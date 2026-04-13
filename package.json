@@ -9,12 +9,15 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "test": "node --import tsx --test ./tests/ci.test.ts",
+    "smoke": "node --import tsx ./scripts/smoke-api.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
     "drizzle-kit": "^0.31.5",
+    "tsx": "^4.21.0",
     "turbo": "^2.5.6",
     "typescript": "^5.9.3"
   }
