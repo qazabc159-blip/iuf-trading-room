@@ -534,13 +534,15 @@ app.post("/api/v1/import/my-tw-coverage", async (c) => {
 });
 
 const port = Number(process.env.PORT ?? 3001);
+const host = process.env.HOST ?? "0.0.0.0";
 
 serve(
   {
     fetch: app.fetch,
-    port
+    port,
+    hostname: host
   },
   (info) => {
-    console.log(`IUF Trading Room API listening on http://localhost:${info.port}`);
+    console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
   }
 );

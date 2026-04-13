@@ -57,6 +57,7 @@ PERSISTENCE_MODE=database
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 REDIS_URL=${{Redis.REDIS_URL}}
 DEFAULT_WORKSPACE_SLUG=primary-desk
+HOST=0.0.0.0
 ```
 
 ### Worker service
@@ -74,6 +75,7 @@ WORKER_HEARTBEAT_SECONDS=60
 ```env
 NEXT_PUBLIC_API_BASE_URL=https://<your-api-domain>
 NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG=primary-desk
+HOST=0.0.0.0
 ```
 
 The web app currently calls the API directly from the browser, so `api` needs a public domain.
