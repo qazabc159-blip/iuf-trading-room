@@ -5,18 +5,27 @@
   "packageManager": "pnpm@10.29.2",
   "scripts": {
     "build:packages": "turbo run build --filter=@iuf-trading-room/contracts --filter=@iuf-trading-room/db --filter=@iuf-trading-room/domain --filter=@iuf-trading-room/auth --filter=@iuf-trading-room/ui",
+    "build:web": "pnpm run build:packages && pnpm --filter @iuf-trading-room/web build",
+    "build:api": "turbo run build --filter=@iuf-trading-room/contracts --filter=@iuf-trading-room/db --filter=@iuf-trading-room/domain --filter=@iuf-trading-room/integrations --filter=@iuf-trading-room/api",
+    "build:worker": "turbo run build --filter=@iuf-trading-room/contracts --filter=@iuf-trading-room/db --filter=@iuf-trading-room/domain --filter=@iuf-trading-room/worker",
     "dev": "pnpm run build:packages && turbo run dev --parallel --filter=@iuf-trading-room/api --filter=@iuf-trading-room/worker --filter=@iuf-trading-room/web",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "node --import tsx --test ./tests/ci.test.ts",
     "smoke": "node --import tsx ./scripts/smoke-api.ts",
+    "migrate": "node --import tsx ./scripts/migrate.ts",
+    "start:web": "pnpm --filter @iuf-trading-room/web start",
+    "start:api": "pnpm --filter @iuf-trading-room/api start",
+    "start:worker": "pnpm --filter @iuf-trading-room/worker start",
+    "start:api:railway": "pnpm migrate && pnpm start:api",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
     "drizzle-kit": "^0.31.5",
+    "postgres": "^3.4.7",
     "tsx": "^4.21.0",
     "turbo": "^2.5.6",
     "typescript": "^5.9.3"

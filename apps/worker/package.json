@@ -11,7 +11,8 @@
     "start": "node dist/worker.js"
   },
   "dependencies": {
-    "@iuf-trading-room/domain": "workspace:*"
+    "@iuf-trading-room/domain": "workspace:*",
+    "redis": "^5.9.0"
   },
   "devDependencies": {
     "tsx": "^4.21.0"
