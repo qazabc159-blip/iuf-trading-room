@@ -1,0 +1,780 @@
+import {
+  and,
+  desc,
+  eq,
+  inArray
+} from "drizzle-orm";
+
+import {
+  type AppSession,
+  type Company,
+  type CompanyCreateInput,
+  companySchema,
+  type CompanyUpdateInput,
+  type DailyBrief,
+  type DailyBriefCreateInput,
+  exposureBreakdownSchema,
+  type ReviewEntry,
+  type ReviewEntryCreateInput,
+  type Signal,
+  type SignalCreateInput,
+  type SignalUpdateInput,
+  type Theme,
+  themeSchema,
+  type ThemeCreateInput,
+  type ThemeUpdateInput,
+  type TradePlan,
+  type TradePlanCreateInput,
+  type TradePlanUpdateInput,
+  validationSnapshotSchema,
+  type Workspace
+} from "@iuf-trading-room/contracts";
+import {
+  companies,
+  companyThemeLinks,
+  getDb,
+  reviewEntries,
+  signals,
+  themes,
+  tradePlans,
+  users,
+  workspaces
+} from "@iuf-trading-room/db";
+
+import type { SessionOptions, TradingRoomRepository } from "./types.js";
+
+const defaultWorkspaceSlug = "primary-desk";
+const defaultWorkspaceName = "Primary Desk";
+const defaultOwnerEmail = "owner@iuf.local";
+const defaultOwnerName = "Desk Owner";
+
+const createSlug = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+export class PostgresTradingRoomRepository implements TradingRoomRepository {
+  private get database() {
+    const db = getDb();
+    if (!db) {
+      throw new Error("Database mode is not active.");
+    }
+
+    return db;
+  }
+
+  private async ensureSessionBase(options?: SessionOptions) {
+    const db = this.database;
+    const workspaceSlug = options?.workspaceSlug ?? defaultWorkspaceSlug;
+
+    let [workspace] = await db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.slug, workspaceSlug))
+      .limit(1);
+
+    if (!workspace) {
+      [workspace] = await db
+        .insert(workspaces)
+        .values({
+          name: workspaceSlug === defaultWorkspaceSlug ? defaultWorkspaceName : workspaceSlug,
+          slug: workspaceSlug
+        })
+        .returning();
+    }
+
+    let [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, defaultOwnerEmail))
+      .limit(1);
+
+    if (!user) {
+      [user] = await db
+        .insert(users)
+        .values({
+          email: defaultOwnerEmail,
+          name: defaultOwnerName
+        })
+        .returning();
+    }
+
+    return {
+      workspace,
+      user
+    };
+  }
+
+  private buildSession(
+    workspace: Workspace,
+    user: { id: string; name: string; email: string },
+    options?: SessionOptions
+  ): AppSession {
+    return {
+      workspace,
+      user: {
+        ...user,
+        role: options?.roleOverride ?? "Owner"
+      },
+      persistenceMode: "database"
+    };
+  }
+
+  private async loadThemeIdsByCompany(companyIds: string[]) {
+    if (companyIds.length === 0) {
+      return new Map<string, string[]>();
+    }
+
+    const db = this.database;
+    const links = await db
+      .select()
+      .from(companyThemeLinks)
+      .where(inArray(companyThemeLinks.companyId, companyIds));
+
+    const mapping = new Map<string, string[]>();
+    for (const link of links) {
+      const current = mapping.get(link.companyId) ?? [];
+      current.push(link.themeId);
+      mapping.set(link.companyId, current);
+    }
+
+    return mapping;
+  }
+
+  async getSession(options?: SessionOptions) {
+    const { workspace, user } = await this.ensureSessionBase(options);
+    return this.buildSession(workspace, user, options);
+  }
+
+  async listThemes(options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const rows = await db
+      .select()
+      .from(themes)
+      .where(eq(themes.workspaceId, workspace.id))
+      .orderBy(desc(themes.updatedAt));
+
+    return rows.map((row) =>
+      themeSchema.parse({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        marketState: row.marketState,
+        lifecycle: row.lifecycle,
+        priority: row.priority,
+        thesis: row.thesis,
+        whyNow: row.whyNow,
+        bottleneck: row.bottleneck,
+        corePoolCount: row.corePoolCount,
+        observationPoolCount: row.observationPoolCount,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString()
+      })
+    );
+  }
+
+  async getTheme(themeId: string, options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const [row] = await db
+      .select()
+      .from(themes)
+      .where(and(eq(themes.id, themeId), eq(themes.workspaceId, workspace.id)))
+      .limit(1);
+
+    if (!row) {
+      return null;
+    }
+
+    return themeSchema.parse({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      marketState: row.marketState,
+      lifecycle: row.lifecycle,
+      priority: row.priority,
+      thesis: row.thesis,
+      whyNow: row.whyNow,
+      bottleneck: row.bottleneck,
+      corePoolCount: row.corePoolCount,
+      observationPoolCount: row.observationPoolCount,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    });
+  }
+
+  async createTheme(input: ThemeCreateInput, options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const [row] = await db
+      .insert(themes)
+      .values({
+        workspaceId: workspace.id,
+        name: input.name,
+        slug: createSlug(input.name),
+        marketState: input.marketState,
+        lifecycle: input.lifecycle,
+        priority: input.priority,
+        thesis: input.thesis,
+        whyNow: input.whyNow,
+        bottleneck: input.bottleneck,
+        corePoolCount: 0,
+        observationPoolCount: 0
+      })
+      .returning();
+
+    return themeSchema.parse({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      marketState: row.marketState,
+      lifecycle: row.lifecycle,
+      priority: row.priority,
+      thesis: row.thesis,
+      whyNow: row.whyNow,
+      bottleneck: row.bottleneck,
+      corePoolCount: row.corePoolCount,
+      observationPoolCount: row.observationPoolCount,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    });
+  }
+
+  async updateTheme(themeId: string, input: ThemeUpdateInput, options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const [row] = await db
+      .update(themes)
+      .set({
+        ...input,
+        slug: input.name ? createSlug(input.name) : undefined,
+        updatedAt: new Date()
+      })
+      .where(and(eq(themes.id, themeId), eq(themes.workspaceId, workspace.id)))
+      .returning();
+
+    if (!row) {
+      return null;
+    }
+
+    return themeSchema.parse({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      marketState: row.marketState,
+      lifecycle: row.lifecycle,
+      priority: row.priority,
+      thesis: row.thesis,
+      whyNow: row.whyNow,
+      bottleneck: row.bottleneck,
+      corePoolCount: row.corePoolCount,
+      observationPoolCount: row.observationPoolCount,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    });
+  }
+
+  async listCompanies(themeId?: string, options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const rows = themeId
+      ? await db
+          .select({
+            id: companies.id,
+            name: companies.name,
+            ticker: companies.ticker,
+            market: companies.market,
+            country: companies.country,
+            chainPosition: companies.chainPosition,
+            beneficiaryTier: companies.beneficiaryTier,
+            exposure: companies.exposure,
+            validation: companies.validation,
+            notes: companies.notes,
+            updatedAt: companies.updatedAt
+          })
+          .from(companies)
+          .innerJoin(companyThemeLinks, eq(companyThemeLinks.companyId, companies.id))
+          .where(
+            and(eq(companies.workspaceId, workspace.id), eq(companyThemeLinks.themeId, themeId))
+          )
+      : await db
+          .select()
+          .from(companies)
+          .where(eq(companies.workspaceId, workspace.id))
+          .orderBy(desc(companies.updatedAt));
+
+    const themeIdsByCompany = await this.loadThemeIdsByCompany(rows.map((row) => row.id));
+
+    return rows.map((row) =>
+      companySchema.parse({
+        id: row.id,
+        name: row.name,
+        ticker: row.ticker,
+        market: row.market,
+        country: row.country,
+        themeIds: themeIdsByCompany.get(row.id) ?? [],
+        chainPosition: row.chainPosition,
+        beneficiaryTier: row.beneficiaryTier,
+        exposure: exposureBreakdownSchema.parse(row.exposure),
+        validation: validationSnapshotSchema.parse(row.validation),
+        notes: row.notes,
+        updatedAt: row.updatedAt.toISOString()
+      })
+    );
+  }
+
+  async getCompany(companyId: string, options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const [row] = await db
+      .select()
+      .from(companies)
+      .where(and(eq(companies.id, companyId), eq(companies.workspaceId, workspace.id)))
+      .limit(1);
+
+    if (!row) {
+      return null;
+    }
+
+    const themeIdsByCompany = await this.loadThemeIdsByCompany([row.id]);
+
+    return companySchema.parse({
+      id: row.id,
+      name: row.name,
+      ticker: row.ticker,
+      market: row.market,
+      country: row.country,
+      themeIds: themeIdsByCompany.get(row.id) ?? [],
+      chainPosition: row.chainPosition,
+      beneficiaryTier: row.beneficiaryTier,
+      exposure: exposureBreakdownSchema.parse(row.exposure),
+      validation: validationSnapshotSchema.parse(row.validation),
+      notes: row.notes,
+      updatedAt: row.updatedAt.toISOString()
+    });
+  }
+
+  async createCompany(input: CompanyCreateInput, options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const [row] = await db
+      .insert(companies)
+      .values({
+        workspaceId: workspace.id,
+        name: input.name,
+        ticker: input.ticker,
+        market: input.market,
+        country: input.country,
+        chainPosition: input.chainPosition,
+        beneficiaryTier: input.beneficiaryTier,
+        exposure: input.exposure,
+        validation: input.validation,
+        notes: input.notes
+      })
+      .returning();
+
+    if (input.themeIds.length > 0) {
+      await db.insert(companyThemeLinks).values(
+        input.themeIds.map((themeId) => ({
+          companyId: row.id,
+          themeId
+        }))
+      );
+    }
+
+    return companySchema.parse({
+      id: row.id,
+      name: row.name,
+      ticker: row.ticker,
+      market: row.market,
+      country: row.country,
+      themeIds: input.themeIds,
+      chainPosition: row.chainPosition,
+      beneficiaryTier: row.beneficiaryTier,
+      exposure: exposureBreakdownSchema.parse(row.exposure),
+      validation: validationSnapshotSchema.parse(row.validation),
+      notes: row.notes,
+      updatedAt: row.updatedAt.toISOString()
+    });
+  }
+
+  async updateCompany(companyId: string, input: CompanyUpdateInput, options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const [row] = await db
+      .update(companies)
+      .set({
+        name: input.name,
+        ticker: input.ticker,
+        market: input.market,
+        country: input.country,
+        chainPosition: input.chainPosition,
+        beneficiaryTier: input.beneficiaryTier,
+        exposure: input.exposure,
+        validation: input.validation,
+        notes: input.notes,
+        updatedAt: new Date()
+      })
+      .where(and(eq(companies.id, companyId), eq(companies.workspaceId, workspace.id)))
+      .returning();
+
+    if (!row) {
+      return null;
+    }
+
+    if (input.themeIds) {
+      await db.delete(companyThemeLinks).where(eq(companyThemeLinks.companyId, companyId));
+      if (input.themeIds.length > 0) {
+        await db.insert(companyThemeLinks).values(
+          input.themeIds.map((themeId) => ({
+            companyId,
+            themeId
+          }))
+        );
+      }
+    }
+
+    const themeIdsByCompany = await this.loadThemeIdsByCompany([row.id]);
+
+    return companySchema.parse({
+      id: row.id,
+      name: row.name,
+      ticker: row.ticker,
+      market: row.market,
+      country: row.country,
+      themeIds: themeIdsByCompany.get(row.id) ?? [],
+      chainPosition: row.chainPosition,
+      beneficiaryTier: row.beneficiaryTier,
+      exposure: exposureBreakdownSchema.parse(row.exposure),
+      validation: validationSnapshotSchema.parse(row.validation),
+      notes: row.notes,
+      updatedAt: row.updatedAt.toISOString()
+    });
+  }
+
+  // ── Signals ──
+
+  async listSignals(
+    filters?: { themeId?: string; companyId?: string; category?: string },
+    options?: SessionOptions
+  ): Promise<Signal[]> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const conditions = [eq(signals.workspaceId, workspace.id)];
+    if (filters?.category) {
+      conditions.push(eq(signals.category, filters.category as any));
+    }
+    const rows = await db
+      .select()
+      .from(signals)
+      .where(and(...conditions))
+      .orderBy(desc(signals.createdAt));
+
+    return rows.map((row) => ({
+      id: row.id,
+      category: row.category,
+      direction: row.direction,
+      title: row.title,
+      summary: row.summary,
+      confidence: row.confidence,
+      themeIds: [],
+      companyIds: [],
+      createdAt: row.createdAt.toISOString()
+    }));
+  }
+
+  async getSignal(signalId: string, options?: SessionOptions): Promise<Signal | null> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const [row] = await db
+      .select()
+      .from(signals)
+      .where(and(eq(signals.id, signalId), eq(signals.workspaceId, workspace.id)));
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      category: row.category,
+      direction: row.direction,
+      title: row.title,
+      summary: row.summary,
+      confidence: row.confidence,
+      themeIds: [],
+      companyIds: [],
+      createdAt: row.createdAt.toISOString()
+    };
+  }
+
+  async createSignal(input: SignalCreateInput, options?: SessionOptions): Promise<Signal> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const [row] = await db
+      .insert(signals)
+      .values({
+        workspaceId: workspace.id,
+        category: input.category,
+        direction: input.direction,
+        title: input.title,
+        summary: input.summary ?? "",
+        confidence: input.confidence
+      })
+      .returning();
+
+    return {
+      id: row.id,
+      category: row.category,
+      direction: row.direction,
+      title: row.title,
+      summary: row.summary,
+      confidence: row.confidence,
+      themeIds: [],
+      companyIds: [],
+      createdAt: row.createdAt.toISOString()
+    };
+  }
+
+  async updateSignal(
+    signalId: string,
+    input: SignalUpdateInput,
+    options?: SessionOptions
+  ): Promise<Signal | null> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const [row] = await db
+      .update(signals)
+      .set({
+        category: input.category,
+        direction: input.direction,
+        title: input.title,
+        summary: input.summary,
+        confidence: input.confidence
+      })
+      .where(and(eq(signals.id, signalId), eq(signals.workspaceId, workspace.id)))
+      .returning();
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      category: row.category,
+      direction: row.direction,
+      title: row.title,
+      summary: row.summary,
+      confidence: row.confidence,
+      themeIds: [],
+      companyIds: [],
+      createdAt: row.createdAt.toISOString()
+    };
+  }
+
+  // ── Trade Plans ──
+
+  async listTradePlans(
+    filters?: { companyId?: string; status?: string },
+    options?: SessionOptions
+  ): Promise<TradePlan[]> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const conditions = [eq(tradePlans.workspaceId, workspace.id)];
+    if (filters?.companyId) {
+      conditions.push(eq(tradePlans.companyId, filters.companyId));
+    }
+    if (filters?.status) {
+      conditions.push(eq(tradePlans.status, filters.status as any));
+    }
+    const rows = await db
+      .select()
+      .from(tradePlans)
+      .where(and(...conditions))
+      .orderBy(desc(tradePlans.createdAt));
+
+    return rows.map((row) => ({
+      id: row.id,
+      companyId: row.companyId,
+      status: row.status,
+      entryPlan: row.entryPlan,
+      invalidationPlan: row.invalidationPlan,
+      targetPlan: row.targetPlan,
+      riskReward: row.riskReward,
+      notes: "",
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    }));
+  }
+
+  async getTradePlan(planId: string, options?: SessionOptions): Promise<TradePlan | null> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const [row] = await db
+      .select()
+      .from(tradePlans)
+      .where(and(eq(tradePlans.id, planId), eq(tradePlans.workspaceId, workspace.id)));
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      companyId: row.companyId,
+      status: row.status,
+      entryPlan: row.entryPlan,
+      invalidationPlan: row.invalidationPlan,
+      targetPlan: row.targetPlan,
+      riskReward: row.riskReward,
+      notes: "",
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    };
+  }
+
+  async createTradePlan(input: TradePlanCreateInput, options?: SessionOptions): Promise<TradePlan> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const [row] = await db
+      .insert(tradePlans)
+      .values({
+        workspaceId: workspace.id,
+        companyId: input.companyId,
+        status: input.status ?? "draft",
+        entryPlan: input.entryPlan,
+        invalidationPlan: input.invalidationPlan,
+        targetPlan: input.targetPlan,
+        riskReward: input.riskReward ?? ""
+      })
+      .returning();
+
+    return {
+      id: row.id,
+      companyId: row.companyId,
+      status: row.status,
+      entryPlan: row.entryPlan,
+      invalidationPlan: row.invalidationPlan,
+      targetPlan: row.targetPlan,
+      riskReward: row.riskReward,
+      notes: "",
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    };
+  }
+
+  async updateTradePlan(
+    planId: string,
+    input: TradePlanUpdateInput,
+    options?: SessionOptions
+  ): Promise<TradePlan | null> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const [row] = await db
+      .update(tradePlans)
+      .set({
+        status: input.status,
+        entryPlan: input.entryPlan,
+        invalidationPlan: input.invalidationPlan,
+        targetPlan: input.targetPlan,
+        riskReward: input.riskReward,
+        updatedAt: new Date()
+      })
+      .where(and(eq(tradePlans.id, planId), eq(tradePlans.workspaceId, workspace.id)))
+      .returning();
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      companyId: row.companyId,
+      status: row.status,
+      entryPlan: row.entryPlan,
+      invalidationPlan: row.invalidationPlan,
+      targetPlan: row.targetPlan,
+      riskReward: row.riskReward,
+      notes: "",
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    };
+  }
+
+  // ── Reviews ──
+
+  async listReviews(
+    filters?: { tradePlanId?: string },
+    options?: SessionOptions
+  ): Promise<ReviewEntry[]> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const conditions = [eq(reviewEntries.workspaceId, workspace.id)];
+    if (filters?.tradePlanId) {
+      conditions.push(eq(reviewEntries.tradePlanId, filters.tradePlanId));
+    }
+    const rows = await db
+      .select()
+      .from(reviewEntries)
+      .where(and(...conditions))
+      .orderBy(desc(reviewEntries.createdAt));
+
+    return rows.map((row) => ({
+      id: row.id,
+      tradePlanId: row.tradePlanId,
+      outcome: row.outcome,
+      attribution: row.attribution,
+      lesson: "",
+      setupTags: [],
+      executionQuality: 3,
+      createdAt: row.createdAt.toISOString()
+    }));
+  }
+
+  async createReview(input: ReviewEntryCreateInput, options?: SessionOptions): Promise<ReviewEntry> {
+    const db = this.database;
+    const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const [row] = await db
+      .insert(reviewEntries)
+      .values({
+        workspaceId: workspace.id,
+        tradePlanId: input.tradePlanId,
+        outcome: input.outcome,
+        attribution: input.attribution ?? ""
+      })
+      .returning();
+
+    return {
+      id: row.id,
+      tradePlanId: row.tradePlanId,
+      outcome: row.outcome,
+      attribution: row.attribution,
+      lesson: "",
+      setupTags: [],
+      executionQuality: input.executionQuality,
+      createdAt: row.createdAt.toISOString()
+    };
+  }
+
+  // ── Daily Briefs (memory-only for v1, no DB table yet) ──
+
+  private briefs: DailyBrief[] = [];
+
+  async listBriefs(): Promise<DailyBrief[]> {
+    return this.briefs.map((b) => ({ ...b, sections: b.sections.map((s) => ({ ...s })) }));
+  }
+
+  async createBrief(input: DailyBriefCreateInput): Promise<DailyBrief> {
+    const brief: DailyBrief = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      ...input,
+      generatedBy: input.generatedBy ?? "manual",
+      status: input.status ?? "draft"
+    };
+    this.briefs.unshift(brief);
+    return { ...brief, sections: brief.sections.map((s) => ({ ...s })) };
+  }
+}
