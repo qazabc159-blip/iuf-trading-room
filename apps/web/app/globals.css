@@ -183,6 +183,33 @@ a {
   color: var(--teal);
 }
 
+.badge-green {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border-radius: 999px;
+  border: 1px solid rgba(22, 163, 74, 0.25);
+  background: rgba(22, 163, 74, 0.1);
+  color: #15803d;
+}
+
+.badge-red {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border-radius: 999px;
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+}
+
+.badge-blue {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+}
+
 .hero-card {
   display: grid;
   gap: 18px;

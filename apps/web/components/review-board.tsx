@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import type { ReviewEntry, ReviewEntryCreateInput } from "@iuf-trading-room/contracts";
 
@@ -16,8 +17,16 @@ const initialForm: ReviewEntryCreateInput = {
 };
 
 export function ReviewBoard() {
+  const searchParams = useSearchParams();
+  const prefillPlanId = searchParams.get("newForPlan") ?? "";
+  const prefillPlanLabel = searchParams.get("planLabel") ?? "";
+  const filterPlanId = searchParams.get("tradePlanId") ?? "";
+
   const [reviews, setReviews] = useState<ReviewEntry[]>([]);
-  const [form, setForm] = useState<ReviewEntryCreateInput>(initialForm);
+  const [form, setForm] = useState<ReviewEntryCreateInput>({
+    ...initialForm,
+    tradePlanId: prefillPlanId
+  });
   const [tagInput, setTagInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +35,8 @@ export function ReviewBoard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const response = await getReviews();
+        const params = filterPlanId ? { tradePlanId: filterPlanId } : undefined;
+        const response = await getReviews(params);
         setReviews(response.data);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load reviews.");
@@ -36,7 +46,7 @@ export function ReviewBoard() {
     };
 
     void load();
-  }, []);
+  }, [filterPlanId]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -95,11 +105,21 @@ export function ReviewBoard() {
                 <span className="badge">Quality: {review.executionQuality}/5</span>
               </div>
               <p className="record-meta">Plan: {review.tradePlanId.slice(0, 8)}...</p>
-              <p><strong>Outcome:</strong> {review.outcome}</p>
-              {review.attribution ? <p><strong>Attribution:</strong> {review.attribution}</p> : null}
-              {review.lesson ? <p><strong>Lesson:</strong> {review.lesson}</p> : null}
+              <p>
+                <strong>Outcome:</strong> {review.outcome}
+              </p>
+              {review.attribution ? (
+                <p>
+                  <strong>Attribution:</strong> {review.attribution}
+                </p>
+              ) : null}
+              {review.lesson ? (
+                <p>
+                  <strong>Lesson:</strong> {review.lesson}
+                </p>
+              ) : null}
               {review.setupTags.length > 0 ? (
-                <div className="tag-row">
+                <div className="tag-row" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
                   {review.setupTags.map((tag) => (
                     <span key={tag} className="badge">
                       {tag}
@@ -116,7 +136,7 @@ export function ReviewBoard() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">Create Review</p>
-            <h3>New review entry</h3>
+            <h3>{prefillPlanLabel ? `Review for ${prefillPlanLabel}` : "New review entry"}</h3>
           </div>
         </div>
 
@@ -129,6 +149,9 @@ export function ReviewBoard() {
             }
             placeholder="Paste trade plan UUID"
           />
+          {prefillPlanId ? (
+            <small className="muted">Pre-filled from plan: {prefillPlanId.slice(0, 12)}...</small>
+          ) : null}
         </label>
 
         <label className="field">
@@ -178,7 +201,7 @@ export function ReviewBoard() {
 
         <div className="field">
           <span>Setup tags</span>
-          <div className="tag-input-row">
+          <div style={{ display: "flex", gap: 8 }}>
             <input
               value={tagInput}
               onChange={(event) => setTagInput(event.target.value)}
@@ -189,15 +212,26 @@ export function ReviewBoard() {
                 }
               }}
               placeholder="Type tag and press Enter"
+              style={{ flex: 1 }}
             />
-            <button type="button" className="action-button-small" onClick={addTag}>
+            <button
+              type="button"
+              className="hero-link"
+              style={{ padding: "8px 14px", fontSize: "0.85rem" }}
+              onClick={addTag}
+            >
               Add
             </button>
           </div>
           {form.setupTags.length > 0 ? (
-            <div className="tag-row">
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
               {form.setupTags.map((tag) => (
-                <span key={tag} className="badge" onClick={() => removeTag(tag)} style={{ cursor: "pointer" }}>
+                <span
+                  key={tag}
+                  className="badge"
+                  onClick={() => removeTag(tag)}
+                  style={{ cursor: "pointer" }}
+                >
                   {tag} x
                 </span>
               ))}

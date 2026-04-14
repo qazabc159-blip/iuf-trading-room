@@ -2,9 +2,15 @@
 
 import { useEffect, useState } from "react";
 
-import type { Signal, SignalCategory, SignalCreateInput, SignalDirection } from "@iuf-trading-room/contracts";
+import type {
+  Company,
+  Signal,
+  SignalCategory,
+  SignalCreateInput,
+  SignalDirection
+} from "@iuf-trading-room/contracts";
 
-import { createSignal, getSignals } from "@/lib/api";
+import { createSignal, getCompanies, getSignals } from "@/lib/api";
 
 const categories: SignalCategory[] = ["macro", "industry", "company", "price", "portfolio"];
 const directions: SignalDirection[] = ["bullish", "bearish", "neutral"];
@@ -21,6 +27,7 @@ const initialForm: SignalCreateInput = {
 
 export function SignalBoard() {
   const [signals, setSignals] = useState<Signal[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [form, setForm] = useState<SignalCreateInput>(initialForm);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,8 +37,12 @@ export function SignalBoard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const response = await getSignals(filterCategory ? { category: filterCategory } : undefined);
-        setSignals(response.data);
+        const [signalsRes, companiesRes] = await Promise.all([
+          getSignals(filterCategory ? { category: filterCategory } : undefined),
+          getCompanies()
+        ]);
+        setSignals(signalsRes.data);
+        setCompanies(companiesRes.data);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load signals.");
       } finally {
@@ -41,6 +52,13 @@ export function SignalBoard() {
 
     void load();
   }, [filterCategory]);
+
+  const companyMap = new Map(companies.map((c) => [c.id, c]));
+
+  const getCompanyLabel = (id: string) => {
+    const c = companyMap.get(id);
+    return c ? `${c.ticker} ${c.name}` : id.slice(0, 8);
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -106,9 +124,33 @@ export function SignalBoard() {
                 <span className={directionColor(signal.direction)}>{signal.direction}</span>
               </div>
               <p className="record-meta">
-                {signal.category} · confidence {signal.confidence}/5
+                {signal.category} / confidence {signal.confidence}/5
               </p>
+              {signal.companyIds.length > 0 ? (
+                <p className="muted" style={{ fontSize: "0.82rem" }}>
+                  Companies: {signal.companyIds.map(getCompanyLabel).join(", ")}
+                </p>
+              ) : null}
               {signal.summary ? <p>{signal.summary}</p> : null}
+
+              {/* Action: create plan from signal's company */}
+              {signal.companyIds.length > 0 ? (
+                <div className="action-row" style={{ marginTop: 8 }}>
+                  {signal.companyIds.map((cid) => {
+                    const comp = companyMap.get(cid);
+                    return (
+                      <a
+                        key={cid}
+                        href={`/plans?newForCompany=${cid}&companyName=${encodeURIComponent(comp?.name ?? cid.slice(0, 8))}`}
+                        className="hero-link primary"
+                        style={{ fontSize: "0.78rem", padding: "5px 10px" }}
+                      >
+                        + Plan for {comp?.ticker ?? cid.slice(0, 8)}
+                      </a>
+                    );
+                  })}
+                </div>
+              ) : null}
             </article>
           ))}
         </div>
