@@ -482,6 +482,22 @@ async function main() {
     assert.ok(Array.isArray(auditSummary.data.actions));
     assert.ok(Array.isArray(auditSummary.data.entities));
 
+    const opsSnapshot = await request<
+      JsonEnvelope<{
+        generatedAt: string;
+        stats: { companies: number; themes: number };
+        openAlice: { queue: { reviewable: number } };
+        latest: { companies: Array<{ id: string }> };
+      }>
+    >(baseUrl, "/api/v1/ops/snapshot?auditHours=24&recentLimit=5", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.match(opsSnapshot.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
+    assert.ok(opsSnapshot.data.stats.companies >= 1);
+    assert.ok(opsSnapshot.data.stats.themes >= 1);
+    assert.ok(Array.isArray(opsSnapshot.data.latest.companies));
+    assert.ok(opsSnapshot.data.openAlice.queue.reviewable >= 0);
+
     console.log("Smoke API checks passed.");
   } catch (error) {
     const details = [

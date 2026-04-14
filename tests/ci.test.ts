@@ -26,6 +26,7 @@ import {
   parseAuditTarget,
   summarizeAuditEntries
 } from "../apps/api/src/audit-log-store.ts";
+import { buildOpsSnapshotView } from "../apps/api/src/ops-snapshot.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
 import { parseGraphData } from "../packages/integrations/src/my-tw-coverage/graph-parser.ts";
@@ -194,6 +195,177 @@ test("audit summary aggregates recent actions and entity types", () => {
     { entityType: "tradingview_webhook", count: 1 }
   ]);
   assert.equal(summary.recent.length, 3);
+});
+
+test("ops snapshot view aggregates stats and latest activity", () => {
+  const snapshot = buildOpsSnapshotView({
+    session: {
+      workspace: {
+        id: "workspace-1",
+        name: "Primary Desk",
+        slug: "primary-desk",
+        createdAt: "2026-04-14T00:00:00.000Z"
+      },
+      user: {
+        id: "user-1",
+        email: "owner@iuf.local",
+        name: "Desk Owner",
+        role: "Owner",
+        createdAt: "2026-04-14T00:00:00.000Z"
+      },
+      persistenceMode: "database"
+    },
+    themes: [
+      {
+        id: randomUUID(),
+        name: "AI 光通訊",
+        slug: "ai-optics",
+        marketState: "Balanced",
+        lifecycle: "Validation",
+        priority: 4,
+        thesis: "",
+        whyNow: "",
+        bottleneck: "",
+        corePoolCount: 1,
+        observationPoolCount: 2,
+        createdAt: "2026-04-14T10:00:00.000Z",
+        updatedAt: "2026-04-14T10:05:00.000Z"
+      }
+    ],
+    companies: [
+      {
+        id: randomUUID(),
+        name: "台積電",
+        ticker: "2330",
+        market: "TWSE",
+        country: "Taiwan",
+        themeIds: [],
+        chainPosition: "Foundry",
+        beneficiaryTier: "Core",
+        exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+        validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+        notes: "",
+        updatedAt: "2026-04-14T09:00:00.000Z"
+      },
+      {
+        id: randomUUID(),
+        name: "智邦",
+        ticker: "2345",
+        market: "TWSE",
+        country: "Taiwan",
+        themeIds: [],
+        chainPosition: "Switch",
+        beneficiaryTier: "Direct",
+        exposure: { volume: 4, asp: 4, margin: 3, capacity: 4, narrative: 4 },
+        validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+        notes: "",
+        updatedAt: "2026-04-14T08:00:00.000Z"
+      }
+    ],
+    signals: [
+      {
+        id: randomUUID(),
+        category: "price",
+        direction: "bullish",
+        title: "突破前高",
+        summary: "",
+        confidence: 4,
+        themeIds: [],
+        companyIds: [],
+        createdAt: "2026-04-14T10:10:00.000Z"
+      }
+    ],
+    plans: [
+      {
+        id: randomUUID(),
+        companyId: randomUUID(),
+        status: "active",
+        entryPlan: "",
+        invalidationPlan: "",
+        targetPlan: "",
+        riskReward: "1:3",
+        notes: "",
+        createdAt: "2026-04-14T10:15:00.000Z",
+        updatedAt: "2026-04-14T10:20:00.000Z"
+      }
+    ],
+    reviews: [
+      {
+        id: randomUUID(),
+        tradePlanId: randomUUID(),
+        outcome: "依計畫減碼",
+        attribution: "",
+        lesson: "",
+        setupTags: [],
+        executionQuality: 4,
+        createdAt: "2026-04-14T10:30:00.000Z"
+      }
+    ],
+    briefs: [
+      {
+        id: randomUUID(),
+        date: "2026-04-14",
+        marketState: "Balanced",
+        sections: [{ heading: "盤勢", body: "平衡偏多" }],
+        generatedBy: "manual",
+        status: "published",
+        createdAt: "2026-04-14T10:35:00.000Z"
+      }
+    ],
+    jobs: [
+      {
+        id: randomUUID(),
+        workspaceSlug: "primary-desk",
+        status: "draft_ready",
+        taskType: "daily_brief",
+        instructions: "產生晨報",
+        contextRefs: [],
+        createdAt: "2026-04-14T10:40:00.000Z"
+      }
+    ],
+    audit: {
+      windowHours: 24,
+      total: 3,
+      latestCreatedAt: "2026-04-14T10:50:00.000Z",
+      actions: [{ action: "create", count: 2 }],
+      entities: [{ entityType: "theme", count: 1 }],
+      recent: []
+    },
+    openAlice: {
+      source: "bridge_fallback",
+      workerStatus: "healthy",
+      sweepStatus: "healthy",
+      workerHeartbeatAt: "2026-04-14T10:45:00.000Z",
+      workerHeartbeatAgeSeconds: 10,
+      lastSweepAt: "2026-04-14T10:45:00.000Z",
+      lastSweepAgeSeconds: 10,
+      metrics: {
+        mode: "database",
+        queuedJobs: 0,
+        runningJobs: 0,
+        staleRunningJobs: 0,
+        terminalJobs: 1,
+        activeDevices: 1,
+        staleDevices: 0,
+        expiredJobsRequeued: 0,
+        expiredJobsFailed: 0
+      }
+    },
+    recentLimit: 5,
+    generatedAt: "2026-04-14T10:55:00.000Z"
+  });
+
+  assert.equal(snapshot.stats.themes, 1);
+  assert.equal(snapshot.stats.companies, 2);
+  assert.equal(snapshot.stats.coreCompanies, 1);
+  assert.equal(snapshot.stats.directCompanies, 1);
+  assert.equal(snapshot.stats.activePlans, 1);
+  assert.equal(snapshot.stats.reviewQueue, 1);
+  assert.equal(snapshot.stats.publishedBriefs, 1);
+  assert.equal(snapshot.stats.bullishSignals, 1);
+  assert.equal(snapshot.latest.themes[0]?.label, "AI 光通訊");
+  assert.equal(snapshot.latest.companies[0]?.label, "2330 台積電");
+  assert.equal(snapshot.openAlice.queue.reviewable, 1);
 });
 
 test("memory repository supports core research-to-review loop", async () => {

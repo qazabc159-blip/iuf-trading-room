@@ -55,6 +55,7 @@ import {
   listAuditLogEntries,
   writeAuditLog
 } from "./audit-log-store.js";
+import { getOpsSnapshot } from "./ops-snapshot.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -195,6 +196,11 @@ const auditLogSummaryQuerySchema = z.object({
   entityType: z.string().min(1).max(120).optional()
 });
 
+const opsSnapshotQuerySchema = z.object({
+  auditHours: z.coerce.number().int().min(1).max(24 * 30).optional(),
+  recentLimit: z.coerce.number().int().min(1).max(20).optional()
+});
+
 async function handleOpenAliceJobClaim(c: Context) {
   const payload = openAliceClaimJobSchema.parse(await c.req.json().catch(() => ({})));
   const deviceOrResponse = await requireOpenAliceDevice(c, payload.deviceId);
@@ -297,6 +303,18 @@ app.get("/api/v1/audit-logs", async (c) => {
       entityId: query.entityId,
       from: query.from,
       to: query.to
+    })
+  });
+});
+
+app.get("/api/v1/ops/snapshot", async (c) => {
+  const query = opsSnapshotQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getOpsSnapshot({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      auditHours: query.auditHours,
+      recentLimit: query.recentLimit
     })
   });
 });
