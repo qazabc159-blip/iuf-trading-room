@@ -492,6 +492,31 @@ test("ops snapshot view aggregates stats and latest activity", () => {
         expiredJobsFailed: 0
       }
     },
+    eventHistorySummary: {
+      windowHours: 24,
+      total: 4,
+      latestCreatedAt: "2026-04-14T10:40:00.000Z",
+      sources: [{ source: "signal", count: 1 }],
+      severities: [{ severity: "success", count: 3 }],
+      entities: [{ entityType: "signal", count: 1 }],
+      recent: []
+    },
+    eventHistoryRecent: [
+      {
+        id: "signal:event-1",
+        source: "signal",
+        action: "bullish",
+        entityType: "signal",
+        entityId: "event-1",
+        title: "突破前高",
+        subtitle: "price / confidence 4",
+        status: "bullish",
+        severity: "success",
+        createdAt: "2026-04-14T10:10:00.000Z",
+        href: "/signals",
+        tags: ["price", "bullish"]
+      }
+    ],
     recentLimit: 5,
     generatedAt: "2026-04-14T10:55:00.000Z"
   });
@@ -507,6 +532,8 @@ test("ops snapshot view aggregates stats and latest activity", () => {
   assert.equal(snapshot.latest.themes[0]?.label, "AI 光通訊");
   assert.equal(snapshot.latest.companies[0]?.label, "2330 台積電");
   assert.equal(snapshot.openAlice.queue.reviewable, 1);
+  assert.equal(snapshot.eventHistory.summary.total, 4);
+  assert.equal(snapshot.eventHistory.recent[0]?.source, "signal");
 });
 
 test("memory repository supports core research-to-review loop", async () => {

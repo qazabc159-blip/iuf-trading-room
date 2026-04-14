@@ -10,6 +10,7 @@ import type {
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 
 import { getAuditLogSummary } from "./audit-log-store.js";
+import { getEventHistory, getEventHistorySummary } from "./event-history.js";
 import { listOpenAliceJobs } from "./openalice-bridge.js";
 import { getOpenAliceObservabilitySnapshot } from "./openalice-observability.js";
 
@@ -52,6 +53,10 @@ export type OpsSnapshot = {
     };
   };
   audit: Awaited<ReturnType<typeof getAuditLogSummary>>;
+  eventHistory: {
+    summary: Awaited<ReturnType<typeof getEventHistorySummary>>;
+    recent: Awaited<ReturnType<typeof getEventHistory>>;
+  };
   latest: {
     themes: LatestRecord[];
     companies: LatestRecord[];
@@ -91,6 +96,8 @@ export function buildOpsSnapshotView(input: {
   briefs: DailyBrief[];
   jobs: Awaited<ReturnType<typeof listOpenAliceJobs>>;
   audit: Awaited<ReturnType<typeof getAuditLogSummary>>;
+  eventHistorySummary: Awaited<ReturnType<typeof getEventHistorySummary>>;
+  eventHistoryRecent: Awaited<ReturnType<typeof getEventHistory>>;
   openAlice: Awaited<ReturnType<typeof getOpenAliceObservabilitySnapshot>>;
   generatedAt?: string;
   recentLimit?: number;
@@ -116,7 +123,8 @@ export function buildOpsSnapshotView(input: {
       briefs: input.briefs.length,
       coreCompanies: input.companies.filter((company) => company.beneficiaryTier === "Core").length,
       directCompanies: input.companies.filter((company) => company.beneficiaryTier === "Direct").length,
-      activePlans: input.plans.filter((plan) => ["ready", "active", "reduced"].includes(plan.status)).length,
+      activePlans: input.plans.filter((plan) => ["ready", "active", "reduced"].includes(plan.status))
+        .length,
       reviewQueue,
       publishedBriefs: input.briefs.filter((brief) => brief.status === "published").length,
       bullishSignals: input.signals.filter((signal) => signal.direction === "bullish").length
@@ -132,6 +140,10 @@ export function buildOpsSnapshotView(input: {
       }
     },
     audit: input.audit,
+    eventHistory: {
+      summary: input.eventHistorySummary,
+      recent: input.eventHistoryRecent
+    },
     latest: {
       themes: takeLatest(
         input.themes,
@@ -140,7 +152,7 @@ export function buildOpsSnapshotView(input: {
         (theme) => ({
           id: theme.id,
           label: theme.name,
-          subtitle: `${theme.lifecycle} / 優先級 ${theme.priority}`,
+          subtitle: `${theme.lifecycle} / priority ${theme.priority}`,
           timestamp: theme.updatedAt
         })
       ),
@@ -162,7 +174,7 @@ export function buildOpsSnapshotView(input: {
         (signal) => ({
           id: signal.id,
           label: signal.title,
-          subtitle: `${signal.category} / ${signal.direction} / 信心 ${signal.confidence}`,
+          subtitle: `${signal.category} / ${signal.direction} / confidence ${signal.confidence}`,
           timestamp: signal.createdAt
         })
       ),
@@ -172,8 +184,8 @@ export function buildOpsSnapshotView(input: {
         (plan) => plan.updatedAt,
         (plan) => ({
           id: plan.id,
-          label: `計畫 ${plan.riskReward ? `RR ${plan.riskReward}` : plan.status}`,
-          subtitle: `狀態 ${plan.status}`,
+          label: `Trade plan ${plan.riskReward ? `RR ${plan.riskReward}` : plan.status}`,
+          subtitle: `status / ${plan.status}`,
           timestamp: plan.updatedAt
         })
       ),
@@ -184,7 +196,7 @@ export function buildOpsSnapshotView(input: {
         (review) => ({
           id: review.id,
           label: review.outcome.slice(0, 80),
-          subtitle: `執行品質 ${review.executionQuality}/5`,
+          subtitle: `execution quality ${review.executionQuality}/5`,
           timestamp: review.createdAt
         })
       ),
@@ -211,22 +223,45 @@ export async function getOpsSnapshot(input: {
 }) {
   const { session, repo } = input;
   const workspaceSlug = session.workspace.slug;
+  const recentLimit = input.recentLimit ?? 6;
 
-  const [themes, companies, signals, plans, reviews, briefs, jobs, openAlice, audit] =
-    await Promise.all([
-      repo.listThemes({ workspaceSlug }),
-      repo.listCompanies(undefined, { workspaceSlug }),
-      repo.listSignals({}, { workspaceSlug }),
-      repo.listTradePlans({}, { workspaceSlug }),
-      repo.listReviews({}, { workspaceSlug }),
-      repo.listBriefs({ workspaceSlug }),
-      listOpenAliceJobs(workspaceSlug),
-      getOpenAliceObservabilitySnapshot(workspaceSlug),
-      getAuditLogSummary({
-        session,
-        hours: input.auditHours
-      })
-    ]);
+  const [
+    themes,
+    companies,
+    signals,
+    plans,
+    reviews,
+    briefs,
+    jobs,
+    openAlice,
+    audit,
+    eventHistorySummary,
+    eventHistoryRecent
+  ] = await Promise.all([
+    repo.listThemes({ workspaceSlug }),
+    repo.listCompanies(undefined, { workspaceSlug }),
+    repo.listSignals({}, { workspaceSlug }),
+    repo.listTradePlans({}, { workspaceSlug }),
+    repo.listReviews({}, { workspaceSlug }),
+    repo.listBriefs({ workspaceSlug }),
+    listOpenAliceJobs(workspaceSlug),
+    getOpenAliceObservabilitySnapshot(workspaceSlug),
+    getAuditLogSummary({
+      session,
+      hours: input.auditHours
+    }),
+    getEventHistorySummary({
+      session,
+      repo,
+      hours: input.auditHours
+    }),
+    getEventHistory({
+      session,
+      repo,
+      hours: input.auditHours,
+      limit: recentLimit
+    })
+  ]);
 
   return buildOpsSnapshotView({
     session,
@@ -238,7 +273,9 @@ export async function getOpsSnapshot(input: {
     briefs,
     jobs,
     audit,
+    eventHistorySummary,
+    eventHistoryRecent,
     openAlice,
-    recentLimit: input.recentLimit
+    recentLimit
   });
 }

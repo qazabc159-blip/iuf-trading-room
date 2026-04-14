@@ -558,6 +558,10 @@ async function main() {
         generatedAt: string;
         stats: { companies: number; themes: number };
         openAlice: { queue: { reviewable: number } };
+        eventHistory: {
+          summary: { total: number };
+          recent: Array<{ source: string }>;
+        };
         latest: { companies: Array<{ id: string }> };
       }>
     >(baseUrl, "/api/v1/ops/snapshot?auditHours=24&recentLimit=5", {
@@ -568,6 +572,8 @@ async function main() {
     assert.ok(opsSnapshot.data.stats.themes >= 1);
     assert.ok(Array.isArray(opsSnapshot.data.latest.companies));
     assert.ok(opsSnapshot.data.openAlice.queue.reviewable >= 0);
+    assert.ok(opsSnapshot.data.eventHistory.summary.total >= 0);
+    assert.ok(Array.isArray(opsSnapshot.data.eventHistory.recent));
 
     console.log("Smoke API checks passed.");
   } catch (error) {
