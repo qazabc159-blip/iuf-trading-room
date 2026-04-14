@@ -91,6 +91,24 @@ export type OpenAliceBridgeSnapshot = {
   staleDevices: number;
 };
 
+export type OpenAliceBridgeDevice = {
+  deviceId: string;
+  deviceName: string;
+  workspaceSlug: string;
+  capabilities: string[];
+  status: "active" | "revoked";
+  registeredAt: string;
+  lastSeenAt: string;
+  stale: boolean;
+};
+
+export type OpenAliceDeviceCleanupResult = {
+  revokedCount: number;
+  staleBeforeCleanup: number;
+  staleThresholdSeconds: number;
+  devices: OpenAliceBridgeDevice[];
+};
+
 type MemoryDevice = DeviceRegistration & {
   deviceName: string;
   capabilities: string[];
@@ -219,6 +237,51 @@ function leaseIsExpired(leaseExpiresAt?: string | Date | null, now = new Date())
   return value.getTime() <= now.getTime();
 }
 
+function isDeviceStale(
+  lastSeenAt?: string | Date | null,
+  now = new Date(),
+  deviceStaleSeconds = defaultOpenAliceDeviceStaleSeconds
+) {
+  if (!lastSeenAt) {
+    return false;
+  }
+
+  const value = lastSeenAt instanceof Date ? lastSeenAt : new Date(lastSeenAt);
+  return value.getTime() <= now.getTime() - deviceStaleSeconds * 1000;
+}
+
+function toBridgeDevicePayload(
+  device: {
+    deviceId: string;
+    deviceName: string;
+    workspaceSlug: string;
+    capabilities: string[];
+    status: "active" | "revoked";
+    registeredAt: string | Date;
+    lastSeenAt: string | Date;
+  },
+  now = new Date(),
+  deviceStaleSeconds = defaultOpenAliceDeviceStaleSeconds
+): OpenAliceBridgeDevice {
+  const registeredAt =
+    device.registeredAt instanceof Date ? device.registeredAt.toISOString() : device.registeredAt;
+  const lastSeenAt =
+    device.lastSeenAt instanceof Date ? device.lastSeenAt.toISOString() : device.lastSeenAt;
+
+  return {
+    deviceId: device.deviceId,
+    deviceName: device.deviceName,
+    workspaceSlug: device.workspaceSlug,
+    capabilities: [...device.capabilities],
+    status: device.status,
+    registeredAt,
+    lastSeenAt,
+    stale:
+      device.status === "active" &&
+      isDeviceStale(lastSeenAt, now, deviceStaleSeconds)
+  };
+}
+
 function collectOpenAliceBridgeSnapshot(input: {
   mode: "memory" | "database";
   jobs: Array<{
@@ -305,6 +368,47 @@ function markMemoryJobExpired(job: MemoryJob, now: Date) {
   job.leaseExpiresAt = undefined;
 }
 
+function releaseRunningMemoryJob(job: MemoryJob, now: Date, reason: string) {
+  if (job.status !== "running") {
+    return;
+  }
+
+  const nowIso = now.toISOString();
+
+  if (job.attemptCount >= job.maxAttempts) {
+    job.status = "failed";
+    job.error = `${reason} after ${job.attemptCount} attempts.`;
+    job.deviceId = undefined;
+    job.claimedAt = undefined;
+    job.lastHeartbeatAt = nowIso;
+    job.leaseExpiresAt = undefined;
+    job.completedAt = nowIso;
+    return;
+  }
+
+  job.status = "queued";
+  job.error = undefined;
+  job.deviceId = undefined;
+  job.claimedAt = undefined;
+  job.lastHeartbeatAt = nowIso;
+  job.leaseExpiresAt = undefined;
+  job.completedAt = undefined;
+}
+
+function releaseRunningJobsForMemoryDevice(deviceId: string, workspaceSlug: string, now: Date) {
+  for (const job of memoryJobs.values()) {
+    if (
+      job.workspaceSlug !== workspaceSlug ||
+      job.status !== "running" ||
+      job.deviceId !== deviceId
+    ) {
+      continue;
+    }
+
+    releaseRunningMemoryJob(job, now, "OpenAlice device revoked");
+  }
+}
+
 async function loadWorkspaceBySlug(workspaceSlug: string) {
   const db = getDb();
   if (!db) {
@@ -380,6 +484,59 @@ async function requeueExpiredOpenAliceJobs(input: {
         claimedAt: null,
         lastHeartbeatAt: null,
         leaseExpiresAt: null,
+        error: null
+      })
+      .where(eq(openAliceJobs.id, row.id));
+  }
+}
+
+async function releaseRunningJobsForDatabaseDevice(input: {
+  workspaceId: string;
+  deviceInternalId: string;
+  now: Date;
+}) {
+  const db = getDb();
+  if (!db) {
+    return;
+  }
+
+  const rows = await db
+    .select()
+    .from(openAliceJobs)
+    .where(
+      and(
+        eq(openAliceJobs.workspaceId, input.workspaceId),
+        eq(openAliceJobs.claimedByDeviceId, input.deviceInternalId),
+        eq(openAliceJobs.status, "running")
+      )
+    )
+    .orderBy(asc(openAliceJobs.createdAt));
+
+  for (const row of rows) {
+    if (row.attemptCount >= row.maxAttempts) {
+      await db
+        .update(openAliceJobs)
+        .set({
+          status: "failed",
+          claimedByDeviceId: null,
+          lastHeartbeatAt: input.now,
+          leaseExpiresAt: null,
+          completedAt: input.now,
+          error: `OpenAlice device revoked after ${row.attemptCount} attempts.`
+        })
+        .where(eq(openAliceJobs.id, row.id));
+      continue;
+    }
+
+    await db
+      .update(openAliceJobs)
+      .set({
+        status: "queued",
+        claimedByDeviceId: null,
+        claimedAt: null,
+        lastHeartbeatAt: input.now,
+        leaseExpiresAt: null,
+        completedAt: null,
         error: null
       })
       .where(eq(openAliceJobs.id, row.id));
@@ -895,6 +1052,232 @@ export async function listOpenAliceJobs(workspaceSlug: string) {
     maxAttempts: row.maxAttempts,
     error: row.error ?? undefined
   }));
+}
+
+export async function listOpenAliceDevices(
+  workspaceSlug: string
+): Promise<OpenAliceBridgeDevice[]> {
+  const now = new Date();
+
+  if (!isDatabaseMode()) {
+    return [...memoryDevices.values()]
+      .filter((device) => device.workspaceSlug === workspaceSlug)
+      .sort((left, right) => right.registeredAt.localeCompare(left.registeredAt))
+      .map((device) => toBridgeDevicePayload(device, now));
+  }
+
+  const db = getDb();
+  const workspace = await loadWorkspaceBySlug(workspaceSlug);
+  if (!db || !workspace) {
+    return [];
+  }
+
+  const rows = await db
+    .select({
+      externalDeviceId: openAliceDevices.externalDeviceId,
+      deviceName: openAliceDevices.deviceName,
+      capabilities: openAliceDevices.capabilities,
+      status: openAliceDevices.status,
+      registeredAt: openAliceDevices.registeredAt,
+      lastSeenAt: openAliceDevices.lastSeenAt
+    })
+    .from(openAliceDevices)
+    .where(eq(openAliceDevices.workspaceId, workspace.id))
+    .orderBy(asc(openAliceDevices.registeredAt));
+
+  return rows.map((row) =>
+    toBridgeDevicePayload(
+      {
+        deviceId: row.externalDeviceId,
+        deviceName: row.deviceName,
+        workspaceSlug,
+        capabilities: Array.isArray(row.capabilities)
+          ? row.capabilities.filter((item): item is string => typeof item === "string")
+          : [],
+        status: row.status,
+        registeredAt: row.registeredAt,
+        lastSeenAt: row.lastSeenAt
+      },
+      now
+    )
+  );
+}
+
+export async function revokeOpenAliceDevice(input: {
+  workspaceSlug: string;
+  deviceId: string;
+}): Promise<OpenAliceBridgeDevice | null> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  if (!isDatabaseMode()) {
+    const device = memoryDevices.get(input.deviceId);
+    if (!device || device.workspaceSlug !== input.workspaceSlug) {
+      return null;
+    }
+
+    device.status = "revoked";
+    device.lastSeenAt = nowIso;
+    releaseRunningJobsForMemoryDevice(device.deviceId, device.workspaceSlug, now);
+    return toBridgeDevicePayload(device, now);
+  }
+
+  const db = getDb();
+  const workspace = await loadWorkspaceBySlug(input.workspaceSlug);
+  if (!db || !workspace) {
+    return null;
+  }
+
+  const [device] = await db
+    .select()
+    .from(openAliceDevices)
+    .where(
+      and(
+        eq(openAliceDevices.workspaceId, workspace.id),
+        eq(openAliceDevices.externalDeviceId, input.deviceId)
+      )
+    )
+    .limit(1);
+
+  if (!device) {
+    return null;
+  }
+
+  await db
+    .update(openAliceDevices)
+    .set({
+      status: "revoked",
+      updatedAt: now
+    })
+    .where(eq(openAliceDevices.id, device.id));
+
+  await releaseRunningJobsForDatabaseDevice({
+    workspaceId: workspace.id,
+    deviceInternalId: device.id,
+    now
+  });
+
+  return toBridgeDevicePayload(
+    {
+      deviceId: device.externalDeviceId,
+      deviceName: device.deviceName,
+      workspaceSlug: input.workspaceSlug,
+      capabilities: Array.isArray(device.capabilities)
+        ? device.capabilities.filter((item): item is string => typeof item === "string")
+        : [],
+      status: "revoked",
+      registeredAt: device.registeredAt,
+      lastSeenAt: device.lastSeenAt
+    },
+    now
+  );
+}
+
+export async function cleanupStaleOpenAliceDevices(input: {
+  workspaceSlug: string;
+  staleSeconds?: number;
+}): Promise<OpenAliceDeviceCleanupResult> {
+  const now = new Date();
+  const staleSeconds = input.staleSeconds ?? defaultOpenAliceDeviceStaleSeconds;
+
+  if (!isDatabaseMode()) {
+    const staleDevices = [...memoryDevices.values()].filter(
+      (device) =>
+        device.workspaceSlug === input.workspaceSlug &&
+        device.status === "active" &&
+        isDeviceStale(device.lastSeenAt, now, staleSeconds)
+    );
+
+    const devices: OpenAliceBridgeDevice[] = [];
+
+    for (const device of staleDevices) {
+      device.status = "revoked";
+      releaseRunningJobsForMemoryDevice(device.deviceId, device.workspaceSlug, now);
+      devices.push(toBridgeDevicePayload(device, now, staleSeconds));
+    }
+
+    return {
+      revokedCount: devices.length,
+      staleBeforeCleanup: staleDevices.length,
+      staleThresholdSeconds: staleSeconds,
+      devices
+    };
+  }
+
+  const db = getDb();
+  const workspace = await loadWorkspaceBySlug(input.workspaceSlug);
+  if (!db || !workspace) {
+    return {
+      revokedCount: 0,
+      staleBeforeCleanup: 0,
+      staleThresholdSeconds: staleSeconds,
+      devices: []
+    };
+  }
+
+  const cutoff = new Date(now.getTime() - staleSeconds * 1000);
+  const staleDevices = await db
+    .select()
+    .from(openAliceDevices)
+    .where(
+      and(
+        eq(openAliceDevices.workspaceId, workspace.id),
+        eq(openAliceDevices.status, "active")
+      )
+    )
+    .orderBy(asc(openAliceDevices.registeredAt));
+
+  const targetDevices = staleDevices.filter((device) =>
+    isDeviceStale(device.lastSeenAt, now, staleSeconds)
+  );
+
+  const devices: OpenAliceBridgeDevice[] = [];
+
+  for (const device of targetDevices) {
+    await db
+      .update(openAliceDevices)
+      .set({
+        status: "revoked",
+        updatedAt: now
+      })
+      .where(
+        and(
+          eq(openAliceDevices.id, device.id),
+          eq(openAliceDevices.status, "active")
+        )
+      );
+
+    await releaseRunningJobsForDatabaseDevice({
+      workspaceId: workspace.id,
+      deviceInternalId: device.id,
+      now
+    });
+
+    devices.push(
+      toBridgeDevicePayload(
+        {
+          deviceId: device.externalDeviceId,
+          deviceName: device.deviceName,
+          workspaceSlug: input.workspaceSlug,
+          capabilities: Array.isArray(device.capabilities)
+            ? device.capabilities.filter((item): item is string => typeof item === "string")
+            : [],
+          status: "revoked",
+          registeredAt: device.registeredAt,
+          lastSeenAt: device.lastSeenAt
+        },
+        now,
+        staleSeconds
+      )
+    );
+  }
+
+  return {
+    revokedCount: devices.length,
+    staleBeforeCleanup: targetDevices.length,
+    staleThresholdSeconds: staleSeconds,
+    devices
+  };
 }
 
 export async function getOpenAliceBridgeSnapshot(

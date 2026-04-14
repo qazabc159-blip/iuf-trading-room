@@ -269,6 +269,15 @@ async function main() {
     });
     assert.equal(registration.data.deviceId, "ci-device");
 
+    const devicesBefore = await request<
+      JsonEnvelope<Array<{ deviceId: string; status: string }>>
+    >(baseUrl, "/api/v1/openalice/devices", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    const activeDevice = devicesBefore.data.find((item) => item.deviceId === registration.data.deviceId);
+    assert.ok(activeDevice, "Expected registered OpenAlice device to be listed.");
+    assert.equal(activeDevice?.status, "active");
+
     const job = await request<JsonEnvelope<{ jobId: string }>>(baseUrl, "/api/v1/openalice/jobs", {
       method: "POST",
       headers: { "x-workspace-slug": workspaceSlug },
@@ -342,6 +351,26 @@ async function main() {
     assert.ok(createdJob, "Expected smoke job to be listed.");
     assert.equal(createdJob?.status, "draft_ready");
 
+    const revokedDevice = await request<
+      JsonEnvelope<{ deviceId: string; status: string }>
+    >(baseUrl, `/api/v1/openalice/devices/${registration.data.deviceId}/revoke`, {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({})
+    });
+    assert.equal(revokedDevice.data.deviceId, registration.data.deviceId);
+    assert.equal(revokedDevice.data.status, "revoked");
+
+    const cleanup = await request<
+      JsonEnvelope<{ revokedCount: number; staleBeforeCleanup: number }>
+    >(baseUrl, "/api/v1/openalice/devices/cleanup", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({ staleSeconds: 1 })
+    });
+    assert.equal(cleanup.data.revokedCount, 0);
+    assert.equal(cleanup.data.staleBeforeCleanup, 0);
+
     const observability = await request<
       JsonEnvelope<{
         source: string;
@@ -359,7 +388,7 @@ async function main() {
     assert.equal(observability.data.metrics.queuedJobs, 0);
     assert.equal(observability.data.metrics.runningJobs, 0);
     assert.ok(observability.data.metrics.terminalJobs >= 1);
-    assert.ok(observability.data.metrics.activeDevices >= 1);
+    assert.equal(observability.data.metrics.activeDevices, 0);
 
     console.log("Smoke API checks passed.");
   } catch (error) {

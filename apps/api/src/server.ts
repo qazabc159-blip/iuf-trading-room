@@ -25,15 +25,18 @@ import { z, ZodError } from "zod";
 
 import {
   authenticateOpenAliceDevice,
+  cleanupStaleOpenAliceDevices,
   claimOpenAliceJob,
   enqueueOpenAliceJob,
   heartbeatOpenAliceDevice,
+  listOpenAliceDevices,
   listOpenAliceJobs,
   openAliceClaimJobSchema,
   openAliceEnqueueJobSchema,
   openAliceJobResultSchema,
   openAliceRegisterSchema,
   registerOpenAliceDevice,
+  revokeOpenAliceDevice,
   submitOpenAliceResult
 } from "./openalice-bridge.js";
 import { getOpenAliceObservabilitySnapshot } from "./openalice-observability.js";
@@ -138,6 +141,10 @@ function secureTokenEquals(expected: string, received: string) {
 
   return timingSafeEqual(expectedBuffer, receivedBuffer);
 }
+
+const openAliceCleanupDevicesSchema = z.object({
+  staleSeconds: z.number().int().positive().max(604_800).optional()
+});
 
 async function handleOpenAliceJobClaim(c: Context) {
   const payload = openAliceClaimJobSchema.parse(await c.req.json().catch(() => ({})));
@@ -446,6 +453,35 @@ app.post("/api/v1/openalice/register", async (c) => {
   });
 
   return c.json({ data: registration }, 201);
+});
+
+app.get("/api/v1/openalice/devices", async (c) =>
+  c.json({
+    data: await listOpenAliceDevices(c.get("session").workspace.slug)
+  })
+);
+
+app.post("/api/v1/openalice/devices/:deviceId/revoke", async (c) => {
+  const device = await revokeOpenAliceDevice({
+    workspaceSlug: c.get("session").workspace.slug,
+    deviceId: c.req.param("deviceId")
+  });
+
+  if (!device) {
+    return c.json({ error: "openalice_device_not_found" }, 404);
+  }
+
+  return c.json({ data: device });
+});
+
+app.post("/api/v1/openalice/devices/cleanup", async (c) => {
+  const payload = openAliceCleanupDevicesSchema.parse(await c.req.json().catch(() => ({})));
+  return c.json({
+    data: await cleanupStaleOpenAliceDevices({
+      workspaceSlug: c.get("session").workspace.slug,
+      staleSeconds: payload.staleSeconds
+    })
+  });
 });
 
 app.get("/api/v1/openalice/jobs", async (c) =>

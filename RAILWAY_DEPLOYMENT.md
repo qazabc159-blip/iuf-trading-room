@@ -139,9 +139,10 @@ After deploy, verify all of the following:
 1. `api` returns `{"status":"ok"}` from `/health`
 2. `api` returns a database-backed session from `/api/v1/session`
 3. `api` returns an OpenAlice observability snapshot from `/api/v1/openalice/observability`
-4. `worker` logs show `Redis connected (PONG).`
-5. `web` returns HTTP `200` from the production URL
-6. `pg` and `cache` are both in `SUCCESS` status in Railway
+4. `api` returns the registered device list from `/api/v1/openalice/devices`
+5. `worker` logs show `Redis connected (PONG).`
+6. `web` returns HTTP `200` from the production URL
+7. `pg` and `cache` are both in `SUCCESS` status in Railway
 
 ## Important Notes
 
@@ -151,6 +152,7 @@ After deploy, verify all of the following:
 - `worker` also writes `iuf:openalice:last_sweep` and `iuf:openalice:metrics` into Redis for bridge observability.
 - OpenAlice jobs now use lease expiry and retry limits, controlled by `OPENALICE_DEFAULT_TIMEOUT_SECONDS` and `OPENALICE_MAX_ATTEMPTS`.
 - `OPENALICE_SWEEP_INTERVAL_SECONDS` and `OPENALICE_DEVICE_STALE_SECONDS` control background maintenance cadence and stale-device reporting on the worker.
+- `POST /api/v1/openalice/devices/:deviceId/revoke` and `POST /api/v1/openalice/devices/cleanup` are available for manual remediation of bad or stale devices.
 - `TV_WEBHOOK_TOKEN` must be set on `api` before enabling the TradingView webhook.
 - `MY_TW_COVERAGE_PATH` is a local-ingest concern and should not be set in Railway.
 - Trial resources were enough for `web + api + worker + pg`, but the full stack with `cache` required the `Hobby` upgrade.

@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   authenticateOpenAliceDevice,
+  cleanupStaleOpenAliceDevices,
   claimOpenAliceJob,
   enqueueOpenAliceJob,
   getOpenAliceBridgeSnapshot,
@@ -353,4 +354,64 @@ test("openalice bridge snapshot reports memory-mode queue and device counts", as
   assert.equal(afterClaim.queuedJobs, 0);
   assert.equal(afterClaim.runningJobs, 1);
   assert.equal(afterClaim.activeDevices, 1);
+});
+
+test("openalice stale device cleanup revokes devices and requeues their jobs", async () => {
+  const suffix = randomUUID();
+  const workspaceSlug = `cleanup-${suffix}`;
+
+  const registrationA = await registerOpenAliceDevice({
+    workspaceSlug,
+    deviceId: `cleanup-device-a-${suffix}`,
+    deviceName: "Cleanup Device A",
+    capabilities: ["drafts"]
+  });
+
+  const deviceA = await authenticateOpenAliceDevice({
+    deviceId: registrationA.deviceId,
+    token: registrationA.deviceToken
+  });
+
+  assert.ok(deviceA);
+
+  const job = await enqueueOpenAliceJob({
+    workspaceSlug,
+    taskType: "daily_brief",
+    schemaName: "BriefDraft",
+    instructions: "Cleanup stale device test.",
+    contextRefs: [],
+    parameters: { source: "ci" },
+    timeoutSeconds: 60
+  });
+
+  const firstClaim = await claimOpenAliceJob(deviceA);
+  assert.equal(firstClaim?.jobId, job.jobId);
+  assert.equal(firstClaim?.attemptCount, 1);
+
+  await delay(1_100);
+
+  const cleanup = await cleanupStaleOpenAliceDevices({
+    workspaceSlug,
+    staleSeconds: 1
+  });
+  assert.equal(cleanup.revokedCount, 1);
+  assert.equal(cleanup.staleBeforeCleanup, 1);
+  assert.equal(cleanup.devices[0]?.deviceId, registrationA.deviceId);
+  assert.equal(cleanup.devices[0]?.status, "revoked");
+
+  const registrationB = await registerOpenAliceDevice({
+    workspaceSlug,
+    deviceId: `cleanup-device-b-${suffix}`,
+    deviceName: "Cleanup Device B",
+    capabilities: ["drafts"]
+  });
+  const deviceB = await authenticateOpenAliceDevice({
+    deviceId: registrationB.deviceId,
+    token: registrationB.deviceToken
+  });
+  assert.ok(deviceB);
+
+  const secondClaim = await claimOpenAliceJob(deviceB);
+  assert.equal(secondClaim?.jobId, job.jobId);
+  assert.equal(secondClaim?.attemptCount, 2);
 });

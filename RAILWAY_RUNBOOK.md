@@ -29,6 +29,7 @@ Quick production checks:
 Invoke-WebRequest -UseBasicParsing "https://api-production-8f08.up.railway.app/health"
 Invoke-WebRequest -UseBasicParsing "https://api-production-8f08.up.railway.app/api/v1/session"
 Invoke-WebRequest -UseBasicParsing "https://api-production-8f08.up.railway.app/api/v1/openalice/observability" -Headers @{"x-workspace-slug"="primary-desk"}
+Invoke-WebRequest -UseBasicParsing "https://api-production-8f08.up.railway.app/api/v1/openalice/devices" -Headers @{"x-workspace-slug"="primary-desk"}
 Invoke-WebRequest -UseBasicParsing "https://web-production-7896c.up.railway.app"
 ```
 
@@ -157,8 +158,10 @@ railway.cmd variable set -s api TV_WEBHOOK_TOKEN=replace-with-your-secret
 3. Confirm `OPENALICE_DEFAULT_TIMEOUT_SECONDS` and `OPENALICE_MAX_ATTEMPTS` are set as expected.
 4. Confirm the worker is still running scheduled sweeps via `OpenAlice maintenance (...)` log lines.
 5. Hit `/api/v1/openalice/observability` to confirm current worker freshness and queue counters.
-6. Inspect `iuf:openalice:last_sweep` and `iuf:openalice:metrics` in Redis if needed.
-7. Wait for the lease to expire, then verify the job is re-queued or marked failed after retry exhaustion.
+6. Hit `/api/v1/openalice/devices` to see whether the claimant device is stale, active, or already revoked.
+7. If you need a one-off stale cleanup, call `POST /api/v1/openalice/devices/cleanup` with `{ "staleSeconds": 21600 }` or a shorter threshold for emergency remediation.
+8. Inspect `iuf:openalice:last_sweep` and `iuf:openalice:metrics` in Redis if needed.
+9. Wait for the lease to expire, then verify the job is re-queued or marked failed after retry exhaustion.
 
 ### TradingView webhook returns 401 or 400
 
