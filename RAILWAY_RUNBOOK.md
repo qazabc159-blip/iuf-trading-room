@@ -107,6 +107,12 @@ railway.cmd variable set -s api OPENALICE_DEFAULT_TIMEOUT_SECONDS=900 OPENALICE_
 railway.cmd variable set -s worker OPENALICE_DEFAULT_TIMEOUT_SECONDS=900 OPENALICE_MAX_ATTEMPTS=3
 ```
 
+TradingView webhook secret:
+
+```powershell
+railway.cmd variable set -s api TV_WEBHOOK_TOKEN=replace-with-your-secret
+```
+
 ## Common Incidents
 
 ### API health fails
@@ -147,6 +153,13 @@ railway.cmd variable set -s worker OPENALICE_DEFAULT_TIMEOUT_SECONDS=900 OPENALI
 2. Check `worker` or device logs for missed heartbeats.
 3. Confirm `OPENALICE_DEFAULT_TIMEOUT_SECONDS` and `OPENALICE_MAX_ATTEMPTS` are set as expected.
 4. Wait for the lease to expire, then verify the job is re-queued or marked failed after retry exhaustion.
+
+### TradingView webhook returns 401 or 400
+
+1. Confirm `TV_WEBHOOK_TOKEN` is set on `api`.
+2. Verify the TradingView alert body is valid JSON and includes `token` plus `ticker`.
+3. Check `api` logs for `validation_error` or `unauthorized`.
+4. Replay the payload locally with `Invoke-WebRequest` before changing the alert template.
 
 ## Cleanup Tasks
 

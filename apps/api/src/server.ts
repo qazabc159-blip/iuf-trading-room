@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { serve } from "@hono/node-server";
 import type { Context } from "hono";
 import {
@@ -20,7 +21,7 @@ import {
 import { runImport } from "@iuf-trading-room/integrations";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 import {
   authenticateOpenAliceDevice,
@@ -124,6 +125,17 @@ async function requireOpenAliceDevice(c: Context, deviceId: string) {
   }
 
   return device;
+}
+
+function secureTokenEquals(expected: string, received: string) {
+  const expectedBuffer = Buffer.from(expected);
+  const receivedBuffer = Buffer.from(received);
+
+  if (expectedBuffer.length !== receivedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, receivedBuffer);
 }
 
 async function handleOpenAliceJobClaim(c: Context) {
@@ -464,6 +476,117 @@ app.post("/api/internal/openalice/jobs/:jobId/result", handleOpenAliceJobResult)
 app.post("/api/v1/openalice/jobs/claim", handleOpenAliceJobClaim);
 app.post("/api/v1/openalice/jobs/:jobId/heartbeat", handleOpenAliceJobHeartbeat);
 app.post("/api/v1/openalice/jobs/:jobId/result", handleOpenAliceJobResult);
+
+// TradingView webhook
+
+const TV_WEBHOOK_TOKEN = process.env.TV_WEBHOOK_TOKEN ?? "";
+
+/**
+ * TradingView alert webhook -> Signal ingest.
+ *
+ * TradingView alert message should be configured as JSON:
+ * {
+ *   "ticker": "{{ticker}}",
+ *   "exchange": "{{exchange}}",
+ *   "price": "{{close}}",
+ *   "interval": "{{interval}}",
+ *   "title": "Your alert name",
+ *   "direction": "bullish" | "bearish" | "neutral",
+ *   "category": "price" | "macro" | "industry" | "company",
+ *   "confidence": 3,
+ *   "summary": "Optional extra text",
+ *   "token": "<your TV_WEBHOOK_TOKEN>"
+ * }
+ *
+ * Only "ticker" and "token" are required. Everything else has sensible defaults.
+ */
+const tvWebhookPayloadSchema = z.object({
+  // Auth
+  token: z.string().min(1),
+  // TradingView template variables
+  ticker: z.string().min(1),
+  exchange: z.string().optional(),
+  price: z.string().optional(),
+  interval: z.string().optional(),
+  // Signal mapping (optional overrides)
+  title: z.string().max(200).optional(),
+  direction: z.enum(["bullish", "bearish", "neutral"]).optional(),
+  category: z.enum(["macro", "industry", "company", "price", "portfolio"]).optional(),
+  confidence: z.coerce.number().int().min(1).max(5).optional(),
+  summary: z.string().max(2000).optional(),
+  themeIds: z.array(z.string().uuid()).optional(),
+  companyIds: z.array(z.string().uuid()).optional()
+});
+
+app.post("/api/v1/webhooks/tradingview", async (c) => {
+  const raw = await c.req.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+
+  const parsed = tvWebhookPayloadSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "validation_error", details: parsed.error.flatten() }, 400);
+  }
+
+  const payload = parsed.data;
+
+  // Token auth with constant-time comparison.
+  if (!TV_WEBHOOK_TOKEN || !secureTokenEquals(TV_WEBHOOK_TOKEN, payload.token)) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  // Build signal from TV alert
+  const direction = payload.direction ?? "neutral";
+  const category = payload.category ?? "price";
+  const confidence = payload.confidence ?? 3;
+
+  const pricePart = payload.price ? ` @ ${payload.price}` : "";
+  const intervalPart = payload.interval ? ` [${payload.interval}]` : "";
+  const title = payload.title
+    ?? `${payload.ticker}${pricePart} - TV Alert${intervalPart}`;
+
+  const summaryParts = [
+    payload.summary,
+    payload.exchange ? `Exchange: ${payload.exchange}` : null,
+    payload.price ? `Price: ${payload.price}` : null,
+    payload.interval ? `Interval: ${payload.interval}` : null,
+    `Source: TradingView webhook at ${new Date().toISOString()}`
+  ].filter(Boolean);
+
+  const repo = c.get("repo");
+  const opts = { workspaceSlug: c.get("session").workspace.slug };
+
+  const signal = await repo.createSignal(
+    {
+      category,
+      direction,
+      title: title.slice(0, 200),
+      summary: summaryParts.join("\n").slice(0, 2000),
+      confidence,
+      themeIds: payload.themeIds ?? [],
+      companyIds: payload.companyIds ?? []
+    },
+    opts
+  );
+
+  console.log(
+    JSON.stringify({
+      tv_webhook: true,
+      ts: new Date().toISOString(),
+      ticker: payload.ticker,
+      direction,
+      signalId: signal.id
+    })
+  );
+
+  return c.json({ data: signal }, 201);
+});
+
+// Import
 
 app.post("/api/v1/import/my-tw-coverage", async (c) => {
   const body = await c.req.json().catch(() => ({}));
