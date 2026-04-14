@@ -91,9 +91,15 @@ importers:
 
   apps/worker:
     dependencies:
+      '@iuf-trading-room/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@iuf-trading-room/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      drizzle-orm:
+        specifier: ^0.44.5
+        version: 0.44.7(postgres@3.4.9)
       redis:
         specifier: ^5.9.0
         version: 5.11.0
