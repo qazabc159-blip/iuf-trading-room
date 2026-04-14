@@ -342,6 +342,25 @@ async function main() {
     assert.ok(createdJob, "Expected smoke job to be listed.");
     assert.equal(createdJob?.status, "draft_ready");
 
+    const observability = await request<
+      JsonEnvelope<{
+        source: string;
+        metrics: {
+          queuedJobs: number;
+          runningJobs: number;
+          terminalJobs: number;
+          activeDevices: number;
+        };
+      }>
+    >(baseUrl, "/api/v1/openalice/observability", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(observability.data.source, "bridge_fallback");
+    assert.equal(observability.data.metrics.queuedJobs, 0);
+    assert.equal(observability.data.metrics.runningJobs, 0);
+    assert.ok(observability.data.metrics.terminalJobs >= 1);
+    assert.ok(observability.data.metrics.activeDevices >= 1);
+
     console.log("Smoke API checks passed.");
   } catch (error) {
     const details = [

@@ -81,6 +81,16 @@ export type OpenAliceAuthenticatedDevice = {
   capabilities: string[];
 };
 
+export type OpenAliceBridgeSnapshot = {
+  mode: "memory" | "database";
+  queuedJobs: number;
+  runningJobs: number;
+  staleRunningJobs: number;
+  terminalJobs: number;
+  activeDevices: number;
+  staleDevices: number;
+};
+
 type MemoryDevice = DeviceRegistration & {
   deviceName: string;
   capabilities: string[];
@@ -125,6 +135,12 @@ const defaultOpenAliceMaxAttempts = getPositiveIntegerFromEnv(
   3,
   1,
   10
+);
+const defaultOpenAliceDeviceStaleSeconds = getPositiveIntegerFromEnv(
+  "OPENALICE_DEVICE_STALE_SECONDS",
+  21_600,
+  300,
+  604_800
 );
 
 function getPositiveIntegerFromEnv(
@@ -201,6 +217,53 @@ function leaseIsExpired(leaseExpiresAt?: string | Date | null, now = new Date())
 
   const value = leaseExpiresAt instanceof Date ? leaseExpiresAt : new Date(leaseExpiresAt);
   return value.getTime() <= now.getTime();
+}
+
+function collectOpenAliceBridgeSnapshot(input: {
+  mode: "memory" | "database";
+  jobs: Array<{
+    status: string;
+    leaseExpiresAt?: string | Date | null;
+  }>;
+  devices: Array<{
+    status: string;
+    lastSeenAt?: string | Date | null;
+  }>;
+  now?: Date;
+  deviceStaleSeconds?: number;
+}): OpenAliceBridgeSnapshot {
+  const now = input.now ?? new Date();
+  const deviceStaleSeconds = input.deviceStaleSeconds ?? defaultOpenAliceDeviceStaleSeconds;
+  const staleCutoff = new Date(now.getTime() - deviceStaleSeconds * 1000);
+
+  const queuedJobs = input.jobs.filter((job) => job.status === "queued").length;
+  const runningJobs = input.jobs.filter((job) => job.status === "running").length;
+  const staleRunningJobs = input.jobs.filter(
+    (job) => job.status === "running" && leaseIsExpired(job.leaseExpiresAt, now)
+  ).length;
+  const terminalJobs = input.jobs.filter(
+    (job) => job.status !== "queued" && job.status !== "running"
+  ).length;
+  const activeDevices = input.devices.filter((device) => device.status === "active").length;
+  const staleDevices = input.devices.filter((device) => {
+    if (device.status !== "active" || !device.lastSeenAt) {
+      return false;
+    }
+
+    const value =
+      device.lastSeenAt instanceof Date ? device.lastSeenAt : new Date(device.lastSeenAt);
+    return value.getTime() <= staleCutoff.getTime();
+  }).length;
+
+  return {
+    mode: input.mode,
+    queuedJobs,
+    runningJobs,
+    staleRunningJobs,
+    terminalJobs,
+    activeDevices,
+    staleDevices
+  };
 }
 
 function toBridgeJobPayload(job: MemoryJob): OpenAliceBridgeJob & { parameters: Record<string, unknown> } {
@@ -832,4 +895,64 @@ export async function listOpenAliceJobs(workspaceSlug: string) {
     maxAttempts: row.maxAttempts,
     error: row.error ?? undefined
   }));
+}
+
+export async function getOpenAliceBridgeSnapshot(
+  workspaceSlug: string
+): Promise<OpenAliceBridgeSnapshot> {
+  const now = new Date();
+
+  if (!isDatabaseMode()) {
+    const jobs = [...memoryJobs.values()].filter((job) => job.workspaceSlug === workspaceSlug);
+    const devices = [...memoryDevices.values()].filter(
+      (device) => device.workspaceSlug === workspaceSlug
+    );
+
+    return collectOpenAliceBridgeSnapshot({
+      mode: "memory",
+      jobs,
+      devices,
+      now
+    });
+  }
+
+  const db = getDb();
+  const workspace = await loadWorkspaceBySlug(workspaceSlug);
+  if (!db || !workspace) {
+    return collectOpenAliceBridgeSnapshot({
+      mode: "database",
+      jobs: [],
+      devices: [],
+      now
+    });
+  }
+
+  await requeueExpiredOpenAliceJobs({
+    workspaceSlug,
+    workspaceId: workspace.id
+  });
+
+  const [jobs, devices] = await Promise.all([
+    db
+      .select({
+        status: openAliceJobs.status,
+        leaseExpiresAt: openAliceJobs.leaseExpiresAt
+      })
+      .from(openAliceJobs)
+      .where(eq(openAliceJobs.workspaceId, workspace.id)),
+    db
+      .select({
+        status: openAliceDevices.status,
+        lastSeenAt: openAliceDevices.lastSeenAt
+      })
+      .from(openAliceDevices)
+      .where(eq(openAliceDevices.workspaceId, workspace.id))
+  ]);
+
+  return collectOpenAliceBridgeSnapshot({
+    mode: "database",
+    jobs,
+    devices,
+    now
+  });
 }

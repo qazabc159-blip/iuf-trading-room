@@ -7,6 +7,7 @@ import {
   authenticateOpenAliceDevice,
   claimOpenAliceJob,
   enqueueOpenAliceJob,
+  getOpenAliceBridgeSnapshot,
   listOpenAliceJobs,
   registerOpenAliceDevice,
   submitOpenAliceResult
@@ -311,4 +312,45 @@ test("openalice maintenance metrics count stale jobs and stale devices", () => {
   assert.equal(metrics.staleDevices, 1);
   assert.equal(metrics.expiredJobsRequeued, 2);
   assert.equal(metrics.expiredJobsFailed, 1);
+});
+
+test("openalice bridge snapshot reports memory-mode queue and device counts", async () => {
+  const suffix = randomUUID();
+  const workspaceSlug = `snapshot-${suffix}`;
+
+  const registration = await registerOpenAliceDevice({
+    workspaceSlug,
+    deviceId: `device-${suffix}`,
+    deviceName: "Snapshot Device",
+    capabilities: ["drafts"]
+  });
+  const device = await authenticateOpenAliceDevice({
+    deviceId: registration.deviceId,
+    token: registration.deviceToken
+  });
+
+  assert.ok(device);
+
+  const job = await enqueueOpenAliceJob({
+    workspaceSlug,
+    taskType: "daily_brief",
+    schemaName: "BriefDraft",
+    instructions: "Snapshot job",
+    contextRefs: [],
+    parameters: {}
+  });
+
+  const beforeClaim = await getOpenAliceBridgeSnapshot(workspaceSlug);
+  assert.equal(beforeClaim.mode, "memory");
+  assert.equal(beforeClaim.queuedJobs, 1);
+  assert.equal(beforeClaim.runningJobs, 0);
+  assert.equal(beforeClaim.activeDevices, 1);
+
+  const claim = await claimOpenAliceJob(device);
+  assert.equal(claim?.jobId, job.jobId);
+
+  const afterClaim = await getOpenAliceBridgeSnapshot(workspaceSlug);
+  assert.equal(afterClaim.queuedJobs, 0);
+  assert.equal(afterClaim.runningJobs, 1);
+  assert.equal(afterClaim.activeDevices, 1);
 });

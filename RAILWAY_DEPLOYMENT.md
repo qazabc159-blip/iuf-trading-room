@@ -138,9 +138,10 @@ After deploy, verify all of the following:
 
 1. `api` returns `{"status":"ok"}` from `/health`
 2. `api` returns a database-backed session from `/api/v1/session`
-3. `worker` logs show `Redis connected (PONG).`
-4. `web` returns HTTP `200` from the production URL
-5. `pg` and `cache` are both in `SUCCESS` status in Railway
+3. `api` returns an OpenAlice observability snapshot from `/api/v1/openalice/observability`
+4. `worker` logs show `Redis connected (PONG).`
+5. `web` returns HTTP `200` from the production URL
+6. `pg` and `cache` are both in `SUCCESS` status in Railway
 
 ## Important Notes
 

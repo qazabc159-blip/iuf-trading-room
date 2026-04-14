@@ -36,6 +36,7 @@ import {
   registerOpenAliceDevice,
   submitOpenAliceResult
 } from "./openalice-bridge.js";
+import { getOpenAliceObservabilitySnapshot } from "./openalice-observability.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -450,6 +451,12 @@ app.post("/api/v1/openalice/register", async (c) => {
 app.get("/api/v1/openalice/jobs", async (c) =>
   c.json({
     data: await listOpenAliceJobs(c.get("session").workspace.slug)
+  })
+);
+
+app.get("/api/v1/openalice/observability", async (c) =>
+  c.json({
+    data: await getOpenAliceObservabilitySnapshot(c.get("session").workspace.slug)
   })
 );
 
