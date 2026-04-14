@@ -11,6 +11,7 @@ import {
   getOpenAliceBridgeSnapshot,
   listOpenAliceJobs,
   registerOpenAliceDevice,
+  reviewOpenAliceJob,
   submitOpenAliceResult
 } from "../apps/api/src/openalice-bridge.ts";
 import {
@@ -414,4 +415,65 @@ test("openalice stale device cleanup revokes devices and requeues their jobs", a
   const secondClaim = await claimOpenAliceJob(deviceB);
   assert.equal(secondClaim?.jobId, job.jobId);
   assert.equal(secondClaim?.attemptCount, 2);
+});
+
+test("openalice draft review publishes reviewable jobs and rejects stale state changes", async () => {
+  const suffix = randomUUID();
+  const workspaceSlug = `review-${suffix}`;
+
+  const job = await enqueueOpenAliceJob({
+    workspaceSlug,
+    taskType: "daily_brief",
+    schemaName: "BriefDraft",
+    instructions: "Review API test.",
+    contextRefs: [],
+    parameters: {}
+  });
+
+  const registration = await registerOpenAliceDevice({
+    workspaceSlug,
+    deviceId: `review-device-${suffix}`,
+    deviceName: "Review Device",
+    capabilities: ["drafts"]
+  });
+  const device = await authenticateOpenAliceDevice({
+    deviceId: registration.deviceId,
+    token: registration.deviceToken
+  });
+
+  assert.ok(device);
+
+  const claim = await claimOpenAliceJob(device);
+  assert.equal(claim?.jobId, job.jobId);
+
+  const submitted = await submitOpenAliceResult({
+    device,
+    result: {
+      jobId: job.jobId,
+      status: "draft_ready",
+      schemaName: "BriefDraft",
+      rawText: "draft body"
+    }
+  });
+  assert.equal(submitted?.status, "draft_ready");
+
+  const reviewed = await reviewOpenAliceJob({
+    workspaceSlug,
+    jobId: job.jobId,
+    status: "published",
+    reviewNote: "looks good"
+  });
+  assert.equal(reviewed?.status, "published");
+
+  const secondReview = await reviewOpenAliceJob({
+    workspaceSlug,
+    jobId: job.jobId,
+    status: "rejected",
+    reviewNote: "too late"
+  });
+  assert.equal(secondReview, null);
+
+  const jobs = await listOpenAliceJobs(workspaceSlug);
+  const finalJob = jobs.find((item) => item.id === job.jobId);
+  assert.equal(finalJob?.status, "published");
 });

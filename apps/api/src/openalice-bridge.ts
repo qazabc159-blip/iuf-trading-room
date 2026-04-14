@@ -109,6 +109,14 @@ export type OpenAliceDeviceCleanupResult = {
   devices: OpenAliceBridgeDevice[];
 };
 
+export type OpenAliceJobReviewResult = {
+  id: string;
+  workspaceSlug: string;
+  status: "published" | "rejected";
+  reviewedAt: string;
+  reviewNote?: string;
+};
+
 type MemoryDevice = DeviceRegistration & {
   deviceName: string;
   capabilities: string[];
@@ -214,6 +222,29 @@ function normalizeArtifacts(value: unknown): OpenAliceBridgeArtifact[] {
 function normalizeResult(value: unknown): OpenAliceBridgeResult | undefined {
   const parsed = openAliceJobResultSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
+}
+
+function appendReviewMetadata(
+  value: unknown,
+  input: {
+    status: "published" | "rejected";
+    reviewedAt: string;
+    reviewNote?: string;
+  }
+) {
+  const base =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : {};
+
+  return {
+    ...base,
+    review: {
+      status: input.status,
+      reviewedAt: input.reviewedAt,
+      ...(input.reviewNote ? { note: input.reviewNote } : {})
+    }
+  };
 }
 
 function resolveTimeoutSeconds(timeoutSeconds?: number) {
@@ -1052,6 +1083,117 @@ export async function listOpenAliceJobs(workspaceSlug: string) {
     maxAttempts: row.maxAttempts,
     error: row.error ?? undefined
   }));
+}
+
+export async function reviewOpenAliceJob(input: {
+  workspaceSlug: string;
+  jobId: string;
+  status: "published" | "rejected";
+  reviewNote?: string;
+}): Promise<OpenAliceJobReviewResult | null> {
+  const reviewedAt = new Date();
+  const reviewedAtIso = reviewedAt.toISOString();
+
+  await requeueExpiredOpenAliceJobs({ workspaceSlug: input.workspaceSlug });
+
+  if (!isDatabaseMode()) {
+    const job = memoryJobs.get(input.jobId);
+    if (!job || job.workspaceSlug !== input.workspaceSlug) {
+      return null;
+    }
+
+    if (job.status !== "draft_ready" && job.status !== "validation_failed") {
+      if (job.status === input.status) {
+        return {
+          id: job.jobId,
+          workspaceSlug: job.workspaceSlug,
+          status: input.status,
+          reviewedAt: job.completedAt ?? reviewedAtIso,
+          reviewNote: input.reviewNote
+        };
+      }
+
+      return null;
+    }
+
+    job.status = input.status;
+    job.completedAt = reviewedAtIso;
+    job.lastHeartbeatAt = reviewedAtIso;
+    job.error =
+      input.status === "rejected"
+        ? input.reviewNote ?? job.error ?? "OpenAlice draft rejected during review."
+        : undefined;
+
+    if (job.result) {
+      job.result = {
+        ...job.result,
+        warnings: [...(job.result.warnings ?? [])]
+      };
+    }
+
+    return {
+      id: job.jobId,
+      workspaceSlug: job.workspaceSlug,
+      status: input.status,
+      reviewedAt: reviewedAtIso,
+      reviewNote: input.reviewNote
+    };
+  }
+
+  const db = getDb();
+  const workspace = await loadWorkspaceBySlug(input.workspaceSlug);
+  if (!db || !workspace) {
+    return null;
+  }
+
+  const [job] = await db
+    .select()
+    .from(openAliceJobs)
+    .where(and(eq(openAliceJobs.id, input.jobId), eq(openAliceJobs.workspaceId, workspace.id)))
+    .limit(1);
+
+  if (!job) {
+    return null;
+  }
+
+  if (job.status !== "draft_ready" && job.status !== "validation_failed") {
+    if (job.status === input.status) {
+      return {
+        id: job.id,
+        workspaceSlug: input.workspaceSlug,
+        status: input.status,
+        reviewedAt: job.completedAt?.toISOString() ?? reviewedAtIso,
+        reviewNote: input.reviewNote
+      };
+    }
+
+    return null;
+  }
+
+  await db
+    .update(openAliceJobs)
+    .set({
+      status: input.status,
+      result: appendReviewMetadata(job.result, {
+        status: input.status,
+        reviewedAt: reviewedAtIso,
+        reviewNote: input.reviewNote
+      }),
+      error:
+        input.status === "rejected"
+          ? input.reviewNote ?? job.error ?? "OpenAlice draft rejected during review."
+          : null,
+      completedAt: reviewedAt
+    })
+    .where(eq(openAliceJobs.id, job.id));
+
+  return {
+    id: job.id,
+    workspaceSlug: input.workspaceSlug,
+    status: input.status,
+    reviewedAt: reviewedAtIso,
+    reviewNote: input.reviewNote
+  };
 }
 
 export async function listOpenAliceDevices(

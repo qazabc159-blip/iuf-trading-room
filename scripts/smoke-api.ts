@@ -351,6 +351,19 @@ async function main() {
     assert.ok(createdJob, "Expected smoke job to be listed.");
     assert.equal(createdJob?.status, "draft_ready");
 
+    const reviewed = await request<
+      JsonEnvelope<{ id: string; status: string; reviewedAt: string }>
+    >(baseUrl, `/api/v1/openalice/jobs/${job.data.jobId}/review`, {
+      method: "PATCH",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        status: "published",
+        note: "smoke review publish"
+      })
+    });
+    assert.equal(reviewed.data.id, job.data.jobId);
+    assert.equal(reviewed.data.status, "published");
+
     const revokedDevice = await request<
       JsonEnvelope<{ deviceId: string; status: string }>
     >(baseUrl, `/api/v1/openalice/devices/${registration.data.deviceId}/revoke`, {

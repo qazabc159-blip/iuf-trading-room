@@ -36,6 +36,7 @@ import {
   openAliceJobResultSchema,
   openAliceRegisterSchema,
   registerOpenAliceDevice,
+  reviewOpenAliceJob,
   revokeOpenAliceDevice,
   submitOpenAliceResult
 } from "./openalice-bridge.js";
@@ -144,6 +145,11 @@ function secureTokenEquals(expected: string, received: string) {
 
 const openAliceCleanupDevicesSchema = z.object({
   staleSeconds: z.number().int().positive().max(604_800).optional()
+});
+
+const openAliceReviewJobSchema = z.object({
+  status: z.enum(["published", "rejected"]),
+  note: z.string().trim().max(2_000).optional()
 });
 
 async function handleOpenAliceJobClaim(c: Context) {
@@ -489,6 +495,22 @@ app.get("/api/v1/openalice/jobs", async (c) =>
     data: await listOpenAliceJobs(c.get("session").workspace.slug)
   })
 );
+
+app.patch("/api/v1/openalice/jobs/:jobId/review", async (c) => {
+  const payload = openAliceReviewJobSchema.parse(await c.req.json().catch(() => ({})));
+  const reviewed = await reviewOpenAliceJob({
+    workspaceSlug: c.get("session").workspace.slug,
+    jobId: c.req.param("jobId"),
+    status: payload.status,
+    reviewNote: payload.note
+  });
+
+  if (!reviewed) {
+    return c.json({ error: "openalice_job_not_reviewable" }, 404);
+  }
+
+  return c.json({ data: reviewed });
+});
 
 app.get("/api/v1/openalice/observability", async (c) =>
   c.json({
