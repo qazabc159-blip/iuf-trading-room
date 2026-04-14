@@ -11,7 +11,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runImport } from "../packages/integrations/src/my-tw-coverage/importer.js";
+import {
+  buildImportedCompanyDraft,
+  runImport
+} from "../packages/integrations/src/my-tw-coverage/importer.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -39,26 +42,7 @@ async function main() {
   const errors: string[] = [];
 
   async function createCompany(seed: (typeof result.companies)[number]) {
-    const body = {
-      name: seed.displayName,
-      ticker: seed.ticker,
-      market: "TWSE",
-      country: "TW",
-      themeIds: [],
-      chainPosition: seed.industry ?? "Unknown",
-      beneficiaryTier: "Observation",
-      exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
-      validation: {
-        capitalFlow: "N/A",
-        consensus: "N/A",
-        relativeStrength: "N/A"
-      },
-      notes:
-        [seed.summary, seed.sector ? `Sector: ${seed.sector}` : ""]
-          .filter(Boolean)
-          .join("\n")
-          .slice(0, 1500) || "Imported from My-TW-Coverage"
-    };
+    const body = buildImportedCompanyDraft(seed);
 
     try {
       const response = await fetch(`${API_URL}/api/v1/companies`, {

@@ -35,7 +35,11 @@ import {
 import { buildOpsSnapshotView } from "../apps/api/src/ops-snapshot.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
-import { parseGraphData } from "../packages/integrations/src/my-tw-coverage/graph-parser.ts";
+import {
+  buildImportedCompanyDraft,
+  parseGraphData,
+  parseReport
+} from "../packages/integrations/src/my-tw-coverage/index.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -73,6 +77,51 @@ test("graph parser extracts companies and relation types", () => {
   assert.equal(parsed.relations.length, 2);
   assert.equal(parsed.relations[0]?.relationType, "technology");
   assert.equal(parsed.relations[1]?.relationType, "co_occurrence");
+});
+
+test("report parser extracts summary, relations, and import draft", () => {
+  const content = `# 2330 - [[台積電]]
+
+## 業務簡介
+**板塊:** Technology
+**產業:** Semiconductors
+**市值:** 47,845,508 百萬台幣
+**企業價值:** 45,886,629 百萬台幣
+
+[[台積電]] 是全球領先的晶圓代工廠，受惠於 [[AI]]、高效能運算與先進製程需求。
+
+## 供應鏈位置
+**上游 (設備/原料):**
+- **設備 ([[微影]]/[[蝕刻]]):** [[ASML]], [[Applied Materials]].
+
+**下游應用:**
+- **終端產品:** [[NVIDIA]] [[AI]] GPU, [[Apple]] iPhone.
+
+## 主要客戶及供應商
+### 主要客戶
+- [[Apple]], [[NVIDIA]]
+
+### 主要供應商
+- [[ASML]]
+`;
+
+  const parsed = parseReport(
+    content,
+    "Pilot_Reports/Semiconductors/2330_台積電.md"
+  );
+
+  assert.ok(parsed);
+  assert.equal(parsed.company.displayName, "台積電");
+  assert.equal(parsed.company.industry, "Semiconductors");
+  assert.match(parsed.company.summary ?? "", /全球領先的晶圓代工廠/);
+  assert.equal(parsed.relations.some((relation) => relation.toLabel === "ASML" && relation.relationType === "supplier"), true);
+  assert.equal(parsed.relations.some((relation) => relation.toLabel === "NVIDIA" && relation.relationType === "customer"), true);
+  assert.equal(parsed.themeKeywords.some((keyword) => keyword.label === "AI"), true);
+
+  const draft = buildImportedCompanyDraft(parsed.company);
+  assert.equal(draft.name, "台積電");
+  assert.equal(draft.chainPosition, "Semiconductors");
+  assert.match(draft.notes, /Market Cap: 47,845,508 百萬台幣/);
 });
 
 test("tradingview event key stays stable and honors explicit event keys", () => {

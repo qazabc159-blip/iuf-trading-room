@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import type { CompanyCreateInput } from "@iuf-trading-room/contracts";
+
 import { parseGraphData } from "./graph-parser.js";
 import { parseReport } from "./report-parser.js";
 import type {
@@ -41,6 +43,58 @@ export type ImportOptions = {
   /** Whether to include graph_data.json parsing (default: true) */
   includeGraph?: boolean;
 };
+
+function toPlainText(value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .replace(/\[\[([^\]]+)\]\]/gu, "$1")
+    .replace(/\*\*([^*]+)\*\*/gu, "$1")
+    .replace(/`([^`]+)`/gu, "$1")
+    .replace(/\r\n/gu, "\n")
+    .trim();
+}
+
+export function buildImportedCompanyNotes(seed: CompanySeed): string {
+  const lines = [
+    toPlainText(seed.summary),
+    seed.sector ? `Sector: ${seed.sector}` : "",
+    seed.industry ? `Industry: ${seed.industry}` : "",
+    seed.marketCap ? `Market Cap: ${seed.marketCap}` : "",
+    seed.enterpriseValue ? `Enterprise Value: ${seed.enterpriseValue}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return lines.slice(0, 1500) || "Imported from My-TW-Coverage";
+}
+
+export function buildImportedCompanyDraft(seed: CompanySeed): CompanyCreateInput {
+  return {
+    name: seed.displayName,
+    ticker: seed.ticker,
+    market: "TWSE",
+    country: "TW",
+    themeIds: [],
+    chainPosition: seed.industry ?? seed.sector ?? "Unknown",
+    beneficiaryTier: "Observation",
+    exposure: {
+      volume: 1,
+      asp: 1,
+      margin: 1,
+      capacity: 1,
+      narrative: 1
+    },
+    validation: {
+      capitalFlow: "N/A",
+      consensus: "N/A",
+      relativeStrength: "N/A"
+    },
+    notes: buildImportedCompanyNotes(seed)
+  };
+}
 
 /**
  * Run the full My-TW-Coverage import pipeline.

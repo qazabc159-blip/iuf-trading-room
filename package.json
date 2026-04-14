@@ -15,6 +15,7 @@
     "test": "node --import tsx --test ./tests/ci.test.ts",
     "smoke": "node --import tsx ./scripts/smoke-api.ts",
     "migrate": "node --import tsx ./scripts/migrate.ts",
+    "sync:tw-coverage": "node --import tsx ./scripts/sync-my-tw-coverage-to-production.ts",
     "start:web": "pnpm --filter @iuf-trading-room/web start",
     "start:api": "pnpm --filter @iuf-trading-room/api start",
     "start:worker": "pnpm --filter @iuf-trading-room/worker start",

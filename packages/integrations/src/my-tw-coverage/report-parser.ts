@@ -5,93 +5,284 @@ import type {
   ThemeKeyword
 } from "./types.js";
 
-/** Extract ticker and displayName from filename like "2330_台積電.md" */
+type ParsedSection = {
+  level: 2 | 3;
+  title: string;
+  parentTitle?: string;
+  lines: string[];
+};
+
+const BUSINESS_INTRO_HEADERS = ["業務簡介", "公司簡介", "營運概況"];
+const SUPPLY_CHAIN_HEADERS = ["供應鏈位置", "供應鏈", "產業鏈位置"];
+const CUSTOMER_SUPPLIER_HEADERS = ["主要客戶及供應商", "主要客戶與供應商"];
+
+const METADATA_LABELS = {
+  sector: ["板塊", "板块", "sector"],
+  industry: ["產業", "产业", "industry"],
+  marketCap: ["市值", "marketcap", "market cap"],
+  enterpriseValue: ["企業價值", "企业价值", "enterprisevalue", "enterprise value"]
+} as const;
+
 function parseFilename(filename: string) {
-  const match = filename.match(/^(\d{4})_(.+)\.md$/);
-  if (!match) return null;
-  return { ticker: match[1], displayName: match[2] };
+  const match = filename.match(/^(\d{4})_(.+)\.md$/u);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    ticker: match[1],
+    displayName: match[2]
+  };
 }
 
-/** Extract sector from path like "Pilot_Reports/Semiconductors/2330_台積電.md" */
 function parseSector(relativePath: string): string | undefined {
   const parts = relativePath.replace(/\\/g, "/").split("/");
-  // Expected: Pilot_Reports/{Sector}/{file}.md
-  const idx = parts.indexOf("Pilot_Reports");
-  if (idx >= 0 && parts.length > idx + 2) {
-    return parts[idx + 1];
+  const reportsIndex = parts.indexOf("Pilot_Reports");
+
+  if (reportsIndex >= 0 && parts.length > reportsIndex + 2) {
+    return parts[reportsIndex + 1];
   }
+
   return undefined;
 }
 
-/** Extract all [[wikilinks]] from text, tolerant of encoding noise */
+function normalizeHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[`*_:#：()\[\]（）/\\,\-.、\s]/gu, "");
+}
+
+function matchesHeader(title: string, candidates: readonly string[]): boolean {
+  const normalizedTitle = normalizeHeading(title);
+  return candidates.some((candidate) =>
+    normalizedTitle.includes(normalizeHeading(candidate))
+  );
+}
+
+function splitSections(text: string): ParsedSection[] {
+  const sections: ParsedSection[] = [];
+  const lines = text.split(/\r?\n/u);
+  let current: ParsedSection | null = null;
+  let currentLevel2Title: string | undefined;
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(##|###)\s+(.+)$/u);
+    if (headingMatch) {
+      const level = headingMatch[1] === "###" ? 3 : 2;
+      const title = headingMatch[2].trim();
+
+      current = {
+        level,
+        title,
+        parentTitle: level === 3 ? currentLevel2Title : undefined,
+        lines: []
+      };
+
+      if (level === 2) {
+        currentLevel2Title = title;
+      }
+
+      sections.push(current);
+      continue;
+    }
+
+    current?.lines.push(line);
+  }
+
+  return sections;
+}
+
 function extractWikilinks(text: string): string[] {
-  const matches = text.matchAll(/\[\[([^\]]+)\]\]/g);
   const result = new Set<string>();
-  for (const m of matches) {
-    const label = m[1].trim();
-    if (label.length > 0 && label.length < 100) {
+  const matches = text.matchAll(/\[\[([^\]]+)\]\]/gu);
+
+  for (const match of matches) {
+    const label = match[1].trim();
+    if (label && label.length < 120) {
       result.add(label);
     }
   }
+
   return [...result];
 }
 
-/** Extract metadata fields from the 業務簡介 section */
-function parseMetadata(text: string) {
-  const sector = text.match(/\*\*板塊:\*\*\s*(.+)/)?.[1]?.trim();
-  const industry = text.match(/\*\*產業:\*\*\s*(.+)/)?.[1]?.trim();
-  const marketCap = text.match(/\*\*市值:\*\*\s*(.+)/)?.[1]?.trim();
-  const enterpriseValue = text.match(/\*\*企業價值:\*\*\s*(.+)/)?.[1]?.trim();
-  return { sector, industry, marketCap, enterpriseValue };
+function stripMetadataLabel(label: string): string {
+  return label.replace(/[*:：\s]/gu, "").trim();
 }
 
-/** Extract summary text from 業務簡介 section (paragraphs after metadata) */
-function parseSummary(text: string): string | undefined {
-  const sectionMatch = text.match(/## 業務簡介\n([\s\S]*?)(?=\n## |$)/);
-  if (!sectionMatch) return undefined;
+function parseMetadata(lines: string[]) {
+  const metadata = {
+    sector: undefined as string | undefined,
+    industry: undefined as string | undefined,
+    marketCap: undefined as string | undefined,
+    enterpriseValue: undefined as string | undefined
+  };
 
-  const sectionText = sectionMatch[1];
-  const lines = sectionText.split("\n");
-  const summaryLines: string[] = [];
-
-  for (const line of lines) {
-    // Skip metadata lines
-    if (line.startsWith("**板塊:") || line.startsWith("**產業:") ||
-        line.startsWith("**市值:") || line.startsWith("**企業價值:") ||
-        line.trim() === "") {
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line.startsWith("**")) {
       continue;
     }
-    summaryLines.push(line);
+
+    const metadataMatch = line.match(/^\*\*(.+?)\*\*\s*(.+)?$/u);
+    if (!metadataMatch) {
+      continue;
+    }
+
+    const label = stripMetadataLabel(metadataMatch[1]);
+    const value = (metadataMatch[2] ?? "").trim();
+    const normalizedLabel = normalizeHeading(label);
+
+    if (!value) {
+      continue;
+    }
+
+    if (METADATA_LABELS.sector.some((item) => normalizedLabel === normalizeHeading(item))) {
+      metadata.sector = value;
+      continue;
+    }
+
+    if (METADATA_LABELS.industry.some((item) => normalizedLabel === normalizeHeading(item))) {
+      metadata.industry = value;
+      continue;
+    }
+
+    if (METADATA_LABELS.marketCap.some((item) => normalizedLabel === normalizeHeading(item))) {
+      metadata.marketCap = value;
+      continue;
+    }
+
+    if (
+      METADATA_LABELS.enterpriseValue.some(
+        (item) => normalizedLabel === normalizeHeading(item)
+      )
+    ) {
+      metadata.enterpriseValue = value;
+    }
   }
 
-  const summary = summaryLines.join("\n").trim();
-  return summary.length > 0 ? summary : undefined;
+  return metadata;
 }
 
-/** Classify wikilink relation based on section context */
-function classifyRelation(
-  sectionHeader: string
-): RelationEdge["relationType"] {
-  const h = sectionHeader.toLowerCase();
-  if (h.includes("上游") || h.includes("供應商") || h.includes("supplier")) {
-    return "supplier";
+function parseSummary(section: ParsedSection | undefined): string | undefined {
+  if (!section) {
+    return undefined;
   }
-  if (h.includes("下游") || h.includes("客戶") || h.includes("customer")) {
+
+  const summaryLines = section.lines
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !line.startsWith("**"))
+    .filter((line) => !line.startsWith("|"))
+    .filter((line) => !line.startsWith("###"));
+
+  if (summaryLines.length === 0) {
+    return undefined;
+  }
+
+  return summaryLines.join("\n");
+}
+
+function classifyRelation(
+  sectionTitle: string,
+  subsectionTitle: string | undefined,
+  lineContext: string
+): RelationEdge["relationType"] {
+  const context = normalizeHeading(`${sectionTitle} ${subsectionTitle ?? ""} ${lineContext}`);
+
+  if (
+    context.includes(normalizeHeading("主要客戶")) ||
+    context.includes(normalizeHeading("客戶")) ||
+    context.includes(normalizeHeading("ai/hpc")) ||
+    context.includes(normalizeHeading("超級大客戶"))
+  ) {
     return "customer";
   }
-  if (h.includes("技術") || h.includes("technology")) {
-    return "technology";
+
+  if (
+    context.includes(normalizeHeading("主要供應商")) ||
+    context.includes(normalizeHeading("供應商")) ||
+    context.includes(normalizeHeading("上游")) ||
+    context.includes(normalizeHeading("設備")) ||
+    context.includes(normalizeHeading("材料")) ||
+    context.includes(normalizeHeading("原料")) ||
+    context.includes(normalizeHeading("ipeda"))
+  ) {
+    return "supplier";
   }
-  if (h.includes("應用") || h.includes("application")) {
+
+  if (
+    context.includes(normalizeHeading("下游應用")) ||
+    context.includes(normalizeHeading("主要平台")) ||
+    context.includes(normalizeHeading("終端產品")) ||
+    context.includes(normalizeHeading("應用"))
+  ) {
     return "application";
   }
+
+  if (
+    context.includes(normalizeHeading("技術")) ||
+    context.includes(normalizeHeading("製程")) ||
+    context.includes(normalizeHeading("technology"))
+  ) {
+    return "technology";
+  }
+
   return "unknown";
 }
 
-/** Check if text contains encoding noise patterns */
 function hasEncodingNoise(text: string): boolean {
-  // Common mojibake patterns from BIG5/UTF-8 mismatch
-  return /[\ufffd]|[锟斤拷]|[\u0080-\u009f]{3,}/.test(text);
+  return /�|ï¿½|�|[\u0080-\u009f]{2,}/u.test(text);
+}
+
+function uniqueRelations(relations: RelationEdge[]) {
+  const deduped = new Map<string, RelationEdge>();
+
+  for (const relation of relations) {
+    const key = [
+      relation.fromLabel,
+      relation.toLabel,
+      relation.relationType
+    ].join("::");
+
+    if (!deduped.has(key)) {
+      deduped.set(key, relation);
+    }
+  }
+
+  return [...deduped.values()];
+}
+
+function buildThemeKeywords(
+  content: string,
+  displayName: string,
+  relations: RelationEdge[],
+  sourcePath: string
+): ThemeKeyword[] {
+  const relatedCompanyLabels = new Set(relations.map((relation) => relation.toLabel));
+  const keywords = new Map<string, ThemeKeyword>();
+
+  for (const label of extractWikilinks(content)) {
+    if (label === displayName) {
+      continue;
+    }
+
+    const looksLikeTheme =
+      !relatedCompanyLabels.has(label) ||
+      /[A-Z]{2,}|\d+奈米|AI|GPU|CPU|EUV|HPC|矽|EDA|光/u.test(label);
+
+    if (!looksLikeTheme) {
+      continue;
+    }
+
+    keywords.set(label, {
+      label,
+      sourcePath,
+      confidence: 0.6
+    });
+  }
+
+  return [...keywords.values()];
 }
 
 export type ReportParseResult = {
@@ -101,21 +292,11 @@ export type ReportParseResult = {
   warnings: ImportWarning[];
 };
 
-/**
- * Parse a single My-TW-Coverage markdown report into structured records.
- *
- * @param content - raw file content
- * @param relativePath - path relative to My-TW-Coverage root, e.g. "Pilot_Reports/Semiconductors/2330_台積電.md"
- */
 export function parseReport(
   content: string,
   relativePath: string
 ): ReportParseResult | null {
   const warnings: ImportWarning[] = [];
-  const relations: RelationEdge[] = [];
-  const themeKeywords: ThemeKeyword[] = [];
-
-  // Extract filename from path
   const filename = relativePath.replace(/\\/g, "/").split("/").pop() ?? "";
   const identity = parseFilename(filename);
 
@@ -128,33 +309,38 @@ export function parseReport(
     return null;
   }
 
-  // Check for encoding noise
   if (hasEncodingNoise(content)) {
     warnings.push({
       code: "encoding_noise",
-      message: "File contains encoding anomalies",
+      message: "Detected encoding noise in report content",
       sourcePath: relativePath
     });
   }
 
-  // Parse metadata
-  const metadata = parseMetadata(content);
-  const sectorFromPath = parseSector(relativePath);
-  const summary = parseSummary(content);
+  const sections = splitSections(content);
+  const introSection = sections.find((section) =>
+    section.level === 2 && matchesHeader(section.title, BUSINESS_INTRO_HEADERS)
+  );
+  const supplyChainSections = sections.filter((section) =>
+    matchesHeader(section.title, SUPPLY_CHAIN_HEADERS) ||
+    matchesHeader(section.title, CUSTOMER_SUPPLIER_HEADERS) ||
+    matchesHeader(section.parentTitle ?? "", SUPPLY_CHAIN_HEADERS) ||
+    matchesHeader(section.parentTitle ?? "", CUSTOMER_SUPPLIER_HEADERS)
+  );
 
+  const metadata = parseMetadata(introSection?.lines ?? []);
   const company: CompanySeed = {
     ticker: identity.ticker,
     displayName: identity.displayName,
-    sector: sectorFromPath ?? metadata.sector,
+    sector: parseSector(relativePath) ?? metadata.sector,
     industry: metadata.industry,
-    summary,
+    summary: parseSummary(introSection),
     marketCap: metadata.marketCap,
     enterpriseValue: metadata.enterpriseValue,
     sourcePath: relativePath
   };
 
-  // Check for missing sections
-  if (!content.includes("## 業務簡介")) {
+  if (!introSection) {
     warnings.push({
       code: "missing_section",
       message: "Missing 業務簡介 section",
@@ -162,91 +348,67 @@ export function parseReport(
     });
   }
 
-  if (!content.includes("## 供應鏈位置")) {
+  if (supplyChainSections.length === 0) {
     warnings.push({
       code: "missing_section",
-      message: "Missing 供應鏈位置 section",
+      message: "Missing 供應鏈/客戶供應商 sections",
       sourcePath: relativePath
     });
   }
 
-  // Extract wikilinks from supply chain and customer sections for relations
-  const supplyChainMatch = content.match(
-    /## 供應鏈位置\n([\s\S]*?)(?=\n## |$)/
-  );
-  if (supplyChainMatch) {
-    const sectionText = supplyChainMatch[1];
-    // Split by sub-headers (lines starting with **)
-    const blocks = sectionText.split(/\n(?=\*\*)/);
+  const relations: RelationEdge[] = [];
 
-    for (const block of blocks) {
-      const headerMatch = block.match(/^\*\*(.+?)\*\*/);
-      const header = headerMatch?.[1] ?? "";
-      const relationType = classifyRelation(header);
-      const links = extractWikilinks(block);
+  for (const section of supplyChainSections) {
+    let currentSubsection: string | undefined =
+      section.level === 3 ? section.title : undefined;
+
+    for (const rawLine of section.lines) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+
+      const subsectionMatch = line.match(/^###\s+(.+)$/u);
+      if (subsectionMatch) {
+        currentSubsection = subsectionMatch[1].trim();
+        continue;
+      }
+
+      const links = extractWikilinks(line).filter((label) => label !== identity.displayName);
+      if (links.length === 0) {
+        continue;
+      }
+
+      const lineContextMatch = line.match(/^-?\s*\*\*(.+?)\*\*/u);
+      const lineContext = lineContextMatch?.[1] ?? line;
+      const relationType = classifyRelation(
+        section.parentTitle ?? section.title,
+        currentSubsection,
+        lineContext
+      );
 
       for (const link of links) {
         relations.push({
           fromLabel: identity.displayName,
           toLabel: link,
           relationType,
-          confidence: 0.8,
+          confidence:
+            relationType === "customer" || relationType === "supplier" ? 0.9 : 0.7,
           sourcePath: relativePath
         });
       }
     }
   }
 
-  // Extract customer/supplier relations
-  const customerMatch = content.match(
-    /## 主要客戶及供應商\n([\s\S]*?)(?=\n## |$)/
-  );
-  if (customerMatch) {
-    const sectionText = customerMatch[1];
-    const customerSection = sectionText.match(
-      /### 主要客戶\n([\s\S]*?)(?=\n### |$)/
-    );
-    const supplierSection = sectionText.match(
-      /### 主要供應商\n([\s\S]*?)(?=\n### |$)/
-    );
-
-    if (customerSection) {
-      for (const link of extractWikilinks(customerSection[1])) {
-        relations.push({
-          fromLabel: identity.displayName,
-          toLabel: link,
-          relationType: "customer",
-          confidence: 0.9,
-          sourcePath: relativePath
-        });
-      }
-    }
-
-    if (supplierSection) {
-      for (const link of extractWikilinks(supplierSection[1])) {
-        relations.push({
-          fromLabel: identity.displayName,
-          toLabel: link,
-          relationType: "supplier",
-          confidence: 0.9,
-          sourcePath: relativePath
-        });
-      }
-    }
-  }
-
-  // Extract all wikilinks as theme keywords (technologies, not company names)
-  const allLinks = extractWikilinks(content);
-  const technologyPatterns = /^[A-Z0-9]|晶|光|矽|碳|氮|磷|載板|衛星|伺服器|電動車/;
-  for (const link of allLinks) {
-    if (technologyPatterns.test(link)) {
-      themeKeywords.push({
-        label: link,
-        sourcePath: relativePath,
-        confidence: 0.6
-      });
-    }
-  }
-
-  return { company, relations, themeKeywords, warnings };
+  return {
+    company,
+    relations: uniqueRelations(relations),
+    themeKeywords: buildThemeKeywords(
+      content,
+      identity.displayName,
+      relations,
+      relativePath
+    ),
+    warnings
+  };
 }

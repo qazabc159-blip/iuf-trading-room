@@ -18,7 +18,10 @@ import {
   getTradingRoomRepository,
   type TradingRoomRepository
 } from "@iuf-trading-room/domain";
-import { runImport } from "@iuf-trading-room/integrations";
+import {
+  buildImportedCompanyDraft,
+  runImport
+} from "@iuf-trading-room/integrations";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z, ZodError } from "zod";
@@ -1014,25 +1017,7 @@ app.post("/api/v1/import/my-tw-coverage", async (c) => {
 
     for (const seed of result.companies) {
       try {
-        await repo.createCompany(
-          {
-            name: seed.displayName,
-            ticker: seed.ticker,
-            market: "TWSE",
-            country: "TW",
-            themeIds: [],
-            chainPosition: seed.industry ?? "Unknown",
-            beneficiaryTier: "Observation",
-            exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
-            validation: { capitalFlow: "N/A", consensus: "N/A", relativeStrength: "N/A" },
-            notes:
-              [seed.summary, seed.sector ? `Sector: ${seed.sector}` : ""]
-                .filter(Boolean)
-                .join("\n")
-                .slice(0, 1500) || "Imported from My-TW-Coverage"
-          },
-          options
-        );
+        await repo.createCompany(buildImportedCompanyDraft(seed), options);
         persisted++;
       } catch (error) {
         persistErrors.push(
