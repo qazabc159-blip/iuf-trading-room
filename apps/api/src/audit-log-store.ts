@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import type { AppSession } from "@iuf-trading-room/contracts";
 import { auditLogs, getDb, isDatabaseMode } from "@iuf-trading-room/db";
 
@@ -20,6 +20,15 @@ export type AuditEntry = {
   entityId: string;
   payload: Record<string, unknown>;
   createdAt: string;
+};
+
+export type AuditSummary = {
+  windowHours: number;
+  total: number;
+  latestCreatedAt: string | null;
+  actions: Array<{ action: string; count: number }>;
+  entities: Array<{ entityType: string; count: number }>;
+  recent: AuditEntry[];
 };
 
 type ParsedAuditTarget = {
@@ -175,6 +184,9 @@ export async function listAuditLogEntries(input: {
   limit?: number;
   action?: string;
   entityType?: string;
+  entityId?: string;
+  from?: Date;
+  to?: Date;
 }) {
   if (!isDatabaseMode()) {
     return [] as AuditEntry[];
@@ -191,6 +203,15 @@ export async function listAuditLogEntries(input: {
   }
   if (input.entityType) {
     filters.push(eq(auditLogs.entityType, input.entityType));
+  }
+  if (input.entityId) {
+    filters.push(eq(auditLogs.entityId, input.entityId));
+  }
+  if (input.from) {
+    filters.push(gte(auditLogs.createdAt, input.from));
+  }
+  if (input.to) {
+    filters.push(lte(auditLogs.createdAt, input.to));
   }
 
   const rows = await db
@@ -211,4 +232,54 @@ export async function listAuditLogEntries(input: {
         : {},
     createdAt: row.createdAt.toISOString()
   }));
+}
+
+export function summarizeAuditEntries(
+  entries: AuditEntry[],
+  windowHours: number
+): AuditSummary {
+  const actionCounts = new Map<string, number>();
+  const entityCounts = new Map<string, number>();
+
+  for (const entry of entries) {
+    actionCounts.set(entry.action, (actionCounts.get(entry.action) ?? 0) + 1);
+    entityCounts.set(entry.entityType, (entityCounts.get(entry.entityType) ?? 0) + 1);
+  }
+
+  const actions = [...actionCounts.entries()]
+    .map(([action, count]) => ({ action, count }))
+    .sort((a, b) => b.count - a.count || a.action.localeCompare(b.action));
+
+  const entities = [...entityCounts.entries()]
+    .map(([entityType, count]) => ({ entityType, count }))
+    .sort((a, b) => b.count - a.count || a.entityType.localeCompare(b.entityType));
+
+  return {
+    windowHours,
+    total: entries.length,
+    latestCreatedAt: entries[0]?.createdAt ?? null,
+    actions,
+    entities,
+    recent: entries.slice(0, 10)
+  };
+}
+
+export async function getAuditLogSummary(input: {
+  session: AppSession;
+  hours?: number;
+  action?: string;
+  entityType?: string;
+}) {
+  const windowHours = Math.max(1, Math.min(input.hours ?? 24, 24 * 30));
+  const from = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+
+  const entries = await listAuditLogEntries({
+    session: input.session,
+    limit: 500,
+    action: input.action,
+    entityType: input.entityType,
+    from
+  });
+
+  return summarizeAuditEntries(entries, windowHours);
 }

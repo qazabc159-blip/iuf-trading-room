@@ -22,7 +22,10 @@ import {
   buildTradingViewEventKey,
   validateTradingViewTimestamp
 } from "../apps/api/src/tradingview-webhook-guard.ts";
-import { parseAuditTarget } from "../apps/api/src/audit-log-store.ts";
+import {
+  parseAuditTarget,
+  summarizeAuditEntries
+} from "../apps/api/src/audit-log-store.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
 import { parseGraphData } from "../packages/integrations/src/my-tw-coverage/graph-parser.ts";
@@ -145,6 +148,52 @@ test("audit target parser recognizes special routes and CRUD fallbacks", () => {
     entityType: "theme",
     entityId: "pending"
   });
+});
+
+test("audit summary aggregates recent actions and entity types", () => {
+  const summary = summarizeAuditEntries(
+    [
+      {
+        id: "1",
+        action: "create",
+        entityType: "theme",
+        entityId: "pending",
+        payload: {},
+        createdAt: "2026-04-14T10:00:00.000Z"
+      },
+      {
+        id: "2",
+        action: "create",
+        entityType: "signal",
+        entityId: "pending",
+        payload: {},
+        createdAt: "2026-04-14T09:59:00.000Z"
+      },
+      {
+        id: "3",
+        action: "ingest",
+        entityType: "tradingview_webhook",
+        entityId: "event",
+        payload: {},
+        createdAt: "2026-04-14T09:58:00.000Z"
+      }
+    ],
+    24
+  );
+
+  assert.equal(summary.windowHours, 24);
+  assert.equal(summary.total, 3);
+  assert.equal(summary.latestCreatedAt, "2026-04-14T10:00:00.000Z");
+  assert.deepEqual(summary.actions, [
+    { action: "create", count: 2 },
+    { action: "ingest", count: 1 }
+  ]);
+  assert.deepEqual(summary.entities, [
+    { entityType: "signal", count: 1 },
+    { entityType: "theme", count: 1 },
+    { entityType: "tradingview_webhook", count: 1 }
+  ]);
+  assert.equal(summary.recent.length, 3);
 });
 
 test("memory repository supports core research-to-review loop", async () => {

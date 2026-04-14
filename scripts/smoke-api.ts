@@ -467,6 +467,21 @@ async function main() {
     });
     assert.ok(Array.isArray(filteredAuditLogs.data));
 
+    const auditSummary = await request<
+      JsonEnvelope<{
+        windowHours: number;
+        total: number;
+        actions: Array<{ action: string; count: number }>;
+        entities: Array<{ entityType: string; count: number }>;
+      }>
+    >(baseUrl, "/api/v1/audit-logs/summary?hours=24", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(auditSummary.data.windowHours, 24);
+    assert.ok(auditSummary.data.total >= 0);
+    assert.ok(Array.isArray(auditSummary.data.actions));
+    assert.ok(Array.isArray(auditSummary.data.entities));
+
     console.log("Smoke API checks passed.");
   } catch (error) {
     const details = [

@@ -50,7 +50,11 @@ import {
   markTradingViewEventComplete,
   validateTradingViewTimestamp
 } from "./tradingview-webhook-guard.js";
-import { listAuditLogEntries, writeAuditLog } from "./audit-log-store.js";
+import {
+  getAuditLogSummary,
+  listAuditLogEntries,
+  writeAuditLog
+} from "./audit-log-store.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -179,6 +183,15 @@ const openAliceReviewJobSchema = z.object({
 const auditLogListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   action: z.string().min(1).max(100).optional(),
+  entityType: z.string().min(1).max(120).optional(),
+  entityId: z.string().min(1).max(160).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional()
+});
+
+const auditLogSummaryQuerySchema = z.object({
+  hours: z.coerce.number().int().min(1).max(24 * 30).optional(),
+  action: z.string().min(1).max(100).optional(),
   entityType: z.string().min(1).max(120).optional()
 });
 
@@ -261,6 +274,18 @@ app.get("/api/v1/session", (c) =>
   })
 );
 
+app.get("/api/v1/audit-logs/summary", async (c) => {
+  const query = auditLogSummaryQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getAuditLogSummary({
+      session: c.get("session"),
+      hours: query.hours,
+      action: query.action,
+      entityType: query.entityType
+    })
+  });
+});
+
 app.get("/api/v1/audit-logs", async (c) => {
   const query = auditLogListQuerySchema.parse(c.req.query());
   return c.json({
@@ -268,7 +293,10 @@ app.get("/api/v1/audit-logs", async (c) => {
       session: c.get("session"),
       limit: query.limit,
       action: query.action,
-      entityType: query.entityType
+      entityType: query.entityType,
+      entityId: query.entityId,
+      from: query.from,
+      to: query.to
     })
   });
 });
