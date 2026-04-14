@@ -204,6 +204,18 @@ test("audit target parser recognizes special routes and CRUD fallbacks", () => {
     entityType: "theme",
     entityId: "pending"
   });
+
+  assert.deepEqual(parseAuditTarget("PUT", "/api/v1/companies/company-1/relations"), {
+    action: "replace",
+    entityType: "company_relation",
+    entityId: "company-1"
+  });
+
+  assert.deepEqual(parseAuditTarget("PUT", "/api/v1/companies/company-1/keywords"), {
+    action: "replace",
+    entityType: "company_keyword",
+    entityId: "company-1"
+  });
 });
 
 test("audit summary aggregates recent actions and entity types", () => {
@@ -631,6 +643,34 @@ test("memory repository supports core research-to-review loop", async () => {
     companyIds: [company.id]
   });
 
+  const relations = await repo.replaceCompanyRelations(company.id, [
+    {
+      targetLabel: "NVIDIA",
+      relationType: "customer",
+      confidence: 0.9,
+      sourcePath: "Pilot_Reports/Semiconductors/PHTN.md"
+    },
+    {
+      targetLabel: "CoWoS",
+      relationType: "technology",
+      confidence: 0.7,
+      sourcePath: "Pilot_Reports/Semiconductors/PHTN.md"
+    }
+  ]);
+
+  const keywords = await repo.replaceCompanyKeywords(company.id, [
+    {
+      label: "Optics",
+      confidence: 0.8,
+      sourcePath: "Pilot_Reports/Semiconductors/PHTN.md"
+    },
+    {
+      label: "AI",
+      confidence: 0.6,
+      sourcePath: "Pilot_Reports/Semiconductors/PHTN.md"
+    }
+  ]);
+
   const plan = await repo.createTradePlan({
     companyId: company.id,
     status: "ready",
@@ -665,6 +705,10 @@ test("memory repository supports core research-to-review loop", async () => {
 
   assert.equal((await repo.listThemes()).some((item) => item.id === theme.id), true);
   assert.equal((await repo.listCompanies(theme.id)).some((item) => item.id === company.id), true);
+  assert.equal(relations.length, 2);
+  assert.equal((await repo.listCompanyRelations(company.id)).length, 2);
+  assert.equal(keywords.length, 2);
+  assert.equal((await repo.listCompanyKeywords(company.id)).length, 2);
   assert.equal((await repo.listSignals({ themeId: theme.id })).some((item) => item.id === signal.id), true);
   assert.equal(
     (await repo.listTradePlans({ companyId: company.id })).some((item) => item.id === plan.id),

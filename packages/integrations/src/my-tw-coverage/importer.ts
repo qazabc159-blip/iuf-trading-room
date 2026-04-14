@@ -7,6 +7,7 @@ import { parseGraphData } from "./graph-parser.js";
 import { parseReport } from "./report-parser.js";
 import type {
   CoverageSourceArtifact,
+  CompanyKeywordSeed,
   CompanySeed,
   ImportResult,
   ImportWarning,
@@ -106,6 +107,7 @@ export function runImport(options: ImportOptions): ImportResult {
   const companies: CompanySeed[] = [];
   const relations: RelationEdge[] = [];
   const themeKeywords: ThemeKeyword[] = [];
+  const companyKeywords: CompanyKeywordSeed[] = [];
   const warnings: ImportWarning[] = [];
   const sources: CoverageSourceArtifact[] = [];
 
@@ -139,6 +141,14 @@ export function runImport(options: ImportOptions): ImportResult {
         companies.push(result.company);
         relations.push(...result.relations);
         themeKeywords.push(...result.themeKeywords);
+        companyKeywords.push(
+          ...result.themeKeywords.map((keyword) => ({
+            companyLabel: result.company.displayName,
+            label: keyword.label,
+            sourcePath: keyword.sourcePath,
+            confidence: keyword.confidence
+          }))
+        );
         warnings.push(...result.warnings);
       }
     }
@@ -191,10 +201,20 @@ export function runImport(options: ImportOptions): ImportResult {
     }
   }
 
+  const companyKeywordMap = new Map<string, CompanyKeywordSeed>();
+  for (const keyword of companyKeywords) {
+    const key = `${keyword.companyLabel}::${keyword.label}`;
+    const existing = companyKeywordMap.get(key);
+    if (!existing || keyword.confidence > existing.confidence) {
+      companyKeywordMap.set(key, keyword);
+    }
+  }
+
   return {
     companies,
     relations,
     themeKeywords: [...keywordMap.values()],
+    companyKeywords: [...companyKeywordMap.values()],
     warnings,
     sources
   };

@@ -5,6 +5,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -46,6 +47,15 @@ export const signalDirectionEnum = pgEnum("signal_direction", [
   "bullish",
   "bearish",
   "neutral"
+]);
+
+export const companyRelationTypeEnum = pgEnum("company_relation_type", [
+  "supplier",
+  "customer",
+  "technology",
+  "application",
+  "co_occurrence",
+  "unknown"
 ]);
 
 export const tradePlanStatusEnum = pgEnum("trade_plan_status", [
@@ -127,6 +137,54 @@ export const companyThemeLinks = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.companyId, table.themeId] })
+  })
+);
+
+export const companyRelations = pgTable(
+  "company_relations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+    companyId: uuid("company_id").notNull().references(() => companies.id),
+    targetCompanyId: uuid("target_company_id").references(() => companies.id),
+    targetLabel: text("target_label").notNull(),
+    relationType: companyRelationTypeEnum("relation_type").notNull(),
+    confidence: real("confidence").default(0.5).notNull(),
+    sourcePath: text("source_path").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    companyIdx: index("company_relations_company_idx").on(table.companyId, table.updatedAt),
+    targetIdx: index("company_relations_target_idx").on(table.targetCompanyId),
+    uniqueEdgeIdx: uniqueIndex("company_relations_unique_edge_idx").on(
+      table.workspaceId,
+      table.companyId,
+      table.targetLabel,
+      table.relationType
+    )
+  })
+);
+
+export const companyKeywords = pgTable(
+  "company_keywords",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+    companyId: uuid("company_id").notNull().references(() => companies.id),
+    label: text("label").notNull(),
+    confidence: real("confidence").default(0.5).notNull(),
+    sourcePath: text("source_path").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    companyIdx: index("company_keywords_company_idx").on(table.companyId, table.updatedAt),
+    uniqueKeywordIdx: uniqueIndex("company_keywords_unique_keyword_idx").on(
+      table.workspaceId,
+      table.companyId,
+      table.label
+    )
   })
 );
 

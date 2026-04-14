@@ -2,6 +2,10 @@ import type {
   AppSession,
   Company,
   CompanyCreateInput,
+  CompanyKeyword,
+  CompanyKeywordInput,
+  CompanyRelation,
+  CompanyRelationInput,
   CompanyUpdateInput,
   DailyBrief,
   DailyBriefCreateInput,
@@ -37,6 +41,18 @@ export interface TradingRoomRepository {
   getCompany(companyId: string, options?: SessionOptions): Promise<Company | null>;
   createCompany(input: CompanyCreateInput, options?: SessionOptions): Promise<Company>;
   updateCompany(companyId: string, input: CompanyUpdateInput, options?: SessionOptions): Promise<Company | null>;
+  listCompanyRelations(companyId: string, options?: SessionOptions): Promise<CompanyRelation[]>;
+  replaceCompanyRelations(
+    companyId: string,
+    input: CompanyRelationInput[],
+    options?: SessionOptions
+  ): Promise<CompanyRelation[]>;
+  listCompanyKeywords(companyId: string, options?: SessionOptions): Promise<CompanyKeyword[]>;
+  replaceCompanyKeywords(
+    companyId: string,
+    input: CompanyKeywordInput[],
+    options?: SessionOptions
+  ): Promise<CompanyKeyword[]>;
 
   // Signals
   listSignals(filters?: { themeId?: string; companyId?: string; category?: string }, options?: SessionOptions): Promise<Signal[]>;

@@ -166,6 +166,89 @@ async function main() {
     );
     assert.equal(company.data.name, "Smoke Optics");
 
+    const relationReplace = await request<
+      JsonEnvelope<
+        Array<{
+          id: string;
+          companyId: string;
+          targetLabel: string;
+          relationType: string;
+        }>
+      >
+    >(baseUrl, `/api/v1/companies/${company.data.id}/relations`, {
+      method: "PUT",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        relations: [
+          {
+            targetLabel: "NVIDIA",
+            relationType: "customer",
+            confidence: 0.9,
+            sourcePath: "Pilot_Reports/Smoke/SMK1.md"
+          },
+          {
+            targetLabel: "CoWoS",
+            relationType: "technology",
+            confidence: 0.7,
+            sourcePath: "Pilot_Reports/Smoke/SMK1.md"
+          }
+        ]
+      })
+    });
+    assert.equal(relationReplace.data.length, 2);
+    assert.equal(relationReplace.data[0]?.companyId, company.data.id);
+
+    const relationList = await request<
+      JsonEnvelope<
+        Array<{
+          targetLabel: string;
+          relationType: string;
+        }>
+      >
+    >(baseUrl, `/api/v1/companies/${company.data.id}/relations`, {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(relationList.data.some((item) => item.targetLabel === "NVIDIA"), true);
+
+    const keywordReplace = await request<
+      JsonEnvelope<
+        Array<{
+          companyId: string;
+          label: string;
+        }>
+      >
+    >(baseUrl, `/api/v1/companies/${company.data.id}/keywords`, {
+      method: "PUT",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        keywords: [
+          {
+            label: "AI",
+            confidence: 0.8,
+            sourcePath: "Pilot_Reports/Smoke/SMK1.md"
+          },
+          {
+            label: "Optics",
+            confidence: 0.7,
+            sourcePath: "Pilot_Reports/Smoke/SMK1.md"
+          }
+        ]
+      })
+    });
+    assert.equal(keywordReplace.data.length, 2);
+    assert.equal(keywordReplace.data[0]?.companyId, company.data.id);
+
+    const keywordList = await request<
+      JsonEnvelope<
+        Array<{
+          label: string;
+        }>
+      >
+    >(baseUrl, `/api/v1/companies/${company.data.id}/keywords`, {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(keywordList.data.some((item) => item.label === "AI"), true);
+
     const signal = await request<JsonEnvelope<{ id: string; title: string }>>(baseUrl, "/api/v1/signals", {
       method: "POST",
       headers: { "x-workspace-slug": workspaceSlug },

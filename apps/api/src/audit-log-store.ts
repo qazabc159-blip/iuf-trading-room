@@ -11,7 +11,8 @@ export type AuditAction =
   | "cleanup"
   | "review"
   | "ingest"
-  | "import";
+  | "import"
+  | "replace";
 
 export type AuditEntry = {
   id: string;
@@ -83,6 +84,18 @@ const specialAuditRoutes: Array<{
     action: "import",
     entityType: "my_tw_coverage",
     entityId: "import"
+  },
+  {
+    matcher: /^\/api\/v1\/companies\/([^/]+)\/relations$/,
+    action: "replace",
+    entityType: "company_relation",
+    entityId: (match) => match[1] ?? "unknown"
+  },
+  {
+    matcher: /^\/api\/v1\/companies\/([^/]+)\/keywords$/,
+    action: "replace",
+    entityType: "company_keyword",
+    entityId: (match) => match[1] ?? "unknown"
   }
 ];
 

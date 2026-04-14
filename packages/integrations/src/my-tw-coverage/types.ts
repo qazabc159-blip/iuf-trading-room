@@ -35,6 +35,10 @@ export type ThemeKeyword = {
   confidence: number;
 };
 
+export type CompanyKeywordSeed = ThemeKeyword & {
+  companyLabel: string;
+};
+
 export type ImportWarning = {
   code:
     | "encoding_noise"
@@ -51,6 +55,7 @@ export type ImportResult = {
   companies: CompanySeed[];
   relations: RelationEdge[];
   themeKeywords: ThemeKeyword[];
+  companyKeywords: CompanyKeywordSeed[];
   warnings: ImportWarning[];
   sources: CoverageSourceArtifact[];
 };

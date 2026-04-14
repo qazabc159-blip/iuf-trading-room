@@ -2,6 +2,10 @@ import type {
   AppSession,
   Company,
   CompanyCreateInput,
+  CompanyKeyword,
+  CompanyKeywordInput,
+  CompanyRelation,
+  CompanyRelationInput,
   CompanyUpdateInput,
   DailyBrief,
   DailyBriefCreateInput,
@@ -138,6 +142,10 @@ export class MemoryTradingRoomRepository implements TradingRoomRepository {
 
   private companies = [...seededCompanies];
 
+  private companyRelations: CompanyRelation[] = [];
+
+  private companyKeywords: CompanyKeyword[] = [];
+
   private signals: Signal[] = [];
 
   private tradePlans: TradePlan[] = [];
@@ -229,6 +237,68 @@ export class MemoryTradingRoomRepository implements TradingRoomRepository {
     });
 
     return { ...company, themeIds: [...company.themeIds] };
+  }
+
+  async listCompanyRelations(companyId: string) {
+    return this.companyRelations
+      .filter((relation) => relation.companyId === companyId)
+      .sort((left, right) => {
+        if (right.confidence !== left.confidence) {
+          return right.confidence - left.confidence;
+        }
+
+        return left.targetLabel.localeCompare(right.targetLabel);
+      })
+      .map((relation) => ({ ...relation }));
+  }
+
+  async replaceCompanyRelations(companyId: string, input: CompanyRelationInput[]) {
+    this.companyRelations = this.companyRelations.filter(
+      (relation) => relation.companyId !== companyId
+    );
+
+    const nextRelations = input.map((relation) => ({
+      id: crypto.randomUUID(),
+      companyId,
+      targetCompanyId: relation.targetCompanyId ?? null,
+      targetLabel: relation.targetLabel,
+      relationType: relation.relationType,
+      confidence: relation.confidence,
+      sourcePath: relation.sourcePath,
+      updatedAt: now()
+    } satisfies CompanyRelation));
+
+    this.companyRelations.unshift(...nextRelations);
+    return nextRelations.map((relation) => ({ ...relation }));
+  }
+
+  async listCompanyKeywords(companyId: string) {
+    return this.companyKeywords
+      .filter((keyword) => keyword.companyId === companyId)
+      .sort((left, right) => {
+        if (right.confidence !== left.confidence) {
+          return right.confidence - left.confidence;
+        }
+
+        return left.label.localeCompare(right.label);
+      })
+      .map((keyword) => ({ ...keyword }));
+  }
+
+  async replaceCompanyKeywords(companyId: string, input: CompanyKeywordInput[]) {
+    this.companyKeywords = this.companyKeywords.filter((keyword) => keyword.companyId !== companyId);
+
+    const nextKeywords = input.map((keyword) => ({
+      id: crypto.randomUUID(),
+      companyId,
+      label: keyword.label,
+      confidence: keyword.confidence,
+      sourcePath: keyword.sourcePath,
+      updatedAt: now()
+    } satisfies CompanyKeyword));
+
+    this.companyKeywords.unshift(...nextKeywords);
+    return nextKeywords.map((keyword) => ({ ...keyword }));
   }
 
   // Signals

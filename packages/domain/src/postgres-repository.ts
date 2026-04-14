@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   desc,
   eq,
   inArray
@@ -9,6 +10,12 @@ import {
   type AppSession,
   type Company,
   type CompanyCreateInput,
+  type CompanyKeyword,
+  type CompanyKeywordInput,
+  companyKeywordSchema,
+  type CompanyRelation,
+  type CompanyRelationInput,
+  companyRelationSchema,
   companySchema,
   type CompanyUpdateInput,
   type DailyBrief,
@@ -31,6 +38,8 @@ import {
 } from "@iuf-trading-room/contracts";
 import {
   companies,
+  companyKeywords,
+  companyRelations,
   companyThemeLinks,
   getDb,
   reviewEntries,
@@ -140,6 +149,30 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
     }
 
     return mapping;
+  }
+
+  private parseCompanyRelation(row: typeof companyRelations.$inferSelect): CompanyRelation {
+    return companyRelationSchema.parse({
+      id: row.id,
+      companyId: row.companyId,
+      targetCompanyId: row.targetCompanyId,
+      targetLabel: row.targetLabel,
+      relationType: row.relationType,
+      confidence: row.confidence,
+      sourcePath: row.sourcePath,
+      updatedAt: row.updatedAt.toISOString()
+    });
+  }
+
+  private parseCompanyKeyword(row: typeof companyKeywords.$inferSelect): CompanyKeyword {
+    return companyKeywordSchema.parse({
+      id: row.id,
+      companyId: row.companyId,
+      label: row.label,
+      confidence: row.confidence,
+      sourcePath: row.sourcePath,
+      updatedAt: row.updatedAt.toISOString()
+    });
   }
 
   async getSession(options?: SessionOptions) {
@@ -460,6 +493,118 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       notes: row.notes,
       updatedAt: row.updatedAt.toISOString()
     });
+  }
+
+  async listCompanyRelations(companyId: string, options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const rows = await db
+      .select()
+      .from(companyRelations)
+      .where(
+        and(
+          eq(companyRelations.workspaceId, workspace.id),
+          eq(companyRelations.companyId, companyId)
+        )
+      )
+      .orderBy(desc(companyRelations.confidence), asc(companyRelations.targetLabel));
+
+    return rows.map((row) => this.parseCompanyRelation(row));
+  }
+
+  async replaceCompanyRelations(
+    companyId: string,
+    input: CompanyRelationInput[],
+    options?: SessionOptions
+  ) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    await db
+      .delete(companyRelations)
+      .where(
+        and(
+          eq(companyRelations.workspaceId, workspace.id),
+          eq(companyRelations.companyId, companyId)
+        )
+      );
+
+    if (input.length === 0) {
+      return [] as CompanyRelation[];
+    }
+
+    const rows = await db
+      .insert(companyRelations)
+      .values(
+        input.map((relation) => ({
+          workspaceId: workspace.id,
+          companyId,
+          targetCompanyId: relation.targetCompanyId ?? null,
+          targetLabel: relation.targetLabel,
+          relationType: relation.relationType,
+          confidence: relation.confidence,
+          sourcePath: relation.sourcePath
+        }))
+      )
+      .returning();
+
+    return rows.map((row) => this.parseCompanyRelation(row));
+  }
+
+  async listCompanyKeywords(companyId: string, options?: SessionOptions) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const rows = await db
+      .select()
+      .from(companyKeywords)
+      .where(
+        and(
+          eq(companyKeywords.workspaceId, workspace.id),
+          eq(companyKeywords.companyId, companyId)
+        )
+      )
+      .orderBy(desc(companyKeywords.confidence), asc(companyKeywords.label));
+
+    return rows.map((row) => this.parseCompanyKeyword(row));
+  }
+
+  async replaceCompanyKeywords(
+    companyId: string,
+    input: CompanyKeywordInput[],
+    options?: SessionOptions
+  ) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    await db
+      .delete(companyKeywords)
+      .where(
+        and(
+          eq(companyKeywords.workspaceId, workspace.id),
+          eq(companyKeywords.companyId, companyId)
+        )
+      );
+
+    if (input.length === 0) {
+      return [] as CompanyKeyword[];
+    }
+
+    const rows = await db
+      .insert(companyKeywords)
+      .values(
+        input.map((keyword) => ({
+          workspaceId: workspace.id,
+          companyId,
+          label: keyword.label,
+          confidence: keyword.confidence,
+          sourcePath: keyword.sourcePath
+        }))
+      )
+      .returning();
+
+    return rows.map((row) => this.parseCompanyKeyword(row));
   }
 
   // ── Signals ──

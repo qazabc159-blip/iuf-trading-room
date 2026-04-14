@@ -4,6 +4,8 @@ import type { Context } from "hono";
 import {
   type AppSession,
   companyCreateInputSchema,
+  companyKeywordsReplaceInputSchema,
+  companyRelationsReplaceInputSchema,
   companyUpdateInputSchema,
   dailyBriefCreateInputSchema,
   reviewEntryCreateInputSchema,
@@ -528,6 +530,68 @@ app.post("/api/v1/companies", async (c) => {
   );
 });
 
+app.get("/api/v1/companies/:id/relations", async (c) => {
+  const company = await c.get("repo").getCompany(c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) {
+    return c.json({ error: "company_not_found" }, 404);
+  }
+
+  return c.json({
+    data: await c.get("repo").listCompanyRelations(company.id, {
+      workspaceSlug: c.get("session").workspace.slug
+    })
+  });
+});
+
+app.put("/api/v1/companies/:id/relations", async (c) => {
+  const company = await c.get("repo").getCompany(c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) {
+    return c.json({ error: "company_not_found" }, 404);
+  }
+
+  const payload = companyRelationsReplaceInputSchema.parse(await c.req.json().catch(() => ({})));
+  return c.json({
+    data: await c.get("repo").replaceCompanyRelations(company.id, payload.relations, {
+      workspaceSlug: c.get("session").workspace.slug
+    })
+  });
+});
+
+app.get("/api/v1/companies/:id/keywords", async (c) => {
+  const company = await c.get("repo").getCompany(c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) {
+    return c.json({ error: "company_not_found" }, 404);
+  }
+
+  return c.json({
+    data: await c.get("repo").listCompanyKeywords(company.id, {
+      workspaceSlug: c.get("session").workspace.slug
+    })
+  });
+});
+
+app.put("/api/v1/companies/:id/keywords", async (c) => {
+  const company = await c.get("repo").getCompany(c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) {
+    return c.json({ error: "company_not_found" }, 404);
+  }
+
+  const payload = companyKeywordsReplaceInputSchema.parse(await c.req.json().catch(() => ({})));
+  return c.json({
+    data: await c.get("repo").replaceCompanyKeywords(company.id, payload.keywords, {
+      workspaceSlug: c.get("session").workspace.slug
+    })
+  });
+});
+
 app.get("/api/v1/companies/:id", async (c) => {
   const company = await c.get("repo").getCompany(c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
@@ -1032,12 +1096,14 @@ app.post("/api/v1/import/my-tw-coverage", async (c) => {
       companiesCount: result.companies.length,
       relationsCount: result.relations.length,
       themeKeywordsCount: result.themeKeywords.length,
+      companyKeywordsCount: result.companyKeywords.length,
       warningsCount: result.warnings.length,
       sourcesCount: result.sources.length,
       ...(persist ? { persisted, persistErrors: persistErrors.slice(0, 50) } : {}),
       companies: result.companies.slice(0, 50),
       warnings: result.warnings.slice(0, 50),
-      themeKeywords: result.themeKeywords.slice(0, 50)
+      themeKeywords: result.themeKeywords.slice(0, 50),
+      companyKeywords: result.companyKeywords.slice(0, 50)
     }
   });
 });

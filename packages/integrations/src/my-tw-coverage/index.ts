@@ -7,6 +7,7 @@ export { parseReport } from "./report-parser.js";
 export { parseGraphData } from "./graph-parser.js";
 export type {
   CompanySeed,
+  CompanyKeywordSeed,
   CoverageSourceArtifact,
   ImportResult,
   ImportWarning,
