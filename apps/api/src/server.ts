@@ -41,6 +41,15 @@ import {
   submitOpenAliceResult
 } from "./openalice-bridge.js";
 import { getOpenAliceObservabilitySnapshot } from "./openalice-observability.js";
+import {
+  buildTradingViewEventKey,
+  checkTradingViewRateLimit,
+  claimTradingViewEvent,
+  clearTradingViewEventClaim,
+  getTradingViewWebhookConfig,
+  markTradingViewEventComplete,
+  validateTradingViewTimestamp
+} from "./tradingview-webhook-guard.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -573,6 +582,8 @@ const tvWebhookPayloadSchema = z.object({
   exchange: z.string().optional(),
   price: z.string().optional(),
   interval: z.string().optional(),
+  timestamp: z.union([z.string(), z.number()]).optional(),
+  eventKey: z.string().max(200).optional(),
   // Signal mapping (optional overrides)
   title: z.string().max(200).optional(),
   direction: z.enum(["bullish", "bearish", "neutral"]).optional(),
@@ -584,6 +595,7 @@ const tvWebhookPayloadSchema = z.object({
 });
 
 app.post("/api/v1/webhooks/tradingview", async (c) => {
+  const webhookConfig = getTradingViewWebhookConfig();
   const raw = await c.req.text();
   let body: unknown;
   try {
@@ -604,6 +616,79 @@ app.post("/api/v1/webhooks/tradingview", async (c) => {
     return c.json({ error: "unauthorized" }, 401);
   }
 
+  const clientIp =
+    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
+    c.req.header("x-real-ip") ||
+    "unknown";
+
+  const rateLimit = await checkTradingViewRateLimit({
+    clientIp,
+    options: webhookConfig
+  });
+  if (!rateLimit.ok) {
+    c.header("Retry-After", String(rateLimit.retryAfterSeconds));
+    return c.json(
+      {
+        error: "rate_limited",
+        limit: rateLimit.limit,
+        retryAfterSeconds: rateLimit.retryAfterSeconds
+      },
+      429
+    );
+  }
+
+  const timestampValidation = validateTradingViewTimestamp(
+    payload.timestamp,
+    new Date(),
+    webhookConfig
+  );
+  if (!timestampValidation.ok) {
+    return c.json({ error: timestampValidation.error }, 400);
+  }
+
+  const eventKey = buildTradingViewEventKey({
+    ticker: payload.ticker,
+    exchange: payload.exchange,
+    price: payload.price,
+    interval: payload.interval,
+    title: payload.title,
+    direction: payload.direction,
+    category: payload.category,
+    confidence: payload.confidence,
+    summary: payload.summary,
+    themeIds: payload.themeIds,
+    companyIds: payload.companyIds,
+    eventKey: payload.eventKey,
+    timestamp: timestampValidation.normalizedTimestamp
+  });
+  const claimedEvent = await claimTradingViewEvent({
+    eventKey,
+    ttlSeconds: webhookConfig.dedupTtlSeconds
+  });
+
+  if (claimedEvent.status === "duplicate") {
+    return c.json(
+      {
+        data: claimedEvent.signal,
+        meta: {
+          duplicate: true,
+          eventKey
+        }
+      },
+      200
+    );
+  }
+
+  if (claimedEvent.status === "pending") {
+    return c.json(
+      {
+        error: "duplicate_in_progress",
+        eventKey
+      },
+      202
+    );
+  }
+
   // Build signal from TV alert
   const direction = payload.direction ?? "neutral";
   const category = payload.category ?? "price";
@@ -619,24 +704,43 @@ app.post("/api/v1/webhooks/tradingview", async (c) => {
     payload.exchange ? `Exchange: ${payload.exchange}` : null,
     payload.price ? `Price: ${payload.price}` : null,
     payload.interval ? `Interval: ${payload.interval}` : null,
+    timestampValidation.normalizedTimestamp
+      ? `Timestamp: ${timestampValidation.normalizedTimestamp}`
+      : null,
     `Source: TradingView webhook at ${new Date().toISOString()}`
   ].filter(Boolean);
 
   const repo = c.get("repo");
   const opts = { workspaceSlug: c.get("session").workspace.slug };
 
-  const signal = await repo.createSignal(
-    {
-      category,
-      direction,
-      title: title.slice(0, 200),
-      summary: summaryParts.join("\n").slice(0, 2000),
-      confidence,
-      themeIds: payload.themeIds ?? [],
-      companyIds: payload.companyIds ?? []
+  let signal;
+  try {
+    signal = await repo.createSignal(
+      {
+        category,
+        direction,
+        title: title.slice(0, 200),
+        summary: summaryParts.join("\n").slice(0, 2000),
+        confidence,
+        themeIds: payload.themeIds ?? [],
+        companyIds: payload.companyIds ?? []
+      },
+      opts
+    );
+  } catch (error) {
+    await clearTradingViewEventClaim(eventKey);
+    throw error;
+  }
+
+  await markTradingViewEventComplete({
+    eventKey,
+    signal: {
+      id: signal.id,
+      title: signal.title,
+      direction: signal.direction
     },
-    opts
-  );
+    ttlSeconds: webhookConfig.dedupTtlSeconds
+  });
 
   console.log(
     JSON.stringify({
@@ -644,11 +748,22 @@ app.post("/api/v1/webhooks/tradingview", async (c) => {
       ts: new Date().toISOString(),
       ticker: payload.ticker,
       direction,
-      signalId: signal.id
+      signalId: signal.id,
+      eventKey,
+      duplicate: false
     })
   );
 
-  return c.json({ data: signal }, 201);
+  return c.json(
+    {
+      data: signal,
+      meta: {
+        duplicate: false,
+        eventKey
+      }
+    },
+    201
+  );
 });
 
 // Import

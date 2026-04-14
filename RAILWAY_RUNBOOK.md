@@ -114,6 +114,7 @@ TradingView webhook secret:
 
 ```powershell
 railway.cmd variable set -s api TV_WEBHOOK_TOKEN=replace-with-your-secret
+railway.cmd variable set -s api TV_WEBHOOK_DEDUP_TTL_SECONDS=300 TV_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS=300 TV_WEBHOOK_RATE_LIMIT_PER_MINUTE=120 TV_WEBHOOK_ENFORCE_TIMESTAMP=false
 ```
 
 ## Common Incidents
@@ -167,8 +168,9 @@ railway.cmd variable set -s api TV_WEBHOOK_TOKEN=replace-with-your-secret
 
 1. Confirm `TV_WEBHOOK_TOKEN` is set on `api`.
 2. Verify the TradingView alert body is valid JSON and includes `token` plus `ticker`.
-3. Check `api` logs for `validation_error` or `unauthorized`.
-4. Replay the payload locally with `Invoke-WebRequest` before changing the alert template.
+3. If timestamp hardening is enabled, confirm the payload timestamp is within `TV_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS`.
+4. Check `api` logs for `validation_error`, `timestamp_out_of_range`, `rate_limited`, or `unauthorized`.
+5. Replay the payload locally with `Invoke-WebRequest` before changing the alert template.
 
 ## Cleanup Tasks
 

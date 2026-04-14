@@ -18,6 +18,10 @@ import {
   collectOpenAliceMaintenanceMetrics,
   resolveExpiredJobTransition
 } from "../apps/worker/src/openalice-maintenance.ts";
+import {
+  buildTradingViewEventKey,
+  validateTradingViewTimestamp
+} from "../apps/api/src/tradingview-webhook-guard.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
 import { parseGraphData } from "../packages/integrations/src/my-tw-coverage/graph-parser.ts";
@@ -58,6 +62,68 @@ test("graph parser extracts companies and relation types", () => {
   assert.equal(parsed.relations.length, 2);
   assert.equal(parsed.relations[0]?.relationType, "technology");
   assert.equal(parsed.relations[1]?.relationType, "co_occurrence");
+});
+
+test("tradingview event key stays stable and honors explicit event keys", () => {
+  const payload = {
+    ticker: "SMK1",
+    exchange: "NASDAQ",
+    price: "123.45",
+    interval: "1D",
+    direction: "bullish",
+    category: "price",
+    confidence: 5,
+    summary: "Webhook smoke signal",
+    themeIds: ["b", "a"],
+    companyIds: ["2", "1"],
+    timestamp: "2026-04-14T00:00:00.000Z"
+  };
+
+  const keyA = buildTradingViewEventKey(payload);
+  const keyB = buildTradingViewEventKey({
+    ...payload,
+    themeIds: ["a", "b"],
+    companyIds: ["1", "2"]
+  });
+
+  assert.equal(keyA, keyB);
+  assert.equal(
+    buildTradingViewEventKey({
+      ...payload,
+      eventKey: "tv-custom-key"
+    }),
+    "tv-custom-key"
+  );
+});
+
+test("tradingview timestamp validation accepts fresh values and rejects stale ones", () => {
+  const now = new Date("2026-04-14T12:00:00.000Z");
+
+  assert.deepEqual(
+    validateTradingViewTimestamp("2026-04-14T11:58:00.000Z", now, {
+      dedupTtlSeconds: 300,
+      timestampToleranceSeconds: 300,
+      rateLimitPerMinute: 120,
+      enforceTimestamp: false
+    }),
+    {
+      ok: true,
+      normalizedTimestamp: "2026-04-14T11:58:00.000Z"
+    }
+  );
+
+  assert.deepEqual(
+    validateTradingViewTimestamp("2026-04-14T11:40:00.000Z", now, {
+      dedupTtlSeconds: 300,
+      timestampToleranceSeconds: 300,
+      rateLimitPerMinute: 120,
+      enforceTimestamp: false
+    }),
+    {
+      ok: false,
+      error: "timestamp_out_of_range"
+    }
+  );
 });
 
 test("memory repository supports core research-to-review loop", async () => {

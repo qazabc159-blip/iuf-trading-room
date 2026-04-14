@@ -181,7 +181,12 @@ async function main() {
     });
     assert.equal(signal.data.title, "CI smoke signal");
 
-    const webhookSignal = await request<JsonEnvelope<{ id: string; title: string; direction: string }>>(
+    const eventTimestamp = new Date().toISOString();
+    const webhookSignal = await request<
+      JsonEnvelope<{ id: string; title: string; direction: string }> & {
+        meta?: { duplicate: boolean; eventKey: string };
+      }
+    >(
       baseUrl,
       "/api/v1/webhooks/tradingview",
       {
@@ -193,6 +198,8 @@ async function main() {
           exchange: "NASDAQ",
           price: "123.45",
           interval: "1D",
+          timestamp: eventTimestamp,
+          eventKey: "smoke-tv-event",
           direction: "bullish",
           category: "price",
           confidence: 5,
@@ -204,6 +211,49 @@ async function main() {
     );
     assert.match(webhookSignal.data.title, /TV Alert/);
     assert.equal(webhookSignal.data.direction, "bullish");
+    assert.equal(webhookSignal.meta?.duplicate, false);
+
+    const duplicateWebhookSignal = await request<
+      JsonEnvelope<{ id: string; title: string; direction: string }> & {
+        meta?: { duplicate: boolean; eventKey: string };
+      }
+    >(baseUrl, "/api/v1/webhooks/tradingview", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        token: webhookToken,
+        ticker: "SMK1",
+        exchange: "NASDAQ",
+        price: "123.45",
+        interval: "1D",
+        timestamp: eventTimestamp,
+        eventKey: "smoke-tv-event",
+        direction: "bullish",
+        category: "price",
+        confidence: 5,
+        summary: "Webhook smoke signal",
+        themeIds: [theme.data.id],
+        companyIds: [company.data.id]
+      })
+    });
+    assert.equal(duplicateWebhookSignal.data.id, webhookSignal.data.id);
+    assert.equal(duplicateWebhookSignal.meta?.duplicate, true);
+
+    const staleWebhookResponse = await fetch(`${baseUrl}/api/v1/webhooks/tradingview`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-workspace-slug": workspaceSlug
+      },
+      body: JSON.stringify({
+        token: webhookToken,
+        ticker: "SMK1",
+        timestamp: "2020-01-01T00:00:00.000Z"
+      })
+    });
+    assert.equal(staleWebhookResponse.status, 400);
+    const staleWebhookBody = (await staleWebhookResponse.json()) as { error: string };
+    assert.equal(staleWebhookBody.error, "timestamp_out_of_range");
 
     const plan = await request<JsonEnvelope<{ id: string; companyId: string }>>(baseUrl, "/api/v1/plans", {
       method: "POST",

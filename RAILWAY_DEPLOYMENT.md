@@ -154,6 +154,7 @@ After deploy, verify all of the following:
 - `OPENALICE_SWEEP_INTERVAL_SECONDS` and `OPENALICE_DEVICE_STALE_SECONDS` control background maintenance cadence and stale-device reporting on the worker.
 - `POST /api/v1/openalice/devices/:deviceId/revoke` and `POST /api/v1/openalice/devices/cleanup` are available for manual remediation of bad or stale devices.
 - `TV_WEBHOOK_TOKEN` must be set on `api` before enabling the TradingView webhook.
+- TradingView webhook hardening is controlled by `TV_WEBHOOK_DEDUP_TTL_SECONDS`, `TV_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS`, `TV_WEBHOOK_RATE_LIMIT_PER_MINUTE`, and `TV_WEBHOOK_ENFORCE_TIMESTAMP`.
 - `MY_TW_COVERAGE_PATH` is a local-ingest concern and should not be set in Railway.
 - Trial resources were enough for `web + api + worker + pg`, but the full stack with `cache` required the `Hobby` upgrade.
 - Delete the unused `redis` service in the Railway dashboard when convenient to avoid future confusion.
