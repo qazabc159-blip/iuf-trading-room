@@ -1,26 +1,31 @@
 # Railway Deployment
 
-This repo is set up for a `Railway-first` topology:
+This repo is deployed on Railway as a single project with five active services:
 
 - `web`: Next.js control tower
 - `api`: Hono API
 - `worker`: long-running background worker
-- `Postgres`: managed Railway PostgreSQL
-- `Redis`: managed Railway Redis
+- `pg`: PostgreSQL 16 container with a Railway volume
+- `cache`: Redis 7 container with a Railway volume
 
-## Service Layout
+Current production endpoints:
 
-Create one Railway project with five services:
+- `web`: `https://web-production-7896c.up.railway.app`
+- `api`: `https://api-production-8f08.up.railway.app`
 
-1. `web`
-2. `api`
-3. `worker`
-4. `Postgres`
-5. `Redis`
+There is also one legacy failed service named `redis` left over from an early image-tag mistake. It is not used by production and can be deleted from the Railway dashboard.
 
-Use the same GitHub repo for `web`, `api`, and `worker`.
+## Service Inventory
 
-## Build and Start Commands
+| Service | Type | Source | Notes |
+| --- | --- | --- | --- |
+| `web` | App | GitHub repo root | Uses `pnpm build:web` and `pnpm start:web` |
+| `api` | App | GitHub repo root | Runs migrations before boot with `pnpm start:api:railway` |
+| `worker` | App | GitHub repo root | Connects to Postgres and Redis |
+| `pg` | Docker image | `postgres:16-alpine` | Volume mounted at `/var/lib/postgresql/data` |
+| `cache` | Docker image | `redis:7-alpine` | Volume mounted at `/data` |
+
+## Build And Start Commands
 
 Configure each app service from the repo root.
 
@@ -39,61 +44,102 @@ Configure each app service from the repo root.
 - Build command: `pnpm build:worker`
 - Start command: `pnpm start:worker`
 
-## Variables
+The root scripts that support these commands live in `package.json`.
+
+## Environment Matrix
 
 ### Shared defaults
 
-Set these once unless you need a different workspace slug:
-
 ```env
 DEFAULT_WORKSPACE_SLUG=primary-desk
 NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG=primary-desk
-```
-
-### API service
-
-```env
-PERSISTENCE_MODE=database
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-REDIS_URL=${{Redis.REDIS_URL}}
-DEFAULT_WORKSPACE_SLUG=primary-desk
 HOST=0.0.0.0
 ```
 
-### Worker service
+### pg
+
+Set these directly on the `pg` service:
+
+```env
+POSTGRES_DB=iuf_trading_room
+POSTGRES_USER=iuf_admin
+POSTGRES_PASSWORD=<secret>
+PGDATA=/var/lib/postgresql/data/pgdata
+```
+
+Internal connection host: `pg.railway.internal`
+
+### cache
+
+No extra runtime config is required beyond the default `redis:7-alpine` image.  
+Internal connection host: `cache.railway.internal`
+
+### api
 
 ```env
 PERSISTENCE_MODE=database
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-REDIS_URL=${{Redis.REDIS_URL}}
+DATABASE_URL=postgresql://iuf_admin:<secret>@pg.railway.internal:5432/iuf_trading_room
+REDIS_URL=redis://cache.railway.internal:6379
+DEFAULT_WORKSPACE_SLUG=primary-desk
+HOST=0.0.0.0
+RAILPACK_INSTALL_CMD=pnpm install --frozen-lockfile
+RAILPACK_BUILD_CMD=pnpm build:api
+RAILPACK_START_CMD=pnpm start:api:railway
+```
+
+### worker
+
+```env
+PERSISTENCE_MODE=database
+DATABASE_URL=postgresql://iuf_admin:<secret>@pg.railway.internal:5432/iuf_trading_room
+REDIS_URL=redis://cache.railway.internal:6379
 DEFAULT_WORKSPACE_SLUG=primary-desk
 WORKER_HEARTBEAT_SECONDS=60
+RAILPACK_INSTALL_CMD=pnpm install --frozen-lockfile
+RAILPACK_BUILD_CMD=pnpm build:worker
+RAILPACK_START_CMD=pnpm start:worker
 ```
 
-### Web service
+### web
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=https://<your-api-domain>
+NEXT_PUBLIC_API_BASE_URL=https://api-production-8f08.up.railway.app
 NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG=primary-desk
 HOST=0.0.0.0
+RAILPACK_INSTALL_CMD=pnpm install --frozen-lockfile
+RAILPACK_BUILD_CMD=pnpm build:web
+RAILPACK_START_CMD=pnpm start:web
 ```
-
-The web app currently calls the API directly from the browser, so `api` needs a public domain.
 
 ## Deployment Order
 
 1. Create the Railway project.
-2. Add `Postgres` and `Redis`.
-3. Add `api`, `worker`, and `web` from GitHub.
-4. Set the service variables.
-5. Assign a public domain to `api`.
-6. Set `NEXT_PUBLIC_API_BASE_URL` on `web` to that domain.
-7. Deploy `api` first so migrations can run.
-8. Deploy `worker`.
-9. Deploy `web`.
+2. Add empty services: `web`, `api`, `worker`.
+3. Add Docker image services: `pg` with `postgres:16-alpine`, `cache` with `redis:7-alpine`.
+4. Attach a Railway volume to `pg` at `/var/lib/postgresql/data`.
+5. Attach a Railway volume to `cache` at `/data`.
+6. Set `pg` credentials and application environment variables.
+7. Deploy `api` first so migrations run against Postgres.
+8. Deploy `worker` after `api` is healthy.
+9. Generate a Railway domain for `api`.
+10. Set `NEXT_PUBLIC_API_BASE_URL` on `web`.
+11. Deploy `web`.
 
-## Notes
+## Verification Checklist
 
+After deploy, verify all of the following:
+
+1. `api` returns `{"status":"ok"}` from `/health`
+2. `api` returns a database-backed session from `/api/v1/session`
+3. `worker` logs show `Redis connected (PONG).`
+4. `web` returns HTTP `200` from the production URL
+5. `pg` and `cache` are both in `SUCCESS` status in Railway
+
+## Important Notes
+
+- `pnpm start:api:railway` runs migrations before the API boots.
 - The migration runner uses an advisory lock and tracks applied SQL files in `schema_migrations`, so repeated API deploys are safe.
-- `worker` is intentionally long-running and writes a Redis heartbeat at `iuf:worker:last_heartbeat` when `REDIS_URL` is configured.
-- `MY_TW_COVERAGE_PATH` is a local-ingest concern and is not expected on Railway.
+- `worker` writes a Redis heartbeat key at `iuf:worker:last_heartbeat`.
+- `MY_TW_COVERAGE_PATH` is a local-ingest concern and should not be set in Railway.
+- Trial resources were enough for `web + api + worker + pg`, but the full stack with `cache` required the `Hobby` upgrade.
+- Delete the unused `redis` service in the Railway dashboard when convenient to avoid future confusion.

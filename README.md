@@ -41,4 +41,4 @@ Use the repo root as the source directory for all Railway services, then set:
 
 `pnpm start:api:railway` runs migrations before booting the API.
 
-See [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md) for the full setup checklist.
+See [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md) for the deployment topology and [RAILWAY_RUNBOOK.md](./RAILWAY_RUNBOOK.md) for day-to-day operations.
