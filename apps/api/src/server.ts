@@ -56,7 +56,12 @@ import {
   listAuditLogEntries,
   writeAuditLog
 } from "./audit-log-store.js";
-import { getEventHistory, parseEventHistorySources } from "./event-history.js";
+import {
+  formatEventHistoryItemsAsCsv,
+  getEventHistory,
+  getEventHistorySummary,
+  parseEventHistorySources
+} from "./event-history.js";
 import { getOpsSnapshot } from "./ops-snapshot.js";
 
 type Variables = {
@@ -219,7 +224,15 @@ const eventHistoryQuerySchema = z.object({
   hours: z.coerce.number().int().min(1).max(24 * 30).optional(),
   sources: z.string().min(1).max(200).optional(),
   entityType: z.string().min(1).max(120).optional(),
+  entityId: z.string().min(1).max(160).optional(),
+  action: z.string().min(1).max(120).optional(),
+  status: z.string().min(1).max(120).optional(),
+  severity: z.enum(["info", "success", "warning", "danger"]).optional(),
   search: z.string().min(1).max(200).optional()
+});
+
+const eventHistoryExportQuerySchema = eventHistoryQuerySchema.extend({
+  format: z.enum(["csv", "json"]).default("csv")
 });
 
 const opsSnapshotQuerySchema = z.object({
@@ -383,8 +396,56 @@ app.get("/api/v1/event-history", async (c) => {
       limit: query.limit,
       sources: parseEventHistorySources(query.sources),
       entityType: query.entityType,
+      entityId: query.entityId,
+      action: query.action,
+      status: query.status,
+      severity: query.severity,
       search: query.search
     })
+  });
+});
+
+app.get("/api/v1/event-history/summary", async (c) => {
+  const query = eventHistoryQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getEventHistorySummary({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      hours: query.hours,
+      sources: parseEventHistorySources(query.sources),
+      entityType: query.entityType,
+      entityId: query.entityId,
+      action: query.action,
+      status: query.status,
+      severity: query.severity,
+      search: query.search
+    })
+  });
+});
+
+app.get("/api/v1/event-history/export", async (c) => {
+  const query = eventHistoryExportQuerySchema.parse(c.req.query());
+  const items = await getEventHistory({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    hours: query.hours,
+    limit: query.limit ?? 200,
+    sources: parseEventHistorySources(query.sources),
+    entityType: query.entityType,
+    entityId: query.entityId,
+    action: query.action,
+    status: query.status,
+    severity: query.severity,
+    search: query.search
+  });
+
+  if (query.format === "json") {
+    return c.json({ data: items });
+  }
+
+  return c.body(formatEventHistoryItemsAsCsv(items), 200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename=\"event-history-${new Date().toISOString().slice(0, 10)}.csv\"`
   });
 });
 

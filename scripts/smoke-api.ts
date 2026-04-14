@@ -526,6 +526,33 @@ async function main() {
     assert.ok(Array.isArray(eventHistory.data));
     assert.ok(eventHistory.data.some((entry) => entry.source === "signal"));
 
+    const eventHistorySummary = await request<
+      JsonEnvelope<{
+        windowHours: number;
+        total: number;
+        sources: Array<{ source: string; count: number }>;
+        severities: Array<{ severity: string; count: number }>;
+      }>
+    >(baseUrl, "/api/v1/event-history/summary?hours=24&sources=audit,signal,plan,review,brief,openalice", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(eventHistorySummary.data.windowHours, 24);
+    assert.ok(eventHistorySummary.data.total >= 1);
+    assert.ok(Array.isArray(eventHistorySummary.data.sources));
+    assert.ok(Array.isArray(eventHistorySummary.data.severities));
+
+    const eventHistoryExport = await fetch(
+      `${baseUrl}/api/v1/event-history/export?format=csv&hours=24&severity=success&limit=10`,
+      {
+        headers: { "x-workspace-slug": workspaceSlug }
+      }
+    );
+    assert.equal(eventHistoryExport.status, 200);
+    assert.match(eventHistoryExport.headers.get("content-type") ?? "", /text\/csv/);
+    const eventHistoryExportBody = await eventHistoryExport.text();
+    assert.match(eventHistoryExportBody, /created_at/);
+    assert.match(eventHistoryExportBody, /severity/);
+
     const opsSnapshot = await request<
       JsonEnvelope<{
         generatedAt: string;

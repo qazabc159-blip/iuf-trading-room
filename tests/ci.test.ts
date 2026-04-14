@@ -29,6 +29,7 @@ import {
 } from "../apps/api/src/audit-log-store.ts";
 import {
   buildEventHistoryView,
+  formatEventHistoryItemsAsCsv,
   parseEventHistorySources
 } from "../apps/api/src/event-history.ts";
 import { buildOpsSnapshotView } from "../apps/api/src/ops-snapshot.ts";
@@ -312,6 +313,29 @@ test("event history source parser falls back safely", () => {
     "brief",
     "openalice"
   ]);
+});
+
+test("event history csv export includes timeline columns", () => {
+  const csv = formatEventHistoryItemsAsCsv([
+    {
+      id: "signal:1",
+      source: "signal",
+      action: "bullish",
+      entityType: "signal",
+      entityId: "1",
+      title: "Signal trigger",
+      subtitle: "price / confidence 4",
+      status: "bullish",
+      severity: "success",
+      createdAt: "2026-04-14T10:05:00.000Z",
+      href: "/signals",
+      tags: ["price", "bullish"]
+    }
+  ]);
+
+  assert.match(csv, /"created_at".*"tags"/);
+  assert.match(csv, /"signal"/);
+  assert.match(csv, /"price\|bullish"/);
 });
 
 test("ops snapshot view aggregates stats and latest activity", () => {

@@ -41,6 +41,16 @@ export type EventHistoryItem = {
   tags: string[];
 };
 
+export type EventHistorySummary = {
+  windowHours: number;
+  total: number;
+  latestCreatedAt: string | null;
+  sources: Array<{ source: EventHistorySource; count: number }>;
+  severities: Array<{ severity: EventHistoryItem["severity"]; count: number }>;
+  entities: Array<{ entityType: string; count: number }>;
+  recent: EventHistoryItem[];
+};
+
 const defaultEventHistorySources: EventHistorySource[] = [
   "audit",
   "theme",
@@ -69,7 +79,7 @@ function clipText(value: string, maxLength = 96) {
     return value;
   }
 
-  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+  return `${value.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
 function humanizeOpenAliceTask(taskType: BridgeJobRecord["taskType"]) {
@@ -134,6 +144,10 @@ export function buildEventHistoryView(input: {
   audit: AuditEntry[];
   sources?: EventHistorySource[];
   entityType?: string;
+  entityId?: string;
+  action?: string;
+  status?: string;
+  severity?: EventHistoryItem["severity"];
   search?: string;
   limit?: number;
 }) {
@@ -181,7 +195,7 @@ export function buildEventHistoryView(input: {
           entityType: "theme",
           entityId: theme.id,
           title: theme.name,
-          subtitle: `${theme.lifecycle} · priority ${theme.priority}`,
+          subtitle: `${theme.lifecycle} / priority ${theme.priority}`,
           status: theme.marketState,
           severity: "info",
           createdAt: theme.updatedAt,
@@ -202,7 +216,7 @@ export function buildEventHistoryView(input: {
           entityType: "company",
           entityId: company.id,
           title: `${company.ticker} ${company.name}`,
-          subtitle: `${company.market} · ${company.beneficiaryTier}`,
+          subtitle: `${company.market} / ${company.beneficiaryTier}`,
           status: company.beneficiaryTier,
           severity: "info",
           createdAt: company.updatedAt,
@@ -223,7 +237,7 @@ export function buildEventHistoryView(input: {
           entityType: "signal",
           entityId: signal.id,
           title: signal.title,
-          subtitle: `${signal.category} · confidence ${signal.confidence}`,
+          subtitle: `${signal.category} / confidence ${signal.confidence}`,
           status: signal.direction,
           severity:
             signal.direction === "bullish"
@@ -301,7 +315,7 @@ export function buildEventHistoryView(input: {
           entityType: "brief",
           entityId: brief.id,
           title: `Daily brief ${brief.date}`,
-          subtitle: `${brief.marketState} · ${brief.generatedBy}`,
+          subtitle: `${brief.marketState} / ${brief.generatedBy}`,
           status: brief.status,
           severity: brief.status === "published" ? "success" : "info",
           createdAt: brief.createdAt,
@@ -335,6 +349,10 @@ export function buildEventHistoryView(input: {
 
   return items
     .filter((item) => !input.entityType || item.entityType === input.entityType)
+    .filter((item) => !input.entityId || item.entityId === input.entityId)
+    .filter((item) => !input.action || item.action === input.action)
+    .filter((item) => !input.status || item.status === input.status)
+    .filter((item) => !input.severity || item.severity === input.severity)
     .filter((item) => {
       if (!searchNeedle) {
         return true;
@@ -358,6 +376,77 @@ export function buildEventHistoryView(input: {
     .slice(0, limit);
 }
 
+export function summarizeEventHistoryItems(
+  items: EventHistoryItem[],
+  windowHours: number
+): EventHistorySummary {
+  const sourceCounts = new Map<EventHistorySource, number>();
+  const severityCounts = new Map<EventHistoryItem["severity"], number>();
+  const entityCounts = new Map<string, number>();
+
+  for (const item of items) {
+    sourceCounts.set(item.source, (sourceCounts.get(item.source) ?? 0) + 1);
+    severityCounts.set(item.severity, (severityCounts.get(item.severity) ?? 0) + 1);
+    entityCounts.set(item.entityType, (entityCounts.get(item.entityType) ?? 0) + 1);
+  }
+
+  return {
+    windowHours,
+    total: items.length,
+    latestCreatedAt: items[0]?.createdAt ?? null,
+    sources: [...sourceCounts.entries()]
+      .map(([source, count]) => ({ source, count }))
+      .sort((left, right) => right.count - left.count || left.source.localeCompare(right.source)),
+    severities: [...severityCounts.entries()]
+      .map(([severity, count]) => ({ severity, count }))
+      .sort(
+        (left, right) => right.count - left.count || left.severity.localeCompare(right.severity)
+      ),
+    entities: [...entityCounts.entries()]
+      .map(([entityType, count]) => ({ entityType, count }))
+      .sort((left, right) => right.count - left.count || left.entityType.localeCompare(right.entityType)),
+    recent: items.slice(0, 10)
+  };
+}
+
+function escapeCsvValue(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+export function formatEventHistoryItemsAsCsv(items: EventHistoryItem[]) {
+  const header = [
+    "created_at",
+    "source",
+    "action",
+    "entity_type",
+    "entity_id",
+    "status",
+    "severity",
+    "title",
+    "subtitle",
+    "href",
+    "tags"
+  ];
+
+  const rows = items.map((item) => [
+    item.createdAt,
+    item.source,
+    item.action,
+    item.entityType,
+    item.entityId,
+    item.status ?? "",
+    item.severity,
+    item.title,
+    item.subtitle ?? "",
+    item.href ?? "",
+    item.tags.join("|")
+  ]);
+
+  return [header, ...rows]
+    .map((row) => row.map((value) => escapeCsvValue(String(value))).join(","))
+    .join("\n");
+}
+
 export async function getEventHistory(input: {
   session: AppSession;
   repo: TradingRoomRepository;
@@ -365,6 +454,10 @@ export async function getEventHistory(input: {
   limit?: number;
   sources?: EventHistorySource[];
   entityType?: string;
+  entityId?: string;
+  action?: string;
+  status?: string;
+  severity?: EventHistoryItem["severity"];
   search?: string;
 }) {
   const workspaceSlug = input.session.workspace.slug;
@@ -417,7 +510,41 @@ export async function getEventHistory(input: {
     audit,
     sources,
     entityType: input.entityType,
+    entityId: input.entityId,
+    action: input.action,
+    status: input.status,
+    severity: input.severity,
     search: input.search,
     limit
   });
+}
+
+export async function getEventHistorySummary(input: {
+  session: AppSession;
+  repo: TradingRoomRepository;
+  hours?: number;
+  sources?: EventHistorySource[];
+  entityType?: string;
+  entityId?: string;
+  action?: string;
+  status?: string;
+  severity?: EventHistoryItem["severity"];
+  search?: string;
+}) {
+  const windowHours = Math.max(1, Math.min(input.hours ?? 24, 24 * 30));
+  const items = await getEventHistory({
+    session: input.session,
+    repo: input.repo,
+    hours: windowHours,
+    limit: 500,
+    sources: input.sources,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    action: input.action,
+    status: input.status,
+    severity: input.severity,
+    search: input.search
+  });
+
+  return summarizeEventHistoryItems(items, windowHours);
 }
