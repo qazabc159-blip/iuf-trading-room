@@ -128,3 +128,41 @@ export async function createBrief(input: DailyBriefCreateInput) {
     body: JSON.stringify(input)
   });
 }
+
+// OpenAlice Jobs (Draft Review Queue)
+
+export type OpenAliceJobEntry = {
+  id: string;
+  workspaceSlug: string;
+  deviceId?: string;
+  status: string;
+  taskType: string;
+  instructions: string;
+  contextRefs: Array<{ type: string; id?: string; path?: string; url?: string }>;
+  result?: {
+    jobId: string;
+    status: string;
+    schemaName: string;
+    structured?: unknown;
+    rawText?: string;
+    warnings?: string[];
+    artifacts?: Array<{ label: string; path?: string; mimeType?: string }>;
+  };
+  createdAt: string;
+  claimedAt?: string;
+  completedAt?: string;
+  attemptCount?: number;
+  maxAttempts?: number;
+  error?: string;
+};
+
+export async function getOpenAliceJobs() {
+  return request<OpenAliceJobEntry[]>("/api/v1/openalice/jobs");
+}
+
+export async function updateOpenAliceJobStatus(jobId: string, status: "published" | "rejected") {
+  return request<{ id: string; status: string }>(`/api/v1/openalice/jobs/${jobId}/review`, {
+    method: "PATCH",
+    body: JSON.stringify({ status })
+  });
+}
