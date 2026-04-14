@@ -11,7 +11,9 @@
     "start": "node dist/worker.js"
   },
   "dependencies": {
+    "@iuf-trading-room/db": "workspace:*",
     "@iuf-trading-room/domain": "workspace:*",
+    "drizzle-orm": "^0.44.5",
     "redis": "^5.9.0"
   },
   "devDependencies": {

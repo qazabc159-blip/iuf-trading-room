@@ -105,6 +105,7 @@ OpenAlice bridge reliability knobs:
 ```powershell
 railway.cmd variable set -s api OPENALICE_DEFAULT_TIMEOUT_SECONDS=900 OPENALICE_MAX_ATTEMPTS=3
 railway.cmd variable set -s worker OPENALICE_DEFAULT_TIMEOUT_SECONDS=900 OPENALICE_MAX_ATTEMPTS=3
+railway.cmd variable set -s worker OPENALICE_SWEEP_INTERVAL_SECONDS=60 OPENALICE_DEVICE_STALE_SECONDS=21600
 ```
 
 TradingView webhook secret:
@@ -127,7 +128,8 @@ railway.cmd variable set -s api TV_WEBHOOK_TOKEN=replace-with-your-secret
 1. Check `worker` logs for startup errors.
 2. Confirm `REDIS_URL` is present on `worker`.
 3. Look for `Redis connected (PONG).`
-4. Check that `cache` is `SUCCESS`.
+4. Look for an `OpenAlice maintenance (...)` log line after startup.
+5. Check that `cache` is `SUCCESS`.
 
 ### Web loads but data is empty or broken
 
@@ -152,7 +154,9 @@ railway.cmd variable set -s api TV_WEBHOOK_TOKEN=replace-with-your-secret
 1. Check `api` logs for failed claim/result requests.
 2. Check `worker` or device logs for missed heartbeats.
 3. Confirm `OPENALICE_DEFAULT_TIMEOUT_SECONDS` and `OPENALICE_MAX_ATTEMPTS` are set as expected.
-4. Wait for the lease to expire, then verify the job is re-queued or marked failed after retry exhaustion.
+4. Confirm the worker is still running scheduled sweeps via `OpenAlice maintenance (...)` log lines.
+5. Inspect `iuf:openalice:last_sweep` and `iuf:openalice:metrics` in Redis if needed.
+6. Wait for the lease to expire, then verify the job is re-queued or marked failed after retry exhaustion.
 
 ### TradingView webhook returns 401 or 400
 

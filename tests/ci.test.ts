@@ -11,6 +11,10 @@ import {
   registerOpenAliceDevice,
   submitOpenAliceResult
 } from "../apps/api/src/openalice-bridge.ts";
+import {
+  collectOpenAliceMaintenanceMetrics,
+  resolveExpiredJobTransition
+} from "../apps/worker/src/openalice-maintenance.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
 import { parseGraphData } from "../packages/integrations/src/my-tw-coverage/graph-parser.ts";
@@ -220,4 +224,91 @@ test("openalice bridge requeues stale jobs and blocks stale submitters", async (
   const completed = jobs.find((item) => item.id === job.jobId);
   assert.equal(completed?.status, "draft_ready");
   assert.equal(completed?.attemptCount, 2);
+});
+
+test("openalice maintenance resolves expired leases into requeue or failure", () => {
+  const now = new Date("2026-04-14T12:00:00.000Z");
+
+  assert.deepEqual(
+    resolveExpiredJobTransition(
+      {
+        status: "running",
+        leaseExpiresAt: new Date("2026-04-14T11:59:00.000Z"),
+        attemptCount: 1,
+        maxAttempts: 3
+      },
+      now
+    ),
+    {
+      status: "queued",
+      error: null
+    }
+  );
+
+  assert.deepEqual(
+    resolveExpiredJobTransition(
+      {
+        status: "running",
+        leaseExpiresAt: new Date("2026-04-14T11:59:00.000Z"),
+        attemptCount: 3,
+        maxAttempts: 3
+      },
+      now
+    ),
+    {
+      status: "failed",
+      error: "OpenAlice job lease expired after 3 attempts."
+    }
+  );
+});
+
+test("openalice maintenance metrics count stale jobs and stale devices", () => {
+  const now = new Date("2026-04-14T12:00:00.000Z");
+
+  const metrics = collectOpenAliceMaintenanceMetrics({
+    now,
+    mode: "database",
+    deviceStaleSeconds: 600,
+    expiredJobsRequeued: 2,
+    expiredJobsFailed: 1,
+    jobs: [
+      {
+        status: "queued",
+        leaseExpiresAt: null,
+        attemptCount: 0,
+        maxAttempts: 3
+      },
+      {
+        status: "running",
+        leaseExpiresAt: new Date("2026-04-14T11:55:00.000Z"),
+        attemptCount: 1,
+        maxAttempts: 3
+      },
+      {
+        status: "draft_ready",
+        leaseExpiresAt: null,
+        attemptCount: 2,
+        maxAttempts: 3
+      }
+    ],
+    devices: [
+      {
+        status: "active",
+        lastSeenAt: new Date("2026-04-14T11:40:00.000Z")
+      },
+      {
+        status: "active",
+        lastSeenAt: new Date("2026-04-14T11:59:30.000Z")
+      }
+    ]
+  });
+
+  assert.equal(metrics.queuedJobs, 1);
+  assert.equal(metrics.runningJobs, 1);
+  assert.equal(metrics.terminalJobs, 1);
+  assert.equal(metrics.staleRunningJobs, 1);
+  assert.equal(metrics.activeDevices, 2);
+  assert.equal(metrics.staleDevices, 1);
+  assert.equal(metrics.expiredJobsRequeued, 2);
+  assert.equal(metrics.expiredJobsFailed, 1);
 });
