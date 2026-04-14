@@ -28,6 +28,9 @@ export type OpenAliceBridgeJob = {
   contextRefs: OpenAliceBridgeContextRef[];
   createdAt: string;
   timeoutSeconds?: number;
+  attemptCount?: number;
+  maxAttempts?: number;
+  leaseExpiresAt?: string;
 };
 
 export type OpenAliceBridgeResult = {
@@ -65,5 +68,10 @@ export type BridgeJobRecord = {
   result?: OpenAliceBridgeResult;
   createdAt: string;
   claimedAt?: string;
+  lastHeartbeatAt?: string;
+  leaseExpiresAt?: string;
   completedAt?: string;
+  attemptCount?: number;
+  maxAttempts?: number;
+  error?: string;
 };

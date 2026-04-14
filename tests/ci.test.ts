@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
+import {
+  authenticateOpenAliceDevice,
+  claimOpenAliceJob,
+  enqueueOpenAliceJob,
+  listOpenAliceJobs,
+  registerOpenAliceDevice,
+  submitOpenAliceResult
+} from "../apps/api/src/openalice-bridge.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
 import { parseGraphData } from "../packages/integrations/src/my-tw-coverage/graph-parser.ts";
@@ -133,4 +143,81 @@ test("memory repository supports core research-to-review loop", async () => {
     true
   );
   assert.equal((await repo.listBriefs()).some((item) => item.id === brief.id), true);
+});
+
+test("openalice bridge requeues stale jobs and blocks stale submitters", async () => {
+  const suffix = randomUUID();
+  const workspaceSlug = `bridge-${suffix}`;
+
+  const registrationA = await registerOpenAliceDevice({
+    workspaceSlug,
+    deviceId: `device-a-${suffix}`,
+    deviceName: "Bridge Test A",
+    capabilities: ["drafts"]
+  });
+  const registrationB = await registerOpenAliceDevice({
+    workspaceSlug,
+    deviceId: `device-b-${suffix}`,
+    deviceName: "Bridge Test B",
+    capabilities: ["drafts"]
+  });
+
+  const deviceA = await authenticateOpenAliceDevice({
+    deviceId: registrationA.deviceId,
+    token: registrationA.deviceToken
+  });
+  const deviceB = await authenticateOpenAliceDevice({
+    deviceId: registrationB.deviceId,
+    token: registrationB.deviceToken
+  });
+
+  assert.ok(deviceA);
+  assert.ok(deviceB);
+
+  const job = await enqueueOpenAliceJob({
+    workspaceSlug,
+    taskType: "daily_brief",
+    schemaName: "BriefDraft",
+    instructions: "Draft a bridge smoke brief.",
+    contextRefs: [],
+    parameters: { source: "ci" },
+    timeoutSeconds: 1
+  });
+
+  const firstClaim = await claimOpenAliceJob(deviceA);
+  assert.equal(firstClaim?.jobId, job.jobId);
+  assert.equal(firstClaim?.attemptCount, 1);
+
+  await delay(1_100);
+
+  const secondClaim = await claimOpenAliceJob(deviceB);
+  assert.equal(secondClaim?.jobId, job.jobId);
+  assert.equal(secondClaim?.attemptCount, 2);
+
+  const staleSubmit = await submitOpenAliceResult({
+    device: deviceA,
+    result: {
+      jobId: job.jobId,
+      status: "draft_ready",
+      schemaName: "BriefDraft",
+      rawText: "stale"
+    }
+  });
+  assert.equal(staleSubmit, null);
+
+  const freshSubmit = await submitOpenAliceResult({
+    device: deviceB,
+    result: {
+      jobId: job.jobId,
+      status: "draft_ready",
+      schemaName: "BriefDraft",
+      rawText: "fresh"
+    }
+  });
+  assert.equal(freshSubmit?.status, "draft_ready");
+
+  const jobs = await listOpenAliceJobs(workspaceSlug);
+  const completed = jobs.find((item) => item.id === job.jobId);
+  assert.equal(completed?.status, "draft_ready");
+  assert.equal(completed?.attemptCount, 2);
 });

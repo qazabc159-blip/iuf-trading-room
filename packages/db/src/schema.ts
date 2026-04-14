@@ -1,4 +1,5 @@
 import {
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -205,9 +206,25 @@ export const openAliceJobs = pgTable("openalice_jobs", {
   contextRefs: jsonb("context_refs").default([]).notNull(),
   parameters: jsonb("parameters").default({}).notNull(),
   timeoutSeconds: integer("timeout_seconds"),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  maxAttempts: integer("max_attempts").default(3).notNull(),
   result: jsonb("result"),
   error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true })
-});
+},
+  (table) => ({
+    workspaceStatusIdx: index("openalice_jobs_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+      table.createdAt
+    ),
+    leaseExpiryIdx: index("openalice_jobs_lease_expires_idx").on(
+      table.status,
+      table.leaseExpiresAt
+    )
+  })
+);

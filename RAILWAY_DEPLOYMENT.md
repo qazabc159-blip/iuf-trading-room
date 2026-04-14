@@ -82,6 +82,8 @@ DATABASE_URL=postgresql://iuf_admin:<secret>@pg.railway.internal:5432/iuf_tradin
 REDIS_URL=redis://cache.railway.internal:6379
 DEFAULT_WORKSPACE_SLUG=primary-desk
 HOST=0.0.0.0
+OPENALICE_DEFAULT_TIMEOUT_SECONDS=900
+OPENALICE_MAX_ATTEMPTS=3
 RAILPACK_INSTALL_CMD=pnpm install --frozen-lockfile
 RAILPACK_BUILD_CMD=pnpm build:api
 RAILPACK_START_CMD=pnpm start:api:railway
@@ -95,6 +97,8 @@ DATABASE_URL=postgresql://iuf_admin:<secret>@pg.railway.internal:5432/iuf_tradin
 REDIS_URL=redis://cache.railway.internal:6379
 DEFAULT_WORKSPACE_SLUG=primary-desk
 WORKER_HEARTBEAT_SECONDS=60
+OPENALICE_DEFAULT_TIMEOUT_SECONDS=900
+OPENALICE_MAX_ATTEMPTS=3
 RAILPACK_INSTALL_CMD=pnpm install --frozen-lockfile
 RAILPACK_BUILD_CMD=pnpm build:worker
 RAILPACK_START_CMD=pnpm start:worker
@@ -140,6 +144,7 @@ After deploy, verify all of the following:
 - `pnpm start:api:railway` runs migrations before the API boots.
 - The migration runner uses an advisory lock and tracks applied SQL files in `schema_migrations`, so repeated API deploys are safe.
 - `worker` writes a Redis heartbeat key at `iuf:worker:last_heartbeat`.
+- OpenAlice jobs now use lease expiry and retry limits, controlled by `OPENALICE_DEFAULT_TIMEOUT_SECONDS` and `OPENALICE_MAX_ATTEMPTS`.
 - `MY_TW_COVERAGE_PATH` is a local-ingest concern and should not be set in Railway.
 - Trial resources were enough for `web + api + worker + pg`, but the full stack with `cache` required the `Hobby` upgrade.
 - Delete the unused `redis` service in the Railway dashboard when convenient to avoid future confusion.

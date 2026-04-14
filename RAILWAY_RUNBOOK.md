@@ -100,6 +100,13 @@ railway.cmd variable delete -s api KEY
 
 When `DATABASE_URL`, `REDIS_URL`, or `NEXT_PUBLIC_API_BASE_URL` changes, redeploy the affected service immediately after the update.
 
+OpenAlice bridge reliability knobs:
+
+```powershell
+railway.cmd variable set -s api OPENALICE_DEFAULT_TIMEOUT_SECONDS=900 OPENALICE_MAX_ATTEMPTS=3
+railway.cmd variable set -s worker OPENALICE_DEFAULT_TIMEOUT_SECONDS=900 OPENALICE_MAX_ATTEMPTS=3
+```
+
 ## Common Incidents
 
 ### API health fails
@@ -133,6 +140,13 @@ When `DATABASE_URL`, `REDIS_URL`, or `NEXT_PUBLIC_API_BASE_URL` changes, redeplo
 1. Check `cache` logs for boot failures.
 2. Confirm volume is still attached at `/data`.
 3. Confirm `api` and `worker` both use `redis://cache.railway.internal:6379`.
+
+### OpenAlice job appears stuck
+
+1. Check `api` logs for failed claim/result requests.
+2. Check `worker` or device logs for missed heartbeats.
+3. Confirm `OPENALICE_DEFAULT_TIMEOUT_SECONDS` and `OPENALICE_MAX_ATTEMPTS` are set as expected.
+4. Wait for the lease to expire, then verify the job is re-queued or marked failed after retry exhaustion.
 
 ## Cleanup Tasks
 
