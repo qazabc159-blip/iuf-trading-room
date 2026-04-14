@@ -20,6 +20,11 @@ export type AuditEntry = {
   entityId: string;
   payload: Record<string, unknown>;
   createdAt: string;
+  method?: string;
+  path?: string;
+  status?: number;
+  role?: string;
+  workspace?: string;
 };
 
 export type AuditSummary = {
@@ -187,6 +192,12 @@ export async function listAuditLogEntries(input: {
   entityId?: string;
   from?: Date;
   to?: Date;
+  method?: string;
+  path?: string;
+  status?: number;
+  role?: string;
+  search?: string;
+  scanLimit?: number;
 }) {
   if (!isDatabaseMode()) {
     return [] as AuditEntry[];
@@ -214,24 +225,87 @@ export async function listAuditLogEntries(input: {
     filters.push(lte(auditLogs.createdAt, input.to));
   }
 
+  const shouldPostFilter = Boolean(
+    input.method || input.path || input.status !== undefined || input.role || input.search
+  );
+  const scanLimit = Math.max(
+    input.limit ?? 50,
+    input.scanLimit ?? (shouldPostFilter ? 500 : input.limit ?? 50)
+  );
+
   const rows = await db
     .select()
     .from(auditLogs)
     .where(and(...filters))
     .orderBy(desc(auditLogs.createdAt))
-    .limit(input.limit ?? 50);
+    .limit(scanLimit);
 
-  return rows.map((row) => ({
-    id: row.id,
-    action: row.action,
-    entityType: row.entityType,
-    entityId: row.entityId,
-    payload:
+  const normalized = rows.map((row) => {
+    const payload =
       row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
         ? (row.payload as Record<string, unknown>)
-        : {},
-    createdAt: row.createdAt.toISOString()
-  }));
+        : {};
+    const method = typeof payload.method === "string" ? payload.method : undefined;
+    const path = typeof payload.path === "string" ? payload.path : undefined;
+    const status =
+      typeof payload.status === "number"
+        ? payload.status
+        : typeof payload.status === "string" && /^\d+$/.test(payload.status)
+          ? Number(payload.status)
+          : undefined;
+    const role = typeof payload.role === "string" ? payload.role : undefined;
+    const workspace = typeof payload.workspace === "string" ? payload.workspace : undefined;
+
+    return {
+      id: row.id,
+      action: row.action,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      payload,
+      createdAt: row.createdAt.toISOString(),
+      method,
+      path,
+      status,
+      role,
+      workspace
+    } satisfies AuditEntry;
+  });
+
+  const searchNeedle = input.search?.trim().toLowerCase();
+
+  return normalized
+    .filter((entry) => {
+      if (input.method && entry.method !== input.method) {
+        return false;
+      }
+      if (input.path && entry.path !== input.path) {
+        return false;
+      }
+      if (input.status !== undefined && entry.status !== input.status) {
+        return false;
+      }
+      if (input.role && entry.role !== input.role) {
+        return false;
+      }
+      if (!searchNeedle) {
+        return true;
+      }
+
+      return [
+        entry.action,
+        entry.entityType,
+        entry.entityId,
+        entry.method ?? "",
+        entry.path ?? "",
+        entry.role ?? "",
+        entry.workspace ?? "",
+        String(entry.status ?? "")
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(searchNeedle);
+    })
+    .slice(0, input.limit ?? 50);
 }
 
 export function summarizeAuditEntries(
@@ -269,6 +343,12 @@ export async function getAuditLogSummary(input: {
   hours?: number;
   action?: string;
   entityType?: string;
+  entityId?: string;
+  method?: string;
+  path?: string;
+  status?: number;
+  role?: string;
+  search?: string;
 }) {
   const windowHours = Math.max(1, Math.min(input.hours ?? 24, 24 * 30));
   const from = new Date(Date.now() - windowHours * 60 * 60 * 1000);
@@ -276,10 +356,53 @@ export async function getAuditLogSummary(input: {
   const entries = await listAuditLogEntries({
     session: input.session,
     limit: 500,
+    scanLimit: 1_000,
     action: input.action,
     entityType: input.entityType,
-    from
+    entityId: input.entityId,
+    from,
+    method: input.method,
+    path: input.path,
+    status: input.status,
+    role: input.role,
+    search: input.search
   });
 
   return summarizeAuditEntries(entries, windowHours);
+}
+
+function escapeCsvValue(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+export function formatAuditEntriesAsCsv(entries: AuditEntry[]) {
+  const header = [
+    "created_at",
+    "action",
+    "entity_type",
+    "entity_id",
+    "method",
+    "path",
+    "status",
+    "role",
+    "workspace",
+    "payload_json"
+  ];
+
+  const rows = entries.map((entry) => [
+    entry.createdAt,
+    entry.action,
+    entry.entityType,
+    entry.entityId,
+    entry.method ?? "",
+    entry.path ?? "",
+    entry.status === undefined ? "" : String(entry.status),
+    entry.role ?? "",
+    entry.workspace ?? "",
+    JSON.stringify(entry.payload ?? {})
+  ]);
+
+  return [header, ...rows]
+    .map((row) => row.map((value) => escapeCsvValue(String(value))).join(","))
+    .join("\n");
 }

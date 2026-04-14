@@ -482,6 +482,50 @@ async function main() {
     assert.ok(Array.isArray(auditSummary.data.actions));
     assert.ok(Array.isArray(auditSummary.data.entities));
 
+    const richerAuditLogs = await request<
+      JsonEnvelope<
+        Array<{
+          action: string;
+          entityType: string;
+          method?: string;
+          role?: string;
+        }>
+      >
+    >(baseUrl, "/api/v1/audit-logs?method=POST&role=Owner&search=theme", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.ok(
+      richerAuditLogs.data.every(
+        (entry) => entry.method === "POST" && entry.role === "Owner"
+      )
+    );
+
+    const auditExport = await fetch(
+      `${baseUrl}/api/v1/audit-logs/export?format=csv&method=POST&search=theme`,
+      {
+        headers: { "x-workspace-slug": workspaceSlug }
+      }
+    );
+    assert.equal(auditExport.status, 200);
+    assert.match(auditExport.headers.get("content-type") ?? "", /text\/csv/);
+    const auditExportBody = await auditExport.text();
+    assert.match(auditExportBody, /created_at/);
+    assert.match(auditExportBody, /payload_json/);
+
+    const eventHistory = await request<
+      JsonEnvelope<
+        Array<{
+          source: string;
+          entityType: string;
+          title: string;
+        }>
+      >
+    >(baseUrl, "/api/v1/event-history?hours=24&limit=10&sources=audit,signal,plan,review,brief,openalice&search=smoke", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.ok(Array.isArray(eventHistory.data));
+    assert.ok(eventHistory.data.some((entry) => entry.source === "signal"));
+
     const opsSnapshot = await request<
       JsonEnvelope<{
         generatedAt: string;

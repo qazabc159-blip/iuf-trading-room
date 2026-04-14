@@ -23,9 +23,14 @@ import {
   validateTradingViewTimestamp
 } from "../apps/api/src/tradingview-webhook-guard.ts";
 import {
+  formatAuditEntriesAsCsv,
   parseAuditTarget,
   summarizeAuditEntries
 } from "../apps/api/src/audit-log-store.ts";
+import {
+  buildEventHistoryView,
+  parseEventHistorySources
+} from "../apps/api/src/event-history.ts";
 import { buildOpsSnapshotView } from "../apps/api/src/ops-snapshot.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
@@ -195,6 +200,118 @@ test("audit summary aggregates recent actions and entity types", () => {
     { entityType: "tradingview_webhook", count: 1 }
   ]);
   assert.equal(summary.recent.length, 3);
+});
+
+test("audit csv export includes enriched columns", () => {
+  const csv = formatAuditEntriesAsCsv([
+    {
+      id: "audit-1",
+      action: "create",
+      entityType: "theme",
+      entityId: "pending",
+      payload: { note: "created theme" },
+      createdAt: "2026-04-14T10:00:00.000Z",
+      method: "POST",
+      path: "/api/v1/themes",
+      status: 201,
+      role: "Owner",
+      workspace: "primary-desk"
+    }
+  ]);
+
+  assert.match(csv, /"created_at".*"payload_json"/);
+  assert.match(csv, /"POST"/);
+  assert.match(csv, /"primary-desk"/);
+  assert.match(csv, /""note"":""created theme""/);
+});
+
+test("event history view merges multiple sources into a single timeline", () => {
+  const history = buildEventHistoryView({
+    themes: [
+      {
+        id: randomUUID(),
+        name: "Optical Upcycle",
+        slug: "optical-upcycle",
+        marketState: "Balanced",
+        lifecycle: "Validation",
+        priority: 4,
+        thesis: "",
+        whyNow: "",
+        bottleneck: "",
+        corePoolCount: 2,
+        observationPoolCount: 3,
+        createdAt: "2026-04-14T08:00:00.000Z",
+        updatedAt: "2026-04-14T10:00:00.000Z"
+      }
+    ],
+    companies: [],
+    signals: [
+      {
+        id: randomUUID(),
+        category: "price",
+        direction: "bullish",
+        title: "Signal trigger",
+        summary: "",
+        confidence: 4,
+        themeIds: [],
+        companyIds: [],
+        createdAt: "2026-04-14T10:05:00.000Z"
+      }
+    ],
+    plans: [],
+    reviews: [],
+    briefs: [],
+    jobs: [
+      {
+        id: randomUUID(),
+        workspaceSlug: "primary-desk",
+        status: "draft_ready",
+        taskType: "daily_brief",
+        instructions: "Draft the market brief",
+        contextRefs: [],
+        createdAt: "2026-04-14T10:10:00.000Z"
+      }
+    ],
+    audit: [
+      {
+        id: "audit-1",
+        action: "ingest",
+        entityType: "tradingview_webhook",
+        entityId: "event",
+        payload: {},
+        createdAt: "2026-04-14T10:15:00.000Z",
+        method: "POST",
+        path: "/api/v1/webhooks/tradingview",
+        status: 201,
+        role: "Owner",
+        workspace: "primary-desk"
+      }
+    ],
+    limit: 10
+  });
+
+  assert.equal(history.length, 4);
+  assert.equal(history[0]?.source, "audit");
+  assert.equal(history[1]?.source, "openalice");
+  assert.equal(history[2]?.source, "signal");
+  assert.equal(history[3]?.source, "theme");
+});
+
+test("event history source parser falls back safely", () => {
+  assert.deepEqual(parseEventHistorySources("signal,openalice,audit"), [
+    "signal",
+    "openalice",
+    "audit"
+  ]);
+  assert.deepEqual(parseEventHistorySources("bogus"), [
+    "audit",
+    "theme",
+    "signal",
+    "plan",
+    "review",
+    "brief",
+    "openalice"
+  ]);
 });
 
 test("ops snapshot view aggregates stats and latest activity", () => {

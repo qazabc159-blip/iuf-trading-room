@@ -51,10 +51,12 @@ import {
   validateTradingViewTimestamp
 } from "./tradingview-webhook-guard.js";
 import {
+  formatAuditEntriesAsCsv,
   getAuditLogSummary,
   listAuditLogEntries,
   writeAuditLog
 } from "./audit-log-store.js";
+import { getEventHistory, parseEventHistorySources } from "./event-history.js";
 import { getOpsSnapshot } from "./ops-snapshot.js";
 
 type Variables = {
@@ -186,6 +188,12 @@ const auditLogListQuerySchema = z.object({
   action: z.string().min(1).max(100).optional(),
   entityType: z.string().min(1).max(120).optional(),
   entityId: z.string().min(1).max(160).optional(),
+  method: z.string().min(1).max(20).optional(),
+  path: z.string().min(1).max(260).optional(),
+  status: z.coerce.number().int().min(100).max(599).optional(),
+  role: z.string().min(1).max(40).optional(),
+  search: z.string().min(1).max(200).optional(),
+  scanLimit: z.coerce.number().int().min(1).max(2_000).optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional()
 });
@@ -193,7 +201,25 @@ const auditLogListQuerySchema = z.object({
 const auditLogSummaryQuerySchema = z.object({
   hours: z.coerce.number().int().min(1).max(24 * 30).optional(),
   action: z.string().min(1).max(100).optional(),
-  entityType: z.string().min(1).max(120).optional()
+  entityType: z.string().min(1).max(120).optional(),
+  entityId: z.string().min(1).max(160).optional(),
+  method: z.string().min(1).max(20).optional(),
+  path: z.string().min(1).max(260).optional(),
+  status: z.coerce.number().int().min(100).max(599).optional(),
+  role: z.string().min(1).max(40).optional(),
+  search: z.string().min(1).max(200).optional()
+});
+
+const auditLogExportQuerySchema = auditLogListQuerySchema.extend({
+  format: z.enum(["csv", "json"]).default("csv")
+});
+
+const eventHistoryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  hours: z.coerce.number().int().min(1).max(24 * 30).optional(),
+  sources: z.string().min(1).max(200).optional(),
+  entityType: z.string().min(1).max(120).optional(),
+  search: z.string().min(1).max(200).optional()
 });
 
 const opsSnapshotQuerySchema = z.object({
@@ -287,8 +313,42 @@ app.get("/api/v1/audit-logs/summary", async (c) => {
       session: c.get("session"),
       hours: query.hours,
       action: query.action,
-      entityType: query.entityType
+      entityType: query.entityType,
+      entityId: query.entityId,
+      method: query.method,
+      path: query.path,
+      status: query.status,
+      role: query.role,
+      search: query.search
     })
+  });
+});
+
+app.get("/api/v1/audit-logs/export", async (c) => {
+  const query = auditLogExportQuerySchema.parse(c.req.query());
+  const entries = await listAuditLogEntries({
+    session: c.get("session"),
+    limit: query.limit,
+    action: query.action,
+    entityType: query.entityType,
+    entityId: query.entityId,
+    method: query.method,
+    path: query.path,
+    status: query.status,
+    role: query.role,
+    search: query.search,
+    scanLimit: query.scanLimit,
+    from: query.from,
+    to: query.to
+  });
+
+  if (query.format === "json") {
+    return c.json({ data: entries });
+  }
+
+  return c.body(formatAuditEntriesAsCsv(entries), 200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename=\"audit-logs-${new Date().toISOString().slice(0, 10)}.csv\"`
   });
 });
 
@@ -301,8 +361,29 @@ app.get("/api/v1/audit-logs", async (c) => {
       action: query.action,
       entityType: query.entityType,
       entityId: query.entityId,
+      method: query.method,
+      path: query.path,
+      status: query.status,
+      role: query.role,
+      search: query.search,
+      scanLimit: query.scanLimit,
       from: query.from,
       to: query.to
+    })
+  });
+});
+
+app.get("/api/v1/event-history", async (c) => {
+  const query = eventHistoryQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getEventHistory({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      hours: query.hours,
+      limit: query.limit,
+      sources: parseEventHistorySources(query.sources),
+      entityType: query.entityType,
+      search: query.search
     })
   });
 });
