@@ -6,5 +6,6 @@ export const primaryNavigation = [
   { href: "/plans", label: "Plans" },
   { href: "/reviews", label: "Reviews" },
   { href: "/briefs", label: "Briefs" },
-  { href: "/drafts", label: "Drafts" }
+  { href: "/drafts", label: "Drafts" },
+  { href: "/ops", label: "Ops" }
 ];

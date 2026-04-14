@@ -160,9 +160,58 @@ export async function getOpenAliceJobs() {
   return request<OpenAliceJobEntry[]>("/api/v1/openalice/jobs");
 }
 
-export async function updateOpenAliceJobStatus(jobId: string, status: "published" | "rejected") {
-  return request<{ id: string; status: string }>(`/api/v1/openalice/jobs/${jobId}/review`, {
-    method: "PATCH",
-    body: JSON.stringify({ status })
-  });
+export async function reviewOpenAliceJob(
+  jobId: string,
+  status: "published" | "rejected",
+  note?: string
+) {
+  return request<{ id: string; workspaceSlug: string; status: string; reviewedAt: string; reviewNote?: string }>(
+    `/api/v1/openalice/jobs/${jobId}/review`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status, note: note || undefined })
+    }
+  );
+}
+
+// OpenAlice Observability + Devices
+
+export type OpenAliceObservability = {
+  source: "redis" | "bridge_fallback";
+  workerStatus: "healthy" | "stale" | "missing";
+  sweepStatus: "healthy" | "stale" | "missing";
+  workerHeartbeatAt: string | null;
+  workerHeartbeatAgeSeconds: number | null;
+  lastSweepAt: string | null;
+  lastSweepAgeSeconds: number | null;
+  metrics: {
+    mode: "memory" | "database";
+    queuedJobs: number;
+    runningJobs: number;
+    staleRunningJobs: number;
+    terminalJobs: number;
+    activeDevices: number;
+    staleDevices: number;
+    expiredJobsRequeued: number;
+    expiredJobsFailed: number;
+  };
+};
+
+export type OpenAliceDevice = {
+  deviceId: string;
+  deviceName: string;
+  workspaceSlug: string;
+  capabilities: string[];
+  status: "active" | "revoked";
+  registeredAt: string;
+  lastSeenAt: string;
+  stale: boolean;
+};
+
+export async function getOpenAliceObservability() {
+  return request<OpenAliceObservability>("/api/v1/openalice/observability");
+}
+
+export async function getOpenAliceDevices() {
+  return request<OpenAliceDevice[]>("/api/v1/openalice/devices");
 }
