@@ -22,6 +22,7 @@ import {
   buildTradingViewEventKey,
   validateTradingViewTimestamp
 } from "../apps/api/src/tradingview-webhook-guard.ts";
+import { parseAuditTarget } from "../apps/api/src/audit-log-store.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
 import { parseGraphData } from "../packages/integrations/src/my-tw-coverage/graph-parser.ts";
@@ -124,6 +125,26 @@ test("tradingview timestamp validation accepts fresh values and rejects stale on
       error: "timestamp_out_of_range"
     }
   );
+});
+
+test("audit target parser recognizes special routes and CRUD fallbacks", () => {
+  assert.deepEqual(parseAuditTarget("POST", "/api/v1/webhooks/tradingview"), {
+    action: "ingest",
+    entityType: "tradingview_webhook",
+    entityId: "event"
+  });
+
+  assert.deepEqual(parseAuditTarget("PATCH", "/api/v1/openalice/jobs/job-123/review"), {
+    action: "review",
+    entityType: "openalice_job",
+    entityId: "job-123"
+  });
+
+  assert.deepEqual(parseAuditTarget("POST", "/api/v1/themes"), {
+    action: "create",
+    entityType: "theme",
+    entityId: "pending"
+  });
 });
 
 test("memory repository supports core research-to-review loop", async () => {

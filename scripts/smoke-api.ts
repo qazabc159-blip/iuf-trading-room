@@ -453,6 +453,20 @@ async function main() {
     assert.ok(observability.data.metrics.terminalJobs >= 1);
     assert.equal(observability.data.metrics.activeDevices, 0);
 
+    const auditLogs = await request<
+      JsonEnvelope<Array<{ id: string; action: string; entityType: string }>>
+    >(baseUrl, "/api/v1/audit-logs", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.ok(Array.isArray(auditLogs.data));
+
+    const filteredAuditLogs = await request<
+      JsonEnvelope<Array<{ action: string; entityType: string }>>
+    >(baseUrl, "/api/v1/audit-logs?action=create&entityType=theme", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.ok(Array.isArray(filteredAuditLogs.data));
+
     console.log("Smoke API checks passed.");
   } catch (error) {
     const details = [

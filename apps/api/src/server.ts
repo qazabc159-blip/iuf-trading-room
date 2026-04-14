@@ -50,6 +50,7 @@ import {
   markTradingViewEventComplete,
   validateTradingViewTimestamp
 } from "./tradingview-webhook-guard.js";
+import { listAuditLogEntries, writeAuditLog } from "./audit-log-store.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -85,17 +86,31 @@ app.use("/api/*", async (c, next) => {
   }
 
   const session = c.var.session;
-  console.log(
-    JSON.stringify({
-      audit: true,
-      ts: new Date().toISOString(),
+  const path = new URL(c.req.url).pathname;
+  const auditPayload = {
+    audit: true,
+    ts: new Date().toISOString(),
+    method: c.req.method,
+    path,
+    status: c.res.status,
+    workspace: session?.workspace.slug ?? null,
+    role: session?.user.role ?? null
+  };
+
+  console.log(JSON.stringify(auditPayload));
+
+  if (session) {
+    await writeAuditLog({
+      session,
       method: c.req.method,
-      path: new URL(c.req.url).pathname,
+      path,
       status: c.res.status,
-      workspace: session?.workspace.slug ?? null,
-      role: session?.user.role ?? null
-    })
-  );
+      payload: {
+        workspace: session.workspace.slug,
+        role: session.user.role
+      }
+    });
+  }
 });
 
 app.onError((error, c) => {
@@ -159,6 +174,12 @@ const openAliceCleanupDevicesSchema = z.object({
 const openAliceReviewJobSchema = z.object({
   status: z.enum(["published", "rejected"]),
   note: z.string().trim().max(2_000).optional()
+});
+
+const auditLogListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  action: z.string().min(1).max(100).optional(),
+  entityType: z.string().min(1).max(120).optional()
 });
 
 async function handleOpenAliceJobClaim(c: Context) {
@@ -239,6 +260,18 @@ app.get("/api/v1/session", (c) =>
     data: c.get("session")
   })
 );
+
+app.get("/api/v1/audit-logs", async (c) => {
+  const query = auditLogListQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await listAuditLogEntries({
+      session: c.get("session"),
+      limit: query.limit,
+      action: query.action,
+      entityType: query.entityType
+    })
+  });
+});
 
 app.get("/api/v1/themes", async (c) =>
   c.json({
