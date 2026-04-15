@@ -33,7 +33,9 @@ import {
 } from "../apps/api/src/company-merge.ts";
 import {
   buildThemeGraphView,
-  getThemeGraphView
+  getThemeGraphStats,
+  getThemeGraphView,
+  searchThemeGraph
 } from "../apps/api/src/theme-graph.ts";
 import {
   buildTradingViewEventKey,
@@ -1381,6 +1383,143 @@ test("theme graph helper reads repository-scoped theme companies", async () => {
   assert.equal(view?.summary.displayedEdges, 1);
   assert.equal(view?.nodes.some((node) => node.kind === "theme_company" && node.companyId === focusCompany.id), true);
   assert.equal(view?.nodes.some((node) => node.kind === "company" && node.companyId === neighborCompany.id), true);
+});
+
+test("theme graph stats summarize connected themes and top keywords", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const theme = await repo.createTheme({
+    name: "AI 光互連",
+    marketState: "Attack",
+    lifecycle: "Validation",
+    priority: 5,
+    thesis: "Optics demand is broadening.",
+    whyNow: "Bandwidth upgrades are accelerating.",
+    bottleneck: "Laser supply"
+  });
+
+  const company = await repo.createCompany({
+    name: "聯鈞",
+    ticker: "3450",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [theme.id],
+    chainPosition: "Optics",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 4, margin: 4, capacity: 4, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "AI optics leader"
+  });
+
+  const neighbor = await repo.createCompany({
+    name: "華星光",
+    ticker: "4979",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [],
+    chainPosition: "Module",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 3, margin: 3, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Neighbor company"
+  });
+
+  await repo.replaceCompanyRelations(company.id, [
+    {
+      targetCompanyId: neighbor.id,
+      targetLabel: neighbor.name,
+      relationType: "supplier",
+      confidence: 0.85,
+      sourcePath: "reports/ai-optics.md"
+    }
+  ]);
+
+  await repo.replaceCompanyKeywords(company.id, [
+    {
+      label: "矽光子",
+      confidence: 0.8,
+      sourcePath: "reports/ai-optics.md"
+    },
+    {
+      label: "CPO",
+      confidence: 0.7,
+      sourcePath: "reports/ai-optics.md"
+    }
+  ]);
+
+  const stats = await getThemeGraphStats({
+    session: { workspace: { slug: "primary-desk" } },
+    repo,
+    limit: 10,
+    keywordLimit: 3
+  });
+
+  assert.ok(stats.themeCount >= 1);
+  assert.equal(stats.connectedThemeCount, 1);
+  assert.ok(stats.totalThemeCompanies >= 1);
+  assert.equal(stats.totalEdges, 1);
+  assert.equal(stats.topThemes[0]?.name, "AI 光互連");
+  assert.equal(stats.topThemes[0]?.topKeywords.some((keyword) => keyword.label === "CPO"), true);
+});
+
+test("theme graph search matches theme, company, and keyword signals", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const theme = await repo.createTheme({
+    name: "液冷散熱",
+    marketState: "Selective Attack",
+    lifecycle: "Discovery",
+    priority: 4,
+    thesis: "Liquid cooling adoption is expanding.",
+    whyNow: "Rack densities keep rising.",
+    bottleneck: "Cold plate yield"
+  });
+
+  const company = await repo.createCompany({
+    name: "奇鋐",
+    ticker: "3017",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [theme.id],
+    chainPosition: "Cooling",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 4, margin: 4, capacity: 4, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Liquid cooling focus"
+  });
+
+  await repo.replaceCompanyKeywords(company.id, [
+    {
+      label: "液冷",
+      confidence: 0.9,
+      sourcePath: "reports/liquid-cooling.md"
+    }
+  ]);
+
+  const byTheme = await searchThemeGraph({
+    session: { workspace: { slug: "primary-desk" } },
+    repo,
+    query: "散熱",
+    limit: 10
+  });
+  assert.equal(byTheme.total, 1);
+  assert.equal(byTheme.results[0]?.matchReasons.includes("theme"), true);
+
+  const byCompany = await searchThemeGraph({
+    session: { workspace: { slug: "primary-desk" } },
+    repo,
+    query: "奇鋐",
+    limit: 10
+  });
+  assert.equal(byCompany.total, 1);
+  assert.equal(byCompany.results[0]?.matchedCompanies, 1);
+
+  const byKeyword = await searchThemeGraph({
+    session: { workspace: { slug: "primary-desk" } },
+    repo,
+    query: "液冷",
+    limit: 10
+  });
+  assert.equal(byKeyword.total, 1);
+  assert.equal(byKeyword.results[0]?.matchReasons.includes("keyword"), true);
 });
 
 test("memory repository supports core research-to-review loop", async () => {

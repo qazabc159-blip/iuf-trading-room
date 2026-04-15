@@ -76,7 +76,11 @@ import {
 import { getCompanyDuplicateReport } from "./company-duplicates.js";
 import { executeCompanyMerge, getCompanyMergePreview } from "./company-merge.js";
 import { getOpsSnapshot } from "./ops-snapshot.js";
-import { getThemeGraphView } from "./theme-graph.js";
+import {
+  getThemeGraphStats,
+  getThemeGraphView,
+  searchThemeGraph
+} from "./theme-graph.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -262,6 +266,17 @@ const companyGraphViewQuerySchema = z.object({
 const themeGraphViewQuerySchema = z.object({
   edgeLimit: z.coerce.number().int().min(1).max(400).optional(),
   keywordLimit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+const themeGraphStatsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  keywordLimit: z.coerce.number().int().min(1).max(5).optional()
+});
+
+const themeGraphSearchQuerySchema = z.object({
+  query: z.string().trim().max(160).optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  keywordLimit: z.coerce.number().int().min(1).max(5).optional()
 });
 
 const companyGraphSearchQuerySchema = z.object({
@@ -621,6 +636,31 @@ app.get("/api/v1/themes/:id/graph", async (c) => {
   }
 
   return c.json({ data: graph });
+});
+
+app.get("/api/v1/theme-graph/stats", async (c) => {
+  const query = themeGraphStatsQuerySchema.parse(c.req.query());
+  const stats = await getThemeGraphStats({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    limit: query.limit,
+    keywordLimit: query.keywordLimit
+  });
+
+  return c.json({ data: stats });
+});
+
+app.get("/api/v1/theme-graph/search", async (c) => {
+  const query = themeGraphSearchQuerySchema.parse(c.req.query());
+  const results = await searchThemeGraph({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    query: query.query,
+    limit: query.limit,
+    keywordLimit: query.keywordLimit
+  });
+
+  return c.json({ data: results });
 });
 
 app.get("/api/v1/themes/:id", async (c) => {

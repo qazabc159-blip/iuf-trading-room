@@ -317,6 +317,39 @@ async function main() {
       true
     );
 
+    const themeGraphStats = await request<
+      JsonEnvelope<{
+        themeCount: number;
+        connectedThemeCount: number;
+        totalEdges: number;
+        topThemes: Array<{ themeId: string; name: string }>;
+      }>
+    >(baseUrl, "/api/v1/theme-graph/stats?limit=10&keywordLimit=3", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.ok(themeGraphStats.data.themeCount >= 1);
+    assert.ok(themeGraphStats.data.connectedThemeCount >= 1);
+    assert.ok(themeGraphStats.data.totalEdges >= 2);
+    assert.equal(themeGraphStats.data.topThemes.some((item) => item.themeId === theme.data.id), true);
+
+    const themeGraphSearch = await request<
+      JsonEnvelope<{
+        query: string;
+        total: number;
+        results: Array<{ themeId: string; matchReasons: string[] }>;
+      }>
+    >(baseUrl, "/api/v1/theme-graph/search?query=Smoke&limit=10&keywordLimit=3", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(themeGraphSearch.data.query, "Smoke");
+    assert.ok(themeGraphSearch.data.total >= 1);
+    assert.equal(
+      themeGraphSearch.data.results.some(
+        (item) => item.themeId === theme.data.id && item.matchReasons.length >= 1
+      ),
+      true
+    );
+
     const duplicateCompany = await request<JsonEnvelope<{ id: string; ticker: string }>>(
       baseUrl,
       "/api/v1/companies",

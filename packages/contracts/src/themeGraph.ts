@@ -44,6 +44,50 @@ export const themeGraphSummarySchema = z.object({
   keywordCount: z.number().int().min(0)
 });
 
+export const themeGraphStatsThemeSchema = z.object({
+  themeId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+  marketState: z.string().min(1).max(40),
+  lifecycle: z.string().min(1).max(40),
+  priority: z.number().int().min(1).max(5),
+  themeCompanyCount: z.number().int().min(0),
+  relatedCompanyCount: z.number().int().min(0),
+  totalEdges: z.number().int().min(0),
+  keywordCount: z.number().int().min(0),
+  topKeywords: z.array(themeGraphKeywordRollupSchema).max(5)
+});
+
+export const themeGraphStatsViewSchema = z.object({
+  generatedAt: z.string(),
+  themeCount: z.number().int().min(0),
+  connectedThemeCount: z.number().int().min(0),
+  totalThemeCompanies: z.number().int().min(0),
+  totalRelatedCompanies: z.number().int().min(0),
+  totalEdges: z.number().int().min(0),
+  totalKeywords: z.number().int().min(0),
+  topThemes: z.array(themeGraphStatsThemeSchema)
+});
+
+export const themeGraphSearchResultSchema = z.object({
+  themeId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+  marketState: z.string().min(1).max(40),
+  lifecycle: z.string().min(1).max(40),
+  priority: z.number().int().min(1).max(5),
+  score: z.number().int().min(0),
+  matchReasons: z.array(z.string().min(1).max(80)).max(8),
+  matchedCompanies: z.number().int().min(0),
+  matchedKeywords: z.number().int().min(0),
+  summary: themeGraphStatsThemeSchema
+});
+
+export const themeGraphSearchViewSchema = z.object({
+  generatedAt: z.string(),
+  query: z.string(),
+  total: z.number().int().min(0),
+  results: z.array(themeGraphSearchResultSchema)
+});
+
 export const themeGraphViewSchema = z.object({
   themeId: z.string().uuid(),
   generatedAt: z.string(),
@@ -57,4 +101,8 @@ export type ThemeGraphNode = z.infer<typeof themeGraphNodeSchema>;
 export type ThemeGraphEdge = z.infer<typeof themeGraphEdgeSchema>;
 export type ThemeGraphKeywordRollup = z.infer<typeof themeGraphKeywordRollupSchema>;
 export type ThemeGraphSummary = z.infer<typeof themeGraphSummarySchema>;
+export type ThemeGraphStatsTheme = z.infer<typeof themeGraphStatsThemeSchema>;
+export type ThemeGraphStatsView = z.infer<typeof themeGraphStatsViewSchema>;
+export type ThemeGraphSearchResult = z.infer<typeof themeGraphSearchResultSchema>;
+export type ThemeGraphSearchView = z.infer<typeof themeGraphSearchViewSchema>;
 export type ThemeGraphView = z.infer<typeof themeGraphViewSchema>;

@@ -5,6 +5,9 @@ import type {
   Theme,
   ThemeGraphEdge,
   ThemeGraphKeywordRollup,
+  ThemeGraphSearchView,
+  ThemeGraphStatsTheme,
+  ThemeGraphStatsView,
   ThemeGraphView
 } from "@iuf-trading-room/contracts";
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
@@ -299,4 +302,238 @@ export async function getThemeGraphView(input: {
     edgeLimit: input.edgeLimit,
     keywordLimit: input.keywordLimit
   });
+}
+
+function buildThemeStatsEntry(input: {
+  theme: Theme;
+  view: ThemeGraphView;
+  keywordLimit?: number;
+}): ThemeGraphStatsTheme {
+  return {
+    themeId: input.theme.id,
+    name: input.theme.name,
+    marketState: input.theme.marketState,
+    lifecycle: input.theme.lifecycle,
+    priority: input.theme.priority,
+    themeCompanyCount: input.view.summary.themeCompanyCount,
+    relatedCompanyCount: input.view.summary.relatedCompanyCount,
+    totalEdges: input.view.summary.totalMatchingEdges,
+    keywordCount: input.view.summary.keywordCount,
+    topKeywords: input.view.topKeywords.slice(0, clamp(input.keywordLimit ?? 5, 1, 5))
+  };
+}
+
+async function loadThemeGraphWorkspaceContext(input: {
+  session: { workspace: { slug: string } };
+  repo: TradingRoomRepository;
+}) {
+  const workspaceSlug = input.session.workspace.slug;
+
+  const [themes, companies, relations, keywords] = await Promise.all([
+    input.repo.listThemes({ workspaceSlug }),
+    input.repo.listCompanies(undefined, { workspaceSlug }),
+    input.repo.listWorkspaceCompanyRelations(undefined, { workspaceSlug }),
+    input.repo.listWorkspaceCompanyKeywords(undefined, { workspaceSlug })
+  ]);
+
+  return {
+    themes,
+    companies,
+    relations,
+    keywords
+  };
+}
+
+export async function getThemeGraphStats(input: {
+  session: { workspace: { slug: string } };
+  repo: TradingRoomRepository;
+  limit?: number;
+  keywordLimit?: number;
+}): Promise<ThemeGraphStatsView> {
+  const { themes, companies, relations, keywords } = await loadThemeGraphWorkspaceContext(input);
+  const limit = clamp(input.limit ?? 12, 1, 50);
+  const keywordLimit = clamp(input.keywordLimit ?? 5, 1, 5);
+  const themeViews = themes.map((theme) =>
+    buildThemeGraphView({
+      theme,
+      themeCompanies: companies.filter((company) => company.themeIds.includes(theme.id)),
+      companies,
+      relations,
+      keywords,
+      edgeLimit: 400,
+      keywordLimit: 24
+    })
+  );
+
+  const topThemes = themeViews
+    .map((view) => {
+      const theme = themes.find((item) => item.id === view.themeId);
+      if (!theme) {
+        return null;
+      }
+
+      return buildThemeStatsEntry({
+        theme,
+        view,
+        keywordLimit
+      });
+    })
+    .filter((item): item is ThemeGraphStatsTheme => item !== null)
+    .sort((left, right) => {
+      if (right.totalEdges !== left.totalEdges) {
+        return right.totalEdges - left.totalEdges;
+      }
+
+      if (right.themeCompanyCount !== left.themeCompanyCount) {
+        return right.themeCompanyCount - left.themeCompanyCount;
+      }
+
+      return left.name.localeCompare(right.name);
+    })
+    .slice(0, limit);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    themeCount: themes.length,
+    connectedThemeCount: themeViews.filter((view) => view.summary.totalMatchingEdges > 0).length,
+    totalThemeCompanies: themeViews.reduce((sum, view) => sum + view.summary.themeCompanyCount, 0),
+    totalRelatedCompanies: themeViews.reduce((sum, view) => sum + view.summary.relatedCompanyCount, 0),
+    totalEdges: themeViews.reduce((sum, view) => sum + view.summary.totalMatchingEdges, 0),
+    totalKeywords: themeViews.reduce((sum, view) => sum + view.summary.keywordCount, 0),
+    topThemes
+  };
+}
+
+function normalizeSearchText(value: string) {
+  return normalizeLabel(value);
+}
+
+function includesQuery(value: string, query: string) {
+  return normalizeSearchText(value).includes(query);
+}
+
+export async function searchThemeGraph(input: {
+  session: { workspace: { slug: string } };
+  repo: TradingRoomRepository;
+  query?: string;
+  limit?: number;
+  keywordLimit?: number;
+}): Promise<ThemeGraphSearchView> {
+  const { themes, companies, relations, keywords } = await loadThemeGraphWorkspaceContext(input);
+  const limit = clamp(input.limit ?? 20, 1, 50);
+  const keywordLimit = clamp(input.keywordLimit ?? 5, 1, 5);
+  const query = (input.query ?? "").trim();
+  const normalizedQuery = normalizeSearchText(query);
+
+  const results = themes
+    .map((theme) => {
+      const themeCompanies = companies.filter((company) => company.themeIds.includes(theme.id));
+      const themeView = buildThemeGraphView({
+        theme,
+        themeCompanies,
+        companies,
+        relations,
+        keywords,
+        edgeLimit: 200,
+        keywordLimit: 24
+      });
+      const summary = buildThemeStatsEntry({
+        theme,
+        view: themeView,
+        keywordLimit
+      });
+
+      if (!normalizedQuery) {
+        return {
+          themeId: theme.id,
+          name: theme.name,
+          marketState: theme.marketState,
+          lifecycle: theme.lifecycle,
+          priority: theme.priority,
+          score: Math.max(1, summary.totalEdges * 4 + summary.themeCompanyCount * 3 + summary.keywordCount),
+          matchReasons: ["overview"],
+          matchedCompanies: summary.themeCompanyCount,
+          matchedKeywords: summary.keywordCount,
+          summary
+        };
+      }
+
+      const reasons = new Set<string>();
+      let score = 0;
+
+      if (
+        includesQuery(theme.name, normalizedQuery) ||
+        includesQuery(theme.thesis, normalizedQuery) ||
+        includesQuery(theme.whyNow, normalizedQuery) ||
+        includesQuery(theme.bottleneck, normalizedQuery)
+      ) {
+        reasons.add("theme");
+        score += 8;
+      }
+
+      const matchedCompanies = themeCompanies.filter(
+        (company) =>
+          includesQuery(company.name, normalizedQuery) ||
+          includesQuery(company.ticker, normalizedQuery) ||
+          includesQuery(company.chainPosition, normalizedQuery) ||
+          includesQuery(company.notes, normalizedQuery)
+      );
+      if (matchedCompanies.length > 0) {
+        reasons.add("company");
+        score += matchedCompanies.length * 3;
+      }
+
+      const themeKeywords = keywords.filter(
+        (keyword) =>
+          themeCompanies.some((company) => company.id === keyword.companyId) &&
+          includesQuery(keyword.label, normalizedQuery)
+      );
+      if (themeKeywords.length > 0) {
+        reasons.add("keyword");
+        score += themeKeywords.length * 2;
+      }
+
+      const relatedLabels = themeView.nodes.filter((node) => includesQuery(node.label, normalizedQuery));
+      if (relatedLabels.length > 0) {
+        reasons.add("relation");
+        score += relatedLabels.length;
+      }
+
+      if (score <= 0) {
+        return null;
+      }
+
+      return {
+        themeId: theme.id,
+        name: theme.name,
+        marketState: theme.marketState,
+        lifecycle: theme.lifecycle,
+        priority: theme.priority,
+        score,
+        matchReasons: [...reasons],
+        matchedCompanies: matchedCompanies.length,
+        matchedKeywords: themeKeywords.length,
+        summary
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      if (right.summary.totalEdges !== left.summary.totalEdges) {
+        return right.summary.totalEdges - left.summary.totalEdges;
+      }
+
+      return left.name.localeCompare(right.name);
+    })
+    .slice(0, limit);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    query,
+    total: results.length,
+    results
+  };
 }
