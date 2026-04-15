@@ -67,6 +67,11 @@ import {
   getEventHistorySummary,
   parseEventHistorySources
 } from "./event-history.js";
+import {
+  getCompanyGraphSearchResults,
+  getCompanyGraphStats,
+  getCompanyGraphView
+} from "./company-graph.js";
 import { getOpsSnapshot } from "./ops-snapshot.js";
 
 type Variables = {
@@ -243,6 +248,20 @@ const eventHistoryExportQuerySchema = eventHistoryQuerySchema.extend({
 const opsSnapshotQuerySchema = z.object({
   auditHours: z.coerce.number().int().min(1).max(24 * 30).optional(),
   recentLimit: z.coerce.number().int().min(1).max(20).optional()
+});
+
+const companyGraphViewQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(240).optional(),
+  keywordLimit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+const companyGraphSearchQuerySchema = z.object({
+  query: z.string().trim().min(1).max(120),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+const companyGraphStatsQuerySchema = z.object({
+  topLimit: z.coerce.number().int().min(1).max(100).optional()
 });
 
 async function handleOpenAliceJobClaim(c: Context) {
@@ -466,6 +485,29 @@ app.get("/api/v1/ops/snapshot", async (c) => {
   });
 });
 
+app.get("/api/v1/company-graph/search", async (c) => {
+  const query = companyGraphSearchQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getCompanyGraphSearchResults({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      query: query.query,
+      limit: query.limit
+    })
+  });
+});
+
+app.get("/api/v1/company-graph/stats", async (c) => {
+  const query = companyGraphStatsQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getCompanyGraphStats({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      topLimit: query.topLimit
+    })
+  });
+});
+
 app.get("/api/v1/themes", async (c) =>
   c.json({
     data: await c.get("repo").listThemes({
@@ -590,6 +632,23 @@ app.put("/api/v1/companies/:id/keywords", async (c) => {
       workspaceSlug: c.get("session").workspace.slug
     })
   });
+});
+
+app.get("/api/v1/companies/:id/graph", async (c) => {
+  const query = companyGraphViewQuerySchema.parse(c.req.query());
+  const graph = await getCompanyGraphView({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    companyId: c.req.param("id"),
+    limit: query.limit,
+    keywordLimit: query.keywordLimit
+  });
+
+  if (!graph) {
+    return c.json({ error: "company_not_found" }, 404);
+  }
+
+  return c.json({ data: graph });
 });
 
 app.get("/api/v1/companies/:id", async (c) => {

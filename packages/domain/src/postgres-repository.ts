@@ -50,7 +50,12 @@ import {
   workspaces
 } from "@iuf-trading-room/db";
 
-import type { SessionOptions, TradingRoomRepository } from "./types.js";
+import type {
+  CompanyKeywordListFilters,
+  CompanyRelationListFilters,
+  SessionOptions,
+  TradingRoomRepository
+} from "./types.js";
 
 const defaultWorkspaceSlug = "primary-desk";
 const defaultWorkspaceName = "Primary Desk";
@@ -552,6 +557,35 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
     return rows.map((row) => this.parseCompanyRelation(row));
   }
 
+  async listWorkspaceCompanyRelations(
+    filters?: CompanyRelationListFilters,
+    options?: SessionOptions
+  ) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+    const conditions = [eq(companyRelations.workspaceId, workspace.id)];
+
+    if (filters?.companyId) {
+      conditions.push(eq(companyRelations.companyId, filters.companyId));
+    }
+
+    if (filters?.targetCompanyId) {
+      conditions.push(eq(companyRelations.targetCompanyId, filters.targetCompanyId));
+    }
+
+    if (filters?.relationType) {
+      conditions.push(eq(companyRelations.relationType, filters.relationType as any));
+    }
+
+    const rows = await db
+      .select()
+      .from(companyRelations)
+      .where(and(...conditions))
+      .orderBy(desc(companyRelations.confidence), asc(companyRelations.targetLabel));
+
+    return rows.map((row) => this.parseCompanyRelation(row));
+  }
+
   async listCompanyKeywords(companyId: string, options?: SessionOptions) {
     const { workspace } = await this.ensureSessionBase(options);
     const db = this.database;
@@ -603,6 +637,27 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
         }))
       )
       .returning();
+
+    return rows.map((row) => this.parseCompanyKeyword(row));
+  }
+
+  async listWorkspaceCompanyKeywords(
+    filters?: CompanyKeywordListFilters,
+    options?: SessionOptions
+  ) {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+    const conditions = [eq(companyKeywords.workspaceId, workspace.id)];
+
+    if (filters?.companyId) {
+      conditions.push(eq(companyKeywords.companyId, filters.companyId));
+    }
+
+    const rows = await db
+      .select()
+      .from(companyKeywords)
+      .where(and(...conditions))
+      .orderBy(desc(companyKeywords.confidence), asc(companyKeywords.label));
 
     return rows.map((row) => this.parseCompanyKeyword(row));
   }

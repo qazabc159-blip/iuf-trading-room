@@ -249,6 +249,52 @@ async function main() {
     });
     assert.equal(keywordList.data.some((item) => item.label === "AI"), true);
 
+    const companyGraph = await request<
+      JsonEnvelope<{
+        focusCompanyId: string;
+        nodes: Array<{ label: string; kind: string }>;
+        edges: Array<{ direction: string; relationType: string }>;
+        keywords: Array<{ label: string }>;
+        summary: { outboundRelations: number; keywords: number };
+      }>
+    >(baseUrl, `/api/v1/companies/${company.data.id}/graph?limit=20&keywordLimit=10`, {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(companyGraph.data.focusCompanyId, company.data.id);
+    assert.equal(companyGraph.data.summary.outboundRelations, 2);
+    assert.equal(companyGraph.data.summary.keywords, 2);
+    assert.equal(companyGraph.data.nodes.some((node) => node.label === "NVIDIA"), true);
+
+    const graphSearch = await request<
+      JsonEnvelope<
+        Array<{
+          companyId: string;
+          matchedBy: string[];
+        }>
+      >
+    >(baseUrl, "/api/v1/company-graph/search?query=AI&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(graphSearch.data.some((item) => item.companyId === company.data.id), true);
+
+    const graphStats = await request<
+      JsonEnvelope<{
+        companiesWithGraph: number;
+        totalRelations: number;
+        totalKeywords: number;
+        topConnectedCompanies: Array<{ companyId: string }>;
+      }>
+    >(baseUrl, "/api/v1/company-graph/stats?topLimit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.ok(graphStats.data.companiesWithGraph >= 1);
+    assert.ok(graphStats.data.totalRelations >= 2);
+    assert.ok(graphStats.data.totalKeywords >= 2);
+    assert.equal(
+      graphStats.data.topConnectedCompanies.some((item) => item.companyId === company.data.id),
+      true
+    );
+
     const signal = await request<JsonEnvelope<{ id: string; title: string }>>(baseUrl, "/api/v1/signals", {
       method: "POST",
       headers: { "x-workspace-slug": workspaceSlug },

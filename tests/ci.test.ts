@@ -19,6 +19,11 @@ import {
   resolveExpiredJobTransition
 } from "../apps/worker/src/openalice-maintenance.ts";
 import {
+  buildCompanyGraphSearchResults,
+  buildCompanyGraphStatsView,
+  buildCompanyGraphView
+} from "../apps/api/src/company-graph.ts";
+import {
   buildTradingViewEventKey,
   validateTradingViewTimestamp
 } from "../apps/api/src/tradingview-webhook-guard.ts";
@@ -397,6 +402,213 @@ test("event history csv export includes timeline columns", () => {
   assert.match(csv, /"created_at".*"tags"/);
   assert.match(csv, /"signal"/);
   assert.match(csv, /"price\|bullish"/);
+});
+
+test("company graph view projects focus company, neighbors, and keywords", () => {
+  const focusCompany: Company = {
+    id: randomUUID(),
+    name: "台積電",
+    ticker: "2330",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "Foundry",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: "2026-04-15T02:00:00.000Z"
+  };
+  const upstreamCompany: Company = {
+    id: randomUUID(),
+    name: "京元電",
+    ticker: "2449",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "Testing",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: "2026-04-15T01:00:00.000Z"
+  };
+
+  const graph = buildCompanyGraphView({
+    focusCompany,
+    companies: [focusCompany, upstreamCompany],
+    relations: [
+      {
+        id: randomUUID(),
+        companyId: focusCompany.id,
+        targetCompanyId: null,
+        targetLabel: "NVIDIA",
+        relationType: "customer",
+        confidence: 0.9,
+        sourcePath: "Pilot_Reports/2330.md",
+        updatedAt: "2026-04-15T02:10:00.000Z"
+      },
+      {
+        id: randomUUID(),
+        companyId: upstreamCompany.id,
+        targetCompanyId: focusCompany.id,
+        targetLabel: focusCompany.name,
+        relationType: "supplier",
+        confidence: 0.8,
+        sourcePath: "Pilot_Reports/2449.md",
+        updatedAt: "2026-04-15T02:11:00.000Z"
+      }
+    ],
+    keywords: [
+      {
+        id: randomUUID(),
+        companyId: focusCompany.id,
+        label: "CoWoS",
+        confidence: 0.8,
+        sourcePath: "Pilot_Reports/2330.md",
+        updatedAt: "2026-04-15T02:12:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal(graph.focusCompanyId, focusCompany.id);
+  assert.equal(graph.nodes.some((node) => node.kind === "focus_company"), true);
+  assert.equal(graph.nodes.some((node) => node.label === "NVIDIA"), true);
+  assert.equal(graph.edges.some((edge) => edge.direction === "outbound"), true);
+  assert.equal(graph.edges.some((edge) => edge.direction === "inbound"), true);
+  assert.equal(graph.summary.outboundRelations, 1);
+  assert.equal(graph.summary.inboundRelations, 1);
+  assert.equal(graph.keywords[0]?.label, "CoWoS");
+});
+
+test("company graph search scores ticker, name, keyword, and relation matches", () => {
+  const companyA: Company = {
+    id: randomUUID(),
+    name: "台光電",
+    ticker: "2383",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "CCL",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: "2026-04-15T02:00:00.000Z"
+  };
+  const companyB: Company = {
+    id: randomUUID(),
+    name: "金像電",
+    ticker: "2368",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "PCB",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: "2026-04-15T02:00:00.000Z"
+  };
+
+  const results = buildCompanyGraphSearchResults({
+    query: "CCL",
+    companies: [companyA, companyB],
+    relations: [
+      {
+        id: randomUUID(),
+        companyId: companyB.id,
+        targetCompanyId: null,
+        targetLabel: "台光電",
+        relationType: "supplier",
+        confidence: 0.7,
+        sourcePath: "Pilot_Reports/2368.md",
+        updatedAt: "2026-04-15T02:10:00.000Z"
+      }
+    ],
+    keywords: [
+      {
+        id: randomUUID(),
+        companyId: companyA.id,
+        label: "CCL",
+        confidence: 0.8,
+        sourcePath: "Pilot_Reports/2383.md",
+        updatedAt: "2026-04-15T02:12:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal(results[0]?.companyId, companyA.id);
+  assert.equal(results[0]?.matchedBy.includes("keyword"), true);
+  assert.equal(results[0]?.keywordCount, 1);
+});
+
+test("company graph stats summarize relation types and top nodes", () => {
+  const companyA: Company = {
+    id: randomUUID(),
+    name: "台光電",
+    ticker: "2383",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "CCL",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: "2026-04-15T02:00:00.000Z"
+  };
+
+  const stats = buildCompanyGraphStatsView({
+    companies: [companyA],
+    relations: [
+      {
+        id: randomUUID(),
+        companyId: companyA.id,
+        targetCompanyId: null,
+        targetLabel: "AI Server",
+        relationType: "application",
+        confidence: 0.7,
+        sourcePath: "Pilot_Reports/2383.md",
+        updatedAt: "2026-04-15T02:10:00.000Z"
+      },
+      {
+        id: randomUUID(),
+        companyId: companyA.id,
+        targetCompanyId: null,
+        targetLabel: "NVIDIA",
+        relationType: "customer",
+        confidence: 0.9,
+        sourcePath: "Pilot_Reports/2383.md",
+        updatedAt: "2026-04-15T02:11:00.000Z"
+      }
+    ],
+    keywords: [
+      {
+        id: randomUUID(),
+        companyId: companyA.id,
+        label: "CCL",
+        confidence: 0.8,
+        sourcePath: "Pilot_Reports/2383.md",
+        updatedAt: "2026-04-15T02:12:00.000Z"
+      },
+      {
+        id: randomUUID(),
+        companyId: companyA.id,
+        label: "CCL",
+        confidence: 0.7,
+        sourcePath: "Pilot_Reports/2383.md",
+        updatedAt: "2026-04-15T02:13:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal(stats.companiesWithGraph, 1);
+  assert.equal(stats.totalRelations, 2);
+  assert.equal(stats.totalKeywords, 2);
+  assert.equal(stats.relationTypes[0]?.count, 1);
+  assert.equal(stats.topKeywords[0]?.label, "CCL");
+  assert.equal(stats.topConnectedCompanies[0]?.companyId, companyA.id);
 });
 
 test("ops snapshot view aggregates stats and latest activity", () => {

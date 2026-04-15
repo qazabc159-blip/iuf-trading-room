@@ -27,6 +27,16 @@ export type SessionOptions = {
   roleOverride?: AppSession["user"]["role"];
 };
 
+export type CompanyRelationListFilters = {
+  companyId?: string;
+  targetCompanyId?: string;
+  relationType?: string;
+};
+
+export type CompanyKeywordListFilters = {
+  companyId?: string;
+};
+
 export interface TradingRoomRepository {
   getSession(options?: SessionOptions): Promise<AppSession>;
 
@@ -47,10 +57,18 @@ export interface TradingRoomRepository {
     input: CompanyRelationInput[],
     options?: SessionOptions
   ): Promise<CompanyRelation[]>;
+  listWorkspaceCompanyRelations(
+    filters?: CompanyRelationListFilters,
+    options?: SessionOptions
+  ): Promise<CompanyRelation[]>;
   listCompanyKeywords(companyId: string, options?: SessionOptions): Promise<CompanyKeyword[]>;
   replaceCompanyKeywords(
     companyId: string,
     input: CompanyKeywordInput[],
+    options?: SessionOptions
+  ): Promise<CompanyKeyword[]>;
+  listWorkspaceCompanyKeywords(
+    filters?: CompanyKeywordListFilters,
     options?: SessionOptions
   ): Promise<CompanyKeyword[]>;
 

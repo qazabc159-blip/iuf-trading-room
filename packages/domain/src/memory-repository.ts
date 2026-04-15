@@ -24,7 +24,12 @@ import type {
   Workspace
 } from "@iuf-trading-room/contracts";
 
-import type { SessionOptions, TradingRoomRepository } from "./types.js";
+import type {
+  CompanyKeywordListFilters,
+  CompanyRelationListFilters,
+  SessionOptions,
+  TradingRoomRepository
+} from "./types.js";
 
 const now = () => new Date().toISOString();
 
@@ -272,6 +277,24 @@ export class MemoryTradingRoomRepository implements TradingRoomRepository {
     return nextRelations.map((relation) => ({ ...relation }));
   }
 
+  async listWorkspaceCompanyRelations(filters?: CompanyRelationListFilters) {
+    let items = this.companyRelations;
+
+    if (filters?.companyId) {
+      items = items.filter((relation) => relation.companyId === filters.companyId);
+    }
+
+    if (filters?.targetCompanyId) {
+      items = items.filter((relation) => relation.targetCompanyId === filters.targetCompanyId);
+    }
+
+    if (filters?.relationType) {
+      items = items.filter((relation) => relation.relationType === filters.relationType);
+    }
+
+    return items.map((relation) => ({ ...relation }));
+  }
+
   async listCompanyKeywords(companyId: string) {
     return this.companyKeywords
       .filter((keyword) => keyword.companyId === companyId)
@@ -299,6 +322,16 @@ export class MemoryTradingRoomRepository implements TradingRoomRepository {
 
     this.companyKeywords.unshift(...nextKeywords);
     return nextKeywords.map((keyword) => ({ ...keyword }));
+  }
+
+  async listWorkspaceCompanyKeywords(filters?: CompanyKeywordListFilters) {
+    let items = this.companyKeywords;
+
+    if (filters?.companyId) {
+      items = items.filter((keyword) => keyword.companyId === filters.companyId);
+    }
+
+    return items.map((keyword) => ({ ...keyword }));
   }
 
   // Signals
