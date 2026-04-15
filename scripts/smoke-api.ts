@@ -350,6 +350,37 @@ async function main() {
       true
     );
 
+    const filteredThemeGraphStats = await request<
+      JsonEnvelope<{
+        themeCount: number;
+        connectedThemeCount: number;
+        topThemes: Array<{ themeId: string }>;
+      }>
+    >(
+      baseUrl,
+      "/api/v1/theme-graph/stats?query=Smoke&marketState=Balanced&onlyConnected=false&limit=10&keywordLimit=3",
+      {
+        headers: { "x-workspace-slug": workspaceSlug }
+      }
+    );
+    assert.ok(filteredThemeGraphStats.data.themeCount >= 1);
+    assert.equal(
+      filteredThemeGraphStats.data.topThemes.some((item) => item.themeId === theme.data.id),
+      true
+    );
+
+    const themeGraphExport = await fetch(
+      `${baseUrl}/api/v1/theme-graph/export?format=csv&query=Smoke&limit=10&keywordLimit=3`,
+      {
+        headers: { "x-workspace-slug": workspaceSlug }
+      }
+    );
+    assert.equal(themeGraphExport.status, 200);
+    assert.match(themeGraphExport.headers.get("content-type") ?? "", /text\/csv/);
+    const themeGraphExportBody = await themeGraphExport.text();
+    assert.match(themeGraphExportBody, /theme_id/);
+    assert.match(themeGraphExportBody, /CI Smoke Theme/);
+
     const duplicateCompany = await request<JsonEnvelope<{ id: string; ticker: string }>>(
       baseUrl,
       "/api/v1/companies",

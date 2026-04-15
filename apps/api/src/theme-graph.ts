@@ -12,6 +12,21 @@ import type {
 } from "@iuf-trading-room/contracts";
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 
+type ThemeGraphFilters = {
+  query?: string;
+  marketState?: Theme["marketState"];
+  lifecycle?: Theme["lifecycle"];
+  minEdges?: number;
+  onlyConnected?: boolean;
+};
+
+type ThemeGraphCatalogEntry = {
+  theme: Theme;
+  themeCompanies: Company[];
+  view: ThemeGraphView;
+  summary: ThemeGraphStatsTheme;
+};
+
 function normalizeLabel(value: string | undefined) {
   return (value ?? "")
     .toLowerCase()
@@ -273,37 +288,6 @@ export function buildThemeGraphView(input: {
   };
 }
 
-export async function getThemeGraphView(input: {
-  session: { workspace: { slug: string } };
-  repo: TradingRoomRepository;
-  themeId: string;
-  edgeLimit?: number;
-  keywordLimit?: number;
-}) {
-  const workspaceSlug = input.session.workspace.slug;
-  const [theme, themeCompanies, companies, relations, keywords] = await Promise.all([
-    input.repo.getTheme(input.themeId, { workspaceSlug }),
-    input.repo.listCompanies(input.themeId, { workspaceSlug }),
-    input.repo.listCompanies(undefined, { workspaceSlug }),
-    input.repo.listWorkspaceCompanyRelations(undefined, { workspaceSlug }),
-    input.repo.listWorkspaceCompanyKeywords(undefined, { workspaceSlug })
-  ]);
-
-  if (!theme) {
-    return null;
-  }
-
-  return buildThemeGraphView({
-    theme,
-    themeCompanies,
-    companies,
-    relations,
-    keywords,
-    edgeLimit: input.edgeLimit,
-    keywordLimit: input.keywordLimit
-  });
-}
-
 function buildThemeStatsEntry(input: {
   theme: Theme;
   view: ThemeGraphView;
@@ -344,41 +328,162 @@ async function loadThemeGraphWorkspaceContext(input: {
   };
 }
 
+function normalizeSearchText(value: string) {
+  return normalizeLabel(value);
+}
+
+function includesQuery(value: string, query: string) {
+  return normalizeSearchText(value).includes(query);
+}
+
+function buildThemeSearchText(input: {
+  theme: Theme;
+  themeCompanies: Company[];
+  view: ThemeGraphView;
+}) {
+  return [
+    input.theme.name,
+    input.theme.thesis,
+    input.theme.whyNow,
+    input.theme.bottleneck,
+    ...input.themeCompanies.flatMap((company) => [
+      company.name,
+      company.ticker,
+      company.chainPosition,
+      company.notes
+    ]),
+    ...input.view.topKeywords.map((keyword) => keyword.label),
+    ...input.view.nodes.map((node) => node.label)
+  ].join(" ");
+}
+
+function matchesThemeFilters(
+  entry: ThemeGraphCatalogEntry,
+  filters: ThemeGraphFilters,
+  queryOverride?: string
+) {
+  if (filters.marketState && entry.theme.marketState !== filters.marketState) {
+    return false;
+  }
+
+  if (filters.lifecycle && entry.theme.lifecycle !== filters.lifecycle) {
+    return false;
+  }
+
+  if (filters.onlyConnected && entry.summary.totalEdges <= 0) {
+    return false;
+  }
+
+  if (filters.minEdges && entry.summary.totalEdges < filters.minEdges) {
+    return false;
+  }
+
+  const query = normalizeSearchText(queryOverride ?? filters.query ?? "");
+  if (!query) {
+    return true;
+  }
+
+  return includesQuery(buildThemeSearchText(entry), query);
+}
+
+function projectThemeGraphCatalog(input: {
+  themes: Theme[];
+  companies: Company[];
+  relations: CompanyRelation[];
+  keywords: CompanyKeyword[];
+  keywordLimit: number;
+  filters?: ThemeGraphFilters;
+  edgeLimit?: number;
+}) {
+  return input.themes
+    .map((theme) => {
+      const themeCompanies = input.companies.filter((company) => company.themeIds.includes(theme.id));
+      const view = buildThemeGraphView({
+        theme,
+        themeCompanies,
+        companies: input.companies,
+        relations: input.relations,
+        keywords: input.keywords,
+        edgeLimit: input.edgeLimit ?? 400,
+        keywordLimit: 24
+      });
+
+      return {
+        theme,
+        themeCompanies,
+        view,
+        summary: buildThemeStatsEntry({
+          theme,
+          view,
+          keywordLimit: input.keywordLimit
+        })
+      } satisfies ThemeGraphCatalogEntry;
+    })
+    .filter((entry) => matchesThemeFilters(entry, input.filters ?? {}));
+}
+
+export async function getThemeGraphView(input: {
+  session: { workspace: { slug: string } };
+  repo: TradingRoomRepository;
+  themeId: string;
+  edgeLimit?: number;
+  keywordLimit?: number;
+}) {
+  const workspaceSlug = input.session.workspace.slug;
+  const [theme, themeCompanies, companies, relations, keywords] = await Promise.all([
+    input.repo.getTheme(input.themeId, { workspaceSlug }),
+    input.repo.listCompanies(input.themeId, { workspaceSlug }),
+    input.repo.listCompanies(undefined, { workspaceSlug }),
+    input.repo.listWorkspaceCompanyRelations(undefined, { workspaceSlug }),
+    input.repo.listWorkspaceCompanyKeywords(undefined, { workspaceSlug })
+  ]);
+
+  if (!theme) {
+    return null;
+  }
+
+  return buildThemeGraphView({
+    theme,
+    themeCompanies,
+    companies,
+    relations,
+    keywords,
+    edgeLimit: input.edgeLimit,
+    keywordLimit: input.keywordLimit
+  });
+}
+
 export async function getThemeGraphStats(input: {
   session: { workspace: { slug: string } };
   repo: TradingRoomRepository;
   limit?: number;
   keywordLimit?: number;
+  query?: string;
+  marketState?: Theme["marketState"];
+  lifecycle?: Theme["lifecycle"];
+  minEdges?: number;
+  onlyConnected?: boolean;
 }): Promise<ThemeGraphStatsView> {
   const { themes, companies, relations, keywords } = await loadThemeGraphWorkspaceContext(input);
   const limit = clamp(input.limit ?? 12, 1, 50);
   const keywordLimit = clamp(input.keywordLimit ?? 5, 1, 5);
-  const themeViews = themes.map((theme) =>
-    buildThemeGraphView({
-      theme,
-      themeCompanies: companies.filter((company) => company.themeIds.includes(theme.id)),
-      companies,
-      relations,
-      keywords,
-      edgeLimit: 400,
-      keywordLimit: 24
-    })
-  );
+  const catalog = projectThemeGraphCatalog({
+    themes,
+    companies,
+    relations,
+    keywords,
+    keywordLimit,
+    filters: {
+      query: input.query,
+      marketState: input.marketState,
+      lifecycle: input.lifecycle,
+      minEdges: input.minEdges,
+      onlyConnected: input.onlyConnected
+    }
+  });
 
-  const topThemes = themeViews
-    .map((view) => {
-      const theme = themes.find((item) => item.id === view.themeId);
-      if (!theme) {
-        return null;
-      }
-
-      return buildThemeStatsEntry({
-        theme,
-        view,
-        keywordLimit
-      });
-    })
-    .filter((item): item is ThemeGraphStatsTheme => item !== null)
+  const topThemes = catalog
+    .map((entry) => entry.summary)
     .sort((left, right) => {
       if (right.totalEdges !== left.totalEdges) {
         return right.totalEdges - left.totalEdges;
@@ -394,22 +499,14 @@ export async function getThemeGraphStats(input: {
 
   return {
     generatedAt: new Date().toISOString(),
-    themeCount: themes.length,
-    connectedThemeCount: themeViews.filter((view) => view.summary.totalMatchingEdges > 0).length,
-    totalThemeCompanies: themeViews.reduce((sum, view) => sum + view.summary.themeCompanyCount, 0),
-    totalRelatedCompanies: themeViews.reduce((sum, view) => sum + view.summary.relatedCompanyCount, 0),
-    totalEdges: themeViews.reduce((sum, view) => sum + view.summary.totalMatchingEdges, 0),
-    totalKeywords: themeViews.reduce((sum, view) => sum + view.summary.keywordCount, 0),
+    themeCount: catalog.length,
+    connectedThemeCount: catalog.filter((entry) => entry.summary.totalEdges > 0).length,
+    totalThemeCompanies: catalog.reduce((sum, entry) => sum + entry.summary.themeCompanyCount, 0),
+    totalRelatedCompanies: catalog.reduce((sum, entry) => sum + entry.summary.relatedCompanyCount, 0),
+    totalEdges: catalog.reduce((sum, entry) => sum + entry.summary.totalEdges, 0),
+    totalKeywords: catalog.reduce((sum, entry) => sum + entry.summary.keywordCount, 0),
     topThemes
   };
-}
-
-function normalizeSearchText(value: string) {
-  return normalizeLabel(value);
-}
-
-function includesQuery(value: string, query: string) {
-  return normalizeSearchText(value).includes(query);
 }
 
 export async function searchThemeGraph(input: {
@@ -418,60 +515,75 @@ export async function searchThemeGraph(input: {
   query?: string;
   limit?: number;
   keywordLimit?: number;
+  marketState?: Theme["marketState"];
+  lifecycle?: Theme["lifecycle"];
+  minEdges?: number;
+  onlyConnected?: boolean;
 }): Promise<ThemeGraphSearchView> {
   const { themes, companies, relations, keywords } = await loadThemeGraphWorkspaceContext(input);
   const limit = clamp(input.limit ?? 20, 1, 50);
   const keywordLimit = clamp(input.keywordLimit ?? 5, 1, 5);
   const query = (input.query ?? "").trim();
   const normalizedQuery = normalizeSearchText(query);
+  const filters: ThemeGraphFilters = {
+    query,
+    marketState: input.marketState,
+    lifecycle: input.lifecycle,
+    minEdges: input.minEdges,
+    onlyConnected: input.onlyConnected
+  };
 
-  const results = themes
-    .map((theme) => {
-      const themeCompanies = companies.filter((company) => company.themeIds.includes(theme.id));
-      const themeView = buildThemeGraphView({
-        theme,
-        themeCompanies,
-        companies,
-        relations,
-        keywords,
-        edgeLimit: 200,
-        keywordLimit: 24
-      });
-      const summary = buildThemeStatsEntry({
-        theme,
-        view: themeView,
-        keywordLimit
-      });
+  const catalog = projectThemeGraphCatalog({
+    themes,
+    companies,
+    relations,
+    keywords,
+    keywordLimit,
+    edgeLimit: 200,
+    filters: {
+      ...filters,
+      query: undefined
+    }
+  });
 
+  const results = catalog
+    .map((entry) => {
       if (!normalizedQuery) {
         return {
-          themeId: theme.id,
-          name: theme.name,
-          marketState: theme.marketState,
-          lifecycle: theme.lifecycle,
-          priority: theme.priority,
-          score: Math.max(1, summary.totalEdges * 4 + summary.themeCompanyCount * 3 + summary.keywordCount),
+          themeId: entry.theme.id,
+          name: entry.theme.name,
+          marketState: entry.theme.marketState,
+          lifecycle: entry.theme.lifecycle,
+          priority: entry.theme.priority,
+          score: Math.max(
+            1,
+            entry.summary.totalEdges * 4 + entry.summary.themeCompanyCount * 3 + entry.summary.keywordCount
+          ),
           matchReasons: ["overview"],
-          matchedCompanies: summary.themeCompanyCount,
-          matchedKeywords: summary.keywordCount,
-          summary
+          matchedCompanies: entry.summary.themeCompanyCount,
+          matchedKeywords: entry.summary.keywordCount,
+          summary: entry.summary
         };
+      }
+
+      if (!matchesThemeFilters(entry, filters, query)) {
+        return null;
       }
 
       const reasons = new Set<string>();
       let score = 0;
 
       if (
-        includesQuery(theme.name, normalizedQuery) ||
-        includesQuery(theme.thesis, normalizedQuery) ||
-        includesQuery(theme.whyNow, normalizedQuery) ||
-        includesQuery(theme.bottleneck, normalizedQuery)
+        includesQuery(entry.theme.name, normalizedQuery) ||
+        includesQuery(entry.theme.thesis, normalizedQuery) ||
+        includesQuery(entry.theme.whyNow, normalizedQuery) ||
+        includesQuery(entry.theme.bottleneck, normalizedQuery)
       ) {
         reasons.add("theme");
         score += 8;
       }
 
-      const matchedCompanies = themeCompanies.filter(
+      const matchedCompanies = entry.themeCompanies.filter(
         (company) =>
           includesQuery(company.name, normalizedQuery) ||
           includesQuery(company.ticker, normalizedQuery) ||
@@ -483,17 +595,15 @@ export async function searchThemeGraph(input: {
         score += matchedCompanies.length * 3;
       }
 
-      const themeKeywords = keywords.filter(
-        (keyword) =>
-          themeCompanies.some((company) => company.id === keyword.companyId) &&
-          includesQuery(keyword.label, normalizedQuery)
+      const matchedKeywords = entry.summary.topKeywords.filter((keyword) =>
+        includesQuery(keyword.label, normalizedQuery)
       );
-      if (themeKeywords.length > 0) {
+      if (matchedKeywords.length > 0) {
         reasons.add("keyword");
-        score += themeKeywords.length * 2;
+        score += matchedKeywords.length * 2;
       }
 
-      const relatedLabels = themeView.nodes.filter((node) => includesQuery(node.label, normalizedQuery));
+      const relatedLabels = entry.view.nodes.filter((node) => includesQuery(node.label, normalizedQuery));
       if (relatedLabels.length > 0) {
         reasons.add("relation");
         score += relatedLabels.length;
@@ -504,16 +614,16 @@ export async function searchThemeGraph(input: {
       }
 
       return {
-        themeId: theme.id,
-        name: theme.name,
-        marketState: theme.marketState,
-        lifecycle: theme.lifecycle,
-        priority: theme.priority,
+        themeId: entry.theme.id,
+        name: entry.theme.name,
+        marketState: entry.theme.marketState,
+        lifecycle: entry.theme.lifecycle,
+        priority: entry.theme.priority,
         score,
         matchReasons: [...reasons],
         matchedCompanies: matchedCompanies.length,
-        matchedKeywords: themeKeywords.length,
-        summary
+        matchedKeywords: matchedKeywords.length,
+        summary: entry.summary
       };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -536,4 +646,37 @@ export async function searchThemeGraph(input: {
     total: results.length,
     results
   };
+}
+
+export function formatThemeGraphStatsAsCsv(items: ThemeGraphStatsTheme[]) {
+  const rows = [
+    [
+      "theme_id",
+      "name",
+      "market_state",
+      "lifecycle",
+      "priority",
+      "theme_company_count",
+      "related_company_count",
+      "total_edges",
+      "keyword_count",
+      "top_keywords"
+    ],
+    ...items.map((item) => [
+      item.themeId,
+      item.name,
+      item.marketState,
+      item.lifecycle,
+      String(item.priority),
+      String(item.themeCompanyCount),
+      String(item.relatedCompanyCount),
+      String(item.totalEdges),
+      String(item.keywordCount),
+      item.topKeywords.map((keyword) => keyword.label).join(" | ")
+    ])
+  ];
+
+  return `${rows
+    .map((row) => row.map((value) => `"${String(value).replaceAll("\"", "\"\"")}"`).join(","))
+    .join("\n")}\n`;
 }

@@ -9,10 +9,12 @@ import {
   companyRelationsReplaceInputSchema,
   companyUpdateInputSchema,
   dailyBriefCreateInputSchema,
+  marketStateSchema,
   reviewEntryCreateInputSchema,
   signalCreateInputSchema,
   signalUpdateInputSchema,
   themeCreateInputSchema,
+  themeLifecycleSchema,
   themeUpdateInputSchema,
   tradePlanCreateInputSchema,
   tradePlanUpdateInputSchema
@@ -77,6 +79,7 @@ import { getCompanyDuplicateReport } from "./company-duplicates.js";
 import { executeCompanyMerge, getCompanyMergePreview } from "./company-merge.js";
 import { getOpsSnapshot } from "./ops-snapshot.js";
 import {
+  formatThemeGraphStatsAsCsv,
   getThemeGraphStats,
   getThemeGraphView,
   searchThemeGraph
@@ -269,14 +272,27 @@ const themeGraphViewQuerySchema = z.object({
 });
 
 const themeGraphStatsQuerySchema = z.object({
+  query: z.string().trim().max(160).optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
-  keywordLimit: z.coerce.number().int().min(1).max(5).optional()
+  keywordLimit: z.coerce.number().int().min(1).max(5).optional(),
+  marketState: marketStateSchema.optional(),
+  lifecycle: themeLifecycleSchema.optional(),
+  minEdges: z.coerce.number().int().min(0).max(10_000).optional(),
+  onlyConnected: z.coerce.boolean().optional()
 });
 
 const themeGraphSearchQuerySchema = z.object({
   query: z.string().trim().max(160).optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
-  keywordLimit: z.coerce.number().int().min(1).max(5).optional()
+  keywordLimit: z.coerce.number().int().min(1).max(5).optional(),
+  marketState: marketStateSchema.optional(),
+  lifecycle: themeLifecycleSchema.optional(),
+  minEdges: z.coerce.number().int().min(0).max(10_000).optional(),
+  onlyConnected: z.coerce.boolean().optional()
+});
+
+const themeGraphExportQuerySchema = themeGraphStatsQuerySchema.extend({
+  format: z.enum(["csv", "json"]).default("csv")
 });
 
 const companyGraphSearchQuerySchema = z.object({
@@ -643,8 +659,13 @@ app.get("/api/v1/theme-graph/stats", async (c) => {
   const stats = await getThemeGraphStats({
     session: c.get("session"),
     repo: c.get("repo"),
+    query: query.query,
     limit: query.limit,
-    keywordLimit: query.keywordLimit
+    keywordLimit: query.keywordLimit,
+    marketState: query.marketState,
+    lifecycle: query.lifecycle,
+    minEdges: query.minEdges,
+    onlyConnected: query.onlyConnected
   });
 
   return c.json({ data: stats });
@@ -657,10 +678,38 @@ app.get("/api/v1/theme-graph/search", async (c) => {
     repo: c.get("repo"),
     query: query.query,
     limit: query.limit,
-    keywordLimit: query.keywordLimit
+    keywordLimit: query.keywordLimit,
+    marketState: query.marketState,
+    lifecycle: query.lifecycle,
+    minEdges: query.minEdges,
+    onlyConnected: query.onlyConnected
   });
 
   return c.json({ data: results });
+});
+
+app.get("/api/v1/theme-graph/export", async (c) => {
+  const query = themeGraphExportQuerySchema.parse(c.req.query());
+  const stats = await getThemeGraphStats({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    query: query.query,
+    limit: query.limit ?? 50,
+    keywordLimit: query.keywordLimit,
+    marketState: query.marketState,
+    lifecycle: query.lifecycle,
+    minEdges: query.minEdges,
+    onlyConnected: query.onlyConnected
+  });
+
+  if (query.format === "json") {
+    return c.json({ data: stats });
+  }
+
+  return c.body(formatThemeGraphStatsAsCsv(stats.topThemes), 200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename=\"theme-graph-${new Date().toISOString().slice(0, 10)}.csv\"`
+  });
 });
 
 app.get("/api/v1/themes/:id", async (c) => {

@@ -33,6 +33,7 @@ import {
 } from "../apps/api/src/company-merge.ts";
 import {
   buildThemeGraphView,
+  formatThemeGraphStatsAsCsv,
   getThemeGraphStats,
   getThemeGraphView,
   searchThemeGraph
@@ -1520,6 +1521,105 @@ test("theme graph search matches theme, company, and keyword signals", async () 
   });
   assert.equal(byKeyword.total, 1);
   assert.equal(byKeyword.results[0]?.matchReasons.includes("keyword"), true);
+});
+
+test("theme graph stats filters and csv export stay aligned", async () => {
+  const repo = new MemoryTradingRoomRepository();
+
+  const connectedTheme = await repo.createTheme({
+    name: "高速光模組",
+    marketState: "Attack",
+    lifecycle: "Validation",
+    priority: 5,
+    thesis: "Optical bandwidth upgrades continue.",
+    whyNow: "Scale-out demand is rising.",
+    bottleneck: "Laser capacity"
+  });
+
+  const disconnectedTheme = await repo.createTheme({
+    name: "邊緣運算",
+    marketState: "Balanced",
+    lifecycle: "Discovery",
+    priority: 3,
+    thesis: "Edge inference may broaden later.",
+    whyNow: "Early pilot demand only.",
+    bottleneck: "Adoption timing"
+  });
+
+  const opticsCompany = await repo.createCompany({
+    name: "上詮",
+    ticker: "3363",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [connectedTheme.id],
+    chainPosition: "Optics",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 4, margin: 4, capacity: 4, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Optical module leader"
+  });
+
+  const relatedCompany = await repo.createCompany({
+    name: "環宇-KY",
+    ticker: "4991",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [],
+    chainPosition: "Laser",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 3, margin: 3, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Related laser vendor"
+  });
+
+  await repo.createCompany({
+    name: "研華",
+    ticker: "2395",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [disconnectedTheme.id],
+    chainPosition: "Edge",
+    beneficiaryTier: "Observation",
+    exposure: { volume: 3, asp: 3, margin: 3, capacity: 3, narrative: 3 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Disconnected theme member"
+  });
+
+  await repo.replaceCompanyRelations(opticsCompany.id, [
+    {
+      targetCompanyId: relatedCompany.id,
+      targetLabel: relatedCompany.name,
+      relationType: "supplier",
+      confidence: 0.9,
+      sourcePath: "reports/optics.md"
+    }
+  ]);
+
+  await repo.replaceCompanyKeywords(opticsCompany.id, [
+    {
+      label: "光模組",
+      confidence: 0.95,
+      sourcePath: "reports/optics.md"
+    }
+  ]);
+
+  const filteredStats = await getThemeGraphStats({
+    session: { workspace: { slug: "primary-desk" } },
+    repo,
+    marketState: "Attack",
+    onlyConnected: true,
+    minEdges: 1,
+    limit: 10,
+    keywordLimit: 3
+  });
+
+  assert.equal(filteredStats.topThemes.length, 1);
+  assert.equal(filteredStats.topThemes[0]?.themeId, connectedTheme.id);
+
+  const csv = formatThemeGraphStatsAsCsv(filteredStats.topThemes);
+  assert.match(csv, /theme_id/);
+  assert.match(csv, /高速光模組/);
+  assert.doesNotMatch(csv, /邊緣運算/);
 });
 
 test("memory repository supports core research-to-review loop", async () => {
