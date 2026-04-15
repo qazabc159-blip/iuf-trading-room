@@ -295,6 +295,28 @@ async function main() {
       true
     );
 
+    const themeGraph = await request<
+      JsonEnvelope<{
+        themeId: string;
+        nodes: Array<{ companyId: string | null; kind: string }>;
+        edges: Array<{ direction: string }>;
+        topKeywords: Array<{ label: string }>;
+        summary: { themeCompanyCount: number; displayedEdges: number; keywordCount: number };
+      }>
+    >(baseUrl, `/api/v1/themes/${theme.data.id}/graph?edgeLimit=20&keywordLimit=10`, {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(themeGraph.data.themeId, theme.data.id);
+    assert.ok(themeGraph.data.summary.themeCompanyCount >= 1);
+    assert.ok(themeGraph.data.summary.displayedEdges >= 2);
+    assert.ok(themeGraph.data.summary.keywordCount >= 2);
+    assert.equal(
+      themeGraph.data.nodes.some(
+        (node) => node.kind === "theme_company" && node.companyId === company.data.id
+      ),
+      true
+    );
+
     const duplicateCompany = await request<JsonEnvelope<{ id: string; ticker: string }>>(
       baseUrl,
       "/api/v1/companies",

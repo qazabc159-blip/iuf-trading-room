@@ -74,6 +74,7 @@ import {
 } from "./company-graph.js";
 import { getCompanyDuplicateReport } from "./company-duplicates.js";
 import { getOpsSnapshot } from "./ops-snapshot.js";
+import { getThemeGraphView } from "./theme-graph.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -253,6 +254,11 @@ const opsSnapshotQuerySchema = z.object({
 
 const companyGraphViewQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(240).optional(),
+  keywordLimit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+const themeGraphViewQuerySchema = z.object({
+  edgeLimit: z.coerce.number().int().min(1).max(400).optional(),
   keywordLimit: z.coerce.number().int().min(1).max(100).optional()
 });
 
@@ -544,6 +550,23 @@ app.post("/api/v1/themes", async (c) => {
     },
     201
   );
+});
+
+app.get("/api/v1/themes/:id/graph", async (c) => {
+  const query = themeGraphViewQuerySchema.parse(c.req.query());
+  const graph = await getThemeGraphView({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    themeId: c.req.param("id"),
+    edgeLimit: query.edgeLimit,
+    keywordLimit: query.keywordLimit
+  });
+
+  if (!graph) {
+    return c.json({ error: "theme_not_found" }, 404);
+  }
+
+  return c.json({ data: graph });
 });
 
 app.get("/api/v1/themes/:id", async (c) => {

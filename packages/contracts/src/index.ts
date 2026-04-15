@@ -5,5 +5,6 @@ export * from "./companyGraph.js";
 export * from "./review.js";
 export * from "./signal.js";
 export * from "./theme.js";
+export * from "./themeGraph.js";
 export * from "./tradePlan.js";
 export * from "./workspace.js";

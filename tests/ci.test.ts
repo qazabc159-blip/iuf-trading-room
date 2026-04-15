@@ -28,6 +28,10 @@ import {
   getCompanyDuplicateReport
 } from "../apps/api/src/company-duplicates.ts";
 import {
+  buildThemeGraphView,
+  getThemeGraphView
+} from "../apps/api/src/theme-graph.ts";
+import {
   buildTradingViewEventKey,
   validateTradingViewTimestamp
 } from "../apps/api/src/tradingview-webhook-guard.ts";
@@ -42,6 +46,7 @@ import {
   parseEventHistorySources
 } from "../apps/api/src/event-history.ts";
 import { buildOpsSnapshotView } from "../apps/api/src/ops-snapshot.ts";
+import type { Company, Theme } from "../packages/contracts/src/index.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
 import {
@@ -729,6 +734,153 @@ test("company graph stats summarize relation types and top nodes", () => {
   assert.equal(stats.topConnectedCompanies[0]?.companyId, companyA.id);
 });
 
+test("theme graph view projects theme companies, neighbors, and keyword rollups", () => {
+  const themeId = randomUUID();
+  const now = "2026-04-15T08:00:00.000Z";
+  const theme: Theme = {
+    id: themeId,
+    name: "AI 光互連",
+    slug: "ai-optical-interconnect",
+    marketState: "Selective Attack",
+    lifecycle: "Discovery",
+    priority: 4,
+    thesis: "Optics scale-out is accelerating.",
+    whyNow: "Bandwidth is becoming the bottleneck.",
+    bottleneck: "1.6T ecosystem readiness",
+    corePoolCount: 2,
+    observationPoolCount: 1,
+    createdAt: now,
+    updatedAt: now
+  };
+  const themeCompanyA: Company = {
+    id: randomUUID(),
+    name: "聯鈞",
+    ticker: "3450",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [themeId],
+    chainPosition: "Optics",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 4, margin: 4, capacity: 4, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: now
+  };
+  const themeCompanyB: Company = {
+    id: randomUUID(),
+    name: "上詮",
+    ticker: "3363",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [themeId],
+    chainPosition: "CPO",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 4, margin: 3, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: now
+  };
+  const neighborCompany: Company = {
+    id: randomUUID(),
+    name: "波若威",
+    ticker: "3163",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [],
+    chainPosition: "Optical modules",
+    beneficiaryTier: "Observation",
+    exposure: { volume: 3, asp: 3, margin: 3, capacity: 3, narrative: 3 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: now
+  };
+
+  const view = buildThemeGraphView({
+    theme,
+    themeCompanies: [themeCompanyA, themeCompanyB],
+    companies: [themeCompanyA, themeCompanyB, neighborCompany],
+    relations: [
+      {
+        id: randomUUID(),
+        companyId: themeCompanyA.id,
+        targetCompanyId: themeCompanyB.id,
+        targetLabel: themeCompanyB.name,
+        relationType: "technology",
+        confidence: 0.9,
+        sourcePath: "reports/a.md",
+        updatedAt: now
+      },
+      {
+        id: randomUUID(),
+        companyId: themeCompanyA.id,
+        targetCompanyId: neighborCompany.id,
+        targetLabel: neighborCompany.name,
+        relationType: "supplier",
+        confidence: 0.8,
+        sourcePath: "reports/a.md",
+        updatedAt: now
+      },
+      {
+        id: randomUUID(),
+        companyId: neighborCompany.id,
+        targetCompanyId: themeCompanyB.id,
+        targetLabel: themeCompanyB.name,
+        relationType: "customer",
+        confidence: 0.7,
+        sourcePath: "reports/b.md",
+        updatedAt: now
+      },
+      {
+        id: randomUUID(),
+        companyId: themeCompanyB.id,
+        targetCompanyId: null,
+        targetLabel: "NVIDIA",
+        relationType: "customer",
+        confidence: 0.85,
+        sourcePath: "reports/c.md",
+        updatedAt: now
+      }
+    ],
+    keywords: [
+      {
+        id: randomUUID(),
+        companyId: themeCompanyA.id,
+        label: "AI",
+        confidence: 0.9,
+        sourcePath: "reports/a.md",
+        updatedAt: now
+      },
+      {
+        id: randomUUID(),
+        companyId: themeCompanyB.id,
+        label: "AI",
+        confidence: 0.8,
+        sourcePath: "reports/b.md",
+        updatedAt: now
+      },
+      {
+        id: randomUUID(),
+        companyId: themeCompanyB.id,
+        label: "CPO",
+        confidence: 0.9,
+        sourcePath: "reports/b.md",
+        updatedAt: now
+      }
+    ]
+  });
+
+  assert.equal(view.themeId, themeId);
+  assert.equal(view.summary.themeCompanyCount, 2);
+  assert.equal(view.summary.internalEdges, 1);
+  assert.equal(view.summary.outboundEdges, 2);
+  assert.equal(view.summary.inboundEdges, 1);
+  assert.equal(view.nodes.some((node) => node.kind === "theme_company" && node.companyId === themeCompanyA.id), true);
+  assert.equal(view.nodes.some((node) => node.kind === "company" && node.companyId === neighborCompany.id), true);
+  assert.equal(view.nodes.some((node) => node.kind === "external_label" && node.label === "NVIDIA"), true);
+  assert.equal(view.topKeywords[0]?.label, "AI");
+  assert.equal(view.topKeywords[0]?.count, 2);
+});
+
 test("company duplicate report groups duplicates and recommends a canonical record", () => {
   const curatedCompany: Company = {
     id: randomUUID(),
@@ -1019,6 +1171,77 @@ test("duplicate report helper reads repository-scoped companies", async () => {
     report.groups.some((group) => group.ticker === "6801" && group.companies.length >= 2),
     true
   );
+});
+
+test("theme graph helper reads repository-scoped theme companies", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const theme = await repo.createTheme({
+    name: "矽光子升級",
+    marketState: "Selective Attack",
+    lifecycle: "Validation",
+    priority: 4,
+    thesis: "Scale-out pushes optics upgrades.",
+    whyNow: "Switch bandwidth is rising quickly.",
+    bottleneck: "Packaging yield"
+  });
+
+  const focusCompany = await repo.createCompany({
+    name: "聯亞",
+    ticker: "3081",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [theme.id],
+    chainPosition: "Laser",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 4, margin: 3, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Theme member"
+  });
+
+  const neighborCompany = await repo.createCompany({
+    name: "華星光",
+    ticker: "4979",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [],
+    chainPosition: "Modules",
+    beneficiaryTier: "Observation",
+    exposure: { volume: 3, asp: 3, margin: 3, capacity: 3, narrative: 3 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Neighbor"
+  });
+
+  await repo.replaceCompanyRelations(focusCompany.id, [
+    {
+      targetCompanyId: neighborCompany.id,
+      targetLabel: neighborCompany.name,
+      relationType: "supplier",
+      confidence: 0.82,
+      sourcePath: "reports/theme.md"
+    }
+  ]);
+  await repo.replaceCompanyKeywords(focusCompany.id, [
+    {
+      label: "矽光子",
+      confidence: 0.88,
+      sourcePath: "reports/theme.md"
+    }
+  ]);
+
+  const view = await getThemeGraphView({
+    session: { workspace: { slug: "primary-desk" } },
+    repo,
+    themeId: theme.id,
+    edgeLimit: 20,
+    keywordLimit: 10
+  });
+
+  assert.ok(view);
+  assert.equal(view?.themeId, theme.id);
+  assert.equal(view?.summary.themeCompanyCount, 1);
+  assert.equal(view?.summary.displayedEdges, 1);
+  assert.equal(view?.nodes.some((node) => node.kind === "theme_company" && node.companyId === focusCompany.id), true);
+  assert.equal(view?.nodes.some((node) => node.kind === "company" && node.companyId === neighborCompany.id), true);
 });
 
 test("memory repository supports core research-to-review loop", async () => {
