@@ -28,6 +28,10 @@ import {
   getCompanyDuplicateReport
 } from "../apps/api/src/company-duplicates.ts";
 import {
+  executeCompanyMerge,
+  getCompanyMergePreview
+} from "../apps/api/src/company-merge.ts";
+import {
   buildThemeGraphView,
   getThemeGraphView
 } from "../apps/api/src/theme-graph.ts";
@@ -1169,6 +1173,141 @@ test("duplicate report helper reads repository-scoped companies", async () => {
   assert.ok(report.summary.groupCount >= 1);
   assert.equal(
     report.groups.some((group) => group.ticker === "6801" && group.companies.length >= 2),
+    true
+  );
+});
+
+test("company merge preview and execution collapse duplicate records in memory mode", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const theme = await repo.createTheme({
+    name: "光通訊升級",
+    marketState: "Selective Attack",
+    lifecycle: "Validation",
+    priority: 4,
+    thesis: "Optics demand is broadening.",
+    whyNow: "Cloud capex is shifting up.",
+    bottleneck: "Yield"
+  });
+
+  const canonical = await repo.createCompany({
+    name: "Acme Optics",
+    ticker: "6801",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [theme.id],
+    chainPosition: "Modules",
+    beneficiaryTier: "Core",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Canonical company"
+  });
+
+  const duplicate = await repo.createCompany({
+    name: "Acme Optics",
+    ticker: "6801",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "Modules",
+    beneficiaryTier: "Observation",
+    exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Imported duplicate"
+  });
+
+  const upstream = await repo.createCompany({
+    name: "Photon Supply",
+    ticker: "9999",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [],
+    chainPosition: "Laser",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 3, asp: 3, margin: 3, capacity: 3, narrative: 3 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Incoming relation source"
+  });
+
+  await repo.replaceCompanyRelations(canonical.id, [
+    {
+      targetLabel: "NVIDIA",
+      relationType: "customer",
+      confidence: 0.7,
+      sourcePath: "reports/canonical.md"
+    }
+  ]);
+  await repo.replaceCompanyRelations(duplicate.id, [
+    {
+      targetLabel: "NVIDIA",
+      relationType: "customer",
+      confidence: 0.9,
+      sourcePath: "reports/duplicate.md"
+    }
+  ]);
+  await repo.replaceCompanyRelations(upstream.id, [
+    {
+      targetCompanyId: duplicate.id,
+      targetLabel: duplicate.name,
+      relationType: "supplier",
+      confidence: 0.85,
+      sourcePath: "reports/upstream.md"
+    }
+  ]);
+  await repo.replaceCompanyKeywords(duplicate.id, [
+    {
+      label: "CPO",
+      confidence: 0.88,
+      sourcePath: "reports/duplicate.md"
+    }
+  ]);
+  const tradePlan = await repo.createTradePlan({
+    companyId: duplicate.id,
+    status: "draft",
+    entryPlan: "Scale in",
+    invalidationPlan: "Break support",
+    targetPlan: "Retest high",
+    riskReward: "1:3",
+    notes: "Duplicate plan"
+  });
+
+  const preview = await getCompanyMergePreview({
+    session: await repo.getSession(),
+    repo,
+    merge: {
+      targetCompanyId: canonical.id,
+      sourceCompanyIds: [duplicate.id],
+      force: false,
+      appendSourceNotes: true
+    }
+  });
+
+  assert.ok(preview);
+  assert.equal(preview?.allowed, true);
+  assert.equal(preview?.impact.sourceCompaniesToDelete, 1);
+  assert.equal(preview?.impact.tradePlansToReassign, 1);
+  assert.equal(preview?.impact.notesAppended, true);
+
+  const result = await executeCompanyMerge({
+    session: await repo.getSession(),
+    repo,
+    merge: {
+      targetCompanyId: canonical.id,
+      sourceCompanyIds: [duplicate.id],
+      force: false,
+      appendSourceNotes: true
+    }
+  });
+
+  assert.ok(result);
+  assert.equal(result?.deletedCompanyIds.includes(duplicate.id), true);
+  assert.equal((await repo.getCompany(duplicate.id)) === null, true);
+  assert.equal((await repo.listCompanies()).some((company) => company.id === canonical.id), true);
+  assert.equal((await repo.listTradePlans({ companyId: canonical.id })).some((plan) => plan.id === tradePlan.id), true);
+  assert.equal((await repo.listCompanyKeywords(canonical.id)).some((keyword) => keyword.label === "CPO"), true);
+  assert.equal(
+    (await repo.listCompanyRelations(upstream.id)).some(
+      (relation) => relation.targetCompanyId === canonical.id && relation.targetLabel === canonical.name
+    ),
     true
   );
 });

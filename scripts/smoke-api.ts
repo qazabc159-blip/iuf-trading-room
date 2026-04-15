@@ -372,6 +372,51 @@ async function main() {
       true
     );
 
+    const mergePreview = await request<
+      JsonEnvelope<{
+        allowed: boolean;
+        warnings: string[];
+        impact: {
+          sourceCompaniesToDelete: number;
+          outgoingRelationRowsToRewrite: number;
+        };
+      }>
+    >(
+      baseUrl,
+      `/api/v1/companies/merge-preview?targetCompanyId=${company.data.id}&sourceCompanyIds=${duplicateCompany.data.id}`,
+      {
+        headers: { "x-workspace-slug": workspaceSlug }
+      }
+    );
+    assert.equal(mergePreview.data.allowed, true);
+    assert.equal(mergePreview.data.impact.sourceCompaniesToDelete, 1);
+    assert.ok(mergePreview.data.impact.outgoingRelationRowsToRewrite >= 2);
+
+    const mergeResult = await request<
+      JsonEnvelope<{
+        targetCompanyId: string;
+        deletedCompanyIds: string[];
+      }>
+    >(baseUrl, "/api/v1/companies/merge", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        targetCompanyId: company.data.id,
+        sourceCompanyIds: [duplicateCompany.data.id]
+      })
+    });
+    assert.equal(mergeResult.data.targetCompanyId, company.data.id);
+    assert.equal(mergeResult.data.deletedCompanyIds.includes(duplicateCompany.data.id), true);
+
+    const duplicateReportAfterMerge = await request<
+      JsonEnvelope<{
+        summary: { groupCount: number };
+      }>
+    >(baseUrl, "/api/v1/companies/duplicates?limit=20&query=SMK1", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(duplicateReportAfterMerge.data.summary.groupCount, 0);
+
     const signal = await request<JsonEnvelope<{ id: string; title: string }>>(baseUrl, "/api/v1/signals", {
       method: "POST",
       headers: { "x-workspace-slug": workspaceSlug },

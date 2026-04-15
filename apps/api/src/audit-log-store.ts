@@ -6,6 +6,7 @@ export type AuditAction =
   | "create"
   | "update"
   | "delete"
+  | "merge"
   | "register"
   | "revoke"
   | "cleanup"
@@ -96,6 +97,12 @@ const specialAuditRoutes: Array<{
     action: "replace",
     entityType: "company_keyword",
     entityId: (match) => match[1] ?? "unknown"
+  },
+  {
+    matcher: /^\/api\/v1\/companies\/merge$/,
+    action: "merge",
+    entityType: "company_merge",
+    entityId: "pending"
   }
 ];
 

@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import type { Context } from "hono";
 import {
   type AppSession,
+  companyMergeInputSchema,
   companyCreateInputSchema,
   companyKeywordsReplaceInputSchema,
   companyRelationsReplaceInputSchema,
@@ -73,6 +74,7 @@ import {
   getCompanyGraphView
 } from "./company-graph.js";
 import { getCompanyDuplicateReport } from "./company-duplicates.js";
+import { executeCompanyMerge, getCompanyMergePreview } from "./company-merge.js";
 import { getOpsSnapshot } from "./ops-snapshot.js";
 import { getThemeGraphView } from "./theme-graph.js";
 
@@ -274,6 +276,23 @@ const companyGraphStatsQuerySchema = z.object({
 const companyDuplicateReportQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional(),
   query: z.string().trim().min(1).max(120).optional()
+});
+
+const companyMergePreviewQuerySchema = z.object({
+  targetCompanyId: z.string().uuid(),
+  sourceCompanyIds: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value) =>
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+    .pipe(z.array(z.string().uuid()).min(1).max(20)),
+  force: z.coerce.boolean().optional(),
+  appendSourceNotes: z.coerce.boolean().optional()
 });
 
 async function handleOpenAliceJobClaim(c: Context) {
@@ -530,6 +549,41 @@ app.get("/api/v1/companies/duplicates", async (c) => {
       query: query.query
     })
   });
+});
+
+app.get("/api/v1/companies/merge-preview", async (c) => {
+  const query = companyMergePreviewQuerySchema.parse(c.req.query());
+  const preview = await getCompanyMergePreview({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    merge: {
+      targetCompanyId: query.targetCompanyId,
+      sourceCompanyIds: query.sourceCompanyIds,
+      force: query.force ?? false,
+      appendSourceNotes: query.appendSourceNotes ?? true
+    }
+  });
+
+  if (!preview) {
+    return c.json({ error: "company_not_found" }, 404);
+  }
+
+  return c.json({ data: preview });
+});
+
+app.post("/api/v1/companies/merge", async (c) => {
+  const payload = companyMergeInputSchema.parse(await c.req.json());
+  const result = await executeCompanyMerge({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    merge: payload
+  });
+
+  if (!result) {
+    return c.json({ error: "company_not_found" }, 404);
+  }
+
+  return c.json({ data: result });
 });
 
 app.get("/api/v1/themes", async (c) =>
