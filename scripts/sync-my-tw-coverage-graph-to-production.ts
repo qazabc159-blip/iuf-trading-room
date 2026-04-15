@@ -19,7 +19,12 @@ import type {
   CompanyRelationInput
 } from "@iuf-trading-room/contracts";
 
-import { runImport } from "../packages/integrations/src/my-tw-coverage/importer.js";
+import {
+  buildCompanyReferenceIndex,
+  normalizeCompanyReferenceLabel,
+  resolveCompanyReference,
+  runImport
+} from "../packages/integrations/src/my-tw-coverage/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -42,13 +47,6 @@ type CompanyGraphSyncItem = {
   keywords: CompanyKeywordInput[];
 };
 
-function normalizeLabel(value: string | undefined) {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/\[\[([^\]]+)\]\]/gu, "$1")
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/gu, "");
-}
-
 function dedupeRelations(relations: CompanyRelationInput[]) {
   const deduped = new Map<string, CompanyRelationInput>();
 
@@ -57,7 +55,7 @@ function dedupeRelations(relations: CompanyRelationInput[]) {
       relation.targetLabel,
       relation.relationType
     ]
-      .map((part) => normalizeLabel(part))
+      .map((part) => normalizeCompanyReferenceLabel(part))
       .join("::");
     const existing = deduped.get(key);
     if (
@@ -82,7 +80,7 @@ function dedupeKeywords(keywords: CompanyKeywordInput[]) {
   const deduped = new Map<string, CompanyKeywordInput>();
 
   for (const keyword of keywords) {
-    const key = normalizeLabel(keyword.label);
+    const key = normalizeCompanyReferenceLabel(keyword.label);
     const existing = deduped.get(key);
     if (!existing || keyword.confidence > existing.confidence) {
       deduped.set(key, keyword);
@@ -143,40 +141,45 @@ async function main() {
   );
 
   const existingCompanies = await fetchCompanies();
-  const companyByTicker = new Map(
-    existingCompanies
-      .filter((company) => company.ticker)
-      .map((company) => [company.ticker, company] as const)
-  );
-  const companyByName = new Map(
-    existingCompanies.map((company) => [normalizeLabel(company.name), company] as const)
-  );
+  const companyReferenceIndex = buildCompanyReferenceIndex(existingCompanies);
 
   const ownedCompanyByLabel = new Map<string, Company>();
   for (const seed of imported.companies) {
     const company =
-      companyByTicker.get(seed.ticker) ??
-      companyByName.get(normalizeLabel(seed.displayName));
+      companyReferenceIndex.byTicker.get(seed.ticker) ??
+      companyReferenceIndex.byExactName.get(normalizeCompanyReferenceLabel(seed.displayName)) ??
+      null;
 
     if (company) {
-      ownedCompanyByLabel.set(normalizeLabel(seed.displayName), company);
+      ownedCompanyByLabel.set(normalizeCompanyReferenceLabel(seed.displayName), company);
     }
   }
 
   const relationsBySource = new Map<string, CompanyRelationInput[]>();
+  const relationStrategyCounts = new Map<string, number>();
   for (const relation of imported.relations) {
-    const sourceCompany = ownedCompanyByLabel.get(normalizeLabel(relation.fromLabel));
+    const sourceCompany = ownedCompanyByLabel.get(normalizeCompanyReferenceLabel(relation.fromLabel));
     if (!sourceCompany) {
       continue;
     }
 
-    const targetCompany =
-      companyByName.get(normalizeLabel(relation.toLabel)) ??
-      ownedCompanyByLabel.get(normalizeLabel(relation.toLabel));
+    const match =
+      resolveCompanyReference(companyReferenceIndex, relation.toLabel) ??
+      (() => {
+        const ownedMatch = ownedCompanyByLabel.get(normalizeCompanyReferenceLabel(relation.toLabel));
+        return ownedMatch ? { company: ownedMatch, strategy: "exact_name" as const } : null;
+      })();
+
+    if (match) {
+      relationStrategyCounts.set(
+        match.strategy,
+        (relationStrategyCounts.get(match.strategy) ?? 0) + 1
+      );
+    }
 
     const current = relationsBySource.get(sourceCompany.id) ?? [];
     current.push({
-      targetCompanyId: targetCompany?.id ?? null,
+      targetCompanyId: match?.company.id ?? null,
       targetLabel: relation.toLabel,
       relationType: relation.relationType,
       confidence: relation.confidence,
@@ -187,7 +190,7 @@ async function main() {
 
   const keywordsBySource = new Map<string, CompanyKeywordInput[]>();
   for (const keyword of imported.companyKeywords) {
-    const company = ownedCompanyByLabel.get(normalizeLabel(keyword.companyLabel));
+    const company = ownedCompanyByLabel.get(normalizeCompanyReferenceLabel(keyword.companyLabel));
     if (!company) {
       continue;
     }
@@ -211,6 +214,13 @@ async function main() {
 
   console.log(
     `[graph-sync] ${planned.length} companies have graph payloads (${APPLY ? "apply" : "dry-run"} mode)`
+  );
+  console.log(
+    `[graph-sync] relation resolution strategies: ${JSON.stringify(
+      Object.fromEntries([...relationStrategyCounts.entries()].sort((left, right) =>
+        left[0].localeCompare(right[0])
+      ))
+    )}`
   );
 
   if (!APPLY || planned.length === 0) {

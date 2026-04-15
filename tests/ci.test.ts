@@ -41,9 +41,11 @@ import { buildOpsSnapshotView } from "../apps/api/src/ops-snapshot.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
 import {
+  buildCompanyReferenceIndex,
   buildImportedCompanyDraft,
   parseGraphData,
-  parseReport
+  parseReport,
+  resolveCompanyReference
 } from "../packages/integrations/src/my-tw-coverage/index.ts";
 
 test("signal schema applies expected defaults", () => {
@@ -127,6 +129,61 @@ test("report parser extracts summary, relations, and import draft", () => {
   assert.equal(draft.name, "台積電");
   assert.equal(draft.chainPosition, "Semiconductors");
   assert.match(draft.notes, /Market Cap: 47,845,508 百萬台幣/);
+});
+
+test("company resolver links exact, canonical, and near-prefix references conservatively", () => {
+  const companies = [
+    {
+      id: randomUUID(),
+      name: "光寶科",
+      ticker: "2301",
+      market: "TWSE",
+      country: "Taiwan",
+      themeIds: [],
+      chainPosition: "Power",
+      beneficiaryTier: "Direct",
+      exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+      validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+      notes: "",
+      updatedAt: "2026-04-15T03:00:00.000Z"
+    },
+    {
+      id: randomUUID(),
+      name: "全家",
+      ticker: "5903",
+      market: "TWSE",
+      country: "Taiwan",
+      themeIds: [],
+      chainPosition: "Retail",
+      beneficiaryTier: "Observation",
+      exposure: { volume: 2, asp: 2, margin: 2, capacity: 2, narrative: 2 },
+      validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+      notes: "",
+      updatedAt: "2026-04-15T03:00:00.000Z"
+    },
+    {
+      id: randomUUID(),
+      name: "中華電",
+      ticker: "2412",
+      market: "TWSE",
+      country: "Taiwan",
+      themeIds: [],
+      chainPosition: "Telecom",
+      beneficiaryTier: "Core",
+      exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+      validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+      notes: "",
+      updatedAt: "2026-04-15T03:00:00.000Z"
+    }
+  ];
+
+  const index = buildCompanyReferenceIndex(companies);
+
+  assert.equal(resolveCompanyReference(index, "2301")?.company.id, companies[0]?.id);
+  assert.equal(resolveCompanyReference(index, "全家便利商店")?.company.id, companies[1]?.id);
+  assert.equal(resolveCompanyReference(index, "中華電信")?.company.id, companies[2]?.id);
+  assert.equal(resolveCompanyReference(index, "光寶科技")?.company.id, companies[0]?.id);
+  assert.equal(resolveCompanyReference(index, "Trip.com"), null);
 });
 
 test("tradingview event key stays stable and honors explicit event keys", () => {
