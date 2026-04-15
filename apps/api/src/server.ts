@@ -259,7 +259,8 @@ const eventHistoryExportQuerySchema = eventHistoryQuerySchema.extend({
 
 const opsSnapshotQuerySchema = z.object({
   auditHours: z.coerce.number().int().min(1).max(24 * 30).optional(),
-  recentLimit: z.coerce.number().int().min(1).max(20).optional()
+  recentLimit: z.coerce.number().int().min(1).max(20).optional(),
+  rankingLimit: z.coerce.number().int().min(1).max(20).optional()
 });
 
 const companyGraphViewQuerySchema = z.object({
@@ -545,7 +546,8 @@ app.get("/api/v1/ops/snapshot", async (c) => {
       session: c.get("session"),
       repo: c.get("repo"),
       auditHours: query.auditHours,
-      recentLimit: query.recentLimit
+      recentLimit: query.recentLimit,
+      rankingLimit: query.rankingLimit
     })
   });
 });

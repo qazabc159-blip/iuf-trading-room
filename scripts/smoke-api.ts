@@ -892,6 +892,7 @@ async function main() {
       JsonEnvelope<{
         generatedAt: string;
         stats: { companies: number; themes: number };
+        rankings: { total: number; results: Array<{ themeId: string; score: number }> };
         openAlice: { queue: { reviewable: number } };
         eventHistory: {
           summary: { total: number };
@@ -905,6 +906,8 @@ async function main() {
     assert.match(opsSnapshot.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
     assert.ok(opsSnapshot.data.stats.companies >= 1);
     assert.ok(opsSnapshot.data.stats.themes >= 1);
+    assert.ok(opsSnapshot.data.rankings.total >= 1);
+    assert.ok(Array.isArray(opsSnapshot.data.rankings.results));
     assert.ok(Array.isArray(opsSnapshot.data.latest.companies));
     assert.ok(opsSnapshot.data.openAlice.queue.reviewable >= 0);
     assert.ok(opsSnapshot.data.eventHistory.summary.total >= 0);

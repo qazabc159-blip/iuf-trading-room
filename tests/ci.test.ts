@@ -1080,6 +1080,46 @@ test("ops snapshot view aggregates stats and latest activity", () => {
       entities: [{ entityType: "theme", count: 1 }],
       recent: []
     },
+    rankings: {
+      generatedAt: "2026-04-14T10:52:00.000Z",
+      total: 1,
+      results: [
+        {
+          themeId: "theme-rank-1",
+          name: "AI 光通訊",
+          marketState: "Balanced",
+          lifecycle: "Validation",
+          priority: 4,
+          score: 52,
+          averageExposure: 4.4,
+          breakdown: {
+            conviction: 20,
+            connectivity: 18,
+            leverage: 10,
+            keywordRichness: 4
+          },
+          signals: ["主題進入驗證或擴散階段", "公司曝險分數偏高"],
+          summary: {
+            themeId: "theme-rank-1",
+            name: "AI 光通訊",
+            marketState: "Balanced",
+            lifecycle: "Validation",
+            priority: 4,
+            themeCompanyCount: 1,
+            relatedCompanyCount: 2,
+            totalEdges: 3,
+            keywordCount: 2,
+            topKeywords: [
+              {
+                label: "CPO",
+                count: 2,
+                companyCount: 1
+              }
+            ]
+          }
+        }
+      ]
+    },
     openAlice: {
       source: "bridge_fallback",
       workerStatus: "healthy",
@@ -1137,6 +1177,8 @@ test("ops snapshot view aggregates stats and latest activity", () => {
   assert.equal(snapshot.stats.reviewQueue, 1);
   assert.equal(snapshot.stats.publishedBriefs, 1);
   assert.equal(snapshot.stats.bullishSignals, 1);
+  assert.equal(snapshot.rankings.total, 1);
+  assert.equal(snapshot.rankings.results[0]?.score, 52);
   assert.equal(snapshot.latest.themes[0]?.label, "AI 光通訊");
   assert.equal(snapshot.latest.companies[0]?.label, "2330 台積電");
   assert.equal(snapshot.openAlice.queue.reviewable, 1);

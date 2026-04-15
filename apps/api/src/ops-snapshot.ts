@@ -13,6 +13,7 @@ import { getAuditLogSummary } from "./audit-log-store.js";
 import { getEventHistory, getEventHistorySummary } from "./event-history.js";
 import { listOpenAliceJobs } from "./openalice-bridge.js";
 import { getOpenAliceObservabilitySnapshot } from "./openalice-observability.js";
+import { getThemeGraphRankings } from "./theme-graph.js";
 
 type LatestRecord = {
   id: string;
@@ -53,6 +54,7 @@ export type OpsSnapshot = {
     };
   };
   audit: Awaited<ReturnType<typeof getAuditLogSummary>>;
+  rankings: Awaited<ReturnType<typeof getThemeGraphRankings>>;
   eventHistory: {
     summary: Awaited<ReturnType<typeof getEventHistorySummary>>;
     recent: Awaited<ReturnType<typeof getEventHistory>>;
@@ -96,6 +98,7 @@ export function buildOpsSnapshotView(input: {
   briefs: DailyBrief[];
   jobs: Awaited<ReturnType<typeof listOpenAliceJobs>>;
   audit: Awaited<ReturnType<typeof getAuditLogSummary>>;
+  rankings: Awaited<ReturnType<typeof getThemeGraphRankings>>;
   eventHistorySummary: Awaited<ReturnType<typeof getEventHistorySummary>>;
   eventHistoryRecent: Awaited<ReturnType<typeof getEventHistory>>;
   openAlice: Awaited<ReturnType<typeof getOpenAliceObservabilitySnapshot>>;
@@ -140,6 +143,7 @@ export function buildOpsSnapshotView(input: {
       }
     },
     audit: input.audit,
+    rankings: input.rankings,
     eventHistory: {
       summary: input.eventHistorySummary,
       recent: input.eventHistoryRecent
@@ -220,10 +224,12 @@ export async function getOpsSnapshot(input: {
   repo: TradingRoomRepository;
   auditHours?: number;
   recentLimit?: number;
+  rankingLimit?: number;
 }) {
   const { session, repo } = input;
   const workspaceSlug = session.workspace.slug;
   const recentLimit = input.recentLimit ?? 6;
+  const rankingLimit = input.rankingLimit ?? 6;
 
   const [
     themes,
@@ -235,6 +241,7 @@ export async function getOpsSnapshot(input: {
     jobs,
     openAlice,
     audit,
+    rankings,
     eventHistorySummary,
     eventHistoryRecent
   ] = await Promise.all([
@@ -249,6 +256,12 @@ export async function getOpsSnapshot(input: {
     getAuditLogSummary({
       session,
       hours: input.auditHours
+    }),
+    getThemeGraphRankings({
+      session,
+      repo,
+      limit: rankingLimit,
+      keywordLimit: 3
     }),
     getEventHistorySummary({
       session,
@@ -273,6 +286,7 @@ export async function getOpsSnapshot(input: {
     briefs,
     jobs,
     audit,
+    rankings,
     eventHistorySummary,
     eventHistoryRecent,
     openAlice,
