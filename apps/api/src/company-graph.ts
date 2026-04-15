@@ -74,6 +74,46 @@ function computeSearchScore(value: string, query: string) {
   return 0;
 }
 
+const beneficiaryTierPriority: Record<Company["beneficiaryTier"], number> = {
+  Core: 4,
+  Direct: 3,
+  Indirect: 2,
+  Observation: 1
+};
+
+function companySearchDedupeKey(item: CompanyGraphSearchResult) {
+  return `${item.ticker}::${normalizeLabel(item.name)}`;
+}
+
+function choosePreferredSearchResult(
+  current: CompanyGraphSearchResult,
+  candidate: CompanyGraphSearchResult
+) {
+  if (candidate.score !== current.score) {
+    return candidate.score > current.score ? candidate : current;
+  }
+
+  if (candidate.relationCount !== current.relationCount) {
+    return candidate.relationCount > current.relationCount ? candidate : current;
+  }
+
+  if (candidate.keywordCount !== current.keywordCount) {
+    return candidate.keywordCount > current.keywordCount ? candidate : current;
+  }
+
+  if (
+    beneficiaryTierPriority[candidate.beneficiaryTier] !==
+    beneficiaryTierPriority[current.beneficiaryTier]
+  ) {
+    return beneficiaryTierPriority[candidate.beneficiaryTier] >
+      beneficiaryTierPriority[current.beneficiaryTier]
+      ? candidate
+      : current;
+  }
+
+  return candidate.country === "TW" && current.country !== "TW" ? candidate : current;
+}
+
 export function buildCompanyGraphView(input: {
   focusCompany: Company;
   companies: Company[];
@@ -245,7 +285,7 @@ export function buildCompanyGraphSearchResults(input: {
     relationsByCompany.set(relation.companyId, current);
   }
 
-  return input.companies
+  const rawResults = input.companies
     .map((company) => {
       const matchedBy = new Set<CompanyGraphSearchResult["matchedBy"][number]>();
       let score = 0;
@@ -297,6 +337,15 @@ export function buildCompanyGraphSearchResults(input: {
       } satisfies CompanyGraphSearchResult;
     })
     .filter((item): item is CompanyGraphSearchResult => item !== null)
+    .reduce<Map<string, CompanyGraphSearchResult>>((deduped, item) => {
+      const key = companySearchDedupeKey(item);
+      const existing = deduped.get(key);
+
+      deduped.set(key, existing ? choosePreferredSearchResult(existing, item) : item);
+      return deduped;
+    }, new Map());
+
+  return [...rawResults.values()]
     .sort((left, right) => {
       if (right.score !== left.score) {
         return right.score - left.score;

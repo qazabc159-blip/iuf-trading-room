@@ -600,6 +600,63 @@ test("company graph search scores ticker, name, keyword, and relation matches", 
   assert.equal(results[0]?.keywordCount, 1);
 });
 
+test("company graph search dedupes duplicate company cards by ticker and name", () => {
+  const sharedTicker = "2330";
+  const curatedCompany: Company = {
+    id: randomUUID(),
+    name: "台積電",
+    ticker: sharedTicker,
+    market: "TWSE",
+    country: "TW",
+    themeIds: [],
+    chainPosition: "Semiconductors",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: "2026-04-15T04:00:00.000Z"
+  };
+  const importedCompany: Company = {
+    ...curatedCompany,
+    id: randomUUID(),
+    country: "Taiwan",
+    beneficiaryTier: "Observation",
+    exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
+    updatedAt: "2026-04-15T03:00:00.000Z"
+  };
+
+  const results = buildCompanyGraphSearchResults({
+    query: "台積",
+    companies: [importedCompany, curatedCompany],
+    relations: [
+      {
+        id: randomUUID(),
+        companyId: curatedCompany.id,
+        targetCompanyId: null,
+        targetLabel: "NVIDIA",
+        relationType: "customer",
+        confidence: 0.9,
+        sourcePath: "Pilot_Reports/Semiconductors/2330_台積電.md",
+        updatedAt: "2026-04-15T04:10:00.000Z"
+      }
+    ],
+    keywords: [
+      {
+        id: randomUUID(),
+        companyId: curatedCompany.id,
+        label: "先進封裝",
+        confidence: 0.8,
+        sourcePath: "Pilot_Reports/Semiconductors/2330_台積電.md",
+        updatedAt: "2026-04-15T04:12:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0]?.companyId, curatedCompany.id);
+  assert.equal(results[0]?.beneficiaryTier, "Core");
+});
+
 test("company graph stats summarize relation types and top nodes", () => {
   const companyA: Company = {
     id: randomUUID(),
