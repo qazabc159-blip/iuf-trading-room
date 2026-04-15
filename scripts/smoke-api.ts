@@ -350,6 +350,26 @@ async function main() {
       true
     );
 
+    const themeGraphRankings = await request<
+      JsonEnvelope<{
+        total: number;
+        results: Array<{ themeId: string; score: number; signals: string[] }>;
+      }>
+    >(
+      baseUrl,
+      "/api/v1/theme-graph/rankings?query=Smoke&marketState=Balanced&onlyConnected=false&limit=10&keywordLimit=3",
+      {
+        headers: { "x-workspace-slug": workspaceSlug }
+      }
+    );
+    assert.ok(themeGraphRankings.data.total >= 1);
+    assert.equal(
+      themeGraphRankings.data.results.some(
+        (item) => item.themeId === theme.data.id && item.score >= 1
+      ),
+      true
+    );
+
     const filteredThemeGraphStats = await request<
       JsonEnvelope<{
         themeCount: number;

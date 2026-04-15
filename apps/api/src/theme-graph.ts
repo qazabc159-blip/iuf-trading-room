@@ -5,6 +5,7 @@ import type {
   Theme,
   ThemeGraphEdge,
   ThemeGraphKeywordRollup,
+  ThemeGraphRankingView,
   ThemeGraphSearchView,
   ThemeGraphStatsTheme,
   ThemeGraphStatsView,
@@ -304,6 +305,181 @@ function buildThemeStatsEntry(input: {
     totalEdges: input.view.summary.totalMatchingEdges,
     keywordCount: input.view.summary.keywordCount,
     topKeywords: input.view.topKeywords.slice(0, clamp(input.keywordLimit ?? 5, 1, 5))
+  };
+}
+
+function marketStateRankWeight(marketState: Theme["marketState"]) {
+  switch (marketState) {
+    case "Attack":
+      return 14;
+    case "Selective Attack":
+      return 11;
+    case "Balanced":
+      return 8;
+    case "Defense":
+      return 5;
+    case "Preservation":
+      return 2;
+    default:
+      return 0;
+  }
+}
+
+function lifecycleRankWeight(lifecycle: Theme["lifecycle"]) {
+  switch (lifecycle) {
+    case "Validation":
+      return 10;
+    case "Expansion":
+      return 9;
+    case "Discovery":
+      return 7;
+    case "Crowded":
+      return 4;
+    case "Distribution":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function beneficiaryTierWeight(tier: Company["beneficiaryTier"]) {
+  switch (tier) {
+    case "Core":
+      return 5;
+    case "Direct":
+      return 4;
+    case "Indirect":
+      return 2;
+    case "Observation":
+      return 1;
+    default:
+      return 1;
+  }
+}
+
+function companyExposureAverage(company: Company) {
+  const values = Object.values(company.exposure);
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function averageThemeExposure(companies: Company[]) {
+  if (companies.length === 0) {
+    return 1;
+  }
+
+  const exposure =
+    companies.reduce((sum, company) => sum + companyExposureAverage(company), 0) / companies.length;
+
+  return Number(exposure.toFixed(2));
+}
+
+function averageThemeTierWeight(companies: Company[]) {
+  if (companies.length === 0) {
+    return 1;
+  }
+
+  return (
+    companies.reduce((sum, company) => sum + beneficiaryTierWeight(company.beneficiaryTier), 0) /
+    companies.length
+  );
+}
+
+function buildThemeRankingSignals(input: {
+  entry: ThemeGraphCatalogEntry;
+  averageExposure: number;
+  keywordRichness: number;
+}) {
+  const signals: string[] = [];
+
+  if (["Attack", "Selective Attack"].includes(input.entry.theme.marketState)) {
+    signals.push("市場風格偏進攻");
+  }
+
+  if (["Validation", "Expansion"].includes(input.entry.theme.lifecycle)) {
+    signals.push("主題進入驗證或擴散階段");
+  }
+
+  if (input.entry.view.summary.internalEdges > 0) {
+    signals.push("主題內部鏈結已形成");
+  }
+
+  if (
+    input.entry.summary.totalEdges >=
+    Math.max(3, input.entry.summary.themeCompanyCount + input.entry.summary.relatedCompanyCount / 2)
+  ) {
+    signals.push("供應鏈連結度偏高");
+  }
+
+  if (input.entry.summary.relatedCompanyCount >= Math.max(2, input.entry.summary.themeCompanyCount)) {
+    signals.push("外部關聯公司擴散明顯");
+  }
+
+  if (input.averageExposure >= 4) {
+    signals.push("公司曝險分數偏高");
+  }
+
+  if (input.keywordRichness >= 6) {
+    signals.push("關鍵詞密度集中");
+  }
+
+  if (input.entry.summary.themeCompanyCount >= 3) {
+    signals.push("主題公司池已成形");
+  }
+
+  return signals.slice(0, 8);
+}
+
+function buildThemeRankingEntry(entry: ThemeGraphCatalogEntry) {
+  const averageExposure = averageThemeExposure(entry.themeCompanies);
+  const averageTier = averageThemeTierWeight(entry.themeCompanies);
+  const sharedKeywordCount = entry.summary.topKeywords.filter((keyword) => keyword.companyCount > 1).length;
+
+  const conviction = clamp(
+    marketStateRankWeight(entry.theme.marketState) +
+      lifecycleRankWeight(entry.theme.lifecycle) +
+      entry.theme.priority * 3,
+    0,
+    40
+  );
+  const connectivity = clamp(
+    entry.summary.totalEdges * 4 +
+      entry.view.summary.internalEdges * 3 +
+      entry.summary.relatedCompanyCount * 2 +
+      Math.min(entry.view.summary.externalLabels, 4),
+    0,
+    30
+  );
+  const leverage = clamp(
+    Math.round(averageExposure * 2 + averageTier * 2 + Math.min(entry.summary.themeCompanyCount, 4) * 2),
+    0,
+    20
+  );
+  const keywordRichness = clamp(
+    entry.summary.topKeywords.length + sharedKeywordCount * 2 + Math.min(entry.summary.keywordCount, 3),
+    0,
+    10
+  );
+
+  return {
+    themeId: entry.theme.id,
+    name: entry.theme.name,
+    marketState: entry.theme.marketState,
+    lifecycle: entry.theme.lifecycle,
+    priority: entry.theme.priority,
+    score: conviction + connectivity + leverage + keywordRichness,
+    averageExposure,
+    breakdown: {
+      conviction,
+      connectivity,
+      leverage,
+      keywordRichness
+    },
+    signals: buildThemeRankingSignals({
+      entry,
+      averageExposure,
+      keywordRichness
+    }),
+    summary: entry.summary
   };
 }
 
@@ -643,6 +819,62 @@ export async function searchThemeGraph(input: {
   return {
     generatedAt: new Date().toISOString(),
     query,
+    total: results.length,
+    results
+  };
+}
+
+export async function getThemeGraphRankings(input: {
+  session: { workspace: { slug: string } };
+  repo: TradingRoomRepository;
+  query?: string;
+  limit?: number;
+  keywordLimit?: number;
+  marketState?: Theme["marketState"];
+  lifecycle?: Theme["lifecycle"];
+  minEdges?: number;
+  onlyConnected?: boolean;
+}): Promise<ThemeGraphRankingView> {
+  const { themes, companies, relations, keywords } = await loadThemeGraphWorkspaceContext(input);
+  const limit = clamp(input.limit ?? 12, 1, 50);
+  const keywordLimit = clamp(input.keywordLimit ?? 5, 1, 5);
+  const catalog = projectThemeGraphCatalog({
+    themes,
+    companies,
+    relations,
+    keywords,
+    keywordLimit,
+    edgeLimit: 240,
+    filters: {
+      query: input.query,
+      marketState: input.marketState,
+      lifecycle: input.lifecycle,
+      minEdges: input.minEdges,
+      onlyConnected: input.onlyConnected
+    }
+  });
+
+  const results = catalog
+    .map((entry) => buildThemeRankingEntry(entry))
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      if (right.summary.totalEdges !== left.summary.totalEdges) {
+        return right.summary.totalEdges - left.summary.totalEdges;
+      }
+
+      if (right.averageExposure !== left.averageExposure) {
+        return right.averageExposure - left.averageExposure;
+      }
+
+      return left.name.localeCompare(right.name);
+    })
+    .slice(0, limit);
+
+  return {
+    generatedAt: new Date().toISOString(),
     total: results.length,
     results
   };

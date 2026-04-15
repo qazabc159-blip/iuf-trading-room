@@ -68,6 +68,32 @@ export const themeGraphStatsViewSchema = z.object({
   topThemes: z.array(themeGraphStatsThemeSchema)
 });
 
+export const themeGraphRankingBreakdownSchema = z.object({
+  conviction: z.number().int().min(0).max(40),
+  connectivity: z.number().int().min(0).max(30),
+  leverage: z.number().int().min(0).max(20),
+  keywordRichness: z.number().int().min(0).max(10)
+});
+
+export const themeGraphRankingResultSchema = z.object({
+  themeId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+  marketState: z.string().min(1).max(40),
+  lifecycle: z.string().min(1).max(40),
+  priority: z.number().int().min(1).max(5),
+  score: z.number().int().min(0).max(100),
+  averageExposure: z.number().min(1).max(5),
+  breakdown: themeGraphRankingBreakdownSchema,
+  signals: z.array(z.string().min(1).max(120)).max(8),
+  summary: themeGraphStatsThemeSchema
+});
+
+export const themeGraphRankingViewSchema = z.object({
+  generatedAt: z.string(),
+  total: z.number().int().min(0),
+  results: z.array(themeGraphRankingResultSchema)
+});
+
 export const themeGraphSearchResultSchema = z.object({
   themeId: z.string().uuid(),
   name: z.string().min(1).max(120),
@@ -103,6 +129,9 @@ export type ThemeGraphKeywordRollup = z.infer<typeof themeGraphKeywordRollupSche
 export type ThemeGraphSummary = z.infer<typeof themeGraphSummarySchema>;
 export type ThemeGraphStatsTheme = z.infer<typeof themeGraphStatsThemeSchema>;
 export type ThemeGraphStatsView = z.infer<typeof themeGraphStatsViewSchema>;
+export type ThemeGraphRankingBreakdown = z.infer<typeof themeGraphRankingBreakdownSchema>;
+export type ThemeGraphRankingResult = z.infer<typeof themeGraphRankingResultSchema>;
+export type ThemeGraphRankingView = z.infer<typeof themeGraphRankingViewSchema>;
 export type ThemeGraphSearchResult = z.infer<typeof themeGraphSearchResultSchema>;
 export type ThemeGraphSearchView = z.infer<typeof themeGraphSearchViewSchema>;
 export type ThemeGraphView = z.infer<typeof themeGraphViewSchema>;

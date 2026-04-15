@@ -80,6 +80,7 @@ import { executeCompanyMerge, getCompanyMergePreview } from "./company-merge.js"
 import { getOpsSnapshot } from "./ops-snapshot.js";
 import {
   formatThemeGraphStatsAsCsv,
+  getThemeGraphRankings,
   getThemeGraphStats,
   getThemeGraphView,
   searchThemeGraph
@@ -294,6 +295,8 @@ const themeGraphSearchQuerySchema = z.object({
 const themeGraphExportQuerySchema = themeGraphStatsQuerySchema.extend({
   format: z.enum(["csv", "json"]).default("csv")
 });
+
+const themeGraphRankingQuerySchema = themeGraphStatsQuerySchema;
 
 const companyGraphSearchQuerySchema = z.object({
   query: z.string().trim().min(1).max(120),
@@ -710,6 +713,23 @@ app.get("/api/v1/theme-graph/export", async (c) => {
     "Content-Type": "text/csv; charset=utf-8",
     "Content-Disposition": `attachment; filename=\"theme-graph-${new Date().toISOString().slice(0, 10)}.csv\"`
   });
+});
+
+app.get("/api/v1/theme-graph/rankings", async (c) => {
+  const query = themeGraphRankingQuerySchema.parse(c.req.query());
+  const rankings = await getThemeGraphRankings({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    query: query.query,
+    limit: query.limit,
+    keywordLimit: query.keywordLimit,
+    marketState: query.marketState,
+    lifecycle: query.lifecycle,
+    minEdges: query.minEdges,
+    onlyConnected: query.onlyConnected
+  });
+
+  return c.json({ data: rankings });
 });
 
 app.get("/api/v1/themes/:id", async (c) => {

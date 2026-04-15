@@ -34,6 +34,7 @@ import {
 import {
   buildThemeGraphView,
   formatThemeGraphStatsAsCsv,
+  getThemeGraphRankings,
   getThemeGraphStats,
   getThemeGraphView,
   searchThemeGraph
@@ -1620,6 +1621,116 @@ test("theme graph stats filters and csv export stay aligned", async () => {
   assert.match(csv, /theme_id/);
   assert.match(csv, /高速光模組/);
   assert.doesNotMatch(csv, /邊緣運算/);
+});
+
+test("theme graph rankings favor connected, high-conviction themes", async () => {
+  const repo = new MemoryTradingRoomRepository();
+
+  const rankedTheme = await repo.createTheme({
+    name: "光通訊擴散",
+    marketState: "Attack",
+    lifecycle: "Validation",
+    priority: 5,
+    thesis: "Optical interconnect demand is broadening across clusters.",
+    whyNow: "Spending is moving from pilot to real budget.",
+    bottleneck: "Laser and module capacity"
+  });
+
+  const weakerTheme = await repo.createTheme({
+    name: "邊緣推論觀察",
+    marketState: "Balanced",
+    lifecycle: "Discovery",
+    priority: 2,
+    thesis: "Edge inference may broaden later.",
+    whyNow: "Pilot projects are still limited.",
+    bottleneck: "Adoption timing"
+  });
+
+  const opticsCore = await repo.createCompany({
+    name: "前鼎",
+    ticker: "4908",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [rankedTheme.id],
+    chainPosition: "Optics",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 4, margin: 4, capacity: 4, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Core optics beneficiary"
+  });
+
+  const opticsNeighbor = await repo.createCompany({
+    name: "聯鈞",
+    ticker: "3450",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [],
+    chainPosition: "Optics module",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 3, margin: 3, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Connected optics vendor"
+  });
+
+  await repo.createCompany({
+    name: "邊緣測試",
+    ticker: "7722",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [weakerTheme.id],
+    chainPosition: "Edge",
+    beneficiaryTier: "Observation",
+    exposure: { volume: 2, asp: 2, margin: 2, capacity: 2, narrative: 2 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Early edge inference observation"
+  });
+
+  await repo.replaceCompanyRelations(opticsCore.id, [
+    {
+      targetCompanyId: opticsNeighbor.id,
+      targetLabel: opticsNeighbor.name,
+      relationType: "supplier",
+      confidence: 0.9,
+      sourcePath: "reports/optics-rank.md"
+    },
+    {
+      targetCompanyId: null,
+      targetLabel: "NVIDIA",
+      relationType: "customer",
+      confidence: 0.85,
+      sourcePath: "reports/optics-rank.md"
+    }
+  ]);
+
+  await repo.replaceCompanyKeywords(opticsCore.id, [
+    {
+      label: "CPO",
+      confidence: 0.95,
+      sourcePath: "reports/optics-rank.md"
+    },
+    {
+      label: "1.6T",
+      confidence: 0.85,
+      sourcePath: "reports/optics-rank.md"
+    }
+  ]);
+
+  const rankings = await getThemeGraphRankings({
+    session: { workspace: { slug: "primary-desk" } },
+    repo,
+    limit: 10,
+    keywordLimit: 3
+  });
+
+  const rankedEntry = rankings.results.find((item) => item.themeId === rankedTheme.id);
+  const weakerEntry = rankings.results.find((item) => item.themeId === weakerTheme.id);
+
+  assert.ok(rankings.total >= 2);
+  assert.ok(rankedEntry);
+  assert.ok(weakerEntry);
+  assert.ok((rankedEntry?.score ?? 0) > (weakerEntry?.score ?? 0));
+  assert.equal(rankedEntry?.signals.includes("市場風格偏進攻"), true);
+  assert.equal(rankedEntry?.summary.totalEdges, 2);
 });
 
 test("memory repository supports core research-to-review loop", async () => {
