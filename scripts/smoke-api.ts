@@ -913,6 +913,27 @@ async function main() {
     assert.ok(opsSnapshot.data.eventHistory.summary.total >= 0);
     assert.ok(Array.isArray(opsSnapshot.data.eventHistory.recent));
 
+    const opsTrends = await request<
+      JsonEnvelope<{
+        summary: {
+          days: number;
+          timeZone: string;
+          totals: { signalsCreated: number; auditEvents: number };
+          latestDay: { date: string } | null;
+        };
+        series: Array<{ date: string; totalActivity: number }>;
+      }>
+    >(baseUrl, "/api/v1/ops/trends?days=7&timeZone=Asia/Taipei", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(opsTrends.data.summary.days, 7);
+    assert.equal(opsTrends.data.summary.timeZone, "Asia/Taipei");
+    assert.ok(opsTrends.data.summary.totals.signalsCreated >= 1);
+    assert.ok(opsTrends.data.summary.totals.auditEvents >= 0);
+    assert.equal(opsTrends.data.series.length, 7);
+    assert.ok(opsTrends.data.series.some((item) => item.totalActivity >= 1));
+    assert.ok(opsTrends.data.summary.latestDay !== null);
+
     console.log("Smoke API checks passed.");
   } catch (error) {
     const details = [

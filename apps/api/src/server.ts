@@ -78,6 +78,7 @@ import {
 import { getCompanyDuplicateReport } from "./company-duplicates.js";
 import { executeCompanyMerge, getCompanyMergePreview } from "./company-merge.js";
 import { getOpsSnapshot } from "./ops-snapshot.js";
+import { getOpsTrends } from "./ops-trends.js";
 import {
   formatThemeGraphStatsAsCsv,
   getThemeGraphRankings,
@@ -261,6 +262,11 @@ const opsSnapshotQuerySchema = z.object({
   auditHours: z.coerce.number().int().min(1).max(24 * 30).optional(),
   recentLimit: z.coerce.number().int().min(1).max(20).optional(),
   rankingLimit: z.coerce.number().int().min(1).max(20).optional()
+});
+
+const opsTrendsQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(60).optional(),
+  timeZone: z.string().trim().min(1).max(80).optional()
 });
 
 const companyGraphViewQuerySchema = z.object({
@@ -548,6 +554,18 @@ app.get("/api/v1/ops/snapshot", async (c) => {
       auditHours: query.auditHours,
       recentLimit: query.recentLimit,
       rankingLimit: query.rankingLimit
+    })
+  });
+});
+
+app.get("/api/v1/ops/trends", async (c) => {
+  const query = opsTrendsQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getOpsTrends({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      days: query.days,
+      timeZone: query.timeZone
     })
   });
 });

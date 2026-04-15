@@ -54,6 +54,7 @@ import {
   parseEventHistorySources
 } from "../apps/api/src/event-history.ts";
 import { buildOpsSnapshotView } from "../apps/api/src/ops-snapshot.ts";
+import { buildOpsTrendView } from "../apps/api/src/ops-trends.ts";
 import type { Company, Theme } from "../packages/contracts/src/index.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
@@ -1184,6 +1185,127 @@ test("ops snapshot view aggregates stats and latest activity", () => {
   assert.equal(snapshot.openAlice.queue.reviewable, 1);
   assert.equal(snapshot.eventHistory.summary.total, 4);
   assert.equal(snapshot.eventHistory.recent[0]?.source, "signal");
+});
+
+test("ops trend view builds daily activity series in Asia/Taipei", () => {
+  const trends = buildOpsTrendView({
+    days: 3,
+    timeZone: "Asia/Taipei",
+    now: new Date("2026-04-15T12:00:00.000Z"),
+    themes: [
+      {
+        id: randomUUID(),
+        name: "AI 光通訊",
+        slug: "ai-optics",
+        marketState: "Balanced",
+        lifecycle: "Validation",
+        priority: 4,
+        thesis: "",
+        whyNow: "",
+        bottleneck: "",
+        corePoolCount: 1,
+        observationPoolCount: 2,
+        createdAt: "2026-04-13T01:00:00.000Z",
+        updatedAt: "2026-04-14T10:05:00.000Z"
+      }
+    ],
+    signals: [
+      {
+        id: randomUUID(),
+        category: "price",
+        direction: "bullish",
+        title: "多頭突破",
+        summary: "",
+        confidence: 4,
+        themeIds: [],
+        companyIds: [],
+        createdAt: "2026-04-14T03:00:00.000Z"
+      },
+      {
+        id: randomUUID(),
+        category: "industry",
+        direction: "neutral",
+        title: "中性觀察",
+        summary: "",
+        confidence: 3,
+        themeIds: [],
+        companyIds: [],
+        createdAt: "2026-04-15T01:00:00.000Z"
+      }
+    ],
+    plans: [
+      {
+        id: randomUUID(),
+        companyId: randomUUID(),
+        status: "ready",
+        entryPlan: "",
+        invalidationPlan: "",
+        targetPlan: "",
+        riskReward: "",
+        notes: "",
+        createdAt: "2026-04-14T08:00:00.000Z",
+        updatedAt: "2026-04-14T08:00:00.000Z"
+      }
+    ],
+    reviews: [
+      {
+        id: randomUUID(),
+        tradePlanId: randomUUID(),
+        outcome: "執行正常",
+        attribution: "",
+        lesson: "",
+        setupTags: [],
+        executionQuality: 4,
+        createdAt: "2026-04-15T02:00:00.000Z"
+      }
+    ],
+    briefs: [
+      {
+        id: randomUUID(),
+        date: "2026-04-15",
+        marketState: "Balanced",
+        sections: [],
+        generatedBy: "openalice",
+        status: "published",
+        createdAt: "2026-04-15T03:00:00.000Z"
+      }
+    ],
+    jobs: [
+      {
+        createdAt: "2026-04-15T04:00:00.000Z"
+      }
+    ],
+    audit: [
+      {
+        id: randomUUID(),
+        action: "create",
+        entityType: "signal",
+        entityId: "pending",
+        payload: {},
+        createdAt: "2026-04-14T05:00:00.000Z",
+        method: "POST",
+        path: "/api/v1/signals",
+        status: 201,
+        role: "Owner",
+        workspace: "primary-desk"
+      }
+    ]
+  });
+
+  assert.equal(trends.summary.days, 3);
+  assert.equal(trends.summary.timeZone, "Asia/Taipei");
+  assert.equal(trends.series.length, 3);
+  assert.equal(trends.summary.totals.themesCreated, 1);
+  assert.equal(trends.summary.totals.signalsCreated, 2);
+  assert.equal(trends.summary.totals.bullishSignals, 1);
+  assert.equal(trends.summary.totals.plansCreated, 1);
+  assert.equal(trends.summary.totals.reviewsCreated, 1);
+  assert.equal(trends.summary.totals.briefsCreated, 1);
+  assert.equal(trends.summary.totals.publishedBriefs, 1);
+  assert.equal(trends.summary.totals.openAliceJobsCreated, 1);
+  assert.equal(trends.summary.totals.auditEvents, 1);
+  assert.ok((trends.summary.busiestDay?.totalActivity ?? 0) >= 3);
+  assert.equal(trends.summary.latestDay?.date, trends.series.at(-1)?.date);
 });
 
 test("duplicate report helper reads repository-scoped companies", async () => {
