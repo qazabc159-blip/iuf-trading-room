@@ -24,6 +24,10 @@ import {
   buildCompanyGraphView
 } from "../apps/api/src/company-graph.ts";
 import {
+  buildCompanyDuplicateReport,
+  getCompanyDuplicateReport
+} from "../apps/api/src/company-duplicates.ts";
+import {
   buildTradingViewEventKey,
   validateTradingViewTimestamp
 } from "../apps/api/src/tradingview-webhook-guard.ts";
@@ -725,6 +729,63 @@ test("company graph stats summarize relation types and top nodes", () => {
   assert.equal(stats.topConnectedCompanies[0]?.companyId, companyA.id);
 });
 
+test("company duplicate report groups duplicates and recommends a canonical record", () => {
+  const curatedCompany: Company = {
+    id: randomUUID(),
+    name: "台積電",
+    ticker: "2330",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [randomUUID()],
+    chainPosition: "Semiconductors",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "",
+    updatedAt: "2026-04-15T05:00:00.000Z"
+  };
+  const importedCompany: Company = {
+    ...curatedCompany,
+    id: randomUUID(),
+    country: "Taiwan",
+    beneficiaryTier: "Observation",
+    themeIds: [],
+    exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
+    updatedAt: "2026-04-15T04:00:00.000Z"
+  };
+
+  const report = buildCompanyDuplicateReport({
+    companies: [curatedCompany, importedCompany],
+    relations: [
+      {
+        id: randomUUID(),
+        companyId: curatedCompany.id,
+        targetCompanyId: null,
+        targetLabel: "NVIDIA",
+        relationType: "customer",
+        confidence: 0.9,
+        sourcePath: "Pilot_Reports/Semiconductors/2330_台積電.md",
+        updatedAt: "2026-04-15T05:10:00.000Z"
+      }
+    ],
+    keywords: [
+      {
+        id: randomUUID(),
+        companyId: curatedCompany.id,
+        label: "先進封裝",
+        confidence: 0.8,
+        sourcePath: "Pilot_Reports/Semiconductors/2330_台積電.md",
+        updatedAt: "2026-04-15T05:12:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal(report.summary.groupCount, 1);
+  assert.equal(report.summary.companyCount, 2);
+  assert.equal(report.groups[0]?.recommendedCompanyId, curatedCompany.id);
+  assert.match(report.groups[0]?.reason ?? "", /canonical/u);
+});
+
 test("ops snapshot view aggregates stats and latest activity", () => {
   const snapshot = buildOpsSnapshotView({
     session: {
@@ -921,6 +982,43 @@ test("ops snapshot view aggregates stats and latest activity", () => {
   assert.equal(snapshot.openAlice.queue.reviewable, 1);
   assert.equal(snapshot.eventHistory.summary.total, 4);
   assert.equal(snapshot.eventHistory.recent[0]?.source, "signal");
+});
+
+test("duplicate report helper reads repository-scoped companies", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const duplicated = await repo.createCompany({
+    name: "Acme Optics Taiwan",
+    ticker: "6801",
+    market: "TWSE",
+    country: "TW",
+    themeIds: [],
+    chainPosition: "Optics",
+    beneficiaryTier: "Observation",
+    exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Imported duplicate"
+  });
+
+  await repo.replaceCompanyRelations(duplicated.id, [
+    {
+      targetLabel: "NVIDIA",
+      relationType: "customer",
+      confidence: 0.8,
+      sourcePath: "Pilot_Reports/Smoke/6801.md"
+    }
+  ]);
+
+  const report = await getCompanyDuplicateReport({
+    session: { workspace: { slug: "primary-desk" } },
+    repo,
+    limit: 20
+  });
+
+  assert.ok(report.summary.groupCount >= 1);
+  assert.equal(
+    report.groups.some((group) => group.ticker === "6801" && group.companies.length >= 2),
+    true
+  );
 });
 
 test("memory repository supports core research-to-review loop", async () => {

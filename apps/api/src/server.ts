@@ -72,6 +72,7 @@ import {
   getCompanyGraphStats,
   getCompanyGraphView
 } from "./company-graph.js";
+import { getCompanyDuplicateReport } from "./company-duplicates.js";
 import { getOpsSnapshot } from "./ops-snapshot.js";
 
 type Variables = {
@@ -262,6 +263,11 @@ const companyGraphSearchQuerySchema = z.object({
 
 const companyGraphStatsQuerySchema = z.object({
   topLimit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+const companyDuplicateReportQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  query: z.string().trim().min(1).max(120).optional()
 });
 
 async function handleOpenAliceJobClaim(c: Context) {
@@ -504,6 +510,18 @@ app.get("/api/v1/company-graph/stats", async (c) => {
       session: c.get("session"),
       repo: c.get("repo"),
       topLimit: query.topLimit
+    })
+  });
+});
+
+app.get("/api/v1/companies/duplicates", async (c) => {
+  const query = companyDuplicateReportQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getCompanyDuplicateReport({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      limit: query.limit,
+      query: query.query
     })
   });
 });

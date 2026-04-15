@@ -295,6 +295,61 @@ async function main() {
       true
     );
 
+    const duplicateCompany = await request<JsonEnvelope<{ id: string; ticker: string }>>(
+      baseUrl,
+      "/api/v1/companies",
+      {
+        method: "POST",
+        headers: { "x-workspace-slug": workspaceSlug },
+        body: JSON.stringify({
+          name: "Smoke Optics",
+          ticker: "SMK1",
+          market: "NASDAQ",
+          country: "United States",
+          themeIds: [],
+          chainPosition: "Optical systems",
+          beneficiaryTier: "Observation",
+          exposure: {
+            volume: 1,
+            asp: 1,
+            margin: 1,
+            capacity: 1,
+            narrative: 1
+          },
+          validation: {
+            capitalFlow: "N/A",
+            consensus: "N/A",
+            relativeStrength: "N/A"
+          },
+          notes: "Duplicate smoke test company"
+        })
+      }
+    );
+    assert.equal(duplicateCompany.data.ticker, "SMK1");
+
+    const duplicateReport = await request<
+      JsonEnvelope<{
+        summary: { groupCount: number; companyCount: number };
+        groups: Array<{
+          ticker: string;
+          duplicateCount: number;
+          recommendedCompanyId: string;
+        }>;
+      }>
+    >(baseUrl, "/api/v1/companies/duplicates?limit=20&query=SMK1", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.ok(duplicateReport.data.summary.groupCount >= 1);
+    assert.equal(
+      duplicateReport.data.groups.some(
+        (group) =>
+          group.ticker === "SMK1" &&
+          group.duplicateCount >= 2 &&
+          group.recommendedCompanyId === company.data.id
+      ),
+      true
+    );
+
     const signal = await request<JsonEnvelope<{ id: string; title: string }>>(baseUrl, "/api/v1/signals", {
       method: "POST",
       headers: { "x-workspace-slug": workspaceSlug },
