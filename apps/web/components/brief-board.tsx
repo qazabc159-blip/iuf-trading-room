@@ -12,14 +12,19 @@ const initialForm: DailyBriefCreateInput = {
   date: today(),
   marketState: "Balanced",
   sections: [
-    { heading: "Market State", body: "" },
-    { heading: "Theme Changes", body: "" },
-    { heading: "Top Signals", body: "" },
-    { heading: "Pending Catalysts", body: "" },
-    { heading: "Watchlist Changes", body: "" }
+    { heading: "盤勢狀態", body: "" },
+    { heading: "主題異動", body: "" },
+    { heading: "重點訊號", body: "" },
+    { heading: "待發酵催化劑", body: "" },
+    { heading: "觀察清單異動", body: "" }
   ],
   generatedBy: "manual",
   status: "draft"
+};
+
+const statusLabel: Record<string, string> = { draft: "草稿", published: "已發布" };
+const stateLabel: Record<string, string> = {
+  Attack: "進攻", "Selective Attack": "精選進攻", Balanced: "平衡", Defense: "防禦", Preservation: "保本"
 };
 
 export function BriefBoard() {
@@ -28,157 +33,114 @@ export function BriefBoard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [selectedBrief, setSelectedBrief] = useState<DailyBrief | null>(null);
+  const [selected, setSelected] = useState<DailyBrief | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await getBriefs();
-        setBriefs(response.data);
-      } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Unable to load briefs.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void load();
+    getBriefs()
+      .then((r) => setBriefs(r.data))
+      .catch((e) => setError(e instanceof Error ? e.message : "無法載入簡報"))
+      .finally(() => setLoading(false));
   }, []);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSaving(true);
-    setError(null);
-
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault(); setSaving(true); setError(null);
     try {
-      const response = await createBrief(form);
-      setBriefs((current) => [response.data, ...current]);
-      setForm({ ...initialForm, date: today() });
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Unable to create brief.");
-    } finally {
-      setSaving(false);
-    }
+      const r = await createBrief(form);
+      setBriefs((c) => [r.data, ...c]);
+      setForm({ ...initialForm, date: today() }); setShowForm(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "建立簡報失敗"); }
+    finally { setSaving(false); }
   };
 
-  const updateSection = (index: number, field: "heading" | "body", value: string) => {
-    setForm((current) => ({
-      ...current,
-      sections: current.sections.map((s, i) =>
-        i === index ? { ...s, [field]: value } : s
-      )
-    }));
+  const updateSection = (i: number, value: string) => {
+    setForm((c) => ({ ...c, sections: c.sections.map((s, idx) => idx === i ? { ...s, body: value } : s) }));
   };
+
+  /* 閱讀模式 */
+  if (selected) {
+    return (
+      <section style={{ display: "grid", gap: 14 }}>
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">每日簡報</p>
+              <h3>{selected.date}</h3>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <span className="badge-blue" style={{ fontSize: "0.65rem" }}>{statusLabel[selected.status] ?? selected.status}</span>
+              <span className="badge" style={{ fontSize: "0.65rem" }}>{selected.generatedBy}</span>
+              <button className="hero-link" style={{ fontSize: "0.72rem", padding: "4px 10px" }} onClick={() => setSelected(null)}>返回</button>
+            </div>
+          </div>
+          <p className="record-meta" style={{ marginBottom: 10 }}>盤勢：{stateLabel[selected.marketState] ?? selected.marketState}</p>
+          {selected.sections.map((s, i) => (
+            <div key={i} style={{ marginBottom: 12 }}>
+              <h4 style={{ fontSize: "0.82rem", margin: "0 0 4px", color: "var(--accent)" }}>{s.heading}</h4>
+              <p style={{ fontSize: "0.8rem", whiteSpace: "pre-wrap" }}>{s.body || "（空白）"}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section className="board-grid">
-      {/* Brief reader */}
-      <div className="panel panel-large">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Daily Briefs</p>
-            <h3>Operating Picture</h3>
+    <section style={{ display: "grid", gap: 14 }}>
+      {/* 工具列 */}
+      <div className="panel" style={{ padding: "8px 14px" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+            <span style={{ fontSize: "0.9rem" }}>{briefs.length}</span>
+            <small style={{ fontSize: "0.6rem" }}>簡報</small>
           </div>
-          <div className="metric-chip">
-            <span>{briefs.length}</span>
-            <small>Total</small>
-          </div>
+          <button className="action-button" style={{ fontSize: "0.75rem", padding: "5px 12px", marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
+            {showForm ? "關閉表單" : "+ 新增簡報"}
+          </button>
         </div>
+      </div>
 
-        {loading ? <p className="muted">Loading briefs...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+      {error ? <p className="error-text" style={{ fontSize: "0.78rem" }}>{error}</p> : null}
 
-        {selectedBrief ? (
-          <div className="brief-reader">
-            <div className="record-topline">
-              <strong>{selectedBrief.date}</strong>
-              <span className="badge">{selectedBrief.status}</span>
-              <span className="badge">{selectedBrief.generatedBy}</span>
-              <button
-                className="action-button-small"
-                onClick={() => setSelectedBrief(null)}
-              >
-                Back
-              </button>
+      {/* 建立表單 */}
+      {showForm ? (
+        <form className="panel" onSubmit={handleSubmit}>
+          <p className="eyebrow">新增每日簡報</p>
+          <label className="field"><span>日期</span>
+            <input type="date" value={form.date} onChange={(e) => setForm((c) => ({ ...c, date: e.target.value }))} />
+          </label>
+          <label className="field"><span>盤勢狀態</span>
+            <input value={form.marketState} onChange={(e) => setForm((c) => ({ ...c, marketState: e.target.value }))} placeholder="平衡、進攻、防禦..." />
+          </label>
+          {form.sections.map((s, i) => (
+            <div key={i} className="field">
+              <span>{s.heading}</span>
+              <textarea value={s.body} onChange={(e) => updateSection(i, e.target.value)} placeholder={`撰寫${s.heading}...`} />
             </div>
-            <p className="record-meta">Market: {selectedBrief.marketState}</p>
-            {selectedBrief.sections.map((section, i) => (
-              <div key={i} className="brief-section">
-                <h4>{section.heading}</h4>
-                <p>{section.body}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
+          ))}
+          <button className="action-button" type="submit" disabled={saving}>{saving ? "建立中..." : "建立簡報"}</button>
+        </form>
+      ) : null}
+
+      {/* 簡報列表 */}
+      <div className="panel">
+        {loading ? <p className="muted">載入簡報...</p> : briefs.length === 0 ? <p className="dim">尚無簡報，點擊上方建立。</p> : (
           <div className="card-stack">
-            {briefs.map((brief) => (
-              <article
-                key={brief.id}
-                className="record-card"
-                onClick={() => setSelectedBrief(brief)}
-                style={{ cursor: "pointer" }}
-              >
+            {briefs.map((b) => (
+              <article key={b.id} className="record-card" onClick={() => setSelected(b)} style={{ cursor: "pointer" }}>
                 <div className="record-topline">
-                  <strong>{brief.date}</strong>
-                  <span className="badge">{brief.status}</span>
-                  <span className="badge">{brief.generatedBy}</span>
+                  <strong className="mono" style={{ fontSize: "0.85rem" }}>{b.date}</strong>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <span className="badge-blue" style={{ fontSize: "0.62rem" }}>{statusLabel[b.status] ?? b.status}</span>
+                    <span className="badge" style={{ fontSize: "0.62rem" }}>{b.generatedBy}</span>
+                  </div>
                 </div>
-                <p className="record-meta">
-                  Market: {brief.marketState} · {brief.sections.length} sections
-                </p>
+                <p className="record-meta">盤勢 {stateLabel[b.marketState] ?? b.marketState} · {b.sections.length} 段落</p>
               </article>
             ))}
-            {briefs.length === 0 && !loading ? (
-              <p className="muted">No briefs yet. Create one to get started.</p>
-            ) : null}
           </div>
         )}
       </div>
-
-      {/* Brief creator */}
-      <form className="panel" onSubmit={handleSubmit}>
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Create Brief</p>
-            <h3>New daily brief</h3>
-          </div>
-        </div>
-
-        <label className="field">
-          <span>Date</span>
-          <input
-            type="date"
-            value={form.date}
-            onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
-          />
-        </label>
-
-        <label className="field">
-          <span>Market State</span>
-          <input
-            value={form.marketState}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, marketState: event.target.value }))
-            }
-            placeholder="Balanced, Attack, Defense..."
-          />
-        </label>
-
-        {form.sections.map((section, i) => (
-          <div key={i} className="field">
-            <span>{section.heading}</span>
-            <textarea
-              value={section.body}
-              onChange={(event) => updateSection(i, "body", event.target.value)}
-              placeholder={`Write ${section.heading.toLowerCase()} notes...`}
-            />
-          </div>
-        ))}
-
-        <button className="action-button" type="submit" disabled={saving}>
-          {saving ? "Creating..." : "Create brief"}
-        </button>
-      </form>
     </section>
   );
 }

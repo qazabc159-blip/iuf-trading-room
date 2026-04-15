@@ -15,6 +15,9 @@ import { createSignal, getCompanies, getSignals } from "@/lib/api";
 const categories: SignalCategory[] = ["macro", "industry", "company", "price", "portfolio"];
 const directions: SignalDirection[] = ["bullish", "bearish", "neutral"];
 
+const catLabel: Record<string, string> = { macro: "總經", industry: "產業", company: "個股", price: "價格", portfolio: "部位" };
+const dirLabel: Record<string, string> = { bullish: "看多", bearish: "看空", neutral: "中性" };
+
 const initialForm: SignalCreateInput = {
   category: "macro",
   direction: "bullish",
@@ -33,212 +36,119 @@ export function SignalBoard() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [filterCategory, setFilterCategory] = useState<string>("");
+  const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [signalsRes, companiesRes] = await Promise.all([
-          getSignals(filterCategory ? { category: filterCategory } : undefined),
-          getCompanies()
-        ]);
-        setSignals(signalsRes.data);
-        setCompanies(companiesRes.data);
-      } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Unable to load signals.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void load();
+    setLoading(true);
+    Promise.all([
+      getSignals(filterCategory ? { category: filterCategory } : undefined),
+      getCompanies()
+    ])
+      .then(([sr, cr]) => { setSignals(sr.data); setCompanies(cr.data); })
+      .catch((e) => setError(e instanceof Error ? e.message : "無法載入訊號"))
+      .finally(() => setLoading(false));
   }, [filterCategory]);
 
   const companyMap = new Map(companies.map((c) => [c.id, c]));
+  const getLabel = (id: string) => { const c = companyMap.get(id); return c ? `${c.ticker} ${c.name}` : id.slice(0, 8); };
 
-  const getCompanyLabel = (id: string) => {
-    const c = companyMap.get(id);
-    return c ? `${c.ticker} ${c.name}` : id.slice(0, 8);
-  };
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSaving(true);
-    setError(null);
-
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault(); setSaving(true); setError(null);
     try {
-      const response = await createSignal(form);
-      setSignals((current) => [response.data, ...current]);
-      setForm(initialForm);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Unable to create signal.");
-    } finally {
-      setSaving(false);
-    }
+      const r = await createSignal(form);
+      setSignals((c) => [r.data, ...c]);
+      setForm(initialForm); setShowForm(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "建立訊號失敗"); }
+    finally { setSaving(false); }
   };
 
-  const directionColor = (direction: string) => {
-    if (direction === "bullish") return "badge-green";
-    if (direction === "bearish") return "badge-red";
-    return "badge";
-  };
+  const dirColor = (d: string) => d === "bullish" ? "badge-green" : d === "bearish" ? "badge-red" : "badge-yellow";
 
   return (
-    <section className="board-grid">
-      <div className="panel panel-large">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Live Board</p>
-            <h3>Signals</h3>
-          </div>
-          <div className="metric-chip">
-            <span>{signals.length}</span>
-            <small>Total</small>
-          </div>
-        </div>
-
-        <div className="filter-row">
-          <select
-            value={filterCategory}
-            onChange={(event) => {
-              setFilterCategory(event.target.value);
-              setLoading(true);
-            }}
-          >
-            <option value="">All categories</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
+    <section style={{ display: "grid", gap: 14 }}>
+      {/* 工具列 */}
+      <div className="panel" style={{ padding: "8px 14px" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={{ width: "auto", minWidth: 90 }}>
+            <option value="">全部類別</option>
+            {categories.map((c) => <option key={c} value={c}>{catLabel[c]}</option>)}
           </select>
-        </div>
-
-        {loading ? <p className="muted">Loading signals...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
-
-        <div className="card-stack">
-          {signals.map((signal) => (
-            <article key={signal.id} className="record-card">
-              <div className="record-topline">
-                <strong>{signal.title}</strong>
-                <span className={directionColor(signal.direction)}>{signal.direction}</span>
-              </div>
-              <p className="record-meta">
-                {signal.category} / confidence {signal.confidence}/5
-              </p>
-              {signal.companyIds.length > 0 ? (
-                <p className="muted" style={{ fontSize: "0.82rem" }}>
-                  Companies: {signal.companyIds.map(getCompanyLabel).join(", ")}
-                </p>
-              ) : null}
-              {signal.summary ? <p>{signal.summary}</p> : null}
-
-              {/* Action: create plan from signal's company */}
-              {signal.companyIds.length > 0 ? (
-                <div className="action-row" style={{ marginTop: 8 }}>
-                  {signal.companyIds.map((cid) => {
-                    const comp = companyMap.get(cid);
-                    return (
-                      <a
-                        key={cid}
-                        href={`/plans?newForCompany=${cid}&companyName=${encodeURIComponent(comp?.name ?? cid.slice(0, 8))}`}
-                        className="hero-link primary"
-                        style={{ fontSize: "0.78rem", padding: "5px 10px" }}
-                      >
-                        + Plan for {comp?.ticker ?? cid.slice(0, 8)}
-                      </a>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </article>
-          ))}
+          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+            <span style={{ fontSize: "0.9rem" }}>{signals.length}</span>
+            <small style={{ fontSize: "0.6rem" }}>訊號</small>
+          </div>
+          <button className="action-button" style={{ fontSize: "0.75rem", padding: "5px 12px", marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
+            {showForm ? "關閉表單" : "+ 新增訊號"}
+          </button>
         </div>
       </div>
 
-      <form className="panel" onSubmit={handleSubmit}>
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Create Signal</p>
-            <h3>New signal entry</h3>
+      {error ? <p className="error-text" style={{ fontSize: "0.78rem" }}>{error}</p> : null}
+
+      {/* 建立表單 */}
+      {showForm ? (
+        <form className="panel" onSubmit={handleSubmit}>
+          <p className="eyebrow">新增訊號</p>
+          <label className="field"><span>標題</span>
+            <input value={form.title} onChange={(e) => setForm((c) => ({ ...c, title: e.target.value }))} placeholder="台積電上調資本支出 15%" />
+          </label>
+          <div className="field-grid">
+            <label className="field"><span>類別</span>
+              <select value={form.category} onChange={(e) => setForm((c) => ({ ...c, category: e.target.value as SignalCategory }))}>
+                {categories.map((v) => <option key={v} value={v}>{catLabel[v]}</option>)}
+              </select>
+            </label>
+            <label className="field"><span>方向</span>
+              <select value={form.direction} onChange={(e) => setForm((c) => ({ ...c, direction: e.target.value as SignalDirection }))}>
+                {directions.map((v) => <option key={v} value={v}>{dirLabel[v]}</option>)}
+              </select>
+            </label>
           </div>
-        </div>
-
-        <label className="field">
-          <span>Title</span>
-          <input
-            value={form.title}
-            onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-            placeholder="TSMC raised capex guidance 15%"
-          />
-        </label>
-
-        <div className="field-grid">
-          <label className="field">
-            <span>Category</span>
-            <select
-              value={form.category}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  category: event.target.value as SignalCategory
-                }))
-              }
-            >
-              {categories.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
+          <label className="field"><span>信心度 (1-5)</span>
+            <input type="number" min={1} max={5} value={form.confidence} onChange={(e) => setForm((c) => ({ ...c, confidence: Number(e.target.value) }))} />
           </label>
-
-          <label className="field">
-            <span>Direction</span>
-            <select
-              value={form.direction}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  direction: event.target.value as SignalDirection
-                }))
-              }
-            >
-              {directions.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
+          <label className="field"><span>摘要</span>
+            <textarea value={form.summary} onChange={(e) => setForm((c) => ({ ...c, summary: e.target.value }))} placeholder="這個訊號對論點的意義" />
           </label>
-        </div>
+          <button className="action-button" type="submit" disabled={saving}>{saving ? "建立中..." : "建立訊號"}</button>
+        </form>
+      ) : null}
 
-        <label className="field">
-          <span>Confidence (1-5)</span>
-          <input
-            type="number"
-            min={1}
-            max={5}
-            value={form.confidence}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, confidence: Number(event.target.value) }))
-            }
-          />
-        </label>
-
-        <label className="field">
-          <span>Summary</span>
-          <textarea
-            value={form.summary}
-            onChange={(event) => setForm((current) => ({ ...current, summary: event.target.value }))}
-            placeholder="What this signal means for the thesis."
-          />
-        </label>
-
-        <button className="action-button" type="submit" disabled={saving}>
-          {saving ? "Creating..." : "Create signal"}
-        </button>
-      </form>
+      {/* 訊號列表 */}
+      <div className="panel">
+        {loading ? <p className="muted">載入訊號...</p> : signals.length === 0 ? <p className="dim">目前沒有訊號。</p> : (
+          <div className="card-stack">
+            {signals.map((s) => (
+              <article key={s.id} className="record-card">
+                <div className="record-topline">
+                  <strong style={{ fontSize: "0.82rem" }}>{s.title}</strong>
+                  <span className={dirColor(s.direction)} style={{ fontSize: "0.65rem" }}>{dirLabel[s.direction]}</span>
+                </div>
+                <p className="record-meta">
+                  {catLabel[s.category] ?? s.category} · 信心 <strong className="mono">{s.confidence}</strong>/5 · {new Date(s.createdAt).toLocaleDateString("zh-TW")}
+                </p>
+                {s.companyIds.length > 0 ? (
+                  <p className="dim" style={{ fontSize: "0.75rem" }}>關聯公司：{s.companyIds.map(getLabel).join("、")}</p>
+                ) : null}
+                {s.summary ? <p style={{ fontSize: "0.78rem", marginTop: 2 }}>{s.summary}</p> : null}
+                {s.companyIds.length > 0 ? (
+                  <div className="action-row" style={{ marginTop: 6 }}>
+                    {s.companyIds.map((cid) => {
+                      const comp = companyMap.get(cid);
+                      return (
+                        <a key={cid} href={`/plans?newForCompany=${cid}&companyName=${encodeURIComponent(comp?.name ?? cid.slice(0, 8))}`}
+                          className="hero-link primary" style={{ fontSize: "0.68rem", padding: "3px 8px" }}>
+                          + {comp?.ticker ?? cid.slice(0, 8)} 計畫
+                        </a>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

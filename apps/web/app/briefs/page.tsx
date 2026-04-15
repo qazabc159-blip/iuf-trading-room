@@ -3,7 +3,7 @@ import { BriefBoard } from "@/components/brief-board";
 
 export default function BriefsPage() {
   return (
-    <AppShell eyebrow="Daily Brief" title="Operating Picture">
+    <AppShell eyebrow="每日簡報" title="盤勢概覽">
       <BriefBoard />
     </AppShell>
   );

@@ -8,15 +8,12 @@ import type { Company, TradePlan, TradePlanCreateInput, TradePlanStatus } from "
 import { createPlan, getCompanies, getPlans } from "@/lib/api";
 
 const statuses: TradePlanStatus[] = ["draft", "ready", "active", "reduced", "closed", "canceled"];
+const statusLabel: Record<string, string> = {
+  draft: "草稿", ready: "就緒", active: "執行中", reduced: "減碼", closed: "平倉", canceled: "取消"
+};
 
 const initialForm: TradePlanCreateInput = {
-  companyId: "",
-  status: "draft",
-  entryPlan: "",
-  invalidationPlan: "",
-  targetPlan: "",
-  riskReward: "",
-  notes: ""
+  companyId: "", status: "draft", entryPlan: "", invalidationPlan: "", targetPlan: "", riskReward: "", notes: ""
 };
 
 export function ExecutionBoard() {
@@ -27,273 +24,127 @@ export function ExecutionBoard() {
 
   const [plans, setPlans] = useState<TradePlan[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [form, setForm] = useState<TradePlanCreateInput>({
-    ...initialForm,
-    companyId: prefillCompanyId
-  });
+  const [form, setForm] = useState<TradePlanCreateInput>({ ...initialForm, companyId: prefillCompanyId });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [companySearch, setCompanySearch] = useState(prefillCompanyName);
-  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [showForm, setShowForm] = useState(!!prefillCompanyId);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const params: { companyId?: string; status?: string } = {};
-        if (filterCompanyId) params.companyId = filterCompanyId;
-        if (filterStatus) params.status = filterStatus;
-        const [plansRes, companiesRes] = await Promise.all([
-          getPlans(Object.keys(params).length > 0 ? params : undefined),
-          getCompanies()
-        ]);
-        setPlans(plansRes.data);
-        setCompanies(companiesRes.data);
-      } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Unable to load plans.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void load();
+    const params: { companyId?: string; status?: string } = {};
+    if (filterCompanyId) params.companyId = filterCompanyId;
+    if (filterStatus) params.status = filterStatus;
+    setLoading(true);
+    Promise.all([getPlans(Object.keys(params).length > 0 ? params : undefined), getCompanies()])
+      .then(([pr, cr]) => { setPlans(pr.data); setCompanies(cr.data); })
+      .catch((e) => setError(e instanceof Error ? e.message : "無法載入計畫"))
+      .finally(() => setLoading(false));
   }, [filterStatus, filterCompanyId]);
 
   const companyMap = new Map(companies.map((c) => [c.id, c]));
+  const getLabel = (id: string) => { const c = companyMap.get(id); return c ? `${c.ticker} ${c.name}` : id.slice(0, 8) + "..."; };
 
-  const getCompanyLabel = (companyId: string) => {
-    const c = companyMap.get(companyId);
-    return c ? `${c.ticker} ${c.name}` : companyId.slice(0, 8) + "...";
-  };
-
-  // Company picker filtered list
   const filteredCompanies = companySearch
-    ? companies
-        .filter(
-          (c) =>
-            c.name.toLowerCase().includes(companySearch.toLowerCase()) ||
-            c.ticker.toLowerCase().includes(companySearch.toLowerCase())
-        )
-        .slice(0, 10)
+    ? companies.filter((c) => c.name.toLowerCase().includes(companySearch.toLowerCase()) || c.ticker.toLowerCase().includes(companySearch.toLowerCase())).slice(0, 10)
     : [];
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSaving(true);
-    setError(null);
-
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault(); setSaving(true); setError(null);
     try {
-      const response = await createPlan(form);
-      setPlans((current) => [response.data, ...current]);
-      setForm(initialForm);
-      setCompanySearch("");
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Unable to create plan.");
-    } finally {
-      setSaving(false);
-    }
+      const r = await createPlan(form);
+      setPlans((c) => [r.data, ...c]);
+      setForm(initialForm); setCompanySearch(""); setShowForm(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "建立計畫失敗"); }
+    finally { setSaving(false); }
   };
 
-  const statusColor = (status: string) => {
-    if (status === "active") return "badge-green";
-    if (status === "closed" || status === "canceled") return "badge-red";
-    if (status === "ready") return "badge-blue";
+  const statusColor = (s: string) => {
+    if (s === "active" || s === "ready") return "badge-green";
+    if (s === "closed" || s === "canceled") return "badge-red";
+    if (s === "reduced") return "badge-yellow";
     return "badge";
   };
 
   return (
-    <section className="board-grid">
-      <div className="panel panel-large">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Live Board</p>
-            <h3>Trade Plans</h3>
-          </div>
-          <div className="metric-chip">
-            <span>{plans.length}</span>
-            <small>Total</small>
-          </div>
-          <div className="metric-chip">
-            <span>{plans.filter((p) => p.status === "active").length}</span>
-            <small>Active</small>
-          </div>
-        </div>
-
-        <div className="filter-row">
-          <select
-            value={filterStatus}
-            onChange={(event) => {
-              setFilterStatus(event.target.value);
-              setLoading(true);
-            }}
-          >
-            <option value="">All statuses</option>
-            {statuses.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
+    <section style={{ display: "grid", gap: 14 }}>
+      {/* 工具列 */}
+      <div className="panel" style={{ padding: "8px 14px" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <select value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setLoading(true); }} style={{ width: "auto", minWidth: 90 }}>
+            <option value="">全部狀態</option>
+            {statuses.map((s) => <option key={s} value={s}>{statusLabel[s]}</option>)}
           </select>
-        </div>
-
-        {loading ? <p className="muted">Loading plans...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
-
-        <div className="card-stack">
-          {plans.map((plan) => (
-            <article key={plan.id} className="record-card">
-              <div className="record-topline">
-                <strong>{getCompanyLabel(plan.companyId)}</strong>
-                <span className={statusColor(plan.status)}>{plan.status}</span>
-              </div>
-              <p>
-                <strong>Entry:</strong> {plan.entryPlan}
-              </p>
-              <p>
-                <strong>Invalidation:</strong> {plan.invalidationPlan}
-              </p>
-              <p>
-                <strong>Target:</strong> {plan.targetPlan}
-              </p>
-              {plan.riskReward ? <p className="muted">R/R: {plan.riskReward}</p> : null}
-              <div className="action-row" style={{ marginTop: 10 }}>
-                <a
-                  href={`/reviews?newForPlan=${plan.id}&planLabel=${encodeURIComponent(getCompanyLabel(plan.companyId))}`}
-                  className="hero-link primary"
-                  style={{ fontSize: "0.8rem", padding: "6px 12px" }}
-                >
-                  + Create Review
-                </a>
-                <a
-                  href={`/reviews?tradePlanId=${plan.id}`}
-                  className="hero-link"
-                  style={{ fontSize: "0.8rem", padding: "6px 12px" }}
-                >
-                  View Reviews
-                </a>
-              </div>
-            </article>
-          ))}
+          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+            <span style={{ fontSize: "0.9rem" }}>{plans.length}</span>
+            <small style={{ fontSize: "0.6rem" }}>計畫</small>
+          </div>
+          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+            <span style={{ fontSize: "0.9rem" }}>{plans.filter((p) => p.status === "active").length}</span>
+            <small style={{ fontSize: "0.6rem" }}>執行中</small>
+          </div>
+          <button className="action-button" style={{ fontSize: "0.75rem", padding: "5px 12px", marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
+            {showForm ? "關閉表單" : "+ 新增計畫"}
+          </button>
         </div>
       </div>
 
-      <form className="panel" onSubmit={handleSubmit}>
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Create Plan</p>
-            <h3>
-              {prefillCompanyName
-                ? `Plan for ${prefillCompanyName}`
-                : "New trade plan"}
-            </h3>
-          </div>
-        </div>
+      {error ? <p className="error-text" style={{ fontSize: "0.78rem" }}>{error}</p> : null}
 
-        {/* Company picker with search */}
-        <label className="field">
-          <span>Company</span>
-          <input
-            value={companySearch}
-            onChange={(e) => {
-              setCompanySearch(e.target.value);
-              setShowCompanyPicker(true);
-            }}
-            onFocus={() => setShowCompanyPicker(true)}
-            placeholder="Search company name or ticker..."
-          />
-          {showCompanyPicker && filteredCompanies.length > 0 ? (
-            <div
-              style={{
-                border: "1px solid var(--line)",
-                borderRadius: 12,
-                background: "var(--panel-strong)",
-                maxHeight: 200,
-                overflowY: "auto",
-                marginTop: 4
-              }}
-            >
-              {filteredCompanies.map((c) => (
-                <div
-                  key={c.id}
-                  onClick={() => {
-                    setForm((f) => ({ ...f, companyId: c.id }));
-                    setCompanySearch(`${c.ticker} ${c.name}`);
-                    setShowCompanyPicker(false);
-                  }}
-                  style={{
-                    padding: "8px 12px",
-                    cursor: "pointer",
-                    borderBottom: "1px solid var(--line)",
-                    fontSize: "0.85rem"
-                  }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = "rgba(180,77,26,0.06)")
-                  }
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  <strong>{c.ticker}</strong> {c.name}{" "}
-                  <span className="muted" style={{ fontSize: "0.78rem" }}>
-                    {c.chainPosition}
-                  </span>
+      {/* 建立表單 */}
+      {showForm ? (
+        <form className="panel" onSubmit={handleSubmit}>
+          <p className="eyebrow">{prefillCompanyName ? `為 ${prefillCompanyName} 建立計畫` : "新增交易計畫"}</p>
+          <label className="field"><span>公司</span>
+            <input value={companySearch} onChange={(e) => { setCompanySearch(e.target.value); setShowPicker(true); }} onFocus={() => setShowPicker(true)} placeholder="搜尋公司名稱或代號..." />
+            {showPicker && filteredCompanies.length > 0 ? (
+              <div style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--panel-hi)", maxHeight: 180, overflowY: "auto", marginTop: 4 }}>
+                {filteredCompanies.map((c) => (
+                  <div key={c.id} onClick={() => { setForm((f) => ({ ...f, companyId: c.id })); setCompanySearch(`${c.ticker} ${c.name}`); setShowPicker(false); }}
+                    style={{ padding: "6px 10px", cursor: "pointer", borderBottom: "1px solid var(--line)", fontSize: "0.8rem" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--panel)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                    <strong className="mono">{c.ticker}</strong> {c.name} <span className="dim" style={{ fontSize: "0.7rem" }}>{c.chainPosition}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {form.companyId ? <small className="dim">已選：{getLabel(form.companyId)}</small> : null}
+          </label>
+          <label className="field"><span>進場計畫</span><textarea value={form.entryPlan} onChange={(e) => setForm((c) => ({ ...c, entryPlan: e.target.value }))} placeholder="進場區間、時機、條件" /></label>
+          <label className="field"><span>失效條件</span><textarea value={form.invalidationPlan} onChange={(e) => setForm((c) => ({ ...c, invalidationPlan: e.target.value }))} placeholder="什麼條件推翻論點" /></label>
+          <label className="field"><span>目標</span><textarea value={form.targetPlan} onChange={(e) => setForm((c) => ({ ...c, targetPlan: e.target.value }))} placeholder="目標價位與出場條件" /></label>
+          <label className="field"><span>風險報酬比</span><input value={form.riskReward} onChange={(e) => setForm((c) => ({ ...c, riskReward: e.target.value }))} placeholder="例如 1:3" /></label>
+          <label className="field"><span>備註</span><textarea value={form.notes} onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))} placeholder="額外脈絡" /></label>
+          <button className="action-button" type="submit" disabled={saving}>{saving ? "建立中..." : "建立計畫"}</button>
+        </form>
+      ) : null}
+
+      {/* 計畫列表 */}
+      <div className="panel">
+        {loading ? <p className="muted">載入計畫...</p> : plans.length === 0 ? <p className="dim">尚無計畫。</p> : (
+          <div className="card-stack">
+            {plans.map((p) => (
+              <article key={p.id} className="record-card">
+                <div className="record-topline">
+                  <strong style={{ fontSize: "0.82rem" }}>{getLabel(p.companyId)}</strong>
+                  <span className={statusColor(p.status)} style={{ fontSize: "0.65rem" }}>{statusLabel[p.status] ?? p.status}</span>
                 </div>
-              ))}
-            </div>
-          ) : null}
-          {form.companyId ? (
-            <small className="muted">Selected: {getCompanyLabel(form.companyId)}</small>
-          ) : null}
-        </label>
-
-        <label className="field">
-          <span>Entry plan</span>
-          <textarea
-            value={form.entryPlan}
-            onChange={(e) => setForm((c) => ({ ...c, entryPlan: e.target.value }))}
-            placeholder="Entry zone, timing, and conditions."
-          />
-        </label>
-
-        <label className="field">
-          <span>Invalidation</span>
-          <textarea
-            value={form.invalidationPlan}
-            onChange={(e) => setForm((c) => ({ ...c, invalidationPlan: e.target.value }))}
-            placeholder="What would prove the thesis wrong."
-          />
-        </label>
-
-        <label className="field">
-          <span>Target</span>
-          <textarea
-            value={form.targetPlan}
-            onChange={(e) => setForm((c) => ({ ...c, targetPlan: e.target.value }))}
-            placeholder="Price targets and exit conditions."
-          />
-        </label>
-
-        <label className="field">
-          <span>Risk / Reward</span>
-          <input
-            value={form.riskReward}
-            onChange={(e) => setForm((c) => ({ ...c, riskReward: e.target.value }))}
-            placeholder="e.g. 1:3"
-          />
-        </label>
-
-        <label className="field">
-          <span>Notes</span>
-          <textarea
-            value={form.notes}
-            onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))}
-            placeholder="Additional context."
-          />
-        </label>
-
-        <button className="action-button" type="submit" disabled={saving}>
-          {saving ? "Creating..." : "Create plan"}
-        </button>
-      </form>
+                <p style={{ fontSize: "0.78rem" }}><strong>進場：</strong>{p.entryPlan}</p>
+                <p style={{ fontSize: "0.78rem" }}><strong>失效：</strong>{p.invalidationPlan}</p>
+                <p style={{ fontSize: "0.78rem" }}><strong>目標：</strong>{p.targetPlan}</p>
+                {p.riskReward ? <p className="dim mono" style={{ fontSize: "0.75rem" }}>R/R: {p.riskReward}</p> : null}
+                <div className="action-row" style={{ marginTop: 6 }}>
+                  <a href={`/reviews?newForPlan=${p.id}&planLabel=${encodeURIComponent(getLabel(p.companyId))}`} className="hero-link primary" style={{ fontSize: "0.68rem", padding: "3px 8px" }}>+ 建立檢討</a>
+                  <a href={`/reviews?tradePlanId=${p.id}`} className="hero-link" style={{ fontSize: "0.68rem", padding: "3px 8px" }}>查看檢討</a>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

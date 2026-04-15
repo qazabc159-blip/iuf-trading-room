@@ -3,7 +3,7 @@ import { OpenAliceOps } from "@/components/openalice-ops";
 
 export default function OpsPage() {
   return (
-    <AppShell eyebrow="Operations" title="OpenAlice Ops">
+    <AppShell eyebrow="系統戰情" title="營運監控">
       <OpenAliceOps />
     </AppShell>
   );

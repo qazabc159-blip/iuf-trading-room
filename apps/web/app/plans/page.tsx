@@ -5,7 +5,7 @@ import { ExecutionBoard } from "@/components/execution-board";
 
 export default function PlansPage() {
   return (
-    <AppShell eyebrow="Execution Board" title="Trade Plans">
+    <AppShell eyebrow="交易計畫" title="執行紀律">
       <Suspense>
         <ExecutionBoard />
       </Suspense>

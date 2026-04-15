@@ -215,3 +215,166 @@ export async function getOpenAliceObservability() {
 export async function getOpenAliceDevices() {
   return request<OpenAliceDevice[]>("/api/v1/openalice/devices");
 }
+
+// Ops Snapshot (全站戰情總覽)
+
+export type OpsSnapshotData = {
+  generatedAt: string;
+  workspace: { id: string; name: string; slug: string };
+  stats: {
+    themes: number;
+    companies: number;
+    signals: number;
+    plans: number;
+    reviews: number;
+    briefs: number;
+    coreCompanies: number;
+    directCompanies: number;
+    activePlans: number;
+    reviewQueue: number;
+    publishedBriefs: number;
+    bullishSignals: number;
+  };
+  openAlice: {
+    observability: OpenAliceObservability;
+    queue: {
+      totalJobs: number;
+      queued: number;
+      running: number;
+      reviewable: number;
+      failed: number;
+    };
+  };
+  audit: {
+    windowHours: number;
+    total: number;
+    latestCreatedAt: string | null;
+    actions: Array<{ action: string; count: number }>;
+    entities: Array<{ entityType: string; count: number }>;
+    recent: Array<{
+      id: string;
+      action: string;
+      entityType: string;
+      entityId: string;
+      payload: Record<string, unknown>;
+      createdAt: string;
+    }>;
+  };
+  latest: {
+    themes: Array<{ id: string; label: string; subtitle?: string; timestamp: string }>;
+    companies: Array<{ id: string; label: string; subtitle?: string; timestamp: string }>;
+    signals: Array<{ id: string; label: string; subtitle?: string; timestamp: string }>;
+    plans: Array<{ id: string; label: string; subtitle?: string; timestamp: string }>;
+    reviews: Array<{ id: string; label: string; subtitle?: string; timestamp: string }>;
+    briefs: Array<{ id: string; label: string; subtitle?: string; timestamp: string }>;
+  };
+};
+
+export async function getOpsSnapshot(params?: { auditHours?: number; recentLimit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.auditHours) query.set("auditHours", String(params.auditHours));
+  if (params?.recentLimit) query.set("recentLimit", String(params.recentLimit));
+  const qs = query.toString();
+  return request<OpsSnapshotData>(`/api/v1/ops/snapshot${qs ? `?${qs}` : ""}`);
+}
+
+// Event History (時間軸)
+
+export type EventHistoryItem = {
+  id: string;
+  source: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  title: string;
+  subtitle?: string;
+  status?: string;
+  severity: "info" | "success" | "warning" | "danger";
+  createdAt: string;
+  href?: string;
+  tags: string[];
+};
+
+export async function getEventHistory(params?: {
+  hours?: number;
+  limit?: number;
+  sources?: string;
+  entityType?: string;
+  search?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params?.hours) query.set("hours", String(params.hours));
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.sources) query.set("sources", params.sources);
+  if (params?.entityType) query.set("entityType", params.entityType);
+  if (params?.search) query.set("search", params.search);
+  const qs = query.toString();
+  return request<EventHistoryItem[]>(`/api/v1/event-history${qs ? `?${qs}` : ""}`);
+}
+
+// Audit Logs (稽核紀錄)
+
+export type AuditEntry = {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  method?: string;
+  path?: string;
+  status?: number;
+  role?: string;
+  workspace?: string;
+};
+
+export type AuditSummary = {
+  windowHours: number;
+  total: number;
+  latestCreatedAt: string | null;
+  actions: Array<{ action: string; count: number }>;
+  entities: Array<{ entityType: string; count: number }>;
+  recent: AuditEntry[];
+};
+
+export async function getAuditLogSummary(params?: {
+  hours?: number;
+  action?: string;
+  entityType?: string;
+  search?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params?.hours) query.set("hours", String(params.hours));
+  if (params?.action) query.set("action", params.action);
+  if (params?.entityType) query.set("entityType", params.entityType);
+  if (params?.search) query.set("search", params.search);
+  const qs = query.toString();
+  return request<AuditSummary>(`/api/v1/audit-logs/summary${qs ? `?${qs}` : ""}`);
+}
+
+export async function getAuditLogs(params?: {
+  limit?: number;
+  action?: string;
+  entityType?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.action) query.set("action", params.action);
+  if (params?.entityType) query.set("entityType", params.entityType);
+  if (params?.search) query.set("search", params.search);
+  if (params?.from) query.set("from", params.from);
+  if (params?.to) query.set("to", params.to);
+  const qs = query.toString();
+  return request<AuditEntry[]>(`/api/v1/audit-logs${qs ? `?${qs}` : ""}`);
+}
+
+export function getAuditLogsExportUrl(params?: { format?: "csv" | "json"; action?: string; entityType?: string }) {
+  const query = new URLSearchParams();
+  query.set("format", params?.format ?? "csv");
+  if (params?.action) query.set("action", params.action);
+  if (params?.entityType) query.set("entityType", params.entityType);
+  return `${API_BASE}/api/v1/audit-logs/export?${query.toString()}`;
+}

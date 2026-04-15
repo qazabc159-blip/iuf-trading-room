@@ -3,7 +3,7 @@ import { ThemeBoard } from "@/components/theme-board";
 
 export default function ThemesPage() {
   return (
-    <AppShell eyebrow="Theme Board" title="Theme Research">
+    <AppShell eyebrow="主題戰區" title="投研主題管理">
       <ThemeBoard />
     </AppShell>
   );
