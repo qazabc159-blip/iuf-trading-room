@@ -1,0 +1,69 @@
+name: Deploy to Railway
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to deploy"
+        default: "all"
+        type: choice
+        options:
+          - all
+          - web
+          - api
+          - worker
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Only deploy if CI passed (auto), or manual dispatch
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [web, api, worker]
+
+    steps:
+      - name: Decide whether this matrix entry should run
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            target="${{ github.event.inputs.service }}"
+            if [ "$target" != "all" ] && [ "$target" != "${{ matrix.service }}" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Skipping ${{ matrix.service }} — manual dispatch targeted '$target'"
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        if: steps.gate.outputs.skip != 'true'
+        run: npm install -g @railway/cli@latest
+
+      - name: Deploy ${{ matrix.service }}
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::error::RAILWAY_TOKEN secret is not set. Create a project token in Railway dashboard (Project → Settings → Tokens) and add it as a GitHub Actions secret named RAILWAY_TOKEN."
+            exit 1
+          fi
+          railway up --service ${{ matrix.service }} --ci --message "GHA deploy ${{ github.sha }}"
