@@ -19,6 +19,16 @@ const exposureLabel: Record<string, string> = { volume: "量", asp: "價", margi
 
 const emptyExposure: ExposureBreakdown = { volume: 3, asp: 3, margin: 3, capacity: 3, narrative: 3 };
 
+// 曝險評分 5 個欄位完全相同時，視為 seed 預設值（未經人工/代理校正）
+function isExposureUnscored(e: ExposureBreakdown) {
+  const values = exposureKeys.map((k) => e[k]);
+  return new Set(values).size === 1;
+}
+
+function formatExposureSummary(e: ExposureBreakdown) {
+  return isExposureUnscored(e) ? "未評分" : exposureKeys.map((k) => e[k]).join("/");
+}
+
 const initialForm: CompanyCreateInput = {
   name: "", ticker: "", market: "TWSE", country: "Taiwan",
   themeIds: [], chainPosition: "", beneficiaryTier: "Observation",
@@ -130,15 +140,26 @@ export function CompanyBoard() {
             </div>
 
             <div className="record-card">
-              <strong style={{ fontSize: "var(--fs-sm)" }}>曝險評分</strong>
-              <div className="exposure-grid">
-                {exposureKeys.map((k) => (
-                  <div key={k} className="exposure-cell">
-                    <div className="exposure-value">{selected.exposure[k]}</div>
-                    <div className="exposure-label">{exposureLabel[k]}</div>
-                  </div>
-                ))}
+              <div className="record-topline">
+                <strong style={{ fontSize: "var(--fs-sm)" }}>曝險評分</strong>
+                {isExposureUnscored(selected.exposure) ? (
+                  <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>尚未評分</span>
+                ) : null}
               </div>
+              {isExposureUnscored(selected.exposure) ? (
+                <p className="dim" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>
+                  五個維度尚未經過人工或代理校正，等待初次評分後才有分析意義。
+                </p>
+              ) : (
+                <div className="exposure-grid">
+                  {exposureKeys.map((k) => (
+                    <div key={k} className="exposure-cell">
+                      <div className="exposure-value">{selected.exposure[k]}</div>
+                      <div className="exposure-label">{exposureLabel[k]}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="record-card">
@@ -162,6 +183,8 @@ export function CompanyBoard() {
                 <p className="muted loading-text" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>載入關係圖...</p>
               ) : !graph ? (
                 <p className="dim" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>尚無關係資料</p>
+              ) : graph.summary.outboundRelations + graph.summary.inboundRelations + graph.summary.keywords === 0 ? (
+                <p className="dim" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>尚無供應鏈關係或關鍵詞數據</p>
               ) : (
                 <>
                   <div className="exposure-grid" style={{ marginTop: 6 }}>
@@ -306,7 +329,7 @@ export function CompanyBoard() {
                       <td>{c.name}</td>
                       <td className="dim" style={{ fontSize: "var(--fs-sm)" }}>{c.chainPosition}</td>
                       <td><span className="badge" style={{ fontSize: "var(--fs-xs)", padding: "2px 7px" }}>{tierLabel[c.beneficiaryTier] ?? c.beneficiaryTier}</span></td>
-                      <td className="mono dim" style={{ fontSize: "var(--fs-sm)", whiteSpace: "nowrap" }}>{c.exposure.volume}/{c.exposure.asp}/{c.exposure.margin}/{c.exposure.capacity}/{c.exposure.narrative}</td>
+                      <td className="mono dim" style={{ fontSize: "var(--fs-sm)", whiteSpace: "nowrap" }}>{formatExposureSummary(c.exposure)}</td>
                     </tr>
                   ))}
                 </tbody>
