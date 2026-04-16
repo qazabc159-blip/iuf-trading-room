@@ -2,6 +2,7 @@ import type {
   AppSession,
   Company,
   CompanyCreateInput,
+  CompanyDuplicateReport,
   CompanyGraphSearchResult,
   CompanyGraphStats,
   CompanyGraphView,
@@ -431,4 +432,11 @@ export async function searchCompanyGraph(params: { query: string; limit?: number
 
 export async function getCompanyGraph(companyId: string) {
   return request<CompanyGraphView>(`/api/v1/companies/${companyId}/graph`);
+}
+
+export async function getCompanyDuplicates(params?: { limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<CompanyDuplicateReport>(`/api/v1/companies/duplicates${qs ? `?${qs}` : ""}`);
 }

@@ -236,6 +236,7 @@ export function CompanyBoard() {
           <span style={{ fontSize: "var(--fs-base)" }}>{filtered.length}</span>
           <small>符合</small>
         </div>
+        <a href="/companies/duplicates" className="btn-sm">重複偵測</a>
         <button className="btn-sm" onClick={() => setShowForm(!showForm)}>
           {showForm ? "關閉表單" : "+ 新增公司"}
         </button>
