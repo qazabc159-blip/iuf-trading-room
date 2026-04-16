@@ -440,3 +440,46 @@ export async function getCompanyDuplicates(params?: { limit?: number }) {
   const qs = query.toString();
   return request<CompanyDuplicateReport>(`/api/v1/companies/duplicates${qs ? `?${qs}` : ""}`);
 }
+
+// ── Ops Trends（活動趨勢）─────────────────────────────────
+
+export type OpsTrendCounts = {
+  themesCreated: number;
+  signalsCreated: number;
+  bullishSignals: number;
+  plansCreated: number;
+  reviewsCreated: number;
+  briefsCreated: number;
+  publishedBriefs: number;
+  openAliceJobsCreated: number;
+  auditEvents: number;
+};
+
+export type OpsTrendPoint = {
+  date: string;
+  label: string;
+  counts: OpsTrendCounts;
+  totalActivity: number;
+};
+
+export type OpsTrendSummary = {
+  days: number;
+  timeZone: string;
+  range: { from: string; to: string };
+  totals: OpsTrendCounts;
+  busiestDay: { date: string; totalActivity: number } | null;
+  latestDay: OpsTrendPoint | null;
+};
+
+export type OpsTrendView = {
+  summary: OpsTrendSummary;
+  series: OpsTrendPoint[];
+};
+
+export async function getOpsTrends(params?: { days?: number; timeZone?: string }) {
+  const query = new URLSearchParams();
+  if (params?.days) query.set("days", String(params.days));
+  if (params?.timeZone) query.set("timeZone", params.timeZone);
+  const qs = query.toString();
+  return request<OpsTrendView>(`/api/v1/ops/trends${qs ? `?${qs}` : ""}`);
+}

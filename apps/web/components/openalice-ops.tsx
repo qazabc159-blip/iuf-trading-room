@@ -9,10 +9,14 @@ import {
   getAuditLogSummary,
   getAuditLogs,
   getAuditLogsExportUrl,
+  getOpsTrends,
   type OpsSnapshotData,
   type EventHistoryItem,
   type AuditSummary,
-  type AuditEntry
+  type AuditEntry,
+  type OpsTrendView,
+  type OpsTrendPoint,
+  type OpsTrendCounts
 } from "@/lib/api";
 
 /* ─── 常數 / 工具 ─── */
@@ -53,14 +57,39 @@ const sourceLabel: Record<string, string> = {
   openalice: "代理"
 };
 
-type Tab = "overview" | "timeline" | "audit" | "logs";
+type Tab = "overview" | "timeline" | "trends" | "audit" | "logs";
 
 const tabs: { key: Tab; label: string }[] = [
   { key: "overview", label: "系統總覽" },
   { key: "timeline", label: "事件時間軸" },
+  { key: "trends", label: "活動趨勢" },
   { key: "audit", label: "稽核摘要" },
   { key: "logs", label: "稽核明細" }
 ];
+
+const trendCategoryLabel: Record<keyof OpsTrendCounts, string> = {
+  themesCreated: "主題新增",
+  signalsCreated: "訊號新增",
+  bullishSignals: "看多訊號",
+  plansCreated: "計畫新增",
+  reviewsCreated: "檢討新增",
+  briefsCreated: "簡報新增",
+  publishedBriefs: "簡報發布",
+  openAliceJobsCreated: "代理工作",
+  auditEvents: "稽核事件"
+};
+
+const trendCategoryColor: Record<keyof OpsTrendCounts, string> = {
+  themesCreated: "var(--accent)",
+  signalsCreated: "var(--accent)",
+  bullishSignals: "var(--bull)",
+  plansCreated: "var(--accent)",
+  reviewsCreated: "var(--accent)",
+  briefsCreated: "var(--accent)",
+  publishedBriefs: "var(--bull)",
+  openAliceJobsCreated: "var(--warn)",
+  auditEvents: "var(--dim)"
+};
 
 function ago(seconds: number | null) {
   if (seconds === null) return "從未";
@@ -87,6 +116,7 @@ export function OpenAliceOps() {
   const [events, setEvents] = useState<EventHistoryItem[] | null>(null);
   const [auditSummary, setAuditSummary] = useState<AuditSummary | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[] | null>(null);
+  const [trends, setTrends] = useState<OpsTrendView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,6 +124,7 @@ export function OpenAliceOps() {
   const [timelineHours, setTimelineHours] = useState(24);
   const [timelineSearch, setTimelineSearch] = useState("");
   const [timelineSource, setTimelineSource] = useState("");
+  const [trendDays, setTrendDays] = useState(14);
   const [auditHours, setAuditHours] = useState(24);
   const [auditAction, setAuditAction] = useState("");
   const [auditEntityType, setAuditEntityType] = useState("");
@@ -151,6 +182,15 @@ export function OpenAliceOps() {
     }
   }, [logAction, logSearch]);
 
+  const loadTrends = useCallback(async () => {
+    try {
+      const res = await getOpsTrends({ days: trendDays });
+      setTrends(res.data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [trendDays]);
+
   /* 初始載入 + 自動刷新 */
   useEffect(() => {
     void loadSnapshot();
@@ -161,9 +201,10 @@ export function OpenAliceOps() {
   /* 切 tab 時載入對應資料 */
   useEffect(() => {
     if (tab === "timeline") void loadTimeline();
+    if (tab === "trends") void loadTrends();
     if (tab === "audit") void loadAuditSummary();
     if (tab === "logs") void loadAuditLogs();
-  }, [tab, loadTimeline, loadAuditSummary, loadAuditLogs]);
+  }, [tab, loadTimeline, loadTrends, loadAuditSummary, loadAuditLogs]);
 
   if (loading && !snap) {
     return <div className="panel" style={{ padding: 16 }}><p className="muted loading-text">載入系統戰情...</p></div>;
@@ -205,6 +246,15 @@ export function OpenAliceOps() {
           source={timelineSource}
           setSource={setTimelineSource}
           onRefresh={loadTimeline}
+        />
+      ) : null}
+
+      {tab === "trends" ? (
+        <TrendsTab
+          view={trends}
+          days={trendDays}
+          setDays={setTrendDays}
+          onRefresh={loadTrends}
         />
       ) : null}
 
@@ -451,7 +501,216 @@ function TimelineTab({
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Tab 3: 稽核摘要
+   Tab 3: 活動趨勢
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+function TrendsTab({
+  view,
+  days, setDays,
+  onRefresh
+}: {
+  view: OpsTrendView | null;
+  days: number; setDays: (v: number) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <>
+      <div className="panel filter-bar">
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+          <option value={7}>7天</option>
+          <option value={14}>14天</option>
+          <option value={30}>30天</option>
+          <option value={60}>60天</option>
+        </select>
+        <button className="btn-sm" onClick={onRefresh}>重新整理</button>
+        {view ? (
+          <span className="dim mono" style={{ fontSize: "var(--fs-xs)", marginLeft: "auto" }}>
+            {view.summary.range.from} → {view.summary.range.to} · {view.summary.timeZone}
+          </span>
+        ) : null}
+      </div>
+
+      {!view ? (
+        <div className="panel" style={{ padding: 14 }}><p className="muted loading-text">載入活動趨勢...</p></div>
+      ) : (
+        <TrendsBody view={view} />
+      )}
+    </>
+  );
+}
+
+function TrendsBody({ view }: { view: OpsTrendView }) {
+  const { summary, series } = view;
+  const maxActivity = Math.max(1, ...series.map((p) => p.totalActivity));
+  const latest = summary.latestDay;
+
+  return (
+    <>
+      <div className="kpi-strip" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+        <KpiCard label="觀察天數" value={summary.days} sub="天" />
+        <KpiCard
+          label="總活動"
+          value={Object.values(summary.totals).reduce((a, b) => a + b, 0)}
+          sub={`訊號${summary.totals.signalsCreated} 計畫${summary.totals.plansCreated}`}
+        />
+        <KpiCard
+          label="看多訊號"
+          value={summary.totals.bullishSignals}
+          color="var(--bull)"
+        />
+        <KpiCard
+          label="代理工作"
+          value={summary.totals.openAliceJobsCreated}
+          sub={`稽核${summary.totals.auditEvents}`}
+        />
+        <div className="kpi-card">
+          <div className="mono" style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--muted)" }}>
+            {summary.busiestDay ? summary.busiestDay.date : "—"}
+          </div>
+          <div className="kpi-label">最忙碌一天</div>
+          {summary.busiestDay ? (
+            <div className="kpi-sub">{summary.busiestDay.totalActivity} 次活動</div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div><p className="eyebrow">每日活動量</p><h3>{summary.days} 天活動柱狀圖</h3></div>
+          <span className="badge">峰值 {maxActivity}</span>
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${series.length}, minmax(0, 1fr))`,
+            alignItems: "end",
+            gap: 3,
+            height: 160,
+            padding: "8px 4px",
+            borderBottom: "1px solid var(--line)"
+          }}
+        >
+          {series.map((point) => {
+            const pct = Math.round((point.totalActivity / maxActivity) * 100);
+            const title = buildTrendTooltip(point);
+            return (
+              <div
+                key={point.date}
+                title={title}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "flex-end",
+                  height: "100%",
+                  minWidth: 0
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    height: `${Math.max(pct, point.totalActivity > 0 ? 4 : 0)}%`,
+                    background: point.totalActivity > 0
+                      ? "linear-gradient(180deg, var(--accent), var(--bull))"
+                      : "var(--panel-hi)",
+                    borderRadius: "4px 4px 0 0",
+                    transition: "height 0.3s ease"
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${series.length}, minmax(0, 1fr))`,
+            gap: 3,
+            padding: "4px 4px 0"
+          }}
+        >
+          {series.map((point) => (
+            <div
+              key={point.date}
+              className="dim mono"
+              style={{
+                fontSize: "var(--fs-xs)",
+                textAlign: "center",
+                whiteSpace: "nowrap",
+                overflow: "hidden"
+              }}
+            >
+              {point.label}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div><p className="eyebrow">類別分佈</p><h3>{summary.days} 天累計</h3></div>
+        </div>
+        <div className="theme-ranking-bars">
+          {(Object.keys(trendCategoryLabel) as Array<keyof OpsTrendCounts>).map((key) => {
+            const value = summary.totals[key];
+            const max = Math.max(1, ...Object.values(summary.totals));
+            const pct = Math.round((value / max) * 100);
+            return (
+              <div key={key} className="theme-bar-row">
+                <span className="theme-bar-label">{trendCategoryLabel[key]}</span>
+                <div className="theme-bar-track">
+                  <div
+                    className="theme-bar-fill"
+                    style={{
+                      width: `${pct}%`,
+                      background: trendCategoryColor[key]
+                    }}
+                  />
+                </div>
+                <span className="theme-bar-value">{value}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {latest ? (
+        <div className="panel">
+          <div className="panel-header">
+            <div><p className="eyebrow">最近一天</p><h3>{latest.date}（{latest.label}）</h3></div>
+            <span className="badge-blue">{latest.totalActivity} 次活動</span>
+          </div>
+          <div className="action-row" style={{ marginTop: 6 }}>
+            {(Object.keys(trendCategoryLabel) as Array<keyof OpsTrendCounts>)
+              .filter((k) => latest.counts[k] > 0)
+              .map((k) => (
+                <div key={k} className="metric-chip" style={{ padding: "5px 10px" }}>
+                  <span style={{ fontSize: "var(--fs-base)" }}>{latest.counts[k]}</span>
+                  <small>{trendCategoryLabel[k]}</small>
+                </div>
+              ))}
+            {latest.totalActivity === 0 ? (
+              <span className="dim" style={{ fontSize: "var(--fs-sm)" }}>當日無活動紀錄</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function buildTrendTooltip(point: OpsTrendPoint) {
+  const lines = [`${point.date}（${point.label}）`, `總活動 ${point.totalActivity}`];
+  for (const key of Object.keys(trendCategoryLabel) as Array<keyof OpsTrendCounts>) {
+    const value = point.counts[key];
+    if (value > 0) {
+      lines.push(`${trendCategoryLabel[key]}：${value}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Tab 4: 稽核摘要
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 function AuditSummaryTab({
@@ -573,7 +832,7 @@ function AuditSummaryTab({
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Tab 4: 稽核明細 (含匯出)
+   Tab 5: 稽核明細 (含匯出)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 function AuditLogsTab({
