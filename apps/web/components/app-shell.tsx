@@ -10,6 +10,7 @@ import { primaryNavigation } from "@iuf-trading-room/ui";
 import { getSession } from "@/lib/api";
 import type { AppSession } from "@iuf-trading-room/contracts";
 
+import { BootSequence } from "./boot-sequence";
 import { CommandPalette } from "./command-palette";
 import { TickerTape } from "./ticker-tape";
 
@@ -82,6 +83,7 @@ export function AppShell({
       </main>
 
       <CommandPalette />
+      <BootSequence />
     </div>
   );
 }

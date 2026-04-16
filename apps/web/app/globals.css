@@ -1419,6 +1419,118 @@ select {
   text-shadow: none;
 }
 
+/* ── Boot Sequence（一次性開機動畫）────────────────────────── */
+
+.boot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  animation: boot-in 160ms var(--ease-out);
+  transition: opacity 240ms var(--ease-out);
+}
+
+.boot-overlay.fading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes boot-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.boot-panel {
+  font-family: var(--font-mono);
+  color: var(--text);
+  width: min(640px, 100%);
+  line-height: 1.55;
+}
+
+.boot-title {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  white-space: pre;
+  margin-bottom: var(--sp-4);
+  letter-spacing: 0;
+}
+
+.boot-lines {
+  font-size: var(--fs-base);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.boot-line {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  animation: boot-line-in 120ms var(--ease-out);
+}
+
+@keyframes boot-line-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.boot-status {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  min-width: 52px;
+}
+.boot-status.ok   { color: var(--phosphor); }
+.boot-status.wait { color: var(--amber); }
+.boot-status.err  { color: var(--bear); }
+
+.boot-label {
+  color: var(--muted);
+  min-width: 120px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--fs-sm);
+}
+
+.boot-sep {
+  color: var(--dim);
+}
+
+.boot-value {
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+
+.boot-cursor {
+  display: inline-block;
+  color: var(--phosphor);
+  margin-top: var(--sp-1);
+  animation: boot-blink 0.6s step-end infinite;
+}
+
+@keyframes boot-blink {
+  50% { opacity: 0; }
+}
+
+.boot-hint {
+  margin-top: var(--sp-5);
+  color: var(--dim);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-overlay,
+  .boot-line,
+  .boot-cursor {
+    animation: none !important;
+  }
+}
+
 /* ── Scrollbar (Webkit) ────────────────────────────────────── */
 
 ::-webkit-scrollbar {
