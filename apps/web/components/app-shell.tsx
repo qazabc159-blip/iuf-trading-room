@@ -11,6 +11,7 @@ import { getSession } from "@/lib/api";
 import type { AppSession } from "@iuf-trading-room/contracts";
 
 import { CommandPalette } from "./command-palette";
+import { TickerTape } from "./ticker-tape";
 
 export function AppShell({
   title,
@@ -52,19 +53,22 @@ export function AppShell({
         </nav>
       </aside>
 
-      {/* 頂部戰情列 */}
+      {/* 頂部戰情列 — ticker tape 活體跑馬燈 */}
       <div className="status-bar">
-        <strong>{session?.workspace.name ?? "主交易桌"}</strong>
-        <span style={{ color: "var(--dim)" }}>|</span>
-        <span>
-          模式：<strong>{session?.persistenceMode === "database" ? "PostgreSQL" : session?.persistenceMode ?? "—"}</strong>
-        </span>
-        <span style={{ color: "var(--dim)" }}>|</span>
-        <span>
+        <strong style={{ flexShrink: 0 }}>
+          <span style={{ color: "var(--phosphor)", textShadow: "var(--phosphor-glow)" }}>◆</span>{" "}
+          {session?.workspace.name ?? "主交易桌"}
+        </strong>
+        <span style={{ color: "rgba(127,255,76,0.35)", flexShrink: 0 }}>│</span>
+        <span style={{ flexShrink: 0 }}>
           <span className={`status-dot ${session ? "green" : "yellow"}`} />{" "}
-          {session ? "系統連線中" : "載入中..."}
+          {session?.persistenceMode === "database" ? "PG·LIVE" : session?.persistenceMode ?? "BOOT"}
         </span>
-        <span className="status-bar-right">
+        <span style={{ color: "rgba(127,255,76,0.35)", flexShrink: 0 }}>│</span>
+
+        <TickerTape />
+
+        <span className="status-bar-right" style={{ flexShrink: 0 }}>
           {dateStr} {timeStr}
         </span>
       </div>
@@ -72,7 +76,11 @@ export function AppShell({
       {/* 主內容 */}
       <main className="content">
         <header className="hero">
-          <p className="eyebrow">{eyebrow}</p>
+          <p className="eyebrow">
+            <span style={{ color: "var(--amber)", textShadow: "var(--amber-glow)", marginRight: "6px" }}>▶</span>
+            {eyebrow}
+            <span style={{ color: "var(--amber)", textShadow: "var(--amber-glow)", marginLeft: "6px" }}>◀</span>
+          </p>
           <h2>{title}</h2>
         </header>
         {children}

@@ -7,6 +7,7 @@ import type { ThemeGraphRankingView } from "@iuf-trading-room/contracts";
 
 import { AppShell } from "@/components/app-shell";
 import { getOpsSnapshot, getThemeGraphRankings, type OpsSnapshotData } from "@/lib/api";
+import { blockSpark } from "@/lib/block-spark";
 
 export default function HomePage() {
   const [snap, setSnap] = useState<OpsSnapshotData | null>(null);
@@ -24,18 +25,26 @@ export default function HomePage() {
   return (
     <AppShell eyebrow="今日作戰總覽" title="台股 AI 交易戰情室">
       {/* 上排：關鍵指標 */}
+      <h3 className="ascii-head">
+        <span className="ascii-head-bracket">[01]</span>
+        核心指標 · CORE METRICS
+      </h3>
       <section className="kpi-strip">
         <KpiCard label="主題戰區" value={s?.themes} />
         <KpiCard label="公司資料庫" value={s?.companies} sub={s ? `核心 ${s.coreCompanies} / 直接 ${s.directCompanies}` : undefined} />
-        <KpiCard label="活躍訊號" value={s?.signals} sub={s ? `看多 ${s.bullishSignals}` : undefined} color="var(--bull)" />
-        <KpiCard label="交易計畫" value={s?.plans} sub={s ? `執行中 ${s.activePlans}` : undefined} />
-        <KpiCard label="待審草稿" value={s?.reviewQueue} color={s && s.reviewQueue > 0 ? "var(--warn)" : undefined} />
+        <KpiCard label="活躍訊號" value={s?.signals} sub={s ? `看多 ${s.bullishSignals}` : undefined} />
+        <KpiCard label="交易計畫" value={s?.plans} sub={s ? `執行中 ${s.activePlans}` : undefined} tone={s && s.activePlans > 0 ? "warn" : undefined} />
+        <KpiCard label="待審草稿" value={s?.reviewQueue} tone={s && s.reviewQueue > 0 ? "warn" : undefined} />
         <KpiCard label="已發布簡報" value={s?.publishedBriefs} />
       </section>
 
       {/* 中排：OpenAlice + 稽核 */}
+      <h3 className="ascii-head">
+        <span className="ascii-head-bracket">[02]</span>
+        代理狀態與稽核 · AGENT & AUDIT
+      </h3>
       <section className="split-panels">
-        <div className="panel">
+        <div className="panel hud-frame">
           <p className="eyebrow">OpenAlice 代理狀態</p>
           {oa ? (
             <div className="action-row" style={{ gap: 16, marginTop: 8 }}>
@@ -51,7 +60,7 @@ export default function HomePage() {
           )}
         </div>
 
-        <div className="panel">
+        <div className="panel hud-frame">
           <p className="eyebrow">稽核紀錄（{audit?.windowHours ?? 24}h）</p>
           {audit ? (
             <div style={{ marginTop: 8 }}>
@@ -73,9 +82,13 @@ export default function HomePage() {
       </section>
 
       {/* 主題排名戰區 */}
-      <section className="panel">
+      <h3 className="ascii-head">
+        <span className="ascii-head-bracket">[03]</span>
+        主題火力排名 · THEME LEADERBOARD
+      </h3>
+      <section className="panel hud-frame">
         <div className="panel-header">
-          <p className="eyebrow">主題火力排名（Top 6）</p>
+          <p className="eyebrow">Top 6</p>
           <Link href="/themes" className="btn-sm">查看全部</Link>
         </div>
         {!rankings ? (
@@ -93,6 +106,14 @@ export default function HomePage() {
                 <div className="theme-ranking-name">{r.name}</div>
                 <div className="theme-ranking-meta dim">
                   {r.summary.themeCompanyCount} 家核心 · {r.summary.relatedCompanyCount} 家關聯
+                  <span className="block-spark" style={{ marginLeft: 8 }}>
+                    {blockSpark([
+                      r.breakdown.conviction,
+                      r.breakdown.connectivity,
+                      r.breakdown.leverage,
+                      r.breakdown.keywordRichness
+                    ])}
+                  </span>
                 </div>
                 {r.signals.length > 0 ? (
                   <div className="theme-ranking-signals">
@@ -114,6 +135,10 @@ export default function HomePage() {
       </section>
 
       {/* 下排：最新動態流 */}
+      <h3 className="ascii-head">
+        <span className="ascii-head-bracket">[04]</span>
+        最新動態流 · LIVE FEED
+      </h3>
       <section className="triple-panels">
         <LatestList title="最新訊號" items={snap?.latest.signals} linkBase="/signals" />
         <LatestList title="最新計畫" items={snap?.latest.plans} linkBase="/plans" />
@@ -132,10 +157,20 @@ export default function HomePage() {
   );
 }
 
-function KpiCard({ label, value, sub, color }: { label: string; value?: number; sub?: string; color?: string }) {
+function KpiCard({
+  label,
+  value,
+  sub,
+  tone
+}: {
+  label: string;
+  value?: number;
+  sub?: string;
+  tone?: "warn" | "bear" | "accent" | "dim";
+}) {
   return (
     <div className="kpi-card">
-      <div className="kpi-value" style={color ? { color } : undefined}>
+      <div className={`kpi-value${tone ? ` ${tone}` : ""}`}>
         {value != null ? value : "—"}
       </div>
       <div className="kpi-label">{label}</div>
