@@ -166,7 +166,7 @@ export function OpenAliceOps() {
   }, [tab, loadTimeline, loadAuditSummary, loadAuditLogs]);
 
   if (loading && !snap) {
-    return <div className="panel" style={{ padding: 16 }}><p className="muted">載入系統戰情...</p></div>;
+    return <div className="panel" style={{ padding: 16 }}><p className="muted loading-text">載入系統戰情...</p></div>;
   }
   if (error && !snap) {
     return <div className="panel" style={{ padding: 16 }}><p className="error-text">{error}</p></div>;
@@ -176,38 +176,25 @@ export function OpenAliceOps() {
     <section style={{ display: "grid", gap: 14 }}>
       {error ? (
         <div className="panel" style={{ padding: "6px 14px" }}>
-          <p className="error-text" style={{ margin: 0, fontSize: "0.75rem" }}>{error}</p>
+          <p className="error-text" style={{ margin: 0, fontSize: "var(--fs-sm)" }}>{error}</p>
         </div>
       ) : null}
 
       {/* Tab 導覽 */}
-      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--line)", paddingBottom: 2 }}>
+      <div className="tab-bar">
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            style={{
-              padding: "6px 14px",
-              fontSize: "0.78rem",
-              fontWeight: tab === t.key ? 700 : 500,
-              color: tab === t.key ? "var(--accent)" : "var(--muted)",
-              background: tab === t.key ? "var(--panel)" : "transparent",
-              border: "none",
-              borderBottom: tab === t.key ? "2px solid var(--accent)" : "2px solid transparent",
-              cursor: "pointer",
-              borderRadius: "8px 8px 0 0",
-              transition: "color 160ms"
-            }}
+            className={`tab-btn${tab === t.key ? " active" : ""}`}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* ═══ Tab: 系統總覽 ═══ */}
       {tab === "overview" && snap ? <OverviewTab snap={snap} onRefresh={loadSnapshot} /> : null}
 
-      {/* ═══ Tab: 事件時間軸 ═══ */}
       {tab === "timeline" ? (
         <TimelineTab
           events={events}
@@ -221,7 +208,6 @@ export function OpenAliceOps() {
         />
       ) : null}
 
-      {/* ═══ Tab: 稽核摘要 ═══ */}
       {tab === "audit" ? (
         <AuditSummaryTab
           summary={auditSummary}
@@ -235,7 +221,6 @@ export function OpenAliceOps() {
         />
       ) : null}
 
-      {/* ═══ Tab: 稽核明細 ═══ */}
       {tab === "logs" ? (
         <AuditLogsTab
           logs={auditLogs}
@@ -263,7 +248,7 @@ function OverviewTab({ snap, onRefresh }: { snap: OpsSnapshotData; onRefresh: ()
   return (
     <>
       {/* KPI 格 */}
-      <div className="dashboard-grid">
+      <div className="kpi-strip">
         <KpiCard label="主題" value={st.themes} />
         <KpiCard label="公司" value={st.companies} sub={`核心${st.coreCompanies} 直接${st.directCompanies}`} />
         <KpiCard label="訊號" value={st.signals} sub={`看多${st.bullishSignals}`} color="var(--bull)" />
@@ -273,16 +258,16 @@ function OverviewTab({ snap, onRefresh }: { snap: OpsSnapshotData; onRefresh: ()
       </div>
 
       {/* Worker / Sweep / Mode */}
-      <div className="dashboard-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+      <div className="triple-panels">
         <div className="panel">
           <div className="panel-header">
             <div><p className="eyebrow">Worker</p><h3>心跳</h3></div>
             <span className={healthColor[obs.workerStatus]}>{healthLabel[obs.workerStatus]}</span>
           </div>
-          <p style={{ fontSize: "0.8rem" }}>
+          <p style={{ fontSize: "var(--fs-sm)" }}>
             最後心跳：<strong className="mono">{obs.workerHeartbeatAt ? ts(obs.workerHeartbeatAt) : "從未"}</strong>
           </p>
-          <p className="dim" style={{ fontSize: "0.72rem" }}>{ago(obs.workerHeartbeatAgeSeconds)}</p>
+          <p className="dim" style={{ fontSize: "var(--fs-xs)" }}>{ago(obs.workerHeartbeatAgeSeconds)}</p>
         </div>
 
         <div className="panel">
@@ -290,17 +275,17 @@ function OverviewTab({ snap, onRefresh }: { snap: OpsSnapshotData; onRefresh: ()
             <div><p className="eyebrow">排程掃描</p><h3>維護</h3></div>
             <span className={healthColor[obs.sweepStatus]}>{healthLabel[obs.sweepStatus]}</span>
           </div>
-          <p style={{ fontSize: "0.8rem" }}>
+          <p style={{ fontSize: "var(--fs-sm)" }}>
             最後掃描：<strong className="mono">{obs.lastSweepAt ? ts(obs.lastSweepAt) : "從未"}</strong>
           </p>
-          <p className="dim" style={{ fontSize: "0.72rem" }}>{ago(obs.lastSweepAgeSeconds)} · {obs.source}</p>
+          <p className="dim" style={{ fontSize: "var(--fs-xs)" }}>{ago(obs.lastSweepAgeSeconds)} · {obs.source}</p>
         </div>
 
         <div className="panel">
           <div className="panel-header">
             <div><p className="eyebrow">持久化</p><h3>{obs.metrics.mode === "database" ? "PostgreSQL" : "記憶體"}</h3></div>
           </div>
-          <p className="dim" style={{ fontSize: "0.72rem" }}>模式: {obs.metrics.mode}</p>
+          <p className="dim" style={{ fontSize: "var(--fs-xs)" }}>模式: {obs.metrics.mode}</p>
         </div>
       </div>
 
@@ -308,9 +293,9 @@ function OverviewTab({ snap, onRefresh }: { snap: OpsSnapshotData; onRefresh: ()
       <div className="panel">
         <div className="panel-header">
           <div><p className="eyebrow">工作佇列</p><h3>佇列狀態</h3></div>
-          <button className="hero-link" style={{ padding: "4px 10px", fontSize: "0.72rem" }} onClick={onRefresh}>重新整理</button>
+          <button className="btn-sm" onClick={onRefresh}>重新整理</button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 8 }}>
+        <div className="kpi-strip" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))" }}>
           <QueueNum label="等待" value={q.queued} />
           <QueueNum label="執行" value={q.running} color="var(--accent)" />
           <QueueNum label="待審" value={q.reviewable} color={q.reviewable > 0 ? "var(--warn)" : undefined} />
@@ -327,9 +312,9 @@ function OverviewTab({ snap, onRefresh }: { snap: OpsSnapshotData; onRefresh: ()
           <span className="badge">共 {audit.total} 筆</span>
         </div>
         {audit.actions.length > 0 ? (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+          <div className="action-row" style={{ marginBottom: 8 }}>
             {audit.actions.map((a) => (
-              <span key={a.action} className="badge-blue" style={{ fontSize: "0.65rem" }}>{a.action} ×{a.count}</span>
+              <span key={a.action} className="badge-blue" style={{ fontSize: "var(--fs-xs)" }}>{a.action} ×{a.count}</span>
             ))}
           </div>
         ) : null}
@@ -337,28 +322,28 @@ function OverviewTab({ snap, onRefresh }: { snap: OpsSnapshotData; onRefresh: ()
           <div className="card-stack">
             {audit.recent.slice(0, 5).map((e) => (
               <div key={e.id} className="record-card" style={{ padding: "6px 10px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div className="record-topline">
                   <div>
-                    <span className="badge-blue" style={{ fontSize: "0.62rem", marginRight: 4 }}>{e.action}</span>
-                    <strong style={{ fontSize: "0.75rem" }}>{e.entityType}</strong>
-                    <span className="dim mono" style={{ fontSize: "0.65rem", marginLeft: 4 }}>{e.entityId.slice(0, 8)}</span>
+                    <span className="badge-blue" style={{ fontSize: "var(--fs-xs)", marginRight: 4 }}>{e.action}</span>
+                    <strong style={{ fontSize: "var(--fs-sm)" }}>{e.entityType}</strong>
+                    <span className="dim mono" style={{ fontSize: "var(--fs-xs)", marginLeft: 4 }}>{e.entityId.slice(0, 8)}</span>
                   </div>
-                  <span className="mono dim" style={{ fontSize: "0.62rem" }}>{ts(e.createdAt)}</span>
+                  <span className="mono dim" style={{ fontSize: "var(--fs-xs)" }}>{ts(e.createdAt)}</span>
                 </div>
               </div>
             ))}
           </div>
-        ) : <p className="dim" style={{ fontSize: "0.75rem" }}>無近期稽核</p>}
+        ) : <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>無近期稽核</p>}
       </div>
 
       {/* 最新動態 */}
-      <div className="dashboard-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+      <div className="triple-panels">
         <LatestPanel title="最新訊號" items={snap.latest.signals} href="/signals" />
         <LatestPanel title="最新計畫" items={snap.latest.plans} href="/plans" />
         <LatestPanel title="最新簡報" items={snap.latest.briefs} href="/briefs" />
       </div>
 
-      <p className="dim mono" style={{ fontSize: "0.6rem", textAlign: "right" }}>快照 {ts(snap.generatedAt)}</p>
+      <p className="dim mono" style={{ fontSize: "var(--fs-xs)", textAlign: "right" }}>快照 {ts(snap.generatedAt)}</p>
     </>
   );
 }
@@ -382,41 +367,37 @@ function TimelineTab({
 }) {
   return (
     <>
-      {/* 篩選列 */}
-      <div className="panel" style={{ padding: "8px 14px" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={hours} onChange={(e) => setHours(Number(e.target.value))} style={{ width: "auto", minWidth: 80 }}>
-            <option value={6}>6小時</option>
-            <option value={12}>12小時</option>
-            <option value={24}>24小時</option>
-            <option value={72}>3天</option>
-            <option value={168}>7天</option>
-          </select>
-          <select value={source} onChange={(e) => setSource(e.target.value)} style={{ width: "auto", minWidth: 80 }}>
-            <option value="">全部來源</option>
-            {Object.entries(sourceLabel).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜尋事件..."
-            style={{ flex: 1, minWidth: 120 }}
-            onKeyDown={(e) => e.key === "Enter" && onRefresh()}
-          />
-          <button className="hero-link" style={{ padding: "4px 10px", fontSize: "0.72rem" }} onClick={onRefresh}>查詢</button>
-        </div>
+      <div className="panel filter-bar">
+        <select value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+          <option value={6}>6小時</option>
+          <option value={12}>12小時</option>
+          <option value={24}>24小時</option>
+          <option value={72}>3天</option>
+          <option value={168}>7天</option>
+        </select>
+        <select value={source} onChange={(e) => setSource(e.target.value)}>
+          <option value="">全部來源</option>
+          {Object.entries(sourceLabel).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
+        </select>
+        <input
+          className="search-input"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="搜尋事件..."
+          onKeyDown={(e) => e.key === "Enter" && onRefresh()}
+        />
+        <button className="btn-sm" onClick={onRefresh}>查詢</button>
       </div>
 
-      {/* 時間軸 */}
       {!events ? (
-        <div className="panel" style={{ padding: 14 }}><p className="muted">載入事件時間軸...</p></div>
+        <div className="panel" style={{ padding: 14 }}><p className="muted loading-text">載入事件時間軸...</p></div>
       ) : events.length === 0 ? (
         <div className="panel" style={{ padding: 14 }}><p className="dim">此區間內無事件</p></div>
       ) : (
         <div className="panel" style={{ padding: "8px 0" }}>
-          <div style={{ maxHeight: 600, overflowY: "auto" }}>
+          <div className="scroll-box">
             {events.map((ev) => (
               <div
                 key={ev.id}
@@ -429,39 +410,28 @@ function TimelineTab({
                   alignItems: "start"
                 }}
               >
-                {/* 時間 */}
-                <span className="mono dim" style={{ fontSize: "0.68rem", whiteSpace: "nowrap" }}>
+                <span className="mono dim" style={{ fontSize: "var(--fs-xs)", whiteSpace: "nowrap" }}>
                   {ts(ev.createdAt)}
                 </span>
-
-                {/* 嚴重度 badge */}
-                <span className={severityColor[ev.severity]} style={{ fontSize: "0.6rem", textAlign: "center" }}>
+                <span className={severityColor[ev.severity]} style={{ fontSize: "var(--fs-xs)", textAlign: "center" }}>
                   {severityLabel[ev.severity]}
                 </span>
-
-                {/* 內容 */}
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                    <span className="badge" style={{ fontSize: "0.58rem", padding: "2px 6px" }}>
+                    <span className="badge" style={{ fontSize: "var(--fs-xs)", padding: "2px 6px" }}>
                       {sourceLabel[ev.source] ?? ev.source}
                     </span>
                     {ev.href ? (
-                      <Link href={ev.href} style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text)" }}>
-                        {ev.title}
-                      </Link>
+                      <Link href={ev.href} className="timeline-title">{ev.title}</Link>
                     ) : (
-                      <strong style={{ fontSize: "0.78rem" }}>{ev.title}</strong>
+                      <span className="timeline-title">{ev.title}</span>
                     )}
                   </div>
-                  {ev.subtitle ? (
-                    <p className="dim" style={{ fontSize: "0.68rem", margin: "1px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {ev.subtitle}
-                    </p>
-                  ) : null}
+                  {ev.subtitle ? <p className="timeline-sub">{ev.subtitle}</p> : null}
                   {ev.tags.length > 0 ? (
-                    <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 2 }}>
+                    <div className="action-row" style={{ gap: 3, marginTop: 2 }}>
                       {ev.tags.slice(0, 4).map((t, i) => (
-                        <span key={i} style={{ fontSize: "0.58rem", color: "var(--dim)", background: "var(--panel-hi)", padding: "1px 5px", borderRadius: 4 }}>
+                        <span key={i} style={{ fontSize: "var(--fs-xs)", color: "var(--dim)", background: "var(--panel-hi)", padding: "1px 5px", borderRadius: 4 }}>
                           {t}
                         </span>
                       ))}
@@ -471,7 +441,7 @@ function TimelineTab({
               </div>
             ))}
           </div>
-          <div className="dim" style={{ fontSize: "0.65rem", padding: "6px 14px" }}>
+          <div className="dim" style={{ fontSize: "var(--fs-xs)", padding: "6px 14px" }}>
             共 {events.length} 筆事件（最近 {hours} 小時）
           </div>
         </div>
@@ -499,76 +469,70 @@ function AuditSummaryTab({
 }) {
   return (
     <>
-      <div className="panel" style={{ padding: "8px 14px" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={hours} onChange={(e) => setHours(Number(e.target.value))} style={{ width: "auto", minWidth: 80 }}>
-            <option value={1}>1小時</option>
-            <option value={6}>6小時</option>
-            <option value={24}>24小時</option>
-            <option value={72}>3天</option>
-            <option value={168}>7天</option>
-            <option value={720}>30天</option>
-          </select>
-          <input
-            value={action}
-            onChange={(e) => setAction(e.target.value)}
-            placeholder="篩選 action..."
-            style={{ width: 120 }}
-          />
-          <input
-            value={entityType}
-            onChange={(e) => setEntityType(e.target.value)}
-            placeholder="篩選 entityType..."
-            style={{ width: 140 }}
-          />
-          <button className="hero-link" style={{ padding: "4px 10px", fontSize: "0.72rem" }} onClick={onRefresh}>查詢</button>
-        </div>
+      <div className="panel filter-bar">
+        <select value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+          <option value={1}>1小時</option>
+          <option value={6}>6小時</option>
+          <option value={24}>24小時</option>
+          <option value={72}>3天</option>
+          <option value={168}>7天</option>
+          <option value={720}>30天</option>
+        </select>
+        <input
+          value={action}
+          onChange={(e) => setAction(e.target.value)}
+          placeholder="篩選 action..."
+          style={{ width: 120 }}
+        />
+        <input
+          value={entityType}
+          onChange={(e) => setEntityType(e.target.value)}
+          placeholder="篩選 entityType..."
+          style={{ width: 140 }}
+        />
+        <button className="btn-sm" onClick={onRefresh}>查詢</button>
       </div>
 
       {!summary ? (
-        <div className="panel" style={{ padding: 14 }}><p className="muted">載入稽核摘要...</p></div>
+        <div className="panel" style={{ padding: 14 }}><p className="muted loading-text">載入稽核摘要...</p></div>
       ) : (
         <>
-          {/* 數字 */}
-          <div className="dashboard-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+          <div className="kpi-strip" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
             <KpiCard label="總筆數" value={summary.total} />
             <KpiCard label="時間窗口" value={summary.windowHours} sub="小時" />
-            <div className="panel" style={{ textAlign: "center", padding: "12px 8px" }}>
-              <div className="mono" style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
+            <div className="kpi-card">
+              <div className="mono" style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--muted)" }}>
                 {summary.latestCreatedAt ? ts(summary.latestCreatedAt) : "—"}
               </div>
-              <div style={{ fontSize: "0.65rem", color: "var(--dim)", marginTop: 2 }}>最近一筆</div>
+              <div className="kpi-label">最近一筆</div>
             </div>
           </div>
 
-          {/* 操作分佈 */}
           <div className="panel">
             <p className="eyebrow">操作分佈</p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+            <div className="action-row" style={{ marginTop: 6 }}>
               {summary.actions.map((a) => (
-                <div key={a.action} className="metric-chip" style={{ padding: "6px 10px", minWidth: "auto", cursor: "pointer" }} onClick={() => setAction(a.action)}>
-                  <span style={{ fontSize: "0.9rem" }}>{a.count}</span>
+                <div key={a.action} className="metric-chip" style={{ cursor: "pointer" }} onClick={() => setAction(a.action)}>
+                  <span>{a.count}</span>
                   <small>{a.action}</small>
                 </div>
               ))}
-              {summary.actions.length === 0 ? <span className="dim" style={{ fontSize: "0.75rem" }}>無操作紀錄</span> : null}
+              {summary.actions.length === 0 ? <span className="dim" style={{ fontSize: "var(--fs-sm)" }}>無操作紀錄</span> : null}
             </div>
           </div>
 
-          {/* 實體分佈 */}
           <div className="panel">
             <p className="eyebrow">實體分佈</p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+            <div className="action-row" style={{ marginTop: 6 }}>
               {summary.entities.map((e) => (
-                <div key={e.entityType} className="metric-chip" style={{ padding: "6px 10px", minWidth: "auto", cursor: "pointer" }} onClick={() => setEntityType(e.entityType)}>
-                  <span style={{ fontSize: "0.9rem" }}>{e.count}</span>
+                <div key={e.entityType} className="metric-chip" style={{ cursor: "pointer" }} onClick={() => setEntityType(e.entityType)}>
+                  <span>{e.count}</span>
                   <small>{e.entityType}</small>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* 最近紀錄 */}
           <div className="panel">
             <p className="eyebrow">最近 10 筆</p>
             {summary.recent.length > 0 ? (
@@ -587,20 +551,20 @@ function AuditSummaryTab({
                 <tbody>
                   {summary.recent.map((r) => (
                     <tr key={r.id}>
-                      <td className="mono" style={{ fontSize: "0.68rem", whiteSpace: "nowrap" }}>{ts(r.createdAt)}</td>
-                      <td><span className="badge-blue" style={{ fontSize: "0.62rem" }}>{r.action}</span></td>
-                      <td style={{ fontSize: "0.75rem" }}>{r.entityType}</td>
-                      <td className="mono dim" style={{ fontSize: "0.65rem" }}>{r.entityId.slice(0, 8)}</td>
-                      <td className="mono" style={{ fontSize: "0.68rem" }}>{r.method ?? ""}</td>
-                      <td className="dim" style={{ fontSize: "0.68rem", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.path ?? ""}</td>
-                      <td className="mono" style={{ fontSize: "0.68rem", color: (r.status ?? 200) >= 400 ? "var(--bear)" : "var(--bull)" }}>
+                      <td className="mono" style={{ fontSize: "var(--fs-xs)", whiteSpace: "nowrap" }}>{ts(r.createdAt)}</td>
+                      <td><span className="badge-blue" style={{ fontSize: "var(--fs-xs)" }}>{r.action}</span></td>
+                      <td style={{ fontSize: "var(--fs-sm)" }}>{r.entityType}</td>
+                      <td className="mono dim" style={{ fontSize: "var(--fs-xs)" }}>{r.entityId.slice(0, 8)}</td>
+                      <td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{r.method ?? ""}</td>
+                      <td className="dim" style={{ fontSize: "var(--fs-xs)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.path ?? ""}</td>
+                      <td className="mono" style={{ fontSize: "var(--fs-xs)", color: (r.status ?? 200) >= 400 ? "var(--bear)" : "var(--bull)" }}>
                         {r.status ?? ""}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            ) : <p className="dim" style={{ fontSize: "0.75rem" }}>無紀錄</p>}
+            ) : <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>無紀錄</p>}
           </div>
         </>
       )}
@@ -627,50 +591,32 @@ function AuditLogsTab({
 
   return (
     <>
-      <div className="panel" style={{ padding: "8px 14px" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            value={action}
-            onChange={(e) => setAction(e.target.value)}
-            placeholder="篩選 action..."
-            style={{ width: 120 }}
-          />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="全文搜尋..."
-            style={{ flex: 1, minWidth: 120 }}
-            onKeyDown={(e) => e.key === "Enter" && onRefresh()}
-          />
-          <button className="hero-link" style={{ padding: "4px 10px", fontSize: "0.72rem" }} onClick={onRefresh}>查詢</button>
-          <a
-            href={getAuditLogsExportUrl({ format: "csv", action: action || undefined })}
-            target="_blank"
-            rel="noreferrer"
-            className="hero-link"
-            style={{ padding: "4px 10px", fontSize: "0.72rem" }}
-          >
-            匯出 CSV
-          </a>
-          <a
-            href={getAuditLogsExportUrl({ format: "json", action: action || undefined })}
-            target="_blank"
-            rel="noreferrer"
-            className="hero-link"
-            style={{ padding: "4px 10px", fontSize: "0.72rem" }}
-          >
-            匯出 JSON
-          </a>
-        </div>
+      <div className="panel filter-bar">
+        <input
+          value={action}
+          onChange={(e) => setAction(e.target.value)}
+          placeholder="篩選 action..."
+          style={{ width: 120 }}
+        />
+        <input
+          className="search-input"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="全文搜尋..."
+          onKeyDown={(e) => e.key === "Enter" && onRefresh()}
+        />
+        <button className="btn-sm" onClick={onRefresh}>查詢</button>
+        <a href={getAuditLogsExportUrl({ format: "csv", action: action || undefined })} target="_blank" rel="noreferrer" className="btn-sm">匯出 CSV</a>
+        <a href={getAuditLogsExportUrl({ format: "json", action: action || undefined })} target="_blank" rel="noreferrer" className="btn-sm">匯出 JSON</a>
       </div>
 
       {!logs ? (
-        <div className="panel" style={{ padding: 14 }}><p className="muted">載入稽核明細...</p></div>
+        <div className="panel" style={{ padding: 14 }}><p className="muted loading-text">載入稽核明細...</p></div>
       ) : logs.length === 0 ? (
         <div className="panel" style={{ padding: 14 }}><p className="dim">無符合條件的稽核紀錄</p></div>
       ) : (
         <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ maxHeight: 640, overflowY: "auto" }}>
+          <div className="scroll-box-lg">
             <table className="data-table">
               <thead>
                 <tr>
@@ -693,32 +639,32 @@ function AuditLogsTab({
                       style={{ cursor: "pointer" }}
                       onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                     >
-                      <td className="mono" style={{ fontSize: "0.66rem", whiteSpace: "nowrap" }}>{ts(entry.createdAt)}</td>
-                      <td><span className="badge-blue" style={{ fontSize: "0.6rem" }}>{entry.action}</span></td>
-                      <td style={{ fontSize: "0.72rem" }}>{entry.entityType}</td>
-                      <td className="mono dim" style={{ fontSize: "0.64rem" }}>
+                      <td className="mono" style={{ fontSize: "var(--fs-xs)", whiteSpace: "nowrap" }}>{ts(entry.createdAt)}</td>
+                      <td><span className="badge-blue" style={{ fontSize: "var(--fs-xs)" }}>{entry.action}</span></td>
+                      <td style={{ fontSize: "var(--fs-sm)" }}>{entry.entityType}</td>
+                      <td className="mono dim" style={{ fontSize: "var(--fs-xs)" }}>
                         {isExpanded ? entry.entityId : entry.entityId.slice(0, 8)}
                       </td>
-                      <td className="mono" style={{ fontSize: "0.66rem" }}>{entry.method ?? ""}</td>
-                      <td className="dim" style={{ fontSize: "0.66rem", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isExpanded ? "normal" : "nowrap" }}>
+                      <td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{entry.method ?? ""}</td>
+                      <td className="dim" style={{ fontSize: "var(--fs-xs)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isExpanded ? "normal" : "nowrap" }}>
                         {entry.path ?? ""}
                         {isExpanded && Object.keys(entry.payload).length > 0 ? (
-                          <pre style={{ fontSize: "0.62rem", marginTop: 4, whiteSpace: "pre-wrap", color: "var(--muted)", background: "var(--bg)", padding: 6, borderRadius: 6, maxHeight: 160, overflow: "auto" }}>
+                          <pre style={{ fontSize: "var(--fs-xs)", marginTop: 4, whiteSpace: "pre-wrap", color: "var(--muted)", background: "var(--bg)", padding: 6, borderRadius: 6, maxHeight: 160, overflow: "auto" }}>
                             {JSON.stringify(entry.payload, null, 2)}
                           </pre>
                         ) : null}
                       </td>
-                      <td className="mono" style={{ fontSize: "0.66rem", color: (entry.status ?? 200) >= 400 ? "var(--bear)" : "var(--bull)" }}>
+                      <td className="mono" style={{ fontSize: "var(--fs-xs)", color: (entry.status ?? 200) >= 400 ? "var(--bear)" : "var(--bull)" }}>
                         {entry.status ?? ""}
                       </td>
-                      <td className="dim" style={{ fontSize: "0.66rem" }}>{entry.role ?? ""}</td>
+                      <td className="dim" style={{ fontSize: "var(--fs-xs)" }}>{entry.role ?? ""}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <div className="dim" style={{ fontSize: "0.62rem", padding: "6px 14px", borderTop: "1px solid var(--line)" }}>
+          <div className="dim" style={{ fontSize: "var(--fs-xs)", padding: "6px 14px", borderTop: "1px solid var(--line)" }}>
             共 {logs.length} 筆 · 點擊列可展開 payload
           </div>
         </div>
@@ -733,19 +679,19 @@ function AuditLogsTab({
 
 function KpiCard({ label, value, sub, color }: { label: string; value: number; sub?: string; color?: string }) {
   return (
-    <div className="panel" style={{ textAlign: "center", padding: "12px 8px" }}>
-      <div className="big-num" style={{ color: color ?? "var(--text)" }}>{value}</div>
-      <div style={{ fontSize: "0.65rem", color: "var(--dim)", marginTop: 2 }}>{label}</div>
-      {sub ? <div style={{ fontSize: "0.58rem", color: "var(--muted)", marginTop: 1 }}>{sub}</div> : null}
+    <div className="kpi-card">
+      <div className="kpi-value" style={color ? { color } : undefined}>{value}</div>
+      <div className="kpi-label">{label}</div>
+      {sub ? <div className="kpi-sub">{sub}</div> : null}
     </div>
   );
 }
 
 function QueueNum({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
-    <div style={{ textAlign: "center" }}>
-      <div className="big-num" style={{ color: color ?? "var(--text)" }}>{value}</div>
-      <div className="dim" style={{ fontSize: "0.62rem" }}>{label}</div>
+    <div className="mini-stat">
+      <div className="kpi-value" style={color ? { color } : undefined}>{value}</div>
+      <div className="mini-stat-label">{label}</div>
     </div>
   );
 }
@@ -755,16 +701,14 @@ function LatestPanel({ title, items, href }: { title: string; items: Array<{ id:
     <div className="panel">
       <p className="eyebrow">{title}</p>
       {items.length === 0 ? (
-        <p className="dim" style={{ fontSize: "0.75rem" }}>尚無資料</p>
+        <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>尚無資料</p>
       ) : (
         <div className="card-stack">
           {items.slice(0, 5).map((item) => (
-            <Link key={item.id} href={href} className="record-card" style={{ display: "block", padding: "6px 8px" }}>
-              <div style={{ fontSize: "0.72rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {item.label}
-              </div>
-              {item.subtitle ? <div className="dim" style={{ fontSize: "0.6rem", marginTop: 1 }}>{item.subtitle}</div> : null}
-              <div className="mono dim" style={{ fontSize: "0.56rem", marginTop: 1 }}>{ts(item.timestamp)}</div>
+            <Link key={item.id} href={href} className="record-card" style={{ display: "block" }}>
+              <div className="timeline-title">{item.label}</div>
+              {item.subtitle ? <div className="timeline-sub">{item.subtitle}</div> : null}
+              <div className="mono dim" style={{ fontSize: "var(--fs-xs)", marginTop: 1 }}>{ts(item.timestamp)}</div>
             </Link>
           ))}
         </div>

@@ -105,7 +105,7 @@ export function CompanyBoard() {
               <p className="eyebrow">公司詳情</p>
               <h3>{selected.name} <span className="mono muted">({selected.ticker})</span></h3>
             </div>
-            <button className="hero-link" style={{ fontSize: "0.75rem", padding: "5px 12px" }} onClick={() => setSelected(null)}>返回列表</button>
+            <button className="btn-sm" onClick={() => setSelected(null)}>返回列表</button>
           </div>
 
           <div className="card-stack">
@@ -118,19 +118,19 @@ export function CompanyBoard() {
             </div>
 
             <div className="record-card">
-              <strong style={{ fontSize: "0.78rem" }}>曝險評分</strong>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginTop: 8 }}>
+              <strong style={{ fontSize: "var(--fs-sm)" }}>曝險評分</strong>
+              <div className="exposure-grid">
                 {exposureKeys.map((k) => (
-                  <div key={k} style={{ textAlign: "center" }}>
-                    <div className="big-num" style={{ fontSize: "1.2rem" }}>{selected.exposure[k]}</div>
-                    <div className="dim" style={{ fontSize: "0.62rem" }}>{exposureLabel[k]}</div>
+                  <div key={k} className="exposure-cell">
+                    <div className="exposure-value">{selected.exposure[k]}</div>
+                    <div className="exposure-label">{exposureLabel[k]}</div>
                   </div>
                 ))}
               </div>
             </div>
 
             <div className="record-card">
-              <strong style={{ fontSize: "0.78rem" }}>驗證快照</strong>
+              <strong style={{ fontSize: "var(--fs-sm)" }}>驗證快照</strong>
               <p className="record-meta" style={{ marginTop: 4 }}>資金流：{selected.validation.capitalFlow || "N/A"}</p>
               <p className="record-meta">共識：{selected.validation.consensus || "N/A"}</p>
               <p className="record-meta">相對強度：{selected.validation.relativeStrength || "N/A"}</p>
@@ -138,15 +138,15 @@ export function CompanyBoard() {
 
             {selected.notes ? (
               <div className="record-card">
-                <strong style={{ fontSize: "0.78rem" }}>筆記</strong>
-                <p style={{ whiteSpace: "pre-wrap", fontSize: "0.8rem", marginTop: 4 }}>{selected.notes}</p>
+                <strong style={{ fontSize: "var(--fs-sm)" }}>筆記</strong>
+                <p style={{ whiteSpace: "pre-wrap", fontSize: "var(--fs-sm)", marginTop: 4 }}>{selected.notes}</p>
               </div>
             ) : null}
 
             <div className="action-row">
-              <a href={`/signals?companyId=${selected.id}`} className="hero-link" style={{ fontSize: "0.75rem", padding: "5px 12px" }}>查看訊號</a>
-              <a href={`/plans?companyId=${selected.id}`} className="hero-link" style={{ fontSize: "0.75rem", padding: "5px 12px" }}>查看計畫</a>
-              <a href={`/plans?newForCompany=${selected.id}&companyName=${encodeURIComponent(selected.name)}`} className="hero-link primary" style={{ fontSize: "0.75rem", padding: "5px 12px" }}>+ 建立計畫</a>
+              <a href={`/signals?companyId=${selected.id}`} className="btn-sm">查看訊號</a>
+              <a href={`/plans?companyId=${selected.id}`} className="btn-sm">查看計畫</a>
+              <a href={`/plans?newForCompany=${selected.id}&companyName=${encodeURIComponent(selected.name)}`} className="hero-link primary" style={{ padding: "5px 12px", fontSize: "var(--fs-sm)" }}>+ 建立計畫</a>
             </div>
           </div>
         </div>
@@ -157,28 +157,26 @@ export function CompanyBoard() {
   return (
     <section style={{ display: "grid", gap: 14 }}>
       {/* 工具列 */}
-      <div className="panel" style={{ padding: "8px 14px" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input placeholder="搜尋名稱或代號..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: "1 1 160px", minWidth: 140 }} />
-          <select value={filterSector} onChange={(e) => setFilterSector(e.target.value)} style={{ width: "auto", minWidth: 100 }}>
-            <option value="">全部產業 ({sectors.length})</option>
-            {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={filterTier} onChange={(e) => setFilterTier(e.target.value)} style={{ width: "auto", minWidth: 80 }}>
-            <option value="">全部層級</option>
-            {tiers.map((t) => <option key={t} value={t}>{tierLabel[t]}</option>)}
-          </select>
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{filtered.length}</span>
-            <small style={{ fontSize: "0.6rem" }}>符合</small>
-          </div>
-          <button className="action-button" style={{ fontSize: "0.75rem", padding: "5px 12px" }} onClick={() => setShowForm(!showForm)}>
-            {showForm ? "關閉表單" : "+ 新增公司"}
-          </button>
+      <div className="panel filter-bar">
+        <input className="search-input" placeholder="搜尋名稱或代號..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select value={filterSector} onChange={(e) => setFilterSector(e.target.value)}>
+          <option value="">全部產業 ({sectors.length})</option>
+          {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filterTier} onChange={(e) => setFilterTier(e.target.value)}>
+          <option value="">全部層級</option>
+          {tiers.map((t) => <option key={t} value={t}>{tierLabel[t]}</option>)}
+        </select>
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{filtered.length}</span>
+          <small>符合</small>
         </div>
+        <button className="btn-sm" onClick={() => setShowForm(!showForm)}>
+          {showForm ? "關閉表單" : "+ 新增公司"}
+        </button>
       </div>
 
-      {error ? <p className="error-text" style={{ fontSize: "0.78rem" }}>{error}</p> : null}
+      {error ? <p className="error-text" style={{ fontSize: "var(--fs-sm)" }}>{error}</p> : null}
 
       {/* 建立表單 */}
       {showForm ? (
@@ -221,7 +219,7 @@ export function CompanyBoard() {
       {/* 表格 */}
       <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
         {loading ? (
-          <p className="muted" style={{ padding: 16 }}>載入 1,700+ 間公司...</p>
+          <p className="muted loading-text" style={{ padding: 16 }}>載入 1,700+ 間公司...</p>
         ) : (
           <>
             <div style={{ overflowX: "auto" }}>
@@ -240,9 +238,9 @@ export function CompanyBoard() {
                     <tr key={c.id} onClick={() => setSelected(c)} style={{ cursor: "pointer" }}>
                       <td className="mono" style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{c.ticker}</td>
                       <td>{c.name}</td>
-                      <td className="dim" style={{ fontSize: "0.75rem" }}>{c.chainPosition}</td>
-                      <td><span className="badge" style={{ fontSize: "0.65rem", padding: "2px 7px" }}>{tierLabel[c.beneficiaryTier] ?? c.beneficiaryTier}</span></td>
-                      <td className="mono dim" style={{ fontSize: "0.72rem", whiteSpace: "nowrap" }}>{c.exposure.volume}/{c.exposure.asp}/{c.exposure.margin}/{c.exposure.capacity}/{c.exposure.narrative}</td>
+                      <td className="dim" style={{ fontSize: "var(--fs-sm)" }}>{c.chainPosition}</td>
+                      <td><span className="badge" style={{ fontSize: "var(--fs-xs)", padding: "2px 7px" }}>{tierLabel[c.beneficiaryTier] ?? c.beneficiaryTier}</span></td>
+                      <td className="mono dim" style={{ fontSize: "var(--fs-sm)", whiteSpace: "nowrap" }}>{c.exposure.volume}/{c.exposure.asp}/{c.exposure.margin}/{c.exposure.capacity}/{c.exposure.narrative}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -250,12 +248,12 @@ export function CompanyBoard() {
             </div>
 
             {/* 分頁 */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", borderTop: "1px solid var(--line)", fontSize: "0.75rem" }}>
-              <span className="dim">顯示 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, filtered.length)} / 共 {filtered.length}</span>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button className="hero-link" style={{ padding: "4px 10px", fontSize: "0.72rem" }} disabled={page === 0} onClick={() => setPage((p) => p - 1)}>上一頁</button>
-                <span className="mono" style={{ lineHeight: "28px" }}>{page + 1} / {totalPages}</span>
-                <button className="hero-link" style={{ padding: "4px 10px", fontSize: "0.72rem" }} disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>下一頁</button>
+            <div className="pagination">
+              <span className="pagination-info">顯示 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, filtered.length)} / 共 {filtered.length}</span>
+              <div className="pagination-controls">
+                <button className="btn-sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>上一頁</button>
+                <span className="mono">{page + 1} / {totalPages}</span>
+                <button className="btn-sm" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>下一頁</button>
               </div>
             </div>
           </>

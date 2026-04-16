@@ -42,6 +42,7 @@ export function ThemeBoard() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [filterLifecycle, setFilterLifecycle] = useState("");
 
   useEffect(() => {
     getThemes()
@@ -51,6 +52,13 @@ export function ThemeBoard() {
   }, []);
 
   const highPriority = useMemo(() => themes.filter((t) => t.priority >= 4).length, [themes]);
+
+  const filtered = useMemo(() => {
+    if (!filterLifecycle) return themes;
+    return themes.filter((t) => t.lifecycle === filterLifecycle);
+  }, [themes, filterLifecycle]);
+
+  const sorted = useMemo(() => [...filtered].sort((a, b) => b.priority - a.priority), [filtered]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -77,27 +85,25 @@ export function ThemeBoard() {
   return (
     <section style={{ display: "grid", gap: 14 }}>
       {/* 工具列 */}
-      <div className="panel" style={{ padding: "8px 14px" }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{themes.length}</span>
-            <small style={{ fontSize: "0.6rem" }}>主題</small>
-          </div>
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{highPriority}</span>
-            <small style={{ fontSize: "0.6rem" }}>高優先</small>
-          </div>
-          <button
-            className="action-button"
-            style={{ fontSize: "0.75rem", padding: "5px 12px", marginLeft: "auto" }}
-            onClick={() => setShowForm(!showForm)}
-          >
-            {showForm ? "關閉表單" : "+ 新增主題"}
-          </button>
+      <div className="panel filter-bar">
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{themes.length}</span>
+          <small>主題</small>
         </div>
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{highPriority}</span>
+          <small>高優先</small>
+        </div>
+        <select value={filterLifecycle} onChange={(e) => setFilterLifecycle(e.target.value)}>
+          <option value="">全部階段</option>
+          {lifecycleStates.map((v) => <option key={v} value={v}>{lifecycleLabel[v]}</option>)}
+        </select>
+        <button className="btn-sm" style={{ marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
+          {showForm ? "關閉表單" : "+ 新增主題"}
+        </button>
       </div>
 
-      {error ? <p className="error-text" style={{ fontSize: "0.78rem" }}>{error}</p> : null}
+      {error ? <p className="error-text" style={{ fontSize: "var(--fs-sm)" }}>{error}</p> : null}
 
       {/* 建立表單 */}
       {showForm ? (
@@ -136,23 +142,23 @@ export function ThemeBoard() {
 
       {/* 主題列表 */}
       <div className="panel">
-        {loading ? <p className="muted">載入主題...</p> : themes.length === 0 ? <p className="dim">尚無主題，點擊上方按鈕建立。</p> : (
+        {loading ? <p className="muted loading-text">載入主題...</p> : sorted.length === 0 ? <p className="dim">尚無主題，點擊上方按鈕建立。</p> : (
           <div className="card-stack">
-            {themes.map((t) => (
+            {sorted.map((t) => (
               <article key={t.id} className="record-card">
                 <div className="record-topline">
-                  <strong style={{ fontSize: "0.85rem" }}>{t.name}</strong>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <span className={stateColor(t.marketState)} style={{ fontSize: "0.65rem" }}>{marketLabel[t.marketState] ?? t.marketState}</span>
-                    <span className="badge" style={{ fontSize: "0.65rem" }}>{lifecycleLabel[t.lifecycle] ?? t.lifecycle}</span>
+                  <strong style={{ fontSize: "var(--fs-base)" }}>{t.name}</strong>
+                  <div className="action-row" style={{ gap: 4 }}>
+                    <span className={stateColor(t.marketState)} style={{ fontSize: "var(--fs-xs)" }}>{marketLabel[t.marketState] ?? t.marketState}</span>
+                    <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>{lifecycleLabel[t.lifecycle] ?? t.lifecycle}</span>
                   </div>
                 </div>
                 <p className="record-meta">
                   優先度 <strong className="mono">{t.priority}</strong> · 更新 {new Date(t.updatedAt).toLocaleDateString("zh-TW")}
                 </p>
-                <p style={{ fontSize: "0.8rem", marginTop: 4 }}>{t.thesis}</p>
-                {t.whyNow ? <p className="dim" style={{ fontSize: "0.75rem" }}>為什麼是現在：{t.whyNow}</p> : null}
-                {t.bottleneck ? <p className="dim" style={{ fontSize: "0.75rem" }}>瓶頸：{t.bottleneck}</p> : null}
+                <p style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>{t.thesis}</p>
+                {t.whyNow ? <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>為什麼是現在：{t.whyNow}</p> : null}
+                {t.bottleneck ? <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>瓶頸：{t.bottleneck}</p> : null}
               </article>
             ))}
           </div>

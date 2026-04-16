@@ -71,27 +71,25 @@ export function ExecutionBoard() {
   return (
     <section style={{ display: "grid", gap: 14 }}>
       {/* 工具列 */}
-      <div className="panel" style={{ padding: "8px 14px" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setLoading(true); }} style={{ width: "auto", minWidth: 90 }}>
-            <option value="">全部狀態</option>
-            {statuses.map((s) => <option key={s} value={s}>{statusLabel[s]}</option>)}
-          </select>
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{plans.length}</span>
-            <small style={{ fontSize: "0.6rem" }}>計畫</small>
-          </div>
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{plans.filter((p) => p.status === "active").length}</span>
-            <small style={{ fontSize: "0.6rem" }}>執行中</small>
-          </div>
-          <button className="action-button" style={{ fontSize: "0.75rem", padding: "5px 12px", marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
-            {showForm ? "關閉表單" : "+ 新增計畫"}
-          </button>
+      <div className="panel filter-bar">
+        <select value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setLoading(true); }}>
+          <option value="">全部狀態</option>
+          {statuses.map((s) => <option key={s} value={s}>{statusLabel[s]}</option>)}
+        </select>
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{plans.length}</span>
+          <small>計畫</small>
         </div>
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{plans.filter((p) => p.status === "active").length}</span>
+          <small>執行中</small>
+        </div>
+        <button className="btn-sm" style={{ marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
+          {showForm ? "關閉表單" : "+ 新增計畫"}
+        </button>
       </div>
 
-      {error ? <p className="error-text" style={{ fontSize: "0.78rem" }}>{error}</p> : null}
+      {error ? <p className="error-text" style={{ fontSize: "var(--fs-sm)" }}>{error}</p> : null}
 
       {/* 建立表單 */}
       {showForm ? (
@@ -100,13 +98,13 @@ export function ExecutionBoard() {
           <label className="field"><span>公司</span>
             <input value={companySearch} onChange={(e) => { setCompanySearch(e.target.value); setShowPicker(true); }} onFocus={() => setShowPicker(true)} placeholder="搜尋公司名稱或代號..." />
             {showPicker && filteredCompanies.length > 0 ? (
-              <div style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--panel-hi)", maxHeight: 180, overflowY: "auto", marginTop: 4 }}>
+              <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius-sm)", background: "var(--panel-hi)", maxHeight: 180, overflowY: "auto", marginTop: 4 }}>
                 {filteredCompanies.map((c) => (
                   <div key={c.id} onClick={() => { setForm((f) => ({ ...f, companyId: c.id })); setCompanySearch(`${c.ticker} ${c.name}`); setShowPicker(false); }}
-                    style={{ padding: "6px 10px", cursor: "pointer", borderBottom: "1px solid var(--line)", fontSize: "0.8rem" }}
+                    style={{ padding: "6px 10px", cursor: "pointer", borderBottom: "1px solid var(--line)", fontSize: "var(--fs-sm)" }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "var(--panel)")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
-                    <strong className="mono">{c.ticker}</strong> {c.name} <span className="dim" style={{ fontSize: "0.7rem" }}>{c.chainPosition}</span>
+                    <strong className="mono">{c.ticker}</strong> {c.name} <span className="dim" style={{ fontSize: "var(--fs-xs)" }}>{c.chainPosition}</span>
                   </div>
                 ))}
               </div>
@@ -124,21 +122,21 @@ export function ExecutionBoard() {
 
       {/* 計畫列表 */}
       <div className="panel">
-        {loading ? <p className="muted">載入計畫...</p> : plans.length === 0 ? <p className="dim">尚無計畫。</p> : (
+        {loading ? <p className="muted loading-text">載入計畫...</p> : plans.length === 0 ? <p className="dim">尚無計畫。</p> : (
           <div className="card-stack">
             {plans.map((p) => (
               <article key={p.id} className="record-card">
                 <div className="record-topline">
-                  <strong style={{ fontSize: "0.82rem" }}>{getLabel(p.companyId)}</strong>
-                  <span className={statusColor(p.status)} style={{ fontSize: "0.65rem" }}>{statusLabel[p.status] ?? p.status}</span>
+                  <strong style={{ fontSize: "var(--fs-base)" }}>{getLabel(p.companyId)}</strong>
+                  <span className={statusColor(p.status)} style={{ fontSize: "var(--fs-xs)" }}>{statusLabel[p.status] ?? p.status}</span>
                 </div>
-                <p style={{ fontSize: "0.78rem" }}><strong>進場：</strong>{p.entryPlan}</p>
-                <p style={{ fontSize: "0.78rem" }}><strong>失效：</strong>{p.invalidationPlan}</p>
-                <p style={{ fontSize: "0.78rem" }}><strong>目標：</strong>{p.targetPlan}</p>
-                {p.riskReward ? <p className="dim mono" style={{ fontSize: "0.75rem" }}>R/R: {p.riskReward}</p> : null}
+                <p style={{ fontSize: "var(--fs-sm)" }}><strong>進場：</strong>{p.entryPlan}</p>
+                <p style={{ fontSize: "var(--fs-sm)" }}><strong>失效：</strong>{p.invalidationPlan}</p>
+                <p style={{ fontSize: "var(--fs-sm)" }}><strong>目標：</strong>{p.targetPlan}</p>
+                {p.riskReward ? <p className="dim mono" style={{ fontSize: "var(--fs-sm)" }}>R/R: {p.riskReward}</p> : null}
                 <div className="action-row" style={{ marginTop: 6 }}>
-                  <a href={`/reviews?newForPlan=${p.id}&planLabel=${encodeURIComponent(getLabel(p.companyId))}`} className="hero-link primary" style={{ fontSize: "0.68rem", padding: "3px 8px" }}>+ 建立檢討</a>
-                  <a href={`/reviews?tradePlanId=${p.id}`} className="hero-link" style={{ fontSize: "0.68rem", padding: "3px 8px" }}>查看檢討</a>
+                  <a href={`/reviews?newForPlan=${p.id}&planLabel=${encodeURIComponent(getLabel(p.companyId))}`} className="hero-link primary" style={{ fontSize: "var(--fs-xs)", padding: "3px 8px" }}>+ 建立檢討</a>
+                  <a href={`/reviews?tradePlanId=${p.id}`} className="hero-link" style={{ fontSize: "var(--fs-xs)", padding: "3px 8px" }}>查看檢討</a>
                 </div>
               </article>
             ))}

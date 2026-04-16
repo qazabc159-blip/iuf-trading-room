@@ -68,16 +68,16 @@ export function BriefBoard() {
               <h3>{selected.date}</h3>
             </div>
             <div style={{ display: "flex", gap: 4 }}>
-              <span className="badge-blue" style={{ fontSize: "0.65rem" }}>{statusLabel[selected.status] ?? selected.status}</span>
-              <span className="badge" style={{ fontSize: "0.65rem" }}>{selected.generatedBy}</span>
-              <button className="hero-link" style={{ fontSize: "0.72rem", padding: "4px 10px" }} onClick={() => setSelected(null)}>返回</button>
+              <span className="badge-blue" style={{ fontSize: "var(--fs-xs)" }}>{statusLabel[selected.status] ?? selected.status}</span>
+              <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>{selected.generatedBy}</span>
+              <button className="btn-sm" onClick={() => setSelected(null)}>返回</button>
             </div>
           </div>
           <p className="record-meta" style={{ marginBottom: 10 }}>盤勢：{stateLabel[selected.marketState] ?? selected.marketState}</p>
           {selected.sections.map((s, i) => (
             <div key={i} style={{ marginBottom: 12 }}>
-              <h4 style={{ fontSize: "0.82rem", margin: "0 0 4px", color: "var(--accent)" }}>{s.heading}</h4>
-              <p style={{ fontSize: "0.8rem", whiteSpace: "pre-wrap" }}>{s.body || "（空白）"}</p>
+              <h4 style={{ fontSize: "var(--fs-base)", margin: "0 0 4px", color: "var(--accent)" }}>{s.heading}</h4>
+              <p style={{ fontSize: "var(--fs-sm)", whiteSpace: "pre-wrap" }}>{s.body || "（空白）"}</p>
             </div>
           ))}
         </div>
@@ -88,19 +88,17 @@ export function BriefBoard() {
   return (
     <section style={{ display: "grid", gap: 14 }}>
       {/* 工具列 */}
-      <div className="panel" style={{ padding: "8px 14px" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{briefs.length}</span>
-            <small style={{ fontSize: "0.6rem" }}>簡報</small>
-          </div>
-          <button className="action-button" style={{ fontSize: "0.75rem", padding: "5px 12px", marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
-            {showForm ? "關閉表單" : "+ 新增簡報"}
-          </button>
+      <div className="panel filter-bar">
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{briefs.length}</span>
+          <small>簡報</small>
         </div>
+        <button className="btn-sm" style={{ marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
+          {showForm ? "關閉表單" : "+ 新增簡報"}
+        </button>
       </div>
 
-      {error ? <p className="error-text" style={{ fontSize: "0.78rem" }}>{error}</p> : null}
+      {error ? <p className="error-text" style={{ fontSize: "var(--fs-sm)" }}>{error}</p> : null}
 
       {/* 建立表單 */}
       {showForm ? (
@@ -124,15 +122,15 @@ export function BriefBoard() {
 
       {/* 簡報列表 */}
       <div className="panel">
-        {loading ? <p className="muted">載入簡報...</p> : briefs.length === 0 ? <p className="dim">尚無簡報，點擊上方建立。</p> : (
+        {loading ? <p className="muted loading-text">載入簡報...</p> : briefs.length === 0 ? <p className="dim">尚無簡報，點擊上方建立。</p> : (
           <div className="card-stack">
             {briefs.map((b) => (
               <article key={b.id} className="record-card" onClick={() => setSelected(b)} style={{ cursor: "pointer" }}>
                 <div className="record-topline">
-                  <strong className="mono" style={{ fontSize: "0.85rem" }}>{b.date}</strong>
+                  <strong className="mono" style={{ fontSize: "var(--fs-base)" }}>{b.date}</strong>
                   <div style={{ display: "flex", gap: 4 }}>
-                    <span className="badge-blue" style={{ fontSize: "0.62rem" }}>{statusLabel[b.status] ?? b.status}</span>
-                    <span className="badge" style={{ fontSize: "0.62rem" }}>{b.generatedBy}</span>
+                    <span className="badge-blue" style={{ fontSize: "var(--fs-xs)" }}>{statusLabel[b.status] ?? b.status}</span>
+                    <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>{b.generatedBy}</span>
                   </div>
                 </div>
                 <p className="record-meta">盤勢 {stateLabel[b.marketState] ?? b.marketState} · {b.sections.length} 段落</p>

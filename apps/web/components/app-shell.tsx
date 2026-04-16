@@ -62,7 +62,7 @@ export function AppShell({
           <span className={`status-dot ${session ? "green" : "yellow"}`} />{" "}
           {session ? "系統連線中" : "載入中..."}
         </span>
-        <span style={{ marginLeft: "auto", fontFamily: "'IBM Plex Mono', monospace" }}>
+        <span className="status-bar-right">
           {dateStr} {timeStr}
         </span>
       </div>

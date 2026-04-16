@@ -67,23 +67,21 @@ export function SignalBoard() {
   return (
     <section style={{ display: "grid", gap: 14 }}>
       {/* 工具列 */}
-      <div className="panel" style={{ padding: "8px 14px" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={{ width: "auto", minWidth: 90 }}>
-            <option value="">全部類別</option>
-            {categories.map((c) => <option key={c} value={c}>{catLabel[c]}</option>)}
-          </select>
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{signals.length}</span>
-            <small style={{ fontSize: "0.6rem" }}>訊號</small>
-          </div>
-          <button className="action-button" style={{ fontSize: "0.75rem", padding: "5px 12px", marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
-            {showForm ? "關閉表單" : "+ 新增訊號"}
-          </button>
+      <div className="panel filter-bar">
+        <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+          <option value="">全部類別</option>
+          {categories.map((c) => <option key={c} value={c}>{catLabel[c]}</option>)}
+        </select>
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{signals.length}</span>
+          <small>訊號</small>
         </div>
+        <button className="btn-sm" style={{ marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
+          {showForm ? "關閉表單" : "+ 新增訊號"}
+        </button>
       </div>
 
-      {error ? <p className="error-text" style={{ fontSize: "0.78rem" }}>{error}</p> : null}
+      {error ? <p className="error-text" style={{ fontSize: "var(--fs-sm)" }}>{error}</p> : null}
 
       {/* 建立表單 */}
       {showForm ? (
@@ -116,28 +114,28 @@ export function SignalBoard() {
 
       {/* 訊號列表 */}
       <div className="panel">
-        {loading ? <p className="muted">載入訊號...</p> : signals.length === 0 ? <p className="dim">目前沒有訊號。</p> : (
+        {loading ? <p className="muted loading-text">載入訊號...</p> : signals.length === 0 ? <p className="dim">目前沒有訊號。</p> : (
           <div className="card-stack">
             {signals.map((s) => (
               <article key={s.id} className="record-card">
                 <div className="record-topline">
-                  <strong style={{ fontSize: "0.82rem" }}>{s.title}</strong>
-                  <span className={dirColor(s.direction)} style={{ fontSize: "0.65rem" }}>{dirLabel[s.direction]}</span>
+                  <strong style={{ fontSize: "var(--fs-base)" }}>{s.title}</strong>
+                  <span className={dirColor(s.direction)} style={{ fontSize: "var(--fs-xs)" }}>{dirLabel[s.direction]}</span>
                 </div>
                 <p className="record-meta">
                   {catLabel[s.category] ?? s.category} · 信心 <strong className="mono">{s.confidence}</strong>/5 · {new Date(s.createdAt).toLocaleDateString("zh-TW")}
                 </p>
                 {s.companyIds.length > 0 ? (
-                  <p className="dim" style={{ fontSize: "0.75rem" }}>關聯公司：{s.companyIds.map(getLabel).join("、")}</p>
+                  <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>關聯公司：{s.companyIds.map(getLabel).join("、")}</p>
                 ) : null}
-                {s.summary ? <p style={{ fontSize: "0.78rem", marginTop: 2 }}>{s.summary}</p> : null}
+                {s.summary ? <p style={{ fontSize: "var(--fs-sm)", marginTop: 2 }}>{s.summary}</p> : null}
                 {s.companyIds.length > 0 ? (
                   <div className="action-row" style={{ marginTop: 6 }}>
                     {s.companyIds.map((cid) => {
                       const comp = companyMap.get(cid);
                       return (
                         <a key={cid} href={`/plans?newForCompany=${cid}&companyName=${encodeURIComponent(comp?.name ?? cid.slice(0, 8))}`}
-                          className="hero-link primary" style={{ fontSize: "0.68rem", padding: "3px 8px" }}>
+                          className="hero-link primary" style={{ fontSize: "var(--fs-xs)", padding: "3px 8px" }}>
                           + {comp?.ticker ?? cid.slice(0, 8)} 計畫
                         </a>
                       );

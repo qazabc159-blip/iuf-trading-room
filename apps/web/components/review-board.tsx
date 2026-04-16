@@ -52,20 +52,18 @@ export function ReviewBoard() {
   return (
     <section style={{ display: "grid", gap: 14 }}>
       {/* 工具列 */}
-      <div className="panel" style={{ padding: "8px 14px" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{reviews.length}</span>
-            <small style={{ fontSize: "0.6rem" }}>檢討</small>
-          </div>
-          {filterPlanId ? <span className="badge-blue" style={{ fontSize: "0.65rem" }}>篩選計畫 {filterPlanId.slice(0, 8)}</span> : null}
-          <button className="action-button" style={{ fontSize: "0.75rem", padding: "5px 12px", marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
-            {showForm ? "關閉表單" : "+ 新增檢討"}
-          </button>
+      <div className="panel filter-bar">
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{reviews.length}</span>
+          <small>檢討</small>
         </div>
+        {filterPlanId ? <span className="badge-blue" style={{ fontSize: "var(--fs-xs)" }}>篩選計畫 {filterPlanId.slice(0, 8)}</span> : null}
+        <button className="btn-sm" style={{ marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
+          {showForm ? "關閉表單" : "+ 新增檢討"}
+        </button>
       </div>
 
-      {error ? <p className="error-text" style={{ fontSize: "0.78rem" }}>{error}</p> : null}
+      {error ? <p className="error-text" style={{ fontSize: "var(--fs-sm)" }}>{error}</p> : null}
 
       {/* 建立表單 */}
       {showForm ? (
@@ -90,12 +88,12 @@ export function ReviewBoard() {
           <div className="field"><span>Setup 標籤</span>
             <div style={{ display: "flex", gap: 6 }}>
               <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }} placeholder="輸入標籤後按 Enter" style={{ flex: 1 }} />
-              <button type="button" className="hero-link" style={{ padding: "5px 10px", fontSize: "0.72rem" }} onClick={addTag}>加入</button>
+              <button type="button" className="btn-sm" onClick={addTag}>加入</button>
             </div>
             {form.setupTags.length > 0 ? (
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
                 {form.setupTags.map((t) => (
-                  <span key={t} className="badge" onClick={() => setForm((c) => ({ ...c, setupTags: c.setupTags.filter((x) => x !== t) }))} style={{ cursor: "pointer", fontSize: "0.68rem" }}>{t} ×</span>
+                  <span key={t} className="badge" onClick={() => setForm((c) => ({ ...c, setupTags: c.setupTags.filter((x) => x !== t) }))} style={{ cursor: "pointer", fontSize: "var(--fs-xs)" }}>{t} ×</span>
                 ))}
               </div>
             ) : null}
@@ -106,21 +104,21 @@ export function ReviewBoard() {
 
       {/* 檢討列表 */}
       <div className="panel">
-        {loading ? <p className="muted">載入檢討...</p> : reviews.length === 0 ? <p className="dim">尚無檢討紀錄。</p> : (
+        {loading ? <p className="muted loading-text">載入檢討...</p> : reviews.length === 0 ? <p className="dim">尚無檢討紀錄。</p> : (
           <div className="card-stack">
             {reviews.map((r) => (
               <article key={r.id} className="record-card">
                 <div className="record-topline">
-                  <strong style={{ fontSize: "0.82rem" }}>檢討 {r.id.slice(0, 8)}</strong>
-                  <span className={qualityColor(r.executionQuality)} style={{ fontSize: "0.65rem" }}>品質 {r.executionQuality}/5</span>
+                  <strong style={{ fontSize: "var(--fs-base)" }}>檢討 {r.id.slice(0, 8)}</strong>
+                  <span className={qualityColor(r.executionQuality)} style={{ fontSize: "var(--fs-xs)" }}>品質 {r.executionQuality}/5</span>
                 </div>
                 <p className="record-meta">計畫 {r.tradePlanId.slice(0, 8)} · {new Date(r.createdAt).toLocaleDateString("zh-TW")}</p>
-                <p style={{ fontSize: "0.78rem" }}><strong>結果：</strong>{r.outcome}</p>
-                {r.attribution ? <p style={{ fontSize: "0.78rem" }}><strong>歸因：</strong>{r.attribution}</p> : null}
-                {r.lesson ? <p style={{ fontSize: "0.78rem" }}><strong>教訓：</strong>{r.lesson}</p> : null}
+                <p style={{ fontSize: "var(--fs-sm)" }}><strong>結果：</strong>{r.outcome}</p>
+                {r.attribution ? <p style={{ fontSize: "var(--fs-sm)" }}><strong>歸因：</strong>{r.attribution}</p> : null}
+                {r.lesson ? <p style={{ fontSize: "var(--fs-sm)" }}><strong>教訓：</strong>{r.lesson}</p> : null}
                 {r.setupTags.length > 0 ? (
                   <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 4 }}>
-                    {r.setupTags.map((t) => <span key={t} className="badge" style={{ fontSize: "0.62rem", padding: "2px 6px" }}>{t}</span>)}
+                    {r.setupTags.map((t) => <span key={t} className="badge" style={{ fontSize: "var(--fs-xs)", padding: "2px 6px" }}>{t}</span>)}
                   </div>
                 ) : null}
               </article>

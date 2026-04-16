@@ -23,18 +23,18 @@ export function WorkspaceStatus() {
   }, []);
 
   if (!session) {
-    return <p className="rail-copy">Loading workspace...</p>;
+    return <p className="rail-copy">載入中...</p>;
   }
 
   return (
     <div className="status-card">
-      <p className="eyebrow">Workspace</p>
+      <p className="eyebrow">工作區</p>
       <strong>{session.workspace.name}</strong>
       <p className="rail-copy">
         {session.user.name} · {session.user.role}
       </p>
       <p className="rail-copy">
-        Mode: <span className="status-accent">{session.persistenceMode}</span>
+        模式：<span className="status-accent">{session.persistenceMode}</span>
       </p>
     </div>
   );

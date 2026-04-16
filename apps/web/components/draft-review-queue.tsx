@@ -104,38 +104,36 @@ export function DraftReviewQueue() {
   return (
     <section style={{ display: "grid", gap: 14 }}>
       {/* 摘要列 */}
-      <div className="panel" style={{ padding: "10px 16px" }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-            <option value="">全部狀態（{jobs.length}）</option>
-            {allStatuses.map((s) => {
-              const count = jobs.filter((j) => j.status === s).length;
-              return (
-                <option key={s} value={s}>
-                  {statusLabel[s] ?? s}（{count}）
-                </option>
-              );
-            })}
-          </select>
+      <div className="panel filter-bar">
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+          <option value="">全部狀態（{jobs.length}）</option>
+          {allStatuses.map((s) => {
+            const count = jobs.filter((j) => j.status === s).length;
+            return (
+              <option key={s} value={s}>
+                {statusLabel[s] ?? s}（{count}）
+              </option>
+            );
+          })}
+        </select>
 
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{reviewable.length}</span>
-            <small style={{ fontSize: "0.62rem" }}>待審核</small>
-          </div>
-
-          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
-            <span style={{ fontSize: "0.9rem" }}>{filtered.length}</span>
-            <small style={{ fontSize: "0.62rem" }}>顯示中</small>
-          </div>
-
-          <button
-            className="hero-link"
-            style={{ padding: "5px 12px", fontSize: "0.75rem", marginLeft: "auto" }}
-            onClick={() => { setLoading(true); void loadJobs(); }}
-          >
-            重新整理
-          </button>
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{reviewable.length}</span>
+          <small>待審核</small>
         </div>
+
+        <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+          <span style={{ fontSize: "var(--fs-base)" }}>{filtered.length}</span>
+          <small>顯示中</small>
+        </div>
+
+        <button
+          className="btn-sm"
+          style={{ marginLeft: "auto" }}
+          onClick={() => { setLoading(true); void loadJobs(); }}
+        >
+          重新整理
+        </button>
       </div>
 
       {error ? (
@@ -146,7 +144,7 @@ export function DraftReviewQueue() {
 
       {loading ? (
         <div className="panel" style={{ padding: 16 }}>
-          <p className="muted">載入代理工作...</p>
+          <p className="muted loading-text">載入代理工作...</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="panel" style={{ padding: 16 }}>
@@ -176,8 +174,8 @@ export function DraftReviewQueue() {
                     onClick={() => toggleExpand(job.id)}
                   >
                     <div>
-                      <strong style={{ fontSize: "0.82rem" }}>{taskTypeLabel[job.taskType] ?? job.taskType}</strong>
-                      <span className="dim" style={{ fontSize: "0.7rem", marginLeft: 8 }}>
+                      <strong style={{ fontSize: "var(--fs-base)" }}>{taskTypeLabel[job.taskType] ?? job.taskType}</strong>
+                      <span className="dim" style={{ fontSize: "var(--fs-xs)", marginLeft: 8 }}>
                         {job.id.slice(0, 8)}
                       </span>
                     </div>
@@ -194,26 +192,26 @@ export function DraftReviewQueue() {
                   </p>
 
                   {!isExpanded ? (
-                    <p className="dim" style={{ fontSize: "0.75rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+                    <p className="dim" style={{ fontSize: "var(--fs-sm)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
                       {job.instructions.slice(0, 120)}{job.instructions.length > 120 ? "..." : ""}
                     </p>
                   ) : null}
 
                   {job.error ? (
-                    <p className="error-text" style={{ fontSize: "0.78rem" }}>錯誤：{job.error}</p>
+                    <p className="error-text" style={{ fontSize: "var(--fs-sm)" }}>錯誤：{job.error}</p>
                   ) : null}
 
                   {isExpanded ? (
                     <div style={{ marginTop: 10 }}>
                       <div className="record-card" style={{ background: "var(--panel-hi)" }}>
-                        <strong style={{ fontSize: "0.75rem", color: "var(--muted)" }}>指令</strong>
-                        <p style={{ whiteSpace: "pre-wrap", fontSize: "0.8rem", marginTop: 4 }}>{job.instructions}</p>
+                        <strong style={{ fontSize: "var(--fs-sm)", color: "var(--muted)" }}>指令</strong>
+                        <p style={{ whiteSpace: "pre-wrap", fontSize: "var(--fs-sm)", marginTop: 4 }}>{job.instructions}</p>
                       </div>
 
                       {job.contextRefs.length > 0 ? (
                         <div className="record-card" style={{ background: "var(--panel-hi)", marginTop: 6 }}>
-                          <strong style={{ fontSize: "0.75rem", color: "var(--muted)" }}>上下文參考</strong>
-                          <ul style={{ margin: "4px 0 0", paddingLeft: 16, fontSize: "0.8rem" }}>
+                          <strong style={{ fontSize: "var(--fs-sm)", color: "var(--muted)" }}>上下文參考</strong>
+                          <ul style={{ margin: "4px 0 0", paddingLeft: 16, fontSize: "var(--fs-sm)" }}>
                             {job.contextRefs.map((ref, i) => (
                               <li key={i}>
                                 <strong>{ref.type}</strong>
@@ -230,24 +228,24 @@ export function DraftReviewQueue() {
 
                       {job.result ? (
                         <div className="record-card" style={{ background: "var(--panel-hi)", marginTop: 6 }}>
-                          <strong style={{ fontSize: "0.75rem", color: "var(--muted)" }}>結果（{job.result.schemaName}）</strong>
+                          <strong style={{ fontSize: "var(--fs-sm)", color: "var(--muted)" }}>結果（{job.result.schemaName}）</strong>
 
                           {job.result.rawText ? (
-                            <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.78rem", marginTop: 4, maxHeight: 260, overflow: "auto", background: "var(--bg)", padding: 10, borderRadius: 8 }}>
+                            <pre style={{ whiteSpace: "pre-wrap", fontSize: "var(--fs-sm)", marginTop: 4, maxHeight: 260, overflow: "auto", background: "var(--bg)", padding: 10, borderRadius: 8 }}>
                               {job.result.rawText}
                             </pre>
                           ) : null}
 
                           {job.result.structured ? (
-                            <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.78rem", marginTop: 4, maxHeight: 260, overflow: "auto", background: "var(--bg)", padding: 10, borderRadius: 8 }}>
+                            <pre style={{ whiteSpace: "pre-wrap", fontSize: "var(--fs-sm)", marginTop: 4, maxHeight: 260, overflow: "auto", background: "var(--bg)", padding: 10, borderRadius: 8 }}>
                               {JSON.stringify(job.result.structured, null, 2)}
                             </pre>
                           ) : null}
 
                           {job.result.warnings && job.result.warnings.length > 0 ? (
                             <div style={{ marginTop: 6 }}>
-                              <strong style={{ fontSize: "0.72rem", color: "var(--warn)" }}>警告：</strong>
-                              <ul style={{ margin: "2px 0 0", paddingLeft: 16, fontSize: "0.78rem", color: "var(--warn)" }}>
+                              <strong style={{ fontSize: "var(--fs-xs)", color: "var(--warn)" }}>警告：</strong>
+                              <ul style={{ margin: "2px 0 0", paddingLeft: 16, fontSize: "var(--fs-sm)", color: "var(--warn)" }}>
                                 {job.result.warnings.map((w, i) => <li key={i}>{w}</li>)}
                               </ul>
                             </div>
@@ -255,10 +253,10 @@ export function DraftReviewQueue() {
 
                           {job.result.artifacts && job.result.artifacts.length > 0 ? (
                             <div style={{ marginTop: 6 }}>
-                              <strong style={{ fontSize: "0.72rem", color: "var(--muted)" }}>產出物：</strong>
+                              <strong style={{ fontSize: "var(--fs-xs)", color: "var(--muted)" }}>產出物：</strong>
                               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
                                 {job.result.artifacts.map((a, i) => (
-                                  <span key={i} className="badge" style={{ fontSize: "0.68rem" }}>
+                                  <span key={i} className="badge" style={{ fontSize: "var(--fs-xs)" }}>
                                     {a.label}{a.mimeType ? ` (${a.mimeType})` : ""}
                                   </span>
                                 ))}
@@ -277,20 +275,20 @@ export function DraftReviewQueue() {
                         value={note}
                         onChange={(e) => setReviewNotes((prev) => ({ ...prev, [job.id]: e.target.value }))}
                         placeholder="審核備註（選填）— 核准或退回的原因"
-                        style={{ width: "100%", minHeight: 48, fontSize: "0.78rem", marginBottom: 6, resize: "vertical" }}
+                        style={{ width: "100%", minHeight: 48, fontSize: "var(--fs-sm)", marginBottom: 6, resize: "vertical" }}
                       />
                       <div className="action-row">
                         <button
-                          className="hero-link primary"
-                          style={{ fontSize: "0.75rem", padding: "5px 12px" }}
+                          className="btn-sm"
+                          style={{ background: "var(--accent)", color: "var(--bg)", borderColor: "var(--accent)" }}
                           disabled={actionLoading === job.id}
                           onClick={() => void handleReview(job.id, "published")}
                         >
                           {actionLoading === job.id ? "..." : "核准並發布"}
                         </button>
                         <button
-                          className="hero-link"
-                          style={{ fontSize: "0.75rem", padding: "5px 12px", borderColor: "rgba(255,93,93,0.3)", color: "var(--bear)" }}
+                          className="btn-sm"
+                          style={{ borderColor: "rgba(255,93,93,0.3)", color: "var(--bear)" }}
                           disabled={actionLoading === job.id}
                           onClick={() => void handleReview(job.id, "rejected")}
                         >
@@ -298,8 +296,7 @@ export function DraftReviewQueue() {
                         </button>
                         {!isExpanded ? (
                           <button
-                            className="hero-link"
-                            style={{ fontSize: "0.75rem", padding: "5px 12px" }}
+                            className="btn-sm"
                             onClick={() => toggleExpand(job.id)}
                           >
                             檢視詳情
