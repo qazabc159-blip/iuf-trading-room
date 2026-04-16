@@ -401,7 +401,8 @@ export class MemoryTradingRoomRepository implements TradingRoomRepository {
       ...input,
       status: input.status ?? "draft",
       riskReward: input.riskReward ?? "",
-      notes: input.notes ?? ""
+      notes: input.notes ?? "",
+      execution: input.execution ?? null
     };
     this.tradePlans.unshift(plan);
     return { ...plan };

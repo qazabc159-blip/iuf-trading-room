@@ -808,6 +808,10 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       targetPlan: row.targetPlan,
       riskReward: row.riskReward,
       notes: "",
+      // Structured execution block not yet persisted; schema accepts null.
+      // DB migration to add `execution` JSONB column lands with the broker
+      // adapter wave.
+      execution: null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString()
     }));
@@ -832,6 +836,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       targetPlan: row.targetPlan,
       riskReward: row.riskReward,
       notes: "",
+      execution: null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString()
     };
@@ -862,6 +867,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       targetPlan: row.targetPlan,
       riskReward: row.riskReward,
       notes: "",
+      execution: null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString()
     };
@@ -898,6 +904,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       targetPlan: row.targetPlan,
       riskReward: row.riskReward,
       notes: "",
+      execution: null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString()
     };

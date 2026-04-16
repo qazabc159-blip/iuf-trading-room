@@ -20,6 +20,7 @@ const PAGE_ITEMS: Array<{ href: string; label: string; subtitle: string; keyword
   { href: "/companies", label: "公司資料庫", subtitle: "全部公司列表", keywords: "公司 資料庫 companies" },
   { href: "/signals", label: "訊號雷達", subtitle: "追蹤所有訊號", keywords: "訊號 雷達 signals" },
   { href: "/plans", label: "交易計畫", subtitle: "進行中與規劃中計畫", keywords: "計畫 交易 plans" },
+  { href: "/portfolio", label: "持倉部位", subtitle: "帳戶 / 部位 / 風控 / kill switch", keywords: "持倉 部位 portfolio 帳戶 風控 broker 凱基 kill switch" },
   { href: "/reviews", label: "交易檢討", subtitle: "歷史結果回顧", keywords: "檢討 回顧 reviews" },
   { href: "/briefs", label: "每日簡報", subtitle: "Morning brief 彙整", keywords: "簡報 briefs daily" },
   { href: "/drafts", label: "草稿審核", subtitle: "OpenAlice 待審佇列", keywords: "草稿 審核 drafts openalice" },
