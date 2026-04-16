@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import type { MarketState, Theme, ThemeCreateInput, ThemeLifecycle } from "@iuf-trading-room/contracts";
+import type { MarketState, Theme, ThemeCreateInput, ThemeGraphRankingView, ThemeGraphStatsView, ThemeLifecycle } from "@iuf-trading-room/contracts";
 
-import { createTheme, getThemes } from "@/lib/api";
+import { createTheme, getThemeGraphRankings, getThemeGraphStats, getThemes } from "@/lib/api";
 
 const marketStates: MarketState[] = ["Attack", "Selective Attack", "Balanced", "Defense", "Preservation"];
 const lifecycleStates: ThemeLifecycle[] = ["Discovery", "Validation", "Expansion", "Crowded", "Distribution"];
@@ -35,20 +35,40 @@ const initialForm: ThemeCreateInput = {
   bottleneck: ""
 };
 
+function MiniBar({ label, value, max }: { label: string; value: number; max: number }) {
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  return (
+    <div className="theme-bar">
+      <div className="theme-bar-row">
+        <span className="theme-bar-label">{label}</span>
+        <span className="theme-bar-value mono">{value}</span>
+      </div>
+      <div className="theme-bar-track">
+        <div className="theme-bar-fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 export function ThemeBoard() {
   const [themes, setThemes] = useState<Theme[]>([]);
+  const [stats, setStats] = useState<ThemeGraphStatsView | null>(null);
+  const [rankings, setRankings] = useState<ThemeGraphRankingView | null>(null);
   const [form, setForm] = useState<ThemeCreateInput>(initialForm);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [filterLifecycle, setFilterLifecycle] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "ranking">("ranking");
 
   useEffect(() => {
     getThemes()
       .then((r) => setThemes(r.data))
       .catch((e) => setError(e instanceof Error ? e.message : "無法載入主題"))
       .finally(() => setLoading(false));
+    getThemeGraphStats().then((r) => setStats(r.data)).catch(() => {});
+    getThemeGraphRankings({ limit: 12 }).then((r) => setRankings(r.data)).catch(() => {});
   }, []);
 
   const highPriority = useMemo(() => themes.filter((t) => t.priority >= 4).length, [themes]);
@@ -86,6 +106,10 @@ export function ThemeBoard() {
     <section style={{ display: "grid", gap: 14 }}>
       {/* 工具列 */}
       <div className="panel filter-bar">
+        <div className="tab-bar" style={{ flexShrink: 0 }}>
+          <button className={`tab-btn ${viewMode === "ranking" ? "active" : ""}`} onClick={() => setViewMode("ranking")}>火力排名</button>
+          <button className={`tab-btn ${viewMode === "list" ? "active" : ""}`} onClick={() => setViewMode("list")}>清單</button>
+        </div>
         <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
           <span style={{ fontSize: "var(--fs-base)" }}>{themes.length}</span>
           <small>主題</small>
@@ -94,10 +118,24 @@ export function ThemeBoard() {
           <span style={{ fontSize: "var(--fs-base)" }}>{highPriority}</span>
           <small>高優先</small>
         </div>
-        <select value={filterLifecycle} onChange={(e) => setFilterLifecycle(e.target.value)}>
-          <option value="">全部階段</option>
-          {lifecycleStates.map((v) => <option key={v} value={v}>{lifecycleLabel[v]}</option>)}
-        </select>
+        {stats ? (
+          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+            <span style={{ fontSize: "var(--fs-base)" }}>{stats.connectedThemeCount}</span>
+            <small>已連結</small>
+          </div>
+        ) : null}
+        {stats ? (
+          <div className="metric-chip" style={{ padding: "5px 10px", minWidth: "auto" }}>
+            <span style={{ fontSize: "var(--fs-base)" }}>{stats.totalEdges}</span>
+            <small>關係</small>
+          </div>
+        ) : null}
+        {viewMode === "list" ? (
+          <select value={filterLifecycle} onChange={(e) => setFilterLifecycle(e.target.value)}>
+            <option value="">全部階段</option>
+            {lifecycleStates.map((v) => <option key={v} value={v}>{lifecycleLabel[v]}</option>)}
+          </select>
+        ) : null}
         <button className="btn-sm" style={{ marginLeft: "auto" }} onClick={() => setShowForm(!showForm)}>
           {showForm ? "關閉表單" : "+ 新增主題"}
         </button>
@@ -140,30 +178,71 @@ export function ThemeBoard() {
         </form>
       ) : null}
 
-      {/* 主題列表 */}
-      <div className="panel">
-        {loading ? <p className="muted loading-text">載入主題...</p> : sorted.length === 0 ? <p className="dim">尚無主題，點擊上方按鈕建立。</p> : (
-          <div className="card-stack">
-            {sorted.map((t) => (
-              <article key={t.id} className="record-card">
-                <div className="record-topline">
-                  <strong style={{ fontSize: "var(--fs-base)" }}>{t.name}</strong>
-                  <div className="action-row" style={{ gap: 4 }}>
-                    <span className={stateColor(t.marketState)} style={{ fontSize: "var(--fs-xs)" }}>{marketLabel[t.marketState] ?? t.marketState}</span>
-                    <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>{lifecycleLabel[t.lifecycle] ?? t.lifecycle}</span>
+      {/* 主題內容 */}
+      {viewMode === "ranking" ? (
+        <div className="panel">
+          {!rankings ? (
+            <p className="muted loading-text">載入排名...</p>
+          ) : rankings.results.length === 0 ? (
+            <p className="dim">尚無排名資料，先新增主題與公司關聯。</p>
+          ) : (
+            <div className="theme-ranking-grid">
+              {rankings.results.map((r, idx) => (
+                <div key={r.themeId} className="theme-ranking-card">
+                  <div className="theme-ranking-head">
+                    <span className="theme-rank-num mono">#{idx + 1}</span>
+                    <div className="theme-ranking-score mono">{r.score}</div>
+                  </div>
+                  <div className="theme-ranking-name">{r.name}</div>
+                  <div className="theme-ranking-meta dim">
+                    {marketLabel[r.marketState] ?? r.marketState} · {lifecycleLabel[r.lifecycle] ?? r.lifecycle} · 優先度 {r.priority}
+                  </div>
+                  <div className="theme-ranking-meta dim">
+                    {r.summary.themeCompanyCount} 核心 · {r.summary.relatedCompanyCount} 關聯 · {r.summary.totalEdges} 關係
+                  </div>
+                  {r.summary.topKeywords.length > 0 ? (
+                    <div className="theme-ranking-signals">
+                      {r.summary.topKeywords.slice(0, 4).map((k, i) => (
+                        <span key={i} className="badge" style={{ fontSize: "var(--fs-xs)" }}>{k.label} ×{k.count}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="theme-ranking-bars">
+                    <MiniBar label="信念" value={r.breakdown.conviction} max={40} />
+                    <MiniBar label="連結" value={r.breakdown.connectivity} max={30} />
+                    <MiniBar label="槓桿" value={r.breakdown.leverage} max={20} />
+                    <MiniBar label="關鍵詞" value={r.breakdown.keywordRichness} max={10} />
                   </div>
                 </div>
-                <p className="record-meta">
-                  優先度 <strong className="mono">{t.priority}</strong> · 更新 {new Date(t.updatedAt).toLocaleDateString("zh-TW")}
-                </p>
-                <p style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>{t.thesis}</p>
-                {t.whyNow ? <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>為什麼是現在：{t.whyNow}</p> : null}
-                {t.bottleneck ? <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>瓶頸：{t.bottleneck}</p> : null}
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="panel">
+          {loading ? <p className="muted loading-text">載入主題...</p> : sorted.length === 0 ? <p className="dim">尚無主題，點擊上方按鈕建立。</p> : (
+            <div className="card-stack">
+              {sorted.map((t) => (
+                <article key={t.id} className="record-card">
+                  <div className="record-topline">
+                    <strong style={{ fontSize: "var(--fs-base)" }}>{t.name}</strong>
+                    <div className="action-row" style={{ gap: 4 }}>
+                      <span className={stateColor(t.marketState)} style={{ fontSize: "var(--fs-xs)" }}>{marketLabel[t.marketState] ?? t.marketState}</span>
+                      <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>{lifecycleLabel[t.lifecycle] ?? t.lifecycle}</span>
+                    </div>
+                  </div>
+                  <p className="record-meta">
+                    優先度 <strong className="mono">{t.priority}</strong> · 更新 {new Date(t.updatedAt).toLocaleDateString("zh-TW")}
+                  </p>
+                  <p style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>{t.thesis}</p>
+                  {t.whyNow ? <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>為什麼是現在：{t.whyNow}</p> : null}
+                  {t.bottleneck ? <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>瓶頸：{t.bottleneck}</p> : null}
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

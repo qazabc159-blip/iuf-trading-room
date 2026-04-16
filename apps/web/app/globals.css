@@ -877,6 +877,97 @@ select {
   color: var(--dim);
 }
 
+/* ── 主題排名卡片 ────────────────────────────────────────── */
+
+.theme-ranking-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.theme-ranking-card {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-hi);
+  display: grid;
+  gap: 6px;
+}
+
+.theme-ranking-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.theme-rank-num {
+  font-size: var(--fs-xs);
+  color: var(--dim);
+  letter-spacing: 0.05em;
+}
+
+.theme-ranking-score {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--accent);
+  font-feature-settings: "tnum";
+}
+
+.theme-ranking-name {
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+.theme-ranking-meta {
+  font-size: var(--fs-xs);
+}
+
+.theme-ranking-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.theme-ranking-bars {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.theme-bar {
+  display: grid;
+  gap: 2px;
+}
+
+.theme-bar-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+}
+
+.theme-bar-label {
+  color: var(--dim);
+}
+
+.theme-bar-value {
+  color: var(--muted);
+}
+
+.theme-bar-track {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.theme-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--bull));
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
 /* ── 狀態文字 ──────────────────────────────────────────────── */
 
 .muted      { color: var(--muted); }

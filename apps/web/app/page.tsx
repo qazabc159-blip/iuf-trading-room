@@ -3,14 +3,18 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import type { ThemeGraphRankingView } from "@iuf-trading-room/contracts";
+
 import { AppShell } from "@/components/app-shell";
-import { getOpsSnapshot, type OpsSnapshotData } from "@/lib/api";
+import { getOpsSnapshot, getThemeGraphRankings, type OpsSnapshotData } from "@/lib/api";
 
 export default function HomePage() {
   const [snap, setSnap] = useState<OpsSnapshotData | null>(null);
+  const [rankings, setRankings] = useState<ThemeGraphRankingView | null>(null);
 
   useEffect(() => {
     getOpsSnapshot().then((r) => setSnap(r.data)).catch(() => {});
+    getThemeGraphRankings({ limit: 6 }).then((r) => setRankings(r.data)).catch(() => {});
   }, []);
 
   const s = snap?.stats;
@@ -68,6 +72,47 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* 主題排名戰區 */}
+      <section className="panel">
+        <div className="panel-header">
+          <p className="eyebrow">主題火力排名（Top 6）</p>
+          <Link href="/themes" className="btn-sm">查看全部</Link>
+        </div>
+        {!rankings ? (
+          <p className="muted loading-text" style={{ fontSize: "var(--fs-sm)" }}>載入排名...</p>
+        ) : rankings.results.length === 0 ? (
+          <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>尚無主題排名</p>
+        ) : (
+          <div className="theme-ranking-grid">
+            {rankings.results.slice(0, 6).map((r, idx) => (
+              <div key={r.themeId} className="theme-ranking-card">
+                <div className="theme-ranking-head">
+                  <span className="theme-rank-num mono">#{idx + 1}</span>
+                  <div className="theme-ranking-score mono">{r.score}</div>
+                </div>
+                <div className="theme-ranking-name">{r.name}</div>
+                <div className="theme-ranking-meta dim">
+                  {r.summary.themeCompanyCount} 家核心 · {r.summary.relatedCompanyCount} 家關聯
+                </div>
+                {r.signals.length > 0 ? (
+                  <div className="theme-ranking-signals">
+                    {r.signals.slice(0, 3).map((sig, i) => (
+                      <span key={i} className="badge" style={{ fontSize: "var(--fs-xs)" }}>{sig}</span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="theme-ranking-bars">
+                  <Bar label="信念" value={r.breakdown.conviction} max={40} />
+                  <Bar label="連結" value={r.breakdown.connectivity} max={30} />
+                  <Bar label="槓桿" value={r.breakdown.leverage} max={20} />
+                  <Bar label="關鍵詞" value={r.breakdown.keywordRichness} max={10} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       {/* 下排：最新動態流 */}
       <section className="triple-panels">
         <LatestList title="最新訊號" items={snap?.latest.signals} linkBase="/signals" />
@@ -104,6 +149,21 @@ function MiniStat({ label, value, color }: { label: string; value: string; color
     <div className="mini-stat">
       <div className="mini-stat-value" style={color ? { color } : undefined}>{value}</div>
       <div className="mini-stat-label">{label}</div>
+    </div>
+  );
+}
+
+function Bar({ label, value, max }: { label: string; value: number; max: number }) {
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  return (
+    <div className="theme-bar">
+      <div className="theme-bar-row">
+        <span className="theme-bar-label">{label}</span>
+        <span className="theme-bar-value mono">{value}</span>
+      </div>
+      <div className="theme-bar-track">
+        <div className="theme-bar-fill" style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }

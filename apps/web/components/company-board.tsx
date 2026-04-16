@@ -6,10 +6,11 @@ import type {
   BeneficiaryTier,
   Company,
   CompanyCreateInput,
+  CompanyGraphView,
   ExposureBreakdown
 } from "@iuf-trading-room/contracts";
 
-import { createCompany, getCompanies, getThemes } from "@/lib/api";
+import { createCompany, getCompanies, getCompanyGraph, getThemes } from "@/lib/api";
 
 const tiers: BeneficiaryTier[] = ["Core", "Direct", "Indirect", "Observation"];
 const tierLabel: Record<string, string> = { Core: "核心", Direct: "直接", Indirect: "間接", Observation: "觀察" };
@@ -45,6 +46,8 @@ export function CompanyBoard() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Company | null>(null);
+  const [graph, setGraph] = useState<CompanyGraphView | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
@@ -53,6 +56,15 @@ export function CompanyBoard() {
       .catch((e) => setError(e instanceof Error ? e.message : "無法載入公司"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!selected) { setGraph(null); return; }
+    setGraphLoading(true);
+    getCompanyGraph(selected.id)
+      .then((r) => setGraph(r.data))
+      .catch(() => setGraph(null))
+      .finally(() => setGraphLoading(false));
+  }, [selected]);
 
   const sectors = useMemo(() => [...new Set(companies.map((c) => c.chainPosition).filter(Boolean))].sort(), [companies]);
 
@@ -142,6 +154,59 @@ export function CompanyBoard() {
                 <p style={{ whiteSpace: "pre-wrap", fontSize: "var(--fs-sm)", marginTop: 4 }}>{selected.notes}</p>
               </div>
             ) : null}
+
+            {/* 關係圖摘要 */}
+            <div className="record-card">
+              <strong style={{ fontSize: "var(--fs-sm)" }}>供應鏈關係</strong>
+              {graphLoading ? (
+                <p className="muted loading-text" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>載入關係圖...</p>
+              ) : !graph ? (
+                <p className="dim" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>尚無關係資料</p>
+              ) : (
+                <>
+                  <div className="exposure-grid" style={{ marginTop: 6 }}>
+                    <div className="exposure-cell"><div className="exposure-value">{graph.summary.outboundRelations}</div><div className="exposure-label">下游</div></div>
+                    <div className="exposure-cell"><div className="exposure-value">{graph.summary.inboundRelations}</div><div className="exposure-label">上游</div></div>
+                    <div className="exposure-cell"><div className="exposure-value">{graph.summary.internalLinks}</div><div className="exposure-label">內部</div></div>
+                    <div className="exposure-cell"><div className="exposure-value">{graph.summary.externalLinks}</div><div className="exposure-label">外部</div></div>
+                    <div className="exposure-cell"><div className="exposure-value">{graph.summary.keywords}</div><div className="exposure-label">關鍵詞</div></div>
+                  </div>
+
+                  {graph.keywords.length > 0 ? (
+                    <div style={{ marginTop: 10 }}>
+                      <p className="eyebrow" style={{ fontSize: "var(--fs-xs)" }}>關鍵詞叢集</p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                        {graph.keywords.slice(0, 20).map((k) => (
+                          <span key={k.id} className="badge" style={{ fontSize: "var(--fs-xs)" }}>{k.label}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {graph.edges.length > 0 ? (
+                    <div style={{ marginTop: 10 }}>
+                      <p className="eyebrow" style={{ fontSize: "var(--fs-xs)" }}>關聯節點（前 10）</p>
+                      <div className="card-stack" style={{ marginTop: 4 }}>
+                        {graph.edges.slice(0, 10).map((e) => {
+                          const target = graph.nodes.find((n) => n.id === e.targetNodeId);
+                          const dirLabel = e.direction === "outbound" ? "→" : "←";
+                          return (
+                            <div key={e.id} style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--fs-sm)", padding: "3px 0" }}>
+                              <span>
+                                <span className="dim mono" style={{ marginRight: 6 }}>{dirLabel}</span>
+                                {target?.ticker ? <strong className="mono">{target.ticker} </strong> : null}
+                                {target?.label ?? "—"}
+                              </span>
+                              <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>{e.relationType}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
 
             <div className="action-row">
               <a href={`/signals?companyId=${selected.id}`} className="btn-sm">查看訊號</a>

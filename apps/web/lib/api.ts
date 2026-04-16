@@ -2,6 +2,9 @@ import type {
   AppSession,
   Company,
   CompanyCreateInput,
+  CompanyGraphSearchResult,
+  CompanyGraphStats,
+  CompanyGraphView,
   DailyBrief,
   DailyBriefCreateInput,
   ReviewEntry,
@@ -10,6 +13,10 @@ import type {
   SignalCreateInput,
   Theme,
   ThemeCreateInput,
+  ThemeGraphRankingView,
+  ThemeGraphSearchView,
+  ThemeGraphStatsView,
+  ThemeGraphView,
   TradePlan,
   TradePlanCreateInput
 } from "@iuf-trading-room/contracts";
@@ -377,4 +384,51 @@ export function getAuditLogsExportUrl(params?: { format?: "csv" | "json"; action
   if (params?.action) query.set("action", params.action);
   if (params?.entityType) query.set("entityType", params.entityType);
   return `${API_BASE}/api/v1/audit-logs/export?${query.toString()}`;
+}
+
+// ── Theme Graph（主題關係圖）────────────────────────────────
+
+export async function getThemeGraphStats(params?: { limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<ThemeGraphStatsView>(`/api/v1/theme-graph/stats${qs ? `?${qs}` : ""}`);
+}
+
+export async function getThemeGraphRankings(params?: { limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<ThemeGraphRankingView>(`/api/v1/theme-graph/rankings${qs ? `?${qs}` : ""}`);
+}
+
+export async function searchThemeGraph(params: { query: string; limit?: number }) {
+  const query = new URLSearchParams();
+  query.set("query", params.query);
+  if (params.limit) query.set("limit", String(params.limit));
+  return request<ThemeGraphSearchView>(`/api/v1/theme-graph/search?${query.toString()}`);
+}
+
+export async function getThemeGraph(themeId: string, params?: { maxEdges?: number }) {
+  const query = new URLSearchParams();
+  if (params?.maxEdges) query.set("maxEdges", String(params.maxEdges));
+  const qs = query.toString();
+  return request<ThemeGraphView>(`/api/v1/themes/${themeId}/graph${qs ? `?${qs}` : ""}`);
+}
+
+// ── Company Graph（公司關係圖）──────────────────────────────
+
+export async function getCompanyGraphStats() {
+  return request<CompanyGraphStats>("/api/v1/company-graph/stats");
+}
+
+export async function searchCompanyGraph(params: { query: string; limit?: number }) {
+  const query = new URLSearchParams();
+  query.set("query", params.query);
+  if (params.limit) query.set("limit", String(params.limit));
+  return request<CompanyGraphSearchResult[]>(`/api/v1/company-graph/search?${query.toString()}`);
+}
+
+export async function getCompanyGraph(companyId: string) {
+  return request<CompanyGraphView>(`/api/v1/companies/${companyId}/graph`);
 }
