@@ -56,15 +56,14 @@ export function AppShell({
       {/* 頂部戰情列 — ticker tape 活體跑馬燈 */}
       <div className="status-bar">
         <strong style={{ flexShrink: 0 }}>
-          <span style={{ color: "var(--phosphor)", textShadow: "var(--phosphor-glow)" }}>◆</span>{" "}
           {session?.workspace.name ?? "主交易桌"}
         </strong>
-        <span style={{ color: "rgba(127,255,76,0.35)", flexShrink: 0 }}>│</span>
+        <span style={{ color: "var(--dim)", flexShrink: 0 }}>|</span>
         <span style={{ flexShrink: 0 }}>
           <span className={`status-dot ${session ? "green" : "yellow"}`} />{" "}
-          {session?.persistenceMode === "database" ? "PG·LIVE" : session?.persistenceMode ?? "BOOT"}
+          {session?.persistenceMode === "database" ? "PostgreSQL" : session?.persistenceMode ?? "—"}
         </span>
-        <span style={{ color: "rgba(127,255,76,0.35)", flexShrink: 0 }}>│</span>
+        <span style={{ color: "var(--dim)", flexShrink: 0 }}>|</span>
 
         <TickerTape />
 
@@ -76,11 +75,7 @@ export function AppShell({
       {/* 主內容 */}
       <main className="content">
         <header className="hero">
-          <p className="eyebrow">
-            <span style={{ color: "var(--amber)", textShadow: "var(--amber-glow)", marginRight: "6px" }}>▶</span>
-            {eyebrow}
-            <span style={{ color: "var(--amber)", textShadow: "var(--amber-glow)", marginLeft: "6px" }}>◀</span>
-          </p>
+          <p className="eyebrow">{eyebrow}</p>
           <h2>{title}</h2>
         </header>
         {children}
