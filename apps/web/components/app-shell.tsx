@@ -10,6 +10,8 @@ import { primaryNavigation } from "@iuf-trading-room/ui";
 import { getSession } from "@/lib/api";
 import type { AppSession } from "@iuf-trading-room/contracts";
 
+import { CommandPalette } from "./command-palette";
+
 export function AppShell({
   title,
   eyebrow,
@@ -75,6 +77,8 @@ export function AppShell({
         </header>
         {children}
       </main>
+
+      <CommandPalette />
     </div>
   );
 }

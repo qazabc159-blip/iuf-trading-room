@@ -1106,6 +1106,153 @@ select {
   }
 }
 
+/* ── Command Palette (⌘K / Ctrl+K) ─────────────────────────── */
+
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  z-index: 1000;
+  animation: cmdk-fade var(--duration) var(--ease-out);
+}
+
+@keyframes cmdk-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.cmdk-modal {
+  width: min(640px, calc(100vw - var(--sp-6)));
+  max-height: 70vh;
+  background: var(--panel);
+  border: 1px solid var(--line-hi);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: cmdk-slide var(--duration) var(--ease-out);
+}
+
+@keyframes cmdk-slide {
+  from { transform: translateY(-8px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.cmdk-input {
+  width: 100%;
+  padding: var(--sp-4) var(--sp-5);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  outline: none;
+}
+
+.cmdk-input::placeholder {
+  color: var(--dim);
+}
+
+.cmdk-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-2) 0;
+}
+
+.cmdk-status {
+  padding: var(--sp-5) var(--sp-5);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.cmdk-group {
+  padding: var(--sp-2) 0;
+}
+
+.cmdk-group + .cmdk-group {
+  border-top: 1px solid var(--line);
+}
+
+.cmdk-group-title {
+  padding: var(--sp-2) var(--sp-5);
+  color: var(--dim);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.cmdk-item {
+  padding: var(--sp-2) var(--sp-5);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-left: 2px solid transparent;
+  transition: background var(--duration) var(--ease-out);
+}
+
+.cmdk-item.active {
+  background: var(--accent-dim);
+  border-left-color: var(--accent);
+}
+
+.cmdk-item-label {
+  color: var(--text);
+  font-size: var(--fs-base);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.cmdk-ticker {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-hi);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+.cmdk-item-meta {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.cmdk-item-meta > span {
+  white-space: nowrap;
+}
+
+.cmdk-path {
+  font-family: var(--font-mono);
+  color: var(--dim);
+}
+
+.cmdk-footer {
+  padding: var(--sp-2) var(--sp-5);
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: var(--sp-4);
+  color: var(--dim);
+  font-size: var(--fs-xs);
+  background: var(--bg2);
+}
+
 /* ── Scrollbar (Webkit) ────────────────────────────────────── */
 
 ::-webkit-scrollbar {
