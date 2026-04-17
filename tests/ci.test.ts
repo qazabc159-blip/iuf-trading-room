@@ -40,6 +40,7 @@ import {
   searchThemeGraph
 } from "../apps/api/src/theme-graph.ts";
 import {
+  getMarketDataOverview,
   listMarketDataProviderStatuses,
   listMarketQuotes,
   listMarketSymbols,
@@ -1342,7 +1343,8 @@ test("market data provider statuses expose manual provider and disconnected stub
 
 test("market data symbols derive from companies and dedupe by market and ticker", async () => {
   const repo = new MemoryTradingRoomRepository();
-  const session = { workspace: { slug: "primary-desk" } };
+  const session = { workspace: { slug: `market-symbols-${randomUUID()}` } };
+  const options = { workspaceSlug: session.workspace.slug };
 
   await repo.createCompany({
     name: "台積電",
@@ -1355,7 +1357,7 @@ test("market data symbols derive from companies and dedupe by market and ticker"
     exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
     validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
     notes: ""
-  });
+  }, options);
 
   await repo.createCompany({
     name: "台積",
@@ -1368,7 +1370,7 @@ test("market data symbols derive from companies and dedupe by market and ticker"
     exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
     validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
     notes: ""
-  });
+  }, options);
 
   await repo.createCompany({
     name: "Photon Switch",
@@ -1381,7 +1383,7 @@ test("market data symbols derive from companies and dedupe by market and ticker"
     exposure: { volume: 4, asp: 3, margin: 3, capacity: 4, narrative: 4 },
     validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
     notes: ""
-  });
+  }, options);
 
   const allSymbols = await listMarketSymbols({
     session,
@@ -1465,6 +1467,106 @@ test("market data quotes support manual upsert with stale filtering", async () =
   assert.equal(includeStale.length, 2);
   assert.equal(includeStale[0]?.symbol, "SMK1");
   assert.equal(includeStale.some((item) => item.symbol === "OLD1" && item.isStale), true);
+});
+
+test("market data overview summarizes providers, coverage, and leaders", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = { workspace: { slug: `market-overview-${randomUUID()}` } };
+  const options = { workspaceSlug: session.workspace.slug };
+
+  await repo.createCompany({
+    name: "Photon Switch",
+    ticker: "SMK1",
+    market: "NASDAQ",
+    country: "United States",
+    themeIds: [],
+    chainPosition: "Optics",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 3, margin: 3, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: ""
+  }, options);
+
+  await repo.createCompany({
+    name: "台積電",
+    ticker: "2330",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "Foundry",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: ""
+  }, options);
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "SMK1",
+        market: "OTHER",
+        source: "manual",
+        last: 123.45,
+        bid: 123.4,
+        ask: 123.5,
+        open: 120,
+        high: 124,
+        low: 119.5,
+        prevClose: 121,
+        volume: 1500,
+        changePct: 2.02
+      },
+      {
+        symbol: "2330",
+        market: "TWSE",
+        source: "manual",
+        last: 880,
+        bid: 879,
+        ask: 881,
+        open: 872,
+        high: 882,
+        low: 870,
+        prevClose: 878,
+        volume: 3200,
+        changePct: -1.15
+      },
+      {
+        symbol: "OLD1",
+        market: "TWSE",
+        source: "manual",
+        last: 80,
+        bid: 79.9,
+        ask: 80.1,
+        open: 79,
+        high: 81,
+        low: 78.5,
+        prevClose: 79.5,
+        volume: 999,
+        changePct: 0.63,
+        timestamp: "2020-01-01T00:00:00.000Z"
+      }
+    ]
+  });
+
+  const overview = await getMarketDataOverview({
+    session,
+    repo,
+    includeStale: true,
+    topLimit: 2
+  });
+
+  assert.equal(overview.providers.length, 4);
+  assert.ok(overview.symbols.total >= 2);
+  assert.equal(overview.symbols.byMarket.some((item) => item.market === "TWSE" && item.total >= 1), true);
+  assert.equal(overview.symbols.byMarket.some((item) => item.market === "OTHER" && item.total >= 1), true);
+  assert.equal(overview.quotes.total, 3);
+  assert.equal(overview.quotes.fresh, 2);
+  assert.equal(overview.quotes.stale, 1);
+  assert.equal(overview.quotes.bySource[0]?.source, "manual");
+  assert.equal(overview.leaders.topGainers[0]?.symbol, "SMK1");
+  assert.equal(overview.leaders.topLosers[0]?.symbol, "2330");
+  assert.equal(overview.leaders.mostActive[0]?.symbol, "2330");
 });
 
 test("duplicate report helper reads repository-scoped companies", async () => {

@@ -248,6 +248,37 @@ async function main() {
     assert.equal(marketQuotes.data[0]?.source, "manual");
     assert.equal(marketQuotes.data[0]?.last, 123.45);
 
+    const marketOverview = await request<
+      JsonEnvelope<{
+        generatedAt: string;
+        providers: Array<{ source: string; connected: boolean }>;
+        symbols: {
+          total: number;
+          byMarket: Array<{ market: string; total: number }>;
+        };
+        quotes: {
+          total: number;
+          fresh: number;
+          stale: number;
+          bySource: Array<{ source: string; total: number }>;
+        };
+        leaders: {
+          topGainers: Array<{ symbol: string; changePct: number | null }>;
+          topLosers: Array<{ symbol: string; changePct: number | null }>;
+          mostActive: Array<{ symbol: string; volume: number | null }>;
+        };
+      }>
+    >(baseUrl, "/api/v1/market-data/overview?includeStale=true&topLimit=5", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.match(marketOverview.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
+    assert.ok(marketOverview.data.providers.length >= 2);
+    assert.ok(marketOverview.data.symbols.total >= 1);
+    assert.ok(marketOverview.data.quotes.total >= 1);
+    assert.ok(marketOverview.data.quotes.bySource.some((item) => item.source === "manual"));
+    assert.equal(marketOverview.data.leaders.topGainers[0]?.symbol, "SMK1");
+    assert.equal(marketOverview.data.leaders.mostActive[0]?.symbol, "SMK1");
+
     const relationReplace = await request<
       JsonEnvelope<
         Array<{

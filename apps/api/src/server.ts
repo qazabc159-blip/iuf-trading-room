@@ -71,9 +71,11 @@ import {
   parseEventHistorySources
 } from "./event-history.js";
 import {
+  getMarketDataOverview,
   listMarketDataProviderStatuses,
   listMarketQuotes,
   listMarketSymbols,
+  marketDataOverviewQuerySchema,
   manualQuoteUpsertSchema,
   marketDataProvidersQuerySchema,
   marketDataQuotesQuerySchema,
@@ -628,6 +630,19 @@ app.post("/api/v1/market-data/manual-quotes", async (c) => {
     },
     201
   );
+});
+
+app.get("/api/v1/market-data/overview", async (c) => {
+  const query = marketDataOverviewQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getMarketDataOverview({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      sources: query.sources,
+      includeStale: query.includeStale,
+      topLimit: query.topLimit
+    })
+  });
 });
 
 app.get("/api/v1/company-graph/search", async (c) => {

@@ -67,6 +67,16 @@ export const marketDataQuotesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional()
 });
 
+export const marketDataOverviewQuerySchema = z.object({
+  sources: z
+    .string()
+    .trim()
+    .min(1)
+    .optional(),
+  includeStale: z.coerce.boolean().optional(),
+  topLimit: z.coerce.number().int().min(1).max(20).optional()
+});
+
 const manualQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
 
@@ -250,6 +260,10 @@ function parseSourceFilter(raw?: string) {
   return parsed.length > 0 ? parsed : [...quoteProviderSources];
 }
 
+function round(value: number, digits = 2) {
+  return Number(value.toFixed(digits));
+}
+
 export async function listMarketDataProviderStatuses(input: {
   session: AppSession;
   sources?: string;
@@ -355,3 +369,118 @@ export async function listMarketQuotes(input: {
   return quotes;
 }
 
+export async function getMarketDataOverview(input: {
+  session: AppSession;
+  repo: TradingRoomRepository;
+  sources?: string;
+  includeStale?: boolean;
+  topLimit?: number;
+}) {
+  const topLimit = input.topLimit ?? 5;
+  const [providers, symbols, quotes] = await Promise.all([
+    listMarketDataProviderStatuses({
+      session: input.session,
+      sources: input.sources
+    }),
+    listMarketSymbols({
+      session: input.session,
+      repo: input.repo,
+      limit: 1000
+    }),
+    listMarketQuotes({
+      session: input.session,
+      includeStale: input.includeStale,
+      limit: 1000
+    })
+  ]);
+
+  const quotesBySource = [...new Set(quoteProviderSources)]
+    .map((source) => ({
+      source,
+      total: quotes.filter((quote) => quote.source === source).length,
+      stale: quotes.filter((quote) => quote.source === source && quote.isStale).length
+    }))
+    .filter((entry) => entry.total > 0 || providers.some((provider) => provider.source === entry.source));
+
+  const symbolsByMarket = [...new Set(symbols.map((symbol) => symbol.market))]
+    .map((market) => ({
+      market,
+      total: symbols.filter((symbol) => symbol.market === market).length
+    }))
+    .sort((left, right) => right.total - left.total || left.market.localeCompare(right.market));
+
+  const quotesByMarket = [...new Set(quotes.map((quote) => quote.market))]
+    .map((market) => ({
+      market,
+      total: quotes.filter((quote) => quote.market === market).length,
+      stale: quotes.filter((quote) => quote.market === market && quote.isStale).length
+    }))
+    .sort((left, right) => right.total - left.total || left.market.localeCompare(right.market));
+
+  const quotesWithChange = quotes.filter((quote) => quote.changePct !== null);
+  const topGainers = [...quotesWithChange]
+    .sort((left, right) => (right.changePct ?? -Infinity) - (left.changePct ?? -Infinity))
+    .slice(0, topLimit)
+    .map((quote) => ({
+      symbol: quote.symbol,
+      market: quote.market,
+      source: quote.source,
+      last: quote.last,
+      changePct: round(quote.changePct ?? 0),
+      volume: quote.volume,
+      timestamp: quote.timestamp
+    }));
+
+  const topLosers = [...quotesWithChange]
+    .sort((left, right) => (left.changePct ?? Infinity) - (right.changePct ?? Infinity))
+    .slice(0, topLimit)
+    .map((quote) => ({
+      symbol: quote.symbol,
+      market: quote.market,
+      source: quote.source,
+      last: quote.last,
+      changePct: round(quote.changePct ?? 0),
+      volume: quote.volume,
+      timestamp: quote.timestamp
+    }));
+
+  const mostActive = [...quotes]
+    .filter((quote) => quote.volume !== null)
+    .sort((left, right) => (right.volume ?? -Infinity) - (left.volume ?? -Infinity))
+    .slice(0, topLimit)
+    .map((quote) => ({
+      symbol: quote.symbol,
+      market: quote.market,
+      source: quote.source,
+      last: quote.last,
+      volume: quote.volume,
+      changePct: quote.changePct !== null ? round(quote.changePct) : null,
+      timestamp: quote.timestamp
+    }));
+
+  const latestQuoteTimestamp = quotes
+    .map((quote) => quote.timestamp)
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    providers,
+    symbols: {
+      total: symbols.length,
+      byMarket: symbolsByMarket
+    },
+    quotes: {
+      total: quotes.length,
+      fresh: quotes.filter((quote) => !quote.isStale).length,
+      stale: quotes.filter((quote) => quote.isStale).length,
+      latestQuoteTimestamp,
+      bySource: quotesBySource,
+      byMarket: quotesByMarket
+    },
+    leaders: {
+      topGainers,
+      topLosers,
+      mostActive
+    }
+  };
+}
