@@ -92,6 +92,7 @@ import {
   marketDataQuotesQuerySchema,
   marketDataSymbolsQuerySchema,
   resolveMarketQuotes,
+  upsertPaperQuotes,
   upsertManualQuotes
 } from "./market-data.js";
 import {
@@ -701,6 +702,19 @@ app.post("/api/v1/market-data/manual-quotes", async (c) => {
   return c.json(
     {
       data: await upsertManualQuotes({
+        session: c.get("session"),
+        quotes: payload.quotes
+      })
+    },
+    201
+  );
+});
+
+app.post("/api/v1/market-data/paper-quotes", async (c) => {
+  const payload = manualQuoteUpsertSchema.parse(await c.req.json());
+  return c.json(
+    {
+      data: await upsertPaperQuotes({
         session: c.get("session"),
         quotes: payload.quotes
       })

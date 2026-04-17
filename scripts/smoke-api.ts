@@ -229,6 +229,42 @@ async function main() {
     assert.equal(manualQuotes.data[0]?.symbol, "SMK1");
     assert.equal(manualQuotes.data[0]?.isStale, false);
 
+    const paperQuotes = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          market: string;
+          source: string;
+          last: number | null;
+          isStale: boolean;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/paper-quotes", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        quotes: [
+          {
+            symbol: "PAPR1",
+            market: "OTHER",
+            source: "manual",
+            last: 77.7,
+            bid: 77.6,
+            ask: 77.8,
+            open: 76.5,
+            high: 78.2,
+            low: 76.2,
+            prevClose: 76.9,
+            volume: 450,
+            changePct: 1.04
+          }
+        ]
+      })
+    });
+    assert.equal(paperQuotes.data.length, 1);
+    assert.equal(paperQuotes.data[0]?.symbol, "PAPR1");
+    assert.equal(paperQuotes.data[0]?.source, "paper");
+
     const tradingviewQuotesUpsert = await request<
       JsonEnvelope<
         Array<{
@@ -283,6 +319,23 @@ async function main() {
     assert.equal(marketQuotes.data[0]?.source, "manual");
     assert.equal(marketQuotes.data[0]?.last, 123.45);
 
+    const paperProviderQuotes = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          market: string;
+          source: string;
+          last: number | null;
+          isStale: boolean;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/quotes?symbols=PAPR1&source=paper&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(paperProviderQuotes.data.length, 1);
+    assert.equal(paperProviderQuotes.data[0]?.symbol, "PAPR1");
+    assert.equal(paperProviderQuotes.data[0]?.source, "paper");
+
     const resolvedQuotes = await request<
       JsonEnvelope<
         Array<{
@@ -299,6 +352,22 @@ async function main() {
     assert.equal(resolvedQuotes.data[0]?.preferredSource, "manual");
     assert.equal(resolvedQuotes.data[0]?.preferredQuote?.last, 123.45);
     assert.equal(resolvedQuotes.data[0]?.candidates.some((item) => item.source === "manual"), true);
+
+    const paperProviderStatus = await request<
+      JsonEnvelope<
+        Array<{
+          source: string;
+          connected: boolean;
+          subscribedSymbols: string[];
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/providers?sources=paper", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(paperProviderStatus.data.length, 1);
+    assert.equal(paperProviderStatus.data[0]?.source, "paper");
+    assert.equal(paperProviderStatus.data[0]?.connected, true);
+    assert.equal(paperProviderStatus.data[0]?.subscribedSymbols.includes("PAPR1"), true);
 
     const tradingviewQuotes = await request<
       JsonEnvelope<

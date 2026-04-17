@@ -48,6 +48,7 @@ import {
   listMarketQuotes,
   listMarketSymbols,
   resolveMarketQuotes,
+  upsertPaperQuotes,
   upsertManualQuotes
 } from "../apps/api/src/market-data.ts";
 import {
@@ -1463,6 +1464,53 @@ test("market data ingests tradingview quotes and reports provider freshness", as
   assert.equal(statuses[0]?.connected, true);
   assert.equal(statuses[0]?.lastMessageAt !== null, true);
   assert.deepEqual(statuses[0]?.subscribedSymbols, ["TV2330"]);
+});
+
+test("market data upserts paper quotes as a first-class provider source", async () => {
+  const session = { workspace: { slug: `market-paper-${randomUUID()}` } };
+  const timestamp = new Date().toISOString();
+
+  const upserted = await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "PAPR1",
+        market: "OTHER",
+        source: "manual",
+        last: 77.7,
+        bid: 77.6,
+        ask: 77.8,
+        open: 76.5,
+        high: 78.2,
+        low: 76.2,
+        prevClose: 76.9,
+        volume: 450,
+        changePct: 1.04,
+        timestamp
+      }
+    ]
+  });
+
+  assert.equal(upserted.length, 1);
+  assert.equal(upserted[0]?.source, "paper");
+
+  const quotes = await listMarketQuotes({
+    session,
+    symbols: "PAPR1",
+    source: "paper",
+    limit: 10
+  });
+  assert.equal(quotes.length, 1);
+  assert.equal(quotes[0]?.symbol, "PAPR1");
+  assert.equal(quotes[0]?.source, "paper");
+
+  const statuses = await listMarketDataProviderStatuses({
+    session,
+    sources: "paper"
+  });
+  assert.equal(statuses[0]?.source, "paper");
+  assert.equal(statuses[0]?.connected, true);
+  assert.deepEqual(statuses[0]?.subscribedSymbols, ["PAPR1"]);
 });
 
 test("market data resolves preferred source by freshness and precedence", async () => {

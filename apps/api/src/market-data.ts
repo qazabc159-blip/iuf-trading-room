@@ -455,8 +455,9 @@ export async function listMarketSymbols(input: {
     .slice(0, input.limit ?? 100);
 }
 
-export async function upsertManualQuotes(input: {
+async function upsertProviderQuotes(input: {
   session: AppSession;
+  sourceOverride?: QuoteSource;
   quotes: z.infer<typeof manualQuoteUpsertItemSchema>[];
 }) {
   const workspaceCache = getQuoteCacheForWorkspace(input.session.workspace.slug);
@@ -465,10 +466,11 @@ export async function upsertManualQuotes(input: {
 
   for (const item of input.quotes) {
     const timestamp = toIso(item.timestamp);
+    const source = input.sourceOverride ?? item.source;
     const entry: QuoteCacheEntry = {
       symbol: item.symbol.trim().toUpperCase(),
       market: item.market,
-      source: item.source,
+      source,
       last: item.last,
       bid: item.bid,
       ask: item.ask,
@@ -509,6 +511,23 @@ export async function upsertManualQuotes(input: {
   }
 
   return upserted;
+}
+
+export async function upsertManualQuotes(input: {
+  session: AppSession;
+  quotes: z.infer<typeof manualQuoteUpsertItemSchema>[];
+}) {
+  return upsertProviderQuotes(input);
+}
+
+export async function upsertPaperQuotes(input: {
+  session: AppSession;
+  quotes: z.infer<typeof manualQuoteUpsertItemSchema>[];
+}) {
+  return upsertProviderQuotes({
+    ...input,
+    sourceOverride: "paper"
+  });
 }
 
 export async function ingestTradingViewQuote(input: {
