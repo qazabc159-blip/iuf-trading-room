@@ -377,15 +377,13 @@ export async function getMarketDataOverview(input: {
   topLimit?: number;
 }) {
   const topLimit = input.topLimit ?? 5;
-  const [providers, symbols, quotes] = await Promise.all([
+  const [providers, companies, quotes] = await Promise.all([
     listMarketDataProviderStatuses({
       session: input.session,
       sources: input.sources
     }),
-    listMarketSymbols({
-      session: input.session,
-      repo: input.repo,
-      limit: 1000
+    input.repo.listCompanies(undefined, {
+      workspaceSlug: input.session.workspace.slug
     }),
     listMarketQuotes({
       session: input.session,
@@ -393,6 +391,7 @@ export async function getMarketDataOverview(input: {
       limit: 1000
     })
   ]);
+  const symbols = dedupeSymbolMasters(companies);
 
   const quotesBySource = [...new Set(quoteProviderSources)]
     .map((source) => ({
