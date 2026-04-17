@@ -229,6 +229,41 @@ async function main() {
     assert.equal(manualQuotes.data[0]?.symbol, "SMK1");
     assert.equal(manualQuotes.data[0]?.isStale, false);
 
+    const tradingviewQuotesUpsert = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          market: string;
+          source: string;
+          last: number | null;
+          isStale: boolean;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/manual-quotes", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        quotes: [
+          {
+            symbol: "TVSMK1",
+            market: "OTHER",
+            source: "tradingview",
+            last: 234.56,
+            bid: 234.5,
+            ask: 234.6,
+            open: 230,
+            high: 235,
+            low: 229.5,
+            prevClose: 231,
+            volume: 700,
+            changePct: 1.54
+          }
+        ]
+      })
+    });
+    assert.equal(tradingviewQuotesUpsert.data.length, 1);
+    assert.equal(tradingviewQuotesUpsert.data[0]?.source, "tradingview");
+
     const marketQuotes = await request<
       JsonEnvelope<
         Array<{
@@ -247,6 +282,39 @@ async function main() {
     assert.equal(marketQuotes.data[0]?.market, "OTHER");
     assert.equal(marketQuotes.data[0]?.source, "manual");
     assert.equal(marketQuotes.data[0]?.last, 123.45);
+
+    const tradingviewQuotes = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          market: string;
+          source: string;
+          last: number | null;
+          isStale: boolean;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/quotes?symbols=TVSMK1&source=tradingview&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(tradingviewQuotes.data.length, 1);
+    assert.equal(tradingviewQuotes.data[0]?.symbol, "TVSMK1");
+    assert.equal(tradingviewQuotes.data[0]?.source, "tradingview");
+
+    const providerStatusAfterTradingview = await request<
+      JsonEnvelope<
+        Array<{
+          source: string;
+          connected: boolean;
+          subscribedSymbols: string[];
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/providers?sources=tradingview", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(providerStatusAfterTradingview.data.length, 1);
+    assert.equal(providerStatusAfterTradingview.data[0]?.source, "tradingview");
+    assert.equal(providerStatusAfterTradingview.data[0]?.connected, true);
+    assert.equal(providerStatusAfterTradingview.data[0]?.subscribedSymbols.includes("TVSMK1"), true);
 
     const marketOverview = await request<
       JsonEnvelope<{

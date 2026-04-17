@@ -77,7 +77,7 @@ export const marketDataOverviewQuerySchema = z.object({
   topLimit: z.coerce.number().int().min(1).max(20).optional()
 });
 
-const manualQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
+const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
 
 function getQuoteStaleMs(source: QuoteSource) {
@@ -100,13 +100,21 @@ function getQuoteStaleMs(source: QuoteSource) {
 }
 
 function getQuoteCacheForWorkspace(workspaceSlug: string) {
-  let workspaceCache = manualQuoteCache.get(workspaceSlug);
+  let workspaceCache = providerQuoteCache.get(workspaceSlug);
   if (!workspaceCache) {
     workspaceCache = new Map<string, QuoteCacheEntry>();
-    manualQuoteCache.set(workspaceSlug, workspaceCache);
+    providerQuoteCache.set(workspaceSlug, workspaceCache);
   }
 
   return workspaceCache;
+}
+
+function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
+  const cache = getQuoteCacheForWorkspace(workspaceSlug);
+  return [...cache.values()]
+    .filter((entry) => entry.source === source)
+    .map(withFreshness)
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
 }
 
 function buildQuoteCacheKey(symbol: string, market: Market, source: QuoteSource) {
@@ -194,56 +202,38 @@ function dedupeSymbolMasters(companies: Company[]) {
   return [...bestByKey.values()];
 }
 
-const manualProvider: QuoteProviderAdapter = {
-  source: "manual",
-  async listQuotes(workspaceSlug) {
-    const cache = getQuoteCacheForWorkspace(workspaceSlug);
-    return [...cache.values()].map(withFreshness);
-  },
-  async getStatus(workspaceSlug) {
-    const quotes = await manualProvider.listQuotes(workspaceSlug);
-    const lastMessageAt = quotes
-      .map((quote) => quote.timestamp)
-      .sort((left, right) => right.localeCompare(left))[0] ?? null;
-
-    return quoteProviderStatusSchema.parse({
-      source: "manual",
-      connected: true,
-      lastMessageAt,
-      latencyMs: null,
-      subscribedSymbols: [...new Set(quotes.map((quote) => quote.symbol))],
-      errorMessage: null
-    });
-  }
-};
-
-function buildStubProvider(
-  source: Exclude<QuoteSource, "manual">,
+function buildCachedProvider(
+  source: QuoteSource,
   errorMessage: string
 ): QuoteProviderAdapter {
   return {
     source,
-    async listQuotes() {
-      return [];
+    async listQuotes(workspaceSlug) {
+      return listCachedProviderQuotes(workspaceSlug, source);
     },
-    async getStatus() {
+    async getStatus(workspaceSlug) {
+      const quotes = await listCachedProviderQuotes(workspaceSlug, source);
+      const freshQuotes = quotes.filter((quote) => !quote.isStale);
+      const lastMessageAt = quotes[0]?.timestamp ?? null;
+      const connected = source === "manual" ? true : freshQuotes.length > 0;
+
       return quoteProviderStatusSchema.parse({
         source,
-        connected: false,
+        connected,
         lastMessageAt: null,
         latencyMs: null,
-        subscribedSymbols: [],
-        errorMessage
+        subscribedSymbols: [...new Set(quotes.map((quote) => quote.symbol))],
+        errorMessage: connected || source === "manual" ? null : errorMessage
       });
     }
   };
 }
 
 const quoteProviders: Record<QuoteSource, QuoteProviderAdapter> = {
-  manual: manualProvider,
-  paper: buildStubProvider("paper", "Paper quote stream not configured."),
-  tradingview: buildStubProvider("tradingview", "TradingView quote provider not configured."),
-  kgi: buildStubProvider("kgi", "KGI quote provider not configured.")
+  manual: buildCachedProvider("manual", "Manual quote provider not configured."),
+  paper: buildCachedProvider("paper", "Paper quote provider not configured."),
+  tradingview: buildCachedProvider("tradingview", "TradingView quote provider not configured."),
+  kgi: buildCachedProvider("kgi", "KGI quote provider not configured.")
 };
 
 function parseSourceFilter(raw?: string) {

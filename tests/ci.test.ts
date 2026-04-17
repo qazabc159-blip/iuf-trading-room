@@ -1353,7 +1353,7 @@ test("market data provider statuses expose manual provider and disconnected stub
 
   assert.equal(statuses[1]?.source, "paper");
   assert.equal(statuses[1]?.connected, false);
-  assert.match(statuses[1]?.errorMessage ?? "", /Paper quote stream not configured/);
+  assert.match(statuses[1]?.errorMessage ?? "", /Paper quote provider not configured/);
 
   assert.equal(statuses[2]?.source, "tradingview");
   assert.equal(statuses[2]?.connected, false);
@@ -1362,6 +1362,80 @@ test("market data provider statuses expose manual provider and disconnected stub
   assert.equal(statuses[3]?.source, "kgi");
   assert.equal(statuses[3]?.connected, false);
   assert.match(statuses[3]?.errorMessage ?? "", /KGI quote provider not configured/);
+});
+
+test("market data keeps provider-specific quote caches isolated", async () => {
+  const session = { workspace: { slug: `market-provider-cache-${randomUUID()}` } };
+  const now = new Date().toISOString();
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "TV01",
+        market: "OTHER",
+        source: "tradingview",
+        last: 456.78,
+        bid: 456.7,
+        ask: 456.9,
+        open: 450,
+        high: 458,
+        low: 449.5,
+        prevClose: 452,
+        volume: 900,
+        changePct: 1.06,
+        timestamp: now
+      },
+      {
+        symbol: "MAN1",
+        market: "TWSE",
+        source: "manual",
+        last: 88.5,
+        bid: 88.4,
+        ask: 88.6,
+        open: 87,
+        high: 89,
+        low: 86.8,
+        prevClose: 87.2,
+        volume: 10_000,
+        changePct: 1.49,
+        timestamp: now
+      }
+    ]
+  });
+
+  const tradingviewQuotes = await listMarketQuotes({
+    session,
+    symbols: "TV01,MAN1",
+    source: "tradingview",
+    limit: 10
+  });
+  assert.equal(tradingviewQuotes.length, 1);
+  assert.equal(tradingviewQuotes[0]?.symbol, "TV01");
+  assert.equal(tradingviewQuotes[0]?.source, "tradingview");
+
+  const manualQuotes = await listMarketQuotes({
+    session,
+    symbols: "TV01,MAN1",
+    source: "manual",
+    limit: 10
+  });
+  assert.equal(manualQuotes.length, 1);
+  assert.equal(manualQuotes[0]?.symbol, "MAN1");
+  assert.equal(manualQuotes[0]?.source, "manual");
+
+  const statuses = await listMarketDataProviderStatuses({
+    session,
+    sources: "manual,tradingview"
+  });
+  assert.equal(statuses.length, 2);
+  assert.equal(statuses[0]?.source, "manual");
+  assert.equal(statuses[0]?.connected, true);
+  assert.deepEqual(statuses[0]?.subscribedSymbols, ["MAN1"]);
+  assert.equal(statuses[1]?.source, "tradingview");
+  assert.equal(statuses[1]?.connected, true);
+  assert.deepEqual(statuses[1]?.subscribedSymbols, ["TV01"]);
+  assert.equal(statuses[1]?.errorMessage, null);
 });
 
 test("market data symbols derive from companies and dedupe by market and ticker", async () => {
