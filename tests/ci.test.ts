@@ -47,6 +47,7 @@ import {
   listMarketQuoteHistory,
   listMarketQuotes,
   listMarketSymbols,
+  resolveMarketQuotes,
   upsertManualQuotes
 } from "../apps/api/src/market-data.ts";
 import {
@@ -1664,6 +1665,123 @@ test("market data builds quote history and minute bars from preferred sources", 
   assert.equal(bars[1]?.close, 105);
   assert.equal(bars[0]?.open, 103);
   assert.equal(bars[0]?.close, 103);
+});
+
+test("market data resolve diagnostics expose preferred source and candidate stack", async () => {
+  const session = { workspace: { slug: `market-resolve-${randomUUID()}` } };
+  const now = "2026-04-18T02:00:00.000Z";
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "RSLV1",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 49,
+        high: 51,
+        low: 48.5,
+        prevClose: 49,
+        volume: 10,
+        changePct: 2.04,
+        timestamp: now
+      },
+      {
+        symbol: "RSLV1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 52,
+        bid: 51.9,
+        ask: 52.1,
+        open: 50,
+        high: 53,
+        low: 49.5,
+        prevClose: 49,
+        volume: 20,
+        changePct: 6.12,
+        timestamp: now
+      }
+    ]
+  });
+
+  const resolved = await resolveMarketQuotes({
+    session,
+    symbols: "RSLV1",
+    limit: 10
+  });
+
+  assert.equal(resolved.length, 1);
+  assert.equal(resolved[0]?.symbol, "RSLV1");
+  assert.equal(resolved[0]?.preferredSource, "tradingview");
+  assert.equal(resolved[0]?.preferredQuote?.last, 52);
+  assert.equal(resolved[0]?.candidates.length, 2);
+  assert.equal(resolved[0]?.candidates[0]?.source, "tradingview");
+  assert.equal(resolved[0]?.candidates[1]?.source, "manual");
+});
+
+test("market data history and bars respect time window filters", async () => {
+  const session = { workspace: { slug: `market-time-range-${randomUUID()}` } };
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "TIME1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 10,
+        bid: 9.9,
+        ask: 10.1,
+        open: 10,
+        high: 10,
+        low: 10,
+        prevClose: 9.5,
+        volume: 1,
+        changePct: 5.26,
+        timestamp: "2026-04-18T03:00:10.000Z"
+      },
+      {
+        symbol: "TIME1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 12,
+        bid: 11.9,
+        ask: 12.1,
+        open: 10,
+        high: 12,
+        low: 10,
+        prevClose: 10,
+        volume: 2,
+        changePct: 20,
+        timestamp: "2026-04-18T03:01:10.000Z"
+      }
+    ]
+  });
+
+  const history = await listMarketQuoteHistory({
+    session,
+    symbols: "TIME1",
+    source: "tradingview",
+    from: "2026-04-18T03:01:00.000Z",
+    limit: 10
+  });
+  assert.equal(history.length, 1);
+  assert.equal(history[0]?.last, 12);
+
+  const bars = await listMarketBars({
+    session,
+    symbols: "TIME1",
+    source: "tradingview",
+    interval: "1m",
+    from: "2026-04-18T03:01:00.000Z",
+    limit: 10
+  });
+  assert.equal(bars.length, 1);
+  assert.equal(bars[0]?.open, 12);
+  assert.equal(bars[0]?.close, 12);
 });
 
 test("market data symbols derive from companies and dedupe by market and ticker", async () => {

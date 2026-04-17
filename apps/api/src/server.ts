@@ -83,6 +83,7 @@ import {
   listMarketQuoteHistory,
   listMarketQuotes,
   listMarketSymbols,
+  marketDataResolveQuerySchema,
   marketDataBarsQuerySchema,
   marketDataHistoryQuerySchema,
   marketDataOverviewQuerySchema,
@@ -90,6 +91,7 @@ import {
   marketDataProvidersQuerySchema,
   marketDataQuotesQuerySchema,
   marketDataSymbolsQuerySchema,
+  resolveMarketQuotes,
   upsertManualQuotes
 } from "./market-data.js";
 import {
@@ -648,6 +650,19 @@ app.get("/api/v1/market-data/quotes", async (c) => {
   });
 });
 
+app.get("/api/v1/market-data/resolve", async (c) => {
+  const query = marketDataResolveQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await resolveMarketQuotes({
+      session: c.get("session"),
+      symbols: query.symbols,
+      market: query.market,
+      includeStale: query.includeStale,
+      limit: query.limit
+    })
+  });
+});
+
 app.get("/api/v1/market-data/history", async (c) => {
   const query = marketDataHistoryQuerySchema.parse(c.req.query());
   return c.json({
@@ -657,6 +672,8 @@ app.get("/api/v1/market-data/history", async (c) => {
       market: query.market,
       source: query.source,
       includeStale: query.includeStale,
+      from: query.from,
+      to: query.to,
       limit: query.limit
     })
   });
@@ -672,6 +689,8 @@ app.get("/api/v1/market-data/bars", async (c) => {
       source: query.source,
       interval: query.interval,
       includeStale: query.includeStale,
+      from: query.from,
+      to: query.to,
       limit: query.limit
     })
   });

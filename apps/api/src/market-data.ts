@@ -85,6 +85,8 @@ export const marketDataHistoryQuerySchema = z.object({
   market: marketSchema.optional(),
   source: quoteSourceSchema.optional(),
   includeStale: z.coerce.boolean().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(2000).optional()
 });
 
@@ -94,7 +96,16 @@ export const marketDataBarsQuerySchema = z.object({
   source: quoteSourceSchema.optional(),
   interval: barIntervalSchema.default("1m"),
   includeStale: z.coerce.boolean().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional()
+});
+
+export const marketDataResolveQuerySchema = z.object({
+  symbols: z.string().trim().min(1),
+  market: marketSchema.optional(),
+  includeStale: z.coerce.boolean().optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional()
 });
 
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
@@ -298,6 +309,18 @@ function parseNullableNumber(raw?: string | number | null) {
 
   const parsed = typeof raw === "number" ? raw : Number(raw);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isWithinTimeRange(timestamp: string, from?: string, to?: string) {
+  if (from && timestamp < from) {
+    return false;
+  }
+
+  if (to && timestamp > to) {
+    return false;
+  }
+
+  return true;
 }
 
 function lotSizeForMarket(market: Market) {
@@ -561,6 +584,8 @@ export async function listMarketQuoteHistory(input: {
   market?: Market;
   source?: QuoteSource;
   includeStale?: boolean;
+  from?: string;
+  to?: string;
   limit?: number;
 }) {
   const workspaceSlug = input.session.workspace.slug;
@@ -590,6 +615,7 @@ export async function listMarketQuoteHistory(input: {
     .filter((quote) => !input.market || quote.market === input.market)
     .filter((quote) => symbolSet.size === 0 || symbolSet.has(quote.symbol))
     .filter((quote) => input.includeStale || !quote.isStale)
+    .filter((quote) => isWithinTimeRange(quote.timestamp, input.from, input.to))
     .filter((quote) => {
       if (input.source || !preferredSourceBySymbol) {
         return true;
@@ -611,6 +637,59 @@ export async function listMarketQuoteHistory(input: {
     .slice(0, input.limit ?? 1000);
 
   return history;
+}
+
+export async function resolveMarketQuotes(input: {
+  session: AppSession;
+  symbols: string;
+  market?: Market;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const workspaceSlug = input.session.workspace.slug;
+  const symbolSet = new Set(
+    input.symbols
+      .split(",")
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean)
+  );
+
+  const allQuotes = (
+    await Promise.all(
+      quoteProviderSources.map((source) => quoteProviders[source].listQuotes(workspaceSlug))
+    )
+  )
+    .flat()
+    .filter((quote) => !input.market || quote.market === input.market)
+    .filter((quote) => symbolSet.size === 0 || symbolSet.has(quote.symbol))
+    .filter((quote) => input.includeStale || !quote.isStale);
+
+  const grouped = new Map<string, Quote[]>();
+  for (const quote of allQuotes) {
+    const key = buildQuoteIdentityKey(quote.symbol, quote.market);
+    const current = grouped.get(key) ?? [];
+    current.push(quote);
+    grouped.set(key, current);
+  }
+
+  return [...grouped.entries()]
+    .map(([key, quotes]) => {
+      const [market, symbol] = key.split(":");
+      const candidates = [...quotes].sort(compareQuotes);
+      return {
+        symbol,
+        market,
+        preferredSource: candidates[0]?.source ?? null,
+        preferredQuote: candidates[0] ?? null,
+        candidates
+      };
+    })
+    .sort((left, right) => {
+      const leftTimestamp = left.preferredQuote?.timestamp ?? "";
+      const rightTimestamp = right.preferredQuote?.timestamp ?? "";
+      return rightTimestamp.localeCompare(leftTimestamp) || left.symbol.localeCompare(right.symbol);
+    })
+    .slice(0, input.limit ?? 100);
 }
 
 function getBarIntervalMs(interval: BarInterval) {
@@ -641,6 +720,8 @@ export async function listMarketBars(input: {
   source?: QuoteSource;
   interval?: BarInterval;
   includeStale?: boolean;
+  from?: string;
+  to?: string;
   limit?: number;
 }) {
   const interval = input.interval ?? "1m";
@@ -651,6 +732,8 @@ export async function listMarketBars(input: {
     market: input.market,
     source: input.source,
     includeStale: input.includeStale,
+    from: input.from,
+    to: input.to,
     limit: Math.max((input.limit ?? 100) * 8, 200)
   });
   const groupedQuotes = new Map<string, Quote[]>();

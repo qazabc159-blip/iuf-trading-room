@@ -283,6 +283,23 @@ async function main() {
     assert.equal(marketQuotes.data[0]?.source, "manual");
     assert.equal(marketQuotes.data[0]?.last, 123.45);
 
+    const resolvedQuotes = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          preferredSource: string | null;
+          preferredQuote: { last: number | null } | null;
+          candidates: Array<{ source: string }>;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/resolve?symbols=SMK1&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(resolvedQuotes.data.length, 1);
+    assert.equal(resolvedQuotes.data[0]?.preferredSource, "manual");
+    assert.equal(resolvedQuotes.data[0]?.preferredQuote?.last, 123.45);
+    assert.equal(resolvedQuotes.data[0]?.candidates.some((item) => item.source === "manual"), true);
+
     const tradingviewQuotes = await request<
       JsonEnvelope<
         Array<{
@@ -332,6 +349,22 @@ async function main() {
     assert.equal(tradingviewBars.data[0]?.symbol, "TVSMK1");
     assert.equal(tradingviewBars.data[0]?.source, "tradingview");
     assert.equal(tradingviewBars.data[0]?.interval, "1m");
+
+    const tradingviewFilteredHistory = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          source: string;
+        }>
+      >
+    >(
+      baseUrl,
+      "/api/v1/market-data/history?symbols=TVSMK1&source=tradingview&from=2026-01-01T00:00:00.000Z&limit=10",
+      {
+        headers: { "x-workspace-slug": workspaceSlug }
+      }
+    );
+    assert.equal(tradingviewFilteredHistory.data.length, 1);
 
     const providerStatusAfterTradingview = await request<
       JsonEnvelope<
@@ -905,6 +938,28 @@ async function main() {
     assert.equal(preferredSmk1Quote.data[0]?.source, "tradingview");
     assert.equal(preferredSmk1Quote.data[0]?.last, 123.45);
 
+    const resolvedSmk1Quote = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          preferredSource: string | null;
+          candidates: Array<{ source: string }>;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/resolve?symbols=SMK1&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(resolvedSmk1Quote.data.length, 1);
+    assert.equal(resolvedSmk1Quote.data[0]?.preferredSource, "tradingview");
+    assert.equal(
+      resolvedSmk1Quote.data[0]?.candidates.some((item) => item.source === "manual"),
+      true
+    );
+    assert.equal(
+      resolvedSmk1Quote.data[0]?.candidates.some((item) => item.source === "tradingview"),
+      true
+    );
+
     const smk1History = await request<
       JsonEnvelope<
         Array<{
@@ -917,6 +972,19 @@ async function main() {
     });
     assert.equal(smk1History.data.length >= 1, true);
     assert.equal(smk1History.data[0]?.source, "tradingview");
+
+    const smk1Bars = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          source: string;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/bars?symbols=SMK1&interval=1m&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(smk1Bars.data.length >= 1, true);
+    assert.equal(smk1Bars.data[0]?.source, "tradingview");
 
     const duplicateWebhookSignal = await request<
       JsonEnvelope<{ id: string; title: string; direction: string }> & {
