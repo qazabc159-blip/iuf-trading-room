@@ -71,6 +71,16 @@ import {
   parseEventHistorySources
 } from "./event-history.js";
 import {
+  listMarketDataProviderStatuses,
+  listMarketQuotes,
+  listMarketSymbols,
+  manualQuoteUpsertSchema,
+  marketDataProvidersQuerySchema,
+  marketDataQuotesQuerySchema,
+  marketDataSymbolsQuerySchema,
+  upsertManualQuotes
+} from "./market-data.js";
+import {
   getCompanyGraphSearchResults,
   getCompanyGraphStats,
   getCompanyGraphView
@@ -568,6 +578,56 @@ app.get("/api/v1/ops/trends", async (c) => {
       timeZone: query.timeZone
     })
   });
+});
+
+app.get("/api/v1/market-data/providers", async (c) => {
+  const query = marketDataProvidersQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await listMarketDataProviderStatuses({
+      session: c.get("session"),
+      sources: query.sources
+    })
+  });
+});
+
+app.get("/api/v1/market-data/symbols", async (c) => {
+  const query = marketDataSymbolsQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await listMarketSymbols({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      query: query.query,
+      market: query.market,
+      limit: query.limit
+    })
+  });
+});
+
+app.get("/api/v1/market-data/quotes", async (c) => {
+  const query = marketDataQuotesQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await listMarketQuotes({
+      session: c.get("session"),
+      symbols: query.symbols,
+      market: query.market,
+      source: query.source,
+      includeStale: query.includeStale,
+      limit: query.limit
+    })
+  });
+});
+
+app.post("/api/v1/market-data/manual-quotes", async (c) => {
+  const payload = manualQuoteUpsertSchema.parse(await c.req.json());
+  return c.json(
+    {
+      data: await upsertManualQuotes({
+        session: c.get("session"),
+        quotes: payload.quotes
+      })
+    },
+    201
+  );
 });
 
 app.get("/api/v1/company-graph/search", async (c) => {

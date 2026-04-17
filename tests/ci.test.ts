@@ -40,6 +40,12 @@ import {
   searchThemeGraph
 } from "../apps/api/src/theme-graph.ts";
 import {
+  listMarketDataProviderStatuses,
+  listMarketQuotes,
+  listMarketSymbols,
+  upsertManualQuotes
+} from "../apps/api/src/market-data.ts";
+import {
   buildTradingViewEventKey,
   validateTradingViewTimestamp
 } from "../apps/api/src/tradingview-webhook-guard.ts";
@@ -1306,6 +1312,159 @@ test("ops trend view builds daily activity series in Asia/Taipei", () => {
   assert.equal(trends.summary.totals.auditEvents, 1);
   assert.ok((trends.summary.busiestDay?.totalActivity ?? 0) >= 3);
   assert.equal(trends.summary.latestDay?.date, trends.series.at(-1)?.date);
+});
+
+test("market data provider statuses expose manual provider and disconnected stubs", async () => {
+  const session = { workspace: { slug: `market-status-${randomUUID()}` } };
+
+  const statuses = await listMarketDataProviderStatuses({
+    session,
+    sources: "manual,paper,tradingview,kgi"
+  });
+
+  assert.equal(statuses.length, 4);
+  assert.equal(statuses[0]?.source, "manual");
+  assert.equal(statuses[0]?.connected, true);
+  assert.deepEqual(statuses[0]?.subscribedSymbols, []);
+
+  assert.equal(statuses[1]?.source, "paper");
+  assert.equal(statuses[1]?.connected, false);
+  assert.match(statuses[1]?.errorMessage ?? "", /Paper quote stream not configured/);
+
+  assert.equal(statuses[2]?.source, "tradingview");
+  assert.equal(statuses[2]?.connected, false);
+  assert.match(statuses[2]?.errorMessage ?? "", /TradingView quote provider not configured/);
+
+  assert.equal(statuses[3]?.source, "kgi");
+  assert.equal(statuses[3]?.connected, false);
+  assert.match(statuses[3]?.errorMessage ?? "", /KGI quote provider not configured/);
+});
+
+test("market data symbols derive from companies and dedupe by market and ticker", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = { workspace: { slug: "primary-desk" } };
+
+  await repo.createCompany({
+    name: "台積電",
+    ticker: "2330",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "Foundry",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: ""
+  });
+
+  await repo.createCompany({
+    name: "台積",
+    ticker: "2330",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "Foundry",
+    beneficiaryTier: "Observation",
+    exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: ""
+  });
+
+  await repo.createCompany({
+    name: "Photon Switch",
+    ticker: "SMK1",
+    market: "NASDAQ",
+    country: "United States",
+    themeIds: [],
+    chainPosition: "Optics",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 3, margin: 3, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: ""
+  });
+
+  const allSymbols = await listMarketSymbols({
+    session,
+    repo,
+    limit: 20
+  });
+  assert.equal(allSymbols.filter((item) => item.symbol === "2330" && item.market === "TWSE").length, 1);
+  assert.equal(allSymbols.some((item) => item.symbol === "SMK1" && item.market === "OTHER"), true);
+
+  const filtered = await listMarketSymbols({
+    session,
+    repo,
+    query: "Photon",
+    market: "OTHER",
+    limit: 20
+  });
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0]?.symbol, "SMK1");
+  assert.equal(filtered[0]?.lotSize, 1);
+});
+
+test("market data quotes support manual upsert with stale filtering", async () => {
+  const session = { workspace: { slug: `market-quotes-${randomUUID()}` } };
+
+  const upserted = await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "SMK1",
+        market: "OTHER",
+        source: "manual",
+        last: 123.45,
+        bid: 123.4,
+        ask: 123.5,
+        open: 120,
+        high: 124,
+        low: 119.5,
+        prevClose: 121,
+        volume: 1500,
+        changePct: 2.02
+      },
+      {
+        symbol: "OLD1",
+        market: "TWSE",
+        source: "manual",
+        last: 80,
+        bid: 79.9,
+        ask: 80.1,
+        open: 79,
+        high: 81,
+        low: 78.5,
+        prevClose: 79.5,
+        volume: 999,
+        changePct: 0.63,
+        timestamp: "2020-01-01T00:00:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal(upserted.length, 2);
+  assert.equal(upserted[0]?.symbol, "SMK1");
+  assert.equal(upserted[0]?.isStale, false);
+  assert.equal(upserted[1]?.symbol, "OLD1");
+  assert.equal(upserted[1]?.isStale, true);
+
+  const freshOnly = await listMarketQuotes({
+    session,
+    symbols: "SMK1,OLD1",
+    limit: 10
+  });
+  assert.equal(freshOnly.length, 1);
+  assert.equal(freshOnly[0]?.symbol, "SMK1");
+
+  const includeStale = await listMarketQuotes({
+    session,
+    symbols: "SMK1,OLD1",
+    includeStale: true,
+    source: "manual",
+    limit: 10
+  });
+  assert.equal(includeStale.length, 2);
+  assert.equal(includeStale[0]?.symbol, "SMK1");
+  assert.equal(includeStale.some((item) => item.symbol === "OLD1" && item.isStale), true);
 });
 
 test("duplicate report helper reads repository-scoped companies", async () => {

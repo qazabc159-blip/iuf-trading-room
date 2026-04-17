@@ -166,6 +166,88 @@ async function main() {
     );
     assert.equal(company.data.name, "Smoke Optics");
 
+    const marketProviders = await request<
+      JsonEnvelope<
+        Array<{
+          source: string;
+          connected: boolean;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/providers?sources=manual,paper,tradingview,kgi", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(marketProviders.data.length, 4);
+    assert.equal(marketProviders.data[0]?.source, "manual");
+    assert.equal(marketProviders.data[0]?.connected, true);
+
+    const marketSymbols = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          market: string;
+          companyId: string | null;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/symbols?query=SMK1&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(marketSymbols.data.some((item) => item.symbol === "SMK1"), true);
+
+    const manualQuotes = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          market: string;
+          source: string;
+          last: number | null;
+          isStale: boolean;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/manual-quotes", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        quotes: [
+          {
+            symbol: "SMK1",
+            market: "OTHER",
+            source: "manual",
+            last: 123.45,
+            bid: 123.4,
+            ask: 123.5,
+            open: 120,
+            high: 124,
+            low: 119.5,
+            prevClose: 121,
+            volume: 1500,
+            changePct: 2.02
+          }
+        ]
+      })
+    });
+    assert.equal(manualQuotes.data.length, 1);
+    assert.equal(manualQuotes.data[0]?.symbol, "SMK1");
+    assert.equal(manualQuotes.data[0]?.isStale, false);
+
+    const marketQuotes = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          market: string;
+          source: string;
+          last: number | null;
+          isStale: boolean;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/quotes?symbols=SMK1&source=manual&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(marketQuotes.data.length, 1);
+    assert.equal(marketQuotes.data[0]?.symbol, "SMK1");
+    assert.equal(marketQuotes.data[0]?.market, "OTHER");
+    assert.equal(marketQuotes.data[0]?.source, "manual");
+    assert.equal(marketQuotes.data[0]?.last, 123.45);
+
     const relationReplace = await request<
       JsonEnvelope<
         Array<{
