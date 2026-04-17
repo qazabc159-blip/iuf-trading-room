@@ -11,6 +11,9 @@ import {
   dailyBriefCreateInputSchema,
   killSwitchInputSchema,
   marketStateSchema,
+  orderCancelInputSchema,
+  orderCreateInputSchema,
+  orderStatusSchema,
   riskLimitUpsertInputSchema,
   reviewEntryCreateInputSchema,
   signalCreateInputSchema,
@@ -88,11 +91,21 @@ import {
   evaluateRiskCheck,
   getKillSwitchState,
   getRiskLimitState,
+  resolveRiskLimit,
   riskAccountQuerySchema,
   riskCheckInputSchema,
   setKillSwitchState,
   upsertRiskLimitState
 } from "./risk-engine.js";
+import {
+  getPaperBalance,
+  getPaperBrokerStatus,
+  listPaperAccounts,
+  listPaperOrders,
+  listPaperPositions,
+  subscribeExecutionEvents
+} from "./broker/paper-broker.js";
+import { cancelOrder, submitOrder } from "./broker/trading-service.js";
 import {
   getCompanyGraphSearchResults,
   getCompanyGraphStats,
@@ -708,6 +721,124 @@ app.post("/api/v1/risk/checks", async (c) => {
     },
     201
   );
+});
+
+app.get("/api/v1/risk/effective-limits", async (c) => {
+  const query = z
+    .object({
+      accountId: z.string().min(1),
+      strategyId: z.string().optional(),
+      symbol: z.string().optional()
+    })
+    .parse(c.req.query());
+  return c.json({
+    data: await resolveRiskLimit({
+      session: c.get("session"),
+      accountId: query.accountId,
+      strategyId: query.strategyId,
+      symbol: query.symbol
+    })
+  });
+});
+
+// ── Trading (paper broker) ──
+
+app.get("/api/v1/trading/accounts", async (c) => {
+  return c.json({ data: listPaperAccounts(c.get("session")) });
+});
+
+const tradingAccountQuerySchema = z.object({ accountId: z.string().min(1) });
+
+app.get("/api/v1/trading/balance", async (c) => {
+  const query = tradingAccountQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getPaperBalance(c.get("session"), query.accountId)
+  });
+});
+
+app.get("/api/v1/trading/positions", async (c) => {
+  const query = tradingAccountQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await listPaperPositions(c.get("session"), query.accountId)
+  });
+});
+
+app.get("/api/v1/trading/orders", async (c) => {
+  const query = z
+    .object({
+      accountId: z.string().optional(),
+      status: orderStatusSchema.optional(),
+      symbol: z.string().optional()
+    })
+    .parse(c.req.query());
+  return c.json({
+    data: listPaperOrders(c.get("session"), query)
+  });
+});
+
+app.post("/api/v1/trading/orders", async (c) => {
+  const payload = orderCreateInputSchema.parse(await c.req.json());
+  const result = await submitOrder({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    order: payload
+  });
+  return c.json({ data: result }, result.blocked ? 422 : 201);
+});
+
+app.post("/api/v1/trading/orders/cancel", async (c) => {
+  const payload = orderCancelInputSchema.parse(await c.req.json());
+  const accountId = c.req.query("accountId");
+  if (!accountId) {
+    return c.json({ error: "accountId query param is required" }, 400);
+  }
+  const order = await cancelOrder({
+    session: c.get("session"),
+    payload,
+    accountId
+  });
+  if (!order) {
+    return c.json({ error: "order_not_found" }, 404);
+  }
+  return c.json({ data: order });
+});
+
+app.get("/api/v1/trading/status", async (c) => {
+  const query = tradingAccountQuerySchema.parse(c.req.query());
+  return c.json({
+    data: getPaperBrokerStatus(c.get("session"), query.accountId)
+  });
+});
+
+app.get("/api/v1/trading/stream", async (c) => {
+  const session = c.get("session");
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+      const heartbeat = setInterval(() => {
+        controller.enqueue(encoder.encode(": ping\n\n"));
+      }, 15_000);
+      const unsubscribe = subscribeExecutionEvents(session, (event) => {
+        controller.enqueue(
+          encoder.encode(`event: execution\ndata: ${JSON.stringify(event)}\n\n`)
+        );
+      });
+      const abort = () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+        controller.close();
+      };
+      c.req.raw.signal.addEventListener("abort", abort);
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive"
+    }
+  });
 });
 
 app.get("/api/v1/company-graph/search", async (c) => {

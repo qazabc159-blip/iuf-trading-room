@@ -374,6 +374,67 @@ export async function getRiskLimitState(input: {
   return created;
 }
 
+// 4-layer resolver: account → strategy → symbol → session override.
+// Phase 1 only implements the account layer; the other layers accept inputs
+// but return {} so callers can start passing context today without rewriting
+// later. When we add config stores for strategy/symbol/session, fill these in.
+type RiskLimitLayer = Partial<Omit<RiskLimit, "id" | "accountId" | "createdAt" | "updatedAt">>;
+
+async function resolveStrategyLayer(_input: {
+  session: AppSession;
+  accountId: string;
+  strategyId: string;
+}): Promise<RiskLimitLayer> {
+  return {};
+}
+
+async function resolveSymbolLayer(_input: {
+  session: AppSession;
+  accountId: string;
+  symbol: string;
+}): Promise<RiskLimitLayer> {
+  return {};
+}
+
+export async function resolveRiskLimit(input: {
+  session: AppSession;
+  accountId: string;
+  strategyId?: string | null;
+  symbol?: string | null;
+  sessionOverride?: RiskLimitLayer;
+}): Promise<RiskLimit> {
+  const base = await getRiskLimitState({
+    session: input.session,
+    accountId: input.accountId
+  });
+  const strategyLayer = input.strategyId
+    ? await resolveStrategyLayer({
+        session: input.session,
+        accountId: input.accountId,
+        strategyId: input.strategyId
+      })
+    : {};
+  const symbolLayer = input.symbol
+    ? await resolveSymbolLayer({
+        session: input.session,
+        accountId: input.accountId,
+        symbol: input.symbol
+      })
+    : {};
+  const sessionLayer = input.sessionOverride ?? {};
+  // Later layers override earlier ones. Only defined keys override.
+  return {
+    ...base,
+    ...strategyLayer,
+    ...symbolLayer,
+    ...sessionLayer,
+    id: base.id,
+    accountId: base.accountId,
+    createdAt: base.createdAt,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export async function upsertRiskLimitState(input: {
   session: AppSession;
   payload: RiskLimitUpsertInput;
