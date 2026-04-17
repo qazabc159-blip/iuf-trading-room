@@ -47,6 +47,13 @@ import {
   upsertManualQuotes
 } from "../apps/api/src/market-data.ts";
 import {
+  evaluateRiskCheck,
+  getKillSwitchState,
+  getRiskLimitState,
+  setKillSwitchState,
+  upsertRiskLimitState
+} from "../apps/api/src/risk-engine.ts";
+import {
   buildTradingViewEventKey,
   validateTradingViewTimestamp
 } from "../apps/api/src/tradingview-webhook-guard.ts";
@@ -62,7 +69,11 @@ import {
 } from "../apps/api/src/event-history.ts";
 import { buildOpsSnapshotView } from "../apps/api/src/ops-snapshot.ts";
 import { buildOpsTrendView } from "../apps/api/src/ops-trends.ts";
-import type { Company, Theme } from "../packages/contracts/src/index.ts";
+import {
+  DEFAULT_RISK_LIMITS,
+  type Company,
+  type Theme
+} from "../packages/contracts/src/index.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
 import {
@@ -302,6 +313,18 @@ test("audit target parser recognizes special routes and CRUD fallbacks", () => {
     action: "replace",
     entityType: "company_keyword",
     entityId: "company-1"
+  });
+
+  assert.deepEqual(parseAuditTarget("POST", "/api/v1/risk/limits"), {
+    action: "replace",
+    entityType: "risk_limit",
+    entityId: "pending"
+  });
+
+  assert.deepEqual(parseAuditTarget("POST", "/api/v1/risk/checks"), {
+    action: "create",
+    entityType: "risk_check",
+    entityId: "pending"
   });
 });
 
@@ -1567,6 +1590,292 @@ test("market data overview summarizes providers, coverage, and leaders", async (
   assert.equal(overview.leaders.topGainers[0]?.symbol, "SMK1");
   assert.equal(overview.leaders.topLosers[0]?.symbol, "2330");
   assert.equal(overview.leaders.mostActive[0]?.symbol, "2330");
+});
+
+test("risk runtime stores per-account limits and kill switch state", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `risk-runtime-${randomUUID()}`
+  });
+
+  const defaults = await getRiskLimitState({
+    session,
+    accountId: "paper-main"
+  });
+  assert.equal(defaults.maxPerTradePct, DEFAULT_RISK_LIMITS.maxPerTradePct);
+  assert.equal(defaults.maxOrdersPerMinute, DEFAULT_RISK_LIMITS.maxOrdersPerMinute);
+
+  const updated = await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-main",
+      maxPerTradePct: 0.5,
+      symbolBlacklist: ["RISKX"],
+      whitelistOnly: true,
+      symbolWhitelist: ["SMK1"]
+    }
+  });
+  assert.equal(updated.maxPerTradePct, 0.5);
+  assert.deepEqual(updated.symbolBlacklist, ["RISKX"]);
+  assert.equal(updated.whitelistOnly, true);
+
+  const kill = await setKillSwitchState({
+    session,
+    payload: {
+      accountId: "paper-main",
+      mode: "halted",
+      reason: "Operator halt",
+      engagedBy: "desk-owner"
+    }
+  });
+  assert.equal(kill.engaged, true);
+  assert.equal(kill.mode, "halted");
+
+  const persistedKill = await getKillSwitchState({
+    session,
+    accountId: "paper-main"
+  });
+  assert.equal(persistedKill.reason, "Operator halt");
+  assert.equal(persistedKill.engagedBy, "desk-owner");
+});
+
+test("risk check blocks stale market orders and oversized exposure", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `risk-check-${randomUUID()}`
+  });
+  const options = { workspaceSlug: session.workspace.slug };
+
+  await repo.createCompany(
+    {
+      name: "Risk Optics",
+      ticker: "RISK1",
+      market: "TWSE",
+      country: "Taiwan",
+      themeIds: [],
+      chainPosition: "Modules",
+      beneficiaryTier: "Direct",
+      exposure: {
+        volume: 4,
+        asp: 4,
+        margin: 3,
+        capacity: 4,
+        narrative: 4
+      },
+      validation: {
+        capitalFlow: "",
+        consensus: "",
+        relativeStrength: ""
+      },
+      notes: ""
+    },
+    options
+  );
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "RISK1",
+        market: "TWSE",
+        source: "manual",
+        last: 100,
+        bid: 99.8,
+        ask: 100.2,
+        open: 99,
+        high: 101,
+        low: 98.5,
+        prevClose: 99.5,
+        volume: 1_000,
+        changePct: 0.5,
+        timestamp: "2020-01-01T00:00:00.000Z"
+      }
+    ]
+  });
+
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-risk",
+      maxPerTradePct: 1
+    }
+  });
+
+  const staleResult = await evaluateRiskCheck({
+    session,
+    repo,
+    payload: {
+      order: {
+        accountId: "paper-risk",
+        symbol: "RISK1",
+        side: "buy",
+        type: "market",
+        timeInForce: "rod",
+        quantity: 10,
+        overrideGuards: [],
+        overrideReason: ""
+      },
+      account: {
+        equity: 100_000
+      },
+      market: {
+        source: "manual",
+        now: "2026-04-17T02:00:00.000Z",
+        timeZone: "Asia/Taipei"
+      }
+    }
+  });
+
+  assert.equal(staleResult.decision, "block");
+  assert.equal(staleResult.guards.some((guard) => guard.guard === "stale_quote"), true);
+
+  const oversizedResult = await evaluateRiskCheck({
+    session,
+    repo,
+    payload: {
+      order: {
+        accountId: "paper-risk",
+        symbol: "RISK1",
+        side: "buy",
+        type: "limit",
+        timeInForce: "rod",
+        quantity: 2_000,
+        price: 100,
+        overrideGuards: [],
+        overrideReason: ""
+      },
+      account: {
+        equity: 100_000
+      },
+      market: {
+        source: "manual",
+        now: "2026-04-17T02:00:00.000Z",
+        timeZone: "Asia/Taipei"
+      }
+    }
+  });
+
+  assert.equal(oversizedResult.decision, "block");
+  assert.equal(
+    oversizedResult.guards.some((guard) => guard.guard === "max_per_trade"),
+    true
+  );
+});
+
+test("risk check records committed intents and blocks duplicates", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `risk-duplicate-${randomUUID()}`
+  });
+  const options = { workspaceSlug: session.workspace.slug };
+
+  await repo.createCompany(
+    {
+      name: "Duplicate Guard Optics",
+      ticker: "DUP1",
+      market: "TWSE",
+      country: "Taiwan",
+      themeIds: [],
+      chainPosition: "Modules",
+      beneficiaryTier: "Direct",
+      exposure: {
+        volume: 3,
+        asp: 3,
+        margin: 3,
+        capacity: 3,
+        narrative: 3
+      },
+      validation: {
+        capitalFlow: "",
+        consensus: "",
+        relativeStrength: ""
+      },
+      notes: ""
+    },
+    options
+  );
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "DUP1",
+        market: "TWSE",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 49.5,
+        high: 50.5,
+        low: 49.2,
+        prevClose: 49.8,
+        volume: 2_000,
+        changePct: 0.4,
+        timestamp: "2026-04-17T02:00:00.000Z"
+      }
+    ]
+  });
+
+  const first = await evaluateRiskCheck({
+    session,
+    repo,
+    payload: {
+      order: {
+        accountId: "paper-dup",
+        symbol: "DUP1",
+        side: "buy",
+        type: "limit",
+        timeInForce: "rod",
+        quantity: 100,
+        price: 50,
+        overrideGuards: [],
+        overrideReason: ""
+      },
+      account: {
+        equity: 1_000_000
+      },
+      market: {
+        source: "manual",
+        now: "2026-04-17T02:00:00.000Z",
+        timeZone: "Asia/Taipei"
+      },
+      commit: true
+    }
+  });
+
+  assert.equal(first.decision, "allow");
+
+  const duplicate = await evaluateRiskCheck({
+    session,
+    repo,
+    payload: {
+      order: {
+        accountId: "paper-dup",
+        symbol: "DUP1",
+        side: "buy",
+        type: "limit",
+        timeInForce: "rod",
+        quantity: 100,
+        price: 50,
+        overrideGuards: [],
+        overrideReason: ""
+      },
+      account: {
+        equity: 1_000_000
+      },
+      market: {
+        source: "manual",
+        now: "2026-04-17T02:00:10.000Z",
+        timeZone: "Asia/Taipei"
+      }
+    }
+  });
+
+  assert.equal(duplicate.decision, "block");
+  assert.equal(
+    duplicate.guards.some((guard) => guard.guard === "duplicate_order"),
+    true
+  );
 });
 
 test("duplicate report helper reads repository-scoped companies", async () => {

@@ -9,7 +9,9 @@ import {
   companyRelationsReplaceInputSchema,
   companyUpdateInputSchema,
   dailyBriefCreateInputSchema,
+  killSwitchInputSchema,
   marketStateSchema,
+  riskLimitUpsertInputSchema,
   reviewEntryCreateInputSchema,
   signalCreateInputSchema,
   signalUpdateInputSchema,
@@ -82,6 +84,15 @@ import {
   marketDataSymbolsQuerySchema,
   upsertManualQuotes
 } from "./market-data.js";
+import {
+  evaluateRiskCheck,
+  getKillSwitchState,
+  getRiskLimitState,
+  riskAccountQuerySchema,
+  riskCheckInputSchema,
+  setKillSwitchState,
+  upsertRiskLimitState
+} from "./risk-engine.js";
 import {
   getCompanyGraphSearchResults,
   getCompanyGraphStats,
@@ -643,6 +654,60 @@ app.get("/api/v1/market-data/overview", async (c) => {
       topLimit: query.topLimit
     })
   });
+});
+
+app.get("/api/v1/risk/limits", async (c) => {
+  const query = riskAccountQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getRiskLimitState({
+      session: c.get("session"),
+      accountId: query.accountId
+    })
+  });
+});
+
+app.post("/api/v1/risk/limits", async (c) => {
+  const payload = riskLimitUpsertInputSchema.parse(await c.req.json());
+  return c.json({
+    data: await upsertRiskLimitState({
+      session: c.get("session"),
+      payload
+    })
+  });
+});
+
+app.get("/api/v1/risk/kill-switch", async (c) => {
+  const query = riskAccountQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getKillSwitchState({
+      session: c.get("session"),
+      accountId: query.accountId
+    })
+  });
+});
+
+app.post("/api/v1/risk/kill-switch", async (c) => {
+  const payload = killSwitchInputSchema.parse(await c.req.json());
+  return c.json({
+    data: await setKillSwitchState({
+      session: c.get("session"),
+      payload
+    })
+  });
+});
+
+app.post("/api/v1/risk/checks", async (c) => {
+  const payload = riskCheckInputSchema.parse(await c.req.json());
+  return c.json(
+    {
+      data: await evaluateRiskCheck({
+        session: c.get("session"),
+        repo: c.get("repo"),
+        payload
+      })
+    },
+    201
+  );
 });
 
 app.get("/api/v1/company-graph/search", async (c) => {

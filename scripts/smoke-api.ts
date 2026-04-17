@@ -279,6 +279,133 @@ async function main() {
     assert.equal(marketOverview.data.leaders.topGainers[0]?.symbol, "SMK1");
     assert.equal(marketOverview.data.leaders.mostActive[0]?.symbol, "SMK1");
 
+    const riskLimits = await request<
+      JsonEnvelope<{
+        accountId: string;
+        maxPerTradePct: number;
+        maxOrdersPerMinute: number;
+      }>
+    >(baseUrl, "/api/v1/risk/limits?accountId=paper-smoke", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(riskLimits.data.accountId, "paper-smoke");
+
+    const updatedRiskLimits = await request<
+      JsonEnvelope<{
+        accountId: string;
+        maxPerTradePct: number;
+        symbolBlacklist: string[];
+      }>
+    >(baseUrl, "/api/v1/risk/limits", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        accountId: "paper-smoke",
+        maxPerTradePct: 2,
+        symbolBlacklist: ["BLK1"]
+      })
+    });
+    assert.equal(updatedRiskLimits.data.maxPerTradePct, 2);
+    assert.equal(updatedRiskLimits.data.symbolBlacklist.includes("BLK1"), true);
+
+    const riskCheck = await request<
+      JsonEnvelope<{
+        decision: string;
+        guards: Array<{ guard: string; decision: string }>;
+      }>
+    >(baseUrl, "/api/v1/risk/checks", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        order: {
+          accountId: "paper-smoke",
+          symbol: "SMK1",
+          side: "buy",
+          type: "limit",
+          timeInForce: "rod",
+          quantity: 10,
+          price: 123.45,
+          overrideGuards: [],
+          overrideReason: ""
+        },
+        account: {
+          equity: 100000,
+          openOrders: 0,
+          grossExposurePct: 0,
+          symbolPositionPct: 0,
+          themeExposurePct: 0,
+          brokerConnected: true
+        },
+        market: {
+          source: "manual",
+          now: "2026-04-17T02:00:00.000Z",
+          timeZone: "Asia/Taipei"
+        },
+        commit: true
+      })
+    });
+    assert.equal(riskCheck.data.decision, "allow");
+
+    const duplicateRiskCheck = await request<
+      JsonEnvelope<{
+        decision: string;
+        guards: Array<{ guard: string; decision: string }>;
+      }>
+    >(baseUrl, "/api/v1/risk/checks", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        order: {
+          accountId: "paper-smoke",
+          symbol: "SMK1",
+          side: "buy",
+          type: "limit",
+          timeInForce: "rod",
+          quantity: 10,
+          price: 123.45,
+          overrideGuards: [],
+          overrideReason: ""
+        },
+        account: {
+          equity: 100000,
+          openOrders: 0,
+          grossExposurePct: 0,
+          symbolPositionPct: 0,
+          themeExposurePct: 0,
+          brokerConnected: true
+        },
+        market: {
+          source: "manual",
+          now: "2026-04-17T02:00:10.000Z",
+          timeZone: "Asia/Taipei"
+        }
+      })
+    });
+    assert.equal(duplicateRiskCheck.data.decision, "block");
+    assert.equal(
+      duplicateRiskCheck.data.guards.some((guard) => guard.guard === "duplicate_order"),
+      true
+    );
+
+    const killSwitch = await request<
+      JsonEnvelope<{
+        accountId: string;
+        engaged: boolean;
+        mode: string;
+      }>
+    >(baseUrl, "/api/v1/risk/kill-switch", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        accountId: "paper-smoke",
+        mode: "halted",
+        reason: "Smoke halt",
+        engagedBy: "ci"
+      })
+    });
+    assert.equal(killSwitch.data.engaged, true);
+    assert.equal(killSwitch.data.mode, "halted");
+
     const relationReplace = await request<
       JsonEnvelope<
         Array<{

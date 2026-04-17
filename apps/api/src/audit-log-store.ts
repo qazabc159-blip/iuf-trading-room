@@ -103,6 +103,24 @@ const specialAuditRoutes: Array<{
     action: "merge",
     entityType: "company_merge",
     entityId: "pending"
+  },
+  {
+    matcher: /^\/api\/v1\/risk\/limits$/,
+    action: "replace",
+    entityType: "risk_limit",
+    entityId: "pending"
+  },
+  {
+    matcher: /^\/api\/v1\/risk\/kill-switch$/,
+    action: "update",
+    entityType: "kill_switch",
+    entityId: "pending"
+  },
+  {
+    matcher: /^\/api\/v1\/risk\/checks$/,
+    action: "create",
+    entityType: "risk_check",
+    entityId: "pending"
   }
 ];
 
