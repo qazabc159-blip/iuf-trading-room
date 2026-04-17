@@ -208,6 +208,7 @@ export const tradePlans = pgTable("trade_plans", {
   invalidationPlan: text("invalidation_plan").default("").notNull(),
   targetPlan: text("target_plan").default("").notNull(),
   riskReward: text("risk_reward").default("").notNull(),
+  execution: jsonb("execution"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });

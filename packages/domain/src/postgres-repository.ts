@@ -32,6 +32,8 @@ import {
   type ThemeUpdateInput,
   type TradePlan,
   type TradePlanCreateInput,
+  type TradePlanExecution,
+  tradePlanExecutionSchema,
   type TradePlanUpdateInput,
   validationSnapshotSchema,
   type Workspace
@@ -780,6 +782,35 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
 
   // ── Trade Plans ──
 
+  private parseExecution(raw: unknown): TradePlanExecution | null {
+    if (raw === null || raw === undefined) return null;
+    const parsed = tradePlanExecutionSchema.safeParse(raw);
+    if (!parsed.success) {
+      console.warn(
+        "[postgres-repository] dropping malformed trade_plans.execution payload",
+        parsed.error.flatten()
+      );
+      return null;
+    }
+    return parsed.data;
+  }
+
+  private mapTradePlanRow(row: typeof tradePlans.$inferSelect): TradePlan {
+    return {
+      id: row.id,
+      companyId: row.companyId,
+      status: row.status,
+      entryPlan: row.entryPlan,
+      invalidationPlan: row.invalidationPlan,
+      targetPlan: row.targetPlan,
+      riskReward: row.riskReward,
+      notes: "",
+      execution: this.parseExecution(row.execution),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    };
+  }
+
   async listTradePlans(
     filters?: { companyId?: string; status?: string },
     options?: SessionOptions
@@ -799,22 +830,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       .where(and(...conditions))
       .orderBy(desc(tradePlans.createdAt));
 
-    return rows.map((row) => ({
-      id: row.id,
-      companyId: row.companyId,
-      status: row.status,
-      entryPlan: row.entryPlan,
-      invalidationPlan: row.invalidationPlan,
-      targetPlan: row.targetPlan,
-      riskReward: row.riskReward,
-      notes: "",
-      // Structured execution block not yet persisted; schema accepts null.
-      // DB migration to add `execution` JSONB column lands with the broker
-      // adapter wave.
-      execution: null,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString()
-    }));
+    return rows.map((row) => this.mapTradePlanRow(row));
   }
 
   async getTradePlan(planId: string, options?: SessionOptions): Promise<TradePlan | null> {
@@ -826,25 +842,15 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       .where(and(eq(tradePlans.id, planId), eq(tradePlans.workspaceId, workspace.id)));
 
     if (!row) return null;
-
-    return {
-      id: row.id,
-      companyId: row.companyId,
-      status: row.status,
-      entryPlan: row.entryPlan,
-      invalidationPlan: row.invalidationPlan,
-      targetPlan: row.targetPlan,
-      riskReward: row.riskReward,
-      notes: "",
-      execution: null,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString()
-    };
+    return this.mapTradePlanRow(row);
   }
 
   async createTradePlan(input: TradePlanCreateInput, options?: SessionOptions): Promise<TradePlan> {
     const db = this.database;
     const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    const execution = input.execution
+      ? tradePlanExecutionSchema.parse(input.execution)
+      : null;
     const [row] = await db
       .insert(tradePlans)
       .values({
@@ -854,23 +860,12 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
         entryPlan: input.entryPlan,
         invalidationPlan: input.invalidationPlan,
         targetPlan: input.targetPlan,
-        riskReward: input.riskReward ?? ""
+        riskReward: input.riskReward ?? "",
+        execution
       })
       .returning();
 
-    return {
-      id: row.id,
-      companyId: row.companyId,
-      status: row.status,
-      entryPlan: row.entryPlan,
-      invalidationPlan: row.invalidationPlan,
-      targetPlan: row.targetPlan,
-      riskReward: row.riskReward,
-      notes: "",
-      execution: null,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString()
-    };
+    return this.mapTradePlanRow(row);
   }
 
   async updateTradePlan(
@@ -880,6 +875,16 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
   ): Promise<TradePlan | null> {
     const db = this.database;
     const workspace = await this.ensureSessionBase(options).then((s) => s.workspace);
+    // Explicit null clears the execution block; undefined leaves it untouched.
+    const executionPatch =
+      input.execution === undefined
+        ? {}
+        : {
+            execution:
+              input.execution === null
+                ? null
+                : tradePlanExecutionSchema.parse(input.execution)
+          };
     const [row] = await db
       .update(tradePlans)
       .set({
@@ -888,26 +893,14 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
         invalidationPlan: input.invalidationPlan,
         targetPlan: input.targetPlan,
         riskReward: input.riskReward,
+        ...executionPatch,
         updatedAt: new Date()
       })
       .where(and(eq(tradePlans.id, planId), eq(tradePlans.workspaceId, workspace.id)))
       .returning();
 
     if (!row) return null;
-
-    return {
-      id: row.id,
-      companyId: row.companyId,
-      status: row.status,
-      entryPlan: row.entryPlan,
-      invalidationPlan: row.invalidationPlan,
-      targetPlan: row.targetPlan,
-      riskReward: row.riskReward,
-      notes: "",
-      execution: null,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString()
-    };
+    return this.mapTradePlanRow(row);
   }
 
   // ── Reviews ──
