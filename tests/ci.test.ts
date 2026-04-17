@@ -41,7 +41,10 @@ import {
 } from "../apps/api/src/theme-graph.ts";
 import {
   getMarketDataOverview,
+  ingestTradingViewQuote,
+  listMarketBars,
   listMarketDataProviderStatuses,
+  listMarketQuoteHistory,
   listMarketQuotes,
   listMarketSymbols,
   upsertManualQuotes
@@ -1436,6 +1439,231 @@ test("market data keeps provider-specific quote caches isolated", async () => {
   assert.equal(statuses[1]?.connected, true);
   assert.deepEqual(statuses[1]?.subscribedSymbols, ["TV01"]);
   assert.equal(statuses[1]?.errorMessage, null);
+});
+
+test("market data ingests tradingview quotes and reports provider freshness", async () => {
+  const session = { workspace: { slug: `market-tradingview-${randomUUID()}` } };
+  const ingested = await ingestTradingViewQuote({
+    session,
+    ticker: "TV2330",
+    exchange: "TWSE",
+    price: "912.5",
+    timestamp: new Date().toISOString()
+  });
+
+  assert.equal(ingested?.symbol, "TV2330");
+  assert.equal(ingested?.market, "TWSE");
+  assert.equal(ingested?.source, "tradingview");
+
+  const statuses = await listMarketDataProviderStatuses({
+    session,
+    sources: "tradingview"
+  });
+  assert.equal(statuses[0]?.connected, true);
+  assert.equal(statuses[0]?.lastMessageAt !== null, true);
+  assert.deepEqual(statuses[0]?.subscribedSymbols, ["TV2330"]);
+});
+
+test("market data resolves preferred source by freshness and precedence", async () => {
+  const session = { workspace: { slug: `market-precedence-${randomUUID()}` } };
+  const freshTimestamp = new Date().toISOString();
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "SAME1",
+        market: "OTHER",
+        source: "manual",
+        last: 100,
+        bid: 99.9,
+        ask: 100.1,
+        open: 98,
+        high: 101,
+        low: 97.5,
+        prevClose: 99,
+        volume: 100,
+        changePct: 1.01,
+        timestamp: freshTimestamp
+      },
+      {
+        symbol: "SAME1",
+        market: "OTHER",
+        source: "paper",
+        last: 101,
+        bid: 100.9,
+        ask: 101.1,
+        open: 99,
+        high: 102,
+        low: 98.5,
+        prevClose: 99,
+        volume: 120,
+        changePct: 2.02,
+        timestamp: freshTimestamp
+      }
+    ]
+  });
+
+  const preferredPaper = await listMarketQuotes({
+    session,
+    symbols: "SAME1",
+    limit: 10
+  });
+  assert.equal(preferredPaper.length, 1);
+  assert.equal(preferredPaper[0]?.source, "paper");
+  assert.equal(preferredPaper[0]?.last, 101);
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "SAME1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 102,
+        bid: 101.9,
+        ask: 102.1,
+        open: 100,
+        high: 103,
+        low: 99.5,
+        prevClose: 100,
+        volume: 150,
+        changePct: 2.5,
+        timestamp: freshTimestamp
+      }
+    ]
+  });
+
+  const preferredTradingView = await listMarketQuotes({
+    session,
+    symbols: "SAME1",
+    limit: 10
+  });
+  assert.equal(preferredTradingView.length, 1);
+  assert.equal(preferredTradingView[0]?.source, "tradingview");
+  assert.equal(preferredTradingView[0]?.last, 102);
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "SAME1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 88,
+        bid: 87.9,
+        ask: 88.1,
+        open: 87,
+        high: 89,
+        low: 86.5,
+        prevClose: 87,
+        volume: 90,
+        changePct: 1.15,
+        timestamp: "2020-01-01T00:00:00.000Z"
+      }
+    ]
+  });
+
+  const preferredFreshPaper = await listMarketQuotes({
+    session,
+    symbols: "SAME1",
+    limit: 10
+  });
+  assert.equal(preferredFreshPaper.length, 1);
+  assert.equal(preferredFreshPaper[0]?.source, "paper");
+});
+
+test("market data builds quote history and minute bars from preferred sources", async () => {
+  const session = { workspace: { slug: `market-history-${randomUUID()}` } };
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "BAR1",
+        market: "OTHER",
+        source: "manual",
+        last: 90,
+        bid: 89.9,
+        ask: 90.1,
+        open: 90,
+        high: 90,
+        low: 90,
+        prevClose: 89,
+        volume: 10,
+        changePct: 1.12,
+        timestamp: "2026-04-18T01:00:05.000Z"
+      },
+      {
+        symbol: "BAR1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 100,
+        bid: 99.9,
+        ask: 100.1,
+        open: 100,
+        high: 100,
+        low: 100,
+        prevClose: 99,
+        volume: 50,
+        changePct: 1.01,
+        timestamp: "2026-04-18T01:00:10.000Z"
+      },
+      {
+        symbol: "BAR1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 105,
+        bid: 104.9,
+        ask: 105.1,
+        open: 100,
+        high: 105,
+        low: 100,
+        prevClose: 99,
+        volume: 80,
+        changePct: 6.06,
+        timestamp: "2026-04-18T01:00:40.000Z"
+      },
+      {
+        symbol: "BAR1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 103,
+        bid: 102.9,
+        ask: 103.1,
+        open: 103,
+        high: 103,
+        low: 103,
+        prevClose: 102,
+        volume: 120,
+        changePct: 0.98,
+        timestamp: "2026-04-18T01:01:05.000Z"
+      }
+    ]
+  });
+
+  const history = await listMarketQuoteHistory({
+    session,
+    symbols: "BAR1",
+    limit: 20
+  });
+  assert.equal(history.length, 3);
+  assert.equal(history.every((quote) => quote.source === "tradingview"), true);
+  assert.equal(history[0]?.symbol, "BAR1");
+
+  const bars = await listMarketBars({
+    session,
+    symbols: "BAR1",
+    interval: "1m",
+    limit: 10
+  });
+  assert.equal(bars.length, 2);
+  assert.equal(bars[1]?.open, 100);
+  assert.equal(bars[1]?.high, 105);
+  assert.equal(bars[1]?.low, 100);
+  assert.equal(bars[1]?.close, 105);
+  assert.equal(bars[0]?.open, 103);
+  assert.equal(bars[0]?.close, 103);
 });
 
 test("market data symbols derive from companies and dedupe by market and ticker", async () => {

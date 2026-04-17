@@ -77,9 +77,14 @@ import {
 } from "./event-history.js";
 import {
   getMarketDataOverview,
+  ingestTradingViewQuote,
+  listMarketBars,
   listMarketDataProviderStatuses,
+  listMarketQuoteHistory,
   listMarketQuotes,
   listMarketSymbols,
+  marketDataBarsQuerySchema,
+  marketDataHistoryQuerySchema,
   marketDataOverviewQuerySchema,
   manualQuoteUpsertSchema,
   marketDataProvidersQuerySchema,
@@ -637,6 +642,35 @@ app.get("/api/v1/market-data/quotes", async (c) => {
       symbols: query.symbols,
       market: query.market,
       source: query.source,
+      includeStale: query.includeStale,
+      limit: query.limit
+    })
+  });
+});
+
+app.get("/api/v1/market-data/history", async (c) => {
+  const query = marketDataHistoryQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await listMarketQuoteHistory({
+      session: c.get("session"),
+      symbols: query.symbols,
+      market: query.market,
+      source: query.source,
+      includeStale: query.includeStale,
+      limit: query.limit
+    })
+  });
+});
+
+app.get("/api/v1/market-data/bars", async (c) => {
+  const query = marketDataBarsQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await listMarketBars({
+      session: c.get("session"),
+      symbols: query.symbols,
+      market: query.market,
+      source: query.source,
+      interval: query.interval,
       includeStale: query.includeStale,
       limit: query.limit
     })
@@ -1553,7 +1587,16 @@ app.post("/api/v1/webhooks/tradingview", async (c) => {
   ].filter(Boolean);
 
   const repo = c.get("repo");
-  const opts = { workspaceSlug: c.get("session").workspace.slug };
+  const session = c.get("session");
+  const opts = { workspaceSlug: session.workspace.slug };
+
+  await ingestTradingViewQuote({
+    session,
+    ticker: payload.ticker,
+    exchange: payload.exchange,
+    price: payload.price,
+    timestamp: timestampValidation.normalizedTimestamp
+  });
 
   let signal;
   try {

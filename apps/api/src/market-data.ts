@@ -1,5 +1,7 @@
 import {
   type AppSession,
+  barIntervalSchema,
+  barSchema,
   type Company,
   type Market,
   marketSchema,
@@ -7,6 +9,7 @@ import {
   quoteSchema,
   quoteSourceSchema,
   symbolMasterSchema,
+  type BarInterval,
   type Quote,
   type QuoteProviderStatus,
   type QuoteSource,
@@ -77,8 +80,32 @@ export const marketDataOverviewQuerySchema = z.object({
   topLimit: z.coerce.number().int().min(1).max(20).optional()
 });
 
+export const marketDataHistoryQuerySchema = z.object({
+  symbols: z.string().trim().min(1).optional(),
+  market: marketSchema.optional(),
+  source: quoteSourceSchema.optional(),
+  includeStale: z.coerce.boolean().optional(),
+  limit: z.coerce.number().int().min(1).max(2000).optional()
+});
+
+export const marketDataBarsQuerySchema = z.object({
+  symbols: z.string().trim().min(1),
+  market: marketSchema.optional(),
+  source: quoteSourceSchema.optional(),
+  interval: barIntervalSchema.default("1m"),
+  includeStale: z.coerce.boolean().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional()
+});
+
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
+const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
+const sourcePriority: Record<QuoteSource, number> = {
+  kgi: 4,
+  tradingview: 3,
+  paper: 2,
+  manual: 1
+};
 
 function getQuoteStaleMs(source: QuoteSource) {
   const envKey =
@@ -109,6 +136,16 @@ function getQuoteCacheForWorkspace(workspaceSlug: string) {
   return workspaceCache;
 }
 
+function getQuoteHistoryCacheForWorkspace(workspaceSlug: string) {
+  let workspaceHistory = providerQuoteHistoryCache.get(workspaceSlug);
+  if (!workspaceHistory) {
+    workspaceHistory = new Map<string, QuoteCacheEntry[]>();
+    providerQuoteHistoryCache.set(workspaceSlug, workspaceHistory);
+  }
+
+  return workspaceHistory;
+}
+
 function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
   const cache = getQuoteCacheForWorkspace(workspaceSlug);
   return [...cache.values()]
@@ -117,8 +154,20 @@ function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
 }
 
+function listCachedProviderQuoteHistory(workspaceSlug: string, source: QuoteSource) {
+  const historyCache = getQuoteHistoryCacheForWorkspace(workspaceSlug);
+  return [...historyCache.entries()]
+    .filter(([key]) => key.startsWith(`${source}:`))
+    .flatMap(([, entries]) => entries.map(withFreshness))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+}
+
 function buildQuoteCacheKey(symbol: string, market: Market, source: QuoteSource) {
   return `${source}:${market}:${symbol.toUpperCase()}`;
+}
+
+function buildQuoteIdentityKey(symbol: string, market: Market) {
+  return `${market}:${symbol.toUpperCase()}`;
 }
 
 function toIso(value?: string) {
@@ -141,6 +190,59 @@ function withFreshness(entry: QuoteCacheEntry): Quote {
   });
 }
 
+function getQuoteHistoryLimit(source: QuoteSource) {
+  const envKey =
+    source === "manual"
+      ? "MANUAL_QUOTE_HISTORY_LIMIT"
+      : source === "paper"
+        ? "PAPER_QUOTE_HISTORY_LIMIT"
+        : source === "tradingview"
+          ? "TRADINGVIEW_QUOTE_HISTORY_LIMIT"
+          : "KGI_QUOTE_HISTORY_LIMIT";
+  const raw = Number(process.env[envKey]);
+  return Number.isFinite(raw) && raw > 0 ? raw : 512;
+}
+
+function compareQuotes(left: Quote, right: Quote) {
+  if (left.isStale !== right.isStale) {
+    return left.isStale ? 1 : -1;
+  }
+
+  const priorityDiff = sourcePriority[right.source] - sourcePriority[left.source];
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+
+  const timestampDiff = right.timestamp.localeCompare(left.timestamp);
+  if (timestampDiff !== 0) {
+    return timestampDiff;
+  }
+
+  return right.symbol.localeCompare(left.symbol);
+}
+
+function dedupePreferredQuotes(quotes: Quote[]) {
+  const preferredBySymbol = new Map<string, Quote>();
+
+  for (const quote of quotes) {
+    const key = buildQuoteIdentityKey(quote.symbol, quote.market);
+    const current = preferredBySymbol.get(key);
+    if (!current || compareQuotes(current, quote) > 0) {
+      preferredBySymbol.set(key, quote);
+    }
+  }
+
+  return [...preferredBySymbol.values()].sort(compareQuotes);
+}
+
+function getPreferredSourceBySymbol(quotes: Quote[]) {
+  const preferred = new Map<string, QuoteSource>();
+  for (const quote of dedupePreferredQuotes(quotes)) {
+    preferred.set(buildQuoteIdentityKey(quote.symbol, quote.market), quote.source);
+  }
+  return preferred;
+}
+
 function mapCompanyMarket(rawMarket: string): Market {
   const normalized = rawMarket.trim().toUpperCase();
   switch (normalized) {
@@ -160,6 +262,42 @@ function mapCompanyMarket(rawMarket: string): Market {
     default:
       return "OTHER";
   }
+}
+
+function mapExchangeMarket(rawExchange?: string): Market {
+  if (!rawExchange) {
+    return "OTHER";
+  }
+
+  const normalized = rawExchange.trim().toUpperCase();
+  switch (normalized) {
+    case "TWSE":
+    case "TSE":
+      return "TWSE";
+    case "TPEX":
+    case "OTC":
+      return "TPEX";
+    case "TWO":
+      return "TWO";
+    case "EMERGING":
+    case "TW_EMERGING":
+    case "TIB":
+      return "TW_EMERGING";
+    case "INDEX":
+    case "TW_INDEX":
+      return "TW_INDEX";
+    default:
+      return "OTHER";
+  }
+}
+
+function parseNullableNumber(raw?: string | number | null) {
+  if (raw === null || raw === undefined || raw === "") {
+    return null;
+  }
+
+  const parsed = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function lotSizeForMarket(market: Market) {
@@ -220,7 +358,7 @@ function buildCachedProvider(
       return quoteProviderStatusSchema.parse({
         source,
         connected,
-        lastMessageAt: null,
+        lastMessageAt,
         latencyMs: null,
         subscribedSymbols: [...new Set(quotes.map((quote) => quote.symbol))],
         errorMessage: connected || source === "manual" ? null : errorMessage
@@ -299,6 +437,7 @@ export async function upsertManualQuotes(input: {
   quotes: z.infer<typeof manualQuoteUpsertItemSchema>[];
 }) {
   const workspaceCache = getQuoteCacheForWorkspace(input.session.workspace.slug);
+  const workspaceHistory = getQuoteHistoryCacheForWorkspace(input.session.workspace.slug);
   const upserted: Quote[] = [];
 
   for (const item of input.quotes) {
@@ -322,11 +461,66 @@ export async function upsertManualQuotes(input: {
       updatedAt: new Date().toISOString()
     };
 
-    workspaceCache.set(buildQuoteCacheKey(entry.symbol, entry.market, entry.source), entry);
+    const cacheKey = buildQuoteCacheKey(entry.symbol, entry.market, entry.source);
+    workspaceCache.set(cacheKey, entry);
+
+    const history = workspaceHistory.get(cacheKey) ?? [];
+    const lastHistoryEntry = history.at(-1);
+    const isDuplicateHistoryEntry =
+      lastHistoryEntry?.timestamp === entry.timestamp
+      && lastHistoryEntry?.last === entry.last
+      && lastHistoryEntry?.bid === entry.bid
+      && lastHistoryEntry?.ask === entry.ask
+      && lastHistoryEntry?.volume === entry.volume;
+
+    if (!isDuplicateHistoryEntry) {
+      history.push(entry);
+      const historyLimit = getQuoteHistoryLimit(entry.source);
+      if (history.length > historyLimit) {
+        history.splice(0, history.length - historyLimit);
+      }
+      workspaceHistory.set(cacheKey, history);
+    }
+
     upserted.push(withFreshness(entry));
   }
 
   return upserted;
+}
+
+export async function ingestTradingViewQuote(input: {
+  session: AppSession;
+  ticker: string;
+  exchange?: string;
+  price?: string;
+  timestamp?: string | null;
+}) {
+  const symbol = input.ticker.trim().toUpperCase();
+  if (!symbol) {
+    return null;
+  }
+
+  const parsedPrice = parseNullableNumber(input.price);
+  return upsertManualQuotes({
+    session: input.session,
+    quotes: [
+      {
+        symbol,
+        market: mapExchangeMarket(input.exchange),
+        source: "tradingview",
+        last: parsedPrice,
+        bid: null,
+        ask: null,
+        open: null,
+        high: parsedPrice,
+        low: parsedPrice,
+        prevClose: null,
+        volume: null,
+        changePct: null,
+        timestamp: input.timestamp ?? undefined
+      }
+    ]
+  }).then((quotes) => quotes[0] ?? null);
 }
 
 export async function listMarketQuotes(input: {
@@ -352,11 +546,154 @@ export async function listMarketQuotes(input: {
     .flat()
     .filter((quote) => !input.market || quote.market === input.market)
     .filter((quote) => symbolSet.size === 0 || symbolSet.has(quote.symbol))
-    .filter((quote) => input.includeStale || !quote.isStale)
-    .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
-    .slice(0, input.limit ?? 200);
+    .filter((quote) => input.includeStale || !quote.isStale);
 
-  return quotes;
+  const resolvedQuotes = input.source
+    ? quotes.sort(compareQuotes)
+    : dedupePreferredQuotes(quotes);
+
+  return resolvedQuotes.slice(0, input.limit ?? 200);
+}
+
+export async function listMarketQuoteHistory(input: {
+  session: AppSession;
+  symbols?: string;
+  market?: Market;
+  source?: QuoteSource;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const workspaceSlug = input.session.workspace.slug;
+  const sources = input.source ? [input.source] : [...quoteProviderSources];
+  const symbolSet = new Set(
+    (input.symbols ?? "")
+      .split(",")
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean)
+  );
+
+  const currentQuotes = (
+    await Promise.all(sources.map((source) => quoteProviders[source].listQuotes(workspaceSlug)))
+  )
+    .flat()
+    .filter((quote) => !input.market || quote.market === input.market)
+    .filter((quote) => symbolSet.size === 0 || symbolSet.has(quote.symbol));
+
+  const preferredSourceBySymbol = input.source ? null : getPreferredSourceBySymbol(currentQuotes);
+
+  const history = (
+    await Promise.all(
+      sources.map((source) => Promise.resolve(listCachedProviderQuoteHistory(workspaceSlug, source)))
+    )
+  )
+    .flat()
+    .filter((quote) => !input.market || quote.market === input.market)
+    .filter((quote) => symbolSet.size === 0 || symbolSet.has(quote.symbol))
+    .filter((quote) => input.includeStale || !quote.isStale)
+    .filter((quote) => {
+      if (input.source || !preferredSourceBySymbol) {
+        return true;
+      }
+
+      return (
+        preferredSourceBySymbol.get(buildQuoteIdentityKey(quote.symbol, quote.market))
+        === quote.source
+      );
+    })
+    .sort((left, right) => {
+      const timestampDiff = right.timestamp.localeCompare(left.timestamp);
+      if (timestampDiff !== 0) {
+        return timestampDiff;
+      }
+
+      return compareQuotes(left, right);
+    })
+    .slice(0, input.limit ?? 1000);
+
+  return history;
+}
+
+function getBarIntervalMs(interval: BarInterval) {
+  switch (interval) {
+    case "1m":
+      return 60_000;
+    case "5m":
+      return 5 * 60_000;
+    case "15m":
+      return 15 * 60_000;
+    case "30m":
+      return 30 * 60_000;
+    case "1h":
+      return 60 * 60_000;
+    case "4h":
+      return 4 * 60 * 60_000;
+    case "1d":
+      return 24 * 60 * 60_000;
+    case "1w":
+      return 7 * 24 * 60 * 60_000;
+  }
+}
+
+export async function listMarketBars(input: {
+  session: AppSession;
+  symbols: string;
+  market?: Market;
+  source?: QuoteSource;
+  interval?: BarInterval;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const interval = input.interval ?? "1m";
+  const intervalMs = getBarIntervalMs(interval);
+  const history = await listMarketQuoteHistory({
+    session: input.session,
+    symbols: input.symbols,
+    market: input.market,
+    source: input.source,
+    includeStale: input.includeStale,
+    limit: Math.max((input.limit ?? 100) * 8, 200)
+  });
+  const groupedQuotes = new Map<string, Quote[]>();
+
+  for (const quote of history) {
+    if (quote.last === null) {
+      continue;
+    }
+
+    const quoteTimestamp = new Date(quote.timestamp).getTime();
+    const bucketStart = Math.floor(quoteTimestamp / intervalMs) * intervalMs;
+    const barKey = `${quote.source}:${quote.symbol}:${bucketStart}`;
+    const current = groupedQuotes.get(barKey) ?? [];
+    current.push(quote);
+    groupedQuotes.set(barKey, current);
+  }
+
+  const bars = [...groupedQuotes.entries()].map(([key, quotes]) => {
+    const [source, symbol, bucketStartRaw] = key.split(":");
+    const bucketStart = Number(bucketStartRaw);
+    const bucketEnd = bucketStart + intervalMs;
+    const ordered = [...quotes].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+    const prices = ordered.map((quote) => quote.last ?? 0);
+    const closeQuote = ordered.at(-1);
+
+    return barSchema.parse({
+      symbol,
+      interval,
+      source,
+      openTime: new Date(bucketStart).toISOString(),
+      closeTime: new Date(bucketEnd).toISOString(),
+      open: prices[0] ?? 0,
+      high: Math.max(...prices),
+      low: Math.min(...prices),
+      close: closeQuote?.last ?? prices[0] ?? 0,
+      volume: Math.max(...ordered.map((quote) => quote.volume ?? 0)),
+      turnover: 0
+    });
+  });
+
+  return bars
+    .sort((left, right) => right.openTime.localeCompare(left.openTime))
+    .slice(0, input.limit ?? 100);
 }
 
 export async function getMarketDataOverview(input: {
