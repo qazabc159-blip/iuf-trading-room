@@ -1,5 +1,8 @@
 import type {
   AppSession,
+  Balance,
+  BrokerAccount,
+  BrokerConnectionStatus,
   Company,
   CompanyCreateInput,
   CompanyDuplicateReport,
@@ -8,6 +11,14 @@ import type {
   CompanyGraphView,
   DailyBrief,
   DailyBriefCreateInput,
+  KillSwitchInput,
+  KillSwitchState,
+  Order,
+  OrderCancelInput,
+  OrderCreateInput,
+  Position,
+  RiskCheckResult,
+  RiskLimit,
   ReviewEntry,
   ReviewEntryCreateInput,
   Signal,
@@ -482,4 +493,88 @@ export async function getOpsTrends(params?: { days?: number; timeZone?: string }
   if (params?.timeZone) query.set("timeZone", params.timeZone);
   const qs = query.toString();
   return request<OpsTrendView>(`/api/v1/ops/trends${qs ? `?${qs}` : ""}`);
+}
+
+// ── Trading (paper broker) ──
+
+export async function getTradingAccounts() {
+  return request<BrokerAccount[]>("/api/v1/trading/accounts");
+}
+
+export async function getTradingBalance(accountId: string) {
+  return request<Balance>(`/api/v1/trading/balance?accountId=${encodeURIComponent(accountId)}`);
+}
+
+export async function getTradingPositions(accountId: string) {
+  return request<Position[]>(`/api/v1/trading/positions?accountId=${encodeURIComponent(accountId)}`);
+}
+
+export async function getTradingOrders(params?: {
+  accountId?: string;
+  status?: string;
+  symbol?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params?.accountId) query.set("accountId", params.accountId);
+  if (params?.status) query.set("status", params.status);
+  if (params?.symbol) query.set("symbol", params.symbol);
+  const qs = query.toString();
+  return request<Order[]>(`/api/v1/trading/orders${qs ? `?${qs}` : ""}`);
+}
+
+export async function submitTradingOrder(input: OrderCreateInput) {
+  return request<{ order: Order | null; riskCheck: RiskCheckResult; blocked: boolean }>(
+    "/api/v1/trading/orders",
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export async function cancelTradingOrder(accountId: string, input: OrderCancelInput) {
+  return request<Order>(
+    `/api/v1/trading/orders/cancel?accountId=${encodeURIComponent(accountId)}`,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export async function getBrokerStatus(accountId: string) {
+  return request<BrokerConnectionStatus>(
+    `/api/v1/trading/status?accountId=${encodeURIComponent(accountId)}`
+  );
+}
+
+// ── Risk ──
+
+export async function getRiskLimit(accountId: string) {
+  return request<RiskLimit>(`/api/v1/risk/limits?accountId=${encodeURIComponent(accountId)}`);
+}
+
+export async function getEffectiveRiskLimit(params: {
+  accountId: string;
+  strategyId?: string;
+  symbol?: string;
+}) {
+  const query = new URLSearchParams();
+  query.set("accountId", params.accountId);
+  if (params.strategyId) query.set("strategyId", params.strategyId);
+  if (params.symbol) query.set("symbol", params.symbol);
+  return request<RiskLimit>(`/api/v1/risk/effective-limits?${query.toString()}`);
+}
+
+export async function getKillSwitch(accountId: string) {
+  return request<KillSwitchState>(
+    `/api/v1/risk/kill-switch?accountId=${encodeURIComponent(accountId)}`
+  );
+}
+
+export async function setKillSwitch(input: KillSwitchInput) {
+  return request<KillSwitchState>("/api/v1/risk/kill-switch", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 }
