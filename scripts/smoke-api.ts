@@ -340,15 +340,23 @@ async function main() {
       JsonEnvelope<
         Array<{
           symbol: string;
+          selectedSource: string | null;
+          freshnessStatus: string;
+          fallbackReason: string;
+          staleReason: string;
           preferredSource: string | null;
           preferredQuote: { last: number | null } | null;
-          candidates: Array<{ source: string }>;
+          candidates: Array<{ source: string; freshnessStatus: string; staleReason: string }>;
         }>
       >
     >(baseUrl, "/api/v1/market-data/resolve?symbols=SMK1&limit=10", {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.equal(resolvedQuotes.data.length, 1);
+    assert.equal(resolvedQuotes.data[0]?.selectedSource, "manual");
+    assert.equal(resolvedQuotes.data[0]?.freshnessStatus, "fresh");
+    assert.equal(resolvedQuotes.data[0]?.fallbackReason, "higher_priority_missing");
+    assert.equal(resolvedQuotes.data[0]?.staleReason, "none");
     assert.equal(resolvedQuotes.data[0]?.preferredSource, "manual");
     assert.equal(resolvedQuotes.data[0]?.preferredQuote?.last, 123.45);
     assert.equal(resolvedQuotes.data[0]?.candidates.some((item) => item.source === "manual"), true);
@@ -1011,14 +1019,20 @@ async function main() {
       JsonEnvelope<
         Array<{
           symbol: string;
+          selectedSource: string | null;
+          freshnessStatus: string;
+          fallbackReason: string;
           preferredSource: string | null;
-          candidates: Array<{ source: string }>;
+          candidates: Array<{ source: string; freshnessStatus: string }>;
         }>
       >
     >(baseUrl, "/api/v1/market-data/resolve?symbols=SMK1&limit=10", {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.equal(resolvedSmk1Quote.data.length, 1);
+    assert.equal(resolvedSmk1Quote.data[0]?.selectedSource, "tradingview");
+    assert.equal(resolvedSmk1Quote.data[0]?.freshnessStatus, "fresh");
+    assert.equal(resolvedSmk1Quote.data[0]?.fallbackReason, "higher_priority_unavailable");
     assert.equal(resolvedSmk1Quote.data[0]?.preferredSource, "tradingview");
     assert.equal(
       resolvedSmk1Quote.data[0]?.candidates.some((item) => item.source === "manual"),

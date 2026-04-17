@@ -1763,11 +1763,21 @@ test("market data resolve diagnostics expose preferred source and candidate stac
 
   assert.equal(resolved.length, 1);
   assert.equal(resolved[0]?.symbol, "RSLV1");
+  assert.equal(resolved[0]?.selectedSource, "tradingview");
+  assert.equal(resolved[0]?.selectedQuote?.last, 52);
+  assert.equal(resolved[0]?.freshnessStatus, "fresh");
+  assert.equal(resolved[0]?.fallbackReason, "higher_priority_unavailable");
+  assert.equal(resolved[0]?.staleReason, "none");
   assert.equal(resolved[0]?.preferredSource, "tradingview");
   assert.equal(resolved[0]?.preferredQuote?.last, 52);
-  assert.equal(resolved[0]?.candidates.length, 2);
-  assert.equal(resolved[0]?.candidates[0]?.source, "tradingview");
-  assert.equal(resolved[0]?.candidates[1]?.source, "manual");
+  assert.equal(resolved[0]?.candidates.length, 4);
+  assert.equal(resolved[0]?.candidates[0]?.source, "kgi");
+  assert.equal(resolved[0]?.candidates[0]?.freshnessStatus, "missing");
+  assert.equal(resolved[0]?.candidates[1]?.source, "tradingview");
+  assert.equal(resolved[0]?.candidates[1]?.freshnessStatus, "fresh");
+  assert.equal(resolved[0]?.candidates[2]?.source, "paper");
+  assert.equal(resolved[0]?.candidates[2]?.staleReason, "no_quote");
+  assert.equal(resolved[0]?.candidates[3]?.source, "manual");
 });
 
 test("market data history and bars respect time window filters", async () => {

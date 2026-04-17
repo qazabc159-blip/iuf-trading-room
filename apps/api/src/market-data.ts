@@ -28,6 +28,60 @@ type QuoteProviderAdapter = {
   getStatus: (workspaceSlug: string) => Promise<QuoteProviderStatus>;
 };
 
+type QuoteResolutionFreshnessStatus = "fresh" | "stale" | "missing";
+type QuoteResolutionFallbackReason =
+  | "none"
+  | "higher_priority_stale"
+  | "higher_priority_missing"
+  | "higher_priority_unavailable"
+  | "no_fresh_quote"
+  | "no_quote";
+type QuoteResolutionStaleReason =
+  | "none"
+  | "age_exceeded"
+  | "missing_last"
+  | "no_quote"
+  | "provider_unavailable";
+
+const quoteResolutionFreshnessStatusSchema = z.enum(["fresh", "stale", "missing"]);
+const quoteResolutionFallbackReasonSchema = z.enum([
+  "none",
+  "higher_priority_stale",
+  "higher_priority_missing",
+  "higher_priority_unavailable",
+  "no_fresh_quote",
+  "no_quote"
+]);
+const quoteResolutionStaleReasonSchema = z.enum([
+  "none",
+  "age_exceeded",
+  "missing_last",
+  "no_quote",
+  "provider_unavailable"
+]);
+const quoteResolutionCandidateSchema = z.object({
+  source: quoteSourceSchema,
+  priority: z.number().int().nonnegative(),
+  providerConnected: z.boolean(),
+  subscribed: z.boolean(),
+  eligible: z.boolean(),
+  freshnessStatus: quoteResolutionFreshnessStatusSchema,
+  staleReason: quoteResolutionStaleReasonSchema,
+  quote: quoteSchema.nullable()
+});
+const quoteResolutionSchema = z.object({
+  symbol: z.string(),
+  market: marketSchema,
+  selectedSource: quoteSourceSchema.nullable(),
+  selectedQuote: quoteSchema.nullable(),
+  preferredSource: quoteSourceSchema.nullable(),
+  preferredQuote: quoteSchema.nullable(),
+  freshnessStatus: quoteResolutionFreshnessStatusSchema,
+  fallbackReason: quoteResolutionFallbackReasonSchema,
+  staleReason: quoteResolutionStaleReasonSchema,
+  candidates: z.array(quoteResolutionCandidateSchema)
+});
+
 const manualQuoteUpsertItemSchema = z.object({
   symbol: z.string().min(1).max(32),
   market: marketSchema,
@@ -252,6 +306,34 @@ function getPreferredSourceBySymbol(quotes: Quote[]) {
     preferred.set(buildQuoteIdentityKey(quote.symbol, quote.market), quote.source);
   }
   return preferred;
+}
+
+function getQuoteFreshnessStatus(quote: Quote | null): QuoteResolutionFreshnessStatus {
+  if (!quote) {
+    return "missing";
+  }
+
+  if (quote.last === null || quote.isStale) {
+    return "stale";
+  }
+
+  return "fresh";
+}
+
+function getQuoteStaleReason(quote: Quote | null): QuoteResolutionStaleReason {
+  if (!quote) {
+    return "no_quote";
+  }
+
+  if (quote.last === null) {
+    return "missing_last";
+  }
+
+  if (quote.isStale) {
+    return "age_exceeded";
+  }
+
+  return "none";
 }
 
 function mapCompanyMarket(rawMarket: string): Market {
@@ -666,6 +748,7 @@ export async function resolveMarketQuotes(input: {
   limit?: number;
 }) {
   const workspaceSlug = input.session.workspace.slug;
+  const includeStale = input.includeStale ?? false;
   const symbolSet = new Set(
     input.symbols
       .split(",")
@@ -673,15 +756,23 @@ export async function resolveMarketQuotes(input: {
       .filter(Boolean)
   );
 
-  const allQuotes = (
-    await Promise.all(
+  const [quotesBySource, providerStatuses] = await Promise.all([
+    Promise.all(
       quoteProviderSources.map((source) => quoteProviders[source].listQuotes(workspaceSlug))
+    ),
+    Promise.all(
+      quoteProviderSources.map((source) => quoteProviders[source].getStatus(workspaceSlug))
     )
-  )
+  ]);
+
+  const statusBySource = new Map<QuoteSource, QuoteProviderStatus>(
+    providerStatuses.map((status) => [status.source, status])
+  );
+
+  const allQuotes = quotesBySource
     .flat()
     .filter((quote) => !input.market || quote.market === input.market)
-    .filter((quote) => symbolSet.size === 0 || symbolSet.has(quote.symbol))
-    .filter((quote) => input.includeStale || !quote.isStale);
+    .filter((quote) => symbolSet.size === 0 || symbolSet.has(quote.symbol));
 
   const grouped = new Map<string, Quote[]>();
   for (const quote of allQuotes) {
@@ -694,18 +785,81 @@ export async function resolveMarketQuotes(input: {
   return [...grouped.entries()]
     .map(([key, quotes]) => {
       const [market, symbol] = key.split(":");
-      const candidates = [...quotes].sort(compareQuotes);
-      return {
+      const bestQuoteBySource = new Map<QuoteSource, Quote>();
+      for (const quote of [...quotes].sort(compareQuotes)) {
+        if (!bestQuoteBySource.has(quote.source)) {
+          bestQuoteBySource.set(quote.source, quote);
+        }
+      }
+
+      const candidates = quoteProviderSources
+        .slice()
+        .sort((left, right) => sourcePriority[right] - sourcePriority[left])
+        .map((source) => {
+          const quote = bestQuoteBySource.get(source) ?? null;
+          const providerStatus = statusBySource.get(source);
+          const freshnessStatus = getQuoteFreshnessStatus(quote);
+          const staleReason = getQuoteStaleReason(quote);
+          const providerConnected = providerStatus?.connected ?? false;
+          const subscribed = quote
+            ? true
+            : (providerStatus?.subscribedSymbols ?? []).includes(symbol);
+          const eligible = quote !== null && (includeStale || freshnessStatus === "fresh");
+
+          return quoteResolutionCandidateSchema.parse({
+            source,
+            priority: sourcePriority[source],
+            providerConnected,
+            subscribed,
+            eligible,
+            freshnessStatus,
+            staleReason,
+            quote
+          });
+        });
+
+      const selected = candidates.find((candidate) => candidate.eligible) ?? null;
+      const selectedQuote = selected?.quote ?? null;
+      const freshnessStatus = selected?.freshnessStatus ?? "missing";
+      const staleReason: QuoteResolutionStaleReason = selected?.staleReason
+        ?? (candidates.some((candidate) => candidate.quote !== null)
+          ? "age_exceeded"
+          : "no_quote");
+
+      let fallbackReason: QuoteResolutionFallbackReason = "none";
+      if (!selected) {
+        fallbackReason = candidates.some((candidate) => candidate.quote !== null)
+          ? "no_fresh_quote"
+          : "no_quote";
+      } else if (selected.source !== quoteProviderSources.at(-1)) {
+        const higherPriorityCandidates = candidates.filter(
+          (candidate) => sourcePriority[candidate.source] > sourcePriority[selected.source]
+        );
+        if (higherPriorityCandidates.some((candidate) => candidate.quote && candidate.freshnessStatus === "stale")) {
+          fallbackReason = "higher_priority_stale";
+        } else if (higherPriorityCandidates.some((candidate) => candidate.providerConnected || candidate.subscribed)) {
+          fallbackReason = "higher_priority_missing";
+        } else if (higherPriorityCandidates.length > 0) {
+          fallbackReason = "higher_priority_unavailable";
+        }
+      }
+
+      return quoteResolutionSchema.parse({
         symbol,
         market,
-        preferredSource: candidates[0]?.source ?? null,
-        preferredQuote: candidates[0] ?? null,
+        selectedSource: selected?.source ?? null,
+        selectedQuote,
+        preferredSource: selected?.source ?? null,
+        preferredQuote: selectedQuote,
+        freshnessStatus,
+        fallbackReason,
+        staleReason,
         candidates
-      };
+      });
     })
     .sort((left, right) => {
-      const leftTimestamp = left.preferredQuote?.timestamp ?? "";
-      const rightTimestamp = right.preferredQuote?.timestamp ?? "";
+      const leftTimestamp = left.selectedQuote?.timestamp ?? "";
+      const rightTimestamp = right.selectedQuote?.timestamp ?? "";
       return rightTimestamp.localeCompare(leftTimestamp) || left.symbol.localeCompare(right.symbol);
     })
     .slice(0, input.limit ?? 100);
