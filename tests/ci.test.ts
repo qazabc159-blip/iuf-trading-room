@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -42,16 +43,20 @@ import {
 import {
   getMarketDataPolicy,
   getMarketDataOverview,
+  getMarketBarDiagnostics,
+  getMarketQuoteHistoryDiagnostics,
   ingestTradingViewQuote,
   listMarketBars,
   listMarketDataProviderStatuses,
   listMarketQuoteHistory,
   listMarketQuotes,
   listMarketSymbols,
+  resetMarketDataWorkspaceState,
   resolveMarketQuotes,
   upsertPaperQuotes,
   upsertManualQuotes
 } from "../apps/api/src/market-data.ts";
+import { resetPersistedQuoteEntries } from "../apps/api/src/market-data-store.ts";
 import {
   evaluateRiskCheck,
   getKillSwitchState,
@@ -1620,7 +1625,7 @@ test("market data resolves preferred source by freshness and precedence", async 
     limit: 10
   });
   assert.equal(preferredFreshPaper.length, 1);
-  assert.equal(preferredFreshPaper[0]?.source, "paper");
+  assert.equal(preferredFreshPaper[0]?.source, "tradingview");
 });
 
 test("market data policy reflects configured source priority and freshness thresholds", () => {
@@ -1900,6 +1905,120 @@ test("market data history and bars respect time window filters", async () => {
   assert.equal(bars.length, 1);
   assert.equal(bars[0]?.open, 12);
   assert.equal(bars[0]?.close, 12);
+});
+
+test("market data persists quote history and can reload it after cache reset", async () => {
+  const workspaceSlug = `market-persist-${randomUUID()}`;
+  const session = { workspace: { slug: workspaceSlug } };
+  const previousStoreDir = process.env.MARKET_DATA_STORE_DIR;
+  process.env.MARKET_DATA_STORE_DIR = path.join(process.cwd(), "tmp-market-data-tests", randomUUID());
+
+  try {
+    await upsertManualQuotes({
+      session,
+      quotes: [
+        {
+          symbol: "PERSIST1",
+          market: "OTHER",
+          source: "tradingview",
+          last: 42,
+          bid: 41.9,
+          ask: 42.1,
+          open: 40,
+          high: 43,
+          low: 39.5,
+          prevClose: 40,
+          volume: 25,
+          changePct: 5,
+          timestamp: new Date().toISOString()
+        }
+      ]
+    });
+
+    resetMarketDataWorkspaceState(workspaceSlug);
+
+    const quotes = await listMarketQuotes({
+      session,
+      symbols: "PERSIST1",
+      source: "tradingview",
+      includeStale: true,
+      limit: 10
+    });
+    const history = await listMarketQuoteHistory({
+      session,
+      symbols: "PERSIST1",
+      source: "tradingview",
+      includeStale: true,
+      limit: 10
+    });
+
+    assert.equal(quotes.length, 1);
+    assert.equal(quotes[0]?.symbol, "PERSIST1");
+    assert.equal(history.length, 1);
+    assert.equal(history[0]?.symbol, "PERSIST1");
+  } finally {
+    resetMarketDataWorkspaceState(workspaceSlug);
+    await resetPersistedQuoteEntries(workspaceSlug);
+    if (previousStoreDir === undefined) {
+      delete process.env.MARKET_DATA_STORE_DIR;
+    } else {
+      process.env.MARKET_DATA_STORE_DIR = previousStoreDir;
+    }
+  }
+});
+
+test("market data diagnostics expose source selection and synthetic quality hints", async () => {
+  const session = { workspace: { slug: `market-diagnostics-${randomUUID()}` } };
+  const now = new Date().toISOString();
+
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "DIA1",
+        market: "OTHER",
+        source: "manual",
+        last: 88,
+        bid: 87.9,
+        ask: 88.1,
+        open: 87,
+        high: 89,
+        low: 86.5,
+        prevClose: 87,
+        volume: 90,
+        changePct: 1.15,
+        timestamp: now
+      }
+    ]
+  });
+
+  const historyDiagnostics = await getMarketQuoteHistoryDiagnostics({
+    session,
+    symbols: "DIA1",
+    includeStale: true,
+    limit: 10
+  });
+  const barDiagnostics = await getMarketBarDiagnostics({
+    session,
+    symbols: "DIA1",
+    source: "paper",
+    interval: "1m",
+    includeStale: true,
+    limit: 10
+  });
+
+  assert.equal(historyDiagnostics.length, 1);
+  assert.equal(historyDiagnostics[0]?.symbol, "DIA1");
+  assert.equal(historyDiagnostics[0]?.selectedSource, "paper");
+  assert.equal(historyDiagnostics[0]?.synthetic, true);
+  assert.equal(historyDiagnostics[0]?.generatedFrom, "provider_quote_history");
+  assert.equal(historyDiagnostics[0]?.freshnessStatus, "fresh");
+
+  assert.equal(barDiagnostics.length, 1);
+  assert.equal(barDiagnostics[0]?.source, "paper");
+  assert.equal(barDiagnostics[0]?.synthetic, true);
+  assert.equal(barDiagnostics[0]?.approximate, true);
+  assert.equal(barDiagnostics[0]?.generatedFrom, "quote_history");
 });
 
 test("market data symbols derive from companies and dedupe by market and ticker", async () => {

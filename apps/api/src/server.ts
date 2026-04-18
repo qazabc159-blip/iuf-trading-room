@@ -78,15 +78,19 @@ import {
 import {
   getMarketDataPolicy,
   getMarketDataOverview,
+  getMarketBarDiagnostics,
+  getMarketQuoteHistoryDiagnostics,
   ingestTradingViewQuote,
   listMarketBars,
   listMarketDataProviderStatuses,
   listMarketQuoteHistory,
   listMarketQuotes,
   listMarketSymbols,
+  marketDataBarDiagnosticsQuerySchema,
   marketDataResolveQuerySchema,
   marketDataBarsQuerySchema,
   marketDataHistoryQuerySchema,
+  marketDataHistoryDiagnosticsQuerySchema,
   marketDataOverviewQuerySchema,
   marketDataPolicyQuerySchema,
   manualQuoteUpsertSchema,
@@ -689,10 +693,43 @@ app.get("/api/v1/market-data/history", async (c) => {
   });
 });
 
+app.get("/api/v1/market-data/history/diagnostics", async (c) => {
+  const query = marketDataHistoryDiagnosticsQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getMarketQuoteHistoryDiagnostics({
+      session: c.get("session"),
+      symbols: query.symbols,
+      market: query.market,
+      source: query.source,
+      includeStale: query.includeStale,
+      from: query.from,
+      to: query.to,
+      limit: query.limit
+    })
+  });
+});
+
 app.get("/api/v1/market-data/bars", async (c) => {
   const query = marketDataBarsQuerySchema.parse(c.req.query());
   return c.json({
     data: await listMarketBars({
+      session: c.get("session"),
+      symbols: query.symbols,
+      market: query.market,
+      source: query.source,
+      interval: query.interval,
+      includeStale: query.includeStale,
+      from: query.from,
+      to: query.to,
+      limit: query.limit
+    })
+  });
+});
+
+app.get("/api/v1/market-data/bars/diagnostics", async (c) => {
+  const query = marketDataBarDiagnosticsQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getMarketBarDiagnostics({
       session: c.get("session"),
       symbols: query.symbols,
       market: query.market,

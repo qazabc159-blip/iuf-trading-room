@@ -464,6 +464,42 @@ async function main() {
     );
     assert.equal(tradingviewFilteredHistory.data.length, 1);
 
+    const tradingviewHistoryDiagnostics = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          selectedSource: string | null;
+          freshnessStatus: string;
+          synthetic: boolean;
+          generatedFrom: string;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/history/diagnostics?symbols=TVSMK1&includeStale=true&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(tradingviewHistoryDiagnostics.data.length, 1);
+    assert.equal(tradingviewHistoryDiagnostics.data[0]?.symbol, "TVSMK1");
+    assert.equal(tradingviewHistoryDiagnostics.data[0]?.selectedSource, "tradingview");
+    assert.equal(tradingviewHistoryDiagnostics.data[0]?.generatedFrom, "provider_quote_history");
+
+    const tradingviewBarDiagnostics = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          source: string;
+          interval: string;
+          synthetic: boolean;
+          generatedFrom: string;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/bars/diagnostics?symbols=TVSMK1&source=tradingview&interval=1m&includeStale=true&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(tradingviewBarDiagnostics.data.length, 1);
+    assert.equal(tradingviewBarDiagnostics.data[0]?.symbol, "TVSMK1");
+    assert.equal(tradingviewBarDiagnostics.data[0]?.source, "tradingview");
+    assert.equal(tradingviewBarDiagnostics.data[0]?.generatedFrom, "quote_history");
+
     const providerStatusAfterTradingview = await request<
       JsonEnvelope<
         Array<{
@@ -492,7 +528,14 @@ async function main() {
           total: number;
           fresh: number;
           stale: number;
+          readiness: {
+            connectedSources: string[];
+            preferredSourceOrder: string[];
+          };
           bySource: Array<{ source: string; total: number }>;
+        };
+        policy: {
+          sourcePriority: Array<{ source: string; priority: number }>;
         };
         leaders: {
           topGainers: Array<{ symbol: string; changePct: number | null }>;
@@ -507,6 +550,9 @@ async function main() {
     assert.ok(marketOverview.data.providers.length >= 2);
     assert.ok(marketOverview.data.symbols.total >= 1);
     assert.ok(marketOverview.data.quotes.total >= 1);
+    assert.equal(marketOverview.data.policy.sourcePriority[0]?.source, "kgi");
+    assert.equal(marketOverview.data.quotes.readiness.connectedSources.includes("tradingview"), true);
+    assert.equal(marketOverview.data.quotes.readiness.preferredSourceOrder[0], "kgi");
     assert.ok(marketOverview.data.quotes.bySource.some((item) => item.source === "manual"));
     assert.equal(marketOverview.data.leaders.topGainers[0]?.symbol, "SMK1");
     assert.equal(marketOverview.data.leaders.mostActive[0]?.symbol, "SMK1");

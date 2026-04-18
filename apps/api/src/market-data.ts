@@ -18,6 +18,11 @@ import {
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 import { z } from "zod";
 
+import {
+  appendPersistedQuoteEntries,
+  loadPersistedQuoteEntries
+} from "./market-data-store.js";
+
 type QuoteCacheEntry = Quote & {
   updatedAt: string;
 };
@@ -42,6 +47,7 @@ type QuoteResolutionStaleReason =
   | "missing_last"
   | "no_quote"
   | "provider_unavailable";
+type TimeWindowCompleteness = "unbounded" | "empty" | "partial" | "complete";
 
 const quoteResolutionFreshnessStatusSchema = z.enum(["fresh", "stale", "missing"]);
 const quoteResolutionFallbackReasonSchema = z.enum([
@@ -59,6 +65,7 @@ const quoteResolutionStaleReasonSchema = z.enum([
   "no_quote",
   "provider_unavailable"
 ]);
+const timeWindowCompletenessSchema = z.enum(["unbounded", "empty", "partial", "complete"]);
 const quoteResolutionCandidateSchema = z.object({
   source: quoteSourceSchema,
   priority: z.number().int().nonnegative(),
@@ -157,6 +164,9 @@ export const marketDataBarsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).optional()
 });
 
+export const marketDataHistoryDiagnosticsQuerySchema = marketDataHistoryQuerySchema;
+export const marketDataBarDiagnosticsQuerySchema = marketDataBarsQuerySchema;
+
 export const marketDataResolveQuerySchema = z.object({
   symbols: z.string().trim().min(1),
   market: marketSchema.optional(),
@@ -166,6 +176,7 @@ export const marketDataResolveQuerySchema = z.object({
 
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>>();
+const persistedQuoteHistoryLoaded = new Set<string>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
 const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "tradingview", "paper", "manual"];
 
@@ -246,6 +257,64 @@ function getQuoteHistoryCacheForWorkspace(workspaceSlug: string) {
   return workspaceHistory;
 }
 
+function normalizePersistedEntry(entry: Awaited<ReturnType<typeof loadPersistedQuoteEntries>>[number]): QuoteCacheEntry {
+  return {
+    ...entry,
+    ageMs: 0,
+    isStale: false,
+    updatedAt: entry.updatedAt ?? entry.timestamp
+  };
+}
+
+function pushQuoteEntry(
+  workspaceCache: Map<string, QuoteCacheEntry>,
+  workspaceHistory: Map<string, QuoteCacheEntry[]>,
+  entry: QuoteCacheEntry
+) {
+  const cacheKey = buildQuoteCacheKey(entry.symbol, entry.market, entry.source);
+  const currentCacheEntry = workspaceCache.get(cacheKey);
+  if (!currentCacheEntry || currentCacheEntry.timestamp.localeCompare(entry.timestamp) <= 0) {
+    workspaceCache.set(cacheKey, entry);
+  }
+
+  const history = workspaceHistory.get(cacheKey) ?? [];
+  const lastHistoryEntry = history.at(-1);
+  const isDuplicateHistoryEntry =
+    lastHistoryEntry?.timestamp === entry.timestamp
+    && lastHistoryEntry?.last === entry.last
+    && lastHistoryEntry?.bid === entry.bid
+    && lastHistoryEntry?.ask === entry.ask
+    && lastHistoryEntry?.volume === entry.volume;
+
+  if (!isDuplicateHistoryEntry) {
+    history.push(entry);
+    const historyLimit = getQuoteHistoryLimit(entry.source);
+    if (history.length > historyLimit) {
+      history.splice(0, history.length - historyLimit);
+    }
+    workspaceHistory.set(cacheKey, history);
+    return true;
+  }
+
+  return false;
+}
+
+async function ensurePersistedQuoteHistoryLoaded(workspaceSlug: string) {
+  if (persistedQuoteHistoryLoaded.has(workspaceSlug)) {
+    return;
+  }
+
+  const persistedEntries = await loadPersistedQuoteEntries(workspaceSlug);
+  const workspaceCache = getQuoteCacheForWorkspace(workspaceSlug);
+  const workspaceHistory = getQuoteHistoryCacheForWorkspace(workspaceSlug);
+
+  for (const persistedEntry of persistedEntries) {
+    pushQuoteEntry(workspaceCache, workspaceHistory, normalizePersistedEntry(persistedEntry));
+  }
+
+  persistedQuoteHistoryLoaded.add(workspaceSlug);
+}
+
 function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
   const cache = getQuoteCacheForWorkspace(workspaceSlug);
   return [...cache.values()]
@@ -301,6 +370,30 @@ function getQuoteHistoryLimit(source: QuoteSource) {
           : "KGI_QUOTE_HISTORY_LIMIT";
   const raw = Number(process.env[envKey]);
   return Number.isFinite(raw) && raw > 0 ? raw : 512;
+}
+
+function isSyntheticSource(source: QuoteSource) {
+  return source === "manual" || source === "paper";
+}
+
+function getTimeWindowCompleteness(input: {
+  count: number;
+  firstTimestamp?: string | null;
+  lastTimestamp?: string | null;
+  from?: string;
+  to?: string;
+}): TimeWindowCompleteness {
+  if (!input.from && !input.to) {
+    return "unbounded";
+  }
+
+  if (input.count === 0 || !input.firstTimestamp || !input.lastTimestamp) {
+    return "empty";
+  }
+
+  const hasFromCoverage = !input.from || input.firstTimestamp <= input.from;
+  const hasToCoverage = !input.to || input.lastTimestamp >= input.to;
+  return hasFromCoverage && hasToCoverage ? "complete" : "partial";
 }
 
 function compareQuotes(left: Quote, right: Quote) {
@@ -488,9 +581,11 @@ function buildCachedProvider(
   return {
     source,
     async listQuotes(workspaceSlug) {
+      await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
       return listCachedProviderQuotes(workspaceSlug, source);
     },
     async getStatus(workspaceSlug) {
+      await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
       const quotes = await listCachedProviderQuotes(workspaceSlug, source);
       const freshQuotes = quotes.filter((quote) => !quote.isStale);
       const lastMessageAt = quotes[0]?.timestamp ?? null;
@@ -560,7 +655,8 @@ export function getMarketDataPolicy() {
     historyLimit: quoteProviderSources.map((source) => ({
       source,
       limit: getQuoteHistoryLimit(source)
-    }))
+    })),
+    syntheticSources: quoteProviderSources.filter(isSyntheticSource)
   };
 }
 
@@ -597,9 +693,12 @@ async function upsertProviderQuotes(input: {
   sourceOverride?: QuoteSource;
   quotes: z.infer<typeof manualQuoteUpsertItemSchema>[];
 }) {
-  const workspaceCache = getQuoteCacheForWorkspace(input.session.workspace.slug);
-  const workspaceHistory = getQuoteHistoryCacheForWorkspace(input.session.workspace.slug);
+  const workspaceSlug = input.session.workspace.slug;
+  await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
+  const workspaceCache = getQuoteCacheForWorkspace(workspaceSlug);
+  const workspaceHistory = getQuoteHistoryCacheForWorkspace(workspaceSlug);
   const upserted: Quote[] = [];
+  const appendedEntries: QuoteCacheEntry[] = [];
 
   for (const item of input.quotes) {
     const timestamp = toIso(item.timestamp);
@@ -623,29 +722,32 @@ async function upsertProviderQuotes(input: {
       updatedAt: new Date().toISOString()
     };
 
-    const cacheKey = buildQuoteCacheKey(entry.symbol, entry.market, entry.source);
-    workspaceCache.set(cacheKey, entry);
-
-    const history = workspaceHistory.get(cacheKey) ?? [];
-    const lastHistoryEntry = history.at(-1);
-    const isDuplicateHistoryEntry =
-      lastHistoryEntry?.timestamp === entry.timestamp
-      && lastHistoryEntry?.last === entry.last
-      && lastHistoryEntry?.bid === entry.bid
-      && lastHistoryEntry?.ask === entry.ask
-      && lastHistoryEntry?.volume === entry.volume;
-
-    if (!isDuplicateHistoryEntry) {
-      history.push(entry);
-      const historyLimit = getQuoteHistoryLimit(entry.source);
-      if (history.length > historyLimit) {
-        history.splice(0, history.length - historyLimit);
-      }
-      workspaceHistory.set(cacheKey, history);
+    if (pushQuoteEntry(workspaceCache, workspaceHistory, entry)) {
+      appendedEntries.push(entry);
     }
 
     upserted.push(withFreshness(entry));
   }
+
+  await appendPersistedQuoteEntries(
+    workspaceSlug,
+    appendedEntries.map((entry) => ({
+      symbol: entry.symbol,
+      market: entry.market,
+      source: entry.source,
+      last: entry.last,
+      bid: entry.bid,
+      ask: entry.ask,
+      open: entry.open,
+      high: entry.high,
+      low: entry.low,
+      prevClose: entry.prevClose,
+      volume: entry.volume,
+      changePct: entry.changePct,
+      timestamp: entry.timestamp,
+      updatedAt: entry.updatedAt
+    }))
+  );
 
   return upserted;
 }
@@ -745,6 +847,7 @@ export async function listMarketQuoteHistory(input: {
   limit?: number;
 }) {
   const workspaceSlug = input.session.workspace.slug;
+  await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
   const sources = input.source ? [input.source] : [...quoteProviderSources];
   const symbolSet = new Set(
     (input.symbols ?? "")
@@ -793,6 +896,77 @@ export async function listMarketQuoteHistory(input: {
     .slice(0, input.limit ?? 1000);
 
   return history;
+}
+
+export async function getMarketQuoteHistoryDiagnostics(input: {
+  session: AppSession;
+  symbols?: string;
+  market?: Market;
+  source?: QuoteSource;
+  includeStale?: boolean;
+  from?: string;
+  to?: string;
+  limit?: number;
+}) {
+  const history = await listMarketQuoteHistory({
+    ...input,
+    includeStale: input.includeStale ?? true
+  });
+  const symbols = [...new Set(history.map((quote) => quote.symbol))];
+  const resolutions = symbols.length > 0
+    ? await resolveMarketQuotes({
+      session: input.session,
+      symbols: symbols.join(","),
+      market: input.market,
+      includeStale: true,
+      limit: input.limit ?? 200
+    })
+    : [];
+  const resolutionByKey = new Map(
+    resolutions.map((resolution) => [
+      buildQuoteIdentityKey(resolution.symbol, resolution.market),
+      resolution
+    ])
+  );
+
+  const grouped = new Map<string, Quote[]>();
+  for (const quote of history) {
+    const key = buildQuoteIdentityKey(quote.symbol, quote.market);
+    const current = grouped.get(key) ?? [];
+    current.push(quote);
+    grouped.set(key, current);
+  }
+
+  return [...grouped.entries()].map(([key, quotes]) => {
+    const [market, symbol] = key.split(":");
+    const ordered = [...quotes].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+    const resolution = resolutionByKey.get(key);
+    const firstTimestamp = ordered[0]?.timestamp ?? null;
+    const lastTimestamp = ordered.at(-1)?.timestamp ?? null;
+    const source = input.source ?? resolution?.selectedSource ?? ordered.at(-1)?.source ?? null;
+
+    return {
+      symbol,
+      market,
+      source,
+      selectedSource: resolution?.selectedSource ?? null,
+      fallbackReason: resolution?.fallbackReason ?? "none",
+      freshnessStatus: resolution?.freshnessStatus ?? "missing",
+      staleReason: resolution?.staleReason ?? "no_quote",
+      pointCount: ordered.length,
+      firstTimestamp,
+      lastTimestamp,
+      timeWindowCompleteness: getTimeWindowCompleteness({
+        count: ordered.length,
+        firstTimestamp,
+        lastTimestamp,
+        from: input.from,
+        to: input.to
+      }),
+      synthetic: source ? isSyntheticSource(source) : false,
+      generatedFrom: "provider_quote_history"
+    };
+  });
 }
 
 export async function resolveMarketQuotes(input: {
@@ -1007,6 +1181,56 @@ export async function listMarketBars(input: {
     .slice(0, input.limit ?? 100);
 }
 
+export async function getMarketBarDiagnostics(input: {
+  session: AppSession;
+  symbols: string;
+  market?: Market;
+  source?: QuoteSource;
+  interval?: BarInterval;
+  includeStale?: boolean;
+  from?: string;
+  to?: string;
+  limit?: number;
+}) {
+  const bars = await listMarketBars({
+    ...input,
+    includeStale: input.includeStale ?? true
+  });
+  const grouped = new Map<string, z.infer<typeof barSchema>[]>();
+  for (const bar of bars) {
+    const key = `${bar.source}:${bar.symbol}`;
+    const current = grouped.get(key) ?? [];
+    current.push(bar);
+    grouped.set(key, current);
+  }
+
+  return [...grouped.entries()].map(([key, entries]) => {
+    const [source, symbol] = key.split(":");
+    const ordered = [...entries].sort((left, right) => left.openTime.localeCompare(right.openTime));
+    const firstOpenTime = ordered[0]?.openTime ?? null;
+    const lastCloseTime = ordered.at(-1)?.closeTime ?? null;
+
+    return {
+      symbol,
+      source,
+      interval: input.interval ?? "1m",
+      barCount: ordered.length,
+      firstOpenTime,
+      lastCloseTime,
+      timeWindowCompleteness: getTimeWindowCompleteness({
+        count: ordered.length,
+        firstTimestamp: firstOpenTime,
+        lastTimestamp: lastCloseTime,
+        from: input.from,
+        to: input.to
+      }),
+      synthetic: true,
+      approximate: true,
+      generatedFrom: "quote_history"
+    };
+  });
+}
+
 export async function getMarketDataOverview(input: {
   session: AppSession;
   repo: TradingRoomRepository;
@@ -1101,6 +1325,7 @@ export async function getMarketDataOverview(input: {
 
   return {
     generatedAt: new Date().toISOString(),
+    policy: getMarketDataPolicy(),
     providers,
     symbols: {
       total: symbols.length,
@@ -1111,6 +1336,11 @@ export async function getMarketDataOverview(input: {
       fresh: quotes.filter((quote) => !quote.isStale).length,
       stale: quotes.filter((quote) => quote.isStale).length,
       latestQuoteTimestamp,
+      readiness: {
+        connectedSources: providers.filter((provider) => provider.connected).map((provider) => provider.source),
+        disconnectedSources: providers.filter((provider) => !provider.connected).map((provider) => provider.source),
+        preferredSourceOrder: getSourcePriorityOrder()
+      },
       bySource: quotesBySource,
       byMarket: quotesByMarket
     },
@@ -1120,4 +1350,17 @@ export async function getMarketDataOverview(input: {
       mostActive
     }
   };
+}
+
+export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
+  if (workspaceSlug) {
+    providerQuoteCache.delete(workspaceSlug);
+    providerQuoteHistoryCache.delete(workspaceSlug);
+    persistedQuoteHistoryLoaded.delete(workspaceSlug);
+    return;
+  }
+
+  providerQuoteCache.clear();
+  providerQuoteHistoryCache.clear();
+  persistedQuoteHistoryLoaded.clear();
 }
