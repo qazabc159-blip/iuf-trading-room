@@ -134,6 +134,8 @@ export const marketDataOverviewQuerySchema = z.object({
   topLimit: z.coerce.number().int().min(1).max(20).optional()
 });
 
+export const marketDataPolicyQuerySchema = z.object({});
+
 export const marketDataHistoryQuerySchema = z.object({
   symbols: z.string().trim().min(1).optional(),
   market: marketSchema.optional(),
@@ -165,12 +167,45 @@ export const marketDataResolveQuerySchema = z.object({
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
-const sourcePriority: Record<QuoteSource, number> = {
-  kgi: 4,
-  tradingview: 3,
-  paper: 2,
-  manual: 1
-};
+const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "tradingview", "paper", "manual"];
+
+function getSourcePriorityOrder() {
+  const configured = (process.env.QUOTE_SOURCE_PRIORITY ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value): value is QuoteSource => quoteProviderSources.includes(value as QuoteSource));
+
+  const seen = new Set<QuoteSource>();
+  const ordered = [...configured, ...defaultSourcePriorityOrder].filter((source): source is QuoteSource => {
+    if (seen.has(source)) {
+      return false;
+    }
+    seen.add(source);
+    return true;
+  });
+
+  return ordered;
+}
+
+function getSourcePriorityMap() {
+  const order = getSourcePriorityOrder();
+  return order.reduce<Record<QuoteSource, number>>(
+    (accumulator, source, index) => {
+      accumulator[source] = order.length - index;
+      return accumulator;
+    },
+    {
+      manual: 1,
+      paper: 1,
+      tradingview: 1,
+      kgi: 1
+    }
+  );
+}
+
+function getSourcePriority(source: QuoteSource) {
+  return getSourcePriorityMap()[source];
+}
 
 function getQuoteStaleMs(source: QuoteSource) {
   const envKey =
@@ -273,6 +308,7 @@ function compareQuotes(left: Quote, right: Quote) {
     return left.isStale ? 1 : -1;
   }
 
+  const sourcePriority = getSourcePriorityMap();
   const priorityDiff = sourcePriority[right.source] - sourcePriority[left.source];
   if (priorityDiff !== 0) {
     return priorityDiff;
@@ -507,6 +543,25 @@ export async function listMarketDataProviderStatuses(input: {
       quoteProviders[source].getStatus(input.session.workspace.slug)
     )
   );
+}
+
+export function getMarketDataPolicy() {
+  const sourcePriorityOrder = getSourcePriorityOrder();
+  return {
+    generatedAt: new Date().toISOString(),
+    sourcePriority: sourcePriorityOrder.map((source) => ({
+      source,
+      priority: getSourcePriority(source)
+    })),
+    freshnessMs: quoteProviderSources.map((source) => ({
+      source,
+      staleAfterMs: getQuoteStaleMs(source)
+    })),
+    historyLimit: quoteProviderSources.map((source) => ({
+      source,
+      limit: getQuoteHistoryLimit(source)
+    }))
+  };
 }
 
 export async function listMarketSymbols(input: {
@@ -794,7 +849,7 @@ export async function resolveMarketQuotes(input: {
 
       const candidates = quoteProviderSources
         .slice()
-        .sort((left, right) => sourcePriority[right] - sourcePriority[left])
+        .sort((left, right) => getSourcePriority(right) - getSourcePriority(left))
         .map((source) => {
           const quote = bestQuoteBySource.get(source) ?? null;
           const providerStatus = statusBySource.get(source);
@@ -808,7 +863,7 @@ export async function resolveMarketQuotes(input: {
 
           return quoteResolutionCandidateSchema.parse({
             source,
-            priority: sourcePriority[source],
+            priority: getSourcePriority(source),
             providerConnected,
             subscribed,
             eligible,
@@ -833,7 +888,7 @@ export async function resolveMarketQuotes(input: {
           : "no_quote";
       } else if (selected.source !== quoteProviderSources.at(-1)) {
         const higherPriorityCandidates = candidates.filter(
-          (candidate) => sourcePriority[candidate.source] > sourcePriority[selected.source]
+          (candidate) => getSourcePriority(candidate.source) > getSourcePriority(selected.source)
         );
         if (higherPriorityCandidates.some((candidate) => candidate.quote && candidate.freshnessStatus === "stale")) {
           fallbackReason = "higher_priority_stale";

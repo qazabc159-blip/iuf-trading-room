@@ -40,6 +40,7 @@ import {
   searchThemeGraph
 } from "../apps/api/src/theme-graph.ts";
 import {
+  getMarketDataPolicy,
   getMarketDataOverview,
   ingestTradingViewQuote,
   listMarketBars,
@@ -1622,8 +1623,59 @@ test("market data resolves preferred source by freshness and precedence", async 
   assert.equal(preferredFreshPaper[0]?.source, "paper");
 });
 
+test("market data policy reflects configured source priority and freshness thresholds", () => {
+  const previousPriority = process.env.QUOTE_SOURCE_PRIORITY;
+  const previousTradingViewStale = process.env.TRADINGVIEW_QUOTE_STALE_MS;
+  const previousPaperStale = process.env.PAPER_QUOTE_STALE_MS;
+  const previousTradingViewHistory = process.env.TRADINGVIEW_QUOTE_HISTORY_LIMIT;
+
+  process.env.QUOTE_SOURCE_PRIORITY = "paper,tradingview,manual";
+  process.env.TRADINGVIEW_QUOTE_STALE_MS = "7000";
+  process.env.PAPER_QUOTE_STALE_MS = "25000";
+  process.env.TRADINGVIEW_QUOTE_HISTORY_LIMIT = "2048";
+
+  try {
+    const policy = getMarketDataPolicy();
+    assert.equal(policy.sourcePriority[0]?.source, "paper");
+    assert.equal(policy.sourcePriority[1]?.source, "tradingview");
+    assert.equal(policy.sourcePriority[2]?.source, "manual");
+    assert.equal(policy.sourcePriority.at(-1)?.source, "kgi");
+    assert.equal(policy.freshnessMs.find((entry) => entry.source === "tradingview")?.staleAfterMs, 7000);
+    assert.equal(policy.freshnessMs.find((entry) => entry.source === "paper")?.staleAfterMs, 25000);
+    assert.equal(policy.historyLimit.find((entry) => entry.source === "tradingview")?.limit, 2048);
+  } finally {
+    if (previousPriority === undefined) {
+      delete process.env.QUOTE_SOURCE_PRIORITY;
+    } else {
+      process.env.QUOTE_SOURCE_PRIORITY = previousPriority;
+    }
+
+    if (previousTradingViewStale === undefined) {
+      delete process.env.TRADINGVIEW_QUOTE_STALE_MS;
+    } else {
+      process.env.TRADINGVIEW_QUOTE_STALE_MS = previousTradingViewStale;
+    }
+
+    if (previousPaperStale === undefined) {
+      delete process.env.PAPER_QUOTE_STALE_MS;
+    } else {
+      process.env.PAPER_QUOTE_STALE_MS = previousPaperStale;
+    }
+
+    if (previousTradingViewHistory === undefined) {
+      delete process.env.TRADINGVIEW_QUOTE_HISTORY_LIMIT;
+    } else {
+      process.env.TRADINGVIEW_QUOTE_HISTORY_LIMIT = previousTradingViewHistory;
+    }
+  }
+});
+
 test("market data builds quote history and minute bars from preferred sources", async () => {
   const session = { workspace: { slug: `market-history-${randomUUID()}` } };
+  const baseMinute = Math.floor((Date.now() - 10_000) / 60_000) * 60_000;
+  const minuteOneOpen = new Date(baseMinute - 55_000).toISOString();
+  const minuteOneClose = new Date(baseMinute - 20_000).toISOString();
+  const minuteTwoOpen = new Date(baseMinute + 5_000).toISOString();
 
   await upsertManualQuotes({
     session,
@@ -1641,7 +1693,7 @@ test("market data builds quote history and minute bars from preferred sources", 
         prevClose: 89,
         volume: 10,
         changePct: 1.12,
-        timestamp: "2026-04-18T01:00:05.000Z"
+        timestamp: minuteOneOpen
       },
       {
         symbol: "BAR1",
@@ -1656,7 +1708,7 @@ test("market data builds quote history and minute bars from preferred sources", 
         prevClose: 99,
         volume: 50,
         changePct: 1.01,
-        timestamp: "2026-04-18T01:00:10.000Z"
+        timestamp: minuteOneOpen
       },
       {
         symbol: "BAR1",
@@ -1671,7 +1723,7 @@ test("market data builds quote history and minute bars from preferred sources", 
         prevClose: 99,
         volume: 80,
         changePct: 6.06,
-        timestamp: "2026-04-18T01:00:40.000Z"
+        timestamp: minuteOneClose
       },
       {
         symbol: "BAR1",
@@ -1686,7 +1738,7 @@ test("market data builds quote history and minute bars from preferred sources", 
         prevClose: 102,
         volume: 120,
         changePct: 0.98,
-        timestamp: "2026-04-18T01:01:05.000Z"
+        timestamp: minuteTwoOpen
       }
     ]
   });
@@ -1694,6 +1746,7 @@ test("market data builds quote history and minute bars from preferred sources", 
   const history = await listMarketQuoteHistory({
     session,
     symbols: "BAR1",
+    includeStale: true,
     limit: 20
   });
   assert.equal(history.length, 3);
@@ -1704,6 +1757,7 @@ test("market data builds quote history and minute bars from preferred sources", 
     session,
     symbols: "BAR1",
     interval: "1m",
+    includeStale: true,
     limit: 10
   });
   assert.equal(bars.length, 2);
@@ -1717,7 +1771,7 @@ test("market data builds quote history and minute bars from preferred sources", 
 
 test("market data resolve diagnostics expose preferred source and candidate stack", async () => {
   const session = { workspace: { slug: `market-resolve-${randomUUID()}` } };
-  const now = "2026-04-18T02:00:00.000Z";
+  const now = new Date().toISOString();
 
   await upsertManualQuotes({
     session,
@@ -1782,6 +1836,10 @@ test("market data resolve diagnostics expose preferred source and candidate stac
 
 test("market data history and bars respect time window filters", async () => {
   const session = { workspace: { slug: `market-time-range-${randomUUID()}` } };
+  const baseMinute = Math.floor((Date.now() - 10_000) / 60_000) * 60_000;
+  const olderTimestamp = new Date(baseMinute - 20_000).toISOString();
+  const newerTimestamp = new Date(baseMinute + 5_000).toISOString();
+  const filterFrom = new Date(baseMinute).toISOString();
 
   await upsertManualQuotes({
     session,
@@ -1799,7 +1857,7 @@ test("market data history and bars respect time window filters", async () => {
         prevClose: 9.5,
         volume: 1,
         changePct: 5.26,
-        timestamp: "2026-04-18T03:00:10.000Z"
+        timestamp: olderTimestamp
       },
       {
         symbol: "TIME1",
@@ -1814,7 +1872,7 @@ test("market data history and bars respect time window filters", async () => {
         prevClose: 10,
         volume: 2,
         changePct: 20,
-        timestamp: "2026-04-18T03:01:10.000Z"
+        timestamp: newerTimestamp
       }
     ]
   });
@@ -1823,7 +1881,8 @@ test("market data history and bars respect time window filters", async () => {
     session,
     symbols: "TIME1",
     source: "tradingview",
-    from: "2026-04-18T03:01:00.000Z",
+    includeStale: true,
+    from: filterFrom,
     limit: 10
   });
   assert.equal(history.length, 1);
@@ -1834,7 +1893,8 @@ test("market data history and bars respect time window filters", async () => {
     symbols: "TIME1",
     source: "tradingview",
     interval: "1m",
-    from: "2026-04-18T03:01:00.000Z",
+    includeStale: true,
+    from: filterFrom,
     limit: 10
   });
   assert.equal(bars.length, 1);

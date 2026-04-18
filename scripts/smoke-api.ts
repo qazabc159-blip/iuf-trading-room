@@ -180,6 +180,27 @@ async function main() {
     assert.equal(marketProviders.data[0]?.source, "manual");
     assert.equal(marketProviders.data[0]?.connected, true);
 
+    const marketPolicy = await request<
+      JsonEnvelope<{
+        generatedAt: string;
+        sourcePriority: Array<{ source: string; priority: number }>;
+        freshnessMs: Array<{ source: string; staleAfterMs: number }>;
+        historyLimit: Array<{ source: string; limit: number }>;
+      }>
+    >(baseUrl, "/api/v1/market-data/policy", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.match(marketPolicy.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
+    assert.equal(marketPolicy.data.sourcePriority[0]?.source, "kgi");
+    assert.equal(
+      marketPolicy.data.freshnessMs.some((entry) => entry.source === "tradingview" && entry.staleAfterMs > 0),
+      true
+    );
+    assert.equal(
+      marketPolicy.data.historyLimit.some((entry) => entry.source === "paper" && entry.limit > 0),
+      true
+    );
+
     const marketSymbols = await request<
       JsonEnvelope<
         Array<{
