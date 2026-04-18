@@ -17,6 +17,8 @@ import type {
   MarketDataConsumerItem,
   MarketDataConsumerMode,
   MarketDataConsumerSummary,
+  MarketDataDecisionSummary,
+  MarketDataDecisionSummaryItem,
   Order,
   OrderCancelInput,
   OrderCreateInput,
@@ -750,6 +752,24 @@ export async function getMarketDataConsumerSummary(params: {
   if (params.limit) query.set("limit", String(params.limit));
   return request<MarketDataConsumerSummary>(
     `/api/v1/market-data/consumer-summary?${query.toString()}`
+  );
+}
+
+export type { MarketDataDecisionSummary, MarketDataDecisionSummaryItem };
+
+export async function getMarketDataDecisionSummary(params: {
+  symbols: string;
+  market?: string;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const query = new URLSearchParams();
+  query.set("symbols", params.symbols);
+  if (params.market) query.set("market", params.market);
+  if (params.includeStale) query.set("includeStale", "true");
+  if (params.limit) query.set("limit", String(params.limit));
+  return request<MarketDataDecisionSummary>(
+    `/api/v1/market-data/decision-summary?${query.toString()}`
   );
 }
 

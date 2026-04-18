@@ -77,6 +77,35 @@ type QuoteContext = {
   ask: number | null;
 };
 
+type QuoteDecisionMode = {
+  decision: "allow" | "review" | "block";
+  usable: boolean;
+  safe: boolean;
+};
+
+type QuoteDecision = {
+  selectedSource: string | null;
+  readiness: "ready" | "degraded" | "blocked" | string;
+  freshnessStatus: "fresh" | "stale" | "missing" | string;
+  fallbackReason: string;
+  staleReason: string;
+  primaryReason: string;
+  reasons: string[];
+  quoteTimestamp: string | null;
+  quoteAgeMs: number | null;
+  quote: {
+    source: string;
+    last: number | null;
+    bid: number | null;
+    ask: number | null;
+    timestamp: string;
+    ageMs: number;
+    isStale: boolean;
+  } | null;
+  paper?: QuoteDecisionMode;
+  execution?: QuoteDecisionMode;
+};
+
 // Paper broker attaches quoteContext to submit/ack/fill/reject payloads so the
 // timeline can show what the quote feed looked like at order time.
 function asQuoteContext(ev: ExecutionEvent): QuoteContext | null {
@@ -85,6 +114,16 @@ function asQuoteContext(ev: ExecutionEvent): QuoteContext | null {
   const qc = p.quoteContext;
   if (!qc || typeof qc !== "object") return null;
   return qc as QuoteContext;
+}
+
+function asQuoteDecision(ev: ExecutionEvent): QuoteDecision | null {
+  if (!ev.payload || typeof ev.payload !== "object") return null;
+  const p = ev.payload as Record<string, unknown>;
+  const qd = p.quoteDecision;
+  if (qd && typeof qd === "object") {
+    return qd as QuoteDecision;
+  }
+  return null;
 }
 
 const QC_READINESS_COLOR: Record<string, string> = {
@@ -200,6 +239,7 @@ export function ExecutionTimeline({
 function DetailPanel({ ev }: { ev: ExecutionEvent }) {
   const fill = asFill(ev);
   const qc = asQuoteContext(ev);
+  const qd = asQuoteDecision(ev);
   const ts = new Date(ev.timestamp);
   const notional = fill ? fill.price * fill.quantity : null;
   return (
@@ -264,8 +304,9 @@ function DetailPanel({ ev }: { ev: ExecutionEvent }) {
       )}
 
       {qc && <QuoteContextBlock qc={qc} />}
+      {qd && <QuoteDecisionBlock qd={qd} />}
 
-      {ev.payload != null && !fill && !qc && (
+      {ev.payload != null && !fill && !qc && !qd && (
         <details>
           <summary style={{ color: "var(--dim)", cursor: "pointer" }}>Raw payload</summary>
           <pre
@@ -348,6 +389,103 @@ function QuoteContextBlock({ qc }: { qc: QuoteContext }) {
         >
           {qc.reasons.map((r, i) => (
             <li key={`qc-r-${i}`}>{r}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function QuoteDecisionBlock({ qd }: { qd: QuoteDecision }) {
+  const readinessColor = QC_READINESS_COLOR[qd.readiness] ?? "var(--dim)";
+  const renderMode = (label: string, mode: QuoteDecisionMode | undefined) =>
+    mode ? (
+      <DetailStat
+        label={label}
+        value={`${mode.decision.toUpperCase()} / ${mode.usable ? "usable" : "hold"} / ${
+          mode.safe ? "safe" : "unsafe"
+        }`}
+        accent={mode.safe ? "var(--phosphor)" : "var(--amber)"}
+      />
+    ) : null;
+
+  return (
+    <div
+      style={{
+        paddingTop: "0.4rem",
+        borderTop: "1px dashed var(--line, #2a2a2a)"
+      }}
+    >
+      <div style={{ color: "var(--dim)", marginBottom: "0.35rem", fontSize: "0.7rem" }}>
+        [QUOTE DECISION]
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: "0.4rem"
+        }}
+      >
+        <DetailStat label="selected" value={qd.selectedSource ?? "??"} />
+        <DetailStat
+          label="readiness"
+          value={qd.readiness.toUpperCase()}
+          accent={readinessColor}
+        />
+        <DetailStat
+          label="freshness"
+          value={qd.freshnessStatus}
+          accent={qd.freshnessStatus === "fresh" ? "var(--phosphor)" : "var(--amber)"}
+        />
+        <DetailStat
+          label="primary"
+          value={qd.primaryReason || "none"}
+          accent={qd.primaryReason && qd.primaryReason !== "none" ? "var(--amber)" : undefined}
+        />
+        <DetailStat
+          label="quote"
+          value={
+            qd.quote
+              ? `${qd.quote.last ?? "??"} / ${qd.quote.bid ?? "??"} / ${qd.quote.ask ?? "??"}`
+              : "none"
+          }
+        />
+        <DetailStat
+          label="quote age"
+          value={qd.quoteAgeMs === null ? "none" : `${qd.quoteAgeMs}ms`}
+          accent={qd.quoteAgeMs !== null && qd.quoteAgeMs > 0 ? "amber" : undefined}
+        />
+        {renderMode("paper", qd.paper)}
+        {renderMode("execution", qd.execution)}
+      </div>
+      {(qd.fallbackReason && qd.fallbackReason !== "none") || (qd.staleReason && qd.staleReason !== "none") ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: "0.4rem",
+            marginTop: "0.4rem"
+          }}
+        >
+          {qd.fallbackReason && qd.fallbackReason !== "none" && (
+            <DetailStat label="fallback" value={qd.fallbackReason} accent="var(--amber)" />
+          )}
+          {qd.staleReason && qd.staleReason !== "none" && (
+            <DetailStat label="stale" value={qd.staleReason} accent="var(--amber)" />
+          )}
+        </div>
+      ) : null}
+      {qd.reasons.length > 0 && (
+        <ul
+          style={{
+            margin: "0.4rem 0 0 1rem",
+            padding: 0,
+            color: "var(--dim)",
+            fontSize: "0.72rem"
+          }}
+        >
+          {qd.reasons.map((r, i) => (
+            <li key={`qd-r-${i}`}>{r}</li>
           ))}
         </ul>
       )}

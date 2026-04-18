@@ -5,7 +5,10 @@ import {
   type BrokerAccount,
   type BrokerConnectionStatus,
   type ExecutionEvent,
+  type ExecutionQuoteContext,
   type Fill,
+  type MarketDataDecisionQuoteSnapshot,
+  type MarketDataDecisionSummaryItem,
   type Order,
   type OrderCancelInput,
   type OrderCreateInput,
@@ -14,8 +17,9 @@ import {
   type Quote
 } from "@iuf-trading-room/contracts";
 
-import { getEffectiveMarketQuotes } from "../market-data.js";
+import { getMarketDataDecisionSummary } from "../market-data.js";
 import { appendExecutionEvent } from "./execution-events-store.js";
+import type { ExecutionGateResult } from "./execution-gate.js";
 import {
   loadWorkspaceSnapshots,
   type PaperAccountSnapshot,
@@ -217,13 +221,32 @@ async function getLatestQuote(
   session: AppSession,
   symbol: string
 ): Promise<Quote | null> {
-  const result = await getEffectiveMarketQuotes({
+  const result = await getMarketDataDecisionSummary({
     session,
     symbols: symbol,
     includeStale: true,
     limit: 1
   });
-  return result.items[0]?.selectedQuote ?? null;
+  const item = result.items[0];
+  const quote = item?.quote ?? null;
+  if (!quote) return null;
+  return {
+    symbol,
+    market: item?.market ?? "TWSE",
+    source: quote.source,
+    last: quote.last,
+    bid: quote.bid,
+    ask: quote.ask,
+    open: null,
+    high: null,
+    low: null,
+    prevClose: null,
+    volume: null,
+    changePct: null,
+    timestamp: quote.timestamp,
+    ageMs: quote.ageMs,
+    isStale: quote.isStale
+  };
 }
 
 // Execution path: extra info so placePaperOrder can reject unsafe fills
@@ -231,8 +254,13 @@ async function getLatestQuote(
 // item is returned so callers can both (a) gate on paperUsable and (b)
 // annotate execution events with quote context for the timeline.
 type ExecutionQuote = {
-  quote: Quote | null;
+  item: MarketDataDecisionSummaryItem | null;
+  quote: MarketDataDecisionQuoteSnapshot | null;
+  primaryReason: string;
   paperUsable: boolean;
+  paperSafe: boolean;
+  executionUsable: boolean;
+  executionSafe: boolean;
   reasons: string[];
   source: string | null;
   readiness: string;
@@ -242,11 +270,35 @@ type ExecutionQuote = {
   providerConnected: boolean;
 };
 
+function executionQuoteFromDecisionItem(
+  item: MarketDataDecisionSummaryItem
+): ExecutionQuote {
+  return {
+    item,
+    quote: item.quote,
+    primaryReason: item.primaryReason,
+    paperUsable: item.paper.usable,
+    paperSafe: item.paper.safe,
+    executionUsable: item.execution.usable,
+    executionSafe: item.execution.safe,
+    reasons:
+      item.primaryReason && !item.reasons.includes(item.primaryReason)
+        ? [item.primaryReason, ...item.reasons]
+        : item.reasons,
+    source: item.selectedSource,
+    readiness: item.readiness,
+    freshnessStatus: item.freshnessStatus,
+    fallbackReason: item.fallbackReason,
+    staleReason: item.staleReason,
+    providerConnected: item.selectedSource !== null && item.quote !== null
+  };
+}
+
 async function getExecutionQuote(
   session: AppSession,
   symbol: string
 ): Promise<ExecutionQuote> {
-  const result = await getEffectiveMarketQuotes({
+  const result = await getMarketDataDecisionSummary({
     session,
     symbols: symbol,
     includeStale: true,
@@ -255,8 +307,13 @@ async function getExecutionQuote(
   const item = result.items[0];
   if (!item) {
     return {
+      item: null,
       quote: null,
+      primaryReason: "no_quote",
       paperUsable: false,
+      paperSafe: false,
+      executionUsable: false,
+      executionSafe: false,
       reasons: ["no_quote"],
       source: null,
       readiness: "blocked",
@@ -266,38 +323,114 @@ async function getExecutionQuote(
       providerConnected: false
     };
   }
-  return {
-    quote: item.selectedQuote,
-    paperUsable: item.paperUsable,
-    reasons: item.reasons,
-    source: item.selectedSource,
-    readiness: item.readiness,
-    freshnessStatus: item.freshnessStatus,
-    fallbackReason: item.fallbackReason,
-    staleReason: item.staleReason,
-    providerConnected: item.providerConnected
-  };
+  return executionQuoteFromDecisionItem(item);
 }
 
 // Serializable quote-context blob we attach to execution event payloads so the
 // UI timeline can reconstruct what the quote feed looked like at order time.
-function quoteContextFor(execQuote: ExecutionQuote) {
+// When the caller already resolved the consumer-summary verdict (via the
+// execution-gate helper), we prefer that exact snapshot so the event, the
+// Order row, and the server-side gate match byte-for-byte.
+function quoteContextFor(
+  execQuote: ExecutionQuote,
+  mode: "paper" | "execution",
+  now: string
+): ExecutionQuoteContext {
+  const decision =
+    mode === "paper"
+      ? execQuote.paperSafe
+        ? execQuote.paperUsable
+          ? "allow"
+          : "review"
+        : "block"
+      : execQuote.executionSafe
+        ? execQuote.executionUsable
+          ? "allow"
+          : "review"
+        : "block";
   return {
+    mode,
+    decision,
     source: execQuote.source,
-    readiness: execQuote.readiness,
-    freshnessStatus: execQuote.freshnessStatus,
+    readiness: execQuote.readiness as ExecutionQuoteContext["readiness"],
+    freshnessStatus: execQuote.freshnessStatus as ExecutionQuoteContext["freshnessStatus"],
     paperUsable: execQuote.paperUsable,
+    // Paper broker never issues live-eligible quotes; the mode selector in
+    // front of us already decided this path.
+    liveUsable: false,
     providerConnected: execQuote.providerConnected,
     fallbackReason: execQuote.fallbackReason,
     staleReason: execQuote.staleReason,
-    reasons: execQuote.reasons,
+    reasons: execQuote.primaryReason && !execQuote.reasons.includes(execQuote.primaryReason)
+      ? [execQuote.primaryReason, ...execQuote.reasons]
+      : execQuote.reasons,
     last: execQuote.quote?.last ?? null,
     bid: execQuote.quote?.bid ?? null,
-    ask: execQuote.quote?.ask ?? null
+    ask: execQuote.quote?.ask ?? null,
+    capturedAt: execQuote.quote?.timestamp ?? now
   };
 }
 
-function refPriceForFill(order: OrderCreateInput, quote: Quote | null): number | null {
+function quoteDecisionPayload(
+  execQuote: ExecutionQuote,
+  mode: "paper" | "execution"
+) {
+  const modeSummary =
+    mode === "paper"
+      ? {
+          decision: execQuote.paperSafe
+            ? execQuote.paperUsable
+              ? "allow"
+              : "review"
+            : "block",
+          usable: execQuote.paperUsable,
+          safe: execQuote.paperSafe
+        }
+      : {
+          decision: execQuote.executionSafe
+            ? execQuote.executionUsable
+              ? "allow"
+              : "review"
+            : "block",
+          usable: execQuote.executionUsable,
+          safe: execQuote.executionSafe
+        };
+
+  return {
+    selectedSource: execQuote.source,
+    readiness: execQuote.readiness,
+    freshnessStatus: execQuote.freshnessStatus,
+    fallbackReason: execQuote.fallbackReason,
+    staleReason: execQuote.staleReason,
+    primaryReason: execQuote.primaryReason,
+    reasons: execQuote.reasons,
+    quoteTimestamp: execQuote.quote?.timestamp ?? null,
+    quoteAgeMs: execQuote.quote?.ageMs ?? null,
+    quote: execQuote.quote
+      ? {
+          source: execQuote.quote.source,
+          last: execQuote.quote.last,
+          bid: execQuote.quote.bid,
+          ask: execQuote.quote.ask,
+          timestamp: execQuote.quote.timestamp,
+          ageMs: execQuote.quote.ageMs,
+          isStale: execQuote.quote.isStale
+        }
+      : null,
+    [mode]: modeSummary
+  };
+}
+
+function refPriceForFill(
+  order: OrderCreateInput,
+  quote:
+    | Pick<
+        Quote,
+        "last" | "bid" | "ask"
+      >
+    | MarketDataDecisionQuoteSnapshot
+    | null
+): number | null {
   if (quote) {
     if (order.side === "buy") {
       return quote.ask ?? quote.last ?? quote.bid ?? null;
@@ -422,13 +555,27 @@ export async function placePaperOrder(input: {
   session: AppSession;
   order: OrderCreateInput;
   riskCheckId: string | null;
+  // When present, we skip the broker-local quote fetch and reuse the
+  // server-side gate's verdict. Keeps the Order.quoteContext, the submit
+  // event, and the gate's verdict in lockstep.
+  quoteGate?: ExecutionGateResult;
 }): Promise<Order> {
   const state = await getOrCreateAccount(input.session, input.order.accountId);
   const now = new Date().toISOString();
   const orderId = randomUUID();
   const clientOrderId = input.order.clientOrderId ?? `po-${randomUUID()}`;
-  const execQuote = await getExecutionQuote(input.session, input.order.symbol);
+  const execQuote =
+    input.quoteGate?.item
+      ? executionQuoteFromDecisionItem(input.quoteGate.item)
+      : await getExecutionQuote(input.session, input.order.symbol);
   const markPrice = refPriceForFill(input.order, execQuote.quote);
+  const quoteDecision = quoteDecisionPayload(execQuote, "paper");
+
+  // Prefer the gate's snapshot when present (server-side path). Fall back to
+  // the broker-local synthesis only when the caller bypassed trading-service
+  // entirely (e.g. reconciliation / tests).
+  const quoteContext: ExecutionQuoteContext =
+    input.quoteGate?.quoteContext ?? quoteContextFor(execQuote, "paper", now);
 
   const order: Order = {
     id: orderId,
@@ -454,20 +601,20 @@ export async function placePaperOrder(input: {
     acknowledgedAt: now,
     filledAt: null,
     canceledAt: null,
+    quoteContext,
     createdAt: now,
     updatedAt: now
   };
 
   state.orders.set(orderId, order);
   state.lastEventAt = now;
-  const quoteContext = quoteContextFor(execQuote);
   emit(input.session, input.order.accountId, {
     type: "submit",
     orderId,
     clientOrderId,
     status: "submitted",
     message: null,
-    payload: { quoteContext },
+    payload: { quoteContext, quoteDecision },
     timestamp: now
   });
 
@@ -479,7 +626,7 @@ export async function placePaperOrder(input: {
   // Block immediate fills against quotes that aren't execution-safe (stale,
   // synthetic, blocked feed, etc.). Resting limit/stop orders are allowed —
   // they'll re-check the quote at trigger time.
-  if (fillsImmediately && markPrice && !execQuote.paperUsable) {
+  if (fillsImmediately && markPrice && (!execQuote.paperUsable || !execQuote.paperSafe)) {
     order.status = "rejected";
     order.reason = "quote_not_paper_safe";
     order.updatedAt = now;
@@ -491,8 +638,8 @@ export async function placePaperOrder(input: {
       orderId,
       clientOrderId,
       status: "rejected",
-      message: `Quote not execution-safe: ${reasonText}`,
-      payload: { reasons: execQuote.reasons, quoteContext },
+      message: `Quote not paper-safe: ${reasonText}`,
+      payload: { reasons: execQuote.reasons, quoteContext, quoteDecision },
       timestamp: now
     });
     persistAccountAsync(input.session, state);
@@ -506,7 +653,8 @@ export async function placePaperOrder(input: {
       fillPrice: markPrice,
       fillQty: order.quantity,
       now,
-      quoteContext
+      quoteContext,
+      quoteDecision
     });
     persistAccountAsync(input.session, state);
     return state.orders.get(orderId)!;
@@ -522,7 +670,7 @@ export async function placePaperOrder(input: {
       clientOrderId,
       status: "rejected",
       message: "No quote available to mark market order.",
-      payload: { quoteContext },
+      payload: { quoteContext, quoteDecision },
       timestamp: now
     });
     persistAccountAsync(input.session, state);
@@ -538,7 +686,7 @@ export async function placePaperOrder(input: {
     clientOrderId,
     status: "acknowledged",
     message: null,
-    payload: { quoteContext },
+    payload: { quoteContext, quoteDecision },
     timestamp: now
   });
 
@@ -552,7 +700,8 @@ async function fillOrder(args: {
   fillPrice: number;
   fillQty: number;
   now: string;
-  quoteContext?: ReturnType<typeof quoteContextFor>;
+  quoteContext?: ExecutionQuoteContext;
+  quoteDecision?: ReturnType<typeof quoteDecisionPayload>;
 }): Promise<void> {
   const state = await getOrCreateAccount(args.session, args.order.accountId);
   const fillId = randomUUID();
@@ -571,7 +720,8 @@ async function fillOrder(args: {
     price: args.fillPrice,
     fee,
     tax,
-    timestamp: args.now
+    timestamp: args.now,
+    quoteContext: args.quoteContext ?? null
   };
 
   const cashDelta =
@@ -612,19 +762,16 @@ async function fillOrder(args: {
   state.orders.set(args.order.id, updated);
   state.lastEventAt = args.now;
 
-  // Merge fill + quoteContext into payload. asFill in the UI timeline narrows
-  // by field presence on {id, orderId, symbol, quantity, price}, so adding
-  // quoteContext as a sibling doesn't break that narrowing.
-  const fillPayload = args.quoteContext
-    ? { ...fill, quoteContext: args.quoteContext }
-    : fill;
+  // Fill itself already carries quoteContext (persisted on the record). The
+  // event payload *is* the fill, so the timeline's asFill narrow picks it up
+  // and DetailPanel's asQuoteContext narrow sees the same sibling field.
   emit(args.session, args.order.accountId, {
     type: "fill",
     orderId: args.order.id,
     clientOrderId: args.order.clientOrderId,
     status: updated.status,
     message: null,
-    payload: fillPayload,
+    payload: args.quoteDecision ? { ...fill, quoteDecision: args.quoteDecision } : fill,
     timestamp: args.now
   });
 }

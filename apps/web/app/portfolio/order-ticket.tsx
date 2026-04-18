@@ -4,8 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   Balance,
-  MarketDataConsumerItem,
-  MarketDataConsumerMode,
+  MarketDataDecisionSummaryItem,
   OrderCreateInput,
   RiskCheckResult,
   RiskGuardResult,
@@ -15,7 +14,7 @@ import type {
 
 import {
   getEffectiveRiskLimit,
-  getMarketDataConsumerSummary,
+  getMarketDataDecisionSummary,
   getPlans,
   getTradingBalance,
   previewTradingOrder,
@@ -30,7 +29,7 @@ type Props = {
   onSubmitted: () => void;
   // Paper account → "paper" mode; live broker → "execution". Defaults to paper
   // so the gate leans conservative when unspecified.
-  quoteMode?: MarketDataConsumerMode;
+  quoteMode?: "paper" | "execution";
 };
 
 type Side = "buy" | "sell";
@@ -68,7 +67,7 @@ export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Pro
   const [effectiveLimits, setEffectiveLimits] = useState<RiskLimit | null>(null);
   const [pendingLimits, setPendingLimits] = useState(false);
   const [balance, setBalance] = useState<Balance | null>(null);
-  const [quote, setQuote] = useState<MarketDataConsumerItem | null>(null);
+  const [quote, setQuote] = useState<MarketDataDecisionSummaryItem | null>(null);
   const [quoteGeneratedAt, setQuoteGeneratedAt] = useState<string | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [pendingQuote, setPendingQuote] = useState(false);
@@ -199,9 +198,9 @@ export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Pro
     };
   }, [accountId, form.symbol]);
 
-  // Fetch consumer-summary for the typed symbol so we inherit Codex's verdict
-  // (decision: allow / review / block) verbatim in the same usability mode the
-  // broker would use (paper / execution). Re-running on symbol change resets
+  // Fetch decision-summary for the typed symbol so the UI reads the same
+  // execution-safe surface the broker submit path consumes. Re-running on
+  // symbol change resets
   // the "I accept degraded" override so each new symbol re-prompts confirmation.
   useEffect(() => {
     const symbol = form.symbol.trim().toUpperCase();
@@ -216,8 +215,7 @@ export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Pro
     setPendingQuote(true);
     setQuoteError(null);
     setAcceptDegraded(false);
-    getMarketDataConsumerSummary({
-      mode: quoteMode,
+    getMarketDataDecisionSummary({
       symbols: symbol,
       includeStale: true,
       limit: 1
@@ -229,7 +227,7 @@ export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Pro
       })
       .catch((err) => {
         if (cancelled) return;
-        console.warn("[order-ticket] consumer-summary failed:", err);
+        console.warn("[order-ticket] decision-summary failed:", err);
         setQuote(null);
         setQuoteError((err as Error).message || "報價取得失敗");
       })
@@ -314,10 +312,11 @@ export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Pro
   }, []);
 
   const disabled = pending !== "idle";
-  // Gate the live submit button on the consumer-summary decision. Preview is
+  // Gate the live submit button on the decision-summary verdict. Preview is
   // always allowed — it's a dry run and showing the trader what would have been
-  // blocked is the whole point. `decision` comes straight from Codex's
-  // market-data policy so the ticket and the broker agree on what's safe.
+  // blocked is the whole point. `decision` comes straight from the same
+  // market-data surface the broker submit path consumes, so ticket and server
+  // share one source of truth.
   //   decision=block → no submit
   //   decision=review → submit only after explicit accept (checkbox)
   //   decision=allow → no friction
@@ -325,15 +324,26 @@ export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Pro
   // preview, and the server-side paper broker will reject if the quote lands
   // non-paper-safe on submit.
   const submitGate = (() => {
+    const modeSummary = quote
+      ? quoteMode === "paper"
+        ? quote.paper
+        : quote.execution
+      : null;
     if (quoteError) {
       return { allow: true, label: "報價取得失敗，伺服器仍會做最終風控判斷" };
     }
-    if (!quote) return { allow: true, label: null as string | null };
-    if (quote.decision === "block") {
-      return { allow: false, label: "報價非執行可用（decision=block），禁止下單" };
+    if (!quote || !modeSummary) return { allow: true, label: null as string | null };
+    if (modeSummary.decision === "block") {
+      return {
+        allow: false,
+        label: `報價不可執行（${quote.primaryReason || quote.readiness}），禁止下單`
+      };
     }
-    if (quote.decision === "review" && !acceptDegraded) {
-      return { allow: false, label: "需勾選「接受 review 報價」" };
+    if (modeSummary.decision === "review" && !acceptDegraded) {
+      return {
+        allow: false,
+        label: `需勾選「接受 review 報價」(${quote.primaryReason || quote.readiness})`
+      };
     }
     return { allow: true, label: null };
   })();
@@ -635,20 +645,20 @@ function PlanStat({
   );
 }
 
-const READINESS_COLOR: Record<MarketDataConsumerItem["readiness"], string> = {
+const READINESS_COLOR: Record<MarketDataDecisionSummaryItem["readiness"], string> = {
   ready: "var(--phosphor)",
   degraded: "var(--amber)",
   blocked: "var(--danger, #ff4d4d)"
 };
 
-const READINESS_LABEL: Record<MarketDataConsumerItem["readiness"], string> = {
+const READINESS_LABEL: Record<MarketDataDecisionSummaryItem["readiness"], string> = {
   ready: "READY",
   degraded: "DEGRADED",
   blocked: "BLOCKED"
 };
 
 const DECISION_STYLE: Record<
-  MarketDataConsumerItem["decision"],
+  MarketDataDecisionSummaryItem["strategy"]["decision"],
   { color: string; label: string }
 > = {
   allow: { color: "var(--phosphor)", label: "ALLOW" },
@@ -656,10 +666,9 @@ const DECISION_STYLE: Record<
   block: { color: "var(--danger, #ff4d4d)", label: "BLOCK" }
 };
 
-const MODE_LABEL: Record<MarketDataConsumerMode, string> = {
+const MODE_LABEL: Record<"paper" | "execution", string> = {
   paper: "PAPER",
-  execution: "LIVE",
-  strategy: "STRATEGY"
+  execution: "LIVE"
 };
 
 function QuoteReadinessCard({
@@ -672,16 +681,21 @@ function QuoteReadinessCard({
   acceptDegraded,
   onAcceptDegraded
 }: {
-  quote: MarketDataConsumerItem | null;
+  quote: MarketDataDecisionSummaryItem | null;
   pending: boolean;
   error: string | null;
   generatedAt: string | null;
   symbol: string;
-  mode: MarketDataConsumerMode;
+  mode: "paper" | "execution";
   acceptDegraded: boolean;
   onAcceptDegraded: (next: boolean) => void;
 }) {
-  const decisionStyle = quote ? DECISION_STYLE[quote.decision] : null;
+  const modeSummary = quote
+    ? mode === "paper"
+      ? quote.paper
+      : quote.execution
+    : null;
+  const decisionStyle = modeSummary ? DECISION_STYLE[modeSummary.decision] : null;
   const readinessColor = quote ? READINESS_COLOR[quote.readiness] : "var(--dim)";
   const accent = decisionStyle?.color ?? readinessColor;
   const generatedLabel = generatedAt
@@ -745,12 +759,12 @@ function QuoteReadinessCard({
             <Stat label="來源" value={quote.selectedSource ?? "—"} />
             <Stat
               label="last"
-              value={quote.selectedQuote?.last?.toString() ?? "—"}
+              value={quote.quote?.last?.toString() ?? "—"}
               accent="phosphor"
             />
             <Stat
               label="bid / ask"
-              value={`${quote.selectedQuote?.bid ?? "—"} / ${quote.selectedQuote?.ask ?? "—"}`}
+              value={`${quote.quote?.bid ?? "—"} / ${quote.quote?.ask ?? "—"}`}
             />
             <Stat
               label="freshness"
@@ -759,8 +773,8 @@ function QuoteReadinessCard({
             />
             <Stat
               label="usable / safe"
-              value={`${quote.usable ? "✓" : "×"} / ${quote.safe ? "✓" : "×"}`}
-              accent={quote.safe ? "phosphor" : "amber"}
+              value={`${modeSummary?.usable ? "✓" : "×"} / ${modeSummary?.safe ? "✓" : "×"}`}
+              accent={modeSummary?.safe ? "phosphor" : "amber"}
             />
             <Stat
               label="fallback"
@@ -780,6 +794,35 @@ function QuoteReadinessCard({
                   : undefined
               }
             />
+            <Stat
+              label="primary"
+              value={quote.primaryReason || "none"}
+              accent={quote.primaryReason && quote.primaryReason !== "none" ? "amber" : undefined}
+            />
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: "0.4rem",
+              marginBottom: "0.4rem"
+            }}
+          >
+            <Stat
+              label="strategy"
+              value={`${quote.strategy.decision} / ${quote.strategy.usable ? "usable" : "hold"}`}
+              accent={quote.strategy.safe ? "phosphor" : "amber"}
+            />
+            <Stat
+              label="paper"
+              value={`${quote.paper.decision} / ${quote.paper.usable ? "usable" : "hold"}`}
+              accent={quote.paper.safe ? "phosphor" : "amber"}
+            />
+            <Stat
+              label="execution"
+              value={`${quote.execution.decision} / ${quote.execution.usable ? "usable" : "hold"}`}
+              accent={quote.execution.safe ? "phosphor" : "amber"}
+            />
           </div>
           {quote.reasons.length > 0 && (
             <ul
@@ -795,7 +838,7 @@ function QuoteReadinessCard({
               ))}
             </ul>
           )}
-          {quote.decision === "review" && (
+          {modeSummary?.decision === "review" && (
             <label
               style={{
                 marginTop: "0.5rem",
@@ -815,9 +858,9 @@ function QuoteReadinessCard({
               </span>
             </label>
           )}
-          {quote.decision === "block" && (
+          {modeSummary?.decision === "block" && (
             <p style={{ color: "var(--danger, #ff4d4d)", marginTop: "0.4rem" }}>
-              Codex 決議 decision=block，已封鎖送單。Preview 仍可運作。
+              報價決策 block：{quote.primaryReason || quote.readiness}。Preview 仍可運作。
             </p>
           )}
         </>

@@ -7,7 +7,7 @@ import {
   cancelTradingOrder,
   getBrokerStatus,
   getKillSwitch,
-  getMarketDataConsumerSummary,
+  getMarketDataDecisionSummary,
   getRiskLimit,
   getTradingAccounts,
   getTradingBalance,
@@ -20,9 +20,8 @@ import type {
   BrokerAccount,
   BrokerConnectionStatus,
   KillSwitchState,
-  MarketDataConsumerItem,
-  MarketDataConsumerMode,
-  MarketDataConsumerSummary,
+  MarketDataDecisionSummary,
+  MarketDataDecisionSummaryItem,
   Order,
   Position,
   RiskLimit
@@ -206,8 +205,8 @@ export default function PortfolioPage() {
   }, [positions, openOrders]);
   const watchedSymbolsKey = watchedSymbols.join(",");
 
-  const quoteMode: MarketDataConsumerMode = isPaper ? "paper" : "execution";
-  const [marketData, setMarketData] = useState<MarketDataConsumerSummary | null>(null);
+  const quoteMode: "paper" | "execution" = isPaper ? "paper" : "execution";
+  const [marketData, setMarketData] = useState<MarketDataDecisionSummary | null>(null);
   const [marketDataError, setMarketDataError] = useState<string | null>(null);
   const [marketDataNonce, setMarketDataNonce] = useState(0);
   const refreshMarketData = useCallback(() => {
@@ -220,8 +219,7 @@ export default function PortfolioPage() {
       return;
     }
     let cancelled = false;
-    getMarketDataConsumerSummary({
-      mode: quoteMode,
+    getMarketDataDecisionSummary({
       symbols: watchedSymbolsKey,
       includeStale: true,
       limit: watchedSymbols.length
@@ -233,8 +231,8 @@ export default function PortfolioPage() {
       })
       .catch((err) => {
         if (cancelled) return;
-        console.warn("[portfolio] consumer-summary failed:", err);
-        setMarketDataError((err as Error).message || "consumer-summary 失敗");
+        console.warn("[portfolio] decision-summary failed:", err);
+        setMarketDataError((err as Error).message || "decision-summary 失敗");
       });
     return () => {
       cancelled = true;
@@ -244,7 +242,7 @@ export default function PortfolioPage() {
   // Build a quick lookup map so the positions table / orders rows can badge
   // their readiness without re-scanning items[] per row.
   const quoteBySymbol = useMemo(() => {
-    const map = new Map<string, MarketDataConsumerItem>();
+    const map = new Map<string, MarketDataDecisionSummaryItem>();
     if (marketData) {
       for (const item of marketData.items) map.set(item.symbol, item);
     }
@@ -404,7 +402,7 @@ export default function PortfolioPage() {
                           : `${formatMoney(p.unrealizedPnl)} (${formatPct(p.unrealizedPnlPct)})`}
                       </td>
                       <td style={td}>
-                        <ReadinessBadge item={item} />
+                        <ReadinessBadge item={item} mode={quoteMode} />
                       </td>
                     </tr>
                   );
@@ -427,6 +425,7 @@ export default function PortfolioPage() {
           <OrdersTable
             orders={openOrders}
             quoteBySymbol={quoteBySymbol}
+            quoteMode={quoteMode}
             canCancel
             onCancel={onCancelOrder}
             busy={mutating}
@@ -439,7 +438,11 @@ export default function PortfolioPage() {
           <p className="ascii-head" data-idx="05">
             [05] 最近成交／取消（最多 10 筆）
           </p>
-          <OrdersTable orders={filledOrders} quoteBySymbol={quoteBySymbol} />
+          <OrdersTable
+            orders={filledOrders}
+            quoteBySymbol={quoteBySymbol}
+            quoteMode={quoteMode}
+          />
         </section>
       )}
 
@@ -615,10 +618,10 @@ function MarketDataBanner({
   mode,
   onRefresh
 }: {
-  data: MarketDataConsumerSummary | null;
+  data: MarketDataDecisionSummary | null;
   error: string | null;
   symbolCount: number;
-  mode: MarketDataConsumerMode;
+  mode: "paper" | "execution";
   onRefresh: () => void;
 }) {
   if (symbolCount === 0) return null;
@@ -667,9 +670,14 @@ function MarketDataBanner({
   }
 
   const summary = data?.summary;
-  const block = summary?.block ?? 0;
-  const review = summary?.review ?? 0;
-  const allow = summary?.allow ?? 0;
+  const modeSummary = summary
+    ? mode === "paper"
+      ? summary.paper
+      : summary.execution
+    : null;
+  const block = modeSummary?.block ?? 0;
+  const review = modeSummary?.review ?? 0;
+  const allow = modeSummary?.allow ?? 0;
   const accent =
     block > 0
       ? "var(--danger, #ff4d4d)"
@@ -715,13 +723,13 @@ function MarketDataBanner({
             <Tally label="allow" value={allow} color="var(--phosphor)" />
             <Tally label="review" value={review} color="var(--amber)" />
             <Tally label="block" value={block} color="var(--danger, #ff4d4d)" />
-            <Tally label="usable" value={summary.usable} color="var(--dim)" />
-            <Tally label="safe" value={summary.safe} color="var(--dim)" />
+            <Tally label="usable" value={modeSummary?.usable ?? 0} color="var(--dim)" />
+            <Tally label="safe" value={modeSummary?.safe ?? 0} color="var(--dim)" />
           </>
         )}
         <button
           onClick={onRefresh}
-          title="重新拉 consumer-summary"
+          title="重新拉 decision-summary"
           style={{
             padding: "0.2rem 0.6rem",
             background: "transparent",
@@ -748,7 +756,7 @@ function Tally({ label, value, color }: { label: string; value: number; color: s
 }
 
 const READINESS_BADGE: Record<
-  MarketDataConsumerItem["readiness"],
+  MarketDataDecisionSummaryItem["readiness"],
   { color: string; label: string }
 > = {
   ready: { color: "var(--phosphor)", label: "●READY" },
@@ -756,12 +764,19 @@ const READINESS_BADGE: Record<
   blocked: { color: "var(--danger, #ff4d4d)", label: "●BLOCKED" }
 };
 
-function ReadinessBadge({ item }: { item: MarketDataConsumerItem | null }) {
+function ReadinessBadge({
+  item,
+  mode
+}: {
+  item: MarketDataDecisionSummaryItem | null;
+  mode: "paper" | "execution";
+}) {
   if (!item) {
     return <span style={{ color: "var(--dim)", fontSize: "0.75rem" }}>— 無報價</span>;
   }
   const badge = READINESS_BADGE[item.readiness];
   const source = item.selectedSource ?? "none";
+  const modeDecision = mode === "paper" ? item.paper : item.execution;
   // Pick the most salient reason to surface inline; full list is in OrderTicket
   // QuoteReadinessCard when the symbol is active.
   const stale =
@@ -770,10 +785,11 @@ function ReadinessBadge({ item }: { item: MarketDataConsumerItem | null }) {
     item.fallbackReason && item.fallbackReason !== "none" ? item.fallbackReason : null;
   const detail = stale ?? fallback ?? null;
   const title = [
-    `decision=${item.decision}`,
+    `${mode}.decision=${modeDecision.decision}`,
     `readiness=${item.readiness}`,
     `source=${source}`,
     `freshness=${item.freshnessStatus}`,
+    `primary=${item.primaryReason}`,
     stale ? `stale=${stale}` : null,
     fallback ? `fallback=${fallback}` : null,
     ...item.reasons.map((r) => `· ${r}`)
@@ -794,6 +810,9 @@ function ReadinessBadge({ item }: { item: MarketDataConsumerItem | null }) {
     >
       <span>{badge.label}</span>
       <span style={{ color: "var(--dim)" }}>{source}</span>
+      <span style={{ color: modeDecision.safe ? "var(--phosphor)" : "var(--amber)" }}>
+        {modeDecision.decision.toUpperCase()}
+      </span>
       {detail && (
         <span style={{ color: "var(--amber)", fontSize: "0.7rem" }}>· {detail}</span>
       )}
@@ -827,12 +846,14 @@ function Stat({
 function OrdersTable({
   orders,
   quoteBySymbol,
+  quoteMode,
   canCancel = false,
   onCancel,
   busy
 }: {
   orders: Order[];
-  quoteBySymbol: Map<string, MarketDataConsumerItem>;
+  quoteBySymbol: Map<string, MarketDataDecisionSummaryItem>;
+  quoteMode: "paper" | "execution";
   canCancel?: boolean;
   onCancel?: (id: string) => void;
   busy?: boolean;
@@ -881,7 +902,7 @@ function OrdersTable({
               </td>
               <td style={td}>{o.status}</td>
               <td style={td}>
-                <ReadinessBadge item={quoteBySymbol.get(o.symbol) ?? null} />
+                <ReadinessBadge item={quoteBySymbol.get(o.symbol) ?? null} mode={quoteMode} />
               </td>
               {canCancel && (
                 <td style={td}>

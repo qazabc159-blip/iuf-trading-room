@@ -8,7 +8,13 @@ import {
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 
 import { evaluateRiskCheck } from "../risk-engine.js";
-import { listMarketQuotes } from "../market-data.js";
+import { getMarketDataDecisionSummary } from "../market-data.js";
+import {
+  evaluateExecutionGate,
+  gateDecisionLabel,
+  modeForBroker,
+  type ExecutionGateResult
+} from "./execution-gate.js";
 import {
   cancelPaperOrder,
   getPaperBalance,
@@ -21,6 +27,9 @@ export type SubmitOrderResult = {
   order: Order | null;
   riskCheck: RiskCheckResult;
   blocked: boolean;
+  // Null only when the risk engine blocked before we ran the quote gate —
+  // keeps the shape stable for the UI.
+  quoteGate: ExecutionGateResult | null;
 };
 
 // Build the account context the risk engine reads from, sourced from the paper
@@ -76,18 +85,20 @@ async function resolveMarketContext(input: {
   session: AppSession;
   order: OrderCreateInput;
 }) {
-  const [quote] = await listMarketQuotes({
+  const result = await getMarketDataDecisionSummary({
     session: input.session,
     symbols: input.order.symbol,
     includeStale: true,
     limit: 1
   });
+  const item = result.items[0];
+  const quote = item?.quote ?? null;
   return {
-    source: quote?.source ?? "manual",
+    source: item?.selectedSource ?? "manual",
     quote: quote
       ? {
-          symbol: quote.symbol,
-          market: quote.market,
+          symbol: input.order.symbol,
+          market: item?.market ?? "TWSE",
           source: quote.source,
           last: quote.last,
           bid: quote.bid,
@@ -129,6 +140,12 @@ async function runRiskCheck(input: {
   });
 }
 
+// Paper is the only broker wired right now. When KGI lands, route by
+// input.order.accountId → account.broker lookup. For now everything is paper.
+function resolveBrokerKind(_order: OrderCreateInput) {
+  return "paper" as const;
+}
+
 export async function submitOrder(input: {
   session: AppSession;
   repo: TradingRoomRepository;
@@ -137,16 +154,31 @@ export async function submitOrder(input: {
   const riskCheck = await runRiskCheck({ ...input, commit: true });
 
   if (riskCheck.decision === "block") {
-    return { order: null, riskCheck, blocked: true };
+    return { order: null, riskCheck, blocked: true, quoteGate: null };
+  }
+
+  const brokerKind = resolveBrokerKind(input.order);
+  const quoteGate = await evaluateExecutionGate({
+    session: input.session,
+    order: input.order,
+    mode: modeForBroker(brokerKind)
+  });
+
+  if (quoteGate.blocked) {
+    // Server-side enforcement of the same matrix the UI shows. We do not
+    // reach the broker layer, so there is no Order row created; the
+    // riskCheck already persisted though, which is the audit trail.
+    return { order: null, riskCheck, blocked: true, quoteGate };
   }
 
   const order = await placePaperOrder({
     session: input.session,
     order: input.order,
-    riskCheckId: riskCheck.id
+    riskCheckId: riskCheck.id,
+    quoteGate
   });
 
-  return { order, riskCheck, blocked: false };
+  return { order, riskCheck, blocked: false, quoteGate };
 }
 
 // Dry-run: runs the same risk gate as submitOrder but skips broker.place.
@@ -157,10 +189,20 @@ export async function previewOrder(input: {
   order: OrderCreateInput;
 }): Promise<SubmitOrderResult> {
   const riskCheck = await runRiskCheck({ ...input, commit: false });
+  // Preview always runs the gate so the UI can see exactly why a submit
+  // would have been blocked — but we don't short-circuit on gate.blocked
+  // here, because preview *is* the diagnostic.
+  const quoteGate = await evaluateExecutionGate({
+    session: input.session,
+    order: input.order,
+    mode: modeForBroker(resolveBrokerKind(input.order))
+  });
+  const blocked = riskCheck.decision === "block" || quoteGate.blocked;
   return {
     order: null,
     riskCheck,
-    blocked: riskCheck.decision === "block"
+    blocked,
+    quoteGate
   };
 }
 
@@ -171,3 +213,7 @@ export async function cancelOrder(input: {
 }): Promise<Order | null> {
   return cancelPaperOrder(input);
 }
+
+// Exposed for tests / diagnostics so other modules can reason about the gate
+// without importing the paper broker.
+export { gateDecisionLabel };
