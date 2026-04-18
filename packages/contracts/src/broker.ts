@@ -75,6 +75,28 @@ export const positionSchema = z.object({
   companyId: z.string().uuid().nullable().default(null)
 });
 
+// Snapshot of the market-data consumer verdict at the instant an order was
+// submitted / filled / rejected. We store a compact copy on the order and on
+// every execution event so a trader can later answer "what quote did this
+// trade actually see?" without replaying the provider timeline.
+export const executionQuoteContextSchema = z.object({
+  mode: z.enum(["paper", "execution"]),
+  decision: z.enum(["allow", "review", "block"]),
+  source: z.string().nullable(),
+  readiness: z.enum(["ready", "degraded", "blocked"]),
+  freshnessStatus: z.enum(["fresh", "stale", "missing"]),
+  paperUsable: z.boolean(),
+  liveUsable: z.boolean(),
+  providerConnected: z.boolean(),
+  fallbackReason: z.string(),
+  staleReason: z.string(),
+  reasons: z.array(z.string()).default([]),
+  last: z.number().nullable(),
+  bid: z.number().nullable(),
+  ask: z.number().nullable(),
+  capturedAt: z.string()
+});
+
 export const orderSchema = z.object({
   id: z.string(),
   clientOrderId: z.string(),
@@ -101,6 +123,9 @@ export const orderSchema = z.object({
   acknowledgedAt: z.string().nullable().default(null),
   filledAt: z.string().nullable().default(null),
   canceledAt: z.string().nullable().default(null),
+  // Quote-feed snapshot captured when the order was submitted. Null for legacy
+  // orders restored from snapshots written before this field existed.
+  quoteContext: executionQuoteContextSchema.nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -116,7 +141,11 @@ export const fillSchema = z.object({
   price: z.number(),
   fee: z.number().nonnegative().default(0),
   tax: z.number().nonnegative().default(0),
-  timestamp: z.string()
+  timestamp: z.string(),
+  // Quote-feed snapshot at fill time. Nullable because (a) legacy fills from
+  // snapshots written before this field existed won't have one, and (b)
+  // reconciled fills originating from broker replay may not carry a quote.
+  quoteContext: executionQuoteContextSchema.nullable().default(null)
 });
 
 export const executionEventSchema = z.object({
@@ -195,3 +224,4 @@ export type BrokerConnectionStatus = z.infer<typeof brokerConnectionStatusSchema
 export type OrderCreateInput = z.infer<typeof orderCreateInputSchema>;
 export type OrderCancelInput = z.infer<typeof orderCancelInputSchema>;
 export type OrderReplaceInput = z.infer<typeof orderReplaceInputSchema>;
+export type ExecutionQuoteContext = z.infer<typeof executionQuoteContextSchema>;

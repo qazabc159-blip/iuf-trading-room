@@ -78,6 +78,15 @@ import {
   summarizeAuditEntries
 } from "../apps/api/src/audit-log-store.ts";
 import {
+  evaluateExecutionGate,
+  GATE_OVERRIDE_KEY
+} from "../apps/api/src/broker/execution-gate.ts";
+import {
+  listPaperOrders,
+  placePaperOrder
+} from "../apps/api/src/broker/paper-broker.ts";
+import { listExecutionEvents } from "../apps/api/src/broker/execution-events-store.ts";
+import {
   buildEventHistoryView,
   formatEventHistoryItemsAsCsv,
   parseEventHistorySources
@@ -3959,4 +3968,188 @@ test("openalice draft review publishes reviewable jobs and rejects stale state c
   const jobs = await listOpenAliceJobs(workspaceSlug);
   const finalJob = jobs.find((item) => item.id === job.jobId);
   assert.equal(finalJob?.status, "published");
+});
+
+test("execution gate blocks paper review without override and passes with override", async () => {
+  const session = { workspace: { slug: `gate-review-${randomUUID()}` } };
+  const timestamp = new Date().toISOString();
+
+  // Paper-sourced quote → decision-summary flags paper=review (synthetic_source)
+  // and execution=block (not live-usable). This is the canonical "needs human
+  // override" case for the paper lane.
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "GATE1",
+        market: "OTHER",
+        source: "manual",
+        last: 100,
+        bid: 99.9,
+        ask: 100.1,
+        open: 100,
+        high: 100,
+        low: 99,
+        prevClose: 99.5,
+        volume: 1000,
+        changePct: 0.5,
+        timestamp
+      }
+    ]
+  });
+
+  const baseOrder = {
+    accountId: "gate-review-acct",
+    symbol: "GATE1",
+    side: "buy" as const,
+    type: "market" as const,
+    timeInForce: "rod" as const,
+    quantity: 1000,
+    price: null,
+    stopPrice: null,
+    tradePlanId: null,
+    strategyId: null,
+    overrideGuards: [] as string[],
+    overrideReason: ""
+  };
+
+  // Without override → gate blocks
+  const required = await evaluateExecutionGate({
+    session,
+    order: baseOrder,
+    mode: "paper"
+  });
+  assert.equal(required.decision, "review_required");
+  assert.equal(required.blocked, true);
+  assert.notEqual(required.quoteContext, null);
+  assert.equal(required.quoteContext?.mode, "paper");
+  assert.equal(required.quoteContext?.decision, "review");
+
+  // Execution-mode lane on a paper-only feed → hard block (not live-usable).
+  const liveLane = await evaluateExecutionGate({
+    session,
+    order: baseOrder,
+    mode: "execution"
+  });
+  assert.equal(liveLane.blocked, true);
+  assert.equal(liveLane.quoteContext?.liveUsable, false);
+
+  // With override → gate allows review_accepted.
+  const accepted = await evaluateExecutionGate({
+    session,
+    order: { ...baseOrder, overrideGuards: [GATE_OVERRIDE_KEY] },
+    mode: "paper"
+  });
+  assert.equal(accepted.decision, "review_accepted");
+  assert.equal(accepted.blocked, false);
+  assert.notEqual(accepted.quoteContext, null);
+});
+
+test("execution gate blocks submit when decision-summary returns no quote", async () => {
+  const session = { workspace: { slug: `gate-unknown-${randomUUID()}` } };
+
+  const gate = await evaluateExecutionGate({
+    session,
+    order: {
+      accountId: "gate-unknown-acct",
+      symbol: "NOPE1",
+      side: "buy",
+      type: "market",
+      timeInForce: "rod",
+      quantity: 1000,
+      price: null,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [],
+      overrideReason: ""
+    },
+    mode: "paper"
+  });
+
+  // Missing quote is fail-open (decision=quote_unknown, blocked=false) — the
+  // broker's paperUsable / paperSafe check still stops the fill, so the UI and
+  // server agree no Order + no Fill can ship against no quote.
+  assert.equal(gate.decision, "quote_unknown");
+  assert.equal(gate.blocked, false);
+  assert.equal(gate.quoteContext, null);
+});
+
+test("placePaperOrder persists quoteContext on order and fill end-to-end", async () => {
+  const session = { workspace: { slug: `gate-fill-${randomUUID()}` } };
+  const timestamp = new Date().toISOString();
+
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "GATE2",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 2000,
+        changePct: 0,
+        timestamp
+      }
+    ]
+  });
+
+  const order = {
+    accountId: "gate-fill-acct",
+    symbol: "GATE2",
+    side: "buy" as const,
+    type: "market" as const,
+    timeInForce: "rod" as const,
+    quantity: 1000,
+    price: null,
+    stopPrice: null,
+    tradePlanId: null,
+    strategyId: null,
+    overrideGuards: [GATE_OVERRIDE_KEY],
+    overrideReason: "smoke test"
+  };
+
+  const gate = await evaluateExecutionGate({
+    session,
+    order,
+    mode: "paper"
+  });
+  assert.equal(gate.decision, "review_accepted");
+  assert.equal(gate.blocked, false);
+
+  const placed = await placePaperOrder({
+    session,
+    order,
+    riskCheckId: null,
+    quoteGate: gate
+  });
+
+  // Market order against a paper quote fills immediately and the resulting
+  // Order row carries the same quoteContext the gate produced.
+  assert.equal(placed.status, "filled");
+  assert.notEqual(placed.quoteContext, null);
+  assert.equal(placed.quoteContext?.source, gate.quoteContext?.source);
+  assert.equal(placed.quoteContext?.decision, "review");
+
+  const stored = await listPaperOrders(session, { accountId: order.accountId });
+  const stamped = stored.find((o) => o.id === placed.id);
+  assert.ok(stamped, "order should be retrievable after place");
+  assert.equal(stamped?.quoteContext?.readiness, gate.quoteContext?.readiness);
+});
+
+test("execution events store is a no-op for memory sessions", async () => {
+  // Paper broker runs in pure-memory mode when persistenceMode !== "database".
+  // listExecutionEvents must short-circuit so a smoke test caller can swap
+  // between memory and database transparently.
+  const session = { workspace: { slug: `gate-events-${randomUUID()}` } };
+  const events = await listExecutionEvents(session as never, {
+    accountId: "gate-events-acct"
+  });
+  assert.deepEqual(events, []);
 });
