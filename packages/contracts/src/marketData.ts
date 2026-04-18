@@ -100,7 +100,15 @@ export const quoteProviderStatusSchema = z.object({
   connected: z.boolean(),
   lastMessageAt: z.string().nullable(),
   latencyMs: z.number().int().nonnegative().nullable(),
+  latestQuoteAgeMs: z.number().int().nonnegative().nullable().default(null),
+  freshnessStatus: z.enum(["fresh", "stale", "missing"]).default("missing"),
+  readiness: z.enum(["ready", "degraded", "blocked"]).default("blocked"),
+  strategyUsable: z.boolean().default(false),
+  paperUsable: z.boolean().default(false),
+  liveUsable: z.boolean().default(false),
+  staleAfterMs: z.number().int().positive().nullable().default(null),
   subscribedSymbols: z.array(z.string()).default([]),
+  reasons: z.array(z.string()).default([]),
   errorMessage: z.string().nullable().default(null)
 });
 

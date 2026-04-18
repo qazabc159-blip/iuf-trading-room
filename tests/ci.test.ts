@@ -1362,18 +1362,28 @@ test("market data provider statuses expose manual provider and disconnected stub
   assert.equal(statuses[0]?.source, "manual");
   assert.equal(statuses[0]?.connected, true);
   assert.deepEqual(statuses[0]?.subscribedSymbols, []);
+  assert.equal(statuses[0]?.freshnessStatus, "missing");
+  assert.equal(statuses[0]?.readiness, "blocked");
+  assert.equal(statuses[0]?.strategyUsable, false);
+  assert.equal(statuses[0]?.paperUsable, false);
+  assert.equal(statuses[0]?.liveUsable, false);
+  assert.equal(statuses[0]?.reasons.includes("missing_quote"), true);
 
   assert.equal(statuses[1]?.source, "paper");
   assert.equal(statuses[1]?.connected, false);
   assert.match(statuses[1]?.errorMessage ?? "", /Paper quote provider not configured/);
+  assert.equal(statuses[1]?.readiness, "blocked");
+  assert.equal(statuses[1]?.reasons.includes("provider_disconnected"), true);
 
   assert.equal(statuses[2]?.source, "tradingview");
   assert.equal(statuses[2]?.connected, false);
   assert.match(statuses[2]?.errorMessage ?? "", /TradingView quote provider not configured/);
+  assert.equal(statuses[2]?.readiness, "blocked");
 
   assert.equal(statuses[3]?.source, "kgi");
   assert.equal(statuses[3]?.connected, false);
   assert.match(statuses[3]?.errorMessage ?? "", /KGI quote provider not configured/);
+  assert.equal(statuses[3]?.readiness, "blocked");
 });
 
 test("market data keeps provider-specific quote caches isolated", async () => {
@@ -1471,6 +1481,12 @@ test("market data ingests tradingview quotes and reports provider freshness", as
   assert.equal(statuses[0]?.connected, true);
   assert.equal(statuses[0]?.lastMessageAt !== null, true);
   assert.deepEqual(statuses[0]?.subscribedSymbols, ["TV2330"]);
+  assert.equal(statuses[0]?.freshnessStatus, "fresh");
+  assert.equal(statuses[0]?.readiness, "degraded");
+  assert.equal(statuses[0]?.strategyUsable, true);
+  assert.equal(statuses[0]?.paperUsable, true);
+  assert.equal(statuses[0]?.liveUsable, false);
+  assert.equal(statuses[0]?.reasons.includes("non_live_source"), true);
 });
 
 test("market data upserts paper quotes as a first-class provider source", async () => {
@@ -1518,6 +1534,12 @@ test("market data upserts paper quotes as a first-class provider source", async 
   assert.equal(statuses[0]?.source, "paper");
   assert.equal(statuses[0]?.connected, true);
   assert.deepEqual(statuses[0]?.subscribedSymbols, ["PAPR1"]);
+  assert.equal(statuses[0]?.freshnessStatus, "fresh");
+  assert.equal(statuses[0]?.readiness, "degraded");
+  assert.equal(statuses[0]?.strategyUsable, true);
+  assert.equal(statuses[0]?.paperUsable, true);
+  assert.equal(statuses[0]?.liveUsable, false);
+  assert.equal(statuses[0]?.reasons.includes("synthetic_source"), true);
 });
 
 test("market data resolves preferred source by freshness and precedence", async () => {
@@ -1919,8 +1941,8 @@ test("market data effective quotes summarize readiness for strategy and paper co
   });
 
   assert.equal(effective.summary.total, 3);
-  assert.equal(effective.summary.ready, 1);
-  assert.equal(effective.summary.degraded, 1);
+  assert.equal(effective.summary.ready, 0);
+  assert.equal(effective.summary.degraded, 2);
   assert.equal(effective.summary.blocked, 1);
   assert.equal(effective.summary.strategyUsable, 2);
   assert.equal(effective.summary.paperUsable, 2);
@@ -1928,11 +1950,12 @@ test("market data effective quotes summarize readiness for strategy and paper co
 
   const ready = effective.items.find((item) => item.symbol === "EFF1");
   assert.equal(ready?.selectedSource, "tradingview");
-  assert.equal(ready?.readiness, "ready");
+  assert.equal(ready?.readiness, "degraded");
   assert.equal(ready?.strategyUsable, true);
   assert.equal(ready?.paperUsable, true);
-  assert.equal(ready?.reasons.length, 1);
+  assert.equal(ready?.reasons.length, 2);
   assert.equal(ready?.reasons[0], "fallback:higher_priority_unavailable");
+  assert.equal(ready?.reasons.includes("non_live_source"), true);
 
   const degraded = effective.items.find((item) => item.symbol === "EFF2");
   assert.equal(degraded?.selectedSource, "paper");

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const apiDir = path.join(repoRoot, "apps", "api");
-const workspaceSlug = "primary-desk";
+const workspaceSlug = `smoke-${Date.now()}`;
 
 type JsonEnvelope<T> = { data: T };
 
@@ -171,6 +171,12 @@ async function main() {
         Array<{
           source: string;
           connected: boolean;
+          freshnessStatus: string;
+          readiness: string;
+          strategyUsable: boolean;
+          paperUsable: boolean;
+          liveUsable: boolean;
+          reasons: string[];
         }>
       >
     >(baseUrl, "/api/v1/market-data/providers?sources=manual,paper,tradingview,kgi", {
@@ -179,6 +185,12 @@ async function main() {
     assert.equal(marketProviders.data.length, 4);
     assert.equal(marketProviders.data[0]?.source, "manual");
     assert.equal(marketProviders.data[0]?.connected, true);
+    assert.equal(marketProviders.data[0]?.freshnessStatus, "missing");
+    assert.equal(marketProviders.data[0]?.readiness, "blocked");
+    assert.equal(marketProviders.data[0]?.strategyUsable, false);
+    assert.equal(marketProviders.data[0]?.paperUsable, false);
+    assert.equal(marketProviders.data[0]?.liveUsable, false);
+    assert.equal(marketProviders.data[0]?.reasons.includes("missing_quote"), true);
 
     const marketPolicy = await request<
       JsonEnvelope<{
@@ -413,7 +425,14 @@ async function main() {
     assert.equal(effectiveQuotes.data.summary.paperUsable >= 2, true);
     assert.equal(
       effectiveQuotes.data.items.some(
-        (item) => item.symbol === "TVSMK1" && item.readiness === "ready" && item.selectedSource === "tradingview"
+        (item) =>
+          item.symbol === "TVSMK1" &&
+          item.readiness === "degraded" &&
+          item.selectedSource === "tradingview" &&
+          item.strategyUsable === true &&
+          item.paperUsable === true &&
+          item.liveUsable === false &&
+          item.reasons.includes("non_live_source")
       ),
       true
     );
@@ -429,6 +448,12 @@ async function main() {
         Array<{
           source: string;
           connected: boolean;
+          freshnessStatus: string;
+          readiness: string;
+          strategyUsable: boolean;
+          paperUsable: boolean;
+          liveUsable: boolean;
+          reasons: string[];
           subscribedSymbols: string[];
         }>
       >
@@ -438,6 +463,12 @@ async function main() {
     assert.equal(paperProviderStatus.data.length, 1);
     assert.equal(paperProviderStatus.data[0]?.source, "paper");
     assert.equal(paperProviderStatus.data[0]?.connected, true);
+    assert.equal(paperProviderStatus.data[0]?.freshnessStatus, "fresh");
+    assert.equal(paperProviderStatus.data[0]?.readiness, "degraded");
+    assert.equal(paperProviderStatus.data[0]?.strategyUsable, true);
+    assert.equal(paperProviderStatus.data[0]?.paperUsable, true);
+    assert.equal(paperProviderStatus.data[0]?.liveUsable, false);
+    assert.equal(paperProviderStatus.data[0]?.reasons.includes("synthetic_source"), true);
     assert.equal(paperProviderStatus.data[0]?.subscribedSymbols.includes("PAPR1"), true);
 
     const tradingviewQuotes = await request<
@@ -547,6 +578,12 @@ async function main() {
         Array<{
           source: string;
           connected: boolean;
+          freshnessStatus: string;
+          readiness: string;
+          strategyUsable: boolean;
+          paperUsable: boolean;
+          liveUsable: boolean;
+          reasons: string[];
           subscribedSymbols: string[];
         }>
       >
@@ -556,6 +593,12 @@ async function main() {
     assert.equal(providerStatusAfterTradingview.data.length, 1);
     assert.equal(providerStatusAfterTradingview.data[0]?.source, "tradingview");
     assert.equal(providerStatusAfterTradingview.data[0]?.connected, true);
+    assert.equal(providerStatusAfterTradingview.data[0]?.freshnessStatus, "fresh");
+    assert.equal(providerStatusAfterTradingview.data[0]?.readiness, "degraded");
+    assert.equal(providerStatusAfterTradingview.data[0]?.strategyUsable, true);
+    assert.equal(providerStatusAfterTradingview.data[0]?.paperUsable, true);
+    assert.equal(providerStatusAfterTradingview.data[0]?.liveUsable, false);
+    assert.equal(providerStatusAfterTradingview.data[0]?.reasons.includes("non_live_source"), true);
     assert.equal(providerStatusAfterTradingview.data[0]?.subscribedSymbols.includes("TVSMK1"), true);
 
     const marketOverview = await request<

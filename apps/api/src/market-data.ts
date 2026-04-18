@@ -508,10 +508,58 @@ function buildEffectiveQuoteReasons(input: {
   if (input.synthetic) {
     reasons.push("synthetic_source");
   }
+  if (input.selectedSource !== null && input.selectedSource !== "kgi") {
+    reasons.push("non_live_source");
+  }
   if (input.selectedSource !== null && !input.providerConnected) {
     reasons.push("provider_disconnected");
   }
   return reasons;
+}
+
+function buildProviderReadiness(input: {
+  source: QuoteSource;
+  connected: boolean;
+  latestQuote: Quote | null;
+}) {
+  const freshnessStatus = getQuoteFreshnessStatus(input.latestQuote);
+  const synthetic = isSyntheticSource(input.source);
+  const strategyUsable = input.connected && freshnessStatus === "fresh";
+  const paperUsable = input.connected && freshnessStatus === "fresh";
+  const liveUsable = input.connected && freshnessStatus === "fresh" && input.source === "kgi";
+  const readiness: EffectiveQuoteReadiness =
+    !input.connected || freshnessStatus !== "fresh"
+      ? "blocked"
+      : synthetic || input.source === "tradingview"
+        ? "degraded"
+        : "ready";
+  const reasons: string[] = [];
+
+  if (!input.connected) {
+    reasons.push("provider_disconnected");
+  }
+  if (freshnessStatus === "missing") {
+    reasons.push("missing_quote");
+  } else if (freshnessStatus === "stale") {
+    reasons.push(`stale:${getQuoteStaleReason(input.latestQuote)}`);
+  }
+  if (synthetic) {
+    reasons.push("synthetic_source");
+  }
+  if (input.source !== "kgi") {
+    reasons.push("non_live_source");
+  }
+
+  return {
+    latestQuoteAgeMs: input.latestQuote?.ageMs ?? null,
+    freshnessStatus,
+    readiness,
+    strategyUsable,
+    paperUsable,
+    liveUsable,
+    staleAfterMs: getQuoteStaleMs(input.source),
+    reasons
+  };
 }
 
 function mapCompanyMarket(rawMarket: string): Market {
@@ -639,13 +687,26 @@ function buildCachedProvider(
       const freshQuotes = quotes.filter((quote) => !quote.isStale);
       const lastMessageAt = quotes[0]?.timestamp ?? null;
       const connected = source === "manual" ? true : freshQuotes.length > 0;
+      const readiness = buildProviderReadiness({
+        source,
+        connected,
+        latestQuote: quotes[0] ?? null
+      });
 
       return quoteProviderStatusSchema.parse({
         source,
         connected,
         lastMessageAt,
         latencyMs: null,
+        latestQuoteAgeMs: readiness.latestQuoteAgeMs,
+        freshnessStatus: readiness.freshnessStatus,
+        readiness: readiness.readiness,
+        strategyUsable: readiness.strategyUsable,
+        paperUsable: readiness.paperUsable,
+        liveUsable: readiness.liveUsable,
+        staleAfterMs: readiness.staleAfterMs,
         subscribedSymbols: [...new Set(quotes.map((quote) => quote.symbol))],
+        reasons: readiness.reasons,
         errorMessage: connected || source === "manual" ? null : errorMessage
       });
     }
@@ -1163,10 +1224,12 @@ export async function getEffectiveMarketQuotes(input: {
     const liveUsable = resolution.freshnessStatus === "fresh" && selectedSource === "kgi";
     const paperUsable = resolution.freshnessStatus === "fresh";
     const strategyUsable = resolution.freshnessStatus === "fresh";
+    const nonLiveSource = selectedSource !== null && selectedSource !== "kgi";
     const readiness: EffectiveQuoteReadiness =
       resolution.freshnessStatus !== "fresh"
         ? "blocked"
         : synthetic
+          || nonLiveSource
           || resolution.fallbackReason === "higher_priority_stale"
           || resolution.fallbackReason === "higher_priority_missing"
           || resolution.fallbackReason === "no_fresh_quote"
