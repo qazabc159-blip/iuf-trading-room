@@ -3,20 +3,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
+  Balance,
   OrderCreateInput,
   RiskCheckResult,
   RiskGuardResult,
   RiskLimit,
-  TradePlan
+  TradePlan,
+  TradePlanExecution
 } from "@iuf-trading-room/contracts";
 
 import {
   getEffectiveRiskLimit,
   getPlans,
+  getTradingBalance,
   previewTradingOrder,
   submitTradingOrder,
   type TradingOrderResult
 } from "@/lib/api";
+import { computeSizedQuantity, type SizingResult } from "@/lib/sizing";
 
 type Props = {
   accountId: string;
@@ -57,9 +61,11 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
   const [plans, setPlans] = useState<TradePlan[]>([]);
   const [effectiveLimits, setEffectiveLimits] = useState<RiskLimit | null>(null);
   const [pendingLimits, setPendingLimits] = useState(false);
+  const [balance, setBalance] = useState<Balance | null>(null);
   const [lastResult, setLastResult] = useState<TradingOrderResult | null>(null);
   const [pending, setPending] = useState<"idle" | "preview" | "submit">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [lastSizing, setLastSizing] = useState<SizingResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,38 +87,87 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
     [plans]
   );
 
+  // Fetch live equity once per accountId; sizing uses balance.equity for the
+  // risk_per_trade / fixed_pct math. Errors surface as a sizing blocker rather
+  // than blocking the form so manual entry still works.
+  useEffect(() => {
+    if (!accountId) {
+      setBalance(null);
+      return;
+    }
+    let cancelled = false;
+    getTradingBalance(accountId)
+      .then((res) => {
+        if (!cancelled) setBalance(res.data);
+      })
+      .catch((err) => {
+        if (!cancelled) console.warn("[order-ticket] getTradingBalance failed:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+
+  const planEntryPrice = useCallback((ex: TradePlanExecution): number | null => {
+    if (ex.entryPrice !== null) return ex.entryPrice;
+    if (ex.entryRange) return (ex.entryRange.low + ex.entryRange.high) / 2;
+    return null;
+  }, []);
+
   const onPickPlan = useCallback(
     (planId: string) => {
       if (!planId) {
         setForm((prev) => ({ ...prev, tradePlanId: "" }));
+        setLastSizing(null);
         return;
       }
       const plan = plans.find((p) => p.id === planId);
       if (!plan?.execution) return;
       const ex = plan.execution;
-      // Quantity prefill: only when plan explicitly specifies a fixed share
-      // count. risk_per_trade and fixed_pct need live equity + stop distance,
-      // which we can't compute synchronously here — leave whatever the user
-      // typed so they can size manually.
-      const sizedQty =
-        ex.positionSizing.mode === "fixed_qty" && ex.positionSizing.qty !== null
-          ? String(ex.positionSizing.qty)
-          : null;
+      const entryForSizing = planEntryPrice(ex);
+      const sized = computeSizedQuantity({
+        equity: balance?.equity ?? null,
+        sizing: ex.positionSizing,
+        entryPrice: entryForSizing,
+        stopLoss: ex.stopLoss
+      });
+      setLastSizing(sized);
       setForm((prev) => ({
         ...prev,
         tradePlanId: plan.id,
         symbol: ex.symbol,
         side: ex.side,
         type: ex.orderType,
-        quantity: sizedQty ?? prev.quantity,
+        quantity: sized.qty !== null ? String(sized.qty) : prev.quantity,
         price: ex.entryPrice !== null ? String(ex.entryPrice) : prev.price,
         stopPrice: ex.orderType === "stop" || ex.orderType === "stop_limit"
           ? (ex.stopLoss !== null ? String(ex.stopLoss) : prev.stopPrice)
           : prev.stopPrice
       }));
     },
-    [plans]
+    [plans, balance, planEntryPrice]
   );
+
+  // If equity arrives after the plan was picked (or balance refreshes), recompute
+  // sizing for the currently selected plan and refill quantity.
+  useEffect(() => {
+    if (!form.tradePlanId || !balance) return;
+    const plan = plans.find((p) => p.id === form.tradePlanId);
+    if (!plan?.execution) return;
+    const ex = plan.execution;
+    const sized = computeSizedQuantity({
+      equity: balance.equity,
+      sizing: ex.positionSizing,
+      entryPrice: planEntryPrice(ex),
+      stopLoss: ex.stopLoss
+    });
+    setLastSizing(sized);
+    if (sized.qty !== null) {
+      setForm((prev) =>
+        prev.tradePlanId === plan.id ? { ...prev, quantity: String(sized.qty) } : prev
+      );
+    }
+  }, [balance, form.tradePlanId, plans, planEntryPrice]);
 
   const selectedPlan = useMemo(
     () => plans.find((p) => p.id === form.tradePlanId) ?? null,
@@ -325,6 +380,10 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
 
       {selectedPlan?.execution && (
         <PlanContextCard plan={selectedPlan} />
+      )}
+
+      {selectedPlan?.execution && lastSizing && (
+        <SizingBreakdownCard sizing={lastSizing} equity={balance?.equity ?? null} />
       )}
 
       <EffectiveLimitsCard
@@ -563,6 +622,64 @@ function LimitStat({
       <div style={{ color: accent === "amber" ? "var(--amber)" : "var(--phosphor)" }}>
         {value}
       </div>
+    </div>
+  );
+}
+
+function SizingBreakdownCard({
+  sizing,
+  equity
+}: {
+  sizing: SizingResult;
+  equity: number | null;
+}) {
+  const accent = sizing.blocker
+    ? "var(--amber)"
+    : sizing.cappedByMaxPosition
+      ? "var(--amber)"
+      : "var(--phosphor)";
+  return (
+    <div
+      style={{
+        border: `1px dashed ${accent}`,
+        padding: "0.6rem 0.75rem",
+        fontFamily: "var(--mono, monospace)",
+        fontSize: "0.8rem"
+      }}
+    >
+      <div style={{ color: "var(--dim)", marginBottom: "0.3rem" }}>
+        [SIZING · 自動計算]
+      </div>
+      {sizing.blocker ? (
+        <div style={{ color: "var(--amber)" }}>{sizing.blocker}</div>
+      ) : (
+        <>
+          <div style={{ color: "var(--fg, #eee)" }}>{sizing.reason}</div>
+          <div
+            style={{
+              marginTop: "0.3rem",
+              display: "flex",
+              gap: "1.25rem",
+              flexWrap: "wrap"
+            }}
+          >
+            <span>
+              <span style={{ color: "var(--dim)" }}>下單張數 </span>
+              <span style={{ color: accent, fontWeight: 600 }}>
+                {sizing.qty?.toLocaleString() ?? "—"}
+              </span>
+            </span>
+            {sizing.cappedByMaxPosition && (
+              <span style={{ color: "var(--amber)" }}>
+                ⚠ 受 maxPositionPct 上限壓低（原 {sizing.rawQty?.toLocaleString()} 股）
+              </span>
+            )}
+            <span style={{ color: "var(--dim)" }}>
+              權益 {equity !== null ? equity.toLocaleString() : "—"}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
