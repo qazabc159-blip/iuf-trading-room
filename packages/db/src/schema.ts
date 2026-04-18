@@ -300,3 +300,31 @@ export const paperBrokerState = pgTable(
     pk: primaryKey({ columns: [table.workspaceId, table.accountId] })
   })
 );
+
+export const executionEvents = pgTable(
+  "execution_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+    accountId: text("account_id").notNull(),
+    orderId: text("order_id").notNull(),
+    clientOrderId: text("client_order_id").notNull(),
+    type: text("type").notNull(),
+    status: text("status").notNull(),
+    message: text("message"),
+    payload: jsonb("payload"),
+    emittedAt: timestamp("emitted_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    workspaceAccountIdx: index("execution_events_workspace_account_idx").on(
+      table.workspaceId,
+      table.accountId,
+      table.emittedAt
+    ),
+    orderIdx: index("execution_events_order_idx").on(
+      table.workspaceId,
+      table.orderId
+    )
+  })
+);

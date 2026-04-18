@@ -15,6 +15,7 @@ import {
 } from "@iuf-trading-room/contracts";
 
 import { listMarketQuotes } from "../market-data.js";
+import { appendExecutionEvent } from "./execution-events-store.js";
 import {
   loadWorkspaceSnapshots,
   type PaperAccountSnapshot,
@@ -304,7 +305,17 @@ function applyFillToPosition(
   return realized;
 }
 
-function emit(session: AppSession, event: ExecutionEvent): void {
+function emit(session: AppSession, accountId: string, event: ExecutionEvent): void {
+  // Persist before broadcasting so a subscriber that immediately re-fetches
+  // history will see this event. Fire-and-forget keeps broker hot path sync;
+  // a failed write is logged but the in-memory subscribers still receive it.
+  appendExecutionEvent(session, accountId, event).catch((err) => {
+    console.error(
+      `[paper-broker] failed to persist execution event for order ${event.orderId}:`,
+      err
+    );
+  });
+
   const key = workspaceKey(session);
   const listeners = subscribers.get(key);
   if (!listeners) return;
@@ -375,7 +386,7 @@ export async function placePaperOrder(input: {
 
   state.orders.set(orderId, order);
   state.lastEventAt = now;
-  emit(input.session, {
+  emit(input.session, input.order.accountId, {
     type: "submit",
     orderId,
     clientOrderId,
@@ -406,7 +417,7 @@ export async function placePaperOrder(input: {
     order.status = "rejected";
     order.reason = "no_reference_price";
     order.updatedAt = now;
-    emit(input.session, {
+    emit(input.session, input.order.accountId, {
       type: "reject",
       orderId,
       clientOrderId,
@@ -422,7 +433,7 @@ export async function placePaperOrder(input: {
   // Limit / stop that don't fill yet stay acknowledged.
   order.status = "acknowledged";
   order.updatedAt = now;
-  emit(input.session, {
+  emit(input.session, input.order.accountId, {
     type: "acknowledge",
     orderId,
     clientOrderId,
@@ -501,7 +512,7 @@ async function fillOrder(args: {
   state.orders.set(args.order.id, updated);
   state.lastEventAt = args.now;
 
-  emit(args.session, {
+  emit(args.session, args.order.accountId, {
     type: "fill",
     orderId: args.order.id,
     clientOrderId: args.order.clientOrderId,
@@ -533,7 +544,7 @@ export async function cancelPaperOrder(input: {
   };
   state.orders.set(order.id, updated);
   state.lastEventAt = now;
-  emit(input.session, {
+  emit(input.session, input.accountId, {
     type: "cancel",
     orderId: order.id,
     clientOrderId: order.clientOrderId,

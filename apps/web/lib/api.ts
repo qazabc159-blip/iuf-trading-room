@@ -555,6 +555,23 @@ export async function previewTradingOrder(input: OrderCreateInput) {
   return requestOrderOutcome("/api/v1/trading/orders/preview", input);
 }
 
+export async function getExecutionEvents(params?: {
+  accountId?: string;
+  orderId?: string;
+  limit?: number;
+  before?: string;
+  after?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params?.accountId) query.set("accountId", params.accountId);
+  if (params?.orderId) query.set("orderId", params.orderId);
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.before) query.set("before", params.before);
+  if (params?.after) query.set("after", params.after);
+  const qs = query.toString();
+  return request<ExecutionEvent[]>(`/api/v1/trading/events${qs ? `?${qs}` : ""}`);
+}
+
 // Fetch-based SSE reader. EventSource can't set custom headers in the browser,
 // so we parse the stream ourselves using the same x-workspace-slug contract as
 // the rest of the client.
