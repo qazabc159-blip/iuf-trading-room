@@ -382,6 +382,48 @@ async function main() {
     assert.equal(resolvedQuotes.data[0]?.preferredQuote?.last, 123.45);
     assert.equal(resolvedQuotes.data[0]?.candidates.some((item) => item.source === "manual"), true);
 
+    const effectiveQuotes = await request<
+      JsonEnvelope<{
+        summary: {
+          total: number;
+          ready: number;
+          degraded: number;
+          blocked: number;
+          strategyUsable: number;
+          paperUsable: number;
+          liveUsable: number;
+        };
+        items: Array<{
+          symbol: string;
+          selectedSource: string | null;
+          readiness: string;
+          strategyUsable: boolean;
+          paperUsable: boolean;
+          liveUsable: boolean;
+          fallbackReason: string;
+          staleReason: string;
+          reasons: string[];
+        }>;
+      }>
+    >(baseUrl, "/api/v1/market-data/effective-quotes?symbols=SMK1,PAPR1,TVSMK1&includeStale=true&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(effectiveQuotes.data.summary.total, 3);
+    assert.equal(effectiveQuotes.data.summary.strategyUsable >= 2, true);
+    assert.equal(effectiveQuotes.data.summary.paperUsable >= 2, true);
+    assert.equal(
+      effectiveQuotes.data.items.some(
+        (item) => item.symbol === "TVSMK1" && item.readiness === "ready" && item.selectedSource === "tradingview"
+      ),
+      true
+    );
+    assert.equal(
+      effectiveQuotes.data.items.some(
+        (item) => item.symbol === "PAPR1" && item.readiness === "degraded" && item.reasons.includes("synthetic_source")
+      ),
+      true
+    );
+
     const paperProviderStatus = await request<
       JsonEnvelope<
         Array<{
@@ -531,6 +573,15 @@ async function main() {
           readiness: {
             connectedSources: string[];
             preferredSourceOrder: string[];
+            effectiveSelection: {
+              total: number;
+              ready: number;
+              degraded: number;
+              blocked: number;
+              strategyUsable: number;
+              paperUsable: number;
+              liveUsable: number;
+            };
           };
           bySource: Array<{ source: string; total: number }>;
         };
@@ -553,6 +604,8 @@ async function main() {
     assert.equal(marketOverview.data.policy.sourcePriority[0]?.source, "kgi");
     assert.equal(marketOverview.data.quotes.readiness.connectedSources.includes("tradingview"), true);
     assert.equal(marketOverview.data.quotes.readiness.preferredSourceOrder[0], "kgi");
+    assert.equal(marketOverview.data.quotes.readiness.effectiveSelection.total >= 2, true);
+    assert.equal(marketOverview.data.quotes.readiness.effectiveSelection.paperUsable >= 1, true);
     assert.ok(marketOverview.data.quotes.bySource.some((item) => item.source === "manual"));
     assert.equal(marketOverview.data.leaders.topGainers[0]?.symbol, "SMK1");
     assert.equal(marketOverview.data.leaders.mostActive[0]?.symbol, "SMK1");

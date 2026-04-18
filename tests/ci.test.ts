@@ -44,6 +44,7 @@ import {
   getMarketDataPolicy,
   getMarketDataOverview,
   getMarketBarDiagnostics,
+  getEffectiveMarketQuotes,
   getMarketQuoteHistoryDiagnostics,
   ingestTradingViewQuote,
   listMarketBars,
@@ -1839,6 +1840,118 @@ test("market data resolve diagnostics expose preferred source and candidate stac
   assert.equal(resolved[0]?.candidates[3]?.source, "manual");
 });
 
+test("market data effective quotes summarize readiness for strategy and paper consumers", async () => {
+  const session = { workspace: { slug: `market-effective-${randomUUID()}` } };
+  const now = new Date().toISOString();
+  const staleTimestamp = "2020-01-01T00:00:00.000Z";
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "EFF1",
+        market: "OTHER",
+        source: "manual",
+        last: 110,
+        bid: 109.9,
+        ask: 110.1,
+        open: 108,
+        high: 111,
+        low: 107.5,
+        prevClose: 108,
+        volume: 200,
+        changePct: 1.85,
+        timestamp: now
+      },
+      {
+        symbol: "EFF1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 111,
+        bid: 110.9,
+        ask: 111.1,
+        open: 109,
+        high: 112,
+        low: 108.5,
+        prevClose: 109,
+        volume: 260,
+        changePct: 1.96,
+        timestamp: now
+      },
+      {
+        symbol: "EFF2",
+        market: "OTHER",
+        source: "paper",
+        last: 42,
+        bid: 41.9,
+        ask: 42.1,
+        open: 40,
+        high: 42.5,
+        low: 39.8,
+        prevClose: 40.5,
+        volume: 40,
+        changePct: 3.7,
+        timestamp: now
+      },
+      {
+        symbol: "EFF3",
+        market: "OTHER",
+        source: "manual",
+        last: 15,
+        bid: 14.9,
+        ask: 15.1,
+        open: 14.8,
+        high: 15.2,
+        low: 14.7,
+        prevClose: 14.9,
+        volume: 20,
+        changePct: 0.67,
+        timestamp: staleTimestamp
+      }
+    ]
+  });
+
+  const effective = await getEffectiveMarketQuotes({
+    session,
+    symbols: "EFF1,EFF2,EFF3",
+    includeStale: true,
+    limit: 10
+  });
+
+  assert.equal(effective.summary.total, 3);
+  assert.equal(effective.summary.ready, 1);
+  assert.equal(effective.summary.degraded, 1);
+  assert.equal(effective.summary.blocked, 1);
+  assert.equal(effective.summary.strategyUsable, 2);
+  assert.equal(effective.summary.paperUsable, 2);
+  assert.equal(effective.summary.liveUsable, 0);
+
+  const ready = effective.items.find((item) => item.symbol === "EFF1");
+  assert.equal(ready?.selectedSource, "tradingview");
+  assert.equal(ready?.readiness, "ready");
+  assert.equal(ready?.strategyUsable, true);
+  assert.equal(ready?.paperUsable, true);
+  assert.equal(ready?.reasons.length, 1);
+  assert.equal(ready?.reasons[0], "fallback:higher_priority_unavailable");
+
+  const degraded = effective.items.find((item) => item.symbol === "EFF2");
+  assert.equal(degraded?.selectedSource, "paper");
+  assert.equal(degraded?.readiness, "degraded");
+  assert.equal(degraded?.strategyUsable, true);
+  assert.equal(degraded?.paperUsable, true);
+  assert.equal(degraded?.liveUsable, false);
+  assert.equal(degraded?.synthetic, true);
+  assert.equal(degraded?.reasons.includes("synthetic_source"), true);
+
+  const blocked = effective.items.find((item) => item.symbol === "EFF3");
+  assert.equal(blocked?.selectedSource, "manual");
+  assert.equal(blocked?.readiness, "blocked");
+  assert.equal(blocked?.strategyUsable, false);
+  assert.equal(blocked?.paperUsable, false);
+  assert.equal(blocked?.staleReason, "age_exceeded");
+  assert.equal(blocked?.reasons.includes("stale:age_exceeded"), true);
+});
+
 test("market data history and bars respect time window filters", async () => {
   const session = { workspace: { slug: `market-time-range-${randomUUID()}` } };
   const baseMinute = Math.floor((Date.now() - 10_000) / 60_000) * 60_000;
@@ -2243,6 +2356,12 @@ test("market data overview summarizes providers, coverage, and leaders", async (
   assert.equal(overview.quotes.total, 3);
   assert.equal(overview.quotes.fresh, 2);
   assert.equal(overview.quotes.stale, 1);
+  assert.equal(overview.quotes.readiness.connectedSources.includes("manual"), true);
+  assert.equal(overview.quotes.readiness.preferredSourceOrder[0], "kgi");
+  assert.equal(overview.quotes.readiness.effectiveSelection.total, 3);
+  assert.equal(overview.quotes.readiness.effectiveSelection.degraded, 2);
+  assert.equal(overview.quotes.readiness.effectiveSelection.blocked, 1);
+  assert.equal(overview.quotes.readiness.effectiveSelection.paperUsable, 2);
   assert.equal(overview.quotes.bySource[0]?.source, "manual");
   assert.equal(overview.leaders.topGainers[0]?.symbol, "SMK1");
   assert.equal(overview.leaders.topLosers[0]?.symbol, "2330");

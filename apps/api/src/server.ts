@@ -80,6 +80,7 @@ import {
   getMarketDataOverview,
   getMarketBarDiagnostics,
   getMarketQuoteHistoryDiagnostics,
+  getEffectiveMarketQuotes,
   ingestTradingViewQuote,
   listMarketBars,
   listMarketDataProviderStatuses,
@@ -97,6 +98,7 @@ import {
   marketDataProvidersQuerySchema,
   marketDataQuotesQuerySchema,
   marketDataSymbolsQuerySchema,
+  marketDataEffectiveQuotesQuerySchema,
   resolveMarketQuotes,
   upsertPaperQuotes,
   upsertManualQuotes
@@ -120,6 +122,7 @@ import {
   subscribeExecutionEvents
 } from "./broker/paper-broker.js";
 import { cancelOrder, previewOrder, submitOrder } from "./broker/trading-service.js";
+import { listExecutionEvents } from "./broker/execution-events-store.js";
 import {
   getCompanyGraphSearchResults,
   getCompanyGraphStats,
@@ -677,6 +680,19 @@ app.get("/api/v1/market-data/resolve", async (c) => {
   });
 });
 
+app.get("/api/v1/market-data/effective-quotes", async (c) => {
+  const query = marketDataEffectiveQuotesQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getEffectiveMarketQuotes({
+      session: c.get("session"),
+      symbols: query.symbols,
+      market: query.market,
+      includeStale: query.includeStale,
+      limit: query.limit
+    })
+  });
+});
+
 app.get("/api/v1/market-data/history", async (c) => {
   const query = marketDataHistoryQuerySchema.parse(c.req.query());
   return c.json({
@@ -930,6 +946,21 @@ app.get("/api/v1/trading/status", async (c) => {
   const query = tradingAccountQuerySchema.parse(c.req.query());
   return c.json({
     data: await getPaperBrokerStatus(c.get("session"), query.accountId)
+  });
+});
+
+app.get("/api/v1/trading/events", async (c) => {
+  const query = z
+    .object({
+      accountId: z.string().optional(),
+      orderId: z.string().optional(),
+      limit: z.coerce.number().int().positive().max(500).optional(),
+      before: z.string().datetime().optional(),
+      after: z.string().datetime().optional()
+    })
+    .parse(c.req.query());
+  return c.json({
+    data: await listExecutionEvents(c.get("session"), query)
   });
 });
 

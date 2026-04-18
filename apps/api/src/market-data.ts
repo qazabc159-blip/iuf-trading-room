@@ -48,6 +48,7 @@ type QuoteResolutionStaleReason =
   | "no_quote"
   | "provider_unavailable";
 type TimeWindowCompleteness = "unbounded" | "empty" | "partial" | "complete";
+type EffectiveQuoteReadiness = "ready" | "degraded" | "blocked";
 
 const quoteResolutionFreshnessStatusSchema = z.enum(["fresh", "stale", "missing"]);
 const quoteResolutionFallbackReasonSchema = z.enum([
@@ -66,6 +67,7 @@ const quoteResolutionStaleReasonSchema = z.enum([
   "provider_unavailable"
 ]);
 const timeWindowCompletenessSchema = z.enum(["unbounded", "empty", "partial", "complete"]);
+const effectiveQuoteReadinessSchema = z.enum(["ready", "degraded", "blocked"]);
 const quoteResolutionCandidateSchema = z.object({
   source: quoteSourceSchema,
   priority: z.number().int().nonnegative(),
@@ -86,6 +88,25 @@ const quoteResolutionSchema = z.object({
   freshnessStatus: quoteResolutionFreshnessStatusSchema,
   fallbackReason: quoteResolutionFallbackReasonSchema,
   staleReason: quoteResolutionStaleReasonSchema,
+  candidates: z.array(quoteResolutionCandidateSchema)
+});
+const effectiveMarketQuoteSchema = z.object({
+  symbol: z.string(),
+  market: marketSchema,
+  selectedSource: quoteSourceSchema.nullable(),
+  selectedQuote: quoteSchema.nullable(),
+  freshnessStatus: quoteResolutionFreshnessStatusSchema,
+  fallbackReason: quoteResolutionFallbackReasonSchema,
+  staleReason: quoteResolutionStaleReasonSchema,
+  readiness: effectiveQuoteReadinessSchema,
+  strategyUsable: z.boolean(),
+  paperUsable: z.boolean(),
+  liveUsable: z.boolean(),
+  synthetic: z.boolean(),
+  providerConnected: z.boolean(),
+  staleAfterMs: z.number().int().positive().nullable(),
+  sourcePriority: z.number().int().nonnegative().nullable(),
+  reasons: z.array(z.string()),
   candidates: z.array(quoteResolutionCandidateSchema)
 });
 
@@ -173,6 +194,8 @@ export const marketDataResolveQuerySchema = z.object({
   includeStale: z.coerce.boolean().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional()
 });
+
+export const marketDataEffectiveQuotesQuerySchema = marketDataResolveQuerySchema;
 
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>>();
@@ -463,6 +486,32 @@ function getQuoteStaleReason(quote: Quote | null): QuoteResolutionStaleReason {
   }
 
   return "none";
+}
+
+function buildEffectiveQuoteReasons(input: {
+  selectedSource: QuoteSource | null;
+  fallbackReason: QuoteResolutionFallbackReason;
+  staleReason: QuoteResolutionStaleReason;
+  synthetic: boolean;
+  providerConnected: boolean;
+}) {
+  const reasons: string[] = [];
+  if (input.selectedSource === null) {
+    reasons.push("missing_quote");
+  }
+  if (input.fallbackReason !== "none") {
+    reasons.push(`fallback:${input.fallbackReason}`);
+  }
+  if (input.staleReason !== "none") {
+    reasons.push(`stale:${input.staleReason}`);
+  }
+  if (input.synthetic) {
+    reasons.push("synthetic_source");
+  }
+  if (input.selectedSource !== null && !input.providerConnected) {
+    reasons.push("provider_disconnected");
+  }
+  return reasons;
 }
 
 function mapCompanyMarket(rawMarket: string): Market {
@@ -1094,6 +1143,102 @@ export async function resolveMarketQuotes(input: {
     .slice(0, input.limit ?? 100);
 }
 
+export async function getEffectiveMarketQuotes(input: {
+  session: AppSession;
+  symbols: string;
+  market?: Market;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const resolutions = await resolveMarketQuotes(input);
+  const items = resolutions.map((resolution) => {
+    const selectedSource = resolution.selectedSource;
+    const synthetic = selectedSource ? isSyntheticSource(selectedSource) : false;
+    const selectedCandidate = selectedSource
+      ? resolution.candidates.find((candidate) => candidate.source === selectedSource) ?? null
+      : null;
+    const providerConnected = selectedCandidate?.providerConnected ?? false;
+    const staleAfterMs = selectedSource ? getQuoteStaleMs(selectedSource) : null;
+    const sourcePriority = selectedSource ? getSourcePriority(selectedSource) : null;
+    const liveUsable = resolution.freshnessStatus === "fresh" && selectedSource === "kgi";
+    const paperUsable = resolution.freshnessStatus === "fresh";
+    const strategyUsable = resolution.freshnessStatus === "fresh";
+    const readiness: EffectiveQuoteReadiness =
+      resolution.freshnessStatus !== "fresh"
+        ? "blocked"
+        : synthetic
+          || resolution.fallbackReason === "higher_priority_stale"
+          || resolution.fallbackReason === "higher_priority_missing"
+          || resolution.fallbackReason === "no_fresh_quote"
+          ? "degraded"
+          : "ready";
+
+    return effectiveMarketQuoteSchema.parse({
+      symbol: resolution.symbol,
+      market: resolution.market,
+      selectedSource,
+      selectedQuote: resolution.selectedQuote,
+      freshnessStatus: resolution.freshnessStatus,
+      fallbackReason: resolution.fallbackReason,
+      staleReason: resolution.staleReason,
+      readiness,
+      strategyUsable,
+      paperUsable,
+      liveUsable,
+      synthetic,
+      providerConnected,
+      staleAfterMs,
+      sourcePriority,
+      reasons: buildEffectiveQuoteReasons({
+        selectedSource,
+        fallbackReason: resolution.fallbackReason,
+        staleReason: resolution.staleReason,
+        synthetic,
+        providerConnected
+      }),
+      candidates: resolution.candidates
+    });
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    policy: getMarketDataPolicy(),
+    summary: {
+      total: items.length,
+      ready: items.filter((item) => item.readiness === "ready").length,
+      degraded: items.filter((item) => item.readiness === "degraded").length,
+      blocked: items.filter((item) => item.readiness === "blocked").length,
+      strategyUsable: items.filter((item) => item.strategyUsable).length,
+      paperUsable: items.filter((item) => item.paperUsable).length,
+      liveUsable: items.filter((item) => item.liveUsable).length,
+      bySource: quoteProviderSources.map((source) => ({
+        source,
+        total: items.filter((item) => item.selectedSource === source).length
+      })),
+      fallbackReasons: [
+        "higher_priority_stale",
+        "higher_priority_missing",
+        "higher_priority_unavailable",
+        "no_fresh_quote",
+        "no_quote"
+      ].map((reason) => ({
+        reason,
+        total: items.filter((item) => item.fallbackReason === reason).length
+      })),
+      staleReasons: [
+        "age_exceeded",
+        "missing_last",
+        "no_quote",
+        "provider_unavailable"
+      ].map((reason) => ({
+        reason,
+        total: items.filter((item) => item.staleReason === reason).length
+      }))
+    },
+    items
+  };
+}
+
 function getBarIntervalMs(interval: BarInterval) {
   switch (interval) {
     case "1m":
@@ -1254,6 +1399,39 @@ export async function getMarketDataOverview(input: {
     })
   ]);
   const symbols = dedupeSymbolMasters(companies);
+  const effectiveSelection = quotes.length > 0
+    ? await getEffectiveMarketQuotes({
+      session: input.session,
+      symbols: [...new Set(quotes.map((quote) => quote.symbol))].join(","),
+      includeStale: true,
+      limit: Math.max(quotes.length, 50)
+    })
+    : {
+      generatedAt: new Date().toISOString(),
+      policy: getMarketDataPolicy(),
+      summary: {
+        total: 0,
+        ready: 0,
+        degraded: 0,
+        blocked: 0,
+        strategyUsable: 0,
+        paperUsable: 0,
+        liveUsable: 0,
+        bySource: quoteProviderSources.map((source) => ({ source, total: 0 })),
+        fallbackReasons: [
+          "higher_priority_stale",
+          "higher_priority_missing",
+          "higher_priority_unavailable",
+          "no_fresh_quote",
+          "no_quote"
+        ].map((reason) => ({ reason, total: 0 })),
+        staleReasons: ["age_exceeded", "missing_last", "no_quote", "provider_unavailable"].map((reason) => ({
+          reason,
+          total: 0
+        }))
+      },
+      items: []
+    };
 
   const quotesBySource = [...new Set(quoteProviderSources)]
     .map((source) => ({
@@ -1339,7 +1517,8 @@ export async function getMarketDataOverview(input: {
       readiness: {
         connectedSources: providers.filter((provider) => provider.connected).map((provider) => provider.source),
         disconnectedSources: providers.filter((provider) => !provider.connected).map((provider) => provider.source),
-        preferredSourceOrder: getSourcePriorityOrder()
+        preferredSourceOrder: getSourcePriorityOrder(),
+        effectiveSelection: effectiveSelection.summary
       },
       bySource: quotesBySource,
       byMarket: quotesByMarket
