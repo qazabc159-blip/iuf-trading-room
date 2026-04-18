@@ -45,6 +45,7 @@ import {
   getMarketDataOverview,
   getMarketBarDiagnostics,
   getMarketDataConsumerSummary,
+  getMarketDataDecisionSummary,
   getMarketDataSelectionSummary,
   getEffectiveMarketQuotes,
   getMarketQuoteHistoryDiagnostics,
@@ -1666,10 +1667,11 @@ test("market data policy reflects configured source priority and freshness thres
 
   try {
     const policy = getMarketDataPolicy();
-    assert.equal(policy.surface.version, "market-data-v1.8-selection-summary");
+    assert.equal(policy.surface.version, "market-data-v1.9-decision-summary");
     assert.equal(policy.surface.capabilities.consumerSummary, true);
     assert.equal(policy.surface.capabilities.selectionSummary, true);
-    assert.equal(policy.surface.preferredEntryPoints.execution, "/api/v1/market-data/selection-summary");
+    assert.equal(policy.surface.capabilities.decisionSummary, true);
+    assert.equal(policy.surface.preferredEntryPoints.execution, "/api/v1/market-data/decision-summary");
     assert.equal(policy.sourcePriority[0]?.source, "paper");
     assert.equal(policy.sourcePriority[1]?.source, "tradingview");
     assert.equal(policy.sourcePriority[2]?.source, "manual");
@@ -2150,6 +2152,70 @@ test("market data selection summary aligns strategy paper and execution interpre
   assert.equal(paperItem?.execution.usable, false);
 });
 
+test("market data decision summary compresses selection into execution-safe consume surface", async () => {
+  const session = { workspace: { slug: `market-decision-${randomUUID()}` } };
+  const now = new Date().toISOString();
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "DCS1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 45,
+        bid: 44.9,
+        ask: 45.1,
+        open: 44,
+        high: 45.5,
+        low: 43.8,
+        prevClose: 44.2,
+        volume: 500,
+        changePct: 1.81,
+        timestamp: now
+      },
+      {
+        symbol: "DCS2",
+        market: "OTHER",
+        source: "paper",
+        last: 88,
+        bid: 87.8,
+        ask: 88.2,
+        open: 86,
+        high: 88.5,
+        low: 85.5,
+        prevClose: 87,
+        volume: 240,
+        changePct: 1.14,
+        timestamp: now
+      }
+    ]
+  });
+
+  const decision = await getMarketDataDecisionSummary({
+    session,
+    symbols: "DCS1,DCS2",
+    includeStale: true,
+    limit: 10
+  });
+
+  assert.equal(decision.summary.total, 2);
+  assert.equal(decision.summary.readiness.degraded, 2);
+  assert.equal(decision.summary.execution.review, 2);
+
+  const tradingviewItem = decision.items.find((item) => item.symbol === "DCS1");
+  assert.equal(tradingviewItem?.selectedSource, "tradingview");
+  assert.equal(tradingviewItem?.quote?.source, "tradingview");
+  assert.equal(tradingviewItem?.execution.decision, "review");
+  assert.equal(tradingviewItem?.execution.primaryReason, "fallback:higher_priority_unavailable");
+
+  const paperItem = decision.items.find((item) => item.symbol === "DCS2");
+  assert.equal(paperItem?.selectedSource, "paper");
+  assert.equal(paperItem?.paper.usable, true);
+  assert.equal(paperItem?.execution.usable, false);
+  assert.equal(paperItem?.primaryReason, "fallback:higher_priority_missing");
+});
+
 test("market data history and bars respect time window filters", async () => {
   const session = { workspace: { slug: `market-time-range-${randomUUID()}` } };
   const baseMinute = Math.floor((Date.now() - 10_000) / 60_000) * 60_000;
@@ -2548,9 +2614,10 @@ test("market data overview summarizes providers, coverage, and leaders", async (
   });
 
   assert.equal(overview.providers.length, 4);
-  assert.equal(overview.surface.version, "market-data-v1.8-selection-summary");
+  assert.equal(overview.surface.version, "market-data-v1.9-decision-summary");
   assert.equal(overview.surface.capabilities.overview, true);
   assert.equal(overview.surface.capabilities.selectionSummary, true);
+  assert.equal(overview.surface.capabilities.decisionSummary, true);
   assert.ok(overview.symbols.total >= 2);
   assert.equal(overview.symbols.byMarket.some((item) => item.market === "TWSE" && item.total >= 1), true);
   assert.equal(overview.symbols.byMarket.some((item) => item.market === "OTHER" && item.total >= 1), true);

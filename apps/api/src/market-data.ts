@@ -6,6 +6,7 @@ import {
   marketDataConsumerDecisionSchema,
   marketDataConsumerModeSchema,
   marketDataConsumerSummarySchema,
+  marketDataDecisionSummarySchema,
   marketDataSelectionSummarySchema,
   marketDataSurfaceMetadataSchema,
   type Market,
@@ -207,13 +208,14 @@ export const marketDataConsumerSummaryQuerySchema = marketDataEffectiveQuotesQue
   mode: marketDataConsumerModeSchema.default("strategy")
 });
 export const marketDataSelectionSummaryQuerySchema = marketDataEffectiveQuotesQuerySchema;
+export const marketDataDecisionSummaryQuerySchema = marketDataEffectiveQuotesQuerySchema;
 
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>>();
 const persistedQuoteHistoryLoaded = new Set<string>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
 const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "tradingview", "paper", "manual"];
-const MARKET_DATA_SURFACE_VERSION = "market-data-v1.8-selection-summary";
+const MARKET_DATA_SURFACE_VERSION = "market-data-v1.9-decision-summary";
 
 function getSourcePriorityOrder() {
   const configured = (process.env.QUOTE_SOURCE_PRIORITY ?? "")
@@ -847,6 +849,7 @@ export function getMarketDataSurfaceMetadata(): MarketDataSurfaceMetadata {
       effectiveQuotes: true,
       consumerSummary: true,
       selectionSummary: true,
+      decisionSummary: true,
       history: true,
       historyDiagnostics: true,
       bars: true,
@@ -854,9 +857,9 @@ export function getMarketDataSurfaceMetadata(): MarketDataSurfaceMetadata {
       overview: true
     },
     preferredEntryPoints: {
-      strategy: "/api/v1/market-data/selection-summary",
-      paper: "/api/v1/market-data/selection-summary",
-      execution: "/api/v1/market-data/selection-summary",
+      strategy: "/api/v1/market-data/decision-summary",
+      paper: "/api/v1/market-data/decision-summary",
+      execution: "/api/v1/market-data/decision-summary",
       ops: "/api/v1/market-data/overview"
     }
   });
@@ -1513,6 +1516,32 @@ function summarizeMode(items: Array<{ decision: "allow" | "review" | "block"; us
   };
 }
 
+function getPrimaryReason(input: {
+  decision: "allow" | "review" | "block";
+  readiness: EffectiveQuoteReadiness;
+  fallbackReason: QuoteResolutionFallbackReason;
+  staleReason: QuoteResolutionStaleReason;
+  reasons: string[];
+}) {
+  if (input.decision === "allow") {
+    return "ready";
+  }
+
+  if (input.staleReason !== "none") {
+    return `stale:${input.staleReason}`;
+  }
+
+  if (input.fallbackReason !== "none") {
+    return `fallback:${input.fallbackReason}`;
+  }
+
+  if (input.readiness === "degraded") {
+    return "readiness:degraded";
+  }
+
+  return input.reasons[0] ?? (input.decision === "review" ? "review_required" : "blocked");
+}
+
 export async function getMarketDataSelectionSummary(input: {
   session: AppSession;
   symbols: string;
@@ -1626,6 +1655,104 @@ export async function getMarketDataSelectionSummary(input: {
         reason,
         total: items.filter((item) => item.staleReason === reason).length
       }))
+    },
+    items
+  });
+}
+
+export async function getMarketDataDecisionSummary(input: {
+  session: AppSession;
+  symbols: string;
+  market?: Market;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const selection = await getMarketDataSelectionSummary(input);
+  const items = selection.items.map((item) => {
+    const strategy = {
+      ...item.strategy,
+      primaryReason: getPrimaryReason({
+        decision: item.strategy.decision,
+        readiness: item.readiness,
+        fallbackReason: item.fallbackReason as QuoteResolutionFallbackReason,
+        staleReason: item.staleReason as QuoteResolutionStaleReason,
+        reasons: item.reasons
+      })
+    };
+    const paper = {
+      ...item.paper,
+      primaryReason: getPrimaryReason({
+        decision: item.paper.decision,
+        readiness: item.readiness,
+        fallbackReason: item.fallbackReason as QuoteResolutionFallbackReason,
+        staleReason: item.staleReason as QuoteResolutionStaleReason,
+        reasons: item.reasons
+      })
+    };
+    const execution = {
+      ...item.execution,
+      primaryReason: getPrimaryReason({
+        decision: item.execution.decision,
+        readiness: item.readiness,
+        fallbackReason: item.fallbackReason as QuoteResolutionFallbackReason,
+        staleReason: item.staleReason as QuoteResolutionStaleReason,
+        reasons: item.reasons
+      })
+    };
+
+    return {
+      symbol: item.symbol,
+      market: item.market,
+      selectedSource: item.selectedSource,
+      quote: item.selectedQuote
+        ? {
+            source: item.selectedQuote.source,
+            last: item.selectedQuote.last,
+            bid: item.selectedQuote.bid,
+            ask: item.selectedQuote.ask,
+            timestamp: item.selectedQuote.timestamp,
+            ageMs: item.selectedQuote.ageMs,
+            isStale: item.selectedQuote.isStale
+          }
+        : null,
+      readiness: item.readiness,
+      freshnessStatus: item.freshnessStatus,
+      fallbackReason: item.fallbackReason,
+      staleReason: item.staleReason,
+      primaryReason: getPrimaryReason({
+        decision:
+          execution.decision === "block"
+            ? paper.decision === "block"
+              ? strategy.decision
+              : paper.decision
+            : execution.decision,
+        readiness: item.readiness,
+        fallbackReason: item.fallbackReason as QuoteResolutionFallbackReason,
+        staleReason: item.staleReason as QuoteResolutionStaleReason,
+        reasons: item.reasons
+      }),
+      reasons: item.reasons,
+      strategy,
+      paper,
+      execution
+    };
+  });
+
+  return marketDataDecisionSummarySchema.parse({
+    generatedAt: selection.generatedAt,
+    summary: {
+      total: items.length,
+      selectedSources: selection.summary.selectedSources,
+      readiness: selection.summary.readiness,
+      strategy: selection.summary.strategy,
+      paper: selection.summary.paper,
+      execution: selection.summary.execution,
+      primaryReasons: summarizeReasonCounts(
+        [...new Set(items.map((item) => item.primaryReason).filter(Boolean))],
+        items.map((item) => ({ reasons: [item.primaryReason] }))
+      ),
+      fallbackReasons: selection.summary.fallbackReasons,
+      staleReasons: selection.summary.staleReasons
     },
     items
   });
