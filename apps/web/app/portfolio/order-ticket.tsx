@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   Balance,
+  ExecutionGateDecision,
+  ExecutionQuoteGateResult,
   MarketDataDecisionSummaryItem,
   OrderCreateInput,
   RiskCheckResult,
@@ -61,16 +63,25 @@ const DECISION_COLOR: Record<RiskCheckResult["decision"], string> = {
   block: "var(--danger, #ff4d4d)"
 };
 
-const QUOTE_GATE_COLOR: Record<
-  NonNullable<TradingOrderResult["quoteGate"]>["decision"],
-  string
-> = {
+const QUOTE_GATE_COLOR: Record<ExecutionGateDecision, string> = {
   allow: "var(--phosphor)",
   review_accepted: "var(--phosphor)",
   review_required: "var(--amber)",
   review_unusable: "var(--danger, #ff4d4d)",
   block: "var(--danger, #ff4d4d)",
   quote_unknown: "var(--amber)"
+};
+
+// Short, copy-friendly label for every gate decision. Used both in the result
+// panel and (via gateDecisionSubmitBlock) in the submit-button tooltip so the
+// two sides say the same thing.
+const QUOTE_GATE_LABEL: Record<ExecutionGateDecision, string> = {
+  allow: "允許送單",
+  review_accepted: "REVIEW 已接受",
+  review_required: "需勾選接受 REVIEW 報價",
+  review_unusable: "REVIEW 已勾選但報價仍不可用",
+  block: "報價不可執行",
+  quote_unknown: "報價未知（伺服器仍會最終判斷）"
 };
 
 export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Props) {
@@ -333,40 +344,73 @@ export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Pro
   }, []);
 
   const disabled = pending !== "idle";
-  // Gate the live submit button on the decision-summary verdict. Preview is
-  // always allowed — it's a dry run and showing the trader what would have been
-  // blocked is the whole point. `decision` comes straight from the same
-  // market-data surface the broker submit path consumes, so ticket and server
-  // share one source of truth.
-  //   decision=block → no submit
-  //   decision=review → submit only after explicit accept (checkbox)
-  //   decision=allow → no friction
-  // Unknown quote (missing / fetch error) → warn but allow: user can still
-  // preview, and the server-side paper broker will reject if the quote lands
-  // non-paper-safe on submit.
-  const submitGate = (() => {
+  // Project the server's ExecutionGateDecision from the decision-summary the
+  // UI already holds. Preview is always allowed — it's a dry run whose entire
+  // purpose is to surface what would have been blocked. For submit, the client
+  // mirrors the server gate's exact vocabulary so a user cannot click through
+  // a state the server would then reject:
+  //   block               → server would return "block"
+  //   review + no accept  → server would return "review_required"
+  //   review + !usable    → server would return "review_unusable"
+  //   review + usable     → server would return "review_accepted"
+  //   no quote / error    → "quote_unknown" (fail open; server makes final call)
+  //   allow               → "allow"
+  // Client-side submit gate mirrors the server's ExecutionGateDecision vocabulary
+  // so the button label and the server's quoteGate.decision stay in sync. The
+  // projected decision is what we expect the server to return if the user clicks
+  // submit right now.
+  const submitGate = ((): {
+    allow: boolean;
+    label: string | null;
+    projectedDecision: ExecutionGateDecision;
+  } => {
     const modeSummary = quote
       ? quoteMode === "paper"
         ? quote.paper
         : quote.execution
       : null;
     if (quoteError) {
-      return { allow: true, label: "報價取得失敗，伺服器仍會做最終風控判斷" };
+      return {
+        allow: true,
+        label: QUOTE_GATE_LABEL.quote_unknown,
+        projectedDecision: "quote_unknown"
+      };
     }
-    if (!quote || !modeSummary) return { allow: true, label: null as string | null };
+    if (!quote || !modeSummary) {
+      // No symbol / no quote yet — fail open so the user can still preview.
+      return { allow: true, label: null, projectedDecision: "quote_unknown" };
+    }
     if (modeSummary.decision === "block") {
       return {
         allow: false,
-        label: `報價不可執行（${quote.primaryReason || quote.readiness}），禁止下單`
+        label: `${QUOTE_GATE_LABEL.block}（${quote.primaryReason || quote.readiness}），禁止下單`,
+        projectedDecision: "block"
       };
     }
-    if (modeSummary.decision === "review" && !acceptDegraded) {
+    if (modeSummary.decision === "review") {
+      if (!acceptDegraded) {
+        return {
+          allow: false,
+          label: `${QUOTE_GATE_LABEL.review_required}（${quote.primaryReason || quote.readiness}）`,
+          projectedDecision: "review_required"
+        };
+      }
+      if (!modeSummary.usable) {
+        // Override checked, but the selected source is still unusable — the
+        // server will reject with review_unusable. Don't let the click fire.
+        return {
+          allow: false,
+          label: `${QUOTE_GATE_LABEL.review_unusable}（${quote.primaryReason || quote.readiness}）`,
+          projectedDecision: "review_unusable"
+        };
+      }
       return {
-        allow: false,
-        label: `需勾選「接受 review 報價」(${quote.primaryReason || quote.readiness})`
+        allow: true,
+        label: QUOTE_GATE_LABEL.review_accepted,
+        projectedDecision: "review_accepted"
       };
     }
-    return { allow: true, label: null };
+    return { allow: true, label: null, projectedDecision: "allow" };
   })();
 
   return (
@@ -1084,44 +1128,66 @@ function RiskCheckPanel({ result }: { result: TradingOrderResult }) {
         </div>
       )}
 
-      {quoteGate && (
-        <div
-          style={{
-            marginBottom: "0.5rem",
-            padding: "0.5rem 0.65rem",
-            border: `1px dashed ${quoteGateColor}`,
-            color: quoteGateColor
-          }}
-        >
-          <div style={{ marginBottom: "0.25rem" }}>
-            [QUOTE GATE] {quoteGate.decision}
-            {quoteGate.item?.selectedSource ? ` · ${quoteGate.item.selectedSource}` : ""}
-            {quoteGate.item?.readiness ? ` · ${quoteGate.item.readiness}` : ""}
-          </div>
-          {quoteGate.item && (
-            <div style={{ color: "var(--dim)", fontSize: "0.78rem" }}>
-              freshness={quoteGate.item.freshnessStatus}
-              {quoteGate.item.fallbackReason && quoteGate.item.fallbackReason !== "none"
-                ? ` · fallback=${quoteGate.item.fallbackReason}`
-                : ""}
-              {quoteGate.item.staleReason && quoteGate.item.staleReason !== "none"
-                ? ` · stale=${quoteGate.item.staleReason}`
-                : ""}
-              {quoteGate.item.primaryReason ? ` · primary=${quoteGate.item.primaryReason}` : ""}
-            </div>
-          )}
-          {quoteGate.reasons.length > 0 && (
-            <div style={{ color: "var(--dim)", fontSize: "0.78rem", marginTop: "0.2rem" }}>
-              {quoteGate.reasons.join(" · ")}
-            </div>
-          )}
-        </div>
-      )}
+      {quoteGate && <QuoteGateResultPanel quoteGate={quoteGate} color={quoteGateColor} />}
 
       {result.riskCheck.guards.length === 0 ? (
         <div style={{ color: "var(--dim)" }}>無風控註記。</div>
       ) : (
         <GuardsTable guards={result.riskCheck.guards} />
+      )}
+    </div>
+  );
+}
+
+function QuoteGateResultPanel({
+  quoteGate,
+  color
+}: {
+  quoteGate: ExecutionQuoteGateResult;
+  color: string;
+}) {
+  // Read exclusively from the flattened contract fields — `item` is still
+  // available on the shape for future detail views but no path here needs it.
+  const details = [
+    quoteGate.selectedSource ? `source=${quoteGate.selectedSource}` : null,
+    quoteGate.readiness ? `readiness=${quoteGate.readiness}` : null,
+    quoteGate.freshnessStatus ? `freshness=${quoteGate.freshnessStatus}` : null,
+    quoteGate.fallbackReason && quoteGate.fallbackReason !== "none"
+      ? `fallback=${quoteGate.fallbackReason}`
+      : null,
+    quoteGate.staleReason && quoteGate.staleReason !== "none"
+      ? `stale=${quoteGate.staleReason}`
+      : null,
+    quoteGate.primaryReason ? `primary=${quoteGate.primaryReason}` : null
+  ].filter(Boolean);
+
+  return (
+    <div
+      style={{
+        marginBottom: "0.5rem",
+        padding: "0.5rem 0.65rem",
+        border: `1px dashed ${color}`,
+        color
+      }}
+    >
+      <div style={{ marginBottom: "0.25rem" }}>
+        [QUOTE GATE · {quoteGate.mode.toUpperCase()}] {quoteGate.decision} —{" "}
+        {QUOTE_GATE_LABEL[quoteGate.decision]}
+      </div>
+      {details.length > 0 && (
+        <div style={{ color: "var(--dim)", fontSize: "0.78rem" }}>
+          {details.join(" · ")}
+        </div>
+      )}
+      {quoteGate.quoteError && (
+        <div style={{ color: "var(--amber)", fontSize: "0.78rem", marginTop: "0.2rem" }}>
+          quote_error: {quoteGate.quoteError}
+        </div>
+      )}
+      {quoteGate.reasons.length > 0 && (
+        <div style={{ color: "var(--dim)", fontSize: "0.78rem", marginTop: "0.2rem" }}>
+          {quoteGate.reasons.join(" · ")}
+        </div>
       )}
     </div>
   );

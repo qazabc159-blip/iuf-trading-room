@@ -85,6 +85,7 @@ import {
   listPaperOrders,
   placePaperOrder
 } from "../apps/api/src/broker/paper-broker.ts";
+import { submitOrder } from "../apps/api/src/broker/trading-service.ts";
 import { listExecutionEvents } from "../apps/api/src/broker/execution-events-store.ts";
 import {
   buildEventHistoryView,
@@ -4152,4 +4153,163 @@ test("execution events store is a no-op for memory sessions", async () => {
     accountId: "gate-events-acct"
   });
   assert.deepEqual(events, []);
+});
+
+test("trading-service.submitOrder runs session + risk + gate + paper broker end-to-end", async () => {
+  // Full-stack smoke: AppSession with EXECUTION_ROLES, risk-engine commit,
+  // quote gate, paper broker placement, quoteContext stamping on the Order.
+  // Covers the review_required and review_accepted branches in one session
+  // so we know the gate's verdict flows all the way through to the broker row.
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `submit-smoke-${randomUUID()}`
+  });
+  const accountId = "paper-smoke-acct";
+
+  // Relax the trading-hours window so this smoke isn't dependent on when the
+  // CI job happens to run. Everything else stays at the default risk limits.
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId,
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "23:59"
+    }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "SMOKE1",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 2000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  const baseOrder = {
+    accountId,
+    symbol: "SMOKE1",
+    side: "buy" as const,
+    type: "market" as const,
+    timeInForce: "rod" as const,
+    price: null,
+    stopPrice: null,
+    tradePlanId: null,
+    strategyId: null,
+    overrideReason: ""
+  };
+
+  // Paper quotes land as paper=review by policy; submit without the override
+  // must be rejected by the gate. Order row must NOT be created — the risk
+  // check did commit (audit trail) but the broker never ran.
+  const denied = await submitOrder({
+    session,
+    repo,
+    order: { ...baseOrder, quantity: 1000, overrideGuards: [] }
+  });
+  assert.equal(denied.blocked, true);
+  assert.equal(denied.order, null);
+  assert.equal(denied.riskCheck.decision, "allow");
+  assert.equal(denied.quoteGate?.decision, "review_required");
+  assert.equal(denied.quoteGate?.blocked, true);
+  assert.equal(denied.quoteGate?.mode, "paper");
+  assert.equal(denied.quoteGate?.readiness, "degraded");
+  assert.equal(denied.riskCheck.accountId, accountId);
+
+  // With override the chain goes risk → gate → broker; the placed Order is
+  // stamped with the same quoteContext the gate produced, and the riskCheckId
+  // links back to the persisted risk record. Quantity differs so duplicate-
+  // intent detection doesn't step on the first submit.
+  const accepted = await submitOrder({
+    session,
+    repo,
+    order: { ...baseOrder, quantity: 1100, overrideGuards: [GATE_OVERRIDE_KEY] }
+  });
+  assert.equal(accepted.blocked, false);
+  assert.equal(accepted.riskCheck.decision, "allow");
+  assert.equal(accepted.quoteGate?.decision, "review_accepted");
+  assert.equal(accepted.quoteGate?.blocked, false);
+  assert.ok(accepted.order, "order should exist after accepted submit");
+  assert.equal(accepted.order?.status, "filled");
+  assert.equal(accepted.order?.quoteContext?.decision, "review");
+  assert.equal(accepted.order?.riskCheckId, accepted.riskCheck.id);
+  assert.equal(
+    accepted.order?.quoteContext?.source,
+    accepted.quoteGate?.quoteContext?.source
+  );
+});
+
+test("trading-service.submitOrder rejects non-execution roles at the risk layer", async () => {
+  // EXECUTION_ROLES gate lives in risk-engine, so an Analyst session must be
+  // blocked before the quote gate ever runs. quoteGate stays null because the
+  // risk layer short-circuits submitOrder.
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `submit-analyst-${randomUUID()}`,
+    roleOverride: "Analyst"
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "SMOKE2",
+        market: "OTHER",
+        source: "manual",
+        last: 25,
+        bid: 24.9,
+        ask: 25.1,
+        open: 25,
+        high: 25,
+        low: 25,
+        prevClose: 25,
+        volume: 2000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  const result = await submitOrder({
+    session,
+    repo,
+    order: {
+      accountId: "paper-analyst-acct",
+      symbol: "SMOKE2",
+      side: "buy",
+      type: "market",
+      timeInForce: "rod",
+      quantity: 1000,
+      price: null,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [GATE_OVERRIDE_KEY],
+      overrideReason: "would-be override"
+    }
+  });
+
+  assert.equal(result.blocked, true);
+  assert.equal(result.order, null);
+  assert.equal(result.riskCheck.decision, "block");
+  assert.equal(
+    result.riskCheck.guards.some((g) => g.guard === "manual_disable"),
+    true
+  );
+  // Gate short-circuited by the risk block — shape stays { quoteGate: null }.
+  assert.equal(result.quoteGate, null);
 });

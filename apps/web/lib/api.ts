@@ -11,7 +11,10 @@ import type {
   CompanyGraphView,
   DailyBrief,
   DailyBriefCreateInput,
+  ExecutionGateDecision,
+  ExecutionGateMode,
   ExecutionQuoteContext,
+  ExecutionQuoteGateResult,
   ExecutionEvent,
   KillSwitchInput,
   KillSwitchState,
@@ -34,6 +37,7 @@ import type {
   ReviewEntryCreateInput,
   Signal,
   SignalCreateInput,
+  SubmitOrderResult,
   Theme,
   ThemeCreateInput,
   ThemeGraphRankingView,
@@ -533,25 +537,15 @@ export async function getTradingOrders(params?: {
   return request<Order[]>(`/api/v1/trading/orders${qs ? `?${qs}` : ""}`);
 }
 
-export type TradingOrderResult = {
-  order: Order | null;
-  riskCheck: RiskCheckResult;
-  blocked: boolean;
-  quoteGate: {
-    mode: "paper" | "execution";
-    decision:
-      | "allow"
-      | "review_accepted"
-      | "review_required"
-      | "review_unusable"
-      | "block"
-      | "quote_unknown";
-    blocked: boolean;
-    reasons: string[];
-    item: MarketDataDecisionSummaryItem | null;
-    quoteContext: ExecutionQuoteContext | null;
-    quoteError: string | null;
-  } | null;
+// The API response shape for trading/orders and trading/orders/preview is
+// the formal SubmitOrderResult contract; re-export here so page components
+// don't need to reach into @iuf-trading-room/contracts for this one shape.
+export type TradingOrderResult = SubmitOrderResult;
+export type {
+  ExecutionGateDecision,
+  ExecutionGateMode,
+  ExecutionQuoteContext,
+  ExecutionQuoteGateResult
 };
 
 // 422 is a semantically meaningful response here — the body carries the

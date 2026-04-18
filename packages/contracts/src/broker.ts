@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { marketDataDecisionSummaryItemSchema } from "./marketData.js";
+import { riskCheckResultSchema } from "./risk.js";
+
 // Broker kind is intentionally narrow and extensible. "paper" is the default
 // for Phase 0/1 so the full execution path can be exercised before touching a
 // real brokerage account.
@@ -209,6 +212,59 @@ export const orderReplaceInputSchema = z.object({
   reason: z.string().default("")
 });
 
+// Gate mode is bound to broker kind: paper accounts use the paper summary,
+// live brokers use the execution summary. "manual" / future brokers fold into
+// "execution" — the gate never lets real money through the paper branch.
+export const executionGateModeSchema = z.enum(["paper", "execution"]);
+
+// Outcome vocabulary for the server-side quote gate. "allow" means the gate
+// is green; the four review_* / block / quote_unknown branches describe every
+// way a submit can be held or diverted. UI and server both bind to this enum
+// so a new state cannot be introduced silently.
+export const executionGateDecisionSchema = z.enum([
+  "allow",
+  "review_accepted",
+  "review_required",
+  "review_unusable",
+  "block",
+  "quote_unknown"
+]);
+
+// Readiness / freshness are nullable on the gate result only because the
+// gate may fail open ("quote_unknown") before it has any decision-summary
+// item to read. When an item is present these are always populated.
+export const executionQuoteGateResultSchema = z.object({
+  mode: executionGateModeSchema,
+  decision: executionGateDecisionSchema,
+  blocked: z.boolean(),
+  reasons: z.array(z.string()).default([]),
+  // Flattened view of the decision-summary fields the UI must show. Hoisting
+  // them to top level means the contract guarantees their presence even if
+  // `item` evolves or is trimmed in a future transport.
+  primaryReason: z.string().nullable().default(null),
+  fallbackReason: z.string().nullable().default(null),
+  staleReason: z.string().nullable().default(null),
+  selectedSource: z.string().nullable().default(null),
+  readiness: z.enum(["ready", "degraded", "blocked"]).nullable().default(null),
+  freshnessStatus: z.enum(["fresh", "stale", "missing"]).nullable().default(null),
+  // Full decision-summary item for advanced UIs; nullable because the gate
+  // may fail open before reaching the market-data surface.
+  item: marketDataDecisionSummaryItemSchema.nullable().default(null),
+  quoteContext: executionQuoteContextSchema.nullable().default(null),
+  quoteError: z.string().nullable().default(null)
+});
+
+// The shape returned by POST /trading/orders and /trading/orders/preview.
+// `order` is null whenever the gate or risk engine blocked before a paper
+// broker row was produced; `quoteGate` is null only when the risk engine
+// hard-blocked before we even reached the quote gate.
+export const submitOrderResultSchema = z.object({
+  order: orderSchema.nullable(),
+  riskCheck: riskCheckResultSchema,
+  blocked: z.boolean(),
+  quoteGate: executionQuoteGateResultSchema.nullable()
+});
+
 export type BrokerKind = z.infer<typeof brokerKindSchema>;
 export type OrderSide = z.infer<typeof orderSideSchema>;
 export type OrderType = z.infer<typeof orderTypeSchema>;
@@ -225,3 +281,7 @@ export type OrderCreateInput = z.infer<typeof orderCreateInputSchema>;
 export type OrderCancelInput = z.infer<typeof orderCancelInputSchema>;
 export type OrderReplaceInput = z.infer<typeof orderReplaceInputSchema>;
 export type ExecutionQuoteContext = z.infer<typeof executionQuoteContextSchema>;
+export type ExecutionGateMode = z.infer<typeof executionGateModeSchema>;
+export type ExecutionGateDecision = z.infer<typeof executionGateDecisionSchema>;
+export type ExecutionQuoteGateResult = z.infer<typeof executionQuoteGateResultSchema>;
+export type SubmitOrderResult = z.infer<typeof submitOrderResultSchema>;

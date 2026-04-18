@@ -3,7 +3,8 @@ import {
   type Order,
   type OrderCancelInput,
   type OrderCreateInput,
-  type RiskCheckResult
+  type RiskCheckResult,
+  type SubmitOrderResult
 } from "@iuf-trading-room/contracts";
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 
@@ -12,8 +13,7 @@ import { getMarketDataDecisionSummary } from "../market-data.js";
 import {
   evaluateExecutionGate,
   gateDecisionLabel,
-  modeForBroker,
-  type ExecutionGateResult
+  modeForBroker
 } from "./execution-gate.js";
 import {
   cancelPaperOrder,
@@ -23,14 +23,8 @@ import {
   placePaperOrder
 } from "./paper-broker.js";
 
-export type SubmitOrderResult = {
-  order: Order | null;
-  riskCheck: RiskCheckResult;
-  blocked: boolean;
-  // Null only when the risk engine blocked before we ran the quote gate —
-  // keeps the shape stable for the UI.
-  quoteGate: ExecutionGateResult | null;
-};
+// Re-export so existing callers (routes, tests) keep the stable import path.
+export type { SubmitOrderResult };
 
 // Build the account context the risk engine reads from, sourced from the paper
 // broker's current state. When real brokers land, swap this out per broker.

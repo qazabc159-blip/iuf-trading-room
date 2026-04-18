@@ -1,7 +1,10 @@
 import type {
   AppSession,
   BrokerKind,
+  ExecutionGateDecision,
+  ExecutionGateMode,
   ExecutionQuoteContext,
+  ExecutionQuoteGateResult,
   MarketDataDecisionModeSummary,
   MarketDataDecisionSummaryItem,
   OrderCreateInput
@@ -15,25 +18,13 @@ import { getMarketDataDecisionSummary } from "../market-data.js";
 
 export const GATE_OVERRIDE_KEY = "quote_review";
 
-export type ExecutionGateMode = "paper" | "execution";
+// Re-export contract types so broker-internal callers can keep importing from
+// execution-gate without knowing these live in the contracts package now.
+export type { ExecutionGateDecision, ExecutionGateMode } from "@iuf-trading-room/contracts";
 
-export type ExecutionGateDecision =
-  | "allow"
-  | "review_accepted"
-  | "review_required"
-  | "review_unusable"
-  | "block"
-  | "quote_unknown";
-
-export type ExecutionGateResult = {
-  mode: ExecutionGateMode;
-  decision: ExecutionGateDecision;
-  blocked: boolean;
-  reasons: string[];
-  item: MarketDataDecisionSummaryItem | null;
-  quoteContext: ExecutionQuoteContext | null;
-  quoteError: string | null;
-};
+// Gate result returned over the API boundary — contract-typed so the web UI
+// binds to the same shape the server emits.
+export type ExecutionGateResult = ExecutionQuoteGateResult;
 
 export function modeForBroker(broker: BrokerKind): ExecutionGateMode {
   return broker === "paper" ? "paper" : "execution";
@@ -102,7 +93,7 @@ export async function evaluateExecutionGate(args: {
   }
 
   if (!item) {
-    return {
+    return buildGateResult({
       mode: args.mode,
       decision: "quote_unknown",
       blocked: false,
@@ -110,7 +101,7 @@ export async function evaluateExecutionGate(args: {
       item: null,
       quoteContext: null,
       quoteError
-    };
+    });
   }
 
   const summary = modeSummaryFor(item, args.mode);
@@ -124,7 +115,7 @@ export async function evaluateExecutionGate(args: {
     args.order.overrideGuards?.includes(GATE_OVERRIDE_KEY) ?? false;
 
   if (summary.decision === "block") {
-    return {
+    return buildGateResult({
       mode: args.mode,
       decision: "block",
       blocked: true,
@@ -132,12 +123,12 @@ export async function evaluateExecutionGate(args: {
       item,
       quoteContext,
       quoteError: null
-    };
+    });
   }
 
   if (summary.decision === "review") {
     if (!overrideRequested) {
-      return {
+      return buildGateResult({
         mode: args.mode,
         decision: "review_required",
         blocked: true,
@@ -145,11 +136,11 @@ export async function evaluateExecutionGate(args: {
         item,
         quoteContext,
         quoteError: null
-      };
+      });
     }
 
     if (!summary.usable) {
-      return {
+      return buildGateResult({
         mode: args.mode,
         decision: "review_unusable",
         blocked: true,
@@ -157,10 +148,10 @@ export async function evaluateExecutionGate(args: {
         item,
         quoteContext,
         quoteError: null
-      };
+      });
     }
 
-    return {
+    return buildGateResult({
       mode: args.mode,
       decision: "review_accepted",
       blocked: false,
@@ -168,10 +159,10 @@ export async function evaluateExecutionGate(args: {
       item,
       quoteContext,
       quoteError: null
-    };
+    });
   }
 
-  return {
+  return buildGateResult({
     mode: args.mode,
     decision: "allow",
     blocked: false,
@@ -179,6 +170,36 @@ export async function evaluateExecutionGate(args: {
     item,
     quoteContext,
     quoteError: null
+  });
+}
+
+// Assembles the contract-typed gate result. Hoists primary/fallback/stale
+// fields from `item` so the UI can read them without defensively unwrapping
+// nested state — guarantees the contract's flattened fields line up with the
+// backing decision-summary item.
+function buildGateResult(args: {
+  mode: ExecutionGateMode;
+  decision: ExecutionGateDecision;
+  blocked: boolean;
+  reasons: string[];
+  item: MarketDataDecisionSummaryItem | null;
+  quoteContext: ExecutionQuoteContext | null;
+  quoteError: string | null;
+}): ExecutionGateResult {
+  return {
+    mode: args.mode,
+    decision: args.decision,
+    blocked: args.blocked,
+    reasons: args.reasons,
+    primaryReason: args.item?.primaryReason ?? null,
+    fallbackReason: args.item?.fallbackReason ?? null,
+    staleReason: args.item?.staleReason ?? null,
+    selectedSource: args.item?.selectedSource ?? null,
+    readiness: args.item?.readiness ?? null,
+    freshnessStatus: args.item?.freshnessStatus ?? null,
+    item: args.item,
+    quoteContext: args.quoteContext,
+    quoteError: args.quoteError
   };
 }
 
