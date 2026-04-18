@@ -8,8 +8,7 @@ import type {
   RiskCheckResult,
   RiskGuardResult,
   RiskLimit,
-  TradePlan,
-  TradePlanExecution
+  TradePlan
 } from "@iuf-trading-room/contracts";
 
 import {
@@ -22,7 +21,8 @@ import {
   type EffectiveMarketQuote,
   type TradingOrderResult
 } from "@/lib/api";
-import { computeSizedQuantity, type SizingResult } from "@/lib/sizing";
+import { type SizingResult } from "@/lib/sizing";
+import { buildOrderInputFromPlan } from "@/lib/plan-to-order";
 
 type Props = {
   accountId: string;
@@ -113,12 +113,6 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
     };
   }, [accountId]);
 
-  const planEntryPrice = useCallback((ex: TradePlanExecution): number | null => {
-    if (ex.entryPrice !== null) return ex.entryPrice;
-    if (ex.entryRange) return (ex.entryRange.low + ex.entryRange.high) / 2;
-    return null;
-  }, []);
-
   const onPickPlan = useCallback(
     (planId: string) => {
       if (!planId) {
@@ -127,30 +121,25 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
         return;
       }
       const plan = plans.find((p) => p.id === planId);
-      if (!plan?.execution) return;
-      const ex = plan.execution;
-      const entryForSizing = planEntryPrice(ex);
-      const sized = computeSizedQuantity({
-        equity: balance?.equity ?? null,
-        sizing: ex.positionSizing,
-        entryPrice: entryForSizing,
-        stopLoss: ex.stopLoss
+      if (!plan) return;
+      const { order, sizing } = buildOrderInputFromPlan({
+        plan,
+        accountId,
+        equity: balance?.equity ?? null
       });
-      setLastSizing(sized);
+      setLastSizing(sizing);
       setForm((prev) => ({
         ...prev,
         tradePlanId: plan.id,
-        symbol: ex.symbol,
-        side: ex.side,
-        type: ex.orderType,
-        quantity: sized.qty !== null ? String(sized.qty) : prev.quantity,
-        price: ex.entryPrice !== null ? String(ex.entryPrice) : prev.price,
-        stopPrice: ex.orderType === "stop" || ex.orderType === "stop_limit"
-          ? (ex.stopLoss !== null ? String(ex.stopLoss) : prev.stopPrice)
-          : prev.stopPrice
+        symbol: order.symbol || prev.symbol,
+        side: order.side,
+        type: order.type,
+        quantity: sizing.qty !== null ? String(sizing.qty) : prev.quantity,
+        price: order.price !== null ? String(order.price) : prev.price,
+        stopPrice: order.stopPrice !== null ? String(order.stopPrice) : prev.stopPrice
       }));
     },
-    [plans, balance, planEntryPrice]
+    [plans, balance, accountId]
   );
 
   // If equity arrives after the plan was picked (or balance refreshes), recompute
@@ -159,20 +148,18 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
     if (!form.tradePlanId || !balance) return;
     const plan = plans.find((p) => p.id === form.tradePlanId);
     if (!plan?.execution) return;
-    const ex = plan.execution;
-    const sized = computeSizedQuantity({
-      equity: balance.equity,
-      sizing: ex.positionSizing,
-      entryPrice: planEntryPrice(ex),
-      stopLoss: ex.stopLoss
+    const { sizing } = buildOrderInputFromPlan({
+      plan,
+      accountId,
+      equity: balance.equity
     });
-    setLastSizing(sized);
-    if (sized.qty !== null) {
+    setLastSizing(sizing);
+    if (sizing.qty !== null) {
       setForm((prev) =>
-        prev.tradePlanId === plan.id ? { ...prev, quantity: String(sized.qty) } : prev
+        prev.tradePlanId === plan.id ? { ...prev, quantity: String(sizing.qty) } : prev
       );
     }
-  }, [balance, form.tradePlanId, plans, planEntryPrice]);
+  }, [balance, form.tradePlanId, plans, accountId]);
 
   const selectedPlan = useMemo(
     () => plans.find((p) => p.id === form.tradePlanId) ?? null,
