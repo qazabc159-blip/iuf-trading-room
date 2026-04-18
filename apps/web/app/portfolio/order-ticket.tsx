@@ -90,12 +90,21 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
       const plan = plans.find((p) => p.id === planId);
       if (!plan?.execution) return;
       const ex = plan.execution;
+      // Quantity prefill: only when plan explicitly specifies a fixed share
+      // count. risk_per_trade and fixed_pct need live equity + stop distance,
+      // which we can't compute synchronously here — leave whatever the user
+      // typed so they can size manually.
+      const sizedQty =
+        ex.positionSizing.mode === "fixed_qty" && ex.positionSizing.qty !== null
+          ? String(ex.positionSizing.qty)
+          : null;
       setForm((prev) => ({
         ...prev,
         tradePlanId: plan.id,
         symbol: ex.symbol,
         side: ex.side,
         type: ex.orderType,
+        quantity: sizedQty ?? prev.quantity,
         price: ex.entryPrice !== null ? String(ex.entryPrice) : prev.price,
         stopPrice: ex.orderType === "stop" || ex.orderType === "stop_limit"
           ? (ex.stopLoss !== null ? String(ex.stopLoss) : prev.stopPrice)
@@ -103,6 +112,11 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
       }));
     },
     [plans]
+  );
+
+  const selectedPlan = useMemo(
+    () => plans.find((p) => p.id === form.tradePlanId) ?? null,
+    [plans, form.tradePlanId]
   );
 
   // Re-fetch effective limits whenever accountId or symbol changes.
@@ -309,6 +323,10 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
         )}
       </div>
 
+      {selectedPlan?.execution && (
+        <PlanContextCard plan={selectedPlan} />
+      )}
+
       <EffectiveLimitsCard
         limits={effectiveLimits}
         pending={pendingLimits}
@@ -363,6 +381,117 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span style={{ color: "var(--dim)" }}>{label}</span>
       {children}
     </label>
+  );
+}
+
+function PlanContextCard({ plan }: { plan: TradePlan }) {
+  const ex = plan.execution!;
+  const ladderSum = ex.takeProfitLadder.reduce((s, leg) => s + leg.portion, 0);
+  const sizingLabel =
+    ex.positionSizing.mode === "fixed_qty"
+      ? `固定張數 ${ex.positionSizing.qty ?? "—"}`
+      : ex.positionSizing.mode === "fixed_pct"
+        ? `固定比例 ${ex.positionSizing.pct}% 權益`
+        : `風險 ${ex.positionSizing.pct}% / 單筆`;
+  return (
+    <div
+      style={{
+        border: "1px dashed var(--phosphor)",
+        padding: "0.75rem",
+        fontFamily: "var(--mono, monospace)",
+        fontSize: "0.8rem"
+      }}
+    >
+      <div style={{ color: "var(--dim)", marginBottom: "0.4rem" }}>
+        [PLAN CONTEXT · {ex.symbol}]
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: "0.5rem"
+        }}
+      >
+        <PlanStat
+          label="進場區間"
+          value={
+            ex.entryRange
+              ? `${ex.entryRange.low} – ${ex.entryRange.high}`
+              : "—"
+          }
+        />
+        <PlanStat
+          label="停損"
+          value={ex.stopLoss !== null ? String(ex.stopLoss) : "—"}
+          accent="amber"
+        />
+        <PlanStat label="部位規則" value={sizingLabel} />
+        <PlanStat
+          label="部位上限"
+          value={`${ex.positionSizing.maxPositionPct}%`}
+        />
+        <PlanStat
+          label="觸發條件"
+          value={ex.triggerCondition || "—"}
+        />
+        <PlanStat
+          label="有效至"
+          value={ex.validUntil ?? "—"}
+        />
+      </div>
+
+      {ex.takeProfitLadder.length > 0 && (
+        <div style={{ marginTop: "0.75rem" }}>
+          <div style={{ color: "var(--dim)", marginBottom: "0.25rem" }}>
+            分批停利（合計 {Math.round(ladderSum * 100)}%）
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ color: "var(--dim)", textAlign: "left" }}>
+                <th style={cell}>價位</th>
+                <th style={cellRight}>分批</th>
+                <th style={cell}>備註</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ex.takeProfitLadder.map((leg, i) => (
+                <tr
+                  key={`tp-${i}`}
+                  style={{ borderTop: "1px solid var(--line, #2a2a2a)" }}
+                >
+                  <td style={{ ...cell, color: "var(--phosphor)" }}>
+                    {leg.price}
+                  </td>
+                  <td style={cellRight}>{Math.round(leg.portion * 100)}%</td>
+                  <td style={{ ...cell, color: "var(--dim)" }}>
+                    {leg.note || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanStat({
+  label,
+  value,
+  accent
+}: {
+  label: string;
+  value: string;
+  accent?: "amber";
+}) {
+  return (
+    <div>
+      <div style={{ color: "var(--dim)" }}>{label}</div>
+      <div style={{ color: accent === "amber" ? "var(--amber)" : "var(--fg, #eee)" }}>
+        {value}
+      </div>
+    </div>
   );
 }
 

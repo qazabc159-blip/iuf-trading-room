@@ -182,8 +182,22 @@ export default function PortfolioPage() {
     [orders]
   );
 
+  const activeAccount = useMemo(
+    () => accounts.find((a) => a.id === accountId) ?? accounts[0] ?? null,
+    [accounts, accountId]
+  );
+  const isPaper = activeAccount?.isPaper ?? true;
+  const brokerLabel = activeAccount?.broker ?? "paper";
+
   return (
     <AppShell eyebrow="持倉部位" title="帳戶 · 部位 · 風控">
+      <ModeBanner
+        isPaper={isPaper}
+        broker={brokerLabel}
+        connected={status?.connected ?? false}
+        streamStatus={streamStatus}
+      />
+
       {loadError && (
         <section
           className="hud-frame"
@@ -453,6 +467,79 @@ const th: React.CSSProperties = { padding: "0.4rem 0.5rem", fontWeight: "normal"
 const thRight: React.CSSProperties = { ...th, textAlign: "right" };
 const td: React.CSSProperties = { padding: "0.4rem 0.5rem" };
 const tdRight: React.CSSProperties = { ...td, textAlign: "right" };
+
+function ModeBanner({
+  isPaper,
+  broker,
+  connected,
+  streamStatus
+}: {
+  isPaper: boolean;
+  broker: string;
+  connected: boolean;
+  streamStatus: "connecting" | "live" | "reconnecting" | "error";
+}) {
+  const accent = isPaper ? "var(--amber)" : "var(--phosphor)";
+  const label = isPaper ? "PAPER MODE" : "LIVE BROKER";
+  const note = isPaper
+    ? "模擬資金 · 任何送單只進 in-memory paper broker，不會觸及真實券商"
+    : `已連線 ${broker.toUpperCase()} · 真實下單會直達券商`;
+  const streamLabel: Record<typeof streamStatus, string> = {
+    connecting: "● CONNECTING",
+    live: "● LIVE",
+    reconnecting: "● RECONNECTING",
+    error: "● STREAM ERROR"
+  };
+  const streamColor =
+    streamStatus === "live"
+      ? "var(--phosphor)"
+      : streamStatus === "reconnecting"
+        ? "var(--amber)"
+        : streamStatus === "error"
+          ? "var(--danger, #ff4d4d)"
+          : "var(--dim)";
+  return (
+    <section
+      className="hud-frame"
+      style={{
+        padding: "0.75rem 1.25rem",
+        marginBottom: "1rem",
+        borderColor: accent,
+        borderWidth: 2,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "0.75rem 1.5rem",
+        alignItems: "center",
+        justifyContent: "space-between",
+        fontFamily: "var(--mono, monospace)"
+      }}
+    >
+      <div style={{ display: "flex", gap: "1rem", alignItems: "baseline", flexWrap: "wrap" }}>
+        <span
+          style={{
+            color: accent,
+            fontSize: "1.05rem",
+            letterSpacing: "0.1em",
+            fontWeight: 600
+          }}
+        >
+          [{label}]
+        </span>
+        <span style={{ color: "var(--dim)", fontSize: "0.85rem" }}>{note}</span>
+      </div>
+      <div style={{ display: "flex", gap: "1rem", fontSize: "0.8rem" }}>
+        <span
+          style={{
+            color: connected ? "var(--phosphor)" : "var(--amber)"
+          }}
+        >
+          BROKER {connected ? "ONLINE" : "OFFLINE"}
+        </span>
+        <span style={{ color: streamColor }}>{streamLabel[streamStatus]}</span>
+      </div>
+    </section>
+  );
+}
 
 function Stat({
   label,
