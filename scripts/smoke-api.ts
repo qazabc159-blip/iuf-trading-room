@@ -110,6 +110,27 @@ async function main() {
   try {
     await waitForHealth(baseUrl);
 
+    const health = await request<{
+      status: string;
+      uptime: number;
+      build: {
+        version: string;
+        commit: string;
+        deploymentId: string;
+        environment: string;
+        service: string;
+        startedAt: string;
+      };
+    }>(baseUrl, "/health");
+    assert.equal(health.status, "ok");
+    assert.equal(typeof health.uptime, "number");
+    assert.equal(typeof health.build.version, "string");
+    assert.equal(typeof health.build.commit, "string");
+    assert.equal(typeof health.build.deploymentId, "string");
+    assert.equal(typeof health.build.environment, "string");
+    assert.equal(health.build.service, "api");
+    assert.match(health.build.startedAt, /\d{4}-\d{2}-\d{2}T/);
+
     const session = await request<JsonEnvelope<{ workspace: { slug: string } }>>(
       baseUrl,
       "/api/v1/session",

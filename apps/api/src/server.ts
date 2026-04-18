@@ -147,6 +147,15 @@ type Variables = {
 
 const app = new Hono<{ Variables: Variables }>();
 const repository = getTradingRoomRepository();
+const PROCESS_STARTED_AT = new Date().toISOString();
+const BUILD_INFO = {
+  version: process.env.npm_package_version ?? "0.1.0",
+  commit: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown",
+  deploymentId: process.env.RAILWAY_DEPLOYMENT_ID ?? process.env.VERCEL_DEPLOYMENT_ID ?? "unknown",
+  environment: process.env.RAILWAY_ENVIRONMENT_NAME ?? process.env.VERCEL_ENV ?? "local",
+  service: process.env.RAILWAY_SERVICE_NAME ?? "api",
+  startedAt: PROCESS_STARTED_AT
+} as const;
 
 app.use("*", cors({ origin: "*" }));
 
@@ -458,7 +467,8 @@ app.get("/", (c) =>
 app.get("/health", (c) =>
   c.json({
     status: "ok",
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    build: BUILD_INFO
   })
 );
 
