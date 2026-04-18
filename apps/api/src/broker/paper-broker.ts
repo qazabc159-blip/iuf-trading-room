@@ -15,10 +15,16 @@ import {
 } from "@iuf-trading-room/contracts";
 
 import { listMarketQuotes } from "../market-data.js";
+import {
+  loadWorkspaceSnapshots,
+  type PaperAccountSnapshot,
+  saveAccountSnapshot
+} from "./paper-broker-store.js";
 
-// Paper broker is fully in-memory per workspace. It is the default execution
-// target for Phase 1 so the risk → broker → fill loop can be exercised before
-// a real brokerage account is wired in.
+// Paper broker keeps state in-memory per workspace for hot-path mutations and
+// snapshots the full account state to paper_broker_state after every write
+// (when persistenceMode=database) so a process restart can rehydrate without
+// losing cash, positions, orders, or fills.
 
 const DEFAULT_ACCOUNT_ID = "paper-default";
 const DEFAULT_ACCOUNT_NAME = "Paper Trading";
@@ -45,14 +51,95 @@ type WorkspaceState = Map<string, PaperAccountState>;
 
 const workspaces = new Map<string, WorkspaceState>();
 const subscribers = new Map<string, Set<(event: ExecutionEvent) => void>>();
+const hydrationPromises = new Map<string, Promise<void>>();
 
 function workspaceKey(session: AppSession): string {
   return session.workspace.slug;
 }
 
-function getOrCreateWorkspace(session: AppSession): WorkspaceState {
+function snapshotToState(snapshot: PaperAccountSnapshot): PaperAccountState {
+  const positions = new Map<
+    string,
+    { quantity: number; avgPrice: number; openedAt: string }
+  >();
+  for (const p of snapshot.positions) {
+    positions.set(p.symbol, {
+      quantity: p.quantity,
+      avgPrice: p.avgPrice,
+      openedAt: p.openedAt
+    });
+  }
+  const orders = new Map<string, Order>();
+  for (const o of snapshot.orders) orders.set(o.id, o);
+  return {
+    account: snapshot.account,
+    cash: snapshot.cash,
+    positions,
+    orders,
+    fills: snapshot.fills,
+    realizedPnlToday: snapshot.realizedPnlToday,
+    lastEventAt: snapshot.lastEventAt,
+    createdAt: snapshot.createdAt
+  };
+}
+
+function stateToSnapshot(state: PaperAccountState): PaperAccountSnapshot {
+  return {
+    account: state.account,
+    cash: state.cash,
+    positions: [...state.positions.entries()].map(([symbol, p]) => ({
+      symbol,
+      quantity: p.quantity,
+      avgPrice: p.avgPrice,
+      openedAt: p.openedAt
+    })),
+    orders: [...state.orders.values()],
+    fills: state.fills,
+    realizedPnlToday: state.realizedPnlToday,
+    lastEventAt: state.lastEventAt,
+    createdAt: state.createdAt
+  };
+}
+
+function persistAccountAsync(session: AppSession, state: PaperAccountState): void {
+  // Fire-and-forget: persistence shouldn't block the hot path. A failed save
+  // is logged but the in-memory state remains authoritative for the process
+  // lifetime; the next successful write will catch up.
+  saveAccountSnapshot(session, state.account.id, stateToSnapshot(state)).catch(
+    (err) => {
+      console.error(
+        `[paper-broker] failed to persist account ${state.account.id}:`,
+        err
+      );
+    }
+  );
+}
+
+async function ensureWorkspaceHydrated(session: AppSession): Promise<WorkspaceState> {
   const key = workspaceKey(session);
   let ws = workspaces.get(key);
+  if (ws) return ws;
+
+  let pending = hydrationPromises.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const snapshots = await loadWorkspaceSnapshots(session);
+      const restored: WorkspaceState = new Map();
+      for (const [accountId, snapshot] of snapshots.entries()) {
+        restored.set(accountId, snapshotToState(snapshot));
+      }
+      workspaces.set(key, restored);
+    })();
+    hydrationPromises.set(key, pending);
+  }
+
+  try {
+    await pending;
+  } finally {
+    hydrationPromises.delete(key);
+  }
+
+  ws = workspaces.get(key);
   if (!ws) {
     ws = new Map();
     workspaces.set(key, ws);
@@ -89,8 +176,11 @@ function bootstrapAccount(): PaperAccountState {
   };
 }
 
-function getOrCreateAccount(session: AppSession, accountId: string): PaperAccountState {
-  const ws = getOrCreateWorkspace(session);
+async function getOrCreateAccount(
+  session: AppSession,
+  accountId: string
+): Promise<PaperAccountState> {
+  const ws = await ensureWorkspaceHydrated(session);
   let state = ws.get(accountId);
   if (!state) {
     state = bootstrapAccount();
@@ -104,15 +194,16 @@ function getOrCreateAccount(session: AppSession, accountId: string): PaperAccoun
       };
     }
     ws.set(accountId, state);
+    persistAccountAsync(session, state);
   }
   return state;
 }
 
-export function listPaperAccounts(session: AppSession): BrokerAccount[] {
-  const ws = getOrCreateWorkspace(session);
+export async function listPaperAccounts(session: AppSession): Promise<BrokerAccount[]> {
+  const ws = await ensureWorkspaceHydrated(session);
   if (ws.size === 0) {
     // Always surface the default so the UI has something to bind to.
-    const state = getOrCreateAccount(session, DEFAULT_ACCOUNT_ID);
+    const state = await getOrCreateAccount(session, DEFAULT_ACCOUNT_ID);
     return [state.account];
   }
   return [...ws.values()].map((s) => s.account);
@@ -247,7 +338,7 @@ export async function placePaperOrder(input: {
   order: OrderCreateInput;
   riskCheckId: string | null;
 }): Promise<Order> {
-  const state = getOrCreateAccount(input.session, input.order.accountId);
+  const state = await getOrCreateAccount(input.session, input.order.accountId);
   const now = new Date().toISOString();
   const orderId = randomUUID();
   const clientOrderId = input.order.clientOrderId ?? `po-${randomUUID()}`;
@@ -300,13 +391,14 @@ export async function placePaperOrder(input: {
     (order.type === "limit" && shouldLimitFill(input.order, markPrice));
 
   if (fillsImmediately && markPrice) {
-    fillOrder({
+    await fillOrder({
       session: input.session,
       order,
       fillPrice: markPrice,
       fillQty: order.quantity,
       now
     });
+    persistAccountAsync(input.session, state);
     return state.orders.get(orderId)!;
   }
 
@@ -323,6 +415,7 @@ export async function placePaperOrder(input: {
       payload: null,
       timestamp: now
     });
+    persistAccountAsync(input.session, state);
     return order;
   }
 
@@ -339,17 +432,18 @@ export async function placePaperOrder(input: {
     timestamp: now
   });
 
+  persistAccountAsync(input.session, state);
   return order;
 }
 
-function fillOrder(args: {
+async function fillOrder(args: {
   session: AppSession;
   order: Order;
   fillPrice: number;
   fillQty: number;
   now: string;
-}): void {
-  const state = getOrCreateAccount(args.session, args.order.accountId);
+}): Promise<void> {
+  const state = await getOrCreateAccount(args.session, args.order.accountId);
   const fillId = randomUUID();
   const fee = args.fillPrice * args.fillQty * PAPER_FEE_RATE;
   const tax =
@@ -423,7 +517,7 @@ export async function cancelPaperOrder(input: {
   payload: OrderCancelInput;
   accountId: string;
 }): Promise<Order | null> {
-  const state = getOrCreateAccount(input.session, input.accountId);
+  const state = await getOrCreateAccount(input.session, input.accountId);
   const order = state.orders.get(input.payload.orderId);
   if (!order) return null;
   if (order.status === "filled" || order.status === "canceled" || order.status === "rejected") {
@@ -448,14 +542,15 @@ export async function cancelPaperOrder(input: {
     payload: null,
     timestamp: now
   });
+  persistAccountAsync(input.session, state);
   return updated;
 }
 
-export function listPaperOrders(
+export async function listPaperOrders(
   session: AppSession,
   filters?: { accountId?: string; status?: OrderStatus; symbol?: string }
-): Order[] {
-  const ws = getOrCreateWorkspace(session);
+): Promise<Order[]> {
+  const ws = await ensureWorkspaceHydrated(session);
   const accountIds = filters?.accountId ? [filters.accountId] : [...ws.keys()];
   const result: Order[] = [];
   for (const id of accountIds) {
@@ -474,7 +569,7 @@ export async function listPaperPositions(
   session: AppSession,
   accountId: string
 ): Promise<Position[]> {
-  const state = getOrCreateAccount(session, accountId);
+  const state = await getOrCreateAccount(session, accountId);
   const positions: Position[] = [];
   for (const [symbol, pos] of state.positions.entries()) {
     const quote = await getLatestQuote(session, symbol);
@@ -509,7 +604,7 @@ export async function getPaperBalance(
   session: AppSession,
   accountId: string
 ): Promise<Balance> {
-  const state = getOrCreateAccount(session, accountId);
+  const state = await getOrCreateAccount(session, accountId);
   const positions = await listPaperPositions(session, accountId);
   const marketValue = positions.reduce((acc, p) => acc + (p.marketValue ?? 0), 0);
   const unrealizedPnl = positions.reduce((acc, p) => acc + (p.unrealizedPnl ?? 0), 0);
@@ -527,11 +622,11 @@ export async function getPaperBalance(
   };
 }
 
-export function getPaperBrokerStatus(
+export async function getPaperBrokerStatus(
   session: AppSession,
   accountId: string
-): BrokerConnectionStatus {
-  const state = getOrCreateAccount(session, accountId);
+): Promise<BrokerConnectionStatus> {
+  const state = await getOrCreateAccount(session, accountId);
   return {
     broker: "paper",
     accountId,
@@ -545,6 +640,8 @@ export function getPaperBrokerStatus(
 
 // Test / ops utility — clears a workspace's paper state. Not wired to any
 // public route; callable from scripts.
-export function resetPaperWorkspace(session: AppSession): void {
+export async function resetPaperWorkspace(session: AppSession): Promise<void> {
   workspaces.delete(workspaceKey(session));
+  const { deleteWorkspaceSnapshots } = await import("./paper-broker-store.js");
+  await deleteWorkspaceSnapshots(session);
 }

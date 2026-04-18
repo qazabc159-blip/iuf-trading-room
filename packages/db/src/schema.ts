@@ -287,3 +287,16 @@ export const openAliceJobs = pgTable("openalice_jobs", {
     )
   })
 );
+
+export const paperBrokerState = pgTable(
+  "paper_broker_state",
+  {
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+    accountId: text("account_id").notNull(),
+    state: jsonb("state").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.workspaceId, table.accountId] })
+  })
+);

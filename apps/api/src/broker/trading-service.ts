@@ -40,7 +40,7 @@ async function buildAccountContext(input: {
 }> {
   const balance = await getPaperBalance(input.session, input.order.accountId);
   const positions = await listPaperPositions(input.session, input.order.accountId);
-  const orders = listPaperOrders(input.session, {
+  const orders = await listPaperOrders(input.session, {
     accountId: input.order.accountId
   });
   const openStatuses = new Set(["pending", "submitted", "acknowledged", "partial"]);

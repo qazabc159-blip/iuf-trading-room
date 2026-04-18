@@ -76,6 +76,7 @@ import {
   parseEventHistorySources
 } from "./event-history.js";
 import {
+  getMarketDataPolicy,
   getMarketDataOverview,
   ingestTradingViewQuote,
   listMarketBars,
@@ -87,6 +88,7 @@ import {
   marketDataBarsQuerySchema,
   marketDataHistoryQuerySchema,
   marketDataOverviewQuerySchema,
+  marketDataPolicyQuerySchema,
   manualQuoteUpsertSchema,
   marketDataProvidersQuerySchema,
   marketDataQuotesQuerySchema,
@@ -624,6 +626,13 @@ app.get("/api/v1/market-data/providers", async (c) => {
   });
 });
 
+app.get("/api/v1/market-data/policy", async (c) => {
+  marketDataPolicyQuerySchema.parse(c.req.query());
+  return c.json({
+    data: getMarketDataPolicy()
+  });
+});
+
 app.get("/api/v1/market-data/symbols", async (c) => {
   const query = marketDataSymbolsQuerySchema.parse(c.req.query());
   return c.json({
@@ -811,7 +820,7 @@ app.get("/api/v1/risk/effective-limits", async (c) => {
 // ── Trading (paper broker) ──
 
 app.get("/api/v1/trading/accounts", async (c) => {
-  return c.json({ data: listPaperAccounts(c.get("session")) });
+  return c.json({ data: await listPaperAccounts(c.get("session")) });
 });
 
 const tradingAccountQuerySchema = z.object({ accountId: z.string().min(1) });
@@ -839,7 +848,7 @@ app.get("/api/v1/trading/orders", async (c) => {
     })
     .parse(c.req.query());
   return c.json({
-    data: listPaperOrders(c.get("session"), query)
+    data: await listPaperOrders(c.get("session"), query)
   });
 });
 
@@ -883,7 +892,7 @@ app.post("/api/v1/trading/orders/cancel", async (c) => {
 app.get("/api/v1/trading/status", async (c) => {
   const query = tradingAccountQuerySchema.parse(c.req.query());
   return c.json({
-    data: getPaperBrokerStatus(c.get("session"), query.accountId)
+    data: await getPaperBrokerStatus(c.get("session"), query.accountId)
   });
 });
 
