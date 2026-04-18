@@ -1665,6 +1665,9 @@ test("market data policy reflects configured source priority and freshness thres
 
   try {
     const policy = getMarketDataPolicy();
+    assert.equal(policy.surface.version, "market-data-v1.7-execution-safe");
+    assert.equal(policy.surface.capabilities.consumerSummary, true);
+    assert.equal(policy.surface.preferredEntryPoints.execution, "/api/v1/market-data/consumer-summary?mode=execution");
     assert.equal(policy.sourcePriority[0]?.source, "paper");
     assert.equal(policy.sourcePriority[1]?.source, "tradingview");
     assert.equal(policy.sourcePriority[2]?.source, "manual");
@@ -2476,6 +2479,8 @@ test("market data overview summarizes providers, coverage, and leaders", async (
   });
 
   assert.equal(overview.providers.length, 4);
+  assert.equal(overview.surface.version, "market-data-v1.7-execution-safe");
+  assert.equal(overview.surface.capabilities.overview, true);
   assert.ok(overview.symbols.total >= 2);
   assert.equal(overview.symbols.byMarket.some((item) => item.market === "TWSE" && item.total >= 1), true);
   assert.equal(overview.symbols.byMarket.some((item) => item.market === "OTHER" && item.total >= 1), true);

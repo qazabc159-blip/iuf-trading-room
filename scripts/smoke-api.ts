@@ -216,6 +216,15 @@ async function main() {
     const marketPolicy = await request<
       JsonEnvelope<{
         generatedAt: string;
+        surface: {
+          version: string;
+          capabilities: {
+            consumerSummary: boolean;
+          };
+          preferredEntryPoints: {
+            execution: string;
+          };
+        };
         sourcePriority: Array<{ source: string; priority: number }>;
         freshnessMs: Array<{ source: string; staleAfterMs: number }>;
         historyLimit: Array<{ source: string; limit: number }>;
@@ -224,6 +233,9 @@ async function main() {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.match(marketPolicy.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
+    assert.equal(marketPolicy.data.surface.version, "market-data-v1.7-execution-safe");
+    assert.equal(marketPolicy.data.surface.capabilities.consumerSummary, true);
+    assert.equal(marketPolicy.data.surface.preferredEntryPoints.execution, "/api/v1/market-data/consumer-summary?mode=execution");
     assert.equal(marketPolicy.data.sourcePriority[0]?.source, "kgi");
     assert.equal(
       marketPolicy.data.freshnessMs.some((entry) => entry.source === "tradingview" && entry.staleAfterMs > 0),
@@ -691,6 +703,12 @@ async function main() {
           bySource: Array<{ source: string; total: number }>;
         };
         policy: {
+          surface: {
+            version: string;
+            capabilities: {
+              overview: boolean;
+            };
+          };
           sourcePriority: Array<{ source: string; priority: number }>;
         };
         leaders: {
@@ -703,6 +721,8 @@ async function main() {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.match(marketOverview.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
+    assert.equal(marketOverview.data.policy.surface.version, "market-data-v1.7-execution-safe");
+    assert.equal(marketOverview.data.policy.surface.capabilities.overview, true);
     assert.ok(marketOverview.data.providers.length >= 2);
     assert.ok(marketOverview.data.symbols.total >= 1);
     assert.ok(marketOverview.data.quotes.total >= 1);

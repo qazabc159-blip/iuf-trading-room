@@ -6,6 +6,7 @@ import {
   marketDataConsumerDecisionSchema,
   marketDataConsumerModeSchema,
   marketDataConsumerSummarySchema,
+  marketDataSurfaceMetadataSchema,
   type Market,
   marketSchema,
   quoteProviderStatusSchema,
@@ -53,6 +54,7 @@ type QuoteResolutionStaleReason =
 type TimeWindowCompleteness = "unbounded" | "empty" | "partial" | "complete";
 type EffectiveQuoteReadiness = "ready" | "degraded" | "blocked";
 type MarketDataConsumerMode = z.infer<typeof marketDataConsumerModeSchema>;
+type MarketDataSurfaceMetadata = z.infer<typeof marketDataSurfaceMetadataSchema>;
 
 const quoteResolutionFreshnessStatusSchema = z.enum(["fresh", "stale", "missing"]);
 const quoteResolutionFallbackReasonSchema = z.enum([
@@ -209,6 +211,7 @@ const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>
 const persistedQuoteHistoryLoaded = new Set<string>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
 const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "tradingview", "paper", "manual"];
+const MARKET_DATA_SURFACE_VERSION = "market-data-v1.7-execution-safe";
 
 function getSourcePriorityOrder() {
   const configured = (process.env.QUOTE_SOURCE_PRIORITY ?? "")
@@ -813,6 +816,7 @@ export function getMarketDataPolicy() {
   const sourcePriorityOrder = getSourcePriorityOrder();
   return {
     generatedAt: new Date().toISOString(),
+    surface: getMarketDataSurfaceMetadata(),
     sourcePriority: sourcePriorityOrder.map((source) => ({
       source,
       priority: getSourcePriority(source)
@@ -827,6 +831,32 @@ export function getMarketDataPolicy() {
     })),
     syntheticSources: quoteProviderSources.filter(isSyntheticSource)
   };
+}
+
+export function getMarketDataSurfaceMetadata(): MarketDataSurfaceMetadata {
+  return marketDataSurfaceMetadataSchema.parse({
+    version: MARKET_DATA_SURFACE_VERSION,
+    capabilities: {
+      providers: true,
+      policy: true,
+      symbols: true,
+      quotes: true,
+      resolve: true,
+      effectiveQuotes: true,
+      consumerSummary: true,
+      history: true,
+      historyDiagnostics: true,
+      bars: true,
+      barDiagnostics: true,
+      overview: true
+    },
+    preferredEntryPoints: {
+      strategy: "/api/v1/market-data/effective-quotes",
+      paper: "/api/v1/market-data/effective-quotes",
+      execution: "/api/v1/market-data/consumer-summary?mode=execution",
+      ops: "/api/v1/market-data/overview"
+    }
+  });
 }
 
 export async function listMarketSymbols(input: {
@@ -1735,6 +1765,7 @@ export async function getMarketDataOverview(input: {
   return {
     generatedAt: new Date().toISOString(),
     policy: getMarketDataPolicy(),
+    surface: getMarketDataSurfaceMetadata(),
     providers,
     symbols: {
       total: symbols.length,

@@ -190,6 +190,30 @@ export const marketDataConsumerSummarySchema = z.object({
   items: z.array(marketDataConsumerItemSchema)
 });
 
+export const marketDataSurfaceMetadataSchema = z.object({
+  version: z.string().min(1),
+  capabilities: z.object({
+    providers: z.boolean(),
+    policy: z.boolean(),
+    symbols: z.boolean(),
+    quotes: z.boolean(),
+    resolve: z.boolean(),
+    effectiveQuotes: z.boolean(),
+    consumerSummary: z.boolean(),
+    history: z.boolean(),
+    historyDiagnostics: z.boolean(),
+    bars: z.boolean(),
+    barDiagnostics: z.boolean(),
+    overview: z.boolean()
+  }),
+  preferredEntryPoints: z.object({
+    strategy: z.string().min(1),
+    paper: z.string().min(1),
+    execution: z.string().min(1),
+    ops: z.string().min(1)
+  })
+});
+
 export type QuoteSource = z.infer<typeof quoteSourceSchema>;
 export type Market = z.infer<typeof marketSchema>;
 export type BarInterval = z.infer<typeof barIntervalSchema>;
@@ -203,3 +227,4 @@ export type MarketDataConsumerMode = z.infer<typeof marketDataConsumerModeSchema
 export type MarketDataConsumerDecision = z.infer<typeof marketDataConsumerDecisionSchema>;
 export type MarketDataConsumerItem = z.infer<typeof marketDataConsumerItemSchema>;
 export type MarketDataConsumerSummary = z.infer<typeof marketDataConsumerSummarySchema>;
+export type MarketDataSurfaceMetadata = z.infer<typeof marketDataSurfaceMetadataSchema>;
