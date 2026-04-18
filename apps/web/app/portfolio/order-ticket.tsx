@@ -13,11 +13,13 @@ import type {
 } from "@iuf-trading-room/contracts";
 
 import {
+  getEffectiveQuotes,
   getEffectiveRiskLimit,
   getPlans,
   getTradingBalance,
   previewTradingOrder,
   submitTradingOrder,
+  type EffectiveMarketQuote,
   type TradingOrderResult
 } from "@/lib/api";
 import { computeSizedQuantity, type SizingResult } from "@/lib/sizing";
@@ -62,10 +64,13 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
   const [effectiveLimits, setEffectiveLimits] = useState<RiskLimit | null>(null);
   const [pendingLimits, setPendingLimits] = useState(false);
   const [balance, setBalance] = useState<Balance | null>(null);
+  const [quote, setQuote] = useState<EffectiveMarketQuote | null>(null);
+  const [pendingQuote, setPendingQuote] = useState(false);
   const [lastResult, setLastResult] = useState<TradingOrderResult | null>(null);
   const [pending, setPending] = useState<"idle" | "preview" | "submit">("idle");
   const [error, setError] = useState<string | null>(null);
   const [lastSizing, setLastSizing] = useState<SizingResult | null>(null);
+  const [acceptDegraded, setAcceptDegraded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -201,6 +206,38 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
     };
   }, [accountId, form.symbol]);
 
+  // Fetch effective-quote readiness for the typed symbol so the trader can see
+  // whether the price they'd hit is fresh, degraded, or unsafe to act on.
+  // Re-running on symbol change resets the "I accept degraded" override so
+  // each new symbol re-prompts confirmation.
+  useEffect(() => {
+    const symbol = form.symbol.trim().toUpperCase();
+    if (!symbol) {
+      setQuote(null);
+      setAcceptDegraded(false);
+      return;
+    }
+    let cancelled = false;
+    setPendingQuote(true);
+    setAcceptDegraded(false);
+    getEffectiveQuotes({ symbols: symbol, includeStale: true, limit: 1 })
+      .then((res) => {
+        if (cancelled) return;
+        setQuote(res.data.items[0] ?? null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("[order-ticket] getEffectiveQuotes failed:", err);
+        setQuote(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPendingQuote(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.symbol]);
+
   const buildPayload = useCallback((): OrderCreateInput | null => {
     const qty = Number(form.quantity);
     if (!form.symbol.trim() || !Number.isFinite(qty) || qty <= 0) {
@@ -274,6 +311,20 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
   }, []);
 
   const disabled = pending !== "idle";
+  // Gate the live submit button on quote readiness. Preview is always allowed
+  // — it's a dry run and showing the user what would have been blocked is the
+  // whole point. Blocked = no submit. Degraded = submit only after explicit
+  // accept (checkbox). Ready = no friction.
+  const submitGate = (() => {
+    if (!quote) return { allow: true, label: null as string | null };
+    if (quote.readiness === "blocked") {
+      return { allow: false, label: "報價非執行可用，禁止下單" };
+    }
+    if (quote.readiness === "degraded" && !acceptDegraded) {
+      return { allow: false, label: "需勾選「接受 degraded 報價」" };
+    }
+    return { allow: true, label: null };
+  })();
 
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
@@ -386,6 +437,14 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
         <SizingBreakdownCard sizing={lastSizing} equity={balance?.equity ?? null} />
       )}
 
+      <QuoteReadinessCard
+        quote={quote}
+        pending={pendingQuote}
+        symbol={form.symbol.trim().toUpperCase()}
+        acceptDegraded={acceptDegraded}
+        onAcceptDegraded={setAcceptDegraded}
+      />
+
       <EffectiveLimitsCard
         limits={effectiveLimits}
         pending={pendingLimits}
@@ -402,8 +461,9 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
         </button>
         <button
           onClick={onSubmit}
-          disabled={disabled}
-          style={buttonStyle("var(--phosphor)")}
+          disabled={disabled || !submitGate.allow}
+          title={submitGate.label ?? undefined}
+          style={buttonStyle(submitGate.allow ? "var(--phosphor)" : "var(--dim)")}
         >
           {pending === "submit" ? "[...]" : "[SUBMIT 送單]"}
         </button>
@@ -415,6 +475,12 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
           [CLEAR]
         </button>
       </div>
+
+      {!submitGate.allow && submitGate.label && (
+        <p style={{ color: "var(--amber)", fontFamily: "var(--mono, monospace)", fontSize: "0.85rem" }}>
+          [GATE] {submitGate.label}
+        </p>
+      )}
 
       {error && (
         <p style={{ color: "var(--amber)", fontFamily: "var(--mono, monospace)" }}>
@@ -550,6 +616,164 @@ function PlanStat({
       <div style={{ color: accent === "amber" ? "var(--amber)" : "var(--fg, #eee)" }}>
         {value}
       </div>
+    </div>
+  );
+}
+
+const READINESS_COLOR: Record<EffectiveMarketQuote["readiness"], string> = {
+  ready: "var(--phosphor)",
+  degraded: "var(--amber)",
+  blocked: "var(--danger, #ff4d4d)"
+};
+
+const READINESS_LABEL: Record<EffectiveMarketQuote["readiness"], string> = {
+  ready: "READY",
+  degraded: "DEGRADED",
+  blocked: "BLOCKED"
+};
+
+function QuoteReadinessCard({
+  quote,
+  pending,
+  symbol,
+  acceptDegraded,
+  onAcceptDegraded
+}: {
+  quote: EffectiveMarketQuote | null;
+  pending: boolean;
+  symbol: string;
+  acceptDegraded: boolean;
+  onAcceptDegraded: (next: boolean) => void;
+}) {
+  const accent = quote ? READINESS_COLOR[quote.readiness] : "var(--dim)";
+  return (
+    <div
+      style={{
+        border: `1px solid ${accent}`,
+        padding: "0.65rem 0.75rem",
+        fontFamily: "var(--mono, monospace)",
+        fontSize: "0.8rem"
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          marginBottom: "0.4rem"
+        }}
+      >
+        <span style={{ color: "var(--dim)" }}>
+          [QUOTE READINESS {symbol ? `· ${symbol}` : ""}]
+          {pending && <span style={{ marginLeft: "0.5rem" }}>…</span>}
+        </span>
+        {quote && (
+          <span style={{ color: accent, letterSpacing: "0.05em" }}>
+            ● {READINESS_LABEL[quote.readiness]}
+          </span>
+        )}
+      </div>
+      {!quote ? (
+        <div style={{ color: "var(--dim)" }}>
+          {symbol ? "—" : "輸入代號以檢查報價狀態"}
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: "0.4rem",
+              marginBottom: "0.4rem"
+            }}
+          >
+            <Stat label="來源" value={quote.selectedSource ?? "—"} />
+            <Stat
+              label="last"
+              value={quote.selectedQuote?.last?.toString() ?? "—"}
+              accent="phosphor"
+            />
+            <Stat
+              label="bid / ask"
+              value={`${quote.selectedQuote?.bid ?? "—"} / ${quote.selectedQuote?.ask ?? "—"}`}
+            />
+            <Stat
+              label="freshness"
+              value={quote.freshnessStatus}
+              accent={quote.freshnessStatus === "fresh" ? "phosphor" : "amber"}
+            />
+            <Stat
+              label="paper / live"
+              value={`${quote.paperUsable ? "✓" : "×"} / ${quote.liveUsable ? "✓" : "×"}`}
+            />
+            <Stat
+              label="connected"
+              value={quote.providerConnected ? "yes" : "no"}
+              accent={quote.providerConnected ? "phosphor" : "amber"}
+            />
+          </div>
+          {quote.reasons.length > 0 && (
+            <ul
+              style={{
+                margin: "0.3rem 0 0 1rem",
+                padding: 0,
+                color: "var(--dim)",
+                fontSize: "0.75rem"
+              }}
+            >
+              {quote.reasons.map((r, i) => (
+                <li key={`r-${i}`}>{r}</li>
+              ))}
+            </ul>
+          )}
+          {quote.readiness === "degraded" && (
+            <label
+              style={{
+                marginTop: "0.5rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                color: "var(--amber)"
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={acceptDegraded}
+                onChange={(e) => onAcceptDegraded(e.target.checked)}
+              />
+              <span>接受 degraded 報價並承擔風險</span>
+            </label>
+          )}
+          {quote.readiness === "blocked" && (
+            <p style={{ color: "var(--danger, #ff4d4d)", marginTop: "0.4rem" }}>
+              報價非執行可用，已封鎖送單。Preview 仍可運作。
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  accent
+}: {
+  label: string;
+  value: string;
+  accent?: "phosphor" | "amber";
+}) {
+  const color =
+    accent === "phosphor"
+      ? "var(--phosphor)"
+      : accent === "amber"
+        ? "var(--amber)"
+        : "var(--fg, #eee)";
+  return (
+    <div>
+      <div style={{ color: "var(--dim)", fontSize: "0.7rem" }}>{label}</div>
+      <div style={{ color }}>{value}</div>
     </div>
   );
 }

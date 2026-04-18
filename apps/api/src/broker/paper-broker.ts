@@ -14,7 +14,7 @@ import {
   type Quote
 } from "@iuf-trading-room/contracts";
 
-import { listMarketQuotes } from "../market-data.js";
+import { getEffectiveMarketQuotes } from "../market-data.js";
 import { appendExecutionEvent } from "./execution-events-store.js";
 import {
   loadWorkspaceSnapshots,
@@ -210,17 +210,41 @@ export async function listPaperAccounts(session: AppSession): Promise<BrokerAcco
   return [...ws.values()].map((s) => s.account);
 }
 
+// Valuation path: marks positions with whatever the source-policy selects,
+// even when readiness is degraded. The UI banner already surfaces the feed
+// state separately, so we still want a price here for P/L display.
 async function getLatestQuote(
   session: AppSession,
   symbol: string
 ): Promise<Quote | null> {
-  const [quote] = await listMarketQuotes({
+  const result = await getEffectiveMarketQuotes({
     session,
     symbols: symbol,
     includeStale: true,
     limit: 1
   });
-  return quote ?? null;
+  return result.items[0]?.selectedQuote ?? null;
+}
+
+// Execution path: extra info so placePaperOrder can reject unsafe fills
+// instead of silently filling against a stale or synthetic quote.
+async function getExecutionQuote(
+  session: AppSession,
+  symbol: string
+): Promise<{ quote: Quote | null; paperUsable: boolean; reasons: string[] }> {
+  const result = await getEffectiveMarketQuotes({
+    session,
+    symbols: symbol,
+    includeStale: true,
+    limit: 1
+  });
+  const item = result.items[0];
+  if (!item) return { quote: null, paperUsable: false, reasons: ["no_quote"] };
+  return {
+    quote: item.selectedQuote,
+    paperUsable: item.paperUsable,
+    reasons: item.reasons
+  };
 }
 
 function refPriceForFill(order: OrderCreateInput, quote: Quote | null): number | null {
@@ -353,8 +377,8 @@ export async function placePaperOrder(input: {
   const now = new Date().toISOString();
   const orderId = randomUUID();
   const clientOrderId = input.order.clientOrderId ?? `po-${randomUUID()}`;
-  const quote = await getLatestQuote(input.session, input.order.symbol);
-  const markPrice = refPriceForFill(input.order, quote);
+  const execQuote = await getExecutionQuote(input.session, input.order.symbol);
+  const markPrice = refPriceForFill(input.order, execQuote.quote);
 
   const order: Order = {
     id: orderId,
@@ -400,6 +424,29 @@ export async function placePaperOrder(input: {
   const fillsImmediately =
     order.type === "market" ||
     (order.type === "limit" && shouldLimitFill(input.order, markPrice));
+
+  // Block immediate fills against quotes that aren't execution-safe (stale,
+  // synthetic, blocked feed, etc.). Resting limit/stop orders are allowed —
+  // they'll re-check the quote at trigger time.
+  if (fillsImmediately && markPrice && !execQuote.paperUsable) {
+    order.status = "rejected";
+    order.reason = "quote_not_paper_safe";
+    order.updatedAt = now;
+    const reasonText = execQuote.reasons.length > 0
+      ? execQuote.reasons.join(", ")
+      : "quote not marked paper-usable";
+    emit(input.session, input.order.accountId, {
+      type: "reject",
+      orderId,
+      clientOrderId,
+      status: "rejected",
+      message: `Quote not execution-safe: ${reasonText}`,
+      payload: { reasons: execQuote.reasons },
+      timestamp: now
+    });
+    persistAccountAsync(input.session, state);
+    return order;
+  }
 
   if (fillsImmediately && markPrice) {
     await fillOrder({

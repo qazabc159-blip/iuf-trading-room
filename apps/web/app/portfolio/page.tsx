@@ -6,13 +6,15 @@ import { AppShell } from "@/components/app-shell";
 import {
   cancelTradingOrder,
   getBrokerStatus,
+  getEffectiveQuotes,
   getKillSwitch,
   getRiskLimit,
   getTradingAccounts,
   getTradingBalance,
   getTradingOrders,
   getTradingPositions,
-  setKillSwitch
+  setKillSwitch,
+  type EffectiveQuotesResponse
 } from "@/lib/api";
 import type {
   Balance,
@@ -190,6 +192,41 @@ export default function PortfolioPage() {
   const isPaper = activeAccount?.isPaper ?? true;
   const brokerLabel = activeAccount?.broker ?? "paper";
 
+  // Symbols we care about for live quote readiness: every symbol the trader
+  // already has skin in (open positions or working orders). Dedupe + sort so
+  // the effect dep is stable across re-renders that don't actually change the
+  // set.
+  const watchedSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of positions) set.add(p.symbol);
+    for (const o of openOrders) set.add(o.symbol);
+    return [...set].sort();
+  }, [positions, openOrders]);
+  const watchedSymbolsKey = watchedSymbols.join(",");
+
+  const [marketData, setMarketData] = useState<EffectiveQuotesResponse | null>(null);
+  useEffect(() => {
+    if (watchedSymbols.length === 0) {
+      setMarketData(null);
+      return;
+    }
+    let cancelled = false;
+    getEffectiveQuotes({
+      symbols: watchedSymbolsKey,
+      includeStale: true,
+      limit: watchedSymbols.length
+    })
+      .then((res) => {
+        if (!cancelled) setMarketData(res.data);
+      })
+      .catch((err) => {
+        if (!cancelled) console.warn("[portfolio] getEffectiveQuotes failed:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [watchedSymbolsKey, watchedSymbols.length]);
+
   return (
     <AppShell eyebrow="持倉部位" title="帳戶 · 部位 · 風控">
       <ModeBanner
@@ -198,6 +235,8 @@ export default function PortfolioPage() {
         connected={status?.connected ?? false}
         streamStatus={streamStatus}
       />
+
+      <MarketDataBanner data={marketData} symbolCount={watchedSymbols.length} />
 
       {loadError && (
         <section
@@ -513,6 +552,76 @@ function ModeBanner({
         <span style={{ color: streamColor }}>{streamLabel[streamStatus]}</span>
       </div>
     </section>
+  );
+}
+
+function MarketDataBanner({
+  data,
+  symbolCount
+}: {
+  data: EffectiveQuotesResponse | null;
+  symbolCount: number;
+}) {
+  if (symbolCount === 0) return null;
+  const summary = data?.summary;
+  const blocked = summary?.blocked ?? 0;
+  const degraded = summary?.degraded ?? 0;
+  const ready = summary?.ready ?? 0;
+  const accent =
+    blocked > 0
+      ? "var(--danger, #ff4d4d)"
+      : degraded > 0
+        ? "var(--amber)"
+        : "var(--phosphor)";
+  const label =
+    blocked > 0
+      ? "QUOTE FEED · BLOCKED"
+      : degraded > 0
+        ? "QUOTE FEED · DEGRADED"
+        : "QUOTE FEED · READY";
+
+  return (
+    <section
+      className="hud-frame"
+      style={{
+        padding: "0.5rem 1.25rem",
+        marginBottom: "1rem",
+        borderColor: accent,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "0.75rem 1.5rem",
+        alignItems: "center",
+        justifyContent: "space-between",
+        fontFamily: "var(--mono, monospace)",
+        fontSize: "0.8rem"
+      }}
+    >
+      <div style={{ display: "flex", gap: "0.75rem", alignItems: "baseline" }}>
+        <span style={{ color: accent, letterSpacing: "0.08em", fontWeight: 600 }}>
+          [{label}]
+        </span>
+        <span style={{ color: "var(--dim)" }}>
+          watching {symbolCount} 個標的
+          {data ? ` · 更新於 ${new Date(data.generatedAt).toLocaleTimeString("zh-TW", { hour12: false })}` : "…"}
+        </span>
+      </div>
+      {summary && (
+        <div style={{ display: "flex", gap: "1rem" }}>
+          <Tally label="ready" value={ready} color="var(--phosphor)" />
+          <Tally label="degraded" value={degraded} color="var(--amber)" />
+          <Tally label="blocked" value={blocked} color="var(--danger, #ff4d4d)" />
+          <Tally label="paper-usable" value={summary.paperUsable} color="var(--dim)" />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Tally({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <span style={{ color: "var(--dim)" }}>
+      {label} <span style={{ color, fontWeight: 600 }}>{value}</span>
+    </span>
   );
 }
 

@@ -18,6 +18,9 @@ import type {
   OrderCancelInput,
   OrderCreateInput,
   Position,
+  Quote,
+  QuoteProviderStatus,
+  QuoteSource,
   RiskCheckResult,
   RiskLimit,
   RiskLimitUpsertInput,
@@ -648,6 +651,79 @@ export async function getBrokerStatus(accountId: string) {
   return request<BrokerConnectionStatus>(
     `/api/v1/trading/status?accountId=${encodeURIComponent(accountId)}`
   );
+}
+
+// ── Market data ──
+//
+// These types mirror the response of /api/v1/market-data/effective-quotes
+// (defined in apps/api/src/market-data.ts). They live here rather than in
+// @iuf-trading-room/contracts to avoid forcing the contracts package to
+// re-export internal market-data shapes that Codex still iterates on.
+
+export type EffectiveQuoteReadiness = "ready" | "degraded" | "blocked";
+
+export type EffectiveMarketQuote = {
+  symbol: string;
+  market: string;
+  selectedSource: QuoteSource | null;
+  selectedQuote: Quote | null;
+  freshnessStatus: "fresh" | "stale" | "missing";
+  fallbackReason:
+    | "none"
+    | "higher_priority_stale"
+    | "higher_priority_missing"
+    | "higher_priority_unavailable"
+    | "no_fresh_quote"
+    | "no_quote";
+  staleReason:
+    | "none"
+    | "age_exceeded"
+    | "missing_last"
+    | "no_quote"
+    | "provider_unavailable";
+  readiness: EffectiveQuoteReadiness;
+  strategyUsable: boolean;
+  paperUsable: boolean;
+  liveUsable: boolean;
+  synthetic: boolean;
+  providerConnected: boolean;
+  staleAfterMs: number | null;
+  sourcePriority: number | null;
+  reasons: string[];
+};
+
+export type EffectiveQuotesResponse = {
+  generatedAt: string;
+  summary: {
+    total: number;
+    ready: number;
+    degraded: number;
+    blocked: number;
+    strategyUsable: number;
+    paperUsable: number;
+    liveUsable: number;
+  };
+  items: EffectiveMarketQuote[];
+};
+
+export async function getEffectiveQuotes(params: {
+  symbols: string;
+  market?: string;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const query = new URLSearchParams();
+  query.set("symbols", params.symbols);
+  if (params.market) query.set("market", params.market);
+  if (params.includeStale) query.set("includeStale", "true");
+  if (params.limit) query.set("limit", String(params.limit));
+  return request<EffectiveQuotesResponse>(
+    `/api/v1/market-data/effective-quotes?${query.toString()}`
+  );
+}
+
+export async function getMarketDataProviders() {
+  return request<QuoteProviderStatus[]>("/api/v1/market-data/providers");
 }
 
 // ── Risk ──
