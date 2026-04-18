@@ -6,6 +6,7 @@ import {
   marketDataConsumerDecisionSchema,
   marketDataConsumerModeSchema,
   marketDataConsumerSummarySchema,
+  marketDataSelectionSummarySchema,
   marketDataSurfaceMetadataSchema,
   type Market,
   marketSchema,
@@ -205,13 +206,14 @@ export const marketDataEffectiveQuotesQuerySchema = marketDataResolveQuerySchema
 export const marketDataConsumerSummaryQuerySchema = marketDataEffectiveQuotesQuerySchema.extend({
   mode: marketDataConsumerModeSchema.default("strategy")
 });
+export const marketDataSelectionSummaryQuerySchema = marketDataEffectiveQuotesQuerySchema;
 
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>>();
 const persistedQuoteHistoryLoaded = new Set<string>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
 const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "tradingview", "paper", "manual"];
-const MARKET_DATA_SURFACE_VERSION = "market-data-v1.7-execution-safe";
+const MARKET_DATA_SURFACE_VERSION = "market-data-v1.8-selection-summary";
 
 function getSourcePriorityOrder() {
   const configured = (process.env.QUOTE_SOURCE_PRIORITY ?? "")
@@ -844,6 +846,7 @@ export function getMarketDataSurfaceMetadata(): MarketDataSurfaceMetadata {
       resolve: true,
       effectiveQuotes: true,
       consumerSummary: true,
+      selectionSummary: true,
       history: true,
       historyDiagnostics: true,
       bars: true,
@@ -851,9 +854,9 @@ export function getMarketDataSurfaceMetadata(): MarketDataSurfaceMetadata {
       overview: true
     },
     preferredEntryPoints: {
-      strategy: "/api/v1/market-data/effective-quotes",
-      paper: "/api/v1/market-data/effective-quotes",
-      execution: "/api/v1/market-data/consumer-summary?mode=execution",
+      strategy: "/api/v1/market-data/selection-summary",
+      paper: "/api/v1/market-data/selection-summary",
+      execution: "/api/v1/market-data/selection-summary",
       ops: "/api/v1/market-data/overview"
     }
   });
@@ -1495,6 +1498,134 @@ export async function getMarketDataConsumerSummary(input: {
         ],
         items
       )
+    },
+    items
+  });
+}
+
+function summarizeMode(items: Array<{ decision: "allow" | "review" | "block"; usable: boolean; safe: boolean }>) {
+  return {
+    allow: items.filter((item) => item.decision === "allow").length,
+    review: items.filter((item) => item.decision === "review").length,
+    block: items.filter((item) => item.decision === "block").length,
+    usable: items.filter((item) => item.usable).length,
+    safe: items.filter((item) => item.safe).length
+  };
+}
+
+export async function getMarketDataSelectionSummary(input: {
+  session: AppSession;
+  symbols: string;
+  market?: Market;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const effective = await getEffectiveMarketQuotes({
+    session: input.session,
+    symbols: input.symbols,
+    market: input.market,
+    includeStale: input.includeStale,
+    limit: input.limit
+  });
+
+  const strategySummary = await getMarketDataConsumerSummary({
+    session: input.session,
+    mode: "strategy",
+    symbols: input.symbols,
+    market: input.market,
+    includeStale: input.includeStale,
+    limit: input.limit
+  });
+  const paperSummary = await getMarketDataConsumerSummary({
+    session: input.session,
+    mode: "paper",
+    symbols: input.symbols,
+    market: input.market,
+    includeStale: input.includeStale,
+    limit: input.limit
+  });
+  const executionSummary = await getMarketDataConsumerSummary({
+    session: input.session,
+    mode: "execution",
+    symbols: input.symbols,
+    market: input.market,
+    includeStale: input.includeStale,
+    limit: input.limit
+  });
+
+  const strategyBySymbol = new Map(strategySummary.items.map((item) => [buildQuoteIdentityKey(item.symbol, item.market), item]));
+  const paperBySymbol = new Map(paperSummary.items.map((item) => [buildQuoteIdentityKey(item.symbol, item.market), item]));
+  const executionBySymbol = new Map(executionSummary.items.map((item) => [buildQuoteIdentityKey(item.symbol, item.market), item]));
+
+  const items = effective.items.map((item) => {
+    const identityKey = buildQuoteIdentityKey(item.symbol, item.market);
+    const strategy = strategyBySymbol.get(identityKey);
+    const paper = paperBySymbol.get(identityKey);
+    const execution = executionBySymbol.get(identityKey);
+
+    return {
+      symbol: item.symbol,
+      market: item.market,
+      selectedSource: item.selectedSource,
+      selectedQuote: item.selectedQuote,
+      readiness: item.readiness,
+      freshnessStatus: item.freshnessStatus,
+      fallbackReason: item.fallbackReason,
+      staleReason: item.staleReason,
+      reasons: item.reasons,
+      strategy: {
+        decision: strategy?.decision ?? "block",
+        usable: strategy?.usable ?? false,
+        safe: strategy?.safe ?? false
+      },
+      paper: {
+        decision: paper?.decision ?? "block",
+        usable: paper?.usable ?? false,
+        safe: paper?.safe ?? false
+      },
+      execution: {
+        decision: execution?.decision ?? "block",
+        usable: execution?.usable ?? false,
+        safe: execution?.safe ?? false
+      }
+    };
+  });
+
+  return marketDataSelectionSummarySchema.parse({
+    generatedAt: effective.generatedAt,
+    summary: {
+      total: items.length,
+      selectedSources: quoteProviderSources.map((source) => ({
+        source,
+        total: items.filter((item) => item.selectedSource === source).length
+      })),
+      readiness: {
+        ready: items.filter((item) => item.readiness === "ready").length,
+        degraded: items.filter((item) => item.readiness === "degraded").length,
+        blocked: items.filter((item) => item.readiness === "blocked").length
+      },
+      strategy: summarizeMode(items.map((item) => item.strategy)),
+      paper: summarizeMode(items.map((item) => item.paper)),
+      execution: summarizeMode(items.map((item) => item.execution)),
+      fallbackReasons: [
+        "higher_priority_stale",
+        "higher_priority_missing",
+        "higher_priority_unavailable",
+        "no_fresh_quote",
+        "no_quote"
+      ].map((reason) => ({
+        reason,
+        total: items.filter((item) => item.fallbackReason === reason).length
+      })),
+      staleReasons: [
+        "age_exceeded",
+        "missing_last",
+        "no_quote",
+        "provider_unavailable"
+      ].map((reason) => ({
+        reason,
+        total: items.filter((item) => item.staleReason === reason).length
+      }))
     },
     items
   });

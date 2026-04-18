@@ -80,6 +80,7 @@ import {
   getMarketDataOverview,
   getMarketBarDiagnostics,
   getMarketDataConsumerSummary,
+  getMarketDataSelectionSummary,
   getMarketQuoteHistoryDiagnostics,
   getEffectiveMarketQuotes,
   ingestTradingViewQuote,
@@ -91,6 +92,7 @@ import {
   marketDataBarDiagnosticsQuerySchema,
   marketDataConsumerSummaryQuerySchema,
   marketDataResolveQuerySchema,
+  marketDataSelectionSummaryQuerySchema,
   marketDataBarsQuerySchema,
   marketDataHistoryQuerySchema,
   marketDataHistoryDiagnosticsQuerySchema,
@@ -711,6 +713,19 @@ app.get("/api/v1/market-data/consumer-summary", async (c) => {
     data: await getMarketDataConsumerSummary({
       session: c.get("session"),
       mode: query.mode,
+      symbols: query.symbols,
+      market: query.market,
+      includeStale: query.includeStale,
+      limit: query.limit
+    })
+  });
+});
+
+app.get("/api/v1/market-data/selection-summary", async (c) => {
+  const query = marketDataSelectionSummaryQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getMarketDataSelectionSummary({
+      session: c.get("session"),
       symbols: query.symbols,
       market: query.market,
       includeStale: query.includeStale,

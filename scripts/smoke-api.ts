@@ -220,6 +220,7 @@ async function main() {
           version: string;
           capabilities: {
             consumerSummary: boolean;
+            selectionSummary: boolean;
           };
           preferredEntryPoints: {
             execution: string;
@@ -233,9 +234,10 @@ async function main() {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.match(marketPolicy.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
-    assert.equal(marketPolicy.data.surface.version, "market-data-v1.7-execution-safe");
+    assert.equal(marketPolicy.data.surface.version, "market-data-v1.8-selection-summary");
     assert.equal(marketPolicy.data.surface.capabilities.consumerSummary, true);
-    assert.equal(marketPolicy.data.surface.preferredEntryPoints.execution, "/api/v1/market-data/consumer-summary?mode=execution");
+    assert.equal(marketPolicy.data.surface.capabilities.selectionSummary, true);
+    assert.equal(marketPolicy.data.surface.preferredEntryPoints.execution, "/api/v1/market-data/selection-summary");
     assert.equal(marketPolicy.data.sourcePriority[0]?.source, "kgi");
     assert.equal(
       marketPolicy.data.freshnessMs.some((entry) => entry.source === "tradingview" && entry.staleAfterMs > 0),
@@ -517,6 +519,48 @@ async function main() {
       true
     );
 
+    const selectionSummary = await request<
+      JsonEnvelope<{
+        generatedAt: string;
+        summary: {
+          total: number;
+          readiness: {
+            ready: number;
+            degraded: number;
+            blocked: number;
+          };
+          strategy: { review: number };
+          paper: { review: number };
+          execution: { review: number };
+        };
+        items: Array<{
+          symbol: string;
+          selectedSource: string | null;
+          strategy: { decision: string };
+          paper: { decision: string };
+          execution: { decision: string };
+        }>;
+      }>
+    >(baseUrl, "/api/v1/market-data/selection-summary?symbols=SMK1,PAPR1,TVSMK1&includeStale=true&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(selectionSummary.data.summary.total, 3);
+    assert.equal(selectionSummary.data.summary.readiness.ready, 0);
+    assert.equal(selectionSummary.data.summary.strategy.review >= 2, true);
+    assert.equal(selectionSummary.data.summary.paper.review >= 2, true);
+    assert.equal(selectionSummary.data.summary.execution.review >= 2, true);
+    assert.equal(
+      selectionSummary.data.items.some(
+        (item) =>
+          item.symbol === "TVSMK1"
+          && item.selectedSource === "tradingview"
+          && item.strategy.decision === "review"
+          && item.paper.decision === "review"
+          && item.execution.decision === "review"
+      ),
+      true
+    );
+
     const paperProviderStatus = await request<
       JsonEnvelope<
         Array<{
@@ -707,6 +751,7 @@ async function main() {
             version: string;
             capabilities: {
               overview: boolean;
+              selectionSummary: boolean;
             };
           };
           sourcePriority: Array<{ source: string; priority: number }>;
@@ -721,8 +766,9 @@ async function main() {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.match(marketOverview.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
-    assert.equal(marketOverview.data.policy.surface.version, "market-data-v1.7-execution-safe");
+    assert.equal(marketOverview.data.policy.surface.version, "market-data-v1.8-selection-summary");
     assert.equal(marketOverview.data.policy.surface.capabilities.overview, true);
+    assert.equal(marketOverview.data.policy.surface.capabilities.selectionSummary, true);
     assert.ok(marketOverview.data.providers.length >= 2);
     assert.ok(marketOverview.data.symbols.total >= 1);
     assert.ok(marketOverview.data.quotes.total >= 1);

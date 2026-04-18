@@ -190,6 +190,79 @@ export const marketDataConsumerSummarySchema = z.object({
   items: z.array(marketDataConsumerItemSchema)
 });
 
+export const marketDataSelectionModeSummarySchema = z.object({
+  decision: marketDataConsumerDecisionSchema,
+  usable: z.boolean(),
+  safe: z.boolean()
+});
+
+export const marketDataSelectionSummaryItemSchema = z.object({
+  symbol: z.string(),
+  market: marketSchema,
+  selectedSource: quoteSourceSchema.nullable(),
+  selectedQuote: quoteSchema.nullable(),
+  readiness: z.enum(["ready", "degraded", "blocked"]),
+  freshnessStatus: z.enum(["fresh", "stale", "missing"]),
+  fallbackReason: z.string(),
+  staleReason: z.string(),
+  reasons: z.array(z.string()),
+  strategy: marketDataSelectionModeSummarySchema,
+  paper: marketDataSelectionModeSummarySchema,
+  execution: marketDataSelectionModeSummarySchema
+});
+
+export const marketDataSelectionSummarySchema = z.object({
+  generatedAt: z.string(),
+  summary: z.object({
+    total: z.number().int().nonnegative(),
+    selectedSources: z.array(
+      z.object({
+        source: quoteSourceSchema,
+        total: z.number().int().nonnegative()
+      })
+    ),
+    readiness: z.object({
+      ready: z.number().int().nonnegative(),
+      degraded: z.number().int().nonnegative(),
+      blocked: z.number().int().nonnegative()
+    }),
+    strategy: z.object({
+      allow: z.number().int().nonnegative(),
+      review: z.number().int().nonnegative(),
+      block: z.number().int().nonnegative(),
+      usable: z.number().int().nonnegative(),
+      safe: z.number().int().nonnegative()
+    }),
+    paper: z.object({
+      allow: z.number().int().nonnegative(),
+      review: z.number().int().nonnegative(),
+      block: z.number().int().nonnegative(),
+      usable: z.number().int().nonnegative(),
+      safe: z.number().int().nonnegative()
+    }),
+    execution: z.object({
+      allow: z.number().int().nonnegative(),
+      review: z.number().int().nonnegative(),
+      block: z.number().int().nonnegative(),
+      usable: z.number().int().nonnegative(),
+      safe: z.number().int().nonnegative()
+    }),
+    fallbackReasons: z.array(
+      z.object({
+        reason: z.string(),
+        total: z.number().int().nonnegative()
+      })
+    ),
+    staleReasons: z.array(
+      z.object({
+        reason: z.string(),
+        total: z.number().int().nonnegative()
+      })
+    )
+  }),
+  items: z.array(marketDataSelectionSummaryItemSchema)
+});
+
 export const marketDataSurfaceMetadataSchema = z.object({
   version: z.string().min(1),
   capabilities: z.object({
@@ -200,6 +273,7 @@ export const marketDataSurfaceMetadataSchema = z.object({
     resolve: z.boolean(),
     effectiveQuotes: z.boolean(),
     consumerSummary: z.boolean(),
+    selectionSummary: z.boolean(),
     history: z.boolean(),
     historyDiagnostics: z.boolean(),
     bars: z.boolean(),
@@ -227,4 +301,7 @@ export type MarketDataConsumerMode = z.infer<typeof marketDataConsumerModeSchema
 export type MarketDataConsumerDecision = z.infer<typeof marketDataConsumerDecisionSchema>;
 export type MarketDataConsumerItem = z.infer<typeof marketDataConsumerItemSchema>;
 export type MarketDataConsumerSummary = z.infer<typeof marketDataConsumerSummarySchema>;
+export type MarketDataSelectionModeSummary = z.infer<typeof marketDataSelectionModeSummarySchema>;
+export type MarketDataSelectionSummaryItem = z.infer<typeof marketDataSelectionSummaryItemSchema>;
+export type MarketDataSelectionSummary = z.infer<typeof marketDataSelectionSummarySchema>;
 export type MarketDataSurfaceMetadata = z.infer<typeof marketDataSurfaceMetadataSchema>;
