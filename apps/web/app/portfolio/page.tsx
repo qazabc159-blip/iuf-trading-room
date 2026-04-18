@@ -24,7 +24,14 @@ import type {
   RiskLimit
 } from "@iuf-trading-room/contracts";
 
-const REFRESH_MS = 5_000;
+import { ExecutionTimeline } from "./execution-timeline";
+import { OrderTicket } from "./order-ticket";
+import { useExecutionStream } from "./use-execution-stream";
+
+// SSE is authoritative — this polling is just a belt-and-suspenders fallback
+// in case the stream drops without firing the error branch (e.g. a proxy
+// closes the socket cleanly after an idle timeout).
+const FALLBACK_REFRESH_MS = 30_000;
 
 function formatMoney(value: number, currency = "TWD") {
   return new Intl.NumberFormat("zh-TW", {
@@ -116,9 +123,18 @@ export default function PortfolioPage() {
     if (!accountId) return;
     const interval = setInterval(() => {
       refresh(accountId).catch(() => undefined);
-    }, REFRESH_MS);
+    }, FALLBACK_REFRESH_MS);
     return () => clearInterval(interval);
   }, [accountId, refresh]);
+
+  const onExecutionEvent = useCallback(() => {
+    if (accountId) refresh(accountId).catch(() => undefined);
+  }, [accountId, refresh]);
+
+  const { events: executionEvents, status: streamStatus } = useExecutionStream(
+    Boolean(accountId),
+    onExecutionEvent
+  );
 
   const onToggleKillSwitch = useCallback(
     async (mode: KillSwitchState["mode"]) => {
@@ -228,9 +244,21 @@ export default function PortfolioPage() {
         )}
       </section>
 
+      {accountId && (
+        <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
+          <p className="ascii-head" data-idx="02">
+            [02] 下單台
+          </p>
+          <OrderTicket
+            accountId={accountId}
+            onSubmitted={() => refresh(accountId).catch(() => undefined)}
+          />
+        </section>
+      )}
+
       <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
-        <p className="ascii-head" data-idx="02">
-          [02] 部位（{positions.length}）
+        <p className="ascii-head" data-idx="03">
+          [03] 部位（{positions.length}）
         </p>
         {positions.length === 0 ? (
           <p
@@ -296,8 +324,8 @@ export default function PortfolioPage() {
       </section>
 
       <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
-        <p className="ascii-head" data-idx="03">
-          [03] 開放中委託（{openOrders.length}）
+        <p className="ascii-head" data-idx="04">
+          [04] 開放中委託（{openOrders.length}）
         </p>
         {openOrders.length === 0 ? (
           <p style={{ fontFamily: "var(--mono, monospace)", color: "var(--dim)" }}>
@@ -310,16 +338,16 @@ export default function PortfolioPage() {
 
       {filledOrders.length > 0 && (
         <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
-          <p className="ascii-head" data-idx="04">
-            [04] 最近成交／取消（最多 10 筆）
+          <p className="ascii-head" data-idx="05">
+            [05] 最近成交／取消（最多 10 筆）
           </p>
           <OrdersTable orders={filledOrders} />
         </section>
       )}
 
       <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
-        <p className="ascii-head" data-idx="05">
-          [05] 風控上限 {riskLimit ? "" : "(載入中)"}
+        <p className="ascii-head" data-idx="06">
+          [06] 風控上限 {riskLimit ? "" : "(載入中)"}
         </p>
         <ul
           style={{
@@ -361,8 +389,8 @@ export default function PortfolioPage() {
       </section>
 
       <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
-        <p className="ascii-head" data-idx="06">
-          [06] Kill Switch
+        <p className="ascii-head" data-idx="07">
+          [07] Kill Switch
         </p>
         <div
           style={{
@@ -409,6 +437,13 @@ export default function PortfolioPage() {
             {killSwitch.engagedBy ?? "—"} · {killSwitch.engagedAt ?? ""}
           </p>
         )}
+      </section>
+
+      <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
+        <p className="ascii-head" data-idx="08">
+          [08] Execution Timeline
+        </p>
+        <ExecutionTimeline events={executionEvents} status={streamStatus} />
       </section>
     </AppShell>
   );

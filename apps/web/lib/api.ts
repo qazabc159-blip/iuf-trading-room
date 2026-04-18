@@ -11,6 +11,7 @@ import type {
   CompanyGraphView,
   DailyBrief,
   DailyBriefCreateInput,
+  ExecutionEvent,
   KillSwitchInput,
   KillSwitchState,
   Order,
@@ -522,14 +523,97 @@ export async function getTradingOrders(params?: {
   return request<Order[]>(`/api/v1/trading/orders${qs ? `?${qs}` : ""}`);
 }
 
+export type TradingOrderResult = {
+  order: Order | null;
+  riskCheck: RiskCheckResult;
+  blocked: boolean;
+};
+
+// 422 is a semantically meaningful response here — the body carries the
+// blocking RiskCheckResult — so don't treat it as a thrown error.
+async function requestOrderOutcome(path: string, body: unknown) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-workspace-slug": WORKSPACE_SLUG
+    },
+    body: JSON.stringify(body)
+  });
+  if (response.status !== 201 && response.status !== 200 && response.status !== 422) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+  return (await response.json()) as Envelope<TradingOrderResult>;
+}
+
 export async function submitTradingOrder(input: OrderCreateInput) {
-  return request<{ order: Order | null; riskCheck: RiskCheckResult; blocked: boolean }>(
-    "/api/v1/trading/orders",
-    {
-      method: "POST",
-      body: JSON.stringify(input)
+  return requestOrderOutcome("/api/v1/trading/orders", input);
+}
+
+export async function previewTradingOrder(input: OrderCreateInput) {
+  return requestOrderOutcome("/api/v1/trading/orders/preview", input);
+}
+
+// Fetch-based SSE reader. EventSource can't set custom headers in the browser,
+// so we parse the stream ourselves using the same x-workspace-slug contract as
+// the rest of the client.
+export async function streamExecutionEvents(
+  onEvent: (event: ExecutionEvent) => void,
+  signal: AbortSignal
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/v1/trading/stream`, {
+    headers: { "x-workspace-slug": WORKSPACE_SLUG },
+    signal
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+
+        if (!frame || frame.startsWith(":")) continue;
+
+        let eventName = "message";
+        let data = "";
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event:")) {
+            eventName = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            data += line.slice(5).trimStart();
+          }
+        }
+
+        if (eventName === "execution" && data) {
+          try {
+            onEvent(JSON.parse(data) as ExecutionEvent);
+          } catch (err) {
+            console.warn("[api] malformed execution event", err);
+          }
+        }
+      }
     }
-  );
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // already released
+    }
+  }
 }
 
 export async function cancelTradingOrder(accountId: string, input: OrderCancelInput) {

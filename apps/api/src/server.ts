@@ -113,7 +113,7 @@ import {
   listPaperPositions,
   subscribeExecutionEvents
 } from "./broker/paper-broker.js";
-import { cancelOrder, submitOrder } from "./broker/trading-service.js";
+import { cancelOrder, previewOrder, submitOrder } from "./broker/trading-service.js";
 import {
   getCompanyGraphSearchResults,
   getCompanyGraphStats,
@@ -851,6 +851,16 @@ app.post("/api/v1/trading/orders", async (c) => {
     order: payload
   });
   return c.json({ data: result }, result.blocked ? 422 : 201);
+});
+
+app.post("/api/v1/trading/orders/preview", async (c) => {
+  const payload = orderCreateInputSchema.parse(await c.req.json());
+  const result = await previewOrder({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    order: payload
+  });
+  return c.json({ data: result });
 });
 
 app.post("/api/v1/trading/orders/cancel", async (c) => {

@@ -102,11 +102,12 @@ async function resolveMarketContext(input: {
   };
 }
 
-export async function submitOrder(input: {
+async function runRiskCheck(input: {
   session: AppSession;
   repo: TradingRoomRepository;
   order: OrderCreateInput;
-}): Promise<SubmitOrderResult> {
+  commit: boolean;
+}): Promise<RiskCheckResult> {
   const account = await buildAccountContext({
     session: input.session,
     order: input.order
@@ -116,16 +117,24 @@ export async function submitOrder(input: {
     order: input.order
   });
 
-  const riskCheck = await evaluateRiskCheck({
+  return evaluateRiskCheck({
     session: input.session,
     repo: input.repo,
     payload: {
       order: input.order,
       account,
       market,
-      commit: true
+      commit: input.commit
     }
   });
+}
+
+export async function submitOrder(input: {
+  session: AppSession;
+  repo: TradingRoomRepository;
+  order: OrderCreateInput;
+}): Promise<SubmitOrderResult> {
+  const riskCheck = await runRiskCheck({ ...input, commit: true });
 
   if (riskCheck.decision === "block") {
     return { order: null, riskCheck, blocked: true };
@@ -138,6 +147,21 @@ export async function submitOrder(input: {
   });
 
   return { order, riskCheck, blocked: false };
+}
+
+// Dry-run: runs the same risk gate as submitOrder but skips broker.place.
+// Uses commit:false so the duplicate-intent guard doesn't see the preview.
+export async function previewOrder(input: {
+  session: AppSession;
+  repo: TradingRoomRepository;
+  order: OrderCreateInput;
+}): Promise<SubmitOrderResult> {
+  const riskCheck = await runRiskCheck({ ...input, commit: false });
+  return {
+    order: null,
+    riskCheck,
+    blocked: riskCheck.decision === "block"
+  };
 }
 
 export async function cancelOrder(input: {
