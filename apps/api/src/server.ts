@@ -79,6 +79,7 @@ import {
   getMarketDataPolicy,
   getMarketDataOverview,
   getMarketBarDiagnostics,
+  getMarketDataConsumerSummary,
   getMarketQuoteHistoryDiagnostics,
   getEffectiveMarketQuotes,
   ingestTradingViewQuote,
@@ -88,6 +89,7 @@ import {
   listMarketQuotes,
   listMarketSymbols,
   marketDataBarDiagnosticsQuerySchema,
+  marketDataConsumerSummaryQuerySchema,
   marketDataResolveQuerySchema,
   marketDataBarsQuerySchema,
   marketDataHistoryQuerySchema,
@@ -695,6 +697,20 @@ app.get("/api/v1/market-data/effective-quotes", async (c) => {
   return c.json({
     data: await getEffectiveMarketQuotes({
       session: c.get("session"),
+      symbols: query.symbols,
+      market: query.market,
+      includeStale: query.includeStale,
+      limit: query.limit
+    })
+  });
+});
+
+app.get("/api/v1/market-data/consumer-summary", async (c) => {
+  const query = marketDataConsumerSummaryQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getMarketDataConsumerSummary({
+      session: c.get("session"),
+      mode: query.mode,
       symbols: query.symbols,
       market: query.market,
       includeStale: query.includeStale,

@@ -112,6 +112,84 @@ export const quoteProviderStatusSchema = z.object({
   errorMessage: z.string().nullable().default(null)
 });
 
+export const marketDataConsumerModeSchema = z.enum([
+  "strategy",
+  "paper",
+  "execution"
+]);
+
+export const marketDataConsumerDecisionSchema = z.enum([
+  "allow",
+  "review",
+  "block"
+]);
+
+export const marketDataConsumerItemSchema = z.object({
+  symbol: z.string(),
+  market: marketSchema,
+  mode: marketDataConsumerModeSchema,
+  selectedSource: quoteSourceSchema.nullable(),
+  selectedQuote: quoteSchema.nullable(),
+  readiness: z.enum(["ready", "degraded", "blocked"]),
+  decision: marketDataConsumerDecisionSchema,
+  usable: z.boolean(),
+  safe: z.boolean(),
+  freshnessStatus: z.enum(["fresh", "stale", "missing"]),
+  fallbackReason: z.string(),
+  staleReason: z.string(),
+  reasons: z.array(z.string()),
+  candidates: z.array(
+    z.object({
+      source: quoteSourceSchema,
+      priority: z.number().int().nonnegative(),
+      providerConnected: z.boolean(),
+      subscribed: z.boolean(),
+      eligible: z.boolean(),
+      freshnessStatus: z.enum(["fresh", "stale", "missing"]),
+      staleReason: z.enum(["none", "age_exceeded", "missing_last", "no_quote", "provider_unavailable"]),
+      quote: quoteSchema.nullable()
+    })
+  )
+});
+
+export const marketDataConsumerSummarySchema = z.object({
+  generatedAt: z.string(),
+  mode: marketDataConsumerModeSchema,
+  summary: z.object({
+    total: z.number().int().nonnegative(),
+    allow: z.number().int().nonnegative(),
+    review: z.number().int().nonnegative(),
+    block: z.number().int().nonnegative(),
+    usable: z.number().int().nonnegative(),
+    safe: z.number().int().nonnegative(),
+    selectedSources: z.array(
+      z.object({
+        source: quoteSourceSchema,
+        total: z.number().int().nonnegative()
+      })
+    ),
+    fallbackReasons: z.array(
+      z.object({
+        reason: z.string(),
+        total: z.number().int().nonnegative()
+      })
+    ),
+    staleReasons: z.array(
+      z.object({
+        reason: z.string(),
+        total: z.number().int().nonnegative()
+      })
+    ),
+    reasons: z.array(
+      z.object({
+        reason: z.string(),
+        total: z.number().int().nonnegative()
+      })
+    )
+  }),
+  items: z.array(marketDataConsumerItemSchema)
+});
+
 export type QuoteSource = z.infer<typeof quoteSourceSchema>;
 export type Market = z.infer<typeof marketSchema>;
 export type BarInterval = z.infer<typeof barIntervalSchema>;
@@ -121,3 +199,7 @@ export type Tick = z.infer<typeof tickSchema>;
 export type Bar = z.infer<typeof barSchema>;
 export type SubscriptionRequest = z.infer<typeof subscriptionRequestSchema>;
 export type QuoteProviderStatus = z.infer<typeof quoteProviderStatusSchema>;
+export type MarketDataConsumerMode = z.infer<typeof marketDataConsumerModeSchema>;
+export type MarketDataConsumerDecision = z.infer<typeof marketDataConsumerDecisionSchema>;
+export type MarketDataConsumerItem = z.infer<typeof marketDataConsumerItemSchema>;
+export type MarketDataConsumerSummary = z.infer<typeof marketDataConsumerSummarySchema>;

@@ -3,6 +3,9 @@ import {
   barIntervalSchema,
   barSchema,
   type Company,
+  marketDataConsumerDecisionSchema,
+  marketDataConsumerModeSchema,
+  marketDataConsumerSummarySchema,
   type Market,
   marketSchema,
   quoteProviderStatusSchema,
@@ -49,6 +52,7 @@ type QuoteResolutionStaleReason =
   | "provider_unavailable";
 type TimeWindowCompleteness = "unbounded" | "empty" | "partial" | "complete";
 type EffectiveQuoteReadiness = "ready" | "degraded" | "blocked";
+type MarketDataConsumerMode = z.infer<typeof marketDataConsumerModeSchema>;
 
 const quoteResolutionFreshnessStatusSchema = z.enum(["fresh", "stale", "missing"]);
 const quoteResolutionFallbackReasonSchema = z.enum([
@@ -196,6 +200,9 @@ export const marketDataResolveQuerySchema = z.object({
 });
 
 export const marketDataEffectiveQuotesQuerySchema = marketDataResolveQuerySchema;
+export const marketDataConsumerSummaryQuerySchema = marketDataEffectiveQuotesQuerySchema.extend({
+  mode: marketDataConsumerModeSchema.default("strategy")
+});
 
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>>();
@@ -515,6 +522,58 @@ function buildEffectiveQuoteReasons(input: {
     reasons.push("provider_disconnected");
   }
   return reasons;
+}
+
+function buildConsumerDecision(input: {
+  mode: MarketDataConsumerMode;
+  selectedSource: QuoteSource | null;
+  providerConnected: boolean;
+  freshnessStatus: QuoteResolutionFreshnessStatus;
+  strategyUsable: boolean;
+  paperUsable: boolean;
+  liveUsable: boolean;
+  readiness: EffectiveQuoteReadiness;
+}) {
+  if (input.mode === "execution") {
+    if (input.liveUsable && input.readiness === "ready") {
+      return marketDataConsumerDecisionSchema.parse("allow");
+    }
+
+    if (input.selectedSource !== null && input.providerConnected && input.freshnessStatus === "fresh") {
+      return marketDataConsumerDecisionSchema.parse("review");
+    }
+
+    return marketDataConsumerDecisionSchema.parse("block");
+  }
+
+  const usable =
+    input.mode === "strategy"
+      ? input.strategyUsable
+      : input.mode === "paper"
+        ? input.paperUsable
+        : input.liveUsable;
+  const safe = usable && input.readiness === "ready";
+  const decision = !usable
+    ? "block"
+    : safe
+      ? "allow"
+      : "review";
+
+  return marketDataConsumerDecisionSchema.parse(decision);
+}
+
+function summarizeReasonCounts(reasonBuckets: string[], items: Array<{ reasons: string[] }>) {
+  const counts = new Map<string, number>(reasonBuckets.map((reason) => [reason, 0]));
+
+  for (const item of items) {
+    for (const reason of item.reasons) {
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .map(([reason, total]) => ({ reason, total }))
+    .filter((entry) => entry.total > 0);
 }
 
 function buildProviderReadiness(input: {
@@ -1300,6 +1359,115 @@ export async function getEffectiveMarketQuotes(input: {
     },
     items
   };
+}
+
+export async function getMarketDataConsumerSummary(input: {
+  session: AppSession;
+  mode: MarketDataConsumerMode;
+  symbols: string;
+  market?: Market;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const effective = await getEffectiveMarketQuotes({
+    session: input.session,
+    symbols: input.symbols,
+    market: input.market,
+    includeStale: input.includeStale,
+    limit: input.limit
+  });
+
+  const items = effective.items.map((item) => {
+    const usable =
+      input.mode === "strategy"
+        ? item.strategyUsable
+        : input.mode === "paper"
+          ? item.paperUsable
+          : item.liveUsable;
+    const safe = usable && item.readiness === "ready";
+    const decision = buildConsumerDecision({
+      mode: input.mode,
+      selectedSource: item.selectedSource,
+      providerConnected: item.providerConnected,
+      freshnessStatus: item.freshnessStatus,
+      strategyUsable: item.strategyUsable,
+      paperUsable: item.paperUsable,
+      liveUsable: item.liveUsable,
+      readiness: item.readiness
+    });
+
+    return {
+      symbol: item.symbol,
+      market: item.market,
+      mode: input.mode,
+      selectedSource: item.selectedSource,
+      selectedQuote: item.selectedQuote,
+      readiness: item.readiness,
+      decision,
+      usable,
+      safe,
+      freshnessStatus: item.freshnessStatus,
+      fallbackReason: item.fallbackReason,
+      staleReason: item.staleReason,
+      reasons: item.reasons,
+      candidates: item.candidates
+    };
+  });
+
+  return marketDataConsumerSummarySchema.parse({
+    generatedAt: effective.generatedAt,
+    mode: input.mode,
+    summary: {
+      total: items.length,
+      allow: items.filter((item) => item.decision === "allow").length,
+      review: items.filter((item) => item.decision === "review").length,
+      block: items.filter((item) => item.decision === "block").length,
+      usable: items.filter((item) => item.usable).length,
+      safe: items.filter((item) => item.safe).length,
+      selectedSources: quoteProviderSources.map((source) => ({
+        source,
+        total: items.filter((item) => item.selectedSource === source).length
+      })),
+      fallbackReasons: [
+        "higher_priority_stale",
+        "higher_priority_missing",
+        "higher_priority_unavailable",
+        "no_fresh_quote",
+        "no_quote"
+      ].map((reason) => ({
+        reason,
+        total: items.filter((item) => item.fallbackReason === reason).length
+      })),
+      staleReasons: [
+        "age_exceeded",
+        "missing_last",
+        "no_quote",
+        "provider_unavailable"
+      ].map((reason) => ({
+        reason,
+        total: items.filter((item) => item.staleReason === reason).length
+      })),
+      reasons: summarizeReasonCounts(
+        [
+          "fallback:higher_priority_stale",
+          "fallback:higher_priority_missing",
+          "fallback:higher_priority_unavailable",
+          "fallback:no_fresh_quote",
+          "fallback:no_quote",
+          "stale:age_exceeded",
+          "stale:missing_last",
+          "stale:no_quote",
+          "stale:provider_unavailable",
+          "synthetic_source",
+          "non_live_source",
+          "provider_disconnected",
+          "missing_quote"
+        ],
+        items
+      )
+    },
+    items
+  });
 }
 
 function getBarIntervalMs(interval: BarInterval) {

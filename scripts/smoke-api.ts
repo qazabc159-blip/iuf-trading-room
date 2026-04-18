@@ -464,6 +464,47 @@ async function main() {
       true
     );
 
+    const consumerSummary = await request<
+      JsonEnvelope<{
+        mode: string;
+        summary: {
+          total: number;
+          allow: number;
+          review: number;
+          block: number;
+          usable: number;
+          safe: number;
+        };
+        items: Array<{
+          symbol: string;
+          mode: string;
+          decision: string;
+          usable: boolean;
+          safe: boolean;
+          selectedSource: string | null;
+        }>;
+      }>
+    >(baseUrl, "/api/v1/market-data/consumer-summary?symbols=SMK1,PAPR1,TVSMK1&includeStale=true&limit=10&mode=execution", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(consumerSummary.data.mode, "execution");
+    assert.equal(consumerSummary.data.summary.total, 3);
+    assert.equal(consumerSummary.data.summary.safe, 0);
+    assert.equal(consumerSummary.data.summary.allow, 0);
+    assert.equal(consumerSummary.data.summary.review >= 2, true);
+    assert.equal(
+      consumerSummary.data.items.some(
+        (item) =>
+          item.symbol === "TVSMK1"
+          && item.mode === "execution"
+          && item.decision === "review"
+          && item.usable === false
+          && item.safe === false
+          && item.selectedSource === "tradingview"
+      ),
+      true
+    );
+
     const paperProviderStatus = await request<
       JsonEnvelope<
         Array<{

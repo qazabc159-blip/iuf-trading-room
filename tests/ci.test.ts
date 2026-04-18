@@ -44,6 +44,7 @@ import {
   getMarketDataPolicy,
   getMarketDataOverview,
   getMarketBarDiagnostics,
+  getMarketDataConsumerSummary,
   getEffectiveMarketQuotes,
   getMarketQuoteHistoryDiagnostics,
   ingestTradingViewQuote,
@@ -1973,6 +1974,108 @@ test("market data effective quotes summarize readiness for strategy and paper co
   assert.equal(blocked?.paperUsable, false);
   assert.equal(blocked?.staleReason, "age_exceeded");
   assert.equal(blocked?.reasons.includes("stale:age_exceeded"), true);
+});
+
+test("market data consumer summary compresses execution-safe decisions", async () => {
+  const session = { workspace: { slug: `market-consumer-${randomUUID()}` } };
+  const now = new Date().toISOString();
+  const staleTimestamp = "2020-01-01T00:00:00.000Z";
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "CNS1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 210,
+        bid: 209.9,
+        ask: 210.1,
+        open: 208,
+        high: 211,
+        low: 207.5,
+        prevClose: 208,
+        volume: 300,
+        changePct: 0.96,
+        timestamp: now
+      },
+      {
+        symbol: "CNS2",
+        market: "OTHER",
+        source: "paper",
+        last: 88,
+        bid: 87.9,
+        ask: 88.1,
+        open: 86.5,
+        high: 88.3,
+        low: 86.2,
+        prevClose: 86.9,
+        volume: 120,
+        changePct: 1.27,
+        timestamp: now
+      },
+      {
+        symbol: "CNS3",
+        market: "OTHER",
+        source: "manual",
+        last: 15,
+        bid: 14.9,
+        ask: 15.1,
+        open: 14.8,
+        high: 15.2,
+        low: 14.7,
+        prevClose: 14.9,
+        volume: 20,
+        changePct: 0.67,
+        timestamp: staleTimestamp
+      }
+    ]
+  });
+
+  const executionSummary = await getMarketDataConsumerSummary({
+    session,
+    mode: "execution",
+    symbols: "CNS1,CNS2,CNS3",
+    includeStale: true,
+    limit: 10
+  });
+
+  assert.equal(executionSummary.mode, "execution");
+  assert.equal(executionSummary.summary.total, 3);
+  assert.equal(executionSummary.summary.allow, 0);
+  assert.equal(executionSummary.summary.review, 2);
+  assert.equal(executionSummary.summary.block, 1);
+  assert.equal(executionSummary.summary.usable, 0);
+  assert.equal(executionSummary.summary.safe, 0);
+  assert.equal(
+    executionSummary.summary.reasons.some((item) => item.reason === "non_live_source" && item.total >= 2),
+    true
+  );
+
+  const tradingviewItem = executionSummary.items.find((item) => item.symbol === "CNS1");
+  assert.equal(tradingviewItem?.decision, "review");
+  assert.equal(tradingviewItem?.usable, false);
+  assert.equal(tradingviewItem?.safe, false);
+  assert.equal(tradingviewItem?.selectedSource, "tradingview");
+
+  const staleItem = executionSummary.items.find((item) => item.symbol === "CNS3");
+  assert.equal(staleItem?.decision, "block");
+  assert.equal(staleItem?.reasons.includes("stale:age_exceeded"), true);
+
+  const strategySummary = await getMarketDataConsumerSummary({
+    session,
+    mode: "strategy",
+    symbols: "CNS1,CNS2,CNS3",
+    includeStale: true,
+    limit: 10
+  });
+
+  assert.equal(strategySummary.mode, "strategy");
+  assert.equal(strategySummary.summary.allow, 0);
+  assert.equal(strategySummary.summary.review, 2);
+  assert.equal(strategySummary.summary.block, 1);
+  assert.equal(strategySummary.summary.usable, 2);
+  assert.equal(strategySummary.summary.safe, 0);
 });
 
 test("market data history and bars respect time window filters", async () => {
