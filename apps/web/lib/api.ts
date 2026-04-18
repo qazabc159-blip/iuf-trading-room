@@ -20,6 +20,7 @@ import type {
   Position,
   RiskCheckResult,
   RiskLimit,
+  RiskLimitUpsertInput,
   ReviewEntry,
   ReviewEntryCreateInput,
   Signal,
@@ -653,6 +654,13 @@ export async function getBrokerStatus(accountId: string) {
 
 export async function getRiskLimit(accountId: string) {
   return request<RiskLimit>(`/api/v1/risk/limits?accountId=${encodeURIComponent(accountId)}`);
+}
+
+export async function upsertRiskLimit(input: RiskLimitUpsertInput) {
+  return request<RiskLimit>("/api/v1/risk/limits", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 }
 
 export async function getEffectiveRiskLimit(params: {

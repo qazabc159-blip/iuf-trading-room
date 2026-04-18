@@ -26,6 +26,7 @@ import type {
 
 import { ExecutionTimeline } from "./execution-timeline";
 import { OrderTicket } from "./order-ticket";
+import { RiskLimitsConfig } from "./risk-limits-config";
 import { useExecutionStream } from "./use-execution-stream";
 
 // SSE is authoritative — this polling is just a belt-and-suspenders fallback
@@ -363,43 +364,17 @@ export default function PortfolioPage() {
         <p className="ascii-head" data-idx="06">
           [06] 風控上限 {riskLimit ? "" : "(載入中)"}
         </p>
-        <ul
-          style={{
-            listStyle: "none",
-            padding: 0,
-            margin: 0,
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "0.75rem",
-            fontFamily: "var(--mono, monospace)"
-          }}
-        >
-          <LimitStat label="單筆風險上限" value={riskLimit?.maxPerTradePct} suffix="%" />
-          <LimitStat
-            label="單日最大損失"
-            value={riskLimit?.maxDailyLossPct}
-            suffix="%"
-            accent="amber"
+        {activeAccount ? (
+          <RiskLimitsConfig
+            accountId={activeAccount.id}
+            current={riskLimit}
+            onSaved={(updated) => setRiskLimit(updated)}
           />
-          <LimitStat label="單一標的部位" value={riskLimit?.maxSinglePositionPct} suffix="%" />
-          <LimitStat
-            label="同主題相關曝險"
-            value={riskLimit?.maxThemeCorrelatedPct}
-            suffix="%"
-          />
-          <LimitStat label="最大未結委託" value={riskLimit?.maxOpenOrders} />
-          <LimitStat label="每分鐘委託數" value={riskLimit?.maxOrdersPerMinute} />
-        </ul>
-        <p
-          style={{
-            marginTop: "0.75rem",
-            fontFamily: "var(--mono, monospace)",
-            color: "var(--dim)",
-            fontSize: "0.8rem"
-          }}
-        >
-          預留 4 層配置空間（account / strategy / symbol / session），目前僅套用 account 層預設。
-        </p>
+        ) : (
+          <p style={{ color: "var(--dim)", fontFamily: "var(--mono, monospace)" }}>
+            等待帳戶載入…
+          </p>
+        )}
       </section>
 
       <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
@@ -561,28 +536,6 @@ function Stat({
       <div style={{ color: "var(--dim)", fontSize: "0.75rem" }}>{label}</div>
       <div style={{ color, fontSize: "1.1rem", marginTop: "0.15rem" }}>{value}</div>
     </div>
-  );
-}
-
-function LimitStat({
-  label,
-  value,
-  suffix = "",
-  accent
-}: {
-  label: string;
-  value: number | undefined;
-  suffix?: string;
-  accent?: "amber";
-}) {
-  const color = accent === "amber" ? "var(--amber)" : "var(--phosphor)";
-  return (
-    <li>
-      <span style={{ color: "var(--dim)", fontSize: "0.75rem" }}>{label}</span>
-      <div style={{ color, fontSize: "1.1rem" }}>
-        {value === undefined ? "—" : `${value}${suffix}`}
-      </div>
-    </li>
   );
 }
 
