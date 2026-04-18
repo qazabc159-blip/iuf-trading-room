@@ -21,6 +21,7 @@ export type ExecutionGateDecision =
   | "allow"
   | "review_accepted"
   | "review_required"
+  | "review_unusable"
   | "block"
   | "quote_unknown";
 
@@ -146,17 +147,19 @@ export async function evaluateExecutionGate(args: {
         quoteError: null
       };
     }
-    if (!summary.safe) {
+
+    if (!summary.usable) {
       return {
         mode: args.mode,
-        decision: "block",
+        decision: "review_unusable",
         blocked: true,
-        reasons: ["decision:review_not_safe", ...reasons],
+        reasons: ["decision:review_not_usable", ...reasons],
         item,
         quoteContext,
         quoteError: null
       };
     }
+
     return {
       mode: args.mode,
       decision: "review_accepted",
@@ -182,14 +185,16 @@ export async function evaluateExecutionGate(args: {
 export function gateDecisionLabel(result: ExecutionGateResult): string {
   switch (result.decision) {
     case "allow":
-      return "報價決策允許送單";
+      return "Execution gate allows submit.";
     case "review_accepted":
-      return "報價需 review，但已接受 override";
+      return "Execution gate accepted quote_review override.";
     case "review_required":
-      return "報價需 review，請先勾選 quote_review override";
+      return "Execution gate requires quote_review override.";
+    case "review_unusable":
+      return "Quote review override accepted, but the source is still unusable.";
     case "block":
-      return "報價決策封鎖送單";
+      return "Execution gate blocks submit.";
     case "quote_unknown":
-      return "報價不可用，採 fail-open 進入後續檢查";
+      return "Quote is unavailable; gate failed open so later checks can decide.";
   }
 }

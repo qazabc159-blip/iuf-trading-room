@@ -11,6 +11,7 @@ import type {
   CompanyGraphView,
   DailyBrief,
   DailyBriefCreateInput,
+  ExecutionQuoteContext,
   ExecutionEvent,
   KillSwitchInput,
   KillSwitchState,
@@ -536,6 +537,21 @@ export type TradingOrderResult = {
   order: Order | null;
   riskCheck: RiskCheckResult;
   blocked: boolean;
+  quoteGate: {
+    mode: "paper" | "execution";
+    decision:
+      | "allow"
+      | "review_accepted"
+      | "review_required"
+      | "review_unusable"
+      | "block"
+      | "quote_unknown";
+    blocked: boolean;
+    reasons: string[];
+    item: MarketDataDecisionSummaryItem | null;
+    quoteContext: ExecutionQuoteContext | null;
+    quoteError: string | null;
+  } | null;
 };
 
 // 422 is a semantically meaningful response here — the body carries the

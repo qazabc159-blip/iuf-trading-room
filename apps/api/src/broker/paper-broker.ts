@@ -337,17 +337,14 @@ function quoteContextFor(
   now: string
 ): ExecutionQuoteContext {
   const decision =
-    mode === "paper"
-      ? execQuote.paperSafe
-        ? execQuote.paperUsable
-          ? "allow"
-          : "review"
-        : "block"
-      : execQuote.executionSafe
-        ? execQuote.executionUsable
-          ? "allow"
-          : "review"
-        : "block";
+    execQuote.item?.[mode]?.decision ??
+    (mode === "paper"
+      ? execQuote.paperUsable
+        ? "allow"
+        : "review"
+      : execQuote.executionUsable
+        ? "allow"
+        : "block");
   return {
     mode,
     decision,
@@ -376,25 +373,18 @@ function quoteDecisionPayload(
   mode: "paper" | "execution"
 ) {
   const modeSummary =
-    mode === "paper"
+    execQuote.item?.[mode] ??
+    (mode === "paper"
       ? {
-          decision: execQuote.paperSafe
-            ? execQuote.paperUsable
-              ? "allow"
-              : "review"
-            : "block",
+          decision: execQuote.paperUsable ? "allow" : "review",
           usable: execQuote.paperUsable,
           safe: execQuote.paperSafe
         }
       : {
-          decision: execQuote.executionSafe
-            ? execQuote.executionUsable
-              ? "allow"
-              : "review"
-            : "block",
+          decision: execQuote.executionUsable ? "allow" : "block",
           usable: execQuote.executionUsable,
           safe: execQuote.executionSafe
-        };
+        });
 
   return {
     selectedSource: execQuote.source,
@@ -626,7 +616,12 @@ export async function placePaperOrder(input: {
   // Block immediate fills against quotes that aren't execution-safe (stale,
   // synthetic, blocked feed, etc.). Resting limit/stop orders are allowed —
   // they'll re-check the quote at trigger time.
-  if (fillsImmediately && markPrice && (!execQuote.paperUsable || !execQuote.paperSafe)) {
+  const quoteReviewAccepted = input.quoteGate?.decision === "review_accepted";
+  if (
+    fillsImmediately &&
+    markPrice &&
+    (!execQuote.paperUsable || (!execQuote.paperSafe && !quoteReviewAccepted))
+  ) {
     order.status = "rejected";
     order.reason = "quote_not_paper_safe";
     order.updatedAt = now;

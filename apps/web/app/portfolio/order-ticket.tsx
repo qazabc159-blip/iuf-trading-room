@@ -61,6 +61,18 @@ const DECISION_COLOR: Record<RiskCheckResult["decision"], string> = {
   block: "var(--danger, #ff4d4d)"
 };
 
+const QUOTE_GATE_COLOR: Record<
+  NonNullable<TradingOrderResult["quoteGate"]>["decision"],
+  string
+> = {
+  allow: "var(--phosphor)",
+  review_accepted: "var(--phosphor)",
+  review_required: "var(--amber)",
+  review_unusable: "var(--danger, #ff4d4d)",
+  block: "var(--danger, #ff4d4d)",
+  quote_unknown: "var(--amber)"
+};
+
 export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [plans, setPlans] = useState<TradePlan[]>([]);
@@ -258,6 +270,13 @@ export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Pro
       return null;
     }
     setError(null);
+    const modeSummary = quote
+      ? quoteMode === "paper"
+        ? quote.paper
+        : quote.execution
+      : null;
+    const acceptQuoteReview =
+      acceptDegraded && modeSummary?.decision === "review";
     return {
       accountId,
       symbol: form.symbol.trim().toUpperCase(),
@@ -269,10 +288,12 @@ export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Pro
       stopPrice,
       tradePlanId: form.tradePlanId || null,
       strategyId: null,
-      overrideGuards: [],
-      overrideReason: ""
+      overrideGuards: acceptQuoteReview ? ["quote_review"] : [],
+      overrideReason: acceptQuoteReview
+        ? `operator accepted ${quoteMode} review gate`
+        : ""
     };
-  }, [accountId, form]);
+  }, [accountId, form, quote, quoteMode, acceptDegraded]);
 
   const onPreview = useCallback(async () => {
     const payload = buildPayload();
@@ -1027,6 +1048,8 @@ function RiskCheckPanel({ result }: { result: TradingOrderResult }) {
   const color = DECISION_COLOR[decision];
   const label =
     decision === "allow" ? "ALLOW" : decision === "warn" ? "WARN" : "BLOCK";
+  const quoteGate = result.quoteGate;
+  const quoteGateColor = quoteGate ? QUOTE_GATE_COLOR[quoteGate.decision] : "var(--dim)";
 
   return (
     <div
@@ -1058,6 +1081,40 @@ function RiskCheckPanel({ result }: { result: TradingOrderResult }) {
       {result.riskCheck.overridden && (
         <div style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
           [OVERRIDDEN] {result.riskCheck.overrideReason}
+        </div>
+      )}
+
+      {quoteGate && (
+        <div
+          style={{
+            marginBottom: "0.5rem",
+            padding: "0.5rem 0.65rem",
+            border: `1px dashed ${quoteGateColor}`,
+            color: quoteGateColor
+          }}
+        >
+          <div style={{ marginBottom: "0.25rem" }}>
+            [QUOTE GATE] {quoteGate.decision}
+            {quoteGate.item?.selectedSource ? ` · ${quoteGate.item.selectedSource}` : ""}
+            {quoteGate.item?.readiness ? ` · ${quoteGate.item.readiness}` : ""}
+          </div>
+          {quoteGate.item && (
+            <div style={{ color: "var(--dim)", fontSize: "0.78rem" }}>
+              freshness={quoteGate.item.freshnessStatus}
+              {quoteGate.item.fallbackReason && quoteGate.item.fallbackReason !== "none"
+                ? ` · fallback=${quoteGate.item.fallbackReason}`
+                : ""}
+              {quoteGate.item.staleReason && quoteGate.item.staleReason !== "none"
+                ? ` · stale=${quoteGate.item.staleReason}`
+                : ""}
+              {quoteGate.item.primaryReason ? ` · primary=${quoteGate.item.primaryReason}` : ""}
+            </div>
+          )}
+          {quoteGate.reasons.length > 0 && (
+            <div style={{ color: "var(--dim)", fontSize: "0.78rem", marginTop: "0.2rem" }}>
+              {quoteGate.reasons.join(" · ")}
+            </div>
+          )}
         </div>
       )}
 
