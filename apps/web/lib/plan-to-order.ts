@@ -74,6 +74,29 @@ export function buildOrderInputFromPlan(input: PlanToOrderInput): PlanToOrderRes
   }
 
   const ex = plan.execution;
+
+  // Plans close/canceled are historical records — we still populate the form
+  // so users can inspect, but mark it as a blocker so SUBMIT gate warns.
+  if (plan.status === "closed" || plan.status === "canceled") {
+    blockers.push(`計畫狀態 ${plan.status}，不建議據此下單`);
+  }
+
+  // validUntil expired → the plan is stale; surface as blocker so caller can
+  // warn or refuse to reuse.
+  if (ex.validUntil) {
+    const expiry = new Date(ex.validUntil).getTime();
+    if (Number.isFinite(expiry) && expiry < Date.now()) {
+      blockers.push(`計畫已於 ${ex.validUntil} 過期`);
+    }
+  }
+
+  // If the plan pinned a specific accountId, flag a mismatch as a blocker —
+  // same symbol but wrong account can silently lose a trader's entry on the
+  // intended book.
+  if (ex.accountId && ex.accountId !== accountId) {
+    blockers.push(`計畫指定帳戶 ${ex.accountId}，與目前帳戶 ${accountId} 不符`);
+  }
+
   const derivedEntryPrice = deriveEntryPrice(ex);
   const sizing = computeSizedQuantity({
     equity,

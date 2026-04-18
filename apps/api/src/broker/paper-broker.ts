@@ -227,11 +227,25 @@ async function getLatestQuote(
 }
 
 // Execution path: extra info so placePaperOrder can reject unsafe fills
-// instead of silently filling against a stale or synthetic quote.
+// instead of silently filling against a stale or synthetic quote. The full
+// item is returned so callers can both (a) gate on paperUsable and (b)
+// annotate execution events with quote context for the timeline.
+type ExecutionQuote = {
+  quote: Quote | null;
+  paperUsable: boolean;
+  reasons: string[];
+  source: string | null;
+  readiness: string;
+  freshnessStatus: string;
+  fallbackReason: string;
+  staleReason: string;
+  providerConnected: boolean;
+};
+
 async function getExecutionQuote(
   session: AppSession,
   symbol: string
-): Promise<{ quote: Quote | null; paperUsable: boolean; reasons: string[] }> {
+): Promise<ExecutionQuote> {
   const result = await getEffectiveMarketQuotes({
     session,
     symbols: symbol,
@@ -239,11 +253,47 @@ async function getExecutionQuote(
     limit: 1
   });
   const item = result.items[0];
-  if (!item) return { quote: null, paperUsable: false, reasons: ["no_quote"] };
+  if (!item) {
+    return {
+      quote: null,
+      paperUsable: false,
+      reasons: ["no_quote"],
+      source: null,
+      readiness: "blocked",
+      freshnessStatus: "missing",
+      fallbackReason: "no_quote",
+      staleReason: "no_quote",
+      providerConnected: false
+    };
+  }
   return {
     quote: item.selectedQuote,
     paperUsable: item.paperUsable,
-    reasons: item.reasons
+    reasons: item.reasons,
+    source: item.selectedSource,
+    readiness: item.readiness,
+    freshnessStatus: item.freshnessStatus,
+    fallbackReason: item.fallbackReason,
+    staleReason: item.staleReason,
+    providerConnected: item.providerConnected
+  };
+}
+
+// Serializable quote-context blob we attach to execution event payloads so the
+// UI timeline can reconstruct what the quote feed looked like at order time.
+function quoteContextFor(execQuote: ExecutionQuote) {
+  return {
+    source: execQuote.source,
+    readiness: execQuote.readiness,
+    freshnessStatus: execQuote.freshnessStatus,
+    paperUsable: execQuote.paperUsable,
+    providerConnected: execQuote.providerConnected,
+    fallbackReason: execQuote.fallbackReason,
+    staleReason: execQuote.staleReason,
+    reasons: execQuote.reasons,
+    last: execQuote.quote?.last ?? null,
+    bid: execQuote.quote?.bid ?? null,
+    ask: execQuote.quote?.ask ?? null
   };
 }
 
@@ -410,13 +460,14 @@ export async function placePaperOrder(input: {
 
   state.orders.set(orderId, order);
   state.lastEventAt = now;
+  const quoteContext = quoteContextFor(execQuote);
   emit(input.session, input.order.accountId, {
     type: "submit",
     orderId,
     clientOrderId,
     status: "submitted",
     message: null,
-    payload: null,
+    payload: { quoteContext },
     timestamp: now
   });
 
@@ -441,7 +492,7 @@ export async function placePaperOrder(input: {
       clientOrderId,
       status: "rejected",
       message: `Quote not execution-safe: ${reasonText}`,
-      payload: { reasons: execQuote.reasons },
+      payload: { reasons: execQuote.reasons, quoteContext },
       timestamp: now
     });
     persistAccountAsync(input.session, state);
@@ -454,7 +505,8 @@ export async function placePaperOrder(input: {
       order,
       fillPrice: markPrice,
       fillQty: order.quantity,
-      now
+      now,
+      quoteContext
     });
     persistAccountAsync(input.session, state);
     return state.orders.get(orderId)!;
@@ -470,7 +522,7 @@ export async function placePaperOrder(input: {
       clientOrderId,
       status: "rejected",
       message: "No quote available to mark market order.",
-      payload: null,
+      payload: { quoteContext },
       timestamp: now
     });
     persistAccountAsync(input.session, state);
@@ -486,7 +538,7 @@ export async function placePaperOrder(input: {
     clientOrderId,
     status: "acknowledged",
     message: null,
-    payload: null,
+    payload: { quoteContext },
     timestamp: now
   });
 
@@ -500,6 +552,7 @@ async function fillOrder(args: {
   fillPrice: number;
   fillQty: number;
   now: string;
+  quoteContext?: ReturnType<typeof quoteContextFor>;
 }): Promise<void> {
   const state = await getOrCreateAccount(args.session, args.order.accountId);
   const fillId = randomUUID();
@@ -559,13 +612,19 @@ async function fillOrder(args: {
   state.orders.set(args.order.id, updated);
   state.lastEventAt = args.now;
 
+  // Merge fill + quoteContext into payload. asFill in the UI timeline narrows
+  // by field presence on {id, orderId, symbol, quantity, price}, so adding
+  // quoteContext as a sibling doesn't break that narrowing.
+  const fillPayload = args.quoteContext
+    ? { ...fill, quoteContext: args.quoteContext }
+    : fill;
   emit(args.session, args.order.accountId, {
     type: "fill",
     orderId: args.order.id,
     clientOrderId: args.order.clientOrderId,
     status: updated.status,
     message: null,
-    payload: fill,
+    payload: fillPayload,
     timestamp: args.now
   });
 }

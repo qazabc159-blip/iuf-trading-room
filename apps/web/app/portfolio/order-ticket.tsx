@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   Balance,
+  MarketDataConsumerItem,
+  MarketDataConsumerMode,
   OrderCreateInput,
   RiskCheckResult,
   RiskGuardResult,
@@ -12,13 +14,12 @@ import type {
 } from "@iuf-trading-room/contracts";
 
 import {
-  getEffectiveQuotes,
   getEffectiveRiskLimit,
+  getMarketDataConsumerSummary,
   getPlans,
   getTradingBalance,
   previewTradingOrder,
   submitTradingOrder,
-  type EffectiveMarketQuote,
   type TradingOrderResult
 } from "@/lib/api";
 import { type SizingResult } from "@/lib/sizing";
@@ -27,6 +28,9 @@ import { buildOrderInputFromPlan } from "@/lib/plan-to-order";
 type Props = {
   accountId: string;
   onSubmitted: () => void;
+  // Paper account → "paper" mode; live broker → "execution". Defaults to paper
+  // so the gate leans conservative when unspecified.
+  quoteMode?: MarketDataConsumerMode;
 };
 
 type Side = "buy" | "sell";
@@ -58,13 +62,15 @@ const DECISION_COLOR: Record<RiskCheckResult["decision"], string> = {
   block: "var(--danger, #ff4d4d)"
 };
 
-export function OrderTicket({ accountId, onSubmitted }: Props) {
+export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [plans, setPlans] = useState<TradePlan[]>([]);
   const [effectiveLimits, setEffectiveLimits] = useState<RiskLimit | null>(null);
   const [pendingLimits, setPendingLimits] = useState(false);
   const [balance, setBalance] = useState<Balance | null>(null);
-  const [quote, setQuote] = useState<EffectiveMarketQuote | null>(null);
+  const [quote, setQuote] = useState<MarketDataConsumerItem | null>(null);
+  const [quoteGeneratedAt, setQuoteGeneratedAt] = useState<string | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
   const [pendingQuote, setPendingQuote] = useState(false);
   const [lastResult, setLastResult] = useState<TradingOrderResult | null>(null);
   const [pending, setPending] = useState<"idle" | "preview" | "submit">("idle");
@@ -193,29 +199,39 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
     };
   }, [accountId, form.symbol]);
 
-  // Fetch effective-quote readiness for the typed symbol so the trader can see
-  // whether the price they'd hit is fresh, degraded, or unsafe to act on.
-  // Re-running on symbol change resets the "I accept degraded" override so
-  // each new symbol re-prompts confirmation.
+  // Fetch consumer-summary for the typed symbol so we inherit Codex's verdict
+  // (decision: allow / review / block) verbatim in the same usability mode the
+  // broker would use (paper / execution). Re-running on symbol change resets
+  // the "I accept degraded" override so each new symbol re-prompts confirmation.
   useEffect(() => {
     const symbol = form.symbol.trim().toUpperCase();
     if (!symbol) {
       setQuote(null);
+      setQuoteGeneratedAt(null);
+      setQuoteError(null);
       setAcceptDegraded(false);
       return;
     }
     let cancelled = false;
     setPendingQuote(true);
+    setQuoteError(null);
     setAcceptDegraded(false);
-    getEffectiveQuotes({ symbols: symbol, includeStale: true, limit: 1 })
+    getMarketDataConsumerSummary({
+      mode: quoteMode,
+      symbols: symbol,
+      includeStale: true,
+      limit: 1
+    })
       .then((res) => {
         if (cancelled) return;
         setQuote(res.data.items[0] ?? null);
+        setQuoteGeneratedAt(res.data.generatedAt);
       })
       .catch((err) => {
         if (cancelled) return;
-        console.warn("[order-ticket] getEffectiveQuotes failed:", err);
+        console.warn("[order-ticket] consumer-summary failed:", err);
         setQuote(null);
+        setQuoteError((err as Error).message || "報價取得失敗");
       })
       .finally(() => {
         if (!cancelled) setPendingQuote(false);
@@ -223,7 +239,7 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [form.symbol]);
+  }, [form.symbol, quoteMode]);
 
   const buildPayload = useCallback((): OrderCreateInput | null => {
     const qty = Number(form.quantity);
@@ -298,17 +314,26 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
   }, []);
 
   const disabled = pending !== "idle";
-  // Gate the live submit button on quote readiness. Preview is always allowed
-  // — it's a dry run and showing the user what would have been blocked is the
-  // whole point. Blocked = no submit. Degraded = submit only after explicit
-  // accept (checkbox). Ready = no friction.
+  // Gate the live submit button on the consumer-summary decision. Preview is
+  // always allowed — it's a dry run and showing the trader what would have been
+  // blocked is the whole point. `decision` comes straight from Codex's
+  // market-data policy so the ticket and the broker agree on what's safe.
+  //   decision=block → no submit
+  //   decision=review → submit only after explicit accept (checkbox)
+  //   decision=allow → no friction
+  // Unknown quote (missing / fetch error) → warn but allow: user can still
+  // preview, and the server-side paper broker will reject if the quote lands
+  // non-paper-safe on submit.
   const submitGate = (() => {
-    if (!quote) return { allow: true, label: null as string | null };
-    if (quote.readiness === "blocked") {
-      return { allow: false, label: "報價非執行可用，禁止下單" };
+    if (quoteError) {
+      return { allow: true, label: "報價取得失敗，伺服器仍會做最終風控判斷" };
     }
-    if (quote.readiness === "degraded" && !acceptDegraded) {
-      return { allow: false, label: "需勾選「接受 degraded 報價」" };
+    if (!quote) return { allow: true, label: null as string | null };
+    if (quote.decision === "block") {
+      return { allow: false, label: "報價非執行可用（decision=block），禁止下單" };
+    }
+    if (quote.decision === "review" && !acceptDegraded) {
+      return { allow: false, label: "需勾選「接受 review 報價」" };
     }
     return { allow: true, label: null };
   })();
@@ -427,7 +452,10 @@ export function OrderTicket({ accountId, onSubmitted }: Props) {
       <QuoteReadinessCard
         quote={quote}
         pending={pendingQuote}
+        error={quoteError}
+        generatedAt={quoteGeneratedAt}
         symbol={form.symbol.trim().toUpperCase()}
+        mode={quoteMode}
         acceptDegraded={acceptDegraded}
         onAcceptDegraded={setAcceptDegraded}
       />
@@ -607,32 +635,58 @@ function PlanStat({
   );
 }
 
-const READINESS_COLOR: Record<EffectiveMarketQuote["readiness"], string> = {
+const READINESS_COLOR: Record<MarketDataConsumerItem["readiness"], string> = {
   ready: "var(--phosphor)",
   degraded: "var(--amber)",
   blocked: "var(--danger, #ff4d4d)"
 };
 
-const READINESS_LABEL: Record<EffectiveMarketQuote["readiness"], string> = {
+const READINESS_LABEL: Record<MarketDataConsumerItem["readiness"], string> = {
   ready: "READY",
   degraded: "DEGRADED",
   blocked: "BLOCKED"
 };
 
+const DECISION_STYLE: Record<
+  MarketDataConsumerItem["decision"],
+  { color: string; label: string }
+> = {
+  allow: { color: "var(--phosphor)", label: "ALLOW" },
+  review: { color: "var(--amber)", label: "REVIEW" },
+  block: { color: "var(--danger, #ff4d4d)", label: "BLOCK" }
+};
+
+const MODE_LABEL: Record<MarketDataConsumerMode, string> = {
+  paper: "PAPER",
+  execution: "LIVE",
+  strategy: "STRATEGY"
+};
+
 function QuoteReadinessCard({
   quote,
   pending,
+  error,
+  generatedAt,
   symbol,
+  mode,
   acceptDegraded,
   onAcceptDegraded
 }: {
-  quote: EffectiveMarketQuote | null;
+  quote: MarketDataConsumerItem | null;
   pending: boolean;
+  error: string | null;
+  generatedAt: string | null;
   symbol: string;
+  mode: MarketDataConsumerMode;
   acceptDegraded: boolean;
   onAcceptDegraded: (next: boolean) => void;
 }) {
-  const accent = quote ? READINESS_COLOR[quote.readiness] : "var(--dim)";
+  const decisionStyle = quote ? DECISION_STYLE[quote.decision] : null;
+  const readinessColor = quote ? READINESS_COLOR[quote.readiness] : "var(--dim)";
+  const accent = decisionStyle?.color ?? readinessColor;
+  const generatedLabel = generatedAt
+    ? new Date(generatedAt).toLocaleTimeString("zh-TW", { hour12: false })
+    : null;
   return (
     <div
       style={{
@@ -647,22 +701,36 @@ function QuoteReadinessCard({
           display: "flex",
           alignItems: "baseline",
           justifyContent: "space-between",
-          marginBottom: "0.4rem"
+          marginBottom: "0.4rem",
+          gap: "0.75rem",
+          flexWrap: "wrap"
         }}
       >
         <span style={{ color: "var(--dim)" }}>
-          [QUOTE READINESS {symbol ? `· ${symbol}` : ""}]
+          [QUOTE · {MODE_LABEL[mode]} {symbol ? `· ${symbol}` : ""}]
           {pending && <span style={{ marginLeft: "0.5rem" }}>…</span>}
+          {generatedLabel && !pending && (
+            <span style={{ marginLeft: "0.5rem", fontSize: "0.7rem" }}>
+              @ {generatedLabel}
+            </span>
+          )}
         </span>
-        {quote && (
-          <span style={{ color: accent, letterSpacing: "0.05em" }}>
-            ● {READINESS_LABEL[quote.readiness]}
+        {quote && decisionStyle && (
+          <span style={{ color: decisionStyle.color, letterSpacing: "0.05em" }}>
+            ● {decisionStyle.label} ·{" "}
+            <span style={{ color: readinessColor }}>
+              {READINESS_LABEL[quote.readiness]}
+            </span>
           </span>
         )}
       </div>
-      {!quote ? (
+      {error ? (
+        <div style={{ color: "var(--amber)" }}>
+          [WARN] 報價服務回應錯誤：{error}。伺服器仍會在送單時重新風控，請小心操作。
+        </div>
+      ) : !quote ? (
         <div style={{ color: "var(--dim)" }}>
-          {symbol ? "—" : "輸入代號以檢查報價狀態"}
+          {symbol ? "—（此代號尚無報價）" : "輸入代號以檢查報價狀態"}
         </div>
       ) : (
         <>
@@ -690,13 +758,27 @@ function QuoteReadinessCard({
               accent={quote.freshnessStatus === "fresh" ? "phosphor" : "amber"}
             />
             <Stat
-              label="paper / live"
-              value={`${quote.paperUsable ? "✓" : "×"} / ${quote.liveUsable ? "✓" : "×"}`}
+              label="usable / safe"
+              value={`${quote.usable ? "✓" : "×"} / ${quote.safe ? "✓" : "×"}`}
+              accent={quote.safe ? "phosphor" : "amber"}
             />
             <Stat
-              label="connected"
-              value={quote.providerConnected ? "yes" : "no"}
-              accent={quote.providerConnected ? "phosphor" : "amber"}
+              label="fallback"
+              value={quote.fallbackReason || "none"}
+              accent={
+                quote.fallbackReason && quote.fallbackReason !== "none"
+                  ? "amber"
+                  : undefined
+              }
+            />
+            <Stat
+              label="stale"
+              value={quote.staleReason || "none"}
+              accent={
+                quote.staleReason && quote.staleReason !== "none"
+                  ? "amber"
+                  : undefined
+              }
             />
           </div>
           {quote.reasons.length > 0 && (
@@ -713,7 +795,7 @@ function QuoteReadinessCard({
               ))}
             </ul>
           )}
-          {quote.readiness === "degraded" && (
+          {quote.decision === "review" && (
             <label
               style={{
                 marginTop: "0.5rem",
@@ -728,12 +810,14 @@ function QuoteReadinessCard({
                 checked={acceptDegraded}
                 onChange={(e) => onAcceptDegraded(e.target.checked)}
               />
-              <span>接受 degraded 報價並承擔風險</span>
+              <span>
+                接受 review 報價（{quote.readiness}）並承擔風險
+              </span>
             </label>
           )}
-          {quote.readiness === "blocked" && (
+          {quote.decision === "block" && (
             <p style={{ color: "var(--danger, #ff4d4d)", marginTop: "0.4rem" }}>
-              報價非執行可用，已封鎖送單。Preview 仍可運作。
+              Codex 決議 decision=block，已封鎖送單。Preview 仍可運作。
             </p>
           )}
         </>

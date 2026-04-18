@@ -63,6 +63,36 @@ function asFill(ev: ExecutionEvent): Fill | null {
   return null;
 }
 
+type QuoteContext = {
+  source: string | null;
+  readiness: "ready" | "degraded" | "blocked" | string;
+  freshnessStatus: "fresh" | "stale" | "missing" | string;
+  paperUsable: boolean;
+  providerConnected: boolean;
+  fallbackReason: string;
+  staleReason: string;
+  reasons: string[];
+  last: number | null;
+  bid: number | null;
+  ask: number | null;
+};
+
+// Paper broker attaches quoteContext to submit/ack/fill/reject payloads so the
+// timeline can show what the quote feed looked like at order time.
+function asQuoteContext(ev: ExecutionEvent): QuoteContext | null {
+  if (!ev.payload || typeof ev.payload !== "object") return null;
+  const p = ev.payload as Record<string, unknown>;
+  const qc = p.quoteContext;
+  if (!qc || typeof qc !== "object") return null;
+  return qc as QuoteContext;
+}
+
+const QC_READINESS_COLOR: Record<string, string> = {
+  ready: "var(--phosphor)",
+  degraded: "var(--amber)",
+  blocked: "var(--danger, #ff4d4d)"
+};
+
 export function ExecutionTimeline({
   events,
   status
@@ -169,6 +199,7 @@ export function ExecutionTimeline({
 
 function DetailPanel({ ev }: { ev: ExecutionEvent }) {
   const fill = asFill(ev);
+  const qc = asQuoteContext(ev);
   const ts = new Date(ev.timestamp);
   const notional = fill ? fill.price * fill.quantity : null;
   return (
@@ -232,7 +263,9 @@ function DetailPanel({ ev }: { ev: ExecutionEvent }) {
         </div>
       )}
 
-      {ev.payload != null && !fill && (
+      {qc && <QuoteContextBlock qc={qc} />}
+
+      {ev.payload != null && !fill && !qc && (
         <details>
           <summary style={{ color: "var(--dim)", cursor: "pointer" }}>Raw payload</summary>
           <pre
@@ -248,6 +281,75 @@ function DetailPanel({ ev }: { ev: ExecutionEvent }) {
             {JSON.stringify(ev.payload, null, 2)}
           </pre>
         </details>
+      )}
+    </div>
+  );
+}
+
+function QuoteContextBlock({ qc }: { qc: QuoteContext }) {
+  const readinessColor = QC_READINESS_COLOR[qc.readiness] ?? "var(--dim)";
+  return (
+    <div
+      style={{
+        paddingTop: "0.4rem",
+        borderTop: "1px dashed var(--line, #2a2a2a)"
+      }}
+    >
+      <div style={{ color: "var(--dim)", marginBottom: "0.35rem", fontSize: "0.7rem" }}>
+        [QUOTE CONTEXT · 送單當下的報價狀態]
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: "0.4rem"
+        }}
+      >
+        <DetailStat label="來源" value={qc.source ?? "—"} />
+        <DetailStat
+          label="readiness"
+          value={qc.readiness.toUpperCase()}
+          accent={readinessColor}
+        />
+        <DetailStat
+          label="freshness"
+          value={qc.freshnessStatus}
+          accent={qc.freshnessStatus === "fresh" ? "var(--phosphor)" : "var(--amber)"}
+        />
+        <DetailStat
+          label="paper-usable"
+          value={qc.paperUsable ? "YES" : "NO"}
+          accent={qc.paperUsable ? "var(--phosphor)" : "var(--amber)"}
+        />
+        <DetailStat
+          label="connected"
+          value={qc.providerConnected ? "YES" : "NO"}
+          accent={qc.providerConnected ? "var(--phosphor)" : "var(--amber)"}
+        />
+        <DetailStat
+          label="last / bid / ask"
+          value={`${qc.last ?? "—"} / ${qc.bid ?? "—"} / ${qc.ask ?? "—"}`}
+        />
+        {qc.fallbackReason && qc.fallbackReason !== "none" && (
+          <DetailStat label="fallback" value={qc.fallbackReason} accent="var(--amber)" />
+        )}
+        {qc.staleReason && qc.staleReason !== "none" && (
+          <DetailStat label="stale" value={qc.staleReason} accent="var(--amber)" />
+        )}
+      </div>
+      {qc.reasons.length > 0 && (
+        <ul
+          style={{
+            margin: "0.4rem 0 0 1rem",
+            padding: 0,
+            color: "var(--dim)",
+            fontSize: "0.72rem"
+          }}
+        >
+          {qc.reasons.map((r, i) => (
+            <li key={`qc-r-${i}`}>{r}</li>
+          ))}
+        </ul>
       )}
     </div>
   );

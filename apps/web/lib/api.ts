@@ -14,6 +14,9 @@ import type {
   ExecutionEvent,
   KillSwitchInput,
   KillSwitchState,
+  MarketDataConsumerItem,
+  MarketDataConsumerMode,
+  MarketDataConsumerSummary,
   Order,
   OrderCancelInput,
   OrderCreateInput,
@@ -724,6 +727,30 @@ export async function getEffectiveQuotes(params: {
 
 export async function getMarketDataProviders() {
   return request<QuoteProviderStatus[]>("/api/v1/market-data/providers");
+}
+
+// Consumer-summary wraps effective-quotes with a usability mode (paper / live /
+// strategy) so we get Codex's verdict (decision: allow / review / block) verbatim
+// per symbol — keeps the execution gate aligned with what the broker itself
+// would accept.
+export type { MarketDataConsumerItem, MarketDataConsumerMode, MarketDataConsumerSummary };
+
+export async function getMarketDataConsumerSummary(params: {
+  mode: MarketDataConsumerMode;
+  symbols: string;
+  market?: string;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const query = new URLSearchParams();
+  query.set("mode", params.mode);
+  query.set("symbols", params.symbols);
+  if (params.market) query.set("market", params.market);
+  if (params.includeStale) query.set("includeStale", "true");
+  if (params.limit) query.set("limit", String(params.limit));
+  return request<MarketDataConsumerSummary>(
+    `/api/v1/market-data/consumer-summary?${query.toString()}`
+  );
 }
 
 // ── Risk ──

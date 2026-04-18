@@ -6,21 +6,23 @@ import { AppShell } from "@/components/app-shell";
 import {
   cancelTradingOrder,
   getBrokerStatus,
-  getEffectiveQuotes,
   getKillSwitch,
+  getMarketDataConsumerSummary,
   getRiskLimit,
   getTradingAccounts,
   getTradingBalance,
   getTradingOrders,
   getTradingPositions,
-  setKillSwitch,
-  type EffectiveQuotesResponse
+  setKillSwitch
 } from "@/lib/api";
 import type {
   Balance,
   BrokerAccount,
   BrokerConnectionStatus,
   KillSwitchState,
+  MarketDataConsumerItem,
+  MarketDataConsumerMode,
+  MarketDataConsumerSummary,
   Order,
   Position,
   RiskLimit
@@ -204,28 +206,50 @@ export default function PortfolioPage() {
   }, [positions, openOrders]);
   const watchedSymbolsKey = watchedSymbols.join(",");
 
-  const [marketData, setMarketData] = useState<EffectiveQuotesResponse | null>(null);
+  const quoteMode: MarketDataConsumerMode = isPaper ? "paper" : "execution";
+  const [marketData, setMarketData] = useState<MarketDataConsumerSummary | null>(null);
+  const [marketDataError, setMarketDataError] = useState<string | null>(null);
+  const [marketDataNonce, setMarketDataNonce] = useState(0);
+  const refreshMarketData = useCallback(() => {
+    setMarketDataNonce((n) => n + 1);
+  }, []);
   useEffect(() => {
     if (watchedSymbols.length === 0) {
       setMarketData(null);
+      setMarketDataError(null);
       return;
     }
     let cancelled = false;
-    getEffectiveQuotes({
+    getMarketDataConsumerSummary({
+      mode: quoteMode,
       symbols: watchedSymbolsKey,
       includeStale: true,
       limit: watchedSymbols.length
     })
       .then((res) => {
-        if (!cancelled) setMarketData(res.data);
+        if (cancelled) return;
+        setMarketData(res.data);
+        setMarketDataError(null);
       })
       .catch((err) => {
-        if (!cancelled) console.warn("[portfolio] getEffectiveQuotes failed:", err);
+        if (cancelled) return;
+        console.warn("[portfolio] consumer-summary failed:", err);
+        setMarketDataError((err as Error).message || "consumer-summary 失敗");
       });
     return () => {
       cancelled = true;
     };
-  }, [watchedSymbolsKey, watchedSymbols.length]);
+  }, [watchedSymbolsKey, watchedSymbols.length, quoteMode, marketDataNonce]);
+
+  // Build a quick lookup map so the positions table / orders rows can badge
+  // their readiness without re-scanning items[] per row.
+  const quoteBySymbol = useMemo(() => {
+    const map = new Map<string, MarketDataConsumerItem>();
+    if (marketData) {
+      for (const item of marketData.items) map.set(item.symbol, item);
+    }
+    return map;
+  }, [marketData]);
 
   return (
     <AppShell eyebrow="持倉部位" title="帳戶 · 部位 · 風控">
@@ -236,7 +260,13 @@ export default function PortfolioPage() {
         streamStatus={streamStatus}
       />
 
-      <MarketDataBanner data={marketData} symbolCount={watchedSymbols.length} />
+      <MarketDataBanner
+        data={marketData}
+        error={marketDataError}
+        symbolCount={watchedSymbols.length}
+        mode={quoteMode}
+        onRefresh={refreshMarketData}
+      />
 
       {loadError && (
         <section
@@ -305,6 +335,7 @@ export default function PortfolioPage() {
           </p>
           <OrderTicket
             accountId={accountId}
+            quoteMode={quoteMode}
             onSubmitted={() => refresh(accountId).catch(() => undefined)}
           />
         </section>
@@ -342,35 +373,42 @@ export default function PortfolioPage() {
                   <th style={thRight}>現價</th>
                   <th style={thRight}>市值</th>
                   <th style={thRight}>未實現損益</th>
+                  <th style={th}>報價</th>
                 </tr>
               </thead>
               <tbody>
-                {positions.map((p) => (
-                  <tr key={p.symbol} style={{ borderTop: "1px solid var(--line, #2a2a2a)" }}>
-                    <td style={td}>{p.symbol}</td>
-                    <td style={tdRight}>{formatQty(p.quantity)}</td>
-                    <td style={tdRight}>{p.avgPrice.toFixed(2)}</td>
-                    <td style={tdRight}>{p.marketPrice?.toFixed(2) ?? "—"}</td>
-                    <td style={tdRight}>
-                      {p.marketValue !== null ? formatMoney(p.marketValue) : "—"}
-                    </td>
-                    <td
-                      style={{
-                        ...tdRight,
-                        color:
-                          p.unrealizedPnl === null
-                            ? "var(--dim)"
-                            : p.unrealizedPnl >= 0
-                              ? "var(--phosphor)"
-                              : "var(--amber)"
-                      }}
-                    >
-                      {p.unrealizedPnl === null
-                        ? "—"
-                        : `${formatMoney(p.unrealizedPnl)} (${formatPct(p.unrealizedPnlPct)})`}
-                    </td>
-                  </tr>
-                ))}
+                {positions.map((p) => {
+                  const item = quoteBySymbol.get(p.symbol) ?? null;
+                  return (
+                    <tr key={p.symbol} style={{ borderTop: "1px solid var(--line, #2a2a2a)" }}>
+                      <td style={td}>{p.symbol}</td>
+                      <td style={tdRight}>{formatQty(p.quantity)}</td>
+                      <td style={tdRight}>{p.avgPrice.toFixed(2)}</td>
+                      <td style={tdRight}>{p.marketPrice?.toFixed(2) ?? "—"}</td>
+                      <td style={tdRight}>
+                        {p.marketValue !== null ? formatMoney(p.marketValue) : "—"}
+                      </td>
+                      <td
+                        style={{
+                          ...tdRight,
+                          color:
+                            p.unrealizedPnl === null
+                              ? "var(--dim)"
+                              : p.unrealizedPnl >= 0
+                                ? "var(--phosphor)"
+                                : "var(--amber)"
+                        }}
+                      >
+                        {p.unrealizedPnl === null
+                          ? "—"
+                          : `${formatMoney(p.unrealizedPnl)} (${formatPct(p.unrealizedPnlPct)})`}
+                      </td>
+                      <td style={td}>
+                        <ReadinessBadge item={item} />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -386,7 +424,13 @@ export default function PortfolioPage() {
             [EMPTY] 沒有未結委託。
           </p>
         ) : (
-          <OrdersTable orders={openOrders} canCancel onCancel={onCancelOrder} busy={mutating} />
+          <OrdersTable
+            orders={openOrders}
+            quoteBySymbol={quoteBySymbol}
+            canCancel
+            onCancel={onCancelOrder}
+            busy={mutating}
+          />
         )}
       </section>
 
@@ -395,7 +439,7 @@ export default function PortfolioPage() {
           <p className="ascii-head" data-idx="05">
             [05] 最近成交／取消（最多 10 筆）
           </p>
-          <OrdersTable orders={filledOrders} />
+          <OrdersTable orders={filledOrders} quoteBySymbol={quoteBySymbol} />
         </section>
       )}
 
@@ -555,30 +599,90 @@ function ModeBanner({
   );
 }
 
+function formatAge(generatedAt: string): string {
+  const diffMs = Date.now() - new Date(generatedAt).getTime();
+  if (diffMs < 0 || !Number.isFinite(diffMs)) return "";
+  if (diffMs < 10_000) return "剛剛";
+  if (diffMs < 60_000) return `${Math.round(diffMs / 1000)}s 前`;
+  if (diffMs < 3_600_000) return `${Math.round(diffMs / 60_000)}m 前`;
+  return `${Math.round(diffMs / 3_600_000)}h 前`;
+}
+
 function MarketDataBanner({
   data,
-  symbolCount
+  error,
+  symbolCount,
+  mode,
+  onRefresh
 }: {
-  data: EffectiveQuotesResponse | null;
+  data: MarketDataConsumerSummary | null;
+  error: string | null;
   symbolCount: number;
+  mode: MarketDataConsumerMode;
+  onRefresh: () => void;
 }) {
   if (symbolCount === 0) return null;
+
+  if (error) {
+    return (
+      <section
+        className="hud-frame"
+        style={{
+          padding: "0.5rem 1.25rem",
+          marginBottom: "1rem",
+          borderColor: "var(--amber)",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.75rem 1.5rem",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontFamily: "var(--mono, monospace)",
+          fontSize: "0.8rem"
+        }}
+      >
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "baseline" }}>
+          <span style={{ color: "var(--amber)", letterSpacing: "0.08em", fontWeight: 600 }}>
+            [QUOTE FEED · ERROR]
+          </span>
+          <span style={{ color: "var(--dim)" }}>
+            watching {symbolCount} 個標的 · {error}
+          </span>
+        </div>
+        <button
+          onClick={onRefresh}
+          style={{
+            padding: "0.25rem 0.75rem",
+            background: "transparent",
+            color: "var(--amber)",
+            border: "1px solid var(--amber)",
+            fontFamily: "var(--mono, monospace)",
+            fontSize: "0.75rem",
+            cursor: "pointer"
+          }}
+        >
+          [RETRY]
+        </button>
+      </section>
+    );
+  }
+
   const summary = data?.summary;
-  const blocked = summary?.blocked ?? 0;
-  const degraded = summary?.degraded ?? 0;
-  const ready = summary?.ready ?? 0;
+  const block = summary?.block ?? 0;
+  const review = summary?.review ?? 0;
+  const allow = summary?.allow ?? 0;
   const accent =
-    blocked > 0
+    block > 0
       ? "var(--danger, #ff4d4d)"
-      : degraded > 0
+      : review > 0
         ? "var(--amber)"
         : "var(--phosphor)";
   const label =
-    blocked > 0
-      ? "QUOTE FEED · BLOCKED"
-      : degraded > 0
-        ? "QUOTE FEED · DEGRADED"
-        : "QUOTE FEED · READY";
+    block > 0
+      ? "QUOTE FEED · BLOCK"
+      : review > 0
+        ? "QUOTE FEED · REVIEW"
+        : "QUOTE FEED · ALLOW";
+  const modeLabel = mode === "paper" ? "PAPER" : mode === "execution" ? "LIVE" : "STRATEGY";
 
   return (
     <section
@@ -596,23 +700,41 @@ function MarketDataBanner({
         fontSize: "0.8rem"
       }}
     >
-      <div style={{ display: "flex", gap: "0.75rem", alignItems: "baseline" }}>
+      <div style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", flexWrap: "wrap" }}>
         <span style={{ color: accent, letterSpacing: "0.08em", fontWeight: 600 }}>
-          [{label}]
+          [{label} · {modeLabel}]
         </span>
         <span style={{ color: "var(--dim)" }}>
           watching {symbolCount} 個標的
-          {data ? ` · 更新於 ${new Date(data.generatedAt).toLocaleTimeString("zh-TW", { hour12: false })}` : "…"}
+          {data ? ` · 更新於 ${formatAge(data.generatedAt)}` : "…"}
         </span>
       </div>
-      {summary && (
-        <div style={{ display: "flex", gap: "1rem" }}>
-          <Tally label="ready" value={ready} color="var(--phosphor)" />
-          <Tally label="degraded" value={degraded} color="var(--amber)" />
-          <Tally label="blocked" value={blocked} color="var(--danger, #ff4d4d)" />
-          <Tally label="paper-usable" value={summary.paperUsable} color="var(--dim)" />
-        </div>
-      )}
+      <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+        {summary && (
+          <>
+            <Tally label="allow" value={allow} color="var(--phosphor)" />
+            <Tally label="review" value={review} color="var(--amber)" />
+            <Tally label="block" value={block} color="var(--danger, #ff4d4d)" />
+            <Tally label="usable" value={summary.usable} color="var(--dim)" />
+            <Tally label="safe" value={summary.safe} color="var(--dim)" />
+          </>
+        )}
+        <button
+          onClick={onRefresh}
+          title="重新拉 consumer-summary"
+          style={{
+            padding: "0.2rem 0.6rem",
+            background: "transparent",
+            color: "var(--dim)",
+            border: "1px solid var(--line, #2a2a2a)",
+            fontFamily: "var(--mono, monospace)",
+            fontSize: "0.72rem",
+            cursor: "pointer"
+          }}
+        >
+          ↻
+        </button>
+      </div>
     </section>
   );
 }
@@ -621,6 +743,60 @@ function Tally({ label, value, color }: { label: string; value: number; color: s
   return (
     <span style={{ color: "var(--dim)" }}>
       {label} <span style={{ color, fontWeight: 600 }}>{value}</span>
+    </span>
+  );
+}
+
+const READINESS_BADGE: Record<
+  MarketDataConsumerItem["readiness"],
+  { color: string; label: string }
+> = {
+  ready: { color: "var(--phosphor)", label: "●READY" },
+  degraded: { color: "var(--amber)", label: "●DEGRADED" },
+  blocked: { color: "var(--danger, #ff4d4d)", label: "●BLOCKED" }
+};
+
+function ReadinessBadge({ item }: { item: MarketDataConsumerItem | null }) {
+  if (!item) {
+    return <span style={{ color: "var(--dim)", fontSize: "0.75rem" }}>— 無報價</span>;
+  }
+  const badge = READINESS_BADGE[item.readiness];
+  const source = item.selectedSource ?? "none";
+  // Pick the most salient reason to surface inline; full list is in OrderTicket
+  // QuoteReadinessCard when the symbol is active.
+  const stale =
+    item.staleReason && item.staleReason !== "none" ? item.staleReason : null;
+  const fallback =
+    item.fallbackReason && item.fallbackReason !== "none" ? item.fallbackReason : null;
+  const detail = stale ?? fallback ?? null;
+  const title = [
+    `decision=${item.decision}`,
+    `readiness=${item.readiness}`,
+    `source=${source}`,
+    `freshness=${item.freshnessStatus}`,
+    stale ? `stale=${stale}` : null,
+    fallback ? `fallback=${fallback}` : null,
+    ...item.reasons.map((r) => `· ${r}`)
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return (
+    <span
+      title={title}
+      style={{
+        display: "inline-flex",
+        gap: "0.4rem",
+        alignItems: "baseline",
+        color: badge.color,
+        fontSize: "0.72rem",
+        letterSpacing: "0.04em"
+      }}
+    >
+      <span>{badge.label}</span>
+      <span style={{ color: "var(--dim)" }}>{source}</span>
+      {detail && (
+        <span style={{ color: "var(--amber)", fontSize: "0.7rem" }}>· {detail}</span>
+      )}
     </span>
   );
 }
@@ -650,11 +826,13 @@ function Stat({
 
 function OrdersTable({
   orders,
+  quoteBySymbol,
   canCancel = false,
   onCancel,
   busy
 }: {
   orders: Order[];
+  quoteBySymbol: Map<string, MarketDataConsumerItem>;
   canCancel?: boolean;
   onCancel?: (id: string) => void;
   busy?: boolean;
@@ -678,6 +856,7 @@ function OrdersTable({
             <th style={thRight}>價格</th>
             <th style={thRight}>成交</th>
             <th style={th}>狀態</th>
+            <th style={th}>報價</th>
             {canCancel && <th style={th}></th>}
           </tr>
         </thead>
@@ -701,6 +880,9 @@ function OrdersTable({
                 {o.avgFillPrice && ` @${o.avgFillPrice.toFixed(2)}`}
               </td>
               <td style={td}>{o.status}</td>
+              <td style={td}>
+                <ReadinessBadge item={quoteBySymbol.get(o.symbol) ?? null} />
+              </td>
               {canCancel && (
                 <td style={td}>
                   <button
