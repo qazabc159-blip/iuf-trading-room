@@ -63,11 +63,18 @@ import {
 } from "../apps/api/src/market-data.ts";
 import { resetPersistedQuoteEntries } from "../apps/api/src/market-data-store.ts";
 import {
+  deleteStrategyRiskLimit,
+  deleteSymbolRiskLimit,
   evaluateRiskCheck,
   getKillSwitchState,
   getRiskLimitState,
+  listStrategyRiskLimits,
+  listSymbolRiskLimits,
+  resolveRiskLimit,
   setKillSwitchState,
-  upsertRiskLimitState
+  upsertRiskLimitState,
+  upsertStrategyRiskLimit,
+  upsertSymbolRiskLimit
 } from "../apps/api/src/risk-engine.ts";
 import {
   buildTradingViewEventKey,
@@ -3020,6 +3027,255 @@ test("risk check records committed intents and blocks duplicates", async () => {
   );
 });
 
+test("resolveRiskLimit merges strategy + symbol layers with source attribution", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `risk-resolve-${randomUUID()}`
+  });
+
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-main",
+      maxPerTradePct: 5,
+      maxSinglePositionPct: 20
+    }
+  });
+
+  // Account-only resolution: every field attributes to "account".
+  const accountOnly = await resolveRiskLimit({
+    session,
+    accountId: "paper-main"
+  });
+  assert.equal(accountOnly.limit.maxPerTradePct, 5);
+  assert.equal(accountOnly.sources.maxPerTradePct, "account");
+  assert.equal(accountOnly.layers.strategy, null);
+  assert.equal(accountOnly.layers.symbol, null);
+
+  await upsertStrategyRiskLimit({
+    session,
+    payload: {
+      accountId: "paper-main",
+      strategyId: "alpha",
+      maxPerTradePct: 2
+    }
+  });
+
+  const withStrategy = await resolveRiskLimit({
+    session,
+    accountId: "paper-main",
+    strategyId: "alpha"
+  });
+  assert.equal(withStrategy.limit.maxPerTradePct, 2);
+  assert.equal(withStrategy.sources.maxPerTradePct, "strategy");
+  // Unchanged field keeps account attribution.
+  assert.equal(withStrategy.sources.maxSinglePositionPct, "account");
+  assert.equal(withStrategy.layers.strategy?.strategyId, "alpha");
+
+  await upsertSymbolRiskLimit({
+    session,
+    payload: {
+      accountId: "paper-main",
+      symbol: "lay1",
+      maxPerTradePct: 1
+    }
+  });
+
+  const withSymbol = await resolveRiskLimit({
+    session,
+    accountId: "paper-main",
+    strategyId: "alpha",
+    symbol: "LAY1"
+  });
+  assert.equal(withSymbol.limit.maxPerTradePct, 1);
+  assert.equal(withSymbol.sources.maxPerTradePct, "symbol");
+  assert.equal(withSymbol.layers.symbol?.symbol, "LAY1");
+
+  // Disabled strategy rows must not contribute (account value wins).
+  await upsertStrategyRiskLimit({
+    session,
+    payload: {
+      accountId: "paper-main",
+      strategyId: "alpha",
+      enabled: false
+    }
+  });
+  const withoutStrategy = await resolveRiskLimit({
+    session,
+    accountId: "paper-main",
+    strategyId: "alpha"
+  });
+  assert.equal(withoutStrategy.limit.maxPerTradePct, 5);
+  assert.equal(withoutStrategy.sources.maxPerTradePct, "account");
+
+  // CRUD list/delete round-trips.
+  const strategies = await listStrategyRiskLimits({
+    session,
+    accountId: "paper-main"
+  });
+  assert.equal(strategies.length, 1);
+  const symbols = await listSymbolRiskLimits({
+    session,
+    accountId: "paper-main"
+  });
+  assert.equal(symbols.length, 1);
+  await deleteStrategyRiskLimit({
+    session,
+    accountId: "paper-main",
+    strategyId: "alpha"
+  });
+  await deleteSymbolRiskLimit({
+    session,
+    accountId: "paper-main",
+    symbol: "LAY1"
+  });
+  assert.equal(
+    (await listStrategyRiskLimits({ session, accountId: "paper-main" })).length,
+    0
+  );
+  assert.equal(
+    (await listSymbolRiskLimits({ session, accountId: "paper-main" })).length,
+    0
+  );
+});
+
+test("evaluateRiskCheck attributes max_per_trade blocks to strategy and symbol layers", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `risk-layers-${randomUUID()}`
+  });
+  const options = { workspaceSlug: session.workspace.slug };
+
+  await repo.createCompany(
+    {
+      name: "Layered Optics",
+      ticker: "LAY1",
+      market: "TWSE",
+      country: "Taiwan",
+      themeIds: [],
+      chainPosition: "Modules",
+      beneficiaryTier: "Direct",
+      exposure: { volume: 4, asp: 4, margin: 3, capacity: 4, narrative: 4 },
+      validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+      notes: ""
+    },
+    options
+  );
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "LAY1",
+        market: "TWSE",
+        source: "manual",
+        last: 100,
+        bid: 99.8,
+        ask: 100.2,
+        open: 99,
+        high: 101,
+        low: 98.5,
+        prevClose: 99.5,
+        volume: 1_000,
+        changePct: 0.5,
+        timestamp: "2026-04-17T02:00:00.000Z"
+      }
+    ]
+  });
+
+  // Account layer is permissive — a 100-lot @ 100 on 1_000_000 equity is 1%.
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-layers",
+      maxPerTradePct: 5
+    }
+  });
+
+  const baseOrder = {
+    accountId: "paper-layers",
+    strategyId: "alpha-momentum",
+    symbol: "LAY1",
+    side: "buy" as const,
+    type: "limit" as const,
+    timeInForce: "rod" as const,
+    quantity: 100,
+    price: 100,
+    overrideGuards: [],
+    overrideReason: ""
+  };
+  const market = {
+    source: "manual" as const,
+    now: "2026-04-17T02:00:00.000Z",
+    timeZone: "Asia/Taipei"
+  };
+
+  // Account-only: allow.
+  const allowed = await evaluateRiskCheck({
+    session,
+    repo,
+    payload: {
+      order: baseOrder,
+      account: { equity: 1_000_000 },
+      market
+    }
+  });
+  assert.equal(allowed.decision, "allow");
+
+  // Strategy override clamps maxPerTradePct to 0.5 — now the same order blocks,
+  // and the guard must attribute the cap to the strategy layer.
+  await upsertStrategyRiskLimit({
+    session,
+    payload: {
+      accountId: "paper-layers",
+      strategyId: "alpha-momentum",
+      maxPerTradePct: 0.5
+    }
+  });
+  const strategyBlocked = await evaluateRiskCheck({
+    session,
+    repo,
+    payload: {
+      order: baseOrder,
+      account: { equity: 1_000_000 },
+      market
+    }
+  });
+  assert.equal(strategyBlocked.decision, "block");
+  const strategyGuard = strategyBlocked.guards.find(
+    (guard) => guard.guard === "max_per_trade"
+  );
+  assert.ok(strategyGuard, "expected max_per_trade guard");
+  assert.equal(strategyGuard?.sourceLayer, "strategy");
+  assert.equal(strategyGuard?.limitValue, 0.5);
+
+  // Symbol layer trumps strategy — tighter 0.1% cap, guard attributes to symbol.
+  await upsertSymbolRiskLimit({
+    session,
+    payload: {
+      accountId: "paper-layers",
+      symbol: "LAY1",
+      maxPerTradePct: 0.1
+    }
+  });
+  const symbolBlocked = await evaluateRiskCheck({
+    session,
+    repo,
+    payload: {
+      order: baseOrder,
+      account: { equity: 1_000_000 },
+      market
+    }
+  });
+  assert.equal(symbolBlocked.decision, "block");
+  const symbolGuard = symbolBlocked.guards.find(
+    (guard) => guard.guard === "max_per_trade"
+  );
+  assert.ok(symbolGuard, "expected max_per_trade guard");
+  assert.equal(symbolGuard?.sourceLayer, "symbol");
+  assert.equal(symbolGuard?.limitValue, 0.1);
+});
+
 test("duplicate report helper reads repository-scoped companies", async () => {
   const repo = new MemoryTradingRoomRepository();
   const duplicated = await repo.createCompany({
@@ -3609,7 +3865,7 @@ test("theme graph rankings favor connected, high-conviction themes", async () =>
   assert.equal(rankedEntry?.summary.totalEdges, 2);
 });
 
-test("strategy ideas rank theme heat, signal context, and market-data readiness", async () => {
+test("strategy ideas support filters, sort modes, and structured rationale", async () => {
   const repo = new MemoryTradingRoomRepository();
   const session = await repo.getSession({
     workspaceSlug: `strategy-ideas-${randomUUID()}`
@@ -3679,6 +3935,28 @@ test("strategy ideas rank theme heat, signal context, and market-data readiness"
     },
     notes: "Lower-conviction legacy name."
   });
+  const blockedCompany = await repo.createCompany({
+    name: "Dark Fiber",
+    ticker: "STR3",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [opticsTheme.id],
+    chainPosition: "Passive optics",
+    beneficiaryTier: "Observation",
+    exposure: {
+      volume: 1,
+      asp: 1,
+      margin: 1,
+      capacity: 1,
+      narrative: 2
+    },
+    validation: {
+      capitalFlow: "Soft",
+      consensus: "Mixed",
+      relativeStrength: "Weak"
+    },
+    notes: "Missing quote should keep this one blocked."
+  });
 
   await repo.replaceCompanyRelations(opticsCompany.id, [
     {
@@ -3698,6 +3976,16 @@ test("strategy ideas rank theme heat, signal context, and market-data readiness"
     confidence: 5,
     themeIds: [opticsTheme.id],
     companyIds: [opticsCompany.id]
+  });
+  await delay(5);
+  await repo.createSignal({
+    category: "industry",
+    direction: "bearish",
+    title: "Networking budget stalls",
+    summary: "Orders remain slow.",
+    confidence: 3,
+    themeIds: [laggardTheme.id],
+    companyIds: [laggardCompany.id]
   });
   await repo.createSignal({
     category: "industry",
@@ -3745,22 +4033,61 @@ test("strategy ideas rank theme heat, signal context, and market-data readiness"
     ]
   });
 
-  const ideas = await getStrategyIdeas({
+  const filteredIdeas = await getStrategyIdeas({
     session,
     repo,
     limit: 10,
     signalDays: 30,
-    includeBlocked: true
+    includeBlocked: true,
+    themeId: opticsTheme.id,
+    decisionMode: "strategy",
+    decisionFilter: "usable_only",
+    sort: "score"
   });
 
-  assert.equal(ideas.summary.total >= 2, true);
-  assert.equal(ideas.items[0]?.companyId, opticsCompany.id);
-  assert.equal(ideas.items[0]?.symbol, "STR1");
-  assert.equal(ideas.items[0]?.marketData.selectedSource, "tradingview");
-  assert.equal(ideas.items[0]?.marketData.decision, "review");
-  assert.equal(ideas.items[0]?.direction, "bullish");
-  assert.equal(ideas.items[0]?.topThemes[0]?.themeId, opticsTheme.id);
-  assert.equal((ideas.items[0]?.score ?? 0) > (ideas.items[1]?.score ?? 0), true);
+  assert.equal(filteredIdeas.summary.total, 1);
+  assert.equal(filteredIdeas.items[0]?.companyId, opticsCompany.id);
+  assert.equal(filteredIdeas.items[0]?.symbol, "STR1");
+  assert.equal(filteredIdeas.items[0]?.marketData.decisionMode, "strategy");
+  assert.equal(filteredIdeas.items[0]?.marketData.selectedSource, "tradingview");
+  assert.equal(filteredIdeas.items[0]?.marketData.decision, "review");
+  assert.equal(filteredIdeas.items[0]?.direction, "bullish");
+  assert.equal(filteredIdeas.items[0]?.topThemes[0]?.themeId, opticsTheme.id);
+  assert.equal(filteredIdeas.items[0]?.rationale.theme.topThemeId, opticsTheme.id);
+  assert.equal(filteredIdeas.items[0]?.rationale.theme.relevance, "high");
+  assert.equal(filteredIdeas.items[0]?.rationale.signals.recentCount, 2);
+  assert.equal(filteredIdeas.items[0]?.rationale.signals.hasRecentSignals, true);
+  assert.equal(
+    filteredIdeas.items[0]?.rationale.marketData.primaryReason,
+    filteredIdeas.items[0]?.marketData.primaryReason
+  );
+  assert.equal(filteredIdeas.items.some((item) => item.companyId === blockedCompany.id), false);
+
+  const recencyIdeas = await getStrategyIdeas({
+    session,
+    repo,
+    limit: 10,
+    signalDays: 30,
+    includeBlocked: true,
+    decisionMode: "paper",
+    sort: "signal_recency"
+  });
+  assert.equal(recencyIdeas.items[0]?.companyId, opticsCompany.id);
+  assert.equal(recencyIdeas.items[0]?.marketData.decisionMode, "paper");
+
+  const symbolIdeas = await getStrategyIdeas({
+    session,
+    repo,
+    limit: 10,
+    signalDays: 30,
+    includeBlocked: true,
+    symbol: "str1",
+    decisionMode: "execution",
+    sort: "symbol"
+  });
+  assert.equal(symbolIdeas.summary.total, 1);
+  assert.equal(symbolIdeas.items[0]?.symbol, "STR1");
+  assert.equal(symbolIdeas.items[0]?.marketData.decisionMode, "execution");
 });
 
 test("memory repository supports core research-to-review loop", async () => {

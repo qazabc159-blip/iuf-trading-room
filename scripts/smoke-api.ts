@@ -1513,14 +1513,28 @@ async function main() {
         items: Array<{
           companyId: string;
           symbol: string;
-          marketData: { selectedSource: string | null; decision: string };
+          marketData: {
+            decisionMode: string;
+            selectedSource: string | null;
+            decision: string;
+          };
           topThemes: Array<{ themeId: string }>;
+          rationale: {
+            primaryReason: string;
+            theme: { topThemeId: string | null };
+            signals: { recentCount: number; hasRecentSignals: boolean };
+            marketData: { mode: string; primaryReason: string };
+          };
         }>;
       }>
-    >(baseUrl, "/api/v1/strategy/ideas?limit=10&signalDays=30&includeBlocked=true", {
-      headers: { "x-workspace-slug": workspaceSlug }
-    });
-    assert.ok(strategyIdeas.data.summary.total >= 1);
+    >(
+      baseUrl,
+      `/api/v1/strategy/ideas?limit=10&signalDays=30&includeBlocked=true&decisionMode=strategy&decisionFilter=usable_only&themeId=${theme.data.id}&sort=score`,
+      {
+        headers: { "x-workspace-slug": workspaceSlug }
+      }
+    );
+    assert.equal(strategyIdeas.data.summary.total, 1);
     assert.ok(strategyIdeas.data.summary.review >= 1);
     assert.ok(strategyIdeas.data.summary.bullish >= 1);
     assert.equal(
@@ -1528,9 +1542,16 @@ async function main() {
         (item) =>
           item.companyId === company.data.id &&
           item.symbol === "SMK1" &&
+          item.marketData.decisionMode === "strategy" &&
           item.marketData.selectedSource === "tradingview" &&
           item.marketData.decision === "review" &&
-          item.topThemes.some((themeItem) => themeItem.themeId === theme.data.id)
+          item.topThemes.some((themeItem) => themeItem.themeId === theme.data.id) &&
+          item.rationale.primaryReason.length > 0 &&
+          item.rationale.theme.topThemeId === theme.data.id &&
+          item.rationale.signals.recentCount >= 1 &&
+          item.rationale.signals.hasRecentSignals === true &&
+          item.rationale.marketData.mode === "strategy" &&
+          item.rationale.marketData.primaryReason.length > 0
       ),
       true
     );

@@ -1402,7 +1402,13 @@ app.get("/api/v1/strategy/ideas", async (c) => {
       limit: query.limit,
       signalDays: query.signalDays,
       includeBlocked: query.includeBlocked,
-      market: query.market
+      market: query.market,
+      themeId: query.themeId,
+      theme: query.theme,
+      symbol: query.symbol,
+      decisionMode: query.decisionMode,
+      decisionFilter: query.decisionFilter,
+      sort: query.sort
     })
   });
 });

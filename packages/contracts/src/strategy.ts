@@ -140,6 +140,15 @@ export const scoreOutputSchema = z.object({
 export const strategyIdeaDirectionSchema = z.enum(["bullish", "bearish", "neutral"]);
 
 export const strategyIdeaMarketDecisionSchema = z.enum(["allow", "review", "block"]);
+export const strategyIdeasDecisionModeSchema = z.enum(["strategy", "paper", "execution"]);
+export const strategyIdeasDecisionFilterSchema = z.enum(["allow", "review", "block", "usable_only"]);
+export const strategyIdeasSortSchema = z.enum([
+  "score",
+  "signal_strength",
+  "signal_recency",
+  "theme_rank",
+  "symbol"
+]);
 
 export const strategyIdeaThemeSchema = z.object({
   themeId: z.string().uuid(),
@@ -154,7 +163,46 @@ export const strategyIdeasQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(12),
   signalDays: z.coerce.number().int().min(1).max(90).default(14),
   includeBlocked: z.coerce.boolean().default(false),
-  market: z.string().min(1).optional()
+  market: z.string().min(1).optional(),
+  themeId: z.string().uuid().optional(),
+  theme: z.string().trim().min(1).max(120).optional(),
+  symbol: z.string().trim().min(1).max(32).optional(),
+  decisionMode: strategyIdeasDecisionModeSchema.default("strategy"),
+  decisionFilter: strategyIdeasDecisionFilterSchema.optional(),
+  sort: strategyIdeasSortSchema.default("score")
+});
+
+export const strategyIdeaRationaleSchema = z.object({
+  primaryReason: z.string().min(1).max(120),
+  theme: z.object({
+    topThemeId: z.string().uuid().nullable(),
+    topThemeName: z.string().min(1).max(120).nullable(),
+    score: z.number().min(0).max(100),
+    relevance: z.enum(["high", "medium", "low", "none"]),
+    marketState: z.string().min(1).max(40).nullable(),
+    lifecycle: z.string().min(1).max(40).nullable()
+  }),
+  signals: z.object({
+    recentCount: z.number().int().nonnegative(),
+    bullishCount: z.number().int().nonnegative(),
+    bearishCount: z.number().int().nonnegative(),
+    latestSignalAt: z.string().nullable(),
+    signalScore: z.number().min(0).max(100),
+    hasRecentSignals: z.boolean(),
+    primaryReason: z.string().min(1).max(120)
+  }),
+  marketData: z.object({
+    mode: strategyIdeasDecisionModeSchema,
+    decision: strategyIdeaMarketDecisionSchema,
+    selectedSource: z.string().nullable(),
+    readiness: z.enum(["ready", "degraded", "blocked"]),
+    freshnessStatus: z.enum(["fresh", "stale", "missing"]),
+    usable: z.boolean(),
+    safe: z.boolean(),
+    primaryReason: z.string().min(1).max(120),
+    fallbackReason: z.string().min(1).max(120),
+    staleReason: z.string().min(1).max(120)
+  })
 });
 
 export const strategyIdeaSchema = z.object({
@@ -172,6 +220,7 @@ export const strategyIdeaSchema = z.object({
   latestSignalAt: z.string().nullable(),
   topThemes: z.array(strategyIdeaThemeSchema).max(3),
   marketData: z.object({
+    decisionMode: strategyIdeasDecisionModeSchema,
     selectedSource: z.string().nullable(),
     readiness: z.enum(["ready", "degraded", "blocked"]),
     freshnessStatus: z.enum(["fresh", "stale", "missing"]),
@@ -182,7 +231,7 @@ export const strategyIdeaSchema = z.object({
     fallbackReason: z.string(),
     staleReason: z.string()
   }),
-  rationale: z.array(z.string().min(1).max(160)).max(8)
+  rationale: strategyIdeaRationaleSchema
 });
 
 export const strategyIdeasViewSchema = z.object({
@@ -215,7 +264,11 @@ export type StrategyRun = z.infer<typeof strategyRunSchema>;
 export type ScoreOutput = z.infer<typeof scoreOutputSchema>;
 export type StrategyIdeaDirection = z.infer<typeof strategyIdeaDirectionSchema>;
 export type StrategyIdeaMarketDecision = z.infer<typeof strategyIdeaMarketDecisionSchema>;
+export type StrategyIdeasDecisionMode = z.infer<typeof strategyIdeasDecisionModeSchema>;
+export type StrategyIdeasDecisionFilter = z.infer<typeof strategyIdeasDecisionFilterSchema>;
+export type StrategyIdeasSort = z.infer<typeof strategyIdeasSortSchema>;
 export type StrategyIdeaTheme = z.infer<typeof strategyIdeaThemeSchema>;
+export type StrategyIdeaRationale = z.infer<typeof strategyIdeaRationaleSchema>;
 export type StrategyIdea = z.infer<typeof strategyIdeaSchema>;
 export type StrategyIdeasQuery = z.infer<typeof strategyIdeasQuerySchema>;
 export type StrategyIdeasView = z.infer<typeof strategyIdeasViewSchema>;
