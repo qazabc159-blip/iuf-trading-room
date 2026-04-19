@@ -18,6 +18,7 @@ import {
   reviewEntryCreateInputSchema,
   signalCreateInputSchema,
   signalUpdateInputSchema,
+  strategyIdeasQuerySchema,
   themeCreateInputSchema,
   themeLifecycleSchema,
   themeUpdateInputSchema,
@@ -145,6 +146,7 @@ import {
   getThemeGraphView,
   searchThemeGraph
 } from "./theme-graph.js";
+import { getStrategyIdeas } from "./strategy-engine.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -1388,6 +1390,20 @@ app.get("/api/v1/signals", async (c) => {
       { themeId, companyId, category },
       { workspaceSlug: c.get("session").workspace.slug }
     )
+  });
+});
+
+app.get("/api/v1/strategy/ideas", async (c) => {
+  const query = strategyIdeasQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await getStrategyIdeas({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      limit: query.limit,
+      signalDays: query.signalDays,
+      includeBlocked: query.includeBlocked,
+      market: query.market
+    })
   });
 });
 

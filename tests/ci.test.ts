@@ -40,6 +40,7 @@ import {
   getThemeGraphView,
   searchThemeGraph
 } from "../apps/api/src/theme-graph.ts";
+import { getStrategyIdeas } from "../apps/api/src/strategy-engine.ts";
 import {
   getMarketDataPolicy,
   getMarketDataOverview,
@@ -3606,6 +3607,160 @@ test("theme graph rankings favor connected, high-conviction themes", async () =>
   assert.ok((rankedEntry?.score ?? 0) > (weakerEntry?.score ?? 0));
   assert.equal(rankedEntry?.signals.includes("市場風格偏進攻"), true);
   assert.equal(rankedEntry?.summary.totalEdges, 2);
+});
+
+test("strategy ideas rank theme heat, signal context, and market-data readiness", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `strategy-ideas-${randomUUID()}`
+  });
+  const now = new Date().toISOString();
+
+  const opticsTheme = await repo.createTheme({
+    name: "Optics Upgrade",
+    marketState: "Selective Attack",
+    lifecycle: "Expansion",
+    priority: 5,
+    thesis: "Optics demand broadens.",
+    whyNow: "AI interconnect budgets are widening.",
+    bottleneck: "Module packaging"
+  });
+  const laggardTheme = await repo.createTheme({
+    name: "Legacy Networking",
+    marketState: "Balanced",
+    lifecycle: "Maturity",
+    priority: 2,
+    thesis: "Legacy networking is stable.",
+    whyNow: "Mostly maintenance cycle.",
+    bottleneck: "Low urgency"
+  });
+
+  const opticsCompany = await repo.createCompany({
+    name: "Photon Systems",
+    ticker: "STR1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [opticsTheme.id],
+    chainPosition: "Optical engines",
+    beneficiaryTier: "Core",
+    exposure: {
+      volume: 5,
+      asp: 4,
+      margin: 4,
+      capacity: 4,
+      narrative: 5
+    },
+    validation: {
+      capitalFlow: "Strong",
+      consensus: "Rising",
+      relativeStrength: "Leading"
+    },
+    notes: "High-conviction optics name."
+  });
+  const laggardCompany = await repo.createCompany({
+    name: "Slow Networks",
+    ticker: "STR2",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [laggardTheme.id],
+    chainPosition: "Legacy switches",
+    beneficiaryTier: "Observation",
+    exposure: {
+      volume: 2,
+      asp: 2,
+      margin: 2,
+      capacity: 2,
+      narrative: 2
+    },
+    validation: {
+      capitalFlow: "Neutral",
+      consensus: "Flat",
+      relativeStrength: "Lagging"
+    },
+    notes: "Lower-conviction legacy name."
+  });
+
+  await repo.replaceCompanyRelations(opticsCompany.id, [
+    {
+      targetCompanyId: laggardCompany.id,
+      targetLabel: laggardCompany.name,
+      relationType: "supplier",
+      confidence: 0.82,
+      sourcePath: "strategy/optics.md"
+    }
+  ]);
+
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "Optics momentum builds",
+    summary: "Demand indicators keep improving.",
+    confidence: 5,
+    themeIds: [opticsTheme.id],
+    companyIds: [opticsCompany.id]
+  });
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "Optics follow-through",
+    summary: "Customers keep adding capacity.",
+    confidence: 4,
+    themeIds: [opticsTheme.id],
+    companyIds: [opticsCompany.id]
+  });
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "STR1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 145,
+        bid: 144.8,
+        ask: 145.2,
+        open: 142,
+        high: 146,
+        low: 141.5,
+        prevClose: 143,
+        volume: 1800,
+        changePct: 1.4,
+        timestamp: now
+      },
+      {
+        symbol: "STR2",
+        market: "OTHER",
+        source: "paper",
+        last: 48,
+        bid: 47.9,
+        ask: 48.1,
+        open: 48.5,
+        high: 48.8,
+        low: 47.5,
+        prevClose: 48.2,
+        volume: 120,
+        changePct: -0.4,
+        timestamp: now
+      }
+    ]
+  });
+
+  const ideas = await getStrategyIdeas({
+    session,
+    repo,
+    limit: 10,
+    signalDays: 30,
+    includeBlocked: true
+  });
+
+  assert.equal(ideas.summary.total >= 2, true);
+  assert.equal(ideas.items[0]?.companyId, opticsCompany.id);
+  assert.equal(ideas.items[0]?.symbol, "STR1");
+  assert.equal(ideas.items[0]?.marketData.selectedSource, "tradingview");
+  assert.equal(ideas.items[0]?.marketData.decision, "review");
+  assert.equal(ideas.items[0]?.direction, "bullish");
+  assert.equal(ideas.items[0]?.topThemes[0]?.themeId, opticsTheme.id);
+  assert.equal((ideas.items[0]?.score ?? 0) > (ideas.items[1]?.score ?? 0), true);
 });
 
 test("memory repository supports core research-to-review loop", async () => {

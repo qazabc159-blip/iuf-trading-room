@@ -137,6 +137,68 @@ export const scoreOutputSchema = z.object({
     .default([])
 });
 
+export const strategyIdeaDirectionSchema = z.enum(["bullish", "bearish", "neutral"]);
+
+export const strategyIdeaMarketDecisionSchema = z.enum(["allow", "review", "block"]);
+
+export const strategyIdeaThemeSchema = z.object({
+  themeId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+  marketState: z.string().min(1).max(40),
+  lifecycle: z.string().min(1).max(40),
+  priority: z.number().int().min(1).max(5),
+  score: z.number().min(0).max(100)
+});
+
+export const strategyIdeasQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(12),
+  signalDays: z.coerce.number().int().min(1).max(90).default(14),
+  includeBlocked: z.coerce.boolean().default(false),
+  market: z.string().min(1).optional()
+});
+
+export const strategyIdeaSchema = z.object({
+  companyId: z.string().uuid(),
+  symbol: z.string().min(1),
+  companyName: z.string().min(1).max(160),
+  market: z.string().min(1).max(32),
+  beneficiaryTier: z.string().min(1).max(40),
+  direction: strategyIdeaDirectionSchema,
+  score: z.number().min(0).max(100),
+  confidence: z.number().min(0).max(1),
+  signalCount: z.number().int().nonnegative(),
+  bullishSignalCount: z.number().int().nonnegative(),
+  bearishSignalCount: z.number().int().nonnegative(),
+  latestSignalAt: z.string().nullable(),
+  topThemes: z.array(strategyIdeaThemeSchema).max(3),
+  marketData: z.object({
+    selectedSource: z.string().nullable(),
+    readiness: z.enum(["ready", "degraded", "blocked"]),
+    freshnessStatus: z.enum(["fresh", "stale", "missing"]),
+    decision: strategyIdeaMarketDecisionSchema,
+    usable: z.boolean(),
+    safe: z.boolean(),
+    primaryReason: z.string(),
+    fallbackReason: z.string(),
+    staleReason: z.string()
+  }),
+  rationale: z.array(z.string().min(1).max(160)).max(8)
+});
+
+export const strategyIdeasViewSchema = z.object({
+  generatedAt: z.string(),
+  summary: z.object({
+    total: z.number().int().nonnegative(),
+    allow: z.number().int().nonnegative(),
+    review: z.number().int().nonnegative(),
+    block: z.number().int().nonnegative(),
+    bullish: z.number().int().nonnegative(),
+    bearish: z.number().int().nonnegative(),
+    neutral: z.number().int().nonnegative()
+  }),
+  items: z.array(strategyIdeaSchema)
+});
+
 export type StrategyKind = z.infer<typeof strategyKindSchema>;
 export type StrategyStatus = z.infer<typeof strategyStatusSchema>;
 export type RuleOperator = z.infer<typeof ruleOperatorSchema>;
@@ -151,3 +213,9 @@ export type StrategyConfigUpdateInput = z.infer<
 export type StrategyRunState = z.infer<typeof strategyRunStateSchema>;
 export type StrategyRun = z.infer<typeof strategyRunSchema>;
 export type ScoreOutput = z.infer<typeof scoreOutputSchema>;
+export type StrategyIdeaDirection = z.infer<typeof strategyIdeaDirectionSchema>;
+export type StrategyIdeaMarketDecision = z.infer<typeof strategyIdeaMarketDecisionSchema>;
+export type StrategyIdeaTheme = z.infer<typeof strategyIdeaThemeSchema>;
+export type StrategyIdea = z.infer<typeof strategyIdeaSchema>;
+export type StrategyIdeasQuery = z.infer<typeof strategyIdeasQuerySchema>;
+export type StrategyIdeasView = z.infer<typeof strategyIdeasViewSchema>;

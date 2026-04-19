@@ -1507,6 +1507,34 @@ async function main() {
     const staleWebhookBody = (await staleWebhookResponse.json()) as { error: string };
     assert.equal(staleWebhookBody.error, "timestamp_out_of_range");
 
+    const strategyIdeas = await request<
+      JsonEnvelope<{
+        summary: { total: number; review: number; bullish: number };
+        items: Array<{
+          companyId: string;
+          symbol: string;
+          marketData: { selectedSource: string | null; decision: string };
+          topThemes: Array<{ themeId: string }>;
+        }>;
+      }>
+    >(baseUrl, "/api/v1/strategy/ideas?limit=10&signalDays=30&includeBlocked=true", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.ok(strategyIdeas.data.summary.total >= 1);
+    assert.ok(strategyIdeas.data.summary.review >= 1);
+    assert.ok(strategyIdeas.data.summary.bullish >= 1);
+    assert.equal(
+      strategyIdeas.data.items.some(
+        (item) =>
+          item.companyId === company.data.id &&
+          item.symbol === "SMK1" &&
+          item.marketData.selectedSource === "tradingview" &&
+          item.marketData.decision === "review" &&
+          item.topThemes.some((themeItem) => themeItem.themeId === theme.data.id)
+      ),
+      true
+    );
+
     const plan = await request<JsonEnvelope<{ id: string; companyId: string }>>(baseUrl, "/api/v1/plans", {
       method: "POST",
       headers: { "x-workspace-slug": workspaceSlug },
