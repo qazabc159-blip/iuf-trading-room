@@ -27,6 +27,8 @@ import type {
   RiskLimit
 } from "@iuf-trading-room/contracts";
 
+import { MODE_DECISION_HINT } from "@/lib/quote-vocab";
+
 import { ExecutionTimeline } from "./execution-timeline";
 import { OrderTicket } from "./order-ticket";
 import { RiskLimitsConfig } from "./risk-limits-config";
@@ -708,14 +710,31 @@ function MarketDataBanner({
         fontSize: "0.8rem"
       }}
     >
-      <div style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", flexWrap: "wrap" }}>
-        <span style={{ color: accent, letterSpacing: "0.08em", fontWeight: 600 }}>
-          [{label} · {modeLabel}]
-        </span>
-        <span style={{ color: "var(--dim)" }}>
-          watching {symbolCount} 個標的
-          {data ? ` · 更新於 ${formatAge(data.generatedAt)}` : "…"}
-        </span>
+      <div
+        style={{
+          display: "flex",
+          gap: "0.75rem",
+          alignItems: "baseline",
+          flexWrap: "wrap",
+          flexDirection: "column"
+        }}
+      >
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", flexWrap: "wrap" }}>
+          <span style={{ color: accent, letterSpacing: "0.08em", fontWeight: 600 }}>
+            [{label} · {modeLabel}]
+          </span>
+          <span style={{ color: "var(--dim)" }}>
+            watching {symbolCount} 個標的
+            {data ? ` · 更新於 ${formatAge(data.generatedAt)}` : "…"}
+          </span>
+        </div>
+        {summary && (block > 0 || review > 0) && (
+          <span style={{ color: "var(--dim)", fontSize: "0.72rem" }}>
+            {block > 0
+              ? MODE_DECISION_HINT.block
+              : MODE_DECISION_HINT.review}
+          </span>
+        )}
       </div>
       <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
         {summary && (

@@ -4,6 +4,8 @@ import { useState } from "react";
 
 import type { ExecutionEvent, Fill } from "@iuf-trading-room/contracts";
 
+import { MODE_DECISION_HINT } from "@/lib/quote-vocab";
+
 type Status = "connecting" | "live" | "reconnecting" | "error";
 
 const TYPE_COLOR: Record<ExecutionEvent["type"], string> = {
@@ -107,13 +109,24 @@ type QuoteDecision = {
 };
 
 // Paper broker attaches quoteContext to submit/ack/fill/reject payloads so the
-// timeline can show what the quote feed looked like at order time.
-function asQuoteContext(ev: ExecutionEvent): QuoteContext | null {
+// timeline can show what the quote feed looked like at order time. Cancel
+// events carry `originalQuoteContext` instead — a replay of the Order's
+// persisted quoteContext — because cancel is user-driven and doesn't make a
+// new decision against the quote.
+function asQuoteContext(
+  ev: ExecutionEvent
+): { qc: QuoteContext; kind: "current" | "original" } | null {
   if (!ev.payload || typeof ev.payload !== "object") return null;
   const p = ev.payload as Record<string, unknown>;
-  const qc = p.quoteContext;
-  if (!qc || typeof qc !== "object") return null;
-  return qc as QuoteContext;
+  const current = p.quoteContext;
+  if (current && typeof current === "object") {
+    return { qc: current as QuoteContext, kind: "current" };
+  }
+  const original = p.originalQuoteContext;
+  if (original && typeof original === "object") {
+    return { qc: original as QuoteContext, kind: "original" };
+  }
+  return null;
 }
 
 function asQuoteDecision(ev: ExecutionEvent): QuoteDecision | null {
@@ -303,7 +316,7 @@ function DetailPanel({ ev }: { ev: ExecutionEvent }) {
         </div>
       )}
 
-      {qc && <QuoteContextBlock qc={qc} />}
+      {qc && <QuoteContextBlock qc={qc.qc} kind={qc.kind} />}
       {qd && <QuoteDecisionBlock qd={qd} />}
 
       {ev.payload != null && !fill && !qc && !qd && (
@@ -327,8 +340,18 @@ function DetailPanel({ ev }: { ev: ExecutionEvent }) {
   );
 }
 
-function QuoteContextBlock({ qc }: { qc: QuoteContext }) {
+function QuoteContextBlock({
+  qc,
+  kind
+}: {
+  qc: QuoteContext;
+  kind: "current" | "original";
+}) {
   const readinessColor = QC_READINESS_COLOR[qc.readiness] ?? "var(--dim)";
+  const heading =
+    kind === "original"
+      ? "[ORIGINAL QUOTE CONTEXT · 原送單時的報價狀態 (cancel 不重讀報價)]"
+      : "[QUOTE CONTEXT · 送單當下的報價狀態]";
   return (
     <div
       style={{
@@ -337,7 +360,7 @@ function QuoteContextBlock({ qc }: { qc: QuoteContext }) {
       }}
     >
       <div style={{ color: "var(--dim)", marginBottom: "0.35rem", fontSize: "0.7rem" }}>
-        [QUOTE CONTEXT · 送單當下的報價狀態]
+        {heading}
       </div>
       <div
         style={{
@@ -458,6 +481,37 @@ function QuoteDecisionBlock({ qd }: { qd: QuoteDecision }) {
         {renderMode("paper", qd.paper)}
         {renderMode("execution", qd.execution)}
       </div>
+      {(() => {
+        // Render the gate-override hint per mode so the reader can tell which
+        // lane (paper vs. live execution) the constraint belongs to. When both
+        // modes are "allow" the mode badges above already say so — no hint
+        // needed. When the two modes disagree (e.g. paper allow + execution
+        // review), both hints appear so the user sees exactly what each lane
+        // would do with this quote.
+        const rows: { mode: "paper" | "execution"; decision: "review" | "block" }[] = [];
+        if (qd.paper && qd.paper.decision !== "allow") {
+          rows.push({ mode: "paper", decision: qd.paper.decision });
+        }
+        if (qd.execution && qd.execution.decision !== "allow") {
+          rows.push({ mode: "execution", decision: qd.execution.decision });
+        }
+        if (rows.length === 0) return null;
+        return (
+          <div style={{ display: "grid", gap: "0.2rem", marginTop: "0.35rem" }}>
+            {rows.map((r) => (
+              <div
+                key={r.mode}
+                style={{ color: "var(--dim)", fontSize: "0.7rem" }}
+              >
+                <span style={{ color: "var(--amber)", marginRight: "0.35rem" }}>
+                  [{r.mode.toUpperCase()}]
+                </span>
+                {MODE_DECISION_HINT[r.decision]}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       {(qd.fallbackReason && qd.fallbackReason !== "none") || (qd.staleReason && qd.staleReason !== "none") ? (
         <div
           style={{

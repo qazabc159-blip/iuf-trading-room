@@ -792,13 +792,23 @@ export async function cancelPaperOrder(input: {
   };
   state.orders.set(order.id, updated);
   state.lastEventAt = now;
+  // Event-payload quote rule:
+  //   submit / acknowledge / reject / fill make a new decision against the
+  //   quote, so each captures { quoteContext, quoteDecision } at emit time.
+  //   cancel is user-driven and doesn't need a fresh quote read — we instead
+  //   replay the Order's persisted quoteContext as `originalQuoteContext` so
+  //   timeline readers can see the quote that was in force when the now-
+  //   canceled order was placed, without cross-referencing the Order row.
+  //   expire / reconcile aren't emitted by the paper broker today.
   emit(input.session, input.accountId, {
     type: "cancel",
     orderId: order.id,
     clientOrderId: order.clientOrderId,
     status: "canceled",
     message: input.payload.reason || null,
-    payload: null,
+    payload: order.quoteContext
+      ? { originalQuoteContext: order.quoteContext }
+      : null,
     timestamp: now
   });
   persistAccountAsync(input.session, state);

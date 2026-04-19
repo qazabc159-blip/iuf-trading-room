@@ -25,6 +25,7 @@ import {
 } from "@/lib/api";
 import { type SizingResult } from "@/lib/sizing";
 import { buildOrderInputFromPlan } from "@/lib/plan-to-order";
+import { QUOTE_GATE_COLOR, QUOTE_GATE_LABEL } from "@/lib/quote-vocab";
 
 type Props = {
   accountId: string;
@@ -63,26 +64,9 @@ const DECISION_COLOR: Record<RiskCheckResult["decision"], string> = {
   block: "var(--danger, #ff4d4d)"
 };
 
-const QUOTE_GATE_COLOR: Record<ExecutionGateDecision, string> = {
-  allow: "var(--phosphor)",
-  review_accepted: "var(--phosphor)",
-  review_required: "var(--amber)",
-  review_unusable: "var(--danger, #ff4d4d)",
-  block: "var(--danger, #ff4d4d)",
-  quote_unknown: "var(--amber)"
-};
-
-// Short, copy-friendly label for every gate decision. Used both in the result
-// panel and (via gateDecisionSubmitBlock) in the submit-button tooltip so the
-// two sides say the same thing.
-const QUOTE_GATE_LABEL: Record<ExecutionGateDecision, string> = {
-  allow: "允許送單",
-  review_accepted: "REVIEW 已接受",
-  review_required: "需勾選接受 REVIEW 報價",
-  review_unusable: "REVIEW 已勾選但報價仍不可用",
-  block: "報價不可執行",
-  quote_unknown: "報價未知（伺服器仍會最終判斷）"
-};
+// Gate decision color/label vocabulary is shared with MarketDataBanner and
+// the execution timeline via apps/web/lib/quote-vocab.ts so the three surfaces
+// stay aligned.
 
 export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
