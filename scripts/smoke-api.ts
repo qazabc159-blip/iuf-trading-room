@@ -224,6 +224,7 @@ async function main() {
             decisionSummary: boolean;
             historyQualitySummary: boolean;
             barQualitySummary: boolean;
+            overviewQualityRollup: boolean;
           };
           preferredEntryPoints: {
             execution: string;
@@ -239,12 +240,13 @@ async function main() {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.match(marketPolicy.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
-    assert.equal(marketPolicy.data.surface.version, "market-data-v1.10-history-quality-summary");
+    assert.equal(marketPolicy.data.surface.version, "market-data-v1.11-overview-quality-rollup");
     assert.equal(marketPolicy.data.surface.capabilities.consumerSummary, true);
     assert.equal(marketPolicy.data.surface.capabilities.selectionSummary, true);
     assert.equal(marketPolicy.data.surface.capabilities.decisionSummary, true);
     assert.equal(marketPolicy.data.surface.capabilities.historyQualitySummary, true);
     assert.equal(marketPolicy.data.surface.capabilities.barQualitySummary, true);
+    assert.equal(marketPolicy.data.surface.capabilities.overviewQualityRollup, true);
     assert.equal(marketPolicy.data.surface.preferredEntryPoints.execution, "/api/v1/market-data/decision-summary");
     assert.equal(marketPolicy.data.surface.preferredEntryPoints.historyQuality, "/api/v1/market-data/history/diagnostics");
     assert.equal(marketPolicy.data.surface.preferredEntryPoints.barQuality, "/api/v1/market-data/bars/diagnostics");
@@ -817,6 +819,21 @@ async function main() {
           };
           bySource: Array<{ source: string; total: number }>;
         };
+        quality: {
+          evaluatedSymbols: number;
+          history: {
+            total: number;
+            strategyReady: number;
+            referenceOnly: number;
+            insufficient: number;
+          };
+          bars: {
+            total: number;
+            strategyReady: number;
+            referenceOnly: number;
+            insufficient: number;
+          };
+        };
         policy: {
           surface: {
             version: string;
@@ -826,6 +843,7 @@ async function main() {
               decisionSummary: boolean;
               historyQualitySummary: boolean;
               barQualitySummary: boolean;
+              overviewQualityRollup: boolean;
             };
             preferredEntryPoints: {
               historyQuality: string;
@@ -844,12 +862,13 @@ async function main() {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.match(marketOverview.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
-    assert.equal(marketOverview.data.policy.surface.version, "market-data-v1.10-history-quality-summary");
+    assert.equal(marketOverview.data.policy.surface.version, "market-data-v1.11-overview-quality-rollup");
     assert.equal(marketOverview.data.policy.surface.capabilities.overview, true);
     assert.equal(marketOverview.data.policy.surface.capabilities.selectionSummary, true);
     assert.equal(marketOverview.data.policy.surface.capabilities.decisionSummary, true);
     assert.equal(marketOverview.data.policy.surface.capabilities.historyQualitySummary, true);
     assert.equal(marketOverview.data.policy.surface.capabilities.barQualitySummary, true);
+    assert.equal(marketOverview.data.policy.surface.capabilities.overviewQualityRollup, true);
     assert.equal(marketOverview.data.policy.surface.preferredEntryPoints.historyQuality, "/api/v1/market-data/history/diagnostics");
     assert.equal(marketOverview.data.policy.surface.preferredEntryPoints.barQuality, "/api/v1/market-data/bars/diagnostics");
     assert.ok(marketOverview.data.providers.length >= 2);
@@ -860,6 +879,9 @@ async function main() {
     assert.equal(marketOverview.data.quotes.readiness.preferredSourceOrder[0], "kgi");
     assert.equal(marketOverview.data.quotes.readiness.effectiveSelection.total >= 2, true);
     assert.equal(marketOverview.data.quotes.readiness.effectiveSelection.paperUsable >= 1, true);
+    assert.equal(marketOverview.data.quality.evaluatedSymbols >= 2, true);
+    assert.equal(marketOverview.data.quality.history.total >= 1, true);
+    assert.equal(marketOverview.data.quality.bars.total >= 1, true);
     assert.ok(marketOverview.data.quotes.bySource.some((item) => item.source === "manual"));
     assert.equal(marketOverview.data.leaders.topGainers[0]?.symbol, "SMK1");
     assert.equal(marketOverview.data.leaders.mostActive[0]?.symbol, "SMK1");

@@ -1678,12 +1678,13 @@ test("market data policy reflects configured source priority and freshness thres
 
   try {
     const policy = getMarketDataPolicy();
-    assert.equal(policy.surface.version, "market-data-v1.10-history-quality-summary");
+    assert.equal(policy.surface.version, "market-data-v1.11-overview-quality-rollup");
     assert.equal(policy.surface.capabilities.consumerSummary, true);
     assert.equal(policy.surface.capabilities.selectionSummary, true);
     assert.equal(policy.surface.capabilities.decisionSummary, true);
     assert.equal(policy.surface.capabilities.historyQualitySummary, true);
     assert.equal(policy.surface.capabilities.barQualitySummary, true);
+    assert.equal(policy.surface.capabilities.overviewQualityRollup, true);
     assert.equal(policy.surface.preferredEntryPoints.execution, "/api/v1/market-data/decision-summary");
     assert.equal(policy.surface.preferredEntryPoints.historyQuality, "/api/v1/market-data/history/diagnostics");
     assert.equal(policy.surface.preferredEntryPoints.barQuality, "/api/v1/market-data/bars/diagnostics");
@@ -2700,12 +2701,13 @@ test("market data overview summarizes providers, coverage, and leaders", async (
   });
 
   assert.equal(overview.providers.length, 4);
-  assert.equal(overview.surface.version, "market-data-v1.10-history-quality-summary");
+  assert.equal(overview.surface.version, "market-data-v1.11-overview-quality-rollup");
   assert.equal(overview.surface.capabilities.overview, true);
   assert.equal(overview.surface.capabilities.selectionSummary, true);
   assert.equal(overview.surface.capabilities.decisionSummary, true);
   assert.equal(overview.surface.capabilities.historyQualitySummary, true);
   assert.equal(overview.surface.capabilities.barQualitySummary, true);
+  assert.equal(overview.surface.capabilities.overviewQualityRollup, true);
   assert.equal(overview.surface.preferredEntryPoints.historyQuality, "/api/v1/market-data/history/diagnostics");
   assert.equal(overview.surface.preferredEntryPoints.barQuality, "/api/v1/market-data/bars/diagnostics");
   assert.ok(overview.symbols.total >= 2);
@@ -2720,6 +2722,11 @@ test("market data overview summarizes providers, coverage, and leaders", async (
   assert.equal(overview.quotes.readiness.effectiveSelection.degraded, 2);
   assert.equal(overview.quotes.readiness.effectiveSelection.blocked, 1);
   assert.equal(overview.quotes.readiness.effectiveSelection.paperUsable, 2);
+  assert.equal(overview.quality.evaluatedSymbols, 3);
+  assert.equal(overview.quality.history.total, 3);
+  assert.equal(overview.quality.history.insufficient >= 1, true);
+  assert.equal(overview.quality.bars.total, 3);
+  assert.equal(overview.quality.bars.insufficient >= 1, true);
   assert.equal(overview.quotes.bySource[0]?.source, "manual");
   assert.equal(overview.leaders.topGainers[0]?.symbol, "SMK1");
   assert.equal(overview.leaders.topLosers[0]?.symbol, "2330");

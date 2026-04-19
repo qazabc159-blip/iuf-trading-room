@@ -294,7 +294,7 @@ export const marketDataQualityAssessmentSchema = z.object({
   reasons: z.array(z.string())
 });
 
-const marketDataQualitySummarySchema = z.object({
+export const marketDataQualitySummarySchema = z.object({
   total: z.number().int().nonnegative(),
   strategyReady: z.number().int().nonnegative(),
   referenceOnly: z.number().int().nonnegative(),
@@ -452,7 +452,8 @@ export const marketDataSurfaceMetadataSchema = z.object({
     bars: z.boolean(),
     barDiagnostics: z.boolean(),
     barQualitySummary: z.boolean(),
-    overview: z.boolean()
+    overview: z.boolean(),
+    overviewQualityRollup: z.boolean()
   }),
   preferredEntryPoints: z.object({
     strategy: z.string().min(1),
@@ -484,6 +485,7 @@ export type MarketDataDecisionModeSummary = z.infer<typeof marketDataDecisionMod
 export type MarketDataDecisionQuoteSnapshot = z.infer<typeof marketDataDecisionQuoteSnapshotSchema>;
 export type MarketDataQualityGrade = z.infer<typeof marketDataQualityGradeSchema>;
 export type MarketDataQualityAssessment = z.infer<typeof marketDataQualityAssessmentSchema>;
+export type MarketDataQualitySummary = z.infer<typeof marketDataQualitySummarySchema>;
 export type MarketDataDecisionSummaryItem = z.infer<typeof marketDataDecisionSummaryItemSchema>;
 export type MarketDataDecisionSummary = z.infer<typeof marketDataDecisionSummarySchema>;
 export type MarketDataHistoryDiagnosticsItem = z.infer<typeof marketDataHistoryDiagnosticsItemSchema>;

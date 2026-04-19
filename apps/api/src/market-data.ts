@@ -218,7 +218,7 @@ const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>
 const persistedQuoteHistoryLoaded = new Set<string>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
 const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "tradingview", "paper", "manual"];
-const MARKET_DATA_SURFACE_VERSION = "market-data-v1.10-history-quality-summary";
+const MARKET_DATA_SURFACE_VERSION = "market-data-v1.11-overview-quality-rollup";
 const historyQualityReasonBuckets = [
   "history_strategy_ready",
   "missing_history",
@@ -989,7 +989,8 @@ export function getMarketDataSurfaceMetadata(): MarketDataSurfaceMetadata {
       bars: true,
       barDiagnostics: true,
       barQualitySummary: true,
-      overview: true
+      overview: true,
+      overviewQualityRollup: true
     },
     preferredEntryPoints: {
       strategy: "/api/v1/market-data/decision-summary",
@@ -2096,10 +2097,11 @@ export async function getMarketDataOverview(input: {
     })
   ]);
   const symbols = dedupeSymbolMasters(companies);
+  const qualitySymbols = [...new Set(quotes.map((quote) => quote.symbol))].join(",");
   const effectiveSelection = quotes.length > 0
     ? await getEffectiveMarketQuotes({
       session: input.session,
-      symbols: [...new Set(quotes.map((quote) => quote.symbol))].join(","),
+      symbols: qualitySymbols,
       includeStale: true,
       limit: Math.max(quotes.length, 50)
     })
@@ -2129,6 +2131,34 @@ export async function getMarketDataOverview(input: {
       },
       items: []
     };
+  const [historyQuality, barQuality] = qualitySymbols
+    ? await Promise.all([
+      getMarketQuoteHistoryDiagnostics({
+        session: input.session,
+        symbols: qualitySymbols,
+        includeStale: true,
+        limit: Math.max(quotes.length * 4, 100)
+      }),
+      getMarketBarDiagnostics({
+        session: input.session,
+        symbols: qualitySymbols,
+        includeStale: true,
+        interval: "1m",
+        limit: Math.max(quotes.length * 2, 50)
+      })
+    ])
+    : [
+      {
+        generatedAt: new Date().toISOString(),
+        summary: summarizeQualityAssessments([], historyQualityReasonBuckets),
+        items: []
+      },
+      {
+        generatedAt: new Date().toISOString(),
+        summary: summarizeQualityAssessments([], barQualityReasonBuckets),
+        items: []
+      }
+    ];
 
   const quotesBySource = [...new Set(quoteProviderSources)]
     .map((source) => ({
@@ -2220,6 +2250,11 @@ export async function getMarketDataOverview(input: {
       },
       bySource: quotesBySource,
       byMarket: quotesByMarket
+    },
+    quality: {
+      evaluatedSymbols: qualitySymbols ? qualitySymbols.split(",").length : 0,
+      history: historyQuality.summary,
+      bars: barQuality.summary
     },
     leaders: {
       topGainers,
