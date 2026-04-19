@@ -7,6 +7,11 @@ type VerifyConfig = {
   workspaceSlug: string;
   accountId: string;
   symbol: string;
+  // Second symbol dedicated to the resting-limit-then-cancel scenario. Must
+  // differ from `symbol` so the duplicate-intent risk guard doesn't collapse
+  // the two flows into a single order row.
+  cancelSymbol: string;
+  checkPortfolio: boolean;
 };
 
 type Envelope<T> = { data: T };
@@ -88,13 +93,22 @@ function loadConfig(): VerifyConfig {
     argValue("--symbol") ??
     process.env.EXEC_VERIFY_SYMBOL ??
     `PX${randomUUID().slice(0, 8).toUpperCase()}`;
+  const cancelSymbol =
+    argValue("--cancel-symbol") ??
+    process.env.EXEC_VERIFY_CANCEL_SYMBOL ??
+    `CX${randomUUID().slice(0, 8).toUpperCase()}`;
+  const checkPortfolio =
+    !process.argv.includes("--skip-portfolio") &&
+    process.env.EXEC_VERIFY_SKIP_PORTFOLIO !== "1";
 
   return {
     apiBase: apiBase.replace(/\/$/, ""),
     webBase: webBase ? webBase.replace(/\/$/, "") : null,
     workspaceSlug,
     accountId,
-    symbol
+    symbol,
+    cancelSymbol,
+    checkPortfolio
   };
 }
 
@@ -129,7 +143,7 @@ function assert(condition: unknown, message: string): asserts condition {
 
 async function main() {
   const config = loadConfig();
-  const portfolioRoute = config.webBase
+  const portfolioRoute = config.checkPortfolio && config.webBase
     ? await requestText(`${config.webBase}/portfolio`)
     : null;
 
@@ -220,9 +234,12 @@ async function main() {
     (event) => event.payload && "quoteDecision" in event.payload
   );
   const eventWithAccountId = events.json.data.find(
-    (event) => event.payload && event.payload.accountId === config.accountId
+    (event) => event.payload?.accountId === config.accountId
   );
+  const portfolioTitle =
+    portfolioRoute?.text.match(/<title>([^<]+)<\/title>/i)?.[1] ?? null;
 
+  assert(decisionSummary.status === 200, "decision-summary request failed");
   assert(preview.json.data.blocked === false, "preview unexpectedly blocked");
   assert(
     preview.json.data.quoteGate?.decision === "review_accepted",
@@ -244,15 +261,20 @@ async function main() {
   assert(Boolean(eventWithAccountId), "events history missing accountId payload");
 
   const output = {
+    kind: "execution-lane-verify",
+    success: true,
+    verifiedAt: new Date().toISOString(),
     apiBase: config.apiBase,
     webBase: config.webBase,
     workspaceSlug: config.workspaceSlug,
+    accountId: config.accountId,
     symbol: config.symbol,
     portfolio: portfolioRoute
       ? {
           status: portfolioRoute.status,
-          hasTitle: portfolioRoute.text.includes("IUF 台股交易戰情室"),
-          hasPortfolioLabel: portfolioRoute.text.includes("持倉")
+          title: portfolioTitle,
+          hasIufMarker: portfolioRoute.text.includes("IUF"),
+          hasNextDataMarker: portfolioRoute.text.includes("__NEXT_DATA__")
         }
       : null,
     decisionSummary: {
@@ -283,6 +305,27 @@ async function main() {
       eventTypes,
       hasQuoteDecision: Boolean(eventWithQuoteDecision),
       hasAccountId: Boolean(eventWithAccountId)
+    },
+    checks: {
+      portfolioReachable: portfolioRoute ? portfolioRoute.status === 200 : null,
+      decisionSummaryAvailable: decisionSummary.status === 200,
+      previewAllowsReviewAccepted:
+        preview.status === 200 &&
+        preview.json.data.blocked === false &&
+        preview.json.data.quoteGate?.decision === "review_accepted",
+      submitAllowsReviewAccepted:
+        submit.status === 201 &&
+        submit.json.data.blocked === false &&
+        submit.json.data.quoteGate?.decision === "review_accepted",
+      orderFilled:
+        submit.json.data.order?.status === "filled" &&
+        Boolean(submit.json.data.order?.quoteContext),
+      eventsRecorded:
+        events.status === 200 &&
+        eventTypes.includes("submit") &&
+        eventTypes.includes("fill") &&
+        Boolean(eventWithQuoteDecision) &&
+        Boolean(eventWithAccountId)
     }
   };
 
