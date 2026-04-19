@@ -3,10 +3,12 @@ import {
   barIntervalSchema,
   barSchema,
   type Company,
+  marketDataBarDiagnosticsResponseSchema,
   marketDataConsumerDecisionSchema,
   marketDataConsumerModeSchema,
   marketDataConsumerSummarySchema,
   marketDataDecisionSummarySchema,
+  marketDataHistoryDiagnosticsResponseSchema,
   marketDataSelectionSummarySchema,
   marketDataSurfaceMetadataSchema,
   type Market,
@@ -55,6 +57,7 @@ type QuoteResolutionStaleReason =
   | "provider_unavailable";
 type TimeWindowCompleteness = "unbounded" | "empty" | "partial" | "complete";
 type EffectiveQuoteReadiness = "ready" | "degraded" | "blocked";
+type MarketDataQualityGrade = "strategy_ready" | "reference_only" | "insufficient";
 type MarketDataConsumerMode = z.infer<typeof marketDataConsumerModeSchema>;
 type MarketDataSurfaceMetadata = z.infer<typeof marketDataSurfaceMetadataSchema>;
 
@@ -215,7 +218,24 @@ const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>
 const persistedQuoteHistoryLoaded = new Set<string>();
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
 const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "tradingview", "paper", "manual"];
-const MARKET_DATA_SURFACE_VERSION = "market-data-v1.9-decision-summary";
+const MARKET_DATA_SURFACE_VERSION = "market-data-v1.10-history-quality-summary";
+const historyQualityReasonBuckets = [
+  "history_strategy_ready",
+  "missing_history",
+  "stale_history",
+  "insufficient_points",
+  "partial_time_window",
+  "synthetic_history"
+] as const;
+const barQualityReasonBuckets = [
+  "bar_series_strategy_ready",
+  "missing_bars",
+  "stale_bars",
+  "insufficient_bars",
+  "partial_time_window",
+  "synthetic_bars",
+  "approximate_bars"
+] as const;
 
 function getSourcePriorityOrder() {
   const configured = (process.env.QUOTE_SOURCE_PRIORITY ?? "")
@@ -431,6 +451,119 @@ function getTimeWindowCompleteness(input: {
   const hasFromCoverage = !input.from || input.firstTimestamp <= input.from;
   const hasToCoverage = !input.to || input.lastTimestamp >= input.to;
   return hasFromCoverage && hasToCoverage ? "complete" : "partial";
+}
+
+function getTimestampAgeMs(timestamp?: string | null) {
+  if (!timestamp) {
+    return null;
+  }
+
+  const parsed = Date.parse(timestamp);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+
+  return Math.max(0, Date.now() - parsed);
+}
+
+function buildHistoryQualityAssessment(input: {
+  pointCount: number;
+  freshnessStatus: QuoteResolutionFreshnessStatus;
+  timeWindowCompleteness: TimeWindowCompleteness;
+  synthetic: boolean;
+}) {
+  const reasons: string[] = [];
+  let grade: MarketDataQualityGrade = "strategy_ready";
+  let primaryReason = "history_strategy_ready";
+
+  if (input.pointCount === 0 || input.timeWindowCompleteness === "empty") {
+    grade = "insufficient";
+    primaryReason = "missing_history";
+  } else if (input.freshnessStatus !== "fresh") {
+    grade = "insufficient";
+    primaryReason = "stale_history";
+  } else if (input.pointCount < 2) {
+    grade = "insufficient";
+    primaryReason = "insufficient_points";
+  } else if (input.synthetic) {
+    grade = "reference_only";
+    primaryReason = "synthetic_history";
+  } else if (input.timeWindowCompleteness === "partial") {
+    grade = "reference_only";
+    primaryReason = "partial_time_window";
+  }
+
+  reasons.push(primaryReason);
+
+  return {
+    grade,
+    strategyUsable: grade === "strategy_ready",
+    referenceOnly: grade === "reference_only",
+    primaryReason,
+    reasons
+  };
+}
+
+function buildBarQualityAssessment(input: {
+  barCount: number;
+  freshnessStatus: QuoteResolutionFreshnessStatus;
+  timeWindowCompleteness: TimeWindowCompleteness;
+  synthetic: boolean;
+  approximate: boolean;
+}) {
+  const reasons: string[] = [];
+  let grade: MarketDataQualityGrade = "strategy_ready";
+  let primaryReason = "bar_series_strategy_ready";
+
+  if (input.barCount === 0 || input.timeWindowCompleteness === "empty") {
+    grade = "insufficient";
+    primaryReason = "missing_bars";
+  } else if (input.freshnessStatus !== "fresh") {
+    grade = "insufficient";
+    primaryReason = "stale_bars";
+  } else if (input.barCount < 2) {
+    grade = "insufficient";
+    primaryReason = "insufficient_bars";
+  } else if (input.synthetic) {
+    grade = "reference_only";
+    primaryReason = "synthetic_bars";
+  } else if (input.approximate) {
+    grade = "reference_only";
+    primaryReason = "approximate_bars";
+  } else if (input.timeWindowCompleteness === "partial") {
+    grade = "reference_only";
+    primaryReason = "partial_time_window";
+  }
+
+  reasons.push(primaryReason);
+
+  return {
+    grade,
+    strategyUsable: grade === "strategy_ready",
+    referenceOnly: grade === "reference_only",
+    primaryReason,
+    reasons
+  };
+}
+
+function summarizeQualityAssessments<T extends { source: QuoteSource | null; quality: { grade: MarketDataQualityGrade; primaryReason: string } }>(
+  items: T[],
+  primaryReasonBuckets: readonly string[]
+) {
+  return {
+    total: items.length,
+    strategyReady: items.filter((item) => item.quality.grade === "strategy_ready").length,
+    referenceOnly: items.filter((item) => item.quality.grade === "reference_only").length,
+    insufficient: items.filter((item) => item.quality.grade === "insufficient").length,
+    primaryReasons: summarizeReasonCounts(
+      [...primaryReasonBuckets],
+      items.map((item) => ({ reasons: [item.quality.primaryReason] }))
+    ),
+    sources: quoteProviderSources.map((source) => ({
+      source,
+      total: items.filter((item) => item.source === source).length
+    }))
+  };
 }
 
 function compareQuotes(left: Quote, right: Quote) {
@@ -852,15 +985,19 @@ export function getMarketDataSurfaceMetadata(): MarketDataSurfaceMetadata {
       decisionSummary: true,
       history: true,
       historyDiagnostics: true,
+      historyQualitySummary: true,
       bars: true,
       barDiagnostics: true,
+      barQualitySummary: true,
       overview: true
     },
     preferredEntryPoints: {
       strategy: "/api/v1/market-data/decision-summary",
       paper: "/api/v1/market-data/decision-summary",
       execution: "/api/v1/market-data/decision-summary",
-      ops: "/api/v1/market-data/overview"
+      ops: "/api/v1/market-data/overview",
+      historyQuality: "/api/v1/market-data/history/diagnostics",
+      barQuality: "/api/v1/market-data/bars/diagnostics"
     }
   });
 }
@@ -1142,13 +1279,27 @@ export async function getMarketQuoteHistoryDiagnostics(input: {
     grouped.set(key, current);
   }
 
-  return [...grouped.entries()].map(([key, quotes]) => {
+  const items = [...grouped.entries()].map(([key, quotes]) => {
     const [market, symbol] = key.split(":");
     const ordered = [...quotes].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
     const resolution = resolutionByKey.get(key);
     const firstTimestamp = ordered[0]?.timestamp ?? null;
     const lastTimestamp = ordered.at(-1)?.timestamp ?? null;
     const source = input.source ?? resolution?.selectedSource ?? ordered.at(-1)?.source ?? null;
+    const timeWindowCompleteness = getTimeWindowCompleteness({
+      count: ordered.length,
+      firstTimestamp,
+      lastTimestamp,
+      from: input.from,
+      to: input.to
+    });
+    const synthetic = source ? isSyntheticSource(source) : false;
+    const quality = buildHistoryQualityAssessment({
+      pointCount: ordered.length,
+      freshnessStatus: resolution?.freshnessStatus ?? "missing",
+      timeWindowCompleteness,
+      synthetic
+    });
 
     return {
       symbol,
@@ -1161,16 +1312,18 @@ export async function getMarketQuoteHistoryDiagnostics(input: {
       pointCount: ordered.length,
       firstTimestamp,
       lastTimestamp,
-      timeWindowCompleteness: getTimeWindowCompleteness({
-        count: ordered.length,
-        firstTimestamp,
-        lastTimestamp,
-        from: input.from,
-        to: input.to
-      }),
-      synthetic: source ? isSyntheticSource(source) : false,
-      generatedFrom: "provider_quote_history"
+      lastPointAgeMs: getTimestampAgeMs(lastTimestamp),
+      timeWindowCompleteness,
+      synthetic,
+      generatedFrom: "provider_quote_history",
+      quality
     };
+  });
+
+  return marketDataHistoryDiagnosticsResponseSchema.parse({
+    generatedAt: new Date().toISOString(),
+    summary: summarizeQualityAssessments(items, historyQualityReasonBuckets),
+    items
   });
 }
 
@@ -1868,30 +2021,55 @@ export async function getMarketBarDiagnostics(input: {
     grouped.set(key, current);
   }
 
-  return [...grouped.entries()].map(([key, entries]) => {
+  const items = [...grouped.entries()].map(([key, entries]) => {
     const [source, symbol] = key.split(":");
     const ordered = [...entries].sort((left, right) => left.openTime.localeCompare(right.openTime));
     const firstOpenTime = ordered[0]?.openTime ?? null;
     const lastCloseTime = ordered.at(-1)?.closeTime ?? null;
+    const sourceKey = source as QuoteSource;
+    const timeWindowCompleteness = getTimeWindowCompleteness({
+      count: ordered.length,
+      firstTimestamp: firstOpenTime,
+      lastTimestamp: lastCloseTime,
+      from: input.from,
+      to: input.to
+    });
+    const lastBarAgeMs = getTimestampAgeMs(lastCloseTime);
+    const freshnessStatus: QuoteResolutionFreshnessStatus = !lastCloseTime
+      ? "missing"
+      : lastBarAgeMs !== null && lastBarAgeMs <= getQuoteStaleMs(sourceKey)
+        ? "fresh"
+        : "stale";
+    const approximate = true;
+    const synthetic = true;
+    const quality = buildBarQualityAssessment({
+      barCount: ordered.length,
+      freshnessStatus,
+      timeWindowCompleteness,
+      synthetic,
+      approximate
+    });
 
     return {
       symbol,
-      source,
+      source: sourceKey,
       interval: input.interval ?? "1m",
       barCount: ordered.length,
       firstOpenTime,
       lastCloseTime,
-      timeWindowCompleteness: getTimeWindowCompleteness({
-        count: ordered.length,
-        firstTimestamp: firstOpenTime,
-        lastTimestamp: lastCloseTime,
-        from: input.from,
-        to: input.to
-      }),
-      synthetic: true,
-      approximate: true,
-      generatedFrom: "quote_history"
+      lastBarAgeMs,
+      timeWindowCompleteness,
+      synthetic,
+      approximate,
+      generatedFrom: "quote_history",
+      quality
     };
+  });
+
+  return marketDataBarDiagnosticsResponseSchema.parse({
+    generatedAt: new Date().toISOString(),
+    summary: summarizeQualityAssessments(items, barQualityReasonBuckets),
+    items
   });
 }
 

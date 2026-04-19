@@ -1678,11 +1678,15 @@ test("market data policy reflects configured source priority and freshness thres
 
   try {
     const policy = getMarketDataPolicy();
-    assert.equal(policy.surface.version, "market-data-v1.9-decision-summary");
+    assert.equal(policy.surface.version, "market-data-v1.10-history-quality-summary");
     assert.equal(policy.surface.capabilities.consumerSummary, true);
     assert.equal(policy.surface.capabilities.selectionSummary, true);
     assert.equal(policy.surface.capabilities.decisionSummary, true);
+    assert.equal(policy.surface.capabilities.historyQualitySummary, true);
+    assert.equal(policy.surface.capabilities.barQualitySummary, true);
     assert.equal(policy.surface.preferredEntryPoints.execution, "/api/v1/market-data/decision-summary");
+    assert.equal(policy.surface.preferredEntryPoints.historyQuality, "/api/v1/market-data/history/diagnostics");
+    assert.equal(policy.surface.preferredEntryPoints.barQuality, "/api/v1/market-data/bars/diagnostics");
     assert.equal(policy.sourcePriority[0]?.source, "paper");
     assert.equal(policy.sourcePriority[1]?.source, "tradingview");
     assert.equal(policy.sourcePriority[2]?.source, "manual");
@@ -2395,18 +2399,89 @@ test("market data diagnostics expose source selection and synthetic quality hint
     limit: 10
   });
 
-  assert.equal(historyDiagnostics.length, 1);
-  assert.equal(historyDiagnostics[0]?.symbol, "DIA1");
-  assert.equal(historyDiagnostics[0]?.selectedSource, "paper");
-  assert.equal(historyDiagnostics[0]?.synthetic, true);
-  assert.equal(historyDiagnostics[0]?.generatedFrom, "provider_quote_history");
-  assert.equal(historyDiagnostics[0]?.freshnessStatus, "fresh");
+  assert.equal(historyDiagnostics.summary.total, 1);
+  assert.equal(historyDiagnostics.summary.insufficient, 1);
+  assert.equal(historyDiagnostics.items[0]?.symbol, "DIA1");
+  assert.equal(historyDiagnostics.items[0]?.selectedSource, "paper");
+  assert.equal(historyDiagnostics.items[0]?.synthetic, true);
+  assert.equal(historyDiagnostics.items[0]?.generatedFrom, "provider_quote_history");
+  assert.equal(historyDiagnostics.items[0]?.freshnessStatus, "fresh");
+  assert.equal(historyDiagnostics.items[0]?.quality.grade, "insufficient");
+  assert.equal(historyDiagnostics.items[0]?.quality.primaryReason, "insufficient_points");
 
-  assert.equal(barDiagnostics.length, 1);
-  assert.equal(barDiagnostics[0]?.source, "paper");
-  assert.equal(barDiagnostics[0]?.synthetic, true);
-  assert.equal(barDiagnostics[0]?.approximate, true);
-  assert.equal(barDiagnostics[0]?.generatedFrom, "quote_history");
+  assert.equal(barDiagnostics.summary.total, 1);
+  assert.equal(barDiagnostics.summary.insufficient, 1);
+  assert.equal(barDiagnostics.items[0]?.source, "paper");
+  assert.equal(barDiagnostics.items[0]?.synthetic, true);
+  assert.equal(barDiagnostics.items[0]?.approximate, true);
+  assert.equal(barDiagnostics.items[0]?.generatedFrom, "quote_history");
+  assert.equal(barDiagnostics.items[0]?.quality.grade, "insufficient");
+  assert.equal(barDiagnostics.items[0]?.quality.primaryReason, "insufficient_bars");
+});
+
+test("market data quality summaries distinguish strategy-ready history from reference-only bars", async () => {
+  const session = { workspace: { slug: `market-quality-${randomUUID()}` } };
+  const baseTime = new Date();
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "QSUM1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 101,
+        bid: 100.9,
+        ask: 101.1,
+        open: 100,
+        high: 101.2,
+        low: 99.8,
+        prevClose: 100.5,
+        volume: 120,
+        changePct: 0.5,
+        timestamp: new Date(baseTime.getTime() - 61_000).toISOString()
+      },
+      {
+        symbol: "QSUM1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 102,
+        bid: 101.9,
+        ask: 102.1,
+        open: 101,
+        high: 102.4,
+        low: 100.9,
+        prevClose: 101.4,
+        volume: 180,
+        changePct: 0.6,
+        timestamp: baseTime.toISOString()
+      }
+    ]
+  });
+
+  const historyDiagnostics = await getMarketQuoteHistoryDiagnostics({
+    session,
+    symbols: "QSUM1",
+    source: "tradingview",
+    includeStale: true,
+    limit: 10
+  });
+  const barDiagnostics = await getMarketBarDiagnostics({
+    session,
+    symbols: "QSUM1",
+    source: "tradingview",
+    interval: "1m",
+    includeStale: true,
+    limit: 10
+  });
+
+  assert.equal(historyDiagnostics.summary.strategyReady, 1);
+  assert.equal(historyDiagnostics.items[0]?.quality.grade, "strategy_ready");
+  assert.equal(historyDiagnostics.items[0]?.quality.primaryReason, "history_strategy_ready");
+
+  assert.equal(barDiagnostics.summary.referenceOnly, 1);
+  assert.equal(barDiagnostics.items[0]?.quality.grade, "reference_only");
+  assert.equal(barDiagnostics.items[0]?.quality.primaryReason, "synthetic_bars");
 });
 
 test("market data symbols derive from companies and dedupe by market and ticker", async () => {
@@ -2625,10 +2700,14 @@ test("market data overview summarizes providers, coverage, and leaders", async (
   });
 
   assert.equal(overview.providers.length, 4);
-  assert.equal(overview.surface.version, "market-data-v1.9-decision-summary");
+  assert.equal(overview.surface.version, "market-data-v1.10-history-quality-summary");
   assert.equal(overview.surface.capabilities.overview, true);
   assert.equal(overview.surface.capabilities.selectionSummary, true);
   assert.equal(overview.surface.capabilities.decisionSummary, true);
+  assert.equal(overview.surface.capabilities.historyQualitySummary, true);
+  assert.equal(overview.surface.capabilities.barQualitySummary, true);
+  assert.equal(overview.surface.preferredEntryPoints.historyQuality, "/api/v1/market-data/history/diagnostics");
+  assert.equal(overview.surface.preferredEntryPoints.barQuality, "/api/v1/market-data/bars/diagnostics");
   assert.ok(overview.symbols.total >= 2);
   assert.equal(overview.symbols.byMarket.some((item) => item.market === "TWSE" && item.total >= 1), true);
   assert.equal(overview.symbols.byMarket.some((item) => item.market === "OTHER" && item.total >= 1), true);

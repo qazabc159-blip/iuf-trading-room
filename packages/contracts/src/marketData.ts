@@ -280,6 +280,86 @@ export const marketDataDecisionQuoteSnapshotSchema = z.object({
   isStale: z.boolean()
 });
 
+export const marketDataQualityGradeSchema = z.enum([
+  "strategy_ready",
+  "reference_only",
+  "insufficient"
+]);
+
+export const marketDataQualityAssessmentSchema = z.object({
+  grade: marketDataQualityGradeSchema,
+  strategyUsable: z.boolean(),
+  referenceOnly: z.boolean(),
+  primaryReason: z.string(),
+  reasons: z.array(z.string())
+});
+
+const marketDataQualitySummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  strategyReady: z.number().int().nonnegative(),
+  referenceOnly: z.number().int().nonnegative(),
+  insufficient: z.number().int().nonnegative(),
+  primaryReasons: z.array(
+    z.object({
+      reason: z.string(),
+      total: z.number().int().nonnegative()
+    })
+  ),
+  sources: z.array(
+    z.object({
+      source: quoteSourceSchema,
+      total: z.number().int().nonnegative()
+    })
+  )
+});
+
+const timeWindowCompletenessSchema = z.enum(["unbounded", "empty", "partial", "complete"]);
+
+export const marketDataHistoryDiagnosticsItemSchema = z.object({
+  symbol: z.string(),
+  market: marketSchema,
+  source: quoteSourceSchema.nullable(),
+  selectedSource: quoteSourceSchema.nullable(),
+  fallbackReason: z.string(),
+  freshnessStatus: z.enum(["fresh", "stale", "missing"]),
+  staleReason: z.string(),
+  pointCount: z.number().int().nonnegative(),
+  firstTimestamp: z.string().nullable(),
+  lastTimestamp: z.string().nullable(),
+  lastPointAgeMs: z.number().int().nonnegative().nullable(),
+  timeWindowCompleteness: timeWindowCompletenessSchema,
+  synthetic: z.boolean(),
+  generatedFrom: z.string(),
+  quality: marketDataQualityAssessmentSchema
+});
+
+export const marketDataHistoryDiagnosticsResponseSchema = z.object({
+  generatedAt: z.string(),
+  summary: marketDataQualitySummarySchema,
+  items: z.array(marketDataHistoryDiagnosticsItemSchema)
+});
+
+export const marketDataBarDiagnosticsItemSchema = z.object({
+  symbol: z.string(),
+  source: quoteSourceSchema,
+  interval: barIntervalSchema,
+  barCount: z.number().int().nonnegative(),
+  firstOpenTime: z.string().nullable(),
+  lastCloseTime: z.string().nullable(),
+  lastBarAgeMs: z.number().int().nonnegative().nullable(),
+  timeWindowCompleteness: timeWindowCompletenessSchema,
+  synthetic: z.boolean(),
+  approximate: z.boolean(),
+  generatedFrom: z.string(),
+  quality: marketDataQualityAssessmentSchema
+});
+
+export const marketDataBarDiagnosticsResponseSchema = z.object({
+  generatedAt: z.string(),
+  summary: marketDataQualitySummarySchema,
+  items: z.array(marketDataBarDiagnosticsItemSchema)
+});
+
 export const marketDataDecisionSummaryItemSchema = z.object({
   symbol: z.string(),
   market: marketSchema,
@@ -368,15 +448,19 @@ export const marketDataSurfaceMetadataSchema = z.object({
     decisionSummary: z.boolean(),
     history: z.boolean(),
     historyDiagnostics: z.boolean(),
+    historyQualitySummary: z.boolean(),
     bars: z.boolean(),
     barDiagnostics: z.boolean(),
+    barQualitySummary: z.boolean(),
     overview: z.boolean()
   }),
   preferredEntryPoints: z.object({
     strategy: z.string().min(1),
     paper: z.string().min(1),
     execution: z.string().min(1),
-    ops: z.string().min(1)
+    ops: z.string().min(1),
+    historyQuality: z.string().min(1),
+    barQuality: z.string().min(1)
   })
 });
 
@@ -398,6 +482,12 @@ export type MarketDataSelectionSummaryItem = z.infer<typeof marketDataSelectionS
 export type MarketDataSelectionSummary = z.infer<typeof marketDataSelectionSummarySchema>;
 export type MarketDataDecisionModeSummary = z.infer<typeof marketDataDecisionModeSummarySchema>;
 export type MarketDataDecisionQuoteSnapshot = z.infer<typeof marketDataDecisionQuoteSnapshotSchema>;
+export type MarketDataQualityGrade = z.infer<typeof marketDataQualityGradeSchema>;
+export type MarketDataQualityAssessment = z.infer<typeof marketDataQualityAssessmentSchema>;
 export type MarketDataDecisionSummaryItem = z.infer<typeof marketDataDecisionSummaryItemSchema>;
 export type MarketDataDecisionSummary = z.infer<typeof marketDataDecisionSummarySchema>;
+export type MarketDataHistoryDiagnosticsItem = z.infer<typeof marketDataHistoryDiagnosticsItemSchema>;
+export type MarketDataHistoryDiagnosticsResponse = z.infer<typeof marketDataHistoryDiagnosticsResponseSchema>;
+export type MarketDataBarDiagnosticsItem = z.infer<typeof marketDataBarDiagnosticsItemSchema>;
+export type MarketDataBarDiagnosticsResponse = z.infer<typeof marketDataBarDiagnosticsResponseSchema>;
 export type MarketDataSurfaceMetadata = z.infer<typeof marketDataSurfaceMetadataSchema>;

@@ -222,9 +222,13 @@ async function main() {
             consumerSummary: boolean;
             selectionSummary: boolean;
             decisionSummary: boolean;
+            historyQualitySummary: boolean;
+            barQualitySummary: boolean;
           };
           preferredEntryPoints: {
             execution: string;
+            historyQuality: string;
+            barQuality: string;
           };
         };
         sourcePriority: Array<{ source: string; priority: number }>;
@@ -235,11 +239,15 @@ async function main() {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.match(marketPolicy.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
-    assert.equal(marketPolicy.data.surface.version, "market-data-v1.9-decision-summary");
+    assert.equal(marketPolicy.data.surface.version, "market-data-v1.10-history-quality-summary");
     assert.equal(marketPolicy.data.surface.capabilities.consumerSummary, true);
     assert.equal(marketPolicy.data.surface.capabilities.selectionSummary, true);
     assert.equal(marketPolicy.data.surface.capabilities.decisionSummary, true);
+    assert.equal(marketPolicy.data.surface.capabilities.historyQualitySummary, true);
+    assert.equal(marketPolicy.data.surface.capabilities.barQualitySummary, true);
     assert.equal(marketPolicy.data.surface.preferredEntryPoints.execution, "/api/v1/market-data/decision-summary");
+    assert.equal(marketPolicy.data.surface.preferredEntryPoints.historyQuality, "/api/v1/market-data/history/diagnostics");
+    assert.equal(marketPolicy.data.surface.preferredEntryPoints.barQuality, "/api/v1/market-data/bars/diagnostics");
     assert.equal(marketPolicy.data.sourcePriority[0]?.source, "kgi");
     assert.equal(
       marketPolicy.data.freshnessMs.some((entry) => entry.source === "tradingview" && entry.staleAfterMs > 0),
@@ -693,40 +701,66 @@ async function main() {
     assert.equal(tradingviewFilteredHistory.data.length, 1);
 
     const tradingviewHistoryDiagnostics = await request<
-      JsonEnvelope<
-        Array<{
+      JsonEnvelope<{
+        summary: {
+          total: number;
+          strategyReady: number;
+          referenceOnly: number;
+          insufficient: number;
+        };
+        items: Array<{
           symbol: string;
           selectedSource: string | null;
           freshnessStatus: string;
           synthetic: boolean;
           generatedFrom: string;
-        }>
-      >
+          quality: {
+            grade: string;
+            primaryReason: string;
+          };
+        }>;
+      }>
     >(baseUrl, "/api/v1/market-data/history/diagnostics?symbols=TVSMK1&includeStale=true&limit=10", {
       headers: { "x-workspace-slug": workspaceSlug }
     });
-    assert.equal(tradingviewHistoryDiagnostics.data.length, 1);
-    assert.equal(tradingviewHistoryDiagnostics.data[0]?.symbol, "TVSMK1");
-    assert.equal(tradingviewHistoryDiagnostics.data[0]?.selectedSource, "tradingview");
-    assert.equal(tradingviewHistoryDiagnostics.data[0]?.generatedFrom, "provider_quote_history");
+    assert.equal(tradingviewHistoryDiagnostics.data.summary.total, 1);
+    assert.equal(tradingviewHistoryDiagnostics.data.summary.insufficient, 1);
+    assert.equal(tradingviewHistoryDiagnostics.data.items[0]?.symbol, "TVSMK1");
+    assert.equal(tradingviewHistoryDiagnostics.data.items[0]?.selectedSource, "tradingview");
+    assert.equal(tradingviewHistoryDiagnostics.data.items[0]?.generatedFrom, "provider_quote_history");
+    assert.equal(tradingviewHistoryDiagnostics.data.items[0]?.quality.grade, "insufficient");
+    assert.equal(tradingviewHistoryDiagnostics.data.items[0]?.quality.primaryReason, "insufficient_points");
 
     const tradingviewBarDiagnostics = await request<
-      JsonEnvelope<
-        Array<{
+      JsonEnvelope<{
+        summary: {
+          total: number;
+          strategyReady: number;
+          referenceOnly: number;
+          insufficient: number;
+        };
+        items: Array<{
           symbol: string;
           source: string;
           interval: string;
           synthetic: boolean;
           generatedFrom: string;
-        }>
-      >
+          quality: {
+            grade: string;
+            primaryReason: string;
+          };
+        }>;
+      }>
     >(baseUrl, "/api/v1/market-data/bars/diagnostics?symbols=TVSMK1&source=tradingview&interval=1m&includeStale=true&limit=10", {
       headers: { "x-workspace-slug": workspaceSlug }
     });
-    assert.equal(tradingviewBarDiagnostics.data.length, 1);
-    assert.equal(tradingviewBarDiagnostics.data[0]?.symbol, "TVSMK1");
-    assert.equal(tradingviewBarDiagnostics.data[0]?.source, "tradingview");
-    assert.equal(tradingviewBarDiagnostics.data[0]?.generatedFrom, "quote_history");
+    assert.equal(tradingviewBarDiagnostics.data.summary.total, 1);
+    assert.equal(tradingviewBarDiagnostics.data.summary.insufficient, 1);
+    assert.equal(tradingviewBarDiagnostics.data.items[0]?.symbol, "TVSMK1");
+    assert.equal(tradingviewBarDiagnostics.data.items[0]?.source, "tradingview");
+    assert.equal(tradingviewBarDiagnostics.data.items[0]?.generatedFrom, "quote_history");
+    assert.equal(tradingviewBarDiagnostics.data.items[0]?.quality.grade, "insufficient");
+    assert.equal(tradingviewBarDiagnostics.data.items[0]?.quality.primaryReason, "insufficient_bars");
 
     const providerStatusAfterTradingview = await request<
       JsonEnvelope<
@@ -789,6 +823,13 @@ async function main() {
             capabilities: {
               overview: boolean;
               selectionSummary: boolean;
+              decisionSummary: boolean;
+              historyQualitySummary: boolean;
+              barQualitySummary: boolean;
+            };
+            preferredEntryPoints: {
+              historyQuality: string;
+              barQuality: string;
             };
           };
           sourcePriority: Array<{ source: string; priority: number }>;
@@ -803,10 +844,14 @@ async function main() {
       headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.match(marketOverview.data.generatedAt, /\d{4}-\d{2}-\d{2}T/);
-    assert.equal(marketOverview.data.policy.surface.version, "market-data-v1.9-decision-summary");
+    assert.equal(marketOverview.data.policy.surface.version, "market-data-v1.10-history-quality-summary");
     assert.equal(marketOverview.data.policy.surface.capabilities.overview, true);
     assert.equal(marketOverview.data.policy.surface.capabilities.selectionSummary, true);
     assert.equal(marketOverview.data.policy.surface.capabilities.decisionSummary, true);
+    assert.equal(marketOverview.data.policy.surface.capabilities.historyQualitySummary, true);
+    assert.equal(marketOverview.data.policy.surface.capabilities.barQualitySummary, true);
+    assert.equal(marketOverview.data.policy.surface.preferredEntryPoints.historyQuality, "/api/v1/market-data/history/diagnostics");
+    assert.equal(marketOverview.data.policy.surface.preferredEntryPoints.barQuality, "/api/v1/market-data/bars/diagnostics");
     assert.ok(marketOverview.data.providers.length >= 2);
     assert.ok(marketOverview.data.symbols.total >= 1);
     assert.ok(marketOverview.data.quotes.total >= 1);
