@@ -108,6 +108,7 @@ import {
   parseReport,
   resolveCompanyReference
 } from "../packages/integrations/src/my-tw-coverage/index.ts";
+import { buildModeHintRows } from "../apps/web/lib/quote-vocab.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -4312,4 +4313,44 @@ test("trading-service.submitOrder rejects non-execution roles at the risk layer"
   );
   // Gate short-circuited by the risk block — shape stays { quoteGate: null }.
   assert.equal(result.quoteGate, null);
+});
+
+test("buildModeHintRows surfaces only non-allow lanes with stable order", () => {
+  // both allow → no hint rows; timeline renders nothing.
+  assert.deepEqual(
+    buildModeHintRows({ decision: "allow" }, { decision: "allow" }),
+    []
+  );
+
+  // execution disagrees → only execution row surfaces (paper stays silent
+  // because its allow state is already clear from the mode badges).
+  assert.deepEqual(
+    buildModeHintRows({ decision: "allow" }, { decision: "review" }),
+    [{ mode: "execution", decision: "review" }]
+  );
+
+  // paper disagrees → only paper row surfaces; execution is allow so no
+  // second hint line.
+  assert.deepEqual(
+    buildModeHintRows({ decision: "review" }, { decision: "allow" }),
+    [{ mode: "paper", decision: "review" }]
+  );
+
+  // Both lanes non-allow with different severities → both rows, paper first
+  // then execution, each carrying its own decision so the user can tell the
+  // lanes apart.
+  assert.deepEqual(
+    buildModeHintRows({ decision: "review" }, { decision: "block" }),
+    [
+      { mode: "paper", decision: "review" },
+      { mode: "execution", decision: "block" }
+    ]
+  );
+
+  // Missing mode summaries are treated as silent (no crash, no row).
+  assert.deepEqual(buildModeHintRows(undefined, undefined), []);
+  assert.deepEqual(
+    buildModeHintRows(undefined, { decision: "block" }),
+    [{ mode: "execution", decision: "block" }]
+  );
 });

@@ -428,7 +428,9 @@ async function main() {
         typeof originalQc?.source === "string" ? (originalQc.source as string) : null
     },
     checks: {
-      portfolioReachable: portfolioRoute ? portfolioRoute.status === 200 : null,
+      portfolioReachable: portfolioRoute
+        ? portfolioRoute.status === 200 && portfolioRoute.text.includes("IUF")
+        : null,
       decisionSummaryAvailable: decisionSummary.status === 200,
       previewAllowsReviewAccepted:
         preview.status === 200 &&

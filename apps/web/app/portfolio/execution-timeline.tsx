@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import type { ExecutionEvent, Fill } from "@iuf-trading-room/contracts";
 
-import { MODE_DECISION_HINT } from "@/lib/quote-vocab";
+import { MODE_DECISION_HINT, buildModeHintRows } from "@/lib/quote-vocab";
 
 type Status = "connecting" | "live" | "reconnecting" | "error";
 
@@ -482,19 +482,10 @@ function QuoteDecisionBlock({ qd }: { qd: QuoteDecision }) {
         {renderMode("execution", qd.execution)}
       </div>
       {(() => {
-        // Render the gate-override hint per mode so the reader can tell which
-        // lane (paper vs. live execution) the constraint belongs to. When both
-        // modes are "allow" the mode badges above already say so — no hint
-        // needed. When the two modes disagree (e.g. paper allow + execution
-        // review), both hints appear so the user sees exactly what each lane
-        // would do with this quote.
-        const rows: { mode: "paper" | "execution"; decision: "review" | "block" }[] = [];
-        if (qd.paper && qd.paper.decision !== "allow") {
-          rows.push({ mode: "paper", decision: qd.paper.decision });
-        }
-        if (qd.execution && qd.execution.decision !== "allow") {
-          rows.push({ mode: "execution", decision: qd.execution.decision });
-        }
+        // Per-mode hint rows come from the pure helper so the rendering rule
+        // (non-allow lanes surface their own hint; both-allow → no hint) is
+        // covered by a deterministic CI test rather than only visual review.
+        const rows = buildModeHintRows(qd.paper, qd.execution);
         if (rows.length === 0) return null;
         return (
           <div style={{ display: "grid", gap: "0.2rem", marginTop: "0.35rem" }}>

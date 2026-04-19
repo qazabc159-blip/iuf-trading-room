@@ -32,3 +32,32 @@ export const MODE_DECISION_HINT: Record<"allow" | "review" | "block", string> = 
   review: "送單需勾選接受 REVIEW 報價（quote_review 覆寫）才能通過",
   block: "報價不可執行 · 送單會被伺服器閘阻擋"
 };
+
+export type QuoteDecisionModeSummary = {
+  decision: "allow" | "review" | "block";
+};
+
+export type ModeHintRow = {
+  mode: "paper" | "execution";
+  decision: "review" | "block";
+};
+
+// Pure helper for ExecutionTimeline's per-mode hint block. Given the paper and
+// execution mode decisions, returns the non-allow rows in a stable order so
+// the timeline can render one hint per lane that still has a constraint. When
+// both modes allow, returns []. When the lanes disagree (e.g. paper allow +
+// execution review), only the non-allow lane appears — so the reader sees
+// exactly which lane the hint belongs to.
+export function buildModeHintRows(
+  paper: QuoteDecisionModeSummary | undefined,
+  execution: QuoteDecisionModeSummary | undefined
+): ModeHintRow[] {
+  const rows: ModeHintRow[] = [];
+  if (paper && paper.decision !== "allow") {
+    rows.push({ mode: "paper", decision: paper.decision });
+  }
+  if (execution && execution.decision !== "allow") {
+    rows.push({ mode: "execution", decision: execution.decision });
+  }
+  return rows;
+}
