@@ -1408,6 +1408,7 @@ app.get("/api/v1/strategy/ideas", async (c) => {
       symbol: query.symbol,
       decisionMode: query.decisionMode,
       decisionFilter: query.decisionFilter,
+      qualityFilter: query.qualityFilter,
       sort: query.sort
     })
   });

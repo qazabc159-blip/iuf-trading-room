@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { marketDataQualityGradeSchema } from "./marketData.js";
+
 // Phase 1 強制走 rule-based + 結構化 setup。AI/discretionary 之後才上。
 export const strategyKindSchema = z.enum([
   "rule_based",
@@ -142,6 +144,7 @@ export const strategyIdeaDirectionSchema = z.enum(["bullish", "bearish", "neutra
 export const strategyIdeaMarketDecisionSchema = z.enum(["allow", "review", "block"]);
 export const strategyIdeasDecisionModeSchema = z.enum(["strategy", "paper", "execution"]);
 export const strategyIdeasDecisionFilterSchema = z.enum(["allow", "review", "block", "usable_only"]);
+export const strategyIdeasQualityFilterSchema = z.enum(["strategy_ready", "exclude_insufficient"]);
 export const strategyIdeasSortSchema = z.enum([
   "score",
   "signal_strength",
@@ -169,7 +172,22 @@ export const strategyIdeasQuerySchema = z.object({
   symbol: z.string().trim().min(1).max(32).optional(),
   decisionMode: strategyIdeasDecisionModeSchema.default("strategy"),
   decisionFilter: strategyIdeasDecisionFilterSchema.optional(),
+  qualityFilter: strategyIdeasQualityFilterSchema.optional(),
   sort: strategyIdeasSortSchema.default("score")
+});
+
+export const strategyIdeaQualityDimensionSchema = z.object({
+  grade: marketDataQualityGradeSchema,
+  strategyUsable: z.boolean(),
+  primaryReason: z.string().min(1).max(120)
+});
+
+export const strategyIdeaQualitySchema = z.object({
+  grade: marketDataQualityGradeSchema,
+  strategyUsable: z.boolean(),
+  primaryReason: z.string().min(1).max(120),
+  history: strategyIdeaQualityDimensionSchema,
+  bars: strategyIdeaQualityDimensionSchema
 });
 
 export const strategyIdeaRationaleSchema = z.object({
@@ -202,6 +220,10 @@ export const strategyIdeaRationaleSchema = z.object({
     primaryReason: z.string().min(1).max(120),
     fallbackReason: z.string().min(1).max(120),
     staleReason: z.string().min(1).max(120)
+  }),
+  quality: z.object({
+    grade: marketDataQualityGradeSchema,
+    primaryReason: z.string().min(1).max(120)
   })
 });
 
@@ -231,6 +253,7 @@ export const strategyIdeaSchema = z.object({
     fallbackReason: z.string(),
     staleReason: z.string()
   }),
+  quality: strategyIdeaQualitySchema,
   rationale: strategyIdeaRationaleSchema
 });
 
@@ -243,7 +266,18 @@ export const strategyIdeasViewSchema = z.object({
     block: z.number().int().nonnegative(),
     bullish: z.number().int().nonnegative(),
     bearish: z.number().int().nonnegative(),
-    neutral: z.number().int().nonnegative()
+    neutral: z.number().int().nonnegative(),
+    quality: z.object({
+      strategyReady: z.number().int().nonnegative(),
+      referenceOnly: z.number().int().nonnegative(),
+      insufficient: z.number().int().nonnegative(),
+      primaryReasons: z.array(
+        z.object({
+          reason: z.string(),
+          total: z.number().int().nonnegative()
+        })
+      )
+    })
   }),
   items: z.array(strategyIdeaSchema)
 });
@@ -266,6 +300,7 @@ export type StrategyIdeaDirection = z.infer<typeof strategyIdeaDirectionSchema>;
 export type StrategyIdeaMarketDecision = z.infer<typeof strategyIdeaMarketDecisionSchema>;
 export type StrategyIdeasDecisionMode = z.infer<typeof strategyIdeasDecisionModeSchema>;
 export type StrategyIdeasDecisionFilter = z.infer<typeof strategyIdeasDecisionFilterSchema>;
+export type StrategyIdeasQualityFilter = z.infer<typeof strategyIdeasQualityFilterSchema>;
 export type StrategyIdeasSort = z.infer<typeof strategyIdeasSortSchema>;
 export type StrategyIdeaTheme = z.infer<typeof strategyIdeaThemeSchema>;
 export type StrategyIdeaRationale = z.infer<typeof strategyIdeaRationaleSchema>;

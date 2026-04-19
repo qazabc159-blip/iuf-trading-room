@@ -1363,6 +1363,40 @@ async function main() {
     });
     assert.equal(signal.data.title, "CI smoke signal");
 
+    const olderStrategyQuote = await request<
+      JsonEnvelope<
+        Array<{
+          symbol: string;
+          source: string;
+          timestamp: string;
+        }>
+      >
+    >(baseUrl, "/api/v1/market-data/manual-quotes", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        quotes: [
+          {
+            symbol: "SMK1",
+            market: "OTHER",
+            source: "tradingview",
+            last: 121.5,
+            bid: 121.4,
+            ask: 121.6,
+            open: 120.8,
+            high: 122.2,
+            low: 120.4,
+            prevClose: 120.9,
+            volume: 18_500,
+            changePct: 0.5,
+            timestamp: new Date(Date.now() - 60_000).toISOString()
+          }
+        ]
+      })
+    });
+    assert.equal(olderStrategyQuote.data[0]?.symbol, "SMK1");
+    assert.equal(olderStrategyQuote.data[0]?.source, "tradingview");
+
     const eventTimestamp = new Date().toISOString();
     const webhookSignal = await request<
       JsonEnvelope<{ id: string; title: string; direction: string }> & {
@@ -1509,7 +1543,12 @@ async function main() {
 
     const strategyIdeas = await request<
       JsonEnvelope<{
-        summary: { total: number; review: number; bullish: number };
+        summary: {
+          total: number;
+          review: number;
+          bullish: number;
+          quality: { referenceOnly: number; insufficient: number };
+        };
         items: Array<{
           companyId: string;
           symbol: string;
@@ -1518,18 +1557,26 @@ async function main() {
             selectedSource: string | null;
             decision: string;
           };
+          quality: {
+            grade: string;
+            strategyUsable: boolean;
+            primaryReason: string;
+            history: { grade: string };
+            bars: { grade: string };
+          };
           topThemes: Array<{ themeId: string }>;
           rationale: {
             primaryReason: string;
             theme: { topThemeId: string | null };
             signals: { recentCount: number; hasRecentSignals: boolean };
             marketData: { mode: string; primaryReason: string };
+            quality: { grade: string; primaryReason: string };
           };
         }>;
       }>
     >(
       baseUrl,
-      `/api/v1/strategy/ideas?limit=10&signalDays=30&includeBlocked=true&decisionMode=strategy&decisionFilter=usable_only&themeId=${theme.data.id}&sort=score`,
+      `/api/v1/strategy/ideas?limit=10&signalDays=30&includeBlocked=true&decisionMode=strategy&decisionFilter=usable_only&qualityFilter=exclude_insufficient&themeId=${theme.data.id}&sort=score`,
       {
         headers: { "x-workspace-slug": workspaceSlug }
       }
@@ -1537,6 +1584,8 @@ async function main() {
     assert.equal(strategyIdeas.data.summary.total, 1);
     assert.ok(strategyIdeas.data.summary.review >= 1);
     assert.ok(strategyIdeas.data.summary.bullish >= 1);
+    assert.ok(strategyIdeas.data.summary.quality.referenceOnly >= 1);
+    assert.equal(strategyIdeas.data.summary.quality.insufficient, 0);
     assert.equal(
       strategyIdeas.data.items.some(
         (item) =>
@@ -1545,13 +1594,19 @@ async function main() {
           item.marketData.decisionMode === "strategy" &&
           item.marketData.selectedSource === "tradingview" &&
           item.marketData.decision === "review" &&
+          item.quality.grade.length > 0 &&
+          item.quality.primaryReason.length > 0 &&
+          item.quality.history.grade.length > 0 &&
+          item.quality.bars.grade.length > 0 &&
           item.topThemes.some((themeItem) => themeItem.themeId === theme.data.id) &&
           item.rationale.primaryReason.length > 0 &&
           item.rationale.theme.topThemeId === theme.data.id &&
           item.rationale.signals.recentCount >= 1 &&
           item.rationale.signals.hasRecentSignals === true &&
           item.rationale.marketData.mode === "strategy" &&
-          item.rationale.marketData.primaryReason.length > 0
+          item.rationale.marketData.primaryReason.length > 0 &&
+          item.rationale.quality.grade.length > 0 &&
+          item.rationale.quality.primaryReason.length > 0
       ),
       true
     );

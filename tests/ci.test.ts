@@ -3871,6 +3871,7 @@ test("strategy ideas support filters, sort modes, and structured rationale", asy
     workspaceSlug: `strategy-ideas-${randomUUID()}`
   });
   const now = new Date().toISOString();
+  const older = new Date(Date.now() - 60_000).toISOString();
 
   const opticsTheme = await repo.createTheme({
     name: "Optics Upgrade",
@@ -4013,7 +4014,7 @@ test("strategy ideas support filters, sort modes, and structured rationale", asy
         prevClose: 143,
         volume: 1800,
         changePct: 1.4,
-        timestamp: now
+        timestamp: older
       },
       {
         symbol: "STR2",
@@ -4028,6 +4029,26 @@ test("strategy ideas support filters, sort modes, and structured rationale", asy
         prevClose: 48.2,
         volume: 120,
         changePct: -0.4,
+        timestamp: older
+      }
+    ]
+  });
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "STR1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 146,
+        bid: 145.8,
+        ask: 146.2,
+        open: 142,
+        high: 146.5,
+        low: 141.5,
+        prevClose: 143,
+        volume: 2100,
+        changePct: 2.1,
         timestamp: now
       }
     ]
@@ -4046,11 +4067,18 @@ test("strategy ideas support filters, sort modes, and structured rationale", asy
   });
 
   assert.equal(filteredIdeas.summary.total, 1);
+  assert.equal(filteredIdeas.summary.quality.referenceOnly, 1);
+  assert.equal(filteredIdeas.summary.quality.insufficient, 0);
   assert.equal(filteredIdeas.items[0]?.companyId, opticsCompany.id);
   assert.equal(filteredIdeas.items[0]?.symbol, "STR1");
   assert.equal(filteredIdeas.items[0]?.marketData.decisionMode, "strategy");
   assert.equal(filteredIdeas.items[0]?.marketData.selectedSource, "tradingview");
   assert.equal(filteredIdeas.items[0]?.marketData.decision, "review");
+  assert.equal(filteredIdeas.items[0]?.quality.grade, "reference_only");
+  assert.equal(filteredIdeas.items[0]?.quality.history.grade, "strategy_ready");
+  assert.equal(filteredIdeas.items[0]?.quality.bars.grade, "reference_only");
+  assert.equal(filteredIdeas.items[0]?.rationale.quality.grade, "reference_only");
+  assert.equal(filteredIdeas.items[0]?.rationale.primaryReason, filteredIdeas.items[0]?.quality.primaryReason);
   assert.equal(filteredIdeas.items[0]?.direction, "bullish");
   assert.equal(filteredIdeas.items[0]?.topThemes[0]?.themeId, opticsTheme.id);
   assert.equal(filteredIdeas.items[0]?.rationale.theme.topThemeId, opticsTheme.id);
@@ -4074,6 +4102,20 @@ test("strategy ideas support filters, sort modes, and structured rationale", asy
   });
   assert.equal(recencyIdeas.items[0]?.companyId, opticsCompany.id);
   assert.equal(recencyIdeas.items[0]?.marketData.decisionMode, "paper");
+
+  const qualityIdeas = await getStrategyIdeas({
+    session,
+    repo,
+    limit: 10,
+    signalDays: 30,
+    includeBlocked: true,
+    decisionMode: "strategy",
+    qualityFilter: "exclude_insufficient",
+    sort: "score"
+  });
+  assert.equal(qualityIdeas.summary.total, 1);
+  assert.equal(qualityIdeas.items[0]?.symbol, "STR1");
+  assert.equal(qualityIdeas.items[0]?.quality.grade, "reference_only");
 
   const symbolIdeas = await getStrategyIdeas({
     session,

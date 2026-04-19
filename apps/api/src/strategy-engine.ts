@@ -2,10 +2,12 @@ import type {
   AppSession,
   Company,
   Market,
+  MarketDataQualityGrade,
   Signal,
   StrategyIdea,
   StrategyIdeasDecisionFilter,
   StrategyIdeasDecisionMode,
+  StrategyIdeasQualityFilter,
   StrategyIdeasSort,
   StrategyIdeasView,
   Theme,
@@ -14,14 +16,27 @@ import type {
 import { strategyIdeasViewSchema } from "@iuf-trading-room/contracts";
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 
-import { getMarketDataDecisionSummary } from "./market-data.js";
+import {
+  getMarketBarDiagnostics,
+  getMarketDataDecisionSummary,
+  getMarketQuoteHistoryDiagnostics
+} from "./market-data.js";
 import { getThemeGraphRankings } from "./theme-graph.js";
 
 const supportedDecisionMarkets = ["TWSE", "TPEX", "TWO", "TW_EMERGING", "TW_INDEX", "OTHER"] as const;
 type MarketDecisionSummaryItem = Awaited<ReturnType<typeof getMarketDataDecisionSummary>>["items"][number];
+type MarketHistoryDiagnosticsItem = Awaited<ReturnType<typeof getMarketQuoteHistoryDiagnostics>>["items"][number];
+type MarketBarDiagnosticsItem = Awaited<ReturnType<typeof getMarketBarDiagnostics>>["items"][number];
 type StrategyIdeaThemeContext = {
   topThemes: StrategyIdea["topThemes"];
   themeScore: number;
+};
+type StrategyIdeaQualityView = StrategyIdea["quality"];
+
+const qualitySeverity: Record<MarketDataQualityGrade, number> = {
+  strategy_ready: 0,
+  reference_only: 1,
+  insufficient: 2
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -104,6 +119,24 @@ function decisionPassesFilter(input: {
   return input.decision !== "block";
 }
 
+function qualityPassesFilter(input: {
+  quality: StrategyIdeaQualityView;
+  qualityFilter?: StrategyIdeasQualityFilter;
+}) {
+  if (!input.qualityFilter) {
+    return true;
+  }
+
+  switch (input.qualityFilter) {
+    case "strategy_ready":
+      return input.quality.grade === "strategy_ready";
+    case "exclude_insufficient":
+      return input.quality.grade !== "insufficient";
+    default:
+      return true;
+  }
+}
+
 function themeMatchesFilter(
   company: Company,
   themesById: Map<string, Theme>,
@@ -184,6 +217,76 @@ function sortIdeas(items: StrategyIdea[], sort: StrategyIdeasSort) {
 
     return left.symbol.localeCompare(right.symbol);
   });
+}
+
+function defaultHistoryQuality(): StrategyIdeaQualityView["history"] {
+  return {
+    grade: "insufficient",
+    strategyUsable: false,
+    primaryReason: "missing_history"
+  };
+}
+
+function defaultBarQuality(): StrategyIdeaQualityView["bars"] {
+  return {
+    grade: "insufficient",
+    strategyUsable: false,
+    primaryReason: "missing_bars"
+  };
+}
+
+function combineIdeaQuality(input: {
+  history?: MarketHistoryDiagnosticsItem | null;
+  bars?: MarketBarDiagnosticsItem | null;
+}): StrategyIdeaQualityView {
+  const history = input.history
+    ? {
+        grade: input.history.quality.grade,
+        strategyUsable: input.history.quality.strategyUsable,
+        primaryReason: input.history.quality.primaryReason
+      }
+    : defaultHistoryQuality();
+  const bars = input.bars
+    ? {
+        grade: input.bars.quality.grade,
+        strategyUsable: input.bars.quality.strategyUsable,
+        primaryReason: input.bars.quality.primaryReason
+      }
+    : defaultBarQuality();
+
+  let grade = history.grade;
+  let primaryReason = history.primaryReason;
+
+  if (qualitySeverity[bars.grade] > qualitySeverity[grade]) {
+    grade = bars.grade;
+    primaryReason = bars.primaryReason;
+  } else if (
+    qualitySeverity[bars.grade] === qualitySeverity[grade] &&
+    grade !== "strategy_ready" &&
+    history.primaryReason === "missing_history"
+  ) {
+    primaryReason = bars.primaryReason;
+  }
+
+  return {
+    grade,
+    strategyUsable: grade === "strategy_ready",
+    primaryReason,
+    history,
+    bars
+  };
+}
+
+function summarizeQualityReasons(items: StrategyIdea[]) {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    counts.set(item.quality.primaryReason, (counts.get(item.quality.primaryReason) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 6)
+    .map(([reason, total]) => ({ reason, total }));
 }
 
 function buildSignalSummary(signals: Signal[], nowIso: string, signalDays: number) {
@@ -277,6 +380,7 @@ export async function getStrategyIdeas(input: {
   symbol?: string;
   decisionMode?: StrategyIdeasDecisionMode;
   decisionFilter?: StrategyIdeasDecisionFilter;
+  qualityFilter?: StrategyIdeasQualityFilter;
   sort?: StrategyIdeasSort;
 }): Promise<StrategyIdeasView> {
   const limit = clamp(input.limit ?? 12, 1, 50);
@@ -348,6 +452,8 @@ export async function getStrategyIdeas(input: {
   }
 
   const decisionMap = new Map<string, MarketDecisionSummaryItem>();
+  const historyQualityMap = new Map<string, MarketHistoryDiagnosticsItem>();
+  const barQualityMap = new Map<string, MarketBarDiagnosticsItem>();
 
   for (const [market, items] of byDecisionMarket) {
     const symbols = [...new Set(items.map((item) => item.company.ticker))].join(",");
@@ -355,16 +461,41 @@ export async function getStrategyIdeas(input: {
       continue;
     }
 
-    const summary = await getMarketDataDecisionSummary({
-      session: input.session,
-      symbols,
-      market,
-      includeStale: true,
-      limit: Math.max(items.length, 20)
-    });
+    const [decisionSummary, historyDiagnostics, barDiagnostics] = await Promise.all([
+      getMarketDataDecisionSummary({
+        session: input.session,
+        symbols,
+        market,
+        includeStale: true,
+        limit: Math.max(items.length, 20)
+      }),
+      getMarketQuoteHistoryDiagnostics({
+        session: input.session,
+        symbols,
+        market,
+        includeStale: true,
+        limit: Math.max(items.length * 4, 40)
+      }),
+      getMarketBarDiagnostics({
+        session: input.session,
+        symbols,
+        market,
+        includeStale: true,
+        interval: "1m",
+        limit: Math.max(items.length * 2, 20)
+      })
+    ]);
 
-    for (const item of summary.items) {
+    for (const item of decisionSummary.items) {
       decisionMap.set(`${item.market}:${item.symbol}`, item);
+    }
+
+    for (const item of historyDiagnostics.items) {
+      historyQualityMap.set(`${item.market}:${item.symbol}`, item);
+    }
+
+    for (const item of barDiagnostics.items) {
+      barQualityMap.set(`${market}:${item.symbol}`, item);
     }
   }
 
@@ -375,6 +506,16 @@ export async function getStrategyIdeas(input: {
         decisionMap.get(`${decisionMarket}:${entry.company.ticker}`) ??
         decisionMap.get(`OTHER:${entry.company.ticker}`) ??
         null;
+      const quality = combineIdeaQuality({
+        history:
+          historyQualityMap.get(`${decisionMarket}:${entry.company.ticker}`) ??
+          historyQualityMap.get(`OTHER:${entry.company.ticker}`) ??
+          null,
+        bars:
+          barQualityMap.get(`${decisionMarket}:${entry.company.ticker}`) ??
+          barQualityMap.get(`OTHER:${entry.company.ticker}`) ??
+          null
+      });
       const decisionView = pickDecisionSummary(decision, decisionMode);
       const decisionName = decisionView?.decision ?? "block";
       const marketDataScore = decisionName === "allow" ? 15 : decisionName === "review" ? 8 : 0;
@@ -397,7 +538,9 @@ export async function getStrategyIdeas(input: {
       const signalPrimaryReason =
         entry.signalSummary.recentSignals.length > 0 ? "recent_signals_present" : "no_recent_signals";
       const rationalePrimaryReason =
-        decisionView?.primaryReason && decisionName !== "allow"
+        quality.grade !== "strategy_ready"
+          ? quality.primaryReason
+          : decisionView?.primaryReason && decisionName !== "allow"
           ? decisionView.primaryReason
           : entry.signalSummary.recentSignals.length > 0
             ? "recent_signals_present"
@@ -431,6 +574,7 @@ export async function getStrategyIdeas(input: {
           fallbackReason: decision?.fallbackReason ?? "no_quote",
           staleReason: decision?.staleReason ?? "missing_quote"
         },
+        quality,
         rationale: {
           primaryReason: rationalePrimaryReason,
           theme: {
@@ -461,6 +605,10 @@ export async function getStrategyIdeas(input: {
             primaryReason: decisionView?.primaryReason ?? "missing_market_decision",
             fallbackReason: decision?.fallbackReason ?? "no_quote",
             staleReason: decision?.staleReason ?? "missing_quote"
+          },
+          quality: {
+            grade: quality.grade,
+            primaryReason: quality.primaryReason
           }
         }
       } satisfies StrategyIdea;
@@ -471,6 +619,10 @@ export async function getStrategyIdeas(input: {
         usable: item.marketData.usable,
         includeBlocked,
         decisionFilter: input.decisionFilter
+      })
+      && qualityPassesFilter({
+        quality: item.quality,
+        qualityFilter: input.qualityFilter
       })
     );
 
@@ -486,7 +638,13 @@ export async function getStrategyIdeas(input: {
       block: finalItems.filter((item) => item.marketData.decision === "block").length,
       bullish: finalItems.filter((item) => item.direction === "bullish").length,
       bearish: finalItems.filter((item) => item.direction === "bearish").length,
-      neutral: finalItems.filter((item) => item.direction === "neutral").length
+      neutral: finalItems.filter((item) => item.direction === "neutral").length,
+      quality: {
+        strategyReady: finalItems.filter((item) => item.quality.grade === "strategy_ready").length,
+        referenceOnly: finalItems.filter((item) => item.quality.grade === "reference_only").length,
+        insufficient: finalItems.filter((item) => item.quality.grade === "insufficient").length,
+        primaryReasons: summarizeQualityReasons(finalItems)
+      }
     },
     items: finalItems
   });
