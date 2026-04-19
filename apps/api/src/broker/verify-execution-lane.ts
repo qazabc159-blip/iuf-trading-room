@@ -67,6 +67,8 @@ type TradingOrderResult = {
 type ExecutionEvent = {
   type: string;
   status: string;
+  orderId?: string;
+  clientOrderId?: string;
   payload: Record<string, unknown> | null;
 };
 
@@ -260,6 +262,111 @@ async function main() {
   assert(Boolean(eventWithQuoteDecision), "events history missing quoteDecision payload");
   assert(Boolean(eventWithAccountId), "events history missing accountId payload");
 
+  // --- Cancel-path scenario ---------------------------------------------
+  // Seed the cancel symbol's quote, place a resting limit far from market,
+  // cancel it, and verify the cancel event replays `originalQuoteContext`.
+  // This is the UI dependency: ExecutionTimeline's cancel detail block reads
+  // `payload.originalQuoteContext`, and that payload is only populated when
+  // the Order row carries a persisted quoteContext at cancel time.
+  const cancelQuoteTs = new Date().toISOString();
+  await requestJson(config, "/api/v1/market-data/paper-quotes", {
+    method: "POST",
+    body: JSON.stringify({
+      source: "paper",
+      quotes: [
+        {
+          symbol: config.cancelSymbol,
+          market: "TWSE",
+          last: 100.0,
+          bid: 99.5,
+          ask: 100.5,
+          timestamp: cancelQuoteTs
+        }
+      ]
+    })
+  });
+
+  // Buy-limit well below ask so the order rests on the book instead of
+  // immediately marrying against the quote. Paper feed still sits in paper-
+  // review (fallback:higher_priority_unavailable), so we still need the
+  // quote_review override for the risk gate.
+  const cancelOrderPayload = {
+    accountId: config.accountId,
+    symbol: config.cancelSymbol,
+    side: "buy",
+    type: "limit",
+    timeInForce: "rod",
+    quantity: 1000,
+    price: 50.0,
+    stopPrice: null,
+    tradePlanId: null,
+    strategyId: null,
+    overrideGuards: ["quote_review"],
+    overrideReason: "verify cancel path"
+  };
+
+  const cancelSubmit = await requestJson<TradingOrderResult>(
+    config,
+    "/api/v1/trading/orders",
+    {
+      method: "POST",
+      body: JSON.stringify(cancelOrderPayload)
+    }
+  );
+  assert(cancelSubmit.status === 201, `cancel-path submit status ${cancelSubmit.status}`);
+  assert(
+    cancelSubmit.json.data.order?.status === "acknowledged",
+    `cancel-path order status was ${cancelSubmit.json.data.order?.status ?? "null"}, expected acknowledged`
+  );
+  const restingOrderId = cancelSubmit.json.data.order?.id ?? null;
+  assert(restingOrderId, "cancel-path submit did not return an order id");
+
+  const cancelResponse = await requestJson<{ id: string; status: string }>(
+    config,
+    `/api/v1/trading/orders/cancel?accountId=${encodeURIComponent(config.accountId)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        orderId: restingOrderId,
+        reason: "verify cancel path"
+      })
+    }
+  );
+  assert(cancelResponse.status === 200, `cancel status was ${cancelResponse.status}`);
+  assert(
+    cancelResponse.json.data.status === "canceled",
+    `cancel-path order did not reach canceled, got ${cancelResponse.json.data.status}`
+  );
+
+  const cancelEvents = await requestJson<ExecutionEvent[]>(
+    config,
+    `/api/v1/trading/events?accountId=${encodeURIComponent(config.accountId)}&limit=50`
+  );
+
+  type CancelEventPayload = {
+    originalQuoteContext?: Record<string, unknown>;
+  };
+  const ackEventForOrder = cancelEvents.json.data.find(
+    (event) => event.type === "acknowledge" && event.orderId === restingOrderId
+  );
+  const cancelEventForOrder = cancelEvents.json.data.find(
+    (event): event is ExecutionEvent & { payload: CancelEventPayload } =>
+      event.type === "cancel" &&
+      event.orderId === restingOrderId &&
+      event.payload !== null &&
+      typeof event.payload === "object" &&
+      "originalQuoteContext" in event.payload
+  );
+  assert(ackEventForOrder, "cancel-path acknowledge event missing");
+  assert(cancelEventForOrder, "cancel-path cancel event missing originalQuoteContext");
+  const originalQc = cancelEventForOrder.payload.originalQuoteContext;
+  assert(
+    originalQc &&
+      typeof originalQc === "object" &&
+      typeof originalQc.source === "string",
+    "cancel-path originalQuoteContext not a well-formed snapshot"
+  );
+
   const output = {
     kind: "execution-lane-verify",
     success: true,
@@ -269,6 +376,7 @@ async function main() {
     workspaceSlug: config.workspaceSlug,
     accountId: config.accountId,
     symbol: config.symbol,
+    cancelSymbol: config.cancelSymbol,
     portfolio: portfolioRoute
       ? {
           status: portfolioRoute.status,
@@ -306,6 +414,19 @@ async function main() {
       hasQuoteDecision: Boolean(eventWithQuoteDecision),
       hasAccountId: Boolean(eventWithAccountId)
     },
+    cancelPath: {
+      submitStatus: cancelSubmit.status,
+      restingOrderId,
+      restingOrderStatus: cancelSubmit.json.data.order?.status ?? null,
+      cancelStatus: cancelResponse.status,
+      canceledOrderStatus: cancelResponse.json.data.status,
+      cancelEventCount: cancelEvents.json.data.filter(
+        (event) => event.type === "cancel" && event.orderId === restingOrderId
+      ).length,
+      hasOriginalQuoteContext: Boolean(originalQc),
+      originalQuoteContextSource:
+        typeof originalQc?.source === "string" ? (originalQc.source as string) : null
+    },
     checks: {
       portfolioReachable: portfolioRoute ? portfolioRoute.status === 200 : null,
       decisionSummaryAvailable: decisionSummary.status === 200,
@@ -325,7 +446,12 @@ async function main() {
         eventTypes.includes("submit") &&
         eventTypes.includes("fill") &&
         Boolean(eventWithQuoteDecision) &&
-        Boolean(eventWithAccountId)
+        Boolean(eventWithAccountId),
+      cancelPathReplaysQuoteContext:
+        cancelResponse.status === 200 &&
+        cancelResponse.json.data.status === "canceled" &&
+        Boolean(cancelEventForOrder) &&
+        Boolean(originalQc)
     }
   };
 
