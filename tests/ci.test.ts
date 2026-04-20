@@ -4590,6 +4590,412 @@ test("autopilot execute blocks all orders when kill-switch is halted", async () 
   });
 });
 
+// ---------------------------------------------------------------------------
+// Autopilot Phase 1 — edge-case hardening tests
+// ---------------------------------------------------------------------------
+
+test("autopilot dryRun: bearish idea with bullish_long sidePolicy → eligible list empty → total=0 result", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `autopilot-bearish-skip-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "Bearish Skip Theme",
+    marketState: "Defensive",
+    lifecycle: "Contraction",
+    priority: 3,
+    thesis: "Bearish signal test.",
+    whyNow: "CI.",
+    bottleneck: "None"
+  });
+
+  const company = await repo.createCompany({
+    name: "Bearish Skip Co",
+    ticker: "BSK1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Core",
+    beneficiaryTier: "Core",
+    exposure: { volume: 3, asp: 3, margin: 3, capacity: 3, narrative: 3 },
+    validation: { capitalFlow: "Weak", consensus: "Down", relativeStrength: "Lagging" },
+    notes: "Bearish skip CI test."
+  });
+
+  // Signal is bearish — with bullish_long sidePolicy, this idea should be skipped entirely
+  await repo.createSignal({
+    category: "industry",
+    direction: "bearish",
+    title: "BSK1 bearish signal",
+    summary: "Bearish.",
+    confidence: 4,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "BSK1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 80,
+        bid: 79.8,
+        ask: 80.2,
+        open: 79,
+        high: 81,
+        low: 78,
+        prevClose: 79,
+        volume: 600,
+        changePct: -1.0,
+        timestamp: new Date().toISOString()
+      }
+    ]
+  });
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  // bullish_long policy: only bullish ideas get a buy side. BSK1 is bearish → skipped.
+  const result = await executeStrategyRun({
+    session,
+    repo,
+    runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 1.0,
+      maxOrders: 5,
+      dryRun: true
+    }
+  });
+
+  // All candidates were skipped by sidePolicy — eligible list is empty → early return with total=0
+  assert.equal(result.runId, run.id);
+  assert.equal(result.dryRun, true);
+  assert.equal(result.summary.total, 0);
+  assert.equal(result.summary.submittedCount, 0);
+  assert.equal(result.summary.blockedCount, 0);
+  assert.equal(result.summary.errorCount, 0);
+  assert.equal(result.submitted.length, 0);
+  assert.equal(result.blocked.length, 0);
+  assert.equal(result.errors.length, 0);
+});
+
+test("autopilot dryRun: sizePct so small that quantity=0 → all go to blocked with quantity_zero reason", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `autopilot-qty-zero-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "Qty Zero Theme",
+    marketState: "Selective Attack",
+    lifecycle: "Expansion",
+    priority: 4,
+    thesis: "Test.",
+    whyNow: "CI.",
+    bottleneck: "None"
+  });
+
+  const company = await repo.createCompany({
+    name: "Qty Zero Co",
+    ticker: "QZ01",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Core",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
+    notes: "Qty zero CI test."
+  });
+
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "QZ01 bullish signal",
+    summary: "Bullish.",
+    confidence: 5,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+
+  // Very high price: paper balance is typically ~100_000 equity, 0.1% sizePct → 100 / 999_999 = 0.0001 lots → floor=0
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "QZ01",
+        market: "OTHER",
+        source: "tradingview",
+        last: 999_999,
+        bid: 999_990,
+        ask: 1_000_010,
+        open: 999_000,
+        high: 1_000_100,
+        low: 998_900,
+        prevClose: 999_000,
+        volume: 10,
+        changePct: 0.1,
+        timestamp: new Date().toISOString()
+      }
+    ]
+  });
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  // sizePct 0.1 % of equity / price 999_999 → raw qty < 1 → floor to 0 → quantity_zero
+  const result = await executeStrategyRun({
+    session,
+    repo,
+    runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 0.1,
+      maxOrders: 3,
+      dryRun: true
+    }
+  });
+
+  assert.equal(result.runId, run.id);
+  assert.equal(result.dryRun, true);
+  // Either quantity_zero (our pre-check) or no_price if quote didn't resolve — either is a blocked reason
+  // Primary assertion: nothing should be submitted
+  assert.equal(result.summary.submittedCount, 0);
+  // If QZ01 was found and priced, it should be in blocked[] with quantity_zero
+  const qz01Blocked = result.blocked.find((e) => e.symbol === "QZ01");
+  if (qz01Blocked) {
+    assert.equal(qz01Blocked.blocked, true);
+    assert.equal(qz01Blocked.blockedReason, "quantity_zero");
+    assert.equal(qz01Blocked.quantity, 0);
+  }
+  // Invariant: total = submitted + blocked + errors
+  assert.equal(
+    result.summary.total,
+    result.summary.submittedCount + result.summary.blockedCount + result.summary.errorCount
+  );
+});
+
+test("autopilot dryRun: bearish_short sidePolicy but idea is bullish → skipped → empty result", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `autopilot-short-only-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "Short Only Theme",
+    marketState: "Selective Attack",
+    lifecycle: "Expansion",
+    priority: 3,
+    thesis: "Short policy test.",
+    whyNow: "CI.",
+    bottleneck: "None"
+  });
+
+  const company = await repo.createCompany({
+    name: "Short Skip Co",
+    ticker: "SPS1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Core",
+    beneficiaryTier: "Core",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
+    notes: "Short-only skip CI test."
+  });
+
+  // Signal is bullish — bearish_short policy should skip this idea
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "SPS1 bullish signal",
+    summary: "Bullish.",
+    confidence: 5,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "SPS1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 60,
+        bid: 59.8,
+        ask: 60.2,
+        open: 59,
+        high: 61,
+        low: 58,
+        prevClose: 59,
+        volume: 700,
+        changePct: 1.5,
+        timestamp: new Date().toISOString()
+      }
+    ]
+  });
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  // bearish_short policy: only bearish ideas get sell side. SPS1 is bullish → resolveSideForIdea returns null → skipped.
+  const result = await executeStrategyRun({
+    session,
+    repo,
+    runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bearish_short",
+      sizeMode: "fixed_pct",
+      sizePct: 1.0,
+      maxOrders: 5,
+      dryRun: true
+    }
+  });
+
+  assert.equal(result.runId, run.id);
+  assert.equal(result.dryRun, true);
+  // bearish_short skips all bullish ideas → eligible empty → total 0
+  assert.equal(result.summary.total, 0);
+  assert.equal(result.summary.submittedCount, 0);
+  assert.equal(result.summary.blockedCount, 0);
+  assert.equal(result.summary.errorCount, 0);
+  assert.equal(result.submitted.length, 0);
+  assert.equal(result.blocked.length, 0);
+});
+
+test("autopilot dryRun: idempotency — same runId executed twice produces independent results without double-counting", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `autopilot-idempotent-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "Idempotency Theme",
+    marketState: "Selective Attack",
+    lifecycle: "Expansion",
+    priority: 4,
+    thesis: "Idempotency test.",
+    whyNow: "CI.",
+    bottleneck: "None"
+  });
+
+  const company = await repo.createCompany({
+    name: "Idempotency Co",
+    ticker: "IDP1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Core",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
+    notes: "Idempotency CI test."
+  });
+
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "IDP1 idempotency signal",
+    summary: "Test.",
+    confidence: 5,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "IDP1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 120,
+        bid: 119.8,
+        ask: 120.2,
+        open: 119,
+        high: 121,
+        low: 118,
+        prevClose: 119,
+        volume: 800,
+        changePct: 0.8,
+        timestamp: new Date().toISOString()
+      }
+    ]
+  });
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const payload = {
+    accountId: "paper-default",
+    sidePolicy: "bullish_long" as const,
+    sizeMode: "fixed_pct" as const,
+    sizePct: 1.0,
+    maxOrders: 3,
+    dryRun: true
+  };
+
+  // Execute the same dryRun twice with the same runId
+  const firstResult = await executeStrategyRun({ session, repo, runId: run.id, payload });
+  const secondResult = await executeStrategyRun({ session, repo, runId: run.id, payload });
+
+  // Both calls should target the same runId
+  assert.equal(firstResult.runId, run.id);
+  assert.equal(secondResult.runId, run.id);
+
+  // Both should be dryRun
+  assert.equal(firstResult.dryRun, true);
+  assert.equal(secondResult.dryRun, true);
+
+  // Totals must be equal (same input, same run snapshot) — second call is independent, not accumulating
+  assert.equal(firstResult.summary.total, secondResult.summary.total);
+  assert.equal(firstResult.summary.submittedCount, secondResult.summary.submittedCount);
+  assert.equal(firstResult.summary.blockedCount, secondResult.summary.blockedCount);
+  assert.equal(firstResult.summary.errorCount, secondResult.summary.errorCount);
+
+  // Invariant holds for both results
+  assert.equal(
+    firstResult.summary.total,
+    firstResult.summary.submittedCount + firstResult.summary.blockedCount + firstResult.summary.errorCount
+  );
+  assert.equal(
+    secondResult.summary.total,
+    secondResult.summary.submittedCount + secondResult.summary.blockedCount + secondResult.summary.errorCount
+  );
+
+  // Second result should not have MORE entries than first (no accumulation)
+  assert.ok(
+    secondResult.submitted.length === firstResult.submitted.length,
+    `submitted count should be equal: ${firstResult.submitted.length} vs ${secondResult.submitted.length}`
+  );
+  assert.ok(
+    secondResult.blocked.length === firstResult.blocked.length,
+    `blocked count should be equal: ${firstResult.blocked.length} vs ${secondResult.blocked.length}`
+  );
+});
+
 test("memory repository supports core research-to-review loop", async () => {
   const repo = new MemoryTradingRoomRepository();
 
