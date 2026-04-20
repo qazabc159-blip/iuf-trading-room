@@ -11,6 +11,57 @@ const repoRoot = path.resolve(__dirname, "..");
 const apiDir = path.join(repoRoot, "apps", "api");
 const workspaceSlug = `smoke-${Date.now()}`;
 
+// ---------------------------------------------------------------------------
+// Output helpers — ANSI colors, step tracker, summary
+// ---------------------------------------------------------------------------
+
+const noColor = !process.stdout.isTTY || process.env.NO_COLOR !== undefined;
+const c = {
+  green: (s: string) => noColor ? s : `\x1b[32m${s}\x1b[0m`,
+  red:   (s: string) => noColor ? s : `\x1b[31m${s}\x1b[0m`,
+  cyan:  (s: string) => noColor ? s : `\x1b[36m${s}\x1b[0m`,
+  bold:  (s: string) => noColor ? s : `\x1b[1m${s}\x1b[0m`,
+  dim:   (s: string) => noColor ? s : `\x1b[2m${s}\x1b[0m`
+};
+
+const stepResults: Array<{ label: string; passed: boolean; ms: number }> = [];
+
+function step(label: string) {
+  const start = Date.now();
+  return {
+    pass() {
+      const ms = Date.now() - start;
+      stepResults.push({ label, passed: true, ms });
+      console.log(`  ${c.green("PASS")} ${c.dim(label)} ${c.dim(`(${ms}ms)`)}`);
+    },
+    fail(err: unknown) {
+      const ms = Date.now() - start;
+      stepResults.push({ label, passed: false, ms });
+      console.log(`  ${c.red("FAIL")} ${c.dim(label)} ${c.dim(`(${ms}ms)`)}`);
+      throw err;
+    }
+  };
+}
+
+function printSummary() {
+  const total = stepResults.length;
+  const passed = stepResults.filter((r) => r.passed).length;
+  const failed = total - passed;
+  const totalMs = stepResults.reduce((sum, r) => sum + r.ms, 0);
+  console.log("");
+  console.log(c.bold("─── Smoke Summary ───────────────────────────────────────────"));
+  console.log(`  Checks : ${total}`);
+  console.log(`  Passed : ${c.green(String(passed))}`);
+  if (failed > 0) {
+    console.log(`  Failed : ${c.red(String(failed))}`);
+    for (const r of stepResults.filter((r) => !r.passed)) {
+      console.log(`    ${c.red("x")} ${r.label}`);
+    }
+  }
+  console.log(`  Time   : ${totalMs}ms`);
+  console.log(c.bold("─────────────────────────────────────────────────────────────"));
+}
+
 type JsonEnvelope<T> = { data: T };
 
 async function getFreePort() {
@@ -108,6 +159,9 @@ async function main() {
   });
 
   try {
+    console.log(c.bold("\n=== IUF Trading Room — Smoke API ==="));
+    console.log(c.dim(`  url: ${baseUrl}  workspace: ${workspaceSlug}\n`));
+    console.log(c.cyan("[ Health ]"));
     await waitForHealth(baseUrl);
 
     const health = await request<{
@@ -1711,37 +1765,50 @@ async function main() {
     assert.ok((strategyRunDetail.data.outputs[0]?.primaryReason ?? "").length > 0);
 
     // Autopilot Phase 1 — dryRun execute smoke (never real submit in smoke)
-    const autopilotDryRun = await request<
-      JsonEnvelope<{
-        runId: string;
-        dryRun: boolean;
-        executedAt: string;
-        submitted: Array<{ symbol: string; side: string; blocked: boolean }>;
-        blocked: Array<{ symbol: string; side: string; blocked: boolean; blockedReason: string | null }>;
-        errors: Array<{ symbol: string; message: string }>;
-        summary: { total: number; submittedCount: number; blockedCount: number; errorCount: number };
-      }>
-    >(baseUrl, `/api/v1/strategy/runs/${strategyRun.data.id}/execute`, {
-      method: "POST",
-      headers: { "x-workspace-slug": workspaceSlug },
-      body: JSON.stringify({
-        accountId: "paper-default",
-        sidePolicy: "bullish_long",
-        sizeMode: "fixed_pct",
-        sizePct: 1.0,
-        maxOrders: 3,
-        dryRun: true
-      })
-    });
-    assert.equal(autopilotDryRun.data.runId, strategyRun.data.id);
-    assert.equal(autopilotDryRun.data.dryRun, true);
-    assert.ok(typeof autopilotDryRun.data.executedAt === "string");
-    assert.equal(
-      autopilotDryRun.data.summary.total,
-      autopilotDryRun.data.summary.submittedCount +
-        autopilotDryRun.data.summary.blockedCount +
-        autopilotDryRun.data.summary.errorCount
-    );
+    console.log(c.cyan("\n[ Autopilot ]"));
+    const autopilotStep = step("POST /strategy/runs/:id/execute dryRun=true — shape + summary invariant");
+    let autopilotDryRun: JsonEnvelope<{
+      runId: string;
+      dryRun: boolean;
+      executedAt: string;
+      submitted: Array<{ symbol: string; side: string; blocked: boolean }>;
+      blocked: Array<{ symbol: string; side: string; blocked: boolean; blockedReason: string | null }>;
+      errors: Array<{ symbol: string; message: string }>;
+      summary: { total: number; submittedCount: number; blockedCount: number; errorCount: number };
+    }>;
+    try {
+      autopilotDryRun = await request<typeof autopilotDryRun>(baseUrl, `/api/v1/strategy/runs/${strategyRun.data.id}/execute`, {
+        method: "POST",
+        headers: { "x-workspace-slug": workspaceSlug },
+        body: JSON.stringify({
+          accountId: "paper-default",
+          sidePolicy: "bullish_long",
+          sizeMode: "fixed_pct",
+          sizePct: 1.0,
+          maxOrders: 3,
+          dryRun: true
+        })
+      });
+      assert.equal(autopilotDryRun.data.runId, strategyRun.data.id);
+      assert.equal(autopilotDryRun.data.dryRun, true);
+      assert.ok(typeof autopilotDryRun.data.executedAt === "string");
+      assert.equal(
+        autopilotDryRun.data.summary.total,
+        autopilotDryRun.data.summary.submittedCount +
+          autopilotDryRun.data.summary.blockedCount +
+          autopilotDryRun.data.summary.errorCount
+      );
+      autopilotStep.pass();
+      const s = autopilotDryRun.data.summary;
+      console.log(c.dim(`    runId=${autopilotDryRun.data.runId.slice(0, 8)}...  total=${s.total}  submitted=${s.submittedCount}  blocked=${s.blockedCount}  errors=${s.errorCount}`));
+      if (autopilotDryRun.data.blocked.length > 0) {
+        for (const b of autopilotDryRun.data.blocked) {
+          console.log(c.dim(`      blocked: ${b.symbol} (${b.blockedReason ?? "unknown"})`));
+        }
+      }
+    } catch (err) {
+      autopilotStep.fail(err);
+    }
 
     const plan = await request<JsonEnvelope<{ id: string; companyId: string }>>(baseUrl, "/api/v1/plans", {
       method: "POST",
@@ -2087,8 +2154,10 @@ async function main() {
     assert.ok(opsTrends.data.series.some((item) => item.totalActivity >= 1));
     assert.ok(opsTrends.data.summary.latestDay !== null);
 
-    console.log("Smoke API checks passed.");
+    printSummary();
+    console.log(c.green(c.bold("All smoke checks passed.")));
   } catch (error) {
+    printSummary();
     const details = [
       error instanceof Error ? error.stack ?? error.message : String(error),
       stdout ? `--- stdout ---\n${stdout}` : "",
