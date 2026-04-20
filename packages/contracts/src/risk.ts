@@ -120,12 +120,25 @@ export const killSwitchInputSchema = z.object({
 
 export const riskCheckDecisionSchema = z.enum(["allow", "warn", "block"]);
 
+// Which configuration layer the guard's limit came from. "account" is the
+// base layer every order sees; "strategy" / "symbol" / "session" override
+// it when an entry exists for that order's strategyId / symbol / ad-hoc
+// session context. Knowing the source lets the UI explain *why* an order
+// was blocked ("this is a symbol-level cap on 2330", not "account cap").
+export const riskLimitLayerSchema = z.enum([
+  "account",
+  "strategy",
+  "symbol",
+  "session"
+]);
+
 export const riskGuardResultSchema = z.object({
   guard: riskGuardKindSchema,
   decision: riskCheckDecisionSchema,
   message: z.string(),
   observedValue: z.number().nullable().default(null),
-  limitValue: z.number().nullable().default(null)
+  limitValue: z.number().nullable().default(null),
+  sourceLayer: riskLimitLayerSchema.default("account")
 });
 
 export const riskCheckResultSchema = z.object({
@@ -142,9 +155,102 @@ export const riskCheckResultSchema = z.object({
   createdAt: z.string()
 });
 
+// ── Strategy + symbol layer overrides ─────────────────────────────────
+// Each layer stores only the fields it wants to override. `null` on a
+// numeric field means "inherit from the layer below" — do NOT read it as
+// "force zero". The merge order is account → strategy → symbol → session,
+// later layers replacing earlier ones (see resolveRiskLimit). Strategy and
+// symbol rows are keyed by (accountId, strategyId|symbol) so one account
+// can carry many entries. `enabled=false` makes the entry a no-op without
+// deleting it — handy when toggling caps off during incidents.
+
+const nullablePct = z.number().min(0).max(100).nullable();
+const nullableGrossPct = z.number().min(0).max(500).nullable();
+const nullablePositiveInt = z.number().int().positive().nullable();
+
+const strategyOverrideFields = {
+  enabled: z.boolean().default(true),
+  maxPerTradePct: nullablePct.default(null),
+  maxSinglePositionPct: nullablePct.default(null),
+  maxThemeCorrelatedPct: nullablePct.default(null),
+  maxGrossExposurePct: nullableGrossPct.default(null),
+  maxOpenOrders: nullablePositiveInt.default(null),
+  maxOrdersPerMinute: nullablePositiveInt.default(null),
+  symbolWhitelist: z.array(z.string()).nullable().default(null),
+  symbolBlacklist: z.array(z.string()).nullable().default(null),
+  whitelistOnly: z.boolean().nullable().default(null),
+  notes: z.string().default("")
+} as const;
+
+// Symbol layer is narrower: only the per-symbol caps matter. Whitelist /
+// blacklist / trading hours live at account or strategy level, not here.
+const symbolOverrideFields = {
+  enabled: z.boolean().default(true),
+  maxPerTradePct: nullablePct.default(null),
+  maxSinglePositionPct: nullablePct.default(null),
+  notes: z.string().default("")
+} as const;
+
+export const strategyRiskLimitSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string(),
+  strategyId: z.string(),
+  ...strategyOverrideFields,
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+
+export const strategyRiskLimitUpsertInputSchema = z
+  .object(strategyOverrideFields)
+  .partial()
+  .extend({
+    accountId: z.string(),
+    strategyId: z.string()
+  });
+
+export const symbolRiskLimitSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string(),
+  symbol: z.string(),
+  ...symbolOverrideFields,
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+
+export const symbolRiskLimitUpsertInputSchema = z
+  .object(symbolOverrideFields)
+  .partial()
+  .extend({
+    accountId: z.string(),
+    symbol: z.string()
+  });
+
+// The effective-limits view surfaces the merged numbers AND where each
+// number came from, so the UI can show "maxPerTradePct 0.5% ← strategy"
+// instead of leaving the user guessing which layer won.
+export const effectiveRiskLimitSchema = z.object({
+  limit: riskLimitSchema,
+  sources: z.record(z.string(), riskLimitLayerSchema),
+  layers: z.object({
+    account: riskLimitSchema,
+    strategy: strategyRiskLimitSchema.nullable(),
+    symbol: symbolRiskLimitSchema.nullable()
+  })
+});
+
 export type RiskGuardKind = z.infer<typeof riskGuardKindSchema>;
 export type RiskLimit = z.infer<typeof riskLimitSchema>;
 export type RiskLimitUpsertInput = z.infer<typeof riskLimitUpsertInputSchema>;
+export type RiskLimitLayer = z.infer<typeof riskLimitLayerSchema>;
+export type StrategyRiskLimit = z.infer<typeof strategyRiskLimitSchema>;
+export type StrategyRiskLimitUpsertInput = z.infer<
+  typeof strategyRiskLimitUpsertInputSchema
+>;
+export type SymbolRiskLimit = z.infer<typeof symbolRiskLimitSchema>;
+export type SymbolRiskLimitUpsertInput = z.infer<
+  typeof symbolRiskLimitUpsertInputSchema
+>;
+export type EffectiveRiskLimit = z.infer<typeof effectiveRiskLimitSchema>;
 export type KillSwitchState = z.infer<typeof killSwitchStateSchema>;
 export type KillSwitchInput = z.infer<typeof killSwitchInputSchema>;
 export type RiskCheckDecision = z.infer<typeof riskCheckDecisionSchema>;

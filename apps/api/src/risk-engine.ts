@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   DEFAULT_RISK_LIMITS,
   type AppSession,
+  type EffectiveRiskLimit,
   type KillSwitchInput,
   type KillSwitchState,
   type OrderCreateInput,
@@ -12,7 +13,12 @@ import {
   type RiskGuardKind,
   type RiskGuardResult,
   type RiskLimit,
+  type RiskLimitLayer,
   type RiskLimitUpsertInput,
+  type StrategyRiskLimit,
+  type StrategyRiskLimitUpsertInput,
+  type SymbolRiskLimit,
+  type SymbolRiskLimitUpsertInput,
   marketSchema,
   orderCreateInputSchema,
   quoteSourceSchema
@@ -50,6 +56,11 @@ type RecentOrderIntent = {
 const riskLimitsStore = new Map<string, RiskLimit>();
 const killSwitchStore = new Map<string, KillSwitchState>();
 const recentOrderIntentStore = new Map<string, RecentOrderIntent[]>();
+// Strategy/symbol overrides are keyed by (workspaceSlug, accountId, id).
+// Scoping per workspace keeps one tenant's caps from bleeding into another
+// when the in-memory store is shared across tests / routes.
+const strategyRiskLimitsStore = new Map<string, StrategyRiskLimit>();
+const symbolRiskLimitsStore = new Map<string, SymbolRiskLimit>();
 
 const inlineQuoteSchema = z.object({
   symbol: z.string().optional(),
@@ -375,64 +386,296 @@ export async function getRiskLimitState(input: {
 }
 
 // 4-layer resolver: account → strategy → symbol → session override.
-// Phase 1 only implements the account layer; the other layers accept inputs
-// but return {} so callers can start passing context today without rewriting
-// later. When we add config stores for strategy/symbol/session, fill these in.
-type RiskLimitLayer = Partial<Omit<RiskLimit, "id" | "accountId" | "createdAt" | "updatedAt">>;
+// The layers store only the fields they want to override; a `null` on a
+// numeric override means "no opinion, fall through" — it does NOT force 0.
+type RiskLimitOverrideLayer = Partial<
+  Omit<RiskLimit, "id" | "accountId" | "createdAt" | "updatedAt">
+>;
 
-async function resolveStrategyLayer(_input: {
+function strategyKey(session: AppSession, accountId: string, strategyId: string) {
+  return `${session.workspace.slug}:${accountId}:${strategyId}`;
+}
+
+function symbolKey(session: AppSession, accountId: string, symbol: string) {
+  return `${session.workspace.slug}:${accountId}:${symbol.toUpperCase()}`;
+}
+
+// Translate a strategy or symbol override row into a shallow patch suitable
+// for the resolver's object spread. Disabled rows contribute nothing so they
+// can be toggled off without losing the stored values.
+function strategyOverridesAsPatch(
+  row: StrategyRiskLimit | null
+): RiskLimitOverrideLayer {
+  if (!row || !row.enabled) return {};
+  const patch: RiskLimitOverrideLayer = {};
+  if (row.maxPerTradePct !== null) patch.maxPerTradePct = row.maxPerTradePct;
+  if (row.maxSinglePositionPct !== null)
+    patch.maxSinglePositionPct = row.maxSinglePositionPct;
+  if (row.maxThemeCorrelatedPct !== null)
+    patch.maxThemeCorrelatedPct = row.maxThemeCorrelatedPct;
+  if (row.maxGrossExposurePct !== null)
+    patch.maxGrossExposurePct = row.maxGrossExposurePct;
+  if (row.maxOpenOrders !== null) patch.maxOpenOrders = row.maxOpenOrders;
+  if (row.maxOrdersPerMinute !== null)
+    patch.maxOrdersPerMinute = row.maxOrdersPerMinute;
+  if (row.symbolWhitelist !== null) patch.symbolWhitelist = row.symbolWhitelist;
+  if (row.symbolBlacklist !== null) patch.symbolBlacklist = row.symbolBlacklist;
+  if (row.whitelistOnly !== null) patch.whitelistOnly = row.whitelistOnly;
+  return patch;
+}
+
+function symbolOverridesAsPatch(
+  row: SymbolRiskLimit | null
+): RiskLimitOverrideLayer {
+  if (!row || !row.enabled) return {};
+  const patch: RiskLimitOverrideLayer = {};
+  if (row.maxPerTradePct !== null) patch.maxPerTradePct = row.maxPerTradePct;
+  if (row.maxSinglePositionPct !== null)
+    patch.maxSinglePositionPct = row.maxSinglePositionPct;
+  return patch;
+}
+
+async function resolveStrategyLayer(input: {
   session: AppSession;
   accountId: string;
   strategyId: string;
-}): Promise<RiskLimitLayer> {
-  return {};
+}): Promise<StrategyRiskLimit | null> {
+  return (
+    strategyRiskLimitsStore.get(
+      strategyKey(input.session, input.accountId, input.strategyId)
+    ) ?? null
+  );
 }
 
-async function resolveSymbolLayer(_input: {
+async function resolveSymbolLayer(input: {
   session: AppSession;
   accountId: string;
   symbol: string;
-}): Promise<RiskLimitLayer> {
-  return {};
+}): Promise<SymbolRiskLimit | null> {
+  return (
+    symbolRiskLimitsStore.get(
+      symbolKey(input.session, input.accountId, input.symbol)
+    ) ?? null
+  );
 }
 
+// Resolve effective limits + annotate which layer contributed each field.
+// The sources map is what lets the UI and guards explain *why* a cap is
+// what it is ("0.5% ← strategy" vs "15% ← account default").
 export async function resolveRiskLimit(input: {
   session: AppSession;
   accountId: string;
   strategyId?: string | null;
   symbol?: string | null;
-  sessionOverride?: RiskLimitLayer;
-}): Promise<RiskLimit> {
+  sessionOverride?: RiskLimitOverrideLayer;
+}): Promise<EffectiveRiskLimit> {
   const base = await getRiskLimitState({
     session: input.session,
     accountId: input.accountId
   });
-  const strategyLayer = input.strategyId
+  const strategyRow = input.strategyId
     ? await resolveStrategyLayer({
         session: input.session,
         accountId: input.accountId,
         strategyId: input.strategyId
       })
-    : {};
-  const symbolLayer = input.symbol
+    : null;
+  const symbolRow = input.symbol
     ? await resolveSymbolLayer({
         session: input.session,
         accountId: input.accountId,
         symbol: input.symbol
       })
-    : {};
-  const sessionLayer = input.sessionOverride ?? {};
-  // Later layers override earlier ones. Only defined keys override.
-  return {
+    : null;
+  const strategyPatch = strategyOverridesAsPatch(strategyRow);
+  const symbolPatch = symbolOverridesAsPatch(symbolRow);
+  const sessionPatch = input.sessionOverride ?? {};
+
+  const merged: RiskLimit = {
     ...base,
-    ...strategyLayer,
-    ...symbolLayer,
-    ...sessionLayer,
+    ...strategyPatch,
+    ...symbolPatch,
+    ...sessionPatch,
     id: base.id,
     accountId: base.accountId,
     createdAt: base.createdAt,
     updatedAt: new Date().toISOString()
   };
+
+  // Attribute every top-level field to the highest-priority layer that set
+  // it. Iterate in layer order (account → strategy → symbol → session) so
+  // the last writer wins naturally.
+  const sources: Record<string, RiskLimitLayer> = {};
+  for (const key of Object.keys(base) as (keyof RiskLimit)[]) {
+    sources[key] = "account";
+  }
+  for (const key of Object.keys(strategyPatch)) sources[key] = "strategy";
+  for (const key of Object.keys(symbolPatch)) sources[key] = "symbol";
+  for (const key of Object.keys(sessionPatch)) sources[key] = "session";
+
+  return {
+    limit: merged,
+    sources,
+    layers: {
+      account: base,
+      strategy: strategyRow,
+      symbol: symbolRow
+    }
+  };
+}
+
+// ── Strategy layer CRUD ────────────────────────────────────────────────
+
+export async function listStrategyRiskLimits(input: {
+  session: AppSession;
+  accountId: string;
+}): Promise<StrategyRiskLimit[]> {
+  const prefix = `${input.session.workspace.slug}:${input.accountId}:`;
+  const rows: StrategyRiskLimit[] = [];
+  for (const [key, value] of strategyRiskLimitsStore) {
+    if (key.startsWith(prefix)) rows.push(value);
+  }
+  // Stable ordering keeps the UI list from shuffling on every refresh.
+  return rows.sort((a, b) => a.strategyId.localeCompare(b.strategyId));
+}
+
+export async function getStrategyRiskLimit(input: {
+  session: AppSession;
+  accountId: string;
+  strategyId: string;
+}): Promise<StrategyRiskLimit | null> {
+  return (
+    strategyRiskLimitsStore.get(
+      strategyKey(input.session, input.accountId, input.strategyId)
+    ) ?? null
+  );
+}
+
+export async function upsertStrategyRiskLimit(input: {
+  session: AppSession;
+  payload: StrategyRiskLimitUpsertInput;
+}): Promise<StrategyRiskLimit> {
+  const key = strategyKey(
+    input.session,
+    input.payload.accountId,
+    input.payload.strategyId
+  );
+  const now = new Date().toISOString();
+  const existing = strategyRiskLimitsStore.get(key);
+  const next: StrategyRiskLimit = {
+    id: existing?.id ?? randomUUID(),
+    accountId: input.payload.accountId,
+    strategyId: input.payload.strategyId,
+    enabled: input.payload.enabled ?? existing?.enabled ?? true,
+    maxPerTradePct:
+      input.payload.maxPerTradePct ?? existing?.maxPerTradePct ?? null,
+    maxSinglePositionPct:
+      input.payload.maxSinglePositionPct ??
+      existing?.maxSinglePositionPct ??
+      null,
+    maxThemeCorrelatedPct:
+      input.payload.maxThemeCorrelatedPct ??
+      existing?.maxThemeCorrelatedPct ??
+      null,
+    maxGrossExposurePct:
+      input.payload.maxGrossExposurePct ??
+      existing?.maxGrossExposurePct ??
+      null,
+    maxOpenOrders:
+      input.payload.maxOpenOrders ?? existing?.maxOpenOrders ?? null,
+    maxOrdersPerMinute:
+      input.payload.maxOrdersPerMinute ??
+      existing?.maxOrdersPerMinute ??
+      null,
+    symbolWhitelist:
+      input.payload.symbolWhitelist ?? existing?.symbolWhitelist ?? null,
+    symbolBlacklist:
+      input.payload.symbolBlacklist ?? existing?.symbolBlacklist ?? null,
+    whitelistOnly:
+      input.payload.whitelistOnly ?? existing?.whitelistOnly ?? null,
+    notes: input.payload.notes ?? existing?.notes ?? "",
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now
+  };
+  strategyRiskLimitsStore.set(key, next);
+  return next;
+}
+
+export async function deleteStrategyRiskLimit(input: {
+  session: AppSession;
+  accountId: string;
+  strategyId: string;
+}): Promise<boolean> {
+  return strategyRiskLimitsStore.delete(
+    strategyKey(input.session, input.accountId, input.strategyId)
+  );
+}
+
+// ── Symbol layer CRUD ──────────────────────────────────────────────────
+
+export async function listSymbolRiskLimits(input: {
+  session: AppSession;
+  accountId: string;
+}): Promise<SymbolRiskLimit[]> {
+  const prefix = `${input.session.workspace.slug}:${input.accountId}:`;
+  const rows: SymbolRiskLimit[] = [];
+  for (const [key, value] of symbolRiskLimitsStore) {
+    if (key.startsWith(prefix)) rows.push(value);
+  }
+  return rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
+}
+
+export async function getSymbolRiskLimit(input: {
+  session: AppSession;
+  accountId: string;
+  symbol: string;
+}): Promise<SymbolRiskLimit | null> {
+  return (
+    symbolRiskLimitsStore.get(
+      symbolKey(input.session, input.accountId, input.symbol)
+    ) ?? null
+  );
+}
+
+export async function upsertSymbolRiskLimit(input: {
+  session: AppSession;
+  payload: SymbolRiskLimitUpsertInput;
+}): Promise<SymbolRiskLimit> {
+  const normalizedSymbol = input.payload.symbol.toUpperCase();
+  const key = symbolKey(
+    input.session,
+    input.payload.accountId,
+    normalizedSymbol
+  );
+  const now = new Date().toISOString();
+  const existing = symbolRiskLimitsStore.get(key);
+  const next: SymbolRiskLimit = {
+    id: existing?.id ?? randomUUID(),
+    accountId: input.payload.accountId,
+    symbol: normalizedSymbol,
+    enabled: input.payload.enabled ?? existing?.enabled ?? true,
+    maxPerTradePct:
+      input.payload.maxPerTradePct ?? existing?.maxPerTradePct ?? null,
+    maxSinglePositionPct:
+      input.payload.maxSinglePositionPct ??
+      existing?.maxSinglePositionPct ??
+      null,
+    notes: input.payload.notes ?? existing?.notes ?? "",
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now
+  };
+  symbolRiskLimitsStore.set(key, next);
+  return next;
+}
+
+export async function deleteSymbolRiskLimit(input: {
+  session: AppSession;
+  accountId: string;
+  symbol: string;
+}): Promise<boolean> {
+  return symbolRiskLimitsStore.delete(
+    symbolKey(input.session, input.accountId, input.symbol)
+  );
 }
 
 export async function upsertRiskLimitState(input: {
@@ -499,10 +742,20 @@ export async function evaluateRiskCheck(input: {
   const nowIso = market.now ?? new Date().toISOString();
   const nowMs = Date.parse(nowIso);
   const nowDate = new Date(nowIso);
-  const limits = await getRiskLimitState({
+  // Resolve the effective limits with strategy + symbol overrides merged in.
+  // The sources map lets us attribute each guard to the layer that actually
+  // set the cap — so a blocked order can tell the user "this was a symbol
+  // cap", not just "blocked by max_per_trade".
+  const effective = await resolveRiskLimit({
     session: input.session,
-    accountId: order.accountId
+    accountId: order.accountId,
+    strategyId: order.strategyId ?? null,
+    symbol: order.symbol
   });
+  const limits = effective.limit;
+  const limitSources = effective.sources;
+  const sourceFor = (field: keyof RiskLimit): RiskLimitLayer =>
+    limitSources[field] ?? "account";
   const killSwitch = await getKillSwitchState({
     session: input.session,
     accountId: order.accountId
@@ -521,14 +774,16 @@ export async function evaluateRiskCheck(input: {
     decision: RiskCheckDecision,
     message: string,
     observedValue: number | null = null,
-    limitValue: number | null = null
+    limitValue: number | null = null,
+    sourceLayer: RiskLimitLayer = "account"
   ) => {
     guards.push({
       guard,
       decision,
       message,
       observedValue,
-      limitValue
+      limitValue,
+      sourceLayer
     });
   };
 
@@ -567,18 +822,35 @@ export async function evaluateRiskCheck(input: {
   }
 
   if (limits.whitelistOnly && limits.symbolWhitelist.length > 0 && !limits.symbolWhitelist.includes(order.symbol)) {
-    pushGuard("symbol_whitelist", "block", `${order.symbol} is not in the account whitelist.`);
+    pushGuard(
+      "symbol_whitelist",
+      "block",
+      `${order.symbol} is not in the account whitelist.`,
+      null,
+      null,
+      sourceFor("symbolWhitelist")
+    );
   }
 
   if (limits.symbolBlacklist.includes(order.symbol)) {
-    pushGuard("symbol_blacklist", "block", `${order.symbol} is blacklisted for this account.`);
+    pushGuard(
+      "symbol_blacklist",
+      "block",
+      `${order.symbol} is blacklisted for this account.`,
+      null,
+      null,
+      sourceFor("symbolBlacklist")
+    );
   }
 
   if (!isWithinTradingHours(nowDate, market.timeZone, limits.tradingHoursStart, limits.tradingHoursEnd)) {
     pushGuard(
       "trading_hours",
       "block",
-      `Current time is outside allowed trading hours (${limits.tradingHoursStart}-${limits.tradingHoursEnd} ${market.timeZone}).`
+      `Current time is outside allowed trading hours (${limits.tradingHoursStart}-${limits.tradingHoursEnd} ${market.timeZone}).`,
+      null,
+      null,
+      sourceFor("tradingHoursStart")
     );
   }
 
@@ -600,7 +872,8 @@ export async function evaluateRiskCheck(input: {
         ? `Latest quote for ${order.symbol} is stale (${Math.round(quoteAgeMs)}ms old).`
         : `No quote available for ${order.symbol}.`,
       Number.isFinite(quoteAgeMs) ? Math.round(quoteAgeMs) : null,
-      limits.staleQuoteMs
+      limits.staleQuoteMs,
+      sourceFor("staleQuoteMs")
     );
   }
 
@@ -610,7 +883,8 @@ export async function evaluateRiskCheck(input: {
       "block",
       `Daily realized PnL is below the allowed threshold.`,
       Math.abs(account.realizedPnlTodayPct),
-      limits.maxDailyLossPct
+      limits.maxDailyLossPct,
+      sourceFor("maxDailyLossPct")
     );
   }
 
@@ -620,7 +894,8 @@ export async function evaluateRiskCheck(input: {
       "block",
       `Open order count has reached the configured ceiling.`,
       account.openOrders,
-      limits.maxOpenOrders
+      limits.maxOpenOrders,
+      sourceFor("maxOpenOrders")
     );
   }
 
@@ -631,7 +906,8 @@ export async function evaluateRiskCheck(input: {
       "block",
       `Orders per minute threshold reached for this account.`,
       recentOrders,
-      limits.maxOrdersPerMinute
+      limits.maxOrdersPerMinute,
+      sourceFor("maxOrdersPerMinute")
     );
   }
 
@@ -655,7 +931,8 @@ export async function evaluateRiskCheck(input: {
         "block",
         "Order size exceeds the per-trade risk budget.",
         Number(orderPct.toFixed(4)),
-        limits.maxPerTradePct
+        limits.maxPerTradePct,
+        sourceFor("maxPerTradePct")
       );
     }
   }
@@ -667,7 +944,8 @@ export async function evaluateRiskCheck(input: {
       "block",
       "Resulting symbol exposure would exceed the single-position limit.",
       Number(nextPositionPct.toFixed(4)),
-      limits.maxSinglePositionPct
+      limits.maxSinglePositionPct,
+      sourceFor("maxSinglePositionPct")
     );
   }
 
@@ -678,7 +956,8 @@ export async function evaluateRiskCheck(input: {
       "block",
       "Resulting gross exposure would exceed the account limit.",
       Number(nextGrossExposurePct.toFixed(4)),
-      limits.maxGrossExposurePct
+      limits.maxGrossExposurePct,
+      sourceFor("maxGrossExposurePct")
     );
   }
 
@@ -690,7 +969,8 @@ export async function evaluateRiskCheck(input: {
         "block",
         "Theme-correlated exposure would exceed the configured cap.",
         Number(nextThemeExposurePct.toFixed(4)),
-        limits.maxThemeCorrelatedPct
+        limits.maxThemeCorrelatedPct,
+        sourceFor("maxThemeCorrelatedPct")
       );
     }
   }

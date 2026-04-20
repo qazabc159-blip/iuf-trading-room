@@ -31,6 +31,7 @@ import { MODE_DECISION_HINT } from "@/lib/quote-vocab";
 
 import { ExecutionTimeline } from "./execution-timeline";
 import { OrderTicket } from "./order-ticket";
+import { RiskLayerOverrides } from "./risk-layer-overrides";
 import { RiskLimitsConfig } from "./risk-limits-config";
 import { useExecutionStream } from "./use-execution-stream";
 
@@ -467,7 +468,20 @@ export default function PortfolioPage() {
 
       <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
         <p className="ascii-head" data-idx="07">
-          [07] Kill Switch
+          [07] 風控層覆寫 · Strategy / Symbol
+        </p>
+        {activeAccount ? (
+          <RiskLayerOverrides accountId={activeAccount.id} />
+        ) : (
+          <p style={{ color: "var(--dim)", fontFamily: "var(--mono, monospace)" }}>
+            等待帳戶載入…
+          </p>
+        )}
+      </section>
+
+      <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
+        <p className="ascii-head" data-idx="08">
+          [08] Kill Switch
         </p>
         <div
           style={{
@@ -517,8 +531,8 @@ export default function PortfolioPage() {
       </section>
 
       <section className="hud-frame" style={{ padding: "1.5rem", marginTop: "1rem" }}>
-        <p className="ascii-head" data-idx="08">
-          [08] Execution Timeline
+        <p className="ascii-head" data-idx="09">
+          [09] Execution Timeline
         </p>
         <ExecutionTimeline events={executionEvents} status={streamStatus} />
       </section>

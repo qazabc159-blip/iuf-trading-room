@@ -10,7 +10,9 @@ import type {
   OrderCreateInput,
   RiskCheckResult,
   RiskGuardResult,
+  EffectiveRiskLimit,
   RiskLimit,
+  RiskLimitLayer,
   TradePlan
 } from "@iuf-trading-room/contracts";
 
@@ -71,7 +73,7 @@ const DECISION_COLOR: Record<RiskCheckResult["decision"], string> = {
 export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [plans, setPlans] = useState<TradePlan[]>([]);
-  const [effectiveLimits, setEffectiveLimits] = useState<RiskLimit | null>(null);
+  const [effectiveLimits, setEffectiveLimits] = useState<EffectiveRiskLimit | null>(null);
   const [pendingLimits, setPendingLimits] = useState(false);
   const [balance, setBalance] = useState<Balance | null>(null);
   const [quote, setQuote] = useState<MarketDataDecisionSummaryItem | null>(null);
@@ -941,15 +943,24 @@ function Stat({
   );
 }
 
+const LAYER_BADGE: Record<RiskLimitLayer, { label: string; color: string }> = {
+  account: { label: "ACCT", color: "var(--dim)" },
+  strategy: { label: "STRAT", color: "var(--amber)" },
+  symbol: { label: "SYM", color: "var(--phosphor)" },
+  session: { label: "SESS", color: "var(--amber)" }
+};
+
 function EffectiveLimitsCard({
   limits,
   pending,
   symbol
 }: {
-  limits: RiskLimit | null;
+  limits: EffectiveRiskLimit | null;
   pending: boolean;
   symbol: string;
 }) {
+  const L = limits?.limit ?? null;
+  const sources = limits?.sources ?? {};
   return (
     <div
       style={{
@@ -963,7 +974,7 @@ function EffectiveLimitsCard({
         [EFFECTIVE LIMITS {symbol ? `· ${symbol}` : ""}]
         {pending && <span style={{ marginLeft: "0.5rem" }}>…</span>}
       </div>
-      {!limits ? (
+      {!L ? (
         <div style={{ color: "var(--dim)" }}>—</div>
       ) : (
         <div
@@ -973,20 +984,46 @@ function EffectiveLimitsCard({
             gap: "0.5rem"
           }}
         >
-          <LimitStat label="單筆風險" value={`${limits.maxPerTradePct}%`} />
-          <LimitStat label="當日最大損失" value={`${limits.maxDailyLossPct}%`} />
-          <LimitStat label="單一標的" value={`${limits.maxSinglePositionPct}%`} />
-          <LimitStat label="同主題曝險" value={`${limits.maxThemeCorrelatedPct}%`} />
-          <LimitStat label="最大未結單" value={String(limits.maxOpenOrders)} />
-          <LimitStat label="每分鐘張數" value={String(limits.maxOrdersPerMinute)} />
+          <LimitStat
+            label="單筆風險"
+            value={`${L.maxPerTradePct}%`}
+            layer={sources.maxPerTradePct}
+          />
+          <LimitStat
+            label="當日最大損失"
+            value={`${L.maxDailyLossPct}%`}
+            layer={sources.maxDailyLossPct}
+          />
+          <LimitStat
+            label="單一標的"
+            value={`${L.maxSinglePositionPct}%`}
+            layer={sources.maxSinglePositionPct}
+          />
+          <LimitStat
+            label="同主題曝險"
+            value={`${L.maxThemeCorrelatedPct}%`}
+            layer={sources.maxThemeCorrelatedPct}
+          />
+          <LimitStat
+            label="最大未結單"
+            value={String(L.maxOpenOrders)}
+            layer={sources.maxOpenOrders}
+          />
+          <LimitStat
+            label="每分鐘張數"
+            value={String(L.maxOrdersPerMinute)}
+            layer={sources.maxOrdersPerMinute}
+          />
           <LimitStat
             label="交易時段"
-            value={`${limits.tradingHoursStart}–${limits.tradingHoursEnd}`}
+            value={`${L.tradingHoursStart}–${L.tradingHoursEnd}`}
+            layer={sources.tradingHoursStart}
           />
           <LimitStat
             label="白名單限制"
-            value={limits.whitelistOnly ? "ON" : "OFF"}
-            accent={limits.whitelistOnly ? "amber" : undefined}
+            value={L.whitelistOnly ? "ON" : "OFF"}
+            accent={L.whitelistOnly ? "amber" : undefined}
+            layer={sources.whitelistOnly}
           />
         </div>
       )}
@@ -997,15 +1034,32 @@ function EffectiveLimitsCard({
 function LimitStat({
   label,
   value,
-  accent
+  accent,
+  layer
 }: {
   label: string;
   value: string;
   accent?: "amber";
+  layer?: RiskLimitLayer;
 }) {
+  const badge = layer ? LAYER_BADGE[layer] : null;
   return (
     <div>
-      <div style={{ color: "var(--dim)" }}>{label}</div>
+      <div
+        style={{
+          color: "var(--dim)",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.35rem"
+        }}
+      >
+        <span>{label}</span>
+        {badge && layer !== "account" && (
+          <span style={{ color: badge.color, fontSize: "0.65rem" }}>
+            ← {badge.label}
+          </span>
+        )}
+      </div>
       <div style={{ color: accent === "amber" ? "var(--amber)" : "var(--phosphor)" }}>
         {value}
       </div>

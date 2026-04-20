@@ -30,9 +30,14 @@ import type {
   Quote,
   QuoteProviderStatus,
   QuoteSource,
+  EffectiveRiskLimit,
   RiskCheckResult,
   RiskLimit,
   RiskLimitUpsertInput,
+  StrategyRiskLimit,
+  StrategyRiskLimitUpsertInput,
+  SymbolRiskLimit,
+  SymbolRiskLimitUpsertInput,
   ReviewEntry,
   ReviewEntryCreateInput,
   Signal,
@@ -805,7 +810,63 @@ export async function getEffectiveRiskLimit(params: {
   query.set("accountId", params.accountId);
   if (params.strategyId) query.set("strategyId", params.strategyId);
   if (params.symbol) query.set("symbol", params.symbol);
-  return request<RiskLimit>(`/api/v1/risk/effective-limits?${query.toString()}`);
+  return request<EffectiveRiskLimit>(
+    `/api/v1/risk/effective-limits?${query.toString()}`
+  );
+}
+
+export async function listStrategyRiskLimits(accountId: string) {
+  return request<StrategyRiskLimit[]>(
+    `/api/v1/risk/strategy-limits?accountId=${encodeURIComponent(accountId)}`
+  );
+}
+
+export async function upsertStrategyRiskLimit(input: StrategyRiskLimitUpsertInput) {
+  return request<StrategyRiskLimit>("/api/v1/risk/strategy-limits", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function deleteStrategyRiskLimit(params: {
+  accountId: string;
+  strategyId: string;
+}) {
+  const query = new URLSearchParams({
+    accountId: params.accountId,
+    strategyId: params.strategyId
+  });
+  return request<{ deleted: boolean }>(
+    `/api/v1/risk/strategy-limits?${query.toString()}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function listSymbolRiskLimits(accountId: string) {
+  return request<SymbolRiskLimit[]>(
+    `/api/v1/risk/symbol-limits?accountId=${encodeURIComponent(accountId)}`
+  );
+}
+
+export async function upsertSymbolRiskLimit(input: SymbolRiskLimitUpsertInput) {
+  return request<SymbolRiskLimit>("/api/v1/risk/symbol-limits", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function deleteSymbolRiskLimit(params: {
+  accountId: string;
+  symbol: string;
+}) {
+  const query = new URLSearchParams({
+    accountId: params.accountId,
+    symbol: params.symbol
+  });
+  return request<{ deleted: boolean }>(
+    `/api/v1/risk/symbol-limits?${query.toString()}`,
+    { method: "DELETE" }
+  );
 }
 
 export async function getKillSwitch(accountId: string) {

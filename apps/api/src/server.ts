@@ -15,6 +15,8 @@ import {
   orderCreateInputSchema,
   orderStatusSchema,
   riskLimitUpsertInputSchema,
+  strategyRiskLimitUpsertInputSchema,
+  symbolRiskLimitUpsertInputSchema,
   reviewEntryCreateInputSchema,
   signalCreateInputSchema,
   signalUpdateInputSchema,
@@ -111,14 +113,22 @@ import {
   upsertManualQuotes
 } from "./market-data.js";
 import {
+  deleteStrategyRiskLimit,
+  deleteSymbolRiskLimit,
   evaluateRiskCheck,
   getKillSwitchState,
   getRiskLimitState,
+  getStrategyRiskLimit,
+  getSymbolRiskLimit,
+  listStrategyRiskLimits,
+  listSymbolRiskLimits,
   resolveRiskLimit,
   riskAccountQuerySchema,
   riskCheckInputSchema,
   setKillSwitchState,
-  upsertRiskLimitState
+  upsertRiskLimitState,
+  upsertStrategyRiskLimit,
+  upsertSymbolRiskLimit
 } from "./risk-engine.js";
 import {
   getPaperBalance,
@@ -926,6 +936,108 @@ app.get("/api/v1/risk/effective-limits", async (c) => {
       symbol: query.symbol
     })
   });
+});
+
+// Strategy-layer overrides. One row per (accountId, strategyId); only
+// present fields override the account-layer cap. Missing row → layer is a
+// no-op for that order.
+app.get("/api/v1/risk/strategy-limits", async (c) => {
+  const query = z
+    .object({
+      accountId: z.string().min(1),
+      strategyId: z.string().optional()
+    })
+    .parse(c.req.query());
+  if (query.strategyId) {
+    return c.json({
+      data: await getStrategyRiskLimit({
+        session: c.get("session"),
+        accountId: query.accountId,
+        strategyId: query.strategyId
+      })
+    });
+  }
+  return c.json({
+    data: await listStrategyRiskLimits({
+      session: c.get("session"),
+      accountId: query.accountId
+    })
+  });
+});
+
+app.post("/api/v1/risk/strategy-limits", async (c) => {
+  const payload = strategyRiskLimitUpsertInputSchema.parse(await c.req.json());
+  return c.json({
+    data: await upsertStrategyRiskLimit({
+      session: c.get("session"),
+      payload
+    })
+  });
+});
+
+app.delete("/api/v1/risk/strategy-limits", async (c) => {
+  const query = z
+    .object({
+      accountId: z.string().min(1),
+      strategyId: z.string().min(1)
+    })
+    .parse(c.req.query());
+  const deleted = await deleteStrategyRiskLimit({
+    session: c.get("session"),
+    accountId: query.accountId,
+    strategyId: query.strategyId
+  });
+  return c.json({ data: { deleted } });
+});
+
+// Symbol-layer overrides. Narrower than strategy: only per-symbol caps.
+app.get("/api/v1/risk/symbol-limits", async (c) => {
+  const query = z
+    .object({
+      accountId: z.string().min(1),
+      symbol: z.string().optional()
+    })
+    .parse(c.req.query());
+  if (query.symbol) {
+    return c.json({
+      data: await getSymbolRiskLimit({
+        session: c.get("session"),
+        accountId: query.accountId,
+        symbol: query.symbol
+      })
+    });
+  }
+  return c.json({
+    data: await listSymbolRiskLimits({
+      session: c.get("session"),
+      accountId: query.accountId
+    })
+  });
+});
+
+app.post("/api/v1/risk/symbol-limits", async (c) => {
+  const payload = symbolRiskLimitUpsertInputSchema.parse(await c.req.json());
+  return c.json({
+    data: await upsertSymbolRiskLimit({
+      session: c.get("session"),
+      payload
+    })
+  });
+});
+
+app.delete("/api/v1/risk/symbol-limits", async (c) => {
+  const query = z
+    .object({
+      accountId: z.string().min(1),
+      symbol: z.string().min(1)
+    })
+    .parse(c.req.query());
+  const deleted = await deleteSymbolRiskLimit({
+    session: c.get("session"),
+    accountId: query.accountId,
+    symbol: query.symbol
+  });
+  return c.json({ data: { deleted } });
 });
 
 // ── Trading (paper broker) ──
