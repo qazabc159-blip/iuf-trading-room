@@ -47,6 +47,7 @@ import type {
   StrategyIdeasQualityFilter,
   StrategyIdeasSort,
   StrategyIdeasView,
+  StrategyRunCreateInput,
   StrategyRunListQuery,
   StrategyRunListSort,
   StrategyRunListView,
@@ -948,4 +949,11 @@ export async function getStrategyRunById(runId: string) {
   return request<StrategyRunRecord>(
     `/api/v1/strategy/runs/${encodeURIComponent(runId)}`
   );
+}
+
+export async function createStrategyRun(payload: StrategyRunCreateInput) {
+  return request<StrategyRunRecord>("/api/v1/strategy/runs", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }

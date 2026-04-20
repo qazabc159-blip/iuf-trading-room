@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import type {
@@ -13,7 +13,7 @@ import type {
 } from "@iuf-trading-room/contracts";
 
 import { AppShell } from "@/components/app-shell";
-import { getStrategyIdeas, type StrategyIdeasQueryParams } from "@/lib/api";
+import { createStrategyRun, getStrategyIdeas, type StrategyIdeasQueryParams } from "@/lib/api";
 import { handoffFromIdea, writeIdeaHandoff } from "@/lib/idea-handoff";
 import { parseIdeasQuery } from "@/lib/ideas-query";
 import {
@@ -43,6 +43,7 @@ export default function IdeasPage() {
 }
 
 function IdeasPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   // Parse URL once on mount so `/runs -> /ideas?...` carries saved query state.
   // Subsequent filter edits live in local state; we don't re-sync from URL.
@@ -55,6 +56,34 @@ function IdeasPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [symbolDraft, setSymbolDraft] = useState(() => query.symbol ?? "");
   const [themeDraft, setThemeDraft] = useState(() => query.theme ?? "");
+  const [saveRunLoading, setSaveRunLoading] = useState(false);
+  const [saveRunError, setSaveRunError] = useState<string | null>(null);
+
+  const handleSaveRun = () => {
+    setSaveRunLoading(true);
+    setSaveRunError(null);
+    const payload = {
+      limit: query.limit ?? 12,
+      signalDays: query.signalDays ?? 14,
+      includeBlocked: query.includeBlocked ?? false,
+      decisionMode: query.decisionMode ?? "strategy" as const,
+      sort: query.sort ?? "score" as const,
+      ...(query.market !== undefined ? { market: query.market } : {}),
+      ...(query.themeId !== undefined ? { themeId: query.themeId } : {}),
+      ...(query.theme !== undefined ? { theme: query.theme } : {}),
+      ...(query.symbol !== undefined ? { symbol: query.symbol } : {}),
+      ...(query.decisionFilter !== undefined ? { decisionFilter: query.decisionFilter } : {}),
+      ...(query.qualityFilter !== undefined ? { qualityFilter: query.qualityFilter } : {})
+    };
+    createStrategyRun(payload)
+      .then((res) => {
+        router.push(`/runs/${res.data.id}`);
+      })
+      .catch((err: unknown) => {
+        setSaveRunError(err instanceof Error ? err.message : String(err));
+        setSaveRunLoading(false);
+      });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -224,7 +253,20 @@ function IdeasPageInner() {
           >
             重置
           </button>
+          <button
+            className="btn-sm"
+            disabled={loading || saveRunLoading}
+            onClick={handleSaveRun}
+            style={{ marginLeft: "auto" }}
+          >
+            {saveRunLoading ? "儲存中..." : "儲存為 Run →"}
+          </button>
         </div>
+        {saveRunError ? (
+          <p className="mono" style={{ fontSize: "var(--fs-xs)", color: "var(--bear)", marginTop: 6 }}>
+            儲存失敗：{saveRunError}
+          </p>
+        ) : null}
       </section>
 
       <h3 className="ascii-head">
