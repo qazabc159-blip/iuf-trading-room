@@ -11,8 +11,10 @@ import type {
   StrategyIdeasDecisionMode,
   StrategyIdeasQualityFilter,
   StrategyIdeasSort,
+  StrategyRunCompactIdea,
   StrategyRunCreateInput,
   StrategyRunListItem,
+  StrategyRunListSort,
   StrategyRunListView,
   StrategyRunOutput,
   StrategyRunRecord,
@@ -253,14 +255,163 @@ function buildStrategyRunOutputs(items: StrategyIdea[]): StrategyRunOutput[] {
   }));
 }
 
+function buildStrategyRunCompactIdea(input: {
+  item?: StrategyIdea | null;
+  output?: StrategyRunOutput | null;
+}): StrategyRunCompactIdea | null {
+  if (input.item) {
+    return {
+      companyId: input.item.companyId,
+      symbol: input.item.symbol,
+      companyName: input.item.companyName,
+      score: input.item.score,
+      confidence: input.item.confidence,
+      direction: input.item.direction,
+      latestSignalAt: input.item.latestSignalAt,
+      topThemeId: input.item.topThemes[0]?.themeId ?? null,
+      topThemeName: input.item.topThemes[0]?.name ?? null,
+      marketDecision: input.item.marketData.decision,
+      selectedSource: input.item.marketData.selectedSource,
+      qualityGrade: input.item.quality.grade,
+      primaryReason: input.item.rationale.primaryReason
+    };
+  }
+
+  if (input.output) {
+    return {
+      companyId: input.output.companyId,
+      symbol: input.output.symbol,
+      companyName: input.output.companyName,
+      score: input.output.score,
+      confidence: input.output.confidence,
+      direction: input.output.direction,
+      latestSignalAt: input.output.latestSignalAt,
+      topThemeId: input.output.topThemeId,
+      topThemeName: input.output.topThemeName,
+      marketDecision: input.output.marketDecision,
+      selectedSource: input.output.selectedSource,
+      qualityGrade: input.output.qualityGrade,
+      primaryReason: input.output.primaryReason
+    };
+  }
+
+  return null;
+}
+
+function runMatchesFilters(input: {
+  run: StrategyRunRecord;
+  decisionMode?: StrategyIdeasDecisionMode;
+  symbol?: string;
+  themeId?: string;
+  theme?: string;
+  qualityFilter?: StrategyIdeasQualityFilter;
+}) {
+  if (input.decisionMode && (input.run.query.decisionMode ?? "strategy") !== input.decisionMode) {
+    return false;
+  }
+
+  const normalizedSymbol = normalizeFilterValue(input.symbol);
+  if (normalizedSymbol) {
+    const symbols = input.run.items.length > 0
+      ? input.run.items.map((item) => item.symbol)
+      : input.run.outputs.map((item) => item.symbol);
+    if (!symbols.some((symbol) => normalizeFilterValue(symbol).includes(normalizedSymbol))) {
+      return false;
+    }
+  }
+
+  if (input.themeId) {
+    const matchesThemeId = input.run.items.length > 0
+      ? input.run.items.some((item) => item.topThemes.some((theme) => theme.themeId === input.themeId))
+      : input.run.outputs.some((item) => item.topThemeId === input.themeId);
+    if (!matchesThemeId) {
+      return false;
+    }
+  }
+
+  const normalizedTheme = normalizeFilterValue(input.theme);
+  if (normalizedTheme) {
+    const matchesTheme = input.run.items.length > 0
+      ? input.run.items.some((item) =>
+          item.topThemes.some((theme) => normalizeFilterValue(theme.name).includes(normalizedTheme))
+        )
+      : input.run.outputs.some((item) =>
+          normalizeFilterValue(item.topThemeName).includes(normalizedTheme)
+        );
+    if (!matchesTheme) {
+      return false;
+    }
+  }
+
+  if (input.qualityFilter) {
+    const qualities = input.run.items.length > 0
+      ? input.run.items.map((item) => item.quality.grade)
+      : input.run.outputs.map((item) => item.qualityGrade);
+    switch (input.qualityFilter) {
+      case "strategy_ready":
+        if (!qualities.includes("strategy_ready")) {
+          return false;
+        }
+        break;
+      case "exclude_insufficient":
+        if (!qualities.some((grade) => grade !== "insufficient")) {
+          return false;
+        }
+        break;
+    }
+  }
+
+  return true;
+}
+
+function sortStrategyRuns(items: StrategyRunListItem[], sort: StrategyRunListSort) {
+  return items.sort((left, right) => {
+    switch (sort) {
+      case "score":
+        if ((right.topIdea?.score ?? -1) !== (left.topIdea?.score ?? -1)) {
+          return (right.topIdea?.score ?? -1) - (left.topIdea?.score ?? -1);
+        }
+        break;
+      case "symbol":
+        if ((left.topIdea?.symbol ?? "") !== (right.topIdea?.symbol ?? "")) {
+          return (left.topIdea?.symbol ?? "").localeCompare(right.topIdea?.symbol ?? "");
+        }
+        break;
+      case "created_at":
+      default:
+        if (right.createdAt !== left.createdAt) {
+          return right.createdAt.localeCompare(left.createdAt);
+        }
+        break;
+    }
+
+    return right.createdAt.localeCompare(left.createdAt);
+  });
+}
+
 function buildStrategyRunListItem(run: StrategyRunRecord): StrategyRunListItem {
+  const topIdea = buildStrategyRunCompactIdea({
+    item: run.items[0] ?? null,
+    output: run.outputs[0] ?? null
+  });
+
   return {
     id: run.id,
     createdAt: run.createdAt,
     generatedAt: run.generatedAt,
     query: run.query,
+    decisionMode: run.query.decisionMode ?? "strategy",
     summary: run.summary,
-    topSymbols: run.outputs.slice(0, 5).map((output) => output.symbol)
+    topIdea,
+    topSymbols: (run.items.length > 0 ? run.items : run.outputs)
+      .slice(0, 5)
+      .map((item) => item.symbol),
+    quality: {
+      strategyReady: run.summary.quality.strategyReady,
+      referenceOnly: run.summary.quality.referenceOnly,
+      insufficient: run.summary.quality.insufficient,
+      primaryReason: run.summary.quality.primaryReasons[0]?.reason ?? "no_quality_reason"
+    }
   };
 }
 
@@ -713,6 +864,7 @@ export async function createStrategyRun(input: {
     generatedAt: ideas.generatedAt,
     query: input.payload,
     summary: ideas.summary,
+    items: ideas.items,
     outputs: buildStrategyRunOutputs(ideas.items)
   });
 
@@ -723,12 +875,33 @@ export async function createStrategyRun(input: {
 export async function listStrategyRuns(input: {
   session: AppSession;
   limit?: number;
+  decisionMode?: StrategyIdeasDecisionMode;
+  symbol?: string;
+  themeId?: string;
+  theme?: string;
+  qualityFilter?: StrategyIdeasQualityFilter;
+  sort?: StrategyRunListSort;
 }): Promise<StrategyRunListView> {
   const limit = clamp(input.limit ?? 20, 1, 50);
   const runs = await loadPersistedStrategyRuns(input.session.workspace.slug);
+  const filtered = runs.filter((run) =>
+    runMatchesFilters({
+      run,
+      decisionMode: input.decisionMode,
+      symbol: input.symbol,
+      themeId: input.themeId,
+      theme: input.theme,
+      qualityFilter: input.qualityFilter
+    })
+  );
+  const items = sortStrategyRuns(
+    filtered.map(buildStrategyRunListItem),
+    input.sort ?? "created_at"
+  ).slice(0, limit);
+
   return strategyRunListViewSchema.parse({
-    total: runs.length,
-    items: runs.slice(0, limit).map(buildStrategyRunListItem)
+    total: filtered.length,
+    items
   });
 }
 

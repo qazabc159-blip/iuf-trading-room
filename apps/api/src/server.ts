@@ -1552,7 +1552,13 @@ app.get("/api/v1/strategy/runs", async (c) => {
   return c.json({
     data: await listStrategyRuns({
       session: c.get("session"),
-      limit: query.limit
+      limit: query.limit,
+      decisionMode: query.decisionMode,
+      symbol: query.symbol,
+      themeId: query.themeId,
+      theme: query.theme,
+      qualityFilter: query.qualityFilter,
+      sort: query.sort
     })
   });
 });

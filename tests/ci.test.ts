@@ -4176,6 +4176,37 @@ test("strategy runs persist query, summary, and score outputs", async () => {
     },
     notes: "High-conviction optics name."
   });
+  const secondaryTheme = await repo.createTheme({
+    name: "Memory Servers",
+    marketState: "Balanced",
+    lifecycle: "Expansion",
+    priority: 3,
+    thesis: "Server memory demand is stable.",
+    whyNow: "Cloud inventory is healthy.",
+    bottleneck: "Pricing discipline"
+  });
+  const secondaryCompany = await repo.createCompany({
+    name: "Server Memory Works",
+    ticker: "RUN2",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [secondaryTheme.id],
+    chainPosition: "Memory modules",
+    beneficiaryTier: "Direct",
+    exposure: {
+      volume: 4,
+      asp: 3,
+      margin: 3,
+      capacity: 3,
+      narrative: 3
+    },
+    validation: {
+      capitalFlow: "Neutral",
+      consensus: "Stable",
+      relativeStrength: "Middle"
+    },
+    notes: "Secondary strategy run candidate."
+  });
 
   await repo.createSignal({
     category: "industry",
@@ -4185,6 +4216,15 @@ test("strategy runs persist query, summary, and score outputs", async () => {
     confidence: 4,
     themeIds: [theme.id],
     companyIds: [company.id]
+  });
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "Memory demand stabilizes",
+    summary: "Inventory digestion improves.",
+    confidence: 3,
+    themeIds: [secondaryTheme.id],
+    companyIds: [secondaryCompany.id]
   });
 
   const now = new Date().toISOString();
@@ -4221,6 +4261,21 @@ test("strategy runs persist query, summary, and score outputs", async () => {
         volume: 1200,
         changePct: 2.4,
         timestamp: now
+      },
+      {
+        symbol: "RUN2",
+        market: "OTHER",
+        source: "paper",
+        last: 55,
+        bid: 54.9,
+        ask: 55.1,
+        open: 54.5,
+        high: 55.2,
+        low: 54.2,
+        prevClose: 54.8,
+        volume: 600,
+        changePct: 0.4,
+        timestamp: now
       }
     ]
   });
@@ -4245,6 +4300,8 @@ test("strategy runs persist query, summary, and score outputs", async () => {
   assert.equal(run.outputs[0]?.marketDecision, "review");
   assert.equal(run.outputs[0]?.qualityGrade, "reference_only");
   assert.equal(run.outputs[0]?.topThemeId, theme.id);
+  assert.equal(run.items[0]?.symbol, "RUN1");
+  assert.equal(run.items[0]?.rationale.theme.topThemeId, theme.id);
 
   const listed = await listStrategyRuns({
     session,
@@ -4252,7 +4309,12 @@ test("strategy runs persist query, summary, and score outputs", async () => {
   });
   assert.equal(listed.total, 1);
   assert.equal(listed.items[0]?.id, run.id);
+  assert.equal(listed.items[0]?.decisionMode, "strategy");
   assert.equal(listed.items[0]?.summary.total, 1);
+  assert.equal(listed.items[0]?.topIdea?.symbol, "RUN1");
+  assert.equal(listed.items[0]?.topIdea?.qualityGrade, "reference_only");
+  assert.equal(listed.items[0]?.quality.referenceOnly, 1);
+  assert.ok((listed.items[0]?.quality.primaryReason ?? "").length > 0);
   assert.equal(listed.items[0]?.topSymbols[0], "RUN1");
 
   const loaded = await getStrategyRunById({
@@ -4263,6 +4325,60 @@ test("strategy runs persist query, summary, and score outputs", async () => {
   assert.equal(loaded?.id, run.id);
   assert.equal(loaded?.outputs[0]?.symbol, "RUN1");
   assert.equal(loaded?.outputs[0]?.primaryReason, run.outputs[0]?.primaryReason);
+  assert.equal(loaded?.items[0]?.symbol, "RUN1");
+  assert.equal(loaded?.items[0]?.marketData.decisionMode, "strategy");
+
+  const secondRun = await createStrategyRun({
+    session,
+    repo,
+    payload: {
+      limit: 10,
+      signalDays: 30,
+      includeBlocked: true,
+      decisionMode: "paper",
+      symbol: "RUN2",
+      sort: "symbol"
+    }
+  });
+
+  const filteredByMode = await listStrategyRuns({
+    session,
+    limit: 10,
+    decisionMode: "paper"
+  });
+  assert.equal(filteredByMode.total, 1);
+  assert.equal(filteredByMode.items[0]?.id, secondRun.id);
+  assert.equal(filteredByMode.items[0]?.decisionMode, "paper");
+
+  const filteredByTheme = await listStrategyRuns({
+    session,
+    limit: 10,
+    themeId: secondaryTheme.id
+  });
+  assert.equal(filteredByTheme.total, 1);
+  assert.equal(filteredByTheme.items[0]?.topIdea?.symbol, "RUN2");
+
+  const filteredByQuality = await listStrategyRuns({
+    session,
+    limit: 10,
+    qualityFilter: "exclude_insufficient"
+  });
+  assert.equal(filteredByQuality.total, 1);
+  assert.equal(filteredByQuality.items[0]?.id, run.id);
+
+  const sortedByScore = await listStrategyRuns({
+    session,
+    limit: 10,
+    sort: "score"
+  });
+  assert.equal(sortedByScore.items[0]?.topIdea?.symbol, "RUN1");
+
+  const sortedBySymbol = await listStrategyRuns({
+    session,
+    limit: 10,
+    sort: "symbol"
+  });
+  assert.equal(sortedBySymbol.items[0]?.topIdea?.symbol, "RUN1");
 });
 
 test("memory repository supports core research-to-review loop", async () => {

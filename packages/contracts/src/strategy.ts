@@ -286,8 +286,16 @@ export const strategyIdeasViewSchema = z.object({
 
 export const strategyRunCreateInputSchema = strategyIdeasQuerySchema;
 
+export const strategyRunListSortSchema = z.enum(["created_at", "score", "symbol"]);
+
 export const strategyRunListQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(20)
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  decisionMode: strategyIdeasDecisionModeSchema.optional(),
+  symbol: z.string().trim().min(1).max(32).optional(),
+  themeId: z.string().uuid().optional(),
+  theme: z.string().trim().min(1).max(120).optional(),
+  qualityFilter: strategyIdeasQualityFilterSchema.optional(),
+  sort: strategyRunListSortSchema.default("created_at")
 });
 
 export const strategyRunOutputSchema = z.object({
@@ -313,13 +321,41 @@ export const strategyRunRecordSchema = z.object({
   generatedAt: z.string(),
   query: strategyRunCreateInputSchema,
   summary: strategyIdeasSummarySchema,
+  items: z.array(strategyIdeaSchema).max(50).default([]),
   outputs: z.array(strategyRunOutputSchema).max(50)
 });
 
-export const strategyRunListItemSchema = strategyRunRecordSchema.extend({
-  topSymbols: z.array(z.string().min(1)).max(5)
-}).omit({
-  outputs: true
+export const strategyRunCompactIdeaSchema = z.object({
+  companyId: z.string().uuid(),
+  symbol: z.string().min(1),
+  companyName: z.string().min(1).max(160),
+  score: z.number().min(0).max(100),
+  confidence: z.number().min(0).max(1),
+  direction: strategyIdeaDirectionSchema,
+  latestSignalAt: z.string().nullable(),
+  topThemeId: z.string().uuid().nullable(),
+  topThemeName: z.string().min(1).max(120).nullable(),
+  marketDecision: strategyIdeaMarketDecisionSchema,
+  selectedSource: z.string().nullable(),
+  qualityGrade: marketDataQualityGradeSchema,
+  primaryReason: z.string().min(1).max(120)
+});
+
+export const strategyRunListItemSchema = z.object({
+  id: z.string().uuid(),
+  createdAt: z.string(),
+  generatedAt: z.string(),
+  query: strategyRunCreateInputSchema,
+  decisionMode: strategyIdeasDecisionModeSchema,
+  summary: strategyIdeasSummarySchema,
+  topIdea: strategyRunCompactIdeaSchema.nullable(),
+  topSymbols: z.array(z.string().min(1)).max(5),
+  quality: z.object({
+    strategyReady: z.number().int().nonnegative(),
+    referenceOnly: z.number().int().nonnegative(),
+    insufficient: z.number().int().nonnegative(),
+    primaryReason: z.string().min(1).max(120)
+  })
 });
 
 export const strategyRunListViewSchema = z.object({
@@ -354,8 +390,10 @@ export type StrategyIdeasQuery = z.infer<typeof strategyIdeasQuerySchema>;
 export type StrategyIdeasSummary = z.infer<typeof strategyIdeasSummarySchema>;
 export type StrategyIdeasView = z.infer<typeof strategyIdeasViewSchema>;
 export type StrategyRunCreateInput = z.infer<typeof strategyRunCreateInputSchema>;
+export type StrategyRunListSort = z.infer<typeof strategyRunListSortSchema>;
 export type StrategyRunListQuery = z.infer<typeof strategyRunListQuerySchema>;
 export type StrategyRunOutput = z.infer<typeof strategyRunOutputSchema>;
 export type StrategyRunRecord = z.infer<typeof strategyRunRecordSchema>;
+export type StrategyRunCompactIdea = z.infer<typeof strategyRunCompactIdeaSchema>;
 export type StrategyRunListItem = z.infer<typeof strategyRunListItemSchema>;
 export type StrategyRunListView = z.infer<typeof strategyRunListViewSchema>;
