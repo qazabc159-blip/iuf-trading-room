@@ -38,6 +38,11 @@ type Props = {
   // When a caller (e.g. /ideas CTA) arrives with a symbol in the URL, seed
   // the form so the trader doesn't have to retype it.
   initialSymbol?: string;
+  // Safe minimal pre-fill from /ideas handoff: bullish→buy, bearish→sell.
+  // Neutral/unknown directions leave the default untouched so the trader
+  // must consciously pick a side. Quantity / type / stop / TP are never
+  // auto-filled — those depend on plan-level sizing or manual judgement.
+  initialSide?: Side;
 };
 
 type Side = "buy" | "sell";
@@ -73,16 +78,31 @@ const DECISION_COLOR: Record<RiskCheckResult["decision"], string> = {
 // the execution timeline via apps/web/lib/quote-vocab.ts so the three surfaces
 // stay aligned.
 
-export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper", initialSymbol }: Props) {
-  const [form, setForm] = useState<FormState>(() =>
-    initialSymbol ? { ...EMPTY_FORM, symbol: initialSymbol.toUpperCase() } : EMPTY_FORM
-  );
+export function OrderTicket({
+  accountId,
+  onSubmitted,
+  quoteMode = "paper",
+  initialSymbol,
+  initialSide
+}: Props) {
+  const [form, setForm] = useState<FormState>(() => {
+    const seeded: FormState = { ...EMPTY_FORM };
+    if (initialSymbol) seeded.symbol = initialSymbol.toUpperCase();
+    if (initialSide) seeded.side = initialSide;
+    return seeded;
+  });
 
   useEffect(() => {
     if (initialSymbol) {
       setForm((prev) => ({ ...prev, symbol: initialSymbol.toUpperCase() }));
     }
   }, [initialSymbol]);
+
+  useEffect(() => {
+    if (initialSide) {
+      setForm((prev) => (prev.side === initialSide ? prev : { ...prev, side: initialSide }));
+    }
+  }, [initialSide]);
   const [plans, setPlans] = useState<TradePlan[]>([]);
   const [effectiveLimits, setEffectiveLimits] = useState<EffectiveRiskLimit | null>(null);
   const [pendingLimits, setPendingLimits] = useState(false);

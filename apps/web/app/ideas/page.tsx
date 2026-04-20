@@ -15,6 +15,7 @@ import type {
 
 import { AppShell } from "@/components/app-shell";
 import { getStrategyIdeas, type StrategyIdeasQueryParams } from "@/lib/api";
+import { writeIdeaHandoff } from "@/lib/idea-handoff";
 
 type QualityGrade = StrategyIdea["quality"]["grade"];
 
@@ -395,7 +396,27 @@ function IdeaCard({ item, mode }: { item: StrategyIdea; mode: StrategyIdeasDecis
         <Link
           className="btn-sm"
           href={`/portfolio?symbol=${encodeURIComponent(item.symbol)}`}
-          title={`帶 ${item.symbol} 到下單台`}
+          title={`帶 ${item.symbol} 與策略上下文到下單台`}
+          onClick={() => {
+            // Write handoff synchronously before Link triggers navigation so
+            // /portfolio's read side always sees fresh context for this idea.
+            writeIdeaHandoff({
+              symbol: item.symbol,
+              companyName: item.companyName,
+              market: item.market,
+              direction: item.direction,
+              score: item.score,
+              confidence: item.confidence,
+              topThemeId: topTheme?.themeId ?? null,
+              topThemeName: topTheme?.name ?? null,
+              qualityGrade: item.quality.grade,
+              qualityReason: item.quality.primaryReason,
+              decision: item.marketData.decision,
+              decisionMode: mode,
+              primaryReason: rationale.primaryReason,
+              capturedAt: new Date().toISOString()
+            });
+          }}
         >
           帶去下單台 →
         </Link>

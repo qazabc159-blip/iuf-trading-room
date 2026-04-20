@@ -28,13 +28,27 @@ import type {
   RiskLimit
 } from "@iuf-trading-room/contracts";
 
+import { clearIdeaHandoff, readIdeaHandoff, type IdeaHandoff } from "@/lib/idea-handoff";
 import { MODE_DECISION_HINT } from "@/lib/quote-vocab";
 
 import { ExecutionTimeline } from "./execution-timeline";
 import { OrderTicket } from "./order-ticket";
 import { RiskLayerOverrides } from "./risk-layer-overrides";
 import { RiskLimitsConfig } from "./risk-limits-config";
+import { StrategyContextCard } from "./strategy-context-card";
 import { useExecutionStream } from "./use-execution-stream";
+
+// bullish / bearish map to buy / sell; neutral leaves the side alone so the
+// trader must pick deliberately. Kept colocated here (not in idea-handoff.ts)
+// because this is the specific rule for "what's safe to auto-fill into the
+// order ticket", which is a UX call, not a data contract.
+function directionToSide(
+  direction: IdeaHandoff["direction"]
+): "buy" | "sell" | undefined {
+  if (direction === "bullish") return "buy";
+  if (direction === "bearish") return "sell";
+  return undefined;
+}
 
 // SSE is authoritative — this polling is just a belt-and-suspenders fallback
 // in case the stream drops without firing the error branch (e.g. a proxy
@@ -92,6 +106,19 @@ function PortfolioPageInner() {
   const [riskLimit, setRiskLimit] = useState<RiskLimit | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mutating, setMutating] = useState(false);
+  const [ideaHandoff, setIdeaHandoff] = useState<IdeaHandoff | null>(null);
+
+  // Pull the handoff out of sessionStorage once we know which symbol the URL
+  // is asking for — readIdeaHandoff validates the symbol match so stale
+  // payloads from a previous /ideas click never attach to the wrong ticker.
+  useEffect(() => {
+    setIdeaHandoff(readIdeaHandoff(incomingSymbol));
+  }, [incomingSymbol]);
+
+  const onDismissHandoff = useCallback(() => {
+    clearIdeaHandoff();
+    setIdeaHandoff(null);
+  }, []);
 
   const refresh = useCallback(
     async (id: string) => {
@@ -345,10 +372,16 @@ function PortfolioPageInner() {
           <p className="ascii-head" data-idx="02">
             [02] 下單台
           </p>
+          {ideaHandoff && (
+            <div style={{ marginBottom: "1rem" }}>
+              <StrategyContextCard handoff={ideaHandoff} onDismiss={onDismissHandoff} />
+            </div>
+          )}
           <OrderTicket
             accountId={accountId}
             quoteMode={quoteMode}
             initialSymbol={incomingSymbol}
+            initialSide={ideaHandoff ? directionToSide(ideaHandoff.direction) : undefined}
             onSubmitted={() => refresh(accountId).catch(() => undefined)}
           />
         </section>
