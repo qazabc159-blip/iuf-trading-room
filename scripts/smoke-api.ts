@@ -1611,6 +1611,84 @@ async function main() {
       true
     );
 
+    const strategyRun = await request<
+      JsonEnvelope<{
+        id: string;
+        createdAt: string;
+        generatedAt: string;
+        query: {
+          decisionMode: string;
+          qualityFilter?: string;
+          sort: string;
+        };
+        summary: {
+          total: number;
+          quality: { referenceOnly: number };
+        };
+        outputs: Array<{
+          symbol: string;
+          marketDecision: string;
+          qualityGrade: string;
+          selectedSource: string | null;
+          topThemeId: string | null;
+        }>;
+      }>
+    >(baseUrl, "/api/v1/strategy/runs", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        limit: 10,
+        signalDays: 30,
+        includeBlocked: true,
+        decisionMode: "strategy",
+        decisionFilter: "usable_only",
+        qualityFilter: "exclude_insufficient",
+        themeId: theme.data.id,
+        sort: "score"
+      })
+    });
+    assert.equal(strategyRun.data.query.decisionMode, "strategy");
+    assert.equal(strategyRun.data.summary.total, 1);
+    assert.ok(strategyRun.data.summary.quality.referenceOnly >= 1);
+    assert.equal(strategyRun.data.outputs[0]?.symbol, "SMK1");
+    assert.equal(strategyRun.data.outputs[0]?.marketDecision, "review");
+    assert.equal(strategyRun.data.outputs[0]?.qualityGrade, "reference_only");
+    assert.equal(strategyRun.data.outputs[0]?.selectedSource, "tradingview");
+    assert.equal(strategyRun.data.outputs[0]?.topThemeId, theme.data.id);
+
+    const strategyRunList = await request<
+      JsonEnvelope<{
+        total: number;
+        items: Array<{
+          id: string;
+          query: { decisionMode: string };
+          summary: { total: number };
+          topSymbols: string[];
+        }>;
+      }>
+    >(baseUrl, "/api/v1/strategy/runs?limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(strategyRunList.data.total, 1);
+    assert.equal(strategyRunList.data.items[0]?.id, strategyRun.data.id);
+    assert.equal(strategyRunList.data.items[0]?.query.decisionMode, "strategy");
+    assert.equal(strategyRunList.data.items[0]?.summary.total, 1);
+    assert.equal(strategyRunList.data.items[0]?.topSymbols[0], "SMK1");
+
+    const strategyRunDetail = await request<
+      JsonEnvelope<{
+        id: string;
+        summary: { total: number };
+        outputs: Array<{ symbol: string; primaryReason: string }>;
+      }>
+    >(baseUrl, `/api/v1/strategy/runs/${strategyRun.data.id}`, {
+      headers: { "x-workspace-slug": workspaceSlug }
+    });
+    assert.equal(strategyRunDetail.data.id, strategyRun.data.id);
+    assert.equal(strategyRunDetail.data.summary.total, 1);
+    assert.equal(strategyRunDetail.data.outputs[0]?.symbol, "SMK1");
+    assert.ok((strategyRunDetail.data.outputs[0]?.primaryReason ?? "").length > 0);
+
     const plan = await request<JsonEnvelope<{ id: string; companyId: string }>>(baseUrl, "/api/v1/plans", {
       method: "POST",
       headers: { "x-workspace-slug": workspaceSlug },

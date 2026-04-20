@@ -257,29 +257,74 @@ export const strategyIdeaSchema = z.object({
   rationale: strategyIdeaRationaleSchema
 });
 
+export const strategyIdeasSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  allow: z.number().int().nonnegative(),
+  review: z.number().int().nonnegative(),
+  block: z.number().int().nonnegative(),
+  bullish: z.number().int().nonnegative(),
+  bearish: z.number().int().nonnegative(),
+  neutral: z.number().int().nonnegative(),
+  quality: z.object({
+    strategyReady: z.number().int().nonnegative(),
+    referenceOnly: z.number().int().nonnegative(),
+    insufficient: z.number().int().nonnegative(),
+    primaryReasons: z.array(
+      z.object({
+        reason: z.string(),
+        total: z.number().int().nonnegative()
+      })
+    )
+  })
+});
+
 export const strategyIdeasViewSchema = z.object({
   generatedAt: z.string(),
-  summary: z.object({
-    total: z.number().int().nonnegative(),
-    allow: z.number().int().nonnegative(),
-    review: z.number().int().nonnegative(),
-    block: z.number().int().nonnegative(),
-    bullish: z.number().int().nonnegative(),
-    bearish: z.number().int().nonnegative(),
-    neutral: z.number().int().nonnegative(),
-    quality: z.object({
-      strategyReady: z.number().int().nonnegative(),
-      referenceOnly: z.number().int().nonnegative(),
-      insufficient: z.number().int().nonnegative(),
-      primaryReasons: z.array(
-        z.object({
-          reason: z.string(),
-          total: z.number().int().nonnegative()
-        })
-      )
-    })
-  }),
+  summary: strategyIdeasSummarySchema,
   items: z.array(strategyIdeaSchema)
+});
+
+export const strategyRunCreateInputSchema = strategyIdeasQuerySchema;
+
+export const strategyRunListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20)
+});
+
+export const strategyRunOutputSchema = z.object({
+  companyId: z.string().uuid(),
+  symbol: z.string().min(1),
+  companyName: z.string().min(1).max(160),
+  direction: strategyIdeaDirectionSchema,
+  score: z.number().min(0).max(100),
+  confidence: z.number().min(0).max(1),
+  signalCount: z.number().int().nonnegative(),
+  latestSignalAt: z.string().nullable(),
+  topThemeId: z.string().uuid().nullable(),
+  topThemeName: z.string().min(1).max(120).nullable(),
+  marketDecision: strategyIdeaMarketDecisionSchema,
+  selectedSource: z.string().nullable(),
+  qualityGrade: marketDataQualityGradeSchema,
+  primaryReason: z.string().min(1).max(120)
+});
+
+export const strategyRunRecordSchema = z.object({
+  id: z.string().uuid(),
+  createdAt: z.string(),
+  generatedAt: z.string(),
+  query: strategyRunCreateInputSchema,
+  summary: strategyIdeasSummarySchema,
+  outputs: z.array(strategyRunOutputSchema).max(50)
+});
+
+export const strategyRunListItemSchema = strategyRunRecordSchema.extend({
+  topSymbols: z.array(z.string().min(1)).max(5)
+}).omit({
+  outputs: true
+});
+
+export const strategyRunListViewSchema = z.object({
+  total: z.number().int().nonnegative(),
+  items: z.array(strategyRunListItemSchema)
 });
 
 export type StrategyKind = z.infer<typeof strategyKindSchema>;
@@ -306,4 +351,11 @@ export type StrategyIdeaTheme = z.infer<typeof strategyIdeaThemeSchema>;
 export type StrategyIdeaRationale = z.infer<typeof strategyIdeaRationaleSchema>;
 export type StrategyIdea = z.infer<typeof strategyIdeaSchema>;
 export type StrategyIdeasQuery = z.infer<typeof strategyIdeasQuerySchema>;
+export type StrategyIdeasSummary = z.infer<typeof strategyIdeasSummarySchema>;
 export type StrategyIdeasView = z.infer<typeof strategyIdeasViewSchema>;
+export type StrategyRunCreateInput = z.infer<typeof strategyRunCreateInputSchema>;
+export type StrategyRunListQuery = z.infer<typeof strategyRunListQuerySchema>;
+export type StrategyRunOutput = z.infer<typeof strategyRunOutputSchema>;
+export type StrategyRunRecord = z.infer<typeof strategyRunRecordSchema>;
+export type StrategyRunListItem = z.infer<typeof strategyRunListItemSchema>;
+export type StrategyRunListView = z.infer<typeof strategyRunListViewSchema>;

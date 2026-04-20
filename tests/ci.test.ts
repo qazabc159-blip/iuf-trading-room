@@ -40,7 +40,12 @@ import {
   getThemeGraphView,
   searchThemeGraph
 } from "../apps/api/src/theme-graph.ts";
-import { getStrategyIdeas } from "../apps/api/src/strategy-engine.ts";
+import {
+  createStrategyRun,
+  getStrategyIdeas,
+  getStrategyRunById,
+  listStrategyRuns
+} from "../apps/api/src/strategy-engine.ts";
 import {
   getMarketDataPolicy,
   getMarketDataOverview,
@@ -62,6 +67,7 @@ import {
   upsertManualQuotes
 } from "../apps/api/src/market-data.ts";
 import { resetPersistedQuoteEntries } from "../apps/api/src/market-data-store.ts";
+import { resetPersistedStrategyRuns } from "../apps/api/src/strategy-runs-store.ts";
 import {
   deleteStrategyRiskLimit,
   deleteSymbolRiskLimit,
@@ -4130,6 +4136,133 @@ test("strategy ideas support filters, sort modes, and structured rationale", asy
   assert.equal(symbolIdeas.summary.total, 1);
   assert.equal(symbolIdeas.items[0]?.symbol, "STR1");
   assert.equal(symbolIdeas.items[0]?.marketData.decisionMode, "execution");
+});
+
+test("strategy runs persist query, summary, and score outputs", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `strategy-runs-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "Server Optics",
+    marketState: "Selective Attack",
+    lifecycle: "Expansion",
+    priority: 4,
+    thesis: "Optics demand remains healthy.",
+    whyNow: "Cloud capex is resilient.",
+    bottleneck: "Module capacity"
+  });
+
+  const company = await repo.createCompany({
+    name: "Laser Works",
+    ticker: "RUN1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Optical engines",
+    beneficiaryTier: "Core",
+    exposure: {
+      volume: 5,
+      asp: 4,
+      margin: 4,
+      capacity: 4,
+      narrative: 4
+    },
+    validation: {
+      capitalFlow: "Strong",
+      consensus: "Up",
+      relativeStrength: "Leading"
+    },
+    notes: "High-conviction optics name."
+  });
+
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "Optics build-out continues",
+    summary: "Lead indicators remain firm.",
+    confidence: 4,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+
+  const now = new Date().toISOString();
+  const older = new Date(Date.now() - 60_000).toISOString();
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "RUN1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 88,
+        bid: 87.8,
+        ask: 88.2,
+        open: 86.5,
+        high: 88.4,
+        low: 86.2,
+        prevClose: 86.9,
+        volume: 900,
+        changePct: 1.3,
+        timestamp: older
+      },
+      {
+        symbol: "RUN1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 89,
+        bid: 88.8,
+        ask: 89.2,
+        open: 86.5,
+        high: 89.4,
+        low: 86.2,
+        prevClose: 86.9,
+        volume: 1200,
+        changePct: 2.4,
+        timestamp: now
+      }
+    ]
+  });
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: {
+      limit: 10,
+      signalDays: 30,
+      includeBlocked: true,
+      decisionMode: "strategy",
+      qualityFilter: "exclude_insufficient",
+      sort: "score"
+    }
+  });
+
+  assert.equal(run.query.decisionMode, "strategy");
+  assert.equal(run.summary.total, 1);
+  assert.equal(run.outputs.length, 1);
+  assert.equal(run.outputs[0]?.symbol, "RUN1");
+  assert.equal(run.outputs[0]?.marketDecision, "review");
+  assert.equal(run.outputs[0]?.qualityGrade, "reference_only");
+  assert.equal(run.outputs[0]?.topThemeId, theme.id);
+
+  const listed = await listStrategyRuns({
+    session,
+    limit: 10
+  });
+  assert.equal(listed.total, 1);
+  assert.equal(listed.items[0]?.id, run.id);
+  assert.equal(listed.items[0]?.summary.total, 1);
+  assert.equal(listed.items[0]?.topSymbols[0], "RUN1");
+
+  const loaded = await getStrategyRunById({
+    session,
+    runId: run.id
+  });
+  assert.ok(loaded);
+  assert.equal(loaded?.id, run.id);
+  assert.equal(loaded?.outputs[0]?.symbol, "RUN1");
+  assert.equal(loaded?.outputs[0]?.primaryReason, run.outputs[0]?.primaryReason);
 });
 
 test("memory repository supports core research-to-review loop", async () => {

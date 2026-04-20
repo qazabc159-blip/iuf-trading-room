@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   AppSession,
   Company,
@@ -9,11 +11,20 @@ import type {
   StrategyIdeasDecisionMode,
   StrategyIdeasQualityFilter,
   StrategyIdeasSort,
+  StrategyRunCreateInput,
+  StrategyRunListItem,
+  StrategyRunListView,
+  StrategyRunOutput,
+  StrategyRunRecord,
   StrategyIdeasView,
   Theme,
   ThemeGraphRankingResult
 } from "@iuf-trading-room/contracts";
-import { strategyIdeasViewSchema } from "@iuf-trading-room/contracts";
+import {
+  strategyIdeasViewSchema,
+  strategyRunListViewSchema,
+  strategyRunRecordSchema
+} from "@iuf-trading-room/contracts";
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 
 import {
@@ -21,6 +32,10 @@ import {
   getMarketDataDecisionSummary,
   getMarketQuoteHistoryDiagnostics
 } from "./market-data.js";
+import {
+  appendPersistedStrategyRun,
+  loadPersistedStrategyRuns
+} from "./strategy-runs-store.js";
 import { getThemeGraphRankings } from "./theme-graph.js";
 
 const supportedDecisionMarkets = ["TWSE", "TPEX", "TWO", "TW_EMERGING", "TW_INDEX", "OTHER"] as const;
@@ -217,6 +232,36 @@ function sortIdeas(items: StrategyIdea[], sort: StrategyIdeasSort) {
 
     return left.symbol.localeCompare(right.symbol);
   });
+}
+
+function buildStrategyRunOutputs(items: StrategyIdea[]): StrategyRunOutput[] {
+  return items.map((item) => ({
+    companyId: item.companyId,
+    symbol: item.symbol,
+    companyName: item.companyName,
+    direction: item.direction,
+    score: item.score,
+    confidence: item.confidence,
+    signalCount: item.signalCount,
+    latestSignalAt: item.latestSignalAt,
+    topThemeId: item.topThemes[0]?.themeId ?? null,
+    topThemeName: item.topThemes[0]?.name ?? null,
+    marketDecision: item.marketData.decision,
+    selectedSource: item.marketData.selectedSource,
+    qualityGrade: item.quality.grade,
+    primaryReason: item.rationale.primaryReason
+  }));
+}
+
+function buildStrategyRunListItem(run: StrategyRunRecord): StrategyRunListItem {
+  return {
+    id: run.id,
+    createdAt: run.createdAt,
+    generatedAt: run.generatedAt,
+    query: run.query,
+    summary: run.summary,
+    topSymbols: run.outputs.slice(0, 5).map((output) => output.symbol)
+  };
 }
 
 function defaultHistoryQuality(): StrategyIdeaQualityView["history"] {
@@ -648,4 +693,49 @@ export async function getStrategyIdeas(input: {
     },
     items: finalItems
   });
+}
+
+export async function createStrategyRun(input: {
+  session: AppSession;
+  repo: TradingRoomRepository;
+  payload: StrategyRunCreateInput;
+}): Promise<StrategyRunRecord> {
+  const ideas = await getStrategyIdeas({
+    session: input.session,
+    repo: input.repo,
+    ...input.payload
+  });
+
+  const createdAt = new Date().toISOString();
+  const run = strategyRunRecordSchema.parse({
+    id: randomUUID(),
+    createdAt,
+    generatedAt: ideas.generatedAt,
+    query: input.payload,
+    summary: ideas.summary,
+    outputs: buildStrategyRunOutputs(ideas.items)
+  });
+
+  await appendPersistedStrategyRun(input.session.workspace.slug, run);
+  return run;
+}
+
+export async function listStrategyRuns(input: {
+  session: AppSession;
+  limit?: number;
+}): Promise<StrategyRunListView> {
+  const limit = clamp(input.limit ?? 20, 1, 50);
+  const runs = await loadPersistedStrategyRuns(input.session.workspace.slug);
+  return strategyRunListViewSchema.parse({
+    total: runs.length,
+    items: runs.slice(0, limit).map(buildStrategyRunListItem)
+  });
+}
+
+export async function getStrategyRunById(input: {
+  session: AppSession;
+  runId: string;
+}): Promise<StrategyRunRecord | null> {
+  const runs = await loadPersistedStrategyRuns(input.session.workspace.slug);
+  return runs.find((run) => run.id === input.runId) ?? null;
 }

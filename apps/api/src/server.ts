@@ -21,6 +21,8 @@ import {
   signalCreateInputSchema,
   signalUpdateInputSchema,
   strategyIdeasQuerySchema,
+  strategyRunCreateInputSchema,
+  strategyRunListQuerySchema,
   themeCreateInputSchema,
   themeLifecycleSchema,
   themeUpdateInputSchema,
@@ -156,7 +158,12 @@ import {
   getThemeGraphView,
   searchThemeGraph
 } from "./theme-graph.js";
-import { getStrategyIdeas } from "./strategy-engine.js";
+import {
+  createStrategyRun,
+  getStrategyIdeas,
+  getStrategyRunById,
+  listStrategyRuns
+} from "./strategy-engine.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -1524,6 +1531,43 @@ app.get("/api/v1/strategy/ideas", async (c) => {
       sort: query.sort
     })
   });
+});
+
+app.post("/api/v1/strategy/runs", async (c) => {
+  const payload = strategyRunCreateInputSchema.parse(await c.req.json().catch(() => ({})));
+  return c.json(
+    {
+      data: await createStrategyRun({
+        session: c.get("session"),
+        repo: c.get("repo"),
+        payload
+      })
+    },
+    201
+  );
+});
+
+app.get("/api/v1/strategy/runs", async (c) => {
+  const query = strategyRunListQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await listStrategyRuns({
+      session: c.get("session"),
+      limit: query.limit
+    })
+  });
+});
+
+app.get("/api/v1/strategy/runs/:id", async (c) => {
+  const run = await getStrategyRunById({
+    session: c.get("session"),
+    runId: c.req.param("id")
+  });
+
+  if (!run) {
+    return c.json({ error: "strategy_run_not_found" }, 404);
+  }
+
+  return c.json({ data: run });
 });
 
 app.post("/api/v1/signals", async (c) => {
