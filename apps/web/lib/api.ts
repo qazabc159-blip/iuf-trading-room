@@ -47,6 +47,10 @@ import type {
   StrategyIdeasQualityFilter,
   StrategyIdeasSort,
   StrategyIdeasView,
+  StrategyRunListQuery,
+  StrategyRunListSort,
+  StrategyRunListView,
+  StrategyRunRecord,
   SubmitOrderResult,
   Theme,
   ThemeCreateInput,
@@ -916,4 +920,32 @@ export async function getStrategyIdeas(params: StrategyIdeasQueryParams = {}) {
   if (params.sort) query.set("sort", params.sort);
   const qs = query.toString();
   return request<StrategyIdeasView>(`/api/v1/strategy/ideas${qs ? `?${qs}` : ""}`);
+}
+
+export type StrategyRunListParams = Partial<
+  Pick<
+    StrategyRunListQuery,
+    "limit" | "decisionMode" | "symbol" | "themeId" | "theme" | "qualityFilter"
+  >
+> & {
+  sort?: StrategyRunListSort;
+};
+
+export async function listStrategyRuns(params: StrategyRunListParams = {}) {
+  const query = new URLSearchParams();
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.decisionMode) query.set("decisionMode", params.decisionMode);
+  if (params.symbol) query.set("symbol", params.symbol);
+  if (params.themeId) query.set("themeId", params.themeId);
+  if (params.theme) query.set("theme", params.theme);
+  if (params.qualityFilter) query.set("qualityFilter", params.qualityFilter);
+  if (params.sort) query.set("sort", params.sort);
+  const qs = query.toString();
+  return request<StrategyRunListView>(`/api/v1/strategy/runs${qs ? `?${qs}` : ""}`);
+}
+
+export async function getStrategyRunById(runId: string) {
+  return request<StrategyRunRecord>(
+    `/api/v1/strategy/runs/${encodeURIComponent(runId)}`
+  );
 }

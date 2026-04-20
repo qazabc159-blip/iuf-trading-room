@@ -1,50 +1,15 @@
 "use client";
 
 import type { IdeaHandoff } from "@/lib/idea-handoff";
-
-// Vocab mirrors /ideas — same badge colors and same Chinese labels, so the
-// trader sees exactly the same classification they just clicked on.
-const DIRECTION_LABEL: Record<IdeaHandoff["direction"], string> = {
-  bullish: "看多",
-  bearish: "看空",
-  neutral: "中性"
-};
-
-const DIRECTION_BADGE: Record<IdeaHandoff["direction"], string> = {
-  bullish: "badge-green",
-  bearish: "badge-red",
-  neutral: "badge-blue"
-};
-
-const DECISION_LABEL: Record<IdeaHandoff["decision"], string> = {
-  allow: "允許送單",
-  review: "需審視",
-  block: "封鎖"
-};
-
-const DECISION_BADGE: Record<IdeaHandoff["decision"], string> = {
-  allow: "badge-green",
-  review: "badge-yellow",
-  block: "badge-red"
-};
-
-const QUALITY_LABEL: Record<IdeaHandoff["qualityGrade"], string> = {
-  strategy_ready: "可策略執行",
-  reference_only: "僅供參考",
-  insufficient: "資料不足"
-};
-
-const QUALITY_BADGE: Record<IdeaHandoff["qualityGrade"], string> = {
-  strategy_ready: "badge-green",
-  reference_only: "badge-yellow",
-  insufficient: "badge-red"
-};
-
-const MODE_LABEL: Record<IdeaHandoff["decisionMode"], string> = {
-  strategy: "策略篩選",
-  paper: "紙上交易",
-  execution: "真倉執行"
-};
+import {
+  DECISION_BADGE,
+  DECISION_LABEL,
+  DIRECTION_BADGE,
+  DIRECTION_LABEL,
+  MODE_LABEL,
+  QUALITY_BADGE,
+  QUALITY_LABEL
+} from "@/lib/strategy-vocab";
 
 type Props = {
   handoff: IdeaHandoff;

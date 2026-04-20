@@ -5,8 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import type {
   StrategyIdea,
-  StrategyIdeaDirection,
-  StrategyIdeaMarketDecision,
   StrategyIdeasDecisionMode,
   StrategyIdeasQualityFilter,
   StrategyIdeasSort,
@@ -15,59 +13,17 @@ import type {
 
 import { AppShell } from "@/components/app-shell";
 import { getStrategyIdeas, type StrategyIdeasQueryParams } from "@/lib/api";
-import { writeIdeaHandoff } from "@/lib/idea-handoff";
-
-type QualityGrade = StrategyIdea["quality"]["grade"];
-
-const DECISION_LABEL: Record<StrategyIdeaMarketDecision, string> = {
-  allow: "允許送單",
-  review: "需審視",
-  block: "封鎖"
-};
-
-const DECISION_BADGE: Record<StrategyIdeaMarketDecision, string> = {
-  allow: "badge-green",
-  review: "badge-yellow",
-  block: "badge-red"
-};
-
-const DIRECTION_LABEL: Record<StrategyIdeaDirection, string> = {
-  bullish: "看多",
-  bearish: "看空",
-  neutral: "中性"
-};
-
-const DIRECTION_BADGE: Record<StrategyIdeaDirection, string> = {
-  bullish: "badge-green",
-  bearish: "badge-red",
-  neutral: "badge-blue"
-};
-
-const QUALITY_LABEL: Record<QualityGrade, string> = {
-  strategy_ready: "可策略執行",
-  reference_only: "僅供參考",
-  insufficient: "資料不足"
-};
-
-const QUALITY_BADGE: Record<QualityGrade, string> = {
-  strategy_ready: "badge-green",
-  reference_only: "badge-yellow",
-  insufficient: "badge-red"
-};
-
-const MODE_LABEL: Record<StrategyIdeasDecisionMode, string> = {
-  strategy: "策略篩選",
-  paper: "紙上交易",
-  execution: "真倉執行"
-};
-
-const SORT_LABEL: Record<StrategyIdeasSort, string> = {
-  score: "推薦分數",
-  signal_strength: "訊號強度",
-  signal_recency: "訊號時效",
-  theme_rank: "主題熱度",
-  symbol: "代號"
-};
+import { handoffFromIdea, writeIdeaHandoff } from "@/lib/idea-handoff";
+import {
+  DECISION_BADGE,
+  DECISION_LABEL,
+  DIRECTION_BADGE,
+  DIRECTION_LABEL,
+  MODE_LABEL,
+  QUALITY_BADGE,
+  QUALITY_LABEL,
+  SORT_LABEL
+} from "@/lib/strategy-vocab";
 
 const DEFAULT_QUERY: StrategyIdeasQueryParams = {
   decisionMode: "strategy",
@@ -400,22 +356,7 @@ function IdeaCard({ item, mode }: { item: StrategyIdea; mode: StrategyIdeasDecis
           onClick={() => {
             // Write handoff synchronously before Link triggers navigation so
             // /portfolio's read side always sees fresh context for this idea.
-            writeIdeaHandoff({
-              symbol: item.symbol,
-              companyName: item.companyName,
-              market: item.market,
-              direction: item.direction,
-              score: item.score,
-              confidence: item.confidence,
-              topThemeId: topTheme?.themeId ?? null,
-              topThemeName: topTheme?.name ?? null,
-              qualityGrade: item.quality.grade,
-              qualityReason: item.quality.primaryReason,
-              decision: item.marketData.decision,
-              decisionMode: mode,
-              primaryReason: rationale.primaryReason,
-              capturedAt: new Date().toISOString()
-            });
+            writeIdeaHandoff(handoffFromIdea(item, mode));
           }}
         >
           帶去下單台 →

@@ -19,6 +19,8 @@ const PAGE_ITEMS: Array<{ href: string; label: string; subtitle: string; keyword
   { href: "/themes", label: "主題戰區", subtitle: "主題排名與 graph", keywords: "主題 戰區 themes" },
   { href: "/companies", label: "公司資料庫", subtitle: "全部公司列表", keywords: "公司 資料庫 companies" },
   { href: "/signals", label: "訊號雷達", subtitle: "追蹤所有訊號", keywords: "訊號 雷達 signals" },
+  { href: "/ideas", label: "策略推薦", subtitle: "品質分級即時推薦", keywords: "策略 推薦 ideas strategy" },
+  { href: "/runs", label: "策略歷史", subtitle: "歷史策略 run 快照", keywords: "歷史 runs strategy runs 快照 snapshot" },
   { href: "/plans", label: "交易計畫", subtitle: "進行中與規劃中計畫", keywords: "計畫 交易 plans" },
   { href: "/portfolio", label: "持倉部位", subtitle: "帳戶 / 部位 / 風控 / kill switch", keywords: "持倉 部位 portfolio 帳戶 風控 broker 凱基 kill switch" },
   { href: "/reviews", label: "交易檢討", subtitle: "歷史結果回顧", keywords: "檢討 回顧 reviews" },

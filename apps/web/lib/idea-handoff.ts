@@ -2,7 +2,8 @@ import type {
   StrategyIdea,
   StrategyIdeaDirection,
   StrategyIdeaMarketDecision,
-  StrategyIdeasDecisionMode
+  StrategyIdeasDecisionMode,
+  StrategyRunCompactIdea
 } from "@iuf-trading-room/contracts";
 
 // Minimum strategy context carried from /ideas → /portfolio so the trader
@@ -66,4 +67,55 @@ export function clearIdeaHandoff() {
   } catch {
     // no-op
   }
+}
+
+// Build an IdeaHandoff from a full StrategyIdea — used by both /ideas and
+// /runs/[id] so the handoff shape can't drift between the live and snapshot
+// surfaces.
+export function handoffFromIdea(
+  item: StrategyIdea,
+  mode: StrategyIdeasDecisionMode
+): IdeaHandoff {
+  const topTheme = item.topThemes[0] ?? null;
+  return {
+    symbol: item.symbol,
+    companyName: item.companyName,
+    market: item.market,
+    direction: item.direction,
+    score: item.score,
+    confidence: item.confidence,
+    topThemeId: topTheme?.themeId ?? null,
+    topThemeName: topTheme?.name ?? null,
+    qualityGrade: item.quality.grade,
+    qualityReason: item.quality.primaryReason,
+    decision: item.marketData.decision,
+    decisionMode: mode,
+    primaryReason: item.rationale.primaryReason,
+    capturedAt: new Date().toISOString()
+  };
+}
+
+// Compact ideas (on run list rows) only carry a flat primaryReason — use it
+// for both rationale and quality reason. The /portfolio card will still show
+// the single reason twice-deduped because its dedupe checks equality.
+export function handoffFromCompact(
+  item: StrategyRunCompactIdea,
+  opts: { market: string; mode: StrategyIdeasDecisionMode }
+): IdeaHandoff {
+  return {
+    symbol: item.symbol,
+    companyName: item.companyName,
+    market: opts.market,
+    direction: item.direction,
+    score: item.score,
+    confidence: item.confidence,
+    topThemeId: item.topThemeId,
+    topThemeName: item.topThemeName,
+    qualityGrade: item.qualityGrade,
+    qualityReason: item.primaryReason,
+    decision: item.marketDecision,
+    decisionMode: opts.mode,
+    primaryReason: item.primaryReason,
+    capturedAt: new Date().toISOString()
+  };
 }
