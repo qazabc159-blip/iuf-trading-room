@@ -164,6 +164,7 @@ import {
   getStrategyRunById,
   listStrategyRuns
 } from "./strategy-engine.js";
+import { initRiskStore } from "./risk-engine.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -2075,7 +2076,10 @@ serve(
     port,
     hostname: host
   },
-  (info) => {
+  async (info) => {
     console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
+    const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+    await initRiskStore(defaultWorkspace);
+    console.log(`[risk-store] Hydrated workspace "${defaultWorkspace}" from persistent store.`);
   }
 );

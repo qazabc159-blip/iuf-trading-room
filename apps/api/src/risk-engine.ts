@@ -27,6 +27,7 @@ import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 import { z } from "zod";
 
 import { listMarketQuotes } from "./market-data.js";
+import { loadRiskStore, saveRiskStore, type RiskStoreState } from "./risk-store.js";
 
 const ORDERS_PER_MINUTE_WINDOW_MS = 60_000;
 const DUPLICATE_ORDER_WINDOW_MS = 30_000;
@@ -61,6 +62,35 @@ const recentOrderIntentStore = new Map<string, RecentOrderIntent[]>();
 // when the in-memory store is shared across tests / routes.
 const strategyRiskLimitsStore = new Map<string, StrategyRiskLimit>();
 const symbolRiskLimitsStore = new Map<string, SymbolRiskLimit>();
+
+// ── Persistence helpers ────────────────────────────────────────────────
+
+/** Hydrate in-memory Maps from a persisted RiskStoreState snapshot. */
+export function hydrateRiskEngine(state: RiskStoreState): void {
+  for (const [k, v] of Object.entries(state.limits)) riskLimitsStore.set(k, v);
+  for (const [k, v] of Object.entries(state.killSwitch)) killSwitchStore.set(k, v);
+  for (const [k, v] of Object.entries(state.strategyLimits)) strategyRiskLimitsStore.set(k, v);
+  for (const [k, v] of Object.entries(state.symbolLimits)) symbolRiskLimitsStore.set(k, v);
+}
+
+/** Snapshot workspace-scoped entries from in-memory Maps for persistence. */
+function snapshotRiskState(workspaceSlug: string): RiskStoreState {
+  const prefix = `${workspaceSlug}:`;
+  const limits: Record<string, RiskLimit> = {};
+  const killSwitch: Record<string, KillSwitchState> = {};
+  const strategyLimits: Record<string, StrategyRiskLimit> = {};
+  const symbolLimits: Record<string, SymbolRiskLimit> = {};
+  for (const [k, v] of riskLimitsStore) if (k.startsWith(prefix)) limits[k] = v;
+  for (const [k, v] of killSwitchStore) if (k.startsWith(prefix)) killSwitch[k] = v;
+  for (const [k, v] of strategyRiskLimitsStore) if (k.startsWith(prefix)) strategyLimits[k] = v;
+  for (const [k, v] of symbolRiskLimitsStore) if (k.startsWith(prefix)) symbolLimits[k] = v;
+  return { limits, killSwitch, strategyLimits, symbolLimits };
+}
+
+export async function initRiskStore(workspace: string): Promise<void> {
+  const state = await loadRiskStore(workspace);
+  hydrateRiskEngine(state);
+}
 
 const inlineQuoteSchema = z.object({
   symbol: z.string().optional(),
@@ -598,6 +628,7 @@ export async function upsertStrategyRiskLimit(input: {
     updatedAt: now
   };
   strategyRiskLimitsStore.set(key, next);
+  await saveRiskStore(input.session.workspace.slug, snapshotRiskState(input.session.workspace.slug));
   return next;
 }
 
@@ -606,9 +637,11 @@ export async function deleteStrategyRiskLimit(input: {
   accountId: string;
   strategyId: string;
 }): Promise<boolean> {
-  return strategyRiskLimitsStore.delete(
+  const deleted = strategyRiskLimitsStore.delete(
     strategyKey(input.session, input.accountId, input.strategyId)
   );
+  await saveRiskStore(input.session.workspace.slug, snapshotRiskState(input.session.workspace.slug));
+  return deleted;
 }
 
 // ── Symbol layer CRUD ──────────────────────────────────────────────────
@@ -665,6 +698,7 @@ export async function upsertSymbolRiskLimit(input: {
     updatedAt: now
   };
   symbolRiskLimitsStore.set(key, next);
+  await saveRiskStore(input.session.workspace.slug, snapshotRiskState(input.session.workspace.slug));
   return next;
 }
 
@@ -673,9 +707,11 @@ export async function deleteSymbolRiskLimit(input: {
   accountId: string;
   symbol: string;
 }): Promise<boolean> {
-  return symbolRiskLimitsStore.delete(
+  const deleted = symbolRiskLimitsStore.delete(
     symbolKey(input.session, input.accountId, input.symbol)
   );
+  await saveRiskStore(input.session.workspace.slug, snapshotRiskState(input.session.workspace.slug));
+  return deleted;
 }
 
 export async function upsertRiskLimitState(input: {
@@ -693,6 +729,7 @@ export async function upsertRiskLimitState(input: {
     updatedAt: new Date().toISOString()
   };
   riskLimitsStore.set(buildAccountKey(input.session, input.payload.accountId), next);
+  await saveRiskStore(input.session.workspace.slug, snapshotRiskState(input.session.workspace.slug));
   return next;
 }
 
@@ -728,6 +765,7 @@ export async function setKillSwitchState(input: {
   };
 
   killSwitchStore.set(buildAccountKey(input.session, input.payload.accountId), next);
+  await saveRiskStore(input.session.workspace.slug, snapshotRiskState(input.session.workspace.slug));
   return next;
 }
 
