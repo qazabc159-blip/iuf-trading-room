@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import type { Context } from "hono";
 import {
   type AppSession,
+  autopilotExecuteInputSchema,
   companyMergeInputSchema,
   companyCreateInputSchema,
   companyKeywordsReplaceInputSchema,
@@ -160,6 +161,7 @@ import {
 } from "./theme-graph.js";
 import {
   createStrategyRun,
+  executeStrategyRun,
   getStrategyIdeas,
   getStrategyRunById,
   listStrategyRuns
@@ -1575,6 +1577,33 @@ app.get("/api/v1/strategy/runs/:id", async (c) => {
   }
 
   return c.json({ data: run });
+});
+
+app.post("/api/v1/strategy/runs/:id/execute", async (c) => {
+  const runId = c.req.param("id");
+  const payload = autopilotExecuteInputSchema.parse(await c.req.json().catch(() => ({})));
+
+  let result;
+  try {
+    result = await executeStrategyRun({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      runId,
+      payload
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.startsWith("strategy_run_not_found:")) {
+      return c.json({ error: "strategy_run_not_found" }, 404);
+    }
+    throw err;
+  }
+
+  if (result.summary.total === 0) {
+    return c.json({ error: "no_qualifying_ideas" }, 400);
+  }
+
+  return c.json({ data: result });
 });
 
 app.post("/api/v1/signals", async (c) => {

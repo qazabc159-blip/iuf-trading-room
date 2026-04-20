@@ -1710,6 +1710,39 @@ async function main() {
     assert.equal(strategyRunDetail.data.outputs[0]?.symbol, "SMK1");
     assert.ok((strategyRunDetail.data.outputs[0]?.primaryReason ?? "").length > 0);
 
+    // Autopilot Phase 1 — dryRun execute smoke (never real submit in smoke)
+    const autopilotDryRun = await request<
+      JsonEnvelope<{
+        runId: string;
+        dryRun: boolean;
+        executedAt: string;
+        submitted: Array<{ symbol: string; side: string; blocked: boolean }>;
+        blocked: Array<{ symbol: string; side: string; blocked: boolean; blockedReason: string | null }>;
+        errors: Array<{ symbol: string; message: string }>;
+        summary: { total: number; submittedCount: number; blockedCount: number; errorCount: number };
+      }>
+    >(baseUrl, `/api/v1/strategy/runs/${strategyRun.data.id}/execute`, {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        accountId: "paper-default",
+        sidePolicy: "bullish_long",
+        sizeMode: "fixed_pct",
+        sizePct: 1.0,
+        maxOrders: 3,
+        dryRun: true
+      })
+    });
+    assert.equal(autopilotDryRun.data.runId, strategyRun.data.id);
+    assert.equal(autopilotDryRun.data.dryRun, true);
+    assert.ok(typeof autopilotDryRun.data.executedAt === "string");
+    assert.equal(
+      autopilotDryRun.data.summary.total,
+      autopilotDryRun.data.summary.submittedCount +
+        autopilotDryRun.data.summary.blockedCount +
+        autopilotDryRun.data.summary.errorCount
+    );
+
     const plan = await request<JsonEnvelope<{ id: string; companyId: string }>>(baseUrl, "/api/v1/plans", {
       method: "POST",
       headers: { "x-workspace-slug": workspaceSlug },

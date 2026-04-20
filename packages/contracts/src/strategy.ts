@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { marketDataQualityGradeSchema } from "./marketData.js";
+import { orderSideSchema, submitOrderResultSchema } from "./broker.js";
 
 // Phase 1 強制走 rule-based + 結構化 setup。AI/discretionary 之後才上。
 export const strategyKindSchema = z.enum([
@@ -362,6 +363,62 @@ export const strategyRunListViewSchema = z.object({
   total: z.number().int().nonnegative(),
   items: z.array(strategyRunListItemSchema)
 });
+
+// ---------------------------------------------------------------------------
+// Autopilot Phase 1 — manual-trigger execute endpoint
+// ---------------------------------------------------------------------------
+
+export const autopilotSidePolicySchema = z.enum([
+  "bullish_long",    // bullish ideas → buy only
+  "bearish_short",   // bearish ideas → sell only (future use)
+  "direction_match"  // map idea.direction to side: bullish→buy, bearish→sell
+]);
+
+export const autopilotSizeModeSchema = z.enum([
+  "fixed_pct",      // fixed % of equity per order (default 1%)
+  "equal_weight"    // divide budget equally across N ideas (future use)
+]);
+
+export const autopilotExecuteInputSchema = z.object({
+  accountId: z.string().min(1).default("paper-default"),
+  sidePolicy: autopilotSidePolicySchema.default("bullish_long"),
+  sizeMode: autopilotSizeModeSchema.default("fixed_pct"),
+  sizePct: z.number().min(0.1).max(10).default(1.0),
+  symbols: z.array(z.string()).optional(),
+  maxOrders: z.number().int().min(1).max(10).default(3),
+  dryRun: z.boolean().default(false)
+});
+
+export const autopilotOrderResultSchema = z.object({
+  symbol: z.string(),
+  side: orderSideSchema,
+  quantity: z.number(),
+  price: z.number().nullable(),
+  submitResult: submitOrderResultSchema.nullable(),
+  blocked: z.boolean(),
+  blockedReason: z.string().nullable()
+});
+
+export const autopilotExecuteResultSchema = z.object({
+  runId: z.string().uuid(),
+  dryRun: z.boolean(),
+  executedAt: z.string(),
+  submitted: z.array(autopilotOrderResultSchema),
+  blocked: z.array(autopilotOrderResultSchema),
+  errors: z.array(z.object({ symbol: z.string(), message: z.string() })),
+  summary: z.object({
+    total: z.number().int(),
+    submittedCount: z.number().int(),
+    blockedCount: z.number().int(),
+    errorCount: z.number().int()
+  })
+});
+
+export type AutopilotSidePolicy = z.infer<typeof autopilotSidePolicySchema>;
+export type AutopilotSizeMode = z.infer<typeof autopilotSizeModeSchema>;
+export type AutopilotExecuteInput = z.infer<typeof autopilotExecuteInputSchema>;
+export type AutopilotOrderResult = z.infer<typeof autopilotOrderResultSchema>;
+export type AutopilotExecuteResult = z.infer<typeof autopilotExecuteResultSchema>;
 
 export type StrategyKind = z.infer<typeof strategyKindSchema>;
 export type StrategyStatus = z.infer<typeof strategyStatusSchema>;

@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import type {
   AppSession,
+  AutopilotExecuteInput,
+  AutopilotExecuteResult,
+  AutopilotOrderResult,
   Company,
   Market,
   MarketDataQualityGrade,
+  OrderCreateInput,
   Signal,
   StrategyIdea,
   StrategyIdeasDecisionFilter,
@@ -23,6 +27,7 @@ import type {
   ThemeGraphRankingResult
 } from "@iuf-trading-room/contracts";
 import {
+  autopilotExecuteResultSchema,
   strategyIdeasViewSchema,
   strategyRunListViewSchema,
   strategyRunRecordSchema
@@ -30,10 +35,15 @@ import {
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 
 import {
+  getEffectiveMarketQuotes,
   getMarketBarDiagnostics,
   getMarketDataDecisionSummary,
   getMarketQuoteHistoryDiagnostics
 } from "./market-data.js";
+import {
+  previewOrder,
+  submitOrder
+} from "./broker/trading-service.js";
 import {
   appendPersistedStrategyRun,
   loadPersistedStrategyRuns
@@ -911,4 +921,238 @@ export async function getStrategyRunById(input: {
 }): Promise<StrategyRunRecord | null> {
   const runs = await loadPersistedStrategyRuns(input.session.workspace.slug);
   return runs.find((run) => run.id === input.runId) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Autopilot Phase 1 — manual-trigger execute
+// ---------------------------------------------------------------------------
+
+function resolveSideForIdea(
+  direction: StrategyIdea["direction"],
+  sidePolicy: AutopilotExecuteInput["sidePolicy"]
+): "buy" | "sell" | null {
+  if (direction === "neutral") {
+    return null; // always skip neutral regardless of policy
+  }
+  switch (sidePolicy) {
+    case "bullish_long":
+      return direction === "bullish" ? "buy" : null;
+    case "bearish_short":
+      return direction === "bearish" ? "sell" : null;
+    case "direction_match":
+      return direction === "bullish" ? "buy" : "sell";
+  }
+}
+
+function deriveQuantity(input: {
+  equity: number;
+  sizePct: number;
+  entryPrice: number;
+  lotSize?: number;
+}): number {
+  const { equity, sizePct, entryPrice, lotSize = 1 } = input;
+  if (entryPrice <= 0 || lotSize <= 0) {
+    return 0;
+  }
+  const rawQty = (equity * sizePct / 100) / entryPrice;
+  const lots = Math.floor(rawQty / lotSize);
+  return lots * lotSize;
+}
+
+export async function executeStrategyRun(input: {
+  session: AppSession;
+  repo: TradingRoomRepository;
+  runId: string;
+  payload: AutopilotExecuteInput;
+}): Promise<AutopilotExecuteResult> {
+  const { session, repo, runId, payload } = input;
+  const {
+    accountId,
+    sidePolicy,
+    sizePct,
+    symbols: symbolFilter,
+    maxOrders,
+    dryRun
+  } = payload;
+
+  const executedAt = new Date().toISOString();
+
+  // Load the run
+  const run = await getStrategyRunById({ session, runId });
+  if (!run) {
+    throw new Error(`strategy_run_not_found:${runId}`);
+  }
+
+  // Determine idea candidates — prefer full items array, fall back to outputs
+  const candidates: Array<{ symbol: string; direction: StrategyIdea["direction"] }> =
+    run.items.length > 0
+      ? run.items.map((item) => ({ symbol: item.symbol, direction: item.direction }))
+      : run.outputs.map((output) => ({ symbol: output.symbol, direction: output.direction }));
+
+  // Filter by explicit symbol list if provided
+  const filtered =
+    symbolFilter && symbolFilter.length > 0
+      ? candidates.filter((c) => symbolFilter.includes(c.symbol))
+      : candidates;
+
+  // Apply sidePolicy filter and cap at maxOrders
+  type Candidate = { symbol: string; direction: StrategyIdea["direction"]; side: "buy" | "sell" };
+  const eligible: Candidate[] = [];
+  for (const candidate of filtered) {
+    if (eligible.length >= maxOrders) {
+      break;
+    }
+    const side = resolveSideForIdea(candidate.direction, sidePolicy);
+    if (side === null) {
+      continue;
+    }
+    eligible.push({ symbol: candidate.symbol, direction: candidate.direction, side });
+  }
+
+  if (eligible.length === 0) {
+    return autopilotExecuteResultSchema.parse({
+      runId,
+      dryRun,
+      executedAt,
+      submitted: [],
+      blocked: [],
+      errors: [],
+      summary: { total: 0, submittedCount: 0, blockedCount: 0, errorCount: 0 }
+    });
+  }
+
+  // Fetch equity once for sizing
+  const { getPaperBalance } = await import("./broker/paper-broker.js");
+  const balance = await getPaperBalance(session, accountId);
+  const equity = balance.equity > 0 ? balance.equity : 1;
+
+  // Fetch quotes for all symbols in one call
+  const symbolsCsv = [...new Set(eligible.map((c) => c.symbol))].join(",");
+  const quotesResult = await getEffectiveMarketQuotes({
+    session,
+    symbols: symbolsCsv,
+    includeStale: false,
+    limit: eligible.length + 5
+  });
+  const quoteBySymbol = new Map(quotesResult.items.map((q) => [q.symbol, q]));
+
+  const submitted: AutopilotOrderResult[] = [];
+  const blocked: AutopilotOrderResult[] = [];
+  const errors: Array<{ symbol: string; message: string }> = [];
+
+  for (const candidate of eligible) {
+    const quote = quoteBySymbol.get(candidate.symbol);
+    const entryPrice = quote?.selectedQuote?.last ?? null;
+
+    if (entryPrice === null || entryPrice <= 0) {
+      blocked.push({
+        symbol: candidate.symbol,
+        side: candidate.side,
+        quantity: 0,
+        price: null,
+        submitResult: null,
+        blocked: true,
+        blockedReason: "no_price"
+      });
+      continue;
+    }
+
+    const quantity = deriveQuantity({ equity, sizePct, entryPrice, lotSize: 1 });
+    if (quantity <= 0) {
+      blocked.push({
+        symbol: candidate.symbol,
+        side: candidate.side,
+        quantity: 0,
+        price: entryPrice,
+        submitResult: null,
+        blocked: true,
+        blockedReason: "quantity_zero"
+      });
+      continue;
+    }
+
+    const order: OrderCreateInput = {
+      accountId,
+      symbol: candidate.symbol,
+      side: candidate.side,
+      type: "limit",
+      timeInForce: "day",
+      quantity,
+      price: entryPrice,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [],
+      overrideReason: dryRun ? "autopilot_dry_run" : "autopilot_execute"
+    };
+
+    try {
+      const result = dryRun
+        ? await previewOrder({ session, repo, order })
+        : await submitOrder({ session, repo, order });
+
+      if (result.blocked) {
+        // Determine blockedReason from risk guards or order rejection
+        let blockedReason = "risk_blocked";
+        if (result.riskCheck) {
+          const killGuard = result.riskCheck.guards.find((g) => g.guard === "kill_switch");
+          if (killGuard) {
+            blockedReason = "kill_switch";
+          } else {
+            const blockGuard = result.riskCheck.guards.find((g) => g.decision === "block");
+            if (blockGuard) {
+              blockedReason = blockGuard.guard;
+            }
+          }
+        }
+        if (result.quoteGate?.blocked && blockedReason === "risk_blocked") {
+          blockedReason = result.quoteGate.decision;
+        }
+        // Check paper-broker rejection via order status
+        if (!dryRun && result.order?.status === "rejected" && result.order?.reason) {
+          blockedReason = result.order.reason;
+        }
+
+        blocked.push({
+          symbol: candidate.symbol,
+          side: candidate.side,
+          quantity,
+          price: entryPrice,
+          submitResult: result,
+          blocked: true,
+          blockedReason
+        });
+      } else {
+        submitted.push({
+          symbol: candidate.symbol,
+          side: candidate.side,
+          quantity,
+          price: entryPrice,
+          submitResult: result,
+          blocked: false,
+          blockedReason: null
+        });
+      }
+    } catch (err) {
+      errors.push({
+        symbol: candidate.symbol,
+        message: err instanceof Error ? err.message : String(err)
+      });
+    }
+  }
+
+  return autopilotExecuteResultSchema.parse({
+    runId,
+    dryRun,
+    executedAt,
+    submitted,
+    blocked,
+    errors,
+    summary: {
+      total: eligible.length,
+      submittedCount: submitted.length,
+      blockedCount: blocked.length,
+      errorCount: errors.length
+    }
+  });
 }

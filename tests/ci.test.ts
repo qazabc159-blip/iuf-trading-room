@@ -42,6 +42,7 @@ import {
 } from "../apps/api/src/theme-graph.ts";
 import {
   createStrategyRun,
+  executeStrategyRun,
   getStrategyIdeas,
   getStrategyRunById,
   listStrategyRuns
@@ -4379,6 +4380,214 @@ test("strategy runs persist query, summary, and score outputs", async () => {
     sort: "symbol"
   });
   assert.equal(sortedBySymbol.items[0]?.topIdea?.symbol, "RUN1");
+});
+
+test("autopilot dryRun execute returns correct result shape without placing orders", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `autopilot-dryrun-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "Autopilot Optics",
+    marketState: "Selective Attack",
+    lifecycle: "Expansion",
+    priority: 4,
+    thesis: "Test theme.",
+    whyNow: "CI.",
+    bottleneck: "None"
+  });
+
+  const company = await repo.createCompany({
+    name: "Autopilot Test Co",
+    ticker: "APT1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Core",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
+    notes: "Autopilot CI test."
+  });
+
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "APT1 autopilot signal",
+    summary: "Test.",
+    confidence: 5,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "APT1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 100,
+        bid: 99.8,
+        ask: 100.2,
+        open: 99,
+        high: 101,
+        low: 98,
+        prevClose: 99,
+        volume: 1000,
+        changePct: 1.0,
+        timestamp: new Date().toISOString()
+      }
+    ]
+  });
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const result = await executeStrategyRun({
+    session,
+    repo,
+    runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 1.0,
+      maxOrders: 3,
+      dryRun: true
+    }
+  });
+
+  // Shape assertions
+  assert.equal(result.runId, run.id);
+  assert.equal(result.dryRun, true);
+  assert.ok(typeof result.executedAt === "string");
+  assert.ok(Array.isArray(result.submitted));
+  assert.ok(Array.isArray(result.blocked));
+  assert.ok(Array.isArray(result.errors));
+  assert.ok(typeof result.summary.total === "number");
+  assert.ok(typeof result.summary.submittedCount === "number");
+  assert.ok(typeof result.summary.blockedCount === "number");
+  assert.ok(typeof result.summary.errorCount === "number");
+  // dryRun: total should equal submitted + blocked + errors
+  assert.equal(
+    result.summary.total,
+    result.summary.submittedCount + result.summary.blockedCount + result.summary.errorCount
+  );
+  // dryRun never produces null-order submitted in real broker — result may be in blocked
+  // (no_price or risk_blocked) but shape must match schema
+  for (const entry of [...result.submitted, ...result.blocked]) {
+    assert.ok(typeof entry.symbol === "string");
+    assert.ok(entry.side === "buy" || entry.side === "sell");
+    assert.ok(typeof entry.blocked === "boolean");
+  }
+});
+
+test("autopilot execute blocks all orders when kill-switch is halted", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `autopilot-killswitch-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "KillSwitch Test Theme",
+    marketState: "Defensive",
+    lifecycle: "Expansion",
+    priority: 3,
+    thesis: "Kill-switch test.",
+    whyNow: "CI.",
+    bottleneck: "None"
+  });
+
+  const company = await repo.createCompany({
+    name: "KillSwitch Test Co",
+    ticker: "KST1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Core",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "Neutral", consensus: "Stable", relativeStrength: "Middle" },
+    notes: "Kill-switch test."
+  });
+
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "KST1 signal",
+    summary: "Test.",
+    confidence: 4,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "KST1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 50,
+        bid: 49.8,
+        ask: 50.2,
+        open: 49,
+        high: 51,
+        low: 48,
+        prevClose: 49,
+        volume: 500,
+        changePct: 2.0,
+        timestamp: new Date().toISOString()
+      }
+    ]
+  });
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  // Halt the kill-switch
+  await setKillSwitchState({
+    session,
+    payload: { accountId: "paper-default", mode: "halted", reason: "CI test: autopilot kill-switch verify" }
+  });
+
+  const result = await executeStrategyRun({
+    session,
+    repo,
+    runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 1.0,
+      maxOrders: 3,
+      dryRun: false
+    }
+  });
+
+  // All qualifying ideas must be in blocked[], none in submitted[]
+  assert.equal(result.submitted.length, 0);
+  assert.ok(result.blocked.length > 0, "expected at least one blocked entry from kill-switch");
+  for (const entry of result.blocked) {
+    assert.equal(entry.blocked, true);
+    assert.equal(entry.blockedReason, "kill_switch");
+  }
+  assert.equal(result.summary.submittedCount, 0);
+  assert.ok(result.summary.blockedCount > 0);
+
+  // Restore kill-switch to active
+  await setKillSwitchState({
+    session,
+    payload: { accountId: "paper-default", mode: "active", reason: "CI test: restored after kill-switch verify" }
+  });
 });
 
 test("memory repository supports core research-to-review loop", async () => {
