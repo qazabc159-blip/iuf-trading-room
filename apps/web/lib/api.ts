@@ -42,6 +42,11 @@ import type {
   ReviewEntryCreateInput,
   Signal,
   SignalCreateInput,
+  StrategyIdeasDecisionFilter,
+  StrategyIdeasDecisionMode,
+  StrategyIdeasQualityFilter,
+  StrategyIdeasSort,
+  StrategyIdeasView,
   SubmitOrderResult,
   Theme,
   ThemeCreateInput,
@@ -880,4 +885,35 @@ export async function setKillSwitch(input: KillSwitchInput) {
     method: "POST",
     body: JSON.stringify(input)
   });
+}
+
+export type StrategyIdeasQueryParams = {
+  limit?: number;
+  signalDays?: number;
+  includeBlocked?: boolean;
+  market?: string;
+  themeId?: string;
+  theme?: string;
+  symbol?: string;
+  decisionMode?: StrategyIdeasDecisionMode;
+  decisionFilter?: StrategyIdeasDecisionFilter;
+  qualityFilter?: StrategyIdeasQualityFilter;
+  sort?: StrategyIdeasSort;
+};
+
+export async function getStrategyIdeas(params: StrategyIdeasQueryParams = {}) {
+  const query = new URLSearchParams();
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.signalDays !== undefined) query.set("signalDays", String(params.signalDays));
+  if (params.includeBlocked !== undefined) query.set("includeBlocked", String(params.includeBlocked));
+  if (params.market) query.set("market", params.market);
+  if (params.themeId) query.set("themeId", params.themeId);
+  if (params.theme) query.set("theme", params.theme);
+  if (params.symbol) query.set("symbol", params.symbol);
+  if (params.decisionMode) query.set("decisionMode", params.decisionMode);
+  if (params.decisionFilter) query.set("decisionFilter", params.decisionFilter);
+  if (params.qualityFilter) query.set("qualityFilter", params.qualityFilter);
+  if (params.sort) query.set("sort", params.sort);
+  const qs = query.toString();
+  return request<StrategyIdeasView>(`/api/v1/strategy/ideas${qs ? `?${qs}` : ""}`);
 }

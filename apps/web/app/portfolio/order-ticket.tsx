@@ -35,6 +35,9 @@ type Props = {
   // Paper account → "paper" mode; live broker → "execution". Defaults to paper
   // so the gate leans conservative when unspecified.
   quoteMode?: "paper" | "execution";
+  // When a caller (e.g. /ideas CTA) arrives with a symbol in the URL, seed
+  // the form so the trader doesn't have to retype it.
+  initialSymbol?: string;
 };
 
 type Side = "buy" | "sell";
@@ -70,8 +73,16 @@ const DECISION_COLOR: Record<RiskCheckResult["decision"], string> = {
 // the execution timeline via apps/web/lib/quote-vocab.ts so the three surfaces
 // stay aligned.
 
-export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper" }: Props) {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+export function OrderTicket({ accountId, onSubmitted, quoteMode = "paper", initialSymbol }: Props) {
+  const [form, setForm] = useState<FormState>(() =>
+    initialSymbol ? { ...EMPTY_FORM, symbol: initialSymbol.toUpperCase() } : EMPTY_FORM
+  );
+
+  useEffect(() => {
+    if (initialSymbol) {
+      setForm((prev) => ({ ...prev, symbol: initialSymbol.toUpperCase() }));
+    }
+  }, [initialSymbol]);
   const [plans, setPlans] = useState<TradePlan[]>([]);
   const [effectiveLimits, setEffectiveLimits] = useState<EffectiveRiskLimit | null>(null);
   const [pendingLimits, setPendingLimits] = useState(false);

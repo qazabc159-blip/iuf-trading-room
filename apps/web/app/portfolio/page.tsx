@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import {
@@ -71,6 +72,16 @@ const KILL_SWITCH_MODES: Array<{
 const OPEN_STATUSES = new Set(["pending", "submitted", "acknowledged", "partial"]);
 
 export default function PortfolioPage() {
+  return (
+    <Suspense fallback={null}>
+      <PortfolioPageInner />
+    </Suspense>
+  );
+}
+
+function PortfolioPageInner() {
+  const searchParams = useSearchParams();
+  const incomingSymbol = searchParams.get("symbol")?.trim() || undefined;
   const [accountId, setAccountId] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<BrokerAccount[]>([]);
   const [balance, setBalance] = useState<Balance | null>(null);
@@ -337,6 +348,7 @@ export default function PortfolioPage() {
           <OrderTicket
             accountId={accountId}
             quoteMode={quoteMode}
+            initialSymbol={incomingSymbol}
             onSubmitted={() => refresh(accountId).catch(() => undefined)}
           />
         </section>
