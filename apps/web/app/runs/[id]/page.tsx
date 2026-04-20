@@ -13,6 +13,7 @@ import type {
 import { AppShell } from "@/components/app-shell";
 import { getStrategyRunById } from "@/lib/api";
 import { handoffFromIdea, writeIdeaHandoff } from "@/lib/idea-handoff";
+import { buildIdeasSearchString } from "@/lib/ideas-query";
 import {
   DECISION_BADGE,
   DECISION_LABEL,
@@ -86,6 +87,10 @@ function RunDetailBody({ run }: { run: StrategyRunRecord }) {
   const query = run.query;
   const summary = run.summary;
   const mode = query.decisionMode;
+  const ideasHref = useMemo(() => {
+    const qs = buildIdeasSearchString(query);
+    return qs ? `/ideas?${qs}` : "/ideas";
+  }, [query]);
 
   return (
     <>
@@ -101,7 +106,7 @@ function RunDetailBody({ run }: { run: StrategyRunRecord }) {
             <Link className="btn-sm" href="/runs">
               ← 回 /runs
             </Link>
-            <Link className="btn-sm" href="/ideas" title="打開即時策略推薦">
+            <Link className="btn-sm" href={ideasHref} title="以此 run 的 query 條件打開 /ideas">
               去 /ideas →
             </Link>
           </div>

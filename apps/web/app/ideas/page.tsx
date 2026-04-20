@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import type {
   StrategyIdea,
@@ -14,6 +15,7 @@ import type {
 import { AppShell } from "@/components/app-shell";
 import { getStrategyIdeas, type StrategyIdeasQueryParams } from "@/lib/api";
 import { handoffFromIdea, writeIdeaHandoff } from "@/lib/idea-handoff";
+import { parseIdeasQuery } from "@/lib/ideas-query";
 import {
   DECISION_BADGE,
   DECISION_LABEL,
@@ -33,12 +35,26 @@ const DEFAULT_QUERY: StrategyIdeasQueryParams = {
 };
 
 export default function IdeasPage() {
-  const [query, setQuery] = useState<StrategyIdeasQueryParams>(DEFAULT_QUERY);
+  return (
+    <Suspense fallback={null}>
+      <IdeasPageInner />
+    </Suspense>
+  );
+}
+
+function IdeasPageInner() {
+  const searchParams = useSearchParams();
+  // Parse URL once on mount so `/runs -> /ideas?...` carries saved query state.
+  // Subsequent filter edits live in local state; we don't re-sync from URL.
+  const [query, setQuery] = useState<StrategyIdeasQueryParams>(() => ({
+    ...DEFAULT_QUERY,
+    ...parseIdeasQuery(new URLSearchParams(searchParams.toString()))
+  }));
   const [view, setView] = useState<StrategyIdeasView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [symbolDraft, setSymbolDraft] = useState("");
-  const [themeDraft, setThemeDraft] = useState("");
+  const [symbolDraft, setSymbolDraft] = useState(() => query.symbol ?? "");
+  const [themeDraft, setThemeDraft] = useState(() => query.theme ?? "");
 
   useEffect(() => {
     let cancelled = false;

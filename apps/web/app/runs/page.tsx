@@ -13,6 +13,7 @@ import type {
 
 import { AppShell } from "@/components/app-shell";
 import { listStrategyRuns, type StrategyRunListParams } from "@/lib/api";
+import { buildIdeasSearchString } from "@/lib/ideas-query";
 import {
   DECISION_BADGE,
   DECISION_LABEL,
@@ -239,6 +240,10 @@ function RunListCard({ run }: { run: StrategyRunListItem }) {
   const topIdea = run.topIdea;
   const qualityBreakdown = run.quality;
   const shortId = run.id.slice(0, 8);
+  const ideasHref = useMemo(() => {
+    const qs = buildIdeasSearchString(run.query);
+    return qs ? `/ideas?${qs}` : "/ideas";
+  }, [run.query]);
 
   return (
     <article className="panel hud-frame" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -349,7 +354,7 @@ function RunListCard({ run }: { run: StrategyRunListItem }) {
           flexWrap: "wrap"
         }}
       >
-        <Link className="btn-sm" href="/ideas" title="打開即時策略推薦">
+        <Link className="btn-sm" href={ideasHref} title="以此 run 的 query 條件打開 /ideas">
           去 /ideas →
         </Link>
         <Link className="btn-sm" href={`/runs/${run.id}`} title="查看此 run 的完整 snapshot">
