@@ -294,6 +294,16 @@ function getQuoteStaleMs(source: QuoteSource) {
   return Number.isFinite(raw) && raw > 0 ? raw : fallback;
 }
 
+// Bars are aggregated from quote ticks; a derived bar series is "fresh" if the
+// most-recent bar's close time is within BARS_STALE_MS of now.  This is
+// intentionally much longer than quote freshness so that a 1-minute bar built
+// from a burst of ticks does not immediately become stale after the 5 s quote
+// window expires.  Default: 10 minutes; override via BARS_STALE_MS env.
+function getBarStaleMs() {
+  const raw = Number(process.env.BARS_STALE_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000;
+}
+
 function getQuoteCacheForWorkspace(workspaceSlug: string) {
   let workspaceCache = providerQuoteCache.get(workspaceSlug);
   if (!workspaceCache) {
@@ -2038,11 +2048,14 @@ export async function getMarketBarDiagnostics(input: {
     const lastBarAgeMs = getTimestampAgeMs(lastCloseTime);
     const freshnessStatus: QuoteResolutionFreshnessStatus = !lastCloseTime
       ? "missing"
-      : lastBarAgeMs !== null && lastBarAgeMs <= getQuoteStaleMs(sourceKey)
+      : lastBarAgeMs !== null && lastBarAgeMs <= getBarStaleMs()
         ? "fresh"
         : "stale";
+    // Bars are derived from quote history tick aggregation (not native OHLCV bars),
+    // so they are always approximate. However, synthetic flag follows the source:
+    // manual/paper are synthetic (user-entered); tradingview/kgi are non-synthetic live feeds.
     const approximate = true;
-    const synthetic = true;
+    const synthetic = isSyntheticSource(sourceKey);
     const quality = buildBarQualityAssessment({
       barCount: ordered.length,
       freshnessStatus,

@@ -2500,7 +2500,9 @@ test("market data quality summaries distinguish strategy-ready history from refe
 
   assert.equal(barDiagnostics.summary.referenceOnly, 1);
   assert.equal(barDiagnostics.items[0]?.quality.grade, "reference_only");
-  assert.equal(barDiagnostics.items[0]?.quality.primaryReason, "synthetic_bars");
+  // tradingview is a non-synthetic live feed; bars are still approximate (tick-aggregated)
+  // so primaryReason is approximate_bars, not synthetic_bars
+  assert.equal(barDiagnostics.items[0]?.quality.primaryReason, "approximate_bars");
 });
 
 test("market data symbols derive from companies and dedupe by market and ticker", async () => {
@@ -6066,4 +6068,76 @@ test("getLotSize: OTHER returns 1 (safe default)", () => {
 test("getLotSize: unknown market string returns 1 (safe default fallback)", () => {
   assert.equal(getLotSize(""), 1);
   assert.equal(getLotSize("UNKNOWN_EXCHANGE"), 1);
+});
+
+// ---------------------------------------------------------------------------
+// R12 — bars quality fix: synthetic flag follows source; getBarStaleMs window
+// ---------------------------------------------------------------------------
+
+test("bars diagnostics: tradingview source yields synthetic=false and reference_only grade when fresh", async () => {
+  const session = { workspace: { slug: `bars-quality-tv-${randomUUID()}` } };
+  const now = new Date();
+  // Seed 3 ticks across 3 separate 1-minute buckets so we get 3 bars
+  const t1 = new Date(now.getTime() - 2 * 60_000).toISOString();
+  const t2 = new Date(now.getTime() - 1 * 60_000).toISOString();
+  const t3 = now.toISOString();
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      { symbol: "QUAL1", market: "TWSE", source: "tradingview", last: 100, bid: 99, ask: 101, open: 99, high: 101, low: 99, prevClose: 98, volume: 1000, changePct: 2, timestamp: t1 },
+      { symbol: "QUAL1", market: "TWSE", source: "tradingview", last: 102, bid: 101, ask: 103, open: 99, high: 103, low: 99, prevClose: 98, volume: 1100, changePct: 4, timestamp: t2 },
+      { symbol: "QUAL1", market: "TWSE", source: "tradingview", last: 103, bid: 102, ask: 104, open: 99, high: 104, low: 99, prevClose: 98, volume: 1200, changePct: 5, timestamp: t3 }
+    ]
+  });
+
+  const diag = await getMarketBarDiagnostics({
+    session,
+    symbols: "QUAL1",
+    market: "TWSE",
+    includeStale: true,
+    interval: "1m"
+  });
+
+  assert.equal(diag.items.length, 1);
+  const item = diag.items[0]!;
+  assert.equal(item.source, "tradingview");
+  assert.equal(item.synthetic, false, "tradingview bars should not be synthetic");
+  assert.equal(item.barCount >= 2, true, "should have at least 2 bars");
+  assert.equal(item.quality.grade, "reference_only", "tradingview non-synthetic + approximate => reference_only");
+  assert.equal(item.quality.primaryReason, "approximate_bars");
+  assert.equal(item.quality.strategyUsable, false);
+});
+
+test("bars diagnostics: manual source yields synthetic=true and at most reference_only grade", async () => {
+  const session = { workspace: { slug: `bars-quality-manual-${randomUUID()}` } };
+  const now = new Date();
+  const t1 = new Date(now.getTime() - 2 * 60_000).toISOString();
+  const t2 = new Date(now.getTime() - 1 * 60_000).toISOString();
+  const t3 = now.toISOString();
+
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      { symbol: "QUAL2", market: "TWSE", source: "manual", last: 200, bid: 199, ask: 201, open: 198, high: 202, low: 198, prevClose: 197, volume: 500, changePct: 1.5, timestamp: t1 },
+      { symbol: "QUAL2", market: "TWSE", source: "manual", last: 201, bid: 200, ask: 202, open: 198, high: 203, low: 198, prevClose: 197, volume: 510, changePct: 2.0, timestamp: t2 },
+      { symbol: "QUAL2", market: "TWSE", source: "manual", last: 202, bid: 201, ask: 203, open: 198, high: 204, low: 198, prevClose: 197, volume: 520, changePct: 2.5, timestamp: t3 }
+    ]
+  });
+
+  const diag = await getMarketBarDiagnostics({
+    session,
+    symbols: "QUAL2",
+    market: "TWSE",
+    includeStale: true,
+    interval: "1m"
+  });
+
+  assert.equal(diag.items.length, 1);
+  const item = diag.items[0]!;
+  assert.equal(item.source, "manual");
+  assert.equal(item.synthetic, true, "manual bars should be synthetic");
+  assert.equal(item.barCount >= 2, true, "should have at least 2 bars");
+  // synthetic => grade can only be reference_only or insufficient, never strategy_ready
+  assert.notEqual(item.quality.grade, "strategy_ready", "synthetic bars cannot be strategy_ready");
 });
