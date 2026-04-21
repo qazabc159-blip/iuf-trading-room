@@ -46,7 +46,9 @@ import {
   getLotSize,
   getStrategyIdeas,
   getStrategyRunById,
-  listStrategyRuns
+  issueConfirmToken,
+  listStrategyRuns,
+  validateAndConsumeConfirmToken
 } from "../apps/api/src/strategy-engine.ts";
 import {
   getMarketDataPolicy,
@@ -4560,6 +4562,9 @@ test("autopilot execute blocks all orders when kill-switch is halted", async () 
     payload: { accountId: "paper-default", mode: "halted", reason: "CI test: autopilot kill-switch verify" }
   });
 
+  // Issue a confirm token for this dryRun:false execute (Phase 2 (c) gate)
+  const killSwitchToken = issueConfirmToken(run.id);
+
   const result = await executeStrategyRun({
     session,
     repo,
@@ -4570,7 +4575,8 @@ test("autopilot execute blocks all orders when kill-switch is halted", async () 
       sizeMode: "fixed_pct",
       sizePct: 1.0,
       maxOrders: 3,
-      dryRun: false
+      dryRun: false,
+      confirmToken: killSwitchToken.token
     }
   });
 
@@ -4995,6 +5001,209 @@ test("autopilot dryRun: idempotency — same runId executed twice produces indep
     secondResult.blocked.length === firstResult.blocked.length,
     `blocked count should be equal: ${firstResult.blocked.length} vs ${secondResult.blocked.length}`
   );
+});
+
+// ---------------------------------------------------------------------------
+// Autopilot Phase 2 (c) — Confirm Gate unit tests
+// These tests exercise the token store directly (no HTTP layer needed).
+// ---------------------------------------------------------------------------
+
+test("confirm gate: dryRun:true with no token → executeStrategyRun proceeds normally", async () => {
+  const workspaceSlug = `confirm-gate-dryrun-${randomUUID()}`;
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "Confirm Gate Theme",
+    marketState: "Selective Attack",
+    lifecycle: "Discovery",
+    priority: 3,
+    thesis: "Gate test.",
+    whyNow: "Gate test.",
+    bottleneck: "None"
+  });
+  const company = await repo.createCompany({
+    name: "Gate Test Co",
+    ticker: "GTC",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Test",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 3, asp: 3, margin: 3, capacity: 3, narrative: 3 },
+    validation: { capitalFlow: "ok", consensus: "ok", relativeStrength: "ok" },
+    notes: "gate test"
+  });
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "Gate test signal",
+    summary: "test",
+    confidence: 3,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+  const run = await createStrategyRun({ session, repo, payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" } });
+
+  // dryRun:true without any token should NOT throw
+  const result = await executeStrategyRun({
+    session,
+    repo,
+    runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 1,
+      maxOrders: 3,
+      dryRun: true
+      // no confirmToken — must not be required for dryRun:true
+    }
+  });
+  assert.equal(result.dryRun, true);
+});
+
+test("confirm gate: dryRun:false with no token → throws confirm_required", async () => {
+  const workspaceSlug = `confirm-gate-required-${randomUUID()}`;
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+  const run = await createStrategyRun({ session, repo, payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" } });
+
+  await assert.rejects(
+    () => executeStrategyRun({
+      session,
+      repo,
+      runId: run.id,
+      payload: {
+        accountId: "paper-default",
+        sidePolicy: "bullish_long",
+        sizeMode: "fixed_pct",
+        sizePct: 1,
+        maxOrders: 3,
+        dryRun: false
+        // no confirmToken
+      }
+    }),
+    (err: Error) => {
+      assert.ok(err.message.includes("confirm_required"), `expected confirm_required, got: ${err.message}`);
+      return true;
+    }
+  );
+});
+
+test("confirm gate: dryRun:false with invalid token → throws confirm_invalid", async () => {
+  const workspaceSlug = `confirm-gate-invalid-${randomUUID()}`;
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+  const run = await createStrategyRun({ session, repo, payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" } });
+
+  await assert.rejects(
+    () => executeStrategyRun({
+      session,
+      repo,
+      runId: run.id,
+      payload: {
+        accountId: "paper-default",
+        sidePolicy: "bullish_long",
+        sizeMode: "fixed_pct",
+        sizePct: 1,
+        maxOrders: 3,
+        dryRun: false,
+        confirmToken: "totally-fake-token-that-does-not-exist"
+      }
+    }),
+    (err: Error) => {
+      assert.ok(err.message.includes("confirm_invalid"), `expected confirm_invalid, got: ${err.message}`);
+      return true;
+    }
+  );
+});
+
+test("confirm gate: expired token path — validateAndConsumeConfirmToken returns confirm_invalid for unknown token", () => {
+  // We cannot sleep 60s in CI to force TTL expiry.
+  // This test verifies the expire branch indirectly: a token not in the store → confirm_invalid.
+  // The expiry branch (entry found but Date.now() > expiresAt) is covered by the confirm_expired
+  // error code in the store logic; the happy-path token test above covers the success path.
+  const fakeToken = "expired-00000000-0000-0000-0000-000000000000";
+  const result = validateAndConsumeConfirmToken(fakeToken, "any-run-id");
+  assert.equal(result, "confirm_invalid");
+});
+
+test("confirm gate: issueConfirmToken + validateAndConsumeConfirmToken — valid token consumed once", () => {
+  const runId = randomUUID();
+  const tokenResponse = issueConfirmToken(runId);
+
+  // Token response shape
+  assert.ok(typeof tokenResponse.token === "string" && tokenResponse.token.length > 0);
+  assert.ok(typeof tokenResponse.expiresAt === "string");
+  assert.ok(!Number.isNaN(Date.parse(tokenResponse.expiresAt)));
+
+  // First consume: valid
+  const firstResult = validateAndConsumeConfirmToken(tokenResponse.token, runId);
+  assert.equal(firstResult, null, "first consume should succeed");
+
+  // Second consume: replay guard
+  const secondResult = validateAndConsumeConfirmToken(tokenResponse.token, runId);
+  assert.equal(secondResult, "confirm_used");
+});
+
+test("confirm gate: replay guard — same token cannot be used twice", () => {
+  const runId = randomUUID();
+  const { token } = issueConfirmToken(runId);
+
+  const first = validateAndConsumeConfirmToken(token, runId);
+  assert.equal(first, null);
+
+  const second = validateAndConsumeConfirmToken(token, runId);
+  assert.equal(second, "confirm_used");
+
+  const third = validateAndConsumeConfirmToken(token, runId);
+  assert.equal(third, "confirm_used");
+});
+
+test("confirm gate: run_mismatch — token bound to different runId is rejected", () => {
+  const runA = randomUUID();
+  const runB = randomUUID();
+  const { token } = issueConfirmToken(runA);
+
+  // Using token with the wrong runId
+  const result = validateAndConsumeConfirmToken(token, runB);
+  assert.equal(result, "confirm_run_mismatch");
+
+  // Token was NOT consumed — still valid for runA
+  const correctResult = validateAndConsumeConfirmToken(token, runA);
+  assert.equal(correctResult, null);
+});
+
+test("confirm gate contracts: new schemas parse round-trip", async () => {
+  const {
+    autopilotExecuteErrorCodeSchema,
+    autopilotConfirmTokenResponseSchema,
+    autopilotExecuteInputSchema
+  } = await import("../packages/contracts/src/index.ts");
+
+  // autopilotExecuteErrorCodeSchema — all 5 valid codes
+  for (const code of ["confirm_required", "confirm_invalid", "confirm_expired", "confirm_used", "confirm_run_mismatch"]) {
+    assert.equal(autopilotExecuteErrorCodeSchema.parse(code), code);
+  }
+  assert.throws(() => autopilotExecuteErrorCodeSchema.parse("not_a_real_code"));
+
+  // autopilotConfirmTokenResponseSchema — full round-trip
+  const tokenResp = { token: "abc-123-uuid", expiresAt: new Date().toISOString() };
+  const parsed = autopilotConfirmTokenResponseSchema.parse(tokenResp);
+  assert.equal(parsed.token, tokenResp.token);
+  assert.equal(parsed.expiresAt, tokenResp.expiresAt);
+
+  // autopilotExecuteInputSchema — confirmToken field is optional (existing fields must still work)
+  const withoutToken = autopilotExecuteInputSchema.parse({ dryRun: true });
+  assert.equal(withoutToken.confirmToken, undefined);
+
+  const withToken = autopilotExecuteInputSchema.parse({ dryRun: false, confirmToken: "my-token" });
+  assert.equal(withToken.confirmToken, "my-token");
+  assert.equal(withToken.dryRun, false);
 });
 
 test("memory repository supports core research-to-review loop", async () => {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   AppSession,
+  AutopilotConfirmTokenResponse,
   AutopilotExecuteInput,
   AutopilotExecuteResult,
   AutopilotOrderResult,
@@ -27,6 +28,7 @@ import type {
   ThemeGraphRankingResult
 } from "@iuf-trading-room/contracts";
 import {
+  autopilotConfirmTokenResponseSchema,
   autopilotExecuteResultSchema,
   strategyIdeasViewSchema,
   strategyRunListViewSchema,
@@ -49,6 +51,63 @@ import {
   loadPersistedStrategyRuns
 } from "./strategy-runs-store.js";
 import { getThemeGraphRankings } from "./theme-graph.js";
+
+// ---------------------------------------------------------------------------
+// Autopilot Phase 2 (c) — Confirm Token Store
+// In-memory Map; process-local; 60s TTL; one-time use.
+// Phase 3 can replace with Redis or file-backed store.
+// ---------------------------------------------------------------------------
+
+const CONFIRM_TOKEN_TTL_MS = 60_000; // 60 seconds
+
+interface ConfirmTokenEntry {
+  runId: string;
+  expiresAt: Date;
+  used: boolean;
+}
+
+// Token store: token string → entry.  Keyed by the opaque UUID token value.
+const confirmTokenStore = new Map<string, ConfirmTokenEntry>();
+
+/** Issue a new confirm token for a given runId.  Existing tokens for the same
+ *  runId are NOT invalidated — callers may re-fetch if the previous token expired.
+ */
+export function issueConfirmToken(runId: string): AutopilotConfirmTokenResponse {
+  const token = randomUUID();
+  const expiresAt = new Date(Date.now() + CONFIRM_TOKEN_TTL_MS);
+  confirmTokenStore.set(token, { runId, expiresAt, used: false });
+  return autopilotConfirmTokenResponseSchema.parse({
+    token,
+    expiresAt: expiresAt.toISOString()
+  });
+}
+
+/** Validate a confirm token for the given runId.
+ *  Returns the error code string on failure, or null on success.
+ *  Side-effect: marks the token as used on success (one-time use).
+ */
+export function validateAndConsumeConfirmToken(
+  token: string,
+  runId: string
+): "confirm_invalid" | "confirm_expired" | "confirm_used" | "confirm_run_mismatch" | null {
+  const entry = confirmTokenStore.get(token);
+  if (!entry) {
+    return "confirm_invalid";
+  }
+  if (entry.runId !== runId) {
+    return "confirm_run_mismatch";
+  }
+  if (entry.used) {
+    return "confirm_used";
+  }
+  if (Date.now() > entry.expiresAt.getTime()) {
+    confirmTokenStore.delete(token); // clean up expired entry
+    return "confirm_expired";
+  }
+  // Mark as used — one-time consumption
+  entry.used = true;
+  return null;
+}
 
 const supportedDecisionMarkets = ["TWSE", "TPEX", "TWO", "TW_EMERGING", "TW_INDEX", "OTHER"] as const;
 type MarketDecisionSummaryItem = Awaited<ReturnType<typeof getMarketDataDecisionSummary>>["items"][number];
@@ -991,8 +1050,24 @@ export async function executeStrategyRun(input: {
     sizePct,
     symbols: symbolFilter,
     maxOrders,
-    dryRun
+    dryRun,
+    confirmToken
   } = payload;
+
+  // ---------------------------------------------------------------------------
+  // Confirm Gate — Phase 2 (c)
+  // dryRun:true  → bypass gate entirely (no token needed)
+  // dryRun:false → requires a valid, non-expired, unused confirmToken bound to this runId
+  // ---------------------------------------------------------------------------
+  if (!dryRun) {
+    if (!confirmToken) {
+      throw new Error("confirm_gate:confirm_required");
+    }
+    const gateError = validateAndConsumeConfirmToken(confirmToken, runId);
+    if (gateError !== null) {
+      throw new Error(`confirm_gate:${gateError}`);
+    }
+  }
 
   const executedAt = new Date().toISOString();
 

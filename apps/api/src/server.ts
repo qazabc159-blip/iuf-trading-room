@@ -164,6 +164,7 @@ import {
   executeStrategyRun,
   getStrategyIdeas,
   getStrategyRunById,
+  issueConfirmToken,
   listStrategyRuns
 } from "./strategy-engine.js";
 import { initRiskStore } from "./risk-engine.js";
@@ -1579,6 +1580,14 @@ app.get("/api/v1/strategy/runs/:id", async (c) => {
   return c.json({ data: run });
 });
 
+// Autopilot Phase 2 (c) — Issue a one-time confirm token for dryRun:false execute.
+// Token is bound to the runId path param; TTL = 60s; one-time use.
+app.post("/api/v1/strategy/runs/:id/confirm-token", async (c) => {
+  const runId = c.req.param("id");
+  const tokenResponse = issueConfirmToken(runId);
+  return c.json({ data: tokenResponse }, 201);
+});
+
 app.post("/api/v1/strategy/runs/:id/execute", async (c) => {
   const runId = c.req.param("id");
   const payload = autopilotExecuteInputSchema.parse(await c.req.json().catch(() => ({})));
@@ -1595,6 +1604,21 @@ app.post("/api/v1/strategy/runs/:id/execute", async (c) => {
     const message = err instanceof Error ? err.message : String(err);
     if (message.startsWith("strategy_run_not_found:")) {
       return c.json({ error: "strategy_run_not_found" }, 404);
+    }
+    // Confirm gate errors — return 400 with structured error code
+    if (message.startsWith("confirm_gate:")) {
+      const code = message.slice("confirm_gate:".length);
+      const statusMsg =
+        code === "confirm_required"
+          ? "dryRun:false requires a valid confirm token. POST /confirm-token first."
+          : code === "confirm_expired"
+          ? "Confirm token has expired (60s TTL). Request a new token."
+          : code === "confirm_used"
+          ? "Confirm token has already been used. Request a new token."
+          : code === "confirm_run_mismatch"
+          ? "Confirm token is bound to a different runId."
+          : "Confirm token is invalid.";
+      return c.json({ error: code, message: statusMsg }, 400);
     }
     throw err;
   }

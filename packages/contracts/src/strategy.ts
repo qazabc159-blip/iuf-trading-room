@@ -386,7 +386,25 @@ export const autopilotExecuteInputSchema = z.object({
   sizePct: z.number().min(0.1).max(10).default(1.0),
   symbols: z.array(z.string()).optional(),
   maxOrders: z.number().int().min(1).max(10).default(3),
-  dryRun: z.boolean().default(false)
+  dryRun: z.boolean().default(false),
+  confirmToken: z.string().optional()
+});
+
+// ---------------------------------------------------------------------------
+// Autopilot Phase 2 (c) — Confirm Gate
+// ---------------------------------------------------------------------------
+
+export const autopilotExecuteErrorCodeSchema = z.enum([
+  "confirm_required",  // dryRun:false without any confirmToken
+  "confirm_invalid",   // token present but not found in store (wrong token)
+  "confirm_expired",   // token was valid but TTL has elapsed
+  "confirm_used",      // token already consumed (replay attempt)
+  "confirm_run_mismatch" // token exists but bound to a different runId
+]);
+
+export const autopilotConfirmTokenResponseSchema = z.object({
+  token: z.string(),
+  expiresAt: z.string() // ISO 8601
 });
 
 export const autopilotOrderResultSchema = z.object({
@@ -419,6 +437,8 @@ export type AutopilotSizeMode = z.infer<typeof autopilotSizeModeSchema>;
 export type AutopilotExecuteInput = z.infer<typeof autopilotExecuteInputSchema>;
 export type AutopilotOrderResult = z.infer<typeof autopilotOrderResultSchema>;
 export type AutopilotExecuteResult = z.infer<typeof autopilotExecuteResultSchema>;
+export type AutopilotExecuteErrorCode = z.infer<typeof autopilotExecuteErrorCodeSchema>;
+export type AutopilotConfirmTokenResponse = z.infer<typeof autopilotConfirmTokenResponseSchema>;
 
 export type StrategyKind = z.infer<typeof strategyKindSchema>;
 export type StrategyStatus = z.infer<typeof strategyStatusSchema>;
