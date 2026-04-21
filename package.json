@@ -14,6 +14,7 @@
     "typecheck": "turbo run typecheck",
     "test": "node --import tsx --test ./tests/ci.test.ts ./tests/risk-persistence.test.ts",
     "smoke": "node --import tsx ./scripts/smoke-api.ts",
+    "smoke:autopilot:dryrun": "node --import tsx ./scripts/smoke-autopilot-dryrun.ts",
     "verify:execution": "node --import tsx ./apps/api/src/broker/verify-execution-lane.ts",
     "verify:execution:local": "pnpm verify:execution -- --base http://127.0.0.1:3001 --web-base http://127.0.0.1:3000",
     "verify:execution:live": "pnpm verify:execution -- --base https://api-production-8f08.up.railway.app --web-base https://web-production-7896c.up.railway.app",

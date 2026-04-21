@@ -6409,3 +6409,157 @@ test("signal with companyIds causes strategy ideas direction != neutral for that
   assert.ok(idea, "strategy ideas should include the company with a signal");
   assert.equal(idea!.direction, "bullish", "direction should be bullish when a recent bullish signal is linked to the company");
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 (d) — equal_weight sizeMode
+// ---------------------------------------------------------------------------
+
+test("autopilot equal_weight: 2 candidates share budget equally — each gets half the fixed_pct quantity", async () => {
+  // Setup: 2 bullish companies with fresh quotes at price=100 (US market, lotSize=1).
+  // Default equity = 10_000_000. sizePct=1 → total_budget=100_000 → perCandidate=50_000.
+  // fixed_pct same sizePct → each would get 1000 shares (100_000/100).
+  // equal_weight → each gets 500 shares (50_000/100).
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `ew-two-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  for (const ticker of ["EWA1", "EWB1"]) {
+    const company = await repo.createCompany({
+      name: `EW Test ${ticker}`,
+      ticker,
+      market: "OTHER",
+      country: "US",
+      themeIds: [],
+      chainPosition: "Core",
+      beneficiaryTier: "Core",
+      exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+      validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
+      notes: "equal_weight CI test."
+    });
+    await repo.createSignal({
+      category: "industry",
+      direction: "bullish",
+      title: `${ticker} signal`,
+      summary: "Bullish.",
+      confidence: 5,
+      themeIds: [],
+      companyIds: [company.id]
+    });
+    await upsertManualQuotes({
+      session,
+      quotes: [{
+        symbol: ticker, market: "OTHER", source: "tradingview",
+        last: 100, bid: 99, ask: 101,
+        open: 99, high: 101, low: 98, prevClose: 99,
+        volume: 1000, changePct: 1.0,
+        timestamp: new Date().toISOString()
+      }]
+    });
+  }
+
+  const run = await createStrategyRun({
+    session, repo,
+    payload: { limit: 10, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const result = await executeStrategyRun({
+    session, repo, runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "equal_weight",
+      sizePct: 1.0,
+      maxOrders: 5,
+      dryRun: true
+    }
+  });
+
+  // Both candidates should be processed (submitted or blocked but not skipped)
+  assert.equal(result.summary.total, 2);
+
+  // Summary invariant
+  assert.equal(
+    result.summary.total,
+    result.summary.submittedCount + result.summary.blockedCount + result.summary.errorCount
+  );
+
+  // If both got a price and passed quantity check, they should have equal quantities
+  const allResults = [...result.submitted, ...result.blocked];
+  const ewa = allResults.find((r) => r.symbol === "EWA1");
+  const ewb = allResults.find((r) => r.symbol === "EWB1");
+  if (ewa && ewb && ewa.quantity > 0 && ewb.quantity > 0) {
+    // equal_weight: both should receive identical quantity (budget split evenly)
+    assert.equal(ewa.quantity, ewb.quantity, "equal_weight: both candidates must receive identical quantity");
+    // And the quantity should be half of what fixed_pct would give
+    // fixed_pct would yield: floor(10_000_000 * 0.01 / 100 / 1) * 1 = 1000
+    // equal_weight (N=2): floor(10_000_000 * 0.01 / 2 / 100 / 1) * 1 = 500
+    assert.equal(ewa.quantity, 500, "equal_weight with 2 candidates: each gets 500 shares at price=100, sizePct=1%");
+  }
+});
+
+test("autopilot equal_weight: 1 candidate receives full budget (same as fixed_pct)", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `ew-one-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const company = await repo.createCompany({
+    name: "EW Solo Co",
+    ticker: "EWS1",
+    market: "OTHER",
+    country: "US",
+    themeIds: [],
+    chainPosition: "Core",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
+    notes: "equal_weight single-candidate CI test."
+  });
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "EWS1 signal",
+    summary: "Bullish.",
+    confidence: 5,
+    themeIds: [],
+    companyIds: [company.id]
+  });
+  await upsertManualQuotes({
+    session,
+    quotes: [{
+      symbol: "EWS1", market: "OTHER", source: "tradingview",
+      last: 100, bid: 99, ask: 101,
+      open: 99, high: 101, low: 98, prevClose: 99,
+      volume: 1000, changePct: 1.0,
+      timestamp: new Date().toISOString()
+    }]
+  });
+
+  const run = await createStrategyRun({
+    session, repo,
+    payload: { limit: 10, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const result = await executeStrategyRun({
+    session, repo, runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "equal_weight",
+      sizePct: 1.0,
+      maxOrders: 5,
+      dryRun: true
+    }
+  });
+
+  assert.equal(result.summary.total, 1);
+
+  // N=1: perCandidateBudget = full budget → same as fixed_pct
+  // floor(10_000_000 * 0.01 / 1 / 100 / 1) * 1 = 1000
+  const allResults = [...result.submitted, ...result.blocked];
+  const solo = allResults.find((r) => r.symbol === "EWS1");
+  if (solo && solo.quantity > 0) {
+    assert.equal(solo.quantity, 1000, "equal_weight N=1: full budget → same as fixed_pct");
+  }
+});

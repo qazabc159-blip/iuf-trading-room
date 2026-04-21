@@ -1048,6 +1048,7 @@ export async function executeStrategyRun(input: {
   const {
     accountId,
     sidePolicy,
+    sizeMode,
     sizePct,
     symbols: symbolFilter,
     maxOrders,
@@ -1155,6 +1156,15 @@ export async function executeStrategyRun(input: {
   const balance = await getPaperBalance(session, accountId);
   const equity = balance.equity > 0 ? balance.equity : 1;
 
+  // equal_weight: divide total budget equally across N eligible candidates.
+  // If sizeMode is "equal_weight" and N > 0, perCandidateBudget = (equity * sizePct/100) / N.
+  // When perCandidateBudget is set we pass it as 100% equity to deriveQuantity.
+  // N=0 case is already handled by the early-return above.
+  const perCandidateBudget =
+    sizeMode === "equal_weight"
+      ? (equity * sizePct / 100) / eligible.length
+      : null;
+
   // Fetch quotes for all symbols in one call
   const symbolsCsv = [...new Set(eligible.map((c) => c.symbol))].join(",");
   const quotesResult = await getEffectiveMarketQuotes({
@@ -1186,7 +1196,10 @@ export async function executeStrategyRun(input: {
       continue;
     }
 
-    const quantity = deriveQuantity({ equity, sizePct, entryPrice, lotSize: getLotSize(candidate.market) });
+    const quantity =
+      perCandidateBudget !== null
+        ? deriveQuantity({ equity: perCandidateBudget, sizePct: 100, entryPrice, lotSize: getLotSize(candidate.market) })
+        : deriveQuantity({ equity, sizePct, entryPrice, lotSize: getLotSize(candidate.market) });
     if (quantity <= 0) {
       blocked.push({
         symbol: candidate.symbol,
@@ -1222,7 +1235,7 @@ export async function executeStrategyRun(input: {
 
       if (result.blocked) {
         // Determine blockedReason from risk guards or order rejection
-        let blockedReason = "risk_blocked";
+        let blockedReason = "risk_unknown";
         if (result.riskCheck) {
           const killGuard = result.riskCheck.guards.find((g) => g.guard === "kill_switch");
           if (killGuard) {
