@@ -995,3 +995,34 @@ export async function executeStrategyRun(
 ): Promise<Envelope<AutopilotExecuteResult>> {
   return requestAutopilotOutcome(runId, input);
 }
+
+// ── Strategy Autopilot Confirm Token ──
+//
+// Step 1 of the 2-step confirm flow for real (dryRun:false) execution.
+// POST /api/v1/strategy/runs/:id/confirm-token → 201 { data: { token, expiresAt } }
+// Token is single-use, bound to the runId, expires in 60 seconds.
+// Must NOT be called for dryRun:true requests — gate is not involved.
+
+export type ConfirmTokenResponse = {
+  token: string;
+  expiresAt: string; // ISO 8601
+};
+
+export async function requestConfirmToken(runId: string): Promise<ConfirmTokenResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/strategy/runs/${encodeURIComponent(runId)}/confirm-token`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-workspace-slug": WORKSPACE_SLUG
+      }
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Confirm token request failed: ${response.status}`);
+  }
+  const envelope = (await response.json()) as Envelope<ConfirmTokenResponse>;
+  return envelope.data;
+}

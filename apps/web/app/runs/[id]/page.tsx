@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   AutopilotExecuteResult,
@@ -13,7 +13,7 @@ import type {
 } from "@iuf-trading-room/contracts";
 
 import { AppShell } from "@/components/app-shell";
-import { executeStrategyRun, getStrategyRunById } from "@/lib/api";
+import { executeStrategyRun, getStrategyRunById, requestConfirmToken } from "@/lib/api";
 import { handoffFromIdea, writeIdeaHandoff } from "@/lib/idea-handoff";
 import { buildIdeasSearchString } from "@/lib/ideas-query";
 import {
@@ -55,6 +55,16 @@ export default function RunDetailPage() {
   const [executeResult, setExecuteResult] = useState<AutopilotExecuteResult | null>(null);
   const [executeError, setExecuteError] = useState<string | null>(null);
 
+  // Confirm gate state (R11 Wave 3)
+  // confirmState: idle | fetching_token | token_ready | executing
+  const [confirmState, setConfirmState] = useState<"idle" | "fetching_token" | "token_ready" | "executing">("idle");
+  const [confirmToken, setConfirmToken] = useState<string | null>(null);
+  const [confirmExpiresAt, setConfirmExpiresAt] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  // countdown in seconds (0 = expired)
+  const [confirmCountdown, setConfirmCountdown] = useState<number>(0);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     if (!runId) return;
     let cancelled = false;
@@ -81,9 +91,12 @@ export default function RunDetailPage() {
     dryRunResult.submitted.length === 0 &&
     dryRunResult.blocked.some((b) => b.blockedReason === "kill_switch");
 
-  // A'' constraint: real submit is always disabled in R10
-  // The button renders but can never be activated until R11 confirm gate
-  const canRealSubmit = false; // R11: Jason confirm gate required
+  // R11 Wave 3: canRealSubmit derived from dryRunResult
+  // Wave 2 Bruce全綠 → enable condition: dryRun has at least 1 submitted AND kill-switch not halted
+  const canRealSubmit =
+    dryRunResult !== null &&
+    dryRunResult.submitted.length > 0 &&
+    !isKillSwitchHalted;
 
   function handleOpenModal() {
     if (!runId) return;
@@ -91,6 +104,16 @@ export default function RunDetailPage() {
     setDryRunResult(null);
     setExecuteError(null);
     setDryRunLoading(true);
+    // Reset confirm state when modal opens
+    setConfirmState("idle");
+    setConfirmToken(null);
+    setConfirmExpiresAt(null);
+    setConfirmError(null);
+    setConfirmCountdown(0);
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
 
     let cancelled = false;
     executeStrategyRun(runId, { ...DEFAULT_AUTOPILOT_INPUT, dryRun: true })
@@ -116,6 +139,122 @@ export default function RunDetailPage() {
     setDryRunResult(null);
     setExecuteError(null);
     setDryRunLoading(false);
+    // Clean up confirm state
+    setConfirmState("idle");
+    setConfirmToken(null);
+    setConfirmExpiresAt(null);
+    setConfirmError(null);
+    setConfirmCountdown(0);
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+  }
+
+  // Step 1: fetch confirm token and start countdown
+  function handleFetchConfirmToken() {
+    if (!runId) return;
+    setConfirmState("fetching_token");
+    setConfirmError(null);
+    setConfirmToken(null);
+    setConfirmExpiresAt(null);
+    setConfirmCountdown(0);
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+
+    requestConfirmToken(runId)
+      .then(({ token, expiresAt }) => {
+        setConfirmToken(token);
+        setConfirmExpiresAt(expiresAt);
+        setConfirmState("token_ready");
+
+        // Start countdown timer
+        const ttlMs = new Date(expiresAt).getTime() - Date.now();
+        const initialSec = Math.max(0, Math.floor(ttlMs / 1000));
+        setConfirmCountdown(initialSec);
+
+        const timer = setInterval(() => {
+          setConfirmCountdown((prev) => {
+            if (prev <= 1) {
+              // Token expired — silently re-fetch
+              clearInterval(timer);
+              countdownTimerRef.current = null;
+              handleFetchConfirmToken();
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+        countdownTimerRef.current = timer;
+      })
+      .catch((err: unknown) => {
+        setConfirmState("idle");
+        setConfirmError(err instanceof Error ? err.message : "無法取得確認 Token，請稍後再試");
+      });
+  }
+
+  // Map confirm gate error codes to zh-TW copy (per spec section 4)
+  function mapConfirmErrorCode(rawMsg: string): string {
+    try {
+      const parsed = JSON.parse(rawMsg) as { error?: string; message?: string };
+      const code = parsed.error ?? "";
+      switch (code) {
+        case "confirm_required": return "請先取得確認 Token";
+        case "confirm_invalid": return "Token 不符，請重新取得";
+        case "confirm_expired": return "Token 已過期（60s），請重新取得";
+        case "confirm_used": return "Token 已使用，請重新取得";
+        case "confirm_run_mismatch": return "Token 與此 Run 不符，請重新取得";
+        default: return parsed.message ?? rawMsg;
+      }
+    } catch {
+      return rawMsg;
+    }
+  }
+
+  // Step 2: execute with confirm token (real submit, dryRun:false)
+  function handleRealSubmit() {
+    if (!runId || !confirmToken) return;
+    setConfirmState("executing");
+    setExecuteLoading(true);
+    setExecuteError(null);
+    // Clear countdown timer during execution
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+
+    executeStrategyRun(runId, {
+      ...DEFAULT_AUTOPILOT_INPUT,
+      dryRun: false,
+      confirmToken
+    })
+      .then((res) => {
+        setExecuteResult(res.data);
+        setConfirmState("idle");
+        // Close modal to show section [04] result panel
+        handleCloseModal();
+      })
+      .catch((err: unknown) => {
+        const rawMsg = err instanceof Error ? err.message : String(err);
+        const friendlyMsg = mapConfirmErrorCode(rawMsg);
+        // Check if it's a confirm gate error — if so, re-fetch token
+        const isGateError = ["confirm_required", "confirm_invalid", "confirm_expired", "confirm_used", "confirm_run_mismatch"]
+          .some((code) => rawMsg.includes(code));
+        if (isGateError) {
+          setConfirmError(friendlyMsg);
+          // Re-fetch token for retry
+          handleFetchConfirmToken();
+        } else {
+          setConfirmError(friendlyMsg);
+          setConfirmState("idle");
+          setExecuteError(friendlyMsg);
+        }
+      })
+      .finally(() => {
+        setExecuteLoading(false);
+      });
   }
 
   return (
@@ -157,7 +296,12 @@ export default function RunDetailPage() {
               executeError={executeError}
               isKillSwitchHalted={isKillSwitchHalted}
               canRealSubmit={canRealSubmit}
+              confirmState={confirmState}
+              confirmCountdown={confirmCountdown}
+              confirmError={confirmError}
               onClose={handleCloseModal}
+              onFetchConfirmToken={handleFetchConfirmToken}
+              onRealSubmit={handleRealSubmit}
             />
           )}
         </>
@@ -304,7 +448,12 @@ interface AutopilotModalProps {
   executeError: string | null;
   isKillSwitchHalted: boolean;
   canRealSubmit: boolean;
+  confirmState: "idle" | "fetching_token" | "token_ready" | "executing";
+  confirmCountdown: number;
+  confirmError: string | null;
   onClose: () => void;
+  onFetchConfirmToken: () => void;
+  onRealSubmit: () => void;
 }
 
 function AutopilotModal({
@@ -314,8 +463,15 @@ function AutopilotModal({
   executeError,
   isKillSwitchHalted,
   canRealSubmit,
-  onClose
+  confirmState,
+  confirmCountdown,
+  confirmError,
+  onClose,
+  onFetchConfirmToken,
+  onRealSubmit
 }: AutopilotModalProps) {
+  const isConfirmBusy = confirmState === "fetching_token" || confirmState === "executing";
+
   return (
     <>
       {/* Backdrop — blocks pointer events to page content below */}
@@ -354,6 +510,7 @@ function AutopilotModal({
               className="btn-sm"
               onClick={onClose}
               aria-label="關閉 Autopilot 執行視窗"
+              disabled={isConfirmBusy}
             >
               ✕ 關閉
             </button>
@@ -405,6 +562,19 @@ function AutopilotModal({
               </p>
               <p className="dim" style={{ fontSize: "var(--fs-xs)", marginTop: 4 }}>
                 請關閉並再試一次，或確認後端狀態。
+              </p>
+            </div>
+          ) : null}
+
+          {/* Confirm gate error (separate from dryRun error) */}
+          {confirmError && !executeError ? (
+            <div className="panel hud-frame" role="alert">
+              <p className="eyebrow" style={{ color: "var(--warn)" }}>確認閘道錯誤</p>
+              <p className="mono" style={{ fontSize: "var(--fs-sm)", color: "var(--warn)" }}>
+                {confirmError}
+              </p>
+              <p className="dim" style={{ fontSize: "var(--fs-xs)", marginTop: 4 }}>
+                系統正在重新取得確認 Token…
               </p>
             </div>
           ) : null}
@@ -469,26 +639,108 @@ function AutopilotModal({
             </div>
           ) : null}
 
+          {/* 2-Step Confirm Gate UI — only shows when canRealSubmit is true */}
+          {canRealSubmit && !dryRunLoading && !executeError ? (
+            <div
+              className="panel hud-frame"
+              style={{ borderColor: "var(--warn, #e6a817)", background: "rgba(230,168,23,0.06)", display: "flex", flexDirection: "column", gap: 8 }}
+            >
+              <p className="eyebrow" style={{ color: "var(--warn, #e6a817)" }}>
+                REAL SUBMIT — 真實送出確認
+              </p>
+              <p className="dim" style={{ fontSize: "var(--fs-xs)" }}>
+                真實送出將實際對 paper broker 下單，請確認 dryRun 預覽無誤後再操作。
+              </p>
+
+              {/* Countdown display */}
+              {confirmState === "token_ready" && confirmCountdown > 0 ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="eyebrow">確認碼有效期</span>
+                  <span
+                    className="mono"
+                    style={{
+                      fontWeight: 700,
+                      color: confirmCountdown <= 15 ? "var(--bear)" : "var(--warn, #e6a817)",
+                      fontSize: "var(--fs-md)"
+                    }}
+                  >
+                    {confirmCountdown}s
+                  </span>
+                  <span className="dim" style={{ fontSize: "var(--fs-xs)" }}>（過期後自動重新取得）</span>
+                </div>
+              ) : null}
+
+              {/* fetching_token status */}
+              {confirmState === "fetching_token" ? (
+                <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>
+                  正在取得確認 Token…
+                </p>
+              ) : null}
+
+              {/* executing status */}
+              {confirmState === "executing" ? (
+                <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>
+                  正在送出真實訂單…
+                </p>
+              ) : null}
+
+              {/* Action buttons — Step 1 then Step 2 */}
+              <div className="action-row" style={{ gap: 8 }}>
+                {/* Step 1: Get Token */}
+                {confirmState === "idle" ? (
+                  <button
+                    className="btn-sm"
+                    onClick={onFetchConfirmToken}
+                    title="取得 60 秒有效確認 Token（Step 1）"
+                    aria-label="取得真實送出確認 Token"
+                    style={{
+                      borderColor: "var(--warn, #e6a817)",
+                      color: "var(--warn, #e6a817)"
+                    }}
+                  >
+                    取得確認碼（Step 1）
+                  </button>
+                ) : null}
+
+                {/* Step 2: Confirm Send */}
+                {confirmState === "token_ready" ? (
+                  <button
+                    className="btn-sm"
+                    onClick={onRealSubmit}
+                    disabled={executeLoading}
+                    title="此為真實送出，點擊後會實際下單"
+                    aria-label="確認真實送出 — 將對 paper broker 實際下單"
+                    style={{
+                      borderColor: "var(--bear, #e05c5c)",
+                      color: "var(--bear, #e05c5c)",
+                      fontWeight: 700
+                    }}
+                  >
+                    確認送出（Step 2）
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {/* Action row */}
           <div className="action-row" style={{ gap: 8, justifyContent: "flex-end", paddingTop: 4 }}>
-            <button className="btn-sm" onClick={onClose} disabled={executeLoading}>
+            <button className="btn-sm" onClick={onClose} disabled={isConfirmBusy}>
               取消
             </button>
-            <button
-              className="btn-sm"
-              disabled={true}
-              title="等 Round 11 confirm gate"
-              aria-label="真實送出（Round 11 開放）"
-              style={{ opacity: 0.45, cursor: "not-allowed" }}
-            >
-              真實送出（R11）
-            </button>
+            {/* Real submit button — disabled when canRealSubmit is false (no qualifying ideas / kill-switch) */}
+            {!canRealSubmit ? (
+              <button
+                className="btn-sm"
+                disabled={true}
+                title={isKillSwitchHalted ? "Kill Switch 已啟動，無法真實送出" : "dryRun 無可送出推薦，按鈕不可用"}
+                aria-label="真實送出 — 目前不可用"
+                style={{ opacity: 0.45, cursor: "not-allowed" }}
+              >
+                真實送出（不可用）
+              </button>
+            ) : null}
           </div>
-
-          {/* R11 notice */}
-          <p className="dim" style={{ fontSize: "var(--fs-xs)", textAlign: "right" }}>
-            真實送出功能將於 Round 11 開放（需 Jason confirm gate）
-          </p>
         </div>
       </div>
     </>
