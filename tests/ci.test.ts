@@ -6141,3 +6141,74 @@ test("bars diagnostics: manual source yields synthetic=true and at most referenc
   // synthetic => grade can only be reference_only or insufficient, never strategy_ready
   assert.notEqual(item.quality.grade, "strategy_ready", "synthetic bars cannot be strategy_ready");
 });
+
+test("signal companyIds round-trip in memory repo: createSignal stores and listSignals returns companyIds", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const company = await repo.createCompany({
+    name: "Test Corp",
+    ticker: "TST",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "Foundry",
+    beneficiaryTier: "Core",
+    exposure: { volume: 3, asp: 3, margin: 3, capacity: 3, narrative: 3 },
+    validation: { capitalFlow: "", consensus: "", relativeStrength: "" },
+    notes: "Test company for signal linkage."
+  });
+
+  const signal = await repo.createSignal({
+    category: "company",
+    direction: "bullish",
+    title: "Strong earnings beat",
+    summary: "Revenue and margin both beat consensus.",
+    confidence: 4,
+    companyIds: [company.id]
+  });
+
+  assert.deepEqual(signal.companyIds, [company.id], "createSignal should return the provided companyIds");
+
+  const all = await repo.listSignals(undefined);
+  const found = all.find((s) => s.id === signal.id);
+  assert.ok(found, "listSignals should return the created signal");
+  assert.deepEqual(found!.companyIds, [company.id], "listSignals should return companyIds from stored signal");
+});
+
+test("signal with companyIds causes strategy ideas direction != neutral for that company", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `signal-direction-${randomUUID()}` });
+
+  const company = await repo.createCompany({
+    name: "DirectionCo",
+    ticker: "DCORP",
+    market: "TWSE",
+    country: "Taiwan",
+    themeIds: [],
+    chainPosition: "Core product",
+    beneficiaryTier: "Core",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "Strong", consensus: "Rising", relativeStrength: "Leading" },
+    notes: "Test company for direction resolution."
+  });
+
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "Strong sector tailwind",
+    summary: "Demand keeps growing.",
+    confidence: 4,
+    companyIds: [company.id]
+  });
+
+  const result = await getStrategyIdeas({
+    session,
+    repo,
+    limit: 50,
+    signalDays: 90,
+    includeBlocked: true
+  });
+
+  const idea = result.items.find((i) => i.symbol === "DCORP");
+  assert.ok(idea, "strategy ideas should include the company with a signal");
+  assert.equal(idea!.direction, "bullish", "direction should be bullish when a recent bullish signal is linked to the company");
+});

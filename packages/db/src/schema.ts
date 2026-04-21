@@ -196,6 +196,7 @@ export const signals = pgTable("signals", {
   title: text("title").notNull(),
   summary: text("summary").default("").notNull(),
   confidence: integer("confidence").default(3).notNull(),
+  companyIds: jsonb("company_ids").$type<string[]>().default([]).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 

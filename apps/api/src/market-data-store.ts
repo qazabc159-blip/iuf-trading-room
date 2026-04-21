@@ -27,8 +27,14 @@ const persistedQuoteEntrySchema = z.object({
 export type PersistedQuoteEntry = z.infer<typeof persistedQuoteEntrySchema>;
 
 function getMarketDataStoreDir() {
-  return process.env.MARKET_DATA_STORE_DIR
-    ? path.resolve(process.env.MARKET_DATA_STORE_DIR)
+  if (process.env.MARKET_DATA_STORE_DIR) {
+    return path.resolve(process.env.MARKET_DATA_STORE_DIR);
+  }
+  // On Railway, RAILWAY_VOLUME_MOUNT_PATH=/data (same pattern as risk-store).
+  // Local dev: fall back to runtime-data/market-data (ephemeral, git-ignored).
+  const volumeBase = process.env.RAILWAY_VOLUME_MOUNT_PATH ?? null;
+  return volumeBase
+    ? path.join(volumeBase, "market-data")
     : path.resolve(process.cwd(), "runtime-data", "market-data");
 }
 

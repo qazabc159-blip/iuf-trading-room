@@ -690,7 +690,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       summary: row.summary,
       confidence: row.confidence,
       themeIds: [],
-      companyIds: [],
+      companyIds: Array.isArray(row.companyIds) ? (row.companyIds as string[]) : [],
       createdAt: row.createdAt.toISOString()
     }));
   }
@@ -713,7 +713,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       summary: row.summary,
       confidence: row.confidence,
       themeIds: [],
-      companyIds: [],
+      companyIds: Array.isArray(row.companyIds) ? (row.companyIds as string[]) : [],
       createdAt: row.createdAt.toISOString()
     };
   }
@@ -729,7 +729,8 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
         direction: input.direction,
         title: input.title,
         summary: input.summary ?? "",
-        confidence: input.confidence
+        confidence: input.confidence,
+        companyIds: input.companyIds ?? []
       })
       .returning();
 
@@ -741,7 +742,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       summary: row.summary,
       confidence: row.confidence,
       themeIds: [],
-      companyIds: [],
+      companyIds: Array.isArray(row.companyIds) ? (row.companyIds as string[]) : [],
       createdAt: row.createdAt.toISOString()
     };
   }
@@ -760,7 +761,8 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
         direction: input.direction,
         title: input.title,
         summary: input.summary,
-        confidence: input.confidence
+        confidence: input.confidence,
+        ...(input.companyIds !== undefined ? { companyIds: input.companyIds } : {})
       })
       .where(and(eq(signals.id, signalId), eq(signals.workspaceId, workspace.id)))
       .returning();
@@ -775,7 +777,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       summary: row.summary,
       confidence: row.confidence,
       themeIds: [],
-      companyIds: [],
+      companyIds: Array.isArray(row.companyIds) ? (row.companyIds as string[]) : [],
       createdAt: row.createdAt.toISOString()
     };
   }
