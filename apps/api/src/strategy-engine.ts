@@ -46,6 +46,7 @@ import {
   previewOrder,
   submitOrder
 } from "./broker/trading-service.js";
+import { getKillSwitchState } from "./risk-engine.js";
 import {
   appendPersistedStrategyRun,
   loadPersistedStrategyRuns
@@ -1113,6 +1114,39 @@ export async function executeStrategyRun(input: {
       blocked: [],
       errors: [],
       summary: { total: 0, submittedCount: 0, blockedCount: 0, errorCount: 0 }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Kill-switch hard precedence — must come BEFORE price lookup / previewOrder
+  // If kill-switch is engaged (mode !== 'trading'), block all eligible candidates
+  // immediately without attempting price resolution or order submission.
+  // This ensures safety signals always take precedence over data availability.
+  // ---------------------------------------------------------------------------
+  const killSwitchState = await getKillSwitchState({ session, accountId });
+  if (killSwitchState.mode !== "trading") {
+    const blockedByKillSwitch: AutopilotOrderResult[] = eligible.map((candidate) => ({
+      symbol: candidate.symbol,
+      side: candidate.side,
+      quantity: 0,
+      price: null,
+      submitResult: null,
+      blocked: true,
+      blockedReason: "kill_switch"
+    }));
+    return autopilotExecuteResultSchema.parse({
+      runId,
+      dryRun,
+      executedAt,
+      submitted: [],
+      blocked: blockedByKillSwitch,
+      errors: [],
+      summary: {
+        total: eligible.length,
+        submittedCount: 0,
+        blockedCount: blockedByKillSwitch.length,
+        errorCount: 0
+      }
     });
   }
 

@@ -4600,6 +4600,203 @@ test("autopilot execute blocks all orders when kill-switch is halted", async () 
 });
 
 // ---------------------------------------------------------------------------
+// Kill-switch hard precedence tests (R14)
+// These tests confirm kill-switch blocking fires BEFORE price lookup —
+// i.e. even when there are NO live quotes, blocked reason must be
+// "kill_switch" not "no_price".
+// ---------------------------------------------------------------------------
+
+test("kill-switch hard precedence: halted + no live quote → blocked=kill_switch (not no_price)", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `ks-precedence-noquote-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "KS Precedence Theme",
+    marketState: "Defensive",
+    lifecycle: "Expansion",
+    priority: 3,
+    thesis: "Kill-switch precedence test.",
+    whyNow: "CI.",
+    bottleneck: "None"
+  });
+
+  const company = await repo.createCompany({
+    name: "KS Precedence Co",
+    ticker: "KSNQ1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Core",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "Neutral", consensus: "Stable", relativeStrength: "Middle" },
+    notes: "Kill-switch precedence test."
+  });
+
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "KSNQ1 signal",
+    summary: "Test.",
+    confidence: 4,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+
+  // Intentionally NO live quote seeded — R13 FAIL root cause scenario
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  // Halt the kill-switch BEFORE executing
+  await setKillSwitchState({
+    session,
+    payload: { accountId: "paper-default", mode: "halted", reason: "CI R14: kill-switch precedence no-quote test" }
+  });
+
+  const token = issueConfirmToken(run.id);
+  const result = await executeStrategyRun({
+    session,
+    repo,
+    runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 1.0,
+      maxOrders: 5,
+      dryRun: false,
+      confirmToken: token.token
+    }
+  });
+
+  // Must NOT have any entry blocked as "no_price" — kill-switch must fire first
+  assert.equal(result.submitted.length, 0);
+  assert.ok(result.blocked.length > 0, "expected at least one blocked entry");
+  for (const entry of result.blocked) {
+    assert.equal(entry.blocked, true);
+    assert.equal(entry.blockedReason, "kill_switch",
+      `expected kill_switch but got ${entry.blockedReason} — price check must NOT precede kill-switch guard`);
+  }
+  assert.equal(result.summary.submittedCount, 0);
+  assert.ok(result.summary.blockedCount > 0);
+
+  // Restore
+  await setKillSwitchState({
+    session,
+    payload: { accountId: "paper-default", mode: "trading", reason: "CI R14: restored" }
+  });
+});
+
+test("kill-switch hard precedence: liquidate_only mode + eligible item → blocked=kill_switch", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `ks-precedence-liqonly-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "KS LiqOnly Theme",
+    marketState: "Defensive",
+    lifecycle: "Expansion",
+    priority: 3,
+    thesis: "Kill-switch liquidate_only test.",
+    whyNow: "CI.",
+    bottleneck: "None"
+  });
+
+  const company = await repo.createCompany({
+    name: "KS LiqOnly Co",
+    ticker: "KSLQ1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Core",
+    beneficiaryTier: "Direct",
+    exposure: { volume: 4, asp: 4, margin: 4, capacity: 4, narrative: 4 },
+    validation: { capitalFlow: "Neutral", consensus: "Stable", relativeStrength: "Middle" },
+    notes: "Kill-switch liquidate_only test."
+  });
+
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "KSLQ1 signal",
+    summary: "Test.",
+    confidence: 4,
+    themeIds: [theme.id],
+    companyIds: [company.id]
+  });
+
+  // Provide a live quote — confirms it is the mode check, not price absence, that blocks
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "KSLQ1",
+        market: "OTHER",
+        source: "tradingview",
+        last: 100,
+        bid: 99.5,
+        ask: 100.5,
+        open: 99,
+        high: 102,
+        low: 98,
+        prevClose: 99,
+        volume: 1000,
+        changePct: 1.0,
+        timestamp: new Date().toISOString()
+      }
+    ]
+  });
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: { limit: 5, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  // liquidate_only mode — opening new positions must be blocked
+  await setKillSwitchState({
+    session,
+    payload: { accountId: "paper-default", mode: "liquidate_only", reason: "CI R14: liquidate_only precedence test" }
+  });
+
+  const token = issueConfirmToken(run.id);
+  const result = await executeStrategyRun({
+    session,
+    repo,
+    runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 1.0,
+      maxOrders: 5,
+      dryRun: true,
+      confirmToken: token.token
+    }
+  });
+
+  assert.equal(result.submitted.length, 0);
+  assert.ok(result.blocked.length > 0, "expected at least one blocked entry for liquidate_only");
+  for (const entry of result.blocked) {
+    assert.equal(entry.blockedReason, "kill_switch",
+      `liquidate_only mode should yield kill_switch block, got ${entry.blockedReason}`);
+  }
+
+  // Restore
+  await setKillSwitchState({
+    session,
+    payload: { accountId: "paper-default", mode: "trading", reason: "CI R14: restored" }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Autopilot Phase 1 — edge-case hardening tests
 // ---------------------------------------------------------------------------
 
