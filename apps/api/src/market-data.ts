@@ -304,6 +304,16 @@ function getBarStaleMs() {
   return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000;
 }
 
+// Quote history is a time series of ticks.  The series is "fresh" if the most
+// recent tick is within HISTORY_STALE_MS of now.  Like bars, this uses a much
+// longer window than the per-provider quote freshness (5 s / 15 s) because
+// history accumulates over time and individual ticks do not expire the series.
+// Default: 10 minutes; override via HISTORY_STALE_MS env.
+function getHistoryStaleMs() {
+  const raw = Number(process.env.HISTORY_STALE_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000;
+}
+
 function getQuoteCacheForWorkspace(workspaceSlug: string) {
   let workspaceCache = providerQuoteCache.get(workspaceSlug);
   if (!workspaceCache) {
@@ -1305,9 +1315,19 @@ export async function getMarketQuoteHistoryDiagnostics(input: {
       to: input.to
     });
     const synthetic = source ? isSyntheticSource(source) : false;
+    // History freshness is derived from the age of the most-recent tick in the
+    // series, not from the quote-provider freshness window (which is 5 s for
+    // live feeds and expires immediately for a historical series).
+    const lastPointAgeMs = getTimestampAgeMs(lastTimestamp);
+    const historyFreshnessStatus: QuoteResolutionFreshnessStatus =
+      ordered.length === 0 || lastTimestamp === null
+        ? "missing"
+        : lastPointAgeMs !== null && lastPointAgeMs <= getHistoryStaleMs()
+          ? "fresh"
+          : "stale";
     const quality = buildHistoryQualityAssessment({
       pointCount: ordered.length,
-      freshnessStatus: resolution?.freshnessStatus ?? "missing",
+      freshnessStatus: historyFreshnessStatus,
       timeWindowCompleteness,
       synthetic
     });
@@ -1318,12 +1338,12 @@ export async function getMarketQuoteHistoryDiagnostics(input: {
       source,
       selectedSource: resolution?.selectedSource ?? null,
       fallbackReason: resolution?.fallbackReason ?? "none",
-      freshnessStatus: resolution?.freshnessStatus ?? "missing",
+      freshnessStatus: historyFreshnessStatus,
       staleReason: resolution?.staleReason ?? "no_quote",
       pointCount: ordered.length,
       firstTimestamp,
       lastTimestamp,
-      lastPointAgeMs: getTimestampAgeMs(lastTimestamp),
+      lastPointAgeMs,
       timeWindowCompleteness,
       synthetic,
       generatedFrom: "provider_quote_history",
