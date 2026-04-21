@@ -1,5 +1,7 @@
 import type {
   AppSession,
+  AutopilotExecuteInput,
+  AutopilotExecuteResult,
   Balance,
   BrokerAccount,
   BrokerConnectionStatus,
@@ -956,4 +958,40 @@ export async function createStrategyRun(payload: StrategyRunCreateInput) {
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+// ── Strategy Autopilot Execute ──
+//
+// Internal fetch path — NOT reusing requestOrderOutcome.
+// Reason: autopilot returns AutopilotExecuteResult on 200 (including when all
+// orders are blocked). Only non-200 statuses (400/403/404/500) are thrown
+// errors. The 422-tolerant requestOrderOutcome expects SubmitOrderResult and
+// would silently mistype the response.
+async function requestAutopilotOutcome(
+  runId: string,
+  input: AutopilotExecuteInput
+): Promise<Envelope<AutopilotExecuteResult>> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/strategy/runs/${encodeURIComponent(runId)}/execute`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-workspace-slug": WORKSPACE_SLUG
+      },
+      body: JSON.stringify(input)
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Autopilot execute failed: ${response.status}`);
+  }
+  return (await response.json()) as Envelope<AutopilotExecuteResult>;
+}
+
+export async function executeStrategyRun(
+  runId: string,
+  input: AutopilotExecuteInput
+): Promise<Envelope<AutopilotExecuteResult>> {
+  return requestAutopilotOutcome(runId, input);
 }

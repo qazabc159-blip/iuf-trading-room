@@ -5,13 +5,15 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import type {
+  AutopilotExecuteResult,
+  AutopilotOrderResult,
   StrategyIdea,
   StrategyIdeasDecisionMode,
   StrategyRunRecord
 } from "@iuf-trading-room/contracts";
 
 import { AppShell } from "@/components/app-shell";
-import { getStrategyRunById } from "@/lib/api";
+import { executeStrategyRun, getStrategyRunById } from "@/lib/api";
 import { handoffFromIdea, writeIdeaHandoff } from "@/lib/idea-handoff";
 import { buildIdeasSearchString } from "@/lib/ideas-query";
 import {
@@ -24,6 +26,19 @@ import {
   QUALITY_LABEL
 } from "@/lib/strategy-vocab";
 
+// ── Autopilot default input ────────────────────────────────────────────────
+
+const DEFAULT_AUTOPILOT_INPUT = {
+  accountId: "paper-default",
+  sidePolicy: "bullish_long" as const,
+  sizeMode: "fixed_pct" as const,
+  sizePct: 1.0,
+  maxOrders: 3,
+  dryRun: true
+};
+
+// ── Page root ──────────────────────────────────────────────────────────────
+
 export default function RunDetailPage() {
   const params = useParams<{ id: string }>();
   const runId = typeof params?.id === "string" ? params.id : "";
@@ -31,6 +46,14 @@ export default function RunDetailPage() {
   const [run, setRun] = useState<StrategyRunRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Autopilot state — lives here so modal open/close doesn't lose it
+  const [modalOpen, setModalOpen] = useState(false);
+  const [dryRunResult, setDryRunResult] = useState<AutopilotExecuteResult | null>(null);
+  const [dryRunLoading, setDryRunLoading] = useState(false);
+  const [executeLoading, setExecuteLoading] = useState(false);
+  const [executeResult, setExecuteResult] = useState<AutopilotExecuteResult | null>(null);
+  const [executeError, setExecuteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!runId) return;
@@ -51,6 +74,49 @@ export default function RunDetailPage() {
       cancelled = true;
     };
   }, [runId]);
+
+  // Derived: kill-switch detection (no separate API call)
+  const isKillSwitchHalted =
+    dryRunResult !== null &&
+    dryRunResult.submitted.length === 0 &&
+    dryRunResult.blocked.some((b) => b.blockedReason === "kill_switch");
+
+  // A'' constraint: real submit is always disabled in R10
+  // The button renders but can never be activated until R11 confirm gate
+  const canRealSubmit = false; // R11: Jason confirm gate required
+
+  function handleOpenModal() {
+    if (!runId) return;
+    setModalOpen(true);
+    setDryRunResult(null);
+    setExecuteError(null);
+    setDryRunLoading(true);
+
+    let cancelled = false;
+    executeStrategyRun(runId, { ...DEFAULT_AUTOPILOT_INPUT, dryRun: true })
+      .then((res) => {
+        if (!cancelled) setDryRunResult(res.data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled)
+          setExecuteError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setDryRunLoading(false);
+      });
+
+    // Expose cancel flag via closure — cancelled=true on modal close
+    return () => {
+      cancelled = true;
+    };
+  }
+
+  function handleCloseModal() {
+    setModalOpen(false);
+    setDryRunResult(null);
+    setExecuteError(null);
+    setDryRunLoading(false);
+  }
 
   return (
     <AppShell eyebrow="策略歷史" title="Run Snapshot · 歷史策略快照">
@@ -75,13 +141,40 @@ export default function RunDetailPage() {
           <p className="dim">查無此 run。</p>
         </div>
       ) : (
-        <RunDetailBody run={run} />
+        <>
+          <RunDetailBody
+            run={run}
+            onExecuteRun={handleOpenModal}
+            executeResult={executeResult}
+          />
+
+          {/* Autopilot Modal */}
+          {modalOpen && (
+            <AutopilotModal
+              dryRunLoading={dryRunLoading}
+              dryRunResult={dryRunResult}
+              executeLoading={executeLoading}
+              executeError={executeError}
+              isKillSwitchHalted={isKillSwitchHalted}
+              canRealSubmit={canRealSubmit}
+              onClose={handleCloseModal}
+            />
+          )}
+        </>
       )}
     </AppShell>
   );
 }
 
-function RunDetailBody({ run }: { run: StrategyRunRecord }) {
+// ── RunDetailBody ──────────────────────────────────────────────────────────
+
+interface RunDetailBodyProps {
+  run: StrategyRunRecord;
+  onExecuteRun: () => void;
+  executeResult: AutopilotExecuteResult | null;
+}
+
+function RunDetailBody({ run, onExecuteRun, executeResult }: RunDetailBodyProps) {
   const created = useMemo(() => safeDate(run.createdAt), [run.createdAt]);
   const generated = useMemo(() => safeDate(run.generatedAt), [run.generatedAt]);
   const query = run.query;
@@ -109,6 +202,14 @@ function RunDetailBody({ run }: { run: StrategyRunRecord }) {
             <Link className="btn-sm" href={ideasHref} title="以此 run 的 query 條件打開 /ideas">
               去 /ideas →
             </Link>
+            <button
+              className="btn-sm"
+              onClick={onExecuteRun}
+              title="以 Autopilot 執行此 Run（dryRun 預覽）"
+              aria-label="Execute Run — 以 Autopilot 執行此策略快照"
+            >
+              ▶ Execute Run
+            </button>
           </div>
         </header>
       </section>
@@ -185,9 +286,355 @@ function RunDetailBody({ run }: { run: StrategyRunRecord }) {
           ))}
         </section>
       )}
+
+      {/* Section [04] — Autopilot Execute Result (real submit only, shown after modal closes) */}
+      {executeResult ? (
+        <AutopilotExecutePanel result={executeResult} />
+      ) : null}
     </>
   );
 }
+
+// ── AutopilotModal ─────────────────────────────────────────────────────────
+
+interface AutopilotModalProps {
+  dryRunLoading: boolean;
+  dryRunResult: AutopilotExecuteResult | null;
+  executeLoading: boolean;
+  executeError: string | null;
+  isKillSwitchHalted: boolean;
+  canRealSubmit: boolean;
+  onClose: () => void;
+}
+
+function AutopilotModal({
+  dryRunLoading,
+  dryRunResult,
+  executeLoading,
+  executeError,
+  isKillSwitchHalted,
+  canRealSubmit,
+  onClose
+}: AutopilotModalProps) {
+  return (
+    <>
+      {/* Backdrop — blocks pointer events to page content below */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Autopilot Execute — 策略自動成單預覽"
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 200,
+          background: "rgba(0,0,0,0.72)",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "center",
+          overflowY: "auto",
+          padding: "48px 16px"
+        }}
+        onClick={(e) => {
+          // Close if clicking the backdrop itself (not the modal content)
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <div
+          className="panel hud-frame"
+          style={{ width: "100%", maxWidth: 560, display: "flex", flexDirection: "column", gap: 12 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Modal header */}
+          <header style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+            <h2 className="ascii-head" style={{ margin: 0 }}>
+              <span className="ascii-head-bracket">[EXEC]</span>
+              Autopilot Execute · 策略自動成單
+            </h2>
+            <button
+              className="btn-sm"
+              onClick={onClose}
+              aria-label="關閉 Autopilot 執行視窗"
+            >
+              ✕ 關閉
+            </button>
+          </header>
+
+          {/* Config summary */}
+          <div className="panel hud-frame" style={{ background: "var(--surface-alt, #111)", gap: 8 }}>
+            <p className="eyebrow" style={{ marginBottom: 4 }}>執行參數</p>
+            <div className="filter-bar" style={{ gap: 10 }}>
+              <QuerySlot label="帳戶" value="paper-default" />
+              <QuerySlot label="方向政策" value="bullish_long" />
+              <QuerySlot label="倉位模式" value="fixed_pct" />
+              <QuerySlot label="倉位 %" value="1.0%" />
+              <QuerySlot label="最多筆數" value="3" />
+            </div>
+          </div>
+
+          {/* Kill-switch halted banner */}
+          {isKillSwitchHalted ? (
+            <div
+              className="panel hud-frame"
+              style={{ borderColor: "var(--bear)", background: "rgba(255,60,60,0.08)" }}
+              role="alert"
+            >
+              <p className="mono" style={{ color: "var(--bear)", fontWeight: 700 }}>
+                TRADING HALTED — Kill Switch 已啟動
+              </p>
+              <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>
+                所有訂單已被 kill_switch 封鎖，請先解除 Kill Switch 再執行。
+              </p>
+            </div>
+          ) : null}
+
+          {/* dryRun loading */}
+          {dryRunLoading ? (
+            <div className="panel hud-frame">
+              <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>
+                正在取得 dryRun 預覽…
+              </p>
+            </div>
+          ) : null}
+
+          {/* dryRun error */}
+          {!dryRunLoading && executeError ? (
+            <div className="panel hud-frame" role="alert">
+              <p className="eyebrow" style={{ color: "var(--bear)" }}>執行錯誤</p>
+              <p className="mono" style={{ fontSize: "var(--fs-sm)", color: "var(--bear)" }}>
+                {executeError}
+              </p>
+              <p className="dim" style={{ fontSize: "var(--fs-xs)", marginTop: 4 }}>
+                請關閉並再試一次，或確認後端狀態。
+              </p>
+            </div>
+          ) : null}
+
+          {/* dryRun preflight results */}
+          {!dryRunLoading && dryRunResult && !executeError ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <p className="eyebrow">DRY RUN 預覽結果</p>
+
+              {/* KPI strip */}
+              <section className="kpi-strip">
+                <KpiCard label="總計" value={dryRunResult.summary.total} />
+                <KpiCard label="可送出" value={dryRunResult.summary.submittedCount} tone="accent" />
+                <KpiCard label="封鎖" value={dryRunResult.summary.blockedCount} tone="bear" />
+                <KpiCard label="錯誤" value={dryRunResult.summary.errorCount} tone="warn" />
+              </section>
+
+              {/* SUBMITTED */}
+              {dryRunResult.submitted.length > 0 ? (
+                <div className="panel hud-frame">
+                  <p className="eyebrow" style={{ color: "var(--accent)", marginBottom: 6 }}>
+                    SUBMITTED ({dryRunResult.submitted.length})
+                  </p>
+                  {dryRunResult.submitted.map((order) => (
+                    <DryRunOrderRow key={order.symbol} order={order} />
+                  ))}
+                </div>
+              ) : (
+                <div className="panel hud-frame">
+                  <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>
+                    沒有可送出的推薦（可能全為 neutral / 全被封鎖）
+                  </p>
+                </div>
+              )}
+
+              {/* BLOCKED */}
+              {dryRunResult.blocked.length > 0 ? (
+                <div className="panel hud-frame">
+                  <p className="eyebrow" style={{ color: "var(--bear)", marginBottom: 6 }}>
+                    BLOCKED ({dryRunResult.blocked.length})
+                  </p>
+                  {dryRunResult.blocked.map((order) => (
+                    <DryRunOrderRow key={order.symbol} order={order} />
+                  ))}
+                </div>
+              ) : null}
+
+              {/* ERRORS */}
+              {dryRunResult.errors.length > 0 ? (
+                <div className="panel hud-frame">
+                  <p className="eyebrow" style={{ color: "var(--warn)", marginBottom: 6 }}>
+                    ERRORS ({dryRunResult.errors.length})
+                  </p>
+                  {dryRunResult.errors.map((err) => (
+                    <div key={err.symbol} style={{ fontSize: "var(--fs-sm)", marginBottom: 4 }}>
+                      <span className="mono" style={{ fontWeight: 700 }}>{err.symbol}</span>
+                      <span className="dim" style={{ marginLeft: 8 }}>{err.message}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Action row */}
+          <div className="action-row" style={{ gap: 8, justifyContent: "flex-end", paddingTop: 4 }}>
+            <button className="btn-sm" onClick={onClose} disabled={executeLoading}>
+              取消
+            </button>
+            <button
+              className="btn-sm"
+              disabled={true}
+              title="等 Round 11 confirm gate"
+              aria-label="真實送出（Round 11 開放）"
+              style={{ opacity: 0.45, cursor: "not-allowed" }}
+            >
+              真實送出（R11）
+            </button>
+          </div>
+
+          {/* R11 notice */}
+          <p className="dim" style={{ fontSize: "var(--fs-xs)", textAlign: "right" }}>
+            真實送出功能將於 Round 11 開放（需 Jason confirm gate）
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── AutopilotExecutePanel [04] ────────────────────────────────────────────
+
+function AutopilotExecutePanel({ result }: { result: AutopilotExecuteResult }) {
+  const isKillSwitchHalted =
+    result.submitted.length === 0 &&
+    result.blocked.some((b) => b.blockedReason === "kill_switch");
+
+  return (
+    <>
+      <h3 className="ascii-head">
+        <span className="ascii-head-bracket">[04]</span>
+        Autopilot Execute · 執行結果
+      </h3>
+
+      <section className="panel hud-frame" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <header style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <div>
+            <p className="eyebrow">Run {result.runId.slice(0, 8)}</p>
+            <div className="dim" style={{ fontSize: "var(--fs-xs)" }}>
+              執行於 {safeDate(result.executedAt)} · dryRun: {result.dryRun ? "是" : "否"}
+            </div>
+          </div>
+          {isKillSwitchHalted ? (
+            <span className="badge-red">KILL SWITCH HALTED</span>
+          ) : null}
+        </header>
+
+        {/* KPI */}
+        <section className="kpi-strip">
+          <KpiCard label="總計" value={result.summary.total} />
+          <KpiCard label="送出" value={result.summary.submittedCount} tone="accent" />
+          <KpiCard label="封鎖" value={result.summary.blockedCount} tone="bear" />
+          <KpiCard label="錯誤" value={result.summary.errorCount} tone="warn" />
+        </section>
+
+        {/* SUBMITTED */}
+        {result.submitted.length > 0 ? (
+          <div>
+            <p className="eyebrow" style={{ color: "var(--accent)", marginBottom: 6 }}>
+              SUBMITTED ({result.submitted.length})
+            </p>
+            {result.submitted.map((order) => (
+              <ExecuteOrderRow key={order.symbol} order={order} />
+            ))}
+          </div>
+        ) : null}
+
+        {/* BLOCKED */}
+        {result.blocked.length > 0 ? (
+          <div>
+            <p className="eyebrow" style={{ color: "var(--bear)", marginBottom: 6 }}>
+              BLOCKED ({result.blocked.length})
+            </p>
+            {result.blocked.map((order) => (
+              <ExecuteOrderRow key={order.symbol} order={order} />
+            ))}
+          </div>
+        ) : null}
+
+        {/* ERRORS */}
+        {result.errors.length > 0 ? (
+          <div>
+            <p className="eyebrow" style={{ color: "var(--warn)", marginBottom: 6 }}>
+              ERRORS ({result.errors.length})
+            </p>
+            {result.errors.map((err) => (
+              <div key={err.symbol} style={{ fontSize: "var(--fs-sm)", marginBottom: 4 }}>
+                <span className="mono" style={{ fontWeight: 700 }}>{err.symbol}</span>
+                <span className="dim" style={{ marginLeft: 8 }}>{err.message}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
+    </>
+  );
+}
+
+// ── Order row components ───────────────────────────────────────────────────
+
+function DryRunOrderRow({ order }: { order: AutopilotOrderResult }) {
+  const sideLabel = order.side === "buy" ? "買" : "賣";
+  const sideBadge = order.side === "buy" ? "badge-green" : "badge-red";
+  const priceLabel = order.price !== null ? String(order.price) : "市價";
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        paddingBottom: 4,
+        borderBottom: "1px solid var(--line, #2a2a2a)",
+        marginBottom: 4,
+        flexWrap: "wrap"
+      }}
+    >
+      <span className="mono" style={{ fontWeight: 700, minWidth: 64 }}>{order.symbol}</span>
+      <span className={sideBadge}>{sideLabel}</span>
+      <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>× {order.quantity}</span>
+      <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>@ {priceLabel}</span>
+      {order.blockedReason ? (
+        <span className="dim" style={{ fontSize: "var(--fs-xs)" }}>封鎖：{order.blockedReason}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function ExecuteOrderRow({ order }: { order: AutopilotOrderResult }) {
+  const sideLabel = order.side === "buy" ? "買" : "賣";
+  const sideBadge = order.side === "buy" ? "badge-green" : "badge-red";
+  const priceLabel = order.price !== null ? String(order.price) : "市價";
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        paddingBottom: 4,
+        borderBottom: "1px solid var(--line, #2a2a2a)",
+        marginBottom: 4,
+        flexWrap: "wrap"
+      }}
+    >
+      <span className="mono" style={{ fontWeight: 700, minWidth: 64 }}>{order.symbol}</span>
+      <span className={sideBadge}>{sideLabel}</span>
+      <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>× {order.quantity}</span>
+      <span className="badge" style={{ fontSize: "var(--fs-xs)" }}>@ {priceLabel}</span>
+      {order.submitResult !== null ? (
+        <span className="badge-green" style={{ fontSize: "var(--fs-xs)" }}>[已送出]</span>
+      ) : null}
+      {order.blockedReason ? (
+        <span className="dim" style={{ fontSize: "var(--fs-xs)" }}>封鎖：{order.blockedReason}</span>
+      ) : null}
+    </div>
+  );
+}
+
+// ── Shared sub-components ──────────────────────────────────────────────────
 
 function SnapshotItemCard({
   item,
