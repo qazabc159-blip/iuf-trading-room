@@ -927,6 +927,25 @@ export async function getStrategyRunById(input: {
 // Autopilot Phase 1 — manual-trigger execute
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns the lot size (minimum tradeable unit) for a given market.
+ * TWSE and TPEX trade in lots of 1000 shares.
+ * US markets (NASDAQ, NYSE) trade in individual shares (lot = 1).
+ * Unknown or unspecified markets default to 1 (safe for US brokers).
+ */
+export function getLotSize(market: string): number {
+  switch (market) {
+    case "TWSE":
+    case "TPEX":
+      return 1000;
+    case "NASDAQ":
+    case "NYSE":
+    case "OTHER":
+    default:
+      return 1;
+  }
+}
+
 function resolveSideForIdea(
   direction: StrategyIdea["direction"],
   sidePolicy: AutopilotExecuteInput["sidePolicy"]
@@ -983,11 +1002,12 @@ export async function executeStrategyRun(input: {
     throw new Error(`strategy_run_not_found:${runId}`);
   }
 
-  // Determine idea candidates — prefer full items array, fall back to outputs
-  const candidates: Array<{ symbol: string; direction: StrategyIdea["direction"] }> =
+  // Determine idea candidates — prefer full items array, fall back to outputs.
+  // market is carried from items (StrategyIdea has market field); outputs (legacy) default to "" → getLotSize → 1.
+  const candidates: Array<{ symbol: string; direction: StrategyIdea["direction"]; market: string }> =
     run.items.length > 0
-      ? run.items.map((item) => ({ symbol: item.symbol, direction: item.direction }))
-      : run.outputs.map((output) => ({ symbol: output.symbol, direction: output.direction }));
+      ? run.items.map((item) => ({ symbol: item.symbol, direction: item.direction, market: item.market }))
+      : run.outputs.map((output) => ({ symbol: output.symbol, direction: output.direction, market: "" }));
 
   // Filter by explicit symbol list if provided
   const filtered =
@@ -996,7 +1016,7 @@ export async function executeStrategyRun(input: {
       : candidates;
 
   // Apply sidePolicy filter and cap at maxOrders
-  type Candidate = { symbol: string; direction: StrategyIdea["direction"]; side: "buy" | "sell" };
+  type Candidate = { symbol: string; direction: StrategyIdea["direction"]; market: string; side: "buy" | "sell" };
   const eligible: Candidate[] = [];
   for (const candidate of filtered) {
     if (eligible.length >= maxOrders) {
@@ -1006,7 +1026,7 @@ export async function executeStrategyRun(input: {
     if (side === null) {
       continue;
     }
-    eligible.push({ symbol: candidate.symbol, direction: candidate.direction, side });
+    eligible.push({ symbol: candidate.symbol, direction: candidate.direction, market: candidate.market, side });
   }
 
   if (eligible.length === 0) {
@@ -1057,7 +1077,7 @@ export async function executeStrategyRun(input: {
       continue;
     }
 
-    const quantity = deriveQuantity({ equity, sizePct, entryPrice, lotSize: 1 });
+    const quantity = deriveQuantity({ equity, sizePct, entryPrice, lotSize: getLotSize(candidate.market) });
     if (quantity <= 0) {
       blocked.push({
         symbol: candidate.symbol,

@@ -43,6 +43,7 @@ import {
 import {
   createStrategyRun,
   executeStrategyRun,
+  getLotSize,
   getStrategyIdeas,
   getStrategyRunById,
   listStrategyRuns
@@ -5827,4 +5828,33 @@ test("buildModeHintRows surfaces only non-allow lanes with stable order", () => 
     buildModeHintRows(undefined, { decision: "block" }),
     [{ mode: "execution", decision: "block" }]
   );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 (a) — getLotSize unit tests
+// ---------------------------------------------------------------------------
+
+test("getLotSize: TWSE returns 1000 (Taiwan lot unit)", () => {
+  assert.equal(getLotSize("TWSE"), 1000);
+});
+
+test("getLotSize: TPEX returns 1000 (same lot rule as TWSE)", () => {
+  assert.equal(getLotSize("TPEX"), 1000);
+});
+
+test("getLotSize: NASDAQ returns 1 (US equities, share-level granularity)", () => {
+  assert.equal(getLotSize("NASDAQ"), 1);
+});
+
+test("getLotSize: NYSE returns 1", () => {
+  assert.equal(getLotSize("NYSE"), 1);
+});
+
+test("getLotSize: OTHER returns 1 (safe default)", () => {
+  assert.equal(getLotSize("OTHER"), 1);
+});
+
+test("getLotSize: unknown market string returns 1 (safe default fallback)", () => {
+  assert.equal(getLotSize(""), 1);
+  assert.equal(getLotSize("UNKNOWN_EXCHANGE"), 1);
 });
