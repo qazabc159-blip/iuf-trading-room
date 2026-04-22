@@ -6563,3 +6563,102 @@ test("autopilot equal_weight: 1 candidate receives full budget (same as fixed_pc
     assert.equal(solo.quantity, 1000, "equal_weight N=1: full budget → same as fixed_pct");
   }
 });
+
+// Regression — R16 hotfix: quoteGate.decision must propagate to blockedReason
+// when riskCheck passes (no block guard / no kill_switch guard) but quoteGate
+// is blocked. Previously line 1250 compared against "risk_blocked" (the old
+// fallback name) which never matched the actual fallback "risk_unknown", so
+// quoteGate.decision was silently discarded and the caller always saw
+// "risk_unknown" instead of the real gate decision.
+test("autopilot executeStrategyRun: quoteGate decision propagates to blockedReason when risk passes but gate blocks", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `qg-regression-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  // Set up a company with a bullish signal so it becomes an eligible candidate.
+  const company = await repo.createCompany({
+    name: "QuoteGate Regression Co",
+    ticker: "QGR1",
+    market: "OTHER",
+    country: "US",
+    themeIds: [],
+    chainPosition: "Core",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
+    notes: "R16 quoteGate regression test."
+  });
+  await repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: "QGR1 bullish signal",
+    summary: "Bullish.",
+    confidence: 5,
+    themeIds: [],
+    companyIds: [company.id]
+  });
+
+  // Upsert a paper-source quote (source="paper") — this makes paper.decision="review"
+  // so quoteGate.decision="review_required" and quoteGate.blocked=true without override.
+  // The riskCheck will be "allow" (no block guards, no kill_switch).
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [{
+      symbol: "QGR1",
+      market: "OTHER",
+      source: "manual",
+      last: 100,
+      bid: 99,
+      ask: 101,
+      open: 99,
+      high: 101,
+      low: 98,
+      prevClose: 99,
+      volume: 1000,
+      changePct: 1.0,
+      timestamp: now
+    }]
+  });
+
+  // Relax trading hours so CI runs at any time of day.
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-default",
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "23:59"
+    }
+  });
+
+  const run = await createStrategyRun({
+    session, repo,
+    payload: { limit: 10, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const result = await executeStrategyRun({
+    session, repo, runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 1.0,
+      maxOrders: 5,
+      dryRun: true
+    }
+  });
+
+  // QGR1 must appear in blocked (riskCheck=allow but quoteGate blocked).
+  const qgr = result.blocked.find((b) => b.symbol === "QGR1");
+  assert.ok(qgr, "QGR1 should appear in blocked list");
+
+  // Key regression assertion: blockedReason must be the quoteGate decision
+  // ("review_required"), NOT "risk_unknown". If line 1250 still has the old
+  // "risk_blocked" comparand this test will fail.
+  assert.equal(
+    qgr?.blockedReason,
+    "review_required",
+    "blockedReason must propagate from quoteGate.decision, not fall back to risk_unknown"
+  );
+});

@@ -1247,7 +1247,7 @@ export async function executeStrategyRun(input: {
             }
           }
         }
-        if (result.quoteGate?.blocked && blockedReason === "risk_blocked") {
+        if (result.quoteGate?.blocked && blockedReason === "risk_unknown") {
           blockedReason = result.quoteGate.decision;
         }
         // Check paper-broker rejection via order status
