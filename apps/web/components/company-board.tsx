@@ -11,6 +11,7 @@ import type {
 } from "@iuf-trading-room/contracts";
 
 import { createCompany, getCompanies, getCompanyGraph, getThemes } from "@/lib/api";
+import { industryLabel } from "@/lib/industry-i18n";
 
 const tiers: BeneficiaryTier[] = ["Core", "Direct", "Indirect", "Observation"];
 const tierLabel: Record<string, string> = { Core: "核心", Direct: "直接", Indirect: "間接", Observation: "觀察" };
@@ -136,7 +137,7 @@ export function CompanyBoard() {
                 <strong>分類</strong>
                 <span className="badge">{tierLabel[selected.beneficiaryTier] ?? selected.beneficiaryTier}</span>
               </div>
-              <p className="record-meta">{selected.market} / {selected.country} / {selected.chainPosition}</p>
+              <p className="record-meta">{selected.market} / {selected.country} / {industryLabel(selected.chainPosition)}</p>
             </div>
 
             <div className="record-card">
@@ -249,7 +250,7 @@ export function CompanyBoard() {
         <input className="search-input" placeholder="搜尋名稱或代號..." value={search} onChange={(e) => setSearch(e.target.value)} />
         <select value={filterSector} onChange={(e) => setFilterSector(e.target.value)}>
           <option value="">全部產業 ({sectors.length})</option>
-          {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
+          {sectors.map((s) => <option key={s} value={s}>{industryLabel(s)}</option>)}
         </select>
         <select value={filterTier} onChange={(e) => setFilterTier(e.target.value)}>
           <option value="">全部層級</option>
@@ -327,7 +328,7 @@ export function CompanyBoard() {
                     <tr key={c.id} onClick={() => setSelected(c)} style={{ cursor: "pointer" }}>
                       <td className="mono" style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{c.ticker}</td>
                       <td>{c.name}</td>
-                      <td className="dim" style={{ fontSize: "var(--fs-sm)" }}>{c.chainPosition}</td>
+                      <td className="dim" style={{ fontSize: "var(--fs-sm)" }}>{industryLabel(c.chainPosition)}</td>
                       <td><span className="badge" style={{ fontSize: "var(--fs-xs)", padding: "2px 7px" }}>{tierLabel[c.beneficiaryTier] ?? c.beneficiaryTier}</span></td>
                       <td className="mono dim" style={{ fontSize: "var(--fs-sm)", whiteSpace: "nowrap" }}>{formatExposureSummary(c.exposure)}</td>
                     </tr>

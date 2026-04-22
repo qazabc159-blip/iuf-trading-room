@@ -114,6 +114,28 @@ function choosePreferredSearchResult(
   return candidate.country === "TW" && current.country !== "TW" ? candidate : current;
 }
 
+// Low-confidence relations (< threshold) are dropped from graph views, and
+// duplicates pointing at the same (direction, target) are collapsed keeping the
+// highest-confidence edge. My-TW-Coverage graph extraction emits noisy raw
+// relations (e.g. same customer tagged both as `customer` and `unknown`) —
+// without this cleanup the UI shows targets repeating with inconsistent types.
+const RELATION_CONFIDENCE_THRESHOLD = 0.3;
+
+function dedupeRelationsByTarget(relations: CompanyRelation[]): CompanyRelation[] {
+  const chosen = new Map<string, CompanyRelation>();
+  for (const relation of relations) {
+    if (relation.confidence < RELATION_CONFIDENCE_THRESHOLD) {
+      continue;
+    }
+    const key = `${relation.companyId}::${relation.targetCompanyId ?? normalizeLabel(relation.targetLabel)}`;
+    const existing = chosen.get(key);
+    if (!existing || relation.confidence > existing.confidence) {
+      chosen.set(key, relation);
+    }
+  }
+  return [...chosen.values()];
+}
+
 export function buildCompanyGraphView(input: {
   focusCompany: Company;
   companies: Company[];
@@ -130,18 +152,18 @@ export function buildCompanyGraphView(input: {
   const keywordCounts = buildKeywordCountMap(input.keywords);
   const focusLabel = normalizeLabel(input.focusCompany.name);
 
-  const outboundRelations = input.relations
-    .filter((relation) => relation.companyId === input.focusCompany.id)
-    .sort(relationSort);
+  const outboundRelations = dedupeRelationsByTarget(
+    input.relations.filter((relation) => relation.companyId === input.focusCompany.id)
+  ).sort(relationSort);
 
-  const inboundRelations = input.relations
-    .filter(
+  const inboundRelations = dedupeRelationsByTarget(
+    input.relations.filter(
       (relation) =>
         relation.companyId !== input.focusCompany.id &&
         (relation.targetCompanyId === input.focusCompany.id ||
           normalizeLabel(relation.targetLabel) === focusLabel)
     )
-    .sort(relationSort);
+  ).sort(relationSort);
 
   const selectedOutbound = outboundRelations.slice(0, limit);
   const remaining = Math.max(0, limit - selectedOutbound.length);

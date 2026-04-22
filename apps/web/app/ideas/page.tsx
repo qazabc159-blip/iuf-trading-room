@@ -24,7 +24,8 @@ import {
   MODE_LABEL,
   QUALITY_BADGE,
   QUALITY_LABEL,
-  SORT_LABEL
+  SORT_LABEL,
+  reasonLabel
 } from "@/lib/strategy-vocab";
 
 const DEFAULT_QUERY: StrategyIdeasQueryParams = {
@@ -383,20 +384,20 @@ function IdeaCard({ item, mode }: { item: StrategyIdea; mode: StrategyIdeasDecis
 
       <div style={{ fontSize: "var(--fs-sm)" }}>
         <span className="eyebrow" style={{ marginRight: 6 }}>主要理由</span>
-        <span>{rationale.primaryReason}</span>
+        <span>{reasonLabel(rationale.primaryReason)}</span>
       </div>
 
       {rationale.marketData.primaryReason &&
       rationale.marketData.primaryReason !== rationale.primaryReason ? (
         <div className="dim" style={{ fontSize: "var(--fs-xs)" }}>
-          行情：{rationale.marketData.primaryReason}
+          行情：{reasonLabel(rationale.marketData.primaryReason)}
         </div>
       ) : null}
 
       {item.quality.primaryReason &&
       item.quality.primaryReason !== rationale.primaryReason ? (
         <div className="dim" style={{ fontSize: "var(--fs-xs)" }}>
-          品質：{item.quality.primaryReason}
+          品質：{reasonLabel(item.quality.primaryReason)}
         </div>
       ) : null}
 

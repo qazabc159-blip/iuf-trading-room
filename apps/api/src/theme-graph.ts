@@ -73,6 +73,29 @@ type ProjectedRelation = {
   direction: ThemeGraphEdge["direction"];
 };
 
+// My-TW-Coverage import 會把同一個 (source, target) 同時打成 customer 又打成 unknown，
+// confidence 低於 0.3 的也會灌進來。UI 吃到會顯示一串亂碼感重複關係 —
+// 這裡在 projection 後做 dedupe + threshold，跟 company-graph 那邊做的是同一件事。
+const RELATION_CONFIDENCE_THRESHOLD = 0.3;
+
+function dedupeProjectedRelations(items: ProjectedRelation[]): ProjectedRelation[] {
+  const chosen = new Map<string, ProjectedRelation>();
+  for (const item of items) {
+    if (item.relation.confidence < RELATION_CONFIDENCE_THRESHOLD) {
+      continue;
+    }
+    const targetKey = item.targetCompany
+      ? `company:${item.targetCompany.id}`
+      : `label:${normalizeLabel(item.relation.targetLabel) || item.relation.targetLabel}`;
+    const key = `${item.sourceCompany.id}::${targetKey}`;
+    const existing = chosen.get(key);
+    if (!existing || item.relation.confidence > existing.relation.confidence) {
+      chosen.set(key, item);
+    }
+  }
+  return [...chosen.values()];
+}
+
 function directionPriority(direction: ThemeGraphEdge["direction"]) {
   switch (direction) {
     case "internal":
@@ -131,7 +154,7 @@ export function buildThemeGraphView(input: {
   const relationCounts = buildRelationCountMap(input.relations);
   const keywordCounts = buildKeywordCountMap(input.keywords);
 
-  const relevantRelations = input.relations
+  const projectedRelations = input.relations
     .map((relation) => {
       const sourceCompany = companiesById.get(relation.companyId);
       if (!sourceCompany) {
@@ -160,8 +183,9 @@ export function buildThemeGraphView(input: {
         direction
       } satisfies ProjectedRelation;
     })
-    .filter((item): item is ProjectedRelation => item !== null)
-    .sort(relationSort);
+    .filter((item): item is ProjectedRelation => item !== null);
+
+  const relevantRelations = dedupeProjectedRelations(projectedRelations).sort(relationSort);
 
   const selectedRelations = relevantRelations.slice(0, edgeLimit);
   const nodes = new Map<string, ThemeGraphView["nodes"][number]>();
