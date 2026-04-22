@@ -71,6 +71,26 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+async function fetchCurrentMaxPerTradePct(accountId: string): Promise<number> {
+  const url = `${BASE_URL}/api/v1/risk/limits?accountId=${encodeURIComponent(accountId)}`;
+  const res = await fetch(url, {
+    headers: { "x-workspace-slug": WORKSPACE_SLUG }
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`GET /api/v1/risk/limits → HTTP ${res.status}: ${text}`);
+  }
+  const json = JSON.parse(text) as { data: { maxPerTradePct: number } };
+  return json.data.maxPerTradePct;
+}
+
+async function restoreMaxPerTradePct(accountId: string, value: number): Promise<void> {
+  await apiPost("/api/v1/risk/limits", {
+    accountId,
+    maxPerTradePct: value
+  });
+}
+
 async function main() {
   console.log(c.bold("\n=== Autopilot dryRun Ops Sequence (R16.5 hotfix) ==="));
   console.log(c.dim(`  base:              ${BASE_URL}`));
@@ -136,107 +156,131 @@ async function main() {
   const runSummary = runRes.data.summary;
   console.log(c.green("  PASS") + c.dim(` runId=${runId.slice(0, 8)}...  total=${runSummary.total}  bullish=${runSummary.bullish}  neutral=${runSummary.neutral}  bearish=${runSummary.bearish}  (${Date.now() - t2}ms)`));
 
-  // ─── Step 2.5: override paper account risk limit so TWSE lots pass max_per_trade ──
-  // DEFAULT maxPerTradePct=1%. One TWSE lot of 2330@875 = 8.75% of 10M equity,
-  // which exceeds 1% and gets blocked.  We set the paper-default account limit to
-  // SMOKE_MAX_PER_TRADE_PCT (default 10%) so dryRun can reach submitted>0.
-  // Real-money accounts have separate persisted risk records and are unaffected.
-  console.log(c.cyan(`\n[ Step 2.5 ] POST /api/v1/risk/limits  accountId=${SMOKE_ACCOUNT_ID}  maxPerTradePct=${SMOKE_MAX_PER_TRADE_PCT}%`));
-  const t25 = Date.now();
-  await apiPost("/api/v1/risk/limits", {
-    accountId: SMOKE_ACCOUNT_ID,
-    maxPerTradePct: SMOKE_MAX_PER_TRADE_PCT
-  });
-  console.log(c.green("  PASS") + c.dim(` paper account maxPerTradePct=${SMOKE_MAX_PER_TRADE_PCT}% set (${Date.now() - t25}ms)`));
+  // ─── Step 2.4: GET original maxPerTradePct (backup before override) ───────
+  console.log(c.cyan(`\n[ Step 2.4 ] GET /api/v1/risk/limits  accountId=${SMOKE_ACCOUNT_ID}  (backup before override)`));
+  const t24 = Date.now();
+  const originalMaxPerTrade = await fetchCurrentMaxPerTradePct(SMOKE_ACCOUNT_ID);
+  console.log(c.green("  PASS") + c.dim(` originalMaxPerTradePct=${originalMaxPerTrade}% captured (${Date.now() - t24}ms)`));
 
-  // ─── Step 3: execute dryRun ────────────────────────────────────────────────
-  console.log(c.cyan(`\n[ Step 3 ] POST /api/v1/strategy/runs/:id/execute  dryRun=true sizePct=${SMOKE_SIZE_PCT} sidePolicy=bullish_long`));
-  const t3 = Date.now();
-  const execRes = await apiPost<{
-    data: {
-      runId: string;
-      dryRun: boolean;
-      executedAt: string;
-      submitted: Array<{ symbol: string; side: string; quantity: number; price: number | null; blockedReason: string | null }>;
-      blocked: Array<{ symbol: string; side: string; quantity: number; price: number | null; blockedReason: string | null }>;
-      errors: Array<{ symbol: string; message: string }>;
-      summary: { total: number; submittedCount: number; blockedCount: number; errorCount: number };
-    };
-  }>(
-    `/api/v1/strategy/runs/${runId}/execute`,
-    {
+  // ─── Steps 2.5 + 3 wrapped in try/finally for guaranteed rollback ─────────
+  // This ensures that even if execute throws, even if process.exit fires inside
+  // a catch, the finally block always restores maxPerTradePct to its original value.
+  try {
+    // ─── Step 2.5: override paper account risk limit so TWSE lots pass max_per_trade ──
+    // DEFAULT maxPerTradePct=1%. One TWSE lot of 2330@875 = 8.75% of 10M equity,
+    // which exceeds 1% and gets blocked.  We set the paper-default account limit to
+    // SMOKE_MAX_PER_TRADE_PCT (default 10%) so dryRun can reach submitted>0.
+    // Real-money accounts have separate persisted risk records and are unaffected.
+    console.log(c.cyan(`\n[ Step 2.5 ] POST /api/v1/risk/limits  accountId=${SMOKE_ACCOUNT_ID}  maxPerTradePct=${SMOKE_MAX_PER_TRADE_PCT}%`));
+    const t25 = Date.now();
+    await apiPost("/api/v1/risk/limits", {
       accountId: SMOKE_ACCOUNT_ID,
-      sidePolicy: "bullish_long",
-      sizeMode: "fixed_pct",
-      sizePct: SMOKE_SIZE_PCT,
-      maxOrders: 5,
-      dryRun: true
+      maxPerTradePct: SMOKE_MAX_PER_TRADE_PCT
+    });
+    console.log(c.green("  PASS") + c.dim(` paper account maxPerTradePct=${SMOKE_MAX_PER_TRADE_PCT}% set (${Date.now() - t25}ms)`));
+
+    // ─── Step 3: execute dryRun ──────────────────────────────────────────────
+    console.log(c.cyan(`\n[ Step 3 ] POST /api/v1/strategy/runs/:id/execute  dryRun=true sizePct=${SMOKE_SIZE_PCT} sidePolicy=bullish_long`));
+    const t3 = Date.now();
+    const execRes = await apiPost<{
+      data: {
+        runId: string;
+        dryRun: boolean;
+        executedAt: string;
+        submitted: Array<{ symbol: string; side: string; quantity: number; price: number | null; blockedReason: string | null }>;
+        blocked: Array<{ symbol: string; side: string; quantity: number; price: number | null; blockedReason: string | null }>;
+        errors: Array<{ symbol: string; message: string }>;
+        summary: { total: number; submittedCount: number; blockedCount: number; errorCount: number };
+      };
+    }>(
+      `/api/v1/strategy/runs/${runId}/execute`,
+      {
+        accountId: SMOKE_ACCOUNT_ID,
+        sidePolicy: "bullish_long",
+        sizeMode: "fixed_pct",
+        sizePct: SMOKE_SIZE_PCT,
+        maxOrders: 5,
+        dryRun: true
+      }
+    );
+    const exec = execRes.data;
+    const elapsedStep3 = Date.now() - t3;
+    console.log(c.green("  PASS") + c.dim(` (${elapsedStep3}ms)`));
+
+    // ─── Step 4: print breakdown ─────────────────────────────────────────────
+    console.log(c.bold("\n[ Result Breakdown ]"));
+    const s = exec.summary;
+    console.log(`  total=${s.total}  submitted=${c.green(String(s.submittedCount))}  blocked=${s.blockedCount > 0 ? c.yellow(String(s.blockedCount)) : "0"}  errors=${s.errorCount > 0 ? c.red(String(s.errorCount)) : "0"}`);
+
+    if (exec.submitted.length > 0) {
+      console.log(c.bold("\n  Submitted:"));
+      for (const o of exec.submitted) {
+        console.log(`    ${c.green(o.symbol)}  side=${o.side}  qty=${o.quantity}  price=${o.price ?? "null"}`);
+      }
     }
-  );
-  const exec = execRes.data;
-  const elapsedStep3 = Date.now() - t3;
-  console.log(c.green("  PASS") + c.dim(` (${elapsedStep3}ms)`));
 
-  // ─── Step 4: print breakdown ───────────────────────────────────────────────
-  console.log(c.bold("\n[ Result Breakdown ]"));
-  const s = exec.summary;
-  console.log(`  total=${s.total}  submitted=${c.green(String(s.submittedCount))}  blocked=${s.blockedCount > 0 ? c.yellow(String(s.blockedCount)) : "0"}  errors=${s.errorCount > 0 ? c.red(String(s.errorCount)) : "0"}`);
+    if (exec.blocked.length > 0) {
+      // Tally blockedReason distribution
+      const reasonCounts = new Map<string, number>();
+      for (const b of exec.blocked) {
+        const r = b.blockedReason ?? "unknown";
+        reasonCounts.set(r, (reasonCounts.get(r) ?? 0) + 1);
+      }
 
-  if (exec.submitted.length > 0) {
-    console.log(c.bold("\n  Submitted:"));
-    for (const o of exec.submitted) {
-      console.log(`    ${c.green(o.symbol)}  side=${o.side}  qty=${o.quantity}  price=${o.price ?? "null"}`);
+      console.log(c.bold("\n  Blocked:"));
+      for (const b of exec.blocked) {
+        console.log(`    ${c.yellow(b.symbol)}  reason=${c.yellow(b.blockedReason ?? "unknown")}  qty=${b.quantity}  price=${b.price ?? "null"}`);
+      }
+
+      console.log(c.bold("\n  blockedReason distribution:"));
+      for (const [reason, count] of [...reasonCounts.entries()].sort()) {
+        console.log(`    ${c.yellow(reason)}: ${count}`);
+      }
+    }
+
+    if (exec.errors.length > 0) {
+      console.log(c.bold("\n  Errors:"));
+      for (const e of exec.errors) {
+        console.log(`    ${c.red(e.symbol)}: ${e.message}`);
+      }
+    }
+
+    // Final assessment
+    console.log("");
+    if (s.submittedCount > 0) {
+      console.log(c.green("  Gate CLEARED — submitted > 0 (dryRun). Ready for real execution gate."));
+    } else if (exec.blocked.some((b) => b.blockedReason === "trading_hours")) {
+      console.log(c.yellow("  trading_hours gate — run during Taiwan trading hours (Mon-Fri 09:00-13:30 TST)."));
+    } else if (exec.blocked.some((b) => b.blockedReason === "no_price")) {
+      console.log(c.red("  no_price gate — manual-quotes may have expired. Re-run within 60s of quote seed."));
+    } else if (exec.blocked.some((b) => b.blockedReason === "kill_switch")) {
+      console.log(c.red("  kill_switch engaged — check risk/kill-switch endpoint."));
+    } else if (exec.blocked.some((b) => b.blockedReason === "max_per_trade")) {
+      console.log(c.red("  max_per_trade gate — TWSE lot-size too large for maxPerTradePct limit."));
+      console.log(c.dim(`  Tip: set SMOKE_MAX_PER_TRADE_PCT env var (current=${SMOKE_MAX_PER_TRADE_PCT}) or raise equity.`));
+    } else if (exec.blocked.some((b) => b.blockedReason === "quantity_zero")) {
+      console.log(c.red("  quantity_zero gate — sizePct too small to buy 1 TWSE lot."));
+      console.log(c.dim(`  Tip: set SMOKE_SIZE_PCT env var (current=${SMOKE_SIZE_PCT}). Min ~9% for 2330@875 with equity=10M.`));
+    } else if (s.total === 0) {
+      console.log(c.yellow("  No qualifying ideas — check signal seeds and sidePolicy."));
+    } else {
+      console.log(c.dim("  See breakdown above for details."));
+    }
+    console.log("");
+  } finally {
+    // ─── Rollback: restore original maxPerTradePct unconditionally ──────────
+    // Fires on success, exception, and any error path.
+    // If rollback itself fails, we log + exit non-zero so the caller knows.
+    try {
+      await restoreMaxPerTradePct(SMOKE_ACCOUNT_ID, originalMaxPerTrade);
+      console.log(c.dim(`[smoke] rolled back maxPerTradePct to ${originalMaxPerTrade}% (accountId=${SMOKE_ACCOUNT_ID})`));
+    } catch (rollbackErr) {
+      console.error(c.red(`[smoke] ROLLBACK FAILED — maxPerTradePct may still be ${SMOKE_MAX_PER_TRADE_PCT}% on accountId=${SMOKE_ACCOUNT_ID}`));
+      console.error(c.red(`[smoke] Manual fix required: POST /api/v1/risk/limits { accountId: "${SMOKE_ACCOUNT_ID}", maxPerTradePct: ${originalMaxPerTrade} }`));
+      console.error(rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr));
+      process.exit(2);
     }
   }
-
-  if (exec.blocked.length > 0) {
-    // Tally blockedReason distribution
-    const reasonCounts = new Map<string, number>();
-    for (const b of exec.blocked) {
-      const r = b.blockedReason ?? "unknown";
-      reasonCounts.set(r, (reasonCounts.get(r) ?? 0) + 1);
-    }
-
-    console.log(c.bold("\n  Blocked:"));
-    for (const b of exec.blocked) {
-      console.log(`    ${c.yellow(b.symbol)}  reason=${c.yellow(b.blockedReason ?? "unknown")}  qty=${b.quantity}  price=${b.price ?? "null"}`);
-    }
-
-    console.log(c.bold("\n  blockedReason distribution:"));
-    for (const [reason, count] of [...reasonCounts.entries()].sort()) {
-      console.log(`    ${c.yellow(reason)}: ${count}`);
-    }
-  }
-
-  if (exec.errors.length > 0) {
-    console.log(c.bold("\n  Errors:"));
-    for (const e of exec.errors) {
-      console.log(`    ${c.red(e.symbol)}: ${e.message}`);
-    }
-  }
-
-  // Final assessment
-  console.log("");
-  if (s.submittedCount > 0) {
-    console.log(c.green("  Gate CLEARED — submitted > 0 (dryRun). Ready for real execution gate."));
-  } else if (exec.blocked.some((b) => b.blockedReason === "trading_hours")) {
-    console.log(c.yellow("  trading_hours gate — run during Taiwan trading hours (Mon-Fri 09:00-13:30 TST)."));
-  } else if (exec.blocked.some((b) => b.blockedReason === "no_price")) {
-    console.log(c.red("  no_price gate — manual-quotes may have expired. Re-run within 60s of quote seed."));
-  } else if (exec.blocked.some((b) => b.blockedReason === "kill_switch")) {
-    console.log(c.red("  kill_switch engaged — check risk/kill-switch endpoint."));
-  } else if (exec.blocked.some((b) => b.blockedReason === "max_per_trade")) {
-    console.log(c.red("  max_per_trade gate — TWSE lot-size too large for maxPerTradePct limit."));
-    console.log(c.dim(`  Tip: set SMOKE_MAX_PER_TRADE_PCT env var (current=${SMOKE_MAX_PER_TRADE_PCT}) or raise equity.`));
-  } else if (exec.blocked.some((b) => b.blockedReason === "quantity_zero")) {
-    console.log(c.red("  quantity_zero gate — sizePct too small to buy 1 TWSE lot."));
-    console.log(c.dim(`  Tip: set SMOKE_SIZE_PCT env var (current=${SMOKE_SIZE_PCT}). Min ~9% for 2330@875 with equity=10M.`));
-  } else if (s.total === 0) {
-    console.log(c.yellow("  No qualifying ideas — check signal seeds and sidePolicy."));
-  } else {
-    console.log(c.dim("  See breakdown above for details."));
-  }
-  console.log("");
 }
 
 main().catch((err) => {
