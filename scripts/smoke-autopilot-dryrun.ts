@@ -4,21 +4,45 @@
  * One-shot helper that runs the R15 ops sequence against a live API server:
  *   1. POST /api/v1/market-data/manual-quotes  (seed fresh prices for 2330 + 6488)
  *   2. POST /api/v1/strategy/runs              (create run with includeBlocked=true)
- *   3. POST /api/v1/strategy/runs/:id/execute  (dryRun=true, sizePct=10, sidePolicy=bullish_long)
+ *   2.5 POST /api/v1/risk/limits               (override paper account maxPerTradePct so TWSE
+ *                                               lot-size orders pass the risk guard)
+ *   3. POST /api/v1/strategy/runs/:id/execute  (dryRun=true, sizePct=SMOKE_SIZE_PCT, sidePolicy=bullish_long)
  *   4. Print submitted / blocked / errors breakdown with blockedReason distribution
  *
  * Usage:
  *   pnpm smoke:autopilot:dryrun
  *   BASE_URL=http://127.0.0.1:3001 pnpm smoke:autopilot:dryrun
+ *   SMOKE_SIZE_PCT=10 SMOKE_MAX_PER_TRADE_PCT=10 pnpm smoke:autopilot:dryrun
  *
  * Defaults to production API if BASE_URL is not set.
  * Always dryRun=true — never sends real orders.
+ *
+ * --- Why SMOKE_SIZE_PCT default is 10 (not 1) ---
+ * TWSE/TPEX trades in lots of 1000 shares.  With equity=10,000,000 TWD:
+ *   sizePct=1  → budget=100,000 → floor(100k/875/1000)*1000 = 0 shares (quantity_zero)
+ *   sizePct=10 → budget=1,000,000 → floor(1M/875/1000)*1000 = 1,000 shares (1 lot)
+ * Lowering sizePct below ~9% produces qty=0 for 2330@875 — a quantity_zero block,
+ * which is *worse* than max_per_trade.  sizePct=10 is the minimum that yields ≥1 lot.
+ *
+ * --- Why SMOKE_MAX_PER_TRADE_PCT default is 10 ---
+ * DEFAULT risk maxPerTradePct = 1%.  One lot of 2330@875 = 875k/10M = 8.75% > 1%.
+ * This smoke helper overrides *only the paper-default account* risk limit to 10%
+ * so the dryRun path can reach submitted>0.  Production real-money accounts are
+ * governed by their own (separately persisted) risk limit records and are unaffected.
  */
 
 import process from "node:process";
 
 const BASE_URL = process.env.BASE_URL ?? "https://api-production-8f08.up.railway.app";
 const WORKSPACE_SLUG = process.env.WORKSPACE_SLUG ?? "primary-desk";
+
+// Sizing: default 10 is the minimum sizePct that yields ≥1 TWSE lot at 2330@875
+// with equity=10M.  Lowering to 1 would produce qty=0 (quantity_zero blocked).
+const SMOKE_SIZE_PCT = Number(process.env.SMOKE_SIZE_PCT ?? "10");
+// Risk override: sets paper-default account maxPerTradePct before execute so that
+// TWSE lot-size orders (8-9% of equity) pass the max_per_trade guard.
+const SMOKE_MAX_PER_TRADE_PCT = Number(process.env.SMOKE_MAX_PER_TRADE_PCT ?? "10");
+const SMOKE_ACCOUNT_ID = process.env.SMOKE_ACCOUNT_ID ?? "paper-default";
 
 const noColor = !process.stdout.isTTY || process.env.NO_COLOR !== undefined;
 const c = {
@@ -48,10 +72,13 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function main() {
-  console.log(c.bold("\n=== Autopilot dryRun Ops Sequence (R15 one-shot) ==="));
-  console.log(c.dim(`  base: ${BASE_URL}`));
-  console.log(c.dim(`  workspace: ${WORKSPACE_SLUG}`));
-  console.log(c.dim("  dryRun: true (no orders submitted)\n"));
+  console.log(c.bold("\n=== Autopilot dryRun Ops Sequence (R16.5 hotfix) ==="));
+  console.log(c.dim(`  base:              ${BASE_URL}`));
+  console.log(c.dim(`  workspace:         ${WORKSPACE_SLUG}`));
+  console.log(c.dim(`  accountId:         ${SMOKE_ACCOUNT_ID}`));
+  console.log(c.dim(`  sizePct:           ${SMOKE_SIZE_PCT}%  (env SMOKE_SIZE_PCT)`));
+  console.log(c.dim(`  maxPerTradePct:    ${SMOKE_MAX_PER_TRADE_PCT}%  (env SMOKE_MAX_PER_TRADE_PCT — paper account override)`));
+  console.log(c.dim("  dryRun:            true (no orders submitted)\n"));
 
   // ─── Step 1: seed fresh manual quotes ─────────────────────────────────────
   console.log(c.cyan("[ Step 1 ] POST /api/v1/market-data/manual-quotes"));
@@ -109,8 +136,21 @@ async function main() {
   const runSummary = runRes.data.summary;
   console.log(c.green("  PASS") + c.dim(` runId=${runId.slice(0, 8)}...  total=${runSummary.total}  bullish=${runSummary.bullish}  neutral=${runSummary.neutral}  bearish=${runSummary.bearish}  (${Date.now() - t2}ms)`));
 
+  // ─── Step 2.5: override paper account risk limit so TWSE lots pass max_per_trade ──
+  // DEFAULT maxPerTradePct=1%. One TWSE lot of 2330@875 = 8.75% of 10M equity,
+  // which exceeds 1% and gets blocked.  We set the paper-default account limit to
+  // SMOKE_MAX_PER_TRADE_PCT (default 10%) so dryRun can reach submitted>0.
+  // Real-money accounts have separate persisted risk records and are unaffected.
+  console.log(c.cyan(`\n[ Step 2.5 ] POST /api/v1/risk/limits  accountId=${SMOKE_ACCOUNT_ID}  maxPerTradePct=${SMOKE_MAX_PER_TRADE_PCT}%`));
+  const t25 = Date.now();
+  await apiPost("/api/v1/risk/limits", {
+    accountId: SMOKE_ACCOUNT_ID,
+    maxPerTradePct: SMOKE_MAX_PER_TRADE_PCT
+  });
+  console.log(c.green("  PASS") + c.dim(` paper account maxPerTradePct=${SMOKE_MAX_PER_TRADE_PCT}% set (${Date.now() - t25}ms)`));
+
   // ─── Step 3: execute dryRun ────────────────────────────────────────────────
-  console.log(c.cyan("\n[ Step 3 ] POST /api/v1/strategy/runs/:id/execute  dryRun=true sizePct=10 sidePolicy=bullish_long"));
+  console.log(c.cyan(`\n[ Step 3 ] POST /api/v1/strategy/runs/:id/execute  dryRun=true sizePct=${SMOKE_SIZE_PCT} sidePolicy=bullish_long`));
   const t3 = Date.now();
   const execRes = await apiPost<{
     data: {
@@ -125,10 +165,10 @@ async function main() {
   }>(
     `/api/v1/strategy/runs/${runId}/execute`,
     {
-      accountId: "paper-default",
+      accountId: SMOKE_ACCOUNT_ID,
       sidePolicy: "bullish_long",
       sizeMode: "fixed_pct",
-      sizePct: 10,
+      sizePct: SMOKE_SIZE_PCT,
       maxOrders: 5,
       dryRun: true
     }
@@ -185,6 +225,12 @@ async function main() {
     console.log(c.red("  no_price gate — manual-quotes may have expired. Re-run within 60s of quote seed."));
   } else if (exec.blocked.some((b) => b.blockedReason === "kill_switch")) {
     console.log(c.red("  kill_switch engaged — check risk/kill-switch endpoint."));
+  } else if (exec.blocked.some((b) => b.blockedReason === "max_per_trade")) {
+    console.log(c.red("  max_per_trade gate — TWSE lot-size too large for maxPerTradePct limit."));
+    console.log(c.dim(`  Tip: set SMOKE_MAX_PER_TRADE_PCT env var (current=${SMOKE_MAX_PER_TRADE_PCT}) or raise equity.`));
+  } else if (exec.blocked.some((b) => b.blockedReason === "quantity_zero")) {
+    console.log(c.red("  quantity_zero gate — sizePct too small to buy 1 TWSE lot."));
+    console.log(c.dim(`  Tip: set SMOKE_SIZE_PCT env var (current=${SMOKE_SIZE_PCT}). Min ~9% for 2330@875 with equity=10M.`));
   } else if (s.total === 0) {
     console.log(c.yellow("  No qualifying ideas — check signal seeds and sidePolicy."));
   } else {
