@@ -197,8 +197,9 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       .where(eq(themes.workspaceId, workspace.id))
       .orderBy(desc(themes.updatedAt));
 
-    return rows.map((row) =>
-      themeSchema.parse({
+    const results = [];
+    for (const row of rows) {
+      const parsed = themeSchema.safeParse({
         id: row.id,
         name: row.name,
         slug: row.slug,
@@ -212,8 +213,17 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
         observationPoolCount: row.observationPoolCount,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString()
-      })
-    );
+      });
+      if (parsed.success) {
+        results.push(parsed.data);
+      } else {
+        // Log bad row so we can identify and fix it
+        console.error(
+          `[listThemes] skipping invalid row id=${row.id} slug="${row.slug}" errors=${JSON.stringify(parsed.error.flatten())}`
+        );
+      }
+    }
+    return results;
   }
 
   async getTheme(themeId: string, options?: SessionOptions) {
