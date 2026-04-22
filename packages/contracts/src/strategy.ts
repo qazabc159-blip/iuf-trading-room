@@ -414,7 +414,10 @@ export const autopilotOrderResultSchema = z.object({
   price: z.number().nullable(),
   submitResult: submitOrderResultSchema.nullable(),
   blocked: z.boolean(),
-  blockedReason: z.string().nullable()
+  blockedReason: z.string().nullable(),
+  // R17: advisory flag for dryRun+review_required soft-pass
+  requiresReview: z.boolean().optional(),
+  reviewReason: z.string().optional()
 });
 
 export const autopilotExecuteResultSchema = z.object({

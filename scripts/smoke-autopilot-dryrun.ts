@@ -187,7 +187,7 @@ async function main() {
         runId: string;
         dryRun: boolean;
         executedAt: string;
-        submitted: Array<{ symbol: string; side: string; quantity: number; price: number | null; blockedReason: string | null }>;
+        submitted: Array<{ symbol: string; side: string; quantity: number; price: number | null; blockedReason: string | null; requiresReview?: boolean; reviewReason?: string }>;
         blocked: Array<{ symbol: string; side: string; quantity: number; price: number | null; blockedReason: string | null }>;
         errors: Array<{ symbol: string; message: string }>;
         summary: { total: number; submittedCount: number; blockedCount: number; errorCount: number };
@@ -213,9 +213,11 @@ async function main() {
     console.log(`  total=${s.total}  submitted=${c.green(String(s.submittedCount))}  blocked=${s.blockedCount > 0 ? c.yellow(String(s.blockedCount)) : "0"}  errors=${s.errorCount > 0 ? c.red(String(s.errorCount)) : "0"}`);
 
     if (exec.submitted.length > 0) {
-      console.log(c.bold("\n  Submitted:"));
+      const advisoryCount = exec.submitted.filter((o) => o.requiresReview).length;
+      console.log(c.bold("\n  Submitted:") + (advisoryCount > 0 ? c.yellow(` (${advisoryCount} advisory requiresReview)`) : ""));
       for (const o of exec.submitted) {
-        console.log(`    ${c.green(o.symbol)}  side=${o.side}  qty=${o.quantity}  price=${o.price ?? "null"}`);
+        const advisoryHint = o.requiresReview ? c.yellow(" [requiresReview]") : "";
+        console.log(`    ${c.green(o.symbol)}  side=${o.side}  qty=${o.quantity}  price=${o.price ?? "null"}${advisoryHint}`);
       }
     }
 
@@ -248,7 +250,13 @@ async function main() {
     // Final assessment
     console.log("");
     if (s.submittedCount > 0) {
-      console.log(c.green("  Gate CLEARED — submitted > 0 (dryRun). Ready for real execution gate."));
+      const advisorySubmits = exec.submitted.filter((o) => o.requiresReview);
+      if (advisorySubmits.length > 0) {
+        console.log(c.green("  Gate CLEARED — submitted > 0 (dryRun).") + c.yellow(` ${advisorySubmits.length} advisory (requiresReview=true; quoteGate=review_required soft-pass).`));
+        console.log(c.dim("  Advisory items passed dryRun but would be hard-blocked on real submit without quote override."));
+      } else {
+        console.log(c.green("  Gate CLEARED — submitted > 0 (dryRun). Ready for real execution gate."));
+      }
     } else if (exec.blocked.some((b) => b.blockedReason === "trading_hours")) {
       console.log(c.yellow("  trading_hours gate — run during Taiwan trading hours (Mon-Fri 09:00-13:30 TST)."));
     } else if (exec.blocked.some((b) => b.blockedReason === "no_price")) {

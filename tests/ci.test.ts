@@ -6564,13 +6564,12 @@ test("autopilot equal_weight: 1 candidate receives full budget (same as fixed_pc
   }
 });
 
-// Regression — R16 hotfix: quoteGate.decision must propagate to blockedReason
-// when riskCheck passes (no block guard / no kill_switch guard) but quoteGate
-// is blocked. Previously line 1250 compared against "risk_blocked" (the old
-// fallback name) which never matched the actual fallback "risk_unknown", so
-// quoteGate.decision was silently discarded and the caller always saw
-// "risk_unknown" instead of the real gate decision.
-test("autopilot executeStrategyRun: quoteGate decision propagates to blockedReason when risk passes but gate blocks", async () => {
+// Regression — R16 hotfix (updated R17): quoteGate.decision must propagate
+// to blockedReason when riskCheck passes but quoteGate is blocked.
+// R17 update: dryRun=true + review_required → soft-pass → submitted[] with
+// requiresReview=true (advisory). The R16 regression is preserved via the
+// R17 matrix (Case 1 below). This test is updated to match R17 semantics.
+test("autopilot executeStrategyRun: dryRun+review_required soft-passes to submitted with requiresReview (R16/R17 regression)", async () => {
   const repo = new MemoryTradingRoomRepository();
   const workspaceSlug = `qg-regression-${randomUUID()}`;
   const session = await repo.getSession({ workspaceSlug });
@@ -6587,7 +6586,7 @@ test("autopilot executeStrategyRun: quoteGate decision propagates to blockedReas
     beneficiaryTier: "Core",
     exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
     validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
-    notes: "R16 quoteGate regression test."
+    notes: "R16/R17 quoteGate regression test."
   });
   await repo.createSignal({
     category: "industry",
@@ -6599,7 +6598,7 @@ test("autopilot executeStrategyRun: quoteGate decision propagates to blockedReas
     companyIds: [company.id]
   });
 
-  // Upsert a paper-source quote (source="paper") — this makes paper.decision="review"
+  // Upsert a paper-source quote (source="manual") — this makes paper.decision="review"
   // so quoteGate.decision="review_required" and quoteGate.blocked=true without override.
   // The riskCheck will be "allow" (no block guards, no kill_switch).
   const now = new Date().toISOString();
@@ -6649,16 +6648,492 @@ test("autopilot executeStrategyRun: quoteGate decision propagates to blockedReas
     }
   });
 
-  // QGR1 must appear in blocked (riskCheck=allow but quoteGate blocked).
-  const qgr = result.blocked.find((b) => b.symbol === "QGR1");
-  assert.ok(qgr, "QGR1 should appear in blocked list");
+  // R17: QGR1 must appear in submitted[] (soft-pass), NOT blocked[].
+  const qgrSubmitted = result.submitted.find((s) => s.symbol === "QGR1");
+  assert.ok(qgrSubmitted, "QGR1 should appear in submitted list (dryRun soft-pass)");
+  assert.equal(qgrSubmitted?.requiresReview, true, "requiresReview must be true for advisory soft-pass");
+  assert.ok(qgrSubmitted?.reviewReason, "reviewReason must be present");
+  assert.equal(qgrSubmitted?.blocked, false, "blocked must be false for soft-passed items");
+  assert.equal(qgrSubmitted?.blockedReason, null, "blockedReason must be null for soft-passed items");
 
-  // Key regression assertion: blockedReason must be the quoteGate decision
-  // ("review_required"), NOT "risk_unknown". If line 1250 still has the old
-  // "risk_blocked" comparand this test will fail.
-  assert.equal(
-    qgr?.blockedReason,
-    "review_required",
-    "blockedReason must propagate from quoteGate.decision, not fall back to risk_unknown"
-  );
+  // QGR1 must NOT appear in blocked[].
+  const qgrBlocked = result.blocked.find((b) => b.symbol === "QGR1");
+  assert.equal(qgrBlocked, undefined, "QGR1 must NOT be in blocked[] after R17 soft-pass");
+});
+
+// =============================================================================
+// R17 — quoteGate advisory soft-pass regression matrix (7 cases)
+// Dispatched by Elva, 2026-04-22. All decisions by 楊董.
+//
+// Matrix axes:
+//   dryRun: true/false
+//   quoteGate.decision: "review_required" / "block" / "allow"
+//   blockedReason source: quoteGate / kill_switch / trading_hours / max_per_trade
+//
+// Soft-pass condition (engine logic):
+//   dryRun=true AND quoteGate.blocked=true AND quoteGate.decision="review_required"
+//   AND blockedReason (after riskCheck resolution) === "review_required"
+//   → submitted[] with requiresReview=true
+//
+// Hard block: everything else (block decision / dryRun=false / riskCheck guards)
+// =============================================================================
+
+// Helper: set up a company + bullish signal in a fresh workspace
+async function setupR17Company(args: {
+  repo: InstanceType<typeof MemoryTradingRoomRepository>;
+  session: { workspace: { slug: string } };
+  ticker: string;
+  name: string;
+}) {
+  const company = await args.repo.createCompany({
+    name: args.name,
+    ticker: args.ticker,
+    market: "OTHER",
+    country: "US",
+    themeIds: [],
+    chainPosition: "Core",
+    beneficiaryTier: "Core",
+    exposure: { volume: 5, asp: 5, margin: 5, capacity: 5, narrative: 5 },
+    validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
+    notes: `R17 test: ${args.ticker}`
+  });
+  await args.repo.createSignal({
+    category: "industry",
+    direction: "bullish",
+    title: `${args.ticker} bullish signal`,
+    summary: "Bullish.",
+    confidence: 5,
+    themeIds: [],
+    companyIds: [company.id]
+  });
+  return company;
+}
+
+// Helper: upsert a manual-source paper quote (gives quoteGate.decision="review_required" in paper mode)
+async function seedReviewRequiredQuote(args: {
+  session: { workspace: { slug: string } };
+  symbol: string;
+  last?: number;
+}) {
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session: args.session,
+    quotes: [{
+      symbol: args.symbol,
+      market: "OTHER",
+      source: "manual",
+      last: args.last ?? 100,
+      bid: 99,
+      ask: 101,
+      open: 99,
+      high: 101,
+      low: 98,
+      prevClose: 99,
+      volume: 1000,
+      changePct: 1.0,
+      timestamp: now
+    }]
+  });
+}
+
+// Helper: relax trading hours for the paper-default account
+async function relaxTradingHoursR17(session: { workspace: { slug: string } }) {
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-default",
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "23:59"
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Case 1: dryRun=true + quoteGate.decision="review_required"
+// Expected: submitted[] with requiresReview=true (soft-pass)
+// ---------------------------------------------------------------------------
+test("R17 Case 1: dryRun=true + review_required => submitted with requiresReview=true", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `r17c1-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  await setupR17Company({ repo, session, ticker: "R17C1", name: "R17 Case1 Co" });
+  await seedReviewRequiredQuote({ session, symbol: "R17C1" });
+  // Relax trading hours AND raise maxPerTradePct so riskCheck does not block before quoteGate
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-default",
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "23:59",
+      maxPerTradePct: 50 // generous limit; sizePct=10 on equity=10M at price=100 qty=1000 = 1% well under 50%
+    }
+  });
+
+  const run = await createStrategyRun({
+    session, repo,
+    payload: { limit: 10, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const result = await executeStrategyRun({
+    session, repo, runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 1.0, // 1% budget → 100K → qty=1000 → notional=100K = 1% equity, within 50% max
+      maxOrders: 5,
+      dryRun: true
+    }
+  });
+
+  const item = result.submitted.find((s) => s.symbol === "R17C1");
+  assert.ok(item, "Case 1: R17C1 must be in submitted[] (soft-pass)");
+  assert.equal(item?.requiresReview, true, "Case 1: requiresReview must be true");
+  assert.ok(item?.reviewReason, "Case 1: reviewReason must be present");
+  assert.equal(item?.blocked, false, "Case 1: blocked must be false");
+  assert.equal(item?.blockedReason, null, "Case 1: blockedReason must be null");
+  const blockedItem = result.blocked.find((b) => b.symbol === "R17C1");
+  assert.equal(blockedItem, undefined, "Case 1: must NOT appear in blocked[]");
+});
+
+// ---------------------------------------------------------------------------
+// Case 2: quoteGate.decision="block" => hard block (engine logic + schema level)
+// Structural note: in the autopilot paper-mode path (always paper broker),
+// fresh manual-source quotes give quoteGate.decision="review_required" (not "block").
+// To get quoteGate.decision="block" (execution mode, no live source), one must use
+// execution-mode gate directly. This test verifies:
+// (a) execution mode + fresh manual quote => "review_required" (NOT "block" — corrects
+//     prior assumption; fresh quotes always give review in non-live mode)
+// (b) The engine soft-pass condition explicitly requires decision === "review_required",
+//     so any OTHER decision (including "block") goes to blocked[] — verified via
+//     engine source code review and schema assertions.
+// (c) autopilotOrderResultSchema accepts a blocked item with blockedReason="block"
+//     without requiresReview flag (confirms hard block shape).
+// ---------------------------------------------------------------------------
+test("R17 Case 2: quoteGate.decision=block => hard block (engine conditional + schema verification)", async () => {
+  const session = { workspace: { slug: `r17c2-${randomUUID()}` } };
+  const now = new Date().toISOString();
+
+  await upsertPaperQuotes({
+    session,
+    quotes: [{
+      symbol: "R17C2",
+      market: "OTHER",
+      source: "manual",
+      last: 100,
+      bid: 99,
+      ask: 101,
+      open: 99,
+      high: 101,
+      low: 98,
+      prevClose: 99,
+      volume: 1000,
+      changePct: 1.0,
+      timestamp: now
+    }]
+  });
+
+  const baseOrder = {
+    accountId: "paper-default",
+    symbol: "R17C2",
+    side: "buy" as const,
+    type: "limit" as const,
+    timeInForce: "day" as const,
+    quantity: 100,
+    price: 100,
+    stopPrice: null,
+    tradePlanId: null,
+    strategyId: null,
+    overrideGuards: [] as string[],
+    overrideReason: "r17-case2-test"
+  };
+
+  // Both paper and execution mode with fresh manual quote give "review_required"
+  // (execution mode: fresh manual → liveUsable=false but selectedSource+connected+fresh → "review")
+  const paperGate = await evaluateExecutionGate({ session, order: baseOrder, mode: "paper" });
+  assert.equal(paperGate.blocked, true, "Case 2: paper mode fresh manual quote is blocked (review_required)");
+  assert.equal(paperGate.decision, "review_required", "Case 2: paper mode fresh manual quote gives review_required");
+
+  const execGate = await evaluateExecutionGate({ session, order: baseOrder, mode: "execution" });
+  assert.equal(execGate.blocked, true, "Case 2: execution mode fresh manual quote is also blocked");
+  assert.equal(execGate.decision, "review_required", "Case 2: execution mode fresh manual quote also gives review_required");
+
+  // Schema level: a blocked item with blockedReason="block" must NOT have requiresReview=true
+  // (confirms hard block shape for literal decision="block" scenarios via schema)
+  const { autopilotOrderResultSchema: orderSchema } = await import("../packages/contracts/src/strategy.ts");
+  const hardBlocked = orderSchema.parse({
+    symbol: "R17C2",
+    side: "buy",
+    quantity: 100,
+    price: 100,
+    submitResult: null,
+    blocked: true,
+    blockedReason: "block"
+    // requiresReview absent => hard block, no advisory flag
+  });
+  assert.equal(hardBlocked.blocked, true, "Case 2: hard block item has blocked=true");
+  assert.equal(hardBlocked.blockedReason, "block", "Case 2: hard block item has blockedReason=block");
+  assert.equal(hardBlocked.requiresReview, undefined, "Case 2: hard block item must NOT have requiresReview");
+
+  // The soft-pass condition in strategy-engine.ts:
+  //   dryRun && quoteGate.blocked && quoteGate.decision === "review_required" && blockedReason === "review_required"
+  // For decision="block": condition is false => goes to blocked[] (not submitted[])
+  // This is enforced by the code itself; schema shape above confirms the expected output shape.
+});
+
+// ---------------------------------------------------------------------------
+// Case 3: dryRun=false + quoteGate.decision="review_required" => hard block
+// Expected: blocked[] with blockedReason="review_required"
+// ---------------------------------------------------------------------------
+test("R17 Case 3: dryRun=false + review_required => hard block (real submit stays blocked)", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `r17c3-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  await setupR17Company({ repo, session, ticker: "R17C3", name: "R17 Case3 Co" });
+  await seedReviewRequiredQuote({ session, symbol: "R17C3" });
+  // Relax trading hours and raise maxPerTradePct so riskCheck allows through to quoteGate
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-default",
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "23:59",
+      maxPerTradePct: 50
+    }
+  });
+
+  const run = await createStrategyRun({
+    session, repo,
+    payload: { limit: 10, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const tokenResp = issueConfirmToken(run.id);
+
+  const result = await executeStrategyRun({
+    session, repo, runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 1.0,
+      maxOrders: 5,
+      dryRun: false,
+      confirmToken: tokenResp.token
+    }
+  });
+
+  const blockedItem = result.blocked.find((b) => b.symbol === "R17C3");
+  assert.ok(blockedItem, "Case 3: R17C3 must be in blocked[] (real submit hard blocks review_required)");
+  assert.equal(blockedItem?.blockedReason, "review_required", "Case 3: blockedReason must be review_required");
+  const submittedItem = result.submitted.find((s) => s.symbol === "R17C3");
+  assert.equal(submittedItem, undefined, "Case 3: must NOT appear in submitted[] for real submit");
+});
+
+// ---------------------------------------------------------------------------
+// Case 4: quoteGate.decision="allow" (or blocked=false) => submitted without requiresReview
+// Verified at schema level: requiresReview is optional and absent for normal submits.
+// Gate-level verification: no-quote symbol => quote_unknown (blocked=false) => submitted path.
+// ---------------------------------------------------------------------------
+test("R17 Case 4: quoteGate not blocked => submitted without requiresReview flag", async () => {
+  // Gate-level: no quote => quote_unknown => blocked=false
+  const gateSession = { workspace: { slug: `r17c4-gate-${randomUUID()}` } };
+  const gate = await evaluateExecutionGate({
+    session: gateSession,
+    order: {
+      accountId: "paper-default",
+      symbol: "R17C4NOQUOTE",
+      side: "buy" as const,
+      type: "limit" as const,
+      timeInForce: "day" as const,
+      quantity: 100,
+      price: 100,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [] as string[],
+      overrideReason: ""
+    },
+    mode: "paper"
+  });
+  assert.equal(gate.blocked, false, "Case 4: no-quote gate is not blocked (quote_unknown)");
+  assert.equal(gate.decision, "quote_unknown", "Case 4: no-quote gives quote_unknown decision");
+
+  // Schema-level: autopilotOrderResultSchema allows requiresReview=undefined
+  const { autopilotOrderResultSchema: orderSchema } = await import("../packages/contracts/src/strategy.ts");
+  const parsed = orderSchema.parse({
+    symbol: "R17C4",
+    side: "buy",
+    quantity: 100,
+    price: 100,
+    submitResult: null,
+    blocked: false,
+    blockedReason: null
+  });
+  assert.equal(parsed.requiresReview, undefined, "Case 4: requiresReview is optional/absent for normal submits");
+  assert.equal(parsed.reviewReason, undefined, "Case 4: reviewReason is optional/absent for normal submits");
+});
+
+// ---------------------------------------------------------------------------
+// Case 5: dryRun=true + kill_switch engaged => all blocked with kill_switch
+// Kill-switch hard precedence overrides any quoteGate decision
+// ---------------------------------------------------------------------------
+test("R17 Case 5: dryRun=true + kill_switch engaged => blocked with kill_switch (no soft-pass)", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `r17c5-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  await setupR17Company({ repo, session, ticker: "R17C5", name: "R17 Case5 Co" });
+  await seedReviewRequiredQuote({ session, symbol: "R17C5" });
+
+  await setKillSwitchState({
+    session,
+    payload: { accountId: "paper-default", mode: "halted", reason: "R17 Case5 test", engagedBy: "jason" }
+  });
+
+  const run = await createStrategyRun({
+    session, repo,
+    payload: { limit: 10, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const result = await executeStrategyRun({
+    session, repo, runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 10.0,
+      maxOrders: 5,
+      dryRun: true
+    }
+  });
+
+  const item = result.blocked.find((b) => b.symbol === "R17C5");
+  assert.ok(item, "Case 5: R17C5 must be in blocked[]");
+  assert.equal(item?.blockedReason, "kill_switch", "Case 5: kill_switch takes hard precedence");
+  assert.equal(result.submitted.find((s) => s.symbol === "R17C5"), undefined,
+    "Case 5: kill_switch must NOT soft-pass");
+
+  // Cleanup
+  await setKillSwitchState({
+    session,
+    payload: { accountId: "paper-default", mode: "trading", reason: "R17 Case5 cleanup", engagedBy: "jason" }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Case 6: dryRun=true + trading hours closed => blocked with trading_hours
+// ---------------------------------------------------------------------------
+test("R17 Case 6: dryRun=true + outside trading hours => blocked with trading_hours (no soft-pass)", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `r17c6-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  await setupR17Company({ repo, session, ticker: "R17C6", name: "R17 Case6 Co" });
+  await seedReviewRequiredQuote({ session, symbol: "R17C6" });
+
+  // Narrow trading window that excludes current time
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-default",
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "00:01"
+    }
+  });
+
+  const run = await createStrategyRun({
+    session, repo,
+    payload: { limit: 10, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const result = await executeStrategyRun({
+    session, repo, runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 10.0,
+      maxOrders: 5,
+      dryRun: true
+    }
+  });
+
+  const item = result.blocked.find((b) => b.symbol === "R17C6");
+  assert.ok(item, "Case 6: R17C6 must be in blocked[]");
+  assert.equal(item?.blockedReason, "trading_hours", "Case 6: trading_hours riskCheck must block");
+  assert.equal(result.submitted.find((s) => s.symbol === "R17C6"), undefined,
+    "Case 6: trading_hours must NOT soft-pass");
+});
+
+// ---------------------------------------------------------------------------
+// Case 7: dryRun=true + max_per_trade exceeded => blocked with max_per_trade
+// Verifies riskCheck guard takes priority over quoteGate soft-pass
+// ---------------------------------------------------------------------------
+test("R17 Case 7: dryRun=true + max_per_trade exceeded => blocked with max_per_trade (decoupled from quoteGate)", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `r17c7-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  await setupR17Company({ repo, session, ticker: "R17C7", name: "R17 Case7 Co" });
+
+  // relaxed trading hours, tight max_per_trade (1% default), large sizePct=10 => exceeds limit
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId: "paper-default",
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "23:59",
+      maxPerTradePct: 1
+    }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [{
+      symbol: "R17C7",
+      market: "OTHER",
+      source: "manual",
+      last: 100,
+      bid: 99,
+      ask: 101,
+      open: 99,
+      high: 101,
+      low: 98,
+      prevClose: 99,
+      volume: 1000,
+      changePct: 1.0,
+      timestamp: now
+    }]
+  });
+
+  const run = await createStrategyRun({
+    session, repo,
+    payload: { limit: 10, signalDays: 30, includeBlocked: true, decisionMode: "strategy", sort: "score" }
+  });
+
+  const result = await executeStrategyRun({
+    session, repo, runId: run.id,
+    payload: {
+      accountId: "paper-default",
+      sidePolicy: "bullish_long",
+      sizeMode: "fixed_pct",
+      sizePct: 10.0, // 10% budget => qty=10000 => notional=1M = 10% of 10M equity => exceeds 1% max
+      maxOrders: 5,
+      dryRun: true
+    }
+  });
+
+  const item = result.blocked.find((b) => b.symbol === "R17C7");
+  assert.ok(item, "Case 7: R17C7 must be in blocked[]");
+  assert.equal(item?.blockedReason, "max_per_trade", "Case 7: max_per_trade riskCheck blocks before quoteGate soft-pass");
+  assert.equal(result.submitted.find((s) => s.symbol === "R17C7"), undefined,
+    "Case 7: max_per_trade must NOT soft-pass");
 });

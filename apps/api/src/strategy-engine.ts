@@ -1255,15 +1255,46 @@ export async function executeStrategyRun(input: {
           blockedReason = result.order.reason;
         }
 
-        blocked.push({
-          symbol: candidate.symbol,
-          side: candidate.side,
-          quantity,
-          price: entryPrice,
-          submitResult: result,
-          blocked: true,
-          blockedReason
-        });
+        // ---------------------------------------------------------------------------
+        // R17 — quoteGate advisory soft-pass for dryRun + review_required
+        //
+        // Business rule (楊董 2026-04-22):
+        //   - dryRun=true  + quoteGate.decision="review_required" → soft-pass:
+        //       move to submitted[] with requiresReview=true (advisory, not a hard block)
+        //   - dryRun=false + quoteGate.decision="review_required" → hard block
+        //       (real-submit must never bypass unreviewed quotes)
+        //   - quoteGate.decision="block" → always hard block (structural issue;
+        //       dryRun does not change semantics for literal decision=block)
+        // ---------------------------------------------------------------------------
+        if (
+          dryRun &&
+          result.quoteGate?.blocked &&
+          result.quoteGate.decision === "review_required" &&
+          blockedReason === "review_required"
+        ) {
+          // Soft-pass: treat as advisory, emit to submitted with advisory flags
+          submitted.push({
+            symbol: candidate.symbol,
+            side: candidate.side,
+            quantity,
+            price: entryPrice,
+            submitResult: result,
+            blocked: false,
+            blockedReason: null,
+            requiresReview: true,
+            reviewReason: result.quoteGate.reasons?.find((r) => r.startsWith("decision:")) ?? "review_required"
+          });
+        } else {
+          blocked.push({
+            symbol: candidate.symbol,
+            side: candidate.side,
+            quantity,
+            price: entryPrice,
+            submitResult: result,
+            blocked: true,
+            blockedReason
+          });
+        }
       } else {
         submitted.push({
           symbol: candidate.symbol,
