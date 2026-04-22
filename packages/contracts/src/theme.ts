@@ -42,7 +42,10 @@ export const themeCreateInputSchema = z.object({
   bottleneck: z.string().min(1).max(800)
 });
 
-export const themeUpdateInputSchema = themeCreateInputSchema.partial();
+// Allow explicit slug override on update (e.g. CJK names that createSlug strips to "")
+export const themeUpdateInputSchema = themeCreateInputSchema
+  .partial()
+  .extend({ slug: z.string().min(1).max(80).optional() });
 
 export type MarketState = z.infer<typeof marketStateSchema>;
 export type ThemeLifecycle = z.infer<typeof themeLifecycleSchema>;

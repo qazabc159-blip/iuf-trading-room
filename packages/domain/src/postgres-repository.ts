@@ -293,7 +293,13 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       .update(themes)
       .set({
         ...input,
-        slug: input.name ? createSlug(input.name) : undefined,
+        // Prefer explicit slug override (for CJK names that createSlug strips to "");
+        // fall back to createSlug(name) if name changed; keep existing if neither.
+        slug: input.slug
+          ? input.slug
+          : input.name
+            ? createSlug(input.name) || undefined
+            : undefined,
         updatedAt: new Date()
       })
       .where(and(eq(themes.id, themeId), eq(themes.workspaceId, workspace.id)))
