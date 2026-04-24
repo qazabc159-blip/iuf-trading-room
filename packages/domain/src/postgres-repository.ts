@@ -24,7 +24,9 @@ import {
   exposureBreakdownSchema,
   type ReviewEntry,
   type ReviewEntryCreateInput,
+  type ReviewSummary,
   type Signal,
+  type SignalCluster,
   type SignalCreateInput,
   type SignalUpdateInput,
   type Theme,
@@ -49,6 +51,8 @@ import {
   dailyBriefs as dailyBriefsTable,
   getDb,
   reviewEntries,
+  reviewSummaries as reviewSummariesTable,
+  signalClusters as signalClustersTable,
   signals,
   themes,
   themeSummaries as themeSummariesTable,
@@ -1088,6 +1092,81 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       companyId: row.companyId,
       note: row.note,
       generatedAt: row.generatedAt.toISOString()
+    }));
+  }
+
+  // ── P1 Worker-produced content ─────────────────────────────────────────────
+
+  async listReviewSummaries(
+    options?: SessionOptions & { themeId?: string; themeSlug?: string; period?: string; limit?: number }
+  ): Promise<ReviewSummary[]> {
+    const db = this.database;
+    const { workspace } = await this.ensureSessionBase(options);
+    const limit = options?.limit ?? 20;
+
+    const conditions = [eq(reviewSummariesTable.workspaceId, workspace.id)];
+
+    // themeSlug filter: resolve themeId from slug first
+    if (options?.themeSlug) {
+      const [themeRow] = await db
+        .select({ id: themes.id })
+        .from(themes)
+        .where(and(eq(themes.workspaceId, workspace.id), eq(themes.slug, options.themeSlug)))
+        .limit(1);
+      if (themeRow) {
+        conditions.push(eq(reviewSummariesTable.themeId, themeRow.id));
+      } else {
+        return []; // unknown slug → empty
+      }
+    } else if (options?.themeId) {
+      conditions.push(eq(reviewSummariesTable.themeId, options.themeId));
+    }
+
+    if (options?.period) {
+      conditions.push(eq(reviewSummariesTable.period, options.period));
+    }
+
+    const rows = await db
+      .select()
+      .from(reviewSummariesTable)
+      .where(and(...conditions))
+      .orderBy(desc(reviewSummariesTable.generatedAt))
+      .limit(limit);
+
+    return rows.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspaceId,
+      themeId: row.themeId,
+      bodyMd: row.bodyMd,
+      period: row.period as ReviewSummary["period"],
+      generatedAt: row.generatedAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    }));
+  }
+
+  async listSignalClusters(
+    options?: SessionOptions & { limit?: number }
+  ): Promise<SignalCluster[]> {
+    const db = this.database;
+    const { workspace } = await this.ensureSessionBase(options);
+    const limit = options?.limit ?? 20;
+
+    const rows = await db
+      .select()
+      .from(signalClustersTable)
+      .where(eq(signalClustersTable.workspaceId, workspace.id))
+      .orderBy(desc(signalClustersTable.generatedAt))
+      .limit(limit);
+
+    return rows.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspaceId,
+      label: row.label,
+      memberTickers: (row.memberTickers as string[]) ?? [],
+      memberThemes: (row.memberThemes as string[]) ?? [],
+      rationaleMarkdown: row.rationale_md,
+      generatedAt: row.generatedAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
     }));
   }
 }

@@ -1799,6 +1799,32 @@ app.get("/api/v1/company-notes", async (c) => {
   });
 });
 
+app.get("/api/v1/review-summaries", async (c) => {
+  const themeSlug = c.req.query("themeSlug");
+  const themeId = c.req.query("themeId");
+  const period = c.req.query("period");
+  const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
+  return c.json({
+    data: await c.get("repo").listReviewSummaries({
+      workspaceSlug: c.get("session").workspace.slug,
+      ...(themeSlug ? { themeSlug } : {}),
+      ...(themeId ? { themeId } : {}),
+      ...(period ? { period } : {}),
+      ...(limit ? { limit } : {})
+    })
+  });
+});
+
+app.get("/api/v1/signal-clusters", async (c) => {
+  const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
+  return c.json({
+    data: await c.get("repo").listSignalClusters({
+      workspaceSlug: c.get("session").workspace.slug,
+      ...(limit ? { limit } : {})
+    })
+  });
+});
+
 app.post("/api/v1/openalice/register", async (c) => {
   const payload = openAliceRegisterSchema.parse(await c.req.json());
   const registration = await registerOpenAliceDevice({

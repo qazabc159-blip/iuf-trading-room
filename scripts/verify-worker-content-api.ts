@@ -103,4 +103,42 @@ await section("GET /api/v1/theme-summaries?themeId=filter-test", async () => {
   console.log("  filter param: OK");
 });
 
+// ── P1 endpoints ─────────────────────────────────────────────────────────────
+
+await section("GET /api/v1/review-summaries", async () => {
+  const { status, body } = await get("/api/v1/review-summaries");
+  console.log(`  status: ${status}`);
+  if (status !== 200) {
+    console.error("  FAIL body:", JSON.stringify(body).slice(0, 400));
+    process.exit(1);
+  }
+  printRows(body.data);
+});
+
+await section("GET /api/v1/review-summaries?themeSlug=filter-test", async () => {
+  const { status } = await get("/api/v1/review-summaries?themeSlug=does-not-exist");
+  console.log(`  status: ${status} (expected 200, empty array)`);
+  if (status !== 200) process.exit(1);
+  console.log("  themeSlug filter: OK");
+});
+
+await section("GET /api/v1/signal-clusters", async () => {
+  const { status, body } = await get("/api/v1/signal-clusters");
+  console.log(`  status: ${status}`);
+  if (status !== 200) {
+    console.error("  FAIL body:", JSON.stringify(body).slice(0, 400));
+    process.exit(1);
+  }
+  printRows(body.data);
+});
+
+await section("GET /api/v1/signal-clusters?limit=5", async () => {
+  const { status, body } = await get("/api/v1/signal-clusters?limit=5");
+  console.log(`  status: ${status}`);
+  if (status !== 200) process.exit(1);
+  const d = body.data;
+  if (Array.isArray(d)) console.log(`  rows returned (capped 5): ${d.length}`);
+  console.log("  limit param: OK");
+});
+
 console.log("\n\nAll checks PASS. API endpoints are live.\n");

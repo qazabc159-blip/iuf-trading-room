@@ -12,7 +12,9 @@ import type {
   DailyBriefCreateInput,
   ReviewEntry,
   ReviewEntryCreateInput,
+  ReviewSummary,
   Signal,
+  SignalCluster,
   SignalCreateInput,
   SignalUpdateInput,
   Theme,
@@ -97,4 +99,8 @@ export interface TradingRoomRepository {
   // Worker-produced content
   listThemeSummaries(options?: SessionOptions & { themeId?: string; limit?: number }): Promise<ThemeSummary[]>;
   listCompanyNotes(options?: SessionOptions & { companyId?: string; limit?: number }): Promise<CompanyNote[]>;
+
+  // P1 Worker-produced content
+  listReviewSummaries(options?: SessionOptions & { themeId?: string; themeSlug?: string; period?: string; limit?: number }): Promise<ReviewSummary[]>;
+  listSignalClusters(options?: SessionOptions & { limit?: number }): Promise<SignalCluster[]>;
 }
