@@ -1938,7 +1938,14 @@ app.get("/api/v1/content-drafts", async (c) => {
   });
 });
 
+// Only Owner / Admin may act on review queue (P0.6 admin guard).
+const REVIEW_ROLES = new Set(["Owner", "Admin"]);
+
 app.post("/api/v1/content-drafts/:draftId/approve", async (c) => {
+  const role = c.get("session").user.role;
+  if (!REVIEW_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
   const result = await approveContentDraft({
     draftId: c.req.param("draftId"),
     reviewerId: c.get("session").user.id
@@ -1953,6 +1960,10 @@ app.post("/api/v1/content-drafts/:draftId/approve", async (c) => {
 });
 
 app.post("/api/v1/content-drafts/:draftId/reject", async (c) => {
+  const role = c.get("session").user.role;
+  if (!REVIEW_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
   const payload = contentDraftRejectSchema.parse(await c.req.json().catch(() => ({})));
   const result = await rejectContentDraft({
     draftId: c.req.param("draftId"),

@@ -1,0 +1,123 @@
+{
+  "ts_utc": "2026-04-24T17:47:29Z",
+  "phase": "P0.6 review-flow E2E",
+  "backend": "rule-template (OpenAI billing not active)",
+  "session_role": "Owner",
+  "session_workspace": "primary-desk",
+  "chosen_theme": {
+    "id": "8200d31b-0b29-4e4d-863e-03f92adf816a",
+    "name": "[ORPHAN] Audit Trail Live Check"
+  },
+  "chosen_company": {
+    "id": "4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff",
+    "ticker": "4433",
+    "name": "興采"
+  },
+  "enqueued_jobs": {
+    "theme_summary": "deb462f4-ed5f-45cb-90d4-d280ef0e1872",
+    "company_note": "f020d6c0-f8a9-4f6b-b3bc-04da9e7f04be"
+  },
+  "runner_stdout": "[runner] claimed jobId=deb462f4-ed5f-45cb-90d4-d280ef0e1872 taskType=theme_summary\n[runner] submitted jobId=deb462f4-ed5f-45cb-90d4-d280ef0e1872 status=draft_ready provider=rule-template\n[runner] claimed jobId=f020d6c0-f8a9-4f6b-b3bc-04da9e7f04be taskType=company_note\n[runner] submitted jobId=f020d6c0-f8a9-4f6b-b3bc-04da9e7f04be status=draft_ready provider=rule-template\n[runner] idle for 3 ticks — exiting.\n",
+  "runner_stderr": "",
+  "drafts_after_run": [
+    {
+      "id": "82a66cf5-9ac6-4f41-9e84-806a7b5ecf3d",
+      "status": "awaiting_review",
+      "targetTable": "company_notes",
+      "targetEntityId": "4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff",
+      "sourceJobId": "f020d6c0-f8a9-4f6b-b3bc-04da9e7f04be",
+      "payload_keys": [
+        "companyId",
+        "note"
+      ],
+      "has_llm_meta": false,
+      "llm_meta_provider": null
+    },
+    {
+      "id": "d11fc21c-44e1-43ae-a9d2-e0085b899cb2",
+      "status": "awaiting_review",
+      "targetTable": "theme_summaries",
+      "targetEntityId": "8200d31b-0b29-4e4d-863e-03f92adf816a",
+      "sourceJobId": "deb462f4-ed5f-45cb-90d4-d280ef0e1872",
+      "payload_keys": [
+        "companyCount",
+        "summary",
+        "themeId"
+      ],
+      "has_llm_meta": false,
+      "llm_meta_provider": null
+    }
+  ],
+  "approve": {
+    "http": 200,
+    "body": {
+      "data": {
+        "draft": {
+          "id": "d11fc21c-44e1-43ae-a9d2-e0085b899cb2",
+          "workspaceId": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+          "sourceJobId": "deb462f4-ed5f-45cb-90d4-d280ef0e1872",
+          "targetTable": "theme_summaries",
+          "targetEntityId": "8200d31b-0b29-4e4d-863e-03f92adf816a",
+          "payload": {
+            "summary": "Theme: [ORPHAN] Audit Trail Live Check\nLinked Companies: 0\nGenerated: 2026-04-25 (runner=rule-template)",
+            "themeId": "8200d31b-0b29-4e4d-863e-03f92adf816a",
+            "companyCount": 0
+          },
+          "status": "approved",
+          "dedupeKey": "888fd3bd-4a48-4656-9e6a-ac19360cc0de:theme_summaries:8200d31b-0b29-4e4d-863e-03f92adf816a:v1",
+          "producerVersion": "v1",
+          "reviewedBy": "8624c6c1-d8ac-43b5-95a1-269252f7dcc8",
+          "reviewedAt": "2026-04-24T17:47:43.859Z",
+          "rejectReason": null,
+          "approvedRefId": "777a5cdc-8a18-4848-9ea5-43df87a2f807",
+          "createdAt": "2026-04-24T17:47:34.907Z",
+          "updatedAt": "2026-04-24T17:47:43.859Z"
+        },
+        "approvedRefId": "777a5cdc-8a18-4848-9ea5-43df87a2f807"
+      }
+    },
+    "draft_id": "d11fc21c-44e1-43ae-a9d2-e0085b899cb2"
+  },
+  "reject": {
+    "http": 200,
+    "body": {
+      "data": {
+        "draft": {
+          "id": "82a66cf5-9ac6-4f41-9e84-806a7b5ecf3d",
+          "workspaceId": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+          "sourceJobId": "f020d6c0-f8a9-4f6b-b3bc-04da9e7f04be",
+          "targetTable": "company_notes",
+          "targetEntityId": "4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff",
+          "payload": {
+            "note": "Company Note: 興采 (4433)\nGenerated: 2026-04-25 (runner=rule-template)",
+            "companyId": "4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff"
+          },
+          "status": "rejected",
+          "dedupeKey": "888fd3bd-4a48-4656-9e6a-ac19360cc0de:company_notes:4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff:v1",
+          "producerVersion": "v1",
+          "reviewedBy": "8624c6c1-d8ac-43b5-95a1-269252f7dcc8",
+          "reviewedAt": "2026-04-24T17:47:44.165Z",
+          "rejectReason": "P0.6 live E2E — reviewer rejects placeholder company note",
+          "approvedRefId": null,
+          "createdAt": "2026-04-24T17:47:35.810Z",
+          "updatedAt": "2026-04-24T17:47:44.165Z"
+        }
+      }
+    },
+    "draft_id": "82a66cf5-9ac6-4f41-9e84-806a7b5ecf3d"
+  },
+  "final_status_of_our_drafts": [
+    {
+      "id": "82a66cf5-9ac6-4f41-9e84-806a7b5ecf3d",
+      "status": "rejected",
+      "rejectReason": "P0.6 live E2E — reviewer rejects placeholder company note",
+      "approvedRefId": null
+    },
+    {
+      "id": "d11fc21c-44e1-43ae-a9d2-e0085b899cb2",
+      "status": "approved",
+      "rejectReason": null,
+      "approvedRefId": "777a5cdc-8a18-4848-9ea5-43df87a2f807"
+    }
+  ]
+}

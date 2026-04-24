@@ -34,6 +34,13 @@ from typing import Any
 
 import requests
 
+# Ensure `llm` package is importable regardless of cwd when launched under NSSM.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+
+from llm import generate as llm_generate, kill_switch_on  # noqa: E402
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Scope-lock (P0-B)
@@ -70,81 +77,19 @@ def _write_creds_file(path: str, data: dict[str, str]) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# LLM backends (pluggable). Default: rule-template (no secret needed).
+# LLM backend bridge — delegates to the `llm` package registry.
+# Registry handles: primary/fallback chain, kill-switch, provider validation,
+# retry+backoff+timeout, and llm_meta annotation. This runner only forwards.
 
 
-def llm_rule_template_theme(params: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    theme_name = str(params.get("themeName", "Unknown theme"))
-    company_count = int(params.get("companyCount", 0))
-    summary = (
-        f"Theme: {theme_name}\n"
-        f"Linked Companies: {company_count}\n"
-        f"Generated: {time.strftime('%Y-%m-%d')} (runner=rule-template)"
-    )
-    return {
-        "themeId": params.get("themeId") or params.get("targetEntityId"),
-        "summary": summary,
-        "companyCount": company_count,
-    }
-
-
-def llm_rule_template_company(params: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    company_name = str(params.get("companyName", "Unknown company"))
-    ticker = str(params.get("ticker", ""))
-    note = (
-        f"Company Note: {company_name}"
-        + (f" ({ticker})" if ticker else "")
-        + f"\nGenerated: {time.strftime('%Y-%m-%d')} (runner=rule-template)"
-    )
-    return {
-        "companyId": params.get("companyId") or params.get("targetEntityId"),
-        "note": note,
-    }
-
-
-def _llm_anthropic_not_wired() -> None:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise SystemExit(
-            "ANTHROPIC_API_KEY not set. Set it in env (never in repo) "
-            "or pass --llm rule-template."
-        )
-    raise SystemExit("anthropic backend is not wired in MVP; use --llm rule-template.")
-
-
-def _llm_openai_not_wired() -> None:
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise SystemExit(
-            "OPENAI_API_KEY not set. Set it in env (never in repo) "
-            "or pass --llm rule-template."
-        )
-    raise SystemExit("openai backend is not wired in MVP; use --llm rule-template.")
-
-
-def _llm_ollama_not_wired() -> None:
-    if not os.environ.get("OLLAMA_BASE_URL"):
-        raise SystemExit(
-            "OLLAMA_BASE_URL not set. Set it in env (e.g. http://localhost:11434) "
-            "or pass --llm rule-template."
-        )
-    raise SystemExit("ollama backend is not wired in MVP; use --llm rule-template.")
-
-
-def run_llm(backend: str, task_type: str, params: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    if backend != "rule-template":
-        if backend == "anthropic":
-            _llm_anthropic_not_wired()
-        elif backend == "openai":
-            _llm_openai_not_wired()
-        elif backend == "ollama":
-            _llm_ollama_not_wired()
-        else:
-            raise SystemExit(f"Unknown --llm backend: {backend}")
-
-    if task_type == "theme_summary":
-        return llm_rule_template_theme(params, context)
-    if task_type == "company_note":
-        return llm_rule_template_company(params, context)
-    raise SystemExit(f"Unsupported task type for rule-template: {task_type}")
+def run_llm(
+    backend: str, task_type: str, params: dict[str, Any], context: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Returns (structured_output, llm_meta). Never raises for provider-side
+    errors — those become rule-template fallback results with fallback_reason
+    in llm_meta, so we still produce a draft row (transparent about route)."""
+    result = llm_generate(backend, task_type, params, context)
+    return result.structured, dict(result.meta)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -200,7 +145,15 @@ class OpenAliceClient:
         if resp.status_code >= 400:
             print(f"[runner] heartbeat warn: {resp.status_code} {resp.text[:120]}")
 
-    def submit(self, job_id: str, status: str, schema_name: str, structured: dict[str, Any] | None, warnings: list[str]) -> None:
+    def submit(
+        self,
+        job_id: str,
+        status: str,
+        schema_name: str,
+        structured: dict[str, Any] | None,
+        warnings: list[str],
+        llm_meta: dict[str, Any] | None = None,
+    ) -> None:
         url = f"{self.api}/api/v1/openalice/jobs/{job_id}/result"
         body: dict[str, Any] = {
             "jobId": job_id,
@@ -211,6 +164,8 @@ class OpenAliceClient:
         }
         if structured is not None:
             body["structured"] = structured
+        if llm_meta:
+            body["llmMeta"] = llm_meta
         resp = self.session.post(url, headers=self._auth_headers(), json=body, timeout=30)
         if resp.status_code >= 400:
             raise SystemExit(f"submit failed: {resp.status_code} {resp.text[:200]}")
@@ -313,15 +268,21 @@ def cmd_run(args: argparse.Namespace) -> int:
 
         try:
             client.heartbeat(job_id)
-            structured = run_llm(args.llm, task_type, params, context)
+            structured, llm_meta = run_llm(args.llm, task_type, params, context)
             client.submit(
                 job_id=job_id,
                 status="draft_ready",
                 schema_name=schema_name,
                 structured=structured,
                 warnings=[],
+                llm_meta=llm_meta,
             )
-            print(f"[runner] submitted jobId={job_id} status=draft_ready (llm={args.llm})")
+            fb = llm_meta.get("fallback_reason") if isinstance(llm_meta, dict) else None
+            effective = llm_meta.get("provider") if isinstance(llm_meta, dict) else args.llm
+            suffix = f" fallback_from={llm_meta.get('fallback_from')}" if fb else ""
+            print(
+                f"[runner] submitted jobId={job_id} status=draft_ready provider={effective}{suffix}"
+            )
         except SystemExit:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -362,7 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--api", required=True)
     run.add_argument("--device-id", required=True)
     run.add_argument("--creds", required=True, help="Path to env file with OPENALICE_DEVICE_TOKEN.")
-    run.add_argument("--llm", default="rule-template", choices=["rule-template", "anthropic", "openai", "ollama"])
+    run.add_argument("--llm", default="rule-template", choices=["rule-template", "openai"])
     run.add_argument("--poll-seconds", type=int, default=10)
     run.add_argument("--max-jobs", type=int, default=1)
     run.add_argument("--exit-when-idle", action="store_true")

@@ -80,7 +80,8 @@ export const openAliceJobResultSchema: z.ZodType<OpenAliceBridgeResult> = z.obje
   structured: z.unknown().optional(),
   rawText: z.string().optional(),
   warnings: z.array(z.string()).default([]),
-  artifacts: z.array(openAliceArtifactSchema).default([])
+  artifacts: z.array(openAliceArtifactSchema).default([]),
+  llmMeta: z.record(z.string(), z.unknown()).optional()
 });
 
 export type OpenAliceAuthenticatedDevice = {
@@ -1042,12 +1043,17 @@ export async function submitOpenAliceResult(input: {
           ? (structured.companyId as string)
           : null;
 
+      const payloadWithMeta: Record<string, unknown> = { ...structured };
+      if (input.result.llmMeta && typeof input.result.llmMeta === "object") {
+        payloadWithMeta.llm_meta = input.result.llmMeta;
+      }
+
       await createContentDraft({
         workspaceId: input.device.workspaceId,
         sourceJobId: job.id,
         targetTable,
         targetEntityId,
-        payload: structured
+        payload: payloadWithMeta
       });
     }
   }

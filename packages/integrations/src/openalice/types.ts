@@ -41,6 +41,7 @@ export type OpenAliceBridgeResult = {
   rawText?: string;
   warnings?: string[];
   artifacts?: OpenAliceBridgeArtifact[];
+  llmMeta?: Record<string, unknown>;
 };
 
 export type DeviceRegistration = {
