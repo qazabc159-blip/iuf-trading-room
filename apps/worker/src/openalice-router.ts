@@ -14,10 +14,12 @@
  */
 import { and, desc, eq, gte } from "drizzle-orm";
 import {
+  companyNotes,
   contentDrafts,
   getDb,
   openAliceDevices,
-  openAliceJobs
+  openAliceJobs,
+  themeSummaries
 } from "@iuf-trading-room/db";
 
 export const OPENALICE_ACTIVE_DEVICE_SECONDS = Number(
@@ -102,6 +104,73 @@ export async function findRecentDraftByDedupeKey(input: {
 }
 
 /**
+ * P0.5 addition — closes the fallback-path duplicate gap.
+ *
+ * `fallback_local` writes directly into the formal table and intentionally
+ * skips `content_drafts`. Without this check, the next producer tick sees an
+ * empty content_drafts for the entity and would run fallback again, producing
+ * a duplicate formal-table row.
+ *
+ * Scope: only `theme_summaries` and `company_notes` — the two tables touched
+ * by the P0 scope-locked producers. Other target tables fall through to the
+ * content_drafts check as before.
+ *
+ * Coarseness: this check does not consider `producerVersion`. That is
+ * intentional — when a formal row already exists in the 24-hr window we do
+ * not want a version bump to produce another row automatically. A deliberate
+ * re-run path (admin action) can bypass this at the application layer later.
+ */
+export async function findRecentFormalRow(input: {
+  workspaceId: string;
+  targetTable: string;
+  targetEntityId: string;
+  windowSeconds?: number;
+  now?: Date;
+}): Promise<{ id: string; generatedAt: Date } | null> {
+  const db = getDb();
+  if (!db) return null;
+
+  const now = input.now ?? new Date();
+  const cutoff = new Date(
+    now.getTime() - (input.windowSeconds ?? CONTENT_DRAFT_DEDUPE_WINDOW_SECONDS) * 1000
+  );
+
+  if (input.targetTable === "theme_summaries") {
+    const rows = await db
+      .select({ id: themeSummaries.id, generatedAt: themeSummaries.generatedAt })
+      .from(themeSummaries)
+      .where(
+        and(
+          eq(themeSummaries.workspaceId, input.workspaceId),
+          eq(themeSummaries.themeId, input.targetEntityId),
+          gte(themeSummaries.generatedAt, cutoff)
+        )
+      )
+      .orderBy(desc(themeSummaries.generatedAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  if (input.targetTable === "company_notes") {
+    const rows = await db
+      .select({ id: companyNotes.id, generatedAt: companyNotes.generatedAt })
+      .from(companyNotes)
+      .where(
+        and(
+          eq(companyNotes.workspaceId, input.workspaceId),
+          eq(companyNotes.companyId, input.targetEntityId),
+          gte(companyNotes.generatedAt, cutoff)
+        )
+      )
+      .orderBy(desc(companyNotes.generatedAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  return null;
+}
+
+/**
  * Returns true if there is already a queued or running OpenAlice job in this
  * workspace with the exact same task type + target entity. Prevents producer
  * from spamming duplicate jobs when the runner is slow.
@@ -171,6 +240,7 @@ export async function enqueueOpenAliceJobFromWorker(input: {
 }
 
 export type ProducerRoutingDecision =
+  | { kind: "skip_existing_formal_row"; rowId: string; generatedAt: Date }
   | { kind: "skip_existing_draft"; dedupeKey: string; draftId: string }
   | { kind: "skip_pending_job"; jobId: string }
   | { kind: "enqueue_openalice" }
@@ -179,7 +249,11 @@ export type ProducerRoutingDecision =
 /**
  * Central routing decision for a producer run.
  *
- * Rules (P0-C):
+ * Rules (P0-C + P0.5 fallback-dedupe fix):
+ *   0. If a formal-table row for the same entity was created in the last 24 h → skip.
+ *      Closes the duplicate gap left by the original P0-C: fallback_local writes
+ *      directly to the formal table without touching content_drafts, so
+ *      rule 1 alone did not cover the fallback path.
  *   1. If a non-rejected draft with same dedupe_key exists in the last 24 h → skip.
  *   2. If a queued/running OpenAlice job for the same task+entity exists → skip.
  *   3. If a device is active (lastSeenAt < 5 min) → enqueue_openalice.
@@ -194,6 +268,21 @@ export async function decideProducerRoute(input: {
   now?: Date;
 }): Promise<ProducerRoutingDecision> {
   const producerVersion = input.producerVersion ?? "v1";
+
+  const existingFormal = await findRecentFormalRow({
+    workspaceId: input.workspaceId,
+    targetTable: input.targetTable,
+    targetEntityId: input.targetEntityId,
+    now: input.now
+  });
+  if (existingFormal) {
+    return {
+      kind: "skip_existing_formal_row",
+      rowId: existingFormal.id,
+      generatedAt: existingFormal.generatedAt
+    };
+  }
+
   const dedupeKey = computeContentDraftDedupeKey({
     workspaceId: input.workspaceId,
     targetTable: input.targetTable,

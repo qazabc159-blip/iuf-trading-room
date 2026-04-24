@@ -36,7 +36,12 @@ export async function runThemeSummaryProducer(): Promise<{
   themeId: string;
   themeName: string;
   companyCount: number;
-  route: "openalice" | "fallback_local" | "skipped_existing_draft" | "skipped_pending_job";
+  route:
+    | "openalice"
+    | "fallback_local"
+    | "skipped_existing_draft"
+    | "skipped_pending_job"
+    | "skipped_existing_formal_row";
   summaryId?: string;
   jobId?: string;
   skippedFor?: string;
@@ -70,6 +75,16 @@ export async function runThemeSummaryProducer(): Promise<{
     taskType: TASK_TYPE,
     producerVersion: PRODUCER_VERSION
   });
+
+  if (route.kind === "skip_existing_formal_row") {
+    return {
+      themeId: theme.id,
+      themeName: theme.name,
+      companyCount: 0,
+      route: "skipped_existing_formal_row",
+      skippedFor: route.rowId
+    };
+  }
 
   if (route.kind === "skip_existing_draft") {
     return {

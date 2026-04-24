@@ -35,7 +35,12 @@ const TARGET_TABLE = "company_notes";
 export async function runCompanyNoteProducer(): Promise<{
   companyId: string;
   companyName: string;
-  route: "openalice" | "fallback_local" | "skipped_existing_draft" | "skipped_pending_job";
+  route:
+    | "openalice"
+    | "fallback_local"
+    | "skipped_existing_draft"
+    | "skipped_pending_job"
+    | "skipped_existing_formal_row";
   noteId?: string;
   jobId?: string;
   skippedFor?: string;
@@ -69,6 +74,15 @@ export async function runCompanyNoteProducer(): Promise<{
     taskType: TASK_TYPE,
     producerVersion: PRODUCER_VERSION
   });
+
+  if (route.kind === "skip_existing_formal_row") {
+    return {
+      companyId: company.id,
+      companyName: company.name,
+      route: "skipped_existing_formal_row",
+      skippedFor: route.rowId
+    };
+  }
 
   if (route.kind === "skip_existing_draft") {
     return {
