@@ -1047,3 +1047,47 @@ export async function getCompanyNotes(params: { companyId: string; limit?: numbe
   if (params.limit) query.set("limit", String(params.limit));
   return request<CompanyNote[]>(`/api/v1/company-notes?${query.toString()}`);
 }
+
+// ── Content Drafts (P0-D / P0.5-4 review queue) ─────────────────────────────
+
+export type ContentDraftStatus = "awaiting_review" | "approved" | "rejected";
+export type ContentDraftTargetTable = "theme_summaries" | "company_notes";
+
+export type ContentDraftEntry = {
+  id: string;
+  workspaceId: string;
+  sourceJobId: string | null;
+  targetTable: ContentDraftTargetTable | string;
+  targetEntityId: string | null;
+  payload: unknown;
+  status: ContentDraftStatus;
+  dedupeKey: string;
+  producerVersion: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  rejectReason: string | null;
+  approvedRefId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getContentDrafts(params?: { status?: ContentDraftStatus; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<ContentDraftEntry[]>(`/api/v1/content-drafts${qs ? `?${qs}` : ""}`);
+}
+
+export async function approveContentDraft(draftId: string) {
+  return request<ContentDraftEntry>(`/api/v1/content-drafts/${draftId}/approve`, {
+    method: "POST"
+  });
+}
+
+export async function rejectContentDraft(draftId: string, reason: string) {
+  return request<ContentDraftEntry>(`/api/v1/content-drafts/${draftId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason })
+  });
+}

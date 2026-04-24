@@ -1,0 +1,192 @@
+{
+  "generatedAt": "2026-04-24T16:08:51.724Z",
+  "results": [
+    {
+      "step": "login",
+      "url": "https://app.eycvector.com/"
+    },
+    {
+      "step": "themes_count",
+      "n": 25
+    },
+    {
+      "step": "companies_count",
+      "n": 1736
+    },
+    {
+      "step": "theme_summaries_total",
+      "n": 17
+    },
+    {
+      "step": "company_notes_total",
+      "n": 24
+    },
+    {
+      "step": "theme_summaries_last_60m_per_theme",
+      "unique_themes": 3,
+      "entities_with_multiple_rows": 1,
+      "duplicate_detail": [
+        {
+          "themeId": "f15fb73c-dac9-496c-8012-c71ab733af56",
+          "rows": 3
+        }
+      ]
+    },
+    {
+      "step": "company_notes_last_60m_per_company",
+      "unique_companies": 7,
+      "entities_with_multiple_rows": 0,
+      "duplicate_detail": []
+    },
+    {
+      "step": "theme_summaries_recent_top10",
+      "rows": [
+        {
+          "id": "bae286d9-2ade-4f67-8ce1-3188a178d0f5",
+          "themeId": "0bc42562-3076-44c4-bc43-a7882684053a",
+          "generatedAt": "2026-04-24T16:08:28.696Z",
+          "kind": "fallback",
+          "summary_prefix": "Theme: NVIDIA\nLifecycle: Discovery | Market State: Balanced | Priority: 3\nThesis"
+        },
+        {
+          "id": "f1d40721-efab-46b0-8706-aa5f3e15d4b4",
+          "themeId": "f15fb73c-dac9-496c-8012-c71ab733af56",
+          "generatedAt": "2026-04-24T15:42:16.586Z",
+          "kind": "fallback",
+          "summary_prefix": "Theme: Tesla\nLifecycle: Discovery | Market State: Balanced | Priority: 3\nThesis:"
+        },
+        {
+          "id": "6d3e66ba-d326-45f3-9962-7b28ec1becac",
+          "themeId": "9f54e15c-66ef-49ba-87ef-3aae2476590d",
+          "generatedAt": "2026-04-24T15:33:10.065Z",
+          "kind": "openalice_roundtrip",
+          "summary_prefix": "[P0E round-trip proof] Theme: [ORPHAN] AI Optics (->CPO). This summary was produ"
+        },
+        {
+          "id": "6d2e9576-51ab-45bb-b5b7-6b1adf5475c5",
+          "themeId": "f15fb73c-dac9-496c-8012-c71ab733af56",
+          "generatedAt": "2026-04-24T15:25:19.223Z",
+          "kind": "other",
+          "summary_prefix": "Theme: Tesla\nLifecycle: Discovery | Market State: Balanced | Priority: 3\nThesis:"
+        },
+        {
+          "id": "63c3ec70-d30b-45fa-b625-b9b06b07e303",
+          "themeId": "f15fb73c-dac9-496c-8012-c71ab733af56",
+          "generatedAt": "2026-04-24T15:10:19.225Z",
+          "kind": "other",
+          "summary_prefix": "Theme: Tesla\nLifecycle: Discovery | Market State: Balanced | Priority: 3\nThesis:"
+        },
+        {
+          "id": "0548ab66-f853-4544-8734-4dd268ea78fd",
+          "themeId": "f15fb73c-dac9-496c-8012-c71ab733af56",
+          "generatedAt": "2026-04-24T15:02:24.439Z",
+          "kind": "other",
+          "summary_prefix": "Theme: Tesla\nLifecycle: Discovery | Market State: Balanced | Priority: 3\nThesis:"
+        },
+        {
+          "id": "d5d77178-ee75-45be-a6ef-2fa9f9664caf",
+          "themeId": "4fb18539-fcad-45a9-9a0c-41da54b77bae",
+          "generatedAt": "2026-04-24T14:47:24.436Z",
+          "kind": "other",
+          "summary_prefix": "Theme: VCSEL\nLifecycle: Discovery | Market State: Balanced | Priority: 3\nThesis:"
+        },
+        {
+          "id": "4ff308b7-b63a-44b5-b740-363c59171bcf",
+          "themeId": "4fb18539-fcad-45a9-9a0c-41da54b77bae",
+          "generatedAt": "2026-04-24T14:46:00.978Z",
+          "kind": "other",
+          "summary_prefix": "Theme: VCSEL\nLifecycle: Discovery | Market State: Balanced | Priority: 3\nThesis:"
+        },
+        {
+          "id": "04117c59-6eb9-4f6a-858d-de00bfa990ad",
+          "themeId": "4fb18539-fcad-45a9-9a0c-41da54b77bae",
+          "generatedAt": "2026-04-24T14:31:00.923Z",
+          "kind": "other",
+          "summary_prefix": "Theme: VCSEL\nLifecycle: Discovery | Market State: Balanced | Priority: 3\nThesis:"
+        },
+        {
+          "id": "9ee54990-e64a-48da-abd9-7bd9e5bcc604",
+          "themeId": "4fb18539-fcad-45a9-9a0c-41da54b77bae",
+          "generatedAt": "2026-04-24T14:16:00.873Z",
+          "kind": "other",
+          "summary_prefix": "Theme: VCSEL\nLifecycle: Discovery | Market State: Balanced | Priority: 3\nThesis:"
+        }
+      ]
+    },
+    {
+      "step": "company_notes_recent_top10",
+      "rows": [
+        {
+          "id": "c1bd8db9-1198-493f-b44b-6311954c7df5",
+          "companyId": "e10d5686-8493-4b40-aad8-4725d80180d8",
+          "generatedAt": "2026-04-24T16:03:28.723Z",
+          "kind": "fallback",
+          "note_prefix": "Company Note: 郡都開發 (4402) — TWSE\nTier: Observation | Country: TW\nChain Position:"
+        },
+        {
+          "id": "0b6e40a6-e0a2-4c8e-84c1-d63959751b19",
+          "companyId": "e88d832d-4a89-4590-aee1-e17ea77af763",
+          "generatedAt": "2026-04-24T15:53:28.713Z",
+          "kind": "fallback",
+          "note_prefix": "Company Note: 大台北 (9908) — TWSE\nTier: Observation | Country: TW\nChain Position: "
+        },
+        {
+          "id": "e1f91b4f-42a5-4339-a6fb-59ff818b4c05",
+          "companyId": "1b773e1a-be4a-4b5a-a684-53c56f7f9f6f",
+          "generatedAt": "2026-04-24T15:52:16.576Z",
+          "kind": "fallback",
+          "note_prefix": "Company Note: 中連 (5604) — TWSE\nTier: Observation | Country: TW\nChain Position: T"
+        },
+        {
+          "id": "7d49dba1-a76d-4aa0-a4a7-6cfb30f25f71",
+          "companyId": "80aea088-1671-427b-b786-71041cc61afe",
+          "generatedAt": "2026-04-24T15:42:16.599Z",
+          "kind": "fallback",
+          "note_prefix": "Company Note: 綠岩能源 (7833) — TWSE\nTier: Observation | Country: TW\nChain Position:"
+        },
+        {
+          "id": "e6670eff-6942-4883-9a8a-f4c84534110a",
+          "companyId": "bfce1f91-4246-465e-a725-d867e7656e6b",
+          "generatedAt": "2026-04-24T15:35:58.872Z",
+          "kind": "openalice_roundtrip",
+          "note_prefix": "[P0E round-trip] Company note for ����-KY (4442). Submitted via OpenAlice runner"
+        },
+        {
+          "id": "cf41e0c4-feca-4d38-8468-41bfadfeed69",
+          "companyId": "3e0a8dc2-955b-49d0-81d4-f23d0ce90819",
+          "generatedAt": "2026-04-24T15:20:19.229Z",
+          "kind": "other",
+          "note_prefix": "Company Note: 聯亞 (3081.TW) — TWSE\nTier: Core | Country: TW\nChain Position: EML l"
+        },
+        {
+          "id": "d93a662f-89ce-448d-bd20-a007a33cc497",
+          "companyId": "1f215748-692e-41d2-b1b4-9a11ba719534",
+          "generatedAt": "2026-04-24T15:10:19.253Z",
+          "kind": "other",
+          "note_prefix": "Company Note: 冠星-KY (4439) — TWSE\nTier: Observation | Country: TW\nChain Position"
+        },
+        {
+          "id": "0eb52c92-41f5-4a53-a3ae-f15252a7b171",
+          "companyId": "d4321735-698e-4769-ab49-85592fae86c9",
+          "generatedAt": "2026-04-24T15:07:24.470Z",
+          "kind": "other",
+          "note_prefix": "Company Note: 光明 (4420) — TWSE\nTier: Observation | Country: TW\nChain Position: T"
+        },
+        {
+          "id": "7f1dfdb5-2678-4d72-aa9b-426829fb36e1",
+          "companyId": "a5abfe62-1bf9-4ef8-8c0c-7c04a50f52ad",
+          "generatedAt": "2026-04-24T14:57:24.454Z",
+          "kind": "other",
+          "note_prefix": "Company Note: 數泓科 (6855) — TWSE\nTier: Observation | Country: TW\nChain Position: "
+        },
+        {
+          "id": "280d5ea0-1bfe-4d44-8350-7f5900f93d60",
+          "companyId": "14ed406c-825c-4146-896c-e0d407c41e5e",
+          "generatedAt": "2026-04-24T14:47:24.464Z",
+          "kind": "other",
+          "note_prefix": "Company Note: 大汽電 (8931) — TWSE\nTier: Observation | Country: TW\nChain Position: "
+        }
+      ]
+    }
+  ]
+}
