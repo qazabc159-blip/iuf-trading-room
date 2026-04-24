@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import { primaryNavigation } from "@iuf-trading-room/ui";
 
 import { getSession } from "@/lib/api";
+import { apiLogout } from "@/lib/auth-client";
 import type { AppSession } from "@iuf-trading-room/contracts";
 
 import { BootSequence } from "./boot-sequence";
@@ -24,6 +25,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [session, setSession] = useState<AppSession | null>(null);
 
   useEffect(() => {
@@ -31,6 +33,11 @@ export function AppShell({
       .then((res) => setSession(res.data))
       .catch(() => {});
   }, []);
+
+  async function handleLogout() {
+    await apiLogout();
+    router.push("/login");
+  }
 
   const now = new Date();
   const timeStr = now.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
@@ -52,6 +59,16 @@ export function AppShell({
             </Link>
           ))}
         </nav>
+        {/* Logout — bottom of rail */}
+        <button
+          type="button"
+          className="nav-logout"
+          onClick={handleLogout}
+          title="登出"
+          aria-label="登出"
+        >
+          OUT
+        </button>
       </aside>
 
       {/* 頂部戰情列 — ticker tape 活體跑馬燈 */}

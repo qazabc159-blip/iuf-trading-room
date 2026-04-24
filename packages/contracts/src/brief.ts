@@ -10,7 +10,7 @@ export const dailyBriefSchema = z.object({
   date: z.string(),
   marketState: z.string(),
   sections: z.array(briefSectionSchema),
-  generatedBy: z.enum(["manual", "openalice"]),
+  generatedBy: z.enum(["manual", "openalice", "worker"]),
   status: z.enum(["draft", "published"]),
   createdAt: z.string()
 });
@@ -24,7 +24,7 @@ export const dailyBriefCreateInputSchema = z.object({
       body: z.string().min(1).max(5000)
     })
   ).min(1),
-  generatedBy: z.enum(["manual", "openalice"]).default("manual"),
+  generatedBy: z.enum(["manual", "openalice", "worker"]).default("manual"),
   status: z.enum(["draft", "published"]).default("draft")
 });
 

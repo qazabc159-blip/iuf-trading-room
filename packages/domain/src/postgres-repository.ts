@@ -13,6 +13,7 @@ import {
   type CompanyKeyword,
   type CompanyKeywordInput,
   companyKeywordSchema,
+  type CompanyNote,
   type CompanyRelation,
   type CompanyRelationInput,
   companyRelationSchema,
@@ -29,6 +30,7 @@ import {
   type Theme,
   themeSchema,
   type ThemeCreateInput,
+  type ThemeSummary,
   type ThemeUpdateInput,
   type TradePlan,
   type TradePlanCreateInput,
@@ -41,12 +43,15 @@ import {
 import {
   companies,
   companyKeywords,
+  companyNotes as companyNotesTable,
   companyRelations,
   companyThemeLinks,
+  dailyBriefs as dailyBriefsTable,
   getDb,
   reviewEntries,
   signals,
   themes,
+  themeSummaries as themeSummariesTable,
   tradePlans,
   users,
   workspaces
@@ -976,23 +981,113 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
     };
   }
 
-  // ── Daily Briefs (memory-only for v1, no DB table yet) ──
+  // ── Daily Briefs ──────────────────────────────────────────────────────────
 
-  private briefs: DailyBrief[] = [];
+  async listBriefs(options?: SessionOptions): Promise<DailyBrief[]> {
+    const db = this.database;
+    const { workspace } = await this.ensureSessionBase(options);
 
-  async listBriefs(): Promise<DailyBrief[]> {
-    return this.briefs.map((b) => ({ ...b, sections: b.sections.map((s) => ({ ...s })) }));
+    const rows = await db
+      .select()
+      .from(dailyBriefsTable)
+      .where(eq(dailyBriefsTable.workspaceId, workspace.id))
+      .orderBy(desc(dailyBriefsTable.createdAt))
+      .limit(30);
+
+    return rows.map((row) => ({
+      id: row.id,
+      date: row.date,
+      marketState: row.marketState,
+      sections: (row.sections ?? []) as Array<{ heading: string; body: string }>,
+      generatedBy: (row.generatedBy ?? "worker") as DailyBrief["generatedBy"],
+      status: (row.status ?? "draft") as DailyBrief["status"],
+      createdAt: row.createdAt.toISOString()
+    }));
   }
 
-  async createBrief(input: DailyBriefCreateInput): Promise<DailyBrief> {
-    const brief: DailyBrief = {
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      ...input,
-      generatedBy: input.generatedBy ?? "manual",
-      status: input.status ?? "draft"
+  async createBrief(input: DailyBriefCreateInput, options?: SessionOptions): Promise<DailyBrief> {
+    const db = this.database;
+    const { workspace } = await this.ensureSessionBase(options);
+
+    const [row] = await db
+      .insert(dailyBriefsTable)
+      .values({
+        workspaceId: workspace.id,
+        date: input.date,
+        marketState: input.marketState,
+        sections: input.sections,
+        generatedBy: input.generatedBy ?? "manual",
+        status: input.status ?? "draft"
+      })
+      .returning();
+
+    return {
+      id: row!.id,
+      date: row!.date,
+      marketState: row!.marketState,
+      sections: (row!.sections ?? []) as Array<{ heading: string; body: string }>,
+      generatedBy: (row!.generatedBy ?? "manual") as DailyBrief["generatedBy"],
+      status: (row!.status ?? "draft") as DailyBrief["status"],
+      createdAt: row!.createdAt.toISOString()
     };
-    this.briefs.unshift(brief);
-    return { ...brief, sections: brief.sections.map((s) => ({ ...s })) };
+  }
+
+  // ── Worker-produced content ────────────────────────────────────────────────
+
+  async listThemeSummaries(
+    options?: SessionOptions & { themeId?: string; limit?: number }
+  ): Promise<ThemeSummary[]> {
+    const db = this.database;
+    const { workspace } = await this.ensureSessionBase(options);
+    const limit = options?.limit ?? 20;
+
+    const conditions = [eq(themeSummariesTable.workspaceId, workspace.id)];
+    if (options?.themeId) {
+      conditions.push(eq(themeSummariesTable.themeId, options.themeId));
+    }
+
+    const rows = await db
+      .select()
+      .from(themeSummariesTable)
+      .where(and(...conditions))
+      .orderBy(desc(themeSummariesTable.generatedAt))
+      .limit(limit);
+
+    return rows.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspaceId,
+      themeId: row.themeId,
+      summary: row.summary,
+      companyCount: row.companyCount,
+      generatedAt: row.generatedAt.toISOString()
+    }));
+  }
+
+  async listCompanyNotes(
+    options?: SessionOptions & { companyId?: string; limit?: number }
+  ): Promise<CompanyNote[]> {
+    const db = this.database;
+    const { workspace } = await this.ensureSessionBase(options);
+    const limit = options?.limit ?? 20;
+
+    const conditions = [eq(companyNotesTable.workspaceId, workspace.id)];
+    if (options?.companyId) {
+      conditions.push(eq(companyNotesTable.companyId, options.companyId));
+    }
+
+    const rows = await db
+      .select()
+      .from(companyNotesTable)
+      .where(and(...conditions))
+      .orderBy(desc(companyNotesTable.generatedAt))
+      .limit(limit);
+
+    return rows.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspaceId,
+      companyId: row.companyId,
+      note: row.note,
+      generatedAt: row.generatedAt.toISOString()
+    }));
   }
 }

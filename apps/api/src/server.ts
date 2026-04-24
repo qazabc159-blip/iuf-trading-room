@@ -168,6 +168,13 @@ import {
   listStrategyRuns
 } from "./strategy-engine.js";
 import { initRiskStore } from "./risk-engine.js";
+import {
+  buildClearCookieHeader,
+  buildSetCookieHeader,
+  loginWithPassword,
+  registerWithInvite,
+  seedOwnerIfEmpty
+} from "./auth-store.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -186,7 +193,24 @@ const BUILD_INFO = {
   startedAt: PROCESS_STARTED_AT
 } as const;
 
-app.use("*", cors({ origin: "*" }));
+const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  "*",
+  cors({
+    origin: (origin) => {
+      if (!origin) return origin;
+      if (CORS_ORIGINS.includes("*")) return origin;
+      return CORS_ORIGINS.includes(origin) ? origin : null;
+    },
+    credentials: true,
+    allowHeaders: ["Content-Type", "Authorization", "x-workspace-slug", "x-user-role"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+  })
+);
 
 app.use("/api/v1/*", async (c, next) => {
   const workspaceSlug = c.req.header("x-workspace-slug") ?? process.env.DEFAULT_WORKSPACE_SLUG;
@@ -1749,6 +1773,32 @@ app.post("/api/v1/briefs", async (c) => {
   );
 });
 
+// ── Worker-produced content endpoints ─────────────────────────────────────────
+
+app.get("/api/v1/theme-summaries", async (c) => {
+  const themeId = c.req.query("themeId");
+  const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
+  return c.json({
+    data: await c.get("repo").listThemeSummaries({
+      workspaceSlug: c.get("session").workspace.slug,
+      ...(themeId ? { themeId } : {}),
+      ...(limit ? { limit } : {})
+    })
+  });
+});
+
+app.get("/api/v1/company-notes", async (c) => {
+  const companyId = c.req.query("companyId");
+  const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
+  return c.json({
+    data: await c.get("repo").listCompanyNotes({
+      workspaceSlug: c.get("session").workspace.slug,
+      ...(companyId ? { companyId } : {}),
+      ...(limit ? { limit } : {})
+    })
+  });
+});
+
 app.post("/api/v1/openalice/register", async (c) => {
   const payload = openAliceRegisterSchema.parse(await c.req.json());
   const registration = await registerOpenAliceDevice({
@@ -2120,6 +2170,54 @@ app.post("/api/v1/import/my-tw-coverage", async (c) => {
   });
 });
 
+// ── Auth routes ───────────────────────────────────────────────────────────────
+
+const authLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1).max(256)
+});
+
+const authRegisterSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8).max(256),
+  inviteCode: z.string().min(1).max(128)
+});
+
+app.post("/auth/login", async (c) => {
+  const body = authLoginSchema.parse(await c.req.json());
+  const result = await loginWithPassword(body.email, body.password);
+  if (!result.ok) {
+    return c.json({ error: result.error }, 401);
+  }
+  c.header("Set-Cookie", buildSetCookieHeader(result.user.id));
+  return c.json({ user: result.user, workspace: result.workspace });
+});
+
+app.post("/auth/register-with-invite", async (c) => {
+  const body = authRegisterSchema.parse(await c.req.json());
+  const result = await registerWithInvite(body.email, body.password, body.inviteCode);
+  if (!result.ok) {
+    return c.json({ error: result.error }, 400);
+  }
+  c.header("Set-Cookie", buildSetCookieHeader(result.user.id));
+  return c.json({ user: result.user, workspace: result.workspace });
+});
+
+app.post("/auth/logout", (c) => {
+  c.header("Set-Cookie", buildClearCookieHeader());
+  return c.json({ ok: true });
+});
+
+app.get("/auth/me", async (c) => {
+  const cookieHeader = c.req.header("cookie");
+  const { parseSessionCookie, getUserById } = await import("./auth-store.js");
+  const userId = parseSessionCookie(cookieHeader);
+  if (!userId) return c.json({ error: "unauthenticated" }, 401);
+  const user = await getUserById(userId);
+  if (!user) return c.json({ error: "user_not_found" }, 401);
+  return c.json({ user, workspace: user.workspace });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
@@ -2134,5 +2232,6 @@ serve(
     const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
     await initRiskStore(defaultWorkspace);
     console.log(`[risk-store] Hydrated workspace "${defaultWorkspace}" from persistent store.`);
+    await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
   }
 );

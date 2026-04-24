@@ -4,6 +4,7 @@ import type {
   CompanyCreateInput,
   CompanyKeyword,
   CompanyKeywordInput,
+  CompanyNote,
   CompanyRelation,
   CompanyRelationInput,
   CompanyUpdateInput,
@@ -17,6 +18,7 @@ import type {
   SignalUpdateInput,
   Theme,
   ThemeCreateInput,
+  ThemeSummary,
   ThemeUpdateInput,
   TradePlan,
   TradePlanCreateInput,
@@ -456,5 +458,19 @@ export class MemoryTradingRoomRepository implements TradingRoomRepository {
     };
     this.briefs.unshift(brief);
     return { ...brief, sections: brief.sections.map((s) => ({ ...s })) };
+  }
+
+  // Worker-produced content (memory mode: always empty — workers require DB mode)
+
+  async listThemeSummaries(
+    _options?: SessionOptions & { themeId?: string; limit?: number }
+  ): Promise<ThemeSummary[]> {
+    return [];
+  }
+
+  async listCompanyNotes(
+    _options?: SessionOptions & { companyId?: string; limit?: number }
+  ): Promise<CompanyNote[]> {
+    return [];
   }
 }
