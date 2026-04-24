@@ -414,3 +414,36 @@ export const signalClusters = pgTable("signal_clusters", {
 }, (table) => ({
   workspaceIdx: index("signal_clusters_workspace_idx").on(table.workspaceId, table.generatedAt)
 }));
+
+// ── OpenAlice content review queue ───────────────────────────────────────────
+
+export const contentDraftStatusEnum = pgEnum("content_draft_status", [
+  "awaiting_review",
+  "approved",
+  "rejected"
+]);
+
+export const contentDrafts = pgTable("content_drafts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  sourceJobId: uuid("source_job_id").references(() => openAliceJobs.id),
+  targetTable: text("target_table").notNull(),
+  targetEntityId: uuid("target_entity_id"),
+  payload: jsonb("payload").notNull(),
+  status: contentDraftStatusEnum("status").default("awaiting_review").notNull(),
+  dedupeKey: text("dedupe_key").notNull(),
+  producerVersion: text("producer_version").default("v1").notNull(),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  rejectReason: text("reject_reason"),
+  approvedRefId: uuid("approved_ref_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => ({
+  workspaceStatusIdx: index("content_drafts_workspace_status_idx").on(
+    table.workspaceId, table.status, table.createdAt
+  ),
+  dedupeKeyIdx: index("content_drafts_dedupe_key_idx").on(table.dedupeKey, table.createdAt),
+  statusCreatedIdx: index("content_drafts_status_created_idx").on(table.status, table.createdAt),
+  sourceJobIdx: index("content_drafts_source_job_idx").on(table.sourceJobId)
+}));

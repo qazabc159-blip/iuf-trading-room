@@ -59,6 +59,13 @@ import {
   revokeOpenAliceDevice,
   submitOpenAliceResult
 } from "./openalice-bridge.js";
+import {
+  approveContentDraft,
+  contentDraftListQuerySchema,
+  contentDraftRejectSchema,
+  listContentDrafts,
+  rejectContentDraft
+} from "./content-draft-store.js";
 import { getOpenAliceObservabilitySnapshot } from "./openalice-observability.js";
 import {
   buildTradingViewEventKey,
@@ -1917,6 +1924,49 @@ app.post("/api/internal/openalice/jobs/:jobId/result", handleOpenAliceJobResult)
 app.post("/api/v1/openalice/jobs/claim", handleOpenAliceJobClaim);
 app.post("/api/v1/openalice/jobs/:jobId/heartbeat", handleOpenAliceJobHeartbeat);
 app.post("/api/v1/openalice/jobs/:jobId/result", handleOpenAliceJobResult);
+
+// Content drafts (OpenAlice result review queue — P0-D)
+
+app.get("/api/v1/content-drafts", async (c) => {
+  const query = contentDraftListQuerySchema.parse(c.req.query());
+  return c.json({
+    data: await listContentDrafts({
+      workspaceSlug: c.get("session").workspace.slug,
+      status: query.status,
+      limit: query.limit
+    })
+  });
+});
+
+app.post("/api/v1/content-drafts/:draftId/approve", async (c) => {
+  const result = await approveContentDraft({
+    draftId: c.req.param("draftId"),
+    reviewerId: c.get("session").user.id
+  });
+
+  if ("error" in result) {
+    const status = result.error === "content_draft_not_found" ? 404 : 409;
+    return c.json({ error: result.error }, status);
+  }
+
+  return c.json({ data: result });
+});
+
+app.post("/api/v1/content-drafts/:draftId/reject", async (c) => {
+  const payload = contentDraftRejectSchema.parse(await c.req.json().catch(() => ({})));
+  const result = await rejectContentDraft({
+    draftId: c.req.param("draftId"),
+    reviewerId: c.get("session").user.id,
+    reason: payload.reason
+  });
+
+  if ("error" in result) {
+    const status = result.error === "content_draft_not_found" ? 404 : 409;
+    return c.json({ error: result.error }, status);
+  }
+
+  return c.json({ data: result });
+});
 
 // TradingView webhook
 

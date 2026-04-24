@@ -1,12 +1,16 @@
 /**
- * theme-summary-producer.ts
+ * theme-summary-producer.ts (P0-C routing)
  *
- * Picks one theme per run, aggregates linked companies + their notes,
- * produces a text summary, and writes it to theme_summaries.
+ * Picks one theme per run, then decides how to produce the summary:
+ *   1. OpenAlice-first — if an active Windows runner is present, enqueue a
+ *      theme_summary job. The runner submits a draft_ready result which the
+ *      API mirrors into content_drafts (awaiting_review).
+ *   2. Fallback — otherwise (no active device) the producer writes a
+ *      rule-template summary directly into theme_summaries.
  *
- * Content generation: template-based using DB data.
- * If ANTHROPIC_API_KEY is set in env, falls back to template anyway for now
- * (Claude integration can be wired later when the key is available in worker).
+ * De-dupe: a dedupeKey of `${workspaceId}:theme_summaries:${themeId}:v1` is
+ * checked against content_drafts in a 24 h window. Non-rejected drafts block
+ * a new run; rejected drafts allow retry.
  */
 import { and, desc, eq } from "drizzle-orm";
 
@@ -19,22 +23,32 @@ import {
   workspaces
 } from "@iuf-trading-room/db";
 
+import {
+  decideProducerRoute,
+  enqueueOpenAliceJobFromWorker
+} from "../openalice-router.js";
+
+const PRODUCER_VERSION = "v1";
+const TASK_TYPE = "theme_summary";
+const TARGET_TABLE = "theme_summaries";
+
 export async function runThemeSummaryProducer(): Promise<{
   themeId: string;
   themeName: string;
   companyCount: number;
-  summaryId: string;
+  route: "openalice" | "fallback_local" | "skipped_existing_draft" | "skipped_pending_job";
+  summaryId?: string;
+  jobId?: string;
+  skippedFor?: string;
 }> {
   const db = getDb();
   if (!db) {
     throw new Error("[theme-summary] PERSISTENCE_MODE must be database");
   }
 
-  // get first workspace
   const [workspace] = await db.select().from(workspaces).limit(1);
   if (!workspace) throw new Error("[theme-summary] No workspace found");
 
-  // pick the most recently updated theme that hasn't been summarised recently
   const allThemes = await db
     .select()
     .from(themes)
@@ -46,11 +60,37 @@ export async function runThemeSummaryProducer(): Promise<{
     throw new Error("[theme-summary] No themes in workspace");
   }
 
-  // pick a theme round-robin by hour-of-day mod count
   const idx = new Date().getUTCHours() % allThemes.length;
   const theme = allThemes[idx]!;
 
-  // get linked companies
+  const route = await decideProducerRoute({
+    workspaceId: workspace.id,
+    targetTable: TARGET_TABLE,
+    targetEntityId: theme.id,
+    taskType: TASK_TYPE,
+    producerVersion: PRODUCER_VERSION
+  });
+
+  if (route.kind === "skip_existing_draft") {
+    return {
+      themeId: theme.id,
+      themeName: theme.name,
+      companyCount: 0,
+      route: "skipped_existing_draft",
+      skippedFor: route.draftId
+    };
+  }
+
+  if (route.kind === "skip_pending_job") {
+    return {
+      themeId: theme.id,
+      themeName: theme.name,
+      companyCount: 0,
+      route: "skipped_pending_job",
+      skippedFor: route.jobId
+    };
+  }
+
   const links = await db
     .select({ companyId: companyThemeLinks.companyId })
     .from(companyThemeLinks)
@@ -71,7 +111,43 @@ export async function runThemeSummaryProducer(): Promise<{
           .then((rows) => rows.filter((r) => companyIds.includes(r.id)))
       : [];
 
-  // template-based summary
+  if (route.kind === "enqueue_openalice") {
+    const job = await enqueueOpenAliceJobFromWorker({
+      workspaceId: workspace.id,
+      taskType: TASK_TYPE,
+      schemaName: "theme_summary@v1",
+      instructions: [
+        `Produce a concise theme summary for: ${theme.name}.`,
+        `Lifecycle=${theme.lifecycle}, MarketState=${theme.marketState}, Priority=${theme.priority}.`,
+        `Thesis: ${theme.thesis.slice(0, 400)}`,
+        `WhyNow: ${theme.whyNow.slice(0, 200)}`,
+        `Include up to 10 linked companies with ticker and beneficiary tier.`,
+        `Output JSON: {themeId, summary, companyCount}.`
+      ].join("\n"),
+      contextRefs: [
+        { type: "theme", id: theme.id },
+        ...linkedCompanies.slice(0, 10).map((c) => ({ type: "company", id: c.id }))
+      ],
+      parameters: {
+        themeId: theme.id,
+        themeName: theme.name,
+        companyCount: linkedCompanies.length,
+        targetTable: TARGET_TABLE,
+        targetEntityId: theme.id,
+        producerVersion: PRODUCER_VERSION
+      }
+    });
+
+    return {
+      themeId: theme.id,
+      themeName: theme.name,
+      companyCount: linkedCompanies.length,
+      route: "openalice",
+      jobId: job?.id
+    };
+  }
+
+  // fallback_local — template write directly to theme_summaries
   const now = new Date().toISOString().split("T")[0];
   const companyLines = linkedCompanies
     .slice(0, 10)
@@ -90,7 +166,7 @@ export async function runThemeSummaryProducer(): Promise<{
     `Linked Companies (${linkedCompanies.length}):`,
     companyLines || "  (none)",
     ``,
-    `Generated: ${now}`
+    `Generated: ${now} (rule-template fallback)`
   ].join("\n");
 
   const [inserted] = await db
@@ -107,6 +183,7 @@ export async function runThemeSummaryProducer(): Promise<{
     themeId: theme.id,
     themeName: theme.name,
     companyCount: linkedCompanies.length,
+    route: "fallback_local",
     summaryId: inserted!.id
   };
 }

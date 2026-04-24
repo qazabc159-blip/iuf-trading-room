@@ -19,6 +19,17 @@ import type {
 } from "@iuf-trading-room/integrations";
 import { z } from "zod";
 
+import {
+  CONTENT_DRAFT_TARGET_TABLES,
+  createContentDraft,
+  type ContentDraftTargetTable
+} from "./content-draft-store.js";
+
+const OPENALICE_TASK_TO_TARGET_TABLE: Partial<Record<OpenAliceBridgeTaskType, ContentDraftTargetTable>> = {
+  theme_summary: "theme_summaries",
+  company_note: "company_notes"
+};
+
 const openAliceTaskTypes = [
   "daily_brief",
   "theme_summary",
@@ -1013,6 +1024,33 @@ export async function submitOpenAliceResult(input: {
       completedAt: submittedAt
     })
     .where(eq(openAliceJobs.id, job.id));
+
+  // P0-D: mirror into content_drafts when task type is scope-locked (theme_summary / company_note).
+  // Drafts sit in awaiting_review until a reviewer approves/rejects via /api/v1/content-drafts/*.
+  if (input.result.status === "draft_ready") {
+    const targetTable = OPENALICE_TASK_TO_TARGET_TABLE[job.taskType as OpenAliceBridgeTaskType];
+    if (targetTable && CONTENT_DRAFT_TARGET_TABLES.includes(targetTable)) {
+      const structured =
+        input.result.structured && typeof input.result.structured === "object" && !Array.isArray(input.result.structured)
+          ? (input.result.structured as Record<string, unknown>)
+          : {};
+
+      const targetEntityId =
+        typeof structured.themeId === "string"
+          ? (structured.themeId as string)
+          : typeof structured.companyId === "string"
+          ? (structured.companyId as string)
+          : null;
+
+      await createContentDraft({
+        workspaceId: input.device.workspaceId,
+        sourceJobId: job.id,
+        targetTable,
+        targetEntityId,
+        payload: structured
+      });
+    }
+  }
 
   return {
     ...input.result,
