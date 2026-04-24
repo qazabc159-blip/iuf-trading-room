@@ -193,7 +193,24 @@ const BUILD_INFO = {
   startedAt: PROCESS_STARTED_AT
 } as const;
 
-app.use("*", cors({ origin: "*" }));
+const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  "*",
+  cors({
+    origin: (origin) => {
+      if (!origin) return origin;
+      if (CORS_ORIGINS.includes("*")) return origin;
+      return CORS_ORIGINS.includes(origin) ? origin : null;
+    },
+    credentials: true,
+    allowHeaders: ["Content-Type", "Authorization", "x-workspace-slug", "x-user-role"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+  })
+);
 
 app.use("/api/v1/*", async (c, next) => {
   const workspaceSlug = c.req.header("x-workspace-slug") ?? process.env.DEFAULT_WORKSPACE_SLUG;
