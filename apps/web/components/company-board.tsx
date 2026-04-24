@@ -7,10 +7,11 @@ import type {
   Company,
   CompanyCreateInput,
   CompanyGraphView,
+  CompanyNote,
   ExposureBreakdown
 } from "@iuf-trading-room/contracts";
 
-import { createCompany, getCompanies, getCompanyGraph, getThemes } from "@/lib/api";
+import { createCompany, getCompanies, getCompanyGraph, getCompanyNotes, getThemes } from "@/lib/api";
 import { industryLabel } from "@/lib/industry-i18n";
 
 const tiers: BeneficiaryTier[] = ["Core", "Direct", "Indirect", "Observation"];
@@ -60,6 +61,8 @@ export function CompanyBoard() {
   const [graph, setGraph] = useState<CompanyGraphView | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [companyNotes, setCompanyNotes] = useState<CompanyNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([getCompanies(), getThemes()])
@@ -75,6 +78,15 @@ export function CompanyBoard() {
       .then((r) => setGraph(r.data))
       .catch(() => setGraph(null))
       .finally(() => setGraphLoading(false));
+  }, [selected]);
+
+  useEffect(() => {
+    if (!selected) { setCompanyNotes([]); return; }
+    setNotesLoading(true);
+    getCompanyNotes({ companyId: selected.id, limit: 3 })
+      .then((r) => setCompanyNotes(r.data))
+      .catch(() => setCompanyNotes([]))
+      .finally(() => setNotesLoading(false));
   }, [selected]);
 
   const sectors = useMemo(() => [...new Set(companies.map((c) => c.chainPosition).filter(Boolean))].sort(), [companies]);
@@ -229,6 +241,35 @@ export function CompanyBoard() {
                     </div>
                   ) : null}
                 </>
+              )}
+            </div>
+
+            {/* [AI] 公司分析筆記 section */}
+            <div className="record-card" style={{ borderColor: "var(--accent)", borderWidth: 1, borderStyle: "solid" }}>
+              <div className="record-topline">
+                <strong style={{ fontSize: "var(--fs-sm)", color: "var(--accent)" }}>[AI] 公司分析筆記</strong>
+                {!notesLoading && companyNotes.length > 0 ? (
+                  <span className="badge-green" style={{ fontSize: "var(--fs-xs)" }}>{companyNotes.length} 則</span>
+                ) : null}
+              </div>
+              {notesLoading ? (
+                <p className="muted loading-text" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>載入 AI 筆記...</p>
+              ) : companyNotes.length === 0 ? (
+                <p className="dim" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>AI 筆記尚未產生，等待 worker 下次執行。</p>
+              ) : (
+                <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
+                  {companyNotes.map((n) => (
+                    <div key={n.id} style={{ borderTop: "1px solid var(--border)", paddingTop: 8 }}>
+                      <p className="eyebrow" style={{ fontSize: "var(--fs-xs)", marginBottom: 4 }}>
+                        {new Date(n.generatedAt).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" })}
+                      </p>
+                      <pre className="whitespace-pre-wrap" style={{ fontSize: "var(--fs-sm)", whiteSpace: "pre-wrap", fontFamily: "var(--font-mono, monospace)", lineHeight: 1.6 }}>
+                        {n.note}
+                      </pre>
+                      {/* TODO: replace <pre> with react-markdown when package is added */}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 

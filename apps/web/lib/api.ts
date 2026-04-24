@@ -3,6 +3,8 @@ import type {
   AutopilotExecuteInput,
   AutopilotExecuteResult,
   Balance,
+  CompanyNote,
+  ThemeSummary,
   BrokerAccount,
   BrokerConnectionStatus,
   Company,
@@ -1025,4 +1027,23 @@ export async function requestConfirmToken(runId: string): Promise<ConfirmTokenRe
   }
   const envelope = (await response.json()) as Envelope<ConfirmTokenResponse>;
   return envelope.data;
+}
+
+// ── Worker Content ──────────────────────────────────────────────────────────
+//
+// theme-summaries and company-notes are produced by the OpenAlice worker.
+// Filter by themeId / companyId (UUIDs). The API returns { data: T[] }.
+
+export async function getThemeSummaries(params: { themeId: string; limit?: number }) {
+  const query = new URLSearchParams();
+  query.set("themeId", params.themeId);
+  if (params.limit) query.set("limit", String(params.limit));
+  return request<ThemeSummary[]>(`/api/v1/theme-summaries?${query.toString()}`);
+}
+
+export async function getCompanyNotes(params: { companyId: string; limit?: number }) {
+  const query = new URLSearchParams();
+  query.set("companyId", params.companyId);
+  if (params.limit) query.set("limit", String(params.limit));
+  return request<CompanyNote[]>(`/api/v1/company-notes?${query.toString()}`);
 }
