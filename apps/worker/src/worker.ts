@@ -12,6 +12,8 @@ import {
 import { runThemeSummaryProducer } from "./jobs/theme-summary-producer.js";
 import { runCompanyNoteProducer } from "./jobs/company-note-producer.js";
 import { runDailyBriefProducer } from "./jobs/daily-brief-producer.js";
+import { runReviewSummaryProducer } from "./jobs/review-summary-producer.js";
+import { runSignalClusterProducer } from "./jobs/signal-cluster-producer.js";
 
 const jobs = [
   "ingest.my_tw_coverage",
@@ -25,6 +27,8 @@ const jobs = [
 const THEME_SUMMARY_INTERVAL_MS = Number(process.env.THEME_SUMMARY_INTERVAL_MS ?? 15 * 60 * 1000); // 15 min
 const COMPANY_NOTE_INTERVAL_MS = Number(process.env.COMPANY_NOTE_INTERVAL_MS ?? 10 * 60 * 1000); // 10 min
 const DAILY_BRIEF_INTERVAL_MS = Number(process.env.DAILY_BRIEF_INTERVAL_MS ?? 60 * 60 * 1000); // 1 hour
+const REVIEW_SUMMARY_INTERVAL_MS = Number(process.env.REVIEW_SUMMARY_INTERVAL_MS ?? 30 * 60 * 1000); // 30 min
+const SIGNAL_CLUSTER_INTERVAL_MS = Number(process.env.SIGNAL_CLUSTER_INTERVAL_MS ?? 20 * 60 * 1000); // 20 min
 
 let producerTimers: NodeJS.Timeout[] = [];
 
@@ -43,17 +47,21 @@ function startProducers() {
     return;
   }
 
-  console.log("[worker] Starting content producers (theme-summary, company-note, daily-brief).");
+  console.log("[worker] Starting content producers (theme-summary, company-note, daily-brief, review-summary, signal-cluster).");
 
   // run immediately on startup then on interval
   void runProducer("theme-summary", runThemeSummaryProducer);
   void runProducer("company-note", runCompanyNoteProducer);
   void runProducer("daily-brief", runDailyBriefProducer);
+  void runProducer("review-summary", runReviewSummaryProducer);
+  void runProducer("signal-cluster", runSignalClusterProducer);
 
   producerTimers.push(
     setInterval(() => void runProducer("theme-summary", runThemeSummaryProducer), THEME_SUMMARY_INTERVAL_MS),
     setInterval(() => void runProducer("company-note", runCompanyNoteProducer), COMPANY_NOTE_INTERVAL_MS),
-    setInterval(() => void runProducer("daily-brief", runDailyBriefProducer), DAILY_BRIEF_INTERVAL_MS)
+    setInterval(() => void runProducer("daily-brief", runDailyBriefProducer), DAILY_BRIEF_INTERVAL_MS),
+    setInterval(() => void runProducer("review-summary", runReviewSummaryProducer), REVIEW_SUMMARY_INTERVAL_MS),
+    setInterval(() => void runProducer("signal-cluster", runSignalClusterProducer), SIGNAL_CLUSTER_INTERVAL_MS)
   );
 }
 

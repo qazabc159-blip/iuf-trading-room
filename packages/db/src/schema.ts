@@ -386,3 +386,31 @@ export const companyNotes = pgTable("company_notes", {
 }, (table) => ({
   companyIdx: index("company_notes_company_idx").on(table.companyId, table.generatedAt)
 }));
+
+// ── P1 Worker-produced content tables ────────────────────────────────────────
+
+export const reviewSummaries = pgTable("review_summaries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  themeId: uuid("theme_id").notNull().references(() => themes.id),
+  bodyMd: text("body_md").notNull(),
+  period: text("period").notNull().default("week"),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => ({
+  themeIdx: index("review_summaries_theme_idx").on(table.themeId, table.generatedAt),
+  workspacePeriodIdx: index("review_summaries_workspace_period_idx").on(table.workspaceId, table.period, table.generatedAt)
+}));
+
+export const signalClusters = pgTable("signal_clusters", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  label: text("label").notNull(),
+  memberTickers: jsonb("member_tickers").$type<string[]>().notNull().default([]),
+  memberThemes: jsonb("member_themes").$type<string[]>().notNull().default([]),
+  rationale_md: text("rationale_md").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => ({
+  workspaceIdx: index("signal_clusters_workspace_idx").on(table.workspaceId, table.generatedAt)
+}));

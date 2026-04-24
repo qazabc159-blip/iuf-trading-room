@@ -12,8 +12,10 @@ import type {
   DailyBriefCreateInput,
   ReviewEntry,
   ReviewEntryCreateInput,
+  ReviewSummary,
   SessionUser,
   Signal,
+  SignalCluster,
   SignalCreateInput,
   SignalUpdateInput,
   Theme,
@@ -471,6 +473,20 @@ export class MemoryTradingRoomRepository implements TradingRoomRepository {
   async listCompanyNotes(
     _options?: SessionOptions & { companyId?: string; limit?: number }
   ): Promise<CompanyNote[]> {
+    return [];
+  }
+
+  // P1 Worker-produced content (memory mode: always empty — workers require DB mode)
+
+  async listReviewSummaries(
+    _options?: SessionOptions & { themeId?: string; themeSlug?: string; period?: string; limit?: number }
+  ): Promise<ReviewSummary[]> {
+    return [];
+  }
+
+  async listSignalClusters(
+    _options?: SessionOptions & { limit?: number }
+  ): Promise<SignalCluster[]> {
     return [];
   }
 }
