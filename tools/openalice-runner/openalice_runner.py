@@ -223,7 +223,13 @@ class OpenAliceClient:
 def _owner_login(api: str, owner_creds_path: str) -> str:
     env = _load_env_file(owner_creds_path)
     email = env.get("OWNER_EMAIL") or os.environ.get("OWNER_EMAIL")
-    password = env.get("OWNER_PASSWORD") or os.environ.get("OWNER_PASSWORD")
+    # accept both OWNER_PASSWORD (canonical) and OWNER_PW (legacy key in existing creds file).
+    password = (
+        env.get("OWNER_PASSWORD")
+        or env.get("OWNER_PW")
+        or os.environ.get("OWNER_PASSWORD")
+        or os.environ.get("OWNER_PW")
+    )
     if not email or not password:
         raise SystemExit("OWNER_EMAIL/OWNER_PASSWORD missing in creds file/env.")
 
