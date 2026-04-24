@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -82,10 +83,30 @@ export const openAliceJobStatusEnum = pgEnum("openalice_job_status", [
   "rejected"
 ]);
 
+export const userRoleEnum = pgEnum("user_role", [
+  "Owner",
+  "Admin",
+  "Analyst",
+  "Trader",
+  "Viewer"
+]);
+
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
+  passwordHash: text("password_hash"),
+  role: userRoleEnum("role").default("Viewer").notNull(),
+  workspaceId: uuid("workspace_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export const inviteCodes = pgTable("invite_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: text("code").notNull().unique(),
+  issuedBy: uuid("issued_by").references(() => users.id),
+  usedBy: uuid("used_by").references(() => users.id),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 
@@ -329,3 +350,39 @@ export const executionEvents = pgTable(
     )
   })
 );
+
+// ── Worker-produced content tables ────────────────────────────────────────────
+
+export const dailyBriefs = pgTable("daily_briefs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  date: text("date").notNull(),
+  marketState: text("market_state").notNull().default("Balanced"),
+  sections: jsonb("sections").$type<Array<{ heading: string; body: string }>>().notNull().default([]),
+  generatedBy: text("generated_by").notNull().default("worker"),
+  status: text("status").notNull().default("draft"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => ({
+  workspaceDateIdx: index("daily_briefs_workspace_date_idx").on(table.workspaceId, table.date)
+}));
+
+export const themeSummaries = pgTable("theme_summaries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  themeId: uuid("theme_id").notNull().references(() => themes.id),
+  summary: text("summary").notNull(),
+  companyCount: integer("company_count").notNull().default(0),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => ({
+  themeIdx: index("theme_summaries_theme_idx").on(table.themeId, table.generatedAt)
+}));
+
+export const companyNotes = pgTable("company_notes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  companyId: uuid("company_id").notNull().references(() => companies.id),
+  note: text("note").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => ({
+  companyIdx: index("company_notes_company_idx").on(table.companyId, table.generatedAt)
+}));

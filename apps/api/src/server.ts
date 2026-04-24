@@ -168,6 +168,13 @@ import {
   listStrategyRuns
 } from "./strategy-engine.js";
 import { initRiskStore } from "./risk-engine.js";
+import {
+  buildClearCookieHeader,
+  buildSetCookieHeader,
+  loginWithPassword,
+  registerWithInvite,
+  seedOwnerIfEmpty
+} from "./auth-store.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -2120,6 +2127,54 @@ app.post("/api/v1/import/my-tw-coverage", async (c) => {
   });
 });
 
+// ── Auth routes ───────────────────────────────────────────────────────────────
+
+const authLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1).max(256)
+});
+
+const authRegisterSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8).max(256),
+  inviteCode: z.string().min(1).max(128)
+});
+
+app.post("/auth/login", async (c) => {
+  const body = authLoginSchema.parse(await c.req.json());
+  const result = await loginWithPassword(body.email, body.password);
+  if (!result.ok) {
+    return c.json({ error: result.error }, 401);
+  }
+  c.header("Set-Cookie", buildSetCookieHeader(result.user.id));
+  return c.json({ user: result.user, workspace: result.workspace });
+});
+
+app.post("/auth/register-with-invite", async (c) => {
+  const body = authRegisterSchema.parse(await c.req.json());
+  const result = await registerWithInvite(body.email, body.password, body.inviteCode);
+  if (!result.ok) {
+    return c.json({ error: result.error }, 400);
+  }
+  c.header("Set-Cookie", buildSetCookieHeader(result.user.id));
+  return c.json({ user: result.user, workspace: result.workspace });
+});
+
+app.post("/auth/logout", (c) => {
+  c.header("Set-Cookie", buildClearCookieHeader());
+  return c.json({ ok: true });
+});
+
+app.get("/auth/me", async (c) => {
+  const cookieHeader = c.req.header("cookie");
+  const { parseSessionCookie, getUserById } = await import("./auth-store.js");
+  const userId = parseSessionCookie(cookieHeader);
+  if (!userId) return c.json({ error: "unauthenticated" }, 401);
+  const user = await getUserById(userId);
+  if (!user) return c.json({ error: "user_not_found" }, 401);
+  return c.json({ user, workspace: user.workspace });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
@@ -2134,5 +2189,6 @@ serve(
     const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
     await initRiskStore(defaultWorkspace);
     console.log(`[risk-store] Hydrated workspace "${defaultWorkspace}" from persistent store.`);
+    await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
   }
 );

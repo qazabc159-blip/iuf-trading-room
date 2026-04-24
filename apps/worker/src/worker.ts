@@ -1,7 +1,7 @@
 import process from "node:process";
 import { setInterval } from "node:timers";
 
-import { closeDb } from "@iuf-trading-room/db";
+import { closeDb, isDatabaseMode } from "@iuf-trading-room/db";
 import { createClient } from "redis";
 
 import {
@@ -9,6 +9,9 @@ import {
   defaultOpenAliceSweepIntervalSeconds,
   runOpenAliceMaintenanceSweep
 } from "./openalice-maintenance.js";
+import { runThemeSummaryProducer } from "./jobs/theme-summary-producer.js";
+import { runCompanyNoteProducer } from "./jobs/company-note-producer.js";
+import { runDailyBriefProducer } from "./jobs/daily-brief-producer.js";
 
 const jobs = [
   "ingest.my_tw_coverage",
@@ -17,6 +20,42 @@ const jobs = [
   "review.refresh_metrics",
   "openalice.run_task"
 ];
+
+// producer schedule intervals (ms)
+const THEME_SUMMARY_INTERVAL_MS = Number(process.env.THEME_SUMMARY_INTERVAL_MS ?? 15 * 60 * 1000); // 15 min
+const COMPANY_NOTE_INTERVAL_MS = Number(process.env.COMPANY_NOTE_INTERVAL_MS ?? 10 * 60 * 1000); // 10 min
+const DAILY_BRIEF_INTERVAL_MS = Number(process.env.DAILY_BRIEF_INTERVAL_MS ?? 60 * 60 * 1000); // 1 hour
+
+let producerTimers: NodeJS.Timeout[] = [];
+
+async function runProducer(name: string, fn: () => Promise<unknown>) {
+  try {
+    const result = await fn();
+    console.log(`[worker] producer ${name} ok`, JSON.stringify(result));
+  } catch (err) {
+    console.error(`[worker] producer ${name} error`, err instanceof Error ? err.message : String(err));
+  }
+}
+
+function startProducers() {
+  if (!isDatabaseMode()) {
+    console.log("[worker] Skipping content producers — not in database mode.");
+    return;
+  }
+
+  console.log("[worker] Starting content producers (theme-summary, company-note, daily-brief).");
+
+  // run immediately on startup then on interval
+  void runProducer("theme-summary", runThemeSummaryProducer);
+  void runProducer("company-note", runCompanyNoteProducer);
+  void runProducer("daily-brief", runDailyBriefProducer);
+
+  producerTimers.push(
+    setInterval(() => void runProducer("theme-summary", runThemeSummaryProducer), THEME_SUMMARY_INTERVAL_MS),
+    setInterval(() => void runProducer("company-note", runCompanyNoteProducer), COMPANY_NOTE_INTERVAL_MS),
+    setInterval(() => void runProducer("daily-brief", runDailyBriefProducer), DAILY_BRIEF_INTERVAL_MS)
+  );
+}
 
 const heartbeatSeconds = Number(process.env.WORKER_HEARTBEAT_SECONDS ?? 60);
 const persistenceMode = process.env.PERSISTENCE_MODE ?? "memory";
@@ -60,6 +99,11 @@ async function shutdown(signal: string) {
     clearInterval(maintenanceTimer);
     maintenanceTimer = null;
   }
+
+  for (const t of producerTimers) {
+    clearInterval(t);
+  }
+  producerTimers = [];
 
   if (redisClient) {
     await redisClient.quit().catch((error) => {
@@ -123,6 +167,7 @@ async function main() {
 
   redisClient = await connectRedis();
   await runOpenAliceMaintenanceCycle("startup");
+  startProducers();
 
   heartbeatTimer = setInterval(async () => {
     const at = new Date().toISOString();
