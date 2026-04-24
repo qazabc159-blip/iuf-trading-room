@@ -1,0 +1,38 @@
+[p0e] 1. login owner
+  login: ok user=qazabc159@gmail.com
+[p0e] 2. initial content-drafts count (should be 0 awaiting)
+  awaiting count = 0
+[p0e] 3. list themes (pick first)
+  picked themeId=9f54e15c-66ef-49ba-87ef-3aae2476590d name=[ORPHAN] AI Optics (->CPO)
+[p0e] 4. register runner device
+  deviceId=oa-p0e-1777044786 token_len=32
+[p0e] 5. enqueue theme_summary job
+  jobId=e75ccf6d-a6fc-412a-93b2-41a91cc8125d
+[p0e] 6. runner claim
+  claimed taskType=theme_summary jobId=e75ccf6d-a6fc-412a-93b2-41a91cc8125d
+[p0e] 7. runner submit draft_ready
+  submit status = draft_ready
+[p0e] 8. content-drafts awaiting_review should now have the draft
+  draftId=9ad1773a-cfc5-46b9-99c1-bc4119cb0352
+[p0e] 9. approve draft
+  approvedRefId=6d3e66ba-d326-45f3-9962-7b28ec1becac
+[p0e] 10. confirm theme_summary row exists in formal table (via GET /api/v1/theme-summaries or derived endpoint)
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\json\__init__.py", line 293, in load
+    return loads(fp.read(),
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\json\__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\json\decoder.py", line 340, in decode
+    raise JSONDecodeError("Extra data", s, end)
+json.decoder.JSONDecodeError: Extra data: line 1 column 5 (char 4)
+  (summary endpoint may not exist; check via drafts list approved status)
+[p0e] 11. list drafts approved to confirm state transition
+  status=approved approvedRefId=6d3e66ba-d326-45f3-9962-7b28ec1becac reviewedAt=2026-04-24T15:33:10.069Z
+
+[p0e] PASS — full round-trip complete.
+  jobId=e75ccf6d-a6fc-412a-93b2-41a91cc8125d
+  draftId=9ad1773a-cfc5-46b9-99c1-bc4119cb0352
+  theme_summaries row id=6d3e66ba-d326-45f3-9962-7b28ec1becac

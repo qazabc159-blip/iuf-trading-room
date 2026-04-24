@@ -1,0 +1,13 @@
+[p0e-company] picked companyId=bfce1f91-4246-465e-a725-d867e7656e6b name=竣邦-KY ticker=4442
+[p0e-company] device registered id=oa-p0e-company-1777044954 tokenLen=32
+[p0e-company] jobId=3afe38d3-83f6-4438-931f-965b092812d6
+[p0e-company] claimed
+[p0e-company] submit ok
+[p0e-company] draftId=e9baa06a-e873-40de-9213-4f2c1db8bd00
+[p0e-company] approvedRefId=e6670eff-6942-4883-9a8a-f4c84534110a
+[p0e-company] verified: status=approved approvedRefId=e6670eff-6942-4883-9a8a-f4c84534110a reviewedAt=2026-04-24T15:35:58.876Z
+
+[p0e-company] PASS
+  jobId=3afe38d3-83f6-4438-931f-965b092812d6
+  draftId=e9baa06a-e873-40de-9213-4f2c1db8bd00
+  company_notes row id=e6670eff-6942-4883-9a8a-f4c84534110a
