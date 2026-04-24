@@ -4,6 +4,7 @@ import type {
   CompanyCreateInput,
   CompanyKeyword,
   CompanyKeywordInput,
+  CompanyNote,
   CompanyRelation,
   CompanyRelationInput,
   CompanyUpdateInput,
@@ -16,6 +17,7 @@ import type {
   SignalUpdateInput,
   Theme,
   ThemeCreateInput,
+  ThemeSummary,
   ThemeUpdateInput,
   TradePlan,
   TradePlanCreateInput,
@@ -91,4 +93,8 @@ export interface TradingRoomRepository {
   // Daily Briefs
   listBriefs(options?: SessionOptions): Promise<DailyBrief[]>;
   createBrief(input: DailyBriefCreateInput, options?: SessionOptions): Promise<DailyBrief>;
+
+  // Worker-produced content
+  listThemeSummaries(options?: SessionOptions & { themeId?: string; limit?: number }): Promise<ThemeSummary[]>;
+  listCompanyNotes(options?: SessionOptions & { companyId?: string; limit?: number }): Promise<CompanyNote[]>;
 }

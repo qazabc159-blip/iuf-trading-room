@@ -1773,6 +1773,32 @@ app.post("/api/v1/briefs", async (c) => {
   );
 });
 
+// ── Worker-produced content endpoints ─────────────────────────────────────────
+
+app.get("/api/v1/theme-summaries", async (c) => {
+  const themeId = c.req.query("themeId");
+  const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
+  return c.json({
+    data: await c.get("repo").listThemeSummaries({
+      workspaceSlug: c.get("session").workspace.slug,
+      ...(themeId ? { themeId } : {}),
+      ...(limit ? { limit } : {})
+    })
+  });
+});
+
+app.get("/api/v1/company-notes", async (c) => {
+  const companyId = c.req.query("companyId");
+  const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
+  return c.json({
+    data: await c.get("repo").listCompanyNotes({
+      workspaceSlug: c.get("session").workspace.slug,
+      ...(companyId ? { companyId } : {}),
+      ...(limit ? { limit } : {})
+    })
+  });
+});
+
 app.post("/api/v1/openalice/register", async (c) => {
   const payload = openAliceRegisterSchema.parse(await c.req.json());
   const registration = await registerOpenAliceDevice({
