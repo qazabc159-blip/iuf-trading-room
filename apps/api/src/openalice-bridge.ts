@@ -847,6 +847,9 @@ export async function claimOpenAliceJob(
     return null;
   }
 
+  // Race-safe claim: include status='queued' in WHERE so a concurrent device can't
+  // double-claim. If another device beat us, returning is empty → return null.
+  // (post-P0.6 backlog item 2, 楊董 ack 2026-04-25.)
   const [claimedJob] = await db
     .update(openAliceJobs)
     .set({
@@ -859,8 +862,12 @@ export async function claimOpenAliceJob(
       error: null,
       completedAt: null
     })
-    .where(eq(openAliceJobs.id, queuedJob.id))
+    .where(and(eq(openAliceJobs.id, queuedJob.id), eq(openAliceJobs.status, "queued")))
     .returning();
+
+  if (!claimedJob) {
+    return null;
+  }
 
   return {
     jobId: claimedJob.id,

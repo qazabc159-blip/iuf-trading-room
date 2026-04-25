@@ -2046,7 +2046,16 @@ app.post("/api/v1/openalice/jobs/:jobId/result", handleOpenAliceJobResult);
 
 // Content drafts (OpenAlice result review queue — P0-D)
 
+// Read content-drafts: Owner / Admin / Analyst only (Viewer→403, anon→401 via middleware).
+// Drafts may contain unreviewed LLM payload + internal research; Viewer-read deferred
+// pending field-level redaction work (post-P0.6 backlog item 1, 楊董 ack 2026-04-25).
+const READ_DRAFT_ROLES = new Set(["Owner", "Admin", "Analyst"]);
+
 app.get("/api/v1/content-drafts", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
   const query = contentDraftListQuerySchema.parse(c.req.query());
   return c.json({
     data: await listContentDrafts({
