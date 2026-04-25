@@ -49,6 +49,8 @@ def generate(
             return b.generate_theme_summary(params, context)
         if task_type == "company_note":
             return b.generate_company_note(params, context)
+        if task_type == "daily_brief":
+            return b.generate_daily_brief(params, context)
         raise SystemExit(f"Unsupported task type: {task_type}")
 
     if primary.provider_name == "rule-template":

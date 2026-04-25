@@ -27,7 +27,8 @@ import {
 
 const OPENALICE_TASK_TO_TARGET_TABLE: Partial<Record<OpenAliceBridgeTaskType, ContentDraftTargetTable>> = {
   theme_summary: "theme_summaries",
-  company_note: "company_notes"
+  company_note: "company_notes",
+  daily_brief: "daily_briefs"
 };
 
 const openAliceTaskTypes = [
@@ -1048,6 +1049,8 @@ export async function submitOpenAliceResult(input: {
           ? (structured.themeId as string)
           : typeof structured.companyId === "string"
           ? (structured.companyId as string)
+          : typeof structured.date === "string"
+          ? (structured.date as string)
           : null;
 
       const payloadWithMeta: Record<string, unknown> = { ...structured };

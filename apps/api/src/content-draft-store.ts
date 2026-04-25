@@ -12,6 +12,7 @@ import { and, desc, eq, gte, sql } from "drizzle-orm";
 import {
   companyNotes,
   contentDrafts,
+  dailyBriefs,
   getDb,
   isDatabaseMode,
   openAliceDevices,
@@ -20,7 +21,7 @@ import {
 } from "@iuf-trading-room/db";
 import { z } from "zod";
 
-export const CONTENT_DRAFT_TARGET_TABLES = ["theme_summaries", "company_notes"] as const;
+export const CONTENT_DRAFT_TARGET_TABLES = ["theme_summaries", "company_notes", "daily_briefs"] as const;
 export type ContentDraftTargetTable = (typeof CONTENT_DRAFT_TARGET_TABLES)[number];
 
 export const contentDraftStatuses = ["awaiting_review", "approved", "rejected"] as const;
@@ -47,9 +48,21 @@ export const companyNotePayloadSchema = z.object({
   note: z.string().min(1)
 });
 
+const dailyBriefSectionSchema = z.object({
+  heading: z.string().min(1),
+  body: z.string().min(1).max(1500)
+});
+
+export const dailyBriefPayloadSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
+  marketState: z.enum(["Risk-On", "Balanced", "Risk-Off"]),
+  sections: z.array(dailyBriefSectionSchema).min(1).max(6)
+});
+
 export type ContentDraftPayload =
   | (z.infer<typeof themeSummaryPayloadSchema> & { __table: "theme_summaries" })
-  | (z.infer<typeof companyNotePayloadSchema> & { __table: "company_notes" });
+  | (z.infer<typeof companyNotePayloadSchema> & { __table: "company_notes" })
+  | (z.infer<typeof dailyBriefPayloadSchema> & { __table: "daily_briefs" });
 
 export type ContentDraftRecord = {
   id: string;
@@ -290,7 +303,7 @@ export async function approveContentDraft(input: {
         throw new Error("content_draft_theme_summary_insert_failed");
       }
       approvedRefId = inserted.id;
-    } else {
+    } else if (draft.targetTable === "company_notes") {
       const payload = companyNotePayloadSchema.parse(draft.payload);
       const [inserted] = await tx
         .insert(companyNotes)
@@ -304,6 +317,54 @@ export async function approveContentDraft(input: {
         throw new Error("content_draft_company_note_insert_failed");
       }
       approvedRefId = inserted.id;
+    } else {
+      // daily_briefs — upsert by workspaceId + date (insert or replace)
+      const payload = dailyBriefPayloadSchema.parse(draft.payload);
+      // Use insert with onConflictDoUpdate keyed on (workspaceId, date).
+      // The schema has a composite index but not a unique constraint; we fall
+      // back to a delete+insert pattern to stay compatible without a migration.
+      const existingRows = await tx
+        .select({ id: dailyBriefs.id })
+        .from(dailyBriefs)
+        .where(
+          and(
+            eq(dailyBriefs.workspaceId, draft.workspaceId),
+            eq(dailyBriefs.date, payload.date)
+          )
+        )
+        .limit(1);
+      if (existingRows.length > 0) {
+        const [updatedBrief] = await tx
+          .update(dailyBriefs)
+          .set({
+            marketState: payload.marketState,
+            sections: payload.sections,
+            generatedBy: "openalice",
+            status: "approved"
+          })
+          .where(eq(dailyBriefs.id, existingRows[0]!.id))
+          .returning();
+        if (!updatedBrief) {
+          throw new Error("content_draft_daily_brief_update_failed");
+        }
+        approvedRefId = updatedBrief.id;
+      } else {
+        const [inserted] = await tx
+          .insert(dailyBriefs)
+          .values({
+            workspaceId: draft.workspaceId,
+            date: payload.date,
+            marketState: payload.marketState,
+            sections: payload.sections,
+            generatedBy: "openalice",
+            status: "approved"
+          })
+          .returning();
+        if (!inserted) {
+          throw new Error("content_draft_daily_brief_insert_failed");
+        }
+        approvedRefId = inserted.id;
+      }
     }
 
     const [updated] = await tx

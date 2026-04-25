@@ -107,6 +107,104 @@ def _validate_company_note(obj: Any) -> str:
     return note.strip()
 
 
+def _system_prompt_daily_brief() -> str:
+    return (
+        "You are the IUF Trading Room investment research assistant. "
+        "Produce a structured daily research brief in Traditional Chinese (繁體中文) "
+        "for internal review. Research-note tone, professional and neutral. "
+        "You MAY write watchlist observations, risk notes, theme overviews, and company observations. "
+        "You MUST NOT output any trade execution instructions, order suggestions, buy/sell calls, "
+        "price targets, stop-loss/take-profit levels, or any sentence resembling '立即買進', "
+        "'立即賣出', '下單', or similar execution language. "
+        "This output is a draft for internal review only — it MUST NOT bypass human review. "
+        "Return a JSON object with exactly two keys: "
+        "\"marketState\" (one of: \"Risk-On\", \"Balanced\", \"Risk-Off\") and "
+        "\"sections\" (array of {\"heading\": string, \"body\": string}). "
+        "Between 3 and 6 sections. Each body must be ≤1500 characters. "
+        "Total body character count must be ≤6000. No other keys or text outside the JSON."
+    )
+
+
+def _user_prompt_daily_brief(params: dict[str, Any], context: dict[str, Any]) -> str:
+    date = str(params.get("date", "unknown"))
+    top_themes = params.get("topThemes") or []
+    recent_summaries = params.get("recentSummaries") or []
+    recent_notes = params.get("recentNotes") or []
+
+    themes_lines = ""
+    if isinstance(top_themes, list) and top_themes:
+        parts = []
+        for t in top_themes[:5]:
+            if isinstance(t, dict):
+                name = t.get("name", "")
+                ms = t.get("marketState", "")
+                pri = t.get("priority", "")
+                parts.append(f"  - {name} [市場狀態={ms}, 優先={pri}]")
+        themes_lines = "\n".join(parts)
+
+    summaries_lines = ""
+    if isinstance(recent_summaries, list) and recent_summaries:
+        parts = [f"  [{i+1}] {str(s)[:400]}" for i, s in enumerate(recent_summaries[:5])]
+        summaries_lines = "\n".join(parts)
+
+    notes_lines = ""
+    if isinstance(recent_notes, list) and recent_notes:
+        parts = [f"  [{i+1}] {str(n)[:400]}" for i, n in enumerate(recent_notes[:3])]
+        notes_lines = "\n".join(parts)
+
+    return (
+        f"Date: {date}\n\n"
+        + (f"Top Themes:\n{themes_lines}\n\n" if themes_lines else "Top Themes: (none)\n\n")
+        + (f"Recent Theme Summaries:\n{summaries_lines}\n\n" if summaries_lines else "Recent Theme Summaries: (none)\n\n")
+        + (f"Recent Company Notes:\n{notes_lines}\n\n" if notes_lines else "Recent Company Notes: (none)\n\n")
+        + "Produce a daily research brief in Traditional Chinese with 3–6 sections. "
+        "Return ONLY a JSON object: "
+        "{\"marketState\": \"Risk-On\"|\"Balanced\"|\"Risk-Off\", "
+        "\"sections\": [{\"heading\": string, \"body\": string}, ...]}"
+        ". Each body ≤1500 chars, total body ≤6000 chars. No other text."
+    )
+
+
+_DAILY_BRIEF_VALID_MARKET_STATES = {"Risk-On", "Balanced", "Risk-Off"}
+
+
+def _validate_daily_brief(obj: Any) -> dict[str, Any]:
+    if not isinstance(obj, dict):
+        raise LlmError("schema_invalid", "model output is not a JSON object")
+    market_state = obj.get("marketState")
+    if market_state not in _DAILY_BRIEF_VALID_MARKET_STATES:
+        raise LlmError(
+            "schema_invalid",
+            f"marketState must be one of Risk-On/Balanced/Risk-Off, got: {market_state!r}"
+        )
+    sections = obj.get("sections")
+    if not isinstance(sections, list):
+        raise LlmError("schema_invalid", "sections must be an array")
+    if len(sections) < 3:
+        raise LlmError("schema_invalid", f"sections too few: {len(sections)} (min 3)")
+    if len(sections) > 6:
+        raise LlmError("schema_invalid", f"sections too many: {len(sections)} (max 6)")
+    total_body = 0
+    for i, sec in enumerate(sections):
+        if not isinstance(sec, dict):
+            raise LlmError("schema_invalid", f"sections[{i}] is not an object")
+        heading = sec.get("heading")
+        body = sec.get("body")
+        if not isinstance(heading, str) or not heading.strip():
+            raise LlmError("schema_invalid", f"sections[{i}].heading missing or empty")
+        if not isinstance(body, str) or not body.strip():
+            raise LlmError("schema_invalid", f"sections[{i}].body missing or empty")
+        if len(body) > 1500:
+            raise LlmError("schema_invalid", f"sections[{i}].body too long: {len(body)} chars (max 1500)")
+        total_body += len(body)
+    if total_body > 6000:
+        raise LlmError("schema_invalid", f"total body chars {total_body} exceeds 6000")
+    return {
+        "marketState": market_state,
+        "sections": [{"heading": s["heading"].strip(), "body": s["body"].strip()} for s in sections],
+    }
+
+
 class OpenAiBackend:
     provider_name = "openai"
 
@@ -297,6 +395,30 @@ class OpenAiBackend:
             "provider": self.provider_name,
             "model": model_used,
             "prompt_id": "openai_company_note",
+            "prompt_version": "1",
+            "attempts": attempts,
+            **usage,
+        }
+        return GenerateResult(structured=structured, meta=meta)
+
+    def generate_daily_brief(
+        self, params: dict[str, Any], context: dict[str, Any]
+    ) -> GenerateResult:
+        cfg = self._cfg()
+        sys_p = _system_prompt_daily_brief()
+        usr_p = _user_prompt_daily_brief(params, context)
+        parsed, usage, model_used, attempts = self._with_model_fallback(cfg, sys_p, usr_p)
+        validated = _validate_daily_brief(parsed)
+        date = str(params.get("date", ""))
+        structured = {
+            "date": date,
+            "marketState": validated["marketState"],
+            "sections": validated["sections"],
+        }
+        meta = {
+            "provider": self.provider_name,
+            "model": model_used,
+            "prompt_id": "openai_daily_brief",
             "prompt_version": "1",
             "attempts": attempts,
             **usage,

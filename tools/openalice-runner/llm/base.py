@@ -39,3 +39,7 @@ class LlmBackend(Protocol):
     def generate_company_note(
         self, params: dict[str, Any], context: dict[str, Any]
     ) -> GenerateResult: ...
+
+    def generate_daily_brief(
+        self, params: dict[str, Any], context: dict[str, Any]
+    ) -> GenerateResult: ...

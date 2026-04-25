@@ -44,7 +44,7 @@ from llm import generate as llm_generate, kill_switch_on  # noqa: E402
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Scope-lock (P0-B)
-SUPPORTED_TASK_TYPES = {"theme_summary", "company_note"}
+SUPPORTED_TASK_TYPES = {"theme_summary", "company_note", "daily_brief"}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -314,7 +314,7 @@ def build_parser() -> argparse.ArgumentParser:
     reg.add_argument("--device-id", required=True)
     reg.add_argument("--device-name", required=True)
     reg.add_argument("--workspace", default="primary-desk")
-    reg.add_argument("--capabilities", nargs="*", default=["theme_summary", "company_note"])
+    reg.add_argument("--capabilities", nargs="*", default=["theme_summary", "company_note", "daily_brief"])
     reg.add_argument("--owner-creds", required=True, help="Path to env file with OWNER_EMAIL/OWNER_PASSWORD.")
     reg.add_argument("--out-creds", required=True, help="Path to write runner token (600).")
     reg.set_defaults(func=cmd_register)
