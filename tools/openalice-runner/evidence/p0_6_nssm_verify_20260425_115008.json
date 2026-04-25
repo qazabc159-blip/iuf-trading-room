@@ -1,0 +1,36 @@
+{
+  "ts_utc": "2026-04-25T11:49:21Z",
+  "phase": "P0.6 NSSM verify",
+  "service": "openalice-runner",
+  "device_id": "oa-win-mvp-01",
+  "sc_query_initial": "RUNNING",
+  "check1_polling": {
+    "pass": true,
+    "sample1": "2026-04-25T11:49:14.768Z",
+    "sample2": "2026-04-25T11:49:25.180Z"
+  },
+  "check2_heartbeat_via_claim": {
+    "pass": false,
+    "job_id": "018c78e2-dd53-4504-a509-4ff8524ede21",
+    "draft_id": "e28e8f6b-88d2-4aae-b952-b50ee1dcb51d",
+    "theme_name": "[BROKEN-1] To Fix"
+  },
+  "check3_duplicate_protection": {
+    "pass": true,
+    "draft_count_for_job": 1,
+    "note": "Atomic SQL claim guarantees one device wins per job"
+  },
+  "check4_service_stop": {
+    "pass": null,
+    "blocked": "needs admin shell",
+    "sc_rc": 5
+  },
+  "check5_service_start": {
+    "pass": null,
+    "blocked": "needs admin shell"
+  },
+  "check6_crash_recovery": {
+    "pass": false,
+    "reason": "no python.exe found running runner"
+  }
+}

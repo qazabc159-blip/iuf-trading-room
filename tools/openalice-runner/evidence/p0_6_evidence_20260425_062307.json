@@ -1,0 +1,137 @@
+{
+  "ts_utc": "2026-04-25T06:22:52Z",
+  "phase": "P0.6 review-flow E2E",
+  "backend": "rule-template (OpenAI billing not active)",
+  "session_role": "Owner",
+  "session_workspace": "primary-desk",
+  "chosen_theme": {
+    "id": "e8c27750-6a00-448e-85a4-9edc057463b6",
+    "name": "[BROKEN-2] To Fix"
+  },
+  "chosen_company": {
+    "id": "4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff",
+    "ticker": "4433",
+    "name": "興采"
+  },
+  "enqueued_jobs": {
+    "theme_summary": "cb3d8591-ef68-4e9c-b49d-b4680f380ab0",
+    "company_note": "2427ca57-70f4-4099-b8db-872572562f5b"
+  },
+  "runner_stdout": "[runner] claimed jobId=cb3d8591-ef68-4e9c-b49d-b4680f380ab0 taskType=theme_summary\n[runner] submitted jobId=cb3d8591-ef68-4e9c-b49d-b4680f380ab0 status=draft_ready provider=rule-template\n[runner] claimed jobId=2427ca57-70f4-4099-b8db-872572562f5b taskType=company_note\n[runner] submitted jobId=2427ca57-70f4-4099-b8db-872572562f5b status=draft_ready provider=rule-template\n[runner] idle for 3 ticks — exiting.\n",
+  "runner_stderr": "",
+  "drafts_after_run": [
+    {
+      "id": "dff0e583-c260-4db1-a54c-913e092fa0c5",
+      "status": "awaiting_review",
+      "targetTable": "company_notes",
+      "targetEntityId": "4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff",
+      "sourceJobId": "2427ca57-70f4-4099-b8db-872572562f5b",
+      "payload_keys": [
+        "companyId",
+        "llm_meta",
+        "note"
+      ],
+      "has_llm_meta": true,
+      "llm_meta_provider": "rule-template"
+    },
+    {
+      "id": "26013596-6551-41ba-ab65-7af0fbe7ab92",
+      "status": "awaiting_review",
+      "targetTable": "theme_summaries",
+      "targetEntityId": "e8c27750-6a00-448e-85a4-9edc057463b6",
+      "sourceJobId": "cb3d8591-ef68-4e9c-b49d-b4680f380ab0",
+      "payload_keys": [
+        "companyCount",
+        "llm_meta",
+        "summary",
+        "themeId"
+      ],
+      "has_llm_meta": true,
+      "llm_meta_provider": "rule-template"
+    }
+  ],
+  "approve": {
+    "http": 200,
+    "body": {
+      "data": {
+        "draft": {
+          "id": "26013596-6551-41ba-ab65-7af0fbe7ab92",
+          "workspaceId": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+          "sourceJobId": "cb3d8591-ef68-4e9c-b49d-b4680f380ab0",
+          "targetTable": "theme_summaries",
+          "targetEntityId": "e8c27750-6a00-448e-85a4-9edc057463b6",
+          "payload": {
+            "summary": "Theme: [BROKEN-2] To Fix\nLinked Companies: 0\nGenerated: 2026-04-25 (runner=rule-template)",
+            "themeId": "e8c27750-6a00-448e-85a4-9edc057463b6",
+            "llm_meta": {
+              "model": null,
+              "provider": "rule-template",
+              "prompt_id": "rule_template_theme_summary",
+              "prompt_version": "1"
+            },
+            "companyCount": 0
+          },
+          "status": "approved",
+          "dedupeKey": "888fd3bd-4a48-4656-9e6a-ac19360cc0de:theme_summaries:e8c27750-6a00-448e-85a4-9edc057463b6:v1",
+          "producerVersion": "v1",
+          "reviewedBy": "8624c6c1-d8ac-43b5-95a1-269252f7dcc8",
+          "reviewedAt": "2026-04-25T06:23:06.512Z",
+          "rejectReason": null,
+          "approvedRefId": "574766d3-a1bd-4b1a-a4e5-8fe062024926",
+          "createdAt": "2026-04-25T06:22:57.582Z",
+          "updatedAt": "2026-04-25T06:23:06.512Z"
+        },
+        "approvedRefId": "574766d3-a1bd-4b1a-a4e5-8fe062024926"
+      }
+    },
+    "draft_id": "26013596-6551-41ba-ab65-7af0fbe7ab92"
+  },
+  "reject": {
+    "http": 200,
+    "body": {
+      "data": {
+        "draft": {
+          "id": "dff0e583-c260-4db1-a54c-913e092fa0c5",
+          "workspaceId": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+          "sourceJobId": "2427ca57-70f4-4099-b8db-872572562f5b",
+          "targetTable": "company_notes",
+          "targetEntityId": "4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff",
+          "payload": {
+            "note": "Company Note: 興采 (4433)\nGenerated: 2026-04-25 (runner=rule-template)",
+            "llm_meta": {
+              "model": null,
+              "provider": "rule-template",
+              "prompt_id": "rule_template_company_note",
+              "prompt_version": "1"
+            },
+            "companyId": "4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff"
+          },
+          "status": "rejected",
+          "dedupeKey": "888fd3bd-4a48-4656-9e6a-ac19360cc0de:company_notes:4e1be5bf-e8ea-4b71-a8dd-5985c754d6ff:v1",
+          "producerVersion": "v1",
+          "reviewedBy": "8624c6c1-d8ac-43b5-95a1-269252f7dcc8",
+          "reviewedAt": "2026-04-25T06:23:06.808Z",
+          "rejectReason": "P0.6 live E2E — reviewer rejects placeholder company note",
+          "approvedRefId": null,
+          "createdAt": "2026-04-25T06:22:58.678Z",
+          "updatedAt": "2026-04-25T06:23:06.808Z"
+        }
+      }
+    },
+    "draft_id": "dff0e583-c260-4db1-a54c-913e092fa0c5"
+  },
+  "final_status_of_our_drafts": [
+    {
+      "id": "dff0e583-c260-4db1-a54c-913e092fa0c5",
+      "status": "rejected",
+      "rejectReason": "P0.6 live E2E — reviewer rejects placeholder company note",
+      "approvedRefId": null
+    },
+    {
+      "id": "26013596-6551-41ba-ab65-7af0fbe7ab92",
+      "status": "approved",
+      "rejectReason": null,
+      "approvedRefId": "574766d3-a1bd-4b1a-a4e5-8fe062024926"
+    }
+  ]
+}

@@ -118,7 +118,7 @@ class OpenAiBackend:
             raise LlmError("missing_api_key", "OPENAI_API_KEY not set")
         return {
             "api_key": api_key,
-            "model": env.get("OPENAI_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini",
+            "model": env.get("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini",
             "fallback_model": env.get("OPENAI_MODEL_FALLBACK", "gpt-4o-mini").strip() or "gpt-4o-mini",
             "max_tokens": int(env.get("OPENAI_MAX_TOKENS", "1024") or "1024"),
             "timeout_s": max(1.0, float(env.get("OPENAI_TIMEOUT_MS", "30000") or "30000") / 1000.0),
@@ -135,16 +135,22 @@ class OpenAiBackend:
         """Single HTTPS call — returns (parsed_output_json, usage_meta, attempt_count).
         Retries once on 429 / 500 / 502 / 503 / timeout with jittered backoff.
         Raises LlmError on any non-recoverable failure."""
-        payload = {
+        # Reasoning models (gpt-5*, o1*, o3*) reject `max_tokens` and `temperature`;
+        # they require `max_completion_tokens` and run at fixed temperature.
+        # Classic chat models (gpt-4o*, gpt-4*, gpt-3.5*) accept both fields, but
+        # `max_completion_tokens` is the modern, forward-compatible spelling.
+        is_reasoning = any(model.lower().startswith(p) for p in ("gpt-5", "o1", "o3", "o4"))
+        payload: dict[str, Any] = {
             "model": model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "max_tokens": cfg["max_tokens"],
-            "temperature": 0.3,
+            "max_completion_tokens": cfg["max_tokens"],
             "response_format": {"type": "json_object"},
         }
+        if not is_reasoning:
+            payload["temperature"] = 0.3
         body = json.dumps(payload).encode("utf-8")
         headers = {
             "Authorization": f"Bearer {cfg['api_key']}",
