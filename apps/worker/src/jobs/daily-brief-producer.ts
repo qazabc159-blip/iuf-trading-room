@@ -1,12 +1,20 @@
 /**
- * daily-brief-producer.ts
+ * daily-brief-producer.ts (P0-C routing)
  *
  * Generates a daily brief by aggregating:
  * - Most recent theme summaries from theme_summaries table
  * - Top themes by priority from themes table
  * - Recent company notes from company_notes table
  *
- * Writes result to daily_briefs table. Skips if today's brief already exists.
+ * Routing (OpenAlice-first):
+ *   1. OpenAlice — if an active Windows runner is present, enqueue a daily_brief
+ *      job. The runner submits a draft_ready result which the API mirrors into
+ *      content_drafts (awaiting_review). Reviewer approves → daily_briefs row.
+ *   2. Fallback — no active device → write directly to daily_briefs (same
+ *      rule-template logic as original producer). Annotates fallback_reason.
+ *
+ * Skips if today's brief already exists in daily_briefs OR a non-rejected draft
+ * for today is already awaiting_review in content_drafts.
  */
 import { and, desc, eq, gte } from "drizzle-orm";
 
@@ -19,11 +27,29 @@ import {
   workspaces
 } from "@iuf-trading-room/db";
 
+import {
+  decideProducerRoute,
+  enqueueOpenAliceJobFromWorker
+} from "../openalice-router.js";
+
+const PRODUCER_VERSION = "v1";
+const TASK_TYPE = "daily_brief";
+const TARGET_TABLE = "daily_briefs";
+
 export async function runDailyBriefProducer(): Promise<{
-  briefId: string;
+  briefId?: string;
   date: string;
-  sectionCount: number;
+  sectionCount?: number;
   skipped: boolean;
+  route:
+    | "openalice"
+    | "fallback_local"
+    | "skipped_existing_draft"
+    | "skipped_pending_job"
+    | "skipped_existing_formal_row";
+  jobId?: string;
+  fallbackReason?: string;
+  skippedFor?: string;
 }> {
   const db = getDb();
   if (!db) {
@@ -35,18 +61,42 @@ export async function runDailyBriefProducer(): Promise<{
 
   const today = new Date().toISOString().split("T")[0]!;
 
-  // skip if today's brief already exists
-  const [existing] = await db
-    .select()
-    .from(dailyBriefs)
-    .where(and(eq(dailyBriefs.workspaceId, workspace.id), eq(dailyBriefs.date, today)))
-    .limit(1);
+  const route = await decideProducerRoute({
+    workspaceId: workspace.id,
+    targetTable: TARGET_TABLE,
+    targetEntityId: today,
+    taskType: TASK_TYPE,
+    producerVersion: PRODUCER_VERSION
+  });
 
-  if (existing) {
-    return { briefId: existing.id, date: today, sectionCount: existing.sections.length, skipped: true };
+  if (route.kind === "skip_existing_formal_row") {
+    return {
+      date: today,
+      skipped: true,
+      route: "skipped_existing_formal_row",
+      skippedFor: route.rowId
+    };
   }
 
-  // gather data
+  if (route.kind === "skip_existing_draft") {
+    return {
+      date: today,
+      skipped: true,
+      route: "skipped_existing_draft",
+      skippedFor: route.draftId
+    };
+  }
+
+  if (route.kind === "skip_pending_job") {
+    return {
+      date: today,
+      skipped: true,
+      route: "skipped_pending_job",
+      skippedFor: route.jobId
+    };
+  }
+
+  // --- gather data for both paths ---
   const topThemes = await db
     .select()
     .from(themes)
@@ -68,13 +118,66 @@ export async function runDailyBriefProducer(): Promise<{
     .orderBy(desc(companyNotes.generatedAt))
     .limit(3);
 
-  // derive market state from highest-priority theme
-  const marketState = topThemes[0]?.marketState ?? "Balanced";
+  // --- OpenAlice path ---
+  if (route.kind === "enqueue_openalice") {
+    const topThemesParam = topThemes.map((t) => ({
+      name: t.name,
+      marketState: t.marketState,
+      priority: t.priority
+    }));
+    const recentSummariesParam = recentSummaries.map((s) => s.summary.slice(0, 400));
+    const recentNotesParam = recentNotes.map((n) => n.note.slice(0, 400));
 
-  // build sections
+    const job = await enqueueOpenAliceJobFromWorker({
+      workspaceId: workspace.id,
+      taskType: TASK_TYPE,
+      schemaName: "daily_brief_v1",
+      instructions: [
+        `Produce a structured daily research brief for date: ${today}.`,
+        `Top ${topThemes.length} themes by priority attached in parameters.`,
+        `Include up to 5 recent theme summaries and 3 recent company notes.`,
+        `Output JSON: {marketState, sections[{heading,body}]} — 3–6 sections.`
+      ].join("\n"),
+      contextRefs: [
+        ...topThemes.slice(0, 5).map((t) => ({ type: "theme", id: t.id }))
+      ],
+      parameters: {
+        date: today,
+        topThemes: topThemesParam,
+        recentSummaries: recentSummariesParam,
+        recentNotes: recentNotesParam,
+        targetTable: TARGET_TABLE,
+        targetEntityId: today,
+        producerVersion: PRODUCER_VERSION
+      }
+    }).catch((err: unknown) => {
+      // enqueue failure — fall through to fallback_local below
+      console.error("[daily-brief] enqueue failed:", err);
+      return null;
+    });
+
+    if (job) {
+      return {
+        date: today,
+        skipped: false,
+        route: "openalice",
+        jobId: job.id
+      };
+    }
+
+    // enqueue threw — fall through to fallback_local
+    console.warn("[daily-brief] OpenAlice enqueue failed, using fallback_local");
+  }
+
+  // --- fallback_local path (rule-template direct write) ---
+  const fallbackReason =
+    route.kind === "enqueue_openalice"
+      ? "openalice_enqueue_failed"
+      : "no_active_device";
+
+  const marketState = topThemes[0]?.marketState ?? "Balanced";
   const sections: Array<{ heading: string; body: string }> = [];
 
-  // section 1: market overview
   if (topThemes.length > 0) {
     const lines = topThemes.map(
       (t) =>
@@ -86,7 +189,6 @@ export async function runDailyBriefProducer(): Promise<{
     });
   }
 
-  // section 2: theme summaries
   if (recentSummaries.length > 0) {
     const lines = recentSummaries.map(
       (s) => `[${s.generatedAt.toISOString().slice(0, 16)}] ${s.summary.slice(0, 300)}`
@@ -97,7 +199,6 @@ export async function runDailyBriefProducer(): Promise<{
     });
   }
 
-  // section 3: company notes
   if (recentNotes.length > 0) {
     const lines = recentNotes.map(
       (n) => `[${n.generatedAt.toISOString().slice(0, 16)}]\n${n.note.slice(0, 400)}`
@@ -108,7 +209,6 @@ export async function runDailyBriefProducer(): Promise<{
     });
   }
 
-  // fallback if no data yet
   if (sections.length === 0) {
     sections.push({
       heading: "Status",
@@ -132,6 +232,8 @@ export async function runDailyBriefProducer(): Promise<{
     briefId: inserted!.id,
     date: today,
     sectionCount: sections.length,
-    skipped: false
+    skipped: false,
+    route: "fallback_local",
+    fallbackReason
   };
 }

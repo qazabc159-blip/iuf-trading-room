@@ -16,6 +16,7 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import {
   companyNotes,
   contentDrafts,
+  dailyBriefs,
   getDb,
   openAliceDevices,
   openAliceJobs,
@@ -163,6 +164,23 @@ export async function findRecentFormalRow(input: {
         )
       )
       .orderBy(desc(companyNotes.generatedAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  if (input.targetTable === "daily_briefs") {
+    // targetEntityId is the date string (YYYY-MM-DD); createdAt is the proxy for recency.
+    const rows = await db
+      .select({ id: dailyBriefs.id, generatedAt: dailyBriefs.createdAt })
+      .from(dailyBriefs)
+      .where(
+        and(
+          eq(dailyBriefs.workspaceId, input.workspaceId),
+          eq(dailyBriefs.date, input.targetEntityId),
+          gte(dailyBriefs.createdAt, cutoff)
+        )
+      )
+      .orderBy(desc(dailyBriefs.createdAt))
       .limit(1);
     return rows[0] ?? null;
   }
