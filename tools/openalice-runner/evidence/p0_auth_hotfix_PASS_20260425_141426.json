@@ -1,0 +1,97 @@
+{
+  "ts_utc": "2026-04-25T14:14:20Z",
+  "phase": "P0 auth-bypass hotfix",
+  "api": "https://api.eycvector.com",
+  "checks": {
+    "1_anon_get_drafts_401": {
+      "pass": true,
+      "status": 401,
+      "body": "{\"error\":\"unauthenticated\"}"
+    },
+    "2_anon_post_approve_401": {
+      "pass": true,
+      "status": 401,
+      "body": "{\"error\":\"unauthenticated\"}"
+    },
+    "3_anon_with_owner_header_401": {
+      "pass": true,
+      "status": 401,
+      "body": "{\"error\":\"unauthenticated\"}"
+    },
+    "4_health_200": {
+      "pass": true,
+      "status": 200,
+      "build_commit": "unknown"
+    },
+    "5_owner_get_drafts_200": {
+      "pass": true,
+      "status": 200
+    },
+    "6_owner_post_approve_not_401_403": {
+      "pass": true,
+      "status": 200,
+      "body": {
+        "data": {
+          "draft": {
+            "id": "fe7b7f3e-b82a-49be-b6a9-3e456af82544",
+            "workspaceId": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+            "sourceJobId": "e52f5142-e453-495d-ba72-3cb5d2c22c5f",
+            "targetTable": "theme_summaries",
+            "targetEntityId": "37a6dd0b-daf1-4cc6-9814-721c446ca190",
+            "payload": {
+              "summary": "Theme: 光阻液\nLinked Companies: 0\nGenerated: 2026-04-25 (runner=rule-template)",
+              "themeId": "37a6dd0b-daf1-4cc6-9814-721c446ca190",
+              "llm_meta": {
+                "model": null,
+                "provider": "rule-template",
+                "prompt_id": "rule_template_theme_summary",
+                "fallback_from": "openai",
+                "prompt_version": "1",
+                "fallback_reason": "openai:auth_error:HTTP 401: {   \"error\": {     \"message\": \"Incorrect API key provided: sk-proj-***************************************************************************************************************************"
+              },
+              "companyCount": 0
+            },
+            "status": "approved",
+            "dedupeKey": "888fd3bd-4a48-4656-9e6a-ac19360cc0de:theme_summaries:37a6dd0b-daf1-4cc6-9814-721c446ca190:v1",
+            "producerVersion": "v1",
+            "reviewedBy": "c1753415-5580-463d-a43a-d2a3987ab250",
+            "reviewedAt": "2026-04-25T14:14:24.795Z",
+            "rejectReason": null,
+            "approvedRefId": "e1980539-ad94-4951-a77f-4fea72cab50e",
+            "createdAt": "2026-04-25T13:58:29.393Z",
+            "updatedAt": "2026-04-25T14:14:24.795Z"
+          },
+          "approvedRefId": "e1980539-ad94-4951-a77f-4fea72cab50e"
+        }
+      },
+      "note": "Owner may legitimately get 200/404/409; only 401/403 = role gate misfire"
+    },
+    "7_viewer_post_approve_403": {
+      "pass": true,
+      "status": 403,
+      "body": {
+        "error": "forbidden_role"
+      }
+    },
+    "8_viewer_get_drafts_200": {
+      "pass": true,
+      "status": 200
+    },
+    "9_owner_role_header_ignored": {
+      "pass": true,
+      "status": 409,
+      "note": "AUTH_ALLOW_ROLE_OVERRIDE not set; header must be ignored"
+    },
+    "10_auth_me_no_cookie_401": {
+      "pass": true,
+      "status": 401
+    }
+  },
+  "viewer": {
+    "email": "viewer-hotfix-ulie650l@iuf.local",
+    "role": "Viewer"
+  },
+  "draft_under_test": "fe7b7f3e-b82a-49be-b6a9-3e456af82544",
+  "awaiting_id": "fe7b7f3e-b82a-49be-b6a9-3e456af82544",
+  "pass": true
+}
