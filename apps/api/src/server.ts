@@ -178,6 +178,7 @@ import { initRiskStore } from "./risk-engine.js";
 import {
   buildClearCookieHeader,
   buildSetCookieHeader,
+  createInviteCode,
   loginWithPassword,
   registerWithInvite,
   seedOwnerIfEmpty
@@ -2293,6 +2294,28 @@ app.post("/auth/register-with-invite", async (c) => {
 app.post("/auth/logout", (c) => {
   c.header("Set-Cookie", buildClearCookieHeader());
   return c.json({ ok: true });
+});
+
+const issueInviteSchema = z.object({
+  code: z.string().min(4).max(64).optional(),
+  ttlMinutes: z.number().int().min(1).max(60 * 24 * 30).optional()
+});
+
+// Owner-gated invite issuance. Used by verify scripts to produce a fresh
+// Viewer-role test user, and by the Owner to onboard real teammates without
+// running the seed script through a DB shell.
+app.post("/auth/issue-invite", async (c) => {
+  const role = c.get("session").user.role;
+  if (role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const body = issueInviteSchema.parse(await c.req.json().catch(() => ({})));
+  const result = await createInviteCode({
+    issuerId: c.get("session").user.id,
+    code: body.code,
+    ttlMs: body.ttlMinutes ? body.ttlMinutes * 60_000 : undefined
+  });
+  return c.json({ data: { code: result.code, expiresAt: result.expiresAt.toISOString() } });
 });
 
 app.get("/auth/me", async (c) => {

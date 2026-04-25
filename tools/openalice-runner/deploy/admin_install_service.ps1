@@ -73,11 +73,25 @@ Write-Host "[cfg ] chosen --llm $backend (hasKey=$([bool]$hasKey) killSwitch=$([
 & $NSSM_EXE set $SVC Start             SERVICE_DEMAND_START | Out-Null
 & $NSSM_EXE set $SVC Description       "IUF OpenAlice Runner — content-only draft producer (P0.6)" | Out-Null
 
-# Inject env (null-separated for NSSM)
+# Inject env. NSSM accepts AppEnvironmentExtra as multiple "KEY=VALUE" args.
+# Earlier `($envLines -join "`0")` passed a single string with embedded null
+# bytes through PowerShell's `&` operator, which truncates at the first null
+# at the cmdline boundary — the result was only the FIRST var being injected.
+# Fix: splat each env line as a separate argument.
 if ($envLines.Count -gt 0) {
-    $flat = ($envLines -join "`0")
-    & $NSSM_EXE set $SVC AppEnvironmentExtra $flat | Out-Null
-    Write-Host "[nssm] injected $($envLines.Count) env vars from $LLM_ENV_TARGET" -ForegroundColor DarkGray
+    $nssmArgs = @("set", $SVC, "AppEnvironmentExtra") + $envLines
+    & $NSSM_EXE @nssmArgs | Out-Null
+    Write-Host "[nssm] injected $($envLines.Count) env vars from $LLM_ENV_TARGET (splat-args)" -ForegroundColor DarkGray
+    # Verify injection landed correctly (defense-in-depth — earlier null-byte bug
+    # silently dropped vars; without this check the service runs partially-configured).
+    $verifyRaw = & $NSSM_EXE get $SVC AppEnvironmentExtra
+    $verifyStr = if ($verifyRaw) { [string]::Join("`n", $verifyRaw) } else { "" }
+    $injectedCount = ([regex]::Matches($verifyStr, "(?m)^[A-Z_][A-Z0-9_]*=")).Count
+    if ($injectedCount -lt $envLines.Count) {
+        Write-Host "[nssm] WARN — verify saw $injectedCount/$($envLines.Count) env vars; service may run with missing config" -ForegroundColor Yellow
+    } else {
+        Write-Host "[nssm] verify ok — $injectedCount env vars present in service environment" -ForegroundColor DarkGray
+    }
 } else {
     & $NSSM_EXE set $SVC AppEnvironmentExtra "PYTHONUNBUFFERED=1" | Out-Null
 }

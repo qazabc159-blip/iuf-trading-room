@@ -281,6 +281,24 @@ export async function getUserById(userId: string): Promise<(AuthUser & { workspa
   };
 }
 
+// ── issue an invite code (Owner-gated; called from server route) ─────────────
+export async function createInviteCode(opts: {
+  issuerId: string;
+  ttlMs?: number;
+  code?: string;
+}): Promise<{ code: string; expiresAt: Date }> {
+  const db = requireDb();
+  const ttl = Math.max(60_000, opts.ttlMs ?? 60 * 60_000); // default 1h, min 1min
+  const expiresAt = new Date(Date.now() + ttl);
+  const code = (opts.code ?? randomBytes(6).toString("base64url")).slice(0, 64);
+  await db.insert(inviteCodes).values({
+    code,
+    issuedBy: opts.issuerId,
+    expiresAt,
+  });
+  return { code, expiresAt };
+}
+
 // ── seed owner on startup ─────────────────────────────────────────────────────
 export async function seedOwnerIfEmpty(): Promise<void> {
   const db = requireDb();
