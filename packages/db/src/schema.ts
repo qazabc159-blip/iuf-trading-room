@@ -428,7 +428,7 @@ export const contentDrafts = pgTable("content_drafts", {
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
   sourceJobId: uuid("source_job_id").references(() => openAliceJobs.id),
   targetTable: text("target_table").notNull(),
-  targetEntityId: uuid("target_entity_id"),
+  targetEntityId: text("target_entity_id"),
   payload: jsonb("payload").notNull(),
   status: contentDraftStatusEnum("status").default("awaiting_review").notNull(),
   dedupeKey: text("dedupe_key").notNull(),
