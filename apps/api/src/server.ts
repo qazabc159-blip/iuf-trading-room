@@ -30,6 +30,7 @@ import {
   tradePlanCreateInputSchema,
   tradePlanUpdateInputSchema
 } from "@iuf-trading-room/contracts";
+import { isDatabaseMode } from "@iuf-trading-room/db";
 import {
   getTradingRoomRepository,
   type TradingRoomRepository
@@ -253,6 +254,23 @@ app.use("/api/v1/*", async (c, next) => {
   // Runner device-auth routes carry their own bearer-auth check; skip cookie gate.
   if (isDeviceAuthRoute(path)) {
     c.set("repo", repository);
+    return next();
+  }
+
+  // Memory mode (CI smoke, local dev without Postgres) has no real users to
+  // authenticate against. Fall through to repository.getSession which returns
+  // a synthetic Viewer session (post-hotfix default). The header-based override
+  // still works in memory mode for legacy CI tests.
+  if (!isDatabaseMode()) {
+    const workspaceSlug = c.req.header("x-workspace-slug") ?? process.env.DEFAULT_WORKSPACE_SLUG;
+    const headerRole = c.req.header("x-user-role");
+    const roleOverride = ALLOWED_ROLES.find((r) => r === headerRole);
+    const memSession = await repository.getSession({
+      workspaceSlug,
+      roleOverride
+    });
+    c.set("repo", repository);
+    c.set("session", memSession);
     return next();
   }
 
