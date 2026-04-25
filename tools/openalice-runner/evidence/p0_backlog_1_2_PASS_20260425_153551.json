@@ -1,0 +1,50 @@
+{
+  "ts_utc": "2026-04-25T15:35:32Z",
+  "phase": "Backlog 1+2 verify (live-only)",
+  "api": "https://api.eycvector.com",
+  "code_review": {
+    "READ_DRAFT_ROLES": [
+      "Owner",
+      "Admin",
+      "Analyst"
+    ],
+    "source": "apps/api/src/server.ts:2052",
+    "rationale": "set-membership identical for all 3 roles; Owner-PASS proves success path, Viewer-403 proves deny path; Analyst/Admin live flip blocked by no public DB proxy"
+  },
+  "checks": {
+    "1_anon_get_401": {
+      "pass": true,
+      "status": 401
+    },
+    "2_viewer_get_403": {
+      "pass": true,
+      "status": 403,
+      "body": {
+        "error": "forbidden_role"
+      }
+    },
+    "3_owner_get_200": {
+      "pass": true,
+      "status": 200
+    },
+    "4_owner_approve_not_401_403": {
+      "pass": true,
+      "status": 409
+    },
+    "5_viewer_approve_403": {
+      "pass": true,
+      "status": 403,
+      "body": {
+        "error": "forbidden_role"
+      }
+    },
+    "6_nssm_claim_still_works": {
+      "pass": true,
+      "job_id": "e0d61acf-3c57-4404-9f19-e34168565ca7",
+      "draft_id": "ebb6c72a-b017-49da-85fc-3cafd6cdeea4"
+    }
+  },
+  "viewer_email": "v-bk12-4byri9wl@iuf.local",
+  "draft_under_test": "4a79e23d-0e35-4b1b-87ba-82f7db60ecd2",
+  "pass": true
+}
