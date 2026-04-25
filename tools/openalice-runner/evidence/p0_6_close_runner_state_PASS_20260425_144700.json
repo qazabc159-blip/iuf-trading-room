@@ -1,0 +1,47 @@
+{
+  "ts_utc": "2026-04-25T14:46:45Z",
+  "phase": "P0.6 close — runner state",
+  "service": "openalice-runner",
+  "sc_state": "RUNNING",
+  "nssm_service_pid": 22912,
+  "nssm_python_children": [
+    {
+      "ProcessId": 9144,
+      "ParentProcessId": 22912,
+      "Name": "python.exe"
+    }
+  ],
+  "check_single_instance": {
+    "pass": true,
+    "child_count": 1,
+    "pids": [
+      9144
+    ]
+  },
+  "nssm_config": {
+    "AppExit_Default": "Restart",
+    "AppThrottle": "10000",
+    "AppRestartDelay": "5000"
+  },
+  "check_crash_recovery_policy": {
+    "pass": true,
+    "note": "AppExit=Restart + 10s throttle + 5s delay = NSSM auto-restart on any exit"
+  },
+  "devices_with_id": 1,
+  "check_polling_alive": {
+    "pass": true,
+    "sample1": "2026-04-25T14:46:46.259Z",
+    "sample2": "2026-04-25T14:46:56.507Z"
+  },
+  "check_single_device_registered": {
+    "pass": true,
+    "count": 1
+  },
+  "check_dup_protection_review": {
+    "pass": true,
+    "mechanism": "claim path: SELECT queued ORDER BY createdAt LIMIT 1; UPDATE by id",
+    "single_device_evidence": "only 1 NSSM-managed runner registered (oa-win-mvp-01); no two-device race possible",
+    "backlog_note": "WHERE clause should add status='queued' for hard atomicity if scaling to N devices"
+  },
+  "pass": true
+}
