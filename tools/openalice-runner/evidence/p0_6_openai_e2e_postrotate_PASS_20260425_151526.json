@@ -1,0 +1,65 @@
+{
+  "ts_utc": "2026-04-25T15:15:14Z",
+  "phase": "P0.6 close — post-rotate OpenAI E2E",
+  "theme_id": "ca395db5-6228-47f0-950f-bf7c9e3226a4",
+  "theme_name": "電動車",
+  "enqueued_job_id": "f0467b68-1c1b-422e-8f88-aacd1fb8a313",
+  "enqueue_status": 201,
+  "draft_id": "4a79e23d-0e35-4b1b-87ba-82f7db60ecd2",
+  "draft_status": "awaiting_review",
+  "llm_meta": {
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "fallback_from": null,
+    "fallback_reason": null,
+    "openai_status": null
+  },
+  "check_provider_openai": {
+    "pass": true
+  },
+  "check_no_fallback": {
+    "pass": true
+  },
+  "approve_status": 200,
+  "approve_body": {
+    "data": {
+      "draft": {
+        "id": "4a79e23d-0e35-4b1b-87ba-82f7db60ecd2",
+        "workspaceId": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+        "sourceJobId": "f0467b68-1c1b-422e-8f88-aacd1fb8a313",
+        "targetTable": "theme_summaries",
+        "targetEntityId": "ca395db5-6228-47f0-950f-bf7c9e3226a4",
+        "payload": {
+          "summary": "電動車主題涵蓋純電動車、插電式混合動力車、電池、充電基礎設施、馬達與功率半導體等整體產業鏈，核心在於以電力驅動取代傳統內燃機。其重要性來自全球減碳政策、能源轉型與車廠電動化布局加速，帶動整車、零組件與基礎設施同步重塑。這個主題同時牽動鋰、鎳、鈷等關鍵材料需求，以及電池成本、續航里程、充電效率與供應鏈韌性等競爭因素。對市場而言，電動車不只是單一車種變化，而是汽車、能源與電子產業交會下的長期結構性趨勢。",
+          "themeId": "ca395db5-6228-47f0-950f-bf7c9e3226a4",
+          "llm_meta": {
+            "model": "gpt-5.4-mini",
+            "attempts": 1,
+            "provider": "openai",
+            "prompt_id": "openai_theme_summary",
+            "tokens_in": 117,
+            "tokens_out": 204,
+            "est_cost_usd": 0.00014,
+            "finish_reason": "stop",
+            "prompt_version": "1"
+          },
+          "companyCount": 0
+        },
+        "status": "approved",
+        "dedupeKey": "888fd3bd-4a48-4656-9e6a-ac19360cc0de:theme_summaries:ca395db5-6228-47f0-950f-bf7c9e3226a4:v1",
+        "producerVersion": "v1",
+        "reviewedBy": "c1753415-5580-463d-a43a-d2a3987ab250",
+        "reviewedAt": "2026-04-25T15:15:25.938Z",
+        "rejectReason": null,
+        "approvedRefId": "9dd29d54-e191-420f-ad66-618817fd5175",
+        "createdAt": "2026-04-25T15:15:24.721Z",
+        "updatedAt": "2026-04-25T15:15:25.938Z"
+      },
+      "approvedRefId": "9dd29d54-e191-420f-ad66-618817fd5175"
+    }
+  },
+  "check_approve_chain": {
+    "pass": true
+  },
+  "pass": true
+}
