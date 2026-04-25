@@ -1,0 +1,36 @@
+{
+  "ts_utc": "2026-04-25T12:37:59Z",
+  "phase": "P0.6 viewer 403",
+  "purpose": "Verify Viewer role gets 403 forbidden_role on review approve/reject",
+  "viewer": {
+    "email": "viewer-test-mnomicgs@iuf.local",
+    "role_at_register": "Viewer",
+    "invite_code_used": "2A7VXmgi",
+    "me_status": 200,
+    "me_role": "Viewer"
+  },
+  "draft_id_under_test": "6cdf7da0-6e3d-49cf-977a-17ccf53b7e8d",
+  "check_approve_403": {
+    "pass": true,
+    "status": 403,
+    "body": {
+      "error": "forbidden_role"
+    }
+  },
+  "check_reject_403": {
+    "pass": true,
+    "status": 403,
+    "body": {
+      "error": "forbidden_role"
+    }
+  },
+  "owner_positive_control": {
+    "pass": true,
+    "status": 409,
+    "body": {
+      "error": "content_draft_not_reviewable:approved"
+    },
+    "note": "Owner may legitimately get 404/409 (draft missing or already reviewed); only 403 would indicate role guard misfire."
+  },
+  "pass": true
+}

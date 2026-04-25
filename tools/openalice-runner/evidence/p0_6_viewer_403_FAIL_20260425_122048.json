@@ -1,0 +1,7 @@
+{
+  "ts_utc": "2026-04-25T12:20:45Z",
+  "phase": "P0.6 viewer 403",
+  "purpose": "Verify Viewer role gets 403 forbidden_role on review approve/reject",
+  "error": "no_usable_invite_code",
+  "pass": false
+}

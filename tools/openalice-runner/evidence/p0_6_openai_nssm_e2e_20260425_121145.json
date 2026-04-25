@@ -1,0 +1,45 @@
+{
+  "ts_utc": "2026-04-25T12:11:45Z",
+  "phase": "P0.6 NSSM-driven OpenAI live E2E (post-restart with max_completion_tokens fix)",
+  "theme_name": "[DEPRECATED] Photoresist Test",
+  "company_name": "興采",
+  "company_ticker": "4433",
+  "enqueued_jobs": [
+    "dbea1175-aa25-4f7c-b3bc-1c46d5f97da5",
+    "5b0e0686-3f4f-4ae2-90c2-878ad5022e9d"
+  ],
+  "drafts": [
+    {
+      "jobId": "dbea1175-aa25-4f7c-b3bc-1c46d5f97da5",
+      "draftId": "f200c9c9-1a7b-4bb0-b95d-95a6d3d77d62",
+      "targetTable": "company_notes",
+      "status": "awaiting_review",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "tokens_in": 115,
+      "tokens_out": 106,
+      "est_cost_usd": 8.1e-05,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "fallback_from": null,
+      "fallback_reason": null
+    },
+    {
+      "jobId": "5b0e0686-3f4f-4ae2-90c2-878ad5022e9d",
+      "draftId": "ad8bbdbc-6f6f-40b6-ae06-3e7f91bd1c85",
+      "targetTable": "theme_summaries",
+      "status": "awaiting_review",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "tokens_in": 123,
+      "tokens_out": 123,
+      "est_cost_usd": 9.2e-05,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "fallback_from": null,
+      "fallback_reason": null
+    }
+  ],
+  "verdict_all_openai": true,
+  "verdict_any_fallback": false
+}

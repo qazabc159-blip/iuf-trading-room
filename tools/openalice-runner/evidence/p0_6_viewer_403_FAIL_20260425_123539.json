@@ -1,0 +1,69 @@
+{
+  "ts_utc": "2026-04-25T12:35:35Z",
+  "phase": "P0.6 viewer 403",
+  "purpose": "Verify Viewer role gets 403 forbidden_role on review approve/reject",
+  "viewer": {
+    "email": "viewer-test-u0t8iamk@iuf.local",
+    "role_at_register": "Viewer",
+    "invite_code_used": "kdDGwBu3",
+    "me_status": 200,
+    "me_role": "Viewer"
+  },
+  "draft_id_under_test": "6cdf7da0-6e3d-49cf-977a-17ccf53b7e8d",
+  "check_approve_403": {
+    "pass": false,
+    "status": 200,
+    "body": {
+      "data": {
+        "draft": {
+          "id": "6cdf7da0-6e3d-49cf-977a-17ccf53b7e8d",
+          "workspaceId": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+          "sourceJobId": "f4646839-8e2b-4d70-8aed-78af0e464704",
+          "targetTable": "company_notes",
+          "targetEntityId": "da66592f-855e-4af5-8107-8490c5940617",
+          "payload": {
+            "note": "台鎔科技（6947）專注於半導體材料的研發與生產，主要提供高純度的化學品和材料，服務於全球半導體產業。近期，公司在提升產品純度及穩定性方面取得了顯著進展，這對於滿足客戶日益增長的需求至關重要。此外，台鎔科技也在積極拓展其在新興市場的業務，以增強其市場競爭力。",
+            "llm_meta": {
+              "model": "gpt-4o-mini",
+              "attempts": 1,
+              "provider": "openai",
+              "prompt_id": "openai_company_note",
+              "tokens_in": 116,
+              "tokens_out": 114,
+              "est_cost_usd": 8.6e-05,
+              "finish_reason": "stop",
+              "prompt_version": "1"
+            },
+            "companyId": "da66592f-855e-4af5-8107-8490c5940617"
+          },
+          "status": "approved",
+          "dedupeKey": "888fd3bd-4a48-4656-9e6a-ac19360cc0de:company_notes:da66592f-855e-4af5-8107-8490c5940617:v1",
+          "producerVersion": "v1",
+          "reviewedBy": "8624c6c1-d8ac-43b5-95a1-269252f7dcc8",
+          "reviewedAt": "2026-04-25T12:35:38.438Z",
+          "rejectReason": null,
+          "approvedRefId": "183714dd-f96b-4eef-b69b-577b101345f0",
+          "createdAt": "2026-04-25T12:33:10.746Z",
+          "updatedAt": "2026-04-25T12:35:38.438Z"
+        },
+        "approvedRefId": "183714dd-f96b-4eef-b69b-577b101345f0"
+      }
+    }
+  },
+  "check_reject_403": {
+    "pass": false,
+    "status": 409,
+    "body": {
+      "error": "content_draft_not_reviewable:approved"
+    }
+  },
+  "owner_positive_control": {
+    "pass": true,
+    "status": 409,
+    "body": {
+      "error": "content_draft_not_reviewable:approved"
+    },
+    "note": "Owner may legitimately get 404/409 (draft missing or already reviewed); only 403 would indicate role guard misfire."
+  },
+  "pass": false
+}
