@@ -1056,7 +1056,7 @@ export async function getCompanyNotes(params: { companyId: string; limit?: numbe
 // ── Content Drafts (P0-D / P0.5-4 review queue) ─────────────────────────────
 
 export type ContentDraftStatus = "awaiting_review" | "approved" | "rejected";
-export type ContentDraftTargetTable = "theme_summaries" | "company_notes";
+export type ContentDraftTargetTable = "theme_summaries" | "company_notes" | "daily_briefs";
 
 export type ContentDraftEntry = {
   id: string;

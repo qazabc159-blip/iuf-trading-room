@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   approveContentDraft,
+  getBriefs,
   getContentDrafts,
   getCompanyNotes,
   getThemeSummaries,
@@ -26,8 +27,39 @@ const statusBadge: Record<ContentDraftStatus, string> = {
 
 const targetLabel: Record<string, string> = {
   theme_summaries: "主題摘要",
-  company_notes: "公司筆記"
+  company_notes: "公司筆記",
+  daily_briefs: "每日簡報"
 };
+
+type DailyBriefSection = { heading: string; body: string };
+
+type DailyBriefPayload = {
+  date: string;
+  marketState: string;
+  sections: DailyBriefSection[];
+};
+
+const marketStateBadge = (s: string) => {
+  if (s === "Risk-On") return "badge-green";
+  if (s === "Risk-Off") return "badge-red";
+  return "badge-yellow"; // Balanced
+};
+
+const marketStateLabel: Record<string, string> = {
+  "Risk-On": "Risk-On 進攻",
+  "Balanced": "Balanced 平衡",
+  "Risk-Off": "Risk-Off 防禦"
+};
+
+function isDailyBriefPayload(p: unknown): p is DailyBriefPayload {
+  if (!p || typeof p !== "object") return false;
+  const obj = p as Record<string, unknown>;
+  return (
+    typeof obj.date === "string" &&
+    typeof obj.marketState === "string" &&
+    Array.isArray(obj.sections)
+  );
+}
 
 function extractDraftText(entry: ContentDraftEntry): string {
   const p = entry.payload;
@@ -35,18 +67,21 @@ function extractDraftText(entry: ContentDraftEntry): string {
   const obj = p as Record<string, unknown>;
   if (typeof obj.summary === "string") return obj.summary;
   if (typeof obj.note === "string") return obj.note;
+  if (isDailyBriefPayload(p)) {
+    return p.sections.map((s) => `[${s.heading}]\n${s.body}`).join("\n\n");
+  }
   return JSON.stringify(obj, null, 2);
 }
 
 type FormalRow =
   | { kind: "theme_summary"; id: string; text: string; generatedAt: string }
   | { kind: "company_note"; id: string; text: string; generatedAt: string }
+  | { kind: "daily_brief"; id: string; date: string; marketState: string; sections: DailyBriefSection[]; createdAt: string }
   | { kind: "none" };
 
 async function fetchLatestFormal(entry: ContentDraftEntry): Promise<FormalRow> {
-  if (!entry.targetEntityId) return { kind: "none" };
-
   if (entry.targetTable === "theme_summaries") {
+    if (!entry.targetEntityId) return { kind: "none" };
     try {
       const res = await getThemeSummaries({ themeId: entry.targetEntityId, limit: 1 });
       const row = res.data[0];
@@ -58,11 +93,34 @@ async function fetchLatestFormal(entry: ContentDraftEntry): Promise<FormalRow> {
   }
 
   if (entry.targetTable === "company_notes") {
+    if (!entry.targetEntityId) return { kind: "none" };
     try {
       const res = await getCompanyNotes({ companyId: entry.targetEntityId, limit: 1 });
       const row = res.data[0];
       if (!row) return { kind: "none" };
       return { kind: "company_note", id: row.id, text: row.note, generatedAt: row.generatedAt };
+    } catch {
+      return { kind: "none" };
+    }
+  }
+
+  if (entry.targetTable === "daily_briefs") {
+    try {
+      const res = await getBriefs();
+      // find brief matching the draft date if payload has one
+      const draftDate = isDailyBriefPayload(entry.payload) ? entry.payload.date : null;
+      const match = draftDate
+        ? res.data.find((b) => b.date === draftDate)
+        : res.data[0];
+      if (!match) return { kind: "none" };
+      return {
+        kind: "daily_brief",
+        id: match.id,
+        date: match.date,
+        marketState: match.marketState,
+        sections: match.sections,
+        createdAt: match.createdAt
+      };
     } catch {
       return { kind: "none" };
     }
@@ -211,14 +269,27 @@ export function ContentDraftsQueue() {
                       <strong style={{ fontSize: "var(--fs-base)" }}>
                         {targetLabel[entry.targetTable] ?? entry.targetTable}
                       </strong>
-                      <span className="dim" style={{ fontSize: "var(--fs-xs)", marginLeft: 8 }}>
-                        {entry.id.slice(0, 8)}
-                      </span>
-                      {entry.targetEntityId ? (
-                        <span className="dim mono" style={{ fontSize: "var(--fs-xs)", marginLeft: 6 }}>
-                          · {entry.targetEntityId.slice(0, 8)}
-                        </span>
-                      ) : null}
+                      {entry.targetTable === "daily_briefs" && isDailyBriefPayload(entry.payload) ? (
+                        <>
+                          <span className="mono" style={{ fontSize: "var(--fs-xs)", marginLeft: 8, fontWeight: 700 }}>
+                            {entry.payload.date}
+                          </span>
+                          <span className={marketStateBadge(entry.payload.marketState)} style={{ fontSize: "var(--fs-xs)", marginLeft: 6 }}>
+                            {marketStateLabel[entry.payload.marketState] ?? entry.payload.marketState}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="dim" style={{ fontSize: "var(--fs-xs)", marginLeft: 8 }}>
+                            {entry.id.slice(0, 8)}
+                          </span>
+                          {entry.targetEntityId ? (
+                            <span className="dim mono" style={{ fontSize: "var(--fs-xs)", marginLeft: 6 }}>
+                              · {entry.targetEntityId.slice(0, 8)}
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                     <span className={statusBadge[entry.status] ?? "badge"}>
                       {statusLabel[entry.status] ?? entry.status}
@@ -244,22 +315,52 @@ export function ContentDraftsQueue() {
 
                   {isExpanded ? (
                     <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                      <div className="record-card" style={{ background: "var(--panel-hi)" }}>
-                        <strong style={{ fontSize: "var(--fs-sm)", color: "var(--muted)" }}>草稿內容</strong>
-                        <pre
-                          style={{
-                            whiteSpace: "pre-wrap",
-                            fontSize: "var(--fs-sm)",
-                            marginTop: 4,
-                            maxHeight: 320,
-                            overflow: "auto",
-                            background: "var(--bg)",
-                            padding: 10,
-                            borderRadius: 8
-                          }}
-                        >
-                          {draftText}
-                        </pre>
+                      <div
+                        className="record-card"
+                        style={{
+                          background: "var(--panel-hi)",
+                          borderColor: entry.targetTable === "daily_briefs" ? "var(--accent)" : undefined,
+                          borderWidth: entry.targetTable === "daily_briefs" ? 1 : undefined,
+                          borderStyle: entry.targetTable === "daily_briefs" ? "solid" : undefined
+                        }}
+                      >
+                        <strong style={{ fontSize: "var(--fs-sm)", color: entry.targetTable === "daily_briefs" ? "var(--accent)" : "var(--muted)" }}>
+                          {entry.targetTable === "daily_briefs" ? "[AI] 每日簡報草稿" : "草稿內容"}
+                        </strong>
+
+                        {entry.targetTable === "daily_briefs" && isDailyBriefPayload(entry.payload) ? (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                              <span className="mono" style={{ fontWeight: 700, fontSize: "var(--fs-base)" }}>{entry.payload.date}</span>
+                              <span className={marketStateBadge(entry.payload.marketState)} style={{ fontSize: "var(--fs-xs)" }}>
+                                {marketStateLabel[entry.payload.marketState] ?? entry.payload.marketState}
+                              </span>
+                            </div>
+                            {entry.payload.sections.map((s, i) => (
+                              <div key={i} style={{ marginBottom: 10 }}>
+                                <p style={{ fontSize: "var(--fs-xs)", color: "var(--accent)", margin: "0 0 2px", fontWeight: 700 }}>{s.heading}</p>
+                                <pre style={{ whiteSpace: "pre-wrap", fontSize: "var(--fs-sm)", lineHeight: 1.6, margin: 0, fontFamily: "inherit" }}>
+                                  {s.body}
+                                </pre>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <pre
+                            style={{
+                              whiteSpace: "pre-wrap",
+                              fontSize: "var(--fs-sm)",
+                              marginTop: 4,
+                              maxHeight: 320,
+                              overflow: "auto",
+                              background: "var(--bg)",
+                              padding: 10,
+                              borderRadius: 8
+                            }}
+                          >
+                            {draftText}
+                          </pre>
+                        )}
                       </div>
 
                       <div className="record-card" style={{ background: "var(--panel-hi)" }}>
@@ -268,8 +369,27 @@ export function ContentDraftsQueue() {
                           <p className="muted" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>載入中…</p>
                         ) : formal.kind === "none" ? (
                           <p className="dim" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>
-                            尚無正式資料列（核准後將為此 entity 寫入第一筆）
+                            尚無正式資料列（核准後將寫入第一筆）
                           </p>
+                        ) : formal.kind === "daily_brief" ? (
+                          <>
+                            <p className="dim mono" style={{ fontSize: "var(--fs-xs)", marginTop: 4 }}>
+                              id {formal.id.slice(0, 8)} · 日期 {formal.date} · 建立於 {new Date(formal.createdAt).toLocaleString("zh-TW")}
+                            </p>
+                            <div style={{ marginTop: 6 }}>
+                              <span className={marketStateBadge(formal.marketState)} style={{ fontSize: "var(--fs-xs)" }}>
+                                {marketStateLabel[formal.marketState] ?? formal.marketState}
+                              </span>
+                            </div>
+                            {formal.sections.map((s, i) => (
+                              <div key={i} style={{ marginTop: 6 }}>
+                                <p style={{ fontSize: "var(--fs-xs)", color: "var(--muted)", margin: "0 0 2px", fontWeight: 700 }}>{s.heading}</p>
+                                <pre style={{ whiteSpace: "pre-wrap", fontSize: "var(--fs-sm)", lineHeight: 1.6, margin: 0, fontFamily: "inherit", maxHeight: 120, overflow: "auto" }}>
+                                  {s.body}
+                                </pre>
+                              </div>
+                            ))}
+                          </>
                         ) : (
                           <>
                             <p className="dim mono" style={{ fontSize: "var(--fs-xs)", marginTop: 4 }}>
