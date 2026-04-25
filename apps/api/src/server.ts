@@ -179,7 +179,9 @@ import {
   buildClearCookieHeader,
   buildSetCookieHeader,
   createInviteCode,
+  getUserById,
   loginWithPassword,
+  parseSessionCookie,
   registerWithInvite,
   seedOwnerIfEmpty
 } from "./auth-store.js";
@@ -220,16 +222,84 @@ app.use(
   })
 );
 
-app.use("/api/v1/*", async (c, next) => {
-  const workspaceSlug = c.req.header("x-workspace-slug") ?? process.env.DEFAULT_WORKSPACE_SLUG;
-  const roleHeader = c.req.header("x-user-role");
-  const allowedRoles = ["Owner", "Admin", "Analyst", "Trader", "Viewer"] as const;
-  const roleOverride = allowedRoles.find((role) => role === roleHeader);
+// P0 auth-bypass hotfix (2026-04-25). Previously this middleware read
+// `x-user-role` from request headers and defaulted to "Owner" — anonymous
+// callers were treated as Owner. Now we require a valid `iuf_session` cookie,
+// hydrate the user from the DB, and use the DB role as the only authority.
+//
+// Route exceptions (handled below):
+//   - /api/v1/openalice/jobs/{claim,heartbeat,result} — runner uses bearer
+//     device auth (not the web cookie). Skip cookie gate; the handler does
+//     bearer auth itself.
+//
+// `x-user-role` is no longer accepted as auth input. To keep a dev-only
+// role-switching escape hatch we honor it ONLY when AUTH_ALLOW_ROLE_OVERRIDE=1
+// AND the authenticated user is Owner.
+const ALLOWED_ROLES = ["Owner", "Admin", "Analyst", "Trader", "Viewer"] as const;
+type AllowedRole = (typeof ALLOWED_ROLES)[number];
 
-  const session = await repository.getSession({
-    workspaceSlug,
-    roleOverride
-  });
+function isDeviceAuthRoute(path: string): boolean {
+  if (path.startsWith("/api/internal/openalice/jobs/")) return true;
+  if (path === "/api/v1/openalice/jobs/claim") return true;
+  if (/^\/api\/v1\/openalice\/jobs\/[^/]+\/(heartbeat|result)$/.test(path)) {
+    return true;
+  }
+  return false;
+}
+
+app.use("/api/v1/*", async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+
+  // Runner device-auth routes carry their own bearer-auth check; skip cookie gate.
+  if (isDeviceAuthRoute(path)) {
+    c.set("repo", repository);
+    return next();
+  }
+
+  const userId = parseSessionCookie(c.req.header("cookie"));
+  if (!userId) {
+    return c.json({ error: "unauthenticated" }, 401);
+  }
+
+  const user = await getUserById(userId);
+  if (!user) {
+    return c.json({ error: "unauthenticated" }, 401);
+  }
+
+  const dbRole = user.role as AllowedRole;
+  let effectiveRole: AllowedRole = dbRole;
+  if (
+    process.env.AUTH_ALLOW_ROLE_OVERRIDE === "1" &&
+    dbRole === "Owner"
+  ) {
+    const headerRole = c.req.header("x-user-role");
+    const requested = ALLOWED_ROLES.find((r) => r === headerRole);
+    if (requested) {
+      effectiveRole = requested;
+    }
+  }
+
+  // Build the session directly from the authenticated user — do not call
+  // repository.getSession, which falls back to a seeded "default owner" lookup
+  // and would let the role override silently mis-attribute audit log entries
+  // to that seeded user.
+  const session: AppSession = {
+    workspace: user.workspace,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: effectiveRole
+    },
+    persistenceMode: "database"
+  };
+
+  // Honor x-workspace-slug only if it matches the user's workspace; we don't
+  // currently support cross-workspace impersonation.
+  const requestedWorkspace = c.req.header("x-workspace-slug");
+  if (requestedWorkspace && requestedWorkspace !== user.workspace.slug) {
+    return c.json({ error: "forbidden_workspace" }, 403);
+  }
 
   c.set("repo", repository);
   c.set("session", session);
@@ -1833,7 +1903,23 @@ app.get("/api/v1/signal-clusters", async (c) => {
   });
 });
 
+// OpenAlice admin operations (device registration, device list/revoke/cleanup,
+// job CRUD, job review, observability) require Owner or Admin. Runner-driven
+// routes (jobs/{claim,heartbeat,result}) use bearer device auth instead and
+// bypass this gate via isDeviceAuthRoute().
+const OPENALICE_ADMIN_ROLES = new Set(["Owner", "Admin"]);
+
+function requireOpenAliceAdmin(c: Context) {
+  const session = c.get("session");
+  if (!session || !OPENALICE_ADMIN_ROLES.has(session.user.role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  return null;
+}
+
 app.post("/api/v1/openalice/register", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
   const payload = openAliceRegisterSchema.parse(await c.req.json());
   const registration = await registerOpenAliceDevice({
     workspaceSlug: c.get("session").workspace.slug,
@@ -1845,13 +1931,17 @@ app.post("/api/v1/openalice/register", async (c) => {
   return c.json({ data: registration }, 201);
 });
 
-app.get("/api/v1/openalice/devices", async (c) =>
-  c.json({
+app.get("/api/v1/openalice/devices", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
+  return c.json({
     data: await listOpenAliceDevices(c.get("session").workspace.slug)
-  })
-);
+  });
+});
 
 app.post("/api/v1/openalice/devices/:deviceId/revoke", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
   const device = await revokeOpenAliceDevice({
     workspaceSlug: c.get("session").workspace.slug,
     deviceId: c.req.param("deviceId")
@@ -1865,6 +1955,8 @@ app.post("/api/v1/openalice/devices/:deviceId/revoke", async (c) => {
 });
 
 app.post("/api/v1/openalice/devices/cleanup", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
   const payload = openAliceCleanupDevicesSchema.parse(await c.req.json().catch(() => ({})));
   return c.json({
     data: await cleanupStaleOpenAliceDevices({
@@ -1874,13 +1966,17 @@ app.post("/api/v1/openalice/devices/cleanup", async (c) => {
   });
 });
 
-app.get("/api/v1/openalice/jobs", async (c) =>
-  c.json({
+app.get("/api/v1/openalice/jobs", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
+  return c.json({
     data: await listOpenAliceJobs(c.get("session").workspace.slug)
-  })
-);
+  });
+});
 
 app.patch("/api/v1/openalice/jobs/:jobId/review", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
   const payload = openAliceReviewJobSchema.parse(await c.req.json().catch(() => ({})));
   const reviewed = await reviewOpenAliceJob({
     workspaceSlug: c.get("session").workspace.slug,
@@ -1896,13 +1992,17 @@ app.patch("/api/v1/openalice/jobs/:jobId/review", async (c) => {
   return c.json({ data: reviewed });
 });
 
-app.get("/api/v1/openalice/observability", async (c) =>
-  c.json({
+app.get("/api/v1/openalice/observability", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
+  return c.json({
     data: await getOpenAliceObservabilitySnapshot(c.get("session").workspace.slug)
-  })
-);
+  });
+});
 
 app.post("/api/v1/openalice/jobs", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
   const payload = openAliceEnqueueJobSchema.parse(await c.req.json());
   const job = await enqueueOpenAliceJob({
     workspaceSlug: c.get("session").workspace.slug,

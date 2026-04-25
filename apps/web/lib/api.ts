@@ -76,6 +76,7 @@ type Envelope<T> = {
 
 async function request<T>(path: string, init?: RequestInit) {
   const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -572,6 +573,7 @@ export type {
 async function requestOrderOutcome(path: string, body: unknown) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       "x-workspace-slug": WORKSPACE_SLUG
@@ -618,6 +620,7 @@ export async function streamExecutionEvents(
   signal: AbortSignal
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/api/v1/trading/stream`, {
+    credentials: "include",
     headers: { "x-workspace-slug": WORKSPACE_SLUG },
     signal
   });
@@ -977,6 +980,7 @@ async function requestAutopilotOutcome(
     `${API_BASE}/api/v1/strategy/runs/${encodeURIComponent(runId)}/execute`,
     {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         "x-workspace-slug": WORKSPACE_SLUG
@@ -1015,6 +1019,7 @@ export async function requestConfirmToken(runId: string): Promise<ConfirmTokenRe
     `${API_BASE}/api/v1/strategy/runs/${encodeURIComponent(runId)}/confirm-token`,
     {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         "x-workspace-slug": WORKSPACE_SLUG

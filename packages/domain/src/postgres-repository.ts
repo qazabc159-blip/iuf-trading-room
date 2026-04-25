@@ -136,11 +136,16 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
     user: { id: string; name: string; email: string },
     options?: SessionOptions
   ): AppSession {
+    // P0 hotfix (2026-04-25): default to least-privileged role. Previously
+    // this defaulted to "Owner", which combined with the broken header-based
+    // /api/v1/* middleware meant any anonymous caller was treated as Owner.
+    // Real authentication is performed in the API middleware; this fallback
+    // exists for tests and internal callers that omit roleOverride.
     return {
       workspace,
       user: {
         ...user,
-        role: options?.roleOverride ?? "Owner"
+        role: options?.roleOverride ?? "Viewer"
       },
       persistenceMode: "database"
     };
