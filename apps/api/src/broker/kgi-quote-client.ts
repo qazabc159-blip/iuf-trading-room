@@ -5,6 +5,10 @@
  * This module is intentionally separate from kgi-gateway-client.ts which carries
  * session/order/position surfaces.
  *
+ * W3 B1 additions:
+ *  - H-6 structured logging via lib/logger.ts (route/symbol/status/latency_ms/freshness/error_code)
+ *  - H-9 ring buffer eviction warning via lib/ring-buffer.ts (warn when buffer >= 90% capacity)
+ *
  * Hard lines (no-order guarantee):
  *  - NO import from kgi-gateway-client.ts (no accidental order surface exposure)
  *  - NO createOrder / cancelOrder / updateOrder / submitOrder / placeOrder methods
@@ -12,10 +16,20 @@
  *  - NO risk-engine import
  *  - Only read-only methods: getQuoteStatus / subscribeSymbolTick / subscribeSymbolBidAsk /
  *    getRecentTicks / getLatestBidAsk
+ *  - NEVER log: account, person_id, token, password, pfx, KGI secret (enforced by logger.ts)
  *
  * Spec: evidence/path_b_w2a_20260426/w2d_quote_consumption_plan.md §2, §7, §8
  * Decisions: D-W2D-1 (stale=5000ms), D-W2D-2 (whitelist=env var), D-W2D-4 (prefix)
+ * W3 B1: evidence/path_b_w3_read_only_2026-04-27/jason_w3_quote_hardening_impl_note.md
  */
+
+// ---------------------------------------------------------------------------
+// W3 B1: structured logger + ring buffer (read-only observability imports)
+// These imports are intentionally from lib/ (not from order modules).
+// ---------------------------------------------------------------------------
+
+import { logger, withLatency } from "../lib/logger.js";
+import { checkBufferStatus } from "../lib/ring-buffer.js";
 
 // ---------------------------------------------------------------------------
 // Error classes (re-declared here — no import from kgi-gateway-client.ts)
@@ -298,9 +312,32 @@ export class KgiQuoteClient {
   // -------------------------------------------------------------------------
 
   async getQuoteStatus(): Promise<KgiQuoteStatusRaw> {
-    const res = await quoteFetch(`${this.baseUrl}/quote/status`, { method: "GET" }, this.timeoutMs);
-    if (!res.ok) await classifyQuoteError(res, "getQuoteStatus");
-    return res.json() as Promise<KgiQuoteStatusRaw>;
+    let status = 0;
+    const result = await withLatency(
+      async () => {
+        const res = await quoteFetch(`${this.baseUrl}/quote/status`, { method: "GET" }, this.timeoutMs);
+        status = res.status;
+        if (!res.ok) await classifyQuoteError(res, "getQuoteStatus");
+        return res.json() as Promise<KgiQuoteStatusRaw>;
+      },
+      (latencyMs, err) => {
+        if (err) {
+          logger.error("quote_status_error", {
+            route: "/api/v1/kgi/quote/status",
+            latency_ms: latencyMs,
+            status,
+            error_code: err instanceof Error ? err.constructor.name : "UNKNOWN",
+          });
+        } else {
+          logger.info("quote_status_ok", {
+            route: "/api/v1/kgi/quote/status",
+            latency_ms: latencyMs,
+            status,
+          });
+        }
+      }
+    );
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -309,18 +346,44 @@ export class KgiQuoteClient {
 
   async subscribeSymbolTick(symbol: string, opts?: { oddLot?: boolean }): Promise<string> {
     this.enforceWhitelist(symbol);
-    const res = await quoteFetch(
-      `${this.baseUrl}/quote/subscribe/tick`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, odd_lot: opts?.oddLot ?? false }),
+    let status = 0;
+    const result = await withLatency(
+      async () => {
+        const res = await quoteFetch(
+          `${this.baseUrl}/quote/subscribe/tick`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol, odd_lot: opts?.oddLot ?? false }),
+          },
+          this.timeoutMs
+        );
+        status = res.status;
+        if (!res.ok) await classifyQuoteError(res, `subscribeSymbolTick(${symbol})`);
+        const data = (await res.json()) as { label: string };
+        return data.label;
       },
-      this.timeoutMs
+      (latencyMs, err) => {
+        if (err) {
+          const code = err instanceof Error ? err.constructor.name : "UNKNOWN";
+          logger.warn("subscribe_tick_error", {
+            route: "/api/v1/kgi/quote/subscribe",
+            symbol,
+            status,
+            latency_ms: latencyMs,
+            error_code: code,
+          });
+        } else {
+          logger.info("subscribe_tick_ok", {
+            route: "/api/v1/kgi/quote/subscribe",
+            symbol,
+            status,
+            latency_ms: latencyMs,
+          });
+        }
+      }
     );
-    if (!res.ok) await classifyQuoteError(res, `subscribeSymbolTick(${symbol})`);
-    const data = (await res.json()) as { label: string };
-    return data.label;
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -329,19 +392,45 @@ export class KgiQuoteClient {
 
   async subscribeSymbolBidAsk(symbol: string, opts?: { oddLot?: boolean }): Promise<string> {
     this.enforceWhitelist(symbol);
-    const res = await quoteFetch(
-      `${this.baseUrl}/quote/subscribe/bidask`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, odd_lot: opts?.oddLot ?? false }),
+    let status = 0;
+    const result = await withLatency(
+      async () => {
+        const res = await quoteFetch(
+          `${this.baseUrl}/quote/subscribe/bidask`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol, odd_lot: opts?.oddLot ?? false }),
+          },
+          this.timeoutMs
+        );
+        status = res.status;
+        // 501 is a special non-error case (SDK not available) — surface as error for caller to handle
+        if (!res.ok) await classifyQuoteError(res, `subscribeSymbolBidAsk(${symbol})`);
+        const data = (await res.json()) as { label: string };
+        return data.label;
       },
-      this.timeoutMs
+      (latencyMs, err) => {
+        if (err) {
+          const code = err instanceof Error ? err.constructor.name : "UNKNOWN";
+          logger.warn("subscribe_bidask_error", {
+            route: "/api/v1/kgi/quote/subscribe",
+            symbol,
+            status,
+            latency_ms: latencyMs,
+            error_code: code,
+          });
+        } else {
+          logger.info("subscribe_bidask_ok", {
+            route: "/api/v1/kgi/quote/subscribe",
+            symbol,
+            status,
+            latency_ms: latencyMs,
+          });
+        }
+      }
     );
-    // 501 is a special non-error case (SDK not available) — surface as error for caller to handle
-    if (!res.ok) await classifyQuoteError(res, `subscribeSymbolBidAsk(${symbol})`);
-    const data = (await res.json()) as { label: string };
-    return data.label;
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -353,21 +442,65 @@ export class KgiQuoteClient {
     limit = 10
   ): Promise<KgiTicksRaw & StalenessInfo> {
     this.enforceWhitelist(symbol);
-    const res = await quoteFetch(
-      `${this.baseUrl}/quote/ticks?symbol=${encodeURIComponent(symbol)}&limit=${limit}`,
-      { method: "GET" },
-      this.timeoutMs
+    let status = 0;
+    let staleness: StalenessInfo = { freshness: "not-available", stale: false, staleSince: null };
+    const result = await withLatency(
+      async () => {
+        const res = await quoteFetch(
+          `${this.baseUrl}/quote/ticks?symbol=${encodeURIComponent(symbol)}&limit=${limit}`,
+          { method: "GET" },
+          this.timeoutMs
+        );
+        status = res.status;
+        if (!res.ok) await classifyQuoteError(res, `getRecentTicks(${symbol})`);
+        const raw = (await res.json()) as KgiTicksRaw;
+
+        // Stale detection: use last tick's _received_at
+        const lastReceivedAt = raw.ticks.length > 0
+          ? (raw.ticks[raw.ticks.length - 1]._received_at ?? null)
+          : null;
+        staleness = classifyFreshness(lastReceivedAt, this.staleThresholdMs);
+
+        // H-9: ring buffer eviction warning
+        const bufStatus = checkBufferStatus(symbol, raw.buffer_used, raw.buffer_size);
+        if (bufStatus.nearCapacity) {
+          logger.warn("quote_ring_buffer_near_capacity", {
+            route: "/api/v1/kgi/quote/ticks",
+            symbol,
+            freshness: staleness.freshness,
+            extra: {
+              buffer_used: bufStatus.bufferUsed,
+              buffer_max: bufStatus.bufferMax,
+              utilization_pct: Math.round(bufStatus.utilizationFraction * 100),
+              at_capacity: bufStatus.atCapacity,
+            },
+          });
+        }
+
+        return { ...raw, ...staleness };
+      },
+      (latencyMs, err) => {
+        if (err) {
+          const code = err instanceof Error ? err.constructor.name : "UNKNOWN";
+          logger.warn("get_recent_ticks_error", {
+            route: "/api/v1/kgi/quote/ticks",
+            symbol,
+            status,
+            latency_ms: latencyMs,
+            error_code: code,
+          });
+        } else {
+          logger.info("get_recent_ticks_ok", {
+            route: "/api/v1/kgi/quote/ticks",
+            symbol,
+            status,
+            latency_ms: latencyMs,
+            freshness: staleness.freshness,
+          });
+        }
+      }
     );
-    if (!res.ok) await classifyQuoteError(res, `getRecentTicks(${symbol})`);
-    const raw = (await res.json()) as KgiTicksRaw;
-
-    // Stale detection: use last tick's _received_at
-    const lastReceivedAt = raw.ticks.length > 0
-      ? (raw.ticks[raw.ticks.length - 1]._received_at ?? null)
-      : null;
-    const staleness = classifyFreshness(lastReceivedAt, this.staleThresholdMs);
-
-    return { ...raw, ...staleness };
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -378,19 +511,47 @@ export class KgiQuoteClient {
     symbol: string
   ): Promise<KgiBidAskResponseRaw & StalenessInfo> {
     this.enforceWhitelist(symbol);
-    const res = await quoteFetch(
-      `${this.baseUrl}/quote/bidask?symbol=${encodeURIComponent(symbol)}`,
-      { method: "GET" },
-      this.timeoutMs
+    let status = 0;
+    let staleness: StalenessInfo = { freshness: "not-available", stale: false, staleSince: null };
+    const result = await withLatency(
+      async () => {
+        const res = await quoteFetch(
+          `${this.baseUrl}/quote/bidask?symbol=${encodeURIComponent(symbol)}`,
+          { method: "GET" },
+          this.timeoutMs
+        );
+        status = res.status;
+        if (!res.ok) await classifyQuoteError(res, `getLatestBidAsk(${symbol})`);
+        const raw = (await res.json()) as KgiBidAskResponseRaw;
+
+        // Stale detection: use bidask._received_at
+        const lastReceivedAt = raw.bidask?._received_at ?? null;
+        staleness = classifyFreshness(lastReceivedAt, this.staleThresholdMs);
+
+        return { ...raw, ...staleness };
+      },
+      (latencyMs, err) => {
+        if (err) {
+          const code = err instanceof Error ? err.constructor.name : "UNKNOWN";
+          logger.warn("get_latest_bidask_error", {
+            route: "/api/v1/kgi/quote/bidask",
+            symbol,
+            status,
+            latency_ms: latencyMs,
+            error_code: code,
+          });
+        } else {
+          logger.info("get_latest_bidask_ok", {
+            route: "/api/v1/kgi/quote/bidask",
+            symbol,
+            status,
+            latency_ms: latencyMs,
+            freshness: staleness.freshness,
+          });
+        }
+      }
     );
-    if (!res.ok) await classifyQuoteError(res, `getLatestBidAsk(${symbol})`);
-    const raw = (await res.json()) as KgiBidAskResponseRaw;
-
-    // Stale detection: use bidask._received_at
-    const lastReceivedAt = raw.bidask?._received_at ?? null;
-    const staleness = classifyFreshness(lastReceivedAt, this.staleThresholdMs);
-
-    return { ...raw, ...staleness };
+    return result;
   }
 
   // -------------------------------------------------------------------------
