@@ -2385,6 +2385,123 @@ app.post("/api/v1/import/my-tw-coverage", async (c) => {
   });
 });
 
+// ── KGI Quote proxy (/api/v1/kgi/quote/*) ────────────────────────────────────
+//
+// W2d: read-only consumption of gateway quote data.
+// Route prefix: /api/v1/kgi/quote/* (D-W2D-4)
+// Stale detection: 5000ms threshold (D-W2D-1)
+// Symbol whitelist: KGI_QUOTE_SYMBOL_WHITELIST env var (D-W2D-2)
+//
+// Hard lines:
+//   - 0 import from order modules
+//   - 0 /order/create call
+//   - 0 broker write surface
+//   - non-whitelisted symbol → 4xx (NOT 200, per D-W2D-2 security note)
+//
+// Note: these routes are inside the /api/v1/* session middleware (auth required).
+// Gateway returns 503 QUOTE_DISABLED when KGI_GATEWAY_QUOTE_DISABLED=true.
+// Gateway unreachable → 503 GATEWAY_UNREACHABLE (graceful degraded state).
+
+import {
+  KgiQuoteClient,
+  KgiQuoteSymbolNotAllowedError,
+  KgiQuoteDisabledError,
+  KgiQuoteAuthError,
+  KgiQuoteNotAvailableError,
+  KgiQuoteUnreachableError,
+} from "./broker/kgi-quote-client.js";
+
+// Lazy singleton — one client per process instance.
+let _kgiQuoteClient: KgiQuoteClient | null = null;
+function getKgiQuoteClient(): KgiQuoteClient {
+  if (!_kgiQuoteClient) {
+    _kgiQuoteClient = new KgiQuoteClient();
+  }
+  return _kgiQuoteClient;
+}
+
+// Helper: map quote client errors to HTTP responses
+function handleKgiQuoteError(c: Context, err: unknown): Response {
+  if (err instanceof KgiQuoteSymbolNotAllowedError) {
+    return c.json({ error: "SYMBOL_NOT_ALLOWED", message: err.message }, 422) as Response;
+  }
+  if (err instanceof KgiQuoteDisabledError) {
+    return c.json({ error: "QUOTE_DISABLED", message: "Quote service is disabled (containment mode)" }, 503) as Response;
+  }
+  if (err instanceof KgiQuoteAuthError) {
+    return c.json({ error: "GATEWAY_AUTH_ERROR", message: "Gateway session not established" }, 503) as Response;
+  }
+  if (err instanceof KgiQuoteNotAvailableError) {
+    return c.json({ error: "QUOTE_NOT_AVAILABLE", message: err.message }, 404) as Response;
+  }
+  if (err instanceof KgiQuoteUnreachableError) {
+    return c.json({ error: "GATEWAY_UNREACHABLE", message: "KGI gateway is unreachable" }, 503) as Response;
+  }
+  return c.json({ error: "GATEWAY_ERROR", message: String(err) }, 503) as Response;
+}
+
+// GET /api/v1/kgi/quote/status — diagnostic, no whitelist check
+app.get("/api/v1/kgi/quote/status", async (c) => {
+  try {
+    const status = await getKgiQuoteClient().getQuoteStatus();
+    return c.json({ data: status });
+  } catch (err) {
+    return handleKgiQuoteError(c, err);
+  }
+});
+
+// POST /api/v1/kgi/quote/subscribe — subscribe tick + bidask for a whitelisted symbol
+const kgiSubscribeSchema = z.object({
+  symbol: z.string().min(1).max(20),
+  type: z.enum(["tick", "bidask", "both"]).default("tick"),
+  oddLot: z.boolean().optional(),
+});
+
+app.post("/api/v1/kgi/quote/subscribe", async (c) => {
+  try {
+    const body = kgiSubscribeSchema.parse(await c.req.json());
+    const client = getKgiQuoteClient();
+    const results: Record<string, string> = {};
+    if (body.type === "tick" || body.type === "both") {
+      results.tickLabel = await client.subscribeSymbolTick(body.symbol, { oddLot: body.oddLot });
+    }
+    if (body.type === "bidask" || body.type === "both") {
+      results.bidAskLabel = await client.subscribeSymbolBidAsk(body.symbol, { oddLot: body.oddLot });
+    }
+    return c.json({ data: { symbol: body.symbol, ...results } });
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return handleKgiQuoteError(c, err);
+  }
+});
+
+// GET /api/v1/kgi/quote/ticks?symbol=<S>&limit=<N>
+app.get("/api/v1/kgi/quote/ticks", async (c) => {
+  const symbol = c.req.query("symbol") ?? "";
+  const limit = Math.max(1, Math.min(200, Number(c.req.query("limit") ?? "10")));
+  if (!symbol) return c.json({ error: "MISSING_SYMBOL" }, 400);
+  try {
+    const result = await getKgiQuoteClient().getRecentTicks(symbol, limit);
+    return c.json({ data: result });
+  } catch (err) {
+    return handleKgiQuoteError(c, err);
+  }
+});
+
+// GET /api/v1/kgi/quote/bidask?symbol=<S>
+app.get("/api/v1/kgi/quote/bidask", async (c) => {
+  const symbol = c.req.query("symbol") ?? "";
+  if (!symbol) return c.json({ error: "MISSING_SYMBOL" }, 400);
+  try {
+    const result = await getKgiQuoteClient().getLatestBidAsk(symbol);
+    return c.json({ data: result });
+  } catch (err) {
+    return handleKgiQuoteError(c, err);
+  }
+});
+
 // ── Auth routes ───────────────────────────────────────────────────────────────
 
 const authLoginSchema = z.object({
