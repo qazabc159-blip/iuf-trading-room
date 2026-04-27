@@ -42,6 +42,15 @@ from kgi_quote import (
     is_tick_subscribed,
     quote_manager,
 )
+from kgi_kbar import (
+    get_kbar_buffer_status,
+    get_recent_kbars,
+    is_kbar_subscribed,
+    kbar_manager,
+    recover_kbar_from_sdk,
+    SUPPORTED_INTERVALS,
+    UNSUPPORTED_INTERVAL_MATRIX,
+)
 from kgi_session import session
 from schemas import (
     CreateOrderRequest,
@@ -49,6 +58,9 @@ from schemas import (
     ErrorDetail,
     ErrorEnvelope,
     HealthResponse,
+    KbarLatestResponse,
+    KBarData,
+    KbarRecoverResponse,
     LoginRequest,
     LoginResponse,
     LogoutResponse,
@@ -58,6 +70,8 @@ from schemas import (
     ShowAccountResponse,
     SubscribeBidAskRequest,
     SubscribeBidAskResponse,
+    SubscribeKbarRequest,
+    SubscribeKbarResponse,
     SubscribeTickRequest,
     SubscribeTickResponse,
     TradesResponse,
@@ -76,10 +90,14 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     quote_manager.set_event_loop(loop)
     order_event_manager.set_event_loop(loop)
+    # W3 B2: register kbar_manager event loop for K-bar WS broadcast
+    kbar_manager.set_event_loop(loop)
 
     # Start background broadcast pumps
     tick_pump_task = asyncio.create_task(quote_manager.tick_broadcast_pump())
     event_pump_task = asyncio.create_task(order_event_manager.order_event_broadcast_pump())
+    # W3 B2: K-bar broadcast pump (DRAFT-only / sandbox-only)
+    kbar_pump_task = asyncio.create_task(kbar_manager.kbar_broadcast_pump())
 
     logger.info(
         "KGI Gateway starting on %s:%d — waiting for POST /session/login",
@@ -90,6 +108,7 @@ async def lifespan(app: FastAPI):
 
     tick_pump_task.cancel()
     event_pump_task.cancel()
+    kbar_pump_task.cancel()
     logger.info("KGI Gateway shutting down")
 
 
@@ -624,6 +643,252 @@ async def get_quote_bidask(symbol: str):
             ).model_dump(),
         )
     return {"symbol": symbol, "bidask": snap}
+
+
+# ---------------------------------------------------------------------------
+# K-bar routes — W3 B2
+# ---------------------------------------------------------------------------
+
+@app.get("/quote/kbar/recover", response_model=KbarRecoverResponse)
+async def recover_kbar(symbol: str, from_date: str, to_date: str):
+    """
+    GET /quote/kbar/recover?symbol=<S>&from=<YYYYMMDD>&to=<YYYYMMDD>
+
+    Calls TWStockQuote.recover_kbar(symbol, from, to) for historical K-bar data.
+
+    Responses:
+      503 if QUOTE_DISABLED (circuit breaker — mirrors W2d pattern)
+      401 if not logged in
+      422 if from/to dates are missing or malformed
+      200 + KbarRecoverResponse with bars list (may be empty if no data)
+
+    Hard lines:
+      - No signal/order write in this handler
+      - Symbol whitelist: applied via whitelist check (mirrors quote pattern)
+      - Mock fallback: returns empty bars (not 500) if SDK unavailable
+    """
+    if settings.QUOTE_DISABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="QUOTE_DISABLED",
+                    message="/quote/kbar/recover is administratively disabled (KGI_GATEWAY_QUOTE_DISABLED=true).",
+                )
+            ).model_dump(),
+        )
+    if not session.is_logged_in:
+        raise HTTPException(
+            status_code=401,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+            ).model_dump(),
+        )
+    if not from_date or not to_date:
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(code="MISSING_DATE_RANGE", message="from and to are required (YYYYMMDD).")
+            ).model_dump(),
+        )
+    if session.api is None:
+        # Empty-safe: return empty bars instead of 500
+        logger.warning("recover_kbar: session.api is None, returning empty bars")
+        return KbarRecoverResponse(
+            symbol=symbol, bars=[], count=0,
+            from_date=from_date, to_date=to_date,
+            note="session.api not available — call POST /session/set-account first",
+        )
+
+    try:
+        raw_bars = recover_kbar_from_sdk(session.api, symbol, from_date, to_date)
+        bars = [KBarData(**b) for b in raw_bars]
+        logger.info("recover_kbar OK: symbol=%s from=%s to=%s count=%d", symbol, from_date, to_date, len(bars))
+        return KbarRecoverResponse(
+            symbol=symbol, bars=bars, count=len(bars),
+            from_date=from_date, to_date=to_date,
+        )
+    except NotImplementedError as exc:
+        logger.warning("recover_kbar NOT_IMPLEMENTED: %s", exc)
+        return KbarRecoverResponse(
+            symbol=symbol, bars=[], count=0,
+            from_date=from_date, to_date=to_date,
+            note=f"SDK recover_kbar not available: {exc}",
+        )
+    except Exception as exc:
+        logger.error("recover_kbar failed: class=%s", type(exc).__name__)
+        # Empty-safe fallback: return empty bars not 500
+        return KbarRecoverResponse(
+            symbol=symbol, bars=[], count=0,
+            from_date=from_date, to_date=to_date,
+            note=f"recover_kbar error: {type(exc).__name__}",
+        )
+
+
+@app.post("/quote/subscribe/kbar", response_model=SubscribeKbarResponse)
+async def subscribe_kbar(body: SubscribeKbarRequest):
+    """
+    POST /quote/subscribe/kbar — subscribe to K-bar stream for a symbol.
+
+    Mirrors W2d subscribe-gap fix pattern:
+      QUOTE_DISABLED check BEFORE auth (system-level breaker fires first).
+
+    Interval handling:
+      - If interval is in UNSUPPORTED_INTERVAL_MATRIX → return 200 with
+        interval_status="unsupported" and unsupported_reason (NOT a hard error)
+      - If interval is in SUPPORTED_INTERVALS → proceed
+      - If interval is None → proceed (SDK determines granularity)
+
+    Hard lines:
+      - NO interval hard-transcoding (unsupported → recorded, not converted)
+      - NO signal/order trigger in this handler
+      - Production-side WS: DRAFT-only / sandbox-only
+    """
+    # W3 B2 subscribe-gap pre-fix: mirrors W2d QUOTE_DISABLED-first pattern
+    if settings.QUOTE_DISABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="QUOTE_DISABLED",
+                    message="Quote service is disabled via KGI_GATEWAY_QUOTE_DISABLED",
+                )
+            ).model_dump(),
+        )
+    if not session.is_logged_in:
+        raise HTTPException(
+            status_code=401,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+            ).model_dump(),
+        )
+
+    # Interval validation (no hard-transcode)
+    interval_status = "unknown"
+    unsupported_reason = None
+    if body.interval is not None:
+        if body.interval in UNSUPPORTED_INTERVAL_MATRIX:
+            unsupported_reason = UNSUPPORTED_INTERVAL_MATRIX[body.interval]
+            logger.info(
+                "subscribe_kbar: unsupported interval=%s reason=%s symbol=%s",
+                body.interval, unsupported_reason, body.symbol,
+            )
+            return SubscribeKbarResponse(
+                ok=True,
+                label=None,
+                note=f"Interval '{body.interval}' is not supported — see unsupported matrix",
+                interval_status="unsupported",
+                unsupported_reason=unsupported_reason,
+            )
+        elif body.interval in SUPPORTED_INTERVALS:
+            interval_status = "supported"
+        else:
+            interval_status = "unknown"
+
+    if session.api is None:
+        raise HTTPException(status_code=500, detail="No API handle")
+
+    try:
+        label = kbar_manager.subscribe_kbar(session.api, body.symbol, odd_lot=body.odd_lot)
+        logger.info("subscribe_kbar OK: symbol=%s label=%s interval=%s", body.symbol, label, body.interval)
+        return SubscribeKbarResponse(
+            ok=True,
+            label=label,
+            interval_status=interval_status,
+            note="DRAFT: WS push is sandbox-only; use GET /quote/kbar for REST poll",
+        )
+    except NotImplementedError as exc:
+        logger.info("subscribe_kbar NOT_IMPLEMENTED: %s", exc)
+        from fastapi.responses import JSONResponse as _JSONResponse
+        return _JSONResponse(
+            status_code=501,
+            content=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="KBAR_NOT_IMPLEMENTED",
+                    message=str(exc),
+                )
+            ).model_dump(),
+        )
+    except Exception as exc:
+        logger.error("subscribe_kbar failed: class=%s symbol=%s", type(exc).__name__, body.symbol)
+        raise HTTPException(
+            status_code=502,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="KGI_SUBSCRIBE_KBAR_FAILED",
+                    message=str(exc),
+                    upstream=str(exc),
+                )
+            ).model_dump(),
+        ) from exc
+
+
+@app.get("/quote/kbar", response_model=KbarLatestResponse)
+async def get_quote_kbar(symbol: str, limit: int = 10):
+    """
+    GET /quote/kbar?symbol=<S>&limit=<N> — last N K-bars from ring buffer.
+    REST poll interface (mirrors /quote/ticks pattern).
+
+    Responses:
+      503 if QUOTE_DISABLED
+      401 if not logged in
+      404 if symbol not in kbar buffer (never subscribed)
+      200 + KbarLatestResponse (may have empty bars if subscribed but no data yet)
+    """
+    if settings.QUOTE_DISABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="QUOTE_DISABLED",
+                    message="/quote/kbar is administratively disabled (KGI_GATEWAY_QUOTE_DISABLED=true).",
+                )
+            ).model_dump(),
+        )
+    if not session.is_logged_in:
+        raise HTTPException(
+            status_code=401,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+            ).model_dump(),
+        )
+    if not is_kbar_subscribed(symbol):
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="KBAR_NOT_SUBSCRIBED",
+                    message=f"Symbol '{symbol}' has no K-bar subscription. Call POST /quote/subscribe/kbar first.",
+                )
+            ).model_dump(),
+        )
+    bars_raw = get_recent_kbars(symbol, limit=limit)
+    bars = [KBarData(**b) for b in bars_raw]
+    from kgi_kbar import _KBAR_BUFFER, _KBAR_LOCK, _KBAR_BUFFER_MAXLEN
+    with _KBAR_LOCK:
+        buf = _KBAR_BUFFER.get(symbol)
+        buf_used = len(buf) if buf is not None else 0
+    return KbarLatestResponse(
+        symbol=symbol,
+        bars=bars,
+        count=len(bars),
+        buffer_size=_KBAR_BUFFER_MAXLEN,
+        buffer_used=buf_used,
+    )
+
+
+@app.get("/quote/kbar/status")
+async def kbar_status():
+    """
+    GET /quote/kbar/status — K-bar buffer state.
+    No auth required (diagnostic surface — mirrors /quote/status pattern).
+    """
+    status = get_kbar_buffer_status()
+    return {
+        **status,
+        "kgi_logged_in": session.is_logged_in,
+        "quote_disabled_flag": settings.QUOTE_DISABLED,
+    }
 
 
 # ---------------------------------------------------------------------------

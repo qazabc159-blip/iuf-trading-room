@@ -1,0 +1,18 @@
+W3 Lane B1 - Quote Hardening DRAFT PR
+
+H-6 structured logging + H-9 ring buffer eviction warning.
+
+Changes:
+- apps/api/src/lib/logger.ts (NEW): structured JSON logger with redaction of account/person_id/token/password/pfx/secret
+- apps/api/src/lib/ring-buffer.ts (NEW): buffer utilisation check, warns at 90% capacity
+- apps/api/src/broker/kgi-quote-client.ts: added withLatency structured logging to all 5 methods
+- apps/api/src/__tests__/quote-hardening.test.ts (NEW): 15 TS unit tests
+- services/kgi-gateway/tests/test_logging_redaction.py (NEW): 5 Python redaction tests
+
+Test results: TS 15/15 pass, Python 26/26 pass, typecheck EXIT 0
+
+Hard lines held: 0 order touch / 0 contracts mutation / 0 deploy / 0 merge
+Redaction proof: W3-B1-T1 to T5; No-order proof: W3-B1-T13, W3-B1-T15
+
+DRAFT - NOT FOR MERGE
+Sprint: W3 Read-Only Expansion Sprint | Lane: B1

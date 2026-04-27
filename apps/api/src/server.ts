@@ -2409,6 +2409,7 @@ import {
   KgiQuoteAuthError,
   KgiQuoteNotAvailableError,
   KgiQuoteUnreachableError,
+  KgiKbarNotAvailableError,
 } from "./broker/kgi-quote-client.js";
 
 // Lazy singleton — one client per process instance.
@@ -2496,6 +2497,68 @@ app.get("/api/v1/kgi/quote/bidask", async (c) => {
   if (!symbol) return c.json({ error: "MISSING_SYMBOL" }, 400);
   try {
     const result = await getKgiQuoteClient().getLatestBidAsk(symbol);
+    return c.json({ data: result });
+  } catch (err) {
+    return handleKgiQuoteError(c, err);
+  }
+});
+
+// ── K-bar routes (/api/v1/kgi/quote/kbar/*) ──────────────────────────────────
+//
+// W3 B2: K-bar Phase 2 backend
+//
+// Hard lines:
+//   - 0 import order
+//   - 0 K-bar callback triggers signal / order
+//   - unsupported interval → surface in response, not hard-transcoded
+//   - subscribe_kbar WS push: DRAFT-only / sandbox-only
+//   - Mock fallback: empty bars (not 500) on gateway unavailable
+
+// GET /api/v1/kgi/quote/kbar/recover?symbol=<S>&from=<YYYYMMDD>&to=<YYYYMMDD>
+app.get("/api/v1/kgi/quote/kbar/recover", async (c) => {
+  const symbol = c.req.query("symbol") ?? "";
+  const from = c.req.query("from") ?? "";
+  const to = c.req.query("to") ?? "";
+  if (!symbol) return c.json({ error: "MISSING_SYMBOL" }, 400);
+  if (!from || !to) return c.json({ error: "MISSING_DATE_RANGE", message: "from and to required (YYYYMMDD)" }, 400);
+  try {
+    const result = await getKgiQuoteClient().recoverKbar(symbol, from, to);
+    return c.json({ data: result });
+  } catch (err) {
+    return handleKgiQuoteError(c, err);
+  }
+});
+
+// POST /api/v1/kgi/quote/subscribe/kbar
+const kgiSubscribeKbarSchema = z.object({
+  symbol: z.string().min(1).max(20),
+  oddLot: z.boolean().optional(),
+  interval: z.string().optional(),
+});
+
+app.post("/api/v1/kgi/quote/subscribe/kbar", async (c) => {
+  try {
+    const body = kgiSubscribeKbarSchema.parse(await c.req.json());
+    const result = await getKgiQuoteClient().subscribeSymbolKbar(body.symbol, {
+      oddLot: body.oddLot,
+      interval: body.interval,
+    });
+    return c.json({ data: result });
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return handleKgiQuoteError(c, err);
+  }
+});
+
+// GET /api/v1/kgi/quote/kbar?symbol=<S>&limit=<N>
+app.get("/api/v1/kgi/quote/kbar", async (c) => {
+  const symbol = c.req.query("symbol") ?? "";
+  const limit = Math.max(1, Math.min(200, Number(c.req.query("limit") ?? "10")));
+  if (!symbol) return c.json({ error: "MISSING_SYMBOL" }, 400);
+  try {
+    const result = await getKgiQuoteClient().getRecentKbars(symbol, limit);
     return c.json({ data: result });
   } catch (err) {
     return handleKgiQuoteError(c, err);

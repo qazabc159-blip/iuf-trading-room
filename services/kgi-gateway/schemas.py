@@ -237,3 +237,62 @@ class HealthResponse(BaseModel):
     kgi_logged_in: bool
     account_set: bool
     note: Optional[str] = None  # populated when logged_in=true but account_set=false
+
+
+# ---------------------------------------------------------------------------
+# K-bar (OHLCV) — W3 B2
+# ---------------------------------------------------------------------------
+
+class KBarData(BaseModel):
+    """
+    Canonical K-bar shape — aligned with Jim sandbox mock-kbar shape.
+    time: Unix milliseconds (int); normalised to UTC in gateway.
+    """
+    time: int        # Unix ms — for lightweight-charts compatibility
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class SubscribeKbarRequest(BaseModel):
+    """
+    POST /quote/subscribe/kbar request body.
+    Hard line: interval is accepted but NOT used to transcode SDK output.
+    Unsupported intervals are recorded in UNSUPPORTED_INTERVAL_MATRIX.
+    """
+    symbol: str
+    odd_lot: bool = False
+    interval: Optional[str] = None  # hint only — SDK may not support all values
+
+
+class SubscribeKbarResponse(BaseModel):
+    ok: bool
+    label: Optional[str] = None
+    note: Optional[str] = None
+    interval_status: Optional[str] = None  # "supported" | "unsupported" | "unknown"
+    unsupported_reason: Optional[str] = None  # set if interval is in UNSUPPORTED_INTERVAL_MATRIX
+
+
+class KbarRecoverResponse(BaseModel):
+    """
+    Response envelope for GET /quote/kbar/recover.
+    """
+    symbol: str
+    bars: list[KBarData]
+    count: int
+    from_date: str
+    to_date: str
+    note: Optional[str] = None
+
+
+class KbarLatestResponse(BaseModel):
+    """
+    Response envelope for GET /quote/kbar (ring buffer REST poll).
+    """
+    symbol: str
+    bars: list[KBarData]
+    count: int
+    buffer_size: int
+    buffer_used: int

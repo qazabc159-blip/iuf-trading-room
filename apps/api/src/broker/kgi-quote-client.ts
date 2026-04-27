@@ -63,6 +63,18 @@ export class KgiQuoteNotAvailableError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// W3 B2: K-bar error class
+// ---------------------------------------------------------------------------
+
+/** K-bar symbol has no data (not subscribed / empty buffer). */
+export class KgiKbarNotAvailableError extends Error {
+  constructor(symbol: string, code: string) {
+    super(`No K-bar data for '${symbol}' (code=${code}).`);
+    this.name = "KgiKbarNotAvailableError";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Response shapes (internal to this module — NOT applied to packages/contracts)
 // Types here are W2d draft; see plan §3 for contract proposal candidates.
 // ---------------------------------------------------------------------------
@@ -126,6 +138,51 @@ export interface KgiBidAskRaw {
 export interface KgiBidAskResponseRaw {
   symbol: string;
   bidask: KgiBidAskRaw | null;
+}
+
+// ---------------------------------------------------------------------------
+// W3 B2: K-bar shapes
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical K-bar shape aligned with Jim sandbox mock-kbar and lightweight-charts.
+ * time: Unix milliseconds (int). Timestamps normalised to UTC in gateway.
+ */
+export interface KBarData {
+  time: number;   // Unix ms
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+/** Response from GET /quote/kbar/recover */
+export interface KgiKbarRecoverResponseRaw {
+  symbol: string;
+  bars: KBarData[];
+  count: number;
+  from_date: string;
+  to_date: string;
+  note?: string;
+}
+
+/** Response from GET /quote/kbar (ring buffer poll) */
+export interface KgiKbarLatestResponseRaw {
+  symbol: string;
+  bars: KBarData[];
+  count: number;
+  buffer_size: number;
+  buffer_used: number;
+}
+
+/** Response from POST /quote/subscribe/kbar */
+export interface KgiKbarSubscribeResponseRaw {
+  ok: boolean;
+  label: string | null;
+  note?: string;
+  interval_status?: "supported" | "unsupported" | "unknown";
+  unsupported_reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -391,6 +448,86 @@ export class KgiQuoteClient {
     const staleness = classifyFreshness(lastReceivedAt, this.staleThresholdMs);
 
     return { ...raw, ...staleness };
+  }
+
+  // -------------------------------------------------------------------------
+  // W3 B2: K-bar methods (read-only)
+  // Hard lines:
+  //   - NO order methods
+  //   - Symbol whitelist enforced
+  //   - Mock fallback (empty bars) on gateway unreachable
+  //   - KBAR_STALE_THRESHOLD_MS env var (default 60_000ms per feasibility note §5)
+  // -------------------------------------------------------------------------
+
+  /**
+   * GET /api/v1/kgi/quote/kbar/recover — historical K-bar data.
+   * Proxies to gateway /quote/kbar/recover?symbol=&from=&to=
+   * Returns KgiKbarRecoverResponseRaw with bars list (may be empty on no data).
+   */
+  async recoverKbar(
+    symbol: string,
+    fromDate: string,
+    toDate: string
+  ): Promise<KgiKbarRecoverResponseRaw> {
+    this.enforceWhitelist(symbol);
+    const url = `${this.baseUrl}/quote/kbar/recover?symbol=${encodeURIComponent(symbol)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}`;
+    const res = await quoteFetch(url, { method: "GET" }, this.timeoutMs);
+    if (!res.ok) await classifyQuoteError(res, `recoverKbar(${symbol})`);
+    return res.json() as Promise<KgiKbarRecoverResponseRaw>;
+  }
+
+  /**
+   * POST /api/v1/kgi/quote/subscribe/kbar — subscribe to K-bar stream.
+   * Proxies to gateway /quote/subscribe/kbar
+   */
+  async subscribeSymbolKbar(
+    symbol: string,
+    opts?: { oddLot?: boolean; interval?: string }
+  ): Promise<KgiKbarSubscribeResponseRaw> {
+    this.enforceWhitelist(symbol);
+    const res = await quoteFetch(
+      `${this.baseUrl}/quote/subscribe/kbar`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol,
+          odd_lot: opts?.oddLot ?? false,
+          interval: opts?.interval ?? null,
+        }),
+      },
+      this.timeoutMs
+    );
+    if (!res.ok) await classifyQuoteError(res, `subscribeSymbolKbar(${symbol})`);
+    return res.json() as Promise<KgiKbarSubscribeResponseRaw>;
+  }
+
+  /**
+   * GET /api/v1/kgi/quote/kbar — latest K-bars from ring buffer (REST poll).
+   * Returns empty bars array if symbol not subscribed (no exception — mock fallback).
+   */
+  async getRecentKbars(
+    symbol: string,
+    limit = 10
+  ): Promise<KgiKbarLatestResponseRaw> {
+    this.enforceWhitelist(symbol);
+    const res = await quoteFetch(
+      `${this.baseUrl}/quote/kbar?symbol=${encodeURIComponent(symbol)}&limit=${limit}`,
+      { method: "GET" },
+      this.timeoutMs
+    );
+    // 404 = not subscribed → return empty-safe response (mock fallback per spec)
+    if (res.status === 404) {
+      return {
+        symbol,
+        bars: [],
+        count: 0,
+        buffer_size: 200,
+        buffer_used: 0,
+      };
+    }
+    if (!res.ok) await classifyQuoteError(res, `getRecentKbars(${symbol})`);
+    return res.json() as Promise<KgiKbarLatestResponseRaw>;
   }
 
   // -------------------------------------------------------------------------
