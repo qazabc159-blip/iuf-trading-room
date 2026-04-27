@@ -71,9 +71,71 @@ Expected files (post-completion)：
 
 ---
 
-## 6. Sprint Closeout (待 B/C/D 全收齊 by Elva)
+## 6. W3 Merge-Window — CLOSED GREEN+ (2026-04-27)
 
-Expected file：`w3_consolidated_closeout_<date>.md`（per template）
+| File | Purpose |
+|---|---|
+| `bruce_w3_pre_merge_final_check.md` | Bruce 10/10 PASS pre-merge gate |
+| `bruce_w3_post_merge_regression.md` | Bruce 16/16 PASS post-merge regression |
+| `w3_merge_window_closeout_2026-04-27.md` | 10-section consolidated merge-window closeout |
+| `w4_plan_draft_2026-04-27.md` | W4 plan read-only draft (9 sections) |
+
+Merges: PR #6 squash `57f7627` (quote hardening) + PR #7 squash `fab35f2` (K-bar Phase 2). main HEAD = `fab35f2`. GHA CI run `24996928346` SUCCESS / Railway auto-deploy fired.
+
+---
+
+## 7. W4 Operator Window + Green+ Autonomous Block — CLOSED PASS_WITH_FLAGS (2026-04-27)
+
+| File | Purpose |
+|---|---|
+| `w4_operator_window_consolidated_closeout_2026-04-27.md` | 13-section W4 round closeout |
+| `kbar_route_mismatch_correction_2026-04-27.md` | K-bar route documentation drift correction (`/intervals` doesn't exist) |
+| `bruce_w4_partA_partB_lane4_audit.md` | Bruce Phase 1: A1-A7 operator checks + Part B route audit + Lane 4 #4-#6 |
+| `bruce_w4_lane4_phase2_audit.md` | Bruce Phase 2: Lane 4 #1-#3 cross-audits (Jim PR / Jason redaction / Athena scope) |
+| `jim_w4_lane1_frontend_cutover_closeout.md` | Jim Lane 1 DRAFT PR #8 closeout |
+| `kgi_position_crash_escalation_package.md` | Jason Lane 2 — KGI escalation main doc |
+| `kgi_position_support_questions.md` | Jason Lane 2 — 10 questions for KGI engineering |
+| `reproduction_summary_redacted.md` | Jason Lane 2 — minimal repro with `<REDACTED_*>` placeholders |
+| `bruce_w4_odd_lot_fix_verify_checklist.md` | Bruce next-window verify checklist for Jason `odd_lot` fix (PREPARED, NOT EXECUTED) |
+| `jason_w4_odd_lot_kwarg_fix_impl_note.md` | Jason DRAFT PR #9 impl note — `odd_lot` kwarg removal from `subscribe_kbar()` |
+
+**DRAFT PR #9** `feat/w4-kbar-odd-lot-fix` → main, commit `be5ba7f`, 1 file (`services/kgi-gateway/kgi_kbar.py` +4/-2), DRAFT/MERGEABLE. Live verify `BLOCKED_PENDING_GATEWAY_RESTART_BY_OPERATOR`. URL: https://github.com/qazabc159-blip/iuf-trading-room/pull/9
+
+Key results:
+- T12 `/order/create` live HTTP 409 NOT_ENABLED_IN_W1 — safety hard-line **HELD**
+- 17/17 stop-line HELD / 0 triggered
+- 2 flags escalated: B2 Q1 `subscribe_kbar(odd_lot=...)` SDK kwarg blocks K-bar live + T7 gateway-layer whitelist gap
+- Jim DRAFT PR #8 `feat/w4-frontend-cutover` (commit `f0b7834`, 18 files / 2207 insertions); held DRAFT pending Jason K-bar fix
+- contracts HEAD `9957c91` UNCHANGED; main HEAD `fab35f2` UNCHANGED
+
+Lane 3 Athena 5 docs filed at `IUF_QUANT_LAB/evidence/w4_unblock_package_2026_04_27/` (not in this dir — sister-company side).
+
+---
+
+## 8. PR #8 Overnight Augment — 2026-04-28 (Jim)
+
+**Trigger**: 楊董 sleeping; Mission Command Mode overnight augment of DRAFT PR #8.
+
+**New commit**: `5a440e2` on `feat/w4-frontend-cutover`
+
+| File | Purpose |
+|---|---|
+| `jim_w4_promotion_risk_list.md` | §1-§5 production promotion risk list |
+| `jim_w4_dependency_impact_note.md` | §1-§5 dependency impact (6 new deps, risk LOW) |
+| `jim_w4_bundle_impact_note.md` | Bundle size before/after + lightweight-charts flag |
+| `jim_w4_rollback_note.md` | Rollback runbook — ETA < 10 min, 0 DB impact |
+| `jim_w4_screenshot_package.md` | Screenshot manifest for Bruce pre-merge |
+
+**Code fix in commit**: `apps/web/package.json` + `pnpm-lock.yaml` — 6 missing deps added for reproducible build.
+
+**Verify results**:
+- PositionContainmentBadge: ALREADY PRESENT (StockDetailPanel line 150, always rendered)
+- OrderLockedBanner: ALREADY PRESENT (StockDetailPanel line 108, always rendered)
+- /order/create in PR #8 files: 0 hits (grep verified)
+- paper/live ready wording in PR #8 files: 0 hits (grep verified)
+- Pre-existing `order-ticket.tsx` `[SUBMIT 送單]`: W2d design, NOT in PR #8 diff — escalated as Risk D
+
+**Status**: DRAFT holds. 10/10 hard lines HELD.
 
 ---
 
