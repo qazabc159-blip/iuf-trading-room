@@ -7,6 +7,7 @@ export const primaryNavigation = [
   { href: "/runs", label: "策略歷史", short: "歷史" },
   { href: "/plans", label: "交易計畫", short: "計畫" },
   { href: "/portfolio", label: "持倉部位", short: "持倉" },
+  { href: "/quote", label: "即時報價", short: "報價" },
   { href: "/reviews", label: "交易檢討", short: "檢討" },
   { href: "/briefs", label: "每日簡報", short: "簡報" },
   { href: "/drafts", label: "草稿審核", short: "審核" },
