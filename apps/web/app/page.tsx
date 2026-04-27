@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { ThemeGraphRankingView } from "@iuf-trading-room/contracts";
 
 import { AppShell } from "@/components/app-shell";
+import { TopKpiStrip } from "@/components/TopKpiStrip";
 import { getOpsSnapshot, getThemeGraphRankings, type OpsSnapshotData } from "@/lib/api";
 import { blockSpark } from "@/lib/block-spark";
 
@@ -24,6 +25,9 @@ export default function HomePage() {
 
   return (
     <AppShell eyebrow="今日作戰總覽" title="台股 AI 交易戰情室">
+      {/* W4: TopKpiStrip — 7-cell nav KPI bar */}
+      <TopKpiStrip />
+
       {/* 上排：關鍵指標 */}
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">[01]</span>

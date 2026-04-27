@@ -13,6 +13,31 @@ import type {
   ThemeGraphSearchResult
 } from "@iuf-trading-room/contracts";
 
+// ── W4: iuf:timezone / iuf:interval custom event dispatch ─────
+function dispatchTimezone(tz: string) {
+  window.dispatchEvent(new CustomEvent("iuf:timezone", { detail: { tz } }));
+}
+function dispatchInterval(iv: string) {
+  window.dispatchEvent(new CustomEvent("iuf:interval", { detail: { iv } }));
+}
+
+// ── W4: ACTION items (tz × 3 + iv × 8) ───────────────────────
+type ActionItem = { kind: "action"; key: string; label: string; subtitle: string; action: string };
+
+const ACTION_ITEMS: ActionItem[] = [
+  { kind: "action", key: "tz-tst", label: "切時區 → TST", subtitle: "Asia/Taipei (UTC+8) · 台灣標準時間", action: "tz:Asia/Taipei" },
+  { kind: "action", key: "tz-utc", label: "切時區 → UTC", subtitle: "協調世界時間", action: "tz:UTC" },
+  { kind: "action", key: "tz-et",  label: "切時區 → ET",  subtitle: "America/New_York · 美東時間", action: "tz:America/New_York" },
+  { kind: "action", key: "iv-1m",  label: "切週期 → 1m",  subtitle: "1分鐘K線", action: "iv:1m" },
+  { kind: "action", key: "iv-5m",  label: "切週期 → 5m",  subtitle: "5分鐘K線", action: "iv:5m" },
+  { kind: "action", key: "iv-15m", label: "切週期 → 15m", subtitle: "15分鐘K線", action: "iv:15m" },
+  { kind: "action", key: "iv-1h",  label: "切週期 → 1h",  subtitle: "1小時K線", action: "iv:1h" },
+  { kind: "action", key: "iv-4h",  label: "切週期 → 4h",  subtitle: "4小時K線", action: "iv:4h" },
+  { kind: "action", key: "iv-D",   label: "切週期 → 日線", subtitle: "日線 (D)", action: "iv:D" },
+  { kind: "action", key: "iv-W",   label: "切週期 → 週線", subtitle: "週線 (W)", action: "iv:W" },
+  { kind: "action", key: "iv-M",   label: "切週期 → 月線", subtitle: "月線 (M)", action: "iv:M" },
+];
+
 // ── 靜態頁面導航清單 ───────────────────────────────────────
 const PAGE_ITEMS: Array<{ href: string; label: string; subtitle: string; keywords: string }> = [
   { href: "/", label: "總覽", subtitle: "首頁戰情儀表板", keywords: "總覽 首頁 dashboard 儀表板" },
@@ -31,12 +56,13 @@ const PAGE_ITEMS: Array<{ href: string; label: string; subtitle: string; keyword
 ];
 
 type PageItem = (typeof PAGE_ITEMS)[number];
-type ResultKind = "theme" | "company" | "page";
+type ResultKind = "action" | "theme" | "company" | "page";
 
 type FlatResult =
-  | { kind: "theme"; key: string; item: ThemeGraphSearchResult }
+  | { kind: "action";   key: string; item: ActionItem }
+  | { kind: "theme";   key: string; item: ThemeGraphSearchResult }
   | { kind: "company"; key: string; item: CompanyGraphSearchResult }
-  | { kind: "page"; key: string; item: PageItem };
+  | { kind: "page";    key: string; item: PageItem };
 
 const DEBOUNCE_MS = 200;
 
@@ -129,14 +155,22 @@ export function CommandPalette() {
     );
   }, [debouncedQuery]);
 
+  // 過濾 ACTION items
+  const filteredActions = useMemo<ActionItem[]>(() => {
+    const q = debouncedQuery.toLowerCase();
+    if (!q) return ACTION_ITEMS;
+    return ACTION_ITEMS.filter(a => a.label.toLowerCase().includes(q) || a.subtitle.toLowerCase().includes(q) || a.action.toLowerCase().includes(q));
+  }, [debouncedQuery]);
+
   // 扁平化成一個 index list 供鍵盤導航
   const flatResults = useMemo<FlatResult[]>(() => {
     const flat: FlatResult[] = [];
+    filteredActions.forEach((a) => flat.push({ kind: "action", key: a.key, item: a }));
     themeResults.forEach((t) => flat.push({ kind: "theme", key: `theme-${t.themeId}`, item: t }));
     companyResults.forEach((c) => flat.push({ kind: "company", key: `company-${c.companyId}`, item: c }));
     filteredPages.forEach((p) => flat.push({ kind: "page", key: `page-${p.href}`, item: p }));
     return flat;
-  }, [themeResults, companyResults, filteredPages]);
+  }, [filteredActions, themeResults, companyResults, filteredPages]);
 
   // activeIndex clamp
   useEffect(() => {
@@ -154,6 +188,13 @@ export function CommandPalette() {
 
   const commit = useCallback(
     (result: FlatResult) => {
+      if (result.kind === "action") {
+        const action = result.item.action;
+        if (action.startsWith("tz:")) dispatchTimezone(action.slice(3));
+        else if (action.startsWith("iv:")) dispatchInterval(action.slice(3));
+        setOpen(false);
+        return;
+      }
       setOpen(false);
       if (result.kind === "theme") {
         router.push("/themes");
@@ -183,6 +224,8 @@ export function CommandPalette() {
   if (!open) return null;
 
   let runningIndex = 0;
+  const actionStart = runningIndex;
+  runningIndex += filteredActions.length;
   const themeStart = runningIndex;
   runningIndex += themeResults.length;
   const companyStart = runningIndex;
@@ -210,6 +253,27 @@ export function CommandPalette() {
           {!loading && flatResults.length === 0 && (
             <div className="cmdk-status">
               {debouncedQuery ? `找不到「${debouncedQuery}」相關結果` : "輸入關鍵字開始搜尋"}
+            </div>
+          )}
+
+          {filteredActions.length > 0 && (
+            <div className="cmdk-group">
+              <div className="cmdk-group-title">指令 ({filteredActions.length})</div>
+              {filteredActions.map((a, idx) => {
+                const index = actionStart + idx;
+                return (
+                  <div
+                    key={a.key}
+                    className={`cmdk-item${activeIndex === index ? " active" : ""}`}
+                    data-cmdk-index={index}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => commit({ kind: "action", key: a.key, item: a })}
+                  >
+                    <div className="cmdk-item-label" style={{ fontWeight: 600 }}>{a.label}</div>
+                    <div className="cmdk-item-meta"><span>{a.subtitle}</span></div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
