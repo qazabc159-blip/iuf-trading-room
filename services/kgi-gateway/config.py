@@ -25,5 +25,9 @@ class Settings:
     # Set in env: KGI_GATEWAY_POSITION_DISABLED=true. Default false (preserves current behaviour).
     POSITION_DISABLED: bool = os.environ.get("KGI_GATEWAY_POSITION_DISABLED", "false").lower() == "true"
 
+    # W2b circuit breaker — when true, /quote/ticks and /quote/bidask return 503 immediately.
+    # Mirrors Candidate F pattern. Default false (preserves current behaviour).
+    QUOTE_DISABLED: bool = os.environ.get("KGI_GATEWAY_QUOTE_DISABLED", "false").lower() == "true"
+
 
 settings = Settings()
