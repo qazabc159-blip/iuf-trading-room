@@ -367,3 +367,231 @@ def test_kgi_kbar_has_no_order_imports():
             assert not matches, (
                 f"kgi_kbar.py must have 0 order imports, found pattern '{pattern}': {matches}"
             )
+
+
+# ===========================================================================
+# W4 B2 Q1 odd_lot kwarg fix tests (6 tests: T14–T19)
+# Verifies that subscribe_kbar SDK call no longer passes odd_lot kwarg.
+# All tests use mocks — no live gateway required.
+# ===========================================================================
+
+
+def _make_mock_api(subscribe_kbar_return="kbar_label"):
+    """Build a minimal mock api object with a Quote.subscribe_kbar spy."""
+    api = MagicMock()
+    api.Quote.subscribe_kbar = MagicMock(return_value=subscribe_kbar_return)
+    api.Quote.set_cb_kbar = MagicMock(return_value=None)
+    return api
+
+
+def _call_subscribe_kbar_via_manager(api, symbol, odd_lot_arg=None):
+    """
+    Invoke KgiKbarManager.subscribe_kbar with the given args.
+    Returns (manager, label) after resetting module-level subscriptions.
+
+    Isolated: creates a fresh manager each call to avoid T13 idempotency guard.
+    """
+    mgr = kk.KgiKbarManager()
+    with kk._KBAR_LOCK:
+        kk._KBAR_SUBSCRIBED.discard(symbol)
+        kk._KBAR_BUFFER.pop(symbol, None)
+
+    if odd_lot_arg is None:
+        label = mgr.subscribe_kbar(api, symbol)
+    else:
+        label = mgr.subscribe_kbar(api, symbol, odd_lot=odd_lot_arg)
+    return mgr, label
+
+
+# ---------------------------------------------------------------------------
+# T14: subscribe_kbar without odd_lot — SDK call must NOT use odd_lot kwarg
+# ---------------------------------------------------------------------------
+
+def test_subscribe_kbar_odd_lot_omitted():
+    """
+    W4 B2 Q1 fix: when odd_lot is omitted from request, SDK subscribe_kbar
+    must be called WITHOUT odd_lot keyword argument.
+    """
+    api = _make_mock_api()
+    symbol = "2330_T14"
+    _call_subscribe_kbar_via_manager(api, symbol)
+
+    assert api.Quote.subscribe_kbar.called, "subscribe_kbar must be called"
+    call_args = api.Quote.subscribe_kbar.call_args
+    # odd_lot must NOT appear in kwargs
+    assert "odd_lot" not in call_args.kwargs, (
+        f"SDK subscribe_kbar must not receive odd_lot kwarg (W4 B2 Q1 fix). "
+        f"Got kwargs: {call_args.kwargs}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# T15: subscribe_kbar odd_lot=False — SDK call must NOT forward odd_lot kwarg
+# ---------------------------------------------------------------------------
+
+def test_subscribe_kbar_odd_lot_false():
+    """
+    W4 B2 Q1 fix: even when client sends odd_lot=False, it is no-op at SDK boundary.
+    SDK subscribe_kbar must NOT receive odd_lot as kwarg.
+    """
+    api = _make_mock_api()
+    symbol = "2330_T15"
+    _call_subscribe_kbar_via_manager(api, symbol, odd_lot_arg=False)
+
+    assert api.Quote.subscribe_kbar.called, "subscribe_kbar must be called"
+    call_args = api.Quote.subscribe_kbar.call_args
+    assert "odd_lot" not in call_args.kwargs, (
+        f"SDK subscribe_kbar must not receive odd_lot kwarg even when odd_lot=False. "
+        f"Got kwargs: {call_args.kwargs}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# T16: subscribe_kbar odd_lot=True — SDK call must NOT forward odd_lot kwarg
+# ---------------------------------------------------------------------------
+
+def test_subscribe_kbar_odd_lot_true():
+    """
+    W4 B2 Q1 fix: even when client sends odd_lot=True, it is no-op at SDK boundary.
+    SDK subscribe_kbar must NOT receive odd_lot as kwarg.
+    """
+    api = _make_mock_api()
+    symbol = "2330_T16"
+    _call_subscribe_kbar_via_manager(api, symbol, odd_lot_arg=True)
+
+    assert api.Quote.subscribe_kbar.called, "subscribe_kbar must be called"
+    call_args = api.Quote.subscribe_kbar.call_args
+    assert "odd_lot" not in call_args.kwargs, (
+        f"SDK subscribe_kbar must not receive odd_lot kwarg even when odd_lot=True. "
+        f"Got kwargs: {call_args.kwargs}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# T17: Static source audit — odd_lot not in subscribe_kbar call site lines
+# ---------------------------------------------------------------------------
+
+def test_subscribe_kbar_sdk_signature_no_kwarg():
+    """
+    W4 B2 Q1 fix static audit: read kgi_kbar.py source, locate every line that
+    calls kbar_subscribe_fn(, verify none pass odd_lot= as an argument.
+
+    This is a code-level guarantee independent of mock behavior.
+    """
+    import importlib
+    import re
+
+    spec = importlib.util.find_spec("kgi_kbar")
+    assert spec and spec.origin, "kgi_kbar module must be importable with source"
+
+    with open(spec.origin, "r", encoding="utf-8") as f:
+        source = f.read()
+
+    # Find all lines containing kbar_subscribe_fn(
+    call_lines = [ln.strip() for ln in source.splitlines() if "kbar_subscribe_fn(" in ln]
+    assert call_lines, "kgi_kbar.py must contain at least one kbar_subscribe_fn( call"
+
+    for line in call_lines:
+        assert "odd_lot" not in line, (
+            f"kbar_subscribe_fn call site must not contain 'odd_lot'. "
+            f"Line: {line!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# T18: Unsupported interval still surfaces interval_status=unsupported (no regression)
+# ---------------------------------------------------------------------------
+
+def test_unsupported_interval_remains_unsupported():
+    """
+    W4 B2 Q1 regression guard: 30m interval must still surface as
+    interval_status='unsupported', not a 422 or 500.
+    Ensures odd_lot kwarg fix did not alter interval matrix behavior.
+    """
+    from fastapi.testclient import TestClient
+    import config as cfg
+    import app as gateway_app
+
+    _clear_kbar_buffers()
+
+    with (
+        patch.object(cfg.settings, "QUOTE_DISABLED", False),
+        patch("kgi_session.KgiSession.is_logged_in", new_callable=lambda: property(lambda self: True)),
+    ):
+        client = TestClient(gateway_app.app)
+        resp = client.post("/quote/subscribe/kbar", json={
+            "symbol": "2330",
+            "odd_lot": False,
+            "interval": "30m",
+        })
+
+    # Must be 200 with interval_status=unsupported — same as T10
+    assert resp.status_code == 200, (
+        f"Unsupported interval must return 200 (informational), got {resp.status_code}"
+    )
+    body = resp.json()
+    assert body["interval_status"] == "unsupported", (
+        f"30m must still have interval_status='unsupported'. Got: {body.get('interval_status')}"
+    )
+    assert body["unsupported_reason"] is not None, "unsupported_reason must be non-null"
+    assert body["label"] is None, "label must be None for unsupported interval"
+
+
+# ---------------------------------------------------------------------------
+# T19: No order module import — kgi_kbar.py and test file do NOT import order
+# ---------------------------------------------------------------------------
+
+def test_no_order_module_import():
+    """
+    W4 no-order guarantee: neither kgi_kbar.py nor this test file imports
+    kgisuperpy.order or any function from the write-path.
+
+    Checks:
+    - kgi_kbar.py: no import of kgisuperpy.order or order-named modules
+    - kgi_kbar.py: no place_order / cancel_order / submit_order function calls
+    - This test file itself: no runtime import of kgisuperpy.order
+    """
+    import importlib
+    import re
+
+    # Patterns to look for in kgi_kbar.py source (actual import/call statements only)
+    # Note: patterns are split/constructed to avoid matching themselves in this file's source.
+    _pkg = "kgisuperpy"
+    _ord = "order"
+    _dotted = f"{_pkg}.{_ord}"  # "kgisuperpy.order" — built at runtime, not literal here
+
+    kbar_forbidden = [
+        rf"from\s+{re.escape(_dotted)}",
+        rf"import\s+{re.escape(_dotted)}",
+        r"\bplace_order\s*\(",
+        r"\bcancel_order\s*\(",
+        r"\bsubmit_order\s*\(",
+    ]
+
+    # --- Check kgi_kbar.py ---
+    spec = importlib.util.find_spec("kgi_kbar")
+    assert spec and spec.origin
+    with open(spec.origin, "r", encoding="utf-8") as f:
+        kbar_source = f.read()
+
+    for pat in kbar_forbidden:
+        hits = re.findall(pat, kbar_source, re.IGNORECASE)
+        assert not hits, (
+            f"kgi_kbar.py must not contain order write-path pattern. Found: {hits}"
+        )
+
+    # --- Check this test file itself (no actual kgisuperpy.order import statement) ---
+    import os
+    this_file = os.path.abspath(__file__)
+    with open(this_file, "r", encoding="utf-8") as f:
+        test_lines = f.readlines()
+
+    # Scan actual import statement lines only (lines starting with "import " or "from ")
+    import_lines = [
+        ln.strip() for ln in test_lines
+        if re.match(r"^\s*(import|from)\s+", ln) and "#" not in ln.split("import")[0]
+    ]
+    for line in import_lines:
+        assert _dotted not in line, (
+            f"test_kbar.py must not import {_dotted!r}. Found import line: {line!r}"
+        )
