@@ -107,10 +107,14 @@ app = FastAPI(
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
+    note = None
+    if session.is_logged_in and not session.is_account_set:
+        note = "logged_in=true but account_set=false: call POST /session/set-account to complete startup"
     return HealthResponse(
         status="ok",
         kgi_logged_in=session.is_logged_in,
         account_set=session.is_account_set,
+        note=note,
     )
 
 

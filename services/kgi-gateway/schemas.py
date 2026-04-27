@@ -236,3 +236,4 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     kgi_logged_in: bool
     account_set: bool
+    note: Optional[str] = None  # populated when logged_in=true but account_set=false
