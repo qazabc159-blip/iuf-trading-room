@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -228,6 +229,20 @@ async def get_position() -> PositionResponse:
     Source: kgisuperpy Order.get_position() docstring + step7_order_state_probe.log
     SDK method: api.Order.get_position() — returns DataFrame indexed by symbol.
     """
+    # W2a Candidate F circuit breaker — mechanism-agnostic containment.
+    # When KGI_GATEWAY_POSITION_DISABLED=true, return 503 BEFORE any KGI SDK / pandas / serialization call.
+    # This does NOT fix the root cause of the native crash; it contains blast radius while mechanism is investigated.
+    if settings.POSITION_DISABLED:
+        logger.info("position_circuit_breaker tripped: returning 503 (KGI_GATEWAY_POSITION_DISABLED=true)")
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="POSITION_DISABLED",
+                    message="/position endpoint is administratively disabled (Candidate F circuit breaker active).",
+                )
+            ).model_dump(),
+        )
     if not session.is_logged_in:
         raise HTTPException(
             status_code=401,
@@ -241,17 +256,34 @@ async def get_position() -> PositionResponse:
             positions=[],
             note="session.api.Order not available — call POST /session/set-account first",
         )
+    # Phase 0 diagnostic markers — local-only, no commit, no deploy.
+    # Discriminate Mechanism A (crash inside get_position) vs B (crash in pandas serialization).
+    # Hard line: no raw positions / no DataFrame rows / no account / no broker / no secret in logs.
+    t0 = time.perf_counter()
     try:
+        logger.info("position_diag step=before_get_position")
         df = session.api.Order.get_position()
-        if df is None or (hasattr(df, "empty") and df.empty):
+        df_is_none = df is None
+        df_is_empty = bool(hasattr(df, "empty") and df.empty) if df is not None else None
+        logger.info("position_diag step=after_get_position df_is_none=%s df_empty=%s elapsed_ms=%.1f",
+                    df_is_none, df_is_empty, (time.perf_counter() - t0) * 1000)
+        if df_is_none or df_is_empty:
+            logger.info("position_diag step=return reason=empty elapsed_ms=%.1f", (time.perf_counter() - t0) * 1000)
             return PositionResponse(positions=[])
-        # Serialise DataFrame: reset_index so symbol becomes a column, then to_dict
+        logger.info("position_diag step=before_reset_index rows=%d cols=%d", len(df), len(df.columns))
         df_reset = df.reset_index()
+        logger.info("position_diag step=after_reset_index rows=%d cols=%d", len(df_reset), len(df_reset.columns))
         df_reset.columns = [str(c) for c in df_reset.columns]
+        logger.info("position_diag step=before_to_dict")
         positions = df_reset.to_dict(orient="records")
+        logger.info("position_diag step=after_to_dict count=%d", len(positions))
+        logger.info("position_diag step=return reason=ok elapsed_ms=%.1f", (time.perf_counter() - t0) * 1000)
         return PositionResponse(positions=positions)
     except Exception as exc:
-        logger.error("get_position failed: %s", exc)
+        logger.error("position_diag step=exception class=%s elapsed_ms=%.1f",
+                     type(exc).__name__, (time.perf_counter() - t0) * 1000)
+        # A-0 safety micro patch 2026-04-26: mask raw upstream message for Phase 0 hard-line compliance.
+        logger.error("get_position failed class=%s", type(exc).__name__)
         raise HTTPException(
             status_code=502,
             detail=ErrorEnvelope(
