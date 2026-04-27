@@ -431,7 +431,20 @@ async def subscribe_tick(body: SubscribeTickRequest) -> SubscribeTickResponse:
     Subscribe to tick stream for a symbol.
     Returns subscription label for use with unsubscribe.
     W2b: callback also writes into ring buffer (_TICK_BUFFER[symbol]).
+    W2d subscribe-gap pre-fix: QUOTE_DISABLED checked first (mirrors breaker pattern on /ticks).
     """
+    # W2d subscribe-gap pre-fix: QUOTE_DISABLED is a system-level circuit breaker.
+    # Check it before auth so callers see the system state, not a misleading 401.
+    if settings.QUOTE_DISABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="QUOTE_DISABLED",
+                    message="Quote service is disabled via KGI_GATEWAY_QUOTE_DISABLED",
+                )
+            ).model_dump(),
+        )
     if not session.is_logged_in:
         raise HTTPException(
             status_code=401,
@@ -517,7 +530,19 @@ async def subscribe_bidask(body: SubscribeBidAskRequest) -> SubscribeBidAskRespo
 
     If KGI SDK does not support bidask subscription on this version → 501 NOT_IMPLEMENTED.
     Endpoint surface always exists (楊董 hard requirement: bidask must not disappear from design).
+    W2d subscribe-gap pre-fix: QUOTE_DISABLED checked first.
     """
+    # W2d subscribe-gap pre-fix: mirrors QUOTE_DISABLED check on /quote/bidask read endpoint.
+    if settings.QUOTE_DISABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="QUOTE_DISABLED",
+                    message="Quote service is disabled via KGI_GATEWAY_QUOTE_DISABLED",
+                )
+            ).model_dump(),
+        )
     if not session.is_logged_in:
         raise HTTPException(
             status_code=401,

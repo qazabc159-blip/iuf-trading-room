@@ -7137,3 +7137,409 @@ test("R17 Case 7: dryRun=true + max_per_trade exceeded => blocked with max_per_t
   assert.equal(result.submitted.find((s) => s.symbol === "R17C7"), undefined,
     "Case 7: max_per_trade must NOT soft-pass");
 });
+
+// ============================================================================
+// W2d — KGI Quote Client (read-only consumption) — 9 tests
+// ============================================================================
+//
+// Tests do NOT require a running gateway — all network calls are mocked via
+// a custom gatewayBaseUrl pointing to a mock fetch interceptor.
+// No order path is touched. No broker write surface.
+//
+// Spec: evidence/path_b_w2a_20260426/w2d_quote_consumption_plan.md §7
+// Gate: evidence/path_b_w2a_20260426/no_order_guarantee_audit_checklist_2026-04-27.md §1-§5
+
+import {
+  KgiQuoteClient,
+  KgiQuoteSymbolNotAllowedError,
+  KgiQuoteDisabledError,
+  KgiQuoteAuthError,
+  KgiQuoteNotAvailableError,
+  KgiQuoteUnreachableError,
+  classifyFreshness,
+  parseSymbolWhitelist,
+  STALE_THRESHOLD_MS,
+} from "../apps/api/src/broker/kgi-quote-client.ts";
+
+// ---------------------------------------------------------------------------
+// Mock fetch factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a mock fetch that records calls and returns predefined responses.
+ * Replaces global fetch for the duration of a test.
+ */
+function makeMockFetch(responses: Map<string, { status: number; body: unknown }>) {
+  const calls: string[] = [];
+  const mockFetch = async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.toString();
+    calls.push(url);
+    const entry = [...responses.entries()].find(([k]) => url.includes(k));
+    if (!entry) {
+      // Return 503 for unregistered URLs (gateway unreachable simulation)
+      return new Response(JSON.stringify({ error: { code: "NOT_REGISTERED", message: "mock: no response registered" } }), { status: 503 });
+    }
+    const [, { status, body }] = entry;
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  return { mockFetch, calls };
+}
+
+// ---------------------------------------------------------------------------
+// W2d Test 1: subscribe disabled → tick blocked (503)
+// ---------------------------------------------------------------------------
+
+test("W2d-T1: subscribe disabled → tick blocked → KgiQuoteDisabledError", async () => {
+  const { mockFetch, calls } = makeMockFetch(new Map([
+    ["/quote/subscribe/tick", {
+      status: 503,
+      body: { error: { code: "QUOTE_DISABLED", message: "Quote service is disabled via KGI_GATEWAY_QUOTE_DISABLED" } },
+    }],
+  ]));
+
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch as typeof fetch;
+  try {
+    const client = new KgiQuoteClient({
+      gatewayBaseUrl: "http://test-gateway",
+      symbolWhitelist: ["2330"],
+    });
+    await assert.rejects(
+      () => client.subscribeSymbolTick("2330"),
+      KgiQuoteDisabledError,
+      "subscribeSymbolTick with QUOTE_DISABLED=true must throw KgiQuoteDisabledError"
+    );
+    assert.ok(calls.some((u) => u.includes("/quote/subscribe/tick")), "must have called /quote/subscribe/tick");
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W2d Test 2: subscribe disabled → bidask blocked (503)
+// ---------------------------------------------------------------------------
+
+test("W2d-T2: subscribe disabled → bidask blocked → KgiQuoteDisabledError", async () => {
+  const { mockFetch, calls } = makeMockFetch(new Map([
+    ["/quote/subscribe/bidask", {
+      status: 503,
+      body: { error: { code: "QUOTE_DISABLED", message: "Quote service is disabled via KGI_GATEWAY_QUOTE_DISABLED" } },
+    }],
+  ]));
+
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch as typeof fetch;
+  try {
+    const client = new KgiQuoteClient({
+      gatewayBaseUrl: "http://test-gateway",
+      symbolWhitelist: ["2330"],
+    });
+    await assert.rejects(
+      () => client.subscribeSymbolBidAsk("2330"),
+      KgiQuoteDisabledError,
+      "subscribeSymbolBidAsk with QUOTE_DISABLED=true must throw KgiQuoteDisabledError"
+    );
+    assert.ok(calls.some((u) => u.includes("/quote/subscribe/bidask")), "must have called /quote/subscribe/bidask");
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W2d Test 3: disabled=false → subscribe works
+// ---------------------------------------------------------------------------
+
+test("W2d-T3: subscribe enabled → subscribeSymbolTick returns label", async () => {
+  const { mockFetch } = makeMockFetch(new Map([
+    ["/quote/subscribe/tick", { status: 200, body: { ok: true, label: "tick_2330" } }],
+  ]));
+
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch as typeof fetch;
+  try {
+    const client = new KgiQuoteClient({
+      gatewayBaseUrl: "http://test-gateway",
+      symbolWhitelist: ["2330"],
+    });
+    const label = await client.subscribeSymbolTick("2330");
+    assert.equal(label, "tick_2330", "label must match gateway response");
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W2d Test 4: status route works
+// ---------------------------------------------------------------------------
+
+test("W2d-T4: getQuoteStatus returns gateway status object", async () => {
+  const mockStatus = {
+    subscribed_symbols: { tick: ["2330"], bidask: [] },
+    buffer: { tick: { "2330": { count: 5, maxlen: 200, last_received_at: null } }, bidask: {} },
+    kgi_logged_in: true,
+    quote_disabled_flag: false,
+  };
+
+  const { mockFetch } = makeMockFetch(new Map([
+    ["/quote/status", { status: 200, body: mockStatus }],
+  ]));
+
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch as typeof fetch;
+  try {
+    const client = new KgiQuoteClient({
+      gatewayBaseUrl: "http://test-gateway",
+      symbolWhitelist: ["2330"],
+    });
+    const status = await client.getQuoteStatus();
+    assert.deepEqual(status.subscribed_symbols.tick, ["2330"]);
+    assert.equal(status.kgi_logged_in, true);
+    assert.equal(status.quote_disabled_flag, false);
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W2d Test 5: ticks route works + stale flag added at API layer
+// ---------------------------------------------------------------------------
+
+test("W2d-T5: getRecentTicks returns ticks with freshness annotation", async () => {
+  const recentTime = new Date(Date.now() - 1000).toISOString(); // 1 second ago = fresh
+  const mockTicksBody = {
+    symbol: "2330",
+    ticks: [{ close: 1052.0, symbol: "2330", _received_at: recentTime }],
+    count: 1,
+    buffer_size: 200,
+    buffer_used: 1,
+  };
+
+  const { mockFetch } = makeMockFetch(new Map([
+    ["/quote/ticks", { status: 200, body: mockTicksBody }],
+  ]));
+
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch as typeof fetch;
+  try {
+    const client = new KgiQuoteClient({
+      gatewayBaseUrl: "http://test-gateway",
+      symbolWhitelist: ["2330"],
+    });
+    const result = await client.getRecentTicks("2330", 10);
+    assert.equal(result.symbol, "2330");
+    assert.equal(result.count, 1);
+    assert.equal(result.freshness, "fresh", "data 1s old must be fresh (threshold=5000ms)");
+    assert.equal(result.stale, false);
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W2d Test 6: bidask route works
+// ---------------------------------------------------------------------------
+
+test("W2d-T6: getLatestBidAsk returns bidask snapshot", async () => {
+  const recentTime = new Date(Date.now() - 500).toISOString();
+  const mockBidAskBody = {
+    symbol: "2330",
+    bidask: {
+      exchange: "TWSE",
+      symbol: "2330",
+      bid_prices: [1051.0, 1050.0, 1049.0, 1048.0, 1047.0],
+      ask_prices: [1052.0, 1053.0, 1054.0, 1055.0, 1056.0],
+      _received_at: recentTime,
+    },
+  };
+
+  const { mockFetch } = makeMockFetch(new Map([
+    ["/quote/bidask", { status: 200, body: mockBidAskBody }],
+  ]));
+
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch as typeof fetch;
+  try {
+    const client = new KgiQuoteClient({
+      gatewayBaseUrl: "http://test-gateway",
+      symbolWhitelist: ["2330"],
+    });
+    const result = await client.getLatestBidAsk("2330");
+    assert.equal(result.symbol, "2330");
+    assert.ok(result.bidask !== null, "bidask must not be null");
+    assert.equal(result.freshness, "fresh");
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W2d Test 7: stale quote handling (threshold 5000ms)
+// ---------------------------------------------------------------------------
+
+test("W2d-T7: stale quote handling — data older than 5000ms classified as stale", async () => {
+  const staleTime = new Date(Date.now() - 6000).toISOString(); // 6 seconds ago → stale
+  const freshTime = new Date(Date.now() - 1000).toISOString(); // 1 second ago → fresh
+  const noTime = null;
+
+  // Direct unit tests of classifyFreshness (no network needed)
+  const staleResult = classifyFreshness(staleTime, STALE_THRESHOLD_MS);
+  assert.equal(staleResult.freshness, "stale", "6s old data must be stale");
+  assert.equal(staleResult.stale, true);
+  assert.equal(staleResult.staleSince, staleTime);
+
+  const freshResult = classifyFreshness(freshTime, STALE_THRESHOLD_MS);
+  assert.equal(freshResult.freshness, "fresh", "1s old data must be fresh");
+  assert.equal(freshResult.stale, false);
+  assert.equal(freshResult.staleSince, null);
+
+  const noDataResult = classifyFreshness(noTime, STALE_THRESHOLD_MS);
+  assert.equal(noDataResult.freshness, "not-available", "null timestamp must be not-available");
+  assert.equal(noDataResult.stale, false);
+
+  // Edge case: exactly at threshold → still fresh (ageMs <= threshold)
+  const exactTime = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
+  const exactResult = classifyFreshness(exactTime, STALE_THRESHOLD_MS);
+  assert.ok(
+    exactResult.freshness === "fresh" || exactResult.freshness === "stale",
+    "edge at threshold is either fresh or stale (timing-dependent)"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// W2d Test 8: whitelist reject non-allowed symbol
+// ---------------------------------------------------------------------------
+
+test("W2d-T8: non-whitelisted symbol → KgiQuoteSymbolNotAllowedError (no network call)", async () => {
+  // Track whether fetch is called — it must NOT be called for non-whitelisted symbol
+  let fetchCalled = false;
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+
+  try {
+    const client = new KgiQuoteClient({
+      gatewayBaseUrl: "http://test-gateway",
+      symbolWhitelist: ["2330", "2317"], // 9999 is NOT in whitelist
+    });
+
+    // subscribe/tick
+    await assert.rejects(
+      () => client.subscribeSymbolTick("9999"),
+      KgiQuoteSymbolNotAllowedError,
+      "subscribeSymbolTick with non-whitelisted symbol must throw before network call"
+    );
+
+    // subscribe/bidask
+    await assert.rejects(
+      () => client.subscribeSymbolBidAsk("9999"),
+      KgiQuoteSymbolNotAllowedError,
+      "subscribeSymbolBidAsk with non-whitelisted symbol must throw before network call"
+    );
+
+    // getRecentTicks
+    await assert.rejects(
+      () => client.getRecentTicks("9999"),
+      KgiQuoteSymbolNotAllowedError,
+      "getRecentTicks with non-whitelisted symbol must throw before network call"
+    );
+
+    // getLatestBidAsk
+    await assert.rejects(
+      () => client.getLatestBidAsk("9999"),
+      KgiQuoteSymbolNotAllowedError,
+      "getLatestBidAsk with non-whitelisted symbol must throw before network call"
+    );
+
+    assert.equal(fetchCalled, false, "fetch must NOT be called for non-whitelisted symbols");
+
+    // Whitelist parsing
+    assert.deepEqual(parseSymbolWhitelist("2330,2317,2454"), ["2330", "2317", "2454"]);
+    assert.deepEqual(parseSymbolWhitelist(""), ["2330"]); // default
+    assert.deepEqual(parseSymbolWhitelist(undefined), ["2330"]); // default
+    assert.deepEqual(parseSymbolWhitelist("  2330 , 2317 "), ["2330", "2317"]); // trimming
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W2d Test 9: no-order guarantee (grep + module-import + URL mock)
+// ---------------------------------------------------------------------------
+
+test("W2d-T9: no-order guarantee — KgiQuoteClient has 0 order methods + 0 order URL calls", async () => {
+  // §2.1: Enumerate all method names on KgiQuoteClient prototype — 0 order-related names
+  const orderPatterns = ["order", "submit", "place", "cancel", "modify", "create"];
+  const client = new KgiQuoteClient({
+    gatewayBaseUrl: "http://test-gateway",
+    symbolWhitelist: ["2330"],
+  });
+
+  // Enumerate own + prototype keys
+  const allKeys = new Set<string>();
+  let proto = Object.getPrototypeOf(client);
+  while (proto && proto !== Object.prototype) {
+    for (const k of Object.getOwnPropertyNames(proto)) {
+      allKeys.add(k.toLowerCase());
+    }
+    proto = Object.getPrototypeOf(proto);
+  }
+  for (const k of Object.keys(client)) {
+    allKeys.add(k.toLowerCase());
+  }
+
+  for (const pattern of orderPatterns) {
+    const matches = [...allKeys].filter((k) => k.includes(pattern));
+    assert.equal(
+      matches.length,
+      0,
+      `KgiQuoteClient must have 0 methods containing '${pattern}' — found: ${matches.join(", ")}`
+    );
+  }
+
+  // §2.2: URL mock — assert no call to /order/create or /order/* during any quote operation
+  const orderUrlsCalled: string[] = [];
+  const successResponses = new Map([
+    ["/quote/status", { status: 200, body: { subscribed_symbols: { tick: [], bidask: [] }, buffer: { tick: {}, bidask: {} }, kgi_logged_in: true, quote_disabled_flag: false } }],
+    ["/quote/subscribe/tick", { status: 200, body: { ok: true, label: "tick_2330" } }],
+    ["/quote/subscribe/bidask", { status: 200, body: { ok: true, label: "bidask_2330" } }],
+    ["/quote/ticks", { status: 200, body: { symbol: "2330", ticks: [], count: 0, buffer_size: 200, buffer_used: 0 } }],
+    ["/quote/bidask", { status: 200, body: { symbol: "2330", bidask: null } }],
+  ]);
+
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/order/")) orderUrlsCalled.push(url);
+    const entry = [...successResponses.entries()].find(([k]) => url.includes(k));
+    if (entry) {
+      return new Response(JSON.stringify(entry[1].body), { status: entry[1].status, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response("{}", { status: 404 });
+  }) as typeof fetch;
+
+  try {
+    const c = new KgiQuoteClient({
+      gatewayBaseUrl: "http://test-gateway",
+      symbolWhitelist: ["2330"],
+    });
+
+    await c.getQuoteStatus();
+    await c.subscribeSymbolTick("2330");
+    await c.subscribeSymbolBidAsk("2330");
+    await c.getRecentTicks("2330", 5);
+    await c.getLatestBidAsk("2330");
+
+    assert.equal(
+      orderUrlsCalled.length,
+      0,
+      `No /order/* URLs must be called during quote operations — found: ${orderUrlsCalled.join(", ")}`
+    );
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
