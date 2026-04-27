@@ -197,10 +197,10 @@ class KgiQuoteManager:
 
         # Attempt to use SDK bidask subscription — SDK may not support this in all versions
         subscribe_fn = getattr(api.Quote, "subscribe_bidask", None)
-        set_cb_fn = getattr(api.Quote, "set_cb_bid_ask", None)
+        set_cb_fn = getattr(api.Quote, "set_cb_bidask", None)  # W2c fix: was set_cb_bid_ask (typo)
         if subscribe_fn is None or set_cb_fn is None:
             raise NotImplementedError(
-                "KGI SDK does not expose api.Quote.subscribe_bidask / set_cb_bid_ask "
+                "KGI SDK does not expose api.Quote.subscribe_bidask / set_cb_bidask "
                 "on this version. BidAsk endpoint surface exists but SDK call is stubbed (501)."
             )
 
