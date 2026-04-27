@@ -35,7 +35,13 @@ from fastapi.responses import JSONResponse
 
 from config import settings
 from kgi_events import order_event_manager
-from kgi_quote import quote_manager
+from kgi_quote import (
+    get_latest_bidask,
+    get_quote_status,
+    get_recent_ticks,
+    is_tick_subscribed,
+    quote_manager,
+)
 from kgi_session import session
 from schemas import (
     CreateOrderRequest,
@@ -50,6 +56,8 @@ from schemas import (
     SetAccountRequest,
     SetAccountResponse,
     ShowAccountResponse,
+    SubscribeBidAskRequest,
+    SubscribeBidAskResponse,
     SubscribeTickRequest,
     SubscribeTickResponse,
     TradesResponse,
@@ -398,11 +406,27 @@ async def get_deals() -> DealsResponse:
 # Quote
 # ---------------------------------------------------------------------------
 
+@app.get("/quote/status")
+async def quote_status():
+    """
+    GET /quote/status — gateway quote subsystem state.
+    No auth required (reveals buffer counts only, no credentials / positions / orders).
+    Always 200 when gateway is alive.
+    """
+    status = get_quote_status()
+    return {
+        **status,
+        "kgi_logged_in": session.is_logged_in,
+        "quote_disabled_flag": settings.QUOTE_DISABLED,
+    }
+
+
 @app.post("/quote/subscribe/tick", response_model=SubscribeTickResponse)
 async def subscribe_tick(body: SubscribeTickRequest) -> SubscribeTickResponse:
     """
     Subscribe to tick stream for a symbol.
     Returns subscription label for use with unsubscribe.
+    W2b: callback also writes into ring buffer (_TICK_BUFFER[symbol]).
     """
     if not session.is_logged_in:
         raise HTTPException(
@@ -430,6 +454,147 @@ async def subscribe_tick(body: SubscribeTickRequest) -> SubscribeTickResponse:
                 )
             ).model_dump(),
         ) from exc
+
+
+@app.get("/quote/ticks")
+async def get_quote_ticks(symbol: str, limit: int = 10):
+    """
+    GET /quote/ticks?symbol=<S>&limit=<N> — last N ticks from ring buffer.
+    W2b: REST poll interface for cross-machine consumers (Elva on Linux EC2).
+
+    Responses:
+      503 if KGI_GATEWAY_QUOTE_DISABLED=true (circuit breaker)
+      401 if not logged in
+      404 if symbol not in ring buffer (never subscribed)
+      200 + ticks list (may be empty if subscribed but no tick arrived yet)
+    """
+    if settings.QUOTE_DISABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="QUOTE_DISABLED",
+                    message="/quote/ticks is administratively disabled (KGI_GATEWAY_QUOTE_DISABLED=true).",
+                )
+            ).model_dump(),
+        )
+    if not session.is_logged_in:
+        raise HTTPException(
+            status_code=401,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+            ).model_dump(),
+        )
+    if not is_tick_subscribed(symbol):
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="SYMBOL_NOT_SUBSCRIBED",
+                    message=f"Symbol '{symbol}' has not been subscribed. Call POST /quote/subscribe/tick first.",
+                )
+            ).model_dump(),
+        )
+    ticks = get_recent_ticks(symbol, limit=limit)
+    return {
+        "symbol": symbol,
+        "ticks": ticks,
+        "count": len(ticks),
+        "buffer_size": 200,
+        "buffer_used": len(get_recent_ticks(symbol, limit=200)),
+    }
+
+
+@app.post("/quote/subscribe/bidask", response_model=SubscribeBidAskResponse)
+async def subscribe_bidask(body: SubscribeBidAskRequest) -> SubscribeBidAskResponse:
+    """
+    POST /quote/subscribe/bidask — subscribe to bid/ask stream for a symbol.
+    Mirrors tick subscribe pattern.
+
+    If KGI SDK does not support bidask subscription on this version → 501 NOT_IMPLEMENTED.
+    Endpoint surface always exists (楊董 hard requirement: bidask must not disappear from design).
+    """
+    if not session.is_logged_in:
+        raise HTTPException(
+            status_code=401,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+            ).model_dump(),
+        )
+    if session.api is None:
+        raise HTTPException(status_code=500, detail="No API handle")
+
+    try:
+        label = quote_manager.subscribe_bidask(session.api, body.symbol, odd_lot=body.odd_lot)
+        logger.info("subscribe_bidask OK: symbol=%s label=%s", body.symbol, label)
+        return SubscribeBidAskResponse(ok=True, label=label, note=None)
+    except NotImplementedError as exc:
+        logger.info("subscribe_bidask NOT_IMPLEMENTED: %s", exc)
+        from fastapi.responses import JSONResponse as _JSONResponse
+        return _JSONResponse(
+            status_code=501,
+            content=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="BIDASK_NOT_IMPLEMENTED",
+                    message=str(exc),
+                )
+            ).model_dump(),
+        )
+    except Exception as exc:
+        logger.error("subscribe_bidask failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="KGI_SUBSCRIBE_BIDASK_FAILED",
+                    message=str(exc),
+                    upstream=str(exc),
+                )
+            ).model_dump(),
+        ) from exc
+
+
+@app.get("/quote/bidask")
+async def get_quote_bidask(symbol: str):
+    """
+    GET /quote/bidask?symbol=<S> — latest bid/ask snapshot from ring buffer.
+    W2b: REST poll interface. Populated only after subscribe_bidask succeeds.
+
+    Responses:
+      503 if KGI_GATEWAY_QUOTE_DISABLED=true
+      401 if not logged in
+      404 if symbol not in bidask latest (never subscribed or no data yet)
+      200 + bidask snapshot
+    """
+    if settings.QUOTE_DISABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="QUOTE_DISABLED",
+                    message="/quote/bidask is administratively disabled (KGI_GATEWAY_QUOTE_DISABLED=true).",
+                )
+            ).model_dump(),
+        )
+    if not session.is_logged_in:
+        raise HTTPException(
+            status_code=401,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+            ).model_dump(),
+        )
+    snap = get_latest_bidask(symbol)
+    if snap is None:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="BIDASK_NOT_AVAILABLE",
+                    message=f"No bidask data for '{symbol}'. Call POST /quote/subscribe/bidask first.",
+                )
+            ).model_dump(),
+        )
+    return {"symbol": symbol, "bidask": snap}
 
 
 # ---------------------------------------------------------------------------

@@ -96,6 +96,17 @@ class SubscribeTickResponse(BaseModel):
     label: str  # subscription label for unsubscribe
 
 
+class SubscribeBidAskRequest(BaseModel):
+    symbol: str
+    odd_lot: bool = False
+
+
+class SubscribeBidAskResponse(BaseModel):
+    ok: bool
+    label: Optional[str] = None  # None if SDK returned no label
+    note: Optional[str] = None   # set if SDK does not support bidask subscription
+
+
 # ---------------------------------------------------------------------------
 # Tick / BidAsk  (broadcast via WS and also emitted as SSE in future)
 # ---------------------------------------------------------------------------

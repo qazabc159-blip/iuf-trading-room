@@ -36,6 +36,13 @@ Source: `feedback_kgi_env_var_uppercase_rule.md`
 - Rollback: unset or set to `false`, restart gateway. No data migration.
 - Does NOT affect: `/trades`, `/deals`, `/order/create`, `/quote/*`, `/events/*`, `/health`, `/session/*`.
 
+### `KGI_GATEWAY_QUOTE_DISABLED` (W2b circuit breaker)
+
+- Type: `bool` (string `"true"` / `"false"`; default `false`)
+- Effect: when `true`, `GET /quote/ticks` and `GET /quote/bidask` return `503 QUOTE_DISABLED` immediately.
+- Pattern mirrors Candidate F (`KGI_GATEWAY_POSITION_DISABLED`).
+- Does NOT affect: `/position`, `/trades`, `/deals`, `/health`, `/session/*`, `/quote/status`, `/quote/subscribe/*`.
+
 ---
 
 ## Install
@@ -107,13 +114,58 @@ curl -X POST http://127.0.0.1:8787/session/set-account \
 
 ---
 
-## Verify subscribe tick (2330)
+## W2b Quote Read-Side Surface (5 routes)
+
+Ring buffer design: `deque(maxlen=200)` per symbol, protected by `threading.Lock`.
+KGI SDK callbacks write to buffer from SDK thread. REST endpoints read from buffer (thread-safe).
+Gateway crash clears buffer — reconnect and resubscribe to repopulate.
+
+### `GET /quote/status` (no auth required)
+
+```bash
+curl http://127.0.0.1:8787/quote/status
+# {"subscribed_symbols":{"tick":["2330"],"bidask":[]},"buffer":{"tick":{"2330":{"count":5,"maxlen":200,"last_received_at":"2026-04-27T..."}},"bidask":{}},"kgi_logged_in":true,"quote_disabled_flag":false}
+```
+
+### `POST /quote/subscribe/tick` (auth required)
 
 ```bash
 curl -X POST http://127.0.0.1:8787/quote/subscribe/tick \
   -H "Content-Type: application/json" \
   -d '{"symbol":"2330"}'
 # Expected: {"ok":true,"label":"tick_2330"}  (label from KGI subscribe return)
+# W2b: callback also writes to ring buffer for REST poll.
+```
+
+### `GET /quote/ticks` (auth required)
+
+```bash
+curl "http://127.0.0.1:8787/quote/ticks?symbol=2330&limit=10"
+# 200: {"symbol":"2330","ticks":[{"close":580.0,...,"_received_at":"..."}],"count":5,"buffer_size":200,"buffer_used":5}
+# 401: not logged in
+# 404: symbol not subscribed (call POST /quote/subscribe/tick first)
+# 503: KGI_GATEWAY_QUOTE_DISABLED=true
+```
+
+### `POST /quote/subscribe/bidask` (auth required)
+
+```bash
+curl -X POST http://127.0.0.1:8787/quote/subscribe/bidask \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"2330"}'
+# 200 if SDK supports bidask subscription
+# 501 NOT_IMPLEMENTED if SDK does not expose subscribe_bidask / set_cb_bid_ask
+# Endpoint surface always exists (bidask design must not disappear).
+```
+
+### `GET /quote/bidask` (auth required)
+
+```bash
+curl "http://127.0.0.1:8787/quote/bidask?symbol=2330"
+# 200: {"symbol":"2330","bidask":{"bid_prices":[...],"ask_prices":[...],...,"_received_at":"..."}}
+# 401: not logged in
+# 404: no bidask data (subscribe first)
+# 503: KGI_GATEWAY_QUOTE_DISABLED=true
 ```
 
 ---
@@ -156,11 +208,13 @@ curl -X POST http://127.0.0.1:8787/order/create \
 services/kgi-gateway/
   app.py              FastAPI entry + all route handlers
   kgi_session.py      kgisuperpy login / show_account / set_Account lifecycle
-  kgi_quote.py        subscribe_tick + asyncio bridge for tick broadcast
+  kgi_quote.py        subscribe_tick + ring buffer (W2b) + asyncio bridge for tick broadcast
   kgi_events.py       api.Order.set_event + asyncio bridge for order event broadcast
   schemas.py          Pydantic request/response models (mirrors TS broker-port types)
   config.py           Environment variable loading
   pyproject.toml      Python dependencies
   SCHEMA_MAPPING.md   Full TS ↔ Pydantic ↔ KGI raw field mapping table
   README.md           This file
+  tests/
+    test_quote_ring_buffer.py  W2b unit tests (5 tests; run with pytest)
 ```
