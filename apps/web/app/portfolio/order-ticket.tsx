@@ -28,6 +28,7 @@ import {
 import { type SizingResult } from "@/lib/sizing";
 import { buildOrderInputFromPlan } from "@/lib/plan-to-order";
 import { QUOTE_GATE_COLOR, QUOTE_GATE_LABEL } from "@/lib/quote-vocab";
+import { ORDER_UI_ENABLED } from "@/lib/feature-flags";
 
 type Props = {
   accountId: string;
@@ -79,6 +80,51 @@ const DECISION_COLOR: Record<RiskCheckResult["decision"], string> = {
 // stay aligned.
 
 export function OrderTicket({
+  accountId,
+  onSubmitted,
+  quoteMode = "paper",
+  initialSymbol,
+  initialSide
+}: Props) {
+  // Risk D mitigation D2 — feature-flag gate. When NEXT_PUBLIC_IUF_ORDER_UI_ENABLED
+  // is not "true" the entire ticket renders as a locked placeholder so the
+  // SUBMIT path is unreachable from the UI.
+  if (!ORDER_UI_ENABLED) {
+    return <LockedTicketPlaceholder />;
+  }
+
+  return (
+    <OrderTicketInner
+      accountId={accountId}
+      onSubmitted={onSubmitted}
+      quoteMode={quoteMode}
+      initialSymbol={initialSymbol}
+      initialSide={initialSide}
+    />
+  );
+}
+
+function LockedTicketPlaceholder() {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: "0.5rem",
+        padding: "1rem",
+        border: "1px dashed var(--dim)",
+        fontFamily: "var(--mono, monospace)",
+        fontSize: "0.85rem",
+        color: "var(--dim)"
+      }}
+    >
+      <div style={{ color: "var(--amber)" }}>[ORDER TICKET — LOCKED]</div>
+      <div>Order submission is locked. Read-only mode is in effect.</div>
+      <div>Set NEXT_PUBLIC_IUF_ORDER_UI_ENABLED=true to unlock (build-time only).</div>
+    </div>
+  );
+}
+
+function OrderTicketInner({
   accountId,
   onSubmitted,
   quoteMode = "paper",
@@ -566,13 +612,18 @@ export function OrderTicket({
         >
           {pending === "preview" ? "[...]" : "[PREVIEW 風控試算]"}
         </button>
+        {/* Risk D mitigation D1 — SUBMIT is hard-disabled with a no-op
+            onClick and a fixed lock tooltip. The W-series read-only posture
+            means no order may leave the UI; this guard runs even if the
+            feature flag is later flipped on. */}
         <button
-          onClick={onSubmit}
-          disabled={disabled || !submitGate.allow}
-          title={submitGate.label ?? undefined}
-          style={buttonStyle(submitGate.allow ? "var(--phosphor)" : "var(--dim)")}
+          onClick={() => undefined}
+          disabled={true}
+          title="Order submission is locked"
+          aria-disabled={true}
+          style={buttonStyle("var(--dim)")}
         >
-          {pending === "submit" ? "[...]" : "[SUBMIT 送單]"}
+          [SUBMIT 送單 — LOCKED]
         </button>
         <button
           onClick={onClear}
