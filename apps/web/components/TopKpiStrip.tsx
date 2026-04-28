@@ -61,7 +61,11 @@ function DeltaBadge({ delta }: { delta: number }) {
 
 function KpiCellView({ cell, last }: { cell: KpiCell; last: boolean }) {
   const valueColor = cell.statusColor ?? "var(--night-ink)";
-  const valueFont  = cell.valueStyle === "mono" ? "var(--mono)" : "var(--serif-en)";
+  // W5b typography fix: use --data-serif (actual Georgia) instead of --serif-en (which aliases to monospace)
+  // --data-serif is defined in globals.css W5b tokens section
+  const valueFont  = cell.valueStyle === "mono"
+    ? "var(--data-mono, var(--mono))"
+    : "var(--data-serif, Georgia, 'Times New Roman', serif)";
   const valueFontSize = cell.valueStyle === "mono" ? 22 : 26;
 
   return (
@@ -214,12 +218,14 @@ export function StatStrip({ cells }: { cells: StatCell[] }) {
         }}>
           <div className="tg" style={{ color: "var(--night-mid)", marginBottom: 4 }}>{cell.label}</div>
           <div style={{
-            fontFamily: "var(--serif-en)",
+            /* W5b typography fix: --data-serif = actual Georgia */
+            fontFamily: "var(--data-serif, Georgia, 'Times New Roman', serif)",
             fontSize:   20,
             fontStyle:  "italic",
-            fontWeight: 300,
+            fontWeight: 400,
             color:      cell.color ?? "var(--night-ink)",
             lineHeight: 1,
+            fontVariantNumeric: "tabular-nums",
           }}>{cell.value}</div>
         </div>
       ))}

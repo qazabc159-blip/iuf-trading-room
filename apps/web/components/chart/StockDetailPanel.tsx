@@ -104,13 +104,18 @@ export function StockDetailPanel({ symbol, lastPx, mainVisual = false }: StockDe
   const chartHeight = mainVisual ? 500 : 420;
 
   return (
-    <div style={{ background: T.bg, border: `1px solid ${T.ruleS}` }}>
+    /* HUD outer frame — gold bottom border, corner brackets via panel-operator */
+    <div
+      className="panel-operator"
+      style={{ background: T.bg, border: `1px solid ${T.ruleS}`, borderBottom: `2px solid var(--gold)` }}
+    >
       <OrderLockedBanner />
 
-      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0, background: T.bg1 }}>
+      {/* Toolbar: interval + timezone + freshness */}
+      <div className="toggle-bar">
         <IntervalToggle value={interval} onChange={setInterval} />
         <TimezoneToggle value={timezone} onChange={setTimezone} />
-        <div style={{ marginLeft: "auto", paddingRight: 10 }}>
+        <div style={{ marginLeft: "auto", paddingRight: 8, display: "flex", alignItems: "center" }}>
           <FreshnessBadge
             freshness={kbarFreshness}
             label="K-BAR"
@@ -120,6 +125,7 @@ export function StockDetailPanel({ symbol, lastPx, mainVisual = false }: StockDe
         </div>
       </div>
 
+      {/* Main chart + side panel grid */}
       <div
         className="sdp-grid"
         style={{
@@ -128,7 +134,13 @@ export function StockDetailPanel({ symbol, lastPx, mainVisual = false }: StockDe
           gap:                 0,
         }}
       >
+        {/* K-line chart column */}
         <div className="sdp-chart" style={{ borderRight: `1px solid ${T.ruleS}`, minWidth: 0 }}>
+          {/* Chart section label */}
+          <div className="chart-section-label">
+            <span className="label-accent">[K-LINE]</span>
+            <span>圖表 · CHART</span>
+          </div>
           <KLineChart
             symbol={symbol}
             interval={interval}
@@ -138,17 +150,27 @@ export function StockDetailPanel({ symbol, lastPx, mainVisual = false }: StockDe
           />
         </div>
 
+        {/* Right panel: bid/ask + tick tape */}
         <div className="sdp-right" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          {/* Bid/ask section label */}
+          <div className="chart-section-label">
+            <span className="label-accent">[DEPTH]</span>
+            <span>五檔報價 · BID/ASK</span>
+          </div>
           <div style={{ borderBottom: `1px solid ${T.ruleS}` }}>
             <BidAskLadder symbol={symbol} lastPx={lastPx} />
+          </div>
+          {/* Tick tape section label */}
+          <div className="chart-section-label">
+            <span className="label-accent">[TAPE]</span>
+            <span>成交明細 · TICKS</span>
           </div>
           <TickTape symbol={symbol} lastPx={lastPx} />
         </div>
       </div>
 
-      <div style={{ borderTop: `1px solid ${T.ruleS}` }}>
-        <PositionContainmentBadge />
-      </div>
+      {/* Containment footer */}
+      <PositionContainmentBadge />
 
       <style>{`
         @media (max-width: 768px) {

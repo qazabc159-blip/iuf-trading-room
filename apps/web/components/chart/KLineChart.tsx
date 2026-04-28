@@ -236,13 +236,11 @@ export function KLineChart({ symbol, interval, data, height = 480, timezone = "A
 
   return (
     <div style={{ position: "relative", width: "100%", background: T.bg }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 12px", borderBottom: `1px solid ${T.ruleStrong}`, background: T.bg1 }}>
-        <span style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: "0.18em", color: T.goldBright, textTransform: "uppercase" }}>
-          [{symbol}] · K-LINE · {interval}
-        </span>
-        <span style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: "0.14em", color: T.soft }}>
-          {data.length} bars
-        </span>
+      {/* Chart header — v2 styled with symbol pill + interval tag */}
+      <div className="kline-header">
+        <span className="kline-symbol-tag">{symbol}</span>
+        <span className="kline-interval-tag">K-LINE · {interval}</span>
+        <span className="kline-bar-count">{data.length} BARS</span>
       </div>
       <div style={{ position: "relative" }}>
         <div ref={containerRef} style={{ width: "100%", height }} />

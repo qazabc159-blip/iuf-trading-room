@@ -2368,3 +2368,508 @@ select {
 .quote-freshness-badge.fresh   { color: var(--status-healthy);  border-color: rgba(46,204,113,0.35); }
 .quote-freshness-badge.stale   { color: var(--status-armed);    border-color: rgba(212,168,81,0.35); }
 .quote-freshness-badge.no_data { color: var(--status-standby);  border-color: rgba(154,147,126,0.35); }
+
+/* ═══════════════════════════════════════════════════════════════
+   W5b Design Tokens v2 — Operator Terminal (Option C)
+   Addresses: typography fix / depth system / motion tokens
+   Appended by Jim W5b visual overhaul (feat/w5b-jim-visual-overhaul-draft)
+   DO NOT remove existing tokens above.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Data typography fix ────────────────────────────────── */
+  /* PROBLEM: --serif-en = var(--font-mono) → Georgia never reached */
+  /* FIX: --data-serif uses actual geometric serif for italic KPI values */
+  --data-serif: "Georgia", "Times New Roman", "Noto Serif TC", serif;
+  --data-mono:  "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  /* ── Depth system (what was missing) ────────────────────── */
+  /* 5-level depth stack for proper foreground/background layering */
+  --d0: #0C0D09;   /* deepest — page canvas */
+  --d1: #14150E;   /* main panel surfaces */
+  --d2: #1C1E15;   /* elevated sections (chart header, toolbar) */
+  --d3: #242618;   /* card cells, hover states */
+  --d4: #2E3020;   /* active/selected cell */
+
+  /* ── Enhanced rule system ───────────────────────────────── */
+  --rule-ghost:  rgba(232, 223, 200, 0.04);
+  --rule-dim:    rgba(232, 223, 200, 0.09);
+  --rule-std:    rgba(232, 223, 200, 0.18);
+  --rule-strong: rgba(232, 223, 200, 0.30);
+  --rule-accent: rgba(212, 168, 81, 0.40);  /* gold rule for section breaks */
+
+  /* ── Motion tokens (mechanical, not smooth) ─────────────── */
+  --flash-dur:    80ms;   /* tick flash */
+  --reveal-dur:   140ms;  /* panel appear */
+  --settle-dur:   220ms;  /* value settle after update */
+  --ease-reveal:  cubic-bezier(0.16, 1, 0.3, 1);
+  /* step-ease for retro digital display feel on value updates */
+  --ease-tick:    steps(3, end);
+}
+
+/* ── Depth background utility classes ─────────────────────────── */
+.bg-d0 { background: var(--d0); }
+.bg-d1 { background: var(--d1); }
+.bg-d2 { background: var(--d2); }
+.bg-d3 { background: var(--d3); }
+
+/* ── Tick flash animation ────────────────────────────────────── */
+
+@keyframes tick-flash-up {
+  0%   { background: var(--tw-up-faint); color: var(--tw-up-bright); }
+  100% { background: transparent; color: inherit; }
+}
+
+@keyframes tick-flash-dn {
+  0%   { background: var(--tw-dn-faint); color: var(--tw-dn-bright); }
+  100% { background: transparent; color: inherit; }
+}
+
+.tick-flash-up { animation: tick-flash-up var(--flash-dur) var(--ease-tick) both; }
+.tick-flash-dn { animation: tick-flash-dn var(--flash-dur) var(--ease-tick) both; }
+
+/* ── KPI value flash (on update) ─────────────────────────────── */
+
+@keyframes kpi-value-flash {
+  0%   { opacity: 0.4; transform: translateY(-2px); }
+  60%  { opacity: 1;   transform: translateY(0); }
+  100% { opacity: 1;   transform: translateY(0); }
+}
+
+.kpi-flash { animation: kpi-value-flash var(--settle-dur) var(--ease-reveal) both; }
+
+/* ── BidAsk depth bar container (relative-positioned row) ────── */
+
+.bid-ask-row {
+  position: relative;
+  overflow: hidden;
+}
+
+.bid-depth-bar {
+  position: absolute;
+  top: 0; bottom: 0; right: 50%;
+  background: var(--tw-dn-faint);
+  pointer-events: none;
+  transition: width var(--settle-dur) var(--ease-reveal);
+}
+
+.ask-depth-bar {
+  position: absolute;
+  top: 0; bottom: 0; left: 50%;
+  background: var(--tw-up-faint);
+  pointer-events: none;
+  transition: width var(--settle-dur) var(--ease-reveal);
+}
+
+/* ── HUD frame variant: accent gold border ─────────────────────── */
+
+.hud-frame-gold {
+  position: relative;
+  border: 1px solid var(--rule-std);
+  border-bottom: 2px solid var(--gold);
+}
+
+/* ── Stock page header row (symbol + nav) ─────────────────────── */
+
+.stock-page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--d2);
+  border-bottom: 1px solid var(--rule-strong);
+  font-family: var(--data-mono);
+  margin-bottom: 16px;
+}
+
+.stock-symbol-pill {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--gold-bright);
+  padding: 3px 10px;
+  border: 1px solid rgba(212, 168, 81, 0.35);
+  background: rgba(212, 168, 81, 0.08);
+}
+
+.stock-name-label {
+  font-size: 12px;
+  color: var(--night-ink);
+  letter-spacing: 0.06em;
+}
+
+.stock-market-badge {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--night-soft);
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border: 1px solid var(--rule-std);
+}
+
+/* ── Chart section label ────────────────────────────────────────── */
+
+.chart-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--d2);
+  border-bottom: 1px solid var(--rule-std);
+  font-family: var(--data-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--night-soft);
+}
+
+.chart-section-label .label-accent {
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
+/* ── Depth bars on bid/ask ladder ───────────────────────────────── */
+
+.ladder-row-wrap {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--rule-ghost);
+  font-family: var(--data-mono);
+  font-size: 11px;
+}
+
+.ladder-depth-bg-bid,
+.ladder-depth-bg-ask {
+  position: absolute;
+  top: 0; bottom: 0;
+  pointer-events: none;
+  border-radius: 0;
+}
+
+.ladder-depth-bg-bid {
+  right: 0;
+  background: linear-gradient(to left, var(--tw-dn-faint), transparent);
+}
+
+.ladder-depth-bg-ask {
+  left: 0;
+  background: linear-gradient(to right, var(--tw-up-faint), transparent);
+}
+
+/* ── Tape row ────────────────────────────────────────────────────── */
+
+.tape-row {
+  display: grid;
+  grid-template-columns: 56px 80px 72px 20px;
+  padding: 2px 10px;
+  border-bottom: 1px solid var(--rule-ghost);
+  align-items: center;
+  font-family: var(--data-mono);
+  transition: background var(--flash-dur) linear;
+}
+
+.tape-row.new-buy  { background: var(--tw-up-faint); }
+.tape-row.new-sell { background: var(--tw-dn-faint); }
+
+/* ── Homepage hero improvements ─────────────────────────────────── */
+
+.dash-section-hud {
+  border: 1px solid var(--rule-std);
+  border-top: 2px solid var(--gold);
+  background: var(--d1);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+
+.dash-section-hud .panel-header {
+  margin-bottom: var(--sp-3);
+}
+
+/* theme ranking bar fill — replace blue-to-green gradient with solid gold */
+.theme-bar-fill {
+  background: var(--gold) !important;
+}
+
+/* ── Panel chrome variant (operator-grade) ───────────────────────── */
+
+.panel-operator {
+  border: 1px solid var(--rule-std);
+  background: var(--d1);
+  position: relative;
+}
+
+/* Corner bracket decoration */
+.panel-operator::before,
+.panel-operator::after {
+  content: "";
+  position: absolute;
+  width: 8px; height: 8px;
+  pointer-events: none;
+}
+.panel-operator::before {
+  top: -1px; left: -1px;
+  border-top: 1px solid var(--gold);
+  border-left: 1px solid var(--gold);
+  opacity: 0.6;
+}
+.panel-operator::after {
+  bottom: -1px; right: -1px;
+  border-bottom: 1px solid var(--gold);
+  border-right: 1px solid var(--gold);
+  opacity: 0.6;
+}
+
+/* ── Freshness badge v2 (larger, clearer) ─────────────────────────── */
+
+.freshness-badge-v2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--data-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  padding: 3px 10px;
+  border-width: 1px;
+  border-style: solid;
+  text-transform: uppercase;
+}
+.freshness-badge-v2.fresh   { color: #4ADE80; border-color: rgba(74,222,128,0.40); background: rgba(74,222,128,0.06); }
+.freshness-badge-v2.stale   { color: #D4A851; border-color: rgba(212,168,81,0.40); background: rgba(212,168,81,0.06); }
+.freshness-badge-v2.no_data { color: #6B6553; border-color: rgba(107,101,83,0.30); background: transparent; }
+
+/* ── Interval + timezone toggle button bar (v2) ──────────────────── */
+
+.toggle-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--d2);
+  border-bottom: 1px solid var(--rule-std);
+  padding: 0 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toggle-bar::-webkit-scrollbar { display: none; }
+
+.toggle-btn {
+  padding: 6px 10px;
+  font-family: var(--data-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  color: var(--night-soft);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.toggle-btn:hover {
+  color: var(--night-mid);
+  border-bottom-color: var(--rule-std);
+}
+
+.toggle-btn.active {
+  color: var(--gold-bright);
+  border-bottom-color: var(--gold);
+  font-weight: 700;
+}
+
+/* ── KLine chart header bar v2 ───────────────────────────────────── */
+
+.kline-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--d2);
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.kline-symbol-tag {
+  font-family: var(--data-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--gold-bright);
+  padding: 2px 8px;
+  border: 1px solid rgba(212, 168, 81, 0.35);
+  background: rgba(212, 168, 81, 0.06);
+  text-transform: uppercase;
+}
+
+.kline-interval-tag {
+  font-family: var(--data-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--night-mid);
+  padding: 2px 6px;
+  border: 1px solid var(--rule-std);
+}
+
+.kline-bar-count {
+  font-family: var(--data-mono);
+  font-size: 9px;
+  letter-spacing: 0.10em;
+  color: var(--night-soft);
+}
+
+/* ── StatStrip v2 (serif fix) ────────────────────────────────────── */
+
+.stat-strip-v2 {
+  display: grid;
+  border: 1px solid var(--rule-strong);
+  border-bottom: 2px solid var(--gold);
+  margin-bottom: 16px;
+  background: var(--d1);
+}
+
+.stat-cell-v2 {
+  padding: 10px 14px;
+  border-right: 1px solid var(--rule-dim);
+}
+.stat-cell-v2:last-child { border-right: none; }
+
+.stat-cell-label {
+  font-family: var(--data-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--night-mid);
+  margin-bottom: 5px;
+}
+
+.stat-cell-value {
+  /* FIXED: actual Georgia serif italic for numerics */
+  font-family: var(--data-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 20px;
+  color: var(--night-ink);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── BidAsk last price row (v2 — more prominent) ─────────────────── */
+
+.ladder-last-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--gold);
+  border-bottom: 1px solid var(--gold);
+  background: rgba(184, 138, 62, 0.08);
+}
+
+.ladder-last-px {
+  font-family: var(--data-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 17px;
+  color: var(--night-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Locked banner v2 ─────────────────────────────────────────────── */
+
+.locked-banner-v2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: rgba(212, 168, 81, 0.06);
+  border-bottom: 1px solid rgba(212, 168, 81, 0.20);
+  font-family: var(--data-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+.locked-banner-v2 .lock-tag {
+  color: var(--gold-bright);
+  font-weight: 700;
+  padding: 1px 6px;
+  border: 1px solid rgba(212, 168, 81, 0.40);
+  background: rgba(212, 168, 81, 0.10);
+}
+
+.locked-banner-v2 .lock-msg {
+  color: var(--night-mid);
+}
+
+/* ── Position containment v2 ──────────────────────────────────────── */
+
+.containment-badge-v2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--rule-std);
+  font-family: var(--data-mono);
+}
+
+.containment-badge-v2 .cont-icon {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 4px var(--gold);
+  flex-shrink: 0;
+}
+
+.containment-badge-v2 .cont-text {
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.containment-badge-v2 .cont-sub {
+  font-size: 8.5px;
+  letter-spacing: 0.10em;
+  color: var(--night-mid);
+  margin-left: auto;
+}
+
+/* ── TickTape header v2 ───────────────────────────────────────────── */
+
+.tape-header-v2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--d2);
+  font-family: var(--data-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--night-soft);
+}
+
+.tape-source-live   { color: var(--tw-dn); }
+.tape-source-mock   { color: rgba(184,138,62,0.5); }
+.tape-source-err    { color: var(--tw-up); }
+
+/* ── BidAsk header v2 ─────────────────────────────────────────────── */
+
+.ladder-header-v2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--d2);
+  font-family: var(--data-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--night-soft);
+}
+

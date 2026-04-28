@@ -33,13 +33,15 @@ export default function HomePage() {
         <span className="ascii-head-bracket">[01]</span>
         核心指標 · CORE METRICS
       </h3>
-      <section className="kpi-strip">
-        <KpiCard label="主題戰區" value={s?.themes} />
-        <KpiCard label="公司資料庫" value={s?.companies} sub={s ? `核心 ${s.coreCompanies} / 直接 ${s.directCompanies}` : undefined} />
-        <KpiCard label="活躍訊號" value={s?.signals} sub={s ? `看多 ${s.bullishSignals}` : undefined} />
-        <KpiCard label="交易計畫" value={s?.plans} sub={s ? `執行中 ${s.activePlans}` : undefined} tone={s && s.activePlans > 0 ? "warn" : undefined} />
-        <KpiCard label="待審草稿" value={s?.reviewQueue} tone={s && s.reviewQueue > 0 ? "warn" : undefined} />
-        <KpiCard label="已發布簡報" value={s?.publishedBriefs} />
+      <section className="dash-section-hud">
+        <div className="kpi-strip" style={{ marginBottom: 0 }}>
+          <KpiCard label="主題戰區" value={s?.themes} />
+          <KpiCard label="公司資料庫" value={s?.companies} sub={s ? `核心 ${s.coreCompanies} / 直接 ${s.directCompanies}` : undefined} />
+          <KpiCard label="活躍訊號" value={s?.signals} sub={s ? `看多 ${s.bullishSignals}` : undefined} />
+          <KpiCard label="交易計畫" value={s?.plans} sub={s ? `執行中 ${s.activePlans}` : undefined} tone={s && s.activePlans > 0 ? "warn" : undefined} />
+          <KpiCard label="待審草稿" value={s?.reviewQueue} tone={s && s.reviewQueue > 0 ? "warn" : undefined} />
+          <KpiCard label="已發布簡報" value={s?.publishedBriefs} />
+        </div>
       </section>
 
       {/* 中排：OpenAlice + 稽核 */}

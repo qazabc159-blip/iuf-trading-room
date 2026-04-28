@@ -2,6 +2,7 @@
 /**
  * BidAskLadder — Bid/Ask 5-Level Ladder (Phase 2 wire-up)
  * Ported from sandbox v0.7.0-w3
+ * W5b visual overhaul: depth bars, v2 CSS classes, improved header.
  * 5 fixed rows, null levels show "——"
  * No order entry button.
  */
@@ -64,6 +65,8 @@ const T = {
   ink:   "#e8dfc8",
   rule:  "rgba(232,223,200,0.08)",
   ruleS: "rgba(232,223,200,0.22)",
+  d1:    "#14150E",
+  d2:    "#1C1E15",
   mono:  '"JetBrains Mono", ui-monospace, monospace',
 } as const;
 
@@ -74,12 +77,24 @@ function fmtQty(v: number | null): string {
   return v === null ? "——" : v.toLocaleString();
 }
 
+/** Compute max qty across all rows for proportional depth bars */
+function maxQty(rows: LadderRow[]): number {
+  let m = 1;
+  for (const r of rows) {
+    if (r.askQty !== null && r.askQty > m) m = r.askQty;
+    if (r.bidQty !== null && r.bidQty > m) m = r.bidQty;
+  }
+  return m;
+}
+
 export function BidAskLadder({ symbol, lastPx }: BidAskLadderProps) {
   const { bidask, freshness, source, endpointUnavailable } = useReadOnlyQuote(symbol);
 
   const rows: LadderRow[] = bidask
     ? buildLadderFromLive(bidask)
     : buildLadder(symbol, lastPx);
+
+  const maxQ = maxQty(rows);
 
   const sourceTooltip = source === "live"
     ? `Live bid/ask from GET /api/v1/kgi/quote/bidask?symbol=${symbol} (W2d HEAD 95466f4)`
@@ -88,59 +103,76 @@ export function BidAskLadder({ symbol, lastPx }: BidAskLadderProps) {
       : `Mock data (NEXT_PUBLIC_API_BASE not set)`;
 
   return (
-    <div style={{ fontFamily: T.mono, fontSize: 11 }}>
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr 1fr 1fr",
-        padding: "5px 10px",
-        borderBottom: `1px solid ${T.ruleS}`,
-        color: T.soft,
-        letterSpacing: "0.14em",
-        fontSize: 9,
-        textTransform: "uppercase",
-      }}>
+    <div style={{ fontFamily: T.mono, fontSize: 11, background: T.d1 }}>
+      {/* Header row */}
+      <div className="ladder-header-v2">
         <span>ASK·QTY</span>
         <span style={{ textAlign: "right" }}>ASK·PX</span>
         <span>BID·PX</span>
         <span style={{ textAlign: "right" }}>BID·QTY</span>
       </div>
 
-      {rows.map((r, i) => (
-        <div key={`row-${i}`} style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr 1fr",
-          padding: "3px 10px",
-          borderBottom: `1px solid ${T.rule}`,
-          background: i === 0 ? "rgba(230,57,70,0.04)" : "transparent",
-        }}>
-          <span style={{ color: T.mid }}>{fmtQty(r.askQty)}</span>
-          <span style={{ color: r.askPx === null ? T.soft : T.up, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-            {fmtPx(r.askPx)}
-          </span>
-          <span style={{ color: r.bidPx === null ? T.soft : T.dn, fontVariantNumeric: "tabular-nums" }}>
-            {fmtPx(r.bidPx)}
-          </span>
-          <span style={{ color: T.mid, textAlign: "right" }}>{fmtQty(r.bidQty)}</span>
-        </div>
-      ))}
+      {/* Depth rows with proportional background bars */}
+      {rows.map((r, i) => {
+        const askDepthPct = r.askQty !== null ? Math.round((r.askQty / maxQ) * 50) : 0;
+        const bidDepthPct = r.bidQty !== null ? Math.round((r.bidQty / maxQ) * 50) : 0;
 
-      <div style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: "6px 10px",
-        borderTop: `1px solid ${T.gold}`,
-        borderBottom: `1px solid ${T.gold}`,
-        background: "rgba(184,138,62,0.06)",
-        gap: 8,
-      }}>
-        <span style={{ color: T.soft, fontSize: 9, letterSpacing: "0.14em" }}>LAST</span>
-        <span style={{ color: T.ink, fontStyle: "italic", fontVariantNumeric: "tabular-nums", fontSize: 15, fontWeight: 300 }}>
+        return (
+          <div
+            key={`row-${i}`}
+            style={{
+              position:           "relative",
+              display:            "grid",
+              gridTemplateColumns:"1fr 1fr 1fr 1fr",
+              padding:            "3px 10px",
+              borderBottom:       `1px solid ${T.rule}`,
+              overflow:           "hidden",
+            }}
+          >
+            {/* Ask depth bar (left-aligned) */}
+            {askDepthPct > 0 && (
+              <span style={{
+                position:    "absolute",
+                top: 0, bottom: 0,
+                left: 0,
+                width:       `${askDepthPct}%`,
+                background:  "rgba(230,57,70,0.07)",
+                pointerEvents: "none",
+              }} />
+            )}
+            {/* Bid depth bar (right-aligned) */}
+            {bidDepthPct > 0 && (
+              <span style={{
+                position:    "absolute",
+                top: 0, bottom: 0,
+                right: 0,
+                width:       `${bidDepthPct}%`,
+                background:  "rgba(46,204,113,0.07)",
+                pointerEvents: "none",
+              }} />
+            )}
+            <span style={{ color: T.mid, position: "relative", zIndex: 1 }}>{fmtQty(r.askQty)}</span>
+            <span style={{ color: r.askPx === null ? T.soft : T.up, textAlign: "right", fontVariantNumeric: "tabular-nums", position: "relative", zIndex: 1 }}>
+              {fmtPx(r.askPx)}
+            </span>
+            <span style={{ color: r.bidPx === null ? T.soft : T.dn, fontVariantNumeric: "tabular-nums", position: "relative", zIndex: 1 }}>
+              {fmtPx(r.bidPx)}
+            </span>
+            <span style={{ color: T.mid, textAlign: "right", position: "relative", zIndex: 1 }}>{fmtQty(r.bidQty)}</span>
+          </div>
+        );
+      })}
+
+      {/* Last price row */}
+      <div className="ladder-last-row">
+        <span style={{ color: T.soft, fontSize: 9, letterSpacing: "0.14em", fontFamily: T.mono }}>LAST</span>
+        <span className="ladder-last-px">
           {lastPx.toFixed(2)}
         </span>
-        <span style={{ color: T.soft, fontSize: 9, letterSpacing: "0.14em" }}>{symbol}</span>
+        <span style={{ color: T.soft, fontSize: 9, letterSpacing: "0.14em", fontFamily: T.mono }}>{symbol}</span>
       </div>
 
+      {/* Freshness footer */}
       <div style={{ padding: "4px 10px", borderTop: `1px solid ${T.rule}`, display: "flex", alignItems: "center", gap: 8 }}>
         <FreshnessBadge
           freshness={freshness}
