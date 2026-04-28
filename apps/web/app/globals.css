@@ -2217,3 +2217,154 @@ select {
   background: rgba(239, 68, 68, 0.10);
   color: var(--bear);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   W4 Night / CRT Token Layer — sandbox v0.7.0-w4 → production
+   Appended by Jim W4 Lane 1 cutover (feat/w4-frontend-cutover).
+   These tokens shadow-extend the existing blue-financial layer.
+   DO NOT remove existing tokens above.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Night CRT palette (sandbox primary) */
+  --night:            #0d0e0a;
+  --night-1:          #15170f;
+  --night-2:          #1d1f16;
+  --night-rule:       rgba(232, 223, 200, 0.08);
+  --night-rule-strong: rgba(232, 223, 200, 0.22);
+  --night-ink:        #e8dfc8;
+  --night-mid:        #9a937e;
+  --night-soft:       #6b6553;
+
+  /* Gold three-rule (brand accent layer) */
+  --gold:             #b88a3e;
+  --gold-bright:      #d4a851;
+  --gold-deep:        #6b4f1f;
+
+  /* TW market convention: gain = red, loss = green */
+  --tw-up:            #e63946;
+  --tw-up-bright:     #ff5b6b;
+  --tw-up-faint:      rgba(230, 57, 70, 0.12);
+  --tw-dn:            #2ecc71;
+  --tw-dn-bright:     #4adb88;
+  --tw-dn-faint:      rgba(46, 204, 113, 0.12);
+
+  /* Status semantic (W4) */
+  --status-healthy:   #2ecc71;
+  --status-armed:     #d4a851;
+  --status-degraded:  #e63946;
+  --status-standby:   #9a937e;
+  --status-mocked:    #9a937e;
+
+  /* Font aliases to match sandbox component expectations */
+  --serif-en:   var(--font-mono), Georgia, serif;
+  --serif:      var(--font-mono), Georgia, serif;
+  --serif-tc:   var(--font-sans), serif;
+  --mono:       var(--font-mono);
+
+  /* Animation tokens (sandbox) */
+  --anim-fast:   100ms;
+  --anim-normal: 220ms;
+  --anim-slow:   400ms;
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Semantic color helpers (W4) ──────────────────────────────── */
+.tw-up   { color: var(--tw-up); }
+.tw-dn   { color: var(--tw-dn); }
+.tw-up-b { color: var(--tw-up-bright); }
+.tw-dn-b { color: var(--tw-dn-bright); }
+
+/* Status pill */
+.status-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono); font-size: 10.5px;
+  letter-spacing: 0.14em; font-weight: 700;
+  padding: 3px 9px; border-radius: 2px;
+}
+.status-healthy  { color: var(--status-healthy);  border: 1px solid rgba(46,204,113,0.3); }
+.status-armed    { color: var(--status-armed);    border: 1px solid rgba(212,168,81,0.3); }
+.status-degraded { color: var(--status-degraded); border: 1px solid rgba(230,57,70,0.3); }
+.status-standby  { color: var(--status-standby);  border: 1px solid rgba(154,147,126,0.3); }
+.status-live-w4  { color: var(--status-healthy); }
+.status-mocked-w4 { color: var(--status-mocked); }
+
+/* ── Inspector right-sheet (W4 Fix 3) ────────────────────────── */
+.inspector-sheet {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(520px, 90vw);
+  background: var(--night-1);
+  border-left: 1px solid var(--night-rule-strong);
+  z-index: 500;
+  display: flex; flex-direction: column;
+  animation: slideInRight var(--anim-normal) var(--ease-out) both;
+  overflow-y: auto;
+}
+.inspector-backdrop {
+  position: fixed; inset: 0; z-index: 499;
+  background: rgba(8,8,6,0.48);
+}
+.radar-container {
+  display: flex; justify-content: center; align-items: center;
+  padding: 8px 0;
+}
+
+/* ── W4 keyframes ─────────────────────────────────────────────── */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.anim-fade-in-up {
+  animation: fadeInUp var(--anim-normal) var(--ease-out) both;
+}
+
+/* ── W4 tg (telegraphic label) ────────────────────────────────── */
+.tg {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* ── Command palette ACTION group gold overrides (W4 Fix 4) ────── */
+.cmdk-item.action-active {
+  background: rgba(212,168,81,0.12);
+  border-left-color: var(--gold-bright);
+}
+.cmdk-group-title.action-group {
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
+/* ── Stock detail panel layout (C-γ) ─────────────────────────── */
+.stock-detail-grid {
+  display: grid;
+  grid-template-columns: 60% 40%;
+  gap: 0;
+}
+@media (max-width: 768px) {
+  .stock-detail-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Top KPI Strip (W4 Fix 2) ─────────────────────────────────── */
+.top-kpi-strip-wrap {
+  margin-bottom: 24px;
+}
+
+/* ── Quote panel cells  ───────────────────────────────────────── */
+.quote-freshness-badge {
+  display: inline-flex; flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.12em;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  transition: color 100ms ease-out, border-color 100ms ease-out;
+}
+.quote-freshness-badge.fresh   { color: var(--status-healthy);  border-color: rgba(46,204,113,0.35); }
+.quote-freshness-badge.stale   { color: var(--status-armed);    border-color: rgba(212,168,81,0.35); }
+.quote-freshness-badge.no_data { color: var(--status-standby);  border-color: rgba(154,147,126,0.35); }
