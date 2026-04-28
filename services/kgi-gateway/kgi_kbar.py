@@ -312,9 +312,11 @@ class KgiKbarManager:
         try:
             from kgisuperpy.marketdata.quote_data.quotedata import QuoteData as _QuoteData
             QuoteVersion = _QuoteData.QuoteVersion
-            label = kbar_subscribe_fn(symbol, odd_lot=odd_lot, version=QuoteVersion.v1)
+            # odd_lot kwarg removed: installed kgisuperpy subscribe_kbar() does not accept it (W4 B2 Q1 fix)
+            label = kbar_subscribe_fn(symbol, version=QuoteVersion.v1)
         except Exception:
-            label = kbar_subscribe_fn(symbol, odd_lot=odd_lot)
+            # Fallback: no version kwarg, no odd_lot kwarg
+            label = kbar_subscribe_fn(symbol)
 
         label_str = str(label) if label is not None else f"kbar_{symbol}"
 
