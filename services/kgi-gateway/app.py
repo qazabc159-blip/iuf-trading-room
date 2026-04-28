@@ -30,7 +30,9 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from typing import Any, Optional
+
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from config import settings
@@ -924,14 +926,26 @@ async def order_events_ws(websocket: WebSocket) -> None:
 # ---------------------------------------------------------------------------
 
 @app.post("/order/create")
-async def create_order(body: CreateOrderRequest) -> JSONResponse:
+async def create_order(body: Optional[Any] = Body(default=None)) -> JSONResponse:
     """
-    Order submission route — input is validated by CreateOrderRequest schema
-    but handler always returns 409 in W1.
+    Order submission route — W1: ALWAYS returns 409 NOT_ENABLED_IN_W1.
+
+    W5b A3 T12 fix: body parameter changed from CreateOrderRequest → Optional[Any].
+    This ensures Pydantic schema validation is bypassed BEFORE handler executes,
+    so ANY payload (empty {}, invalid fields, wrong content-type, missing fields)
+    returns 409 NOT_ENABLED_IN_W1 — not 422 Unprocessable Entity.
+
+    T12 finding (2026-04-29): POST /order/create {} previously returned 422 because
+    Pydantic validation ran before the handler body. This was safe (no order placed)
+    but violated the documented stop-line literal "returns 409 NOT_ENABLED_IN_W1".
 
     W2+ will wire this to api.Order.create_order() after paper dry-run evidence.
+    Hard line: body argument is intentionally NOT validated — handler returns 409 regardless.
     """
-    logger.info("POST /order/create received (returning 409 NotEnabledInW1): symbol=%s", body.symbol)
+    # Top-of-handler 409 short-circuit.
+    # body is IGNORED — we never inspect it to prevent accidental order submission.
+    # Any payload shape (empty, valid CreateOrderRequest, garbage) returns the same 409.
+    logger.info("POST /order/create received (returning 409 NOT_ENABLED_IN_W1) — payload ignored per W1 hard-line")
     return JSONResponse(
         status_code=409,
         content=ErrorEnvelope(
