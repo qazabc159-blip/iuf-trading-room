@@ -2,9 +2,9 @@
  * API client — single import surface.
  *
  * Behavior:
- *   • NEXT_PUBLIC_API_BASE empty → use mocks (always).
- *   • NEXT_PUBLIC_API_BASE set + dev → fetch, fallback to mock with console.warn.
- *   • NEXT_PUBLIC_API_BASE set + prod → fetch, THROW on failure.
+ *   • NEXT_PUBLIC_API_BASE_URL empty → use mocks (always).
+ *   • NEXT_PUBLIC_API_BASE_URL set + dev → fetch, fallback to mock with console.warn.
+ *   • NEXT_PUBLIC_API_BASE_URL set + prod → fetch, THROW on failure.
  *     UI shows the OFFLINE state via DataSourceBadge.
  *
  * The DataSource state machine is published via the `__iuf_data_source` window
@@ -41,7 +41,7 @@ import {
   weeklyPlan as mockWeekly,
 } from "./radar-mocks";
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
+const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const IS_PROD = process.env.NODE_ENV === "production";
 
 export type DataSourceState = "MOCK" | "LIVE" | "OFFLINE";
