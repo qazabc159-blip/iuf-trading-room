@@ -1,23 +1,27 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 
 import { apiLogin, authErrorMessage, setAuthPresence } from "@/lib/auth-client";
+
+import "./login.css";
+
+const SCAN_ROWS = ["AUTH", "SESSION", "ROLE", "RISK", "AUDIT"] as const;
 
 export default function LoginPage() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setError(null);
 
-    // Client-side validation
     if (!email.trim()) {
       setError("請輸入 Email");
       return;
@@ -34,8 +38,6 @@ export default function LoginPage() {
         setError(authErrorMessage(result.error));
         return;
       }
-      // iuf_session cookie is set by API server (HttpOnly)
-      // set presence cookie so Next.js middleware can detect auth state
       setAuthPresence();
       router.push("/");
     } finally {
@@ -44,81 +46,99 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        {/* Brand */}
-        <div className="auth-brand">
-          <div className="auth-logo">IUF</div>
-          <h1 className="auth-title">台股 AI 交易戰情室</h1>
-          <p className="auth-subtitle">IUF Trading Room — Operator Login</p>
+    <main className="login-route">
+      <section className="login-shell">
+        <div className="login-brand">
+          <div className="brand-mark">IUF</div>
+          <div>
+            <div className="tg soft">TRADING ROOM / OPERATOR ACCESS</div>
+            <h1>Trading Room</h1>
+          </div>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="auth-form" noValidate>
-          <div className="auth-field">
-            <label htmlFor="email" className="auth-label">
-              EMAIL
-            </label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              autoFocus
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="auth-input"
-              placeholder="operator@iuf.tw"
-              disabled={loading}
-            />
-          </div>
-
-          <div className="auth-field">
-            <label htmlFor="password" className="auth-label">
-              PASSWORD
-            </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="auth-input"
-              placeholder="••••••••"
-              disabled={loading}
-            />
-          </div>
-
-          {error ? (
-            <div className="auth-error" role="alert">
-              <span className="auth-error-icon">!</span>
-              {error}
+        <div className="login-grid">
+          <div className="login-copy">
+            <div className="tg gold">RADAR LOGIN / SECURE SESSION</div>
+            <h2>Operator Gate</h2>
+            <div className="login-scan">
+              {SCAN_ROWS.map((item, index) => (
+                <div className="login-scan-row" key={item}>
+                  <span className="tg">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="tg gold">{item}</span>
+                  <span className="scan-line" />
+                  <span className="tg soft">{index < 2 ? "READY" : "WAIT"}</span>
+                </div>
+              ))}
             </div>
-          ) : null}
+          </div>
 
-          <button
-            type="submit"
-            className="auth-submit"
-            disabled={loading}
-          >
-            {loading ? (
-              <>
-                <span className="auth-spinner" aria-hidden="true" />
-                驗證中...
-              </>
-            ) : (
-              "進入戰情室"
-            )}
-          </button>
-        </form>
+          <form className="login-panel" onSubmit={handleSubmit} noValidate>
+            <div className="panel-head" style={{ paddingTop: 0 }}>
+              <div>
+                <span className="tg panel-code">AUTH</span>
+                <span className="tg muted"> / </span>
+                <span className="tg gold">operator login</span>
+                <div className="tg panel-sub">email / password / session memory</div>
+              </div>
+              <span className="tg soft">POST-CLOSE</span>
+            </div>
 
-        {/* Footer */}
-        <p className="auth-footer">
-          收到邀請碼？{" "}
-          <a href="/register" className="auth-link">
-            建立帳號
-          </a>
-        </p>
-      </div>
-    </div>
+            <label className="login-field">
+              <span className="tg soft">EMAIL</span>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                autoComplete="email"
+                autoFocus
+                placeholder="operator@iuf.tw"
+                disabled={loading}
+              />
+            </label>
+
+            <label className="login-field">
+              <span className="tg soft">PASSWORD</span>
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                autoComplete="current-password"
+                placeholder="••••••••••••"
+                disabled={loading}
+              />
+            </label>
+
+            <label className="login-check">
+              <input
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                type="checkbox"
+                disabled={loading}
+              />
+              <span>
+                <span className="tg">REMEMBER ME</span>
+                <span className="tg soft">keep operator session on this desk</span>
+              </span>
+            </label>
+
+            <div
+              className={`login-error ${error ? "active" : ""}`}
+              role="alert"
+              aria-live="polite"
+            >
+              {error || "ERROR MESSAGE AREA"}
+            </div>
+
+            <button className="login-submit" type="submit" disabled={loading}>
+              {loading ? "驗證中..." : "ENTER WAR ROOM →"}
+            </button>
+
+            <div className="tg soft login-foot">
+              IUF-01 / REV RADAR-0.8 / OPERATOR AUTH
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
   );
 }

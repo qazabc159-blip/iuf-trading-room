@@ -1,0 +1,271 @@
+/* IUF Trading Room — RADAR login surface
+   Source: Codex package RADAR_FRONTEND_ELVA_PACKAGE_20260429_155821 (globals.css §login)
+   Scope: limited to .login-route subtree so apps/web global design system is untouched.
+*/
+
+.login-route {
+  --serif: var(--font-serif), "Source Serif 4", Georgia, serif;
+  --serif-tc: var(--font-serif-tc), "Noto Serif TC", "PingFang TC", serif;
+  --mono: var(--font-mono), "IBM Plex Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --gold: #c8943f;
+  --gold-bright: #e2b85c;
+  --gold-deep: #6d4a18;
+
+  --night: #080b10;
+  --night-1: #0c1118;
+  --night-rule: rgba(220, 228, 240, 0.09);
+  --night-rule-strong: rgba(220, 228, 240, 0.19);
+  --night-ink: #e7ecf3;
+  --night-mid: #91a0b5;
+  --night-soft: #566276;
+
+  --tw-up: #e63946;
+  --tw-up-bright: #ff5b6b;
+  --tw-up-faint: rgba(230, 57, 70, 0.15);
+
+  min-height: 100vh;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  color: var(--night-ink);
+  font-family: var(--serif);
+  background:
+    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.014) 1px, transparent 1px),
+    radial-gradient(circle at 72% 18%, rgba(200,148,63,0.08), transparent 30%),
+    var(--night);
+  background-size: 32px 32px, 32px 32px, auto, auto;
+}
+
+.login-route * { box-sizing: border-box; }
+.login-route a { color: inherit; text-decoration: none; }
+.login-route button { font: inherit; }
+
+.login-route .tg {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.login-route .tc { font-family: var(--serif-tc); }
+.login-route .muted { color: var(--night-mid); }
+.login-route .soft { color: var(--night-soft); }
+.login-route .gold { color: var(--gold-bright); }
+
+.login-shell {
+  width: min(1120px, 100%);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--night-rule-strong);
+}
+
+.login-route .brand-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 24px;
+  border: 1px solid var(--gold);
+  color: var(--gold-bright);
+  font: 700 11px/1 var(--mono);
+  letter-spacing: 0.18em;
+}
+
+.login-brand h1 {
+  margin: 4px 0 0;
+  color: var(--night-ink);
+  font: italic 300 34px/1 var(--serif);
+}
+
+.login-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 34px;
+  align-items: stretch;
+  margin-top: 28px;
+}
+
+.login-copy,
+.login-panel {
+  border: 1px solid var(--night-rule-strong);
+  background: rgba(255,255,255,0.018);
+}
+
+.login-copy {
+  padding: 28px;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+.login-copy h2 {
+  margin: 10px 0 60px;
+  color: var(--night-ink);
+  font: italic 300 56px/1 var(--serif);
+}
+
+.login-scan {
+  display: grid;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.login-scan-row {
+  display: grid;
+  grid-template-columns: 32px 88px 1fr 58px;
+  gap: 12px;
+  align-items: center;
+  min-height: 28px;
+}
+
+.scan-line {
+  height: 1px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+}
+
+.login-panel {
+  padding: 24px;
+}
+
+.login-route .panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0 8px;
+  border-bottom: 1px solid var(--night-rule);
+}
+
+.login-route .panel-code {
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
+.login-route .panel-sub {
+  color: var(--night-mid);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.login-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.login-field input {
+  min-height: 48px;
+  border: 1px solid var(--night-rule-strong);
+  background: var(--night);
+  color: var(--night-ink);
+  padding: 0 14px;
+  font: 700 14px/1 var(--mono);
+  letter-spacing: 0.04em;
+  outline: none;
+}
+
+.login-field input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold-deep);
+}
+
+.login-field input::placeholder {
+  color: var(--night-soft);
+}
+
+.login-field input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 20px;
+  padding: 12px;
+  border: 1px solid var(--night-rule);
+  cursor: pointer;
+}
+
+.login-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--gold);
+}
+
+.login-check span {
+  display: grid;
+  gap: 4px;
+}
+
+.login-error {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  margin-top: 18px;
+  padding: 0 12px;
+  border: 1px solid var(--night-rule);
+  color: var(--night-soft);
+  font: 700 11px/1.4 var(--mono);
+  letter-spacing: 0.14em;
+}
+
+.login-error.active {
+  border-color: var(--tw-up);
+  color: var(--tw-up-bright);
+  background: var(--tw-up-faint);
+}
+
+.login-submit {
+  width: 100%;
+  min-height: 54px;
+  margin-top: 18px;
+  border: 1px solid var(--gold);
+  background: var(--gold);
+  color: var(--night);
+  font: 700 12px/1 var(--mono);
+  letter-spacing: 0.22em;
+  cursor: pointer;
+}
+
+.login-submit:hover:not(:disabled) {
+  background: var(--gold-bright);
+}
+
+.login-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.login-foot {
+  margin-top: 16px;
+  text-align: center;
+}
+
+@media (max-width: 820px) {
+  .login-route {
+    padding: 22px;
+    place-items: start center;
+  }
+
+  .login-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .login-copy {
+    min-height: 260px;
+  }
+
+  .login-copy h2 {
+    font-size: 42px;
+    margin-bottom: 34px;
+  }
+}
