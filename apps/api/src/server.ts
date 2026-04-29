@@ -3022,6 +3022,114 @@ app.post("/api/v1/portfolio/kill-mode", async (c) => {
 // End of API Gap Fillers
 // =============================================================================
 
+// ── W7 Market Agent Ingest (/internal/market/*) ───────────────────────────────
+//
+// Server-to-server only. Frontend MUST NOT call these routes.
+// Auth: Bearer token === MARKET_AGENT_HMAC_SECRET (quick pre-check before HMAC
+// verify so unauthenticated callers pay zero ingest cost).
+//
+// POST /internal/market/ingest   — receive signed MarketEvent from agent
+// POST /internal/market/heartbeat — receive liveness ping from agent
+// GET  /internal/market/health   — ops: agent staleness status
+//
+// Hard lines:
+//   - MARKET_AGENT_HMAC_SECRET never logged / never returned in response
+//   - Stale data → warning in result, never silent fill (W7 hard line #11)
+//   - No /order/create, no kill-switch touched
+
+import {
+  ingestMarketEvent,
+  updateAgentHeartbeat,
+  getAgentHealth,
+} from "./market-ingest.js";
+import {
+  marketEventSchema,
+  marketAgentHeartbeatSchema,
+} from "@iuf-trading-room/contracts";
+
+function requireMarketAgentBearer(c: Context): boolean {
+  const secret = process.env.MARKET_AGENT_HMAC_SECRET;
+  if (!secret) return false;  // no secret configured → block all
+
+  const bearer = getBearerToken(c);
+  if (!bearer) return false;
+
+  // Timing-safe compare to prevent oracle on token length
+  const expectedBuf = Buffer.from(secret, "utf8");
+  const receivedBuf = Buffer.from(bearer, "utf8");
+  if (expectedBuf.length !== receivedBuf.length) return false;
+  return timingSafeEqual(expectedBuf, receivedBuf);
+}
+
+// POST /internal/market/ingest
+app.post("/internal/market/ingest", async (c) => {
+  if (!requireMarketAgentBearer(c)) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  let event: ReturnType<typeof marketEventSchema.parse>;
+  try {
+    event = marketEventSchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "validation_error", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "bad_request" }, 400);
+  }
+
+  const result = await ingestMarketEvent(event);
+
+  if (!result.ok) {
+    const statusCode =
+      result.rejectedReason === "hmac_invalid" ? 401 :
+      result.rejectedReason === "sequence_duplicate" ? 409 :
+      result.rejectedReason === "sequence_regression" ? 422 : 400;
+    return c.json({
+      ok: false,
+      rejectedReason: result.rejectedReason,
+      cached: false,
+      persisted: false
+    }, statusCode);
+  }
+
+  return c.json({
+    ok: true,
+    eventId: result.eventId,
+    cached: result.cached,
+    persisted: result.persisted
+  }, 201);
+});
+
+// POST /internal/market/heartbeat
+app.post("/internal/market/heartbeat", async (c) => {
+  if (!requireMarketAgentBearer(c)) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  let heartbeat: ReturnType<typeof marketAgentHeartbeatSchema.parse>;
+  try {
+    heartbeat = marketAgentHeartbeatSchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "validation_error", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "bad_request" }, 400);
+  }
+
+  await updateAgentHeartbeat(heartbeat);
+  return c.json({ ok: true });
+});
+
+// GET /internal/market/health
+app.get("/internal/market/health", async (c) => {
+  if (!requireMarketAgentBearer(c)) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  const health = await getAgentHealth();
+  return c.json({ data: health });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
