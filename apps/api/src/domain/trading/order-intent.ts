@@ -42,9 +42,12 @@ export interface OrderIntent {
 // Transition map — only legal next-states are listed per current state
 // ---------------------------------------------------------------------------
 
+// ACCEPTED → REJECTED is legal: brokers can reject post-acknowledge for
+// insufficient funds, contract mismatch, or executor-stage validation failures
+// (e.g. LIMIT order with null price). PaperExecutor relies on this path.
 const LEGAL_TRANSITIONS: Record<OrderIntentStatus, ReadonlySet<OrderIntentStatus>> = {
   PENDING:   new Set<OrderIntentStatus>(["ACCEPTED", "REJECTED", "CANCELLED"]),
-  ACCEPTED:  new Set<OrderIntentStatus>(["FILLED", "CANCELLED"]),
+  ACCEPTED:  new Set<OrderIntentStatus>(["FILLED", "REJECTED", "CANCELLED"]),
   FILLED:    new Set<OrderIntentStatus>(),
   REJECTED:  new Set<OrderIntentStatus>(),
   CANCELLED: new Set<OrderIntentStatus>()
