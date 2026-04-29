@@ -15,6 +15,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHmac } from "node:crypto";
+import type { createClient } from "redis";
 import {
   verifyMarketEventHmac,
   IngestSequenceTracker,
@@ -22,6 +23,8 @@ import {
   updateAgentHeartbeat,
   getAgentHealth,
   _seqTracker,
+  _internalCache,
+  _setRedisClientForTest,
 } from "./market-ingest.js";
 import type { MarketEvent, MarketAgentHeartbeat } from "@iuf-trading-room/contracts";
 
@@ -223,4 +226,141 @@ test("T8: Idempotency replay — second ingest with same seq rejected", async ()
   const replay = await ingestMarketEvent(event);
   assert.equal(replay.ok, false, "Replay ingest should be rejected");
   assert.equal(replay.rejectedReason, "sequence_duplicate");
+});
+
+// ── D2 Redis tests ────────────────────────────────────────────────────────────
+//
+// These tests exercise the RedisCacheBackend wrapper via the _setRedisClientForTest
+// escape hatch. No real Redis required in CI (REDIS_URL unset).
+
+// Minimal fake Redis client shape used by the tests below.
+interface FakeRedisClientRecord {
+  setExCalls: Array<{ key: string; ttl: number; value: string }>;
+  setCalls: Array<{ key: string; value: string }>;
+  getCalls: string[];
+  returnNull: boolean; // when true, get() returns null
+  throwOnSet?: boolean; // when true, set/setEx throws
+  delayMs?: number; // when set, set/setEx hangs for this many ms
+}
+
+function makeFakeRedisClient(opts: Partial<FakeRedisClientRecord> = {}): {
+  client: ReturnType<typeof createClient>;
+  record: FakeRedisClientRecord;
+} {
+  const record: FakeRedisClientRecord = {
+    setExCalls: [],
+    setCalls: [],
+    getCalls: [],
+    returnNull: opts.returnNull ?? false,
+    throwOnSet: opts.throwOnSet,
+    delayMs: opts.delayMs,
+  };
+
+  const client = {
+    isReady: true,
+    setEx: async (key: string, ttl: number, value: string) => {
+      if (record.throwOnSet) throw new Error("redis_fake_error");
+      if (record.delayMs) {
+        await new Promise((resolve) => setTimeout(resolve, record.delayMs));
+      }
+      record.setExCalls.push({ key, ttl, value });
+    },
+    set: async (key: string, value: string) => {
+      if (record.throwOnSet) throw new Error("redis_fake_error");
+      if (record.delayMs) {
+        await new Promise((resolve) => setTimeout(resolve, record.delayMs));
+      }
+      record.setCalls.push({ key, value });
+    },
+    get: async (key: string) => {
+      record.getCalls.push(key);
+      return record.returnNull ? null : `fake:${key}`;
+    },
+    on: (_event: string, _handler: unknown) => { /* noop */ },
+  } as unknown as ReturnType<typeof createClient>;
+
+  return { client, record };
+}
+
+// T-new-1: Redis unavailable → fallback to _internalCache, result.cached = true
+test("T-new-1: Redis null path → _internalCache fallback, cached=true", async () => {
+  // Force null client (simulates REDIS_URL unset or connection failure)
+  _setRedisClientForTest(null);
+  _seqTracker.reset();
+
+  const symbol = "REDIS-TEST-1.TW";
+  const ts = new Date().toISOString();
+  const seq = 1;
+  const data = { last: 100.0, bid: 99.5, ask: 100.5, open: 99.0, high: 101.0, low: 98.5, prevClose: 99.0, volume: 1000, changePct: 1.0 };
+  const hmac = signEvent("quote", symbol, ts, seq, data);
+  const event: MarketEvent = { type: "quote", symbol, ts, seq, hmac, data };
+
+  const result = await ingestMarketEvent(event);
+  assert.equal(result.ok, true, "Ingest should succeed even without Redis");
+  assert.equal(result.cached, true, "_internalCache fallback should report cached=true");
+
+  const cacheKey = `mkt:quote:${symbol}`;
+  const stored = _internalCache.raw().get(cacheKey);
+  assert.ok(stored !== undefined, "_internalCache should contain the key");
+});
+
+// T-new-2: Redis mock → writes land; simulate disconnect → in-memory; reconnect → Redis again
+test("T-new-2: Redis mock write / null drop / reconnect cycle — no exception thrown", async () => {
+  _seqTracker.reset();
+  const { client: mockRedis, record } = makeFakeRedisClient();
+
+  const symbol = "REDIS-TEST-2.TW";
+  const ts = new Date().toISOString();
+  const mkEvent = (seq: number): MarketEvent => {
+    const data = { last: 100.0 + seq, bid: 99.5, ask: 100.5, open: 99.0, high: 101.0, low: 98.5, prevClose: 99.0, volume: 1000, changePct: 1.0 };
+    const hmac = signEvent("quote", symbol, ts, seq, data);
+    return { type: "quote", symbol, ts, seq, hmac, data };
+  };
+
+  // Event 1 — Redis mock connected
+  _setRedisClientForTest(mockRedis);
+  await ingestMarketEvent(mkEvent(1));
+
+  // Event 2 — simulate Redis drop
+  _setRedisClientForTest(null);
+  await ingestMarketEvent(mkEvent(2));
+
+  // Event 3 — simulate reconnect
+  _setRedisClientForTest(mockRedis);
+  await ingestMarketEvent(mkEvent(3));
+
+  // Events 1 and 3 should have called setEx on the mock
+  const keysWritten = record.setExCalls.map((c) => c.key);
+  const cacheKey = `mkt:quote:${symbol}`;
+  assert.equal(
+    keysWritten.filter((k) => k === cacheKey).length,
+    2,
+    "setEx should have been called for event 1 and event 3 only"
+  );
+
+  // Event 2 should have landed in _internalCache
+  const memValue = _internalCache.raw().get(cacheKey);
+  assert.ok(memValue !== undefined, "Event 2 should be in _internalCache during drop");
+});
+
+// T-new-3: Slow Redis (hangs > 500ms) → timeout fires → cached=false, ok=true
+test("T-new-3: Redis write timeout >500ms → cached=false, ok=true (primary path unblocked)", async () => {
+  _seqTracker.reset();
+  const { client: slowRedis } = makeFakeRedisClient({ delayMs: 1000 });
+  _setRedisClientForTest(slowRedis);
+
+  const symbol = "REDIS-SLOW.TW";
+  const ts = new Date().toISOString();
+  const seq = 1;
+  const data = { last: 200.0, bid: 199.5, ask: 200.5, open: 199.0, high: 201.0, low: 198.5, prevClose: 199.0, volume: 2000, changePct: 0.5 };
+  const hmac = signEvent("quote", symbol, ts, seq, data);
+  const event: MarketEvent = { type: "quote", symbol, ts, seq, hmac, data };
+
+  const result = await ingestMarketEvent(event);
+
+  assert.equal(result.ok, true, "Primary path (DB) should succeed despite Redis timeout");
+  assert.equal(result.cached, false, "cached should be false when Redis write timed out");
+
+  // Cleanup: reset to null so subsequent tests don't see slow client
+  _setRedisClientForTest(null);
 });
