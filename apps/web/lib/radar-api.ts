@@ -77,6 +77,16 @@ async function get<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
+/**
+ * Force-mock helper — for endpoints that have no backend equivalent yet.
+ * Bypasses fetch entirely so prod deploys never see OFFLINE state from these.
+ * Tracked for backend coverage in evidence/path_b_w2a_20260426/pr21_api_gap.md.
+ */
+async function mockOnly<T>(fallback: T | (() => T | Promise<T>)): Promise<T> {
+  if (typeof fallback === "function") return await (fallback as () => T | Promise<T>)();
+  return fallback;
+}
+
 async function post<TIn, TOut>(path: string, body: TIn, fallback: () => TOut | Promise<TOut>): Promise<TOut> {
   if (!BASE) return await fallback();
   try {
@@ -97,22 +107,22 @@ async function post<TIn, TOut>(path: string, body: TIn, fallback: () => TOut | P
 }
 
 export const api = {
-  // GETs
+  // GETs — backend-matched paths (apps/api/src/server.ts)
   session:    () => get<SessionMeta>("/api/v1/session", mockSessionMeta),
   themes:     () => get<Theme[]>("/api/v1/themes", mockThemes),
   companies:  () => get<Company[]>("/api/v1/companies", mockCompanies),
-  company:    (s: string) => get<Company | null>(`/api/v1/companies/${s}`,
-                  mockCompanies.find(c => c.symbol === s) ?? null),
-  ideas:      () => get<Idea[]>("/api/v1/ideas", mockIdeas),
-  runs:       () => get<Run[]>("/api/v1/runs", mockRuns),
-  run:        (id: string) => get<Run | null>(`/api/v1/runs/${encodeURIComponent(id)}`,
+  // company(s): RADAR uses :symbol, backend uses :id (uuid). Force MOCK until symbol-resolver wired.
+  company:    (s: string) => mockOnly<Company | null>(mockCompanies.find(c => c.symbol === s) ?? null),
+  ideas:      () => get<Idea[]>("/api/v1/strategy/ideas", mockIdeas),
+  runs:       () => get<Run[]>("/api/v1/strategy/runs", mockRuns),
+  run:        (id: string) => get<Run | null>(`/api/v1/strategy/runs/${encodeURIComponent(id)}`,
                   mockRuns.find(r => r.id === id) ?? null),
-  ideasByRun: (id: string) => get<Idea[]>(`/api/v1/runs/${encodeURIComponent(id)}/ideas`,
-                  mockIdeas.filter(i => i.runId === id)),
+  // ideasByRun: no /strategy/runs/:id/ideas endpoint. Force MOCK; tracked for backend.
+  ideasByRun: (id: string) => mockOnly<Idea[]>(mockIdeas.filter(i => i.runId === id)),
   signals:    () => get<Signal[]>("/api/v1/signals", mockSignals),
-  quotes:     () => get<Quote[]>("/api/v1/quotes", mockQuotes),
-  positions:  () => get<Position[]>("/api/v1/portfolio/positions", mockPositions),
-  riskLimits: () => get<RiskLimit[]>("/api/v1/portfolio/risk", mockRiskLimits),
+  quotes:     () => get<Quote[]>("/api/v1/market-data/quotes", mockQuotes),
+  positions:  () => get<Position[]>("/api/v1/trading/positions", mockPositions),
+  riskLimits: () => get<RiskLimit[]>("/api/v1/risk/limits", mockRiskLimits),
 
   executionEvents: (sinceISO?: string) =>
     get<ExecutionEvent[]>(`/api/v1/trading/events${sinceISO ? `?since=${encodeURIComponent(sinceISO)}` : ""}`,
@@ -122,29 +132,32 @@ export const api = {
   symbolLimits:   () => get<SymbolRiskLimit[]>("/api/v1/risk/symbol-limits", mockSymbolLimits),
 
   // Ops
-  opsSystem:    () => get<OpsSystem>("/api/v1/ops/system", mockOpsSystem),
-  opsActivity:  () => get<ActivityEvent[]>("/api/v1/ops/activity", mockActivityEvents),
-  opsAudit:     () => get<AuditEvent[]>("/api/v1/ops/audit", mockAuditEvents),
-  opsAuditSum:  () => get<AuditSummary>("/api/v1/ops/audit/summary", mockAuditSummary),
+  opsSystem:    () => get<OpsSystem>("/api/v1/ops/snapshot", mockOpsSystem),
+  // opsActivity: no /api/v1/ops/activity endpoint. Force MOCK; tracked for backend.
+  opsActivity:  () => mockOnly<ActivityEvent[]>(mockActivityEvents),
+  opsAudit:     () => get<AuditEvent[]>("/api/v1/audit-logs", mockAuditEvents),
+  opsAuditSum:  () => get<AuditSummary>("/api/v1/audit-logs/summary", mockAuditSummary),
 
-  // Plans
-  brief:        () => get<BriefBundle>("/api/v1/plans/brief", mockBrief),
-  review:       () => get<ReviewBundle>("/api/v1/plans/review", mockReview),
-  weeklyPlan:   () => get<WeeklyPlan>("/api/v1/plans/weekly", mockWeekly),
+  // Plans — backend has /api/v1/briefs + /api/v1/reviews but bundle shapes differ. Force MOCK.
+  brief:        () => mockOnly<BriefBundle>(mockBrief),
+  review:       () => mockOnly<ReviewBundle>(mockReview),
+  weeklyPlan:   () => mockOnly<WeeklyPlan>(mockWeekly),
 
   // POSTs
+  // killMode: backend is /api/v1/risk/kill-switch with different body shape (killSwitchInputSchema).
+  // Force MOCK to preserve UI state machine; W6 hard line: kill-switch ARMED state untouched in this PR.
   killMode: (mode: KillMode) =>
-    post<{ mode: KillMode }, { ok: true; mode: KillMode }>("/api/v1/portfolio/kill-mode",
-      { mode }, () => ({ ok: true, mode })),
+    mockOnly<{ ok: true; mode: KillMode }>({ ok: true, mode }),
 
-  previewOrder: (t: OrderTicket) =>
-    post<OrderTicket, OrderPreview>("/api/v1/paper/orders/preview", t, () => mockPreviewOrder(t)),
+  // previewOrder: no /api/v1/paper/orders/preview backend route. Force MOCK; tracked for Jason.
+  previewOrder: (t: OrderTicket) => mockOnly<OrderPreview>(() => mockPreviewOrder(t)),
 
+  // submitOrder: /api/v1/paper/orders is W6 paper sprint live route (apps/api line 2679).
   submitOrder: (t: OrderTicket) =>
     post<OrderTicket, OrderAck>("/api/v1/paper/orders", t, () => mockSubmitOrder(t)),
 };
 
 /** SSE URL for execution-event stream. Component reconnects with exp backoff. */
 export function executionStreamUrl(): string | null {
-  return BASE ? `${BASE}/api/v1/trading/events/stream` : null;
+  return BASE ? `${BASE}/api/v1/trading/stream` : null;
 }
