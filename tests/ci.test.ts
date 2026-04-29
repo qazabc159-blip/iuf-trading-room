@@ -7601,7 +7601,9 @@ test("api-gap Item 1: previewOrder returns risk+gate verdict without placing an 
       price: 100,
       stopPrice: null,
       tradePlanId: null,
-      strategyId: null
+      strategyId: null,
+      overrideGuards: [],
+      overrideReason: ""
     }
   });
 
@@ -7668,7 +7670,9 @@ test("api-gap Item 1b: previewOrder never creates a ledger row — order is alwa
       price: null,
       stopPrice: null,
       tradePlanId: null,
-      strategyId: null
+      strategyId: null,
+      overrideGuards: [],
+      overrideReason: ""
     }
   });
 
