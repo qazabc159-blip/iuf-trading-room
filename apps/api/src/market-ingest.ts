@@ -27,6 +27,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { randomUUID } from "node:crypto";
+import { createClient } from "redis";
 import type { MarketEvent, MarketAgentHeartbeat } from "@iuf-trading-room/contracts";
 
 // ── HMAC helpers ──────────────────────────────────────────────────────────────
@@ -130,14 +131,14 @@ export const _seqTracker = new IngestSequenceTracker();
 // exercise the full ingest flow without a real Redis instance.
 
 interface CacheBackend {
-  set(key: string, value: string): Promise<void>;
+  set(key: string, value: string, ttlSeconds?: number): Promise<void>;
   get(key: string): Promise<string | null>;
 }
 
 class MemoryCacheBackend implements CacheBackend {
   private readonly _store = new Map<string, string>();
 
-  async set(key: string, value: string): Promise<void> {
+  async set(key: string, value: string, _ttlSeconds?: number): Promise<void> {
     this._store.set(key, value);
   }
 
@@ -154,12 +155,90 @@ class MemoryCacheBackend implements CacheBackend {
 // Export for tests to inspect cache state.
 export const _internalCache = new MemoryCacheBackend();
 
-// TODO(W7-D2): replace _internalCache with real Redis client when REDIS_URL set:
-// import { createClient } from "redis";
-// const redisClient = REDIS_URL ? createClient({ url: REDIS_URL }) : null;
-// const cache: CacheBackend = redisClient ?? _internalCache;
+// ── Redis client (lazy-connect) ───────────────────────────────────────────────
 
-const cache: CacheBackend = _internalCache;
+let _redisClient: ReturnType<typeof createClient> | null = null;
+let _redisConnectPromise: Promise<ReturnType<typeof createClient> | null> | null = null;
+
+async function getRedisClient(): Promise<ReturnType<typeof createClient> | null> {
+  const url = process.env.REDIS_URL ?? null;
+  if (!url) return null; // no URL → memory mode
+
+  if (_redisClient?.isReady) return _redisClient; // already connected
+
+  if (_redisConnectPromise) return _redisConnectPromise; // deduplicate races
+
+  _redisConnectPromise = (async () => {
+    const client = createClient({
+      url,
+      socket: { reconnectStrategy: (n: number) => Math.min(n * 200, 3_000) }
+    });
+    client.on("error", (e: Error) => console.error("[market-ingest] Redis error", e));
+    await client.connect();
+    _redisClient = client;
+    _redisConnectPromise = null;
+    return client;
+  })().catch((e: unknown) => {
+    console.error("[market-ingest] Redis connect failed", e);
+    _redisConnectPromise = null;
+    return null;
+  });
+
+  return _redisConnectPromise;
+}
+
+/** Returns "redis" when REDIS_URL is configured, "memory" otherwise. */
+export function cacheBackendMode(): "redis" | "memory" {
+  return process.env.REDIS_URL ? "redis" : "memory";
+}
+
+/** Test-only escape hatch — inject a fake Redis client. */
+export function _setRedisClientForTest(
+  client: ReturnType<typeof createClient> | null
+): void {
+  _redisClient = client;
+}
+
+// TTL constants (seconds)
+const TTL_QUOTE = 60;
+const TTL_TICK = 60;
+const TTL_BIDASK = 60;
+const TTL_KBAR = 300;
+
+function ttlForKey(key: string): number | undefined {
+  if (key.startsWith("mkt:quote:")) return TTL_QUOTE;
+  if (key.startsWith("mkt:tick:")) return TTL_TICK;
+  if (key.startsWith("mkt:bidask:")) return TTL_BIDASK;
+  if (key.startsWith("mkt:kbar:")) return TTL_KBAR;
+  return undefined; // no TTL (e.g. mkt:agent:lastSeen)
+}
+
+class RedisCacheBackend implements CacheBackend {
+  async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    const ttl = ttlSeconds ?? ttlForKey(key);
+    const client = await getRedisClient();
+    if (!client) {
+      await _internalCache.set(key, value);
+      return;
+    }
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("redis_write_timeout")), 500)
+    );
+    if (ttl !== undefined) {
+      await Promise.race([client.setEx(key, ttl, value), timeout]);
+    } else {
+      await Promise.race([client.set(key, value), timeout]);
+    }
+  }
+
+  async get(key: string): Promise<string | null> {
+    const client = await getRedisClient();
+    if (!client) return _internalCache.get(key);
+    return client.get(key);
+  }
+}
+
+const cache: CacheBackend = new RedisCacheBackend();
 
 // ── Postgres stub ─────────────────────────────────────────────────────────────
 //
