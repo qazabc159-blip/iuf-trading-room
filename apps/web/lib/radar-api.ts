@@ -43,6 +43,10 @@ import {
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const IS_PROD = process.env.NODE_ENV === "production";
+// At Next.js production build time there is no auth cookie, so calls to
+// authenticated endpoints (e.g. /api/v1/themes for generateStaticParams) get
+// 401. Fall through to mocks during the build — runtime browser still hits live.
+const IS_BUILD = process.env.NEXT_PHASE === "phase-production-build";
 
 export type DataSourceState = "MOCK" | "LIVE" | "OFFLINE";
 
@@ -61,6 +65,7 @@ export function getDataSourceState(): DataSourceState {
 
 async function get<T>(path: string, fallback: T): Promise<T> {
   if (!BASE) return fallback;
+  if (IS_BUILD) return fallback;
   try {
     const r = await fetch(`${BASE}${path}`, { next: { revalidate: 30 } });
     if (!r.ok) throw new Error(`${r.status} ${path}`);
