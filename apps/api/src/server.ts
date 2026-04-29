@@ -15,6 +15,7 @@ import {
   orderCancelInputSchema,
   orderCreateInputSchema,
   orderStatusSchema,
+  paperOrderCreateInputSchema,
   riskLimitUpsertInputSchema,
   strategyRiskLimitUpsertInputSchema,
   symbolRiskLimitUpsertInputSchema,
@@ -30,6 +31,14 @@ import {
   tradePlanCreateInputSchema,
   tradePlanUpdateInputSchema
 } from "@iuf-trading-room/contracts";
+import {
+  checkPaperExecutionGate,
+  getExecutionFlagSnapshot
+} from "./domain/trading/execution-mode.js";
+import {
+  createOrderIntent,
+  _registerIdempotencyKey
+} from "./domain/trading/order-intent.js";
 import { isDatabaseMode } from "@iuf-trading-room/db";
 import {
   getTradingRoomRepository,
@@ -2640,6 +2649,74 @@ app.get("/auth/me", async (c) => {
   const user = await getUserById(userId);
   if (!user) return c.json({ error: "user_not_found" }, 401);
   return c.json({ user, workspace: user.workspace });
+});
+
+// ── W6 Paper Trading Sprint (/api/v1/paper/*) ─────────────────────────────
+//
+// Standalone paper execution path. Completely independent of KGI gateway.
+// Hard lines:
+//   - NO KGI SDK import
+//   - NO /order/create call (that route stays 409 NOT_ENABLED_IN_W1)
+//   - ExecutionMode default = disabled
+//   - Kill switch default = ON (blocked)
+//   - Paper mode default = OFF
+
+// GET /api/v1/paper/flags — diagnostics only, no auth side-effects
+app.get("/api/v1/paper/flags", (c) => {
+  return c.json({ data: getExecutionFlagSnapshot() });
+});
+
+// POST /api/v1/paper/orders — create a paper order intent
+// Returns 422 if any of the three execution gate layers blocks
+app.post("/api/v1/paper/orders", async (c) => {
+  // Layer 0: parse + validate input
+  let payload: ReturnType<typeof paperOrderCreateInputSchema.parse>;
+  try {
+    payload = paperOrderCreateInputSchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  // Layer 1-3: three-layer AND gate
+  const gate = checkPaperExecutionGate();
+  if (!gate.allowed) {
+    return c.json(
+      {
+        error: "paper_gate_blocked",
+        reason: gate.reason,
+        layer: gate.layer
+      },
+      422
+    );
+  }
+
+  // Idempotency: lightweight in-memory pre-check before DB round-trip
+  if (_registerIdempotencyKey(payload.idempotencyKey) === false) {
+    return c.json(
+      {
+        error: "DUPLICATE_IDEMPOTENCY_KEY",
+        idempotencyKey: payload.idempotencyKey
+      },
+      409
+    );
+  }
+
+  // Build the order intent (pure domain object, no DB yet — Day 2+ wires persistence)
+  const session = c.get("session");
+  const intent = createOrderIntent({
+    idempotencyKey: payload.idempotencyKey,
+    symbol: payload.symbol,
+    side: payload.side,
+    orderType: payload.orderType,
+    qty: payload.qty,
+    price: payload.price,
+    userId: session.user.id
+  });
+
+  return c.json({ data: intent }, 201);
 });
 
 const port = Number(process.env.PORT ?? 3001);

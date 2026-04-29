@@ -1,5 +1,6 @@
 export * from "./brief.js";
 export * from "./broker.js";
+export * from "./paper.js";
 export * from "./company.js";
 export * from "./companyDiagnostics.js";
 export * from "./companyGraph.js";
