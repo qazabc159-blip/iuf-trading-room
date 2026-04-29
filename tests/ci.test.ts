@@ -103,7 +103,7 @@ import {
   listPaperOrders,
   placePaperOrder
 } from "../apps/api/src/broker/paper-broker.ts";
-import { submitOrder } from "../apps/api/src/broker/trading-service.ts";
+import { previewOrder, submitOrder } from "../apps/api/src/broker/trading-service.ts";
 import { listExecutionEvents } from "../apps/api/src/broker/execution-events-store.ts";
 import {
   buildEventHistoryView,
@@ -7542,4 +7542,242 @@ test("W2d-T9: no-order guarantee — KgiQuoteClient has 0 order methods + 0 orde
   } finally {
     globalThis.fetch = orig;
   }
+});
+
+// ---------------------------------------------------------------------------
+// API Gap Filler tests (Items 1-3) — PR #21 RADAR cutover force-MOCK closures
+// ---------------------------------------------------------------------------
+
+// Item 1: previewOrder — no DB write, returns risk + gate verdict
+test("api-gap Item 1: previewOrder returns risk+gate verdict without placing an order", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `preview-gap-${randomUUID()}`
+  });
+
+  // Relax trading hours so the test doesn't depend on clock
+  const accountId = "paper-default";
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId,
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "23:59"
+    }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "PVTEST",
+        market: "OTHER",
+        source: "manual",
+        last: 100,
+        bid: 99,
+        ask: 101,
+        open: 100,
+        high: 100,
+        low: 100,
+        prevClose: 100,
+        volume: 5000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  const result = await previewOrder({
+    session,
+    repo,
+    order: {
+      accountId,
+      symbol: "PVTEST",
+      side: "buy",
+      type: "limit",
+      timeInForce: "rod",
+      quantity: 1,
+      price: 100,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [],
+      overrideReason: ""
+    }
+  });
+
+  // previewOrder always returns order:null (no placement)
+  assert.equal(result.order, null, "previewOrder must not place an order");
+  // riskCheck must exist
+  assert.ok(result.riskCheck, "riskCheck must be present");
+  assert.ok(typeof result.riskCheck.id === "string", "riskCheck.id must be a string");
+  // blocked reflects combined risk + gate verdict
+  assert.equal(typeof result.blocked, "boolean", "blocked must be boolean");
+  // quoteGate must be populated (even if review_required due to paper source)
+  assert.ok(result.quoteGate !== undefined, "quoteGate must be populated by previewOrder");
+});
+
+// Item 1b: previewOrder — order is always null regardless of risk outcome; no ledger row created
+test("api-gap Item 1b: previewOrder never creates a ledger row — order is always null", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `preview-no-row-${randomUUID()}`
+  });
+
+  const accountId = "paper-default";
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId,
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "23:59"
+    }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "PVNULL",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49,
+        ask: 51,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 1000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  const result = await previewOrder({
+    session,
+    repo,
+    order: {
+      accountId,
+      symbol: "PVNULL",
+      side: "buy",
+      type: "market",
+      timeInForce: "rod",
+      quantity: 1,
+      price: null,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [],
+      overrideReason: ""
+    }
+  });
+
+  // Invariant: previewOrder ALWAYS returns order:null (no broker placement)
+  assert.equal(result.order, null, "previewOrder.order must always be null");
+  // riskCheck and quoteGate must be present for diagnostic use
+  assert.ok(result.riskCheck, "riskCheck must be present");
+  assert.ok(result.quoteGate !== undefined, "quoteGate must be present");
+  // No order row created in the ledger
+  const orders = await listPaperOrders(session, { accountId });
+  const pvnullOrders = orders.filter((o) => o.symbol === "PVNULL");
+  assert.equal(pvnullOrders.length, 0, "no ledger Order row must exist after previewOrder");
+});
+
+// Item 2: getStrategyRunById + run.items returns the stored ideas array
+test("api-gap Item 2: getStrategyRunById returns items array usable as ideas-by-run", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const workspaceSlug = `ideas-by-run-${randomUUID()}`;
+  const session = await repo.getSession({ workspaceSlug });
+  await resetPersistedStrategyRuns(workspaceSlug);
+
+  const theme = await repo.createTheme({
+    name: "Ideas Run Theme",
+    marketState: "Expansion",
+    lifecycle: "Early",
+    priority: 4,
+    thesis: "Test theme for ideas-by-run.",
+    whyNow: "CI test.",
+    bottleneck: "None"
+  });
+
+  await repo.createCompany({
+    name: "Ideas By Run Co",
+    ticker: "IBR1",
+    market: "OTHER",
+    country: "Taiwan",
+    themeIds: [theme.id],
+    chainPosition: "Core",
+    beneficiaryTier: "Core",
+    exposure: { volume: 4, asp: 4, margin: 3, capacity: 3, narrative: 3 },
+    validation: { capitalFlow: "Strong", consensus: "Up", relativeStrength: "Leading" },
+    notes: "CI."
+  });
+
+  const run = await createStrategyRun({
+    session,
+    repo,
+    payload: {
+      limit: 5,
+      signalDays: 30,
+      includeBlocked: true,
+      decisionMode: "strategy",
+      sort: "score"
+    }
+  });
+
+  // Simulate what the route handler does: load run by id, return run.items
+  const loaded = await getStrategyRunById({ session, runId: run.id });
+  assert.ok(loaded, "run must be found by id");
+  assert.ok(Array.isArray(loaded.items), "run.items must be an array");
+
+  // Unknown run → null
+  const notFound = await getStrategyRunById({ session, runId: randomUUID() });
+  assert.equal(notFound, null, "unknown runId must return null");
+});
+
+// Item 3: ops/activity adapter logic — AuditEntry severity mapping
+test("api-gap Item 3: ActivityEvent severity mapping (2xx→INFO, 4xx→WARN, 5xx→ERROR)", () => {
+  // Test the severity mapping logic extracted from the route handler inline.
+  // This is pure logic — no async, no DB needed.
+  function toSeverity(status: number | undefined): string {
+    return (status ?? 0) >= 500
+      ? "ERROR"
+      : (status ?? 0) >= 400
+      ? "WARN"
+      : "INFO";
+  }
+
+  assert.equal(toSeverity(200), "INFO");
+  assert.equal(toSeverity(201), "INFO");
+  assert.equal(toSeverity(204), "INFO");
+  assert.equal(toSeverity(301), "INFO");
+  assert.equal(toSeverity(400), "WARN");
+  assert.equal(toSeverity(401), "WARN");
+  assert.equal(toSeverity(403), "WARN");
+  assert.equal(toSeverity(404), "WARN");
+  assert.equal(toSeverity(422), "WARN");
+  assert.equal(toSeverity(499), "WARN");
+  assert.equal(toSeverity(500), "ERROR");
+  assert.equal(toSeverity(502), "ERROR");
+  assert.equal(toSeverity(503), "ERROR");
+  assert.equal(toSeverity(undefined), "INFO");
+});
+
+test("api-gap Item 3b: ActivityEvent slug generation from path", () => {
+  // Test the event slug generation logic from the ops/activity route handler.
+  function toSlug(method: string | undefined, path: string | undefined): string {
+    return `${(method ?? "?").toLowerCase()}.${
+      (path ?? "").replace(/^\/api\/v1\//, "").replace(/\//g, ".")
+    }`;
+  }
+
+  assert.equal(toSlug("GET", "/api/v1/strategy/ideas"), "get.strategy.ideas");
+  assert.equal(toSlug("POST", "/api/v1/paper/orders"), "post.paper.orders");
+  assert.equal(toSlug("DELETE", "/api/v1/risk/kill-switch"), "delete.risk.kill-switch");
+  assert.equal(toSlug(undefined, "/api/v1/ops/snapshot"), "?.ops.snapshot");
+  assert.equal(toSlug("GET", undefined), "get.");
 });

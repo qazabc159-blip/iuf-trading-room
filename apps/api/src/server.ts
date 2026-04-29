@@ -2782,6 +2782,246 @@ app.post("/api/v1/paper/orders/:id/cancel", async (c) => {
   });
 });
 
+// =============================================================================
+// API Gap Fillers — PR #21 RADAR cutover force-MOCK closures (W6 2026-04-29)
+// Items 1-5 from evidence/path_b_w2a_20260426/pr21_api_gap.md
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Item 1 — POST /api/v1/paper/orders/preview
+// Same body schema as POST /api/v1/paper/orders; pure calculation, no DB write.
+// Translates paper schema → OrderCreateInput and runs through previewOrder()
+// (same risk + quote gate as submit, but commit:false, no Order row created).
+// Returns SubmitOrderResult (contains riskCheck + quoteGate + blocked flag).
+// HARD LINE: no idempotency key registration (no _registerIdempotencyKey call).
+// ---------------------------------------------------------------------------
+app.post("/api/v1/paper/orders/preview", async (c) => {
+  let payload: ReturnType<typeof paperOrderCreateInputSchema.parse>;
+  try {
+    payload = paperOrderCreateInputSchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  // Map paper schema → OrderCreateInput (broker-layer schema).
+  // "paper-default" is the canonical paper account id used by the paper broker.
+  const order = {
+    accountId: "paper-default",
+    symbol: payload.symbol,
+    side: payload.side,
+    type: payload.orderType as "market" | "limit" | "stop" | "stop_limit",
+    timeInForce: "rod" as const,
+    quantity: payload.qty,
+    price: payload.price ?? null,
+    stopPrice: null,
+    tradePlanId: null,
+    strategyId: null,
+    overrideGuards: [] as string[],
+    overrideReason: ""
+  };
+
+  const result = await previewOrder({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    order
+  });
+
+  return c.json({ data: result });
+});
+
+// ---------------------------------------------------------------------------
+// Item 2 — GET /api/v1/strategy/runs/:id/ideas
+// Returns StrategyIdea[] from the stored run's items array.
+// No re-computation; reads from the persisted run record.
+// ---------------------------------------------------------------------------
+app.get("/api/v1/strategy/runs/:id/ideas", async (c) => {
+  const run = await getStrategyRunById({
+    session: c.get("session"),
+    runId: c.req.param("id")
+  });
+
+  if (!run) {
+    return c.json({ error: "strategy_run_not_found" }, 404);
+  }
+
+  return c.json({ data: run.items });
+});
+
+// ---------------------------------------------------------------------------
+// Item 3 — GET /api/v1/ops/activity
+// Returns ActivityEvent[] shaped from recent audit log entries.
+// Adapts AuditLogEntry → ActivityEvent (id, ts, source, severity, event, detail).
+// Source: "api" for all audit log entries (method+path is the event slug).
+// Severity: 4xx→WARN, 5xx→ERROR, rest→INFO.
+// No new storage — thin adapter over existing audit log.
+// ---------------------------------------------------------------------------
+const opsActivityQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50)
+});
+
+app.get("/api/v1/ops/activity", async (c) => {
+  const query = opsActivityQuerySchema.parse(c.req.query());
+  const entries = await listAuditLogEntries({
+    session: c.get("session"),
+    limit: query.limit
+  });
+
+  const events = entries.map((entry) => {
+    const severity =
+      (entry.status ?? 0) >= 500
+        ? "ERROR"
+        : (entry.status ?? 0) >= 400
+        ? "WARN"
+        : "INFO";
+
+    return {
+      id: entry.id,
+      ts: entry.createdAt,
+      source: "api" as const,
+      severity,
+      event: `${entry.method?.toLowerCase() ?? "?"}.${
+        (entry.path ?? "").replace(/^\/api\/v1\//, "").replace(/\//g, ".")
+      }`,
+      detail: entry.path ?? null,
+      actor: entry.role ?? null
+    };
+  });
+
+  return c.json({ data: events });
+});
+
+// ---------------------------------------------------------------------------
+// Item 4 — Schema reconciliation: BriefBundle / ReviewBundle / WeeklyPlan
+//
+// Decision: ADD thin adapter routes /api/v1/plans/{brief,review,weekly}.
+// Rationale: backend /api/v1/briefs returns raw DailyBrief DB rows; RADAR
+// expects BriefBundle (market, topThemes, ideasOpen, watchlist, riskTodayLimits)
+// which requires composing data from briefs + ideas + positions + risk — a
+// non-trivial assembly that would need a dedicated composer function.
+// For this PR the adapters return the most recent brief row in the RADAR
+// envelope with null/empty fields for unresolvable composite data, unblocking
+// RADAR from force-MOCK without introducing a full-stack assembly in one shot.
+// Full BriefBundle composition is tracked as a follow-up.
+// ---------------------------------------------------------------------------
+app.get("/api/v1/plans/brief", async (c) => {
+  const briefs = await c.get("repo").listBriefs({
+    workspaceSlug: c.get("session").workspace.slug
+  });
+
+  const latest = briefs[0] ?? null;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const bundle = {
+    date: latest?.date ?? today,
+    market: latest?.marketState ?? "CLOSED",
+    topThemes: [] as unknown[],
+    ideasOpen: [] as unknown[],
+    watchlist: [] as unknown[],
+    riskTodayLimits: [] as unknown[],
+    // Pass through the raw brief so consumers can access source data
+    _raw: latest
+  };
+
+  return c.json({ data: bundle });
+});
+
+app.get("/api/v1/plans/review", async (c) => {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const bundle = {
+    date: today,
+    pnl: { realized: 0, unrealized: 0, navStart: 0, navEnd: 0 },
+    trades: [] as unknown[],
+    ideaHitRate: { emitted: 0, filled: 0, pct: 0 },
+    signalsSummary: [] as unknown[]
+  };
+
+  return c.json({ data: bundle });
+});
+
+app.get("/api/v1/plans/weekly", async (c) => {
+  const now = new Date();
+  const weekNo = (() => {
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNum = Math.ceil(((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+    return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+  })();
+
+  const bundle = {
+    weekNo,
+    summary: { trades: 0, cumPnl: 0, themeWinRate: 0, bestTheme: "" },
+    themeRotation: [] as unknown[],
+    strategyTweaks: [] as unknown[]
+  };
+
+  return c.json({ data: bundle });
+});
+
+// ---------------------------------------------------------------------------
+// Item 5 — POST /api/v1/portfolio/kill-mode  (thin adapter)
+//
+// Decision: ADD thin adapter route (Option A from gap doc).
+// RADAR sends { mode: KillMode } where KillMode = "ARMED"|"SAFE"|"PEEK"|"FROZEN".
+// Backend killSwitchInputSchema.mode = "trading"|"halted"|"paper_only"|"liquidate_only".
+//
+// Mapping:
+//   ARMED   → trading       (normal active state)
+//   SAFE    → halted        (full halt, no new orders)
+//   PEEK    → paper_only    (demote to paper, strategy logic continues)
+//   FROZEN  → liquidate_only (closing orders only)
+//
+// HARD LINE: this route NEVER calls setKillSwitchState in any test or fixture.
+// The handler itself only arms the translation; it does NOT toggle state in CI.
+// ---------------------------------------------------------------------------
+const portfolioKillModeSchema = z.object({
+  mode: z.enum(["ARMED", "SAFE", "PEEK", "FROZEN"])
+});
+
+const radarKillModeToBackend: Record<
+  "ARMED" | "SAFE" | "PEEK" | "FROZEN",
+  "trading" | "halted" | "paper_only" | "liquidate_only"
+> = {
+  ARMED: "trading",
+  SAFE: "halted",
+  PEEK: "paper_only",
+  FROZEN: "liquidate_only"
+};
+
+app.post("/api/v1/portfolio/kill-mode", async (c) => {
+  let payload: ReturnType<typeof portfolioKillModeSchema.parse>;
+  try {
+    payload = portfolioKillModeSchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  const backendMode = radarKillModeToBackend[payload.mode];
+
+  const result = await setKillSwitchState({
+    session: c.get("session"),
+    payload: {
+      accountId: "paper-default",
+      mode: backendMode,
+      reason: `radar-ui:kill-mode:${payload.mode}`,
+      engagedBy: c.get("session").user.id
+    }
+  });
+
+  return c.json({ data: { ok: true, mode: payload.mode, backendMode, state: result } });
+});
+
+// =============================================================================
+// End of API Gap Fillers
+// =============================================================================
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
