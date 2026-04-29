@@ -39,6 +39,14 @@ import {
   createOrderIntent,
   _registerIdempotencyKey
 } from "./domain/trading/order-intent.js";
+import {
+  driveOrder,
+  cancelOrder as cancelPaperOrder
+} from "./domain/trading/order-driver.js";
+import {
+  getOrder,
+  listOrders
+} from "./domain/trading/paper-ledger.js";
 import { isDatabaseMode } from "@iuf-trading-room/db";
 import {
   getTradingRoomRepository,
@@ -2704,7 +2712,7 @@ app.post("/api/v1/paper/orders", async (c) => {
     );
   }
 
-  // Build the order intent (pure domain object, no DB yet — Day 2+ wires persistence)
+  // Build the order intent (pure domain object)
   const session = c.get("session");
   const intent = createOrderIntent({
     idempotencyKey: payload.idempotencyKey,
@@ -2716,7 +2724,62 @@ app.post("/api/v1/paper/orders", async (c) => {
     userId: session.user.id
   });
 
-  return c.json({ data: intent }, 201);
+  // Day 3: drive PENDING -> ACCEPTED -> FILLED|REJECTED through PaperExecutor.
+  // Ledger persists each transition (in-memory; Day 4 swaps to PG).
+  const result = await driveOrder(intent);
+  const status = result.finalState.intent.status === "REJECTED" ? 422 : 201;
+  return c.json({ data: result.finalState }, status);
+});
+
+// GET /api/v1/paper/orders/:id — fetch a single order state from the ledger
+app.get("/api/v1/paper/orders/:id", (c) => {
+  const session = c.get("session");
+  const orderId = c.req.param("id");
+  const state = getOrder(orderId);
+  if (!state) return c.json({ error: "ORDER_NOT_FOUND" }, 404);
+  if (state.intent.userId !== session.user.id) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  return c.json({ data: state });
+});
+
+// GET /api/v1/paper/orders — list orders for the current user (optional ?status=)
+app.get("/api/v1/paper/orders", (c) => {
+  const session = c.get("session");
+  const statusParam = c.req.query("status");
+  const allowed = ["PENDING", "ACCEPTED", "FILLED", "REJECTED", "CANCELLED"] as const;
+  const status = (allowed as readonly string[]).includes(statusParam ?? "")
+    ? (statusParam as (typeof allowed)[number])
+    : undefined;
+  const orders = listOrders(session.user.id, status ? { status } : undefined);
+  return c.json({ data: orders });
+});
+
+// POST /api/v1/paper/orders/:id/cancel — cancel a PENDING/ACCEPTED order
+app.post("/api/v1/paper/orders/:id/cancel", async (c) => {
+  const session = c.get("session");
+  const orderId = c.req.param("id");
+  const state = getOrder(orderId);
+  if (!state) return c.json({ error: "ORDER_NOT_FOUND" }, 404);
+  if (state.intent.userId !== session.user.id) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  let body: { reason?: string } = {};
+  try {
+    const raw = await c.req.json();
+    if (raw && typeof raw === "object" && typeof raw.reason === "string") {
+      body = { reason: raw.reason };
+    }
+  } catch {
+    // empty body is fine
+  }
+
+  const result = cancelPaperOrder(state, body.reason);
+  return c.json({
+    data: result.finalState,
+    alreadyTerminal: result.alreadyTerminal
+  });
 });
 
 const port = Number(process.env.PORT ?? 3001);
