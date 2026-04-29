@@ -3,6 +3,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -447,3 +448,47 @@ export const contentDrafts = pgTable("content_drafts", {
   statusCreatedIdx: index("content_drafts_status_created_idx").on(table.status, table.createdAt),
   sourceJobIdx: index("content_drafts_source_job_idx").on(table.sourceJobId)
 }));
+
+// ── W6 Paper Sprint — paper_orders / paper_fills (migration 0015) ─────────────
+// These tables are standalone; no dependency on KGI broker tables.
+
+export const paperOrders = pgTable(
+  "paper_orders",
+  {
+    id:             uuid("id").defaultRandom().primaryKey(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    symbol:         text("symbol").notNull(),
+    side:           text("side", { enum: ["buy", "sell"] }).notNull(),
+    orderType:      text("order_type", { enum: ["market", "limit", "stop", "stop_limit"] }).notNull(),
+    qty:            integer("qty").notNull(),
+    price:          numeric("price", { precision: 14, scale: 4 }),
+    status:         text("status", { enum: ["PENDING", "ACCEPTED", "FILLED", "REJECTED", "CANCELLED"] })
+                      .notNull()
+                      .default("PENDING"),
+    reason:         text("reason"),
+    userId:         uuid("user_id").notNull(),
+    intentId:       uuid("intent_id").notNull(),
+    createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:      timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    idempotencyKeyIdx: uniqueIndex("paper_orders_idempotency_key_idx").on(table.idempotencyKey),
+    userIdIdx:         index("paper_orders_user_id_idx").on(table.userId),
+    symbolIdx:         index("paper_orders_symbol_idx").on(table.symbol, table.createdAt)
+  })
+);
+
+export const paperFills = pgTable(
+  "paper_fills",
+  {
+    id:          uuid("id").defaultRandom().primaryKey(),
+    orderId:     uuid("order_id").notNull().references(() => paperOrders.id, { onDelete: "cascade" }),
+    fillQty:     integer("fill_qty").notNull(),
+    fillPrice:   numeric("fill_price", { precision: 14, scale: 4 }).notNull(),
+    fillTime:    timestamp("fill_time", { withTimezone: true }).notNull(),
+    simulatedAt: timestamp("simulated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    orderIdIdx: index("paper_fills_order_id_idx").on(table.orderId)
+  })
+);
