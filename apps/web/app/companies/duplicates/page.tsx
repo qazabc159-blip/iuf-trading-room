@@ -1,10 +1,10 @@
-import { AppShell } from "@/components/app-shell";
+import { PageFrame } from "@/components/PageFrame";
 import { CompanyDuplicates } from "@/components/company-duplicates";
 
 export default function CompanyDuplicatesPage() {
   return (
-    <AppShell eyebrow="公司資料庫" title="重複偵測">
+    <PageFrame code="DUP" title="Duplicates" sub="重複公司">
       <CompanyDuplicates />
-    </AppShell>
+    </PageFrame>
   );
 }

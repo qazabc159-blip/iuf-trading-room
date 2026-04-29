@@ -1,0 +1,150 @@
+/**
+ * API client — single import surface.
+ *
+ * Behavior:
+ *   • NEXT_PUBLIC_API_BASE empty → use mocks (always).
+ *   • NEXT_PUBLIC_API_BASE set + dev → fetch, fallback to mock with console.warn.
+ *   • NEXT_PUBLIC_API_BASE set + prod → fetch, THROW on failure.
+ *     UI shows the OFFLINE state via DataSourceBadge.
+ *
+ * The DataSource state machine is published via the `__iuf_data_source` window
+ * event so DataSourceBadge can render LIVE / MOCK / OFFLINE.
+ */
+import type {
+  Theme, Company, Idea, Run, Signal, Quote, Position,
+  RiskLimit, SessionMeta, OrderTicket, OrderPreview, OrderAck,
+  ExecutionEvent, KillMode, StrategyRiskLimit, SymbolRiskLimit,
+  OpsSystem, ActivityEvent, AuditEvent, AuditSummary,
+  BriefBundle, ReviewBundle, WeeklyPlan,
+} from "./radar-types";
+import {
+  themes as mockThemes,
+  companies as mockCompanies,
+  ideas as mockIdeas,
+  runs as mockRuns,
+  signals as mockSignals,
+  quotes as mockQuotes,
+  positions as mockPositions,
+  riskLimits as mockRiskLimits,
+  sessionMeta as mockSessionMeta,
+  previewOrder as mockPreviewOrder,
+  submitOrder as mockSubmitOrder,
+  executionEvents as mockExecutionEvents,
+  strategyLimits as mockStrategyLimits,
+  symbolLimits as mockSymbolLimits,
+  opsSystem as mockOpsSystem,
+  activityEvents as mockActivityEvents,
+  auditEvents as mockAuditEvents,
+  auditSummary as mockAuditSummary,
+  briefBundle as mockBrief,
+  reviewBundle as mockReview,
+  weeklyPlan as mockWeekly,
+} from "./radar-mocks";
+
+const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
+const IS_PROD = process.env.NODE_ENV === "production";
+
+export type DataSourceState = "MOCK" | "LIVE" | "OFFLINE";
+
+/** Track the worst state seen this session. OFFLINE is sticky until a successful fetch resets it. */
+let _state: DataSourceState = BASE ? "LIVE" : "MOCK";
+function publish(s: DataSourceState) {
+  if (s === _state) return;
+  _state = s;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("__iuf_data_source", { detail: s }));
+  }
+}
+export function getDataSourceState(): DataSourceState {
+  return BASE ? _state : "MOCK";
+}
+
+async function get<T>(path: string, fallback: T): Promise<T> {
+  if (!BASE) return fallback;
+  try {
+    const r = await fetch(`${BASE}${path}`, { next: { revalidate: 30 } });
+    if (!r.ok) throw new Error(`${r.status} ${path}`);
+    publish("LIVE");
+    return (await r.json()) as T;
+  } catch (e) {
+    publish("OFFLINE");
+    if (IS_PROD) {
+      // In production we surface the failure. The component layer must handle it.
+      throw e instanceof Error ? e : new Error(String(e));
+    }
+    console.warn("[api · dev] falling back to mock:", path, e);
+    return fallback;
+  }
+}
+
+async function post<TIn, TOut>(path: string, body: TIn, fallback: () => TOut | Promise<TOut>): Promise<TOut> {
+  if (!BASE) return await fallback();
+  try {
+    const r = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`${r.status} ${path}`);
+    publish("LIVE");
+    return (await r.json()) as TOut;
+  } catch (e) {
+    publish("OFFLINE");
+    if (IS_PROD) throw e instanceof Error ? e : new Error(String(e));
+    console.warn("[api · dev] mock-fallback POST:", path, e);
+    return await fallback();
+  }
+}
+
+export const api = {
+  // GETs
+  session:    () => get<SessionMeta>(("/api/v1/session", mockSessionMeta),
+  themes:     () => get<Theme[]>(("/api/v1/themes", mockThemes),
+  companies:  () => get<Company[]>(("/api/v1/companies", mockCompanies),
+  company:    (s: string) => get<Company | null>(`/api/companies/${s}`,
+                  mockCompanies.find(c => c.symbol === s) ?? null),
+  ideas:      () => get<Idea[]>(("/api/v1/ideas", mockIdeas),
+  runs:       () => get<Run[]>(("/api/v1/runs", mockRuns),
+  run:        (id: string) => get<Run | null>(`/api/runs/${encodeURIComponent(id)}`,
+                  mockRuns.find(r => r.id === id) ?? null),
+  ideasByRun: (id: string) => get<Idea[]>(`/api/runs/${encodeURIComponent(id)}/ideas`,
+                  mockIdeas.filter(i => i.runId === id)),
+  signals:    () => get<Signal[]>(("/api/v1/signals", mockSignals),
+  quotes:     () => get<Quote[]>(("/api/v1/quotes", mockQuotes),
+  positions:  () => get<Position[]>(("/api/v1/portfolio/positions", mockPositions),
+  riskLimits: () => get<RiskLimit[]>(("/api/v1/portfolio/risk", mockRiskLimits),
+
+  executionEvents: (sinceISO?: string) =>
+    get<ExecutionEvent[]>(`/api/trading/events${sinceISO ? `?since=${encodeURIComponent(sinceISO)}` : ""}`,
+      mockExecutionEvents),
+
+  strategyLimits: () => get<StrategyRiskLimit[]>(("/api/v1/risk/strategy-limits", mockStrategyLimits),
+  symbolLimits:   () => get<SymbolRiskLimit[]>(("/api/v1/risk/symbol-limits", mockSymbolLimits),
+
+  // Ops
+  opsSystem:    () => get<OpsSystem>(("/api/v1/ops/system", mockOpsSystem),
+  opsActivity:  () => get<ActivityEvent[]>(("/api/v1/ops/activity", mockActivityEvents),
+  opsAudit:     () => get<AuditEvent[]>(("/api/v1/ops/audit", mockAuditEvents),
+  opsAuditSum:  () => get<AuditSummary>(("/api/v1/ops/audit/summary", mockAuditSummary),
+
+  // Plans
+  brief:        () => get<BriefBundle>(("/api/v1/plans/brief", mockBrief),
+  review:       () => get<ReviewBundle>(("/api/v1/plans/review", mockReview),
+  weeklyPlan:   () => get<WeeklyPlan>(("/api/v1/plans/weekly", mockWeekly),
+
+  // POSTs
+  killMode: (mode: KillMode) =>
+    post<{ mode: KillMode }, { ok: true; mode: KillMode }>(("/api/v1/portfolio/kill-mode",
+      { mode }, () => ({ ok: true, mode })),
+
+  previewOrder: (t: OrderTicket) =>
+    post<OrderTicket, OrderPreview>(("/api/v1/paper/orders/preview", t, () => mockPreviewOrder(t)),
+
+  submitOrder: (t: OrderTicket) =>
+    post<OrderTicket, OrderAck>(("/api/v1/paper/orders", t, () => mockSubmitOrder(t)),
+};
+
+/** SSE URL for execution-event stream. Component reconnects with exp backoff. */
+export function executionStreamUrl(): string | null {
+  return BASE ? `${BASE}/api/v1/trading/events/stream` : null;
+}

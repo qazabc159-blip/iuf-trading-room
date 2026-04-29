@@ -1,14 +1,13 @@
 import { Suspense } from "react";
-
-import { AppShell } from "@/components/app-shell";
+import { PageFrame } from "@/components/PageFrame";
 import { ReviewBoard } from "@/components/review-board";
 
 export default function ReviewsPage() {
   return (
-    <AppShell eyebrow="交易檢討" title="覆盤紀錄">
+    <PageFrame code="RVW" title="Reviews" sub="覆盤紀錄">
       <Suspense>
         <ReviewBoard />
       </Suspense>
-    </AppShell>
+    </PageFrame>
   );
 }

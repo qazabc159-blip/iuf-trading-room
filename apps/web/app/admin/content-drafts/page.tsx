@@ -1,10 +1,10 @@
-import { AppShell } from "@/components/app-shell";
+import { PageFrame } from "@/components/PageFrame";
 import { ContentDraftsQueue } from "@/components/content-drafts-queue";
 
 export default function ContentDraftsAdminPage() {
   return (
-    <AppShell eyebrow="審稿 · 內容草稿" title="OpenAlice 草稿佇列">
+    <PageFrame code="ADM" title="Content Drafts" sub="內容草稿審核" exec>
       <ContentDraftsQueue />
-    </AppShell>
+    </PageFrame>
   );
 }

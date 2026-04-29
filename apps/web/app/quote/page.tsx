@@ -22,7 +22,8 @@
 
 import { Suspense, useState } from "react";
 
-import { AppShell } from "@/components/app-shell";
+import { PageFrame } from "@/components/PageFrame";
+
 import { KgiBrokerStatusAllStates, KgiBrokerStatusPanel } from "@/components/kgi-broker-status";
 import { KgiPositionContainmentPlaceholder } from "@/components/kgi-position-placeholder";
 import { KgiQuotePanel } from "@/components/kgi-quote-panel";
@@ -48,7 +49,7 @@ function QuotePageInner() {
   const [showAllStates, setShowAllStates] = useState(false);
 
   return (
-    <AppShell eyebrow="報價監控" title="KGI 即時報價 · 讀取模式">
+    <PageFrame code="QT" title="Quote" sub="報價查詢">
       {/* DRAFT notice */}
       <section
         className="hud-frame"
@@ -134,7 +135,7 @@ function QuotePageInner() {
         </p>
         <OrderLockedPlaceholder />
       </section>
-    </AppShell>
+    </PageFrame>
   );
 }
 

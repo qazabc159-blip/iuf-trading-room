@@ -1,10 +1,13 @@
-import { AppShell } from "@/components/app-shell";
-import { DraftReviewQueue } from "@/components/draft-review-queue";
+import { Suspense } from "react";
+import { PageFrame } from "@/components/PageFrame";
+import { ContentDraftsQueue } from "@/components/content-drafts-queue";
 
 export default function DraftsPage() {
   return (
-    <AppShell eyebrow="草稿審核" title="代理草稿佇列">
-      <DraftReviewQueue />
-    </AppShell>
+    <PageFrame code="DFT" title="Drafts" sub="內容草稿">
+      <Suspense>
+        <ContentDraftsQueue />
+      </Suspense>
+    </PageFrame>
   );
 }
