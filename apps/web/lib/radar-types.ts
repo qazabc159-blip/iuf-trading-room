@@ -234,7 +234,7 @@ export interface SymbolRiskLimit extends BaseRiskOverride {
   scope: "symbol";
 }
 
-/* ─── Chart abstraction (see ChartProvider) ──────────────────────────── */
+/* ─── Chart abstraction ──────────────────────────────────────────────── */
 export type ChartInterval = "1m" | "5m" | "15m" | "1h" | "1d" | "1wk";
 export type ChartTimezone = "Asia/Taipei" | "America/New_York" | "Europe/London" | "Asia/Tokyo";
 
@@ -247,7 +247,7 @@ export interface ChartTick {
 }
 
 export interface ChartProps {
-  symbol: string;        // TWSE code OR exchange-prefixed for TradingView
+  symbol: string;        // TWSE code
   interval?: ChartInterval;
   timezone?: ChartTimezone;
   height?: number;
@@ -257,6 +257,7 @@ export interface ChartProps {
   onReady?: () => void;
   onTickStream?: (t: ChartTick) => void;
   onError?: (e: Error) => void;
+  onIntervalChange?: (interval: ChartInterval) => void;
   streamState?: ChartStreamState;
 }
 

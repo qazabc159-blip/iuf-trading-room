@@ -2,9 +2,9 @@
  * API client — single import surface.
  *
  * Behavior:
- *   • NEXT_PUBLIC_API_BASE empty → use mocks (always).
- *   • NEXT_PUBLIC_API_BASE set + dev → fetch, fallback to mock with console.warn.
- *   • NEXT_PUBLIC_API_BASE set + prod → fetch, THROW on failure.
+ *   • NEXT_PUBLIC_API_BASE_URL empty → use mocks (always).
+ *   • NEXT_PUBLIC_API_BASE_URL set + dev → fetch, fallback to mock with console.warn.
+ *   • NEXT_PUBLIC_API_BASE_URL set + prod → fetch, THROW on failure.
  *     UI shows the OFFLINE state via DataSourceBadge.
  *
  * The DataSource state machine is published via the `__iuf_data_source` window
@@ -41,7 +41,7 @@ import {
   weeklyPlan as mockWeekly,
 } from "./radar-mocks";
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
+const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const IS_PROD = process.env.NODE_ENV === "production";
 
 export type DataSourceState = "MOCK" | "LIVE" | "OFFLINE";
@@ -65,7 +65,9 @@ async function get<T>(path: string, fallback: T): Promise<T> {
     const r = await fetch(`${BASE}${path}`, { next: { revalidate: 30 } });
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     publish("LIVE");
-    return (await r.json()) as T;
+    // All apps/api endpoints return { data: T } — unwrap the envelope.
+    const json = await r.json();
+    return (json && typeof json === "object" && "data" in json ? json.data : json) as T;
   } catch (e) {
     publish("OFFLINE");
     if (IS_PROD) {

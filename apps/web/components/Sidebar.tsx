@@ -13,6 +13,7 @@ const NAV = [
   { code: "07", path: "/signals", label: "SIGNALS", tc: "訊號" },
   { code: "08", path: "/plans", label: "PLANS", tc: "計畫" },
   { code: "09", path: "/ops", label: "OPS", tc: "戰情室" },
+  { code: "10", path: "/lab", label: "LAB", tc: "量化實驗室" },
 ];
 
 export function Sidebar() {

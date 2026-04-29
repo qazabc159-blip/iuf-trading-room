@@ -30,9 +30,9 @@ interface StockDetailPanelProps {
 }
 
 const T = {
-  ruleS: "rgba(232,223,200,0.22)",
-  bg:    "#0d0e0a",
-  bg1:   "#15170f",
+  ruleS: "var(--night-rule-strong)",
+  bg:    "var(--night)",
+  bg1:   "var(--night-1)",
 } as const;
 
 export function StockDetailPanel({ symbol, lastPx, mainVisual = false }: StockDetailPanelProps) {
@@ -153,7 +153,7 @@ export function StockDetailPanel({ symbol, lastPx, mainVisual = false }: StockDe
       <style>{`
         @media (max-width: 768px) {
           .sdp-grid { grid-template-columns: 1fr !important; }
-          .sdp-chart { border-right: none !important; border-bottom: 1px solid var(--night-rule-strong, rgba(232,223,200,0.22)); }
+          .sdp-chart { border-right: none !important; border-bottom: 1px solid var(--night-rule-strong); }
         }
         @media (max-width: 640px) {
           .sdp-grid { grid-template-columns: 1fr !important; }

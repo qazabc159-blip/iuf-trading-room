@@ -12,6 +12,7 @@ import type {
   SymbolRiskLimit,
 } from "@/lib/radar-types";
 import { Panel } from "@/components/PageFrame";
+import { OrderTicketForm } from "@/components/portfolio/OrderTicket";
 
 function tone(value: number) {
   if (value > 0) return "up";
@@ -90,9 +91,6 @@ export function PortfolioClient({
   const [killMode, setKillMode] = useState<KillMode>(initialKill);
   const totalPnl = useMemo(() => positions.reduce((sum, p) => sum + p.pnlTwd, 0), [positions]);
   const focus = positions.find((p) => p.symbol === "6504") ?? positions[0];
-  const focusQuote = quotes.find((q) => q.symbol === focus.symbol);
-  const limitPx = focusQuote?.last ? focusQuote.last + 0.1 : focus.lastPx + 0.1;
-  const notional = limitPx * focus.qty;
 
   return (
     <>
@@ -100,86 +98,15 @@ export function PortfolioClient({
 
       <div className="exec-grid">
         <div>
-          <Panel code="ORD-TKT" title="14:32:08 TPE · ● LIVE" sub={`ORDER TICKET · ${focus.symbol} · ${focus.name}`} right="QUOTE T-02S">
-            <div className="ticket">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 16 }}>
-                <div>
-                  <div className="tg gold">● FROM IDEA · ID-1142</div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 8 }}>
-                    <strong className="num" style={{ fontSize: 24 }}>{focus.symbol}</strong>
-                    <span className="tc" style={{ fontSize: 22 }}>{focus.name}</span>
-                    <span className="tg session-pill">LONG</span>
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div className="tg soft">LAST · LIVE</div>
-                  <div className={`num ${tone(focus.changePct)}`} style={{ fontSize: 34, fontWeight: 700 }}>{focus.lastPx.toFixed(2)}</div>
-                  <div className={`tg ${tone(focus.changePct)}`}>▲ {signed(focus.lastPx - focus.avgPx, 2)} · {signed(focus.changePct, 2)}%</div>
-                </div>
-              </div>
-
-              <div className="ticket-grid">
-                {[
-                  ["SIDE", ["BUY", "SELL", "TRIM"], "BUY"],
-                  ["TYPE", ["LMT", "MKT", "STOP"], "LMT"],
-                  ["TIF", ["ROD", "IOC", "FOK"], "ROD"],
-                ].map(([label, values, active]) => (
-                  <div key={String(label)}>
-                    <div className="tg soft" style={{ marginBottom: 7 }}>{label}</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5 }}>
-                      {(values as string[]).map((value) => (
-                        <button className={value === active ? "mini-button" : "outline-button"} key={value}>{value}</button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <div className="tg soft" style={{ marginBottom: 7 }}>VENUE</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5, maxWidth: 220 }}>
-                  {["TWSE", "TPEX", "DARK"].map((value) => (
-                    <button className={value === "TWSE" ? "mini-button" : "outline-button"} key={value}>{value}</button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="ticket-grid" style={{ marginTop: 14 }}>
-                <div className="field-box">
-                  <div className="tg soft">LIMIT·PXVS LAST</div>
-                  <div className="num" style={{ fontSize: 22, fontWeight: 700 }}>{limitPx.toFixed(2)}</div>
-                  <div className="tg soft">+0.10</div>
-                </div>
-                <div className="field-box">
-                  <div className="tg soft">QTY·SHR</div>
-                  <div className="num" style={{ fontSize: 22, fontWeight: 700 }}>{focus.qty.toLocaleString()}</div>
-                  <div className="tg soft">{Math.round(focus.qty / 1000)} LOTS</div>
-                </div>
-                <div className="field-box">
-                  <div className="tg soft">NOTIONAL TWD</div>
-                  <div className="num" style={{ fontSize: 22, fontWeight: 700 }}>{Math.round(notional).toLocaleString()}</div>
-                  <div className="tg soft">+</div>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 0.8fr", gap: 8, marginTop: 14 }}>
-                <button className="mini-button" style={{ minHeight: 56 }}>SUBMIT · 送單 →</button>
-                <button className="outline-button" style={{ minHeight: 56, color: "var(--night-ink)" }}>PREVIEW · 預覽</button>
-                <button className="outline-button" style={{ minHeight: 56 }}>CANCEL · 取消</button>
-              </div>
-
-              <div className="tg soft" style={{ marginTop: 13, lineHeight: 1.7 }}>
-                EFF · CHECKED PASS · ACCOUNT 24% · SYMBOL 6.0%<br />
-                RR · 1:2.4 · STOP @ 81.20 · TARGET @ 91.00 · SLIPPAGE BUDGET 0.20%
-              </div>
-            </div>
+          <Panel code="ORD-TKT" title="14:32:08 TPE · ● LIVE" sub="ORDER TICKET · EXECUTION DESK" right="KILL AWARE">
+            <OrderTicketForm killMode={killMode} />
           </Panel>
 
           <Panel code="SIZ-BRK" title="14:32:08 TPE" sub="部位拆解 · SIZING BREAKDOWN" right="ACCOUNT · STRATEGY · SYMBOL">
             {[
               ["ACCOUNT", 24.0, "TWD 24.0M"],
               ["STRATEGY", 8.4, "AI-PWR · LONG"],
-              ["SYMBOL", 6.0, focus.symbol],
+              ["SYMBOL", 6.0, focus?.symbol ?? "—"],
               ["IDEA", 1.8, "ID-1142"],
             ].map(([label, value, note]) => (
               <div key={String(label)} style={{ padding: "10px 0", borderBottom: "1px solid var(--night-rule)" }}>

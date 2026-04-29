@@ -7,8 +7,6 @@ import { MetricStrip, signed, toneClass } from "@/components/RadarWidgets";
 import type { BidAskLevel, QuoteInterval, QuoteStatus, QuoteTick } from "@/lib/radar-uncovered";
 import { fallbackQuote, mockBidAsk, mockTicks, radarUncoveredApi } from "@/lib/radar-uncovered";
 
-const INTERVALS: QuoteInterval[] = ["1m", "5m", "15m", "1d"];
-
 function initialSymbol() {
   if (typeof window === "undefined") return "2330";
   return new URLSearchParams(window.location.search).get("symbol") || "2330";
@@ -101,23 +99,10 @@ export default function QuotePage() {
         <Panel
           code="QTE-K"
           title="K 線"
-          right={
-            <span style={{ display: "inline-flex", gap: 6 }}>
-              {INTERVALS.map((item) => (
-                <button
-                  className={item === interval ? "mini-button" : "outline-button"}
-                  key={item}
-                  onClick={() => setInterval(item)}
-                  type="button"
-                >
-                  {item}
-                </button>
-              ))}
-            </span>
-          }
+          right="Lightweight Charts"
         >
-          <Chart symbol={symbol} interval={interval} height={520} />
-          <div className="terminal-note">目前保留 KGI K 線 adapter 位置；後端 interval 完整開放後，只替換資料來源，不改畫面。</div>
+          <Chart symbol={symbol} interval={interval} height={520} onIntervalChange={(next) => setInterval(next as QuoteInterval)} />
+          <div className="terminal-note">K 線以 KGI adapter / 模擬備援供資料；畫面固定使用 Lightweight Charts，不載入 TradingView Widget。</div>
         </Panel>
 
         <div>
