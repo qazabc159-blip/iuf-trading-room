@@ -187,22 +187,29 @@ def test_ws_hygiene_current_handler_no_control_plane():
     with open(spec.origin, "r", encoding="utf-8") as f:
         source = f.read()
 
-    # Find the order_events_ws function block
+    # Find the order_events_ws function block (up to the next top-level @app.* decorator)
     ws_handler_match = re.search(
-        r"async def order_events_ws\(.*?\n(?=^@|\Z|\Z)",
+        r"async def order_events_ws\(.*?(?=^@app\.|\Z)",
         source,
         re.MULTILINE | re.DOTALL,
     )
     assert ws_handler_match is not None, "order_events_ws function must exist in app.py"
-    handler_source = ws_handler_match.group(0)
+    handler_source_raw = ws_handler_match.group(0)
 
-    # Verify: no order submission calls in the WS handler
+    # Strip docstrings + line comments before pattern matching so descriptive prose
+    # (e.g., "Events arrive via api.Order.set_event() callback") is not flagged as a code call.
+    # We only want to catch ACTUAL code patterns invoking order submission.
+    handler_source = re.sub(r'""".*?"""', "", handler_source_raw, flags=re.DOTALL)
+    handler_source = re.sub(r"'''.*?'''", "", handler_source, flags=re.DOTALL)
+    handler_source = re.sub(r"#.*?$", "", handler_source, flags=re.MULTILINE)
+
+    # Verify: no order submission calls in the WS handler (code only, not docstrings/comments)
     forbidden_patterns = [
         r"\bcreate_order\s*\(",
         r"\bplace_order\s*\(",
         r"\bsubmit_order\s*\(",
-        r"\bapi\.Order\b",
-        r"\bsession\.api\.Order\b",
+        r"\bapi\.Order\.",
+        r"\bsession\.api\.Order\.",
     ]
     for pattern in forbidden_patterns:
         matches = re.findall(pattern, handler_source, re.IGNORECASE)

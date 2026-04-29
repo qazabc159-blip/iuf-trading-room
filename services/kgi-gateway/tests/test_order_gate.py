@@ -222,8 +222,9 @@ def test_order_create_handler_never_calls_sdk(order_client):
 
     import kgi_session
 
-    with patch.object(kgi_session.session, "api", _MockApi()), \
-         patch.object(kgi_session.session, "is_logged_in", True):
+    # KgiSession.api is a read-only @property backed by self._api; patch the backing field.
+    # is_logged_in is also @property backed by self._api is not None — patching _api covers both.
+    with patch.object(kgi_session.session, "_api", _MockApi()):
         resp = order_client.post("/order/create", json={
             "action": "Buy",
             "symbol": "2330",
