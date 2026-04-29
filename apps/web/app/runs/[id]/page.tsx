@@ -11,8 +11,9 @@ function duration(ms: number) {
   return `${minutes}m ${seconds}s`;
 }
 
-export default async function RunDetailPage({ params }: { params: { id: string } }) {
-  const id = decodeURIComponent(params.id);
+export default async function RunDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: encodedId } = await params;
+  const id = decodeURIComponent(encodedId);
   const [run, ideas, runs] = await Promise.all([
     api.run(id),
     api.ideasByRun(id),

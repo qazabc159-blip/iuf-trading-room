@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-
 export function PageFrame({
   code,
   title,
@@ -11,9 +9,9 @@ export function PageFrame({
   code: string;
   title: string;
   sub?: string;
-  children: ReactNode;
+  children: React.ReactNode;
   exec?: boolean;
-  note?: ReactNode;
+  note?: React.ReactNode;
 }) {
   return (
     <main className="page-frame">
@@ -25,7 +23,7 @@ export function PageFrame({
           {sub && <span className="tc">{sub}</span>}
         </div>
         <div className="tg meta-strip">
-          <span>RUN · <b>RUN·2026-04-25·F·17</b></span>
+          <span>RUN · <b>RUN-2026-04-25-F-17</b></span>
           <span>SCAN · <b className="gold">T-06S</b></span>
           <span>FRI · W17 · <b>14:32:08</b> TPE</span>
         </div>
@@ -49,8 +47,8 @@ export function Panel({
   code: string;
   title: string;
   sub?: string;
-  right?: ReactNode;
-  children: ReactNode;
+  right?: React.ReactNode;
+  children: React.ReactNode;
 }) {
   return (
     <section className="panel">
@@ -76,7 +74,7 @@ export function SectHead({
 }: {
   code: string;
   sub?: string;
-  right?: ReactNode;
+  right?: React.ReactNode;
   exec?: boolean;
   live?: boolean;
 }) {

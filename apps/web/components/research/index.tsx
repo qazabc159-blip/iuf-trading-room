@@ -3,7 +3,7 @@
  * Shared research-layer primitives — KPI strip, FilterBar atoms, badges.
  * Night-layer (monochrome + gold) only. Exec-layer pages use their own atoms.
  */
-import type { ReactNode } from "react";
+type Node = React.ReactNode;
 
 /* ─── KpiStrip ──────────────────────────────────────────────────────── */
 export interface KpiCell {
@@ -44,7 +44,7 @@ export function KpiStrip({ cells }: { cells: KpiCell[] }) {
 }
 
 /* ─── FilterBar wrappers ────────────────────────────────────────────── */
-export function FilterBar({ children, right }: { children: ReactNode; right?: ReactNode }) {
+export function FilterBar({ children, right }: { children: Node; right?: Node }) {
   return (
     <div style={{
       display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center",

@@ -9,14 +9,15 @@ export async function generateStaticParams() {
   return themes.map((theme) => ({ short: theme.short }));
 }
 
-export default async function ThemeDetailPage({ params }: { params: { short: string } }) {
+export default async function ThemeDetailPage({ params }: { params: Promise<{ short: string }> }) {
+  const { short } = await params;
   const [themes, companies, ideas, signals] = await Promise.all([
     api.themes(),
     api.companies(),
     api.ideas(),
     api.signals(),
   ]);
-  const theme = themes.find((item) => item.short === params.short);
+  const theme = themes.find((item) => item.short === short);
   if (!theme) notFound();
 
   const members = companies.filter((company) => company.themes.includes(theme.code));

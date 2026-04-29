@@ -1,6 +1,5 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import { Source_Serif_4, JetBrains_Mono, Noto_Serif_TC } from "next/font/google";
 import { Sidebar } from "@/components/Sidebar";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
@@ -32,7 +31,7 @@ export const metadata: Metadata = {
   description: "Theme-driven investment trading room",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-Hant" className={`${serif.variable} ${mono.variable} ${serifTc.variable}`}>
       <body style={{ margin: 0, display: "flex", minHeight: "100vh", background: "var(--night)" }}>

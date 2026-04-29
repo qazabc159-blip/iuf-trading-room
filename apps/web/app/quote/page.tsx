@@ -1,170 +1,158 @@
 "use client";
 
-/**
- * /quote — KGI Gateway Quote Monitor
- *
- * W2d Lane 2 read-only frontend. Displays:
- *  [01] Quote Panel     — tick (close/chg/vol) + bidask 5-level + freshness badge
- *  [02] Broker Status   — 4-state connection indicator (§3.3 policy)
- *  [03] Position Status — containment placeholder (§3.1 policy)
- *  [04] Order UI        — locked placeholder (§6.1 no order button rule)
- *
- * Hard rules enforced:
- * - 0 order buttons (even disabled)
- * - 0 /order/* route links
- * - position wording: "持倉資料目前不可用（containment 模式）" only
- * - 0 import from broker/* or risk-engine
- * - data-testid never contains "order" or "submit"
- *
- * DRAFT PR status: not merged, not deployed.
- * Backend wire-up: awaiting Jason Lane 1 /api/v1/kgi/quote/* routes.
- */
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Chart } from "@/components/Chart";
+import { PageFrame, Panel } from "@/components/PageFrame";
+import { MetricStrip, signed, toneClass } from "@/components/RadarWidgets";
+import type { BidAskLevel, QuoteInterval, QuoteStatus, QuoteTick } from "@/lib/radar-uncovered";
+import { fallbackQuote, mockBidAsk, mockTicks, radarUncoveredApi } from "@/lib/radar-uncovered";
 
-import { Suspense, useState } from "react";
+const INTERVALS: QuoteInterval[] = ["1m", "5m", "15m", "1d"];
 
-import { PageFrame } from "@/components/PageFrame";
-
-import { KgiBrokerStatusAllStates, KgiBrokerStatusPanel } from "@/components/kgi-broker-status";
-import { KgiPositionContainmentPlaceholder } from "@/components/kgi-position-placeholder";
-import { KgiQuotePanel } from "@/components/kgi-quote-panel";
-import type { BrokerConnectionState } from "@/lib/kgi-quote-types";
-
-// Default symbol for W2d Step 3a evidence (2330 TSMC)
-const DEFAULT_SYMBOL = "2330";
-
-// Hard-wired status for W2d: position disabled, order locked per W1 hard line.
-// Will be derived from live API state after Jason Lane 1 wire-up.
-const BROKER_STATE: BrokerConnectionState = "connected-quote-available-pos-disabled";
+function initialSymbol() {
+  if (typeof window === "undefined") return "2330";
+  return new URLSearchParams(window.location.search).get("symbol") || "2330";
+}
 
 export default function QuotePage() {
-  return (
-    <Suspense fallback={null}>
-      <QuotePageInner />
-    </Suspense>
+  const [symbol, setSymbol] = useState(initialSymbol);
+  const [input, setInput] = useState(initialSymbol);
+  const [interval, setInterval] = useState<QuoteInterval>("1m");
+  const [status, setStatus] = useState<QuoteStatus>(() => fallbackQuote(initialSymbol()));
+  const [bidask, setBidask] = useState<BidAskLevel[]>(() => mockBidAsk(initialSymbol()));
+  const [ticks, setTicks] = useState<QuoteTick[]>(() => mockTicks(initialSymbol()));
+
+  useEffect(() => {
+    let alive = true;
+
+    async function pullFast() {
+      const [nextStatus, nextBidask, nextTicks] = await Promise.all([
+        radarUncoveredApi.quoteStatus(symbol),
+        radarUncoveredApi.quoteBidask(symbol),
+        radarUncoveredApi.quoteTicks(symbol),
+      ]);
+      if (!alive) return;
+      setStatus(nextStatus);
+      setBidask(nextBidask);
+      setTicks(nextTicks);
+    }
+
+    pullFast();
+    const fast = window.setInterval(pullFast, 5000);
+    return () => {
+      alive = false;
+      window.clearInterval(fast);
+    };
+  }, [symbol]);
+
+  const cells = useMemo(
+    () => [
+      { label: "現價", value: status.last.toLocaleString(), delta: status.change },
+      { label: "漲跌", value: signed(status.change, 2), tone: toneClass(status.change) },
+      { label: "漲跌幅", value: `${signed(status.changePct, 2)}%`, tone: toneClass(status.changePct) },
+      { label: "成交量", value: status.volume.toLocaleString(), tone: "muted" as const },
+      { label: "買價", value: status.bid.toLocaleString(), tone: "up" as const },
+      { label: "賣價", value: status.ask.toLocaleString(), tone: "down" as const },
+    ],
+    [status],
   );
-}
 
-function QuotePageInner() {
-  const [symbol] = useState(DEFAULT_SYMBOL);
-  const [showAllStates, setShowAllStates] = useState(false);
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next = input.trim() || "2330";
+    setSymbol(next);
+    window.history.replaceState(null, "", `/quote?symbol=${encodeURIComponent(next)}`);
+  }
 
   return (
-    <PageFrame code="QT" title="Quote" sub="報價查詢">
-      {/* DRAFT notice */}
-      <section
-        className="hud-frame"
-        style={{
-          padding: "0.5rem 1.25rem",
-          marginBottom: "1rem",
-          borderColor: "var(--amber)",
-          fontFamily: "var(--mono, monospace)",
-          fontSize: "0.78rem",
-          color: "var(--amber)"
-        }}
-      >
-        [DRAFT] W2d Lane 2 — 讀取模式預覽。後端 API wire-up 待 Jason Lane 1 完成後接通。
-      </section>
-
-      {/* [01] Quote Panel */}
-      <section className="hud-frame" style={{ padding: "1.5rem", marginBottom: "1rem" }}>
-        <p className="ascii-head" data-idx="01">
-          [01] 即時報價 · {symbol}
-        </p>
-        <KgiQuotePanel symbol={symbol} />
-      </section>
-
-      {/* [02] Broker Status Panel */}
-      <section className="hud-frame" style={{ padding: "1.5rem", marginBottom: "1rem" }}>
-        <p className="ascii-head" data-idx="02">
-          [02] Broker 連線狀態
-        </p>
-        <KgiBrokerStatusPanel state={BROKER_STATE} />
-
-        {/* Dev toggle: show all 4 states for DRAFT review */}
-        <div style={{ marginTop: "1rem" }}>
-          <button
-            onClick={() => setShowAllStates((v) => !v)}
-            style={{
-              background: "transparent",
-              color: "var(--dim)",
-              border: "1px solid var(--line, #2a2a2a)",
-              padding: "0.2rem 0.6rem",
-              fontFamily: "var(--mono, monospace)",
-              fontSize: "0.72rem",
-              cursor: "pointer"
-            }}
-          >
-            {showAllStates ? "▲ 收起" : "▼ 展開全部狀態（DRAFT 審核用）"}
-          </button>
-          {showAllStates && (
-            <div
-              style={{
-                marginTop: "0.75rem",
-                padding: "0.75rem",
-                border: "1px dashed var(--line, #2a2a2a)"
-              }}
-            >
-              <p
-                style={{
-                  fontFamily: "var(--mono, monospace)",
-                  fontSize: "0.7rem",
-                  color: "var(--dim)",
-                  marginBottom: "0.75rem"
-                }}
-              >
-                [DRAFT REVIEW] 四態狀態預覽 — 非生產狀態
-              </p>
-              <KgiBrokerStatusAllStates />
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* [03] Position Status */}
-      <section className="hud-frame" style={{ padding: "1.5rem", marginBottom: "1rem" }}>
-        <p className="ascii-head" data-idx="03">
-          [03] 持倉狀態
-        </p>
-        <KgiPositionContainmentPlaceholder />
-      </section>
-
-      {/* [04] Order UI — locked placeholder, per §6.1: no order button allowed */}
-      <section className="hud-frame" style={{ padding: "1.5rem", marginBottom: "1rem" }}>
-        <p className="ascii-head" data-idx="04">
-          [04] 下單功能
-        </p>
-        <OrderLockedPlaceholder />
-      </section>
-    </PageFrame>
-  );
-}
-
-/**
- * Order locked placeholder.
- *
- * §6.1: quote panel MUST NOT contain order button (even disabled).
- * This section only displays the lock status — no order interaction.
- */
-function OrderLockedPlaceholder() {
-  return (
-    <div
-      data-testid="kgi-route-lock-notice"
-      style={{
-        fontFamily: "var(--mono, monospace)",
-        padding: "0.75rem 1rem",
-        borderLeft: "3px solid var(--dim)",
-        color: "var(--dim)",
-        fontSize: "0.82rem",
-        lineHeight: 1.6
-      }}
-      title="/order/create remains locked"
+    <PageFrame
+      code="QTE"
+      title={`即時報價 · ${symbol}`}
+      sub="單檔報價 / K 線 / 五檔 / 成交明細"
+      note="[QTE] KGI 報價讀取面 · 五秒刷新 · 不含下單動作"
     >
-      <span style={{ letterSpacing: "0.06em" }}>
-        [LOCKED] /order/create remains locked (NOT_ENABLED_IN_W1)
-      </span>
-      <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.75rem" }}>
-        下單功能尚未開放。W1 hard line 維持。
-      </p>
-    </div>
+      <Panel code="QTE-SRC" title="股票代號" right="KGI / 模擬備援">
+        <form onSubmit={submit} style={{ display: "flex", gap: 10, padding: "12px 0" }}>
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            style={{
+              flex: "0 1 220px",
+              minHeight: 34,
+              border: "1px solid var(--night-rule-strong)",
+              background: "var(--night)",
+              color: "var(--night-ink)",
+              fontFamily: "var(--mono)",
+              padding: "0 10px",
+              outline: "none",
+            }}
+            placeholder="2330"
+          />
+          <button className="mini-button" type="submit">查詢</button>
+          <span className="tg soft" style={{ alignSelf: "center" }}>
+            {status.name} · 開 {status.open} / 高 {status.high} / 低 {status.low}
+          </span>
+        </form>
+      </Panel>
+
+      <MetricStrip columns={6} cells={cells} />
+
+      <div className="company-grid">
+        <Panel
+          code="QTE-K"
+          title="K 線"
+          right={
+            <span style={{ display: "inline-flex", gap: 6 }}>
+              {INTERVALS.map((item) => (
+                <button
+                  className={item === interval ? "mini-button" : "outline-button"}
+                  key={item}
+                  onClick={() => setInterval(item)}
+                  type="button"
+                >
+                  {item}
+                </button>
+              ))}
+            </span>
+          }
+        >
+          <Chart symbol={symbol} interval={interval} height={520} />
+          <div className="terminal-note">目前保留 KGI K 線 adapter 位置；後端 interval 完整開放後，只替換資料來源，不改畫面。</div>
+        </Panel>
+
+        <div>
+          <Panel code="QTE-BA" title="五檔報價" right="買賣盤">
+            <div className="row table-head" style={{ gridTemplateColumns: "64px 1fr 1fr 1fr 1fr", gap: 10 }}>
+              <span>檔位</span>
+              <span>買量</span>
+              <span>買價</span>
+              <span>賣價</span>
+              <span>賣量</span>
+            </div>
+            {bidask.map((level) => (
+              <div className="row" key={level.level} style={{ gridTemplateColumns: "64px 1fr 1fr 1fr 1fr", gap: 10, padding: "8px 0" }}>
+                <span className="tg soft">{level.level}</span>
+                <span className="tg up">{level.bidQty}</span>
+                <span className="num up">{level.bidPrice}</span>
+                <span className="num down">{level.askPrice}</span>
+                <span className="tg down">{level.askQty}</span>
+              </div>
+            ))}
+          </Panel>
+
+          <Panel code="QTE-T" title="近 50 筆成交" right="最新在上">
+            {ticks.slice(0, 18).map((tick) => (
+              <div className="row telex-row" key={tick.id}>
+                <span className="tg soft">{tick.ts}</span>
+                <span className={`tg ${tick.side === "B" ? "up" : "down"}`}>{tick.side === "B" ? "買" : "賣"}</span>
+                <span className="tg">
+                  <b>{tick.price}</b> · {tick.qty} 張
+                </span>
+              </div>
+            ))}
+          </Panel>
+        </div>
+      </div>
+    </PageFrame>
   );
 }

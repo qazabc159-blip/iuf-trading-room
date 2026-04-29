@@ -88,9 +88,10 @@ export async function generateStaticParams() {
   return companies.map((company) => ({ symbol: company.symbol }));
 }
 
-export default async function CompanyPage({ params }: { params: { symbol: string } }) {
+export default async function CompanyPage({ params }: { params: Promise<{ symbol: string }> }) {
+  const { symbol } = await params;
   const [company, companies, themes, ideas, signals, quotes] = await Promise.all([
-    api.company(params.symbol),
+    api.company(symbol),
     api.companies(),
     api.themes(),
     api.ideas(),

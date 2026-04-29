@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+export type Tone = "gold" | "up" | "down" | "muted";
 
-export function toneClass(value: number) {
+export function toneClass(value: number): Exclude<Tone, "gold"> {
   if (value > 0) return "up";
   if (value < 0) return "down";
   return "muted";
@@ -14,7 +14,7 @@ export function MetricStrip({
   cells,
   columns,
 }: {
-  cells: { label: string; value: ReactNode; delta?: number | string; tone?: "gold" | "up" | "down" | "muted" }[];
+  cells: { label: string; value: React.ReactNode; delta?: number | string; tone?: Tone }[];
   columns?: number;
 }) {
   return (
@@ -60,8 +60,8 @@ export function Pill({
   children,
   tone = "muted",
 }: {
-  children: ReactNode;
-  tone?: "gold" | "up" | "down" | "muted";
+  children: React.ReactNode;
+  tone?: Tone;
 }) {
   return <span className={`tg session-pill ${tone}`}>{children}</span>;
 }

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
 
 import { primaryNavigation } from "@iuf-trading-room/ui";
 
@@ -22,7 +21,7 @@ export function AppShell({
 }: {
   title: string;
   eyebrow: string;
-  children: ReactNode;
+  children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
