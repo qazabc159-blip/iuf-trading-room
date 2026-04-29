@@ -1,233 +1,233 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { PageFrame, Panel } from "@/components/PageFrame";
+import { api } from "@/lib/radar-api";
+import type { Theme } from "@/lib/radar-types";
 
-import type { ThemeGraphRankingView } from "@iuf-trading-room/contracts";
+function signedTone(value: number) {
+  if (value > 0) return "up";
+  if (value < 0) return "down";
+  return "muted";
+}
 
-import { AppShell } from "@/components/app-shell";
-import { TopKpiStrip } from "@/components/TopKpiStrip";
-import { getOpsSnapshot, getThemeGraphRankings, type OpsSnapshotData } from "@/lib/api";
-import { blockSpark } from "@/lib/block-spark";
+function signed(value: number, digits = 0) {
+  const text = digits > 0 ? value.toFixed(digits) : String(value);
+  return `${value > 0 ? "+" : ""}${text}`;
+}
 
-export default function HomePage() {
-  const [snap, setSnap] = useState<OpsSnapshotData | null>(null);
-  const [rankings, setRankings] = useState<ThemeGraphRankingView | null>(null);
+function Momentum({ value }: { value: Theme["momentum"] }) {
+  if (value === "ACCEL") return <span className="up">▲ ACL</span>;
+  if (value === "DECEL") return <span className="down">▼ DCL</span>;
+  return <span className="muted">● STD</span>;
+}
 
-  useEffect(() => {
-    getOpsSnapshot().then((r) => setSnap(r.data)).catch(() => {});
-    getThemeGraphRankings({ limit: 6 }).then((r) => setRankings(r.data)).catch(() => {});
-  }, []);
-
-  const s = snap?.stats;
-  const oa = snap?.openAlice;
-  const audit = snap?.audit;
+function Spark({ values }: { values: number[] }) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = Math.max(1, max - min);
+  const points = values
+    .map((v, i) => {
+      const x = 4 + i * 13;
+      const y = 20 - ((v - min) / span) * 17;
+      return `${x},${y.toFixed(1)}`;
+    })
+    .join(" ");
 
   return (
-    <AppShell eyebrow="今日作戰總覽" title="台股 AI 交易戰情室">
-      {/* W4: TopKpiStrip — 7-cell nav KPI bar */}
-      <TopKpiStrip />
+    <svg className="spark" viewBox="0 0 96 24" aria-hidden>
+      <polyline points={points} fill="none" stroke="var(--night-mid)" strokeWidth="1.2" />
+    </svg>
+  );
+}
 
-      {/* 上排：關鍵指標 */}
-      <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[01]</span>
-        核心指標 · CORE METRICS
-      </h3>
-      <section className="kpi-strip">
-        <KpiCard label="主題戰區" value={s?.themes} />
-        <KpiCard label="公司資料庫" value={s?.companies} sub={s ? `核心 ${s.coreCompanies} / 直接 ${s.directCompanies}` : undefined} />
-        <KpiCard label="活躍訊號" value={s?.signals} sub={s ? `看多 ${s.bullishSignals}` : undefined} />
-        <KpiCard label="交易計畫" value={s?.plans} sub={s ? `執行中 ${s.activePlans}` : undefined} tone={s && s.activePlans > 0 ? "warn" : undefined} />
-        <KpiCard label="待審草稿" value={s?.reviewQueue} tone={s && s.reviewQueue > 0 ? "warn" : undefined} />
-        <KpiCard label="已發布簡報" value={s?.publishedBriefs} />
-      </section>
+function MarketStrip({
+  quotes,
+  heat,
+}: {
+  quotes: Awaited<ReturnType<typeof api.quotes>>;
+  heat: number;
+}) {
+  const twa = quotes.find((q) => q.symbol === "TWA");
+  const cards = [
+    { sym: "TAIEX", name: "TAIEX", last: twa?.last ?? 21486.4, change: twa?.change ?? 184.22, pct: twa?.changePct ?? 0.86, state: "CLOSE" },
+    { sym: "TPEX", name: "TPEx", last: 264.18, change: 1.94, pct: 0.74, state: "CLOSE" },
+    { sym: "TURNOVER·BN", name: "成交", last: 402.6, change: 38.2, pct: 10.5, state: "CLOSE" },
+    { sym: "BREADTH·A/D", name: "廣度", last: 812, extra: "/586", change: 0, pct: 0, state: "CLOSE" },
+    { sym: "FOREIGN·NETBN", name: "外資", last: 12.8, change: 12.8, pct: 0, state: "CLOSE" },
+    { sym: "IUF·HEAT·IDX", name: "heat", last: heat, change: 4.1, pct: 5.6, state: "● LIVE" },
+    { sym: "RISK·BUDGET", name: "risk", last: 58, extra: ".0%", change: 6, pct: 0, state: "● LIVE" },
+  ];
 
-      {/* 中排：OpenAlice + 稽核 */}
-      <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[02]</span>
-        代理狀態與稽核 · AGENT & AUDIT
-      </h3>
-      <section className="split-panels">
-        <div className="panel hud-frame">
-          <p className="eyebrow">OpenAlice 代理狀態</p>
-          {oa ? (
-            <div className="action-row" style={{ gap: 16, marginTop: 8 }}>
-              <MiniStat label="背景程序" value={oa.observability.workerStatus} color={oa.observability.workerStatus === "healthy" ? "var(--bull)" : "var(--bear)"} />
-              <MiniStat label="排程" value={oa.observability.sweepStatus} color={oa.observability.sweepStatus === "healthy" ? "var(--bull)" : "var(--bear)"} />
-              <MiniStat label="佇列" value={String(oa.queue.queued)} />
-              <MiniStat label="執行中" value={String(oa.queue.running)} />
-              <MiniStat label="待審" value={String(oa.queue.reviewable)} color={oa.queue.reviewable > 0 ? "var(--warn)" : undefined} />
-              <MiniStat label="失敗" value={String(oa.queue.failed)} color={oa.queue.failed > 0 ? "var(--bear)" : undefined} />
+  return (
+    <div className="quote-strip">
+      {cards.map((card) => (
+        <div className="quote-card" key={card.sym}>
+          <div className="tg">
+            <span className="quote-symbol">{card.sym}</span>
+            <span className="quote-state">{card.state}</span>
+          </div>
+          <div className="quote-last num">
+            {card.last.toLocaleString("en-US", { maximumFractionDigits: card.last < 1000 ? 2 : 1 })}
+            {card.extra}
+          </div>
+          <div className={`tg ${signedTone(card.change)}`}>
+            {card.change === 0 ? "-" : signed(card.change, card.sym.includes("HEAT") ? 1 : card.last < 1000 ? 2 : 1)}
+            {card.pct ? <span style={{ marginLeft: 18 }}>{signed(card.pct,  card.pct < 2 ? 2 : 1)}{card.sym === "RISK·BUDGET" ? "PT" : ""}</span> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HeatMap({ themes }: { themes: Theme[] }) {
+  const points = [
+    { code: "AI-PWR", x: 54, y: 18, locked: false },
+    { code: "HBM-TW", x: 70, y: 29, locked: false },
+    { code: "ROBOT", x: 66, y: 48, locked: true },
+    { code: "SLCN-PV", x: 75, y: 66, locked: false },
+    { code: "DDR5", x: 36, y: 74, locked: false },
+    { code: "CYBR", x: 29, y: 52, locked: false },
+    { code: "DEFENSE", x: 25, y: 65, locked: false },
+    { code: "AUTO-EV", x: 18, y: 78, locked: false },
+  ];
+  const byCode = new Map(themes.map((t) => [t.code, t]));
+
+  return (
+    <div className="heat-map">
+      {points.map((p) => (
+        <div
+          className={`map-point ${p.locked ? "locked" : ""}`}
+          key={p.code}
+          style={{ left: `${p.x}%`, top: `${p.y}%` }}
+          title={byCode.get(p.code)?.name ?? p.code}
+        />
+      ))}
+      <div className="tg soft" style={{ position: "absolute", left: 18, top: 18 }}>POLAR</div>
+      <div className="tg gold" style={{ position: "absolute", right: 18, top: 98 }}>ROBOT</div>
+      <div className="tg soft" style={{ position: "absolute", left: 18, bottom: 18 }}>HEAT MAP</div>
+    </div>
+  );
+}
+
+export default async function DashboardPage() {
+  const [session, themes, ideas, runs, signals, quotes] = await Promise.all([
+    api.session(),
+    api.themes(),
+    api.ideas(),
+    api.runs(),
+    api.signals(),
+    api.quotes(),
+  ]);
+  const activeRun = runs.find((r) => r.state === "ACTIVE") ?? runs[0];
+  const openIdeas = ideas.slice(0, 5);
+  const tape = signals.slice(0, 7);
+
+  return (
+    <PageFrame
+      code="01"
+      title="Trading Room"
+      sub="戰情台"
+      note="[01] DASHBOARD · 主題驅動投資戰情台 · POST-CLOSE EDITION · 2026-04-25"
+    >
+      <MarketStrip quotes={quotes} heat={72.4} />
+
+      <div className="main-grid">
+        <div>
+          <Panel code="THM-SCOPE" title="14:32:08 TPE · ● LIVE" sub="THEMES · BY HEAT · LIVE SWEEP" right="D7 MOMENTUM">
+            <div className="row theme-row table-head tg">
+              <span>#</span><span>CODE</span><span>主題 · THEME</span><span>MOM</span><span>MEM</span><span>HEAT</span><span>Δ D7 PULSE</span><span>STATE</span>
             </div>
-          ) : (
-            <p className="muted loading-text" style={{ fontSize: "var(--fs-sm)" }}>載入中...</p>
-          )}
+            {themes.map((theme) => (
+              <Link
+                href={`/themes/${theme.short}`}
+                key={theme.code}
+                className={`row theme-row ${theme.rank === 3 ? "theme-active" : ""}`}
+              >
+                <span className="tg soft">{String(theme.rank).padStart(2, "0")}</span>
+                <span className="tg" style={{ color: "var(--night-ink)", fontWeight: 700 }}>{theme.code}</span>
+                <span>
+                  <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{theme.name}</strong>
+                  <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{theme.short.toUpperCase()} · {theme.members} CO</span>
+                </span>
+                <span className="tg"><Momentum value={theme.momentum} /></span>
+                <span className="num">{theme.members}</span>
+                <strong className="num" style={{ fontSize: 20 }}>{theme.heat}</strong>
+                <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                  <span className={`tg ${signedTone(theme.dHeat)}`}>{signed(theme.dHeat)}</span>
+                  <Spark values={theme.pulse} />
+                </span>
+                <span className={`tg ${theme.lockState === "LOCKED" ? "gold" : "muted"}`}>
+                  {theme.lockState === "LOCKED" ? "● " : ""}{theme.lockState}
+                </span>
+              </Link>
+            ))}
+          </Panel>
         </div>
 
-        <div className="panel hud-frame">
-          <p className="eyebrow">稽核紀錄（{audit?.windowHours ?? 24}h）</p>
-          {audit ? (
-            <div style={{ marginTop: 8 }}>
-              <p style={{ fontSize: "var(--fs-sm)" }}>
-                共 <strong className="mono">{audit.total}</strong> 筆操作
-              </p>
-              <div className="action-row" style={{ marginTop: 6 }}>
-                {audit.actions.slice(0, 6).map((a) => (
-                  <span key={a.action} className="badge" style={{ fontSize: "var(--fs-xs)" }}>
-                    {a.action} ×{a.count}
+        <div>
+          <Panel code="TELEX-LIVE" title="14:32:08 TPE · ● LIVE" sub="LIVE TAPE · 30S CYCLE" right="AUTO">
+            {tape.map((signal) => {
+              const time = new Date(signal.emittedAt).toLocaleTimeString("zh-TW", { hour12: false });
+              return (
+                <div className="row telex-row" key={signal.id}>
+                  <span className="tg soft">{time}</span>
+                  <span className="tg gold">{signal.channel}</span>
+                  <span className="tg" style={{ color: signal.state === "MUTED" ? "var(--night-soft)" : "var(--night-ink)" }}>
+                    <b>{signal.symbol ?? signal.themeCode ?? "-"}</b> · {signal.trigger}
                   </span>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="muted loading-text" style={{ fontSize: "var(--fs-sm)" }}>載入中...</p>
-          )}
-        </div>
-      </section>
+                </div>
+              );
+            })}
+          </Panel>
 
-      {/* 主題排名戰區 */}
-      <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[03]</span>
-        主題火力排名 · THEME LEADERBOARD
-      </h3>
-      <section className="panel hud-frame">
-        <div className="panel-header">
-          <p className="eyebrow">Top 6</p>
-          <Link href="/themes" className="btn-sm">查看全部</Link>
-        </div>
-        {!rankings ? (
-          <p className="muted loading-text" style={{ fontSize: "var(--fs-sm)" }}>載入排名...</p>
-        ) : rankings.results.length === 0 ? (
-          <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>尚無主題排名</p>
-        ) : (
-          <div className="theme-ranking-grid">
-            {rankings.results.slice(0, 6).map((r, idx) => (
-              <div key={r.themeId} className="theme-ranking-card">
-                <div className="theme-ranking-head">
-                  <span className="theme-rank-num mono">#{idx + 1}</span>
-                  <div className="theme-ranking-score mono">{r.score}</div>
-                </div>
-                <div className="theme-ranking-name">{r.name}</div>
-                <div className="theme-ranking-meta dim">
-                  {r.summary.themeCompanyCount} 家核心 · {r.summary.relatedCompanyCount} 家關聯
-                  <span className="block-spark" style={{ marginLeft: 8 }}>
-                    {blockSpark([
-                      r.breakdown.conviction,
-                      r.breakdown.connectivity,
-                      r.breakdown.leverage,
-                      r.breakdown.keywordRichness
-                    ])}
-                  </span>
-                </div>
-                {r.signals.length > 0 ? (
-                  <div className="theme-ranking-signals">
-                    {r.signals.slice(0, 3).map((sig, i) => (
-                      <span key={i} className="badge" style={{ fontSize: "var(--fs-xs)" }}>{sig}</span>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="theme-ranking-bars">
-                  <Bar label="信念" value={r.breakdown.conviction} max={40} />
-                  <Bar label="連結" value={r.breakdown.connectivity} max={30} />
-                  <Bar label="槓桿" value={r.breakdown.leverage} max={20} />
-                  <Bar label="關鍵詞" value={r.breakdown.keywordRichness} max={10} />
-                </div>
+          <Panel code="IDEA-OPN" title="14:32:08 TPE" sub="EMITTED IDEAS · 5 OPEN" right="QUALITY > MED">
+            {openIdeas.map((idea) => (
+              <div className="row idea-row" key={idea.id}>
+                <span className="tg soft">{idea.id}</span>
+                <Link className="tg" href={`/companies/${idea.symbol}`} style={{ color: "var(--night-ink)", fontWeight: 700 }}>
+                  {idea.symbol}
+                </Link>
+                <span className={`tg ${idea.side === "TRIM" || idea.side === "EXIT" || idea.side === "SHORT" ? "down" : "up"}`}>{idea.side}</span>
+                <span className="tg">Q·{idea.quality}</span>
+                <span className="tc soft">{idea.rationale}</span>
+                <Link href="/portfolio" className="mini-button">下單台 →</Link>
               </div>
             ))}
-          </div>
-        )}
-      </section>
-
-      {/* 下排：最新動態流 */}
-      <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[04]</span>
-        最新動態流 · LIVE FEED
-      </h3>
-      <section className="triple-panels">
-        <LatestList title="最新訊號" items={snap?.latest.signals} linkBase="/signals" />
-        <LatestList title="最新計畫" items={snap?.latest.plans} linkBase="/plans" />
-        <LatestList title="最新檢討" items={snap?.latest.reviews} linkBase="/reviews" />
-      </section>
-
-      {/* 快速導航 */}
-      <div className="quick-nav">
-        <Link href="/themes" className="hero-link primary">主題戰區</Link>
-        <Link href="/companies" className="hero-link">公司資料庫</Link>
-        <Link href="/signals" className="hero-link">訊號雷達</Link>
-        <Link href="/drafts" className="hero-link">草稿審核</Link>
-        <Link href="/ops" className="hero-link">系統戰情</Link>
-      </div>
-    </AppShell>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  sub,
-  tone
-}: {
-  label: string;
-  value?: number;
-  sub?: string;
-  tone?: "warn" | "bear" | "accent" | "dim";
-}) {
-  return (
-    <div className="kpi-card">
-      <div className={`kpi-value${tone ? ` ${tone}` : ""}`}>
-        {value != null ? value : "—"}
-      </div>
-      <div className="kpi-label">{label}</div>
-      {sub ? <div className="kpi-sub">{sub}</div> : null}
-    </div>
-  );
-}
-
-function MiniStat({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="mini-stat">
-      <div className="mini-stat-value" style={color ? { color } : undefined}>{value}</div>
-      <div className="mini-stat-label">{label}</div>
-    </div>
-  );
-}
-
-function Bar({ label, value, max }: { label: string; value: number; max: number }) {
-  const pct = Math.max(0, Math.min(100, (value / max) * 100));
-  return (
-    <div className="theme-bar">
-      <div className="theme-bar-row">
-        <span className="theme-bar-label">{label}</span>
-        <span className="theme-bar-value mono">{value}</span>
-      </div>
-      <div className="theme-bar-track">
-        <div className="theme-bar-fill" style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function LatestList({ title, items, linkBase }: { title: string; items?: Array<{ id: string; label: string; subtitle?: string; timestamp: string }>; linkBase: string }) {
-  return (
-    <div className="panel">
-      <p className="eyebrow">{title}</p>
-      {!items ? (
-        <p className="muted loading-text" style={{ fontSize: "var(--fs-sm)" }}>載入中...</p>
-      ) : items.length === 0 ? (
-        <p className="dim" style={{ fontSize: "var(--fs-sm)" }}>尚無資料</p>
-      ) : (
-        <div className="card-stack">
-          {items.slice(0, 5).map((item) => (
-            <Link key={item.id} href={linkBase} className="record-card" style={{ display: "block" }}>
-              <div className="timeline-title">{item.label}</div>
-              {item.subtitle ? <div className="timeline-sub">{item.subtitle}</div> : null}
-              <div className="mono" style={{ fontSize: "var(--fs-xs)", color: "var(--dim)", marginTop: 2 }}>
-                {new Date(item.timestamp).toLocaleString("zh-TW")}
-              </div>
-            </Link>
-          ))}
+          </Panel>
         </div>
-      )}
-    </div>
+
+        <div>
+          <Panel code="OPS-HLT" title="14:32:08 TPE" sub="HEALTH PROBES" right="6 SERV">
+            {[
+              ["RECON", "GREEN", "T-12s", 14.2],
+              ["INGEST", "GREEN", "T-06s", 22.1],
+              ["RANKER", "GREEN", "T-18s", 6.0],
+              ["EMITTER", "GREEN", "T-02m", 0.4],
+              ["BROKER", "AMBER", "T-04m", 0.8],
+              ["AUDIT", "GREEN", "T-00s", 38.4],
+            ].map(([name, state, lag, val]) => (
+              <div className="row health-row" key={String(name)}>
+                <span className="tg" style={{ color: state === "AMBER" ? "var(--gold)" : "var(--night-ink)", fontWeight: 700 }}>{name}</span>
+                <span className={`tg ${state === "AMBER" ? "gold" : "muted"}`}><span className="status-dot" />{state}</span>
+                <span className="tg soft">{lag}</span>
+                <span className="num soft">{String(val)}</span>
+              </div>
+            ))}
+          </Panel>
+
+          <Panel code="MAP-THM" title="14:32:08 TPE" sub="HEAT MAP · POLAR" right="AI">
+            <HeatMap themes={themes} />
+          </Panel>
+
+          <Panel code="EOD-NXT" title="14:32:08 TPE" sub="NEXT ACTIONS" right={activeRun.id}>
+            {["EOD-SNAP · T+18m · queued", "BROKER-REC · T+24m · queued", "WEEKLY-BRF · DUE SUN", "RUN-219 · MON 08:55"].map((line) => (
+              <div className="row telex-row" style={{ gridTemplateColumns: "1fr" }} key={line}>
+                <span className="tg">{line}</span>
+              </div>
+            ))}
+          </Panel>
+        </div>
+      </div>
+    </PageFrame>
   );
 }
