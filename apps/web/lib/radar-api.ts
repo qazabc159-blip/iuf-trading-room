@@ -98,50 +98,50 @@ async function post<TIn, TOut>(path: string, body: TIn, fallback: () => TOut | P
 
 export const api = {
   // GETs
-  session:    () => get<SessionMeta>(("/api/v1/session", mockSessionMeta),
-  themes:     () => get<Theme[]>(("/api/v1/themes", mockThemes),
-  companies:  () => get<Company[]>(("/api/v1/companies", mockCompanies),
-  company:    (s: string) => get<Company | null>(`/api/companies/${s}`,
+  session:    () => get<SessionMeta>("/api/v1/session", mockSessionMeta),
+  themes:     () => get<Theme[]>("/api/v1/themes", mockThemes),
+  companies:  () => get<Company[]>("/api/v1/companies", mockCompanies),
+  company:    (s: string) => get<Company | null>(`/api/v1/companies/${s}`,
                   mockCompanies.find(c => c.symbol === s) ?? null),
-  ideas:      () => get<Idea[]>(("/api/v1/ideas", mockIdeas),
-  runs:       () => get<Run[]>(("/api/v1/runs", mockRuns),
-  run:        (id: string) => get<Run | null>(`/api/runs/${encodeURIComponent(id)}`,
+  ideas:      () => get<Idea[]>("/api/v1/ideas", mockIdeas),
+  runs:       () => get<Run[]>("/api/v1/runs", mockRuns),
+  run:        (id: string) => get<Run | null>(`/api/v1/runs/${encodeURIComponent(id)}`,
                   mockRuns.find(r => r.id === id) ?? null),
-  ideasByRun: (id: string) => get<Idea[]>(`/api/runs/${encodeURIComponent(id)}/ideas`,
+  ideasByRun: (id: string) => get<Idea[]>(`/api/v1/runs/${encodeURIComponent(id)}/ideas`,
                   mockIdeas.filter(i => i.runId === id)),
-  signals:    () => get<Signal[]>(("/api/v1/signals", mockSignals),
-  quotes:     () => get<Quote[]>(("/api/v1/quotes", mockQuotes),
-  positions:  () => get<Position[]>(("/api/v1/portfolio/positions", mockPositions),
-  riskLimits: () => get<RiskLimit[]>(("/api/v1/portfolio/risk", mockRiskLimits),
+  signals:    () => get<Signal[]>("/api/v1/signals", mockSignals),
+  quotes:     () => get<Quote[]>("/api/v1/quotes", mockQuotes),
+  positions:  () => get<Position[]>("/api/v1/portfolio/positions", mockPositions),
+  riskLimits: () => get<RiskLimit[]>("/api/v1/portfolio/risk", mockRiskLimits),
 
   executionEvents: (sinceISO?: string) =>
-    get<ExecutionEvent[]>(`/api/trading/events${sinceISO ? `?since=${encodeURIComponent(sinceISO)}` : ""}`,
+    get<ExecutionEvent[]>(`/api/v1/trading/events${sinceISO ? `?since=${encodeURIComponent(sinceISO)}` : ""}`,
       mockExecutionEvents),
 
-  strategyLimits: () => get<StrategyRiskLimit[]>(("/api/v1/risk/strategy-limits", mockStrategyLimits),
-  symbolLimits:   () => get<SymbolRiskLimit[]>(("/api/v1/risk/symbol-limits", mockSymbolLimits),
+  strategyLimits: () => get<StrategyRiskLimit[]>("/api/v1/risk/strategy-limits", mockStrategyLimits),
+  symbolLimits:   () => get<SymbolRiskLimit[]>("/api/v1/risk/symbol-limits", mockSymbolLimits),
 
   // Ops
-  opsSystem:    () => get<OpsSystem>(("/api/v1/ops/system", mockOpsSystem),
-  opsActivity:  () => get<ActivityEvent[]>(("/api/v1/ops/activity", mockActivityEvents),
-  opsAudit:     () => get<AuditEvent[]>(("/api/v1/ops/audit", mockAuditEvents),
-  opsAuditSum:  () => get<AuditSummary>(("/api/v1/ops/audit/summary", mockAuditSummary),
+  opsSystem:    () => get<OpsSystem>("/api/v1/ops/system", mockOpsSystem),
+  opsActivity:  () => get<ActivityEvent[]>("/api/v1/ops/activity", mockActivityEvents),
+  opsAudit:     () => get<AuditEvent[]>("/api/v1/ops/audit", mockAuditEvents),
+  opsAuditSum:  () => get<AuditSummary>("/api/v1/ops/audit/summary", mockAuditSummary),
 
   // Plans
-  brief:        () => get<BriefBundle>(("/api/v1/plans/brief", mockBrief),
-  review:       () => get<ReviewBundle>(("/api/v1/plans/review", mockReview),
-  weeklyPlan:   () => get<WeeklyPlan>(("/api/v1/plans/weekly", mockWeekly),
+  brief:        () => get<BriefBundle>("/api/v1/plans/brief", mockBrief),
+  review:       () => get<ReviewBundle>("/api/v1/plans/review", mockReview),
+  weeklyPlan:   () => get<WeeklyPlan>("/api/v1/plans/weekly", mockWeekly),
 
   // POSTs
   killMode: (mode: KillMode) =>
-    post<{ mode: KillMode }, { ok: true; mode: KillMode }>(("/api/v1/portfolio/kill-mode",
+    post<{ mode: KillMode }, { ok: true; mode: KillMode }>("/api/v1/portfolio/kill-mode",
       { mode }, () => ({ ok: true, mode })),
 
   previewOrder: (t: OrderTicket) =>
-    post<OrderTicket, OrderPreview>(("/api/v1/paper/orders/preview", t, () => mockPreviewOrder(t)),
+    post<OrderTicket, OrderPreview>("/api/v1/paper/orders/preview", t, () => mockPreviewOrder(t)),
 
   submitOrder: (t: OrderTicket) =>
-    post<OrderTicket, OrderAck>(("/api/v1/paper/orders", t, () => mockSubmitOrder(t)),
+    post<OrderTicket, OrderAck>("/api/v1/paper/orders", t, () => mockSubmitOrder(t)),
 };
 
 /** SSE URL for execution-event stream. Component reconnects with exp backoff. */

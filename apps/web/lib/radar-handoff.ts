@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { Idea, IdeaHandoff, OrderSide } from "@/lib/radar-types";
-import { IDEA_HANDOFF_KEY } from "@/lib/types";
+import { IDEA_HANDOFF_KEY } from "@/lib/radar-types";
 
 function ideaSideToOrderSide(s: Idea["side"]): OrderSide {
   switch (s) {
