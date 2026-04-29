@@ -65,7 +65,9 @@ async function get<T>(path: string, fallback: T): Promise<T> {
     const r = await fetch(`${BASE}${path}`, { next: { revalidate: 30 } });
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     publish("LIVE");
-    return (await r.json()) as T;
+    // All apps/api endpoints return { data: T } — unwrap the envelope.
+    const json = await r.json();
+    return (json && typeof json === "object" && "data" in json ? json.data : json) as T;
   } catch (e) {
     publish("OFFLINE");
     if (IS_PROD) {

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Chart } from "@/components/Chart";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 
@@ -11,46 +12,6 @@ function tone(value: number) {
 
 function signed(value: number, digits = 2) {
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
-}
-
-function MiniKLine({ seed = 0 }: { seed?: number }) {
-  const candles = Array.from({ length: 32 }, (_, i) => {
-    const base = 36 + Math.sin((i + seed) / 2.2) * 14 + Math.cos((i + seed) / 4.4) * 8;
-    const high = base + 8 + (i % 3) * 2;
-    const low = base - 8 - (i % 4);
-    const up = i % 5 !== 1;
-    return { x: 10 + i * 13, base, high, low, up };
-  });
-
-  return (
-    <div style={{ position: "relative" }}>
-      <div className="tg session-pill" style={{ position: "absolute", right: 8, top: 8, zIndex: 1 }}>
-        SIMULATED K-LINE
-      </div>
-      <svg viewBox="0 0 440 138" style={{ width: "100%", height: 180 }} aria-hidden>
-        {candles.map((c, i) => (
-          <g key={i}>
-            <line x1={c.x} x2={c.x} y1={c.low} y2={c.high} stroke="var(--night-soft)" strokeWidth="1" />
-            <rect
-              x={c.x - 4}
-              y={Math.min(c.base, c.base + (c.up ? -11 : 11))}
-              width="8"
-              height="22"
-              fill={c.up ? "var(--tw-up-bright)" : "var(--tw-dn-bright)"}
-              opacity="0.78"
-            />
-          </g>
-        ))}
-        <polyline
-          points={candles.map((c) => `${c.x},${c.base}`).join(" ")}
-          fill="none"
-          stroke="var(--gold-bright)"
-          strokeWidth="1.4"
-          opacity="0.7"
-        />
-      </svg>
-    </div>
-  );
 }
 
 function Radar({ score, dHeat }: { score: number; dHeat: number }) {
@@ -113,7 +74,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ symbol
       code={`03-${company.symbol}`}
       title={company.symbol}
       sub={`${company.name} - ${company.listing}`}
-      note={`[03B] COMPANIES / ${company.symbol} - RADAR VISUAL SHELL - quote and K-line are simulated until the market-data bridge is wired`}
+      note={`[03B] COMPANIES / ${company.symbol} - RADAR DETAIL - K 線讀取 KGI adapter，失敗時使用模擬備援`}
     >
       <div className="quote-strip" style={{ gridTemplateColumns: "repeat(6, minmax(130px, 1fr))" }}>
         {[
@@ -138,7 +99,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ symbol
 
       <div className="company-grid">
         <div>
-          <Panel code="PX-SIM" title="14:32:08 TPE - SIM" sub="K-LINE SIMULATION - awaiting /api/v1/market-data/bars" right="NO LIVE SOURCE">
+          <Panel code="PX-RAD" title="K 線動能" sub="Lightweight Charts - KGI adapter / mock fallback" right="LIVE / STALE / OFFLINE">
             <div className="ticket" style={{ padding: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
                 <div>
@@ -153,7 +114,9 @@ export default async function CompanyPage({ params }: { params: Promise<{ symbol
                   </div>
                 </div>
               </div>
-              <MiniKLine seed={Number(company.symbol.slice(-2))} />
+              <div style={{ marginTop: 18 }}>
+                <Chart symbol={company.symbol} interval="1d" height={360} />
+              </div>
             </div>
           </Panel>
 

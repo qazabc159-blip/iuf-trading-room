@@ -11,7 +11,7 @@
  *
  * Contents:
  *   - Header: ticker + name
- *   - Mini K-line (deterministic mock, 20 bars — no live API)
+ *   - Small read-only spark chart (deterministic mock, 20 bars — no live API)
  *   - Radar chart: ABILITY / FIT / COVER / EVENT / MOMO / SCALE (SVG polygon)
  *   - Quick stats: chain / tier / exposure summary
  *   - Theme IDs
@@ -78,7 +78,7 @@ function RadarChart({ ticker, exposureTotal }: { ticker: string; exposureTotal: 
       {axes.map(ax => (
         <line key={ax.dim} x1={CX} y1={CY} x2={ax.outer.x} y2={ax.outer.y} stroke="var(--night-rule-strong)" strokeWidth={0.8} />
       ))}
-      <polygon points={polyStr} fill="rgba(184,138,62,0.14)" stroke="var(--gold)" strokeWidth={1.4} strokeLinejoin="round" />
+      <polygon points={polyStr} fill="var(--tw-up-faint)" stroke="var(--gold)" strokeWidth={1.4} strokeLinejoin="round" />
       {scorePoints.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={2.5} fill="var(--gold-bright)" />)}
       {axes.map(ax => {
         const score = scores[ax.dim];
@@ -98,8 +98,8 @@ function RadarChart({ ticker, exposureTotal }: { ticker: string; exposureTotal: 
   );
 }
 
-/* ─── Mini mock K-line ───────────────────────────────────────── */
-function MiniKLine({ ticker }: { ticker: string }) {
+/* ─── Small read-only spark chart ────────────────────────────── */
+function InspectorSparkline({ ticker }: { ticker: string }) {
   const seed = ticker.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   const base = 100 + (seed % 900);
   const bars = Array.from({ length: 20 }, (_, i) => {
@@ -200,8 +200,8 @@ export function RightInspector({ company: c, onClose }: RightInspectorProps) {
 
           {/* §1 Mini K-line (mock) */}
           <div style={{ marginBottom: 18 }}>
-            <div className="tg" style={{ color: "var(--night-mid)", marginBottom: 8 }}>K-LINE · MOCK · 20D</div>
-            <MiniKLine ticker={c.ticker} />
+            <div className="tg" style={{ color: "var(--night-mid)", marginBottom: 8 }}>READ-ONLY SPARK · 20D</div>
+            <InspectorSparkline ticker={c.ticker} />
           </div>
 
           {/* §2 Radar chart */}
@@ -242,7 +242,7 @@ export function RightInspector({ company: c, onClose }: RightInspectorProps) {
                   <span key={id} style={{
                     fontFamily: "var(--mono)", fontSize: 9.5,
                     color: "var(--gold)", letterSpacing: "0.14em",
-                    border: "1px solid rgba(184,138,62,0.3)",
+                    border: "1px solid var(--gold-deep)",
                     padding: "2px 8px",
                   }}>{id.slice(0, 8)}</span>
                 ))}
@@ -273,7 +273,7 @@ export function RightInspector({ company: c, onClose }: RightInspectorProps) {
         }}>
           <Link href={`/companies/${c.ticker}`} onClick={onClose} style={{
             display: "inline-flex", alignItems: "center", gap: 6,
-            background: "rgba(184,138,62,0.14)", border: "1px solid var(--gold)",
+            background: "var(--night-2)", border: "1px solid var(--gold)",
             color: "var(--gold-bright)", fontFamily: "var(--mono)", fontSize: 10.5,
             letterSpacing: "0.16em", fontWeight: 700, padding: "6px 14px", textDecoration: "none",
           }}>
