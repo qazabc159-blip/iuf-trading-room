@@ -43,6 +43,8 @@ Active backend lanes (Jason scope, Codex 不踩):
 
 Bruce 4-state harness v1 DONE @ 2026-05-01 02:00 Taipei → evidence/w7_paper_sprint/bruce_4state_harness_v1_2026-05-01.md
 
+Bruce Cycle 3 regression sweep DONE @ 2026-05-01 ~02:54 Taipei → B10 RESOLVED / B11 RESOLVED / B12 NEW (radar-lab.ts no IS_PROD guard, /lab + /lab/[bundleId] pages affected, owner=Codex)
+
 Known usable endpoints:
 
 - `GET /api/v1/session`
@@ -313,6 +315,14 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - Mike → 0020 migration audit lane（不變）
 - Jim → halted on new frontend scope（deprecated branch dispositioned 上方）
 
+### Cycle 4 (03:17) — Bruce sweep consumed / B12 OPEN HIGH waiting on Codex
+- Read board / `git fetch origin main`. **No new Codex commit** since `633d00e` @ 02:48 — Codex 安靜 ~30 min（1.5 cycle）。
+- Bruce regression sweep（agent `a23e9c9a0ad8585b7`）completed @ ~02:54 — B10/B11 二次 verify RESOLVED；B12 NEW / HIGH / `apps/web/lib/radar-lab.ts` 沒 `IS_PROD` guard，`/lab` + `/lab/[bundleId]` 直接 import `radarLabApi.*` → production API failure 會 silent serve mock bundle。Bruce 已寫完整 fix-pattern instruction 到 board B12 行。
+- Stop-line scan **PASS** — 無新 commit。
+- B12 是 Codex lane 內，不主動 dispatch，等 Codex 下一輪 heartbeat 接手；若 Cycle 5 (~03:37) 仍未動作 = 2+ cycles，再 escalate board hint。
+- 無 mid/large PR → Pete standby。
+- Yellow/Red: 無觸發。
+
 ### Cycle 3 (02:55) — Codex B10/B11 fix landed + Bruce regression dispatched
 - Read board / `git fetch origin main`. New commit: `633d00e fix(web): fail closed on production quote mocks` — Codex 02:48 cycle.
 - **B10/B11 source-level verify (Elva 02:55)**: `apps/web/lib/radar-uncovered.ts` 加 `IS_PROD` guard + `shouldAllowMockFallback()` → production catch path 改 throw `productionFallbackError`；`apps/web/lib/use-readonly-quote.ts` `IS_PROD` guard 加在 line 142/173，production path 設 `endpointUnavailable: true` + `error` 不再 fallback `mockBidAsk`/`mockTicks`。修法看起來正確 — **本輪 Elva source-level mark RESOLVED；待 Bruce regression sweep 二次確認**。
@@ -344,7 +354,8 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - **B3**: KGI bidask/tick readonly endpoint — write-side `libCGCrypt.so` blocked；read-side BLOCKED per Jason Contract 5（gateway operator dep + WS not impl）；Codex 標 BLOCKED owner="Operator + Jason"
 - **B4**: Pete standby — Codex 至今 cycle (01:49 → 02:04) 全部 direct-commit `fix(web)`，無 mid/large PR，Pete 仍 standby
 - **B5~B9**: [Rule 5] mock-in-production page-level violations — **status: RESOLVED @ Cycle 1 verify (Elva 02:11)**. Codex commits f463069/3fa0feb/11c2b9a/b64a875/8abfc13 已將 briefs/reviews/drafts/admin-content-drafts/quote 全部從 mock 直賦轉成 LIVE/EMPTY/BLOCKED API 綁定；`ContentDraftDetailClient.tsx` 已刪除（per cycle 02:00 board entry）；mock constants 仍存於 `lib/radar-uncovered.ts` 但 page-level 直接 import 已消失。
-- **B10**: [Rule 7] `apps/web/lib/radar-uncovered.ts` production fallback guard — **RESOLVED @ Codex 02:48**. `getMaybe`/`postMaybe` and direct dev-only helpers now fail closed in production; dev/build mock fallback remains allowed.
-- **B11**: [Rule 7] `apps/web/lib/use-readonly-quote.ts` quote fallback — **RESOLVED @ Codex 02:48**. Production failures now render BLOCKED/NO DATA with `endpointUnavailable=true`; `BidAskLadder` and `TickTape` no longer draw synthetic rows when KGI read endpoints are unavailable.
+- **B10**: [Rule 7] `apps/web/lib/radar-uncovered.ts` production fallback guard — **RESOLVED @ Codex 02:48 / verified by Bruce Cycle 3 @ ~02:54**. `getMaybe`/`postMaybe` now guarded by `shouldAllowMockFallback()` which returns `false` in production; `devOnlyValue()` rejects in production; all catch paths throw in prod instead of returning fallback. No app-level callers of `radarUncoveredApi.*` found in `apps/web/app/**` (zero matches Sweep A).
+- **B11**: [Rule 7] `apps/web/lib/use-readonly-quote.ts` quote fallback — **RESOLVED @ Codex 02:48 / verified by Bruce Cycle 3 @ ~02:54**. `!API_BASE` branch and catch branch both set `endpointUnavailable: true` + empty data in production instead of returning `mockBidAsk`/`mockTicks`. `BidAskLadder` and `TickTape` confirmed to gate on `endpointUnavailable` before drawing any synthetic rows.
+- **B12**: [Rule 7] `apps/web/lib/radar-lab.ts` production fallback guard — **OPEN / HIGH / owner: Codex**. `getMaybe` line 44-45 returns fallback unconditionally when `!API_BASE` (no IS_PROD check). Catch block at lines 55-57 also returns fallback unconditionally. No `IS_PROD` or `NODE_ENV` variable declared anywhere in file. Pages `/lab` and `/lab/[bundleId]` consume `radarLabApi.bundles()` / `radarLabApi.bundle()` / `radarLabApi.bundleAction()` directly — these will silently serve mock bundle data in production on any API failure. Fix required: add `IS_PROD = process.env.NODE_ENV === "production"` and guard identical to `radar-uncovered.ts` `shouldAllowMockFallback()` pattern.
 
 Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區.
