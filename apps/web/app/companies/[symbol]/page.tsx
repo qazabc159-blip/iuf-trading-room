@@ -1,33 +1,44 @@
 // /companies/[symbol]/page.tsx — Server Component
-// Reads contracts-shape Company + OHLCV from live backend.
-// Panels: CompanyInfoPanel → OhlcvCandlestickChart → FinancialsPanel →
-//         ChipsPanel → AnnouncementsPanel → PaperOrderPanel
+// 9-panel RADAR visual skeleton on top of live contracts-shape Company + OHLCV.
+// HeroBar / OHLCV chart / CompanyInfo / Chips / Announcements / Financials live
+// from /api/v1; PaperOrder posts to /api/v1/paper/orders/*; Source / Derivatives /
+// TickStream are visual placeholders fed by company-adapter mocks until backends land.
 //
-// Each client panel is individually responsible for its own fetch + error state.
-// OHLCV is pre-fetched server-side (fail-open: empty bars on error).
+// HARD LINE: never import KGI SDK or call broker live submit path.
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
 import { getCompanyByTicker, getCompanyOhlcv, type OhlcvBar } from "@/lib/api";
+import {
+  buildCompanyDetailMocks,
+  quoteFromOhlcvBars,
+  toCompanyDetailView,
+} from "@/lib/company-adapter";
 
+import { CompanyHeroBar }      from "./CompanyHeroBar";
 import { CompanyInfoPanel }    from "./CompanyInfoPanel";
 import { OhlcvCandlestickChart } from "./OhlcvCandlestickChart";
 import { FinancialsPanel }     from "./FinancialsPanel";
 import { ChipsPanel }          from "./ChipsPanel";
 import { AnnouncementsPanel }  from "./AnnouncementsPanel";
 import { PaperOrderPanel }     from "./PaperOrderPanel";
+import { SourceStatusCard }    from "./SourceStatusCard";
+import { DerivativesPanel }    from "./DerivativesPanel";
+import { TickStreamPanel }     from "./TickStreamPanel";
 
-// ── Tier badge helpers (shared across listing + detail) ───────────────────────
-const tierBadge: Record<string, string> = {
-  Core:        "badge-green",
-  Direct:      "badge-yellow",
-  Indirect:    "badge",
-  Observation: "badge",
-};
+function tone(value: number | null | undefined) {
+  if (typeof value !== "number") return "muted";
+  if (value > 0) return "up";
+  if (value < 0) return "down";
+  return "muted";
+}
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+function signed(value: number | null | undefined, digits = 2) {
+  if (typeof value !== "number") return "--";
+  return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
+}
 
 export default async function CompanyDetailPage({
   params,
@@ -36,12 +47,14 @@ export default async function CompanyDetailPage({
 }) {
   const { symbol } = await params;
 
-  // Resolve company by ticker (list-scan until Jason TASK1 lands ticker server-side lookup)
   const company = await getCompanyByTicker(symbol).catch(() => null);
   if (!company) notFound();
 
-  // Pre-fetch OHLCV server-side (fail-open — chart shows NO DATA on empty)
   const bars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d" }).catch(() => []);
+
+  const detail = toCompanyDetailView(company, symbol);
+  const quote = quoteFromOhlcvBars(bars, detail);
+  const mocks = buildCompanyDetailMocks(detail);
 
   return (
     <PageFrame
@@ -50,8 +63,7 @@ export default async function CompanyDetailPage({
       sub={`${company.name} · ${company.market}`}
       note={`[03B] COMPANIES / ${company.ticker} · ${company.chainPosition} · ${company.beneficiaryTier}`}
     >
-      {/* Back link */}
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 8 }}>
         <Link
           href="/companies"
           className="btn-sm"
@@ -61,59 +73,54 @@ export default async function CompanyDetailPage({
         </Link>
       </div>
 
-      {/* Stock page header row */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 14,
-        marginBottom: 20,
-        paddingBottom: 14,
-        borderBottom: "1px solid var(--night-rule-strong, #333)",
-        flexWrap: "wrap",
-      }}>
-        <span className="mono" style={{ fontWeight: 700, fontSize: 22, color: "var(--gold, #b8960c)" }}>
-          {company.ticker}
-        </span>
-        <span style={{ fontSize: 16, color: "var(--night-ink, #d8d4c8)" }}>{company.name}</span>
-        <span className={tierBadge[company.beneficiaryTier] ?? "badge"} style={{ fontSize: 11, padding: "2px 8px" }}>
-          {company.beneficiaryTier}
-        </span>
-        <span className="badge" style={{ fontSize: 11, padding: "2px 8px" }}>{company.market}</span>
-        <span className="badge" style={{ fontSize: 11, padding: "2px 8px" }}>{company.country}</span>
-      </div>
+      <CompanyHeroBar company={detail} quote={quote} />
 
-      {/*
-        Mobile responsive layout:
-        - md:grid-cols-2 for InfoPanel + ChipsPanel side by side
-        - Other panels full-width
-      */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
-        {/* Row 1: InfoPanel + ChipsPanel (2-col on wider screens) */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: 20,
-        }}>
-          {/* [01] Company Info */}
+      <div className="company-detail-layout">
+        <div className="company-main-column">
+          <OhlcvCandlestickChart bars={bars} symbol={company.ticker} />
           <CompanyInfoPanel company={company} />
-
-          {/* [04] Chips */}
-          <ChipsPanel companyId={company.id} />
         </div>
 
-        {/* [02] K-line chart — full width */}
-        <OhlcvCandlestickChart bars={bars} symbol={company.ticker} />
+        <aside className="company-side-column">
+          <PaperOrderPanel symbol={company.ticker} />
+          <SourceStatusCard sources={mocks.sources} />
+        </aside>
+      </div>
 
-        {/* [03] Financials — full width */}
+      <div className="company-kpi-strip">
+        <div>
+          <span className="tg soft">SCORE</span>
+          <b className="num">{detail.scorePct}</b>
+        </div>
+        <div>
+          <span className="tg soft">MOM</span>
+          <b className={`tg ${tone(detail.intradayChgPct)}`}>{detail.momentum}</b>
+        </div>
+        <div>
+          <span className="tg soft">FII 5D</span>
+          <b className={`num ${tone(detail.fiiNetBn5d)}`}>{signed(detail.fiiNetBn5d)} BN</b>
+        </div>
+        <div>
+          <span className="tg soft">INTRADAY</span>
+          <b className={`num ${tone(detail.intradayChgPct)}`}>{signed(detail.intradayChgPct)}%</b>
+        </div>
+        <div>
+          <span className="tg soft">THEMES</span>
+          <b className="tg gold">{detail.themes.join(" / ") || "—"}</b>
+        </div>
+      </div>
+
+      <div className="company-tabs-band">
+        <span className="tg gold">COMPANY SURFACE</span>
+        <span className="tg soft">財報 / 籌碼 / 公告 / 期權 / tick stream</span>
+      </div>
+
+      <div className="company-panels-grid">
         <FinancialsPanel companyId={company.id} />
-
-        {/* [05] Announcements — full width */}
+        <ChipsPanel companyId={company.id} />
         <AnnouncementsPanel companyId={company.id} />
-
-        {/* [06] Paper Order — full width */}
-        <PaperOrderPanel symbol={company.ticker} />
-
+        <DerivativesPanel rows={mocks.derivatives} />
+        <TickStreamPanel rows={mocks.ticks} />
       </div>
     </PageFrame>
   );
