@@ -30,6 +30,39 @@ const COVERAGE_PATH =
 const WORKSPACE_SLUG = process.env.WORKSPACE_SLUG ?? "primary-desk";
 const APPLY = process.env.APPLY !== "false";
 const BATCH_SIZE = 10;
+const OWNER_EMAIL = process.env.OWNER_EMAIL;
+const OWNER_PASSWORD = process.env.OWNER_PASSWORD;
+
+let sessionCookie = "";
+
+async function login(): Promise<void> {
+  if (!OWNER_EMAIL || !OWNER_PASSWORD) {
+    throw new Error("OWNER_EMAIL and OWNER_PASSWORD must be set");
+  }
+  const response = await fetch(`${API_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD })
+  });
+  if (!response.ok) {
+    throw new Error(`Login failed: HTTP ${response.status}`);
+  }
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  const match = setCookie.match(/iuf_session=[^;]+/);
+  if (!match) {
+    throw new Error(`Login response missing iuf_session cookie: ${setCookie.slice(0, 200)}`);
+  }
+  sessionCookie = match[0];
+  console.log(`[sync] Logged in as ${OWNER_EMAIL}`);
+}
+
+function authHeaders(): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "x-workspace-slug": WORKSPACE_SLUG,
+    Cookie: sessionCookie
+  };
+}
 
 const headers = {
   "Content-Type": "application/json",
@@ -78,7 +111,7 @@ function buildCompanyPatch(existing: Company, desired: ReturnType<typeof buildIm
 
 async function fetchCompanies(): Promise<Company[]> {
   const response = await fetch(`${API_URL}/api/v1/companies`, {
-    headers
+    headers: authHeaders()
   });
 
   if (!response.ok) {
@@ -92,7 +125,7 @@ async function fetchCompanies(): Promise<Company[]> {
 async function patchCompany(companyId: string, patch: Record<string, unknown>) {
   const response = await fetch(`${API_URL}/api/v1/companies/${companyId}`, {
     method: "PATCH",
-    headers,
+    headers: authHeaders(),
     body: JSON.stringify(patch)
   });
 
@@ -103,6 +136,7 @@ async function patchCompany(companyId: string, patch: Record<string, unknown>) {
 }
 
 async function main() {
+  await login();
   console.log(`[sync] Parsing coverage at: ${COVERAGE_PATH}`);
   const imported = runImport({ coveragePath: COVERAGE_PATH });
   console.log(
