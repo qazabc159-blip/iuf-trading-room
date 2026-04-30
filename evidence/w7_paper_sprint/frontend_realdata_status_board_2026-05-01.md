@@ -242,6 +242,10 @@ Tests:
 - PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
 - PASS `pnpm.cmd --filter @iuf-trading-room/web build`
 
+Deploy:
+
+- PASS Railway web deployment `3261ca7a-09dd-4af7-b6d7-72dfaff5a982` reached SUCCESS at 02:06 Taipei.
+
 ## Elva Notes
 
 ### 2026-05-01 01:42 Taipei — Operator final ACK + Elva 20min cycle started
