@@ -46,15 +46,43 @@ export default async function CompanyDetailPage({
   params: Promise<{ symbol: string }>;
 }) {
   const { symbol } = await params;
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "(unset)";
+  const wsSlug  = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
 
   let companies: Company[] = [];
+  let fetchErrorMsg: string | null = null;
   try {
     const res = await getCompanies();
     companies = res.data ?? [];
   } catch (err) {
-    console.error("[company-detail] getCompanies failed", { symbol, err });
-    throw new Error(
-      `公司列表載入失敗 (symbol=${symbol}): ${err instanceof Error ? err.message : String(err)}`,
+    fetchErrorMsg = err instanceof Error ? err.message : String(err);
+    console.error("[company-detail] getCompanies failed", { symbol, err: fetchErrorMsg });
+  }
+
+  if (fetchErrorMsg !== null) {
+    return (
+      <PageFrame
+        code="03-ERR"
+        title={symbol.toUpperCase()}
+        sub="fetch /api/v1/companies failed"
+        note={`[03B-DIAG] /companies/${symbol} · 後端 list 取不回`}
+      >
+        <div style={{ padding: "32px 24px", fontFamily: "var(--mono, monospace)", fontSize: 12, lineHeight: 1.7 }}>
+          <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 16, fontSize: 14 }}>
+            [DIAG] /companies/{symbol.toUpperCase()} — getCompanies() failed
+          </div>
+          <div className="dim" style={{ marginBottom: 8 }}>API_BASE: <b>{apiBase}</b></div>
+          <div className="dim" style={{ marginBottom: 8 }}>WORKSPACE_SLUG: <b>{wsSlug}</b></div>
+          <div className="dim" style={{ marginBottom: 8 }}>PATH: <b>/api/v1/companies</b></div>
+          <div className="dim" style={{ marginBottom: 16 }}>
+            ERROR (raw): <pre style={{ background: "rgba(255,0,0,0.08)", padding: 12, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-all", maxWidth: 800 }}>{fetchErrorMsg}</pre>
+          </div>
+          <div className="dim" style={{ marginBottom: 16 }}>
+            可能原因：(a) SSR cookie 未轉發 → 401；(b) workspace_slug 不對 → 401/403；(c) API base 設錯；(d) 後端 5xx。把 ERROR 那段截圖貼給 Elva。
+          </div>
+          <Link href="/companies" className="btn-sm">← 公司列表</Link>
+        </div>
+      </PageFrame>
     );
   }
 
