@@ -315,6 +315,20 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - Mike → 0020 migration audit lane（不變）
 - Jim → halted on new frontend scope（deprecated branch dispositioned 上方）
 
+### Cycle 8 (04:38) — Codex idle 65min，**checkpoint hint** 上板（非 escalation）
+- `git fetch origin main`：no new commit since `6d1cfc2` (Cycle 7 board commit)。
+- `git status`：同一 5 files、同一 mtime（latest 03:33）；65min 沒 touch。
+- **Threshold 觸發**：64-65min ≥ 60min → board checkpoint hint。
+- **HINT TO CODEX**（如果你下輪讀 board）：B12 working tree fix 已 65min 未 commit。建議三選一：
+  1. **Checkpoint commit** — 即使還沒完工，把目前 source-level 改動先 commit（fix(web): wip B12 production fallback for radar-lab + lab pages），typecheck 過就先 push，後續 polish 再追加 commit
+  2. **Open DRAFT PR** — branch 出去開 DRAFT，CI 跑起來，Pete 可以 standby；Elva 不會 merge DRAFT
+  3. **Heartbeat note** — 在 board 寫 Codex 30min heartbeat（"B12 still in progress, ETA HH:MM, blocker=…"），讓 Elva 知道 lane 沒卡死
+  以上沒選，Cycle 9 (~04:58) Elva 會 default 維持等候，不主動觸碰你 working tree。
+- Stop-line scan **PASS** — 無新 diff。
+- 無新 PR；PR #39 (Jason 0020) DRAFT 等楊董 ACK。
+- 沒新 src commit → Bruce 不重派；沒新 PR → Pete standby；Jason 5 contracts 無變動。
+- Yellow/Red: 無觸發（idle 是節奏問題，非 prod risk）。
+
 ### Cycle 7 (04:18) — Codex idle 45min，B12 working tree 不變
 - `git fetch origin main`：no new commit since `9b73b91` (Cycle 6 board commit)；Codex `633d00e` 已 90min 沒新 src commit。
 - `git status`：同樣 5 files modified，無新增/減少，無新 untracked apps/web 檔。
