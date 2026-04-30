@@ -347,7 +347,9 @@ export const mockDuplicatePairs: DuplicatePair[] = [
 export const radarUncoveredApi = {
   reviewQueue: () => getMaybe<ReviewItem[]>("/api/v1/reviews", mockReviewQueue, isArray),
   review: (id: string) => Promise.resolve(mockReviewQueue.find((item) => item.id === id) ?? mockReviewQueue[0]),
-  reviewLog: () => getMaybe<ReviewLogItem[]>("/api/v1/openalice/jobs", mockReviewLog, isArray),
+  // W7 L6: reviewLog now points to /api/v1/reviews/log (new route) instead of
+  // /api/v1/openalice/jobs (wrong shape). Graceful fallback to mockReviewLog preserved.
+  reviewLog: () => getMaybe<ReviewLogItem[]>("/api/v1/reviews/log", mockReviewLog, isArray),
   reviewAction: (id: string, action: ReviewAction) =>
     postMaybe(`/api/v1/reviews/${encodeURIComponent(id)}/action`, { action }, { ok: true, id, action }),
 

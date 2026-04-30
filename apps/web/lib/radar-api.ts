@@ -118,14 +118,19 @@ export const api = {
   session:    () => get<SessionMeta>("/api/v1/session", mockSessionMeta),
   themes:     () => get<Theme[]>("/api/v1/themes", mockThemes),
   companies:  () => get<Company[]>("/api/v1/companies", mockCompanies),
-  // company(s): RADAR uses :symbol, backend uses :id (uuid). Force MOCK until symbol-resolver wired.
-  company:    (s: string) => mockOnly<Company | null>(mockCompanies.find(c => c.symbol === s) ?? null),
+  // company(s): RADAR uses :symbol, backend uses :id (uuid).
+  // W7 L6: fetch all companies and find by symbol client-side. Falls back to mock on any failure.
+  // get<T> returns T (already unwrapped from envelope), so here T=Company[] and we find by symbol.
+  company:    (s: string) => get<Company[]>("/api/v1/companies", mockCompanies).then(
+    (all) => (Array.isArray(all) ? all.find(c => c.symbol === s) ?? null : null)
+  ).catch(() => mockCompanies.find(c => c.symbol === s) ?? null),
   ideas:      () => get<Idea[]>("/api/v1/strategy/ideas", mockIdeas),
   runs:       () => get<Run[]>("/api/v1/strategy/runs", mockRuns),
   run:        (id: string) => get<Run | null>(`/api/v1/strategy/runs/${encodeURIComponent(id)}`,
                   mockRuns.find(r => r.id === id) ?? null),
-  // ideasByRun: no /strategy/runs/:id/ideas endpoint. Force MOCK; tracked for backend.
-  ideasByRun: (id: string) => mockOnly<Idea[]>(mockIdeas.filter(i => i.runId === id)),
+  // ideasByRun: wired to /strategy/runs/:id/ideas (added PR #22 item 2).
+  ideasByRun: (id: string) => get<Idea[]>(`/api/v1/strategy/runs/${encodeURIComponent(id)}/ideas`,
+    mockIdeas.filter(i => i.runId === id)),
   signals:    () => get<Signal[]>("/api/v1/signals", mockSignals),
   quotes:     () => get<Quote[]>("/api/v1/market-data/quotes", mockQuotes),
   positions:  () => get<Position[]>("/api/v1/trading/positions", mockPositions),
@@ -140,24 +145,27 @@ export const api = {
 
   // Ops
   opsSystem:    () => get<OpsSystem>("/api/v1/ops/snapshot", mockOpsSystem),
-  // opsActivity: no /api/v1/ops/activity endpoint. Force MOCK; tracked for backend.
-  opsActivity:  () => mockOnly<ActivityEvent[]>(mockActivityEvents),
+  // opsActivity: wired to /api/v1/ops/activity (added PR #22 item 3). W7 L6: remove mockOnly.
+  opsActivity:  () => get<ActivityEvent[]>("/api/v1/ops/activity", mockActivityEvents),
   opsAudit:     () => get<AuditEvent[]>("/api/v1/audit-logs", mockAuditEvents),
   opsAuditSum:  () => get<AuditSummary>("/api/v1/audit-logs/summary", mockAuditSummary),
 
-  // Plans — backend has /api/v1/briefs + /api/v1/reviews but bundle shapes differ. Force MOCK.
-  brief:        () => mockOnly<BriefBundle>(mockBrief),
-  review:       () => mockOnly<ReviewBundle>(mockReview),
-  weeklyPlan:   () => mockOnly<WeeklyPlan>(mockWeekly),
+  // Plans — wired to /api/v1/plans/{brief,review,weekly} (PR #22 item 4 + W7 L6 compose pass).
+  brief:        () => get<BriefBundle>("/api/v1/plans/brief", mockBrief),
+  review:       () => get<ReviewBundle>("/api/v1/plans/review", mockReview),
+  weeklyPlan:   () => get<WeeklyPlan>("/api/v1/plans/weekly", mockWeekly),
 
   // POSTs
-  // killMode: backend is /api/v1/risk/kill-switch with different body shape (killSwitchInputSchema).
-  // Force MOCK to preserve UI state machine; W6 hard line: kill-switch ARMED state untouched in this PR.
+  // killMode: HARD LINE — kill-switch ARMED state machine must not be toggled from UI via backend.
+  // Remains mockOnly to preserve frontend-only UI state machine semantics.
+  // Backend /api/v1/portfolio/kill-mode exists but routes through setKillSwitchState which mutates
+  // ARMED state — not safe to wire until operator-gate review is done.
   killMode: (mode: KillMode) =>
     mockOnly<{ ok: true; mode: KillMode }>({ ok: true, mode }),
 
-  // previewOrder: no /api/v1/paper/orders/preview backend route. Force MOCK; tracked for Jason.
-  previewOrder: (t: OrderTicket) => mockOnly<OrderPreview>(() => mockPreviewOrder(t)),
+  // previewOrder: wired to /api/v1/paper/orders/preview (added PR #22 item 1). W7 L6: remove mockOnly.
+  previewOrder: (t: OrderTicket) =>
+    post<OrderTicket, OrderPreview>("/api/v1/paper/orders/preview", t, () => mockPreviewOrder(t)),
 
   // submitOrder: /api/v1/paper/orders is W6 paper sprint live route (apps/api line 2679).
   submitOrder: (t: OrderTicket) =>
