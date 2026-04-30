@@ -83,7 +83,7 @@ Initial high-risk surfaces:
 - `/briefs`: DONE in Codex cycle 01:54; now binds `GET /api/v1/briefs` and renders LIVE / EMPTY / BLOCKED.
 - `/reviews`: DONE in Codex cycle 01:56; now binds `GET /api/v1/reviews` as read-only ledger and marks action queue BLOCKED.
 - `/drafts` and `/admin/content-drafts`: DONE in Codex cycle 02:00; now bind `GET /api/v1/content-drafts` and remove local-only audit/action mocks.
-- `/quote`: currently uses mock bidask/ticks.
+- `/quote`: DONE in Codex cycle 02:04; now binds `GET /api/v1/market-data/effective-quotes` and blocks K-line/depth/ticks instead of rendering deterministic mock market data.
 - `/companies/[symbol]`: source/tick/derivatives mock feed removed in Codex cycle 01:49; remaining company-detail mock risk is `toCompanyDetailView` fallback fields.
 - `DerivativesPanel`: BLOCKED until production endpoint contract exists.
 - `TickStreamPanel`: BLOCKED until KGI readonly bid/ask + tick contract exists.
@@ -213,6 +213,29 @@ Files:
 Endpoints:
 
 - `GET /api/v1/content-drafts`
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+
+### 2026-05-01 02:04 Taipei
+
+Completed:
+
+- Converted `/quote` from client-side `fallbackQuote`, `mockBidAsk`, and `mockTicks` to server-rendered `GET /api/v1/market-data/effective-quotes`.
+- Removed deterministic bid/ask ladder, generated tick tape, and mock-kbar chart from the quote page.
+- K-line, bid/ask depth, and tick tape now render BLOCKED until production bars/depth/tick contracts are deliberately wired.
+
+Files:
+
+- `apps/web/app/quote/page.tsx`
+- `apps/web/app/globals.css`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `GET /api/v1/market-data/effective-quotes`
 
 Tests:
 

@@ -1486,6 +1486,33 @@ body:has(.login-route) > div {
   white-space: pre-wrap;
 }
 
+.quote-snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--night-rule, #222);
+  background: var(--night-rule, #222);
+}
+
+.quote-snapshot-grid > div {
+  display: grid;
+  gap: 8px;
+  min-height: 78px;
+  padding: 12px;
+  background: var(--night-1, #111);
+}
+
+.quote-snapshot-grid b {
+  overflow-wrap: anywhere;
+}
+
+.quote-reason-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
 @media (max-width: 1100px) {
   .company-detail-layout {
     grid-template-columns: 1fr;
@@ -1513,5 +1540,8 @@ body:has(.login-route) > div {
   }
   .market-intel-body {
     padding-left: 0;
+  }
+  .quote-snapshot-grid {
+    grid-template-columns: 1fr;
   }
 }

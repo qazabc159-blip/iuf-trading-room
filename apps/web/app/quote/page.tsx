@@ -1,79 +1,153 @@
-"use client";
-
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Chart } from "@/components/Chart";
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip, signed, toneClass } from "@/components/RadarWidgets";
-import type { BidAskLevel, QuoteInterval, QuoteStatus, QuoteTick } from "@/lib/radar-uncovered";
-import { fallbackQuote, mockBidAsk, mockTicks, radarUncoveredApi } from "@/lib/radar-uncovered";
+import { getEffectiveQuotes, type EffectiveMarketQuote } from "@/lib/api";
 
-function initialSymbol() {
-  if (typeof window === "undefined") return "2330";
-  return new URLSearchParams(window.location.search).get("symbol") || "2330";
+function fmtNumber(value: number | null | undefined, digits = 2) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  });
 }
 
-export default function QuotePage() {
-  const [symbol, setSymbol] = useState(initialSymbol);
-  const [input, setInput] = useState(initialSymbol);
-  const [interval, setInterval] = useState<QuoteInterval>("1m");
-  const [status, setStatus] = useState<QuoteStatus>(() => fallbackQuote(initialSymbol()));
-  const [bidask, setBidask] = useState<BidAskLevel[]>(() => mockBidAsk(initialSymbol()));
-  const [ticks, setTicks] = useState<QuoteTick[]>(() => mockTicks(initialSymbol()));
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "NOT SET";
+  return new Date(value).toLocaleString("zh-TW", { hour12: false });
+}
 
-  useEffect(() => {
-    let alive = true;
+function readinessBadge(readiness: EffectiveMarketQuote["readiness"]) {
+  if (readiness === "ready") return "badge-green";
+  if (readiness === "degraded") return "badge-yellow";
+  return "badge-red";
+}
 
-    async function pullFast() {
-      const [nextStatus, nextBidask, nextTicks] = await Promise.all([
-        radarUncoveredApi.quoteStatus(symbol),
-        radarUncoveredApi.quoteBidask(symbol),
-        radarUncoveredApi.quoteTicks(symbol),
-      ]);
-      if (!alive) return;
-      setStatus(nextStatus);
-      setBidask(nextBidask);
-      setTicks(nextTicks);
-    }
-
-    pullFast();
-    const fast = window.setInterval(pullFast, 5000);
-    return () => {
-      alive = false;
-      window.clearInterval(fast);
-    };
-  }, [symbol]);
-
-  const cells = useMemo(
-    () => [
-      { label: "現價", value: status.last.toLocaleString(), delta: status.change },
-      { label: "漲跌", value: signed(status.change, 2), tone: toneClass(status.change) },
-      { label: "漲跌幅", value: `${signed(status.changePct, 2)}%`, tone: toneClass(status.changePct) },
-      { label: "成交量", value: status.volume.toLocaleString(), tone: "muted" as const },
-      { label: "買價", value: status.bid.toLocaleString(), tone: "up" as const },
-      { label: "賣價", value: status.ask.toLocaleString(), tone: "down" as const },
-    ],
-    [status],
+function QuoteStatePanel({
+  state,
+  reason,
+}: {
+  state: "EMPTY" | "BLOCKED";
+  reason: string;
+}) {
+  return (
+    <Panel code={`QTE-${state}`} title={state} right="Quote source">
+      <div className="state-panel">
+        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
+        <span className="tg soft">Source: GET /api/v1/market-data/effective-quotes</span>
+        <span className="state-reason">{reason}</span>
+      </div>
+    </Panel>
   );
+}
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const next = input.trim() || "2330";
-    setSymbol(next);
-    window.history.replaceState(null, "", `/quote?symbol=${encodeURIComponent(next)}`);
+function QuoteSnapshot({ item }: { item: EffectiveMarketQuote }) {
+  const quote = item.selectedQuote;
+  const reasons = item.reasons.length > 0 ? item.reasons : ["none"];
+
+  return (
+    <Panel
+      code="QTE-LIVE"
+      title={`${item.symbol} ${item.market}`}
+      right={
+        <span className="source-line" style={{ margin: 0 }}>
+          <span className={`badge ${readinessBadge(item.readiness)}`}>{item.readiness.toUpperCase()}</span>
+          <span>Source: {item.selectedSource ?? "NONE"}</span>
+          <span>Freshness: {item.freshnessStatus}</span>
+        </span>
+      }
+    >
+      {quote ? (
+        <div className="quote-snapshot-grid">
+          <div>
+            <span className="tg soft">LAST</span>
+            <b className="num">{fmtNumber(quote.last)}</b>
+          </div>
+          <div>
+            <span className="tg soft">BID</span>
+            <b className="num up">{fmtNumber(quote.bid)}</b>
+          </div>
+          <div>
+            <span className="tg soft">ASK</span>
+            <b className="num down">{fmtNumber(quote.ask)}</b>
+          </div>
+          <div>
+            <span className="tg soft">CHANGE</span>
+            <b className="num">{fmtNumber(quote.changePct)}%</b>
+          </div>
+          <div>
+            <span className="tg soft">VOLUME</span>
+            <b className="num">{fmtNumber(quote.volume, 0)}</b>
+          </div>
+          <div>
+            <span className="tg soft">UPDATED</span>
+            <b className="tg">{formatDateTime(quote.timestamp)}</b>
+          </div>
+        </div>
+      ) : (
+        <div className="state-panel">
+          <span className="badge badge-red">BLOCKED</span>
+          <span className="state-reason">No selected quote is available for this symbol.</span>
+        </div>
+      )}
+
+      <div className="quote-reason-list">
+        {reasons.map((reason) => (
+          <span className="badge" key={reason}>{reason}</span>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function BlockedMarketPanel({
+  code,
+  title,
+  reason,
+}: {
+  code: string;
+  title: string;
+  reason: string;
+}) {
+  return (
+    <Panel code={code} title={title} right="contract required">
+      <div className="state-panel">
+        <span className="badge badge-red">BLOCKED</span>
+        <span className="tg soft">Owner: Jason/Elva.</span>
+        <span className="state-reason">{reason}</span>
+      </div>
+    </Panel>
+  );
+}
+
+export default async function QuotePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ symbol?: string }>;
+}) {
+  const params = await searchParams;
+  const symbol = (params?.symbol?.trim() || "2330").toUpperCase();
+  let item: EffectiveMarketQuote | null = null;
+  let generatedAt: string | null = null;
+  let error: string | null = null;
+
+  try {
+    const response = await getEffectiveQuotes({ symbols: symbol, includeStale: true, limit: 1 });
+    generatedAt = response.data.generatedAt;
+    item = response.data.items[0] ?? null;
+  } catch (err) {
+    error = err instanceof Error ? err.message : "effective quote request failed";
   }
 
   return (
     <PageFrame
       code="QTE"
-      title={`即時報價 · ${symbol}`}
-      sub="單檔報價 / K 線 / 五檔 / 成交明細"
-      note="[QTE] KGI 報價讀取面 · 五秒刷新 · 不含下單動作"
+      title={`Quote ${symbol}`}
+      sub="Effective quote from production market-data policy"
+      note="[QTE] No deterministic bid/ask, ticks, or K-line mock is rendered."
     >
-      <Panel code="QTE-SRC" title="股票代號" right="KGI / 模擬備援">
-        <form onSubmit={submit} style={{ display: "flex", gap: 10, padding: "12px 0" }}>
+      <Panel code="QTE-SRC" title="Symbol lookup" right={generatedAt ? `Generated ${formatDateTime(generatedAt)}` : "market-data"}>
+        <form action="/quote" className="filter-row">
           <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
+            name="symbol"
+            defaultValue={symbol}
             style={{
               flex: "0 1 220px",
               minHeight: 34,
@@ -86,56 +160,43 @@ export default function QuotePage() {
             }}
             placeholder="2330"
           />
-          <button className="mini-button" type="submit">查詢</button>
-          <span className="tg soft" style={{ alignSelf: "center" }}>
-            {status.name} · 開 {status.open} / 高 {status.high} / 低 {status.low}
-          </span>
+          <button className="mini-button" type="submit">LOAD</button>
         </form>
       </Panel>
 
-      <MetricStrip columns={6} cells={cells} />
+      {error && (
+        <QuoteStatePanel
+          state="BLOCKED"
+          reason={`API request failed. Owner: Jason/Elva. Detail: ${error}`}
+        />
+      )}
+
+      {!error && !item && (
+        <QuoteStatePanel
+          state="EMPTY"
+          reason="The effective quote API returned zero rows for this symbol. No fallback quote is rendered."
+        />
+      )}
+
+      {!error && item && <QuoteSnapshot item={item} />}
 
       <div className="company-grid">
-        <Panel
+        <BlockedMarketPanel
           code="QTE-K"
-          title="K 線"
-          right="Lightweight Charts"
-        >
-          <Chart symbol={symbol} interval={interval} height={520} onIntervalChange={(next) => setInterval(next as QuoteInterval)} />
-          <div className="terminal-note">K 線以 KGI adapter / 模擬備援供資料；畫面固定使用 Lightweight Charts，不載入 TradingView Widget。</div>
-        </Panel>
-
+          title="K-line"
+          reason="The current Chart component still uses mock-kbar fallback and synthetic ticking. It is hidden here until bound directly to a production bars endpoint."
+        />
         <div>
-          <Panel code="QTE-BA" title="五檔報價" right="買賣盤">
-            <div className="row table-head" style={{ gridTemplateColumns: "64px 1fr 1fr 1fr 1fr", gap: 10 }}>
-              <span>檔位</span>
-              <span>買量</span>
-              <span>買價</span>
-              <span>賣價</span>
-              <span>賣量</span>
-            </div>
-            {bidask.map((level) => (
-              <div className="row" key={level.level} style={{ gridTemplateColumns: "64px 1fr 1fr 1fr 1fr", gap: 10, padding: "8px 0" }}>
-                <span className="tg soft">{level.level}</span>
-                <span className="tg up">{level.bidQty}</span>
-                <span className="num up">{level.bidPrice}</span>
-                <span className="num down">{level.askPrice}</span>
-                <span className="tg down">{level.askQty}</span>
-              </div>
-            ))}
-          </Panel>
-
-          <Panel code="QTE-T" title="近 50 筆成交" right="最新在上">
-            {ticks.slice(0, 18).map((tick) => (
-              <div className="row telex-row" key={tick.id}>
-                <span className="tg soft">{tick.ts}</span>
-                <span className={`tg ${tick.side === "B" ? "up" : "down"}`}>{tick.side === "B" ? "買" : "賣"}</span>
-                <span className="tg">
-                  <b>{tick.price}</b> · {tick.qty} 張
-                </span>
-              </div>
-            ))}
-          </Panel>
+          <BlockedMarketPanel
+            code="QTE-BA"
+            title="Bid/ask depth"
+            reason="No verified production depth contract is wired for this page yet. The old deterministic ladder has been removed."
+          />
+          <BlockedMarketPanel
+            code="QTE-T"
+            title="Tick tape"
+            reason="KGI readonly ticks are still blocked pending endpoint availability and Jason contract confirmation. The old generated tick tape has been removed."
+          />
         </div>
       </div>
     </PageFrame>
