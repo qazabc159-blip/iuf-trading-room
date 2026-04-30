@@ -1,177 +1,249 @@
-import Link from "next/link";
+/**
+ * /companies/[symbol] — Company Detail Page (D1 rewrite 2026-04-30)
+ *
+ * Server Component. Fetches from live backend using contracts-shape fields.
+ * Chart is a Client Component (OhlcvCandlestickChart) receiving pre-fetched bars.
+ *
+ * Backend dependency:
+ *   - GET /api/v1/companies → list-scan for ticker→UUID resolution
+ *     (Jason TASK 1 will add ticker-aware :id route; until merged, we scan the list)
+ *   - GET /api/v1/companies/:id/ohlcv?interval=1d → OHLCV bars (mock fallback on backend)
+ *
+ * Contracts fields rendered:
+ *   ticker, name, market, country, chainPosition, beneficiaryTier,
+ *   exposure (volume/asp/margin/capacity/narrative), validation (capitalFlow/consensus/relativeStrength),
+ *   notes, themeIds
+ *
+ * RADAR-only fields dropped:
+ *   score, momentum, intradayChgPct, fiiNetBn5d, marketCapBn, themes[] (string codes)
+ *   Radar SVG removed.
+ */
+
 import { notFound } from "next/navigation";
-import { Chart } from "@/components/Chart";
-import { PageFrame, Panel } from "@/components/PageFrame";
-import { api } from "@/lib/radar-api";
+import Link from "next/link";
+import { PageFrame } from "@/components/PageFrame";
+import { getCompanyByTicker, getCompanyOhlcv, getThemes } from "@/lib/api";
+import type { OhlcvBar } from "@/lib/api";
+import type { Company, Theme } from "@iuf-trading-room/contracts";
+import { OhlcvCandlestickChart } from "./OhlcvCandlestickChart";
 
-function tone(value: number) {
-  if (value > 0) return "up";
-  if (value < 0) return "down";
-  return "muted";
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function tierBadgeClass(tier: Company["beneficiaryTier"]) {
+  if (tier === "Core") return "badge-green";
+  if (tier === "Direct") return "badge-green";
+  if (tier === "Indirect") return "badge-yellow";
+  return "badge"; // Observation
 }
 
-function signed(value: number, digits = 2) {
-  return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
+function scoreBar(value: number) {
+  // 1–5 scale → 5 filled blocks
+  return Array.from({ length: 5 }, (_, i) => (
+    <span
+      key={i}
+      style={{
+        display: "inline-block",
+        width: 10,
+        height: 10,
+        marginRight: 2,
+        background: i < value ? "var(--gold)" : "var(--night-rule-strong)",
+        borderRadius: 2,
+      }}
+    />
+  ));
 }
 
-function Radar({ score, dHeat }: { score: number; dHeat: number }) {
-  const values = [score * 100, 82 + dHeat, 72, 66 + dHeat, 76, 58 + score * 25];
-  const labels = ["ABILITY", "FIT", "COVER", "EVENT", "MOMO", "SCALE"];
-  const points = values.map((value, i) => {
-    const angle = -Math.PI / 2 + (i / values.length) * Math.PI * 2;
-    const r = Math.max(18, Math.min(92, value)) / 100 * 82;
-    return `${110 + Math.cos(angle) * r},${110 + Math.sin(angle) * r}`;
-  });
+// ── Page ─────────────────────────────────────────────────────────────────────
 
-  return (
-    <svg viewBox="0 0 220 220" style={{ width: "100%", maxWidth: 260 }} aria-hidden>
-      {[32, 58, 82].map((r) => (
-        <circle key={r} cx="110" cy="110" r={r} fill="none" stroke="var(--night-rule-strong)" />
-      ))}
-      {labels.map((label, i) => {
-        const angle = -Math.PI / 2 + (i / labels.length) * Math.PI * 2;
-        const x = 110 + Math.cos(angle) * 96;
-        const y = 110 + Math.sin(angle) * 96;
-        return (
-          <g key={label}>
-            <line x1="110" y1="110" x2={x} y2={y} stroke="var(--night-rule)" />
-            <text x={x} y={y} fill="var(--night-mid)" fontSize="7" fontFamily="var(--mono)" textAnchor="middle">{label}</text>
-          </g>
-        );
-      })}
-      <polygon points={points.join(" ")} fill="var(--tw-up-faint)" stroke="var(--tw-up-bright)" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
-export async function generateStaticParams() {
-  const companies = await api.companies();
-  return companies.map((company) => ({ symbol: company.symbol }));
-}
-
-export default async function CompanyPage({ params }: { params: Promise<{ symbol: string }> }) {
+export default async function CompanyDetailPage({
+  params,
+}: {
+  params: Promise<{ symbol: string }>;
+}) {
   const { symbol } = await params;
-  const [company, companies, themes, ideas, signals, quotes] = await Promise.all([
-    api.company(symbol),
-    api.companies(),
-    api.themes(),
-    api.ideas(),
-    api.signals(),
-    api.quotes(),
-  ]);
-  if (!company) notFound();
+  const ticker = symbol.toUpperCase();
 
-  const quote = quotes.find((q) => q.symbol === company.symbol);
-  const displayLast = quote?.last ?? Math.round((40 + company.score * 320) * 10) / 10;
-  const displayChangePct = quote?.changePct ?? company.intradayChgPct;
-  const companyIdeas = ideas.filter((idea) => idea.symbol === company.symbol);
-  const companySignals = signals.filter((signal) => signal.symbol === company.symbol || company.themes.includes(signal.themeCode ?? ""));
-  const peerRows = companies.filter((item) => item.symbol !== company.symbol).slice(0, 6);
-  const companyThemes = themes.filter((theme) => company.themes.includes(theme.code));
+  // Resolve ticker → Company via list-scan (safe before Jason TASK 1 merges)
+  const companyResult = await getCompanyByTicker(ticker);
+  if (!companyResult) notFound();
+
+  const company = companyResult.data;
+
+  // Fetch OHLCV (fail-open: empty bars renders "NO DATA" badge)
+  let bars: OhlcvBar[] = [];
+  try {
+    const { data: ohlcvData } = await getCompanyOhlcv(company.id, {
+      interval: "1d",
+    });
+    bars = ohlcvData;
+  } catch (_err) {
+    // OHLCV failure is non-fatal — chart will show empty state
+    bars = [];
+  }
+
+  // Fetch themes to resolve themeIds → names
+  let themes: Theme[] = [];
+  try {
+    const { data: themeData } = await getThemes();
+    themes = themeData;
+  } catch (_err) {
+    themes = [];
+  }
+
+  const companyThemes = themes.filter((t) => company.themeIds.includes(t.id));
 
   return (
     <PageFrame
-      code={`03-${company.symbol}`}
-      title={company.symbol}
-      sub={`${company.name} - ${company.listing}`}
-      note={`[03B] COMPANIES / ${company.symbol} - RADAR DETAIL - K 線讀取 KGI adapter，失敗時使用模擬備援`}
+      code={`03-${company.ticker}`}
+      title={company.ticker}
+      sub={`${company.name} · ${company.market} · ${company.country}`}
+      note={`[03B] COMPANIES / ${company.ticker} — D1 contracts shape — OHLCV via GET /api/v1/companies/:id/ohlcv`}
     >
-      <div className="quote-strip" style={{ gridTemplateColumns: "repeat(6, minmax(130px, 1fr))" }}>
-        {[
-          ["LAST", displayLast, displayChangePct],
-          ["SCORE", company.score * 100, company.score - 0.5],
-          ["FII-5D", company.fiiNetBn5d, company.fiiNetBn5d],
-          ["CAP-BN", company.marketCapBn, company.marketCapBn],
-          ["THEMES", company.themes.length, company.themes.length],
-          ["MOM", company.momentum, company.intradayChgPct],
-        ].map(([label, value, delta]) => (
-          <div className="quote-card" key={String(label)}>
-            <div className="tg quote-symbol">{label}</div>
-            <div className={`quote-last num ${typeof delta === "number" ? tone(delta) : ""}`}>
-              {typeof value === "number" ? value.toLocaleString("en-US", { maximumFractionDigits: 2 }) : value}
-            </div>
-            <div className={`tg ${typeof delta === "number" ? tone(delta) : "muted"}`}>
-              {typeof delta === "number" ? `${signed(delta, Math.abs(delta) > 10 ? 0 : 2)}${String(label).includes("LAST") ? "%" : ""}` : "STATE"}
+      {/* [01] COMPANY HEADER */}
+      <section className="panel hud-frame">
+        <div className="panel-head">
+          <div>
+            <span className="tg panel-code">CDL-01</span>
+            <span className="tg muted"> · </span>
+            <span className="tg gold">COMPANY HEADER</span>
+            <div className="panel-sub">{company.chainPosition}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span className={tierBadgeClass(company.beneficiaryTier)}>
+              {company.beneficiaryTier.toUpperCase()}
+            </span>
+            <span className="badge">{company.market}</span>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 32, padding: "16px 0 8px", flexWrap: "wrap" }}>
+          <div>
+            <div className="eyebrow">TICKER</div>
+            <div className="mono" style={{ fontWeight: 700, fontSize: 28, color: "var(--gold)" }}>
+              {company.ticker}
             </div>
           </div>
-        ))}
-      </div>
-
-      <div className="company-grid">
-        <div>
-          <Panel code="PX-RAD" title="K 線動能" sub="Lightweight Charts - KGI adapter / mock fallback" right="LIVE / STALE / OFFLINE">
-            <div className="ticket" style={{ padding: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
-                <div>
-                  <div className="tg gold">PRIMARY NODE - {company.symbol}</div>
-                  <h2 className="tc" style={{ margin: "8px 0 2px", fontSize: 28 }}>{company.name}</h2>
-                  <div className="tg soft">{company.themes.join(" - ")} - CAP {company.marketCapBn.toFixed(0)}B</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div className="tg soft">INTRADAY %</div>
-                  <div className={`num ${tone(company.intradayChgPct)}`} style={{ fontSize: 34, fontWeight: 700 }}>
-                    {signed(company.intradayChgPct, 2)}%
-                  </div>
-                </div>
-              </div>
-              <div style={{ marginTop: 18 }}>
-                <Chart symbol={company.symbol} interval="1d" height={360} />
-              </div>
+          <div style={{ flex: 1 }}>
+            <div className="eyebrow">NAME</div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: "var(--night-ink)" }}>
+              {company.name}
             </div>
-          </Panel>
-
-          <Panel code="IDEA-ATT" title="attached ideas" sub="idea drawer - symbol scoped" right={`${companyIdeas.length} OPEN`}>
-            {(companyIdeas.length ? companyIdeas : ideas.slice(0, 3)).map((idea) => (
-              <div className="row idea-row" key={idea.id}>
-                <span className="tg soft">{idea.id}</span>
-                <span className={`tg ${idea.side === "LONG" ? "up" : "down"}`}>{idea.side}</span>
-                <span className="tg">Q-{idea.quality}</span>
-                <span className="tg gold">{idea.themeCode}</span>
-                <span className="tc soft">{idea.rationale}</span>
-                <Link className="mini-button" href="/portfolio">ORDER -&gt;</Link>
-              </div>
-            ))}
-          </Panel>
-
-          <Panel code="PEERS" title="theme-linked peers" sub="same radar route, any symbol" right="DYNAMIC">
-            {peerRows.map((peer) => (
-              <Link className="row position-row" key={peer.symbol} href={`/companies/${peer.symbol}`}>
-                <span className="tg" style={{ fontWeight: 700 }}>{peer.symbol}</span>
-                <span className="tc">{peer.name}</span>
-                <span className="num">{(peer.score * 100).toFixed(0)}</span>
-                <span className={`tg ${tone(peer.intradayChgPct)}`}>{signed(peer.intradayChgPct, 2)}%</span>
-                <span className={`tg ${tone(peer.fiiNetBn5d)}`}>{signed(peer.fiiNetBn5d, 2)}BN</span>
-                <span className="tg muted">{peer.momentum}</span>
-              </Link>
-            ))}
-          </Panel>
+          </div>
+          <div>
+            <div className="eyebrow">COUNTRY</div>
+            <div className="mono">{company.country}</div>
+          </div>
         </div>
 
-        <div>
-          <Panel code="NODE-MAP" title="theme radar" sub="ABILITY / FIT / COVER / EVENT / MOMO / SCALE" right={company.momentum}>
-            <div className="ticket" style={{ display: "grid", placeItems: "center", minHeight: 290 }}>
-              <Radar score={company.score} dHeat={companyThemes[0]?.dHeat ?? 0} />
-            </div>
-          </Panel>
+        {companyThemes.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, paddingBottom: 12 }}>
+            {companyThemes.map((t) => (
+              <span key={t.id} className="session-pill tg">{t.name}</span>
+            ))}
+          </div>
+        )}
+      </section>
 
-          <Panel code="KW-CLU" title="keyword cluster" sub="company / theme / flow" right={`${company.themes.length} THEMES`}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "12px 0" }}>
-              {[company.symbol, company.name, company.listing, ...company.themes, company.momentum, "FII", "MOMO", "SIM"].map((tag) => (
-                <span className="session-pill tg" key={tag}>{tag}</span>
-              ))}
+      {/* [02] OHLCV CHART */}
+      <section className="panel hud-frame">
+        <div className="panel-head">
+          <div>
+            <span className="tg panel-code">CDL-02</span>
+            <span className="tg muted"> · </span>
+            <span className="tg gold">K-LINE · 日線</span>
+            <div className="panel-sub">
+              GET /api/v1/companies/{company.id.slice(0, 8)}…/ohlcv?interval=1d
             </div>
-          </Panel>
+          </div>
+        </div>
+        <div style={{ padding: "8px 0 4px" }}>
+          <OhlcvCandlestickChart bars={bars} />
+        </div>
+      </section>
 
-          <Panel code="SIG-LIVE" title="signal tape" sub="symbol + theme attached stream" right={`${companySignals.length} EVENTS`}>
-            {companySignals.slice(0, 8).map((signal) => (
-              <div className="row telex-row" key={signal.id}>
-                <span className="tg soft">{new Date(signal.emittedAt).toLocaleTimeString("zh-TW", { hour12: false })}</span>
-                <span className="tg gold">{signal.channel}</span>
-                <span className="tg">{signal.code} - {signal.trigger}</span>
+      {/* [03] EXPOSURE + VALIDATION */}
+      <section className="panel hud-frame">
+        <div className="panel-head">
+          <span className="tg panel-code">CDL-03</span>
+          <span className="tg muted"> · </span>
+          <span className="tg gold">EXPOSURE / VALIDATION</span>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, padding: "12px 0" }}>
+          {/* Exposure breakdown */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>EXPOSURE BREAKDOWN</div>
+            {(
+              [
+                ["VOLUME", company.exposure.volume],
+                ["ASP", company.exposure.asp],
+                ["MARGIN", company.exposure.margin],
+                ["CAPACITY", company.exposure.capacity],
+                ["NARRATIVE", company.exposure.narrative],
+              ] as [string, number][]
+            ).map(([label, value]) => (
+              <div
+                key={label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 6,
+                  fontSize: 12,
+                }}
+              >
+                <span className="eyebrow" style={{ width: 80, flexShrink: 0 }}>{label}</span>
+                <span>{scoreBar(value)}</span>
+                <span className="dim" style={{ fontSize: 11 }}>{value}/5</span>
               </div>
             ))}
-          </Panel>
+          </div>
+
+          {/* Validation snapshot */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>VALIDATION SNAPSHOT</div>
+            {(
+              [
+                ["CAPITAL FLOW", company.validation.capitalFlow],
+                ["CONSENSUS", company.validation.consensus],
+                ["REL STRENGTH", company.validation.relativeStrength],
+              ] as [string, string][]
+            ).map(([label, value]) => (
+              <div
+                key={label}
+                style={{ marginBottom: 10, borderBottom: "1px solid var(--night-rule)", paddingBottom: 8 }}
+              >
+                <div className="eyebrow">{label}</div>
+                <div style={{ fontSize: 13, color: "var(--night-ink)", marginTop: 4, lineHeight: 1.4 }}>
+                  {value || <span className="dim">—</span>}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
+      </section>
+
+      {/* [04] NOTES */}
+      {company.notes && (
+        <section className="panel hud-frame">
+          <div className="panel-head">
+            <span className="tg panel-code">CDL-04</span>
+            <span className="tg muted"> · </span>
+            <span className="tg gold">ANALYST NOTES</span>
+          </div>
+          <div style={{ padding: "12px 0 8px", lineHeight: 1.7, fontSize: 13, color: "var(--night-ink)" }}>
+            <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", margin: 0 }}>
+              {company.notes}
+            </pre>
+          </div>
+        </section>
+      )}
+
+      {/* [05] BACK NAV */}
+      <div style={{ paddingTop: 12 }}>
+        <Link className="btn-sm" href="/companies">
+          &larr; COMPANIES LIST
+        </Link>
       </div>
     </PageFrame>
   );

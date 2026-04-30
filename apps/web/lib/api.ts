@@ -112,6 +112,59 @@ export async function getCompanies() {
   return request<Company[]>("/api/v1/companies");
 }
 
+// OhlcvBar type — matches backend companies-ohlcv.ts OhlcvBar interface
+export type OhlcvBar = {
+  dt: string;        // 'YYYY-MM-DD'
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  source: "mock" | "kgi" | "tej";
+};
+
+export type OhlcvInterval = "1d" | "1w" | "1m";
+
+/**
+ * Fetch a single company by UUID.
+ * Blocked on Jason TASK 1: backend currently only accepts UUID, not ticker.
+ * Use getCompanyByTicker() for the ticker→UUID resolution path.
+ */
+export async function getCompanyById(id: string) {
+  return request<Company>(`/api/v1/companies/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Resolve ticker → Company by scanning the list.
+ * Safe to call when Jason's TASK 1 (ticker-aware :id route) is not yet merged.
+ * Falls back to list-scan so the page works today against current prod.
+ */
+export async function getCompanyByTicker(ticker: string): Promise<{ data: Company } | null> {
+  const { data: all } = await getCompanies();
+  const found = all.find((c) => c.ticker.toUpperCase() === ticker.toUpperCase());
+  if (!found) return null;
+  return { data: found };
+}
+
+/**
+ * Fetch OHLCV bars for a company (by UUID).
+ * Endpoint: GET /api/v1/companies/:id/ohlcv?from=&to=&interval=1d
+ * Falls back to mock on backend when no real bars exist.
+ */
+export async function getCompanyOhlcv(
+  companyId: string,
+  params?: { from?: string; to?: string; interval?: OhlcvInterval }
+) {
+  const query = new URLSearchParams();
+  if (params?.from) query.set("from", params.from);
+  if (params?.to) query.set("to", params.to);
+  if (params?.interval) query.set("interval", params.interval);
+  const qs = query.toString();
+  return request<OhlcvBar[]>(
+    `/api/v1/companies/${encodeURIComponent(companyId)}/ohlcv${qs ? `?${qs}` : ""}`
+  );
+}
+
 export async function createCompany(input: CompanyCreateInput) {
   return request<Company>("/api/v1/companies", {
     method: "POST",
