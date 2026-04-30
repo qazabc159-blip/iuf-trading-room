@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+
+import { apiLogout } from "@/lib/auth-client";
 
 const NAV = [
   { code: "01", path: "/", label: "DASHBOARD", tc: "戰情台" },
@@ -18,6 +20,12 @@ const NAV = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await apiLogout();
+    router.push("/login");
+  }
 
   return (
     <aside className="app-sidebar">
@@ -49,6 +57,9 @@ export function Sidebar() {
         <div>⌘. · KILL</div>
         <div className="soft">REV · RADAR-0.8</div>
       </div>
+      <button type="button" className="sidebar-logout" onClick={handleLogout}>
+        LOGOUT
+      </button>
     </aside>
   );
 }
