@@ -41,11 +41,11 @@ class LoginRequest(BaseModel):
 class Account(BaseModel):
     """
     Mirrors KgiAccount (TS).
-    KGI raw shape: {'account': '0308732', 'account_flag': '證券', 'broker_id': '9204'}
+    KGI raw shape: {'account': 'YOUR_ACCOUNT', 'account_flag': '證券', 'broker_id': 'YOUR_BROKER_ID'}
     """
-    account: str         # e.g. "0308732"
+    account: str         # e.g. "YOUR_ACCOUNT"
     account_flag: str    # e.g. "證券"
-    broker_id: str       # e.g. "9204"
+    broker_id: str       # e.g. "YOUR_BROKER_ID"
 
 
 class LoginResponse(BaseModel):
@@ -70,7 +70,7 @@ class SetAccountRequest(BaseModel):
     def must_be_string(cls, v: Any) -> str:
         if not isinstance(v, str):
             raise ValueError(
-                "account must be a plain string (e.g. '0308732'), not a dict or other type. "
+                "account must be a plain string (e.g. 'YOUR_ACCOUNT'), not a dict or other type. "
                 "KGI set_Account() only accepts the account string."
             )
         return v

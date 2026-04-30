@@ -93,7 +93,7 @@ export class KgiBroker implements BrokerPort {
   /**
    * Set the active trading account.
    *
-   * CRITICAL: only pass the account string (e.g. "0308732"), NOT the full dict.
+   * CRITICAL: only pass the account string (e.g. "YOUR_ACCOUNT"), NOT the full dict.
    * KGI set_Account() only accepts the account string parameter.
    * Source: brokerport_golden_2026-04-23.md §15-16
    *

@@ -67,3 +67,22 @@ jobs:
 
       - name: Run W6 no-real-order audit
         run: python3 scripts/audit/w6_no_real_order_audit.py
+
+  secret_regression:
+    name: Secret Regression Check (A2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run secret regression check
+        run: python3 scripts/audit/secret_regression_check.py

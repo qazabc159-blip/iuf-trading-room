@@ -25,7 +25,7 @@ Path B architecture: `IUF API (Linux) → HTTP+WS → KGI Gateway (Windows)`
 | `GATEWAY_PORT` | No | `8787` | Bind port |
 | `AUTO_LOGIN` | No | `false` | Auto-login on startup (not recommended for W1) |
 
-**Important:** `KGI_PERSON_ID` is case-sensitive — must be uppercase (e.g. `F131331910`).  
+**Important:** `KGI_PERSON_ID` is case-sensitive — must be uppercase (e.g. `YOUR_PERSON_ID`).  
 Source: `feedback_kgi_env_var_uppercase_rule.md`
 
 ### `KGI_GATEWAY_POSITION_DISABLED` (W2a Candidate F)
@@ -82,10 +82,10 @@ curl http://127.0.0.1:8787/health
 ```bash
 curl -X POST http://127.0.0.1:8787/session/login \
   -H "Content-Type: application/json" \
-  -d '{"person_id":"F131331910","person_pwd":"YOUR_PWD","simulation":false}'
+  -d '{"person_id":"YOUR_PERSON_ID","person_pwd":"YOUR_PWD","simulation":false}'
 
 # Expected:
-# {"ok":true,"accounts":[{"account":"0308732","account_flag":"證券","broker_id":"9204"}]}
+# {"ok":true,"accounts":[{"account":"YOUR_ACCOUNT","account_flag":"證券","broker_id":"YOUR_BROKER_ID"}]}
 ```
 
 ---
@@ -94,7 +94,7 @@ curl -X POST http://127.0.0.1:8787/session/login \
 
 ```bash
 curl http://127.0.0.1:8787/session/show-account
-# {"accounts":[{"account":"0308732","account_flag":"證券","broker_id":"9204"}]}
+# {"accounts":[{"account":"YOUR_ACCOUNT","account_flag":"證券","broker_id":"YOUR_BROKER_ID"}]}
 ```
 
 ---
@@ -105,11 +105,11 @@ curl http://127.0.0.1:8787/session/show-account
 # CORRECT — account is a plain string
 curl -X POST http://127.0.0.1:8787/session/set-account \
   -H "Content-Type: application/json" \
-  -d '{"account":"0308732"}'
-# Expected: {"ok":true,"account_flag":"證券","broker_id":"9204"}
+  -d '{"account":"YOUR_ACCOUNT"}'
+# Expected: {"ok":true,"account_flag":"證券","broker_id":"YOUR_BROKER_ID"}
 
 # WRONG — passing dict causes 422
-# -d '{"account":{"account":"0308732","account_flag":"證券","broker_id":"9204"}}'
+# -d '{"account":{"account":"YOUR_ACCOUNT","account_flag":"證券","broker_id":"YOUR_BROKER_ID"}}'
 ```
 
 ---

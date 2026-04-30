@@ -1,0 +1,288 @@
+{
+  "report_type": "post_merge_w2b_regression",
+  "verifier": "Bruce (verifier-release-bruce)",
+  "timestamp_utc": "2026-04-27T05:07:25Z",
+  "timestamp_tst": "2026-04-27 13:07 TST",
+  "sprint": "Parallel Sprint Mode Lane 2",
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 8787,
+    "route_count": 14,
+    "kgi_logged_in": true,
+    "KGI_GATEWAY_POSITION_DISABLED": "true",
+    "KGI_GATEWAY_QUOTE_DISABLED": "false"
+  },
+
+  "task1_main_head": {
+    "result": "PASS",
+    "head_sha": "f4d5b47",
+    "head_message": "feat(kgi-gateway): W2b quote read-side endpoint (ticks + bidask ring buffer) (#2)",
+    "prior_sha": "0ae5665",
+    "prior_message": "feat(kgi-gateway): W2a Candidate F /position circuit breaker (PR #1)",
+    "match_expected": true
+  },
+
+  "task2_f_regression": {
+    "result": "PASS",
+    "probes": [
+      {
+        "seq": 1,
+        "endpoint": "/position",
+        "http_status": 503,
+        "body_code": "POSITION_DISABLED",
+        "expected": "503 POSITION_DISABLED",
+        "pass": true
+      },
+      {
+        "seq": 2,
+        "endpoint": "/health",
+        "http_status": 200,
+        "kgi_logged_in": true,
+        "expected": "200 kgi_logged_in=true",
+        "pass": true
+      },
+      {
+        "seq": 3,
+        "endpoint": "/position",
+        "http_status": 503,
+        "body_code": "POSITION_DISABLED",
+        "expected": "503 POSITION_DISABLED",
+        "pass": true
+      },
+      {
+        "seq": 4,
+        "endpoint": "/health",
+        "http_status": 200,
+        "kgi_logged_in": true,
+        "expected": "200",
+        "pass": true
+      },
+      {
+        "seq": 5,
+        "endpoint": "/position",
+        "http_status": 503,
+        "body_code": "POSITION_DISABLED",
+        "expected": "503 POSITION_DISABLED",
+        "pass": true
+      },
+      {
+        "seq": 6,
+        "endpoint": "/health",
+        "http_status": 200,
+        "kgi_logged_in": true,
+        "expected": "200 kgi_logged_in=true",
+        "pass": true
+      }
+    ],
+    "gateway_crashes": 0,
+    "position_diag_markers_fired": 0
+  },
+
+  "task3_w2b_regression": {
+    "result": "PASS",
+    "route_count_confirmed": 14,
+    "probes": [
+      {
+        "endpoint": "GET /quote/status",
+        "http_status": 200,
+        "has_subscribed_symbols": true,
+        "has_buffer": true,
+        "kgi_logged_in": true,
+        "quote_disabled_flag": false,
+        "pass": true
+      },
+      {
+        "endpoint": "POST /quote/subscribe/tick",
+        "body": {"symbol": "2330"},
+        "http_status": 200,
+        "response_ok": true,
+        "response_label": "tick_2330",
+        "pass": true
+      },
+      {
+        "endpoint": "GET /quote/ticks?symbol=2330&limit=5",
+        "http_status": 200,
+        "tick_count_returned": 5,
+        "buffer_used": 200,
+        "buffer_size": 200,
+        "sample_tick": {
+          "exchange": "TWSE",
+          "symbol": "2330",
+          "datetime": "20260427130604",
+          "close": 2295.0,
+          "_received_at": "2026-04-27T05:06:04.100801+00:00"
+        },
+        "live_ticks_received": true,
+        "pass": true
+      },
+      {
+        "endpoint": "POST /quote/subscribe/bidask",
+        "body": {"symbol": "2330"},
+        "http_status": 501,
+        "body_code": "BIDASK_NOT_IMPLEMENTED",
+        "expected": "501 BIDASK_NOT_IMPLEMENTED",
+        "regression_check": "NOT silently 200",
+        "pass": true
+      },
+      {
+        "endpoint": "GET /quote/bidask?symbol=2330",
+        "http_status": 404,
+        "body_code": "BIDASK_NOT_AVAILABLE",
+        "expected": "404 BIDASK_NOT_AVAILABLE",
+        "regression_check": "NOT silently 200",
+        "pass": true
+      }
+    ]
+  },
+
+  "task4_order_regression": {
+    "result": "PASS",
+    "probe": {
+      "endpoint": "POST /order/create",
+      "body": {"action": "Buy", "symbol": "TEST000", "qty": 0},
+      "http_status": 409,
+      "body_code": "NOT_ENABLED_IN_W1",
+      "pass": true
+    },
+    "real_symbol_used": false,
+    "qty_gt_0": false,
+    "hard_line_0_real_order": true
+  },
+
+  "task5_auth_regression": {
+    "result": "PARTIAL",
+    "local_api_running": false,
+    "prod_api": "api.eycvector.com",
+    "probes": [
+      {
+        "endpoint": "GET /api/v1/me (anonymous)",
+        "http_status": 401,
+        "body": {"error": "unauthenticated"},
+        "expected": "401",
+        "pass": true
+      },
+      {
+        "endpoint": "GET /api/v1/content-drafts (anonymous)",
+        "http_status": 401,
+        "body": {"error": "unauthenticated"},
+        "expected": "401",
+        "note": "Hits auth wall before role check; backlog viewer-403 tightening is separate concern",
+        "pass": true
+      },
+      {
+        "endpoint": "GET /api/v1/me (owner-role)",
+        "status": "DEFERRED",
+        "reason": "No auth token available in sprint context; not a regression signal"
+      }
+    ]
+  },
+
+  "task6_secret_audit": {
+    "result": "FLAG_LOW_RISK",
+    "password_found": false,
+    "pfx_found": false,
+    "b12_broker_pattern_found": false,
+    "account_number_REDACTED_locations": [
+      {
+        "file": "evidence/path_b_w2a_20260426/read_side_live.json:65",
+        "context": "gateway log replay string in evidence JSON",
+        "classification": "REDACTED_2026_04_30_A2",
+        "severity": "RESOLVED"
+      },
+      {
+        "file": "evidence/path_b_w2a_20260426/read_side_live_crash.json:25",
+        "context": "gateway log replay string",
+        "classification": "REDACTED_2026_04_30_A2",
+        "severity": "RESOLVED"
+      },
+      {
+        "file": "evidence/path_b_w2a_20260426/step3a_blocked_gateway_missing_routes_2026-04-27.md:46",
+        "context": "table row, show-account response example",
+        "classification": "REDACTED_2026_04_30_A2",
+        "severity": "RESOLVED"
+      },
+      {
+        "file": "services/kgi-gateway/README.md",
+        "context": "example response values in operator README",
+        "classification": "REDACTED_2026_04_30_A2",
+        "severity": "RESOLVED"
+      },
+      {
+        "file": "services/kgi-gateway/schemas.py",
+        "context": "code comment example",
+        "classification": "REDACTED_2026_04_30_A2",
+        "severity": "RESOLVED"
+      }
+    ],
+    "person_id_REDACTED_locations": [
+      {
+        "file": "services/kgi-gateway/README.md",
+        "context": "example person_id in login example",
+        "classification": "REDACTED_2026_04_30_A2",
+        "severity": "RESOLVED"
+      },
+      {
+        "file": "evidence/path_b_w2a_20260426/bruce_verify_candidate_f_live_20260427T031621.json:85",
+        "context": "note text — redacted in place",
+        "classification": "REDACTED_2026_04_30_A2",
+        "severity": "RESOLVED"
+      }
+    ],
+    "recommendation": "A2 redaction complete 2026-04-30. All account/broker/person_id values replaced with <REDACTED:*> markers. Password was rotated (A1) and redacted in evidence. Non-blocking."
+  },
+
+  "task7_language_audit": {
+    "result": "PASS",
+    "readme_bidask_correct": true,
+    "readme_step3a_no_false_completion": true,
+    "index_section10_bidask_correct": true,
+    "index_section10_step3a_guard_present": true,
+    "handoff_bidask_correct": true,
+    "handoff_step3a_guard_present": true,
+    "misleading_language_found": false,
+    "notes": "All three documents correctly state bidask=501 stub and Step 3a=partial. No 'bidask done' or 'Step 3a complete' language found."
+  },
+
+  "task8_boundaries": {
+    "result": "PASS",
+    "self_merge": false,
+    "push_to_main": false,
+    "deploy": false,
+    "env_change": false,
+    "gateway_restart": false,
+    "logout_call": false,
+    "order_create_real": false,
+    "real_symbol_used": false,
+    "secret_leak": false,
+    "cross_lane_ping": false
+  },
+
+  "stop_line_triggers": {
+    "f_containment_broken": false,
+    "gateway_crashed": false,
+    "order_create_accepted_real": false,
+    "secret_leaked": false,
+    "readme_language_misleading": false,
+    "auth_broken_unexpected": false
+  },
+
+  "overall": {
+    "result": "PASS",
+    "can_declare_w2b_post_merge_regression_pass": true,
+    "blockers": [],
+    "risks": [
+      {
+        "severity": "LOW",
+        "description": "Account/broker numbers in evidence JSON (log replay context) — not auth credentials"
+      },
+      {
+        "severity": "INFORMATIONAL",
+        "description": "T5 owner-role auth check deferred — no token in sprint context"
+      },
+      {
+        "severity": "INFORMATIONAL",
+        "description": "account_set=false in /health — pre-existing known issue, unblocking"
+      }
+    ]
+  }
+}
