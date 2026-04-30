@@ -278,18 +278,22 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - Mike → 0020 migration audit lane（不變）
 - Jim → halted on new frontend scope（deprecated branch dispositioned 上方）
 
+### Cycle 1 (02:11) — 觀察期
+- Read board / `git log -20` / Jason output / Bruce output. Codex commits 6 condensed ones: `8abfc13 / f463069 / 3fa0feb / 11c2b9a / b64a875 / e0f92df`，全在 `apps/web/**` lane，stop-line scan **PASS**.
+- Jason 5-contract 完成（Contract 1+4-read READY；Contract 2/3/4-promote/5 BLOCKED with ETA Day 4-5/5-6）→ Backend Ready 已附 link。
+- Bruce harness v1 完成 + 第一輪 sweep 寫了 B5~B11 七項 FAIL → cross-check 後 B5~B9 已被 Codex 同期 cycle 修掉，標 RESOLVED；B10/B11 wrapper-level fallback 仍 OPEN，HIGH priority，等 Codex 下輪 cycle 接走。
+- 無 mid/large PR → Pete 持續 standby。
+- 無 dispatch this cycle — 4 lanes 自走。
+- Yellow/Red zone: 無觸發。
+
 ## Blockers
 
-- **B1**: Jason 5 條 backend contract 未交（owner: Jason / due: cycle 1 = 02:00 Taipei first draft / status: dispatched）
+- **B1**: Jason 5 條 backend contract 未交（owner: Jason / due: cycle 1 = 02:00 Taipei first draft / **status: RESOLVED @ ~01:58**）
 - **B2**: Bruce 4-state harness spec 未交（owner: Bruce / due: cycle 1 = 02:00 first version / **status: RESOLVED @ 02:00**）
-- **B3**: KGI bidask/tick readonly endpoint — write-side `libCGCrypt.so` blocked；read-side 是否有可用 endpoint 待 Jason contract 確認；如無，Codex 標 BLOCKED owner=KGI SDK
-- **B4**: Pete standby — 等 Codex 開第一個中大型 frontend PR 才需介入
-- **B5**: [Rule 5] `apps/web/app/briefs/page.tsx:7` — `const brief = mockBrief` directly assigned, no API call, renders hardcoded mock data in production (owner: Codex / status: open)
-- **B6**: [Rule 5] `apps/web/app/reviews/page.tsx:20-21` — `mockReviewQueue` and `mockReviewLog` used as initial state, no fetch on mount visible in grep; renders mock data in production (owner: Codex / status: open)
-- **B7**: [Rule 5] `apps/web/app/drafts/page.tsx:25` — `mockDrafts` used directly for filtering, no real fetch path (owner: Codex / status: open)
-- **B8**: [Rule 5] `apps/web/app/admin/content-drafts/page.tsx:29,31` — `mockDrafts` used directly for author list + filter; no real fetch (owner: Codex / status: open)
-- **B9**: [Rule 5] `apps/web/app/admin/content-drafts/[id]/ContentDraftDetailClient.tsx:21,24` — `mockDrafts` and `mockDraftAudit` used directly; no real fetch (owner: Codex / status: open)
-- **B10**: [Rule 7] `apps/web/lib/radar-uncovered.ts:19,37` — `getMaybe`/`postMaybe` have no `IS_PROD` guard; catch blocks silently return fallback mock in production; all `radarUncoveredApi.*` callers are affected (owner: Codex / status: open / priority: HIGH)
-- **B11**: [Rule 7] `apps/web/lib/use-readonly-quote.ts:161` — falls back to mock quote on any fetch error, no IS_PROD guard; production quote panel will show stale hardcoded prices on KGI failure (owner: Codex / status: open / priority: HIGH)
+- **B3**: KGI bidask/tick readonly endpoint — write-side `libCGCrypt.so` blocked；read-side BLOCKED per Jason Contract 5（gateway operator dep + WS not impl）；Codex 標 BLOCKED owner="Operator + Jason"
+- **B4**: Pete standby — Codex 至今 cycle (01:49 → 02:04) 全部 direct-commit `fix(web)`，無 mid/large PR，Pete 仍 standby
+- **B5~B9**: [Rule 5] mock-in-production page-level violations — **status: RESOLVED @ Cycle 1 verify (Elva 02:11)**. Codex commits f463069/3fa0feb/11c2b9a/b64a875/8abfc13 已將 briefs/reviews/drafts/admin-content-drafts/quote 全部從 mock 直賦轉成 LIVE/EMPTY/BLOCKED API 綁定；`ContentDraftDetailClient.tsx` 已刪除（per cycle 02:00 board entry）；mock constants 仍存於 `lib/radar-uncovered.ts` 但 page-level 直接 import 已消失。
+- **B10**: [Rule 7] `apps/web/lib/radar-uncovered.ts:18-19,36-37` — `getMaybe`/`postMaybe` catch blocks silently return fallback mock in production, no `IS_PROD` guard; all `radarUncoveredApi.*` callers (`reviewQueue`/`brief`/`drafts`/`adminDrafts`/`adminDraft`/`adminDraftAudit`/`reviewLog`/`quoteStatus`) affected (owner: Codex / status: **open** / priority: **HIGH** / next-action: Codex 加 production guard or 改 throw → page-level BLOCKED)
+- **B11**: [Rule 7] `apps/web/lib/use-readonly-quote.ts:159-161` — falls back to `fallbackQuote()` constant on any fetch error, no `IS_PROD` guard; production quote panel will show stale hardcoded prices on KGI failure (owner: Codex / status: **open** / priority: **HIGH** / next-action: 改 throw → quote panel BLOCKED state with reason)
 
 Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區.
