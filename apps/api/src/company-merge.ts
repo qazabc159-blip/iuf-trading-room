@@ -698,6 +698,9 @@ export async function upsertCompanyOnConflict(
   input: CompanyCreateInput & { workspaceId: string }
 ): Promise<{ id: string; ticker: string; upserted: boolean }> {
   const db = getDb();
+  if (!db) {
+    throw new Error("upsertCompanyOnConflict: db unavailable");
+  }
 
   const values = {
     workspaceId: input.workspaceId,
