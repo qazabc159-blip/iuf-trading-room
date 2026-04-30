@@ -1,0 +1,124 @@
+{
+  "verify_id": "bruce_verify_pr3_health_note_20260427T053421",
+  "verifier": "Bruce",
+  "task": "D7 — PR #3 fix/health-account-set-sync quick verify",
+  "timestamp_utc": "2026-04-27T05:34:21Z",
+  "pr": {
+    "number": 3,
+    "title": "fix(kgi-gateway): /health note when logged_in but account_set=false",
+    "branch": "fix/health-account-set-sync",
+    "state": "OPEN (DRAFT)",
+    "commit": "42a803b852dd5cfd7554f7ea6bd2d056a3ac8ca8",
+    "url": "https://github.com/qazabc159-blip/iuf-trading-room/pull/3",
+    "files_changed": [
+      "services/kgi-gateway/app.py (+4 lines, health handler only)",
+      "services/kgi-gateway/schemas.py (+1 line, Optional[str] = None on HealthResponse)",
+      "services/kgi-gateway/tests/test_health_account_set.py (NEW, 61 lines, 3 tests)"
+    ]
+  },
+  "checks": {
+    "1_pytest_all_green": {
+      "command": "cd services/kgi-gateway && PYTHONUTF8=1 python -m pytest tests/ -v",
+      "result": "PASS",
+      "detail": "10/10 passed in 1.20s (Python 3.11.9, pytest-9.0.3)",
+      "new_tests": [
+        "test_health_not_logged_in_no_note — PASS",
+        "test_health_logged_in_account_not_set_shows_note — PASS",
+        "test_health_logged_in_account_set_no_note — PASS"
+      ],
+      "pre_existing_tests": [
+        "test_position_circuit_breaker.py::test_position_disabled_returns_503 — PASS",
+        "test_position_circuit_breaker.py::test_position_enabled_proceeds_to_existing_path — PASS",
+        "test_quote_ring_buffer.py::test_tick_callback_appends_to_buffer — PASS",
+        "test_quote_ring_buffer.py::test_buffer_respects_maxlen — PASS",
+        "test_quote_ring_buffer.py::test_get_quote_ticks_endpoint_shape — PASS",
+        "test_quote_ring_buffer.py::test_quote_disabled_breaker_returns_503 — PASS",
+        "test_quote_ring_buffer.py::test_unsubscribed_symbol_returns_404 — PASS"
+      ]
+    },
+    "2_health_schema_note_field": {
+      "result": "PASS",
+      "detail": "note: Optional[str] = None added to HealthResponse — backward-compatible (absent when None via FastAPI exclude_none behavior, but explicit null in JSON otherwise)",
+      "note": "Live gateway is pre-merge (W2b code f4d5b47), so /health live does NOT yet show note field — this is correct. Post-merge + restart will surface note when kgi_logged_in=true and account_set=false"
+    },
+    "3_health_before_after_login_readable": {
+      "result": "PASS",
+      "detail": "Unit tests cover: (a) not logged in → 200 note=null; (b) logged_in but account not set → 200 note=guidance string; (c) fully healthy → 200 note=null. All 3 states return HTTP 200."
+    },
+    "4_live_health_200": {
+      "command": "curl -s http://127.0.0.1:8787/health",
+      "result": "PASS",
+      "response": {"status": "ok", "kgi_logged_in": true, "account_set": false},
+      "http_status": 200,
+      "note": "Running process is pre-merge W2b (f4d5b47). note field absent pre-merge — correct."
+    },
+    "5_trades_200": {
+      "command": "curl -s http://127.0.0.1:8787/trades",
+      "result": "PASS",
+      "http_status": 200,
+      "detail": "trades returned with note (account not set — expected state)"
+    },
+    "6_deals_200": {
+      "command": "curl -s http://127.0.0.1:8787/deals",
+      "result": "PASS",
+      "http_status": 200,
+      "detail": "deals returned with note (account not set — expected state)"
+    },
+    "7_position_503": {
+      "command": "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/position",
+      "result": "PASS",
+      "http_status": 503,
+      "detail": "POSITION_DISABLED circuit breaker active — not affected by PR #3"
+    },
+    "8_order_create_409": {
+      "command": "curl -s -X POST http://127.0.0.1:8787/order/create -H 'Content-Type: application/json' -d '{\"action\":\"Buy\",\"symbol\":\"TEST000\",\"qty\":0}'",
+      "result": "PASS",
+      "http_status": 409,
+      "response_code": "NOT_ENABLED_IN_W1",
+      "detail": "W1 stub preserved — not affected by PR #3"
+    },
+    "9_static_scope_check": {
+      "result": "PASS",
+      "detail": "app.py diff: only health() handler modified (+4 lines — note=None init, conditional note assignment, note= in HealthResponse constructor). All other handlers (session/*, position, trades, deals, quote/*, order/create) UNCHANGED. schemas.py diff: only HealthResponse +1 field (Optional[str] = None). No other schema classes modified.",
+      "handler_count_unchanged": "14 routes on branch matches 14 routes on main (W2b merge)"
+    },
+    "10_ci_status": {
+      "command": "gh pr checks 3",
+      "result": "PASS",
+      "checks": [
+        {"name": "validate", "status": "pass", "duration": "1m15s", "url": "https://github.com/qazabc159-blip/iuf-trading-room/actions/runs/24977697958/job/73132788430"}
+      ]
+    },
+    "11_secret_audit": {
+      "result": "FLAG_NOT_BLOCK",
+      "detail": "PR #3 diff contains '<REDACTED:KGI_ACCOUNT>' in test_health_account_set.py line 55 (patch.object _active_account='<REDACTED:KGI_ACCOUNT>'). This is the real KGI account number used as a mock fixture. HOWEVER: '<REDACTED:KGI_ACCOUNT>' was already present in committed main branch code pre-PR #3 (schemas.py lines 44,46,73 as docstring examples; README.md lines 88,97,108 as curl examples). PR #3 did NOT introduce this value to the repo — it already existed. Flagged for Elva/楊董 awareness. Recommendation: future tests should use a neutral sentinel like 'TEST_ACCT_MOCK' per redaction policy. [Redacted 2026-04-30 A2]",
+      "new_secrets_introduced_by_pr3": false,
+      "account_already_in_main": true,
+      "broker_id_in_diff": false,
+      "password_in_diff": false,
+      "pfx_in_diff": false,
+      "person_id_in_diff": false,
+      "token_in_diff": false
+    }
+  },
+  "route_count_check": {
+    "expected": 14,
+    "actual": 14,
+    "routes": ["/health", "/session/login", "/session/show-account", "/session/set-account", "/session/logout", "/position", "/trades", "/deals", "/quote/status", "/quote/subscribe/tick", "/quote/ticks", "/quote/subscribe/bidask", "/quote/bidask", "/order/create"],
+    "result": "PASS"
+  },
+  "verdict": "PASS_WITH_FLAG",
+  "flag": "account_number_<REDACTED:KGI_ACCOUNT>_in_test_fixture — pre-existing in repo, not new leak, but future tests should use sentinel. See redaction_policy_v1.md for guidance. [Redacted 2026-04-30 A2]",
+  "merge_recommendation": "READY_FOR_ELVA_SQUASH_MERGE_PER_D7",
+  "hard_lines": {
+    "0_self_merge": true,
+    "0_push_to_main": true,
+    "0_deploy": true,
+    "0_env_change": true,
+    "0_gateway_restart": true,
+    "0_logout": true,
+    "0_real_order": true,
+    "0_secret_leak": true,
+    "0_cross_lane_ping": true
+  }
+}

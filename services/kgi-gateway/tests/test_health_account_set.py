@@ -52,7 +52,7 @@ def test_health_logged_in_account_set_no_note():
     """Fully healthy state: logged in + account set → note should be None."""
     sentinel = object()  # non-None api handle
     with patch.object(session, "_api", sentinel):
-        with patch.object(session, "_active_account", "0308732"):
+        with patch.object(session, "_active_account", "TEST_ACCT_SENTINEL"):
             response = client.get("/health")
             assert response.status_code == 200
             body = response.json()

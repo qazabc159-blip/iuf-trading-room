@@ -1,0 +1,154 @@
+{
+  "verification": "candidate_f_circuit_breaker",
+  "candidate_f_definition": "containment, NOT root-cause fix — /position safely 503 does NOT mean position data is available",
+  "status": "PASS",
+  "branch": "feat/w2a-position-circuit-breaker",
+  "commit": "39f5460",
+  "pr_url": "https://github.com/qazabc159-blip/iuf-trading-room/pull/1",
+  "verify_round": "Round 2 — live behavior (§3 flag=true 9 items + idempotent 3x)",
+  "timestamp_utc": "2026-04-27T03:16:21Z",
+  "log_file": "C:/tmp/kgi_gw_candidate_f_20260427_111143.log",
+  "static_checks": {
+    "note": "§1 static + §2 unit verified in Round 1 (20260427T100249). Carried forward PASS.",
+    "1.1": true,
+    "1.2": true,
+    "1.3": true,
+    "1.4": true,
+    "1.5": true,
+    "1.6": true,
+    "1.7": true,
+    "1.8": true,
+    "1.9": true,
+    "1.10": true,
+    "evidence_json": "bruce_verify_candidate_f_static_and_unit_20260427T100249.json"
+  },
+  "unit_tests": {
+    "note": "§2 pytest run in Round 1. Carried forward PASS.",
+    "2.1_test_position_disabled_returns_503": true,
+    "2.2_test_position_enabled_proceeds_to_existing_path": true,
+    "2.3_full_pytest_regress": true
+  },
+  "live_flag_true_9items": {
+    "3.1_log_capture_open": {
+      "result": true,
+      "evidence": "File C:/tmp/kgi_gw_candidate_f_20260427_111143.log exists, 7226 bytes, UTF-16LE. Log line 11: 'INFO: Uvicorn running on http://127.0.0.1:8787'. Log line 62: 'kgi_gateway INFO Login OK: person_id=F1*****1910 accounts=1' (person_id truncated in evidence)."
+    },
+    "3.2_position_503_POSITION_DISABLED": {
+      "result": true,
+      "http_status": 503,
+      "body_summary": "{\"detail\":{\"error\":{\"code\":\"POSITION_DISABLED\",\"message\":\"/position endpoint is administratively disabled (Candidate F circuit breaker active).\",\"upstream\":null}}}",
+      "shape_check": "ErrorEnvelope with detail.error.code = POSITION_DISABLED — PASS"
+    },
+    "3.3_no_sdk_no_pandas_no_crash": {
+      "result": true,
+      "position_circuit_breaker_tripped_in_log": true,
+      "log_line": "2026-04-27 11:14:59,396 kgi_gateway INFO position_circuit_breaker tripped: returning 503 (KGI_GATEWAY_POSITION_DISABLED",
+      "position_diag_step_markers_in_log": false,
+      "position_diag_step_count": 0,
+      "interpretation": "Breaker fires before SDK/pandas path. Markers path (position_diag step=) never executed. Gateway alive throughout.",
+      "health_after": "HTTP 200, kgi_logged_in=true"
+    },
+    "3.4_trades_200": {
+      "result": true,
+      "http_status": 200,
+      "body_summary": "{\"trades\":{},...set-account note...}"
+    },
+    "3.5_deals_200": {
+      "result": true,
+      "http_status": 200,
+      "body_summary": "{\"deals\":{},...set-account note...}"
+    },
+    "3.6_health_200_logged_in": {
+      "result": true,
+      "http_status": 200,
+      "body": "{\"status\":\"ok\",\"kgi_logged_in\":true,\"account_set\":false}"
+    },
+    "3.7_order_create_409_NOT_ENABLED_IN_W1": {
+      "result": true,
+      "http_status": 409,
+      "stub_sent": "{\"action\":\"Buy\",\"symbol\":\"TEST000\",\"qty\":0}",
+      "stub_note": "Minimal fake stub (no real stock/qty/price) used to pass FastAPI schema validation. Handler immediately returns 409 before any order path executes.",
+      "body_summary": "{\"error\":{\"code\":\"NOT_ENABLED_IN_W1\",...}}",
+      "note_on_empty_body": "Empty {} returns 422 (schema validation by FastAPI before handler fires). Stub with action+symbol+qty is correct test pattern. No real order submitted."
+    },
+    "3.8_readme_describes_flag_behavior_rollback": {
+      "result": true,
+      "flag_name_correct": "KGI_GATEWAY_POSITION_DISABLED — FOUND",
+      "expected_503_described": true,
+      "rollback_steps_present": "unset or set to false, restart gateway. No data migration.",
+      "unaffected_endpoints_listed": "/trades, /deals, /order/create, /quote/*, /events/*, /health, /session/*",
+      "readme_line_range": "lines 31-36 in services/kgi-gateway/README.md"
+    },
+    "3.9_secret_not_in_log": {
+      "result": true,
+      "grep_password_pfx_B12_hits": 0,
+      "note_on_person_id": "person_id=<REDACTED:KGI_PERSON_ID> appears in gateway's own SDK 'Login OK' log line (line 62). This is the gateway's operational log, NOT included in this evidence JSON. Evidence file contains 0 real credentials. [Redacted 2026-04-30 A2]"
+    }
+  },
+  "idempotent_3x_position_test": {
+    "call_1_status": 503,
+    "health_after_1": "200 kgi_logged_in=true",
+    "call_2_status": 503,
+    "health_after_2": "200 kgi_logged_in=true",
+    "call_3_status": 503,
+    "health_after_3": "200 kgi_logged_in=true",
+    "gateway_alive_after_3_calls": true,
+    "crash_observed": false,
+    "log_tripped_count": 4,
+    "note": "Log shows 4 total 'position_circuit_breaker tripped' entries (1 from 3.2 + 3 from idempotent run). All 503. Gateway never crashed."
+  },
+  "live_flag_false": {
+    "4.1": "DEFERRED_REQUIRES_OPERATOR_ENV_FLIP",
+    "4.2": "DEFERRED_REQUIRES_OPERATOR_ENV_FLIP",
+    "note": "Operator must unset KGI_GATEWAY_POSITION_DISABLED and restart gateway. Bruce cannot auto-restart or change env per hard lines."
+  },
+  "frontend_smoke": {
+    "5.1": "DEFERRED_OPTIONAL",
+    "5.2": "DEFERRED_OPTIONAL",
+    "5.3": "DEFERRED_OPTIONAL",
+    "note": "apps/web not in scope for this verify round. Not blocking."
+  },
+  "rollback_drill": {
+    "6.1": "DEFERRED_REQUIRES_OPERATOR_ENV_UNSET",
+    "6.2": "DEFERRED_REQUIRES_OPERATOR_ENV_UNSET",
+    "6.3": "DEFERRED_REQUIRES_OPERATOR_ENV_UNSET",
+    "note": "Requires operator restart with flag=false. Static analysis (README §rollback) confirms rollback procedure is documented."
+  },
+  "scope_creep_noted": {
+    "phase0_position_diag_markers_28lines": "additive diagnostic logging only, not changing containment or control flow. Confirmed: 0 markers executed during flag=true run.",
+    "readme_166_lines_new": "operational documentation, not changing containment behavior",
+    "verdict": "accepted, not blocking verify PASS"
+  },
+  "lane_check": {
+    "backend_jason": "PR #1 feat/w2a-position-circuit-breaker — no commit/merge to main",
+    "frontend_jim": "not in this PR scope; J0 isolated package parallel",
+    "verifier_bruce": "this report",
+    "lab_athena": "not affected",
+    "contracts": "HEAD 9957c91 unchanged"
+  },
+  "hard_lines_confirmed": {
+    "0_commit_to_main": true,
+    "0_push_to_main": true,
+    "0_merge_to_main_by_bruce": true,
+    "0_deploy_to_railway_ec2": true,
+    "0_destructive_op": true,
+    "0_secret_leak": true,
+    "0_fix_root_cause": true,
+    "0_cross_lane_scope_creep": true,
+    "0_position_live_native_path_flag_false": true,
+    "0_order_create_real": true,
+    "0_session_logout_call": true,
+    "0_auto_restart_gateway": true,
+    "0_paper_live_activation": true,
+    "all_13_preserved": true
+  },
+  "gateway_crash_check": {
+    "alive_after_initial_503": true,
+    "alive_after_3x_idempotent": true,
+    "crash_observed": false,
+    "final_health": "HTTP 200 kgi_logged_in=true"
+  },
+  "ready_for_main_merge": true,
+  "merge_gate": "REQUIRES_OPERATOR_D4_ACK",
+  "comments": "All §3 live 9-item checks PASS. Gateway stable throughout. §4/§6 deferred to operator env flip. §5 frontend deferred optional. Candidate F circuit breaker verified as effective containment for /position native crash. Does NOT fix root cause — root cause investigation continues via Phase 0 Mode 4 / Candidate G."
+}

@@ -1,0 +1,109 @@
+{
+  "test": "path_b_w2a_read_side_verify",
+  "gateway": "http://127.0.0.1:8787",
+  "started_at_utc": "2026-04-25T18:23:14Z",
+  "started_at_tst": "2026-04-26T02:23:14+08:00",
+  "outcome": "FAIL_HARD_STOP",
+  "status": "RED_CLOSEOUT",
+  "abort_reason": "operator_relogin_was_a_FALSE_CONFIRMATION; live 8787 was the 04-23 zombie gateway, not a fresh restart",
+  "stop_line_triggered": "gateway 需要再次 relogin，但我不在場 (overnight stop line #6)",
+  "actions_taken_after_abort": [
+    "stopped script execution",
+    "did NOT restart 8787",
+    "did NOT attempt re-login",
+    "did NOT call any mutating endpoint",
+    "wrote red closeout"
+  ],
+  "checks": [
+    {
+      "step": "0_health_baseline_pre_script",
+      "ts_tst": "02:23:14",
+      "result": "200 {kgi_logged_in:true, account_set:false}",
+      "interpretation_at_time": "PASS — believed operator's relogin succeeded",
+      "interpretation_after_forensics": "STALE — the kgi_logged_in=true flag was module-level cache from the 04-23 15:24 login; KGI upstream heartbeat was actually dead since 04-24 06:00 (Q021 max reconnection attempts reached)",
+      "pass": false
+    },
+    {
+      "step": "1_show_account",
+      "result": "presumed 200 (no error logged before script crash)",
+      "interpretation": "likely returned cached account from 04-23; KGI not actually queried because upstream was dead",
+      "pass": "indeterminate"
+    },
+    {
+      "step": "2_set_account",
+      "result": "presumed 200",
+      "interpretation": "module-level state mutation only; no real KGI side effect because session was zombie",
+      "pass": "indeterminate"
+    },
+    {
+      "step": "3_quote_subscribe_tick",
+      "result": "presumed 200",
+      "interpretation": "likely accepted by stale state but no actual subscription registered upstream (heartbeat dead)",
+      "pass": "indeterminate"
+    },
+    {
+      "step": "4_get_position",
+      "result": "ConnectionResetError [WinError 10054] — gateway process exited mid-request",
+      "post_diagnostic": "gateway 8787 LISTEN socket gone; netstat shows only TIME_WAIT remnants; no python uvicorn bound to 8787",
+      "pass": false
+    },
+    {
+      "step": "5_get_trades",
+      "result": "NOT_REACHED",
+      "pass": false
+    },
+    {
+      "step": "6_get_deals",
+      "result": "NOT_REACHED",
+      "pass": false
+    }
+  ],
+  "forensic_evidence": {
+    "live_log_path": "C:/Users/User/AppData/Local/Temp/kgi-gw3.log",
+    "gateway_uvicorn_started_at": "2026-04-23 15:24:18 (line 3 of gw3.log) — NOT restarted since",
+    "last_login_ok_in_log": "2026-04-23 15:24:34 (person_id <REDACTED:KGI_PERSON_ID> accounts=1)",
+    "last_set_account_in_log": "2026-04-23 15:24:43 (account=<REDACTED:KGI_ACCOUNT> broker_id=<REDACTED:KGI_BROKER_ID>)",
+    "kgi_upstream_websocket_died": "2026-04-24 06:00:01 (Connection to remote host was lost)",
+    "kgi_max_reconnection_attempts_reached": "2026-04-24 06:02:04 (Q021 — gave up reconnecting after 20 retries)",
+    "heartbeat_thread_dead_since": "approx 2026-04-24 06:02 — log shows continuous 'heartbeat thread not connected' loop ever since",
+    "404_on_position_trades_deals_observed_at": "2026-04-26 00:24:53 (HEAD /position) and 01:15:58 (GET /position, /trades, /deals all 404)",
+    "404_root_cause": "uvicorn loaded app.py at 04-23 15:24, before W1.5 endpoints were added; in-memory FastAPI app does not have /position /trades /deals routes",
+    "current_app_py_on_disk_HAS_those_routes": true,
+    "gateway_process_state_now": "dead — no LISTEN on 8787, only TIME_WAIT entries",
+    "no_application_startup_or_shutdown_log_entries_between": "2026-04-23 15:24 ↔ now"
+  },
+  "root_cause_chain": [
+    "1. Operator's runbook Step A (stop old gateway via Ctrl+C) likely did not actually kill the 04-23 zombie — or operator stopped a different terminal.",
+    "2. Operator's runbook Step B (start new uvicorn) likely failed silently with [Errno 10048] address already in use — operator's console may have shown the startup banner from a stale window OR the new process exited immediately.",
+    "3. Operator's runbook Step C (POST /session/login) hit the 04-23 zombie gateway, which returned 200 because module-level state still had logged_in=true cached — but the actual KGI upstream session was dead since 04-24 06:02.",
+    "4. Elva's pre-script /health check read the same stale flag and believed relogin succeeded.",
+    "5. The 04-23 zombie's app.py does not have /position /trades /deals routes (loaded before Lane B work today). My script's call to /position would have hit 404, but the gateway process appears to have crashed mid-request before responding."
+  ],
+  "what_did_NOT_happen": {
+    "real_order_submitted": false,
+    "broker_execution_invoked": false,
+    "order_create_opened": false,
+    "secret_in_log_or_chat_or_evidence": false,
+    "openalice_broker_execution": false,
+    "signal_cluster_to_execution": false,
+    "tunnel_implementation": false,
+    "auth_regression": false,
+    "gateway_8787_restart_by_elva": false,
+    "kgi_relogin_by_elva": false
+  },
+  "required_operator_actions_morning": [
+    "1. Confirm whether new uvicorn console is still showing 'waiting for POST /session/login' or has exited; if stale, close it.",
+    "2. Verify no python.exe still bound to 8787 (Get-NetTCPConnection -LocalPort 8787); kill any stragglers (PID 27408 / 31552 may be unrelated runners — check before killing).",
+    "3. Do a CLEAN restart: cd services/kgi-gateway, uvicorn app:app --host 127.0.0.1 --port 8787 --log-level info — confirm bind via the 'Uvicorn running on' line BEFORE attempting login.",
+    "4. After bind confirmed, run /session/login from operator's local secret holder.",
+    "5. Validate fresh state: GET /health should show {kgi_logged_in:true, account_set:false}; GET /position should NOT be 404 (route exists in current app.py).",
+    "6. Then say 'W2a relogin 完了，跑 read-side verify' and Elva will retry."
+  ],
+  "lessons_to_codify": [
+    "Pre-flight check 'kgi_logged_in=true' is INSUFFICIENT signal — must also verify a W1.5 endpoint exists (e.g. GET /position not 404) to confirm the running uvicorn loaded the current app.py.",
+    "Operator's restart-success confirmation must include 'Uvicorn running on' message visible in the new console, not just the startup banner.",
+    "Add a /version or /build_info endpoint in app.py that returns a content hash — Elva can verify the running gateway matches expected build before driving any read-side test."
+  ],
+  "finished_at_utc": "2026-04-25T18:30:00Z",
+  "elva_signature": "W2a aborted under stop line #6; awaiting operator clean restart"
+}

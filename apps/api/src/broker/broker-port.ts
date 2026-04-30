@@ -30,7 +30,7 @@
  * Source: brokerport_golden_2026-04-23.md §7
  */
 export interface KgiBrokerCredentials {
-  personId: string;        // e.g. "F131331910" — MUST be uppercase
+  personId: string;        // e.g. "YOUR_PERSON_ID" — MUST be uppercase
   personPwd: string;
   simulation?: boolean;    // default false; sim env currently blocked by KGI error 78
 }
@@ -38,12 +38,12 @@ export interface KgiBrokerCredentials {
 /**
  * Returned by showAccounts().
  * Source: brokerport_golden_2026-04-23.md §12-13
- *   ["{'account': '0308732', 'account_flag': '證券', 'broker_id': '9204'}"]
+ *   ["{'account': 'YOUR_ACCOUNT', 'account_flag': '證券', 'broker_id': 'YOUR_BROKER_ID'}"]
  */
 export interface KgiAccount {
-  account: string;         // e.g. "0308732"
+  account: string;         // e.g. "YOUR_ACCOUNT"
   accountFlag: string;     // e.g. "證券"
-  brokerId: string;        // e.g. "9204"
+  brokerId: string;        // e.g. "YOUR_BROKER_ID"
 }
 
 /** Opaque session token returned after successful login. */

@@ -1,0 +1,103 @@
+{
+  "test": "path_b_w2a_read_side_verify_LIVE_OPERATOR_RELOGIN",
+  "context": "Operator (楊董) completed /session/login at 12:14 TST. Elva (no credentials, no logout/login calls) ran path_b_w2a_read_side_verify.py against fresh logged-in session. Steps 0-3 PASS, step 4 (/position) crashed uvicorn worker process.",
+  "ts_tst_start": "2026-04-26T12:14:30+08:00",
+  "ts_tst_crash": "2026-04-26T12:15:08+08:00",
+  "gateway": "http://127.0.0.1:8787 (operator-relogged uvicorn, uvicorn log /tmp/kgi_gw_8787_w2a_freshstart.log)",
+  "outcome": "FAIL_HARD_STOP_UVICORN_KILLED_BY_NATIVE_SDK",
+  "severity": "CRITICAL — gateway worker process dead, KGI session lost with it; operator relogin needed again",
+  "do_not_restart_reason": "Operator (楊董) just completed login. If Elva restarts 8787 autonomously the credentials need to be re-entered. STOP and let operator decide.",
+  "step_by_step": [
+    {
+      "step": "0_health_preflight",
+      "result": "200 OK, kgi_logged_in=true, account_set=false (operator login succeeded; account_set transitions in step 2)",
+      "pass": true
+    },
+    {
+      "step": "1_show_account",
+      "result": "200 OK, account_count=1 (broker 9*** account 0***32 masked)",
+      "pass": true
+    },
+    {
+      "step": "2_set_account",
+      "result": "200 OK, account selected and broker bound",
+      "pass": true,
+      "log_evidence": "set_Account OK: account=<REDACTED:KGI_ACCOUNT> broker_id=<REDACTED:KGI_BROKER_ID>"
+    },
+    {
+      "step": "3_quote_subscribe_tick",
+      "result": "200 OK, symbol=2330 oddLot=false, websocket connected and subscribed",
+      "pass": true,
+      "log_evidence": "Subscribed tick: symbol=2330 label=tick_2330"
+    },
+    {
+      "step": "4_get_position",
+      "result": "ConnectionResetError [WinError 10054] — uvicorn worker process was killed mid-request",
+      "pass": false,
+      "diagnosis": "Worker did not log the request line. After [kgiTradeCom::OnData] 4310 the process died with no Python traceback in stdout/stderr — strong signature of native SDK (kgisuperpy / pythonnet COM binding) segfault on list_positions() or upstream callback."
+    }
+  ],
+  "log_tail_at_crash": [
+    "POST /session/login HTTP/1.1 200 OK",
+    "GET /health HTTP/1.1 200 OK (Elva preflight A — standalone)",
+    "GET /position HTTP/1.1 200 OK (Elva probe — account_set=false, returned 200 empty)",
+    "GET /health HTTP/1.1 200 OK (script step 0)",
+    "GET /position HTTP/1.1 200 OK (extra probe)",
+    "GET /health HTTP/1.1 200 OK",
+    "GET /session/show-account HTTP/1.1 200 OK",
+    "POST /session/set-account HTTP/1.1 200 OK",
+    "POST /quote/subscribe/tick HTTP/1.1 200 OK",
+    "[kgiTradeCom::OnData] 4310",
+    "(no further log lines — worker process killed)"
+  ],
+  "critical_observations": [
+    "/position returned 200 TWICE before set_account (account_set=false) — handler code path was exercised without crash",
+    "Crash happened only AFTER set_account=true + quote/subscribe/tick — i.e. after upstream KGI session became fully active and tick stream was running",
+    "[kgiTradeCom::OnData] 4310 was the last log line — this is kgisuperpy SDK push-channel callback; the next /position call competed with active push handler and crashed",
+    "No Python traceback in uvicorn stdout — confirms native-code crash, not Python-level exception",
+    "Curl to /health post-crash returned exit 7 (connection refused) — confirms uvicorn process gone, not just hung"
+  ],
+  "differential_from_04_23_zombie": {
+    "04_23_zombie": "Old uvicorn alive but KGI WebSocket dead 3 days; /health flag was stale; /position returned 404 (route not in old in-memory app.py)",
+    "this_crash": "Fresh uvicorn (Elva 02:29 TST restart, then operator 12:14 TST login); all routes load; /position returned 200 twice without crash; crash triggered by COMBINATION of set_account=true + active tick subscription + /position call"
+  },
+  "what_did_NOT_happen_by_elva": {
+    "no_login_attempt": "Operator did /session/login; Elva never invoked it",
+    "no_logout_attempt": "Hard rule preserved",
+    "no_order_create_attempt": "Hard rule preserved",
+    "no_secret_in_log_or_chat": "person_id and account masked (<REDACTED:KGI_PERSON_ID> / <REDACTED:KGI_BROKER_ID> broker visible only because operator's own log line emits it; not Elva-printed in chat)",
+    "no_autonomous_restart_after_crash": "Elva DID NOT restart 8787 — that would erase the operator login session. Decision deferred to operator.",
+    "no_kgi_session_kill_signal": "Elva never sent SIGTERM/SIGKILL to uvicorn process"
+  },
+  "hypothesis_for_native_crash": [
+    "Hypothesis A: kgisuperpy list_positions() invokes a Windows COM object (pythonnet binding to KGI ActiveX SDK) that has a thread-safety bug — concurrent push callback + list_positions causes access violation",
+    "Hypothesis B: /position handler in app.py calls a SDK method that internally re-enters the message pump while a push event is mid-dispatch → unhandled exception escapes Python boundary",
+    "Hypothesis C: The 4310 OnData event itself is fatal regardless of /position; coincidence that crash showed up on /position",
+    "Test plan (after operator decides whether to relogin): repro by isolating each — (1) login + show + set + position WITHOUT quote subscribe; (2) login + show + set + quote subscribe + WAIT 60s without /position; (3) full sequence again to check determinism"
+  ],
+  "blast_radius_assessment": {
+    "production_app_eycvector_com": "UNAFFECTED — Railway api/web running independent of local 8787",
+    "openalice_runner_nssm_service": "UNAFFECTED — NSSM service is independent process",
+    "operator_kgi_session_remote_state": "Likely orphaned at KGI server side; will time out per KGI's session policy. New login will create a new session. Old session does not pose hard line risk (/order/create still 409 NOT_ENABLED_IN_W1 in code, so even if old session were somehow exploitable, no order can flow)",
+    "secrets": "ZERO leak — operator inline PowerShell load (Read-Host -AsSecureString), Elva never touched credentials; uvicorn log contains person_id/broker/account but that file is local-only"
+  },
+  "hard_lines_preserved": {
+    "no_real_order": true,
+    "no_broker_execution": true,
+    "no_order_create_open": true,
+    "no_secret_logged_to_chat_or_evidence_by_elva": true,
+    "no_login_call_by_elva": true,
+    "no_logout_call_by_elva": true,
+    "no_autonomous_destructive_action": true,
+    "no_tunnel_implementation": true,
+    "no_production_code_commit": true,
+    "no_production_deploy": true
+  },
+  "next_step_decision_belongs_to_operator": [
+    "Option 1 (recommended): Operator relogin again, then Elva runs a SUBSET — only /position WITHOUT quote subscribe — to test Hypothesis A vs C",
+    "Option 2: Operator relogin, then skip /position entirely; verify /trades + /deals work post-tick-subscribe (those use different SDK methods)",
+    "Option 3: Park live read-side verify for now, file a Jason backlog item to add try/except + watchdog around all SDK calls in app.py, then retry next operator window",
+    "Option 4: STOP W2a entirely; the gateway is too fragile for live read-side without isolation (each SDK call in its own subprocess to contain crashes)"
+  ],
+  "elva_recommendation": "Option 1 — relogin + /position-only test (no quote subscribe) — would isolate whether crash is /position-alone or interaction with active push channel. This is a 30-second test and dispositive for the hypothesis. But this is operator's call; Elva will not autonomously relogin or restart."
+}

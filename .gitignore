@@ -9,3 +9,25 @@ coverage
 *.tsbuildinfo
 runtime-data/
 apps/*/runtime-data/
+
+# Agent-generated one-shot artifacts (A2 housekeeping 2026-04-30)
+.tmp_*
+*.tmp
+.tmp_pr*
+scripts/commit_*.txt
+scripts/pr_body_*.md
+scripts/do_*.bat
+tmp_*.html
+*_typecheck_files.txt
+
+# Codex dev server runtime files
+apps/web/.codex-web-dev.*
+apps/web/.codex-web-dev-*.log
+
+# Runtime process state
+*.pid
+*-dev.err.path
+*-dev.out.path
+
+# Evidence files containing live runtime captures (gitignore future ones)
+evidence_*_runtime_*.md
