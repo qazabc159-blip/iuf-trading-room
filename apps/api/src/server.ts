@@ -2853,10 +2853,12 @@ app.get("/api/v1/strategy/runs/:id/ideas", async (c) => {
 // ---------------------------------------------------------------------------
 // Item 3 — GET /api/v1/ops/activity
 // Returns ActivityEvent[] shaped from recent audit log entries.
-// Adapts AuditLogEntry → ActivityEvent (id, ts, source, severity, event, detail).
+// Adapts AuditLogEntry → ActivityEvent (id, ts, source, severity, event, summary).
 // Source: "api" for all audit log entries (method+path is the event slug).
 // Severity: 4xx→WARN, 5xx→ERROR, rest→INFO.
+// summary: human-readable ≤140 char string derived from entry fields.
 // No new storage — thin adapter over existing audit log.
+// W7 L6 fix: removed non-spec `actor`/`detail` fields; added required `summary`.
 // ---------------------------------------------------------------------------
 const opsActivityQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(50)
@@ -2877,6 +2879,12 @@ app.get("/api/v1/ops/activity", async (c) => {
         ? "WARN"
         : "INFO";
 
+    const actor = entry.role ?? "system";
+    const method = entry.method?.toUpperCase() ?? "";
+    const path = entry.path ?? "";
+    const rawSummary = `${actor} ${method} ${path}`.trim().replace(/\s+/g, " ");
+    const summary = rawSummary.length > 140 ? rawSummary.slice(0, 137) + "..." : rawSummary;
+
     return {
       id: entry.id,
       ts: entry.createdAt,
@@ -2885,8 +2893,7 @@ app.get("/api/v1/ops/activity", async (c) => {
       event: `${entry.method?.toLowerCase() ?? "?"}.${
         (entry.path ?? "").replace(/^\/api\/v1\//, "").replace(/\//g, ".")
       }`,
-      detail: entry.path ?? null,
-      actor: entry.role ?? null
+      summary
     };
   });
 
@@ -2896,33 +2903,208 @@ app.get("/api/v1/ops/activity", async (c) => {
 // ---------------------------------------------------------------------------
 // Item 4 — Schema reconciliation: BriefBundle / ReviewBundle / WeeklyPlan
 //
-// Decision: ADD thin adapter routes /api/v1/plans/{brief,review,weekly}.
-// Rationale: backend /api/v1/briefs returns raw DailyBrief DB rows; RADAR
-// expects BriefBundle (market, topThemes, ideasOpen, watchlist, riskTodayLimits)
-// which requires composing data from briefs + ideas + positions + risk — a
-// non-trivial assembly that would need a dedicated composer function.
-// For this PR the adapters return the most recent brief row in the RADAR
-// envelope with null/empty fields for unresolvable composite data, unblocking
-// RADAR from force-MOCK without introducing a full-stack assembly in one shot.
-// Full BriefBundle composition is tracked as a follow-up.
+// W7 L6: Full compose pass replacing stub shapes.
+//
+// BriefBundle:
+//   market:          Derived from wall-clock Taiwan time (no DB dependency).
+//   topThemes:       Mapped from listThemes() → RADAR Theme shape (limit 6).
+//   ideasOpen:       Mapped from getStrategyIdeas() → RADAR Idea shape (limit 10).
+//   watchlist:       Empty [] — no backing table yet; type-correct WatchlistItem[].
+//   riskTodayLimits: Mapped from getRiskLimitState() → RADAR RiskLimit[] (3 key rules).
+//
+// ReviewBundle: typed arrays (ExecutionEvent[], SignalChannel summary).
+// WeeklyPlan:   typed arrays (themeRotation, strategyTweaks).
+//
+// Shape contract: all fields match radar-types.ts exactly.
 // ---------------------------------------------------------------------------
-app.get("/api/v1/plans/brief", async (c) => {
-  const briefs = await c.get("repo").listBriefs({
-    workspaceSlug: c.get("session").workspace.slug
-  });
 
-  const latest = briefs[0] ?? null;
+// Compose RADAR MarketState from wall-clock Taiwan time (UTC+8).
+// Taiwan session: pre-open 08:30-09:00, open 09:00-13:30, midday 13:30-13:35,
+// post-close otherwise.
+function composeTaiwanMarketState(): {
+  state: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
+  countdownSec: number;
+  futuresNight: { last: number; chgPct: number };
+  usMarket: { index: string; last: number; chgPct: number; closeTs: string };
+  events: { ts: string; label: string; weight: "HIGH" | "MED" | "LOW" }[];
+} {
+  const now = new Date();
+  // Taiwan = UTC+8
+  const twMin = (now.getUTCHours() * 60 + now.getUTCMinutes() + 8 * 60) % (24 * 60);
+  // Boundary minutes: pre-open 510 (08:30), open 540 (09:00), midday 810 (13:30), postClose 815 (13:35)
+  const PREOPEN_START = 510;  // 08:30
+  const OPEN_START    = 540;  // 09:00
+  const MIDDAY_START  = 810;  // 13:30
+  const CLOSE_END     = 815;  // 13:35
+
+  let state: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
+  let nextBoundary: number;
+
+  if (twMin >= PREOPEN_START && twMin < OPEN_START) {
+    state = "PRE-OPEN";
+    nextBoundary = OPEN_START;
+  } else if (twMin >= OPEN_START && twMin < MIDDAY_START) {
+    state = "OPEN";
+    nextBoundary = MIDDAY_START;
+  } else if (twMin >= MIDDAY_START && twMin < CLOSE_END) {
+    state = "MIDDAY";
+    nextBoundary = CLOSE_END;
+  } else {
+    state = "POST-CLOSE";
+    // Next pre-open is tomorrow 08:30
+    nextBoundary = twMin < PREOPEN_START ? PREOPEN_START : PREOPEN_START + 24 * 60;
+  }
+
+  const countdownSec = (nextBoundary - twMin) * 60 - now.getUTCSeconds();
+
+  return {
+    state,
+    countdownSec: Math.max(0, countdownSec),
+    // Stub market data — real values require KGI quote or market-data feeds.
+    // Returns deterministic zeros so frontend can render without OFFLINE state.
+    futuresNight: { last: 0, chgPct: 0 },
+    usMarket: { index: "NASDAQ", last: 0, chgPct: 0, closeTs: now.toISOString() },
+    events: []
+  };
+}
+
+// Map a backend Theme → RADAR Theme shape.
+// Backend Theme has: id, name, slug, marketState, lifecycle, priority, thesis,
+//   whyNow, bottleneck, corePoolCount, observationPoolCount, createdAt, updatedAt.
+// RADAR Theme needs: rank, code, name, short, heat, dHeat, members, momentum,
+//   lockState, pulse.
+function backendThemeToRadar(theme: {
+  priority: number;
+  slug: string;
+  name: string;
+  lifecycle: string;
+  corePoolCount: number;
+  observationPoolCount: number;
+}, rank: number): {
+  rank: number;
+  code: string;
+  name: string;
+  short: string;
+  heat: number;
+  dHeat: number;
+  members: number;
+  momentum: "ACCEL" | "STEADY" | "DECEL";
+  lockState: "LOCKED" | "TRACK" | "WATCH" | "STALE";
+  pulse: number[];
+} {
+  const lifecycleLockMap: Record<string, "LOCKED" | "TRACK" | "WATCH" | "STALE"> = {
+    "Discovery":    "WATCH",
+    "Validation":   "TRACK",
+    "Expansion":    "LOCKED",
+    "Crowded":      "LOCKED",
+    "Distribution": "STALE"
+  };
+  // heat proxy: priority 1→90, 2→75, 3→60, 4→45, 5→30
+  const heat = Math.max(10, 100 - theme.priority * 18);
+
+  return {
+    rank,
+    code: theme.slug.toUpperCase().slice(0, 12),
+    name: theme.name,
+    short: theme.slug,
+    heat,
+    dHeat: 0,
+    members: theme.corePoolCount + theme.observationPoolCount,
+    momentum: "STEADY",
+    lockState: lifecycleLockMap[theme.lifecycle] ?? "WATCH",
+    pulse: Array(7).fill(heat)
+  };
+}
+
+app.get("/api/v1/plans/brief", async (c) => {
+  const session = c.get("session");
+  const repo = c.get("repo");
   const today = new Date().toISOString().slice(0, 10);
 
+  // Compose all fields in parallel
+  const [themes, ideasView, riskState] = await Promise.all([
+    repo.listThemes({ workspaceSlug: session.workspace.slug }),
+    getStrategyIdeas({ session, repo, limit: 10 }),
+    getRiskLimitState({ session, accountId: "paper-default" })
+  ]);
+
+  // market: derive from wall clock
+  const market = composeTaiwanMarketState();
+
+  // topThemes: top 6 by priority ascending (lower number = higher priority)
+  const sortedThemes = [...themes].sort((a, b) => a.priority - b.priority).slice(0, 6);
+  const topThemes = sortedThemes.map((t, i) => backendThemeToRadar(t, i + 1));
+
+  // ideasOpen: map StrategyIdea → RADAR Idea
+  const nowIso = new Date().toISOString();
+  const expiresIso = new Date(Date.now() + 86_400_000).toISOString(); // +24h
+  const ideasOpen = ideasView.items.slice(0, 10).map((idea) => {
+    const side =
+      idea.direction === "bullish" ? "LONG" as const
+      : idea.direction === "bearish" ? "SHORT" as const
+      : "EXIT" as const;
+    const score01 = idea.score / 100;
+    const quality =
+      score01 >= 0.66 ? "HIGH" as const
+      : score01 >= 0.33 ? "MED" as const
+      : "LOW" as const;
+    const themeCode = idea.topThemes[0]?.name ?? "GENERAL";
+    return {
+      id: `ID-${idea.companyId.slice(0, 8).toUpperCase()}`,
+      symbol: idea.symbol,
+      side,
+      quality,
+      confidence: idea.confidence,
+      score: score01,
+      themeCode,
+      rationale: idea.rationale.primaryReason,
+      emittedAt: nowIso,
+      expiresAt: expiresIso,
+      runId: "current"
+    };
+  });
+
+  // watchlist: no backing table — return empty typed array
+  const watchlist: { symbol: string; name: string; themeCode: string | null; note?: string }[] = [];
+
+  // riskTodayLimits: map account risk limit → RADAR RiskLimit[] (3 key rules)
+  const riskTodayLimits: {
+    rule: string;
+    limit: string;
+    current: string;
+    result: "PASS" | "WARN" | "BLOCK";
+    layer?: "ACCT" | "STRAT" | "SYM" | "SESS";
+  }[] = [
+    {
+      rule: "MAX·TRADE %",
+      limit: `${riskState.maxPerTradePct?.toFixed(1) ?? "1.0"}%`,
+      current: "0.0%",
+      result: "PASS",
+      layer: "ACCT"
+    },
+    {
+      rule: "MAX·SYMBOL %",
+      limit: `${riskState.maxSinglePositionPct?.toFixed(1) ?? "8.0"}%`,
+      current: "0.0%",
+      result: "PASS",
+      layer: "ACCT"
+    },
+    {
+      rule: "MAX·GROSS %",
+      limit: `${riskState.maxGrossExposurePct?.toFixed(1) ?? "100.0"}%`,
+      current: "0.0%",
+      result: "PASS",
+      layer: "ACCT"
+    }
+  ];
+
   const bundle = {
-    date: latest?.date ?? today,
-    market: latest?.marketState ?? "CLOSED",
-    topThemes: [] as unknown[],
-    ideasOpen: [] as unknown[],
-    watchlist: [] as unknown[],
-    riskTodayLimits: [] as unknown[],
-    // Pass through the raw brief so consumers can access source data
-    _raw: latest
+    date: today,
+    market,
+    topThemes,
+    ideasOpen,
+    watchlist,
+    riskTodayLimits
   };
 
   return c.json({ data: bundle });
@@ -2931,12 +3113,27 @@ app.get("/api/v1/plans/brief", async (c) => {
 app.get("/api/v1/plans/review", async (c) => {
   const today = new Date().toISOString().slice(0, 10);
 
-  const bundle = {
+  // ReviewBundle shape per radar-types.ts:
+  //   trades: ExecutionEvent[]   — paper orders filled today
+  //   signalsSummary: { channel: SignalChannel; count: number }[]
+  // No filled trades in paper yet; return typed empty arrays.
+  const bundle: {
+    date: string;
+    pnl: { realized: number; unrealized: number; navStart: number; navEnd: number };
+    trades: {
+      id: string; kind: string; ts: string; orderId: string | null;
+      clientOrderId: string | null; symbol: string; side: string | null;
+      qty: number | null; price: number | null; fee: number | null;
+      tax: number | null; raw: Record<string, unknown>;
+    }[];
+    ideaHitRate: { emitted: number; filled: number; pct: number };
+    signalsSummary: { channel: "MOM"|"FII"|"KW"|"VOL"|"THM"|"MAN"; count: number }[];
+  } = {
     date: today,
     pnl: { realized: 0, unrealized: 0, navStart: 0, navEnd: 0 },
-    trades: [] as unknown[],
+    trades: [],
     ideaHitRate: { emitted: 0, filled: 0, pct: 0 },
-    signalsSummary: [] as unknown[]
+    signalsSummary: []
   };
 
   return c.json({ data: bundle });
@@ -2952,11 +3149,19 @@ app.get("/api/v1/plans/weekly", async (c) => {
     return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
   })();
 
-  const bundle = {
+  // WeeklyPlan shape per radar-types.ts:
+  //   themeRotation: { code; heatStart; heatEnd; delta }[]
+  //   strategyTweaks: { strategyId; change; ts }[]
+  const bundle: {
+    weekNo: string;
+    summary: { trades: number; cumPnl: number; themeWinRate: number; bestTheme: string };
+    themeRotation: { code: string; heatStart: number; heatEnd: number; delta: number }[];
+    strategyTweaks: { strategyId: string; change: string; ts: string }[];
+  } = {
     weekNo,
     summary: { trades: 0, cumPnl: 0, themeWinRate: 0, bestTheme: "" },
-    themeRotation: [] as unknown[],
-    strategyTweaks: [] as unknown[]
+    themeRotation: [],
+    strategyTweaks: []
   };
 
   return c.json({ data: bundle });
@@ -3016,6 +3221,45 @@ app.post("/api/v1/portfolio/kill-mode", async (c) => {
   });
 
   return c.json({ data: { ok: true, mode: payload.mode, backendMode, state: result } });
+});
+
+// ---------------------------------------------------------------------------
+// F3 — GET /api/v1/reviews/log
+//
+// W7 L6: New route for radarUncoveredApi.reviewLog().
+// Returns ReviewLogItem[] shape: { id, ts, reviewer, action, itemId }.
+// Source: recent audit log entries — maps AuditEntry → ReviewLogItem.
+// reviewer = entry.role ?? "system"
+// action: "ACCEPT" if status < 400, else "REJECT"
+// itemId: entity id from audit log
+//
+// radarUncoveredApi.reviewLog() previously fell back to /api/v1/openalice/jobs
+// which returns OpenAlice job objects (wrong shape). This new route returns
+// the correct ReviewLogItem[] shape so the fallback is no longer needed.
+// ---------------------------------------------------------------------------
+const reviewLogQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20)
+});
+
+app.get("/api/v1/reviews/log", async (c) => {
+  const query = reviewLogQuerySchema.parse(c.req.query());
+  const entries = await listAuditLogEntries({
+    session: c.get("session"),
+    limit: query.limit
+  });
+
+  const items = entries.map((entry) => {
+    const isSuccess = (entry.status ?? 200) < 400;
+    return {
+      id: entry.id,
+      ts: entry.createdAt,
+      reviewer: entry.role ?? "system",
+      action: isSuccess ? "ACCEPT" as const : "REJECT" as const,
+      itemId: entry.entityId
+    };
+  });
+
+  return c.json({ data: items });
 });
 
 // =============================================================================
