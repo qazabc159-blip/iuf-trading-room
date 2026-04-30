@@ -41,6 +41,8 @@ Active backend lanes (Jason scope, Codex 不踩):
 
 ## Backend Ready
 
+Bruce 4-state harness v1 DONE @ 2026-05-01 02:00 Taipei → evidence/w7_paper_sprint/bruce_4state_harness_v1_2026-05-01.md
+
 Known usable endpoints:
 
 - `GET /api/v1/session`
@@ -78,7 +80,7 @@ Needs confirmation from Elva/Jason:
 
 Initial high-risk surfaces:
 
-- `/briefs`: currently imports mock brief data.
+- `/briefs`: DONE in Codex cycle 01:54; now binds `GET /api/v1/briefs` and renders LIVE / EMPTY / BLOCKED.
 - `/reviews`: currently imports mock review queue/log.
 - `/drafts` and `/admin/content-drafts`: currently import mock drafts/audit.
 - `/quote`: currently uses mock bidask/ticks.
@@ -143,6 +145,29 @@ Blockers:
 
 - Need Jason canonical contracts for derivatives exposure and KGI readonly tick/bidask before panels [08]/[09] can move from BLOCKED to LIVE.
 
+### 2026-05-01 01:54 Taipei
+
+Completed:
+
+- Converted `/briefs` from `mockBrief` to production `GET /api/v1/briefs`.
+- The page now renders latest DailyBrief sections from DB when LIVE, a real zero-row EMPTY state, or a BLOCKED state with owner/detail when the API fails.
+- Removed fake market metrics / fake theme heat / fake ideas from the brief page because no production contract was backing those fields.
+
+Files:
+
+- `apps/web/app/briefs/page.tsx`
+- `apps/web/app/globals.css`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `GET /api/v1/briefs`
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+
 ## Elva Notes
 
 ### 2026-05-01 01:42 Taipei — Operator final ACK + Elva 20min cycle started
@@ -178,8 +203,15 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 ## Blockers
 
 - **B1**: Jason 5 條 backend contract 未交（owner: Jason / due: cycle 1 = 02:00 Taipei first draft / status: dispatched）
-- **B2**: Bruce 4-state harness spec 未交（owner: Bruce / due: cycle 1 = 02:00 first version / status: dispatched）
+- **B2**: Bruce 4-state harness spec 未交（owner: Bruce / due: cycle 1 = 02:00 first version / **status: RESOLVED @ 02:00**）
 - **B3**: KGI bidask/tick readonly endpoint — write-side `libCGCrypt.so` blocked；read-side 是否有可用 endpoint 待 Jason contract 確認；如無，Codex 標 BLOCKED owner=KGI SDK
 - **B4**: Pete standby — 等 Codex 開第一個中大型 frontend PR 才需介入
+- **B5**: [Rule 5] `apps/web/app/briefs/page.tsx:7` — `const brief = mockBrief` directly assigned, no API call, renders hardcoded mock data in production (owner: Codex / status: open)
+- **B6**: [Rule 5] `apps/web/app/reviews/page.tsx:20-21` — `mockReviewQueue` and `mockReviewLog` used as initial state, no fetch on mount visible in grep; renders mock data in production (owner: Codex / status: open)
+- **B7**: [Rule 5] `apps/web/app/drafts/page.tsx:25` — `mockDrafts` used directly for filtering, no real fetch path (owner: Codex / status: open)
+- **B8**: [Rule 5] `apps/web/app/admin/content-drafts/page.tsx:29,31` — `mockDrafts` used directly for author list + filter; no real fetch (owner: Codex / status: open)
+- **B9**: [Rule 5] `apps/web/app/admin/content-drafts/[id]/ContentDraftDetailClient.tsx:21,24` — `mockDrafts` and `mockDraftAudit` used directly; no real fetch (owner: Codex / status: open)
+- **B10**: [Rule 7] `apps/web/lib/radar-uncovered.ts:19,37` — `getMaybe`/`postMaybe` have no `IS_PROD` guard; catch blocks silently return fallback mock in production; all `radarUncoveredApi.*` callers are affected (owner: Codex / status: open / priority: HIGH)
+- **B11**: [Rule 7] `apps/web/lib/use-readonly-quote.ts:161` — falls back to mock quote on any fetch error, no IS_PROD guard; production quote panel will show stale hardcoded prices on KGI failure (owner: Codex / status: open / priority: HIGH)
 
-Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區。
+Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區.

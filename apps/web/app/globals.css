@@ -1344,6 +1344,49 @@ body:has(.login-route) > div {
   white-space: pre-wrap;
 }
 
+.brief-section-list {
+  display: grid;
+  gap: 14px;
+}
+
+.brief-section {
+  border-bottom: 1px solid var(--night-rule, #222);
+  padding: 0 0 14px;
+}
+
+.brief-section h2 {
+  margin: 0 0 8px;
+  color: var(--gold, #b8960c);
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.brief-section p {
+  margin: 0;
+  color: var(--night-ink, #d8d4c8);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.brief-history-table {
+  display: grid;
+  gap: 0;
+  overflow-x: auto;
+}
+
+.brief-history-row {
+  display: grid;
+  grid-template-columns: 100px minmax(160px, 1fr) 110px 110px 170px;
+  gap: 12px;
+  align-items: center;
+  min-width: 760px;
+  border-bottom: 1px solid var(--night-rule, #222);
+  padding: 10px 0;
+}
+
 @media (max-width: 1100px) {
   .company-detail-layout {
     grid-template-columns: 1fr;

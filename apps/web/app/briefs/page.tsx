@@ -1,81 +1,121 @@
-import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip, signed, toneClass } from "@/components/RadarWidgets";
-import { mockBrief } from "@/lib/radar-uncovered";
+import { getBriefs } from "@/lib/api";
+import type { DailyBrief } from "@iuf-trading-room/contracts";
 
-export default function BriefsPage() {
-  const brief = mockBrief;
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("zh-TW", { hour12: false });
+}
+
+function sortBriefs(briefs: DailyBrief[]) {
+  return [...briefs].sort((a, b) => {
+    const bTime = Date.parse(b.createdAt);
+    const aTime = Date.parse(a.createdAt);
+    return bTime - aTime;
+  });
+}
+
+function statusBadge(status: DailyBrief["status"]) {
+  return status === "published" ? "badge-green" : "badge-yellow";
+}
+
+function BriefStatePanel({
+  state,
+  reason,
+}: {
+  state: "EMPTY" | "BLOCKED";
+  reason: string;
+}) {
+  return (
+    <Panel code={`BRF-${state}`} title={state} right="Daily brief source">
+      <div className="state-panel">
+        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
+        <span className="tg soft">Source: GET /api/v1/briefs</span>
+        <span className="state-reason">{reason}</span>
+      </div>
+    </Panel>
+  );
+}
+
+export default async function BriefsPage() {
+  let briefs: DailyBrief[] = [];
+  let error: string | null = null;
+
+  try {
+    const response = await getBriefs();
+    briefs = sortBriefs(response.data ?? []);
+  } catch (err) {
+    error = err instanceof Error ? err.message : "brief request failed";
+  }
+
+  const latest = briefs[0] ?? null;
 
   return (
     <PageFrame
       code="BRF"
-      title="每日簡報"
-      sub="今日盤前簡報"
-      note="[BRF] 每日盤前簡報 · OpenAlice 產出 · 操作員覆核"
+      title="Daily Brief"
+      sub="Operator brief from production DB"
+      note="[BRF] LIVE/EMPTY/BLOCKED surface for GET /api/v1/briefs"
     >
-      <MetricStrip
-        columns={6}
-        cells={[
-          { label: "市場", value: brief.market.state, tone: "gold" },
-          { label: "夜盤期", value: brief.market.futuresNight.last.toLocaleString(), delta: brief.market.futuresNight.chgPct },
-          { label: "美股", value: brief.market.usMarket.last.toLocaleString(), delta: brief.market.usMarket.chgPct },
-          { label: "美元台幣", value: brief.market.usdTwd.toFixed(2), tone: "muted" },
-          { label: "波動率", value: brief.market.vix.toFixed(2), tone: "muted" },
-          { label: "簡報信心", value: brief.market.confidence.toFixed(2), tone: "gold" },
-        ]}
-      />
+      {error && (
+        <BriefStatePanel
+          state="BLOCKED"
+          reason={`API request failed. Owner: Jason/Elva. Detail: ${error}`}
+        />
+      )}
 
-      <div className="company-grid">
-        <div>
-          <Panel code="BRF-MKT" title="市場概況" sub={brief.date}>
-            {brief.overview.map((line, index) => (
-              <div className="row telex-row" key={line}>
-                <span className="tg soft">{String(index + 1).padStart(2, "0")}</span>
-                <span className="tg gold">市場</span>
-                <span className="tc">{line}</span>
+      {!error && !latest && (
+        <BriefStatePanel
+          state="EMPTY"
+          reason="The API returned zero daily briefs for the authenticated workspace. No mock brief is rendered."
+        />
+      )}
+
+      {!error && latest && (
+        <>
+          <Panel
+            code="BRF-LIVE"
+            title={latest.marketState || "Market brief"}
+            sub={latest.date}
+            right={
+              <span className="source-line" style={{ margin: 0 }}>
+                <span className="badge badge-green">LIVE</span>
+                <span>Source: GET /api/v1/briefs</span>
+                <span>Updated {formatDateTime(latest.createdAt)}</span>
+              </span>
+            }
+          >
+            <div className="brief-section-list">
+              {latest.sections.map((section) => (
+                <article className="brief-section" key={`${latest.id}-${section.heading}`}>
+                  <h2>{section.heading}</h2>
+                  <p>{section.body}</p>
+                </article>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel code="BRF-HIST" title="Brief history" right={`${briefs.length} rows`}>
+            <div className="brief-history-table">
+              <div className="brief-history-row table-head">
+                <span>Date</span>
+                <span>State</span>
+                <span>Status</span>
+                <span>Generated</span>
+                <span>Created</span>
               </div>
-            ))}
+              {briefs.map((brief) => (
+                <div className="brief-history-row" key={brief.id}>
+                  <span className="tg gold">{brief.date}</span>
+                  <span className="tg">{brief.marketState}</span>
+                  <span className={`badge ${statusBadge(brief.status)}`}>{brief.status.toUpperCase()}</span>
+                  <span className="tg soft">{brief.generatedBy}</span>
+                  <span className="tg soft">{formatDateTime(brief.createdAt)}</span>
+                </div>
+              ))}
+            </div>
           </Panel>
-
-          <Panel code="BRF-THM" title="重點主題" right={`${brief.themes.length} 個主題`}>
-            {brief.themes.map((theme) => (
-              <Link
-                className="row"
-                href={`/themes/${theme.short}`}
-                key={theme.code}
-                style={{ gridTemplateColumns: "76px 1fr 56px 54px 72px", gap: 12, padding: "12px 0", color: "inherit", textDecoration: "none" }}
-              >
-                <span className="tg gold">{theme.code}</span>
-                <span className="tc">{theme.name}</span>
-                <span className="num">{theme.heat}</span>
-                <span className={`tg ${toneClass(theme.dHeat)}`}>{signed(theme.dHeat, 0)}</span>
-                <span className="tg gold">{theme.state === "LOCKED" ? "鎖定" : theme.state === "TRACK" ? "追蹤" : "觀察"}</span>
-              </Link>
-            ))}
-          </Panel>
-        </div>
-
-        <div>
-          <Panel code="BRF-IDEA" title="開盤候選" right={`${brief.ideas.length} 筆候選`}>
-            {brief.ideas.map((idea) => (
-              <div className="row idea-row" key={idea.id}>
-                <span className="tg soft">{idea.id}</span>
-                <span className={`tg ${idea.side === "TRIM" ? "down" : "up"}`}>{idea.side === "LONG" ? "做多" : idea.side === "TRIM" ? "減碼" : "退出"}</span>
-                <span className="tg gold">{idea.themeCode}</span>
-                <span className="tg">{idea.confidence.toFixed(2)}</span>
-                <Link href={`/companies/${idea.symbol}`} style={{ color: "var(--night-ink)", textDecoration: "none" }}>
-                  {idea.symbol} · {idea.name}
-                </Link>
-                <Link className="mini-button" href="/portfolio">下單台</Link>
-              </div>
-            ))}
-          </Panel>
-
-          <Panel code="BRF-NOTE" title="操作員註記">
-            <p className="tc" style={{ color: "var(--night-ink)", lineHeight: 1.9, margin: "14px 0 4px" }}>{brief.note}</p>
-          </Panel>
-        </div>
-      </div>
+        </>
+      )}
     </PageFrame>
   );
 }
