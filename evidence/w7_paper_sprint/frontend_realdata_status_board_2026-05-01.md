@@ -16,14 +16,28 @@ Primary goal: make production UI meaningful, sourced, and operational.
 
 ## Path Locks
 
-Codex active ownership:
+**Jim D1 production path handed off to Codex at 2026-05-01 01:42 Taipei, main/origin main = e231201.**
+
+Codex active ownership (post-handoff):
 
 - `apps/web/app/**`
 - `apps/web/components/**`
 - `apps/web/lib/**`
 - `apps/web/app/globals.css`
 
-Elva/Jason/Jim/Bruce should mark active conflicts here before editing same files.
+**Local Jim branch `jim/w7-d-ui-deplumbing-2026-04-30 @ ab8cfe8` is NOT merged and is path-locked pending Elva disposition.**
+
+Elva disposition (2026-05-01 01:42 Taipei): **DEPRECATED / SUPERSEDED**.
+- Branch is not main ancestor; merging would delete 13,022 lines including `secret_inventory.md`, `services/market-agent/**`, migrations 0017-0019, W5/W6/W7 evidence — all landed via newer PRs.
+- The "deplumb decoratives" intent appears already covered by `d6e907b feat(ui): deplumb decoratives + fix companies 3470 symbols (#28)` already on main.
+- **Codex: 不擋你，可以動 `apps/web/**`，這條 branch 不會被 merge。** 若 Pete 後續審出有 Codex 應參考的 deplumb 細節，會單獨開小 PR 補。
+
+Elva/Jason/Bruce should mark active conflicts here before editing same files.
+
+Active backend lanes (Jason scope, Codex 不踩):
+- `apps/api/src/paper/**`, `apps/api/src/risk/**`, `apps/api/src/broker/**`
+- `apps/api/src/audit/**`, `apps/api/src/worker/**`
+- `packages/db/migrations/**`
 
 ## Backend Ready
 
@@ -89,10 +103,42 @@ Files touched:
 
 ## Elva Notes
 
-Elva can append notes here.
+### 2026-05-01 01:42 Taipei — Operator final ACK + Elva 20min cycle started
+
+Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason 寫 B / Codex hybrid PR 流程 C / Elva cycle OK / 跑到 07:00 Taipei A / Bruce 立刻 4-state harness A）.
+
+**Elva 20min cycle protocol**（每輪固定 6 段）:
+- t+0~5：讀 board / git log / evidence INDEX / Codex 上一輪 commit
+- t+5~8：評估 Codex diff + blocker，確認沒踩 stop-line
+- t+8~12：派工 — backend→Jason / verify→Bruce / migration→Mike / review→Pete
+- t+12~15：更新 board 4 區（Backend Ready / Path Locks / Elva Notes / Blockers）
+- t+15~18：許可範圍內 review/merge PR；重大事件 memory writeback
+- t+18~20：schedule next wakeup
+- 每輪驗：Codex 是否把 visible UI 標 LIVE/EMPTY/BLOCKED/HIDDEN；有無 fake mock 回流
+
+**Merge 權限規則**（Elva 自主，無需 operator）:
+- non-destructive PR + CI 全綠 + Pete review PASS（or Elva 明確記 why bypass）
+- 不碰 stop-line / secrets / destructive migration / live submit
+- production rollback path 清楚
+
+**叫醒 operator 條件**:
+- Yellow: production down / agent 跨 stop-line / destructive ACK / Railway secret 需求 / live submit 風險 / 0020 promote / auth 失效
+- Red: 真實下單風險 / secret 外洩 / 全站不可用 / DB destructive 已發生
+- 一般 UI blocker / shape 不明 / mock cleanup → 寫 board 繼續推，不叫
+
+### Cycle 0 (01:42) — 派工已發
+- Jason → `evidence/w7_paper_sprint/jason_5_backend_contracts_workorder_2026-05-01.md`
+- Bruce → `evidence/w7_paper_sprint/bruce_4state_harness_workorder_2026-05-01.md`
+- Pete → `evidence/w7_paper_sprint/pete_codex_pr_review_standby_2026-05-01.md`
+- Mike → 0020 migration audit lane（不變）
+- Jim → halted on new frontend scope（deprecated branch dispositioned 上方）
 
 ## Blockers
 
-- Need active branch/PR awareness from Jim if he is editing company page D1 files.
-- Need Jason endpoint readiness for paper E2E and portfolio binding.
+- **B1**: Jason 5 條 backend contract 未交（owner: Jason / due: cycle 1 = 02:00 Taipei first draft / status: dispatched）
+- **B2**: Bruce 4-state harness spec 未交（owner: Bruce / due: cycle 1 = 02:00 first version / status: dispatched）
+- **B3**: KGI bidask/tick readonly endpoint — write-side `libCGCrypt.so` blocked；read-side 是否有可用 endpoint 待 Jason contract 確認；如無，Codex 標 BLOCKED owner=KGI SDK
+- **B4**: Pete standby — 等 Codex 開第一個中大型 frontend PR 才需介入
+
+Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區。
 
