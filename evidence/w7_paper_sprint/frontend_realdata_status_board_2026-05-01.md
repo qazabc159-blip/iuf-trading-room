@@ -315,6 +315,15 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - Mike → 0020 migration audit lane（不變）
 - Jim → halted on new frontend scope（deprecated branch dispositioned 上方）
 
+### Cycle 5 (03:38) — Codex B12 fix in-flight (uncommitted local WIP)
+- `git fetch origin main`：no new commit since `633d00e` @ 02:48 (Elva commits 之後是 board update only).
+- **`git status` 發現 Codex 已有 uncommitted local edits**: `apps/web/app/lab/LabClient.tsx`, `apps/web/app/lab/[bundleId]/LabBundleDetailClient.tsx`, `apps/web/app/lab/[bundleId]/page.tsx`, `apps/web/app/lab/page.tsx`, `apps/web/lib/radar-lab.ts`（5 files, +247/-110）。
+- **Source-level verify**: `apps/web/lib/radar-lab.ts` 已加 `const IS_PROD = process.env.NODE_ENV === "production"` (line 3) + `shouldAllowMockFallback()` helper (line 46-47) + production throw at lines 60/73/78/86/100。Pattern 與 `radar-uncovered.ts` 對齊。**B12 source-level fix in working tree but not yet committed**。
+- Stop-line scan **PASS** — diff 全在 `apps/web/{app,lib}/**` Codex lane。
+- Elva 不動 Codex working tree（lane 分界）；等 Codex 自己 commit。
+- 無 mid/large PR → Pete standby。
+- Yellow/Red: 無觸發。
+
 ### Cycle 4 (03:17) — Bruce sweep consumed / B12 OPEN HIGH waiting on Codex
 - Read board / `git fetch origin main`. **No new Codex commit** since `633d00e` @ 02:48 — Codex 安靜 ~30 min（1.5 cycle）。
 - Bruce regression sweep（agent `a23e9c9a0ad8585b7`）completed @ ~02:54 — B10/B11 二次 verify RESOLVED；B12 NEW / HIGH / `apps/web/lib/radar-lab.ts` 沒 `IS_PROD` guard，`/lab` + `/lab/[bundleId]` 直接 import `radarLabApi.*` → production API failure 會 silent serve mock bundle。Bruce 已寫完整 fix-pattern instruction 到 board B12 行。
