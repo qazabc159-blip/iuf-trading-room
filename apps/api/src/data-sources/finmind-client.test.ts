@@ -292,3 +292,44 @@ test("T8: getDividend shape + TTL is 86400", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("T9: PriceAdj permission failure falls back to TaiwanStockPrice", async () => {
+  const cache = new MemoryCache();
+  const client = new FinMindClient({ token: "test-token", redisClient: cache });
+
+  let fetchCallCount = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: URL | RequestInfo, _init?: RequestInit): Promise<Response> => {
+    fetchCallCount++;
+    const url = new URL(String(input));
+    if (fetchCallCount === 1) {
+      assert.equal(url.searchParams.get("dataset"), "TaiwanStockPriceAdj");
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({
+          status: 400,
+          msg: "Your level is register. Please update your user level.",
+          data: []
+        })
+      } as unknown as Response;
+    }
+
+    assert.equal(url.searchParams.get("dataset"), "TaiwanStockPrice");
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 200, msg: "Success", data: [SAMPLE_PRICE_ADJ_ROW] })
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  try {
+    const bars = await client.getStockPriceAdj("2330", "2026-01-01", "2026-04-30");
+    assert.equal(fetchCallCount, 2);
+    assert.equal(bars.length, 1);
+    assert.equal(bars[0].dt, "2026-04-29");
+    assert.equal(bars[0].source, "tej");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

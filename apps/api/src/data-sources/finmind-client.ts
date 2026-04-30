@@ -17,6 +17,7 @@
  *
  * Datasets:
  *   - TaiwanStockPriceAdj      → OHLCV adjusted bars
+ *   - TaiwanStockPrice         → OHLCV fallback when token tier cannot access adjusted bars
  *   - TaiwanStockFinancialStatements → 損益表
  *   - TaiwanStockBalanceSheet   → 資產負債表
  *   - TaiwanStockCashFlowsStatement → 現金流量表
@@ -346,8 +347,20 @@ export class FinMindClient {
 
   // ── getStockPriceAdj → OhlcvBar[] ─────────────────────────────────────────
 
+  private _priceRowsToBars(rows: FinMindPriceAdjRow[]): OhlcvBar[] {
+    return rows.map(r => ({
+      dt: r.date,
+      open: r.open,
+      high: r.max,
+      low: r.min,
+      close: r.close,
+      volume: r.Trading_Volume,
+      source: "tej" as const  // FinMind data is TEJ-sourced; not KGI
+    })).sort((a, b) => a.dt.localeCompare(b.dt));
+  }
+
   /**
-   * Fetch adjusted OHLCV bars from TaiwanStockPriceAdj dataset.
+   * Fetch OHLCV bars from TaiwanStockPriceAdj, falling back to TaiwanStockPrice.
    * Returns OhlcvBar[] sorted ascending by date.
    * Falls back to empty array (source=mock upstream) when token missing.
    */
@@ -364,22 +377,23 @@ export class FinMindClient {
       }
     }
 
-    const rows = await this._fetch<FinMindPriceAdjRow>(
+    let rows = await this._fetch<FinMindPriceAdjRow>(
       "TaiwanStockPriceAdj",
       stockId,
       startDate,
       endDate
     );
 
-    const bars: OhlcvBar[] = rows.map(r => ({
-      dt: r.date,
-      open: r.open,
-      high: r.max,
-      low: r.min,
-      close: r.close,
-      volume: r.Trading_Volume,
-      source: "tej" as const  // FinMind data is TEJ-sourced; not KGI
-    })).sort((a, b) => a.dt.localeCompare(b.dt));
+    if (rows.length === 0 && this._getToken()) {
+      rows = await this._fetch<FinMindPriceAdjRow>(
+        "TaiwanStockPrice",
+        stockId,
+        startDate,
+        endDate
+      );
+    }
+
+    const bars = this._priceRowsToBars(rows);
 
     // Cache write (non-fatal)
     if (bars.length > 0) {
