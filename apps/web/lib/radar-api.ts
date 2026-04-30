@@ -64,7 +64,10 @@ export function getDataSourceState(): DataSourceState {
 }
 
 async function get<T>(path: string, fallback: T): Promise<T> {
-  if (!BASE) return fallback;
+  if (!BASE) {
+    if (IS_PROD && !IS_BUILD) throw new Error(`NEXT_PUBLIC_API_BASE_URL is not configured for ${path}`);
+    return fallback;
+  }
   if (IS_BUILD) return fallback;
 
   // SSR (server component) calls don't get the browser's cookie automatically.
@@ -112,7 +115,10 @@ async function mockOnly<T>(fallback: T | (() => T | Promise<T>)): Promise<T> {
 }
 
 async function post<TIn, TOut>(path: string, body: TIn, fallback: () => TOut | Promise<TOut>): Promise<TOut> {
-  if (!BASE) return await fallback();
+  if (!BASE) {
+    if (IS_PROD && !IS_BUILD) throw new Error(`NEXT_PUBLIC_API_BASE_URL is not configured for ${path}`);
+    return await fallback();
+  }
 
   let ssrCookie: string | null = null;
   if (typeof window === "undefined") {
@@ -152,11 +158,14 @@ export const api = {
   themes:     () => get<Theme[]>("/api/v1/themes", mockThemes),
   companies:  () => get<Company[]>("/api/v1/companies", mockCompanies),
   // company(s): RADAR uses :symbol, backend uses :id (uuid).
-  // W7 L6: fetch all companies and find by symbol client-side. Falls back to mock on any failure.
+  // W7 L6: fetch all companies and find by symbol client-side.
   // get<T> returns T (already unwrapped from envelope), so here T=Company[] and we find by symbol.
   company:    (s: string) => get<Company[]>("/api/v1/companies", mockCompanies).then(
     (all) => (Array.isArray(all) ? all.find(c => c.symbol === s) ?? null : null)
-  ).catch(() => mockCompanies.find(c => c.symbol === s) ?? null),
+  ).catch((error) => {
+    if (IS_PROD && !IS_BUILD) throw error;
+    return mockCompanies.find(c => c.symbol === s) ?? null;
+  }),
   ideas:      () => get<Idea[]>("/api/v1/strategy/ideas", mockIdeas),
   runs:       () => get<Run[]>("/api/v1/strategy/runs", mockRuns),
   run:        (id: string) => get<Run | null>(`/api/v1/strategy/runs/${encodeURIComponent(id)}`,

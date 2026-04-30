@@ -1,8 +1,21 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
+const IS_PROD = process.env.NODE_ENV === "production";
+const IS_BUILD = process.env.NEXT_PHASE === "phase-production-build";
+
+function shouldAllowMockFallback(): boolean {
+  return !IS_PROD || IS_BUILD;
+}
+
+function productionFallbackError(path: string, reason: string): Error {
+  return new Error(`[radar-uncovered] ${path} cannot use mock fallback in production: ${reason}`);
+}
 
 async function getMaybe<T>(path: string, fallback: T, accept?: (value: unknown) => value is T): Promise<T> {
-  if (!API_BASE) return fallback;
+  if (!API_BASE) {
+    if (!shouldAllowMockFallback()) throw productionFallbackError(path, "NEXT_PUBLIC_API_BASE_URL is not configured");
+    return fallback;
+  }
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       credentials: "include",
@@ -12,16 +25,23 @@ async function getMaybe<T>(path: string, fallback: T, accept?: (value: unknown) 
     if (!response.ok) throw new Error(`${response.status} ${path}`);
     const body = await response.json();
     const data = (body && typeof body === "object" && "data" in body) ? body.data : body;
-    if (accept && !accept(data)) return fallback;
+    if (accept && !accept(data)) {
+      if (!shouldAllowMockFallback()) throw productionFallbackError(path, "response shape was not accepted");
+      return fallback;
+    }
     return data as T;
   } catch (error) {
-    console.warn("[radar-uncovered] mock fallback:", path, error);
+    if (!shouldAllowMockFallback()) throw error instanceof Error ? error : productionFallbackError(path, String(error));
+    console.warn("[radar-uncovered] dev mock fallback:", path, error);
     return fallback;
   }
 }
 
 async function postMaybe<TOut>(path: string, body: unknown, fallback: TOut): Promise<TOut> {
-  if (!API_BASE) return fallback;
+  if (!API_BASE) {
+    if (!shouldAllowMockFallback()) throw productionFallbackError(path, "NEXT_PUBLIC_API_BASE_URL is not configured");
+    return fallback;
+  }
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       method: "POST",
@@ -33,9 +53,15 @@ async function postMaybe<TOut>(path: string, body: unknown, fallback: TOut): Pro
     const payload = await response.json();
     return ((payload && typeof payload === "object" && "data" in payload) ? payload.data : payload) as TOut;
   } catch (error) {
-    console.warn("[radar-uncovered] mock POST fallback:", path, error);
+    if (!shouldAllowMockFallback()) throw error instanceof Error ? error : productionFallbackError(path, String(error));
+    console.warn("[radar-uncovered] dev mock POST fallback:", path, error);
     return fallback;
   }
+}
+
+function devOnlyValue<T>(path: string, value: T): Promise<T> {
+  if (!shouldAllowMockFallback()) return Promise.reject(productionFallbackError(path, "dev-only local mock helper"));
+  return Promise.resolve(value);
 }
 
 function isArray<T>(value: unknown): value is T[] {
@@ -346,9 +372,9 @@ export const mockDuplicatePairs: DuplicatePair[] = [
 
 export const radarUncoveredApi = {
   reviewQueue: () => getMaybe<ReviewItem[]>("/api/v1/reviews", mockReviewQueue, isArray),
-  review: (id: string) => Promise.resolve(mockReviewQueue.find((item) => item.id === id) ?? mockReviewQueue[0]),
+  review: (id: string) => devOnlyValue(`/api/v1/reviews/${encodeURIComponent(id)}`, mockReviewQueue.find((item) => item.id === id) ?? mockReviewQueue[0]),
   // W7 L6: reviewLog now points to /api/v1/reviews/log (new route) instead of
-  // /api/v1/openalice/jobs (wrong shape). Graceful fallback to mockReviewLog preserved.
+  // /api/v1/openalice/jobs (wrong shape). Dev fallback is preserved, but production must fail closed.
   reviewLog: () => getMaybe<ReviewLogItem[]>("/api/v1/reviews/log", mockReviewLog, isArray),
   reviewAction: (id: string, action: ReviewAction) =>
     postMaybe(`/api/v1/reviews/${encodeURIComponent(id)}/action`, { action }, { ok: true, id, action }),
@@ -357,8 +383,8 @@ export const radarUncoveredApi = {
 
   drafts: () => getMaybe<ContentDraft[]>("/api/v1/content-drafts", mockDrafts, isArray),
   adminDrafts: () => getMaybe<ContentDraft[]>("/api/v1/content-drafts", mockDrafts, isArray),
-  adminDraft: (id: string) => Promise.resolve(mockDrafts.find((draft) => draft.id === id) ?? mockDrafts[0]),
-  adminDraftAudit: (_id: string) => Promise.resolve(mockDraftAudit),
+  adminDraft: (id: string) => devOnlyValue(`/api/v1/content-drafts/${encodeURIComponent(id)}`, mockDrafts.find((draft) => draft.id === id) ?? mockDrafts[0]),
+  adminDraftAudit: (id: string) => devOnlyValue(`/api/v1/content-drafts/${encodeURIComponent(id)}/audit`, mockDraftAudit),
   adminDraftAction: (id: string, action: "APPROVE" | "REJECT" | "REASSIGN", payload?: unknown) =>
     postMaybe(`/api/v1/content-drafts/${encodeURIComponent(id)}/${action.toLowerCase()}`, payload ?? {}, { ok: true, id, action }),
 
@@ -367,7 +393,7 @@ export const radarUncoveredApi = {
   quoteTicks: (symbol: string) => getMaybe<QuoteTick[]>(`/api/v1/kgi/quote/ticks?symbol=${encodeURIComponent(symbol)}&limit=50`, mockTicks(symbol), isArray),
 
   duplicatePairs: () => getMaybe<DuplicatePair[]>("/api/v1/companies/duplicates", mockDuplicatePairs, isArray),
-  duplicatePair: (id: string) => Promise.resolve(mockDuplicatePairs.find((pair) => pair.id === id) ?? mockDuplicatePairs[0]),
+  duplicatePair: (id: string) => devOnlyValue(`/api/v1/companies/duplicates/${encodeURIComponent(id)}`, mockDuplicatePairs.find((pair) => pair.id === id) ?? mockDuplicatePairs[0]),
   duplicateAction: (id: string, action: "MERGE" | "NOT_DUP" | "IGNORE", payload?: unknown) =>
     postMaybe(`/api/v1/companies/duplicates/${encodeURIComponent(id)}/action`, { action, payload }, { ok: true, id, action }),
 };

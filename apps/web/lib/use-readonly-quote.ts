@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const IS_PROD = process.env.NODE_ENV === "production";
 
 /** Polling interval in ms. Clamped to [1000, 30000]. Default 3000. */
 const rawPollMs = parseInt(process.env.NEXT_PUBLIC_QUOTE_POLL_MS ?? "3000", 10);
@@ -127,7 +128,7 @@ export function useReadOnlyQuote(symbol: string): ReadOnlyQuoteResult {
     bidask: null,
     ticks: [],
     freshness: "no_data",
-    source: API_BASE ? "live" : "mock",
+    source: API_BASE || IS_PROD ? "live" : "mock",
   });
 
   const symbolRef = useRef(symbol);
@@ -138,6 +139,17 @@ export function useReadOnlyQuote(symbol: string): ReadOnlyQuoteResult {
     const sym = symbolRef.current;
 
     if (!API_BASE) {
+      if (IS_PROD) {
+        setResult({
+          bidask: null,
+          ticks: [],
+          freshness: "no_data",
+          source: "live",
+          error: "NEXT_PUBLIC_API_BASE_URL is not configured",
+          endpointUnavailable: true,
+        });
+        return;
+      }
       setResult({
         bidask: mockBidAsk(sym),
         ticks: mockTicks(sym),
@@ -158,7 +170,18 @@ export function useReadOnlyQuote(symbol: string): ReadOnlyQuoteResult {
       setResult({ bidask, ticks, freshness, source: "live" });
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      console.warn("[useReadOnlyQuote] fetch error — fallback to mock:", errMsg);
+      if (IS_PROD) {
+        setResult({
+          bidask: null,
+          ticks: [],
+          freshness: "no_data",
+          source: "live",
+          error: errMsg,
+          endpointUnavailable: true,
+        });
+        return;
+      }
+      console.warn("[useReadOnlyQuote] dev fetch error; fallback to mock:", errMsg);
       setResult({
         bidask: mockBidAsk(sym),
         ticks: mockTicks(sym),

@@ -10,7 +10,7 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - Sidebar logout: DONE.
 - API health: PASS after deployment.
 - Company 2330 with authenticated cookie: PASS.
-- Production no-silent-mock policy: IN PROGRESS.
+- Production no-silent-mock policy: IN PROGRESS; B10/B11 wrapper-level production fallback fixed in Codex cycle 02:48.
 - Market Intel/news lane: IN PROGRESS; company detail panel [05] now binds TWSE announcements through the shared API client.
 - Full mock/placeholder removal: OPEN.
 
@@ -246,6 +246,41 @@ Deploy:
 
 - PASS Railway web deployment `3261ca7a-09dd-4af7-b6d7-72dfaff5a982` reached SUCCESS at 02:06 Taipei.
 
+### 2026-05-01 02:48 Taipei
+
+Completed:
+
+- Fixed B10: `radar-uncovered.ts` no longer converts production API failure / invalid shape / missing API base into mock success. Dev/build mock fallback is preserved only outside production runtime.
+- Fixed B11: `use-readonly-quote.ts` no longer falls back to mock bid/ask or ticks in production. KGI endpoint failure now returns `endpointUnavailable=true` with empty data.
+- Updated `BidAskLadder`, `TickTape`, and `FreshnessBadge` so unavailable KGI depth/ticks render BLOCKED / NO DATA and hide synthetic rows instead of showing deterministic ladders/tapes.
+- Tightened `radar-api.ts` missing-base and `api.company()` failure behavior so production fails closed rather than returning mock companies.
+
+Files:
+
+- `apps/web/lib/radar-uncovered.ts`
+- `apps/web/lib/use-readonly-quote.ts`
+- `apps/web/lib/radar-api.ts`
+- `apps/web/components/chart/BidAskLadder.tsx`
+- `apps/web/components/chart/TickTape.tsx`
+- `apps/web/components/chart/FreshnessBadge.tsx`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `GET /api/v1/kgi/quote/bidask?symbol=...` remains BLOCKED when unavailable.
+- `GET /api/v1/kgi/quote/ticks?symbol=...` remains BLOCKED when unavailable.
+- Existing `radarUncoveredApi.*` endpoints now fail closed in production when backend data is unavailable.
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+
+Blockers:
+
+- KGI bidask/tick stays B3 BLOCKED pending Operator + Jason gateway/WS contract.
+- Remaining mock audit moves next to `/m/kill`, `radar-api.ts` force-mock hard-line surfaces, and dashboard/plans portfolio pages.
+
 ## Elva Notes
 
 ### 2026-05-01 01:42 Taipei — Operator final ACK + Elva 20min cycle started
@@ -301,7 +336,7 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - **B3**: KGI bidask/tick readonly endpoint — write-side `libCGCrypt.so` blocked；read-side BLOCKED per Jason Contract 5（gateway operator dep + WS not impl）；Codex 標 BLOCKED owner="Operator + Jason"
 - **B4**: Pete standby — Codex 至今 cycle (01:49 → 02:04) 全部 direct-commit `fix(web)`，無 mid/large PR，Pete 仍 standby
 - **B5~B9**: [Rule 5] mock-in-production page-level violations — **status: RESOLVED @ Cycle 1 verify (Elva 02:11)**. Codex commits f463069/3fa0feb/11c2b9a/b64a875/8abfc13 已將 briefs/reviews/drafts/admin-content-drafts/quote 全部從 mock 直賦轉成 LIVE/EMPTY/BLOCKED API 綁定；`ContentDraftDetailClient.tsx` 已刪除（per cycle 02:00 board entry）；mock constants 仍存於 `lib/radar-uncovered.ts` 但 page-level 直接 import 已消失。
-- **B10**: [Rule 7] `apps/web/lib/radar-uncovered.ts:18-19,36-37` — `getMaybe`/`postMaybe` catch blocks silently return fallback mock in production, no `IS_PROD` guard; all `radarUncoveredApi.*` callers (`reviewQueue`/`brief`/`drafts`/`adminDrafts`/`adminDraft`/`adminDraftAudit`/`reviewLog`/`quoteStatus`) affected (owner: Codex / status: **open** / priority: **HIGH** / next-action: Codex 加 production guard or 改 throw → page-level BLOCKED)
-- **B11**: [Rule 7] `apps/web/lib/use-readonly-quote.ts:159-161` — falls back to `fallbackQuote()` constant on any fetch error, no `IS_PROD` guard; production quote panel will show stale hardcoded prices on KGI failure (owner: Codex / status: **open** / priority: **HIGH** / next-action: 改 throw → quote panel BLOCKED state with reason)
+- **B10**: [Rule 7] `apps/web/lib/radar-uncovered.ts` production fallback guard — **RESOLVED @ Codex 02:48**. `getMaybe`/`postMaybe` and direct dev-only helpers now fail closed in production; dev/build mock fallback remains allowed.
+- **B11**: [Rule 7] `apps/web/lib/use-readonly-quote.ts` quote fallback — **RESOLVED @ Codex 02:48**. Production failures now render BLOCKED/NO DATA with `endpointUnavailable=true`; `BidAskLadder` and `TickTape` no longer draw synthetic rows when KGI read endpoints are unavailable.
 
 Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區.
