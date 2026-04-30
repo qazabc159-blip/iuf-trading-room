@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type {
   AppSession,
   Company,
+  CompanyCreateInput,
   CompanyKeyword,
   CompanyKeywordInput,
   CompanyMergeCompanySummary,
@@ -680,4 +681,56 @@ export async function executeCompanyMerge(input: {
     impact: plan.preview.impact,
     warnings: plan.preview.warnings
   } satisfies CompanyMergeResult;
+}
+
+// ── Upsert helper (post-0020 import path) ────────────────────────────────────
+//
+// After migration 0020 adds UNIQUE(workspace_id, ticker), the import endpoint
+// should call this instead of repo.createCompany() to handle re-runs gracefully.
+// Without this, a second import run throws a UNIQUE constraint violation.
+//
+// Pre-0020: behaves as a regular insert (no conflict match, UNIQUE not yet enforced).
+// Post-0020: updates in place on ticker collision.
+//
+// CompanyCreateInput is imported at the top of this file.
+
+export async function upsertCompanyOnConflict(
+  input: CompanyCreateInput & { workspaceId: string }
+): Promise<{ id: string; ticker: string; upserted: boolean }> {
+  const db = getDb();
+
+  const values = {
+    workspaceId: input.workspaceId,
+    name: input.name,
+    ticker: input.ticker,
+    market: input.market,
+    country: input.country,
+    chainPosition: input.chainPosition,
+    beneficiaryTier: input.beneficiaryTier,
+    exposure: input.exposure,
+    validation: input.validation,
+    notes: input.notes,
+    updatedAt: new Date()
+  };
+
+  const [row] = await db
+    .insert(companies)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [companies.workspaceId, companies.ticker],
+      set: {
+        name: values.name,
+        market: values.market,
+        country: values.country,
+        chainPosition: values.chainPosition,
+        beneficiaryTier: values.beneficiaryTier,
+        exposure: values.exposure,
+        validation: values.validation,
+        notes: values.notes,
+        updatedAt: values.updatedAt
+      }
+    })
+    .returning({ id: companies.id, ticker: companies.ticker });
+
+  return { id: row.id, ticker: row.ticker, upserted: true };
 }
