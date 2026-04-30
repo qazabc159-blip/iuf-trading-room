@@ -1,182 +1,159 @@
 "use client";
 
-/**
- * OhlcvCandlestickChart — D1 company detail chart (Client Component)
- *
- * Consumes OhlcvBar[] (passed from Server Component as props) and renders
- * a candlestick chart via lightweight-charts. No fetch inside this component —
- * data is fetched server-side and passed in. Falls back gracefully to empty state.
- *
- * Source badge logic:
- *   - "kgi"  → badge-green  (live KGI data)
- *   - "mock" → badge-yellow (deterministic mock)
- *   - "tej"  → badge        (TEJ data)
- *   - stale  → badge-red when last bar dt > STALE_DAYS trading days ago
- */
+// OhlcvCandlestickChart.tsx — Client Component
+// Receives pre-fetched OhlcvBar[] from Server Component parent.
+// Uses lightweight-charts v5 for candlestick + volume chart.
+// TW market convention: up=red (tw-up), down=green (tw-dn).
 
-import { useEffect, useRef } from "react";
-import {
-  CandlestickSeries,
-  ColorType,
-  CrosshairMode,
-  HistogramSeries,
-  createChart,
-  type IChartApi,
-  type ISeriesApi,
-  type SeriesType,
-  type Time,
-} from "lightweight-charts";
+import { useEffect, useRef, useState } from "react";
 import type { OhlcvBar } from "@/lib/api";
 
-const STALE_DAYS = 5;
-
+// Source badge helpers
 function daysSince(dt: string): number {
-  const ms = Date.now() - new Date(dt).getTime();
-  return ms / (1000 * 60 * 60 * 24);
-}
-
-function isStale(bars: OhlcvBar[]): boolean {
-  if (bars.length === 0) return false;
-  const last = bars[bars.length - 1];
-  return daysSince(last.dt) > STALE_DAYS;
+  const now = Date.now();
+  const then = new Date(dt).getTime();
+  return Math.floor((now - then) / 86_400_000);
 }
 
 function sourceBadgeClass(bars: OhlcvBar[]): string {
-  if (bars.length === 0) return "badge";
-  if (isStale(bars)) return "badge-red";
-  const src = bars[bars.length - 1].source;
-  if (src === "kgi") return "badge-green";
-  if (src === "mock") return "badge-yellow";
-  return "badge";
+  if (!bars.length) return "badge-red";
+  const last = bars[bars.length - 1];
+  if (daysSince(last.dt) > 5) return "badge-red";
+  if (last.source === "kgi") return "badge-green";
+  if (last.source === "tej") return "badge";
+  return "badge-yellow"; // mock
 }
 
 function sourceBadgeLabel(bars: OhlcvBar[]): string {
-  if (bars.length === 0) return "NO DATA";
-  if (isStale(bars)) return "STALE";
-  const src = bars[bars.length - 1].source;
-  if (src === "kgi") return "KGI-ORIGIN";
-  if (src === "mock") return "MOCK";
-  if (src === "tej") return "TEJ";
-  return "UNKNOWN";
+  if (!bars.length) return "NO DATA";
+  const last = bars[bars.length - 1];
+  if (daysSince(last.dt) > 5) return `STALE · ${last.dt}`;
+  return last.source.toUpperCase();
 }
 
-function cssVar(name: string): string {
-  if (typeof window === "undefined") return "#888";
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
-}
-
-export function OhlcvCandlestickChart({ bars }: { bars: OhlcvBar[] }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const candleRef = useRef<ISeriesApi<SeriesType> | null>(null);
-  const volumeRef = useRef<ISeriesApi<SeriesType> | null>(null);
+export function OhlcvCandlestickChart({ bars, symbol }: { bars: OhlcvBar[]; symbol: string }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+    if (!containerRef.current || !bars.length) return;
 
-    const chart = createChart(el, {
-      layout: {
-        background: { type: ColorType.Solid, color: cssVar("--night") || "#0a0a0f" },
-        textColor: cssVar("--night-mid") || "#888",
-        fontFamily: cssVar("--font-mono") || "monospace",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: cssVar("--night-rule") || "#1e1e2e", style: 1 },
-        horzLines: { color: cssVar("--night-rule") || "#1e1e2e", style: 1 },
-      },
-      crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: {
-        borderColor: cssVar("--night-rule-strong") || "#2a2a3e",
-      },
-      timeScale: {
-        borderColor: cssVar("--night-rule-strong") || "#2a2a3e",
-        timeVisible: false,
-      },
-      height: 320,
-    });
+    let chart: import("lightweight-charts").IChartApi | null = null;
 
-    // Volume pane — slim histogram behind candlesticks
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      color: cssVar("--night-rule-strong") || "#2a2a3e",
-      priceScaleId: "vol",
-      priceFormat: { type: "volume" },
-    });
-    chart.priceScale("vol").applyOptions({
-      scaleMargins: { top: 0.80, bottom: 0 },
-    });
+    (async () => {
+      try {
+        const lc = await import("lightweight-charts");
 
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: cssVar("--tw-up") || "#e63946",
-      downColor: cssVar("--tw-dn") || "#2ecc71",
-      borderUpColor: cssVar("--tw-up") || "#e63946",
-      borderDownColor: cssVar("--tw-dn") || "#2ecc71",
-      wickUpColor: cssVar("--tw-up") || "#e63946",
-      wickDownColor: cssVar("--tw-dn") || "#2ecc71",
-    });
+        const el = containerRef.current!;
+        const width = el.clientWidth || 800;
 
-    if (bars.length > 0) {
-      const candleData = bars.map((b) => ({
-        time: b.dt as Time,
-        open: b.open,
-        high: b.high,
-        low: b.low,
-        close: b.close,
-      }));
-      const volumeData = bars.map((b) => ({
-        time: b.dt as Time,
-        value: b.volume,
-        color: b.close >= b.open
-          ? (cssVar("--tw-up-faint") || "rgba(230,57,70,0.2)")
-          : (cssVar("--tw-dn-faint") || "rgba(46,204,113,0.2)"),
-      }));
-      candleSeries.setData(candleData);
-      volumeSeries.setData(volumeData);
-      chart.timeScale().fitContent();
-    }
+        chart = lc.createChart(el, {
+          width,
+          height: 320,
+          layout: {
+            background: { color: "transparent" },
+            textColor: "var(--night-mid, #888)",
+          },
+          grid: {
+            vertLines: { color: "rgba(255,255,255,0.04)" },
+            horzLines: { color: "rgba(255,255,255,0.04)" },
+          },
+          crosshair: { mode: 1 },
+          rightPriceScale: { borderColor: "var(--night-rule-strong, #333)" },
+          timeScale: { borderColor: "var(--night-rule-strong, #333)", timeVisible: true },
+        });
 
-    chartRef.current = chart;
-    candleRef.current = candleSeries;
-    volumeRef.current = volumeSeries;
+        chartRef.current = chart;
 
-    const observer = new ResizeObserver(() => {
-      if (el) {
-        chart.applyOptions({ width: el.clientWidth });
+        // Candlestick — TW convention: up=red (tw-up), down=green (tw-dn)
+        const candleSeries = chart.addSeries(lc.CandlestickSeries, {
+          upColor:          "#e63946",
+          downColor:        "#2ecc71",
+          borderUpColor:   "#e63946",
+          borderDownColor: "#2ecc71",
+          wickUpColor:     "#e63946",
+          wickDownColor:   "#2ecc71",
+        });
+
+        // Volume — separate price scale
+        const volSeries = chart.addSeries(lc.HistogramSeries, {
+          color: "rgba(184,150,12,0.25)",
+          priceFormat: { type: "volume" },
+          priceScaleId: "vol",
+        });
+        chart.priceScale("vol").applyOptions({
+          scaleMargins: { top: 0.80, bottom: 0 },
+        });
+
+        const candleData = bars.map((b) => ({
+          time: b.dt as import("lightweight-charts").Time,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+        }));
+
+        const volData = bars.map((b) => ({
+          time: b.dt as import("lightweight-charts").Time,
+          value: b.volume,
+          color: b.close >= b.open ? "rgba(230,57,70,0.35)" : "rgba(46,204,113,0.35)",
+        }));
+
+        candleSeries.setData(candleData);
+        volSeries.setData(volData);
+        chart.timeScale().fitContent();
+
+        // Responsive resize
+        const ro = new ResizeObserver((entries) => {
+          const w = entries[0]?.contentRect.width;
+          if (w && chart) chart.applyOptions({ width: w });
+        });
+        ro.observe(el);
+
+        return () => {
+          ro.disconnect();
+          chart?.remove();
+          chartRef.current = null;
+        };
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Chart error");
       }
-    });
-    observer.observe(el);
+    })();
 
     return () => {
-      observer.disconnect();
-      chart.remove();
+      chart?.remove();
       chartRef.current = null;
-      candleRef.current = null;
-      volumeRef.current = null;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bars]);
 
   const badgeClass = sourceBadgeClass(bars);
   const badgeLabel = sourceBadgeLabel(bars);
-  const lastBar = bars.length > 0 ? bars[bars.length - 1] : null;
 
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <span className={badgeClass}>{badgeLabel}</span>
-        {lastBar && (
-          <span className="dim" style={{ fontSize: 11 }}>
-            last bar · {lastBar.dt}
+    <section className="panel hud-frame">
+      <h3 className="ascii-head">
+        <span className="ascii-head-bracket">[02]</span> K 線圖
+        <span style={{ marginLeft: 12 }}>
+          <span className={badgeClass} style={{ fontSize: 10, padding: "1px 6px" }}>
+            {badgeLabel}
           </span>
-        )}
-        {bars.length === 0 && (
-          <span className="dim" style={{ fontSize: 11 }}>no OHLCV data available</span>
-        )}
-      </div>
-      <div
-        ref={containerRef}
-        style={{ width: "100%", height: 320, background: "var(--night, #0a0a0f)" }}
-      />
-    </div>
+        </span>
+        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>{symbol}</span>
+      </h3>
+
+      {error ? (
+        <div className="dim" style={{ padding: "24px 0", fontFamily: "var(--mono)", fontSize: 11 }}>
+          [CHART ERROR] {error}
+        </div>
+      ) : bars.length === 0 ? (
+        <div className="dim" style={{ padding: "24px 0", fontFamily: "var(--mono)", fontSize: 11 }}>
+          NO DATA — K 線資料尚未載入
+        </div>
+      ) : (
+        <div ref={containerRef} style={{ width: "100%", minHeight: 320 }} />
+      )}
+    </section>
   );
 }

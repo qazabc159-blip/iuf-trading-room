@@ -1,6 +1,9 @@
 "use client";
 
-import { PageFrame } from "@/components/PageFrame";
+// error.tsx — Error boundary for /companies/[symbol]
+// Next.js App Router requires this to be a Client Component.
+
+import { useEffect } from "react";
 
 export default function CompanyDetailError({
   error,
@@ -9,27 +12,24 @@ export default function CompanyDetailError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    console.error("[company-detail-error]", error);
+  }, [error]);
+
   return (
-    <PageFrame
-      code="03-ERR"
-      title="ERROR"
-      sub="公司資料載入失敗"
-    >
-      <section className="panel">
-        <div className="panel-head">
-          <span className="tg panel-code">CDL-ERR</span>
-          <span className="tg muted"> · </span>
-          <span className="tg gold">COMPANY DETAIL ERROR</span>
-        </div>
-        <div style={{ padding: "24px 16px" }}>
-          <p className="dim" style={{ marginBottom: 12 }}>
-            {error.message || "無法載入公司資料"}
-          </p>
-          <button className="btn-sm" onClick={reset}>
-            重試
-          </button>
-        </div>
-      </section>
-    </PageFrame>
+    <div style={{
+      padding: "40px 24px",
+      fontFamily: "var(--mono, monospace)",
+      fontSize: 12,
+    }}>
+      <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 12 }}>
+        [ERROR] 公司頁載入失敗
+      </div>
+      <div className="dim" style={{ marginBottom: 16 }}>
+        {error.message || "Unknown error"}
+        {error.digest && ` · digest: ${error.digest}`}
+      </div>
+      <button className="btn-sm" onClick={reset}>重試</button>
+    </div>
   );
 }
