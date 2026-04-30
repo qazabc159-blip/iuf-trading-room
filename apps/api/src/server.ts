@@ -3308,8 +3308,6 @@ app.get("/api/v1/companies/:id/ohlcv", async (c) => {
 
 // GET /api/v1/companies/ohlcv/bulk?ids=a,b,c&from=...&to=...&interval=1d
 // Returns map<companyId, OhlcvBar[]>.  Used by watchlist chart rendering.
-// Note: this route MUST be registered before /api/v1/companies/:id/* to avoid
-// the `:id` param matcher capturing "ohlcv" as an id.
 
 const ohlcvBulkQuerySchema = z.object({
   ids:      z.string().min(1),

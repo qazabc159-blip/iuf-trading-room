@@ -2,10 +2,12 @@
  * daily-theme-summary-producer.ts — W7 D3
  *
  * Daily cron job (09:00 TST) that:
- *   1. Pulls recent market_events from the last 24 h.
- *   2. Pulls top themes from the DB.
- *   3. Calls OpenAI gpt-5.4-mini → generates summary_md + theme_label.
- *   4. Upserts into daily_theme_summaries (one row per workspace per day).
+ *   1. Pulls top themes + company-coverage proxy from the DB.
+ *   2. Calls OpenAI gpt-5.4-mini → generates summary_md + theme_label.
+ *   3. Upserts into daily_theme_summaries (one row per workspace per day).
+ *
+ *   NOTE: market_events 24 h pull is intentionally deferred — sourceEventCount
+ *   is reported as 0 until market_events ships in the Drizzle schema (W7 D6).
  *
  * Fallback:
  *   If OPENAI_API_KEY is absent or the call fails, writes a rule-template
@@ -129,10 +131,15 @@ function buildFallbackSummary(params: {
     (t) => `- **${t.name}** [${t.lifecycle}/${t.marketState}] priority=${t.priority}: ${t.thesis.slice(0, 120) || "No thesis."}`
   );
 
+  const eventsLine =
+    eventCount > 0
+      ? `Market events ingested: ${eventCount} | Companies tracked: ${companyCount}`
+      : `Companies tracked: ${companyCount} (market_events ingestion deferred to W7 D6)`;
+
   const summaryMd = [
     `## Daily Theme Summary — ${date}`,
     "",
-    `Market events ingested: ${eventCount} | Companies tracked: ${companyCount}`,
+    eventsLine,
     "",
     "### Active Themes",
     ...themeLines,
@@ -210,18 +217,10 @@ export async function runDailyThemeSummaryProducer(): Promise<DailyThemeSummaryR
     .limit(MAX_COMPANY_SAMPLE);
   const companyCount = companyRows.length;
 
-  // Source event count: query market_events from past 24h via raw SQL
-  // market_events table has no Drizzle schema (appended to DB via migration 0016)
-  // Use count estimate via recent ingested events
-  let sourceEventCount = 0;
-  try {
-    // We approximate event count using the postgres count from raw schema
-    // Since market_events is not in Drizzle schema, use db.$client.execute fallback
-    // Simpler: use 0 if not queryable (doesn't affect correctness, just metadata)
-    sourceEventCount = 0; // TODO: wire when market_events has Drizzle schema
-  } catch {
-    // non-blocking
-  }
+  // Source event count: market_events lives in raw SQL (migration 0016) without
+  // a Drizzle schema yet. Wiring is deferred to W7 D6 — keep at 0 until then.
+  // The fallback summary and the AI prompt both handle 0 gracefully.
+  const sourceEventCount = 0;
 
   // Build themeParams for prompt
   const themeParams = topThemes.map((t) => ({
