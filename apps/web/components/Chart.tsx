@@ -6,13 +6,17 @@ import type { ChartInterval, ChartProps, ChartStreamState } from "@/lib/radar-ty
 import { getKBarsAsync } from "@/lib/mock-kbar";
 
 const CHART_INTERVALS: RadarChartInterval[] = ["1m", "5m", "15m", "1d"];
+const RADAR_INTERVALS = new Set<RadarChartInterval>(["1m", "5m", "15m", "1d", "5d", "1mo", "3mo", "6mo", "1y"]);
 
 function normalizeInterval(interval?: ChartInterval): RadarChartInterval {
-  if (interval === "1m" || interval === "5m" || interval === "15m" || interval === "1d") return interval;
+  if (interval && RADAR_INTERVALS.has(interval as RadarChartInterval)) return interval as RadarChartInterval;
   return "1d";
 }
 
 function adapterInterval(interval: RadarChartInterval) {
+  if (interval === "1mo" || interval === "3mo" || interval === "6mo") return "D";
+  if (interval === "1y") return "D";
+  if (interval === "5d") return "D";
   return interval === "1d" ? "D" : interval;
 }
 
@@ -20,6 +24,11 @@ function limitForInterval(interval: RadarChartInterval) {
   if (interval === "1m") return 160;
   if (interval === "5m") return 140;
   if (interval === "15m") return 120;
+  if (interval === "5d") return 5;
+  if (interval === "1mo") return 22;
+  if (interval === "3mo") return 66;
+  if (interval === "6mo") return 132;
+  if (interval === "1y") return 252;
   return 110;
 }
 
@@ -63,6 +72,8 @@ export function Chart({
   onError,
   streamState,
   onIntervalChange,
+  intervalOptions,
+  sourceLabel,
 }: ChartProps) {
   const [selectedInterval, setSelectedInterval] = useState<RadarChartInterval>(() => normalizeInterval(interval));
   const [bars, setBars] = useState<RadarChartBar[]>([]);
@@ -133,6 +144,8 @@ export function Chart({
       bars={bars}
       interval={selectedInterval}
       onIntervalChange={changeInterval}
+      intervalOptions={intervalOptions?.map(normalizeInterval)}
+      sourceLabel={sourceLabel}
       state={radarState}
       lastTickAt={lastTickAt ?? undefined}
       agentHeartbeatAt={agentHeartbeatAt ?? undefined}

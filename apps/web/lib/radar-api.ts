@@ -118,11 +118,9 @@ export const api = {
   session:    () => get<SessionMeta>("/api/v1/session", mockSessionMeta),
   themes:     () => get<Theme[]>("/api/v1/themes", mockThemes),
   companies:  () => get<Company[]>("/api/v1/companies", mockCompanies),
-  // company(s): RADAR uses :symbol, backend uses :id (uuid).
-  // W7 L6: fetch all companies and find by symbol client-side. Falls back to mock on any failure.
-  // get<T> returns T (already unwrapped from envelope), so here T=Company[] and we find by symbol.
+  // RADAR mocks use `symbol`; backend rows expose `ticker`. Match either so prod 2330 doesn't 404.
   company:    (s: string) => get<Company[]>("/api/v1/companies", mockCompanies).then(
-    (all) => (Array.isArray(all) ? all.find(c => c.symbol === s) ?? null : null)
+    (all) => (Array.isArray(all) ? all.find(c => (c.symbol ?? (c as any).ticker) === s) ?? null : null)
   ).catch(() => mockCompanies.find(c => c.symbol === s) ?? null),
   ideas:      () => get<Idea[]>("/api/v1/strategy/ideas", mockIdeas),
   runs:       () => get<Run[]>("/api/v1/strategy/runs", mockRuns),

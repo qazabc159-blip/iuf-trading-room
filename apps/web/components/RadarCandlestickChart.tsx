@@ -15,7 +15,7 @@ import {
 } from "lightweight-charts";
 import { RadarDataStateBadge, type RadarDataState } from "@/components/RadarDataStateBadge";
 
-export type RadarChartInterval = "1m" | "5m" | "15m" | "1d";
+export type RadarChartInterval = "1m" | "5m" | "15m" | "1d" | "5d" | "1mo" | "3mo" | "6mo" | "1y";
 
 export type RadarChartBar = {
   time: number;
@@ -44,7 +44,19 @@ type ChartToken = {
   mono: string;
 };
 
-const INTERVALS: RadarChartInterval[] = ["1m", "5m", "15m", "1d"];
+const DEFAULT_INTERVALS: RadarChartInterval[] = ["1m", "5m", "15m", "1d"];
+const INTERVAL_LABELS: Record<RadarChartInterval, string> = {
+  "1m": "1分",
+  "5m": "5分",
+  "15m": "15分",
+  "1d": "1日",
+  "5d": "5日",
+  "1mo": "1月",
+  "3mo": "3月",
+  "6mo": "6月",
+  "1y": "1年",
+};
+const DAILY_LIKE = new Set<RadarChartInterval>(["1d", "5d", "1mo", "3mo", "6mo", "1y"]);
 
 function cssToken(name: string) {
   if (typeof window === "undefined") return "";
@@ -73,7 +85,7 @@ function readTokens(): ChartToken {
 
 function formatBarTime(unixSec: number, interval: RadarChartInterval) {
   const date = new Date(unixSec * 1000);
-  if (interval === "1d") {
+  if (DAILY_LIKE.has(interval)) {
     return date.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" });
   }
   return date.toLocaleString("zh-TW", {
@@ -107,14 +119,14 @@ function CrosshairCard({
 
   return (
     <div className="radar-crosshair-card">
-      <div className="tg soft">TPE · {formatBarTime(bar.time, interval)}</div>
+      <div className="tg soft">TPE - {formatBarTime(bar.time, interval)}</div>
       <div className="radar-crosshair-grid">
         <span>開</span><b>{bar.open.toFixed(2)}</b>
         <span>高</span><b>{bar.high.toFixed(2)}</b>
         <span>低</span><b>{bar.low.toFixed(2)}</b>
         <span>收</span><b className={up ? "up" : "down"}>{bar.close.toFixed(2)}</b>
         <span>量</span><b>{formatVolume(bar.volume)}</b>
-        <span>Δ</span><b className={up ? "up" : "down"}>{delta >= 0 ? "+" : ""}{delta.toFixed(2)} / {deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(2)}%</b>
+        <span>變動</span><b className={up ? "up" : "down"}>{delta >= 0 ? "+" : ""}{delta.toFixed(2)} / {deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(2)}%</b>
       </div>
     </div>
   );
@@ -129,6 +141,8 @@ export function RadarCandlestickChart({
   lastTickAt,
   agentHeartbeatAt,
   height = 520,
+  intervalOptions,
+  sourceLabel,
 }: {
   symbol: string;
   bars: RadarChartBar[];
@@ -138,6 +152,8 @@ export function RadarCandlestickChart({
   lastTickAt?: string | number | Date;
   agentHeartbeatAt?: string | number | Date;
   height?: number;
+  intervalOptions?: RadarChartInterval[];
+  sourceLabel?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -148,7 +164,8 @@ export function RadarCandlestickChart({
   const barsRef = useRef<RadarChartBar[]>([]);
   const [crosshairBar, setCrosshairBar] = useState<RadarChartBar | null>(null);
   const showSeconds = interval === "1m";
-  const showTime = interval !== "1d";
+  const showTime = !DAILY_LIKE.has(interval);
+  const options = intervalOptions ?? DEFAULT_INTERVALS;
 
   barsRef.current = bars;
 
@@ -290,20 +307,21 @@ export function RadarCandlestickChart({
       <div className="radar-chart-head">
         <div>
           <span className="tg panel-code">K-LINE</span>
-          <span className="tg muted"> · </span>
+          <span className="tg muted"> - </span>
           <span className="tg gold">{symbol}</span>
-          <span className="tg soft"> · {bars.length} 根</span>
+          <span className="tg soft"> - {bars.length} bars</span>
+          {sourceLabel && <span className="tg badge badge-blue radar-chart-source">{sourceLabel}</span>}
         </div>
         <div className="radar-chart-actions">
-          <div className="radar-intervals" aria-label="K 線週期">
-            {INTERVALS.map((item) => (
+          <div className="radar-intervals" aria-label="K 線區間">
+            {options.map((item) => (
               <button
                 className={item === interval ? "mini-button" : "outline-button"}
                 key={item}
                 onClick={() => onIntervalChange?.(item)}
                 type="button"
               >
-                {item}
+                {INTERVAL_LABELS[item]}
               </button>
             ))}
           </div>
@@ -319,3 +337,4 @@ export function RadarCandlestickChart({
     </div>
   );
 }
+

@@ -235,7 +235,7 @@ export interface SymbolRiskLimit extends BaseRiskOverride {
 }
 
 /* ─── Chart abstraction ──────────────────────────────────────────────── */
-export type ChartInterval = "1m" | "5m" | "15m" | "1h" | "1d" | "1wk";
+export type ChartInterval = "1m" | "5m" | "15m" | "1h" | "1d" | "5d" | "1mo" | "3mo" | "6mo" | "1y" | "1wk";
 export type ChartTimezone = "Asia/Taipei" | "America/New_York" | "Europe/London" | "Asia/Tokyo";
 
 export type ChartStreamState = "idle" | "connecting" | "live" | "stale" | "error";
@@ -258,6 +258,8 @@ export interface ChartProps {
   onTickStream?: (t: ChartTick) => void;
   onError?: (e: Error) => void;
   onIntervalChange?: (interval: ChartInterval) => void;
+  intervalOptions?: ChartInterval[];
+  sourceLabel?: string;
   streamState?: ChartStreamState;
 }
 
