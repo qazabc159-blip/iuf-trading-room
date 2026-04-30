@@ -59,6 +59,9 @@ SKIP_FILES = {
     "evidence/w7_paper_sprint/overnight_closeout_FINAL_2026-04-30.md",
     "evidence/w7_paper_sprint/eod_summary_2026-04-30_morning.md",
     ".claude/agent-memory/verifier-release-bruce/l5_housekeeping_audit_learnings.md",
+    # Audit script transcripts that enumerate the identifiers in their
+    # "command sequence used" appendix as `Grep '0308732' in ...`
+    "evidence/path_b_w3_read_only_2026-04-27/bruce_w4_overnight_drift_audit.md",
 }
 
 # Directory prefixes to skip (worktrees, node_modules, .git)
