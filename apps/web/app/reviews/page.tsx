@@ -1,128 +1,123 @@
-"use client";
-
-import { useMemo, useState } from "react";
 import { PageFrame, Panel } from "@/components/PageFrame";
-import type { ReviewAction, ReviewItem, ReviewLogItem } from "@/lib/radar-uncovered";
-import { mockReviewLog, mockReviewQueue } from "@/lib/radar-uncovered";
+import { getReviews } from "@/lib/api";
+import type { ReviewEntry } from "@iuf-trading-room/contracts";
 
-const TYPE_LABEL: Record<ReviewItem["type"], string> = {
-  signal: "訊號",
-  theme: "主題",
-  note: "註記",
-};
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("zh-TW", { hour12: false });
+}
 
-const ACTION_LABEL: Record<ReviewAction, string> = {
-  ACCEPT: "接受",
-  REJECT: "駁回",
-};
+function sortReviews(reviews: ReviewEntry[]) {
+  return [...reviews].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
 
-export default function ReviewsPage() {
-  const [queue, setQueue] = useState<ReviewItem[]>(mockReviewQueue);
-  const [log, setLog] = useState<ReviewLogItem[]>(mockReviewLog);
-  const [selectedId, setSelectedId] = useState(queue[0]?.id ?? "");
-  const selected = useMemo(
-    () => queue.find((item) => item.id === selectedId) ?? queue[0] ?? null,
-    [queue, selectedId],
+function qualityBadge(value: number) {
+  if (value >= 4) return "badge-green";
+  if (value <= 2) return "badge-red";
+  return "badge-yellow";
+}
+
+function ReviewStatePanel({
+  state,
+  reason,
+}: {
+  state: "EMPTY" | "BLOCKED";
+  reason: string;
+}) {
+  return (
+    <Panel code={`REV-${state}`} title={state} right="Review ledger source">
+      <div className="state-panel">
+        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
+        <span className="tg soft">Source: GET /api/v1/reviews</span>
+        <span className="state-reason">{reason}</span>
+      </div>
+    </Panel>
   );
+}
 
-  function act(action: ReviewAction) {
-    if (!selected) return;
-    const itemId = selected.id;
-    setQueue((items) => items.filter((item) => item.id !== itemId));
-    setLog((items) => [
-      {
-        id: `ACT-${Date.now()}`,
-        ts: new Date().toLocaleTimeString("zh-TW", { hour12: false }),
-        reviewer: "IUF-01",
-        action,
-        itemId,
-      },
-      ...items,
-    ]);
-    setSelectedId((current) => {
-      const next = queue.find((item) => item.id !== itemId);
-      return current === itemId ? next?.id ?? "" : current;
-    });
+export default async function ReviewsPage() {
+  let reviews: ReviewEntry[] = [];
+  let error: string | null = null;
+
+  try {
+    const response = await getReviews();
+    reviews = sortReviews(response.data ?? []);
+  } catch (err) {
+    error = err instanceof Error ? err.message : "reviews request failed";
   }
 
   return (
     <PageFrame
       code="REV"
-      title="文章審核"
-      sub="OpenAlice 佇列"
-      note="[REV] OpenAlice 審核佇列 · 接受 / 駁回 · 操作員把關"
+      title="Review Ledger"
+      sub="Post-trade review entries from production DB"
+      note="[REV] Read-only LIVE/EMPTY/BLOCKED surface for GET /api/v1/reviews"
     >
-      <div className="main-grid">
-        <Panel code="REV-Q" title="待審佇列" right={`${queue.length} 筆待審`}>
-          <div className="row table-head" style={{ gridTemplateColumns: "82px 68px 1fr 82px 72px", gap: 10 }}>
-            <span>編號</span>
-            <span>類型</span>
-            <span>標題</span>
-            <span>作者</span>
-            <span>時間</span>
-          </div>
-          {queue.map((item) => (
-            <button
-              className="row"
-              key={item.id}
-              onClick={() => setSelectedId(item.id)}
-              style={{
-                gridTemplateColumns: "82px 68px 1fr 82px 72px",
-                gap: 10,
-                minHeight: 58,
-                padding: "8px 0",
-                textAlign: "left",
-                background: item.id === selected?.id ? "var(--night-1)" : "transparent",
-                borderLeft: item.id === selected?.id ? "2px solid var(--gold)" : "2px solid transparent",
-                borderTop: 0,
-                borderRight: 0,
-                cursor: "pointer",
-                color: "var(--night-ink)",
-              }}
-            >
-              <span className="tg gold">{item.id}</span>
-              <span className="tg session-pill">{TYPE_LABEL[item.type]}</span>
-              <span className="tc">{item.title}</span>
-              <span className="tg soft">{item.author}</span>
-              <span className="tg muted">{item.createdAgo}</span>
-            </button>
-          ))}
-        </Panel>
+      {error && (
+        <ReviewStatePanel
+          state="BLOCKED"
+          reason={`API request failed. Owner: Jason/Elva. Detail: ${error}`}
+        />
+      )}
 
-        <Panel code="REV-D" title="文章詳情" right={selected ? "審閱中" : "未選取"}>
-          {!selected ? (
-            <div className="terminal-note">選擇左側項目以審閱</div>
-          ) : (
-            <div style={{ padding: "16px 0 4px" }}>
-              <div className="tg gold">{selected.id} · {TYPE_LABEL[selected.type]}</div>
-              <h2 style={{ margin: "8px 0 12px", color: "var(--night-ink)", fontSize: 28 }}>{selected.title}</h2>
-              <p className="tc" style={{ color: "var(--night-ink)", lineHeight: 1.8 }}>{selected.body}</p>
-              <div style={{ display: "grid", gap: 8, marginTop: 18 }}>
-                {selected.metadata.map((meta) => (
-                  <div className="row" key={meta.label} style={{ gridTemplateColumns: "94px 1fr", gap: 12, padding: "7px 0" }}>
-                    <span className="tg muted">{meta.label}</span>
-                    <span className="tg">{meta.value}</span>
+      {!error && reviews.length === 0 && (
+        <ReviewStatePanel
+          state="EMPTY"
+          reason="The API returned zero review entries for the authenticated workspace. No mock queue is rendered."
+        />
+      )}
+
+      {!error && reviews.length > 0 && (
+        <Panel
+          code="REV-LIVE"
+          title="Review entries"
+          right={
+            <span className="source-line" style={{ margin: 0 }}>
+              <span className="badge badge-green">LIVE</span>
+              <span>Source: GET /api/v1/reviews</span>
+              <span>{reviews.length} rows</span>
+            </span>
+          }
+        >
+          <div className="review-ledger-list">
+            {reviews.map((review) => (
+              <article className="review-ledger-card" key={review.id}>
+                <div className="review-ledger-head">
+                  <span className="tg gold">{formatDateTime(review.createdAt)}</span>
+                  <span className={`badge ${qualityBadge(review.executionQuality)}`}>
+                    Q{review.executionQuality}
+                  </span>
+                  <span className="tg soft">Plan {review.tradePlanId.slice(0, 8)}</span>
+                </div>
+                <h2>{review.outcome || "Untitled review"}</h2>
+                {review.attribution && (
+                  <p><b>Attribution:</b> {review.attribution}</p>
+                )}
+                {review.lesson && (
+                  <p><b>Lesson:</b> {review.lesson}</p>
+                )}
+                {review.setupTags.length > 0 && (
+                  <div className="review-tag-row">
+                    {review.setupTags.map((tag) => (
+                      <span className="badge" key={`${review.id}-${tag}`}>{tag}</span>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-                <button className="mini-button" type="button" onClick={() => act("ACCEPT")}>接受</button>
-                <button className="outline-button" type="button" onClick={() => act("REJECT")}>駁回</button>
-              </div>
-            </div>
-          )}
+                )}
+              </article>
+            ))}
+          </div>
         </Panel>
+      )}
 
-        <Panel code="REV-LOG" title="近 24 小時審核紀錄" right={`${log.length} 筆紀錄`}>
-          {log.map((entry) => (
-            <div className="row telex-row" key={entry.id}>
-              <span className="tg soft">{entry.ts}</span>
-              <span className={`tg ${entry.action === "ACCEPT" ? "up" : "down"}`}>{ACTION_LABEL[entry.action]}</span>
-              <span className="tg">{entry.reviewer} · {entry.itemId}</span>
-            </div>
-          ))}
-        </Panel>
-      </div>
+      <Panel code="REV-ACTION" title="Action queue" right="contract required">
+        <div className="state-panel">
+          <span className="badge badge-red">BLOCKED</span>
+          <span className="tg soft">Owner: Jason/Elva.</span>
+          <span className="state-reason">
+            No production contract exists for an accept/reject review queue on this page. The old local-only
+            buttons were removed so operators cannot mistake simulated actions for persisted review decisions.
+          </span>
+        </div>
+      </Panel>
     </PageFrame>
   );
 }

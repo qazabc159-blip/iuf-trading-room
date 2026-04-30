@@ -81,7 +81,7 @@ Needs confirmation from Elva/Jason:
 Initial high-risk surfaces:
 
 - `/briefs`: DONE in Codex cycle 01:54; now binds `GET /api/v1/briefs` and renders LIVE / EMPTY / BLOCKED.
-- `/reviews`: currently imports mock review queue/log.
+- `/reviews`: DONE in Codex cycle 01:56; now binds `GET /api/v1/reviews` as read-only ledger and marks action queue BLOCKED.
 - `/drafts` and `/admin/content-drafts`: currently import mock drafts/audit.
 - `/quote`: currently uses mock bidask/ticks.
 - `/companies/[symbol]`: source/tick/derivatives mock feed removed in Codex cycle 01:49; remaining company-detail mock risk is `toCompanyDetailView` fallback fields.
@@ -162,6 +162,29 @@ Files:
 Endpoints:
 
 - `GET /api/v1/briefs`
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+
+### 2026-05-01 01:56 Taipei
+
+Completed:
+
+- Converted `/reviews` from local `mockReviewQueue` / `mockReviewLog` state to production `GET /api/v1/reviews`.
+- The page now renders a read-only review ledger when LIVE, a real zero-row EMPTY state, or a BLOCKED state when API fetch fails.
+- Removed local-only ACCEPT / REJECT buttons. The action queue now renders BLOCKED until Jason/Elva provide a production accept/reject contract.
+
+Files:
+
+- `apps/web/app/reviews/page.tsx`
+- `apps/web/app/globals.css`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `GET /api/v1/reviews`
 
 Tests:
 

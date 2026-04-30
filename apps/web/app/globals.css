@@ -1387,6 +1387,45 @@ body:has(.login-route) > div {
   padding: 10px 0;
 }
 
+.review-ledger-list {
+  display: grid;
+  gap: 14px;
+}
+
+.review-ledger-card {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid var(--night-rule, #222);
+  padding: 0 0 14px;
+}
+
+.review-ledger-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-ledger-card h2 {
+  margin: 0;
+  color: var(--night-ink, #d8d4c8);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.review-ledger-card p {
+  margin: 0;
+  color: var(--night-ink, #d8d4c8);
+  line-height: 1.7;
+}
+
+.review-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 @media (max-width: 1100px) {
   .company-detail-layout {
     grid-template-columns: 1fr;
