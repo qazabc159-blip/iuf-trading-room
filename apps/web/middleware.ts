@@ -3,16 +3,17 @@ import { type NextRequest, NextResponse } from "next/server";
 /**
  * Route protection middleware.
  *
- * Auth detection: checks for cookie `iuf_auth=1` (set by auth-client.ts after login).
- * This is a client-set cookie (not httpOnly), suitable for MVP redirect gating.
- * When Jason adds server-side session validation, this can be upgraded to verify
- * the JWT token against /api/v1/auth/verify.
+ * Auth detection uses the API-issued `iuf_session` cookie as the routing gate.
+ * `iuf_auth=1` is only a client-side presence hint and can survive after a
+ * cross-subdomain cookie migration, so it must not be trusted by middleware.
  *
  * Public routes: /login, /register, /_next/*, /favicon.ico
- * Everything else → redirect to /login if not authenticated.
+ * Everything else redirects to /login if not authenticated.
  */
 
 const PUBLIC_PATHS = new Set(["/login", "/register"]);
+const PRESENCE_COOKIE = "iuf_auth";
+const SESSION_COOKIE = "iuf_session";
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
@@ -24,33 +25,46 @@ function isPublicPath(pathname: string): boolean {
   return false;
 }
 
-/** Add noindex header to every response — remove when app goes public. */
+/** Add noindex header to every response; remove when app goes public. */
 function addNoindex(response: ReturnType<typeof NextResponse.next> | ReturnType<typeof NextResponse.redirect>) {
   response.headers.set("X-Robots-Tag", "noindex, nofollow");
   return response;
 }
 
+function clearPresenceCookie(response: ReturnType<typeof NextResponse.next> | ReturnType<typeof NextResponse.redirect>) {
+  response.cookies.set(PRESENCE_COOKIE, "", {
+    path: "/",
+    maxAge: 0,
+    sameSite: "lax"
+  });
+  return response;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const hasSessionCookie = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (isPublicPath(pathname)) {
-    // If already authed, redirect /login and /register → home
-    if (PUBLIC_PATHS.has(pathname)) {
-      const authCookie = request.cookies.get("iuf_auth");
-      if (authCookie?.value === "1") {
-        return addNoindex(NextResponse.redirect(new URL("/", request.url)));
-      }
+    if (PUBLIC_PATHS.has(pathname) && hasSessionCookie) {
+      return addNoindex(NextResponse.redirect(new URL("/", request.url)));
     }
-    return addNoindex(NextResponse.next());
+
+    const response = NextResponse.next();
+    if (request.cookies.get(PRESENCE_COOKIE)?.value === "1" && !hasSessionCookie) {
+      clearPresenceCookie(response);
+    }
+    return addNoindex(response);
   }
 
-  // Protected route — check auth cookie
-  const authCookie = request.cookies.get("iuf_auth");
-  if (!authCookie || authCookie.value !== "1") {
+  if (!hasSessionCookie) {
     const loginUrl = new URL("/login", request.url);
-    // Preserve intended destination for post-login redirect (future enhancement)
     loginUrl.searchParams.set("next", pathname);
-    return addNoindex(NextResponse.redirect(loginUrl));
+
+    const response = NextResponse.redirect(loginUrl);
+    if (request.cookies.get(PRESENCE_COOKIE)?.value === "1") {
+      clearPresenceCookie(response);
+    }
+    return addNoindex(response);
   }
 
   return addNoindex(NextResponse.next());
