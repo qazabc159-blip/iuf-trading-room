@@ -392,7 +392,11 @@ app.onError((error, c) => {
     );
   }
 
-  console.error(error);
+  // Log full stack + request context to stderr; do NOT leak to response body.
+  console.error(
+    `[onError] ${c.req.method} ${c.req.path}`,
+    error instanceof Error ? error.stack ?? error.message : String(error)
+  );
   return c.json({ error: "internal_server_error" }, 500);
 });
 
@@ -404,6 +408,27 @@ function getBearerToken(c: Context) {
 
   const token = header.slice("Bearer ".length).trim();
   return token.length > 0 ? token : null;
+}
+
+// UUID v4 pattern — used to decide whether `:id` needs ticker fallback.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolve a company by UUID or ticker within a workspace.
+ * Returns the Company (which has a `.id` UUID) or null.
+ * Callers should return 404 on null — never 500.
+ */
+async function resolveCompany(
+  repo: TradingRoomRepository,
+  idOrTicker: string,
+  options: { workspaceSlug: string }
+) {
+  if (UUID_PATTERN.test(idOrTicker)) {
+    return repo.getCompany(idOrTicker, options);
+  }
+  // Ticker fallback: scan list within workspace. listCompanies is workspace-scoped.
+  const companies = await repo.listCompanies(undefined, options);
+  return companies.find((c) => c.ticker === idOrTicker) ?? null;
 }
 
 async function requireOpenAliceDevice(c: Context, deviceId: string) {
@@ -1545,7 +1570,7 @@ app.post("/api/v1/companies", async (c) => {
 });
 
 app.get("/api/v1/companies/:id/relations", async (c) => {
-  const company = await c.get("repo").getCompany(c.req.param("id"), {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
   });
   if (!company) {
@@ -1560,7 +1585,7 @@ app.get("/api/v1/companies/:id/relations", async (c) => {
 });
 
 app.put("/api/v1/companies/:id/relations", async (c) => {
-  const company = await c.get("repo").getCompany(c.req.param("id"), {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
   });
   if (!company) {
@@ -1576,7 +1601,7 @@ app.put("/api/v1/companies/:id/relations", async (c) => {
 });
 
 app.get("/api/v1/companies/:id/keywords", async (c) => {
-  const company = await c.get("repo").getCompany(c.req.param("id"), {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
   });
   if (!company) {
@@ -1591,7 +1616,7 @@ app.get("/api/v1/companies/:id/keywords", async (c) => {
 });
 
 app.put("/api/v1/companies/:id/keywords", async (c) => {
-  const company = await c.get("repo").getCompany(c.req.param("id"), {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
   });
   if (!company) {
@@ -1608,10 +1633,17 @@ app.put("/api/v1/companies/:id/keywords", async (c) => {
 
 app.get("/api/v1/companies/:id/graph", async (c) => {
   const query = companyGraphViewQuerySchema.parse(c.req.query());
+  // Resolve ticker→UUID first so getCompanyGraphView always receives a UUID.
+  const resolved = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!resolved) {
+    return c.json({ error: "company_not_found" }, 404);
+  }
   const graph = await getCompanyGraphView({
     session: c.get("session"),
     repo: c.get("repo"),
-    companyId: c.req.param("id"),
+    companyId: resolved.id,
     limit: query.limit,
     keywordLimit: query.keywordLimit
   });
@@ -1624,7 +1656,7 @@ app.get("/api/v1/companies/:id/graph", async (c) => {
 });
 
 app.get("/api/v1/companies/:id", async (c) => {
-  const company = await c.get("repo").getCompany(c.req.param("id"), {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
   });
   if (!company) {
@@ -1636,7 +1668,14 @@ app.get("/api/v1/companies/:id", async (c) => {
 
 app.patch("/api/v1/companies/:id", async (c) => {
   const payload = companyUpdateInputSchema.parse(await c.req.json());
-  const company = await c.get("repo").updateCompany(c.req.param("id"), payload, {
+  // Resolve ticker→UUID so updateCompany always receives a UUID.
+  const resolved = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!resolved) {
+    return c.json({ error: "company_not_found" }, 404);
+  }
+  const company = await c.get("repo").updateCompany(resolved.id, payload, {
     workspaceSlug: c.get("session").workspace.slug
   });
   if (!company) {
