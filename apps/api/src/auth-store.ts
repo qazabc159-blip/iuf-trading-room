@@ -69,14 +69,26 @@ function verifyAndParseCookie(value: string): string | null {
   return timingSafeEqual(expectedBuf, receivedBuf) ? userId : null;
 }
 
+// In production the web app and api are on different sub-domains
+// (app.eycvector.com vs api.eycvector.com). Without an explicit Domain,
+// the cookie is host-only on api.* and SSR on app.* cannot read it via
+// next/headers — every authenticated GET surfaces as 401. Set
+// AUTH_COOKIE_DOMAIN=.eycvector.com on the Railway api service so the
+// session cookie is visible on both sub-domains. Leave unset in local dev.
+function buildCookieAttributes(): string[] {
+  const attrs = ["Path=/", "HttpOnly", "SameSite=Lax"];
+  const domain = process.env.AUTH_COOKIE_DOMAIN;
+  if (domain) attrs.push(`Domain=${domain}`);
+  if (process.env.NODE_ENV === "production") attrs.push("Secure");
+  return attrs;
+}
+
 export function buildSetCookieHeader(userId: string): string {
   const value = signCookie(userId);
   return [
     `${COOKIE_NAME}=${value}`,
     `Max-Age=${COOKIE_MAX_AGE}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax"
+    ...buildCookieAttributes()
   ].join("; ");
 }
 
@@ -84,9 +96,7 @@ export function buildClearCookieHeader(): string {
   return [
     `${COOKIE_NAME}=`,
     "Max-Age=0",
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax"
+    ...buildCookieAttributes()
   ].join("; ");
 }
 
