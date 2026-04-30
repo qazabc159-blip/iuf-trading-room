@@ -13,6 +13,7 @@ import type {
 } from "@/lib/radar-types";
 import { Panel } from "@/components/PageFrame";
 import { OrderTicketForm } from "@/components/portfolio/OrderTicket";
+import { KillSwitch } from "@/components/portfolio/KillSwitch";
 
 function tone(value: number) {
   if (value > 0) return "up";
@@ -25,20 +26,11 @@ function signed(value: number, digits = 2) {
 }
 
 function QuoteStrip({ quotes, positions }: { quotes: Quote[]; positions: Position[] }) {
-  const extras: Quote[] = [
-    {
-      symbol: "VIX·TW",
-      last: 14.2,
-      change: -0.42,
-      changePct: -2.87,
-      state: "CLOSE",
-      asOf: "2026-04-25T06:32:00Z",
-    },
-  ];
+  // Show quotes for held positions + TWA index quote if present
+  // VIX·TW hardcode removed — no live data source
   const cards = [
     ...quotes.filter((q) => positions.some((p) => p.symbol === q.symbol)).slice(0, 4),
     ...(quotes.find((q) => q.symbol === "TWA") ? [quotes.find((q) => q.symbol === "TWA") as Quote] : []),
-    ...extras,
   ];
 
   return (
@@ -90,7 +82,6 @@ export function PortfolioClient({
 }) {
   const [killMode, setKillMode] = useState<KillMode>(initialKill);
   const totalPnl = useMemo(() => positions.reduce((sum, p) => sum + p.pnlTwd, 0), [positions]);
-  const focus = positions.find((p) => p.symbol === "6504") ?? positions[0];
 
   return (
     <>
@@ -102,23 +93,7 @@ export function PortfolioClient({
             <OrderTicketForm killMode={killMode} />
           </Panel>
 
-          <Panel code="SIZ-BRK" title="14:32:08 TPE" sub="部位拆解 · SIZING BREAKDOWN" right="ACCOUNT · STRATEGY · SYMBOL">
-            {[
-              ["ACCOUNT", 24.0, "TWD 24.0M"],
-              ["STRATEGY", 8.4, "AI-PWR · LONG"],
-              ["SYMBOL", 6.0, focus?.symbol ?? "—"],
-              ["IDEA", 1.8, "ID-1142"],
-            ].map(([label, value, note]) => (
-              <div key={String(label)} style={{ padding: "10px 0", borderBottom: "1px solid var(--night-rule)" }}>
-                <div className="tg" style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>{label}</span><span className="soft">{note}</span><b>{Number(value).toFixed(1)}% used</b>
-                </div>
-                <div className="bar" style={{ marginTop: 8 }}>
-                  <span style={{ width: `${Number(value) * 4}%`, background: label === "ACCOUNT" ? "var(--tw-up-bright)" : "var(--gold-bright)" }} />
-                </div>
-              </div>
-            ))}
-          </Panel>
+          {/* SIZ-BRK removed — no live sizing data source; will be wired when position-sizer endpoint lands */}
         </div>
 
         <div>
@@ -135,23 +110,8 @@ export function PortfolioClient({
           </Panel>
 
           <Panel code="KIL-SW" title="14:32:08 TPE" sub="模式 · 4-MODE KILL SWITCH" right={`CURRENT · ${killMode}`}>
-            <div className="mode-grid">
-              {(["ARMED", "SAFE", "PEEK", "FROZEN"] as KillMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  className={`mode-card ${killMode === mode ? "active" : ""}`}
-                  onClick={() => setKillMode(mode)}
-                >
-                  <div className="tg" style={{ fontWeight: 700 }}>● {mode}</div>
-                  <div className="tc" style={{ marginTop: 8, fontSize: 13 }}>
-                    {mode === "ARMED" ? "全開" : mode === "SAFE" ? "安全" : mode === "PEEK" ? "預讀" : "凍結"}
-                  </div>
-                  <div className="tg" style={{ marginTop: 8, opacity: 0.72 }}>
-                    {mode === "ARMED" ? "允許訂單可改" : mode === "SAFE" ? "只允許平倉" : mode === "PEEK" ? "唯讀不送單" : "全部封鎖"}
-                  </div>
-                </button>
-              ))}
-            </div>
+            {/* KillSwitch component — requires confirm dialog before mode change; api.killMode is mockOnly (hard line) */}
+            <KillSwitch mode={killMode} onChange={setKillMode} />
           </Panel>
 
           <Panel code="OVR-PNL" title="14:32:08 TPE" sub="覆蓋面板 · ACCOUNT / STRAT / SYMBOL" right={totalPnl >= 0 ? "ACTIVE" : "WATCH"}>
@@ -185,13 +145,13 @@ export function PortfolioClient({
                     <span className="status-dot" />{event.kind.replace("order_", "").replace("_", "-").toUpperCase()}
                   </span>
                   <span className="tg">{event.symbol} · {event.qty?.toLocaleString() ?? "-"} @ {event.price ?? "-"}</span>
-                  <span className={`tg ${tone(event.price ? event.price - 100 : 0)}`}>{fill ? "+1.4 bps" : "-"}</span>
+                  <span className="tg muted">—</span>
                 </div>
               );
             })}
           </Panel>
 
-          <Panel code="POS-OPN" title="14:32:08 TPE" sub="持倉 · OPEN POSITIONS" right={`${positions.length} OF 12`}>
+          <Panel code="POS-OPN" title="14:32:08 TPE" sub="持倉 · OPEN POSITIONS" right={`${positions.length} 持倉`}>
             <div className="row position-row table-head tg">
               <span>SYM</span><span>名稱</span><span>LAST</span><span>CHG</span><span>P&L</span><span>%NAV</span>
             </div>
