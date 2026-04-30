@@ -1128,6 +1128,14 @@ export interface OhlcvBar {
   source: "mock" | "kgi" | "tej";
 }
 
+export interface CompanyAnnouncement {
+  id: string;
+  date: string;
+  title: string;
+  category: string;
+  body?: string;
+}
+
 /**
  * Resolve a Company by UUID. Use this once Jason TASK1 ticker-resolution lands.
  * Until then, prefer getCompanyByTicker() which list-scans.
@@ -1158,6 +1166,13 @@ export async function getCompanyOhlcv(
   const qs = query.toString();
   const res = await request<OhlcvBar[]>(`/api/v1/companies/${companyId}/ohlcv${qs ? `?${qs}` : ""}`);
   return res.data;
+}
+
+export async function getCompanyAnnouncements(companyId: string, params?: { days?: number }) {
+  const query = new URLSearchParams();
+  if (params?.days) query.set("days", String(params.days));
+  const qs = query.toString();
+  return request<CompanyAnnouncement[]>(`/api/v1/companies/${companyId}/announcements${qs ? `?${qs}` : ""}`);
 }
 
 // ── Paper Order ───────────────────────────────────────────────────────────────

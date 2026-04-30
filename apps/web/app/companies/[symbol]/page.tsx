@@ -1,8 +1,7 @@
 // /companies/[symbol]/page.tsx — Server Component
-// 9-panel RADAR visual skeleton on top of live contracts-shape Company + OHLCV.
-// HeroBar / OHLCV chart / CompanyInfo / Chips / Announcements / Financials live
-// from /api/v1; PaperOrder posts to /api/v1/paper/orders/*; Source / Derivatives /
-// TickStream are visual placeholders fed by company-adapter mocks until backends land.
+// 9-panel company surface on top of live contracts-shape Company + OHLCV.
+// HeroBar / OHLCV chart / CompanyInfo / Chips / Announcements / Financials bind
+// to /api/v1. Panels without a production contract render BLOCKED, not mock data.
 //
 // HARD LINE: never import KGI SDK or call broker live submit path.
 
@@ -12,8 +11,8 @@ import { PageFrame } from "@/components/PageFrame";
 import { getCompanies, getCompanyOhlcv, type OhlcvBar } from "@/lib/api";
 import type { Company } from "@iuf-trading-room/contracts";
 import {
-  buildCompanyDetailMocks,
   quoteFromOhlcvBars,
+  type SourceStatus,
   toCompanyDetailView,
 } from "@/lib/company-adapter";
 
@@ -38,6 +37,58 @@ function tone(value: number | null | undefined) {
 function signed(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number") return "--";
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
+}
+
+function companyTimestamp(company: Company) {
+  const record = company as unknown as { updatedAt?: string; createdAt?: string };
+  return record.updatedAt ?? record.createdAt ?? new Date().toISOString();
+}
+
+function buildSourceStatus(company: Company, bars: OhlcvBar[]): SourceStatus[] {
+  const lastBar = bars.at(-1);
+  const lastBarTime = lastBar ? new Date(`${lastBar.dt}T13:30:00+08:00`).toISOString() : new Date().toISOString();
+  const priceSource = lastBar?.source === "tej" ? "FinMind/TEJ official OHLCV" : lastBar?.source === "kgi" ? "KGI readonly quote" : null;
+
+  return [
+    {
+      id: "company-master",
+      label: "Company master",
+      state: "live",
+      summary: "Workspace company record",
+      lastSeen: companyTimestamp(company),
+      detail: "GET /api/v1/companies returned this symbol in the authenticated workspace.",
+      queueDepth: 0,
+    },
+    {
+      id: "ohlcv",
+      label: "Daily OHLCV",
+      state: lastBar && priceSource ? "live" : "error",
+      summary: priceSource ?? "No production bars returned",
+      lastSeen: lastBarTime,
+      detail: lastBar
+        ? `GET /api/v1/companies/:id/ohlcv returned ${bars.length} bars; latest source=${lastBar.source}.`
+        : "GET /api/v1/companies/:id/ohlcv returned zero bars, so price-derived UI stays empty.",
+      queueDepth: 0,
+    },
+    {
+      id: "twse-announcements",
+      label: "Market Intel",
+      state: "live",
+      summary: "TWSE OpenAPI material announcements",
+      lastSeen: new Date().toISOString(),
+      detail: "GET /api/v1/companies/:id/announcements?days=30 is bound in panel [05].",
+      queueDepth: 0,
+    },
+    {
+      id: "kgi-ticks",
+      label: "Tick stream",
+      state: "error",
+      summary: "Blocked until KGI readonly tick contract is confirmed",
+      lastSeen: new Date().toISOString(),
+      detail: "Panel [09] is intentionally BLOCKED and does not render generated tick rows.",
+      queueDepth: 0,
+    },
+  ];
 }
 
 export default async function CompanyDetailPage({
@@ -127,7 +178,7 @@ export default async function CompanyDetailPage({
 
   const detail = toCompanyDetailView(company, symbol);
   const quote = quoteFromOhlcvBars(bars, detail);
-  const mocks = buildCompanyDetailMocks(detail);
+  const sources = buildSourceStatus(company, bars);
 
   return (
     <PageFrame
@@ -156,7 +207,7 @@ export default async function CompanyDetailPage({
 
         <aside className="company-side-column">
           <PaperOrderPanel symbol={company.ticker} />
-          <SourceStatusCard sources={mocks.sources} />
+          <SourceStatusCard sources={sources} />
         </aside>
       </div>
 
@@ -192,8 +243,8 @@ export default async function CompanyDetailPage({
         <FinancialsPanel companyId={company.id} />
         <ChipsPanel companyId={company.id} />
         <AnnouncementsPanel companyId={company.id} />
-        <DerivativesPanel rows={mocks.derivatives} />
-        <TickStreamPanel rows={mocks.ticks} />
+        <DerivativesPanel />
+        <TickStreamPanel />
       </div>
     </PageFrame>
   );

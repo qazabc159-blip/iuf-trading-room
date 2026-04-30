@@ -10,8 +10,8 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - Sidebar logout: DONE.
 - API health: PASS after deployment.
 - Company 2330 with authenticated cookie: PASS.
-- Production no-silent-mock policy: OPEN.
-- Market Intel/news lane: OPEN.
+- Production no-silent-mock policy: IN PROGRESS.
+- Market Intel/news lane: IN PROGRESS; company detail panel [05] now binds TWSE announcements through the shared API client.
 - Full mock/placeholder removal: OPEN.
 
 ## Path Locks
@@ -59,6 +59,13 @@ Known usable endpoints:
 - `GET /api/v1/audit-logs`
 - `GET /api/v1/audit-logs/summary`
 
+Jason 5-contract first draft DONE @ 2026-05-01 ~01:58 Taipei → `evidence/w7_paper_sprint/jason_backend_contracts_2026-05-01.md`
+- Contract 1 (Paper Orders preview/submit/status/cancel): READY
+- Contract 2 (Portfolio positions/fills/summary): BLOCKED owner=Jason ETA=Day 4-5
+- Contract 3 (Watchlist): BLOCKED owner=Jason ETA=Day 4-5
+- Contract 4 (Strategy ideas/runs READY; promote-to-order): BLOCKED owner=Jason ETA=Day 5-6
+- Contract 5 (KGI bidask/tick): BLOCKED owner=Operator+Jason (gateway dep); WS not implemented
+
 Needs confirmation from Elva/Jason:
 
 - Paper order preview/submit production contract
@@ -75,9 +82,9 @@ Initial high-risk surfaces:
 - `/reviews`: currently imports mock review queue/log.
 - `/drafts` and `/admin/content-drafts`: currently import mock drafts/audit.
 - `/quote`: currently uses mock bidask/ticks.
-- `/companies/[symbol]`: some panels still use `buildCompanyDetailMocks`.
-- `DerivativesPanel`: explicit placeholder.
-- `TickStreamPanel`: KGI live placeholder.
+- `/companies/[symbol]`: source/tick/derivatives mock feed removed in Codex cycle 01:49; remaining company-detail mock risk is `toCompanyDetailView` fallback fields.
+- `DerivativesPanel`: BLOCKED until production endpoint contract exists.
+- `TickStreamPanel`: BLOCKED until KGI readonly bid/ask + tick contract exists.
 - `/m/kill`: says no backend in mock.
 - `radar-api.ts` and `radar-uncovered.ts`: API failure can fall back to mock.
 
@@ -100,6 +107,41 @@ Files touched:
 
 - `evidence/w7_paper_sprint/frontend_realdata_elva_handoff_2026-05-01.md`
 - `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+### 2026-05-01 01:49 Taipei
+
+Completed:
+
+- Updated heartbeat automation to keep this live thread waking every 30 minutes.
+- Bound company detail Market Intel panel [05] to `GET /api/v1/companies/:id/announcements?days=30` through `apps/web/lib/api.ts`.
+- Converted Market Intel visible states to LOADING / LIVE / EMPTY / BLOCKED with source and updated timestamp.
+- Removed no-op behavior from announcement rows: rows without body text render as static data, not inert buttons.
+- Removed deterministic derivatives and tick-stream rows from the company page. Panels [08] and [09] now render BLOCKED with owner/blocker instead of synthetic data.
+- Replaced source card data on `/companies/[symbol]` with live-derived source status from company master, OHLCV, TWSE announcements, and blocked KGI ticks.
+
+Files:
+
+- `apps/web/lib/api.ts`
+- `apps/web/app/companies/[symbol]/page.tsx`
+- `apps/web/app/companies/[symbol]/AnnouncementsPanel.tsx`
+- `apps/web/app/companies/[symbol]/DerivativesPanel.tsx`
+- `apps/web/app/companies/[symbol]/TickStreamPanel.tsx`
+- `apps/web/app/globals.css`
+
+Endpoints:
+
+- `GET /api/v1/companies`
+- `GET /api/v1/companies/:id/ohlcv?interval=1d`
+- `GET /api/v1/companies/:id/announcements?days=30`
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+
+Blockers:
+
+- Need Jason canonical contracts for derivatives exposure and KGI readonly tick/bidask before panels [08]/[09] can move from BLOCKED to LIVE.
 
 ## Elva Notes
 
@@ -141,4 +183,3 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - **B4**: Pete standby — 等 Codex 開第一個中大型 frontend PR 才需介入
 
 Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區。
-
