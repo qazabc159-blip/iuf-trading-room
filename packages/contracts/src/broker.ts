@@ -265,6 +265,14 @@ export const submitOrderResultSchema = z.object({
   quoteGate: executionQuoteGateResultSchema.nullable()
 });
 
+// previewOrderResultSchema is the authoritative contract for
+// POST /api/v1/paper/orders/preview (and /api/v1/trading/orders/preview).
+// Frontend OrderPreview type MUST be derived from this, not hand-written.
+// This is identical to submitOrderResultSchema — preview runs the same
+// risk+gate pipeline but never commits an order (order is always null).
+export const previewOrderResultSchema = submitOrderResultSchema;
+export type PreviewOrderResult = z.infer<typeof previewOrderResultSchema>;
+
 export type BrokerKind = z.infer<typeof brokerKindSchema>;
 export type OrderSide = z.infer<typeof orderSideSchema>;
 export type OrderType = z.infer<typeof orderTypeSchema>;
