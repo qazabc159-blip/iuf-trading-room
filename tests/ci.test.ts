@@ -114,6 +114,7 @@ import { buildOpsSnapshotView } from "../apps/api/src/ops-snapshot.ts";
 import { buildOpsTrendView } from "../apps/api/src/ops-trends.ts";
 import {
   DEFAULT_RISK_LIMITS,
+  previewOrderResultSchema,
   type Company,
   type Theme
 } from "../packages/contracts/src/index.ts";
@@ -7685,6 +7686,77 @@ test("api-gap Item 1b: previewOrder never creates a ledger row — order is alwa
   const orders = await listPaperOrders(session, { accountId });
   const pvnullOrders = orders.filter((o) => o.symbol === "PVNULL");
   assert.equal(pvnullOrders.length, 0, "no ledger Order row must exist after previewOrder");
+});
+
+// TASK 4: previewOrder response shape matches previewOrderResultSchema (contract alignment)
+// This test is the source of truth — if SubmitOrderResult ever drifts from
+// what the route returns, this will catch it at build time.
+test("TASK4: previewOrder result satisfies previewOrderResultSchema (SubmitOrderResult contract)", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `preview-contract-${randomUUID()}`
+  });
+
+  const accountId = "paper-default";
+  await upsertRiskLimitState({
+    session,
+    payload: {
+      accountId,
+      tradingHoursStart: "00:00",
+      tradingHoursEnd: "23:59"
+    }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "CONTRACT1",
+        market: "OTHER",
+        source: "manual",
+        last: 100,
+        bid: 99,
+        ask: 101,
+        open: 100,
+        high: 100,
+        low: 100,
+        prevClose: 100,
+        volume: 1000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  const result = await previewOrder({
+    session,
+    repo,
+    order: {
+      accountId,
+      symbol: "CONTRACT1",
+      side: "buy",
+      type: "market",
+      timeInForce: "rod",
+      quantity: 1,
+      price: null,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [],
+      overrideReason: ""
+    }
+  });
+
+  // Validate against the formal Zod contract — this is the alignment test.
+  // If this throws, backend output diverged from previewOrderResultSchema.
+  const parsed = previewOrderResultSchema.safeParse(result);
+  assert.ok(
+    parsed.success,
+    `previewOrder result failed previewOrderResultSchema: ${JSON.stringify(parsed.error?.flatten())}`
+  );
+  // Invariant: order is always null on preview
+  assert.equal(parsed.data!.order, null, "preview result.order must be null");
 });
 
 // Item 2: getStrategyRunById + run.items returns the stored ideas array
