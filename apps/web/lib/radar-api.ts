@@ -66,8 +66,25 @@ export function getDataSourceState(): DataSourceState {
 async function get<T>(path: string, fallback: T): Promise<T> {
   if (!BASE) return fallback;
   if (IS_BUILD) return fallback;
+
+  // SSR (server component) calls don't get the browser's cookie automatically.
+  // Forward the incoming request's Cookie header so authenticated endpoints work.
+  let ssrCookie: string | null = null;
+  if (typeof window === "undefined") {
+    try {
+      const { headers } = await import("next/headers");
+      const h = await headers();
+      ssrCookie = h.get("cookie");
+    } catch {
+      // Outside a request context (e.g. build time) — leave cookie unset.
+    }
+  }
+
   try {
-    const r = await fetch(`${BASE}${path}`, { next: { revalidate: 30 } });
+    const init: RequestInit & { next?: { revalidate: number } } = ssrCookie
+      ? { headers: { Cookie: ssrCookie }, cache: "no-store" }
+      : { next: { revalidate: 30 } };
+    const r = await fetch(`${BASE}${path}`, init);
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     publish("LIVE");
     // All apps/api endpoints return { data: T } — unwrap the envelope.
@@ -96,10 +113,26 @@ async function mockOnly<T>(fallback: T | (() => T | Promise<T>)): Promise<T> {
 
 async function post<TIn, TOut>(path: string, body: TIn, fallback: () => TOut | Promise<TOut>): Promise<TOut> {
   if (!BASE) return await fallback();
+
+  let ssrCookie: string | null = null;
+  if (typeof window === "undefined") {
+    try {
+      const { headers } = await import("next/headers");
+      const h = await headers();
+      ssrCookie = h.get("cookie");
+    } catch {
+      // Outside a request context — leave cookie unset.
+    }
+  }
+
   try {
     const r = await fetch(`${BASE}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(ssrCookie ? { Cookie: ssrCookie } : {}),
+      },
       body: JSON.stringify(body),
     });
     if (!r.ok) throw new Error(`${r.status} ${path}`);

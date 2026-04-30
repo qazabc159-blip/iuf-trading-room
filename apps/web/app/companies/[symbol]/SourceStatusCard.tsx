@@ -1,0 +1,49 @@
+"use client";
+
+import { useState } from "react";
+import type { SourceStatus } from "@/lib/company-adapter";
+
+function stateClass(state: SourceStatus["state"]) {
+  if (state === "live") return "badge-green";
+  if (state === "stale") return "badge-yellow";
+  return "badge-red";
+}
+
+function stateLabel(state: SourceStatus["state"]) {
+  if (state === "live") return "LIVE";
+  if (state === "stale") return "STALE";
+  return "ERROR";
+}
+
+export function SourceStatusCard({ sources }: { sources: SourceStatus[] }) {
+  const [openId, setOpenId] = useState<string | null>(sources[0]?.id ?? null);
+
+  return (
+    <section className="panel hud-frame">
+      <h3 className="ascii-head">
+        <span className="ascii-head-bracket">[07]</span> 資料源狀態
+        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>{sources.length} sources</span>
+      </h3>
+      <div className="source-status-card">
+        {sources.map((source) => {
+          const open = openId === source.id;
+          return (
+            <button className="source-status-row" key={source.id} onClick={() => setOpenId(open ? null : source.id)} type="button">
+              <span className={`source-led ${source.state}`} aria-hidden />
+              <span>
+                <b className="tg">{source.label}</b>
+                <small className="tg soft">{source.summary}</small>
+              </span>
+              <span className={`badge ${stateClass(source.state)}`}>{stateLabel(source.state)}</span>
+              {open && (
+                <span className="source-status-detail tg soft">
+                  last {new Date(source.lastSeen).toLocaleTimeString("zh-TW", { hour12: false })} · queue {source.queueDepth} · {source.detail}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
