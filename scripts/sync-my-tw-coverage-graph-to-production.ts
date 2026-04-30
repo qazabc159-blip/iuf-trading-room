@@ -35,11 +35,39 @@ const COVERAGE_PATH =
 const WORKSPACE_SLUG = process.env.WORKSPACE_SLUG ?? "primary-desk";
 const APPLY = process.env.APPLY !== "false";
 const BATCH_SIZE = 10;
+const OWNER_EMAIL = process.env.OWNER_EMAIL;
+const OWNER_PASSWORD = process.env.OWNER_PASSWORD;
 
-const headers = {
-  "Content-Type": "application/json",
-  "x-workspace-slug": WORKSPACE_SLUG
-};
+let sessionCookie = "";
+
+async function login(): Promise<void> {
+  if (!OWNER_EMAIL || !OWNER_PASSWORD) {
+    throw new Error("OWNER_EMAIL and OWNER_PASSWORD must be set");
+  }
+  const response = await fetch(`${API_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD })
+  });
+  if (!response.ok) {
+    throw new Error(`Login failed: HTTP ${response.status}`);
+  }
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  const match = setCookie.match(/iuf_session=[^;]+/);
+  if (!match) {
+    throw new Error(`Login response missing iuf_session cookie`);
+  }
+  sessionCookie = match[0];
+  console.log(`[graph-sync] Logged in as ${OWNER_EMAIL}`);
+}
+
+function authHeaders(): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "x-workspace-slug": WORKSPACE_SLUG,
+    Cookie: sessionCookie
+  };
+}
 
 type CompanyGraphSyncItem = {
   company: Company;
@@ -97,7 +125,7 @@ function dedupeKeywords(keywords: CompanyKeywordInput[]) {
 }
 
 async function fetchCompanies(): Promise<Company[]> {
-  const response = await fetch(`${API_URL}/api/v1/companies`, { headers });
+  const response = await fetch(`${API_URL}/api/v1/companies`, { headers: authHeaders() });
 
   if (!response.ok) {
     throw new Error(`Failed to fetch companies: HTTP ${response.status}`);
@@ -110,7 +138,7 @@ async function fetchCompanies(): Promise<Company[]> {
 async function replaceCompanyRelations(companyId: string, relations: CompanyRelationInput[]) {
   const response = await fetch(`${API_URL}/api/v1/companies/${companyId}/relations`, {
     method: "PUT",
-    headers,
+    headers: authHeaders(),
     body: JSON.stringify({ relations })
   });
 
@@ -123,7 +151,7 @@ async function replaceCompanyRelations(companyId: string, relations: CompanyRela
 async function replaceCompanyKeywords(companyId: string, keywords: CompanyKeywordInput[]) {
   const response = await fetch(`${API_URL}/api/v1/companies/${companyId}/keywords`, {
     method: "PUT",
-    headers,
+    headers: authHeaders(),
     body: JSON.stringify({ keywords })
   });
 
@@ -134,6 +162,7 @@ async function replaceCompanyKeywords(companyId: string, keywords: CompanyKeywor
 }
 
 async function main() {
+  await login();
   console.log(`[graph-sync] Parsing coverage at: ${COVERAGE_PATH}`);
   const imported = runImport({ coveragePath: COVERAGE_PATH });
   console.log(

@@ -23,6 +23,31 @@ const API_URL = process.env.API_URL ?? "https://api-production-8f08.up.railway.a
 const COVERAGE_PATH = process.env.COVERAGE_PATH ?? path.resolve(repoRoot, "..", "My-TW-Coverage");
 const WORKSPACE_SLUG = "primary-desk";
 const BATCH_SIZE = 10;
+const OWNER_EMAIL = process.env.OWNER_EMAIL;
+const OWNER_PASSWORD = process.env.OWNER_PASSWORD;
+
+let sessionCookie = "";
+
+async function login(): Promise<void> {
+  if (!OWNER_EMAIL || !OWNER_PASSWORD) {
+    throw new Error("OWNER_EMAIL and OWNER_PASSWORD must be set");
+  }
+  const response = await fetch(`${API_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD })
+  });
+  if (!response.ok) {
+    throw new Error(`Login failed: HTTP ${response.status}`);
+  }
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  const match = setCookie.match(/iuf_session=[^;]+/);
+  if (!match) {
+    throw new Error(`Login response missing iuf_session cookie`);
+  }
+  sessionCookie = match[0];
+  console.log(`[import] Logged in as ${OWNER_EMAIL}`);
+}
 
 console.log(`[import] Parsing coverage at: ${COVERAGE_PATH}`);
 const result = runImport({ coveragePath: COVERAGE_PATH });
@@ -30,12 +55,16 @@ console.log(
   `[import] Parsed: ${result.companies.length} companies, ${result.relations.length} relations, ${result.themeKeywords.length} keywords`
 );
 
-const headers = {
-  "Content-Type": "application/json",
-  "x-workspace-slug": WORKSPACE_SLUG
-};
+function buildHeaders(): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "x-workspace-slug": WORKSPACE_SLUG,
+    Cookie: sessionCookie
+  };
+}
 
 async function main() {
+  await login();
   let created = 0;
   let skipped = 0;
   let failed = 0;
@@ -47,7 +76,7 @@ async function main() {
     try {
       const response = await fetch(`${API_URL}/api/v1/companies`, {
         method: "POST",
-        headers,
+        headers: buildHeaders(),
         body: JSON.stringify(body)
       });
 
