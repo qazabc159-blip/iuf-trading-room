@@ -31,9 +31,17 @@ export default function CompaniesPage() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(0);
 
+  const [rawTotal, setRawTotal] = useState(0);
+
   useEffect(() => {
     getCompanies()
-      .then((r) => setCompanies(r.data))
+      .then((r) => {
+        const raw = r.data;
+        setRawTotal(raw.length);
+        // Client-side dedup by ticker (临時防禦 — 等 Jason 0020 migration 拆掉)
+        const unique = Array.from(new Map(raw.map((c) => [c.ticker, c])).values());
+        setCompanies(unique);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "無法載入公司"))
       .finally(() => setLoading(false));
   }, []);
@@ -170,6 +178,21 @@ export default function CompaniesPage() {
             </button>
           )}
         </div>
+
+        {/* Dedup banner — temporary, remove when Jason 0020 migration lands */}
+        {!loading && !error && rawTotal !== companies.length && (
+          <div style={{
+            padding: "6px 10px",
+            background: "rgba(184,150,12,0.08)",
+            border: "1px solid var(--gold, #b8960c)",
+            fontFamily: "var(--mono, monospace)",
+            fontSize: 11,
+            color: "var(--gold, #b8960c)",
+            marginBottom: 8,
+          }}>
+            [DEDUP] 資料庫去重整合中 — 顯示 {companies.length.toLocaleString()} 唯一公司，總列 {rawTotal.toLocaleString()} 行
+          </div>
+        )}
 
         {/* Error state */}
         {error && (

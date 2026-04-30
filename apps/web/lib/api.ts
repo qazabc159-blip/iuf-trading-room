@@ -30,6 +30,9 @@ import type {
   Order,
   OrderCancelInput,
   OrderCreateInput,
+  PaperOrder,
+  PaperOrderCreateInput,
+  PreviewOrderResult,
   Position,
   Quote,
   QuoteProviderStatus,
@@ -1094,5 +1097,75 @@ export async function rejectContentDraft(draftId: string, reason: string) {
   return request<ContentDraftEntry>(`/api/v1/content-drafts/${draftId}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason })
+  });
+}
+
+// ── Company Detail — OHLCV + ticker resolution ───────────────────────────────
+
+export type OhlcvInterval = "1d" | "1w" | "1m";
+
+export interface OhlcvBar {
+  dt: string;       // 'YYYY-MM-DD'
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  source: "mock" | "kgi" | "tej";
+}
+
+/**
+ * Resolve a Company by UUID. Use this once Jason TASK1 ticker-resolution lands.
+ * Until then, prefer getCompanyByTicker() which list-scans.
+ */
+export async function getCompanyById(id: string) {
+  return request<Company>(`/api/v1/companies/${id}`);
+}
+
+/**
+ * Resolve a Company by ticker symbol (case-insensitive list-scan).
+ * Workaround until Jason TASK1 adds server-side ticker lookup.
+ * Returns null when not found.
+ */
+export async function getCompanyByTicker(ticker: string): Promise<Company | null> {
+  const res = await getCompanies();
+  const needle = ticker.toLowerCase();
+  return res.data.find((c) => c.ticker.toLowerCase() === needle) ?? null;
+}
+
+export async function getCompanyOhlcv(
+  companyId: string,
+  params?: { interval?: OhlcvInterval; from?: string; to?: string }
+): Promise<OhlcvBar[]> {
+  const query = new URLSearchParams();
+  if (params?.interval) query.set("interval", params.interval);
+  if (params?.from) query.set("from", params.from);
+  if (params?.to) query.set("to", params.to);
+  const qs = query.toString();
+  const res = await request<OhlcvBar[]>(`/api/v1/companies/${companyId}/ohlcv${qs ? `?${qs}` : ""}`);
+  return res.data;
+}
+
+// ── Paper Order ───────────────────────────────────────────────────────────────
+
+export async function previewPaperOrder(input: Omit<PaperOrderCreateInput, "idempotencyKey">) {
+  const body: PaperOrderCreateInput = {
+    ...input,
+    idempotencyKey: `preview-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  };
+  return request<PreviewOrderResult>("/api/v1/paper/orders/preview", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function submitPaperOrder(input: Omit<PaperOrderCreateInput, "idempotencyKey">) {
+  const body: PaperOrderCreateInput = {
+    ...input,
+    idempotencyKey: `submit-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  };
+  return request<PaperOrder>("/api/v1/paper/orders", {
+    method: "POST",
+    body: JSON.stringify(body)
   });
 }
