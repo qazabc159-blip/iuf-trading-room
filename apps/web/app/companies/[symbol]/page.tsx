@@ -6,11 +6,11 @@
 //
 // HARD LINE: never import KGI SDK or call broker live submit path.
 
-import { notFound } from "next/navigation";
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
-import { getCompanyByTicker, getCompanyOhlcv, type OhlcvBar } from "@/lib/api";
+import { getCompanies, getCompanyOhlcv, type OhlcvBar } from "@/lib/api";
+import type { Company } from "@iuf-trading-room/contracts";
 import {
   buildCompanyDetailMocks,
   quoteFromOhlcvBars,
@@ -47,10 +47,55 @@ export default async function CompanyDetailPage({
 }) {
   const { symbol } = await params;
 
-  const company = await getCompanyByTicker(symbol).catch(() => null);
-  if (!company) notFound();
+  let companies: Company[] = [];
+  try {
+    const res = await getCompanies();
+    companies = res.data ?? [];
+  } catch (err) {
+    console.error("[company-detail] getCompanies failed", { symbol, err });
+    throw new Error(
+      `公司列表載入失敗 (symbol=${symbol}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
-  const bars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d" }).catch(() => []);
+  const needle = symbol.toLowerCase();
+  const company = companies.find((c) => c.ticker.toLowerCase() === needle) ?? null;
+
+  if (!company) {
+    console.warn("[company-detail] ticker not found in workspace", {
+      symbol,
+      workspaceSize: companies.length,
+      sample: companies.slice(0, 5).map((c) => c.ticker),
+    });
+    return (
+      <PageFrame
+        code="03-?"
+        title={symbol.toUpperCase()}
+        sub="ticker not found"
+        note={`[03B] /companies/${symbol} · ticker 不在 workspace 公司清單中`}
+      >
+        <div style={{ padding: "32px 24px", fontFamily: "var(--mono, monospace)", fontSize: 12 }}>
+          <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 12 }}>
+            [NOT FOUND] {symbol.toUpperCase()}
+          </div>
+          <div className="dim" style={{ marginBottom: 16 }}>
+            workspace 共 {companies.length} 家公司，沒有 ticker = <b>{symbol}</b> 的紀錄。
+          </div>
+          {companies.length > 0 && (
+            <div className="dim" style={{ marginBottom: 16 }}>
+              SAMPLE: {companies.slice(0, 8).map((c) => c.ticker).join(" / ")}
+            </div>
+          )}
+          <Link href="/companies" className="btn-sm">← 公司列表</Link>
+        </div>
+      </PageFrame>
+    );
+  }
+
+  const bars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d" }).catch((err) => {
+    console.warn("[company-detail] getCompanyOhlcv failed", { id: company.id, err });
+    return [];
+  });
 
   const detail = toCompanyDetailView(company, symbol);
   const quote = quoteFromOhlcvBars(bars, detail);
