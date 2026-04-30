@@ -1,5 +1,7 @@
 import {
+  bigint,
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -490,5 +492,56 @@ export const paperFills = pgTable(
   },
   (table) => ({
     orderIdIdx: index("paper_fills_order_id_idx").on(table.orderId)
+  })
+);
+
+// ── W7 D3: OHLCV bars per company ─────────────────────────────────────────────
+// migration 0017_companies_ohlcv.sql
+
+export const companiesOhlcv = pgTable(
+  "companies_ohlcv",
+  {
+    id:          uuid("id").defaultRandom().primaryKey(),
+    companyId:   uuid("company_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    dt:          date("dt").notNull(),
+    interval:    text("interval", { enum: ["1d", "1w", "1m"] }).notNull().default("1d"),
+    open:        numeric("open",  { precision: 14, scale: 4 }).notNull(),
+    high:        numeric("high",  { precision: 14, scale: 4 }).notNull(),
+    low:         numeric("low",   { precision: 14, scale: 4 }).notNull(),
+    close:       numeric("close", { precision: 14, scale: 4 }).notNull(),
+    volume:      bigint("volume", { mode: "number" }).notNull().default(0),
+    source:      text("source", { enum: ["mock", "kgi", "tej"] }).notNull().default("mock"),
+    createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    companyDtIntervalUidx: uniqueIndex("companies_ohlcv_company_dt_interval_uidx").on(
+      table.companyId, table.dt, table.interval
+    ),
+    workspaceDtIdx: index("companies_ohlcv_workspace_dt_idx").on(table.workspaceId, table.dt),
+    companyDtIdx:   index("companies_ohlcv_company_dt_idx").on(table.companyId, table.dt)
+  })
+);
+
+// ── W7 D3: Daily AI-generated theme summary ────────────────────────────────────
+// migration 0018_daily_theme_summaries.sql
+
+export const dailyThemeSummaries = pgTable(
+  "daily_theme_summaries",
+  {
+    id:               uuid("id").defaultRandom().primaryKey(),
+    workspaceId:      uuid("workspace_id").notNull(),
+    dt:               text("dt").notNull(),
+    summaryMd:        text("summary_md").notNull(),
+    themeLabel:       text("theme_label").notNull().default(""),
+    sourceEventCount: integer("source_event_count").notNull().default(0),
+    generatedBy:      text("generated_by").notNull().default("worker_cron"),
+    createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    workspaceDtUidx: uniqueIndex("daily_theme_summaries_workspace_dt_uidx").on(
+      table.workspaceId, table.dt
+    ),
+    dtIdx: index("daily_theme_summaries_dt_idx").on(table.dt)
   })
 );
