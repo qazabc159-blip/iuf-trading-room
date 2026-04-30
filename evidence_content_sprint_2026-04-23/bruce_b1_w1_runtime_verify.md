@@ -248,7 +248,7 @@ curl http://127.0.0.1:8787/health
 | Gateway import clean | PASS | after QuoteVersion + annotation fix |
 | Gateway local startup | PASS | uvicorn log OK |
 | GET /health pre-login | PASS | {status:ok, logged_in:false} |
-| POST /session/login | PASS | account 0308732 / broker 9204 |
+| POST /session/login | PASS | account `<REDACTED:KGI_ACCOUNT>` / broker `<REDACTED:KGI_BROKER_ID>` |
 | GET /session/show-account | PASS | same shape as B0 |
 | POST /session/set-account (string) | PASS | ok + metadata returned |
 | POST /session/set-account (dict) | PASS | 422 correctly rejected |

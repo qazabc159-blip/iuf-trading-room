@@ -51,6 +51,14 @@ SKIP_FILES = {
     "scripts/audit/secret_regression_check.py",   # this file
     "secret_inventory.md",                          # governance reference doc
     "evidence/path_b_w2a_20260426/redaction_policy_v1.md",  # meta-doc
+    # Audit trail / reconciliation docs that legitimately enumerate the
+    # identifiers as part of "what was redacted" tables. These are meta-
+    # references in governance documentation, not live PII leaks.
+    "evidence/w7_paper_sprint/l5_secret_inventory_reconciliation_2026-04-30.md",
+    "evidence/w7_paper_sprint/overnight_progress_log_2026-04-29_to_30.md",
+    "evidence/w7_paper_sprint/overnight_closeout_FINAL_2026-04-30.md",
+    "evidence/w7_paper_sprint/eod_summary_2026-04-30_morning.md",
+    ".claude/agent-memory/verifier-release-bruce/l5_housekeeping_audit_learnings.md",
 }
 
 # Directory prefixes to skip (worktrees, node_modules, .git)
