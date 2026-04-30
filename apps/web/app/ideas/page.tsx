@@ -8,7 +8,7 @@ export default async function IdeasPage() {
   const high = ideas.filter((idea) => idea.quality === "HIGH").length;
   const long = ideas.filter((idea) => idea.side === "LONG").length;
   const trimExit = ideas.filter((idea) => idea.side === "TRIM" || idea.side === "EXIT").length;
-  const avgConf = ideas.reduce((sum, idea) => sum + idea.confidence, 0) / ideas.length;
+  const avgConf = ideas.length ? ideas.reduce((sum, idea) => sum + idea.confidence, 0) / ideas.length : 0;
 
   return (
     <PageFrame code="04" title="Ideas" sub="策略意見" note="[04] IDEAS · emitted trade candidates · send to execution desk">
