@@ -315,6 +315,17 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - Mike → 0020 migration audit lane（不變）
 - Jim → halted on new frontend scope（deprecated branch dispositioned 上方）
 
+### Cycle 9 (04:58) — Codex 85min idle，hint 未響應；繼續等待（無 prod risk）
+- `git fetch origin main`：no new commit since `29e9705` (Cycle 8 board commit)。
+- `git status`：同一 5 files、同一 mtime（latest 03:33）；85min 沒 touch。
+- **Cycle 8 checkpoint hint 未被響應**：3 選項都沒走（沒 commit / 沒 PR / 沒 board heartbeat）。
+- 評估：依 Cycle 9 rule，**繼續 silent 等候**，不主動觸碰 Codex working tree、不升級 operator。idle 是節奏問題不是 production risk；Codex `633d00e` 已部署 production，B12 fix 是 polish 不是 hotfix。
+- 不重派 Bruce production smoke：last deploy `633d00e` ~130min 前 stable，沒新 code → re-verify 同 surface 低價值；Bruce cycles 留給 Codex 真的 commit 時用。
+- Stop-line scan **PASS** — 無新 diff。
+- 無新 PR；PR #39 (Jason 0020) DRAFT 等楊董 ACK。
+- Yellow/Red: 無觸發。
+- 觀察期延續到 morning closeout (~07:00 Taipei)。若 Codex 整夜不動，morning closeout 會把 B12 列為 carry-over，附完整 fix instruction（已在 board）讓白班接手。
+
 ### Cycle 8 (04:38) — Codex idle 65min，**checkpoint hint** 上板（非 escalation）
 - `git fetch origin main`：no new commit since `6d1cfc2` (Cycle 7 board commit)。
 - `git status`：同一 5 files、同一 mtime（latest 03:33）；65min 沒 touch。
