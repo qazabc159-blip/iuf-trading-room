@@ -14,6 +14,7 @@ import { runCompanyNoteProducer } from "./jobs/company-note-producer.js";
 import { runDailyBriefProducer } from "./jobs/daily-brief-producer.js";
 import { runReviewSummaryProducer } from "./jobs/review-summary-producer.js";
 import { runSignalClusterProducer } from "./jobs/signal-cluster-producer.js";
+import { runDailyThemeSummaryProducer } from "./jobs/daily-theme-summary-producer.js";
 
 const jobs = [
   "ingest.my_tw_coverage",
@@ -29,6 +30,14 @@ const COMPANY_NOTE_INTERVAL_MS = Number(process.env.COMPANY_NOTE_INTERVAL_MS ?? 
 const DAILY_BRIEF_INTERVAL_MS = Number(process.env.DAILY_BRIEF_INTERVAL_MS ?? 60 * 60 * 1000); // 1 hour
 const REVIEW_SUMMARY_INTERVAL_MS = Number(process.env.REVIEW_SUMMARY_INTERVAL_MS ?? 30 * 60 * 1000); // 30 min
 const SIGNAL_CLUSTER_INTERVAL_MS = Number(process.env.SIGNAL_CLUSTER_INTERVAL_MS ?? 20 * 60 * 1000); // 20 min
+
+// Daily theme summary: 09:00 TST = 01:00 UTC. We use a daily check-and-skip
+// pattern: run the producer every 4 hours; the producer itself is idempotent
+// (skips if already generated today).  A cron-exact scheduler is not available
+// in the current worker architecture.
+const DAILY_THEME_SUMMARY_INTERVAL_MS = Number(
+  process.env.DAILY_THEME_SUMMARY_INTERVAL_MS ?? 4 * 60 * 60 * 1000 // 4 hours
+);
 
 let producerTimers: NodeJS.Timeout[] = [];
 
@@ -47,7 +56,7 @@ function startProducers() {
     return;
   }
 
-  console.log("[worker] Starting content producers (theme-summary, company-note, daily-brief, review-summary, signal-cluster).");
+  console.log("[worker] Starting content producers (theme-summary, company-note, daily-brief, review-summary, signal-cluster, daily-theme-summary).");
 
   // run immediately on startup then on interval
   void runProducer("theme-summary", runThemeSummaryProducer);
@@ -55,13 +64,15 @@ function startProducers() {
   void runProducer("daily-brief", runDailyBriefProducer);
   void runProducer("review-summary", runReviewSummaryProducer);
   void runProducer("signal-cluster", runSignalClusterProducer);
+  void runProducer("daily-theme-summary", runDailyThemeSummaryProducer);
 
   producerTimers.push(
     setInterval(() => void runProducer("theme-summary", runThemeSummaryProducer), THEME_SUMMARY_INTERVAL_MS),
     setInterval(() => void runProducer("company-note", runCompanyNoteProducer), COMPANY_NOTE_INTERVAL_MS),
     setInterval(() => void runProducer("daily-brief", runDailyBriefProducer), DAILY_BRIEF_INTERVAL_MS),
     setInterval(() => void runProducer("review-summary", runReviewSummaryProducer), REVIEW_SUMMARY_INTERVAL_MS),
-    setInterval(() => void runProducer("signal-cluster", runSignalClusterProducer), SIGNAL_CLUSTER_INTERVAL_MS)
+    setInterval(() => void runProducer("signal-cluster", runSignalClusterProducer), SIGNAL_CLUSTER_INTERVAL_MS),
+    setInterval(() => void runProducer("daily-theme-summary", runDailyThemeSummaryProducer), DAILY_THEME_SUMMARY_INTERVAL_MS)
   );
 }
 

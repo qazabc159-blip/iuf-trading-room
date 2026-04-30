@@ -47,7 +47,8 @@ import {
   getOrder,
   listOrders
 } from "./domain/trading/paper-ledger.js";
-import { isDatabaseMode } from "@iuf-trading-room/db";
+import { isDatabaseMode, getDb, dailyThemeSummaries } from "@iuf-trading-room/db";
+import { eq, and } from "drizzle-orm";
 import {
   getTradingRoomRepository,
   type TradingRoomRepository
@@ -193,6 +194,10 @@ import {
   listStrategyRuns
 } from "./strategy-engine.js";
 import { initRiskStore } from "./risk-engine.js";
+import {
+  getCompanyOhlcv,
+  getCompanyOhlcvBulk
+} from "./companies-ohlcv.js";
 import {
   buildClearCookieHeader,
   buildSetCookieHeader,
@@ -3265,6 +3270,136 @@ app.get("/api/v1/reviews/log", async (c) => {
 // =============================================================================
 // End of API Gap Fillers
 // =============================================================================
+
+// =============================================================================
+// W7 D3 — OHLCV endpoints
+// =============================================================================
+// GET /api/v1/companies/:id/ohlcv?from=...&to=...&interval=1d
+// Returns OhlcvBar[] for a single company.
+// Falls back to deterministic mock (seeded by companyId) when no DB rows exist.
+// Cache: 5-minute Redis TTL (fail-open — cache miss does not block response).
+
+const ohlcvQuerySchema = z.object({
+  from:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to:       z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  interval: z.enum(["1d", "1w", "1m"]).optional().default("1d")
+});
+
+app.get("/api/v1/companies/:id/ohlcv", async (c) => {
+  const companyId = c.req.param("id");
+  let query: ReturnType<typeof ohlcvQuerySchema.parse>;
+  try {
+    query = ohlcvQuerySchema.parse(c.req.query());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  const bars = await getCompanyOhlcv(companyId, c.get("session"), {
+    from: query.from,
+    to: query.to,
+    interval: query.interval
+  });
+
+  return c.json({ data: bars });
+});
+
+// GET /api/v1/companies/ohlcv/bulk?ids=a,b,c&from=...&to=...&interval=1d
+// Returns map<companyId, OhlcvBar[]>.  Used by watchlist chart rendering.
+
+const ohlcvBulkQuerySchema = z.object({
+  ids:      z.string().min(1),
+  from:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to:       z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  interval: z.enum(["1d", "1w", "1m"]).optional().default("1d")
+});
+
+app.get("/api/v1/companies/ohlcv/bulk", async (c) => {
+  let query: ReturnType<typeof ohlcvBulkQuerySchema.parse>;
+  try {
+    query = ohlcvBulkQuerySchema.parse(c.req.query());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  const ids = query.ids
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 50); // cap at 50 companies per request
+
+  const data = await getCompanyOhlcvBulk(ids, c.get("session"), {
+    from: query.from,
+    to: query.to,
+    interval: query.interval
+  });
+
+  return c.json({ data });
+});
+
+// =============================================================================
+// W7 D3 — Daily theme summary endpoints
+// =============================================================================
+// GET /api/v1/themes/daily/:date
+// Returns the daily AI-generated theme summary for a given date (YYYY-MM-DD).
+// 404 when no summary exists for that date yet.
+
+app.get("/api/v1/themes/daily/:date", async (c) => {
+  const dateParam = c.req.param("date");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+    return c.json({ error: "BAD_DATE_FORMAT", message: "Expected YYYY-MM-DD" }, 400);
+  }
+
+  const db = getDb();
+  if (!db) {
+    // Memory mode: return a mock summary
+    const mockSummary = {
+      id: "mock-summary-" + dateParam,
+      dt: dateParam,
+      summaryMd: `## Daily Theme Summary — ${dateParam}\n\n_No data available in memory mode._`,
+      themeLabel: "No data (memory mode)",
+      sourceEventCount: 0,
+      generatedBy: "mock",
+      createdAt: new Date().toISOString()
+    };
+    return c.json({ data: mockSummary });
+  }
+
+  const session = c.get("session");
+
+  const rows = await db
+    .select()
+    .from(dailyThemeSummaries)
+    .where(
+      and(
+        eq(dailyThemeSummaries.workspaceId, session.workspace.id),
+        eq(dailyThemeSummaries.dt, dateParam)
+      )
+    )
+    .limit(1);
+
+  if (rows.length === 0) {
+    return c.json({ error: "NOT_FOUND", message: `No theme summary for ${dateParam}` }, 404);
+  }
+
+  const row = rows[0]!;
+  return c.json({
+    data: {
+      id: row.id,
+      dt: row.dt,
+      summaryMd: row.summaryMd,
+      themeLabel: row.themeLabel,
+      sourceEventCount: row.sourceEventCount,
+      generatedBy: row.generatedBy,
+      createdAt: row.createdAt.toISOString()
+    }
+  });
+});
 
 // ── W7 Market Agent Ingest (/internal/market/*) ───────────────────────────────
 //
