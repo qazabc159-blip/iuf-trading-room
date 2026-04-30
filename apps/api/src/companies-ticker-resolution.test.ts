@@ -56,9 +56,9 @@ test("T1: UUID lookup returns existing company", async () => {
       chainPosition: "Mid",
       beneficiaryTier: "Direct",
       themeIds: [],
-      exposure: { direct: 0, indirect: 0, total: 0 },
-      validation: { status: "pending", score: 0, issues: [] },
-      notes: ""
+      exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
+      validation: { capitalFlow: "pending", consensus: "pending", relativeStrength: "pending" },
+      notes: "test fixture"
     },
     { workspaceSlug: session.workspace.slug }
   );
@@ -84,9 +84,9 @@ test("T2: ticker lookup resolves to correct company", async () => {
       chainPosition: "Mid",
       beneficiaryTier: "Direct",
       themeIds: [],
-      exposure: { direct: 0, indirect: 0, total: 0 },
-      validation: { status: "pending", score: 0, issues: [] },
-      notes: ""
+      exposure: { volume: 1, asp: 1, margin: 1, capacity: 1, narrative: 1 },
+      validation: { capitalFlow: "pending", consensus: "pending", relativeStrength: "pending" },
+      notes: "test fixture"
     },
     { workspaceSlug: session.workspace.slug }
   );
