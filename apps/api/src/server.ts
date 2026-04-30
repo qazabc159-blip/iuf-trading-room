@@ -3325,7 +3325,6 @@ const ohlcvQuerySchema = z.object({
 });
 
 app.get("/api/v1/companies/:id/ohlcv", async (c) => {
-  const companyId = c.req.param("id");
   let query: ReturnType<typeof ohlcvQuerySchema.parse>;
   try {
     query = ohlcvQuerySchema.parse(c.req.query());
@@ -3336,10 +3335,17 @@ app.get("/api/v1/companies/:id/ohlcv", async (c) => {
     return c.json({ error: "BAD_REQUEST" }, 400);
   }
 
-  const bars = await getCompanyOhlcv(companyId, c.get("session"), {
+  // Resolve UUID or ticker → company so we can pass ticker to FinMind fallback.
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const bars = await getCompanyOhlcv(company.id, c.get("session"), {
     from: query.from,
     to: query.to,
-    interval: query.interval
+    interval: query.interval,
+    ticker: company.ticker
   });
 
   return c.json({ data: bars });
@@ -3586,7 +3592,8 @@ function nDaysAgoDate(days: number): string {
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
 // GET /api/v1/companies/:id/financials?period=Q&limit=8
-// Returns: { data: FinMindFinancialStatementsRow[] } grouped by quarter
+// Returns: { data: FinancialRow[] } reshaped from FinMind long-format rows.
+// FinancialRow = { period, revenue, grossMarginPct, operatingMarginPct, epsAfterTax, yoyPct }
 app.get("/api/v1/companies/:id/financials", async (c) => {
   const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
@@ -3594,14 +3601,81 @@ app.get("/api/v1/companies/:id/financials", async (c) => {
   if (!company) return c.json({ error: "company_not_found" }, 404);
 
   const limit = Math.max(1, Math.min(32, Number(c.req.query("limit") ?? "8")));
-  // 8 quarters = 2 years
-  const yearsBack = Math.ceil(limit / 4) + 1;
+  // 8 quarters = 2 years; pull a year extra so YoY has comparison row.
+  const yearsBack = Math.ceil(limit / 4) + 2;
   const startDate = nYearsAgoDate(yearsBack);
   const stockId = companyIdToTicker(company.ticker);
 
   const rows = await getFinMindClient().getFinancialStatements(stockId, startDate, todayDate());
 
-  return c.json({ data: rows });
+  // FinMind long-format: each (date, type, value) tuple — bucket by date then map known type aliases.
+  const REVENUE_KEYS = new Set(["Revenue", "OperatingRevenue", "NetRevenue"]);
+  const GROSS_PROFIT_KEYS = new Set(["GrossProfit", "GrossProfitLoss", "GrossProfitFromOperations"]);
+  const OP_INCOME_KEYS = new Set(["OperatingIncome", "OperatingIncomeLoss", "IncomeFromOperatingActivities"]);
+  const EPS_KEYS = new Set(["EPS", "EarningsPerShare", "BasicEPS"]);
+
+  const buckets = new Map<string, { revenue: number | null; gross: number | null; op: number | null; eps: number | null }>();
+  for (const r of rows) {
+    let bucket = buckets.get(r.date);
+    if (!bucket) {
+      bucket = { revenue: null, gross: null, op: null, eps: null };
+      buckets.set(r.date, bucket);
+    }
+    if (REVENUE_KEYS.has(r.type)) bucket.revenue = r.value;
+    else if (GROSS_PROFIT_KEYS.has(r.type)) bucket.gross = r.value;
+    else if (OP_INCOME_KEYS.has(r.type)) bucket.op = r.value;
+    else if (EPS_KEYS.has(r.type)) bucket.eps = r.value;
+  }
+
+  const dateToPeriod = (d: string) => {
+    const [yyyy, mm] = d.split("-");
+    const m = Number(mm);
+    const q = m <= 3 ? 1 : m <= 6 ? 2 : m <= 9 ? 3 : 4;
+    return `${yyyy.slice(2)}Q${q}`;
+  };
+
+  // Build period→revenue map for YoY lookup before we trim.
+  const revenueByPeriod = new Map<string, number>();
+  for (const [date, b] of buckets) {
+    if (b.revenue !== null) revenueByPeriod.set(dateToPeriod(date), b.revenue);
+  }
+  const yoyKey = (period: string) => {
+    const yy = Number(period.slice(0, 2));
+    const q = period.slice(2);
+    return `${String(yy - 1).padStart(2, "0")}${q}`;
+  };
+
+  type FinancialRow = {
+    period: string;
+    revenue: number | null;
+    grossMarginPct: number | null;
+    operatingMarginPct: number | null;
+    epsAfterTax: number | null;
+    yoyPct: number | null;
+  };
+
+  const allRows: FinancialRow[] = Array.from(buckets.entries())
+    .sort(([a], [b]) => b.localeCompare(a)) // descending by date
+    .map(([date, b]) => {
+      const period = dateToPeriod(date);
+      const grossMarginPct = b.revenue && b.revenue !== 0 && b.gross !== null ? (b.gross / b.revenue) * 100 : null;
+      const operatingMarginPct = b.revenue && b.revenue !== 0 && b.op !== null ? (b.op / b.revenue) * 100 : null;
+      const prevRev = revenueByPeriod.get(yoyKey(period));
+      const yoyPct = b.revenue !== null && prevRev !== undefined && prevRev !== 0
+        ? ((b.revenue - prevRev) / prevRev) * 100
+        : null;
+      return {
+        period,
+        revenue: b.revenue,
+        grossMarginPct,
+        operatingMarginPct,
+        epsAfterTax: b.eps,
+        yoyPct
+      };
+    })
+    .slice(0, limit);
+
+  return c.json({ data: allRows });
 });
 
 // GET /api/v1/companies/:id/revenue?limit=24
@@ -3622,7 +3696,8 @@ app.get("/api/v1/companies/:id/revenue", async (c) => {
 });
 
 // GET /api/v1/companies/:id/chips?days=30
-// Returns: { data: { institutional: FinMindInstitutionalRow[], margin: FinMindMarginShortRow[] } }
+// Returns: { data: { foreign:{net30d}, trust:{net30d}, dealer:{net30d}, margin, short } }
+// Reshape from FinMind long-format institutional rows + raw margin/short rows.
 app.get("/api/v1/companies/:id/chips", async (c) => {
   const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
@@ -3639,7 +3714,38 @@ app.get("/api/v1/companies/:id/chips", async (c) => {
     client.getMarginShortSale(stockId, startDate, todayDate())
   ]);
 
-  return c.json({ data: { institutional, margin } });
+  // Sum (buy - sell) per investor category. FinMind uses 外陸資/投信/自營商 labels;
+  // 自營商 splits into 自營商(自行買賣) + 自營商(避險) — sum both into "dealer".
+  let foreignNet = 0, trustNet = 0, dealerNet = 0;
+  for (const row of institutional) {
+    const net = (row.buy ?? 0) - (row.sell ?? 0);
+    const name = row.name ?? "";
+    if (name.includes("外") || name.includes("陸")) foreignNet += net;
+    else if (name.includes("投信")) trustNet += net;
+    else if (name.includes("自營")) dealerNet += net;
+  }
+  // FinMind reports shares; convert to 張 (1 lot = 1000 shares).
+  const toLots = (shares: number) => Math.round(shares / 1000);
+
+  // Margin/short: take latest day's row and use today vs yesterday for change.
+  const sortedMargin = [...margin].sort((a, b) => b.date.localeCompare(a.date));
+  const latest = sortedMargin[0] ?? null;
+  const marginOut = latest
+    ? { balance: latest.MarginPurchaseToday ?? 0, change: (latest.MarginPurchaseToday ?? 0) - (latest.MarginPurchaseYesterday ?? 0) }
+    : null;
+  const shortOut = latest
+    ? { balance: latest.ShortSaleToday ?? 0, change: (latest.ShortSaleToday ?? 0) - (latest.ShortSaleYesterday ?? 0) }
+    : null;
+
+  return c.json({
+    data: {
+      foreign: { net30d: toLots(foreignNet) },
+      trust:   { net30d: toLots(trustNet) },
+      dealer:  { net30d: toLots(dealerNet) },
+      margin:  marginOut,
+      short:   shortOut
+    }
+  });
 });
 
 // GET /api/v1/companies/:id/dividend?years=5
@@ -3665,7 +3771,7 @@ app.get("/api/v1/companies/:id/dividend", async (c) => {
 // Cache TTL: 1800s.
 
 // GET /api/v1/companies/:id/announcements?days=30
-// Returns: { data: MaterialAnnouncementRow[] }
+// Returns: { data: { id, date, title, category, body? }[] } adapted from TWSE rows.
 app.get("/api/v1/companies/:id/announcements", async (c) => {
   const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
@@ -3677,7 +3783,24 @@ app.get("/api/v1/companies/:id/announcements", async (c) => {
 
   const rows = await getTwseOpenApiClient().getMaterialAnnouncements(stockId, days);
 
-  return c.json({ data: rows });
+  const items = rows.map((r, i) => {
+    const dateIso = r.Date ? r.Date.replace(/\//g, "-") : "";
+    const title = r.Title ?? "";
+    // Lightweight category guess from title keywords; falls back to "重大訊息".
+    let category = "重大訊息";
+    if (/股利|配息|配股/.test(title)) category = "股利";
+    else if (/財報|營收|EPS|損益|資產/.test(title)) category = "財報";
+    else if (/董事|監察|人事|總經理|董事長/.test(title)) category = "人事";
+    return {
+      id: `${stockId}-${dateIso}-${i}`,
+      date: dateIso,
+      title,
+      category,
+      body: r.Content ?? undefined
+    };
+  });
+
+  return c.json({ data: items });
 });
 
 const port = Number(process.env.PORT ?? 3001);
