@@ -24,16 +24,16 @@ import {
 
 // ── Fetch mock helpers ────────────────────────────────────────────────────────
 
-function makeFetchMock(responses: Array<{ status: number; body: unknown }>) {
+function makeFetchMock(responses: Array<{ status: number; body: unknown }>): typeof fetch {
   let call = 0;
-  return async (_url: string): Promise<Response> => {
+  return (async (_input: URL | RequestInfo, _init?: RequestInit): Promise<Response> => {
     const resp = responses[Math.min(call++, responses.length - 1)];
     return {
       ok: resp.status >= 200 && resp.status < 300,
       status: resp.status,
       json: async () => resp.body
     } as unknown as Response;
-  };
+  }) as typeof fetch;
 }
 
 function buildOkResponse<T>(data: T[]): { status: number; body: { status: number; msg: string; data: T[] } } {
@@ -109,7 +109,7 @@ test("T2: 429 retry — retries up to maxRetries then succeeds", async () => {
 
   let callCount = 0;
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (_url: string): Promise<Response> => {
+  globalThis.fetch = (async (_input: URL | RequestInfo, _init?: RequestInit): Promise<Response> => {
     callCount++;
     if (callCount < 3) {
       // First 2 calls: 429
@@ -121,7 +121,7 @@ test("T2: 429 retry — retries up to maxRetries then succeeds", async () => {
       status: 200,
       json: async () => ({ status: 200, msg: "Success", data: [SAMPLE_PRICE_ADJ_ROW] })
     } as unknown as Response;
-  };
+  }) as typeof fetch;
 
   try {
     const bars = await client.getStockPriceAdj("2330", "2026-01-01", "2026-04-30");
@@ -140,10 +140,10 @@ test("T3: token missing — returns empty array, does NOT throw", async () => {
   // Should NOT call fetch at all
   const originalFetch = globalThis.fetch;
   let fetchCalled = false;
-  globalThis.fetch = async () => {
+  globalThis.fetch = (async () => {
     fetchCalled = true;
     return {} as Response;
-  };
+  }) as typeof fetch;
 
   try {
     const bars = await client.getStockPriceAdj("2330", "2026-01-01", "2026-04-30");
@@ -178,14 +178,14 @@ test("T5: Redis cache miss-then-hit — first call fetches, second returns cache
 
   let fetchCallCount = 0;
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (_url: string): Promise<Response> => {
+  globalThis.fetch = (async (_input: URL | RequestInfo, _init?: RequestInit): Promise<Response> => {
     fetchCallCount++;
     return {
       ok: true,
       status: 200,
       json: async () => ({ status: 200, msg: "Success", data: [SAMPLE_PRICE_ADJ_ROW] })
     } as unknown as Response;
-  };
+  }) as typeof fetch;
 
   try {
     // First call: cache miss → fetch

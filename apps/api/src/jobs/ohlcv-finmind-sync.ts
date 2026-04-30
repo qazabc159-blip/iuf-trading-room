@@ -107,6 +107,10 @@ async function syncTicker(
   let barsUpserted = 0;
   try {
     const db = getDb();
+    if (!db) {
+      console.warn(`[ohlcv-finmind-sync] db unavailable, skipping upsert ticker=${ticker}`);
+      return { ticker, barsFromApi: bars.length, barsUpserted: 0, skipped: true };
+    }
 
     for (const bar of bars) {
       await db
