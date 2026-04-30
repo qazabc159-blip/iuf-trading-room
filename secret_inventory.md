@@ -1,6 +1,6 @@
 # Secret Inventory — IUF Trading Room
 Generated: 2026-04-24
-Last updated: 2026-04-30 (A2 redaction round)
+Last updated: 2026-04-30 (A2 redaction round + W7 P2 add)
 
 ## Local .env Files
 
@@ -49,6 +49,9 @@ Railway env vars are set in Railway dashboard (not stored in repo). Based on `.e
 | TV_WEBHOOK_TOKEN | Railway → api | 楊董 | Should rotate every 90 days | Must match TradingView alert config |
 | DEFAULT_WORKSPACE_SLUG | Railway → api | 楊董 | N/A | Not a secret |
 | NEXT_PUBLIC_API_BASE_URL | Railway → web | 楊董 | N/A on URL change | Public API base URL |
+| FINMIND_API_TOKEN | Railway → api | 楊董 | JWT — re-issue from FinMind dashboard if revoked | Activates FinMind live OHLCV/financials/chips/dividend; level=`register` so client falls back to TaiwanStockPrice (unadjusted). Set 2026-04-30. |
+| OPENAI_API_KEY | Railway → api/worker | 楊董 | Should rotate every 90 days | Powers daily_brief / review producer (`OPENAI_MODEL=gpt-5.4-mini` pinned). Live since P0.6 close 2026-04-25. |
+| MARKET_AGENT_HMAC_SECRET | Railway → api + Market Agent Host | 楊董 | Rotate jointly with Market Agent Host re-deploy | Outbound HMAC shared secret for Market Agent → api ingest push. Skeleton landed PR #40 (DRAFT). |
 
 > Note: Railway env vars cannot be enumerated programmatically without Railway CLI authenticated session. This list is derived from `.env.example` + `server.ts` env var reads. To get exact live list, run: `railway variables --service api` (requires RAILWAY_TOKEN auth).
 
