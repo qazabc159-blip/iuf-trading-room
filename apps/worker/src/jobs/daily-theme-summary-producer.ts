@@ -51,11 +51,18 @@ interface OpenAiResponse {
   choices: { message: { content: string } }[];
 }
 
-async function callOpenAi(messages: OpenAiMessage[]): Promise<string | null> {
+export type RouteReason = "api_key_missing" | "http_error" | "parse_error" | "success";
+
+interface OpenAiCallResult {
+  content: string | null;
+  routeReason: RouteReason;
+}
+
+async function callOpenAi(messages: OpenAiMessage[]): Promise<OpenAiCallResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[daily-theme-summary] OPENAI_API_KEY not set — using fallback template");
-    return null;
+    return { content: null, routeReason: "api_key_missing" };
   }
 
   try {
@@ -77,14 +84,19 @@ async function callOpenAi(messages: OpenAiMessage[]): Promise<string | null> {
     if (!res.ok) {
       const body = await res.text().catch(() => "(no body)");
       console.error(`[daily-theme-summary] OpenAI ${res.status}: ${body.slice(0, 200)}`);
-      return null;
+      return { content: null, routeReason: "http_error" };
     }
 
     const data = (await res.json()) as OpenAiResponse;
-    return data.choices[0]?.message?.content ?? null;
+    const content = data.choices[0]?.message?.content ?? null;
+    if (!content) {
+      console.error("[daily-theme-summary] OpenAI returned empty content");
+      return { content: null, routeReason: "parse_error" };
+    }
+    return { content, routeReason: "success" };
   } catch (e) {
     console.error("[daily-theme-summary] OpenAI call failed:", e instanceof Error ? e.message : e);
-    return null;
+    return { content: null, routeReason: "http_error" };
   }
 }
 
@@ -162,6 +174,8 @@ export interface DailyThemeSummaryResult {
   themeLabel: string;
   sourceEventCount: number;
   route: "openai" | "fallback_template" | "skipped_existing";
+  /** Why the route was chosen. "success" = OpenAI call returned content. */
+  routeReason: RouteReason | "skipped_existing";
   skipped: boolean;
   generatedBy: string;
 }
@@ -196,6 +210,7 @@ export async function runDailyThemeSummaryProducer(): Promise<DailyThemeSummaryR
       themeLabel: "",
       sourceEventCount: 0,
       route: "skipped_existing",
+      routeReason: "skipped_existing",
       skipped: true,
       generatedBy: "worker_cron"
     };
@@ -235,6 +250,7 @@ export async function runDailyThemeSummaryProducer(): Promise<DailyThemeSummaryR
   let summaryMd: string;
   let themeLabel: string;
   let route: "openai" | "fallback_template";
+  let routeReason: RouteReason;
   let generatedBy: string;
 
   const systemPrompt = [
@@ -256,16 +272,17 @@ export async function runDailyThemeSummaryProducer(): Promise<DailyThemeSummaryR
     "Generate the daily theme summary."
   ].join("\n");
 
-  const aiResponse = await callOpenAi([
+  const aiCallResult = await callOpenAi([
     { role: "system", content: systemPrompt },
     { role: "user", content: userContent }
   ]);
 
-  if (aiResponse) {
-    const parsed = parseAiResponse(aiResponse);
+  if (aiCallResult.content) {
+    const parsed = parseAiResponse(aiCallResult.content);
     summaryMd = parsed.summaryMd;
     themeLabel = parsed.themeLabel;
     route = "openai";
+    routeReason = "success";
     generatedBy = `worker_cron:${OPENAI_MODEL}`;
   } else {
     const fallback = buildFallbackSummary({
@@ -277,6 +294,7 @@ export async function runDailyThemeSummaryProducer(): Promise<DailyThemeSummaryR
     summaryMd = fallback.summaryMd;
     themeLabel = fallback.themeLabel;
     route = "fallback_template";
+    routeReason = aiCallResult.routeReason;
     generatedBy = "worker_cron:fallback_template";
   }
 
@@ -308,6 +326,7 @@ export async function runDailyThemeSummaryProducer(): Promise<DailyThemeSummaryR
     themeLabel,
     sourceEventCount,
     route,
+    routeReason,
     skipped: false,
     generatedBy
   };
