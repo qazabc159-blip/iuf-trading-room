@@ -315,6 +315,17 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - Mike → 0020 migration audit lane（不變）
 - Jim → halted on new frontend scope（deprecated branch dispositioned 上方）
 
+### Cycle 6 (03:58) — Codex 仍在 active edit B12，working tree mtime 03:33（剛 25min 前）
+- `git fetch origin main`：no new commit since `3e16c14` (Cycle 5 board commit)；Codex `633d00e` 之後仍無新 src commit。
+- `git status`：同一 5 files 仍 modified（radar-lab.ts / lab/page.tsx / LabClient.tsx / [bundleId]/page.tsx / [bundleId]/LabBundleDetailClient.tsx）。
+- **mtime 證據 Codex 仍活躍**：`radar-lab.ts` 03:29、`lab/page.tsx` 03:30、`LabClient.tsx` 03:33。距離 cycle 開頭只 25min，**不是 stuck**，是 mid/large scope（+247/-110、5 files）正常編輯時間。
+- Bonus check：`apps/web/lib/radar-api.ts` 已有 `IS_PROD` guard（line 45/68/98/119/149/166），不在 B12 fix scope。
+- Stop-line scan **PASS** — diff 全在 `apps/web/{app,lib}/**` Codex lane。
+- No new PR；唯一 open PR #39 是 Jason `jason/0020-dedup-companies-unique-2026-04-30` DRAFT（destructive，等楊董 ACK，不是這 cycle scope）。
+- Bruce regression sweep 不重派（沒有新 commit；上次 sweep `a23e9c9a0ad8585b7` 已涵蓋 B12 source-pattern instructions）。
+- Jason backend contract 5 條無變動，沒有新 BLOCKED 升級。
+- Yellow/Red: 無觸發。
+
 ### Cycle 5 (03:38) — Codex B12 fix in-flight (uncommitted local WIP)
 - `git fetch origin main`：no new commit since `633d00e` @ 02:48 (Elva commits 之後是 board update only).
 - **`git status` 發現 Codex 已有 uncommitted local edits**: `apps/web/app/lab/LabClient.tsx`, `apps/web/app/lab/[bundleId]/LabBundleDetailClient.tsx`, `apps/web/app/lab/[bundleId]/page.tsx`, `apps/web/app/lab/page.tsx`, `apps/web/lib/radar-lab.ts`（5 files, +247/-110）。
