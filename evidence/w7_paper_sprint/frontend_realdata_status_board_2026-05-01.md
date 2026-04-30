@@ -313,6 +313,14 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - Mike → 0020 migration audit lane（不變）
 - Jim → halted on new frontend scope（deprecated branch dispositioned 上方）
 
+### Cycle 3 (02:55) — Codex B10/B11 fix landed + Bruce regression dispatched
+- Read board / `git fetch origin main`. New commit: `633d00e fix(web): fail closed on production quote mocks` — Codex 02:48 cycle.
+- **B10/B11 source-level verify (Elva 02:55)**: `apps/web/lib/radar-uncovered.ts` 加 `IS_PROD` guard + `shouldAllowMockFallback()` → production catch path 改 throw `productionFallbackError`；`apps/web/lib/use-readonly-quote.ts` `IS_PROD` guard 加在 line 142/173，production path 設 `endpointUnavailable: true` + `error` 不再 fallback `mockBidAsk`/`mockTicks`。修法看起來正確 — **本輪 Elva source-level mark RESOLVED；待 Bruce regression sweep 二次確認**。
+- Stop-line scan **PASS** — `633d00e` 只動 `apps/web/lib/**`，全在 Codex lane。
+- **Dispatch**: Bruce regression sweep（Cycle 3）— 跑 sweep A-E + 二次 verify B10/B11；output 寫到 board `Backend Ready` + 任何新 FAIL 寫 B12+。
+- 無 mid/large PR → Pete 持續 standby。
+- Yellow/Red: 無觸發。
+
 ### Cycle 2 (02:34) — Codex 安靜期 / Bruce sweep 未自動續跑
 - Read board / `git fetch origin main` → no new commits since `bc8e94d` (Elva Cycle 1 board update at 02:11)。Codex 最近 commit 仍是 `e0f92df` @ 02:06。Codex ~30 min 無動作 — 可能在做大改 or 暫停。
 - 開啟 PR list（`gh pr list --state open`）：只有 PR #39（Jason 0020 dedup destructive migration DRAFT，Mike lane，尚未 ready）。**無 Codex mid/large PR**。
