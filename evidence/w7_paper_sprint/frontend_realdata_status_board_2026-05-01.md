@@ -82,7 +82,7 @@ Initial high-risk surfaces:
 
 - `/briefs`: DONE in Codex cycle 01:54; now binds `GET /api/v1/briefs` and renders LIVE / EMPTY / BLOCKED.
 - `/reviews`: DONE in Codex cycle 01:56; now binds `GET /api/v1/reviews` as read-only ledger and marks action queue BLOCKED.
-- `/drafts` and `/admin/content-drafts`: currently import mock drafts/audit.
+- `/drafts` and `/admin/content-drafts`: DONE in Codex cycle 02:00; now bind `GET /api/v1/content-drafts` and remove local-only audit/action mocks.
 - `/quote`: currently uses mock bidask/ticks.
 - `/companies/[symbol]`: source/tick/derivatives mock feed removed in Codex cycle 01:49; remaining company-detail mock risk is `toCompanyDetailView` fallback fields.
 - `DerivativesPanel`: BLOCKED until production endpoint contract exists.
@@ -185,6 +185,34 @@ Files:
 Endpoints:
 
 - `GET /api/v1/reviews`
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+
+### 2026-05-01 02:00 Taipei
+
+Completed:
+
+- Converted `/drafts`, `/admin/content-drafts`, and `/admin/content-drafts/[id]` from local `mockDrafts` / `mockDraftAudit` to production `GET /api/v1/content-drafts`.
+- Added shared content draft view helpers for payload title/body/status rendering.
+- Removed local-only approve/reject/reassign action simulation from the detail page. Persisted actions now render BLOCKED until a deliberate UI mutation slice is scheduled.
+- Kept role/permission behavior on the API side: 401/403 surfaces as BLOCKED with owner/detail instead of fake draft data.
+
+Files:
+
+- `apps/web/app/drafts/page.tsx`
+- `apps/web/app/admin/content-drafts/page.tsx`
+- `apps/web/app/admin/content-drafts/[id]/page.tsx`
+- `apps/web/app/admin/content-drafts/[id]/ContentDraftDetailClient.tsx` (deleted)
+- `apps/web/lib/content-draft-view.ts`
+- `apps/web/app/globals.css`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `GET /api/v1/content-drafts`
 
 Tests:
 
