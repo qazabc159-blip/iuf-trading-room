@@ -7,7 +7,6 @@
 // OHLCV is pre-fetched server-side (fail-open: empty bars on error).
 
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
@@ -97,59 +96,23 @@ export default async function CompanyDetailPage({
           gap: 20,
         }}>
           {/* [01] Company Info */}
-          <Suspense fallback={
-            <div className="panel hud-frame">
-              <span className="dim" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>LOADING INFO…</span>
-            </div>
-          }>
-            <CompanyInfoPanel company={company} />
-          </Suspense>
+          <CompanyInfoPanel company={company} />
 
           {/* [04] Chips */}
-          <Suspense fallback={
-            <div className="panel hud-frame">
-              <span className="dim" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>LOADING CHIPS…</span>
-            </div>
-          }>
-            <ChipsPanel companyId={company.id} />
-          </Suspense>
+          <ChipsPanel companyId={company.id} />
         </div>
 
         {/* [02] K-line chart — full width */}
-        <Suspense fallback={
-          <div className="panel hud-frame">
-            <span className="dim" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>LOADING CHART…</span>
-          </div>
-        }>
-          <OhlcvCandlestickChart bars={bars} symbol={company.ticker} />
-        </Suspense>
+        <OhlcvCandlestickChart bars={bars} symbol={company.ticker} />
 
         {/* [03] Financials — full width */}
-        <Suspense fallback={
-          <div className="panel hud-frame">
-            <span className="dim" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>LOADING FINANCIALS…</span>
-          </div>
-        }>
-          <FinancialsPanel companyId={company.id} />
-        </Suspense>
+        <FinancialsPanel companyId={company.id} />
 
         {/* [05] Announcements — full width */}
-        <Suspense fallback={
-          <div className="panel hud-frame">
-            <span className="dim" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>LOADING ANNOUNCEMENTS…</span>
-          </div>
-        }>
-          <AnnouncementsPanel companyId={company.id} />
-        </Suspense>
+        <AnnouncementsPanel companyId={company.id} />
 
         {/* [06] Paper Order — full width */}
-        <Suspense fallback={
-          <div className="panel hud-frame">
-            <span className="dim" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>LOADING ORDER PANEL…</span>
-          </div>
-        }>
-          <PaperOrderPanel symbol={company.ticker} />
-        </Suspense>
+        <PaperOrderPanel symbol={company.ticker} />
 
       </div>
     </PageFrame>

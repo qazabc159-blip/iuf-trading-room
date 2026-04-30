@@ -78,12 +78,26 @@ type Envelope<T> = {
 };
 
 async function request<T>(path: string, init?: RequestInit) {
+  // SSR (server component) calls don't get the browser's cookie automatically.
+  // Forward the incoming request's Cookie header so authenticated endpoints (e.g. /companies) work.
+  let ssrCookie: string | null = null;
+  if (typeof window === "undefined") {
+    try {
+      const { headers } = await import("next/headers");
+      const h = await headers();
+      ssrCookie = h.get("cookie");
+    } catch {
+      // Outside a request context (e.g. build time) — leave cookie unset.
+    }
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     ...init,
     headers: {
       "Content-Type": "application/json",
       "x-workspace-slug": WORKSPACE_SLUG,
+      ...(ssrCookie ? { Cookie: ssrCookie } : {}),
       ...(init?.headers ?? {})
     }
   });
