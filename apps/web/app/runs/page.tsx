@@ -14,7 +14,7 @@ export default async function RunsPage() {
   const active = runs.filter((run) => run.state === "ACTIVE").length;
   const archived = runs.filter((run) => run.state === "ARCHIVED").length;
   const failed = runs.filter((run) => run.state === "FAILED").length;
-  const avgConf = runs.reduce((sum, run) => sum + run.avgConfidence, 0) / runs.length;
+  const avgConf = runs.length ? runs.reduce((sum, run) => sum + run.avgConfidence, 0) / runs.length : 0;
 
   return (
     <PageFrame code="05" title="Runs" sub="策略歷史" note="[05] RUNS · run ledger in RADAR skin · detail keeps lineage">

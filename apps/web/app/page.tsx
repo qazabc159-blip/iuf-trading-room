@@ -118,7 +118,7 @@ export default async function DashboardPage() {
     api.signals(),
     api.quotes(),
   ]);
-  const activeRun = runs.find((r) => r.state === "ACTIVE") ?? runs[0];
+  const activeRun = runs.find((r) => r.state === "ACTIVE") ?? runs[0] ?? null;
   const openIdeas = ideas.slice(0, 5);
   const tape = signals.slice(0, 7);
 
@@ -219,7 +219,7 @@ export default async function DashboardPage() {
             <HeatMap themes={themes} />
           </Panel>
 
-          <Panel code="EOD-NXT" title="14:32:08 TPE" sub="NEXT ACTIONS" right={activeRun.id}>
+          <Panel code="EOD-NXT" title="14:32:08 TPE" sub="NEXT ACTIONS" right={activeRun?.id ?? "—"}>
             {["EOD-SNAP · T+18m · queued", "BROKER-REC · T+24m · queued", "WEEKLY-BRF · DUE SUN", "RUN-219 · MON 08:55"].map((line) => (
               <div className="row telex-row" style={{ gridTemplateColumns: "1fr" }} key={line}>
                 <span className="tg">{line}</span>

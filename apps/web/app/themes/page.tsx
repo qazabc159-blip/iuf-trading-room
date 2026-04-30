@@ -7,7 +7,7 @@ export default async function ThemesPage() {
   const themes = await api.themes();
   const locked = themes.filter((t) => t.lockState === "LOCKED").length;
   const accel = themes.filter((t) => t.momentum === "ACCEL").length;
-  const avgHeat = themes.reduce((sum, t) => sum + t.heat, 0) / themes.length;
+  const avgHeat = themes.length ? themes.reduce((sum, t) => sum + t.heat, 0) / themes.length : 0;
   const dHeat = themes.reduce((sum, t) => sum + t.dHeat, 0);
 
   return (
