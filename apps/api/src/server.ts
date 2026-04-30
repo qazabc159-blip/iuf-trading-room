@@ -3548,6 +3548,138 @@ app.get("/internal/market/health", async (c) => {
   return c.json({ data: health });
 });
 
+// ── W7 H1: FinMind financial data routes (/api/v1/companies/:id/financials etc.) ────────
+//
+// All routes require session cookie auth (inside /api/v1/* middleware).
+// Token read from FINMIND_API_TOKEN env — never logged or returned in response.
+// Fallback: empty array when token missing (no throw).
+// Cache TTLs: OHLCV=600s / financials=3600s / chips=1800s / dividends=86400s.
+
+import { getFinMindClient } from "./data-sources/finmind-client.js";
+import { getTwseOpenApiClient } from "./data-sources/twse-openapi-client.js";
+
+// Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
+function companyIdToTicker(ticker: string): string {
+  // Taiwan stocks: ticker is already the FinMind data_id (e.g. "2330")
+  return ticker;
+}
+
+// Date helpers for FinMind range params
+function nYearsAgoDate(years: number): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - years);
+  return d.toISOString().slice(0, 10);
+}
+
+function nMonthsAgoDate(months: number): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return d.toISOString().slice(0, 10);
+}
+
+function nDaysAgoDate(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+const todayDate = () => new Date().toISOString().slice(0, 10);
+
+// GET /api/v1/companies/:id/financials?period=Q&limit=8
+// Returns: { data: FinMindFinancialStatementsRow[] } grouped by quarter
+app.get("/api/v1/companies/:id/financials", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const limit = Math.max(1, Math.min(32, Number(c.req.query("limit") ?? "8")));
+  // 8 quarters = 2 years
+  const yearsBack = Math.ceil(limit / 4) + 1;
+  const startDate = nYearsAgoDate(yearsBack);
+  const stockId = companyIdToTicker(company.ticker);
+
+  const rows = await getFinMindClient().getFinancialStatements(stockId, startDate, todayDate());
+
+  return c.json({ data: rows });
+});
+
+// GET /api/v1/companies/:id/revenue?limit=24
+// Returns: { data: FinMindMonthRevenueRow[] } up to limit months
+app.get("/api/v1/companies/:id/revenue", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const limit = Math.max(1, Math.min(60, Number(c.req.query("limit") ?? "24")));
+  const startDate = nMonthsAgoDate(limit + 1);
+  const stockId = companyIdToTicker(company.ticker);
+
+  const rows = await getFinMindClient().getMonthRevenue(stockId, startDate, todayDate());
+
+  return c.json({ data: rows });
+});
+
+// GET /api/v1/companies/:id/chips?days=30
+// Returns: { data: { institutional: FinMindInstitutionalRow[], margin: FinMindMarginShortRow[] } }
+app.get("/api/v1/companies/:id/chips", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const days = Math.max(1, Math.min(365, Number(c.req.query("days") ?? "30")));
+  const startDate = nDaysAgoDate(days);
+  const stockId = companyIdToTicker(company.ticker);
+  const client = getFinMindClient();
+
+  const [institutional, margin] = await Promise.all([
+    client.getInstitutionalInvestors(stockId, startDate, todayDate()),
+    client.getMarginShortSale(stockId, startDate, todayDate())
+  ]);
+
+  return c.json({ data: { institutional, margin } });
+});
+
+// GET /api/v1/companies/:id/dividend?years=5
+// Returns: { data: FinMindDividendRow[] }
+app.get("/api/v1/companies/:id/dividend", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const years = Math.max(1, Math.min(20, Number(c.req.query("years") ?? "5")));
+  const startDate = nYearsAgoDate(years);
+  const stockId = companyIdToTicker(company.ticker);
+
+  const rows = await getFinMindClient().getDividend(stockId, startDate, todayDate());
+
+  return c.json({ data: rows });
+});
+
+// ── W7 H4: TWSE OpenAPI routes (/api/v1/companies/:id/announcements) ──────────
+//
+// No auth required from TWSE — but route still requires IUF session cookie.
+// Cache TTL: 1800s.
+
+// GET /api/v1/companies/:id/announcements?days=30
+// Returns: { data: MaterialAnnouncementRow[] }
+app.get("/api/v1/companies/:id/announcements", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const days = Math.max(1, Math.min(365, Number(c.req.query("days") ?? "30")));
+  const stockId = companyIdToTicker(company.ticker);
+
+  const rows = await getTwseOpenApiClient().getMaterialAnnouncements(stockId, days);
+
+  return c.json({ data: rows });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
