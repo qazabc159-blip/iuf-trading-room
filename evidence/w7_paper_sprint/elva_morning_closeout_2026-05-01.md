@@ -1,12 +1,12 @@
 # Elva Morning Closeout — 2026-05-01
 
-**Window**: 01:42 → 07:00 Taipei (overnight autonomous run, 13 cycles × 20min)
+**Window**: 01:42 → 07:00 Taipei (overnight autonomous run, ~5h 18min, 14 × 20min cycles + closeout)
 **Operator**: 楊董 (asleep)
 **Lane configuration**: Codex frontend real-data owner; Elva orchestrate + dispatch + governance.
 **Stop-lines status**: 0 violations.
 **Yellow / Red events**: 0 / 0.
 
-Board live-coordination: `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` (full 12-cycle log).
+Board live-coordination: `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` (full Cycle 0 → Cycle 14 log).
 
 ---
 
@@ -24,17 +24,19 @@ Board live-coordination: `evidence/w7_paper_sprint/frontend_realdata_status_boar
 | `e0f92df` | docs(frontend): record web deploy success |
 | `633d00e` | fix(web): fail closed on production quote mocks (B10/B11 RESOLVED) |
 
-### Board governance commits (11 — Elva authored, board only, no src touch)
-- Cycles 1-11 board updates: `bc8e94d`, `efa7a40`, `de8575f`, `c7d9957`, `3e16c14`, `9b73b91`, `6d1cfc2`, `29e9705`, `d6cb476`, `aecbc22`, `95dfaf4`.
+### Board governance commits (Elva authored, board + closeout doc only, no src touch)
+- Cycles 1-11 board updates (11): `bc8e94d`, `efa7a40`, `de8575f`, `c7d9957`, `3e16c14`, `9b73b91`, `6d1cfc2`, `29e9705`, `d6cb476`, `aecbc22`, `95dfaf4`.
+- Cycle 12 closeout doc draft + board: `1f978da`.
+- Cycles 13-14 will add 1-2 more polish/finalize commits.
 
-**Total**: 19 commits on `main`. **0** destructive merges. **0** stop-line violations. **0** force-pushes. **0** secret rotations.
+**Total** (src + governance): 8 + 12 = 20 commits on `main` at draft time. **0** destructive merges. **0** stop-line violations. **0** force-pushes. **0** secret rotations. **0** PR merges (PR #39 still DRAFT, never promoted).
 
 ---
 
 ## 2. Remaining blockers + B12 carry-over
 
 ### B12 (HIGH) — Codex working tree uncommitted, fix pattern verified
-Codex worked on `radar-lab.ts` + 4 `app/lab/**` files between 03:14-03:33 (mtime evidence), then went idle ~145min as of Cycle 12. Working tree has:
+Codex worked on `radar-lab.ts` + 4 `app/lab/**` files between 03:29-03:34 (mtime evidence — earliest `radar-lab.ts` 03:29:53, latest `LabClient.tsx` 03:33:55), then went idle. Idle duration at closeout time: ~165min (no edits since 03:33). Working tree has:
 
 ```
  M apps/web/app/lab/LabClient.tsx
@@ -96,19 +98,37 @@ Secondary (if cycles allow):
 
 No production downtime. No agent crossed stop-line. No destructive ACK requested. No Railway secret access. No live submit risk. No 0020 promotion attempted. No auth/session failure. No real order risk. No secret leak. No DB destructive action.
 
-The single deviation from ideal flow is Codex's 145min idle on B12 WIP. Per the 20-min cycle protocol's classification, this is a **rhythm issue**, not a production-risk issue — checkpoint hint was posted Cycle 8, no further escalation.
+The single deviation from ideal flow is Codex's ~165min idle on B12 WIP (mtime 03:33 → closeout). Per the 20-min cycle protocol's classification, this is a **rhythm issue**, not a production-risk issue — Codex's already-deployed B10/B11 fix (`633d00e`) is the safety net; B12 is polish-not-hotfix. Checkpoint hint posted Cycle 8, no further escalation.
 
 ---
 
-## Appendix: 12-cycle board log pointer
+## Appendix: full cycle board log pointer
 
-Full overnight cycle log lives in `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` under the "Elva Notes" section, Cycle 0 → Cycle 12 (each cycle entry has read-state, dispatch decision, stop-line verdict, Yellow/Red status).
+Full overnight cycle log lives in `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` under the "Elva Notes" section, Cycle 0 → Cycle 14 (each cycle entry has read-state, dispatch decision, stop-line verdict, Yellow/Red status).
 
-Closeout doc commit hash will appear in next board entry. Carry-over to next session via `handoff/session_handoff.md` (separate update).
+Carry-over to next session via `handoff/session_handoff.md` (Cycle 13/14 update).
+
+### White-shift quick-start command sequence (B12 Option 1: pick up Codex WIP)
+```bash
+git status --short                          # confirm 5 files M
+git diff apps/web/lib/radar-lab.ts          # review fix pattern
+git diff apps/web/app/lab/                  # review consumer call-site changes
+pnpm.cmd --filter @iuf-trading-room/web typecheck
+pnpm.cmd --filter @iuf-trading-room/web build
+git add apps/web/lib/radar-lab.ts apps/web/app/lab/
+git commit -m "fix(web): fail closed on production lab mocks (B12, picked up from Codex WIP)"
+git push origin main
+# then dispatch verifier-release-bruce for B5-B12 cumulative regression
+```
+
+### White-shift quick-start command sequence (B12 Option 2: wait for Codex)
+- Ping Codex first thing; give 1 cycle (20-30min) to commit autonomously.
+- If Codex commits → Bruce regression → deploy.
+- If Codex still silent after 1 ping cycle → fall back to Option 1.
 
 ---
 
 **Drafted at**: Cycle 12 ~05:58 Taipei
-**Polish pass**: Cycle 13 ~06:18 Taipei (planned)
+**Polish pass DONE**: Cycle 13 ~06:18 Taipei
 **Final**: Cycle 14 ~06:38 Taipei (planned)
 **Operator-facing summary**: ~07:00 Taipei conversation response (next loop turn).
