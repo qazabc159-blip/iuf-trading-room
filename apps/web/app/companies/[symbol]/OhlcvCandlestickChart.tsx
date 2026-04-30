@@ -24,7 +24,7 @@ import {
   type IChartApi,
   type ISeriesApi,
   type SeriesType,
-  type UTCTimestamp,
+  type Time,
 } from "lightweight-charts";
 import type { OhlcvBar } from "@/lib/api";
 
@@ -57,7 +57,7 @@ function sourceBadgeLabel(bars: OhlcvBar[]): string {
   if (src === "kgi") return "KGI-ORIGIN";
   if (src === "mock") return "MOCK";
   if (src === "tej") return "TEJ";
-  return src.toUpperCase();
+  return "UNKNOWN";
 }
 
 function cssVar(name: string): string {
@@ -118,14 +118,14 @@ export function OhlcvCandlestickChart({ bars }: { bars: OhlcvBar[] }) {
 
     if (bars.length > 0) {
       const candleData = bars.map((b) => ({
-        time: b.dt as UTCTimestamp,
+        time: b.dt as Time,
         open: b.open,
         high: b.high,
         low: b.low,
         close: b.close,
       }));
       const volumeData = bars.map((b) => ({
-        time: b.dt as UTCTimestamp,
+        time: b.dt as Time,
         value: b.volume,
         color: b.close >= b.open
           ? (cssVar("--tw-up-faint") || "rgba(230,57,70,0.2)")
