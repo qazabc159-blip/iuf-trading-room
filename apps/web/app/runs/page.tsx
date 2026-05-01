@@ -116,6 +116,7 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
 
 export default async function RunsPage() {
   const result = await loadRuns();
+  const statsAvailable = result.state !== "BLOCKED";
   const counts = qualityPrimary(result.data);
   const totals = result.data.items.reduce(
     (acc, run) => {
@@ -140,12 +141,12 @@ export default async function RunsPage() {
       <MetricStrip
         cells={[
           { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "RUNS", value: result.data.total },
-          { label: "ALLOW", value: totals.allow, tone: "up" },
-          { label: "REVIEW", value: totals.review, tone: "gold" },
-          { label: "BLOCK", value: totals.block, tone: "down" },
-          { label: "READY", value: counts.ready, tone: counts.ready > 0 ? "up" : "muted" },
-          { label: "TOP CONF", value: result.data.items.length ? percent(avgConfidence) : "--" },
+          { label: "RUNS", value: statsAvailable ? result.data.total : "--" },
+          { label: "ALLOW", value: statsAvailable ? totals.allow : "--", tone: "up" },
+          { label: "REVIEW", value: statsAvailable ? totals.review : "--", tone: "gold" },
+          { label: "BLOCK", value: statsAvailable ? totals.block : "--", tone: "down" },
+          { label: "READY", value: statsAvailable ? counts.ready : "--", tone: statsAvailable && counts.ready > 0 ? "up" : "muted" },
+          { label: "TOP CONF", value: statsAvailable && result.data.items.length ? percent(avgConfidence) : "--" },
         ]}
         columns={7}
       />
@@ -189,7 +190,9 @@ export default async function RunsPage() {
       <Panel code="RUN-QA" title="4-STATE AUDIT" sub="endpoint truth / no silent mock" right={result.source}>
         <div className="tg soft" style={{ display: "grid", gap: 6, paddingBottom: 12 }}>
           <span>source: {result.source}</span>
-          <span>quality: ready {counts.ready} / reference {counts.reference} / insufficient {counts.insufficient}</span>
+          <span>
+            quality: {statsAvailable ? `ready ${counts.ready} / reference ${counts.reference} / insufficient ${counts.insufficient}` : "blocked until strategy run source is live"}
+          </span>
           <span>write policy: list/detail only; strategy run execute and order submit remain outside this page.</span>
         </div>
       </Panel>

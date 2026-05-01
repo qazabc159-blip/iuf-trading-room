@@ -144,6 +144,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
   const id = decodeURIComponent(encodedId);
   const result = await loadDetail(id);
   const run = result.data.run;
+  const runAvailable = run !== null;
   const summary = run?.summary ?? {
     total: 0,
     allow: 0,
@@ -156,6 +157,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
   };
   const outputs = run?.outputs ?? [];
   const lineage = buildLineage(run, result.data.runs);
+  const unavailableReason = result.state === "LIVE" ? "Strategy run payload is unavailable." : result.reason;
 
   return (
     <PageFrame
@@ -167,11 +169,11 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
       <MetricStrip
         cells={[
           { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "TOTAL", value: summary.total },
-          { label: "ALLOW", value: summary.allow, tone: "up" },
-          { label: "REVIEW", value: summary.review, tone: "gold" },
-          { label: "BLOCK", value: summary.block, tone: "down" },
-          { label: "READY", value: summary.quality.strategyReady, tone: summary.quality.strategyReady > 0 ? "up" : "muted" },
+          { label: "TOTAL", value: runAvailable ? summary.total : "--" },
+          { label: "ALLOW", value: runAvailable ? summary.allow : "--", tone: "up" },
+          { label: "REVIEW", value: runAvailable ? summary.review : "--", tone: "gold" },
+          { label: "BLOCK", value: runAvailable ? summary.block : "--", tone: "down" },
+          { label: "READY", value: runAvailable ? summary.quality.strategyReady : "--", tone: runAvailable && summary.quality.strategyReady > 0 ? "up" : "muted" },
         ]}
         columns={6}
       />
@@ -193,13 +195,18 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
             )}
           </Panel>
 
-          <Panel code="RUN-IDEA" title="OUTPUTS" sub="company detail links only" right={`${outputs.length} ROWS`}>
-            {outputs.length === 0 && (
+          <Panel code="RUN-IDEA" title="OUTPUTS" sub="company detail links only" right={runAvailable ? `${outputs.length} ROWS` : result.state}>
+            {!runAvailable && (
+              <div className="terminal-note">
+                <span className={`tg ${stateTone(result.state)}`}>{result.state}</span> {unavailableReason}
+              </div>
+            )}
+            {runAvailable && outputs.length === 0 && (
               <div className="terminal-note">
                 <span className="tg gold">EMPTY</span> This run has no output rows.
               </div>
             )}
-            {outputs.map((idea) => (
+            {runAvailable && outputs.map((idea) => (
               <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
                 <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
                 <span className={`tg ${directionTone(idea.direction)}`}>{idea.direction}</span>
@@ -216,33 +223,43 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
 
         <div>
           <Panel code="RUN-OUT" title="OUTCOME SPLIT" sub="summary from API" right={run?.id ?? "BLOCKED"}>
-            {[
-              ["ALLOW", summary.allow, "up"],
-              ["REVIEW", summary.review, "gold"],
-              ["BLOCK", summary.block, "down"],
-              ["BULLISH", summary.bullish, "up"],
-              ["BEARISH", summary.bearish, "down"],
-              ["NEUTRAL", summary.neutral, "muted"],
-            ].map(([label, value, tone]) => (
-              <div style={{ padding: "10px 0", borderBottom: "1px solid var(--night-rule)" }} key={label}>
-                <div className="tg" style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>{label}</span><span className={String(tone)}>{value}</span>
-                </div>
-                <div className="bar" style={{ marginTop: 8 }}>
-                  <span style={{ width: barWidth(Number(value), Math.max(1, summary.total)), background: tone === "gold" ? "var(--gold-bright)" : tone === "up" ? "var(--tw-up-bright)" : tone === "down" ? "var(--tw-dn-bright)" : "var(--night-mid)" }} />
-                </div>
+            {!runAvailable && (
+              <div className="terminal-note">
+                <span className={`tg ${stateTone(result.state)}`}>{result.state}</span> {unavailableReason}
               </div>
-            ))}
-            <div className="tg soft" style={{ display: "grid", gap: 6, padding: "12px 0" }}>
-              <span>generated: {formatDateTime(run?.generatedAt)}</span>
-              <span>avg confidence: {outputs.length ? percent(outputs.reduce((sum, item) => sum + item.confidence, 0) / outputs.length) : "--"}</span>
-              <span>write policy: execute/order controls hidden until explicit backend and risk gate approval.</span>
-            </div>
+            )}
+            {runAvailable && (
+              <>
+                {[
+                  ["ALLOW", summary.allow, "up"],
+                  ["REVIEW", summary.review, "gold"],
+                  ["BLOCK", summary.block, "down"],
+                  ["BULLISH", summary.bullish, "up"],
+                  ["BEARISH", summary.bearish, "down"],
+                  ["NEUTRAL", summary.neutral, "muted"],
+                ].map(([label, value, tone]) => (
+                  <div style={{ padding: "10px 0", borderBottom: "1px solid var(--night-rule)" }} key={label}>
+                    <div className="tg" style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>{label}</span><span className={String(tone)}>{value}</span>
+                    </div>
+                    <div className="bar" style={{ marginTop: 8 }}>
+                      <span style={{ width: barWidth(Number(value), Math.max(1, summary.total)), background: tone === "gold" ? "var(--gold-bright)" : tone === "up" ? "var(--tw-up-bright)" : tone === "down" ? "var(--tw-dn-bright)" : "var(--night-mid)" }} />
+                    </div>
+                  </div>
+                ))}
+                <div className="tg soft" style={{ display: "grid", gap: 6, padding: "12px 0" }}>
+                  <span>generated: {formatDateTime(run.generatedAt)}</span>
+                  <span>avg confidence: {outputs.length ? percent(outputs.reduce((sum, item) => sum + item.confidence, 0) / outputs.length) : "--"}</span>
+                  <span>write policy: execute/order controls hidden until explicit backend and risk gate approval.</span>
+                </div>
+              </>
+            )}
           </Panel>
 
           <Panel code="RUN-LIN" title="LINEAGE" sub="newer / older run chain" right="NAV">
-            {lineage.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No lineage available.</div>}
-            {lineage.map(({ label, item }) => (
+            {!runAvailable && <div className="terminal-note"><span className={`tg ${stateTone(result.state)}`}>{result.state}</span> {unavailableReason}</div>}
+            {runAvailable && lineage.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No lineage available.</div>}
+            {runAvailable && lineage.map(({ label, item }) => (
               <div className="row telex-row" style={{ gridTemplateColumns: "70px 1fr" }} key={label}>
                 <span className="tg gold">{label}</span>
                 {item ? (

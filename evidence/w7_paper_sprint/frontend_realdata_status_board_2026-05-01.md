@@ -1171,3 +1171,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: when the themes endpoint is BLOCKED, TOTAL/ATTACK/DEFENSE/CORE/OBS/P1 KPI cells show `--` instead of calculating zeros from the fail-closed empty array. True EMPTY endpoint responses can still show real zero counts with the EMPTY reason.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
+### Codex cycle (2026-05-01 16:09 Taipei) - strategy run pages no longer render blocked ledgers as zero rows
+- Files changed: updated `apps/web/app/runs/page.tsx` and `apps/web/app/runs/[id]/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Run list/detail still read `GET /api/v1/strategy/runs?decisionMode=paper&sort=created_at` and `GET /api/v1/strategy/runs/:id`.
+- Behavior change: BLOCKED strategy run sources now show `--` or BLOCKED reason for summary/output/lineage panels instead of fallback zero totals, empty output rows, or fake quality counts. True EMPTY run payloads still show EMPTY with reason.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. Pages remain read-only; no broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
