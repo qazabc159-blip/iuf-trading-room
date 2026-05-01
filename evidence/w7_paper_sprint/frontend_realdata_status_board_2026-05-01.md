@@ -4,6 +4,65 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 18:03 Taipei — Elva cadence: 68h sprint Block 1, 20min #6 — P1-10 demo contingency plan drafted (failure-mode playbook)
+
+**Codex burst since 17:43 (0 commits)**: Codex quiet — likely chewing through Contract 4 (P1-3) which is heavier (~980 LOC, 4 routes, 1 migration, frontend PROMOTE wiring).
+
+**Verify clean**:
+| Check | Result |
+|---|---|
+| New Codex commits since `cbadbb9` | 0 (digesting Contract 4) |
+| Stop-line grep on apps/web | **0 hits** |
+| Hard rule status | All 8 most recent fix(web) + 2 feat(web) commits compliant |
+
+**Cycle deliverable — P1-10 demo contingency / backup plan**:
+- File: `evidence/w7_paper_sprint/paper_e2e_demo_contingency_plan_2026-05-04.md`
+- 10 failure categories F1-F10 mapped to severity (DEMO STOP / PARTIAL / RECOVERABLE)
+- 8 hard-stop conditions HS1-HS8 (idempotency fail / kill bypass / pool exhaust / regression / stop-line hit / state non-determinism / 楊董 veto)
+- 3 partial-demo modes:
+  - Mode A: read-only walkthrough (no submit) → ~10min
+  - Mode B: submit + cancel before fill (mini-cycle) → ~15min
+  - Mode C: submit on alt-symbol (0050 pivot) → ~25min full
+- Pre-open monitoring script (Bruce-owned, 5/3 author) with 7 probes / 60s cadence
+- 08:55 go/no-go decision matrix + 楊董 ack protocol
+- Postponement protocol: rootcause within 24h, 5/5 retry, hotfix gate
+- Mid-flow recovery: turn failures into honest 4-state demos (system shows reality, not silent mock)
+- Communication tree (8 events from 06:00 → post-demo)
+- Evidence bundle layout for `contingency_triggered/` subfolder
+- 4 open Q with defaults (audience composition / alt-symbol / postpone cadence / Elva NO-GO authority)
+
+**Block 1 status table**:
+| P1 # | Topic | Design | Impl |
+|---|---|---|---|
+| P1-1 (Contract 2) | Portfolio + 4-layer risk | ★ 16:43 | ★ `13ca56a` 16:54 |
+| P1-2 (Contract 3) | Watchlist UI | ★ 17:23 | ★ `cbadbb9` 17:45 |
+| P1-3 (Contract 4) | Idea→paper promote | ★ 16:23 | queued (~980 LOC) |
+| P1-7 (Codex) | K-line wire | covered | `8a749d7` |
+| P1-8 | Demo runbook (happy path) | ★ 17:03 | static |
+| P1-9 | Idempotency verify gate | ★ 17:43 | Bruce-actionable 5/2 |
+| P1-10 | Demo contingency plan | ★ 18:03 (this cycle) | Bruce monitor script 5/3 |
+| P1-11 | OpenAlice 100-co batch | ★ 15:54 | queued |
+
+**Demo readiness map**:
+- 5/2 Sat: Bruce drafts preopen_monitor.ps1 + Jason confirms migration unique indices + Codex confirms `submitInFlight` ref + draft-time UUID
+- 5/3 Sun 09:00: Idempotency dry-run T01-T05
+- 5/3 Sun 14:00: T06-T12 + Mode A/B/C dry-rehearsal
+- 5/3 Sun 22:00: Full 12/12 verify gate (postpone if not green)
+- 5/4 06:00–08:55: monitor probe loop + go/no-go ack
+- 5/4 09:00: Demo OR postpone
+
+**Yellow / red**: none.
+
+**Velocity**: 8 P1 designs delivered (P1-1, P1-2, P1-3, P1-7-Codex, P1-8, P1-9, P1-10, P1-11) + 2 Codex direct executions in 5.5h overnight push. Demo path is now fully papered.
+
+**Next 20min (18:23 cadence)**:
+1. Verify next Codex commits stop-line clean
+2. Watch for Contract 4 (P1-3) Codex pickup
+3. Pick next design candidate: **P1-4 4-layer risk override admin UI** (lets operator nudge limits without DB shell) OR **P1-5 daily_brief OpenAI streaming UX** (institutional-grade roadmap §6) OR **P1-12 W7 sprint EOD closeout template**
+4. Cycle entry write-back
+
+---
+
 ### 2026-05-01 17:43 Taipei — Elva cadence: 68h sprint Block 1, 20min #5 — ★ Codex executed Contract 3 (P1-2) inside 20min for the SECOND time + P1-9 idempotency verify checklist drafted
 
 **★ HEADLINE (2nd time)**: Codex executed Contract 3 P1-2 design **inside ~22min of my 17:23 push** — `cbadbb9 feat(web): scaffold dashboard watchlist surface`. Design→impl loop now repeating reliably.
