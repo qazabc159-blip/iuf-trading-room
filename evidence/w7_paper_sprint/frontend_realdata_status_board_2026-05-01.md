@@ -1207,3 +1207,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: when the combined mobile brief source is BLOCKED/EMPTY, latest brief, theme sweep, and paper idea sections now show the same non-live source state instead of rendering dependent empty arrays as independent EMPTY sections.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
+### Codex cycle (2026-05-01 16:25 Taipei) - plans and lab metrics stop deriving fake averages from blocked data
+- Files changed: updated `apps/web/app/plans/page.tsx` and `apps/web/app/lab/LabClient.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Plans still read production plan context; Lab still reads/acts only through the lab bundle API.
+- Behavior change: BLOCKED plans context no longer renders plan/review/brief/idea/signal KPI cells as zero. BLOCKED Quant Lab no longer renders NEW/APPROVED/PUSHED or AVG CONF/AVG RETURN/MAX DD as zero-valued metrics; empty lab data keeps true queue counts but hides averages.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: Lab push-to-portfolio remains BLOCKED until the Jason/Athena handoff contract exists. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.

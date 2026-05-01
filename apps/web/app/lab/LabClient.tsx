@@ -38,6 +38,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
   const [busy, setBusy] = useState<string | null>(null);
   const [blockedReason, setBlockedReason] = useState<string | null>(initialBlockedReason ?? null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const statsAvailable = !blockedReason;
 
   useEffect(() => {
     if (initialBlockedReason) return;
@@ -60,21 +61,32 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
   const selected = bundles.find((bundle) => bundle.bundleId === selectedId) ?? bundles[0] ?? null;
   const actionsBlocked = Boolean(blockedReason);
   const cells = useMemo(() => {
+    if (!statsAvailable) {
+      return [
+        { label: "NEW", value: "--", tone: "muted" as const },
+        { label: "APPROVED", value: "--", tone: "muted" as const },
+        { label: "PUSHED", value: "--", tone: "muted" as const },
+        { label: "AVG CONF", value: "--", tone: "muted" as const },
+        { label: "AVG RETURN", value: "--", tone: "muted" as const },
+        { label: "MAX DD", value: "--", tone: "muted" as const },
+      ];
+    }
+
     const pending = bundles.filter((bundle) => bundle.status === "NEW").length;
     const approved = bundles.filter((bundle) => bundle.status === "APPROVED").length;
     const pushed = bundles.filter((bundle) => bundle.status === "PUSHED").length;
-    const avgConfidence = bundles.length ? bundles.reduce((sum, bundle) => sum + bundle.confidence, 0) / bundles.length : 0;
-    const avgReturn = bundles.length ? bundles.reduce((sum, bundle) => sum + bundle.backtest.totalReturnPct, 0) / bundles.length : 0;
-    const worstDrawdown = bundles.length ? Math.min(...bundles.map((bundle) => bundle.backtest.maxDrawdownPct)) : 0;
+    const avgConfidence = bundles.length ? bundles.reduce((sum, bundle) => sum + bundle.confidence, 0) / bundles.length : null;
+    const avgReturn = bundles.length ? bundles.reduce((sum, bundle) => sum + bundle.backtest.totalReturnPct, 0) / bundles.length : null;
+    const worstDrawdown = bundles.length ? Math.min(...bundles.map((bundle) => bundle.backtest.maxDrawdownPct)) : null;
     return [
       { label: "NEW", value: pending, tone: "muted" as const },
       { label: "APPROVED", value: approved, tone: "down" as const },
       { label: "PUSHED", value: pushed, tone: "gold" as const },
-      { label: "AVG CONF", value: `${Math.round(avgConfidence * 100)}%`, tone: "muted" as const },
-      { label: "AVG RETURN", value: `${signed(avgReturn, 1)}%`, tone: toneClass(avgReturn) },
-      { label: "MAX DD", value: `${worstDrawdown.toFixed(1)}%`, tone: worstDrawdown < -6 ? "up" as const : "muted" as const },
+      { label: "AVG CONF", value: avgConfidence === null ? "--" : `${Math.round(avgConfidence * 100)}%`, tone: "muted" as const },
+      { label: "AVG RETURN", value: avgReturn === null ? "--" : `${signed(avgReturn, 1)}%`, tone: avgReturn === null ? "muted" as const : toneClass(avgReturn) },
+      { label: "MAX DD", value: worstDrawdown === null ? "--" : `${worstDrawdown.toFixed(1)}%`, tone: worstDrawdown !== null && worstDrawdown < -6 ? "up" as const : "muted" as const },
     ];
-  }, [bundles]);
+  }, [bundles, statsAvailable]);
 
   async function applyAction(bundleId: string, nextStatus: LabBundleStatus, action: "APPROVE" | "REJECT") {
     if (actionsBlocked) return;

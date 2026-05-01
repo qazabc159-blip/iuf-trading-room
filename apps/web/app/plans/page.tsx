@@ -170,6 +170,7 @@ export default async function PlansPage() {
   const readyPlans = plans.filter((plan) => plan.status === "ready" || plan.status === "active").length;
   const reviewedPlanIds = new Set(result.data.reviews.map((review) => review.tradePlanId));
   const contextLive = result.state === "LIVE";
+  const countsAvailable = result.state !== "BLOCKED";
 
   return (
     <PageFrame
@@ -181,12 +182,12 @@ export default async function PlansPage() {
       <MetricStrip
         cells={[
           { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "PLANS", value: plans.length },
-          { label: "READY", value: readyPlans, tone: readyPlans > 0 ? "up" : "muted" },
-          { label: "REVIEWS", value: result.data.reviews.length },
-          { label: "BRIEFS", value: result.data.briefs.length, tone: result.data.briefs.length > 0 ? "gold" : "muted" },
-          { label: "IDEAS", value: result.data.ideas.length, tone: result.data.ideas.length > 0 ? "up" : "muted" },
-          { label: "SIGNALS", value: result.data.signals.length },
+          { label: "PLANS", value: countsAvailable ? plans.length : "--" },
+          { label: "READY", value: countsAvailable ? readyPlans : "--", tone: countsAvailable && readyPlans > 0 ? "up" : "muted" },
+          { label: "REVIEWS", value: countsAvailable ? result.data.reviews.length : "--" },
+          { label: "BRIEFS", value: countsAvailable ? result.data.briefs.length : "--", tone: countsAvailable && result.data.briefs.length > 0 ? "gold" : "muted" },
+          { label: "IDEAS", value: countsAvailable ? result.data.ideas.length : "--", tone: countsAvailable && result.data.ideas.length > 0 ? "up" : "muted" },
+          { label: "SIGNALS", value: countsAvailable ? result.data.signals.length : "--" },
         ]}
         columns={7}
       />
