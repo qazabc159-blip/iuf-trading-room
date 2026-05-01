@@ -4,6 +4,48 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 18:53 Taipei — Elva cadence: 68h sprint Block 1, 20min #8 — 楊董返回 + 詳報已交 + P1-12 EOD closeout 模板
+
+**Codex burst since 18:23 (0 commits)**: Codex still quiet — likely waiting on Jason backend (Contract 4 4 routes) before wiring frontend full PROMOTE flow.
+
+**Verify**: 0 new commits to grep, prior 12-commit window stop-line clean held.
+
+**楊董返回 (18:53 TST)** — 我已交完整 6 小時報告（9 段 §1-§9）；楊董未回覆即發 `<<autonomous-loop-dynamic>>` → autonomous push 繼續，不停下等決策。
+
+**Cycle deliverable — P1-12 W7 EOD closeout template**:
+- File: `evidence/w7_paper_sprint/w7_eod_closeout_template_2026-05-01.md`
+- 8-section standardized format: headline (≤25字) / shipped today / **demo readiness D-3→D-day matrix** / 4-lane status / yellow-red events / blockers / tomorrow top-5 / 楊董 decisions
+- Filename convention `eod/w7_eod_YYYY-MM-DD.md`, filed 21:00 TST nightly
+- Special cases: weekend EOD / demo day EOD (with §9 execution log) / sprint close 5/9 with W7_FINAL_CLOSEOUT.md
+- Today's first-use EOD (5/1) due 21:00 — preview included in §7
+
+**Block 1 status table (full)**:
+| P1 # | Topic | Design | Impl |
+|---|---|---|---|
+| P1-1 (Contract 2) | Portfolio + 4-layer risk read | ★ 16:43 | ★ `13ca56a` 16:54 |
+| P1-2 (Contract 3) | Watchlist UI | ★ 17:23 | ★ `cbadbb9` 17:45 |
+| P1-3 (Contract 4) | Idea→paper promote | ★ 16:23 | ★ `1d9f50f` 18:23 (groundwork) |
+| P1-4 (Contract 2b) | Risk override admin UI | ★ 18:23 | W8 D2-D4 deferred |
+| P1-7 (Codex) | K-line wire | covered | `8a749d7` |
+| P1-8 | Demo runbook | ★ 17:03 | static |
+| P1-9 | Idempotency verify gate | ★ 17:43 | Bruce 5/2 prep |
+| P1-10 | Demo contingency plan | ★ 18:03 | Bruce monitor 5/3 |
+| P1-11 | OpenAlice 100-co batch | ★ 15:54 | queued |
+| P1-12 | EOD closeout template | ★ 18:53 (this cycle) | first use today 21:00 |
+
+**6h push tally**: 10 P1 designs + 3 Codex direct executions + 1 standardized closeout template + 7 status board updates + 0 stop-line hits.
+
+**Yellow / red**: 楊董返回但未拍板 8 個 §9 Q1-Q5 — 我繼續按 default 推進。
+
+**Next 20min (19:13 cadence)**:
+1. Check Codex 是否在 Contract 4 PROMOTE 主流程繼續推進
+2. Stop-line grep 不放鬆
+3. 寫第一份正式 EOD `eod/w7_eod_2026-05-01.md` 草稿（按 P1-12 template，21:00 收板）
+4. 或寫 **P1-5 daily_brief OpenAI streaming UX** / **P1-6 paper E2E observability dashboard** 視 Codex 進度
+5. Cycle entry write-back
+
+---
+
 ### 2026-05-01 18:23 Taipei — Elva cadence: 68h sprint Block 1, 20min #7 — P1-4 risk override admin UI design (Contract 2b) + Codex Contract 4 in motion
 
 **Codex burst since 18:03 (1 commit, mid-cycle)**:
