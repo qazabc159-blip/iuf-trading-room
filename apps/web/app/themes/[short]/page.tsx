@@ -142,6 +142,18 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
   const { short } = await params;
   const result = await loadThemeDetail(short);
   const theme = result.data.theme;
+  const detailLive = result.state === "LIVE";
+  const dependentState = result.state === "EMPTY" ? "EMPTY" : "BLOCKED";
+  const dependentTone = result.state === "EMPTY" ? "gold" : "down";
+  const dependentReason =
+    result.state === "EMPTY"
+      ? "No theme row exists, so dependent joins are not evaluated."
+      : "Theme detail source is blocked, so dependent joins are hidden until the source is live.";
+  const coreCount = detailLive && theme ? theme.corePoolCount : null;
+  const observationCount = detailLive && theme ? theme.observationPoolCount : null;
+  const memberCount = detailLive ? result.data.companies.length : null;
+  const ideaCount = detailLive ? result.data.ideas.length : null;
+  const signalCount = detailLive ? result.data.signals.length : null;
 
   return (
     <PageFrame
@@ -154,11 +166,11 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
         cells={[
           { label: "STATE", value: result.state, tone: stateTone(result.state) },
           { label: "PRIORITY", value: theme?.priority ?? "--", tone: theme?.priority === 1 ? "gold" : "muted" },
-          { label: "CORE", value: theme?.corePoolCount ?? 0, tone: (theme?.corePoolCount ?? 0) > 0 ? "gold" : "muted" },
-          { label: "OBS", value: theme?.observationPoolCount ?? 0 },
-          { label: "MEMBERS", value: result.data.companies.length },
-          { label: "IDEAS", value: result.data.ideas.length, tone: result.data.ideas.length > 0 ? "up" : "muted" },
-          { label: "SIGNALS", value: result.data.signals.length },
+          { label: "CORE", value: coreCount ?? "--", tone: (coreCount ?? 0) > 0 ? "gold" : "muted" },
+          { label: "OBS", value: observationCount ?? "--" },
+          { label: "MEMBERS", value: memberCount ?? "--" },
+          { label: "IDEAS", value: ideaCount ?? "--", tone: (ideaCount ?? 0) > 0 ? "up" : "muted" },
+          { label: "SIGNALS", value: signalCount ?? "--" },
         ]}
         columns={7}
       />
@@ -188,14 +200,15 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
             )}
           </Panel>
 
-          <Panel code="MEM-LST" title="MEMBER COMPANIES" sub="themeIds join / real DB" right={`${result.data.companies.length} CO`}>
-            {result.data.companies.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No company rows currently attach this theme id.</div>}
-            {result.data.companies.length > 0 && (
+          <Panel code="MEM-LST" title="MEMBER COMPANIES" sub="themeIds join / real DB" right={detailLive ? `${result.data.companies.length} CO` : dependentState}>
+            {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{dependentState}</span> {dependentReason}</div>}
+            {detailLive && result.data.companies.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No company rows currently attach this theme id.</div>}
+            {detailLive && result.data.companies.length > 0 && (
               <div className="row position-row table-head tg">
                 <span>SYM</span><span>NAME</span><span>TIER</span><span>MKT</span><span>CHAIN</span><span>UPDATED</span>
               </div>
             )}
-            {result.data.companies.map((company) => (
+            {detailLive && result.data.companies.map((company) => (
               <Link className="row position-row" href={`/companies/${company.ticker}`} key={company.id}>
                 <span className="tg gold">{company.ticker}</span>
                 <span className="tc">{company.name}</span>
@@ -209,9 +222,10 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
         </div>
 
         <div>
-          <Panel code="IDEA-ATT" title="ATTACHED IDEAS" sub="strategy endpoint theme filter" right={`${result.data.ideas.length} ROWS`}>
-            {result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No strategy ideas currently attach this theme id.</div>}
-            {result.data.ideas.slice(0, 8).map((idea) => (
+          <Panel code="IDEA-ATT" title="ATTACHED IDEAS" sub="strategy endpoint theme filter" right={detailLive ? `${result.data.ideas.length} ROWS` : dependentState}>
+            {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{dependentState}</span> {dependentReason}</div>}
+            {detailLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No strategy ideas currently attach this theme id.</div>}
+            {detailLive && result.data.ideas.slice(0, 8).map((idea) => (
               <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
                 <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
                 <span className={`tg ${directionTone(idea.direction)}`}>{idea.direction}</span>
@@ -223,9 +237,10 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
             ))}
           </Panel>
 
-          <Panel code="SIG-TAPE" title="THEME SIGNAL TAPE" sub="real signal rows" right={`${result.data.signals.length} EVENTS`}>
-            {result.data.signals.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No signal rows currently attach this theme id.</div>}
-            {result.data.signals.slice(0, 10).map((signal) => (
+          <Panel code="SIG-TAPE" title="THEME SIGNAL TAPE" sub="real signal rows" right={detailLive ? `${result.data.signals.length} EVENTS` : dependentState}>
+            {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{dependentState}</span> {dependentReason}</div>}
+            {detailLive && result.data.signals.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No signal rows currently attach this theme id.</div>}
+            {detailLive && result.data.signals.slice(0, 10).map((signal) => (
               <div className="row telex-row" style={{ gridTemplateColumns: "76px 78px 74px 1fr" }} key={signal.id}>
                 <span className="tg soft">{formatTime(signal.createdAt)}</span>
                 <span className="tg gold">{signal.category}</span>

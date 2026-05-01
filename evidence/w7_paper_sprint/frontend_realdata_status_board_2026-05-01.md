@@ -1159,3 +1159,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: when the ops snapshot is BLOCKED, KPI cells now show `--` instead of fake zero counts, and OpenAlice/latest/audit panels show BLOCKED notes rather than EMPTY or `0 ROWS`.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, or destructive DB action touched.
+### Codex cycle (2026-05-01 16:05 Taipei) - theme detail dependent panels no longer render blocked data as zero
+- Files changed: updated `apps/web/app/themes/[short]/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Theme detail still reads `GET /api/v1/themes`, `GET /api/v1/companies`, `GET /api/v1/signals`, and `GET /api/v1/strategy/ideas?themeId=...`.
+- Behavior change: when the theme detail source is BLOCKED or EMPTY, KPI counts and dependent member/idea/signal panels no longer render `emptyData` as zero rows; dependent panels show the BLOCKED/EMPTY reason until the source is LIVE.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
