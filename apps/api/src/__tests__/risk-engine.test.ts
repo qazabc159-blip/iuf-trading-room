@@ -58,13 +58,13 @@ const TRADING_NOW = "2026-05-05T01:30:00.000Z";
 /** Inline quote context so we don't need live market data. */
 function makeMarketContext(price: number) {
   return {
-    source: "manual" as const,
+    source: "manual",
     // Provide the price inline so resolveQuoteForRiskCheck uses it directly.
     // Use the same timestamp as TRADING_NOW to avoid stale_quote guard.
     quote: {
       symbol: "2330",
       market: "TWSE",
-      source: "manual" as const,
+      source: "manual",
       last: price,
       bid: price,
       ask: price,
@@ -74,7 +74,7 @@ function makeMarketContext(price: number) {
     },
     now: TRADING_NOW,
     timeZone: "Asia/Taipei"
-  };
+  } as const;
 }
 
 // ---------------------------------------------------------------------------
