@@ -10,7 +10,7 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - Sidebar logout: DONE.
 - API health: PASS after deployment.
 - Company 2330 with authenticated cookie: PASS.
-- Production no-silent-mock policy: IN PROGRESS; B10/B11 wrapper-level production fallback fixed in Codex cycle 02:48.
+- Production no-silent-mock policy: IN PROGRESS; B10/B11 wrapper-level production fallback fixed in Codex cycle 02:48, B12 Quant Lab fallback fixed in Codex cycle 03:40.
 - Market Intel/news lane: IN PROGRESS; company detail panel [05] now binds TWSE announcements through the shared API client.
 - Full mock/placeholder removal: OPEN.
 
@@ -44,6 +44,8 @@ Active backend lanes (Jason scope, Codex 不踩):
 Bruce 4-state harness v1 DONE @ 2026-05-01 02:00 Taipei → evidence/w7_paper_sprint/bruce_4state_harness_v1_2026-05-01.md
 
 Bruce Cycle 3 regression sweep DONE @ 2026-05-01 ~02:54 Taipei → B10 RESOLVED / B11 RESOLVED / B12 NEW (radar-lab.ts no IS_PROD guard, /lab + /lab/[bundleId] pages affected, owner=Codex)
+
+Codex B12 fix landed @ 2026-05-01 ~03:40 Taipei: Quant Lab frontend now fails closed in production and renders BLOCKED/EMPTY instead of mock bundles when lab API routes are unavailable.
 
 Known usable endpoints:
 
@@ -86,6 +88,7 @@ Initial high-risk surfaces:
 - `/reviews`: DONE in Codex cycle 01:56; now binds `GET /api/v1/reviews` as read-only ledger and marks action queue BLOCKED.
 - `/drafts` and `/admin/content-drafts`: DONE in Codex cycle 02:00; now bind `GET /api/v1/content-drafts` and remove local-only audit/action mocks.
 - `/quote`: DONE in Codex cycle 02:04; now binds `GET /api/v1/market-data/effective-quotes` and blocks K-line/depth/ticks instead of rendering deterministic mock market data.
+- `/lab` and `/lab/[bundleId]`: DONE in Codex cycle 03:40; `radar-lab.ts` now fails closed in production and pages render BLOCKED/EMPTY instead of mock Quant Lab bundles when the lab API is unavailable.
 - `/companies/[symbol]`: source/tick/derivatives mock feed removed in Codex cycle 01:49; remaining company-detail mock risk is `toCompanyDetailView` fallback fields.
 - `DerivativesPanel`: BLOCKED until production endpoint contract exists.
 - `TickStreamPanel`: BLOCKED until KGI readonly bid/ask + tick contract exists.
@@ -283,6 +286,40 @@ Blockers:
 - KGI bidask/tick stays B3 BLOCKED pending Operator + Jason gateway/WS contract.
 - Remaining mock audit moves next to `/m/kill`, `radar-api.ts` force-mock hard-line surfaces, and dashboard/plans portfolio pages.
 
+### 2026-05-01 03:40 Taipei
+
+Completed:
+
+- Fixed B12: `radar-lab.ts` no longer converts production API failure / invalid shape / missing API base into mock Quant Lab bundle success. Dev/build mock fallback is preserved only outside production runtime.
+- `/lab` now renders LIVE only from `GET /api/v1/lab/bundles`, EMPTY on a real zero-row result, or BLOCKED when the Quant Lab API contract is unavailable.
+- `/lab/[bundleId]` now renders a BLOCKED detail page when `GET /api/v1/lab/bundles/:bundleId` is unavailable, instead of serving a mock bundle.
+- Lab approve/reject actions only mutate local UI state after a successful `POST /api/v1/lab/bundles/:bundleId/action`; errors surface as BLOCKED action feedback.
+- Push-to-portfolio remains disabled with an explicit blocker until Athena + Jason define the strategy-bundle-to-paper-order handoff. No broker order, no live submit, and no migration 0020 behavior changed.
+
+Files:
+
+- `apps/web/lib/radar-lab.ts`
+- `apps/web/app/lab/page.tsx`
+- `apps/web/app/lab/LabClient.tsx`
+- `apps/web/app/lab/[bundleId]/page.tsx`
+- `apps/web/app/lab/[bundleId]/LabBundleDetailClient.tsx`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `GET /api/v1/lab/bundles` remains BLOCKED until Athena + Jason publish the backend route/contract.
+- `GET /api/v1/lab/bundles/:bundleId` remains BLOCKED until Athena + Jason publish the backend route/contract.
+- `POST /api/v1/lab/bundles/:bundleId/action` fails closed in production when unavailable.
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+
+Blockers:
+
+- New backend blocker B13: Quant Lab bundle API contract/routes are not implemented yet; owner Athena + Jason. Frontend is truthful and ready to bind once routes exist.
+
 ## Elva Notes
 
 ### 2026-05-01 01:42 Taipei — Operator final ACK + Elva 20min cycle started
@@ -459,6 +496,9 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - Yellow/Red zone: 無觸發。
 
 ## Blockers
+
+- **B12 CURRENT STATUS**: [Rule 7] `apps/web/lib/radar-lab.ts` production fallback guard is **RESOLVED @ Codex 03:40**. This supersedes the older OPEN line below from Elva Cycle 4-5. `getMaybe`/`postMaybe` now use production fail-closed behavior matching `radar-uncovered.ts`; `/lab` and `/lab/[bundleId]` render BLOCKED/EMPTY instead of mock bundles when lab API routes are unavailable.
+- **B13**: Quant Lab bundle API contract/routes ??**OPEN / BLOCKED / owner: Athena + Jason**. Frontend expects `GET /api/v1/lab/bundles`, `GET /api/v1/lab/bundles/:bundleId`, and `POST /api/v1/lab/bundles/:bundleId/action`; until implemented, production UI shows BLOCKED and push-to-portfolio remains disabled.
 
 - **B1**: Jason 5 條 backend contract 未交（owner: Jason / due: cycle 1 = 02:00 Taipei first draft / **status: RESOLVED @ ~01:58**）
 - **B2**: Bruce 4-state harness spec 未交（owner: Bruce / due: cycle 1 = 02:00 first version / **status: RESOLVED @ 02:00**）

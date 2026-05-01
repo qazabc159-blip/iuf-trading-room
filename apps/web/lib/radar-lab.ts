@@ -1,5 +1,7 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
+const IS_PROD = process.env.NODE_ENV === "production";
+const IS_BUILD = process.env.NEXT_PHASE === "phase-production-build";
 
 export type LabProducer = "QUANT_LAB" | "OPERATOR" | "OPENALICE";
 export type LabBundleStatus = "NEW" | "APPROVED" | "REJECTED" | "PUSHED";
@@ -41,8 +43,23 @@ export type LabSignalBundle = {
 
 type LabAction = "APPROVE" | "REJECT" | "PUSH_TO_PORTFOLIO" | "DIVERGENCE_FEEDBACK";
 
-async function getMaybe<T>(path: string, fallback: T): Promise<T> {
-  if (!API_BASE) return fallback;
+function shouldAllowMockFallback(): boolean {
+  return !IS_PROD || IS_BUILD;
+}
+
+function productionFallbackError(path: string, reason: string): Error {
+  return new Error(`[radar-lab] ${path} cannot use mock fallback in production: ${reason}`);
+}
+
+function isArray<T>(value: unknown): value is T[] {
+  return Array.isArray(value);
+}
+
+async function getMaybe<T>(path: string, fallback: T, accept?: (value: unknown) => value is T): Promise<T> {
+  if (!API_BASE) {
+    if (!shouldAllowMockFallback()) throw productionFallbackError(path, "NEXT_PUBLIC_API_BASE_URL is not configured");
+    return fallback;
+  }
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       credentials: "include",
@@ -51,15 +68,24 @@ async function getMaybe<T>(path: string, fallback: T): Promise<T> {
     });
     if (!response.ok) throw new Error(`${response.status} ${path}`);
     const body = await response.json();
-    return ((body && typeof body === "object" && "data" in body) ? body.data : body) as T;
+    const data = (body && typeof body === "object" && "data" in body) ? body.data : body;
+    if (accept && !accept(data)) {
+      if (!shouldAllowMockFallback()) throw productionFallbackError(path, "response shape was not accepted");
+      return fallback;
+    }
+    return data as T;
   } catch (error) {
-    console.warn("[radar-lab] mock fallback:", path, error);
+    if (!shouldAllowMockFallback()) throw error instanceof Error ? error : productionFallbackError(path, String(error));
+    console.warn("[radar-lab] dev mock fallback:", path, error);
     return fallback;
   }
 }
 
 async function postMaybe<T>(path: string, body: unknown, fallback: T): Promise<T> {
-  if (!API_BASE) return fallback;
+  if (!API_BASE) {
+    if (!shouldAllowMockFallback()) throw productionFallbackError(path, "NEXT_PUBLIC_API_BASE_URL is not configured");
+    return fallback;
+  }
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       method: "POST",
@@ -71,7 +97,8 @@ async function postMaybe<T>(path: string, body: unknown, fallback: T): Promise<T
     const payload = await response.json();
     return ((payload && typeof payload === "object" && "data" in payload) ? payload.data : payload) as T;
   } catch (error) {
-    console.warn("[radar-lab] mock POST fallback:", path, error);
+    if (!shouldAllowMockFallback()) throw error instanceof Error ? error : productionFallbackError(path, String(error));
+    console.warn("[radar-lab] dev mock POST fallback:", path, error);
     return fallback;
   }
 }
@@ -223,7 +250,7 @@ export const labDisplay = {
 };
 
 export const radarLabApi = {
-  bundles: () => getMaybe<LabSignalBundle[]>("/api/v1/lab/bundles", mockLabBundles),
+  bundles: () => getMaybe<LabSignalBundle[]>("/api/v1/lab/bundles", mockLabBundles, isArray),
   bundle: (bundleId: string) =>
     getMaybe<LabSignalBundle | null>(
       `/api/v1/lab/bundles/${encodeURIComponent(bundleId)}`,

@@ -30,18 +30,25 @@ function LabLineChart({
   stroke: string;
   label: string;
 }) {
+  const pointString = pointsFor(points);
+  const coords = pointString ? pointString.split(" ") : [];
+
   return (
     <svg className="lab-chart" viewBox="0 0 320 160" role="img" aria-label={label}>
       {[28, 66, 104, 142].map((y) => (
         <line key={y} x1="10" x2="310" y1={y} y2={y} stroke="var(--night-rule)" />
       ))}
-      <polyline points={pointsFor(points)} fill="none" stroke={stroke} strokeWidth="2" />
+      <polyline points={pointString} fill="none" stroke={stroke} strokeWidth="2" />
       {points.map((point, index) => {
-        const [x, y] = pointsFor(points).split(" ")[index].split(",");
+        const [x, y] = coords[index]?.split(",") ?? ["0", "0"];
         return <circle key={point.t} cx={x} cy={y} r="2.5" fill={stroke} />;
       })}
     </svg>
   );
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
@@ -49,58 +56,71 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
   const [feedback, setFeedback] = useState("");
   const [notes, setNotes] = useState(bundle.divergenceNotes);
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const cells = [
-    { label: "股票", value: bundle.symbol, tone: "gold" as const },
-    { label: "主題", value: bundle.themeCode, tone: "muted" as const },
-    { label: "信心", value: `${Math.round(bundle.confidence * 100)}%`, tone: "muted" as const },
-    { label: "勝率", value: `${Math.round(bundle.backtest.winRate * 100)}%`, tone: "down" as const },
-    { label: "總報酬", value: `${signed(bundle.backtest.totalReturnPct, 1)}%`, tone: toneClass(bundle.backtest.totalReturnPct) },
-    { label: "最大回撤", value: `${bundle.backtest.maxDrawdownPct.toFixed(1)}%`, tone: "up" as const },
+    { label: "SYMBOL", value: bundle.symbol, tone: "gold" as const },
+    { label: "THEME", value: bundle.themeCode, tone: "muted" as const },
+    { label: "CONF", value: `${Math.round(bundle.confidence * 100)}%`, tone: "muted" as const },
+    { label: "WIN", value: `${Math.round(bundle.backtest.winRate * 100)}%`, tone: "down" as const },
+    { label: "RETURN", value: `${signed(bundle.backtest.totalReturnPct, 1)}%`, tone: toneClass(bundle.backtest.totalReturnPct) },
+    { label: "MAX DD", value: `${bundle.backtest.maxDrawdownPct.toFixed(1)}%`, tone: "up" as const },
   ];
 
-  async function applyAction(nextStatus: typeof status, action: "APPROVE" | "REJECT" | "PUSH_TO_PORTFOLIO") {
+  async function applyAction(nextStatus: typeof status, action: "APPROVE" | "REJECT") {
     setBusy(true);
-    await radarLabApi.bundleAction(bundle.bundleId, action);
-    setStatus(nextStatus);
-    setBusy(false);
+    setActionError(null);
+    try {
+      await radarLabApi.bundleAction(bundle.bundleId, action);
+      setStatus(nextStatus);
+    } catch (error) {
+      setActionError(errorText(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitFeedback() {
     const text = feedback.trim();
     if (!text) return;
     setBusy(true);
-    await radarLabApi.bundleAction(bundle.bundleId, "DIVERGENCE_FEEDBACK", { note: text });
-    setNotes((prev) => [`operator feedback：${text}`, ...prev]);
-    setFeedback("");
-    setBusy(false);
+    setActionError(null);
+    try {
+      await radarLabApi.bundleAction(bundle.bundleId, "DIVERGENCE_FEEDBACK", { note: text });
+      setNotes((prev) => [`operator feedback: ${text}`, ...prev]);
+      setFeedback("");
+    } catch (error) {
+      setActionError(errorText(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <PageFrame
       code="LAB-D"
-      title="量化訊號詳情"
+      title="Quant Lab Detail"
       sub={bundle.bundleId}
-      note={`[LAB-D] ${labDisplay.producer[bundle.producer]} · ${labDisplay.status[status]} · divergence feedback channel`}
+      note={`[LAB-D] ${labDisplay.producer[bundle.producer]} / ${labDisplay.status[status]} / divergence feedback channel`}
     >
       <MetricStrip columns={6} cells={cells} />
 
       <div className="lab-detail-grid">
-        <Panel code="BT-RPT" title="回測報告" right={`${bundle.backtest.tradeCount} TRADES`}>
+        <Panel code="BT-RPT" title="Backtest Report" right={`${bundle.backtest.tradeCount} TRADES`}>
           <div className="ticket">
-            <div className="tg gold">權益曲線</div>
-            <LabLineChart points={bundle.backtest.equityCurve} stroke="var(--gold-bright)" label="權益曲線" />
-            <div className="tg gold" style={{ marginTop: 14 }}>回撤曲線</div>
-            <LabLineChart points={bundle.backtest.drawdown} stroke="var(--tw-up-bright)" label="回撤曲線" />
+            <div className="tg gold">Equity Curve</div>
+            <LabLineChart points={bundle.backtest.equityCurve} stroke="var(--gold-bright)" label="Equity curve" />
+            <div className="tg gold" style={{ marginTop: 14 }}>Drawdown</div>
+            <LabLineChart points={bundle.backtest.drawdown} stroke="var(--tw-up-bright)" label="Drawdown" />
           </div>
         </Panel>
 
-        <Panel code="BT-STAT" title="期間統計" right="PERIODS">
+        <Panel code="BT-STAT" title="Period Stats" right="PERIODS">
           <div className="row table-head" style={{ gridTemplateColumns: "70px 70px 80px 80px", gap: 10 }}>
-            <span>期間</span>
-            <span>交易</span>
-            <span>勝率</span>
-            <span>報酬</span>
+            <span>Period</span>
+            <span>Trades</span>
+            <span>Win</span>
+            <span>Return</span>
           </div>
           {bundle.backtest.periodStats.map((period) => (
             <div className="row" key={period.label} style={{ gridTemplateColumns: "70px 70px 80px 80px", gap: 10, padding: "10px 0" }}>
@@ -111,27 +131,35 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
             </div>
           ))}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-            <button className="mini-button" type="button" disabled={busy} onClick={() => applyAction("APPROVED", "APPROVE")}>批准</button>
-            <button className="outline-button" type="button" disabled={busy} onClick={() => applyAction("REJECTED", "REJECT")}>駁回</button>
-            <button className="outline-button" type="button" disabled={busy} onClick={() => applyAction("PUSHED", "PUSH_TO_PORTFOLIO")}>推送到下單台</button>
-            <Link className="outline-button" href="/lab">返回佇列</Link>
+            <button className="mini-button" type="button" disabled={busy} onClick={() => applyAction("APPROVED", "APPROVE")}>Approve</button>
+            <button className="outline-button" type="button" disabled={busy} onClick={() => applyAction("REJECTED", "REJECT")}>Reject</button>
+            <button className="outline-button" type="button" disabled title="BLOCKED: strategy bundle to portfolio handoff contract is not ready.">Push</button>
+            <Link className="outline-button" href="/lab">Back</Link>
           </div>
+          <div className="terminal-note" style={{ marginTop: 12 }}>
+            Push-to-portfolio is BLOCKED until Jason/Athena define the handoff contract. No broker order is created from this page.
+          </div>
+          {actionError && (
+            <div className="terminal-note" style={{ marginTop: 12 }}>
+              BLOCKED: lab action endpoint failed. {actionError}
+            </div>
+          )}
         </Panel>
 
         <div>
-          <Panel code="PROMO" title="升級備忘" right={labDisplay.status[status]}>
+          <Panel code="PROMO" title="Promotion Memo" right={labDisplay.status[status]}>
             <div className="lab-memo">{bundle.promotionMemo}</div>
           </Panel>
 
-          <Panel code="DIV-FB" title="反向回饋" right={`${notes.length} NOTES`}>
+          <Panel code="DIV-FB" title="Divergence Feedback" right={`${notes.length} NOTES`}>
             <textarea
               className="lab-textarea"
               value={feedback}
               onChange={(event) => setFeedback(event.target.value)}
-              placeholder="寫給 Quant Lab / Athena 的 divergence feedback..."
+              placeholder="Write divergence feedback for Quant Lab / Athena..."
             />
             <button className="mini-button" type="button" disabled={busy || !feedback.trim()} onClick={submitFeedback} style={{ marginTop: 10 }}>
-              送出回饋
+              Submit Feedback
             </button>
             <div style={{ marginTop: 14 }}>
               {notes.map((note) => (
