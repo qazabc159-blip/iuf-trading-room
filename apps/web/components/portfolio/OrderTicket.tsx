@@ -15,7 +15,7 @@ import {
   type PaperOrderState,
 } from "@/lib/paper-orders-api";
 import { useIdeaHandoff } from "@/lib/radar-handoff";
-import type { KillMode } from "@/lib/radar-types";
+import type { KillMode } from "@/components/portfolio/KillSwitch";
 
 type PaperSide = PaperOrderInput["side"];
 type PaperOrderType = PaperOrderInput["orderType"];

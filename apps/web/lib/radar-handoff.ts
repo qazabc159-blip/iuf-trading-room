@@ -1,50 +1,85 @@
 "use client";
-/**
- * IdeaHandoff hook — sessionStorage shuttle.
- *
- * Producer (Dashboard / Ideas list): set() with the idea row when user clicks
- *   "帶去下單台" CTA. Then router.push("/portfolio").
- * Consumer (Portfolio OrderTicket): read() on mount, prefill form, clear()
- *   after first read so the next visit isn't sticky.
- */
-import { useCallback, useEffect, useState } from "react";
-import type { Idea, IdeaHandoff, OrderSide } from "@/lib/radar-types";
-import { IDEA_HANDOFF_KEY } from "@/lib/radar-types";
 
-function ideaSideToOrderSide(s: Idea["side"]): OrderSide {
-  switch (s) {
-    case "LONG":  return "BUY";
-    case "TRIM":  return "TRIM";
-    case "EXIT":  return "SELL";
-    case "SHORT": return "SELL";
-  }
+import { useCallback, useEffect, useState } from "react";
+
+export const IDEA_HANDOFF_KEY = "iuf:idea-handoff:v2";
+
+export type IdeaHandoffSide = "BUY" | "SELL" | "TRIM";
+
+export type IdeaHandoff = {
+  ideaId: string;
+  symbol: string;
+  side: IdeaHandoffSide;
+  rationale: string;
+  themeCode: string;
+  emittedAt: string | null;
+};
+
+export type IdeaHandoffInput = {
+  id?: string;
+  companyId?: string;
+  symbol: string;
+  side?: "LONG" | "SHORT" | "TRIM" | "EXIT";
+  direction?: "bullish" | "bearish" | "neutral";
+  rationale?: string | { primaryReason?: string };
+  themeCode?: string | null;
+  topThemes?: Array<{ name?: string | null; themeId?: string | null }>;
+  emittedAt?: string | null;
+  latestSignalAt?: string | null;
+};
+
+function inputSideToOrderSide(input: IdeaHandoffInput): IdeaHandoffSide {
+  if (input.side === "LONG") return "BUY";
+  if (input.side === "TRIM") return "TRIM";
+  if (input.side === "SHORT" || input.side === "EXIT") return "SELL";
+  if (input.direction === "bearish") return "SELL";
+  return "BUY";
 }
 
-export function ideaToHandoff(i: Idea): IdeaHandoff {
+function inputRationale(input: IdeaHandoffInput) {
+  if (typeof input.rationale === "string") return input.rationale;
+  return input.rationale?.primaryReason ?? "Strategy idea handoff from live frontend data.";
+}
+
+function inputTheme(input: IdeaHandoffInput) {
+  return input.themeCode ?? input.topThemes?.[0]?.name ?? input.topThemes?.[0]?.themeId ?? "paper-strategy";
+}
+
+export function ideaToHandoff(input: IdeaHandoffInput): IdeaHandoff {
   return {
-    ideaId: i.id, symbol: i.symbol, side: ideaSideToOrderSide(i.side),
-    rationale: i.rationale, themeCode: i.themeCode, emittedAt: i.emittedAt,
+    ideaId: input.id ?? input.companyId ?? input.symbol,
+    symbol: input.symbol,
+    side: inputSideToOrderSide(input),
+    rationale: inputRationale(input),
+    themeCode: inputTheme(input),
+    emittedAt: input.emittedAt ?? input.latestSignalAt ?? null
   };
 }
 
-export function setIdeaHandoff(h: IdeaHandoff) {
+export function setIdeaHandoff(handoff: IdeaHandoff) {
   if (typeof window === "undefined") return;
-  sessionStorage.setItem(IDEA_HANDOFF_KEY, JSON.stringify(h));
+  sessionStorage.setItem(IDEA_HANDOFF_KEY, JSON.stringify(handoff));
 }
 
 export function useIdeaHandoff(): { handoff: IdeaHandoff | null; clear: () => void } {
   const [handoff, setHandoff] = useState<IdeaHandoff | null>(null);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const raw = sessionStorage.getItem(IDEA_HANDOFF_KEY);
-    if (raw) {
-      try { setHandoff(JSON.parse(raw) as IdeaHandoff); } catch {}
+    if (!raw) return;
+    try {
+      setHandoff(JSON.parse(raw) as IdeaHandoff);
+    } catch {
+      sessionStorage.removeItem(IDEA_HANDOFF_KEY);
     }
   }, []);
+
   const clear = useCallback(() => {
     if (typeof window === "undefined") return;
     sessionStorage.removeItem(IDEA_HANDOFF_KEY);
     setHandoff(null);
   }, []);
+
   return { handoff, clear };
 }

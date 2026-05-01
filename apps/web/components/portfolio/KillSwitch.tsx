@@ -1,6 +1,6 @@
 "use client";
 
-import type { KillMode } from "@/lib/radar-types";
+export type KillMode = "ARMED" | "SAFE" | "PEEK" | "FROZEN";
 
 const MODES: { mode: KillMode; label: string; sub: string; tone: "ok" | "warn" | "block" | "danger" }[] = [
   { mode: "ARMED", label: "ARMED", sub: "backend risk gates decide order eligibility", tone: "ok" },

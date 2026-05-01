@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:29 Taipei - Codex cycle: production portfolio no longer depends on placeholder `radar-types`
+- Now: Removed `@/lib/radar-types` from the active `/portfolio` page, kill-switch control, paper order ticket, and idea handoff path. Kept the paper ticket read/write behavior bounded to existing paper-order endpoints; live broker submit remains untouched.
+- Files: `apps/web/app/portfolio/page.tsx`; `apps/web/components/portfolio/KillSwitch.tsx`; `apps/web/components/portfolio/OrderTicket.tsx`; `apps/web/lib/radar-handoff.ts`; `apps/web/components/SendToTicketButton.tsx`.
+- Endpoints: unchanged from prior portfolio work: paper-order preview/submit/status/list/cancel through `paper-orders-api.ts`, plus real risk/kill-switch reads from `/api/v1/risk/*`.
+- Behavior: `KillMode` is now a portfolio UI type instead of a placeholder schema type. Idea handoff stores only the minimal live/paper-ticket payload (`symbol`, `side`, `rationale`, `themeCode`, `emittedAt`) and accepts real strategy idea shapes without importing the old mock domain model.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: residual `@/lib/radar-types` imports remain only in legacy shared/research components and unused old portfolio client/table widgets. Next cycle can either retire unused legacy components or migrate them to contract types.
+
 ### 2026-05-01 13:24 Taipei - Codex cycle: final visible `radar-api` adapter consumers removed
 - Now: Removed the remaining visible `@/lib/radar-api` consumers from the global data-source badge, root command palette, and execution timeline component. `apps/web` no longer imports the old mock adapter anywhere.
 - Files: `apps/web/components/DataSourceBadge.tsx`; `apps/web/components/CommandPalette.tsx`; `apps/web/components/portfolio/ExecutionTimeline.tsx`.

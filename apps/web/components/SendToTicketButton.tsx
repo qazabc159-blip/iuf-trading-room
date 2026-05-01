@@ -1,16 +1,18 @@
 "use client";
-/** Send-to-portfolio CTA · stashes IdeaHandoff and routes to /portfolio. */
+
 import { useRouter } from "next/navigation";
-import type { Idea } from "@/lib/radar-types";
+
+import type { IdeaHandoffInput } from "@/lib/radar-handoff";
 import { ideaToHandoff, setIdeaHandoff } from "@/lib/radar-handoff";
 
-export function SendToTicketButton({ idea, compact }: { idea: Idea; compact?: boolean }) {
+export function SendToTicketButton({ idea, compact }: { idea: IdeaHandoffInput; compact?: boolean }) {
   const router = useRouter();
+
   return (
     <button
-      onClick={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
+      onClick={(event) => {
+        event.stopPropagation();
+        event.preventDefault();
         setIdeaHandoff(ideaToHandoff(idea));
         router.push("/portfolio#order-ticket");
       }}
@@ -20,13 +22,16 @@ export function SendToTicketButton({ idea, compact }: { idea: Idea; compact?: bo
         color: "var(--gold-bright)",
         fontFamily: "var(--mono)",
         fontSize: compact ? 9.5 : 10.5,
-        letterSpacing: "0.20em",
+        letterSpacing: "0.16em",
         padding: compact ? "3px 7px" : "4px 9px",
         fontWeight: 700,
         cursor: "pointer",
-        whiteSpace: "nowrap",
+        whiteSpace: "nowrap"
       }}
-      title="Stash this idea and jump to /portfolio"
-    >↘ 帶去下單台</button>
+      title="Stash this live idea into the paper ticket"
+      type="button"
+    >
+      PAPER TICKET
+    </button>
   );
 }

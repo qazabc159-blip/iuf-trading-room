@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { OrderTicketForm } from "@/components/portfolio/OrderTicket";
 import { KillSwitch } from "@/components/portfolio/KillSwitch";
+import type { KillMode } from "@/components/portfolio/KillSwitch";
 import {
   getExecutionEvents,
   getKillSwitch,
@@ -13,7 +14,6 @@ import {
   listStrategyRiskLimits,
   listSymbolRiskLimits,
 } from "@/lib/api";
-import type { KillMode } from "@/lib/radar-types";
 
 export const dynamic = "force-dynamic";
 
