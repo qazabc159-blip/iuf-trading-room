@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 12:58 Taipei - Codex cycle: `/runs` real strategy endpoints DONE
+- Now: Converted `apps/web/app/runs/page.tsx` and `apps/web/app/runs/[id]/page.tsx` from legacy `@/lib/radar-api` mock-shaped run data to production strategy run endpoints.
+- Files: `apps/web/app/runs/page.tsx`; `apps/web/app/runs/[id]/page.tsx`.
+- Endpoints: `GET /api/v1/strategy/runs?decisionMode=paper&sort=created_at`; `GET /api/v1/strategy/runs/:id`.
+- Behavior: run list/detail now render explicit LIVE / EMPTY / BLOCKED states with source + updatedAt; detail page removed fake `/portfolio` ORDER action and exposes company detail links only. Execute/order controls remain hidden until backend and risk gates approve them.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; `git diff --check -- apps/web/app/runs/page.tsx apps/web/app/runs/[id]/page.tsx` PASS.
+- Blockers: none for run read paths. Next: commit/push this scoped change; continue legacy `radar-api` cleanup on signals/themes/plans/mobile/ops as safe.
+
 ### 2026-05-01 12:53 Taipei - Codex cycle: `/ideas` real strategy endpoint DONE
 - Now: Converted `apps/web/app/ideas/page.tsx` from legacy `@/lib/radar-api` mock-shaped ideas to `getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 30, sort: "score" })`.
 - Files: `apps/web/app/ideas/page.tsx`.
