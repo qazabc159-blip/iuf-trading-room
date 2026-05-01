@@ -4,9 +4,13 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { OrderTicketForm } from "@/components/portfolio/OrderTicket";
 import { KillSwitch } from "@/components/portfolio/KillSwitch";
 import type { KillMode } from "@/components/portfolio/KillSwitch";
+import { PositionRiskBadge } from "@/components/portfolio/PositionRiskBadge";
+import { RiskSurface } from "@/components/portfolio/RiskSurface";
+import type { RiskSurfaceState } from "@/components/portfolio/RiskSurface";
 import {
   getExecutionEvents,
   getKillSwitch,
+  getRiskPortfolioOverview,
   getRiskLimit,
   getTradingBalance,
   getTradingOrders,
@@ -93,6 +97,28 @@ async function loadPortfolio(): Promise<LoadState> {
   }
 }
 
+async function loadRiskSurface(): Promise<RiskSurfaceState> {
+  const source = "GET /api/v1/risk/portfolio-overview";
+  const updatedAt = new Date().toISOString();
+
+  try {
+    const overview = await getRiskPortfolioOverview();
+    return {
+      state: "LIVE",
+      data: overview.data,
+      updatedAt: overview.data.generatedAt || updatedAt,
+      source,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      updatedAt,
+      source,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function formatTime(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
@@ -160,9 +186,14 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
 }
 
 export default async function PortfolioPage() {
-  const result = await loadPortfolio();
+  const [result, riskSurface] = await Promise.all([loadPortfolio(), loadRiskSurface()]);
   const data = result.data;
   const killMode = mapKillMode(data?.kill ?? null);
+  const riskAttributionBySymbol = new Map(
+    riskSurface.state === "LIVE"
+      ? riskSurface.data.positionAttribution.map((row) => [row.symbol, row])
+      : []
+  );
 
   return (
     <PageFrame
@@ -189,7 +220,11 @@ export default async function PortfolioPage() {
         ))}
       </div>
 
-      <div className="exec-grid">
+      <Panel code="RSK-SFC" title="RISK SURFACE" sub="4-layer read-only overview / Contract 2" right={riskSurface.state}>
+        <RiskSurface result={riskSurface} />
+      </Panel>
+
+      <div className="exec-grid" style={{ marginTop: 20 }}>
         <div>
           <div id="order-ticket">
             <Panel code="ORD-TKT" title={`${formatTime(result.updatedAt)} TPE`} sub="PAPER ORDER TICKET / CONTRACT 1" right={result.state}>
@@ -203,18 +238,24 @@ export default async function PortfolioPage() {
             {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Portfolio snapshot is unavailable, so positions are hidden.</div>}
             {data?.positions.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No open paper positions.</div>}
             {data && data.positions.length > 0 && (
-              <div className="row position-row table-head tg">
-                <span>SYM</span><span>MKT</span><span>QTY</span><span>AVG</span><span>P&L</span><span>%</span>
+              <div className="row position-row table-head tg" style={positionRiskRowStyle}>
+                <span>SYM</span><span>MKT</span><span>QTY</span><span>AVG</span><span>P&L</span><span>%</span><span>RISK_NEXT</span>
               </div>
             )}
             {data?.positions.map((position) => (
-              <div className="row position-row" key={`${position.accountId}-${position.symbol}`}>
+              <div className="row position-row" key={`${position.accountId}-${position.symbol}`} style={positionRiskRowStyle}>
                 <Link className="tg gold" href={`/companies/${position.symbol}`}>{position.symbol}</Link>
                 <span className="tg muted">{position.market}</span>
                 <span className="num">{position.quantity.toLocaleString()}</span>
                 <span className="num">{money(position.avgPrice)}</span>
                 <span className={`num ${tone(position.unrealizedPnl)}`}>{money(position.unrealizedPnl)}</span>
                 <span className={`tg ${tone(position.unrealizedPnlPct)}`}>{pct(position.unrealizedPnlPct)}</span>
+                <PositionRiskBadge
+                  blockedReason={riskSurface.state === "BLOCKED" ? riskSurface.reason : undefined}
+                  layers={riskSurface.state === "LIVE" ? riskSurface.data.layers : null}
+                  overviewState={riskSurface.state}
+                  row={riskAttributionBySymbol.get(position.symbol) ?? null}
+                />
               </div>
             ))}
           </Panel>
@@ -307,3 +348,7 @@ export default async function PortfolioPage() {
     </PageFrame>
   );
 }
+
+const positionRiskRowStyle: React.CSSProperties = {
+  gridTemplateColumns: "48px minmax(54px, 1fr) 62px 62px 78px 54px 76px",
+};

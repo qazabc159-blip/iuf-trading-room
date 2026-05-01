@@ -915,6 +915,59 @@ export async function getEffectiveRiskLimit(params: {
   );
 }
 
+export type RiskLayerName = "account" | "strategy" | "symbol" | "session";
+export type RiskLayerStatus = "ok" | "warn" | "block" | "no_limit_set" | "blocked_killswitch";
+
+export type RiskLayerCell = {
+  layer: RiskLayerName;
+  status: RiskLayerStatus;
+  limit: { kind: string; value: number; unit: "ntd" | "lots" | "count" };
+  current: number;
+  utilizationPct: number;
+  warnThresholdPct: number;
+  blockThresholdPct: number;
+  reason: string | null;
+  topContributors: Array<{ key: string; value: number }>;
+};
+
+export type PositionRiskRow = {
+  symbol: string;
+  qtyLots: number;
+  marketValueNtd: number;
+  unrealizedPnlNtd: number;
+  hypotheticalBlockingLayer: "none" | RiskLayerName;
+  hypotheticalBlockReason: string | null;
+};
+
+export type StrategyExposureRow = {
+  strategyTag: string;
+  exposureNtd: number;
+  utilizationPct: number;
+  status: Exclude<RiskLayerStatus, "blocked_killswitch">;
+};
+
+export type SymbolExposureRow = {
+  symbol: string;
+  exposureNtd: number;
+  utilizationPct: number;
+  status: Exclude<RiskLayerStatus, "blocked_killswitch">;
+};
+
+export type RiskPortfolioOverview = {
+  workspaceSlug: string;
+  generatedAt: string;
+  killSwitchState: "ARMED" | "DISARMED";
+  paperGateState: "ARMED" | "DISARMED";
+  layers: Record<RiskLayerName, RiskLayerCell>;
+  positionAttribution: PositionRiskRow[];
+  strategyBreakdown: StrategyExposureRow[];
+  symbolBreakdown: SymbolExposureRow[];
+};
+
+export async function getRiskPortfolioOverview() {
+  return request<RiskPortfolioOverview>("/api/v1/risk/portfolio-overview");
+}
+
 export async function listStrategyRiskLimits(accountId: string) {
   return request<StrategyRiskLimit[]>(
     `/api/v1/risk/strategy-limits?accountId=${encodeURIComponent(accountId)}`
