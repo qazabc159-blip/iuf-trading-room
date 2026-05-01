@@ -24,7 +24,7 @@
     "start:web": "pnpm --filter @iuf-trading-room/web start",
     "start:api": "pnpm --filter @iuf-trading-room/api start",
     "start:worker": "pnpm --filter @iuf-trading-room/worker start",
-    "start:api:railway": "pnpm migrate && pnpm start:api",
+    "start:api:railway": "node ./scripts/start-api-railway.mjs",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
