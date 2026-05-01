@@ -36,36 +36,3 @@ export function MetricStrip({
     </div>
   );
 }
-
-export function Sparkline({ values }: { values: number[] }) {
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = Math.max(1, max - min);
-  const points = values
-    .map((value, index) => {
-      const x = 4 + index * 13;
-      const y = 20 - ((value - min) / span) * 17;
-      return `${x},${y.toFixed(1)}`;
-    })
-    .join(" ");
-
-  return (
-    <svg className="spark" viewBox="0 0 96 24" aria-hidden>
-      <polyline points={points} fill="none" stroke="var(--night-mid)" strokeWidth="1.2" />
-    </svg>
-  );
-}
-
-export function Pill({
-  children,
-  tone = "muted",
-}: {
-  children: React.ReactNode;
-  tone?: Tone;
-}) {
-  return <span className={`tg session-pill ${tone}`}>{children}</span>;
-}
-
-export function TimeText({ iso }: { iso: string }) {
-  return <>{new Date(iso).toLocaleString("zh-TW", { hour12: false })}</>;
-}

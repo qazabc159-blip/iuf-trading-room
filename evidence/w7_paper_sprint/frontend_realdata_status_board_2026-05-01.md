@@ -960,3 +960,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: BLOCKED/EMPTY palette status rows now render as `role="note"` information rows instead of disabled buttons. Real navigation rows remain buttons and continue to route to actual pages.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:48 Taipei) - unused decorative widget helpers removed
+- Files changed: updated `apps/web/components/RadarWidgets.tsx`.
+- Endpoints / data behavior: no endpoint contract changed.
+- Behavior change: removed unused Sparkline/Pill/TimeText exports from the shared metric helper, leaving only the real-data metric strip helpers currently imported by production pages. This reduces dead decorative UI that could be mistaken for wired data later.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; import scan found no remaining Sparkline/Pill/TimeText consumers.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
