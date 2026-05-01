@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   formatPaperOrderError,
@@ -94,6 +94,14 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
   const [orders, setOrders] = useState<OrdersState>({ status: "loading" });
 
+  // F1: submitInFlight ref — prevents double-submit if React batching drops disabled flag for a tick.
+  const submitInFlight = useRef(false);
+
+  // F2: draftKey is generated once when the operator first previews a draft and reused for all
+  // subsequent preview + submit calls for the same draft. Cleared on form change or successful submit
+  // so that a fresh draft always gets a fresh key.
+  const [draftKey, setDraftKey] = useState<string | null>(null);
+
   const parsed = useMemo(() => {
     const qty = Number(form.qty);
     const price = Number(form.price);
@@ -179,14 +187,25 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     setForm((current) => ({ ...current, ...patch }));
     setPreview({ status: "idle" });
     setSubmit({ status: "idle" });
+    // F2: form change invalidates the current draft; clear key so next preview generates a fresh one.
+    setDraftKey(null);
   };
 
   const handlePreview = async () => {
     if (!input) return;
     setPreview({ status: "loading" });
     setSubmit({ status: "idle" });
+    // F2: generate a stable draft key on first preview; reuse it on retry so the server can
+    // deduplicate. Key encodes all intent fields + a mount-time timestamp to be unique per draft.
+    const stableKey = draftKey ?? (() => {
+      const ts = Date.now();
+      const priceStr = input.price != null ? String(input.price) : "MKT";
+      const key = `paper-${input.symbol}-${input.side}-${input.orderType}-${input.quantity_unit ?? "LOT"}-${input.qty}-${priceStr}-${ts}`;
+      setDraftKey(key);
+      return key;
+    })();
     try {
-      const result = await previewPaperOrder(input);
+      const result = await previewPaperOrder(input, stableKey);
       setPreview(result.blocked ? { status: "blocked", result } : { status: "live", result });
     } catch (error) {
       setPreview({ status: "error", message: formatPaperOrderError(error) });
@@ -194,15 +213,25 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   };
 
   const handleSubmit = async () => {
+    // F1: useRef guard — blocks duplicate network calls even if React batching delays the
+    // disabled-button state by a tick (fast double-click protection).
+    if (submitInFlight.current) return;
     if (!input || preview.status !== "live") return;
+    submitInFlight.current = true;
     setSubmit({ status: "loading" });
     try {
-      const state = await submitPaperOrder(input);
+      // F2: pass the same draft key used for preview so the server can deduplicate.
+      const state = await submitPaperOrder(input, draftKey ?? undefined);
       setSubmit(state.intent.status === "REJECTED" ? { status: "blocked", state } : { status: "live", state });
+      // F2: successful submit — clear draft key so a fresh draft gets a fresh key next time.
+      setDraftKey(null);
       await refreshOrders();
     } catch (error) {
       setSubmit({ status: "error", message: formatPaperOrderError(error) });
       await refreshOrders();
+    } finally {
+      // F1: always release the in-flight guard so the button can be used again after an error.
+      submitInFlight.current = false;
     }
   };
 
