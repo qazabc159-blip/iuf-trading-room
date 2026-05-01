@@ -31,3 +31,4 @@ apps/web/.codex-web-dev-*.log
 
 # Evidence files containing live runtime captures (gitignore future ones)
 evidence_*_runtime_*.md
+.gstack/

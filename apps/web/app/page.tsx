@@ -37,7 +37,7 @@ type NewsItem = CompanyAnnouncement & {
 
 function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  if (/fetch failed|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
+  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
   if (/401|unauthorized|unauthenticated/i.test(message)) return "登入狀態已失效，請重新登入。";
   if (/404|not found/i.test(message)) return "後端端點尚未提供。";
   return message;
@@ -315,7 +315,7 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
       <EmptyOrBlocked state={themes} />
       {themes.state === "LIVE" && (
         <div className="row dashboard-theme-row table-head tg">
-          <span>#</span><span>主題</span><span>狀態</span><span>階段</span><span>池</span><span>更新</span>
+          <span>#</span><span>主題</span><span>盤勢</span><span>更新</span>
         </div>
       )}
       {themes.state === "LIVE" && themes.data
@@ -330,8 +330,6 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
               <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{theme.slug} · {themeThesisText(theme)}</span>
             </span>
             <span className="tg gold">{marketText(theme.marketState)}</span>
-            <span className="tg muted">{lifecycleText(theme.lifecycle)}</span>
-            <span className="num">{theme.corePoolCount}/{theme.observationPoolCount}</span>
             <span className="tg soft">{formatDate(theme.updatedAt)}</span>
           </Link>
         ))}

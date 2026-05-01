@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import { Source_Serif_4, JetBrains_Mono, Noto_Serif_TC } from "next/font/google";
+import { Source_Serif_4, JetBrains_Mono, Noto_Sans_TC, Noto_Serif_TC } from "next/font/google";
 import { Sidebar } from "@/components/Sidebar";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -19,6 +19,12 @@ const mono = JetBrains_Mono({
   variable: "--font-mono",
   display: "swap",
 });
+const sansTc = Noto_Sans_TC({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+  variable: "--font-sans-tc",
+  display: "swap",
+});
 const serifTc = Noto_Serif_TC({
   subsets: ["latin"],          // zh-TW glyphs ship via the variable font itself
   weight: ["300", "400", "500", "600", "700"],
@@ -33,7 +39,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-Hant" className={`${serif.variable} ${mono.variable} ${serifTc.variable}`}>
+    <html lang="zh-Hant" className={`${serif.variable} ${mono.variable} ${sansTc.variable} ${serifTc.variable}`}>
       <body style={{ margin: 0, display: "flex", minHeight: "100vh", background: "var(--night)" }}>
         <Sidebar />
         <div style={{ flex: 1, display: "flex" }}>{children}</div>
