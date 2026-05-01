@@ -219,3 +219,70 @@ D5 work (migration 0017 + risk-brief + pre-market-brief) requires 楊董 picks f
 **Awaiting**: Lane A+B return → consolidated 10-line closeout per §10 + git ops for Lane C DRAFT PR.
 
 — Elva, 2026-04-30 ~12:15 TST Day 2 dispatch in flight
+
+---
+
+## 9. W7 Paper Sprint Day 2 (2026-05-01 — 勞動節休市；5/4 09:00 真開盤 deadline)
+
+**Trigger**: 楊董 verbatim 12:33 TST「現在已經12:33了而且台股今天5/1沒開盤 5/2 5/3是周末 5/4才有開盤」+「能不能全力拚一下」 → 68.5h sprint window 啟動，60min cadence on non-trading day.
+
+### 9.1 Frontend ownership pivot — Codex 接管 apps/web real-data
+
+| File | Purpose |
+|---|---|
+| `frontend_realdata_status_board_2026-05-01.md` | Codex-owned board (newest entry on top). Cycle 1 (B5-B9 RESOLVED), Cycle 2 cleanup, Elva 13:46 + 14:51 cadence audits, Codex 14-commit + 10-commit + 13-commit truthfulness/cleanup bursts. 4-state hard rule (LIVE/EMPTY/BLOCKED/HIDDEN). |
+| `codex_contract_1_paper_orders_workorder_2026-05-01.md` | Codex Contract 1 work order (preview/submit/status/list/cancel + 4-state). |
+| `codex_autonomy_rule_2026-05-01.md` | Codex autonomy rules (working-tree ownership, hybrid PR flow). |
+
+### 9.2 Backend — Jason 5 contracts work order
+
+| File | Purpose |
+|---|---|
+| `jason_backend_contracts_2026-05-01.md` | 5 KGI contracts roadmap: 1=Paper Orders / 2=Portfolio / 3=Watchlist / 4=Strategy idea→order promote / 5=KGI bidask+tick WS subscribe. |
+| `jason_0020_v2_work_order_2026-05-01.md` | Migration 0020 v2 dedup work order (5 child tables ON DELETE CASCADE correction). |
+| `session_layer_risk_schema_design_2026-05-01.md` | **★ 4-layer risk last layer** session-layer schema design (~1100 LOC est, ~20h impl). 6 new guard kinds, 0021_session_risk.sql, 4 routes, defaults NT$2M gross / NT$100K realized loss / NT$200K unrealized / 50 orders / 30 fills. |
+
+### 9.3 Verifier — Bruce harness + smoke
+
+| File | Purpose |
+|---|---|
+| `bruce_4state_harness_v1_2026-05-01.md` | 4-state regression harness v1 (LIVE/EMPTY/BLOCKED/HIDDEN). |
+| `bruce_morning_smoke_2026-05-01.md` | Bruce 5/1 morning static-only smoke (Bash dead 9th session). |
+| `bruce_contract_15_backend_readiness_audit_2026-05-01.md` | Backend readiness audit for Contracts 1+5. |
+
+### 9.4 PR #39 — Migration 0020 v2 standby
+
+| File | Purpose |
+|---|---|
+| `mike_pr39_migration_audit_2026-05-01.md` | Mike subagent migration audit standby (gated on Jason v2 push). |
+| `pete_pr39_desk_review_2026-05-01.md` | Pete subagent 7-axis desk review standby. |
+
+### 9.5 Elva governance + roadmap
+
+| File | Purpose |
+|---|---|
+| `institutional_grade_roadmap_2026-05-01.md` | **★ 機構級 25-condition gap analysis**：P0 (4 gaps before 5/4 09:00) / P1 (11 gaps before 5/9 paper E2E deadline) / P2 (10 gaps W8+). Sprint blocks 1-4 (5/1 12:33 → 5/4 09:00). 8 stop-lines. |
+| `elva_morning_closeout_2026-05-01.md` | 5/1 morning closeout. |
+| `openalice_100co_exposure_batch_design_2026-05-01.md` | **★ P1-11** OpenAlice 100-company exposure rebrief design. Universe SQL by `coverage_priority_score`, prompt YAML using gpt-5.4-mini, ~$0.034 per batch / ~50s wall-clock at 2 RPS, 5-dim scoring (aiExposure / taiwanExposure / usExposure / chinaExposure / volatilityProfile). 6 pipeline stages + 9-rule hard-line matrix all PASS. |
+| `preopen_spotcheck_2026-05-01/` | 5/3 22:00 operator browser 7-item spot-check templates. |
+
+### 9.6 Hard-line state (W7 paper sprint, Day 2 ~15:54 TST)
+
+- ✓ `/order/create` 409 untouched (no real-money path)
+- ✓ Kill-switch ARMED untouched
+- ✓ No KGI SDK import in apps/api (verified via grep at HEAD `119914f`)
+- ✓ Codex 13 cleanup commits all stop-line clean (only docs file matches)
+- ✓ Risk persistence file-backed via Railway Volume (P1-5 corrected from stale "in-memory only" claim)
+- ✓ 4-state hard rule honored across Codex 37-commit burst (14+10+13)
+- ✓ OPENAI_MODEL pinned `gpt-5.4-mini`
+- ✓ No secret rotation auto-triggered
+- ✓ Mike + Pete + Bruce 三層 desk review standby honored (no PR merge under gate)
+
+### 9.7 Sprint forward path
+
+- **Block 1** (5/1 12:33–24:00, ~12h): Codex Contract 1 wiring (in flight, 37 commits done) / Elva design docs (P1-5 / P1-6 / P1-11 all DONE) / Bruce static-only / Mike+Pete standby
+- **Block 2** (5/2 16h): Codex Contract 1 → DRAFT PR → Pete review → merge / Jason 0020 v2 → Mike + Pete + 楊董 ACK gate → merge
+- **Block 3** (5/3 16h): Codex Contract 2/3 frontend wiring (gated on 0020 v2 merged) / Bruce 4-state regression full sweep / 楊董 22:00 7-item browser spot-check
+- **Block 4** (5/4 06:00–09:00, 3h): Bruce final smoke / merge-window / 09:00 開盤後第一動作 paper 試打 1 張 2330 buy → Day 4 報告
+
+— Elva, 2026-05-01 ~15:54 TST W7 Day 2 mid-sprint cadence

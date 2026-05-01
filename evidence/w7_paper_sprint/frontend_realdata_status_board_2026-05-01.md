@@ -4,6 +4,57 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 15:54 Taipei — Elva cadence: 68h sprint Block 1 final-third checkpoint
+
+**Codex burst recap since 14:51 (13 commits, all `apps/web/**` truthfulness polish)**:
+- `f3c272b` tighten company paper order source text
+- `f322835` classify empty paper ledgers truthfully
+- `87716e8` show source freshness on dashboard market strip
+- `ee32e1f` report partial market intel coverage
+- `13ddfc6` expose partial market intel coverage
+- `5a6d90a` remove static companies catalog count
+- `c45c675` expose companies registry state
+- `88f2f59` hide non-live mobile metric placeholders
+- `3f592b9` use market overview generated timestamp
+- `4ffd680` show freshness on empty review surfaces
+- `0440d8e` fail closed without portfolio kill state
+- `88514fd` block dependent plan panels when source unavailable
+- `119914f` show frozen kill state without payload
+
+Aggregate diff (7004030..119914f): **13 files, +203/-66** across `app/admin/content-drafts/` (3 files) + `app/briefs/` + `app/companies/[symbol]/PaperOrderPanel.tsx` (+16/-? truthfulness) + `app/companies/page.tsx` (+44/-?) + `app/drafts/` + `app/m/page.tsx` (+22/-?) + `app/market-intel/page.tsx` (+15/-?) + `app/page.tsx` (+62/-?) + `app/plans/page.tsx` (+29/-?) + `app/portfolio/page.tsx` (+22/-?) + `app/reviews/` + `components/portfolio/OrderTicket.tsx` (+29/-?). Net +137 LOC — adding source/freshness/state badges across most pages.
+
+**Verification at 15:54 (HEAD `119914f`)**:
+- Stop-line grep `apps/web` for `broker\.submit|live\.submit|kgi-broker|/order/create`: 1 hit (`apps/web/docs/paper_trading_api_binding_contract_2026-04-29.md` design doc — expected). 0 actual broker-write paths in code.
+- pnpm typecheck NOT runnable from this shell (PowerShell exec policy blocks pnpm.ps1) — accept Codex's own per-cycle CI as authority; previous cycle 14:51 PASS at `2408853`, cleanup since then is presentation-only edits inside React components, no contract/router change. Will revisit if Bruce's Bash recovers.
+- 4-state hard rule: still LIVE/EMPTY/BLOCKED/HIDDEN; commits explicitly add source-state metadata or fail-closed kill-state branches; net direction is **more truthful**, not less.
+
+**Working tree** (still NOT my lane to touch):
+- `.gitignore` modified, unstaged
+- `apps/web/app/ops/page.tsx` modified, unstaged
+- Codex still owns these. No pickup.
+
+**Block 1 status (5/1 12:33 → 24:00, ~8h remaining)**:
+| Lane | Owner | Status |
+|---|---|---|
+| A — Codex Contract 1 + truthfulness polish | Codex | LIVE-pushing ~24 commits/hour, polish phase, no slowdown |
+| B — Elva design docs (P1-5/P1-6/P1-11) | Elva | **ALL 3 DONE** (risk-persist correction `a5a9d3a` / session-layer `a5a9d3a` / OpenAlice 100-co batch this cycle) |
+| C — Bruce regression | Bruce | Bash dead 9th session, static audit DONE @ 22363e4 |
+| D — Jason 0020 v2 | Jason | OFFLINE |
+
+**Yellow / Red events**: 0 / 0. No stop-line violation. No live broker write. No 0020 promote. No Codex working-tree pickup. No secret rotation.
+
+**This cycle's deliverable**: `evidence/w7_paper_sprint/openalice_100co_exposure_batch_design_2026-05-01.md` — 11-section operational design for P1-11. Universe SQL by `coverage_priority_score`, prompt YAML using gpt-5.4-mini, ~$0.034 per batch / ~50s wall-clock at 2 RPS, 5-dim scoring, Stages A-F pipeline, 9-rule hard-line matrix all PASS, ~6h total effort (~5h impl + ~1h operator review). Gated on 楊董 ACK + Codex Contract 1 cleanup + Jason 0020 v2 merge.
+
+Plus: `evidence/w7_paper_sprint/INDEX.md` §9 added — full Day 2 (2026-05-01) deliverables index covering 9.1 (frontend pivot — Codex board + work order + autonomy rule) / 9.2 (backend — Jason 5 contracts + 0020 v2 + session-layer schema) / 9.3 (Bruce 4-state harness + morning smoke + Contract 1+5 readiness) / 9.4 (PR #39 standby Mike+Pete) / 9.5 (Elva governance + roadmap + OpenAlice + spot-check) / 9.6 (hard-line state) / 9.7 (Block 1-4 forward path).
+
+**Next 60min (16:54 cadence)**:
+1. Verify next Codex commit batch stop-line clean
+2. Standby for Jason / 0020 v2 trigger (no probe — ASYNC)
+3. If no new dispatch trigger: pick up next P1 design doc — candidate is **P1-7 K-line UI design hand-off** (use KGI K-bar Phase 2 backend already wired), or **P1-3 Contract 4 strategy idea→order promote pipeline design**.
+4. Cycle entry write-back; if Block 1 closes at midnight: write Block 1 closeout doc.
+
+---
+
 ### 2026-05-01 14:51 Taipei — Elva cadence: 68h sprint Block 1 mid-late checkpoint
 
 **Codex burst recap since 13:46 (10 commits, all `apps/web/**`)**:
