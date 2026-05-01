@@ -53,6 +53,13 @@ function signed(value: number | null | undefined, digits = 2) {
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
 
+function momentumFromChange(value: number | null | undefined) {
+  if (typeof value !== "number") return "待接";
+  if (value > 1) return "偏強";
+  if (value < -1) return "偏弱";
+  return "中性";
+}
+
 function companyTimestamp(company: Company) {
   const record = company as unknown as { updatedAt?: string; createdAt?: string };
   return record.updatedAt ?? record.createdAt ?? new Date().toISOString();
@@ -202,6 +209,7 @@ export default async function CompanyDetailPage({
   const detail = toCompanyDetailView(company, symbol);
   const quote = quoteFromOhlcvBars(bars);
   const sources = buildSourceStatus(company, bars, ohlcvReason);
+  const dailyChangePct = quote?.changePercent ?? null;
 
   return (
     <PageFrame
@@ -236,20 +244,20 @@ export default async function CompanyDetailPage({
 
       <div className="company-kpi-strip">
         <div>
-          <span className="tg soft">分數</span>
-          <b className="num">{detail.scorePct ?? "--"}</b>
+          <span className="tg soft">資料</span>
+          <b className="tg gold">{ohlcvState === "LIVE" ? "K線" : "待接"}</b>
         </div>
         <div>
           <span className="tg soft">動能</span>
-          <b className={`tg ${tone(detail.intradayChgPct)}`}>{detail.momentum}</b>
+          <b className={`tg ${tone(dailyChangePct)}`}>{momentumFromChange(dailyChangePct)}</b>
         </div>
         <div>
-          <span className="tg soft">外資5日</span>
-          <b className={`num ${tone(detail.fiiNetBn5d)}`}>{signed(detail.fiiNetBn5d)} 十億</b>
+          <span className="tg soft">籌碼</span>
+          <b className="tg muted">待接</b>
         </div>
         <div>
-          <span className="tg soft">盤中</span>
-          <b className={`num ${tone(detail.intradayChgPct)}`}>{signed(detail.intradayChgPct)}%</b>
+          <span className="tg soft">日變動</span>
+          <b className={`num ${tone(dailyChangePct)}`}>{signed(dailyChangePct)}%</b>
         </div>
         <div>
           <span className="tg soft">主題</span>

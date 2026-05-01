@@ -60,6 +60,7 @@ function validationTone(value: string) {
 }
 
 function validationLabel(value: string) {
+  if (!value || /^(n\/a|na|--|null)$/i.test(value.trim())) return "尚未接資料";
   if (/positive|bullish|strong/i.test(value)) return "偏強";
   if (/negative|bearish|weak/i.test(value)) return "偏弱";
   if (/neutral/i.test(value)) return "中性";
@@ -79,7 +80,11 @@ function ValidationPill({ label, value }: { label: string; value: string }) {
 }
 
 function Dim({ value }: { value: string | undefined | null }) {
-  return <span className="dim">{value?.trim() || "未填"}</span>;
+  const normalized = value?.trim();
+  if (!normalized || /^(n\/a|na|--|null)$/i.test(normalized)) {
+    return <span className="dim">尚未接資料</span>;
+  }
+  return <span className="dim">{normalized}</span>;
 }
 
 function translateNoteLine(line: string) {
@@ -153,7 +158,7 @@ export function CompanyInfoPanel({ company }: { company: Company }) {
 
       <div style={{ borderTop: "1px solid var(--night-rule, #222)", paddingTop: 12, marginTop: 4 }}>
         <div className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)", marginBottom: 8, letterSpacing: "0.12em" }}>
-          曝險拆解 / 來源：公司主檔
+          產業受惠拆解 / 來源：公司主檔分類
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {(
@@ -176,7 +181,7 @@ export function CompanyInfoPanel({ company }: { company: Company }) {
 
       <div style={{ borderTop: "1px solid var(--night-rule, #222)", paddingTop: 12, marginTop: 12 }}>
         <div className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)", marginBottom: 8, letterSpacing: "0.12em" }}>
-          驗證快照 / 來源：公司主檔
+          驗證欄位 / 來源：公司主檔；未接資料會明確標示
         </div>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           <ValidationPill label="資金流" value={validation.capitalFlow} />
