@@ -13,6 +13,7 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - Production no-silent-mock policy: IN PROGRESS; B10/B11 wrapper-level production fallback fixed in Codex cycle 02:48, B12 Quant Lab fallback fixed in Codex cycle 03:40, kill-switch mock writes removed in Codex catch-up cycle 12:10.
 - Market Intel/news lane: IN PROGRESS; company detail panel [05] now binds TWSE announcements through the shared API client.
 - Build-time mock static HTML risk: MITIGATED in Codex catch-up cycle 12:30; legacy `radar-api` pages now force dynamic request-time render.
+- Paper Orders Contract 1 frontend wiring: DONE in Codex catch-up cycle 12:41; portfolio order ticket and company-side panel now call real paper preview/submit/status/list/cancel endpoints through `paper-orders-api.ts`.
 - Full mock/placeholder removal: OPEN.
 
 ## Path Locks
@@ -65,6 +66,11 @@ Known usable endpoints:
 - `GET /api/v1/event-history`
 - `GET /api/v1/audit-logs`
 - `GET /api/v1/audit-logs/summary`
+- `POST /api/v1/paper/orders/preview`
+- `POST /api/v1/paper/orders`
+- `GET /api/v1/paper/orders`
+- `GET /api/v1/paper/orders/:id`
+- `POST /api/v1/paper/orders/:id/cancel`
 
 Jason 5-contract first draft DONE @ 2026-05-01 ~01:58 Taipei → `evidence/w7_paper_sprint/jason_backend_contracts_2026-05-01.md`
 - Contract 1 (Paper Orders preview/submit/status/cancel): READY
@@ -95,7 +101,8 @@ Initial high-risk surfaces:
 - `DerivativesPanel`: BLOCKED until production endpoint contract exists.
 - `TickStreamPanel`: BLOCKED until KGI readonly bid/ask + tick contract exists.
 - `/m/kill` and portfolio KillSwitch: DONE in Codex catch-up cycle 12:10; frontend mock kill-mode toggles removed, current mode is read-only, all writes render BLOCKED pending backend governance/audit/risk approval.
-- `radar-api.ts` and `radar-uncovered.ts`: API failure can fall back to mock.
+- Portfolio `OrderTicket` and `/companies/[symbol]` `PaperOrderPanel`: DONE in Codex catch-up cycle 12:41; no longer use mock-shaped `radar-api.previewOrder/submitOrder`, show LIVE/EMPTY/BLOCKED ledger states, and use fresh idempotency keys for submit.
+- `radar-api.ts` GET surfaces and `radar-uncovered.ts`: API failure can still fall back to mock on remaining legacy pages; order POST fallback has been removed from `radar-api.ts`.
 
 ## Overnight Log
 
@@ -416,6 +423,44 @@ Tests:
 Blockers:
 
 - B16: Several legacy `radar-api` pages still need component-level LIVE/EMPTY/BLOCKED polish, but they no longer ship build-time mock HTML.
+
+### 2026-05-01 12:41 Taipei
+
+Completed:
+
+- Wired Contract 1 Paper Orders into the frontend with a dedicated no-mock API client.
+- Portfolio `OrderTicket` now uses real paper order preview, submit, status polling, list, and cancel endpoints with LIVE / EMPTY / BLOCKED states.
+- Company detail `PaperOrderPanel` now shares the same real paper endpoint path and shows symbol-scoped paper ledger rows instead of treating submit as an isolated local acknowledgement.
+- Removed legacy mock-shaped paper order POST methods from `radar-api.ts`; order submit/preview now use the Contract 1 payload (`idempotencyKey`, `symbol`, `side`, `orderType`, `qty`, `price`) instead of RADAR mock ticket shape.
+- Live broker submit remains untouched. No KGI SDK import, no `/order/create`, no migration 0020, no Railway secrets.
+
+Files:
+
+- `apps/web/lib/paper-orders-api.ts`
+- `apps/web/lib/api.ts`
+- `apps/web/lib/radar-api.ts`
+- `apps/web/components/portfolio/OrderTicket.tsx`
+- `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `POST /api/v1/paper/orders/preview`
+- `POST /api/v1/paper/orders`
+- `GET /api/v1/paper/orders/:id`
+- `GET /api/v1/paper/orders`
+- `POST /api/v1/paper/orders/:id/cancel`
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+- PASS `git diff --check -- apps/web/lib/paper-orders-api.ts apps/web/lib/api.ts apps/web/lib/radar-api.ts apps/web/components/portfolio/OrderTicket.tsx apps/web/app/companies/[symbol]/PaperOrderPanel.tsx`
+
+Blockers:
+
+- Paper ledger remains backend in-memory until Jason completes persistence/freshness work. Frontend labels this as real paper endpoint state, not live broker state.
+- Contract 2/3/4-promote/5 remain BLOCKED per Jason contract board.
 
 ## Elva Notes
 

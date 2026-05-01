@@ -30,9 +30,6 @@ import type {
   Order,
   OrderCancelInput,
   OrderCreateInput,
-  PaperOrder,
-  PaperOrderCreateInput,
-  PreviewOrderResult,
   Position,
   Quote,
   QuoteProviderStatus,
@@ -1175,26 +1172,15 @@ export async function getCompanyAnnouncements(companyId: string, params?: { days
   return request<CompanyAnnouncement[]>(`/api/v1/companies/${companyId}/announcements${qs ? `?${qs}` : ""}`);
 }
 
-// ── Paper Order ───────────────────────────────────────────────────────────────
-
-export async function previewPaperOrder(input: Omit<PaperOrderCreateInput, "idempotencyKey">) {
-  const body: PaperOrderCreateInput = {
-    ...input,
-    idempotencyKey: `preview-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  };
-  return request<PreviewOrderResult>("/api/v1/paper/orders/preview", {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-}
-
-export async function submitPaperOrder(input: Omit<PaperOrderCreateInput, "idempotencyKey">) {
-  const body: PaperOrderCreateInput = {
-    ...input,
-    idempotencyKey: `submit-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  };
-  return request<PaperOrder>("/api/v1/paper/orders", {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-}
+// Paper orders live in a dedicated no-mock client so both company and portfolio
+// order panels share the Contract 1 shape.
+export {
+  cancelPaperOrder,
+  formatPaperOrderError,
+  getPaperOrder,
+  isCancellablePaperOrder,
+  isTerminalPaperOrder,
+  listPaperOrders,
+  previewPaperOrder,
+  submitPaperOrder,
+} from "./paper-orders-api";

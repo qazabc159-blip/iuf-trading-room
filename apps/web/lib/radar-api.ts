@@ -12,7 +12,7 @@
  */
 import type {
   Theme, Company, Idea, Run, Signal, Quote, Position,
-  RiskLimit, SessionMeta, OrderTicket, OrderPreview, OrderAck,
+  RiskLimit, SessionMeta,
   ExecutionEvent, KillMode, StrategyRiskLimit, SymbolRiskLimit,
   OpsSystem, ActivityEvent, AuditEvent, AuditSummary,
   BriefBundle, ReviewBundle, WeeklyPlan,
@@ -27,8 +27,6 @@ import {
   positions as mockPositions,
   riskLimits as mockRiskLimits,
   sessionMeta as mockSessionMeta,
-  previewOrder as mockPreviewOrder,
-  submitOrder as mockSubmitOrder,
   executionEvents as mockExecutionEvents,
   strategyLimits as mockStrategyLimits,
   symbolLimits as mockSymbolLimits,
@@ -115,44 +113,6 @@ async function mockOnly<T>(fallback: T | (() => T | Promise<T>), label = "mockOn
   return fallback;
 }
 
-async function post<TIn, TOut>(path: string, body: TIn, fallback: () => TOut | Promise<TOut>): Promise<TOut> {
-  if (!BASE) {
-    if (IS_PROD && !IS_BUILD) throw new Error(`NEXT_PUBLIC_API_BASE_URL is not configured for ${path}`);
-    return await fallback();
-  }
-
-  let ssrCookie: string | null = null;
-  if (typeof window === "undefined") {
-    try {
-      const { headers } = await import("next/headers");
-      const h = await headers();
-      ssrCookie = h.get("cookie");
-    } catch {
-      // Outside a request context — leave cookie unset.
-    }
-  }
-
-  try {
-    const r = await fetch(`${BASE}${path}`, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(ssrCookie ? { Cookie: ssrCookie } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) throw new Error(`${r.status} ${path}`);
-    publish("LIVE");
-    return (await r.json()) as TOut;
-  } catch (e) {
-    publish("OFFLINE");
-    if (IS_PROD) throw e instanceof Error ? e : new Error(String(e));
-    console.warn("[api · dev] mock-fallback POST:", path, e);
-    return await fallback();
-  }
-}
-
 export const api = {
   // GETs — backend-matched paths (apps/api/src/server.ts)
   session:    () => get<SessionMeta>("/api/v1/session", mockSessionMeta),
@@ -206,13 +166,9 @@ export const api = {
   killMode: (mode: KillMode) =>
     mockOnly<{ ok: true; mode: KillMode }>({ ok: true, mode }, "killMode"),
 
-  // previewOrder: wired to /api/v1/paper/orders/preview (added PR #22 item 1). W7 L6: remove mockOnly.
-  previewOrder: (t: OrderTicket) =>
-    post<OrderTicket, OrderPreview>("/api/v1/paper/orders/preview", t, () => mockPreviewOrder(t)),
-
-  // submitOrder: /api/v1/paper/orders is W6 paper sprint live route (apps/api line 2679).
-  submitOrder: (t: OrderTicket) =>
-    post<OrderTicket, OrderAck>("/api/v1/paper/orders", t, () => mockSubmitOrder(t)),
+  // Paper order preview/submit moved to lib/paper-orders-api.ts. Keeping this
+  // legacy surface free of order methods prevents mock-shaped payloads from
+  // reaching the Contract 1 paper endpoints.
 };
 
 /** SSE URL for execution-event stream. Component reconnects with exp backoff. */
