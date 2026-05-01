@@ -25,6 +25,19 @@ export type PaperOrderSide = z.infer<typeof paperOrderSideSchema>;
 export const paperOrderTypeSchema = z.enum(["market", "limit", "stop", "stop_limit"]);
 export type PaperOrderType = z.infer<typeof paperOrderTypeSchema>;
 
+/**
+ * quantity_unit distinguishes board-lot (整股) from odd-lot (零股) orders.
+ *
+ * LOT  — 1 lot = 1,000 shares (TWSE board lot). Default for all existing orders.
+ * SHARE — 1 share unit; valid range 1–999 for Taiwan odd-lot session.
+ *
+ * The API and ledger are quantity-unit-aware. The arithmetic path is unit-agnostic
+ * (qty=1 SHARE fills 1 share, qty=1 LOT fills at 1-lot scale).
+ * Risk engine computes effectiveShares = qty * (unit === "LOT" ? 1000 : 1).
+ */
+export const quantityUnitSchema = z.enum(["SHARE", "LOT"]);
+export type QuantityUnit = z.infer<typeof quantityUnitSchema>;
+
 // ---------------------------------------------------------------------------
 // Paper order — request schema (POST /api/v1/paper/orders)
 // ---------------------------------------------------------------------------
@@ -35,6 +48,7 @@ export const paperOrderCreateInputSchema = z.object({
   side: paperOrderSideSchema,
   orderType: paperOrderTypeSchema,
   qty: z.number().int().positive(),
+  quantity_unit: quantityUnitSchema.optional().default("LOT"),
   price: z.number().positive().nullable().optional()
 });
 export type PaperOrderCreateInput = z.infer<typeof paperOrderCreateInputSchema>;
@@ -50,6 +64,7 @@ export const paperOrderSchema = z.object({
   side: paperOrderSideSchema,
   orderType: paperOrderTypeSchema,
   qty: z.number().int().positive(),
+  quantity_unit: quantityUnitSchema.default("LOT"),
   price: z.number().nullable(),
   status: paperOrderStatusSchema,
   reason: z.string().nullable(),

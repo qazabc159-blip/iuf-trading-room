@@ -48,6 +48,25 @@ function makeIntent(overrides: Partial<Parameters<typeof createOrderIntent>[0]> 
 }
 
 // ---------------------------------------------------------------------------
+// A0. Odd-lot (SHARE unit) — notional must equal price × qty (not × 1000)
+// ---------------------------------------------------------------------------
+
+test("A0: odd-lot SHARE qty=1 price=800 → FILLED, fillQty=1 (not 1000)", async () => {
+  const intent = makeIntent({ orderType: "limit", qty: 1, quantity_unit: "SHARE", price: 800.0 });
+  const result = await executeOrder(intent);
+  assert.equal(result.status, "FILLED");
+  if (result.status === "FILLED") {
+    // fillQty is the raw qty (1 share), not lot-expanded (1000 shares)
+    assert.equal(result.fill.fillQty, 1);
+    assert.equal(result.fill.fillPrice, 800.0);
+    // Notional = 1 × 800 = 800 TWD (not 800,000 TWD from ×1000 lot-expansion)
+    const notional = result.fill.fillQty * result.fill.fillPrice;
+    assert.equal(notional, 800);
+    assert.equal(result.quantity_unit, "SHARE");
+  }
+});
+
+// ---------------------------------------------------------------------------
 // A. PaperExecutor — MARKET fills
 // ---------------------------------------------------------------------------
 

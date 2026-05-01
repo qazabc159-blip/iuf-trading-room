@@ -27,6 +27,7 @@ export const riskGuardKindSchema = z.enum([
   "max_gross_exposure",
   "max_open_orders",
   "max_orders_per_minute",
+  "max_absolute_notional",
   "symbol_whitelist",
   "symbol_blacklist",
   "duplicate_order",

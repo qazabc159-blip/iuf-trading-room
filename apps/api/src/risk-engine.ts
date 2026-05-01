@@ -954,13 +954,42 @@ export async function evaluateRiskCheck(input: {
   }
 
   const referencePrice = resolveReferencePrice(order, quote);
-  const orderNotional = referencePrice ? referencePrice * order.quantity : null;
+
+  // Odd-lot (零股) support: compute effective share count before notional.
+  // LOT  orders: quantity is in lots; 1 lot = 1,000 shares.
+  // SHARE orders: quantity is in shares (odd-lot, 1–999).
+  // Default is LOT for all existing callers that don't set quantity_unit.
+  const BOARD_LOT_SIZE = 1000;
+  // quantity_unit is added to OrderCreateInput in W7 P0; default "LOT" for backward compat.
+  const quantityUnit = order.quantity_unit ?? "LOT";
+  const effectiveShares =
+    quantityUnit === "SHARE" ? order.quantity : order.quantity * BOARD_LOT_SIZE;
+
+  const orderNotional = referencePrice ? referencePrice * effectiveShares : null;
   const orderPct =
     orderNotional && account.equity > 0 ? (orderNotional / account.equity) * 100 : null;
   const exposureDeltaPct =
     order.side === "buy"
       ? orderPct ?? 0
       : -Math.min(account.symbolPositionPct, orderPct ?? 0);
+
+  // Absolute notional cap for odd-lot demo orders (max_absolute_notional guard).
+  // When quantity_unit === "SHARE" and no explicit override is provided, apply the
+  // 20,000 TWD demo capital cap. This ensures a SHARE order cannot exceed the
+  // demo capital regardless of pct-based limits.
+  const DEMO_CAPITAL_TWD = 20_000;
+  if (quantityUnit === "SHARE" && orderNotional !== null && order.side === "buy") {
+    if (orderNotional > DEMO_CAPITAL_TWD) {
+      pushGuard(
+        "max_absolute_notional",
+        "block",
+        `Odd-lot order notional ${orderNotional.toFixed(0)} TWD exceeds demo capital cap ${DEMO_CAPITAL_TWD} TWD.`,
+        Math.round(orderNotional),
+        DEMO_CAPITAL_TWD,
+        "account"
+      );
+    }
+  }
 
   if (orderPct !== null && (order.side === "buy" || account.symbolPositionPct <= 0)) {
     if (orderPct > limits.maxPerTradePct) {

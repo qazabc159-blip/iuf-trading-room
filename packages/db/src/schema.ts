@@ -463,6 +463,9 @@ export const paperOrders = pgTable(
     side:           text("side", { enum: ["buy", "sell"] }).notNull(),
     orderType:      text("order_type", { enum: ["market", "limit", "stop", "stop_limit"] }).notNull(),
     qty:            integer("qty").notNull(),
+    // quantity_unit: 'LOT' = board lot (1000 shares); 'SHARE' = odd-lot (1–999).
+    // Migration 0020 adds this column; default 'LOT' for backward compat.
+    quantityUnit:   text("quantity_unit", { enum: ["SHARE", "LOT"] }).notNull().default("LOT"),
     price:          numeric("price", { precision: 14, scale: 4 }),
     status:         text("status", { enum: ["PENDING", "ACCEPTED", "FILLED", "REJECTED", "CANCELLED"] })
                       .notNull()

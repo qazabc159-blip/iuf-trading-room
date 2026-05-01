@@ -23,6 +23,18 @@ export type OrderIntentStatus =
 export type OrderSide = "buy" | "sell";
 export type OrderType = "market" | "limit" | "stop" | "stop_limit";
 
+/**
+ * Quantity unit for TWSE paper orders.
+ *
+ * LOT  — board lot (1 lot = 1,000 shares). Default for backward compat.
+ * SHARE — odd-lot (零股). Valid range: 1–999 shares.
+ *
+ * The arithmetic path is unit-agnostic (qty=1 SHARE = 1 share, qty=1 LOT = 1 lot).
+ * Risk engine must use effectiveShares = qty * (unit === "LOT" ? 1000 : 1) for
+ * notional calculations.
+ */
+export type QuantityUnit = "SHARE" | "LOT";
+
 export interface OrderIntent {
   readonly id: string;
   readonly idempotencyKey: string;
@@ -30,6 +42,7 @@ export interface OrderIntent {
   readonly side: OrderSide;
   readonly orderType: OrderType;
   readonly qty: number;
+  readonly quantity_unit: QuantityUnit;
   readonly price: number | null;
   readonly userId: string;
   readonly status: OrderIntentStatus;
@@ -68,12 +81,16 @@ export class IllegalTransitionError extends Error {
 // Factory
 // ---------------------------------------------------------------------------
 
+// Demo capital constant — used by risk engine and UI for odd-lot absolute notional cap.
+export const DEMO_CAPITAL_TWD = 20_000;
+
 export interface CreateOrderIntentInput {
   idempotencyKey: string;
   symbol: string;
   side: OrderSide;
   orderType: OrderType;
   qty: number;
+  quantity_unit?: QuantityUnit;
   price?: number | null;
   userId: string;
 }
@@ -89,6 +106,13 @@ export function createOrderIntent(input: CreateOrderIntentInput): OrderIntent {
     throw new Error("qty must be a positive integer");
   }
 
+  const unit: QuantityUnit = input.quantity_unit ?? "LOT";
+
+  // Odd-lot range validation: Taiwan market allows 1–999 shares per odd-lot order.
+  if (unit === "SHARE" && (input.qty < 1 || input.qty > 999)) {
+    throw new Error("qty for SHARE (odd-lot) must be between 1 and 999");
+  }
+
   const now = new Date().toISOString();
   return {
     id: randomUUID(),
@@ -97,6 +121,7 @@ export function createOrderIntent(input: CreateOrderIntentInput): OrderIntent {
     side: input.side,
     orderType: input.orderType,
     qty: input.qty,
+    quantity_unit: unit,
     price: input.price ?? null,
     userId: input.userId,
     status: "PENDING",

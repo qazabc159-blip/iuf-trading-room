@@ -7,6 +7,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
   ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
 
+// PaperOrderInput is the form-facing type (no idempotencyKey — added by withIdempotency).
+// quantity_unit is optional; omit for LOT (board lot, 1 lot = 1000 shares).
+// Set to "SHARE" for odd-lot (零股) orders (1–999 shares).
 export type PaperOrderInput = Omit<PaperOrderCreateInput, "idempotencyKey">;
 
 export type PaperOrderStatus =

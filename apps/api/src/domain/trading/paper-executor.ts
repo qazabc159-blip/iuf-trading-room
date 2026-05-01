@@ -23,7 +23,7 @@ import type { SimulatedFill } from "./paper-ledger.js";
 // ---------------------------------------------------------------------------
 
 export type ExecuteOrderResult =
-  | { status: "FILLED"; fill: SimulatedFill }
+  | { status: "FILLED"; fill: SimulatedFill; quantity_unit: import("./order-intent.js").QuantityUnit }
   | { status: "REJECTED"; reason: string };
 
 // ---------------------------------------------------------------------------
@@ -57,7 +57,8 @@ export async function executeOrder(
           fillQty: intent.qty,
           fillPrice,
           fillTime
-        }
+        },
+        quantity_unit: intent.quantity_unit
       };
     }
 
@@ -76,7 +77,8 @@ export async function executeOrder(
           fillQty: intent.qty,
           fillPrice: intent.price,
           fillTime
-        }
+        },
+        quantity_unit: intent.quantity_unit
       };
     }
 
