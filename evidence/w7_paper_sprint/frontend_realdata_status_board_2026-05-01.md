@@ -882,3 +882,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: API failure, ticker not found, back navigation, company header, and company error boundary now render readable diagnostics instead of corrupted text. This makes Bruce/Elva production smoke actionable when auth, workspace, API base, or backend errors occur.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; company page mojibake scan only returned legitimate nullish-coalescing code and industry dictionary Chinese strings.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 14:20 Taipei) - idea-to-ticket anchor repaired
+- Files changed: added the missing `order-ticket` anchor wrapper in `apps/web/app/portfolio/page.tsx`.
+- Endpoints / data behavior: no API contract changed. `SendToTicketButton` already writes a real local handoff and routes to `/portfolio#order-ticket`; the portfolio page now exposes that target around the real paper order ticket.
+- Behavior change: clicking PAPER TICKET from an idea now lands on the actual paper order panel instead of only loading the portfolio page top. This preserves the paper-only Contract 1 flow without touching broker/live submit.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; hash-link scan confirms `/portfolio#order-ticket` has a matching `id="order-ticket"` target.
+- Blockers: paper submit remains gated by preview/risk/quote endpoint responses. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

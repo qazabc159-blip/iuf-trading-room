@@ -191,11 +191,13 @@ export default async function PortfolioPage() {
 
       <div className="exec-grid">
         <div>
-          <Panel code="ORD-TKT" title={`${formatTime(result.updatedAt)} TPE`} sub="PAPER ORDER TICKET / CONTRACT 1" right={result.state}>
-            <SourceLine result={result} />
-            <EmptyOrBlocked result={result} />
-            <OrderTicketForm killMode={killMode} />
-          </Panel>
+          <div id="order-ticket">
+            <Panel code="ORD-TKT" title={`${formatTime(result.updatedAt)} TPE`} sub="PAPER ORDER TICKET / CONTRACT 1" right={result.state}>
+              <SourceLine result={result} />
+              <EmptyOrBlocked result={result} />
+              <OrderTicketForm killMode={killMode} />
+            </Panel>
+          </div>
 
           <Panel code="POS-OPN" title="PAPER POSITIONS" sub="real trading positions endpoint" right={`${data?.positions.length ?? 0} ROWS`}>
             {data?.positions.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No open paper positions.</div>}
