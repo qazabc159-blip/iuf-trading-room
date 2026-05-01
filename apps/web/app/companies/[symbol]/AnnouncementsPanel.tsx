@@ -18,9 +18,9 @@ function formatTime(value: string) {
 }
 
 function badgeClass(category: string) {
-  if (/dividend|cash dividend|stock dividend|股利|配息|配股/i.test(category)) return "badge-yellow";
-  if (/financial|revenue|eps|earnings|財報|營收|損益/i.test(category)) return "badge-green";
-  if (/material|announcement|重大|公告|訊息/i.test(category)) return "badge-blue";
+  if (/dividend|cash dividend|stock dividend|股利|除權|除息/i.test(category)) return "badge-yellow";
+  if (/financial|revenue|eps|earnings|財報|營收|獲利|盈餘/i.test(category)) return "badge-green";
+  if (/material|announcement|重大|公告|董事會/i.test(category)) return "badge-blue";
   return "badge";
 }
 
@@ -30,9 +30,9 @@ function AnnouncementRow({ item }: { item: CompanyAnnouncement }) {
   const rowContent = (
     <>
       <span className="tg soft">{item.date || "--"}</span>
-      <span className={`badge ${badgeClass(item.category)}`}>{item.category || "NEWS"}</span>
-      <span className="market-intel-title">{item.title || "Untitled announcement"}</span>
-      <span className="tg soft">{hasBody ? (expanded ? "LESS" : "MORE") : "TWSE"}</span>
+      <span className={`badge ${badgeClass(item.category)}`}>{item.category || "重大訊息"}</span>
+      <span className="market-intel-title">{item.title || "未命名公告"}</span>
+      <span className="tg soft">{hasBody ? (expanded ? "收合" : "詳情") : "公告"}</span>
     </>
   );
 
@@ -80,7 +80,7 @@ export function AnnouncementsPanel({ companyId }: { companyId: string }) {
         if (!active) return;
         setState({
           status: "blocked",
-          reason: error instanceof Error ? error.message : "announcements request failed",
+          reason: error instanceof Error ? error.message : "重大訊息讀取失敗",
         });
       });
 
@@ -92,33 +92,33 @@ export function AnnouncementsPanel({ companyId }: { companyId: string }) {
   return (
     <section className="panel hud-frame">
       <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[05]</span> MARKET INTEL
+        <span className="ascii-head-bracket">[05]</span> 重大訊息
         <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>
-          TWSE material announcements
+          臺股公告 / 新聞線索
         </span>
       </h3>
 
       {state.status === "loading" && (
         <div className="state-panel">
-          <span className="badge badge-blue">LOADING</span>
-          <span className="tg soft">Fetching TWSE OpenAPI announcements.</span>
+          <span className="badge badge-blue">讀取中</span>
+          <span className="tg soft">正在讀取臺灣證交所重大訊息。</span>
         </div>
       )}
 
       {state.status === "blocked" && (
         <div className="state-panel">
-          <span className="badge badge-red">BLOCKED</span>
-          <span className="tg soft">Owner: Jason/Elva. Source: TWSE OpenAPI t187ap46_L.</span>
+          <span className="badge badge-red">暫停</span>
+          <span className="tg soft">重大訊息資料暫時無法讀取。</span>
           <span className="state-reason">{state.reason}</span>
         </div>
       )}
 
       {state.status === "empty" && (
         <div className="state-panel">
-          <span className="badge badge-yellow">EMPTY</span>
-          <span className="tg soft">Source: TWSE OpenAPI t187ap46_L.</span>
+          <span className="badge badge-yellow">無資料</span>
+          <span className="tg soft">臺灣證交所重大訊息。</span>
           <span className="state-reason">
-            No material announcements returned for the last 30 days. Updated {formatTime(state.fetchedAt)}.
+            近 30 天沒有重大訊息。更新 {formatTime(state.fetchedAt)}。
           </span>
         </div>
       )}
@@ -126,9 +126,9 @@ export function AnnouncementsPanel({ companyId }: { companyId: string }) {
       {state.status === "live" && (
         <div className="market-intel-list">
           <div className="source-line">
-            <span className="badge badge-green">LIVE</span>
-            <span className="tg soft">Source: TWSE OpenAPI t187ap46_L</span>
-            <span className="tg soft">Updated {formatTime(state.fetchedAt)}</span>
+            <span className="badge badge-green">正常</span>
+            <span className="tg soft">臺灣證交所重大訊息</span>
+            <span className="tg soft">更新 {formatTime(state.fetchedAt)}</span>
           </div>
           {state.items.map((item) => (
             <AnnouncementRow key={item.id} item={item} />

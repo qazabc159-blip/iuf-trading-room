@@ -15,7 +15,7 @@ function tone(value: number | null | undefined) {
 }
 
 function formatAsOf(value: string | null | undefined) {
-  if (!value) return "EMPTY";
+  if (!value) return "無資料";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleTimeString("zh-TW", { hour12: false });
@@ -29,14 +29,14 @@ export function CompanyHeroBar({
   quote: CompanyDetailQuote | null;
 }) {
   const changePercent = quote?.changePercent ?? company.intradayChgPct;
-  const source = quote?.source ? quote.source.toUpperCase() : "EMPTY";
+  const source = quote?.source ? quote.source.toUpperCase() : "無資料";
   const quoteTone = tone(changePercent);
 
   return (
     <div className="company-hero-bar">
       <div className="company-hero-main">
         <div>
-          <div className="tg gold">COMPANY NODE</div>
+          <div className="tg gold">公司總覽</div>
           <div className="company-hero-title">
             <span className="num">{company.symbol}</span>
             <span className="tc">{company.name}</span>
@@ -45,18 +45,18 @@ export function CompanyHeroBar({
           </div>
         </div>
         <div className="tg soft">
-          {company.chainPosition} / {company.themes.join(" / ") || "no themes"}
+          {company.chainPosition} / {company.themes.join(" / ") || "尚無主題"}
         </div>
       </div>
 
       <div className="company-hero-quote">
-        <div className="company-hero-price num">{quote?.last?.toLocaleString("en-US") ?? "--"}</div>
+        <div className="company-hero-price num">{quote?.last?.toLocaleString("zh-TW") ?? "--"}</div>
         <div className={`badge ${quoteTone === "up" ? "badge-red" : quoteTone === "down" ? "badge-green" : "badge-blue"}`}>
           {signed(changePercent)}%
         </div>
-        <div className="tg soft">VOL {quote?.volume?.toLocaleString("en-US") ?? "--"}</div>
-        <div className="tg muted">AS OF {formatAsOf(quote?.asOf)}</div>
-        <div className="tg badge badge-blue">SRC {source}</div>
+        <div className="tg soft">量 {quote?.volume?.toLocaleString("zh-TW") ?? "--"}</div>
+        <div className="tg muted">更新 {formatAsOf(quote?.asOf)}</div>
+        <div className="tg badge badge-blue">來源 {source}</div>
       </div>
     </div>
   );

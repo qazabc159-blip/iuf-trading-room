@@ -10,11 +10,11 @@ export type RiskSurfaceState =
 const LAYERS: RiskLayerName[] = ["account", "strategy", "symbol", "session"];
 
 function statusLabel(status: RiskLayerCell["status"]) {
-  if (status === "ok") return "OK";
-  if (status === "warn") return "WARN";
-  if (status === "block") return "BLOCK";
-  if (status === "blocked_killswitch") return "KILL";
-  return "NO LIMIT";
+  if (status === "ok") return "正常";
+  if (status === "warn") return "注意";
+  if (status === "block") return "阻擋";
+  if (status === "blocked_killswitch") return "鎖定";
+  return "未設定";
 }
 
 function statusTone(status: RiskLayerCell["status"]) {
@@ -48,12 +48,12 @@ function formatTime(value: string | null | undefined) {
 
 function formatValue(value: number, unit: RiskLayerCell["limit"]["unit"]) {
   if (unit === "ntd") return money(value);
-  if (unit === "lots") return `${numberText(value)} lots`;
+  if (unit === "lots") return `${numberText(value)} 張`;
   return numberText(value);
 }
 
 function topContributor(cell: RiskLayerCell) {
-  return cell.topContributors[0]?.key ?? "none";
+  return cell.topContributors[0]?.key ?? "無主要曝險";
 }
 
 function layerCaption(cell: RiskLayerCell) {
@@ -69,14 +69,14 @@ function RiskCell({ cell }: { cell: RiskLayerCell }) {
   const color = statusTone(cell.status);
   return (
     <Link
-      aria-label={`${cell.layer} risk layer ${status}`}
+      aria-label={`${layerName(cell.layer)}風控層 ${status}`}
       href={`/risk/limits?layer=${cell.layer}`}
       style={cellStyle}
-      title={cell.reason ?? `Open ${cell.layer} risk limits`}
+      title={cell.reason ?? `查看${layerName(cell.layer)}風控限制`}
     >
       <div style={cellTopStyle}>
-        <span>{cell.layer.toUpperCase()}</span>
-        <span style={{ color }}>[{status}]</span>
+        <span>{layerName(cell.layer)}</span>
+        <span style={{ color }}>{status}</span>
       </div>
       <div style={contributorStyle}>{topContributor(cell)}</div>
       <div style={numericStyle}>
@@ -95,11 +95,18 @@ function RiskCell({ cell }: { cell: RiskLayerCell }) {
         />
       </div>
       <div style={footerStyle}>
-        <span>{pct(cell.utilizationPct)} used</span>
+        <span>已使用 {pct(cell.utilizationPct)}</span>
         <span>{layerCaption(cell)}</span>
       </div>
     </Link>
   );
+}
+
+function layerName(layer: RiskLayerName) {
+  if (layer === "account") return "帳戶";
+  if (layer === "strategy") return "策略";
+  if (layer === "symbol") return "個股";
+  return "盤中";
 }
 
 function Breakdown({
@@ -112,7 +119,7 @@ function Breakdown({
   return (
     <div>
       <div className="tg gold" style={{ marginBottom: 6 }}>{title}</div>
-      {rows.length === 0 && <div className="terminal-note">EMPTY: backend returned no breakdown rows.</div>}
+      {rows.length === 0 && <div className="terminal-note">目前沒有曝險明細。</div>}
       {rows.slice(0, 5).map((row) => (
         <div className="row" key={`${title}-${row.key}`} style={breakdownRowStyle}>
           <span className="tg gold">{row.key}</span>
@@ -132,13 +139,12 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
     return (
       <div>
         <div className="tg soft" style={sourceStyle}>
-          <span style={{ color: "var(--tw-up-bright)", fontWeight: 700 }}>BLOCKED</span>
-          <span>{result.source}</span>
-          <span>checked {formatTime(result.updatedAt)}</span>
+          <span style={{ color: "var(--gold-bright)", fontWeight: 700 }}>待啟用</span>
+          <span>四層風控總覽</span>
+          <span>檢查 {formatTime(result.updatedAt)}</span>
         </div>
         <div className="terminal-note">
-          <span className="tg down">BLOCKED</span>{" "}
-          Risk Surface is hidden because the portfolio overview endpoint is unavailable: {result.reason}. Owner: Jason backend contract, Codex frontend wire.
+          風控總覽資料尚未接上。紙上委託仍會在送出前執行風控預檢；此區待後端總覽資料啟用後會顯示帳戶、策略、個股與盤中四層曝險。
         </div>
       </div>
     );
@@ -149,16 +155,15 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
   return (
     <div>
       <div className="tg soft" style={sourceStyle}>
-        <span style={{ color: "var(--tw-dn-bright)", fontWeight: 700 }}>LIVE</span>
-        <span>{result.source}</span>
-        <span>generated {formatTime(data.generatedAt)}</span>
-        <span>kill {data.killSwitchState}</span>
-        <span>paper {data.paperGateState}</span>
+        <span style={{ color: "var(--tw-dn-bright)", fontWeight: 700 }}>即時</span>
+        <span>四層風控總覽</span>
+        <span>更新 {formatTime(data.generatedAt)}</span>
+        <span>交易模式 {data.killSwitchState}</span>
+        <span>紙上閘門 {data.paperGateState}</span>
       </div>
       {isEmpty && (
         <div className="terminal-note">
-          <span className="tg gold">EMPTY</span>{" "}
-          No positions returned for risk attribution; layer limits are still rendered from the live overview payload.
+          目前沒有部位曝險，仍保留四層限制供送單前檢查。
         </div>
       )}
       <div style={gridStyle}>
@@ -167,10 +172,10 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
         ))}
       </div>
       <details style={detailsStyle}>
-        <summary className="tg gold" style={{ cursor: "pointer" }}>TOP EXPOSURE BREAKDOWN</summary>
+        <summary className="tg gold" style={{ cursor: "pointer" }}>主要曝險明細</summary>
         <div style={breakdownGridStyle}>
           <Breakdown
-            title="TOP STRATEGIES"
+            title="策略曝險"
             rows={data.strategyBreakdown.map((row) => ({
               key: row.strategyTag,
               exposure: row.exposureNtd,
@@ -179,7 +184,7 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
             }))}
           />
           <Breakdown
-            title="TOP SYMBOLS"
+            title="個股曝險"
             rows={data.symbolBreakdown.map((row) => ({
               key: row.symbol,
               exposure: row.exposureNtd,

@@ -35,12 +35,12 @@ export function PageFrame({
           {sub && <span className="tc">{sub}</span>}
         </div>
         <div className="tg meta-strip" suppressHydrationWarning>
-          <span>RENDERED / <b>{generatedAt.date} {generatedAt.time}</b> TPE</span>
-          <span>SESSION / <b className="gold">REAL-DATA</b></span>
-          <span>MODE / <b>{exec ? "PAPER" : "READ"}</b></span>
+          <span>更新 / <b>{generatedAt.date} {generatedAt.time}</b> 台北</span>
+          <span>資料 / <b className="gold">真實資料</b></span>
+          <span>模式 / <b>{exec ? "紙上交易" : "唯讀"}</b></span>
         </div>
         <div className={`tg session-pill ${exec ? "exec" : ""}`}>
-          {exec ? "EXEC LAYER / PAPER" : "SESSION / REAL-DATA"}
+          {exec ? "交易層 / 紙上" : "連線 / 真實資料"}
         </div>
       </header>
       {note && <div className="tg terminal-note">{note}</div>}

@@ -41,14 +41,36 @@ type OrdersState =
   | { status: "blocked"; message: string; updatedAt: string };
 
 const SIDES: ReadonlyArray<{ value: PaperSide; label: string }> = [
-  { value: "buy", label: "BUY" },
-  { value: "sell", label: "SELL" },
+  { value: "buy", label: "買進" },
+  { value: "sell", label: "賣出" },
 ];
 
 const TYPES: ReadonlyArray<{ value: PaperOrderType; label: string }> = [
-  { value: "market", label: "MKT" },
-  { value: "limit", label: "LMT" },
+  { value: "market", label: "市價" },
+  { value: "limit", label: "限價" },
 ];
+
+function uiStateLabel(state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING") {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  if (state === "LOADING") return "讀取中";
+  return "暫停";
+}
+
+function sideLabel(side: PaperSide | string) {
+  return side === "buy" ? "買進" : side === "sell" ? "賣出" : String(side);
+}
+
+function orderStatusLabel(status: string) {
+  if (status === "REJECTED") return "已拒絕";
+  if (status === "FILLED") return "已成交";
+  if (status === "CANCELLED") return "已撤單";
+  if (status === "WORKING") return "委託中";
+  if (status === "ACCEPTED") return "已接受";
+  if (status === "PENDING") return "待處理";
+  if (status === "SUBMITTED") return "已送出";
+  return status;
+}
 
 export function PaperOrderPanel({ symbol }: { symbol: string }) {
   const [form, setForm] = useState<FormState>({
@@ -85,9 +107,9 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   }, [form.orderType, form.side, parsed, symbol]);
 
   const validationReason = !parsed.validQty
-    ? "Quantity must be a positive whole number."
+    ? "股數必須是正整數。"
     : !parsed.validPrice
-      ? "Limit orders need a positive price."
+      ? "限價單需要有效價格。"
       : null;
   const ledgerState =
     orders.status === "blocked"
@@ -160,25 +182,25 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   return (
     <section className="panel hud-frame">
       <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[06]</span> Paper Orders
+        <span className="ascii-head-bracket">[06]</span> 紙上委託
       </h3>
 
       <div style={sourceBarStyle}>
         <StatePill state={ledgerState} />
-        <span>Contract 1 / GET paper order ledger / paper only / no broker submit</span>
+        <span>紙上交易 / 風控預檢 / 個股委託紀錄</span>
       </div>
 
       <div style={bannerStyle}>
-        PAPER ONLY. This panel calls paper endpoints only and never touches KGI/live order routes.
+        此區只送紙上委託，不會送往凱基正式下單；正式送單等待 libCGCrypt.so 補齊後接上。
       </div>
 
       <div style={gridStyle}>
         <div>
-          <label style={labelStyle}>SIDE</label>
+          <label style={labelStyle}>方向</label>
           <Segmented options={SIDES} value={form.side} onChange={(side) => updateForm({ side })} />
         </div>
         <div>
-          <label style={labelStyle}>TYPE</label>
+          <label style={labelStyle}>類型</label>
           <Segmented
             options={TYPES}
             value={form.orderType}
@@ -186,7 +208,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           />
         </div>
         <div>
-          <label style={labelStyle}>QTY</label>
+          <label style={labelStyle}>股數</label>
           <input
             type="number"
             min={1}
@@ -197,7 +219,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
         </div>
         {form.orderType !== "market" && (
           <div>
-            <label style={labelStyle}>PRICE</label>
+            <label style={labelStyle}>價格</label>
             <input
               type="number"
               min={0.01}
@@ -212,7 +234,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <span className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)" }}>SYMBOL</span>
+        <span className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)" }}>股票</span>
         <span className="mono" style={{ marginLeft: 10, fontWeight: 700, fontSize: 15 }}>{symbol.toUpperCase()}</span>
       </div>
 
@@ -223,25 +245,25 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           className="btn-sm"
           onClick={handlePreview}
           disabled={input === null || preview.status === "loading"}
-          title={validationReason ?? "Run real paper preview endpoint"}
+          title={validationReason ?? "執行紙上委託預覽"}
           type="button"
         >
-          {preview.status === "loading" ? "PREVIEWING" : "PREVIEW"}
+          {preview.status === "loading" ? "預覽中" : "預覽風控"}
         </button>
         <button
           className="btn-sm"
           onClick={handleSubmit}
           disabled={!canSubmit || submit.status === "loading"}
-          title={!canSubmit ? "BLOCKED: run a passing preview first." : "Submit a paper order only."}
+          title={!canSubmit ? "請先完成通過的風控預覽。" : "只送出紙上委託。"}
           type="button"
           style={canSubmit ? { borderColor: "var(--gold, #b8960c)", color: "var(--gold, #b8960c)" } : {}}
         >
-          {submit.status === "loading" ? "SUBMITTING" : "SUBMIT PAPER"}
+          {submit.status === "loading" ? "送出中" : "送出紙上單"}
         </button>
       </div>
 
       {preview.status === "idle" && (
-        <TruthNote state="EMPTY" text="No preview for the current draft yet." />
+        <TruthNote state="EMPTY" text="尚未預覽目前委託草稿。" />
       )}
       {preview.status === "error" && (
         <TruthNote state="BLOCKED" text={preview.message} />
@@ -256,29 +278,29 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
       {(submit.status === "live" || submit.status === "blocked") && (
         <TruthNote
           state={submit.state.intent.status === "REJECTED" ? "BLOCKED" : "LIVE"}
-          text={`Paper order ${submit.state.intent.id} is ${submit.state.intent.status}${submit.state.intent.reason ? `: ${submit.state.intent.reason}` : ""}.`}
+          text={`紙上委託 ${submit.state.intent.id}：${orderStatusLabel(submit.state.intent.status)}${submit.state.intent.reason ? `：${submit.state.intent.reason}` : ""}`}
         />
       )}
 
       <div style={ledgerStyle}>
         <div style={ledgerHeaderStyle}>
-          <span>SYMBOL PAPER LEDGER</span>
+          <span>個股紙上委託紀錄</span>
           <span>
             {orders.status === "live"
-              ? `${ledgerState} / ${orders.items.length} rows / ${formatTime(orders.updatedAt)}`
+              ? `${uiStateLabel(ledgerState)} / ${orders.items.length} 筆 / ${formatTime(orders.updatedAt)}`
               : orders.status === "loading"
-                ? "loading"
-                : `blocked / ${formatTime(orders.updatedAt)}`}
+                ? "讀取中"
+                : `暫停 / ${formatTime(orders.updatedAt)}`}
           </span>
         </div>
         {orders.status === "blocked" && <TruthNote state="BLOCKED" text={orders.message} />}
         {orders.status === "live" && orders.items.length === 0 && (
-          <TruthNote state="EMPTY" text="No paper orders returned for this symbol." />
+          <TruthNote state="EMPTY" text="此股票目前沒有紙上委託紀錄。" />
         )}
         {orders.status === "live" && orders.items.slice(0, 3).map((order) => (
           <div key={order.intent.id} style={orderRowStyle}>
-            <span>{order.intent.side.toUpperCase()} {order.intent.qty.toLocaleString()}</span>
-            <span>{order.intent.status}</span>
+            <span>{sideLabel(order.intent.side)} {order.intent.qty.toLocaleString()}</span>
+            <span>{orderStatusLabel(order.intent.status)}</span>
             <span>{formatTime(order.intent.updatedAt)}</span>
           </div>
         ))}
@@ -292,10 +314,10 @@ function PreviewResult({ result }: { result: Awaited<ReturnType<typeof previewPa
   const blocked = result.riskCheck.guards.filter((guard) => guard.decision === "block");
   return (
     <div style={previewBoxStyle}>
-      <TruthNote state={state} text={result.riskCheck.summary || `Risk decision: ${result.riskCheck.decision}`} />
-      <div style={kvStyle}><span>RISK</span><b>{result.riskCheck.decision.toUpperCase()}</b></div>
-      <div style={kvStyle}><span>QUOTE</span><b>{result.quoteGate ? result.quoteGate.decision : "not reached"}</b></div>
-      <div style={kvStyle}><span>UPDATED</span><b>{formatTime(result.riskCheck.createdAt)}</b></div>
+      <TruthNote state={state} text={result.riskCheck.summary || `風控判斷：${result.riskCheck.decision}`} />
+      <div style={kvStyle}><span>風控</span><b>{result.riskCheck.decision.toUpperCase()}</b></div>
+      <div style={kvStyle}><span>報價</span><b>{result.quoteGate ? result.quoteGate.decision : "尚未檢查"}</b></div>
+      <div style={kvStyle}><span>更新</span><b>{formatTime(result.riskCheck.createdAt)}</b></div>
       {blocked.map((guard) => (
         <div key={`${guard.guard}-${guard.message}`} style={blockedGuardStyle}>
           {guard.guard}: {guard.message}
@@ -310,7 +332,7 @@ function StatePill({ state }: { state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING" 
     : state === "EMPTY" ? "var(--night-mid)"
       : state === "LOADING" ? "var(--gold)"
         : "var(--tw-up-bright)";
-  return <span style={{ color, fontWeight: 700, letterSpacing: "0.16em" }}>{state}</span>;
+  return <span style={{ color, fontWeight: 700, letterSpacing: "0.16em" }}>{uiStateLabel(state)}</span>;
 }
 
 function TruthNote({ state, text }: { state: "LIVE" | "EMPTY" | "BLOCKED"; text: string }) {

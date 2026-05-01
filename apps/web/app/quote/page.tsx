@@ -10,15 +10,27 @@ type KlineState = {
 
 function fmtNumber(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "--";
-  return value.toLocaleString("en-US", {
+  return value.toLocaleString("zh-TW", {
     maximumFractionDigits: digits,
     minimumFractionDigits: digits,
   });
 }
 
 function formatDateTime(value: string | null | undefined) {
-  if (!value) return "NOT SET";
+  if (!value) return "未設定";
   return new Date(value).toLocaleString("zh-TW", { hour12: false });
+}
+
+function stateLabel(state: "LIVE" | "EMPTY" | "BLOCKED") {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  return "暫停";
+}
+
+function readinessLabel(readiness: EffectiveMarketQuote["readiness"]) {
+  if (readiness === "ready") return "正常";
+  if (readiness === "degraded") return "降級";
+  return "暫停";
 }
 
 function readinessBadge(readiness: EffectiveMarketQuote["readiness"]) {
@@ -35,10 +47,10 @@ function QuoteStatePanel({
   reason: string;
 }) {
   return (
-    <Panel code={`QTE-${state}`} title={state} right="Quote source">
+    <Panel code={`QTE-${state}`} title={stateLabel(state)} right="報價來源">
       <div className="state-panel">
-        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
-        <span className="tg soft">Source: GET /api/v1/market-data/effective-quotes</span>
+        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{stateLabel(state)}</span>
+        <span className="tg soft">正式報價資料</span>
         <span className="state-reason">{reason}</span>
       </div>
     </Panel>
@@ -55,43 +67,43 @@ function QuoteSnapshot({ item }: { item: EffectiveMarketQuote }) {
       title={`${item.symbol} ${item.market}`}
       right={
         <span className="source-line" style={{ margin: 0 }}>
-          <span className={`badge ${readinessBadge(item.readiness)}`}>{item.readiness.toUpperCase()}</span>
-          <span>Source: {item.selectedSource ?? "NONE"}</span>
-          <span>Freshness: {item.freshnessStatus}</span>
+          <span className={`badge ${readinessBadge(item.readiness)}`}>{readinessLabel(item.readiness)}</span>
+          <span>來源：{item.selectedSource ?? "無"}</span>
+          <span>新鮮度：{item.freshnessStatus}</span>
         </span>
       }
     >
       {quote ? (
         <div className="quote-snapshot-grid">
           <div>
-            <span className="tg soft">LAST</span>
+            <span className="tg soft">成交</span>
             <b className="num">{fmtNumber(quote.last)}</b>
           </div>
           <div>
-            <span className="tg soft">BID</span>
+            <span className="tg soft">買價</span>
             <b className="num up">{fmtNumber(quote.bid)}</b>
           </div>
           <div>
-            <span className="tg soft">ASK</span>
+            <span className="tg soft">賣價</span>
             <b className="num down">{fmtNumber(quote.ask)}</b>
           </div>
           <div>
-            <span className="tg soft">CHANGE</span>
+            <span className="tg soft">漲跌幅</span>
             <b className="num">{fmtNumber(quote.changePct)}%</b>
           </div>
           <div>
-            <span className="tg soft">VOLUME</span>
+            <span className="tg soft">成交量</span>
             <b className="num">{fmtNumber(quote.volume, 0)}</b>
           </div>
           <div>
-            <span className="tg soft">UPDATED</span>
+            <span className="tg soft">更新</span>
             <b className="tg">{formatDateTime(quote.timestamp)}</b>
           </div>
         </div>
       ) : (
         <div className="state-panel">
-          <span className="badge badge-red">BLOCKED</span>
-          <span className="state-reason">No selected quote is available for this symbol.</span>
+          <span className="badge badge-red">暫停</span>
+          <span className="state-reason">此股票目前沒有可用的正式報價。</span>
         </div>
       )}
 
@@ -114,10 +126,10 @@ function BlockedMarketPanel({
   reason: string;
 }) {
   return (
-    <Panel code={code} title={title} right="contract required">
+    <Panel code={code} title={title} right="待資料源">
       <div className="state-panel">
-        <span className="badge badge-red">BLOCKED</span>
-        <span className="tg soft">Owner: Jason/Elva.</span>
+        <span className="badge badge-red">暫停</span>
+        <span className="tg soft">等待即時資料源接上後啟用</span>
         <span className="state-reason">{reason}</span>
       </div>
     </Panel>
@@ -132,7 +144,7 @@ async function loadQuoteKline(symbol: string): Promise<KlineState> {
       return {
         state: "EMPTY",
         bars: [],
-        reason: `GET /api/v1/companies returned no company row for ${symbol}; K-line lookup is not evaluated.`,
+        reason: `查無 ${symbol} 公司資料，無法讀取 K 線。`,
       };
     }
 
@@ -143,26 +155,26 @@ async function loadQuoteKline(symbol: string): Promise<KlineState> {
         return {
           state: "EMPTY",
           bars: [],
-          reason: "GET /api/v1/companies/:id/ohlcv returned zero production OHLCV bars for this symbol.",
+          reason: "此股票目前沒有可用的正式 K 線資料。",
         };
       }
       return {
         state: "LIVE",
         bars,
-        reason: `GET /api/v1/companies/:id/ohlcv returned ${bars.length} production bars.`,
+        reason: `已讀取 ${bars.length} 根正式 K 線。`,
       };
     } catch (error) {
       return {
         state: "BLOCKED",
         bars: [],
-        reason: `GET /api/v1/companies/:id/ohlcv failed: ${error instanceof Error ? error.message : String(error)}`,
+        reason: `K 線資料暫時無法讀取：${error instanceof Error ? error.message : String(error)}`,
       };
     }
   } catch (error) {
     return {
       state: "BLOCKED",
       bars: [],
-      reason: `GET /api/v1/companies failed before K-line lookup: ${error instanceof Error ? error.message : String(error)}`,
+      reason: `公司清單暫時無法讀取：${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }
@@ -184,17 +196,17 @@ export default async function QuotePage({
     generatedAt = response.data.generatedAt;
     item = response.data.items[0] ?? null;
   } catch (err) {
-    error = err instanceof Error ? err.message : "effective quote request failed";
+    error = err instanceof Error ? err.message : "報價請求失敗";
   }
 
   return (
     <PageFrame
       code="QTE"
-      title={`Quote ${symbol}`}
-      sub="Effective quote from production market-data policy"
-      note="[QTE] No deterministic bid/ask, ticks, or K-line mock is rendered."
+      title={`台股報價 ${symbol}`}
+      sub="報價 / K 線 / 五檔與逐筆"
+      note="此頁只顯示正式資料；尚未接上的即時五檔與逐筆會清楚標示暫停。"
     >
-      <Panel code="QTE-SRC" title="Symbol lookup" right={generatedAt ? `Generated ${formatDateTime(generatedAt)}` : "market-data"}>
+      <Panel code="QTE-SRC" title="股票查詢" right={generatedAt ? `更新 ${formatDateTime(generatedAt)}` : "市場資料"}>
         <form action="/quote" className="filter-row">
           <input
             name="symbol"
@@ -211,21 +223,21 @@ export default async function QuotePage({
             }}
             placeholder="2330"
           />
-          <button className="mini-button" type="submit">LOAD</button>
+          <button className="mini-button" type="submit">查詢</button>
         </form>
       </Panel>
 
       {error && (
         <QuoteStatePanel
           state="BLOCKED"
-          reason={`API request failed. Owner: Jason/Elva. Detail: ${error}`}
+          reason={`報價暫時無法讀取：${error}`}
         />
       )}
 
       {!error && !item && (
         <QuoteStatePanel
           state="EMPTY"
-          reason="The effective quote API returned zero rows for this symbol. No fallback quote is rendered."
+          reason="此股票目前沒有可用的正式報價；不使用假資料補值。"
         />
       )}
 
@@ -236,13 +248,13 @@ export default async function QuotePage({
         <div>
           <BlockedMarketPanel
             code="QTE-BA"
-            title="Bid/ask depth"
-            reason="No verified production depth contract is wired for this page yet. The old deterministic ladder has been removed."
+            title="五檔委買委賣"
+            reason="凱基唯讀五檔資料尚未接上；目前不顯示假五檔。"
           />
           <BlockedMarketPanel
             code="QTE-T"
-            title="Tick tape"
-            reason="KGI readonly ticks are still blocked pending endpoint availability and Jason contract confirmation. The old generated tick tape has been removed."
+            title="逐筆成交"
+            reason="逐筆資料等待凱基唯讀串流或後端快取啟用；目前不顯示假逐筆。"
           />
         </div>
       </div>

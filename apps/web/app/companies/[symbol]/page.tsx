@@ -47,45 +47,45 @@ function companyTimestamp(company: Company) {
 function buildSourceStatus(company: Company, bars: OhlcvBar[], ohlcvReason: string): SourceStatus[] {
   const lastBar = bars.at(-1);
   const lastBarTime = lastBar ? new Date(`${lastBar.dt}T13:30:00+08:00`).toISOString() : new Date().toISOString();
-  const priceSource = lastBar?.source === "tej" ? "FinMind/TEJ official OHLCV" : lastBar?.source === "kgi" ? "KGI readonly quote" : null;
+  const priceSource = lastBar?.source === "tej" ? "FinMind/TEJ 正式 K 線" : lastBar?.source === "kgi" ? "KGI 唯讀報價" : null;
 
   return [
     {
       id: "company-master",
-      label: "Company master",
+      label: "公司主檔",
       state: "live",
-      summary: "Workspace company record",
+      summary: "工作區公司資料",
       lastSeen: companyTimestamp(company),
-      detail: "GET /api/v1/companies returned this symbol in the authenticated workspace.",
+      detail: "已在登入工作區找到這檔股票。",
       queueDepth: 0,
     },
     {
       id: "ohlcv",
-      label: "Daily OHLCV",
+      label: "K 線",
       state: lastBar && priceSource ? "live" : "error",
-      summary: priceSource ?? "No production bars returned",
+      summary: priceSource ?? "尚無正式 K 線",
       lastSeen: lastBarTime,
       detail: lastBar
-        ? `GET /api/v1/companies/:id/ohlcv returned ${bars.length} bars; latest source=${lastBar.source}.`
+        ? `已讀取 ${bars.length} 根正式 K 線；最新來源 ${lastBar.source}。`
         : ohlcvReason,
       queueDepth: 0,
     },
     {
       id: "twse-announcements",
-      label: "Market Intel",
+      label: "重大訊息",
       state: "stale",
-      summary: "Panel-level announcement probe",
+      summary: "個股公告與新聞線索",
       lastSeen: new Date().toISOString(),
-      detail: "Panel [05] fetches GET /api/v1/companies/:id/announcements?days=30 and reports LIVE/EMPTY/BLOCKED there.",
+      detail: "重大訊息欄會自行顯示正常、無資料或暫停。",
       queueDepth: 0,
     },
     {
       id: "kgi-ticks",
-      label: "Tick stream",
+      label: "逐筆資料",
       state: "error",
-      summary: "Blocked until KGI readonly tick contract is confirmed",
+      summary: "等待凱基唯讀逐筆資料",
       lastSeen: new Date().toISOString(),
-      detail: "Panel [09] is intentionally BLOCKED and does not render generated tick rows.",
+      detail: "目前不顯示假逐筆；待唯讀資料接上後啟用。",
       queueDepth: 0,
     },
   ];
@@ -115,23 +115,23 @@ export default async function CompanyDetailPage({
       <PageFrame
         code="03-ERR"
         title={symbol.toUpperCase()}
-        sub="fetch /api/v1/companies failed"
-        note={`[03B-DIAG] /companies/${symbol} list fetch failed`}
+        sub="公司資料暫時無法讀取"
+        note={`公司板 / ${symbol} / 暫停`}
       >
         <div style={{ padding: "32px 24px", fontFamily: "var(--mono, monospace)", fontSize: 12, lineHeight: 1.7 }}>
           <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 16, fontSize: 14 }}>
-            [DIAG] /companies/{symbol.toUpperCase()} getCompanies() failed
-          </div>
-          <div className="dim" style={{ marginBottom: 8 }}>API_BASE: <b>{apiBase}</b></div>
-          <div className="dim" style={{ marginBottom: 8 }}>WORKSPACE_SLUG: <b>{wsSlug}</b></div>
-          <div className="dim" style={{ marginBottom: 8 }}>PATH: <b>/api/v1/companies</b></div>
-          <div className="dim" style={{ marginBottom: 16 }}>
-            ERROR (raw): <pre style={{ background: "rgba(255,0,0,0.08)", padding: 12, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-all", maxWidth: 800 }}>{fetchErrorMsg}</pre>
+            {symbol.toUpperCase()} 公司資料暫時無法讀取
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
-            Likely causes: (a) SSR cookie missing or expired / 401; (b) workspace slug mismatch / 401-403; (c) API base is not configured; (d) backend 5xx. Keep this BLOCKED and surface the raw error to Elva.
+            目前登入工作區或後端公司資料服務沒有回應；請稍後重試，或由 Elva/Jason 檢查 API 與登入狀態。
           </div>
-          <Link href="/companies" className="btn-sm">BACK TO COMPANIES</Link>
+          <details className="dim" style={{ marginBottom: 16 }}>
+            <summary>工程診斷</summary>
+            <div style={{ marginTop: 8 }}>API_BASE: <b>{apiBase}</b></div>
+            <div>WORKSPACE: <b>{wsSlug}</b></div>
+            <pre style={{ background: "rgba(255,0,0,0.08)", padding: 12, marginTop: 8, whiteSpace: "pre-wrap", wordBreak: "break-all", maxWidth: 800 }}>{fetchErrorMsg}</pre>
+          </details>
+          <Link href="/companies" className="btn-sm">返回公司列表</Link>
         </div>
       </PageFrame>
     );
@@ -150,22 +150,22 @@ export default async function CompanyDetailPage({
       <PageFrame
         code="03-NF"
         title={symbol.toUpperCase()}
-        sub="ticker not found"
-        note={`[03B] /companies/${symbol} ticker not found in workspace`}
+        sub="查無此股票"
+        note={`公司板 / ${symbol} / 無資料`}
       >
         <div style={{ padding: "32px 24px", fontFamily: "var(--mono, monospace)", fontSize: 12 }}>
           <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 12 }}>
-            [NOT FOUND] {symbol.toUpperCase()}
+            查無 {symbol.toUpperCase()}
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
-            Workspace returned {companies.length} companies, but none matched ticker = <b>{symbol}</b>.
+            目前工作區有 {companies.length} 檔公司資料，但沒有符合代號 <b>{symbol}</b> 的股票。
           </div>
           {companies.length > 0 && (
             <div className="dim" style={{ marginBottom: 16 }}>
-              SAMPLE: {companies.slice(0, 8).map((c) => c.ticker).join(" / ")}
+              可用範例：{companies.slice(0, 8).map((c) => c.ticker).join(" / ")}
             </div>
           )}
-          <Link href="/companies" className="btn-sm">BACK TO COMPANIES</Link>
+          <Link href="/companies" className="btn-sm">返回公司列表</Link>
         </div>
       </PageFrame>
     );
@@ -180,8 +180,8 @@ export default async function CompanyDetailPage({
   const bars = rawBars.filter((bar) => bar.source !== "mock");
   const ohlcvState = ohlcvErrorMsg ? "BLOCKED" : bars.length > 0 ? "LIVE" : "EMPTY";
   const ohlcvReason = ohlcvErrorMsg
-    ? `GET /api/v1/companies/:id/ohlcv failed: ${ohlcvErrorMsg}`
-    : "GET /api/v1/companies/:id/ohlcv returned zero production OHLCV bars; K-line is hidden instead of rendering generated candles.";
+    ? `K 線資料暫時無法讀取：${ohlcvErrorMsg}`
+    : "此股票目前沒有可用的正式 K 線資料。";
 
   const detail = toCompanyDetailView(company, symbol);
   const quote = quoteFromOhlcvBars(bars);
@@ -192,7 +192,7 @@ export default async function CompanyDetailPage({
       code={`03-${company.ticker}`}
       title={company.ticker}
       sub={`${company.name} / ${company.market}`}
-      note={`[03B] COMPANIES / ${company.ticker} / ${company.chainPosition} / ${company.beneficiaryTier}`}
+      note={`公司板 / ${company.ticker} / ${company.chainPosition} / ${company.beneficiaryTier}`}
     >
       <div style={{ marginBottom: 8 }}>
         <Link
@@ -200,7 +200,7 @@ export default async function CompanyDetailPage({
           className="btn-sm"
           style={{ fontFamily: "var(--mono, monospace)", fontSize: 11 }}
         >
-          BACK TO COMPANIES
+          返回公司列表
         </Link>
       </div>
 
@@ -220,30 +220,30 @@ export default async function CompanyDetailPage({
 
       <div className="company-kpi-strip">
         <div>
-          <span className="tg soft">SCORE</span>
+          <span className="tg soft">分數</span>
           <b className="num">{detail.scorePct ?? "--"}</b>
         </div>
         <div>
-          <span className="tg soft">MOM</span>
+          <span className="tg soft">動能</span>
           <b className={`tg ${tone(detail.intradayChgPct)}`}>{detail.momentum}</b>
         </div>
         <div>
-          <span className="tg soft">FII 5D</span>
+          <span className="tg soft">外資5日</span>
           <b className={`num ${tone(detail.fiiNetBn5d)}`}>{signed(detail.fiiNetBn5d)} BN</b>
         </div>
         <div>
-          <span className="tg soft">INTRADAY</span>
+          <span className="tg soft">盤中</span>
           <b className={`num ${tone(detail.intradayChgPct)}`}>{signed(detail.intradayChgPct)}%</b>
         </div>
         <div>
-          <span className="tg soft">THEMES</span>
+          <span className="tg soft">主題</span>
           <b className="tg gold">{detail.themes.join(" / ") || "--"}</b>
         </div>
       </div>
 
       <div className="company-tabs-band">
-        <span className="tg gold">COMPANY SURFACE</span>
-        <span className="tg soft">price / fundamentals / flows / announcements / tick stream</span>
+        <span className="tg gold">公司資料面板</span>
+        <span className="tg soft">價格 / 財報 / 籌碼 / 重大訊息 / 逐筆</span>
       </div>
 
       <div className="company-panels-grid">

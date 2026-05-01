@@ -3,10 +3,10 @@
 export type KillMode = "ARMED" | "SAFE" | "PEEK" | "FROZEN";
 
 const MODES: { mode: KillMode; label: string; sub: string; tone: "ok" | "warn" | "block" | "danger" }[] = [
-  { mode: "ARMED", label: "ARMED", sub: "backend risk gates decide order eligibility", tone: "ok" },
-  { mode: "SAFE", label: "SAFE", sub: "write path blocked until governance route is approved", tone: "warn" },
-  { mode: "PEEK", label: "PEEK", sub: "read-only execution desk", tone: "block" },
-  { mode: "FROZEN", label: "FROZEN", sub: "requires audited backend kill-switch state", tone: "danger" },
+  { mode: "ARMED", label: "可交易", sub: "後端風控與紙上交易閘門共同判斷委託資格", tone: "ok" },
+  { mode: "SAFE", label: "只減倉", sub: "僅保留降低曝險的操作，避免新增風險", tone: "warn" },
+  { mode: "PEEK", label: "唯讀", sub: "只檢視部位、委託與風控狀態", tone: "block" },
+  { mode: "FROZEN", label: "凍結", sub: "缺少可信風控狀態時，前端一律保守鎖住", tone: "danger" },
 ];
 
 function toneColor(t: "ok" | "warn" | "block" | "danger") {
@@ -21,7 +21,7 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
     <>
       <div
         role="radiogroup"
-        aria-label="Kill mode read-only"
+        aria-label="交易模式唯讀狀態"
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(4, 1fr)",
@@ -36,7 +36,7 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
               role="radio"
               aria-checked={on}
               disabled
-              title="BLOCKED: frontend kill-switch writes are disabled until backend governance, audit, and risk regression are approved."
+              title="目前僅顯示狀態；切換交易模式需要後端治理、稽核紀錄與風控回歸測試通過。"
               style={{
                 padding: "14px 12px",
                 background: on ? "rgba(184,138,62,0.18)" : "transparent",
@@ -53,7 +53,7 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
               <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                 <span style={{ color: toneColor(m.tone), fontSize: 12, fontWeight: 700 }}>{m.label}</span>
                 <span style={{ color: on ? "var(--gold)" : "var(--exec-soft)", fontSize: 9.5 }}>
-                  {on ? "CURRENT" : "BLOCKED"}
+                  {on ? "目前" : "未啟用"}
                 </span>
               </div>
               <div style={{ fontFamily: "var(--serif-tc)", fontSize: 12.5, color: "var(--exec-mid)", marginTop: 4, letterSpacing: 0 }}>
@@ -64,8 +64,7 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
         })}
       </div>
       <div className="terminal-note" style={{ marginTop: 12 }}>
-        BLOCKED: kill-switch writes are intentionally unavailable in the frontend. Owner: Jason + Bruce. Required:
-        backend governance route, audit log, 4-layer risk regression, and operator approval.
+        交易模式目前由後端控管，前端只顯示狀態；正式切換需完成治理路由、稽核紀錄與四層風控驗證。
       </div>
     </>
   );

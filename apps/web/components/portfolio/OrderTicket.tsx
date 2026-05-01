@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 
+import type { KillMode } from "@/components/portfolio/KillSwitch";
 import {
   cancelPaperOrder,
   formatPaperOrderError,
@@ -15,7 +16,6 @@ import {
   type PaperOrderState,
 } from "@/lib/paper-orders-api";
 import { useIdeaHandoff } from "@/lib/radar-handoff";
-import type { KillMode } from "@/components/portfolio/KillSwitch";
 
 type PaperSide = PaperOrderInput["side"];
 type PaperOrderType = PaperOrderInput["orderType"];
@@ -48,16 +48,38 @@ type OrdersState =
   | { status: "blocked"; message: string; updatedAt: string };
 
 const SIDES: ReadonlyArray<{ value: PaperSide; label: string }> = [
-  { value: "buy", label: "BUY" },
-  { value: "sell", label: "SELL" },
+  { value: "buy", label: "買進" },
+  { value: "sell", label: "賣出" },
 ];
 
 const TYPES: ReadonlyArray<{ value: PaperOrderType; label: string }> = [
-  { value: "market", label: "MKT" },
-  { value: "limit", label: "LMT" },
-  { value: "stop", label: "STP" },
-  { value: "stop_limit", label: "STP-LMT" },
+  { value: "market", label: "市價" },
+  { value: "limit", label: "限價" },
+  { value: "stop", label: "停損" },
+  { value: "stop_limit", label: "停損限價" },
 ];
+
+function uiStateLabel(state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING") {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  if (state === "LOADING") return "讀取中";
+  return "暫停";
+}
+
+function sideLabel(side: PaperSide | string) {
+  return side === "buy" ? "買進" : side === "sell" ? "賣出" : String(side);
+}
+
+function orderStatusLabel(status: string) {
+  if (status === "REJECTED") return "已拒絕";
+  if (status === "FILLED") return "已成交";
+  if (status === "CANCELLED") return "已撤單";
+  if (status === "WORKING") return "委託中";
+  if (status === "ACCEPTED") return "已接受";
+  if (status === "PENDING") return "待處理";
+  if (status === "SUBMITTED") return "已送出";
+  return status;
+}
 
 export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
   const { handoff, clear } = useIdeaHandoff();
@@ -138,29 +160,28 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
   };
 
   const validationReason = !parsed.symbol
-    ? "Enter a ticker symbol."
+    ? "請輸入股票代號。"
     : !parsed.validQty
-      ? "Quantity must be a positive whole number."
+      ? "股數必須是正整數。"
       : !parsed.validPrice
-        ? "This order type needs a positive price."
+        ? "此委託類型需要有效價格。"
         : null;
 
-  const previewBlocked = preview.status === "blocked";
-  const previewReady = preview.status === "live";
   const submitDisabledReason =
     killMode !== "ARMED"
-      ? `BLOCKED: local kill mode is ${killMode}.`
+      ? "目前交易模式未開放送出。"
       : validationReason
-        ? `BLOCKED: ${validationReason}`
+        ? validationReason
         : preview.status === "idle"
-          ? "BLOCKED: run PREVIEW first."
+          ? "請先預覽風控與報價。"
           : preview.status === "loading"
-            ? "BLOCKED: preview is still running."
-            : previewBlocked
-              ? "BLOCKED: risk or quote gate failed preview."
+            ? "風控預覽讀取中。"
+            : preview.status === "blocked"
+              ? "風控或報價預檢未通過。"
               : preview.status === "error"
-                ? "BLOCKED: preview failed."
+                ? "風控預覽失敗。"
                 : null;
+
   const ledgerState =
     orders.status === "blocked"
       ? "BLOCKED"
@@ -230,32 +251,35 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
     }
   };
 
+  const canPreview = orderInput !== null && preview.status !== "loading";
+  const canSubmit = submitDisabledReason === null && submit.status !== "loading";
+
   return (
     <div>
       {handoff && (
         <div style={handoffStyle}>
           <div className="tg" style={{ color: "var(--gold-bright)", fontWeight: 700 }}>
-            LIVE HANDOFF FROM IDEA {handoff.ideaId} / {handoff.themeCode}
+            由策略想法帶入 {handoff.ideaId} / {handoff.themeCode}
           </div>
           <div style={{ color: "var(--exec-mid)", fontSize: 12.5, lineHeight: 1.5, marginTop: 4 }}>
             {handoff.rationale}
           </div>
           <button onClick={clear} style={plainButtonStyle} type="button">
-            CLEAR
+            清除
           </button>
         </div>
       )}
 
       <div style={sourceBarStyle}>
         <StatePill state={ledgerState} />
-        <span>POST /api/v1/paper/orders/preview</span>
-        <span>POST /api/v1/paper/orders</span>
-        <span>GET /api/v1/paper/orders</span>
+        <span>紙上交易</span>
+        <span>送出前風控預檢</span>
+        <span>委託紀錄</span>
       </div>
 
-      <div style={gridStyle}>
-        <div style={boxStyle}>
-          <Row label="SYMBOL">
+      <div style={ticketShellStyle}>
+        <div style={formCardStyle}>
+          <Row label="股票">
             <input
               value={draft.symbol}
               onChange={(event) => updateDraft({ symbol: event.target.value.toUpperCase() })}
@@ -263,32 +287,32 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
               style={inputStyle}
             />
           </Row>
-          <Row label="SIDE">
+          <Row label="方向">
             <Segmented options={SIDES} value={draft.side} onChange={(side) => updateDraft({ side })} />
           </Row>
-          <Row label="TYPE">
+          <Row label="類型">
             <Segmented
               options={TYPES}
               value={draft.orderType}
               onChange={(orderType) => updateDraft({ orderType, price: orderType === "market" ? "" : draft.price })}
             />
           </Row>
-          <Row label="TIF">
-            <div style={staticFieldStyle}>ROD / paper only</div>
+          <Row label="效期">
+            <div style={staticFieldStyle}>ROD / 紙上</div>
           </Row>
-          <Row label="PRICE">
+          <Row label="價格">
             <input
               type="number"
               min={0.01}
               step="0.01"
               value={draft.price}
               onChange={(event) => updateDraft({ price: event.target.value })}
-              placeholder={draft.orderType === "market" ? "not required" : "1084.00"}
+              placeholder={draft.orderType === "market" ? "市價免填" : "1084.00"}
               disabled={draft.orderType === "market"}
               style={inputStyle}
             />
           </Row>
-          <Row label="QTY">
+          <Row label="股數">
             <input
               type="number"
               min={1}
@@ -302,15 +326,12 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
           {validationReason && <TruthNote state="BLOCKED" text={validationReason} />}
         </div>
 
-        <div style={boxStyle}>
-          <div className="tg" style={panelHeadingStyle}>PREVIEW / RISK + QUOTE GATE</div>
+        <div style={previewCardStyle}>
+          <div className="tg" style={panelHeadingStyle}>風控與報價預覽</div>
           {preview.status === "idle" && (
-            <TruthNote
-              state="EMPTY"
-              text="No preview has been requested for the current draft. Press PREVIEW to run the real paper dry-run."
-            />
+            <TruthNote state="EMPTY" text="尚未預覽目前委託草稿。送出前請先跑紙上風控預檢。" />
           )}
-          {preview.status === "loading" && <TruthNote state="LIVE" text="Calling real preview endpoint..." />}
+          {preview.status === "loading" && <TruthNote state="LIVE" text="正在檢查風控與報價..." />}
           {preview.status === "error" && <TruthNote state="BLOCKED" text={preview.message} />}
           {(preview.status === "live" || preview.status === "blocked") && (
             <PreviewResult result={preview.result} />
@@ -321,33 +342,34 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
       <div style={actionBarStyle}>
         <button
           onClick={runPreview}
-          disabled={orderInput === null || preview.status === "loading"}
-          title={validationReason ?? "Run POST /api/v1/paper/orders/preview"}
+          disabled={!canPreview}
+          title={validationReason ?? "執行紙上委託預覽"}
           style={{
             ...actionButtonStyle,
-            color: orderInput === null ? "var(--exec-soft)" : "var(--gold-bright)",
+            color: canPreview ? "var(--gold-bright)" : "var(--exec-soft)",
           }}
           type="button"
         >
-          {preview.status === "loading" ? "PREVIEWING" : "PREVIEW"}
+          {preview.status === "loading" ? "預覽中" : "預覽風控"}
         </button>
         <button
           onClick={runSubmit}
-          disabled={submitDisabledReason !== null || submit.status === "loading"}
-          title={submitDisabledReason ?? "Submit one paper order with a fresh idempotency key."}
+          disabled={!canSubmit}
+          title={submitDisabledReason ?? "送出一筆紙上委託"}
           style={{
             ...actionButtonStyle,
-            color: submitDisabledReason ? "var(--exec-soft)" : "var(--tw-up-bright)",
+            borderRight: "none",
+            color: canSubmit ? "var(--tw-dn-bright)" : "var(--exec-soft)",
           }}
           type="button"
         >
-          {submit.status === "loading" ? "SUBMITTING" : "SUBMIT PAPER"}
+          {submit.status === "loading" ? "送出中" : "送出紙上單"}
         </button>
       </div>
 
       {submitDisabledReason && <TruthNote state="BLOCKED" text={submitDisabledReason} />}
-      {previewReady && !submitDisabledReason && (
-        <TruthNote state="LIVE" text="Preview passed. Submit remains paper-only and creates no broker/live order." />
+      {preview.status === "live" && !submitDisabledReason && (
+        <TruthNote state="LIVE" text="預檢通過。此送單只建立紙上委託，不會送往券商；凱基正式下單待 libCGCrypt.so 補齊後接上。" />
       )}
 
       {(submit.status === "live" || submit.status === "blocked") && (
@@ -371,14 +393,14 @@ function PreviewResult({ result }: { result: Awaited<ReturnType<typeof previewPa
     <div>
       <TruthNote
         state={state}
-        text={result.riskCheck.summary || `Risk decision: ${result.riskCheck.decision}`}
+        text={result.riskCheck.summary || `風控判斷：${result.riskCheck.decision}`}
       />
       <div style={kvListStyle}>
-        <KV k="RISK" v={result.riskCheck.decision.toUpperCase()} />
-        <KV k="GUARDS" v={`${result.riskCheck.guards.length} checked / ${blockedGuards.length} blocked`} />
-        <KV k="UPDATED" v={formatTime(result.riskCheck.createdAt)} />
-        <KV k="QUOTE" v={result.quoteGate ? result.quoteGate.decision : "not reached"} />
-        {result.quoteGate?.selectedSource && <KV k="SOURCE" v={result.quoteGate.selectedSource} />}
+        <KV k="風控" v={result.riskCheck.decision.toUpperCase()} />
+        <KV k="檢查項目" v={`${result.riskCheck.guards.length} 項 / ${blockedGuards.length} 項阻擋`} />
+        <KV k="更新" v={formatTime(result.riskCheck.createdAt)} />
+        <KV k="報價" v={result.quoteGate ? result.quoteGate.decision : "尚未檢查"} />
+        {result.quoteGate?.selectedSource && <KV k="來源" v={result.quoteGate.selectedSource} />}
       </div>
       {blockedGuards.length > 0 && (
         <div style={{ marginTop: 10 }}>
@@ -407,15 +429,15 @@ function OrderOutcome({ state }: { state: PaperOrderState }) {
     <div style={{ marginTop: 12 }}>
       <TruthNote
         state={tone}
-        text={`Order ${state.intent.id} is ${state.intent.status}${state.intent.reason ? `: ${state.intent.reason}` : ""}.`}
+        text={`委託 ${state.intent.id}：${orderStatusLabel(state.intent.status)}${state.intent.reason ? `：${state.intent.reason}` : ""}`}
       />
       <div style={kvListStyle}>
-        <KV k="SYMBOL" v={state.intent.symbol} />
-        <KV k="SIDE" v={state.intent.side.toUpperCase()} />
-        <KV k="QTY" v={state.intent.qty.toLocaleString()} />
-        <KV k="PRICE" v={state.intent.price === null ? "market" : String(state.intent.price)} />
-        <KV k="UPDATED" v={formatTime(state.intent.updatedAt)} />
-        {state.fill && <KV k="FILL" v={`${state.fill.fillQty.toLocaleString()} @ ${state.fill.fillPrice}`} />}
+        <KV k="股票" v={state.intent.symbol} />
+        <KV k="方向" v={sideLabel(state.intent.side)} />
+        <KV k="股數" v={state.intent.qty.toLocaleString()} />
+        <KV k="價格" v={state.intent.price === null ? "市價" : String(state.intent.price)} />
+        <KV k="更新" v={formatTime(state.intent.updatedAt)} />
+        {state.fill && <KV k="成交" v={`${state.fill.fillQty.toLocaleString()} @ ${state.fill.fillPrice}`} />}
       </div>
     </div>
   );
@@ -442,42 +464,38 @@ function OrderHistory({
   return (
     <div style={{ marginTop: 14, border: "1px solid var(--exec-rule-strong)" }}>
       <div style={historyHeaderStyle}>
-        <span>REAL PAPER LEDGER</span>
+        <span>紙上委託紀錄</span>
         <span>
           {orders.status === "live"
-            ? `${ledgerState} / ${orders.items.length} rows / ${formatTime(orders.updatedAt)}`
+            ? `${uiStateLabel(ledgerState)} / ${orders.items.length} 筆 / ${formatTime(orders.updatedAt)}`
             : orders.status === "loading"
-              ? "LOADING"
-              : `BLOCKED / ${formatTime(orders.updatedAt)}`}
+              ? "讀取中"
+              : `暫停 / ${formatTime(orders.updatedAt)}`}
         </span>
       </div>
       {orders.status === "loading" && (
-        <TruthNote state="LIVE" text="Loading GET /api/v1/paper/orders..." />
+        <TruthNote state="LIVE" text="正在讀取紙上委託紀錄..." />
       )}
       {orders.status === "blocked" && (
-        <TruthNote state="BLOCKED" text={`Order ledger unavailable: ${orders.message}. Owner: Jason/Bruce.`} />
+        <TruthNote state="BLOCKED" text={`暫時無法讀取委託紀錄：${orders.message}`} />
       )}
       {orders.status === "live" && orders.items.length === 0 && (
-        <TruthNote state="EMPTY" text="GET /api/v1/paper/orders returned zero rows for the current user." />
+        <TruthNote state="EMPTY" text="目前沒有紙上委託紀錄。" />
       )}
       {orders.status === "live" && orders.items.slice(0, 6).map((state) => (
         <div key={state.intent.id} style={orderRowStyle}>
           <span className="tg" style={{ color: "var(--gold-bright)", fontWeight: 700 }}>{state.intent.symbol}</span>
-          <span className="tg">{state.intent.side.toUpperCase()} {state.intent.qty.toLocaleString()}</span>
-          <span className="tg">{state.intent.status}</span>
+          <span className="tg">{sideLabel(state.intent.side)} {state.intent.qty.toLocaleString()}</span>
+          <span className="tg">{orderStatusLabel(state.intent.status)}</span>
           <span className="tg soft">{formatTime(state.intent.updatedAt)}</span>
           <button
             type="button"
             disabled={!isCancellablePaperOrder(state.intent.status) || cancellingId === state.intent.id}
-            title={
-              isCancellablePaperOrder(state.intent.status)
-                ? "Cancel this paper order through POST /api/v1/paper/orders/:id/cancel"
-                : "BLOCKED: terminal paper orders cannot be cancelled."
-            }
+            title={isCancellablePaperOrder(state.intent.status) ? "撤銷此紙上委託" : "終態委託無法撤銷"}
             onClick={() => onCancel(state.intent.id)}
             style={miniButtonStyle}
           >
-            {cancellingId === state.intent.id ? "..." : "CANCEL"}
+            {cancellingId === state.intent.id ? "..." : "撤單"}
           </button>
         </div>
       ))}
@@ -492,7 +510,7 @@ function StatePill({ state }: { state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING" 
         : "var(--tw-up-bright)";
   return (
     <span style={{ color, fontWeight: 700, letterSpacing: "0.18em" }}>
-      {state}
+      {uiStateLabel(state)}
     </span>
   );
 }
@@ -536,7 +554,7 @@ function Segmented<T extends string>({
             style={{
               ...segmentButtonStyle,
               borderLeft: index === 0 ? "none" : "1px solid var(--exec-rule)",
-              background: active ? "rgba(184,138,62,0.16)" : "transparent",
+              background: active ? "rgba(184,138,62,0.18)" : "transparent",
               color: active ? "var(--gold-bright)" : "var(--exec-mid)",
               cursor: active ? "default" : "pointer",
             }}
@@ -552,7 +570,7 @@ function Segmented<T extends string>({
 function KV({ k, v }: { k: string; v: string }) {
   return (
     <div style={kvStyle}>
-      <span style={{ color: "var(--exec-mid)", letterSpacing: "0.16em" }}>{k}</span>
+      <span style={{ color: "var(--exec-mid)", letterSpacing: "0.12em" }}>{k}</span>
       <span style={{ color: "var(--exec-ink)", textAlign: "right" }}>{v}</span>
     </div>
   );
@@ -564,7 +582,7 @@ function formatTime(value: string) {
   return date.toLocaleTimeString("zh-TW", { hour12: false });
 }
 
-const handoffStyle: React.CSSProperties = {
+const handoffStyle: CSSProperties = {
   padding: "10px 12px",
   marginBottom: 12,
   border: "1px solid var(--gold)",
@@ -573,7 +591,7 @@ const handoffStyle: React.CSSProperties = {
   position: "relative",
 };
 
-const plainButtonStyle: React.CSSProperties = {
+const plainButtonStyle: CSSProperties = {
   position: "absolute",
   top: 8,
   right: 8,
@@ -586,7 +604,7 @@ const plainButtonStyle: React.CSSProperties = {
   letterSpacing: "0.16em",
 };
 
-const sourceBarStyle: React.CSSProperties = {
+const sourceBarStyle: CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
   gap: "8px 14px",
@@ -597,36 +615,43 @@ const sourceBarStyle: React.CSSProperties = {
   fontSize: 10.5,
 };
 
-const gridStyle: React.CSSProperties = {
+const ticketShellStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "minmax(280px, 1fr) minmax(280px, 1fr)",
-  gap: 18,
+  gridTemplateColumns: "minmax(280px, 0.9fr) minmax(300px, 1.1fr)",
+  gap: 16,
 };
 
-const boxStyle: React.CSSProperties = {
+const formCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
   padding: 16,
-  minHeight: 300,
+  minHeight: 286,
+  background: "rgba(255,255,255,0.012)",
 };
 
-const rowStyle: React.CSSProperties = {
+const previewCardStyle: CSSProperties = {
+  border: "1px solid var(--exec-rule-strong)",
+  padding: 16,
+  minHeight: 286,
+  background: "rgba(255,255,255,0.012)",
+};
+
+const rowStyle: CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
   gap: 10,
   marginBottom: 10,
 };
 
-const labelStyle: React.CSSProperties = {
+const labelStyle: CSSProperties = {
   fontFamily: "var(--mono)",
   fontSize: 10,
-  letterSpacing: "0.20em",
+  letterSpacing: "0.16em",
   color: "var(--exec-mid)",
-  textTransform: "uppercase",
-  width: 82,
+  width: 58,
   paddingTop: 8,
 };
 
-const inputStyle: React.CSSProperties = {
+const inputStyle: CSSProperties = {
   flex: 1,
   padding: "8px 10px",
   background: "var(--exec-bg)",
@@ -639,71 +664,72 @@ const inputStyle: React.CSSProperties = {
   minWidth: 0,
 };
 
-const staticFieldStyle: React.CSSProperties = {
+const staticFieldStyle: CSSProperties = {
   ...inputStyle,
   color: "var(--exec-mid)",
 };
 
-const segmentedStyle: React.CSSProperties = {
+const segmentedStyle: CSSProperties = {
   display: "flex",
   flex: 1,
   border: "1px solid var(--exec-rule-strong)",
   minWidth: 0,
 };
 
-const segmentButtonStyle: React.CSSProperties = {
+const segmentButtonStyle: CSSProperties = {
   flex: 1,
+  minHeight: 34,
   padding: "8px 6px",
   border: "none",
   fontFamily: "var(--mono)",
   fontSize: 11,
   fontWeight: 700,
-  letterSpacing: "0.12em",
+  letterSpacing: "0.08em",
 };
 
-const panelHeadingStyle: React.CSSProperties = {
-  color: "var(--exec-mid)",
+const panelHeadingStyle: CSSProperties = {
+  color: "var(--gold-bright)",
   marginBottom: 8,
-  letterSpacing: "0.16em",
+  letterSpacing: "0.14em",
 };
 
-const actionBarStyle: React.CSSProperties = {
+const actionBarStyle: CSSProperties = {
   display: "flex",
   gap: 0,
   marginTop: 14,
   border: "1px solid var(--exec-rule-strong)",
 };
 
-const actionButtonStyle: React.CSSProperties = {
+const actionButtonStyle: CSSProperties = {
   flex: 1,
   background: "transparent",
   border: "none",
   borderRight: "1px solid var(--exec-rule-strong)",
   padding: "14px 16px",
   fontFamily: "var(--mono)",
-  letterSpacing: "0.18em",
+  letterSpacing: "0.14em",
   fontWeight: 700,
   fontSize: 12,
   cursor: "pointer",
 };
 
-const truthNoteStyle: React.CSSProperties = {
+const truthNoteStyle: CSSProperties = {
   display: "flex",
   gap: 10,
   alignItems: "flex-start",
   padding: "9px 0",
   color: "var(--exec-mid)",
-  fontFamily: "var(--mono)",
-  fontSize: 11.5,
-  lineHeight: 1.5,
+  fontFamily: "var(--serif-tc)",
+  fontSize: 13,
+  lineHeight: 1.55,
 };
 
-const kvListStyle: React.CSSProperties = {
+const kvListStyle: CSSProperties = {
   borderTop: "1px solid var(--exec-rule-strong)",
   marginTop: 8,
 };
 
-const kvStyle: React.CSSProperties = {
+const kvStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "96px 1fr",
   gap: 8,
@@ -713,7 +739,7 @@ const kvStyle: React.CSSProperties = {
   fontSize: 11.5,
 };
 
-const guardRowStyle: React.CSSProperties = {
+const guardRowStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "130px 1fr",
   gap: 10,
@@ -724,7 +750,7 @@ const guardRowStyle: React.CSSProperties = {
   fontSize: 11,
 };
 
-const reasonListStyle: React.CSSProperties = {
+const reasonListStyle: CSSProperties = {
   marginTop: 8,
   color: "var(--exec-soft)",
   fontFamily: "var(--mono)",
@@ -732,7 +758,7 @@ const reasonListStyle: React.CSSProperties = {
   lineHeight: 1.5,
 };
 
-const historyHeaderStyle: React.CSSProperties = {
+const historyHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   gap: 12,
@@ -741,12 +767,12 @@ const historyHeaderStyle: React.CSSProperties = {
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
   fontSize: 10.5,
-  letterSpacing: "0.14em",
+  letterSpacing: "0.1em",
 };
 
-const orderRowStyle: React.CSSProperties = {
+const orderRowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "72px 1fr 86px 74px 74px",
+  gridTemplateColumns: "72px 1fr 86px 74px 64px",
   gap: 10,
   alignItems: "center",
   padding: "9px 10px",
@@ -755,13 +781,13 @@ const orderRowStyle: React.CSSProperties = {
   fontSize: 11.5,
 };
 
-const miniButtonStyle: React.CSSProperties = {
+const miniButtonStyle: CSSProperties = {
   background: "transparent",
   border: "1px solid var(--exec-rule-strong)",
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
   fontSize: 10,
-  letterSpacing: "0.12em",
+  letterSpacing: "0.08em",
   padding: "5px 6px",
   cursor: "pointer",
 };
