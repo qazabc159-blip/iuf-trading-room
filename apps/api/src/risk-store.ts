@@ -11,7 +11,12 @@ export type RiskStoreState = {
 };
 
 function getRiskStoreDir(): string {
-  const base = process.env.RAILWAY_VOLUME_MOUNT_PATH ?? "/data";
+  const base =
+    process.env.RAILWAY_VOLUME_MOUNT_PATH ??
+    process.env.IUF_RISK_STORE_BASE_PATH ??
+    (process.env.CI === "true" || process.env.NODE_ENV === "test"
+      ? path.join(process.cwd(), ".tmp", "risk-store")
+      : "/data");
   return path.join(base, "risk");
 }
 

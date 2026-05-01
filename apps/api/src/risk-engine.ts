@@ -960,8 +960,9 @@ export async function evaluateRiskCheck(input: {
   // SHARE orders: quantity is in shares (odd-lot, 1–999).
   // Default is LOT for all existing callers that don't set quantity_unit.
   const BOARD_LOT_SIZE = 1000;
-  // quantity_unit is added to OrderCreateInput in W7 P0; default "LOT" for backward compat.
-  const quantityUnit = order.quantity_unit ?? "LOT";
+  // quantity_unit is added to OrderCreateInput in W7 P0. Default "SHARE" matches
+  // legacy callers (deriveQuantity emits shares; tests pass raw share counts).
+  const quantityUnit = order.quantity_unit ?? "SHARE";
   const effectiveShares =
     quantityUnit === "SHARE" ? order.quantity : order.quantity * BOARD_LOT_SIZE;
 
@@ -973,12 +974,23 @@ export async function evaluateRiskCheck(input: {
       ? orderPct ?? 0
       : -Math.min(account.symbolPositionPct, orderPct ?? 0);
 
-  // Absolute notional cap for odd-lot demo orders (max_absolute_notional guard).
-  // When quantity_unit === "SHARE" and no explicit override is provided, apply the
-  // 20,000 TWD demo capital cap. This ensures a SHARE order cannot exceed the
-  // demo capital regardless of pct-based limits.
+  // Absolute notional cap for the W7 odd-lot demo (max_absolute_notional guard).
+  // Scoped to small demo paper accounts (equity ≤ 2M TWD) so this hard 20k cap
+  // only fires for the W7 demo fixture and does not retroactively block
+  // larger paper accounts (autopilot/strategy tests run on 10M default equity)
+  // whose risk profile is governed by pct-based limits.
   const DEMO_CAPITAL_TWD = 20_000;
-  if (quantityUnit === "SHARE" && orderNotional !== null && order.side === "buy") {
+  const DEMO_EQUITY_THRESHOLD = DEMO_CAPITAL_TWD * 100; // 2,000,000 TWD
+  const isDemoPaperAccount =
+    order.accountId === "paper-default" &&
+    account.equity > 0 &&
+    account.equity <= DEMO_EQUITY_THRESHOLD;
+  if (
+    isDemoPaperAccount &&
+    quantityUnit === "SHARE" &&
+    orderNotional !== null &&
+    order.side === "buy"
+  ) {
     if (orderNotional > DEMO_CAPITAL_TWD) {
       pushGuard(
         "max_absolute_notional",

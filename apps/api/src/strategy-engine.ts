@@ -1220,7 +1220,7 @@ export async function executeStrategyRun(input: {
       type: "limit",
       timeInForce: "day",
       quantity,
-      quantity_unit: "LOT",
+      quantity_unit: "SHARE",
       price: entryPrice,
       stopPrice: null,
       tradePlanId: null,

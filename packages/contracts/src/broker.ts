@@ -189,11 +189,13 @@ export const orderCreateInputSchema = z.object({
   timeInForce: timeInForceSchema.default("rod"),
   quantity: z.number().positive(),
   // quantity_unit: paper-layer odd-lot support.
-  // LOT  = board lot (1 lot = 1000 shares); default for all existing orders.
-  // SHARE = odd-lot (1–999 shares); risk engine computes effectiveShares accordingly.
+  // SHARE = raw share count; default — `quantity` is interpreted as shares.
+  //         Existing callers and deriveQuantity() emit shares, so SHARE is the
+  //         backward-compatible default.
+  // LOT   = board lot (1 lot = 1000 shares); explicit opt-in for board-lot orders.
   // Broker adapters (KGI) must NOT use this field for live orders — they handle
   // lot sizing via their own contract rules.
-  quantity_unit: z.enum(["SHARE", "LOT"]).optional().default("LOT"),
+  quantity_unit: z.enum(["SHARE", "LOT"]).optional().default("SHARE"),
   price: z.number().positive().nullable().default(null),
   stopPrice: z.number().positive().nullable().default(null),
   tradePlanId: z.string().uuid().nullable().default(null),

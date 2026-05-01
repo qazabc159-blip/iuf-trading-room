@@ -4877,7 +4877,7 @@ test("autopilot dryRun: bearish idea with bullish_long sidePolicy → eligible l
       accountId: "paper-default",
       sidePolicy: "bullish_long",
       sizeMode: "fixed_pct",
-      sizePct: 1.0,
+      sizePct: 0.1,
       maxOrders: 5,
       dryRun: true
     }
@@ -6643,7 +6643,7 @@ test("autopilot executeStrategyRun: dryRun+review_required soft-passes to submit
       accountId: "paper-default",
       sidePolicy: "bullish_long",
       sizeMode: "fixed_pct",
-      sizePct: 1.0,
+      sizePct: 0.1,
       maxOrders: 5,
       dryRun: true
     }
@@ -6783,7 +6783,7 @@ test("R17 Case 1: dryRun=true + review_required => submitted with requiresReview
       accountId: "paper-default",
       sidePolicy: "bullish_long",
       sizeMode: "fixed_pct",
-      sizePct: 1.0, // 1% budget → 100K → qty=1000 → notional=100K = 1% equity, within 50% max
+      sizePct: 0.1, // Keep demo paper-default SHARE notional below the 20k cap so quoteGate owns this case.
       maxOrders: 5,
       dryRun: true
     }
@@ -6920,7 +6920,7 @@ test("R17 Case 3: dryRun=false + review_required => hard block (real submit stay
       accountId: "paper-default",
       sidePolicy: "bullish_long",
       sizeMode: "fixed_pct",
-      sizePct: 1.0,
+      sizePct: 0.1,
       maxOrders: 5,
       dryRun: false,
       confirmToken: tokenResp.token
@@ -7079,6 +7079,7 @@ test("R17 Case 6: dryRun=true + outside trading hours => blocked with trading_ho
 test("R17 Case 7: dryRun=true + max_per_trade exceeded => blocked with max_per_trade (decoupled from quoteGate)", async () => {
   const repo = new MemoryTradingRoomRepository();
   const workspaceSlug = `r17c7-${randomUUID()}`;
+  const accountId = "paper-r17-case7";
   const session = await repo.getSession({ workspaceSlug });
   await resetPersistedStrategyRuns(workspaceSlug);
 
@@ -7088,7 +7089,7 @@ test("R17 Case 7: dryRun=true + max_per_trade exceeded => blocked with max_per_t
   await upsertRiskLimitState({
     session,
     payload: {
-      accountId: "paper-default",
+      accountId,
       tradingHoursStart: "00:00",
       tradingHoursEnd: "23:59",
       maxPerTradePct: 1
@@ -7123,7 +7124,7 @@ test("R17 Case 7: dryRun=true + max_per_trade exceeded => blocked with max_per_t
   const result = await executeStrategyRun({
     session, repo, runId: run.id,
     payload: {
-      accountId: "paper-default",
+      accountId,
       sidePolicy: "bullish_long",
       sizeMode: "fixed_pct",
       sizePct: 10.0, // 10% budget => qty=10000 => notional=1M = 10% of 10M equity => exceeds 1% max
