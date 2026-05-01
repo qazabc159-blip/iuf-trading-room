@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:38 Taipei - Codex cycle: legacy RADAR mock layer retired
+- Now: Removed the unused legacy RADAR client/components that kept placeholder schemas and mock datasets alive in `apps/web`. Company detail adapter no longer invents market cap, score, FII, intraday, or quote values; missing non-contracted fields now render EMPTY/BLOCKED instead of generated numbers.
+- Files: deleted `apps/web/lib/radar-api.ts`, `apps/web/lib/radar-mocks.ts`, `apps/web/lib/radar-types.ts`, `apps/web/components/Chart.tsx`, unused `apps/web/components/research/*`, and unused legacy portfolio client/table/override widgets. Updated `apps/web/lib/company-adapter.ts`, `apps/web/app/companies/[symbol]/page.tsx`, and `CompanyHeroBar.tsx`.
+- Endpoints: no new backend writes. Company detail still uses `GET /api/v1/companies`, `GET /api/v1/companies/:id/ohlcv`, `GET /api/v1/companies/:id/announcements`, plus existing client panels for financials/chips where available.
+- Behavior: OHLCV rows with `source=mock` are filtered before chart/quote rendering. Quote badge now says EMPTY when no production bar exists. Company KPIs that do not have real contracted data show `--` or BLOCKED, not deterministic fallback values.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; exact scan for `radar-types`, `radar-api`, `radar-mocks`, old research imports, and old portfolio widgets returns zero rows.
+- Blockers: broader scan still finds other mock-named files/components (`mock-kbar`, `kgi-quote-mock`, blocked quote/chart panels). These need separate treatment: either bind to real quote/K-line endpoints or keep HIDDEN/BLOCKED.
+
 ### 2026-05-01 13:29 Taipei - Codex cycle: production portfolio no longer depends on placeholder `radar-types`
 - Now: Removed `@/lib/radar-types` from the active `/portfolio` page, kill-switch control, paper order ticket, and idea handoff path. Kept the paper ticket read/write behavior bounded to existing paper-order endpoints; live broker submit remains untouched.
 - Files: `apps/web/app/portfolio/page.tsx`; `apps/web/components/portfolio/KillSwitch.tsx`; `apps/web/components/portfolio/OrderTicket.tsx`; `apps/web/lib/radar-handoff.ts`; `apps/web/components/SendToTicketButton.tsx`.

@@ -1,4 +1,4 @@
-// /companies/[symbol]/page.tsx — Server Component
+﻿// /companies/[symbol]/page.tsx ??Server Component
 // 9-panel company surface on top of live contracts-shape Company + OHLCV.
 // HeroBar / OHLCV chart / CompanyInfo / Chips / Announcements / Financials bind
 // to /api/v1. Panels without a production contract render BLOCKED, not mock data.
@@ -116,11 +116,11 @@ export default async function CompanyDetailPage({
         code="03-ERR"
         title={symbol.toUpperCase()}
         sub="fetch /api/v1/companies failed"
-        note={`[03B-DIAG] /companies/${symbol} · 後端 list 取不回`}
+        note={`[03B-DIAG] /companies/${symbol} list fetch failed`}
       >
         <div style={{ padding: "32px 24px", fontFamily: "var(--mono, monospace)", fontSize: 12, lineHeight: 1.7 }}>
           <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 16, fontSize: 14 }}>
-            [DIAG] /companies/{symbol.toUpperCase()} — getCompanies() failed
+            [DIAG] /companies/{symbol.toUpperCase()} ??getCompanies() failed
           </div>
           <div className="dim" style={{ marginBottom: 8 }}>API_BASE: <b>{apiBase}</b></div>
           <div className="dim" style={{ marginBottom: 8 }}>WORKSPACE_SLUG: <b>{wsSlug}</b></div>
@@ -129,9 +129,9 @@ export default async function CompanyDetailPage({
             ERROR (raw): <pre style={{ background: "rgba(255,0,0,0.08)", padding: 12, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-all", maxWidth: 800 }}>{fetchErrorMsg}</pre>
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
-            可能原因：(a) SSR cookie 未轉發 → 401；(b) workspace_slug 不對 → 401/403；(c) API base 設錯；(d) 後端 5xx。把 ERROR 那段截圖貼給 Elva。
+            ?航??嚗?a) SSR cookie ?芾?????401嚗?b) workspace_slug 銝? ??401/403嚗?c) API base 閮剝嚗?d) 敺垢 5xx?? ERROR ??挾?芸?鞎潛策 Elva??
           </div>
-          <Link href="/companies" className="btn-sm">← 公司列表</Link>
+          <Link href="/companies" className="btn-sm">???砍?”</Link>
         </div>
       </PageFrame>
     );
@@ -151,41 +151,42 @@ export default async function CompanyDetailPage({
         code="03-?"
         title={symbol.toUpperCase()}
         sub="ticker not found"
-        note={`[03B] /companies/${symbol} · ticker 不在 workspace 公司清單中`}
+        note={`[03B] /companies/${symbol} ticker not found in workspace`}
       >
         <div style={{ padding: "32px 24px", fontFamily: "var(--mono, monospace)", fontSize: 12 }}>
           <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 12 }}>
             [NOT FOUND] {symbol.toUpperCase()}
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
-            workspace 共 {companies.length} 家公司，沒有 ticker = <b>{symbol}</b> 的紀錄。
+            workspace ??{companies.length} 摰嗅?賂?瘝? ticker = <b>{symbol}</b> ????
           </div>
           {companies.length > 0 && (
             <div className="dim" style={{ marginBottom: 16 }}>
               SAMPLE: {companies.slice(0, 8).map((c) => c.ticker).join(" / ")}
             </div>
           )}
-          <Link href="/companies" className="btn-sm">← 公司列表</Link>
+          <Link href="/companies" className="btn-sm">???砍?”</Link>
         </div>
       </PageFrame>
     );
   }
 
-  const bars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d" }).catch((err) => {
+  const rawBars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d" }).catch((err) => {
     console.warn("[company-detail] getCompanyOhlcv failed", { id: company.id, err });
     return [];
   });
+  const bars = rawBars.filter((bar) => bar.source !== "mock");
 
   const detail = toCompanyDetailView(company, symbol);
-  const quote = quoteFromOhlcvBars(bars, detail);
+  const quote = quoteFromOhlcvBars(bars);
   const sources = buildSourceStatus(company, bars);
 
   return (
     <PageFrame
       code={`03-${company.ticker}`}
       title={company.ticker}
-      sub={`${company.name} · ${company.market}`}
-      note={`[03B] COMPANIES / ${company.ticker} · ${company.chainPosition} · ${company.beneficiaryTier}`}
+      sub={`${company.name} 繚 ${company.market}`}
+      note={`[03B] COMPANIES / ${company.ticker} 繚 ${company.chainPosition} 繚 ${company.beneficiaryTier}`}
     >
       <div style={{ marginBottom: 8 }}>
         <Link
@@ -193,7 +194,7 @@ export default async function CompanyDetailPage({
           className="btn-sm"
           style={{ fontFamily: "var(--mono, monospace)", fontSize: 11 }}
         >
-          ← 公司列表
+          ???砍?”
         </Link>
       </div>
 
@@ -214,7 +215,7 @@ export default async function CompanyDetailPage({
       <div className="company-kpi-strip">
         <div>
           <span className="tg soft">SCORE</span>
-          <b className="num">{detail.scorePct}</b>
+          <b className="num">{detail.scorePct ?? "--"}</b>
         </div>
         <div>
           <span className="tg soft">MOM</span>
@@ -230,13 +231,13 @@ export default async function CompanyDetailPage({
         </div>
         <div>
           <span className="tg soft">THEMES</span>
-          <b className="tg gold">{detail.themes.join(" / ") || "—"}</b>
+          <b className="tg gold">{detail.themes.join(" / ") || "--"}</b>
         </div>
       </div>
 
       <div className="company-tabs-band">
         <span className="tg gold">COMPANY SURFACE</span>
-        <span className="tg soft">財報 / 籌碼 / 公告 / 期權 / tick stream</span>
+        <span className="tg soft">鞎∪ / 蝐Ⅳ / ?砍? / ?? / tick stream</span>
       </div>
 
       <div className="company-panels-grid">

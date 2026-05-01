@@ -27,7 +27,7 @@ export function CompanyHeroBar({
   quote: CompanyDetailQuote | null;
 }) {
   const changePercent = quote?.changePercent ?? company.intradayChgPct;
-  const source = quote?.source ? quote.source.toUpperCase() : "MOCK";
+  const source = quote?.source ? quote.source.toUpperCase() : "EMPTY";
 
   return (
     <div className="company-hero-bar">
