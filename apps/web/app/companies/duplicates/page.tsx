@@ -1,153 +1,126 @@
-"use client";
-
-import { useMemo, useState } from "react";
+import type { CompanyDuplicateEntry, CompanyDuplicateGroup } from "@iuf-trading-room/contracts";
 import { PageFrame, Panel } from "@/components/PageFrame";
-import type { DuplicatePair, DuplicatePairStatus } from "@/lib/radar-uncovered";
-import { mockDuplicatePairs } from "@/lib/radar-uncovered";
+import { getCompanyDuplicates } from "@/lib/api";
 
-const STATUS_LABEL: Record<DuplicatePairStatus | "ALL", string> = {
-  ALL: "全部",
-  PENDING: "待處理",
-  RESOLVED: "已處理",
-  IGNORED: "已忽略",
-};
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
-export default function CompanyDuplicatesPage() {
-  const [pairs, setPairs] = useState<DuplicatePair[]>(mockDuplicatePairs);
-  const [status, setStatus] = useState<DuplicatePairStatus | "ALL">("PENDING");
-  const [threshold, setThreshold] = useState(0.7);
-  const [selectedId, setSelectedId] = useState(pairs[0]?.id ?? "");
+function timeText(iso: string) {
+  return new Date(iso).toLocaleString("zh-TW", {
+    hour12: false,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-  const filtered = useMemo(
-    () => pairs.filter((pair) => (status === "ALL" || pair.status === status) && pair.score >= threshold),
-    [pairs, status, threshold],
-  );
-  const selected = pairs.find((pair) => pair.id === selectedId) ?? filtered[0] ?? null;
+export default async function CompanyDuplicatesPage() {
+  let groups: CompanyDuplicateGroup[] = [];
+  let generatedAt: string | null = null;
+  let blockedReason: string | null = null;
 
-  function apply(id: string, next: "MERGE" | "NOT_DUP" | "IGNORE") {
-    if (next === "MERGE" && !window.confirm("確認要合併這組疑似重複公司？")) return;
-    setPairs((items) => items.map((pair) => (
-      pair.id === id
-        ? { ...pair, status: next === "IGNORE" ? "IGNORED" : "RESOLVED" }
-        : pair
-    )));
+  try {
+    const response = await getCompanyDuplicates({ limit: 100 });
+    groups = response.data.groups;
+    generatedAt = response.data.generatedAt;
+  } catch (error) {
+    blockedReason = errorText(error);
   }
+
+  const duplicateCompanies = groups.reduce((sum, group) => sum + group.duplicateCount, 0);
 
   return (
     <PageFrame
       code="CMP-DUP"
-      title="公司重複辨識"
-      sub="疑似重複條目輔助"
-      note="[CMP-DUP] OpenAlice 比對產出 · 操作員決定合併 / 非重複 / 忽略"
+      title="Company Duplicate Review"
+      sub={blockedReason ? "BLOCKED" : "Data Quality"}
+      note="[CMP-DUP] Read-only duplicate report from /api/v1/companies/duplicates. Merge actions stay blocked until migration/audit approval."
     >
-      <Panel code="DUP-FLT" title="篩選條件" right={`分數 >= ${threshold.toFixed(2)}`}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0" }}>
-          <select value={status} onChange={(event) => setStatus(event.target.value as DuplicatePairStatus | "ALL")} style={selectStyle}>
-            {(["ALL", "PENDING", "RESOLVED", "IGNORED"] as const).map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
-          </select>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={threshold}
-            onChange={(event) => setThreshold(Number(event.target.value))}
-            style={{ accentColor: "var(--gold)", width: 240 }}
-          />
-          <span className="tg soft">{filtered.length} 組</span>
-        </div>
+      <Panel code="DUP-SUM" title="Duplicate Report" right={blockedReason ? "BLOCKED" : generatedAt ? `UPDATED ${timeText(generatedAt)}` : "EMPTY"}>
+        {blockedReason ? (
+          <div className="terminal-note">
+            BLOCKED: duplicate report API unavailable. Owner: Jason + Mike. Detail: {blockedReason}
+          </div>
+        ) : groups.length === 0 ? (
+          <div className="terminal-note">
+            EMPTY: /api/v1/companies/duplicates returned zero duplicate groups. No mock duplicate rows are rendered.
+          </div>
+        ) : (
+          <div className="metric-strip" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+            <Metric label="GROUPS" value={groups.length} />
+            <Metric label="COMPANIES" value={duplicateCompanies} />
+            <Metric label="SOURCE" value="API / DB" />
+          </div>
+        )}
       </Panel>
 
       <div className="company-grid">
-        <Panel code="DUP-Q" title="疑似重複公司" right={`${filtered.filter((pair) => pair.status === "PENDING").length} 組待處理`}>
-          <div className="row table-head" style={{ gridTemplateColumns: "72px 92px 1fr 24px 92px 1fr 86px", gap: 10 }}>
-            <span>分數</span>
-            <span>A</span>
-            <span>公司名稱</span>
-            <span />
-            <span>B</span>
-            <span>公司名稱</span>
-            <span>狀態</span>
-          </div>
-          {filtered.map((pair) => (
-            <button
-              className="row"
-              key={pair.id}
-              onClick={() => setSelectedId(pair.id)}
-              style={{
-                gridTemplateColumns: "72px 92px 1fr 24px 92px 1fr 86px",
-                gap: 10,
-                minHeight: 56,
-                borderTop: 0,
-                borderRight: 0,
-                borderLeft: pair.id === selected?.id ? "2px solid var(--gold)" : "2px solid transparent",
-                background: pair.id === selected?.id ? "var(--night-1)" : "transparent",
-                color: "var(--night-ink)",
-                textAlign: "left",
-                cursor: "pointer",
-              }}
-            >
-              <span className="tg gold">{pair.score.toFixed(2)}</span>
-              <span className="tg">{pair.a.ticker}</span>
-              <span className="tc">{pair.a.name}</span>
-              <span className="tg soft">≈</span>
-              <span className="tg">{pair.b.ticker}</span>
-              <span className="tc">{pair.b.name}</span>
-              <span className="tg soft">{STATUS_LABEL[pair.status]}</span>
-            </button>
-          ))}
+        <Panel code="DUP-Q" title="Candidate Groups" right={blockedReason ? "BLOCKED" : `${groups.length} GROUPS`}>
+          {groups.length > 0 ? (
+            <>
+              <div className="row table-head" style={{ gridTemplateColumns: "92px 84px 1fr 74px 1fr", gap: 10 }}>
+                <span>Ticker</span>
+                <span>Count</span>
+                <span>Recommended Canonical</span>
+                <span>Graph</span>
+                <span>Reason</span>
+              </div>
+              {groups.map((group) => {
+                const recommended = group.companies.find((company) => company.companyId === group.recommendedCompanyId) ?? group.companies[0];
+                return (
+                  <div className="row" key={group.groupKey} style={{ gridTemplateColumns: "92px 84px 1fr 74px 1fr", gap: 10, minHeight: 62 }}>
+                    <span className="tg gold">{group.ticker}</span>
+                    <span className="num">{group.duplicateCount}</span>
+                    <span className="tc">{recommended?.name ?? group.recommendedCompanyId}</span>
+                    <span className="num">{recommended ? recommended.relationCount + recommended.keywordCount : 0}</span>
+                    <span className="tg soft">{group.reason}</span>
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            <div className="terminal-note">
+              {blockedReason ? "BLOCKED: no duplicate queue is shown while the API is unavailable." : "EMPTY: no duplicate groups to review."}
+            </div>
+          )}
         </Panel>
 
         <div>
-          {!selected ? (
-            <Panel code="DUP-D" title="比對詳情">
-              <div className="terminal-note">選擇左側 pair 以查看比對</div>
-            </Panel>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <CompanyPanel code="DUP-A" company={selected.a} />
-                <CompanyPanel code="DUP-B" company={selected.b} />
+          {groups.slice(0, 4).map((group) => (
+            <Panel code="DUP-GRP" title={`${group.ticker} / ${group.duplicateCount} records`} right="READ ONLY" key={group.groupKey}>
+              <div className="terminal-note" style={{ marginBottom: 12 }}>
+                BLOCKED: merge / not-duplicate / ignore actions are intentionally hidden. Required before enablement: Mike migration audit, Jason merge contract, backup ACK, and Pete review.
               </div>
-              <Panel code="DUP-ACT" title="處理動作" right={selected.id}>
-                <div style={{ display: "flex", gap: 10, padding: "14px 0" }}>
-                  <button className="mini-button" type="button" onClick={() => apply(selected.id, "MERGE")}>合併 A←B</button>
-                  <button className="outline-button" type="button" onClick={() => apply(selected.id, "NOT_DUP")}>標記非重複</button>
-                  <button className="outline-button" type="button" onClick={() => apply(selected.id, "IGNORE")}>忽略</button>
-                </div>
-              </Panel>
-            </>
-          )}
+              {group.companies.map((company) => (
+                <CompanyRow key={company.companyId} company={company} recommended={company.companyId === group.recommendedCompanyId} />
+              ))}
+            </Panel>
+          ))}
         </div>
       </div>
     </PageFrame>
   );
 }
 
-function CompanyPanel({ code, company }: { code: string; company: DuplicatePair["a"] }) {
+function Metric({ label, value }: { label: string; value: string | number }) {
   return (
-    <Panel code={code} title={company.ticker}>
-      {[
-        ["資料編號", company.id],
-        ["股票代號", company.ticker],
-        ["公司名稱", company.name],
-        ["產業", company.sector],
-      ].map(([key, value]) => (
-        <div className="row" key={key} style={{ gridTemplateColumns: "82px 1fr", gap: 10, padding: "8px 0" }}>
-          <span className="tg gold">{key}</span>
-          <span className="tg">{value}</span>
-        </div>
-      ))}
-    </Panel>
+    <div className="metric-cell">
+      <div className="metric-label">{label}</div>
+      <div className="metric-value">{value}</div>
+    </div>
   );
 }
 
-const selectStyle = {
-  minHeight: 32,
-  border: "1px solid var(--night-rule-strong)",
-  background: "var(--night)",
-  color: "var(--night-ink)",
-  fontFamily: "var(--mono)",
-  fontSize: 12,
-  padding: "0 10px",
-} satisfies React.CSSProperties;
+function CompanyRow({ company, recommended }: { company: CompanyDuplicateEntry; recommended: boolean }) {
+  return (
+    <div className="row" style={{ gridTemplateColumns: "92px 1fr 88px 72px 92px", gap: 10, padding: "9px 0" }}>
+      <span className="tg gold">{company.ticker}</span>
+      <span className="tc">{company.name}</span>
+      <span className="tg">{company.market}</span>
+      <span className="num">{company.relationCount + company.keywordCount}</span>
+      <span className={`tg ${recommended ? "gold" : "soft"}`}>{recommended ? "CANONICAL" : company.beneficiaryTier}</span>
+    </div>
+  );
+}

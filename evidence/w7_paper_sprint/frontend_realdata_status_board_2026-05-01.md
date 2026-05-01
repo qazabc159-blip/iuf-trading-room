@@ -89,6 +89,7 @@ Initial high-risk surfaces:
 - `/drafts` and `/admin/content-drafts`: DONE in Codex cycle 02:00; now bind `GET /api/v1/content-drafts` and remove local-only audit/action mocks.
 - `/quote`: DONE in Codex cycle 02:04; now binds `GET /api/v1/market-data/effective-quotes` and blocks K-line/depth/ticks instead of rendering deterministic mock market data.
 - `/lab` and `/lab/[bundleId]`: DONE in Codex cycle 03:40; `radar-lab.ts` now fails closed in production and pages render BLOCKED/EMPTY instead of mock Quant Lab bundles when the lab API is unavailable.
+- `/companies/duplicates`: DONE in Codex catch-up cycle 12:20; page now binds `GET /api/v1/companies/duplicates` and renders LIVE/EMPTY/BLOCKED, with merge/ignore actions hidden until migration audit + backup ACK.
 - `/companies/[symbol]`: source/tick/derivatives mock feed removed in Codex cycle 01:49; remaining company-detail mock risk is `toCompanyDetailView` fallback fields.
 - `DerivativesPanel`: BLOCKED until production endpoint contract exists.
 - `TickStreamPanel`: BLOCKED until KGI readonly bid/ask + tick contract exists.
@@ -350,6 +351,33 @@ Blockers:
 
 - B14: Kill-switch write governance remains BLOCKED, owner Jason + Bruce. Frontend is now truthful and read-only.
 
+### 2026-05-01 12:20 Taipei
+
+Completed:
+
+- Converted `/companies/duplicates` from client-side `mockDuplicatePairs` to real `GET /api/v1/companies/duplicates`.
+- The page now renders LIVE duplicate groups from DB, EMPTY when the API returns zero groups, or BLOCKED when the duplicate report API is unavailable.
+- Removed local-only merge / not-duplicate / ignore buttons. The page now shows read-only duplicate groups and explicitly blocks write actions until governance is approved.
+- No destructive merge route was wired. No migration 0020 promotion, no backup-affecting action, no DB write, no Railway secret touched.
+
+Files:
+
+- `apps/web/app/companies/duplicates/page.tsx`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `GET /api/v1/companies/duplicates`
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+
+Blockers:
+
+- B15: Duplicate merge / ignore write actions remain BLOCKED, owner Mike + Jason + Pete. Required: migration audit, backup ACK, merge contract, and desk review.
+
 ## Elva Notes
 
 ### 2026-05-01 01:42 Taipei — Operator final ACK + Elva 20min cycle started
@@ -530,6 +558,7 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - **B12 CURRENT STATUS**: [Rule 7] `apps/web/lib/radar-lab.ts` production fallback guard is **RESOLVED @ Codex 03:40**. This supersedes the older OPEN line below from Elva Cycle 4-5. `getMaybe`/`postMaybe` now use production fail-closed behavior matching `radar-uncovered.ts`; `/lab` and `/lab/[bundleId]` render BLOCKED/EMPTY instead of mock bundles when lab API routes are unavailable.
 - **B13**: Quant Lab bundle API contract/routes ??**OPEN / BLOCKED / owner: Athena + Jason**. Frontend expects `GET /api/v1/lab/bundles`, `GET /api/v1/lab/bundles/:bundleId`, and `POST /api/v1/lab/bundles/:bundleId/action`; until implemented, production UI shows BLOCKED and push-to-portfolio remains disabled.
 - **B14**: Kill-switch write governance ??**OPEN / BLOCKED / owner: Jason + Bruce**. `/m/kill` and portfolio KillSwitch no longer simulate mode changes; frontend requires approved backend governance route, audit log, 4-layer risk regression, and operator approval before any write control is re-enabled.
+- **B15**: Duplicate merge / ignore write actions ??**OPEN / BLOCKED / owner: Mike + Jason + Pete**. `/companies/duplicates` now reads real duplicate groups but hides destructive/local-only actions until migration audit, backup ACK, merge contract, and desk review are complete.
 
 - **B1**: Jason 5 條 backend contract 未交（owner: Jason / due: cycle 1 = 02:00 Taipei first draft / **status: RESOLVED @ ~01:58**）
 - **B2**: Bruce 4-state harness spec 未交（owner: Bruce / due: cycle 1 = 02:00 first version / **status: RESOLVED @ 02:00**）
