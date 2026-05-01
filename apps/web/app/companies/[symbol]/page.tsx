@@ -60,6 +60,14 @@ function momentumFromChange(value: number | null | undefined) {
   return "中性";
 }
 
+function friendlyError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (/failed to fetch|fetch failed|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
+  if (/401|unauthorized|unauthenticated/i.test(message)) return "登入狀態已失效，請重新登入。";
+  if (/404|not found/i.test(message)) return "後端端點尚未提供。";
+  return "資料暫時無法讀取。";
+}
+
 function companyTimestamp(company: Company) {
   const record = company as unknown as { updatedAt?: string; createdAt?: string };
   return record.updatedAt ?? record.createdAt ?? new Date().toISOString();
@@ -118,8 +126,6 @@ export default async function CompanyDetailPage({
   params: Promise<{ symbol: string }>;
 }) {
   const { symbol } = await params;
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "(unset)";
-  const wsSlug  = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
 
   let companies: Company[] = [];
   let fetchErrorMsg: string | null = null;
@@ -127,7 +133,7 @@ export default async function CompanyDetailPage({
     const res = await getCompanies();
     companies = res.data ?? [];
   } catch (err) {
-    fetchErrorMsg = err instanceof Error ? err.message : String(err);
+    fetchErrorMsg = friendlyError(err);
     console.error("[company-detail] getCompanies failed", { symbol, err: fetchErrorMsg });
   }
 
@@ -139,19 +145,14 @@ export default async function CompanyDetailPage({
         sub="公司資料暫時無法讀取"
         note={`公司板 / ${symbol} / 暫停`}
       >
-        <div style={{ padding: "32px 24px", fontFamily: "var(--mono, monospace)", fontSize: 12, lineHeight: 1.7 }}>
-          <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 16, fontSize: 14 }}>
+        <div style={{ padding: "32px 24px", fontSize: 14, lineHeight: 1.8 }}>
+          <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 16, fontSize: 16, fontWeight: 700 }}>
             {symbol.toUpperCase()} 公司資料暫時無法讀取
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
             目前登入工作區或後端公司資料服務沒有回應；請稍後重試，或由 Elva/Jason 檢查 API 與登入狀態。
           </div>
-          <details className="dim" style={{ marginBottom: 16 }}>
-            <summary>工程診斷</summary>
-            <div style={{ marginTop: 8 }}>API_BASE: <b>{apiBase}</b></div>
-            <div>WORKSPACE: <b>{wsSlug}</b></div>
-            <pre style={{ background: "rgba(255,0,0,0.08)", padding: 12, marginTop: 8, whiteSpace: "pre-wrap", wordBreak: "break-all", maxWidth: 800 }}>{fetchErrorMsg}</pre>
-          </details>
+          <div className="terminal-note compact">{fetchErrorMsg}</div>
           <Link href="/companies" className="btn-sm">返回公司列表</Link>
         </div>
       </PageFrame>
@@ -196,7 +197,7 @@ export default async function CompanyDetailPage({
   const from = new Date();
   from.setFullYear(from.getFullYear() - 3);
   const rawBars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d", from: from.toISOString().slice(0, 10) }).catch((err) => {
-    ohlcvErrorMsg = err instanceof Error ? err.message : String(err);
+    ohlcvErrorMsg = friendlyError(err);
     console.warn("[company-detail] getCompanyOhlcv failed", { id: company.id, err });
     return [];
   });

@@ -45,10 +45,6 @@ export function middleware(request: NextRequest) {
   const hasSessionCookie = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (isPublicPath(pathname)) {
-    if (PUBLIC_PATHS.has(pathname) && hasSessionCookie) {
-      return addNoindex(NextResponse.redirect(new URL("/", request.url)));
-    }
-
     const response = NextResponse.next();
     if (request.cookies.get(PRESENCE_COOKIE)?.value === "1" && !hasSessionCookie) {
       clearPresenceCookie(response);
