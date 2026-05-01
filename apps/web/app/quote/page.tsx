@@ -1,5 +1,12 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { getEffectiveQuotes, type EffectiveMarketQuote } from "@/lib/api";
+import { getCompanies, getCompanyOhlcv, getEffectiveQuotes, type EffectiveMarketQuote, type OhlcvBar } from "@/lib/api";
+import { OhlcvCandlestickChart } from "../companies/[symbol]/OhlcvCandlestickChart";
+
+type KlineState = {
+  state: "LIVE" | "EMPTY" | "BLOCKED";
+  bars: OhlcvBar[];
+  reason: string;
+};
 
 function fmtNumber(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "--";
@@ -117,6 +124,49 @@ function BlockedMarketPanel({
   );
 }
 
+async function loadQuoteKline(symbol: string): Promise<KlineState> {
+  try {
+    const companies = await getCompanies();
+    const company = companies.data.find((item) => item.ticker.toUpperCase() === symbol) ?? null;
+    if (!company) {
+      return {
+        state: "EMPTY",
+        bars: [],
+        reason: `GET /api/v1/companies returned no company row for ${symbol}; K-line lookup is not evaluated.`,
+      };
+    }
+
+    try {
+      const response = await getCompanyOhlcv(company.id, { interval: "1d" });
+      const bars = response.filter((bar) => bar.source !== "mock");
+      if (bars.length === 0) {
+        return {
+          state: "EMPTY",
+          bars: [],
+          reason: "GET /api/v1/companies/:id/ohlcv returned zero production OHLCV bars for this symbol.",
+        };
+      }
+      return {
+        state: "LIVE",
+        bars,
+        reason: `GET /api/v1/companies/:id/ohlcv returned ${bars.length} production bars.`,
+      };
+    } catch (error) {
+      return {
+        state: "BLOCKED",
+        bars: [],
+        reason: `GET /api/v1/companies/:id/ohlcv failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      bars: [],
+      reason: `GET /api/v1/companies failed before K-line lookup: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 export default async function QuotePage({
   searchParams,
 }: {
@@ -127,6 +177,7 @@ export default async function QuotePage({
   let item: EffectiveMarketQuote | null = null;
   let generatedAt: string | null = null;
   let error: string | null = null;
+  const kline = await loadQuoteKline(symbol);
 
   try {
     const response = await getEffectiveQuotes({ symbols: symbol, includeStale: true, limit: 1 });
@@ -181,11 +232,7 @@ export default async function QuotePage({
       {!error && item && <QuoteSnapshot item={item} />}
 
       <div className="company-grid">
-        <BlockedMarketPanel
-          code="QTE-K"
-          title="K-line"
-          reason="K-line remains blocked until a production bars endpoint is promoted; no mock chart or synthetic ticking is mounted."
-        />
+        <OhlcvCandlestickChart bars={kline.bars} symbol={symbol} sourceState={kline.state} sourceReason={kline.reason} />
         <div>
           <BlockedMarketPanel
             code="QTE-BA"

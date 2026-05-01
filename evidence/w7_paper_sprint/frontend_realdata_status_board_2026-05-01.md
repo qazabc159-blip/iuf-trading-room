@@ -1189,3 +1189,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: OHLCV request failures now surface as BLOCKED with the raw request reason, while successful zero production bars surface as EMPTY. The K-line panel no longer renders a generic no-data message that hides whether the endpoint failed or was truly empty.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
+### Codex cycle (2026-05-01 16:18 Taipei) - quote page K-line now uses production OHLCV instead of a decorative blocked panel
+- Files changed: updated `apps/web/app/quote/page.tsx`.
+- Endpoints / data behavior: quote page still reads `GET /api/v1/market-data/effective-quotes`; it now also resolves the symbol through `GET /api/v1/companies` and, when available, reads `GET /api/v1/companies/:id/ohlcv?interval=1d` for the K-line panel.
+- Behavior change: the quote page K-line panel is now LIVE/EMPTY/BLOCKED from the real OHLCV source instead of a static blocked placeholder claiming no bars contract exists. Bid/ask depth and tick tape remain BLOCKED pending their own contracts.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: KGI readonly bid/ask and tick contracts remain Jason/Elva blockers. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
