@@ -124,7 +124,7 @@ function stateTone(state: LoadState["state"]) {
 }
 
 function mapKillMode(kill: KillState | null): KillMode {
-  if (!kill) return "PEEK";
+  if (!kill) return "FROZEN";
   if (kill.mode === "halted") return "FROZEN";
   if (kill.mode === "liquidate_only") return "SAFE";
   if (kill.mode === "paper_only") return "PEEK";
@@ -199,7 +199,8 @@ export default async function PortfolioPage() {
             </Panel>
           </div>
 
-          <Panel code="POS-OPN" title="PAPER POSITIONS" sub="real trading positions endpoint" right={`${data?.positions.length ?? 0} ROWS`}>
+          <Panel code="POS-OPN" title="PAPER POSITIONS" sub="real trading positions endpoint" right={data ? `${data.positions.length} ROWS` : "BLOCKED"}>
+            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Portfolio snapshot is unavailable, so positions are hidden.</div>}
             {data?.positions.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No open paper positions.</div>}
             {data && data.positions.length > 0 && (
               <div className="row position-row table-head tg">
@@ -222,6 +223,11 @@ export default async function PortfolioPage() {
         <div>
           <Panel code="KIL-SW" title="KILL SWITCH" sub="real state / frontend write disabled" right={data?.kill.mode ?? "BLOCKED"}>
             <KillSwitch mode={killMode} />
+            {!data?.kill && (
+              <div className="terminal-note" style={{ marginTop: 12 }}>
+                FROZEN: no audited backend kill-switch state was returned, so order controls fail closed.
+              </div>
+            )}
             {data?.kill && (
               <div className="tg soft" style={{ display: "grid", gap: 6, marginTop: 12 }}>
                 <span>account: {data.kill.accountId}</span>
@@ -232,6 +238,7 @@ export default async function PortfolioPage() {
           </Panel>
 
           <Panel code="RISK-BASE" title="ACCOUNT RISK LIMITS" sub="real risk limit endpoint" right={ACCOUNT_ID}>
+            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Risk limits are hidden until the portfolio snapshot is live.</div>}
             {data && [
               ["MAX/TRADE", `${data.risk.maxPerTradePct}%`],
               ["MAX DAILY LOSS", `${data.risk.maxDailyLossPct}%`],
@@ -249,7 +256,8 @@ export default async function PortfolioPage() {
             ))}
           </Panel>
 
-          <Panel code="RISK-OVR" title="STRATEGY / SYMBOL OVERRIDES" sub="read only" right={`${(data?.strategyLimits.length ?? 0) + (data?.symbolLimits.length ?? 0)} ROWS`}>
+          <Panel code="RISK-OVR" title="STRATEGY / SYMBOL OVERRIDES" sub="read only" right={data ? `${data.strategyLimits.length + data.symbolLimits.length} ROWS` : "BLOCKED"}>
+            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Risk overrides are hidden until the portfolio snapshot is live.</div>}
             {data?.strategyLimits.slice(0, 3).map((limit) => (
               <div className="row limit-row" key={limit.id}>
                 <span className="tg gold">STRAT</span>
@@ -269,7 +277,8 @@ export default async function PortfolioPage() {
         </div>
 
         <div>
-          <Panel code="ORD-LDG" title="PAPER ORDERS" sub="real order ledger endpoint" right={`${data?.orders.length ?? 0} ROWS`}>
+          <Panel code="ORD-LDG" title="PAPER ORDERS" sub="real order ledger endpoint" right={data ? `${data.orders.length} ROWS` : "BLOCKED"}>
+            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Paper order ledger is hidden until the portfolio snapshot is live.</div>}
             {data?.orders.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No paper orders returned.</div>}
             {data?.orders.slice(0, 10).map((order) => (
               <div className="row timeline-row" key={order.id}>
@@ -281,7 +290,8 @@ export default async function PortfolioPage() {
             ))}
           </Panel>
 
-          <Panel code="EXC-TML" title="EXECUTION EVENTS" sub="real trading events endpoint" right={`${data?.events.length ?? 0} ROWS`}>
+          <Panel code="EXC-TML" title="EXECUTION EVENTS" sub="real trading events endpoint" right={data ? `${data.events.length} ROWS` : "BLOCKED"}>
+            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Execution event ledger is hidden until the portfolio snapshot is live.</div>}
             {data?.events.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No execution events returned.</div>}
             {data?.events.slice(0, 12).map((event) => (
               <div className="row timeline-row" key={`${event.orderId}-${event.timestamp}-${event.type}`}>

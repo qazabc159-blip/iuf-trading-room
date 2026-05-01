@@ -1084,3 +1084,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: EMPTY/BLOCKED state panels now show the query timestamp beside source and reason, matching the LIVE panels' source/freshness behavior.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:21 Taipei) - portfolio fails closed when kill-switch state is unavailable
+- Files changed: updated `apps/web/app/portfolio/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Portfolio still reads paper trading, risk, and kill-switch endpoints for `paper-default`.
+- Behavior change: missing backend kill-switch state now maps to `FROZEN` instead of `PEEK`, so the paper ticket fails closed when the portfolio snapshot is BLOCKED. Downstream positions/risk/orders/events panels show BLOCKED notes instead of `0 ROWS` when the snapshot is unavailable.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. This remains paper-only UI; no live broker submit, migration 0020, Railway secrets, or destructive DB action touched.
