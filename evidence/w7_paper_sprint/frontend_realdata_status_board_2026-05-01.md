@@ -4,6 +4,51 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 16:43 Taipei — Elva cadence: 68h sprint Block 1, 20min #2
+
+**Codex burst recap since 16:23 (2 commits — burst slowing as Codex hits steady state)**:
+- `a990790` hide blocked plan and lab metrics
+- `12c591c` hide company registry counts when source blocks
+
+Aggregate diff scope: continued surface BLOCKED-not-EMPTY truthfulness on plans/lab + companies registry. No new contract entity, no migration, no broker write.
+
+**Verification at 16:43 (HEAD `12c591c`)**:
+- Stop-line grep `apps/web` for `broker\.submit|live\.submit|kgi-broker|/order/create`: 1 hit (docs file, expected). 0 actual broker-write paths.
+- 4-state hard rule: still strictly enforced; commits add fail-closed BLOCKED branches across 2 more pages
+- No new working-tree diff observed
+
+**Working tree**: clean.
+
+**Block 1 status (5/1 12:33 → 24:00, ~7.3h remaining)**:
+| Lane | Owner | Status |
+|---|---|---|
+| A — Codex Contract 1 + truthfulness | Codex | LIVE-pushing, burst slowing (~6 commits/hour vs prior 24/hour); approaching 4-state convergence |
+| B — Elva design docs | Elva | **6 docs DONE** — risk-persist 修正 / session-layer / OpenAlice / Contract 4 promote / **Contract 2 portfolio risk badge UI (本 cycle)** / P1-7 K-line Codex-自助 cover |
+| C — Bruce regression | Bruce | Bash dead 9th session, static audit DONE @ 22363e4 |
+| D — Jason 0020 v2 | Jason | OFFLINE |
+
+**Yellow / Red events**: 0 / 0.
+
+**This cycle's deliverable**: `evidence/w7_paper_sprint/contract_2_portfolio_4layer_risk_ui_design_2026-05-01.md` — 12-section P1-1 design for **portfolio + 4-layer risk badge**. New entity `RiskPortfolioOverview`、1 backend route (no new migration, reuses risk-store)、`RiskSurface.tsx` 4-cell horizontal block + drawer、`PositionRiskBadge.tsx` 4-char status code (`OWBN` style)、4-state strict (BLOCKED never renders as `[OK]`)、12/12 hard-line PASS、~970 LOC / ~18.5h e2e、W8 D1-D3 sequenced。8 open Q for 楊董。
+
+**Block 1 design coverage status — 6 P1 docs in 4 hours (12:33→16:43)**:
+- ✓ P1-1 Contract 2 Portfolio + 4-layer risk badge UI design (本 cycle)
+- ✓ P1-3 Contract 4 idea→paper promote pipeline (16:23 cycle)
+- ✓ P1-5 Risk persistence stale claim corrected (13:46 cycle)
+- ✓ P1-6 Session-layer risk schema design (13:46 cycle)
+- ✓ P1-7 K-line UI — **Codex 自主接管不需 Elva design** (15:54-16:23 cycle)
+- ✓ P1-11 OpenAlice 100-co exposure batch design (15:54 cycle)
+
+Remaining P1 design needs: P1-2 Watchlist (depends on P1-1 portfolio patterns), P1-4 KGI WS (gated on operator), P1-8 paper E2E live demo plan, P1-9 idempotency live verify, P1-10 order-detail timeline filter. Most are operator-gated or depend on other P1 work — write further design only if Codex / Jason haven't auto-covered.
+
+**Next 20min (17:03 cadence)**:
+1. Verify next Codex commits stop-line clean
+2. Standby for Jason / 0020 v2 trigger (no probe — ASYNC)
+3. Pick next P1 design — candidate: **P1-8 paper E2E live demo runbook for 5/4 09:00 open** OR **P1-2 Watchlist UI design** (mirrors Contract 2 patterns, depends on Contract 3 backend)
+4. Cycle entry write-back
+
+---
+
 ### 2026-05-01 16:23 Taipei — Elva cadence: 68h sprint Block 1, 20min mode
 
 **Trigger**: 楊董出門前指示「每20分鐘自主推進」+「一堆紅字好好處理」 → cadence 60→20min, PowerShell git stderr 改用 `2>$null`，新 memory `feedback_powershell_git_red_noise.md` 落地。
