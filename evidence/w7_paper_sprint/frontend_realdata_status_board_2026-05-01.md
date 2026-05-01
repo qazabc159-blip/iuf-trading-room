@@ -4,6 +4,62 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 17:43 Taipei — Elva cadence: 68h sprint Block 1, 20min #5 — ★ Codex executed Contract 3 (P1-2) inside 20min for the SECOND time + P1-9 idempotency verify checklist drafted
+
+**★ HEADLINE (2nd time)**: Codex executed Contract 3 P1-2 design **inside ~22min of my 17:23 push** — `cbadbb9 feat(web): scaffold dashboard watchlist surface`. Design→impl loop now repeating reliably.
+
+**Codex burst since 17:23 (1 commit, big one)**:
+- `cbadbb9` — 6 files, 324 insertions, exact §3.4-§5 file layout from my Contract 3 spec:
+  - `apps/web/components/watchlist/WatchlistSurface.tsx` (65 lines vs my §5.1 ~120 — leaner, faithful)
+  - `apps/web/components/watchlist/WatchlistTable.tsx` (134 lines vs my §5.2 ~180 — leaner)
+  - `apps/web/components/watchlist/QuoteCellRender.tsx` (51 lines vs my §5.2 ~50 — bullseye)
+  - `apps/web/lib/api.ts` (+39 — types added per my §5.4)
+  - `apps/web/app/page.tsx` (+30 — 3-pane integration per my §5.3)
+
+**Diff inspection of WatchlistSurface.tsx**:
+| Spec | Codex impl |
+|---|---|
+| `WatchlistSurfaceState = LIVE \| BLOCKED` | ✓ exact |
+| BLOCKED branch shows reason + source + checked time | ✓ exact (matches RiskSurface BLOCKED pattern) |
+| LIVE renders source line with kill+paper state | ✓ exact |
+| `data.warnings` rendered as PARTIAL banner | ✓ added (per my §3.1 warnings array) |
+| `rows.length === 0` → EMPTY hint | ✓ exact |
+| Otherwise `<WatchlistTable>` | ✓ exact |
+| Stop-line grep | **0 hits** |
+
+**Cycle deliverable — P1-9 idempotency verify checklist**:
+- File: `evidence/w7_paper_sprint/paper_e2e_idempotency_verify_checklist_2026-05-04.md`
+- 12 test cases T01-T12 covering 5 idempotency layers (L1 frontend ref / L2 API key / L3 DB unique / L4 state machine guard / L5 ledger unique)
+- Cross-tab, retry, race, terminal-state, network-drop, cross-surface promote scenarios
+- Evidence bundle layout for `idempotency_verify/` subfolder
+- 6 hard lines for demo day (single click, one tab, no cross-surface PROMOTE etc.)
+- 5 open Q with defaults
+- Sequencing: 5/2-5/3 Bruce + Codex prep, 5/3 22:00 full 12/12 verify, 5/4 06:00 smoke, 5/4 09:00 go/no-go gated on PASS
+- Demo postponed to 5/5 if 12/12 not green by 5/3 22:00
+
+**Block 1 status table**:
+| P1 # | Topic | Design | Impl |
+|---|---|---|---|
+| P1-1 (Contract 2) | Portfolio + 4-layer risk | ★ 16:43 | ★ `13ca56a` 16:54 |
+| P1-2 (Contract 3) | Watchlist UI | ★ 17:23 | ★ `cbadbb9` 17:45 |
+| P1-3 (Contract 4) | Idea→paper promote | ★ 16:23 | queued |
+| P1-7 (Codex self) | K-line wire | covered | `8a749d7` |
+| P1-8 | Paper E2E demo runbook | ★ 17:03 | static |
+| P1-9 | Idempotency verify checklist | ★ 17:43 (this cycle) | Bruce-actionable 5/2 |
+| P1-11 | OpenAlice 100-co batch | ★ 15:54 | queued |
+
+**Yellow / red events**: none this cycle.
+
+**Velocity check**: 7 P1 designs delivered + 2 Codex direct executions in 5h overnight push. On track for 5/4 demo readiness.
+
+**Next 20min (18:03 cadence)**:
+1. Verify next Codex commits stop-line clean
+2. Check if Codex picks up Contract 4 (P1-3) idea→paper promote next
+3. Pick next P1 design candidate: **P1-4 4-layer risk override admin UI** OR **P1-10 paper E2E backup plan** (what to do if 5/4 09:00 has TWSE outage, KGI quote storm, etc.)
+4. Cycle entry write-back
+
+---
+
 ### 2026-05-01 17:23 Taipei — Elva cadence: 68h sprint Block 1, 20min #4 — Contract 3 Watchlist UI design queued (P1-2)
 
 **Codex burst since 17:03 (0 commits)**: Codex quiet — likely consuming Contract 4 (P1-3) design or in design-read mode. No drift, no stop-line risk.
