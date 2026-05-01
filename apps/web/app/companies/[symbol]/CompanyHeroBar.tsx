@@ -15,8 +15,10 @@ function tone(value: number | null | undefined) {
 }
 
 function formatAsOf(value: string | null | undefined) {
-  if (!value) return "尚無時間";
-  return new Date(value).toLocaleTimeString("zh-TW", { hour12: false });
+  if (!value) return "EMPTY";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("zh-TW", { hour12: false });
 }
 
 export function CompanyHeroBar({
@@ -28,6 +30,7 @@ export function CompanyHeroBar({
 }) {
   const changePercent = quote?.changePercent ?? company.intradayChgPct;
   const source = quote?.source ? quote.source.toUpperCase() : "EMPTY";
+  const quoteTone = tone(changePercent);
 
   return (
     <div className="company-hero-bar">
@@ -42,16 +45,16 @@ export function CompanyHeroBar({
           </div>
         </div>
         <div className="tg soft">
-          {company.chainPosition} · {company.themes.join(" / ")}
+          {company.chainPosition} / {company.themes.join(" / ") || "no themes"}
         </div>
       </div>
 
       <div className="company-hero-quote">
         <div className="company-hero-price num">{quote?.last?.toLocaleString("en-US") ?? "--"}</div>
-        <div className={`badge ${tone(changePercent) === "up" ? "badge-red" : tone(changePercent) === "down" ? "badge-green" : "badge-blue"}`}>
+        <div className={`badge ${quoteTone === "up" ? "badge-red" : quoteTone === "down" ? "badge-green" : "badge-blue"}`}>
           {signed(changePercent)}%
         </div>
-        <div className="tg soft">量 {quote?.volume?.toLocaleString("en-US") ?? "--"}</div>
+        <div className="tg soft">VOL {quote?.volume?.toLocaleString("en-US") ?? "--"}</div>
         <div className="tg muted">AS OF {formatAsOf(quote?.asOf)}</div>
         <div className="tg badge badge-blue">SRC {source}</div>
       </div>

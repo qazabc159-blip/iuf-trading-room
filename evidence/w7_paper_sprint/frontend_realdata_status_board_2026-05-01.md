@@ -948,3 +948,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: non-exec page chrome no longer hard-codes `SESSION / POST-CLOSE`; it now reports `SESSION / REAL-DATA`, while exec pages remain `EXEC LAYER / PAPER`.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for `POST-CLOSE`, old fake run id, old scan timer, and old static clock returned 0.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:32 Taipei) - company master panel labels made readable
+- Files changed: rewrote `apps/web/app/companies/[symbol]/CompanyInfoPanel.tsx` labels and cleaned `CompanyHeroBar.tsx` quote metadata.
+- Endpoints / data behavior: no endpoint contract changed. Company detail still uses real company master rows and real OHLCV-derived quote data only.
+- Behavior change: company page [01] no longer renders corrupted label text; it now shows readable COMPANY MASTER, TICKER, MARKET, COUNTRY, CHAIN POSITION, exposure, validation, source, VOL, AS OF, and EMPTY states.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
