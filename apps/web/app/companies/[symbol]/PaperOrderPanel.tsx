@@ -157,7 +157,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
 
       <div style={sourceBarStyle}>
         <StatePill state={orders.status === "blocked" ? "BLOCKED" : orders.status === "loading" ? "LOADING" : "LIVE"} />
-        <span>Contract 1 · paper only · no broker submit</span>
+        <span>Contract 1 / GET paper order ledger / paper only / no broker submit</span>
       </div>
 
       <div style={bannerStyle}>
@@ -257,10 +257,10 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           <span>SYMBOL PAPER LEDGER</span>
           <span>
             {orders.status === "live"
-              ? `${orders.items.length} rows · ${formatTime(orders.updatedAt)}`
+              ? `${orders.items.length} rows / ${formatTime(orders.updatedAt)}`
               : orders.status === "loading"
                 ? "loading"
-                : `blocked · ${formatTime(orders.updatedAt)}`}
+                : `blocked / ${formatTime(orders.updatedAt)}`}
           </span>
         </div>
         {orders.status === "blocked" && <TruthNote state="BLOCKED" text={orders.message} />}

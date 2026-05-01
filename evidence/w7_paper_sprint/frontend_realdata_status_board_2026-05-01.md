@@ -1024,3 +1024,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: LIVE draft/review panels now show both source and Updated time, satisfying the 4-state rule for source + freshness instead of only showing row counts.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 16:08 Taipei) - company paper order panel source text tightened
+- Files changed: updated `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. The panel still calls paper-order preview/submit/ledger endpoints only and never broker/live routes.
+- Behavior change: removed decorative middle-dot separators from the company paper-order source/ledger labels and made the source bar explicitly name the paper order ledger. This keeps Contract 1 visible as paper-only operational state, not styling text.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for middle-dot/garbled separator in this panel returned 0.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
