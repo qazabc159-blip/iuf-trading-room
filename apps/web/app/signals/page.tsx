@@ -120,6 +120,11 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
 export default async function SignalsPage() {
   const result = await loadSignals();
   const signals = result.data.signals.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  const countsAvailable = result.state !== "BLOCKED";
+  const bullCount = signals.filter((signal) => signal.direction === "bullish").length;
+  const bearCount = signals.filter((signal) => signal.direction === "bearish").length;
+  const neutralCount = signals.filter((signal) => signal.direction === "neutral").length;
+  const highConfidenceCount = signals.filter((signal) => signal.confidence >= 4).length;
   const categories = new Set(signals.map((signal) => signal.category));
 
   return (
@@ -132,12 +137,12 @@ export default async function SignalsPage() {
       <MetricStrip
         cells={[
           { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "TOTAL", value: signals.length },
-          { label: "BULL", value: signals.filter((signal) => signal.direction === "bullish").length, tone: "up" },
-          { label: "BEAR", value: signals.filter((signal) => signal.direction === "bearish").length, tone: "down" },
-          { label: "NEUT", value: signals.filter((signal) => signal.direction === "neutral").length, tone: "muted" },
-          { label: "CAT", value: categories.size },
-          { label: "HIGH CONF", value: signals.filter((signal) => signal.confidence >= 4).length, tone: "gold" },
+          { label: "TOTAL", value: countsAvailable ? signals.length : "--" },
+          { label: "BULL", value: countsAvailable ? bullCount : "--", tone: "up" },
+          { label: "BEAR", value: countsAvailable ? bearCount : "--", tone: "down" },
+          { label: "NEUT", value: countsAvailable ? neutralCount : "--", tone: "muted" },
+          { label: "CAT", value: countsAvailable ? categories.size : "--" },
+          { label: "HIGH CONF", value: countsAvailable ? highConfidenceCount : "--", tone: "gold" },
         ]}
         columns={7}
       />

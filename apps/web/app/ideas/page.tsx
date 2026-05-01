@@ -153,6 +153,7 @@ function IdeaRowView({ idea }: { idea: IdeaRow }) {
 export default async function IdeasPage() {
   const result = await loadIdeas();
   const summary = result.data.summary;
+  const statsAvailable = result.state !== "BLOCKED";
   const topReason = summary.quality.primaryReasons[0]?.reason ?? "none";
 
   return (
@@ -165,11 +166,11 @@ export default async function IdeasPage() {
       <MetricStrip
         cells={[
           { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "TOTAL", value: summary.total },
-          { label: "ALLOW", value: summary.allow, tone: "up" },
-          { label: "REVIEW", value: summary.review, tone: "gold" },
-          { label: "BLOCK", value: summary.block, tone: "down" },
-          { label: "READY", value: summary.quality.strategyReady, tone: summary.quality.strategyReady > 0 ? "up" : "muted" },
+          { label: "TOTAL", value: statsAvailable ? summary.total : "--" },
+          { label: "ALLOW", value: statsAvailable ? summary.allow : "--", tone: "up" },
+          { label: "REVIEW", value: statsAvailable ? summary.review : "--", tone: "gold" },
+          { label: "BLOCK", value: statsAvailable ? summary.block : "--", tone: "down" },
+          { label: "READY", value: statsAvailable ? summary.quality.strategyReady : "--", tone: statsAvailable && summary.quality.strategyReady > 0 ? "up" : "muted" },
           { label: "UPDATED", value: formatTime(result.updatedAt) },
         ]}
         columns={7}
@@ -204,33 +205,33 @@ export default async function IdeasPage() {
         code="IDEA-QA"
         title="4-STATE AUDIT"
         sub="endpoint truth / no silent mock"
-        right={topReason}
+        right={statsAvailable ? topReason : result.state}
       >
         <div className="quote-strip" style={{ gridTemplateColumns: "repeat(6, minmax(120px, 1fr))", marginTop: 0 }}>
           <div className="quote-card">
             <div className="tg quote-symbol">BULLISH</div>
-            <div className="quote-last num up">{summary.bullish}</div>
+            <div className="quote-last num up">{statsAvailable ? summary.bullish : "--"}</div>
           </div>
           <div className="quote-card">
             <div className="tg quote-symbol">BEARISH</div>
-            <div className="quote-last num down">{summary.bearish}</div>
+            <div className="quote-last num down">{statsAvailable ? summary.bearish : "--"}</div>
           </div>
           <div className="quote-card">
             <div className="tg quote-symbol">NEUTRAL</div>
-            <div className="quote-last num muted">{summary.neutral}</div>
+            <div className="quote-last num muted">{statsAvailable ? summary.neutral : "--"}</div>
           </div>
           <div className="quote-card">
             <div className="tg quote-symbol">REFERENCE</div>
-            <div className="quote-last num gold">{summary.quality.referenceOnly}</div>
+            <div className="quote-last num gold">{statsAvailable ? summary.quality.referenceOnly : "--"}</div>
           </div>
           <div className="quote-card">
             <div className="tg quote-symbol">INSUFFICIENT</div>
-            <div className="quote-last num down">{summary.quality.insufficient}</div>
+            <div className="quote-last num down">{statsAvailable ? summary.quality.insufficient : "--"}</div>
           </div>
           <div className="quote-card">
             <div className="tg quote-symbol">CONF AVG</div>
             <div className="quote-last num">
-              {result.data.items.length
+              {statsAvailable && result.data.items.length
                 ? percent(result.data.items.reduce((sum, idea) => sum + idea.confidence, 0) / result.data.items.length)
                 : "--"}
             </div>
@@ -238,7 +239,7 @@ export default async function IdeasPage() {
         </div>
         <div className="tg soft" style={{ display: "grid", gap: 6, paddingBottom: 12 }}>
           <span>source: {result.source}</span>
-          <span>generated: {formatDateTime(result.data.generatedAt)}</span>
+          <span>generated: {statsAvailable ? formatDateTime(result.data.generatedAt) : "blocked until strategy idea source is live"}</span>
           <span>handoff: strategy idea to order remains BLOCKED / owner Jason + Bruce / Contract 4 promote route not approved.</span>
         </div>
       </Panel>

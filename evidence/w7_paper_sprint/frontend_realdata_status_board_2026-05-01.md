@@ -1177,3 +1177,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: BLOCKED strategy run sources now show `--` or BLOCKED reason for summary/output/lineage panels instead of fallback zero totals, empty output rows, or fake quality counts. True EMPTY run payloads still show EMPTY with reason.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. Pages remain read-only; no broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
+### Codex cycle (2026-05-01 16:11 Taipei) - ideas and signals blocked state no longer reports fake counts
+- Files changed: updated `apps/web/app/ideas/page.tsx` and `apps/web/app/signals/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Ideas still read `GET /api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&sort=score`; signals still read `GET /api/v1/signals + /api/v1/themes + /api/v1/companies`.
+- Behavior change: BLOCKED strategy idea and signal sources now show `--` or blocked freshness text instead of fallback zero totals, 1970 generated timestamps, fake direction counts, or fake quality counts. True EMPTY endpoint responses still show EMPTY with reason.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. Idea-to-order handoff remains BLOCKED per Contract 4; no broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
