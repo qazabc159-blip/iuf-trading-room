@@ -1066,3 +1066,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: company registry now exposes LOADING/LIVE/EMPTY/BLOCKED state, source, updated time, and owner/detail for failed API calls. Empty API results show an EMPTY note instead of silently rendering an empty table.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. PR #39 migration 0020 remains blocked by Mike/Pete P0 and was not touched. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:15 Taipei) - mobile brief hides non-live metric placeholders
+- Files changed: updated `apps/web/app/m/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Mobile brief still reads briefs, themes, paper ideas, market overview, and kill-switch state through existing read endpoints.
+- Behavior change: `/m` no longer renders zero-valued market metrics when the combined mobile source is BLOCKED/EMPTY or when the market overview payload is absent. Theme and paper idea sections now render explicit EMPTY cards instead of blank sections.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

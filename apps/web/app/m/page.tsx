@@ -133,9 +133,23 @@ export default async function MobileBrief() {
       )}
 
       <MobileSection code="MKT" title="market data" right={activeSource.toUpperCase()}>
-        <MobileMetric label="KILL" value={result.data.kill?.mode ?? "--"} tone={result.data.kill?.engaged ? "down" : "gold"} />
-        <MobileMetric label="QUOTES" value={overview?.quotes.total ?? 0} sub={`${overview?.quotes.fresh ?? 0} fresh`} tone={(overview?.quotes.fresh ?? 0) > 0 ? "up" : "muted"} />
-        <MobileMetric label="PAPER-USABLE" value={overview?.quotes.readiness.effectiveSelection.paperUsable ?? 0} sub={`${overview?.quotes.readiness.effectiveSelection.blocked ?? 0} blocked`} tone="gold" />
+        {result.state !== "LIVE" ? (
+          <div className="mobile-card">
+            <div className={`tg ${stateTone(result.state)}`}>{result.state}</div>
+            <div className="tc soft" style={{ marginTop: 8 }}>Market metrics are hidden because the mobile brief source is not live.</div>
+          </div>
+        ) : !overview ? (
+          <div className="mobile-card">
+            <div className="tg gold">EMPTY</div>
+            <div className="tc soft" style={{ marginTop: 8 }}>No market overview payload was returned.</div>
+          </div>
+        ) : (
+          <>
+            <MobileMetric label="KILL" value={result.data.kill?.mode ?? "UNKNOWN"} tone={result.data.kill?.engaged ? "down" : "gold"} />
+            <MobileMetric label="QUOTES" value={overview.quotes.total} sub={`${overview.quotes.fresh} fresh`} tone={overview.quotes.fresh > 0 ? "up" : "muted"} />
+            <MobileMetric label="PAPER-USABLE" value={overview.quotes.readiness.effectiveSelection.paperUsable} sub={`${overview.quotes.readiness.effectiveSelection.blocked} blocked`} tone="gold" />
+          </>
+        )}
       </MobileSection>
 
       <MobileSection code="BRF" title="latest brief" right={latestBrief?.status ?? "EMPTY"}>
@@ -150,6 +164,7 @@ export default async function MobileBrief() {
       </MobileSection>
 
       <MobileSection code="THM" title="theme sweep" right={`${themes.length} REAL`}>
+        {themes.length === 0 && <div className="mobile-card"><div className="tg gold">EMPTY</div><div className="tc soft">No theme rows returned.</div></div>}
         {themes.map((theme) => (
           <Link className="mobile-card" href={`/themes/${theme.slug}`} key={theme.id}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -163,6 +178,7 @@ export default async function MobileBrief() {
       </MobileSection>
 
       <MobileSection code="IDA" title="paper ideas" right={`${ideas.length} REAL`}>
+        {ideas.length === 0 && <div className="mobile-card"><div className="tg gold">EMPTY</div><div className="tc soft">No paper strategy ideas returned.</div></div>}
         {ideas.map((idea) => (
           <Link className="mobile-card" href={`/companies/${idea.symbol}`} key={`${idea.companyId}-${idea.symbol}`}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
