@@ -10,7 +10,7 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - Sidebar logout: DONE.
 - API health: PASS after deployment.
 - Company 2330 with authenticated cookie: PASS.
-- Production no-silent-mock policy: IN PROGRESS; B10/B11 wrapper-level production fallback fixed in Codex cycle 02:48, B12 Quant Lab fallback fixed in Codex cycle 03:40.
+- Production no-silent-mock policy: IN PROGRESS; B10/B11 wrapper-level production fallback fixed in Codex cycle 02:48, B12 Quant Lab fallback fixed in Codex cycle 03:40, kill-switch mock writes removed in Codex catch-up cycle 12:10.
 - Market Intel/news lane: IN PROGRESS; company detail panel [05] now binds TWSE announcements through the shared API client.
 - Full mock/placeholder removal: OPEN.
 
@@ -92,7 +92,7 @@ Initial high-risk surfaces:
 - `/companies/[symbol]`: source/tick/derivatives mock feed removed in Codex cycle 01:49; remaining company-detail mock risk is `toCompanyDetailView` fallback fields.
 - `DerivativesPanel`: BLOCKED until production endpoint contract exists.
 - `TickStreamPanel`: BLOCKED until KGI readonly bid/ask + tick contract exists.
-- `/m/kill`: says no backend in mock.
+- `/m/kill` and portfolio KillSwitch: DONE in Codex catch-up cycle 12:10; frontend mock kill-mode toggles removed, current mode is read-only, all writes render BLOCKED pending backend governance/audit/risk approval.
 - `radar-api.ts` and `radar-uncovered.ts`: API failure can fall back to mock.
 
 ## Overnight Log
@@ -320,6 +320,36 @@ Blockers:
 
 - New backend blocker B13: Quant Lab bundle API contract/routes are not implemented yet; owner Athena + Jason. Frontend is truthful and ready to bind once routes exist.
 
+### 2026-05-01 12:10 Taipei
+
+Completed:
+
+- Removed fake kill-switch writes from `/m/kill`. The mobile kill page now reads current session kill mode when available, renders all mode changes as BLOCKED, and documents owner/blocker instead of simulating a mode transition.
+- Removed local mock mode changes from the portfolio `KillSwitch` component. It is now a read-only 4-state display with all write controls disabled and explained.
+- Hardened `api.killMode()` so mock-only kill-mode fallback cannot be used in production runtime.
+- No backend kill-route wiring was added. No live submit, no migration 0020, no broker path, no Railway secret touched.
+
+Files:
+
+- `apps/web/app/m/kill/page.tsx`
+- `apps/web/components/portfolio/KillSwitch.tsx`
+- `apps/web/lib/radar-api.ts`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `GET /api/v1/session` is used only to show the current kill mode on `/m/kill`.
+- Kill-switch write path remains BLOCKED until Jason + Bruce provide approved backend governance, audit log, 4-layer risk regression, and operator approval.
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+
+Blockers:
+
+- B14: Kill-switch write governance remains BLOCKED, owner Jason + Bruce. Frontend is now truthful and read-only.
+
 ## Elva Notes
 
 ### 2026-05-01 01:42 Taipei — Operator final ACK + Elva 20min cycle started
@@ -499,6 +529,7 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 
 - **B12 CURRENT STATUS**: [Rule 7] `apps/web/lib/radar-lab.ts` production fallback guard is **RESOLVED @ Codex 03:40**. This supersedes the older OPEN line below from Elva Cycle 4-5. `getMaybe`/`postMaybe` now use production fail-closed behavior matching `radar-uncovered.ts`; `/lab` and `/lab/[bundleId]` render BLOCKED/EMPTY instead of mock bundles when lab API routes are unavailable.
 - **B13**: Quant Lab bundle API contract/routes ??**OPEN / BLOCKED / owner: Athena + Jason**. Frontend expects `GET /api/v1/lab/bundles`, `GET /api/v1/lab/bundles/:bundleId`, and `POST /api/v1/lab/bundles/:bundleId/action`; until implemented, production UI shows BLOCKED and push-to-portfolio remains disabled.
+- **B14**: Kill-switch write governance ??**OPEN / BLOCKED / owner: Jason + Bruce**. `/m/kill` and portfolio KillSwitch no longer simulate mode changes; frontend requires approved backend governance route, audit log, 4-layer risk regression, and operator approval before any write control is re-enabled.
 
 - **B1**: Jason 5 條 backend contract 未交（owner: Jason / due: cycle 1 = 02:00 Taipei first draft / **status: RESOLVED @ ~01:58**）
 - **B2**: Bruce 4-state harness spec 未交（owner: Bruce / due: cycle 1 = 02:00 first version / **status: RESOLVED @ 02:00**）

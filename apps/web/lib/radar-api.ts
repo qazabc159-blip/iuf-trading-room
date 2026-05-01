@@ -109,7 +109,8 @@ async function get<T>(path: string, fallback: T): Promise<T> {
  * Bypasses fetch entirely so prod deploys never see OFFLINE state from these.
  * Tracked for backend coverage in evidence/path_b_w2a_20260426/pr21_api_gap.md.
  */
-async function mockOnly<T>(fallback: T | (() => T | Promise<T>)): Promise<T> {
+async function mockOnly<T>(fallback: T | (() => T | Promise<T>), label = "mockOnly"): Promise<T> {
+  if (IS_PROD && !IS_BUILD) throw new Error(`${label} cannot use mock-only fallback in production`);
   if (typeof fallback === "function") return await (fallback as () => T | Promise<T>)();
   return fallback;
 }
@@ -203,7 +204,7 @@ export const api = {
   // Backend /api/v1/portfolio/kill-mode exists but routes through setKillSwitchState which mutates
   // ARMED state — not safe to wire until operator-gate review is done.
   killMode: (mode: KillMode) =>
-    mockOnly<{ ok: true; mode: KillMode }>({ ok: true, mode }),
+    mockOnly<{ ok: true; mode: KillMode }>({ ok: true, mode }, "killMode"),
 
   // previewOrder: wired to /api/v1/paper/orders/preview (added PR #22 item 1). W7 L6: remove mockOnly.
   previewOrder: (t: OrderTicket) =>
