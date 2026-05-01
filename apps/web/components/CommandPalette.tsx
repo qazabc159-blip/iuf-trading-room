@@ -34,7 +34,7 @@ const ROUTES: Item[] = [
   { code: "03", label: "公司板", sub: "公司池、個股資料與 K 線", href: "/companies", group: "頁面" },
   { code: "04", label: "策略想法", sub: "由真實訊號與市場資料產生的紙上想法", href: "/ideas", group: "頁面" },
   { code: "05", label: "策略批次", sub: "策略批次紀錄與輸出", href: "/runs", group: "頁面" },
-  { code: "06", label: "紙上交易", sub: "資金、部位、委託、成交與風控", href: "/portfolio", group: "頁面" },
+  { code: "06", label: "交易室", sub: "模擬資金、部位、委託、成交與風控", href: "/portfolio", group: "頁面" },
   { code: "07", label: "訊號證據", sub: "訊號資料與證據紀錄", href: "/signals", group: "頁面" },
   { code: "08", label: "交易計畫", sub: "交易計畫與審核佇列", href: "/plans", group: "頁面" },
   { code: "09", label: "營運監控", sub: "系統狀態、稽核與工作流", href: "/ops", group: "頁面" },
@@ -54,7 +54,7 @@ function directionLabel(value: string) {
 }
 
 function decisionModeLabel(value: string) {
-  if (value === "paper") return "紙上";
+  if (value === "paper") return "模擬";
   if (value === "live") return "實盤";
   if (value === "research") return "研究";
   return value;

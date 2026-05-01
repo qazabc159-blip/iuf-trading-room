@@ -35,6 +35,14 @@ type NewsItem = CompanyAnnouncement & {
   companyName: string;
 };
 
+function friendlyError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/fetch failed|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
+  if (/401|unauthorized|unauthenticated/i.test(message)) return "登入狀態已失效，請重新登入。";
+  if (/404|not found/i.test(message)) return "後端端點尚未提供。";
+  return message;
+}
+
 async function load<T>(
   source: string,
   emptyValue: T,
@@ -60,7 +68,7 @@ async function load<T>(
       data: emptyValue,
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyError(error),
     };
   }
 }
@@ -102,10 +110,18 @@ function marketText(value: string | null | undefined) {
   if (value === "Selective Attack") return "選擇性進攻";
   if (value === "Defense") return "防守";
   if (value === "Preservation") return "保全";
+  if (value === "Balanced") return "平衡";
   return value ?? "--";
 }
 
 function lifecycleText(value: string | null | undefined) {
+  if (value === "Discovery") return "探索";
+  if (value === "Validation") return "驗證";
+  if (value === "Expansion") return "擴張";
+  if (value === "Crowded") return "擁擠";
+  if (value === "Distribution") return "分配";
+  if (value === "Incubation") return "孵化";
+  if (value === "Monitoring") return "監控";
   if (value === "active") return "啟用";
   if (value === "watch") return "觀察";
   if (value === "paused") return "暫停";
@@ -113,11 +129,60 @@ function lifecycleText(value: string | null | undefined) {
   return value ?? "--";
 }
 
+function categoryText(value: string | null | undefined) {
+  if (!value) return "未分類";
+  const key = value.toLowerCase();
+  if (key === "earnings") return "財報";
+  if (key === "revenue") return "營收";
+  if (key === "news") return "新聞";
+  if (key === "theme") return "主題";
+  if (key === "technical") return "技術";
+  if (key === "fundamental") return "基本面";
+  if (key === "test" || key === "dryrun") return "內部測試";
+  return value.replace(/[_-]/g, " ");
+}
+
+function hasBrokenText(value: string | null | undefined) {
+  if (!value) return false;
+  return /�|Ã|Â|undefined|null/i.test(value);
+}
+
+function themeThesisText(theme: ThemeRow) {
+  if (!theme.thesis || hasBrokenText(theme.thesis)) {
+    return "主題說明待整理；目前先顯示正式主題主檔與公司池數量。";
+  }
+  return theme.thesis;
+}
+
+function isInternalTestSignal(signal: SignalRow) {
+  const text = `${signal.title} ${signal.summary ?? ""} ${signal.category}`.toLowerCase();
+  return /bruce|dryrun|smoke|test signal|verify/.test(text);
+}
+
+function signalTitleText(signal: SignalRow) {
+  const raw = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
+  if (hasBrokenText(raw)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
+  return raw.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
+}
+
 function formatTime(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleTimeString("zh-TW", { hour12: false });
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function formatDate(value: string | null | undefined) {
@@ -140,7 +205,7 @@ function StateLine<T>({ state, label }: { state: LoadState<T>; label: string }) 
     <div className="tg soft" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
       <StatePill state={state.state} />
       <span>{label}</span>
-      <span>更新 {formatTime(state.updatedAt)}</span>
+      <span>更新 {formatDateTime(state.updatedAt)}</span>
       {state.state !== "LIVE" && <span>{state.reason}</span>}
     </div>
   );
@@ -176,6 +241,29 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
   const topLoser = data.leaders.topLosers[0] ?? null;
   const active = data.leaders.mostActive[0] ?? null;
   const connected = data.quotes.readiness.connectedSources.join("/") || "無";
+  const tapeItems = [
+    ...data.leaders.topGainers.slice(0, 4).map((item) => ({
+      label: "強勢",
+      symbol: item.symbol,
+      value: `${signed(item.changePct)}%`,
+      tone: tone(item.changePct),
+      source: item.source,
+    })),
+    ...data.leaders.topLosers.slice(0, 4).map((item) => ({
+      label: "弱勢",
+      symbol: item.symbol,
+      value: `${signed(item.changePct)}%`,
+      tone: tone(item.changePct),
+      source: item.source,
+    })),
+    ...data.leaders.mostActive.slice(0, 4).map((item) => ({
+      label: "成交",
+      symbol: item.symbol,
+      value: item.volume ? `${item.volume.toLocaleString("zh-TW")}股` : "--",
+      tone: "muted",
+      source: item.source,
+    })),
+  ];
 
   const cards = [
     { key: "quotes", label: "報價", value: String(data.quotes.total), sub: `${data.quotes.fresh} 新鮮 / ${data.quotes.stale} 過期`, tone: data.quotes.fresh > 0 ? "up" : "muted" },
@@ -190,6 +278,20 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
   return (
     <div>
       <StateLine state={overview} label="市場總覽" />
+      {tapeItems.length > 0 && (
+        <div className="market-tape" aria-label="即時行情帶">
+          <div className="market-tape-track">
+            {[...tapeItems, ...tapeItems].map((item, index) => (
+              <span className="market-tape-item" key={`${item.label}-${item.symbol}-${index}`}>
+                <span className="tg gold">{item.label}</span>
+                <span className="num">{item.symbol}</span>
+                <span className={`num ${item.tone}`}>{item.value}</span>
+                <span className="tg soft">{item.source.toUpperCase()}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="quote-strip">
         {cards.map((card) => (
           <div className="quote-card" key={card.key}>
@@ -212,7 +314,7 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
       <StateLine state={themes} label="主題資料" />
       <EmptyOrBlocked state={themes} />
       {themes.state === "LIVE" && (
-        <div className="row theme-row table-head tg">
+        <div className="row dashboard-theme-row table-head tg">
           <span>#</span><span>主題</span><span>狀態</span><span>階段</span><span>池</span><span>更新</span>
         </div>
       )}
@@ -221,11 +323,11 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
         .sort((left, right) => left.priority - right.priority || left.name.localeCompare(right.name))
         .slice(0, 8)
         .map((theme) => (
-          <Link href={`/themes/${theme.slug}`} key={theme.id} className="row theme-row">
+          <Link href={`/themes/${theme.slug}`} key={theme.id} className="row dashboard-theme-row">
             <span className="tg soft">{theme.priority}</span>
             <span>
               <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{theme.name}</strong>
-              <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{theme.slug}</span>
+              <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{theme.slug} · {themeThesisText(theme)}</span>
             </span>
             <span className="tg gold">{marketText(theme.marketState)}</span>
             <span className="tg muted">{lifecycleText(theme.lifecycle)}</span>
@@ -262,17 +364,26 @@ function IdeasPanel({ ideas }: { ideas: LoadState<StrategyIdeaData | null> }) {
 }
 
 function SignalsPanel({ signals }: { signals: LoadState<SignalRow[]> }) {
+  const visibleSignals = signals.state === "LIVE"
+    ? signals.data.filter((signal) => !isInternalTestSignal(signal)).slice(0, 7)
+    : [];
+  const hiddenCount = signals.state === "LIVE"
+    ? signals.data.length - signals.data.filter((signal) => !isInternalTestSignal(signal)).length
+    : 0;
+
   return (
     <Panel code="SIG-TAPE" title={`${formatTime(signals.updatedAt)} 台北`} sub="訊號證據紀錄" right={<StatePill state={signals.state} />}>
       <StateLine state={signals} label="訊號證據" />
+      {hiddenCount > 0 && <div className="tg soft" style={{ marginBottom: 8 }}>已收納內部測試訊號 {hiddenCount} 筆，不放入戰情台判讀。</div>}
       <EmptyOrBlocked state={signals} />
-      {signals.state === "LIVE" && signals.data.slice(0, 7).map((signal) => (
-        <div className="row telex-row" key={signal.id}>
-          <span className="tg soft">{formatTime(signal.createdAt)}</span>
+      {visibleSignals.map((signal) => (
+        <div className="row dashboard-signal-row" key={signal.id}>
+          <span className="tg soft">{formatDateTime(signal.createdAt)}</span>
+          <span className="tg gold">{categoryText(signal.category)}</span>
           <span className={`tg ${signal.direction === "bullish" ? "up" : signal.direction === "bearish" ? "down" : "muted"}`}>
             {directionText(signal.direction)}
           </span>
-          <span className="tg" style={{ color: "var(--night-ink)" }}>{signal.title}</span>
+          <span className="tc" style={{ color: "var(--night-ink)" }}>{signalTitleText(signal)}</span>
           <span className="tg soft">信心 {signal.confidence}</span>
         </div>
       ))}
@@ -430,7 +541,7 @@ async function loadWatchlist(): Promise<WatchlistSurfaceState> {
       state: "BLOCKED",
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyError(error),
     };
   }
 }

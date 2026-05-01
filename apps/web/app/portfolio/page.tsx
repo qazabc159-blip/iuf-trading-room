@@ -165,15 +165,15 @@ function mapKillMode(kill: KillState | null): KillMode {
 
 function killModeLabel(mode: string | null | undefined) {
   if (mode === "trading") return "可交易";
-  if (mode === "paper_only") return "紙上模式";
+  if (mode === "paper_only") return "模擬模式";
   if (mode === "liquidate_only") return "只減倉";
   if (mode === "halted") return "全鎖定";
   return "保守鎖定";
 }
 
 function accountLabel(value: string | null | undefined) {
-  if (!value) return "紙上帳戶";
-  if (value === ACCOUNT_ID) return "紙上帳戶";
+  if (!value) return "模擬帳戶";
+  if (value === ACCOUNT_ID) return "模擬帳戶";
   return value;
 }
 
@@ -231,7 +231,7 @@ function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{displayState(result.state)}</span>
-      <span>紙上交易資料</span>
+      <span>模擬交易資料</span>
       <span>更新 {formatTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
@@ -261,10 +261,10 @@ export default async function PortfolioPage() {
   return (
     <PageFrame
       code="06-PORT"
-      title="紙上交易"
+      title="交易室"
       sub="部位 / 委託 / 風控"
       exec
-      note="紙上交易使用真實後端資料；正式券商送單等待凱基 libCGCrypt.so 後再接上。"
+      note="交易室目前使用模擬委託與真實後端資料；正式券商送單等待凱基 libCGCrypt.so 後再接上。"
     >
       <div className="quote-strip">
         {[
@@ -274,7 +274,7 @@ export default async function PortfolioPage() {
           ["可用資金", money(data?.balance.availableCash), "gold"],
           ["市值", money(data?.balance.marketValue), "muted"],
           ["未實現損益", money(data?.balance.unrealizedPnl), tone(data?.balance.unrealizedPnl)],
-          ["交易模式", data?.kill.mode ? "紙上" : "保守鎖定", data?.kill.engaged || !data?.kill ? "down" : "gold"],
+          ["交易模式", data?.kill.mode ? "模擬" : "保守鎖定", data?.kill.engaged || !data?.kill ? "down" : "gold"],
         ].map(([label, value, cls]) => (
           <div className="quote-card" key={String(label)}>
             <div className="tg quote-symbol">{label}</div>
@@ -290,16 +290,16 @@ export default async function PortfolioPage() {
       <div className="exec-grid" style={{ marginTop: 20 }}>
         <div>
           <div id="order-ticket">
-            <Panel code="ORD-TKT" title={`${formatTime(result.updatedAt)} 台北`} sub="紙上委託單" right={displayState(result.state)}>
+            <Panel code="ORD-TKT" title={`${formatTime(result.updatedAt)} 台北`} sub="模擬委託單" right={displayState(result.state)}>
               <SourceLine result={result} />
               <EmptyOrBlocked result={result} />
               <OrderTicketForm killMode={killMode} />
             </Panel>
           </div>
 
-          <Panel code="POS-OPN" title="紙上部位" sub="目前持倉" right={data ? `${data.positions.length} 筆` : "暫停"}>
-            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得紙上部位。</div>}
-            {data?.positions.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有紙上部位。</div>}
+          <Panel code="POS-OPN" title="模擬部位" sub="目前持倉" right={data ? `${data.positions.length} 筆` : "暫停"}>
+            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得模擬部位。</div>}
+            {data?.positions.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有模擬部位。</div>}
             {data && data.positions.length > 0 && (
               <div className="row position-row table-head tg" style={positionRiskRowStyle}>
                 <span>股票</span><span>市場</span><span>股數</span><span>均價</span><span>損益</span><span>%</span><span>風控</span>
@@ -341,7 +341,7 @@ export default async function PortfolioPage() {
             )}
           </Panel>
 
-          <Panel code="RISK-BASE" title="帳戶風控限制" sub="紙上交易限制" right={accountLabel(ACCOUNT_ID)}>
+          <Panel code="RISK-BASE" title="帳戶風控限制" sub="模擬交易限制" right={accountLabel(ACCOUNT_ID)}>
             {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得風控限制。</div>}
             {data && [
               ["單筆上限", `${data.risk.maxPerTradePct}%`],
@@ -381,9 +381,9 @@ export default async function PortfolioPage() {
         </div>
 
         <div>
-          <Panel code="ORD-LDG" title="紙上委託" sub="委託紀錄" right={data ? `${data.orders.length} 筆` : "暫停"}>
-            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得紙上委託紀錄。</div>}
-            {data?.orders.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有紙上委託。</div>}
+          <Panel code="ORD-LDG" title="模擬委託" sub="委託紀錄" right={data ? `${data.orders.length} 筆` : "暫停"}>
+            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得模擬委託紀錄。</div>}
+            {data?.orders.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有模擬委託。</div>}
             {data?.orders.slice(0, 10).map((order) => (
               <div className="row timeline-row" key={order.id}>
                 <span className="tg soft">{formatTime(order.updatedAt)}</span>
@@ -394,7 +394,7 @@ export default async function PortfolioPage() {
             ))}
           </Panel>
 
-          <Panel code="EXC-TML" title="成交事件" sub="紙上交易事件" right={data ? `${data.events.length} 筆` : "暫停"}>
+          <Panel code="EXC-TML" title="成交事件" sub="模擬交易事件" right={data ? `${data.events.length} 筆` : "暫停"}>
             {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得成交事件。</div>}
             {data?.events.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有成交事件。</div>}
             {data?.events.slice(0, 12).map((event) => (

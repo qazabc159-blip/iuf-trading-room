@@ -128,6 +128,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
       orderType: draft.orderType,
       qty: parsed.qty,
       price: draft.orderType === "market" ? null : parsed.price,
+      quantity_unit: "SHARE" as const,
     };
   }, [draft.orderType, draft.side, parsed]);
 
@@ -343,7 +344,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
         <button
           onClick={runPreview}
           disabled={!canPreview}
-          title={validationReason ?? "執行紙上委託預覽"}
+          title={validationReason ?? "執行模擬委託預覽"}
           style={{
             ...actionButtonStyle,
             color: canPreview ? "var(--gold-bright)" : "var(--exec-soft)",
@@ -355,7 +356,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
         <button
           onClick={runSubmit}
           disabled={!canSubmit}
-          title={submitDisabledReason ?? "送出一筆紙上委託"}
+          title={submitDisabledReason ?? "送出一筆模擬委託"}
           style={{
             ...actionButtonStyle,
             borderRight: "none",

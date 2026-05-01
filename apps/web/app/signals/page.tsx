@@ -25,6 +25,14 @@ const emptyData: SignalData = {
   companies: [],
 };
 
+function friendlyError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/fetch failed|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
+  if (/401|unauthorized|unauthenticated/i.test(message)) return "登入狀態已失效，請重新登入。";
+  if (/404|not found/i.test(message)) return "後端端點尚未提供。";
+  return message;
+}
+
 async function loadSignals(): Promise<LoadState> {
   const source = "訊號資料庫";
   const updatedAt = new Date().toISOString();
@@ -56,7 +64,7 @@ async function loadSignals(): Promise<LoadState> {
       data: emptyData,
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyError(error),
     };
   }
 }
@@ -66,6 +74,19 @@ function formatTime(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleTimeString("zh-TW", { hour12: false });
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function stateTone(state: LoadState["state"]) {
@@ -98,6 +119,35 @@ function confidenceTone(confidence: number) {
   return "muted";
 }
 
+function categoryLabel(value: string | null | undefined) {
+  if (!value) return "未分類";
+  const key = value.toLowerCase();
+  if (key === "earnings") return "財報";
+  if (key === "revenue") return "營收";
+  if (key === "news") return "新聞";
+  if (key === "theme") return "主題";
+  if (key === "technical") return "技術";
+  if (key === "fundamental") return "基本面";
+  if (key === "test" || key === "dryrun") return "內部測試";
+  return value.replace(/[_-]/g, " ");
+}
+
+function hasBrokenText(value: string | null | undefined) {
+  if (!value) return false;
+  return /�|Ã|Â|undefined|null/i.test(value);
+}
+
+function isInternalTestSignal(signal: SignalRow) {
+  const text = `${signal.title} ${signal.summary ?? ""} ${signal.category}`.toLowerCase();
+  return /bruce|dryrun|smoke|test signal|verify/.test(text);
+}
+
+function signalTitle(signal: SignalRow) {
+  const value = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
+  if (hasBrokenText(value)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
+  return value.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
+}
+
 function firstTheme(signal: SignalRow, themes: ThemeRow[]) {
   const themeId = signal.themeIds[0];
   return themeId ? themes.find((theme) => theme.id === themeId) ?? null : null;
@@ -113,7 +163,7 @@ function SourceLine({ result }: { result: LoadState }) {
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
       <span>來源：{result.source}</span>
-      <span>更新 {formatTime(result.updatedAt)}</span>
+      <span>更新 {formatDateTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );
@@ -132,12 +182,14 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
 export default async function SignalsPage() {
   const result = await loadSignals();
   const signals = result.data.signals.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  const displaySignals = signals.filter((signal) => !isInternalTestSignal(signal));
+  const hiddenInternalCount = signals.length - displaySignals.length;
   const countsAvailable = result.state !== "BLOCKED";
-  const bullCount = signals.filter((signal) => signal.direction === "bullish").length;
-  const bearCount = signals.filter((signal) => signal.direction === "bearish").length;
-  const neutralCount = signals.filter((signal) => signal.direction === "neutral").length;
-  const highConfidenceCount = signals.filter((signal) => signal.confidence >= 4).length;
-  const categories = new Set(signals.map((signal) => signal.category));
+  const bullCount = displaySignals.filter((signal) => signal.direction === "bullish").length;
+  const bearCount = displaySignals.filter((signal) => signal.direction === "bearish").length;
+  const neutralCount = displaySignals.filter((signal) => signal.direction === "neutral").length;
+  const highConfidenceCount = displaySignals.filter((signal) => signal.confidence >= 4).length;
+  const categories = new Set(displaySignals.map((signal) => signal.category));
 
   return (
     <PageFrame
@@ -149,7 +201,7 @@ export default async function SignalsPage() {
       <MetricStrip
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "總數", value: countsAvailable ? signals.length : "--" },
+          { label: "總數", value: countsAvailable ? displaySignals.length : "--" },
           { label: "偏多", value: countsAvailable ? bullCount : "--", tone: "up" },
           { label: "偏空", value: countsAvailable ? bearCount : "--", tone: "down" },
           { label: "中性", value: countsAvailable ? neutralCount : "--", tone: "muted" },
@@ -166,19 +218,24 @@ export default async function SignalsPage() {
         right={stateLabel(result.state)}
       >
         <SourceLine result={result} />
+        {hiddenInternalCount > 0 && (
+          <div className="terminal-note compact">
+            內部測試訊號 {hiddenInternalCount} 筆已收納，不放入正式訊號清單；正式清單只顯示可連結主題或公司的資料列。
+          </div>
+        )}
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
           <>
-            <div className="row telex-row table-head tg" style={{ gridTemplateColumns: "76px 82px 76px 110px 1fr 74px" }}>
-              <span>時間</span><span>分類</span><span>方向</span><span>連結</span><span>標題</span><span>信心</span>
+            <div className="row signal-ledger-row table-head tg">
+              <span>日期時間</span><span>分類</span><span>方向</span><span>連結</span><span>訊號內容</span><span>信心</span>
             </div>
-            {signals.map((signal) => {
+            {displaySignals.map((signal) => {
               const company = firstCompany(signal, result.data.companies);
               const theme = firstTheme(signal, result.data.themes);
               return (
-                <div className="row telex-row" style={{ gridTemplateColumns: "76px 82px 76px 110px 1fr 74px" }} key={signal.id}>
-                  <span className="tg soft">{formatTime(signal.createdAt)}</span>
-                  <span className="tg gold">{signal.category}</span>
+                <div className="row signal-ledger-row" key={signal.id}>
+                  <span className="tg soft">{formatDateTime(signal.createdAt)}</span>
+                  <span className="tg gold">{categoryLabel(signal.category)}</span>
                   <span className={`tg ${directionTone(signal.direction)}`}>{directionLabel(signal.direction)}</span>
                   {company ? (
                     <Link href={`/companies/${company.ticker}`} className="tg">{company.ticker}</Link>
@@ -187,9 +244,7 @@ export default async function SignalsPage() {
                   ) : (
                     <span className="tg muted">未連結</span>
                   )}
-                  <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {signal.title} / {signal.summary || "無摘要"}
-                  </span>
+                  <span className="tc signal-title">{signalTitle(signal)}</span>
                   <span className={`tg ${confidenceTone(signal.confidence)}`}>C{signal.confidence}</span>
                 </div>
               );

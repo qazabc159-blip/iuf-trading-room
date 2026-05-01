@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { getSession } from "@/lib/api";
 
@@ -41,6 +42,7 @@ function workspaceLabel(value: string | null | undefined) {
 }
 
 export function DataSourceBadge() {
+  const pathname = usePathname();
   const [state, setState] = useState<BadgeState>({
     status: "CHECKING",
     label: "檢查中 | 後端",
@@ -81,6 +83,10 @@ export function DataSourceBadge() {
     };
   }, []);
 
+  if (pathname === "/login" || pathname === "/register") {
+    return null;
+  }
+
   const tone =
     state.status === "LIVE"
       ? "var(--gold-bright)"
@@ -94,6 +100,7 @@ export function DataSourceBadge() {
 
   return (
     <div
+      className="source-badge"
       role="status"
       aria-live="polite"
       title={`${state.detail}${state.checkedAt ? ` | 檢查 ${state.checkedAt}` : ""}`}

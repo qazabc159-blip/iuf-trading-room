@@ -13,6 +13,25 @@ const ERROR_TEXT: Record<string, string> = {
   network_error: "無法連線到驗證服務，請稍後再試。",
 };
 
+const REGISTER_STEPS = [
+  {
+    label: "邀請開通",
+    body: "現在先用邀請碼保護測試名單；公開測試時會改成自助註冊。",
+  },
+  {
+    label: "個人工作台",
+    body: "帳號建立後會保留觀察清單、策略草稿、模擬交易與風控設定。",
+  },
+  {
+    label: "券商綁定預留",
+    body: "未來可將自己的證券帳號接到同一個 IUF 帳號底下。",
+  },
+  {
+    label: "分級功能",
+    body: "進階資料、AI 摘要、量化研究包與自動化功能會依權限逐步開放。",
+  },
+];
+
 export default function RegisterPage() {
   const router = useRouter();
   const [invite, setInvite] = useState("");
@@ -66,20 +85,18 @@ export default function RegisterPage() {
         <div className="login-grid">
           <div className="login-copy">
             <div className="tg gold">邀請註冊 · 操作員開通</div>
-            <h2>建立操作員帳號</h2>
-            <div className="login-scan">
-              {[
-                ["01", "邀請碼", "必填"],
-                ["02", "電子信箱", "必填"],
-                ["03", "密碼", "必填"],
-                ["04", "角色權限", "開通後確認"],
-                ["05", "稽核紀錄", "啟用"],
-              ].map(([idx, label, state]) => (
-                <div className="login-scan-row" key={idx}>
-                  <span className="tg">{idx}</span>
-                  <span className="tg gold">{label}</span>
-                  <span className="scan-line" />
-                  <span className="tg soft">{state}</span>
+            <h2>建立你的 IUF 帳號</h2>
+            <p className="login-intro">
+              這裡建立的是網站帳號，不是券商帳號。之後券商綁定、月費方案與進階資料權限都會掛在同一個帳號上。
+            </p>
+            <div className="login-capability-list">
+              {REGISTER_STEPS.map((item) => (
+                <div className="login-capability-card" key={item.label}>
+                  <div>
+                    <span className="tg gold">{item.label}</span>
+                    <p>{item.body}</p>
+                  </div>
+                  <span className="tg capability-state gold">規劃</span>
                 </div>
               ))}
             </div>

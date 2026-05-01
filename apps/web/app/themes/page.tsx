@@ -12,6 +12,14 @@ type LoadState =
   | { state: "EMPTY"; data: ThemeRow[]; updatedAt: string; source: string; reason: string }
   | { state: "BLOCKED"; data: ThemeRow[]; updatedAt: string; source: string; reason: string };
 
+function friendlyError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/fetch failed|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
+  if (/401|unauthorized|unauthenticated/i.test(message)) return "登入狀態已失效，請重新登入。";
+  if (/404|not found/i.test(message)) return "後端端點尚未提供。";
+  return message;
+}
+
 async function loadThemes(): Promise<LoadState> {
   const source = "主題資料庫";
   const updatedAt = new Date().toISOString();
@@ -35,7 +43,7 @@ async function loadThemes(): Promise<LoadState> {
       data: [],
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyError(error),
     };
   }
 }
@@ -45,6 +53,19 @@ function formatTime(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleTimeString("zh-TW", { hour12: false });
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function formatDate(value: string | null | undefined) {
@@ -71,6 +92,7 @@ function marketLabel(state: ThemeRow["marketState"]) {
   if (state === "Selective Attack") return "選擇進攻";
   if (state === "Defense") return "防守";
   if (state === "Preservation") return "保全";
+  if (state === "Balanced") return "平衡";
   return state;
 }
 
@@ -80,12 +102,43 @@ function marketTone(state: ThemeRow["marketState"]) {
   return "gold";
 }
 
+function lifecycleLabel(value: string | null | undefined) {
+  if (value === "Discovery") return "探索";
+  if (value === "Validation") return "驗證";
+  if (value === "Expansion") return "擴張";
+  if (value === "Crowded") return "擁擠";
+  if (value === "Distribution") return "分配";
+  if (value === "Incubation") return "孵化";
+  if (value === "Monitoring") return "監控";
+  if (value === "active") return "啟用";
+  if (value === "watch") return "觀察";
+  if (value === "paused") return "暫停";
+  if (value === "retired") return "退場";
+  return value ?? "--";
+}
+
+function hasBrokenText(value: string | null | undefined) {
+  if (!value) return false;
+  return /�|Ã|Â|undefined|null/i.test(value);
+}
+
+function themeDisplayName(theme: ThemeRow) {
+  return theme.name.replace(/^\[ORPHAN\]\s*/i, "待歸檔：");
+}
+
+function themeThesisText(theme: ThemeRow) {
+  if (!theme.thesis || hasBrokenText(theme.thesis)) {
+    return "主題說明待整理；目前先顯示正式主題主檔與公司池數量。";
+  }
+  return theme.thesis;
+}
+
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
       <span>來源：{result.source}</span>
-      <span>更新 {formatTime(result.updatedAt)}</span>
+      <span>更新 {formatDateTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );
@@ -149,11 +202,11 @@ export default async function ThemesPage() {
                 <span className="tg soft">{theme.priority}</span>
                 <span className="tg" style={{ color: "var(--night-ink)", fontWeight: 700 }}>{theme.slug}</span>
                 <span>
-                  <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{theme.name}</strong>
-                  <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{theme.thesis}</span>
+                  <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{themeDisplayName(theme)}</strong>
+                  <span className="tc soft theme-thesis">{themeThesisText(theme)}</span>
                 </span>
                 <span className={`tg ${marketTone(theme.marketState)}`}>{marketLabel(theme.marketState)}</span>
-                <span className="tg muted">{theme.lifecycle}</span>
+                <span className="tg muted">{lifecycleLabel(theme.lifecycle)}</span>
                 <span className="num">{theme.corePoolCount}</span>
                 <span className="num">{theme.observationPoolCount}</span>
                 <span className="tg soft">{formatDate(theme.updatedAt)}</span>

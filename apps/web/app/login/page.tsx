@@ -1,8 +1,32 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiLogin, authErrorMessage, setAuthPresence } from "@/lib/auth-client";
+
+const ACCOUNT_CAPABILITIES = [
+  {
+    label: "帳號資料",
+    state: "已啟用",
+    body: "保存戰情台設定、觀察清單、策略偏好與模擬交易紀錄。",
+  },
+  {
+    label: "模擬交易",
+    state: "已啟用",
+    body: "正式券商送單前，先做報價、風控、委託與成交流程演練。",
+  },
+  {
+    label: "券商綁定",
+    state: "規劃中",
+    body: "之後一個網站帳號可綁定自己的證券帳號，凱基 SDK 補齊後接上。",
+  },
+  {
+    label: "訂閱權限",
+    state: "規劃中",
+    body: "公開測試後逐步開放月費方案、進階資料與 AI 摘要功能。",
+  },
+];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,21 +72,22 @@ export default function LoginPage() {
 
         <div className="login-grid">
           <div className="login-copy">
-            <div className="tg gold">登入檢查 · 安全工作階段</div>
-            <h2>操作員入口</h2>
-            <div className="login-scan">
-              {[
-                ["01", "身分驗證", "待確認"],
-                ["02", "工作階段", "待確認"],
-                ["03", "角色權限", "待確認"],
-                ["04", "風控狀態", "唯讀"],
-                ["05", "稽核紀錄", "啟用"],
-              ].map(([idx, label, state]) => (
-                <div className="login-scan-row" key={idx}>
-                  <span className="tg">{idx}</span>
-                  <span className="tg gold">{label}</span>
-                  <span className="scan-line" />
-                  <span className="tg soft">{state}</span>
+            <div className="tg gold">帳號入口 · 台股交易工作台</div>
+            <h2>登入你的戰情室</h2>
+            <p className="login-intro">
+              一個 IUF 帳號會保存你的觀察清單、策略想法、模擬交易紀錄與之後的券商綁定狀態。
+              現階段採邀請碼開通，公開測試時會開放自助建立帳號。
+            </p>
+            <div className="login-capability-list">
+              {ACCOUNT_CAPABILITIES.map((item) => (
+                <div className="login-capability-card" key={item.label}>
+                  <div>
+                    <span className="tg gold">{item.label}</span>
+                    <p>{item.body}</p>
+                  </div>
+                  <span className={`tg capability-state ${item.state === "已啟用" ? "up" : "gold"}`}>
+                    {item.state}
+                  </span>
                 </div>
               ))}
             </div>
@@ -122,6 +147,11 @@ export default function LoginPage() {
             <button className="login-submit" type="submit" disabled={loading}>
               {loading ? "登入中..." : "登入戰情室"}
             </button>
+
+            <div className="login-action-row">
+              <span className="tc soft">還沒有帳號？</span>
+              <Link href="/register" className="login-secondary-link">建立帳號</Link>
+            </div>
 
             <div className="tg soft login-foot">
               IUF-01 / 真實登入工作階段 / 安全登入

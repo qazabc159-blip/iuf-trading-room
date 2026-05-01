@@ -21,7 +21,7 @@ function displayCode(code: string) {
     "03-ERR": "03 / 錯誤",
     "03-NF": "03 / 無資料",
     "05-D": "05 / 明細",
-    "06-PORT": "06 / 紙上交易",
+    "06-PORT": "交易室",
     "LAB-D": "量化研究明細",
   };
 
@@ -100,10 +100,10 @@ export function PageFrame({
         <div className="tg meta-strip" suppressHydrationWarning>
           <span>產生 / <b>{generatedAt.date} {generatedAt.time}</b> 台北</span>
           <span>工作階段 / <b className="gold">真實資料</b></span>
-          <span>模式 / <b>{exec ? "紙上交易" : "觀察"}</b></span>
+          <span>模式 / <b>{exec ? "模擬交易" : "觀察"}</b></span>
         </div>
         <div className={`tg session-pill ${exec ? "exec" : ""}`}>
-          {exec ? "執行層 / 紙上" : "盤面 / 真實資料"}
+          {exec ? "執行層 / 模擬" : "盤面 / 真實資料"}
         </div>
       </header>
       {note && <div className="terminal-note">{note}</div>}

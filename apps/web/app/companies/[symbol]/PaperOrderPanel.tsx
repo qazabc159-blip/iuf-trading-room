@@ -146,7 +146,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     : !parsed.validPrice
       ? "限價單需要有效價格。"
       : parsed.notionalExceedsCap
-        ? `超過紙上資金 ${DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元（預估 ${parsed.estimatedNotional?.toLocaleString("zh-TW", { maximumFractionDigits: 0 }) ?? "?"} 元）`
+        ? `超過模擬資金 ${DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元（預估 ${parsed.estimatedNotional?.toLocaleString("zh-TW", { maximumFractionDigits: 0 }) ?? "?"} 元）`
         : null;
   const ledgerState =
     orders.status === "blocked"
@@ -240,16 +240,16 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   return (
     <section className="panel hud-frame">
       <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[06]</span> 紙上委託
+        <span className="ascii-head-bracket">[06]</span> 模擬委託
       </h3>
 
       <div style={sourceBarStyle}>
         <StatePill state={ledgerState} />
-        <span>紙上交易 / 風控預檢 / 個股委託紀錄</span>
+        <span>模擬交易 / 風控預檢 / 個股委託紀錄</span>
       </div>
 
       <div style={bannerStyle}>
-        此區只送紙上委託，不會送往凱基正式下單；正式送單等待 libCGCrypt.so 補齊後接上。
+        此區只送模擬委託，不會送往凱基正式下單；正式送單等待 libCGCrypt.so 補齊後接上。
       </div>
 
       <div style={gridStyle}>
@@ -327,12 +327,12 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
             </b>
           </div>
           <div style={kvStyle}>
-            <span>紙上資金上限</span>
+            <span>模擬資金上限</span>
             <b>{DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元</b>
           </div>
           {parsed.notionalExceedsCap && (
             <div style={{ color: "var(--tw-up-bright, #e63946)", fontFamily: "var(--mono, monospace)", fontSize: 11, paddingTop: 4 }}>
-              超過紙上資金 {DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元
+              超過模擬資金 {DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元
             </div>
           )}
         </div>
@@ -350,7 +350,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           className="btn-sm"
           onClick={handlePreview}
           disabled={input === null || preview.status === "loading"}
-          title={validationReason ?? "執行紙上委託預覽"}
+          title={validationReason ?? "執行模擬委託預覽"}
           type="button"
         >
           {preview.status === "loading" ? "預覽中" : "預覽風控"}
@@ -359,11 +359,11 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           className="btn-sm"
           onClick={handleSubmit}
           disabled={!canSubmit || submit.status === "loading"}
-          title={!canSubmit ? "請先完成通過的風控預覽。" : "只送出紙上委託。"}
+          title={!canSubmit ? "請先完成通過的風控預覽。" : "只送出模擬委託。"}
           type="button"
           style={canSubmit ? { borderColor: "var(--gold, #b8960c)", color: "var(--gold, #b8960c)" } : {}}
         >
-          {submit.status === "loading" ? "送出中" : "送出紙上單"}
+          {submit.status === "loading" ? "送出中" : "送出模擬單"}
         </button>
       </div>
 
@@ -383,13 +383,13 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
       {(submit.status === "live" || submit.status === "blocked") && (
         <TruthNote
           state={submit.state.intent.status === "REJECTED" ? "BLOCKED" : "LIVE"}
-          text={`紙上委託 ${submit.state.intent.id}：${orderStatusLabel(submit.state.intent.status)}${submit.state.intent.reason ? `：${submit.state.intent.reason}` : ""}`}
+          text={`模擬委託 ${submit.state.intent.id}：${orderStatusLabel(submit.state.intent.status)}${submit.state.intent.reason ? `：${submit.state.intent.reason}` : ""}`}
         />
       )}
 
       <div style={ledgerStyle}>
         <div style={ledgerHeaderStyle}>
-          <span>個股紙上委託紀錄</span>
+          <span>個股模擬委託紀錄</span>
           <span>
             {orders.status === "live"
               ? `${uiStateLabel(ledgerState)} / ${orders.items.length} 筆 / ${formatTime(orders.updatedAt)}`
@@ -400,7 +400,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
         </div>
         {orders.status === "blocked" && <TruthNote state="BLOCKED" text={orders.message} />}
         {orders.status === "live" && orders.items.length === 0 && (
-          <TruthNote state="EMPTY" text="此股票目前沒有紙上委託紀錄。" />
+          <TruthNote state="EMPTY" text="此股票目前沒有模擬委託紀錄。" />
         )}
         {orders.status === "live" && orders.items.slice(0, 3).map((order) => (
           <div key={order.intent.id} style={orderRowStyle}>
