@@ -1060,3 +1060,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: removed the hard-coded `3470 symbols` text from page chrome and loading state. The visible count now comes only from the real API response.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. PR #39 migration 0020 remains blocked by Mike/Pete P0 and was not touched. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:13 Taipei) - companies registry gets explicit 4-state source line
+- Files changed: updated `apps/web/app/companies/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Companies registry still reads `GET /api/v1/companies` client-side; the client-side ticker dedup remains visible as a temporary defensive banner until Jason replaces PR #39 migration 0020 with a safe v2.
+- Behavior change: company registry now exposes LOADING/LIVE/EMPTY/BLOCKED state, source, updated time, and owner/detail for failed API calls. Empty API results show an EMPTY note instead of silently rendering an empty table.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. PR #39 migration 0020 remains blocked by Mike/Pete P0 and was not touched. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

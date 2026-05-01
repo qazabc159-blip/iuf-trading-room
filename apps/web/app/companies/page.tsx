@@ -15,6 +15,13 @@ const tierRank: Record<BeneficiaryTier, number> = { Core: 0, Direct: 1, Indirect
 const tierLabel: Record<BeneficiaryTier, string> = { Core: "核心", Direct: "直接", Indirect: "間接", Observation: "觀察" };
 const tierBadge: Record<BeneficiaryTier, string> = { Core: "badge-green", Direct: "badge-yellow", Indirect: "badge", Observation: "badge" };
 
+function formatTime(value: string | null) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("zh-TW", { hour12: false });
+}
+
 function sortArrowChar(field: SortField, sortField: SortField, sortDir: SortDir) {
   if (sortField !== field) return "";
   return sortDir === "asc" ? " ↑" : " ↓";
@@ -30,19 +37,24 @@ export default function CompaniesPage() {
   const [sortField, setSortField] = useState<SortField>("ticker");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(0);
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
 
   const [rawTotal, setRawTotal] = useState(0);
 
   useEffect(() => {
     getCompanies()
       .then((r) => {
+        setFetchedAt(new Date().toISOString());
         const raw = r.data;
         setRawTotal(raw.length);
         // Client-side dedup by ticker (临時防禦 — 等 Jason 0020 migration 拆掉)
         const unique = Array.from(new Map(raw.map((c) => [c.ticker, c])).values());
         setCompanies(unique);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "無法載入公司"))
+      .catch((e) => {
+        setFetchedAt(new Date().toISOString());
+        setError(e instanceof Error ? e.message : "無法載入公司");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -89,6 +101,9 @@ export default function CompaniesPage() {
   const twseCount = companies.filter((c) => c.market === "TWSE").length;
   const tpexCount = companies.filter((c) => c.market === "TPEX").length;
   const coreCount = companies.filter((c) => c.beneficiaryTier === "Core").length;
+  const registryState = loading ? "LOADING" : error ? "BLOCKED" : companies.length === 0 ? "EMPTY" : "LIVE";
+  const registryBadge = registryState === "LIVE" ? "badge-green" : registryState === "EMPTY" ? "badge-yellow" : registryState === "LOADING" ? "badge-blue" : "badge-red";
+  const registryTone = registryState === "LIVE" ? "up" : registryState === "EMPTY" || registryState === "LOADING" ? "gold" : "down";
 
   return (
     <PageFrame
@@ -99,8 +114,9 @@ export default function CompaniesPage() {
     >
       {/* KPI strip */}
       <MetricStrip
-        columns={5}
+        columns={6}
         cells={[
+          { label: "STATE",     value: registryState, tone: registryTone },
           { label: "TOTAL",     value: loading ? "—" : companies.length.toLocaleString() },
           { label: "TWSE",      value: loading ? "—" : twseCount.toLocaleString() },
           { label: "TPEX",      value: loading ? "—" : tpexCount.toLocaleString() },
@@ -113,8 +129,15 @@ export default function CompaniesPage() {
         code="CO-REG"
         title="COMPANY REGISTRY"
         sub="ticker · name · chainPosition · beneficiaryTier"
-        right={loading ? "LOADING…" : `${companies.length} SYMBOLS`}
+        right={registryState === "LIVE" ? `${companies.length} SYMBOLS` : registryState}
       >
+        <div className="source-line">
+          <span className={`badge ${registryBadge}`}>{registryState}</span>
+          <span className="tg soft">Source: GET /api/v1/companies</span>
+          <span className="tg soft">Updated {formatTime(fetchedAt)}</span>
+          {error && <span className="tg soft">Owner: Jason/Elva. Detail: {error}</span>}
+        </div>
+
         {/* Search + filter bar */}
         <div style={{ display: "flex", gap: 8, padding: "10px 0", flexWrap: "wrap", alignItems: "center" }}>
           <input
@@ -194,10 +217,9 @@ export default function CompaniesPage() {
           </div>
         )}
 
-        {/* Error state */}
         {error && (
-          <div style={{ padding: "12px 0", color: "var(--tw-up-bright, #e63946)", fontFamily: "var(--mono)", fontSize: 12 }}>
-            [ERR] {error}
+          <div className="terminal-note">
+            BLOCKED: company registry request failed. {error}
           </div>
         )}
 
@@ -205,6 +227,12 @@ export default function CompaniesPage() {
         {loading && !error && (
           <div style={{ padding: "16px 0", color: "var(--night-mid, #888)", fontFamily: "var(--mono)", fontSize: 12, letterSpacing: "0.1em" }}>
             LOADING · COMPANY REGISTRY…
+          </div>
+        )}
+
+        {!loading && !error && companies.length === 0 && (
+          <div className="terminal-note">
+            EMPTY: GET /api/v1/companies returned zero company rows. No fallback catalog is rendered.
           </div>
         )}
 
