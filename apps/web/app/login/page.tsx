@@ -124,7 +124,7 @@ export default function LoginPage() {
             </button>
 
             <div className="tg soft login-foot">
-              IUF-01 / RADAR-0.8 / 安全登入
+              IUF-01 / real auth session / 安全登入
             </div>
           </form>
         </div>

@@ -912,3 +912,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: global frame metadata remains truthful on both dynamic and static pages: it reports render/build time, real-data session policy, and route mode.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web build` PASS; sequential `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS. Earlier parallel typecheck failed only because `.next/types` was being regenerated during build; rerun after build passed.
 - Blockers: CI for `f272cb3` still in progress as of this cycle; previous CI/deploy runs green. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 14:50 Taipei) - auth footer fake version removed
+- Files changed: updated `apps/web/app/login/page.tsx`.
+- Endpoints / data behavior: no auth contract changed. Login still calls the real auth API and fails closed through `api_base_unconfigured` if the production API base is missing.
+- Behavior change: the login footer no longer displays the static `RADAR-0.8` version-like label. It now describes the real auth session surface.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web build` PASS; sequential `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; scan for `RADAR-0.8`, old fake run id, and old scan timer in auth pages returned 0.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
