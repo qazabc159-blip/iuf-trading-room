@@ -1054,3 +1054,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: the standalone Market Intel page now shows Updated time in the source block. LIVE feeds with partial announcement-call failures display a visible PARTIAL note, and EMPTY state no longer claims full selected-universe zero news when some selected company calls failed.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. Announcement endpoint availability still belongs to Jason/Elva. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:12 Taipei) - companies page removes static catalog count
+- Files changed: updated `apps/web/app/companies/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Companies page still reads `GET /api/v1/companies` client-side and derives KPI counts from the returned rows.
+- Behavior change: removed the hard-coded `3470 symbols` text from page chrome and loading state. The visible count now comes only from the real API response.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. PR #39 migration 0020 remains blocked by Mike/Pete P0 and was not touched. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

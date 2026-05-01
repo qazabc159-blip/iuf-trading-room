@@ -95,7 +95,7 @@ export default function CompaniesPage() {
       code="03"
       title="Companies"
       sub="公司板"
-      note="[03] COMPANIES · catalog registry · 3470 symbols · sorted by ticker"
+      note="[03] COMPANIES · catalog registry · real API count · sorted by ticker"
     >
       {/* KPI strip */}
       <MetricStrip
@@ -204,7 +204,7 @@ export default function CompaniesPage() {
         {/* Loading state */}
         {loading && !error && (
           <div style={{ padding: "16px 0", color: "var(--night-mid, #888)", fontFamily: "var(--mono)", fontSize: 12, letterSpacing: "0.1em" }}>
-            LOADING · 3470 SYMBOLS…
+            LOADING · COMPANY REGISTRY…
           </div>
         )}
 
