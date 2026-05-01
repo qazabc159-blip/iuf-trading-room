@@ -269,7 +269,7 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
     { key: "quotes", label: "報價", value: String(data.quotes.total), sub: `${data.quotes.fresh} 新鮮 / ${data.quotes.stale} 過期`, tone: data.quotes.fresh > 0 ? "up" : "muted" },
     { key: "symbols", label: "股票池", value: String(data.symbols.total), sub: data.symbols.byMarket.slice(0, 3).map((m) => `${m.market}:${m.total}`).join(" / ") || "尚無股票主檔", tone: "muted" },
     { key: "providers", label: "來源", value: connected.toUpperCase(), sub: `優先 ${data.quotes.readiness.preferredSourceOrder.join(">")}`, tone: connected === "無" ? "down" : "up" },
-    { key: "usable", label: "可紙上", value: String(data.quotes.readiness.effectiveSelection.paperUsable), sub: `${data.quotes.readiness.effectiveSelection.blocked} 檔暫停`, tone: data.quotes.readiness.effectiveSelection.paperUsable > 0 ? "up" : "gold" },
+    { key: "usable", label: "可模擬", value: String(data.quotes.readiness.effectiveSelection.paperUsable), sub: `${data.quotes.readiness.effectiveSelection.blocked} 檔暫停`, tone: data.quotes.readiness.effectiveSelection.paperUsable > 0 ? "up" : "gold" },
     { key: "gainer", label: "強勢", value: topGainer?.symbol ?? "--", sub: topGainer ? `${signed(topGainer.changePct)}% ${topGainer.source}` : "無資料", tone: tone(topGainer?.changePct) },
     { key: "loser", label: "弱勢", value: topLoser?.symbol ?? "--", sub: topLoser ? `${signed(topLoser.changePct)}% ${topLoser.source}` : "無資料", tone: tone(topLoser?.changePct) },
     { key: "active", label: "成交活躍", value: active?.symbol ?? "--", sub: active?.volume ? `${active.volume.toLocaleString("zh-TW")} 股` : "無資料", tone: "muted" },
@@ -342,7 +342,7 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
 function IdeasPanel({ ideas }: { ideas: LoadState<StrategyIdeaData | null> }) {
   const items = ideas.state === "LIVE" && ideas.data ? ideas.data.items.slice(0, 6) : [];
   return (
-    <Panel code="IDEA-OPN" title={`${formatTime(ideas.updatedAt)} 台北`} sub="策略想法 / 紙上決策" right={<StatePill state={ideas.state} />}>
+    <Panel code="IDEA-OPN" title={`${formatTime(ideas.updatedAt)} 台北`} sub="策略想法 / 模擬決策" right={<StatePill state={ideas.state} />}>
       <StateLine state={ideas} label="策略想法" />
       <EmptyOrBlocked state={ideas} />
       {items.map((idea) => (

@@ -3,7 +3,7 @@
 export type KillMode = "ARMED" | "SAFE" | "PEEK" | "FROZEN";
 
 const MODES: { mode: KillMode; label: string; sub: string; tone: "ok" | "warn" | "block" | "danger" }[] = [
-  { mode: "ARMED", label: "可交易", sub: "後端風控與紙上交易閘門共同判斷委託資格", tone: "ok" },
+  { mode: "ARMED", label: "可交易", sub: "後端風控與模擬交易閘門共同判斷委託資格", tone: "ok" },
   { mode: "SAFE", label: "只減倉", sub: "僅保留降低曝險的操作，避免新增風險", tone: "warn" },
   { mode: "PEEK", label: "唯讀", sub: "只檢視部位、委託與風控狀態", tone: "block" },
   { mode: "FROZEN", label: "凍結", sub: "缺少可信風控狀態時，前端一律保守鎖住", tone: "danger" },

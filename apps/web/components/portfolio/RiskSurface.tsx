@@ -111,7 +111,7 @@ function layerName(layer: RiskLayerName) {
 
 function rowStatusLabel(status: string) {
   if (status === "trading") return "可交易";
-  if (status === "paper_only") return "紙上模式";
+  if (status === "paper_only") return "模擬模式";
   if (status === "liquidate_only") return "只減倉";
   if (status === "halted") return "全鎖定";
   if (status === "ok") return "正常";
@@ -157,7 +157,7 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
           <span>檢查 {formatTime(result.updatedAt)}</span>
         </div>
         <div className="terminal-note">
-          風控總覽資料尚未接上。紙上委託仍會在送出前執行風控預檢；此區待後端總覽資料啟用後會顯示帳戶、策略、個股與盤中四層曝險。
+          風控總覽資料尚未接上。模擬委託仍會在送出前執行風控預檢；此區待後端總覽資料啟用後會顯示帳戶、策略、個股與盤中四層曝險。
         </div>
       </div>
     );
@@ -172,7 +172,7 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
         <span>四層風控總覽</span>
         <span>更新 {formatTime(data.generatedAt)}</span>
         <span>交易模式 {rowStatusLabel(data.killSwitchState)}</span>
-        <span>紙上閘門 {rowStatusLabel(data.paperGateState)}</span>
+        <span>模擬閘門 {rowStatusLabel(data.paperGateState)}</span>
       </div>
       {isEmpty && (
         <div className="terminal-note">

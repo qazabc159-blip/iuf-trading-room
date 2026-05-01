@@ -16,7 +16,7 @@ function formatTime(value: string | null | undefined) {
 
 function gateLabel(value: string | null | undefined) {
   if (value === "trading") return "可交易";
-  if (value === "paper_only") return "紙上模式";
+  if (value === "paper_only") return "模擬模式";
   if (value === "liquidate_only") return "只減倉";
   if (value === "halted") return "全鎖定";
   if (value === "ok") return "正常";
@@ -51,7 +51,7 @@ export function WatchlistSurface({ result }: { result: WatchlistSurfaceState }) 
         <span>觀察清單</span>
         <span>更新 {formatTime(data.generatedAt)}</span>
         <span>交易模式 {gateLabel(data.killSwitchState)}</span>
-        <span>紙上閘門 {gateLabel(data.paperGateState)}</span>
+        <span>模擬閘門 {gateLabel(data.paperGateState)}</span>
       </div>
       {data.warnings.map((warning) => (
         <div className="terminal-note" key={warning}>

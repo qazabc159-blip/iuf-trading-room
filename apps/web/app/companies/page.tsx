@@ -202,7 +202,7 @@ export default function CompaniesPage() {
 
         {!loading && !error && rawTotal !== companies.length && (
           <div className="terminal-note" style={{ marginBottom: 8 }}>
-            去重提示：公司主檔目前讀到 {rawTotal.toLocaleString("zh-TW")} 筆，前端先以代號顯示 {companies.length.toLocaleString("zh-TW")} 檔。正式去重 migration 仍待 Mike/Jason gate。
+            公司池：目前顯示 {companies.length.toLocaleString("zh-TW")} 檔台股公司；重複主檔已在前端隱藏，正式資料庫去重仍待 Mike/Jason migration gate。
           </div>
         )}
 

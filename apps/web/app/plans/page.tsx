@@ -204,7 +204,7 @@ export default async function PlansPage() {
       code="08"
       title="交易計畫"
       sub="計畫書與審核佇列"
-      note="交易計畫 / 正式交易計畫、簡報、覆盤、訊號與策略想法；本頁不提供紙上或實盤下單。"
+      note="交易計畫 / 正式交易計畫、簡報、覆盤、訊號與策略想法；本頁不提供模擬或實盤下單。"
     >
       <MetricStrip
         cells={[
@@ -248,9 +248,9 @@ export default async function PlansPage() {
             })}
           </Panel>
 
-          <Panel code="IDEA-REF" title="策略想法" sub="紙上候選 / 只讀" right={contextLive ? `${result.data.ideas.length} 筆` : "暫停"}>
+          <Panel code="IDEA-REF" title="策略想法" sub="模擬候選 / 只讀" right={contextLive ? `${result.data.ideas.length} 筆` : "暫停"}>
             {!contextLive && <div className="terminal-note"><span className="tg down">暫停</span> 交易計畫來源未正常時，策略想法先隱藏。</div>}
-            {contextLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有紙上決策想法。</div>}
+            {contextLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有模擬決策想法。</div>}
             {contextLive && result.data.ideas.slice(0, 8).map((idea) => (
               <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
                 <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
@@ -318,7 +318,7 @@ export default async function PlansPage() {
 
           <Panel code="PLAN-GATE" title="寫入控制" sub="真實性 gate" right="暫停">
             <div className="terminal-note">
-              <span className="tg down">暫停</span> 本頁是只讀計畫面板。紙上委託預覽與送出已放在紙上交易頁；實盤送單仍需風控閘門與操作員明示。
+              <span className="tg down">暫停</span> 本頁是只讀計畫面板。模擬委託預覽與送出已放在模擬交易頁；實盤送單仍需風控閘門與操作員明示。
             </div>
           </Panel>
         </div>

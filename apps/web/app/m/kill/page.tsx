@@ -3,10 +3,10 @@ import { getKillSwitch } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 const ACCOUNT_ID = "paper-default";
-const ACCOUNT_LABEL = "紙上帳戶";
+const ACCOUNT_LABEL = "模擬帳戶";
 const MODES = [
-  { mode: "trading", label: "可交易", sub: "通過後端風控後，可建立紙上委託", tone: "gold" },
-  { mode: "paper_only", label: "紙上模式", sub: "策略與委託都只留在紙上交易層", tone: "muted" },
+  { mode: "trading", label: "可交易", sub: "通過後端風控後，可建立模擬委託", tone: "gold" },
+  { mode: "paper_only", label: "模擬模式", sub: "策略與委託都只留在模擬交易層", tone: "muted" },
   { mode: "liquidate_only", label: "只減倉", sub: "只允許降低曝險的委託", tone: "muted" },
   { mode: "halted", label: "全鎖定", sub: "停止新增委託，等待風控處理", tone: "up" },
 ] as const;
@@ -67,7 +67,7 @@ export default async function MobileKillPage() {
         <div>
           <div className="tg soft">IUF 交易戰情室 / 行動風控</div>
           <h1>交易模式</h1>
-          <div className="tg soft" style={{ marginTop: 8 }}>紙上帳戶：{ACCOUNT_LABEL}</div>
+          <div className="tg soft" style={{ marginTop: 8 }}>模擬帳戶：{ACCOUNT_LABEL}</div>
         </div>
         <div className={`tg session-pill ${stateTone(result.state)}`}>{surfaceState(result.state)}</div>
       </header>

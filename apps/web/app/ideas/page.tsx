@@ -51,7 +51,7 @@ async function loadIdeas(): Promise<LoadState> {
         data,
         updatedAt: data.generatedAt || updatedAt,
         source,
-        reason: "紙上決策目前沒有策略想法資料列，不顯示假候選單。",
+        reason: "模擬決策目前沒有策略想法資料列，不顯示假候選單。",
       };
     }
     return {
@@ -133,12 +133,12 @@ function PromotionBlockedCell() {
   return (
     <span
       className="tg down"
-      title="策略想法轉紙上預覽的正式端點尚未開通。負責：Jason + Bruce。"
+      title="策略想法轉模擬預覽的正式端點尚未開通。負責：Jason + Bruce。"
       style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.25 }}
     >
       <span>轉單暫停</span>
       <span className="tc soft" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        等策略轉紙上端點
+        等策略轉模擬端點
       </span>
     </span>
   );
@@ -198,8 +198,8 @@ export default async function IdeasPage() {
     <PageFrame
       code="04"
       title="策略想法"
-      sub="紙上候選佇列"
-      note="策略想法 / 正式策略資料；轉成紙上委託的交接流程通過前維持暫停。"
+      sub="模擬候選佇列"
+      note="策略想法 / 正式策略資料；轉成模擬委託的交接流程通過前維持暫停。"
     >
       <MetricStrip
         cells={[
@@ -217,7 +217,7 @@ export default async function IdeasPage() {
       <Panel
         code="IDEA-OPN"
         title={`${formatTime(result.updatedAt)} 台北`}
-        sub="策略想法 / 紙上決策 / 只讀"
+        sub="策略想法 / 模擬決策 / 只讀"
         right={stateLabel(result.state)}
       >
         <SourceLine result={result} />
@@ -279,7 +279,7 @@ export default async function IdeasPage() {
         <div className="tg soft" style={{ display: "grid", gap: 6, paddingBottom: 12 }}>
           <span>來源：{result.source}</span>
           <span>產生：{statsAvailable ? formatDateTime(result.data.generatedAt) : "策略想法來源恢復前維持暫停"}</span>
-          <span>交接：策略想法轉紙上委託仍暫停；負責 Jason + Bruce；正式轉單端點尚未開通。</span>
+          <span>交接：策略想法轉模擬委託仍暫停；負責 Jason + Bruce；正式轉單端點尚未開通。</span>
         </div>
       </Panel>
     </PageFrame>

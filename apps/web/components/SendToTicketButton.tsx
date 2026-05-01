@@ -28,7 +28,7 @@ export function SendToTicketButton({ idea, compact }: { idea: IdeaHandoffInput; 
         cursor: "pointer",
         whiteSpace: "nowrap"
       }}
-      title="帶入紙上委託單"
+      title="帶入模擬委託單"
       type="button"
     >
       帶入委託

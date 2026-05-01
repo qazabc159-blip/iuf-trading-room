@@ -50,7 +50,7 @@ function promoteReason(row: WatchlistRow) {
   if (row.promoteBlockedReason) return row.promoteBlockedReason;
   if (quoteBlocked(row)) return "報價資料不完整，暫時不能帶入委託。";
   if (!row.hypothetical1LotBuyRisk) return "風控試算尚未可用。";
-  return "策略想法帶入紙上委託的後端流程尚未啟用，請先到紙上交易頁手動建立。";
+  return "策略想法帶入模擬委託的後端流程尚未啟用，請先到模擬交易頁手動建立。";
 }
 
 export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {

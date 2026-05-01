@@ -34,7 +34,7 @@ export function Sidebar() {
         <div className="brand-mark">IUF</div>
         <div className="tg" style={{ marginTop: 10, color: "var(--night-ink)" }}>交易戰情室</div>
         <div className="tg" style={{ marginTop: 6 }}>操作員 / IUF-01</div>
-        <div className="tg gold" style={{ marginTop: 5 }}>紙上模式 / 風控守門</div>
+        <div className="tg gold" style={{ marginTop: 5 }}>模擬交易 / 風控守門</div>
       </div>
 
       <nav className="nav-list" aria-label="主要導覽">

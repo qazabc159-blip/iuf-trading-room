@@ -4,6 +4,13 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 
 import type { KillMode } from "@/components/portfolio/KillSwitch";
 import {
+  getCompanies,
+  getCompanyOhlcv,
+  getEffectiveQuotes,
+  type EffectiveMarketQuote,
+  type OhlcvBar,
+} from "@/lib/api";
+import {
   cancelPaperOrder,
   formatPaperOrderError,
   getPaperOrder,
@@ -47,6 +54,21 @@ type OrdersState =
   | { status: "live"; items: PaperOrderState[]; updatedAt: string }
   | { status: "blocked"; message: string; updatedAt: string };
 
+type MarketPreviewState =
+  | { status: "idle"; message: string }
+  | { status: "loading"; symbol: string }
+  | {
+      status: "live";
+      symbol: string;
+      quote: EffectiveMarketQuote | null;
+      bars: OhlcvBar[];
+      updatedAt: string;
+      source: string;
+      warning: string | null;
+    }
+  | { status: "empty"; symbol: string; message: string; updatedAt: string }
+  | { status: "blocked"; symbol: string; message: string; updatedAt: string };
+
 const SIDES: ReadonlyArray<{ value: PaperSide; label: string }> = [
   { value: "buy", label: "買進" },
   { value: "sell", label: "賣出" },
@@ -84,7 +106,7 @@ function orderStatusLabel(status: string) {
 export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
   const { handoff, clear } = useIdeaHandoff();
   const [draft, setDraft] = useState<Draft>({
-    symbol: "",
+    symbol: "2330",
     side: "buy",
     orderType: "limit",
     qty: "",
@@ -93,6 +115,10 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
   const [orders, setOrders] = useState<OrdersState>({ status: "loading" });
+  const [marketPreview, setMarketPreview] = useState<MarketPreviewState>({
+    status: "idle",
+    message: "輸入股票代號後，這裡會載入真實報價與 K 線。",
+  });
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -131,6 +157,79 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
       quantity_unit: "SHARE" as const,
     };
   }, [draft.orderType, draft.side, parsed]);
+
+  useEffect(() => {
+    const symbol = parsed.symbol;
+    if (!symbol) {
+      setMarketPreview({
+        status: "idle",
+        message: "輸入股票代號後，這裡會載入真實報價與 K 線。",
+      });
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setMarketPreview({ status: "loading", symbol });
+      const updatedAt = new Date().toISOString();
+      try {
+        const quoteResponse = await getEffectiveQuotes({ symbols: symbol, includeStale: true, limit: 1 });
+        const quote =
+          quoteResponse.data.items.find((item) => item.symbol.toUpperCase() === symbol)
+          ?? quoteResponse.data.items[0]
+          ?? null;
+
+        let bars: OhlcvBar[] = [];
+        let warning: string | null = null;
+        try {
+          const companies = await getCompanies();
+          const company = companies.data.find((item) => item.ticker.toUpperCase() === symbol) ?? null;
+          if (company) {
+            const allBars = await getCompanyOhlcv(company.id, { interval: "1d" });
+            bars = allBars.filter((bar) => bar.source !== "mock").slice(-120);
+          } else {
+            warning = "公司主檔查不到此代號，暫時無法載入 K 線。";
+          }
+        } catch (error) {
+          warning = `K 線暫時無法載入：${formatPaperOrderError(error)}`;
+        }
+
+        if (cancelled) return;
+        if (!quote && bars.length === 0) {
+          setMarketPreview({
+            status: "empty",
+            symbol,
+            message: "目前沒有可用的真實報價或 K 線資料。",
+            updatedAt,
+          });
+          return;
+        }
+
+        setMarketPreview({
+          status: "live",
+          symbol,
+          quote,
+          bars,
+          updatedAt,
+          source: quote?.selectedSource ?? (bars.length > 0 ? "OHLCV" : "market-data"),
+          warning,
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setMarketPreview({
+          status: "blocked",
+          symbol,
+          message: formatPaperOrderError(error),
+          updatedAt,
+        });
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [parsed.symbol]);
 
   const refreshOrders = useCallback(async () => {
     setOrders({ status: "loading" });
@@ -273,10 +372,12 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
 
       <div style={sourceBarStyle}>
         <StatePill state={ledgerState} />
-        <span>紙上交易</span>
+        <span>模擬交易</span>
         <span>送出前風控預檢</span>
         <span>委託紀錄</span>
       </div>
+
+      <MarketPreviewPanel preview={marketPreview} />
 
       <div style={ticketShellStyle}>
         <div style={formCardStyle}>
@@ -299,7 +400,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
             />
           </Row>
           <Row label="效期">
-            <div style={staticFieldStyle}>ROD / 紙上</div>
+            <div style={staticFieldStyle}>ROD / 模擬</div>
           </Row>
           <Row label="價格">
             <input
@@ -330,7 +431,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
         <div style={previewCardStyle}>
           <div className="tg" style={panelHeadingStyle}>風控與報價預覽</div>
           {preview.status === "idle" && (
-            <TruthNote state="EMPTY" text="尚未預覽目前委託草稿。送出前請先跑紙上風控預檢。" />
+            <TruthNote state="EMPTY" text="尚未預覽目前委託草稿。送出前請先跑模擬風控預檢。" />
           )}
           {preview.status === "loading" && <TruthNote state="LIVE" text="正在檢查風控與報價..." />}
           {preview.status === "error" && <TruthNote state="BLOCKED" text={preview.message} />}
@@ -364,13 +465,13 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
           }}
           type="button"
         >
-          {submit.status === "loading" ? "送出中" : "送出紙上單"}
+          {submit.status === "loading" ? "送出中" : "送出模擬單"}
         </button>
       </div>
 
       {submitDisabledReason && <TruthNote state="BLOCKED" text={submitDisabledReason} />}
       {preview.status === "live" && !submitDisabledReason && (
-        <TruthNote state="LIVE" text="預檢通過。此送單只建立紙上委託，不會送往券商；凱基正式下單待 libCGCrypt.so 補齊後接上。" />
+        <TruthNote state="LIVE" text="預檢通過。此送單只建立模擬委託，不會送往券商；凱基正式下單待 libCGCrypt.so 補齊後接上。" />
       )}
 
       {(submit.status === "live" || submit.status === "blocked") && (
@@ -385,6 +486,159 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
       />
     </div>
   );
+}
+
+function MarketPreviewPanel({ preview }: { preview: MarketPreviewState }) {
+  if (preview.status === "idle") {
+    return (
+      <div style={marketPreviewShellStyle}>
+        <TruthNote state="EMPTY" text={preview.message} />
+      </div>
+    );
+  }
+
+  if (preview.status === "loading") {
+    return (
+      <div style={marketPreviewShellStyle}>
+        <TruthNote state="LIVE" text={`正在讀取 ${preview.symbol} 的真實報價與 K 線。`} />
+      </div>
+    );
+  }
+
+  if (preview.status === "empty" || preview.status === "blocked") {
+    return (
+      <div style={marketPreviewShellStyle}>
+        <TruthNote state={preview.status === "empty" ? "EMPTY" : "BLOCKED"} text={`${preview.symbol}：${preview.message}`} />
+        <div style={marketSourceLineStyle}>更新：{formatDateTime(preview.updatedAt)}</div>
+      </div>
+    );
+  }
+
+  const quote = preview.quote?.selectedQuote ?? null;
+  const changePct = quote?.changePct;
+
+  return (
+    <div style={marketPreviewShellStyle}>
+      <div style={marketPreviewHeaderStyle}>
+        <div>
+          <div className="tg" style={{ color: "var(--gold-bright)", fontWeight: 700 }}>即時參考 / {preview.symbol}</div>
+          <div style={marketSourceLineStyle}>
+            來源：{preview.source || "market-data"} / 狀態：{readinessLabel(preview.quote?.readiness)} / 更新：{formatDateTime(quote?.timestamp ?? preview.updatedAt)}
+          </div>
+        </div>
+        <a className="mini-button" href={`/quote?symbol=${encodeURIComponent(preview.symbol)}`}>
+          打開完整圖表
+        </a>
+      </div>
+
+      <div style={marketPreviewGridStyle}>
+        <div style={marketQuoteCardStyle}>
+          <span className="tg soft">成交</span>
+          <b className="num" style={{ color: "var(--exec-ink)", fontSize: 28 }}>{formatMarketNumber(quote?.last)}</b>
+        </div>
+        <div style={marketQuoteCardStyle}>
+          <span className="tg soft">漲跌幅</span>
+          <b className="num" style={{ color: marketTone(changePct), fontSize: 22 }}>{formatMarketNumber(changePct)}%</b>
+        </div>
+        <div style={marketQuoteCardStyle}>
+          <span className="tg soft">買 / 賣</span>
+          <b className="num" style={{ color: "var(--exec-ink)", fontSize: 18 }}>
+            {formatMarketNumber(quote?.bid)} / {formatMarketNumber(quote?.ask)}
+          </b>
+        </div>
+        <div style={marketQuoteCardStyle}>
+          <span className="tg soft">量</span>
+          <b className="num" style={{ color: "var(--exec-ink)", fontSize: 18 }}>{formatMarketNumber(quote?.volume, 0)}</b>
+        </div>
+      </div>
+
+      <MiniKline bars={preview.bars} />
+      {preview.warning && <TruthNote state="BLOCKED" text={preview.warning} />}
+    </div>
+  );
+}
+
+function MiniKline({ bars }: { bars: OhlcvBar[] }) {
+  const visible = bars.slice(-80);
+  if (visible.length < 2) {
+    return <TruthNote state="EMPTY" text="目前沒有足夠的 K 線資料可畫圖。" />;
+  }
+
+  const width = 720;
+  const height = 168;
+  const pad = 12;
+  const highs = visible.map((bar) => bar.high);
+  const lows = visible.map((bar) => bar.low);
+  const max = Math.max(...highs);
+  const min = Math.min(...lows);
+  const span = Math.max(max - min, 0.01);
+  const step = (width - pad * 2) / Math.max(visible.length - 1, 1);
+  const candleWidth = Math.max(3, Math.min(8, step * 0.58));
+  const y = (value: number) => pad + ((max - value) / span) * (height - pad * 2);
+
+  return (
+    <div style={miniKlineStyle}>
+      <div style={marketSourceLineStyle}>
+        K 線：{visible[0]?.dt} - {visible.at(-1)?.dt} / {visible.length} 根 / 真實 OHLCV
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="股票 K 線預覽" style={{ width: "100%", height: 168, display: "block" }}>
+        <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="rgba(255,255,255,0.12)" />
+        <line x1={pad} y1={pad} x2={pad} y2={height - pad} stroke="rgba(255,255,255,0.08)" />
+        {visible.map((bar, index) => {
+          const x = pad + index * step;
+          const up = bar.close >= bar.open;
+          const color = up ? "#e63946" : "#2ecc71";
+          const openY = y(bar.open);
+          const closeY = y(bar.close);
+          const bodyTop = Math.min(openY, closeY);
+          const bodyHeight = Math.max(2, Math.abs(openY - closeY));
+          return (
+            <g key={`${bar.dt}-${index}`}>
+              <line x1={x} y1={y(bar.high)} x2={x} y2={y(bar.low)} stroke={color} strokeWidth="1.2" opacity="0.78" />
+              <rect
+                x={x - candleWidth / 2}
+                y={bodyTop}
+                width={candleWidth}
+                height={bodyHeight}
+                fill={up ? "rgba(230,57,70,0.72)" : "rgba(46,204,113,0.72)"}
+                stroke={color}
+                strokeWidth="0.8"
+              />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function readinessLabel(readiness: EffectiveMarketQuote["readiness"] | undefined) {
+  if (readiness === "ready") return "正常";
+  if (readiness === "degraded") return "部分可用";
+  if (readiness === "blocked") return "受阻";
+  return "待確認";
+}
+
+function formatMarketNumber(value: number | null | undefined, digits = 2) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  return value.toLocaleString("zh-TW", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  });
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", { hour12: false });
+}
+
+function marketTone(value: number | null | undefined) {
+  if (typeof value !== "number") return "var(--exec-mid)";
+  if (value > 0) return "var(--tw-up-bright)";
+  if (value < 0) return "var(--tw-dn-bright)";
+  return "var(--exec-mid)";
 }
 
 function PreviewResult({ result }: { result: Awaited<ReturnType<typeof previewPaperOrder>> }) {
@@ -465,7 +719,7 @@ function OrderHistory({
   return (
     <div style={{ marginTop: 14, border: "1px solid var(--exec-rule-strong)" }}>
       <div style={historyHeaderStyle}>
-        <span>紙上委託紀錄</span>
+        <span>模擬委託紀錄</span>
         <span>
           {orders.status === "live"
             ? `${uiStateLabel(ledgerState)} / ${orders.items.length} 筆 / ${formatTime(orders.updatedAt)}`
@@ -475,13 +729,13 @@ function OrderHistory({
         </span>
       </div>
       {orders.status === "loading" && (
-        <TruthNote state="LIVE" text="正在讀取紙上委託紀錄..." />
+        <TruthNote state="LIVE" text="正在讀取模擬委託紀錄..." />
       )}
       {orders.status === "blocked" && (
         <TruthNote state="BLOCKED" text={`暫時無法讀取委託紀錄：${orders.message}`} />
       )}
       {orders.status === "live" && orders.items.length === 0 && (
-        <TruthNote state="EMPTY" text="目前沒有紙上委託紀錄。" />
+        <TruthNote state="EMPTY" text="目前沒有模擬委託紀錄。" />
       )}
       {orders.status === "live" && orders.items.slice(0, 6).map((state) => (
         <div key={state.intent.id} style={orderRowStyle}>
@@ -492,7 +746,7 @@ function OrderHistory({
           <button
             type="button"
             disabled={!isCancellablePaperOrder(state.intent.status) || cancellingId === state.intent.id}
-            title={isCancellablePaperOrder(state.intent.status) ? "撤銷此紙上委託" : "終態委託無法撤銷"}
+            title={isCancellablePaperOrder(state.intent.status) ? "撤銷此模擬委託" : "終態委託無法撤銷"}
             onClick={() => onCancel(state.intent.id)}
             style={miniButtonStyle}
           >
@@ -590,6 +844,50 @@ const handoffStyle: CSSProperties = {
   background: "rgba(184,138,62,0.10)",
   fontFamily: "var(--mono)",
   position: "relative",
+};
+
+const marketPreviewShellStyle: CSSProperties = {
+  border: "1px solid var(--exec-rule-strong)",
+  background: "linear-gradient(180deg, rgba(226,184,92,0.052), rgba(255,255,255,0.012))",
+  padding: 14,
+  marginBottom: 16,
+};
+
+const marketPreviewHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-start",
+  marginBottom: 12,
+};
+
+const marketSourceLineStyle: CSSProperties = {
+  marginTop: 4,
+  color: "var(--exec-mid)",
+  fontFamily: "var(--mono)",
+  fontSize: 11,
+  lineHeight: 1.55,
+};
+
+const marketPreviewGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 10,
+  marginBottom: 12,
+};
+
+const marketQuoteCardStyle: CSSProperties = {
+  display: "grid",
+  gap: 6,
+  minHeight: 72,
+  padding: "10px 12px",
+  border: "1px solid var(--exec-rule)",
+  background: "rgba(0,0,0,0.12)",
+};
+
+const miniKlineStyle: CSSProperties = {
+  borderTop: "1px solid var(--exec-rule)",
+  paddingTop: 10,
 };
 
 const plainButtonStyle: CSSProperties = {

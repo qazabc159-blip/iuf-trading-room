@@ -112,7 +112,7 @@ function directionLabel(direction: RunOutput["direction"]) {
 }
 
 function modeLabel(mode: string | null | undefined) {
-  if (mode === "paper") return "紙上";
+  if (mode === "paper") return "模擬";
   if (mode === "live") return "正式";
   return mode ?? "--";
 }
@@ -121,7 +121,7 @@ function formatQueryValue(value: unknown) {
   if (Array.isArray(value)) return value.join(" / ") || "--";
   if (typeof value === "boolean") return value ? "是" : "否";
   if (value === null || value === undefined || value === "") return "--";
-  if (value === "paper") return "紙上";
+  if (value === "paper") return "模擬";
   if (value === "live") return "正式";
   return String(value);
 }
@@ -134,7 +134,7 @@ function PromotionBlockedCell() {
   return (
     <span
       className="tg down"
-      title="策略想法轉紙上委託預覽的後端契約尚未完成。負責人：Jason + Bruce。"
+      title="策略想法轉模擬委託預覽的後端契約尚未完成。負責人：Jason + Bruce。"
       style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.25 }}
     >
       <span>轉單暫停</span>
@@ -209,7 +209,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
       code="05-D"
       title={run?.id ?? id}
       sub={run ? `策略批次 / ${modeLabel(run.query.decisionMode)}` : "策略批次暫停"}
-      note="此頁讀取正式策略批次資料；策略想法轉紙上委託會保持暫停，直到後端預覽契約啟用。"
+      note="此頁讀取正式策略批次資料；策略想法轉模擬委託會保持暫停，直到後端預覽契約啟用。"
     >
       <MetricStrip
         cells={[

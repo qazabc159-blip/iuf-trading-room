@@ -150,7 +150,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
                     <span
                       className="outline-button"
                       role="status"
-                      title="策略包轉紙上交易的後端契約尚未完成。"
+                      title="策略包轉模擬交易的後端契約尚未完成。"
                     >
                       待契約
                     </span>
@@ -163,7 +163,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
             <div className="terminal-note" style={{ marginTop: 12 }}>
               {actionError
                 ? `暫停：量化研究動作失敗。${actionError}`
-                : "轉入紙上交易需等待 Jason/Athena 完成交接契約；核准/退回會以量化研究 API 寫入。"}
+                : "轉入模擬交易需等待 Jason/Athena 完成交接契約；核准/退回會以量化研究 API 寫入。"}
             </div>
           )}
         </Panel>

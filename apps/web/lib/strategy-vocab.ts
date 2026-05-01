@@ -49,7 +49,7 @@ export const QUALITY_BADGE: Record<QualityGrade, string> = {
 
 export const MODE_LABEL: Record<StrategyIdeasDecisionMode, string> = {
   strategy: "策略篩選",
-  paper: "紙上交易",
+  paper: "模擬交易",
   execution: "真倉執行"
 };
 
@@ -83,7 +83,7 @@ const REASON_LABEL_MAP: Record<string, string> = {
   // market-data decision (broker 側)
   no_quote: "無即時報價",
   missing_quote: "缺報價",
-  quote_not_paper_safe: "報價未達紙上交易門檻",
+  quote_not_paper_safe: "報價未達模擬交易門檻",
   no_reference_price: "無參考價",
   missing_market_decision: "無市場決策輸出",
 

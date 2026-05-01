@@ -98,7 +98,7 @@ function stateLabel(state: LoadState["state"]) {
 
 function modeLabel(mode: string | null | undefined) {
   if (mode === "trading") return "可交易";
-  if (mode === "paper_only") return "紙上模式";
+  if (mode === "paper_only") return "模擬模式";
   if (mode === "liquidate_only") return "只減倉";
   if (mode === "halted") return "全鎖定";
   return "未知";
@@ -190,7 +190,7 @@ export default async function MobileBrief() {
           <>
             <MobileMetric label="交易模式" value={modeLabel(result.data.kill?.mode)} tone={result.data.kill?.engaged ? "down" : "gold"} />
             <MobileMetric label="報價" value={overview.quotes.total} sub={`${overview.quotes.fresh} 筆新鮮`} tone={overview.quotes.fresh > 0 ? "up" : "muted"} />
-            <MobileMetric label="紙上可用" value={overview.quotes.readiness.effectiveSelection.paperUsable} sub={`${overview.quotes.readiness.effectiveSelection.blocked} 筆阻擋`} tone="gold" />
+            <MobileMetric label="模擬可用" value={overview.quotes.readiness.effectiveSelection.paperUsable} sub={`${overview.quotes.readiness.effectiveSelection.blocked} 筆阻擋`} tone="gold" />
           </>
         )}
       </MobileSection>
@@ -222,9 +222,9 @@ export default async function MobileBrief() {
         ))}
       </MobileSection>
 
-      <MobileSection code="IDA" title="紙上策略想法" right={mobileLive ? `${ideas.length} 筆` : stateLabel(result.state)}>
-        {!mobileLive && <div className="mobile-card"><div className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</div><div className="tc soft">紙上策略想法先隱藏，等待行動簡報資料恢復正常。</div></div>}
-        {mobileLive && ideas.length === 0 && <div className="mobile-card"><div className="tg gold">無資料</div><div className="tc soft">目前沒有紙上策略想法。</div></div>}
+      <MobileSection code="IDA" title="模擬策略想法" right={mobileLive ? `${ideas.length} 筆` : stateLabel(result.state)}>
+        {!mobileLive && <div className="mobile-card"><div className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</div><div className="tc soft">模擬策略想法先隱藏，等待行動簡報資料恢復正常。</div></div>}
+        {mobileLive && ideas.length === 0 && <div className="mobile-card"><div className="tg gold">無資料</div><div className="tc soft">目前沒有模擬策略想法。</div></div>}
         {mobileLive && ideas.map((idea) => (
           <Link className="mobile-card" href={`/companies/${idea.symbol}`} key={`${idea.companyId}-${idea.symbol}`}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>

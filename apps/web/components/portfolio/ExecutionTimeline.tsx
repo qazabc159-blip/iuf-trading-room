@@ -123,7 +123,7 @@ export function ExecutionTimeline() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-        <span className="tg" style={{ color: "var(--gold)", fontWeight: 700 }}>紙上交易事件</span>
+        <span className="tg" style={{ color: "var(--gold)", fontWeight: 700 }}>模擬交易事件</span>
         <span
           className="tg"
           style={{
@@ -138,7 +138,7 @@ export function ExecutionTimeline() {
           {streamLabel(streamState)}
         </span>
         <span className="tg" style={{ color: "var(--exec-soft)", marginLeft: "auto" }}>
-          {events.length} 筆 | 紙上帳戶
+          {events.length} 筆 | 模擬帳戶
         </span>
       </div>
 
@@ -219,8 +219,8 @@ export function ExecutionTimeline() {
         {!events.length && (
           <div style={{ padding: "20px 4px", color: "var(--exec-soft)", fontFamily: "var(--mono)", fontSize: 11 }}>
             {streamState === "blocked"
-              ? "暫停 | 紙上交易事件端點暫時無法讀取"
-              : "無資料 | 紙上帳戶目前沒有交易事件"}
+              ? "暫停 | 模擬交易事件端點暫時無法讀取"
+              : "無資料 | 模擬帳戶目前沒有交易事件"}
           </div>
         )}
       </div>

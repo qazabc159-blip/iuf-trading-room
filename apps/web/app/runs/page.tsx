@@ -81,7 +81,7 @@ function stateLabel(state: LoadState["state"]) {
 }
 
 function decisionModeLabel(value: string) {
-  if (value === "paper") return "紙上";
+  if (value === "paper") return "模擬";
   if (value === "live") return "實盤";
   return value;
 }
@@ -173,7 +173,7 @@ export default async function RunsPage() {
       <Panel
         code="RUN-TBL"
         title={`${formatTime(result.updatedAt)} 台北`}
-        sub="策略批次 / 紙上決策 / 只讀"
+        sub="策略批次 / 模擬決策 / 只讀"
         right={stateLabel(result.state)}
       >
         <SourceLine result={result} />

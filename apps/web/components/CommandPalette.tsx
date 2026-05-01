@@ -32,7 +32,7 @@ const ROUTES: Item[] = [
   { code: "01", label: "戰情台", sub: "大盤、觀察清單、重大訊息與策略總覽", href: "/", group: "頁面" },
   { code: "02", label: "主題板", sub: "台股主題、產業鏈與投資敘事", href: "/themes", group: "頁面" },
   { code: "03", label: "公司板", sub: "公司池、個股資料與 K 線", href: "/companies", group: "頁面" },
-  { code: "04", label: "策略想法", sub: "由真實訊號與市場資料產生的紙上想法", href: "/ideas", group: "頁面" },
+  { code: "04", label: "策略想法", sub: "由真實訊號與市場資料產生的模擬候選", href: "/ideas", group: "頁面" },
   { code: "05", label: "策略批次", sub: "策略批次紀錄與輸出", href: "/runs", group: "頁面" },
   { code: "06", label: "交易室", sub: "模擬資金、部位、委託、成交與風控", href: "/portfolio", group: "頁面" },
   { code: "07", label: "訊號證據", sub: "訊號資料與證據紀錄", href: "/signals", group: "頁面" },
