@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:24 Taipei - Codex cycle: final visible `radar-api` adapter consumers removed
+- Now: Removed the remaining visible `@/lib/radar-api` consumers from the global data-source badge, root command palette, and execution timeline component. `apps/web` no longer imports the old mock adapter anywhere.
+- Files: `apps/web/components/DataSourceBadge.tsx`; `apps/web/components/CommandPalette.tsx`; `apps/web/components/portfolio/ExecutionTimeline.tsx`.
+- Endpoints: `GET /api/v1/session`; `GET /api/v1/themes`; `GET /api/v1/companies`; `GET /api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&sort=score`; `GET /api/v1/strategy/runs?decisionMode=paper&sort=created_at`; `GET /api/v1/trading/events`; `GET /api/v1/trading/stream`.
+- Behavior: badge now reports LIVE or BLOCKED from the real session endpoint, never MOCK. Command palette lazy-loads real themes/companies/ideas/runs and renders BLOCKED/EMPTY when backend data is unavailable. Execution timeline reads paper-default execution events and uses the real stream helper with polling fallback; no mock event stream remains.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; exact `@/lib/radar-api` scan under `apps/web` returns zero rows; `git diff --check` PASS for changed files.
+- Blockers: old `apps/web/lib/radar-types.ts` placeholder types still have residual imports in legacy shared components; no `radar-api` mock adapter imports remain. Next cycle should retire or replace those placeholder-type consumers without touching backend, broker, migrations, or secrets.
+
 ### 2026-05-01 13:15 Taipei - Codex cycle: `/portfolio` real paper trading surface DONE
 - Now: Converted `apps/web/app/portfolio/page.tsx` from legacy `@/lib/radar-api` mock-shaped `PortfolioClient` inputs into a server-side production paper trading/risk surface. Page-level `@/lib/radar-api` imports under `apps/web/app/**` are now zero.
 - Files: `apps/web/app/portfolio/page.tsx`.

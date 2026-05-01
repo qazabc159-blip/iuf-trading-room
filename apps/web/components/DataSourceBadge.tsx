@@ -1,50 +1,122 @@
 "use client";
-/**
- * DataSourceBadge — bottom-right pill, always visible.
- *
- * Three states (driven by api.ts publish):
- *   LIVE     — real backend responding (gold dot)
- *   MOCK     — NEXT_PUBLIC_API_BASE empty (telegraphic, mid)
- *   OFFLINE  — backend set but failing (red, sticky)
- *
- * In production OFFLINE means the operator is looking at stale or no data;
- * we make it loud on purpose so they don't trade against a phantom feed.
- */
+
 import { useEffect, useState } from "react";
-import type { DataSourceState } from "@/lib/radar-api";
-import { getDataSourceState } from "@/lib/radar-api";
+
+import { getSession } from "@/lib/api";
+
+type BadgeState =
+  | {
+      status: "CHECKING";
+      label: string;
+      detail: string;
+      checkedAt: string | null;
+    }
+  | {
+      status: "LIVE";
+      label: string;
+      detail: string;
+      checkedAt: string;
+    }
+  | {
+      status: "BLOCKED";
+      label: string;
+      detail: string;
+      checkedAt: string;
+    };
+
+const CHECK_INTERVAL_MS = 60_000;
 
 export function DataSourceBadge() {
-  const [state, setState] = useState<DataSourceState>(getDataSourceState());
+  const [state, setState] = useState<BadgeState>({
+    status: "CHECKING",
+    label: "CHECKING | BACKEND",
+    detail: "session probe",
+    checkedAt: null
+  });
 
   useEffect(() => {
-    const onChange = (e: Event) => setState((e as CustomEvent<DataSourceState>).detail);
-    window.addEventListener("__iuf_data_source", onChange);
-    return () => window.removeEventListener("__iuf_data_source", onChange);
+    let cancelled = false;
+
+    async function probe() {
+      const checkedAt = new Date().toISOString();
+      try {
+        const session = await getSession();
+        if (cancelled) return;
+        setState({
+          status: "LIVE",
+          label: "LIVE | BACKEND",
+          detail: `${session.data.persistenceMode} | ${session.data.workspace.name}`,
+          checkedAt
+        });
+      } catch {
+        if (cancelled) return;
+        setState({
+          status: "BLOCKED",
+          label: "BLOCKED | AUTH/API",
+          detail: "session endpoint unavailable",
+          checkedAt
+        });
+      }
+    }
+
+    void probe();
+    const interval = window.setInterval(() => void probe(), CHECK_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, []);
 
-  const color = state === "LIVE" ? "var(--gold-bright)"
-              : state === "OFFLINE" ? "var(--tw-up-bright)"
-              : "var(--night-mid)";
-  const bg = state === "OFFLINE" ? "rgba(230,57,70,0.10)" : "rgba(13,14,10,0.92)";
-  const label = state === "LIVE" ? "● LIVE · BACKEND"
-              : state === "OFFLINE" ? "✕ OFFLINE · CHECK BACKEND"
-              : "○ MOCK · NO BACKEND";
+  const tone =
+    state.status === "LIVE"
+      ? "var(--gold-bright)"
+      : state.status === "BLOCKED"
+        ? "var(--tw-up-bright)"
+        : "var(--night-mid)";
+  const bg =
+    state.status === "BLOCKED"
+      ? "rgba(230,57,70,0.12)"
+      : "rgba(13,14,10,0.92)";
 
   return (
     <div
       role="status"
       aria-live="polite"
+      title={`${state.detail}${state.checkedAt ? ` | checked ${state.checkedAt}` : ""}`}
       style={{
-        position: "fixed", right: 14, bottom: 14, zIndex: 9999,
-        fontFamily: "var(--mono)", fontSize: 10.5, letterSpacing: "0.18em",
-        padding: "6px 10px",
-        border: `1px solid ${color}`, color, background: bg,
-        textTransform: "uppercase", fontWeight: 700,
-        backdropFilter: "blur(4px)",
+        position: "fixed",
+        right: 14,
+        bottom: 14,
+        zIndex: 9999,
+        display: "grid",
+        gap: 3,
+        minWidth: 168,
+        padding: "7px 10px",
+        border: `1px solid ${tone}`,
+        color: tone,
+        background: bg,
+        fontFamily: "var(--mono)",
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: "0.14em",
+        textTransform: "uppercase",
+        backdropFilter: "blur(4px)"
       }}
     >
-      {label}
+      <span>{state.label}</span>
+      <span
+        style={{
+          color: "var(--night-soft)",
+          fontSize: 9,
+          fontWeight: 500,
+          letterSpacing: "0.08em",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap"
+        }}
+      >
+        {state.detail}
+      </span>
     </div>
   );
 }
