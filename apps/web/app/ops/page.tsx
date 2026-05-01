@@ -108,11 +108,11 @@ export default async function OpsPage() {
       <MetricStrip
         cells={[
           { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "THEMES", value: stats?.themes ?? 0 },
-          { label: "COMPANIES", value: stats?.companies ?? 0 },
-          { label: "SIGNALS", value: stats?.signals ?? 0 },
-          { label: "QUEUE", value: queue?.totalJobs ?? 0, tone: (queue?.failed ?? 0) > 0 ? "down" : "muted" },
-          { label: "AUDIT", value: data?.audit.total ?? 0, tone: (data?.audit.total ?? 0) > 0 ? "gold" : "muted" },
+          { label: "THEMES", value: data ? stats?.themes ?? 0 : "--" },
+          { label: "COMPANIES", value: data ? stats?.companies ?? 0 : "--" },
+          { label: "SIGNALS", value: data ? stats?.signals ?? 0 : "--" },
+          { label: "QUEUE", value: data ? queue?.totalJobs ?? 0 : "--", tone: (queue?.failed ?? 0) > 0 ? "down" : "muted" },
+          { label: "AUDIT", value: data ? data.audit.total : "--", tone: data && data.audit.total > 0 ? "gold" : "muted" },
           { label: "WORKER", value: obs?.workerStatus ?? "--", tone: obs ? healthTone(obs.workerStatus) : "muted" },
         ]}
         columns={7}
@@ -145,7 +145,8 @@ export default async function OpsPage() {
           </Panel>
 
           <Panel code="JOB-Q" title="OPENALICE QUEUE" sub="worker observability" right={obs?.workerStatus ?? "BLOCKED"}>
-            {!obs && <div className="terminal-note"><span className="tg gold">EMPTY</span> No OpenAlice observability payload.</div>}
+            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> OpenAlice observability is hidden because the ops snapshot is unavailable.</div>}
+            {data && !obs && <div className="terminal-note"><span className="tg gold">EMPTY</span> No OpenAlice observability payload.</div>}
             {obs && queue && (
               <>
                 {[
@@ -169,6 +170,7 @@ export default async function OpsPage() {
 
         <div>
           <Panel code="LAT-ROW" title="LATEST ROWS" sub="themes / companies / signals / plans" right="DB">
+            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Latest rows are hidden because the ops snapshot is unavailable.</div>}
             {data && Object.entries(data.latest).flatMap(([bucket, rows]) =>
               rows.slice(0, 3).map((row) => (
                 <div className="row telex-row" style={{ gridTemplateColumns: "76px 92px 1fr" }} key={`${bucket}-${row.id}`}>
@@ -187,7 +189,8 @@ export default async function OpsPage() {
         </div>
 
         <div>
-          <Panel code="AUD-SUM" title="AUDIT SUMMARY" sub="last 24 hours" right={`${data?.audit.total ?? 0} ROWS`}>
+          <Panel code="AUD-SUM" title="AUDIT SUMMARY" sub="last 24 hours" right={data ? `${data.audit.total} ROWS` : "BLOCKED"}>
+            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Audit summary is hidden because the ops snapshot is unavailable.</div>}
             {data?.audit.actions.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No audit summary rows.</div>}
             {data?.audit.actions.map((item) => (
               <div className="row limit-row" key={item.action}>
@@ -197,7 +200,8 @@ export default async function OpsPage() {
             ))}
           </Panel>
 
-          <Panel code="AUD-TBL" title="AUDIT EVENTS" sub="recent mutations / reads" right={`${data?.audit.recent.length ?? 0} ROWS`}>
+          <Panel code="AUD-TBL" title="AUDIT EVENTS" sub="recent mutations / reads" right={data ? `${data.audit.recent.length} ROWS` : "BLOCKED"}>
+            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Audit events are hidden because the ops snapshot is unavailable.</div>}
             {data?.audit.recent.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No recent audit rows.</div>}
             {data?.audit.recent.slice(0, 10).map((event) => (
               <div className="row telex-row" style={{ gridTemplateColumns: "76px 82px 1fr" }} key={event.id}>

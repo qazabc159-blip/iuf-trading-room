@@ -1102,3 +1102,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: when no backend kill-switch payload is available, the top portfolio KILL card now shows `FROZEN` instead of `--`, matching the fail-closed order ticket and kill-switch panel behavior.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, or destructive DB action touched.
+### Codex cycle (2026-05-01 15:58 Taipei) - ops snapshot no longer renders blocked data as zero
+- Files changed: updated `apps/web/app/ops/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Ops still reads `GET /api/v1/ops/snapshot?auditHours=24&recentLimit=12`.
+- Behavior change: when the ops snapshot is BLOCKED, KPI cells now show `--` instead of fake zero counts, and OpenAlice/latest/audit panels show BLOCKED notes rather than EMPTY or `0 ROWS`.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, or destructive DB action touched.
