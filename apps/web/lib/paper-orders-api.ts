@@ -10,7 +10,9 @@ const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primar
 // PaperOrderInput is the form-facing type (no idempotencyKey — added by withIdempotency).
 // quantity_unit is optional; omit for LOT (board lot, 1 lot = 1000 shares).
 // Set to "SHARE" for odd-lot (零股) orders (1–999 shares).
-export type PaperOrderInput = Omit<PaperOrderCreateInput, "idempotencyKey">;
+export type PaperOrderInput = Omit<PaperOrderCreateInput, "idempotencyKey"> & {
+  quantity_unit?: "LOT" | "SHARE";
+};
 
 export type PaperOrderStatus =
   | "PENDING"
@@ -118,12 +120,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return ((body && typeof body === "object" && "data" in body ? (body as Envelope<T>).data : body) ?? null) as T;
 }
 
-function withIdempotency(input: PaperOrderInput, prefix: "preview" | "submit"): PaperOrderCreateInput {
+function withIdempotency(
+  input: PaperOrderInput,
+  prefix: "preview" | "submit",
+  overrideKey?: string,
+): PaperOrderCreateInput {
   return {
     ...input,
     symbol: input.symbol.trim().toUpperCase(),
     price: input.orderType === "market" ? null : input.price ?? null,
-    idempotencyKey: makeIdempotencyKey(prefix),
+    idempotencyKey: overrideKey ?? makeIdempotencyKey(prefix),
   };
 }
 
@@ -135,19 +141,19 @@ export function isCancellablePaperOrder(status: PaperOrderStatus) {
   return status === "PENDING" || status === "ACCEPTED";
 }
 
-export async function previewPaperOrder(input: PaperOrderInput) {
+export async function previewPaperOrder(input: PaperOrderInput, idempotencyKey?: string) {
   return request<PreviewOrderResult>("/api/v1/paper/orders/preview", {
     method: "POST",
-    body: JSON.stringify(withIdempotency(input, "preview")),
+    body: JSON.stringify(withIdempotency(input, "preview", idempotencyKey)),
   });
 }
 
-export async function submitPaperOrder(input: PaperOrderInput) {
+export async function submitPaperOrder(input: PaperOrderInput, idempotencyKey?: string) {
   if (!API_BASE) {
     throw new PaperOrderApiError(503, { error: "API_BASE_UNCONFIGURED" }, "PAPER_ORDER_API_BASE_UNCONFIGURED");
   }
 
-  const body = withIdempotency(input, "submit");
+  const body = withIdempotency(input, "submit", idempotencyKey);
   const response = await fetch(`${API_BASE}/api/v1/paper/orders`, {
     method: "POST",
     credentials: "include",
