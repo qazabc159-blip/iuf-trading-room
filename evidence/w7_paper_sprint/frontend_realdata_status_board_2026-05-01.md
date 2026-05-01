@@ -4,6 +4,61 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 18:23 Taipei — Elva cadence: 68h sprint Block 1, 20min #7 — P1-4 risk override admin UI design (Contract 2b) + Codex Contract 4 in motion
+
+**Codex burst since 18:03 (1 commit, mid-cycle)**:
+- `1d9f50f fix(web): show blocked idea promotion state` — Contract 4 (P1-3) groundwork; ideas/runs pages now respect 4-state hard rule for promotion-BLOCKED scenarios. 53 insertions, no migration, stop-line clean.
+
+**Verify clean**:
+| Check | Result |
+|---|---|
+| Stop-line grep on `09aaec4..origin/main` | **0 hits** |
+| New file count under apps/web/components/admin/ | 0 (Contract 2b is fresh design — Codex hasn't touched it yet) |
+| 4-state hard rule across all 12 fix(web)+feat(web) commits since 15:54 | All compliant |
+
+**Cycle deliverable — Contract 2b (P1-4) risk override admin UI design**:
+- File: `evidence/w7_paper_sprint/contract_2b_risk_override_admin_ui_design_2026-05-01.md`
+- Closes the gap between Contract 2 read-side and DB-shell-only write-side
+- Backend: 1 new migration `0023_risk_limit_override_audit.sql` (immutable audit table, idempotent CREATE) + 3 routes (GET / PATCH / GET audit) + risk-store `applyOverride()` extension
+- Frontend: 5 new components under `apps/web/components/admin/` — `RiskLimitAdminSurface` / `LimitGrid` / `LimitEditModal` / `AuditTrail` / page entry — all 4-state explicit
+- Key safety invariants:
+  - Reason field REQUIRED min 10 chars (server validates)
+  - Audit row immutable (no UPDATE/DELETE route ever exposed)
+  - Kill-switch ENGAGED → all edits 423 LOCKED (read still allowed)
+  - NTD bound [0, 100M], lots bound [0, 10k], hard server-side
+  - Synchronous risk-store cache invalidation (next 5s poll reflects)
+- 12/12 hard-line matrix PASS at design time
+- ~1130 LOC / ~22h e2e
+- **Explicitly NOT on 5/4 demo path** — W8 D2-D4 deliverable (Jason 5/5-5/6, Codex 5/7, Bruce+Mike 5/8)
+- 7 open Q with defaults
+
+**Block 1 status table**:
+| P1 # | Topic | Design | Impl |
+|---|---|---|---|
+| P1-1 (Contract 2) | Portfolio + 4-layer risk read | ★ 16:43 | ★ `13ca56a` 16:54 |
+| P1-2 (Contract 3) | Watchlist UI | ★ 17:23 | ★ `cbadbb9` 17:45 |
+| P1-3 (Contract 4) | Idea→paper promote | ★ 16:23 | in-progress `1d9f50f` 18:23 |
+| P1-4 (Contract 2b) | Risk override admin UI | ★ 18:23 (this cycle) | W8 D2-D4 deferred |
+| P1-7 (Codex) | K-line wire | covered | `8a749d7` |
+| P1-8 | Demo runbook | ★ 17:03 | static |
+| P1-9 | Idempotency verify gate | ★ 17:43 | Bruce 5/2 prep |
+| P1-10 | Demo contingency plan | ★ 18:03 | Bruce monitor 5/3 |
+| P1-11 | OpenAlice 100-co batch | ★ 15:54 | queued |
+
+**Demo path coverage**: 100% papered. Read-side (Contract 2 ✓ implemented), watchlist (Contract 3 ✓ implemented), promote flow (Contract 4 partial impl), runbook + idempotency + contingency all written. The **only** missing piece for the demo is Contract 4 full implementation — which Codex started this cycle.
+
+**Yellow / red**: none.
+
+**Velocity**: 9 P1 designs (P1-1, P1-2, P1-3, P1-4, P1-7, P1-8, P1-9, P1-10, P1-11) + Codex active execution on P1-1, P1-2, P1-3 in 6h push.
+
+**Next 20min (18:43 cadence)**:
+1. Watch for Contract 4 PROMOTE button wire-up (the heart of the demo path)
+2. Stop-line grep on every new commit
+3. Pick next design candidate: **P1-5 daily_brief OpenAI streaming UX** OR **P1-12 W7 EOD closeout template** (handoff for 楊董's return) OR **P1-6 paper E2E observability dashboard** (institutional roadmap §8)
+4. Cycle entry write-back
+
+---
+
 ### 2026-05-01 18:03 Taipei — Elva cadence: 68h sprint Block 1, 20min #6 — P1-10 demo contingency plan drafted (failure-mode playbook)
 
 **Codex burst since 17:43 (0 commits)**: Codex quiet — likely chewing through Contract 4 (P1-3) which is heavier (~980 LOC, 4 routes, 1 migration, frontend PROMOTE wiring).
