@@ -1,42 +1,246 @@
 import Link from "next/link";
+
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { api } from "@/lib/radar-api";
 import { MetricStrip } from "@/components/RadarWidgets";
+import { getStrategyIdeas } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
+type IdeasView = Awaited<ReturnType<typeof getStrategyIdeas>>["data"];
+type IdeaRow = IdeasView["items"][number];
+type LoadState =
+  | { state: "LIVE"; data: IdeasView; updatedAt: string; source: string }
+  | { state: "EMPTY"; data: IdeasView; updatedAt: string; source: string; reason: string }
+  | { state: "BLOCKED"; data: IdeasView; updatedAt: string; source: string; reason: string };
+
+const emptyIdeas: IdeasView = {
+  generatedAt: new Date(0).toISOString(),
+  summary: {
+    total: 0,
+    allow: 0,
+    review: 0,
+    block: 0,
+    bullish: 0,
+    bearish: 0,
+    neutral: 0,
+    quality: {
+      strategyReady: 0,
+      referenceOnly: 0,
+      insufficient: 0,
+      primaryReasons: [],
+    },
+  },
+  items: [],
+};
+
+async function loadIdeas(): Promise<LoadState> {
+  const source = "GET /api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&sort=score";
+  const updatedAt = new Date().toISOString();
+
+  try {
+    const envelope = await getStrategyIdeas({
+      decisionMode: "paper",
+      includeBlocked: true,
+      limit: 30,
+      sort: "score",
+    });
+    const data = envelope.data;
+    if (data.items.length === 0) {
+      return {
+        state: "EMPTY",
+        data,
+        updatedAt: data.generatedAt || updatedAt,
+        source,
+        reason: "Strategy endpoint returned zero paper-decision ideas. No fallback rows are rendered.",
+      };
+    }
+    return {
+      state: "LIVE",
+      data,
+      updatedAt: data.generatedAt || updatedAt,
+      source,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      data: emptyIdeas,
+      updatedAt,
+      source,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function formatTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("zh-TW", { hour12: false });
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", { hour12: false });
+}
+
+function percent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function stateTone(state: LoadState["state"]) {
+  if (state === "LIVE") return "up";
+  if (state === "EMPTY") return "gold";
+  return "down";
+}
+
+function decisionTone(decision: IdeaRow["marketData"]["decision"]) {
+  if (decision === "allow") return "up";
+  if (decision === "review") return "gold";
+  return "down";
+}
+
+function directionTone(direction: IdeaRow["direction"]) {
+  if (direction === "bullish") return "up";
+  if (direction === "bearish") return "down";
+  return "muted";
+}
+
+function SourceLine({ result }: { result: LoadState }) {
+  return (
+    <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
+      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{result.state}</span>
+      <span>{result.source}</span>
+      <span>updated {formatTime(result.updatedAt)}</span>
+      {result.state !== "LIVE" && <span>{result.reason}</span>}
+    </div>
+  );
+}
+
+function EmptyOrBlocked({ result }: { result: LoadState }) {
+  if (result.state === "LIVE") return null;
+  return (
+    <div className="terminal-note">
+      <span className={`tg ${stateTone(result.state)}`}>{result.state}</span>{" "}
+      {result.reason}
+    </div>
+  );
+}
+
+function IdeaRowView({ idea }: { idea: IdeaRow }) {
+  const theme = idea.topThemes[0]?.name ?? "NO THEME";
+  return (
+    <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
+      <Link href={`/companies/${idea.symbol}`} className="tg gold">
+        {idea.symbol}
+      </Link>
+      <span className={`tg ${directionTone(idea.direction)}`}>{idea.direction}</span>
+      <span className="num">{idea.score.toFixed(1)}</span>
+      <span className={`tg ${decisionTone(idea.marketData.decision)}`}>
+        {idea.marketData.decision}
+      </span>
+      <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {idea.companyName} / {theme} / {idea.rationale.primaryReason}
+      </span>
+      <Link href={`/companies/${idea.symbol}`} className="mini-button">
+        DETAIL
+      </Link>
+    </div>
+  );
+}
+
 export default async function IdeasPage() {
-  const ideas = await api.ideas();
-  const high = ideas.filter((idea) => idea.quality === "HIGH").length;
-  const long = ideas.filter((idea) => idea.side === "LONG").length;
-  const trimExit = ideas.filter((idea) => idea.side === "TRIM" || idea.side === "EXIT").length;
-  const avgConf = ideas.length ? ideas.reduce((sum, idea) => sum + idea.confidence, 0) / ideas.length : 0;
+  const result = await loadIdeas();
+  const summary = result.data.summary;
+  const topReason = summary.quality.primaryReasons[0]?.reason ?? "none";
 
   return (
-    <PageFrame code="04" title="Ideas" sub="策略意見" note="[04] IDEAS · emitted trade candidates · send to execution desk">
+    <PageFrame
+      code="04"
+      title="Ideas"
+      sub="Strategy queue"
+      note="[04] IDEAS reads the production strategy endpoint. Promote/order handoff stays BLOCKED until Contract 4 is approved."
+    >
       <MetricStrip
         cells={[
-          { label: "TOTAL", value: ideas.length },
-          { label: "HIGH-Q", value: high, tone: "gold" },
-          { label: "LONG", value: long, tone: "up" },
-          { label: "TRIM/EXIT", value: trimExit, tone: "down" },
-          { label: "AVG·CONF", value: avgConf.toFixed(2) },
-          { label: "ACTIVE", value: ideas.filter((idea) => Date.parse(idea.expiresAt) > Date.now()).length, tone: "gold" },
+          { label: "STATE", value: result.state, tone: stateTone(result.state) },
+          { label: "TOTAL", value: summary.total },
+          { label: "ALLOW", value: summary.allow, tone: "up" },
+          { label: "REVIEW", value: summary.review, tone: "gold" },
+          { label: "BLOCK", value: summary.block, tone: "down" },
+          { label: "READY", value: summary.quality.strategyReady, tone: summary.quality.strategyReady > 0 ? "up" : "muted" },
+          { label: "UPDATED", value: formatTime(result.updatedAt) },
         ]}
-        columns={6}
+        columns={7}
       />
 
-      <Panel code="IDEA-OPN" title="14:32:08 TPE · ● LIVE" sub="idea tape · quality gated" right={`${ideas.length} EMITTED`}>
-        {ideas.map((idea) => (
-          <div className="row idea-row" key={idea.id}>
-            <span className="tg soft">{idea.id}</span>
-            <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
-            <span className={`tg ${idea.side === "LONG" ? "up" : "down"}`}>{idea.side}</span>
-            <span className={`tg ${idea.quality === "HIGH" ? "gold" : "muted"}`}>Q·{idea.quality}</span>
-            <span className="tc soft">{idea.rationale}</span>
-            <Link href="/portfolio" className="mini-button">下單台 →</Link>
+      <Panel
+        code="IDEA-OPN"
+        title={`${formatTime(result.updatedAt)} TPE`}
+        sub="STRATEGY IDEAS / PAPER DECISION / READ ONLY"
+        right={result.state}
+      >
+        <SourceLine result={result} />
+        <EmptyOrBlocked result={result} />
+        {result.state === "LIVE" && (
+          <>
+            <div className="row idea-row table-head tg">
+              <span>SYMBOL</span>
+              <span>DIR</span>
+              <span>SCORE</span>
+              <span>DECISION</span>
+              <span>RATIONALE</span>
+              <span>LINK</span>
+            </div>
+            {result.data.items.map((idea) => (
+              <IdeaRowView idea={idea} key={`${idea.companyId}-${idea.symbol}`} />
+            ))}
+          </>
+        )}
+      </Panel>
+
+      <Panel
+        code="IDEA-QA"
+        title="4-STATE AUDIT"
+        sub="endpoint truth / no silent mock"
+        right={topReason}
+      >
+        <div className="quote-strip" style={{ gridTemplateColumns: "repeat(6, minmax(120px, 1fr))", marginTop: 0 }}>
+          <div className="quote-card">
+            <div className="tg quote-symbol">BULLISH</div>
+            <div className="quote-last num up">{summary.bullish}</div>
           </div>
-        ))}
+          <div className="quote-card">
+            <div className="tg quote-symbol">BEARISH</div>
+            <div className="quote-last num down">{summary.bearish}</div>
+          </div>
+          <div className="quote-card">
+            <div className="tg quote-symbol">NEUTRAL</div>
+            <div className="quote-last num muted">{summary.neutral}</div>
+          </div>
+          <div className="quote-card">
+            <div className="tg quote-symbol">REFERENCE</div>
+            <div className="quote-last num gold">{summary.quality.referenceOnly}</div>
+          </div>
+          <div className="quote-card">
+            <div className="tg quote-symbol">INSUFFICIENT</div>
+            <div className="quote-last num down">{summary.quality.insufficient}</div>
+          </div>
+          <div className="quote-card">
+            <div className="tg quote-symbol">CONF AVG</div>
+            <div className="quote-last num">
+              {result.data.items.length
+                ? percent(result.data.items.reduce((sum, idea) => sum + idea.confidence, 0) / result.data.items.length)
+                : "--"}
+            </div>
+          </div>
+        </div>
+        <div className="tg soft" style={{ display: "grid", gap: 6, paddingBottom: 12 }}>
+          <span>source: {result.source}</span>
+          <span>generated: {formatDateTime(result.data.generatedAt)}</span>
+          <span>handoff: strategy idea to order remains BLOCKED / owner Jason + Bruce / Contract 4 promote route not approved.</span>
+        </div>
       </Panel>
     </PageFrame>
   );

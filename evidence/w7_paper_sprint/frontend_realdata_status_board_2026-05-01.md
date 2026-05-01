@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 12:53 Taipei - Codex cycle: `/ideas` real strategy endpoint DONE
+- Now: Converted `apps/web/app/ideas/page.tsx` from legacy `@/lib/radar-api` mock-shaped ideas to `getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 30, sort: "score" })`.
+- Files: `apps/web/app/ideas/page.tsx`.
+- Endpoint: `GET /api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&sort=score`.
+- Behavior: page now renders explicit LIVE / EMPTY / BLOCKED states with source + updatedAt; removed fake `/portfolio` order action and replaced row action with read-only company detail link. Strategy idea -> order handoff remains BLOCKED until Contract 4 promote route is approved.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; `git diff --check -- apps/web/app/ideas/page.tsx evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` PASS.
+- Blockers: none for `/ideas` read path. Next: commit/push this scoped change; continue to `/runs` legacy radar-api cleanup.
+
 ## Current State
 
 - Auth cookie/domain: DONE.
