@@ -1791,6 +1791,12 @@ body:has(.login-route) > div {
   white-space: pre-wrap;
 }
 
+.intel-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
 .brief-section-list {
   display: grid;
   gap: 14px;
@@ -1987,6 +1993,9 @@ body:has(.login-route) > div {
   }
   .market-intel-body {
     padding-left: 0;
+  }
+  .intel-two-col {
+    grid-template-columns: 1fr;
   }
   .quote-snapshot-grid {
     grid-template-columns: 1fr;
