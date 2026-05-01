@@ -11,14 +11,19 @@ import {
   type PaperOrderState,
 } from "@/lib/paper-orders-api";
 
+// Demo capital constant — must match DEMO_CAPITAL_TWD in order-intent.ts.
+const DEMO_CAPITAL_TWD = 20_000;
+
 type PaperSide = PaperOrderInput["side"];
 type PaperOrderType = PaperOrderInput["orderType"];
+type QuantityUnit = "SHARE" | "LOT";
 
 type FormState = {
   side: PaperSide;
   orderType: PaperOrderType;
   qty: string;
   price: string;
+  quantityUnit: QuantityUnit;
 };
 
 type PreviewState =
@@ -50,6 +55,11 @@ const TYPES: ReadonlyArray<{ value: PaperOrderType; label: string }> = [
   { value: "limit", label: "限價" },
 ];
 
+const QUANTITY_UNITS: ReadonlyArray<{ value: QuantityUnit; label: string }> = [
+  { value: "LOT", label: "整股" },
+  { value: "SHARE", label: "零股" },
+];
+
 function uiStateLabel(state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING") {
   if (state === "LIVE") return "正常";
   if (state === "EMPTY") return "無資料";
@@ -76,8 +86,9 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   const [form, setForm] = useState<FormState>({
     side: "buy",
     orderType: "limit",
-    qty: "1000",
+    qty: "1",
     price: "",
+    quantityUnit: "SHARE",
   });
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
@@ -87,11 +98,24 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     const qty = Number(form.qty);
     const price = Number(form.price);
     const needsPrice = form.orderType !== "market";
+    const isShare = form.quantityUnit === "SHARE";
+    const validQty = Number.isInteger(qty) && qty > 0 && (!isShare || qty <= 999);
+    const validPrice = !needsPrice || (Number.isFinite(price) && price > 0);
+    // Effective share count for notional preview
+    const effectiveShares = isShare ? qty : qty * 1000;
+    // Use form price for notional preview; if market order and price unknown, show null
+    const refPrice = needsPrice ? price : (Number.isFinite(price) && price > 0 ? price : null);
+    const estimatedNotional = refPrice && validQty ? refPrice * effectiveShares : null;
+    const notionalExceedsCap = estimatedNotional !== null && estimatedNotional > DEMO_CAPITAL_TWD;
     return {
       qty,
       price,
-      validQty: Number.isInteger(qty) && qty > 0,
-      validPrice: !needsPrice || (Number.isFinite(price) && price > 0),
+      validQty,
+      validPrice,
+      estimatedNotional,
+      notionalExceedsCap,
+      effectiveShares,
+      isShare,
     };
   }, [form]);
 
@@ -102,15 +126,20 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
       side: form.side,
       orderType: form.orderType,
       qty: parsed.qty,
+      quantity_unit: form.quantityUnit,
       price: form.orderType === "market" ? null : parsed.price,
     };
-  }, [form.orderType, form.side, parsed, symbol]);
+  }, [form.orderType, form.side, form.quantityUnit, parsed, symbol]);
 
   const validationReason = !parsed.validQty
-    ? "股數必須是正整數。"
+    ? parsed.isShare
+      ? "零股股數必須是 1–999 的正整數。"
+      : "股數必須是正整數。"
     : !parsed.validPrice
       ? "限價單需要有效價格。"
-      : null;
+      : parsed.notionalExceedsCap
+        ? `超過紙上資金 ${DEMO_CAPITAL_TWD.toLocaleString()} TWD（預估 ${parsed.estimatedNotional?.toFixed(0) ?? "?"} TWD）`
+        : null;
   const ledgerState =
     orders.status === "blocked"
       ? "BLOCKED"
@@ -177,7 +206,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     }
   };
 
-  const canSubmit = preview.status === "live";
+  const canSubmit = preview.status === "live" && !parsed.notionalExceedsCap;
 
   return (
     <section className="panel hud-frame">
@@ -208,10 +237,26 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           />
         </div>
         <div>
-          <label style={labelStyle}>股數</label>
+          <label style={labelStyle}>單位</label>
+          <Segmented
+            options={QUANTITY_UNITS}
+            value={form.quantityUnit}
+            onChange={(quantityUnit) =>
+              updateForm({
+                quantityUnit,
+                qty: quantityUnit === "SHARE" ? "1" : "1",
+              })
+            }
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>
+            {parsed.isShare ? "股數 (零股 odd-lot)" : "張數 (整股)"}
+          </label>
           <input
             type="number"
             min={1}
+            max={parsed.isShare ? 999 : undefined}
             value={form.qty}
             onChange={(event) => updateForm({ qty: event.target.value })}
             style={inputStyle}
@@ -232,6 +277,37 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           </div>
         )}
       </div>
+
+      {/* Odd-lot indicator pill */}
+      {parsed.isShare && (
+        <div style={{ marginBottom: 8, display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={oddLotPillStyle}>零股 odd-lot</span>
+          <span style={{ fontSize: 10, color: "var(--night-mid, #888)", fontFamily: "var(--mono, monospace)" }}>
+            1 股為單位 / 上限 999 股
+          </span>
+        </div>
+      )}
+
+      {/* Live notional preview + demo capital check */}
+      {parsed.validQty && parsed.estimatedNotional !== null && (
+        <div style={notionalPreviewStyle}>
+          <div style={kvStyle}>
+            <span>預估金額</span>
+            <b style={parsed.notionalExceedsCap ? { color: "var(--tw-up-bright, #e63946)" } : {}}>
+              {parsed.estimatedNotional.toLocaleString("zh-TW", { maximumFractionDigits: 0 })} TWD
+            </b>
+          </div>
+          <div style={kvStyle}>
+            <span>紙上資金上限</span>
+            <b>{DEMO_CAPITAL_TWD.toLocaleString()} TWD</b>
+          </div>
+          {parsed.notionalExceedsCap && (
+            <div style={{ color: "var(--tw-up-bright, #e63946)", fontFamily: "var(--mono, monospace)", fontSize: 11, paddingTop: 4 }}>
+              超過紙上資金 {DEMO_CAPITAL_TWD.toLocaleString()} TWD
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ marginBottom: 12 }}>
         <span className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)" }}>股票</span>
@@ -507,6 +583,26 @@ const orderRowStyle: React.CSSProperties = {
   borderTop: "1px solid var(--night-rule, #222)",
   padding: "7px 0",
   color: "var(--night-ink, #d8d4c8)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 11,
+};
+
+const oddLotPillStyle: React.CSSProperties = {
+  display: "inline-block",
+  background: "rgba(184,138,62,0.18)",
+  border: "1px solid var(--gold, #b8960c)",
+  color: "var(--gold-bright, #f4c430)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: "0.10em",
+  padding: "2px 7px",
+};
+
+const notionalPreviewStyle: React.CSSProperties = {
+  border: "1px solid var(--night-rule-strong, #333)",
+  padding: "8px 10px",
+  marginBottom: 10,
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
 };

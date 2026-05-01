@@ -2764,6 +2764,7 @@ app.post("/api/v1/paper/orders", async (c) => {
     side: payload.side,
     orderType: payload.orderType,
     qty: payload.qty,
+    quantity_unit: payload.quantity_unit,
     price: payload.price,
     userId: session.user.id
   });
@@ -2859,6 +2860,7 @@ app.post("/api/v1/paper/orders/preview", async (c) => {
     type: payload.orderType as "market" | "limit" | "stop" | "stop_limit",
     timeInForce: "rod" as const,
     quantity: payload.qty,
+    quantity_unit: payload.quantity_unit,
     price: payload.price ?? null,
     stopPrice: null,
     tradePlanId: null,
