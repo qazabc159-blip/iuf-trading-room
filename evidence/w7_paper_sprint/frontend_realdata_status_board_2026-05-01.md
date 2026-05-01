@@ -864,3 +864,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: no fake Quant Lab backtest/equity/promotion memo data remains in the web client. Lab pages stay useful as real intake surfaces and honest blockers.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for `mockLabBundles`, `dev mock fallback`, and `shouldAllowMockFallback` returned 0.
 - Blockers: real lab bundle API remains owner Athena + Jason. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 13:59 Taipei) - Market Intel route made real
+- Files changed: added `apps/web/app/market-intel/page.tsx`; rewrote `apps/web/components/Sidebar.tsx` labels and added INTEL navigation.
+- Endpoints / data behavior: `/market-intel` aggregates real `GET /api/v1/companies`, `GET /api/v1/strategy/ideas?decisionMode=paper`, and `GET /api/v1/companies/:id/announcements?days=30`. It prioritizes companies from current paper strategy ideas, then fills from the company universe.
+- Behavior change: the existing Command Palette `/market-intel` route now resolves to a real page. Sidebar includes the same page. Feed rows link back to company detail and render LIVE/EMPTY/BLOCKED with source, updatedAt, failures, and selected ticker universe.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; build route table includes `/market-intel`.
+- Blockers: news freshness depends on TWSE announcement route health and authenticated company universe. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
