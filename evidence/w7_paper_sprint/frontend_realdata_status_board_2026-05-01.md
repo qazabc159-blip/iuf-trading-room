@@ -1201,3 +1201,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: when Market Intel is BLOCKED, NEWS/COMPANIES/FAILURES KPI cells and the feed panel header no longer render fallback zero rows as if TWSE returned real empty coverage. LIVE and true EMPTY states keep their explicit source and reason.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: announcement endpoint availability remains Jason/Elva-owned. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
+### Codex cycle (2026-05-01 16:22 Taipei) - mobile dependent sections follow source state
+- Files changed: updated `apps/web/app/m/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Mobile brief still reads briefs, themes, strategy ideas, market overview, and kill-switch read endpoints.
+- Behavior change: when the combined mobile brief source is BLOCKED/EMPTY, latest brief, theme sweep, and paper idea sections now show the same non-live source state instead of rendering dependent empty arrays as independent EMPTY sections.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.

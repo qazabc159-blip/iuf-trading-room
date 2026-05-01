@@ -108,6 +108,7 @@ export default async function MobileBrief() {
   const ideas = result.data.ideas.slice(0, 4);
   const overview = result.data.overview;
   const activeSource = overview?.quotes.readiness.connectedSources.join("/") || "none";
+  const mobileLive = result.state === "LIVE";
 
   return (
     <main>
@@ -152,9 +153,10 @@ export default async function MobileBrief() {
         )}
       </MobileSection>
 
-      <MobileSection code="BRF" title="latest brief" right={latestBrief?.status ?? "EMPTY"}>
-        {!latestBrief && <div className="mobile-card"><div className="tg gold">EMPTY</div><div className="tc soft">No daily brief row.</div></div>}
-        {latestBrief && (
+      <MobileSection code="BRF" title="latest brief" right={mobileLive ? latestBrief?.status ?? "EMPTY" : result.state}>
+        {!mobileLive && <div className="mobile-card"><div className={`tg ${stateTone(result.state)}`}>{result.state}</div><div className="tc soft">Brief rows are hidden because the mobile brief source is not live.</div></div>}
+        {mobileLive && !latestBrief && <div className="mobile-card"><div className="tg gold">EMPTY</div><div className="tc soft">No daily brief row.</div></div>}
+        {mobileLive && latestBrief && (
           <div className="mobile-card">
             <div className="tg gold">{latestBrief.date} / {latestBrief.marketState}</div>
             <div className="tc" style={{ fontSize: 18, marginTop: 8 }}>{latestBrief.sections[0]?.heading ?? "Brief"}</div>
@@ -163,9 +165,10 @@ export default async function MobileBrief() {
         )}
       </MobileSection>
 
-      <MobileSection code="THM" title="theme sweep" right={`${themes.length} REAL`}>
-        {themes.length === 0 && <div className="mobile-card"><div className="tg gold">EMPTY</div><div className="tc soft">No theme rows returned.</div></div>}
-        {themes.map((theme) => (
+      <MobileSection code="THM" title="theme sweep" right={mobileLive ? `${themes.length} REAL` : result.state}>
+        {!mobileLive && <div className="mobile-card"><div className={`tg ${stateTone(result.state)}`}>{result.state}</div><div className="tc soft">Theme sweep is hidden because the mobile brief source is not live.</div></div>}
+        {mobileLive && themes.length === 0 && <div className="mobile-card"><div className="tg gold">EMPTY</div><div className="tc soft">No theme rows returned.</div></div>}
+        {mobileLive && themes.map((theme) => (
           <Link className="mobile-card" href={`/themes/${theme.slug}`} key={theme.id}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <span className="tg gold">P{theme.priority} / {theme.slug}</span>
@@ -177,9 +180,10 @@ export default async function MobileBrief() {
         ))}
       </MobileSection>
 
-      <MobileSection code="IDA" title="paper ideas" right={`${ideas.length} REAL`}>
-        {ideas.length === 0 && <div className="mobile-card"><div className="tg gold">EMPTY</div><div className="tc soft">No paper strategy ideas returned.</div></div>}
-        {ideas.map((idea) => (
+      <MobileSection code="IDA" title="paper ideas" right={mobileLive ? `${ideas.length} REAL` : result.state}>
+        {!mobileLive && <div className="mobile-card"><div className={`tg ${stateTone(result.state)}`}>{result.state}</div><div className="tc soft">Paper ideas are hidden because the mobile brief source is not live.</div></div>}
+        {mobileLive && ideas.length === 0 && <div className="mobile-card"><div className="tg gold">EMPTY</div><div className="tc soft">No paper strategy ideas returned.</div></div>}
+        {mobileLive && ideas.map((idea) => (
           <Link className="mobile-card" href={`/companies/${idea.symbol}`} key={`${idea.companyId}-${idea.symbol}`}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <span className="tg gold">{idea.symbol}</span>
