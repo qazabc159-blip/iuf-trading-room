@@ -4,6 +4,57 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:46 Taipei — Elva cadence: 68h sprint Block 1 mid-checkpoint
+
+**Trigger**: 60min cadence on (12:33 dispatch + 13:33 plan checkpoint + 13:46 Codex burst verification fold-in).
+
+**Codex burst recap (12:42 → 13:38, ~14 commits to main)**:
+- `54a6041` Contract 1 paper orders wiring (PaperOrderPanel +584/-220, OrderTicket +878/-214, new `paper-orders-api.ts` +193, lib/api +38)
+- `17b8049` dashboard live; `5d615b5` ideas live; `2c9baba` strategy runs live; `399ecd6` signals/themes live; `2e86f95` theme detail live
+- `2dafaae` plans live; `5bfe76d` ops live; `a893309` mobile live; `8ce3e46` portfolio live (full kill-switch real reads + paper risk surface)
+- `40d2267` retire remaining radar-api consumers; `b2b17cc` portfolio placeholder type drop; `8bd2e98` retire legacy radar mock layer; `211c1c7` dormant quote mock widgets removed
+
+**Verification at 13:42 (HEAD `8bd2e98`)**:
+- `pnpm typecheck` PASS (clean tsc -p tsconfig.json --noEmit)
+- `pnpm build` PASS (full Next.js bundle, /portfolio 5.96kB, all routes compiled)
+- Stop-line grep `apps/web/lib/paper-orders-api.ts`: 0 matches mock|placeholder|TODO|FIXME|fake
+- Stop-line grep `apps/web/**` live submit patterns: only legitimate hard-line markers (`// HARD LINE: never import KGI SDK or call broker live submit path.`, "Submit remains paper-only and creates no broker/live order")
+- 4-state hard rule: every wired endpoint shows source + updatedAt + LIVE/EMPTY/BLOCKED branch (per Codex's own per-cycle log)
+
+**Working tree note (NOT my lane to touch)**:
+- 18 `D` (deleted, unstaged) component files — `RadarCandlestickChart.tsx`, `RadarDataStateBadge.tsx`, `boot-sequence.tsx`, etc. — Codex still mid-burst retiring legacy mock components.
+- `.gitignore` modified, unstaged.
+- Will NOT pick up Codex working tree (Codex is active; B12 lesson learned).
+
+**Bruce backend Contract 1-5 audit** (committed `22363e4` on Bruce's behalf — Bash dead 9th session):
+- C1 Paper Orders = READY (5 routes, idempotency 409 PASS, gate ARMED, 0 KGI calls)
+- C2 Portfolio = BLOCKED (routes absent — Jason ETA Day 4-5)
+- C3 Watchlist = BLOCKED (routes absent — Jason ETA Day 4-5)
+- C4 Strategy idea→order = PARTIAL (4a-4d READY, 4e promote-to-order no impl)
+- C5 KGI Bidask = PARTIAL (read at server.ts:2556/2617, gateway ops BLOCKED, 5c WS not implemented)
+
+**Stale memory correction (P1-5 risk persist gap is INVALID)**:
+- `apps/api/src/risk-store.ts:1-64` already file-backed via `RAILWAY_VOLUME_MOUNT_PATH ?? "/data"` + atomic tmp→rename + `hydrateRiskEngine(state)` on boot rehydrates 4 stores (limits, killSwitch, strategyLimits, symbolLimits).
+- Memory + roadmap claim "P1-5 in-memory only" was wrong. Will correct in `institutional_grade_roadmap_2026-05-01.md` next push and update relevant memory entries.
+
+**Block 1 lane status (5/1 12:33 → 24:00, ~10h remaining)**:
+| Lane | Owner | Status |
+|---|---|---|
+| A — Codex Contract 1 wiring | Codex | LIVE-pushing (14 commits, still mid-burst) |
+| B — Elva risk persist + session schema design | Elva self | RESCOPED — risk persist already done; pivot to Session layer schema (P1-6) only |
+| C — Bruce regression sweep | Bruce | Bash dead, static audit DONE; static-only path until tooling fixed |
+| D — Jason 0020 v2 standby | Jason | OFFLINE (Mike + Pete templates ready) |
+
+**Yellow / Red events**: 0 / 0. No stop-line violation. No live broker write. No 0020 promote. No secret rotation. No Codex working-tree pickup.
+
+**Next 60min (14:46 cadence)**:
+1. Update institutional_grade_roadmap §3 P1-5 → mark CORRECTION (already done) + bump P1-6 Session layer to P1-5 priority
+2. Write Session layer schema design doc (4th risk layer: open-to-close 限額 + 當日緊急停損)
+3. Verify 0 stop-line violations in latest Codex commits (post `211c1c7`)
+4. Standby for Jason / Pete review trigger
+
+---
+
 ### 2026-05-01 13:38 Taipei - Codex cycle: legacy RADAR mock layer retired
 - Now: Removed the unused legacy RADAR client/components that kept placeholder schemas and mock datasets alive in `apps/web`. Company detail adapter no longer invents market cap, score, FII, intraday, or quote values; missing non-contracted fields now render EMPTY/BLOCKED instead of generated numbers.
 - Files: deleted `apps/web/lib/radar-api.ts`, `apps/web/lib/radar-mocks.ts`, `apps/web/lib/radar-types.ts`, `apps/web/components/Chart.tsx`, unused `apps/web/components/research/*`, and unused legacy portfolio client/table/override widgets. Updated `apps/web/lib/company-adapter.ts`, `apps/web/app/companies/[symbol]/page.tsx`, and `CompanyHeroBar.tsx`.

@@ -59,8 +59,8 @@
 | P1-2 | Contract 3 Watchlist 接通（自選股 + paper 快下單） | Jason / Codex | 操作體驗 |
 | P1-3 | Contract 4 Strategy idea → order promote（paper auto-execute pipeline） | Jason / Codex | research→execution 閉環 |
 | P1-4 | Contract 5 KGI bidask/tick WS subscribe（即時報價） | Operator + Jason | 機構級 real-time |
-| P1-5 | **Risk layer 持久化**（strategy/symbol layer 從 in-memory → DB；重啟保 limit） | Backend (Elva self / Jason) | 機構級風控基本要求 |
-| P1-6 | **Session layer 風控**（4 層的最後一層；當日緊急停損 + open-to-close 限額） | Backend | 4 層風控真完整 |
+| ~~P1-5~~ | ~~Risk layer 持久化~~ **CORRECTION 2026-05-01 13:55**: 已完成。`apps/api/src/risk-store.ts:1-64` 已 file-backed via Railway Volume + atomic tmp→rename + `hydrateRiskEngine` boot 重灌 4 store（limits/killSwitch/strategyLimits/symbolLimits）。Memory 條目已更新。 | — | INVALID gap |
+| **P1-5 (new)** | **Session layer 風控**（4 層的最後一層；當日緊急停損 + open-to-close 限額；schema design DONE → `evidence/w7_paper_sprint/session_layer_risk_schema_design_2026-05-01.md`，~1100 LOC / ~20h impl + Mike + Pete + Bruce） | Jason backend | 4 層風控真完整 |
 | P1-7 | K 線圖 UI（用 KGI K-bar Phase 2 已接好的 backend） | Codex frontend | 操盤桌不可缺 |
 | P1-8 | Paper E2E live demo：idea → 2330 1 張 → fill → cancel → timeline 完整 | All | 5/9 deadline 驗收項 |
 | P1-9 | Idempotency / duplicate prevention live verify | Bruce | 防雙開 |
