@@ -73,10 +73,10 @@ function buildSourceStatus(company: Company, bars: OhlcvBar[]): SourceStatus[] {
     {
       id: "twse-announcements",
       label: "Market Intel",
-      state: "live",
-      summary: "TWSE OpenAPI material announcements",
+      state: "stale",
+      summary: "Panel-level announcement probe",
       lastSeen: new Date().toISOString(),
-      detail: "GET /api/v1/companies/:id/announcements?days=30 is bound in panel [05].",
+      detail: "Panel [05] fetches GET /api/v1/companies/:id/announcements?days=30 and reports LIVE/EMPTY/BLOCKED there.",
       queueDepth: 0,
     },
     {

@@ -18,9 +18,9 @@ function formatTime(value: string) {
 }
 
 function badgeClass(category: string) {
-  if (/股利|配息|配股/.test(category)) return "badge-yellow";
-  if (/財報|營收|EPS|損益|資產/.test(category)) return "badge-green";
-  if (/人事|董事|監察|總經理|董事長/.test(category)) return "badge-blue";
+  if (/dividend|cash dividend|stock dividend|股利|配息|配股/i.test(category)) return "badge-yellow";
+  if (/financial|revenue|eps|earnings|財報|營收|損益/i.test(category)) return "badge-green";
+  if (/material|announcement|重大|公告|訊息/i.test(category)) return "badge-blue";
   return "badge";
 }
 

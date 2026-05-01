@@ -930,3 +930,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: browser title now uses `IUF Trading Room`; the old decorative separator is removed from metadata and the next/font comment is plain ASCII.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web build` PASS; sequential `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; layout scan for old separator/title fragments returned 0.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:15 Taipei) - company source status no longer overclaims Market Intel
+- Files changed: updated `apps/web/app/companies/[symbol]/page.tsx`, `SourceStatusCard.tsx`, and `AnnouncementsPanel.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Company detail still fetches company master/OHLCV server-side and announcements panel fetches `GET /api/v1/companies/:id/announcements?days=30` client-side.
+- Behavior change: Source Status no longer marks Market Intel as LIVE just because the panel is mounted. It now marks that row STALE/panel-level and points users to panel [05], where the actual announcement request reports LIVE/EMPTY/BLOCKED. The source card title and detail separators were also made readable.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; company detail mojibake scan returned 0.
+- Blockers: true announcement health remains owned by the TWSE announcement endpoint. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

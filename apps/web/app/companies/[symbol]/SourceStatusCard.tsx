@@ -21,7 +21,7 @@ export function SourceStatusCard({ sources }: { sources: SourceStatus[] }) {
   return (
     <section className="panel hud-frame">
       <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[07]</span> 資料源狀態
+        <span className="ascii-head-bracket">[07]</span> DATA SOURCES
         <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>{sources.length} sources</span>
       </h3>
       <div className="source-status-card">
@@ -37,7 +37,7 @@ export function SourceStatusCard({ sources }: { sources: SourceStatus[] }) {
               <span className={`badge ${stateClass(source.state)}`}>{stateLabel(source.state)}</span>
               {open && (
                 <span className="source-status-detail tg soft">
-                  last {new Date(source.lastSeen).toLocaleTimeString("zh-TW", { hour12: false })} · queue {source.queueDepth} · {source.detail}
+                  last {new Date(source.lastSeen).toLocaleTimeString("zh-TW", { hour12: false })} / queue {source.queueDepth} / {source.detail}
                 </span>
               )}
             </button>
