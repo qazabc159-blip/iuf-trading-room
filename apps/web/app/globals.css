@@ -468,6 +468,9 @@ button { font: inherit; }
 }
 
 .session-pill {
+  justify-self: end;
+  align-self: start;
+  white-space: nowrap;
   border: 1px solid var(--night-rule-strong);
   padding: 5px 8px;
   color: var(--night-mid);

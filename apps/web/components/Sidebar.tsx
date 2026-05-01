@@ -46,7 +46,7 @@ export function Sidebar() {
                 <span />
               </span>
               <span>
-                <span className="nav-label">{item.label}{item.exec && <span className="gold"> / 執行</span>}</span>
+                <span className="nav-label">{item.label}</span>
                 <span className="nav-tc">{item.tc}</span>
               </span>
             </Link>
