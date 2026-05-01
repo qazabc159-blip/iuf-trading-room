@@ -46,9 +46,9 @@ function stateTone(state: IntelState["state"]) {
 }
 
 function categoryTone(category: string) {
-  if (/dividend|股利|除權|除息/i.test(category)) return "badge-yellow";
-  if (/financial|revenue|eps|財務|營收/i.test(category)) return "badge-green";
-  if (/material|重大|公告/i.test(category)) return "badge-blue";
+  if (/dividend|cash dividend|stock dividend|股利|配息|配股/i.test(category)) return "badge-yellow";
+  if (/financial|revenue|eps|earnings|財報|營收|損益/i.test(category)) return "badge-green";
+  if (/material|announcement|重大|公告|訊息/i.test(category)) return "badge-blue";
   return "badge";
 }
 

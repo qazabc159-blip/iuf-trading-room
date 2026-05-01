@@ -888,3 +888,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: clicking PAPER TICKET from an idea now lands on the actual paper order panel instead of only loading the portfolio page top. This preserves the paper-only Contract 1 flow without touching broker/live submit.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; hash-link scan confirms `/portfolio#order-ticket` has a matching `id="order-ticket"` target.
 - Blockers: paper submit remains gated by preview/risk/quote endpoint responses. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 14:27 Taipei) - Market Intel category mapping tightened
+- Files changed: updated `apps/web/app/market-intel/page.tsx` category badge mapping.
+- Endpoints / data behavior: no endpoint contract changed. `/market-intel` still reads real company universe, paper ideas, and TWSE announcement endpoints.
+- Behavior change: important-news rows now classify dividend, financial/revenue, and material-announcement categories with maintainable keyword sets instead of brittle legacy category fragments. Unknown categories remain neutral badges and are not invented.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; Market Intel mojibake scan returned 0.
+- Blockers: TWSE announcement freshness remains API/data-source dependent. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
