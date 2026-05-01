@@ -1718,6 +1718,165 @@ app.get("/api/v1/strategy/ideas", async (c) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Contract 4 — POST /api/v1/strategy/ideas/:ideaId/promote-to-paper-preview
+//
+// ideaId = companyId (UUID) or ticker.
+// Builds an OrderIntent draft from company + request body and runs it through
+// previewOrder() (same risk + quote gate as submit, but commit:false, no Order
+// row created). Returns { orderIntent, riskCheck, quoteGate, blocked }.
+// HARD LINE: no broker.submit / live.submit / /order/create call.
+// W7 demo default: quantity_unit="SHARE", qty=1 (odd-lot, 2330 scenario).
+// ---------------------------------------------------------------------------
+const promotePreviewBodySchema = z.object({
+  qty: z.number().int().min(1).max(999).optional().default(1),
+  price: z.number().positive().nullable().optional().default(null),
+  orderType: z.enum(["market", "limit", "stop", "stop_limit"]).optional().default("limit"),
+  side: z.enum(["buy", "sell"]).optional().default("buy")
+});
+
+app.post("/api/v1/strategy/ideas/:ideaId/promote-to-paper-preview", async (c) => {
+  const ideaId = c.req.param("ideaId");
+  const session = c.get("session");
+  const repo = c.get("repo");
+
+  // Resolve company from ideaId (UUID or ticker)
+  const company = await resolveCompany(repo, ideaId, { workspaceSlug: session.workspace.slug });
+  if (!company) {
+    return c.json({ error: "idea_not_found", ideaId }, 404);
+  }
+
+  let body: ReturnType<typeof promotePreviewBodySchema.parse>;
+  try {
+    const raw = await c.req.json().catch(() => ({}));
+    body = promotePreviewBodySchema.parse(raw);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  const order = {
+    accountId: "paper-default",
+    symbol: company.ticker,
+    side: body.side,
+    type: body.orderType as "market" | "limit" | "stop" | "stop_limit",
+    timeInForce: "rod" as const,
+    quantity: body.qty,
+    quantity_unit: "SHARE" as const,
+    price: body.price ?? null,
+    stopPrice: null,
+    tradePlanId: null,
+    strategyId: null,
+    overrideGuards: [] as string[],
+    overrideReason: ""
+  };
+
+  const result = await previewOrder({ session, repo, order });
+
+  return c.json({
+    data: {
+      orderIntent: {
+        symbol: order.symbol,
+        side: order.side,
+        orderType: order.type,
+        qty: order.quantity,
+        quantity_unit: order.quantity_unit,
+        price: order.price
+      },
+      riskCheck: result.riskCheck,
+      quoteGate: result.quoteGate,
+      blocked: result.blocked
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contract 4 — POST /api/v1/strategy/ideas/:ideaId/promote-to-paper-submit
+//
+// Same lookup + body validation as preview.
+// Calls driveOrder() through the existing paper execution pipeline.
+// Idempotency: uses Idempotency-Key header, fallback to deterministic key.
+// Returns { orderIntent, state, ledgerRow }.
+// HARD LINE: no broker.submit / live.submit / /order/create call.
+// ---------------------------------------------------------------------------
+const promoteSubmitBodySchema = z.object({
+  qty: z.number().int().min(1).max(999).optional().default(1),
+  price: z.number().positive().nullable().optional().default(null),
+  orderType: z.enum(["market", "limit", "stop", "stop_limit"]).optional().default("limit"),
+  side: z.enum(["buy", "sell"]).optional().default("buy")
+});
+
+app.post("/api/v1/strategy/ideas/:ideaId/promote-to-paper-submit", async (c) => {
+  const ideaId = c.req.param("ideaId");
+  const session = c.get("session");
+  const repo = c.get("repo");
+
+  // Resolve company from ideaId (UUID or ticker)
+  const company = await resolveCompany(repo, ideaId, { workspaceSlug: session.workspace.slug });
+  if (!company) {
+    return c.json({ error: "idea_not_found", ideaId }, 404);
+  }
+
+  let body: ReturnType<typeof promoteSubmitBodySchema.parse>;
+  try {
+    const raw = await c.req.json().catch(() => ({}));
+    body = promoteSubmitBodySchema.parse(raw);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  // Idempotency key: header-first, fallback to deterministic key (minute-level)
+  const idempotencyKeyHeader = c.req.header("Idempotency-Key");
+  const minuteBucket = Math.floor(Date.now() / 60_000);
+  const idempotencyKey = idempotencyKeyHeader
+    ?? `idea-${ideaId}-${body.qty}-SHARE-${minuteBucket}`;
+
+  // Guard against duplicate submissions in the same minute window
+  if (_registerIdempotencyKey(idempotencyKey) === false) {
+    return c.json(
+      { error: "DUPLICATE_IDEMPOTENCY_KEY", idempotencyKey },
+      409
+    );
+  }
+
+  const intent = createOrderIntent({
+    idempotencyKey,
+    symbol: company.ticker,
+    side: body.side,
+    orderType: body.orderType,
+    qty: body.qty,
+    quantity_unit: "SHARE",
+    price: body.price,
+    userId: session.user.id
+  });
+
+  const result = await driveOrder(intent);
+
+  const status = result.finalState.intent.status === "REJECTED" ? 422 : 201;
+  return c.json(
+    {
+      data: {
+        orderIntent: {
+          symbol: intent.symbol,
+          side: intent.side,
+          orderType: intent.orderType,
+          qty: intent.qty,
+          quantity_unit: intent.quantity_unit,
+          price: intent.price
+        },
+        state: result.finalState.intent.status,
+        ledgerRow: result.finalState
+      }
+    },
+    status
+  );
+});
+
 app.post("/api/v1/strategy/runs", async (c) => {
   const payload = strategyRunCreateInputSchema.parse(await c.req.json().catch(() => ({})));
   return c.json(
