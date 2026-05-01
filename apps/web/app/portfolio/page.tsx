@@ -180,7 +180,7 @@ export default async function PortfolioPage() {
           ["AVAILABLE", money(data?.balance.availableCash), "gold"],
           ["MKT VALUE", money(data?.balance.marketValue), "muted"],
           ["UNREAL PNL", money(data?.balance.unrealizedPnl), tone(data?.balance.unrealizedPnl)],
-          ["KILL", data?.kill.mode ?? "--", data?.kill.engaged ? "down" : "gold"],
+          ["KILL", data?.kill.mode ?? "FROZEN", data?.kill.engaged || !data?.kill ? "down" : "gold"],
         ].map(([label, value, cls]) => (
           <div className="quote-card" key={String(label)}>
             <div className="tg quote-symbol">{label}</div>
