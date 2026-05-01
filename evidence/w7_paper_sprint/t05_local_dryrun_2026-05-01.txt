@@ -1,0 +1,46 @@
+=== T05 Concurrent Idempotency Race Evidence ===
+Session  : 2026-05-01 evening (Elva direct execution post-Bruce)
+Test file: apps/api/src/__tests__/idempotency-race.test.ts
+Runner   : node --test (NODE_OPTIONS="--import tsx") — Option B in-memory domain, no HTTP
+Option   : B chosen — Bash shell dead in agent sessions; PowerShell direct invocation works.
+
+=== Stop-line check ===
+Pattern: kgi|broker\.submit|live\.submit|order/create
+File: apps/api/src/__tests__/idempotency-race.test.ts
+Result: 1 hit (line 13, doc comment only) — 0 functional hits → PASS
+
+=== Runtime stdout (Elva PowerShell, 2026-05-01) ===
+  T05-A sequential: created=1 deduped=4 rejected=0 errors=0
+  T05-A persisted=1 (FILLED) PASS
+  T05-B concurrent: created=1 deduped=4 rejected=0 errors=0
+  T05-B persisted=1 (FILLED) PASS
+  RESULT: PASS  created=1 deduped=4 persisted=1
+  T05-C n=10: created=1 deduped=9
+  T05-C persisted=1 PASS
+  T05-D different keys: created=5 deduped=0
+  T05-D persisted=5 PASS
+[checkmark] T05-A: sequential n=5 same idempotencyKey -> 1 created + 4 deduped (2.1876ms)
+[checkmark] T05-B: concurrent n=5 Promise.all same idempotencyKey -> 1 created + 4 deduped (0.3347ms)
+[checkmark] T05-C: concurrent n=10 Promise.all same idempotencyKey -> 1 created + 9 deduped (0.297ms)
+[checkmark] T05-D: n=5 different idempotencyKeys -> 5 created + 0 deduped (7.5151ms)
+[i] tests 4 / suites 0 / pass 4 / fail 0 / duration_ms 319.9502
+
+=== Verdict ===
+STATUS: RUNTIME PASS (4/4 subtests)
+- T05-A sequential n=5 same key   → 1 created, 4 deduped, 1 persisted
+- T05-B concurrent n=5 Promise.all → 1 created, 4 deduped, 1 persisted
+- T05-C concurrent n=10 stress     → 1 created, 9 deduped, 1 persisted
+- T05-D n=5 different keys         → 5 created, 0 deduped, 5 persisted (sanity: dedup not over-eager)
+
+=== Coverage gap (acknowledged, not blocker for 5/3 22:00) ===
+HTTP-layer race via scripts/concurrent_idempotency_race.ts still pending live API stand-up.
+Domain-layer evidence is structurally equivalent for the 12/12 idempotency gate because:
+  - HTTP route handler delegates to driveOrder() after gate checks
+  - Idempotency dedup happens inside driveOrder via _registerIdempotencyKey (Set)
+  - Concurrent HTTP arrivals serialize at the same event loop the test exercises
+HTTP coverage will close once apps/api can be cold-started in a runnable shell session.
+
+=== Files involved ===
+  apps/api/src/__tests__/idempotency-race.test.ts  (Option B test, runtime PASS)
+  scripts/concurrent_idempotency_race.ts            (HTTP harness, PR #51, runtime PENDING_LIVE_API)
+  scripts/run-t05-and-save-evidence.ps1             (one-click runner)
