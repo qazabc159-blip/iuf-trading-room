@@ -852,3 +852,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: company fundamentals and flows now use LIVE/EMPTY/BLOCKED states with source and updatedAt. No localhost-only panel fetcher, no vague placeholder copy, no tab that implies data from the wrong endpoint.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for `/financials?period=M`, `/financials?period=DIV`, and panel-local `NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001"` returned 0 in these panels.
 - Blockers: FinMind data freshness depends on API-side `FINMIND_API_TOKEN` and backend route health. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 13:54 Taipei) - dev preview and duplicate command UI removed
+- Files changed: deleted unused lowercase `apps/web/components/command-palette.tsx`, unused `Pulse.tsx`, private `_dev/empty-state-preview`, and unused empty-state preview components.
+- Endpoints / data behavior: no active route changed. The active command palette remains `apps/web/components/CommandPalette.tsx`, which reads real pages/themes/companies/ideas/runs. The deleted preview components were not imported by production pages.
+- Behavior change: removes duplicate UI code and dev-only preview surfaces that could drift from the 4-state production contract.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; exact import scan for deleted names returned 0.
+- Blockers: none introduced. Stop-lines respected: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
