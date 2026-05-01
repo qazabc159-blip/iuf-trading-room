@@ -4,6 +4,52 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 16:23 Taipei — Elva cadence: 68h sprint Block 1, 20min mode
+
+**Trigger**: 楊董出門前指示「每20分鐘自主推進」+「一堆紅字好好處理」 → cadence 60→20min, PowerShell git stderr 改用 `2>$null`，新 memory `feedback_powershell_git_red_noise.md` 落地。
+
+**Codex burst recap since 15:54 (8 commits)**:
+- `86a73b8` block theme detail panels when source unavailable
+- `e0857e7` hide theme totals when source is blocked
+- `053c226` block strategy run summaries when source unavailable
+- `9c2d60e` hide idea and signal counts when sources block
+- `7486efb` classify empty and blocked company kline states
+- `8a749d7` **wire quote kline to production ohlcv** ★ P1-7 K-line UI Codex 自主接管
+- `805f447` hide market intel counts when source blocks
+- `e72e3b0` block mobile dependent sections when source unavailable
+
+Aggregate diff (94df067..e72e3b0): **11 source files +267/-119**, 11 pages tightened — themes / theme detail / runs list / runs detail / ideas / signals / company detail + OHLCV chart / quote / market-intel / mobile. Codex 自己也加了 8 條 board entry（cycle 16:05/16:06/16:09/16:11/16:15/16:18/16:20/16:22）每條都標 typecheck PASS / build PASS / no broker write / no migration 0020。
+
+**Key deliverable from Codex this cycle**: `apps/web/app/quote/page.tsx` K-line panel 改吃 production OHLCV (`GET /api/v1/companies/:id/ohlcv?interval=1d`) — 取代之前 "static blocked placeholder claiming no bars contract exists"。**P1-7 (K-line UI 用 KGI K-bar Phase 2 backend) 不需 Elva 寫 hand-off design — Codex 自主完成**。
+
+**Verification at 16:23 (HEAD `e72e3b0`)**:
+- Stop-line grep `apps/web` for `broker\.submit|live\.submit|kgi-broker|/order/create`: 1 hit (`apps/web/docs/paper_trading_api_binding_contract_2026-04-29.md` design doc — expected). 0 actual broker-write paths.
+- Codex per-cycle typecheck + build PASS (記錄在每條 board entry)；本 cycle 接受 Codex 自證
+- 4-state hard rule: 8 commits 全部主軸是「拒絕把 BLOCKED 顯示為 EMPTY 的零值/假時戳/假 count」，4-state 條件更嚴而非更寬
+- 木馬風險 grep: `auto.*submit|broker.*submit` apps/web → 0 hit (excluding docs)
+
+**Working tree**: clean.
+
+**Block 1 status (5/1 12:33 → 24:00, ~7.5h remaining)**:
+| Lane | Owner | Status |
+|---|---|---|
+| A — Codex Contract 1 + truthfulness + K-line | Codex | LIVE-pushing ~24 commits/hour, polish + K-line wiring 都做完 |
+| B — Elva design docs (P1-3/-5/-6/-7/-11) | Elva | **5 docs DONE** — risk-persist 修正 / session-layer / OpenAlice / **Contract 4 promote (本 cycle)** / P1-7 K-line **由 Codex 自己 cover** |
+| C — Bruce regression | Bruce | Bash dead 9th session, static audit DONE @ 22363e4 |
+| D — Jason 0020 v2 | Jason | OFFLINE |
+
+**Yellow / Red events**: 0 / 0. No stop-line violation. No live broker write. No 0020 promote. No Codex working-tree pickup. No secret rotation.
+
+**This cycle's deliverable**: `evidence/w7_paper_sprint/contract_4_idea_to_order_promote_design_2026-05-01.md` — 12-section P1-3 design for **research → execution closed loop**. New entity `IdeaPromotionPreview`、4 routes、migration `0022_idea_promotion_log.sql`、frontend "PROMOTE → TICKET" button + PaperOrderPanel hydration、4-layer risk advisory (advisory only, real block at submit)、12/12 hard-line PASS、~980 LOC / ~22.5h end-to-end、W8 D1-D5 (5/5→5/9) sequenced，**5/9 paper E2E deadline 內可達**。9 open Q for 楊董，每題有 Elva default。
+
+**Next 20min (16:43 cadence)**:
+1. Verify next Codex commit batch stop-line clean (預期 K-line 後續 polish)
+2. Standby for Jason / 0020 v2 trigger (no probe — ASYNC)
+3. 寫 P1-1 Portfolio + 4-layer risk badge UI design draft (next P1 still queued)
+4. Cycle entry write-back
+
+---
+
 ### 2026-05-01 15:54 Taipei — Elva cadence: 68h sprint Block 1 final-third checkpoint
 
 **Codex burst recap since 14:51 (13 commits, all `apps/web/**` truthfulness polish)**:
