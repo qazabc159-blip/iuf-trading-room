@@ -15,6 +15,7 @@ import {
   type SourceStatus,
   toCompanyDetailView,
 } from "@/lib/company-adapter";
+import { industryLabel } from "@/lib/industry-i18n";
 
 import { CompanyHeroBar }      from "./CompanyHeroBar";
 import { CompanyInfoPanel }    from "./CompanyInfoPanel";
@@ -33,6 +34,13 @@ function tone(value: number | null | undefined) {
   if (value < 0) return "down";
   return "muted";
 }
+
+const tierLabel: Record<string, string> = {
+  Core: "核心受惠",
+  Direct: "直接受惠",
+  Indirect: "間接受惠",
+  Observation: "觀察",
+};
 
 function signed(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number") return "--";
@@ -194,7 +202,7 @@ export default async function CompanyDetailPage({
       code={`03-${company.ticker}`}
       title={company.ticker}
       sub={`${company.name} / ${company.market}`}
-      note={`公司板 / ${company.ticker} / ${company.chainPosition} / ${company.beneficiaryTier}`}
+      note={`公司板 / ${company.ticker} / ${industryLabel(company.chainPosition)} / ${tierLabel[company.beneficiaryTier] ?? company.beneficiaryTier}`}
     >
       <div style={{ marginBottom: 8 }}>
         <Link
@@ -231,7 +239,7 @@ export default async function CompanyDetailPage({
         </div>
         <div>
           <span className="tg soft">外資5日</span>
-          <b className={`num ${tone(detail.fiiNetBn5d)}`}>{signed(detail.fiiNetBn5d)} BN</b>
+          <b className={`num ${tone(detail.fiiNetBn5d)}`}>{signed(detail.fiiNetBn5d)} 十億</b>
         </div>
         <div>
           <span className="tg soft">盤中</span>

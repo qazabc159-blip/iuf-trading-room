@@ -24,7 +24,7 @@ export type CompanyDetailView = {
   beneficiaryTier: string;
   themes: string[];
   scorePct: number | null;
-  momentum: "BLOCKED";
+  momentum: string;
   marketCapBn: number | null;
   intradayChgPct: number | null;
   fiiNetBn5d: number | null;
@@ -72,7 +72,7 @@ export function toCompanyDetailView(company: ContractCompany, fallbackSymbol = "
     beneficiaryTier: company.beneficiaryTier,
     themes: themeNames.length > 0 ? themeNames : themeCodes.length > 0 ? themeCodes : company.themeIds,
     scorePct: null,
-    momentum: "BLOCKED",
+    momentum: "暫停",
     marketCapBn: null,
     intradayChgPct: null,
     fiiNetBn5d: null,

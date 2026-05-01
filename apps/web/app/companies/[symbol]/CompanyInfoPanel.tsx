@@ -1,4 +1,5 @@
 import type { Company } from "@iuf-trading-room/contracts";
+import { industryLabel } from "@/lib/industry-i18n";
 
 const tierBadge: Record<string, string> = {
   Core: "badge-green",
@@ -73,6 +74,29 @@ function ValidationPill({ label, value }: { label: string; value: string }) {
 
 function Dim({ value }: { value: string | undefined | null }) {
   return <span className="dim">{value?.trim() || "未填"}</span>;
+}
+
+function translateNoteLine(line: string) {
+  const [rawLabel, ...rest] = line.split(":");
+  if (rest.length === 0) return line;
+  const label = rawLabel.trim();
+  const value = rest.join(":").trim();
+  const translatedLabel: Record<string, string> = {
+    Sector: "產業",
+    Industry: "產業分類",
+    "Market Cap": "市值",
+    "Enterprise Value": "企業價值",
+  };
+
+  if (label === "Sector" || label === "Industry") {
+    return `${translatedLabel[label]}：${industryLabel(value)}`;
+  }
+
+  return `${translatedLabel[label] ?? label}：${value}`;
+}
+
+function translateNotes(value: string) {
+  return value.split(/\r?\n/).map(translateNoteLine).join("\n");
 }
 
 export function CompanyInfoPanel({ company }: { company: Company }) {
@@ -168,7 +192,7 @@ export function CompanyInfoPanel({ company }: { company: Company }) {
             color: "var(--night-ink, #d8d4c8)",
             margin: 0,
           }}>
-            {notes}
+            {translateNotes(notes)}
           </pre>
         </div>
       )}

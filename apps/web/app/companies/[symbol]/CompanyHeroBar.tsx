@@ -1,6 +1,7 @@
 "use client";
 
 import type { CompanyDetailQuote, CompanyDetailView } from "@/lib/company-adapter";
+import { industryLabel } from "@/lib/industry-i18n";
 
 function signed(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number") return "--";
@@ -21,6 +22,19 @@ function formatAsOf(value: string | null | undefined) {
   return date.toLocaleTimeString("zh-TW", { hour12: false });
 }
 
+const tierLabel: Record<string, string> = {
+  Core: "核心受惠",
+  Direct: "直接受惠",
+  Indirect: "間接受惠",
+  Observation: "觀察",
+};
+
+const marketLabel: Record<string, string> = {
+  TWSE: "上市",
+  TPEX: "上櫃",
+  OTC: "上櫃",
+};
+
 export function CompanyHeroBar({
   company,
   quote,
@@ -31,6 +45,7 @@ export function CompanyHeroBar({
   const changePercent = quote?.changePercent ?? company.intradayChgPct;
   const source = quote?.source ? quote.source.toUpperCase() : "無資料";
   const quoteTone = tone(changePercent);
+  const themes = company.themes.map((theme) => industryLabel(theme)).join(" / ");
 
   return (
     <div className="company-hero-bar">
@@ -40,12 +55,12 @@ export function CompanyHeroBar({
           <div className="company-hero-title">
             <span className="num">{company.symbol}</span>
             <span className="tc">{company.name}</span>
-            <span className="badge badge-blue">{company.market}</span>
-            <span className="badge badge-yellow">{company.beneficiaryTier}</span>
+            <span className="badge badge-blue">{marketLabel[company.market] ?? company.market}</span>
+            <span className="badge badge-yellow">{tierLabel[company.beneficiaryTier] ?? company.beneficiaryTier}</span>
           </div>
         </div>
         <div className="tg soft">
-          {company.chainPosition} / {company.themes.join(" / ") || "尚無主題"}
+          {industryLabel(company.chainPosition)} / {themes || "尚無主題"}
         </div>
       </div>
 
