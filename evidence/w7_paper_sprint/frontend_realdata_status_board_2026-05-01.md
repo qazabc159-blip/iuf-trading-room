@@ -4,6 +4,52 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 14:51 Taipei — Elva cadence: 68h sprint Block 1 mid-late checkpoint
+
+**Codex burst recap since 13:46 (10 commits, all `apps/web/**`)**:
+- `1d3b507` remove fake auth footer version
+- `00b9bd3` clean document title metadata
+- `7d4729b` make company source status truthful
+- `e01cd80` clean ohlcv chart truthfulness wording
+- `bcd136b` remove static post-close session label
+- `4c577d8` make company master labels readable
+- `b52bb26` render command palette state rows as notes
+- `ba1cc1b` remove unused decorative widget helpers
+- `2408853` remove unused block spark helper
+- `a3412da` docs(w7): record frontend smoke and ci status
+
+Aggregate diff (a5a9d3a..2408853): **31 files, +991/-1648 (net -657 LOC)**. Codex now in cleanup phase — retiring fake/decorative widgets that survived the wire-live phase.
+
+**Verification at 14:51 (HEAD `2408853`)**:
+- `pnpm typecheck` PASS (clean tsc -p tsconfig.json --noEmit)
+- Stop-line grep `apps/web` for `broker.*submit|live.*submit|kgi.*broker|order/create`: 5 hits, all confirmed false positives (UI state machine `submit.status === "live"` + 3 hard-line marker comments + 1 LabClient note "does not enable live submit"). 0 actual broker-write paths.
+- 4-state hard rule: still LIVE/EMPTY/BLOCKED/HIDDEN; no fake mock fallback introduced.
+- `radar-lab.ts` -230 LOC — earlier Cycle 8 B12 working tree finally committed by Codex with the production fail-closed pattern intact.
+
+**Working tree** (still NOT my lane to touch):
+- `.gitignore` modified, unstaged (Codex still has it on its plate)
+- All previously `D` files now committed (no longer in working tree)
+
+**Block 1 status (5/1 12:33 → 24:00, ~9h remaining)**:
+| Lane | Owner | Status |
+|---|---|---|
+| A — Codex Contract 1 + cleanup | Codex | LIVE-pushing ~24 commits/hour, cleanup phase, no slowdown |
+| B — Elva session-layer schema | Elva | DONE (`session_layer_risk_schema_design_2026-05-01.md` committed `a5a9d3a`) |
+| C — Bruce regression | Bruce | Bash dead, static audit DONE @ 22363e4 |
+| D — Jason 0020 v2 | Jason | OFFLINE |
+
+**Yellow / Red events**: 0 / 0. No stop-line violation. No live broker write. No 0020 promote. No Codex working-tree pickup. No secret rotation.
+
+**Pivot note**: Block 1 original B-lane scope (risk persist + session schema + OpenAlice 100-co batch design) is now (a) DONE for risk persist correction, (b) DONE for session schema, (c) NOT STARTED for OpenAlice batch design. Will pick up OpenAlice 100-co batch design next cycle.
+
+**Next 60min (15:51 cadence)**:
+1. Write OpenAlice 100-company exposure batch design doc (P1-11)
+2. Update `evidence/w7_paper_sprint/INDEX.md` (if exists, else create) with today's docs
+3. Verify any new Codex commits stop-line clean
+4. Standby for Jason / 0020 v2 trigger
+
+---
+
 ### 2026-05-01 13:46 Taipei — Elva cadence: 68h sprint Block 1 mid-checkpoint
 
 **Trigger**: 60min cadence on (12:33 dispatch + 13:33 plan checkpoint + 13:46 Codex burst verification fold-in).
