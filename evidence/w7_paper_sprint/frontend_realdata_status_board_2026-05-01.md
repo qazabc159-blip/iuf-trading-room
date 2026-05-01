@@ -924,3 +924,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior check: `/login`, `/market-intel`, `/portfolio`, `/quote?symbol=2330`, `/companies/2330`, and `/lab` all returned HTTP 200. With no local `NEXT_PUBLIC_API_BASE_URL`, `/market-intel` rendered honest BLOCKED state (`NEXT_PUBLIC_API_BASE_URL is not configured`) instead of fake news rows.
 - Tests: local `pnpm.cmd --filter @iuf-trading-room/web build` PASS; sequential typecheck PASS before smoke. GitHub Actions: latest `1d3b507` CI success and Railway deploy success; preceding `1e48c98` CI/deploy success; older superseded deploy run cancelled by newer deploy, not a failure.
 - Blockers: production data freshness still depends on Railway env and backend route health. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:07 Taipei) - document title cleaned
+- Files changed: updated `apps/web/app/layout.tsx`.
+- Endpoints / data behavior: no endpoint contract changed.
+- Behavior change: browser title now uses `IUF Trading Room`; the old decorative separator is removed from metadata and the next/font comment is plain ASCII.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web build` PASS; sequential `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; layout scan for old separator/title fragments returned 0.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

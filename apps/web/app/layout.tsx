@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { CommandPalette } from "@/components/CommandPalette";
 
-/* next/font · self-hosted, zero CLS. Replaces the Google CDN @import. */
+/* next/font is self-hosted, zero CLS. Replaces the Google CDN @import. */
 const serif = Source_Serif_4({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
@@ -27,7 +27,7 @@ const serifTc = Noto_Serif_TC({
 });
 
 export const metadata: Metadata = {
-  title: "IUF · Trading Room",
+  title: "IUF Trading Room",
   description: "Theme-driven investment trading room",
 };
 
