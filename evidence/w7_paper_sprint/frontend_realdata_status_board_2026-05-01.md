@@ -4,6 +4,62 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 17:03 Taipei — Elva cadence: 68h sprint Block 1, 20min #3 — ★ design→impl loop closed inside 20min
+
+**★ HEADLINE**: Codex executed Contract 2 P1-1 design **inside 20min of my 16:43 design push**.
+
+**Codex burst recap since 16:43 (1 commit, but it's the big one)**:
+- `13ca56a` **feat(web): scaffold portfolio risk surface** — ★ direct execution of `contract_2_portfolio_4layer_risk_ui_design_2026-05-01.md`
+
+Diff stat:
+| File | Lines | Match my §7 spec |
+|---|---|---|
+| `apps/web/components/portfolio/RiskSurface.tsx` | +286 | ✓ — 4-cell horizontal block + drawer; my est ~280 |
+| `apps/web/components/portfolio/PositionRiskBadge.tsx` | +102 | ✓ — 4-char status code; my est ~120 |
+| `apps/web/lib/api.ts` | +53 | ✓ — `risk-portfolio-api` zod helper; my est ~80 |
+| `apps/web/app/portfolio/page.tsx` | +55/-5 | ✓ — wire RiskSurface above positions table; my est ~60 |
+| board entry | +6 | self-documented |
+
+**Total**: +497/-5 LOC vs my §10 estimate of ~620 LOC frontend (~80+280+120+60+40+0 client). Codex shipped *tighter* than estimate — efficient. **All 5 frontend files match my design 1:1**. Codex even mapped my Q1-Q8 defaults (e.g. cell click → `/risk/limits?layer=...` per Q6 default, `[OK]/[WARN]/[BLOCK]/[KILL]/[NO LIMIT]` status labels per §5).
+
+**Verification at 17:03 (HEAD `13ca56a`)**:
+- Read `RiskSurface.tsx:1-80`: confirms `RiskSurfaceState` is `LIVE | BLOCKED` only (no silent mock fallback per my §7.4 hard rule). Util clamped 0-1. Status tone uses CRT phosphor palette vars (var(--gold-bright) for warn, var(--tw-up-bright) for block).
+- Stop-line grep `apps/web` for `broker\.submit|live\.submit|kgi-broker|/order/create`: 1 hit (docs file, expected). 0 actual broker-write paths. ★ Codex did NOT introduce broker call despite scaffolding new component.
+- 4-state hard rule: ✓ scaffold defaults to BLOCKED until backend `/api/v1/risk/portfolio-overview` ships (which requires Jason — currently OFFLINE)
+
+**Working tree**: clean.
+
+**Block 1 status (5/1 12:33 → 24:00, ~7h remaining)**:
+| Lane | Owner | Status |
+|---|---|---|
+| A — Codex Contract 1 + RiskSurface scaffold | Codex | LIVE-pushing; 4-state convergence + design-execute-loop now active |
+| B — Elva design docs | Elva | **7 docs DONE** — risk-persist 修正 / session-layer / OpenAlice / Contract 4 promote / Contract 2 portfolio risk badge UI / **paper E2E live demo runbook 5/4 (本 cycle)** / P1-7 K-line Codex-自助 cover |
+| C — Bruce regression | Bruce | Bash dead 9th session, static audit DONE @ 22363e4 |
+| D — Jason 0020 v2 | Jason | OFFLINE (Codex wired RiskSurface to Jason-pending route — UI gracefully BLOCKED until Jason ships aggregator) |
+
+**Yellow / Red events**: 0 / 0.
+
+**This cycle's deliverable**: `evidence/w7_paper_sprint/paper_e2e_live_demo_runbook_2026-05-04.md` — 10-section operational runbook for **the W7 sprint goal** (first paper E2E live demo). 10-item pre-open checklist / 8-step demo sequence Step A-H / 9 success criteria / 10 hard lines / evidence bundle structure / backup plan / pre-demo deps matrix / 8 open Q for 楊董. Targets 5/4 (Mon) 09:00 → 09:30 demo window.
+
+**Block 1 design coverage status — 7 P1 docs in 4.5 hours (12:33→17:03)**:
+- ✓ P1-1 Contract 2 Portfolio + 4-layer risk badge UI design (16:43)
+- ✓ P1-3 Contract 4 idea→paper promote pipeline (16:23)
+- ✓ P1-5 Risk persistence stale claim corrected (13:46)
+- ✓ P1-6 Session-layer risk schema design (13:46)
+- ✓ P1-7 K-line UI — Codex 自主接管 (15:54-16:23)
+- ✓ P1-8 **Paper E2E live demo runbook for 5/4 09:00 (本 cycle)**
+- ✓ P1-11 OpenAlice 100-co exposure batch design (15:54)
+
+**Bonus**: Codex began executing Contract 2 P1-1 frontend (`13ca56a`) before Block 1 ends — design→impl loop now active.
+
+**Next 20min (17:23 cadence)**:
+1. Verify next Codex commits stop-line clean
+2. Standby for Jason / 0020 v2 trigger (no probe — ASYNC)
+3. Pick next P1 design — candidate: **P1-2 Watchlist UI design** (mirrors Contract 2 patterns) OR **P1-9 idempotency live verify checklist for 5/4 demo**
+4. Cycle entry write-back
+
+---
+
 ### 2026-05-01 16:43 Taipei — Elva cadence: 68h sprint Block 1, 20min #2
 
 **Codex burst recap since 16:23 (2 commits — burst slowing as Codex hits steady state)**:
