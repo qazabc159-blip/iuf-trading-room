@@ -298,31 +298,8 @@ export function CommandPalette() {
           )}
           {items.map((item, index) => {
             const selected = index === active;
-            return (
-              <button
-                key={`${item.group}-${item.href ?? item.code}-${index}`}
-                onClick={() => go(item.href)}
-                onMouseEnter={() => setActive(index)}
-                disabled={!item.href}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "82px 110px 1fr 86px",
-                  gap: 10,
-                  alignItems: "baseline",
-                  width: "100%",
-                  minHeight: 44,
-                  padding: "9px 14px",
-                  borderLeft: selected ? "2px solid var(--gold)" : "2px solid transparent",
-                  background: selected ? "rgba(184,138,62,0.08)" : "transparent",
-                  borderTop: "none",
-                  borderRight: "none",
-                  borderBottom: "1px solid var(--night-rule)",
-                  textAlign: "left",
-                  cursor: item.href ? "pointer" : "default",
-                  color: selected ? "var(--night-ink)" : "var(--night-mid)",
-                  opacity: item.href ? 1 : 0.8
-                }}
-              >
+            const content = (
+              <>
                 <span style={{ color: "var(--night-soft)", fontSize: 9.5, letterSpacing: "0.14em" }}>
                   {item.group}
                 </span>
@@ -335,6 +312,46 @@ export function CommandPalette() {
                 <span style={{ color: "var(--night-soft)", fontSize: 10, letterSpacing: "0.12em", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {item.label}
                 </span>
+              </>
+            );
+            const rowStyle = {
+              display: "grid",
+              gridTemplateColumns: "82px 110px 1fr 86px",
+              gap: 10,
+              alignItems: "baseline",
+              width: "100%",
+              minHeight: 44,
+              padding: "9px 14px",
+              borderLeft: selected ? "2px solid var(--gold)" : "2px solid transparent",
+              background: selected ? "rgba(184,138,62,0.08)" : "transparent",
+              borderTop: "none",
+              borderRight: "none",
+              borderBottom: "1px solid var(--night-rule)",
+              textAlign: "left" as const,
+              color: selected ? "var(--night-ink)" : "var(--night-mid)"
+            };
+
+            if (!item.href) {
+              return (
+                <div
+                  key={`${item.group}-${item.code}-${index}`}
+                  role="note"
+                  onMouseEnter={() => setActive(index)}
+                  style={{ ...rowStyle, cursor: "default", opacity: 0.82 }}
+                >
+                  {content}
+                </div>
+              );
+            }
+
+            return (
+              <button
+                key={`${item.group}-${item.href}-${index}`}
+                onClick={() => go(item.href)}
+                onMouseEnter={() => setActive(index)}
+                style={{ ...rowStyle, cursor: "pointer", opacity: 1 }}
+              >
+                {content}
               </button>
             );
           })}

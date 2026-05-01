@@ -954,3 +954,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: company page [01] no longer renders corrupted label text; it now shows readable COMPANY MASTER, TICKER, MARKET, COUNTRY, CHAIN POSITION, exposure, validation, source, VOL, AS OF, and EMPTY states.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:40 Taipei) - command palette state rows no longer pretend to be actions
+- Files changed: updated `apps/web/components/CommandPalette.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Palette still probes real themes, companies, paper ideas, and strategy runs.
+- Behavior change: BLOCKED/EMPTY palette status rows now render as `role="note"` information rows instead of disabled buttons. Real navigation rows remain buttons and continue to route to actual pages.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
