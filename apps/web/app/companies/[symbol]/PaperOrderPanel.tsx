@@ -89,6 +89,14 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     : !parsed.validPrice
       ? "Limit orders need a positive price."
       : null;
+  const ledgerState =
+    orders.status === "blocked"
+      ? "BLOCKED"
+      : orders.status === "loading"
+        ? "LOADING"
+        : orders.items.length === 0
+          ? "EMPTY"
+          : "LIVE";
 
   const refreshOrders = async () => {
     setOrders({ status: "loading" });
@@ -156,7 +164,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
       </h3>
 
       <div style={sourceBarStyle}>
-        <StatePill state={orders.status === "blocked" ? "BLOCKED" : orders.status === "loading" ? "LOADING" : "LIVE"} />
+        <StatePill state={ledgerState} />
         <span>Contract 1 / GET paper order ledger / paper only / no broker submit</span>
       </div>
 
@@ -257,7 +265,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           <span>SYMBOL PAPER LEDGER</span>
           <span>
             {orders.status === "live"
-              ? `${orders.items.length} rows / ${formatTime(orders.updatedAt)}`
+              ? `${ledgerState} / ${orders.items.length} rows / ${formatTime(orders.updatedAt)}`
               : orders.status === "loading"
                 ? "loading"
                 : `blocked / ${formatTime(orders.updatedAt)}`}

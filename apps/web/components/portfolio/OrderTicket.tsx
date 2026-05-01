@@ -161,6 +161,14 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
               : preview.status === "error"
                 ? "BLOCKED: preview failed."
                 : null;
+  const ledgerState =
+    orders.status === "blocked"
+      ? "BLOCKED"
+      : orders.status === "loading"
+        ? "LOADING"
+        : orders.items.length === 0
+          ? "EMPTY"
+          : "LIVE";
 
   const runPreview = async () => {
     if (!orderInput) return;
@@ -227,7 +235,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
       {handoff && (
         <div style={handoffStyle}>
           <div className="tg" style={{ color: "var(--gold-bright)", fontWeight: 700 }}>
-            LIVE HANDOFF FROM IDEA {handoff.ideaId} · {handoff.themeCode}
+            LIVE HANDOFF FROM IDEA {handoff.ideaId} / {handoff.themeCode}
           </div>
           <div style={{ color: "var(--exec-mid)", fontSize: 12.5, lineHeight: 1.5, marginTop: 4 }}>
             {handoff.rationale}
@@ -239,7 +247,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
       )}
 
       <div style={sourceBarStyle}>
-        <StatePill state={orders.status === "blocked" ? "BLOCKED" : orders.status === "loading" ? "LOADING" : "LIVE"} />
+        <StatePill state={ledgerState} />
         <span>POST /api/v1/paper/orders/preview</span>
         <span>POST /api/v1/paper/orders</span>
         <span>GET /api/v1/paper/orders</span>
@@ -266,7 +274,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
             />
           </Row>
           <Row label="TIF">
-            <div style={staticFieldStyle}>ROD · paper only</div>
+            <div style={staticFieldStyle}>ROD / paper only</div>
           </Row>
           <Row label="PRICE">
             <input
@@ -295,7 +303,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
         </div>
 
         <div style={boxStyle}>
-          <div className="tg" style={panelHeadingStyle}>PREVIEW · RISK + QUOTE GATE</div>
+          <div className="tg" style={panelHeadingStyle}>PREVIEW / RISK + QUOTE GATE</div>
           {preview.status === "idle" && (
             <TruthNote
               state="EMPTY"
@@ -422,16 +430,25 @@ function OrderHistory({
   cancellingId: string | null;
   onCancel: (orderId: string) => void;
 }) {
+  const ledgerState =
+    orders.status === "blocked"
+      ? "BLOCKED"
+      : orders.status === "loading"
+        ? "LOADING"
+        : orders.items.length === 0
+          ? "EMPTY"
+          : "LIVE";
+
   return (
     <div style={{ marginTop: 14, border: "1px solid var(--exec-rule-strong)" }}>
       <div style={historyHeaderStyle}>
         <span>REAL PAPER LEDGER</span>
         <span>
           {orders.status === "live"
-            ? `LIVE · ${orders.items.length} rows · ${formatTime(orders.updatedAt)}`
+            ? `${ledgerState} / ${orders.items.length} rows / ${formatTime(orders.updatedAt)}`
             : orders.status === "loading"
               ? "LOADING"
-              : `BLOCKED · ${formatTime(orders.updatedAt)}`}
+              : `BLOCKED / ${formatTime(orders.updatedAt)}`}
         </span>
       </div>
       {orders.status === "loading" && (

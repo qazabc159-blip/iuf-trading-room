@@ -1030,3 +1030,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: removed decorative middle-dot separators from the company paper-order source/ledger labels and made the source bar explicitly name the paper order ledger. This keeps Contract 1 visible as paper-only operational state, not styling text.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for middle-dot/garbled separator in this panel returned 0.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 16:16 Taipei) - paper ledger zero rows classify as EMPTY
+- Files changed: updated `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx` and `apps/web/components/portfolio/OrderTicket.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Both surfaces still read/preview/submit paper orders only through Contract 1 endpoints; no broker/live route is touched.
+- Behavior change: paper order ledger headers now show EMPTY when the real ledger request succeeds with zero rows, instead of showing LIVE beside an empty ledger. Portfolio ticket handoff/TIF/preview labels also use plain ASCII separators.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for middle-dot/garbled separators in both paper order surfaces returned 0.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
