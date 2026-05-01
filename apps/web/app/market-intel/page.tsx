@@ -8,6 +8,7 @@ import {
   getStrategyIdeas,
   type CompanyAnnouncement,
 } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +80,7 @@ async function loadMarketIntel(): Promise<IntelState> {
       selected: [],
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : "公司清單讀取失敗",
+      reason: friendlyDataError(error, "公司清單讀取失敗。"),
       failures: 0,
     };
   }

@@ -7,6 +7,7 @@ import type { BeneficiaryTier, Company } from "@iuf-trading-room/contracts";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getCompanies } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 const PAGE_SIZE = 50;
 type SortField = "ticker" | "name" | "chainPosition" | "beneficiaryTier";
@@ -40,17 +41,7 @@ function sortArrowChar(field: SortField, sortField: SortField, sortDir: SortDir)
 }
 
 function friendlyError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error ?? "");
-  if (/failed to fetch|fetch failed|ECONNREFUSED|network/i.test(message)) {
-    return "前端暫時無法連到後端 API。";
-  }
-  if (/401|unauthorized|unauthenticated/i.test(message)) {
-    return "登入狀態已失效，請重新登入。";
-  }
-  if (/404|not found/i.test(message)) {
-    return "後端端點尚未提供。";
-  }
-  return message || "公司資料讀取失敗。";
+  return friendlyDataError(error, "公司資料讀取失敗。");
 }
 
 function registryLabel(state: RegistryState) {

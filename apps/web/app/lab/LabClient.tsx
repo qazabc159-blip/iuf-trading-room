@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip, signed, toneClass } from "@/components/RadarWidgets";
+import { friendlyDataError } from "@/lib/friendly-error";
 import { labDisplay, radarLabApi, type LabBundleStatus, type LabSignalBundle } from "@/lib/radar-lab";
 
 type LabClientProps = {
@@ -29,7 +30,7 @@ function timeText(iso: string) {
 }
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return friendlyDataError(error, "量化研究資料暫時無法讀取。");
 }
 
 export function LabClient({ initialBundles, initialBlockedReason }: LabClientProps) {

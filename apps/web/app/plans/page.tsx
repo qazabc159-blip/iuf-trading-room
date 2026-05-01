@@ -11,6 +11,7 @@ import {
   getStrategyIdeas,
   getThemes,
 } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +90,7 @@ async function loadPlans(): Promise<LoadState> {
       data: emptyData,
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyDataError(error, "交易計畫暫時無法讀取。"),
     };
   }
 }
