@@ -90,8 +90,12 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
 export default async function ThemesPage() {
   const result = await loadThemes();
   const themes = result.data.slice().sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+  const countsAvailable = result.state !== "BLOCKED";
+  const attackCount = themes.filter((theme) => theme.marketState === "Attack" || theme.marketState === "Selective Attack").length;
+  const defenseCount = themes.filter((theme) => theme.marketState === "Defense" || theme.marketState === "Preservation").length;
   const coreTotal = themes.reduce((sum, theme) => sum + theme.corePoolCount, 0);
   const observationTotal = themes.reduce((sum, theme) => sum + theme.observationPoolCount, 0);
+  const priorityOneCount = themes.filter((theme) => theme.priority === 1).length;
 
   return (
     <PageFrame
@@ -103,12 +107,12 @@ export default async function ThemesPage() {
       <MetricStrip
         cells={[
           { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "TOTAL", value: themes.length },
-          { label: "ATTACK", value: themes.filter((theme) => theme.marketState === "Attack" || theme.marketState === "Selective Attack").length, tone: "up" },
-          { label: "DEFENSE", value: themes.filter((theme) => theme.marketState === "Defense" || theme.marketState === "Preservation").length, tone: "down" },
-          { label: "CORE", value: coreTotal, tone: coreTotal > 0 ? "gold" : "muted" },
-          { label: "OBS", value: observationTotal },
-          { label: "P1", value: themes.filter((theme) => theme.priority === 1).length, tone: "gold" },
+          { label: "TOTAL", value: countsAvailable ? themes.length : "--" },
+          { label: "ATTACK", value: countsAvailable ? attackCount : "--", tone: "up" },
+          { label: "DEFENSE", value: countsAvailable ? defenseCount : "--", tone: "down" },
+          { label: "CORE", value: countsAvailable ? coreTotal : "--", tone: coreTotal > 0 ? "gold" : "muted" },
+          { label: "OBS", value: countsAvailable ? observationTotal : "--" },
+          { label: "P1", value: countsAvailable ? priorityOneCount : "--", tone: "gold" },
         ]}
         columns={7}
       />
