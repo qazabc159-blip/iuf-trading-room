@@ -40,7 +40,7 @@ export function PageFrame({
           <span>MODE / <b>{exec ? "PAPER" : "READ"}</b></span>
         </div>
         <div className={`tg session-pill ${exec ? "exec" : ""}`}>
-          {exec ? "EXEC LAYER / PAPER" : "SESSION / POST-CLOSE"}
+          {exec ? "EXEC LAYER / PAPER" : "SESSION / REAL-DATA"}
         </div>
       </header>
       {note && <div className="tg terminal-note">{note}</div>}

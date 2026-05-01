@@ -942,3 +942,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: removed stale mock/comment wording and old decorative separators from the OHLCV chart source badge helpers so automated truthfulness scans only flag the intentional server-side mock filter.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:25 Taipei) - static post-close session label removed
+- Files changed: updated `apps/web/components/PageFrame.tsx`.
+- Endpoints / data behavior: no endpoint contract changed.
+- Behavior change: non-exec page chrome no longer hard-codes `SESSION / POST-CLOSE`; it now reports `SESSION / REAL-DATA`, while exec pages remain `EXEC LAYER / PAPER`.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for `POST-CLOSE`, old fake run id, old scan timer, and old static clock returned 0.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
