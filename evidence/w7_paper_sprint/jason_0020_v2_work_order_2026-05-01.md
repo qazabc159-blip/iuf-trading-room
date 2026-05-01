@@ -2,8 +2,8 @@
 
 Date: 2026-05-01
 Owner: Jason
-Audit source: Mike PR #39 P0 finding
-Status: BLOCKED until v2 patch + Mike audit PASS
+Audit source: Mike PR #39 P0 finding + Pete independent desk review
+Status: BLOCKED until v2 patch + Mike audit PASS + Pete PASS/PASS_WITH_PATCH
 
 ## Decision
 
@@ -13,9 +13,10 @@ Operator ACK and pg_dump backup are not sufficient, because the current migratio
 can deterministically fail before the backup matters:
 
 - `DELETE FROM companies` assumes child FK rows cascade.
-- Current schema references to `companies(id)` do not declare `ON DELETE CASCADE`.
+- Current schema references to `companies(id)` do not declare `ON DELETE CASCADE`; Mike and Pete independently confirmed the PR comment is wrong.
 - Transaction will hit `foreign_key_violation` and rollback.
 - Non-FK references can also leave silent orphan data.
+- The current T1-T4 tests are JS Map simulations, not a real SQL migration/FK test.
 
 ## Required v2 Behavior
 
@@ -46,6 +47,10 @@ Merge/rebuild curated graph data before deleting source rows:
 Handle non-FK market data explicitly:
 
 - `companies_ohlcv.company_id`: reassign to survivor when row uniqueness allows it; otherwise delete source rows with an audit count. Do not leave orphan rows.
+
+Patch the helper nit Pete found:
+
+- `upsertCompanyOnConflict().set` must include `country`; second import currently would not update country.
 
 Only after the above:
 
