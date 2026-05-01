@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:15 Taipei - Codex cycle: `/portfolio` real paper trading surface DONE
+- Now: Converted `apps/web/app/portfolio/page.tsx` from legacy `@/lib/radar-api` mock-shaped `PortfolioClient` inputs into a server-side production paper trading/risk surface. Page-level `@/lib/radar-api` imports under `apps/web/app/**` are now zero.
+- Files: `apps/web/app/portfolio/page.tsx`.
+- Endpoints: `GET /api/v1/trading/balance`; `GET /api/v1/trading/positions`; `GET /api/v1/trading/orders`; `GET /api/v1/trading/events`; `GET /api/v1/risk/limits`; `GET /api/v1/risk/strategy-limits`; `GET /api/v1/risk/symbol-limits`; `GET /api/v1/risk/kill-switch`, all scoped to `accountId=paper-default`.
+- Behavior: page renders LIVE / EMPTY / BLOCKED with source + updatedAt; keeps the already-wired Paper Order Ticket; reads real kill-switch state; shows real paper balance/positions/orders/events/risk limits. Kill-switch writes remain disabled; live broker submit remains out of scope.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; `Get-ChildItem apps/web/app -Recurse -Include *.tsx | Select-String '@/lib/radar-api'` returns zero rows.
+- Blockers: no remaining page-level `radar-api` usage. Residual cleanup can move to unused legacy client/components/libs later, but production pages are no longer importing the mock adapter.
+
 ### 2026-05-01 13:12 Taipei - Codex cycle: mobile `/m` + `/m/kill` real read paths DONE
 - Now: Converted `apps/web/app/m/page.tsx` from legacy `@/lib/radar-api` mock mobile brief to real briefs/themes/strategy ideas/market overview/kill-switch data. Converted `apps/web/app/m/kill/page.tsx` from mock session kill mode to real kill-switch read endpoint.
 - Files: `apps/web/app/m/page.tsx`; `apps/web/app/m/kill/page.tsx`.
