@@ -35,9 +35,9 @@ export function PageFrame({
           {sub && <span className="tc">{sub}</span>}
         </div>
         <div className="tg meta-strip" suppressHydrationWarning>
-          <span>DATE / <b>{generatedAt.date}</b></span>
+          <span>RENDERED / <b>{generatedAt.date} {generatedAt.time}</b> TPE</span>
           <span>SESSION / <b className="gold">REAL-DATA</b></span>
-          <span>TIME / <b>{generatedAt.time}</b> TPE</span>
+          <span>MODE / <b>{exec ? "PAPER" : "READ"}</b></span>
         </div>
         <div className={`tg session-pill ${exec ? "exec" : ""}`}>
           {exec ? "EXEC LAYER / PAPER" : "SESSION / POST-CLOSE"}

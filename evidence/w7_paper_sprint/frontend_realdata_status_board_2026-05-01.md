@@ -906,3 +906,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: nav subtitles are readable, INTEL stays visible, and the old static `PAPER ARMED` / `REV RADAR-0.8` wording is replaced by conservative `PAPER MODE / RISK GATED` and `Frontend / real-data lane`.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; sidebar scan for corrupted text fragments and stale RADAR/PAPER ARMED labels returned 0.
 - Blockers: real kill-switch state remains visible on `/portfolio` and `/m/kill`, not in static sidebar chrome. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 14:44 Taipei) - frame timestamp wording clarified
+- Files changed: refined `apps/web/components/PageFrame.tsx` metadata labels.
+- Endpoints / data behavior: no endpoint contract changed. Shared chrome now labels the timestamp as `RENDERED` and separately shows read/paper mode, avoiding the impression of a live ticking clock on statically rendered routes.
+- Behavior change: global frame metadata remains truthful on both dynamic and static pages: it reports render/build time, real-data session policy, and route mode.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web build` PASS; sequential `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS. Earlier parallel typecheck failed only because `.next/types` was being regenerated during build; rerun after build passed.
+- Blockers: CI for `f272cb3` still in progress as of this cycle; previous CI/deploy runs green. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
