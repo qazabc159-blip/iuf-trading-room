@@ -870,3 +870,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: the existing Command Palette `/market-intel` route now resolves to a real page. Sidebar includes the same page. Feed rows link back to company detail and render LIVE/EMPTY/BLOCKED with source, updatedAt, failures, and selected ticker universe.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; build route table includes `/market-intel`.
 - Blockers: news freshness depends on TWSE announcement route health and authenticated company universe. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 14:03 Taipei) - production API base fails closed
+- Files changed: hardened `apps/web/lib/api.ts`, `apps/web/lib/auth-client.ts`, and `apps/web/lib/paper-orders-api.ts`.
+- Endpoints / data behavior: production no longer silently defaults frontend API clients to `http://localhost:3001` when `NEXT_PUBLIC_API_BASE_URL` is missing. Shared data requests throw a clear API base configuration error, auth returns `api_base_unconfigured`, and paper order preview/submit/cancel returns a blocked `PAPER_ORDER_API_BASE_UNCONFIGURED` error instead of touching a wrong host.
+- Behavior change: missing production API configuration is now BLOCKED, not fake-empty or localhost leakage. The dev fallback remains available only outside production.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for the old unconditional `NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001"` pattern returned 0.
+- Blockers: production deploy still requires `NEXT_PUBLIC_API_BASE_URL` set by environment. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

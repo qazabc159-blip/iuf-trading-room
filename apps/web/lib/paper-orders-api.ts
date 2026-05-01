@@ -3,7 +3,8 @@ import type {
   PreviewOrderResult,
 } from "@iuf-trading-room/contracts";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
+  ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
 
 export type PaperOrderInput = Omit<PaperOrderCreateInput, "idempotencyKey">;
@@ -91,6 +92,10 @@ async function readJson(response: Response): Promise<ApiErrorBody> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!API_BASE) {
+    throw new PaperOrderApiError(503, { error: "API_BASE_UNCONFIGURED" }, "PAPER_ORDER_API_BASE_UNCONFIGURED");
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     cache: "no-store",
@@ -135,6 +140,10 @@ export async function previewPaperOrder(input: PaperOrderInput) {
 }
 
 export async function submitPaperOrder(input: PaperOrderInput) {
+  if (!API_BASE) {
+    throw new PaperOrderApiError(503, { error: "API_BASE_UNCONFIGURED" }, "PAPER_ORDER_API_BASE_UNCONFIGURED");
+  }
+
   const body = withIdempotency(input, "submit");
   const response = await fetch(`${API_BASE}/api/v1/paper/orders`, {
     method: "POST",
@@ -167,6 +176,10 @@ export async function listPaperOrders(status?: PaperOrderStatus) {
 }
 
 export async function cancelPaperOrder(orderId: string, reason = "operator cancelled from frontend") {
+  if (!API_BASE) {
+    throw new PaperOrderApiError(503, { error: "API_BASE_UNCONFIGURED" }, "PAPER_ORDER_API_BASE_UNCONFIGURED");
+  }
+
   const response = await fetch(`${API_BASE}/api/v1/paper/orders/${encodeURIComponent(orderId)}/cancel`, {
     method: "POST",
     credentials: "include",

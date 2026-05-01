@@ -1,4 +1,5 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
+  ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
 
 export function setAuthPresence(): void {
   document.cookie = "iuf_auth=1; path=/; max-age=2592000; SameSite=Lax";
@@ -10,7 +11,7 @@ export function clearAuthPresence(): void {
 
 export function isAuthenticated(): boolean {
   if (typeof document === "undefined") return false;
-  return document.cookie.split(";").some((c) => c.trim().startsWith("iuf_auth=1"));
+  return document.cookie.split(";").some((cookie) => cookie.trim().startsWith("iuf_auth=1"));
 }
 
 export type AuthUser = {
@@ -40,7 +41,13 @@ export type AuthFailure = {
 
 export type AuthResult = AuthSuccess | AuthFailure;
 
+function missingApi(): AuthFailure {
+  return { ok: false, error: "api_base_unconfigured" };
+}
+
 export async function apiLogin(email: string, password: string): Promise<AuthResult> {
+  if (!API_BASE) return missingApi();
+
   try {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
@@ -66,6 +73,8 @@ export async function apiRegister(
   password: string,
   inviteCode: string,
 ): Promise<AuthResult> {
+  if (!API_BASE) return missingApi();
+
   try {
     const res = await fetch(`${API_BASE}/auth/register-with-invite`, {
       method: "POST",
@@ -88,10 +97,12 @@ export async function apiRegister(
 
 export async function apiLogout(): Promise<void> {
   try {
-    await fetch(`${API_BASE}/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
+    if (API_BASE) {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    }
   } catch {
     // Best-effort logout still clears the middleware-visible presence cookie.
   }
@@ -99,6 +110,8 @@ export async function apiLogout(): Promise<void> {
 }
 
 export async function apiGetMe(): Promise<AuthSuccess | AuthFailure> {
+  if (!API_BASE) return missingApi();
+
   try {
     const res = await fetch(`${API_BASE}/auth/me`, {
       credentials: "include",
@@ -118,21 +131,23 @@ export async function apiGetMe(): Promise<AuthSuccess | AuthFailure> {
 export function authErrorMessage(error: string): string {
   switch (error) {
     case "invalid_credentials":
-      return "電子信箱或密碼錯誤。";
+      return "帳號或密碼錯誤。";
     case "invalid_invite_code":
       return "邀請碼無效。";
     case "invite_already_used":
-      return "此邀請碼已被使用。";
+      return "這組邀請碼已經使用過。";
     case "invite_expired":
-      return "此邀請碼已過期。";
+      return "這組邀請碼已過期。";
     case "email_already_registered":
-      return "此電子信箱已註冊。";
+      return "這個信箱已經註冊。";
     case "no_workspace":
-      return "帳號尚未綁定工作區，請聯絡管理員。";
+      return "這個帳號尚未連到 workspace。";
     case "unauthenticated":
-      return "登入已失效，請重新登入。";
+      return "登入狀態已失效，請重新登入。";
+    case "api_base_unconfigured":
+      return "前端 API_BASE 尚未設定，登入功能暫時不可用。";
     case "network_error":
-      return "無法連線到驗證服務，請稍後再試。";
+      return "連線失敗，請稍後再試。";
     default:
       return `登入失敗：${error}`;
   }

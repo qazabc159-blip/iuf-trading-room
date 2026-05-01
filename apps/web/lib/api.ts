@@ -67,7 +67,8 @@ import type {
   TradePlanCreateInput
 } from "@iuf-trading-room/contracts";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
+  ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
 
 type Envelope<T> = {
@@ -75,6 +76,10 @@ type Envelope<T> = {
 };
 
 async function request<T>(path: string, init?: RequestInit) {
+  if (!API_BASE) {
+    throw new Error("NEXT_PUBLIC_API_BASE_URL is not configured");
+  }
+
   // SSR (server component) calls don't get the browser's cookie automatically.
   // Forward the incoming request's Cookie header so authenticated endpoints (e.g. /companies) work.
   let ssrCookie: string | null = null;
