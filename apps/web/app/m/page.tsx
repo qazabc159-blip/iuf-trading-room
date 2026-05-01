@@ -7,6 +7,7 @@ import {
   getStrategyIdeas,
   getThemes,
 } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ async function loadMobileBrief(): Promise<LoadState> {
       data: emptyData,
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyDataError(error, "行動簡報暫時無法讀取。"),
     };
   }
 }

@@ -1,5 +1,6 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getCompanies, getCompanyOhlcv, getEffectiveQuotes, type EffectiveMarketQuote, type OhlcvBar } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 import { OhlcvCandlestickChart } from "../companies/[symbol]/OhlcvCandlestickChart";
 
 type KlineState = {
@@ -167,14 +168,14 @@ async function loadQuoteKline(symbol: string): Promise<KlineState> {
       return {
         state: "BLOCKED",
         bars: [],
-        reason: `K 線資料暫時無法讀取：${error instanceof Error ? error.message : String(error)}`,
+        reason: `K 線資料暫時無法讀取：${friendlyDataError(error)}`,
       };
     }
   } catch (error) {
     return {
       state: "BLOCKED",
       bars: [],
-      reason: `公司清單暫時無法讀取：${error instanceof Error ? error.message : String(error)}`,
+      reason: `公司清單暫時無法讀取：${friendlyDataError(error)}`,
     };
   }
 }
@@ -196,7 +197,7 @@ export default async function QuotePage({
     generatedAt = response.data.generatedAt;
     item = response.data.items[0] ?? null;
   } catch (err) {
-    error = err instanceof Error ? err.message : "報價請求失敗";
+    error = friendlyDataError(err, "報價請求失敗。");
   }
 
   return (

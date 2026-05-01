@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getStrategyIdeas } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,7 @@ async function loadIdeas(): Promise<LoadState> {
       data: emptyIdeas,
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyDataError(error, "策略想法暫時無法讀取。"),
     };
   }
 }

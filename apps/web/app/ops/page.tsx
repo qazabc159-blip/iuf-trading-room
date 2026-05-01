@@ -1,6 +1,7 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getOpsSnapshot } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ async function loadOps(): Promise<LoadState> {
       data: null,
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyDataError(error, "營運監控暫時無法讀取。"),
     };
   }
 }

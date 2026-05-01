@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getCompanies, getSignals, getThemes } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +27,7 @@ const emptyData: SignalData = {
 };
 
 function friendlyError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
-  if (/401|unauthorized|unauthenticated/i.test(message)) return "登入狀態已失效，請重新登入。";
-  if (/404|not found/i.test(message)) return "後端端點尚未提供。";
-  return message;
+  return friendlyDataError(error, "訊號資料暫時無法讀取。");
 }
 
 async function loadSignals(): Promise<LoadState> {
