@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:06 Taipei - Codex cycle: `/plans` real planning surface DONE
+- Now: Converted `apps/web/app/plans/page.tsx` from legacy `@/lib/radar-api` mock brief/review/weekly/risk/events into a read-only production planning board.
+- Files: `apps/web/app/plans/page.tsx`.
+- Endpoints: `GET /api/v1/plans`; `GET /api/v1/companies`; `GET /api/v1/themes`; `GET /api/v1/signals`; `GET /api/v1/briefs`; `GET /api/v1/reviews`; `GET /api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&sort=score`.
+- Behavior: page renders LIVE / EMPTY / BLOCKED with source + updatedAt. Removed unsupported mock weekly rotation, mock PnL, fake risk snapshot, fake execution events, and fake order action. Planning page is explicitly read-only; order controls stay in approved paper-order UI only.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none for read-only plan board. Next: diff check + commit/push; then continue `/ops`, `/m`, `/portfolio` legacy `radar-api` cleanup.
+
 ### 2026-05-01 13:03 Taipei - Codex cycle: `/themes/[short]` real detail DONE
 - Now: Converted `apps/web/app/themes/[short]/page.tsx` from legacy `@/lib/radar-api` mock detail to a real theme detail view using theme slug lookup plus DB-backed companies/signals and strategy ideas filtered by theme id.
 - Files: `apps/web/app/themes/[short]/page.tsx`.
