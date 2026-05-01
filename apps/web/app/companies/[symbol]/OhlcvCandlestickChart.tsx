@@ -8,7 +8,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { OhlcvBar } from "@/lib/api";
 
-// Source badge helpers
 function daysSince(dt: string): number {
   const now = Date.now();
   const then = new Date(dt).getTime();
@@ -31,7 +30,17 @@ function sourceBadgeLabel(bars: OhlcvBar[]): string {
   return last.source.toUpperCase();
 }
 
-export function OhlcvCandlestickChart({ bars, symbol }: { bars: OhlcvBar[]; symbol: string }) {
+export function OhlcvCandlestickChart({
+  bars,
+  symbol,
+  sourceState,
+  sourceReason,
+}: {
+  bars: OhlcvBar[];
+  symbol: string;
+  sourceState: "LIVE" | "EMPTY" | "BLOCKED";
+  sourceReason: string;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,17 +75,15 @@ export function OhlcvCandlestickChart({ bars, symbol }: { bars: OhlcvBar[]; symb
 
         chartRef.current = chart;
 
-        // TW convention: up=red (tw-up), down=green (tw-dn).
         const candleSeries = chart.addSeries(lc.CandlestickSeries, {
-          upColor:          "#e63946",
-          downColor:        "#2ecc71",
-          borderUpColor:   "#e63946",
+          upColor: "#e63946",
+          downColor: "#2ecc71",
+          borderUpColor: "#e63946",
           borderDownColor: "#2ecc71",
-          wickUpColor:     "#e63946",
-          wickDownColor:   "#2ecc71",
+          wickUpColor: "#e63946",
+          wickDownColor: "#2ecc71",
         });
 
-        // Volume uses a separate price scale.
         const volSeries = chart.addSeries(lc.HistogramSeries, {
           color: "rgba(184,150,12,0.25)",
           priceFormat: { type: "volume" },
@@ -86,28 +93,27 @@ export function OhlcvCandlestickChart({ bars, symbol }: { bars: OhlcvBar[]; symb
           scaleMargins: { top: 0.80, bottom: 0 },
         });
 
-        const candleData = bars.map((b) => ({
-          time: b.dt as import("lightweight-charts").Time,
-          open: b.open,
-          high: b.high,
-          low: b.low,
-          close: b.close,
+        const candleData = bars.map((bar) => ({
+          time: bar.dt as import("lightweight-charts").Time,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
         }));
 
-        const volData = bars.map((b) => ({
-          time: b.dt as import("lightweight-charts").Time,
-          value: b.volume,
-          color: b.close >= b.open ? "rgba(230,57,70,0.35)" : "rgba(46,204,113,0.35)",
+        const volData = bars.map((bar) => ({
+          time: bar.dt as import("lightweight-charts").Time,
+          value: bar.volume,
+          color: bar.close >= bar.open ? "rgba(230,57,70,0.35)" : "rgba(46,204,113,0.35)",
         }));
 
         candleSeries.setData(candleData);
         volSeries.setData(volData);
         chart.timeScale().fitContent();
 
-        // Responsive resize
         const ro = new ResizeObserver((entries) => {
-          const w = entries[0]?.contentRect.width;
-          if (w && chart) chart.applyOptions({ width: w });
+          const width = entries[0]?.contentRect.width;
+          if (width && chart) chart.applyOptions({ width });
         });
         ro.observe(el);
 
@@ -116,8 +122,8 @@ export function OhlcvCandlestickChart({ bars, symbol }: { bars: OhlcvBar[]; symb
           chart?.remove();
           chartRef.current = null;
         };
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Chart error");
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Chart error");
       }
     })();
 
@@ -134,7 +140,7 @@ export function OhlcvCandlestickChart({ bars, symbol }: { bars: OhlcvBar[]; symb
   return (
     <section className="panel hud-frame">
       <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[02]</span> K 線圖
+        <span className="ascii-head-bracket">[02]</span> K-LINE
         <span style={{ marginLeft: 12 }}>
           <span className={badgeClass} style={{ fontSize: 10, padding: "1px 6px" }}>
             {badgeLabel}
@@ -149,7 +155,8 @@ export function OhlcvCandlestickChart({ bars, symbol }: { bars: OhlcvBar[]; symb
         </div>
       ) : bars.length === 0 ? (
         <div className="dim" style={{ padding: "24px 0", fontFamily: "var(--mono)", fontSize: 11 }}>
-          NO DATA — K 線資料尚未載入
+          <span className={sourceState === "BLOCKED" ? "down" : "gold"}>{sourceState}</span>{" "}
+          {sourceReason}
         </div>
       ) : (
         <div ref={containerRef} style={{ width: "100%", minHeight: 320 }} />

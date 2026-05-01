@@ -1183,3 +1183,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: BLOCKED strategy idea and signal sources now show `--` or blocked freshness text instead of fallback zero totals, 1970 generated timestamps, fake direction counts, or fake quality counts. True EMPTY endpoint responses still show EMPTY with reason.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. Idea-to-order handoff remains BLOCKED per Contract 4; no broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
+### Codex cycle (2026-05-01 16:15 Taipei) - company K-line distinguishes blocked OHLCV from true empty
+- Files changed: updated `apps/web/app/companies/[symbol]/page.tsx` and `apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Company detail still reads `GET /api/v1/companies` and `GET /api/v1/companies/:id/ohlcv?interval=1d`.
+- Behavior change: OHLCV request failures now surface as BLOCKED with the raw request reason, while successful zero production bars surface as EMPTY. The K-line panel no longer renders a generic no-data message that hides whether the endpoint failed or was truly empty.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.

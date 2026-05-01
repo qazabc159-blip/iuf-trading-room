@@ -44,7 +44,7 @@ function companyTimestamp(company: Company) {
   return record.updatedAt ?? record.createdAt ?? new Date().toISOString();
 }
 
-function buildSourceStatus(company: Company, bars: OhlcvBar[]): SourceStatus[] {
+function buildSourceStatus(company: Company, bars: OhlcvBar[], ohlcvReason: string): SourceStatus[] {
   const lastBar = bars.at(-1);
   const lastBarTime = lastBar ? new Date(`${lastBar.dt}T13:30:00+08:00`).toISOString() : new Date().toISOString();
   const priceSource = lastBar?.source === "tej" ? "FinMind/TEJ official OHLCV" : lastBar?.source === "kgi" ? "KGI readonly quote" : null;
@@ -67,7 +67,7 @@ function buildSourceStatus(company: Company, bars: OhlcvBar[]): SourceStatus[] {
       lastSeen: lastBarTime,
       detail: lastBar
         ? `GET /api/v1/companies/:id/ohlcv returned ${bars.length} bars; latest source=${lastBar.source}.`
-        : "GET /api/v1/companies/:id/ohlcv returned zero bars, so price-derived UI stays empty.",
+        : ohlcvReason,
       queueDepth: 0,
     },
     {
@@ -171,15 +171,21 @@ export default async function CompanyDetailPage({
     );
   }
 
+  let ohlcvErrorMsg: string | null = null;
   const rawBars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d" }).catch((err) => {
+    ohlcvErrorMsg = err instanceof Error ? err.message : String(err);
     console.warn("[company-detail] getCompanyOhlcv failed", { id: company.id, err });
     return [];
   });
   const bars = rawBars.filter((bar) => bar.source !== "mock");
+  const ohlcvState = ohlcvErrorMsg ? "BLOCKED" : bars.length > 0 ? "LIVE" : "EMPTY";
+  const ohlcvReason = ohlcvErrorMsg
+    ? `GET /api/v1/companies/:id/ohlcv failed: ${ohlcvErrorMsg}`
+    : "GET /api/v1/companies/:id/ohlcv returned zero production OHLCV bars; K-line is hidden instead of rendering generated candles.";
 
   const detail = toCompanyDetailView(company, symbol);
   const quote = quoteFromOhlcvBars(bars);
-  const sources = buildSourceStatus(company, bars);
+  const sources = buildSourceStatus(company, bars, ohlcvReason);
 
   return (
     <PageFrame
@@ -202,7 +208,7 @@ export default async function CompanyDetailPage({
 
       <div className="company-detail-layout">
         <div className="company-main-column">
-          <OhlcvCandlestickChart bars={bars} symbol={company.ticker} />
+          <OhlcvCandlestickChart bars={bars} symbol={company.ticker} sourceState={ohlcvState} sourceReason={ohlcvReason} />
           <CompanyInfoPanel company={company} />
         </div>
 
