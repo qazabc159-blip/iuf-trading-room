@@ -1078,3 +1078,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: when the market overview is LIVE and includes `generatedAt`, dashboard source freshness now uses the API payload timestamp instead of the SSR render/request time.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:18 Taipei) - draft/review EMPTY and BLOCKED states include query freshness
+- Files changed: updated `apps/web/app/briefs/page.tsx`, `apps/web/app/drafts/page.tsx`, `apps/web/app/reviews/page.tsx`, `apps/web/app/admin/content-drafts/page.tsx`, and `apps/web/app/admin/content-drafts/[id]/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. These pages still read `GET /api/v1/briefs`, `GET /api/v1/content-drafts`, and `GET /api/v1/reviews`.
+- Behavior change: EMPTY/BLOCKED state panels now show the query timestamp beside source and reason, matching the LIVE panels' source/freshness behavior.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

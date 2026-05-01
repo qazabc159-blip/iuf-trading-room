@@ -24,15 +24,18 @@ function parseStatus(value: string | undefined): ContentDraftStatus | undefined 
 function DraftStatePanel({
   state,
   reason,
+  updatedAt,
 }: {
   state: "EMPTY" | "BLOCKED";
   reason: string;
+  updatedAt: string;
 }) {
   return (
     <Panel code={`DRF-${state}`} title={state} right="Content draft source">
       <div className="state-panel">
         <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
         <span className="tg soft">Source: GET /api/v1/content-drafts</span>
+        <span className="tg soft">Updated {formatDateTime(updatedAt)}</span>
         <span className="state-reason">{reason}</span>
       </div>
     </Panel>
@@ -87,6 +90,7 @@ export default async function DraftsPage({
   const status = parseStatus(params?.status);
   let drafts: ContentDraftEntry[] = [];
   let error: string | null = null;
+  const requestedAt = new Date().toISOString();
 
   try {
     const response = await getContentDrafts({ status, limit: 100 });
@@ -121,6 +125,7 @@ export default async function DraftsPage({
         <DraftStatePanel
           state="BLOCKED"
           reason={`API request failed. Owner: Jason/Elva. Detail: ${error}`}
+          updatedAt={requestedAt}
         />
       )}
 
@@ -128,6 +133,7 @@ export default async function DraftsPage({
         <DraftStatePanel
           state="EMPTY"
           reason="The API returned zero content drafts for this filter. No mock drafts are rendered."
+          updatedAt={requestedAt}
         />
       )}
 

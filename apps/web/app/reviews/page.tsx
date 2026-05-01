@@ -19,15 +19,18 @@ function qualityBadge(value: number) {
 function ReviewStatePanel({
   state,
   reason,
+  updatedAt,
 }: {
   state: "EMPTY" | "BLOCKED";
   reason: string;
+  updatedAt: string;
 }) {
   return (
     <Panel code={`REV-${state}`} title={state} right="Review ledger source">
       <div className="state-panel">
         <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
         <span className="tg soft">Source: GET /api/v1/reviews</span>
+        <span className="tg soft">Updated {formatDateTime(updatedAt)}</span>
         <span className="state-reason">{reason}</span>
       </div>
     </Panel>
@@ -37,6 +40,7 @@ function ReviewStatePanel({
 export default async function ReviewsPage() {
   let reviews: ReviewEntry[] = [];
   let error: string | null = null;
+  const requestedAt = new Date().toISOString();
 
   try {
     const response = await getReviews();
@@ -56,6 +60,7 @@ export default async function ReviewsPage() {
         <ReviewStatePanel
           state="BLOCKED"
           reason={`API request failed. Owner: Jason/Elva. Detail: ${error}`}
+          updatedAt={requestedAt}
         />
       )}
 
@@ -63,6 +68,7 @@ export default async function ReviewsPage() {
         <ReviewStatePanel
           state="EMPTY"
           reason="The API returned zero review entries for the authenticated workspace. No mock queue is rendered."
+          updatedAt={requestedAt}
         />
       )}
 

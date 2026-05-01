@@ -21,15 +21,18 @@ function statusBadge(status: DailyBrief["status"]) {
 function BriefStatePanel({
   state,
   reason,
+  updatedAt,
 }: {
   state: "EMPTY" | "BLOCKED";
   reason: string;
+  updatedAt: string;
 }) {
   return (
     <Panel code={`BRF-${state}`} title={state} right="Daily brief source">
       <div className="state-panel">
         <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
         <span className="tg soft">Source: GET /api/v1/briefs</span>
+        <span className="tg soft">Updated {formatDateTime(updatedAt)}</span>
         <span className="state-reason">{reason}</span>
       </div>
     </Panel>
@@ -39,6 +42,7 @@ function BriefStatePanel({
 export default async function BriefsPage() {
   let briefs: DailyBrief[] = [];
   let error: string | null = null;
+  const requestedAt = new Date().toISOString();
 
   try {
     const response = await getBriefs();
@@ -60,6 +64,7 @@ export default async function BriefsPage() {
         <BriefStatePanel
           state="BLOCKED"
           reason={`API request failed. Owner: Jason/Elva. Detail: ${error}`}
+          updatedAt={requestedAt}
         />
       )}
 
@@ -67,6 +72,7 @@ export default async function BriefsPage() {
         <BriefStatePanel
           state="EMPTY"
           reason="The API returned zero daily briefs for the authenticated workspace. No mock brief is rendered."
+          updatedAt={requestedAt}
         />
       )}
 

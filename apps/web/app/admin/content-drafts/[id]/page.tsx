@@ -19,15 +19,18 @@ function formatDateTime(value: string | null) {
 function DetailStatePanel({
   state,
   reason,
+  updatedAt,
 }: {
   state: "EMPTY" | "BLOCKED";
   reason: string;
+  updatedAt: string;
 }) {
   return (
     <Panel code={`DRF-${state}`} title={state} right="Content draft detail">
       <div className="state-panel">
         <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
         <span className="tg soft">Source: GET /api/v1/content-drafts</span>
+        <span className="tg soft">Updated {formatDateTime(updatedAt)}</span>
         <span className="state-reason">{reason}</span>
       </div>
     </Panel>
@@ -100,6 +103,7 @@ export default async function ContentDraftDetailPage({ params }: { params: Promi
   const { id } = await params;
   let draft: ContentDraftEntry | null = null;
   let error: string | null = null;
+  const requestedAt = new Date().toISOString();
 
   try {
     const response = await getContentDrafts({ limit: 200 });
@@ -124,12 +128,14 @@ export default async function ContentDraftDetailPage({ params }: { params: Promi
         <DetailStatePanel
           state="BLOCKED"
           reason={`API request failed or role denied. Owner: Jason/Elva. Detail: ${error}`}
+          updatedAt={requestedAt}
         />
       )}
       {!error && !draft && (
         <DetailStatePanel
           state="EMPTY"
           reason="The API returned drafts, but none matched this id. No mock fallback draft is rendered."
+          updatedAt={requestedAt}
         />
       )}
       {!error && draft && <DraftDetail draft={draft} />}

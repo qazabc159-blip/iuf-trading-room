@@ -24,15 +24,18 @@ function parseStatus(value: string | undefined): ContentDraftStatus | undefined 
 function AdminDraftStatePanel({
   state,
   reason,
+  updatedAt,
 }: {
   state: "EMPTY" | "BLOCKED";
   reason: string;
+  updatedAt: string;
 }) {
   return (
     <Panel code={`ADM-${state}`} title={state} right="Admin draft source">
       <div className="state-panel">
         <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
         <span className="tg soft">Source: GET /api/v1/content-drafts</span>
+        <span className="tg soft">Updated {formatDateTime(updatedAt)}</span>
         <span className="state-reason">{reason}</span>
       </div>
     </Panel>
@@ -89,6 +92,7 @@ export default async function ContentDraftsAdminPage({
   const status = parseStatus(params?.status);
   let drafts: ContentDraftEntry[] = [];
   let error: string | null = null;
+  const requestedAt = new Date().toISOString();
 
   try {
     const response = await getContentDrafts({ status, limit: 100 });
@@ -124,6 +128,7 @@ export default async function ContentDraftsAdminPage({
         <AdminDraftStatePanel
           state="BLOCKED"
           reason={`API request failed or role denied. Owner: Jason/Elva. Detail: ${error}`}
+          updatedAt={requestedAt}
         />
       )}
 
@@ -131,6 +136,7 @@ export default async function ContentDraftsAdminPage({
         <AdminDraftStatePanel
           state="EMPTY"
           reason="The API returned zero content drafts for this filter. No mock admin queue is rendered."
+          updatedAt={requestedAt}
         />
       )}
 
