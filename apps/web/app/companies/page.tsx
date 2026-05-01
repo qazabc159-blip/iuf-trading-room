@@ -104,6 +104,7 @@ export default function CompaniesPage() {
   const registryState = loading ? "LOADING" : error ? "BLOCKED" : companies.length === 0 ? "EMPTY" : "LIVE";
   const registryBadge = registryState === "LIVE" ? "badge-green" : registryState === "EMPTY" ? "badge-yellow" : registryState === "LOADING" ? "badge-blue" : "badge-red";
   const registryTone = registryState === "LIVE" ? "up" : registryState === "EMPTY" || registryState === "LOADING" ? "gold" : "down";
+  const registryMetric = (value: number) => loading ? "—" : error ? "--" : value.toLocaleString();
 
   return (
     <PageFrame
@@ -117,11 +118,11 @@ export default function CompaniesPage() {
         columns={6}
         cells={[
           { label: "STATE",     value: registryState, tone: registryTone },
-          { label: "TOTAL",     value: loading ? "—" : companies.length.toLocaleString() },
-          { label: "TWSE",      value: loading ? "—" : twseCount.toLocaleString() },
-          { label: "TPEX",      value: loading ? "—" : tpexCount.toLocaleString() },
-          { label: "CORE TIER", value: loading ? "—" : coreCount.toLocaleString(), tone: "gold" },
-          { label: "FILTERED",  value: loading ? "—" : filtered.length.toLocaleString() },
+          { label: "TOTAL",     value: registryMetric(companies.length) },
+          { label: "TWSE",      value: registryMetric(twseCount) },
+          { label: "TPEX",      value: registryMetric(tpexCount) },
+          { label: "CORE TIER", value: registryMetric(coreCount), tone: !error && coreCount > 0 ? "gold" : "muted" },
+          { label: "FILTERED",  value: registryMetric(filtered.length) },
         ]}
       />
 

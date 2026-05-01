@@ -1259,3 +1259,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: BLOCKED plans context no longer renders plan/review/brief/idea/signal KPI cells as zero. BLOCKED Quant Lab no longer renders NEW/APPROVED/PUSHED or AVG CONF/AVG RETURN/MAX DD as zero-valued metrics; empty lab data keeps true queue counts but hides averages.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: Lab push-to-portfolio remains BLOCKED until the Jason/Athena handoff contract exists. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
+### Codex cycle (2026-05-01 16:28 Taipei) - companies registry KPIs fail closed on API error
+- Files changed: updated `apps/web/app/companies/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Companies registry still reads `GET /api/v1/companies` client-side.
+- Behavior change: when the company registry request is BLOCKED, TOTAL/TWSE/TPEX/CORE/FILTERED KPI cells now show `--` instead of deriving zeros from the empty client state. Loading and true EMPTY states remain distinct.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: PR #39 migration 0020 remains blocked by Mike/Pete P0 and was not touched. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
