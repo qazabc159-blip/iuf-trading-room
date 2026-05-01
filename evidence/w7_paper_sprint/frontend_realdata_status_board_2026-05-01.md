@@ -900,3 +900,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: all pages now show actual Taipei date/time plus `SESSION / REAL-DATA`; exec pages are labelled `EXEC LAYER / PAPER`. This removes decorative status text that looked operational but was not backed by real state.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for `RUN-2026`, `T-06S`, `14:32:08`, and old live glyph text returned 0.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 14:39 Taipei) - sidebar labels and status wording cleaned
+- Files changed: updated `apps/web/components/Sidebar.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Sidebar remains navigation-only and does not claim live health state.
+- Behavior change: nav subtitles are readable, INTEL stays visible, and the old static `PAPER ARMED` / `REV RADAR-0.8` wording is replaced by conservative `PAPER MODE / RISK GATED` and `Frontend / real-data lane`.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; sidebar scan for corrupted text fragments and stale RADAR/PAPER ARMED labels returned 0.
+- Blockers: real kill-switch state remains visible on `/portfolio` and `/m/kill`, not in static sidebar chrome. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
