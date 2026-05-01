@@ -1048,3 +1048,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: if some announcement calls fail but others succeed, the dashboard now marks the source line as partial coverage. If successful calls return zero rows while some calls failed, EMPTY now says coverage is partial instead of claiming TWSE returned zero rows for the full selected set.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. Announcement endpoint availability still belongs to Jason/Elva. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:10 Taipei) - Market Intel page exposes partial coverage and freshness
+- Files changed: updated `apps/web/app/market-intel/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. The page still reads `GET /api/v1/companies`, optional strategy ideas, and selected company announcement calls through `GET /api/v1/companies/:id/announcements?days=30`.
+- Behavior change: the standalone Market Intel page now shows Updated time in the source block. LIVE feeds with partial announcement-call failures display a visible PARTIAL note, and EMPTY state no longer claims full selected-universe zero news when some selected company calls failed.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. Announcement endpoint availability still belongs to Jason/Elva. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

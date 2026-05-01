@@ -119,13 +119,14 @@ async function loadMarketIntel(): Promise<IntelState> {
   );
 
   const failures = settled.filter((result) => result.status === "rejected").length;
+  const partialSource = failures > 0 ? `${source} (${failures}/${settled.length} calls failed)` : source;
   const rows = settled
     .flatMap((result) => result.status === "fulfilled" ? result.value : [])
     .sort((left, right) => right.date.localeCompare(left.date) || left.ticker.localeCompare(right.ticker))
     .slice(0, 60);
 
   if (rows.length > 0) {
-    return { state: "LIVE", items: rows, selected, updatedAt, source, failures };
+    return { state: "LIVE", items: rows, selected, updatedAt, source: partialSource, failures };
   }
 
   if (failures === settled.length) {
@@ -145,8 +146,10 @@ async function loadMarketIntel(): Promise<IntelState> {
     items: [],
     selected,
     updatedAt,
-    source,
-    reason: "TWSE returned zero material announcements for the selected companies in the last 30 days.",
+    source: partialSource,
+    reason: failures > 0
+      ? "Successful announcement requests returned zero rows; coverage is partial because some company calls failed."
+      : "TWSE returned zero material announcements for the selected companies in the last 30 days.",
     failures,
   };
 }
@@ -180,8 +183,14 @@ export default async function MarketIntelPage() {
             {result.state}
           </span>
           <span className="tg soft">Source: {result.source}</span>
+          <span className="tg soft">Updated {formatTime(result.updatedAt)}</span>
           <span className="tg soft">Universe: {sourceTickers}</span>
         </div>
+        {result.failures > 0 && result.state === "LIVE" && (
+          <div className="terminal-note">
+            PARTIAL: {result.failures} selected company announcement request{result.failures === 1 ? "" : "s"} failed, so this LIVE feed is not full-universe coverage.
+          </div>
+        )}
         {result.state !== "LIVE" && (
           <div className="terminal-note">
             {result.state}: {result.reason}
