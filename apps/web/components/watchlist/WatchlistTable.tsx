@@ -82,15 +82,14 @@ export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
               overviewState={advisory ? "LIVE" : "BLOCKED"}
               row={riskRow(row)}
             />
-            <button
-              aria-disabled="true"
-              disabled
+            <span
+              aria-label={promoteReason(row)}
+              role="status"
               style={disabledButtonStyle}
               title={promoteReason(row)}
-              type="button"
             >
               待啟用
-            </button>
+            </span>
           </div>
         );
       })}

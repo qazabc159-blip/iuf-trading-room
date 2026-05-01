@@ -133,7 +133,7 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
             <button className="mini-button" type="button" disabled={busy} onClick={() => applyAction("APPROVED", "APPROVE")}>核准</button>
             <button className="outline-button" type="button" disabled={busy} onClick={() => applyAction("REJECTED", "REJECT")}>退回</button>
-            <button className="outline-button" type="button" disabled title="策略包轉紙上交易的後端契約尚未完成。">轉入</button>
+            <span className="outline-button" role="status" title="策略包轉紙上交易的後端契約尚未完成。">待契約</span>
             <Link className="outline-button" href="/lab">返回</Link>
           </div>
           <div className="terminal-note" style={{ marginTop: 12 }}>

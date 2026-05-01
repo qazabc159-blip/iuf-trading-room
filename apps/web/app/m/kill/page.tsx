@@ -3,6 +3,7 @@ import { getKillSwitch } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 const ACCOUNT_ID = "paper-default";
+const ACCOUNT_LABEL = "紙上帳戶";
 const MODES = [
   { mode: "trading", label: "可交易", sub: "通過後端風控後，可建立紙上委託", tone: "gold" },
   { mode: "paper_only", label: "紙上模式", sub: "策略與委託都只留在紙上交易層", tone: "muted" },
@@ -66,7 +67,7 @@ export default async function MobileKillPage() {
         <div>
           <div className="tg soft">IUF 交易戰情室 / 行動風控</div>
           <h1>交易模式</h1>
-          <div className="tg soft" style={{ marginTop: 8 }}>紙上帳戶：{ACCOUNT_ID}</div>
+          <div className="tg soft" style={{ marginTop: 8 }}>紙上帳戶：{ACCOUNT_LABEL}</div>
         </div>
         <div className={`tg session-pill ${stateTone(result.state)}`}>{surfaceState(result.state)}</div>
       </header>
@@ -86,9 +87,9 @@ export default async function MobileKillPage() {
           {MODES.map((item) => {
             const active = item.mode === current;
             return (
-              <button
+              <div
                 key={item.mode}
-                disabled
+                role="status"
                 title="前端目前只顯示狀態；切換交易模式需要後端治理、稽核紀錄與風控回歸測試通過。"
                 className={`kill-mode ${active ? "active" : ""}`}
               >
@@ -97,7 +98,7 @@ export default async function MobileKillPage() {
                   <span className="tc soft">{item.sub}</span>
                 </span>
                 <span className="tg soft">{active ? "目前" : "不可切換"}</span>
-              </button>
+              </div>
             );
           })}
         </div>

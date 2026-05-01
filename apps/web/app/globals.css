@@ -824,7 +824,7 @@ button { font: inherit; }
   border: 1px solid var(--night-rule-strong);
   background: var(--night-1);
   color: var(--night-ink);
-  cursor: pointer;
+  cursor: default;
 }
 
 .kill-mode.active {

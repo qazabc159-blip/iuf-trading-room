@@ -147,9 +147,13 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
                     <button className="outline-button" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "REJECTED", "REJECT")}>
                       退回
                     </button>
-                    <button className="outline-button" type="button" disabled title="策略包轉紙上交易的後端契約尚未完成。">
-                      轉入
-                    </button>
+                    <span
+                      className="outline-button"
+                      role="status"
+                      title="策略包轉紙上交易的後端契約尚未完成。"
+                    >
+                      待契約
+                    </span>
                   </span>
                 </div>
               ))}
