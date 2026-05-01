@@ -14,6 +14,7 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - Market Intel/news lane: IN PROGRESS; company detail panel [05] now binds TWSE announcements through the shared API client.
 - Build-time mock static HTML risk: MITIGATED in Codex catch-up cycle 12:30; legacy `radar-api` pages now force dynamic request-time render.
 - Paper Orders Contract 1 frontend wiring: DONE in Codex catch-up cycle 12:41; portfolio order ticket and company-side panel now call real paper preview/submit/status/list/cancel endpoints through `paper-orders-api.ts`.
+- Dashboard real-data conversion + Market Intel/news column: DONE in Codex catch-up cycle 12:49; `/` now uses real market-data overview, themes, strategy ideas/runs, signals, and TWSE material announcements.
 - Full mock/placeholder removal: OPEN.
 
 ## Path Locks
@@ -66,6 +67,7 @@ Known usable endpoints:
 - `GET /api/v1/event-history`
 - `GET /api/v1/audit-logs`
 - `GET /api/v1/audit-logs/summary`
+- `GET /api/v1/market-data/overview`
 - `POST /api/v1/paper/orders/preview`
 - `POST /api/v1/paper/orders`
 - `GET /api/v1/paper/orders`
@@ -102,6 +104,7 @@ Initial high-risk surfaces:
 - `TickStreamPanel`: BLOCKED until KGI readonly bid/ask + tick contract exists.
 - `/m/kill` and portfolio KillSwitch: DONE in Codex catch-up cycle 12:10; frontend mock kill-mode toggles removed, current mode is read-only, all writes render BLOCKED pending backend governance/audit/risk approval.
 - Portfolio `OrderTicket` and `/companies/[symbol]` `PaperOrderPanel`: DONE in Codex catch-up cycle 12:41; no longer use mock-shaped `radar-api.previewOrder/submitOrder`, show LIVE/EMPTY/BLOCKED ledger states, and use fresh idempotency keys for submit.
+- `/` dashboard: DONE in Codex catch-up cycle 12:49; removed hardcoded TAIEX/TPEX/turnover/breadth/ops/heat-map cards and added a TWSE Market Intel/news column sourced from company announcement endpoints.
 - `radar-api.ts` GET surfaces and `radar-uncovered.ts`: API failure can still fall back to mock on remaining legacy pages; order POST fallback has been removed from `radar-api.ts`.
 
 ## Overnight Log
@@ -461,6 +464,43 @@ Blockers:
 
 - Paper ledger remains backend in-memory until Jason completes persistence/freshness work. Frontend labels this as real paper endpoint state, not live broker state.
 - Contract 2/3/4-promote/5 remain BLOCKED per Jason contract board.
+
+### 2026-05-01 12:49 Taipei
+
+Completed:
+
+- Converted `/` from the legacy `radar-api` mock-shaped dashboard into a real-data dashboard.
+- Removed hardcoded market cards for TAIEX/TPEX/turnover/breadth/risk budget, static ops health rows, and decorative heat-map points.
+- Added `GET /api/v1/market-data/overview` to the shared API client and uses it for quote counts, freshness, providers, paper-usable counts, top gainers/losers, and most-active symbols.
+- Dashboard themes now come from `GET /api/v1/themes`, ideas from `GET /api/v1/strategy/ideas?decisionMode=paper`, runs from `GET /api/v1/strategy/runs`, and signals from `GET /api/v1/signals`.
+- Added Market Intel/news column: selects active/idea-linked companies and aggregates `GET /api/v1/companies/:id/announcements?days=14` TWSE material announcements.
+- Every dashboard panel now renders LIVE / EMPTY / BLOCKED with source and updated time instead of silently filling with mock rows.
+
+Files:
+
+- `apps/web/app/page.tsx`
+- `apps/web/lib/api.ts`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- `GET /api/v1/market-data/overview`
+- `GET /api/v1/themes`
+- `GET /api/v1/companies`
+- `GET /api/v1/strategy/ideas?decisionMode=paper`
+- `GET /api/v1/strategy/runs`
+- `GET /api/v1/signals`
+- `GET /api/v1/companies/:id/announcements?days=14`
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+- PASS `git diff --check -- apps/web/app/page.tsx apps/web/lib/api.ts`
+
+Blockers:
+
+- Market Intel is limited to company-linked TWSE material announcements until Jason exposes a global news endpoint or broader market-news source.
 
 ## Elva Notes
 

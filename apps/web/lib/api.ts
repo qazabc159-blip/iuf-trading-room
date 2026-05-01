@@ -773,6 +773,70 @@ export async function getEffectiveQuotes(params: {
   );
 }
 
+export type MarketDataOverviewLeader = {
+  symbol: string;
+  market: string;
+  source: QuoteSource;
+  last: number | null;
+  changePct?: number | null;
+  volume?: number | null;
+  timestamp: string;
+};
+
+export type MarketDataOverview = {
+  generatedAt: string;
+  providers: QuoteProviderStatus[];
+  symbols: {
+    total: number;
+    byMarket: Array<{ market: string; total: number }>;
+  };
+  quotes: {
+    total: number;
+    fresh: number;
+    stale: number;
+    latestQuoteTimestamp: string | null;
+    readiness: {
+      connectedSources: QuoteSource[];
+      disconnectedSources: QuoteSource[];
+      preferredSourceOrder: QuoteSource[];
+      effectiveSelection: {
+        total: number;
+        ready: number;
+        degraded: number;
+        blocked: number;
+        strategyUsable: number;
+        paperUsable: number;
+        liveUsable: number;
+      };
+    };
+    bySource: Array<{ source: QuoteSource; total: number; stale: number }>;
+    byMarket: Array<{ market: string; total: number; stale: number }>;
+  };
+  quality: {
+    evaluatedSymbols: number;
+    history: { ready: number; degraded: number; blocked: number; total: number };
+    bars: { ready: number; degraded: number; blocked: number; total: number };
+  };
+  leaders: {
+    topGainers: MarketDataOverviewLeader[];
+    topLosers: MarketDataOverviewLeader[];
+    mostActive: MarketDataOverviewLeader[];
+  };
+};
+
+export async function getMarketDataOverview(params: {
+  sources?: string;
+  includeStale?: boolean;
+  topLimit?: number;
+} = {}) {
+  const query = new URLSearchParams();
+  if (params.sources) query.set("sources", params.sources);
+  if (params.includeStale !== undefined) query.set("includeStale", String(params.includeStale));
+  if (params.topLimit !== undefined) query.set("topLimit", String(params.topLimit));
+  const qs = query.toString();
+  return request<MarketDataOverview>(`/api/v1/market-data/overview${qs ? `?${qs}` : ""}`);
+}
+
 export async function getMarketDataProviders() {
   return request<QuoteProviderStatus[]>("/api/v1/market-data/providers");
 }
