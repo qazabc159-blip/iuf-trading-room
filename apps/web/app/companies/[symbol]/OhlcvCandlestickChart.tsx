@@ -1,6 +1,6 @@
 "use client";
 
-// OhlcvCandlestickChart.tsx — Client Component
+// Client candlestick chart for pre-fetched OHLCV bars.
 // Receives pre-fetched OhlcvBar[] from Server Component parent.
 // Uses lightweight-charts v5 for candlestick + volume chart.
 // TW market convention: up=red (tw-up), down=green (tw-dn).
@@ -21,13 +21,13 @@ function sourceBadgeClass(bars: OhlcvBar[]): string {
   if (daysSince(last.dt) > 5) return "badge-red";
   if (last.source === "kgi") return "badge-green";
   if (last.source === "tej") return "badge";
-  return "badge-yellow"; // mock
+  return "badge-yellow";
 }
 
 function sourceBadgeLabel(bars: OhlcvBar[]): string {
   if (!bars.length) return "NO DATA";
   const last = bars[bars.length - 1];
-  if (daysSince(last.dt) > 5) return `STALE · ${last.dt}`;
+  if (daysSince(last.dt) > 5) return `STALE / ${last.dt}`;
   return last.source.toUpperCase();
 }
 
@@ -66,7 +66,7 @@ export function OhlcvCandlestickChart({ bars, symbol }: { bars: OhlcvBar[]; symb
 
         chartRef.current = chart;
 
-        // Candlestick — TW convention: up=red (tw-up), down=green (tw-dn)
+        // TW convention: up=red (tw-up), down=green (tw-dn).
         const candleSeries = chart.addSeries(lc.CandlestickSeries, {
           upColor:          "#e63946",
           downColor:        "#2ecc71",
@@ -76,7 +76,7 @@ export function OhlcvCandlestickChart({ bars, symbol }: { bars: OhlcvBar[]; symb
           wickDownColor:   "#2ecc71",
         });
 
-        // Volume — separate price scale
+        // Volume uses a separate price scale.
         const volSeries = chart.addSeries(lc.HistogramSeries, {
           color: "rgba(184,150,12,0.25)",
           priceFormat: { type: "volume" },

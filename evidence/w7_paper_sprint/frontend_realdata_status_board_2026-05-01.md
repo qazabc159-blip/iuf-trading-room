@@ -936,3 +936,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: Source Status no longer marks Market Intel as LIVE just because the panel is mounted. It now marks that row STALE/panel-level and points users to panel [05], where the actual announcement request reports LIVE/EMPTY/BLOCKED. The source card title and detail separators were also made readable.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; company detail mojibake scan returned 0.
 - Blockers: true announcement health remains owned by the TWSE announcement endpoint. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:20 Taipei) - OHLCV chart scan noise removed
+- Files changed: updated `apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Company page still filters out `source === "mock"` before chart rendering.
+- Behavior change: removed stale mock/comment wording and old decorative separators from the OHLCV chart source badge helpers so automated truthfulness scans only flag the intentional server-side mock filter.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
