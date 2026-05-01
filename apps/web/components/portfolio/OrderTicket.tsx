@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import type { KillMode } from "@/components/portfolio/KillSwitch";
 import {
@@ -568,6 +568,9 @@ function OrderReviewModal({
   const shares = toTaiwanStockShareCount(qty, unit);
   const price = input.price ?? null;
   const notional = price === null ? null : estimateTaiwanStockNotional(price, qty, unit);
+  const unitFormula = unit === "LOT"
+    ? `${qty.toLocaleString("zh-TW")} LOT × 1,000 股/張 × ${price === null ? "市價" : formatTwd(price)}`
+    : `${qty.toLocaleString("zh-TW")} SHARE × ${price === null ? "市價" : formatTwd(price)}`;
 
   return (
     <div style={modalBackdropStyle} role="presentation">
@@ -590,32 +593,42 @@ function OrderReviewModal({
           <KV k="股票" v={input.symbol} />
           <KV k="方向" v={sideLabel(input.side)} />
           <KV k="類型" v={input.orderType === "market" ? "市價" : "限價/條件"} />
-          <KV k="單位" v={`${quantityUnitLabel(unit)} (${quantityUnitDescription(unit)})`} />
+          <KV
+            k="單位"
+            v={
+              <span style={unitBadgeRowStyle}>
+                <span style={unit === "SHARE" ? activeUnitBadgeStyle : unitBadgeStyle}>SHARE 零股</span>
+                <span style={unit === "LOT" ? activeUnitBadgeStyle : unitBadgeStyle}>LOT 整張</span>
+              </span>
+            }
+          />
           <KV k={unit === "LOT" ? "張數" : "股數"} v={qty.toLocaleString("zh-TW")} />
           <KV k="實際股數" v={`${shares.toLocaleString("zh-TW")} 股`} />
           <KV k="委託價格" v={price === null ? "市價，送出時依後端報價門檻處理" : formatTwd(price)} />
           <KV
-            k="預估金額"
+            k="金額算式"
             v={
               notional === null
                 ? "市價單待後端報價門檻計算"
-                : `${qty.toLocaleString("zh-TW")} ${unit === "LOT" ? "張" : "股"} x ${unit === "LOT" ? "1,000 股/張 x " : ""}${formatTwd(price!)} = ${formatTwd(notional)}`
+                : `${unitFormula} = ${formatTwd(notional)}`
             }
           />
+          <KV k="手續費" v="NT$0（模擬單；正式下單另依券商費率）" />
+          <KV k="送出型態" v="模擬委託，不送券商" />
         </div>
 
         <TruthNote
           state={unit === "LOT" ? "BLOCKED" : "LIVE"}
           text={
             unit === "LOT"
-              ? "你目前選的是整張：1 張會用 1,000 股計算。高價股請確認資金量，測試通常建議用零股。"
-              : "你目前選的是零股：1 股就是 1 股，不會被轉成 1 張。"
+              ? "你目前選的是 LOT 整張：1 張一定會用 1,000 股計算。高價股測試請優先改用 SHARE 零股。"
+              : "你目前選的是 SHARE 零股：1 股就是 1 股，送出 payload 也會明確標記 quantity_unit=SHARE。"
           }
         />
 
         <div style={modalActionStyle}>
           <button type="button" onClick={onCancel} disabled={isSubmitting} style={secondaryActionStyle}>
-            返回修改
+            取消
           </button>
           <button
             type="button"
@@ -623,7 +636,7 @@ function OrderReviewModal({
             disabled={!canSubmit || isSubmitting}
             style={primaryActionStyle}
           >
-            {isSubmitting ? "送出中..." : "確認送出模擬單"}
+            {isSubmitting ? "送出中..." : "確認送出"}
           </button>
         </div>
       </div>
@@ -984,7 +997,7 @@ function Segmented<T extends string>({
   );
 }
 
-function KV({ k, v }: { k: string; v: string }) {
+function KV({ k, v }: { k: string; v: ReactNode }) {
   return (
     <div style={kvStyle}>
       <span style={{ color: "var(--exec-mid)", letterSpacing: "0.12em" }}>{k}</span>
@@ -1310,6 +1323,33 @@ const reviewGridStyle: CSSProperties = {
   display: "grid",
   gap: 0,
   borderTop: "1px solid var(--exec-rule)",
+};
+
+const unitBadgeRowStyle: CSSProperties = {
+  display: "inline-flex",
+  justifyContent: "flex-end",
+  flexWrap: "wrap",
+  gap: 6,
+};
+
+const unitBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  minHeight: 24,
+  alignItems: "center",
+  padding: "0 8px",
+  border: "1px solid var(--exec-rule-strong)",
+  color: "var(--exec-mid)",
+  background: "rgba(255,255,255,0.018)",
+  fontFamily: "var(--mono)",
+  fontWeight: 800,
+  fontSize: 10,
+};
+
+const activeUnitBadgeStyle: CSSProperties = {
+  ...unitBadgeStyle,
+  borderColor: "var(--gold)",
+  color: "var(--night)",
+  background: "var(--gold-bright)",
 };
 
 const modalActionStyle: CSSProperties = {
