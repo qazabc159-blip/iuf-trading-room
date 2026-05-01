@@ -8,6 +8,7 @@
 // at runtime (via transitionIntent). No KGI SDK import. No broker dependency.
 
 import { randomUUID } from "node:crypto";
+import { TWSE_ODD_LOT_MAX_SHARES } from "@iuf-trading-room/contracts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,8 +27,9 @@ export type OrderType = "market" | "limit" | "stop" | "stop_limit";
 /**
  * Quantity unit for TWSE paper orders.
  *
- * LOT  — board lot (1 lot = 1,000 shares). Default for backward compat.
+ * Required field. No default. Caller must specify SHARE or LOT explicitly.
  * SHARE — odd-lot (零股). Valid range: 1–999 shares.
+ * LOT   — board lot (整張). 1 lot = 1,000 shares for TWSE/TPEx stocks.
  *
  * The arithmetic path is unit-agnostic (qty=1 SHARE = 1 share, qty=1 LOT = 1 lot).
  * Risk engine must use effectiveShares = qty * (unit === "LOT" ? 1000 : 1) for
@@ -90,7 +92,7 @@ export interface CreateOrderIntentInput {
   side: OrderSide;
   orderType: OrderType;
   qty: number;
-  quantity_unit?: QuantityUnit;
+  quantity_unit: QuantityUnit;
   price?: number | null;
   userId: string;
 }
@@ -106,11 +108,11 @@ export function createOrderIntent(input: CreateOrderIntentInput): OrderIntent {
     throw new Error("qty must be a positive integer");
   }
 
-  const unit: QuantityUnit = input.quantity_unit ?? "LOT";
+  const unit: QuantityUnit = input.quantity_unit;
 
   // Odd-lot range validation: Taiwan market allows 1–999 shares per odd-lot order.
-  if (unit === "SHARE" && (input.qty < 1 || input.qty > 999)) {
-    throw new Error("qty for SHARE (odd-lot) must be between 1 and 999");
+  if (unit === "SHARE" && (input.qty < 1 || input.qty > TWSE_ODD_LOT_MAX_SHARES)) {
+    throw new Error(`qty for SHARE (odd-lot) must be between 1 and ${TWSE_ODD_LOT_MAX_SHARES}`);
   }
 
   const now = new Date().toISOString();

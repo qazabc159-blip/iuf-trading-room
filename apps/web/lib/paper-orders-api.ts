@@ -27,6 +27,7 @@ export type PaperOrderIntent = {
   side: "buy" | "sell";
   orderType: "market" | "limit" | "stop" | "stop_limit";
   qty: number;
+  quantity_unit: "SHARE" | "LOT";
   price: number | null;
   userId: string;
   status: PaperOrderStatus;

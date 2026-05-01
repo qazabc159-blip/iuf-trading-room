@@ -23,6 +23,15 @@ import {
   type PaperOrderState,
 } from "@/lib/paper-orders-api";
 import { useIdeaHandoff } from "@/lib/radar-handoff";
+import {
+  estimateTaiwanStockNotional,
+  formatTwd,
+  quantityUnitDescription,
+  quantityUnitLabel,
+  toTaiwanStockShareCount,
+  validateTaiwanStockQuantity,
+  type TaiwanStockQuantityUnit,
+} from "@/lib/order-units";
 
 type PaperSide = PaperOrderInput["side"];
 type PaperOrderType = PaperOrderInput["orderType"];
@@ -33,6 +42,7 @@ type Draft = {
   orderType: PaperOrderType;
   qty: string;
   price: string;
+  quantityUnit: TaiwanStockQuantityUnit;
 };
 
 type PreviewState =
@@ -81,6 +91,11 @@ const TYPES: ReadonlyArray<{ value: PaperOrderType; label: string }> = [
   { value: "stop_limit", label: "停損限價" },
 ];
 
+const QUANTITY_UNITS: ReadonlyArray<{ value: TaiwanStockQuantityUnit; label: string }> = [
+  { value: "SHARE", label: "零股" },
+  { value: "LOT", label: "整張" },
+];
+
 function uiStateLabel(state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING") {
   if (state === "LIVE") return "正常";
   if (state === "EMPTY") return "無資料";
@@ -109,8 +124,9 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
     symbol: "2330",
     side: "buy",
     orderType: "limit",
-    qty: "",
+    qty: "1",
     price: "",
+    quantityUnit: "SHARE",
   });
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
@@ -120,6 +136,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
     message: "輸入股票代號後，這裡會載入真實報價與 K 線。",
   });
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   useEffect(() => {
     if (!handoff) return;
@@ -136,12 +153,25 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
     const qty = Number(draft.qty);
     const price = Number(draft.price);
     const needsPrice = draft.orderType !== "market";
+    const quantityUnit = draft.quantityUnit;
+    const quantityReason = validateTaiwanStockQuantity(qty, quantityUnit);
+    const effectiveShares = Number.isFinite(qty) && qty > 0
+      ? toTaiwanStockShareCount(qty, quantityUnit)
+      : 0;
+    const estimatedNotional =
+      !needsPrice || !Number.isFinite(price) || price <= 0
+        ? null
+        : estimateTaiwanStockNotional(price, qty, quantityUnit);
     return {
       symbol: draft.symbol.trim().toUpperCase(),
       qty,
       price,
       needsPrice,
-      validQty: Number.isInteger(qty) && qty > 0,
+      quantityUnit,
+      quantityReason,
+      effectiveShares,
+      estimatedNotional,
+      validQty: quantityReason === null,
       validPrice: !needsPrice || (Number.isFinite(price) && price > 0),
     };
   }, [draft]);
@@ -154,7 +184,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
       orderType: draft.orderType,
       qty: parsed.qty,
       price: draft.orderType === "market" ? null : parsed.price,
-      quantity_unit: "SHARE" as const,
+      quantity_unit: parsed.quantityUnit,
     };
   }, [draft.orderType, draft.side, parsed]);
 
@@ -257,12 +287,13 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
     setDraft((current) => ({ ...current, ...patch }));
     setPreview({ status: "idle" });
     setSubmit({ status: "idle" });
+    setReviewOpen(false);
   };
 
   const validationReason = !parsed.symbol
     ? "請輸入股票代號。"
     : !parsed.validQty
-      ? "股數必須是正整數。"
+      ? parsed.quantityReason ?? "股數必須是正整數。"
       : !parsed.validPrice
         ? "此委託類型需要有效價格。"
         : null;
@@ -317,6 +348,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
     setSubmit({ status: "loading" });
     try {
       const initial = await submitPaperOrder(orderInput);
+      setReviewOpen(false);
       const state = isTerminalPaperOrder(initial.intent.status)
         ? initial
         : await pollOrder(initial.intent.id);
@@ -399,6 +431,13 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
               onChange={(orderType) => updateDraft({ orderType, price: orderType === "market" ? "" : draft.price })}
             />
           </Row>
+          <Row label="單位">
+            <Segmented
+              options={QUANTITY_UNITS}
+              value={draft.quantityUnit}
+              onChange={(quantityUnit) => updateDraft({ quantityUnit, qty: "1" })}
+            />
+          </Row>
           <Row label="效期">
             <div style={staticFieldStyle}>ROD / 模擬</div>
           </Row>
@@ -414,17 +453,30 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
               style={inputStyle}
             />
           </Row>
-          <Row label="股數">
+          <Row label={draft.quantityUnit === "LOT" ? "張數" : "股數"}>
             <input
               type="number"
               min={1}
+              max={draft.quantityUnit === "SHARE" ? 999 : undefined}
               step={1}
               value={draft.qty}
               onChange={(event) => updateDraft({ qty: event.target.value })}
-              placeholder="1000"
+              placeholder="1"
               style={inputStyle}
             />
           </Row>
+          <div style={unitGuardStyle}>
+            <b>{quantityUnitLabel(draft.quantityUnit)}</b>
+            <span>{quantityUnitDescription(draft.quantityUnit)}</span>
+            {parsed.validQty && (
+              <span>
+                實際股數 {parsed.effectiveShares.toLocaleString("zh-TW")} 股
+                {parsed.estimatedNotional !== null
+                  ? ` / 預估金額 ${formatTwd(parsed.estimatedNotional)}`
+                  : ""}
+              </span>
+            )}
+          </div>
           {validationReason && <TruthNote state="BLOCKED" text={validationReason} />}
         </div>
 
@@ -455,9 +507,9 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
           {preview.status === "loading" ? "預覽中" : "預覽風控"}
         </button>
         <button
-          onClick={runSubmit}
+          onClick={() => setReviewOpen(true)}
           disabled={!canSubmit}
-          title={submitDisabledReason ?? "送出一筆模擬委託"}
+          title={submitDisabledReason ?? "送出前會先開啟確認視窗。"}
           style={{
             ...actionButtonStyle,
             borderRight: "none",
@@ -465,7 +517,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
           }}
           type="button"
         >
-          {submit.status === "loading" ? "送出中" : "送出模擬單"}
+          {submit.status === "loading" ? "送出中" : "檢查並送出"}
         </button>
       </div>
 
@@ -479,11 +531,102 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
       )}
       {submit.status === "error" && <TruthNote state="BLOCKED" text={submit.message} />}
 
+      {reviewOpen && orderInput && (
+        <OrderReviewModal
+          input={orderInput}
+          canSubmit={canSubmit}
+          isSubmitting={submit.status === "loading"}
+          onCancel={() => setReviewOpen(false)}
+          onConfirm={() => void runSubmit()}
+        />
+      )}
+
       <OrderHistory
         orders={orders}
         cancellingId={cancellingId}
         onCancel={(orderId) => void runCancel(orderId)}
       />
+    </div>
+  );
+}
+
+function OrderReviewModal({
+  input,
+  canSubmit,
+  isSubmitting,
+  onCancel,
+  onConfirm,
+}: {
+  input: PaperOrderInput;
+  canSubmit: boolean;
+  isSubmitting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const unit = input.quantity_unit;
+  const qty = input.qty;
+  const shares = toTaiwanStockShareCount(qty, unit);
+  const price = input.price ?? null;
+  const notional = price === null ? null : estimateTaiwanStockNotional(price, qty, unit);
+
+  return (
+    <div style={modalBackdropStyle} role="presentation">
+      <div style={modalShellStyle} role="dialog" aria-modal="true" aria-label="委託送出確認">
+        <div style={modalHeaderStyle}>
+          <div>
+            <div className="tg" style={{ color: "var(--gold-bright)", fontWeight: 800 }}>
+              委託送出確認
+            </div>
+            <div style={marketSourceLineStyle}>
+              台股單位防呆：零股=股，整張=1,000股。本視窗確認後才送出模擬委託。
+            </div>
+          </div>
+          <button type="button" onClick={onCancel} style={modalCloseStyle} disabled={isSubmitting}>
+            取消
+          </button>
+        </div>
+
+        <div style={reviewGridStyle}>
+          <KV k="股票" v={input.symbol} />
+          <KV k="方向" v={sideLabel(input.side)} />
+          <KV k="類型" v={input.orderType === "market" ? "市價" : "限價/條件"} />
+          <KV k="單位" v={`${quantityUnitLabel(unit)} (${quantityUnitDescription(unit)})`} />
+          <KV k={unit === "LOT" ? "張數" : "股數"} v={qty.toLocaleString("zh-TW")} />
+          <KV k="實際股數" v={`${shares.toLocaleString("zh-TW")} 股`} />
+          <KV k="委託價格" v={price === null ? "市價，送出時依後端報價門檻處理" : formatTwd(price)} />
+          <KV
+            k="預估金額"
+            v={
+              notional === null
+                ? "市價單待後端報價門檻計算"
+                : `${qty.toLocaleString("zh-TW")} ${unit === "LOT" ? "張" : "股"} x ${unit === "LOT" ? "1,000 股/張 x " : ""}${formatTwd(price!)} = ${formatTwd(notional)}`
+            }
+          />
+        </div>
+
+        <TruthNote
+          state={unit === "LOT" ? "BLOCKED" : "LIVE"}
+          text={
+            unit === "LOT"
+              ? "你目前選的是整張：1 張會用 1,000 股計算。高價股請確認資金量，測試通常建議用零股。"
+              : "你目前選的是零股：1 股就是 1 股，不會被轉成 1 張。"
+          }
+        />
+
+        <div style={modalActionStyle}>
+          <button type="button" onClick={onCancel} disabled={isSubmitting} style={secondaryActionStyle}>
+            返回修改
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!canSubmit || isSubmitting}
+            style={primaryActionStyle}
+          >
+            {isSubmitting ? "送出中..." : "確認送出模擬單"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1088,5 +1231,93 @@ const miniButtonStyle: CSSProperties = {
   fontSize: 10,
   letterSpacing: "0.08em",
   padding: "5px 6px",
+  cursor: "pointer",
+};
+
+const unitGuardStyle: CSSProperties = {
+  display: "grid",
+  gap: 5,
+  margin: "-2px 0 10px 76px",
+  padding: "8px 10px",
+  border: "1px solid rgba(226,184,92,0.28)",
+  background: "rgba(226,184,92,0.06)",
+  color: "var(--exec-mid)",
+  fontFamily: "var(--mono)",
+  fontSize: 11,
+  lineHeight: 1.55,
+};
+
+const modalBackdropStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 1000,
+  display: "grid",
+  placeItems: "center",
+  padding: 20,
+  background: "rgba(0,0,0,0.68)",
+  backdropFilter: "blur(3px)",
+};
+
+const modalShellStyle: CSSProperties = {
+  width: "min(720px, 96vw)",
+  maxHeight: "86vh",
+  overflow: "auto",
+  border: "1px solid var(--gold)",
+  background: "linear-gradient(180deg, rgba(14,15,16,0.98), rgba(4,6,8,0.98))",
+  boxShadow: "0 24px 80px rgba(0,0,0,0.56)",
+  padding: 18,
+};
+
+const modalHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 14,
+  alignItems: "flex-start",
+  borderBottom: "1px solid var(--exec-rule-strong)",
+  paddingBottom: 12,
+  marginBottom: 12,
+};
+
+const modalCloseStyle: CSSProperties = {
+  background: "transparent",
+  border: "1px solid var(--exec-rule-strong)",
+  color: "var(--exec-mid)",
+  fontFamily: "var(--mono)",
+  padding: "6px 10px",
+  cursor: "pointer",
+};
+
+const reviewGridStyle: CSSProperties = {
+  display: "grid",
+  gap: 0,
+  borderTop: "1px solid var(--exec-rule)",
+};
+
+const modalActionStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 10,
+  borderTop: "1px solid var(--exec-rule-strong)",
+  marginTop: 12,
+  paddingTop: 12,
+};
+
+const secondaryActionStyle: CSSProperties = {
+  background: "transparent",
+  border: "1px solid var(--exec-rule-strong)",
+  color: "var(--exec-mid)",
+  fontFamily: "var(--mono)",
+  fontWeight: 700,
+  padding: "10px 14px",
+  cursor: "pointer",
+};
+
+const primaryActionStyle: CSSProperties = {
+  background: "var(--gold)",
+  border: "1px solid var(--gold-bright)",
+  color: "#080808",
+  fontFamily: "var(--mono)",
+  fontWeight: 800,
+  padding: "10px 16px",
   cursor: "pointer",
 };

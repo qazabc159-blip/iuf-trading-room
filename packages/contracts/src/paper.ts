@@ -25,18 +25,32 @@ export type PaperOrderSide = z.infer<typeof paperOrderSideSchema>;
 export const paperOrderTypeSchema = z.enum(["market", "limit", "stop", "stop_limit"]);
 export type PaperOrderType = z.infer<typeof paperOrderTypeSchema>;
 
+export const TWSE_BOARD_LOT_SHARES = 1000;
+export const TWSE_ODD_LOT_MAX_SHARES = TWSE_BOARD_LOT_SHARES - 1;
+
 /**
- * quantity_unit distinguishes board-lot (整股) from odd-lot (零股) orders.
+ * quantity_unit distinguishes board-lot (整張) from odd-lot (零股) orders.
  *
- * LOT  — 1 lot = 1,000 shares (TWSE board lot). Default for all existing orders.
- * SHARE — 1 share unit; valid range 1–999 for Taiwan odd-lot session.
+ * SHARE — raw share count for odd-lot trading. Valid range: 1-999 shares.
+ * LOT   — board-lot count. 1 lot = 1,000 shares for TWSE/TPEx stocks.
  *
- * The API and ledger are quantity-unit-aware. The arithmetic path is unit-agnostic
- * (qty=1 SHARE fills 1 share, qty=1 LOT fills at 1-lot scale).
- * Risk engine computes effectiveShares = qty * (unit === "LOT" ? 1000 : 1).
+ * Safety invariant:
+ *   qty=1 + SHARE + price=800 => NT$800
+ *   qty=1 + LOT   + price=800 => NT$800,000
+ *
+ * The API must never silently convert SHARE to LOT. Broker adapters must map
+ * SHARE to odd-lot routing and LOT to regular board-lot routing explicitly.
  */
 export const quantityUnitSchema = z.enum(["SHARE", "LOT"]);
 export type QuantityUnit = z.infer<typeof quantityUnitSchema>;
+
+export function toTaiwanStockShareCount(qty: number, unit: QuantityUnit): number {
+  return unit === "LOT" ? qty * TWSE_BOARD_LOT_SHARES : qty;
+}
+
+export function estimateTaiwanStockNotional(price: number, qty: number, unit: QuantityUnit): number {
+  return price * toTaiwanStockShareCount(qty, unit);
+}
 
 // ---------------------------------------------------------------------------
 // Paper order — request schema (POST /api/v1/paper/orders)
@@ -48,8 +62,16 @@ export const paperOrderCreateInputSchema = z.object({
   side: paperOrderSideSchema,
   orderType: paperOrderTypeSchema,
   qty: z.number().int().positive(),
-  quantity_unit: quantityUnitSchema.optional().default("LOT"),
+  quantity_unit: quantityUnitSchema,
   price: z.number().positive().nullable().optional()
+}).superRefine((value, ctx) => {
+  if (value.quantity_unit === "SHARE" && value.qty > TWSE_ODD_LOT_MAX_SHARES) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["qty"],
+      message: `SHARE odd-lot quantity must be between 1 and ${TWSE_ODD_LOT_MAX_SHARES} shares`
+    });
+  }
 });
 export type PaperOrderCreateInput = z.infer<typeof paperOrderCreateInputSchema>;
 
@@ -64,7 +86,7 @@ export const paperOrderSchema = z.object({
   side: paperOrderSideSchema,
   orderType: paperOrderTypeSchema,
   qty: z.number().int().positive(),
-  quantity_unit: quantityUnitSchema.default("LOT"),
+  quantity_unit: quantityUnitSchema,
   price: z.number().nullable(),
   status: paperOrderStatusSchema,
   reason: z.string().nullable(),

@@ -17,6 +17,7 @@
 
 import type { OrderIntent } from "./order-intent.js";
 import type { SimulatedFill } from "./paper-ledger.js";
+import { toTaiwanStockShareCount } from "@iuf-trading-room/contracts";
 
 // ---------------------------------------------------------------------------
 // Return type
@@ -45,6 +46,7 @@ export async function executeOrder(
   intent: OrderIntent
 ): Promise<ExecuteOrderResult> {
   const fillTime = new Date();
+  const fillQty = toTaiwanStockShareCount(intent.qty, intent.quantity_unit);
 
   switch (intent.orderType) {
     case "market": {
@@ -54,7 +56,7 @@ export async function executeOrder(
       return {
         status: "FILLED",
         fill: {
-          fillQty: intent.qty,
+          fillQty,
           fillPrice,
           fillTime
         },
@@ -74,7 +76,7 @@ export async function executeOrder(
       return {
         status: "FILLED",
         fill: {
-          fillQty: intent.qty,
+          fillQty,
           fillPrice: intent.price,
           fillTime
         },

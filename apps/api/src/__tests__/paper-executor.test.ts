@@ -41,7 +41,8 @@ function makeIntent(overrides: Partial<Parameters<typeof createOrderIntent>[0]> 
     symbol: "2330",
     side: "buy",
     orderType: "market",
-    qty: 1000,
+    qty: 1,
+    quantity_unit: "LOT",
     userId: "00000000-0000-0000-0000-000000000001",
     ...overrides
   });
@@ -101,12 +102,24 @@ test("A3: market order with price=undefined → FILLED at fallback 100.0", async
   }
 });
 
-test("A4: market order fill qty equals intent.qty", async () => {
-  const intent = makeIntent({ orderType: "market", qty: 5000, price: 200.0 });
+test("A4: market order fill qty equals effective share count", async () => {
+  const intent = makeIntent({ orderType: "market", qty: 5, quantity_unit: "LOT", price: 200.0 });
   const result = await executeOrder(intent);
   assert.equal(result.status, "FILLED");
   if (result.status === "FILLED") {
     assert.equal(result.fill.fillQty, 5000);
+  }
+});
+
+test("A0b: board-lot LOT qty=1 price=800 → FILLED, fillQty=1000 and notional=800000", async () => {
+  const intent = makeIntent({ orderType: "limit", qty: 1, quantity_unit: "LOT", price: 800.0 });
+  const result = await executeOrder(intent);
+  assert.equal(result.status, "FILLED");
+  if (result.status === "FILLED") {
+    assert.equal(result.fill.fillQty, 1000);
+    assert.equal(result.fill.fillPrice, 800.0);
+    assert.equal(result.fill.fillQty * result.fill.fillPrice, 800_000);
+    assert.equal(result.quantity_unit, "LOT");
   }
 });
 

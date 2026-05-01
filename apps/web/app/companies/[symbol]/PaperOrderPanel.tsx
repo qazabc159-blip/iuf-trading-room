@@ -10,13 +10,21 @@ import {
   type PaperOrderInput,
   type PaperOrderState,
 } from "@/lib/paper-orders-api";
+import {
+  estimateTaiwanStockNotional,
+  formatTwd,
+  quantityUnitDescription,
+  toTaiwanStockShareCount,
+  validateTaiwanStockQuantity,
+  type TaiwanStockQuantityUnit,
+} from "@/lib/order-units";
 
 // Demo capital constant — must match DEMO_CAPITAL_TWD in order-intent.ts.
 const DEMO_CAPITAL_TWD = 20_000;
 
 type PaperSide = PaperOrderInput["side"];
 type PaperOrderType = PaperOrderInput["orderType"];
-type QuantityUnit = "SHARE" | "LOT";
+type QuantityUnit = TaiwanStockQuantityUnit;
 
 type FormState = {
   side: PaperSide;
@@ -56,8 +64,8 @@ const TYPES: ReadonlyArray<{ value: PaperOrderType; label: string }> = [
 ];
 
 const QUANTITY_UNITS: ReadonlyArray<{ value: QuantityUnit; label: string }> = [
-  { value: "LOT", label: "整股" },
   { value: "SHARE", label: "零股" },
+  { value: "LOT", label: "整張" },
 ];
 
 function uiStateLabel(state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING") {
@@ -107,13 +115,16 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     const price = Number(form.price);
     const needsPrice = form.orderType !== "market";
     const isShare = form.quantityUnit === "SHARE";
-    const validQty = Number.isInteger(qty) && qty > 0 && (!isShare || qty <= 999);
+    const quantityReason = validateTaiwanStockQuantity(qty, form.quantityUnit);
+    const validQty = quantityReason === null;
     const validPrice = !needsPrice || (Number.isFinite(price) && price > 0);
     // Effective share count for notional preview
-    const effectiveShares = isShare ? qty : qty * 1000;
+    const effectiveShares = validQty ? toTaiwanStockShareCount(qty, form.quantityUnit) : 0;
     // Use form price for notional preview; if market order and price unknown, show null
     const refPrice = needsPrice ? price : (Number.isFinite(price) && price > 0 ? price : null);
-    const estimatedNotional = refPrice && validQty ? refPrice * effectiveShares : null;
+    const estimatedNotional = refPrice && validQty
+      ? estimateTaiwanStockNotional(refPrice, qty, form.quantityUnit)
+      : null;
     const notionalExceedsCap = estimatedNotional !== null && estimatedNotional > DEMO_CAPITAL_TWD;
     return {
       qty,
@@ -124,6 +135,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
       notionalExceedsCap,
       effectiveShares,
       isShare,
+      quantityReason,
     };
   }, [form]);
 
@@ -140,9 +152,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   }, [form.orderType, form.side, form.quantityUnit, parsed, symbol]);
 
   const validationReason = !parsed.validQty
-    ? parsed.isShare
-      ? "零股股數必須是 1–999 的正整數。"
-      : "股數必須是正整數。"
+    ? parsed.quantityReason ?? "股數必須是正整數。"
     : !parsed.validPrice
       ? "限價單需要有效價格。"
       : parsed.notionalExceedsCap
@@ -217,6 +227,26 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     // disabled-button state by a tick (fast double-click protection).
     if (submitInFlight.current) return;
     if (!input || preview.status !== "live") return;
+    const shares = toTaiwanStockShareCount(input.qty, input.quantity_unit);
+    const orderPrice = input.price ?? null;
+    const priceText = orderPrice === null ? "市價" : formatTwd(orderPrice);
+    const notionalText = orderPrice === null
+      ? "市價單待後端報價門檻計算"
+      : formatTwd(estimateTaiwanStockNotional(orderPrice, input.qty, input.quantity_unit));
+    const confirmed = window.confirm(
+      [
+        "送出模擬委託前確認：",
+        `股票：${input.symbol}`,
+        `單位：${input.quantity_unit === "SHARE" ? "零股" : "整張"}`,
+        `數量：${input.qty.toLocaleString("zh-TW")} ${input.quantity_unit === "SHARE" ? "股" : "張"}`,
+        `實際股數：${shares.toLocaleString("zh-TW")} 股`,
+        `價格：${priceText}`,
+        `預估金額：${notionalText}`,
+        "",
+        "零股不會被轉成整張；整張會用 1 張 = 1,000 股計算。",
+      ].join("\n"),
+    );
+    if (!confirmed) return;
     submitInFlight.current = true;
     setSubmit({ status: "loading" });
     try {
@@ -280,7 +310,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
         </div>
         <div>
           <label style={labelStyle}>
-            {parsed.isShare ? "股數（零股）" : "張數（整股）"}
+            {parsed.isShare ? "股數（零股）" : "張數（整張）"}
           </label>
           <input
             type="number"
@@ -307,12 +337,12 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
         )}
       </div>
 
-      {/* Odd-lot indicator pill */}
-      {parsed.isShare && (
+      {/* Quantity-unit indicator pill */}
+      {parsed.validQty && (
         <div style={{ marginBottom: 8, display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={oddLotPillStyle}>零股</span>
+          <span style={oddLotPillStyle}>{parsed.isShare ? "零股" : "整張"}</span>
           <span style={{ fontSize: 10, color: "var(--night-mid, #888)", fontFamily: "var(--mono, monospace)" }}>
-            1 股為單位 / 上限 999 股
+            {quantityUnitDescription(form.quantityUnit)} / 實際 {parsed.effectiveShares.toLocaleString("zh-TW")} 股
           </span>
         </div>
       )}
@@ -323,16 +353,16 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           <div style={kvStyle}>
             <span>預估金額</span>
             <b style={parsed.notionalExceedsCap ? { color: "var(--tw-up-bright, #e63946)" } : {}}>
-              {parsed.estimatedNotional.toLocaleString("zh-TW", { maximumFractionDigits: 0 })} 元
+              {formatTwd(parsed.estimatedNotional)}
             </b>
           </div>
           <div style={kvStyle}>
             <span>模擬資金上限</span>
-            <b>{DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元</b>
+            <b>{formatTwd(DEMO_CAPITAL_TWD)}</b>
           </div>
           {parsed.notionalExceedsCap && (
             <div style={{ color: "var(--tw-up-bright, #e63946)", fontFamily: "var(--mono, monospace)", fontSize: 11, paddingTop: 4 }}>
-              超過模擬資金 {DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元
+              超過模擬資金 {formatTwd(DEMO_CAPITAL_TWD)}
             </div>
           )}
         </div>

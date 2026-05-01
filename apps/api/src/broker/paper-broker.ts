@@ -14,7 +14,8 @@ import {
   type OrderCreateInput,
   type OrderStatus,
   type Position,
-  type Quote
+  type Quote,
+  toTaiwanStockShareCount
 } from "@iuf-trading-room/contracts";
 
 import { getMarketDataDecisionSummary } from "../market-data.js";
@@ -566,6 +567,8 @@ export async function placePaperOrder(input: {
   // entirely (e.g. reconciliation / tests).
   const quoteContext: ExecutionQuoteContext =
     input.quoteGate?.quoteContext ?? quoteContextFor(execQuote, "paper", now);
+  const quantityUnit = input.order.quantity_unit ?? "SHARE";
+  const orderQuantityShares = toTaiwanStockShareCount(input.order.quantity, quantityUnit);
 
   const order: Order = {
     id: orderId,
@@ -577,7 +580,7 @@ export async function placePaperOrder(input: {
     side: input.order.side,
     type: input.order.type,
     timeInForce: input.order.timeInForce,
-    quantity: input.order.quantity,
+    quantity: orderQuantityShares,
     filledQuantity: 0,
     price: input.order.price,
     stopPrice: input.order.stopPrice,
@@ -604,7 +607,13 @@ export async function placePaperOrder(input: {
     clientOrderId,
     status: "submitted",
     message: null,
-    payload: { quoteContext, quoteDecision },
+    payload: {
+      quoteContext,
+      quoteDecision,
+      requestedQuantity: input.order.quantity,
+      quantityUnit,
+      shareQuantity: orderQuantityShares
+    },
     timestamp: now
   });
 
