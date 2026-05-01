@@ -136,6 +136,8 @@ function categoryText(value: string | null | undefined) {
   if (key === "revenue") return "營收";
   if (key === "news") return "新聞";
   if (key === "theme") return "主題";
+  if (key === "industry") return "產業";
+  if (key === "supply_chain") return "供應鏈";
   if (key === "technical") return "技術";
   if (key === "fundamental") return "基本面";
   if (key === "test" || key === "dryrun") return "內部測試";
@@ -162,7 +164,19 @@ function isInternalTestSignal(signal: SignalRow) {
 function signalTitleText(signal: SignalRow) {
   const raw = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
   if (hasBrokenText(raw)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
-  return raw.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
+  const cleaned = raw.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
+  if (/^[\x00-\x7F\s%.,:;()/-]+$/.test(cleaned) && /[A-Za-z]/.test(cleaned)) {
+    return `外文訊號：${cleaned}`;
+  }
+  return cleaned;
+}
+
+function reasonText(value: string | null | undefined) {
+  if (!value) return "理由待補";
+  return value
+    .replace(/missing_bars/g, "K 線資料不足")
+    .replace(/no_theme/g, "尚未連結主題")
+    .replace(/_/g, " ");
 }
 
 function formatTime(value: string | null | undefined) {
@@ -353,7 +367,7 @@ function IdeasPanel({ ideas }: { ideas: LoadState<StrategyIdeaData | null> }) {
           <span className={`tg ${idea.marketData.decision === "allow" ? "up" : idea.marketData.decision === "review" ? "gold" : "down"}`}>
             {decisionText(idea.marketData.decision)}
           </span>
-          <span className="tc soft">{idea.rationale.primaryReason}</span>
+          <span className="tc soft">{reasonText(idea.rationale.primaryReason)}</span>
           <Link href={`/companies/${idea.symbol}`} className="mini-button">查看</Link>
         </div>
       ))}
@@ -566,6 +580,13 @@ export default async function DashboardPage() {
     `重大訊息 ${news.state === "LIVE" ? news.data.length : stateText(news.state)}`,
   ].join(" / ");
 
+  const heroStats = [
+    { label: "市場總覽", value: stateText(marketOverview.state), tone: marketOverview.state === "LIVE" ? "up" : marketOverview.state === "EMPTY" ? "muted" : "down" },
+    { label: "主題", value: themes.state === "LIVE" ? String(themes.data.length) : stateText(themes.state), tone: themes.state === "LIVE" ? "gold" : "muted" },
+    { label: "策略想法", value: ideas.state === "LIVE" && ideas.data ? String(ideas.data.summary.total) : stateText(ideas.state), tone: ideas.state === "LIVE" ? "gold" : "muted" },
+    { label: "訊號", value: signals.state === "LIVE" ? String(signals.data.filter((signal) => !isInternalTestSignal(signal)).length) : stateText(signals.state), tone: signals.state === "LIVE" ? "gold" : "muted" },
+  ];
+
   return (
     <PageFrame
       code="01"
@@ -573,6 +594,21 @@ export default async function DashboardPage() {
       sub="台股戰情台"
       note={`戰情台 / ${summary}`}
     >
+      <section className="dashboard-hero" aria-label="戰情台狀態總覽">
+        <div className="dashboard-hero-main">
+          <span className="tg gold">IUF 台股戰情台</span>
+          <h2>盤前、盤中、盤後都先看這一屏</h2>
+          <p>這裡只呈現正式資料源與明確暫停原因；沒有資料就停住，不用假數字裝作正常。</p>
+        </div>
+        <div className="dashboard-hero-kpis">
+          {heroStats.map((item) => (
+            <div className="dashboard-hero-stat" key={item.label}>
+              <span className="tg soft">{item.label}</span>
+              <strong className={`num ${item.tone}`}>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
       <MarketStrip overview={marketOverview} />
 
       <div className="main-grid">
@@ -581,14 +617,11 @@ export default async function DashboardPage() {
             <WatchlistSurface result={watchlist} />
           </Panel>
           <ThemesPanel themes={themes} />
-        </div>
-
-        <div>
-          <MarketIntelPanel news={news} />
           <IdeasPanel ideas={ideas} />
         </div>
 
         <div>
+          <MarketIntelPanel news={news} />
           <SignalsPanel signals={signals} />
           <OpsPanel overview={marketOverview} runs={runs} />
         </div>
