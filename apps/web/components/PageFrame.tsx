@@ -1,3 +1,13 @@
+function formatTpeParts(date: Date) {
+  return {
+    date: date.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }),
+    time: date.toLocaleTimeString("zh-TW", {
+      timeZone: "Asia/Taipei",
+      hour12: false,
+    }),
+  };
+}
+
 export function PageFrame({
   code,
   title,
@@ -13,22 +23,24 @@ export function PageFrame({
   exec?: boolean;
   note?: React.ReactNode;
 }) {
+  const generatedAt = formatTpeParts(new Date());
+
   return (
     <main className="page-frame">
       {exec && <div className="exec-band" aria-hidden />}
       <header className="page-head">
         <div className="page-title">
-          <span className="tg page-code">P · {code}</span>
+          <span className="tg page-code">P / {code}</span>
           <h1>{title}</h1>
           {sub && <span className="tc">{sub}</span>}
         </div>
-        <div className="tg meta-strip">
-          <span>RUN · <b>RUN-2026-04-25-F-17</b></span>
-          <span>SCAN · <b className="gold">T-06S</b></span>
-          <span>FRI · W17 · <b>14:32:08</b> TPE</span>
+        <div className="tg meta-strip" suppressHydrationWarning>
+          <span>DATE / <b>{generatedAt.date}</b></span>
+          <span>SESSION / <b className="gold">REAL-DATA</b></span>
+          <span>TIME / <b>{generatedAt.time}</b> TPE</span>
         </div>
         <div className={`tg session-pill ${exec ? "exec" : ""}`}>
-          {exec ? "● EXEC LAYER" : "SESSION · POST-CLOSE"}
+          {exec ? "EXEC LAYER / PAPER" : "SESSION / POST-CLOSE"}
         </div>
       </header>
       {note && <div className="tg terminal-note">{note}</div>}
@@ -55,7 +67,7 @@ export function Panel({
       <div className="panel-head">
         <div>
           <span className="tg panel-code">{code}</span>
-          <span className="tg muted"> · </span>
+          <span className="tg muted"> / </span>
           <span className="tg gold">{title}</span>
           {sub && <div className="panel-sub">{sub}</div>}
         </div>
@@ -82,7 +94,7 @@ export function SectHead({
     <div className="panel-head">
       <div>
         <span className="tg panel-code">{code}</span>
-        {live && <span className="tg gold"> · ● LIVE</span>}
+        {live && <span className="tg gold"> / LIVE</span>}
         {sub && <div className="panel-sub">{sub}</div>}
       </div>
       {right && <div className="tg soft">{right}</div>}

@@ -894,3 +894,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: important-news rows now classify dividend, financial/revenue, and material-announcement categories with maintainable keyword sets instead of brittle legacy category fragments. Unknown categories remain neutral badges and are not invented.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; Market Intel mojibake scan returned 0.
 - Blockers: TWSE announcement freshness remains API/data-source dependent. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 14:33 Taipei) - global frame fake run metadata removed
+- Files changed: rewrote `apps/web/components/PageFrame.tsx` header metadata.
+- Endpoints / data behavior: no endpoint contract changed. Shared page chrome no longer displays a hard-coded run id, scan timer, or stale fixed clock.
+- Behavior change: all pages now show actual Taipei date/time plus `SESSION / REAL-DATA`; exec pages are labelled `EXEC LAYER / PAPER`. This removes decorative status text that looked operational but was not backed by real state.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for `RUN-2026`, `T-06S`, `14:32:08`, and old live glyph text returned 0.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
