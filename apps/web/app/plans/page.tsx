@@ -169,6 +169,7 @@ export default async function PlansPage() {
   const latestBrief = result.data.briefs.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0] ?? null;
   const readyPlans = plans.filter((plan) => plan.status === "ready" || plan.status === "active").length;
   const reviewedPlanIds = new Set(result.data.reviews.map((review) => review.tradePlanId));
+  const contextLive = result.state === "LIVE";
 
   return (
     <PageFrame
@@ -219,9 +220,10 @@ export default async function PlansPage() {
             })}
           </Panel>
 
-          <Panel code="IDEA-REF" title="STRATEGY IDEAS" sub="paper decision candidates / read only" right={`${result.data.ideas.length} ROWS`}>
-            {result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No paper-decision ideas currently returned.</div>}
-            {result.data.ideas.slice(0, 8).map((idea) => (
+          <Panel code="IDEA-REF" title="STRATEGY IDEAS" sub="paper decision candidates / read only" right={contextLive ? `${result.data.ideas.length} ROWS` : "BLOCKED"}>
+            {!contextLive && <div className="terminal-note"><span className="tg down">BLOCKED</span> Strategy ideas are hidden because the plans context source is not live.</div>}
+            {contextLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No paper-decision ideas currently returned.</div>}
+            {contextLive && result.data.ideas.slice(0, 8).map((idea) => (
               <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
                 <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
                 <span className={`tg ${directionTone(idea.direction)}`}>{idea.direction}</span>
@@ -237,9 +239,10 @@ export default async function PlansPage() {
         </div>
 
         <div>
-          <Panel code="BRF-LAT" title={latestBrief?.date ?? "NO BRIEF"} sub="daily brief rows / real DB" right={latestBrief?.status ?? "EMPTY"}>
-            {!latestBrief && <div className="terminal-note"><span className="tg gold">EMPTY</span> No daily brief row currently exists.</div>}
-            {latestBrief && (
+          <Panel code="BRF-LAT" title={contextLive ? latestBrief?.date ?? "NO BRIEF" : "BLOCKED"} sub="daily brief rows / real DB" right={contextLive ? latestBrief?.status ?? "EMPTY" : "BLOCKED"}>
+            {!contextLive && <div className="terminal-note"><span className="tg down">BLOCKED</span> Brief context is hidden because the plans context source is not live.</div>}
+            {contextLive && !latestBrief && <div className="terminal-note"><span className="tg gold">EMPTY</span> No daily brief row currently exists.</div>}
+            {contextLive && latestBrief && (
               <div style={{ display: "grid", gap: 12, paddingBottom: 12 }}>
                 <div className="row limit-row">
                   <span className="tg gold">MARKET</span>
@@ -255,9 +258,10 @@ export default async function PlansPage() {
             )}
           </Panel>
 
-          <Panel code="REV-LDG" title="REVIEW LEDGER" sub="post-trade review rows" right={`${result.data.reviews.length} ROWS`}>
-            {result.data.reviews.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No review rows currently exist.</div>}
-            {result.data.reviews.slice(0, 6).map((review) => (
+          <Panel code="REV-LDG" title="REVIEW LEDGER" sub="post-trade review rows" right={contextLive ? `${result.data.reviews.length} ROWS` : "BLOCKED"}>
+            {!contextLive && <div className="terminal-note"><span className="tg down">BLOCKED</span> Review ledger is hidden because the plans context source is not live.</div>}
+            {contextLive && result.data.reviews.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No review rows currently exist.</div>}
+            {contextLive && result.data.reviews.slice(0, 6).map((review) => (
               <div style={{ padding: "10px 0", borderBottom: "1px solid var(--night-rule)" }} key={review.id}>
                 <div className="tg" style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                   <span className="gold">Q{review.executionQuality}</span>
@@ -270,9 +274,10 @@ export default async function PlansPage() {
         </div>
 
         <div>
-          <Panel code="SIG-CUE" title="SIGNAL CONTEXT" sub="latest live signals" right={`${result.data.signals.length} EVENTS`}>
-            {result.data.signals.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No signal rows currently exist.</div>}
-            {result.data.signals.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 10).map((signal) => (
+          <Panel code="SIG-CUE" title="SIGNAL CONTEXT" sub="latest live signals" right={contextLive ? `${result.data.signals.length} EVENTS` : "BLOCKED"}>
+            {!contextLive && <div className="terminal-note"><span className="tg down">BLOCKED</span> Signal context is hidden because the plans context source is not live.</div>}
+            {contextLive && result.data.signals.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No signal rows currently exist.</div>}
+            {contextLive && result.data.signals.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 10).map((signal) => (
               <div className="row telex-row" style={{ gridTemplateColumns: "76px 76px 1fr" }} key={signal.id}>
                 <span className="tg soft">{formatTime(signal.createdAt)}</span>
                 <span className="tg gold">{signal.category}</span>

@@ -1090,3 +1090,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: missing backend kill-switch state now maps to `FROZEN` instead of `PEEK`, so the paper ticket fails closed when the portfolio snapshot is BLOCKED. Downstream positions/risk/orders/events panels show BLOCKED notes instead of `0 ROWS` when the snapshot is unavailable.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. This remains paper-only UI; no live broker submit, migration 0020, Railway secrets, or destructive DB action touched.
+### Codex cycle (2026-05-01 15:24 Taipei) - plans dependent panels no longer turn BLOCKED into EMPTY
+- Files changed: updated `apps/web/app/plans/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Plans still reads production plans plus briefs/reviews/signals/themes/companies and paper strategy ideas.
+- Behavior change: when the combined plans context source is BLOCKED/EMPTY, dependent idea, brief, review, and signal panels now show BLOCKED instead of rendering emptyData as `0 ROWS` or EMPTY. True EMPTY notes are only shown after the source is LIVE.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No broker write, migration 0020, Railway secrets, live submit, or destructive DB action touched.
