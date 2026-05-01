@@ -23,6 +23,12 @@ const exposureLabel: Record<string, string> = {
   narrative: "敘事",
 };
 
+const marketLabel: Record<string, string> = {
+  TWSE: "上市",
+  TPEX: "上櫃",
+  OTC: "上櫃",
+};
+
 function scoreValue(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(5, Math.round(value)));
@@ -125,7 +131,7 @@ export function CompanyInfoPanel({ company }: { company: Company }) {
         </div>
         <div>
           <dt className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)", marginBottom: 2 }}>市場</dt>
-          <dd style={{ margin: 0 }}><Dim value={market} /></dd>
+          <dd style={{ margin: 0 }}><Dim value={marketLabel[market] ?? market} /></dd>
         </div>
         <div>
           <dt className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)", marginBottom: 2 }}>國別</dt>
@@ -133,7 +139,7 @@ export function CompanyInfoPanel({ company }: { company: Company }) {
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
           <dt className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)", marginBottom: 4 }}>產業鏈位置</dt>
-          <dd style={{ margin: 0, fontFamily: "var(--mono, monospace)", fontSize: 12 }}><Dim value={chainPosition} /></dd>
+          <dd style={{ margin: 0, fontFamily: "var(--mono, monospace)", fontSize: 12 }}><Dim value={industryLabel(chainPosition)} /></dd>
         </div>
         <div>
           <dt className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)", marginBottom: 4 }}>受惠層級</dt>

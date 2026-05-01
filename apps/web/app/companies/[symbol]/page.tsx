@@ -42,6 +42,12 @@ const tierLabel: Record<string, string> = {
   Observation: "觀察",
 };
 
+const marketLabel: Record<string, string> = {
+  TWSE: "上市",
+  TPEX: "上櫃",
+  OTC: "上櫃",
+};
+
 function signed(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number") return "--";
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
@@ -201,7 +207,7 @@ export default async function CompanyDetailPage({
     <PageFrame
       code={`03-${company.ticker}`}
       title={company.ticker}
-      sub={`${company.name} / ${company.market}`}
+      sub={`${company.name} / ${marketLabel[company.market] ?? company.market}`}
       note={`公司板 / ${company.ticker} / ${industryLabel(company.chainPosition)} / ${tierLabel[company.beneficiaryTier] ?? company.beneficiaryTier}`}
     >
       <div style={{ marginBottom: 8 }}>
