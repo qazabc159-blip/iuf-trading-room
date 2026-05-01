@@ -294,12 +294,13 @@ function OpsPanel({ overview, runs }: { overview: LoadState<MarketDataOverview |
 }
 
 async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awaited<ReturnType<typeof getStrategyIdeas>>["data"] | null>) {
+  const source = "GET /api/v1/companies/:id/announcements?days=14";
   if (companies.state !== "LIVE") {
     return {
       state: "BLOCKED",
       data: [],
       updatedAt: new Date().toISOString(),
-      source: "GET /api/v1/companies/:id/announcements?days=14",
+      source,
       reason: "Company list is unavailable, so Market Intel cannot choose tickers.",
     } satisfies LoadState<NewsItem[]>;
   }
@@ -320,7 +321,7 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awa
       state: "EMPTY",
       data: [],
       updatedAt: new Date().toISOString(),
-      source: "GET /api/v1/companies/:id/announcements?days=14",
+      source,
       reason: "No companies are available to query for TWSE material announcements.",
     } satisfies LoadState<NewsItem[]>;
   }
@@ -339,6 +340,9 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awa
 
   const rows = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
   const updatedAt = new Date().toISOString();
+  const failures = settled.filter((result) => result.status === "rejected").length;
+  const partialSource = failures > 0 ? `${source} (${failures}/${settled.length} calls failed)` : source;
+
   if (rows.length > 0) {
     return {
       state: "LIVE",
@@ -346,17 +350,16 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awa
         .sort((left, right) => right.date.localeCompare(left.date))
         .slice(0, 12),
       updatedAt,
-      source: "GET /api/v1/companies/:id/announcements?days=14",
+      source: partialSource,
     } satisfies LoadState<NewsItem[]>;
   }
 
-  const failures = settled.filter((result) => result.status === "rejected").length;
   if (failures === settled.length) {
     return {
       state: "BLOCKED",
       data: [],
       updatedAt,
-      source: "GET /api/v1/companies/:id/announcements?days=14",
+      source,
       reason: "All announcement endpoint calls failed.",
     } satisfies LoadState<NewsItem[]>;
   }
@@ -365,8 +368,10 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awa
     state: "EMPTY",
     data: [],
     updatedAt,
-    source: "GET /api/v1/companies/:id/announcements?days=14",
-    reason: "TWSE returned zero material announcements for the selected symbols.",
+    source: partialSource,
+    reason: failures > 0
+      ? "Successful announcement requests returned zero rows; coverage is partial because some company calls failed."
+      : "TWSE returned zero material announcements for the selected symbols.",
   } satisfies LoadState<NewsItem[]>;
 }
 

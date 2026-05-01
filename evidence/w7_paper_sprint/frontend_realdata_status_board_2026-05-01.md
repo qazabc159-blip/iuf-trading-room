@@ -1042,3 +1042,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: dashboard market overview quote strip now renders the shared source/updatedAt line before LIVE/EMPTY/BLOCKED cards, so LIVE metric cards no longer stand alone without freshness/source evidence.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:08 Taipei) - dashboard Market Intel shows partial coverage honestly
+- Files changed: updated `apps/web/app/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Dashboard Market Intel still fans out to `GET /api/v1/companies/:id/announcements?days=14` for selected company ids.
+- Behavior change: if some announcement calls fail but others succeed, the dashboard now marks the source line as partial coverage. If successful calls return zero rows while some calls failed, EMPTY now says coverage is partial instead of claiming TWSE returned zero rows for the full selected set.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. Announcement endpoint availability still belongs to Jason/Elva. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
