@@ -3,6 +3,8 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 import { MetricStrip } from "@/components/RadarWidgets";
 
+export const dynamic = "force-dynamic";
+
 export default async function IdeasPage() {
   const ideas = await api.ideas();
   const high = ideas.filter((idea) => idea.quality === "HIGH").length;

@@ -3,6 +3,8 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 import { MetricStrip } from "@/components/RadarWidgets";
 
+export const dynamic = "force-dynamic";
+
 function duration(ms: number) {
   const minutes = Math.floor(ms / 60000);
   const seconds = Math.floor((ms % 60000) / 1000);

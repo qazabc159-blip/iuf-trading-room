@@ -1,6 +1,8 @@
 import { api } from "@/lib/radar-api";
 import type { KillMode } from "@/lib/radar-types";
 
+export const dynamic = "force-dynamic";
+
 const MODES: { mode: KillMode; sub: string; tone: "gold" | "up" | "muted" }[] = [
   { mode: "ARMED", sub: "live order path remains governed by backend risk gates", tone: "gold" },
   { mode: "SAFE", sub: "block new orders, allow trim after backend approval", tone: "muted" },

@@ -3,6 +3,8 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 import type { Theme } from "@/lib/radar-types";
 
+export const dynamic = "force-dynamic";
+
 function signedTone(value: number) {
   if (value > 0) return "up";
   if (value < 0) return "down";

@@ -3,6 +3,8 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 import { MetricStrip, signed, toneClass } from "@/components/RadarWidgets";
 
+export const dynamic = "force-dynamic";
+
 export default async function PlansPage() {
   const [brief, review, weekly, themes, ideas, risk, events] = await Promise.all([
     api.brief(),

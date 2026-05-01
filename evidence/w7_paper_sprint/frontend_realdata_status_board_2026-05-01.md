@@ -12,6 +12,7 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - Company 2330 with authenticated cookie: PASS.
 - Production no-silent-mock policy: IN PROGRESS; B10/B11 wrapper-level production fallback fixed in Codex cycle 02:48, B12 Quant Lab fallback fixed in Codex cycle 03:40, kill-switch mock writes removed in Codex catch-up cycle 12:10.
 - Market Intel/news lane: IN PROGRESS; company detail panel [05] now binds TWSE announcements through the shared API client.
+- Build-time mock static HTML risk: MITIGATED in Codex catch-up cycle 12:30; legacy `radar-api` pages now force dynamic request-time render.
 - Full mock/placeholder removal: OPEN.
 
 ## Path Locks
@@ -378,6 +379,44 @@ Blockers:
 
 - B15: Duplicate merge / ignore write actions remain BLOCKED, owner Mike + Jason + Pete. Required: migration audit, backup ACK, merge contract, and desk review.
 
+### 2026-05-01 12:30 Taipei
+
+Completed:
+
+- Mitigated the highest build-time mock risk: pages that still use legacy `apps/web/lib/radar-api.ts` now opt into request-time rendering with `export const dynamic = "force-dynamic"`.
+- Removed `generateStaticParams()` from `/themes/[short]` so theme detail pages do not call the legacy API client at build time and bake fallback data into static HTML.
+- Confirmed production build output changed the affected routes from static `○` to dynamic `ƒ`.
+
+Files:
+
+- `apps/web/app/page.tsx`
+- `apps/web/app/ideas/page.tsx`
+- `apps/web/app/runs/page.tsx`
+- `apps/web/app/runs/[id]/page.tsx`
+- `apps/web/app/signals/page.tsx`
+- `apps/web/app/themes/page.tsx`
+- `apps/web/app/themes/[short]/page.tsx`
+- `apps/web/app/plans/page.tsx`
+- `apps/web/app/m/page.tsx`
+- `apps/web/app/m/kill/page.tsx`
+- `apps/web/app/portfolio/page.tsx`
+- `apps/web/app/ops/page.tsx`
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md`
+
+Endpoints:
+
+- Existing legacy `radar-api` GET endpoints are now evaluated at request time instead of build time.
+
+Tests:
+
+- PASS `pnpm.cmd --filter @iuf-trading-room/web typecheck`
+- PASS `pnpm.cmd --filter @iuf-trading-room/web build`
+- Build route check: `/`, `/ideas`, `/runs`, `/runs/[id]`, `/signals`, `/themes`, `/themes/[short]`, `/plans`, `/m`, `/m/kill`, `/ops`, `/portfolio` are `ƒ Dynamic`.
+
+Blockers:
+
+- B16: Several legacy `radar-api` pages still need component-level LIVE/EMPTY/BLOCKED polish, but they no longer ship build-time mock HTML.
+
 ## Elva Notes
 
 ### 2026-05-01 01:42 Taipei — Operator final ACK + Elva 20min cycle started
@@ -559,6 +598,7 @@ Operator (楊董) final ACK 全部 6 條（Jim D1 handoff A / contract 由 Jason
 - **B13**: Quant Lab bundle API contract/routes ??**OPEN / BLOCKED / owner: Athena + Jason**. Frontend expects `GET /api/v1/lab/bundles`, `GET /api/v1/lab/bundles/:bundleId`, and `POST /api/v1/lab/bundles/:bundleId/action`; until implemented, production UI shows BLOCKED and push-to-portfolio remains disabled.
 - **B14**: Kill-switch write governance ??**OPEN / BLOCKED / owner: Jason + Bruce**. `/m/kill` and portfolio KillSwitch no longer simulate mode changes; frontend requires approved backend governance route, audit log, 4-layer risk regression, and operator approval before any write control is re-enabled.
 - **B15**: Duplicate merge / ignore write actions ??**OPEN / BLOCKED / owner: Mike + Jason + Pete**. `/companies/duplicates` now reads real duplicate groups but hides destructive/local-only actions until migration audit, backup ACK, merge contract, and desk review are complete.
+- **B16**: Legacy `radar-api` page-level 4-state polish ??**OPEN / owner: Codex**. Build-time mock static HTML risk is mitigated by force-dynamic routes; remaining work is per-page catch/empty rendering for dashboard, ideas, runs, signals, themes, plans, ops, mobile brief, and portfolio.
 
 - **B1**: Jason 5 條 backend contract 未交（owner: Jason / due: cycle 1 = 02:00 Taipei first draft / **status: RESOLVED @ ~01:58**）
 - **B2**: Bruce 4-state harness spec 未交（owner: Bruce / due: cycle 1 = 02:00 first version / **status: RESOLVED @ 02:00**）

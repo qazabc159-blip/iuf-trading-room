@@ -3,6 +3,8 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 import { MetricStrip, Sparkline, signed, toneClass } from "@/components/RadarWidgets";
 
+export const dynamic = "force-dynamic";
+
 export default async function ThemesPage() {
   const themes = await api.themes();
   const locked = themes.filter((t) => t.lockState === "LOCKED").length;

@@ -2,6 +2,8 @@ import { PageFrame } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 import { PortfolioClient } from "@/components/portfolio/PortfolioClient";
 
+export const dynamic = "force-dynamic";
+
 export default async function PortfolioPage() {
   const [session, positions, riskLimits, strategyLimits, symbolLimits, quotes, events] = await Promise.all([
     api.session(),

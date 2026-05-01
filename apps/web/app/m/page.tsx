@@ -2,6 +2,8 @@ import Link from "next/link";
 import { api } from "@/lib/radar-api";
 import { signed, toneClass } from "@/components/RadarWidgets";
 
+export const dynamic = "force-dynamic";
+
 export default async function MobileBrief() {
   const [brief, themes, ideas, session] = await Promise.all([
     api.brief(),

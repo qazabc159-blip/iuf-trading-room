@@ -4,10 +4,7 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 import { MetricStrip, Sparkline, signed, toneClass } from "@/components/RadarWidgets";
 
-export async function generateStaticParams() {
-  const themes = await api.themes();
-  return themes.map((theme) => ({ short: theme.short }));
-}
+export const dynamic = "force-dynamic";
 
 export default async function ThemeDetailPage({ params }: { params: Promise<{ short: string }> }) {
   const { short } = await params;

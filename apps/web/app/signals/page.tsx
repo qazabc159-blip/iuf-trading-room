@@ -3,6 +3,8 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 import { MetricStrip } from "@/components/RadarWidgets";
 
+export const dynamic = "force-dynamic";
+
 export default async function SignalsPage() {
   const signals = await api.signals();
   const channels = Array.from(new Set(signals.map((signal) => signal.channel)));

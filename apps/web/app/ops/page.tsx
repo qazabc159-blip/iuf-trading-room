@@ -2,6 +2,8 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { api } from "@/lib/radar-api";
 import { MetricStrip } from "@/components/RadarWidgets";
 
+export const dynamic = "force-dynamic";
+
 export default async function OpsPage() {
   const [system, activity, audit, auditSummary] = await Promise.all([
     api.opsSystem(),
