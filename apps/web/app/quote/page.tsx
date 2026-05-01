@@ -184,7 +184,7 @@ export default async function QuotePage({
         <BlockedMarketPanel
           code="QTE-K"
           title="K-line"
-          reason="The current Chart component still uses mock-kbar fallback and synthetic ticking. It is hidden here until bound directly to a production bars endpoint."
+          reason="K-line remains blocked until a production bars endpoint is promoted; no mock chart or synthetic ticking is mounted."
         />
         <div>
           <BlockedMarketPanel
