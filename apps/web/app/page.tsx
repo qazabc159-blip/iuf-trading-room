@@ -21,8 +21,8 @@ export const dynamic = "force-dynamic";
 type ThemeRow = Awaited<ReturnType<typeof getThemes>>["data"][number];
 type CompanyRow = Awaited<ReturnType<typeof getCompanies>>["data"][number];
 type SignalRow = Awaited<ReturnType<typeof getSignals>>["data"][number];
-type StrategyIdeaRow = Awaited<ReturnType<typeof getStrategyIdeas>>["data"]["items"][number];
-type StrategyRunRow = Awaited<ReturnType<typeof listStrategyRuns>>["data"]["items"][number];
+type StrategyIdeaData = Awaited<ReturnType<typeof getStrategyIdeas>>["data"];
+type StrategyRunData = Awaited<ReturnType<typeof listStrategyRuns>>["data"];
 
 type LoadState<T> =
   | { state: "LIVE"; data: T; updatedAt: string; source: string }
@@ -50,7 +50,7 @@ async function load<T>(
         data,
         updatedAt,
         source,
-        reason: `${source} returned zero rows.`,
+        reason: "正式資料來源目前回傳 0 筆。",
       };
     }
     return { state: "LIVE", data, updatedAt, source };
@@ -65,6 +65,13 @@ async function load<T>(
   }
 }
 
+function stateText(state: LoadState<unknown>["state"] | "LOADING") {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  if (state === "LOADING") return "讀取中";
+  return "暫停";
+}
+
 function tone(value: number | null | undefined) {
   if (typeof value !== "number") return "muted";
   if (value > 0) return "up";
@@ -75,6 +82,35 @@ function tone(value: number | null | undefined) {
 function signed(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number") return "--";
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
+}
+
+function directionText(value: string) {
+  if (value === "bullish") return "偏多";
+  if (value === "bearish") return "偏空";
+  return "中性";
+}
+
+function decisionText(value: string) {
+  if (value === "allow") return "可觀察";
+  if (value === "review") return "待審";
+  if (value === "block") return "阻擋";
+  return value;
+}
+
+function marketText(value: string | null | undefined) {
+  if (value === "Attack") return "進攻";
+  if (value === "Selective Attack") return "選擇性進攻";
+  if (value === "Defense") return "防守";
+  if (value === "Preservation") return "保全";
+  return value ?? "--";
+}
+
+function lifecycleText(value: string | null | undefined) {
+  if (value === "active") return "啟用";
+  if (value === "watch") return "觀察";
+  if (value === "paused") return "暫停";
+  if (value === "retired") return "退場";
+  return value ?? "--";
 }
 
 function formatTime(value: string | null | undefined) {
@@ -96,15 +132,15 @@ function StatePill({ state }: { state: LoadState<unknown>["state"] | "LOADING" }
     : state === "EMPTY" ? "var(--night-mid)"
       : state === "LOADING" ? "var(--gold)"
         : "var(--tw-up-bright)";
-  return <span style={{ color, fontWeight: 700, letterSpacing: "0.16em" }}>{state}</span>;
+  return <span style={{ color, fontWeight: 700, letterSpacing: "0.16em" }}>{stateText(state)}</span>;
 }
 
-function StateLine<T>({ state }: { state: LoadState<T> }) {
+function StateLine<T>({ state, label }: { state: LoadState<T>; label: string }) {
   return (
     <div className="tg soft" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
       <StatePill state={state.state} />
-      <span>{state.source}</span>
-      <span>updated {formatTime(state.updatedAt)}</span>
+      <span>{label}</span>
+      <span>更新 {formatTime(state.updatedAt)}</span>
       {state.state !== "LIVE" && <span>{state.reason}</span>}
     </div>
   );
@@ -123,12 +159,12 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
   if (overview.state !== "LIVE" || !overview.data) {
     return (
       <div>
-        <StateLine state={overview} />
+        <StateLine state={overview} label="市場總覽" />
         <div className="quote-strip">
           <div className="quote-card">
-            <div className="tg"><span className="quote-symbol">MKT-OVR</span><span className="quote-state">{overview.state}</span></div>
+            <div className="tg"><span className="quote-symbol">市場總覽</span><span className="quote-state">{stateText(overview.state)}</span></div>
             <div className="quote-last num">--</div>
-            <div className="tg soft">{overview.state === "LIVE" ? "No overview payload." : overview.reason}</div>
+            <div className="tg soft">{overview.state === "LIVE" ? "沒有市場總覽資料。" : overview.reason}</div>
           </div>
         </div>
       </div>
@@ -139,27 +175,27 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
   const topGainer = data.leaders.topGainers[0] ?? null;
   const topLoser = data.leaders.topLosers[0] ?? null;
   const active = data.leaders.mostActive[0] ?? null;
-  const connected = data.quotes.readiness.connectedSources.join("/") || "none";
+  const connected = data.quotes.readiness.connectedSources.join("/") || "無";
 
   const cards = [
-    { key: "quotes", label: "QUOTES", value: String(data.quotes.total), sub: `${data.quotes.fresh} fresh / ${data.quotes.stale} stale`, tone: data.quotes.fresh > 0 ? "up" : "muted" },
-    { key: "symbols", label: "SYMBOLS", value: String(data.symbols.total), sub: data.symbols.byMarket.slice(0, 3).map((m) => `${m.market}:${m.total}`).join(" / ") || "no symbol master", tone: "muted" },
-    { key: "providers", label: "SOURCES", value: connected.toUpperCase(), sub: `preferred ${data.quotes.readiness.preferredSourceOrder.join(">")}`, tone: connected === "none" ? "down" : "up" },
-    { key: "usable", label: "PAPER-USABLE", value: String(data.quotes.readiness.effectiveSelection.paperUsable), sub: `${data.quotes.readiness.effectiveSelection.blocked} blocked`, tone: data.quotes.readiness.effectiveSelection.paperUsable > 0 ? "up" : "gold" },
-    { key: "gainer", label: "TOP GAINER", value: topGainer?.symbol ?? "--", sub: topGainer ? `${signed(topGainer.changePct)}% ${topGainer.source}` : "empty", tone: tone(topGainer?.changePct) },
-    { key: "loser", label: "TOP LOSER", value: topLoser?.symbol ?? "--", sub: topLoser ? `${signed(topLoser.changePct)}% ${topLoser.source}` : "empty", tone: tone(topLoser?.changePct) },
-    { key: "active", label: "MOST ACTIVE", value: active?.symbol ?? "--", sub: active?.volume ? `${active.volume.toLocaleString()} vol` : "empty", tone: "muted" },
+    { key: "quotes", label: "報價", value: String(data.quotes.total), sub: `${data.quotes.fresh} 新鮮 / ${data.quotes.stale} 過期`, tone: data.quotes.fresh > 0 ? "up" : "muted" },
+    { key: "symbols", label: "股票池", value: String(data.symbols.total), sub: data.symbols.byMarket.slice(0, 3).map((m) => `${m.market}:${m.total}`).join(" / ") || "尚無股票主檔", tone: "muted" },
+    { key: "providers", label: "來源", value: connected.toUpperCase(), sub: `優先 ${data.quotes.readiness.preferredSourceOrder.join(">")}`, tone: connected === "無" ? "down" : "up" },
+    { key: "usable", label: "可紙上", value: String(data.quotes.readiness.effectiveSelection.paperUsable), sub: `${data.quotes.readiness.effectiveSelection.blocked} 檔暫停`, tone: data.quotes.readiness.effectiveSelection.paperUsable > 0 ? "up" : "gold" },
+    { key: "gainer", label: "強勢", value: topGainer?.symbol ?? "--", sub: topGainer ? `${signed(topGainer.changePct)}% ${topGainer.source}` : "無資料", tone: tone(topGainer?.changePct) },
+    { key: "loser", label: "弱勢", value: topLoser?.symbol ?? "--", sub: topLoser ? `${signed(topLoser.changePct)}% ${topLoser.source}` : "無資料", tone: tone(topLoser?.changePct) },
+    { key: "active", label: "成交活躍", value: active?.symbol ?? "--", sub: active?.volume ? `${active.volume.toLocaleString("zh-TW")} 股` : "無資料", tone: "muted" },
   ];
 
   return (
     <div>
-      <StateLine state={overview} />
+      <StateLine state={overview} label="市場總覽" />
       <div className="quote-strip">
         {cards.map((card) => (
           <div className="quote-card" key={card.key}>
             <div className="tg">
               <span className="quote-symbol">{card.label}</span>
-              <span className="quote-state">LIVE</span>
+              <span className="quote-state">正常</span>
             </div>
             <div className={`quote-last num ${card.tone}`}>{card.value}</div>
             <div className="tg soft">{card.sub}</div>
@@ -172,12 +208,12 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
 
 function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
   return (
-    <Panel code="THM-SCOPE" title={`${formatTime(themes.updatedAt)} TPE`} sub="THEMES · DB SOURCE" right={themes.state}>
-      <StateLine state={themes} />
+    <Panel code="THM-SCOPE" title={`${formatTime(themes.updatedAt)} 台北`} sub="主題資料" right={<StatePill state={themes.state} />}>
+      <StateLine state={themes} label="主題資料" />
       <EmptyOrBlocked state={themes} />
       {themes.state === "LIVE" && (
         <div className="row theme-row table-head tg">
-          <span>#</span><span>THEME</span><span>STATE</span><span>LIFE</span><span>POOL</span><span>UPDATED</span>
+          <span>#</span><span>主題</span><span>狀態</span><span>階段</span><span>池</span><span>更新</span>
         </div>
       )}
       {themes.state === "LIVE" && themes.data
@@ -191,8 +227,8 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
               <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{theme.name}</strong>
               <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{theme.slug}</span>
             </span>
-            <span className="tg gold">{theme.marketState}</span>
-            <span className="tg muted">{theme.lifecycle}</span>
+            <span className="tg gold">{marketText(theme.marketState)}</span>
+            <span className="tg muted">{lifecycleText(theme.lifecycle)}</span>
             <span className="num">{theme.corePoolCount}/{theme.observationPoolCount}</span>
             <span className="tg soft">{formatDate(theme.updatedAt)}</span>
           </Link>
@@ -201,24 +237,24 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
   );
 }
 
-function IdeasPanel({ ideas }: { ideas: LoadState<Awaited<ReturnType<typeof getStrategyIdeas>>["data"] | null> }) {
+function IdeasPanel({ ideas }: { ideas: LoadState<StrategyIdeaData | null> }) {
   const items = ideas.state === "LIVE" && ideas.data ? ideas.data.items.slice(0, 6) : [];
   return (
-    <Panel code="IDEA-OPN" title={`${formatTime(ideas.updatedAt)} TPE`} sub="STRATEGY IDEAS · PAPER DECISION" right={ideas.state}>
-      <StateLine state={ideas} />
+    <Panel code="IDEA-OPN" title={`${formatTime(ideas.updatedAt)} 台北`} sub="策略想法 / 紙上決策" right={<StatePill state={ideas.state} />}>
+      <StateLine state={ideas} label="策略想法" />
       <EmptyOrBlocked state={ideas} />
       {items.map((idea) => (
         <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
           <Link className="tg" href={`/companies/${idea.symbol}`} style={{ color: "var(--night-ink)", fontWeight: 700 }}>
             {idea.symbol}
           </Link>
-          <span className={`tg ${idea.direction === "bearish" ? "down" : idea.direction === "bullish" ? "up" : "muted"}`}>{idea.direction.toUpperCase()}</span>
+          <span className={`tg ${idea.direction === "bearish" ? "down" : idea.direction === "bullish" ? "up" : "muted"}`}>{directionText(idea.direction)}</span>
           <span className="num">{idea.score.toFixed(1)}</span>
           <span className={`tg ${idea.marketData.decision === "allow" ? "up" : idea.marketData.decision === "review" ? "gold" : "down"}`}>
-            {idea.marketData.decision.toUpperCase()}
+            {decisionText(idea.marketData.decision)}
           </span>
           <span className="tc soft">{idea.rationale.primaryReason}</span>
-          <Link href={`/companies/${idea.symbol}`} className="mini-button">DETAIL</Link>
+          <Link href={`/companies/${idea.symbol}`} className="mini-button">查看</Link>
         </div>
       ))}
     </Panel>
@@ -227,17 +263,17 @@ function IdeasPanel({ ideas }: { ideas: LoadState<Awaited<ReturnType<typeof getS
 
 function SignalsPanel({ signals }: { signals: LoadState<SignalRow[]> }) {
   return (
-    <Panel code="SIG-TAPE" title={`${formatTime(signals.updatedAt)} TPE`} sub="SIGNALS · DB LEDGER" right={signals.state}>
-      <StateLine state={signals} />
+    <Panel code="SIG-TAPE" title={`${formatTime(signals.updatedAt)} 台北`} sub="訊號證據紀錄" right={<StatePill state={signals.state} />}>
+      <StateLine state={signals} label="訊號證據" />
       <EmptyOrBlocked state={signals} />
       {signals.state === "LIVE" && signals.data.slice(0, 7).map((signal) => (
         <div className="row telex-row" key={signal.id}>
           <span className="tg soft">{formatTime(signal.createdAt)}</span>
           <span className={`tg ${signal.direction === "bullish" ? "up" : signal.direction === "bearish" ? "down" : "muted"}`}>
-            {signal.direction.toUpperCase()}
+            {directionText(signal.direction)}
           </span>
           <span className="tg" style={{ color: "var(--night-ink)" }}>{signal.title}</span>
-          <span className="tg soft">C{signal.confidence}</span>
+          <span className="tg soft">信心 {signal.confidence}</span>
         </div>
       ))}
     </Panel>
@@ -246,48 +282,48 @@ function SignalsPanel({ signals }: { signals: LoadState<SignalRow[]> }) {
 
 function MarketIntelPanel({ news }: { news: LoadState<NewsItem[]> }) {
   return (
-    <Panel code="MKT-INTEL" title={`${formatTime(news.updatedAt)} TPE`} sub="TWSE MATERIAL NEWS" right={news.state}>
-      <StateLine state={news} />
+    <Panel code="MKT-INTEL" title={`${formatTime(news.updatedAt)} 台北`} sub="臺股重大訊息" right={<StatePill state={news.state} />}>
+      <StateLine state={news} label="重大訊息" />
       <EmptyOrBlocked state={news} />
       {news.state === "LIVE" && news.data.slice(0, 8).map((item) => (
         <Link href={`/companies/${item.ticker}`} className="row telex-row" key={`${item.ticker}-${item.id}`}>
           <span className="tg soft">{formatDate(item.date)}</span>
           <span className="tg gold">{item.ticker}</span>
           <span className="tg" style={{ color: "var(--night-ink)" }}>{item.title}</span>
-          <span className="tg soft">{item.category || "TWSE"}</span>
+          <span className="tg soft">{item.category || "公告"}</span>
         </Link>
       ))}
     </Panel>
   );
 }
 
-function OpsPanel({ overview, runs }: { overview: LoadState<MarketDataOverview | null>; runs: LoadState<Awaited<ReturnType<typeof listStrategyRuns>>["data"] | null> }) {
+function OpsPanel({ overview, runs }: { overview: LoadState<MarketDataOverview | null>; runs: LoadState<StrategyRunData | null> }) {
   const providers = overview.state === "LIVE" && overview.data ? overview.data.providers : [];
   const runItems = runs.state === "LIVE" && runs.data ? runs.data.items.slice(0, 4) : [];
   return (
     <>
-      <Panel code="OPS-HLT" title={`${formatTime(overview.updatedAt)} TPE`} sub="MARKET DATA PROVIDERS" right={overview.state}>
-        <StateLine state={overview} />
+      <Panel code="OPS-HLT" title={`${formatTime(overview.updatedAt)} 台北`} sub="市場資料來源" right={<StatePill state={overview.state} />}>
+        <StateLine state={overview} label="市場資料來源" />
         <EmptyOrBlocked state={overview} />
         {providers.map((provider) => (
           <div className="row health-row" key={provider.source}>
             <span className="tg" style={{ color: provider.connected ? "var(--night-ink)" : "var(--gold)", fontWeight: 700 }}>
               {provider.source.toUpperCase()}
             </span>
-            <span className={`tg ${provider.connected ? "muted" : "gold"}`}><span className="status-dot" />{provider.connected ? "CONNECTED" : "DISCONNECTED"}</span>
+            <span className={`tg ${provider.connected ? "muted" : "gold"}`}><span className="status-dot" />{provider.connected ? "連線" : "斷線"}</span>
             <span className="tg soft">{formatTime(provider.lastMessageAt)}</span>
             <span className="num soft">{provider.latencyMs ?? "--"}ms</span>
           </div>
         ))}
       </Panel>
 
-      <Panel code="RUNS" title={`${formatTime(runs.updatedAt)} TPE`} sub="STRATEGY RUNS · DB" right={runs.state}>
-        <StateLine state={runs} />
+      <Panel code="RUNS" title={`${formatTime(runs.updatedAt)} 台北`} sub="策略批次紀錄" right={<StatePill state={runs.state} />}>
+        <StateLine state={runs} label="策略批次" />
         <EmptyOrBlocked state={runs} />
         {runItems.map((run) => (
           <Link href={`/runs/${run.id}`} className="row telex-row" style={{ gridTemplateColumns: "90px 1fr 70px" }} key={run.id}>
             <span className="tg soft">{formatDate(run.generatedAt)}</span>
-            <span className="tg" style={{ color: "var(--night-ink)" }}>{run.topSymbols.join(" / ") || "no symbols"}</span>
+            <span className="tg" style={{ color: "var(--night-ink)" }}>{run.topSymbols.join(" / ") || "無標的"}</span>
             <span className="num">{run.summary.total}</span>
           </Link>
         ))}
@@ -296,15 +332,15 @@ function OpsPanel({ overview, runs }: { overview: LoadState<MarketDataOverview |
   );
 }
 
-async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awaited<ReturnType<typeof getStrategyIdeas>>["data"] | null>) {
-  const source = "GET /api/v1/companies/:id/announcements?days=14";
+async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<StrategyIdeaData | null>) {
+  const source = "重大訊息";
   if (companies.state !== "LIVE") {
     return {
       state: "BLOCKED",
       data: [],
       updatedAt: new Date().toISOString(),
       source,
-      reason: "Company list is unavailable, so Market Intel cannot choose tickers.",
+      reason: "公司清單無法讀取，因此重大訊息無法選股查詢。",
     } satisfies LoadState<NewsItem[]>;
   }
 
@@ -325,7 +361,7 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awa
       data: [],
       updatedAt: new Date().toISOString(),
       source,
-      reason: "No companies are available to query for TWSE material announcements.",
+      reason: "目前沒有可查詢重大訊息的公司資料。",
     } satisfies LoadState<NewsItem[]>;
   }
 
@@ -344,7 +380,7 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awa
   const rows = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
   const updatedAt = new Date().toISOString();
   const failures = settled.filter((result) => result.status === "rejected").length;
-  const partialSource = failures > 0 ? `${source} (${failures}/${settled.length} calls failed)` : source;
+  const partialSource = failures > 0 ? `重大訊息（${failures}/${settled.length} 檔失敗）` : source;
 
   if (rows.length > 0) {
     return {
@@ -363,7 +399,7 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awa
       data: [],
       updatedAt,
       source,
-      reason: "All announcement endpoint calls failed.",
+      reason: "重大訊息端點全部讀取失敗。",
     } satisfies LoadState<NewsItem[]>;
   }
 
@@ -373,13 +409,13 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awa
     updatedAt,
     source: partialSource,
     reason: failures > 0
-      ? "Successful announcement requests returned zero rows; coverage is partial because some company calls failed."
-      : "TWSE returned zero material announcements for the selected symbols.",
+      ? "成功的重大訊息請求回傳 0 筆；部分公司查詢失敗。"
+      : "選定股票近 14 天沒有重大訊息。",
   } satisfies LoadState<NewsItem[]>;
 }
 
 async function loadWatchlist(): Promise<WatchlistSurfaceState> {
-  const source = "GET /api/watchlist/overview";
+  const source = "觀察清單";
   const updatedAt = new Date().toISOString();
   try {
     const res = await getWatchlistOverview();
@@ -401,12 +437,12 @@ async function loadWatchlist(): Promise<WatchlistSurfaceState> {
 
 export default async function DashboardPage() {
   const [overview, themes, companies, ideas, runs, signals, watchlist] = await Promise.all([
-    load("GET /api/v1/market-data/overview", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 5 })).data, (value) => value === null || value.quotes.total === 0),
-    load("GET /api/v1/themes", [], async () => (await getThemes()).data, (value) => value.length === 0),
-    load("GET /api/v1/companies", [], async () => (await getCompanies()).data, (value) => value.length === 0),
-    load("GET /api/v1/strategy/ideas?decisionMode=paper", null, async () => (await getStrategyIdeas({ limit: 8, includeBlocked: true, decisionMode: "paper", sort: "score" })).data, (value) => value === null || value.items.length === 0),
-    load("GET /api/v1/strategy/runs", null, async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data, (value) => value === null || value.items.length === 0),
-    load("GET /api/v1/signals", [], async () => (await getSignals()).data, (value) => value.length === 0),
+    load("市場總覽", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 5 })).data, (value) => value === null || value.quotes.total === 0),
+    load("主題資料", [], async () => (await getThemes()).data, (value) => value.length === 0),
+    load("公司資料", [], async () => (await getCompanies()).data, (value) => value.length === 0),
+    load("策略想法", null, async () => (await getStrategyIdeas({ limit: 8, includeBlocked: true, decisionMode: "paper", sort: "score" })).data, (value) => value === null || value.items.length === 0),
+    load("策略批次", null, async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data, (value) => value === null || value.items.length === 0),
+    load("訊號證據", [], async () => (await getSignals()).data, (value) => value.length === 0),
     loadWatchlist(),
   ]);
   const news = await loadNews(companies, ideas);
@@ -415,24 +451,24 @@ export default async function DashboardPage() {
     : overview;
 
   const summary = [
-    `themes ${themes.state === "LIVE" ? themes.data.length : themes.state}`,
-    `ideas ${ideas.state === "LIVE" && ideas.data ? ideas.data.summary.total : ideas.state}`,
-    `signals ${signals.state === "LIVE" ? signals.data.length : signals.state}`,
-    `news ${news.state === "LIVE" ? news.data.length : news.state}`,
-  ].join(" · ");
+    `主題 ${themes.state === "LIVE" ? themes.data.length : stateText(themes.state)}`,
+    `想法 ${ideas.state === "LIVE" && ideas.data ? ideas.data.summary.total : stateText(ideas.state)}`,
+    `訊號 ${signals.state === "LIVE" ? signals.data.length : stateText(signals.state)}`,
+    `重大訊息 ${news.state === "LIVE" ? news.data.length : stateText(news.state)}`,
+  ].join(" / ");
 
   return (
     <PageFrame
       code="01"
-      title="Trading Room"
-      sub="Real-data dashboard"
-      note={`[01] DASHBOARD · ${summary}`}
+      title="交易戰情室"
+      sub="台股戰情台"
+      note={`戰情台 / ${summary}`}
     >
       <MarketStrip overview={marketOverview} />
 
       <div className="main-grid">
         <div>
-          <Panel code="WCH-LST" title={`${formatTime(watchlist.updatedAt)} TPE`} sub="WATCHLIST / QUOTES / RISK ADVISORY" right={watchlist.state}>
+          <Panel code="WCH-LST" title={`${formatTime(watchlist.updatedAt)} 台北`} sub="觀察清單 / 報價 / 風控試算" right={<StatePill state={watchlist.state} />}>
             <WatchlistSurface result={watchlist} />
           </Panel>
           <ThemesPanel themes={themes} />

@@ -6,17 +6,17 @@ import { usePathname, useRouter } from "next/navigation";
 import { apiLogout } from "@/lib/auth-client";
 
 const NAV = [
-  { code: "01", path: "/", label: "DASHBOARD", tc: "戰情台" },
-  { code: "02", path: "/themes", label: "THEMES", tc: "主題板" },
-  { code: "03", path: "/companies", label: "COMPANIES", tc: "公司板" },
-  { code: "04", path: "/ideas", label: "IDEAS", tc: "策略想法" },
-  { code: "05", path: "/runs", label: "RUNS", tc: "策略批次" },
-  { code: "06", path: "/portfolio", label: "PORTFOLIO", tc: "紙上交易", exec: true },
-  { code: "07", path: "/signals", label: "SIGNALS", tc: "訊號證據" },
-  { code: "08", path: "/plans", label: "PLANS", tc: "交易計畫" },
-  { code: "09", path: "/ops", label: "OPS", tc: "營運監控" },
-  { code: "10", path: "/market-intel", label: "INTEL", tc: "重大訊息" },
-  { code: "11", path: "/lab", label: "LAB", tc: "量化研究" },
+  { code: "01", path: "/", label: "戰情台", tc: "總覽" },
+  { code: "02", path: "/themes", label: "主題板", tc: "產業鏈" },
+  { code: "03", path: "/companies", label: "公司板", tc: "個股資料" },
+  { code: "04", path: "/ideas", label: "策略想法", tc: "候選單" },
+  { code: "05", path: "/runs", label: "策略批次", tc: "批次紀錄" },
+  { code: "06", path: "/portfolio", label: "紙上交易", tc: "委託與部位", exec: true },
+  { code: "07", path: "/signals", label: "訊號證據", tc: "訊號流" },
+  { code: "08", path: "/plans", label: "交易計畫", tc: "計畫書" },
+  { code: "09", path: "/ops", label: "營運監控", tc: "系統狀態" },
+  { code: "10", path: "/market-intel", label: "重大訊息", tc: "公告新聞" },
+  { code: "11", path: "/lab", label: "量化研究", tc: "研究包" },
 ];
 
 export function Sidebar() {
@@ -32,19 +32,19 @@ export function Sidebar() {
     <aside className="app-sidebar">
       <div className="brand-lockup">
         <div className="brand-mark">IUF</div>
-        <div className="tg" style={{ marginTop: 10, color: "var(--night-ink)" }}>TRADING ROOM</div>
-        <div className="tg" style={{ marginTop: 6 }}>OPERATOR / IUF-01</div>
-        <div className="tg gold" style={{ marginTop: 5 }}>PAPER MODE / RISK GATED</div>
+        <div className="tg" style={{ marginTop: 10, color: "var(--night-ink)" }}>交易戰情室</div>
+        <div className="tg" style={{ marginTop: 6 }}>操作員 / IUF-01</div>
+        <div className="tg gold" style={{ marginTop: 5 }}>紙上模式 / 風控守門</div>
       </div>
 
-      <nav className="nav-list">
+      <nav className="nav-list" aria-label="主要導覽">
         {NAV.map((item) => {
           const active = item.path === "/" ? pathname === "/" : pathname.startsWith(item.path);
           return (
             <Link key={item.code} href={item.path} className="nav-link" data-active={active}>
               <span className="nav-code">{item.code}</span>
               <span>
-                <span className="nav-label">{item.label}{item.exec && <span className="gold"> / EXEC</span>}</span>
+                <span className="nav-label">{item.label}{item.exec && <span className="gold"> / 執行</span>}</span>
                 <span className="nav-tc">{item.tc}</span>
               </span>
             </Link>
@@ -53,13 +53,13 @@ export function Sidebar() {
       </nav>
 
       <div className="tg" style={{ padding: "13px 18px", borderTop: "1px solid var(--night-rule)", lineHeight: 1.8 }}>
-        <div>Search / real company universe</div>
-        <div>Palette / Ctrl+K</div>
-        <div>Kill switch / write-blocked</div>
-        <div className="soft">Frontend / real-data lane</div>
+        <div>搜尋 / 真實公司池</div>
+        <div>指令面板 / Ctrl+K</div>
+        <div>交易模式 / 風控控管</div>
+        <div className="soft">前端 / 真資料介面</div>
       </div>
       <button type="button" className="sidebar-logout" onClick={handleLogout}>
-        LOGOUT
+        登出
       </button>
     </aside>
   );

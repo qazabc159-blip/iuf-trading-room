@@ -4,10 +4,10 @@ export const dynamic = "force-dynamic";
 
 const ACCOUNT_ID = "paper-default";
 const MODES = [
-  { mode: "trading", sub: "normal paper routing after backend risk gates", tone: "gold" },
-  { mode: "paper_only", sub: "demote strategy logic to paper-only", tone: "muted" },
-  { mode: "liquidate_only", sub: "closing orders only after backend approval", tone: "muted" },
-  { mode: "halted", sub: "hard block new orders", tone: "up" },
+  { mode: "trading", label: "可交易", sub: "通過後端風控後，可建立紙上委託", tone: "gold" },
+  { mode: "paper_only", label: "紙上模式", sub: "策略與委託都只留在紙上交易層", tone: "muted" },
+  { mode: "liquidate_only", label: "只減倉", sub: "只允許降低曝險的委託", tone: "muted" },
+  { mode: "halted", label: "全鎖定", sub: "停止新增委託，等待風控處理", tone: "up" },
 ] as const;
 
 type KillState = Awaited<ReturnType<typeof getKillSwitch>>["data"];
@@ -48,6 +48,14 @@ function stateTone(state: LoadState["state"]) {
   return state === "LIVE" ? "up" : "down";
 }
 
+function surfaceState(state: LoadState["state"]) {
+  return state === "LIVE" ? "正常" : "暫停";
+}
+
+function modeLabel(mode: string) {
+  return MODES.find((item) => item.mode === mode)?.label ?? "未知狀態";
+}
+
 export default async function MobileKillPage() {
   const result = await loadKill();
   const current = result.data?.mode ?? "unknown";
@@ -56,22 +64,22 @@ export default async function MobileKillPage() {
     <main>
       <header className="mobile-head">
         <div>
-          <div className="tg soft">IUF TR / MOBILE KILL</div>
-          <h1>Kill Switch</h1>
-          <div className="tg soft" style={{ marginTop: 8 }}>{result.source}</div>
+          <div className="tg soft">IUF 交易戰情室 / 行動風控</div>
+          <h1>交易模式</h1>
+          <div className="tg soft" style={{ marginTop: 8 }}>紙上帳戶：{ACCOUNT_ID}</div>
         </div>
-        <div className={`tg session-pill ${stateTone(result.state)}`}>{result.state}</div>
+        <div className={`tg session-pill ${stateTone(result.state)}`}>{surfaceState(result.state)}</div>
       </header>
 
       <section className="mobile-section">
         <div className="mobile-section-head">
-          <span className="tg gold">CUR / MODE</span>
-          <span className="tg soft">READ ONLY</span>
+          <span className="tg gold">目前模式</span>
+          <span className="tg soft">唯讀狀態</span>
         </div>
         <div style={{ padding: 18, borderBottom: "1px solid var(--night-rule)" }}>
-          <div className="tg soft">CURRENT</div>
-          <div className="kill-current">{current.toUpperCase()}</div>
-          <div className="tg soft" style={{ marginTop: 8 }}>updated {formatTime(result.updatedAt)}</div>
+          <div className="tg soft">後端回報</div>
+          <div className="kill-current">{modeLabel(current)}</div>
+          <div className="tg soft" style={{ marginTop: 8 }}>更新 {formatTime(result.updatedAt)}</div>
           {result.data?.reason && <div className="tc soft" style={{ marginTop: 8 }}>{result.data.reason}</div>}
         </div>
         <div style={{ display: "grid", gap: 10, padding: 14 }}>
@@ -81,14 +89,14 @@ export default async function MobileKillPage() {
               <button
                 key={item.mode}
                 disabled
-                title="BLOCKED: frontend kill-switch writes are disabled until backend governance, audit, and risk regression are approved."
+                title="前端目前只顯示狀態；切換交易模式需要後端治理、稽核紀錄與風控回歸測試通過。"
                 className={`kill-mode ${active ? "active" : ""}`}
               >
                 <span>
-                  <span className={`tg ${active ? "gold" : item.tone}`}>{item.mode}</span>
+                  <span className={`tg ${active ? "gold" : item.tone}`}>{item.label}</span>
                   <span className="tc soft">{item.sub}</span>
                 </span>
-                <span className="tg soft">{active ? "CURRENT" : "BLOCKED"}</span>
+                <span className="tg soft">{active ? "目前" : "不可切換"}</span>
               </button>
             );
           })}
@@ -97,15 +105,15 @@ export default async function MobileKillPage() {
 
       <section className="mobile-section">
         <div className="mobile-section-head">
-          <span className="tg up">BLOCKED / OWNER</span>
-          <span className="tg soft">Jason + Bruce</span>
+          <span className="tg up">切換權限</span>
+          <span className="tg soft">後端治理</span>
         </div>
         <div style={{ padding: 18 }}>
           <p className="tc soft" style={{ margin: 0, lineHeight: 1.8 }}>
-            This page reads the real kill-switch state but does not change it.
+            這一頁只讀取真實交易模式，不直接更改後端狀態。
           </p>
           <div className="terminal-note" style={{ marginTop: 12 }}>
-            BLOCKED: {result.state === "BLOCKED" ? result.reason : "write path requires backend governance route, audit log, 4-layer risk regression, and operator approval."}
+            暫停切換：{result.state === "BLOCKED" ? result.reason : "切換路徑需要後端治理路由、稽核紀錄、四層風控回歸與操作員核准。"}
           </div>
         </div>
       </section>

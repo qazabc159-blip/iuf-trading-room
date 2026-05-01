@@ -17,9 +17,24 @@ function statusChar(status: RiskLayerCell["status"]) {
 
 function titleFor(layer: RiskLayerName, cell: RiskLayerCell, row: PositionRiskRow) {
   if (row.hypotheticalBlockingLayer === layer) {
-    return row.hypotheticalBlockReason ?? `${layer} would block the next hypothetical lot.`;
+    return row.hypotheticalBlockReason ?? `${layerName(layer)}會阻擋下一筆試算委託。`;
   }
-  return cell.reason ?? `${layer}: ${cell.status}`;
+  return cell.reason ?? `${layerName(layer)}：${statusText(cell.status)}`;
+}
+
+function layerName(layer: RiskLayerName) {
+  if (layer === "account") return "帳戶";
+  if (layer === "strategy") return "策略";
+  if (layer === "symbol") return "個股";
+  return "盤中";
+}
+
+function statusText(status: RiskLayerCell["status"]) {
+  if (status === "ok") return "正常";
+  if (status === "warn") return "注意";
+  if (status === "block") return "阻擋";
+  if (status === "blocked_killswitch") return "交易鎖定";
+  return "未設定";
 }
 
 export function PositionRiskBadge({
@@ -36,10 +51,10 @@ export function PositionRiskBadge({
   if (overviewState === "BLOCKED" || !layers) {
     return (
       <span
-        aria-label={`risk attribution blocked: ${blockedReason ?? "overview unavailable"}`}
+        aria-label={`風控歸因暫停：${blockedReason ?? "總覽資料尚未啟用"}`}
         className="tg"
         style={blockedStyle}
-        title={blockedReason ?? "Risk overview endpoint is unavailable."}
+        title={blockedReason ?? "風控總覽資料尚未啟用。"}
       >
         ????
       </span>
@@ -49,10 +64,10 @@ export function PositionRiskBadge({
   if (!row) {
     return (
       <span
-        aria-label="risk attribution not returned for this symbol"
+        aria-label="此股票尚未回傳風控歸因"
         className="tg"
         style={unknownStyle}
-        title="The live overview did not include attribution for this symbol."
+        title="後端總覽尚未提供此股票的風控歸因。"
       >
         ----
       </span>
@@ -70,7 +85,7 @@ export function PositionRiskBadge({
 
   return (
     <span
-      aria-label={`risk next order code ${text}`}
+      aria-label={`下一筆委託風控代碼 ${text}`}
       className="tg"
       style={{ ...badgeStyle, color }}
       title={title}

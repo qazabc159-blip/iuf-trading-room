@@ -20,9 +20,9 @@ type TabState =
   | { status: "live"; rows: CompanyFinancialRow[] | CompanyRevenueRow[] | CompanyDividendRow[]; fetchedAt: string };
 
 const TABS: Array<{ key: TabKey; label: string; source: string }> = [
-  { key: "financials", label: "Financials", source: "GET /api/v1/companies/:id/financials?limit=8" },
-  { key: "revenue", label: "Monthly revenue", source: "GET /api/v1/companies/:id/revenue?limit=12" },
-  { key: "dividend", label: "Dividend", source: "GET /api/v1/companies/:id/dividend?years=5" },
+  { key: "financials", label: "季報財務", source: "FinMind 財報" },
+  { key: "revenue", label: "月營收", source: "FinMind 月營收" },
+  { key: "dividend", label: "股利", source: "FinMind 股利" },
 ];
 
 function formatTime(value: string) {
@@ -31,7 +31,7 @@ function formatTime(value: string) {
 
 function money(value: number | null | undefined, divisor = 1_000_000_000) {
   if (value === null || value === undefined) return "--";
-  return (value / divisor).toFixed(2);
+  return (value / divisor).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
 }
 
 function percent(value: number | null | undefined) {
@@ -41,16 +41,23 @@ function percent(value: number | null | undefined) {
 
 function numberText(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined) return "--";
-  return value.toFixed(digits);
+  return value.toLocaleString("zh-TW", { maximumFractionDigits: digits });
+}
+
+function statusLabel(status: TabState["status"]) {
+  if (status === "live") return "正常";
+  if (status === "empty") return "無資料";
+  if (status === "loading") return "讀取中";
+  return "暫停";
 }
 
 function StatePanel({ state, source }: { state: Extract<TabState, { status: "blocked" | "empty" }>; source: string }) {
   const badge = state.status === "blocked" ? "badge-red" : "badge-yellow";
   return (
     <div className="state-panel">
-      <span className={`badge ${badge}`}>{state.status.toUpperCase()}</span>
-      <span className="tg soft">Source: {source}</span>
-      <span className="tg soft">Updated {formatTime(state.fetchedAt)}</span>
+      <span className={`badge ${badge}`}>{statusLabel(state.status)}</span>
+      <span className="tg soft">來源：{source}</span>
+      <span className="tg soft">更新 {formatTime(state.fetchedAt)}</span>
       <span className="state-reason">{state.reason}</span>
     </div>
   );
@@ -62,12 +69,12 @@ function FinancialTable({ rows }: { rows: CompanyFinancialRow[] }) {
       <table className="data-table">
         <thead>
           <tr>
-            <th>Period</th>
-            <th>Revenue (bn)</th>
-            <th>Gross margin</th>
-            <th>Operating margin</th>
+            <th>期別</th>
+            <th>營收（十億）</th>
+            <th>毛利率</th>
+            <th>營益率</th>
             <th>EPS</th>
-            <th>YoY</th>
+            <th>年增率</th>
           </tr>
         </thead>
         <tbody>
@@ -95,10 +102,10 @@ function RevenueTable({ rows }: { rows: CompanyRevenueRow[] }) {
       <table className="data-table">
         <thead>
           <tr>
-            <th>Month</th>
-            <th>Revenue (bn)</th>
-            <th>Stock</th>
-            <th>Country</th>
+            <th>年月</th>
+            <th>營收（十億）</th>
+            <th>代號</th>
+            <th>市場</th>
           </tr>
         </thead>
         <tbody>
@@ -122,11 +129,11 @@ function DividendTable({ rows }: { rows: CompanyDividendRow[] }) {
       <table className="data-table">
         <thead>
           <tr>
-            <th>Year</th>
-            <th>Total dividend</th>
-            <th>Cash dividend</th>
-            <th>Stock dividend</th>
-            <th>Date</th>
+            <th>年度</th>
+            <th>股利合計</th>
+            <th>現金股利</th>
+            <th>股票股利</th>
+            <th>日期</th>
           </tr>
         </thead>
         <tbody>
@@ -149,8 +156,8 @@ function Rows({ tab, state }: { tab: TabKey; state: TabState }) {
   if (state.status === "loading") {
     return (
       <div className="state-panel">
-        <span className="badge badge-blue">LOADING</span>
-        <span className="tg soft">Fetching FinMind {tab} data.</span>
+        <span className="badge badge-blue">讀取中</span>
+        <span className="tg soft">正在讀取 {TABS.find((item) => item.key === tab)?.label ?? "財務"} 資料。</span>
       </div>
     );
   }
@@ -189,7 +196,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
           : {
               status: "empty",
               fetchedAt,
-              reason: `FinMind returned zero ${tab} rows for this company.`,
+              reason: `這檔股票目前沒有 ${TABS.find((item) => item.key === tab)?.label ?? "財務"} 資料列。`,
             },
       }));
     } catch (error) {
@@ -198,7 +205,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         [tab]: {
           status: "blocked",
           fetchedAt,
-          reason: error instanceof Error ? error.message : `${tab} request failed`,
+          reason: error instanceof Error ? error.message : `${tab} 資料讀取失敗`,
         },
       }));
     }
@@ -214,8 +221,8 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
   return (
     <section className="panel hud-frame">
       <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[03]</span> FINANCIALS
-        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind live fundamentals</span>
+        <span className="ascii-head-bracket">[03]</span> 財報與營收
+        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 正式基本面</span>
       </h3>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", borderBottom: "1px solid var(--night-rule-strong, #333)", marginBottom: 12, paddingBottom: 10 }}>
@@ -236,9 +243,9 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
 
       {currentState.status === "live" && (
         <div className="source-line">
-          <span className="badge badge-green">LIVE</span>
-          <span className="tg soft">Source: {activeSource}</span>
-          <span className="tg soft">Updated {formatTime(currentState.fetchedAt)}</span>
+          <span className="badge badge-green">正常</span>
+          <span className="tg soft">來源：{activeSource}</span>
+          <span className="tg soft">更新 {formatTime(currentState.fetchedAt)}</span>
         </div>
       )}
       <Rows tab={activeTab} state={currentState} />

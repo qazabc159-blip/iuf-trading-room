@@ -1,4 +1,3 @@
-// loading.tsx — Suspense fallback for /companies/[symbol]
 export default function CompanyDetailLoading() {
   return (
     <div style={{
@@ -8,7 +7,7 @@ export default function CompanyDetailLoading() {
       color: "var(--night-mid, #888)",
       letterSpacing: "0.12em",
     }}>
-      LOADING · COMPANY DETAIL…
+      讀取中 / 公司資料
     </div>
   );
 }

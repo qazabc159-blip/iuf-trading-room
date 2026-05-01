@@ -11,7 +11,7 @@ function stateClass(state: SourceStatus["state"]) {
 
 function stateLabel(state: SourceStatus["state"]) {
   if (state === "live") return "正常";
-  if (state === "stale") return "待更新";
+  if (state === "stale") return "過期";
   return "暫停";
 }
 
@@ -37,7 +37,7 @@ export function SourceStatusCard({ sources }: { sources: SourceStatus[] }) {
               <span className={`badge ${stateClass(source.state)}`}>{stateLabel(source.state)}</span>
               {open && (
                 <span className="source-status-detail tg soft">
-                  更新 {new Date(source.lastSeen).toLocaleTimeString("zh-TW", { hour12: false })} / 等待 {source.queueDepth} / {source.detail}
+                  更新 {new Date(source.lastSeen).toLocaleTimeString("zh-TW", { hour12: false })} / 佇列 {source.queueDepth} / {source.detail}
                 </span>
               )}
             </button>

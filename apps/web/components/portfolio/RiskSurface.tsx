@@ -26,12 +26,12 @@ function statusTone(status: RiskLayerCell["status"]) {
 
 function money(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "--";
-  return `NT$ ${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return `NT$ ${value.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}`;
 }
 
 function numberText(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "--";
-  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  return value.toLocaleString("zh-TW", { maximumFractionDigits: 0 });
 }
 
 function pct(value: number | null | undefined) {
@@ -109,6 +109,19 @@ function layerName(layer: RiskLayerName) {
   return "盤中";
 }
 
+function rowStatusLabel(status: string) {
+  if (status === "trading") return "可交易";
+  if (status === "paper_only") return "紙上模式";
+  if (status === "liquidate_only") return "只減倉";
+  if (status === "halted") return "全鎖定";
+  if (status === "ok") return "正常";
+  if (status === "warn") return "注意";
+  if (status === "block") return "阻擋";
+  if (status === "blocked_killswitch") return "鎖定";
+  if (status === "no_limit_set") return "未設定";
+  return status;
+}
+
 function Breakdown({
   title,
   rows,
@@ -126,7 +139,7 @@ function Breakdown({
           <span className="num">{money(row.exposure)}</span>
           <span className="tg muted">{pct(row.utilizationPct)}</span>
           <span className="tg" style={{ color: row.status === "block" ? "var(--tw-up-bright)" : row.status === "warn" ? "var(--gold-bright)" : "var(--tw-dn-bright)" }}>
-            {row.status}
+            {rowStatusLabel(row.status)}
           </span>
         </div>
       ))}
@@ -158,8 +171,8 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
         <span style={{ color: "var(--tw-dn-bright)", fontWeight: 700 }}>即時</span>
         <span>四層風控總覽</span>
         <span>更新 {formatTime(data.generatedAt)}</span>
-        <span>交易模式 {data.killSwitchState}</span>
-        <span>紙上閘門 {data.paperGateState}</span>
+        <span>交易模式 {rowStatusLabel(data.killSwitchState)}</span>
+        <span>紙上閘門 {rowStatusLabel(data.paperGateState)}</span>
       </div>
       {isEmpty && (
         <div className="terminal-note">

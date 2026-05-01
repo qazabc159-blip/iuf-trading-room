@@ -7,8 +7,10 @@ export const CONTENT_DRAFT_STATUSES: ContentDraftStatus[] = [
 ];
 
 export function contentDraftStatusLabel(status: ContentDraftStatus) {
-  if (status === "awaiting_review") return "AWAITING REVIEW";
-  return status.toUpperCase();
+  if (status === "awaiting_review") return "待審";
+  if (status === "approved") return "已核准";
+  if (status === "rejected") return "已退回";
+  return status;
 }
 
 export function contentDraftStatusBadge(status: ContentDraftStatus) {
@@ -18,7 +20,7 @@ export function contentDraftStatusBadge(status: ContentDraftStatus) {
 }
 
 export function contentDraftTargetLabel(draft: ContentDraftEntry) {
-  return draft.targetTable.replace(/_/g, " ").toUpperCase();
+  return draft.targetTable.replace(/_/g, " ");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

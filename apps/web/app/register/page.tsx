@@ -121,7 +121,7 @@ export default function RegisterPage() {
             </div>
 
             <button className="login-submit" type="submit" disabled={loading}>
-              {loading ? "建立中..." : "建立帳號 ->"}
+              {loading ? "建立中..." : "建立帳號"}
             </button>
 
             <div className="tg soft login-foot">

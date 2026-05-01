@@ -34,38 +34,38 @@ export default async function CompanyDuplicatesPage() {
   return (
     <PageFrame
       code="CMP-DUP"
-      title="Company Duplicate Review"
-      sub={blockedReason ? "BLOCKED" : "Data Quality"}
-      note="[CMP-DUP] Read-only duplicate report from /api/v1/companies/duplicates. Merge actions stay blocked until migration/audit approval."
+      title="公司重複資料檢查"
+      sub={blockedReason ? "暫停" : "資料品質"}
+      note="公司板 / 重複資料報告只讀；合併動作必須等 migration audit、備份 ACK 與審核完成。"
     >
-      <Panel code="DUP-SUM" title="Duplicate Report" right={blockedReason ? "BLOCKED" : generatedAt ? `UPDATED ${timeText(generatedAt)}` : "EMPTY"}>
+      <Panel code="DUP-SUM" title="重複資料總覽" right={blockedReason ? "暫停" : generatedAt ? `更新 ${timeText(generatedAt)}` : "無資料"}>
         {blockedReason ? (
           <div className="terminal-note">
-            BLOCKED: duplicate report API unavailable. Owner: Jason + Mike. Detail: {blockedReason}
+            暫停：重複資料報告暫時無法讀取。負責：Jason + Mike。細節：{blockedReason}
           </div>
         ) : groups.length === 0 ? (
           <div className="terminal-note">
-            EMPTY: /api/v1/companies/duplicates returned zero duplicate groups. No mock duplicate rows are rendered.
+            無資料：正式資料庫目前沒有重複公司群組，不顯示假資料列。
           </div>
         ) : (
           <div className="metric-strip" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-            <Metric label="GROUPS" value={groups.length} />
-            <Metric label="COMPANIES" value={duplicateCompanies} />
-            <Metric label="SOURCE" value="API / DB" />
+            <Metric label="群組" value={groups.length} />
+            <Metric label="公司" value={duplicateCompanies} />
+            <Metric label="來源" value="正式資料庫" />
           </div>
         )}
       </Panel>
 
       <div className="company-grid">
-        <Panel code="DUP-Q" title="Candidate Groups" right={blockedReason ? "BLOCKED" : `${groups.length} GROUPS`}>
+        <Panel code="DUP-Q" title="候選重複群組" right={blockedReason ? "暫停" : `${groups.length} 組`}>
           {groups.length > 0 ? (
             <>
               <div className="row table-head" style={{ gridTemplateColumns: "92px 84px 1fr 74px 1fr", gap: 10 }}>
-                <span>Ticker</span>
-                <span>Count</span>
-                <span>Recommended Canonical</span>
-                <span>Graph</span>
-                <span>Reason</span>
+                <span>代號</span>
+                <span>筆數</span>
+                <span>建議保留</span>
+                <span>關聯</span>
+                <span>原因</span>
               </div>
               {groups.map((group) => {
                 const recommended = group.companies.find((company) => company.companyId === group.recommendedCompanyId) ?? group.companies[0];
@@ -82,16 +82,16 @@ export default async function CompanyDuplicatesPage() {
             </>
           ) : (
             <div className="terminal-note">
-              {blockedReason ? "BLOCKED: no duplicate queue is shown while the API is unavailable." : "EMPTY: no duplicate groups to review."}
+              {blockedReason ? "暫停：API 無法讀取時不顯示重複資料佇列。" : "無資料：目前沒有需要檢查的重複群組。"}
             </div>
           )}
         </Panel>
 
         <div>
           {groups.slice(0, 4).map((group) => (
-            <Panel code="DUP-GRP" title={`${group.ticker} / ${group.duplicateCount} records`} right="READ ONLY" key={group.groupKey}>
+            <Panel code="DUP-GRP" title={`${group.ticker} / ${group.duplicateCount} 筆`} right="只讀" key={group.groupKey}>
               <div className="terminal-note" style={{ marginBottom: 12 }}>
-                BLOCKED: merge / not-duplicate / ignore actions are intentionally hidden. Required before enablement: Mike migration audit, Jason merge contract, backup ACK, and Pete review.
+                暫停：合併、非重複、忽略動作刻意隱藏。啟用前必須完成 Mike migration audit、Jason 合併契約、備份 ACK 與 Pete review。
               </div>
               {group.companies.map((company) => (
                 <CompanyRow key={company.companyId} company={company} recommended={company.companyId === group.recommendedCompanyId} />
@@ -120,7 +120,7 @@ function CompanyRow({ company, recommended }: { company: CompanyDuplicateEntry; 
       <span className="tc">{company.name}</span>
       <span className="tg">{company.market}</span>
       <span className="num">{company.relationCount + company.keywordCount}</span>
-      <span className={`tg ${recommended ? "gold" : "soft"}`}>{recommended ? "CANONICAL" : company.beneficiaryTier}</span>
+      <span className={`tg ${recommended ? "gold" : "soft"}`}>{recommended ? "建議保留" : company.beneficiaryTier}</span>
     </div>
   );
 }

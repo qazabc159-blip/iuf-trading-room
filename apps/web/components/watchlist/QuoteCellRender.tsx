@@ -10,7 +10,7 @@ function formatTime(value: string | null | undefined) {
 }
 
 function formatNumber(value: number) {
-  return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return value.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
 }
 
 function isStale(updatedAt: string) {
@@ -22,10 +22,10 @@ export function QuoteCellRender({ cell, suffix = "" }: { cell: WatchlistQuoteCel
   if (cell.state === "BLOCKED") {
     return (
       <span
-        aria-label={`quote blocked: ${cell.reason}`}
+        aria-label={`報價暫停：${cell.reason}`}
         className="tg"
         style={blockedStyle}
-        title={`${cell.reason}${cell.lastSeenAt ? ` / last seen ${formatTime(cell.lastSeenAt)}` : ""}`}
+        title={`${cell.reason}${cell.lastSeenAt ? ` / 最後 ${formatTime(cell.lastSeenAt)}` : ""}`}
       >
         --
       </span>
@@ -35,10 +35,10 @@ export function QuoteCellRender({ cell, suffix = "" }: { cell: WatchlistQuoteCel
   const stale = isStale(cell.updatedAt);
   return (
     <span
-      aria-label={`quote live ${formatNumber(cell.value)} updated ${formatTime(cell.updatedAt)}`}
+      aria-label={`報價正常 ${formatNumber(cell.value)}，更新 ${formatTime(cell.updatedAt)}`}
       className="num"
       style={{ color: stale ? "var(--gold-bright)" : "var(--tw-dn-bright)" }}
-      title={`updated ${formatTime(cell.updatedAt)}${stale ? " / stale over 30s" : ""}`}
+      title={`更新 ${formatTime(cell.updatedAt)}${stale ? " / 超過 30 秒未更新" : ""}`}
     >
       {formatNumber(cell.value)}{suffix}
     </span>

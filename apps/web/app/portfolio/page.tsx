@@ -163,6 +163,14 @@ function mapKillMode(kill: KillState | null): KillMode {
   return kill.engaged ? "FROZEN" : "ARMED";
 }
 
+function killModeLabel(mode: string | null | undefined) {
+  if (mode === "trading") return "可交易";
+  if (mode === "paper_only") return "紙上模式";
+  if (mode === "liquidate_only") return "只減倉";
+  if (mode === "halted") return "全鎖定";
+  return "保守鎖定";
+}
+
 function statusTone(status: OrderRow["status"]) {
   if (status === "filled" || status === "acknowledged") return "up";
   if (status === "rejected" || status === "expired") return "down";
@@ -305,7 +313,7 @@ export default async function PortfolioPage() {
         </div>
 
         <div>
-          <Panel code="KIL-SW" title="交易模式" sub="後端控管 / 前端唯讀" right={data?.kill.mode ?? "保守鎖定"}>
+          <Panel code="KIL-SW" title="交易模式" sub="後端控管 / 前端唯讀" right={killModeLabel(data?.kill.mode)}>
             <KillSwitch mode={killMode} />
             {!data?.kill && (
               <div className="terminal-note" style={{ marginTop: 12 }}>

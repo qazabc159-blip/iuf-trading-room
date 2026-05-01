@@ -16,6 +16,10 @@ function qualityBadge(value: number) {
   return "badge-yellow";
 }
 
+function surfaceLabel(state: "EMPTY" | "BLOCKED") {
+  return state === "EMPTY" ? "無資料" : "暫停";
+}
+
 function ReviewStatePanel({
   state,
   reason,
@@ -26,11 +30,11 @@ function ReviewStatePanel({
   updatedAt: string;
 }) {
   return (
-    <Panel code={`REV-${state}`} title={state} right="Review ledger source">
+    <Panel code={`REV-${state}`} title={surfaceLabel(state)} right="交易檢討資料">
       <div className="state-panel">
-        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
-        <span className="tg soft">Source: GET /api/v1/reviews</span>
-        <span className="tg soft">Updated {formatDateTime(updatedAt)}</span>
+        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{surfaceLabel(state)}</span>
+        <span className="tg soft">交易檢討資料</span>
+        <span className="tg soft">更新 {formatDateTime(updatedAt)}</span>
         <span className="state-reason">{reason}</span>
       </div>
     </Panel>
@@ -46,20 +50,20 @@ export default async function ReviewsPage() {
     const response = await getReviews();
     reviews = sortReviews(response.data ?? []);
   } catch (err) {
-    error = err instanceof Error ? err.message : "reviews request failed";
+    error = err instanceof Error ? err.message : "交易檢討讀取失敗";
   }
 
   return (
     <PageFrame
       code="REV"
-      title="Review Ledger"
-      sub="Post-trade review entries from production DB"
-      note="[REV] Read-only LIVE/EMPTY/BLOCKED surface for GET /api/v1/reviews"
+      title="交易檢討"
+      sub="成交後復盤與執行品質"
+      note="此頁只讀取正式資料庫的交易檢討，不顯示假資料，也不提供本地模擬動作。"
     >
       {error && (
         <ReviewStatePanel
           state="BLOCKED"
-          reason={`API request failed. Owner: Jason/Elva. Detail: ${error}`}
+          reason={`交易檢討資料暫時無法讀取；後端負責人 Jason/Elva。細節：${error}`}
           updatedAt={requestedAt}
         />
       )}
@@ -67,7 +71,7 @@ export default async function ReviewsPage() {
       {!error && reviews.length === 0 && (
         <ReviewStatePanel
           state="EMPTY"
-          reason="The API returned zero review entries for the authenticated workspace. No mock queue is rendered."
+          reason="目前工作區沒有交易檢討紀錄。"
           updatedAt={requestedAt}
         />
       )}
@@ -75,13 +79,13 @@ export default async function ReviewsPage() {
       {!error && reviews.length > 0 && (
         <Panel
           code="REV-LIVE"
-          title="Review entries"
+          title="交易檢討紀錄"
           right={
             <span className="source-line" style={{ margin: 0 }}>
-              <span className="badge badge-green">LIVE</span>
-              <span>Source: GET /api/v1/reviews</span>
-              <span>Updated {formatDateTime(reviews[0].createdAt)}</span>
-              <span>{reviews.length} rows</span>
+              <span className="badge badge-green">正常</span>
+              <span>交易檢討資料</span>
+              <span>更新 {formatDateTime(reviews[0].createdAt)}</span>
+              <span>{reviews.length} 筆</span>
             </span>
           }
         >
@@ -93,14 +97,14 @@ export default async function ReviewsPage() {
                   <span className={`badge ${qualityBadge(review.executionQuality)}`}>
                     Q{review.executionQuality}
                   </span>
-                  <span className="tg soft">Plan {review.tradePlanId.slice(0, 8)}</span>
+                  <span className="tg soft">計畫 {review.tradePlanId.slice(0, 8)}</span>
                 </div>
-                <h2>{review.outcome || "Untitled review"}</h2>
+                <h2>{review.outcome || "未命名檢討"}</h2>
                 {review.attribution && (
-                  <p><b>Attribution:</b> {review.attribution}</p>
+                  <p><b>歸因：</b>{review.attribution}</p>
                 )}
                 {review.lesson && (
-                  <p><b>Lesson:</b> {review.lesson}</p>
+                  <p><b>教訓：</b>{review.lesson}</p>
                 )}
                 {review.setupTags.length > 0 && (
                   <div className="review-tag-row">
@@ -115,13 +119,12 @@ export default async function ReviewsPage() {
         </Panel>
       )}
 
-      <Panel code="REV-ACTION" title="Action queue" right="contract required">
+      <Panel code="REV-ACTION" title="審核動作" right="待後端契約">
         <div className="state-panel">
-          <span className="badge badge-red">BLOCKED</span>
-          <span className="tg soft">Owner: Jason/Elva.</span>
+          <span className="badge badge-red">暫停</span>
+          <span className="tg soft">負責人：Jason/Elva</span>
           <span className="state-reason">
-            No production contract exists for an accept/reject review queue on this page. The old local-only
-            buttons were removed so operators cannot mistake simulated actions for persisted review decisions.
+            目前沒有正式後端契約可在此頁核准或退回檢討。舊的本地按鈕已移除，避免把模擬動作誤認為已寫入資料庫。
           </span>
         </div>
       </Panel>

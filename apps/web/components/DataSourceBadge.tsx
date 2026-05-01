@@ -26,12 +26,20 @@ type BadgeState =
 
 const CHECK_INTERVAL_MS = 60_000;
 
+function modeLabel(value: string | null | undefined) {
+  if (!value) return "資料庫";
+  if (value === "database") return "資料庫";
+  if (value === "memory") return "記憶體";
+  if (value === "mock") return "模擬資料";
+  return value;
+}
+
 export function DataSourceBadge() {
   const [state, setState] = useState<BadgeState>({
     status: "CHECKING",
-    label: "CHECKING | BACKEND",
-    detail: "session probe",
-    checkedAt: null
+    label: "檢查中 | 後端",
+    detail: "正在確認工作階段",
+    checkedAt: null,
   });
 
   useEffect(() => {
@@ -44,17 +52,17 @@ export function DataSourceBadge() {
         if (cancelled) return;
         setState({
           status: "LIVE",
-          label: "LIVE | BACKEND",
-          detail: `${session.data.persistenceMode} | ${session.data.workspace.name}`,
-          checkedAt
+          label: "正常 | 後端",
+          detail: `${modeLabel(session.data.persistenceMode)} | ${session.data.workspace.name}`,
+          checkedAt,
         });
       } catch {
         if (cancelled) return;
         setState({
           status: "BLOCKED",
-          label: "BLOCKED | AUTH/API",
-          detail: "session endpoint unavailable",
-          checkedAt
+          label: "暫停 | 登入/API",
+          detail: "工作階段暫時無法確認",
+          checkedAt,
         });
       }
     }
@@ -82,7 +90,7 @@ export function DataSourceBadge() {
     <div
       role="status"
       aria-live="polite"
-      title={`${state.detail}${state.checkedAt ? ` | checked ${state.checkedAt}` : ""}`}
+      title={`${state.detail}${state.checkedAt ? ` | 檢查 ${state.checkedAt}` : ""}`}
       style={{
         position: "fixed",
         right: 14,
@@ -99,8 +107,7 @@ export function DataSourceBadge() {
         fontSize: 10,
         fontWeight: 700,
         letterSpacing: "0.14em",
-        textTransform: "uppercase",
-        backdropFilter: "blur(4px)"
+        backdropFilter: "blur(4px)",
       }}
     >
       <span>{state.label}</span>
@@ -112,7 +119,7 @@ export function DataSourceBadge() {
           letterSpacing: "0.08em",
           overflow: "hidden",
           textOverflow: "ellipsis",
-          whiteSpace: "nowrap"
+          whiteSpace: "nowrap",
         }}
       >
         {state.detail}

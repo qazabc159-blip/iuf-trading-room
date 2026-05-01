@@ -26,7 +26,7 @@ const emptyData: SignalData = {
 };
 
 async function loadSignals(): Promise<LoadState> {
-  const source = "GET /api/v1/signals + /api/v1/themes + /api/v1/companies";
+  const source = "訊號資料庫";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -46,7 +46,7 @@ async function loadSignals(): Promise<LoadState> {
         data,
         updatedAt,
         source,
-        reason: "Signals endpoint returned zero rows. No fallback tape is rendered.",
+        reason: "訊號資料庫目前回傳 0 筆，不顯示假訊號流。",
       };
     }
     return { state: "LIVE", data, updatedAt, source };
@@ -74,6 +74,18 @@ function stateTone(state: LoadState["state"]) {
   return "down";
 }
 
+function stateLabel(state: LoadState["state"]) {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  return "暫停";
+}
+
+function directionLabel(direction: SignalRow["direction"]) {
+  if (direction === "bullish") return "偏多";
+  if (direction === "bearish") return "偏空";
+  return "中性";
+}
+
 function directionTone(direction: SignalRow["direction"]) {
   if (direction === "bullish") return "up";
   if (direction === "bearish") return "down";
@@ -99,9 +111,9 @@ function firstCompany(signal: SignalRow, companies: CompanyRow[]) {
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
-      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{result.state}</span>
-      <span>{result.source}</span>
-      <span>updated {formatTime(result.updatedAt)}</span>
+      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
+      <span>來源：{result.source}</span>
+      <span>更新 {formatTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );
@@ -111,7 +123,7 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
   if (result.state === "LIVE") return null;
   return (
     <div className="terminal-note">
-      <span className={`tg ${stateTone(result.state)}`}>{result.state}</span>{" "}
+      <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>{" "}
       {result.reason}
     </div>
   );
@@ -130,35 +142,35 @@ export default async function SignalsPage() {
   return (
     <PageFrame
       code="07"
-      title="Signals"
-      sub="Signal tape"
-      note="[07] SIGNALS reads production signal rows and maps attached theme/company ids. No synthetic tape is rendered."
+      title="訊號證據"
+      sub="訊號流"
+      note="訊號證據 / 正式訊號資料；連結主題與公司，不顯示假訊號。"
     >
       <MetricStrip
         cells={[
-          { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "TOTAL", value: countsAvailable ? signals.length : "--" },
-          { label: "BULL", value: countsAvailable ? bullCount : "--", tone: "up" },
-          { label: "BEAR", value: countsAvailable ? bearCount : "--", tone: "down" },
-          { label: "NEUT", value: countsAvailable ? neutralCount : "--", tone: "muted" },
-          { label: "CAT", value: countsAvailable ? categories.size : "--" },
-          { label: "HIGH CONF", value: countsAvailable ? highConfidenceCount : "--", tone: "gold" },
+          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
+          { label: "總數", value: countsAvailable ? signals.length : "--" },
+          { label: "偏多", value: countsAvailable ? bullCount : "--", tone: "up" },
+          { label: "偏空", value: countsAvailable ? bearCount : "--", tone: "down" },
+          { label: "中性", value: countsAvailable ? neutralCount : "--", tone: "muted" },
+          { label: "分類", value: countsAvailable ? categories.size : "--" },
+          { label: "高信心", value: countsAvailable ? highConfidenceCount : "--", tone: "gold" },
         ]}
         columns={7}
       />
 
       <Panel
         code="SIG-TAPE"
-        title={`${formatTime(result.updatedAt)} TPE`}
-        sub="CHRONOLOGICAL SIGNAL RAIL / REAL API"
-        right={result.state}
+        title={`${formatTime(result.updatedAt)} 台北`}
+        sub="時間序訊號流 / 正式 API"
+        right={stateLabel(result.state)}
       >
         <SourceLine result={result} />
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
           <>
             <div className="row telex-row table-head tg" style={{ gridTemplateColumns: "76px 82px 76px 110px 1fr 74px" }}>
-              <span>TIME</span><span>CATEGORY</span><span>DIR</span><span>ATTACH</span><span>TITLE</span><span>CONF</span>
+              <span>時間</span><span>分類</span><span>方向</span><span>連結</span><span>標題</span><span>信心</span>
             </div>
             {signals.map((signal) => {
               const company = firstCompany(signal, result.data.companies);
@@ -167,16 +179,16 @@ export default async function SignalsPage() {
                 <div className="row telex-row" style={{ gridTemplateColumns: "76px 82px 76px 110px 1fr 74px" }} key={signal.id}>
                   <span className="tg soft">{formatTime(signal.createdAt)}</span>
                   <span className="tg gold">{signal.category}</span>
-                  <span className={`tg ${directionTone(signal.direction)}`}>{signal.direction}</span>
+                  <span className={`tg ${directionTone(signal.direction)}`}>{directionLabel(signal.direction)}</span>
                   {company ? (
                     <Link href={`/companies/${company.ticker}`} className="tg">{company.ticker}</Link>
                   ) : theme ? (
                     <Link href={`/themes/${theme.slug}`} className="tg">{theme.slug}</Link>
                   ) : (
-                    <span className="tg muted">UNMAPPED</span>
+                    <span className="tg muted">未連結</span>
                   )}
                   <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {signal.title} / {signal.summary || "no summary"}
+                    {signal.title} / {signal.summary || "無摘要"}
                   </span>
                   <span className={`tg ${confidenceTone(signal.confidence)}`}>C{signal.confidence}</span>
                 </div>

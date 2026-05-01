@@ -52,12 +52,27 @@ body {
     radial-gradient(circle at 70% 0%, rgba(200,148,63,0.07), transparent 34%),
     var(--night);
   background-size: 100% 18px, 18px 100%, 100% 100%, 100% 100%;
-  font-family: var(--serif);
+  font-family: var(--serif-tc);
 }
 
 * { box-sizing: border-box; }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; }
+
+.table-sort-button {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.table-sort-button:hover {
+  color: var(--gold-bright);
+}
 
 .tg {
   font-family: var(--mono);
@@ -119,6 +134,13 @@ button { font: inherit; }
   padding: 9px 16px;
   border-left: 2px solid transparent;
   color: var(--night-soft);
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.nav-link:hover {
+  color: var(--night-ink);
+  background: rgba(200, 148, 63, 0.055);
+  transform: translateX(1px);
 }
 
 .nav-link[data-active="true"] {
@@ -133,13 +155,14 @@ button { font: inherit; }
 }
 
 .nav-label {
-  font: 700 10.5px/1.15 var(--mono);
+  font: 700 12px/1.15 var(--serif-tc);
+  letter-spacing: 0.02em;
 }
 
 .nav-tc {
   margin-top: 3px;
   color: var(--night-mid);
-  font: 12px/1.2 var(--serif-tc);
+  font: 10px/1.2 var(--mono);
 }
 
 .sidebar-logout {
@@ -299,6 +322,13 @@ button { font: inherit; }
 .panel {
   border-top: 1px solid var(--night-rule-strong);
   background: rgba(8, 11, 16, 0.48);
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.panel:hover {
+  border-top-color: rgba(226, 184, 92, 0.36);
+  background: rgba(10, 14, 20, 0.62);
+  box-shadow: inset 0 1px 0 rgba(226, 184, 92, 0.045);
 }
 
 .panel + .panel { margin-top: 20px; }

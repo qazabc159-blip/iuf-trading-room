@@ -2,18 +2,30 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Company, BeneficiaryTier } from "@iuf-trading-room/contracts";
-import { getCompanies } from "@/lib/api";
+import type { BeneficiaryTier, Company } from "@iuf-trading-room/contracts";
+
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
+import { getCompanies } from "@/lib/api";
 
 const PAGE_SIZE = 50;
 type SortField = "ticker" | "name" | "chainPosition" | "beneficiaryTier";
 type SortDir = "asc" | "desc";
+type RegistryState = "LOADING" | "LIVE" | "EMPTY" | "BLOCKED";
 
 const tierRank: Record<BeneficiaryTier, number> = { Core: 0, Direct: 1, Indirect: 2, Observation: 3 };
-const tierLabel: Record<BeneficiaryTier, string> = { Core: "核心", Direct: "直接", Indirect: "間接", Observation: "觀察" };
-const tierBadge: Record<BeneficiaryTier, string> = { Core: "badge-green", Direct: "badge-yellow", Indirect: "badge", Observation: "badge" };
+const tierLabel: Record<BeneficiaryTier, string> = {
+  Core: "核心",
+  Direct: "直接",
+  Indirect: "間接",
+  Observation: "觀察",
+};
+const tierBadge: Record<BeneficiaryTier, string> = {
+  Core: "badge-green",
+  Direct: "badge-yellow",
+  Indirect: "badge",
+  Observation: "badge",
+};
 
 function formatTime(value: string | null) {
   if (!value) return "--";
@@ -27,6 +39,26 @@ function sortArrowChar(field: SortField, sortField: SortField, sortDir: SortDir)
   return sortDir === "asc" ? " ↑" : " ↓";
 }
 
+function registryLabel(state: RegistryState) {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  if (state === "LOADING") return "讀取中";
+  return "暫停";
+}
+
+function registryTone(state: RegistryState) {
+  if (state === "LIVE") return "up";
+  if (state === "BLOCKED") return "down";
+  return "gold";
+}
+
+function registryBadge(state: RegistryState) {
+  if (state === "LIVE") return "badge-green";
+  if (state === "EMPTY") return "badge-yellow";
+  if (state === "LOADING") return "badge-blue";
+  return "badge-red";
+}
+
 export default function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,43 +70,41 @@ export default function CompaniesPage() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(0);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
-
   const [rawTotal, setRawTotal] = useState(0);
 
   useEffect(() => {
     getCompanies()
-      .then((r) => {
+      .then((response) => {
         setFetchedAt(new Date().toISOString());
-        const raw = r.data;
+        const raw = response.data;
         setRawTotal(raw.length);
-        // Client-side dedup by ticker (临時防禦 — 等 Jason 0020 migration 拆掉)
-        const unique = Array.from(new Map(raw.map((c) => [c.ticker, c])).values());
+        const unique = Array.from(new Map(raw.map((company) => [company.ticker, company])).values());
         setCompanies(unique);
       })
-      .catch((e) => {
+      .catch((caught) => {
         setFetchedAt(new Date().toISOString());
-        setError(e instanceof Error ? e.message : "無法載入公司");
+        setError(caught instanceof Error ? caught.message : "公司資料讀取失敗");
       })
       .finally(() => setLoading(false));
   }, []);
 
   const chainPositions = useMemo(
-    () => [...new Set(companies.map((c) => c.chainPosition).filter(Boolean))].sort(),
+    () => [...new Set(companies.map((company) => company.chainPosition).filter(Boolean))].sort(),
     [companies]
   );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return companies
-      .filter((c) => {
+      .filter((company) => {
         if (q) {
-          const matchTicker = c.ticker.toLowerCase().includes(q);
-          const matchName = c.name.toLowerCase().includes(q);
-          const matchChain = c.chainPosition.toLowerCase().includes(q);
+          const matchTicker = company.ticker.toLowerCase().includes(q);
+          const matchName = company.name.toLowerCase().includes(q);
+          const matchChain = company.chainPosition.toLowerCase().includes(q);
           if (!matchTicker && !matchName && !matchChain) return false;
         }
-        if (filterChain && c.chainPosition !== filterChain) return false;
-        if (filterTier && c.beneficiaryTier !== filterTier) return false;
+        if (filterChain && company.chainPosition !== filterChain) return false;
+        if (filterTier && company.beneficiaryTier !== filterTier) return false;
         return true;
       })
       .sort((a, b) => {
@@ -86,7 +116,7 @@ export default function CompaniesPage() {
         }
         return sortDir === "asc" ? cmp : -cmp;
       });
-  }, [companies, search, filterChain, filterTier, sortField, sortDir]);
+  }, [companies, filterChain, filterTier, search, sortDir, sortField]);
 
   useEffect(() => { setPage(0); }, [search, filterChain, filterTier, sortField, sortDir]);
 
@@ -94,184 +124,116 @@ export default function CompaniesPage() {
   const pageSlice = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   const toggleSort = useCallback((field: SortField) => {
-    if (sortField === field) setSortDir((d) => d === "asc" ? "desc" : "asc");
-    else { setSortField(field); setSortDir("asc"); }
+    if (sortField === field) setSortDir((current) => current === "asc" ? "desc" : "asc");
+    else {
+      setSortField(field);
+      setSortDir("asc");
+    }
   }, [sortField]);
 
-  const twseCount = companies.filter((c) => c.market === "TWSE").length;
-  const tpexCount = companies.filter((c) => c.market === "TPEX").length;
-  const coreCount = companies.filter((c) => c.beneficiaryTier === "Core").length;
-  const registryState = loading ? "LOADING" : error ? "BLOCKED" : companies.length === 0 ? "EMPTY" : "LIVE";
-  const registryBadge = registryState === "LIVE" ? "badge-green" : registryState === "EMPTY" ? "badge-yellow" : registryState === "LOADING" ? "badge-blue" : "badge-red";
-  const registryTone = registryState === "LIVE" ? "up" : registryState === "EMPTY" || registryState === "LOADING" ? "gold" : "down";
-  const registryMetric = (value: number) => loading ? "—" : error ? "--" : value.toLocaleString();
+  const twseCount = companies.filter((company) => company.market === "TWSE").length;
+  const tpexCount = companies.filter((company) => company.market === "TPEX" || company.market === "TPEx").length;
+  const coreCount = companies.filter((company) => company.beneficiaryTier === "Core").length;
+  const state: RegistryState = loading ? "LOADING" : error ? "BLOCKED" : companies.length === 0 ? "EMPTY" : "LIVE";
+  const metric = (value: number) => loading ? "--" : error ? "--" : value.toLocaleString("zh-TW");
 
   return (
     <PageFrame
       code="03"
-      title="Companies"
-      sub="公司板"
-      note="[03] COMPANIES · catalog registry · real API count · sorted by ticker"
+      title="公司板"
+      sub="台股公司池"
+      note="公司板 / 正式公司主檔 / 可搜尋、篩選、排序；重複資料合併仍等 migration audit。"
     >
-      {/* KPI strip */}
       <MetricStrip
         columns={6}
         cells={[
-          { label: "STATE",     value: registryState, tone: registryTone },
-          { label: "TOTAL",     value: registryMetric(companies.length) },
-          { label: "TWSE",      value: registryMetric(twseCount) },
-          { label: "TPEX",      value: registryMetric(tpexCount) },
-          { label: "CORE TIER", value: registryMetric(coreCount), tone: !error && coreCount > 0 ? "gold" : "muted" },
-          { label: "FILTERED",  value: registryMetric(filtered.length) },
+          { label: "狀態", value: registryLabel(state), tone: registryTone(state) },
+          { label: "總數", value: metric(companies.length) },
+          { label: "上市", value: metric(twseCount) },
+          { label: "上櫃", value: metric(tpexCount) },
+          { label: "核心", value: metric(coreCount), tone: !error && coreCount > 0 ? "gold" : "muted" },
+          { label: "篩選", value: metric(filtered.length) },
         ]}
       />
 
       <Panel
         code="CO-REG"
-        title="COMPANY REGISTRY"
-        sub="ticker · name · chainPosition · beneficiaryTier"
-        right={registryState === "LIVE" ? `${companies.length} SYMBOLS` : registryState}
+        title="公司主檔"
+        sub="代號 / 名稱 / 產業鏈位置 / 受惠層級"
+        right={state === "LIVE" ? `${companies.length.toLocaleString("zh-TW")} 檔` : registryLabel(state)}
       >
         <div className="source-line">
-          <span className={`badge ${registryBadge}`}>{registryState}</span>
-          <span className="tg soft">Source: GET /api/v1/companies</span>
-          <span className="tg soft">Updated {formatTime(fetchedAt)}</span>
-          {error && <span className="tg soft">Owner: Jason/Elva. Detail: {error}</span>}
+          <span className={`badge ${registryBadge(state)}`}>{registryLabel(state)}</span>
+          <span className="tg soft">來源：公司主檔 API</span>
+          <span className="tg soft">更新 {formatTime(fetchedAt)}</span>
+          {error && <span className="tg soft">負責：Jason / Elva。細節：{error}</span>}
         </div>
 
-        {/* Search + filter bar */}
         <div style={{ display: "flex", gap: 8, padding: "10px 0", flexWrap: "wrap", alignItems: "center" }}>
           <input
             type="text"
-            placeholder="搜尋 ticker / 名稱 / 產業鏈..."
+            placeholder="搜尋代號、公司名、產業鏈..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              flex: "1 1 220px", minWidth: 180,
-              background: "var(--night-bg, #0a0a08)",
-              border: "1px solid var(--night-rule-strong, #333)",
-              color: "var(--night-ink, #d8d4c8)",
-              fontFamily: "var(--mono)",
-              fontSize: 12,
-              padding: "6px 10px",
-              letterSpacing: "0.06em",
-            }}
+            onChange={(event) => setSearch(event.target.value)}
+            style={inputStyle}
           />
-          <select
-            value={filterChain}
-            onChange={(e) => setFilterChain(e.target.value)}
-            style={{
-              flex: "0 1 200px",
-              background: "var(--night-bg, #0a0a08)",
-              border: "1px solid var(--night-rule-strong, #333)",
-              color: "var(--night-ink, #d8d4c8)",
-              fontFamily: "var(--mono)",
-              fontSize: 11,
-              padding: "6px 8px",
-            }}
-          >
+          <select value={filterChain} onChange={(event) => setFilterChain(event.target.value)} style={selectStyle}>
             <option value="">全部產業鏈</option>
-            {chainPositions.map((cp) => (
-              <option key={cp} value={cp}>{cp}</option>
+            {chainPositions.map((chainPosition) => (
+              <option key={chainPosition} value={chainPosition}>{chainPosition}</option>
             ))}
           </select>
-          <select
-            value={filterTier}
-            onChange={(e) => setFilterTier(e.target.value)}
-            style={{
-              flex: "0 1 140px",
-              background: "var(--night-bg, #0a0a08)",
-              border: "1px solid var(--night-rule-strong, #333)",
-              color: "var(--night-ink, #d8d4c8)",
-              fontFamily: "var(--mono)",
-              fontSize: 11,
-              padding: "6px 8px",
-            }}
-          >
+          <select value={filterTier} onChange={(event) => setFilterTier(event.target.value)} style={{ ...selectStyle, flex: "0 1 140px" }}>
             <option value="">全部層級</option>
-            {(["Core", "Direct", "Indirect", "Observation"] as BeneficiaryTier[]).map((t) => (
-              <option key={t} value={t}>{tierLabel[t]}</option>
+            {(["Core", "Direct", "Indirect", "Observation"] as BeneficiaryTier[]).map((tier) => (
+              <option key={tier} value={tier}>{tierLabel[tier]}</option>
             ))}
           </select>
           {(search || filterChain || filterTier) && (
             <button
               className="btn-sm"
               onClick={() => { setSearch(""); setFilterChain(""); setFilterTier(""); }}
+              type="button"
             >
               清除
             </button>
           )}
         </div>
 
-        {/* Dedup banner — temporary, remove when Jason 0020 migration lands */}
         {!loading && !error && rawTotal !== companies.length && (
-          <div style={{
-            padding: "6px 10px",
-            background: "rgba(184,150,12,0.08)",
-            border: "1px solid var(--gold, #b8960c)",
-            fontFamily: "var(--mono, monospace)",
-            fontSize: 11,
-            color: "var(--gold, #b8960c)",
-            marginBottom: 8,
-          }}>
-            [DEDUP] 資料庫去重整合中 — 顯示 {companies.length.toLocaleString()} 唯一公司，總列 {rawTotal.toLocaleString()} 行
+          <div className="terminal-note" style={{ marginBottom: 8 }}>
+            去重提示：公司主檔目前讀到 {rawTotal.toLocaleString("zh-TW")} 筆，前端先以代號顯示 {companies.length.toLocaleString("zh-TW")} 檔。正式去重 migration 仍待 Mike/Jason gate。
           </div>
         )}
 
         {error && (
           <div className="terminal-note">
-            BLOCKED: company registry request failed. {error}
+            暫停：公司主檔讀取失敗。{error}
           </div>
         )}
 
-        {/* Loading state */}
         {loading && !error && (
-          <div style={{ padding: "16px 0", color: "var(--night-mid, #888)", fontFamily: "var(--mono)", fontSize: 12, letterSpacing: "0.1em" }}>
-            LOADING · COMPANY REGISTRY…
-          </div>
+          <div className="terminal-note">讀取中：正在讀取公司主檔。</div>
         )}
 
         {!loading && !error && companies.length === 0 && (
           <div className="terminal-note">
-            EMPTY: GET /api/v1/companies returned zero company rows. No fallback catalog is rendered.
+            無資料：公司主檔 API 回傳 0 筆，不顯示假公司列表。
           </div>
         )}
 
-        {/* Table */}
         {!loading && !error && (
           <>
-            <div className="row position-row table-head tg" style={{ gridTemplateColumns: "70px minmax(120px,1fr) minmax(140px,1.4fr) 80px 80px" }}>
-              <span
-                style={{ cursor: "pointer" }}
-                onClick={() => toggleSort("ticker")}
-              >
-                SYM{sortArrowChar("ticker", sortField, sortDir)}
-              </span>
-              <span
-                style={{ cursor: "pointer" }}
-                onClick={() => toggleSort("name")}
-              >
-                名稱{sortArrowChar("name", sortField, sortDir)}
-              </span>
-              <span
-                style={{ cursor: "pointer" }}
-                onClick={() => toggleSort("chainPosition")}
-              >
-                產業鏈{sortArrowChar("chainPosition", sortField, sortDir)}
-              </span>
-              <span
-                style={{ cursor: "pointer" }}
-                onClick={() => toggleSort("beneficiaryTier")}
-              >
-                層級{sortArrowChar("beneficiaryTier", sortField, sortDir)}
-              </span>
-              <span>MKT</span>
+            <div className="row position-row table-head tg" style={tableGridStyle}>
+              <button type="button" className="table-sort-button" onClick={() => toggleSort("ticker")}>代號{sortArrowChar("ticker", sortField, sortDir)}</button>
+              <button type="button" className="table-sort-button" onClick={() => toggleSort("name")}>公司{sortArrowChar("name", sortField, sortDir)}</button>
+              <button type="button" className="table-sort-button" onClick={() => toggleSort("chainPosition")}>產業鏈{sortArrowChar("chainPosition", sortField, sortDir)}</button>
+              <button type="button" className="table-sort-button" onClick={() => toggleSort("beneficiaryTier")}>層級{sortArrowChar("beneficiaryTier", sortField, sortDir)}</button>
+              <span>市場</span>
             </div>
 
             {pageSlice.length === 0 && (
-              <div style={{ padding: "16px 0", color: "var(--night-mid, #888)", fontFamily: "var(--mono)", fontSize: 12 }}>
-                — 無符合條件的公司 —
-              </div>
+              <div className="terminal-note">沒有符合篩選條件的公司。</div>
             )}
 
             {pageSlice.map((company) => (
@@ -279,7 +241,7 @@ export default function CompaniesPage() {
                 key={company.id}
                 href={`/companies/${company.ticker}`}
                 className="row position-row"
-                style={{ gridTemplateColumns: "70px minmax(120px,1fr) minmax(140px,1.4fr) 80px 80px" }}
+                style={tableGridStyle}
                 title={company.notes ? company.notes.slice(0, 120) : undefined}
               >
                 <span className="tg gold" style={{ fontWeight: 700, fontFamily: "var(--mono)" }}>{company.ticker}</span>
@@ -296,28 +258,19 @@ export default function CompaniesPage() {
               </Link>
             ))}
 
-            {/* Pagination */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderTop: "1px solid var(--night-rule, #222)" }}>
               <span className="tg muted" style={{ fontSize: 11 }}>
-                {filtered.length === 0 ? "0 筆" : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, filtered.length)} / ${filtered.length} 筆`}
+                {filtered.length === 0 ? "0 筆" : `${page * PAGE_SIZE + 1} 至 ${Math.min((page + 1) * PAGE_SIZE, filtered.length)} / ${filtered.length} 筆`}
               </span>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <button
-                  className="btn-sm"
-                  disabled={page === 0}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  ← 上頁
+                <button className="btn-sm" disabled={page === 0} onClick={() => setPage((current) => current - 1)} type="button">
+                  上一頁
                 </button>
                 <span className="tg muted" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
                   {page + 1} / {totalPages}
                 </span>
-                <button
-                  className="btn-sm"
-                  disabled={page >= totalPages - 1}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  下頁 →
+                <button className="btn-sm" disabled={page >= totalPages - 1} onClick={() => setPage((current) => current + 1)} type="button">
+                  下一頁
                 </button>
               </div>
             </div>
@@ -327,3 +280,29 @@ export default function CompaniesPage() {
     </PageFrame>
   );
 }
+
+const tableGridStyle = {
+  gridTemplateColumns: "70px minmax(120px,1fr) minmax(140px,1.4fr) 80px 80px",
+} satisfies React.CSSProperties;
+
+const inputStyle = {
+  flex: "1 1 220px",
+  minWidth: 180,
+  background: "var(--night-bg, #0a0a08)",
+  border: "1px solid var(--night-rule-strong, #333)",
+  color: "var(--night-ink, #d8d4c8)",
+  fontFamily: "var(--mono)",
+  fontSize: 12,
+  padding: "6px 10px",
+  letterSpacing: "0.06em",
+} satisfies React.CSSProperties;
+
+const selectStyle = {
+  flex: "0 1 200px",
+  background: "var(--night-bg, #0a0a08)",
+  border: "1px solid var(--night-rule-strong, #333)",
+  color: "var(--night-ink, #d8d4c8)",
+  fontFamily: "var(--mono)",
+  fontSize: 11,
+  padding: "6px 8px",
+} satisfies React.CSSProperties;

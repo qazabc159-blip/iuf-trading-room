@@ -172,7 +172,9 @@ export default async function CompanyDetailPage({
   }
 
   let ohlcvErrorMsg: string | null = null;
-  const rawBars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d" }).catch((err) => {
+  const from = new Date();
+  from.setFullYear(from.getFullYear() - 3);
+  const rawBars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d", from: from.toISOString().slice(0, 10) }).catch((err) => {
     ohlcvErrorMsg = err instanceof Error ? err.message : String(err);
     console.warn("[company-detail] getCompanyOhlcv failed", { id: company.id, err });
     return [];

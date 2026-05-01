@@ -11,12 +11,12 @@ function toRiskCell(layer: RiskLayerName, advisory: WatchlistRiskAdvisoryPreview
   return {
     layer,
     status: advisory.layers[layer],
-    limit: { kind: "watchlist advisory", value: 0, unit: "count" },
+    limit: { kind: "觀察清單試算", value: 0, unit: "count" },
     current: 0,
     utilizationPct: advisory.layers[layer] === "block" ? 1 : advisory.layers[layer] === "warn" ? 0.8 : 0,
     warnThresholdPct: 0.8,
     blockThresholdPct: 1,
-    reason: advisory.layers[layer] === "no_limit_set" ? `${layer} limit not set` : null,
+    reason: advisory.layers[layer] === "no_limit_set" ? "此層風控尚未設定限制" : null,
     topContributors: [],
   };
 }
@@ -48,23 +48,23 @@ function quoteBlocked(row: WatchlistRow) {
 
 function promoteReason(row: WatchlistRow) {
   if (row.promoteBlockedReason) return row.promoteBlockedReason;
-  if (quoteBlocked(row)) return "BLOCKED: one or more quote cells are unavailable.";
-  if (!row.hypothetical1LotBuyRisk) return "BLOCKED: risk advisory unavailable.";
-  return "BLOCKED: Contract 4 promote-to-paper route is not wired yet; use /portfolio paper ticket manually.";
+  if (quoteBlocked(row)) return "報價資料不完整，暫時不能帶入委託。";
+  if (!row.hypothetical1LotBuyRisk) return "風控試算尚未可用。";
+  return "策略想法帶入紙上委託的後端流程尚未啟用，請先到紙上交易頁手動建立。";
 }
 
 export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
   return (
     <div style={tableStyle}>
       <div className="row table-head tg" style={rowStyle}>
-        <span>SYMBOL</span>
-        <span>NAME</span>
-        <span>LAST</span>
-        <span>BID</span>
-        <span>ASK</span>
-        <span>CHG%</span>
-        <span>RISK</span>
-        <span>PROMOTE</span>
+        <span>代號</span>
+        <span>名稱</span>
+        <span>成交</span>
+        <span>買價</span>
+        <span>賣價</span>
+        <span>漲跌%</span>
+        <span>風控</span>
+        <span>帶入</span>
       </div>
       {rows.slice(0, 12).map((row) => {
         const advisory = row.hypothetical1LotBuyRisk;
@@ -77,7 +77,7 @@ export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
             <QuoteCellRender cell={row.ask} />
             <QuoteCellRender cell={row.changePct} suffix="%" />
             <PositionRiskBadge
-              blockedReason={advisory ? undefined : "Risk advisory failed for this watchlist row."}
+              blockedReason={advisory ? undefined : "此檔風控試算尚未可用。"}
               layers={advisory ? riskLayers(advisory) : null}
               overviewState={advisory ? "LIVE" : "BLOCKED"}
               row={riskRow(row)}
@@ -89,14 +89,14 @@ export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
               title={promoteReason(row)}
               type="button"
             >
-              PROMOTE
+              待啟用
             </button>
           </div>
         );
       })}
       {rows.length > 12 && (
         <div className="tg soft" style={{ padding: "8px 0" }}>
-          Showing first 12 of {rows.length}; backend order preserved.
+          先顯示前 12 檔，共 {rows.length} 檔；排序沿用後端結果。
         </div>
       )}
     </div>

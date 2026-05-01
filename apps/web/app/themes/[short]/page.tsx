@@ -42,7 +42,7 @@ async function loadThemeDetail(slug: string): Promise<LoadState> {
         data: emptyData,
         updatedAt,
         source,
-        reason: `No theme row found for slug ${slug}.`,
+        reason: `找不到主題代碼 ${slug}。`,
       };
     }
 
@@ -99,6 +99,28 @@ function stateTone(state: LoadState["state"]) {
   return "down";
 }
 
+function stateLabel(state: LoadState["state"]) {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  return "暫停";
+}
+
+function marketStateLabel(state: ThemeRow["marketState"] | string | null | undefined) {
+  if (state === "Attack") return "進攻";
+  if (state === "Selective Attack") return "選擇性進攻";
+  if (state === "Defense") return "防守";
+  if (state === "Preservation") return "保全";
+  return state ?? "--";
+}
+
+function lifecycleLabel(value: string | null | undefined) {
+  if (value === "active") return "啟用";
+  if (value === "watch") return "觀察";
+  if (value === "paused") return "暫停";
+  if (value === "retired") return "退場";
+  return value ?? "--";
+}
+
 function marketTone(state: ThemeRow["marketState"]) {
   if (state === "Attack" || state === "Selective Attack") return "up";
   if (state === "Defense" || state === "Preservation") return "down";
@@ -111,18 +133,30 @@ function directionTone(direction: IdeaRow["direction"] | SignalRow["direction"])
   return "muted";
 }
 
+function directionLabel(direction: IdeaRow["direction"] | SignalRow["direction"]) {
+  if (direction === "bullish") return "偏多";
+  if (direction === "bearish") return "偏空";
+  return "中性";
+}
+
 function decisionTone(decision: IdeaRow["marketData"]["decision"]) {
   if (decision === "allow") return "up";
   if (decision === "review") return "gold";
   return "down";
 }
 
+function decisionLabel(decision: IdeaRow["marketData"]["decision"]) {
+  if (decision === "allow") return "可觀察";
+  if (decision === "review") return "待審";
+  return "阻擋";
+}
+
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
-      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{result.state}</span>
-      <span>{result.source}</span>
-      <span>updated {formatTime(result.updatedAt)}</span>
+      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
+      <span>主題資料 / 公司 / 訊號 / 策略想法</span>
+      <span>更新 {formatTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );
@@ -132,7 +166,7 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
   if (result.state === "LIVE") return null;
   return (
     <div className="terminal-note">
-      <span className={`tg ${stateTone(result.state)}`}>{result.state}</span>{" "}
+      <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>{" "}
       {result.reason}
     </div>
   );
@@ -147,8 +181,8 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
   const dependentTone = result.state === "EMPTY" ? "gold" : "down";
   const dependentReason =
     result.state === "EMPTY"
-      ? "No theme row exists, so dependent joins are not evaluated."
-      : "Theme detail source is blocked, so dependent joins are hidden until the source is live.";
+      ? "找不到主題主檔，因此不顯示相關公司、訊號與策略想法。"
+      : "主題明細資料暫停，相關公司、訊號與策略想法先隱藏。";
   const coreCount = detailLive && theme ? theme.corePoolCount : null;
   const observationCount = detailLive && theme ? theme.observationPoolCount : null;
   const memberCount = detailLive ? result.data.companies.length : null;
@@ -159,53 +193,53 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
     <PageFrame
       code={theme ? `02-${theme.priority}` : "02-D"}
       title={theme?.name ?? short}
-      sub={theme ? `${theme.slug} / ${theme.marketState}` : "Theme detail unavailable"}
-      note="[02B] THEME DETAIL reads production themes, companies, signals, and strategy ideas. Unsupported mock heat/pulse/order actions are hidden."
+      sub={theme ? `${theme.slug} / ${marketStateLabel(theme.marketState)}` : "主題明細暫停"}
+      note="此頁讀取正式主題、公司、訊號與策略想法；沒有後端契約的熱度、脈衝與下單動作不顯示。"
     >
       <MetricStrip
         cells={[
-          { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "PRIORITY", value: theme?.priority ?? "--", tone: theme?.priority === 1 ? "gold" : "muted" },
-          { label: "CORE", value: coreCount ?? "--", tone: (coreCount ?? 0) > 0 ? "gold" : "muted" },
-          { label: "OBS", value: observationCount ?? "--" },
-          { label: "MEMBERS", value: memberCount ?? "--" },
-          { label: "IDEAS", value: ideaCount ?? "--", tone: (ideaCount ?? 0) > 0 ? "up" : "muted" },
-          { label: "SIGNALS", value: signalCount ?? "--" },
+          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
+          { label: "優先", value: theme?.priority ?? "--", tone: theme?.priority === 1 ? "gold" : "muted" },
+          { label: "核心", value: coreCount ?? "--", tone: (coreCount ?? 0) > 0 ? "gold" : "muted" },
+          { label: "觀察", value: observationCount ?? "--" },
+          { label: "成員", value: memberCount ?? "--" },
+          { label: "想法", value: ideaCount ?? "--", tone: (ideaCount ?? 0) > 0 ? "up" : "muted" },
+          { label: "訊號", value: signalCount ?? "--" },
         ]}
         columns={7}
       />
 
       <div className="company-grid">
         <div>
-          <Panel code="THM-SRC" title={`${formatTime(result.updatedAt)} TPE`} sub="SOURCE / THESIS / WHY NOW" right={result.state}>
+          <Panel code="THM-SRC" title={`${formatTime(result.updatedAt)} 台北`} sub="資料來源 / 投資命題 / 現在性" right={stateLabel(result.state)}>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {theme && (
               <div className="ticket" style={{ minHeight: 168 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start" }}>
                   <div style={{ minWidth: 0 }}>
-                    <div className={`tg ${marketTone(theme.marketState)}`}>{theme.marketState} / {theme.lifecycle}</div>
+                    <div className={`tg ${marketTone(theme.marketState)}`}>{marketStateLabel(theme.marketState)} / {lifecycleLabel(theme.lifecycle)}</div>
                     <div className="tc" style={{ fontSize: 30, marginTop: 8 }}>{theme.name}</div>
-                    <div className="tg soft" style={{ marginTop: 8 }}>{theme.slug.toUpperCase()} / updated {formatDate(theme.updatedAt)}</div>
+                    <div className="tg soft" style={{ marginTop: 8 }}>{theme.slug.toUpperCase()} / 更新 {formatDate(theme.updatedAt)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div className="num" style={{ fontSize: 42, fontWeight: 700 }}>{theme.priority}</div>
-                    <div className="tg gold">PRIORITY</div>
+                    <div className="tg gold">優先序</div>
                   </div>
                 </div>
                 <div className="tc soft" style={{ marginTop: 16, lineHeight: 1.7 }}>{theme.thesis}</div>
-                <div className="tg soft" style={{ marginTop: 10 }}>why now: {theme.whyNow}</div>
-                <div className="tg soft" style={{ marginTop: 6 }}>bottleneck: {theme.bottleneck}</div>
+                <div className="tg soft" style={{ marginTop: 10 }}>現在性：{theme.whyNow}</div>
+                <div className="tg soft" style={{ marginTop: 6 }}>瓶頸：{theme.bottleneck}</div>
               </div>
             )}
           </Panel>
 
-          <Panel code="MEM-LST" title="MEMBER COMPANIES" sub="themeIds join / real DB" right={detailLive ? `${result.data.companies.length} CO` : dependentState}>
-            {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{dependentState}</span> {dependentReason}</div>}
-            {detailLive && result.data.companies.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No company rows currently attach this theme id.</div>}
+          <Panel code="MEM-LST" title="成員公司" sub="正式公司主檔連結" right={detailLive ? `${result.data.companies.length} 檔` : stateLabel(dependentState)}>
+            {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
+            {detailLive && result.data.companies.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有公司掛在此主題。</div>}
             {detailLive && result.data.companies.length > 0 && (
               <div className="row position-row table-head tg">
-                <span>SYM</span><span>NAME</span><span>TIER</span><span>MKT</span><span>CHAIN</span><span>UPDATED</span>
+                <span>代號</span><span>公司</span><span>層級</span><span>市場</span><span>位置</span><span>更新</span>
               </div>
             )}
             {detailLive && result.data.companies.map((company) => (
@@ -222,29 +256,29 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
         </div>
 
         <div>
-          <Panel code="IDEA-ATT" title="ATTACHED IDEAS" sub="strategy endpoint theme filter" right={detailLive ? `${result.data.ideas.length} ROWS` : dependentState}>
-            {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{dependentState}</span> {dependentReason}</div>}
-            {detailLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No strategy ideas currently attach this theme id.</div>}
+          <Panel code="IDEA-ATT" title="連結策略想法" sub="依主題篩選正式策略資料" right={detailLive ? `${result.data.ideas.length} 筆` : stateLabel(dependentState)}>
+            {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
+            {detailLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有策略想法掛在此主題。</div>}
             {detailLive && result.data.ideas.slice(0, 8).map((idea) => (
               <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
                 <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
-                <span className={`tg ${directionTone(idea.direction)}`}>{idea.direction}</span>
+                <span className={`tg ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
                 <span className="num">{idea.score.toFixed(1)}</span>
-                <span className={`tg ${decisionTone(idea.marketData.decision)}`}>{idea.marketData.decision}</span>
+                <span className={`tg ${decisionTone(idea.marketData.decision)}`}>{decisionLabel(idea.marketData.decision)}</span>
                 <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{idea.rationale.primaryReason}</span>
-                <Link href={`/companies/${idea.symbol}`} className="mini-button">DETAIL</Link>
+                <Link href={`/companies/${idea.symbol}`} className="mini-button">公司</Link>
               </div>
             ))}
           </Panel>
 
-          <Panel code="SIG-TAPE" title="THEME SIGNAL TAPE" sub="real signal rows" right={detailLive ? `${result.data.signals.length} EVENTS` : dependentState}>
-            {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{dependentState}</span> {dependentReason}</div>}
-            {detailLive && result.data.signals.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No signal rows currently attach this theme id.</div>}
+          <Panel code="SIG-TAPE" title="主題訊號流" sub="正式訊號資料" right={detailLive ? `${result.data.signals.length} 則` : stateLabel(dependentState)}>
+            {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
+            {detailLive && result.data.signals.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有訊號掛在此主題。</div>}
             {detailLive && result.data.signals.slice(0, 10).map((signal) => (
               <div className="row telex-row" style={{ gridTemplateColumns: "76px 78px 74px 1fr" }} key={signal.id}>
                 <span className="tg soft">{formatTime(signal.createdAt)}</span>
                 <span className="tg gold">{signal.category}</span>
-                <span className={`tg ${directionTone(signal.direction)}`}>{signal.direction}</span>
+                <span className={`tg ${directionTone(signal.direction)}`}>{directionLabel(signal.direction)}</span>
                 <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {signal.title} / C{signal.confidence}
                 </span>

@@ -19,7 +19,7 @@ const emptyRuns: RunsView = {
 };
 
 async function loadRuns(): Promise<LoadState> {
-  const source = "GET /api/v1/strategy/runs?decisionMode=paper&sort=created_at";
+  const source = "策略批次資料庫";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -35,7 +35,7 @@ async function loadRuns(): Promise<LoadState> {
         data,
         updatedAt,
         source,
-        reason: "Strategy runs endpoint returned zero rows. No fallback run ledger is rendered.",
+        reason: "策略批次目前回傳 0 筆，不顯示假批次紀錄。",
       };
     }
     return { state: "LIVE", data, updatedAt, source };
@@ -74,6 +74,25 @@ function stateTone(state: LoadState["state"]) {
   return "down";
 }
 
+function stateLabel(state: LoadState["state"]) {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  return "暫停";
+}
+
+function decisionModeLabel(value: string) {
+  if (value === "paper") return "紙上";
+  if (value === "live") return "實盤";
+  return value;
+}
+
+function directionLabel(value: string) {
+  if (value === "bullish") return "偏多";
+  if (value === "bearish") return "偏空";
+  if (value === "neutral") return "中性";
+  return value;
+}
+
 function decisionTone(decision: RunRow["summary"] extends { allow: number } ? "allow" | "review" | "block" : never) {
   if (decision === "allow") return "up";
   if (decision === "review") return "gold";
@@ -96,9 +115,9 @@ function qualityPrimary(view: RunsView) {
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
-      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{result.state}</span>
-      <span>{result.source}</span>
-      <span>updated {formatTime(result.updatedAt)}</span>
+      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
+      <span>來源：{result.source}</span>
+      <span>更新 {formatTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );
@@ -108,7 +127,7 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
   if (result.state === "LIVE") return null;
   return (
     <div className="terminal-note">
-      <span className={`tg ${stateTone(result.state)}`}>{result.state}</span>{" "}
+      <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>{" "}
       {result.reason}
     </div>
   );
@@ -134,35 +153,35 @@ export default async function RunsPage() {
   return (
     <PageFrame
       code="05"
-      title="Runs"
-      sub="Strategy run ledger"
-      note="[05] RUNS reads the production strategy run ledger. It is read-only and never submits orders."
+      title="策略批次"
+      sub="策略產出紀錄"
+      note="策略批次 / 正式資料庫；本頁只讀，永遠不送出委託。"
     >
       <MetricStrip
         cells={[
-          { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "RUNS", value: statsAvailable ? result.data.total : "--" },
-          { label: "ALLOW", value: statsAvailable ? totals.allow : "--", tone: "up" },
-          { label: "REVIEW", value: statsAvailable ? totals.review : "--", tone: "gold" },
-          { label: "BLOCK", value: statsAvailable ? totals.block : "--", tone: "down" },
-          { label: "READY", value: statsAvailable ? counts.ready : "--", tone: statsAvailable && counts.ready > 0 ? "up" : "muted" },
-          { label: "TOP CONF", value: statsAvailable && result.data.items.length ? percent(avgConfidence) : "--" },
+          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
+          { label: "批次", value: statsAvailable ? result.data.total : "--" },
+          { label: "可觀察", value: statsAvailable ? totals.allow : "--", tone: "up" },
+          { label: "待審", value: statsAvailable ? totals.review : "--", tone: "gold" },
+          { label: "阻擋", value: statsAvailable ? totals.block : "--", tone: "down" },
+          { label: "可用", value: statsAvailable ? counts.ready : "--", tone: statsAvailable && counts.ready > 0 ? "up" : "muted" },
+          { label: "信心", value: statsAvailable && result.data.items.length ? percent(avgConfidence) : "--" },
         ]}
         columns={7}
       />
 
       <Panel
         code="RUN-TBL"
-        title={`${formatTime(result.updatedAt)} TPE`}
-        sub="STRATEGY RUNS / PAPER DECISION / READ ONLY"
-        right={result.state}
+        title={`${formatTime(result.updatedAt)} 台北`}
+        sub="策略批次 / 紙上決策 / 只讀"
+        right={stateLabel(result.state)}
       >
         <SourceLine result={result} />
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
           <>
             <div className="row position-row table-head tg" style={{ gridTemplateColumns: "170px 136px 86px 72px 72px 72px 1fr 80px" }}>
-              <span>ID</span><span>GENERATED</span><span>MODE</span><span>ALLOW</span><span>REVIEW</span><span>BLOCK</span><span>TOP IDEA</span><span>DETAIL</span>
+              <span>ID</span><span>產生</span><span>模式</span><span>可觀察</span><span>待審</span><span>阻擋</span><span>主要想法</span><span>明細</span>
             </div>
             {result.data.items.map((run) => (
               <Link
@@ -173,27 +192,27 @@ export default async function RunsPage() {
               >
                 <span className="tg gold">{run.id}</span>
                 <span className="tg soft">{formatDateTime(run.generatedAt)}</span>
-                <span className="tg">{run.decisionMode}</span>
+                <span className="tg">{decisionModeLabel(run.decisionMode)}</span>
                 <span className={`num ${decisionTone("allow")}`}>{run.summary.allow}</span>
                 <span className={`num ${decisionTone("review")}`}>{run.summary.review}</span>
                 <span className={`num ${decisionTone("block")}`}>{run.summary.block}</span>
                 <span className="tg soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {run.topIdea ? `${run.topIdea.symbol} / ${run.topIdea.direction} / ${run.topIdea.score.toFixed(1)} / ${run.topSymbols.join(", ")}` : "NO TOP IDEA"}
+                  {run.topIdea ? `${run.topIdea.symbol} / ${directionLabel(run.topIdea.direction)} / ${run.topIdea.score.toFixed(1)} / ${run.topSymbols.join(", ")}` : "無主要想法"}
                 </span>
-                <span className="mini-button">DETAIL</span>
+                <span className="mini-button">查看</span>
               </Link>
             ))}
           </>
         )}
       </Panel>
 
-      <Panel code="RUN-QA" title="4-STATE AUDIT" sub="endpoint truth / no silent mock" right={result.source}>
+      <Panel code="RUN-QA" title="真實狀態檢查" sub="端點真實性 / 不靜默造假" right={result.source}>
         <div className="tg soft" style={{ display: "grid", gap: 6, paddingBottom: 12 }}>
-          <span>source: {result.source}</span>
+          <span>來源：{result.source}</span>
           <span>
-            quality: {statsAvailable ? `ready ${counts.ready} / reference ${counts.reference} / insufficient ${counts.insufficient}` : "blocked until strategy run source is live"}
+            品質：{statsAvailable ? `可用 ${counts.ready} / 參考 ${counts.reference} / 不足 ${counts.insufficient}` : "策略批次來源恢復前維持暫停"}
           </span>
-          <span>write policy: list/detail only; strategy run execute and order submit remain outside this page.</span>
+          <span>寫入政策：只看列表與明細；策略執行與下單不在本頁。</span>
         </div>
       </Panel>
     </PageFrame>

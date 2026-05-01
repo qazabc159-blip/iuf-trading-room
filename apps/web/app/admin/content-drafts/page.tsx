@@ -30,12 +30,13 @@ function AdminDraftStatePanel({
   reason: string;
   updatedAt: string;
 }) {
+  const label = state === "EMPTY" ? "無資料" : "暫停";
   return (
-    <Panel code={`ADM-${state}`} title={state} right="Admin draft source">
+    <Panel code={`ADM-${state}`} title={label} right="審稿草稿來源">
       <div className="state-panel">
-        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{state}</span>
-        <span className="tg soft">Source: GET /api/v1/content-drafts</span>
-        <span className="tg soft">Updated {formatDateTime(updatedAt)}</span>
+        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{label}</span>
+        <span className="tg soft">來源：審稿草稿資料庫</span>
+        <span className="tg soft">更新 {formatDateTime(updatedAt)}</span>
         <span className="state-reason">{reason}</span>
       </div>
     </Panel>
@@ -47,12 +48,12 @@ function AdminDraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
     <div className="content-draft-table">
       <div className="content-draft-row admin table-head">
         <span>ID</span>
-        <span>Target</span>
-        <span>Title</span>
-        <span>Status</span>
-        <span>Producer</span>
-        <span>Updated</span>
-        <span>Open</span>
+        <span>目標</span>
+        <span>標題</span>
+        <span>狀態</span>
+        <span>產生者</span>
+        <span>更新</span>
+        <span>開啟</span>
       </div>
       {drafts.map((draft) => {
         const body = contentDraftBody(draft);
@@ -69,7 +70,7 @@ function AdminDraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
             </span>
             <span className="tg soft">{draft.producerVersion}</span>
             <span className="tg soft">{formatDateTime(draft.updatedAt)}</span>
-            <Link className="mini-button" href={`/admin/content-drafts/${draft.id}`}>VIEW</Link>
+            <Link className="mini-button" href={`/admin/content-drafts/${draft.id}`}>查看</Link>
           </div>
         );
       })}
@@ -98,20 +99,20 @@ export default async function ContentDraftsAdminPage({
     const response = await getContentDrafts({ status, limit: 100 });
     drafts = response.data ?? [];
   } catch (err) {
-    error = err instanceof Error ? err.message : "content drafts request failed";
+    error = err instanceof Error ? err.message : "審稿草稿讀取失敗";
   }
 
   return (
     <PageFrame
       code="ADM-DRF"
-      title="Admin Content Drafts"
-      sub="OpenAlice review queue from production DB"
+      title="內容草稿審核"
+      sub="OpenAlice 正式審稿佇列"
       exec
-      note="[ADM-DRF] Read-only queue; approve/reject actions remain gated on detail page."
+      note="內容草稿審核 / 只讀佇列；核准與退回動作仍在明確 gate 後才開。"
     >
-      <Panel code="ADM-FLT" title="Status filter" right={status ? contentDraftStatusLabel(status) : "ALL"}>
+      <Panel code="ADM-FLT" title="狀態篩選" right={status ? contentDraftStatusLabel(status) : "全部"}>
         <div className="filter-row">
-          <Link className={!status ? "mini-button" : "outline-button"} href="/admin/content-drafts">ALL</Link>
+          <Link className={!status ? "mini-button" : "outline-button"} href="/admin/content-drafts">全部</Link>
           {CONTENT_DRAFT_STATUSES.map((item) => (
             <Link
               className={status === item ? "mini-button" : "outline-button"}
@@ -127,7 +128,7 @@ export default async function ContentDraftsAdminPage({
       {error && (
         <AdminDraftStatePanel
           state="BLOCKED"
-          reason={`API request failed or role denied. Owner: Jason/Elva. Detail: ${error}`}
+          reason={`審稿草稿 API 暫時無法讀取或權限不足。負責：Jason / Elva。細節：${error}`}
           updatedAt={requestedAt}
         />
       )}
@@ -135,7 +136,7 @@ export default async function ContentDraftsAdminPage({
       {!error && drafts.length === 0 && (
         <AdminDraftStatePanel
           state="EMPTY"
-          reason="The API returned zero content drafts for this filter. No mock admin queue is rendered."
+          reason="目前篩選條件沒有內容草稿，不顯示假審稿佇列。"
           updatedAt={requestedAt}
         />
       )}
@@ -143,13 +144,13 @@ export default async function ContentDraftsAdminPage({
       {!error && drafts.length > 0 && (
         <Panel
           code="ADM-LIVE"
-          title="Draft queue"
+          title="草稿佇列"
           right={
             <span className="source-line" style={{ margin: 0 }}>
-              <span className="badge badge-green">LIVE</span>
-              <span>Source: GET /api/v1/content-drafts</span>
-              <span>Updated {formatDateTime(latestUpdatedAt(drafts))}</span>
-              <span>{drafts.length} rows</span>
+              <span className="badge badge-green">正常</span>
+              <span>來源：審稿草稿資料庫</span>
+              <span>更新 {formatDateTime(latestUpdatedAt(drafts))}</span>
+              <span>{drafts.length} 筆</span>
             </span>
           }
         >

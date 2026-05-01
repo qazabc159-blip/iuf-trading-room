@@ -120,11 +120,11 @@ export default function LoginPage() {
             </div>
 
             <button className="login-submit" type="submit" disabled={loading}>
-              {loading ? "登入中..." : "登入戰情室 ->"}
+              {loading ? "登入中..." : "登入戰情室"}
             </button>
 
             <div className="tg soft login-foot">
-              IUF-01 / real auth session / 安全登入
+              IUF-01 / 真實登入工作階段 / 安全登入
             </div>
           </form>
         </div>

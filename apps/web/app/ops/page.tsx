@@ -11,7 +11,7 @@ type LoadState =
   | { state: "BLOCKED"; data: OpsSnapshot | null; updatedAt: string; source: string; reason: string };
 
 async function loadOps(): Promise<LoadState> {
-  const source = "GET /api/v1/ops/snapshot?auditHours=24&recentLimit=12";
+  const source = "營運快照";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -24,7 +24,7 @@ async function loadOps(): Promise<LoadState> {
         data,
         updatedAt: data.generatedAt || updatedAt,
         source,
-        reason: "Ops snapshot returned zero stats, audit rows, and queue jobs.",
+        reason: "營運快照目前沒有統計、稽核列或佇列工作。",
       };
     }
     return {
@@ -57,6 +57,19 @@ function stateTone(state: LoadState["state"]) {
   return "down";
 }
 
+function stateLabel(state: LoadState["state"]) {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  return "暫停";
+}
+
+function healthLabel(state: string | undefined) {
+  if (state === "healthy") return "健康";
+  if (state === "stale") return "過期";
+  if (!state) return "--";
+  return state;
+}
+
 function healthTone(state: string) {
   if (state === "healthy") return "up";
   if (state === "stale") return "gold";
@@ -73,9 +86,9 @@ function severityTone(value: string | undefined) {
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
-      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{result.state}</span>
-      <span>{result.source}</span>
-      <span>updated {formatTime(result.updatedAt)}</span>
+      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
+      <span>來源：{result.source}</span>
+      <span>更新 {formatTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );
@@ -85,7 +98,7 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
   if (result.state === "LIVE") return null;
   return (
     <div className="terminal-note">
-      <span className={`tg ${stateTone(result.state)}`}>{result.state}</span>{" "}
+      <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>{" "}
       {result.reason}
     </div>
   );
@@ -101,39 +114,39 @@ export default async function OpsPage() {
   return (
     <PageFrame
       code="09"
-      title="Ops"
-      sub="Operations snapshot"
-      note="[09] OPS reads the production ops snapshot endpoint. Mock health probes and fake jobs are removed."
+      title="營運監控"
+      sub="系統快照"
+      note="營運監控 / 正式營運快照；不顯示假健康檢查或假工作。"
     >
       <MetricStrip
         cells={[
-          { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "THEMES", value: data ? stats?.themes ?? 0 : "--" },
-          { label: "COMPANIES", value: data ? stats?.companies ?? 0 : "--" },
-          { label: "SIGNALS", value: data ? stats?.signals ?? 0 : "--" },
-          { label: "QUEUE", value: data ? queue?.totalJobs ?? 0 : "--", tone: (queue?.failed ?? 0) > 0 ? "down" : "muted" },
-          { label: "AUDIT", value: data ? data.audit.total : "--", tone: data && data.audit.total > 0 ? "gold" : "muted" },
-          { label: "WORKER", value: obs?.workerStatus ?? "--", tone: obs ? healthTone(obs.workerStatus) : "muted" },
+          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
+          { label: "主題", value: data ? stats?.themes ?? 0 : "--" },
+          { label: "公司", value: data ? stats?.companies ?? 0 : "--" },
+          { label: "訊號", value: data ? stats?.signals ?? 0 : "--" },
+          { label: "佇列", value: data ? queue?.totalJobs ?? 0 : "--", tone: (queue?.failed ?? 0) > 0 ? "down" : "muted" },
+          { label: "稽核", value: data ? data.audit.total : "--", tone: data && data.audit.total > 0 ? "gold" : "muted" },
+          { label: "Worker", value: healthLabel(obs?.workerStatus), tone: obs ? healthTone(obs.workerStatus) : "muted" },
         ]}
         columns={7}
       />
 
       <div className="main-grid">
         <div>
-          <Panel code="OPS-SRC" title={`${formatTime(result.updatedAt)} TPE`} sub="SNAPSHOT SOURCE" right={result.state}>
+          <Panel code="OPS-SRC" title={`${formatTime(result.updatedAt)} 台北`} sub="快照來源" right={stateLabel(result.state)}>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {data && (
               <div style={{ border: "1px solid var(--night-rule-strong)" }}>
                 {[
-                  ["WORKSPACE", `${data.workspace.name} / ${data.workspace.slug}`],
-                  ["GENERATED", data.generatedAt],
-                  ["CORE CO", String(data.stats.coreCompanies)],
-                  ["DIRECT CO", String(data.stats.directCompanies)],
-                  ["ACTIVE PLANS", String(data.stats.activePlans)],
-                  ["REVIEW QUEUE", String(data.stats.reviewQueue)],
-                  ["PUBLISHED BRIEFS", String(data.stats.publishedBriefs)],
-                  ["BULLISH SIGNALS", String(data.stats.bullishSignals)],
+                  ["工作區", `${data.workspace.name} / ${data.workspace.slug}`],
+                  ["產生時間", data.generatedAt],
+                  ["核心公司", String(data.stats.coreCompanies)],
+                  ["直接受惠", String(data.stats.directCompanies)],
+                  ["進行計畫", String(data.stats.activePlans)],
+                  ["審核佇列", String(data.stats.reviewQueue)],
+                  ["已發布簡報", String(data.stats.publishedBriefs)],
+                  ["偏多訊號", String(data.stats.bullishSignals)],
                 ].map(([label, value]) => (
                   <div className="row limit-row" key={label}>
                     <span className="tg gold">{label}</span>
@@ -144,19 +157,19 @@ export default async function OpsPage() {
             )}
           </Panel>
 
-          <Panel code="JOB-Q" title="OPENALICE QUEUE" sub="worker observability" right={obs?.workerStatus ?? "BLOCKED"}>
-            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> OpenAlice observability is hidden because the ops snapshot is unavailable.</div>}
-            {data && !obs && <div className="terminal-note"><span className="tg gold">EMPTY</span> No OpenAlice observability payload.</div>}
+          <Panel code="JOB-Q" title="OpenAlice 佇列" sub="worker 觀測" right={healthLabel(obs?.workerStatus) ?? "暫停"}>
+            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，OpenAlice 觀測先隱藏。</div>}
+            {data && !obs && <div className="terminal-note"><span className="tg gold">無資料</span> 沒有 OpenAlice 觀測 payload。</div>}
             {obs && queue && (
               <>
                 {[
-                  ["WORKER", obs.workerStatus, healthTone(obs.workerStatus)],
-                  ["SWEEP", obs.sweepStatus, healthTone(obs.sweepStatus)],
-                  ["MODE", obs.metrics.mode, "muted"],
-                  ["QUEUED", String(queue.queued), queue.queued > 0 ? "gold" : "muted"],
-                  ["RUNNING", String(queue.running), queue.running > 0 ? "up" : "muted"],
-                  ["FAILED", String(queue.failed), queue.failed > 0 ? "down" : "muted"],
-                  ["STALE RUNNING", String(obs.metrics.staleRunningJobs), obs.metrics.staleRunningJobs > 0 ? "down" : "muted"],
+                  ["Worker", healthLabel(obs.workerStatus), healthTone(obs.workerStatus)],
+                  ["掃描", healthLabel(obs.sweepStatus), healthTone(obs.sweepStatus)],
+                  ["模式", obs.metrics.mode, "muted"],
+                  ["排隊", String(queue.queued), queue.queued > 0 ? "gold" : "muted"],
+                  ["執行中", String(queue.running), queue.running > 0 ? "up" : "muted"],
+                  ["失敗", String(queue.failed), queue.failed > 0 ? "down" : "muted"],
+                  ["過期執行", String(obs.metrics.staleRunningJobs), obs.metrics.staleRunningJobs > 0 ? "down" : "muted"],
                 ].map(([label, value, tone]) => (
                   <div className="row limit-row" key={label}>
                     <span className="tg gold">{label}</span>
@@ -169,8 +182,8 @@ export default async function OpsPage() {
         </div>
 
         <div>
-          <Panel code="LAT-ROW" title="LATEST ROWS" sub="themes / companies / signals / plans" right="DB">
-            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Latest rows are hidden because the ops snapshot is unavailable.</div>}
+          <Panel code="LAT-ROW" title="最新資料列" sub="主題 / 公司 / 訊號 / 計畫" right="資料庫">
+            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，最新資料列先隱藏。</div>}
             {data && Object.entries(data.latest).flatMap(([bucket, rows]) =>
               rows.slice(0, 3).map((row) => (
                 <div className="row telex-row" style={{ gridTemplateColumns: "76px 92px 1fr" }} key={`${bucket}-${row.id}`}>
@@ -183,15 +196,15 @@ export default async function OpsPage() {
               ))
             )}
             {data && Object.values(data.latest).every((rows) => rows.length === 0) && (
-              <div className="terminal-note"><span className="tg gold">EMPTY</span> No latest rows in snapshot.</div>
+              <div className="terminal-note"><span className="tg gold">無資料</span> 快照中沒有最新資料列。</div>
             )}
           </Panel>
         </div>
 
         <div>
-          <Panel code="AUD-SUM" title="AUDIT SUMMARY" sub="last 24 hours" right={data ? `${data.audit.total} ROWS` : "BLOCKED"}>
-            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Audit summary is hidden because the ops snapshot is unavailable.</div>}
-            {data?.audit.actions.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No audit summary rows.</div>}
+          <Panel code="AUD-SUM" title="稽核摘要" sub="近 24 小時" right={data ? `${data.audit.total} 筆` : "暫停"}>
+            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，稽核摘要先隱藏。</div>}
+            {data?.audit.actions.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 沒有稽核摘要。</div>}
             {data?.audit.actions.map((item) => (
               <div className="row limit-row" key={item.action}>
                 <span className="tg gold">{item.action}</span>
@@ -200,9 +213,9 @@ export default async function OpsPage() {
             ))}
           </Panel>
 
-          <Panel code="AUD-TBL" title="AUDIT EVENTS" sub="recent mutations / reads" right={data ? `${data.audit.recent.length} ROWS` : "BLOCKED"}>
-            {!data && <div className="terminal-note"><span className="tg down">BLOCKED</span> Audit events are hidden because the ops snapshot is unavailable.</div>}
-            {data?.audit.recent.length === 0 && <div className="terminal-note"><span className="tg gold">EMPTY</span> No recent audit rows.</div>}
+          <Panel code="AUD-TBL" title="稽核事件" sub="最近寫入 / 讀取" right={data ? `${data.audit.recent.length} 筆` : "暫停"}>
+            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，稽核事件先隱藏。</div>}
+            {data?.audit.recent.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 沒有最近稽核列。</div>}
             {data?.audit.recent.slice(0, 10).map((event) => (
               <div className="row telex-row" style={{ gridTemplateColumns: "76px 82px 1fr" }} key={event.id}>
                 <span className="tg soft">{formatTime(event.createdAt)}</span>

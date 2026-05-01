@@ -7,16 +7,16 @@ import {
   getCompanies,
   getStrategyIdeas,
   getThemes,
-  listStrategyRuns
+  listStrategyRuns,
 } from "@/lib/api";
 import type {
   Company,
   StrategyIdea,
   StrategyRunListItem,
-  Theme
+  Theme,
 } from "@iuf-trading-room/contracts";
 
-type ItemGroup = "ROUTE" | "THEME" | "COMPANY" | "IDEA" | "RUN" | "STATE";
+type ItemGroup = "頁面" | "主題" | "公司" | "想法" | "批次" | "狀態";
 
 type Item = {
   code: string;
@@ -29,21 +29,53 @@ type Item = {
 type LoadState = "idle" | "loading" | "live" | "empty" | "blocked";
 
 const ROUTES: Item[] = [
-  { code: "01", label: "Dashboard", sub: "market, risk, and live desk overview", href: "/", group: "ROUTE" },
-  { code: "02", label: "Themes", sub: "theme graph and investment narratives", href: "/themes", group: "ROUTE" },
-  { code: "03", label: "Companies", sub: "company universe and detail panels", href: "/companies", group: "ROUTE" },
-  { code: "04", label: "Ideas", sub: "strategy ideas from real signals and market data", href: "/ideas", group: "ROUTE" },
-  { code: "05", label: "Runs", sub: "strategy run records and lineage", href: "/runs", group: "ROUTE" },
-  { code: "06", label: "Portfolio", sub: "paper balance, positions, orders, fills, and risk", href: "/portfolio", group: "ROUTE" },
-  { code: "07", label: "Signals", sub: "stored signal evidence", href: "/signals", group: "ROUTE" },
-  { code: "08", label: "Plans", sub: "trade plans and review queue", href: "/plans", group: "ROUTE" },
-  { code: "09", label: "Ops", sub: "production snapshot and audit logs", href: "/ops", group: "ROUTE" },
-  { code: "10", label: "Market Intel", sub: "announcements and news-style evidence", href: "/market-intel", group: "ROUTE" }
+  { code: "01", label: "戰情台", sub: "大盤、觀察清單、重大訊息與策略總覽", href: "/", group: "頁面" },
+  { code: "02", label: "主題板", sub: "台股主題、產業鏈與投資敘事", href: "/themes", group: "頁面" },
+  { code: "03", label: "公司板", sub: "公司池、個股資料與 K 線", href: "/companies", group: "頁面" },
+  { code: "04", label: "策略想法", sub: "由真實訊號與市場資料產生的紙上想法", href: "/ideas", group: "頁面" },
+  { code: "05", label: "策略批次", sub: "策略批次紀錄與輸出", href: "/runs", group: "頁面" },
+  { code: "06", label: "紙上交易", sub: "資金、部位、委託、成交與風控", href: "/portfolio", group: "頁面" },
+  { code: "07", label: "訊號證據", sub: "訊號資料與證據紀錄", href: "/signals", group: "頁面" },
+  { code: "08", label: "交易計畫", sub: "交易計畫與審核佇列", href: "/plans", group: "頁面" },
+  { code: "09", label: "營運監控", sub: "系統狀態、稽核與工作流", href: "/ops", group: "頁面" },
+  { code: "10", label: "重大訊息", sub: "公告、新聞線索與市場情報", href: "/market-intel", group: "頁面" },
 ];
 
 function clip(value: string | null | undefined, max = 72) {
   if (!value) return "-";
   return value.length > max ? `${value.slice(0, max - 1)}...` : value;
+}
+
+function directionLabel(value: string) {
+  if (value === "bullish") return "偏多";
+  if (value === "bearish") return "偏空";
+  if (value === "neutral") return "中性";
+  return value;
+}
+
+function decisionModeLabel(value: string) {
+  if (value === "paper") return "紙上";
+  if (value === "live") return "實盤";
+  if (value === "research") return "研究";
+  return value;
+}
+
+function readinessLabel(value: string | null | undefined) {
+  if (!value) return "未標示";
+  if (value === "ready" || value === "allow") return "可用";
+  if (value === "review") return "待審";
+  if (value === "blocked") return "暫停";
+  if (value === "stale") return "過期";
+  if (value === "missing") return "缺資料";
+  return value;
+}
+
+function sourceLabel(state: LoadState, loadedAt: string | null) {
+  if (state === "live") return `正常 | ${loadedAt ?? "已載入"}`;
+  if (state === "loading") return "讀取中 | 後端";
+  if (state === "empty") return `無資料 | ${loadedAt ?? "已載入"}`;
+  if (state === "blocked") return `暫停 | ${loadedAt ?? "已檢查"}`;
+  return "待命";
 }
 
 export function CommandPalette() {
@@ -90,13 +122,13 @@ export function CommandPalette() {
         decisionMode: "paper",
         includeBlocked: true,
         limit: 20,
-        sort: "score"
+        sort: "score",
       }),
       listStrategyRuns({
         decisionMode: "paper",
         limit: 20,
-        sort: "created_at"
-      })
+        sort: "created_at",
+      }),
     ])
       .then(([themeRes, companyRes, ideaRes, runRes]) => {
         if (cancelled) return;
@@ -118,7 +150,7 @@ export function CommandPalette() {
         setIdeas([]);
         setRuns([]);
         setLoadedAt(new Date().toISOString());
-        setLoadError(error instanceof Error ? error.message : "command palette data request failed");
+        setLoadError(error instanceof Error ? error.message : "指令面板資料讀取失敗");
         setLoadState("blocked");
       });
 
@@ -132,22 +164,22 @@ export function CommandPalette() {
       loadState === "blocked"
         ? [
             {
-              code: "BLOCKED",
-              label: "Backend unavailable",
+              code: "暫停",
+              label: "後端暫時無法讀取",
               sub: clip(loadError, 90),
               href: null,
-              group: "STATE"
-            }
+              group: "狀態",
+            },
           ]
         : loadState === "empty"
           ? [
               {
-                code: "EMPTY",
-                label: "No live rows returned",
-                sub: "routes still available; backend returned zero rows for searchable data",
+                code: "無資料",
+                label: "目前沒有資料列",
+                sub: "頁面仍可開啟；後端回傳可搜尋資料為零",
                 href: null,
-                group: "STATE"
-              }
+                group: "狀態",
+              },
             ]
           : [];
 
@@ -159,29 +191,29 @@ export function CommandPalette() {
         label: theme.name,
         sub: `${theme.marketState} | ${theme.lifecycle} | ${clip(theme.thesis, 56)}`,
         href: `/themes/${theme.slug}`,
-        group: "THEME" as const
+        group: "主題" as const,
       })),
       ...companies.map((company) => ({
         code: company.ticker,
         label: company.name,
         sub: `${company.market} | ${company.beneficiaryTier} | ${clip(company.chainPosition, 56)}`,
         href: `/companies/${company.ticker}`,
-        group: "COMPANY" as const
+        group: "公司" as const,
       })),
       ...ideas.map((idea) => ({
         code: idea.symbol,
-        label: `${idea.direction.toUpperCase()} | ${idea.score.toFixed(1)}`,
-        sub: `${idea.companyName} | ${idea.marketData.readiness} | ${idea.rationale.primaryReason}`,
+        label: `${directionLabel(idea.direction)} | ${idea.score.toFixed(1)}`,
+        sub: `${idea.companyName} | ${readinessLabel(idea.marketData.readiness)} | ${idea.rationale.primaryReason}`,
         href: `/companies/${idea.symbol}`,
-        group: "IDEA" as const
+        group: "想法" as const,
       })),
       ...runs.map((run) => ({
         code: run.id.slice(0, 8),
-        label: `${run.decisionMode} | ${run.summary.total} ideas`,
-        sub: `${run.topIdea?.symbol ?? "no top idea"} | ${run.quality.primaryReason} | ${run.generatedAt}`,
+        label: `${decisionModeLabel(run.decisionMode)} | ${run.summary.total} 筆想法`,
+        sub: `${run.topIdea?.symbol ?? "無主要想法"} | ${run.quality.primaryReason} | ${run.generatedAt}`,
         href: `/runs/${encodeURIComponent(run.id)}`,
-        group: "RUN" as const
-      }))
+        group: "批次" as const,
+      })),
     ];
 
     if (!q.trim()) return all.slice(0, 48);
@@ -204,21 +236,10 @@ export function CommandPalette() {
 
   if (!open) return null;
 
-  const sourceLabel =
-    loadState === "live"
-      ? `LIVE | ${loadedAt ?? "loaded"}`
-      : loadState === "loading"
-        ? "LOADING | backend"
-        : loadState === "empty"
-          ? `EMPTY | ${loadedAt ?? "loaded"}`
-          : loadState === "blocked"
-            ? `BLOCKED | ${loadedAt ?? "checked"}`
-            : "IDLE";
-
   return (
     <div
       role="dialog"
-      aria-label="Command palette"
+      aria-label="指令面板"
       onClick={() => setOpen(false)}
       style={{
         position: "fixed",
@@ -229,29 +250,28 @@ export function CommandPalette() {
         display: "grid",
         placeItems: "start center",
         paddingTop: "12vh",
-        fontFamily: "var(--mono)"
       }}
     >
       <div
         onClick={(event) => event.stopPropagation()}
         style={{
-          width: "min(720px, 92vw)",
-          background: "var(--night-1)",
-          border: "1px solid var(--night-rule-strong)",
-          boxShadow: "0 24px 60px rgba(0,0,0,0.55)"
+          width: "min(820px, calc(100vw - 28px))",
+          border: "1px solid rgba(200,148,63,0.45)",
+          background: "rgba(7,10,15,0.96)",
+          boxShadow: "0 28px 90px rgba(0,0,0,0.58)",
         }}
       >
         <div
           style={{
             display: "flex",
-            alignItems: "baseline",
-            gap: 10,
-            padding: "12px 14px",
-            borderBottom: "1px solid var(--night-rule-strong)"
+            alignItems: "center",
+            gap: 12,
+            padding: "13px 14px",
+            borderBottom: "1px solid var(--night-rule)",
           }}
         >
           <span style={{ color: "var(--gold)", fontSize: 11, letterSpacing: "0.18em", fontWeight: 700 }}>
-            CMD
+            指令
           </span>
           <input
             ref={inputRef}
@@ -263,114 +283,85 @@ export function CommandPalette() {
             onKeyDown={(event) => {
               if (event.key === "ArrowDown") {
                 event.preventDefault();
-                setActive((current) => Math.min(current + 1, Math.max(items.length - 1, 0)));
+                setActive((current) => Math.min(current + 1, Math.max(0, items.length - 1)));
               } else if (event.key === "ArrowUp") {
                 event.preventDefault();
                 setActive((current) => Math.max(current - 1, 0));
               } else if (event.key === "Enter") {
+                event.preventDefault();
                 const item = items[active];
                 if (item) go(item.href);
               }
             }}
-            placeholder="Search pages, themes, companies, ideas, and runs"
+            placeholder="搜尋頁面、主題、公司、策略想法與批次"
             style={{
               flex: 1,
               background: "transparent",
-              border: "none",
+              border: 0,
               outline: "none",
               color: "var(--night-ink)",
-              fontFamily: "var(--serif)",
-              fontSize: 16,
-              fontStyle: "italic",
-              fontWeight: 300
+              fontSize: 18,
+              fontFamily: "var(--serif-tc)",
             }}
           />
-          <span style={{ color: "var(--night-soft)", fontSize: 10, letterSpacing: "0.16em", whiteSpace: "nowrap" }}>
-            {sourceLabel}
-          </span>
+          <span className="tg soft">{sourceLabel(loadState, loadedAt)}</span>
         </div>
 
         <div style={{ maxHeight: "56vh", overflowY: "auto" }}>
           {items.length === 0 && (
             <div style={{ padding: "20px 16px", color: "var(--night-soft)", fontSize: 12 }}>
-              EMPTY | no matching live rows
+              無資料 | 找不到符合條件的資料
             </div>
           )}
           {items.map((item, index) => {
             const selected = index === active;
-            const content = (
-              <>
-                <span style={{ color: "var(--night-soft)", fontSize: 9.5, letterSpacing: "0.14em" }}>
-                  {item.group}
-                </span>
-                <span style={{ color: selected ? "var(--gold-bright)" : "var(--gold)", fontWeight: 700, fontSize: 11.5 }}>
-                  {clip(item.code, 12)}
-                </span>
-                <span style={{ fontFamily: "var(--serif-tc)", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {item.sub}
-                </span>
-                <span style={{ color: "var(--night-soft)", fontSize: 10, letterSpacing: "0.12em", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {item.label}
-                </span>
-              </>
-            );
-            const rowStyle = {
-              display: "grid",
-              gridTemplateColumns: "82px 110px 1fr 86px",
-              gap: 10,
-              alignItems: "baseline",
-              width: "100%",
-              minHeight: 44,
-              padding: "9px 14px",
-              borderLeft: selected ? "2px solid var(--gold)" : "2px solid transparent",
-              background: selected ? "rgba(184,138,62,0.08)" : "transparent",
-              borderTop: "none",
-              borderRight: "none",
-              borderBottom: "1px solid var(--night-rule)",
-              textAlign: "left" as const,
-              color: selected ? "var(--night-ink)" : "var(--night-mid)"
-            };
-
-            if (!item.href) {
-              return (
-                <div
-                  key={`${item.group}-${item.code}-${index}`}
-                  role="note"
-                  onMouseEnter={() => setActive(index)}
-                  style={{ ...rowStyle, cursor: "default", opacity: 0.82 }}
-                >
-                  {content}
-                </div>
-              );
-            }
-
             return (
               <button
-                key={`${item.group}-${item.href}-${index}`}
-                onClick={() => go(item.href)}
+                type="button"
+                key={`${item.group}-${item.code}-${item.href ?? item.label}`}
                 onMouseEnter={() => setActive(index)}
-                style={{ ...rowStyle, cursor: "pointer", opacity: 1 }}
+                onClick={() => go(item.href)}
+                style={{
+                  width: "100%",
+                  border: 0,
+                  borderBottom: "1px solid rgba(49,60,72,0.42)",
+                  background: selected ? "rgba(200,148,63,0.12)" : "transparent",
+                  color: "var(--night-ink)",
+                  display: "grid",
+                  gridTemplateColumns: "74px 1fr 76px",
+                  gap: 12,
+                  alignItems: "center",
+                  padding: "11px 14px",
+                  textAlign: "left",
+                  cursor: item.href ? "pointer" : "default",
+                }}
               >
-                {content}
+                <span className="tg gold">{item.code}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontWeight: 700 }}>{item.label}</span>
+                  <span className="tg soft" style={{ display: "block", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {item.sub}
+                  </span>
+                </span>
+                <span className="tg soft" style={{ textAlign: "right" }}>{item.group}</span>
               </button>
             );
           })}
         </div>
 
         <div
+          className="tg soft"
           style={{
             display: "flex",
-            gap: 16,
-            padding: "8px 14px",
-            borderTop: "1px solid var(--night-rule-strong)",
-            color: "var(--night-soft)",
-            fontSize: 10,
-            letterSpacing: "0.14em"
+            justifyContent: "space-between",
+            padding: "10px 14px",
+            borderTop: "1px solid var(--night-rule)",
+            letterSpacing: "0.14em",
           }}
         >
-          <span>ARROWS NAV</span>
-          <span>ENTER OPEN</span>
-          <span>ESC CLOSE</span>
+          <span>方向鍵選取</span>
+          <span>確認鍵開啟</span>
+          <span>Esc 關閉</span>
         </div>
       </div>
     </div>

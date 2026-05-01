@@ -63,12 +63,12 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
   const cells = useMemo(() => {
     if (!statsAvailable) {
       return [
-        { label: "NEW", value: "--", tone: "muted" as const },
-        { label: "APPROVED", value: "--", tone: "muted" as const },
-        { label: "PUSHED", value: "--", tone: "muted" as const },
-        { label: "AVG CONF", value: "--", tone: "muted" as const },
-        { label: "AVG RETURN", value: "--", tone: "muted" as const },
-        { label: "MAX DD", value: "--", tone: "muted" as const },
+        { label: "待審", value: "--", tone: "muted" as const },
+        { label: "已核准", value: "--", tone: "muted" as const },
+        { label: "已送出", value: "--", tone: "muted" as const },
+        { label: "平均信心", value: "--", tone: "muted" as const },
+        { label: "平均報酬", value: "--", tone: "muted" as const },
+        { label: "最大回撤", value: "--", tone: "muted" as const },
       ];
     }
 
@@ -79,12 +79,12 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
     const avgReturn = bundles.length ? bundles.reduce((sum, bundle) => sum + bundle.backtest.totalReturnPct, 0) / bundles.length : null;
     const worstDrawdown = bundles.length ? Math.min(...bundles.map((bundle) => bundle.backtest.maxDrawdownPct)) : null;
     return [
-      { label: "NEW", value: pending, tone: "muted" as const },
-      { label: "APPROVED", value: approved, tone: "down" as const },
-      { label: "PUSHED", value: pushed, tone: "gold" as const },
-      { label: "AVG CONF", value: avgConfidence === null ? "--" : `${Math.round(avgConfidence * 100)}%`, tone: "muted" as const },
-      { label: "AVG RETURN", value: avgReturn === null ? "--" : `${signed(avgReturn, 1)}%`, tone: avgReturn === null ? "muted" as const : toneClass(avgReturn) },
-      { label: "MAX DD", value: worstDrawdown === null ? "--" : `${worstDrawdown.toFixed(1)}%`, tone: worstDrawdown !== null && worstDrawdown < -6 ? "up" as const : "muted" as const },
+      { label: "待審", value: pending, tone: "muted" as const },
+      { label: "已核准", value: approved, tone: "down" as const },
+      { label: "已送出", value: pushed, tone: "gold" as const },
+      { label: "平均信心", value: avgConfidence === null ? "--" : `${Math.round(avgConfidence * 100)}%`, tone: "muted" as const },
+      { label: "平均報酬", value: avgReturn === null ? "--" : `${signed(avgReturn, 1)}%`, tone: avgReturn === null ? "muted" as const : toneClass(avgReturn) },
+      { label: "最大回撤", value: worstDrawdown === null ? "--" : `${worstDrawdown.toFixed(1)}%`, tone: worstDrawdown !== null && worstDrawdown < -6 ? "up" as const : "muted" as const },
     ];
   }, [bundles, statsAvailable]);
 
@@ -105,30 +105,30 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
   return (
     <PageFrame
       code="LAB"
-      title="Quant Lab Intake"
-      sub={blockedReason ? "BLOCKED" : "Signal bundles"}
-      note="[LAB] Strategy bundle intake. Production requires real /api/v1/lab/bundles data; no mock bundle data is shown as live."
+      title="量化研究"
+      sub={blockedReason ? "資料暫停" : "策略包審核"}
+      note="此頁只顯示正式量化策略包；沒有真實資料時不以假策略包充數。"
     >
       <MetricStrip columns={6} cells={cells} />
 
       <div className="company-grid">
-        <Panel code="LAB-Q" title="Bundle Queue" right={blockedReason ? "BLOCKED" : `${bundles.length} BUNDLES`}>
+        <Panel code="LAB-Q" title="策略包佇列" right={blockedReason ? "暫停" : `${bundles.length} 包`}>
           {blockedReason ? (
             <div className="terminal-note">
-              BLOCKED: Quant Lab bundle API is unavailable. Owner: Athena + Jason. Detail: {blockedReason}
+              暫停：量化策略包資料尚未啟用。負責人：Athena + Jason。細節：{blockedReason}
             </div>
           ) : bundles.length === 0 ? (
-            <div className="terminal-note">EMPTY: /api/v1/lab/bundles returned no bundle rows.</div>
+            <div className="terminal-note">無資料：目前沒有待審策略包。</div>
           ) : (
             <>
               <div className="row table-head lab-row">
                 <span>ID</span>
-                <span>Producer</span>
-                <span>Title</span>
-                <span>Symbol</span>
-                <span>Conf</span>
-                <span>Status</span>
-                <span>Actions</span>
+                <span>來源</span>
+                <span>標題</span>
+                <span>股票</span>
+                <span>信心</span>
+                <span>狀態</span>
+                <span>動作</span>
               </div>
               {bundles.map((bundle) => (
                 <div className="row lab-row" key={bundle.bundleId}>
@@ -142,13 +142,13 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
                   <span className={`tg ${statusTone(bundle.status)}`}>{labDisplay.status[bundle.status]}</span>
                   <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
                     <button className="mini-button" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "APPROVED", "APPROVE")}>
-                      Approve
+                      核准
                     </button>
                     <button className="outline-button" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "REJECTED", "REJECT")}>
-                      Reject
+                      退回
                     </button>
-                    <button className="outline-button" type="button" disabled title="BLOCKED: strategy bundle to portfolio handoff contract is not ready.">
-                      Push
+                    <button className="outline-button" type="button" disabled title="策略包轉紙上交易的後端契約尚未完成。">
+                      轉入
                     </button>
                   </span>
                 </div>
@@ -158,14 +158,14 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
           {(actionError || (!blockedReason && bundles.length > 0)) && (
             <div className="terminal-note" style={{ marginTop: 12 }}>
               {actionError
-                ? `BLOCKED: lab action endpoint failed. ${actionError}`
-                : "Push-to-portfolio is BLOCKED until Jason/Athena define the handoff contract. Approve/Reject require the lab action endpoint to respond successfully."}
+                ? `暫停：量化研究動作失敗。${actionError}`
+                : "轉入紙上交易需等待 Jason/Athena 完成交接契約；核准/退回會以量化研究 API 寫入。"}
             </div>
           )}
         </Panel>
 
         <div>
-          <Panel code="LAB-D" title="Selected Bundle" right={selected ? labDisplay.status[selected.status] : blockedReason ? "BLOCKED" : "EMPTY"}>
+          <Panel code="LAB-D" title="選取策略包" right={selected ? labDisplay.status[selected.status] : blockedReason ? "暫停" : "無資料"}>
             {selected ? (
               <div className="ticket">
                 <div className="tg gold">{selected.bundleId} / {labDisplay.producer[selected.producer]}</div>
@@ -173,27 +173,27 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
                 <div className="tg soft">{selected.symbol} / {selected.themeCode} / {timeText(selected.createdAt)}</div>
                 <p className="tc" style={{ color: "var(--night-ink)", lineHeight: 1.8 }}>{selected.summary}</p>
                 <div className="row position-row">
-                  <span className="tg muted">Win</span>
+                  <span className="tg muted">勝率</span>
                   <span className="num down">{Math.round(selected.backtest.winRate * 100)}%</span>
-                  <span className="tg muted">Return</span>
+                  <span className="tg muted">報酬</span>
                   <span className={`num ${toneClass(selected.backtest.totalReturnPct)}`}>{signed(selected.backtest.totalReturnPct, 1)}%</span>
-                  <span className="tg muted">Max DD</span>
+                  <span className="tg muted">回撤</span>
                   <span className="num up">{selected.backtest.maxDrawdownPct.toFixed(1)}%</span>
                 </div>
                 <Link className="mini-button" href={`/lab/${selected.bundleId}`} style={{ marginTop: 12 }}>
-                  Open Detail
+                  查看明細
                 </Link>
               </div>
             ) : (
               <div className="terminal-note">
-                {blockedReason ? "BLOCKED: no real lab bundle can be displayed." : "EMPTY: no lab bundle selected."}
+                {blockedReason ? "暫停：目前無法顯示正式策略包。" : "無資料：尚未選取策略包。"}
               </div>
             )}
           </Panel>
 
-          <Panel code="LAB-MEMO" title="Governance" right="NO LIVE ORDER">
+          <Panel code="LAB-MEMO" title="治理邊界" right="不會實單">
             <div className="terminal-note">
-              Lab review is read/write only against the lab API. It does not create broker orders, does not promote migration 0020, and does not enable live submit.
+              量化研究只寫入研究 API；不會建立券商委託、不會推進 migration 0020，也不會啟用正式下單。
             </div>
           </Panel>
         </div>

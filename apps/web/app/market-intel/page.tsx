@@ -66,7 +66,7 @@ async function loadIdeas(): Promise<IdeaView | null> {
 }
 
 async function loadMarketIntel(): Promise<IntelState> {
-  const source = "GET /api/v1/companies/:id/announcements?days=30";
+  const source = "臺股重大訊息";
   const updatedAt = new Date().toISOString();
 
   let companies: CompanyRow[];
@@ -79,7 +79,7 @@ async function loadMarketIntel(): Promise<IntelState> {
       selected: [],
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : "company list request failed",
+      reason: error instanceof Error ? error.message : "公司清單讀取失敗",
       failures: 0,
     };
   }
@@ -91,7 +91,7 @@ async function loadMarketIntel(): Promise<IntelState> {
       selected: [],
       updatedAt,
       source,
-      reason: "Company list returned zero rows, so Market Intel has no tickers to query.",
+      reason: "公司清單目前 0 筆，所以重大訊息沒有可查詢的股票。",
       failures: 0,
     };
   }
@@ -119,7 +119,7 @@ async function loadMarketIntel(): Promise<IntelState> {
   );
 
   const failures = settled.filter((result) => result.status === "rejected").length;
-  const partialSource = failures > 0 ? `${source} (${failures}/${settled.length} calls failed)` : source;
+  const partialSource = failures > 0 ? `${source}（${failures}/${settled.length} 檔查詢失敗）` : source;
   const rows = settled
     .flatMap((result) => result.status === "fulfilled" ? result.value : [])
     .sort((left, right) => right.date.localeCompare(left.date) || left.ticker.localeCompare(right.ticker))
@@ -136,7 +136,7 @@ async function loadMarketIntel(): Promise<IntelState> {
       selected,
       updatedAt,
       source,
-      reason: "All TWSE announcement endpoint calls failed.",
+      reason: "所有重大訊息查詢都失敗。",
       failures,
     };
   }
@@ -148,10 +148,16 @@ async function loadMarketIntel(): Promise<IntelState> {
     updatedAt,
     source: partialSource,
     reason: failures > 0
-      ? "Successful announcement requests returned zero rows; coverage is partial because some company calls failed."
-      : "TWSE returned zero material announcements for the selected companies in the last 30 days.",
+      ? "成功查詢的公司近 30 天沒有重大訊息；部分公司查詢失敗。"
+      : "選定公司近 30 天沒有重大訊息。",
     failures,
   };
+}
+
+function stateLabel(state: IntelState["state"]) {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  return "暫停";
 }
 
 export default async function MarketIntelPage() {
@@ -163,66 +169,66 @@ export default async function MarketIntelPage() {
   return (
     <PageFrame
       code="10"
-      title="Market Intel"
-      sub="TWSE material announcements"
-      note={`[10] MARKET INTEL / ${result.state} / ${result.state === "LIVE" ? `${result.items.length} news rows` : "no rendered news rows"} / source ${result.source}`}
+      title="重大訊息"
+      sub="臺股公告與重點消息"
+      note={`重大訊息 / ${stateLabel(result.state)} / ${result.state === "LIVE" ? `${result.items.length} 筆消息` : "沒有渲染假消息"} / 來源：${result.source}`}
     >
       <MetricStrip
         columns={5}
         cells={[
-          { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "NEWS", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "up" : "muted" },
-          { label: "COMPANIES", value: statsAvailable ? uniqueCompanies || result.selected.length : "--" },
-          { label: "FAILURES", value: result.state === "BLOCKED" && result.failures === 0 ? "--" : result.failures, tone: result.failures > 0 ? "gold" : "muted" },
-          { label: "UPDATED", value: formatTime(result.updatedAt) },
+          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
+          { label: "消息", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "up" : "muted" },
+          { label: "公司", value: statsAvailable ? uniqueCompanies || result.selected.length : "--" },
+          { label: "失敗", value: result.state === "BLOCKED" && result.failures === 0 ? "--" : result.failures, tone: result.failures > 0 ? "gold" : "muted" },
+          { label: "更新", value: formatTime(result.updatedAt) },
         ]}
       />
 
-      <Panel code="INT-SRC" title={`${formatTime(result.updatedAt)} TPE`} sub="source + selection" right={result.source}>
+      <Panel code="INT-SRC" title={`${formatTime(result.updatedAt)} 台北`} sub="來源與選股範圍" right={result.source}>
         <div className="source-line">
           <span className={`badge ${result.state === "LIVE" ? "badge-green" : result.state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>
-            {result.state}
+            {stateLabel(result.state)}
           </span>
-          <span className="tg soft">Source: {result.source}</span>
-          <span className="tg soft">Updated {formatTime(result.updatedAt)}</span>
-          <span className="tg soft">Universe: {sourceTickers}</span>
+          <span className="tg soft">來源：{result.source}</span>
+          <span className="tg soft">更新 {formatTime(result.updatedAt)}</span>
+          <span className="tg soft">追蹤：{sourceTickers}</span>
         </div>
         {result.failures > 0 && result.state === "LIVE" && (
           <div className="terminal-note">
-            PARTIAL: {result.failures} selected company announcement request{result.failures === 1 ? "" : "s"} failed, so this LIVE feed is not full-universe coverage.
+            部分覆蓋：{result.failures} 檔公司重大訊息查詢失敗，所以這份消息流不是完整 universe。
           </div>
         )}
         {result.state !== "LIVE" && (
           <div className="terminal-note">
-            {result.state}: {result.reason}
+            {stateLabel(result.state)}：{result.reason}
           </div>
         )}
       </Panel>
 
-      <Panel code="INT-FEED" title="Important News Feed" sub="company-linked announcements / read only" right={result.state === "LIVE" ? `${result.items.length} ROWS` : result.state}>
+      <Panel code="INT-FEED" title="重點消息流" sub="公司連結公告 / 只讀" right={result.state === "LIVE" ? `${result.items.length} 筆` : stateLabel(result.state)}>
         {result.state === "LIVE" ? (
           <div className="market-intel-list">
             <div className="row table-head telex-row">
-              <span>Date</span>
-              <span>Ticker</span>
-              <span>Title</span>
-              <span>Category</span>
+              <span>日期</span>
+              <span>代號</span>
+              <span>標題</span>
+              <span>分類</span>
             </div>
             {result.items.map((item) => (
               <Link href={`/companies/${item.ticker}`} className="row telex-row" key={`${item.ticker}-${item.id}`}>
                 <span className="tg soft">{formatDate(item.date)}</span>
                 <span className="tg gold">{item.ticker}</span>
                 <span className="market-intel-title">
-                  {item.title || "Untitled announcement"}
+                  {item.title || "未命名公告"}
                   <small style={{ display: "block", marginTop: 3, color: "var(--night-soft)" }}>{item.companyName}</small>
                 </span>
-                <span className={`badge ${categoryTone(item.category)}`}>{item.category || "TWSE"}</span>
+                <span className={`badge ${categoryTone(item.category)}`}>{item.category || "公告"}</span>
               </Link>
             ))}
           </div>
         ) : (
           <div className="terminal-note">
-            {result.state}: no news rows are rendered without a real TWSE response.
+            {stateLabel(result.state)}：沒有真實重大訊息回應時，不渲染假消息。
           </div>
         )}
       </Panel>

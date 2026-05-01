@@ -8,9 +8,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
 
 // PaperOrderInput is the form-facing type (no idempotencyKey — added by withIdempotency).
-// quantity_unit is optional; omit for LOT (board lot, 1 lot = 1000 shares).
-// Set to "SHARE" for odd-lot (零股) orders (1–999 shares).
-export type PaperOrderInput = Omit<PaperOrderCreateInput, "idempotencyKey"> & {
+// quantity_unit is optional at the form layer; frontend paper tickets default
+// to SHARE so the visible "股數" field means actual shares, not lots.
+export type PaperOrderInput = Omit<PaperOrderCreateInput, "idempotencyKey" | "quantity_unit"> & {
   quantity_unit?: "LOT" | "SHARE";
 };
 
@@ -128,6 +128,7 @@ function withIdempotency(
   return {
     ...input,
     symbol: input.symbol.trim().toUpperCase(),
+    quantity_unit: input.quantity_unit ?? "SHARE",
     price: input.orderType === "market" ? null : input.price ?? null,
     idempotencyKey: overrideKey ?? makeIdempotencyKey(prefix),
   };

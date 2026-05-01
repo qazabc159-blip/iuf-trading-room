@@ -86,15 +86,15 @@ async function postApi<T>(path: string, body: unknown): Promise<T> {
 
 export const labDisplay = {
   producer: {
-    QUANT_LAB: "Quant Lab",
-    OPERATOR: "Operator",
+    QUANT_LAB: "量化研究",
+    OPERATOR: "操作員",
     OPENALICE: "OpenAlice",
   } satisfies Record<LabProducer, string>,
   status: {
-    NEW: "New",
-    APPROVED: "Approved",
-    REJECTED: "Rejected",
-    PUSHED: "Pushed",
+    NEW: "待審",
+    APPROVED: "已核准",
+    REJECTED: "已退回",
+    PUSHED: "已送出",
   } satisfies Record<LabBundleStatus, string>,
 };
 

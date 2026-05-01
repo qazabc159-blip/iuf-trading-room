@@ -59,12 +59,12 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const cells = [
-    { label: "SYMBOL", value: bundle.symbol, tone: "gold" as const },
-    { label: "THEME", value: bundle.themeCode, tone: "muted" as const },
-    { label: "CONF", value: `${Math.round(bundle.confidence * 100)}%`, tone: "muted" as const },
-    { label: "WIN", value: `${Math.round(bundle.backtest.winRate * 100)}%`, tone: "down" as const },
-    { label: "RETURN", value: `${signed(bundle.backtest.totalReturnPct, 1)}%`, tone: toneClass(bundle.backtest.totalReturnPct) },
-    { label: "MAX DD", value: `${bundle.backtest.maxDrawdownPct.toFixed(1)}%`, tone: "up" as const },
+    { label: "股票", value: bundle.symbol, tone: "gold" as const },
+    { label: "主題", value: bundle.themeCode, tone: "muted" as const },
+    { label: "信心", value: `${Math.round(bundle.confidence * 100)}%`, tone: "muted" as const },
+    { label: "勝率", value: `${Math.round(bundle.backtest.winRate * 100)}%`, tone: "down" as const },
+    { label: "報酬", value: `${signed(bundle.backtest.totalReturnPct, 1)}%`, tone: toneClass(bundle.backtest.totalReturnPct) },
+    { label: "最大回撤", value: `${bundle.backtest.maxDrawdownPct.toFixed(1)}%`, tone: "up" as const },
   ];
 
   async function applyAction(nextStatus: typeof status, action: "APPROVE" | "REJECT") {
@@ -87,7 +87,7 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
     setActionError(null);
     try {
       await radarLabApi.bundleAction(bundle.bundleId, "DIVERGENCE_FEEDBACK", { note: text });
-      setNotes((prev) => [`operator feedback: ${text}`, ...prev]);
+      setNotes((prev) => [`操作員回饋：${text}`, ...prev]);
       setFeedback("");
     } catch (error) {
       setActionError(errorText(error));
@@ -99,28 +99,28 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
   return (
     <PageFrame
       code="LAB-D"
-      title="Quant Lab Detail"
+      title="量化策略包明細"
       sub={bundle.bundleId}
-      note={`[LAB-D] ${labDisplay.producer[bundle.producer]} / ${labDisplay.status[status]} / divergence feedback channel`}
+      note={`${labDisplay.producer[bundle.producer]} / ${labDisplay.status[status]} / 分歧回饋通道`}
     >
       <MetricStrip columns={6} cells={cells} />
 
       <div className="lab-detail-grid">
-        <Panel code="BT-RPT" title="Backtest Report" right={`${bundle.backtest.tradeCount} TRADES`}>
+        <Panel code="BT-RPT" title="回測報告" right={`${bundle.backtest.tradeCount} 筆交易`}>
           <div className="ticket">
-            <div className="tg gold">Equity Curve</div>
-            <LabLineChart points={bundle.backtest.equityCurve} stroke="var(--gold-bright)" label="Equity curve" />
-            <div className="tg gold" style={{ marginTop: 14 }}>Drawdown</div>
-            <LabLineChart points={bundle.backtest.drawdown} stroke="var(--tw-up-bright)" label="Drawdown" />
+            <div className="tg gold">權益曲線</div>
+            <LabLineChart points={bundle.backtest.equityCurve} stroke="var(--gold-bright)" label="權益曲線" />
+            <div className="tg gold" style={{ marginTop: 14 }}>回撤</div>
+            <LabLineChart points={bundle.backtest.drawdown} stroke="var(--tw-up-bright)" label="回撤" />
           </div>
         </Panel>
 
-        <Panel code="BT-STAT" title="Period Stats" right="PERIODS">
+        <Panel code="BT-STAT" title="分期統計" right="區間">
           <div className="row table-head" style={{ gridTemplateColumns: "70px 70px 80px 80px", gap: 10 }}>
-            <span>Period</span>
-            <span>Trades</span>
-            <span>Win</span>
-            <span>Return</span>
+            <span>區間</span>
+            <span>交易</span>
+            <span>勝率</span>
+            <span>報酬</span>
           </div>
           {bundle.backtest.periodStats.map((period) => (
             <div className="row" key={period.label} style={{ gridTemplateColumns: "70px 70px 80px 80px", gap: 10, padding: "10px 0" }}>
@@ -131,41 +131,41 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
             </div>
           ))}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-            <button className="mini-button" type="button" disabled={busy} onClick={() => applyAction("APPROVED", "APPROVE")}>Approve</button>
-            <button className="outline-button" type="button" disabled={busy} onClick={() => applyAction("REJECTED", "REJECT")}>Reject</button>
-            <button className="outline-button" type="button" disabled title="BLOCKED: strategy bundle to portfolio handoff contract is not ready.">Push</button>
-            <Link className="outline-button" href="/lab">Back</Link>
+            <button className="mini-button" type="button" disabled={busy} onClick={() => applyAction("APPROVED", "APPROVE")}>核准</button>
+            <button className="outline-button" type="button" disabled={busy} onClick={() => applyAction("REJECTED", "REJECT")}>退回</button>
+            <button className="outline-button" type="button" disabled title="策略包轉紙上交易的後端契約尚未完成。">轉入</button>
+            <Link className="outline-button" href="/lab">返回</Link>
           </div>
           <div className="terminal-note" style={{ marginTop: 12 }}>
-            Push-to-portfolio is BLOCKED until Jason/Athena define the handoff contract. No broker order is created from this page.
+            轉入紙上交易需等待 Jason/Athena 完成交接契約；此頁不會建立券商委託。
           </div>
           {actionError && (
             <div className="terminal-note" style={{ marginTop: 12 }}>
-              BLOCKED: lab action endpoint failed. {actionError}
+              暫停：量化研究動作失敗。{actionError}
             </div>
           )}
         </Panel>
 
         <div>
-          <Panel code="PROMO" title="Promotion Memo" right={labDisplay.status[status]}>
+          <Panel code="PROMO" title="轉入摘要" right={labDisplay.status[status]}>
             <div className="lab-memo">{bundle.promotionMemo}</div>
           </Panel>
 
-          <Panel code="DIV-FB" title="Divergence Feedback" right={`${notes.length} NOTES`}>
+          <Panel code="DIV-FB" title="分歧回饋" right={`${notes.length} 則`}>
             <textarea
               className="lab-textarea"
               value={feedback}
               onChange={(event) => setFeedback(event.target.value)}
-              placeholder="Write divergence feedback for Quant Lab / Athena..."
+              placeholder="寫下要回給 Athena / 量化研究的分歧回饋..."
             />
             <button className="mini-button" type="button" disabled={busy || !feedback.trim()} onClick={submitFeedback} style={{ marginTop: 10 }}>
-              Submit Feedback
+              送出回饋
             </button>
             <div style={{ marginTop: 14 }}>
               {notes.map((note) => (
                 <div className="row telex-row" key={note}>
-                  <span className="tg soft">NOTE</span>
-                  <span className="tg gold">LAB</span>
+                  <span className="tg soft">備註</span>
+                  <span className="tg gold">量化</span>
                   <span className="tg">{note}</span>
                 </div>
               ))}

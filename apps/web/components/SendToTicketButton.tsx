@@ -28,10 +28,10 @@ export function SendToTicketButton({ idea, compact }: { idea: IdeaHandoffInput; 
         cursor: "pointer",
         whiteSpace: "nowrap"
       }}
-      title="Stash this live idea into the paper ticket"
+      title="帶入紙上委託單"
       type="button"
     >
-      PAPER TICKET
+      帶入委託
     </button>
   );
 }

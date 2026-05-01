@@ -13,7 +13,7 @@ type LoadState =
   | { state: "BLOCKED"; data: ThemeRow[]; updatedAt: string; source: string; reason: string };
 
 async function loadThemes(): Promise<LoadState> {
-  const source = "GET /api/v1/themes";
+  const source = "主題資料庫";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -25,7 +25,7 @@ async function loadThemes(): Promise<LoadState> {
         data,
         updatedAt,
         source,
-        reason: "Themes endpoint returned zero rows. No fallback ladder is rendered.",
+        reason: "主題資料庫目前回傳 0 筆，不顯示假主題。",
       };
     }
     return { state: "LIVE", data, updatedAt, source };
@@ -60,6 +60,20 @@ function stateTone(state: LoadState["state"]) {
   return "down";
 }
 
+function stateLabel(state: LoadState["state"]) {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  return "暫停";
+}
+
+function marketLabel(state: ThemeRow["marketState"]) {
+  if (state === "Attack") return "進攻";
+  if (state === "Selective Attack") return "選擇進攻";
+  if (state === "Defense") return "防守";
+  if (state === "Preservation") return "保全";
+  return state;
+}
+
 function marketTone(state: ThemeRow["marketState"]) {
   if (state === "Attack" || state === "Selective Attack") return "up";
   if (state === "Defense" || state === "Preservation") return "down";
@@ -69,9 +83,9 @@ function marketTone(state: ThemeRow["marketState"]) {
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
-      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{result.state}</span>
-      <span>{result.source}</span>
-      <span>updated {formatTime(result.updatedAt)}</span>
+      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
+      <span>來源：{result.source}</span>
+      <span>更新 {formatTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );
@@ -81,7 +95,7 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
   if (result.state === "LIVE") return null;
   return (
     <div className="terminal-note">
-      <span className={`tg ${stateTone(result.state)}`}>{result.state}</span>{" "}
+      <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>{" "}
       {result.reason}
     </div>
   );
@@ -100,18 +114,18 @@ export default async function ThemesPage() {
   return (
     <PageFrame
       code="02"
-      title="Themes"
-      sub="Theme ladder"
-      note="[02] THEMES reads production theme rows. Heat/pulse mock metrics are removed until backed by a real endpoint."
+      title="主題板"
+      sub="台股主題階梯"
+      note="主題板 / 正式主題資料；沒有真端點的熱度與脈衝指標先不顯示。"
     >
       <MetricStrip
         cells={[
-          { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "TOTAL", value: countsAvailable ? themes.length : "--" },
-          { label: "ATTACK", value: countsAvailable ? attackCount : "--", tone: "up" },
-          { label: "DEFENSE", value: countsAvailable ? defenseCount : "--", tone: "down" },
-          { label: "CORE", value: countsAvailable ? coreTotal : "--", tone: coreTotal > 0 ? "gold" : "muted" },
-          { label: "OBS", value: countsAvailable ? observationTotal : "--" },
+          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
+          { label: "總數", value: countsAvailable ? themes.length : "--" },
+          { label: "進攻", value: countsAvailable ? attackCount : "--", tone: "up" },
+          { label: "防守", value: countsAvailable ? defenseCount : "--", tone: "down" },
+          { label: "核心", value: countsAvailable ? coreTotal : "--", tone: coreTotal > 0 ? "gold" : "muted" },
+          { label: "觀察", value: countsAvailable ? observationTotal : "--" },
           { label: "P1", value: countsAvailable ? priorityOneCount : "--", tone: "gold" },
         ]}
         columns={7}
@@ -119,16 +133,16 @@ export default async function ThemesPage() {
 
       <Panel
         code="THM-LDR"
-        title={`${formatTime(result.updatedAt)} TPE`}
-        sub="THEME MASTER / REAL API"
-        right={result.state}
+        title={`${formatTime(result.updatedAt)} 台北`}
+        sub="主題主檔 / 正式 API"
+        right={stateLabel(result.state)}
       >
         <SourceLine result={result} />
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
           <>
             <div className="row theme-row table-head tg">
-              <span>#</span><span>SLUG</span><span>THEME</span><span>STATE</span><span>LIFE</span><span>CORE</span><span>OBS</span><span>UPDATED</span>
+              <span>#</span><span>代碼</span><span>主題</span><span>盤勢</span><span>階段</span><span>核心</span><span>觀察</span><span>更新</span>
             </div>
             {themes.map((theme) => (
               <Link href={`/themes/${theme.slug}`} className={`row theme-row ${theme.priority === 1 ? "theme-active" : ""}`} key={theme.id}>
@@ -138,7 +152,7 @@ export default async function ThemesPage() {
                   <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{theme.name}</strong>
                   <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{theme.thesis}</span>
                 </span>
-                <span className={`tg ${marketTone(theme.marketState)}`}>{theme.marketState}</span>
+                <span className={`tg ${marketTone(theme.marketState)}`}>{marketLabel(theme.marketState)}</span>
                 <span className="tg muted">{theme.lifecycle}</span>
                 <span className="num">{theme.corePoolCount}</span>
                 <span className="num">{theme.observationPoolCount}</span>
