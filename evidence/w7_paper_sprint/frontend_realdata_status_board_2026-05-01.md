@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:03 Taipei - Codex cycle: `/themes/[short]` real detail DONE
+- Now: Converted `apps/web/app/themes/[short]/page.tsx` from legacy `@/lib/radar-api` mock detail to a real theme detail view using theme slug lookup plus DB-backed companies/signals and strategy ideas filtered by theme id.
+- Files: `apps/web/app/themes/[short]/page.tsx`.
+- Endpoints: `GET /api/v1/themes`; `GET /api/v1/companies`; `GET /api/v1/signals?themeId=:id`; `GET /api/v1/strategy/ideas?themeId=:id&decisionMode=paper&includeBlocked=true&sort=score`.
+- Behavior: page renders LIVE / EMPTY / BLOCKED with source + updatedAt. Removed mock heat/pulse/member metrics and fake order action; company/idea rows link only to company detail.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none for theme detail read path. Next: diff check + commit/push; continue legacy `radar-api` cleanup on `/plans`, `/ops`, `/m`, `/portfolio`.
+
 ### 2026-05-01 13:01 Taipei - Codex cycle: `/signals` + `/themes` real endpoints DONE
 - Now: Converted `apps/web/app/signals/page.tsx` from legacy `@/lib/radar-api` signal mocks to real `getSignals()` with theme/company id mapping from real theme/company endpoints. Converted `apps/web/app/themes/page.tsx` from heat/pulse mock ladder to real `getThemes()` rows.
 - Files: `apps/web/app/signals/page.tsx`; `apps/web/app/themes/page.tsx`.
