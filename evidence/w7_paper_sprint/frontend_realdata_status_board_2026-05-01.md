@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:01 Taipei - Codex cycle: `/signals` + `/themes` real endpoints DONE
+- Now: Converted `apps/web/app/signals/page.tsx` from legacy `@/lib/radar-api` signal mocks to real `getSignals()` with theme/company id mapping from real theme/company endpoints. Converted `apps/web/app/themes/page.tsx` from heat/pulse mock ladder to real `getThemes()` rows.
+- Files: `apps/web/app/signals/page.tsx`; `apps/web/app/themes/page.tsx`.
+- Endpoints: `GET /api/v1/signals`; `GET /api/v1/themes`; `GET /api/v1/companies`.
+- Behavior: both pages render explicit LIVE / EMPTY / BLOCKED states with source + updatedAt. Theme list removed unsupported heat/pulse/mock momentum values and displays only DB-backed priority, marketState, lifecycle, core/observation pool counts, thesis, and updatedAt.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: `/themes/[short]` still legacy radar-api and must be converted before theme drilldown is fully truthful. Next: diff check + commit/push; then wire `/themes/[short]`.
+
 ### 2026-05-01 12:58 Taipei - Codex cycle: `/runs` real strategy endpoints DONE
 - Now: Converted `apps/web/app/runs/page.tsx` and `apps/web/app/runs/[id]/page.tsx` from legacy `@/lib/radar-api` mock-shaped run data to production strategy run endpoints.
 - Files: `apps/web/app/runs/page.tsx`; `apps/web/app/runs/[id]/page.tsx`.
