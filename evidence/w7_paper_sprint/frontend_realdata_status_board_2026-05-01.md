@@ -858,3 +858,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: removes duplicate UI code and dev-only preview surfaces that could drift from the 4-state production contract.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; exact import scan for deleted names returned 0.
 - Blockers: none introduced. Stop-lines respected: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 13:55 Taipei) - Quant Lab dev mock bundles removed
+- Files changed: rewrote `apps/web/lib/radar-lab.ts` to remove embedded lab bundle mock data and all dev mock fallback helpers.
+- Endpoints / data behavior: `/lab` and `/lab/[bundleId]` now require real `GET /api/v1/lab/bundles`, `GET /api/v1/lab/bundles/:bundleId`, and `POST /api/v1/lab/bundles/:bundleId/action` responses. Missing API base, non-2xx, or invalid shape throws into the existing BLOCKED/EMPTY UI instead of returning sample bundles.
+- Behavior change: no fake Quant Lab backtest/equity/promotion memo data remains in the web client. Lab pages stay useful as real intake surfaces and honest blockers.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for `mockLabBundles`, `dev mock fallback`, and `shouldAllowMockFallback` returned 0.
+- Blockers: real lab bundle API remains owner Athena + Jason. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
