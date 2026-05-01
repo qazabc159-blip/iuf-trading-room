@@ -1197,6 +1197,49 @@ export interface CompanyAnnouncement {
   body?: string;
 }
 
+export interface CompanyFinancialRow {
+  period: string;
+  revenue: number | null;
+  grossMarginPct: number | null;
+  operatingMarginPct: number | null;
+  epsAfterTax: number | null;
+  yoyPct: number | null;
+}
+
+export interface CompanyRevenueRow {
+  date: string;
+  stock_id: string;
+  country: string;
+  revenue: number;
+  revenue_month: number;
+  revenue_year: number;
+}
+
+export interface CompanyDividendRow {
+  date: string;
+  stock_id: string;
+  year: number;
+  StockEarningsDistribution: number;
+  StockStatutoryReserveTransfer: number;
+  StockCapitalReserveTransfer: number;
+  StockReward: number;
+  TotalStockDividend: number;
+  CashEarningsDistribution: number;
+  CashStatutoryReserveTransfer: number;
+  CashCapitalReserveTransfer: number;
+  CashReward: number;
+  TotalCashDividend: number;
+  TotalDividend: number;
+}
+
+export interface CompanyChipsData {
+  foreign: { net30d: number };
+  trust: { net30d: number };
+  dealer: { net30d: number };
+  margin: { balance: number; change: number } | null;
+  short: { balance: number; change: number } | null;
+}
+
 /**
  * Resolve a Company by UUID. Use this once Jason TASK1 ticker-resolution lands.
  * Until then, prefer getCompanyByTicker() which list-scans.
@@ -1234,6 +1277,34 @@ export async function getCompanyAnnouncements(companyId: string, params?: { days
   if (params?.days) query.set("days", String(params.days));
   const qs = query.toString();
   return request<CompanyAnnouncement[]>(`/api/v1/companies/${companyId}/announcements${qs ? `?${qs}` : ""}`);
+}
+
+export async function getCompanyFinancials(companyId: string, params?: { limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<CompanyFinancialRow[]>(`/api/v1/companies/${companyId}/financials${qs ? `?${qs}` : ""}`);
+}
+
+export async function getCompanyRevenue(companyId: string, params?: { limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<CompanyRevenueRow[]>(`/api/v1/companies/${companyId}/revenue${qs ? `?${qs}` : ""}`);
+}
+
+export async function getCompanyDividends(companyId: string, params?: { years?: number }) {
+  const query = new URLSearchParams();
+  if (params?.years) query.set("years", String(params.years));
+  const qs = query.toString();
+  return request<CompanyDividendRow[]>(`/api/v1/companies/${companyId}/dividend${qs ? `?${qs}` : ""}`);
+}
+
+export async function getCompanyChips(companyId: string, params?: { days?: number }) {
+  const query = new URLSearchParams();
+  if (params?.days) query.set("days", String(params.days));
+  const qs = query.toString();
+  return request<CompanyChipsData>(`/api/v1/companies/${companyId}/chips${qs ? `?${qs}` : ""}`);
 }
 
 // Paper orders live in a dedicated no-mock client so both company and portfolio
