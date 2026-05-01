@@ -72,6 +72,12 @@ function DraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
   );
 }
 
+function latestUpdatedAt(drafts: ContentDraftEntry[]) {
+  return drafts
+    .map((draft) => draft.updatedAt)
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
+}
+
 export default async function DraftsPage({
   searchParams,
 }: {
@@ -133,6 +139,7 @@ export default async function DraftsPage({
             <span className="source-line" style={{ margin: 0 }}>
               <span className="badge badge-green">LIVE</span>
               <span>Source: GET /api/v1/content-drafts</span>
+              <span>Updated {formatDateTime(latestUpdatedAt(drafts))}</span>
               <span>{drafts.length} rows</span>
             </span>
           }

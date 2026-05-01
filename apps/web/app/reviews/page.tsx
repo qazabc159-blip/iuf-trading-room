@@ -74,6 +74,7 @@ export default async function ReviewsPage() {
             <span className="source-line" style={{ margin: 0 }}>
               <span className="badge badge-green">LIVE</span>
               <span>Source: GET /api/v1/reviews</span>
+              <span>Updated {formatDateTime(reviews[0].createdAt)}</span>
               <span>{reviews.length} rows</span>
             </span>
           }

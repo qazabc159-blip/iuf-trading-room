@@ -43,6 +43,7 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
         <div className="source-line">
           <span className="badge badge-green">LIVE</span>
           <span className="tg soft">Source: GET /api/v1/content-drafts</span>
+          <span>Updated {formatDateTime(draft.updatedAt)}</span>
           <span className={`badge ${contentDraftStatusBadge(draft.status)}`}>
             {contentDraftStatusLabel(draft.status)}
           </span>

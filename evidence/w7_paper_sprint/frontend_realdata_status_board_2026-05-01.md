@@ -972,3 +972,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: removed an unreferenced legacy sparkline helper with corrupted text/block glyphs. No visible route behavior changes; this prevents a dead decorative chart helper from being reintroduced into production data surfaces.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; import scan for `blockSpark` / `block-spark` returned 0.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 16:02 Taipei) - draft/review LIVE panels include freshness
+- Files changed: updated `apps/web/app/admin/content-drafts/[id]/page.tsx`, `apps/web/app/admin/content-drafts/page.tsx`, `apps/web/app/drafts/page.tsx`, and `apps/web/app/reviews/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Draft and review pages still read `GET /api/v1/content-drafts` and `GET /api/v1/reviews`.
+- Behavior change: LIVE draft/review panels now show both source and Updated time, satisfying the 4-state rule for source + freshness instead of only showing row counts.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
