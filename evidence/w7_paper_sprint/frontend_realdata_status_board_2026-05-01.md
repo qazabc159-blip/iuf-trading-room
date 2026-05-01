@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:08 Taipei - Codex cycle: `/ops` real ops snapshot DONE
+- Now: Converted `apps/web/app/ops/page.tsx` from legacy `@/lib/radar-api` mock API probes/jobs/audit to production ops snapshot data.
+- Files: `apps/web/app/ops/page.tsx`.
+- Endpoint: `GET /api/v1/ops/snapshot?auditHours=24&recentLimit=12`.
+- Behavior: page renders LIVE / EMPTY / BLOCKED with source + updatedAt. Removed fake endpoint latency/error-rate rows and fake worker jobs; now shows workspace stats, OpenAlice observability/queue, latest rows, audit summary, and recent audit rows from the ops snapshot payload.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none for ops snapshot read path. Next: diff check + commit/push; continue `/m` and `/portfolio` legacy `radar-api` cleanup.
+
 ### 2026-05-01 13:06 Taipei - Codex cycle: `/plans` real planning surface DONE
 - Now: Converted `apps/web/app/plans/page.tsx` from legacy `@/lib/radar-api` mock brief/review/weekly/risk/events into a read-only production planning board.
 - Files: `apps/web/app/plans/page.tsx`.
