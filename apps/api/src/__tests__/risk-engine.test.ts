@@ -63,7 +63,7 @@ function makeMarketContext(price: number) {
     // Use the same timestamp as TRADING_NOW to avoid stale_quote guard.
     quote: {
       symbol: "2330",
-      market: "TWSE",
+      market: "TWSE" as const,
       source: "manual",
       last: price,
       bid: price,
