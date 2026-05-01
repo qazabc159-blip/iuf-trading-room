@@ -1,29 +1,56 @@
-import { api } from "@/lib/radar-api";
-import type { KillMode } from "@/lib/radar-types";
+import { getKillSwitch } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-const MODES: { mode: KillMode; sub: string; tone: "gold" | "up" | "muted" }[] = [
-  { mode: "ARMED", sub: "live order path remains governed by backend risk gates", tone: "gold" },
-  { mode: "SAFE", sub: "block new orders, allow trim after backend approval", tone: "muted" },
-  { mode: "PEEK", sub: "read-only execution desk", tone: "muted" },
-  { mode: "FROZEN", sub: "hard lock all order paths", tone: "up" },
-];
+const ACCOUNT_ID = "paper-default";
+const MODES = [
+  { mode: "trading", sub: "normal paper routing after backend risk gates", tone: "gold" },
+  { mode: "paper_only", sub: "demote strategy logic to paper-only", tone: "muted" },
+  { mode: "liquidate_only", sub: "closing orders only after backend approval", tone: "muted" },
+  { mode: "halted", sub: "hard block new orders", tone: "up" },
+] as const;
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+type KillState = Awaited<ReturnType<typeof getKillSwitch>>["data"];
+type LoadState =
+  | { state: "LIVE"; data: KillState | null; updatedAt: string; source: string }
+  | { state: "BLOCKED"; data: KillState | null; updatedAt: string; source: string; reason: string };
+
+async function loadKill(): Promise<LoadState> {
+  const source = `GET /api/v1/risk/kill-switch?accountId=${ACCOUNT_ID}`;
+  const updatedAt = new Date().toISOString();
+  try {
+    const envelope = await getKillSwitch(ACCOUNT_ID);
+    return {
+      state: "LIVE",
+      data: envelope.data,
+      updatedAt: envelope.data.updatedAt || updatedAt,
+      source,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      data: null,
+      updatedAt,
+      source,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function formatTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("zh-TW", { hour12: false });
+}
+
+function stateTone(state: LoadState["state"]) {
+  return state === "LIVE" ? "up" : "down";
 }
 
 export default async function MobileKillPage() {
-  let current: KillMode | null = null;
-  let blockedDetail = "Kill-switch write contract is not approved for frontend use.";
-
-  try {
-    const session = await api.session();
-    current = session.killMode;
-  } catch (error) {
-    blockedDetail = `Unable to read session kill mode. ${errorText(error)}`;
-  }
+  const result = await loadKill();
+  const current = result.data?.mode ?? "unknown";
 
   return (
     <main>
@@ -31,8 +58,9 @@ export default async function MobileKillPage() {
         <div>
           <div className="tg soft">IUF TR / MOBILE KILL</div>
           <h1>Kill Switch</h1>
+          <div className="tg soft" style={{ marginTop: 8 }}>{result.source}</div>
         </div>
-        <div className="tg session-pill up">BLOCKED</div>
+        <div className={`tg session-pill ${stateTone(result.state)}`}>{result.state}</div>
       </header>
 
       <section className="mobile-section">
@@ -42,7 +70,9 @@ export default async function MobileKillPage() {
         </div>
         <div style={{ padding: 18, borderBottom: "1px solid var(--night-rule)" }}>
           <div className="tg soft">CURRENT</div>
-          <div className="kill-current">{current ?? "UNKNOWN"}</div>
+          <div className="kill-current">{current.toUpperCase()}</div>
+          <div className="tg soft" style={{ marginTop: 8 }}>updated {formatTime(result.updatedAt)}</div>
+          {result.data?.reason && <div className="tc soft" style={{ marginTop: 8 }}>{result.data.reason}</div>}
         </div>
         <div style={{ display: "grid", gap: 10, padding: 14 }}>
           {MODES.map((item) => {
@@ -51,7 +81,7 @@ export default async function MobileKillPage() {
               <button
                 key={item.mode}
                 disabled
-                title="BLOCKED: backend kill-switch write contract is not approved."
+                title="BLOCKED: frontend kill-switch writes are disabled until backend governance, audit, and risk regression are approved."
                 className={`kill-mode ${active ? "active" : ""}`}
               >
                 <span>
@@ -72,10 +102,10 @@ export default async function MobileKillPage() {
         </div>
         <div style={{ padding: 18 }}>
           <p className="tc soft" style={{ margin: 0, lineHeight: 1.8 }}>
-            This page does not change kill mode. Frontend mock toggles were removed because a fake safety switch is worse than no switch.
+            This page reads the real kill-switch state but does not change it.
           </p>
           <div className="terminal-note" style={{ marginTop: 12 }}>
-            BLOCKED: {blockedDetail} Required before enablement: backend governance route, audit log, 4-layer risk regression, and operator approval.
+            BLOCKED: {result.state === "BLOCKED" ? result.reason : "write path requires backend governance route, audit log, 4-layer risk regression, and operator approval."}
           </div>
         </div>
       </section>

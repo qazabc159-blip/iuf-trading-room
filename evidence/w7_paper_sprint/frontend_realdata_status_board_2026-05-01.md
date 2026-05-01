@@ -4,6 +4,14 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 13:12 Taipei - Codex cycle: mobile `/m` + `/m/kill` real read paths DONE
+- Now: Converted `apps/web/app/m/page.tsx` from legacy `@/lib/radar-api` mock mobile brief to real briefs/themes/strategy ideas/market overview/kill-switch data. Converted `apps/web/app/m/kill/page.tsx` from mock session kill mode to real kill-switch read endpoint.
+- Files: `apps/web/app/m/page.tsx`; `apps/web/app/m/kill/page.tsx`.
+- Endpoints: `GET /api/v1/briefs`; `GET /api/v1/themes`; `GET /api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&sort=score`; `GET /api/v1/market-data/overview`; `GET /api/v1/risk/kill-switch?accountId=paper-default`.
+- Behavior: mobile brief renders LIVE / EMPTY / BLOCKED and no longer shows mock countdown/events/heat/watchlist. Mobile kill switch reads real state but all mode buttons remain disabled; write path stays BLOCKED pending backend governance, audit, risk regression, and operator approval.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none for mobile read paths. Next: diff check + commit/push; then assess `/portfolio` separately because its client still uses legacy `radar-types` and needs a narrower adapter or backend readiness.
+
 ### 2026-05-01 13:08 Taipei - Codex cycle: `/ops` real ops snapshot DONE
 - Now: Converted `apps/web/app/ops/page.tsx` from legacy `@/lib/radar-api` mock API probes/jobs/audit to production ops snapshot data.
 - Files: `apps/web/app/ops/page.tsx`.
