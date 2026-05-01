@@ -1195,3 +1195,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: the quote page K-line panel is now LIVE/EMPTY/BLOCKED from the real OHLCV source instead of a static blocked placeholder claiming no bars contract exists. Bid/ask depth and tick tape remain BLOCKED pending their own contracts.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: KGI readonly bid/ask and tick contracts remain Jason/Elva blockers. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.
+### Codex cycle (2026-05-01 16:20 Taipei) - Market Intel blocked state no longer reports fake news counts
+- Files changed: updated `apps/web/app/market-intel/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Market Intel still reads `GET /api/v1/companies`, optional strategy ideas, and `GET /api/v1/companies/:id/announcements?days=30`.
+- Behavior change: when Market Intel is BLOCKED, NEWS/COMPANIES/FAILURES KPI cells and the feed panel header no longer render fallback zero rows as if TWSE returned real empty coverage. LIVE and true EMPTY states keep their explicit source and reason.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: announcement endpoint availability remains Jason/Elva-owned. No broker write, migration 0020, Railway secrets, live submit, KGI SDK/write-side, or destructive DB action touched.

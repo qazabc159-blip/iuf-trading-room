@@ -156,6 +156,7 @@ async function loadMarketIntel(): Promise<IntelState> {
 
 export default async function MarketIntelPage() {
   const result = await loadMarketIntel();
+  const statsAvailable = result.state !== "BLOCKED";
   const sourceTickers = result.selected.map((company) => company.ticker).join(" / ") || "--";
   const uniqueCompanies = new Set(result.items.map((item) => item.ticker)).size;
 
@@ -164,15 +165,15 @@ export default async function MarketIntelPage() {
       code="10"
       title="Market Intel"
       sub="TWSE material announcements"
-      note={`[10] MARKET INTEL / ${result.state} / ${result.items.length} news rows / source ${result.source}`}
+      note={`[10] MARKET INTEL / ${result.state} / ${result.state === "LIVE" ? `${result.items.length} news rows` : "no rendered news rows"} / source ${result.source}`}
     >
       <MetricStrip
         columns={5}
         cells={[
           { label: "STATE", value: result.state, tone: stateTone(result.state) },
-          { label: "NEWS", value: result.items.length, tone: result.items.length > 0 ? "up" : "muted" },
-          { label: "COMPANIES", value: uniqueCompanies || result.selected.length },
-          { label: "FAILURES", value: result.failures, tone: result.failures > 0 ? "gold" : "muted" },
+          { label: "NEWS", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "up" : "muted" },
+          { label: "COMPANIES", value: statsAvailable ? uniqueCompanies || result.selected.length : "--" },
+          { label: "FAILURES", value: result.state === "BLOCKED" && result.failures === 0 ? "--" : result.failures, tone: result.failures > 0 ? "gold" : "muted" },
           { label: "UPDATED", value: formatTime(result.updatedAt) },
         ]}
       />
@@ -198,7 +199,7 @@ export default async function MarketIntelPage() {
         )}
       </Panel>
 
-      <Panel code="INT-FEED" title="Important News Feed" sub="company-linked announcements / read only" right={`${result.items.length} ROWS`}>
+      <Panel code="INT-FEED" title="Important News Feed" sub="company-linked announcements / read only" right={result.state === "LIVE" ? `${result.items.length} ROWS` : result.state}>
         {result.state === "LIVE" ? (
           <div className="market-intel-list">
             <div className="row table-head telex-row">
