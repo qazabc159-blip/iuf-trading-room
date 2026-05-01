@@ -390,13 +390,12 @@ function SignalsPanel({ signals }: { signals: LoadState<SignalRow[]> }) {
       <EmptyOrBlocked state={signals} />
       {visibleSignals.map((signal) => (
         <div className="row dashboard-signal-row" key={signal.id}>
-          <span className="tg soft">{formatDateTime(signal.createdAt)}</span>
-          <span className="tg gold">{categoryText(signal.category)}</span>
-          <span className={`tg ${signal.direction === "bullish" ? "up" : signal.direction === "bearish" ? "down" : "muted"}`}>
-            {directionText(signal.direction)}
+          <span className="tg soft signal-time">{formatDateTime(signal.createdAt)}</span>
+          <span className="tc signal-title-main">{signalTitleText(signal)}</span>
+          <span className="tg soft signal-confidence">信心 {signal.confidence}</span>
+          <span className={`tg signal-meta ${signal.direction === "bullish" ? "up" : signal.direction === "bearish" ? "down" : "gold"}`}>
+            {categoryText(signal.category)} / {directionText(signal.direction)}
           </span>
-          <span className="tc" style={{ color: "var(--night-ink)" }}>{signalTitleText(signal)}</span>
-          <span className="tg soft">信心 {signal.confidence}</span>
         </div>
       ))}
     </Panel>
