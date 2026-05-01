@@ -966,3 +966,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: removed unused Sparkline/Pill/TimeText exports from the shared metric helper, leaving only the real-data metric strip helpers currently imported by production pages. This reduces dead decorative UI that could be mistaken for wired data later.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; import scan found no remaining Sparkline/Pill/TimeText consumers.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:55 Taipei) - unused block spark helper deleted
+- Files changed: deleted `apps/web/lib/block-spark.ts`.
+- Endpoints / data behavior: no endpoint contract changed.
+- Behavior change: removed an unreferenced legacy sparkline helper with corrupted text/block glyphs. No visible route behavior changes; this prevents a dead decorative chart helper from being reintroduced into production data surfaces.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; import scan for `blockSpark` / `block-spark` returned 0.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
