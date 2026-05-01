@@ -139,6 +139,7 @@ function makeIntent(
     side:           "buy",
     orderType:      "market",
     qty:            1000,
+    quantity_unit:  "LOT",
     userId:         "00000000-0000-0000-0000-000000000001",
     ...overrides
   });

@@ -48,6 +48,7 @@ function makePendingIntent(overrides: Partial<Parameters<typeof createOrderInten
     side: "buy",
     orderType: "market",
     qty: 1000,
+    quantity_unit: "LOT",
     userId: "user-test-01",
     ...overrides
   });
@@ -273,6 +274,7 @@ test("E6: createOrderIntent rejects empty idempotencyKey", () => {
       side: "buy",
       orderType: "market",
       qty: 1000,
+      quantity_unit: "LOT",
       userId: "user-01"
     }),
     { message: /idempotencyKey must not be empty/ }
@@ -287,6 +289,7 @@ test("E7: createOrderIntent rejects zero qty", () => {
       side: "buy",
       orderType: "market",
       qty: 0,
+      quantity_unit: "LOT",
       userId: "user-01"
     }),
     { message: /qty must be a positive integer/ }
@@ -301,6 +304,7 @@ test("E8: createOrderIntent rejects negative qty", () => {
       side: "buy",
       orderType: "market",
       qty: -100,
+      quantity_unit: "LOT",
       userId: "user-01"
     }),
     { message: /qty must be a positive integer/ }
