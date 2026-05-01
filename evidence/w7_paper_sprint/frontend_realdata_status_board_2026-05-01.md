@@ -876,3 +876,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: missing production API configuration is now BLOCKED, not fake-empty or localhost leakage. The dev fallback remains available only outside production.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for the old unconditional `NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001"` pattern returned 0.
 - Blockers: production deploy still requires `NEXT_PUBLIC_API_BASE_URL` set by environment. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 14:13 Taipei) - company detail diagnostics made readable
+- Files changed: cleaned user-visible mojibake in `apps/web/app/companies/[symbol]/page.tsx` and `error.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. `/companies/:symbol` still uses real `GET /api/v1/companies` plus company OHLCV and keeps missing/failed data in BLOCKED or not-found states.
+- Behavior change: API failure, ticker not found, back navigation, company header, and company error boundary now render readable diagnostics instead of corrupted text. This makes Bruce/Elva production smoke actionable when auth, workspace, API base, or backend errors occur.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; company page mojibake scan only returned legitimate nullish-coalescing code and industry dictionary Chinese strings.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

@@ -120,7 +120,7 @@ export default async function CompanyDetailPage({
       >
         <div style={{ padding: "32px 24px", fontFamily: "var(--mono, monospace)", fontSize: 12, lineHeight: 1.7 }}>
           <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 16, fontSize: 14 }}>
-            [DIAG] /companies/{symbol.toUpperCase()} ??getCompanies() failed
+            [DIAG] /companies/{symbol.toUpperCase()} getCompanies() failed
           </div>
           <div className="dim" style={{ marginBottom: 8 }}>API_BASE: <b>{apiBase}</b></div>
           <div className="dim" style={{ marginBottom: 8 }}>WORKSPACE_SLUG: <b>{wsSlug}</b></div>
@@ -129,9 +129,9 @@ export default async function CompanyDetailPage({
             ERROR (raw): <pre style={{ background: "rgba(255,0,0,0.08)", padding: 12, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-all", maxWidth: 800 }}>{fetchErrorMsg}</pre>
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
-            ?航??嚗?a) SSR cookie ?芾?????401嚗?b) workspace_slug 銝? ??401/403嚗?c) API base 閮剝嚗?d) 敺垢 5xx?? ERROR ??挾?芸?鞎潛策 Elva??
+            Likely causes: (a) SSR cookie missing or expired / 401; (b) workspace slug mismatch / 401-403; (c) API base is not configured; (d) backend 5xx. Keep this BLOCKED and surface the raw error to Elva.
           </div>
-          <Link href="/companies" className="btn-sm">???砍?”</Link>
+          <Link href="/companies" className="btn-sm">BACK TO COMPANIES</Link>
         </div>
       </PageFrame>
     );
@@ -148,7 +148,7 @@ export default async function CompanyDetailPage({
     });
     return (
       <PageFrame
-        code="03-?"
+        code="03-NF"
         title={symbol.toUpperCase()}
         sub="ticker not found"
         note={`[03B] /companies/${symbol} ticker not found in workspace`}
@@ -158,14 +158,14 @@ export default async function CompanyDetailPage({
             [NOT FOUND] {symbol.toUpperCase()}
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
-            workspace ??{companies.length} 摰嗅?賂?瘝? ticker = <b>{symbol}</b> ????
+            Workspace returned {companies.length} companies, but none matched ticker = <b>{symbol}</b>.
           </div>
           {companies.length > 0 && (
             <div className="dim" style={{ marginBottom: 16 }}>
               SAMPLE: {companies.slice(0, 8).map((c) => c.ticker).join(" / ")}
             </div>
           )}
-          <Link href="/companies" className="btn-sm">???砍?”</Link>
+          <Link href="/companies" className="btn-sm">BACK TO COMPANIES</Link>
         </div>
       </PageFrame>
     );
@@ -185,8 +185,8 @@ export default async function CompanyDetailPage({
     <PageFrame
       code={`03-${company.ticker}`}
       title={company.ticker}
-      sub={`${company.name} 繚 ${company.market}`}
-      note={`[03B] COMPANIES / ${company.ticker} 繚 ${company.chainPosition} 繚 ${company.beneficiaryTier}`}
+      sub={`${company.name} / ${company.market}`}
+      note={`[03B] COMPANIES / ${company.ticker} / ${company.chainPosition} / ${company.beneficiaryTier}`}
     >
       <div style={{ marginBottom: 8 }}>
         <Link
@@ -194,7 +194,7 @@ export default async function CompanyDetailPage({
           className="btn-sm"
           style={{ fontFamily: "var(--mono, monospace)", fontSize: 11 }}
         >
-          ???砍?”
+          BACK TO COMPANIES
         </Link>
       </div>
 
@@ -237,7 +237,7 @@ export default async function CompanyDetailPage({
 
       <div className="company-tabs-band">
         <span className="tg gold">COMPANY SURFACE</span>
-        <span className="tg soft">鞎∪ / 蝐Ⅳ / ?砍? / ?? / tick stream</span>
+        <span className="tg soft">price / fundamentals / flows / announcements / tick stream</span>
       </div>
 
       <div className="company-panels-grid">

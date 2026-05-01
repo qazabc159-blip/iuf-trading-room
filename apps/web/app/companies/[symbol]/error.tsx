@@ -1,7 +1,6 @@
 "use client";
 
-// error.tsx — Error boundary for /companies/[symbol]
-// Next.js App Router requires this to be a Client Component.
+// Error boundary for /companies/[symbol].
 
 import { useEffect } from "react";
 
@@ -23,13 +22,13 @@ export default function CompanyDetailError({
       fontSize: 12,
     }}>
       <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 12 }}>
-        [ERROR] 公司頁載入失敗
+        [ERROR] Company detail failed to load
       </div>
       <div className="dim" style={{ marginBottom: 16 }}>
         {error.message || "Unknown error"}
-        {error.digest && ` · digest: ${error.digest}`}
+        {error.digest && ` / digest: ${error.digest}`}
       </div>
-      <button className="btn-sm" onClick={reset}>重試</button>
+      <button className="btn-sm" onClick={reset}>Retry</button>
     </div>
   );
 }
