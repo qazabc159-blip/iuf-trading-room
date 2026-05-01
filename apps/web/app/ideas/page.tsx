@@ -107,6 +107,25 @@ function directionTone(direction: IdeaRow["direction"]) {
   return "muted";
 }
 
+const ideaRowWithPromoteStyle = {
+  gridTemplateColumns: "74px 56px 54px 72px minmax(160px, 1fr) 88px minmax(170px, 0.72fr)",
+};
+
+function PromotionBlockedCell() {
+  return (
+    <span
+      className="tg down"
+      title="Contract 4 route POST /api/v1/strategy/ideas/:ideaId/promote-to-paper-preview is not live. Owner: Jason + Bruce."
+      style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.25 }}
+    >
+      <span>PROMOTE BLOCKED</span>
+      <span className="tc soft" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        Contract 4 route missing
+      </span>
+    </span>
+  );
+}
+
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
@@ -131,7 +150,7 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
 function IdeaRowView({ idea }: { idea: IdeaRow }) {
   const theme = idea.topThemes[0]?.name ?? "NO THEME";
   return (
-    <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
+    <div className="row idea-row" style={ideaRowWithPromoteStyle} key={`${idea.companyId}-${idea.symbol}`}>
       <Link href={`/companies/${idea.symbol}`} className="tg gold">
         {idea.symbol}
       </Link>
@@ -146,6 +165,7 @@ function IdeaRowView({ idea }: { idea: IdeaRow }) {
       <Link href={`/companies/${idea.symbol}`} className="mini-button">
         DETAIL
       </Link>
+      <PromotionBlockedCell />
     </div>
   );
 }
@@ -186,13 +206,14 @@ export default async function IdeasPage() {
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
           <>
-            <div className="row idea-row table-head tg">
+            <div className="row idea-row table-head tg" style={ideaRowWithPromoteStyle}>
               <span>SYMBOL</span>
               <span>DIR</span>
               <span>SCORE</span>
               <span>DECISION</span>
               <span>RATIONALE</span>
               <span>LINK</span>
+              <span>PROMOTE</span>
             </div>
             {result.data.items.map((idea) => (
               <IdeaRowView idea={idea} key={`${idea.companyId}-${idea.symbol}`} />
@@ -240,7 +261,7 @@ export default async function IdeasPage() {
         <div className="tg soft" style={{ display: "grid", gap: 6, paddingBottom: 12 }}>
           <span>source: {result.source}</span>
           <span>generated: {statsAvailable ? formatDateTime(result.data.generatedAt) : "blocked until strategy idea source is live"}</span>
-          <span>handoff: strategy idea to order remains BLOCKED / owner Jason + Bruce / Contract 4 promote route not approved.</span>
+          <span>handoff: strategy idea to order remains BLOCKED / owner Jason + Bruce / `POST /api/v1/strategy/ideas/:ideaId/promote-to-paper-preview` not live.</span>
         </div>
       </Panel>
     </PageFrame>

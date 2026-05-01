@@ -100,6 +100,25 @@ function formatQueryValue(value: unknown) {
   return String(value);
 }
 
+const runIdeaRowWithPromoteStyle = {
+  gridTemplateColumns: "74px 56px 54px 72px minmax(160px, 1fr) 88px minmax(170px, 0.72fr)",
+};
+
+function PromotionBlockedCell() {
+  return (
+    <span
+      className="tg down"
+      title="Contract 4 route POST /api/v1/strategy/ideas/:ideaId/promote-to-paper-preview is not live. Owner: Jason + Bruce."
+      style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.25 }}
+    >
+      <span>PROMOTE BLOCKED</span>
+      <span className="tc soft" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        Contract 4 route missing
+      </span>
+    </span>
+  );
+}
+
 function barWidth(value: number, total: number) {
   if (total <= 0) return "0%";
   return `${Math.min(100, Math.round((value / total) * 100))}%`;
@@ -164,7 +183,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
       code="05-D"
       title={run?.id ?? id}
       sub={run ? `Strategy run / ${run.query.decisionMode}` : "Strategy run unavailable"}
-      note="[05D] RUN DETAIL reads the production strategy run record. Execute/order actions are intentionally hidden."
+      note="[05D] RUN DETAIL reads the production strategy run record. Idea promote is visibly BLOCKED until Contract 4 is live."
     >
       <MetricStrip
         cells={[
@@ -195,7 +214,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
             )}
           </Panel>
 
-          <Panel code="RUN-IDEA" title="OUTPUTS" sub="company detail links only" right={runAvailable ? `${outputs.length} ROWS` : result.state}>
+          <Panel code="RUN-IDEA" title="OUTPUTS" sub="company detail links + blocked promote state" right={runAvailable ? `${outputs.length} ROWS` : result.state}>
             {!runAvailable && (
               <div className="terminal-note">
                 <span className={`tg ${stateTone(result.state)}`}>{result.state}</span> {unavailableReason}
@@ -207,7 +226,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
               </div>
             )}
             {runAvailable && outputs.map((idea) => (
-              <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
+              <div className="row idea-row" style={runIdeaRowWithPromoteStyle} key={`${idea.companyId}-${idea.symbol}`}>
                 <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
                 <span className={`tg ${directionTone(idea.direction)}`}>{idea.direction}</span>
                 <span className="num">{idea.score.toFixed(1)}</span>
@@ -216,6 +235,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                   {idea.companyName} / {idea.topThemeName ?? "NO THEME"} / {idea.primaryReason}
                 </span>
                 <Link href={`/companies/${idea.symbol}`} className="mini-button">DETAIL</Link>
+                <PromotionBlockedCell />
               </div>
             ))}
           </Panel>
