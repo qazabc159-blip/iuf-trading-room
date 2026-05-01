@@ -385,6 +385,9 @@ export default async function DashboardPage() {
     load("GET /api/v1/signals", [], async () => (await getSignals()).data, (value) => value.length === 0),
   ]);
   const news = await loadNews(companies, ideas);
+  const marketOverview = overview.state === "LIVE" && overview.data?.generatedAt
+    ? { ...overview, updatedAt: overview.data.generatedAt }
+    : overview;
 
   const summary = [
     `themes ${themes.state === "LIVE" ? themes.data.length : themes.state}`,
@@ -400,7 +403,7 @@ export default async function DashboardPage() {
       sub="Real-data dashboard"
       note={`[01] DASHBOARD · ${summary}`}
     >
-      <MarketStrip overview={overview} />
+      <MarketStrip overview={marketOverview} />
 
       <div className="main-grid">
         <div>
@@ -414,7 +417,7 @@ export default async function DashboardPage() {
 
         <div>
           <SignalsPanel signals={signals} />
-          <OpsPanel overview={overview} runs={runs} />
+          <OpsPanel overview={marketOverview} runs={runs} />
         </div>
       </div>
     </PageFrame>
