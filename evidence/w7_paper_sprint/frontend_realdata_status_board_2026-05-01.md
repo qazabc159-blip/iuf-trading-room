@@ -1036,3 +1036,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: paper order ledger headers now show EMPTY when the real ledger request succeeds with zero rows, instead of showing LIVE beside an empty ledger. Portfolio ticket handoff/TIF/preview labels also use plain ASCII separators.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; scan for middle-dot/garbled separators in both paper order surfaces returned 0.
 - Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 15:04 Taipei) - dashboard market overview strip shows source freshness
+- Files changed: updated `apps/web/app/page.tsx`.
+- Endpoints / data behavior: no endpoint contract changed. Top dashboard metrics still derive from `GET /api/v1/market-data/overview`.
+- Behavior change: dashboard market overview quote strip now renders the shared source/updatedAt line before LIVE/EMPTY/BLOCKED cards, so LIVE metric cards no longer stand alone without freshness/source evidence.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: none introduced. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.

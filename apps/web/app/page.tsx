@@ -119,11 +119,14 @@ function EmptyOrBlocked<T>({ state }: { state: LoadState<T> }) {
 function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | null> }) {
   if (overview.state !== "LIVE" || !overview.data) {
     return (
-      <div className="quote-strip">
-        <div className="quote-card">
-          <div className="tg"><span className="quote-symbol">MKT-OVR</span><span className="quote-state">{overview.state}</span></div>
-          <div className="quote-last num">--</div>
-          <div className="tg soft">{overview.state === "LIVE" ? "No overview payload." : overview.reason}</div>
+      <div>
+        <StateLine state={overview} />
+        <div className="quote-strip">
+          <div className="quote-card">
+            <div className="tg"><span className="quote-symbol">MKT-OVR</span><span className="quote-state">{overview.state}</span></div>
+            <div className="quote-last num">--</div>
+            <div className="tg soft">{overview.state === "LIVE" ? "No overview payload." : overview.reason}</div>
+          </div>
         </div>
       </div>
     );
@@ -146,17 +149,20 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
   ];
 
   return (
-    <div className="quote-strip">
-      {cards.map((card) => (
-        <div className="quote-card" key={card.key}>
-          <div className="tg">
-            <span className="quote-symbol">{card.label}</span>
-            <span className="quote-state">LIVE</span>
+    <div>
+      <StateLine state={overview} />
+      <div className="quote-strip">
+        {cards.map((card) => (
+          <div className="quote-card" key={card.key}>
+            <div className="tg">
+              <span className="quote-symbol">{card.label}</span>
+              <span className="quote-state">LIVE</span>
+            </div>
+            <div className={`quote-last num ${card.tone}`}>{card.value}</div>
+            <div className="tg soft">{card.sub}</div>
           </div>
-          <div className={`quote-last num ${card.tone}`}>{card.value}</div>
-          <div className="tg soft">{card.sub}</div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
