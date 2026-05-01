@@ -46,6 +46,14 @@ type LoadState =
   | { state: "EMPTY"; data: PortfolioData | null; updatedAt: string; source: string; reason: string }
   | { state: "BLOCKED"; data: PortfolioData | null; updatedAt: string; source: string; reason: string };
 
+function friendlyError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
+  if (/401|unauthorized|unauthenticated/i.test(message)) return "登入狀態已失效，請重新登入。";
+  if (/404|not found/i.test(message)) return "後端端點尚未提供。";
+  return message;
+}
+
 function displayState(state: LoadState["state"]) {
   if (state === "LIVE") return "正常";
   if (state === "EMPTY") return "無資料";
@@ -98,7 +106,7 @@ async function loadPortfolio(): Promise<LoadState> {
       data: null,
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyError(error),
     };
   }
 }
@@ -120,7 +128,7 @@ async function loadRiskSurface(): Promise<RiskSurfaceState> {
       state: "BLOCKED",
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyError(error),
     };
   }
 }

@@ -666,7 +666,7 @@ function MarketPreviewPanel({ preview }: { preview: MarketPreviewState }) {
         <div>
           <div className="tg" style={{ color: "var(--gold-bright)", fontWeight: 700 }}>即時參考 / {preview.symbol}</div>
           <div style={marketSourceLineStyle}>
-            來源：{preview.source || "market-data"} / 狀態：{readinessLabel(preview.quote?.readiness)} / 更新：{formatDateTime(quote?.timestamp ?? preview.updatedAt)}
+            來源：{marketSourceLabel(preview.source)} / 狀態：{readinessLabel(preview.quote?.readiness)} / 更新：{formatDateTime(quote?.timestamp ?? preview.updatedAt)}
           </div>
         </div>
         <a className="mini-button" href={`/quote?symbol=${encodeURIComponent(preview.symbol)}`}>
@@ -762,6 +762,15 @@ function readinessLabel(readiness: EffectiveMarketQuote["readiness"] | undefined
   return "待確認";
 }
 
+function marketSourceLabel(value: string | null | undefined) {
+  if (!value) return "市場資料";
+  if (value === "market-data") return "市場資料";
+  if (value === "OHLCV") return "K 線資料";
+  if (value === "tej") return "FinMind/TEJ";
+  if (value === "kgi") return "凱基唯讀";
+  return value.toUpperCase();
+}
+
 function formatMarketNumber(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "--";
   return value.toLocaleString("zh-TW", {
@@ -823,6 +832,8 @@ function PreviewResult({ result }: { result: Awaited<ReturnType<typeof previewPa
 
 function OrderOutcome({ state }: { state: PaperOrderState }) {
   const tone = state.intent.status === "REJECTED" ? "BLOCKED" : "LIVE";
+  const unit = state.intent.quantity_unit;
+  const shares = toTaiwanStockShareCount(state.intent.qty, unit);
   return (
     <div style={{ marginTop: 12 }}>
       <TruthNote
@@ -832,7 +843,9 @@ function OrderOutcome({ state }: { state: PaperOrderState }) {
       <div style={kvListStyle}>
         <KV k="股票" v={state.intent.symbol} />
         <KV k="方向" v={sideLabel(state.intent.side)} />
-        <KV k="股數" v={state.intent.qty.toLocaleString()} />
+        <KV k="單位" v={quantityUnitLabel(unit)} />
+        <KV k={unit === "LOT" ? "張數" : "股數"} v={state.intent.qty.toLocaleString("zh-TW")} />
+        <KV k="實際股數" v={`${shares.toLocaleString("zh-TW")} 股`} />
         <KV k="價格" v={state.intent.price === null ? "市價" : String(state.intent.price)} />
         <KV k="更新" v={formatTime(state.intent.updatedAt)} />
         {state.fill && <KV k="成交" v={`${state.fill.fillQty.toLocaleString()} @ ${state.fill.fillPrice}`} />}
@@ -883,7 +896,13 @@ function OrderHistory({
       {orders.status === "live" && orders.items.slice(0, 6).map((state) => (
         <div key={state.intent.id} style={orderRowStyle}>
           <span className="tg" style={{ color: "var(--gold-bright)", fontWeight: 700 }}>{state.intent.symbol}</span>
-          <span className="tg">{sideLabel(state.intent.side)} {state.intent.qty.toLocaleString()}</span>
+          <span className="tg">
+            {sideLabel(state.intent.side)} {state.intent.qty.toLocaleString("zh-TW")}
+            {quantityUnitLabel(state.intent.quantity_unit)}
+          </span>
+          <span className="tg soft">
+            {toTaiwanStockShareCount(state.intent.qty, state.intent.quantity_unit).toLocaleString("zh-TW")} 股
+          </span>
           <span className="tg">{orderStatusLabel(state.intent.status)}</span>
           <span className="tg soft">{formatTime(state.intent.updatedAt)}</span>
           <button
@@ -1161,7 +1180,7 @@ const truthNoteStyle: CSSProperties = {
   alignItems: "flex-start",
   padding: "9px 0",
   color: "var(--exec-mid)",
-  fontFamily: "var(--serif-tc)",
+  fontFamily: "var(--sans-tc)",
   fontSize: 14,
   lineHeight: 1.65,
 };
@@ -1214,7 +1233,7 @@ const historyHeaderStyle: CSSProperties = {
 
 const orderRowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "72px 1fr 86px 74px 64px",
+  gridTemplateColumns: "72px 98px 92px 86px 74px 64px",
   gap: 10,
   alignItems: "center",
   padding: "9px 10px",
