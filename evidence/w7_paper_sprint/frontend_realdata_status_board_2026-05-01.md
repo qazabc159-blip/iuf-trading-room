@@ -4,6 +4,54 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-01 17:23 Taipei — Elva cadence: 68h sprint Block 1, 20min #4 — Contract 3 Watchlist UI design queued (P1-2)
+
+**Codex burst since 17:03 (0 commits)**: Codex quiet — likely consuming Contract 4 (P1-3) design or in design-read mode. No drift, no stop-line risk.
+
+**Verify clean (origin/main e53dbf0..origin/main = 0 new web commits)**:
+| Check | Result |
+|---|---|
+| Stop-line grep on diff `94df067..origin/main` apps/web | **0 hits** (broker.submit / live.submit / kgi-broker / /order/create) |
+| 4-state hard rule across last 8 fix(web) commits | All hide/block patterns — no silent fallback regression |
+
+**Cycle deliverable — Contract 3 (P1-2) Watchlist UI design**:
+- File: `evidence/w7_paper_sprint/contract_3_watchlist_ui_design_2026-05-01.md`
+- Mirrors Contract 2 pattern: `WatchlistSurfaceState = LIVE | BLOCKED`, per-row `QuoteCell` 4-state, re-uses `PositionRiskBadge` from Contract 2 (no duplication)
+- 7 columns: SYMBOL/NAME/LAST/BID/ASK/Δ%/RISK/[PROMOTE]
+- PROMOTE click → invokes Contract 4 `POST /api/idea/promote-to-paper-preview` first, then navigates → unifies idea+watchlist promotion path
+- Hard-blocks PROMOTE if any quote BLOCKED, kill-switch ENGAGED, or paper gate not ARMED
+- Backend: 1 aggregator route, **0 migrations**, p95 ≤ 200ms target for 50 rows
+- 12/12 hard-line matrix PASS at design time
+- ~700 LOC / ~14h e2e (Jason 4h + Codex 8h + Bruce 2h)
+- 8 open Q with defaults applied — Codex can pick up immediately
+
+**Block 1 status table**:
+| P1 # | Topic | Design status | Impl status |
+|---|---|---|---|
+| P1-1 (Contract 2) | Portfolio + 4-layer risk badge | ★ DELIVERED 16:43 | ★ Codex executed `13ca56a` 16:54 |
+| P1-2 (Contract 3) | Watchlist UI | ★ DELIVERED 17:23 (this cycle) | queued for Codex |
+| P1-3 (Contract 4) | Idea→paper promote | ★ DELIVERED 16:23 | queued |
+| P1-5 / 6 / 7 | (Codex P1-7 self-took) | covered | `8a749d7` |
+| P1-8 | Paper E2E demo runbook | ★ DELIVERED 17:03 | runbook static |
+| P1-9 | idempotency live verify checklist | not yet | (next cycle candidate) |
+| P1-11 | OpenAlice 100-co exposure batch | ★ DELIVERED 15:54 | queued |
+
+**Yellow / red events**: none this cycle.
+
+**Sequencing call**:
+- 5/2 Sat → Jason aggregator + Codex skeleton
+- 5/3 Sun → Codex full wire + Bruce 4-state harness
+- 5/4 06:00 → preflight against 2330/2317/0050
+- Fallback: strip PROMOTE button if weekend slips, watchlist still LIVE read-only, demo path covered by Contract 4 idea panel
+
+**Next 20min (17:43 cadence)**:
+1. Verify next Codex commits stop-line clean
+2. Standby for Jason / 0020 v2 PR #39 trigger (no probe — ASYNC)
+3. Pick next P1 design — likely **P1-9 idempotency live verify checklist for 5/4 demo** (3 days out, getting closer to operationally critical)
+4. Cycle entry write-back
+
+---
+
 ### 2026-05-01 17:03 Taipei — Elva cadence: 68h sprint Block 1, 20min #3 — ★ design→impl loop closed inside 20min
 
 **★ HEADLINE**: Codex executed Contract 2 P1-1 design **inside 20min of my 16:43 design push**.
