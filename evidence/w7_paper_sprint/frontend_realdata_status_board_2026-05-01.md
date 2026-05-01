@@ -789,3 +789,9 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: dormant synthetic K-line, bid/ask, tick tape, KGI quote panel, broker-status demo, and radar-uncovered fallback utilities are no longer present in the web bundle. No visible UI can import those old mock paths by accident.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; exact mock import scan for `mock-kbar`, `kbar-adapter`, `kgi-quote-mock`, `kgi-quote-types`, `use-readonly-quote`, `radar-uncovered`, `components/chart`, `kgi-quote-panel`, and `kgi-broker-status` returned 0.
 - Blockers: production K-line/bidask/tick remains BLOCKED pending Jason/Operator real read contracts. No stop-line touched: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
+### Codex cycle (2026-05-01 13:46 Taipei) - unused legacy UI shells removed
+- Files changed: deleted unused legacy client components `app-shell`, `boot-sequence`, `ticker-tape`, old CRUD boards, `openalice-ops`, `RightInspector`, dormant RADAR candlestick widgets, stale KPI strip, and KGI position placeholder.
+- Endpoints / data behavior: no active route changed. Exact import scan confirmed no visible page imports these files; active routes continue using `PageFrame`, `RadarWidgets`, portfolio widgets, company detail panels, and real API clients.
+- Behavior change: removes dormant deterministic spark/radar mock UI, old local-only forms, old placeholder broker/position widgets, and unused shell chrome that could be accidentally reintroduced as production UI.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; exact import scan for the deleted component names returned 0.
+- Blockers: none introduced. Stop-lines respected: no broker write, no migration 0020, no Railway secrets, no live submit, no destructive DB action.
