@@ -146,7 +146,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     : !parsed.validPrice
       ? "限價單需要有效價格。"
       : parsed.notionalExceedsCap
-        ? `超過紙上資金 ${DEMO_CAPITAL_TWD.toLocaleString()} TWD（預估 ${parsed.estimatedNotional?.toFixed(0) ?? "?"} TWD）`
+        ? `超過紙上資金 ${DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元（預估 ${parsed.estimatedNotional?.toLocaleString("zh-TW", { maximumFractionDigits: 0 }) ?? "?"} 元）`
         : null;
   const ledgerState =
     orders.status === "blocked"
@@ -280,7 +280,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
         </div>
         <div>
           <label style={labelStyle}>
-            {parsed.isShare ? "股數 (零股 odd-lot)" : "張數 (整股)"}
+            {parsed.isShare ? "股數（零股）" : "張數（整股）"}
           </label>
           <input
             type="number"
@@ -310,7 +310,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
       {/* Odd-lot indicator pill */}
       {parsed.isShare && (
         <div style={{ marginBottom: 8, display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={oddLotPillStyle}>零股 odd-lot</span>
+          <span style={oddLotPillStyle}>零股</span>
           <span style={{ fontSize: 10, color: "var(--night-mid, #888)", fontFamily: "var(--mono, monospace)" }}>
             1 股為單位 / 上限 999 股
           </span>
@@ -323,16 +323,16 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           <div style={kvStyle}>
             <span>預估金額</span>
             <b style={parsed.notionalExceedsCap ? { color: "var(--tw-up-bright, #e63946)" } : {}}>
-              {parsed.estimatedNotional.toLocaleString("zh-TW", { maximumFractionDigits: 0 })} TWD
+              {parsed.estimatedNotional.toLocaleString("zh-TW", { maximumFractionDigits: 0 })} 元
             </b>
           </div>
           <div style={kvStyle}>
             <span>紙上資金上限</span>
-            <b>{DEMO_CAPITAL_TWD.toLocaleString()} TWD</b>
+            <b>{DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元</b>
           </div>
           {parsed.notionalExceedsCap && (
             <div style={{ color: "var(--tw-up-bright, #e63946)", fontFamily: "var(--mono, monospace)", fontSize: 11, paddingTop: 4 }}>
-              超過紙上資金 {DEMO_CAPITAL_TWD.toLocaleString()} TWD
+              超過紙上資金 {DEMO_CAPITAL_TWD.toLocaleString("zh-TW")} 元
             </div>
           )}
         </div>

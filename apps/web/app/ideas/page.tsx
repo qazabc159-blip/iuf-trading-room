@@ -199,7 +199,7 @@ export default async function IdeasPage() {
       code="04"
       title="策略想法"
       sub="紙上候選佇列"
-      note="策略想法 / 正式策略資料；轉單交接在 Contract 4 通過前維持暫停。"
+      note="策略想法 / 正式策略資料；轉成紙上委託的交接流程通過前維持暫停。"
     >
       <MetricStrip
         cells={[

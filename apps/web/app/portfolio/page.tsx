@@ -171,6 +171,18 @@ function killModeLabel(mode: string | null | undefined) {
   return "保守鎖定";
 }
 
+function accountLabel(value: string | null | undefined) {
+  if (!value) return "紙上帳戶";
+  if (value === ACCOUNT_ID) return "紙上帳戶";
+  return value;
+}
+
+function durationLabel(ms: number | null | undefined) {
+  if (typeof ms !== "number") return "--";
+  if (ms >= 1000 && ms % 1000 === 0) return `${ms / 1000} 秒`;
+  return `${ms} ms`;
+}
+
 function statusTone(status: OrderRow["status"]) {
   if (status === "filled" || status === "acknowledged") return "up";
   if (status === "rejected" || status === "expired") return "down";
@@ -322,14 +334,14 @@ export default async function PortfolioPage() {
             )}
             {data?.kill && (
               <div className="tg soft" style={{ display: "grid", gap: 6, marginTop: 12 }}>
-                <span>帳戶：{data.kill.accountId}</span>
+                <span>帳戶：{accountLabel(data.kill.accountId)}</span>
                 <span>鎖定：{data.kill.engaged ? "是" : "否"} / 原因：{data.kill.reason || "--"}</span>
                 <span>更新：{formatTime(data.kill.updatedAt)}</span>
               </div>
             )}
           </Panel>
 
-          <Panel code="RISK-BASE" title="帳戶風控限制" sub="紙上交易限制" right={ACCOUNT_ID}>
+          <Panel code="RISK-BASE" title="帳戶風控限制" sub="紙上交易限制" right={accountLabel(ACCOUNT_ID)}>
             {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得風控限制。</div>}
             {data && [
               ["單筆上限", `${data.risk.maxPerTradePct}%`],
@@ -339,7 +351,7 @@ export default async function PortfolioPage() {
               ["總曝險", `${data.risk.maxGrossExposurePct}%`],
               ["開放委託", String(data.risk.maxOpenOrders)],
               ["每分鐘委託", String(data.risk.maxOrdersPerMinute)],
-              ["報價過期", `${data.risk.staleQuoteMs}ms`],
+              ["報價過期", durationLabel(data.risk.staleQuoteMs)],
             ].map(([label, value]) => (
               <div className="row limit-row" key={label}>
                 <span className="tg gold">{label}</span>

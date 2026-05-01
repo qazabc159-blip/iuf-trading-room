@@ -34,6 +34,12 @@ function modeLabel(value: string | null | undefined) {
   return value;
 }
 
+function workspaceLabel(value: string | null | undefined) {
+  if (!value) return "工作區";
+  if (value === "Primary Desk" || value === "primary-desk") return "主控工作區";
+  return value;
+}
+
 export function DataSourceBadge() {
   const [state, setState] = useState<BadgeState>({
     status: "CHECKING",
@@ -53,7 +59,7 @@ export function DataSourceBadge() {
         setState({
           status: "LIVE",
           label: "正常 | 後端",
-          detail: `${modeLabel(session.data.persistenceMode)} | ${session.data.workspace.name}`,
+          detail: `${modeLabel(session.data.persistenceMode)} | ${workspaceLabel(session.data.workspace.name)}`,
           checkedAt,
         });
       } catch {

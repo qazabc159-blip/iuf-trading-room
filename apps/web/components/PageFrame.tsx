@@ -51,7 +51,7 @@ export function PageFrame({
           {exec ? "執行層 / 紙上" : "盤面 / 真實資料"}
         </div>
       </header>
-      {note && <div className="tg terminal-note">{note}</div>}
+      {note && <div className="terminal-note">{note}</div>}
       {children}
     </main>
   );

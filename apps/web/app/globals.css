@@ -76,9 +76,9 @@ button { font: inherit; }
 
 .tg {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.35;
   letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .tc { font-family: var(--serif-tc); }
@@ -155,14 +155,14 @@ button { font: inherit; }
 }
 
 .nav-label {
-  font: 700 12px/1.15 var(--serif-tc);
+  font: 700 13.5px/1.22 var(--serif-tc);
   letter-spacing: 0.02em;
 }
 
 .nav-tc {
   margin-top: 3px;
   color: var(--night-mid);
-  font: 10px/1.2 var(--mono);
+  font: 10.5px/1.25 var(--mono);
 }
 
 .sidebar-logout {
@@ -281,6 +281,8 @@ button { font: inherit; }
   padding-bottom: 14px;
   border-bottom: 1px solid var(--night-rule);
   color: var(--night-soft);
+  font-size: 14px;
+  line-height: 1.65;
 }
 
 .quote-strip {
@@ -299,7 +301,7 @@ button { font: inherit; }
 .quote-card:last-child { border-right: 0; }
 .quote-symbol { color: var(--night-ink); font-weight: 700; }
 .quote-state { color: var(--night-soft); float: right; }
-.quote-last { margin-top: 7px; font-size: 24px; font-weight: 700; }
+.quote-last { margin-top: 7px; font-size: 28px; font-weight: 700; }
 
 .main-grid {
   display: grid;
@@ -309,8 +311,16 @@ button { font: inherit; }
 
 .exec-grid {
   display: grid;
-  grid-template-columns: 1.03fr 0.95fr 0.86fr;
-  gap: 20px;
+  grid-template-columns: minmax(720px, 1.18fr) minmax(420px, 0.82fr);
+  gap: 22px;
+}
+
+.exec-grid > :nth-child(3) {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 22px;
+  align-content: start;
 }
 
 .company-grid {
@@ -732,6 +742,13 @@ button { font: inherit; }
   body { overflow-x: auto; }
   .app-sidebar { width: 150px; }
   .page-frame { min-width: 1120px; padding: 20px; }
+  .exec-grid {
+    grid-template-columns: 1fr;
+  }
+  .exec-grid > :nth-child(3) {
+    grid-column: 1;
+    grid-template-columns: 1fr;
+  }
 }
 
 .mobile-head {

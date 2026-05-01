@@ -22,13 +22,13 @@ export default function CompanyDetailError({
       fontSize: 12,
     }}>
       <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 12 }}>
-        [ERROR] Company detail failed to load
+        公司頁暫時無法載入
       </div>
       <div className="dim" style={{ marginBottom: 16 }}>
-        {error.message || "Unknown error"}
-        {error.digest && ` / digest: ${error.digest}`}
+        {error.message || "未知錯誤"}
+        {error.digest && ` / 診斷碼：${error.digest}`}
       </div>
-      <button className="btn-sm" onClick={reset}>Retry</button>
+      <button className="btn-sm" onClick={reset}>重新載入</button>
     </div>
   );
 }

@@ -108,7 +108,7 @@ export default async function ContentDraftsAdminPage({
       title="內容草稿審核"
       sub="OpenAlice 正式審稿佇列"
       exec
-      note="內容草稿審核 / 只讀佇列；核准與退回動作仍在明確 gate 後才開。"
+      note="內容草稿審核 / 只讀佇列；核准與退回動作仍在明確閘門後才開。"
     >
       <Panel code="ADM-FLT" title="狀態篩選" right={status ? contentDraftStatusLabel(status) : "全部"}>
         <div className="filter-row">

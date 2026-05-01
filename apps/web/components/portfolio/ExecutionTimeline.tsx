@@ -17,6 +17,25 @@ const TYPE_TONE: Record<ExecutionEvent["type"], string> = {
   reconcile: "var(--exec-mid)"
 };
 
+function streamLabel(state: "loading" | "live" | "stale" | "blocked" | "empty") {
+  if (state === "loading") return "讀取中";
+  if (state === "live") return "正常";
+  if (state === "stale") return "輪詢中";
+  if (state === "empty") return "無資料";
+  return "暫停";
+}
+
+function eventTypeLabel(type: ExecutionEvent["type"]) {
+  if (type === "submit") return "送出";
+  if (type === "acknowledge") return "回報";
+  if (type === "fill") return "成交";
+  if (type === "cancel") return "撤單";
+  if (type === "reject") return "拒絕";
+  if (type === "expire") return "逾時";
+  if (type === "reconcile") return "對帳";
+  return type;
+}
+
 function eventKey(event: ExecutionEvent) {
   return `${event.timestamp}:${event.type}:${event.orderId}:${event.status}`;
 }
@@ -104,7 +123,7 @@ export function ExecutionTimeline() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-        <span className="tg" style={{ color: "var(--gold)", fontWeight: 700 }}>EXECUTION EVENTS</span>
+        <span className="tg" style={{ color: "var(--gold)", fontWeight: 700 }}>紙上交易事件</span>
         <span
           className="tg"
           style={{
@@ -116,10 +135,10 @@ export function ExecutionTimeline() {
                   : "var(--exec-mid)"
           }}
         >
-          {streamState.toUpperCase()}
+          {streamLabel(streamState)}
         </span>
         <span className="tg" style={{ color: "var(--exec-soft)", marginLeft: "auto" }}>
-          {events.length} ROWS | {ACCOUNT_ID}
+          {events.length} 筆 | 紙上帳戶
         </span>
       </div>
 
@@ -134,7 +153,7 @@ export function ExecutionTimeline() {
             fontSize: 10.5
           }}
         >
-          {streamState === "blocked" ? "BLOCKED" : "LIVE-DEGRADED"} | {blocker}
+          {streamState === "blocked" ? "暫停" : "降級輪詢"} | {blocker}
         </div>
       )}
 
@@ -167,7 +186,7 @@ export function ExecutionTimeline() {
                   {new Date(event.timestamp).toISOString().replace("T", " ").slice(0, 19)}Z
                 </span>
                 <span style={{ color: tone, fontWeight: 700, letterSpacing: "0.12em" }}>
-                  {event.type.toUpperCase()}
+                  {eventTypeLabel(event.type)}
                 </span>
                 <span>{event.status}</span>
                 <span style={{ color: "var(--gold)" }}>{event.orderId.slice(0, 12)}</span>
@@ -200,8 +219,8 @@ export function ExecutionTimeline() {
         {!events.length && (
           <div style={{ padding: "20px 4px", color: "var(--exec-soft)", fontFamily: "var(--mono)", fontSize: 11 }}>
             {streamState === "blocked"
-              ? "BLOCKED | execution events endpoint is unavailable"
-              : "EMPTY | no execution events returned for paper-default"}
+              ? "暫停 | 紙上交易事件端點暫時無法讀取"
+              : "無資料 | 紙上帳戶目前沒有交易事件"}
           </div>
         )}
       </div>

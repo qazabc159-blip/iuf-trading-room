@@ -157,7 +157,7 @@ export default async function OpsPage() {
             )}
           </Panel>
 
-          <Panel code="JOB-Q" title="OpenAlice 佇列" sub="worker 觀測" right={healthLabel(obs?.workerStatus) ?? "暫停"}>
+          <Panel code="JOB-Q" title="OpenAlice 佇列" sub="背景執行觀測" right={healthLabel(obs?.workerStatus) ?? "暫停"}>
             {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，OpenAlice 觀測先隱藏。</div>}
             {data && !obs && <div className="terminal-note"><span className="tg gold">無資料</span> 沒有 OpenAlice 觀測 payload。</div>}
             {obs && queue && (

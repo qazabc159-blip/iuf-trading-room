@@ -31,11 +31,10 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
         {MODES.map((m, i) => {
           const on = m.mode === mode;
           return (
-            <button
+            <div
               key={m.mode}
               role="radio"
               aria-checked={on}
-              disabled
               title="目前僅顯示狀態；切換交易模式需要後端治理、稽核紀錄與風控回歸測試通過。"
               style={{
                 padding: "14px 12px",
@@ -43,9 +42,8 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
                 color: on ? "var(--gold-bright)" : "var(--exec-ink)",
                 borderLeft: i === 0 ? "none" : "1px solid var(--exec-rule)",
                 borderTop: on ? "2px solid var(--gold)" : "2px solid transparent",
-                cursor: "not-allowed",
                 fontFamily: "var(--mono)",
-                letterSpacing: "0.18em",
+                letterSpacing: "0.08em",
                 textAlign: "left",
                 opacity: on ? 1 : 0.7,
               }}
@@ -59,7 +57,7 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
               <div style={{ fontFamily: "var(--serif-tc)", fontSize: 12.5, color: "var(--exec-mid)", marginTop: 4, letterSpacing: 0 }}>
                 {m.sub}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

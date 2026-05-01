@@ -99,10 +99,10 @@ function filterRange(bars: OhlcvBar[], range: RangeKey) {
 }
 
 function visibleBarsFor(interval: EnabledInterval, range: RangeKey) {
-  if (range === "all") return interval === "1d" ? 260 : interval === "1w" ? 156 : 96;
-  if (interval === "1d") return range === "3m" ? 70 : range === "6m" ? 130 : 220;
-  if (interval === "1w") return range === "3m" ? 18 : range === "6m" ? 34 : 104;
-  return range === "3m" ? 6 : range === "6m" ? 10 : 36;
+  if (range === "all") return interval === "1d" ? 520 : interval === "1w" ? 220 : 120;
+  if (interval === "1d") return range === "3m" ? 72 : range === "6m" ? 136 : range === "1y" ? 260 : 420;
+  if (interval === "1w") return range === "3m" ? 18 : range === "6m" ? 34 : range === "1y" ? 58 : 112;
+  return range === "3m" ? 6 : range === "6m" ? 10 : range === "1y" ? 14 : 28;
 }
 
 function formatNumber(value: number | null | undefined, digits = 2) {
@@ -125,7 +125,7 @@ export function OhlcvCandlestickChart({
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [interval, setInterval] = useState<EnabledInterval>("1d");
-  const [range, setRange] = useState<RangeKey>("1y");
+  const [range, setRange] = useState<RangeKey>("2y");
   const chartBars = useMemo(() => filterRange(aggregateBars(bars, interval), range), [bars, interval, range]);
 
   useEffect(() => {
@@ -147,7 +147,7 @@ export function OhlcvCandlestickChart({
 
         chart = lc.createChart(el, {
           width,
-          height: 480,
+          height: 520,
           layout: {
             background: { color: "transparent" },
             textColor: "rgba(203,213,225,0.68)",
@@ -163,7 +163,7 @@ export function OhlcvCandlestickChart({
             borderColor: "rgba(255,255,255,0.14)",
             timeVisible: interval === "1d",
             rightOffset: 10,
-            barSpacing: interval === "1d" ? 7 : interval === "1w" ? 9 : 12,
+            barSpacing: interval === "1d" ? 5 : interval === "1w" ? 7 : 10,
             fixLeftEdge: false,
             fixRightEdge: false,
           },
@@ -208,7 +208,7 @@ export function OhlcvCandlestickChart({
           const count = visibleBarsFor(interval, range);
           chart.timeScale().setVisibleLogicalRange({
             from: Math.max(0, chartBars.length - count),
-            to: chartBars.length + 8,
+            to: chartBars.length + 4,
           });
         }
 
@@ -315,7 +315,7 @@ export function OhlcvCandlestickChart({
           {emptyReason}
         </div>
       ) : (
-        <div ref={containerRef} style={{ width: "100%", minHeight: 480 }} />
+        <div ref={containerRef} style={{ width: "100%", minHeight: 520 }} />
       )}
     </section>
   );

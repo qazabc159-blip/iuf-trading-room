@@ -609,10 +609,10 @@ const sourceBarStyle: CSSProperties = {
   flexWrap: "wrap",
   gap: "8px 14px",
   alignItems: "center",
-  padding: "8px 0",
+  padding: "8px 0 10px",
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
-  fontSize: 10.5,
+  fontSize: 11.5,
 };
 
 const ticketShellStyle: CSSProperties = {
@@ -623,42 +623,41 @@ const ticketShellStyle: CSSProperties = {
 
 const formCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 16,
-  minHeight: 286,
-  background: "rgba(255,255,255,0.012)",
+  padding: 18,
+  minHeight: 326,
+  background: "linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.010))",
 };
 
 const previewCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 16,
-  minHeight: 286,
-  background: "rgba(255,255,255,0.012)",
+  padding: 18,
+  minHeight: 326,
+  background: "linear-gradient(180deg, rgba(200,148,63,0.040), rgba(255,255,255,0.010))",
 };
 
 const rowStyle: CSSProperties = {
   display: "flex",
-  alignItems: "flex-start",
-  gap: 10,
-  marginBottom: 10,
+  alignItems: "center",
+  gap: 12,
+  marginBottom: 12,
 };
 
 const labelStyle: CSSProperties = {
   fontFamily: "var(--mono)",
-  fontSize: 10,
-  letterSpacing: "0.16em",
+  fontSize: 11,
+  letterSpacing: "0.08em",
   color: "var(--exec-mid)",
-  width: 58,
-  paddingTop: 8,
+  width: 64,
 };
 
 const inputStyle: CSSProperties = {
   flex: 1,
-  padding: "8px 10px",
+  padding: "11px 12px",
   background: "var(--exec-bg)",
   border: "1px solid var(--exec-rule-strong)",
   color: "var(--exec-ink)",
   fontFamily: "var(--mono)",
-  fontSize: 13,
+  fontSize: 15,
   fontFeatureSettings: "\"tnum\",\"lnum\"",
   outline: "none",
   minWidth: 0,
@@ -678,13 +677,13 @@ const segmentedStyle: CSSProperties = {
 
 const segmentButtonStyle: CSSProperties = {
   flex: 1,
-  minHeight: 34,
-  padding: "8px 6px",
+  minHeight: 42,
+  padding: "9px 8px",
   border: "none",
   fontFamily: "var(--mono)",
-  fontSize: 11,
+  fontSize: 12,
   fontWeight: 700,
-  letterSpacing: "0.08em",
+  letterSpacing: "0.04em",
 };
 
 const panelHeadingStyle: CSSProperties = {
@@ -705,11 +704,12 @@ const actionButtonStyle: CSSProperties = {
   background: "transparent",
   border: "none",
   borderRight: "1px solid var(--exec-rule-strong)",
-  padding: "14px 16px",
+  minHeight: 48,
+  padding: "14px 18px",
   fontFamily: "var(--mono)",
-  letterSpacing: "0.14em",
+  letterSpacing: "0.08em",
   fontWeight: 700,
-  fontSize: 12,
+  fontSize: 13,
   cursor: "pointer",
 };
 
@@ -720,8 +720,8 @@ const truthNoteStyle: CSSProperties = {
   padding: "9px 0",
   color: "var(--exec-mid)",
   fontFamily: "var(--serif-tc)",
-  fontSize: 13,
-  lineHeight: 1.55,
+  fontSize: 14,
+  lineHeight: 1.65,
 };
 
 const kvListStyle: CSSProperties = {
