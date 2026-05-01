@@ -149,6 +149,9 @@ export function authErrorMessage(error: string): string {
     case "network_error":
       return "連線失敗，請稍後再試。";
     default:
-      return `登入失敗：${error}`;
+      if (error.startsWith("server_error_")) {
+        return "伺服器暫時無法完成請求，請稍後再試。";
+      }
+      return "登入失敗，請稍後再試。";
   }
 }

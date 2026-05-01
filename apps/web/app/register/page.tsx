@@ -62,7 +62,7 @@ export default function RegisterPage() {
     try {
       const result = await apiRegister(email.trim(), password, invite.trim());
       if (!result.ok) {
-        setError(ERROR_TEXT[result.error] ?? `註冊失敗：${result.error}`);
+        setError(ERROR_TEXT[result.error] ?? "註冊暫時無法完成，請稍後再試。");
         return;
       }
       router.push("/login?registered=1");
