@@ -16,6 +16,61 @@ export function statusLabel(value: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING" | st
   return value;
 }
 
+function displayCode(code: string) {
+  const exact: Record<string, string> = {
+    "03-ERR": "03 / 錯誤",
+    "03-NF": "03 / 無資料",
+    "05-D": "05 / 明細",
+    "06-PORT": "06 / 紙上交易",
+    "LAB-D": "量化研究明細",
+  };
+
+  if (exact[code]) return exact[code];
+  if (/^\d{2}$/.test(code)) return code;
+  if (/^\d{2}-/.test(code)) return code.replace("-", " / ");
+
+  const prefix = code.split(/[-_]/)[0];
+  const labels: Record<string, string> = {
+    ADM: "管理",
+    AUD: "稽核",
+    BRF: "簡報",
+    BT: "回測",
+    CMP: "公司",
+    CO: "公司",
+    DIV: "回饋",
+    DRF: "草稿",
+    DUP: "重複資料",
+    EXC: "成交",
+    IDA: "想法",
+    IDEA: "策略想法",
+    INT: "重大訊息",
+    JOB: "背景工作",
+    KIL: "交易模式",
+    LAB: "量化研究",
+    LAT: "最近資料",
+    MEM: "成員",
+    MKT: "市場",
+    OPS: "營運",
+    ORD: "委託",
+    PLAN: "計畫",
+    PLN: "計畫",
+    POS: "部位",
+    PROMO: "發布",
+    QTE: "報價",
+    REV: "複核",
+    RISK: "風控",
+    RSK: "風控",
+    RUN: "策略批次",
+    RUNS: "策略批次",
+    SIG: "訊號",
+    SRC: "資料來源",
+    THM: "主題",
+    WCH: "觀察清單",
+  };
+
+  return labels[prefix] ?? code;
+}
+
 export function PageFrame({
   code,
   title,
@@ -38,7 +93,7 @@ export function PageFrame({
       {exec && <div className="exec-band" aria-hidden />}
       <header className="page-head">
         <div className="page-title">
-          <span className="tg page-code">頁 / {code}</span>
+          <span className="tg page-code">頁 / {displayCode(code)}</span>
           <h1>{title}</h1>
           {sub && <span className="tc">{sub}</span>}
         </div>
@@ -74,7 +129,7 @@ export function Panel({
     <section className="panel">
       <div className="panel-head">
         <div>
-          <span className="tg panel-code">{code}</span>
+          <span className="tg panel-code">{displayCode(code)}</span>
           <span className="tg muted"> / </span>
           <span className="tg gold">{title}</span>
           {sub && <div className="panel-sub">{sub}</div>}
@@ -101,7 +156,7 @@ export function SectHead({
   return (
     <div className="panel-head">
       <div>
-        <span className="tg panel-code">{code}</span>
+        <span className="tg panel-code">{displayCode(code)}</span>
         {live && <span className="tg gold"> / 正常</span>}
         {sub && <div className="panel-sub">{sub}</div>}
       </div>

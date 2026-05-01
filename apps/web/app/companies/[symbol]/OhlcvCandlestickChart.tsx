@@ -99,10 +99,10 @@ function filterRange(bars: OhlcvBar[], range: RangeKey) {
 }
 
 function visibleBarsFor(interval: EnabledInterval, range: RangeKey) {
-  if (range === "all") return interval === "1d" ? 520 : interval === "1w" ? 220 : 120;
-  if (interval === "1d") return range === "3m" ? 72 : range === "6m" ? 136 : range === "1y" ? 260 : 420;
-  if (interval === "1w") return range === "3m" ? 18 : range === "6m" ? 34 : range === "1y" ? 58 : 112;
-  return range === "3m" ? 6 : range === "6m" ? 10 : range === "1y" ? 14 : 28;
+  if (range === "all") return interval === "1d" ? 720 : interval === "1w" ? 260 : 160;
+  if (interval === "1d") return range === "3m" ? 82 : range === "6m" ? 156 : range === "1y" ? 300 : 520;
+  if (interval === "1w") return range === "3m" ? 20 : range === "6m" ? 38 : range === "1y" ? 64 : 126;
+  return range === "3m" ? 6 : range === "6m" ? 12 : range === "1y" ? 18 : 36;
 }
 
 function formatNumber(value: number | null | undefined, digits = 2) {
@@ -163,7 +163,7 @@ export function OhlcvCandlestickChart({
             borderColor: "rgba(255,255,255,0.14)",
             timeVisible: interval === "1d",
             rightOffset: 10,
-            barSpacing: interval === "1d" ? 5 : interval === "1w" ? 7 : 10,
+            barSpacing: interval === "1d" ? 3.6 : interval === "1w" ? 6 : 8,
             fixLeftEdge: false,
             fixRightEdge: false,
           },
@@ -244,7 +244,7 @@ export function OhlcvCandlestickChart({
     <section className="panel hud-frame">
       <div className="panel-head">
         <div>
-          <span className="tg panel-code">K-LINE</span>
+          <span className="tg panel-code">K線</span>
           <span className="tg muted"> / </span>
           <span className="tg gold">K 線圖</span>
           <div className="panel-sub">日線、週線、月線與成交量</div>
