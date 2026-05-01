@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "node --import tsx --test ./tests/ci.test.ts ./tests/risk-persistence.test.ts",
+    "test": "node --import tsx --test ./tests/ci.test.ts ./tests/risk-persistence.test.ts ./tests/migrate.test.ts",
     "smoke": "node --import tsx ./scripts/smoke-api.ts",
     "smoke:autopilot:dryrun": "node --import tsx ./scripts/smoke-autopilot-dryrun.ts",
     "verify:execution": "node --import tsx ./apps/api/src/broker/verify-execution-lane.ts",

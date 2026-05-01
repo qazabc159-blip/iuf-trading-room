@@ -11,14 +11,14 @@ const migrationsDir = path.join(repoRoot, "packages", "db", "migrations");
 const lockKeyA = 9412;
 const lockKeyB = 20260413;
 
-function getMigrationFiles() {
+export function getMigrationFiles(directory = migrationsDir) {
   return fs
-    .readdirSync(migrationsDir)
-    .filter((file) => file.endsWith(".sql"))
+    .readdirSync(directory)
+    .filter((file) => file.endsWith(".sql") && !file.endsWith(".down.sql"))
     .sort((left, right) => left.localeCompare(right));
 }
 
-async function main() {
+export async function main() {
   const persistenceMode = process.env.PERSISTENCE_MODE ?? "memory";
   if (persistenceMode !== "database") {
     console.log("[migrate] Skipping migrations because PERSISTENCE_MODE is not database.");
@@ -75,7 +75,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("[migrate] Failed", error);
-  process.exitCode = 1;
-});
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error("[migrate] Failed", error);
+    process.exitCode = 1;
+  });
+}
