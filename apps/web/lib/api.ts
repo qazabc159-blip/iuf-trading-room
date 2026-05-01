@@ -968,6 +968,45 @@ export async function getRiskPortfolioOverview() {
   return request<RiskPortfolioOverview>("/api/v1/risk/portfolio-overview");
 }
 
+export type WatchlistQuoteCell =
+  | { state: "LIVE"; value: number; updatedAt: string }
+  | { state: "BLOCKED"; reason: string; lastSeenAt: string | null };
+
+export type WatchlistAdvisoryStatus = "ok" | "warn" | "block" | "no_limit_set";
+
+export type WatchlistRiskAdvisoryPreview = {
+  layers: Record<RiskLayerName, WatchlistAdvisoryStatus>;
+  worstStatus: RiskLayerStatus;
+  badgeCode: string;
+  hypotheticalBlockingLayer: RiskLayerName | null;
+};
+
+export type WatchlistRow = {
+  symbol: string;
+  symbolName: string | null;
+  last: WatchlistQuoteCell;
+  bid: WatchlistQuoteCell;
+  ask: WatchlistQuoteCell;
+  changePct: WatchlistQuoteCell;
+  hypothetical1LotBuyRisk: WatchlistRiskAdvisoryPreview | null;
+  canPromote: boolean;
+  promoteBlockedReason: string | null;
+};
+
+export type WatchlistOverview = {
+  generatedAt: string;
+  source: "watchlist-store@v1";
+  workspaceId: string;
+  killSwitchState: "ARMED" | "ENGAGED";
+  paperGateState: "ARMED" | "ENGAGED";
+  rows: WatchlistRow[];
+  warnings: string[];
+};
+
+export async function getWatchlistOverview() {
+  return request<WatchlistOverview>("/api/watchlist/overview");
+}
+
 export async function listStrategyRiskLimits(accountId: string) {
   return request<StrategyRiskLimit[]>(
     `/api/v1/risk/strategy-limits?accountId=${encodeURIComponent(accountId)}`

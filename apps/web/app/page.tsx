@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
+import { WatchlistSurface } from "@/components/watchlist/WatchlistSurface";
+import type { WatchlistSurfaceState } from "@/components/watchlist/WatchlistSurface";
 import {
   getCompanies,
   getCompanyAnnouncements,
@@ -8,6 +10,7 @@ import {
   getSignals,
   getStrategyIdeas,
   getThemes,
+  getWatchlistOverview,
   listStrategyRuns,
   type CompanyAnnouncement,
   type MarketDataOverview,
@@ -375,14 +378,36 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Awa
   } satisfies LoadState<NewsItem[]>;
 }
 
+async function loadWatchlist(): Promise<WatchlistSurfaceState> {
+  const source = "GET /api/watchlist/overview";
+  const updatedAt = new Date().toISOString();
+  try {
+    const res = await getWatchlistOverview();
+    return {
+      state: "LIVE",
+      data: res.data,
+      updatedAt: res.data.generatedAt || updatedAt,
+      source,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      updatedAt,
+      source,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export default async function DashboardPage() {
-  const [overview, themes, companies, ideas, runs, signals] = await Promise.all([
+  const [overview, themes, companies, ideas, runs, signals, watchlist] = await Promise.all([
     load("GET /api/v1/market-data/overview", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 5 })).data, (value) => value === null || value.quotes.total === 0),
     load("GET /api/v1/themes", [], async () => (await getThemes()).data, (value) => value.length === 0),
     load("GET /api/v1/companies", [], async () => (await getCompanies()).data, (value) => value.length === 0),
     load("GET /api/v1/strategy/ideas?decisionMode=paper", null, async () => (await getStrategyIdeas({ limit: 8, includeBlocked: true, decisionMode: "paper", sort: "score" })).data, (value) => value === null || value.items.length === 0),
     load("GET /api/v1/strategy/runs", null, async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data, (value) => value === null || value.items.length === 0),
     load("GET /api/v1/signals", [], async () => (await getSignals()).data, (value) => value.length === 0),
+    loadWatchlist(),
   ]);
   const news = await loadNews(companies, ideas);
   const marketOverview = overview.state === "LIVE" && overview.data?.generatedAt
@@ -407,6 +432,9 @@ export default async function DashboardPage() {
 
       <div className="main-grid">
         <div>
+          <Panel code="WCH-LST" title={`${formatTime(watchlist.updatedAt)} TPE`} sub="WATCHLIST / QUOTES / RISK ADVISORY" right={watchlist.state}>
+            <WatchlistSurface result={watchlist} />
+          </Panel>
           <ThemesPanel themes={themes} />
         </div>
 
