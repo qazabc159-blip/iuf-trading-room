@@ -216,19 +216,18 @@ export default async function ThemesPage() {
         <SourceLine result={result} />
         {result.state === "LIVE" && hiddenCleanupCount > 0 && (
           <div className="terminal-note compact">
-            已收納內部清理主題 {hiddenCleanupCount} 筆；不顯示 placeholder、broken 或 deprecated 項目。
+            已收納內部清理主題 {hiddenCleanupCount} 筆；不在正式主題表顯示待修、佔位或退役項目。
           </div>
         )}
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
           <>
             <div className="row theme-row table-head tg">
-              <span>#</span><span>代碼</span><span>主題</span><span>盤勢</span><span>階段</span><span>核心</span><span>觀察</span><span>更新</span>
+              <span>#</span><span>主題</span><span>盤勢</span><span>階段</span><span>核心</span><span>觀察</span><span>更新</span>
             </div>
             {visibleThemes.map((theme) => (
               <Link href={`/themes/${theme.slug}`} className={`row theme-row ${theme.priority === 1 ? "theme-active" : ""}`} key={theme.id}>
                 <span className="tg soft">{theme.priority}</span>
-                <span className="tg" style={{ color: "var(--night-ink)", fontWeight: 700 }}>{theme.slug}</span>
                 <span>
                   <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{themeDisplayName(theme)}</strong>
                   <span className="tc soft theme-thesis">{themeThesisText(theme)}</span>

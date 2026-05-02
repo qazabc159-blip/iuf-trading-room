@@ -419,7 +419,7 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
             <span className="tg soft">{theme.priority}</span>
             <span>
               <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{themeDisplayName(theme)}</strong>
-              <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{theme.slug} · {themeThesisText(theme)}</span>
+              <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{themeThesisText(theme)}</span>
             </span>
             <span className="tg gold">{marketText(theme.marketState)}</span>
             <span className="tg soft">{formatDate(theme.updatedAt)}</span>
