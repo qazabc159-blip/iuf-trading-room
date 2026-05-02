@@ -14,6 +14,7 @@ import {
   estimateTaiwanStockNotional,
   formatTwd,
   quantityUnitDescription,
+  quantityUnitLabel,
   toTaiwanStockShareCount,
   validateTaiwanStockQuantity,
   type TaiwanStockQuantityUnit,
@@ -434,7 +435,12 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
         )}
         {orders.status === "live" && orders.items.slice(0, 3).map((order) => (
           <div key={order.intent.id} style={orderRowStyle}>
-            <span>{sideLabel(order.intent.side)} {order.intent.qty.toLocaleString()}</span>
+            <span>
+              {sideLabel(order.intent.side)} {order.intent.qty.toLocaleString("zh-TW")} {quantityUnitLabel(order.intent.quantity_unit)}
+              <small style={orderShareHintStyle}>
+                實際 {toTaiwanStockShareCount(order.intent.qty, order.intent.quantity_unit).toLocaleString("zh-TW")} 股
+              </small>
+            </span>
             <span>{orderStatusLabel(order.intent.status)}</span>
             <span>{formatTime(order.intent.updatedAt)}</span>
           </div>
@@ -637,13 +643,21 @@ const ledgerHeaderStyle: React.CSSProperties = {
 
 const orderRowStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1fr 80px 70px",
+  gridTemplateColumns: "minmax(0, 1fr) 80px 70px",
   gap: 8,
   borderTop: "1px solid var(--night-rule, #222)",
   padding: "7px 0",
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
+};
+
+const orderShareHintStyle: React.CSSProperties = {
+  display: "block",
+  marginTop: 2,
+  color: "var(--night-mid, #888)",
+  fontSize: 10,
+  lineHeight: 1.35,
 };
 
 const oddLotPillStyle: React.CSSProperties = {
