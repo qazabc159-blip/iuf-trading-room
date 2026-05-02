@@ -4,6 +4,32 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-02 16:28 Taipei — Codex heartbeat pass 11 — remove global overlay + hydration fix
+
+**Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS.
+
+**Files changed**:
+- `apps/web/app/layout.tsx` — removed the global floating source badge from the root layout; page/panel-level 4-state truth remains.
+- `apps/web/components/PageFrame.tsx` — added a targeted hydration suppressor on the generated-at timestamp so client pages do not emit React hydration errors.
+
+**Behavior**:
+- Bottom-right source overlay no longer sits on top of the trading room / market pages.
+- Company board and quant lab no longer throw React hydration mismatch on first paint.
+- No new functionality, no data-source expansion, no wording iteration outside demo-critical UI breakage.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- Local QA used `NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:59999` to keep frontend 4-state fail-closed behavior visible without touching production data or secrets.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS
+- Local production Playwright sweep at 1365x768 over 21 routes PASS after rerun: `/login`, `/register`, `/`, `/themes`, `/companies`, `/companies/duplicates`, `/companies/2330`, `/ideas`, `/runs`, `/plans`, `/ops`, `/signals`, `/market-intel`, `/portfolio`, `/quote?symbol=2330`, `/lab`, `/briefs`, `/drafts`, `/reviews`, `/m`, `/m/kill`
+- QA assertions: 0 horizontal overflow, 0 narrow vertical text columns, 0 raw backend labels, 0 `.source-badge`, 0 React page errors.
+
+**Blockers / next bypass**:
+- None for this scoped fix. Next step: PR + CI + deploy smoke for this pass, then continue page-by-page demo UI repair within freeze.
+
 ### 2026-05-01 18:53 Taipei — Elva cadence: 68h sprint Block 1, 20min #8 — 楊董返回 + 詳報已交 + P1-12 EOD closeout 模板
 
 **Codex burst since 18:23 (0 commits)**: Codex still quiet — likely waiting on Jason backend (Contract 4 4 routes) before wiring frontend full PROMOTE flow.
