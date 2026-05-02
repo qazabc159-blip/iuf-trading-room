@@ -694,8 +694,8 @@ const inputStyle: React.CSSProperties = {
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
-  minHeight: 43,
-  padding: "9px 12px",
+  minHeight: 48,
+  padding: "12px 14px",
   width: "100%",
   boxSizing: "border-box",
 };
@@ -703,14 +703,14 @@ const inputStyle: React.CSSProperties = {
 const segmentedStyle: React.CSSProperties = {
   display: "flex",
   border: "1px solid var(--night-rule-strong, #333)",
-  minHeight: 44,
+  minHeight: 48,
 };
 
 const segmentButtonStyle: React.CSSProperties = {
   flex: 1,
   background: "transparent",
   border: "none",
-  padding: "9px 10px",
+  padding: "12px 12px",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   fontWeight: 700,
@@ -725,12 +725,12 @@ const truthNoteStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   lineHeight: 1.5,
-  padding: "7px 0",
+  padding: "10px 2px",
 };
 
 const previewBoxStyle: React.CSSProperties = {
   border: "1px solid var(--night-rule-strong, #333)",
-  padding: "9px 10px",
+  padding: "12px 14px",
   marginBottom: 12,
 };
 
@@ -739,7 +739,7 @@ const kvStyle: React.CSSProperties = {
   justifyContent: "space-between",
   gap: 10,
   borderTop: "1px solid var(--night-rule, #222)",
-  padding: "6px 0",
+  padding: "9px 0",
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
@@ -773,7 +773,7 @@ const orderRowStyle: React.CSSProperties = {
   gridTemplateColumns: "minmax(0, 1fr) 80px 70px",
   gap: 8,
   borderTop: "1px solid var(--night-rule, #222)",
-  padding: "7px 0",
+  padding: "10px 2px",
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
@@ -801,7 +801,7 @@ const oddLotPillStyle: React.CSSProperties = {
 
 const notionalPreviewStyle: React.CSSProperties = {
   border: "1px solid var(--night-rule-strong, #333)",
-  padding: "8px 10px",
+  padding: "12px 14px",
   marginBottom: 10,
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
@@ -825,7 +825,7 @@ const modalShellStyle: React.CSSProperties = {
   border: "1px solid var(--gold, #b8960c)",
   background: "linear-gradient(180deg, rgba(14,15,16,0.98), rgba(4,6,8,0.98))",
   boxShadow: "0 24px 80px rgba(0,0,0,0.56)",
-  padding: 18,
+  padding: 22,
 };
 
 const modalHeaderStyle: React.CSSProperties = {
@@ -834,8 +834,8 @@ const modalHeaderStyle: React.CSSProperties = {
   gap: 14,
   alignItems: "flex-start",
   borderBottom: "1px solid var(--night-rule-strong, #333)",
-  paddingBottom: 12,
-  marginBottom: 12,
+  paddingBottom: 16,
+  marginBottom: 16,
 };
 
 const modalSourceStyle: React.CSSProperties = {
@@ -867,7 +867,7 @@ const reviewRowStyle: React.CSSProperties = {
   gap: 12,
   alignItems: "start",
   borderBottom: "1px solid var(--night-rule, #222)",
-  padding: "10px 0",
+  padding: "13px 2px",
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
@@ -906,8 +906,8 @@ const modalActionStyle: React.CSSProperties = {
   justifyContent: "flex-end",
   gap: 10,
   borderTop: "1px solid var(--night-rule-strong, #333)",
-  marginTop: 12,
-  paddingTop: 12,
+  marginTop: 16,
+  paddingTop: 16,
 };
 
 const lotAckStyle: React.CSSProperties = {
@@ -930,7 +930,7 @@ const secondaryActionStyle: React.CSSProperties = {
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontWeight: 700,
-  padding: "10px 14px",
+  padding: "12px 16px",
   cursor: "pointer",
 };
 
@@ -940,6 +940,6 @@ const primaryActionStyle: React.CSSProperties = {
   color: "#080808",
   fontFamily: "var(--mono, monospace)",
   fontWeight: 800,
-  padding: "10px 16px",
+  padding: "12px 18px",
   cursor: "pointer",
 };
