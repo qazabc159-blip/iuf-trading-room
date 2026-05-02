@@ -106,7 +106,7 @@ export default async function ContentDraftsAdminPage({
     <PageFrame
       code="ADM-DRF"
       title="內容草稿審核"
-      sub="OpenAlice 正式審稿佇列"
+      sub="AI 內容審稿佇列"
       exec
       note="內容草稿審核 / 只讀佇列；核准與退回動作仍在明確閘門後才開。"
     >

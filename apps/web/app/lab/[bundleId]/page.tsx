@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import { LabBundleDetailClient } from "@/app/lab/[bundleId]/LabBundleDetailClient";
 import { PageFrame, Panel } from "@/components/PageFrame";
+import { friendlyDataError } from "@/lib/friendly-error";
 import { radarLabApi } from "@/lib/radar-lab";
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return friendlyDataError(error, "量化策略包明細暫時無法讀取。");
 }
 
 export default async function LabBundlePage({ params }: { params: Promise<{ bundleId: string }> }) {
