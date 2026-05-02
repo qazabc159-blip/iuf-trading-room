@@ -24,7 +24,7 @@ export default async function LabBundlePage({ params }: { params: Promise<{ bund
       >
         <Panel code="LAB-D" title="策略包明細" right="暫停">
           <div className="terminal-note">
-            暫停：策略包 {bundleId} 的資料尚未啟用。負責人：Athena + Jason。細節：{errorText(error)}
+            暫停：策略包 {bundleId} 的資料尚未啟用。負責人：量化研究交接管線。細節：{errorText(error)}
           </div>
         </Panel>
       </PageFrame>

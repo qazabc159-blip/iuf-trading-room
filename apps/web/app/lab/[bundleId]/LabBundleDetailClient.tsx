@@ -137,7 +137,7 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
             <Link className="outline-button" href="/lab">返回</Link>
           </div>
           <div className="terminal-note" style={{ marginTop: 12 }}>
-            轉入模擬交易需等待 Jason/Athena 完成交接契約；此頁不會建立券商委託。
+            轉入模擬交易需等待 量化研究交接管線 完成交接契約；此頁不會建立券商委託。
           </div>
           {actionError && (
             <div className="terminal-note" style={{ marginTop: 12 }}>
@@ -156,7 +156,7 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
               className="lab-textarea"
               value={feedback}
               onChange={(event) => setFeedback(event.target.value)}
-              placeholder="寫下要回給 Athena / 量化研究的分歧回饋..."
+              placeholder="寫下要回給 量化研究的分歧回饋..."
             />
             <button className="mini-button" type="button" disabled={busy || !feedback.trim()} onClick={submitFeedback} style={{ marginTop: 10 }}>
               送出回饋

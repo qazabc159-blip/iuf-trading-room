@@ -64,7 +64,7 @@ export default async function ReviewsPage() {
       {error && (
         <ReviewStatePanel
           state="BLOCKED"
-          reason={`交易檢討資料暫時無法讀取；後端負責人 Jason/Elva。${error}`}
+          reason={`交易檢討資料暫時無法讀取；後端負責人 內容與後端資料管線。${error}`}
           updatedAt={requestedAt}
         />
       )}
@@ -123,7 +123,7 @@ export default async function ReviewsPage() {
       <Panel code="REV-ACTION" title="審核動作" right="待後端契約">
         <div className="state-panel">
           <span className="badge badge-red">暫停</span>
-          <span className="tg soft">負責人：Jason/Elva</span>
+          <span className="tg soft">負責人：內容與後端資料管線</span>
           <span className="state-reason">
             目前沒有正式後端契約可在此頁核准或退回檢討。舊的本地按鈕已移除，避免把模擬動作誤認為已寫入資料庫。
           </span>

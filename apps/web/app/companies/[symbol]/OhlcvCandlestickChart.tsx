@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { OhlcvBar } from "@/lib/api";
 
 type EnabledInterval = "1d" | "1w" | "1m";
 type RangeKey = "3m" | "6m" | "1y" | "2y" | "all";
 
 const ENABLED_INTERVALS: ReadonlyArray<{ value: EnabledInterval; label: string; note: string }> = [
-  { value: "1d", label: "日K", note: "每日 OHLCV" },
-  { value: "1w", label: "週K", note: "由日K彙整成週線" },
-  { value: "1m", label: "月K", note: "由日K彙整成月線" },
+  { value: "1d", label: "日K", note: "正式日 OHLCV" },
+  { value: "1w", label: "週K", note: "由正式日 K 彙整" },
+  { value: "1m", label: "月K", note: "由正式日 K 彙整" },
 ];
 
 const RANGE_OPTIONS: ReadonlyArray<{ value: RangeKey; label: string; days: number | null }> = [
@@ -41,14 +41,14 @@ function sourceBadgeClass(bars: OhlcvBar[]): string {
 function sourceBadgeLabel(bars: OhlcvBar[]): string {
   if (!bars.length) return "無資料";
   const last = bars[bars.length - 1];
-  if (daysSince(last.dt) > 5) return `資料過期 / ${last.dt}`;
+  if (daysSince(last.dt) > 5) return `資料偏舊 / ${last.dt}`;
   if (last.source === "tej") return "FinMind/TEJ";
   if (last.source === "kgi") return "KGI";
   return "正式資料";
 }
 
 function stateLabel(state: "LIVE" | "EMPTY" | "BLOCKED") {
-  if (state === "LIVE") return "正常";
+  if (state === "LIVE") return "真實資料";
   if (state === "EMPTY") return "無資料";
   return "暫停";
 }
@@ -219,8 +219,8 @@ export function OhlcvCandlestickChart({
           if (nextWidth && chart) chart.applyOptions({ width: nextWidth });
         });
         ro.observe(el);
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "K 線圖載入失敗");
+      } catch {
+        setError("K 線圖載入失敗，請稍後重試。");
       }
     })();
 
@@ -239,26 +239,26 @@ export function OhlcvCandlestickChart({
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const emptyReason =
     sourceState === "BLOCKED"
-      ? `K 線資料暫停：${sourceReason}`
+      ? `K 線資料暫時無法讀取：${sourceReason}`
       : "此股票目前沒有可用的正式 K 線資料。";
 
   return (
-    <section className="panel hud-frame">
+    <section className="panel hud-frame kline-panel">
       <div className="panel-head">
         <div>
-          <span className="tg panel-code">K線</span>
+          <span className="tg panel-code">K 線</span>
           <span className="tg muted"> / </span>
           <span className="tg gold">K 線圖</span>
           <div className="panel-sub">日線、週線、月線與成交量</div>
         </div>
         <div className="tg soft">
-          <span className={badgeClass} style={{ fontSize: 10, padding: "1px 6px" }}>{badgeLabel}</span>
+          <span className={badgeClass}>{badgeLabel}</span>
           <span style={{ marginLeft: 8 }}>{symbol}</span>
         </div>
       </div>
 
-      <div style={toolbarStyle}>
-        <div style={controlGroupStyle}>
+      <div className="kline-toolbar">
+        <div className="kline-control-group">
           {ENABLED_INTERVALS.map((item) => (
             <button
               key={item.value}
@@ -272,13 +272,13 @@ export function OhlcvCandlestickChart({
             </button>
           ))}
         </div>
-        <div style={controlGroupStyle}>
+        <div className="kline-control-group">
           {RANGE_OPTIONS.map((item) => (
             <button
               key={item.value}
               type="button"
               onClick={() => setRange(item.value)}
-              className="mini-button"
+              className="outline-button"
               style={range === item.value ? activeButtonStyle : undefined}
             >
               {item.label}
@@ -287,18 +287,18 @@ export function OhlcvCandlestickChart({
         </div>
       </div>
 
-      <div style={pendingLineStyle}>
+      <div className="kline-pending-line">
         <span className="tg gold">分K</span>
         {PENDING_INTERVALS.map((label) => (
-          <span key={label} style={pendingIntervalStyle} title="等待 KGI 唯讀分K或逐筆資料來源，不顯示假資料">
+          <span key={label} className="kline-pending-chip" title="等待 KGI 唯讀分K與逐筆資料，不顯示假資料。">
             {label}
           </span>
         ))}
-        <span className="tg soft">等待 KGI 唯讀分K/逐筆來源；目前不造假。</span>
+        <span className="tg soft">等待 KGI 唯讀分K/逐筆資料接上。</span>
       </div>
 
       {chartBars.length > 0 && (
-        <div style={metaLineStyle}>
+        <div className="kline-meta-line">
           <span>{activeMeta?.note}</span>
           <span>{chartBars.length.toLocaleString("zh-TW")} 根</span>
           <span>{firstBar?.dt} 至 {lastBar?.dt}</span>
@@ -340,25 +340,25 @@ function KlineInsufficientState({
 }) {
   const latest = bars.at(-1);
   return (
-    <div style={insufficientShellStyle}>
+    <div className="kline-insufficient">
       <div>
         <span className="badge badge-yellow">資料不足</span>
-        <h4 style={insufficientTitleStyle}>正式 K 線目前只回傳 {bars.length.toLocaleString("zh-TW")} 根，先不放大成趨勢圖。</h4>
-        <p style={insufficientTextStyle}>
-          這裡只用真實 OHLCV；少於 {MIN_TREND_BARS} 根時不硬畫成完整趨勢，避免把幾根 K 棒誤看成可交易型態。
-          後端補齊歷史資料後，日線、週線、月線會自動回到完整圖表。
+        <h4>目前只有 {bars.length.toLocaleString("zh-TW")} 根正式 K 線，先不畫成趨勢圖。</h4>
+        <p>
+          此區只使用真實 OHLCV。資料少於 {MIN_TREND_BARS} 根時不拉伸成圖，避免看起來像完整趨勢；
+          後端補足歷史資料後，日線、週線與月線會自動恢復完整圖表。
         </p>
       </div>
-      <div style={insufficientMetaStyle}>
+      <div className="kline-insufficient-meta">
         <div><span>週期</span><b>{intervalLabel}</b></div>
         <div><span>來源</span><b>{sourceLabel}</b></div>
-        <div><span>最新</span><b>{latest ? `${latest.dt} / 收 ${formatNumber(latest.close)}` : "--"}</b></div>
+        <div><span>最新</span><b>{latest ? `${latest.dt} / ${formatNumber(latest.close)}` : "--"}</b></div>
       </div>
-      <div style={miniBarGridStyle}>
+      <div className="kline-mini-grid">
         {bars.slice(-8).map((bar) => {
           const up = bar.close >= bar.open;
           return (
-            <div style={miniBarStyle} key={`${bar.dt}-${bar.source}`}>
+            <div className="kline-mini-bar" key={`${bar.dt}-${bar.source}`}>
               <span className="tg soft">{bar.dt.slice(5)}</span>
               <b className={up ? "up" : "down"}>{formatNumber(bar.close)}</b>
               <small>高 {formatNumber(bar.high)} / 低 {formatNumber(bar.low)}</small>
@@ -371,104 +371,8 @@ function KlineInsufficientState({
   );
 }
 
-const toolbarStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  justifyContent: "space-between",
-  gap: "12px 16px",
-  margin: "16px 0 14px",
-};
-
-const controlGroupStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 10,
-  alignItems: "center",
-};
-
-const activeButtonStyle: React.CSSProperties = {
+const activeButtonStyle: CSSProperties = {
   borderColor: "rgba(226,184,92,0.72)",
   color: "var(--gold-bright)",
   background: "rgba(226,184,92,0.14)",
-};
-
-const pendingLineStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  alignItems: "center",
-  gap: "10px 12px",
-  marginBottom: 14,
-  lineHeight: 1.6,
-};
-
-const pendingIntervalStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  minHeight: 30,
-  border: "1px solid var(--night-rule, #222)",
-  padding: "0 11px",
-  color: "var(--night-soft, #555)",
-  fontFamily: "var(--mono)",
-  fontSize: 10,
-  letterSpacing: "0.08em",
-};
-
-const metaLineStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "8px 14px",
-  color: "var(--night-mid, #888)",
-  fontFamily: "var(--mono)",
-  fontSize: 10.5,
-  lineHeight: 1.6,
-  marginBottom: 12,
-};
-
-const insufficientShellStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 16,
-  minHeight: 360,
-  alignContent: "start",
-  border: "1px solid var(--night-rule-strong, #333)",
-  background: "linear-gradient(135deg, rgba(226,184,92,0.08), rgba(255,255,255,0.012))",
-  padding: 18,
-};
-
-const insufficientTitleStyle: React.CSSProperties = {
-  margin: "10px 0 0",
-  color: "var(--night-ink, #e5e7eb)",
-  fontFamily: "var(--serif-tc)",
-  fontSize: 22,
-  fontWeight: 400,
-  lineHeight: 1.5,
-};
-
-const insufficientTextStyle: React.CSSProperties = {
-  margin: "10px 0 0",
-  color: "var(--night-mid, #8aa0bd)",
-  fontFamily: "var(--sans-tc)",
-  fontSize: 14,
-  lineHeight: 1.8,
-};
-
-const insufficientMetaStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: 10,
-};
-
-const miniBarGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(132px, 1fr))",
-  gap: 8,
-};
-
-const miniBarStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-  minHeight: 92,
-  border: "1px solid var(--night-rule, #222)",
-  padding: 10,
-  background: "rgba(5,8,12,0.42)",
 };

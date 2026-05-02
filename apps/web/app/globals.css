@@ -993,6 +993,227 @@ button { font: inherit; }
   white-space: nowrap;
 }
 
+.company-info-panel .ascii-head {
+  margin-bottom: 18px;
+}
+
+.company-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 28px;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.company-info-grid dt,
+.company-info-label {
+  color: var(--night-mid);
+  font: 700 11px/1.6 var(--sans-tc);
+}
+
+.company-info-grid dd {
+  margin: 6px 0 0;
+  color: var(--night-ink);
+  font: 600 15px/1.7 var(--sans-tc);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.company-info-grid dd.strong,
+.company-info-grid .strong {
+  font-size: 22px;
+  color: var(--night-ink);
+}
+
+.company-info-section {
+  border-top: 1px solid var(--night-rule);
+  margin-top: 20px;
+  padding-top: 18px;
+}
+
+.company-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 16px;
+}
+
+.company-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--night-rule);
+}
+
+.company-score-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.company-score-row {
+  display: grid;
+  grid-template-columns: 70px minmax(90px, 1fr) 34px;
+  gap: 14px;
+  align-items: center;
+  color: var(--night-mid);
+  font: 700 12px/1.4 var(--sans-tc);
+}
+
+.score-bar {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.score-bar span {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  background: var(--night-faint);
+}
+
+.score-bar span[data-filled="true"] {
+  background: var(--gold);
+}
+
+.validation-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 18px;
+  margin-top: 12px;
+}
+
+.validation-pill {
+  display: grid;
+  gap: 6px;
+  min-width: 126px;
+}
+
+.validation-pill > span {
+  color: var(--night-mid);
+  font: 700 11px/1.4 var(--sans-tc);
+}
+
+.validation-pill > b {
+  width: fit-content;
+  padding: 5px 10px;
+}
+
+.company-notes {
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+  color: var(--night-ink);
+  font: 500 14px/1.9 var(--sans-tc);
+}
+
+.kline-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 14px 18px;
+  margin: 20px 0 16px;
+}
+
+.kline-control-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.kline-pending-line,
+.kline-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 16px;
+  line-height: 1.7;
+}
+
+.kline-meta-line {
+  color: var(--night-mid);
+  font: 700 11px/1.7 var(--mono);
+}
+
+.kline-pending-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  min-width: 54px;
+  border: 1px solid var(--night-rule-strong);
+  padding: 0 12px;
+  color: var(--night-soft);
+  font: 700 11px/1 var(--sans-tc);
+}
+
+.kline-insufficient {
+  display: grid;
+  gap: 18px;
+  min-height: 360px;
+  align-content: start;
+  border: 1px solid var(--night-rule-strong);
+  background: linear-gradient(135deg, rgba(226,184,92,0.08), rgba(255,255,255,0.012));
+  padding: 22px;
+}
+
+.kline-insufficient h4 {
+  margin: 12px 0 0;
+  color: var(--night-ink);
+  font: 500 24px/1.55 var(--serif-tc);
+}
+
+.kline-insufficient p {
+  max-width: 860px;
+  margin: 12px 0 0;
+  color: var(--night-mid);
+  font: 500 15px/1.9 var(--sans-tc);
+}
+
+.kline-insufficient-meta,
+.kline-mini-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.kline-insufficient-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.kline-insufficient-meta div {
+  border: 1px solid var(--night-rule);
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.kline-insufficient-meta span {
+  color: var(--night-mid);
+  font: 700 11px/1.3 var(--sans-tc);
+}
+
+.kline-mini-grid {
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+}
+
+.kline-mini-bar {
+  display: grid;
+  gap: 5px;
+  min-height: 94px;
+  border: 1px solid var(--night-rule);
+  padding: 12px;
+  background: rgba(5,8,12,0.42);
+}
+
+.kline-mini-bar small {
+  color: var(--night-mid);
+}
+
 .outline-button {
   display: inline-flex;
   min-height: 36px;

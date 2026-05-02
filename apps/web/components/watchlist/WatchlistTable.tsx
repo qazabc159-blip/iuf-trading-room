@@ -11,12 +11,12 @@ function toRiskCell(layer: RiskLayerName, advisory: WatchlistRiskAdvisoryPreview
   return {
     layer,
     status: advisory.layers[layer],
-    limit: { kind: "觀察清單試算", value: 0, unit: "count" },
+    limit: { kind: "watchlist-preview", value: 0, unit: "count" },
     current: 0,
     utilizationPct: advisory.layers[layer] === "block" ? 1 : advisory.layers[layer] === "warn" ? 0.8 : 0,
     warnThresholdPct: 0.8,
     blockThresholdPct: 1,
-    reason: advisory.layers[layer] === "no_limit_set" ? "此層風控尚未設定限制" : null,
+    reason: advisory.layers[layer] === "no_limit_set" ? "此風控層尚未設定限制" : null,
     topContributors: [],
   };
 }
@@ -48,15 +48,15 @@ function quoteBlocked(row: WatchlistRow) {
 
 function promoteReason(row: WatchlistRow) {
   if (row.promoteBlockedReason) return row.promoteBlockedReason;
-  if (quoteBlocked(row)) return "報價資料不完整，暫時不能帶入委託。";
-  if (!row.hypothetical1LotBuyRisk) return "風控試算尚未可用。";
-  return "策略想法帶入模擬委託的後端流程尚未啟用，請先到模擬交易頁手動建立。";
+  if (quoteBlocked(row)) return "報價資料尚未完整，不能轉入模擬委託。";
+  if (!row.hypothetical1LotBuyRisk) return "風控預覽尚未可用。";
+  return "轉入模擬委託仍暫停；需完成策略交接、風控預覽與操作者確認。";
 }
 
 export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
   return (
     <div style={tableStyle}>
-      <div className="row table-head tg" style={rowStyle}>
+      <div className="row table-head tg watchlist-row" style={rowStyle}>
         <span>代號</span>
         <span>名稱</span>
         <span>成交</span>
@@ -64,12 +64,12 @@ export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
         <span>賣價</span>
         <span>漲跌%</span>
         <span>風控</span>
-        <span>帶入</span>
+        <span>轉單</span>
       </div>
       {rows.slice(0, 12).map((row) => {
         const advisory = row.hypothetical1LotBuyRisk;
         return (
-          <div className="row" key={row.symbol} style={rowStyle}>
+          <div className="row watchlist-row" key={row.symbol} style={rowStyle}>
             <Link className="tg gold" href={`/companies/${row.symbol}`}>{row.symbol}</Link>
             <span className="tc soft" style={nameStyle}>{row.symbolName ?? "--"}</span>
             <QuoteCellRender cell={row.last} />
@@ -77,7 +77,7 @@ export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
             <QuoteCellRender cell={row.ask} />
             <QuoteCellRender cell={row.changePct} suffix="%" />
             <PositionRiskBadge
-              blockedReason={advisory ? undefined : "此檔風控試算尚未可用。"}
+              blockedReason={advisory ? undefined : "風控預覽尚未可用"}
               layers={advisory ? riskLayers(advisory) : null}
               overviewState={advisory ? "LIVE" : "BLOCKED"}
               row={riskRow(row)}
@@ -88,14 +88,14 @@ export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
               style={disabledButtonStyle}
               title={promoteReason(row)}
             >
-              待啟用
+              暫停
             </span>
           </div>
         );
       })}
       {rows.length > 12 && (
-        <div className="tg soft" style={{ padding: "8px 0" }}>
-          先顯示前 12 檔，共 {rows.length} 檔；排序沿用後端結果。
+        <div className="tg soft" style={{ padding: "12px 0" }}>
+          目前先顯示 12 檔，共 {rows.length} 檔；完整清單待正式篩選器接上。
         </div>
       )}
     </div>
@@ -108,9 +108,9 @@ const tableStyle: CSSProperties = {
 };
 
 const rowStyle: CSSProperties = {
-  gridTemplateColumns: "58px minmax(96px, 1fr) 68px 68px 68px 58px 72px 78px",
-  gap: 8,
-  padding: "9px 0",
+  gridTemplateColumns: "62px minmax(116px, 1fr) 72px 72px 72px 64px 78px 78px",
+  gap: 10,
+  padding: "12px 0",
 };
 
 const nameStyle: CSSProperties = {
@@ -121,13 +121,16 @@ const nameStyle: CSSProperties = {
 };
 
 const disabledButtonStyle: CSSProperties = {
-  minHeight: 24,
+  minHeight: 28,
   border: "1px solid var(--exec-rule-strong)",
   background: "transparent",
   color: "var(--exec-soft)",
   cursor: "not-allowed",
-  fontFamily: "var(--mono)",
-  fontSize: 10,
+  fontFamily: "var(--sans-tc)",
+  fontSize: 12,
   fontWeight: 700,
   letterSpacing: 0,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
 };

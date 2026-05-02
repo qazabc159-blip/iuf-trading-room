@@ -35,7 +35,7 @@ export function QuoteCellRender({ cell, suffix = "" }: { cell: WatchlistQuoteCel
   const stale = isStale(cell.updatedAt);
   return (
     <span
-      aria-label={`報價正常 ${formatNumber(cell.value)}，更新 ${formatTime(cell.updatedAt)}`}
+      aria-label={`真實報價 ${formatNumber(cell.value)}，更新 ${formatTime(cell.updatedAt)}`}
       className="num"
       style={{ color: stale ? "var(--gold-bright)" : "var(--tw-dn-bright)" }}
       title={`更新 ${formatTime(cell.updatedAt)}${stale ? " / 超過 30 秒未更新" : ""}`}

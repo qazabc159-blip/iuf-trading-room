@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { BeneficiaryTier, Company } from "@iuf-trading-room/contracts";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
@@ -41,13 +41,13 @@ function sortArrowChar(field: SortField, sortField: SortField, sortDir: SortDir)
 }
 
 function friendlyError(error: unknown): string {
-  return friendlyDataError(error, "公司資料讀取失敗。");
+  return friendlyDataError(error, "公司資料暫時無法讀取。");
 }
 
 function registryLabel(state: RegistryState) {
   if (state === "LIVE") return "正常";
   if (state === "EMPTY") return "無資料";
-  if (state === "LOADING") return "讀取中";
+  if (state === "LOADING") return "載入中";
   return "暫停";
 }
 
@@ -62,6 +62,12 @@ function registryBadge(state: RegistryState) {
   if (state === "EMPTY") return "badge-yellow";
   if (state === "LOADING") return "badge-blue";
   return "badge-red";
+}
+
+function marketLabel(value: string) {
+  if (value === "TWSE") return "上市";
+  if (value === "TPEX" || value === "TPEx" || value === "OTC") return "上櫃";
+  return value;
 }
 
 export default function CompaniesPage() {
@@ -148,13 +154,13 @@ export default function CompaniesPage() {
       code="03"
       title="公司板"
       sub="台股公司池"
-      note="公司板 / 正式公司主檔 / 以股票代號去重後顯示；資料庫永久去重仍等資料庫稽核。"
+      note="公司板 / 正式公司主檔；前端先以代號去重，正式資料庫去重仍維持審核閘門"
     >
       <MetricStrip
         columns={6}
         cells={[
           { label: "狀態", value: registryLabel(state), tone: registryTone(state) },
-          { label: "公司數", value: metric(companies.length) },
+          { label: "公司", value: metric(companies.length) },
           { label: "上市", value: metric(twseCount) },
           { label: "上櫃", value: metric(tpexCount) },
           { label: "核心", value: metric(coreCount), tone: !error && coreCount > 0 ? "gold" : "muted" },
@@ -165,17 +171,17 @@ export default function CompaniesPage() {
       <Panel
         code="CO-REG"
         title="公司主檔"
-        sub="代號 / 名稱 / 產業鏈位置 / 受惠層級"
+        sub="代號 / 公司名 / 產業鏈位置 / 受惠層級"
         right={state === "LIVE" ? `${companies.length.toLocaleString("zh-TW")} 檔` : registryLabel(state)}
       >
         <div className="source-line">
           <span className={`badge ${registryBadge(state)}`}>{registryLabel(state)}</span>
           <span className="tg soft">來源：公司主檔</span>
           <span className="tg soft">更新 {formatTime(fetchedAt)}</span>
-          {error && <span className="tg soft">負責：Jason / Elva。細節：{error}</span>}
+          {error && <span className="tg soft">處理：公司資料管線。細節：{error}</span>}
         </div>
 
-        <div style={{ display: "flex", gap: 8, padding: "10px 0", flexWrap: "wrap", alignItems: "center" }}>
+        <div className="company-filter-row">
           <input
             type="text"
             placeholder="搜尋代號、公司名、產業鏈..."
@@ -207,25 +213,25 @@ export default function CompaniesPage() {
         </div>
 
         {!loading && !error && duplicateRows > 0 && (
-          <div className="terminal-note" style={{ marginBottom: 8 }}>
-            公司池：正式主檔原始讀到 {rawTotal.toLocaleString("zh-TW")} 列；前端先按股票代號去重，實際顯示 {companies.length.toLocaleString("zh-TW")} 檔台股公司，
-            已隱藏 {duplicateRows.toLocaleString("zh-TW")} 列重複主檔。正式資料庫去重仍待 Mike/Jason 資料庫稽核閘門。
+          <div className="terminal-note" style={{ marginBottom: 12 }}>
+            去重提示：公司主檔目前讀到 {rawTotal.toLocaleString("zh-TW")} 列，前端先以代號顯示 {companies.length.toLocaleString("zh-TW")} 檔。
+            已隱藏 {duplicateRows.toLocaleString("zh-TW")} 列重複主檔；正式資料庫去重仍待資料庫稽核與備份閘門。
           </div>
         )}
 
         {error && (
           <div className="terminal-note">
-            暫停：公司主檔讀取失敗。{error}
+            暫停：公司主檔暫時無法讀取。{error}
           </div>
         )}
 
         {loading && !error && (
-          <div className="terminal-note">讀取中：正在讀取公司主檔。</div>
+          <div className="terminal-note">載入中：正在讀取公司主檔。</div>
         )}
 
         {!loading && !error && companies.length === 0 && (
           <div className="terminal-note">
-            無資料：公司主檔回傳 0 筆，不顯示假公司列表。
+            無資料：公司主檔目前回傳 0 筆。
           </div>
         )}
 
@@ -240,7 +246,7 @@ export default function CompaniesPage() {
             </div>
 
             {pageSlice.length === 0 && (
-              <div className="terminal-note">沒有符合篩選條件的公司。</div>
+              <div className="terminal-note">沒有符合目前篩選條件的公司。</div>
             )}
 
             {pageSlice.map((company) => (
@@ -257,15 +263,15 @@ export default function CompaniesPage() {
                   {company.chainPosition}
                 </span>
                 <span>
-                  <span className={tierBadge[company.beneficiaryTier]} style={{ fontSize: 10, padding: "2px 6px" }}>
+                  <span className={tierBadge[company.beneficiaryTier]} style={{ fontSize: 10, padding: "3px 8px" }}>
                     {tierLabel[company.beneficiaryTier]}
                   </span>
                 </span>
-                <span className="tg muted" style={{ fontSize: 11 }}>{company.market}</span>
+                <span className="tg muted" style={{ fontSize: 11 }}>{marketLabel(company.market)}</span>
               </Link>
             ))}
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderTop: "1px solid var(--night-rule, #222)" }}>
+            <div className="company-pagination">
               <span className="tg muted" style={{ fontSize: 11 }}>
                 {filtered.length === 0 ? "0 筆" : `${page * PAGE_SIZE + 1} 至 ${Math.min((page + 1) * PAGE_SIZE, filtered.length)} / ${filtered.length} 筆`}
               </span>
@@ -289,27 +295,27 @@ export default function CompaniesPage() {
 }
 
 const tableGridStyle = {
-  gridTemplateColumns: "70px minmax(120px,1fr) minmax(140px,1.4fr) 80px 80px",
-} satisfies React.CSSProperties;
+  gridTemplateColumns: "78px minmax(130px,1fr) minmax(150px,1.35fr) 84px 80px",
+} satisfies CSSProperties;
 
 const inputStyle = {
-  flex: "1 1 220px",
-  minWidth: 180,
+  flex: "1 1 260px",
+  minWidth: 210,
   background: "var(--night-bg, #0a0a08)",
   border: "1px solid var(--night-rule-strong, #333)",
   color: "var(--night-ink, #d8d4c8)",
-  fontFamily: "var(--mono)",
-  fontSize: 12,
-  padding: "6px 10px",
-  letterSpacing: "0.06em",
-} satisfies React.CSSProperties;
+  fontFamily: "var(--sans-tc)",
+  fontSize: 14,
+  padding: "10px 12px",
+  letterSpacing: 0,
+} satisfies CSSProperties;
 
 const selectStyle = {
-  flex: "0 1 200px",
+  flex: "0 1 220px",
   background: "var(--night-bg, #0a0a08)",
   border: "1px solid var(--night-rule-strong, #333)",
   color: "var(--night-ink, #d8d4c8)",
-  fontFamily: "var(--mono)",
-  fontSize: 11,
-  padding: "6px 8px",
-} satisfies React.CSSProperties;
+  fontFamily: "var(--sans-tc)",
+  fontSize: 13,
+  padding: "10px 12px",
+} satisfies CSSProperties;
