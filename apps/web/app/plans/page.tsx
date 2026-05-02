@@ -186,6 +186,15 @@ function marketStateLabel(value: string | null | undefined) {
   return value ?? "--";
 }
 
+function briefStatusLabel(status: BriefRow["status"] | null | undefined) {
+  if (!status) return "無資料";
+  const key = status.toLowerCase();
+  if (key === "published" || key === "approved") return "已核准";
+  if (key === "draft") return "草稿";
+  if (key === "archived") return "封存";
+  return cleanNarrativeText(status, "狀態待整理");
+}
+
 function signalCategoryLabel(value: string | null | undefined) {
   if (!value) return "未分類";
   const key = value.toLowerCase();
@@ -309,7 +318,7 @@ export default async function PlansPage() {
         </div>
 
         <div>
-          <Panel code="BRF-LAT" title={contextLive ? latestBrief?.date ?? "無簡報" : "暫停"} sub="每日簡報 / 正式資料庫" right={contextLive ? latestBrief?.status ?? "無資料" : "暫停"}>
+          <Panel code="BRF-LAT" title={contextLive ? latestBrief?.date ?? "無簡報" : "暫停"} sub="每日簡報 / 正式資料庫" right={contextLive ? briefStatusLabel(latestBrief?.status) : "暫停"}>
             {!contextLive && <div className="terminal-note"><span className="tg down">暫停</span> 交易計畫來源未正常時，簡報內容先隱藏。</div>}
             {contextLive && !latestBrief && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有每日簡報。</div>}
             {contextLive && latestBrief && (

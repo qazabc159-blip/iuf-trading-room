@@ -252,12 +252,12 @@ export default async function SignalsPage() {
                   {company ? (
                     <Link href={`/companies/${company.ticker}`} className="tg">{company.ticker}</Link>
                   ) : theme ? (
-                    <Link href={`/themes/${theme.slug}`} className="tg">{theme.slug}</Link>
+                    <Link href={`/themes/${theme.slug}`} className="tg">{theme.name}</Link>
                   ) : (
                     <span className="tg muted">未連結</span>
                   )}
                   <span className="tc signal-title">{signalTitle(signal)}</span>
-                  <span className={`tg ${confidenceTone(signal.confidence)}`}>C{signal.confidence}</span>
+                  <span className={`tg ${confidenceTone(signal.confidence)}`}>信心 {signal.confidence}</span>
                 </div>
               );
             })}
