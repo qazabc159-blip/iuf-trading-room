@@ -145,7 +145,7 @@ export function authErrorMessage(error: string): string {
     case "unauthenticated":
       return "登入狀態已失效，請重新登入。";
     case "api_base_unconfigured":
-      return "前端 API_BASE 尚未設定，登入功能暫時不可用。";
+      return "前端尚未設定後端 API，登入功能暫時不可用。";
     case "network_error":
       return "連線失敗，請稍後再試。";
     default:

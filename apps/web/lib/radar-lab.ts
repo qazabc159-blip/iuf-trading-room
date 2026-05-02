@@ -88,7 +88,7 @@ export const labDisplay = {
   producer: {
     QUANT_LAB: "量化研究",
     OPERATOR: "操作員",
-    OPENALICE: "OpenAlice",
+    OPENALICE: "AI 內容管線",
   } satisfies Record<LabProducer, string>,
   status: {
     NEW: "待審",
