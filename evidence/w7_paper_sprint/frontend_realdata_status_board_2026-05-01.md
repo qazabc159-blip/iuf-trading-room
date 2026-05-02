@@ -4,6 +4,31 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 04:37 Taipei - Codex heartbeat pass 23 - theme cleanup rows hidden
+
+**Scope**: demo-critical UI/content repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/themes/page.tsx` - hides internal cleanup themes whose source text contains `broken`, `deprecated`, `placeholder`, or `[BROKEN]` from the operator-facing theme table, with a truthful compact note showing how many were collected.
+- `apps/web/app/page.tsx` - applies the same internal cleanup filter before selecting dashboard theme rows.
+
+**Behavior**:
+- The theme board no longer shows `[BROKEN-1] To Fix`, `[BROKEN-2] To Fix`, `[DEPRECATED] Photoresist Test`, or `placeholder` rows in the main operator table.
+- Visible theme totals now count operator-facing themes, not internal cleanup records.
+- Internal cleanup records are not deleted and no backend data is changed; they are just kept out of the production UI table.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- No new data source, RSS, commercial news feed, AI translation, or mock data added.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `git diff --check -- apps/web/app/page.tsx apps/web/app/themes/page.tsx` PASS (CRLF warning only).
+
+**Blockers / next bypass**:
+- Production visual confirmation waits on PR CI/deploy. Next safe task: production `/themes` smoke, then continue route-by-route cleanup for portfolio/order wording and remaining English source IDs.
+
 ### 2026-05-03 04:18 Taipei - Codex heartbeat pass 22 - dashboard/theme/signal zh-TW cleanup
 
 **Scope**: demo-critical UI/content repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

@@ -149,6 +149,11 @@ function themeThesisText(theme: ThemeRow) {
   return theme.thesis;
 }
 
+function isInternalCleanupTheme(theme: ThemeRow) {
+  const text = `${theme.slug} ${theme.name} ${theme.thesis ?? ""}`.toLowerCase();
+  return /\bbroken\b|deprecated|placeholder|\[broken/.test(text);
+}
+
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
@@ -173,12 +178,14 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
 export default async function ThemesPage() {
   const result = await loadThemes();
   const themes = result.data.slice().sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+  const visibleThemes = themes.filter((theme) => !isInternalCleanupTheme(theme));
+  const hiddenCleanupCount = themes.length - visibleThemes.length;
   const countsAvailable = result.state !== "BLOCKED";
-  const attackCount = themes.filter((theme) => theme.marketState === "Attack" || theme.marketState === "Selective Attack").length;
-  const defenseCount = themes.filter((theme) => theme.marketState === "Defense" || theme.marketState === "Preservation").length;
-  const coreTotal = themes.reduce((sum, theme) => sum + theme.corePoolCount, 0);
-  const observationTotal = themes.reduce((sum, theme) => sum + theme.observationPoolCount, 0);
-  const priorityOneCount = themes.filter((theme) => theme.priority === 1).length;
+  const attackCount = visibleThemes.filter((theme) => theme.marketState === "Attack" || theme.marketState === "Selective Attack").length;
+  const defenseCount = visibleThemes.filter((theme) => theme.marketState === "Defense" || theme.marketState === "Preservation").length;
+  const coreTotal = visibleThemes.reduce((sum, theme) => sum + theme.corePoolCount, 0);
+  const observationTotal = visibleThemes.reduce((sum, theme) => sum + theme.observationPoolCount, 0);
+  const priorityOneCount = visibleThemes.filter((theme) => theme.priority === 1).length;
 
   return (
     <PageFrame
@@ -190,7 +197,7 @@ export default async function ThemesPage() {
       <MetricStrip
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "總數", value: countsAvailable ? themes.length : "--" },
+          { label: "總數", value: countsAvailable ? visibleThemes.length : "--" },
           { label: "進攻", value: countsAvailable ? attackCount : "--", tone: "up" },
           { label: "防守", value: countsAvailable ? defenseCount : "--", tone: "down" },
           { label: "核心", value: countsAvailable ? coreTotal : "--", tone: coreTotal > 0 ? "gold" : "muted" },
@@ -207,13 +214,18 @@ export default async function ThemesPage() {
         right={stateLabel(result.state)}
       >
         <SourceLine result={result} />
+        {result.state === "LIVE" && hiddenCleanupCount > 0 && (
+          <div className="terminal-note compact">
+            已收納內部清理主題 {hiddenCleanupCount} 筆；不顯示 placeholder、broken 或 deprecated 項目。
+          </div>
+        )}
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
           <>
             <div className="row theme-row table-head tg">
               <span>#</span><span>代碼</span><span>主題</span><span>盤勢</span><span>階段</span><span>核心</span><span>觀察</span><span>更新</span>
             </div>
-            {themes.map((theme) => (
+            {visibleThemes.map((theme) => (
               <Link href={`/themes/${theme.slug}`} className={`row theme-row ${theme.priority === 1 ? "theme-active" : ""}`} key={theme.id}>
                 <span className="tg soft">{theme.priority}</span>
                 <span className="tg" style={{ color: "var(--night-ink)", fontWeight: 700 }}>{theme.slug}</span>
