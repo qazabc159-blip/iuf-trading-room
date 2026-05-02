@@ -12,6 +12,7 @@ import {
   getThemes,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { reasonLabel } from "@/lib/strategy-vocab";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,19 @@ function formatDate(value: string | null | undefined) {
   return date.toLocaleDateString("zh-TW", { month: "2-digit", day: "2-digit" });
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 function stateTone(state: LoadState["state"]) {
   if (state === "LIVE") return "up";
   if (state === "EMPTY") return "gold";
@@ -159,6 +173,29 @@ function decisionTone(decision: IdeaRow["marketData"]["decision"]) {
   if (decision === "allow") return "up";
   if (decision === "review") return "gold";
   return "down";
+}
+
+function marketStateLabel(value: string | null | undefined) {
+  if (value === "Attack") return "進攻";
+  if (value === "Selective Attack") return "選擇進攻";
+  if (value === "Defense") return "防守";
+  if (value === "Preservation") return "保全";
+  if (value === "Balanced") return "平衡";
+  return value ?? "--";
+}
+
+function signalCategoryLabel(value: string | null | undefined) {
+  if (!value) return "未分類";
+  const key = value.toLowerCase();
+  if (key === "industry") return "產業";
+  if (key === "theme") return "主題";
+  if (key === "earnings") return "財報";
+  if (key === "revenue") return "營收";
+  if (key === "news") return "新聞";
+  if (key === "technical") return "技術";
+  if (key === "fundamental") return "基本面";
+  if (key === "test" || key === "dryrun") return "內部測試";
+  return value.replace(/[_-]/g, " ");
 }
 
 function companyForPlan(plan: PlanRow, companies: CompanyRow[]) {
@@ -259,7 +296,7 @@ export default async function PlansPage() {
                 <span className="num">{idea.score.toFixed(1)}</span>
                 <span className={`tg ${decisionTone(idea.marketData.decision)}`}>{decisionLabel(idea.marketData.decision)}</span>
                 <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {idea.rationale.primaryReason}
+                  {reasonLabel(idea.rationale.primaryReason)}
                 </span>
                 <Link href={`/companies/${idea.symbol}`} className="mini-button">查看</Link>
               </div>
@@ -275,7 +312,7 @@ export default async function PlansPage() {
               <div style={{ display: "grid", gap: 12, paddingBottom: 12 }}>
                 <div className="row limit-row">
                   <span className="tg gold">盤勢</span>
-                  <span className="tg" style={{ gridColumn: "span 2", textAlign: "right" }}>{latestBrief.marketState}</span>
+                  <span className="tg" style={{ gridColumn: "span 2", textAlign: "right" }}>{marketStateLabel(latestBrief.marketState)}</span>
                 </div>
                 {latestBrief.sections.slice(0, 4).map((section) => (
                   <div style={{ borderBottom: "1px solid var(--night-rule)", paddingBottom: 10 }} key={section.heading}>
@@ -307,9 +344,9 @@ export default async function PlansPage() {
             {!contextLive && <div className="terminal-note"><span className="tg down">暫停</span> 交易計畫來源未正常時，訊號脈絡先隱藏。</div>}
             {contextLive && result.data.signals.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有訊號列。</div>}
             {contextLive && result.data.signals.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 10).map((signal) => (
-              <div className="row telex-row" style={{ gridTemplateColumns: "76px 76px 1fr" }} key={signal.id}>
-                <span className="tg soft">{formatTime(signal.createdAt)}</span>
-                <span className="tg gold">{signal.category}</span>
+              <div className="row telex-row" style={{ gridTemplateColumns: "112px 76px 1fr" }} key={signal.id}>
+                <span className="tg soft">{formatDateTime(signal.createdAt)}</span>
+                <span className="tg gold">{signalCategoryLabel(signal.category)}</span>
                 <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {signal.title}
                 </span>
