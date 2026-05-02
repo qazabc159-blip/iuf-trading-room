@@ -1,4 +1,5 @@
 import { getKillSwitch } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ async function loadKill(): Promise<LoadState> {
       data: null,
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyDataError(error, "交易模式暫時無法讀取。"),
     };
   }
 }
