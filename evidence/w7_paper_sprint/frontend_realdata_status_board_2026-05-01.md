@@ -4,6 +4,32 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 03:48 Taipei - Codex heartbeat pass 21 - company panel spacing repair
+
+**Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/globals.css` - restored safe padding for `.panel.hud-frame`, widened panel inner padding, and gave mini/outline buttons stable height plus no-wrap text.
+- `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx` - increased spacing in the company-detail simulated order panel: source row, warning banner, form grid, labels, segmented controls, and inputs no longer sit tight against borders.
+- `apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx` - added breathing room around K-line timeframe controls, pending interval chips, and metadata rows.
+
+**Behavior**:
+- Company-detail panels such as `[01] 公司主檔`, `[06] 模擬委託`, and the K-line control band now keep visible text and controls away from border lines.
+- Buttons and segmented controls maintain stable touch/click height and avoid clipped or cramped labels.
+- This is spacing-only; no endpoint, order payload, unit conversion, broker path, or data fallback behavior changed.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- No new data source, RSS, commercial news feed, AI translation, or mock data added.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `git diff --check -- apps/web/app/globals.css apps/web/app/companies/[symbol]/PaperOrderPanel.tsx apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx` PASS (CRLF warning only).
+- Local 1365px Playwright route probe recorded under `evidence/w7_paper_sprint/local_visual_qa_pass21_spacing_2026-05-03/`; local protected company page could not be treated as visual truth because the local server lacks a production API session and static assets 404 on the existing dev process. Bypass: CI/deploy, then production authenticated smoke.
+
+**Blockers / next bypass**:
+- Production visual confirmation waits on PR CI/deploy. Next safe task after deploy: authenticated production company-page smoke for `1101` and `2330`, then continue global spacing sweep across dashboard/theme/portfolio routes.
 ### 2026-05-03 03:18 Taipei — Codex heartbeat pass 20 — market-intel text containment
 
 **Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
