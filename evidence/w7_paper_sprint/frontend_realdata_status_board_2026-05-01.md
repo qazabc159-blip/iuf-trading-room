@@ -4,6 +4,33 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-02 21:00 Taipei — Codex heartbeat pass 15 — company panel raw-error cleanup
+
+**Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/companies/[symbol]/FinancialsPanel.tsx` — blocked financial/revenue/dividend errors now pass through `friendlyDataError()`.
+- `apps/web/app/companies/[symbol]/ChipsPanel.tsx` — blocked errors now pass through `friendlyDataError()` and malformed/partial chips payloads render `無資料` instead of throwing raw JavaScript exceptions.
+- `apps/web/app/companies/[symbol]/AnnouncementsPanel.tsx` — blocked announcement errors now pass through `friendlyDataError()`.
+- `apps/web/app/companies/[symbol]/error.tsx` — route error boundary no longer prints `error.message` directly.
+
+**Behavior**:
+- Company detail panels no longer surface implementation strings like `Cannot read properties of undefined` to the operator.
+- If a data source returns an incomplete chips payload, the UI says the endpoint did not return the expected three-institution fields and hides partial data.
+- Network/auth/not-found/timeout failures keep the existing Traditional Chinese 4-state wording.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- No mock or fallback data added.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS
+- `git grep error instanceof Error ? error.message -- apps/web/app/companies apps/web/lib` now only leaves internal friendly-error conversion and the server helper; client-facing company panels no longer print raw messages directly.
+
+**Blockers / next bypass**:
+- ELVA/backend lanes still unavailable until 2026-05-05. Continue frontend 4-state polishing and route-level QA without changing data contracts.
+
 ### 2026-05-02 20:45 Taipei — Codex heartbeat pass 14 — company-detail order review modal
 
 **Scope**: demo-critical UI safety repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

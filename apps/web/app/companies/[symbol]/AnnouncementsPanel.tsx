@@ -6,6 +6,7 @@ import {
   getCompanyAnnouncements,
   type CompanyAnnouncement,
 } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 type AnnouncementsState =
   | { status: "loading" }
@@ -80,7 +81,7 @@ export function AnnouncementsPanel({ companyId }: { companyId: string }) {
         if (!active) return;
         setState({
           status: "blocked",
-          reason: error instanceof Error ? error.message : "重大訊息讀取失敗",
+          reason: friendlyDataError(error, "重大訊息資料暫時無法讀取。"),
         });
       });
 

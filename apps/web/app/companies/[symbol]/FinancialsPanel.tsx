@@ -10,6 +10,7 @@ import {
   type CompanyFinancialRow,
   type CompanyRevenueRow,
 } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 type TabKey = "financials" | "revenue" | "dividend";
 
@@ -205,7 +206,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         [tab]: {
           status: "blocked",
           fetchedAt,
-          reason: error instanceof Error ? error.message : `${tab} 資料讀取失敗`,
+          reason: friendlyDataError(error, `${TABS.find((item) => item.key === tab)?.label ?? "財務"}資料暫時無法讀取。`),
         },
       }));
     }

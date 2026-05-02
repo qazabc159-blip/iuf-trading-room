@@ -6,6 +6,7 @@ import {
   getCompanyChips,
   type CompanyChipsData,
 } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 type ChipsState =
   | { status: "loading" }
@@ -63,6 +64,10 @@ function StatePanel({ state }: { state: Exclude<ChipsState, { status: "live" | "
   );
 }
 
+function isCompleteChipsData(data: CompanyChipsData | null | undefined): data is CompanyChipsData {
+  return Boolean(data?.foreign && data.trust && data.dealer);
+}
+
 export function ChipsPanel({ companyId }: { companyId: string }) {
   const [state, setState] = useState<ChipsState>({ status: "loading" });
 
@@ -74,6 +79,14 @@ export function ChipsPanel({ companyId }: { companyId: string }) {
         if (!active) return;
         const fetchedAt = new Date().toISOString();
         const data = response.data;
+        if (!isCompleteChipsData(data)) {
+          setState({
+            status: "empty",
+            fetchedAt,
+            reason: "籌碼端點目前沒有回傳三大法人欄位；不顯示半截資料。",
+          });
+          return;
+        }
         const hasInstitutional = data.foreign.net30d !== 0 || data.trust.net30d !== 0 || data.dealer.net30d !== 0;
         const hasBalances = Boolean(data.margin || data.short);
         setState(hasInstitutional || hasBalances
@@ -89,7 +102,7 @@ export function ChipsPanel({ companyId }: { companyId: string }) {
         setState({
           status: "blocked",
           fetchedAt: new Date().toISOString(),
-          reason: error instanceof Error ? error.message : "籌碼資料讀取失敗",
+          reason: friendlyDataError(error, "籌碼資料暫時無法讀取。"),
         });
       });
 
