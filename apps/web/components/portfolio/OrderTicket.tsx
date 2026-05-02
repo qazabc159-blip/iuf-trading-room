@@ -32,6 +32,14 @@ import {
   validateTaiwanStockQuantity,
   type TaiwanStockQuantityUnit,
 } from "@/lib/order-units";
+import {
+  paperGateReasonLabel,
+  paperQuoteDecisionLabel,
+  paperQuoteSourceLabel,
+  paperRiskDecisionLabel,
+  paperRiskGuardLabel,
+  paperRiskMessageLabel,
+} from "@/lib/paper-order-vocab";
 
 type PaperSide = PaperOrderInput["side"];
 type PaperOrderType = PaperOrderInput["orderType"];
@@ -572,8 +580,8 @@ function OrderReviewModal({
   const [lotAcknowledged, setLotAcknowledged] = useState(!lotNeedsAck);
   const canConfirm = canSubmit && (!lotNeedsAck || lotAcknowledged);
   const unitFormula = unit === "LOT"
-    ? `${qty.toLocaleString("zh-TW")} LOT × 1,000 股/張 × ${price === null ? "市價" : formatTwd(price)}`
-    : `${qty.toLocaleString("zh-TW")} SHARE × ${price === null ? "市價" : formatTwd(price)}`;
+    ? `${qty.toLocaleString("zh-TW")} 張 × 1,000 股/張 × ${price === null ? "市價" : formatTwd(price)}`
+    : `${qty.toLocaleString("zh-TW")} 股 × ${price === null ? "市價" : formatTwd(price)}`;
 
   return (
     <div style={modalBackdropStyle} role="presentation">
@@ -600,8 +608,8 @@ function OrderReviewModal({
             k="單位"
             v={
               <span style={unitBadgeRowStyle}>
-                <span style={unit === "SHARE" ? activeUnitBadgeStyle : unitBadgeStyle}>SHARE 零股</span>
-                <span style={unit === "LOT" ? activeUnitBadgeStyle : unitBadgeStyle}>LOT 整張</span>
+                <span style={unit === "SHARE" ? activeUnitBadgeStyle : unitBadgeStyle}>零股（SHARE）</span>
+                <span style={unit === "LOT" ? activeUnitBadgeStyle : unitBadgeStyle}>整張（LOT）</span>
               </span>
             }
           />
@@ -624,8 +632,8 @@ function OrderReviewModal({
           state={unit === "LOT" && !lotAcknowledged ? "BLOCKED" : "LIVE"}
           text={
             unit === "LOT"
-              ? "你目前選的是 LOT 整張：1 張一定會用 1,000 股計算。高價股測試請優先改用 SHARE 零股；若確定要測整張，請先勾選下方確認。"
-              : "你目前選的是 SHARE 零股：1 股就是 1 股，送出 payload 也會明確標記 quantity_unit=SHARE。"
+              ? "你目前選的是整張（LOT）：1 張一定會用 1,000 股計算。高價股測試請優先改用零股（SHARE）；若確定要測整張，請先勾選下方確認。"
+              : "你目前選的是零股（SHARE）：1 股就是 1 股，送出資料也會明確標記為零股（quantity_unit=SHARE）。"
           }
         />
 
@@ -824,25 +832,26 @@ function marketTone(value: number | null | undefined) {
 function PreviewResult({ result }: { result: Awaited<ReturnType<typeof previewPaperOrder>> }) {
   const blockedGuards = result.riskCheck.guards.filter((guard) => guard.decision === "block");
   const state = result.blocked ? "BLOCKED" : "LIVE";
+  const riskDecision = paperRiskDecisionLabel(result.riskCheck.decision);
   return (
     <div>
       <TruthNote
         state={state}
-        text={result.riskCheck.summary || `風控判斷：${result.riskCheck.decision}`}
+        text={paperRiskMessageLabel(result.riskCheck.summary) || `風控判斷：${riskDecision}`}
       />
       <div style={kvListStyle}>
-        <KV k="風控" v={result.riskCheck.decision.toUpperCase()} />
+        <KV k="風控" v={riskDecision} />
         <KV k="檢查項目" v={`${result.riskCheck.guards.length} 項 / ${blockedGuards.length} 項阻擋`} />
         <KV k="更新" v={formatTime(result.riskCheck.createdAt)} />
-        <KV k="報價" v={result.quoteGate ? result.quoteGate.decision : "尚未檢查"} />
-        {result.quoteGate?.selectedSource && <KV k="來源" v={result.quoteGate.selectedSource} />}
+        <KV k="報價" v={result.quoteGate ? paperQuoteDecisionLabel(result.quoteGate.decision) : "尚未檢查"} />
+        {result.quoteGate?.selectedSource && <KV k="報價來源" v={paperQuoteSourceLabel(result.quoteGate.selectedSource)} />}
       </div>
       {blockedGuards.length > 0 && (
         <div style={{ marginTop: 10 }}>
           {blockedGuards.map((guard) => (
             <div key={`${guard.guard}-${guard.message}`} style={guardRowStyle}>
-              <span>{guard.guard}</span>
-              <span>{guard.message}</span>
+              <span>{paperRiskGuardLabel(guard.guard)}</span>
+              <span>{paperRiskMessageLabel(guard.message) || guard.message}</span>
             </div>
           ))}
         </div>
@@ -850,7 +859,7 @@ function PreviewResult({ result }: { result: Awaited<ReturnType<typeof previewPa
       {result.quoteGate?.reasons?.length ? (
         <div style={reasonListStyle}>
           {result.quoteGate.reasons.map((reason) => (
-            <div key={reason}>{reason}</div>
+            <div key={reason}>{paperGateReasonLabel(reason)}</div>
           ))}
         </div>
       ) : null}

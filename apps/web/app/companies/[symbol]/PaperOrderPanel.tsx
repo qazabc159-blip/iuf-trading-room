@@ -19,6 +19,14 @@ import {
   validateTaiwanStockQuantity,
   type TaiwanStockQuantityUnit,
 } from "@/lib/order-units";
+import {
+  paperGateReasonLabel,
+  paperQuoteDecisionLabel,
+  paperQuoteSourceLabel,
+  paperRiskDecisionLabel,
+  paperRiskGuardLabel,
+  paperRiskMessageLabel,
+} from "@/lib/paper-order-vocab";
 
 // Demo capital constant — must match DEMO_CAPITAL_TWD in order-intent.ts.
 const DEMO_CAPITAL_TWD = 20_000;
@@ -447,17 +455,28 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
 function PreviewResult({ result }: { result: Awaited<ReturnType<typeof previewPaperOrder>> }) {
   const state = result.blocked ? "BLOCKED" : "LIVE";
   const blocked = result.riskCheck.guards.filter((guard) => guard.decision === "block");
+  const riskDecision = paperRiskDecisionLabel(result.riskCheck.decision);
   return (
     <div style={previewBoxStyle}>
-      <TruthNote state={state} text={result.riskCheck.summary || `風控判斷：${result.riskCheck.decision}`} />
-      <div style={kvStyle}><span>風控</span><b>{result.riskCheck.decision.toUpperCase()}</b></div>
-      <div style={kvStyle}><span>報價</span><b>{result.quoteGate ? result.quoteGate.decision : "尚未檢查"}</b></div>
+      <TruthNote state={state} text={paperRiskMessageLabel(result.riskCheck.summary) || `風控判斷：${riskDecision}`} />
+      <div style={kvStyle}><span>風控</span><b>{riskDecision}</b></div>
+      <div style={kvStyle}><span>報價</span><b>{result.quoteGate ? paperQuoteDecisionLabel(result.quoteGate.decision) : "尚未檢查"}</b></div>
+      {result.quoteGate?.selectedSource && (
+        <div style={kvStyle}><span>報價來源</span><b>{paperQuoteSourceLabel(result.quoteGate.selectedSource)}</b></div>
+      )}
       <div style={kvStyle}><span>更新</span><b>{formatTime(result.riskCheck.createdAt)}</b></div>
       {blocked.map((guard) => (
         <div key={`${guard.guard}-${guard.message}`} style={blockedGuardStyle}>
-          {guard.guard}: {guard.message}
+          {paperRiskGuardLabel(guard.guard)}：{paperRiskMessageLabel(guard.message) || guard.message}
         </div>
       ))}
+      {result.quoteGate?.reasons?.length ? (
+        <div style={blockedGuardStyle}>
+          {result.quoteGate.reasons.map((reason) => (
+            <div key={reason}>報價原因：{paperGateReasonLabel(reason)}</div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -509,8 +528,8 @@ function CompanyOrderReviewModal({
             k="單位"
             v={
               <span style={unitBadgeRowStyle}>
-                <span style={unit === "SHARE" ? activeUnitBadgeStyle : unitBadgeStyle}>SHARE 零股</span>
-                <span style={unit === "LOT" ? activeUnitBadgeStyle : unitBadgeStyle}>LOT 整張</span>
+                <span style={unit === "SHARE" ? activeUnitBadgeStyle : unitBadgeStyle}>零股（SHARE）</span>
+                <span style={unit === "LOT" ? activeUnitBadgeStyle : unitBadgeStyle}>整張（LOT）</span>
               </span>
             }
           />
@@ -533,8 +552,8 @@ function CompanyOrderReviewModal({
             overCapital
               ? `此單預估 ${formatTwd(notional ?? 0)}，超過模擬可用資金 ${formatTwd(demoCapital)}。`
               : unit === "LOT"
-                ? "你目前選的是 LOT 整張：1 張一定會用 1,000 股計算。高價股測試請優先改用 SHARE 零股；若確定要測整張，請先勾選下方確認。"
-                : "你目前選的是 SHARE 零股：1 股就是 1 股，送出 payload 也會明確標記 quantity_unit=SHARE。"
+                ? "你目前選的是整張（LOT）：1 張一定會用 1,000 股計算。高價股測試請優先改用零股（SHARE）；若確定要測整張，請先勾選下方確認。"
+                : "你目前選的是零股（SHARE）：1 股就是 1 股，送出資料也會明確標記為零股（quantity_unit=SHARE）。"
           }
         />
 
