@@ -164,7 +164,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
             <div className="terminal-note" style={{ marginTop: 12 }}>
               {actionError
                 ? `暫停：量化研究動作失敗。${actionError}`
-                : "轉入模擬交易需等待 Jason/Athena 完成交接契約；核准/退回會以量化研究 API 寫入。"}
+                : "轉入模擬交易需等待 Jason/Athena 完成交接契約；核准/退回會寫入量化研究正式資料。"}
             </div>
           )}
         </Panel>
@@ -198,7 +198,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
 
           <Panel code="LAB-MEMO" title="治理邊界" right="不會實單">
             <div className="terminal-note">
-              量化研究只寫入研究 API；不會建立券商委託、不會推進 migration 0020，也不會啟用正式下單。
+              量化研究只寫入研究資料庫；不會建立券商委託、不會推進資料庫去重流程，也不會啟用正式下單。
             </div>
           </Panel>
         </div>

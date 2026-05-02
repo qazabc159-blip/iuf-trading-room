@@ -184,7 +184,7 @@ export default async function ThemesPage() {
       <Panel
         code="THM-LDR"
         title="主題主檔"
-        sub="主題主檔 / 正式 API"
+        sub="主題主檔 / 正式資料"
         right={stateLabel(result.state)}
       >
         <SourceLine result={result} />

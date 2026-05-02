@@ -62,7 +62,7 @@ function momentumFromChange(value: number | null | undefined) {
 
 function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
-  if (/failed to fetch|fetch failed|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
+  if (/failed to fetch|fetch failed|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端。";
   if (/401|unauthorized|unauthenticated/i.test(message)) return "登入狀態已失效，請重新登入。";
   if (/404|not found/i.test(message)) return "後端端點尚未提供。";
   return "資料暫時無法讀取。";
@@ -150,7 +150,7 @@ export default async function CompanyDetailPage({
             {symbol.toUpperCase()} 公司資料暫時無法讀取
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
-            目前登入工作區或後端公司資料服務沒有回應；請稍後重試，或由 Elva/Jason 檢查 API 與登入狀態。
+            目前登入工作區或後端公司資料服務沒有回應；請稍後重試，或由 Elva/Jason 檢查後端與登入狀態。
           </div>
           <div className="terminal-note compact">{fetchErrorMsg}</div>
           <Link href="/companies" className="btn-sm">返回公司列表</Link>

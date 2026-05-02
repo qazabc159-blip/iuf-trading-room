@@ -128,7 +128,7 @@ export default async function ContentDraftsAdminPage({
       {error && (
         <AdminDraftStatePanel
           state="BLOCKED"
-          reason={`審稿草稿 API 暫時無法讀取或權限不足。負責：Jason / Elva。細節：${error}`}
+          reason={`審稿草稿暫時無法讀取或權限不足。負責：Jason / Elva。細節：${error}`}
           updatedAt={requestedAt}
         />
       )}

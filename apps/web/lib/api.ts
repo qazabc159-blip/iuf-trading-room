@@ -77,7 +77,7 @@ type Envelope<T> = {
 
 async function request<T>(path: string, init?: RequestInit) {
   if (!API_BASE) {
-    throw new Error("NEXT_PUBLIC_API_BASE_URL is not configured");
+    throw new Error("後端位址尚未設定");
   }
 
   // SSR (server component) calls don't get the browser's cookie automatically.
