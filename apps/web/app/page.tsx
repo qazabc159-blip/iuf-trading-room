@@ -178,6 +178,11 @@ function themeThesisText(theme: ThemeRow) {
   return theme.thesis;
 }
 
+function isInternalCleanupTheme(theme: ThemeRow) {
+  const text = `${theme.slug} ${theme.name} ${theme.thesis ?? ""}`.toLowerCase();
+  return /\bbroken\b|deprecated|placeholder|\[broken/.test(text);
+}
+
 function isInternalTestSignal(signal: SignalRow) {
   const text = `${signal.title} ${signal.summary ?? ""} ${signal.category}`.toLowerCase();
   return /bruce|dryrun|smoke|test signal|verify/.test(text);
@@ -406,6 +411,7 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
       )}
       {themes.state === "LIVE" && themes.data
         .slice()
+        .filter((theme) => !isInternalCleanupTheme(theme))
         .sort((left, right) => left.priority - right.priority || left.name.localeCompare(right.name))
         .slice(0, 8)
         .map((theme) => (
