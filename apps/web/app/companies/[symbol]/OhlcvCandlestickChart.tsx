@@ -21,6 +21,7 @@ const RANGE_OPTIONS: ReadonlyArray<{ value: RangeKey; label: string; days: numbe
 ];
 
 const PENDING_INTERVALS = ["1分", "5分", "15分", "60分"];
+const MIN_TREND_BARS = 12;
 
 function daysSince(dt: string): number {
   const now = Date.now();
@@ -127,9 +128,10 @@ export function OhlcvCandlestickChart({
   const [interval, setInterval] = useState<EnabledInterval>("1d");
   const [range, setRange] = useState<RangeKey>("2y");
   const chartBars = useMemo(() => filterRange(aggregateBars(bars, interval), range), [bars, interval, range]);
+  const insufficientTrend = chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
 
   useEffect(() => {
-    if (!containerRef.current || !chartBars.length) return;
+    if (!containerRef.current || !chartBars.length || insufficientTrend) return;
 
     let chart: import("lightweight-charts").IChartApi | null = null;
     let ro: ResizeObserver | null = null;
@@ -228,7 +230,7 @@ export function OhlcvCandlestickChart({
       chart?.remove();
       chartRef.current = null;
     };
-  }, [chartBars, interval, range]);
+  }, [chartBars, insufficientTrend, interval, range]);
 
   const badgeClass = sourceBadgeClass(bars);
   const badgeLabel = sourceBadgeLabel(bars);
@@ -314,10 +316,58 @@ export function OhlcvCandlestickChart({
           <span className={sourceState === "BLOCKED" ? "down" : "gold"}>{stateLabel(sourceState)}</span>{" "}
           {emptyReason}
         </div>
+      ) : insufficientTrend ? (
+        <KlineInsufficientState
+          bars={chartBars}
+          intervalLabel={activeMeta?.label ?? "K 線"}
+          sourceLabel={badgeLabel}
+        />
       ) : (
         <div ref={containerRef} style={{ width: "100%", minHeight: 520 }} />
       )}
     </section>
+  );
+}
+
+function KlineInsufficientState({
+  bars,
+  intervalLabel,
+  sourceLabel,
+}: {
+  bars: OhlcvBar[];
+  intervalLabel: string;
+  sourceLabel: string;
+}) {
+  const latest = bars.at(-1);
+  return (
+    <div style={insufficientShellStyle}>
+      <div>
+        <span className="badge badge-yellow">資料不足</span>
+        <h4 style={insufficientTitleStyle}>正式 K 線目前只回傳 {bars.length.toLocaleString("zh-TW")} 根，先不放大成趨勢圖。</h4>
+        <p style={insufficientTextStyle}>
+          這裡只用真實 OHLCV；少於 {MIN_TREND_BARS} 根時不硬畫成完整趨勢，避免把幾根 K 棒誤看成可交易型態。
+          後端補齊歷史資料後，日線、週線、月線會自動回到完整圖表。
+        </p>
+      </div>
+      <div style={insufficientMetaStyle}>
+        <div><span>週期</span><b>{intervalLabel}</b></div>
+        <div><span>來源</span><b>{sourceLabel}</b></div>
+        <div><span>最新</span><b>{latest ? `${latest.dt} / 收 ${formatNumber(latest.close)}` : "--"}</b></div>
+      </div>
+      <div style={miniBarGridStyle}>
+        {bars.slice(-8).map((bar) => {
+          const up = bar.close >= bar.open;
+          return (
+            <div style={miniBarStyle} key={`${bar.dt}-${bar.source}`}>
+              <span className="tg soft">{bar.dt.slice(5)}</span>
+              <b className={up ? "up" : "down"}>{formatNumber(bar.close)}</b>
+              <small>高 {formatNumber(bar.high)} / 低 {formatNumber(bar.low)}</small>
+              <small>量 {formatNumber(bar.volume, 0)}</small>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -367,4 +417,52 @@ const metaLineStyle: React.CSSProperties = {
   fontFamily: "var(--mono)",
   fontSize: 10.5,
   marginBottom: 8,
+};
+
+const insufficientShellStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 16,
+  minHeight: 360,
+  alignContent: "start",
+  border: "1px solid var(--night-rule-strong, #333)",
+  background: "linear-gradient(135deg, rgba(226,184,92,0.08), rgba(255,255,255,0.012))",
+  padding: 18,
+};
+
+const insufficientTitleStyle: React.CSSProperties = {
+  margin: "10px 0 0",
+  color: "var(--night-ink, #e5e7eb)",
+  fontFamily: "var(--serif-tc)",
+  fontSize: 22,
+  fontWeight: 400,
+  lineHeight: 1.5,
+};
+
+const insufficientTextStyle: React.CSSProperties = {
+  margin: "10px 0 0",
+  color: "var(--night-mid, #8aa0bd)",
+  fontFamily: "var(--sans-tc)",
+  fontSize: 14,
+  lineHeight: 1.8,
+};
+
+const insufficientMetaStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 10,
+};
+
+const miniBarGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(132px, 1fr))",
+  gap: 8,
+};
+
+const miniBarStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  minHeight: 92,
+  border: "1px solid var(--night-rule, #222)",
+  padding: 10,
+  background: "rgba(5,8,12,0.42)",
 };
