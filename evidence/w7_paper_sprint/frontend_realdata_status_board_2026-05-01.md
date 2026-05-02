@@ -4,6 +4,32 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 00:21 Taipei — Codex heartbeat pass 18 — paper preview vocabulary cleanup
+
+**Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/lib/paper-order-vocab.ts` — added Traditional Chinese labels for paper risk decisions, quote-gate decisions, risk guards, quote reasons, and quote sources.
+- `apps/web/components/portfolio/OrderTicket.tsx` — trading room paper preview now renders risk/quote decisions, guard names, reasons, quote source, and odd-lot/board-lot review wording in Chinese-first language.
+- `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx` — company-detail paper preview now uses the same Chinese-first vocabulary and keeps `SHARE` / `LOT` only as parenthesized payload identifiers.
+
+**Behavior**:
+- Paper-order preview no longer shows raw backend enums like `allow`, `block`, `review_required`, `quote_unknown`, `max_absolute_notional`, or `Blocked by ...` as operator-facing primary text.
+- Review modal unit badges now read `零股（SHARE）` and `整張（LOT）`; formulas use `股` / `張 × 1,000 股/張` instead of English-first `SHARE` / `LOT`.
+- Payload identifiers remain visible only where they help prevent a future zero-lot / board-lot routing mistake; no API payload or backend contract changed.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- Still uses existing paper preview/submit/list APIs.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS
+- `git diff --check -- apps/web/lib/paper-order-vocab.ts apps/web/components/portfolio/OrderTicket.tsx apps/web/app/companies/[symbol]/PaperOrderPanel.tsx` PASS (CRLF warning only)
+
+**Blockers / next bypass**:
+- Local browser QA not started this cycle because sandbox/GUI prompts must not block autonomous work. Build/typecheck/diff-check are green; next bypass is PR/CI/deploy smoke, then continue demo-critical visual cleanup.
+
 ### 2026-05-02 21:00 Taipei — Codex heartbeat pass 15 — company panel raw-error cleanup
 
 **Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
