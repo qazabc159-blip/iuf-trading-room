@@ -650,13 +650,14 @@ function formatTime(value: string) {
 const sourceBarStyle: React.CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
-  gap: "8px 14px",
+  gap: "10px 18px",
   alignItems: "center",
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 10.5,
-  lineHeight: 1.6,
-  marginBottom: 14,
+  lineHeight: 1.75,
+  marginBottom: 18,
+  paddingBottom: 4,
 };
 
 const bannerStyle: React.CSSProperties = {
@@ -666,24 +667,24 @@ const bannerStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontWeight: 700,
   fontSize: 11,
-  lineHeight: 1.8,
-  padding: "12px 14px",
+  lineHeight: 1.9,
+  padding: "16px 18px",
   letterSpacing: "0.08em",
-  marginBottom: 18,
+  marginBottom: 24,
 };
 
 const gridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
-  gap: "16px 18px",
-  marginBottom: 18,
+  gap: "22px 24px",
+  marginBottom: 24,
 };
 
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   color: "var(--night-mid, #888)",
   display: "block",
-  marginBottom: 7,
+  marginBottom: 10,
   fontFamily: "var(--mono, monospace)",
   letterSpacing: "0.16em",
 };
@@ -694,8 +695,8 @@ const inputStyle: React.CSSProperties = {
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
-  minHeight: 48,
-  padding: "12px 14px",
+  minHeight: 52,
+  padding: "14px 16px",
   width: "100%",
   boxSizing: "border-box",
 };
@@ -703,14 +704,14 @@ const inputStyle: React.CSSProperties = {
 const segmentedStyle: React.CSSProperties = {
   display: "flex",
   border: "1px solid var(--night-rule-strong, #333)",
-  minHeight: 48,
+  minHeight: 52,
 };
 
 const segmentButtonStyle: React.CSSProperties = {
   flex: 1,
   background: "transparent",
   border: "none",
-  padding: "12px 12px",
+  padding: "14px 14px",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   fontWeight: 700,
@@ -730,8 +731,8 @@ const truthNoteStyle: React.CSSProperties = {
 
 const previewBoxStyle: React.CSSProperties = {
   border: "1px solid var(--night-rule-strong, #333)",
-  padding: "12px 14px",
-  marginBottom: 12,
+  padding: "16px 18px",
+  marginBottom: 18,
 };
 
 const kvStyle: React.CSSProperties = {
@@ -754,8 +755,8 @@ const blockedGuardStyle: React.CSSProperties = {
 
 const ledgerStyle: React.CSSProperties = {
   borderTop: "1px solid var(--night-rule-strong, #333)",
-  marginTop: 12,
-  paddingTop: 8,
+  marginTop: 18,
+  paddingTop: 14,
 };
 
 const ledgerHeaderStyle: React.CSSProperties = {
@@ -771,9 +772,9 @@ const ledgerHeaderStyle: React.CSSProperties = {
 const orderRowStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "minmax(0, 1fr) 80px 70px",
-  gap: 8,
+  gap: 12,
   borderTop: "1px solid var(--night-rule, #222)",
-  padding: "10px 2px",
+  padding: "14px 2px",
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
@@ -825,17 +826,17 @@ const modalShellStyle: React.CSSProperties = {
   border: "1px solid var(--gold, #b8960c)",
   background: "linear-gradient(180deg, rgba(14,15,16,0.98), rgba(4,6,8,0.98))",
   boxShadow: "0 24px 80px rgba(0,0,0,0.56)",
-  padding: 22,
+  padding: 28,
 };
 
 const modalHeaderStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 14,
+  gap: 18,
   alignItems: "flex-start",
   borderBottom: "1px solid var(--night-rule-strong, #333)",
-  paddingBottom: 16,
-  marginBottom: 16,
+  paddingBottom: 20,
+  marginBottom: 20,
 };
 
 const modalSourceStyle: React.CSSProperties = {
@@ -867,7 +868,7 @@ const reviewRowStyle: React.CSSProperties = {
   gap: 12,
   alignItems: "start",
   borderBottom: "1px solid var(--night-rule, #222)",
-  padding: "13px 2px",
+  padding: "16px 4px",
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
@@ -904,18 +905,18 @@ const activeUnitBadgeStyle: React.CSSProperties = {
 const modalActionStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "flex-end",
-  gap: 10,
+  gap: 14,
   borderTop: "1px solid var(--night-rule-strong, #333)",
-  marginTop: 16,
-  paddingTop: 16,
+  marginTop: 22,
+  paddingTop: 20,
 };
 
 const lotAckStyle: React.CSSProperties = {
   display: "flex",
-  gap: 10,
+  gap: 14,
   alignItems: "flex-start",
-  marginTop: 12,
-  padding: 12,
+  marginTop: 18,
+  padding: 16,
   border: "1px solid rgba(226,184,92,0.35)",
   background: "rgba(226,184,92,0.08)",
   color: "var(--night-ink, #f3f4f6)",
