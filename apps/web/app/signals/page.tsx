@@ -4,6 +4,7 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getCompanies, getSignals, getThemes } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanExternalHeadline } from "@/lib/operator-copy";
 
 export const dynamic = "force-dynamic";
 
@@ -154,9 +155,9 @@ function signalTitle(signal: SignalRow) {
   if (hasBrokenText(value)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
   const cleaned = value.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
   if ((/^[\x00-\x7F\s%.,:;()/-]+$/.test(cleaned) && /[A-Za-z]/.test(cleaned)) || isEnglishHeavy(cleaned)) {
-    return "外文訊號待整理；保留來源紀錄，不納入正式判讀。";
+    return cleanExternalHeadline(cleaned, "外文訊號待整理；保留來源紀錄，不納入正式判讀。");
   }
-  return cleaned;
+  return cleanExternalHeadline(cleaned, "外文訊號待整理；保留來源紀錄，不納入正式判讀。");
 }
 
 function firstTheme(signal: SignalRow, themes: ThemeRow[]) {

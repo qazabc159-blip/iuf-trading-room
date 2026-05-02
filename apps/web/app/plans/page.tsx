@@ -12,6 +12,7 @@ import {
   getThemes,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanExternalHeadline, cleanNarrativeText, cleanTradePlanText } from "@/lib/operator-copy";
 import { reasonLabel } from "@/lib/strategy-vocab";
 
 export const dynamic = "force-dynamic";
@@ -198,13 +199,12 @@ function signalCategoryLabel(value: string | null | undefined) {
   return value.replace(/[_-]/g, " ");
 }
 
-function companyForPlan(plan: PlanRow, companies: CompanyRow[]) {
-  return companies.find((company) => company.id === plan.companyId) ?? null;
+function displayPlanEntry(plan: PlanRow) {
+  return cleanTradePlanText(plan.entryPlan);
 }
 
-function themeForCompany(company: CompanyRow | null, themes: ThemeRow[]) {
-  const themeId = company?.themeIds[0];
-  return themeId ? themes.find((theme) => theme.id === themeId) ?? null : null;
+function companyForPlan(plan: PlanRow, companies: CompanyRow[]) {
+  return companies.find((company) => company.id === plan.companyId) ?? null;
 }
 
 function SourceLine({ result }: { result: LoadState }) {
@@ -270,12 +270,11 @@ export default async function PlansPage() {
             )}
             {plans.slice(0, 12).map((plan) => {
               const company = companyForPlan(plan, result.data.companies);
-              const theme = themeForCompany(company, result.data.themes);
               return (
                 <div className="row position-row" style={{ gridTemplateColumns: "58px minmax(88px,1fr) 70px 80px 70px 84px" }} key={plan.id}>
                   {company ? <Link href={`/companies/${company.ticker}`} className="tg gold">{company.ticker}</Link> : <span className="tg muted">--</span>}
                   <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {theme ? `${theme.slug} / ` : ""}{plan.entryPlan}
+                    {displayPlanEntry(plan)}
                   </span>
                   <span className={`tg ${statusTone(plan.status)}`}>{planStatusLabel(plan.status)}</span>
                   <span className="tg">{plan.riskReward || "--"}</span>
@@ -316,8 +315,10 @@ export default async function PlansPage() {
                 </div>
                 {latestBrief.sections.slice(0, 4).map((section) => (
                   <div style={{ borderBottom: "1px solid var(--night-rule)", paddingBottom: 10 }} key={section.heading}>
-                    <div className="tg gold">{section.heading}</div>
-                    <div className="tc soft" style={{ marginTop: 6, lineHeight: 1.65 }}>{section.body}</div>
+                    <div className="tg gold">{cleanExternalHeadline(section.heading, "簡報段落")}</div>
+                    <div className="tc soft" style={{ marginTop: 6, lineHeight: 1.65 }}>
+                      {cleanNarrativeText(section.body, "簡報段落尚未完成中文整理；保留來源紀錄。")}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -333,7 +334,9 @@ export default async function PlansPage() {
                   <span className="gold">Q{review.executionQuality}</span>
                   <span className="soft">{formatDate(review.createdAt)}</span>
                 </div>
-                <div className="tc soft" style={{ marginTop: 6, lineHeight: 1.65 }}>{review.outcome}</div>
+                <div className="tc soft" style={{ marginTop: 6, lineHeight: 1.65 }}>
+                  {cleanTradePlanText(review.outcome, "覆盤紀錄尚未完成中文整理；保留來源紀錄。")}
+                </div>
               </div>
             ))}
           </Panel>
@@ -348,7 +351,7 @@ export default async function PlansPage() {
                 <span className="tg soft">{formatDateTime(signal.createdAt)}</span>
                 <span className="tg gold">{signalCategoryLabel(signal.category)}</span>
                 <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {signal.title}
+                  {cleanExternalHeadline(signal.title, "訊號內容尚未完成中文整理；保留來源紀錄。")}
                 </span>
               </div>
             ))}

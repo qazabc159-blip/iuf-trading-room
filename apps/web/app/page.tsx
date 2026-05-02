@@ -15,6 +15,7 @@ import {
   type MarketDataOverview,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanExternalHeadline, cleanThemeThesis } from "@/lib/operator-copy";
 
 export const dynamic = "force-dynamic";
 
@@ -163,7 +164,7 @@ function themeThesisText(theme: ThemeRow) {
   if (!theme.thesis || hasBrokenText(theme.thesis)) {
     return "此主題尚未補齊正式投資論點，先列為觀察。";
   }
-  return theme.thesis;
+  return cleanThemeThesis(theme.slug, theme.thesis);
 }
 
 function isInternalCleanupTheme(theme: ThemeRow) {
@@ -179,13 +180,16 @@ function isInternalTestSignal(signal: SignalRow) {
 function signalTitleText(signal: SignalRow) {
   const raw = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
   if (hasBrokenText(raw)) return "訊號內容尚未完成整理。";
-  return raw.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
+  return cleanExternalHeadline(
+    raw.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證："),
+    "外文訊號待中文化；保留來源紀錄，不納入正式判讀。"
+  );
 }
 
 function intelTitleText(item: NewsItem) {
   const raw = item.title || "未命名重大訊息";
   if (hasBrokenText(raw)) return "重大訊息尚未完成整理。";
-  return raw;
+  return cleanExternalHeadline(raw, "重大訊息尚未完成中文整理；保留來源紀錄。");
 }
 
 function reasonText(value: string | null | undefined) {

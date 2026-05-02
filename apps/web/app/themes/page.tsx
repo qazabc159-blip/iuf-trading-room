@@ -4,6 +4,7 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getThemes } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanThemeThesis } from "@/lib/operator-copy";
 
 export const dynamic = "force-dynamic";
 
@@ -144,9 +145,9 @@ function themeDisplayName(theme: ThemeRow) {
 
 function themeThesisText(theme: ThemeRow) {
   if (!theme.thesis || hasBrokenText(theme.thesis) || isEnglishHeavy(theme.thesis)) {
-    return "主題說明待整理；目前保留來源主檔與公司池，不作自動解讀。";
+    return cleanThemeThesis(theme.slug, theme.thesis);
   }
-  return theme.thesis;
+  return cleanThemeThesis(theme.slug, theme.thesis);
 }
 
 function isInternalCleanupTheme(theme: ThemeRow) {
