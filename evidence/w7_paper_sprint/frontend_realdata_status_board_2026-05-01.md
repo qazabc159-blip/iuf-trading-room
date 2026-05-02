@@ -4,6 +4,33 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 05:38 Taipei - Codex heartbeat pass 28 - shared chrome breathing-room cleanup
+
+**Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/globals.css` - widened the application sidebar, increased nav icon hit areas, panel/header gutters, terminal-note padding, HUD-frame padding, and badge primitive line-height/padding.
+- `apps/web/components/DataSourceBadge.tsx` - moved the fixed data-source badge farther from the viewport edge, increased internal padding, reduced letter spacing, and changed checking/blocked copy to clean Traditional Chinese source-status wording.
+
+**Behavior**:
+- Text, icons, tags, side navigation, page headers, panel titles, and the bottom-right source badge no longer sit tight against borders or separator lines.
+- The source badge now reads like a small status plate rather than a cramped diagnostic label, and it stays away from the bottom/right edge on 1365px desktop.
+- This is layout/copy only. It does not alter data contracts, order payloads, broker paths, Taiwan stock unit handling, or any backend state.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- No new data source, RSS, commercial news feed, AI translation, mock data, or fallback success path added.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Local unauthenticated 1365px Playwright sweep over 21 routes on `127.0.0.1:3047` PASS: 0 horizontal overflow, 0 narrow vertical text stacks, 0 page errors, 0 raw diagnostics.
+- Local authenticated-cookie 1365px Playwright sweep over 19 protected routes on `127.0.0.1:3047` with read-only fake local API PASS: all 200, 0 horizontal overflow, 0 narrow vertical text stacks, 0 page errors, 0 raw diagnostics. Screenshots/report are local-only under `evidence/w7_paper_sprint/local_visual_qa_pass28_authed_shared_chrome_2026-05-03/`.
+- `git diff --check -- apps/web/app/globals.css apps/web/components/DataSourceBadge.tsx` PASS with only CRLF normalization warnings.
+
+**Blockers / next bypass**:
+- Production authenticated smoke waits for PR CI and Railway deploy. Next safe task after deploy: production spot-check the company page and trading room, then continue page-specific polish where screenshots still feel visually sparse.
+
 ### 2026-05-03 04:37 Taipei - Codex heartbeat pass 23 - theme cleanup rows hidden
 
 **Scope**: demo-critical UI/content repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

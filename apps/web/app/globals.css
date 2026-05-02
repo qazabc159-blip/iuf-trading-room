@@ -104,7 +104,7 @@ button { font: inherit; }
 .gold { color: var(--gold-bright); }
 
 .app-sidebar {
-  width: 224px;
+  width: 236px;
   min-height: 100vh;
   flex-shrink: 0;
   background: linear-gradient(180deg, var(--night-1), var(--night));
@@ -115,7 +115,7 @@ button { font: inherit; }
 }
 
 .brand-lockup {
-  padding: 22px 18px 18px;
+  padding: 24px 22px 20px;
   border-bottom: 1px solid var(--night-rule);
 }
 
@@ -149,17 +149,17 @@ button { font: inherit; }
 }
 
 .nav-list {
-  padding: 14px 0;
+  padding: 16px 0;
   flex: 1;
 }
 
 .nav-link {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 15px;
   align-items: center;
-  min-height: 58px;
-  padding: 14px 20px;
+  min-height: 64px;
+  padding: 15px 22px;
   border-left: 2px solid transparent;
   color: var(--night-soft);
   transition: color 150ms ease, background 150ms ease, border-color 150ms ease, transform 150ms ease;
@@ -184,8 +184,8 @@ button { font: inherit; }
 
 .nav-icon {
   position: relative;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   align-self: center;
   justify-self: center;
   border: 1px solid var(--night-rule-strong);
@@ -371,34 +371,34 @@ button { font: inherit; }
 
 .nav-label {
   display: block;
-  font: 700 13.5px/1.28 var(--sans-tc);
+  font: 700 14px/1.38 var(--sans-tc);
   letter-spacing: 0;
   white-space: normal;
 }
 
 .nav-tc {
   display: block;
-  margin-top: 3px;
+  margin-top: 5px;
   color: var(--night-mid);
-  font: 11.5px/1.35 var(--sans-tc);
+  font: 12px/1.45 var(--sans-tc);
 }
 
 .sidebar-footer {
-  padding: 18px 20px;
+  padding: 20px 22px;
   border-top: 1px solid var(--night-rule);
   color: var(--night-mid);
   font: 12px/1.75 var(--sans-tc);
 }
 
 .sidebar-logout {
-  width: calc(100% - 32px);
-  margin: 0 16px 16px;
-  padding: 9px 10px;
+  width: calc(100% - 44px);
+  margin: 0 22px 20px;
+  padding: 11px 12px;
   border: 1px solid var(--night-rule-strong);
   background: rgba(200, 148, 63, 0.06);
   color: var(--gold-bright);
   cursor: pointer;
-  font: 700 10px/1 var(--mono);
+  font: 700 12px/1.25 var(--sans-tc);
   letter-spacing: 0;
   text-align: center;
 }
@@ -413,7 +413,7 @@ button { font: inherit; }
   flex: 1;
   min-width: 0;
   min-height: 100vh;
-  padding: 34px 40px 50px;
+  padding: 38px 44px 64px;
   background:
     linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
     var(--night);
@@ -424,8 +424,8 @@ button { font: inherit; }
   display: grid;
   grid-template-columns: minmax(260px, max-content) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 32px;
-  padding-bottom: 24px;
+  gap: 34px;
+  padding-bottom: 28px;
   border-bottom: 1px solid var(--night-rule-strong);
 }
 
@@ -475,7 +475,8 @@ button { font: inherit; }
   align-self: start;
   white-space: nowrap;
   border: 1px solid var(--night-rule-strong);
-  padding: 7px 10px;
+  padding: 9px 13px;
+  line-height: 1.45;
   color: var(--night-mid);
   background: rgba(255,255,255,0.02);
 }
@@ -509,12 +510,12 @@ button { font: inherit; }
 }
 
 .terminal-note {
-  margin-top: 18px;
-  padding: 16px 18px 20px;
+  margin-top: 22px;
+  padding: 18px 22px 22px;
   border-bottom: 1px solid var(--night-rule);
   color: var(--night-soft);
   font-size: 14px;
-  line-height: 1.75;
+  line-height: 1.85;
 }
 
 .dashboard-hero {
@@ -711,7 +712,7 @@ button { font: inherit; }
   border: 1px solid rgba(220, 228, 240, 0.10);
   border-top-color: var(--night-rule-strong);
   background: rgba(8, 11, 16, 0.56);
-  padding: 0 30px 30px;
+  padding: 0 34px 34px;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
@@ -721,16 +722,16 @@ button { font: inherit; }
   box-shadow: inset 0 1px 0 rgba(226, 184, 92, 0.045);
 }
 
-.panel + .panel { margin-top: 28px; }
+.panel + .panel { margin-top: 32px; }
 
 .panel-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 24px 0 20px;
+  gap: 24px;
+  padding: 28px 0 24px;
   border-bottom: 1px solid var(--night-rule);
-  margin-bottom: 2px;
+  margin-bottom: 8px;
 }
 
 .panel-head > div:first-child {
@@ -747,13 +748,15 @@ button { font: inherit; }
 .panel-code {
   color: var(--gold-bright);
   font-weight: 700;
+  line-height: 1.6;
 }
 
 .panel-sub {
   color: var(--night-mid);
   font-style: italic;
-  line-height: 1.7;
+  line-height: 1.85;
   font-family: var(--sans-tc);
+  margin-top: 5px;
 }
 
 .row {
@@ -955,7 +958,7 @@ button { font: inherit; }
 
 .panel.hud-frame,
 .hud-frame {
-  padding: 28px 32px 34px;
+  padding: 32px 36px 38px;
 }
 
 .ascii-head {
@@ -2002,12 +2005,13 @@ body:has(.login-route) > div {
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  min-height: 26px;
+  padding: 4px 10px;
   border: 1px solid var(--night-rule-strong, #333);
   background: var(--night-1, rgba(255,255,255,0.04));
   color: var(--night-ink, #d8d4c8);
-  font: 700 11px/1.4 var(--mono, monospace);
-  letter-spacing: 0.06em;
+  font: 700 11px/1.55 var(--sans-tc);
+  letter-spacing: 0.02em;
   border-radius: 2px;
 }
 

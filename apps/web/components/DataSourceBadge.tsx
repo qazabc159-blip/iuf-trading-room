@@ -36,7 +36,7 @@ function modeLabel(value: string | null | undefined) {
 }
 
 function workspaceLabel(value: string | null | undefined) {
-  if (!value) return "工作區";
+  if (!value) return "主控工作區";
   if (value === "Primary Desk" || value === "primary-desk") return "主控工作區";
   return value;
 }
@@ -46,7 +46,7 @@ export function DataSourceBadge() {
   const [state, setState] = useState<BadgeState>({
     status: "CHECKING",
     label: "檢查中 | 後端",
-    detail: "正在確認工作階段",
+    detail: "正在確認資料來源",
     checkedAt: null,
   });
 
@@ -69,7 +69,7 @@ export function DataSourceBadge() {
         setState({
           status: "BLOCKED",
           label: "暫停 | 登入/後端",
-          detail: "工作階段暫時無法確認",
+          detail: "資料來源暫時無法確認",
           checkedAt,
         });
       }
@@ -106,30 +106,34 @@ export function DataSourceBadge() {
       title={`${state.detail}${state.checkedAt ? ` | 檢查 ${state.checkedAt}` : ""}`}
       style={{
         position: "fixed",
-        right: 14,
-        bottom: 14,
+        right: 24,
+        bottom: 24,
         zIndex: 9999,
         display: "grid",
-        gap: 3,
-        minWidth: 168,
-        padding: "7px 10px",
+        gap: 6,
+        minWidth: 196,
+        maxWidth: "min(340px, calc(100vw - 48px))",
+        padding: "11px 14px 12px",
         border: `1px solid ${tone}`,
         color: tone,
         background: bg,
         fontFamily: "var(--mono)",
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
-        letterSpacing: "0.14em",
+        lineHeight: 1.45,
+        letterSpacing: "0.08em",
         backdropFilter: "blur(4px)",
+        boxShadow: "0 10px 28px rgba(0, 0, 0, 0.28)",
       }}
     >
       <span>{state.label}</span>
       <span
         style={{
           color: "var(--night-soft)",
-          fontSize: 9,
+          fontSize: 10,
           fontWeight: 500,
-          letterSpacing: "0.08em",
+          lineHeight: 1.45,
+          letterSpacing: "0.02em",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
