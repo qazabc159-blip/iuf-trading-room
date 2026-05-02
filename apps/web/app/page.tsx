@@ -168,6 +168,15 @@ function signalTitleText(signal: SignalRow) {
   return cleaned;
 }
 
+function intelTitleText(item: NewsItem) {
+  const raw = item.title || "未命名公告";
+  if (hasBrokenText(raw)) return "消息文字待整理；保留來源紀錄，不作交易解讀。";
+  if (/^[\x00-\x7F\s%.,:;()/-]+$/.test(raw) && /[A-Za-z]/.test(raw)) {
+    return "外文消息待整理；保留來源紀錄，不納入戰情台判讀。";
+  }
+  return raw;
+}
+
 function reasonText(value: string | null | undefined) {
   if (!value) return "理由待補";
   return value
@@ -449,8 +458,8 @@ function MarketIntelPanel({ news }: { news: LoadState<NewsItem[]> }) {
         <Link href={`/companies/${item.ticker}`} className="row telex-row" key={`${item.ticker}-${item.id}`}>
           <span className="tg soft">{formatDate(item.date)}</span>
           <span className="tg gold">{item.ticker}</span>
-          <span className="tg" style={{ color: "var(--night-ink)" }}>{item.title}</span>
-          <span className="tg soft">{item.category || "公告"}</span>
+          <span className="tc market-intel-title">{intelTitleText(item)}</span>
+          <span className="tg soft">{categoryText(item.category)}</span>
         </Link>
       ))}
     </Panel>
