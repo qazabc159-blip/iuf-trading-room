@@ -4,6 +4,30 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-02 17:11 Taipei — Codex heartbeat pass 12 — company-detail order unit trace
+
+**Scope**: demo-critical UI safety repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS.
+
+**Files changed**:
+- `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx` — individual-company paper order history now shows the Taiwan quantity unit and computed actual share count for each displayed paper order.
+
+**Behavior**:
+- A submitted/recent paper order no longer appears as ambiguous `買進 1`; it renders as `買進 1 零股` plus `實際 1 股`, or `買進 1 整張` plus `實際 1,000 股`.
+- This keeps the post-submit ledger consistent with the pre-submit odd-lot / board-lot guard and prevents the UI from hiding the difference between one share and one board lot.
+- No submit contract changed; `quantity_unit` remains the existing required payload field.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- Still reads `GET /api/v1/paper/orders`; display-only formatting change.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS after build completed
+- Attempted local 1365px Playwright QA for `/companies/2330` and `/portfolio`; Chromium required elevated spawn and the combined local-server/browser harness timed out before a usable screenshot summary. This is a QA tooling blocker, not an application build/type blocker.
+
+**Blockers / next bypass**:
+- Browser QA path needs a stable elevated local-browser runner in this sandbox. Bypass for this micro-fix: keep change display-only, build/typecheck-gated, and run production/public smoke after CI deploy if merged.
+
 ### 2026-05-02 16:28 Taipei — Codex heartbeat pass 11 — remove global overlay + hydration fix
 
 **Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS.
