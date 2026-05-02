@@ -225,7 +225,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
 
       <div className="company-grid">
         <div>
-          <Panel code="RUN-QRY" title={`${formatTime(result.updatedAt)} 台北`} sub="查詢條件 / 唯讀" right={stateLabel(result.state)}>
+          <Panel code="RUN-QRY" title="查詢條件" sub="策略批次 / 唯讀" right={stateLabel(result.state)}>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {run && (

@@ -1,9 +1,10 @@
 import type { CompanyDuplicateEntry, CompanyDuplicateGroup } from "@iuf-trading-room/contracts";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getCompanyDuplicates } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return friendlyDataError(error, "重複資料報告暫時無法讀取。");
 }
 
 function timeText(iso: string) {
@@ -36,7 +37,7 @@ export default async function CompanyDuplicatesPage() {
       code="CMP-DUP"
       title="公司重複資料檢查"
       sub={blockedReason ? "暫停" : "資料品質"}
-      note="公司板 / 重複資料報告只讀；合併動作必須等 migration audit、備份 ACK 與審核完成。"
+      note="公司板 / 重複資料報告只讀；合併動作必須等資料庫稽核、備份確認與審核完成。"
     >
       <Panel code="DUP-SUM" title="重複資料總覽" right={blockedReason ? "暫停" : generatedAt ? `更新 ${timeText(generatedAt)}` : "無資料"}>
         {blockedReason ? (
@@ -91,7 +92,7 @@ export default async function CompanyDuplicatesPage() {
           {groups.slice(0, 4).map((group) => (
             <Panel code="DUP-GRP" title={`${group.ticker} / ${group.duplicateCount} 筆`} right="只讀" key={group.groupKey}>
               <div className="terminal-note" style={{ marginBottom: 12 }}>
-                暫停：合併、非重複、忽略動作刻意隱藏。啟用前必須完成 Mike migration audit、Jason 合併契約、備份 ACK 與 Pete review。
+                暫停：合併、非重複、忽略動作刻意隱藏。啟用前必須完成 Mike 資料庫稽核、Jason 合併契約、備份確認與 Pete 審核。
               </div>
               {group.companies.map((company) => (
                 <CompanyRow key={company.companyId} company={company} recommended={company.companyId === group.recommendedCompanyId} />

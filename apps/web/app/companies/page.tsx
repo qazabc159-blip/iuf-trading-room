@@ -141,19 +141,20 @@ export default function CompaniesPage() {
   const coreCount = companies.filter((company) => company.beneficiaryTier === "Core").length;
   const state: RegistryState = loading ? "LOADING" : error ? "BLOCKED" : companies.length === 0 ? "EMPTY" : "LIVE";
   const metric = (value: number) => loading ? "--" : error ? "--" : value.toLocaleString("zh-TW");
+  const duplicateRows = Math.max(0, rawTotal - companies.length);
 
   return (
     <PageFrame
       code="03"
       title="公司板"
       sub="台股公司池"
-      note="公司板 / 正式公司主檔 / 可搜尋、篩選、排序；重複資料合併仍等 migration audit。"
+      note="公司板 / 正式公司主檔 / 以股票代號去重後顯示；資料庫永久去重仍等資料庫稽核。"
     >
       <MetricStrip
         columns={6}
         cells={[
           { label: "狀態", value: registryLabel(state), tone: registryTone(state) },
-          { label: "總數", value: metric(companies.length) },
+          { label: "公司數", value: metric(companies.length) },
           { label: "上市", value: metric(twseCount) },
           { label: "上櫃", value: metric(tpexCount) },
           { label: "核心", value: metric(coreCount), tone: !error && coreCount > 0 ? "gold" : "muted" },
@@ -205,9 +206,10 @@ export default function CompaniesPage() {
           )}
         </div>
 
-        {!loading && !error && rawTotal !== companies.length && (
+        {!loading && !error && duplicateRows > 0 && (
           <div className="terminal-note" style={{ marginBottom: 8 }}>
-            公司池：目前顯示 {companies.length.toLocaleString("zh-TW")} 檔台股公司；重複主檔已在前端隱藏，正式資料庫去重仍待 Mike/Jason migration gate。
+            公司池：正式主檔原始讀到 {rawTotal.toLocaleString("zh-TW")} 列；前端先按股票代號去重，實際顯示 {companies.length.toLocaleString("zh-TW")} 檔台股公司，
+            已隱藏 {duplicateRows.toLocaleString("zh-TW")} 列重複主檔。正式資料庫去重仍待 Mike/Jason 資料庫稽核閘門。
           </div>
         )}
 

@@ -217,7 +217,7 @@ export default async function IdeasPage() {
 
       <Panel
         code="IDEA-OPN"
-        title={`${formatTime(result.updatedAt)} 台北`}
+        title="策略想法佇列"
         sub="策略想法 / 模擬決策 / 只讀"
         right={stateLabel(result.state)}
       >
