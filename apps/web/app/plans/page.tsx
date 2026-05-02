@@ -12,7 +12,7 @@ import {
   getThemes,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
-import { cleanExternalHeadline, cleanNarrativeText, cleanTradePlanText } from "@/lib/operator-copy";
+import { cleanExternalHeadline, cleanNarrativeText, cleanRiskRewardText, cleanTradePlanText } from "@/lib/operator-copy";
 import { reasonLabel } from "@/lib/strategy-vocab";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +33,7 @@ type PlansData = {
   reviews: ReviewRow[];
   ideas: IdeaRow[];
 };
+const PLAN_GRID_COLUMNS = "72px minmax(260px,1.5fr) 82px minmax(168px,0.7fr) 64px 84px";
 type LoadState =
   | { state: "LIVE"; data: PlansData; updatedAt: string; source: string }
   | { state: "EMPTY"; data: PlansData; updatedAt: string; source: string; reason: string }
@@ -193,6 +194,8 @@ function signalCategoryLabel(value: string | null | undefined) {
   if (key === "earnings") return "財報";
   if (key === "revenue") return "營收";
   if (key === "news") return "新聞";
+  if (key === "company") return "公司";
+  if (key === "market") return "市場";
   if (key === "technical") return "技術";
   if (key === "fundamental") return "基本面";
   if (key === "test" || key === "dryrun") return "內部測試";
@@ -264,20 +267,22 @@ export default async function PlansPage() {
             <EmptyOrBlocked result={result} />
             {plans.length === 0 && result.state === "LIVE" && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有交易計畫。</div>}
             {plans.length > 0 && (
-              <div className="row position-row table-head tg" style={{ gridTemplateColumns: "58px minmax(88px,1fr) 70px 80px 70px 84px" }}>
+              <div className="row position-row table-head tg" style={{ gridTemplateColumns: PLAN_GRID_COLUMNS }}>
                 <span>代號</span><span>計畫</span><span>狀態</span><span>風報</span><span>覆盤</span><span>更新</span>
               </div>
             )}
             {plans.slice(0, 12).map((plan) => {
               const company = companyForPlan(plan, result.data.companies);
               return (
-                <div className="row position-row" style={{ gridTemplateColumns: "58px minmax(88px,1fr) 70px 80px 70px 84px" }} key={plan.id}>
+                <div className="row position-row" style={{ gridTemplateColumns: PLAN_GRID_COLUMNS }} key={plan.id}>
                   {company ? <Link href={`/companies/${company.ticker}`} className="tg gold">{company.ticker}</Link> : <span className="tg muted">--</span>}
-                  <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span className="tc soft" style={{ minWidth: 0, lineHeight: 1.55, overflowWrap: "anywhere", whiteSpace: "normal" }}>
                     {displayPlanEntry(plan)}
                   </span>
                   <span className={`tg ${statusTone(plan.status)}`}>{planStatusLabel(plan.status)}</span>
-                  <span className="tg">{plan.riskReward || "--"}</span>
+                  <span className="tg" style={{ minWidth: 0, lineHeight: 1.45, overflowWrap: "anywhere", whiteSpace: "normal" }}>
+                    {cleanRiskRewardText(plan.riskReward)}
+                  </span>
                   <span className={`tg ${reviewedPlanIds.has(plan.id) ? "gold" : "muted"}`}>{reviewedPlanIds.has(plan.id) ? "有" : "無"}</span>
                   <span className="tg soft">{formatDate(plan.updatedAt)}</span>
                 </div>
