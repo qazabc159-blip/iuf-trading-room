@@ -650,12 +650,13 @@ function formatTime(value: string) {
 const sourceBarStyle: React.CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
-  gap: "8px 12px",
+  gap: "8px 14px",
   alignItems: "center",
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 10.5,
-  marginBottom: 10,
+  lineHeight: 1.6,
+  marginBottom: 14,
 };
 
 const bannerStyle: React.CSSProperties = {
@@ -665,23 +666,24 @@ const bannerStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontWeight: 700,
   fontSize: 11,
-  padding: "8px 10px",
+  lineHeight: 1.8,
+  padding: "12px 14px",
   letterSpacing: "0.08em",
-  marginBottom: 14,
+  marginBottom: 18,
 };
 
 const gridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
-  gap: 12,
-  marginBottom: 14,
+  gap: "16px 18px",
+  marginBottom: 18,
 };
 
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   color: "var(--night-mid, #888)",
   display: "block",
-  marginBottom: 4,
+  marginBottom: 7,
   fontFamily: "var(--mono, monospace)",
   letterSpacing: "0.16em",
 };
@@ -692,7 +694,8 @@ const inputStyle: React.CSSProperties = {
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
-  padding: "6px 10px",
+  minHeight: 43,
+  padding: "9px 12px",
   width: "100%",
   boxSizing: "border-box",
 };
@@ -700,13 +703,14 @@ const inputStyle: React.CSSProperties = {
 const segmentedStyle: React.CSSProperties = {
   display: "flex",
   border: "1px solid var(--night-rule-strong, #333)",
+  minHeight: 44,
 };
 
 const segmentButtonStyle: React.CSSProperties = {
   flex: 1,
   background: "transparent",
   border: "none",
-  padding: "7px 8px",
+  padding: "9px 10px",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   fontWeight: 700,

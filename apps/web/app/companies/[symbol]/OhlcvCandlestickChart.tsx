@@ -375,14 +375,14 @@ const toolbarStyle: React.CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
   justifyContent: "space-between",
-  gap: 10,
-  margin: "4px 0 10px",
+  gap: "12px 16px",
+  margin: "16px 0 14px",
 };
 
 const controlGroupStyle: React.CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
-  gap: 8,
+  gap: 10,
   alignItems: "center",
 };
 
@@ -396,13 +396,18 @@ const pendingLineStyle: React.CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
   alignItems: "center",
-  gap: 8,
-  marginBottom: 10,
+  gap: "10px 12px",
+  marginBottom: 14,
+  lineHeight: 1.6,
 };
 
 const pendingIntervalStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 30,
   border: "1px solid var(--night-rule, #222)",
-  padding: "5px 8px",
+  padding: "0 11px",
   color: "var(--night-soft, #555)",
   fontFamily: "var(--mono)",
   fontSize: 10,
@@ -416,7 +421,8 @@ const metaLineStyle: React.CSSProperties = {
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono)",
   fontSize: 10.5,
-  marginBottom: 8,
+  lineHeight: 1.6,
+  marginBottom: 12,
 };
 
 const insufficientShellStyle: React.CSSProperties = {
