@@ -109,7 +109,7 @@ export function PageFrame({
           {sub && <span className="tc">{sub}</span>}
         </div>
         <div className="tg meta-strip" suppressHydrationWarning>
-          <span>產生 / <b>{generatedAt.date} {generatedAt.time}</b> 台北</span>
+          <span>產生 / <b suppressHydrationWarning>{generatedAt.date} {generatedAt.time}</b> 台北</span>
           <span>工作階段 / <b className="gold">真實資料</b></span>
           <span>模式 / <b>{exec ? "模擬交易" : "觀察"}</b></span>
         </div>

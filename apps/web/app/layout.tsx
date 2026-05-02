@@ -2,7 +2,6 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { Source_Serif_4, JetBrains_Mono, Noto_Sans_TC, Noto_Serif_TC } from "next/font/google";
 import { Sidebar } from "@/components/Sidebar";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { CommandPalette } from "@/components/CommandPalette";
 
 /* next/font is self-hosted, zero CLS. */
@@ -43,7 +42,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body style={{ margin: 0, display: "flex", minHeight: "100vh", background: "var(--night)" }}>
         <Sidebar />
         <div style={{ flex: 1, display: "flex" }}>{children}</div>
-        <DataSourceBadge />
         <CommandPalette />
       </body>
     </html>
