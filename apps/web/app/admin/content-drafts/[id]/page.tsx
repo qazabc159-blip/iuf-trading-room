@@ -90,7 +90,7 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
           <span className="badge badge-red">暫停</span>
           <span className="tg soft">負責：Jason / Elva</span>
           <span className="state-reason">
-            核准與退回 API 已存在，但本輪 UI 先不啟用寫入。舊的本機假按鈕已移除，避免把模擬核准誤認成正式資料庫決策。
+            核准與退回的正式後端路徑已存在，但本輪介面先不啟用寫入。舊的本機假按鈕已移除，避免把模擬核准誤認成正式資料庫決策。
           </span>
         </div>
       </Panel>
@@ -117,7 +117,7 @@ export default async function ContentDraftDetailPage({ params }: { params: Promi
       title={draft ? contentDraftTitle(draft) : "內容草稿明細"}
       sub={id}
       exec
-      note="內容草稿明細 / 只讀；無資料或 API 暫停時不顯示假內容。"
+      note="內容草稿明細 / 只讀；無資料或後端暫停時不顯示假內容。"
     >
       <div style={{ marginBottom: 12 }}>
         <Link className="btn-sm" href="/admin/content-drafts">返回草稿列表</Link>
@@ -126,14 +126,14 @@ export default async function ContentDraftDetailPage({ params }: { params: Promi
       {error && (
         <DetailStatePanel
           state="BLOCKED"
-          reason={`草稿明細 API 暫時無法讀取或權限不足。負責：Jason / Elva。細節：${error}`}
+          reason={`草稿明細暫時無法讀取或權限不足。負責：Jason / Elva。細節：${error}`}
           updatedAt={requestedAt}
         />
       )}
       {!error && !draft && (
         <DetailStatePanel
           state="EMPTY"
-          reason="API 有回傳草稿，但沒有符合這個 ID 的資料；不顯示假草稿。"
+          reason="後端有回傳草稿，但沒有符合這個 ID 的資料；不顯示假草稿。"
           updatedAt={requestedAt}
         />
       )}

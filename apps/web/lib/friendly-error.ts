@@ -2,7 +2,7 @@ export function friendlyDataError(error: unknown, fallback = "資料暫時無法
   const message = error instanceof Error ? error.message : String(error ?? "");
 
   if (/failed to fetch|fetch failed|ECONNREFUSED|network/i.test(message)) {
-    return "前端暫時無法連到後端 API。";
+    return "前端暫時無法連到後端。";
   }
   if (/401|unauthorized|unauthenticated/i.test(message)) {
     return "登入狀態已失效，請重新登入。";

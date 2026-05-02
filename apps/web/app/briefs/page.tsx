@@ -77,7 +77,7 @@ export default async function BriefsPage() {
       code="BRF"
       title="每日簡報"
       sub="正式資料庫的操作員盤前/盤後摘要"
-      note="每日簡報 / 真實資料；無資料或 API 暫停時不顯示假簡報。"
+      note="每日簡報 / 真實資料；無資料或後端暫停時不顯示假簡報。"
     >
       {error && (
         <BriefStatePanel

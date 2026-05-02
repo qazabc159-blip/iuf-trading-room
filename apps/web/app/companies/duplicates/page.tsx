@@ -83,7 +83,7 @@ export default async function CompanyDuplicatesPage() {
             </>
           ) : (
             <div className="terminal-note">
-              {blockedReason ? "暫停：API 無法讀取時不顯示重複資料佇列。" : "無資料：目前沒有需要檢查的重複群組。"}
+              {blockedReason ? "暫停：後端無法讀取時不顯示重複資料佇列。" : "無資料：目前沒有需要檢查的重複群組。"}
             </div>
           )}
         </Panel>

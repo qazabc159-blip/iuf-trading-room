@@ -212,7 +212,7 @@ export default async function SignalsPage() {
       <Panel
         code="SIG-TAPE"
         title="訊號流"
-        sub="時間序訊號流 / 正式 API"
+        sub="時間序訊號流 / 正式資料"
         right={stateLabel(result.state)}
       >
         <SourceLine result={result} />

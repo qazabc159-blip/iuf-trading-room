@@ -68,7 +68,7 @@ export function DataSourceBadge() {
         if (cancelled) return;
         setState({
           status: "BLOCKED",
-          label: "暫停 | 登入/API",
+          label: "暫停 | 登入/後端",
           detail: "工作階段暫時無法確認",
           checkedAt,
         });

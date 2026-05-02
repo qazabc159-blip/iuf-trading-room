@@ -210,14 +210,14 @@ export async function cancelPaperOrder(orderId: string, reason = "operator_cance
 export function formatPaperOrderError(error: unknown) {
   if (error instanceof PaperOrderApiError) {
     const layer = error.layer ? ` layer=${error.layer}` : "";
-    if (error.code === "API_BASE_UNCONFIGURED") return "前端尚未設定後端 API，無法讀取模擬委託。";
+    if (error.code === "API_BASE_UNCONFIGURED") return "前端尚未設定後端，無法讀取模擬委託。";
     if (error.status === 401) return "登入狀態已失效，請重新登入。";
     if (error.status === 404) return "後端端點尚未提供。";
     if (error.status >= 500) return `後端暫時無法處理模擬委託（${error.status}${layer}）。`;
-    return `${error.code} (${error.status}${layer})`;
+    return `模擬委託被後端拒絕（${error.status}${layer}）。`;
   }
   const message = error instanceof Error ? error.message : String(error);
-  if (/API_BASE|NEXT_PUBLIC_API_BASE_URL|base url/i.test(message)) return "前端尚未設定後端 API，無法讀取模擬交易資料。";
-  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
-  return message;
+  if (/API_BASE|NEXT_PUBLIC_API_BASE_URL|base url/i.test(message)) return "前端尚未設定後端，無法讀取模擬交易資料。";
+  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端。";
+  return message.trim() ? "模擬交易暫時無法處理，請稍後重試。" : "模擬交易暫時無法處理。";
 }

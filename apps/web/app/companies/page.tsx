@@ -170,7 +170,7 @@ export default function CompaniesPage() {
       >
         <div className="source-line">
           <span className={`badge ${registryBadge(state)}`}>{registryLabel(state)}</span>
-          <span className="tg soft">來源：公司主檔 API</span>
+          <span className="tg soft">來源：公司主檔</span>
           <span className="tg soft">更新 {formatTime(fetchedAt)}</span>
           {error && <span className="tg soft">負責：Jason / Elva。細節：{error}</span>}
         </div>
@@ -225,7 +225,7 @@ export default function CompaniesPage() {
 
         {!loading && !error && companies.length === 0 && (
           <div className="terminal-note">
-            無資料：公司主檔 API 回傳 0 筆，不顯示假公司列表。
+            無資料：公司主檔回傳 0 筆，不顯示假公司列表。
           </div>
         )}
 

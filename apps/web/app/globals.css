@@ -1419,8 +1419,9 @@ body:has(.mobile-route) {
   display: block !important;
 }
 
-body:has(.mobile-route) .app-sidebar {
-  display: none;
+body:has(.mobile-route) .app-sidebar,
+body:has(.mobile-route) .source-badge {
+  display: none !important;
 }
 
 body:has(.mobile-route) > div {

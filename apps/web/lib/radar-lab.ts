@@ -42,11 +42,11 @@ export type LabSignalBundle = {
 type LabAction = "APPROVE" | "REJECT" | "PUSH_TO_PORTFOLIO" | "DIVERGENCE_FEEDBACK";
 
 function missingApiError(path: string): Error {
-  return new Error(`[radar-lab] ${path} blocked: NEXT_PUBLIC_API_BASE_URL is not configured`);
+  return new Error(`量化研究後端尚未設定：${path}`);
 }
 
 function invalidShapeError(path: string): Error {
-  return new Error(`[radar-lab] ${path} blocked: response shape was not accepted`);
+  return new Error(`量化研究資料格式暫時無法辨識：${path}`);
 }
 
 function isArray<T>(value: unknown): value is T[] {
