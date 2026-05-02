@@ -143,7 +143,11 @@ function isInternalTestSignal(signal: SignalRow) {
 function signalTitle(signal: SignalRow) {
   const value = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
   if (hasBrokenText(value)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
-  return value.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
+  const cleaned = value.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
+  if (/^[\x00-\x7F\s%.,:;()/-]+$/.test(cleaned) && /[A-Za-z]/.test(cleaned)) {
+    return "外文訊號待整理；保留來源紀錄，不納入正式判讀。";
+  }
+  return cleaned;
 }
 
 function firstTheme(signal: SignalRow, themes: ThemeRow[]) {

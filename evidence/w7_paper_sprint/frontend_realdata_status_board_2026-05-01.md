@@ -4,6 +4,32 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 00:59 Taipei — Codex heartbeat pass 19 — signal text containment
+
+**Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/page.tsx` — dashboard signal rows now convert English-only signal text to a truthful Chinese state instead of rendering a long English sentence as primary operator text.
+- `apps/web/app/signals/page.tsx` — full signal ledger applies the same English-only containment rule.
+- `apps/web/app/globals.css` — signal title cells now use `break-word` / `keep-all` plus a height cap so long text cannot collapse a narrow column into one-word vertical wrapping.
+
+**Behavior**:
+- Internal/test signals remain filtered or collected as before.
+- English-only signal content is not fake-translated. The UI states: `外文訊號待整理；保留來源紀錄，不納入...判讀。`
+- This prevents the dashboard/signals page from showing a tall English wall of text while keeping the true 4-state/evidence posture.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- No new data source, RSS, commercial news feed, mock data, or AI translation added.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS
+- `git diff --check -- apps/web/app/page.tsx apps/web/app/signals/page.tsx apps/web/app/globals.css` PASS (CRLF warning only)
+
+**Blockers / next bypass**:
+- Local browser QA not run in this cycle to avoid sandbox/GUI confirmation blocking. Next bypass: PR/CI/deploy smoke, then continue with company/detail or portfolio route visual QA.
+
 ### 2026-05-03 00:21 Taipei — Codex heartbeat pass 18 — paper preview vocabulary cleanup
 
 **Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
