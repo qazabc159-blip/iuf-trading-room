@@ -568,6 +568,9 @@ function OrderReviewModal({
   const shares = toTaiwanStockShareCount(qty, unit);
   const price = input.price ?? null;
   const notional = price === null ? null : estimateTaiwanStockNotional(price, qty, unit);
+  const lotNeedsAck = unit === "LOT";
+  const [lotAcknowledged, setLotAcknowledged] = useState(!lotNeedsAck);
+  const canConfirm = canSubmit && (!lotNeedsAck || lotAcknowledged);
   const unitFormula = unit === "LOT"
     ? `${qty.toLocaleString("zh-TW")} LOT × 1,000 股/張 × ${price === null ? "市價" : formatTwd(price)}`
     : `${qty.toLocaleString("zh-TW")} SHARE × ${price === null ? "市價" : formatTwd(price)}`;
@@ -618,13 +621,25 @@ function OrderReviewModal({
         </div>
 
         <TruthNote
-          state={unit === "LOT" ? "BLOCKED" : "LIVE"}
+          state={unit === "LOT" && !lotAcknowledged ? "BLOCKED" : "LIVE"}
           text={
             unit === "LOT"
-              ? "你目前選的是 LOT 整張：1 張一定會用 1,000 股計算。高價股測試請優先改用 SHARE 零股。"
+              ? "你目前選的是 LOT 整張：1 張一定會用 1,000 股計算。高價股測試請優先改用 SHARE 零股；若確定要測整張，請先勾選下方確認。"
               : "你目前選的是 SHARE 零股：1 股就是 1 股，送出 payload 也會明確標記 quantity_unit=SHARE。"
           }
         />
+
+        {lotNeedsAck && (
+          <label style={lotAckStyle}>
+            <input
+              checked={lotAcknowledged}
+              disabled={isSubmitting}
+              onChange={(event) => setLotAcknowledged(event.target.checked)}
+              type="checkbox"
+            />
+            <span>我知道這是整張委託，1 張會送出 1,000 股；不是零股測試。</span>
+          </label>
+        )}
 
         <div style={modalActionStyle}>
           <button type="button" onClick={onCancel} disabled={isSubmitting} style={secondaryActionStyle}>
@@ -633,7 +648,7 @@ function OrderReviewModal({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={!canSubmit || isSubmitting}
+            disabled={!canConfirm || isSubmitting}
             style={primaryActionStyle}
           >
             {isSubmitting ? "送出中..." : "確認送出"}
@@ -1359,6 +1374,20 @@ const modalActionStyle: CSSProperties = {
   borderTop: "1px solid var(--exec-rule-strong)",
   marginTop: 12,
   paddingTop: 12,
+};
+
+const lotAckStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  alignItems: "flex-start",
+  marginTop: 12,
+  padding: 12,
+  border: "1px solid rgba(226,184,92,0.35)",
+  background: "rgba(226,184,92,0.08)",
+  color: "var(--exec-ink)",
+  fontFamily: "var(--sans-tc)",
+  fontSize: 13,
+  lineHeight: 1.65,
 };
 
 const secondaryActionStyle: CSSProperties = {
