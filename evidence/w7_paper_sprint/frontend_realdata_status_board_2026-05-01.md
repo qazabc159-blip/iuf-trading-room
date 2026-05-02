@@ -4,6 +4,34 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-02 20:30 Taipei — Codex heartbeat pass 13 — dashboard degraded-state collapse
+
+**Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/page.tsx` — added a dashboard degraded-state detector and a compact source-status summary when most core data sources are BLOCKED.
+- `apps/web/app/globals.css` — added responsive layout for the degraded summary and source rows.
+
+**Behavior**:
+- If market overview / watchlist / themes / strategy ideas / signals / announcements are mostly blocked, the dashboard no longer expands every secondary panel into repeated `暫停` / `無資料` sections.
+- The page now renders one clear Traditional Chinese degradation card with source, updated time, status, and reason for each data lane.
+- Normal LIVE/partial-live dashboard behavior is unchanged; the full market strip, watchlist, themes, ideas, signals, and ops panels still render when enough real data is available.
+- No fake market/news data added and no data contract changed.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- Local QA intentionally used `NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:59999` to verify the worst-case fail-closed UI.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS
+- Local Next production server on `127.0.0.1:3035` PASS
+- Local 1365px Playwright QA over `/`, `/companies/2330`, `/portfolio`, `/quote?symbol=2330`, `/themes`, `/signals`, `/login`, `/register` PASS: all 200, 0 horizontal overflow, 0 narrow vertical text, 0 wide elements, 0 page errors, no raw backend/error text.
+- Screenshot/report: `evidence/w7_paper_sprint/local_visual_qa_pass13_routes_2026-05-02/`
+
+**Blockers / next bypass**:
+- ELVA/Jason/Bruce/Mike/Pete/Athena lanes are quota-blocked until 2026-05-05. Frontend will continue only within safe demo-critical UI fixes and record backend-contract blockers rather than waiting.
+
 ### 2026-05-02 17:11 Taipei — Codex heartbeat pass 12 — company-detail order unit trace
 
 **Scope**: demo-critical UI safety repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS.
