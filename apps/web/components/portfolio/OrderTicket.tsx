@@ -1048,45 +1048,45 @@ const handoffStyle: CSSProperties = {
 const marketPreviewShellStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
   background: "linear-gradient(180deg, rgba(226,184,92,0.052), rgba(255,255,255,0.012))",
-  padding: 18,
-  marginBottom: 16,
+  padding: 22,
+  marginBottom: 22,
 };
 
 const marketPreviewHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 12,
+  gap: 18,
   alignItems: "flex-start",
-  marginBottom: 12,
+  marginBottom: 16,
 };
 
 const marketSourceLineStyle: CSSProperties = {
-  marginTop: 4,
+  marginTop: 8,
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
   fontSize: 11,
-  lineHeight: 1.55,
+  lineHeight: 1.7,
 };
 
 const marketPreviewGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: 10,
-  marginBottom: 12,
+  gap: 14,
+  marginBottom: 16,
 };
 
 const marketQuoteCardStyle: CSSProperties = {
   display: "grid",
-  gap: 6,
-  minHeight: 72,
-  padding: "13px 14px",
+  gap: 8,
+  minHeight: 80,
+  padding: "16px 18px",
   border: "1px solid var(--exec-rule)",
   background: "rgba(0,0,0,0.12)",
 };
 
 const miniKlineStyle: CSSProperties = {
   borderTop: "1px solid var(--exec-rule)",
-  paddingTop: 10,
+  paddingTop: 16,
 };
 
 const plainButtonStyle: CSSProperties = {
@@ -1105,9 +1105,9 @@ const plainButtonStyle: CSSProperties = {
 const sourceBarStyle: CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
-  gap: "10px 18px",
+  gap: "12px 22px",
   alignItems: "center",
-  padding: "10px 0 14px",
+  padding: "12px 0 18px",
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
   fontSize: 11.5,
@@ -1116,19 +1116,19 @@ const sourceBarStyle: CSSProperties = {
 const ticketShellStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "minmax(280px, 0.9fr) minmax(300px, 1.1fr)",
-  gap: 22,
+  gap: 28,
 };
 
 const formCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 28,
+  padding: 34,
   minHeight: 326,
   background: "linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.010))",
 };
 
 const previewCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 28,
+  padding: 34,
   minHeight: 326,
   background: "linear-gradient(180deg, rgba(200,148,63,0.040), rgba(255,255,255,0.010))",
 };
@@ -1136,8 +1136,8 @@ const previewCardStyle: CSSProperties = {
 const rowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 16,
-  marginBottom: 18,
+  gap: 20,
+  marginBottom: 22,
 };
 
 const labelStyle: CSSProperties = {
@@ -1145,12 +1145,12 @@ const labelStyle: CSSProperties = {
   fontSize: 11,
   letterSpacing: "0.08em",
   color: "var(--exec-mid)",
-  width: 74,
+  width: 82,
 };
 
 const inputStyle: CSSProperties = {
   flex: 1,
-  padding: "15px 16px",
+  padding: "17px 18px",
   background: "var(--exec-bg)",
   border: "1px solid var(--exec-rule-strong)",
   color: "var(--exec-ink)",
@@ -1175,8 +1175,8 @@ const segmentedStyle: CSSProperties = {
 
 const segmentButtonStyle: CSSProperties = {
   flex: 1,
-  minHeight: 52,
-  padding: "14px 12px",
+  minHeight: 56,
+  padding: "16px 14px",
   border: "none",
   fontFamily: "var(--mono)",
   fontSize: 12,
@@ -1186,14 +1186,14 @@ const segmentButtonStyle: CSSProperties = {
 
 const panelHeadingStyle: CSSProperties = {
   color: "var(--gold-bright)",
-  marginBottom: 8,
+  marginBottom: 14,
   letterSpacing: "0.14em",
 };
 
 const actionBarStyle: CSSProperties = {
   display: "flex",
   gap: 0,
-  marginTop: 14,
+  marginTop: 20,
   border: "1px solid var(--exec-rule-strong)",
 };
 
@@ -1202,8 +1202,8 @@ const actionButtonStyle: CSSProperties = {
   background: "transparent",
   border: "none",
   borderRight: "1px solid var(--exec-rule-strong)",
-  minHeight: 48,
-  padding: "14px 18px",
+  minHeight: 54,
+  padding: "16px 20px",
   fontFamily: "var(--mono)",
   letterSpacing: "0.08em",
   fontWeight: 700,
@@ -1213,9 +1213,9 @@ const actionButtonStyle: CSSProperties = {
 
 const truthNoteStyle: CSSProperties = {
   display: "flex",
-  gap: 10,
+  gap: 14,
   alignItems: "flex-start",
-  padding: "12px 2px",
+  padding: "16px 4px",
   color: "var(--exec-mid)",
   fontFamily: "var(--sans-tc)",
   fontSize: 14,
@@ -1230,8 +1230,8 @@ const kvListStyle: CSSProperties = {
 const kvStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "96px 1fr",
-  gap: 8,
-  padding: "9px 0",
+  gap: 14,
+  padding: "12px 0",
   borderBottom: "1px solid var(--exec-rule)",
   fontFamily: "var(--mono)",
   fontSize: 11.5,
@@ -1240,8 +1240,8 @@ const kvStyle: CSSProperties = {
 const guardRowStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "130px 1fr",
-  gap: 10,
-  padding: "9px 0",
+  gap: 14,
+  padding: "12px 0",
   borderBottom: "1px solid var(--exec-rule)",
   color: "var(--tw-up-bright)",
   fontFamily: "var(--mono)",
@@ -1259,8 +1259,8 @@ const reasonListStyle: CSSProperties = {
 const historyHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 12,
-  padding: "12px 14px",
+  gap: 18,
+  padding: "16px 18px",
   borderBottom: "1px solid var(--exec-rule-strong)",
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
@@ -1271,9 +1271,9 @@ const historyHeaderStyle: CSSProperties = {
 const orderRowStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "72px 98px 92px 86px 74px 64px",
-  gap: 14,
+  gap: 18,
   alignItems: "center",
-  padding: "15px 16px",
+  padding: "18px 18px",
   borderTop: "1px solid var(--exec-rule)",
   fontFamily: "var(--mono)",
   fontSize: 11.5,
@@ -1292,15 +1292,15 @@ const miniButtonStyle: CSSProperties = {
 
 const unitGuardStyle: CSSProperties = {
   display: "grid",
-  gap: 5,
-  margin: "-2px 0 10px 76px",
-  padding: "11px 12px",
+  gap: 8,
+  margin: "0 0 16px 90px",
+  padding: "14px 16px",
   border: "1px solid rgba(226,184,92,0.28)",
   background: "rgba(226,184,92,0.06)",
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
   fontSize: 11,
-  lineHeight: 1.55,
+  lineHeight: 1.7,
 };
 
 const modalBackdropStyle: CSSProperties = {
@@ -1321,17 +1321,17 @@ const modalShellStyle: CSSProperties = {
   border: "1px solid var(--gold)",
   background: "linear-gradient(180deg, rgba(14,15,16,0.98), rgba(4,6,8,0.98))",
   boxShadow: "0 24px 80px rgba(0,0,0,0.56)",
-  padding: 28,
+  padding: 34,
 };
 
 const modalHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 18,
+  gap: 22,
   alignItems: "flex-start",
   borderBottom: "1px solid var(--exec-rule-strong)",
-  paddingBottom: 20,
-  marginBottom: 20,
+  paddingBottom: 24,
+  marginBottom: 24,
 };
 
 const modalCloseStyle: CSSProperties = {
@@ -1353,14 +1353,14 @@ const unitBadgeRowStyle: CSSProperties = {
   display: "inline-flex",
   justifyContent: "flex-end",
   flexWrap: "wrap",
-  gap: 6,
+  gap: 8,
 };
 
 const unitBadgeStyle: CSSProperties = {
   display: "inline-flex",
-  minHeight: 24,
+  minHeight: 28,
   alignItems: "center",
-  padding: "0 8px",
+  padding: "0 10px",
   border: "1px solid var(--exec-rule-strong)",
   color: "var(--exec-mid)",
   background: "rgba(255,255,255,0.018)",
@@ -1379,24 +1379,24 @@ const activeUnitBadgeStyle: CSSProperties = {
 const modalActionStyle: CSSProperties = {
   display: "flex",
   justifyContent: "flex-end",
-  gap: 14,
+  gap: 18,
   borderTop: "1px solid var(--exec-rule-strong)",
-  marginTop: 22,
-  paddingTop: 20,
+  marginTop: 26,
+  paddingTop: 24,
 };
 
 const lotAckStyle: CSSProperties = {
   display: "flex",
-  gap: 14,
+  gap: 16,
   alignItems: "flex-start",
-  marginTop: 18,
-  padding: 16,
+  marginTop: 22,
+  padding: 18,
   border: "1px solid rgba(226,184,92,0.35)",
   background: "rgba(226,184,92,0.08)",
   color: "var(--exec-ink)",
   fontFamily: "var(--sans-tc)",
   fontSize: 13,
-  lineHeight: 1.65,
+  lineHeight: 1.8,
 };
 
 const secondaryActionStyle: CSSProperties = {
@@ -1405,7 +1405,7 @@ const secondaryActionStyle: CSSProperties = {
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
   fontWeight: 700,
-  padding: "12px 16px",
+  padding: "14px 18px",
   cursor: "pointer",
 };
 
@@ -1415,6 +1415,6 @@ const primaryActionStyle: CSSProperties = {
   color: "#080808",
   fontFamily: "var(--mono)",
   fontWeight: 800,
-  padding: "12px 18px",
+  padding: "14px 20px",
   cursor: "pointer",
 };
