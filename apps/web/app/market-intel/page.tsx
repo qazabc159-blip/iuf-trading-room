@@ -185,7 +185,7 @@ export default async function MarketIntelPage() {
         ]}
       />
 
-      <Panel code="INT-SRC" title={`${formatTime(result.updatedAt)} 台北`} sub="來源與選股範圍" right={result.source}>
+      <Panel code="INT-SRC" title="來源與選股範圍" sub="正式公告查詢" right={result.source}>
         <div className="source-line">
           <span className={`badge ${result.state === "LIVE" ? "badge-green" : result.state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>
             {stateLabel(result.state)}

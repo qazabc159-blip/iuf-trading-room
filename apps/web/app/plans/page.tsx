@@ -259,7 +259,7 @@ export default async function PlansPage() {
 
       <div className="main-grid">
         <div>
-          <Panel code="PLN-LST" title={`${formatTime(result.updatedAt)} 台北`} sub="交易計畫 / 正式資料庫" right={stateLabel(result.state)}>
+          <Panel code="PLN-LST" title="交易計畫" sub="正式資料庫" right={stateLabel(result.state)}>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {plans.length === 0 && result.state === "LIVE" && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有交易計畫。</div>}

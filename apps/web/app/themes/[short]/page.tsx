@@ -211,7 +211,7 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
 
       <div className="company-grid">
         <div>
-          <Panel code="THM-SRC" title={`${formatTime(result.updatedAt)} 台北`} sub="資料來源 / 投資命題 / 現在性" right={stateLabel(result.state)}>
+          <Panel code="THM-SRC" title="資料來源" sub="投資命題 / 現在性" right={stateLabel(result.state)}>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {theme && (

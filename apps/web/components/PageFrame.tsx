@@ -18,9 +18,20 @@ export function statusLabel(value: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING" | st
 
 function displayCode(code: string) {
   const exact: Record<string, string> = {
-    "03-ERR": "03 / 錯誤",
-    "03-NF": "03 / 無資料",
-    "05-D": "05 / 明細",
+    "01": "戰情台",
+    "02": "主題板",
+    "03": "公司板",
+    "04": "策略想法",
+    "05": "策略批次",
+    "06": "交易室",
+    "07": "訊號證據",
+    "08": "交易計畫",
+    "09": "營運監控",
+    "10": "重大訊息",
+    "11": "量化研究",
+    "03-ERR": "公司板 / 錯誤",
+    "03-NF": "公司板 / 無資料",
+    "05-D": "策略批次 / 明細",
     "06-PORT": "交易室",
     "LAB-D": "量化研究明細",
   };
@@ -103,7 +114,7 @@ export function PageFrame({
           <span>模式 / <b>{exec ? "模擬交易" : "觀察"}</b></span>
         </div>
         <div className={`tg session-pill ${exec ? "exec" : ""}`}>
-          {exec ? "執行層 / 模擬" : "盤面 / 真實資料"}
+          {exec ? "交易室 / 模擬" : "盤面 / 真實資料"}
         </div>
       </header>
       {note && <div className="terminal-note">{note}</div>}

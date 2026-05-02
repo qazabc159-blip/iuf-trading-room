@@ -173,7 +173,7 @@ export default async function RunsPage() {
 
       <Panel
         code="RUN-TBL"
-        title={`${formatTime(result.updatedAt)} 台北`}
+        title="策略批次佇列"
         sub="策略批次 / 模擬決策 / 只讀"
         right={stateLabel(result.state)}
       >

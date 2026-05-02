@@ -321,7 +321,7 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
 
 function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
   return (
-    <Panel code="THM-SCOPE" title={`${formatTime(themes.updatedAt)} 台北`} sub="主題資料" right={<StatePill state={themes.state} />}>
+    <Panel code="THM-SCOPE" title="主題資料" sub="台股主題與產業鏈" right={<StatePill state={themes.state} />}>
       <StateLine state={themes} label="主題資料" />
       <EmptyOrBlocked state={themes} />
       {themes.state === "LIVE" && (
@@ -351,7 +351,7 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
 function IdeasPanel({ ideas }: { ideas: LoadState<StrategyIdeaData | null> }) {
   const items = ideas.state === "LIVE" && ideas.data ? ideas.data.items.slice(0, 6) : [];
   return (
-    <Panel code="IDEA-OPN" title={`${formatTime(ideas.updatedAt)} 台北`} sub="策略想法 / 模擬決策" right={<StatePill state={ideas.state} />}>
+    <Panel code="IDEA-OPN" title="策略想法" sub="模擬決策候選" right={<StatePill state={ideas.state} />}>
       <StateLine state={ideas} label="策略想法" />
       <EmptyOrBlocked state={ideas} />
       {items.map((idea) => (
@@ -381,7 +381,7 @@ function SignalsPanel({ signals }: { signals: LoadState<SignalRow[]> }) {
     : 0;
 
   return (
-    <Panel code="SIG-TAPE" title={`${formatTime(signals.updatedAt)} 台北`} sub="訊號證據紀錄" right={<StatePill state={signals.state} />}>
+    <Panel code="SIG-TAPE" title="訊號證據" sub="正式訊號紀錄" right={<StatePill state={signals.state} />}>
       <StateLine state={signals} label="訊號證據" />
       {hiddenCount > 0 && <div className="tg soft" style={{ marginBottom: 8 }}>已收納內部測試訊號 {hiddenCount} 筆，不放入戰情台判讀。</div>}
       <EmptyOrBlocked state={signals} />
@@ -401,7 +401,7 @@ function SignalsPanel({ signals }: { signals: LoadState<SignalRow[]> }) {
 
 function MarketIntelPanel({ news }: { news: LoadState<NewsItem[]> }) {
   return (
-    <Panel code="MKT-INTEL" title={`${formatTime(news.updatedAt)} 台北`} sub="臺股重大訊息" right={<StatePill state={news.state} />}>
+    <Panel code="MKT-INTEL" title="臺股重大訊息" sub="公司公告與重點消息" right={<StatePill state={news.state} />}>
       <StateLine state={news} label="重大訊息" />
       <EmptyOrBlocked state={news} />
       {news.state === "LIVE" && news.data.slice(0, 8).map((item) => (
@@ -421,7 +421,7 @@ function OpsPanel({ overview, runs }: { overview: LoadState<MarketDataOverview |
   const runItems = runs.state === "LIVE" && runs.data ? runs.data.items.slice(0, 4) : [];
   return (
     <>
-      <Panel code="OPS-HLT" title={`${formatTime(overview.updatedAt)} 台北`} sub="市場資料來源" right={<StatePill state={overview.state} />}>
+      <Panel code="OPS-HLT" title="市場資料來源" sub="行情與資料源健康度" right={<StatePill state={overview.state} />}>
         <StateLine state={overview} label="市場資料來源" />
         <EmptyOrBlocked state={overview} />
         {providers.map((provider) => (
@@ -436,7 +436,7 @@ function OpsPanel({ overview, runs }: { overview: LoadState<MarketDataOverview |
         ))}
       </Panel>
 
-      <Panel code="RUNS" title={`${formatTime(runs.updatedAt)} 台北`} sub="策略批次紀錄" right={<StatePill state={runs.state} />}>
+      <Panel code="RUNS" title="策略批次紀錄" sub="策略產出與候選批次" right={<StatePill state={runs.state} />}>
         <StateLine state={runs} label="策略批次" />
         <EmptyOrBlocked state={runs} />
         {runItems.map((run) => (
@@ -609,7 +609,7 @@ export default async function DashboardPage() {
 
       <div className="main-grid">
         <div>
-          <Panel code="WCH-LST" title={`${formatTime(watchlist.updatedAt)} 台北`} sub="觀察清單 / 報價 / 風控試算" right={<StatePill state={watchlist.state} />}>
+          <Panel code="WCH-LST" title="觀察清單" sub="報價與風控試算" right={<StatePill state={watchlist.state} />}>
             <WatchlistSurface result={watchlist} />
           </Panel>
           <ThemesPanel themes={themes} />

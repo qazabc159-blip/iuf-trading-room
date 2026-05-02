@@ -295,7 +295,7 @@ export default async function PortfolioPage() {
       <div className="exec-grid" style={{ marginTop: 20 }}>
         <div>
           <div id="order-ticket">
-            <Panel code="ORD-TKT" title={`${formatTime(result.updatedAt)} 台北`} sub="模擬委託單" right={displayState(result.state)}>
+            <Panel code="ORD-TKT" title="委託單" sub="模擬交易預覽" right={displayState(result.state)}>
               <SourceLine result={result} />
               <EmptyOrBlocked result={result} />
               <OrderTicketForm killMode={killMode} />

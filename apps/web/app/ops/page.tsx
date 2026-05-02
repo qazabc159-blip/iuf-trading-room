@@ -193,7 +193,7 @@ export default async function OpsPage() {
 
       <div className="main-grid">
         <div>
-          <Panel code="OPS-SRC" title={`${formatTime(result.updatedAt)} 台北`} sub="快照來源" right={stateLabel(result.state)}>
+          <Panel code="OPS-SRC" title="營運快照" sub="資料來源與更新狀態" right={stateLabel(result.state)}>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {data && (
