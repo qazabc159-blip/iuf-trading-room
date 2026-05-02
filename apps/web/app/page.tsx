@@ -222,6 +222,47 @@ function StateLine<T>({ state, label }: { state: LoadState<T>; label: string }) 
   );
 }
 
+type DashboardSourceStatus = {
+  label: string;
+  state: LoadState<unknown>["state"];
+  source: string;
+  updatedAt: string;
+  reason?: string;
+  next: string;
+};
+
+function sourceReason(state: LoadState<unknown> | WatchlistSurfaceState) {
+  return state.state === "LIVE" ? undefined : state.reason;
+}
+
+function DashboardBlockedSummary({ sections }: { sections: DashboardSourceStatus[] }) {
+  return (
+    <Panel code="OPS-HLT" title="資料服務狀態" sub="戰情台降級顯示" right={<span className="tg down">暫停</span>}>
+      <div className="dashboard-blocked-summary">
+        <div>
+          <span className="tg gold">系統降級</span>
+          <h3>主要資料服務暫時不可用，戰情台停止展開細節。</h3>
+          <p>
+            這個頁面沒有用假行情或假新聞補畫面。等後端資料源恢復後，主題、策略想法、訊號與重大訊息會自動回到完整戰情台。
+          </p>
+        </div>
+        <div className="blocked-source-grid" aria-label="資料來源狀態">
+          {sections.map((section) => (
+            <div className="blocked-source-row" key={section.label}>
+              <div>
+                <strong>{section.label}</strong>
+                <span className="tg soft">來源：{section.source} · 更新 {formatDateTime(section.updatedAt)}</span>
+              </div>
+              <StatePill state={section.state} />
+              <p>{section.reason ?? section.next}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function EmptyOrBlocked<T>({ state }: { state: LoadState<T> }) {
   if (state.state === "LIVE") return null;
   return (
@@ -582,6 +623,57 @@ export default async function DashboardPage() {
     { label: "策略想法", value: ideas.state === "LIVE" && ideas.data ? String(ideas.data.summary.total) : stateText(ideas.state), tone: ideas.state === "LIVE" ? "gold" : "muted" },
     { label: "訊號", value: signals.state === "LIVE" ? String(signals.data.filter((signal) => !isInternalTestSignal(signal)).length) : stateText(signals.state), tone: signals.state === "LIVE" ? "gold" : "muted" },
   ];
+  const sourceStatuses: DashboardSourceStatus[] = [
+    {
+      label: "市場總覽",
+      state: marketOverview.state,
+      source: marketOverview.source,
+      updatedAt: marketOverview.updatedAt,
+      reason: sourceReason(marketOverview),
+      next: "行情資料恢復後會顯示大盤、成交與來源健康度。",
+    },
+    {
+      label: "觀察清單",
+      state: watchlist.state,
+      source: watchlist.source,
+      updatedAt: watchlist.updatedAt,
+      reason: sourceReason(watchlist),
+      next: "觀察清單恢復後會顯示報價與風控試算。",
+    },
+    {
+      label: "主題資料",
+      state: themes.state,
+      source: themes.source,
+      updatedAt: themes.updatedAt,
+      reason: sourceReason(themes),
+      next: "主題資料恢復後會顯示台股主題與產業鏈。",
+    },
+    {
+      label: "策略想法",
+      state: ideas.state,
+      source: ideas.source,
+      updatedAt: ideas.updatedAt,
+      reason: sourceReason(ideas),
+      next: "策略想法恢復後會顯示紙上候選與阻擋原因。",
+    },
+    {
+      label: "訊號證據",
+      state: signals.state,
+      source: signals.source,
+      updatedAt: signals.updatedAt,
+      reason: sourceReason(signals),
+      next: "訊號恢復後會只顯示正式訊號，內部測試訊號會收納。",
+    },
+    {
+      label: "重大訊息",
+      state: news.state,
+      source: news.source,
+      updatedAt: news.updatedAt,
+      reason: sourceReason(news),
+      next: "重大訊息恢復後會顯示公司公告與重點消息。",
+    },
+  ];
+  const dashboardDegraded = sourceStatuses.filter((section) => section.state === "BLOCKED").length >= 4;
 
   return (
     <PageFrame
@@ -605,23 +697,29 @@ export default async function DashboardPage() {
           ))}
         </div>
       </section>
-      <MarketStrip overview={marketOverview} />
+      {dashboardDegraded ? (
+        <DashboardBlockedSummary sections={sourceStatuses} />
+      ) : (
+        <>
+          <MarketStrip overview={marketOverview} />
 
-      <div className="main-grid">
-        <div>
-          <Panel code="WCH-LST" title="觀察清單" sub="報價與風控試算" right={<StatePill state={watchlist.state} />}>
-            <WatchlistSurface result={watchlist} />
-          </Panel>
-          <ThemesPanel themes={themes} />
-          <IdeasPanel ideas={ideas} />
-        </div>
+          <div className="main-grid">
+            <div>
+              <Panel code="WCH-LST" title="觀察清單" sub="報價與風控試算" right={<StatePill state={watchlist.state} />}>
+                <WatchlistSurface result={watchlist} />
+              </Panel>
+              <ThemesPanel themes={themes} />
+              <IdeasPanel ideas={ideas} />
+            </div>
 
-        <div>
-          <MarketIntelPanel news={news} />
-          <SignalsPanel signals={signals} />
-          <OpsPanel overview={marketOverview} runs={runs} />
-        </div>
-      </div>
+            <div>
+              <MarketIntelPanel news={news} />
+              <SignalsPanel signals={signals} />
+              <OpsPanel overview={marketOverview} runs={runs} />
+            </div>
+          </div>
+        </>
+      )}
     </PageFrame>
   );
 }

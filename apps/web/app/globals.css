@@ -561,6 +561,55 @@ button { font: inherit; }
   line-height: 1.1;
 }
 
+.dashboard-blocked-summary {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1fr);
+  gap: 22px;
+  padding-top: 16px;
+  align-items: start;
+}
+
+.dashboard-blocked-summary h3 {
+  margin: 8px 0 0;
+  color: var(--night-ink);
+  font: 300 24px/1.45 var(--serif-tc);
+}
+
+.dashboard-blocked-summary p {
+  margin: 10px 0 0;
+  color: var(--night-mid);
+  font: 15px/1.8 var(--sans-tc);
+}
+
+.blocked-source-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.blocked-source-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 58px minmax(240px, 1.1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--night-rule);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.blocked-source-row strong,
+.blocked-source-row span {
+  display: block;
+  line-height: 1.6;
+}
+
+.blocked-source-row p {
+  margin: 0;
+  color: var(--night-mid);
+  font-size: 13px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
 .terminal-note.compact {
   margin: 8px 0 10px;
   padding: 8px 0 10px;
@@ -2190,6 +2239,10 @@ body:has(.login-route) > div {
 }
 
 @media (max-width: 1100px) {
+  .dashboard-blocked-summary,
+  .blocked-source-row {
+    grid-template-columns: 1fr;
+  }
   .company-detail-layout {
     grid-template-columns: 1fr;
   }
