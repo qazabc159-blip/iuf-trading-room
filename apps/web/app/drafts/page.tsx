@@ -126,7 +126,7 @@ export default async function DraftsPage({
       {error && (
         <DraftStatePanel
           state="BLOCKED"
-          reason={`內容草稿資料暫時無法讀取；後端負責人 Jason/Elva。${error}`}
+          reason={`內容草稿資料暫時無法讀取；後端負責人 內容與後端資料管線。${error}`}
           updatedAt={requestedAt}
         />
       )}

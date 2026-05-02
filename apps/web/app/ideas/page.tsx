@@ -52,7 +52,7 @@ async function loadIdeas(): Promise<LoadState> {
         data,
         updatedAt: data.generatedAt || updatedAt,
         source,
-        reason: "模擬決策目前沒有策略想法資料列，不顯示假候選單。",
+        reason: "正式策略想法資料庫目前回傳 0 筆。",
       };
     }
     return {
@@ -126,20 +126,26 @@ function directionTone(direction: IdeaRow["direction"]) {
   return "muted";
 }
 
-const ideaRowWithPromoteStyle = {
-  gridTemplateColumns: "74px 56px 54px 72px minmax(160px, 1fr) 88px minmax(170px, 0.72fr)",
-};
+function reasonText(value: string | null | undefined) {
+  if (!value) return "原因未列明";
+  return value
+    .replace(/missing_bars/g, "K 線資料不足")
+    .replace(/no_theme/g, "尚未連結主題")
+    .replace(/readiness:degraded/g, "資料品質降級")
+    .replace(/readiness:blocked/g, "資料品質阻擋")
+    .replace(/_/g, " ");
+}
 
 function PromotionBlockedCell() {
   return (
     <span
-      className="tg down"
-      title="策略想法轉模擬預覽的正式端點尚未開通。負責：Jason + Bruce。"
-      style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.25 }}
+      className="tg soft"
+      title="策略想法轉模擬委託的正式轉單端點尚未開通。"
+      style={{ display: "grid", gap: 4, minWidth: 0, lineHeight: 1.35 }}
     >
-      <span>轉單暫停</span>
+      <span className="gold">轉單暫停</span>
       <span className="tc soft" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        等策略轉模擬端點
+        等正式轉單端點
       </span>
     </span>
   );
@@ -147,7 +153,7 @@ function PromotionBlockedCell() {
 
 function SourceLine({ result }: { result: LoadState }) {
   return (
-    <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
+    <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 12, margin: "12px 0 14px" }}>
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
       <span>來源：{result.source}</span>
       <span>更新 {formatTime(result.updatedAt)}</span>
@@ -167,9 +173,9 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
 }
 
 function IdeaRowView({ idea }: { idea: IdeaRow }) {
-  const theme = idea.topThemes[0]?.name ?? "無主題";
+  const theme = idea.topThemes[0]?.name ?? "未連結主題";
   return (
-    <div className="row idea-row" style={ideaRowWithPromoteStyle} key={`${idea.companyId}-${idea.symbol}`}>
+    <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
       <Link href={`/companies/${idea.symbol}`} className="tg gold">
         {idea.symbol}
       </Link>
@@ -179,7 +185,7 @@ function IdeaRowView({ idea }: { idea: IdeaRow }) {
         {decisionLabel(idea.marketData.decision)}
       </span>
       <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {idea.companyName} / {theme} / {idea.rationale.primaryReason}
+        {idea.companyName} / {theme} / {reasonText(idea.rationale.primaryReason)}
       </span>
       <Link href={`/companies/${idea.symbol}`} className="mini-button">
         查看
@@ -193,14 +199,14 @@ export default async function IdeasPage() {
   const result = await loadIdeas();
   const summary = result.data.summary;
   const statsAvailable = result.state !== "BLOCKED";
-  const topReason = summary.quality.primaryReasons[0]?.reason ?? "none";
+  const topReason = summary.quality.primaryReasons[0]?.reason ?? "尚無主要原因";
 
   return (
     <PageFrame
       code="04"
       title="策略想法"
-      sub="模擬候選佇列"
-      note="策略想法 / 正式策略資料；轉成模擬委託的交接流程通過前維持暫停。"
+      sub="紙上候選清單"
+      note="策略想法 / 正式策略資料；轉成模擬委託前維持暫停"
     >
       <MetricStrip
         cells={[
@@ -217,15 +223,15 @@ export default async function IdeasPage() {
 
       <Panel
         code="IDEA-OPN"
-        title="策略想法佇列"
-        sub="策略想法 / 模擬決策 / 只讀"
+        title="策略想法候選"
+        sub="紙上決策 / 只讀"
         right={stateLabel(result.state)}
       >
         <SourceLine result={result} />
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
           <>
-            <div className="row idea-row table-head tg" style={ideaRowWithPromoteStyle}>
+            <div className="row idea-row table-head tg">
               <span>代號</span>
               <span>方向</span>
               <span>分數</span>
@@ -243,9 +249,9 @@ export default async function IdeasPage() {
 
       <Panel
         code="IDEA-QA"
-        title="真實狀態檢查"
-        sub="端點真實性 / 不靜默造假"
-        right={statsAvailable ? topReason : stateLabel(result.state)}
+        title="品質檢查"
+        sub="策略想法 / 資料完整性"
+        right={statsAvailable ? reasonText(topReason) : stateLabel(result.state)}
       >
         <div className="quote-strip" style={{ gridTemplateColumns: "repeat(6, minmax(120px, 1fr))", marginTop: 0 }}>
           <div className="quote-card">
@@ -277,10 +283,10 @@ export default async function IdeasPage() {
             </div>
           </div>
         </div>
-        <div className="tg soft" style={{ display: "grid", gap: 6, paddingBottom: 12 }}>
+        <div className="tg soft" style={{ display: "grid", gap: 8, paddingBottom: 14 }}>
           <span>來源：{result.source}</span>
-          <span>產生：{statsAvailable ? formatDateTime(result.data.generatedAt) : "策略想法來源恢復前維持暫停"}</span>
-          <span>交接：策略想法轉模擬委託仍暫停；負責 Jason + Bruce；正式轉單端點尚未開通。</span>
+          <span>產生：{statsAvailable ? formatDateTime(result.data.generatedAt) : "策略想法來源未回應"}</span>
+          <span>轉單：正式轉成模擬委託前一律暫停；本頁不會建立券商委託。</span>
         </div>
       </Panel>
     </PageFrame>

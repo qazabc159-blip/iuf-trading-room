@@ -82,7 +82,7 @@ export default async function BriefsPage() {
       {error && (
         <BriefStatePanel
           state="BLOCKED"
-          reason={`簡報資料暫時無法讀取。負責：Jason / Elva。${error}`}
+          reason={`簡報資料暫時無法讀取。負責：內容與後端資料管線。${error}`}
           updatedAt={requestedAt}
         />
       )}

@@ -88,7 +88,7 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
       <Panel code="DRF-ACT" title="寫入動作" right="受控">
         <div className="state-panel">
           <span className="badge badge-red">暫停</span>
-          <span className="tg soft">負責：Jason / Elva</span>
+          <span className="tg soft">負責：內容與後端資料管線</span>
           <span className="state-reason">
             核准與退回的正式後端路徑已存在，但本輪介面先不啟用寫入。舊的本機假按鈕已移除，避免把模擬核准誤認成正式資料庫決策。
           </span>
@@ -126,7 +126,7 @@ export default async function ContentDraftDetailPage({ params }: { params: Promi
       {error && (
         <DetailStatePanel
           state="BLOCKED"
-          reason={`草稿明細暫時無法讀取或權限不足。負責：Jason / Elva。細節：${error}`}
+          reason={`草稿明細暫時無法讀取或權限不足。負責：內容與後端資料管線。細節：${error}`}
           updatedAt={requestedAt}
         />
       )}

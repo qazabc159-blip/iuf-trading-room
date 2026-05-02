@@ -150,7 +150,7 @@ export default async function CompanyDetailPage({
             {symbol.toUpperCase()} 公司資料暫時無法讀取
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
-            目前登入工作區或後端公司資料服務沒有回應；請稍後重試，或由 Elva/Jason 檢查後端與登入狀態。
+            目前登入工作區或後端公司資料服務沒有回應；請稍後重試，或檢查後端與登入狀態。
           </div>
           <div className="terminal-note compact">{fetchErrorMsg}</div>
           <Link href="/companies" className="btn-sm">返回公司列表</Link>

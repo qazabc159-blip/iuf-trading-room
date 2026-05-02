@@ -116,7 +116,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
         <Panel code="LAB-Q" title="策略包佇列" right={blockedReason ? "暫停" : `${bundles.length} 包`}>
           {blockedReason ? (
             <div className="terminal-note">
-              暫停：量化策略包資料尚未啟用。負責人：Athena + Jason。細節：{blockedReason}
+              暫停：量化策略包資料尚未啟用。負責人：量化研究交接管線。細節：{blockedReason}
             </div>
           ) : bundles.length === 0 ? (
             <div className="terminal-note">無資料：目前沒有待審策略包。</div>
@@ -164,7 +164,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
             <div className="terminal-note" style={{ marginTop: 12 }}>
               {actionError
                 ? `暫停：量化研究動作失敗。${actionError}`
-                : "轉入模擬交易需等待 Jason/Athena 完成交接契約；核准/退回會寫入量化研究正式資料。"}
+                : "轉入模擬交易需等待 量化研究交接管線 完成交接契約；核准/退回會寫入量化研究正式資料。"}
             </div>
           )}
         </Panel>

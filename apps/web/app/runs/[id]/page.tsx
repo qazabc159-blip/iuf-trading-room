@@ -134,7 +134,7 @@ function PromotionBlockedCell() {
   return (
     <span
       className="tg down"
-      title="策略想法轉模擬委託預覽的後端契約尚未完成。負責人：Jason + Bruce。"
+      title="策略想法轉模擬委託預覽的後端契約尚未完成。負責人：策略交接與風控管線。"
       style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.25 }}
     >
       <span>轉單暫停</span>
