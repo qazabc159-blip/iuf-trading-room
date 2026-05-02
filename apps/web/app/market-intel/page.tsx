@@ -53,6 +53,35 @@ function categoryTone(category: string) {
   return "badge";
 }
 
+function categoryLabel(category: string | null | undefined) {
+  if (!category) return "公告";
+  const key = category.toLowerCase();
+  if (key === "earnings") return "財報";
+  if (key === "revenue") return "營收";
+  if (key === "news") return "新聞";
+  if (key === "theme") return "主題";
+  if (key === "industry") return "產業";
+  if (key === "supply_chain") return "供應鏈";
+  if (key === "technical") return "技術";
+  if (key === "fundamental") return "基本面";
+  if (key === "material" || key === "announcement") return "公告";
+  return category.replace(/[_-]/g, " ");
+}
+
+function hasBrokenText(value: string | null | undefined) {
+  if (!value) return false;
+  return /�|Ã|Â|undefined|null/i.test(value);
+}
+
+function intelTitleText(item: IntelItem) {
+  const raw = item.title || "未命名公告";
+  if (hasBrokenText(raw)) return "消息文字待整理；保留來源紀錄，不作交易解讀。";
+  if (/^[\x00-\x7F\s%.,:;()/-]+$/.test(raw) && /[A-Za-z]/.test(raw)) {
+    return "外文消息待整理；保留來源紀錄，不納入正式判讀。";
+  }
+  return raw;
+}
+
 async function loadIdeas(): Promise<IdeaView | null> {
   try {
     return (await getStrategyIdeas({
@@ -220,10 +249,10 @@ export default async function MarketIntelPage() {
                 <span className="tg soft">{formatDate(item.date)}</span>
                 <span className="tg gold">{item.ticker}</span>
                 <span className="market-intel-title">
-                  {item.title || "未命名公告"}
+                  {intelTitleText(item)}
                   <small style={{ display: "block", marginTop: 3, color: "var(--night-soft)" }}>{item.companyName}</small>
                 </span>
-                <span className={`badge ${categoryTone(item.category)}`}>{item.category || "公告"}</span>
+                <span className={`badge ${categoryTone(item.category)}`}>{categoryLabel(item.category)}</span>
               </Link>
             ))}
           </div>

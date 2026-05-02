@@ -4,6 +4,32 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 03:18 Taipei — Codex heartbeat pass 20 — market-intel text containment
+
+**Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/page.tsx` — dashboard Market Intel rows now contain English-only or broken announcement text with a truthful Traditional Chinese state instead of rendering long English titles in a narrow panel.
+- `apps/web/app/market-intel/page.tsx` — full Market Intel page applies the same text-safety rule and localizes common category labels.
+- `apps/web/app/globals.css` — Market Intel / telex rows now force child min-width containment and use the zh-TW sans font for announcement titles to avoid one-word vertical wrapping.
+
+**Behavior**:
+- No fake translation is introduced. English-only titles render as `外文消息待整理；保留來源紀錄，不納入...判讀。`
+- Broken mojibake/undefined/null-like strings render as a truthful text-cleanup state instead of becoming operator-facing evidence.
+- Announcement category badges prefer Traditional Chinese labels such as `產業`, `財報`, `供應鏈`, `公告`.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- No new data source, RSS, commercial news feed, AI translation, or mock data added.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS after `next build` regenerated `.next/types`
+- `git diff --check -- apps/web/app/page.tsx apps/web/app/market-intel/page.tsx apps/web/app/globals.css` PASS (CRLF warning only)
+
+**Blockers / next bypass**:
+- Local browser QA not run in this cycle to avoid GUI/sandbox confirmation blocking. Next bypass: PR/CI/deploy smoke, then continue with demo-critical dashboard/portfolio spacing checks.
+
 ### 2026-05-03 00:59 Taipei — Codex heartbeat pass 19 — signal text containment
 
 **Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

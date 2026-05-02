@@ -843,6 +843,10 @@ button { font: inherit; }
   padding: 10px 0;
 }
 
+.telex-row > * {
+  min-width: 0;
+}
+
 .dashboard-signal-row {
   grid-template-columns: 96px minmax(0, 1fr) 64px;
   grid-template-areas:
@@ -2059,9 +2063,10 @@ body:has(.login-route) > div {
 .market-intel-title {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-family: var(--mono, monospace);
-  font-size: 12px;
-  line-height: 1.45;
+  word-break: keep-all;
+  font-family: var(--sans-tc);
+  font-size: 13.5px;
+  line-height: 1.65;
 }
 
 .market-intel-body {
