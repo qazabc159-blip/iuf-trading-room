@@ -132,6 +132,8 @@ function categoryText(value: string | null | undefined) {
   if (key === "earnings") return "財報";
   if (key === "revenue") return "營收";
   if (key === "news") return "新聞";
+  if (key === "company") return "公司";
+  if (key === "market") return "市場";
   if (key === "theme") return "主題";
   if (key === "industry") return "產業";
   if (key === "supply_chain") return "供應鏈";
@@ -146,9 +148,32 @@ function hasBrokenText(value: string | null | undefined) {
   return /�|Ã|Â|undefined|null/i.test(value);
 }
 
+function isEnglishHeavy(value: string | null | undefined) {
+  if (!value) return false;
+  const latin = value.match(/[A-Za-z]/g)?.length ?? 0;
+  const cjk = value.match(/[\u4e00-\u9fff]/g)?.length ?? 0;
+  return latin >= 12 && latin > cjk * 2;
+}
+
+function themeDisplayName(theme: ThemeRow) {
+  const bySlug: Record<string, string> = {
+    "orphan-audit-trail": "內部稽核軌跡",
+    "orphan-ai-optics": "AI 光通訊封裝",
+    "5g": "5G 通訊",
+    abf: "ABF 載板",
+    ai: "AI 伺服器",
+    apple: "Apple 供應鏈",
+    cowos: "CoWoS 先進封裝",
+    cpo: "CPO 光通訊",
+  };
+  const mapped = bySlug[theme.slug.toLowerCase()];
+  if (mapped) return mapped;
+  return theme.name.replace(/^\[ORPHAN\]\s*/i, "待歸檔主題：");
+}
+
 function themeThesisText(theme: ThemeRow) {
-  if (!theme.thesis || hasBrokenText(theme.thesis)) {
-    return "主題說明待整理；目前先顯示正式主題主檔與公司池數量。";
+  if (!theme.thesis || hasBrokenText(theme.thesis) || isEnglishHeavy(theme.thesis)) {
+    return "主題說明待整理；目前保留來源主檔與公司池，不作自動解讀。";
   }
   return theme.thesis;
 }
@@ -162,7 +187,7 @@ function signalTitleText(signal: SignalRow) {
   const raw = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
   if (hasBrokenText(raw)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
   const cleaned = raw.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
-  if (/^[\x00-\x7F\s%.,:;()/-]+$/.test(cleaned) && /[A-Za-z]/.test(cleaned)) {
+  if ((/^[\x00-\x7F\s%.,:;()/-]+$/.test(cleaned) && /[A-Za-z]/.test(cleaned)) || isEnglishHeavy(cleaned)) {
     return "外文訊號待整理；保留來源紀錄，不納入戰情台判讀。";
   }
   return cleaned;
@@ -171,7 +196,7 @@ function signalTitleText(signal: SignalRow) {
 function intelTitleText(item: NewsItem) {
   const raw = item.title || "未命名公告";
   if (hasBrokenText(raw)) return "消息文字待整理；保留來源紀錄，不作交易解讀。";
-  if (/^[\x00-\x7F\s%.,:;()/-]+$/.test(raw) && /[A-Za-z]/.test(raw)) {
+  if ((/^[\x00-\x7F\s%.,:;()/-]+$/.test(raw) && /[A-Za-z]/.test(raw)) || isEnglishHeavy(raw)) {
     return "外文消息待整理；保留來源紀錄，不納入戰情台判讀。";
   }
   return raw;
@@ -387,7 +412,7 @@ function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
           <Link href={`/themes/${theme.slug}`} key={theme.id} className="row dashboard-theme-row">
             <span className="tg soft">{theme.priority}</span>
             <span>
-              <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{theme.name}</strong>
+              <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{themeDisplayName(theme)}</strong>
               <span className="tg soft" style={{ display: "block", marginTop: 3 }}>{theme.slug} · {themeThesisText(theme)}</span>
             </span>
             <span className="tg gold">{marketText(theme.marketState)}</span>

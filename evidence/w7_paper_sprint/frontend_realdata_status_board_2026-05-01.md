@@ -4,6 +4,33 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 04:18 Taipei - Codex heartbeat pass 22 - dashboard/theme/signal zh-TW cleanup
+
+**Scope**: demo-critical UI/content repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/page.tsx` - dashboard theme rows now use Traditional Chinese display names for known theme slugs and hide English-heavy thesis/signal/news text behind truthful "待整理" states.
+- `apps/web/app/themes/page.tsx` - full theme board applies the same known theme label mapping and avoids rendering English-heavy thesis text as primary operator copy.
+- `apps/web/app/signals/page.tsx` - signal ledger treats mixed Chinese/English-but-English-heavy signal titles as "外文訊號待整理" instead of showing operator-facing English sentences.
+
+**Behavior**:
+- Dashboard no longer exposes `[ORPHAN] Audit Trail Live Check`, `[ORPHAN] AI Optics`, or long English thesis/signal text as the primary display copy.
+- Known Taiwan-market themes show Chinese-first names such as `內部稽核軌跡`, `AI 光通訊封裝`, `ABF 載板`, `CoWoS 先進封裝`, and `CPO 光通訊`.
+- No fake translation is introduced; English-heavy source strings are preserved in the backend but rendered as truthful pending-cleanup states.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- No new data source, RSS, commercial news feed, AI translation, or mock data added.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `git diff --check -- apps/web/app/page.tsx apps/web/app/themes/page.tsx apps/web/app/signals/page.tsx` PASS (CRLF warning only).
+- Production pre-fix route sweep screenshots/metrics recorded under `evidence/w7_paper_sprint/production_screenshots_pass22_route_sweep_2026-05-03/`; pre-fix sweep had zero horizontal overflow, but still showed English-heavy theme/signal copy.
+
+**Blockers / next bypass**:
+- Production visual confirmation waits on PR CI/deploy. Next safe task: deploy smoke for dashboard/themes/signals, then continue route-by-route copy/spacing cleanup.
+
 ### 2026-05-03 03:48 Taipei - Codex heartbeat pass 21 - company panel spacing repair
 
 **Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
