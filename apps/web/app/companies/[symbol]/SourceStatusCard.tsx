@@ -15,6 +15,15 @@ function stateLabel(state: SourceStatus["state"]) {
   return "暫停";
 }
 
+function formatTaipeiTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("zh-TW", {
+    hour12: false,
+    timeZone: "Asia/Taipei",
+  });
+}
+
 export function SourceStatusCard({ sources }: { sources: SourceStatus[] }) {
   const [openId, setOpenId] = useState<string | null>(sources[0]?.id ?? null);
 
@@ -37,7 +46,7 @@ export function SourceStatusCard({ sources }: { sources: SourceStatus[] }) {
               <span className={`badge ${stateClass(source.state)}`}>{stateLabel(source.state)}</span>
               {open && (
                 <span className="source-status-detail tg soft">
-                  更新 {new Date(source.lastSeen).toLocaleTimeString("zh-TW", { hour12: false })} / 佇列 {source.queueDepth} / {source.detail}
+                  更新 {formatTaipeiTime(source.lastSeen)} / 佇列 {source.queueDepth} / {source.detail}
                 </span>
               )}
             </button>

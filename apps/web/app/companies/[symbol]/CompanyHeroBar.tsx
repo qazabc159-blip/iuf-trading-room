@@ -19,7 +19,10 @@ function formatAsOf(value: string | null | undefined) {
   if (!value) return "無資料";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-TW", { hour12: false });
+  return date.toLocaleTimeString("zh-TW", {
+    hour12: false,
+    timeZone: "Asia/Taipei",
+  });
 }
 
 const tierLabel: Record<string, string> = {

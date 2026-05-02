@@ -4,6 +4,32 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 05:50 Taipei - Codex heartbeat pass 29 - company hydration time-zone fix
+
+**Scope**: demo-critical UI/runtime repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/companies/[symbol]/CompanyHeroBar.tsx` - company quote `更新` time now formats with explicit `Asia/Taipei`.
+- `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx` - individual-company paper-order ledger/preview times now format with explicit `Asia/Taipei`.
+- `apps/web/app/companies/[symbol]/SourceStatusCard.tsx` - expanded source-status timestamps now format with explicit `Asia/Taipei`.
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` - recorded the production hydration finding and fix.
+
+**Behavior**:
+- Production `/companies/1101` no longer risks SSR/client text mismatch between Railway server time zone and browser Taipei time zone in visible company update timestamps.
+- This is display-only. It does not change quote data, OHLCV data, paper-order payloads, Taiwan stock unit conversion, broker paths, or backend contracts.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- No new data source, RSS, commercial news feed, AI translation, mock data, or fallback success path added.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Local authenticated-cookie 1365px Playwright check on `127.0.0.1:3048/companies/1101` with read-only fake local API PASS: status 200, 0 console/page errors, 0 horizontal overflow, 0 narrow vertical text stacks, 0 raw diagnostics. Screenshot/report are local-only under `evidence/w7_paper_sprint/local_visual_qa_pass29_company_hydration_2026-05-03/`.
+
+**Blockers / next bypass**:
+- Production confirmation waits for PR CI and Railway deploy. Next safe task after deploy: re-run production authenticated smoke on `/companies/1101` to ensure the React hydration error is gone.
+
 ### 2026-05-03 05:38 Taipei - Codex heartbeat pass 28 - shared chrome breathing-room cleanup
 
 **Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

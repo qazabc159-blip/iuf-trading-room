@@ -644,7 +644,10 @@ function Segmented<T extends string>({
 function formatTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-TW", { hour12: false });
+  return date.toLocaleTimeString("zh-TW", {
+    hour12: false,
+    timeZone: "Asia/Taipei",
+  });
 }
 
 const sourceBarStyle: React.CSSProperties = {
