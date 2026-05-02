@@ -67,6 +67,17 @@ function applyKnownCopy(value: string) {
   return null;
 }
 
+function replaceKnownSourceTerms(value: string) {
+  return value
+    .replace(/\bAudit Trail Live Check\b/g, "稽核軌跡檢查")
+    .replace(/\bAudit verification theme\b/gi, "稽核驗證題材")
+    .replace(/\bAI Optics\s*\(->\s*CPO\)/g, "AI 光通訊 / CPO")
+    .replace(/\bAI Optics\b/g, "AI 光通訊")
+    .replace(/\bBalanced\b/g, "平衡")
+    .replace(/\bBROKEN\b/g, "待修")
+    .replace(/\bDEPRECATED\b/g, "退役");
+}
+
 export function cleanExternalHeadline(
   value: string | null | undefined,
   fallback = "內容尚未完成中文整理；保留來源紀錄，不納入正式判讀。"
@@ -75,6 +86,8 @@ export function cleanExternalHeadline(
   if (!raw || hasCorruptText(raw)) return fallback;
   const known = applyKnownCopy(raw);
   if (known) return known;
+  const replaced = replaceKnownSourceTerms(raw);
+  if (replaced !== raw) return replaced;
   if (isEnglishHeavy(raw)) return fallback;
   return raw;
 }
@@ -83,7 +96,11 @@ export function cleanNarrativeText(
   value: string | null | undefined,
   fallback = "段落尚未完成中文整理；保留來源紀錄，不納入正式判讀。"
 ) {
-  return cleanExternalHeadline(value, fallback);
+  const raw = value?.trim();
+  if (!raw || hasCorruptText(raw)) return fallback;
+  const replaced = replaceKnownSourceTerms(raw);
+  if (replaced !== raw) return replaced;
+  return cleanExternalHeadline(raw, fallback);
 }
 
 export function cleanTradePlanText(
@@ -96,6 +113,14 @@ export function cleanTradePlanText(
     if (item.pattern.test(raw)) return raw.replace(item.pattern, item.text);
   }
   return cleanExternalHeadline(raw, fallback);
+}
+
+export function cleanRiskRewardText(value: string | null | undefined) {
+  const raw = value?.trim();
+  if (!raw || hasCorruptText(raw)) return "--";
+  const match = raw.match(/risk\s*([0-9.]+%?)\s*\/\s*reward\s*([0-9.]+%?)\s*=\s*([0-9.]+:1)/i);
+  if (match) return `風險 ${match[1]} / 報酬 ${match[2]} / 風報比 ${match[3]}`;
+  return cleanNarrativeText(raw, "--");
 }
 
 export function cleanThemeThesis(slug: string | null | undefined, thesis: string | null | undefined) {
