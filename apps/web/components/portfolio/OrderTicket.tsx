@@ -1037,7 +1037,7 @@ function formatTime(value: string) {
 }
 
 const handoffStyle: CSSProperties = {
-  padding: "10px 12px",
+  padding: "14px 16px",
   marginBottom: 12,
   border: "1px solid var(--gold)",
   background: "rgba(184,138,62,0.10)",
@@ -1048,7 +1048,7 @@ const handoffStyle: CSSProperties = {
 const marketPreviewShellStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
   background: "linear-gradient(180deg, rgba(226,184,92,0.052), rgba(255,255,255,0.012))",
-  padding: 14,
+  padding: 18,
   marginBottom: 16,
 };
 
@@ -1079,7 +1079,7 @@ const marketQuoteCardStyle: CSSProperties = {
   display: "grid",
   gap: 6,
   minHeight: 72,
-  padding: "10px 12px",
+  padding: "13px 14px",
   border: "1px solid var(--exec-rule)",
   background: "rgba(0,0,0,0.12)",
 };
@@ -1121,14 +1121,14 @@ const ticketShellStyle: CSSProperties = {
 
 const formCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 18,
+  padding: 22,
   minHeight: 326,
   background: "linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.010))",
 };
 
 const previewCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 18,
+  padding: 22,
   minHeight: 326,
   background: "linear-gradient(180deg, rgba(200,148,63,0.040), rgba(255,255,255,0.010))",
 };
@@ -1137,7 +1137,7 @@ const rowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 12,
-  marginBottom: 12,
+  marginBottom: 14,
 };
 
 const labelStyle: CSSProperties = {
@@ -1150,7 +1150,7 @@ const labelStyle: CSSProperties = {
 
 const inputStyle: CSSProperties = {
   flex: 1,
-  padding: "11px 12px",
+  padding: "13px 14px",
   background: "var(--exec-bg)",
   border: "1px solid var(--exec-rule-strong)",
   color: "var(--exec-ink)",
@@ -1175,8 +1175,8 @@ const segmentedStyle: CSSProperties = {
 
 const segmentButtonStyle: CSSProperties = {
   flex: 1,
-  minHeight: 42,
-  padding: "9px 8px",
+  minHeight: 48,
+  padding: "12px 10px",
   border: "none",
   fontFamily: "var(--mono)",
   fontSize: 12,
@@ -1215,7 +1215,7 @@ const truthNoteStyle: CSSProperties = {
   display: "flex",
   gap: 10,
   alignItems: "flex-start",
-  padding: "9px 0",
+  padding: "12px 2px",
   color: "var(--exec-mid)",
   fontFamily: "var(--sans-tc)",
   fontSize: 14,
@@ -1231,7 +1231,7 @@ const kvStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "96px 1fr",
   gap: 8,
-  padding: "6px 0",
+  padding: "9px 0",
   borderBottom: "1px solid var(--exec-rule)",
   fontFamily: "var(--mono)",
   fontSize: 11.5,
@@ -1241,7 +1241,7 @@ const guardRowStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "130px 1fr",
   gap: 10,
-  padding: "6px 0",
+  padding: "9px 0",
   borderBottom: "1px solid var(--exec-rule)",
   color: "var(--tw-up-bright)",
   fontFamily: "var(--mono)",
@@ -1260,7 +1260,7 @@ const historyHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   gap: 12,
-  padding: "9px 10px",
+  padding: "12px 14px",
   borderBottom: "1px solid var(--exec-rule-strong)",
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
@@ -1273,7 +1273,7 @@ const orderRowStyle: CSSProperties = {
   gridTemplateColumns: "72px 98px 92px 86px 74px 64px",
   gap: 10,
   alignItems: "center",
-  padding: "9px 10px",
+  padding: "12px 14px",
   borderTop: "1px solid var(--exec-rule)",
   fontFamily: "var(--mono)",
   fontSize: 11.5,
@@ -1286,7 +1286,7 @@ const miniButtonStyle: CSSProperties = {
   fontFamily: "var(--mono)",
   fontSize: 10,
   letterSpacing: "0.08em",
-  padding: "5px 6px",
+  padding: "7px 9px",
   cursor: "pointer",
 };
 
@@ -1294,7 +1294,7 @@ const unitGuardStyle: CSSProperties = {
   display: "grid",
   gap: 5,
   margin: "-2px 0 10px 76px",
-  padding: "8px 10px",
+  padding: "11px 12px",
   border: "1px solid rgba(226,184,92,0.28)",
   background: "rgba(226,184,92,0.06)",
   color: "var(--exec-mid)",
@@ -1321,7 +1321,7 @@ const modalShellStyle: CSSProperties = {
   border: "1px solid var(--gold)",
   background: "linear-gradient(180deg, rgba(14,15,16,0.98), rgba(4,6,8,0.98))",
   boxShadow: "0 24px 80px rgba(0,0,0,0.56)",
-  padding: 18,
+  padding: 22,
 };
 
 const modalHeaderStyle: CSSProperties = {
@@ -1330,8 +1330,8 @@ const modalHeaderStyle: CSSProperties = {
   gap: 14,
   alignItems: "flex-start",
   borderBottom: "1px solid var(--exec-rule-strong)",
-  paddingBottom: 12,
-  marginBottom: 12,
+  paddingBottom: 16,
+  marginBottom: 16,
 };
 
 const modalCloseStyle: CSSProperties = {
@@ -1381,8 +1381,8 @@ const modalActionStyle: CSSProperties = {
   justifyContent: "flex-end",
   gap: 10,
   borderTop: "1px solid var(--exec-rule-strong)",
-  marginTop: 12,
-  paddingTop: 12,
+  marginTop: 16,
+  paddingTop: 16,
 };
 
 const lotAckStyle: CSSProperties = {
@@ -1405,7 +1405,7 @@ const secondaryActionStyle: CSSProperties = {
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
   fontWeight: 700,
-  padding: "10px 14px",
+  padding: "12px 16px",
   cursor: "pointer",
 };
 
@@ -1415,6 +1415,6 @@ const primaryActionStyle: CSSProperties = {
   color: "#080808",
   fontFamily: "var(--mono)",
   fontWeight: 800,
-  padding: "10px 16px",
+  padding: "12px 18px",
   cursor: "pointer",
 };
