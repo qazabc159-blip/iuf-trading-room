@@ -119,13 +119,32 @@ function hasBrokenText(value: string | null | undefined) {
   return /�|Ã|Â|undefined|null/i.test(value);
 }
 
+function isEnglishHeavy(value: string | null | undefined) {
+  if (!value) return false;
+  const latin = value.match(/[A-Za-z]/g)?.length ?? 0;
+  const cjk = value.match(/[\u4e00-\u9fff]/g)?.length ?? 0;
+  return latin >= 12 && latin > cjk * 2;
+}
+
 function themeDisplayName(theme: ThemeRow) {
+  const bySlug: Record<string, string> = {
+    "orphan-audit-trail": "內部稽核軌跡",
+    "orphan-ai-optics": "AI 光通訊封裝",
+    "5g": "5G 通訊",
+    abf: "ABF 載板",
+    ai: "AI 伺服器",
+    apple: "Apple 供應鏈",
+    cowos: "CoWoS 先進封裝",
+    cpo: "CPO 光通訊",
+  };
+  const mapped = bySlug[theme.slug.toLowerCase()];
+  if (mapped) return mapped;
   return theme.name.replace(/^\[ORPHAN\]\s*/i, "待歸檔：");
 }
 
 function themeThesisText(theme: ThemeRow) {
-  if (!theme.thesis || hasBrokenText(theme.thesis)) {
-    return "主題說明待整理；目前先顯示正式主題主檔與公司池數量。";
+  if (!theme.thesis || hasBrokenText(theme.thesis) || isEnglishHeavy(theme.thesis)) {
+    return "主題說明待整理；目前保留來源主檔與公司池，不作自動解讀。";
   }
   return theme.thesis;
 }

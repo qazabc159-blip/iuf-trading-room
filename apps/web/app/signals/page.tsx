@@ -122,6 +122,8 @@ function categoryLabel(value: string | null | undefined) {
   if (key === "earnings") return "財報";
   if (key === "revenue") return "營收";
   if (key === "news") return "新聞";
+  if (key === "company") return "公司";
+  if (key === "market") return "市場";
   if (key === "industry") return "產業";
   if (key === "theme") return "主題";
   if (key === "technical") return "技術";
@@ -135,6 +137,13 @@ function hasBrokenText(value: string | null | undefined) {
   return /�|Ã|Â|undefined|null/i.test(value);
 }
 
+function isEnglishHeavy(value: string | null | undefined) {
+  if (!value) return false;
+  const latin = value.match(/[A-Za-z]/g)?.length ?? 0;
+  const cjk = value.match(/[\u4e00-\u9fff]/g)?.length ?? 0;
+  return latin >= 12 && latin > cjk * 2;
+}
+
 function isInternalTestSignal(signal: SignalRow) {
   const text = `${signal.title} ${signal.summary ?? ""} ${signal.category}`.toLowerCase();
   return /bruce|dryrun|smoke|test signal|verify/.test(text);
@@ -144,7 +153,7 @@ function signalTitle(signal: SignalRow) {
   const value = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
   if (hasBrokenText(value)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
   const cleaned = value.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
-  if (/^[\x00-\x7F\s%.,:;()/-]+$/.test(cleaned) && /[A-Za-z]/.test(cleaned)) {
+  if ((/^[\x00-\x7F\s%.,:;()/-]+$/.test(cleaned) && /[A-Za-z]/.test(cleaned)) || isEnglishHeavy(cleaned)) {
     return "外文訊號待整理；保留來源紀錄，不納入正式判讀。";
   }
   return cleaned;
