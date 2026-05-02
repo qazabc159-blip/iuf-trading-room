@@ -4,6 +4,33 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-02 20:45 Taipei — Codex heartbeat pass 14 — company-detail order review modal
+
+**Scope**: demo-critical UI safety repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx` — replaced native `window.confirm` with an in-app blocking order review modal for the individual-company paper order panel.
+
+**Behavior**:
+- Company-detail paper order submit no longer uses the browser-native confirm box.
+- After a passing paper preview, `檢查並送出` opens a Traditional Chinese modal with stock, side, order type, unit badges (`SHARE 零股` / `LOT 整張`), quantity, actual share count, price, notional formula, demo available cash, estimated usage, fee, and submit type.
+- Odd-lot safety is explicit: `1 股 × NT$800 = NT$800`; board-lot still clearly means `1 張 × 1,000 股/張`.
+- Confirm button still calls the existing paper submit endpoint only; no API contract, broker write-side, live submit, or backend route changed.
+
+**Endpoints / data**:
+- No backend endpoint changes.
+- Still uses existing `POST /api/v1/paper/orders/preview`, `POST /api/v1/paper/orders`, and `GET /api/v1/paper/orders`.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS
+- `git grep window.confirm -- apps/web/app/companies/[symbol]/PaperOrderPanel.tsx apps/web/components/portfolio/OrderTicket.tsx` PASS: no native confirm remains in paper order surfaces.
+- Local 1365px Playwright modal QA with fake local API on `127.0.0.1:59999` PASS: `/companies/2330` rendered 200, preview passed, modal opened, zero horizontal overflow, zero narrow vertical text; modal contained `SHARE 零股`, `LOT 整張`, `實際股數 1 股`, and `1 股 × NT$800 = NT$800`.
+- Screenshot/report: `evidence/w7_paper_sprint/local_visual_qa_pass14_order_modal_2026-05-02/`
+
+**Blockers / next bypass**:
+- Full post-demo order review hardening (cash freshness, market deviation checkbox, Playwright E2E suite) remains scheduled after freeze per ELVA handoff. Current change closes the immediate demo-critical odd-lot/board-lot confirmation gap without touching backend.
+
 ### 2026-05-02 20:30 Taipei — Codex heartbeat pass 13 — dashboard degraded-state collapse
 
 **Scope**: demo-critical UI repair only; no live submit, no Railway secrets, no migration 0020, no KGI/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

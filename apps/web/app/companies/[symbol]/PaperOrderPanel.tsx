@@ -102,6 +102,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
   const [orders, setOrders] = useState<OrdersState>({ status: "loading" });
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   // F1: submitInFlight ref — prevents double-submit if React batching drops disabled flag for a tick.
   const submitInFlight = useRef(false);
@@ -198,6 +199,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     setForm((current) => ({ ...current, ...patch }));
     setPreview({ status: "idle" });
     setSubmit({ status: "idle" });
+    setReviewOpen(false);
     // F2: form change invalidates the current draft; clear key so next preview generates a fresh one.
     setDraftKey(null);
   };
@@ -228,32 +230,13 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     // disabled-button state by a tick (fast double-click protection).
     if (submitInFlight.current) return;
     if (!input || preview.status !== "live") return;
-    const shares = toTaiwanStockShareCount(input.qty, input.quantity_unit);
-    const orderPrice = input.price ?? null;
-    const priceText = orderPrice === null ? "市價" : formatTwd(orderPrice);
-    const notionalText = orderPrice === null
-      ? "市價單待後端報價門檻計算"
-      : formatTwd(estimateTaiwanStockNotional(orderPrice, input.qty, input.quantity_unit));
-    const confirmed = window.confirm(
-      [
-        "送出模擬委託前確認：",
-        `股票：${input.symbol}`,
-        `單位：${input.quantity_unit === "SHARE" ? "零股" : "整張"}`,
-        `數量：${input.qty.toLocaleString("zh-TW")} ${input.quantity_unit === "SHARE" ? "股" : "張"}`,
-        `實際股數：${shares.toLocaleString("zh-TW")} 股`,
-        `價格：${priceText}`,
-        `預估金額：${notionalText}`,
-        "",
-        "零股不會被轉成整張；整張會用 1 張 = 1,000 股計算。",
-      ].join("\n"),
-    );
-    if (!confirmed) return;
     submitInFlight.current = true;
     setSubmit({ status: "loading" });
     try {
       // F2: pass the same draft key used for preview so the server can deduplicate.
       const state = await submitPaperOrder(input, draftKey ?? undefined);
       setSubmit(state.intent.status === "REJECTED" ? { status: "blocked", state } : { status: "live", state });
+      setReviewOpen(false);
       // F2: successful submit — clear draft key so a fresh draft gets a fresh key next time.
       setDraftKey(null);
       await refreshOrders();
@@ -388,13 +371,13 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
         </button>
         <button
           className="btn-sm"
-          onClick={handleSubmit}
+          onClick={() => setReviewOpen(true)}
           disabled={!canSubmit || submit.status === "loading"}
-          title={!canSubmit ? "請先完成通過的風控預覽。" : "只送出模擬委託。"}
+          title={!canSubmit ? "請先完成通過的風控預覽。" : "送出前會開啟零股/整張確認視窗。"}
           type="button"
           style={canSubmit ? { borderColor: "var(--gold, #b8960c)", color: "var(--gold, #b8960c)" } : {}}
         >
-          {submit.status === "loading" ? "送出中" : "送出模擬單"}
+          {submit.status === "loading" ? "送出中" : "檢查並送出"}
         </button>
       </div>
 
@@ -433,7 +416,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
         {orders.status === "live" && orders.items.length === 0 && (
           <TruthNote state="EMPTY" text="此股票目前沒有模擬委託紀錄。" />
         )}
-        {orders.status === "live" && orders.items.slice(0, 3).map((order) => (
+      {orders.status === "live" && orders.items.slice(0, 3).map((order) => (
           <div key={order.intent.id} style={orderRowStyle}>
             <span>
               {sideLabel(order.intent.side)} {order.intent.qty.toLocaleString("zh-TW")} {quantityUnitLabel(order.intent.quantity_unit)}
@@ -446,6 +429,17 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
           </div>
         ))}
       </div>
+
+      {reviewOpen && input && (
+        <CompanyOrderReviewModal
+          input={input}
+          canSubmit={canSubmit}
+          isSubmitting={submit.status === "loading"}
+          demoCapital={DEMO_CAPITAL_TWD}
+          onCancel={() => setReviewOpen(false)}
+          onConfirm={() => void handleSubmit()}
+        />
+      )}
     </section>
   );
 }
@@ -464,6 +458,101 @@ function PreviewResult({ result }: { result: Awaited<ReturnType<typeof previewPa
           {guard.guard}: {guard.message}
         </div>
       ))}
+    </div>
+  );
+}
+
+function CompanyOrderReviewModal({
+  input,
+  canSubmit,
+  isSubmitting,
+  demoCapital,
+  onCancel,
+  onConfirm,
+}: {
+  input: PaperOrderInput;
+  canSubmit: boolean;
+  isSubmitting: boolean;
+  demoCapital: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const unit = input.quantity_unit;
+  const qty = input.qty;
+  const shares = toTaiwanStockShareCount(qty, unit);
+  const price = input.price ?? null;
+  const notional = price === null ? null : estimateTaiwanStockNotional(price, qty, unit);
+  const unitFormula = unit === "LOT"
+    ? `${qty.toLocaleString("zh-TW")} 張 × 1,000 股/張 × ${price === null ? "市價" : formatTwd(price)}`
+    : `${qty.toLocaleString("zh-TW")} 股 × ${price === null ? "市價" : formatTwd(price)}`;
+  const overCapital = notional !== null && notional > demoCapital;
+
+  return (
+    <div style={modalBackdropStyle} role="presentation">
+      <div style={modalShellStyle} role="dialog" aria-modal="true" aria-label="模擬委託送出確認">
+        <div style={modalHeaderStyle}>
+          <div>
+            <div className="tg" style={{ color: "var(--gold-bright)", fontWeight: 800 }}>模擬委託送出確認</div>
+            <div style={modalSourceStyle}>台股單位防呆：零股=股，整張=1,000 股。本視窗確認後才送出模擬委託。</div>
+          </div>
+          <button type="button" onClick={onCancel} style={modalCloseStyle} disabled={isSubmitting}>取消</button>
+        </div>
+
+        <div style={reviewGridStyle}>
+          <KV k="股票" v={input.symbol} />
+          <KV k="方向" v={sideLabel(input.side)} />
+          <KV k="類型" v={input.orderType === "market" ? "市價" : "限價"} />
+          <KV
+            k="單位"
+            v={
+              <span style={unitBadgeRowStyle}>
+                <span style={unit === "SHARE" ? activeUnitBadgeStyle : unitBadgeStyle}>SHARE 零股</span>
+                <span style={unit === "LOT" ? activeUnitBadgeStyle : unitBadgeStyle}>LOT 整張</span>
+              </span>
+            }
+          />
+          <KV k={unit === "LOT" ? "張數" : "股數"} v={qty.toLocaleString("zh-TW")} />
+          <KV k="實際股數" v={`${shares.toLocaleString("zh-TW")} 股`} />
+          <KV k="委託價格" v={price === null ? "市價，送出時依後端報價門檻處理" : formatTwd(price)} />
+          <KV
+            k="金額算式"
+            v={notional === null ? "市價單待後端報價門檻計算" : `${unitFormula} = ${formatTwd(notional)}`}
+          />
+          <KV k="模擬可用資金" v={formatTwd(demoCapital)} />
+          <KV k="預估佔用" v={notional === null ? "市價單待後端計算" : formatTwd(notional)} />
+          <KV k="預估手續費" v="NT$0（模擬單；正式券商另依費率）" />
+          <KV k="送出型態" v="模擬委託，不送券商" />
+        </div>
+
+        <TruthNote
+          state={unit === "LOT" || overCapital ? "BLOCKED" : "LIVE"}
+          text={
+            overCapital
+              ? `此單預估 ${formatTwd(notional ?? 0)}，超過模擬可用資金 ${formatTwd(demoCapital)}。`
+              : unit === "LOT"
+                ? "你目前選的是 LOT 整張：1 張一定會用 1,000 股計算。高價股測試請優先改用 SHARE 零股。"
+                : "你目前選的是 SHARE 零股：1 股就是 1 股，送出 payload 也會明確標記 quantity_unit=SHARE。"
+          }
+        />
+
+        <div style={modalActionStyle}>
+          <button type="button" onClick={onCancel} disabled={isSubmitting} style={secondaryActionStyle}>
+            取消
+          </button>
+          <button type="button" onClick={onConfirm} disabled={!canSubmit || isSubmitting} style={primaryActionStyle}>
+            {isSubmitting ? "送出中..." : "確認送出"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KV({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div style={reviewRowStyle}>
+      <span>{k}</span>
+      <b>{v}</b>
     </div>
   );
 }
@@ -678,4 +767,127 @@ const notionalPreviewStyle: React.CSSProperties = {
   marginBottom: 10,
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
+};
+
+const modalBackdropStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 1000,
+  display: "grid",
+  placeItems: "center",
+  padding: 20,
+  background: "rgba(0,0,0,0.70)",
+  backdropFilter: "blur(3px)",
+};
+
+const modalShellStyle: React.CSSProperties = {
+  width: "min(720px, 96vw)",
+  maxHeight: "86vh",
+  overflow: "auto",
+  border: "1px solid var(--gold, #b8960c)",
+  background: "linear-gradient(180deg, rgba(14,15,16,0.98), rgba(4,6,8,0.98))",
+  boxShadow: "0 24px 80px rgba(0,0,0,0.56)",
+  padding: 18,
+};
+
+const modalHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 14,
+  alignItems: "flex-start",
+  borderBottom: "1px solid var(--night-rule-strong, #333)",
+  paddingBottom: 12,
+  marginBottom: 12,
+};
+
+const modalSourceStyle: React.CSSProperties = {
+  marginTop: 6,
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 11,
+  lineHeight: 1.55,
+};
+
+const modalCloseStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid var(--night-rule-strong, #333)",
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  padding: "6px 10px",
+  cursor: "pointer",
+};
+
+const reviewGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 0,
+  borderTop: "1px solid var(--night-rule, #222)",
+};
+
+const reviewRowStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "150px minmax(0, 1fr)",
+  gap: 12,
+  alignItems: "start",
+  borderBottom: "1px solid var(--night-rule, #222)",
+  padding: "10px 0",
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 12,
+  lineHeight: 1.6,
+};
+
+const unitBadgeRowStyle: React.CSSProperties = {
+  display: "inline-flex",
+  justifyContent: "flex-end",
+  flexWrap: "wrap",
+  gap: 6,
+};
+
+const unitBadgeStyle: React.CSSProperties = {
+  display: "inline-flex",
+  minHeight: 24,
+  alignItems: "center",
+  padding: "0 8px",
+  border: "1px solid var(--night-rule-strong, #333)",
+  color: "var(--night-mid, #888)",
+  background: "rgba(255,255,255,0.018)",
+  fontFamily: "var(--mono, monospace)",
+  fontWeight: 800,
+  fontSize: 10,
+};
+
+const activeUnitBadgeStyle: React.CSSProperties = {
+  ...unitBadgeStyle,
+  borderColor: "var(--gold, #b8960c)",
+  color: "#080808",
+  background: "var(--gold-bright, #f4c430)",
+};
+
+const modalActionStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 10,
+  borderTop: "1px solid var(--night-rule-strong, #333)",
+  marginTop: 12,
+  paddingTop: 12,
+};
+
+const secondaryActionStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid var(--night-rule-strong, #333)",
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontWeight: 700,
+  padding: "10px 14px",
+  cursor: "pointer",
+};
+
+const primaryActionStyle: React.CSSProperties = {
+  background: "var(--gold, #b8960c)",
+  border: "1px solid var(--gold-bright, #f4c430)",
+  color: "#080808",
+  fontFamily: "var(--mono, monospace)",
+  fontWeight: 800,
+  padding: "10px 16px",
+  cursor: "pointer",
 };
