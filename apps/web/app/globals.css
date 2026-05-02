@@ -874,8 +874,10 @@ button { font: inherit; }
   color: var(--night-ink);
   font-size: 14px;
   line-height: 1.64;
-  overflow-wrap: normal;
-  word-break: normal;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+  max-height: 4.9em;
+  overflow: hidden;
 }
 
 .dashboard-signal-row .signal-confidence {
@@ -898,7 +900,9 @@ button { font: inherit; }
 
 .signal-title {
   color: var(--night-mid);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+  line-height: 1.65;
 }
 
 .btn-sm {

@@ -163,7 +163,7 @@ function signalTitleText(signal: SignalRow) {
   if (hasBrokenText(raw)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
   const cleaned = raw.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
   if (/^[\x00-\x7F\s%.,:;()/-]+$/.test(cleaned) && /[A-Za-z]/.test(cleaned)) {
-    return `外文訊號：${cleaned}`;
+    return "外文訊號待整理；保留來源紀錄，不納入戰情台判讀。";
   }
   return cleaned;
 }
