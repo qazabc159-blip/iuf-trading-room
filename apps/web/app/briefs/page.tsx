@@ -1,5 +1,6 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getBriefs } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
 
 function formatDateTime(value: string) {
@@ -66,7 +67,7 @@ export default async function BriefsPage() {
     const response = await getBriefs();
     briefs = sortBriefs(response.data ?? []);
   } catch (err) {
-    error = err instanceof Error ? err.message : "每日簡報讀取失敗";
+    error = friendlyDataError(err, "每日簡報暫時無法讀取。");
   }
 
   const latest = briefs[0] ?? null;
@@ -81,7 +82,7 @@ export default async function BriefsPage() {
       {error && (
         <BriefStatePanel
           state="BLOCKED"
-          reason={`簡報 API 暫時無法讀取。負責：Jason / Elva。細節：${error}`}
+          reason={`簡報資料暫時無法讀取。負責：Jason / Elva。${error}`}
           updatedAt={requestedAt}
         />
       )}

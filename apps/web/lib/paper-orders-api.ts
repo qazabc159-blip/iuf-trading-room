@@ -217,6 +217,7 @@ export function formatPaperOrderError(error: unknown) {
     return `${error.code} (${error.status}${layer})`;
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (/API_BASE|NEXT_PUBLIC_API_BASE_URL|base url/i.test(message)) return "前端尚未設定後端 API，無法讀取模擬交易資料。";
   if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端 API。";
   return message;
 }

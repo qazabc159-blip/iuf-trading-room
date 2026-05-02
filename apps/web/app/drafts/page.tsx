@@ -10,6 +10,7 @@ import {
   contentDraftTargetLabel,
   contentDraftTitle,
 } from "@/lib/content-draft-view";
+import { friendlyDataError } from "@/lib/friendly-error";
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", { hour12: false });
@@ -97,14 +98,14 @@ export default async function DraftsPage({
     const response = await getContentDrafts({ status, limit: 100 });
     drafts = response.data ?? [];
   } catch (err) {
-    error = err instanceof Error ? err.message : "內容草稿讀取失敗";
+    error = friendlyDataError(err, "內容草稿暫時無法讀取。");
   }
 
   return (
     <PageFrame
       code="DRF"
       title="內容草稿"
-      sub="OpenAlice 草稿與審核佇列"
+      sub="AI 內容草稿與審核佇列"
       note="此頁只讀取正式資料庫的內容草稿，不顯示假草稿。"
     >
       <Panel code="DRF-FLT" title="狀態篩選" right={status ? contentDraftStatusLabel(status) : "全部"}>
@@ -125,7 +126,7 @@ export default async function DraftsPage({
       {error && (
         <DraftStatePanel
           state="BLOCKED"
-          reason={`內容草稿資料暫時無法讀取；後端負責人 Jason/Elva。細節：${error}`}
+          reason={`內容草稿資料暫時無法讀取；後端負責人 Jason/Elva。${error}`}
           updatedAt={requestedAt}
         />
       )}

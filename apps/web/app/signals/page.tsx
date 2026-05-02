@@ -122,6 +122,7 @@ function categoryLabel(value: string | null | undefined) {
   if (key === "earnings") return "財報";
   if (key === "revenue") return "營收";
   if (key === "news") return "新聞";
+  if (key === "industry") return "產業";
   if (key === "theme") return "主題";
   if (key === "technical") return "技術";
   if (key === "fundamental") return "基本面";

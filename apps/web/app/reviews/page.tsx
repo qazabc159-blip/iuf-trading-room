@@ -1,5 +1,6 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getReviews } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 import type { ReviewEntry } from "@iuf-trading-room/contracts";
 
 function formatDateTime(value: string) {
@@ -50,7 +51,7 @@ export default async function ReviewsPage() {
     const response = await getReviews();
     reviews = sortReviews(response.data ?? []);
   } catch (err) {
-    error = err instanceof Error ? err.message : "交易檢討讀取失敗";
+    error = friendlyDataError(err, "交易檢討暫時無法讀取。");
   }
 
   return (
@@ -63,7 +64,7 @@ export default async function ReviewsPage() {
       {error && (
         <ReviewStatePanel
           state="BLOCKED"
-          reason={`交易檢討資料暫時無法讀取；後端負責人 Jason/Elva。細節：${error}`}
+          reason={`交易檢討資料暫時無法讀取；後端負責人 Jason/Elva。${error}`}
           updatedAt={requestedAt}
         />
       )}

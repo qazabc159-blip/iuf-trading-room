@@ -52,6 +52,19 @@ function formatTime(value: string | null | undefined) {
   return date.toLocaleTimeString("zh-TW", { hour12: false });
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 function stateTone(state: LoadState["state"]) {
   if (state === "LIVE") return "up";
   if (state === "EMPTY") return "gold";
@@ -82,6 +95,52 @@ function severityTone(value: string | undefined) {
   if (value === "warning") return "gold";
   if (value === "success") return "up";
   return "muted";
+}
+
+function opsModeLabel(value: string | null | undefined) {
+  if (!value) return "--";
+  if (value === "production") return "正式";
+  if (value === "demo") return "展示";
+  if (value === "memory") return "記憶模式";
+  if (value === "disabled") return "停用";
+  return value.replace(/[_-]/g, " ");
+}
+
+function latestBucketLabel(value: string) {
+  const key = value.toLowerCase();
+  if (key.includes("theme")) return "主題";
+  if (key.includes("compan")) return "公司";
+  if (key.includes("signal")) return "訊號";
+  if (key.includes("plan")) return "計畫";
+  if (key.includes("brief")) return "簡報";
+  if (key.includes("review")) return "覆盤";
+  return value.replace(/[_-]/g, " ");
+}
+
+function auditActionLabel(value: string) {
+  const key = value.toUpperCase();
+  if (key === "READ") return "讀取";
+  if (key === "WRITE") return "寫入";
+  if (key === "CREATE") return "新增";
+  if (key === "UPDATE") return "更新";
+  if (key === "DELETE") return "刪除";
+  if (key === "LOGIN") return "登入";
+  if (key === "LOGOUT") return "登出";
+  return value.replace(/[_-]/g, " ");
+}
+
+function entityLabel(value: string | null | undefined) {
+  if (!value) return "資料列";
+  const key = value.toLowerCase();
+  if (key.includes("theme")) return "主題";
+  if (key.includes("compan")) return "公司";
+  if (key.includes("signal")) return "訊號";
+  if (key.includes("plan")) return "交易計畫";
+  if (key.includes("brief")) return "每日簡報";
+  if (key.includes("review")) return "覆盤";
+  if (key.includes("paper")) return "模擬交易";
+  if (key.includes("order")) return "委託";
+  return value.replace(/[_-]/g, " ");
 }
 
 function SourceLine({ result }: { result: LoadState }) {
@@ -127,7 +186,7 @@ export default async function OpsPage() {
           { label: "訊號", value: data ? stats?.signals ?? 0 : "--" },
           { label: "佇列", value: data ? queue?.totalJobs ?? 0 : "--", tone: (queue?.failed ?? 0) > 0 ? "down" : "muted" },
           { label: "稽核", value: data ? data.audit.total : "--", tone: data && data.audit.total > 0 ? "gold" : "muted" },
-          { label: "Worker", value: healthLabel(obs?.workerStatus), tone: obs ? healthTone(obs.workerStatus) : "muted" },
+          { label: "背景服務", value: healthLabel(obs?.workerStatus), tone: obs ? healthTone(obs.workerStatus) : "muted" },
         ]}
         columns={7}
       />
@@ -140,8 +199,8 @@ export default async function OpsPage() {
             {data && (
               <div style={{ border: "1px solid var(--night-rule-strong)" }}>
                 {[
-                  ["工作區", `${data.workspace.name} / ${data.workspace.slug}`],
-                  ["產生時間", data.generatedAt],
+                  ["工作區", data.workspace.name || "主控工作區"],
+                  ["產生時間", formatDateTime(data.generatedAt)],
                   ["核心公司", String(data.stats.coreCompanies)],
                   ["直接受惠", String(data.stats.directCompanies)],
                   ["進行計畫", String(data.stats.activePlans)],
@@ -158,15 +217,15 @@ export default async function OpsPage() {
             )}
           </Panel>
 
-          <Panel code="JOB-Q" title="OpenAlice 佇列" sub="背景執行觀測" right={healthLabel(obs?.workerStatus) ?? "暫停"}>
-            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，OpenAlice 觀測先隱藏。</div>}
-            {data && !obs && <div className="terminal-note"><span className="tg gold">無資料</span> 沒有 OpenAlice 觀測 payload。</div>}
+          <Panel code="JOB-Q" title="背景佇列" sub="背景執行觀測" right={healthLabel(obs?.workerStatus) ?? "暫停"}>
+            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，背景佇列觀測先隱藏。</div>}
+            {data && !obs && <div className="terminal-note"><span className="tg gold">無資料</span> 沒有背景佇列觀測資料。</div>}
             {obs && queue && (
               <>
                 {[
-                  ["Worker", healthLabel(obs.workerStatus), healthTone(obs.workerStatus)],
+                  ["背景服務", healthLabel(obs.workerStatus), healthTone(obs.workerStatus)],
                   ["掃描", healthLabel(obs.sweepStatus), healthTone(obs.sweepStatus)],
-                  ["模式", obs.metrics.mode, "muted"],
+                  ["模式", opsModeLabel(obs.metrics.mode), "muted"],
                   ["排隊", String(queue.queued), queue.queued > 0 ? "gold" : "muted"],
                   ["執行中", String(queue.running), queue.running > 0 ? "up" : "muted"],
                   ["失敗", String(queue.failed), queue.failed > 0 ? "down" : "muted"],
@@ -187,9 +246,9 @@ export default async function OpsPage() {
             {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，最新資料列先隱藏。</div>}
             {data && Object.entries(data.latest).flatMap(([bucket, rows]) =>
               rows.slice(0, 3).map((row) => (
-                <div className="row telex-row" style={{ gridTemplateColumns: "76px 92px 1fr" }} key={`${bucket}-${row.id}`}>
-                  <span className="tg soft">{formatTime(row.timestamp)}</span>
-                  <span className="tg gold">{bucket}</span>
+                <div className="row telex-row" style={{ gridTemplateColumns: "112px 82px 1fr" }} key={`${bucket}-${row.id}`}>
+                  <span className="tg soft">{formatDateTime(row.timestamp)}</span>
+                  <span className="tg gold">{latestBucketLabel(bucket)}</span>
                   <span className="tg" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {row.label}{row.subtitle ? ` / ${row.subtitle}` : ""}
                   </span>
@@ -208,7 +267,7 @@ export default async function OpsPage() {
             {data?.audit.actions.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 沒有稽核摘要。</div>}
             {data?.audit.actions.map((item) => (
               <div className="row limit-row" key={item.action}>
-                <span className="tg gold">{item.action}</span>
+                <span className="tg gold">{auditActionLabel(item.action)}</span>
                 <span className="num" style={{ gridColumn: "span 2", textAlign: "right" }}>{item.count}</span>
               </div>
             ))}
@@ -218,11 +277,11 @@ export default async function OpsPage() {
             {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，稽核事件先隱藏。</div>}
             {data?.audit.recent.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 沒有最近稽核列。</div>}
             {data?.audit.recent.slice(0, 10).map((event) => (
-              <div className="row telex-row" style={{ gridTemplateColumns: "76px 82px 1fr" }} key={event.id}>
-                <span className="tg soft">{formatTime(event.createdAt)}</span>
-                <span className={`tg ${severityTone(event.action === "DELETE" ? "danger" : event.action === "WRITE" ? "warning" : "info")}`}>{event.action}</span>
+              <div className="row telex-row" style={{ gridTemplateColumns: "112px 82px 1fr" }} key={event.id}>
+                <span className="tg soft">{formatDateTime(event.createdAt)}</span>
+                <span className={`tg ${severityTone(event.action === "DELETE" ? "danger" : event.action === "WRITE" ? "warning" : "info")}`}>{auditActionLabel(event.action)}</span>
                 <span className="tg" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {event.entityType} / {event.entityId}
+                  {entityLabel(event.entityType)} / {event.entityId}
                 </span>
               </div>
             ))}
