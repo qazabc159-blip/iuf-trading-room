@@ -708,18 +708,28 @@ const inputStyle: React.CSSProperties = {
 
 const segmentedStyle: React.CSSProperties = {
   display: "flex",
+  flexWrap: "wrap",
   border: "1px solid var(--night-rule-strong, #333)",
   minHeight: 64,
+  overflow: "hidden",
 };
 
 const segmentButtonStyle: React.CSSProperties = {
-  flex: 1,
+  flex: "1 1 92px",
+  minWidth: 72,
+  minHeight: 62,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
   background: "transparent",
   border: "none",
   padding: "18px 20px",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   fontWeight: 700,
+  lineHeight: 1.25,
+  whiteSpace: "nowrap",
+  wordBreak: "keep-all",
   cursor: "pointer",
 };
 
