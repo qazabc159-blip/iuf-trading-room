@@ -2547,8 +2547,15 @@ body:has(.login-route) > div {
 .company-side-column {
   min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 28px;
+}
+
+.company-main-column > *,
+.company-side-column > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .source-status-card {
