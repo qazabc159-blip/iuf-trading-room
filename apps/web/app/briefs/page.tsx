@@ -4,6 +4,8 @@ import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
 
+export const dynamic = "force-dynamic";
+
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", { hour12: false });
 }
@@ -109,19 +111,22 @@ export default async function BriefsPage() {
 
       {!error && latest && (
         <>
-          <Panel
-            code="BRF-LIVE"
-            title={marketLabel(latest.marketState)}
-            sub={latest.date}
-            right={
-              <span className="source-line" style={{ margin: 0 }}>
+          <section className="daily-brief-sheet">
+            <div className="daily-brief-head">
+              <div>
+                <span className="tg panel-code">每日簡報</span>
+                <h2>{latest.date}</h2>
+                <p>台股操作摘要 / 正式資料庫</p>
+              </div>
+              <div className="daily-brief-meta">
                 <span className="badge badge-green">正常</span>
+                <span>盤勢：{marketLabel(latest.marketState)}</span>
                 <span>來源：每日簡報資料庫</span>
                 <span>更新 {formatDateTime(latest.createdAt)}</span>
-              </span>
-            }
-          >
-            <div className="brief-section-list">
+              </div>
+            </div>
+
+            <div className="daily-brief-body">
               {latest.sections.map((section) => (
                 <article className="brief-section" key={`${latest.id}-${section.heading}`}>
                   <h2>{cleanExternalHeadline(section.heading, "日報段落")}</h2>
@@ -129,9 +134,16 @@ export default async function BriefsPage() {
                 </article>
               ))}
             </div>
-          </Panel>
+          </section>
 
-          <Panel code="BRF-HIST" title="簡報歷史" right={`${briefs.length} 筆`}>
+          <section className="daily-brief-history">
+            <div className="plans-surface-head compact">
+              <div>
+                <span className="tg panel-code">簡報歷史</span>
+                <h2>資料庫紀錄</h2>
+              </div>
+              <span className="tg soft">{briefs.length} 筆</span>
+            </div>
             <div className="brief-history-table">
               <div className="brief-history-row table-head">
                 <span>日期</span>
@@ -150,7 +162,7 @@ export default async function BriefsPage() {
                 </div>
               ))}
             </div>
-          </Panel>
+          </section>
         </>
       )}
     </PageFrame>
