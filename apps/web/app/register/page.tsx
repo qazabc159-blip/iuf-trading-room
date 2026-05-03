@@ -103,7 +103,7 @@ export default function RegisterPage() {
           </div>
 
           <form className="login-panel" onSubmit={submit} noValidate>
-            <div className="panel-head" style={{ paddingTop: 0 }}>
+            <div className="panel-head">
               <div>
                 <span className="tg panel-code">註冊</span>
                 <span className="tg muted"> · </span>
