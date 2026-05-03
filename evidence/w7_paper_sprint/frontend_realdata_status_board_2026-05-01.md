@@ -4,6 +4,28 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 23:20 Taipei - Codex heartbeat pass 49 - global edge breathing-room repair
+
+**Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/globals.css` - added shared page/panel/hud gutter variables and increased breathing-room for page headers, panels, panel headings, sidebar icon rows, K-line toolbars, K-line pending/meta rows, company master sections, dense field boxes, and mode cards.
+- `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx` - increased spacing in the company-page simulated order ticket source bar, safety banner, form grid, segmented controls, truth notes, preview box, and ledger area.
+- `apps/web/components/DataSourceBadge.tsx` - moved the bottom-right source badge farther away from viewport edges and reduced letter crowding.
+
+**Behavior**:
+- Addresses the user-reported issue where labels, icons, K-line controls, and order-ticket text sat too close to borders or separator lines.
+- This is layout-only; it does not change broker/write-side behavior, data contracts, order units, or Railway secrets.
+
+**Checks**:
+- `git diff --check -- apps/web/app/globals.css apps/web/components/DataSourceBadge.tsx apps/web/app/companies/[symbol]/PaperOrderPanel.tsx` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Browser QA and production deploy/smoke pending in this cycle after PR merge.
+
+**Blockers / next bypass**:
+- Freeze directive file `evidence/w7_paper_sprint/TO_CODEX_freeze_breach_revert_and_banner_2026-05-02.md` is not present in this worktree; continuing under the latest user freeze instructions and existing board stop-lines.
+
 ### 2026-05-03 10:54 Taipei - Codex heartbeat pass 47 - plans copy cleanup
 
 **Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

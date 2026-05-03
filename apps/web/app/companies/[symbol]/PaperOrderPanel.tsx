@@ -659,8 +659,8 @@ const sourceBarStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontSize: 10.5,
   lineHeight: 1.75,
-  marginBottom: 26,
-  padding: "12px 14px",
+  marginBottom: 30,
+  padding: "14px 18px",
   border: "1px solid var(--night-rule, #222)",
   background: "rgba(255,255,255,0.012)",
 };
@@ -672,24 +672,24 @@ const bannerStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontWeight: 700,
   fontSize: 11,
-  lineHeight: 2,
-  padding: "20px 24px",
+  lineHeight: 2.05,
+  padding: "22px 28px",
   letterSpacing: "0.08em",
-  marginBottom: 34,
+  marginBottom: 38,
 };
 
 const gridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
-  gap: "30px 34px",
-  marginBottom: 34,
+  gap: "34px 40px",
+  marginBottom: 38,
 };
 
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   color: "var(--night-mid, #888)",
   display: "block",
-  marginBottom: 14,
+  marginBottom: 16,
   fontFamily: "var(--mono, monospace)",
   letterSpacing: "0.16em",
 };
@@ -700,8 +700,8 @@ const inputStyle: React.CSSProperties = {
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
-  minHeight: 60,
-  padding: "18px 20px",
+  minHeight: 64,
+  padding: "19px 22px",
   width: "100%",
   boxSizing: "border-box",
 };
@@ -709,14 +709,14 @@ const inputStyle: React.CSSProperties = {
 const segmentedStyle: React.CSSProperties = {
   display: "flex",
   border: "1px solid var(--night-rule-strong, #333)",
-  minHeight: 60,
+  minHeight: 64,
 };
 
 const segmentButtonStyle: React.CSSProperties = {
   flex: 1,
   background: "transparent",
   border: "none",
-  padding: "17px 18px",
+  padding: "18px 20px",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   fontWeight: 700,
@@ -731,13 +731,13 @@ const truthNoteStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   lineHeight: 1.75,
-  padding: "16px 12px",
+  padding: "18px 16px",
 };
 
 const previewBoxStyle: React.CSSProperties = {
   border: "1px solid var(--night-rule-strong, #333)",
-  padding: "24px 26px",
-  marginBottom: 26,
+  padding: "26px 30px",
+  marginBottom: 30,
 };
 
 const kvStyle: React.CSSProperties = {
@@ -760,8 +760,8 @@ const blockedGuardStyle: React.CSSProperties = {
 
 const ledgerStyle: React.CSSProperties = {
   borderTop: "1px solid var(--night-rule-strong, #333)",
-  marginTop: 30,
-  paddingTop: 24,
+  marginTop: 34,
+  paddingTop: 28,
 };
 
 const ledgerHeaderStyle: React.CSSProperties = {
