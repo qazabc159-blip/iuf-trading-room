@@ -4,6 +4,30 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 19:52 Taipei - Codex heartbeat pass 77 - dashboard/company template-stiffness repair
+
+**Scope**: demo-critical frontend repair only. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/page.tsx` - gave the dashboard lower work area explicit `dashboard-mosaic-*` structure so the homepage no longer renders as two columns of identical generic panels.
+- `apps/web/app/globals.css` - added dashboard mosaic styling, tighter homepage panel rhythm, compact company-master density, smaller company-detail side column, and dedicated K-line toolbar button styles.
+- `apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx` - reduced chart height from 460px to 392px and moved day/week/month/range controls onto dedicated compact `kline-tab` buttons instead of global large buttons.
+
+**Behavior**:
+- Homepage keeps the command-deck hero and real market strip, then presents watchlist/theme/ideas/intel/signals/ops as a lighter trading-room mosaic rather than repeating the same heavy bordered card template.
+- Company detail keeps the real OHLCV chart, explicit LIVE/EMPTY/BLOCKED states, and Taiwan order-unit safety; company master and validation sections use denser information rows instead of oversized boxes.
+- K-line controls remain truthful: day/week/month are derived from official OHLCV; intraday intervals stay labeled as waiting for KGI read-only data.
+
+**Checks**:
+- `git diff --check -- apps/web/app/page.tsx apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx apps/web/app/globals.css` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Authenticated local production Playwright QA on `localhost:3107` with production API cookie copied only in process memory swept `/`, `/companies/1101`, `/plans`, and `/briefs` at 1365px desktop and 390px mobile: 8/8 returned 200 with 0 horizontal overflow, 0 narrow vertical text stacks, 0 targeted raw diagnostic hits, 0 console errors, and 0 page errors. Evidence: `evidence/w7_paper_sprint/local_visual_qa_pass77_dashboard_company_2026-05-03/`.
+
+**Blockers / next bypass**:
+- Production visual smoke still required after PR merge/deploy.
+- Remaining design debt: lower company panels and other secondary routes still need page-specific layouts instead of generic panel styling.
+
 ### 2026-05-03 23:39 Taipei - Codex heartbeat pass 50 - hud panel gutter follow-up
 
 **Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

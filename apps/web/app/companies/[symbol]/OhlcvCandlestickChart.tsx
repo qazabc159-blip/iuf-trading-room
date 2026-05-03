@@ -149,7 +149,7 @@ export function OhlcvCandlestickChart({
 
         chart = lc.createChart(el, {
           width,
-          height: 460,
+          height: 392,
           layout: {
             background: { color: "transparent" },
             textColor: "rgba(203,213,225,0.68)",
@@ -264,7 +264,7 @@ export function OhlcvCandlestickChart({
               key={item.value}
               type="button"
               onClick={() => setInterval(item.value)}
-              className="mini-button"
+              className="kline-tab"
               style={interval === item.value ? activeButtonStyle : undefined}
               title={item.note}
             >
@@ -278,7 +278,7 @@ export function OhlcvCandlestickChart({
               key={item.value}
               type="button"
               onClick={() => setRange(item.value)}
-              className="outline-button"
+              className="kline-tab"
               style={range === item.value ? activeButtonStyle : undefined}
             >
               {item.label}
@@ -318,7 +318,7 @@ export function OhlcvCandlestickChart({
           sourceLabel={badgeLabel}
         />
       ) : (
-        <div ref={containerRef} style={{ width: "100%", minHeight: 460 }} />
+        <div ref={containerRef} style={{ width: "100%", minHeight: 392 }} />
       )}
     </section>
   );
