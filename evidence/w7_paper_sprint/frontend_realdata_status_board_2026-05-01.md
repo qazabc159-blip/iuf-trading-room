@@ -4,6 +4,27 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 10:33 Taipei - Codex heartbeat pass 46 - company registry industry labels
+
+**Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/companies/page.tsx` - company registry now displays, searches, sorts, and filters industry-chain values through `industryLabel()` instead of exposing raw English category keys.
+- `apps/web/lib/industry-i18n.ts` - added all currently unmapped production company-master industry values found from `/api/v1/companies`.
+
+**Behavior**:
+- `/companies` no longer shows raw English industry names such as `Advertising Agencies`, `Aerospace Defense`, or `Agricultural Inputs` in the visible table/dropdown.
+- The raw backend value is preserved for filtering; this is display-only localization.
+
+**Checks**:
+- Production company-master mapping audit PASS: fetched `/api/v1/companies`, found 3,470 rows / 108 unique industry values / 0 unmapped display labels after this patch.
+- `git diff --check -- apps/web/app/companies/page.tsx apps/web/lib/industry-i18n.ts evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+
+**Blockers / next bypass**:
+- None for this scoped localization pass.
+
 ### 2026-05-03 10:18 Taipei - Codex heartbeat pass 45 - production table breathing-room follow-up
 
 **Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
