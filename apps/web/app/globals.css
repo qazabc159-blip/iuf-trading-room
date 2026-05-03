@@ -1557,6 +1557,7 @@ button { font: inherit; }
     grid-column: 1;
     grid-template-columns: 1fr;
   }
+
 }
 
 @media (max-width: 1450px) {
@@ -1574,6 +1575,14 @@ button { font: inherit; }
   .dashboard-hero,
   .main-grid {
     grid-template-columns: 1fr;
+  }
+
+  .company-panels-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .company-panels-grid > section:nth-child(3) {
+    grid-column: 1;
   }
 
   .exec-grid {
@@ -2209,6 +2218,15 @@ body:has(.login-route) > div {
   padding: 8px 0 0;
 }
 
+.company-data-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--night-rule-strong, #333);
+}
+
 .table-scroll {
   width: 100%;
   overflow-x: auto;
@@ -2245,6 +2263,16 @@ body:has(.login-route) > div {
 
 .data-table td {
   color: var(--night-ink, #d8d4c8);
+}
+
+.company-data-table-fit {
+  min-width: 0;
+}
+
+.company-data-table-fit th,
+.company-data-table-fit td {
+  padding: 16px 14px;
+  line-height: 1.55;
 }
 
 .tick-row {

@@ -4,6 +4,35 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 08:31 Taipei - Codex heartbeat pass 39 - company financial table breathing room
+
+**Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/companies/[symbol]/FinancialsPanel.tsx` - simplified financial/revenue/dividend labels, normalized loading/empty/blocked copy, removed inline tab styling, and applied the compact data-table class to company financial tables.
+- `apps/web/app/globals.css` - company data panels collapse to one column below 1450px so 1365px desktop no longer squeezes the financial table into a half-width card; added reusable company data tab spacing and compact table cell padding.
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` - recorded this pass.
+
+**Behavior**:
+- Company detail lower data panels keep breathing room at 1365px instead of cutting the financial table against the card edge.
+- The financial panel now shows clean Traditional Chinese labels (`財報`, `月營收`, `股利`, `正常`, `載入中`, `來源`, `更新`) and avoids raw/garbled source copy.
+- This is UI/layout only. It does not change FinMind request paths, quote/K-line data, paper-order payloads, Taiwan odd-lot/board-lot conversion, broker paths, or backend contracts.
+
+**Endpoints / data**:
+- Existing read endpoints only: `GET /api/v1/companies/:id/financials`, `GET /api/v1/companies/:id/revenue`, `GET /api/v1/companies/:id/dividend`.
+- No new data source, no RSS/news feed, no commercial provider, no AI-generated market item, no fake success fallback.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS after rerun; the first parallel run hit the known `.next/types` generation race only.
+- `git diff --check -- apps/web/app/companies/[symbol]/FinancialsPanel.tsx apps/web/app/globals.css` PASS.
+- Local authenticated 1365px Playwright smoke on `/companies/1101` PASS for current real API state: status 200, 0 console/page errors, 0 body horizontal overflow, 0 non-scroll overflow elements, 0 narrow text stacks. Screenshot/report: `evidence/w7_paper_sprint/local_visual_qa_pass39_company_financials_2026-05-03/`.
+- Fixture-only financial table QA was attempted to force a live financial table while the local real endpoint returned blocked; tooling produced server logs but no final report, so production post-deploy smoke remains the decisive verification for the live-table case.
+
+**Blockers / next bypass**:
+- Production post-deploy check should re-run `/companies/1101` after this PR lands. If FinMind financials are live in production, verify `.table-scroll` no longer overflows; if blocked, the panel should truthfully show `暫停`.
+- Next safe task: continue all-page spacing/raw-copy sweep or add a focused company-page mobile breakpoint pass.
+
 ### 2026-05-03 05:50 Taipei - Codex heartbeat pass 29 - company hydration time-zone fix
 
 **Scope**: demo-critical UI/runtime repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
