@@ -1393,6 +1393,12 @@ export interface CompanyValuationRow {
   PBR: number;
 }
 
+export interface CompanyMarketValueRow {
+  date: string;
+  stock_id: string;
+  market_value: number;
+}
+
 export interface CompanyChipsData {
   foreign: { net30d: number };
   trust: { net30d: number };
@@ -1466,6 +1472,13 @@ export async function getCompanyValuation(companyId: string, params?: { days?: n
   if (params?.days) query.set("days", String(params.days));
   const qs = query.toString();
   return request<CompanyValuationRow[]>(`/api/v1/companies/${companyId}/valuation${qs ? `?${qs}` : ""}`);
+}
+
+export async function getCompanyMarketValue(companyId: string, params?: { days?: number }) {
+  const query = new URLSearchParams();
+  if (params?.days) query.set("days", String(params.days));
+  const qs = query.toString();
+  return request<CompanyMarketValueRow[]>(`/api/v1/companies/${companyId}/market-value${qs ? `?${qs}` : ""}`);
 }
 
 export async function getCompanyChips(companyId: string, params?: { days?: number }) {

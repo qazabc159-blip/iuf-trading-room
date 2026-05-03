@@ -115,12 +115,18 @@ export interface FinMindMarginShortRow {
   MarginPurchaseBuy: number;
   MarginPurchaseSell: number;
   MarginPurchaseCashRepayment: number;
+  MarginPurchaseLimit?: number;
   ShortSaleBuy: number;
   ShortSaleSell: number;
-  MarginPurchaseYesterday: number;
-  MarginPurchaseToday: number;
-  ShortSaleYesterday: number;
-  ShortSaleToday: number;
+  ShortSaleLimit?: number;
+  MarginPurchaseYesterday?: number;
+  MarginPurchaseToday?: number;
+  MarginPurchaseYesterdayBalance?: number;
+  MarginPurchaseTodayBalance?: number;
+  ShortSaleYesterday?: number;
+  ShortSaleToday?: number;
+  ShortSaleYesterdayBalance?: number;
+  ShortSaleTodayBalance?: number;
 }
 
 export interface FinMindDividendRow {
@@ -146,6 +152,12 @@ export interface FinMindPERRow {
   dividend_yield: number;
   PER: number;
   PBR: number;
+}
+
+export interface FinMindMarketValueRow {
+  date: string;
+  stock_id: string;
+  market_value: number;
 }
 
 export interface FinMindKBarRow {
@@ -629,6 +641,29 @@ export class FinMindClient {
 
     const rows = await this._fetch<FinMindPERRow>(
       "TaiwanStockPER",
+      stockId,
+      startDate,
+      endDate
+    );
+
+    if (rows.length > 0) {
+      await cacheSet(cacheKey, JSON.stringify(rows), TTL_FINANCIAL, this._redisOverride);
+    }
+    return rows;
+  }
+
+  // ── Market value ─────────────────────────────────────────────────────────
+
+  async getMarketValue(stockId: string, startDate: string, endDate: string): Promise<FinMindMarketValueRow[]> {
+    const cacheKey = `finmind:market-value:${stockId}:${startDate}:${endDate}`;
+
+    const cached = await cacheGet(cacheKey, this._redisOverride);
+    if (cached) {
+      try { return JSON.parse(cached) as FinMindMarketValueRow[]; } catch { /* fall through */ }
+    }
+
+    const rows = await this._fetch<FinMindMarketValueRow>(
+      "TaiwanStockMarketValue",
       stockId,
       startDate,
       endDate
