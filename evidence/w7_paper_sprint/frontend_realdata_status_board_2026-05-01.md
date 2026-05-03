@@ -4,6 +4,29 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 19:58 Taipei - Codex heartbeat pass 78 - company/plans/briefs rhythm repair
+
+**Scope**: demo-critical frontend repair only. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/globals.css` - reduced generic box treatment on company lower data panels, trade-plan workbench, daily brief sheet/history, plan cards, idea tickets, and dense tables.
+
+**Behavior**:
+- `/plans` now reads more like a decision workbench plus briefing rail instead of two oversized identical panels; trade plan rows use lighter separators and better text rhythm.
+- `/briefs` now presents the latest daily brief as a report sheet with section dividers, keeping the future AI-backed brief concept visible without fabricating new data.
+- `/companies/1101` keeps real K-line, compact day/week/month/range controls, and Taiwan odd-lot/board-lot safety while reducing the heavy boxed look in lower company data.
+
+**Checks**:
+- `git diff --check -- apps/web/app/globals.css` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS after build regenerated `.next/types`.
+- Authenticated local production Playwright QA on `localhost:3109` with production API cookie copied only in process memory swept `/`, `/companies/1101`, `/plans`, `/briefs`, and `/portfolio` at 1365px desktop and 390px mobile: 10/10 returned 200 with 0 body overflow, 0 narrow vertical text stacks, 0 suspect mojibake hits, 0 console errors, and 0 page errors. Mobile reported fixed-position/nav overflow samples while document width stayed 0 overflow. Evidence: `evidence/w7_paper_sprint/local_visual_qa_pass78_rhythm_2026-05-03/`.
+
+**Blockers / next bypass**:
+- Freeze directive file `evidence/w7_paper_sprint/TO_CODEX_freeze_breach_revert_and_banner_2026-05-02.md` is not present in this worktree; continuing under latest user freeze instructions and board stop-lines.
+- Production visual smoke still required after PR merge/deploy.
+- Remaining design debt: homepage still needs a stronger command-center visual pass; company detail can further reduce right-rail ticket heaviness without touching broker/write-side logic.
+
 ### 2026-05-03 19:52 Taipei - Codex heartbeat pass 77 - dashboard/company template-stiffness repair
 
 **Scope**: demo-critical frontend repair only. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
