@@ -4,6 +4,29 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 20:10 Taipei - Codex heartbeat pass 41 - duplicate reason + border breathing repair
+
+**Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/companies/duplicates/page.tsx` - expands duplicate-report reason mapping so backend phrases such as `richer graph coverage` and `canonical company card` render as Traditional Chinese operator copy.
+- `apps/web/app/globals.css` - increases shared panel/hud padding, company info section spacing, validation pill padding, K-line toolbar gutters, and K-line pending/meta row inset so labels/buttons do not sit against border lines.
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` - recorded this pass.
+
+**Behavior**:
+- `/companies/duplicates` should no longer leak the residual English `canonical company card` reason found by the previous production full-route sweep.
+- Company detail panels, the K-line controls, and the simulated-order area inherit more internal spacing from shared panel styles, reducing the text-against-line problem seen in the operator screenshots.
+- This pass is visual/copy only. It does not alter order payloads, odd-lot/board-lot conversion, broker paths, backend contracts, migrations, or data sources.
+
+**Checks**:
+- `git diff --check -- apps/web/app/companies/duplicates/page.tsx apps/web/app/globals.css evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Local authenticated 1365px Playwright smoke on `/companies/duplicates` and `/companies/1101` PASS after restarting a stale local server: status 200, 0 page errors, 0 horizontal overflow, 0 raw English lifecycle/reason hits, 0 mojibake, 0 narrow text stacks. Screenshot/report: `evidence/w7_paper_sprint/local_visual_qa_pass41_border_reason_2026-05-03_rerun/`.
+
+**Blockers / next bypass**:
+- None for this scoped UI fix. If production deploy lags, verify GitHub/Railway deploy status and continue local route QA instead of waiting.
+
 ### 2026-05-03 08:42 Taipei - Codex heartbeat pass 40 - duplicate page text containment
 
 **Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

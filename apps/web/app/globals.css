@@ -729,7 +729,7 @@ button { font: inherit; }
   border: 1px solid rgba(220, 228, 240, 0.10);
   border-top-color: var(--night-rule-strong);
   background: rgba(8, 11, 16, 0.56);
-  padding: 10px 38px 40px;
+  padding: 12px 40px 42px;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
@@ -1000,7 +1000,7 @@ button { font: inherit; }
 
 .panel.hud-frame,
 .hud-frame {
-  padding: 40px 44px 46px;
+  padding: 44px 48px 50px;
 }
 
 .ascii-head {
@@ -1009,8 +1009,8 @@ button { font: inherit; }
   align-items: center;
   gap: 14px;
   min-height: 52px;
-  margin: 0 0 28px;
-  padding: 2px 0 22px;
+  margin: 0 0 30px;
+  padding: 4px 0 24px;
   border-bottom: 1px solid var(--night-rule);
   color: var(--night-ink);
   font: 700 17px/1.55 var(--sans-tc);
@@ -1079,7 +1079,7 @@ button { font: inherit; }
 .company-info-section {
   border-top: 1px solid var(--night-rule);
   margin-top: 28px;
-  padding-top: 24px;
+  padding: 26px 2px 0;
 }
 
 .company-filter-row {
@@ -1110,8 +1110,8 @@ button { font: inherit; }
   grid-template-columns: 70px minmax(90px, 1fr) 34px;
   gap: 14px;
   align-items: center;
-  min-height: 30px;
-  padding: 3px 0;
+  min-height: 34px;
+  padding: 5px 0;
   color: var(--night-mid);
   font: 700 12px/1.4 var(--sans-tc);
 }
@@ -1137,7 +1137,7 @@ button { font: inherit; }
   display: flex;
   flex-wrap: wrap;
   gap: 16px 20px;
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .validation-pill {
@@ -1153,12 +1153,13 @@ button { font: inherit; }
 
 .validation-pill > b {
   width: fit-content;
-  padding: 5px 10px;
+  padding: 7px 11px;
+  line-height: 1.35;
 }
 
 .company-notes {
-  margin: 16px 0 0;
-  padding: 16px 18px;
+  margin: 18px 0 0;
+  padding: 20px 22px;
   border: 1px solid var(--night-rule);
   background: rgba(255, 255, 255, 0.018);
   white-space: pre-wrap;
@@ -1172,7 +1173,7 @@ button { font: inherit; }
   justify-content: space-between;
   gap: 22px 30px;
   margin: 30px 0 24px;
-  padding: 22px 0 26px;
+  padding: 24px 2px 28px;
   border-bottom: 1px solid var(--night-rule);
 }
 
@@ -1190,13 +1191,20 @@ button { font: inherit; }
   align-items: center;
   gap: 16px 20px;
   margin-bottom: 24px;
-  padding: 6px 0 8px;
+  padding: 14px 16px;
   line-height: 1.7;
+}
+
+.kline-pending-line {
+  border: 1px solid var(--night-rule);
+  background: rgba(255, 255, 255, 0.012);
 }
 
 .kline-meta-line {
   color: var(--night-mid);
   font: 700 11px/1.7 var(--mono);
+  border-top: 1px solid var(--night-rule);
+  border-bottom: 1px solid var(--night-rule);
 }
 
 .kline-pending-chip {
