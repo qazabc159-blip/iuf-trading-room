@@ -41,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-Hant" className={`${serif.variable} ${mono.variable} ${sansTc.variable} ${serifTc.variable}`}>
       <body style={{ margin: 0, display: "flex", minHeight: "100vh", background: "var(--night)" }}>
         <Sidebar />
-        <div style={{ flex: 1, display: "flex" }}>{children}</div>
+        <div style={{ flex: 1, minWidth: 0, display: "flex" }}>{children}</div>
         <CommandPalette />
       </body>
     </html>
