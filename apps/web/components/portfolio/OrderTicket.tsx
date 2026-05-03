@@ -1123,20 +1123,22 @@ const sourceBarStyle: CSSProperties = {
 
 const ticketShellStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "minmax(280px, 0.9fr) minmax(300px, 1.1fr)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
   gap: 34,
 };
 
 const formCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 42,
+  minWidth: 0,
+  padding: "clamp(24px, 5vw, 42px)",
   minHeight: 326,
   background: "linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.010))",
 };
 
 const previewCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 42,
+  minWidth: 0,
+  padding: "clamp(24px, 5vw, 42px)",
   minHeight: 326,
   background: "linear-gradient(180deg, rgba(200,148,63,0.040), rgba(255,255,255,0.010))",
 };

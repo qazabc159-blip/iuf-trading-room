@@ -24,7 +24,7 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
         aria-label="交易模式唯讀狀態"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
           border: "1px solid var(--exec-rule-strong)",
         }}
       >
@@ -37,24 +37,25 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
               aria-checked={on}
               title="目前僅顯示狀態；切換交易模式需要後端治理、稽核紀錄與風控回歸測試通過。"
               style={{
-                padding: "14px 12px",
+                minWidth: 0,
+                padding: "clamp(14px, 4vw, 18px)",
                 background: on ? "rgba(184,138,62,0.18)" : "transparent",
                 color: on ? "var(--gold-bright)" : "var(--exec-ink)",
                 borderLeft: i === 0 ? "none" : "1px solid var(--exec-rule)",
                 borderTop: on ? "2px solid var(--gold)" : "2px solid transparent",
-                fontFamily: "var(--mono)",
-                letterSpacing: "0.08em",
+                fontFamily: "var(--sans-tc)",
+                letterSpacing: 0,
                 textAlign: "left",
                 opacity: on ? 1 : 0.7,
               }}
             >
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span style={{ color: toneColor(m.tone), fontSize: 12, fontWeight: 700 }}>{m.label}</span>
-                <span style={{ color: on ? "var(--gold)" : "var(--exec-soft)", fontSize: 9.5 }}>
+              <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "4px 8px" }}>
+                <span style={{ color: toneColor(m.tone), fontSize: 12.5, fontWeight: 800, whiteSpace: "nowrap" }}>{m.label}</span>
+                <span style={{ color: on ? "var(--gold)" : "var(--exec-soft)", fontSize: 10, whiteSpace: "nowrap" }}>
                   {on ? "目前" : "未啟用"}
                 </span>
               </div>
-              <div style={{ fontFamily: "var(--serif-tc)", fontSize: 12.5, color: "var(--exec-mid)", marginTop: 4, letterSpacing: 0 }}>
+              <div style={{ fontFamily: "var(--sans-tc)", fontSize: 12.5, color: "var(--exec-mid)", marginTop: 8, lineHeight: 1.7, letterSpacing: 0 }}>
                 {m.sub}
               </div>
             </div>
