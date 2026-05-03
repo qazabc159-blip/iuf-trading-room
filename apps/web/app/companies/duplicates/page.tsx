@@ -33,8 +33,14 @@ function tierText(value: string) {
 
 function reasonText(value: string | null | undefined) {
   const reason = value?.trim() ?? "";
+  const lower = reason.toLowerCase();
   if (!reason) return "同代號公司主檔需要人工核對。";
-  if (reason.toLowerCase().includes("high ticker growth")) {
+  if (
+    lower.includes("high ticker growth") ||
+    lower.includes("richer graph coverage") ||
+    lower.includes("canonical company card") ||
+    lower.includes("graph coverage")
+  ) {
     return "此代號關聯與覆蓋度較高，建議作為保留主檔。";
   }
   return reason.replace(/[\uFFFD\uE000-\uF8FF]/g, "").trim() || "同代號公司主檔需要人工核對。";
