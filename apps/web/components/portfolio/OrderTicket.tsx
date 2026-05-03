@@ -1053,8 +1053,8 @@ const handoffStyle: CSSProperties = {
 const marketPreviewShellStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
   background: "linear-gradient(180deg, rgba(226,184,92,0.052), rgba(255,255,255,0.012))",
-  padding: 22,
-  marginBottom: 22,
+  padding: 26,
+  marginBottom: 26,
 };
 
 const marketPreviewHeaderStyle: CSSProperties = {
@@ -1112,8 +1112,8 @@ const sourceBarStyle: CSSProperties = {
   flexWrap: "wrap",
   gap: "12px 22px",
   alignItems: "center",
-  padding: "14px 16px",
-  marginBottom: 20,
+  padding: "16px 20px",
+  marginBottom: 24,
   border: "1px solid var(--exec-rule)",
   background: "rgba(255,255,255,0.012)",
   color: "var(--exec-mid)",
@@ -1129,14 +1129,14 @@ const ticketShellStyle: CSSProperties = {
 
 const formCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 38,
+  padding: 42,
   minHeight: 326,
   background: "linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.010))",
 };
 
 const previewCardStyle: CSSProperties = {
   border: "1px solid var(--exec-rule-strong)",
-  padding: 38,
+  padding: 42,
   minHeight: 326,
   background: "linear-gradient(180deg, rgba(200,148,63,0.040), rgba(255,255,255,0.010))",
 };
@@ -1242,14 +1242,14 @@ const truthNoteStyle: CSSProperties = {
 
 const kvListStyle: CSSProperties = {
   borderTop: "1px solid var(--exec-rule-strong)",
-  marginTop: 8,
+  marginTop: 12,
 };
 
 const kvStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "96px 1fr",
   gap: 14,
-  padding: "12px 0",
+  padding: "14px 0",
   borderBottom: "1px solid var(--exec-rule)",
   fontFamily: "var(--mono)",
   fontSize: 11.5,
@@ -1259,7 +1259,7 @@ const guardRowStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "130px 1fr",
   gap: 14,
-  padding: "12px 0",
+  padding: "14px 0",
   borderBottom: "1px solid var(--exec-rule)",
   color: "var(--tw-up-bright)",
   fontFamily: "var(--mono)",
@@ -1278,7 +1278,7 @@ const historyHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   gap: 18,
-  padding: "16px 18px",
+  padding: "18px 22px",
   borderBottom: "1px solid var(--exec-rule-strong)",
   color: "var(--exec-mid)",
   fontFamily: "var(--mono)",
@@ -1291,7 +1291,7 @@ const orderRowStyle: CSSProperties = {
   gridTemplateColumns: "72px 98px 92px 86px 74px 64px",
   gap: 18,
   alignItems: "center",
-  padding: "18px 18px",
+  padding: "20px 22px",
   borderTop: "1px solid var(--exec-rule)",
   fontFamily: "var(--mono)",
   fontSize: 11.5,

@@ -106,14 +106,14 @@ export function DataSourceBadge() {
       title={`${state.detail}${state.checkedAt ? ` | 檢查 ${state.checkedAt}` : ""}`}
       style={{
         position: "fixed",
-        right: 46,
-        bottom: 46,
-        zIndex: 9999,
+        right: 64,
+        bottom: 72,
+        zIndex: 60,
         display: "grid",
-        gap: 6,
-        minWidth: 208,
-        maxWidth: "min(380px, calc(100vw - 92px))",
-        padding: "16px 18px 17px",
+        gap: 8,
+        minWidth: 230,
+        maxWidth: "min(400px, calc(100vw - 128px))",
+        padding: "18px 20px 19px",
         border: `1px solid ${tone}`,
         color: tone,
         background: bg,
@@ -124,6 +124,7 @@ export function DataSourceBadge() {
         letterSpacing: 0,
         backdropFilter: "blur(4px)",
         boxShadow: "0 10px 28px rgba(0, 0, 0, 0.28)",
+        pointerEvents: "none",
       }}
     >
       <span>{state.label}</span>

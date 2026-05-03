@@ -790,7 +790,7 @@ const orderRowStyle: React.CSSProperties = {
   gridTemplateColumns: "minmax(0, 1fr) 80px 70px",
   gap: 16,
   borderTop: "1px solid var(--night-rule, #222)",
-  padding: "20px 10px",
+  padding: "22px 14px",
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
@@ -818,8 +818,8 @@ const oddLotPillStyle: React.CSSProperties = {
 
 const notionalPreviewStyle: React.CSSProperties = {
   border: "1px solid var(--night-rule-strong, #333)",
-  padding: "18px 20px",
-  marginBottom: 20,
+  padding: "20px 22px",
+  marginBottom: 22,
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
 };
@@ -884,7 +884,7 @@ const reviewRowStyle: React.CSSProperties = {
   gap: 16,
   alignItems: "start",
   borderBottom: "1px solid var(--night-rule, #222)",
-  padding: "18px 4px",
+  padding: "18px 8px",
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
