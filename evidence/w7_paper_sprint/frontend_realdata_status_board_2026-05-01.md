@@ -4,6 +4,22 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 23:39 Taipei - Codex heartbeat pass 50 - hud panel gutter follow-up
+
+**Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/globals.css` - raised the shared HUD panel horizontal gutter minimum from 54px to 64px so company-detail cards, K-line panels, and simulated order panels do not become tighter than the previous layout at 1365px.
+
+**Behavior**:
+- Follow-up to pass 49: keeps the breathing-room patch directionally correct for the user-reported company-page and simulated-order panels.
+
+**Checks**:
+- Pending in this cycle: diff check, web typecheck/build, PR CI, deploy, and production smoke.
+
+**Blockers / next bypass**:
+- None for this scoped CSS correction.
+
 ### 2026-05-03 23:20 Taipei - Codex heartbeat pass 49 - global edge breathing-room repair
 
 **Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

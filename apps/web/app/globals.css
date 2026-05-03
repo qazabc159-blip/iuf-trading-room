@@ -23,7 +23,7 @@
   --night-faint: #273142;
   --page-gutter-x: clamp(54px, 4vw, 86px);
   --panel-gutter-x: clamp(46px, 3.2vw, 66px);
-  --hud-gutter-x: clamp(54px, 3.8vw, 76px);
+  --hud-gutter-x: clamp(64px, 4.4vw, 88px);
 
   --exec-bg: var(--night);
   --exec-bg-1: var(--night-1);
