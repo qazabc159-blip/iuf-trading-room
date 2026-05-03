@@ -6,23 +6,26 @@ import {
   getCompanyDividends,
   getCompanyFinancials,
   getCompanyRevenue,
+  getCompanyValuation,
   type CompanyDividendRow,
   type CompanyFinancialRow,
   type CompanyRevenueRow,
+  type CompanyValuationRow,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 
-type TabKey = "financials" | "revenue" | "dividend";
+type TabKey = "financials" | "revenue" | "valuation" | "dividend";
 
 type TabState =
   | { status: "loading" }
   | { status: "blocked"; reason: string; fetchedAt: string }
   | { status: "empty"; reason: string; fetchedAt: string }
-  | { status: "live"; rows: CompanyFinancialRow[] | CompanyRevenueRow[] | CompanyDividendRow[]; fetchedAt: string };
+  | { status: "live"; rows: CompanyFinancialRow[] | CompanyRevenueRow[] | CompanyValuationRow[] | CompanyDividendRow[]; fetchedAt: string };
 
 const TABS: Array<{ key: TabKey; label: string; source: string }> = [
   { key: "financials", label: "財報", source: "FinMind 財報" },
   { key: "revenue", label: "月營收", source: "FinMind 月營收" },
+  { key: "valuation", label: "估值", source: "FinMind PER/PBR" },
   { key: "dividend", label: "股利", source: "FinMind 股利" },
 ];
 
@@ -61,6 +64,10 @@ function tabStateSummary(tab: TabKey, state: TabState | undefined) {
   if (tab === "revenue") {
     const row = (state.rows as CompanyRevenueRow[])[0];
     return row ? `${row.revenue_year}/${String(row.revenue_month).padStart(2, "0")} / ${money(row.revenue)} 十億` : "無資料";
+  }
+  if (tab === "valuation") {
+    const row = (state.rows as CompanyValuationRow[])[0];
+    return row ? `${row.date} / PER ${numberText(row.PER)}` : "無資料";
   }
 
   const row = (state.rows as CompanyDividendRow[])[0];
@@ -175,6 +182,33 @@ function DividendTable({ rows }: { rows: CompanyDividendRow[] }) {
   );
 }
 
+function ValuationTable({ rows }: { rows: CompanyValuationRow[] }) {
+  return (
+    <div className="table-scroll">
+      <table className="data-table company-data-table-fit">
+        <thead>
+          <tr>
+            <th><span className="table-cell-inner">日期</span></th>
+            <th><span className="table-cell-inner">本益比 PER</span></th>
+            <th><span className="table-cell-inner">股價淨值比 PBR</span></th>
+            <th><span className="table-cell-inner">殖利率</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.stock_id}-${row.date}`}>
+              <td><span className="table-cell-inner">{row.date}</span></td>
+              <td className="num"><span className="table-cell-inner">{numberText(row.PER)}</span></td>
+              <td className="num"><span className="table-cell-inner">{numberText(row.PBR)}</span></td>
+              <td className="num"><span className="table-cell-inner">{numberText(row.dividend_yield)}%</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Rows({ tab, state }: { tab: TabKey; state: TabState }) {
   if (state.status === "loading") {
     return (
@@ -190,6 +224,7 @@ function Rows({ tab, state }: { tab: TabKey; state: TabState }) {
 
   if (tab === "financials") return <FinancialTable rows={state.rows as CompanyFinancialRow[]} />;
   if (tab === "revenue") return <RevenueTable rows={state.rows as CompanyRevenueRow[]} />;
+  if (tab === "valuation") return <ValuationTable rows={state.rows as CompanyValuationRow[]} />;
   return <DividendTable rows={state.rows as CompanyDividendRow[]} />;
 }
 
@@ -211,7 +246,9 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         ? await getCompanyFinancials(companyId, { limit: 8 })
         : tab === "revenue"
           ? await getCompanyRevenue(companyId, { limit: 12 })
-          : await getCompanyDividends(companyId, { years: 5 });
+          : tab === "valuation"
+            ? await getCompanyValuation(companyId, { days: 120 })
+            : await getCompanyDividends(companyId, { years: 5 });
       const rows = response.data ?? [];
       setStates((prev) => ({
         ...prev,
@@ -247,8 +284,8 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
   return (
     <section className="panel hud-frame">
       <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[03]</span> 財報與營收
-        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 即時資料</span>
+        <span className="ascii-head-bracket">[03]</span> 財報與估值
+        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 財報 / 月營收 / PER / 股利</span>
       </h3>
 
       <div className="company-data-tabs finmind-tabs">

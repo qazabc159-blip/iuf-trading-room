@@ -1385,6 +1385,14 @@ export interface CompanyDividendRow {
   TotalDividend: number;
 }
 
+export interface CompanyValuationRow {
+  date: string;
+  stock_id: string;
+  dividend_yield: number;
+  PER: number;
+  PBR: number;
+}
+
 export interface CompanyChipsData {
   foreign: { net30d: number };
   trust: { net30d: number };
@@ -1451,6 +1459,13 @@ export async function getCompanyDividends(companyId: string, params?: { years?: 
   if (params?.years) query.set("years", String(params.years));
   const qs = query.toString();
   return request<CompanyDividendRow[]>(`/api/v1/companies/${companyId}/dividend${qs ? `?${qs}` : ""}`);
+}
+
+export async function getCompanyValuation(companyId: string, params?: { days?: number }) {
+  const query = new URLSearchParams();
+  if (params?.days) query.set("days", String(params.days));
+  const qs = query.toString();
+  return request<CompanyValuationRow[]>(`/api/v1/companies/${companyId}/valuation${qs ? `?${qs}` : ""}`);
 }
 
 export async function getCompanyChips(companyId: string, params?: { days?: number }) {

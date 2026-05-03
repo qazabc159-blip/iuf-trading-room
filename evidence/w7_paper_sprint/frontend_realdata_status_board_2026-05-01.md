@@ -2657,3 +2657,11 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change (follow-up): the company FinMind panel now preloads `財報`, `月營收`, and `股利` together, and each tab shows a compact latest-period summary. This makes the page visibly connected to the full FinMind data stack instead of looking like only the first tab is wired.
 - Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: production post-merge visual/API smoke required after deploy. KGI `libCGCrypt.so` remains the live-submit blocker only. `/api/v1/lab/bundles` remains a backend gap before Quant Lab can show real performance bundles. Stop-lines respected.
+
+### Codex cycle (2026-05-03 23:52 Taipei) - FinMind valuation panel wiring
+- Production deploy status: PR #132 merge commit `f0a726c` deployed successfully to Railway web deployment `11929944-2788-40f5-9413-dc18dc6655ef`; `/login`, `/companies/2330`, and API `/health` returned HTTP 200. Auth-gated FinMind diagnostics returned 401 without session as expected.
+- Files changed this cycle: `apps/api/src/data-sources/finmind-client.ts`, `apps/api/src/server.ts`, `apps/web/lib/api.ts`, `apps/web/app/companies/[symbol]/FinancialsPanel.tsx`, and this board.
+- Endpoints / data behavior: added authenticated read-only `GET /api/v1/companies/:id/valuation?days=90`, backed by FinMind official `TaiwanStockPER` rows (`date`, `stock_id`, `dividend_yield`, `PER`, `PBR`). `TaiwanStockPER` now reports READY in the FinMind source status list when the token is present.
+- UI behavior: company detail `財報與估值` panel now has a fourth `估值` tab showing PER, PBR, and dividend yield from FinMind. It follows the existing LIVE / EMPTY / BLOCKED panel behavior and does not fabricate values when FinMind returns no rows.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/api typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/api build` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: no live submit, no KGI SDK/write-side, no Railway secret, no migration 0020, no RSS/news/commercial-data feature, and no destructive DB action touched. Next bypass task: finish PR/CI/deploy for this read-only valuation slice, then continue company-page layout polish and FinMind dataset expansion.

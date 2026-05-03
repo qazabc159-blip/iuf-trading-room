@@ -140,6 +140,14 @@ export interface FinMindDividendRow {
   TotalDividend: number;
 }
 
+export interface FinMindPERRow {
+  date: string;
+  stock_id: string;
+  dividend_yield: number;
+  PER: number;
+  PBR: number;
+}
+
 export interface FinMindKBarRow {
   date: string;           // 'YYYY-MM-DD'
   minute: string;         // 'HH:mm:ss'
@@ -605,6 +613,29 @@ export class FinMindClient {
 
     if (rows.length > 0) {
       await cacheSet(cacheKey, JSON.stringify(rows), TTL_DIVIDEND, this._redisOverride);
+    }
+    return rows;
+  }
+
+  // ── PER / PBR / dividend yield ────────────────────────────────────────────
+
+  async getPER(stockId: string, startDate: string, endDate: string): Promise<FinMindPERRow[]> {
+    const cacheKey = `finmind:per:${stockId}:${startDate}:${endDate}`;
+
+    const cached = await cacheGet(cacheKey, this._redisOverride);
+    if (cached) {
+      try { return JSON.parse(cached) as FinMindPERRow[]; } catch { /* fall through */ }
+    }
+
+    const rows = await this._fetch<FinMindPERRow>(
+      "TaiwanStockPER",
+      stockId,
+      startDate,
+      endDate
+    );
+
+    if (rows.length > 0) {
+      await cacheSet(cacheKey, JSON.stringify(rows), TTL_FINANCIAL, this._redisOverride);
     }
     return rows;
   }
