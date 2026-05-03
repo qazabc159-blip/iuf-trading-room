@@ -1485,9 +1485,15 @@ button { font: inherit; }
 
 .company-info-section {
   border-top: 1px solid var(--night-rule);
-  margin-top: 12px;
+  margin-top: 10px;
   min-width: 0;
-  padding: 12px 12px 14px;
+  padding: 12px 12px 13px;
+}
+
+.company-inline-empty {
+  margin-top: 10px;
+  color: var(--night-mid);
+  font: 650 13px/1.85 var(--sans-tc);
 }
 
 .company-filter-row {
@@ -3253,8 +3259,8 @@ body:has(.login-route) > div {
   grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
-  min-height: 58px;
-  padding: 14px 16px;
+  min-height: 50px;
+  padding: 12px 14px;
   border: 0;
   border-bottom: 1px solid var(--night-rule, #222);
   background: transparent;
@@ -3290,7 +3296,14 @@ body:has(.login-route) > div {
 .source-status-detail {
   grid-column: 2 / 4;
   border-top: 1px solid var(--night-rule, #222);
-  padding: 14px 0 6px;
+  padding: 12px 0 4px;
+  line-height: 1.8;
+}
+
+.source-status-panel .ascii-head {
+  min-height: 0;
+  margin-bottom: 10px;
+  padding: 4px 8px 12px;
 }
 
 .company-kpi-strip {
