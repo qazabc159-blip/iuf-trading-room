@@ -20,7 +20,15 @@ export function contentDraftStatusBadge(status: ContentDraftStatus) {
 }
 
 export function contentDraftTargetLabel(draft: ContentDraftEntry) {
-  return draft.targetTable.replace(/_/g, " ");
+  const labels: Record<string, string> = {
+    daily_briefs: "每日簡報",
+    themes: "主題資料",
+    signals: "訊號證據",
+    companies: "公司資料",
+    trade_plans: "交易計畫",
+    reviews: "檢討紀錄",
+  };
+  return labels[draft.targetTable] ?? draft.targetTable.replace(/_/g, " ");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
