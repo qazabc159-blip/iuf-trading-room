@@ -21,6 +21,9 @@
   --night-mid: #91a0b5;
   --night-soft: #566276;
   --night-faint: #273142;
+  --page-gutter-x: clamp(54px, 4vw, 86px);
+  --panel-gutter-x: clamp(46px, 3.2vw, 66px);
+  --hud-gutter-x: clamp(54px, 3.8vw, 76px);
 
   --exec-bg: var(--night);
   --exec-bg-1: var(--night-1);
@@ -155,11 +158,11 @@ button { font: inherit; }
 
 .nav-link {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 20px;
   align-items: center;
   min-height: 68px;
-  padding: 18px 24px 18px 26px;
+  padding: 18px 26px 18px 28px;
   border-left: 2px solid transparent;
   color: var(--night-soft);
   transition: color 150ms ease, background 150ms ease, border-color 150ms ease, transform 150ms ease;
@@ -184,8 +187,8 @@ button { font: inherit; }
 
 .nav-icon {
   position: relative;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   align-self: center;
   justify-self: center;
   border: 1px solid var(--night-rule-strong);
@@ -413,7 +416,7 @@ button { font: inherit; }
   flex: 1;
   min-width: 0;
   min-height: 100vh;
-  padding: 42px 50px 72px;
+  padding: 46px var(--page-gutter-x) 96px;
   background:
     linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
     var(--night);
@@ -425,7 +428,7 @@ button { font: inherit; }
   grid-template-columns: minmax(260px, max-content) minmax(0, 1fr) auto;
   align-items: center;
   gap: 34px;
-  padding-bottom: 28px;
+  padding-bottom: 34px;
   border-bottom: 1px solid var(--night-rule-strong);
 }
 
@@ -511,7 +514,7 @@ button { font: inherit; }
 
 .terminal-note {
   margin-top: 22px;
-  padding: 18px 22px 22px;
+  padding: 20px 26px 24px;
   border-bottom: 1px solid var(--night-rule);
   color: var(--night-soft);
   font-size: 14px;
@@ -729,7 +732,7 @@ button { font: inherit; }
   border: 1px solid rgba(220, 228, 240, 0.10);
   border-top-color: var(--night-rule-strong);
   background: rgba(8, 11, 16, 0.56);
-  padding: 18px 44px 46px;
+  padding: 24px var(--panel-gutter-x) 52px;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
@@ -745,14 +748,16 @@ button { font: inherit; }
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 28px;
-  padding: 34px 8px 30px;
+  gap: 30px;
+  min-height: 78px;
+  padding: 38px 14px 34px;
   border-bottom: 1px solid var(--night-rule);
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 .panel-head > div:first-child {
   min-width: 0;
+  padding-right: 8px;
 }
 
 .panel-head > .tg.soft {
@@ -760,6 +765,8 @@ button { font: inherit; }
   max-width: 42%;
   text-align: right;
   overflow-wrap: anywhere;
+  padding-top: 3px;
+  line-height: 1.65;
 }
 
 .panel-code {
@@ -1000,17 +1007,17 @@ button { font: inherit; }
 
 .panel.hud-frame,
 .hud-frame {
-  padding: 52px 58px 58px;
+  padding: 58px var(--hud-gutter-x) 64px;
 }
 
 .ascii-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
   min-height: 58px;
   margin: 0 0 34px;
-  padding: 8px 10px 26px;
+  padding: 12px 16px 30px;
   border-bottom: 1px solid var(--night-rule);
   color: var(--night-ink);
   font: 700 17px/1.55 var(--sans-tc);
@@ -1035,12 +1042,12 @@ button { font: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 46px;
-  padding: 0 22px;
+  min-height: 48px;
+  padding: 0 24px;
   border: 1px solid var(--gold-deep);
   background: var(--gold);
   color: var(--night);
-  font: 800 13px/1 var(--sans-tc);
+  font: 800 13px/1.25 var(--sans-tc);
   white-space: nowrap;
 }
 
@@ -1051,9 +1058,9 @@ button { font: inherit; }
 .company-info-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 28px 38px;
-  margin: 24px 0 0;
-  padding: 0 10px;
+  gap: 32px 44px;
+  margin: 28px 0 0;
+  padding: 0 16px;
 }
 
 .company-info-grid dt,
@@ -1078,8 +1085,8 @@ button { font: inherit; }
 
 .company-info-section {
   border-top: 1px solid var(--night-rule);
-  margin-top: 32px;
-  padding: 30px 12px 0;
+  margin-top: 36px;
+  padding: 36px 18px 0;
 }
 
 .company-filter-row {
@@ -1108,10 +1115,10 @@ button { font: inherit; }
 .company-score-row {
   display: grid;
   grid-template-columns: 74px minmax(108px, 1fr) 42px;
-  gap: 18px;
+  gap: 20px;
   align-items: center;
-  min-height: 38px;
-  padding: 7px 0;
+  min-height: 42px;
+  padding: 9px 0;
   color: var(--night-mid);
   font: 700 12px/1.4 var(--sans-tc);
 }
@@ -1172,8 +1179,8 @@ button { font: inherit; }
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 24px 34px;
-  margin: 32px 0 26px;
-  padding: 24px 26px 26px;
+  margin: 36px 0 30px;
+  padding: 28px 30px 30px;
   border: 1px solid var(--night-rule-strong);
   background: rgba(255,255,255,0.014);
 }
@@ -1190,9 +1197,9 @@ button { font: inherit; }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 18px 22px;
-  margin-bottom: 26px;
-  padding: 16px 20px;
+  gap: 20px 24px;
+  margin-bottom: 30px;
+  padding: 18px 24px;
   line-height: 1.7;
 }
 
@@ -1284,14 +1291,14 @@ button { font: inherit; }
 
 .outline-button {
   display: inline-flex;
-  min-height: 46px;
+  min-height: 48px;
   align-items: center;
   justify-content: center;
-  padding: 0 22px;
+  padding: 0 24px;
   border: 1px solid var(--night-rule-strong);
   background: var(--night-1);
   color: var(--night-mid);
-  font: 800 13px/1 var(--sans-tc);
+  font: 800 13px/1.25 var(--sans-tc);
   white-space: nowrap;
 }
 
@@ -1349,8 +1356,8 @@ button { font: inherit; }
 
 .field-box {
   border: 1px solid var(--night-rule-strong);
-  padding: 16px 18px;
-  min-height: 76px;
+  padding: 18px 20px;
+  min-height: 82px;
   background: rgba(255,255,255,0.018);
 }
 
@@ -1362,8 +1369,8 @@ button { font: inherit; }
 
 .mode-card {
   border: 1px solid var(--night-rule-strong);
-  padding: 12px;
-  min-height: 96px;
+  padding: 14px;
+  min-height: 104px;
   background: var(--night-1);
 }
 
@@ -2593,6 +2600,12 @@ body:has(.login-route) > div {
 }
 
 @media (max-width: 1100px) {
+  :root {
+    --page-gutter-x: 28px;
+    --panel-gutter-x: 28px;
+    --hud-gutter-x: 28px;
+  }
+
   .dashboard-blocked-summary,
   .blocked-source-row {
     grid-template-columns: 1fr;
