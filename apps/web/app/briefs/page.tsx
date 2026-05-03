@@ -19,15 +19,12 @@ function sortBriefs(briefs: DailyBrief[]) {
 }
 
 function statusBadge(status: DailyBrief["status"]) {
-  const key = String(status).toLowerCase();
-  return key === "published" || key === "approved" ? "badge-green" : "badge-yellow";
+  return status === "published" ? "badge-green" : "badge-yellow";
 }
 
 function statusLabel(status: DailyBrief["status"]) {
-  const key = String(status).toLowerCase();
-  if (key === "published") return "已發布";
-  if (key === "approved") return "已核准";
-  if (key === "draft") return "草稿";
+  if (status === "published") return "已發布";
+  if (status === "draft") return "草稿";
   return status;
 }
 
@@ -111,22 +108,19 @@ export default async function BriefsPage() {
 
       {!error && latest && (
         <>
-          <section className="daily-brief-sheet">
-            <div className="daily-brief-head">
-              <div>
-                <span className="tg panel-code">每日簡報</span>
-                <h2>{latest.date}</h2>
-                <p>台股操作摘要 / 正式資料庫</p>
-              </div>
-              <div className="daily-brief-meta">
+          <Panel
+            code="BRF-LIVE"
+            title={marketLabel(latest.marketState)}
+            sub={latest.date}
+            right={
+              <span className="source-line" style={{ margin: 0 }}>
                 <span className="badge badge-green">正常</span>
-                <span>盤勢：{marketLabel(latest.marketState)}</span>
                 <span>來源：每日簡報資料庫</span>
                 <span>更新 {formatDateTime(latest.createdAt)}</span>
-              </div>
-            </div>
-
-            <div className="daily-brief-body">
+              </span>
+            }
+          >
+            <div className="brief-section-list">
               {latest.sections.map((section) => (
                 <article className="brief-section" key={`${latest.id}-${section.heading}`}>
                   <h2>{cleanExternalHeadline(section.heading, "日報段落")}</h2>
@@ -134,16 +128,9 @@ export default async function BriefsPage() {
                 </article>
               ))}
             </div>
-          </section>
+          </Panel>
 
-          <section className="daily-brief-history">
-            <div className="plans-surface-head compact">
-              <div>
-                <span className="tg panel-code">簡報歷史</span>
-                <h2>資料庫紀錄</h2>
-              </div>
-              <span className="tg soft">{briefs.length} 筆</span>
-            </div>
+          <Panel code="BRF-HIST" title="簡報歷史" right={`${briefs.length} 筆`}>
             <div className="brief-history-table">
               <div className="brief-history-row table-head">
                 <span>日期</span>
@@ -162,7 +149,7 @@ export default async function BriefsPage() {
                 </div>
               ))}
             </div>
-          </section>
+          </Panel>
         </>
       )}
     </PageFrame>

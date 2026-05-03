@@ -5,7 +5,6 @@ import { WatchlistSurface, type WatchlistSurfaceState } from "@/components/watch
 import {
   getCompanies,
   getCompanyAnnouncements,
-  getFinMindStatus,
   getMarketDataOverview,
   getSignals,
   getStrategyIdeas,
@@ -13,7 +12,6 @@ import {
   getWatchlistOverview,
   listStrategyRuns,
   type CompanyAnnouncement,
-  type FinMindSourceStatus,
   type MarketDataOverview,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
@@ -372,7 +370,7 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
           </div>
         </div>
       )}
-      <div className="quote-strip market-command-strip">
+      <div className="quote-strip">
         {cards.map((card) => (
           <div className="quote-card" key={card.key}>
             <div className="tg">
@@ -519,146 +517,6 @@ function OpsPanel({ overview, runs }: { overview: LoadState<MarketDataOverview |
   );
 }
 
-function FinMindPanel({ finmind }: { finmind: LoadState<FinMindSourceStatus | null> }) {
-  const datasets = finmind.state === "LIVE" && finmind.data ? finmind.data.datasets : [];
-  const readyCount = datasets.filter((dataset) => dataset.state === "READY").length;
-  const blockedCount = datasets.filter((dataset) => dataset.state === "BLOCKED").length;
-  return (
-    <Panel
-      code="FM-DATA"
-      title="FinMind 資料源"
-      sub="Sponsor 資料狀態；只讀、不代表下單通道"
-      right={<StatePill state={finmind.state} />}
-    >
-      <StateLine state={finmind} label="FinMind Sponsor" />
-      <EmptyOrBlocked state={finmind} />
-      {finmind.state === "LIVE" && finmind.data && (
-        <>
-          <div className="quote-strip quote-strip-compact">
-            <div className="quote-card">
-              <div className="tg gold">Token</div>
-              <div className="quote-last num up">{finmind.data.tokenPresent ? "已接上" : "未設定"}</div>
-              <div className="tg soft">只回傳存在狀態，不顯示 token</div>
-            </div>
-            <div className="quote-card">
-              <div className="tg gold">資料集</div>
-              <div className="quote-last num">{readyCount}</div>
-              <div className="tg soft">{blockedCount} 項待接或凍結</div>
-            </div>
-            <div className="quote-card">
-              <div className="tg gold">額度</div>
-              <div className="quote-last num">待查</div>
-              <div className="tg soft">下一版接 user_info 安全回傳</div>
-            </div>
-          </div>
-          <div className="finmind-dataset-grid">
-            {datasets.slice(0, 10).map((dataset) => (
-              <div className="finmind-dataset-chip" key={dataset.key}>
-                <span className="tg gold">{dataset.label}</span>
-                <span className={`tg ${dataset.state === "READY" ? "up" : "soft"}`}>
-                  {dataset.state === "READY" ? "可用" : "待接"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </Panel>
-  );
-}
-
-function DashboardReadinessDeck({
-  marketOverview,
-  companies,
-  ideas,
-  news,
-  finmind,
-}: {
-  marketOverview: LoadState<MarketDataOverview | null>;
-  companies: LoadState<CompanyRow[]>;
-  ideas: LoadState<StrategyIdeaData | null>;
-  news: LoadState<NewsItem[]>;
-  finmind: LoadState<FinMindSourceStatus | null>;
-}) {
-  const datasets = finmind.state === "LIVE" && finmind.data ? finmind.data.datasets : [];
-  const readyDatasets = datasets.filter((dataset) => dataset.state === "READY");
-  const pendingDatasets = datasets.filter((dataset) => dataset.state !== "READY");
-  const quoteFresh = marketOverview.state === "LIVE" && marketOverview.data ? marketOverview.data.quotes.fresh : 0;
-  const quoteStale = marketOverview.state === "LIVE" && marketOverview.data ? marketOverview.data.quotes.stale : 0;
-  const companyCount = companies.state === "LIVE" ? companies.data.length : 0;
-  const ideaCount = ideas.state === "LIVE" && ideas.data ? ideas.data.summary.total : 0;
-  const liveNews = news.state === "LIVE" ? news.data.length : 0;
-
-  const lanes = [
-    {
-      label: "行情核心",
-      state: marketOverview.state,
-      metric: marketOverview.state === "LIVE" ? `${quoteFresh} 新鮮 / ${quoteStale} 待刷新` : stateText(marketOverview.state),
-      detail: "大盤、漲跌排行、量能與候選股可用性。",
-    },
-    {
-      label: "公司資料",
-      state: companies.state,
-      metric: companies.state === "LIVE" ? `${companyCount.toLocaleString("zh-TW")} 檔` : stateText(companies.state),
-      detail: "公司主檔、產業、公司頁 FinMind 財報與籌碼入口。",
-    },
-    {
-      label: "策略候選",
-      state: ideas.state,
-      metric: ideas.state === "LIVE" ? `${ideaCount} 筆` : stateText(ideas.state),
-      detail: "只做紙上決策候選，不自動送單。",
-    },
-    {
-      label: "重大訊息",
-      state: news.state,
-      metric: news.state === "LIVE" ? `${liveNews} 則` : stateText(news.state),
-      detail: "目前走公司公告端點；AI 每日簡報會在資料框架穩定後接上。",
-    },
-    {
-      label: "FinMind Sponsor",
-      state: finmind.state,
-      metric: finmind.state === "LIVE" ? `${readyDatasets.length} 組可用` : stateText(finmind.state),
-      detail: "只讀資料源，不代表券商下單或 live submit 已開。",
-    },
-  ];
-
-  return (
-    <section className="dashboard-readiness-deck" aria-label="台股資料接線圖">
-      <div className="dashboard-readiness-copy">
-        <span className="tg gold">資料接線圖</span>
-        <h3>先確認資料能不能用，再決定要看哪一檔。</h3>
-        <p>
-          FinMind Sponsor 999 會逐步補進 K 線、分 K、PER/PBR、法人、融資券、股權結構、股利、財報與新聞線索。
-          戰情台只呈現正式來源回傳的狀態；缺資料就標明原因，不用漂亮假面板混過去。
-        </p>
-      </div>
-      <div className="dashboard-readiness-lanes">
-        {lanes.map((lane) => (
-          <div className="dashboard-readiness-lane" key={lane.label}>
-            <div>
-              <span className="tg gold">{lane.label}</span>
-              <strong>{lane.metric}</strong>
-            </div>
-            <StatePill state={lane.state} />
-            <p>{lane.detail}</p>
-          </div>
-        ))}
-      </div>
-      <div className="dashboard-dataset-ribbon" aria-label="FinMind 可用資料集">
-        <span className="tg soft">Sponsor 資料覆蓋</span>
-        {(readyDatasets.length > 0 ? readyDatasets : pendingDatasets).slice(0, 9).map((dataset) => (
-          <span className={`dashboard-dataset-token ${dataset.state === "READY" ? "is-ready" : "is-pending"}`} key={dataset.key}>
-            {dataset.label}
-          </span>
-        ))}
-        {readyDatasets.length === 0 && pendingDatasets.length === 0 && (
-          <span className="dashboard-dataset-token is-pending">等待 FinMind 狀態端點</span>
-        )}
-      </div>
-    </section>
-  );
-}
-
 async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<StrategyIdeaData | null>) {
   const source = "重大訊息";
   if (companies.state !== "LIVE") {
@@ -762,40 +620,8 @@ async function loadWatchlist(): Promise<WatchlistSurfaceState> {
   }
 }
 
-async function loadFinMindStatus(): Promise<LoadState<FinMindSourceStatus | null>> {
-  const source = "FinMind Sponsor";
-  const updatedAt = new Date().toISOString();
-  try {
-    const res = await getFinMindStatus();
-    const data = res.data;
-    if (!data.tokenPresent || data.state === "BLOCKED") {
-      return {
-        state: "BLOCKED",
-        data,
-        updatedAt: data.updatedAt || updatedAt,
-        source,
-        reason: "FinMind token 或資料源診斷尚未就緒。",
-      };
-    }
-    return {
-      state: "LIVE",
-      data,
-      updatedAt: data.updatedAt || updatedAt,
-      source,
-    };
-  } catch (error) {
-    return {
-      state: "BLOCKED",
-      data: null,
-      updatedAt,
-      source,
-      reason: friendlyDataError(error),
-    };
-  }
-}
-
 export default async function DashboardPage() {
-  const [overview, themes, companies, ideas, runs, signals, watchlist, finmind] = await Promise.all([
+  const [overview, themes, companies, ideas, runs, signals, watchlist] = await Promise.all([
     load("市場總覽", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 5 })).data, (value) => value === null || value.quotes.total === 0),
     load("主題資料", [], async () => (await getThemes()).data, (value) => value.length === 0),
     load("公司資料", [], async () => (await getCompanies()).data, (value) => value.length === 0),
@@ -803,7 +629,6 @@ export default async function DashboardPage() {
     load("策略批次", null, async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data, (value) => value === null || value.items.length === 0),
     load("訊號證據", [], async () => (await getSignals()).data, (value) => value.length === 0),
     loadWatchlist(),
-    loadFinMindStatus(),
   ]);
   const news = await loadNews(companies, ideas);
   const marketOverview = overview.state === "LIVE" && overview.data?.generatedAt
@@ -815,7 +640,6 @@ export default async function DashboardPage() {
     `想法 ${ideas.state === "LIVE" && ideas.data ? ideas.data.summary.total : stateText(ideas.state)}`,
     `訊號 ${signals.state === "LIVE" ? signals.data.length : stateText(signals.state)}`,
     `重大訊息 ${news.state === "LIVE" ? news.data.length : stateText(news.state)}`,
-    `FinMind ${stateText(finmind.state)}`,
   ].join(" / ");
 
   const heroStats = [
@@ -823,17 +647,8 @@ export default async function DashboardPage() {
     { label: "主題", value: themes.state === "LIVE" ? String(themes.data.length) : stateText(themes.state), tone: themes.state === "LIVE" ? "gold" : "muted" },
     { label: "策略想法", value: ideas.state === "LIVE" && ideas.data ? String(ideas.data.summary.total) : stateText(ideas.state), tone: ideas.state === "LIVE" ? "gold" : "muted" },
     { label: "訊號", value: signals.state === "LIVE" ? String(signals.data.filter((signal) => !isInternalTestSignal(signal)).length) : stateText(signals.state), tone: signals.state === "LIVE" ? "gold" : "muted" },
-    { label: "FinMind", value: stateText(finmind.state), tone: finmind.state === "LIVE" ? "up" : "down" },
   ];
   const sourceStatuses: DashboardSourceStatus[] = [
-    {
-      label: "FinMind",
-      state: finmind.state,
-      source: finmind.source,
-      updatedAt: finmind.updatedAt,
-      reason: sourceReason(finmind),
-      next: "FinMind 恢復後會顯示台股日線、分 K、月營收、法人、融資券、股利與財報資料狀態。",
-    },
     {
       label: "市場總覽",
       state: marketOverview.state,
@@ -892,46 +707,29 @@ export default async function DashboardPage() {
       sub="台股戰情台"
       note={`戰情台 / ${summary}`}
     >
-      <section className="dashboard-hero dashboard-command-deck" aria-label="戰情台狀態">
+      <section className="dashboard-hero" aria-label="戰情台狀態">
         <div className="dashboard-hero-main">
           <span className="tg gold">IUF 台股戰情台</span>
-          <h2>把盤勢、資料源與候選股整理成一個真正能看的台股首頁。</h2>
-          <p>這裡先看行情是否接上、FinMind 覆蓋到哪裡、哪些候選股能進紙上觀察。下單仍鎖在模擬與風控層，正式券商送單等 KGI SDK 補齊。</p>
-          <div className="dashboard-hero-kpis dashboard-hero-kpis-inline">
-            {heroStats.map((item) => (
-              <div className="dashboard-hero-stat" key={item.label}>
-                <span className="tg soft">{item.label}</span>
-                <strong className={`num ${item.tone}`}>{item.value}</strong>
-              </div>
-            ))}
-          </div>
+          <h2>先確認資料真實性，再看訊號與候選名單。</h2>
+          <p>所有區塊只讀正式端點。沒有資料就明講無資料，端點暫停就明講暫停，不用假數據把畫面補滿。</p>
         </div>
-        <div className="dashboard-source-rail" aria-label="資料源健康">
-          {sourceStatuses.map((section) => (
-            <div className="dashboard-source-chip" key={section.label}>
-              <div>
-                <span className="tg gold">{section.label}</span>
-                <span className="tg soft"> / {formatDateTime(section.updatedAt)}</span>
-              </div>
-              <StatePill state={section.state} />
+        <div className="dashboard-hero-kpis">
+          {heroStats.map((item) => (
+            <div className="dashboard-hero-stat" key={item.label}>
+              <span className="tg soft">{item.label}</span>
+              <strong className={`num ${item.tone}`}>{item.value}</strong>
             </div>
           ))}
         </div>
       </section>
-      <MarketStrip overview={marketOverview} />
-      <DashboardReadinessDeck
-        marketOverview={marketOverview}
-        companies={companies}
-        ideas={ideas}
-        news={news}
-        finmind={finmind}
-      />
       {dashboardDegraded ? (
         <DashboardBlockedSummary sections={sourceStatuses} />
       ) : (
         <>
-          <div className="main-grid dashboard-mosaic-grid">
-            <div className="dashboard-mosaic-primary">
+          <MarketStrip overview={marketOverview} />
+
+          <div className="main-grid">
+            <div>
               <Panel code="WCH-LST" title="觀察清單" sub="報價、風控與候選股票" right={<StatePill state={watchlist.state} />}>
                 <WatchlistSurface result={watchlist} />
               </Panel>
@@ -939,8 +737,7 @@ export default async function DashboardPage() {
               <IdeasPanel ideas={ideas} />
             </div>
 
-            <div className="dashboard-mosaic-secondary">
-              <FinMindPanel finmind={finmind} />
+            <div>
               <MarketIntelPanel news={news} />
               <SignalsPanel signals={signals} />
               <OpsPanel overview={marketOverview} runs={runs} />
