@@ -1,39 +1,39 @@
 const knownEnglishCopy: Array<{ pattern: RegExp; text: string }> = [
   {
     pattern: /silicon wafer supply tightens|globalwafers expects price recovery/i,
-    text: "矽晶圓供給吃緊，SiC 與 AI 基板需求回溫；來源指出環球晶預期下半年庫存去化加快。",
+    text: "矽晶圓供給轉緊，SiC 與 AI 基板需求回溫，環球晶庫存去化速度優於預期。",
   },
   {
     pattern: /tsmc kumamoto phase 2|arizona n2/i,
-    text: "台積電熊本二期與亞利桑那 N2 進度維持；產能擴充支撐長期營收能見度。",
+    text: "台積電熊本二期與亞利桑那 N2 進度延續，先進製程擴產支撐長期營收能見度。",
   },
   {
     pattern: /ai cowos demand drives tsmc n3/i,
-    text: "AI CoWoS 需求推升台積電 N3 產能利用率，先進封裝訂單能見度延續。",
+    text: "AI 與 CoWoS 需求推升台積電 N3 利用率，先進封裝與晶圓代工仍是主軸。",
   },
   {
     pattern: /ai server demand drives tsmc advanced node/i,
-    text: "AI 伺服器需求帶動台積電先進製程利用率維持高檔。",
+    text: "AI 伺服器需求支撐台積電先進節點稼動率，需同步觀察估值與資金面。",
   },
   {
-    pattern: /聯亞 eml laser yield improvement|eml laser yield improvement/i,
-    text: "聯亞 EML 雷射良率改善至 68%。",
+    pattern: /eml laser yield improvement/i,
+    text: "聯亞 EML 雷射良率改善，後續需觀察量產穩定度與客戶拉貨。",
   },
   {
     pattern: /co-packaged optics .* next bottleneck|silicon photonics capacity/i,
-    text: "CPO 共同封裝光學可能成為 AI 資料中心擴張的下一個瓶頸；台積電與封測供應鏈的矽光子產能值得追蹤。",
+    text: "CPO 與矽光子成為 AI 資料中心擴張瓶頸，台廠供應鏈可追蹤但仍需驗證。",
   },
   {
     pattern: /audit verification theme/i,
-    text: "內部稽核主題；保留來源軌跡，不作自動交易判讀。",
+    text: "稽核驗證主題，用於追蹤資料品質與操作紀錄，不納入投資判斷。",
   },
   {
     pattern: /high bandwidth memory/i,
-    text: "HBM 高頻寬記憶體；追蹤 AI 加速器與先進封裝供應鏈。",
+    text: "HBM 受 AI 伺服器需求帶動，供應鏈需同時觀察價格、產能與客戶集中度。",
   },
   {
     pattern: /ajinomoto build-up film/i,
-    text: "ABF 載板與高階 IC 封裝基板供應鏈。",
+    text: "ABF 載板為高階 IC 封裝材料，需觀察 AI、伺服器與庫存循環。",
   },
 ];
 
@@ -44,13 +44,15 @@ const knownTradePlanCopy: Array<{ pattern: RegExp; text: string }> = [
   },
   {
     pattern: /^.*hit t1 at\s+([0-9]+(?:\.[0-9]+)?).*sold\s+([0-9/]+)\s+position.*breakeven stop.*$/i,
-    text: "達成第一目標價 $1；已賣出 $2 部位；剩餘部位以損益兩平停利停損管理。",
+    text: "已觸及第一目標 $1；賣出 $2 部位；其餘部位以損益兩平作為停損參考。",
   },
 ];
 
+const corruptMarkers = /�|Ã|Â|嚙|undefined|null/i;
+
 export function hasCorruptText(value: string | null | undefined) {
   if (!value) return false;
-  return /�|Ã|Â|undefined|null/i.test(value);
+  return corruptMarkers.test(value);
 }
 
 export function isEnglishHeavy(value: string | null | undefined) {
@@ -69,10 +71,10 @@ function applyKnownCopy(value: string) {
 
 function replaceKnownSourceTerms(value: string) {
   return value
-    .replace(/\bAudit Trail Live Check\b/g, "稽核軌跡檢查")
+    .replace(/\bAudit Trail Live Check\b/g, "稽核軌跡即時檢查")
     .replace(/\bAudit Trail\b/gi, "稽核軌跡")
-    .replace(/\bAudit verification theme\b/gi, "稽核驗證題材")
-    .replace(/\bAI Optics\s*\(->\s*CPO\)/g, "AI 光通訊 / CPO")
+    .replace(/\bAudit verification theme\b/gi, "稽核驗證主題")
+    .replace(/\bAI Optics\s*\(->\s*CPO\)/g, "AI 光通訊與 CPO")
     .replace(/\bAI Optics\b/g, "AI 光通訊")
     .replace(/\bBalanced\b/g, "平衡")
     .replace(/\bBROKEN\b/g, "待修")
@@ -81,7 +83,7 @@ function replaceKnownSourceTerms(value: string) {
 
 export function cleanExternalHeadline(
   value: string | null | undefined,
-  fallback = "內容尚未完成中文整理；保留來源紀錄，不納入正式判讀。"
+  fallback = "消息文字尚未完成中文整理；保留來源紀錄，不納入正式判讀。"
 ) {
   const raw = value?.trim();
   if (!raw || hasCorruptText(raw)) return fallback;
@@ -99,21 +101,24 @@ export function cleanNarrativeText(
 ) {
   const raw = value?.trim();
   if (!raw || hasCorruptText(raw)) return fallback;
+  const known = applyKnownCopy(raw);
+  if (known) return known;
   const replaced = replaceKnownSourceTerms(raw);
   if (replaced !== raw) return replaced;
-  return cleanExternalHeadline(raw, fallback);
+  if (isEnglishHeavy(raw)) return fallback;
+  return raw;
 }
 
 export function cleanTradePlanText(
   value: string | null | undefined,
-  fallback = "交易紀錄尚未完成中文整理；保留來源紀錄，不自動轉單。"
+  fallback = "交易計畫文字尚未完成中文整理；保留來源紀錄，不自動轉為委託。"
 ) {
   const raw = value?.trim();
   if (!raw || hasCorruptText(raw)) return fallback;
   for (const item of knownTradePlanCopy) {
     if (item.pattern.test(raw)) return raw.replace(item.pattern, item.text);
   }
-  return cleanExternalHeadline(raw, fallback);
+  return cleanNarrativeText(raw, fallback);
 }
 
 export function cleanRiskRewardText(value: string | null | undefined) {
@@ -127,16 +132,16 @@ export function cleanRiskRewardText(value: string | null | undefined) {
 export function cleanThemeThesis(slug: string | null | undefined, thesis: string | null | undefined) {
   const key = slug?.toLowerCase() ?? "";
   const bySlug: Record<string, string> = {
-    "orphan-audit-trail": "內部稽核軌跡檢查；目前只作資料品質與治理追蹤，不作交易判讀。",
-    "orphan-ai-optics": "AI 光通訊與 CPO 封裝題材；等待來源主檔補齊後再納入正式主題判讀。",
-    "5g": "5G 通訊與基地台供應鏈；目前主題資料尚未補齊正式投資論點。",
-    abf: "ABF 載板與高階 IC 封裝基板供應鏈。",
-    ai: "AI 訓練與推論伺服器供應鏈，從晶片到系統組裝成熟。",
-    apple: "蘋果公司台灣供應鏈成員。",
-    cowos: "台積電 CoWoS 先進封裝與 AI 晶片供應鏈。",
-    cpo: "CPO 光通訊與共同封裝光學供應鏈。",
-    euv: "先進製程關鍵微影設備與材料供應鏈。",
-    hbm: "HBM 高頻寬記憶體與 AI 加速器供應鏈。",
+    "orphan-audit-trail": "稽核軌跡檢查主題，保留作為資料品質與流程驗證，不納入正式選股判讀。",
+    "orphan-ai-optics": "AI 光通訊與 CPO 供應鏈仍有結構性需求，但需等待資料驗證後才納入正式主題。",
+    "5g": "5G 相關供應鏈以通訊設備、射頻與基礎建設為主，後續需補齊公司池與資料來源。",
+    abf: "ABF 載板受高階封裝與伺服器需求影響，需觀察庫存循環與報價回升。",
+    ai: "AI 伺服器與加速運算供應鏈仍是台股主軸，需分辨基本面與短線情緒。",
+    apple: "蘋果供應鏈需觀察新品週期、庫存與匯率影響。",
+    cowos: "CoWoS 先進封裝產能仍是 AI 供應鏈重點，需追蹤擴產與交期變化。",
+    cpo: "CPO 與矽光子是高速傳輸瓶頸題材，需等待公司資料與訂單驗證。",
+    euv: "EUV 與先進製程設備供應鏈需觀察台積電資本支出節奏。",
+    hbm: "HBM 高頻寬記憶體受 AI 伺服器需求帶動，需追蹤價格、產能與客戶集中度。",
   };
   if (bySlug[key]) return bySlug[key];
   return cleanNarrativeText(thesis, "主題說明待整理；目前保留來源主檔與公司池，不作自動解讀。");
