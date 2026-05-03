@@ -18,6 +18,8 @@ const INDUSTRY_LABEL: Record<string, string> = {
   // Semiconductors / Electronics
   "Semiconductors": "半導體",
   "Semiconductor Equipment & Materials": "半導體設備/材料",
+  "Semiconductor Equipment": "半導體設備",
+  "Semiconductor Materials": "半導體材料",
   "Electronic Components": "電子零組件",
   "Electronics & Computer Distribution": "電子通路",
   "Consumer Electronics": "消費電子",
@@ -31,17 +33,27 @@ const INDUSTRY_LABEL: Record<string, string> = {
   "Software - Infrastructure": "基礎軟體",
   "Internet Content & Information": "網路內容",
   "Internet Retail": "電商",
+  "Electronics Distribution": "電子通路",
+  "Other Electronics": "其他電子",
+  "Optical Components": "光學元件",
+  "EML laser chip maker": "EML 雷射晶片",
+  "Electronic Components -> Utilities": "電子零組件 → 公用事業",
+  "Industrial Computing": "工業電腦",
 
   // Industrial / Machinery
   "Specialty Industrial Machinery": "特用機械",
   "Industrial Distribution": "工業通路",
   "Electrical Equipment & Parts": "電機設備/零件",
   "Metal Fabrication": "金屬加工",
+  "[[Meta]]l Fabrication": "金屬加工",
   "Tools & Accessories": "工具/配件",
   "Business Equipment & Supplies": "商用設備",
   "Engineering & Construction": "工程/營建",
   "Pollution & Treatment Controls": "汙染/廢處理",
   "Security & Protection Services": "安全防護",
+  "Ground Transportation": "陸路運輸",
+  "Conglomerates": "綜合企業",
+  "Consulting Services": "顧問服務",
 
   // Chemicals / Materials
   "Specialty Chemicals": "特用化學",
@@ -55,6 +67,8 @@ const INDUSTRY_LABEL: Record<string, string> = {
   "Aluminum": "鋁",
   "Gold": "黃金",
   "Other Industrial Metals & Mining": "其他工業金屬",
+  "Other Industrial [[Meta]]ls & Mining": "其他工業金屬",
+  "Lumber & Wood Production": "木材/木製品",
 
   // Auto / Transport
   "Auto Manufacturers": "汽車整車",
@@ -65,6 +79,7 @@ const INDUSTRY_LABEL: Record<string, string> = {
   "Integrated Freight & Logistics": "物流",
   "Railroads": "鐵路",
   "Trucking": "貨運",
+  "Recreational Vehicles": "休旅車/露營車",
 
   // Energy / Utilities
   "Solar": "太陽能",
@@ -76,9 +91,13 @@ const INDUSTRY_LABEL: Record<string, string> = {
   "Thermal Coal": "動力煤",
   "Uranium": "鈾",
   "Utilities - Regulated Electric": "電力公用",
+  "Utilities - Regulated Gas": "天然氣公用",
+  "Utilities - Regulated Water": "水務公用",
   "Utilities - Renewable": "再生能源",
 
   // Health / Medical
+  "Health Information Services": "醫療資訊服務",
+  "Biotech - Therapeutics": "生技治療",
   "Medical Devices": "醫療器材",
   "Medical Instruments & Supplies": "醫療儀器/耗材",
   "Medical Distribution": "醫療通路",
@@ -108,6 +127,7 @@ const INDUSTRY_LABEL: Record<string, string> = {
   "Luxury Goods": "精品",
   "Household & Personal Products": "家用/個人用品",
   "Furnishings": "家具/居家",
+  "Furnishings, Fixtures & Appliances": "家具/裝修/家電",
   "Leisure": "休閒用品",
   "Personal Services": "個人服務",
   "Travel Services": "旅遊服務",
@@ -116,19 +136,30 @@ const INDUSTRY_LABEL: Record<string, string> = {
   "Entertainment": "娛樂",
   "Publishing": "出版",
   "Electronic Gaming & Multimedia": "遊戲/多媒體",
+  "Advertising Agencies": "廣告代理",
+  "Broadcasting": "廣播電視",
+  "Department Stores": "百貨零售",
+  "Education & Training Services": "教育訓練",
+  "Home Improvement Retail": "居家修繕零售",
 
   // Financial
+  "Banks": "銀行",
   "Banks - Diversified": "綜合銀行",
   "Banks - Regional": "區域銀行",
   "Asset Management": "資產管理",
+  "Capital Markets": "資本市場",
   "Credit Services": "信貸服務",
   "Insurance - Life": "壽險",
   "Insurance - Property & Casualty": "產險",
   "Insurance - Diversified": "綜合保險",
+  "Insurance - Reinsurance": "再保險",
+  "Insurance Brokers": "保險經紀",
+  "Financial Conglomerates": "金融控股/綜合金融",
 
   // Real Estate
   "Real Estate - Development": "不動產開發",
   "Real Estate - Services": "不動產服務",
+  "Real Estate Services": "不動產服務",
   "Real Estate - Diversified": "綜合不動產",
   "Residential Construction": "住宅營建",
 
@@ -141,6 +172,7 @@ const INDUSTRY_LABEL: Record<string, string> = {
 
   // Other
   "Aerospace & Defense": "航太國防",
+  "Aerospace Defense": "航太國防",
   "Packaging & Containers": "包材/容器",
   "Shell Companies": "空殼公司",
 

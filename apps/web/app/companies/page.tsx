@@ -8,6 +8,7 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getCompanies } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { industryLabel } from "@/lib/industry-i18n";
 
 const PAGE_SIZE = 50;
 type SortField = "ticker" | "name" | "chainPosition" | "beneficiaryTier";
@@ -112,7 +113,8 @@ export default function CompaniesPage() {
           const matchTicker = company.ticker.toLowerCase().includes(q);
           const matchName = company.name.toLowerCase().includes(q);
           const matchChain = company.chainPosition.toLowerCase().includes(q);
-          if (!matchTicker && !matchName && !matchChain) return false;
+          const matchChainLabel = industryLabel(company.chainPosition).toLowerCase().includes(q);
+          if (!matchTicker && !matchName && !matchChain && !matchChainLabel) return false;
         }
         if (filterChain && company.chainPosition !== filterChain) return false;
         if (filterTier && company.beneficiaryTier !== filterTier) return false;
@@ -122,6 +124,8 @@ export default function CompaniesPage() {
         let cmp: number;
         if (sortField === "beneficiaryTier") {
           cmp = tierRank[a.beneficiaryTier] - tierRank[b.beneficiaryTier];
+        } else if (sortField === "chainPosition") {
+          cmp = industryLabel(a.chainPosition).localeCompare(industryLabel(b.chainPosition), "zh-TW");
         } else {
           cmp = (a[sortField] ?? "").localeCompare(b[sortField] ?? "");
         }
@@ -192,7 +196,7 @@ export default function CompaniesPage() {
           <select value={filterChain} onChange={(event) => setFilterChain(event.target.value)} style={selectStyle}>
             <option value="">全部產業鏈</option>
             {chainPositions.map((chainPosition) => (
-              <option key={chainPosition} value={chainPosition}>{chainPosition}</option>
+              <option key={chainPosition} value={chainPosition}>{industryLabel(chainPosition)}</option>
             ))}
           </select>
           <select value={filterTier} onChange={(event) => setFilterTier(event.target.value)} style={{ ...selectStyle, flex: "0 1 140px" }}>
@@ -260,7 +264,7 @@ export default function CompaniesPage() {
                 <span className="tg gold" style={{ fontWeight: 700, fontFamily: "var(--mono)" }}>{company.ticker}</span>
                 <span className="tc">{company.name}</span>
                 <span className="tg muted" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {company.chainPosition}
+                  {industryLabel(company.chainPosition)}
                 </span>
                 <span>
                   <span className={tierBadge[company.beneficiaryTier]} style={{ fontSize: 10, padding: "3px 8px" }}>
