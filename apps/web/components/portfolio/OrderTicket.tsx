@@ -1075,7 +1075,7 @@ const marketSourceLineStyle: CSSProperties = {
 
 const marketPreviewGridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 132px), 1fr))",
   gap: 14,
   marginBottom: 16,
 };
