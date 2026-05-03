@@ -260,7 +260,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   const canSubmit = preview.status === "live" && !parsed.notionalExceedsCap;
 
   return (
-    <section className="panel hud-frame">
+    <section className="panel hud-frame paper-order-panel">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">[06]</span> 模擬委託
       </h3>
@@ -653,14 +653,14 @@ function formatTime(value: string) {
 const sourceBarStyle: React.CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
-  gap: "12px 22px",
+  gap: "8px 14px",
   alignItems: "center",
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 10.5,
   lineHeight: 1.75,
-  marginBottom: 30,
-  padding: "18px 22px",
+  marginBottom: 16,
+  padding: "10px 12px",
   border: "1px solid var(--night-rule, #222)",
   background: "rgba(255,255,255,0.012)",
 };
@@ -672,24 +672,24 @@ const bannerStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontWeight: 700,
   fontSize: 11,
-  lineHeight: 2.05,
-  padding: "24px 30px",
+  lineHeight: 1.85,
+  padding: "14px 16px",
   letterSpacing: 0,
-  marginBottom: 42,
+  marginBottom: 20,
 };
 
 const gridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "minmax(0, 1fr)",
-  gap: 30,
-  marginBottom: 38,
+  gap: 16,
+  marginBottom: 22,
 };
 
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   color: "var(--night-mid, #888)",
   display: "block",
-  marginBottom: 16,
+  marginBottom: 8,
   fontFamily: "var(--mono, monospace)",
   letterSpacing: "0.16em",
 };
@@ -700,8 +700,8 @@ const inputStyle: React.CSSProperties = {
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
-  minHeight: 64,
-  padding: "19px 22px",
+  minHeight: 48,
+  padding: "12px 14px",
   width: "100%",
   boxSizing: "border-box",
 };
@@ -710,21 +710,21 @@ const segmentedStyle: React.CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
   border: "1px solid var(--night-rule-strong, #333)",
-  minHeight: 64,
+  minHeight: 46,
   width: "100%",
   overflow: "hidden",
 };
 
 const segmentButtonStyle: React.CSSProperties = {
-  flex: "1 1 118px",
-  minWidth: 96,
-  minHeight: 62,
+  flex: "1 1 82px",
+  minWidth: 72,
+  minHeight: 44,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   background: "transparent",
   border: "none",
-  padding: "18px 20px",
+  padding: "11px 12px",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   fontWeight: 700,
