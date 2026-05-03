@@ -21,10 +21,14 @@ type TabState =
   | { status: "live"; rows: CompanyFinancialRow[] | CompanyRevenueRow[] | CompanyDividendRow[]; fetchedAt: string };
 
 const TABS: Array<{ key: TabKey; label: string; source: string }> = [
-  { key: "financials", label: "季報財務", source: "FinMind 財報" },
+  { key: "financials", label: "財報", source: "FinMind 財報" },
   { key: "revenue", label: "月營收", source: "FinMind 月營收" },
   { key: "dividend", label: "股利", source: "FinMind 股利" },
 ];
+
+function tabCopy(tab: TabKey) {
+  return TABS.find((item) => item.key === tab) ?? TABS[0];
+}
 
 function formatTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", { hour12: false });
@@ -48,7 +52,7 @@ function numberText(value: number | null | undefined, digits = 2) {
 function statusLabel(status: TabState["status"]) {
   if (status === "live") return "正常";
   if (status === "empty") return "無資料";
-  if (status === "loading") return "讀取中";
+  if (status === "loading") return "載入中";
   return "暫停";
 }
 
@@ -67,7 +71,7 @@ function StatePanel({ state, source }: { state: Extract<TabState, { status: "blo
 function FinancialTable({ rows }: { rows: CompanyFinancialRow[] }) {
   return (
     <div className="table-scroll">
-      <table className="data-table">
+      <table className="data-table company-data-table-fit">
         <thead>
           <tr>
             <th>期別</th>
@@ -100,7 +104,7 @@ function FinancialTable({ rows }: { rows: CompanyFinancialRow[] }) {
 function RevenueTable({ rows }: { rows: CompanyRevenueRow[] }) {
   return (
     <div className="table-scroll">
-      <table className="data-table">
+      <table className="data-table company-data-table-fit">
         <thead>
           <tr>
             <th>年月</th>
@@ -127,14 +131,14 @@ function RevenueTable({ rows }: { rows: CompanyRevenueRow[] }) {
 function DividendTable({ rows }: { rows: CompanyDividendRow[] }) {
   return (
     <div className="table-scroll">
-      <table className="data-table">
+      <table className="data-table company-data-table-fit">
         <thead>
           <tr>
             <th>年度</th>
-            <th>股利合計</th>
+            <th>總股利</th>
             <th>現金股利</th>
             <th>股票股利</th>
-            <th>日期</th>
+            <th>除權息日</th>
           </tr>
         </thead>
         <tbody>
@@ -157,13 +161,13 @@ function Rows({ tab, state }: { tab: TabKey; state: TabState }) {
   if (state.status === "loading") {
     return (
       <div className="state-panel">
-        <span className="badge badge-blue">讀取中</span>
-        <span className="tg soft">正在讀取 {TABS.find((item) => item.key === tab)?.label ?? "財務"} 資料。</span>
+        <span className="badge badge-blue">載入中</span>
+        <span className="tg soft">正在讀取 {tabCopy(tab).label} 資料</span>
       </div>
     );
   }
 
-  const source = TABS.find((item) => item.key === tab)?.source ?? "FinMind";
+  const source = tabCopy(tab).source;
   if (state.status === "blocked" || state.status === "empty") return <StatePanel state={state} source={source} />;
 
   if (tab === "financials") return <FinancialTable rows={state.rows as CompanyFinancialRow[]} />;
@@ -182,6 +186,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
 
     setStates((prev) => ({ ...prev, [tab]: { status: "loading" } }));
     const fetchedAt = new Date().toISOString();
+    const copy = tabCopy(tab);
 
     try {
       const response = tab === "financials"
@@ -197,7 +202,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
           : {
               status: "empty",
               fetchedAt,
-              reason: `這檔股票目前沒有 ${TABS.find((item) => item.key === tab)?.label ?? "財務"} 資料列。`,
+              reason: `目前沒有回傳 ${copy.label} 資料。`,
             },
       }));
     } catch (error) {
@@ -206,7 +211,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         [tab]: {
           status: "blocked",
           fetchedAt,
-          reason: friendlyDataError(error, `${TABS.find((item) => item.key === tab)?.label ?? "財務"}資料暫時無法讀取。`),
+          reason: friendlyDataError(error, `${copy.label}資料暫時無法讀取`),
         },
       }));
     }
@@ -217,16 +222,16 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
   }, [loadTab]);
 
   const currentState: TabState = states[activeTab] ?? { status: "loading" };
-  const activeSource = TABS.find((item) => item.key === activeTab)?.source ?? "FinMind";
+  const activeSource = tabCopy(activeTab).source;
 
   return (
     <section className="panel hud-frame">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">[03]</span> 財報與營收
-        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 正式基本面</span>
+        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 即時資料</span>
       </h3>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", borderBottom: "1px solid var(--night-rule-strong, #333)", marginBottom: 12, paddingBottom: 10 }}>
+      <div className="company-data-tabs">
         {TABS.map((tab) => (
           <button
             key={tab.key}
