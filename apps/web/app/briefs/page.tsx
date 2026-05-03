@@ -1,6 +1,7 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getBriefs } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
 
 function formatDateTime(value: string) {
@@ -16,12 +17,15 @@ function sortBriefs(briefs: DailyBrief[]) {
 }
 
 function statusBadge(status: DailyBrief["status"]) {
-  return status === "published" ? "badge-green" : "badge-yellow";
+  const key = String(status).toLowerCase();
+  return key === "published" || key === "approved" ? "badge-green" : "badge-yellow";
 }
 
 function statusLabel(status: DailyBrief["status"]) {
-  if (status === "published") return "已發布";
-  if (status === "draft") return "草稿";
+  const key = String(status).toLowerCase();
+  if (key === "published") return "已發布";
+  if (key === "approved") return "已核准";
+  if (key === "draft") return "草稿";
   return status;
 }
 
@@ -34,6 +38,7 @@ function marketLabel(value: string | null | undefined) {
   if (value === "Selective Attack") return "選擇性進攻";
   if (value === "Defense") return "防守";
   if (value === "Preservation") return "保全";
+  if (value === "Balanced") return "平衡";
   return value ?? "市場簡報";
 }
 
@@ -112,8 +117,8 @@ export default async function BriefsPage() {
             <div className="brief-section-list">
               {latest.sections.map((section) => (
                 <article className="brief-section" key={`${latest.id}-${section.heading}`}>
-                  <h2>{section.heading}</h2>
-                  <p>{section.body}</p>
+                  <h2>{cleanExternalHeadline(section.heading, "日報段落")}</h2>
+                  <p>{cleanNarrativeText(section.body, "段落尚未完成中文整理；保留來源紀錄。")}</p>
                 </article>
               ))}
             </div>

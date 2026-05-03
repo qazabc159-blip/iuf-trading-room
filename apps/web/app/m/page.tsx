@@ -8,6 +8,8 @@ import {
   getThemes,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
+import { reasonLabel } from "@/lib/strategy-vocab";
 
 export const dynamic = "force-dynamic";
 
@@ -122,7 +124,17 @@ function marketLabel(value: string | null | undefined) {
   if (value === "Selective Attack") return "選擇性進攻";
   if (value === "Defense") return "防守";
   if (value === "Preservation") return "保全";
+  if (value === "Balanced") return "平衡";
   return value ?? "--";
+}
+
+function briefStatusLabel(status: BriefRow["status"] | null | undefined) {
+  if (!status) return "無資料";
+  const key = status.toLowerCase();
+  if (key === "published" || key === "approved") return "已核准";
+  if (key === "draft") return "草稿";
+  if (key === "archived") return "封存";
+  return cleanNarrativeText(status, "狀態待整理");
 }
 
 function lifecycleLabel(value: string | null | undefined) {
@@ -196,14 +208,14 @@ export default async function MobileBrief() {
         )}
       </MobileSection>
 
-      <MobileSection code="BRF" title="最新日報" right={mobileLive ? latestBrief?.status ?? "無資料" : stateLabel(result.state)}>
+      <MobileSection code="BRF" title="最新日報" right={mobileLive ? briefStatusLabel(latestBrief?.status) : stateLabel(result.state)}>
         {!mobileLive && <div className="mobile-card"><div className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</div><div className="tc soft">日報資料先隱藏，等待行動簡報資料恢復正常。</div></div>}
         {mobileLive && !latestBrief && <div className="mobile-card"><div className="tg gold">無資料</div><div className="tc soft">目前沒有每日簡報。</div></div>}
         {mobileLive && latestBrief && (
           <div className="mobile-card">
             <div className="tg gold">{latestBrief.date} / {marketLabel(latestBrief.marketState)}</div>
-            <div className="tc" style={{ fontSize: 18, marginTop: 8 }}>{latestBrief.sections[0]?.heading ?? "日報"}</div>
-            <div className="tc soft" style={{ marginTop: 7, lineHeight: 1.65 }}>{latestBrief.sections[0]?.body ?? "目前沒有日報內容。"}</div>
+            <div className="tc" style={{ fontSize: 18, marginTop: 8 }}>{cleanExternalHeadline(latestBrief.sections[0]?.heading, "日報")}</div>
+            <div className="tc soft" style={{ marginTop: 7, lineHeight: 1.65 }}>{cleanNarrativeText(latestBrief.sections[0]?.body, "目前沒有日報內容。")}</div>
           </div>
         )}
       </MobileSection>
@@ -214,10 +226,10 @@ export default async function MobileBrief() {
         {mobileLive && themes.map((theme) => (
           <Link className="mobile-card" href={`/themes/${theme.slug}`} key={theme.id}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span className="tg gold">P{theme.priority} / {theme.slug}</span>
+              <span className="tg gold">P{theme.priority} / {cleanExternalHeadline(theme.name, "主題")}</span>
               <span className="tg soft">{marketLabel(theme.marketState)}</span>
             </div>
-            <div className="tc" style={{ fontSize: 18, marginTop: 5 }}>{theme.name}</div>
+            <div className="tc" style={{ fontSize: 18, marginTop: 5 }}>{cleanExternalHeadline(theme.name, "主題")}</div>
             <div className="tg soft" style={{ marginTop: 7 }}>{lifecycleLabel(theme.lifecycle)} / 核心 {theme.corePoolCount} / 觀察 {theme.observationPoolCount}</div>
           </Link>
         ))}
@@ -232,7 +244,7 @@ export default async function MobileBrief() {
               <span className="tg gold">{idea.symbol}</span>
               <span className={`tg session-pill ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
             </div>
-            <div className="tc" style={{ marginTop: 8 }}>{idea.rationale.primaryReason}</div>
+            <div className="tc" style={{ marginTop: 8 }}>{reasonLabel(idea.rationale.primaryReason)}</div>
             <div className="tg soft" style={{ marginTop: 7 }}>判斷 {decisionLabel(idea.marketData.decision)} / 分數 {idea.score.toFixed(1)} / 信心 {signed(idea.confidence * 100, 0)}%</div>
           </Link>
         ))}

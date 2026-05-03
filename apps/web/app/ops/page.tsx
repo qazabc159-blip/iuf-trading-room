@@ -2,6 +2,7 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getOpsSnapshot } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanExternalHeadline, cleanNarrativeText, cleanRiskRewardText, cleanTradePlanText } from "@/lib/operator-copy";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +144,12 @@ function entityLabel(value: string | null | undefined) {
   return value.replace(/[_-]/g, " ");
 }
 
+function latestRowText(label: string, subtitle?: string | null) {
+  const main = cleanTradePlanText(label, cleanExternalHeadline(label, "資料列尚未完成中文整理"));
+  const sub = subtitle ? cleanRiskRewardText(cleanNarrativeText(subtitle, subtitle)) : "";
+  return sub ? `${main} / ${sub}` : main;
+}
+
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
@@ -250,7 +257,7 @@ export default async function OpsPage() {
                   <span className="tg soft">{formatDateTime(row.timestamp)}</span>
                   <span className="tg gold">{latestBucketLabel(bucket)}</span>
                   <span className="tg" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {row.label}{row.subtitle ? ` / ${row.subtitle}` : ""}
+                    {latestRowText(row.label, row.subtitle)}
                   </span>
                 </div>
               ))

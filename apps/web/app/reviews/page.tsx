@@ -1,6 +1,7 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getReviews } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanNarrativeText, cleanTradePlanText } from "@/lib/operator-copy";
 import type { ReviewEntry } from "@iuf-trading-room/contracts";
 
 function formatDateTime(value: string) {
@@ -100,12 +101,12 @@ export default async function ReviewsPage() {
                   </span>
                   <span className="tg soft">計畫 {review.tradePlanId.slice(0, 8)}</span>
                 </div>
-                <h2>{review.outcome || "未命名檢討"}</h2>
+                <h2>{cleanTradePlanText(review.outcome, "未命名檢討")}</h2>
                 {review.attribution && (
-                  <p><b>歸因：</b>{review.attribution}</p>
+                  <p><b>歸因：</b>{cleanNarrativeText(review.attribution, "歸因尚未完成中文整理。")}</p>
                 )}
                 {review.lesson && (
-                  <p><b>教訓：</b>{review.lesson}</p>
+                  <p><b>教訓：</b>{cleanNarrativeText(review.lesson, "教訓尚未完成中文整理。")}</p>
                 )}
                 {review.setupTags.length > 0 && (
                   <div className="review-tag-row">
