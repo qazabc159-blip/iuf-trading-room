@@ -23,8 +23,8 @@
   --night-faint: #273142;
   --page-gutter-x: clamp(60px, 4.6vw, 96px);
   --page-safe-right: 112px;
-  --panel-gutter-x: clamp(52px, 3.8vw, 76px);
-  --hud-gutter-x: clamp(70px, 4.8vw, 96px);
+  --panel-gutter-x: clamp(34px, 3vw, 56px);
+  --hud-gutter-x: clamp(38px, 3.4vw, 64px);
 
   --exec-bg: var(--night);
   --exec-bg-1: var(--night-1);
@@ -1151,11 +1151,11 @@ button { font: inherit; }
 
 .panel.hud-frame,
 .hud-frame {
-  padding: clamp(30px, 3vw, 44px) var(--hud-gutter-x) clamp(34px, 3.2vw, 50px);
+  padding: clamp(24px, 2.4vw, 34px) var(--hud-gutter-x) clamp(28px, 2.8vw, 40px);
 }
 
-.kline-panel,
-.paper-order-panel {
+.panel.hud-frame.kline-panel,
+.panel.hud-frame.paper-order-panel {
   padding: 18px clamp(18px, 2vw, 26px) 22px;
 }
 
@@ -3098,7 +3098,7 @@ body:has(.login-route) > div {
     rgba(5, 8, 12, 0.48);
 }
 
-.company-info-panel {
+.panel.hud-frame.company-info-panel {
   padding: 18px clamp(18px, 2.2vw, 28px) 22px;
 }
 
