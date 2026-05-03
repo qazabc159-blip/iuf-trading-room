@@ -33,7 +33,6 @@ type PlansData = {
   reviews: ReviewRow[];
   ideas: IdeaRow[];
 };
-const PLAN_GRID_COLUMNS = "72px minmax(260px,1.5fr) 82px minmax(168px,0.7fr) 64px 84px";
 type LoadState =
   | { state: "LIVE"; data: PlansData; updatedAt: string; source: string }
   | { state: "EMPTY"; data: PlansData; updatedAt: string; source: string; reason: string }
@@ -276,27 +275,38 @@ export default async function PlansPage() {
             <EmptyOrBlocked result={result} />
             {plans.length === 0 && result.state === "LIVE" && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有交易計畫。</div>}
             {plans.length > 0 && (
-              <div className="row position-row table-head tg" style={{ gridTemplateColumns: PLAN_GRID_COLUMNS }}>
-                <span>代號</span><span>計畫</span><span>狀態</span><span>風報</span><span>覆盤</span><span>更新</span>
+              <div className="plans-ledger">
+                {plans.slice(0, 12).map((plan) => {
+                  const company = companyForPlan(plan, result.data.companies);
+                  const reviewed = reviewedPlanIds.has(plan.id);
+                  return (
+                    <article className="plan-card" key={plan.id}>
+                      <div className="plan-card-symbol">
+                        {company ? <Link href={`/companies/${company.ticker}`} className="tg gold">{company.ticker}</Link> : <span className="tg muted">--</span>}
+                        <span className={`tg ${statusTone(plan.status)}`}>{planStatusLabel(plan.status)}</span>
+                      </div>
+                      <div className="plan-card-body">
+                        <p>{displayPlanEntry(plan)}</p>
+                        <dl className="plan-card-meta">
+                          <div>
+                            <dt>風報</dt>
+                            <dd>{cleanRiskRewardText(plan.riskReward)}</dd>
+                          </div>
+                          <div>
+                            <dt>覆盤</dt>
+                            <dd className={reviewed ? "gold" : "muted"}>{reviewed ? "有" : "無"}</dd>
+                          </div>
+                          <div>
+                            <dt>更新</dt>
+                            <dd>{formatDate(plan.updatedAt)}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
-            {plans.slice(0, 12).map((plan) => {
-              const company = companyForPlan(plan, result.data.companies);
-              return (
-                <div className="row position-row" style={{ gridTemplateColumns: PLAN_GRID_COLUMNS }} key={plan.id}>
-                  {company ? <Link href={`/companies/${company.ticker}`} className="tg gold">{company.ticker}</Link> : <span className="tg muted">--</span>}
-                  <span className="tc soft" style={{ minWidth: 0, lineHeight: 1.55, overflowWrap: "anywhere", whiteSpace: "normal" }}>
-                    {displayPlanEntry(plan)}
-                  </span>
-                  <span className={`tg ${statusTone(plan.status)}`}>{planStatusLabel(plan.status)}</span>
-                  <span className="tg" style={{ minWidth: 0, lineHeight: 1.45, overflowWrap: "anywhere", whiteSpace: "normal" }}>
-                    {cleanRiskRewardText(plan.riskReward)}
-                  </span>
-                  <span className={`tg ${reviewedPlanIds.has(plan.id) ? "gold" : "muted"}`}>{reviewedPlanIds.has(plan.id) ? "有" : "無"}</span>
-                  <span className="tg soft">{formatDate(plan.updatedAt)}</span>
-                </div>
-              );
-            })}
           </Panel>
 
           <Panel code="IDEA-REF" title="策略想法" sub="模擬候選 / 只讀" right={contextLive ? `${result.data.ideas.length} 筆` : "暫停"}>
@@ -323,9 +333,10 @@ export default async function PlansPage() {
             {contextLive && !latestBrief && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有每日簡報。</div>}
             {contextLive && latestBrief && (
               <div style={{ display: "grid", gap: 12, paddingBottom: 12 }}>
-                <div className="row limit-row">
+                <div className="brief-snapshot">
                   <span className="tg gold">盤勢</span>
-                  <span className="tg" style={{ gridColumn: "span 2", textAlign: "right" }}>{marketStateLabel(latestBrief.marketState)}</span>
+                  <strong>{marketStateLabel(latestBrief.marketState)}</strong>
+                  <span className="tg soft">更新 {formatDateTime(latestBrief.createdAt)}</span>
                 </div>
                 {latestBrief.sections.slice(0, 4).map((section) => (
                   <div style={{ borderBottom: "1px solid var(--night-rule)", paddingBottom: 10 }} key={section.heading}>
