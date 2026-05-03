@@ -1893,6 +1893,70 @@ button { font: inherit; }
     display: none;
   }
 
+  .table-scroll:has(.company-data-table-fit) {
+    overflow-x: visible;
+  }
+
+  .company-data-table-fit,
+  .company-data-table-fit thead,
+  .company-data-table-fit tbody,
+  .company-data-table-fit tr,
+  .company-data-table-fit th,
+  .company-data-table-fit td {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .company-data-table-fit thead {
+    display: none;
+  }
+
+  .company-data-table-fit tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .company-data-table-fit tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+    padding: 16px;
+    border: 1px solid var(--night-rule);
+    background: rgba(255, 255, 255, 0.015);
+  }
+
+  .company-data-table-fit th,
+  .company-data-table-fit td {
+    padding: 0;
+    border-bottom: 0;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .company-data-table-fit td:first-child {
+    grid-column: 1 / -1;
+    color: var(--gold-bright);
+  }
+
+  .company-data-table-fit td::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--night-mid);
+    font-family: var(--sans-tc);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  .company-data-table-fit td:nth-child(1)::before { content: "期別"; }
+  .company-data-table-fit td:nth-child(2)::before { content: "營收"; }
+  .company-data-table-fit td:nth-child(3)::before { content: "毛利率"; }
+  .company-data-table-fit td:nth-child(4)::before { content: "營益率"; }
+  .company-data-table-fit td:nth-child(5)::before { content: "EPS"; }
+  .company-data-table-fit td:nth-child(6)::before { content: "年增率"; }
+
   .theme-row.table-head,
   .dashboard-theme-row.table-head,
   .telex-row.table-head,
