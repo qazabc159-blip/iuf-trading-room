@@ -26,9 +26,9 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
 
 function MobileNav() {
   const items = [
-    { href: "/m", label: "BRIEF", sub: "FIELD" },
-    { href: "/m/kill", label: "KILL", sub: "MODE" },
-    { href: "/", label: "DESK", sub: "FULL" },
+    { href: "/m", label: "快覽", sub: "行動" },
+    { href: "/m/kill", label: "風控", sub: "模式" },
+    { href: "/", label: "戰情台", sub: "完整" },
   ];
 
   return (

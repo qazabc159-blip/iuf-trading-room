@@ -4,6 +4,30 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 20:30 Taipei - Codex heartbeat pass 42 - mobile route zh-TW cleanup
+
+**Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/m/page.tsx` - mobile theme cards now map known theme slugs such as orphan audit/AI optics to clean Traditional Chinese labels instead of exposing `[ORPHAN]` source names.
+- `apps/web/app/m/layout.tsx` - bottom mobile nav labels changed from `BRIEF/FIELD`, `KILL/MODE`, `DESK/FULL` to Chinese operator labels.
+- `apps/web/app/globals.css` - mobile sections/cards get internal gutters so section text and cards do not sit directly on border lines.
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` - recorded this pass.
+
+**Behavior**:
+- `/m` no longer shows `[ORPHAN]` in the theme scan and no longer shows the English bottom-nav labels flagged by the production route sweep.
+- Mobile cards have more inset spacing while keeping the existing dark trading-room visual language.
+- This is copy/layout only. No backend data, order payload, broker path, migration, or data-source behavior changed.
+
+**Checks**:
+- `git diff --check -- apps/web/app/m/page.tsx apps/web/app/m/layout.tsx apps/web/app/globals.css evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Local authenticated 1365px Playwright smoke on `/m` and `/m/kill` PASS: status 200, 0 page errors, 0 horizontal overflow, 0 `[ORPHAN]` / `BRIEF` / `FIELD` / `KILL` / `MODE` / `DESK` / `FULL` / lifecycle raw hits, 0 mojibake. Screenshot/report: `evidence/w7_paper_sprint/local_visual_qa_pass42_mobile_2026-05-03/`.
+
+**Blockers / next bypass**:
+- None for this scoped mobile UI fix.
+
 ### 2026-05-03 20:10 Taipei - Codex heartbeat pass 41 - duplicate reason + border breathing repair
 
 **Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
