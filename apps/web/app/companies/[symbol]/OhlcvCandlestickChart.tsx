@@ -149,7 +149,7 @@ export function OhlcvCandlestickChart({
 
         chart = lc.createChart(el, {
           width,
-          height: 392,
+          height: 368,
           layout: {
             background: { color: "transparent" },
             textColor: "rgba(203,213,225,0.68)",
@@ -318,7 +318,7 @@ export function OhlcvCandlestickChart({
           sourceLabel={badgeLabel}
         />
       ) : (
-        <div ref={containerRef} style={{ width: "100%", minHeight: 392 }} />
+        <div ref={containerRef} style={{ width: "100%", minHeight: 368 }} />
       )}
     </section>
   );
