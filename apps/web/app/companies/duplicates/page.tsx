@@ -17,6 +17,29 @@ function timeText(iso: string) {
   });
 }
 
+function safeCompanyName(company: CompanyDuplicateEntry) {
+  const name = company.name?.trim();
+  if (!name || /[\uFFFD\uE000-\uF8FF]/.test(name)) return "名稱待校正";
+  return name;
+}
+
+function tierText(value: string) {
+  if (value === "Core") return "核心";
+  if (value === "Direct") return "直接";
+  if (value === "Indirect") return "間接";
+  if (value === "Observation") return "觀察";
+  return value;
+}
+
+function reasonText(value: string | null | undefined) {
+  const reason = value?.trim() ?? "";
+  if (!reason) return "同代號公司主檔需要人工核對。";
+  if (reason.toLowerCase().includes("high ticker growth")) {
+    return "此代號關聯與覆蓋度較高，建議作為保留主檔。";
+  }
+  return reason.replace(/[\uFFFD\uE000-\uF8FF]/g, "").trim() || "同代號公司主檔需要人工核對。";
+}
+
 export default async function CompanyDuplicatesPage() {
   let groups: CompanyDuplicateGroup[] = [];
   let generatedAt: string | null = null;
@@ -57,11 +80,11 @@ export default async function CompanyDuplicatesPage() {
         )}
       </Panel>
 
-      <div className="company-grid">
+      <div className="company-grid duplicate-grid">
         <Panel code="DUP-Q" title="重複群組" right={blockedReason ? "暫停" : `${groups.length} 組`}>
           {groups.length > 0 ? (
             <>
-              <div className="row table-head" style={{ gridTemplateColumns: "92px 84px 1fr 74px 1fr", gap: 12 }}>
+              <div className="row table-head duplicate-summary-row">
                 <span>代號</span>
                 <span>筆數</span>
                 <span>保留候選</span>
@@ -71,12 +94,12 @@ export default async function CompanyDuplicatesPage() {
               {groups.map((group) => {
                 const recommended = group.companies.find((company) => company.companyId === group.recommendedCompanyId) ?? group.companies[0];
                 return (
-                  <div className="row" key={group.groupKey} style={{ gridTemplateColumns: "92px 84px 1fr 74px 1fr", gap: 12, minHeight: 66 }}>
+                  <div className="row duplicate-summary-row" key={group.groupKey}>
                     <span className="tg gold">{group.ticker}</span>
                     <span className="num">{group.duplicateCount}</span>
-                    <span className="tc">{recommended?.name ?? group.recommendedCompanyId}</span>
+                    <span className="tc">{recommended ? safeCompanyName(recommended) : group.recommendedCompanyId}</span>
                     <span className="num">{recommended ? recommended.relationCount + recommended.keywordCount : 0}</span>
-                    <span className="tg soft">{group.reason}</span>
+                    <span className="tg soft duplicate-reason">{reasonText(group.reason)}</span>
                   </div>
                 );
               })}
@@ -88,7 +111,7 @@ export default async function CompanyDuplicatesPage() {
           )}
         </Panel>
 
-        <div>
+        <div className="duplicate-side-list">
           {groups.slice(0, 4).map((group) => (
             <Panel code="DUP-GRP" title={`${group.ticker} / ${group.duplicateCount} 筆`} right="只讀" key={group.groupKey}>
               <div className="terminal-note" style={{ marginBottom: 14 }}>
@@ -116,12 +139,12 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 
 function CompanyRow({ company, recommended }: { company: CompanyDuplicateEntry; recommended: boolean }) {
   return (
-    <div className="row" style={{ gridTemplateColumns: "92px 1fr 88px 72px 92px", gap: 12, padding: "12px 0" }}>
+    <div className="row duplicate-company-row">
       <span className="tg gold">{company.ticker}</span>
-      <span className="tc">{company.name}</span>
+      <span className="tc">{safeCompanyName(company)}</span>
       <span className="tg">{company.market}</span>
       <span className="num">{company.relationCount + company.keywordCount}</span>
-      <span className={`tg ${recommended ? "gold" : "soft"}`}>{recommended ? "保留候選" : company.beneficiaryTier}</span>
+      <span className={`tg ${recommended ? "gold" : "soft"}`}>{recommended ? "保留候選" : tierText(company.beneficiaryTier)}</span>
     </div>
   );
 }
