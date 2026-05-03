@@ -47,6 +47,7 @@ export interface OhlcvQueryParams {
 
 // FinMind only covers daily bars; weekly/monthly use DB or mock paths.
 const TAIWAN_TICKER_PATTERN = /^\d{4}$/;
+const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 220;
 
 function nDaysAgoIso(days: number): string {
   const d = new Date();
@@ -241,6 +242,26 @@ export async function getCompanyOhlcv(
           volume: Number(r.volume),
           source: r.source as "mock" | "kgi" | "tej"
         })).reverse(); // return ascending
+
+        if (
+          interval === "1d" &&
+          bars.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL &&
+          params.ticker &&
+          TAIWAN_TICKER_PATTERN.test(params.ticker) &&
+          process.env.FINMIND_API_TOKEN
+        ) {
+          try {
+            const startDate = params.from ?? nDaysAgoIso(1095);
+            const endDate = params.to ?? todayIso();
+            const finmindBars = await getFinMindClient().getStockPriceAdj(params.ticker, startDate, endDate);
+            if (finmindBars.length > bars.length) {
+              await setCachedOhlcv(cacheKey, finmindBars);
+              return finmindBars;
+            }
+          } catch (e) {
+            console.warn("[companies-ohlcv] FinMind daily backfill failed, keeping DB rows", e instanceof Error ? e.message : String(e));
+          }
+        }
 
         await setCachedOhlcv(cacheKey, bars);
         return bars;
