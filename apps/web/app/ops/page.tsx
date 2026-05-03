@@ -102,6 +102,7 @@ function opsModeLabel(value: string | null | undefined) {
   if (!value) return "--";
   if (value === "production") return "正式";
   if (value === "demo") return "展示";
+  if (value === "database") return "資料庫";
   if (value === "memory") return "記憶模式";
   if (value === "disabled") return "停用";
   return value.replace(/[_-]/g, " ");
@@ -144,10 +145,35 @@ function entityLabel(value: string | null | undefined) {
   return value.replace(/[_-]/g, " ");
 }
 
+function cleanOpsLatestText(value: string) {
+  return value
+    .replace(/\[ORPHAN\]\s*/gi, "")
+    .replace(/\[待修-[^\]]+\]\s*To Fix/gi, "待修資料列")
+    .replace(/\bTWSE\b/g, "上市")
+    .replace(/\bTPEX\b|\bOTC\b/g, "上櫃")
+    .replace(/\bObservation\b/g, "觀察")
+    .replace(/\bCore\b/g, "核心")
+    .replace(/\bDirect\b/g, "直接受惠")
+    .replace(/\bIndirect\b/g, "間接受惠")
+    .replace(/\bstatus\b/gi, "狀態")
+    .replace(/\bready\b/gi, "已就緒")
+    .replace(/\bworker\b/gi, "背景服務")
+    .replace(/\bdraft\b/gi, "草稿")
+    .replace(/\s*\/\s*--\s*$/g, "")
+    .trim();
+}
+
 function latestRowText(label: string, subtitle?: string | null) {
-  const main = cleanTradePlanText(label, cleanExternalHeadline(label, "資料列尚未完成中文整理"));
-  const sub = subtitle ? cleanRiskRewardText(cleanNarrativeText(subtitle, subtitle)) : "";
+  const main = cleanOpsLatestText(cleanTradePlanText(label, cleanExternalHeadline(label, "資料列尚未完成中文整理")));
+  const sub = subtitle ? cleanOpsLatestText(cleanRiskRewardText(cleanNarrativeText(subtitle, subtitle))) : "";
+  if (!sub || sub === "--") return main;
   return sub ? `${main} / ${sub}` : main;
+}
+
+function workspaceLabel(value: string | null | undefined) {
+  if (!value) return "主控工作區";
+  if (/primary desk/i.test(value)) return "主控工作區";
+  return cleanOpsLatestText(value);
 }
 
 function SourceLine({ result }: { result: LoadState }) {
@@ -189,7 +215,7 @@ export default async function OpsPage() {
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
           { label: "主題", value: data ? stats?.themes ?? 0 : "--" },
-          { label: "公司", value: data ? stats?.companies ?? 0 : "--" },
+          { label: "主檔列數", value: data ? stats?.companies ?? 0 : "--" },
           { label: "訊號", value: data ? stats?.signals ?? 0 : "--" },
           { label: "佇列", value: data ? queue?.totalJobs ?? 0 : "--", tone: (queue?.failed ?? 0) > 0 ? "down" : "muted" },
           { label: "稽核", value: data ? data.audit.total : "--", tone: data && data.audit.total > 0 ? "gold" : "muted" },
@@ -206,8 +232,9 @@ export default async function OpsPage() {
             {data && (
               <div style={{ border: "1px solid var(--night-rule-strong)" }}>
                 {[
-                  ["工作區", data.workspace.name || "主控工作區"],
+                  ["工作區", workspaceLabel(data.workspace.name)],
                   ["產生時間", formatDateTime(data.generatedAt)],
+                  ["主檔統計", `原始列數 ${data.stats.companies.toLocaleString("zh-TW")}；去重後公司數以公司板為準`],
                   ["核心公司", String(data.stats.coreCompanies)],
                   ["直接受惠", String(data.stats.directCompanies)],
                   ["進行計畫", String(data.stats.activePlans)],
