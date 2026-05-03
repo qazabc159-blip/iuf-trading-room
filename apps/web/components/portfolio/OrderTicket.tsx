@@ -987,7 +987,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <label style={rowStyle}>
       <span style={labelStyle}>{label}</span>
-      <span style={{ flex: 1, display: "flex" }}>{children}</span>
+      <span style={{ flex: "1 1 0", display: "flex", minWidth: 0 }}>{children}</span>
     </label>
   );
 }
@@ -1143,7 +1143,7 @@ const previewCardStyle: CSSProperties = {
 
 const rowStyle: CSSProperties = {
   display: "flex",
-  alignItems: "center",
+  alignItems: "flex-start",
   gap: 24,
   marginBottom: 26,
 };
@@ -1176,20 +1176,30 @@ const staticFieldStyle: CSSProperties = {
 
 const segmentedStyle: CSSProperties = {
   display: "flex",
+  flexWrap: "wrap",
   flex: 1,
   border: "1px solid var(--exec-rule-strong)",
   minWidth: 0,
+  width: "100%",
+  overflow: "hidden",
 };
 
 const segmentButtonStyle: CSSProperties = {
-  flex: 1,
+  flex: "1 1 96px",
+  minWidth: 88,
   minHeight: 60,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
   padding: "17px 16px",
   border: "none",
   fontFamily: "var(--mono)",
   fontSize: 12,
   fontWeight: 700,
   letterSpacing: "0.04em",
+  lineHeight: 1.25,
+  whiteSpace: "nowrap",
+  wordBreak: "keep-all",
 };
 
 const panelHeadingStyle: CSSProperties = {
