@@ -1362,6 +1362,52 @@ button { font: inherit; }
   background: rgba(255,255,255,0.018);
 }
 
+.field-box select {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  border: 1px solid var(--night-rule-strong);
+  background: var(--night);
+  color: var(--night-ink);
+  padding: 0 14px;
+  font: 700 14px/1 var(--sans-tc);
+  outline: none;
+}
+
+.field-box p {
+  margin: 12px 0 0;
+  color: var(--night-mid);
+  font: 500 14px/1.85 var(--sans-tc);
+}
+
+.invite-admin {
+  display: grid;
+  gap: 20px;
+}
+
+.invite-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(280px, 1.2fr);
+  gap: 22px;
+  align-items: stretch;
+}
+
+.invite-result {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 22px 26px;
+  border: 1px solid rgba(226,184,92,0.34);
+  background: rgba(226,184,92,0.07);
+}
+
+.invite-result strong {
+  color: var(--night-ink);
+  font: 800 24px/1.35 var(--mono);
+  letter-spacing: 0.05em;
+  overflow-wrap: anywhere;
+}
+
 .mode-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1640,6 +1686,10 @@ button { font: inherit; }
 
   .company-panels-grid > section:nth-child(3) {
     grid-column: 1;
+  }
+
+  .invite-admin-grid {
+    grid-template-columns: 1fr;
   }
 
   .exec-grid {

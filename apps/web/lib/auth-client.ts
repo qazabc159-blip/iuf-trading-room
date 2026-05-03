@@ -41,6 +41,14 @@ export type AuthFailure = {
 
 export type AuthResult = AuthSuccess | AuthFailure;
 
+export type InviteIssueSuccess = {
+  ok: true;
+  code: string;
+  expiresAt: string;
+};
+
+export type InviteIssueResult = InviteIssueSuccess | AuthFailure;
+
 function missingApi(): AuthFailure {
   return { ok: false, error: "api_base_unconfigured" };
 }
@@ -95,6 +103,33 @@ export async function apiRegister(
   }
 }
 
+export async function apiIssueInvite(ttlMinutes: number): Promise<InviteIssueResult> {
+  if (!API_BASE) return missingApi();
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/issue-invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ ttlMinutes }),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      return { ok: false, error: body.error ?? `server_error_${res.status}` };
+    }
+
+    const body = await res.json() as { data: { code: string; expiresAt: string } };
+    return {
+      ok: true,
+      code: body.data.code,
+      expiresAt: body.data.expiresAt,
+    };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
 export async function apiLogout(): Promise<void> {
   try {
     if (API_BASE) {
@@ -144,6 +179,10 @@ export function authErrorMessage(error: string): string {
       return "這個帳號尚未連到 workspace。";
     case "unauthenticated":
       return "登入狀態已失效，請重新登入。";
+    case "forbidden_role":
+      return "目前帳號沒有管理員權限。";
+    case "user_not_found":
+      return "找不到目前登入帳號，請重新登入。";
     case "api_base_unconfigured":
       return "前端尚未設定後端 API，登入功能暫時不可用。";
     case "network_error":
