@@ -331,9 +331,9 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
 
       {/* Quantity-unit indicator pill */}
       {parsed.validQty && (
-        <div style={{ marginBottom: 8, display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span style={oddLotPillStyle}>{parsed.isShare ? "零股" : "整張"}</span>
-          <span style={{ fontSize: 10, color: "var(--night-mid, #888)", fontFamily: "var(--mono, monospace)" }}>
+          <span style={{ fontSize: 11, color: "var(--night-mid, #888)", fontFamily: "var(--mono, monospace)", lineHeight: 1.6 }}>
             {quantityUnitDescription(form.quantityUnit)} / 實際 {parsed.effectiveShares.toLocaleString("zh-TW")} 股
           </span>
         </div>
@@ -360,14 +360,14 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
         </div>
       )}
 
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 18, padding: "4px 0" }}>
         <span className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)" }}>股票</span>
         <span className="mono" style={{ marginLeft: 10, fontWeight: 700, fontSize: 15 }}>{symbol.toUpperCase()}</span>
       </div>
 
       {validationReason && <TruthNote state="BLOCKED" text={validationReason} />}
 
-      <div className="action-row" style={{ gap: 8, marginBottom: 16 }}>
+      <div className="action-row" style={{ gap: 14, marginBottom: 22 }}>
         <button
           className="btn-sm"
           onClick={handlePreview}
@@ -659,8 +659,10 @@ const sourceBarStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontSize: 10.5,
   lineHeight: 1.75,
-  marginBottom: 24,
-  paddingBottom: 8,
+  marginBottom: 26,
+  padding: "12px 14px",
+  border: "1px solid var(--night-rule, #222)",
+  background: "rgba(255,255,255,0.012)",
 };
 
 const bannerStyle: React.CSSProperties = {
@@ -671,23 +673,23 @@ const bannerStyle: React.CSSProperties = {
   fontWeight: 700,
   fontSize: 11,
   lineHeight: 2,
-  padding: "18px 22px",
+  padding: "20px 24px",
   letterSpacing: "0.08em",
-  marginBottom: 30,
+  marginBottom: 34,
 };
 
 const gridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
-  gap: "26px 28px",
-  marginBottom: 30,
+  gap: "30px 34px",
+  marginBottom: 34,
 };
 
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   color: "var(--night-mid, #888)",
   display: "block",
-  marginBottom: 12,
+  marginBottom: 14,
   fontFamily: "var(--mono, monospace)",
   letterSpacing: "0.16em",
 };
@@ -698,8 +700,8 @@ const inputStyle: React.CSSProperties = {
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
-  minHeight: 56,
-  padding: "16px 18px",
+  minHeight: 60,
+  padding: "18px 20px",
   width: "100%",
   boxSizing: "border-box",
 };
@@ -707,14 +709,14 @@ const inputStyle: React.CSSProperties = {
 const segmentedStyle: React.CSSProperties = {
   display: "flex",
   border: "1px solid var(--night-rule-strong, #333)",
-  minHeight: 56,
+  minHeight: 60,
 };
 
 const segmentButtonStyle: React.CSSProperties = {
   flex: 1,
   background: "transparent",
   border: "none",
-  padding: "16px 16px",
+  padding: "17px 18px",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   fontWeight: 700,
@@ -729,13 +731,13 @@ const truthNoteStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   lineHeight: 1.75,
-  padding: "14px 4px",
+  padding: "16px 12px",
 };
 
 const previewBoxStyle: React.CSSProperties = {
   border: "1px solid var(--night-rule-strong, #333)",
-  padding: "20px 22px",
-  marginBottom: 22,
+  padding: "24px 26px",
+  marginBottom: 26,
 };
 
 const kvStyle: React.CSSProperties = {
@@ -743,7 +745,7 @@ const kvStyle: React.CSSProperties = {
   justifyContent: "space-between",
   gap: 14,
   borderTop: "1px solid var(--night-rule, #222)",
-  padding: "12px 0",
+  padding: "14px 0",
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
@@ -758,8 +760,8 @@ const blockedGuardStyle: React.CSSProperties = {
 
 const ledgerStyle: React.CSSProperties = {
   borderTop: "1px solid var(--night-rule-strong, #333)",
-  marginTop: 24,
-  paddingTop: 18,
+  marginTop: 30,
+  paddingTop: 24,
 };
 
 const ledgerHeaderStyle: React.CSSProperties = {
@@ -777,7 +779,7 @@ const orderRowStyle: React.CSSProperties = {
   gridTemplateColumns: "minmax(0, 1fr) 80px 70px",
   gap: 16,
   borderTop: "1px solid var(--night-rule, #222)",
-  padding: "18px 4px",
+  padding: "20px 10px",
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
@@ -800,13 +802,13 @@ const oddLotPillStyle: React.CSSProperties = {
   fontSize: 10,
   fontWeight: 700,
   letterSpacing: "0.10em",
-  padding: "2px 7px",
+  padding: "5px 9px",
 };
 
 const notionalPreviewStyle: React.CSSProperties = {
   border: "1px solid var(--night-rule-strong, #333)",
-  padding: "16px 18px",
-  marginBottom: 16,
+  padding: "18px 20px",
+  marginBottom: 20,
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
 };
