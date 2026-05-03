@@ -220,7 +220,7 @@ function companyForPlan(plan: PlanRow, companies: CompanyRow[]) {
 
 function SourceLine({ result }: { result: LoadState }) {
   return (
-    <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
+    <div className="plans-source-line">
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
       <span>來源：{result.source}</span>
       <span>更新 {formatTime(result.updatedAt)}</span>
@@ -268,9 +268,19 @@ export default async function PlansPage() {
         columns={7}
       />
 
-      <div className="main-grid">
-        <div>
-          <Panel code="PLN-LST" title="交易計畫" sub="正式資料庫" right={stateLabel(result.state)}>
+      <div className="plans-workbench-grid">
+        <div className="plans-primary-column">
+          <section className="plans-command-surface plans-command-surface-primary">
+            <div className="plans-surface-head">
+              <div>
+                <span className="tg panel-code">交易計畫</span>
+                <h2>決策工作台</h2>
+                <p>正式資料庫，僅顯示可追溯來源；本頁不送單。</p>
+              </div>
+              <span className={`badge ${result.state === "LIVE" ? "badge-green" : result.state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>
+                {stateLabel(result.state)}
+              </span>
+            </div>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {plans.length === 0 && result.state === "LIVE" && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有交易計畫。</div>}
@@ -284,6 +294,7 @@ export default async function PlansPage() {
                       <div className="plan-card-symbol">
                         {company ? <Link href={`/companies/${company.ticker}`} className="tg gold">{company.ticker}</Link> : <span className="tg muted">--</span>}
                         <span className={`tg ${statusTone(plan.status)}`}>{planStatusLabel(plan.status)}</span>
+                        {company?.name && <span className="tc soft">{company.name}</span>}
                       </div>
                       <div className="plan-card-body">
                         <p>{displayPlanEntry(plan)}</p>
@@ -307,87 +318,121 @@ export default async function PlansPage() {
                 })}
               </div>
             )}
-          </Panel>
+          </section>
 
-          <Panel code="IDEA-REF" title="策略想法" sub="模擬候選 / 只讀" right={contextLive ? `${result.data.ideas.length} 筆` : "暫停"}>
+          <section className="plans-command-surface plans-idea-surface">
+            <div className="plans-surface-head compact">
+              <div>
+                <span className="tg panel-code">策略想法</span>
+                <h2>候選清單</h2>
+                <p>紙上決策來源，只讀，不會轉委託。</p>
+              </div>
+              <span className="tg soft">{contextLive ? `${result.data.ideas.length} 筆` : "暫停"}</span>
+            </div>
             {!contextLive && <div className="terminal-note"><span className="tg down">暫停</span> 交易計畫來源未正常時，策略想法先隱藏。</div>}
             {contextLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有模擬決策想法。</div>}
-            {contextLive && result.data.ideas.slice(0, 8).map((idea) => (
-              <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
-                <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
-                <span className={`tg ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
-                <span className="num">{idea.score.toFixed(1)}</span>
-                <span className={`tg ${decisionTone(idea.marketData.decision)}`}>{decisionLabel(idea.marketData.decision)}</span>
-                <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {reasonLabel(idea.rationale.primaryReason)}
-                </span>
-                <Link href={`/companies/${idea.symbol}`} className="mini-button">查看</Link>
+            {contextLive && result.data.ideas.length > 0 && (
+              <div className="ideas-rail">
+                {result.data.ideas.slice(0, 8).map((idea) => (
+                  <article className="idea-ticket" key={`${idea.companyId}-${idea.symbol}`}>
+                    <div className="idea-ticket-symbol">
+                      <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
+                      <span className={`tg ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
+                      <span className="num">{idea.score.toFixed(1)}</span>
+                    </div>
+                    <div className="idea-ticket-body">
+                      <span className={`tg ${decisionTone(idea.marketData.decision)}`}>{decisionLabel(idea.marketData.decision)}</span>
+                      <p>{reasonLabel(idea.rationale.primaryReason)}</p>
+                    </div>
+                    <Link href={`/companies/${idea.symbol}`} className="mini-button">查看公司</Link>
+                  </article>
+                ))}
               </div>
-            ))}
-          </Panel>
+            )}
+          </section>
         </div>
 
-        <div>
-          <Panel code="BRF-LAT" title={contextLive ? latestBrief?.date ?? "無簡報" : "暫停"} sub="每日簡報 / 正式資料庫" right={contextLive ? briefStatusLabel(latestBrief?.status) : "暫停"}>
+        <aside className="plans-context-column">
+          <section className="plans-brief-card">
+            <div className="plans-surface-head compact">
+              <div>
+                <span className="tg panel-code">每日簡報</span>
+                <h2>{contextLive ? latestBrief?.date ?? "無簡報" : "資料暫停"}</h2>
+                <p>正式資料庫；未來後台 AI 只負責產生草稿，前端不顯示假簡報。</p>
+              </div>
+              <span className="tg soft">{contextLive ? briefStatusLabel(latestBrief?.status) : "暫停"}</span>
+            </div>
             {!contextLive && <div className="terminal-note"><span className="tg down">暫停</span> 交易計畫來源未正常時，簡報內容先隱藏。</div>}
             {contextLive && !latestBrief && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有每日簡報。</div>}
             {contextLive && latestBrief && (
-              <div style={{ display: "grid", gap: 12, paddingBottom: 12 }}>
+              <div className="plans-brief-preview">
                 <div className="brief-snapshot">
                   <span className="tg gold">盤勢</span>
                   <strong>{marketStateLabel(latestBrief.marketState)}</strong>
                   <span className="tg soft">更新 {formatDateTime(latestBrief.createdAt)}</span>
                 </div>
                 {latestBrief.sections.slice(0, 4).map((section) => (
-                  <div style={{ borderBottom: "1px solid var(--night-rule)", paddingBottom: 10 }} key={section.heading}>
+                  <article className="plans-brief-section" key={section.heading}>
                     <div className="tg gold">{cleanExternalHeadline(section.heading, "簡報段落")}</div>
-                    <div className="tc soft" style={{ marginTop: 6, lineHeight: 1.65 }}>
+                    <div className="tc soft">
                       {cleanNarrativeText(section.body, "簡報段落尚未完成中文整理；保留來源紀錄。")}
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
             )}
-          </Panel>
+          </section>
 
-          <Panel code="REV-LDG" title="覆盤紀錄" sub="交易後檢討" right={contextLive ? `${result.data.reviews.length} 筆` : "暫停"}>
+          <section className="plans-command-surface plans-review-surface">
+            <div className="plans-surface-head compact">
+              <div>
+                <span className="tg panel-code">覆盤紀錄</span>
+                <h2>交易後檢討</h2>
+              </div>
+              <span className="tg soft">{contextLive ? `${result.data.reviews.length} 筆` : "暫停"}</span>
+            </div>
             {!contextLive && <div className="terminal-note"><span className="tg down">暫停</span> 交易計畫來源未正常時，覆盤紀錄先隱藏。</div>}
             {contextLive && result.data.reviews.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有覆盤紀錄。</div>}
             {contextLive && result.data.reviews.slice(0, 6).map((review) => (
-              <div style={{ padding: "10px 0", borderBottom: "1px solid var(--night-rule)" }} key={review.id}>
-                <div className="tg" style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <article className="plans-review-row" key={review.id}>
+                <div className="tg">
                   <span className="gold">Q{review.executionQuality}</span>
                   <span className="soft">{formatDate(review.createdAt)}</span>
                 </div>
-                <div className="tc soft" style={{ marginTop: 6, lineHeight: 1.65 }}>
+                <div className="tc soft">
                   {cleanTradePlanText(review.outcome, "覆盤紀錄尚未完成中文整理；保留來源紀錄。")}
                 </div>
-              </div>
+              </article>
             ))}
-          </Panel>
-        </div>
+          </section>
 
-        <div>
-          <Panel code="SIG-CUE" title="訊號脈絡" sub="最新真實訊號" right={contextLive ? `${result.data.signals.length} 筆` : "暫停"}>
+          <section className="plans-command-surface plans-signal-surface">
+            <div className="plans-surface-head compact">
+              <div>
+                <span className="tg panel-code">訊號脈絡</span>
+                <h2>最新真實訊號</h2>
+              </div>
+              <span className="tg soft">{contextLive ? `${result.data.signals.length} 筆` : "暫停"}</span>
+            </div>
             {!contextLive && <div className="terminal-note"><span className="tg down">暫停</span> 交易計畫來源未正常時，訊號脈絡先隱藏。</div>}
             {contextLive && result.data.signals.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有訊號列。</div>}
             {contextLive && result.data.signals.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 10).map((signal) => (
-              <div className="row telex-row" style={{ gridTemplateColumns: "112px 76px 1fr" }} key={signal.id}>
+              <article className="plans-signal-row" key={signal.id}>
                 <span className="tg soft">{formatDateTime(signal.createdAt)}</span>
                 <span className="tg gold">{signalCategoryLabel(signal.category)}</span>
-                <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span className="tc soft">
                   {cleanExternalHeadline(signal.title, "訊號內容尚未完成中文整理；保留來源紀錄。")}
                 </span>
-              </div>
+              </article>
             ))}
-          </Panel>
+          </section>
 
           <Panel code="PLAN-LOCK" title="寫入控管" sub="真實性閘門" right="暫停">
             <div className="terminal-note">
               <span className="tg down">暫停</span> 本頁是只讀計畫面板。模擬委託預覽與送出已放在模擬交易頁；實盤送單仍需風控閘門與操作員明示。
             </div>
           </Panel>
-        </div>
+        </aside>
       </div>
     </PageFrame>
   );
