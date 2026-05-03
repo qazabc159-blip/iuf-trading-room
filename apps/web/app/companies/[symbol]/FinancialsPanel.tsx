@@ -5,27 +5,30 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getCompanyDividends,
   getCompanyFinancials,
+  getCompanyMarketValue,
   getCompanyRevenue,
   getCompanyValuation,
   type CompanyDividendRow,
   type CompanyFinancialRow,
+  type CompanyMarketValueRow,
   type CompanyRevenueRow,
   type CompanyValuationRow,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 
-type TabKey = "financials" | "revenue" | "valuation" | "dividend";
+type TabKey = "financials" | "revenue" | "valuation" | "marketValue" | "dividend";
 
 type TabState =
   | { status: "loading" }
   | { status: "blocked"; reason: string; fetchedAt: string }
   | { status: "empty"; reason: string; fetchedAt: string }
-  | { status: "live"; rows: CompanyFinancialRow[] | CompanyRevenueRow[] | CompanyValuationRow[] | CompanyDividendRow[]; fetchedAt: string };
+  | { status: "live"; rows: CompanyFinancialRow[] | CompanyRevenueRow[] | CompanyValuationRow[] | CompanyMarketValueRow[] | CompanyDividendRow[]; fetchedAt: string };
 
 const TABS: Array<{ key: TabKey; label: string; source: string }> = [
   { key: "financials", label: "財報", source: "FinMind 財報" },
   { key: "revenue", label: "月營收", source: "FinMind 月營收" },
   { key: "valuation", label: "估值", source: "FinMind PER/PBR" },
+  { key: "marketValue", label: "市值", source: "FinMind 股價市值" },
   { key: "dividend", label: "股利", source: "FinMind 股利" },
 ];
 
@@ -40,6 +43,14 @@ function formatTime(value: string) {
 function money(value: number | null | undefined, divisor = 1_000_000_000) {
   if (value === null || value === undefined) return "--";
   return (value / divisor).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+}
+
+function marketValueText(value: number | null | undefined) {
+  if (value === null || value === undefined) return "--";
+  if (Math.abs(value) >= 1_000_000_000_000) {
+    return `${(value / 1_000_000_000_000).toLocaleString("zh-TW", { maximumFractionDigits: 2 })} 兆`;
+  }
+  return `${(value / 100_000_000).toLocaleString("zh-TW", { maximumFractionDigits: 1 })} 億`;
 }
 
 function percent(value: number | null | undefined) {
@@ -68,6 +79,10 @@ function tabStateSummary(tab: TabKey, state: TabState | undefined) {
   if (tab === "valuation") {
     const row = (state.rows as CompanyValuationRow[])[0];
     return row ? `${row.date} / PER ${numberText(row.PER)}` : "無資料";
+  }
+  if (tab === "marketValue") {
+    const row = (state.rows as CompanyMarketValueRow[])[0];
+    return row ? `${row.date} / ${marketValueText(row.market_value)}` : "無資料";
   }
 
   const row = (state.rows as CompanyDividendRow[])[0];
@@ -209,6 +224,31 @@ function ValuationTable({ rows }: { rows: CompanyValuationRow[] }) {
   );
 }
 
+function MarketValueTable({ rows }: { rows: CompanyMarketValueRow[] }) {
+  return (
+    <div className="table-scroll">
+      <table className="data-table company-data-table-fit">
+        <thead>
+          <tr>
+            <th><span className="table-cell-inner">日期</span></th>
+            <th><span className="table-cell-inner">股價市值</span></th>
+            <th><span className="table-cell-inner">代號</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.stock_id}-${row.date}`}>
+              <td><span className="table-cell-inner">{row.date}</span></td>
+              <td className="num"><span className="table-cell-inner">{marketValueText(row.market_value)}</span></td>
+              <td><span className="table-cell-inner">{row.stock_id}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Rows({ tab, state }: { tab: TabKey; state: TabState }) {
   if (state.status === "loading") {
     return (
@@ -225,6 +265,7 @@ function Rows({ tab, state }: { tab: TabKey; state: TabState }) {
   if (tab === "financials") return <FinancialTable rows={state.rows as CompanyFinancialRow[]} />;
   if (tab === "revenue") return <RevenueTable rows={state.rows as CompanyRevenueRow[]} />;
   if (tab === "valuation") return <ValuationTable rows={state.rows as CompanyValuationRow[]} />;
+  if (tab === "marketValue") return <MarketValueTable rows={state.rows as CompanyMarketValueRow[]} />;
   return <DividendTable rows={state.rows as CompanyDividendRow[]} />;
 }
 
@@ -248,6 +289,8 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
           ? await getCompanyRevenue(companyId, { limit: 12 })
           : tab === "valuation"
             ? await getCompanyValuation(companyId, { days: 120 })
+            : tab === "marketValue"
+              ? await getCompanyMarketValue(companyId, { days: 365 })
             : await getCompanyDividends(companyId, { years: 5 });
       const rows = response.data ?? [];
       setStates((prev) => ({
@@ -285,7 +328,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
     <section className="panel hud-frame">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">[03]</span> 財報與估值
-        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 財報 / 月營收 / PER / 股利</span>
+        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 財報 / 月營收 / PER / 市值 / 股利</span>
       </h3>
 
       <div className="company-data-tabs finmind-tabs">

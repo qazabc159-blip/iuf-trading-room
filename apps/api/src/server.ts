@@ -3765,6 +3765,7 @@ const FINMIND_DATASET_STATUS = [
   { key: "TaiwanStockDividend", label: "股利", implemented: true },
   { key: "TaiwanStockNews", label: "台股新聞", implemented: false, blocker: "freeze_no_news_feature" },
   { key: "TaiwanStockPER", label: "PER / PBR / 殖利率", implemented: true },
+  { key: "TaiwanStockMarketValue", label: "股價市值", implemented: true },
   { key: "taiwan_stock_tick_snapshot", label: "即時快照", implemented: false, blocker: "quote_contract_pending" }
 ] as const;
 
@@ -3985,11 +3986,15 @@ app.get("/api/v1/companies/:id/chips", async (c) => {
   // Margin/short: take latest day's row and use today vs yesterday for change.
   const sortedMargin = [...margin].sort((a, b) => b.date.localeCompare(a.date));
   const latest = sortedMargin[0] ?? null;
+  const marginToday = latest?.MarginPurchaseTodayBalance ?? latest?.MarginPurchaseToday ?? null;
+  const marginYesterday = latest?.MarginPurchaseYesterdayBalance ?? latest?.MarginPurchaseYesterday ?? null;
+  const shortToday = latest?.ShortSaleTodayBalance ?? latest?.ShortSaleToday ?? null;
+  const shortYesterday = latest?.ShortSaleYesterdayBalance ?? latest?.ShortSaleYesterday ?? null;
   const marginOut = latest
-    ? { balance: latest.MarginPurchaseToday ?? 0, change: (latest.MarginPurchaseToday ?? 0) - (latest.MarginPurchaseYesterday ?? 0) }
+    ? { balance: marginToday ?? 0, change: (marginToday ?? 0) - (marginYesterday ?? 0) }
     : null;
   const shortOut = latest
-    ? { balance: latest.ShortSaleToday ?? 0, change: (latest.ShortSaleToday ?? 0) - (latest.ShortSaleYesterday ?? 0) }
+    ? { balance: shortToday ?? 0, change: (shortToday ?? 0) - (shortYesterday ?? 0) }
     : null;
 
   return c.json({
@@ -4033,6 +4038,24 @@ app.get("/api/v1/companies/:id/valuation", async (c) => {
   const stockId = companyIdToTicker(company.ticker);
 
   const rows = await getFinMindClient().getPER(stockId, startDate, todayDate());
+  rows.sort((a, b) => b.date.localeCompare(a.date));
+
+  return c.json({ data: rows });
+});
+
+// GET /api/v1/companies/:id/market-value?days=365
+// Returns: { data: FinMindMarketValueRow[] } sorted by latest date first.
+app.get("/api/v1/companies/:id/market-value", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const days = Math.max(30, Math.min(1095, Number(c.req.query("days") ?? "365")));
+  const startDate = nDaysAgoDate(days);
+  const stockId = companyIdToTicker(company.ticker);
+
+  const rows = await getFinMindClient().getMarketValue(stockId, startDate, todayDate());
   rows.sort((a, b) => b.date.localeCompare(a.date));
 
   return c.json({ data: rows });
