@@ -49,6 +49,24 @@ function numberText(value: number | null | undefined, digits = 2) {
   return value.toLocaleString("zh-TW", { maximumFractionDigits: digits });
 }
 
+function tabStateSummary(tab: TabKey, state: TabState | undefined) {
+  if (!state || state.status === "loading") return "讀取中";
+  if (state.status === "blocked") return "暫停";
+  if (state.status === "empty") return "無資料";
+
+  if (tab === "financials") {
+    const row = (state.rows as CompanyFinancialRow[])[0];
+    return row ? `${row.period} / EPS ${numberText(row.epsAfterTax)}` : "無資料";
+  }
+  if (tab === "revenue") {
+    const row = (state.rows as CompanyRevenueRow[])[0];
+    return row ? `${row.revenue_year}/${String(row.revenue_month).padStart(2, "0")} / ${money(row.revenue)} 十億` : "無資料";
+  }
+
+  const row = (state.rows as CompanyDividendRow[])[0];
+  return row ? `${row.year} / ${numberText(row.TotalDividend)} 元` : "無資料";
+}
+
 function statusLabel(status: TabState["status"]) {
   if (status === "live") return "正常";
   if (status === "empty") return "無資料";
@@ -218,7 +236,9 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
   }, [companyId]);
 
   useEffect(() => {
-    void loadTab("financials");
+    for (const tab of TABS) {
+      void loadTab(tab.key);
+    }
   }, [loadTab]);
 
   const currentState: TabState = states[activeTab] ?? { status: "loading" };
@@ -231,7 +251,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 即時資料</span>
       </h3>
 
-      <div className="company-data-tabs">
+      <div className="company-data-tabs finmind-tabs">
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -242,7 +262,8 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
             }}
             type="button"
           >
-            {tab.label}
+            <span className="company-data-tab-main">{tab.label}</span>
+            <span className="company-data-tab-meta">{tabStateSummary(tab.key, states[tab.key])}</span>
           </button>
         ))}
       </div>

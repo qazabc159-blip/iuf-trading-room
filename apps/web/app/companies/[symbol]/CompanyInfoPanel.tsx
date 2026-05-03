@@ -70,6 +70,11 @@ function ValidationPill({ label, value }: { label: string; value: string }) {
   );
 }
 
+function isMissingValidation(value: string | undefined | null) {
+  const normalized = value?.trim();
+  return !normalized || /^(n\/a|na|--|null)$/i.test(normalized);
+}
+
 function Dim({ value }: { value: string | undefined | null }) {
   const normalized = value?.trim();
   if (!normalized || /^(n\/a|na|--|null)$/i.test(normalized)) {
@@ -103,6 +108,11 @@ function translateNotes(value: string) {
 
 export function CompanyInfoPanel({ company }: { company: Company }) {
   const { ticker, name, market, country, chainPosition, beneficiaryTier, exposure, validation, notes } = company;
+  const validationMissing = [
+    validation.capitalFlow,
+    validation.consensus,
+    validation.relativeStrength,
+  ].every(isMissingValidation);
 
   return (
     <section className="panel hud-frame company-info-panel">
@@ -165,11 +175,17 @@ export function CompanyInfoPanel({ company }: { company: Company }) {
 
       <div className="company-info-section">
         <div className="company-info-label">驗證欄位 / 來源：公司主檔；尚未接資料會明確標示</div>
-        <div className="validation-grid">
-          <ValidationPill label="資金流" value={validation.capitalFlow} />
-          <ValidationPill label="市場共識" value={validation.consensus} />
-          <ValidationPill label="相對強弱" value={validation.relativeStrength} />
-        </div>
+        {validationMissing ? (
+          <div className="company-inline-empty">
+            公司主檔尚未提供資金流、市場共識與相對強弱。此區等 FinMind 籌碼與策略驗證接上後才會顯示結論。
+          </div>
+        ) : (
+          <div className="validation-grid">
+            <ValidationPill label="資金流" value={validation.capitalFlow} />
+            <ValidationPill label="市場共識" value={validation.consensus} />
+            <ValidationPill label="相對強弱" value={validation.relativeStrength} />
+          </div>
+        )}
       </div>
 
       {notes && notes.trim() && (

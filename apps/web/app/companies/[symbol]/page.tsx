@@ -73,10 +73,16 @@ function companyTimestamp(company: Company) {
   return record.updatedAt ?? record.createdAt ?? new Date().toISOString();
 }
 
-function buildSourceStatus(company: Company, bars: OhlcvBar[], ohlcvReason: string): SourceStatus[] {
+function buildSourceStatus(
+  company: Company,
+  bars: OhlcvBar[],
+  ohlcvReason: string,
+  kbar: { state: string; reason: string; rows: number; date: string },
+): SourceStatus[] {
   const lastBar = bars.at(-1);
   const lastBarTime = lastBar ? new Date(`${lastBar.dt}T13:30:00+08:00`).toISOString() : new Date().toISOString();
   const priceSource = lastBar?.source === "tej" ? "FinMind/TEJ 正式 K 線" : lastBar?.source === "kgi" ? "KGI 唯讀報價" : null;
+  const kbarLive = kbar.state === "LIVE" && kbar.rows > 0;
 
   return [
     {
@@ -106,6 +112,17 @@ function buildSourceStatus(company: Company, bars: OhlcvBar[], ohlcvReason: stri
       summary: "個股公告與新聞線索",
       lastSeen: new Date().toISOString(),
       detail: "重大訊息欄會自行顯示正常、無資料或暫停。",
+      queueDepth: 0,
+    },
+    {
+      id: "finmind-kbar",
+      label: "分 K",
+      state: kbarLive ? "live" : kbar.state === "BLOCKED" ? "error" : "stale",
+      summary: kbarLive ? `FinMind ${kbar.date} / ${kbar.rows} 根` : "FinMind 分 K 尚未可用",
+      lastSeen: new Date().toISOString(),
+      detail: kbarLive
+        ? "已接 FinMind Sponsor 分 K；日內 1/5/15/60 分鐘由同一批真實分 K 彙整，不使用假線。"
+        : kbar.reason,
       queueDepth: 0,
     },
     {
@@ -222,7 +239,12 @@ export default async function CompanyDetailPage({
 
   const detail = toCompanyDetailView(company, symbol);
   const quote = quoteFromOhlcvBars(bars);
-  const sources = buildSourceStatus(company, bars, ohlcvReason);
+  const sources = buildSourceStatus(company, bars, ohlcvReason, {
+    state: kbarState,
+    reason: kbarReason,
+    rows: kbarView?.rows.length ?? 0,
+    date: kbarView?.date ?? kbarDate,
+  });
   const dailyChangePct = quote?.changePercent ?? null;
 
   return (

@@ -1485,9 +1485,15 @@ button { font: inherit; }
 
 .company-info-section {
   border-top: 1px solid var(--night-rule);
-  margin-top: 12px;
+  margin-top: 10px;
   min-width: 0;
-  padding: 12px 12px 14px;
+  padding: 12px 12px 13px;
+}
+
+.company-inline-empty {
+  margin-top: 10px;
+  color: var(--night-mid);
+  font: 650 13px/1.85 var(--sans-tc);
 }
 
 .company-filter-row {
@@ -3253,8 +3259,8 @@ body:has(.login-route) > div {
   grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
-  min-height: 58px;
-  padding: 14px 16px;
+  min-height: 50px;
+  padding: 12px 14px;
   border: 0;
   border-bottom: 1px solid var(--night-rule, #222);
   background: transparent;
@@ -3290,7 +3296,14 @@ body:has(.login-route) > div {
 .source-status-detail {
   grid-column: 2 / 4;
   border-top: 1px solid var(--night-rule, #222);
-  padding: 14px 0 6px;
+  padding: 12px 0 4px;
+  line-height: 1.8;
+}
+
+.source-status-panel .ascii-head {
+  min-height: 0;
+  margin-bottom: 10px;
+  padding: 4px 8px 12px;
 }
 
 .company-kpi-strip {
@@ -3405,6 +3418,39 @@ body:has(.login-route) > div {
   min-height: 34px;
   padding: 8px 14px;
   font-size: 12px;
+}
+
+.company-data-tabs.finmind-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.company-data-tabs.finmind-tabs .mini-button,
+.company-data-tabs.finmind-tabs .outline-button {
+  min-height: 52px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 12px;
+  text-align: left;
+}
+
+.company-data-tab-main,
+.company-data-tab-meta {
+  display: block;
+  max-width: 100%;
+}
+
+.company-data-tab-main {
+  color: var(--night-ink);
+  font-weight: 850;
+}
+
+.company-data-tab-meta {
+  color: var(--night-mid);
+  font: 700 10.5px/1.45 var(--sans-tc);
+  overflow-wrap: anywhere;
 }
 
 .table-scroll {
