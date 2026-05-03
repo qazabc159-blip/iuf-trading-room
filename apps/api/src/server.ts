@@ -3766,6 +3766,8 @@ const FINMIND_DATASET_STATUS = [
   { key: "TaiwanStockNews", label: "台股新聞", implemented: false, blocker: "freeze_no_news_feature" },
   { key: "TaiwanStockPER", label: "PER / PBR / 殖利率", implemented: true },
   { key: "TaiwanStockMarketValue", label: "股價市值", implemented: true },
+  { key: "TaiwanStockShareholding", label: "外資持股", implemented: true },
+  { key: "TaiwanStockHoldingSharesPer", label: "股權分散", implemented: true },
   { key: "taiwan_stock_tick_snapshot", label: "即時快照", implemented: false, blocker: "quote_contract_pending" }
 ] as const;
 
@@ -3934,6 +3936,139 @@ app.get("/api/v1/companies/:id/financials", async (c) => {
   return c.json({ data: allRows });
 });
 
+function latestBucket(rows: Array<{ date: string; type: string; value: number; origin_name?: string }>) {
+  const buckets = new Map<string, Map<string, { value: number; originName: string | null }>>();
+  for (const row of rows) {
+    if (!row.date || !row.type || row.type.endsWith("_per")) continue;
+    let bucket = buckets.get(row.date);
+    if (!bucket) {
+      bucket = new Map();
+      buckets.set(row.date, bucket);
+    }
+    bucket.set(row.type, { value: row.value, originName: row.origin_name ?? null });
+  }
+  const latestDate = [...buckets.keys()].sort((a, b) => b.localeCompare(a))[0] ?? null;
+  return latestDate ? { date: latestDate, bucket: buckets.get(latestDate) ?? new Map() } : null;
+}
+
+function pickMetric(
+  bucket: Map<string, { value: number; originName: string | null }>,
+  keys: string[]
+) {
+  for (const key of keys) {
+    const found = bucket.get(key);
+    if (found) return found;
+  }
+  return null;
+}
+
+// GET /api/v1/companies/:id/balance-sheet?years=3
+// Returns one compact latest balance-sheet snapshot plus selected line items.
+app.get("/api/v1/companies/:id/balance-sheet", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const years = Math.max(1, Math.min(10, Number(c.req.query("years") ?? "3")));
+  const stockId = companyIdToTicker(company.ticker);
+  const rows = await getFinMindClient().getBalanceSheet(stockId, nYearsAgoDate(years), todayDate());
+  const latest = latestBucket(rows);
+
+  if (!latest) {
+    return c.json({ data: null });
+  }
+
+  const totalAssets = pickMetric(latest.bucket, ["TotalAssets", "Assets"]);
+  const totalLiabilities = pickMetric(latest.bucket, ["TotalLiabilities", "Liabilities"]);
+  const equity = pickMetric(latest.bucket, ["Equity", "EquityAttributableToOwnersOfParent", "TotalEquity"]);
+  const currentAssets = pickMetric(latest.bucket, ["CurrentAssets", "TotalCurrentAssets"]);
+  const currentLiabilities = pickMetric(latest.bucket, ["CurrentLiabilities", "TotalCurrentLiabilities"]);
+  const cash = pickMetric(latest.bucket, ["CashAndCashEquivalents", "CashAndCashEquivalentsAtCarryingValue"]);
+
+  const debtRatioPct = totalAssets?.value && totalLiabilities
+    ? (totalLiabilities.value / totalAssets.value) * 100
+    : null;
+  const currentRatioPct = currentLiabilities?.value && currentAssets
+    ? (currentAssets.value / currentLiabilities.value) * 100
+    : null;
+
+  return c.json({
+    data: {
+      date: latest.date,
+      stock_id: stockId,
+      totalAssets: totalAssets?.value ?? null,
+      totalLiabilities: totalLiabilities?.value ?? null,
+      equity: equity?.value ?? null,
+      cashAndCashEquivalents: cash?.value ?? null,
+      currentAssets: currentAssets?.value ?? null,
+      currentLiabilities: currentLiabilities?.value ?? null,
+      debtRatioPct,
+      currentRatioPct,
+      sourceItems: [...latest.bucket.entries()]
+        .slice(0, 80)
+        .map(([type, item]) => ({ type, value: item.value, originName: item.originName }))
+    }
+  });
+});
+
+// GET /api/v1/companies/:id/cash-flow?years=3
+// Returns one compact latest cash-flow snapshot plus selected line items.
+app.get("/api/v1/companies/:id/cash-flow", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const years = Math.max(1, Math.min(10, Number(c.req.query("years") ?? "3")));
+  const stockId = companyIdToTicker(company.ticker);
+  const rows = await getFinMindClient().getCashFlow(stockId, nYearsAgoDate(years), todayDate());
+  const latest = latestBucket(rows);
+
+  if (!latest) {
+    return c.json({ data: null });
+  }
+
+  const operating = pickMetric(latest.bucket, [
+    "CashFlowsFromOperatingActivities",
+    "CashProvidedByOperatingActivities",
+    "NetCashProvidedByUsedInOperatingActivities"
+  ]);
+  const investing = pickMetric(latest.bucket, [
+    "CashProvidedByInvestingActivities",
+    "CashFlowsFromInvestingActivities",
+    "NetCashProvidedByUsedInInvestingActivities"
+  ]);
+  const financing = pickMetric(latest.bucket, [
+    "CashProvidedByFinancingActivities",
+    "CashFlowsFromFinancingActivities",
+    "NetCashProvidedByUsedInFinancingActivities"
+  ]);
+  const cashIncrease = pickMetric(latest.bucket, [
+    "CashBalancesIncrease",
+    "IncreaseDecreaseInCashAndCashEquivalents",
+    "NetIncreaseDecreaseInCashAndCashEquivalents"
+  ]);
+  const netIncomeBeforeTax = pickMetric(latest.bucket, ["NetIncomeBeforeTax"]);
+  const capex = pickMetric(latest.bucket, ["PropertyAndPlantAndEquipment", "PurchaseOfPropertyPlantAndEquipment"]);
+
+  return c.json({
+    data: {
+      date: latest.date,
+      stock_id: stockId,
+      operatingCashFlow: operating?.value ?? null,
+      investingCashFlow: investing?.value ?? null,
+      financingCashFlow: financing?.value ?? null,
+      cashIncrease: cashIncrease?.value ?? null,
+      netIncomeBeforeTax: netIncomeBeforeTax?.value ?? null,
+      freeCashFlow: operating && capex ? operating.value + capex.value : null,
+      sourceItems: [...latest.bucket.entries()]
+        .slice(0, 80)
+        .map(([type, item]) => ({ type, value: item.value, originName: item.originName }))
+    }
+  });
+});
+
 // GET /api/v1/companies/:id/revenue?limit=24
 // Returns: { data: FinMindMonthRevenueRow[] } up to limit months
 app.get("/api/v1/companies/:id/revenue", async (c) => {
@@ -4004,6 +4139,42 @@ app.get("/api/v1/companies/:id/chips", async (c) => {
       dealer:  { net30d: toLots(dealerNet) },
       margin:  marginOut,
       short:   shortOut
+    }
+  });
+});
+
+// GET /api/v1/companies/:id/shareholding?months=6
+// Read-only FinMind Sponsor ownership surface: latest foreign holding + latest distribution levels.
+app.get("/api/v1/companies/:id/shareholding", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const months = Math.max(1, Math.min(36, Number(c.req.query("months") ?? "6")));
+  const startDate = nMonthsAgoDate(months);
+  const stockId = companyIdToTicker(company.ticker);
+  const client = getFinMindClient();
+
+  const [shareholding, levels] = await Promise.all([
+    client.getShareholding(stockId, startDate, todayDate()),
+    client.getHoldingSharesPer(stockId, startDate, todayDate())
+  ]);
+
+  const latestShareholding = [...shareholding].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+  const latestLevelDate = [...new Set(levels.map((row) => row.date))].sort((a, b) => b.localeCompare(a))[0] ?? null;
+  const latestLevels = latestLevelDate
+    ? levels
+        .filter((row) => row.date === latestLevelDate)
+        .sort((a, b) => b.percent - a.percent)
+    : [];
+
+  return c.json({
+    data: {
+      latest: latestShareholding,
+      holdingLevels: latestLevels,
+      latestLevelDate,
+      source: "FinMind TaiwanStockShareholding / TaiwanStockHoldingSharesPer"
     }
   });
 });

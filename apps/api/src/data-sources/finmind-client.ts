@@ -25,6 +25,10 @@
  *   - TaiwanStockInstitutionalInvestorsBuySell → 三大法人
  *   - TaiwanStockMarginPurchaseShortSale → 融資融券
  *   - TaiwanStockDividend       → 股利
+ *   - TaiwanStockPER            → PER / PBR / 殖利率
+ *   - TaiwanStockMarketValue    → 股價市值
+ *   - TaiwanStockShareholding   → 外資持股
+ *   - TaiwanStockHoldingSharesPer → 股權分散
  *   - TaiwanStockKBar           → 分 K（sponsor；單次一天）
  */
 
@@ -76,6 +80,7 @@ export interface FinMindFinancialStatementsRow {
   stock_id: string;
   type: string;
   value: number;
+  origin_name?: string;
 }
 
 export interface FinMindBalanceSheetRow {
@@ -83,6 +88,7 @@ export interface FinMindBalanceSheetRow {
   stock_id: string;
   type: string;
   value: number;
+  origin_name?: string;
 }
 
 export interface FinMindCashFlowRow {
@@ -90,6 +96,7 @@ export interface FinMindCashFlowRow {
   stock_id: string;
   type: string;
   value: number;
+  origin_name?: string;
 }
 
 export interface FinMindMonthRevenueRow {
@@ -158,6 +165,31 @@ export interface FinMindMarketValueRow {
   date: string;
   stock_id: string;
   market_value: number;
+}
+
+export interface FinMindShareholdingRow {
+  date: string;
+  stock_id: string;
+  stock_name: string;
+  InternationalCode: string;
+  ForeignInvestmentRemainingShares: number;
+  ForeignInvestmentShares: number;
+  ForeignInvestmentRemainRatio: number;
+  ForeignInvestmentSharesRatio: number;
+  ForeignInvestmentUpperLimitRatio: number;
+  ChineseInvestmentUpperLimitRatio: number;
+  NumberOfSharesIssued: number;
+  RecentlyDeclareDate: string;
+  note?: string;
+}
+
+export interface FinMindHoldingSharesPerRow {
+  date: string;
+  stock_id: string;
+  HoldingSharesLevel: string;
+  people: number;
+  percent: number;
+  unit: number;
 }
 
 export interface FinMindKBarRow {
@@ -671,6 +703,52 @@ export class FinMindClient {
 
     if (rows.length > 0) {
       await cacheSet(cacheKey, JSON.stringify(rows), TTL_FINANCIAL, this._redisOverride);
+    }
+    return rows;
+  }
+
+  // ── Foreign shareholding ──────────────────────────────────────────────────
+
+  async getShareholding(stockId: string, startDate: string, endDate: string): Promise<FinMindShareholdingRow[]> {
+    const cacheKey = `finmind:shareholding:${stockId}:${startDate}:${endDate}`;
+
+    const cached = await cacheGet(cacheKey, this._redisOverride);
+    if (cached) {
+      try { return JSON.parse(cached) as FinMindShareholdingRow[]; } catch { /* fall through */ }
+    }
+
+    const rows = await this._fetch<FinMindShareholdingRow>(
+      "TaiwanStockShareholding",
+      stockId,
+      startDate,
+      endDate
+    );
+
+    if (rows.length > 0) {
+      await cacheSet(cacheKey, JSON.stringify(rows), TTL_CHIP, this._redisOverride);
+    }
+    return rows;
+  }
+
+  // ── Holding distribution ─────────────────────────────────────────────────
+
+  async getHoldingSharesPer(stockId: string, startDate: string, endDate: string): Promise<FinMindHoldingSharesPerRow[]> {
+    const cacheKey = `finmind:holding-shares-per:${stockId}:${startDate}:${endDate}`;
+
+    const cached = await cacheGet(cacheKey, this._redisOverride);
+    if (cached) {
+      try { return JSON.parse(cached) as FinMindHoldingSharesPerRow[]; } catch { /* fall through */ }
+    }
+
+    const rows = await this._fetch<FinMindHoldingSharesPerRow>(
+      "TaiwanStockHoldingSharesPer",
+      stockId,
+      startDate,
+      endDate
+    );
+
+    if (rows.length > 0) {
+      await cacheSet(cacheKey, JSON.stringify(rows), TTL_CHIP, this._redisOverride);
     }
     return rows;
   }

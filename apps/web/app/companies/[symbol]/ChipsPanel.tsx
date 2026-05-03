@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 
 import {
   getCompanyChips,
+  getCompanyShareholding,
   type CompanyChipsData,
+  type CompanyShareholdingData,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 
@@ -12,7 +14,7 @@ type ChipsState =
   | { status: "loading" }
   | { status: "blocked"; reason: string; fetchedAt: string }
   | { status: "empty"; reason: string; fetchedAt: string }
-  | { status: "live"; data: CompanyChipsData; fetchedAt: string };
+  | { status: "live"; data: CompanyChipsData; shareholding: CompanyShareholdingData | null; fetchedAt: string };
 
 function formatTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", { hour12: false });
@@ -28,6 +30,19 @@ function statusLabel(status: ChipsState["status"]) {
 function formatLots(value: number) {
   const signed = value >= 0 ? `+${value.toLocaleString("zh-TW")}` : value.toLocaleString("zh-TW");
   return `${signed} 張`;
+}
+
+function formatShares(value: number | null | undefined) {
+  if (value === null || value === undefined) return "--";
+  if (Math.abs(value) >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toLocaleString("zh-TW", { maximumFractionDigits: 2 })} 十億股`;
+  }
+  return `${value.toLocaleString("zh-TW")} 股`;
+}
+
+function pct(value: number | null | undefined) {
+  if (value === null || value === undefined) return "--";
+  return `${value.toLocaleString("zh-TW", { maximumFractionDigits: 2 })}%`;
 }
 
 function NetRow({ label, value }: { label: string; value: number }) {
@@ -64,6 +79,53 @@ function StatePanel({ state }: { state: Exclude<ChipsState, { status: "live" | "
   );
 }
 
+function ShareholdingBlock({ data }: { data: CompanyShareholdingData | null }) {
+  if (!data?.latest && data?.holdingLevels.length === 0) return null;
+  const latest = data?.latest ?? null;
+  const topLevels = (data?.holdingLevels ?? []).slice(0, 6);
+
+  return (
+    <div className="ownership-block">
+      <div className="source-line">
+        <span className="badge badge-green">正常</span>
+        <span className="tg soft">來源：FinMind 外資持股 / 股權分散</span>
+        <span className="tg soft">持股日 {latest?.date ?? data?.latestLevelDate ?? "--"}</span>
+      </div>
+      {latest ? (
+        <div className="metric-grid compact-metric-grid">
+          <div className="metric-tile">
+            <span className="tg soft">外資持股</span>
+            <strong>{pct(latest.ForeignInvestmentSharesRatio)}</strong>
+            <span className="tg soft">{formatShares(latest.ForeignInvestmentShares)}</span>
+          </div>
+          <div className="metric-tile">
+            <span className="tg soft">外資尚可投資</span>
+            <strong>{pct(latest.ForeignInvestmentRemainRatio)}</strong>
+            <span className="tg soft">{formatShares(latest.ForeignInvestmentRemainingShares)}</span>
+          </div>
+          <div className="metric-tile">
+            <span className="tg soft">發行股數</span>
+            <strong>{formatShares(latest.NumberOfSharesIssued)}</strong>
+            <span className="tg soft">申報 {latest.RecentlyDeclareDate || "--"}</span>
+          </div>
+        </div>
+      ) : null}
+      {topLevels.length > 0 ? (
+        <div className="ownership-bars">
+          {topLevels.map((row) => (
+            <div className="ownership-bar" key={`${row.date}-${row.HoldingSharesLevel}`}>
+              <span>{row.HoldingSharesLevel}</span>
+              <span className="ownership-bar-track"><i style={{ width: `${Math.max(2, Math.min(100, row.percent))}%` }} /></span>
+              <strong>{pct(row.percent)}</strong>
+              <span className="tg soft">{row.people.toLocaleString("zh-TW")} 人</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function isCompleteChipsData(data: CompanyChipsData | null | undefined): data is CompanyChipsData {
   return Boolean(data?.foreign && data.trust && data.dealer);
 }
@@ -74,8 +136,11 @@ export function ChipsPanel({ companyId }: { companyId: string }) {
   useEffect(() => {
     let active = true;
 
-    getCompanyChips(companyId, { days: 30 })
-      .then((response) => {
+    Promise.all([
+      getCompanyChips(companyId, { days: 30 }),
+      getCompanyShareholding(companyId, { months: 6 }).catch(() => ({ data: null as CompanyShareholdingData | null })),
+    ])
+      .then(([response, shareholdingResponse]) => {
         if (!active) return;
         const fetchedAt = new Date().toISOString();
         const data = response.data;
@@ -89,12 +154,14 @@ export function ChipsPanel({ companyId }: { companyId: string }) {
         }
         const hasInstitutional = data.foreign.net30d !== 0 || data.trust.net30d !== 0 || data.dealer.net30d !== 0;
         const hasBalances = Boolean(data.margin || data.short);
-        setState(hasInstitutional || hasBalances
-          ? { status: "live", data, fetchedAt }
+        const shareholding = shareholdingResponse.data;
+        const hasShareholding = Boolean(shareholding?.latest || shareholding?.holdingLevels.length);
+        setState(hasInstitutional || hasBalances || hasShareholding
+          ? { status: "live", data, shareholding, fetchedAt }
           : {
               status: "empty",
               fetchedAt,
-              reason: "近 30 天沒有外資、投信、自營商、融資或融券資料列。",
+              reason: "近 30 天沒有三大法人、融資券或股權分散資料列。",
             });
       })
       .catch((error) => {
@@ -139,6 +206,7 @@ export function ChipsPanel({ companyId }: { companyId: string }) {
           <NetRow label="自營商近 30 日買賣超" value={state.data.dealer.net30d} />
           <BalanceRow label="融資餘額" value={state.data.margin} />
           <BalanceRow label="融券餘額" value={state.data.short} />
+          <ShareholdingBlock data={state.shareholding} />
         </div>
       )}
     </section>

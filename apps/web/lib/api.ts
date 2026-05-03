@@ -1399,12 +1399,66 @@ export interface CompanyMarketValueRow {
   market_value: number;
 }
 
+export interface CompanyBalanceSheetSnapshot {
+  date: string;
+  stock_id: string;
+  totalAssets: number | null;
+  totalLiabilities: number | null;
+  equity: number | null;
+  cashAndCashEquivalents: number | null;
+  currentAssets: number | null;
+  currentLiabilities: number | null;
+  debtRatioPct: number | null;
+  currentRatioPct: number | null;
+  sourceItems: Array<{ type: string; value: number; originName: string | null }>;
+}
+
+export interface CompanyCashFlowSnapshot {
+  date: string;
+  stock_id: string;
+  operatingCashFlow: number | null;
+  investingCashFlow: number | null;
+  financingCashFlow: number | null;
+  cashIncrease: number | null;
+  netIncomeBeforeTax: number | null;
+  freeCashFlow: number | null;
+  sourceItems: Array<{ type: string; value: number; originName: string | null }>;
+}
+
 export interface CompanyChipsData {
   foreign: { net30d: number };
   trust: { net30d: number };
   dealer: { net30d: number };
   margin: { balance: number; change: number } | null;
   short: { balance: number; change: number } | null;
+}
+
+export interface CompanyShareholdingData {
+  latest: {
+    date: string;
+    stock_id: string;
+    stock_name: string;
+    InternationalCode: string;
+    ForeignInvestmentRemainingShares: number;
+    ForeignInvestmentShares: number;
+    ForeignInvestmentRemainRatio: number;
+    ForeignInvestmentSharesRatio: number;
+    ForeignInvestmentUpperLimitRatio: number;
+    ChineseInvestmentUpperLimitRatio: number;
+    NumberOfSharesIssued: number;
+    RecentlyDeclareDate: string;
+    note?: string;
+  } | null;
+  holdingLevels: Array<{
+    date: string;
+    stock_id: string;
+    HoldingSharesLevel: string;
+    people: number;
+    percent: number;
+    unit: number;
+  }>;
+  latestLevelDate: string | null;
+  source: string;
 }
 
 /**
@@ -1453,6 +1507,20 @@ export async function getCompanyFinancials(companyId: string, params?: { limit?:
   return request<CompanyFinancialRow[]>(`/api/v1/companies/${companyId}/financials${qs ? `?${qs}` : ""}`);
 }
 
+export async function getCompanyBalanceSheet(companyId: string, params?: { years?: number }) {
+  const query = new URLSearchParams();
+  if (params?.years) query.set("years", String(params.years));
+  const qs = query.toString();
+  return request<CompanyBalanceSheetSnapshot | null>(`/api/v1/companies/${companyId}/balance-sheet${qs ? `?${qs}` : ""}`);
+}
+
+export async function getCompanyCashFlow(companyId: string, params?: { years?: number }) {
+  const query = new URLSearchParams();
+  if (params?.years) query.set("years", String(params.years));
+  const qs = query.toString();
+  return request<CompanyCashFlowSnapshot | null>(`/api/v1/companies/${companyId}/cash-flow${qs ? `?${qs}` : ""}`);
+}
+
 export async function getCompanyRevenue(companyId: string, params?: { limit?: number }) {
   const query = new URLSearchParams();
   if (params?.limit) query.set("limit", String(params.limit));
@@ -1486,6 +1554,13 @@ export async function getCompanyChips(companyId: string, params?: { days?: numbe
   if (params?.days) query.set("days", String(params.days));
   const qs = query.toString();
   return request<CompanyChipsData>(`/api/v1/companies/${companyId}/chips${qs ? `?${qs}` : ""}`);
+}
+
+export async function getCompanyShareholding(companyId: string, params?: { months?: number }) {
+  const query = new URLSearchParams();
+  if (params?.months) query.set("months", String(params.months));
+  const qs = query.toString();
+  return request<CompanyShareholdingData>(`/api/v1/companies/${companyId}/shareholding${qs ? `?${qs}` : ""}`);
 }
 
 // Paper orders live in a dedicated no-mock client so both company and portfolio
