@@ -2328,6 +2328,12 @@ body:has(.login-route) > div {
   line-height: 1.65;
 }
 
+.table-cell-inner {
+  display: inline-block;
+  min-height: 1.45em;
+  padding: 2px 1px;
+}
+
 .tick-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(70px, 1fr));

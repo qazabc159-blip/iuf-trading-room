@@ -74,24 +74,24 @@ function FinancialTable({ rows }: { rows: CompanyFinancialRow[] }) {
       <table className="data-table company-data-table-fit">
         <thead>
           <tr>
-            <th>期別</th>
-            <th>營收（十億）</th>
-            <th>毛利率</th>
-            <th>營益率</th>
-            <th>EPS</th>
-            <th>年增率</th>
+            <th><span className="table-cell-inner">期別</span></th>
+            <th><span className="table-cell-inner">營收（十億）</span></th>
+            <th><span className="table-cell-inner">毛利率</span></th>
+            <th><span className="table-cell-inner">營益率</span></th>
+            <th><span className="table-cell-inner">EPS</span></th>
+            <th><span className="table-cell-inner">年增率</span></th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.period}>
-              <td>{row.period}</td>
-              <td className="num">{money(row.revenue)}</td>
-              <td className="num">{percent(row.grossMarginPct)}</td>
-              <td className="num">{percent(row.operatingMarginPct)}</td>
-              <td className="num">{numberText(row.epsAfterTax)}</td>
+              <td><span className="table-cell-inner">{row.period}</span></td>
+              <td className="num"><span className="table-cell-inner">{money(row.revenue)}</span></td>
+              <td className="num"><span className="table-cell-inner">{percent(row.grossMarginPct)}</span></td>
+              <td className="num"><span className="table-cell-inner">{percent(row.operatingMarginPct)}</span></td>
+              <td className="num"><span className="table-cell-inner">{numberText(row.epsAfterTax)}</span></td>
               <td className={`num ${row.yoyPct && row.yoyPct > 0 ? "up" : row.yoyPct && row.yoyPct < 0 ? "down" : "muted"}`}>
-                {percent(row.yoyPct)}
+                <span className="table-cell-inner">{percent(row.yoyPct)}</span>
               </td>
             </tr>
           ))}
@@ -107,19 +107,19 @@ function RevenueTable({ rows }: { rows: CompanyRevenueRow[] }) {
       <table className="data-table company-data-table-fit">
         <thead>
           <tr>
-            <th>年月</th>
-            <th>營收（十億）</th>
-            <th>代號</th>
-            <th>市場</th>
+            <th><span className="table-cell-inner">年月</span></th>
+            <th><span className="table-cell-inner">營收（十億）</span></th>
+            <th><span className="table-cell-inner">代號</span></th>
+            <th><span className="table-cell-inner">市場</span></th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={`${row.stock_id}-${row.date}`}>
-              <td>{row.revenue_year}/{String(row.revenue_month).padStart(2, "0")}</td>
-              <td className="num">{money(row.revenue)}</td>
-              <td>{row.stock_id}</td>
-              <td>{row.country}</td>
+              <td><span className="table-cell-inner">{row.revenue_year}/{String(row.revenue_month).padStart(2, "0")}</span></td>
+              <td className="num"><span className="table-cell-inner">{money(row.revenue)}</span></td>
+              <td><span className="table-cell-inner">{row.stock_id}</span></td>
+              <td><span className="table-cell-inner">{row.country}</span></td>
             </tr>
           ))}
         </tbody>
@@ -134,21 +134,21 @@ function DividendTable({ rows }: { rows: CompanyDividendRow[] }) {
       <table className="data-table company-data-table-fit">
         <thead>
           <tr>
-            <th>年度</th>
-            <th>總股利</th>
-            <th>現金股利</th>
-            <th>股票股利</th>
-            <th>除權息日</th>
+            <th><span className="table-cell-inner">年度</span></th>
+            <th><span className="table-cell-inner">總股利</span></th>
+            <th><span className="table-cell-inner">現金股利</span></th>
+            <th><span className="table-cell-inner">股票股利</span></th>
+            <th><span className="table-cell-inner">除權息日</span></th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={`${row.stock_id}-${row.year}-${row.date}`}>
-              <td>{row.year}</td>
-              <td className="num">{numberText(row.TotalDividend)}</td>
-              <td className="num">{numberText(row.TotalCashDividend)}</td>
-              <td className="num">{numberText(row.TotalStockDividend)}</td>
-              <td>{row.date}</td>
+              <td><span className="table-cell-inner">{row.year}</span></td>
+              <td className="num"><span className="table-cell-inner">{numberText(row.TotalDividend)}</span></td>
+              <td className="num"><span className="table-cell-inner">{numberText(row.TotalCashDividend)}</span></td>
+              <td className="num"><span className="table-cell-inner">{numberText(row.TotalStockDividend)}</span></td>
+              <td><span className="table-cell-inner">{row.date}</span></td>
             </tr>
           ))}
         </tbody>
