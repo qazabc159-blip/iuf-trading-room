@@ -23,8 +23,10 @@ export function contentDraftTargetLabel(draft: ContentDraftEntry) {
   const labels: Record<string, string> = {
     daily_briefs: "每日簡報",
     themes: "主題資料",
+    theme_summaries: "主題摘要",
     signals: "訊號證據",
     companies: "公司資料",
+    company_notes: "公司筆記",
     trade_plans: "交易計畫",
     reviews: "檢討紀錄",
   };

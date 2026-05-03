@@ -56,7 +56,6 @@ function DraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
         <span>標題</span>
         <span>狀態</span>
         <span>更新</span>
-        <span>查看</span>
       </div>
       {drafts.map((draft) => {
         const body = cleanNarrativeText(contentDraftBody(draft), "");
@@ -72,7 +71,6 @@ function DraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
               {contentDraftStatusLabel(draft.status)}
             </span>
             <span className="tg soft">{formatDateTime(draft.updatedAt)}</span>
-            <span className="mini-button">查看</span>
           </Link>
         );
       })}
