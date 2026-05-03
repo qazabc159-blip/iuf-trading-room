@@ -142,6 +142,10 @@ function lifecycleLabel(value: string | null | undefined) {
   if (value === "watch") return "觀察";
   if (value === "paused") return "暫停";
   if (value === "retired") return "退場";
+  if (value === "Discovery") return "探索";
+  if (value === "Validation") return "驗證";
+  if (value === "Expansion") return "擴張";
+  if (value === "Crowded") return "擁擠";
   return value ?? "--";
 }
 

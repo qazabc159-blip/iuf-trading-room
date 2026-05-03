@@ -715,6 +715,16 @@ button { font: inherit; }
   gap: 20px;
 }
 
+.duplicate-grid {
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+.duplicate-side-list {
+  display: grid;
+  gap: 20px;
+}
+
 .panel {
   border: 1px solid rgba(220, 228, 240, 0.10);
   border-top-color: var(--night-rule-strong);
@@ -778,6 +788,31 @@ button { font: inherit; }
 
 .row:hover {
   background: rgba(200, 148, 63, 0.045);
+}
+
+.duplicate-summary-row {
+  grid-template-columns: 82px 60px minmax(220px, 0.9fr) 64px minmax(360px, 1.3fr);
+  gap: 18px;
+  min-height: 72px;
+  padding: 16px 14px;
+}
+
+.duplicate-company-row {
+  grid-template-columns: 82px minmax(180px, 1fr) 72px 72px 96px;
+  gap: 16px;
+  padding: 14px 0;
+}
+
+.duplicate-summary-row .tc,
+.duplicate-company-row .tc,
+.duplicate-reason {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.duplicate-reason {
+  line-height: 1.72;
 }
 
 .theme-row {

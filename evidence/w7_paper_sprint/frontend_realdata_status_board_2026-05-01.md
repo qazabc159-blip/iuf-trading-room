@@ -4,6 +4,34 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 08:42 Taipei - Codex heartbeat pass 40 - duplicate page text containment
+
+**Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/companies/duplicates/page.tsx` - duplicate-report rows now translate the canonical English reason into Traditional Chinese, hide corrupt backend names as `名稱待校正`, and translate beneficiary-tier fallback labels.
+- `apps/web/app/m/page.tsx` - mobile theme lifecycle labels now include `Discovery` / `Validation` / `Expansion` / `Crowded` as `探索` / `驗證` / `擴張` / `擁擠`.
+- `apps/web/app/globals.css` - duplicate-report layout now uses a full-width one-column report surface, wider reason columns, and wrapping row styles instead of half-width squeezed text.
+- `evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` - recorded this pass.
+
+**Behavior**:
+- `/companies/duplicates` no longer displays long English audit reasons in a narrow vertical strip.
+- If backend duplicate data contains replacement-character names, the operator sees `名稱待校正` instead of visible mojibake.
+- `/m` no longer leaks `Discovery` / `Validation` in mobile theme cards.
+
+**Endpoints / data**:
+- Existing read endpoints only: `GET /api/v1/companies/duplicates`, plus existing mobile read endpoints.
+- No merge/ignore/delete action added; duplicate page remains read-only because migration 0020 is still gated.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `git diff --check -- apps/web/app/companies/duplicates/page.tsx apps/web/app/m/page.tsx apps/web/app/globals.css` PASS.
+- Local authenticated 1365px Playwright smoke on `/companies/duplicates` and `/m` PASS for current local/prod API state: status 200, 0 overflow, 0 clipped, 0 narrow stacks, 0 raw lifecycle/reason hits, 0 mojibake hits. Screenshot/report: `evidence/w7_paper_sprint/local_visual_qa_pass40_duplicates_mobile_2026-05-03/`.
+
+**Blockers / next bypass**:
+- Production verification waits on PR CI and Railway deploy. Next smoke should re-run full route sweep; previous pass 40 production sweep found only `/companies/duplicates` and `/m`.
+
 ### 2026-05-03 08:31 Taipei - Codex heartbeat pass 39 - company financial table breathing room
 
 **Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
