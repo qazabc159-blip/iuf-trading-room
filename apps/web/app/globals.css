@@ -3420,6 +3420,39 @@ body:has(.login-route) > div {
   font-size: 12px;
 }
 
+.company-data-tabs.finmind-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.company-data-tabs.finmind-tabs .mini-button,
+.company-data-tabs.finmind-tabs .outline-button {
+  min-height: 52px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 12px;
+  text-align: left;
+}
+
+.company-data-tab-main,
+.company-data-tab-meta {
+  display: block;
+  max-width: 100%;
+}
+
+.company-data-tab-main {
+  color: var(--night-ink);
+  font-weight: 850;
+}
+
+.company-data-tab-meta {
+  color: var(--night-mid);
+  font: 700 10.5px/1.45 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
 .table-scroll {
   width: 100%;
   overflow-x: auto;
