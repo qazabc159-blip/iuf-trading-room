@@ -5,6 +5,7 @@ import { WatchlistSurface, type WatchlistSurfaceState } from "@/components/watch
 import {
   getCompanies,
   getCompanyAnnouncements,
+  getFinMindStatus,
   getMarketDataOverview,
   getSignals,
   getStrategyIdeas,
@@ -12,6 +13,7 @@ import {
   getWatchlistOverview,
   listStrategyRuns,
   type CompanyAnnouncement,
+  type FinMindSourceStatus,
   type MarketDataOverview,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
@@ -517,6 +519,54 @@ function OpsPanel({ overview, runs }: { overview: LoadState<MarketDataOverview |
   );
 }
 
+function FinMindPanel({ finmind }: { finmind: LoadState<FinMindSourceStatus | null> }) {
+  const datasets = finmind.state === "LIVE" && finmind.data ? finmind.data.datasets : [];
+  const readyCount = datasets.filter((dataset) => dataset.state === "READY").length;
+  const blockedCount = datasets.filter((dataset) => dataset.state === "BLOCKED").length;
+  return (
+    <Panel
+      code="FM-DATA"
+      title="FinMind 資料源"
+      sub="Sponsor 資料狀態；只讀、不代表下單通道"
+      right={<StatePill state={finmind.state} />}
+    >
+      <StateLine state={finmind} label="FinMind Sponsor" />
+      <EmptyOrBlocked state={finmind} />
+      {finmind.state === "LIVE" && finmind.data && (
+        <>
+          <div className="quote-strip quote-strip-compact">
+            <div className="quote-card">
+              <div className="tg gold">Token</div>
+              <div className="quote-last num up">{finmind.data.tokenPresent ? "已接上" : "未設定"}</div>
+              <div className="tg soft">只回傳存在狀態，不顯示 token</div>
+            </div>
+            <div className="quote-card">
+              <div className="tg gold">資料集</div>
+              <div className="quote-last num">{readyCount}</div>
+              <div className="tg soft">{blockedCount} 項待接或凍結</div>
+            </div>
+            <div className="quote-card">
+              <div className="tg gold">額度</div>
+              <div className="quote-last num">待查</div>
+              <div className="tg soft">下一版接 user_info 安全回傳</div>
+            </div>
+          </div>
+          <div className="finmind-dataset-grid">
+            {datasets.slice(0, 10).map((dataset) => (
+              <div className="finmind-dataset-chip" key={dataset.key}>
+                <span className="tg gold">{dataset.label}</span>
+                <span className={`tg ${dataset.state === "READY" ? "up" : "soft"}`}>
+                  {dataset.state === "READY" ? "可用" : "待接"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
 async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<StrategyIdeaData | null>) {
   const source = "重大訊息";
   if (companies.state !== "LIVE") {
@@ -620,8 +670,40 @@ async function loadWatchlist(): Promise<WatchlistSurfaceState> {
   }
 }
 
+async function loadFinMindStatus(): Promise<LoadState<FinMindSourceStatus | null>> {
+  const source = "FinMind Sponsor";
+  const updatedAt = new Date().toISOString();
+  try {
+    const res = await getFinMindStatus();
+    const data = res.data;
+    if (!data.tokenPresent || data.state === "BLOCKED") {
+      return {
+        state: "BLOCKED",
+        data,
+        updatedAt: data.updatedAt || updatedAt,
+        source,
+        reason: "FinMind token 或資料源診斷尚未就緒。",
+      };
+    }
+    return {
+      state: "LIVE",
+      data,
+      updatedAt: data.updatedAt || updatedAt,
+      source,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      data: null,
+      updatedAt,
+      source,
+      reason: friendlyDataError(error),
+    };
+  }
+}
+
 export default async function DashboardPage() {
-  const [overview, themes, companies, ideas, runs, signals, watchlist] = await Promise.all([
+  const [overview, themes, companies, ideas, runs, signals, watchlist, finmind] = await Promise.all([
     load("市場總覽", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 5 })).data, (value) => value === null || value.quotes.total === 0),
     load("主題資料", [], async () => (await getThemes()).data, (value) => value.length === 0),
     load("公司資料", [], async () => (await getCompanies()).data, (value) => value.length === 0),
@@ -629,6 +711,7 @@ export default async function DashboardPage() {
     load("策略批次", null, async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data, (value) => value === null || value.items.length === 0),
     load("訊號證據", [], async () => (await getSignals()).data, (value) => value.length === 0),
     loadWatchlist(),
+    loadFinMindStatus(),
   ]);
   const news = await loadNews(companies, ideas);
   const marketOverview = overview.state === "LIVE" && overview.data?.generatedAt
@@ -640,6 +723,7 @@ export default async function DashboardPage() {
     `想法 ${ideas.state === "LIVE" && ideas.data ? ideas.data.summary.total : stateText(ideas.state)}`,
     `訊號 ${signals.state === "LIVE" ? signals.data.length : stateText(signals.state)}`,
     `重大訊息 ${news.state === "LIVE" ? news.data.length : stateText(news.state)}`,
+    `FinMind ${stateText(finmind.state)}`,
   ].join(" / ");
 
   const heroStats = [
@@ -647,8 +731,17 @@ export default async function DashboardPage() {
     { label: "主題", value: themes.state === "LIVE" ? String(themes.data.length) : stateText(themes.state), tone: themes.state === "LIVE" ? "gold" : "muted" },
     { label: "策略想法", value: ideas.state === "LIVE" && ideas.data ? String(ideas.data.summary.total) : stateText(ideas.state), tone: ideas.state === "LIVE" ? "gold" : "muted" },
     { label: "訊號", value: signals.state === "LIVE" ? String(signals.data.filter((signal) => !isInternalTestSignal(signal)).length) : stateText(signals.state), tone: signals.state === "LIVE" ? "gold" : "muted" },
+    { label: "FinMind", value: stateText(finmind.state), tone: finmind.state === "LIVE" ? "up" : "down" },
   ];
   const sourceStatuses: DashboardSourceStatus[] = [
+    {
+      label: "FinMind",
+      state: finmind.state,
+      source: finmind.source,
+      updatedAt: finmind.updatedAt,
+      reason: sourceReason(finmind),
+      next: "FinMind 恢復後會顯示台股日線、分 K、月營收、法人、融資券、股利與財報資料狀態。",
+    },
     {
       label: "市場總覽",
       state: marketOverview.state,
@@ -748,6 +841,7 @@ export default async function DashboardPage() {
             </div>
 
             <div className="dashboard-mosaic-secondary">
+              <FinMindPanel finmind={finmind} />
               <MarketIntelPanel news={news} />
               <SignalsPanel signals={signals} />
               <OpsPanel overview={marketOverview} runs={runs} />

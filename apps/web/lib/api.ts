@@ -549,6 +549,34 @@ export async function getOpsTrends(params?: { days?: number; timeZone?: string }
   return request<OpsTrendView>(`/api/v1/ops/trends${qs ? `?${qs}` : ""}`);
 }
 
+// ── Data source diagnostics ──
+
+export type FinMindDatasetStatus = {
+  key: string;
+  label: string;
+  implemented: boolean;
+  blocker?: string;
+  state: "READY" | "BLOCKED";
+};
+
+export type FinMindSourceStatus = {
+  source: "FINMIND";
+  state: "LIVE_READY" | "BLOCKED";
+  tokenPresent: boolean;
+  quota: {
+    used: number | null;
+    limit: number | null;
+    source: string;
+  };
+  datasets: FinMindDatasetStatus[];
+  notes: string[];
+  updatedAt: string;
+};
+
+export async function getFinMindStatus() {
+  return request<FinMindSourceStatus>("/api/v1/data-sources/finmind/status");
+}
+
 // ── Trading (paper broker) ──
 
 export async function getTradingAccounts() {

@@ -1619,6 +1619,45 @@ button { font: inherit; }
   overflow-wrap: anywhere;
 }
 
+.quote-strip-compact {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 12px 0 16px;
+  border-top: 1px solid rgba(226, 184, 92, 0.12);
+}
+
+.quote-strip-compact .quote-card {
+  min-height: 82px;
+  padding: 14px 16px 16px;
+}
+
+.quote-strip-compact .quote-last {
+  font-size: clamp(18px, 1.7vw, 24px);
+}
+
+.finmind-dataset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.finmind-dataset-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 11px;
+  border-top: 1px solid rgba(226, 184, 92, 0.16);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.07);
+  background: rgba(5, 8, 12, 0.28);
+}
+
+.finmind-dataset-chip span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .kline-toolbar {
   display: flex;
   flex-wrap: wrap;
