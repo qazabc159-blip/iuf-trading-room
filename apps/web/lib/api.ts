@@ -573,8 +573,36 @@ export type FinMindSourceStatus = {
   updatedAt: string;
 };
 
+export type FinMindKBarRow = {
+  date: string;
+  minute: string;
+  stock_id: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+export type FinMindKBarView = {
+  source: "FINMIND";
+  state: "LIVE" | "EMPTY" | "BLOCKED";
+  reason: string | null;
+  stockId: string;
+  date: string;
+  rows: FinMindKBarRow[];
+  updatedAt: string;
+};
+
 export async function getFinMindStatus() {
   return request<FinMindSourceStatus>("/api/v1/data-sources/finmind/status");
+}
+
+export async function getCompanyKBar(id: string, date?: string) {
+  const query = new URLSearchParams();
+  if (date) query.set("date", date);
+  const qs = query.toString();
+  return request<FinMindKBarView>(`/api/v1/companies/${id}/kbar${qs ? `?${qs}` : ""}`);
 }
 
 // ── Trading (paper broker) ──

@@ -3768,6 +3768,10 @@ const FINMIND_DATASET_STATUS = [
   { key: "taiwan_stock_tick_snapshot", label: "即時快照", implemented: false, blocker: "quote_contract_pending" }
 ] as const;
 
+const finmindKBarQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+});
+
 // GET /api/v1/data-sources/finmind/status
 // Authenticated diagnostics only. Never returns the token or any value derived from it.
 app.get("/api/v1/data-sources/finmind/status", async (c) => {
@@ -3796,6 +3800,47 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
         "finmind_does_not_enable_broker_submit",
         "kbar_single_day_payload"
       ],
+      updatedAt: new Date().toISOString()
+    }
+  });
+});
+
+// GET /api/v1/companies/:id/kbar?date=YYYY-MM-DD
+// Authenticated read-only FinMind Sponsor KBar route. Never touches broker submit.
+app.get("/api/v1/companies/:id/kbar", async (c) => {
+  const query = finmindKBarQuerySchema.parse(c.req.query());
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const date = query.date ?? todayDate();
+  const stockId = companyIdToTicker(company.ticker);
+  const client = getFinMindClient();
+  const tokenPresent = client.hasToken();
+  if (!tokenPresent) {
+    return c.json({
+      data: {
+        source: "FINMIND",
+        state: "BLOCKED",
+        reason: "finmind_token_missing",
+        stockId,
+        date,
+        rows: [],
+        updatedAt: new Date().toISOString()
+      }
+    });
+  }
+
+  const rows = await client.getStockKBar(stockId, date);
+  return c.json({
+    data: {
+      source: "FINMIND",
+      state: rows.length > 0 ? "LIVE" : "EMPTY",
+      reason: rows.length > 0 ? null : "no_kbar_rows_for_date",
+      stockId,
+      date,
+      rows,
       updatedAt: new Date().toISOString()
     }
   });
