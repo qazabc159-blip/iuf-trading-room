@@ -262,7 +262,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   return (
     <section className="panel hud-frame paper-order-panel">
       <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[06]</span> 模擬委託
+        <span className="ascii-head-bracket">[06]</span> 委託票（模擬）
       </h3>
 
       <div style={sourceBarStyle}>
@@ -271,7 +271,7 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
       </div>
 
       <div style={bannerStyle}>
-        此區只送模擬委託，不會送往凱基正式下單；正式送單等待 libCGCrypt.so 補齊後接上。
+        此區只建立模擬委託，不會送往凱基正式下單；正式送單等待 libCGCrypt.so 補齊後接上。
       </div>
 
       <div style={gridStyle}>
@@ -681,8 +681,8 @@ const bannerStyle: React.CSSProperties = {
 
 const gridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr)",
-  gap: 12,
+  gridTemplateColumns: "repeat(auto-fit, minmax(136px, 1fr))",
+  gap: "12px 14px",
   marginBottom: 16,
 };
 
