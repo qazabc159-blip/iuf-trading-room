@@ -196,9 +196,21 @@ Validation:
 - `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
 - `pnpm.cmd run build:api` PASS.
 
+Fourth cycle is scoped to company chart consumption:
+
+- `/companies/[symbol]` now requests `getCompanyKBar(company.id, latestDailyBarDate)` alongside official OHLCV.
+- `OhlcvCandlestickChart` now supports `日K / 週K / 月K / 1分 / 5分 / 15分 / 60分`.
+- Daily/weekly/monthly views still use official OHLCV; intraday views use FinMind Sponsor KBar and aggregate 5/15/60 分 from 1 分 rows.
+- If KBar is missing or blocked, the chart shows `EMPTY` or `BLOCKED` with a reason, not mock candles.
+
+Validation:
+
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+
 ## Blockers
 
 - KGI `libCGCrypt.so` remains the live-submit blocker only.
-- KBar is now integrated into the Trading Room API model, but the company chart UI still needs to consume the new route.
+- KBar is now integrated into the Trading Room API model and company chart UI. Production visual/API smoke is still required after merge/deploy.
 - `/api/v1/lab/bundles` still needs backend implementation before Quant Lab can show real performance bundles.
 - News expansion must wait until freeze permits the non-RSS/non-commercial-data path.

@@ -8,7 +8,7 @@
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
-import { getCompanies, getCompanyOhlcv, type OhlcvBar } from "@/lib/api";
+import { getCompanies, getCompanyKBar, getCompanyOhlcv, type FinMindKBarView, type OhlcvBar } from "@/lib/api";
 import type { Company } from "@iuf-trading-room/contracts";
 import {
   quoteFromOhlcvBars,
@@ -206,6 +206,19 @@ export default async function CompanyDetailPage({
   const ohlcvReason = ohlcvErrorMsg
     ? `K 線資料暫時無法讀取：${ohlcvErrorMsg}`
     : "此股票目前沒有可用的正式 K 線資料。";
+  const kbarDate = bars.at(-1)?.dt ?? new Date().toISOString().slice(0, 10);
+  let kbarView: FinMindKBarView | null = null;
+  let kbarErrorMsg: string | null = null;
+  try {
+    kbarView = (await getCompanyKBar(company.id, kbarDate)).data;
+  } catch (err) {
+    kbarErrorMsg = friendlyError(err);
+    console.warn("[company-detail] getCompanyKBar failed", { id: company.id, date: kbarDate, err: kbarErrorMsg });
+  }
+  const kbarState = kbarErrorMsg ? "BLOCKED" : kbarView?.state ?? "EMPTY";
+  const kbarReason = kbarErrorMsg
+    ? `FinMind 分 K 暫時無法讀取：${kbarErrorMsg}`
+    : kbarView?.reason ?? "FinMind 分 K 尚未回傳資料。";
 
   const detail = toCompanyDetailView(company, symbol);
   const quote = quoteFromOhlcvBars(bars);
@@ -233,7 +246,16 @@ export default async function CompanyDetailPage({
 
       <div className="company-detail-layout">
         <div className="company-main-column">
-          <OhlcvCandlestickChart bars={bars} symbol={company.ticker} sourceState={ohlcvState} sourceReason={ohlcvReason} />
+          <OhlcvCandlestickChart
+            bars={bars}
+            kbarRows={kbarView?.rows ?? []}
+            kbarState={kbarState}
+            kbarReason={kbarReason}
+            kbarDate={kbarView?.date ?? kbarDate}
+            symbol={company.ticker}
+            sourceState={ohlcvState}
+            sourceReason={ohlcvReason}
+          />
           <CompanyInfoPanel company={company} />
         </div>
 
