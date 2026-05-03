@@ -1889,6 +1889,61 @@ button { font: inherit; }
 }
 
 @media (max-width: 760px) {
+  .source-badge {
+    display: none;
+  }
+
+  .theme-row.table-head,
+  .dashboard-theme-row.table-head,
+  .telex-row.table-head,
+  .signal-ledger-row.table-head,
+  .idea-row.table-head,
+  .limit-row.table-head,
+  .position-row.table-head,
+  .duplicate-summary-row.table-head,
+  .duplicate-company-row.table-head {
+    display: none;
+  }
+
+  .theme-row,
+  .dashboard-theme-row,
+  .telex-row,
+  .signal-ledger-row,
+  .idea-row,
+  .limit-row,
+  .position-row,
+  .duplicate-summary-row,
+  .duplicate-company-row {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    padding: 18px 16px !important;
+    overflow: hidden;
+  }
+
+  .theme-row > *,
+  .dashboard-theme-row > *,
+  .telex-row > *,
+  .signal-ledger-row > *,
+  .idea-row > *,
+  .limit-row > *,
+  .position-row > *,
+  .duplicate-summary-row > *,
+  .duplicate-company-row > * {
+    grid-column: auto !important;
+    min-width: 0;
+    max-width: 100%;
+    text-align: left !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  .theme-row .tc,
+  .position-row .tc {
+    overflow: visible;
+    text-overflow: clip;
+  }
+
   .dashboard-signal-row {
     grid-template-columns: 1fr;
     grid-template-areas:
