@@ -149,6 +149,25 @@ function lifecycleLabel(value: string | null | undefined) {
   return value ?? "--";
 }
 
+function mobileThemeName(theme: ThemeRow) {
+  const bySlug: Record<string, string> = {
+    "orphan-audit-trail": "稽核軌跡檢查",
+    "orphan-ai-optics": "AI 光通訊 / CPO",
+    "5g": "5G",
+    abf: "ABF 載板",
+    ai: "AI 伺服器",
+    apple: "Apple 供應鏈",
+    cowos: "CoWoS 先進封裝",
+    cpo: "CPO 光通訊",
+    euv: "EUV 先進製程",
+    hbm: "HBM 高頻寬記憶體",
+  };
+  const slugLabel = bySlug[theme.slug.toLowerCase()];
+  if (slugLabel) return slugLabel;
+  const cleaned = cleanExternalHeadline(theme.name, "主題");
+  return cleaned.replace(/^\[[^\]]+\]\s*/, "").trim() || "主題";
+}
+
 function signed(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number") return "--";
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
@@ -227,16 +246,19 @@ export default async function MobileBrief() {
       <MobileSection code="THM" title="主題掃描" right={mobileLive ? `${themes.length} 筆` : stateLabel(result.state)}>
         {!mobileLive && <div className="mobile-card"><div className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</div><div className="tc soft">主題掃描先隱藏，等待行動簡報資料恢復正常。</div></div>}
         {mobileLive && themes.length === 0 && <div className="mobile-card"><div className="tg gold">無資料</div><div className="tc soft">目前沒有主題資料。</div></div>}
-        {mobileLive && themes.map((theme) => (
+        {mobileLive && themes.map((theme) => {
+          const name = mobileThemeName(theme);
+          return (
           <Link className="mobile-card" href={`/themes/${theme.slug}`} key={theme.id}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span className="tg gold">P{theme.priority} / {cleanExternalHeadline(theme.name, "主題")}</span>
+              <span className="tg gold">P{theme.priority} / {name}</span>
               <span className="tg soft">{marketLabel(theme.marketState)}</span>
             </div>
-            <div className="tc" style={{ fontSize: 18, marginTop: 5 }}>{cleanExternalHeadline(theme.name, "主題")}</div>
+            <div className="tc" style={{ fontSize: 18, marginTop: 5 }}>{name}</div>
             <div className="tg soft" style={{ marginTop: 7 }}>{lifecycleLabel(theme.lifecycle)} / 核心 {theme.corePoolCount} / 觀察 {theme.observationPoolCount}</div>
           </Link>
-        ))}
+          );
+        })}
       </MobileSection>
 
       <MobileSection code="IDA" title="模擬策略想法" right={mobileLive ? `${ideas.length} 筆` : stateLabel(result.state)}>
