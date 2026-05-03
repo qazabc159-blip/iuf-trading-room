@@ -372,7 +372,7 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
           </div>
         </div>
       )}
-      <div className="quote-strip">
+      <div className="quote-strip market-command-strip">
         {cards.map((card) => (
           <div className="quote-card" key={card.key}>
             <div className="tg">
@@ -564,6 +564,98 @@ function FinMindPanel({ finmind }: { finmind: LoadState<FinMindSourceStatus | nu
         </>
       )}
     </Panel>
+  );
+}
+
+function DashboardReadinessDeck({
+  marketOverview,
+  companies,
+  ideas,
+  news,
+  finmind,
+}: {
+  marketOverview: LoadState<MarketDataOverview | null>;
+  companies: LoadState<CompanyRow[]>;
+  ideas: LoadState<StrategyIdeaData | null>;
+  news: LoadState<NewsItem[]>;
+  finmind: LoadState<FinMindSourceStatus | null>;
+}) {
+  const datasets = finmind.state === "LIVE" && finmind.data ? finmind.data.datasets : [];
+  const readyDatasets = datasets.filter((dataset) => dataset.state === "READY");
+  const pendingDatasets = datasets.filter((dataset) => dataset.state !== "READY");
+  const quoteFresh = marketOverview.state === "LIVE" && marketOverview.data ? marketOverview.data.quotes.fresh : 0;
+  const quoteStale = marketOverview.state === "LIVE" && marketOverview.data ? marketOverview.data.quotes.stale : 0;
+  const companyCount = companies.state === "LIVE" ? companies.data.length : 0;
+  const ideaCount = ideas.state === "LIVE" && ideas.data ? ideas.data.summary.total : 0;
+  const liveNews = news.state === "LIVE" ? news.data.length : 0;
+
+  const lanes = [
+    {
+      label: "行情核心",
+      state: marketOverview.state,
+      metric: marketOverview.state === "LIVE" ? `${quoteFresh} 新鮮 / ${quoteStale} 待刷新` : stateText(marketOverview.state),
+      detail: "大盤、漲跌排行、量能與候選股可用性。",
+    },
+    {
+      label: "公司資料",
+      state: companies.state,
+      metric: companies.state === "LIVE" ? `${companyCount.toLocaleString("zh-TW")} 檔` : stateText(companies.state),
+      detail: "公司主檔、產業、公司頁 FinMind 財報與籌碼入口。",
+    },
+    {
+      label: "策略候選",
+      state: ideas.state,
+      metric: ideas.state === "LIVE" ? `${ideaCount} 筆` : stateText(ideas.state),
+      detail: "只做紙上決策候選，不自動送單。",
+    },
+    {
+      label: "重大訊息",
+      state: news.state,
+      metric: news.state === "LIVE" ? `${liveNews} 則` : stateText(news.state),
+      detail: "目前走公司公告端點；AI 每日簡報會在資料框架穩定後接上。",
+    },
+    {
+      label: "FinMind Sponsor",
+      state: finmind.state,
+      metric: finmind.state === "LIVE" ? `${readyDatasets.length} 組可用` : stateText(finmind.state),
+      detail: "只讀資料源，不代表券商下單或 live submit 已開。",
+    },
+  ];
+
+  return (
+    <section className="dashboard-readiness-deck" aria-label="台股資料接線圖">
+      <div className="dashboard-readiness-copy">
+        <span className="tg gold">資料接線圖</span>
+        <h3>先確認資料能不能用，再決定要看哪一檔。</h3>
+        <p>
+          FinMind Sponsor 999 會逐步補進 K 線、分 K、PER/PBR、法人、融資券、股權結構、股利、財報與新聞線索。
+          戰情台只呈現正式來源回傳的狀態；缺資料就標明原因，不用漂亮假面板混過去。
+        </p>
+      </div>
+      <div className="dashboard-readiness-lanes">
+        {lanes.map((lane) => (
+          <div className="dashboard-readiness-lane" key={lane.label}>
+            <div>
+              <span className="tg gold">{lane.label}</span>
+              <strong>{lane.metric}</strong>
+            </div>
+            <StatePill state={lane.state} />
+            <p>{lane.detail}</p>
+          </div>
+        ))}
+      </div>
+      <div className="dashboard-dataset-ribbon" aria-label="FinMind 可用資料集">
+        <span className="tg soft">Sponsor 資料覆蓋</span>
+        {(readyDatasets.length > 0 ? readyDatasets : pendingDatasets).slice(0, 9).map((dataset) => (
+          <span className={`dashboard-dataset-token ${dataset.state === "READY" ? "is-ready" : "is-pending"}`} key={dataset.key}>
+            {dataset.label}
+          </span>
+        ))}
+        {readyDatasets.length === 0 && pendingDatasets.length === 0 && (
+          <span className="dashboard-dataset-token is-pending">等待 FinMind 狀態端點</span>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -803,8 +895,8 @@ export default async function DashboardPage() {
       <section className="dashboard-hero dashboard-command-deck" aria-label="戰情台狀態">
         <div className="dashboard-hero-main">
           <span className="tg gold">IUF 台股戰情台</span>
-          <h2>盤勢、訊號、候選清單，先看真實資料狀態。</h2>
-          <p>戰情台只讀正式端點。資料缺口會明確標示，不用假數據把畫面補滿。</p>
+          <h2>把盤勢、資料源與候選股整理成一個真正能看的台股首頁。</h2>
+          <p>這裡先看行情是否接上、FinMind 覆蓋到哪裡、哪些候選股能進紙上觀察。下單仍鎖在模擬與風控層，正式券商送單等 KGI SDK 補齊。</p>
           <div className="dashboard-hero-kpis dashboard-hero-kpis-inline">
             {heroStats.map((item) => (
               <div className="dashboard-hero-stat" key={item.label}>
@@ -827,6 +919,13 @@ export default async function DashboardPage() {
         </div>
       </section>
       <MarketStrip overview={marketOverview} />
+      <DashboardReadinessDeck
+        marketOverview={marketOverview}
+        companies={companies}
+        ideas={ideas}
+        news={news}
+        finmind={finmind}
+      />
       {dashboardDegraded ? (
         <DashboardBlockedSummary sections={sourceStatuses} />
       ) : (
