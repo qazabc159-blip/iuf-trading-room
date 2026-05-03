@@ -111,6 +111,21 @@ function formatNumber(value: number | null | undefined, digits = 2) {
   return value.toLocaleString("zh-TW", { maximumFractionDigits: digits });
 }
 
+function signedNumber(value: number | null | undefined, digits = 2) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  return `${value > 0 ? "+" : ""}${value.toLocaleString("zh-TW", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  })}`;
+}
+
+function toneClass(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "muted";
+  if (value > 0) return "up";
+  if (value < 0) return "down";
+  return "muted";
+}
+
 export function OhlcvCandlestickChart({
   bars,
   symbol,
@@ -236,6 +251,13 @@ export function OhlcvCandlestickChart({
   const badgeLabel = sourceBadgeLabel(bars);
   const lastBar = chartBars.at(-1);
   const firstBar = chartBars.at(0);
+  const previousBar = chartBars.length >= 2 ? chartBars[chartBars.length - 2] : null;
+  const priceChange = lastBar && previousBar ? Number((lastBar.close - previousBar.close).toFixed(2)) : null;
+  const priceChangePct = previousBar && previousBar.close > 0 && priceChange !== null
+    ? Number(((priceChange / previousBar.close) * 100).toFixed(2))
+    : null;
+  const highInView = chartBars.length ? Math.max(...chartBars.map((bar) => bar.high)) : null;
+  const lowInView = chartBars.length ? Math.min(...chartBars.map((bar) => bar.low)) : null;
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const emptyReason =
     sourceState === "BLOCKED"
@@ -249,13 +271,40 @@ export function OhlcvCandlestickChart({
           <span className="tg panel-code">K 線</span>
           <span className="tg muted"> / </span>
           <span className="tg gold">K 線圖</span>
-          <div className="panel-sub">日線、週線、月線與成交量</div>
+          <div className="panel-sub">日線、週線、月線與成交量；右側價格軸依正式 OHLCV 繪製</div>
         </div>
         <div className="tg soft">
           <span className={badgeClass}>{badgeLabel}</span>
           <span style={{ marginLeft: 8 }}>{symbol}</span>
         </div>
       </div>
+
+      {lastBar && (
+        <div className="kline-snapshot-strip">
+          <div>
+            <span>最新收盤</span>
+            <b className={`num ${toneClass(priceChange)}`}>{formatNumber(lastBar.close)}</b>
+            <small>{lastBar.dt}</small>
+          </div>
+          <div>
+            <span>漲跌幅</span>
+            <b className={`num ${toneClass(priceChange)}`}>
+              {signedNumber(priceChange)} / {signedNumber(priceChangePct)}%
+            </b>
+            <small>{previousBar ? `前收 ${formatNumber(previousBar.close)}` : "前收不足"}</small>
+          </div>
+          <div>
+            <span>區間高低</span>
+            <b className="num">{formatNumber(highInView)} / {formatNumber(lowInView)}</b>
+            <small>{activeMeta?.label ?? "K 線"} 可視範圍</small>
+          </div>
+          <div>
+            <span>成交量</span>
+            <b className="num">{formatNumber(lastBar.volume, 0)}</b>
+            <small>{chartBars.length.toLocaleString("zh-TW")} 根正式資料</small>
+          </div>
+        </div>
+      )}
 
       <div className="kline-toolbar">
         <div className="kline-control-group">

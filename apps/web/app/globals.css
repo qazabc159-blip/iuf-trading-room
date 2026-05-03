@@ -1581,6 +1581,44 @@ button { font: inherit; }
   font: 500 13px/1.75 var(--sans-tc);
 }
 
+.kline-snapshot-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin: 8px 0 10px;
+  border-top: 1px solid rgba(226, 184, 92, 0.18);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+  background:
+    linear-gradient(90deg, rgba(226, 184, 92, 0.055), transparent 36%),
+    rgba(4, 7, 11, 0.42);
+}
+
+.kline-snapshot-strip > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 11px 14px;
+  border-right: 1px solid rgba(220, 228, 240, 0.07);
+}
+
+.kline-snapshot-strip > div:last-child {
+  border-right: 0;
+}
+
+.kline-snapshot-strip span,
+.kline-snapshot-strip small {
+  color: var(--night-mid);
+  font: 700 10.5px/1.45 var(--sans-tc);
+}
+
+.kline-snapshot-strip b {
+  min-width: 0;
+  color: var(--night-ink);
+  font-size: clamp(15px, 1.25vw, 20px);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .kline-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -3146,8 +3184,8 @@ body:has(.login-route) > div {
 
 .company-detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(274px, 318px);
-  gap: 22px;
+  grid-template-columns: minmax(600px, 1.34fr) minmax(360px, 0.66fr);
+  gap: clamp(18px, 2.2vw, 30px);
 }
 
 .company-main-column,
@@ -3231,6 +3269,13 @@ body:has(.login-route) > div {
 .company-main-column .panel,
 .company-side-column .panel {
   box-shadow: none;
+}
+
+.company-side-column .paper-order-panel {
+  border-top-color: rgba(226, 184, 92, 0.32);
+  background:
+    linear-gradient(155deg, rgba(226, 184, 92, 0.09), rgba(226, 184, 92, 0.015) 38%, transparent),
+    rgba(5, 8, 12, 0.56);
 }
 
 .company-main-column .panel:hover,
@@ -3790,6 +3835,14 @@ body:has(.login-route) > div {
     justify-content: flex-start;
     padding-left: 8px;
     padding-right: 8px;
+  }
+
+  .kline-snapshot-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kline-snapshot-strip > div:nth-child(2n) {
+    border-right: 0;
   }
 
   .company-hero-quote {
