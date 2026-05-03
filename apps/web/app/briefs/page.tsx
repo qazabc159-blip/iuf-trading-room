@@ -42,6 +42,13 @@ function marketLabel(value: string | null | undefined) {
   return value ?? "市場簡報";
 }
 
+function producerLabel(value: string | null | undefined) {
+  const key = value?.toLowerCase() ?? "";
+  if (key.includes("openalice")) return "AI 摘要";
+  if (key.includes("worker")) return "系統排程";
+  return value ?? "--";
+}
+
 function BriefStatePanel({
   state,
   reason,
@@ -138,7 +145,7 @@ export default async function BriefsPage() {
                   <span className="tg gold">{brief.date}</span>
                   <span className="tg">{marketLabel(brief.marketState)}</span>
                   <span className={`badge ${statusBadge(brief.status)}`}>{statusLabel(brief.status)}</span>
-                  <span className="tg soft">{brief.generatedBy}</span>
+                  <span className="tg soft">{producerLabel(brief.generatedBy)}</span>
                   <span className="tg soft">{formatDateTime(brief.createdAt)}</span>
                 </div>
               ))}

@@ -13,6 +13,8 @@ import {
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 
+const DRAFT_DISPLAY_LIMIT = 30;
+
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", { hour12: false });
 }
@@ -102,6 +104,9 @@ export default async function DraftsPage({
     error = friendlyDataError(err, "內容草稿暫時無法讀取。");
   }
 
+  const visibleDrafts = drafts.slice(0, DRAFT_DISPLAY_LIMIT);
+  const hiddenCount = Math.max(0, drafts.length - visibleDrafts.length);
+
   return (
     <PageFrame
       code="DRF"
@@ -153,7 +158,12 @@ export default async function DraftsPage({
             </span>
           }
         >
-          <DraftRows drafts={drafts} />
+          {hiddenCount > 0 && (
+            <div className="terminal-note" style={{ marginBottom: 18 }}>
+              目前顯示最新 {visibleDrafts.length} 筆，另外 {hiddenCount} 筆仍保留在資料庫與後台審核流程中。
+            </div>
+          )}
+          <DraftRows drafts={visibleDrafts} />
         </Panel>
       )}
     </PageFrame>
