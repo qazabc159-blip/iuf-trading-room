@@ -680,8 +680,8 @@ const bannerStyle: React.CSSProperties = {
 
 const gridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: "34px 40px",
+  gridTemplateColumns: "minmax(0, 1fr)",
+  gap: 30,
   marginBottom: 38,
 };
 
@@ -711,12 +711,13 @@ const segmentedStyle: React.CSSProperties = {
   flexWrap: "wrap",
   border: "1px solid var(--night-rule-strong, #333)",
   minHeight: 64,
+  width: "100%",
   overflow: "hidden",
 };
 
 const segmentButtonStyle: React.CSSProperties = {
-  flex: "1 1 92px",
-  minWidth: 72,
+  flex: "1 1 118px",
+  minWidth: 96,
   minHeight: 62,
   display: "flex",
   alignItems: "center",
