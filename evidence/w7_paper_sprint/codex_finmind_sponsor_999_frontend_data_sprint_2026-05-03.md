@@ -161,7 +161,7 @@ Do not show invented Sharpe, equity curve, win rate, or drawdown.
 
 ## Current Codex Patch In Flight
 
-This cycle is scoped to company-page usability:
+First cycle was scoped to company-page usability and landed through PR #130:
 
 - K-line now shows latest close, change, visible-range high/low, volume, row count, and date context.
 - Company hero quote timestamp now includes date and time, not time-only.
@@ -173,9 +173,44 @@ Validation:
 - `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
 - `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 
+Second cycle is scoped to read-only API readiness:
+
+- `FinMindClient.getStockKBar(stockId, date)` maps official `TaiwanStockKBar` rows.
+- `GET /api/v1/data-sources/finmind/status` exposes authenticated source diagnostics without returning token material.
+- Dataset status includes implemented vs blocked FinMind surfaces for web source-truth UI.
+
+Validation:
+
+- `node --import tsx --test apps/api/src/data-sources/finmind-client.test.ts` PASS, 11/11.
+- `pnpm.cmd run build:api` PASS.
+
+Third cycle is scoped to user-facing read-only KBar contract:
+
+- `GET /api/v1/companies/:id/kbar?date=YYYY-MM-DD` resolves company UUID or ticker and returns official FinMind Sponsor KBar rows for one date.
+- The route is authenticated, token-safe, read-only, and returns `LIVE`, `EMPTY`, or `BLOCKED` instead of fake success.
+- `apps/web/lib/api.ts` now exposes `getCompanyKBar()` and typed `FinMindKBarView` / `FinMindKBarRow` for the next chart UI pass.
+
+Validation:
+
+- `node --import tsx --test apps/api/src/data-sources/finmind-client.test.ts` PASS, 11/11.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd run build:api` PASS.
+
+Fourth cycle is scoped to company chart consumption:
+
+- `/companies/[symbol]` now requests `getCompanyKBar(company.id, latestDailyBarDate)` alongside official OHLCV.
+- `OhlcvCandlestickChart` now supports `日K / 週K / 月K / 1分 / 5分 / 15分 / 60分`.
+- Daily/weekly/monthly views still use official OHLCV; intraday views use FinMind Sponsor KBar and aggregate 5/15/60 分 from 1 分 rows.
+- If KBar is missing or blocked, the chart shows `EMPTY` or `BLOCKED` with a reason, not mock candles.
+
+Validation:
+
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+
 ## Blockers
 
 - KGI `libCGCrypt.so` remains the live-submit blocker only.
-- KBar is verified in Sponsor smoke but not yet integrated into Trading Room API model.
+- KBar is now integrated into the Trading Room API model and company chart UI. Production visual/API smoke is still required after merge/deploy.
 - `/api/v1/lab/bundles` still needs backend implementation before Quant Lab can show real performance bundles.
 - News expansion must wait until freeze permits the non-RSS/non-commercial-data path.

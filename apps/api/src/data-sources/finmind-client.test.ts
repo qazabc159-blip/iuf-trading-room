@@ -19,7 +19,8 @@ import {
   type FinMindPriceAdjRow,
   type FinMindFinancialStatementsRow,
   type FinMindMonthRevenueRow,
-  type FinMindDividendRow
+  type FinMindDividendRow,
+  type FinMindKBarRow
 } from "./finmind-client.js";
 
 // ── Fetch mock helpers ────────────────────────────────────────────────────────
@@ -329,6 +330,63 @@ test("T9: PriceAdj permission failure falls back to TaiwanStockPrice", async () 
     assert.equal(bars.length, 1);
     assert.equal(bars[0].dt, "2026-04-29");
     assert.equal(bars[0].source, "tej");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("T10: getStockKBar happy path — sorts one-day minute bars and caches with short TTL", async () => {
+  const cache = new MemoryCache();
+  const client = new FinMindClient({ token: "test-token", redisClient: cache });
+
+  const rows: FinMindKBarRow[] = [
+    { date: "2026-04-30", minute: "09:02:00", stock_id: "2330", open: 1005, high: 1008, low: 1001, close: 1006, volume: 300 },
+    { date: "2026-04-30", minute: "09:00:00", stock_id: "2330", open: 1000, high: 1004, low: 999, close: 1003, volume: 500 }
+  ];
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: URL | RequestInfo, _init?: RequestInit): Promise<Response> => {
+    const url = new URL(String(input));
+    assert.equal(url.searchParams.get("dataset"), "TaiwanStockKBar");
+    assert.equal(url.searchParams.get("data_id"), "2330");
+    assert.equal(url.searchParams.get("start_date"), "2026-04-30");
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 200, msg: "Success", data: rows })
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  try {
+    const kbars = await client.getStockKBar("2330", "2026-04-30");
+    assert.equal(kbars.length, 2);
+    assert.equal(kbars[0].minute, "09:00:00");
+    assert.equal(kbars[1].minute, "09:02:00");
+    assert.equal(kbars[0].close, 1003);
+
+    const calls = cache.getSetExCalls();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].ttl, 300, "KBar cache TTL should be 300 seconds");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("T11: getStockKBar token missing — returns empty array and does not fetch", async () => {
+  const cache = new MemoryCache();
+  const client = new FinMindClient({ redisClient: cache });
+
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    return {} as Response;
+  }) as typeof fetch;
+
+  try {
+    const rows = await client.getStockKBar("2330", "2026-04-30");
+    assert.equal(rows.length, 0);
+    assert.equal(fetchCalled, false);
   } finally {
     globalThis.fetch = originalFetch;
   }

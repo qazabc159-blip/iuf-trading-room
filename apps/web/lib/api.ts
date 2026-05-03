@@ -549,6 +549,62 @@ export async function getOpsTrends(params?: { days?: number; timeZone?: string }
   return request<OpsTrendView>(`/api/v1/ops/trends${qs ? `?${qs}` : ""}`);
 }
 
+// ── Data source diagnostics ──
+
+export type FinMindDatasetStatus = {
+  key: string;
+  label: string;
+  implemented: boolean;
+  blocker?: string;
+  state: "READY" | "BLOCKED";
+};
+
+export type FinMindSourceStatus = {
+  source: "FINMIND";
+  state: "LIVE_READY" | "BLOCKED";
+  tokenPresent: boolean;
+  quota: {
+    used: number | null;
+    limit: number | null;
+    source: string;
+  };
+  datasets: FinMindDatasetStatus[];
+  notes: string[];
+  updatedAt: string;
+};
+
+export type FinMindKBarRow = {
+  date: string;
+  minute: string;
+  stock_id: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+export type FinMindKBarView = {
+  source: "FINMIND";
+  state: "LIVE" | "EMPTY" | "BLOCKED";
+  reason: string | null;
+  stockId: string;
+  date: string;
+  rows: FinMindKBarRow[];
+  updatedAt: string;
+};
+
+export async function getFinMindStatus() {
+  return request<FinMindSourceStatus>("/api/v1/data-sources/finmind/status");
+}
+
+export async function getCompanyKBar(id: string, date?: string) {
+  const query = new URLSearchParams();
+  if (date) query.set("date", date);
+  const qs = query.toString();
+  return request<FinMindKBarView>(`/api/v1/companies/${id}/kbar${qs ? `?${qs}` : ""}`);
+}
+
 // ── Trading (paper broker) ──
 
 export async function getTradingAccounts() {

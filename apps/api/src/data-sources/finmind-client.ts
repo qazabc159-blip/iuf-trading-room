@@ -25,6 +25,7 @@
  *   - TaiwanStockInstitutionalInvestorsBuySell → 三大法人
  *   - TaiwanStockMarginPurchaseShortSale → 融資融券
  *   - TaiwanStockDividend       → 股利
+ *   - TaiwanStockKBar           → 分 K（sponsor；單次一天）
  */
 
 import { createClient } from "redis";
@@ -139,9 +140,21 @@ export interface FinMindDividendRow {
   TotalDividend: number;
 }
 
+export interface FinMindKBarRow {
+  date: string;           // 'YYYY-MM-DD'
+  minute: string;         // 'HH:mm:ss'
+  stock_id: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 // ── Cache TTL constants (seconds) ─────────────────────────────────────────────
 
 const TTL_OHLCV     = 600;    // 10 min — refreshed daily but cache hits during day
+const TTL_KBAR      = 300;    // 5 min — sponsor KBar is one-day payload
 const TTL_FINANCIAL = 3600;   // 1h — quarterly data
 const TTL_CHIP      = 1800;   // 30 min — institutional daily
 const TTL_DIVIDEND  = 86400;  // 1d — rarely changes
@@ -282,6 +295,10 @@ export class FinMindClient {
     return this._tokenOverride ?? process.env.FINMIND_API_TOKEN ?? null;
   }
 
+  hasToken(): boolean {
+    return Boolean(this._getToken());
+  }
+
   private _buildUrl(dataset: string, stockId: string, startDate: string, endDate: string): string {
     const token = this._getToken();
     const params = new URLSearchParams({
@@ -401,6 +418,34 @@ export class FinMindClient {
     }
 
     return bars;
+  }
+
+  // ── KBar ───────────────────────────────────────────────────────────────────
+
+  async getStockKBar(stockId: string, date: string): Promise<FinMindKBarRow[]> {
+    const cacheKey = `finmind:kbar:${stockId}:${date}`;
+
+    const cached = await cacheGet(cacheKey, this._redisOverride);
+    if (cached) {
+      try { return JSON.parse(cached) as FinMindKBarRow[]; } catch { /* fall through */ }
+    }
+
+    const rows = await this._fetch<FinMindKBarRow>(
+      "TaiwanStockKBar",
+      stockId,
+      date,
+      date
+    );
+
+    const sorted = rows
+      .filter((row) => row.date && row.minute)
+      .sort((a, b) => `${a.date} ${a.minute}`.localeCompare(`${b.date} ${b.minute}`));
+
+    if (sorted.length > 0) {
+      await cacheSet(cacheKey, JSON.stringify(sorted), TTL_KBAR, this._redisOverride);
+    }
+
+    return sorted;
   }
 
   // ── Financial Statements ───────────────────────────────────────────────────
