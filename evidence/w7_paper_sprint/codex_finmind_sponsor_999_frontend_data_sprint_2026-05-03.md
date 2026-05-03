@@ -161,7 +161,7 @@ Do not show invented Sharpe, equity curve, win rate, or drawdown.
 
 ## Current Codex Patch In Flight
 
-This cycle is scoped to company-page usability:
+First cycle was scoped to company-page usability and landed through PR #130:
 
 - K-line now shows latest close, change, visible-range high/low, volume, row count, and date context.
 - Company hero quote timestamp now includes date and time, not time-only.
@@ -172,6 +172,17 @@ Validation:
 
 - `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
 - `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+
+Second cycle is scoped to read-only API readiness:
+
+- `FinMindClient.getStockKBar(stockId, date)` maps official `TaiwanStockKBar` rows.
+- `GET /api/v1/data-sources/finmind/status` exposes authenticated source diagnostics without returning token material.
+- Dataset status includes implemented vs blocked FinMind surfaces for web source-truth UI.
+
+Validation:
+
+- `node --import tsx --test apps/api/src/data-sources/finmind-client.test.ts` PASS, 11/11.
+- `pnpm.cmd run build:api` PASS.
 
 ## Blockers
 

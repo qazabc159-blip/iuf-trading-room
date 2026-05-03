@@ -3752,6 +3752,55 @@ function nDaysAgoDate(days: number): string {
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
+const FINMIND_DATASET_STATUS = [
+  { key: "TaiwanStockPriceAdj", label: "還原日 K", implemented: true },
+  { key: "TaiwanStockPrice", label: "日 K 備援", implemented: true },
+  { key: "TaiwanStockKBar", label: "分 K", implemented: true },
+  { key: "TaiwanStockFinancialStatements", label: "損益表", implemented: true },
+  { key: "TaiwanStockBalanceSheet", label: "資產負債表", implemented: true },
+  { key: "TaiwanStockCashFlowsStatement", label: "現金流量表", implemented: true },
+  { key: "TaiwanStockMonthRevenue", label: "月營收", implemented: true },
+  { key: "TaiwanStockInstitutionalInvestorsBuySell", label: "三大法人", implemented: true },
+  { key: "TaiwanStockMarginPurchaseShortSale", label: "融資融券", implemented: true },
+  { key: "TaiwanStockDividend", label: "股利", implemented: true },
+  { key: "TaiwanStockNews", label: "台股新聞", implemented: false, blocker: "freeze_no_news_feature" },
+  { key: "TaiwanStockPER", label: "PER / PBR", implemented: false, blocker: "next_panel_batch" },
+  { key: "taiwan_stock_tick_snapshot", label: "即時快照", implemented: false, blocker: "quote_contract_pending" }
+] as const;
+
+// GET /api/v1/data-sources/finmind/status
+// Authenticated diagnostics only. Never returns the token or any value derived from it.
+app.get("/api/v1/data-sources/finmind/status", async (c) => {
+  const finmind = getFinMindClient();
+  const tokenPresent = finmind.hasToken();
+
+  return c.json({
+    data: {
+      source: "FINMIND",
+      state: tokenPresent ? "LIVE_READY" : "BLOCKED",
+      tokenPresent,
+      quota: {
+        used: null,
+        limit: null,
+        source: "not_queried_token_safe_v1"
+      },
+      datasets: FINMIND_DATASET_STATUS.map((dataset) => ({
+        ...dataset,
+        state: tokenPresent
+          ? dataset.implemented ? "READY" : "BLOCKED"
+          : "BLOCKED"
+      })),
+      notes: [
+        "diagnostics_only",
+        "token_never_returned",
+        "finmind_does_not_enable_broker_submit",
+        "kbar_single_day_payload"
+      ],
+      updatedAt: new Date().toISOString()
+    }
+  });
+});
+
 // GET /api/v1/companies/:id/financials?period=Q&limit=8
 // Returns: { data: FinancialRow[] } reshaped from FinMind long-format rows.
 // FinancialRow = { period, revenue, grossMarginPct, operatingMarginPct, epsAfterTax, yoyPct }
