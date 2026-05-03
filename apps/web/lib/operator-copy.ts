@@ -70,12 +70,13 @@ function applyKnownCopy(value: string) {
 function replaceKnownSourceTerms(value: string) {
   return value
     .replace(/\bAudit Trail Live Check\b/g, "稽核軌跡檢查")
+    .replace(/\bAudit Trail\b/gi, "稽核軌跡")
     .replace(/\bAudit verification theme\b/gi, "稽核驗證題材")
     .replace(/\bAI Optics\s*\(->\s*CPO\)/g, "AI 光通訊 / CPO")
     .replace(/\bAI Optics\b/g, "AI 光通訊")
     .replace(/\bBalanced\b/g, "平衡")
     .replace(/\bBROKEN\b/g, "待修")
-    .replace(/\bDEPRECATED\b/g, "退役");
+    .replace(/\bDEPRECATED\b/gi, "退役");
 }
 
 export function cleanExternalHeadline(

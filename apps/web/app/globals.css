@@ -1745,6 +1745,23 @@ button { font: inherit; }
   cursor: default;
 }
 
+.kill-mode > span {
+  min-width: 0;
+}
+
+.kill-mode > span:first-child {
+  display: grid;
+  gap: 8px;
+}
+
+.kill-mode > span:last-child {
+  flex: 0 0 auto;
+  min-width: 86px;
+  text-align: right;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
 .kill-mode.active {
   border-color: var(--gold);
   background: rgba(200,148,63,0.12);
