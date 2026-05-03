@@ -707,11 +707,12 @@ export default async function DashboardPage() {
       sub="台股戰情台"
       note={`戰情台 / ${summary}`}
     >
+      <MarketStrip overview={marketOverview} />
       <section className="dashboard-hero" aria-label="戰情台狀態">
         <div className="dashboard-hero-main">
           <span className="tg gold">IUF 台股戰情台</span>
-          <h2>先確認資料真實性，再看訊號與候選名單。</h2>
-          <p>所有區塊只讀正式端點。沒有資料就明講無資料，端點暫停就明講暫停，不用假數據把畫面補滿。</p>
+          <h2>盤勢、訊號、候選清單，先看真實資料狀態。</h2>
+          <p>戰情台只讀正式端點。資料缺口會明確標示，不用假數據把畫面補滿。</p>
         </div>
         <div className="dashboard-hero-kpis">
           {heroStats.map((item) => (
@@ -726,8 +727,6 @@ export default async function DashboardPage() {
         <DashboardBlockedSummary sections={sourceStatuses} />
       ) : (
         <>
-          <MarketStrip overview={marketOverview} />
-
           <div className="main-grid">
             <div>
               <Panel code="WCH-LST" title="觀察清單" sub="報價、風控與候選股票" right={<StatePill state={watchlist.state} />}>
