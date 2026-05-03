@@ -4,6 +4,28 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-03 10:18 Taipei - Codex heartbeat pass 45 - production table breathing-room follow-up
+
+**Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
+
+**Files changed**:
+- `apps/web/app/companies/[symbol]/FinancialsPanel.tsx` - company financial/revenue/dividend table content now sits inside padded inline wrappers so values are not visually glued to table borders.
+- `apps/web/app/globals.css` - shared `.table-cell-inner` breathing-room utility for dense production tables.
+- `apps/web/components/portfolio/OrderTicket.tsx` - bid/ask fallback changed from `-- / --` to explicit `買價待接 / 賣價待接`.
+
+**Behavior**:
+- Production smoke after PR #97 found company financial cells still too close to the table edge and the paper order quote card still exposing an engineering placeholder when bid/ask is unavailable.
+- This pass keeps the same real-data / paper-trading behavior but makes the empty bid/ask state readable in Traditional Chinese.
+
+**Checks**:
+- `git diff --check -- apps/web/app/companies/[symbol]/FinancialsPanel.tsx apps/web/app/globals.css apps/web/components/portfolio/OrderTicket.tsx evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Local authenticated 1365px Playwright QA on `/companies/1101` + `/portfolio` PASS: status 200, 0 page errors, 0 console errors, 0 horizontal overflow, 0 narrow vertical stacks, 0 close-to-border hits, 0 `-- / --` / ` / --` / raw engineering placeholder hits. Evidence: `evidence/w7_paper_sprint/local_visual_qa_pass45_table_bidask_2026-05-03/`.
+
+**Blockers / next bypass**:
+- None for this scoped visual/copy repair.
+
 ### 2026-05-03 20:30 Taipei - Codex heartbeat pass 42 - mobile route zh-TW cleanup
 
 **Scope**: demo-critical UI repair only during freeze. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.

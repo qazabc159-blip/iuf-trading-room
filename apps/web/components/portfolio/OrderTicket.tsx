@@ -722,7 +722,7 @@ function MarketPreviewPanel({ preview }: { preview: MarketPreviewState }) {
         <div style={marketQuoteCardStyle}>
           <span className="tg soft">買 / 賣</span>
           <b className="num" style={{ color: "var(--exec-ink)", fontSize: 18 }}>
-            {formatMarketNumber(quote?.bid)} / {formatMarketNumber(quote?.ask)}
+            {quoteSideText(quote?.bid, "買價")} / {quoteSideText(quote?.ask, "賣價")}
           </b>
         </div>
         <div style={marketQuoteCardStyle}>
@@ -813,6 +813,11 @@ function formatMarketNumber(value: number | null | undefined, digits = 2) {
     maximumFractionDigits: digits,
     minimumFractionDigits: digits,
   });
+}
+
+function quoteSideText(value: number | null | undefined, label: string) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return `${label}待接`;
+  return formatMarketNumber(value);
 }
 
 function formatDateTime(value: string | null | undefined) {
