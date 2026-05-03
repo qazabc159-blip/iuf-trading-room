@@ -99,18 +99,25 @@ function orderStatusLabel(status: string) {
   return status;
 }
 
-export function PaperOrderPanel({ symbol }: { symbol: string }) {
+function formatPrice(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  return value.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+}
+
+export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; lastPrice?: number | null }) {
+  const initialPrice = typeof lastPrice === "number" && Number.isFinite(lastPrice) ? String(lastPrice) : "";
   const [form, setForm] = useState<FormState>({
     side: "buy",
     orderType: "limit",
     qty: "1",
-    price: "",
+    price: initialPrice,
     quantityUnit: "SHARE",
   });
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
   const [orders, setOrders] = useState<OrdersState>({ status: "loading" });
   const [reviewOpen, setReviewOpen] = useState(false);
+  const lastSymbolRef = useRef(symbol);
 
   // F1: submitInFlight ref — prevents double-submit if React batching drops disabled flag for a tick.
   const submitInFlight = useRef(false);
@@ -203,6 +210,18 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
+  useEffect(() => {
+    const nextPrice = typeof lastPrice === "number" && Number.isFinite(lastPrice) ? String(lastPrice) : "";
+    if (lastSymbolRef.current !== symbol) {
+      lastSymbolRef.current = symbol;
+      setForm((current) => ({ ...current, price: current.orderType === "market" ? "" : nextPrice }));
+      return;
+    }
+    if (nextPrice && form.orderType !== "market" && form.price.trim() === "") {
+      setForm((current) => ({ ...current, price: current.price.trim() === "" ? nextPrice : current.price }));
+    }
+  }, [form.orderType, form.price, lastPrice, symbol]);
+
   const updateForm = (patch: Partial<FormState>) => {
     setForm((current) => ({ ...current, ...patch }));
     setPreview({ status: "idle" });
@@ -262,16 +281,25 @@ export function PaperOrderPanel({ symbol }: { symbol: string }) {
   return (
     <section className="panel hud-frame paper-order-panel">
       <h3 className="ascii-head">
-        <span className="ascii-head-bracket">[06]</span> 委託票（模擬）
+        <span className="ascii-head-bracket">模擬委託</span>
+        <span className="tg soft">零股 / 整張防呆</span>
       </h3>
 
       <div style={sourceBarStyle}>
         <StatePill state={ledgerState} />
-        <span>模擬交易 / 風控預檢 / 個股委託紀錄</span>
+        <span>只送紙上交易 / 風控預檢 / 個股委託紀錄</span>
       </div>
 
       <div style={bannerStyle}>
-        此區只建立模擬委託，不會送往凱基正式下單；正式送單等待 libCGCrypt.so 補齊後接上。
+        此區只建立模擬委託，不會送往凱基正式下單。正式送單等待 libCGCrypt.so 補齊後接上。
+      </div>
+
+      <div style={quoteRailStyle}>
+        <span>最新參考價</span>
+        <b style={{ color: "var(--night-ink, #d8d4c8)", fontFamily: "var(--mono, monospace)" }}>{formatPrice(lastPrice)}</b>
+        <small style={{ minWidth: 0, overflowWrap: "break-word" }}>
+          {lastPrice ? "來自最新正式 K 線；限價可自行修改。" : "正式價格尚未回傳，請手動輸入限價。"}
+        </small>
       </div>
 
       <div style={gridStyle}>
@@ -656,43 +684,58 @@ const sourceBarStyle: React.CSSProperties = {
   gap: "6px 12px",
   alignItems: "center",
   color: "var(--night-mid, #888)",
-  fontFamily: "var(--mono, monospace)",
+  fontFamily: "var(--sans-tc)",
   fontSize: 10.5,
   lineHeight: 1.75,
-  marginBottom: 12,
-  padding: "8px 0 10px",
+  marginBottom: 10,
+  padding: "7px 0 9px",
   borderTop: "1px solid var(--night-rule, #222)",
   borderBottom: "1px solid var(--night-rule, #222)",
   background: "transparent",
 };
 
 const bannerStyle: React.CSSProperties = {
-  background: "rgba(184,138,62,0.14)",
-  border: "1px solid var(--gold, #b8960c)",
+  background: "rgba(184,138,62,0.075)",
+  borderLeft: "2px solid var(--gold, #b8960c)",
   color: "var(--night-ink, #d8d4c8)",
-  fontFamily: "var(--mono, monospace)",
+  fontFamily: "var(--sans-tc)",
   fontWeight: 700,
-  fontSize: 11,
-  lineHeight: 1.75,
-  padding: "11px 13px",
+  fontSize: 12,
+  lineHeight: 1.78,
+  padding: "10px 12px",
   letterSpacing: 0,
-  marginBottom: 16,
+  marginBottom: 12,
+};
+
+const quoteRailStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "auto auto minmax(0, 1fr)",
+  gap: "8px 12px",
+  alignItems: "baseline",
+  marginBottom: 14,
+  padding: "9px 0 11px",
+  borderTop: "1px solid var(--night-rule, #222)",
+  borderBottom: "1px solid var(--night-rule, #222)",
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--sans-tc)",
+  fontSize: 12,
+  lineHeight: 1.55,
 };
 
 const gridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(136px, 1fr))",
-  gap: "12px 14px",
-  marginBottom: 16,
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: "10px 12px",
+  marginBottom: 14,
 };
 
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   color: "var(--night-mid, #888)",
   display: "block",
-  marginBottom: 6,
-  fontFamily: "var(--mono, monospace)",
-  letterSpacing: "0.16em",
+  marginBottom: 5,
+  fontFamily: "var(--sans-tc)",
+  letterSpacing: 0,
 };
 
 const inputStyle: React.CSSProperties = {
@@ -701,8 +744,8 @@ const inputStyle: React.CSSProperties = {
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 12,
-  minHeight: 40,
-  padding: "9px 12px",
+  minHeight: 36,
+  padding: "8px 11px",
   width: "100%",
   boxSizing: "border-box",
 };
@@ -711,23 +754,23 @@ const segmentedStyle: React.CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
   border: "1px solid var(--night-rule-strong, #333)",
-  minHeight: 40,
+  minHeight: 36,
   width: "100%",
   overflow: "hidden",
 };
 
 const segmentButtonStyle: React.CSSProperties = {
   flex: "1 1 70px",
-  minWidth: 64,
-  minHeight: 38,
+  minWidth: 58,
+  minHeight: 34,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   background: "transparent",
   border: "none",
-  padding: "8px 10px",
-  fontFamily: "var(--mono, monospace)",
-  fontSize: 11,
+  padding: "7px 9px",
+  fontFamily: "var(--sans-tc)",
+  fontSize: 12,
   fontWeight: 700,
   lineHeight: 1.25,
   whiteSpace: "nowrap",
