@@ -371,7 +371,7 @@ export default async function PlansPage() {
             ))}
           </Panel>
 
-          <Panel code="PLAN-GATE" title="寫入控制" sub="真實性 gate" right="暫停">
+          <Panel code="PLAN-LOCK" title="寫入控管" sub="真實性閘門" right="暫停">
             <div className="terminal-note">
               <span className="tg down">暫停</span> 本頁是只讀計畫面板。模擬委託預覽與送出已放在模擬交易頁；實盤送單仍需風控閘門與操作員明示。
             </div>
