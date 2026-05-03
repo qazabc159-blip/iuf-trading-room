@@ -3349,9 +3349,10 @@ body:has(.login-route) > div {
 
 .company-detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
-  gap: clamp(18px, 1.8vw, 26px);
+  grid-template-columns: minmax(680px, 1fr) minmax(320px, 380px);
+  gap: clamp(24px, 2.4vw, 36px);
   align-items: start;
+  margin-top: 6px;
 }
 
 .company-main-column,
@@ -3447,8 +3448,9 @@ body:has(.login-route) > div {
 .company-side-column .paper-order-panel {
   border-top-color: rgba(226, 184, 92, 0.32);
   background:
-    linear-gradient(155deg, rgba(226, 184, 92, 0.09), rgba(226, 184, 92, 0.015) 38%, transparent),
-    rgba(5, 8, 12, 0.56);
+    linear-gradient(155deg, rgba(226, 184, 92, 0.11), rgba(226, 184, 92, 0.018) 34%, transparent),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 48%),
+    rgba(5, 8, 12, 0.5);
 }
 
 .paper-order-panel .ascii-head {
@@ -3480,6 +3482,20 @@ body:has(.login-route) > div {
 
 .company-kpi-strip b {
   font-size: 16px;
+}
+
+.company-main-column .kline-panel {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(226, 184, 92, 0.11), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.024), transparent 52%),
+    rgba(4, 8, 13, 0.34);
+}
+
+.company-main-column .kline-panel:hover,
+.company-side-column .paper-order-panel:hover {
+  background:
+    linear-gradient(112deg, rgba(226, 184, 92, 0.068), transparent 42%),
+    rgba(8, 12, 18, 0.42);
 }
 
 .company-tabs-band {
