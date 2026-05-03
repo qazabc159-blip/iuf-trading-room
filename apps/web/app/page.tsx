@@ -738,8 +738,8 @@ export default async function DashboardPage() {
         <DashboardBlockedSummary sections={sourceStatuses} />
       ) : (
         <>
-          <div className="main-grid">
-            <div>
+          <div className="main-grid dashboard-mosaic-grid">
+            <div className="dashboard-mosaic-primary">
               <Panel code="WCH-LST" title="觀察清單" sub="報價、風控與候選股票" right={<StatePill state={watchlist.state} />}>
                 <WatchlistSurface result={watchlist} />
               </Panel>
@@ -747,7 +747,7 @@ export default async function DashboardPage() {
               <IdeasPanel ideas={ideas} />
             </div>
 
-            <div>
+            <div className="dashboard-mosaic-secondary">
               <MarketIntelPanel news={news} />
               <SignalsPanel signals={signals} />
               <OpsPanel overview={marketOverview} runs={runs} />
