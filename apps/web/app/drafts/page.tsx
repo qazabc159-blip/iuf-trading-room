@@ -11,6 +11,7 @@ import {
   contentDraftTitle,
 } from "@/lib/content-draft-view";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", { hour12: false });
@@ -56,13 +57,13 @@ function DraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
         <span>查看</span>
       </div>
       {drafts.map((draft) => {
-        const body = contentDraftBody(draft);
+        const body = cleanNarrativeText(contentDraftBody(draft), "");
         return (
           <Link className="content-draft-row" href={`/admin/content-drafts/${draft.id}`} key={draft.id}>
             <span className="tg gold">{draft.id.slice(0, 8)}</span>
             <span className="tg">{contentDraftTargetLabel(draft)}</span>
             <span className="content-draft-title">
-              {contentDraftTitle(draft)}
+              {cleanExternalHeadline(contentDraftTitle(draft), "內容草稿")}
               {body && <small>{body}</small>}
             </span>
             <span className={`badge ${contentDraftStatusBadge(draft.status)}`}>
