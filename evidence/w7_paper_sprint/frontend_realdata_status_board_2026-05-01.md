@@ -2454,3 +2454,10 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior change: the dashboard now renders the real market-data strip before the hero copy, so the first screen starts with 台股市場總覽/報價池/資料源/可模擬/強弱/量能 state instead of hiding it below the large status block. The hero wording was tightened to focus on 盤勢、訊號、候選清單 and truthful data state.
 - Tests: `git diff --check -- apps/web/app/page.tsx` PASS with CRLF warning only; `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Blockers: production visual smoke required after merge/deploy. Stop-lines respected.
+
+### Codex cycle (2026-05-03 14:01 Taipei) - owner invite-code UI
+- Files changed: added `apps/web/app/admin/invites/page.tsx` and `apps/web/app/admin/invites/InviteIssuer.tsx`; updated `apps/web/lib/auth-client.ts`, `apps/web/app/register/page.tsx`, `apps/web/app/globals.css`, and this board.
+- Endpoints / data behavior: no backend contract changed. The new UI uses the existing Owner-gated `/auth/issue-invite` endpoint and existing `/auth/register-with-invite` registration flow. No public self-registration was opened, no role escalation was added, and no credentials are stored.
+- Behavior change: Owner can generate a one-time test invite code from `/admin/invites`, copy it, and hand it to a tester. The register page now links admins to the invite-code page while still requiring an invite code for account creation.
+- Tests: `git diff --check -- apps/web/lib/auth-client.ts apps/web/app/admin/invites/page.tsx apps/web/app/admin/invites/InviteIssuer.tsx apps/web/app/register/page.tsx apps/web/app/globals.css evidence/w7_paper_sprint/frontend_realdata_status_board_2026-05-01.md` PASS with CRLF warnings only; `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Blockers: production visual and owner-role smoke pending. Stop-lines respected.
