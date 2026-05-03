@@ -266,6 +266,29 @@ export default async function CompanyDetailPage({
 
       <CompanyHeroBar company={detail} quote={quote} />
 
+      <div className="company-kpi-strip">
+        <div>
+          <span className="tg soft">資料</span>
+          <b className="tg gold">{ohlcvState === "LIVE" ? "K線" : "待接"}</b>
+        </div>
+        <div>
+          <span className="tg soft">動能</span>
+          <b className={`tg ${tone(dailyChangePct)}`}>{momentumFromChange(dailyChangePct)}</b>
+        </div>
+        <div>
+          <span className="tg soft">籌碼</span>
+          <b className="tg muted">FinMind 接入中</b>
+        </div>
+        <div>
+          <span className="tg soft">日變動</span>
+          <b className={`num ${tone(dailyChangePct)}`}>{signed(dailyChangePct)}%</b>
+        </div>
+        <div>
+          <span className="tg soft">主題</span>
+          <b className="tg gold">{detail.themes.join(" / ") || "--"}</b>
+        </div>
+      </div>
+
       <div className="company-detail-layout">
         <div className="company-main-column">
           <OhlcvCandlestickChart
@@ -282,32 +305,9 @@ export default async function CompanyDetailPage({
         </div>
 
         <aside className="company-side-column">
-          <PaperOrderPanel symbol={company.ticker} />
+          <PaperOrderPanel symbol={company.ticker} lastPrice={quote?.last ?? null} />
           <SourceStatusCard sources={sources} />
         </aside>
-      </div>
-
-      <div className="company-kpi-strip">
-        <div>
-          <span className="tg soft">資料</span>
-          <b className="tg gold">{ohlcvState === "LIVE" ? "K線" : "待接"}</b>
-        </div>
-        <div>
-          <span className="tg soft">動能</span>
-          <b className={`tg ${tone(dailyChangePct)}`}>{momentumFromChange(dailyChangePct)}</b>
-        </div>
-        <div>
-          <span className="tg soft">籌碼</span>
-          <b className="tg muted">待接</b>
-        </div>
-        <div>
-          <span className="tg soft">日變動</span>
-          <b className={`num ${tone(dailyChangePct)}`}>{signed(dailyChangePct)}%</b>
-        </div>
-        <div>
-          <span className="tg soft">主題</span>
-          <b className="tg gold">{detail.themes.join(" / ") || "--"}</b>
-        </div>
       </div>
 
       <div className="company-tabs-band">
