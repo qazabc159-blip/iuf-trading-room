@@ -660,7 +660,7 @@ const sourceBarStyle: React.CSSProperties = {
   fontSize: 10.5,
   lineHeight: 1.75,
   marginBottom: 30,
-  padding: "14px 18px",
+  padding: "18px 22px",
   border: "1px solid var(--night-rule, #222)",
   background: "rgba(255,255,255,0.012)",
 };
@@ -673,9 +673,9 @@ const bannerStyle: React.CSSProperties = {
   fontWeight: 700,
   fontSize: 11,
   lineHeight: 2.05,
-  padding: "22px 28px",
-  letterSpacing: "0.08em",
-  marginBottom: 38,
+  padding: "24px 30px",
+  letterSpacing: 0,
+  marginBottom: 42,
 };
 
 const gridStyle: React.CSSProperties = {
@@ -742,7 +742,7 @@ const truthNoteStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   lineHeight: 1.75,
-  padding: "18px 16px",
+  padding: "20px 22px",
 };
 
 const previewBoxStyle: React.CSSProperties = {

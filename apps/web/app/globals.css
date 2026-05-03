@@ -22,6 +22,7 @@
   --night-soft: #566276;
   --night-faint: #273142;
   --page-gutter-x: clamp(60px, 4.6vw, 96px);
+  --page-safe-right: 112px;
   --panel-gutter-x: clamp(52px, 3.8vw, 76px);
   --hud-gutter-x: clamp(70px, 4.8vw, 96px);
 
@@ -416,7 +417,7 @@ button { font: inherit; }
   flex: 1;
   min-width: 0;
   min-height: 100vh;
-  padding: 54px var(--page-gutter-x) 104px;
+  padding: 54px max(var(--page-gutter-x), var(--page-safe-right)) 104px var(--page-gutter-x);
   background:
     linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
     var(--night);
@@ -974,13 +975,13 @@ button { font: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 42px;
-  padding: 0 20px;
+  min-height: 46px;
+  padding: 12px 20px;
   border: 1px solid var(--night-rule-strong);
   background: rgba(255,255,255,0.018);
   color: var(--night-mid);
   cursor: pointer;
-  font: 700 11px/1 var(--sans-tc);
+  font: 700 11px/1.35 var(--sans-tc);
   letter-spacing: 0;
   transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
 }
@@ -1043,8 +1044,8 @@ button { font: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
-  padding: 0 24px;
+  min-height: 50px;
+  padding: 13px 24px;
   border: 1px solid var(--gold-deep);
   background: var(--gold);
   color: var(--night);
@@ -1087,7 +1088,7 @@ button { font: inherit; }
 .company-info-section {
   border-top: 1px solid var(--night-rule);
   margin-top: 46px;
-  padding: 46px 32px 0;
+  padding: 46px 32px 20px;
 }
 
 .company-filter-row {
@@ -1181,7 +1182,7 @@ button { font: inherit; }
   justify-content: space-between;
   gap: 28px 40px;
   margin: 48px 0 40px;
-  padding: 38px 42px 40px;
+  padding: 42px 46px 44px;
   border: 1px solid var(--night-rule-strong);
   background: rgba(255,255,255,0.014);
 }
@@ -1223,9 +1224,9 @@ button { font: inherit; }
   min-height: 46px;
   min-width: 68px;
   border: 1px solid var(--night-rule-strong);
-  padding: 0 16px;
+  padding: 12px 16px;
   color: var(--night-soft);
-  font: 700 11px/1 var(--sans-tc);
+  font: 700 11px/1.35 var(--sans-tc);
 }
 
 .kline-insufficient {
@@ -1292,10 +1293,10 @@ button { font: inherit; }
 
 .outline-button {
   display: inline-flex;
-  min-height: 48px;
+  min-height: 50px;
   align-items: center;
   justify-content: center;
-  padding: 0 24px;
+  padding: 13px 24px;
   border: 1px solid var(--night-rule-strong);
   background: var(--night-1);
   color: var(--night-mid);
@@ -2672,6 +2673,7 @@ body:has(.login-route) > div {
 @media (max-width: 1100px) {
   :root {
     --page-gutter-x: 28px;
+    --page-safe-right: 28px;
     --panel-gutter-x: 28px;
     --hud-gutter-x: 28px;
   }
