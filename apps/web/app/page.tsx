@@ -707,22 +707,33 @@ export default async function DashboardPage() {
       sub="台股戰情台"
       note={`戰情台 / ${summary}`}
     >
-      <MarketStrip overview={marketOverview} />
-      <section className="dashboard-hero" aria-label="戰情台狀態">
+      <section className="dashboard-hero dashboard-command-deck" aria-label="戰情台狀態">
         <div className="dashboard-hero-main">
           <span className="tg gold">IUF 台股戰情台</span>
           <h2>盤勢、訊號、候選清單，先看真實資料狀態。</h2>
           <p>戰情台只讀正式端點。資料缺口會明確標示，不用假數據把畫面補滿。</p>
+          <div className="dashboard-hero-kpis dashboard-hero-kpis-inline">
+            {heroStats.map((item) => (
+              <div className="dashboard-hero-stat" key={item.label}>
+                <span className="tg soft">{item.label}</span>
+                <strong className={`num ${item.tone}`}>{item.value}</strong>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="dashboard-hero-kpis">
-          {heroStats.map((item) => (
-            <div className="dashboard-hero-stat" key={item.label}>
-              <span className="tg soft">{item.label}</span>
-              <strong className={`num ${item.tone}`}>{item.value}</strong>
+        <div className="dashboard-source-rail" aria-label="資料源健康">
+          {sourceStatuses.map((section) => (
+            <div className="dashboard-source-chip" key={section.label}>
+              <div>
+                <span className="tg gold">{section.label}</span>
+                <span className="tg soft"> / {formatDateTime(section.updatedAt)}</span>
+              </div>
+              <StatePill state={section.state} />
             </div>
           ))}
         </div>
       </section>
+      <MarketStrip overview={marketOverview} />
       {dashboardDegraded ? (
         <DashboardBlockedSummary sections={sourceStatuses} />
       ) : (

@@ -598,6 +598,41 @@ button { font: inherit; }
   line-height: 1.1;
 }
 
+.dashboard-command-deck {
+  grid-template-columns: minmax(360px, 1fr) minmax(280px, 0.48fr);
+  gap: 30px;
+  align-items: stretch;
+}
+
+.dashboard-hero-kpis-inline {
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  margin-top: 22px;
+}
+
+.dashboard-source-rail {
+  display: grid;
+  align-content: stretch;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 0 8px 22px;
+  border-left: 1px solid rgba(226, 184, 92, 0.25);
+}
+
+.dashboard-source-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+  background: rgba(0, 0, 0, 0.10);
+}
+
+.dashboard-source-chip:last-child {
+  border-bottom: 0;
+}
+
 .dashboard-blocked-summary {
   display: grid;
   grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1fr);
@@ -1976,6 +2011,15 @@ button { font: inherit; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .dashboard-hero-kpis-inline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-source-chip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .plan-card,
   .plan-card-meta {
     grid-template-columns: 1fr;
@@ -2001,6 +2045,12 @@ button { font: inherit; }
   .dashboard-hero,
   .main-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-source-rail {
+    padding: 18px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(226, 184, 92, 0.25);
   }
 
   .company-panels-grid {
