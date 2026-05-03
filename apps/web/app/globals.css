@@ -1893,6 +1893,45 @@ button { font: inherit; }
     display: none;
   }
 
+  .panel {
+    padding: 26px 22px 36px;
+  }
+
+  .panel-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    min-height: 0;
+    padding: 26px 18px 24px;
+    margin-bottom: 24px;
+  }
+
+  .panel-head > div:first-child {
+    padding-right: 0;
+  }
+
+  .panel-head > .tg.soft {
+    max-width: 100%;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .panel-code,
+  .panel-sub,
+  .tg.gold,
+  .tg.panel-code {
+    word-break: keep-all;
+    overflow-wrap: normal;
+  }
+
+  .terminal-note,
+  .state-panel,
+  .ticket,
+  .field-box {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
   .table-scroll:has(.company-data-table-fit) {
     overflow-x: visible;
   }
@@ -2019,6 +2058,82 @@ button { font: inherit; }
 
   .dashboard-signal-row .signal-confidence {
     justify-self: start;
+  }
+
+  .lab-row.table-head,
+  .brief-history-row.table-head,
+  .content-draft-row.table-head {
+    display: none;
+  }
+
+  .lab-row,
+  .brief-history-row,
+  .content-draft-row,
+  .content-draft-row.admin {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+    min-width: 0 !important;
+    width: 100%;
+    padding: 18px 16px !important;
+    border: 1px solid var(--night-rule);
+    border-bottom-color: var(--night-rule-strong);
+    background: rgba(255, 255, 255, 0.015);
+  }
+
+  .lab-row + .lab-row,
+  .brief-history-row + .brief-history-row,
+  .content-draft-row + .content-draft-row {
+    margin-top: 12px;
+  }
+
+  .lab-row > *,
+  .brief-history-row > *,
+  .content-draft-row > *,
+  .content-draft-row.admin > * {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    text-align: left !important;
+  }
+
+  .brief-history-table,
+  .content-draft-table {
+    gap: 0;
+    overflow-x: visible;
+  }
+
+  .brief-history-row:not(.table-head) > span,
+  .content-draft-row:not(.table-head) > span,
+  .content-draft-row:not(.table-head) > .content-draft-title {
+    display: grid;
+    gap: 4px;
+  }
+
+  .brief-history-row:not(.table-head) > span::before,
+  .content-draft-row:not(.table-head) > span::before,
+  .content-draft-row:not(.table-head) > .content-draft-title::before {
+    color: var(--night-mid);
+    font: 700 11px/1.35 var(--sans-tc);
+  }
+
+  .brief-history-row:not(.table-head) > span:nth-child(1)::before { content: "日期"; }
+  .brief-history-row:not(.table-head) > span:nth-child(2)::before { content: "盤勢"; }
+  .brief-history-row:not(.table-head) > span:nth-child(3)::before { content: "狀態"; }
+  .brief-history-row:not(.table-head) > span:nth-child(4)::before { content: "產生者"; }
+  .brief-history-row:not(.table-head) > span:nth-child(5)::before { content: "建立"; }
+
+  .content-draft-row:not(.table-head) > span:nth-child(1)::before { content: "ID"; }
+  .content-draft-row:not(.table-head) > span:nth-child(2)::before { content: "目標"; }
+  .content-draft-row:not(.table-head) > .content-draft-title::before { content: "標題"; }
+  .content-draft-row:not(.table-head) > span:nth-child(4)::before { content: "狀態"; }
+  .content-draft-row:not(.table-head) > span:nth-child(5)::before { content: "更新"; }
+  .content-draft-row:not(.table-head) > span:nth-child(6)::before { content: "查看"; }
+
+  .content-draft-title small {
+    font-family: var(--sans-tc);
+    font-size: 12px;
+    line-height: 1.65;
   }
 }
 
@@ -2995,6 +3110,9 @@ body:has(.login-route) > div {
   }
   .company-detail-layout {
     grid-template-columns: 1fr;
+  }
+  .company-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
   .company-panels-grid {
     grid-template-columns: 1fr;
