@@ -126,7 +126,7 @@ export function OhlcvCandlestickChart({
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [interval, setInterval] = useState<EnabledInterval>("1d");
-  const [range, setRange] = useState<RangeKey>("2y");
+  const [range, setRange] = useState<RangeKey>("all");
   const chartBars = useMemo(() => filterRange(aggregateBars(bars, interval), range), [bars, interval, range]);
   const insufficientTrend = chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
 
@@ -149,7 +149,7 @@ export function OhlcvCandlestickChart({
 
         chart = lc.createChart(el, {
           width,
-          height: 520,
+          height: 460,
           layout: {
             background: { color: "transparent" },
             textColor: "rgba(203,213,225,0.68)",
@@ -289,12 +289,7 @@ export function OhlcvCandlestickChart({
 
       <div className="kline-pending-line">
         <span className="tg gold">分K</span>
-        {PENDING_INTERVALS.map((label) => (
-          <span key={label} className="kline-pending-chip" title="等待 KGI 唯讀分K與逐筆資料，不顯示假資料。">
-            {label}
-          </span>
-        ))}
-        <span className="tg soft">等待 KGI 唯讀分K/逐筆資料接上。</span>
+        <span className="tg soft">等待 KGI 唯讀分K/逐筆資料接上：{PENDING_INTERVALS.join(" / ")}</span>
       </div>
 
       {chartBars.length > 0 && (
@@ -323,7 +318,7 @@ export function OhlcvCandlestickChart({
           sourceLabel={badgeLabel}
         />
       ) : (
-        <div ref={containerRef} style={{ width: "100%", minHeight: 520 }} />
+        <div ref={containerRef} style={{ width: "100%", minHeight: 460 }} />
       )}
     </section>
   );
