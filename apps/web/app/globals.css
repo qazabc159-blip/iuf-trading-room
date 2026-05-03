@@ -3422,17 +3422,17 @@ body:has(.login-route) > div {
 
 .company-data-tabs.finmind-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
 }
 
 .company-data-tabs.finmind-tabs .mini-button,
 .company-data-tabs.finmind-tabs .outline-button {
-  min-height: 52px;
+  min-height: 46px;
   align-items: flex-start;
   flex-direction: column;
-  gap: 4px;
-  padding: 9px 12px;
+  gap: 3px;
+  padding: 8px 11px;
   text-align: left;
 }
 
@@ -3556,6 +3556,78 @@ body:has(.login-route) > div {
 
 .market-intel-list {
   margin-top: 8px;
+}
+
+.company-finmind-snapshot {
+  display: grid;
+  gap: 18px;
+}
+
+.compact-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.metric-tile {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-top: 1px solid rgba(226, 184, 92, 0.16);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.07);
+  background:
+    linear-gradient(105deg, rgba(226, 184, 92, 0.06), transparent 42%),
+    rgba(255, 255, 255, 0.012);
+}
+
+.metric-tile strong {
+  color: var(--night-ink);
+  font: 850 clamp(17px, 1.25vw, 22px)/1.25 var(--mono);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.ownership-block {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(220, 228, 240, 0.08);
+}
+
+.ownership-bars {
+  display: grid;
+  gap: 9px;
+}
+
+.ownership-bar {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.38fr) minmax(120px, 1fr) 58px minmax(78px, auto);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  color: var(--night-soft);
+  font: 700 11px/1.45 var(--mono);
+}
+
+.ownership-bar > span:first-child {
+  color: var(--night-ink);
+  overflow-wrap: anywhere;
+}
+
+.ownership-bar-track {
+  position: relative;
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  background: rgba(138, 151, 170, 0.18);
+}
+
+.ownership-bar-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(226, 184, 92, 0.95), rgba(72, 211, 139, 0.8));
 }
 
 .market-intel-row {

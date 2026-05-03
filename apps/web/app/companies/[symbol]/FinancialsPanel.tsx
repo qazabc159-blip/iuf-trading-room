@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  getCompanyBalanceSheet,
+  getCompanyCashFlow,
   getCompanyDividends,
   getCompanyFinancials,
   getCompanyMarketValue,
   getCompanyRevenue,
   getCompanyValuation,
+  type CompanyBalanceSheetSnapshot,
+  type CompanyCashFlowSnapshot,
   type CompanyDividendRow,
   type CompanyFinancialRow,
   type CompanyMarketValueRow,
@@ -16,17 +20,28 @@ import {
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 
-type TabKey = "financials" | "revenue" | "valuation" | "marketValue" | "dividend";
+type TabKey = "financials" | "revenue" | "balance" | "cashFlow" | "valuation" | "marketValue" | "dividend";
+
+type TabRows =
+  | CompanyFinancialRow[]
+  | CompanyRevenueRow[]
+  | CompanyValuationRow[]
+  | CompanyMarketValueRow[]
+  | CompanyDividendRow[]
+  | CompanyBalanceSheetSnapshot[]
+  | CompanyCashFlowSnapshot[];
 
 type TabState =
   | { status: "loading" }
   | { status: "blocked"; reason: string; fetchedAt: string }
   | { status: "empty"; reason: string; fetchedAt: string }
-  | { status: "live"; rows: CompanyFinancialRow[] | CompanyRevenueRow[] | CompanyValuationRow[] | CompanyMarketValueRow[] | CompanyDividendRow[]; fetchedAt: string };
+  | { status: "live"; rows: TabRows; fetchedAt: string };
 
 const TABS: Array<{ key: TabKey; label: string; source: string }> = [
   { key: "financials", label: "財報", source: "FinMind 財報" },
   { key: "revenue", label: "月營收", source: "FinMind 月營收" },
+  { key: "balance", label: "資產負債", source: "FinMind 資產負債表" },
+  { key: "cashFlow", label: "現金流", source: "FinMind 現金流量表" },
   { key: "valuation", label: "估值", source: "FinMind PER/PBR" },
   { key: "marketValue", label: "市值", source: "FinMind 股價市值" },
   { key: "dividend", label: "股利", source: "FinMind 股利" },
@@ -75,6 +90,14 @@ function tabStateSummary(tab: TabKey, state: TabState | undefined) {
   if (tab === "revenue") {
     const row = (state.rows as CompanyRevenueRow[])[0];
     return row ? `${row.revenue_year}/${String(row.revenue_month).padStart(2, "0")} / ${money(row.revenue)} 十億` : "無資料";
+  }
+  if (tab === "balance") {
+    const row = (state.rows as CompanyBalanceSheetSnapshot[])[0];
+    return row ? `${row.date} / 資產 ${money(row.totalAssets)}` : "無資料";
+  }
+  if (tab === "cashFlow") {
+    const row = (state.rows as CompanyCashFlowSnapshot[])[0];
+    return row ? `${row.date} / 營業 ${money(row.operatingCashFlow)}` : "無資料";
   }
   if (tab === "valuation") {
     const row = (state.rows as CompanyValuationRow[])[0];
@@ -164,6 +187,98 @@ function RevenueTable({ rows }: { rows: CompanyRevenueRow[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function MetricTile({ label, value, unit }: { label: string; value: string; unit?: string }) {
+  return (
+    <div className="metric-tile">
+      <span className="tg soft">{label}</span>
+      <strong>{value}</strong>
+      {unit ? <span className="tg soft">{unit}</span> : null}
+    </div>
+  );
+}
+
+function BalanceSheetTable({ rows }: { rows: CompanyBalanceSheetSnapshot[] }) {
+  const row = rows[0];
+  return (
+    <div className="company-finmind-snapshot">
+      <div className="source-line">
+        <span className="badge badge-green">正常</span>
+        <span className="tg soft">期別：{row.date}</span>
+        <span className="tg soft">來源：FinMind 資產負債表</span>
+      </div>
+      <div className="metric-grid compact-metric-grid">
+        <MetricTile label="總資產" value={money(row.totalAssets)} unit="十億" />
+        <MetricTile label="總負債" value={money(row.totalLiabilities)} unit="十億" />
+        <MetricTile label="權益" value={money(row.equity)} unit="十億" />
+        <MetricTile label="現金與約當現金" value={money(row.cashAndCashEquivalents)} unit="十億" />
+        <MetricTile label="負債比" value={numberText(row.debtRatioPct, 1)} unit="%" />
+        <MetricTile label="流動比" value={numberText(row.currentRatioPct, 1)} unit="%" />
+      </div>
+      <div className="table-scroll">
+        <table className="data-table company-data-table-fit">
+          <thead>
+            <tr>
+              <th><span className="table-cell-inner">項目</span></th>
+              <th><span className="table-cell-inner">原始科目</span></th>
+              <th><span className="table-cell-inner">金額（十億）</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {row.sourceItems.slice(0, 12).map((item) => (
+              <tr key={item.type}>
+                <td><span className="table-cell-inner">{item.type}</span></td>
+                <td><span className="table-cell-inner">{item.originName ?? "未提供"}</span></td>
+                <td className="num"><span className="table-cell-inner">{money(item.value)}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function CashFlowTable({ rows }: { rows: CompanyCashFlowSnapshot[] }) {
+  const row = rows[0];
+  return (
+    <div className="company-finmind-snapshot">
+      <div className="source-line">
+        <span className="badge badge-green">正常</span>
+        <span className="tg soft">期別：{row.date}</span>
+        <span className="tg soft">來源：FinMind 現金流量表</span>
+      </div>
+      <div className="metric-grid compact-metric-grid">
+        <MetricTile label="營業現金流" value={money(row.operatingCashFlow)} unit="十億" />
+        <MetricTile label="投資現金流" value={money(row.investingCashFlow)} unit="十億" />
+        <MetricTile label="籌資現金流" value={money(row.financingCashFlow)} unit="十億" />
+        <MetricTile label="自由現金流" value={money(row.freeCashFlow)} unit="十億" />
+        <MetricTile label="現金增減" value={money(row.cashIncrease)} unit="十億" />
+        <MetricTile label="稅前淨利" value={money(row.netIncomeBeforeTax)} unit="十億" />
+      </div>
+      <div className="table-scroll">
+        <table className="data-table company-data-table-fit">
+          <thead>
+            <tr>
+              <th><span className="table-cell-inner">項目</span></th>
+              <th><span className="table-cell-inner">原始科目</span></th>
+              <th><span className="table-cell-inner">金額（十億）</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {row.sourceItems.slice(0, 12).map((item) => (
+              <tr key={item.type}>
+                <td><span className="table-cell-inner">{item.type}</span></td>
+                <td><span className="table-cell-inner">{item.originName ?? "未提供"}</span></td>
+                <td className="num"><span className="table-cell-inner">{money(item.value)}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -264,6 +379,8 @@ function Rows({ tab, state }: { tab: TabKey; state: TabState }) {
 
   if (tab === "financials") return <FinancialTable rows={state.rows as CompanyFinancialRow[]} />;
   if (tab === "revenue") return <RevenueTable rows={state.rows as CompanyRevenueRow[]} />;
+  if (tab === "balance") return <BalanceSheetTable rows={state.rows as CompanyBalanceSheetSnapshot[]} />;
+  if (tab === "cashFlow") return <CashFlowTable rows={state.rows as CompanyCashFlowSnapshot[]} />;
   if (tab === "valuation") return <ValuationTable rows={state.rows as CompanyValuationRow[]} />;
   if (tab === "marketValue") return <MarketValueTable rows={state.rows as CompanyMarketValueRow[]} />;
   return <DividendTable rows={state.rows as CompanyDividendRow[]} />;
@@ -287,12 +404,17 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         ? await getCompanyFinancials(companyId, { limit: 8 })
         : tab === "revenue"
           ? await getCompanyRevenue(companyId, { limit: 12 })
-          : tab === "valuation"
-            ? await getCompanyValuation(companyId, { days: 120 })
-            : tab === "marketValue"
-              ? await getCompanyMarketValue(companyId, { days: 365 })
-            : await getCompanyDividends(companyId, { years: 5 });
-      const rows = response.data ?? [];
+          : tab === "balance"
+            ? await getCompanyBalanceSheet(companyId, { years: 3 })
+            : tab === "cashFlow"
+              ? await getCompanyCashFlow(companyId, { years: 3 })
+              : tab === "valuation"
+                ? await getCompanyValuation(companyId, { days: 120 })
+                : tab === "marketValue"
+                  ? await getCompanyMarketValue(companyId, { days: 365 })
+                  : await getCompanyDividends(companyId, { years: 5 });
+      const rawRows = response.data;
+      const rows = Array.isArray(rawRows) ? rawRows : rawRows ? [rawRows] : [];
       setStates((prev) => ({
         ...prev,
         [tab]: rows.length > 0
@@ -328,7 +450,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
     <section className="panel hud-frame">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">[03]</span> 財報與估值
-        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 財報 / 月營收 / PER / 市值 / 股利</span>
+        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 財報 / 月營收 / 資產負債 / 現金流 / PER / 市值 / 股利</span>
       </h3>
 
       <div className="company-data-tabs finmind-tabs">

@@ -4,6 +4,47 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-04 00:23 Taipei - Codex heartbeat - FinMind Sponsor company research expansion
+
+**Scope**: read-only FinMind Sponsor 999 data expansion and company-page source truth. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no RSS/commercial/deferred news feature.
+
+**References read**:
+- FinMind official DataList: 79 Taiwan datasets, including `TaiwanStockShareholding`, `TaiwanStockHoldingSharesPer`, `TaiwanStockBalanceSheet`, `TaiwanStockCashFlowsStatement`, and `TaiwanStockMarketValue`.
+- Elva sponsor brief from `../IUF_TRADING_ROOM_APP/evidence/w7_paper_sprint/TO_ELVA_CODEX_finmind_sponsor_999_integration_brief_2026-05-03.md`.
+- Freeze banner from `../IUF_TRADING_ROOM_APP/evidence/w7_paper_sprint/TO_CODEX_freeze_breach_revert_and_banner_2026-05-02.md`; current work keeps news/RSS/commercial feeds out of scope.
+
+**Files changed**:
+- `apps/api/src/data-sources/finmind-client.ts` - added typed read-only adapters for `TaiwanStockShareholding` and `TaiwanStockHoldingSharesPer`; annotated financial raw rows with optional `origin_name`.
+- `apps/api/src/server.ts` - added authenticated read-only endpoints for `/balance-sheet`, `/cash-flow`, and `/shareholding`; FinMind diagnostics now marks shareholding/distribution datasets implemented.
+- `apps/web/lib/api.ts` - added typed clients for balance sheet, cash flow, and shareholding.
+- `apps/web/app/companies/[symbol]/FinancialsPanel.tsx` - added `資產負債` and `現金流` tabs with compact metric snapshots plus source line items.
+- `apps/web/app/companies/[symbol]/ChipsPanel.tsx` - merged foreign shareholding and holding-distribution rows into the existing 籌碼 panel without changing broker/order behavior.
+- `apps/web/app/globals.css` - added compact FinMind metric tiles and ownership bars; reduced new tab height to avoid another oversized box surface.
+
+**Endpoints added**:
+- `GET /api/v1/companies/:id/balance-sheet?years=3`
+- `GET /api/v1/companies/:id/cash-flow?years=3`
+- `GET /api/v1/companies/:id/shareholding?months=6`
+
+**Behavior**:
+- Company detail now has real FinMind research surfaces for profit/revenue, assets/liabilities, cash flow, PER/PBR, market value, dividends, institutional flow, margin/short, foreign ownership, and shareholder distribution.
+- Empty or blocked responses remain explicit; no mock or synthetic line item is created.
+- Taiwan order-unit safety remains untouched: this patch does not modify order preview/submit or broker write paths.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/api typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/api build` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `git diff --check -- <changed files>` PASS with CRLF warnings only.
+
+**Deploy watch**:
+- PR #134 / commit `8d7a587` has API production deployment SUCCESS; web production deployment was still BUILDING during this cycle. Continue polling before the next deploy.
+
+**Blockers / next bypass**:
+- Do not add RSS/Yahoo/Futu/commercial news during freeze. Next safe bypass is FinMind-only official data and page source-truth polish.
+- Visual browser QA still needs a post-PR/deploy production sweep at 1365px desktop and mobile.
+
 ### 2026-05-03 19:58 Taipei - Codex heartbeat pass 78 - company/plans/briefs rhythm repair
 
 **Scope**: demo-critical frontend repair only. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no deferred news/RSS/commercial data feature.
