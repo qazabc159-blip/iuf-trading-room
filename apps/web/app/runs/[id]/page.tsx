@@ -3,6 +3,9 @@ import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getStrategyRunById, listStrategyRuns } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanNarrativeText } from "@/lib/operator-copy";
+import { reasonLabel } from "@/lib/strategy-vocab";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +25,7 @@ type LoadState =
 const emptyRuns: RunsView = { total: 0, items: [] };
 
 async function loadDetail(id: string): Promise<LoadState> {
-  const source = `GET /api/v1/strategy/runs/${id}`;
+  const source = "策略批次資料庫 / 批次明細";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -52,7 +55,7 @@ async function loadDetail(id: string): Promise<LoadState> {
       data: { run: null, runs: emptyRuns },
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyDataError(error, "策略批次明細暫時無法讀取。"),
     };
   }
 }
@@ -61,14 +64,27 @@ function formatTime(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-TW", { hour12: false });
+  return date.toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", { hour12: false });
+  return date.toLocaleString("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function percent(value: number) {
@@ -106,39 +122,64 @@ function directionTone(direction: RunOutput["direction"]) {
 }
 
 function directionLabel(direction: RunOutput["direction"]) {
-  if (direction === "bullish") return "偏多";
-  if (direction === "bearish") return "偏空";
+  if (direction === "bullish") return "看多";
+  if (direction === "bearish") return "看空";
   return "中性";
 }
 
 function modeLabel(mode: string | null | undefined) {
-  if (mode === "paper") return "模擬";
-  if (mode === "live") return "正式";
+  if (mode === "paper") return "模擬候選";
+  if (mode === "live") return "正式模式";
+  if (mode === "strategy") return "策略篩選";
   return mode ?? "--";
+}
+
+function shortRunId(value: string) {
+  return value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+}
+
+function queryLabel(key: string) {
+  const labels: Record<string, string> = {
+    limit: "候選上限",
+    signalDays: "訊號天數",
+    includeBlocked: "包含阻擋",
+    market: "市場",
+    themeId: "主題 ID",
+    theme: "主題",
+    symbol: "股票",
+    decisionMode: "模式",
+    decisionFilter: "決策篩選",
+    qualityFilter: "品質篩選",
+    sort: "排序",
+  };
+  return labels[key] ?? key;
 }
 
 function formatQueryValue(value: unknown) {
   if (Array.isArray(value)) return value.join(" / ") || "--";
   if (typeof value === "boolean") return value ? "是" : "否";
   if (value === null || value === undefined || value === "") return "--";
-  if (value === "paper") return "模擬";
-  if (value === "live") return "正式";
+  if (value === "paper") return "模擬候選";
+  if (value === "live") return "正式模式";
+  if (value === "strategy") return "策略篩選";
+  if (value === "score") return "分數";
+  if (value === "created_at") return "建立時間";
+  if (value === "symbol") return "股票代號";
+  if (value === "signal_strength") return "訊號強度";
+  if (value === "signal_recency") return "訊號時效";
+  if (value === "theme_rank") return "主題熱度";
   return String(value);
 }
-
-const runIdeaRowWithPromoteStyle = {
-  gridTemplateColumns: "74px 56px 54px 72px minmax(160px, 1fr) 88px minmax(170px, 0.72fr)",
-};
 
 function PromotionBlockedCell() {
   return (
     <span
       className="tg down"
       title="策略想法轉模擬委託預覽的後端契約尚未完成。負責人：策略交接與風控管線。"
-      style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.25 }}
+      style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.45 }}
     >
       <span>轉單暫停</span>
-      <span className="tc soft" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      <span className="tc soft">
         等待後端預覽契約
       </span>
     </span>
@@ -152,12 +193,19 @@ function barWidth(value: number, total: number) {
 
 function SourceLine({ result }: { result: LoadState }) {
   return (
-    <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
+    <div className="runs-source-line">
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
-      <span>策略批次資料</span>
+      <span>來源：{result.source}</span>
       <span>更新 {formatTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
+  );
+}
+
+function ideaReasonText(idea: RunOutput) {
+  return cleanNarrativeText(
+    `${idea.companyName} / ${idea.topThemeName ?? "未連結主題"} / ${reasonLabel(idea.primaryReason)}`,
+    `${idea.companyName} / 原因待後端整理`
   );
 }
 
@@ -207,9 +255,9 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
   return (
     <PageFrame
       code="05-D"
-      title={run?.id ?? id}
-      sub={run ? `策略批次 / ${modeLabel(run.query.decisionMode)}` : "策略批次暫停"}
-      note="此頁讀取正式策略批次資料；策略想法轉模擬委託會保持暫停，直到後端預覽契約啟用。"
+      title="批次明細"
+      sub={run ? `${shortRunId(run.id)} / ${modeLabel(run.query.decisionMode)}` : `${shortRunId(id)} / 暫停`}
+      note="此頁讀取正式策略批次資料；候選轉模擬委託會保持暫停，直到後端預覽契約與風控 gate 啟用。"
     >
       <MetricStrip
         cells={[
@@ -223,17 +271,17 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
         columns={6}
       />
 
-      <div className="company-grid">
+      <div className="runs-detail-layout">
         <div>
-          <Panel code="RUN-QRY" title="查詢條件" sub="策略批次 / 唯讀" right={stateLabel(result.state)}>
+          <Panel code="RUN-QRY" title="批次條件" sub="策略批次 / 唯讀" right={stateLabel(result.state)}>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {run && (
-              <div style={{ border: "1px solid var(--night-rule-strong)" }}>
+              <div className="run-query-grid">
                 {Object.entries(run.query).map(([key, value]) => (
-                  <div className="row limit-row" key={key}>
-                    <span className="tg gold">{key}</span>
-                    <span className="tg" style={{ gridColumn: "span 2", textAlign: "right" }}>{formatQueryValue(value)}</span>
+                  <div className="run-query-chip" key={key}>
+                    <span>{queryLabel(key)}</span>
+                    <strong>{formatQueryValue(value)}</strong>
                   </div>
                 ))}
               </div>
@@ -252,15 +300,19 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
               </div>
             )}
             {runAvailable && outputs.map((idea) => (
-              <div className="row idea-row" style={runIdeaRowWithPromoteStyle} key={`${idea.companyId}-${idea.symbol}`}>
-                <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
-                <span className={`tg ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
-                <span className="num">{idea.score.toFixed(1)}</span>
-                <span className={`tg ${decisionTone(idea.marketDecision)}`}>{decisionLabel(idea.marketDecision)}</span>
-                <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {idea.companyName} / {idea.topThemeName ?? "未連結主題"} / {idea.primaryReason}
-                </span>
-                <Link href={`/companies/${idea.symbol}`} className="mini-button">公司</Link>
+              <div className="run-output-card" key={`${idea.companyId}-${idea.symbol}`}>
+                <div className="run-output-symbol">
+                  <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
+                  <strong>{idea.companyName}</strong>
+                  <span className="tc">{idea.topThemeName ?? "未連結主題"}</span>
+                </div>
+                <div className="run-output-metrics">
+                  <span className={directionTone(idea.direction)}>{directionLabel(idea.direction)}</span>
+                  <span>{idea.score.toFixed(1)} 分</span>
+                  <span className={decisionTone(idea.marketDecision)}>{decisionLabel(idea.marketDecision)}</span>
+                </div>
+                <p>{ideaReasonText(idea)}</p>
+                <Link href={`/companies/${idea.symbol}`} className="mini-button">公司頁</Link>
                 <PromotionBlockedCell />
               </div>
             ))}
@@ -268,7 +320,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
         </div>
 
         <div>
-          <Panel code="RUN-OUT" title="結果分布" sub="後端摘要" right={run?.id ?? "暫停"}>
+          <Panel code="RUN-OUT" title="結果分布" sub="後端摘要" right={run ? shortRunId(run.id) : "暫停"}>
             {!runAvailable && (
               <div className="terminal-note">
                 <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span> {unavailableReason}
@@ -309,7 +361,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
               <div className="row telex-row" style={{ gridTemplateColumns: "70px 1fr" }} key={label}>
                 <span className="tg gold">{label}</span>
                 {item ? (
-                  <Link href={`/runs/${encodeURIComponent(item.id)}`} className="tg">{item.id} / {modeLabel(item.decisionMode)}</Link>
+                  <Link href={`/runs/${encodeURIComponent(item.id)}`} className="tg">{shortRunId(item.id)} / {modeLabel(item.decisionMode)}</Link>
                 ) : (
                   <span className="tg soft">無</span>
                 )}
