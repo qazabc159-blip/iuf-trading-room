@@ -16,18 +16,22 @@ const ERROR_TEXT: Record<string, string> = {
 const REGISTER_STEPS = [
   {
     label: "邀請開通",
+    state: "現在",
     body: "現在先用邀請碼保護測試名單；公開測試時會改成自助註冊。",
   },
   {
     label: "個人工作台",
+    state: "建立後",
     body: "帳號建立後會保留觀察清單、策略草稿、模擬交易與風控設定。",
   },
   {
     label: "券商綁定預留",
+    state: "預留",
     body: "未來可將自己的證券帳號接到同一個 IUF 帳號底下。",
   },
   {
     label: "分級功能",
+    state: "後續",
     body: "進階資料、AI 摘要、量化研究包與自動化功能會依權限逐步開放。",
   },
 ];
@@ -84,11 +88,16 @@ export default function RegisterPage() {
 
         <div className="login-grid">
           <div className="login-copy">
-            <div className="tg gold">邀請註冊 · 操作員開通</div>
-            <h2>建立你的 IUF 帳號</h2>
+            <div className="tg gold">建立帳號 · 測試席位開通</div>
+            <h2>先建立網站帳號，券商綁定之後再接</h2>
             <p className="login-intro">
-              這裡建立的是網站帳號，不是券商帳號。之後券商綁定、月費方案與進階資料權限都會掛在同一個帳號上。
+              這裡建立的是 IUF 網站帳號，不是券商帳號，也不會觸發任何下單功能。
+              帳號建立後可以進入戰情室、保存個人設定，之後再逐步開放券商綁定與訂閱權限。
             </p>
+            <div className="login-copy-actions">
+              <Link href="/login" className="login-secondary-cta">已有帳號，前往登入</Link>
+              <span className="tc soft">目前採邀請碼測試；公開測試時會改成一般使用者可自行申請。</span>
+            </div>
             <div className="login-capability-list">
               {REGISTER_STEPS.map((item) => (
                 <div className="login-capability-card" key={item.label}>
@@ -96,7 +105,9 @@ export default function RegisterPage() {
                     <span className="tg gold">{item.label}</span>
                     <p>{item.body}</p>
                   </div>
-                  <span className="tg capability-state gold">規劃</span>
+                  <span className={`tg capability-state ${item.state === "現在" || item.state === "建立後" ? "status-ok" : "gold"}`}>
+                    {item.state}
+                  </span>
                 </div>
               ))}
             </div>
@@ -107,10 +118,10 @@ export default function RegisterPage() {
               <div>
                 <span className="tg panel-code">註冊</span>
                 <span className="tg muted"> · </span>
-                <span className="tg gold">邀請驗證</span>
-                <div className="panel-sub">邀請碼 / 電子信箱 / 密碼</div>
+                <span className="tg gold">測試帳號開通</span>
+                <div className="panel-sub">邀請碼 / 電子信箱 / 密碼 / 確認</div>
               </div>
-              <span className="tg soft">僅限受邀</span>
+              <span className="tg gold">邀請制</span>
             </div>
 
             <label className="login-field">
@@ -120,7 +131,7 @@ export default function RegisterPage() {
 
             <label className="login-field">
               <span className="tg soft">電子信箱</span>
-              <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" placeholder="operator@iuf.local" required />
+              <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" placeholder="輸入你的電子信箱" required />
             </label>
 
             <label className="login-field">
@@ -144,7 +155,7 @@ export default function RegisterPage() {
             <div className="tg soft login-foot">
               已有帳號？ <Link href="/login" style={{ color: "var(--gold-bright)" }}>前往登入</Link>
               <br />
-              管理員？ <Link href="/admin/invites" style={{ color: "var(--gold-bright)" }}>產生測試邀請碼</Link>
+              管理員可前往 <Link href="/admin/invites" style={{ color: "var(--gold-bright)" }}>邀請碼管理</Link>
             </div>
           </form>
         </div>

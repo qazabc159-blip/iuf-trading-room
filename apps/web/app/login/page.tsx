@@ -7,23 +7,23 @@ import { apiLogin, authErrorMessage, setAuthPresence } from "@/lib/auth-client";
 
 const ACCOUNT_CAPABILITIES = [
   {
-    label: "帳號資料",
-    state: "已啟用",
+    label: "網站帳號",
+    state: "可用",
     body: "保存戰情台設定、觀察清單、策略偏好與模擬交易紀錄。",
   },
   {
     label: "模擬交易",
-    state: "已啟用",
+    state: "可用",
     body: "正式券商送單前，先做報價、風控、委託與成交流程演練。",
   },
   {
     label: "券商綁定",
-    state: "規劃中",
-    body: "之後一個網站帳號可綁定自己的證券帳號，凱基 SDK 補齊後接上。",
+    state: "預留",
+    body: "之後一個網站帳號可綁定自己的證券帳號；凱基 SDK 補齊後再開正式送單。",
   },
   {
     label: "訂閱權限",
-    state: "規劃中",
+    state: "規劃",
     body: "公開測試後逐步開放月費方案、進階資料與 AI 摘要功能。",
   },
 ];
@@ -72,12 +72,16 @@ export default function LoginPage() {
 
         <div className="login-grid">
           <div className="login-copy">
-            <div className="tg gold">帳號入口 · 台股交易工作台</div>
-            <h2>登入你的戰情室</h2>
+            <div className="tg gold">IUF 帳號 · 台股交易工作台</div>
+            <h2>登入、建立帳號、之後綁券商都在這裡</h2>
             <p className="login-intro">
-              一個 IUF 帳號會保存你的觀察清單、策略想法、模擬交易紀錄與之後的券商綁定狀態。
-              現階段採邀請碼開通，公開測試時會開放自助建立帳號。
+              這裡是 IUF 網站帳號入口，不是券商下單登入。現階段用邀請碼開通測試帳號；
+              未來同一個帳號會承接證券帳號綁定、資料權限、月費方案與 AI 每日簡報。
             </p>
+            <div className="login-copy-actions">
+              <Link href="/register" className="login-secondary-cta">申請測試帳號</Link>
+              <span className="tc soft">已有邀請碼即可開通；未拿到邀請碼時，登入不會偷偷建立假帳號。</span>
+            </div>
             <div className="login-capability-list">
               {ACCOUNT_CAPABILITIES.map((item) => (
                 <div className="login-capability-card" key={item.label}>
@@ -85,7 +89,7 @@ export default function LoginPage() {
                     <span className="tg gold">{item.label}</span>
                     <p>{item.body}</p>
                   </div>
-                  <span className={`tg capability-state ${item.state === "已啟用" ? "up" : "gold"}`}>
+                  <span className={`tg capability-state ${item.state === "可用" ? "status-ok" : "gold"}`}>
                     {item.state}
                   </span>
                 </div>
@@ -98,10 +102,10 @@ export default function LoginPage() {
               <div>
                 <span className="tg panel-code">登入</span>
                 <span className="tg muted"> · </span>
-                <span className="tg gold">操作員驗證</span>
-                <div className="panel-sub">電子信箱 / 密碼 / 工作階段記憶</div>
+                <span className="tg gold">IUF 帳號驗證</span>
+                <div className="panel-sub">電子信箱 / 密碼 / 裝置記憶</div>
               </div>
-              <span className="tg soft">盤後工作階段</span>
+              <span className="tg status-ok">可登入</span>
             </div>
 
             <label className="login-field">
@@ -111,7 +115,7 @@ export default function LoginPage() {
                 onChange={(event) => setEmail(event.target.value)}
                 type="email"
                 autoComplete="email"
-                placeholder="operator@iuf.local"
+                placeholder="輸入你的電子信箱"
                 required
               />
             </label>
@@ -150,11 +154,11 @@ export default function LoginPage() {
 
             <div className="login-action-row">
               <span className="tc soft">還沒有帳號？</span>
-              <Link href="/register" className="login-secondary-link">建立帳號</Link>
+              <Link href="/register" className="login-secondary-link">用邀請碼建立帳號</Link>
             </div>
 
             <div className="tg soft login-foot">
-              IUF-01 / 真實登入工作階段 / 安全登入
+              IUF 帳號 / 真實登入工作階段 / 不含券商送單
             </div>
           </form>
         </div>
