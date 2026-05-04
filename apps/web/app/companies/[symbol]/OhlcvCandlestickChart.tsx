@@ -19,13 +19,13 @@ type ChartBar = {
 };
 
 const ENABLED_INTERVALS: ReadonlyArray<{ value: EnabledInterval; label: string; note: string; kind: "daily" | "intraday"; minutes?: number }> = [
-  { value: "1d", label: "日K", note: "正式日 OHLCV", kind: "daily" },
-  { value: "1w", label: "週K", note: "由正式日 K 彙整", kind: "daily" },
-  { value: "1mo", label: "月K", note: "由正式日 K 彙整", kind: "daily" },
+  { value: "1d", label: "日K", note: "正式 OHLCV", kind: "daily" },
+  { value: "1w", label: "週K", note: "日 K 彙整週線", kind: "daily" },
+  { value: "1mo", label: "月K", note: "日 K 彙整月線", kind: "daily" },
   { value: "1min", label: "1分", note: "FinMind Sponsor 分 K", kind: "intraday", minutes: 1 },
-  { value: "5min", label: "5分", note: "由 1 分 K 彙整", kind: "intraday", minutes: 5 },
-  { value: "15min", label: "15分", note: "由 1 分 K 彙整", kind: "intraday", minutes: 15 },
-  { value: "60min", label: "60分", note: "由 1 分 K 彙整", kind: "intraday", minutes: 60 },
+  { value: "5min", label: "5分", note: "1 分 K 彙整", kind: "intraday", minutes: 5 },
+  { value: "15min", label: "15分", note: "1 分 K 彙整", kind: "intraday", minutes: 15 },
+  { value: "60min", label: "60分", note: "1 分 K 彙整", kind: "intraday", minutes: 60 },
 ];
 
 const RANGE_OPTIONS: ReadonlyArray<{ value: RangeKey; label: string; days: number | null }> = [
@@ -48,24 +48,22 @@ function sourceBadgeClass(bars: OhlcvBar[]): string {
   if (!bars.length) return "badge-red";
   const last = bars[bars.length - 1];
   if (daysSince(last.dt) > 5) return "badge-red";
-  if (last.source === "kgi") return "badge-green";
-  if (last.source === "tej") return "badge";
-  return "badge-yellow";
+  return "badge-green";
 }
 
 function sourceBadgeLabel(bars: OhlcvBar[]): string {
   if (!bars.length) return "無資料";
   const last = bars[bars.length - 1];
   if (daysSince(last.dt) > 5) return `資料偏舊 / ${last.dt}`;
-  if (last.source === "tej") return "FinMind/TEJ";
+  if (last.source === "tej") return "FinMind / TEJ";
   if (last.source === "kgi") return "KGI";
   return "正式資料";
 }
 
 function stateLabel(state: "LIVE" | "EMPTY" | "BLOCKED") {
-  if (state === "LIVE") return "真實資料";
+  if (state === "LIVE") return "正常";
   if (state === "EMPTY") return "無資料";
-  return "暫停";
+  return "無法顯示";
 }
 
 function monthKey(dt: string) {
@@ -207,7 +205,7 @@ export function OhlcvCandlestickChart({
   bars,
   kbarRows = [],
   kbarState = "EMPTY",
-  kbarReason = "分 K 尚未回傳資料。",
+  kbarReason = "FinMind 分 K 尚未回傳資料。",
   kbarDate,
   symbol,
   sourceState,
@@ -328,7 +326,7 @@ export function OhlcvCandlestickChart({
         });
         ro.observe(el);
       } catch {
-        setError("K 線圖載入失敗，請稍後重試。");
+        setError("K 線圖載入失敗，請稍後重整。");
       }
     })();
 
@@ -341,10 +339,10 @@ export function OhlcvCandlestickChart({
   }, [chartBars, insufficientTrend, interval, isIntraday, range]);
 
   const badgeClass = isIntraday
-    ? kbarState === "LIVE" ? "badge" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
+    ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
     : sourceBadgeClass(bars);
   const badgeLabel = isIntraday
-    ? kbarState === "LIVE" ? "FinMind 分K" : kbarState === "BLOCKED" ? "分K 暫停" : "分K 無資料"
+    ? kbarState === "LIVE" ? "FinMind 分K" : kbarState === "BLOCKED" ? "分K 無法顯示" : "分K 無資料"
     : sourceBadgeLabel(bars);
   const lastBar = chartBars.at(-1);
   const firstBar = chartBars.at(0);
@@ -359,23 +357,23 @@ export function OhlcvCandlestickChart({
     isIntraday
       ? kbarState === "BLOCKED"
         ? `分 K 資料暫時無法讀取：${kbarReason}`
-        : `FinMind ${kbarDate ?? ""} 分 K 尚無資料。`
+        : `FinMind ${kbarDate ?? ""} 分 K 目前沒有回傳資料。`
       : sourceState === "BLOCKED"
         ? `K 線資料暫時無法讀取：${sourceReason}`
-        : "此股票目前沒有可用的正式 K 線資料。";
+        : "正式日 K 目前沒有可用資料。";
   const activeState = isIntraday ? kbarState : sourceState;
 
   return (
     <section className="panel hud-frame kline-panel">
       <div className="panel-head">
         <div>
-          <span className="tg panel-code">K 線</span>
+          <span className="tg panel-code">K線</span>
           <span className="tg muted"> / </span>
           <span className="tg gold">K 線圖</span>
-          <div className="panel-sub">日線、週線、月線與 FinMind 分 K；右側價格軸依正式資料繪製</div>
+          <div className="panel-sub">日線、週線、月線與 FinMind 分 K；右側價格軸可直接讀價。</div>
         </div>
         <div className="tg soft">
-          <span className={badgeClass}>{badgeLabel}</span>
+          <span className={`badge ${badgeClass}`}>{badgeLabel}</span>
           <span style={{ marginLeft: 8 }}>{symbol}</span>
         </div>
       </div>
@@ -388,21 +386,21 @@ export function OhlcvCandlestickChart({
             <small>{lastBar.label}</small>
           </div>
           <div>
-            <span>漲跌幅</span>
+            <span>漲跌</span>
             <b className={`num ${toneClass(priceChange)}`}>
               {signedNumber(priceChange)} / {signedNumber(priceChangePct)}%
             </b>
-            <small>{previousBar ? `前收 ${formatNumber(previousBar.close)}` : "前收不足"}</small>
+            <small>{previousBar ? `前值 ${formatNumber(previousBar.close)}` : "前值不足"}</small>
           </div>
           <div>
             <span>區間高低</span>
             <b className="num">{formatNumber(highInView)} / {formatNumber(lowInView)}</b>
-            <small>{activeMeta?.label ?? "K 線"} 可視範圍</small>
+            <small>{activeMeta?.label ?? "K 線"} 顯示範圍</small>
           </div>
           <div>
             <span>成交量</span>
             <b className="num">{formatNumber(lastBar.volume, 0)}</b>
-            <small>{chartBars.length.toLocaleString("zh-TW")} 根{isIntraday ? "分 K" : "正式資料"}</small>
+            <small>{chartBars.length.toLocaleString("zh-TW")} 根{isIntraday ? "分 K" : "K 線"}</small>
           </div>
         </div>
       )}
@@ -443,9 +441,9 @@ export function OhlcvCandlestickChart({
         <span className="tg gold">分K</span>
         <span className="tg soft">
           {kbarState === "LIVE"
-            ? `FinMind Sponsor ${kbarDate ?? ""} 已回傳 ${kbarRows.length.toLocaleString("zh-TW")} 根 1 分 K，可切換 1 / 5 / 15 / 60 分。`
+            ? `FinMind Sponsor ${kbarDate ?? ""} 已回傳 ${kbarRows.length.toLocaleString("zh-TW")} 根 1 分 K，可彙整 1 / 5 / 15 / 60 分。`
             : kbarState === "BLOCKED"
-              ? `分 K 暫停：${kbarReason}`
+              ? `分 K 無法顯示：${kbarReason}`
               : `分 K 無資料：${kbarReason}`}
         </span>
       </div>
@@ -454,15 +452,15 @@ export function OhlcvCandlestickChart({
         <div className="kline-meta-line">
           <span>{activeMeta?.note}</span>
           <span>{chartBars.length.toLocaleString("zh-TW")} 根</span>
-          <span>{firstBar?.label} 至 {lastBar?.label}</span>
-          <span>收盤 {formatNumber(lastBar?.close)}</span>
+          <span>{firstBar?.label} - {lastBar?.label}</span>
+          <span>收 {formatNumber(lastBar?.close)}</span>
           <span>量 {formatNumber(lastBar?.volume, 0)}</span>
         </div>
       )}
 
       {error ? (
         <div className="terminal-note">
-          <span className="tg down">暫停</span> {error}
+          <span className="tg down">無法顯示</span> {error}
         </div>
       ) : chartBars.length === 0 ? (
         <div className="terminal-note">
@@ -478,7 +476,7 @@ export function OhlcvCandlestickChart({
       ) : (
         <div className="kline-chart-shell">
           <div className="kline-price-ribbon" aria-hidden>
-            <span>{isIntraday ? "分K 最新" : "最新收盤"}</span>
+            <span>{isIntraday ? "分 K 最新" : "最新收盤"}</span>
             <b className={`num ${toneClass(priceChange)}`}>{formatNumber(lastBar?.close)}</b>
             <small>{lastBar?.label ?? "--"}</small>
           </div>
@@ -503,10 +501,9 @@ function KlineInsufficientState({
     <div className="kline-insufficient">
       <div>
         <span className="badge badge-yellow">資料不足</span>
-        <h4>目前只有 {bars.length.toLocaleString("zh-TW")} 根正式 K 線，先不畫成趨勢圖。</h4>
+        <h4>目前只有 {bars.length.toLocaleString("zh-TW")} 根 {intervalLabel}，先顯示最近成交，不畫趨勢圖。</h4>
         <p>
-          此區只使用真實 OHLCV。資料少於 {MIN_TREND_BARS} 根時不拉伸成圖，避免看起來像完整趨勢；
-          後端補足歷史資料後，日線、週線與月線會自動恢復完整圖表。
+          K 線圖至少需要 {MIN_TREND_BARS} 根資料才會畫完整趨勢，避免用少量資料誤導判讀。資料補齊後會自動切回正式圖表。
         </p>
       </div>
       <div className="kline-insufficient-meta">
