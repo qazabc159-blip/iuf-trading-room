@@ -590,6 +590,7 @@ export type FinMindKBarView = {
   reason: string | null;
   stockId: string;
   date: string;
+  requestedDate?: string;
   rows: FinMindKBarRow[];
   updatedAt: string;
 };

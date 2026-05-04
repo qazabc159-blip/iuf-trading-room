@@ -3752,6 +3752,20 @@ function nDaysAgoDate(days: number): string {
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
+function recentKBarDateCandidates(primaryDate: string): string[] {
+  const dates = new Set<string>();
+  for (const seed of [primaryDate, todayDate()]) {
+    const base = new Date(`${seed}T00:00:00Z`);
+    if (Number.isNaN(base.getTime())) continue;
+    for (let offset = 0; offset < 7; offset += 1) {
+      const d = new Date(base);
+      d.setUTCDate(base.getUTCDate() - offset);
+      dates.add(d.toISOString().slice(0, 10));
+    }
+  }
+  return Array.from(dates).slice(0, 10);
+}
+
 const FINMIND_DATASET_STATUS = [
   { key: "TaiwanStockPriceAdj", label: "還原日 K", implemented: true },
   { key: "TaiwanStockPrice", label: "日 K 備援", implemented: true },
@@ -3835,14 +3849,22 @@ app.get("/api/v1/companies/:id/kbar", async (c) => {
     });
   }
 
-  const rows = await client.getStockKBar(stockId, date);
+  let rows = [] as Awaited<ReturnType<typeof client.getStockKBar>>;
+  let resolvedDate = date;
+  for (const candidateDate of recentKBarDateCandidates(date)) {
+    rows = await client.getStockKBar(stockId, candidateDate);
+    resolvedDate = candidateDate;
+    if (rows.length > 0) break;
+  }
+
   return c.json({
     data: {
       source: "FINMIND",
       state: rows.length > 0 ? "LIVE" : "EMPTY",
-      reason: rows.length > 0 ? null : "no_kbar_rows_for_date",
+      reason: rows.length > 0 ? null : "no_kbar_rows_for_recent_dates",
       stockId,
-      date,
+      date: resolvedDate,
+      requestedDate: date,
       rows,
       updatedAt: new Date().toISOString()
     }

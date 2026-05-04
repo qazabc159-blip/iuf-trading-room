@@ -147,6 +147,25 @@ button { font: inherit; }
 .soft { color: var(--night-soft); }
 .gold { color: var(--gold-bright); }
 
+/* Text-only operational states use traffic-light semantics.
+   Price movement keeps Taiwan market colors through .num.up / .num.down. */
+.tg.up,
+.state-ok,
+.status-ok,
+.pass-ok {
+  color: var(--tw-dn-bright);
+}
+
+.tg.down,
+.state-bad,
+.status-bad,
+.fail-bad {
+  color: var(--tw-up-bright);
+}
+
+.num.up { color: var(--tw-up-bright); }
+.num.down { color: var(--tw-dn-bright); }
+
 .app-sidebar {
   width: 252px;
   min-height: 100vh;
@@ -988,6 +1007,76 @@ button { font: inherit; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 22px;
+  align-content: start;
+}
+
+.portfolio-account-strip {
+  margin-top: 26px;
+  border-top: 1px solid rgba(226, 184, 92, 0.18);
+  background:
+    linear-gradient(100deg, rgba(226, 184, 92, 0.07), transparent 28%),
+    rgba(255, 255, 255, 0.01);
+}
+
+.portfolio-account-strip .quote-card {
+  min-height: 88px;
+  padding: 16px 20px 17px;
+}
+
+.portfolio-risk-overview {
+  margin: 24px 0 0;
+}
+
+.portfolio-risk-overview .panel {
+  border-top-color: rgba(226, 184, 92, 0.28);
+  background:
+    linear-gradient(105deg, rgba(226, 184, 92, 0.045), transparent 42%),
+    rgba(5, 9, 14, 0.22);
+}
+
+.portfolio-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(520px, 1.14fr) minmax(360px, 0.72fr);
+  gap: clamp(26px, 3vw, 44px);
+  align-items: start;
+  margin-top: 26px;
+}
+
+.portfolio-workbench-grid > * {
+  min-width: 0;
+}
+
+.portfolio-workbench-grid > :first-child {
+  display: grid;
+  gap: 24px;
+}
+
+.portfolio-workbench-grid > :first-child > .panel:first-child {
+  border-top-color: rgba(226, 184, 92, 0.42);
+  border-left: 1px solid rgba(226, 184, 92, 0.28);
+  background:
+    linear-gradient(116deg, rgba(226, 184, 92, 0.055), rgba(255, 255, 255, 0.012) 42%, transparent),
+    rgba(5, 9, 14, 0.30);
+}
+
+.portfolio-workbench-grid > :first-child > .panel:first-child .panel-head {
+  margin-bottom: 18px;
+}
+
+.portfolio-workbench-grid > :nth-child(2) {
+  display: grid;
+  gap: 22px;
+}
+
+.portfolio-workbench-grid > :nth-child(2) .panel {
+  background: rgba(4, 8, 13, 0.20);
+}
+
+.portfolio-workbench-grid > :nth-child(3) {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(22px, 2.6vw, 36px);
   align-content: start;
 }
 
@@ -2646,6 +2735,15 @@ button { font: inherit; }
     grid-column: 1;
     grid-template-columns: 1fr;
   }
+
+  .portfolio-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-workbench-grid > :nth-child(3) {
+    grid-column: 1;
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (min-width: 1181px) and (max-width: 1450px) {
@@ -2657,10 +2755,28 @@ button { font: inherit; }
     grid-column: 1 / -1;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+
+  .portfolio-workbench-grid {
+    grid-template-columns: minmax(500px, 1.08fr) minmax(330px, 0.92fr);
+  }
+
+  .portfolio-workbench-grid > :nth-child(3) {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 1180px) {
   .plans-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-workbench-grid > :nth-child(3) {
+    grid-column: 1;
     grid-template-columns: 1fr;
   }
 }
@@ -3707,24 +3823,29 @@ body:has(.login-route) > div {
 
 .company-data-tabs.finmind-tabs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
 }
 
 .company-data-tabs.finmind-tabs .mini-button,
 .company-data-tabs.finmind-tabs .outline-button {
-  min-height: 38px;
+  min-height: 44px;
   align-items: flex-start;
   flex-direction: column;
-  gap: 2px;
-  padding: 7px 10px;
+  gap: 3px;
+  padding: 8px 12px;
   text-align: left;
+  overflow: hidden;
 }
 
 .company-data-tab-main,
 .company-data-tab-meta {
   display: block;
+  min-width: 0;
   max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .company-data-tab-main {
@@ -3735,7 +3856,6 @@ body:has(.login-route) > div {
 .company-data-tab-meta {
   color: var(--night-mid);
   font: 700 10.5px/1.45 var(--sans-tc);
-  overflow-wrap: anywhere;
 }
 
 .table-scroll {
@@ -3790,6 +3910,10 @@ body:has(.login-route) > div {
   display: inline-block;
   min-height: 1.45em;
   padding: 2px 1px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tick-row {
@@ -3846,6 +3970,72 @@ body:has(.login-route) > div {
 .company-finmind-snapshot {
   display: grid;
   gap: 18px;
+}
+
+.company-finmind-panel {
+  min-width: 0;
+}
+
+.company-finmind-head {
+  gap: 12px;
+}
+
+.company-finmind-head .dim {
+  min-width: 0;
+  color: var(--night-mid);
+  font: 700 11px/1.6 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
+.company-finmind-table-shell {
+  display: grid;
+  gap: 14px;
+  min-height: 520px;
+  align-content: start;
+}
+
+.company-finmind-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 18px;
+  padding: 12px 0 2px;
+  border-top: 1px solid var(--night-rule);
+  color: var(--night-mid);
+  font: 700 11px/1.5 var(--sans-tc);
+}
+
+.company-finmind-pagination > div {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.company-finmind-pagination button {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid rgba(220, 228, 240, 0.14);
+  background: rgba(7, 10, 15, 0.58);
+  color: var(--night-ink);
+  cursor: pointer;
+  font: 750 11px/1.35 var(--sans-tc);
+}
+
+.company-finmind-pagination button:hover:not(:disabled) {
+  border-color: rgba(226, 184, 92, 0.50);
+  color: var(--gold-bright);
+}
+
+.company-finmind-pagination button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.company-finmind-pagination strong {
+  color: var(--night-ink);
+  font: 800 11px/1.35 var(--mono);
 }
 
 .company-side-column {

@@ -271,7 +271,7 @@ export default async function PortfolioPage() {
       exec
       note="交易室目前使用模擬委託與真實後端資料；正式券商送單等待凱基 libCGCrypt.so 後再接上。"
     >
-      <div className="quote-strip">
+      <div className="quote-strip portfolio-account-strip">
         {[
           ["狀態", displayState(result.state), stateTone(result.state)],
           ["權益", money(data?.balance.equity), tone(data?.balance.unrealizedPnl)],
@@ -288,11 +288,13 @@ export default async function PortfolioPage() {
         ))}
       </div>
 
-      <Panel code="RSK-SFC" title="風控總覽" sub="帳戶 / 策略 / 個股 / 盤中" right={riskSurface.state === "LIVE" ? "即時" : "待啟用"}>
-        <RiskSurface result={riskSurface} />
-      </Panel>
+      <div className="portfolio-risk-overview">
+        <Panel code="RSK-SFC" title="風控總覽" sub="帳戶 / 策略 / 個股 / 盤中" right={riskSurface.state === "LIVE" ? "即時" : "待啟用"}>
+          <RiskSurface result={riskSurface} />
+        </Panel>
+      </div>
 
-      <div className="exec-grid" style={{ marginTop: 20 }}>
+      <div className="portfolio-workbench-grid">
         <div>
           <div id="order-ticket">
             <Panel code="ORD-TKT" title="委託單" sub="模擬交易預覽" right={displayState(result.state)}>
