@@ -795,10 +795,10 @@ export default async function DashboardPage() {
       <section className="dashboard-hero dashboard-command-deck" aria-label="戰情台狀態">
         <div className="dashboard-hero-main">
           <span className="tg gold">IUF 台股戰情室</span>
-          <h2>先看資料狀態，再看候選標的。</h2>
+          <h2>台股資料中樞，候選標的即時歸隊。</h2>
           <p>
-            戰情台只呈現正式來源回傳的資訊。FinMind 負責台股資料補強，KGI live submit 仍等 `libCGCrypt.so`；
-            任何沒有資料的地方都會標示無資料或暫停，不用 mock 假裝已接好。
+            FinMind 負責盤勢、K 線、財報與籌碼補強；策略、訊號、重大訊息與觀察清單集中在同一張戰情圖。
+            KGI live submit 仍等 `libCGCrypt.so`，交易送出層維持鎖定。
           </p>
           <div className="dashboard-hero-kpis dashboard-hero-kpis-inline">
             {heroStats.map((item) => (
