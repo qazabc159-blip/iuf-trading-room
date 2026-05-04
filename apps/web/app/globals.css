@@ -3500,8 +3500,225 @@ button { font: inherit; }
   background: var(--night-1);
 }
 
+.lab-command-deck {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+  gap: clamp(24px, 3vw, 44px);
+  align-items: end;
+  margin: 0 0 24px;
+  padding: clamp(26px, 3vw, 44px);
+  overflow: hidden;
+  border-top: 1px solid rgba(226, 184, 92, 0.2);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+  background:
+    radial-gradient(circle at 86% 0%, rgba(105, 214, 142, 0.1), transparent 30%),
+    linear-gradient(105deg, rgba(226, 184, 92, 0.08), transparent 54%),
+    rgba(4, 8, 12, 0.18);
+}
+
+.lab-command-deck h2 {
+  max-width: 780px;
+  margin: 14px 0 14px;
+  color: var(--night-ink);
+  font: 900 clamp(34px, 4vw, 64px)/1.08 var(--sans-tc);
+  letter-spacing: 0;
+}
+
+.lab-command-deck p,
+.lab-source-card p,
+.lab-empty-state p,
+.lab-bundle-card p,
+.lab-selected-card p {
+  margin: 0;
+  color: var(--night-soft);
+  font: 650 16px/1.85 var(--sans-tc);
+  letter-spacing: 0;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.lab-source-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid rgba(220, 228, 240, 0.1);
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.lab-source-card span {
+  color: var(--gold-bright);
+  font: 800 12px/1.4 var(--sans-tc);
+}
+
+.lab-source-card strong {
+  font: 900 30px/1.15 var(--sans-tc);
+}
+
+.lab-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.16fr) minmax(330px, 0.84fr);
+  gap: clamp(22px, 2.5vw, 38px);
+  align-items: start;
+}
+
+.lab-workbench-grid > *,
+.lab-side-stack,
+.lab-bundle-card {
+  min-width: 0;
+}
+
+.lab-side-stack,
+.lab-bundle-stack,
+.lab-governance-list {
+  display: grid;
+  gap: 14px;
+}
+
+.lab-empty-state {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 22px;
+  border-left: 2px solid rgba(226, 184, 92, 0.54);
+  background:
+    linear-gradient(115deg, rgba(226, 184, 92, 0.07), transparent 40%),
+    rgba(0, 0, 0, 0.13);
+}
+
+.lab-empty-state strong {
+  color: var(--night-ink);
+  font: 900 22px/1.35 var(--sans-tc);
+}
+
+.lab-empty-state div,
+.lab-governance-list span {
+  display: grid;
+  gap: 8px;
+  color: var(--night-mid);
+  font: 650 14px/1.7 var(--sans-tc);
+}
+
+.lab-bundle-card {
+  display: grid;
+  gap: 15px;
+  padding: 20px 22px;
+  border-top: 1px solid rgba(220, 228, 240, 0.09);
+  border-left: 2px solid rgba(98, 156, 255, 0.38);
+  background:
+    linear-gradient(120deg, rgba(98, 156, 255, 0.055), transparent 42%),
+    rgba(0, 0, 0, 0.12);
+}
+
+.lab-bundle-card.is-selected {
+  border-left-color: rgba(226, 184, 92, 0.76);
+  background:
+    linear-gradient(120deg, rgba(226, 184, 92, 0.08), transparent 46%),
+    rgba(0, 0, 0, 0.14);
+}
+
+.lab-bundle-head,
+.lab-bundle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.lab-bundle-title {
+  color: var(--night-ink);
+  text-decoration: none;
+  font: 900 24px/1.32 var(--sans-tc);
+  letter-spacing: 0;
+  overflow-wrap: break-word;
+}
+
+.lab-bundle-title:hover {
+  color: var(--gold-bright);
+}
+
+.lab-bundle-metrics,
+.lab-selected-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid rgba(220, 228, 240, 0.08);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+}
+
+.lab-bundle-metrics span,
+.lab-selected-metrics span {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 10px;
+  border-right: 1px solid rgba(220, 228, 240, 0.08);
+}
+
+.lab-bundle-metrics span:last-child,
+.lab-selected-metrics span:last-child {
+  border-right: 0;
+}
+
+.lab-bundle-metrics b,
+.lab-selected-metrics b {
+  color: var(--night-ink);
+  font: 900 22px/1.1 var(--mono);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.lab-bundle-metrics small,
+.lab-selected-metrics small {
+  color: var(--night-mid);
+  font: 800 11px/1.4 var(--sans-tc);
+}
+
+.lab-selected-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.lab-selected-card h2 {
+  margin: 6px 0 0;
+  color: var(--night-ink);
+  font: 900 28px/1.25 var(--sans-tc);
+}
+
+.lab-selected-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.danger-soft {
+  color: var(--tw-down-bright) !important;
+  border-color: rgba(255, 82, 112, 0.28) !important;
+}
+
 @media (max-width: 1000px) {
   body { overflow-x: hidden; }
+
+  .lab-command-deck,
+  .lab-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lab-bundle-metrics,
+  .lab-selected-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .lab-bundle-metrics span,
+  .lab-selected-metrics span {
+    border-right: 0;
+    border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+  }
+
+  .lab-bundle-metrics span:last-child,
+  .lab-selected-metrics span:last-child {
+    border-bottom: 0;
+  }
 
   .app-root {
     display: block;
