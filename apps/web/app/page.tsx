@@ -719,11 +719,11 @@ export default async function DashboardPage() {
   ].join(" / ");
 
   const heroStats = [
-    { label: "市場總覽", value: stateText(marketOverview.state), tone: marketOverview.state === "LIVE" ? "up" : marketOverview.state === "EMPTY" ? "muted" : "down" },
+    { label: "市場總覽", value: stateText(marketOverview.state), tone: marketOverview.state === "LIVE" ? "status-ok" : marketOverview.state === "EMPTY" ? "muted" : "status-bad" },
     { label: "主題", value: themes.state === "LIVE" ? String(themes.data.length) : stateText(themes.state), tone: themes.state === "LIVE" ? "gold" : "muted" },
     { label: "策略想法", value: ideas.state === "LIVE" && ideas.data ? String(ideas.data.summary.total) : stateText(ideas.state), tone: ideas.state === "LIVE" ? "gold" : "muted" },
     { label: "訊號", value: signals.state === "LIVE" ? String(signals.data.filter((signal) => !isInternalTestSignal(signal)).length) : stateText(signals.state), tone: signals.state === "LIVE" ? "gold" : "muted" },
-    { label: "FinMind", value: stateText(finmind.state), tone: finmind.state === "LIVE" ? "up" : "down" },
+    { label: "FinMind", value: stateText(finmind.state), tone: finmind.state === "LIVE" ? "status-ok" : "status-bad" },
   ];
   const sourceStatuses: DashboardSourceStatus[] = [
     {

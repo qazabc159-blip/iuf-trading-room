@@ -2807,3 +2807,10 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Tests: git diff --check -- apps/web PASS with CRLF warnings only; pnpm.cmd --filter @iuf-trading-room/web typecheck PASS; pnpm.cmd --filter @iuf-trading-room/web build PASS.
 - Local QA: local production server on 127.0.0.1:3126 with a middleware-only session cookie swept /, /companies, /ideas, /plans, /portfolio, /signals, /runs, /themes, /market-intel, /ops, and /lab at 1365px. Result: 0 console errors, 0 horizontal overflow routes, 0 replacement-character routes, 0 login redirects, and 0 routes where exact normal/LIVE status text rendered in red. Evidence is local at evidence/w7_paper_sprint/local_visual_qa_pass88_status_semantics_2026-05-04_final/.
 - Blockers / bypass: local authenticated data QA cannot reuse the production .eycvector.com session cookie on 127.0.0.1; production-domain post-deploy smoke remains the true final visual check. KGI libCGCrypt.so remains the only live-submit blocker.
+
+
+## Codex Cycle (2026-05-04 22:23 Taipei) - dashboard hero status hotfix
+- Files changed: updated apps/web/app/page.tsx and this board.
+- Behavior: fixed the final dashboard hero KPI leak where FinMind/market overview LIVE status still used the market-movement up/down classes. Hero status values now use status-ok/status-bad, while price movement remains unchanged.
+- Tests: pnpm.cmd --filter @iuf-trading-room/web typecheck PASS; pnpm.cmd --filter @iuf-trading-room/web build PASS. Production post-deploy QA from PR #146 found 12 authenticated routes with 0 console/page errors, 0 horizontal overflow, and only this one red-normal dashboard hero case, now patched here.
+- Stop-lines: no endpoint contract, live submit, KGI SDK/write-side, Railway secret, migration 0020, destructive DB action, or RSS/news/commercial-data feature was touched.
