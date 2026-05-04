@@ -3141,6 +3141,14 @@ button { font: inherit; }
   background: transparent;
 }
 
+.kline-pending-line .tg.soft {
+  flex: 1 1 260px;
+  min-width: 0;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
 .kline-meta-line {
   color: var(--night-mid);
   font: 700 11px/1.7 var(--mono);
@@ -3773,7 +3781,11 @@ button { font: inherit; }
 }
 
 @media (max-width: 1000px) {
-  body { overflow-x: hidden; }
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: clip;
+  }
 
   .lab-command-deck,
   .lab-workbench-grid,
@@ -3800,12 +3812,17 @@ button { font: inherit; }
 
   .app-root {
     display: block;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: clip;
   }
 
   .app-main-shell {
     display: block;
     width: 100%;
+    max-width: 100vw;
     min-width: 0;
+    overflow-x: clip;
   }
 
   .app-sidebar {
@@ -3821,6 +3838,7 @@ button { font: inherit; }
     border-bottom: 1px solid var(--night-rule-strong);
     box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
     overflow: hidden;
+    max-width: 100vw;
   }
 
   .brand-lockup {
@@ -3848,11 +3866,14 @@ button { font: inherit; }
   }
 
   .nav-list {
+    width: 100%;
+    max-width: 100vw;
     min-width: 0;
     padding: 10px 12px;
     display: flex;
     gap: 10px;
     overflow-x: auto;
+    overflow-y: hidden;
     overscroll-behavior-x: contain;
     scrollbar-width: thin;
     contain: layout paint;
@@ -3863,7 +3884,8 @@ button { font: inherit; }
     grid-template-columns: 28px minmax(0, auto);
     gap: 10px;
     min-height: 54px;
-    min-width: max-content;
+    min-width: 126px;
+    max-width: 178px;
     padding: 10px 14px;
     border-left: 0;
     border-bottom: 2px solid transparent;
@@ -3886,9 +3908,9 @@ button { font: inherit; }
 
   .nav-label,
   .nav-tc {
-    white-space: nowrap;
+    white-space: normal;
     word-break: keep-all;
-    overflow-wrap: normal;
+    overflow-wrap: anywhere;
     writing-mode: horizontal-tb;
   }
 

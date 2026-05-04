@@ -742,17 +742,20 @@ function MiniKline({ bars }: { bars: OhlcvBar[] }) {
     return <TruthNote state="EMPTY" text="目前沒有足夠的 K 線資料可畫圖。" />;
   }
 
-  const width = 720;
+  const width = 760;
   const height = 168;
   const pad = 12;
+  const pricePad = 56;
   const highs = visible.map((bar) => bar.high);
   const lows = visible.map((bar) => bar.low);
   const max = Math.max(...highs);
   const min = Math.min(...lows);
   const span = Math.max(max - min, 0.01);
-  const step = (width - pad * 2) / Math.max(visible.length - 1, 1);
+  const plotRight = width - pad - pricePad;
+  const step = (plotRight - pad) / Math.max(visible.length - 1, 1);
   const candleWidth = Math.max(3, Math.min(8, step * 0.58));
   const y = (value: number) => pad + ((max - value) / span) * (height - pad * 2);
+  const last = visible.at(-1);
 
   return (
     <div style={miniKlineStyle}>
@@ -760,8 +763,16 @@ function MiniKline({ bars }: { bars: OhlcvBar[] }) {
         K 線：{visible[0]?.dt} - {visible.at(-1)?.dt} / {visible.length} 根 / 真實 OHLCV
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="股票 K 線預覽" style={{ width: "100%", height: 168, display: "block" }}>
-        <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="rgba(255,255,255,0.12)" />
+        <line x1={pad} y1={height - pad} x2={plotRight} y2={height - pad} stroke="rgba(255,255,255,0.12)" />
         <line x1={pad} y1={pad} x2={pad} y2={height - pad} stroke="rgba(255,255,255,0.08)" />
+        {[max, (max + min) / 2, min].map((value) => (
+          <g key={value}>
+            <line x1={pad} y1={y(value)} x2={plotRight} y2={y(value)} stroke="rgba(255,255,255,0.045)" />
+            <text x={plotRight + 8} y={y(value) + 4} fill="rgba(203,213,225,0.72)" fontSize="10" fontFamily="monospace">
+              {formatMarketNumber(value)}
+            </text>
+          </g>
+        ))}
         {visible.map((bar, index) => {
           const x = pad + index * step;
           const up = bar.close >= bar.open;
@@ -785,6 +796,15 @@ function MiniKline({ bars }: { bars: OhlcvBar[] }) {
             </g>
           );
         })}
+        {last && (
+          <g>
+            <line x1={pad} y1={y(last.close)} x2={plotRight} y2={y(last.close)} stroke="rgba(226,184,92,0.28)" strokeDasharray="4 4" />
+            <rect x={plotRight + 4} y={y(last.close) - 10} width="48" height="20" fill="rgba(226,184,92,0.14)" stroke="rgba(226,184,92,0.45)" />
+            <text x={plotRight + 9} y={y(last.close) + 4} fill="#e2b85c" fontSize="10" fontFamily="monospace">
+              {formatMarketNumber(last.close)}
+            </text>
+          </g>
+        )}
       </svg>
     </div>
   );
@@ -962,12 +982,12 @@ function OrderHistory({
 }
 
 function StatePill({ state }: { state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING" }) {
-  const color = state === "LIVE" ? "var(--gold-bright)"
-    : state === "EMPTY" ? "var(--exec-mid)"
+  const color = state === "LIVE" ? "var(--tw-dn-bright)"
+    : state === "EMPTY" ? "var(--gold-bright)"
       : state === "LOADING" ? "var(--gold)"
         : "var(--tw-up-bright)";
   return (
-    <span style={{ color, fontWeight: 700, letterSpacing: "0.18em" }}>
+    <span style={{ color, fontWeight: 800, letterSpacing: "0.06em" }}>
       {uiStateLabel(state)}
     </span>
   );
@@ -1125,57 +1145,57 @@ const sourceBarStyle: CSSProperties = {
 
 const ticketShellStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
-  gap: 18,
+  gridTemplateColumns: "minmax(0, 1fr)",
+  gap: 14,
   alignItems: "start",
 };
 
 const formCardStyle: CSSProperties = {
-  borderTop: "1px solid var(--exec-rule-strong)",
-  borderBottom: "1px solid var(--exec-rule)",
+  borderTop: "1px solid rgba(220,228,240,0.10)",
+  borderBottom: "1px solid rgba(220,228,240,0.07)",
   minWidth: 0,
-  padding: "16px 12px 12px",
+  padding: "14px 0 10px",
   minHeight: 0,
   background: "transparent",
 };
 
 const previewCardStyle: CSSProperties = {
-  borderTop: "1px solid var(--exec-rule-strong)",
-  borderBottom: "1px solid var(--exec-rule)",
+  borderTop: "1px solid rgba(220,228,240,0.10)",
+  borderBottom: "1px solid rgba(220,228,240,0.07)",
   minWidth: 0,
-  padding: "16px 12px 12px",
+  padding: "14px 0 10px",
   minHeight: 0,
   background: "linear-gradient(90deg, rgba(200,148,63,0.035), transparent 70%)",
 };
 
 const rowStyle: CSSProperties = {
-  display: "flex",
+  display: "grid",
+  gridTemplateColumns: "64px minmax(0, 1fr)",
   alignItems: "center",
-  gap: 14,
-  marginBottom: 14,
+  gap: 12,
+  marginBottom: 12,
 };
 
 const labelStyle: CSSProperties = {
   fontFamily: "var(--mono)",
-  fontSize: 10.5,
-  letterSpacing: "0.08em",
+  fontSize: 11,
+  letterSpacing: "0",
   color: "var(--exec-mid)",
-  width: 76,
-  flex: "0 0 76px",
+  minWidth: 0,
 };
 
 const inputStyle: CSSProperties = {
   flex: 1,
-  padding: "12px 14px",
+  padding: "10px 12px",
   background: "var(--exec-bg)",
   border: "1px solid var(--exec-rule-strong)",
   color: "var(--exec-ink)",
   fontFamily: "var(--mono)",
-  fontSize: 14,
+  fontSize: 15,
   fontFeatureSettings: "\"tnum\",\"lnum\"",
   outline: "none",
   minWidth: 0,
-  minHeight: 44,
+  minHeight: 40,
 };
 
 const staticFieldStyle: CSSProperties = {
@@ -1187,7 +1207,7 @@ const segmentedStyle: CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
   flex: 1,
-  gap: 8,
+  gap: 7,
   border: "none",
   minWidth: 0,
   width: "100%",
@@ -1195,18 +1215,18 @@ const segmentedStyle: CSSProperties = {
 };
 
 const segmentButtonStyle: CSSProperties = {
-  flex: "1 1 78px",
-  minWidth: 72,
-  minHeight: 42,
+  flex: "1 1 76px",
+  minWidth: 68,
+  minHeight: 38,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "11px 12px",
+  padding: "9px 10px",
   border: "1px solid var(--exec-rule-strong)",
-  fontFamily: "var(--mono)",
-  fontSize: 12,
+  fontFamily: "var(--sans-tc)",
+  fontSize: 13,
   fontWeight: 700,
-  letterSpacing: "0.04em",
+  letterSpacing: "0",
   lineHeight: 1.25,
   whiteSpace: "nowrap",
   wordBreak: "keep-all",
@@ -1242,7 +1262,7 @@ const truthNoteStyle: CSSProperties = {
   display: "flex",
   gap: 10,
   alignItems: "flex-start",
-  padding: "12px 14px",
+  padding: "11px 12px",
   color: "var(--exec-mid)",
   fontFamily: "var(--sans-tc)",
   fontSize: 14,
@@ -1297,10 +1317,10 @@ const historyHeaderStyle: CSSProperties = {
 
 const orderRowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "72px 98px 92px 86px 74px 64px",
-  gap: 18,
+  gridTemplateColumns: "repeat(auto-fit, minmax(84px, 1fr))",
+  gap: "10px 14px",
   alignItems: "center",
-  padding: "20px 22px",
+  padding: "14px 16px",
   borderTop: "1px solid var(--exec-rule)",
   fontFamily: "var(--mono)",
   fontSize: 11.5,

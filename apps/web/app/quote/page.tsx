@@ -1,5 +1,13 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { getCompanies, getCompanyOhlcv, getEffectiveQuotes, type EffectiveMarketQuote, type OhlcvBar } from "@/lib/api";
+import {
+  getCompanies,
+  getCompanyKBar,
+  getCompanyOhlcv,
+  getEffectiveQuotes,
+  type EffectiveMarketQuote,
+  type FinMindKBarRow,
+  type OhlcvBar,
+} from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { OhlcvCandlestickChart } from "../companies/[symbol]/OhlcvCandlestickChart";
 
@@ -7,6 +15,10 @@ type KlineState = {
   state: "LIVE" | "EMPTY" | "BLOCKED";
   bars: OhlcvBar[];
   reason: string;
+  kbarRows: FinMindKBarRow[];
+  kbarState: "LIVE" | "EMPTY" | "BLOCKED";
+  kbarReason: string;
+  kbarDate: string;
 };
 
 function fmtNumber(value: number | null | undefined, digits = 2) {
@@ -40,6 +52,34 @@ function readinessBadge(readiness: EffectiveMarketQuote["readiness"]) {
   return "badge-red";
 }
 
+function quoteSourceLabel(source: EffectiveMarketQuote["selectedSource"]) {
+  if (!source) return "無";
+  if (source === "kgi") return "凱基";
+  if (source === "paper") return "模擬";
+  if (source === "tradingview") return "TradingView";
+  if (source === "manual") return "手動資料";
+  return source;
+}
+
+function freshnessLabel(status: EffectiveMarketQuote["freshnessStatus"]) {
+  if (status === "fresh") return "即時";
+  if (status === "stale") return "偏舊";
+  return "缺資料";
+}
+
+function reasonLabel(reason: string) {
+  if (reason === "none") return "";
+  if (reason === "no_quote") return "無報價";
+  if (reason === "no_fresh_quote") return "無新鮮報價";
+  if (reason === "age_exceeded") return "資料逾時";
+  if (reason === "missing_last") return "缺成交價";
+  if (reason === "provider_unavailable") return "資料源未連線";
+  if (reason === "higher_priority_stale") return "優先資料偏舊";
+  if (reason === "higher_priority_missing") return "優先資料缺漏";
+  if (reason === "higher_priority_unavailable") return "優先資料源未連線";
+  return reason;
+}
+
 function QuoteStatePanel({
   state,
   reason,
@@ -60,7 +100,7 @@ function QuoteStatePanel({
 
 function QuoteSnapshot({ item }: { item: EffectiveMarketQuote }) {
   const quote = item.selectedQuote;
-  const reasons = item.reasons.length > 0 ? item.reasons : ["none"];
+  const reasons = item.reasons.map(reasonLabel).filter(Boolean);
 
   return (
     <Panel
@@ -69,8 +109,8 @@ function QuoteSnapshot({ item }: { item: EffectiveMarketQuote }) {
       right={
         <span className="source-line" style={{ margin: 0 }}>
           <span className={`badge ${readinessBadge(item.readiness)}`}>{readinessLabel(item.readiness)}</span>
-          <span>來源：{item.selectedSource ?? "無"}</span>
-          <span>新鮮度：{item.freshnessStatus}</span>
+          <span>來源：{quoteSourceLabel(item.selectedSource)}</span>
+          <span>新鮮度：{freshnessLabel(item.freshnessStatus)}</span>
         </span>
       }
     >
@@ -108,11 +148,13 @@ function QuoteSnapshot({ item }: { item: EffectiveMarketQuote }) {
         </div>
       )}
 
-      <div className="quote-reason-list">
-        {reasons.map((reason) => (
-          <span className="badge" key={reason}>{reason}</span>
-        ))}
-      </div>
+      {reasons.length > 0 && (
+        <div className="quote-reason-list">
+          {reasons.map((reason) => (
+            <span className="badge" key={reason}>{reason}</span>
+          ))}
+        </div>
+      )}
     </Panel>
   );
 }
@@ -138,6 +180,7 @@ function BlockedMarketPanel({
 }
 
 async function loadQuoteKline(symbol: string): Promise<KlineState> {
+  const today = new Date().toISOString().slice(0, 10);
   try {
     const companies = await getCompanies();
     const company = companies.data.find((item) => item.ticker.toUpperCase() === symbol) ?? null;
@@ -146,36 +189,63 @@ async function loadQuoteKline(symbol: string): Promise<KlineState> {
         state: "EMPTY",
         bars: [],
         reason: `查無 ${symbol} 公司資料，無法讀取 K 線。`,
+        kbarRows: [],
+        kbarState: "EMPTY",
+        kbarReason: `查無 ${symbol} 公司資料，無法讀取分 K。`,
+        kbarDate: today,
       };
     }
 
+    let dailyState: KlineState["state"] = "EMPTY";
+    let dailyBars: OhlcvBar[] = [];
+    let dailyReason = "此股票目前沒有可用的正式 K 線資料。";
+
     try {
       const response = await getCompanyOhlcv(company.id, { interval: "1d" });
-      const bars = response.filter((bar) => bar.source !== "mock");
-      if (bars.length === 0) {
-        return {
-          state: "EMPTY",
-          bars: [],
-          reason: "此股票目前沒有可用的正式 K 線資料。",
-        };
+      dailyBars = response.filter((bar) => bar.source !== "mock");
+      if (dailyBars.length > 0) {
+        dailyState = "LIVE";
+        dailyReason = `已讀取 ${dailyBars.length} 根正式 K 線。`;
       }
-      return {
-        state: "LIVE",
-        bars,
-        reason: `已讀取 ${bars.length} 根正式 K 線。`,
-      };
     } catch (error) {
-      return {
-        state: "BLOCKED",
-        bars: [],
-        reason: `K 線資料暫時無法讀取：${friendlyDataError(error)}`,
-      };
+      dailyState = "BLOCKED";
+      dailyReason = `K 線資料暫時無法讀取：${friendlyDataError(error)}`;
     }
+
+    const kbarDate = dailyBars.at(-1)?.dt ?? today;
+    let kbarRows: FinMindKBarRow[] = [];
+    let kbarState: KlineState["kbarState"] = "EMPTY";
+    let kbarReason = "FinMind 分 K 尚未回傳資料。";
+    let resolvedKbarDate = kbarDate;
+    try {
+      const kbar = (await getCompanyKBar(company.id, kbarDate)).data;
+      kbarRows = kbar.rows;
+      kbarState = kbar.state;
+      kbarReason = kbar.reason ?? (kbar.rows.length > 0 ? "已取得 FinMind Sponsor 分 K。" : "FinMind 分 K 尚未回傳資料。");
+      resolvedKbarDate = kbar.date;
+    } catch (error) {
+      kbarState = "BLOCKED";
+      kbarReason = `FinMind 分 K 暫時無法讀取：${friendlyDataError(error)}`;
+    }
+
+    return {
+      state: dailyState,
+      bars: dailyBars,
+      reason: dailyReason,
+      kbarRows,
+      kbarState,
+      kbarReason,
+      kbarDate: resolvedKbarDate,
+    };
   } catch (error) {
     return {
       state: "BLOCKED",
       bars: [],
       reason: `公司清單暫時無法讀取：${friendlyDataError(error)}`,
+      kbarRows: [],
+      kbarState: "BLOCKED",
+      kbarReason: `公司清單暫時無法讀取：${friendlyDataError(error)}`,
+      kbarDate: today,
     };
   }
 }
@@ -245,7 +315,16 @@ export default async function QuotePage({
       {!error && item && <QuoteSnapshot item={item} />}
 
       <div className="company-grid">
-        <OhlcvCandlestickChart bars={kline.bars} symbol={symbol} sourceState={kline.state} sourceReason={kline.reason} />
+        <OhlcvCandlestickChart
+          bars={kline.bars}
+          kbarRows={kline.kbarRows}
+          kbarState={kline.kbarState}
+          kbarReason={kline.kbarReason}
+          kbarDate={kline.kbarDate}
+          symbol={symbol}
+          sourceState={kline.state}
+          sourceReason={kline.reason}
+        />
         <div>
           <BlockedMarketPanel
             code="QTE-BA"
