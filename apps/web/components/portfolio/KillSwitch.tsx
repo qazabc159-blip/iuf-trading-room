@@ -10,10 +10,16 @@ const MODES: { mode: KillMode; label: string; sub: string; tone: "ok" | "warn" |
 ];
 
 function toneColor(t: "ok" | "warn" | "block" | "danger") {
-  return t === "ok" ? "var(--gold-bright)"
+  return t === "ok" ? "var(--tw-dn-bright)"
        : t === "warn" ? "var(--gold)"
        : t === "block" ? "var(--exec-mid)"
        : "var(--tw-up-bright)";
+}
+
+function toneBackground(t: "ok" | "warn" | "block" | "danger") {
+  return t === "ok" ? "rgba(46,204,113,0.10)"
+       : t === "danger" ? "rgba(230,57,70,0.10)"
+       : "rgba(184,138,62,0.18)";
 }
 
 export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) => void }) {
@@ -39,10 +45,10 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
               style={{
                 minWidth: 0,
                 padding: "clamp(14px, 4vw, 18px)",
-                background: on ? "rgba(184,138,62,0.18)" : "transparent",
-                color: on ? "var(--gold-bright)" : "var(--exec-ink)",
+                background: on ? toneBackground(m.tone) : "transparent",
+                color: on ? toneColor(m.tone) : "var(--exec-ink)",
                 borderLeft: i === 0 ? "none" : "1px solid var(--exec-rule)",
-                borderTop: on ? "2px solid var(--gold)" : "2px solid transparent",
+                borderTop: on ? `2px solid ${toneColor(m.tone)}` : "2px solid transparent",
                 fontFamily: "var(--sans-tc)",
                 letterSpacing: 0,
                 textAlign: "left",
