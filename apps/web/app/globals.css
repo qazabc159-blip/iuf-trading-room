@@ -4660,6 +4660,198 @@ body:has(.login-route) > div {
     rgba(4, 8, 13, 0.3);
 }
 
+.company-info-card {
+  padding: 18px 18px 20px;
+  overflow: hidden;
+}
+
+.company-info-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 0 13px;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.085);
+}
+
+.company-info-titlebar .ascii-head-bracket {
+  flex: 0 0 auto;
+}
+
+.company-info-titlebar h3 {
+  margin: 0;
+  color: var(--night-ink);
+  font: 900 20px/1.25 var(--sans-tc);
+  letter-spacing: 0;
+}
+
+.company-info-titlebar p {
+  margin: 4px 0 0;
+  color: var(--night-mid);
+  font: 650 12px/1.5 var(--sans-tc);
+}
+
+.company-info-identity {
+  display: grid;
+  grid-template-columns: minmax(86px, 0.34fr) minmax(0, 1fr);
+  gap: 12px 14px;
+  align-items: center;
+  padding: 14px 0 12px;
+}
+
+.company-info-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--night-mid);
+  font: 750 11px/1.3 var(--sans-tc);
+}
+
+.company-info-identity .mono {
+  color: var(--night-ink);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.company-info-name {
+  min-width: 0;
+}
+
+.company-info-name strong {
+  display: block;
+  color: var(--night-ink);
+  font: 900 18px/1.35 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
+.company-info-name span {
+  display: block;
+  margin-top: 4px;
+  color: var(--night-mid);
+  font: 650 12px/1.45 var(--sans-tc);
+}
+
+.company-info-tags {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.company-info-card .company-info-grid-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.company-info-card .company-info-grid-compact > div {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid rgba(220, 228, 240, 0.075);
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.company-info-card .company-info-grid-compact dd {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.company-info-card .company-info-section-compact {
+  margin-top: 14px;
+  padding: 13px 0 0;
+  border-top: 1px solid rgba(220, 228, 240, 0.085);
+}
+
+.company-info-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 12px;
+  color: var(--gold-bright);
+  font: 850 12px/1.45 var(--sans-tc);
+}
+
+.company-info-label-row b {
+  color: var(--night-mid);
+  font: 650 11px/1.45 var(--sans-tc);
+}
+
+.company-score-list-compact {
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.company-score-row-compact {
+  grid-template-columns: 42px minmax(74px, 1fr) 22px 34px;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.045);
+}
+
+.company-score-row-compact em {
+  color: var(--night-mid);
+  font-style: normal;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.company-score-meter span {
+  width: 10px;
+  height: 10px;
+}
+
+.company-validation-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.company-validation-pill {
+  padding: 8px 9px;
+  border: 1px solid rgba(220, 228, 240, 0.07);
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.company-validation-pill > b {
+  max-width: 100%;
+}
+
+.company-inline-empty-compact {
+  margin-top: 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(220, 228, 240, 0.075);
+  background: rgba(255, 255, 255, 0.012);
+  line-height: 1.7;
+}
+
+.company-notes-compact {
+  max-height: 190px;
+  margin-top: 10px;
+  padding: 12px 11px;
+  overflow: auto;
+  border: 1px solid rgba(220, 228, 240, 0.075);
+  background:
+    linear-gradient(180deg, rgba(226, 184, 92, 0.045), transparent 22%),
+    rgba(255, 255, 255, 0.012);
+}
+
+@media (max-width: 760px) {
+  .company-info-identity {
+    grid-template-columns: 1fr;
+  }
+
+  .company-info-card .company-info-grid-compact,
+  .company-validation-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .company-data-tabs.finmind-tabs {
   display: flex;
   flex-wrap: nowrap;
