@@ -1604,8 +1604,8 @@ button { font: inherit; }
 
 .plans-workbench-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.16fr) minmax(360px, 0.84fr);
-  gap: clamp(28px, 3vw, 44px);
+  grid-template-columns: minmax(560px, 1.08fr) minmax(420px, 0.92fr);
+  gap: clamp(30px, 3.2vw, 48px);
   align-items: start;
 }
 
@@ -1622,6 +1622,7 @@ button { font: inherit; }
 .daily-brief-history {
   position: relative;
   min-width: 0;
+  overflow: hidden;
   border: 0;
   border-top: 1px solid rgba(226, 184, 92, 0.18);
   border-bottom: 1px solid rgba(220, 228, 240, 0.075);
@@ -1631,12 +1632,44 @@ button { font: inherit; }
   padding: clamp(22px, 2.2vw, 32px) clamp(24px, 2.9vw, 44px);
 }
 
+.plans-command-surface::before,
+.plans-brief-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(226, 184, 92, 0.7), transparent 70%);
+  opacity: 0.78;
+}
+
 .plans-command-surface-primary {
   border-top-color: rgba(226, 184, 92, 0.34);
   background:
     linear-gradient(100deg, rgba(226, 184, 92, 0.085), transparent 38%),
     radial-gradient(circle at top right, rgba(104, 158, 255, 0.07), transparent 30%),
     rgba(6, 10, 15, 0.42);
+}
+
+.plans-idea-surface {
+  border-top-color: rgba(98, 156, 255, 0.26);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(98, 156, 255, 0.08), transparent 34%),
+    linear-gradient(115deg, rgba(226, 184, 92, 0.04), transparent 48%),
+    rgba(5, 9, 14, 0.3);
+}
+
+.plans-review-surface {
+  border-top-color: rgba(226, 184, 92, 0.25);
+  background:
+    linear-gradient(105deg, rgba(226, 184, 92, 0.055), transparent 42%),
+    rgba(5, 9, 14, 0.3);
+}
+
+.plans-signal-surface {
+  border-top-color: rgba(255, 111, 125, 0.22);
+  background:
+    radial-gradient(circle at top right, rgba(255, 111, 125, 0.055), transparent 28%),
+    rgba(5, 9, 14, 0.28);
 }
 
 .plans-surface-head,
@@ -1684,32 +1717,42 @@ button { font: inherit; }
 
 .plans-ledger {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .plan-card {
   display: grid;
-  grid-template-columns: minmax(118px, 0.2fr) minmax(0, 1fr);
-  gap: 20px;
-  align-items: stretch;
-  padding: 18px 12px;
-  border: 0;
-  border-bottom: 1px solid rgba(220, 228, 240, 0.075);
-  background: transparent;
+  grid-template-columns: minmax(128px, 0.22fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  padding: 18px 20px 18px 18px;
+  border: 1px solid rgba(220, 228, 240, 0.075);
+  border-left: 3px solid rgba(226, 184, 92, 0.52);
+  background:
+    linear-gradient(90deg, rgba(226, 184, 92, 0.075), transparent 26%),
+    rgba(3, 7, 12, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .plan-card-symbol {
-  display: grid;
-  gap: 8px;
-  align-content: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
   min-width: 0;
-  padding: 4px 16px 4px 0;
-  border-right: 1px solid rgba(226, 184, 92, 0.14);
+  padding: 2px 4px 0 0;
+}
+
+.plan-card-symbol > a,
+.plan-card-symbol > .tg:first-child {
+  font-size: 14px;
+  line-height: 1.2;
 }
 
 .plan-card-symbol .tc {
+  flex-basis: 100%;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.55;
 }
 
 .plan-card-body {
@@ -1719,23 +1762,25 @@ button { font: inherit; }
 .plan-card-body p {
   margin: 0;
   color: var(--night-soft);
-  font: 600 15.5px/1.72 var(--sans-tc);
+  font: 650 15.5px/1.78 var(--sans-tc);
   overflow-wrap: break-word;
   word-break: keep-all;
 }
 
 .plan-card-meta {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) 86px 110px;
-  gap: 16px;
-  margin: 14px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 0;
   color: var(--night-mid);
 }
 
 .plan-card-meta div {
+  flex: 1 1 132px;
   min-width: 0;
-  padding-top: 10px;
-  border-top: 1px solid rgba(220, 228, 240, 0.08);
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 228, 240, 0.075);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .plan-card-meta dt {
@@ -1746,8 +1791,9 @@ button { font: inherit; }
 
 .plan-card-meta dd {
   margin: 0;
-  font: 700 12px/1.55 var(--mono);
-  overflow-wrap: anywhere;
+  font: 750 12.5px/1.55 var(--sans-tc);
+  overflow-wrap: break-word;
+  word-break: keep-all;
 }
 
 .ideas-rail,
@@ -1758,12 +1804,14 @@ button { font: inherit; }
 
 .idea-ticket {
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr) auto;
-  gap: 18px;
+  grid-template-columns: minmax(126px, 0.2fr) minmax(0, 1fr) auto;
+  gap: 16px;
   align-items: center;
   min-width: 0;
-  padding: 15px 12px;
-  border-bottom: 1px solid var(--night-rule);
+  padding: 15px 16px;
+  border: 1px solid rgba(220, 228, 240, 0.07);
+  border-left: 2px solid rgba(98, 156, 255, 0.46);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .idea-ticket-symbol {
@@ -1782,13 +1830,20 @@ button { font: inherit; }
   margin: 4px 0 0;
   color: var(--night-mid);
   font: 500 13.5px/1.65 var(--sans-tc);
+  overflow-wrap: break-word;
+  word-break: keep-all;
 }
 
 .plans-brief-card {
   border-top-color: rgba(105, 214, 142, 0.24);
   background:
-    linear-gradient(120deg, rgba(105, 214, 142, 0.052), transparent 32%),
+    linear-gradient(135deg, rgba(105, 214, 142, 0.065), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 24%),
     rgba(5, 9, 14, 0.28);
+}
+
+.plans-brief-card::before {
+  background: linear-gradient(180deg, rgba(105, 214, 142, 0.72), transparent 70%);
 }
 
 .brief-snapshot {
@@ -1796,8 +1851,9 @@ button { font: inherit; }
   flex-wrap: wrap;
   gap: 10px 16px;
   align-items: baseline;
-  padding: 0 0 14px;
-  border-bottom: 1px solid var(--night-rule);
+  padding: 12px 14px;
+  border: 1px solid rgba(105, 214, 142, 0.12);
+  background: rgba(105, 214, 142, 0.045);
 }
 
 .brief-snapshot strong {
@@ -1809,8 +1865,8 @@ button { font: inherit; }
 .plans-review-row,
 .plans-signal-row {
   min-width: 0;
-  border-bottom: 1px solid var(--night-rule);
-  padding: 14px 12px;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.065);
+  padding: 15px 14px;
 }
 
 .plans-brief-section .tc,
@@ -1820,6 +1876,15 @@ button { font: inherit; }
   margin-top: 7px;
   line-height: 1.72;
   overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+.plans-brief-section {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.plans-brief-section + .plans-brief-section {
+  margin-top: 10px;
 }
 
 .plans-review-row > .tg {
@@ -1830,26 +1895,29 @@ button { font: inherit; }
 
 .plans-signal-row {
   display: grid;
-  grid-template-columns: 112px 70px minmax(0, 1fr);
-  gap: 14px;
-  align-items: baseline;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 10px 14px;
+  align-items: start;
 }
 
 .plans-context-column .plans-signal-row {
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 6px 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  padding-left: 18px;
+  border-left: 1px solid rgba(255, 111, 125, 0.16);
 }
 
 .plans-context-column .plans-signal-row .tc {
   grid-column: 1 / -1;
+  max-width: 56ch;
 }
 
 .mini-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 50px;
-  padding: 13px 24px;
+  min-height: 42px;
+  padding: 10px 20px;
   border: 1px solid var(--gold-deep);
   background: var(--gold);
   color: var(--night);
@@ -2872,6 +2940,26 @@ button { font: inherit; }
   .portfolio-workbench-grid > :nth-child(3) {
     grid-column: 1 / -1;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1380px) {
+  .plans-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plans-context-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .plans-brief-card {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
+  .plans-context-column {
+    grid-template-columns: 1fr;
   }
 }
 
