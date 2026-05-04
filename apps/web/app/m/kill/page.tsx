@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 const ACCOUNT_ID = "paper-default";
 const ACCOUNT_LABEL = "模擬帳戶";
 const MODES = [
-  { mode: "trading", label: "可交易", sub: "通過後端風控後，可建立模擬委託", tone: "gold" },
+  { mode: "trading", label: "可交易", sub: "通過後端風控後，可建立模擬委託", tone: "status-ok" },
   { mode: "paper_only", label: "模擬模式", sub: "策略與委託都只留在模擬交易層", tone: "muted" },
   { mode: "liquidate_only", label: "只減倉", sub: "只允許降低曝險的委託", tone: "muted" },
   { mode: "halted", label: "全鎖定", sub: "停止新增委託，等待風控處理", tone: "status-bad" },
@@ -92,10 +92,10 @@ export default async function MobileKillPage() {
                 key={item.mode}
                 role="status"
                 title="前端目前只顯示狀態；切換交易模式需要後端治理、稽核紀錄與風控回歸測試通過。"
-                className={`kill-mode ${active ? "active" : ""}`}
+                className={`kill-mode ${active ? `active ${item.tone}` : ""}`}
               >
                 <span>
-                  <span className={`tg ${active ? "gold" : item.tone}`}>{item.label}</span>
+                  <span className={`tg ${item.tone}`}>{item.label}</span>
                   <span className="tc soft">{item.sub}</span>
                 </span>
                 <span className="tg soft">{active ? "目前" : "不可切換"}</span>

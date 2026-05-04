@@ -565,6 +565,18 @@ button { font: inherit; }
   border-color: var(--tw-dn-faint);
 }
 
+.session-pill.status-ok {
+  color: var(--tw-dn-bright);
+  border-color: rgba(46, 204, 113, 0.38);
+  background: rgba(46, 204, 113, 0.08);
+}
+
+.session-pill.status-bad {
+  color: var(--tw-up-bright);
+  border-color: rgba(230, 57, 70, 0.38);
+  background: rgba(230, 57, 70, 0.08);
+}
+
 .exec-band {
   height: 1px;
   background: var(--tw-up);
@@ -3776,8 +3788,14 @@ button { font: inherit; }
 }
 
 .danger-soft {
-  color: var(--tw-down-bright) !important;
+  color: var(--tw-up-bright) !important;
   border-color: rgba(255, 82, 112, 0.28) !important;
+}
+
+.approve-soft {
+  color: var(--tw-dn-bright) !important;
+  border-color: rgba(46, 204, 113, 0.38) !important;
+  background: rgba(46, 204, 113, 0.10) !important;
 }
 
 @media (max-width: 1000px) {
@@ -4520,6 +4538,16 @@ button { font: inherit; }
   border-color: var(--gold);
   background: rgba(200,148,63,0.12);
   cursor: default;
+}
+
+.kill-mode.active.status-ok {
+  border-color: rgba(46, 204, 113, 0.55);
+  background: rgba(46, 204, 113, 0.10);
+}
+
+.kill-mode.active.status-bad {
+  border-color: rgba(230, 57, 70, 0.55);
+  background: rgba(230, 57, 70, 0.10);
 }
 
 .confirm-sheet {

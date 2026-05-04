@@ -186,7 +186,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
                   </div>
 
                   <div className="lab-bundle-actions">
-                    <button className="mini-button" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "APPROVED", "APPROVE")}>
+                    <button className="mini-button approve-soft" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "APPROVED", "APPROVE")}>
                       通過
                     </button>
                     <button className="outline-button danger-soft" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "REJECTED", "REJECT")}>
