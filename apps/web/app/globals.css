@@ -1278,7 +1278,62 @@ button { font: inherit; }
 .paper-order-panel .ascii-head {
   min-height: 0;
   margin-bottom: 8px;
-  padding: 2px 4px 10px;
+  padding: 6px 8px 12px;
+}
+
+.paper-order-source-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 8px 8px 10px;
+  border-top: 1px solid rgba(220, 228, 240, 0.08);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+  color: var(--night-mid);
+  font: 650 11px/1.7 var(--sans-tc);
+}
+
+.paper-order-lock-note {
+  margin-bottom: 12px;
+  padding: 10px 12px 10px 13px;
+  border-left: 2px solid rgba(226, 184, 92, 0.82);
+  background:
+    linear-gradient(90deg, rgba(226, 184, 92, 0.11), rgba(226, 184, 92, 0.025) 58%, transparent);
+  color: var(--night-ink);
+  font: 750 12px/1.85 var(--sans-tc);
+}
+
+.paper-order-price-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: baseline;
+  margin-bottom: 14px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid rgba(226, 184, 92, 0.15);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.07);
+  background: rgba(4, 7, 11, 0.38);
+  color: var(--night-mid);
+  font: 650 12px/1.55 var(--sans-tc);
+}
+
+.paper-order-price-row b {
+  color: var(--night-ink);
+  font: 800 18px/1.1 var(--mono);
+}
+
+.paper-order-price-row small {
+  min-width: 0;
+  color: var(--night-soft);
+  overflow-wrap: anywhere;
+}
+
+.paper-order-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin-bottom: 14px;
 }
 
 .ascii-head {
@@ -3349,8 +3404,8 @@ body:has(.login-route) > div {
 
 .company-detail-layout {
   display: grid;
-  grid-template-columns: minmax(680px, 1fr) minmax(320px, 380px);
-  gap: clamp(24px, 2.4vw, 36px);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  gap: clamp(20px, 2vw, 30px);
   align-items: start;
   margin-top: 6px;
 }
@@ -3361,7 +3416,7 @@ body:has(.login-route) > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
-  gap: 18px;
+  gap: 16px;
 }
 
 .company-main-column > *,
@@ -3446,6 +3501,8 @@ body:has(.login-route) > div {
 }
 
 .company-side-column .paper-order-panel {
+  position: relative;
+  overflow: hidden;
   border-top-color: rgba(226, 184, 92, 0.32);
   background:
     linear-gradient(155deg, rgba(226, 184, 92, 0.11), rgba(226, 184, 92, 0.018) 34%, transparent),
@@ -3489,6 +3546,48 @@ body:has(.login-route) > div {
     radial-gradient(circle at 18% 0%, rgba(226, 184, 92, 0.11), transparent 28%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.024), transparent 52%),
     rgba(4, 8, 13, 0.34);
+}
+
+.kline-chart-shell {
+  position: relative;
+  min-height: 420px;
+  margin-top: 12px;
+  border-left: 1px solid rgba(226, 184, 92, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent),
+    rgba(2, 5, 9, 0.2);
+}
+
+.kline-chart-canvas {
+  width: 100%;
+  min-height: 420px;
+}
+
+.kline-price-ribbon {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: min(360px, calc(100% - 24px));
+  padding: 7px 10px;
+  border: 1px solid rgba(226, 184, 92, 0.2);
+  background: rgba(3, 6, 10, 0.74);
+  color: var(--night-mid);
+  font: 700 11px/1.35 var(--sans-tc);
+  pointer-events: none;
+}
+
+.kline-price-ribbon b {
+  color: var(--night-ink);
+  font-size: 19px;
+}
+
+.kline-price-ribbon small {
+  color: var(--night-soft);
+  overflow-wrap: anywhere;
 }
 
 .company-main-column .kline-panel:hover,
@@ -4159,10 +4258,22 @@ body:has(.login-route) > div {
   .company-hero-quote {
     grid-template-columns: repeat(2, minmax(0, auto));
   }
+
+  .paper-order-price-row {
+    grid-template-columns: auto auto;
+  }
+
+  .paper-order-price-row small {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 460px) {
   .company-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .paper-order-grid {
     grid-template-columns: 1fr;
   }
 }
