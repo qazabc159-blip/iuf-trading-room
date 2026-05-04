@@ -108,38 +108,11 @@ function statusBadgeClass(status: TabState["status"]) {
   return "badge-blue";
 }
 
-function tabStateSummary(tab: TabKey, state: TabState | undefined) {
+function tabStateSummary(_tab: TabKey, state: TabState | undefined) {
   if (!state || state.status === "loading") return "讀取中";
   if (state.status === "blocked") return "暫停";
   if (state.status === "empty") return "無資料";
-
-  if (tab === "financials") {
-    const row = (state.rows as CompanyFinancialRow[])[0];
-    return row ? `${row.period} / EPS ${numberText(row.epsAfterTax)}` : "無資料";
-  }
-  if (tab === "revenue") {
-    const row = (state.rows as CompanyRevenueRow[])[0];
-    return row ? `${row.revenue_year}/${String(row.revenue_month).padStart(2, "0")} / ${money(row.revenue)}` : "無資料";
-  }
-  if (tab === "balance") {
-    const row = (state.rows as CompanyBalanceSheetSnapshot[])[0];
-    return row ? `${row.date} / 資產 ${money(row.totalAssets)}` : "無資料";
-  }
-  if (tab === "cashFlow") {
-    const row = (state.rows as CompanyCashFlowSnapshot[])[0];
-    return row ? `${row.date} / 營業 ${money(row.operatingCashFlow)}` : "無資料";
-  }
-  if (tab === "valuation") {
-    const row = (state.rows as CompanyValuationRow[])[0];
-    return row ? `${row.date} / PER ${numberText(row.PER)}` : "無資料";
-  }
-  if (tab === "marketValue") {
-    const row = (state.rows as CompanyMarketValueRow[])[0];
-    return row ? `${row.date} / ${money(row.market_value)}` : "無資料";
-  }
-
-  const row = (state.rows as CompanyDividendRow[])[0];
-  return row ? `${row.year} / ${numberText(row.TotalDividend)} 元` : "無資料";
+  return `${rowCount(state)} 筆`;
 }
 
 function paginate<T>(rows: T[], page: number) {
@@ -169,7 +142,7 @@ function PaginationBar({
   return (
     <div className="company-finance-pagination">
       <span>
-        第 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, total)} 筆 / 共 {total} 筆
+        顯示 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, total)} / {total}
       </span>
       <div>
         <button type="button" onClick={() => onPage(page - 1)} disabled={page <= 0}>
@@ -237,8 +210,8 @@ function FinancialTable({ rows, page, onPage }: { rows: CompanyFinancialRow[]; p
             </tr>
           </thead>
           <tbody>
-            {view.rows.map((row) => (
-              <tr key={row.period}>
+            {view.rows.map((row, index) => (
+              <tr key={`${row.period}-${view.start + index}`}>
                 <td><span>{row.period}</span></td>
                 <td className="num"><span>{money(row.revenue)}</span></td>
                 <td className="num"><span>{percent(row.grossMarginPct)}</span></td>
@@ -599,7 +572,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         <div>
           <span className="tg gold">目前檢視</span>
           <strong>{activeCopy.label}</strong>
-          <small>{activeCopy.short}</small>
+          <small>{activeCopy.short}；每頁固定 {PAGE_SIZE} 筆，避免資料撐破版面。</small>
         </div>
         <div className="source-line compact">
           <span className={`badge ${statusBadgeClass(currentState.status)}`}>{statusLabel(currentState.status)}</span>
