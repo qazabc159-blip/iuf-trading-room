@@ -1,4 +1,5 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
+import { MetricStrip } from "@/components/RadarWidgets";
 import { getBriefs } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
@@ -7,7 +8,14 @@ import type { DailyBrief } from "@iuf-trading-room/contracts";
 export const dynamic = "force-dynamic";
 
 function formatDateTime(value: string) {
-  return new Date(value).toLocaleString("zh-TW", { hour12: false });
+  return new Date(value).toLocaleString("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function sortBriefs(briefs: DailyBrief[]) {
@@ -45,6 +53,7 @@ function producerLabel(value: string | null | undefined) {
   const key = value?.toLowerCase() ?? "";
   if (key.includes("openalice")) return "AI 摘要";
   if (key.includes("worker")) return "系統排程";
+  if (key.includes("manual")) return "人工整理";
   return value ?? "--";
 }
 
@@ -82,28 +91,79 @@ export default async function BriefsPage() {
   }
 
   const latest = briefs[0] ?? null;
+  const publishedCount = briefs.filter((brief) => brief.status === "published").length;
+  const draftCount = briefs.filter((brief) => brief.status === "draft").length;
+  const totalSections = latest?.sections.length ?? 0;
+  const surfaceState = error ? "BLOCKED" : latest ? "LIVE" : "EMPTY";
 
   return (
     <PageFrame
       code="BRF"
       title="每日簡報"
-      sub="正式資料庫的操作員盤前/盤後摘要"
-      note="每日簡報 / 真實資料；無資料或後端暫停時不顯示假簡報。"
+      sub="台股盤前 / 盤後摘要"
+      note="每日簡報 / 真實資料；先建立資料框架，後續再接 OpenAlice 自動產文，不顯示假新聞或假建議。"
     >
-      {error && (
-        <BriefStatePanel
-          state="BLOCKED"
-          reason={`簡報資料暫時無法讀取。負責：內容與後端資料管線。${error}`}
-          updatedAt={requestedAt}
-        />
-      )}
+      <MetricStrip
+        columns={6}
+        cells={[
+          { label: "狀態", value: surfaceState === "LIVE" ? "正常" : surfaceState === "EMPTY" ? "無資料" : "暫停", tone: surfaceState === "LIVE" ? "status-ok" : surfaceState === "EMPTY" ? "gold" : "status-bad" },
+          { label: "簡報數", value: briefs.length },
+          { label: "已發布", value: publishedCount, tone: publishedCount > 0 ? "status-ok" : "muted" },
+          { label: "草稿", value: draftCount, tone: draftCount > 0 ? "gold" : "muted" },
+          { label: "段落", value: latest ? totalSections : "--" },
+          { label: "最新日期", value: latest?.date ?? "--" },
+        ]}
+      />
 
-      {!error && !latest && (
-        <BriefStatePanel
-          state="EMPTY"
-          reason="目前工作區沒有每日簡報資料列，不顯示假簡報。"
-          updatedAt={requestedAt}
-        />
+      <section className="brief-command-deck">
+        <div>
+          <span className="tg gold">每日簡報 / 台股情報框架</span>
+          <h2>每天要看什麼，先把資料入口定清楚。</h2>
+          <p>
+            這裡會承接台股盤勢、重大訊息、候選策略、風控狀態與 OpenAlice 摘要。
+            現在只顯示正式資料庫內容；未接線前不自動生成假新聞或假建議。
+          </p>
+        </div>
+        <div className="brief-source-card">
+          <span>來源狀態</span>
+          <strong className={surfaceState === "LIVE" ? "status-ok" : surfaceState === "EMPTY" ? "gold" : "status-bad"}>
+            {surfaceState === "LIVE" ? "正式資料" : surfaceState === "EMPTY" ? "等待首份" : "資料暫停"}
+          </strong>
+          <p>{latest ? `最新簡報 ${latest.date}，共 ${latest.sections.length} 段。` : "尚未取得正式簡報資料，先顯示接線規格。"}</p>
+        </div>
+      </section>
+
+      {(error || !latest) && (
+        <div className="brief-empty-grid">
+          {error ? (
+            <BriefStatePanel
+              state="BLOCKED"
+              reason={`簡報資料暫時無法讀取。負責：內容與後端資料管線。${error}`}
+              updatedAt={requestedAt}
+            />
+          ) : (
+            <BriefStatePanel
+              state="EMPTY"
+              reason="目前工作區沒有每日簡報資料列，不顯示假簡報。"
+              updatedAt={requestedAt}
+            />
+          )}
+          <Panel code="BRF-SPEC" title="接線目標" sub="先資料框架，後 AI 產文" right="待接">
+            <div className="brief-spec-list">
+              <span>盤勢：TAIEX / TPEx / 成交量 / 漲跌家數 / 外資買賣超。</span>
+              <span>焦點：FinMind 財報、月營收、法人、融資券與重大訊息。</span>
+              <span>策略：策略想法與策略批次只做候選摘要，不直接轉單。</span>
+              <span>風控：交易模式、kill-switch、帳戶風險與可用資金狀態。</span>
+            </div>
+          </Panel>
+          <Panel code="BRF-AI" title="OpenAlice 摘要" sub="後續接線" right="不造假">
+            <div className="brief-spec-list">
+              <span>OpenAlice 只能根據已入庫資料產生摘要，不能憑空寫新聞。</span>
+              <span>每段摘要需保留來源類型與更新時間，方便回查。</span>
+              <span>沒有資料時顯示 EMPTY / BLOCKED，不放漂亮但無依據的文字。</span>
+            </div>
+          </Panel>
+        </div>
       )}
 
       {!error && latest && (

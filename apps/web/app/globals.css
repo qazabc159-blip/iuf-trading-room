@@ -2737,6 +2737,82 @@ button { font: inherit; }
   font: 800 18px/1.4 var(--sans-tc);
 }
 
+.brief-command-deck {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+  gap: clamp(24px, 3vw, 44px);
+  align-items: end;
+  margin: 0 0 24px;
+  padding: clamp(26px, 3vw, 44px);
+  overflow: hidden;
+  border-top: 1px solid rgba(226, 184, 92, 0.22);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(98, 156, 255, 0.1), transparent 30%),
+    linear-gradient(105deg, rgba(226, 184, 92, 0.08), transparent 54%),
+    rgba(4, 8, 12, 0.18);
+}
+
+.brief-command-deck h2 {
+  max-width: 780px;
+  margin: 14px 0 14px;
+  color: var(--night-ink);
+  font: 900 clamp(34px, 4vw, 64px)/1.08 var(--sans-tc);
+  letter-spacing: 0;
+}
+
+.brief-command-deck p,
+.brief-source-card p {
+  margin: 0;
+  color: var(--night-soft);
+  font: 650 16px/1.85 var(--sans-tc);
+  letter-spacing: 0;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.brief-source-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid rgba(220, 228, 240, 0.1);
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.brief-source-card span {
+  color: var(--gold-bright);
+  font: 800 12px/1.4 var(--sans-tc);
+}
+
+.brief-source-card strong {
+  font: 900 30px/1.15 var(--sans-tc);
+}
+
+.brief-empty-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.72fr) minmax(300px, 0.72fr);
+  gap: clamp(18px, 2vw, 28px);
+  align-items: stretch;
+}
+
+.brief-empty-grid > * {
+  min-width: 0;
+}
+
+.brief-spec-list {
+  display: grid;
+  gap: 12px;
+  color: var(--night-soft);
+  font: 650 15px/1.75 var(--sans-tc);
+}
+
+.brief-spec-list span {
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.075);
+}
+
 .plans-brief-section,
 .plans-review-row,
 .plans-signal-row {
@@ -3700,7 +3776,9 @@ button { font: inherit; }
   body { overflow-x: hidden; }
 
   .lab-command-deck,
-  .lab-workbench-grid {
+  .lab-workbench-grid,
+  .brief-command-deck,
+  .brief-empty-grid {
     grid-template-columns: 1fr;
   }
 
