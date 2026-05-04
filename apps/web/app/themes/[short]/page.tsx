@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getCompanies, getSignals, getStrategyIdeas, getThemes } from "@/lib/api";
+import { cleanExternalHeadline, cleanNarrativeText, cleanThemeThesis } from "@/lib/operator-copy";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ const emptyData: DetailData = {
 };
 
 async function loadThemeDetail(slug: string): Promise<LoadState> {
-  const source = `GET /api/v1/themes -> slug ${slug}; GET /api/v1/companies; GET /api/v1/signals; GET /api/v1/strategy/ideas?themeId=...`;
+  const source = "主題資料庫 / 公司主檔 / 訊號資料庫 / 策略想法";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -83,7 +84,14 @@ function formatTime(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-TW", { hour12: false });
+  return date.toLocaleString("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function formatDate(value: string | null | undefined) {
@@ -114,6 +122,13 @@ function marketStateLabel(state: ThemeRow["marketState"] | string | null | undef
 }
 
 function lifecycleLabel(value: string | null | undefined) {
+  if (value === "Discovery") return "探索";
+  if (value === "Validation") return "驗證";
+  if (value === "Expansion") return "擴張";
+  if (value === "Crowded") return "擁擠";
+  if (value === "Distribution") return "分配";
+  if (value === "Incubation") return "孵化";
+  if (value === "Monitoring") return "監控";
   if (value === "active") return "啟用";
   if (value === "watch") return "觀察";
   if (value === "paused") return "暫停";
@@ -151,6 +166,54 @@ function decisionLabel(decision: IdeaRow["marketData"]["decision"]) {
   return "阻擋";
 }
 
+function categoryLabel(value: string | null | undefined) {
+  if (!value) return "未分類";
+  const key = value.toLowerCase();
+  if (key === "earnings") return "財報";
+  if (key === "revenue") return "營收";
+  if (key === "news") return "新聞";
+  if (key === "company") return "公司";
+  if (key === "market") return "市場";
+  if (key === "industry") return "產業";
+  if (key === "theme") return "主題";
+  if (key === "technical") return "技術";
+  if (key === "fundamental") return "基本面";
+  if (key === "test" || key === "dryrun") return "內部測試";
+  return value.replace(/[_-]/g, " ");
+}
+
+function themeDisplayName(theme: ThemeRow) {
+  const bySlug: Record<string, string> = {
+    "orphan-audit-trail": "內部稽核軌跡",
+    "orphan-ai-optics": "AI 光通訊封裝",
+    "5g": "5G 通訊",
+    abf: "ABF 載板",
+    ai: "AI 伺服器",
+    apple: "Apple 供應鏈",
+    cowos: "CoWoS 先進封裝",
+    cpo: "CPO 光通訊",
+  };
+  return bySlug[theme.slug.toLowerCase()] ?? theme.name.replace(/^\[ORPHAN\]\s*/i, "待歸檔：");
+}
+
+function themeThesisText(theme: ThemeRow) {
+  return cleanThemeThesis(theme.slug, theme.thesis);
+}
+
+function themeNarrative(value: string | null | undefined) {
+  return cleanNarrativeText(value, "主題敘述待整理；目前僅保留來源資料，不作自動解讀。");
+}
+
+function signalText(signal: SignalRow) {
+  const value = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
+  return cleanExternalHeadline(value, "訊號文字待整理；保留來源紀錄，不納入正式判讀。");
+}
+
+function isInternalTestSignal(signal: SignalRow) {
+  const text = `${signal.title} ${signal.summary ?? ""} ${signal.category}`.toLowerCase();
+  return /bruce|dryrun|smoke|test signal|verify/.test(text);
+}
+
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
@@ -176,6 +239,7 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
   const { short } = await params;
   const result = await loadThemeDetail(short);
   const theme = result.data.theme;
+  const displaySignals = result.data.signals.filter((signal) => !isInternalTestSignal(signal));
   const detailLive = result.state === "LIVE";
   const dependentState = result.state === "EMPTY" ? "EMPTY" : "BLOCKED";
   const dependentTone = result.state === "EMPTY" ? "gold" : "status-bad";
@@ -187,12 +251,12 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
   const observationCount = detailLive && theme ? theme.observationPoolCount : null;
   const memberCount = detailLive ? result.data.companies.length : null;
   const ideaCount = detailLive ? result.data.ideas.length : null;
-  const signalCount = detailLive ? result.data.signals.length : null;
+  const signalCount = detailLive ? displaySignals.length : null;
 
   return (
     <PageFrame
       code={theme ? `02-${theme.priority}` : "02-D"}
-      title={theme?.name ?? short}
+      title={theme ? themeDisplayName(theme) : short}
       sub={theme ? `${theme.slug} / ${marketStateLabel(theme.marketState)}` : "主題明細暫停"}
       note="此頁讀取正式主題、公司、訊號與策略想法；沒有後端契約的熱度、脈衝與下單動作不顯示。"
     >
@@ -209,27 +273,33 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
         columns={7}
       />
 
-      <div className="company-grid">
-        <div>
-          <Panel code="THM-SRC" title="資料來源" sub="投資命題 / 現在性" right={stateLabel(result.state)}>
+      <div className="theme-detail-layout">
+        <div className="theme-detail-main">
+          <Panel code="THM-SRC" title="主題工作頁" sub="投資命題 / 現在性" right={stateLabel(result.state)}>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {theme && (
-              <div className="ticket" style={{ minHeight: 168 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start" }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div className={`tg ${marketTone(theme.marketState)}`}>{marketStateLabel(theme.marketState)} / {lifecycleLabel(theme.lifecycle)}</div>
-                    <div className="tc" style={{ fontSize: 30, marginTop: 8 }}>{theme.name}</div>
-                    <div className="tg soft" style={{ marginTop: 8 }}>{theme.slug.toUpperCase()} / 更新 {formatDate(theme.updatedAt)}</div>
+              <div className="theme-detail-hero">
+                <div className="theme-detail-hero-top">
+                  <span className={`tg ${marketTone(theme.marketState)}`}>{marketStateLabel(theme.marketState)}</span>
+                  <span className="tg gold">{lifecycleLabel(theme.lifecycle)}</span>
+                  <span className="tg soft">更新 {formatDate(theme.updatedAt)}</span>
+                </div>
+                <div className="theme-detail-titleline">
+                  <div>
+                    <div className="tc theme-detail-title">{themeDisplayName(theme)}</div>
+                    <div className="tg soft">{theme.slug} / 正式主題主檔</div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div className="num" style={{ fontSize: 42, fontWeight: 700 }}>{theme.priority}</div>
-                    <div className="tg gold">優先序</div>
+                  <div className="theme-detail-priority">
+                    <span className="num">{theme.priority}</span>
+                    <span className="tg gold">優先序</span>
                   </div>
                 </div>
-                <div className="tc soft" style={{ marginTop: 16, lineHeight: 1.7 }}>{theme.thesis}</div>
-                <div className="tg soft" style={{ marginTop: 10 }}>現在性：{theme.whyNow}</div>
-                <div className="tg soft" style={{ marginTop: 6 }}>瓶頸：{theme.bottleneck}</div>
+                <p className="tc theme-detail-thesis">{themeThesisText(theme)}</p>
+                <div className="theme-detail-notes">
+                  <span><b>現在性</b>{themeNarrative(theme.whyNow)}</span>
+                  <span><b>瓶頸</b>{themeNarrative(theme.bottleneck)}</span>
+                </div>
               </div>
             )}
           </Panel>
@@ -238,52 +308,59 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
             {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
             {detailLive && result.data.companies.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有公司掛在此主題。</div>}
             {detailLive && result.data.companies.length > 0 && (
-              <div className="row position-row table-head tg">
-                <span>代號</span><span>公司</span><span>層級</span><span>市場</span><span>位置</span><span>更新</span>
+              <div className="theme-member-grid">
+                {result.data.companies.map((company) => (
+                  <Link className="theme-member-card" href={`/companies/${company.ticker}`} key={company.id}>
+                    <span className="tg gold">{company.ticker}</span>
+                    <strong className="tc">{company.name}</strong>
+                    <span className="tg soft">{company.market} / {company.chainPosition}</span>
+                    <span className="tg">{company.beneficiaryTier} / 更新 {formatDate(company.updatedAt)}</span>
+                  </Link>
+                ))}
               </div>
             )}
-            {detailLive && result.data.companies.map((company) => (
-              <Link className="row position-row" href={`/companies/${company.ticker}`} key={company.id}>
-                <span className="tg gold">{company.ticker}</span>
-                <span className="tc">{company.name}</span>
-                <span className="tg">{company.beneficiaryTier}</span>
-                <span className="tg muted">{company.market}</span>
-                <span className="tg soft">{company.chainPosition}</span>
-                <span className="tg soft">{formatDate(company.updatedAt)}</span>
-              </Link>
-            ))}
           </Panel>
         </div>
 
-        <div>
+        <div className="theme-detail-side">
           <Panel code="IDEA-ATT" title="連結策略想法" sub="依主題篩選正式策略資料" right={detailLive ? `${result.data.ideas.length} 筆` : stateLabel(dependentState)}>
             {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
             {detailLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有策略想法掛在此主題。</div>}
-            {detailLive && result.data.ideas.slice(0, 8).map((idea) => (
-              <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
-                <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
-                <span className={`tg ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
-                <span className="num">{idea.score.toFixed(1)}</span>
-                <span className={`tg ${decisionTone(idea.marketData.decision)}`}>{decisionLabel(idea.marketData.decision)}</span>
-                <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{idea.rationale.primaryReason}</span>
-                <Link href={`/companies/${idea.symbol}`} className="mini-button">公司</Link>
+            {detailLive && result.data.ideas.length > 0 && (
+              <div className="theme-idea-stack">
+                {result.data.ideas.slice(0, 8).map((idea) => (
+                  <div className="theme-idea-card" key={`${idea.companyId}-${idea.symbol}`}>
+                    <div className="theme-card-top">
+                      <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
+                      <span className={`tg ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
+                      <span className={`tg ${decisionTone(idea.marketData.decision)}`}>{decisionLabel(idea.marketData.decision)}</span>
+                      <span className="num">{idea.score.toFixed(1)}</span>
+                    </div>
+                    <div className="tc soft">{cleanNarrativeText(idea.rationale.primaryReason, "策略原因待整理；只保留候選列，不自動轉委託。")}</div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </Panel>
 
-          <Panel code="SIG-TAPE" title="主題訊號流" sub="正式訊號資料" right={detailLive ? `${result.data.signals.length} 則` : stateLabel(dependentState)}>
+          <Panel code="SIG-TAPE" title="主題訊號流" sub="正式訊號資料" right={detailLive ? `${displaySignals.length} 則` : stateLabel(dependentState)}>
             {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
-            {detailLive && result.data.signals.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有訊號掛在此主題。</div>}
-            {detailLive && result.data.signals.slice(0, 10).map((signal) => (
-              <div className="row telex-row" style={{ gridTemplateColumns: "76px 78px 74px 1fr" }} key={signal.id}>
-                <span className="tg soft">{formatTime(signal.createdAt)}</span>
-                <span className="tg gold">{signal.category}</span>
-                <span className={`tg ${directionTone(signal.direction)}`}>{directionLabel(signal.direction)}</span>
-                <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {signal.title} / C{signal.confidence}
-                </span>
+            {detailLive && displaySignals.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有正式訊號掛在此主題；內部測試訊號不顯示。</div>}
+            {detailLive && displaySignals.length > 0 && (
+              <div className="signal-tape-grid compact">
+                {displaySignals.slice(0, 10).map((signal) => (
+                  <div className="signal-tape-card compact" key={signal.id}>
+                    <div className="signal-tape-meta">
+                      <span className="tg soft">{formatTime(signal.createdAt)}</span>
+                      <span className="tg gold">{categoryLabel(signal.category)}</span>
+                      <span className={`tg ${directionTone(signal.direction)}`}>{directionLabel(signal.direction)}</span>
+                      <span className="tg soft">信心 {signal.confidence}</span>
+                    </div>
+                    <div className="tc signal-tape-title">{signalText(signal)}</div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </Panel>
         </div>
       </div>
