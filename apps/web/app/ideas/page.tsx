@@ -4,6 +4,8 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getStrategyIdeas } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanNarrativeText } from "@/lib/operator-copy";
+import { reasonLabel } from "@/lib/strategy-vocab";
 
 export const dynamic = "force-dynamic";
 
@@ -76,14 +78,27 @@ function formatTime(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-TW", { hour12: false });
+  return date.toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", { hour12: false });
+  return date.toLocaleString("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function percent(value: number) {
@@ -103,8 +118,8 @@ function stateLabel(state: LoadState["state"]) {
 }
 
 function directionLabel(direction: IdeaRow["direction"]) {
-  if (direction === "bullish") return "偏多";
-  if (direction === "bearish") return "偏空";
+  if (direction === "bullish") return "看多";
+  if (direction === "bearish") return "看空";
   return "中性";
 }
 
@@ -127,33 +142,60 @@ function directionTone(direction: IdeaRow["direction"]) {
 }
 
 function reasonText(value: string | null | undefined) {
-  if (!value) return "原因未列明";
-  return value
-    .replace(/missing_bars/g, "K 線資料不足")
-    .replace(/no_theme/g, "尚未連結主題")
-    .replace(/readiness:degraded/g, "資料品質降級")
-    .replace(/readiness:blocked/g, "資料品質阻擋")
-    .replace(/_/g, " ");
+  return cleanNarrativeText(reasonLabel(value), "原因尚未完成中文整理。");
+}
+
+function qualityLabel(grade: IdeaRow["quality"]["grade"]) {
+  if (grade === "strategy_ready") return "可策略觀察";
+  if (grade === "reference_only") return "僅供參考";
+  return "資料不足";
+}
+
+function readinessLabel(value: IdeaRow["marketData"]["readiness"]) {
+  if (value === "ready") return "資料可用";
+  if (value === "degraded") return "資料降級";
+  return "資料阻擋";
+}
+
+function freshnessLabel(value: IdeaRow["marketData"]["freshnessStatus"]) {
+  if (value === "fresh") return "資料新鮮";
+  if (value === "stale") return "資料偏舊";
+  return "缺資料";
+}
+
+function qualityTone(grade: IdeaRow["quality"]["grade"]) {
+  if (grade === "strategy_ready") return "status-ok";
+  if (grade === "reference_only") return "gold";
+  return "status-bad";
+}
+
+function ideaSummary(idea: IdeaRow) {
+  const theme = idea.topThemes[0]?.name ?? "尚未連結主題";
+  const primary = reasonText(idea.rationale.primaryReason);
+  return cleanNarrativeText(
+    `${idea.companyName} / ${theme} / ${primary}`,
+    `${idea.companyName} / ${theme} / 策略理由尚未整理完成。`
+  );
+}
+
+function sourceLabel(idea: IdeaRow) {
+  return idea.marketData.selectedSource ?? "正式市場資料";
 }
 
 function PromotionBlockedCell() {
   return (
     <span
-      className="tg soft"
+      className="idea-promotion-block"
       title="策略想法轉模擬委託的正式轉單端點尚未開通。"
-      style={{ display: "grid", gap: 4, minWidth: 0, lineHeight: 1.35 }}
     >
-      <span className="gold">轉單暫停</span>
-      <span className="tc soft" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        等正式轉單端點
-      </span>
+      轉單待接
     </span>
   );
 }
 
 function SourceLine({ result }: { result: LoadState }) {
   return (
-    <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 12, margin: "12px 0 14px" }}>
+    <div className="runs-source-line">
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
       <span>來源：{result.source}</span>
       <span>更新 {formatTime(result.updatedAt)}</span>
@@ -173,25 +215,49 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
 }
 
 function IdeaRowView({ idea }: { idea: IdeaRow }) {
-  const theme = idea.topThemes[0]?.name ?? "未連結主題";
+  const themes = idea.topThemes.length ? idea.topThemes : [];
   return (
-    <div className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
-      <Link href={`/companies/${idea.symbol}`} className="tg gold">
-        {idea.symbol}
-      </Link>
-      <span className={`tg ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
-      <span className="num">{idea.score.toFixed(1)}</span>
-      <span className={`tg ${decisionTone(idea.marketData.decision)}`}>
-        {decisionLabel(idea.marketData.decision)}
-      </span>
-      <span className="tc soft" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {idea.companyName} / {theme} / {reasonText(idea.rationale.primaryReason)}
-      </span>
-      <Link href={`/companies/${idea.symbol}`} className="mini-button">
-        查看
-      </Link>
-      <PromotionBlockedCell />
-    </div>
+    <article className="strategy-idea-card" key={`${idea.companyId}-${idea.symbol}`}>
+      <div className="strategy-idea-head">
+        <div className="strategy-idea-symbol">
+          <Link href={`/companies/${idea.symbol}`} className="tg gold">
+            {idea.symbol}
+          </Link>
+          <strong>{idea.companyName}</strong>
+          <span>{idea.market} / {idea.beneficiaryTier}</span>
+        </div>
+        <div className="strategy-idea-actions">
+          <span className={directionTone(idea.direction)}>{directionLabel(idea.direction)}</span>
+          <Link href={`/companies/${idea.symbol}`} className="mini-button">公司頁</Link>
+          <PromotionBlockedCell />
+        </div>
+      </div>
+
+      <p className="strategy-idea-copy">{ideaSummary(idea)}</p>
+
+      <div className="strategy-idea-metrics">
+        <span><b>{idea.score.toFixed(1)}</b><small>分數</small></span>
+        <span><b>{percent(idea.confidence)}</b><small>信心</small></span>
+        <span><b>{idea.signalCount}</b><small>訊號</small></span>
+        <span className={decisionTone(idea.marketData.decision)}>
+          <b>{decisionLabel(idea.marketData.decision)}</b><small>決策</small>
+        </span>
+      </div>
+
+      <div className="strategy-idea-tags">
+        {themes.length ? themes.map((theme) => (
+          <span key={theme.themeId}>{theme.name} / {theme.score.toFixed(0)}</span>
+        )) : <span>尚未連結主題</span>}
+      </div>
+
+      <div className="strategy-idea-footer">
+        <span className={qualityTone(idea.quality.grade)}>
+          {qualityLabel(idea.quality.grade)} / {reasonText(idea.quality.primaryReason)}
+        </span>
+        <span>{readinessLabel(idea.marketData.readiness)} / {freshnessLabel(idea.marketData.freshnessStatus)}</span>
+        <span>來源：{sourceLabel(idea)}</span>
+      </div>
+    </article>
   );
 }
 
@@ -205,8 +271,8 @@ export default async function IdeasPage() {
     <PageFrame
       code="04"
       title="策略想法"
-      sub="紙上候選清單"
-      note="策略想法 / 正式策略資料；轉成模擬委託前維持暫停"
+      sub="台股候選工作台"
+      note="策略想法 / 正式策略資料；只做候選觀察與品質揭露，轉成模擬委託前維持暫停。"
     >
       <MetricStrip
         cells={[
@@ -221,74 +287,75 @@ export default async function IdeasPage() {
         columns={7}
       />
 
-      <Panel
-        code="IDEA-OPN"
-        title="策略想法候選"
-        sub="紙上決策 / 只讀"
-        right={stateLabel(result.state)}
-      >
-        <SourceLine result={result} />
-        <EmptyOrBlocked result={result} />
-        {result.state === "LIVE" && (
-          <>
-            <div className="row idea-row table-head tg">
-              <span>代號</span>
-              <span>方向</span>
-              <span>分數</span>
-              <span>決策</span>
-              <span>理由</span>
-              <span>連結</span>
-              <span>轉單</span>
-            </div>
-            {result.data.items.map((idea) => (
-              <IdeaRowView idea={idea} key={`${idea.companyId}-${idea.symbol}`} />
-            ))}
-          </>
-        )}
-      </Panel>
+      <section className="ideas-command-deck">
+        <div>
+          <span className="tg gold">策略想法 / 候選觀察</span>
+          <h2>先看資料是否夠真，再看股票是否值得追蹤。</h2>
+          <p>
+            這頁只呈現後端策略引擎產出的台股候選、主題連結、訊號數與資料品質。
+            它不是下單頁，也不會把任何候選直接變成委託。
+          </p>
+        </div>
+        <div className="ideas-summary-grid">
+          <span><b className="status-ok">{statsAvailable ? summary.allow : "--"}</b><small>可觀察</small></span>
+          <span><b className="gold">{statsAvailable ? summary.review : "--"}</b><small>待審</small></span>
+          <span><b className="status-bad">{statsAvailable ? summary.block : "--"}</b><small>阻擋</small></span>
+        </div>
+      </section>
 
-      <Panel
-        code="IDEA-QA"
-        title="品質檢查"
-        sub="策略想法 / 資料完整性"
-        right={statsAvailable ? reasonText(topReason) : stateLabel(result.state)}
-      >
-        <div className="quote-strip" style={{ gridTemplateColumns: "repeat(6, minmax(120px, 1fr))", marginTop: 0 }}>
-          <div className="quote-card">
-            <div className="tg quote-symbol">偏多</div>
-            <div className="quote-last num up">{statsAvailable ? summary.bullish : "--"}</div>
-          </div>
-          <div className="quote-card">
-            <div className="tg quote-symbol">偏空</div>
-            <div className="quote-last num down">{statsAvailable ? summary.bearish : "--"}</div>
-          </div>
-          <div className="quote-card">
-            <div className="tg quote-symbol">中性</div>
-            <div className="quote-last num muted">{statsAvailable ? summary.neutral : "--"}</div>
-          </div>
-          <div className="quote-card">
-            <div className="tg quote-symbol">參考</div>
-            <div className="quote-last num gold">{statsAvailable ? summary.quality.referenceOnly : "--"}</div>
-          </div>
-          <div className="quote-card">
-            <div className="tg quote-symbol">不足</div>
-            <div className="quote-last num down">{statsAvailable ? summary.quality.insufficient : "--"}</div>
-          </div>
-          <div className="quote-card">
-            <div className="tg quote-symbol">平均信心</div>
-            <div className="quote-last num">
-              {statsAvailable && result.data.items.length
-                ? percent(result.data.items.reduce((sum, idea) => sum + idea.confidence, 0) / result.data.items.length)
-                : "--"}
+      <div className="ideas-workbench-layout">
+        <Panel
+          code="IDEA-OPN"
+          title="候選清單"
+          sub="紙上決策 / 只讀"
+          right={stateLabel(result.state)}
+        >
+          <SourceLine result={result} />
+          <EmptyOrBlocked result={result} />
+          {result.state === "LIVE" && (
+            <div className="strategy-idea-stack">
+              {result.data.items.map((idea) => (
+                <IdeaRowView idea={idea} key={`${idea.companyId}-${idea.symbol}`} />
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <Panel
+          code="IDEA-QA"
+          title="品質檢查"
+          sub="策略想法 / 資料完整性"
+          right={statsAvailable ? reasonText(topReason) : stateLabel(result.state)}
+        >
+          <div className="ideas-quality-stack">
+            <div>
+              <span>方向分布</span>
+              <strong>{statsAvailable ? `${summary.bullish} 看多 / ${summary.bearish} 看空 / ${summary.neutral} 中性` : "--"}</strong>
+            </div>
+            <div>
+              <span>可用性</span>
+              <strong>{statsAvailable ? `${summary.quality.strategyReady} 可策略觀察 / ${summary.quality.referenceOnly} 參考 / ${summary.quality.insufficient} 不足` : "--"}</strong>
+            </div>
+            <div>
+              <span>平均信心</span>
+              <strong>
+                {statsAvailable && result.data.items.length
+                  ? percent(result.data.items.reduce((sum, idea) => sum + idea.confidence, 0) / result.data.items.length)
+                  : "--"}
+              </strong>
+            </div>
+            <div>
+              <span>轉單政策</span>
+              <strong>正式轉成模擬委託前一律暫停；本頁不建立券商委託。</strong>
             </div>
           </div>
-        </div>
-        <div className="tg soft" style={{ display: "grid", gap: 8, paddingBottom: 14 }}>
-          <span>來源：{result.source}</span>
-          <span>產生：{statsAvailable ? formatDateTime(result.data.generatedAt) : "策略想法來源未回應"}</span>
-          <span>轉單：正式轉成模擬委託前一律暫停；本頁不會建立券商委託。</span>
-        </div>
-      </Panel>
+          <div className="idea-source-note">
+            <span>來源：{result.source}</span>
+            <span>產生：{statsAvailable ? formatDateTime(result.data.generatedAt) : "策略想法來源未回應"}</span>
+            <span>主要品質原因：{statsAvailable ? reasonText(topReason) : stateLabel(result.state)}</span>
+          </div>
+        </Panel>
+      </div>
     </PageFrame>
   );
 }
