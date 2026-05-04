@@ -64,7 +64,7 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
     { label: "信心", value: `${Math.round(bundle.confidence * 100)}%`, tone: "muted" as const },
     { label: "勝率", value: `${Math.round(bundle.backtest.winRate * 100)}%`, tone: "down" as const },
     { label: "報酬", value: `${signed(bundle.backtest.totalReturnPct, 1)}%`, tone: toneClass(bundle.backtest.totalReturnPct) },
-    { label: "最大回撤", value: `${bundle.backtest.maxDrawdownPct.toFixed(1)}%`, tone: "up" as const },
+    { label: "最大回撤", value: `${bundle.backtest.maxDrawdownPct.toFixed(1)}%`, tone: "status-bad" as const },
   ];
 
   async function applyAction(nextStatus: typeof status, action: "APPROVE" | "REJECT") {

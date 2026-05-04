@@ -70,9 +70,9 @@ function percent(value: number) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function stateLabel(state: LoadState["state"]) {
@@ -162,10 +162,10 @@ export default async function RunsPage() {
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
           { label: "批次", value: statsAvailable ? result.data.total : "--" },
-          { label: "可觀察", value: statsAvailable ? totals.allow : "--", tone: "up" },
+          { label: "可觀察", value: statsAvailable ? totals.allow : "--", tone: "status-ok" },
           { label: "待審", value: statsAvailable ? totals.review : "--", tone: "gold" },
-          { label: "阻擋", value: statsAvailable ? totals.block : "--", tone: "down" },
-          { label: "可用", value: statsAvailable ? counts.ready : "--", tone: statsAvailable && counts.ready > 0 ? "up" : "muted" },
+          { label: "阻擋", value: statsAvailable ? totals.block : "--", tone: "status-bad" },
+          { label: "可用", value: statsAvailable ? counts.ready : "--", tone: statsAvailable && counts.ready > 0 ? "status-ok" : "muted" },
           { label: "信心", value: statsAvailable && result.data.items.length ? percent(avgConfidence) : "--" },
         ]}
         columns={7}

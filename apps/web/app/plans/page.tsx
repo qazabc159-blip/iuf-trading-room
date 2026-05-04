@@ -125,9 +125,9 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function stateLabel(state: LoadState["state"]) {
@@ -158,7 +158,7 @@ function decisionLabel(decision: IdeaRow["marketData"]["decision"]) {
 }
 
 function statusTone(status: PlanRow["status"]) {
-  if (status === "ready" || status === "active") return "up";
+  if (status === "ready" || status === "active") return "status-ok";
   if (status === "closed" || status === "canceled") return "muted";
   if (status === "reduced") return "gold";
   return "muted";
@@ -259,7 +259,7 @@ export default async function PlansPage() {
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
           { label: "計畫", value: countsAvailable ? plans.length : "--" },
-          { label: "就緒", value: countsAvailable ? readyPlans : "--", tone: countsAvailable && readyPlans > 0 ? "up" : "muted" },
+          { label: "就緒", value: countsAvailable ? readyPlans : "--", tone: countsAvailable && readyPlans > 0 ? "status-ok" : "muted" },
           { label: "覆盤", value: countsAvailable ? result.data.reviews.length : "--" },
           { label: "簡報", value: countsAvailable ? result.data.briefs.length : "--", tone: countsAvailable && result.data.briefs.length > 0 ? "gold" : "muted" },
           { label: "想法", value: countsAvailable ? result.data.ideas.length : "--", tone: countsAvailable && result.data.ideas.length > 0 ? "up" : "muted" },

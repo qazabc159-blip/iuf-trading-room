@@ -1,6 +1,6 @@
-export type Tone = "gold" | "up" | "down" | "muted";
+export type Tone = "gold" | "up" | "down" | "muted" | "status-ok" | "status-bad";
 
-export function toneClass(value: number): Exclude<Tone, "gold"> {
+export function toneClass(value: number): Extract<Tone, "up" | "down" | "muted"> {
   if (value > 0) return "up";
   if (value < 0) return "down";
   return "muted";

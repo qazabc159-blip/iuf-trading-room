@@ -155,9 +155,9 @@ function tone(value: number | null | undefined) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function mapKillMode(kill: KillState | null): KillMode {
@@ -189,8 +189,8 @@ function durationLabel(ms: number | null | undefined) {
 }
 
 function statusTone(status: OrderRow["status"]) {
-  if (status === "filled" || status === "acknowledged") return "up";
-  if (status === "rejected" || status === "expired") return "down";
+  if (status === "filled" || status === "acknowledged") return "status-ok";
+  if (status === "rejected" || status === "expired") return "status-bad";
   if (status === "pending" || status === "submitted" || status === "partial") return "gold";
   return "muted";
 }

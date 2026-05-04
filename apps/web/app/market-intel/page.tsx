@@ -41,9 +41,9 @@ function formatTime(value: string | null | undefined) {
 }
 
 function stateTone(state: IntelState["state"]) {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function categoryTone(category: string) {
@@ -207,9 +207,9 @@ export default async function MarketIntelPage() {
         columns={5}
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "消息", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "up" : "muted" },
+          { label: "消息", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "status-ok" : "muted" },
           { label: "公司", value: statsAvailable ? uniqueCompanies || result.selected.length : "--" },
-          { label: "失敗", value: result.state === "BLOCKED" && result.failures === 0 ? "--" : result.failures, tone: result.failures > 0 ? "gold" : "muted" },
+          { label: "失敗", value: result.state === "BLOCKED" && result.failures === 0 ? "--" : result.failures, tone: result.failures > 0 ? "status-bad" : "muted" },
           { label: "更新", value: formatTime(result.updatedAt) },
         ]}
       />

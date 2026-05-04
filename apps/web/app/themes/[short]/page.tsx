@@ -94,9 +94,9 @@ function formatDate(value: string | null | undefined) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function stateLabel(state: LoadState["state"]) {
@@ -178,7 +178,7 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
   const theme = result.data.theme;
   const detailLive = result.state === "LIVE";
   const dependentState = result.state === "EMPTY" ? "EMPTY" : "BLOCKED";
-  const dependentTone = result.state === "EMPTY" ? "gold" : "down";
+  const dependentTone = result.state === "EMPTY" ? "gold" : "status-bad";
   const dependentReason =
     result.state === "EMPTY"
       ? "找不到主題主檔，因此不顯示相關公司、訊號與策略想法。"

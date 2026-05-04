@@ -73,9 +73,9 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function stateLabel(state: LoadState["state"]) {
@@ -92,15 +92,15 @@ function healthLabel(state: string | undefined) {
 }
 
 function healthTone(state: string) {
-  if (state === "healthy") return "up";
+  if (state === "healthy") return "status-ok";
   if (state === "stale") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function severityTone(value: string | undefined) {
-  if (value === "danger") return "down";
+  if (value === "danger") return "status-bad";
   if (value === "warning") return "gold";
-  if (value === "success") return "up";
+  if (value === "success") return "status-ok";
   return "muted";
 }
 
@@ -223,7 +223,7 @@ export default async function OpsPage() {
           { label: "主題", value: data ? stats?.themes ?? 0 : "--" },
           { label: "主檔列數", value: data ? stats?.companies ?? 0 : "--" },
           { label: "訊號", value: data ? stats?.signals ?? 0 : "--" },
-          { label: "佇列", value: data ? queue?.totalJobs ?? 0 : "--", tone: (queue?.failed ?? 0) > 0 ? "down" : "muted" },
+          { label: "佇列", value: data ? queue?.totalJobs ?? 0 : "--", tone: (queue?.failed ?? 0) > 0 ? "status-bad" : "muted" },
           { label: "稽核", value: data ? data.audit.total : "--", tone: data && data.audit.total > 0 ? "gold" : "muted" },
           { label: "背景服務", value: healthLabel(obs?.workerStatus), tone: obs ? healthTone(obs.workerStatus) : "muted" },
         ]}
