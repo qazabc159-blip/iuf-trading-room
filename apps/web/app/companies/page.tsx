@@ -53,8 +53,8 @@ function registryLabel(state: RegistryState) {
 }
 
 function registryTone(state: RegistryState) {
-  if (state === "LIVE") return "up";
-  if (state === "BLOCKED") return "down";
+  if (state === "LIVE") return "status-ok";
+  if (state === "BLOCKED") return "status-bad";
   return "gold";
 }
 

@@ -76,9 +76,9 @@ function percent(value: number) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function stateLabel(state: LoadState["state"]) {
@@ -88,9 +88,9 @@ function stateLabel(state: LoadState["state"]) {
 }
 
 function decisionTone(decision: RunOutput["marketDecision"]) {
-  if (decision === "allow") return "up";
+  if (decision === "allow") return "status-ok";
   if (decision === "review") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function decisionLabel(decision: RunOutput["marketDecision"]) {
@@ -215,10 +215,10 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
           { label: "總數", value: runAvailable ? summary.total : "--" },
-          { label: "可觀察", value: runAvailable ? summary.allow : "--", tone: "up" },
+          { label: "可觀察", value: runAvailable ? summary.allow : "--", tone: "status-ok" },
           { label: "待審", value: runAvailable ? summary.review : "--", tone: "gold" },
-          { label: "阻擋", value: runAvailable ? summary.block : "--", tone: "down" },
-          { label: "可用", value: runAvailable ? summary.quality.strategyReady : "--", tone: runAvailable && summary.quality.strategyReady > 0 ? "up" : "muted" },
+          { label: "阻擋", value: runAvailable ? summary.block : "--", tone: "status-bad" },
+          { label: "可用", value: runAvailable ? summary.quality.strategyReady : "--", tone: runAvailable && summary.quality.strategyReady > 0 ? "status-ok" : "muted" },
         ]}
         columns={6}
       />
@@ -289,7 +289,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                       <span>{label}</span><span className={String(tone)}>{value}</span>
                     </div>
                     <div className="bar" style={{ marginTop: 8 }}>
-                      <span style={{ width: barWidth(Number(value), Math.max(1, summary.total)), background: tone === "gold" ? "var(--gold-bright)" : tone === "up" ? "var(--tw-up-bright)" : tone === "down" ? "var(--tw-dn-bright)" : "var(--night-mid)" }} />
+                      <span style={{ width: barWidth(Number(value), Math.max(1, summary.total)), background: tone === "gold" ? "var(--gold-bright)" : tone === "status-ok" ? "var(--tw-dn-bright)" : tone === "status-bad" ? "var(--tw-up-bright)" : tone === "up" ? "var(--tw-up-bright)" : tone === "down" ? "var(--tw-dn-bright)" : "var(--night-mid)" }} />
                     </div>
                   </div>
                 ))}

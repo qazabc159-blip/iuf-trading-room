@@ -91,9 +91,9 @@ function percent(value: number) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function stateLabel(state: LoadState["state"]) {
@@ -212,10 +212,10 @@ export default async function IdeasPage() {
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
           { label: "總數", value: statsAvailable ? summary.total : "--" },
-          { label: "可觀察", value: statsAvailable ? summary.allow : "--", tone: "up" },
+          { label: "可觀察", value: statsAvailable ? summary.allow : "--", tone: "status-ok" },
           { label: "待審", value: statsAvailable ? summary.review : "--", tone: "gold" },
-          { label: "阻擋", value: statsAvailable ? summary.block : "--", tone: "down" },
-          { label: "可用", value: statsAvailable ? summary.quality.strategyReady : "--", tone: statsAvailable && summary.quality.strategyReady > 0 ? "up" : "muted" },
+          { label: "阻擋", value: statsAvailable ? summary.block : "--", tone: "status-bad" },
+          { label: "可用", value: statsAvailable ? summary.quality.strategyReady : "--", tone: statsAvailable && summary.quality.strategyReady > 0 ? "status-ok" : "muted" },
           { label: "更新", value: formatTime(result.updatedAt) },
         ]}
         columns={7}

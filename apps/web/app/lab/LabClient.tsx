@@ -13,8 +13,8 @@ type LabClientProps = {
 };
 
 function statusTone(status: LabBundleStatus) {
-  if (status === "APPROVED") return "down";
-  if (status === "REJECTED") return "up";
+  if (status === "APPROVED") return "status-ok";
+  if (status === "REJECTED") return "status-bad";
   if (status === "PUSHED") return "gold";
   return "muted";
 }
@@ -81,11 +81,11 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
     const worstDrawdown = bundles.length ? Math.min(...bundles.map((bundle) => bundle.backtest.maxDrawdownPct)) : null;
     return [
       { label: "待審", value: pending, tone: "muted" as const },
-      { label: "已核准", value: approved, tone: "down" as const },
+      { label: "已核准", value: approved, tone: "status-ok" as const },
       { label: "已送出", value: pushed, tone: "gold" as const },
       { label: "平均信心", value: avgConfidence === null ? "--" : `${Math.round(avgConfidence * 100)}%`, tone: "muted" as const },
       { label: "平均報酬", value: avgReturn === null ? "--" : `${signed(avgReturn, 1)}%`, tone: avgReturn === null ? "muted" as const : toneClass(avgReturn) },
-      { label: "最大回撤", value: worstDrawdown === null ? "--" : `${worstDrawdown.toFixed(1)}%`, tone: worstDrawdown !== null && worstDrawdown < -6 ? "up" as const : "muted" as const },
+      { label: "最大回撤", value: worstDrawdown === null ? "--" : `${worstDrawdown.toFixed(1)}%`, tone: worstDrawdown !== null && worstDrawdown < -6 ? "status-bad" as const : "muted" as const },
     ];
   }, [bundles, statsAvailable]);
 

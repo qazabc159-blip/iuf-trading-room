@@ -76,10 +76,10 @@ function stateText(state: LoadState<unknown>["state"] | WatchlistSurfaceState["s
 }
 
 function stateTone(state: LoadState<unknown>["state"] | WatchlistSurfaceState["state"] | "LOADING") {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
   if (state === "LOADING") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function StatePill({ state }: { state: LoadState<unknown>["state"] | WatchlistSurfaceState["state"] | "LOADING" }) {
@@ -336,7 +336,7 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
     { key: "quotes", label: "報價", value: String(data.quotes.total), sub: `${data.quotes.fresh} 新鮮 / ${data.quotes.stale} 偏舊`, tone: data.quotes.fresh > 0 ? "up" : "muted" },
     { key: "symbols", label: "股票池", value: String(data.symbols.total), sub: data.symbols.byMarket.slice(0, 3).map((m) => `${m.market}:${m.total}`).join(" / ") || "尚無股票池", tone: "muted" },
     { key: "providers", label: "資料源", value: connected.toUpperCase(), sub: `優先 ${data.quotes.readiness.preferredSourceOrder.join(">")}`, tone: connected === "尚未連線" ? "down" : "up" },
-    { key: "usable", label: "可模擬", value: String(data.quotes.readiness.effectiveSelection.paperUsable), sub: `${data.quotes.readiness.effectiveSelection.blocked} 檔阻擋`, tone: data.quotes.readiness.effectiveSelection.paperUsable > 0 ? "up" : "gold" },
+    { key: "usable", label: "可模擬", value: String(data.quotes.readiness.effectiveSelection.paperUsable), sub: `${data.quotes.readiness.effectiveSelection.blocked} 檔阻擋`, tone: data.quotes.readiness.effectiveSelection.paperUsable > 0 ? "status-ok" : "gold" },
     { key: "gainer", label: "最強", value: topGainer?.symbol ?? "--", sub: topGainer ? `${signed(topGainer.changePct)}% ${topGainer.source}` : "無資料", tone: tone(topGainer?.changePct) },
     { key: "loser", label: "最弱", value: topLoser?.symbol ?? "--", sub: topLoser ? `${signed(topLoser.changePct)}% ${topLoser.source}` : "無資料", tone: tone(topLoser?.changePct) },
     { key: "active", label: "大量", value: active?.symbol ?? "--", sub: active?.volume ? `${active.volume.toLocaleString("zh-TW")} 股` : "無資料", tone: "muted" },
@@ -537,7 +537,7 @@ function OpsPanel({ overview, runs }: { overview: LoadState<MarketDataOverview |
         {providers.map((provider) => (
           <div className="row health-row" key={provider.source}>
             <span className="tg gold">{provider.source.toUpperCase()}</span>
-            <span className={`tg ${provider.connected ? "up" : "gold"}`}><span className="status-dot" />{provider.connected ? "連線" : "中斷"}</span>
+            <span className={`tg ${provider.connected ? "status-ok" : "gold"}`}><span className="status-dot" />{provider.connected ? "連線" : "中斷"}</span>
             <span className="tg soft">{formatTime(provider.lastMessageAt)}</span>
             <span className="num soft">{provider.latencyMs ?? "--"}ms</span>
           </div>

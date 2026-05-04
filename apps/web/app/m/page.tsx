@@ -88,9 +88,9 @@ function formatTime(value: string | null | undefined) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "up";
+  if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
-  return "down";
+  return "status-bad";
 }
 
 function stateLabel(state: LoadState["state"]) {
@@ -224,8 +224,8 @@ export default async function MobileBrief() {
           </div>
         ) : (
           <>
-            <MobileMetric label="交易模式" value={modeLabel(result.data.kill?.mode)} tone={result.data.kill?.engaged ? "down" : "gold"} />
-            <MobileMetric label="報價" value={overview.quotes.total} sub={`${overview.quotes.fresh} 筆新鮮`} tone={overview.quotes.fresh > 0 ? "up" : "muted"} />
+            <MobileMetric label="交易模式" value={modeLabel(result.data.kill?.mode)} tone={result.data.kill?.engaged ? "status-bad" : "gold"} />
+            <MobileMetric label="報價" value={overview.quotes.total} sub={`${overview.quotes.fresh} 筆新鮮`} tone={overview.quotes.fresh > 0 ? "status-ok" : "muted"} />
             <MobileMetric label="模擬可用" value={overview.quotes.readiness.effectiveSelection.paperUsable} sub={`${overview.quotes.readiness.effectiveSelection.blocked} 筆阻擋`} tone="gold" />
           </>
         )}

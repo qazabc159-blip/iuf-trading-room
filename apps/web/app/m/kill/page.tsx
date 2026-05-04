@@ -9,7 +9,7 @@ const MODES = [
   { mode: "trading", label: "可交易", sub: "通過後端風控後，可建立模擬委託", tone: "gold" },
   { mode: "paper_only", label: "模擬模式", sub: "策略與委託都只留在模擬交易層", tone: "muted" },
   { mode: "liquidate_only", label: "只減倉", sub: "只允許降低曝險的委託", tone: "muted" },
-  { mode: "halted", label: "全鎖定", sub: "停止新增委託，等待風控處理", tone: "up" },
+  { mode: "halted", label: "全鎖定", sub: "停止新增委託，等待風控處理", tone: "status-bad" },
 ] as const;
 
 type KillState = Awaited<ReturnType<typeof getKillSwitch>>["data"];
@@ -47,7 +47,7 @@ function formatTime(value: string | null | undefined) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  return state === "LIVE" ? "up" : "down";
+  return state === "LIVE" ? "status-ok" : "status-bad";
 }
 
 function surfaceState(state: LoadState["state"]) {
