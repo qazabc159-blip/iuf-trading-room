@@ -285,24 +285,24 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
         <span className="tg soft">零股 / 整張防呆</span>
       </h3>
 
-      <div style={sourceBarStyle}>
+      <div className="paper-order-source-row">
         <StatePill state={ledgerState} />
         <span>只送紙上交易 / 風控預檢 / 個股委託紀錄</span>
       </div>
 
-      <div style={bannerStyle}>
+      <div className="paper-order-lock-note">
         此區只建立模擬委託，不會送往凱基正式下單。正式送單等待 libCGCrypt.so 補齊後接上。
       </div>
 
-      <div style={quoteRailStyle}>
+      <div className="paper-order-price-row">
         <span>最新參考價</span>
-        <b style={{ color: "var(--night-ink, #d8d4c8)", fontFamily: "var(--mono, monospace)" }}>{formatPrice(lastPrice)}</b>
-        <small style={{ minWidth: 0, overflowWrap: "break-word" }}>
+        <b>{formatPrice(lastPrice)}</b>
+        <small>
           {lastPrice ? "來自最新正式 K 線；限價可自行修改。" : "正式價格尚未回傳，請手動輸入限價。"}
         </small>
       </div>
 
-      <div style={gridStyle}>
+      <div className="paper-order-grid">
         <div>
           <label style={labelStyle}>方向</label>
           <Segmented options={SIDES} value={form.side} onChange={(side) => updateForm({ side })} />
@@ -677,57 +677,6 @@ function formatTime(value: string) {
     timeZone: "Asia/Taipei",
   });
 }
-
-const sourceBarStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "6px 12px",
-  alignItems: "center",
-  color: "var(--night-mid, #888)",
-  fontFamily: "var(--sans-tc)",
-  fontSize: 10.5,
-  lineHeight: 1.75,
-  marginBottom: 10,
-  padding: "7px 0 9px",
-  borderTop: "1px solid var(--night-rule, #222)",
-  borderBottom: "1px solid var(--night-rule, #222)",
-  background: "transparent",
-};
-
-const bannerStyle: React.CSSProperties = {
-  background: "rgba(184,138,62,0.075)",
-  borderLeft: "2px solid var(--gold, #b8960c)",
-  color: "var(--night-ink, #d8d4c8)",
-  fontFamily: "var(--sans-tc)",
-  fontWeight: 700,
-  fontSize: 12,
-  lineHeight: 1.78,
-  padding: "10px 12px",
-  letterSpacing: 0,
-  marginBottom: 12,
-};
-
-const quoteRailStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "auto auto minmax(0, 1fr)",
-  gap: "8px 12px",
-  alignItems: "baseline",
-  marginBottom: 14,
-  padding: "9px 0 11px",
-  borderTop: "1px solid var(--night-rule, #222)",
-  borderBottom: "1px solid var(--night-rule, #222)",
-  color: "var(--night-mid, #888)",
-  fontFamily: "var(--sans-tc)",
-  fontSize: 12,
-  lineHeight: 1.55,
-};
-
-const gridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: "10px 12px",
-  marginBottom: 14,
-};
 
 const labelStyle: React.CSSProperties = {
   fontSize: 10,

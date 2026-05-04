@@ -257,7 +257,7 @@ export function OhlcvCandlestickChart({
 
         chart = lc.createChart(el, {
           width,
-          height: 430,
+          height: 420,
           layout: {
             background: { color: "transparent" },
             textColor: "rgba(203,213,225,0.68)",
@@ -476,7 +476,14 @@ export function OhlcvCandlestickChart({
           sourceLabel={badgeLabel}
         />
       ) : (
-        <div ref={containerRef} style={{ width: "100%", minHeight: 430 }} />
+        <div className="kline-chart-shell">
+          <div className="kline-price-ribbon" aria-hidden>
+            <span>{isIntraday ? "分K 最新" : "最新收盤"}</span>
+            <b className={`num ${toneClass(priceChange)}`}>{formatNumber(lastBar?.close)}</b>
+            <small>{lastBar?.label ?? "--"}</small>
+          </div>
+          <div ref={containerRef} className="kline-chart-canvas" />
+        </div>
       )}
     </section>
   );

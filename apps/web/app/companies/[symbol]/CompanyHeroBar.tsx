@@ -19,14 +19,12 @@ function formatAsOf(value: string | null | undefined) {
   if (!value) return "無資料";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", {
-    hour12: false,
-    timeZone: "Asia/Taipei",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const taipei = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  const month = String(taipei.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(taipei.getUTCDate()).padStart(2, "0");
+  const hour = String(taipei.getUTCHours()).padStart(2, "0");
+  const minute = String(taipei.getUTCMinutes()).padStart(2, "0");
+  return `${month}/${day} ${hour}:${minute}`;
 }
 
 const tierLabel: Record<string, string> = {
