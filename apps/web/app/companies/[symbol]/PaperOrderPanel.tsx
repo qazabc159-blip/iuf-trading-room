@@ -302,168 +302,172 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
         </small>
       </div>
 
-      <div className="paper-order-grid">
-        <div>
-          <label style={labelStyle}>方向</label>
-          <Segmented options={SIDES} value={form.side} onChange={(side) => updateForm({ side })} />
-        </div>
-        <div>
-          <label style={labelStyle}>類型</label>
-          <Segmented
-            options={TYPES}
-            value={form.orderType}
-            onChange={(orderType) => updateForm({ orderType, price: orderType === "market" ? "" : form.price })}
-          />
-        </div>
-        <div>
-          <label style={labelStyle}>單位</label>
-          <Segmented
-            options={QUANTITY_UNITS}
-            value={form.quantityUnit}
-            onChange={(quantityUnit) =>
-              updateForm({
-                quantityUnit,
-                qty: quantityUnit === "SHARE" ? "1" : "1",
-              })
-            }
-          />
-        </div>
-        <div>
-          <label style={labelStyle}>
-            {parsed.isShare ? "股數（零股）" : "張數（整張）"}
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={parsed.isShare ? 999 : undefined}
-            value={form.qty}
-            onChange={(event) => updateForm({ qty: event.target.value })}
-            style={inputStyle}
-          />
-        </div>
-        {form.orderType !== "market" && (
-          <div>
-            <label style={labelStyle}>價格</label>
-            <input
-              type="number"
-              min={0.01}
-              step={0.01}
-              value={form.price}
-              onChange={(event) => updateForm({ price: event.target.value })}
-              placeholder="780.5"
-              style={inputStyle}
-            />
+      <div className="paper-order-workbench">
+        <div className="paper-order-ticket">
+          <div className="paper-order-grid">
+            <div>
+              <label style={labelStyle}>方向</label>
+              <Segmented options={SIDES} value={form.side} onChange={(side) => updateForm({ side })} />
+            </div>
+            <div>
+              <label style={labelStyle}>類型</label>
+              <Segmented
+                options={TYPES}
+                value={form.orderType}
+                onChange={(orderType) => updateForm({ orderType, price: orderType === "market" ? "" : form.price })}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>單位</label>
+              <Segmented
+                options={QUANTITY_UNITS}
+                value={form.quantityUnit}
+                onChange={(quantityUnit) =>
+                  updateForm({
+                    quantityUnit,
+                    qty: quantityUnit === "SHARE" ? "1" : "1",
+                  })
+                }
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>
+                {parsed.isShare ? "股數（零股）" : "張數（整張）"}
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={parsed.isShare ? 999 : undefined}
+                value={form.qty}
+                onChange={(event) => updateForm({ qty: event.target.value })}
+                style={inputStyle}
+              />
+            </div>
+            {form.orderType !== "market" && (
+              <div>
+                <label style={labelStyle}>價格</label>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  value={form.price}
+                  onChange={(event) => updateForm({ price: event.target.value })}
+                  placeholder="780.5"
+                  style={inputStyle}
+                />
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Quantity-unit indicator pill */}
-      {parsed.validQty && (
-        <div style={{ marginBottom: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={oddLotPillStyle}>{parsed.isShare ? "零股" : "整張"}</span>
-          <span style={{ fontSize: 11, color: "var(--night-mid, #888)", fontFamily: "var(--mono, monospace)", lineHeight: 1.6 }}>
-            {quantityUnitDescription(form.quantityUnit)} / 實際 {parsed.effectiveShares.toLocaleString("zh-TW")} 股
-          </span>
-        </div>
-      )}
-
-      {/* Live notional preview + demo capital check */}
-      {parsed.validQty && parsed.estimatedNotional !== null && (
-        <div style={notionalPreviewStyle}>
-          <div style={kvStyle}>
-            <span>預估金額</span>
-            <b style={parsed.notionalExceedsCap ? { color: "var(--tw-up-bright, #e63946)" } : {}}>
-              {formatTwd(parsed.estimatedNotional)}
-            </b>
-          </div>
-          <div style={kvStyle}>
-            <span>模擬資金上限</span>
-            <b>{formatTwd(DEMO_CAPITAL_TWD)}</b>
-          </div>
-          {parsed.notionalExceedsCap && (
-            <div style={{ color: "var(--tw-up-bright, #e63946)", fontFamily: "var(--mono, monospace)", fontSize: 11, paddingTop: 4 }}>
-              超過模擬資金 {formatTwd(DEMO_CAPITAL_TWD)}
+          {parsed.validQty && (
+            <div className="paper-order-unit-row">
+              <span style={oddLotPillStyle}>{parsed.isShare ? "零股" : "整張"}</span>
+              <span>
+                {quantityUnitDescription(form.quantityUnit)} / 實際 {parsed.effectiveShares.toLocaleString("zh-TW")} 股
+              </span>
             </div>
           )}
-        </div>
-      )}
 
-      <div style={{ marginBottom: 12, padding: "2px 0" }}>
-        <span className="tg" style={{ fontSize: 10, color: "var(--night-mid, #888)" }}>股票</span>
-        <span className="mono" style={{ marginLeft: 10, fontWeight: 700, fontSize: 15 }}>{symbol.toUpperCase()}</span>
-      </div>
+          {parsed.validQty && parsed.estimatedNotional !== null && (
+            <div style={notionalPreviewStyle}>
+              <div style={kvStyle}>
+                <span>預估金額</span>
+                <b style={parsed.notionalExceedsCap ? { color: "var(--tw-up-bright, #e63946)" } : {}}>
+                  {formatTwd(parsed.estimatedNotional)}
+                </b>
+              </div>
+              <div style={kvStyle}>
+                <span>模擬資金上限</span>
+                <b>{formatTwd(DEMO_CAPITAL_TWD)}</b>
+              </div>
+              {parsed.notionalExceedsCap && (
+                <div style={{ color: "var(--tw-up-bright, #e63946)", fontFamily: "var(--mono, monospace)", fontSize: 11, paddingTop: 4 }}>
+                  超過模擬資金 {formatTwd(DEMO_CAPITAL_TWD)}
+                </div>
+              )}
+            </div>
+          )}
 
-      {validationReason && <TruthNote state="BLOCKED" text={validationReason} />}
-
-      <div className="action-row" style={{ gap: 10, marginBottom: 16 }}>
-        <button
-          className="btn-sm"
-          onClick={handlePreview}
-          disabled={input === null || preview.status === "loading"}
-          title={validationReason ?? "執行模擬委託預覽"}
-          type="button"
-        >
-          {preview.status === "loading" ? "預覽中" : "預覽風控"}
-        </button>
-        <button
-          className="btn-sm"
-          onClick={() => setReviewOpen(true)}
-          disabled={!canSubmit || submit.status === "loading"}
-          title={!canSubmit ? "請先完成通過的風控預覽。" : "送出前會開啟零股/整張確認視窗。"}
-          type="button"
-          style={canSubmit ? { borderColor: "var(--gold, #b8960c)", color: "var(--gold, #b8960c)" } : {}}
-        >
-          {submit.status === "loading" ? "送出中" : "檢查並送出"}
-        </button>
-      </div>
-
-      {preview.status === "idle" && (
-        <TruthNote state="EMPTY" text="尚未預覽目前委託草稿。" />
-      )}
-      {preview.status === "error" && (
-        <TruthNote state="BLOCKED" text={preview.message} />
-      )}
-      {(preview.status === "live" || preview.status === "blocked") && (
-        <PreviewResult result={preview.result} />
-      )}
-
-      {submit.status === "error" && (
-        <TruthNote state="BLOCKED" text={submit.message} />
-      )}
-      {(submit.status === "live" || submit.status === "blocked") && (
-        <TruthNote
-          state={submit.state.intent.status === "REJECTED" ? "BLOCKED" : "LIVE"}
-          text={`模擬委託 ${submit.state.intent.id}：${orderStatusLabel(submit.state.intent.status)}${submit.state.intent.reason ? `：${submit.state.intent.reason}` : ""}`}
-        />
-      )}
-
-      <div style={ledgerStyle}>
-        <div style={ledgerHeaderStyle}>
-          <span>個股模擬委託紀錄</span>
-          <span>
-            {orders.status === "live"
-              ? `${uiStateLabel(ledgerState)} / ${orders.items.length} 筆 / ${formatTime(orders.updatedAt)}`
-              : orders.status === "loading"
-                ? "讀取中"
-                : `暫停 / ${formatTime(orders.updatedAt)}`}
-          </span>
-        </div>
-        {orders.status === "blocked" && <TruthNote state="BLOCKED" text={orders.message} />}
-        {orders.status === "live" && orders.items.length === 0 && (
-          <TruthNote state="EMPTY" text="此股票目前沒有模擬委託紀錄。" />
-        )}
-      {orders.status === "live" && orders.items.slice(0, 3).map((order) => (
-          <div key={order.intent.id} style={orderRowStyle}>
-            <span>
-              {sideLabel(order.intent.side)} {order.intent.qty.toLocaleString("zh-TW")} {quantityUnitLabel(order.intent.quantity_unit)}
-              <small style={orderShareHintStyle}>
-                實際 {toTaiwanStockShareCount(order.intent.qty, order.intent.quantity_unit).toLocaleString("zh-TW")} 股
-              </small>
-            </span>
-            <span>{orderStatusLabel(order.intent.status)}</span>
-            <span>{formatTime(order.intent.updatedAt)}</span>
+          <div className="paper-order-symbol-row">
+            <span>股票</span>
+            <b>{symbol.toUpperCase()}</b>
           </div>
-        ))}
+
+          {validationReason && <TruthNote state="BLOCKED" text={validationReason} />}
+
+          <div className="action-row paper-order-actions">
+            <button
+              className="btn-sm"
+              onClick={handlePreview}
+              disabled={input === null || preview.status === "loading"}
+              title={validationReason ?? "執行模擬委託預覽"}
+              type="button"
+            >
+              {preview.status === "loading" ? "預覽中" : "預覽風控"}
+            </button>
+            <button
+              className="btn-sm"
+              onClick={() => setReviewOpen(true)}
+              disabled={!canSubmit || submit.status === "loading"}
+              title={!canSubmit ? "請先完成通過的風控預覽。" : "送出前會開啟零股/整張確認視窗。"}
+              type="button"
+              style={canSubmit ? { borderColor: "var(--gold, #b8960c)", color: "var(--gold, #b8960c)" } : {}}
+            >
+              {submit.status === "loading" ? "送出中" : "檢查並送出"}
+            </button>
+          </div>
+        </div>
+
+        <div className="paper-order-sidecar">
+          {preview.status === "idle" && (
+            <TruthNote state="EMPTY" text="尚未預覽目前委託草稿。" />
+          )}
+          {preview.status === "error" && (
+            <TruthNote state="BLOCKED" text={preview.message} />
+          )}
+          {(preview.status === "live" || preview.status === "blocked") && (
+            <PreviewResult result={preview.result} />
+          )}
+
+          {submit.status === "error" && (
+            <TruthNote state="BLOCKED" text={submit.message} />
+          )}
+          {(submit.status === "live" || submit.status === "blocked") && (
+            <TruthNote
+              state={submit.state.intent.status === "REJECTED" ? "BLOCKED" : "LIVE"}
+              text={`模擬委託 ${submit.state.intent.id}：${orderStatusLabel(submit.state.intent.status)}${submit.state.intent.reason ? `：${submit.state.intent.reason}` : ""}`}
+            />
+          )}
+
+          <div style={ledgerStyle}>
+            <div style={ledgerHeaderStyle}>
+              <span>個股模擬委託紀錄</span>
+              <span>
+                {orders.status === "live"
+                  ? `${uiStateLabel(ledgerState)} / ${orders.items.length} 筆 / ${formatTime(orders.updatedAt)}`
+                  : orders.status === "loading"
+                    ? "讀取中"
+                    : `暫停 / ${formatTime(orders.updatedAt)}`}
+              </span>
+            </div>
+            {orders.status === "blocked" && <TruthNote state="BLOCKED" text={orders.message} />}
+            {orders.status === "live" && orders.items.length === 0 && (
+              <TruthNote state="EMPTY" text="此股票目前沒有模擬委託紀錄。" />
+            )}
+            {orders.status === "live" && orders.items.slice(0, 3).map((order) => (
+              <div key={order.intent.id} style={orderRowStyle}>
+                <span>
+                  {sideLabel(order.intent.side)} {order.intent.qty.toLocaleString("zh-TW")} {quantityUnitLabel(order.intent.quantity_unit)}
+                  <small style={orderShareHintStyle}>
+                    實際 {toTaiwanStockShareCount(order.intent.qty, order.intent.quantity_unit).toLocaleString("zh-TW")} 股
+                  </small>
+                </span>
+                <span>{orderStatusLabel(order.intent.status)}</span>
+                <span>{formatTime(order.intent.updatedAt)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {reviewOpen && input && (
@@ -692,18 +696,18 @@ const inputStyle: React.CSSProperties = {
   border: "1px solid var(--night-rule-strong, #333)",
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
-  fontSize: 12,
-  minHeight: 36,
-  padding: "8px 11px",
+  fontSize: 13,
+  minHeight: 34,
+  padding: "7px 10px",
   width: "100%",
   boxSizing: "border-box",
 };
 
 const segmentedStyle: React.CSSProperties = {
   display: "flex",
-  flexWrap: "wrap",
+  flexWrap: "nowrap",
   border: "1px solid var(--night-rule-strong, #333)",
-  minHeight: 36,
+  minHeight: 32,
   width: "100%",
   overflow: "hidden",
 };
@@ -711,15 +715,15 @@ const segmentedStyle: React.CSSProperties = {
 const segmentButtonStyle: React.CSSProperties = {
   flex: "1 1 70px",
   minWidth: 58,
-  minHeight: 34,
+  minHeight: 30,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   background: "transparent",
   border: "none",
-  padding: "7px 9px",
+  padding: "6px 9px",
   fontFamily: "var(--sans-tc)",
-  fontSize: 12,
+  fontSize: 11.5,
   fontWeight: 700,
   lineHeight: 1.25,
   whiteSpace: "nowrap",
