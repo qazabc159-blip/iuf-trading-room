@@ -6540,15 +6540,16 @@ body:has(.login-route) > div {
 
 .company-finance-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 0.78fr) minmax(0, 1.22fr);
-  gap: 14px;
+  grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.28fr);
+  gap: 16px;
   align-items: center;
-  margin: 0 0 14px;
-  padding: 12px 14px;
-  border: 1px solid rgba(220, 228, 240, 0.08);
+  margin: 0 0 12px;
+  padding: 10px 0 12px;
+  border-top: 1px solid rgba(220, 228, 240, 0.10);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
   background:
-    linear-gradient(112deg, rgba(226, 184, 92, 0.07), transparent 48%),
-    rgba(4, 8, 13, 0.42);
+    linear-gradient(112deg, rgba(226, 184, 92, 0.050), transparent 52%),
+    linear-gradient(90deg, rgba(8, 13, 20, 0.18), transparent);
 }
 
 .company-finance-toolbar > div:first-child {
@@ -6559,7 +6560,7 @@ body:has(.login-route) > div {
 
 .company-finance-toolbar strong {
   color: var(--night-ink);
-  font: 850 20px/1.18 var(--sans-tc);
+  font: 850 19px/1.2 var(--sans-tc);
   letter-spacing: 0;
 }
 
@@ -6577,14 +6578,16 @@ body:has(.login-route) > div {
   margin: 0;
   padding: 0;
   border: 0;
+  min-width: 0;
+  row-gap: 6px;
 }
 
 .company-data-tabs.finmind-tabs.company-finance-tabs {
   display: flex;
   flex-wrap: nowrap;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 0 0 12px;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 0 0 10px;
   border-bottom: 1px solid rgba(220, 228, 240, 0.08);
   overflow-x: auto;
   overflow-y: hidden;
@@ -6594,35 +6597,37 @@ body:has(.login-route) > div {
 .company-data-tabs.finmind-tabs.company-finance-tabs .mini-button,
 .company-data-tabs.finmind-tabs.company-finance-tabs .outline-button {
   flex: 0 0 auto;
-  width: clamp(108px, 12vw, 148px);
-  min-width: 108px;
-  max-width: 148px;
-  min-height: 42px;
-  padding: 7px 10px;
+  width: clamp(92px, 9vw, 122px);
+  min-width: 92px;
+  max-width: 122px;
+  min-height: 36px;
+  padding: 6px 9px;
   border-radius: 0;
   align-items: flex-start;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
   text-align: left;
+  box-shadow: none;
 }
 
 .company-finance-tabs .company-data-tab-main {
   color: var(--night-ink);
-  font: 850 12px/1.25 var(--sans-tc);
+  font: 850 12px/1.2 var(--sans-tc);
 }
 
 .company-finance-tabs .company-data-tab-meta {
   color: var(--night-mid);
-  font: 700 10px/1.3 var(--sans-tc);
+  font: 750 10px/1.25 var(--mono);
 }
 
 .company-finance-table-shell {
-  max-height: 620px;
+  max-height: min(452px, 58vh);
   overflow: auto;
   border-top: 1px solid rgba(220, 228, 240, 0.07);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.07);
   background:
-    linear-gradient(180deg, rgba(8, 13, 20, 0.28), transparent 52%),
-    rgba(4, 8, 13, 0.2);
+    linear-gradient(180deg, rgba(8, 13, 20, 0.22), transparent 52%),
+    rgba(4, 8, 13, 0.14);
 }
 
 .company-finance-table-wrap {
@@ -6630,14 +6635,14 @@ body:has(.login-route) > div {
 }
 
 .company-finance-table {
-  min-width: 640px;
+  min-width: 560px;
   table-layout: fixed;
 }
 
 .company-finance-table th,
 .company-finance-table td {
-  padding: 12px 14px;
-  line-height: 1.45;
+  padding: 9px 12px;
+  line-height: 1.35;
 }
 
 .company-finance-table th span,
@@ -6657,7 +6662,7 @@ body:has(.login-route) > div {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   color: var(--night-mid);
   font: 700 11px/1.4 var(--sans-tc);
   border-top: 1px solid rgba(220, 228, 240, 0.08);
@@ -6689,24 +6694,30 @@ body:has(.login-route) > div {
 }
 
 .company-finance-state {
-  min-height: 118px;
-  padding: 18px;
+  min-height: 96px;
+  padding: 14px;
 }
 
 .company-finance-snapshot {
   display: grid;
-  gap: 14px;
-  padding: 14px 0 0;
+  gap: 10px;
+  padding: 10px 0 0;
 }
 
 .company-finance-metric-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
 }
 
 .company-finance-metric {
-  min-height: 82px;
-  padding: 12px 14px;
+  min-height: 58px;
+  padding: 9px 10px;
+}
+
+.company-finance-metric strong {
+  font-size: clamp(14px, 1.04vw, 18px);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {
