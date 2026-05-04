@@ -1477,6 +1477,51 @@ button { font: inherit; }
   margin-bottom: 14px;
 }
 
+.paper-order-summary-strip {
+  display: grid;
+  grid-template-columns: 0.8fr 1.15fr 1.1fr 1.2fr;
+  gap: 0;
+  margin: 4px 0 12px;
+  border-top: 1px solid rgba(226, 184, 92, 0.18);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.075);
+  background:
+    linear-gradient(90deg, rgba(226, 184, 92, 0.055), transparent 34%),
+    rgba(2, 6, 10, 0.34);
+}
+
+.paper-order-summary-strip > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px 11px;
+  border-right: 1px solid rgba(220, 228, 240, 0.07);
+}
+
+.paper-order-summary-strip > div:last-child {
+  border-right: 0;
+}
+
+.paper-order-summary-strip span {
+  color: var(--night-mid);
+  font: 700 10.5px/1.35 var(--sans-tc);
+  white-space: nowrap;
+}
+
+.paper-order-summary-strip b {
+  min-width: 0;
+  color: var(--night-ink);
+  font: 850 15px/1.35 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.paper-order-summary-strip small {
+  min-width: 0;
+  color: var(--night-soft);
+  font: 600 10.5px/1.45 var(--sans-tc);
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
 .paper-order-workbench {
   display: grid;
   grid-template-columns: minmax(360px, 0.92fr) minmax(320px, 1.08fr);
@@ -1495,7 +1540,7 @@ button { font: inherit; }
 
 .paper-order-sidecar {
   position: relative;
-  padding: 2px 0 0 clamp(18px, 1.8vw, 28px);
+  padding: 10px 0 4px clamp(18px, 1.8vw, 28px);
   border-left: 1px solid rgba(220, 228, 240, 0.08);
 }
 
@@ -4592,6 +4637,24 @@ body:has(.login-route) > div {
     rgba(4, 8, 13, 0.38);
 }
 
+.company-main-column .paper-order-ticket {
+  position: relative;
+  padding: 12px clamp(12px, 1.3vw, 18px) 10px;
+  border-top: 1px solid rgba(226, 184, 92, 0.13);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.075);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 58%),
+    rgba(1, 5, 9, 0.18);
+}
+
+.company-main-column .paper-order-sidecar {
+  min-height: 100%;
+  padding-top: 12px;
+  background:
+    linear-gradient(100deg, rgba(105, 214, 142, 0.035), transparent 32%),
+    rgba(1, 5, 9, 0.09);
+}
+
 .company-main-column .paper-order-panel .ascii-head {
   display: flex;
   min-height: 0;
@@ -4634,6 +4697,10 @@ body:has(.login-route) > div {
 
 .company-main-column .paper-order-workbench {
   grid-template-columns: minmax(420px, 0.9fr) minmax(360px, 1.1fr);
+}
+
+.company-main-column .paper-order-summary-strip {
+  margin-top: 6px;
 }
 
 .company-main-column .paper-order-panel .action-row {
@@ -5119,6 +5186,14 @@ body:has(.login-route) > div {
     border-top: 1px solid rgba(220, 228, 240, 0.08);
     padding-top: 14px;
   }
+
+  .paper-order-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .paper-order-summary-strip > div:nth-child(2n) {
+    border-right: 0;
+  }
 }
 
 @media (max-width: 640px) {
@@ -5132,5 +5207,13 @@ body:has(.login-route) > div {
 
   .company-main-column .paper-order-price-row small {
     grid-column: 1 / -1;
+  }
+
+  .paper-order-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .paper-order-summary-strip > div {
+    border-right: 0;
   }
 }

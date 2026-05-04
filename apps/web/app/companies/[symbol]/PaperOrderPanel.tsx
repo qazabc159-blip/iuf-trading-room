@@ -359,38 +359,28 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
             )}
           </div>
 
-          {parsed.validQty && (
-            <div className="paper-order-unit-row">
-              <span style={oddLotPillStyle}>{parsed.isShare ? "零股" : "整張"}</span>
-              <span>
-                {quantityUnitDescription(form.quantityUnit)} / 實際 {parsed.effectiveShares.toLocaleString("zh-TW")} 股
-              </span>
+          <div className="paper-order-summary-strip">
+            <div>
+              <span>股票</span>
+              <b>{symbol.toUpperCase()}</b>
             </div>
-          )}
-
-          {parsed.validQty && parsed.estimatedNotional !== null && (
-            <div style={notionalPreviewStyle}>
-              <div style={kvStyle}>
-                <span>預估金額</span>
-                <b style={parsed.notionalExceedsCap ? { color: "var(--tw-up-bright, #e63946)" } : {}}>
-                  {formatTwd(parsed.estimatedNotional)}
-                </b>
-              </div>
-              <div style={kvStyle}>
-                <span>模擬資金上限</span>
-                <b>{formatTwd(DEMO_CAPITAL_TWD)}</b>
-              </div>
-              {parsed.notionalExceedsCap && (
-                <div style={{ color: "var(--tw-up-bright, #e63946)", fontFamily: "var(--mono, monospace)", fontSize: 11, paddingTop: 4 }}>
-                  超過模擬資金 {formatTwd(DEMO_CAPITAL_TWD)}
-                </div>
-              )}
+            <div>
+              <span>單位</span>
+              <b>{parsed.isShare ? "零股" : "整張"}</b>
+              <small>{quantityUnitDescription(form.quantityUnit)}</small>
             </div>
-          )}
-
-          <div className="paper-order-symbol-row">
-            <span>股票</span>
-            <b>{symbol.toUpperCase()}</b>
+            <div>
+              <span>實際股數</span>
+              <b>{parsed.validQty ? parsed.effectiveShares.toLocaleString("zh-TW") : "--"}</b>
+              <small>送出時標記為{parsed.isShare ? "零股" : "整張"}</small>
+            </div>
+            <div>
+              <span>預估金額</span>
+              <b className={parsed.notionalExceedsCap ? "status-bad" : ""}>
+                {parsed.estimatedNotional !== null ? formatTwd(parsed.estimatedNotional) : "--"}
+              </b>
+              <small>模擬上限 {formatTwd(DEMO_CAPITAL_TWD)}</small>
+            </div>
           </div>
 
           {validationReason && <TruthNote state="BLOCKED" text={validationReason} />}
@@ -801,27 +791,6 @@ const orderShareHintStyle: React.CSSProperties = {
   color: "var(--night-mid, #888)",
   fontSize: 10,
   lineHeight: 1.35,
-};
-
-const oddLotPillStyle: React.CSSProperties = {
-  display: "inline-block",
-  background: "rgba(184,138,62,0.18)",
-  border: "1px solid var(--gold, #b8960c)",
-  color: "var(--gold-bright, #f4c430)",
-  fontFamily: "var(--mono, monospace)",
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: "0.10em",
-  padding: "5px 9px",
-};
-
-const notionalPreviewStyle: React.CSSProperties = {
-  borderTop: "1px solid var(--night-rule-strong, #333)",
-  borderBottom: "1px solid var(--night-rule, #222)",
-  padding: "10px 0",
-  marginBottom: 16,
-  fontFamily: "var(--mono, monospace)",
-  fontSize: 11,
 };
 
 const modalBackdropStyle: React.CSSProperties = {
