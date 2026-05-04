@@ -58,6 +58,7 @@ function formatDateTime(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-TW", {
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -117,7 +118,7 @@ function lifecycleLabel(value: string | null | undefined) {
 
 function hasBrokenText(value: string | null | undefined) {
   if (!value) return false;
-  return /�|Ã|Â|undefined|null/i.test(value);
+  return /\uFFFD|Ã|Â|undefined|null/i.test(value);
 }
 
 function isEnglishHeavy(value: string | null | undefined) {
@@ -148,6 +149,15 @@ function themeThesisText(theme: ThemeRow) {
     return cleanThemeThesis(theme.slug, theme.thesis);
   }
   return cleanThemeThesis(theme.slug, theme.thesis);
+}
+
+function themeStageText(theme: ThemeRow) {
+  const parts = [
+    marketLabel(theme.marketState),
+    lifecycleLabel(theme.lifecycle),
+    theme.priority === 1 ? "優先追蹤" : "例行觀察",
+  ];
+  return parts.filter(Boolean).join(" / ");
 }
 
 function isInternalCleanupTheme(theme: ThemeRow) {
@@ -210,8 +220,8 @@ export default async function ThemesPage() {
 
       <Panel
         code="THM-LDR"
-        title="主題主檔"
-        sub="主題主檔 / 正式資料"
+        title="主題雷達"
+        sub="正式主題資料 / 公司池連結"
         right={stateLabel(result.state)}
       >
         <SourceLine result={result} />
@@ -222,25 +232,27 @@ export default async function ThemesPage() {
         )}
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
-          <>
-            <div className="row theme-row table-head tg">
-              <span>#</span><span>主題</span><span>盤勢</span><span>階段</span><span>核心</span><span>觀察</span><span>更新</span>
-            </div>
+          <div className="theme-board-grid">
             {visibleThemes.map((theme) => (
-              <Link href={`/themes/${theme.slug}`} className={`row theme-row ${theme.priority === 1 ? "theme-active" : ""}`} key={theme.id}>
-                <span className="tg soft">{theme.priority}</span>
-                <span>
-                  <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{themeDisplayName(theme)}</strong>
-                  <span className="tc soft theme-thesis">{themeThesisText(theme)}</span>
-                </span>
-                <span className={`tg ${marketTone(theme.marketState)}`}>{marketLabel(theme.marketState)}</span>
-                <span className="tg muted">{lifecycleLabel(theme.lifecycle)}</span>
-                <span className="num">{theme.corePoolCount}</span>
-                <span className="num">{theme.observationPoolCount}</span>
-                <span className="tg soft">{formatDate(theme.updatedAt)}</span>
+              <Link href={`/themes/${theme.slug}`} className={`theme-card ${theme.priority === 1 ? "theme-card-priority" : ""}`} key={theme.id}>
+                <div className="theme-card-top">
+                  <span className="tg theme-priority">P{theme.priority}</span>
+                  <span className={`tg theme-state ${marketTone(theme.marketState)}`}>{marketLabel(theme.marketState)}</span>
+                  <span className="tg soft">{formatDate(theme.updatedAt)}</span>
+                </div>
+                <div className="theme-card-title">
+                  <strong className="tc">{themeDisplayName(theme)}</strong>
+                  <span className="tg soft">{theme.slug}</span>
+                </div>
+                <p className="tc theme-card-thesis">{themeThesisText(theme)}</p>
+                <div className="theme-card-bottom">
+                  <span className="tg">{themeStageText(theme)}</span>
+                  <span className="tg soft">核心 {theme.corePoolCount}</span>
+                  <span className="tg soft">觀察 {theme.observationPoolCount}</span>
+                </div>
               </Link>
             ))}
-          </>
+          </div>
         )}
       </Panel>
     </PageFrame>
