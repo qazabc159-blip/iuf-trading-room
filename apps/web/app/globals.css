@@ -107,6 +107,33 @@ button { font: inherit; }
   line-height: 1.65;
   letter-spacing: 0;
 }
+
+.tg,
+.tc,
+.panel-code,
+.quote-symbol,
+.quote-last,
+.session-pill,
+.mini-button,
+.outline-button,
+.btn-sm,
+.kline-tab,
+.radar-state-badge {
+  writing-mode: horizontal-tb;
+}
+
+.tg.up,
+.tg.down,
+.tg.gold,
+.tg.muted,
+.tg.soft,
+.panel-code,
+.quote-symbol,
+.quote-last {
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
 .mono { font-family: var(--mono); }
 .num {
   font-family: var(--mono);
@@ -532,7 +559,13 @@ button { font: inherit; }
   border-bottom: 1px solid var(--night-rule);
   color: var(--night-soft);
   font-size: 14px;
-  line-height: 1.85;
+  line-height: 1.9;
+}
+
+.terminal-note .tg {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 8px;
 }
 
 .dashboard-hero {
@@ -849,7 +882,8 @@ button { font: inherit; }
   font-size: 26px;
   font-weight: 700;
   line-height: 1.16;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .market-command-strip {
@@ -1004,9 +1038,9 @@ button { font: inherit; }
   justify-content: space-between;
   gap: 24px;
   min-height: 0;
-  padding: 12px 14px 18px;
+  padding: 14px 16px 20px;
   border-bottom: 1px solid var(--night-rule);
-  margin-bottom: 24px;
+  margin-bottom: 26px;
 }
 
 .panel-head > div:first-child {
@@ -1099,7 +1133,8 @@ button { font: inherit; }
 
 .theme-row .tg {
   line-height: 1.4;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .theme-thesis {
@@ -1122,9 +1157,13 @@ button { font: inherit; }
   min-width: 0;
 }
 
-.dashboard-theme-row .tc,
-.dashboard-theme-row .tg {
+.dashboard-theme-row .tc {
   overflow-wrap: anywhere;
+}
+
+.dashboard-theme-row .tg {
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .dashboard-theme-row strong {
@@ -1326,7 +1365,8 @@ button { font: inherit; }
 .paper-order-price-row small {
   min-width: 0;
   color: var(--night-soft);
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .paper-order-grid {
