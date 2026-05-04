@@ -291,17 +291,19 @@ export default async function CompanyDetailPage({
 
       <div className="company-detail-layout">
         <div className="company-main-column">
-          <OhlcvCandlestickChart
-            bars={bars}
-            kbarRows={kbarView?.rows ?? []}
-            kbarState={kbarState}
-            kbarReason={kbarReason}
-            kbarDate={kbarView?.date ?? kbarDate}
-            symbol={company.ticker}
-            sourceState={ohlcvState}
-            sourceReason={ohlcvReason}
-          />
-          <PaperOrderPanel symbol={company.ticker} lastPrice={quote?.last ?? null} />
+          <div className="company-workbench-shell">
+            <OhlcvCandlestickChart
+              bars={bars}
+              kbarRows={kbarView?.rows ?? []}
+              kbarState={kbarState}
+              kbarReason={kbarReason}
+              kbarDate={kbarView?.date ?? kbarDate}
+              symbol={company.ticker}
+              sourceState={ohlcvState}
+              sourceReason={ohlcvReason}
+            />
+            <PaperOrderPanel symbol={company.ticker} lastPrice={quote?.last ?? null} />
+          </div>
         </div>
 
         <aside className="company-side-column">
