@@ -39,14 +39,14 @@ type TabState =
 
 const PAGE_SIZE = 10;
 
-const TABS: Array<{ key: TabKey; label: string; source: string }> = [
-  { key: "financials", label: "財報", source: "FinMind 財報" },
-  { key: "revenue", label: "月營收", source: "FinMind 月營收" },
-  { key: "balance", label: "資產負債", source: "FinMind 資產負債表" },
-  { key: "cashFlow", label: "現金流", source: "FinMind 現金流量表" },
-  { key: "valuation", label: "估值", source: "FinMind PER / PBR" },
-  { key: "marketValue", label: "市值", source: "FinMind 股價市值" },
-  { key: "dividend", label: "股利", source: "FinMind 股利政策" },
+const TABS: Array<{ key: TabKey; label: string; short: string; source: string }> = [
+  { key: "financials", label: "財報", short: "EPS / 毛利 / 營益率", source: "FinMind 財報" },
+  { key: "revenue", label: "月營收", short: "每月營收", source: "FinMind 月營收" },
+  { key: "balance", label: "資產負債", short: "資產 / 負債 / 權益", source: "FinMind 資產負債表" },
+  { key: "cashFlow", label: "現金流", short: "營業 / 投資 / 融資", source: "FinMind 現金流量表" },
+  { key: "valuation", label: "估值", short: "PER / PBR / 殖利率", source: "FinMind PER / PBR" },
+  { key: "marketValue", label: "市值", short: "每日股價市值", source: "FinMind 股價市值" },
+  { key: "dividend", label: "股利", short: "現金 / 股票股利", source: "FinMind 股利政策" },
 ];
 
 function tabCopy(tab: TabKey) {
@@ -54,7 +54,14 @@ function tabCopy(tab: TabKey) {
 }
 
 function formatTime(value: string) {
-  return new Date(value).toLocaleString("zh-TW", { hour12: false });
+  return new Date(value).toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    hour12: false,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function numberText(value: number | null | undefined, digits = 2) {
@@ -82,9 +89,28 @@ function percent(value: number | null | undefined) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
+function rowCount(state: TabState | undefined) {
+  if (!state || state.status !== "live") return 0;
+  return state.rows.length;
+}
+
+function statusLabel(status: TabState["status"]) {
+  if (status === "live") return "正常";
+  if (status === "empty") return "無資料";
+  if (status === "loading") return "讀取中";
+  return "暫停";
+}
+
+function statusBadgeClass(status: TabState["status"]) {
+  if (status === "live") return "badge-green";
+  if (status === "blocked") return "badge-red";
+  if (status === "empty") return "badge-yellow";
+  return "badge-blue";
+}
+
 function tabStateSummary(tab: TabKey, state: TabState | undefined) {
   if (!state || state.status === "loading") return "讀取中";
-  if (state.status === "blocked") return "無法顯示";
+  if (state.status === "blocked") return "暫停";
   if (state.status === "empty") return "無資料";
 
   if (tab === "financials") {
@@ -116,13 +142,6 @@ function tabStateSummary(tab: TabKey, state: TabState | undefined) {
   return row ? `${row.year} / ${numberText(row.TotalDividend)} 元` : "無資料";
 }
 
-function statusLabel(status: TabState["status"]) {
-  if (status === "live") return "正常";
-  if (status === "empty") return "無資料";
-  if (status === "loading") return "讀取中";
-  return "無法顯示";
-}
-
 function paginate<T>(rows: T[], page: number) {
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(page, 0), pageCount - 1);
@@ -148,9 +167,9 @@ function PaginationBar({
 }) {
   if (total <= PAGE_SIZE) return null;
   return (
-    <div className="company-finmind-pagination">
+    <div className="company-finance-pagination">
       <span>
-        顯示 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, total)} / {total} 筆
+        第 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, total)} 筆 / 共 {total} 筆
       </span>
       <div>
         <button type="button" onClick={() => onPage(page - 1)} disabled={page <= 0}>
@@ -166,10 +185,9 @@ function PaginationBar({
 }
 
 function StatePanel({ state, source }: { state: Extract<TabState, { status: "blocked" | "empty" }>; source: string }) {
-  const badge = state.status === "blocked" ? "badge-red" : "badge-yellow";
   return (
-    <div className="state-panel">
-      <span className={`badge ${badge}`}>{statusLabel(state.status)}</span>
+    <div className="state-panel company-finance-state">
+      <span className={`badge ${statusBadgeClass(state.status)}`}>{statusLabel(state.status)}</span>
       <span className="tg soft">來源：{source}</span>
       <span className="tg soft">更新：{formatTime(state.fetchedAt)}</span>
       <span className="state-reason">{state.reason}</span>
@@ -191,45 +209,49 @@ function DataShell({
   onPage: (next: number) => void;
 }) {
   return (
-    <div className="company-finmind-table-shell">
+    <div className="company-finance-table-shell">
       {children}
       <PaginationBar page={page} pageCount={pageCount} total={total} onPage={onPage} />
     </div>
   );
 }
 
+function TableWrap({ children }: { children: ReactNode }) {
+  return <div className="table-scroll company-finance-table-wrap">{children}</div>;
+}
+
 function FinancialTable({ rows, page, onPage }: { rows: CompanyFinancialRow[]; page: number; onPage: (next: number) => void }) {
   const view = paginate(rows, page);
   return (
     <DataShell page={view.page} pageCount={view.pageCount} total={rows.length} onPage={onPage}>
-      <div className="table-scroll">
-        <table className="data-table company-data-table-fit">
+      <TableWrap>
+        <table className="data-table company-data-table-fit company-finance-table">
           <thead>
             <tr>
-              <th><span className="table-cell-inner">期別</span></th>
-              <th><span className="table-cell-inner">營收</span></th>
-              <th><span className="table-cell-inner">毛利率</span></th>
-              <th><span className="table-cell-inner">營益率</span></th>
-              <th><span className="table-cell-inner">EPS</span></th>
-              <th><span className="table-cell-inner">年增率</span></th>
+              <th><span>期別</span></th>
+              <th><span>營收</span></th>
+              <th><span>毛利率</span></th>
+              <th><span>營益率</span></th>
+              <th><span>EPS</span></th>
+              <th><span>年增率</span></th>
             </tr>
           </thead>
           <tbody>
             {view.rows.map((row) => (
               <tr key={row.period}>
-                <td><span className="table-cell-inner">{row.period}</span></td>
-                <td className="num"><span className="table-cell-inner">{money(row.revenue)}</span></td>
-                <td className="num"><span className="table-cell-inner">{percent(row.grossMarginPct)}</span></td>
-                <td className="num"><span className="table-cell-inner">{percent(row.operatingMarginPct)}</span></td>
-                <td className="num"><span className="table-cell-inner">{numberText(row.epsAfterTax)}</span></td>
+                <td><span>{row.period}</span></td>
+                <td className="num"><span>{money(row.revenue)}</span></td>
+                <td className="num"><span>{percent(row.grossMarginPct)}</span></td>
+                <td className="num"><span>{percent(row.operatingMarginPct)}</span></td>
+                <td className="num"><span>{numberText(row.epsAfterTax)}</span></td>
                 <td className={`num ${row.yoyPct && row.yoyPct > 0 ? "up" : row.yoyPct && row.yoyPct < 0 ? "down" : "muted"}`}>
-                  <span className="table-cell-inner">{percent(row.yoyPct)}</span>
+                  <span>{percent(row.yoyPct)}</span>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
     </DataShell>
   );
 }
@@ -238,35 +260,35 @@ function RevenueTable({ rows, page, onPage }: { rows: CompanyRevenueRow[]; page:
   const view = paginate(rows, page);
   return (
     <DataShell page={view.page} pageCount={view.pageCount} total={rows.length} onPage={onPage}>
-      <div className="table-scroll">
-        <table className="data-table company-data-table-fit">
+      <TableWrap>
+        <table className="data-table company-data-table-fit company-finance-table">
           <thead>
             <tr>
-              <th><span className="table-cell-inner">年月</span></th>
-              <th><span className="table-cell-inner">營收</span></th>
-              <th><span className="table-cell-inner">代號</span></th>
-              <th><span className="table-cell-inner">市場</span></th>
+              <th><span>月份</span></th>
+              <th><span>營收</span></th>
+              <th><span>代號</span></th>
+              <th><span>市場</span></th>
             </tr>
           </thead>
           <tbody>
             {view.rows.map((row) => (
               <tr key={`${row.stock_id}-${row.date}`}>
-                <td><span className="table-cell-inner">{row.revenue_year}/{String(row.revenue_month).padStart(2, "0")}</span></td>
-                <td className="num"><span className="table-cell-inner">{money(row.revenue)}</span></td>
-                <td><span className="table-cell-inner">{row.stock_id}</span></td>
-                <td><span className="table-cell-inner">{row.country}</span></td>
+                <td><span>{row.revenue_year}/{String(row.revenue_month).padStart(2, "0")}</span></td>
+                <td className="num"><span>{money(row.revenue)}</span></td>
+                <td><span>{row.stock_id}</span></td>
+                <td><span>{row.country}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
     </DataShell>
   );
 }
 
 function MetricTile({ label, value, unit }: { label: string; value: string; unit?: string }) {
   return (
-    <div className="metric-tile">
+    <div className="metric-tile company-finance-metric">
       <span className="tg soft">{label}</span>
       <strong>{value}</strong>
       {unit ? <span className="tg soft">{unit}</span> : null}
@@ -283,29 +305,30 @@ function SourceItemsTable({
   page: number;
   onPage: (next: number) => void;
 }) {
+  if (!items.length) return null;
   const view = paginate(items, page);
   return (
     <DataShell page={view.page} pageCount={view.pageCount} total={items.length} onPage={onPage}>
-      <div className="table-scroll">
-        <table className="data-table company-data-table-fit">
+      <TableWrap>
+        <table className="data-table company-data-table-fit company-finance-table">
           <thead>
             <tr>
-              <th><span className="table-cell-inner">指標</span></th>
-              <th><span className="table-cell-inner">原始項目</span></th>
-              <th><span className="table-cell-inner">金額</span></th>
+              <th><span>項目</span></th>
+              <th><span>原始名稱</span></th>
+              <th><span>數值</span></th>
             </tr>
           </thead>
           <tbody>
-            {view.rows.map((item) => (
-              <tr key={`${item.type}-${item.originName ?? "source"}`}>
-                <td><span className="table-cell-inner">{item.type}</span></td>
-                <td><span className="table-cell-inner">{item.originName ?? "未標示"}</span></td>
-                <td className="num"><span className="table-cell-inner">{money(item.value)}</span></td>
+            {view.rows.map((item, index) => (
+              <tr key={`${item.type}-${item.originName ?? "source"}-${index}`}>
+                <td><span>{item.type}</span></td>
+                <td><span>{item.originName ?? "未提供"}</span></td>
+                <td className="num"><span>{money(item.value)}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
     </DataShell>
   );
 }
@@ -320,14 +343,15 @@ function BalanceSheetTable({
   onPage: (next: number) => void;
 }) {
   const row = rows[0];
+  if (!row) return null;
   return (
-    <div className="company-finmind-snapshot">
+    <div className="company-finance-snapshot">
       <div className="source-line">
         <span className="badge badge-green">正常</span>
         <span className="tg soft">期別：{row.date}</span>
         <span className="tg soft">來源：FinMind 資產負債表</span>
       </div>
-      <div className="metric-grid compact-metric-grid">
+      <div className="metric-grid compact-metric-grid company-finance-metric-grid">
         <MetricTile label="總資產" value={money(row.totalAssets)} />
         <MetricTile label="總負債" value={money(row.totalLiabilities)} />
         <MetricTile label="股東權益" value={money(row.equity)} />
@@ -350,19 +374,20 @@ function CashFlowTable({
   onPage: (next: number) => void;
 }) {
   const row = rows[0];
+  if (!row) return null;
   return (
-    <div className="company-finmind-snapshot">
+    <div className="company-finance-snapshot">
       <div className="source-line">
         <span className="badge badge-green">正常</span>
         <span className="tg soft">期別：{row.date}</span>
         <span className="tg soft">來源：FinMind 現金流量表</span>
       </div>
-      <div className="metric-grid compact-metric-grid">
+      <div className="metric-grid compact-metric-grid company-finance-metric-grid">
         <MetricTile label="營業現金流" value={money(row.operatingCashFlow)} />
         <MetricTile label="投資現金流" value={money(row.investingCashFlow)} />
-        <MetricTile label="籌資現金流" value={money(row.financingCashFlow)} />
+        <MetricTile label="融資現金流" value={money(row.financingCashFlow)} />
         <MetricTile label="自由現金流" value={money(row.freeCashFlow)} />
-        <MetricTile label="現金增加" value={money(row.cashIncrease)} />
+        <MetricTile label="現金增減" value={money(row.cashIncrease)} />
         <MetricTile label="稅前淨利" value={money(row.netIncomeBeforeTax)} />
       </div>
       <SourceItemsTable items={row.sourceItems} page={page} onPage={onPage} />
@@ -374,30 +399,30 @@ function DividendTable({ rows, page, onPage }: { rows: CompanyDividendRow[]; pag
   const view = paginate(rows, page);
   return (
     <DataShell page={view.page} pageCount={view.pageCount} total={rows.length} onPage={onPage}>
-      <div className="table-scroll">
-        <table className="data-table company-data-table-fit">
+      <TableWrap>
+        <table className="data-table company-data-table-fit company-finance-table">
           <thead>
             <tr>
-              <th><span className="table-cell-inner">年度</span></th>
-              <th><span className="table-cell-inner">股利合計</span></th>
-              <th><span className="table-cell-inner">現金股利</span></th>
-              <th><span className="table-cell-inner">股票股利</span></th>
-              <th><span className="table-cell-inner">除權息日</span></th>
+              <th><span>年度</span></th>
+              <th><span>合計股利</span></th>
+              <th><span>現金股利</span></th>
+              <th><span>股票股利</span></th>
+              <th><span>公告日</span></th>
             </tr>
           </thead>
           <tbody>
             {view.rows.map((row) => (
               <tr key={`${row.stock_id}-${row.year}-${row.date}`}>
-                <td><span className="table-cell-inner">{row.year}</span></td>
-                <td className="num"><span className="table-cell-inner">{numberText(row.TotalDividend)}</span></td>
-                <td className="num"><span className="table-cell-inner">{numberText(row.TotalCashDividend)}</span></td>
-                <td className="num"><span className="table-cell-inner">{numberText(row.TotalStockDividend)}</span></td>
-                <td><span className="table-cell-inner">{row.date}</span></td>
+                <td><span>{row.year}</span></td>
+                <td className="num"><span>{numberText(row.TotalDividend)}</span></td>
+                <td className="num"><span>{numberText(row.TotalCashDividend)}</span></td>
+                <td className="num"><span>{numberText(row.TotalStockDividend)}</span></td>
+                <td><span>{row.date}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
     </DataShell>
   );
 }
@@ -406,28 +431,28 @@ function ValuationTable({ rows, page, onPage }: { rows: CompanyValuationRow[]; p
   const view = paginate(rows, page);
   return (
     <DataShell page={view.page} pageCount={view.pageCount} total={rows.length} onPage={onPage}>
-      <div className="table-scroll">
-        <table className="data-table company-data-table-fit">
+      <TableWrap>
+        <table className="data-table company-data-table-fit company-finance-table">
           <thead>
             <tr>
-              <th><span className="table-cell-inner">日期</span></th>
-              <th><span className="table-cell-inner">本益比 PER</span></th>
-              <th><span className="table-cell-inner">股價淨值比 PBR</span></th>
-              <th><span className="table-cell-inner">殖利率</span></th>
+              <th><span>日期</span></th>
+              <th><span>本益比 PER</span></th>
+              <th><span>股價淨值比 PBR</span></th>
+              <th><span>殖利率</span></th>
             </tr>
           </thead>
           <tbody>
             {view.rows.map((row) => (
               <tr key={`${row.stock_id}-${row.date}`}>
-                <td><span className="table-cell-inner">{row.date}</span></td>
-                <td className="num"><span className="table-cell-inner">{numberText(row.PER)}</span></td>
-                <td className="num"><span className="table-cell-inner">{numberText(row.PBR)}</span></td>
-                <td className="num"><span className="table-cell-inner">{numberText(row.dividend_yield)}%</span></td>
+                <td><span>{row.date}</span></td>
+                <td className="num"><span>{numberText(row.PER)}</span></td>
+                <td className="num"><span>{numberText(row.PBR)}</span></td>
+                <td className="num"><span>{numberText(row.dividend_yield)}%</span></td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
     </DataShell>
   );
 }
@@ -444,26 +469,26 @@ function MarketValueTable({
   const view = paginate(rows, page);
   return (
     <DataShell page={view.page} pageCount={view.pageCount} total={rows.length} onPage={onPage}>
-      <div className="table-scroll">
-        <table className="data-table company-data-table-fit">
+      <TableWrap>
+        <table className="data-table company-data-table-fit company-finance-table">
           <thead>
             <tr>
-              <th><span className="table-cell-inner">日期</span></th>
-              <th><span className="table-cell-inner">股價市值</span></th>
-              <th><span className="table-cell-inner">代號</span></th>
+              <th><span>日期</span></th>
+              <th><span>股價市值</span></th>
+              <th><span>代號</span></th>
             </tr>
           </thead>
           <tbody>
             {view.rows.map((row) => (
               <tr key={`${row.stock_id}-${row.date}`}>
-                <td><span className="table-cell-inner">{row.date}</span></td>
-                <td className="num"><span className="table-cell-inner">{money(row.market_value)}</span></td>
-                <td><span className="table-cell-inner">{row.stock_id}</span></td>
+                <td><span>{row.date}</span></td>
+                <td className="num"><span>{money(row.market_value)}</span></td>
+                <td><span>{row.stock_id}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
     </DataShell>
   );
 }
@@ -481,7 +506,7 @@ function Rows({
 }) {
   if (state.status === "loading") {
     return (
-      <div className="state-panel">
+      <div className="state-panel company-finance-state">
         <span className="badge badge-blue">讀取中</span>
         <span className="tg soft">正在讀取 {tabCopy(tab).label} 資料</span>
       </div>
@@ -546,7 +571,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         [tab]: {
           status: "blocked",
           fetchedAt,
-          reason: friendlyDataError(error, `${copy.label}資料暫時無法讀取`),
+          reason: friendlyDataError(error, `${copy.label}資料暫時無法讀取。`),
         },
       }));
     }
@@ -559,41 +584,55 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
   }, [loadTab]);
 
   const currentState: TabState = states[activeTab] ?? { status: "loading" };
-  const activeSource = tabCopy(activeTab).source;
+  const activeCopy = tabCopy(activeTab);
   const activePage = pageByTab[activeTab] ?? 0;
+  const activeCount = rowCount(currentState);
 
   return (
-    <section className="panel hud-frame company-finmind-panel">
+    <section className="panel hud-frame company-finmind-panel company-finance-console">
       <h3 className="ascii-head company-finmind-head">
         <span className="ascii-head-bracket">[03]</span> 財報與估值
-        <span className="dim">FinMind 財報 / 月營收 / 資產負債 / 現金流 / PER / 市值 / 股利</span>
+        <span className="dim">FinMind：財報 / 月營收 / 資產負債 / 現金流 / PER / 市值 / 股利</span>
       </h3>
 
-      <div className="company-data-tabs finmind-tabs">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            className={activeTab === tab.key ? "mini-button" : "outline-button"}
-            onClick={() => {
-              setActiveTab(tab.key);
-              setPageByTab((prev) => ({ ...prev, [tab.key]: 0 }));
-              void loadTab(tab.key);
-            }}
-            type="button"
-          >
-            <span className="company-data-tab-main">{tab.label}</span>
-            <span className="company-data-tab-meta">{tabStateSummary(tab.key, states[tab.key])}</span>
-          </button>
-        ))}
+      <div className="company-finance-toolbar">
+        <div>
+          <span className="tg gold">目前檢視</span>
+          <strong>{activeCopy.label}</strong>
+          <small>{activeCopy.short}</small>
+        </div>
+        <div className="source-line compact">
+          <span className={`badge ${statusBadgeClass(currentState.status)}`}>{statusLabel(currentState.status)}</span>
+          <span className="tg soft">來源：{activeCopy.source}</span>
+          {currentState.status === "live" ? <span className="tg soft">筆數：{activeCount}</span> : null}
+          {currentState.status !== "loading" ? <span className="tg soft">更新：{formatTime(currentState.fetchedAt)}</span> : null}
+        </div>
       </div>
 
-      {currentState.status === "live" && (
-        <div className="source-line">
-          <span className="badge badge-green">正常</span>
-          <span className="tg soft">來源：{activeSource}</span>
-          <span className="tg soft">更新：{formatTime(currentState.fetchedAt)}</span>
-        </div>
-      )}
+      <div className="company-data-tabs finmind-tabs company-finance-tabs" role="tablist" aria-label="公司 FinMind 資料集">
+        {TABS.map((tab) => {
+          const state = states[tab.key];
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              className={active ? "mini-button" : "outline-button"}
+              onClick={() => {
+                setActiveTab(tab.key);
+                setPageByTab((prev) => ({ ...prev, [tab.key]: 0 }));
+                void loadTab(tab.key);
+              }}
+              type="button"
+              role="tab"
+              aria-selected={active}
+            >
+              <span className="company-data-tab-main">{tab.label}</span>
+              <span className="company-data-tab-meta">{tabStateSummary(tab.key, state)}</span>
+            </button>
+          );
+        })}
+      </div>
+
       <Rows
         tab={activeTab}
         state={currentState}
