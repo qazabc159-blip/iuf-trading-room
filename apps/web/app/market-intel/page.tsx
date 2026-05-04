@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { PageFrame, Panel } from "@/components/PageFrame";
+import { PageFrame } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import {
   getCompanies,
@@ -30,14 +30,41 @@ function formatDate(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("zh-TW", { month: "2-digit", day: "2-digit" });
+  return date.toLocaleDateString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
 }
 
-function formatTime(value: string | null | undefined) {
+function formatStamp(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-TW", { hour12: false });
+  return date.toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function formatShortStamp(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function stateTone(state: IntelState["state"]) {
@@ -68,9 +95,15 @@ function categoryLabel(category: string | null | undefined) {
   return category.replace(/[_-]/g, " ");
 }
 
+function sourceCoverageLabel(result: IntelState) {
+  if (result.state === "BLOCKED") return "來源暫停";
+  if (result.items.length === 0) return "近 30 天無公告";
+  return `${result.items.length} 筆 / ${new Set(result.items.map((item) => item.ticker)).size} 檔`;
+}
+
 function hasBrokenText(value: string | null | undefined) {
   if (!value) return false;
-  return /�|Ã|Â|undefined|null/i.test(value);
+  return /[\uFFFD]|Ã|Â|undefined|null/i.test(value);
 }
 
 function intelTitleText(item: IntelItem) {
@@ -128,7 +161,8 @@ async function loadMarketIntel(): Promise<IntelState> {
 
   const byId = new Map(companies.map((company) => [company.id, company]));
   const ideas = await loadIdeas();
-  const ideaCompanies = ideas?.items
+  const ideaItems = Array.isArray(ideas?.items) ? ideas.items : [];
+  const ideaCompanies = ideaItems
     .map((idea) => byId.get(idea.companyId))
     .filter((company): company is CompanyRow => Boolean(company)) ?? [];
 
@@ -195,6 +229,8 @@ export default async function MarketIntelPage() {
   const statsAvailable = result.state !== "BLOCKED";
   const sourceTickers = result.selected.map((company) => company.ticker).join(" / ") || "--";
   const uniqueCompanies = new Set(result.items.map((item) => item.ticker)).size;
+  const featured = result.items[0] ?? null;
+  const feedItems = result.items.slice(featured ? 1 : 0);
 
   return (
     <PageFrame
@@ -210,58 +246,90 @@ export default async function MarketIntelPage() {
           { label: "消息", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "status-ok" : "muted" },
           { label: "公司", value: statsAvailable ? uniqueCompanies || result.selected.length : "--" },
           { label: "失敗", value: result.state === "BLOCKED" && result.failures === 0 ? "--" : result.failures, tone: result.failures > 0 ? "status-bad" : "muted" },
-          { label: "更新", value: formatTime(result.updatedAt) },
+          { label: "更新", value: formatShortStamp(result.updatedAt) },
         ]}
       />
 
-      <Panel code="INT-SRC" title="來源與選股範圍" sub="正式公告查詢" right={result.source}>
-        <div className="source-line">
+      <section className="intel-command-deck">
+        <div className="intel-command-copy">
+          <div className="tg gold">官方來源 / 重大訊息</div>
+          <h2>臺股公告監控，不渲染假新聞</h2>
+          <p>
+            本頁目前只讀公司連結的 TWSE OpenAPI 重大訊息，並以策略候選與公司池挑選追蹤股票。
+            若官方來源回傳 0 筆，就顯示無資料；不會用 RSS、商用新聞或 AI 文字假裝有消息。
+          </p>
+          <div className="intel-chip-rail" aria-label="本次追蹤股票">
+            {result.selected.slice(0, 16).map((company) => (
+              <Link href={`/companies/${company.ticker}`} key={company.id} className="intel-chip">
+                <span>{company.ticker}</span>
+                <small>{company.name}</small>
+              </Link>
+            ))}
+          </div>
+        </div>
+        <aside className="intel-source-card">
           <span className={`badge ${result.state === "LIVE" ? "badge-green" : result.state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>
             {stateLabel(result.state)}
           </span>
-          <span className="tg soft">來源：{result.source}</span>
-          <span className="tg soft">更新 {formatTime(result.updatedAt)}</span>
-          <span className="tg soft">追蹤：{sourceTickers}</span>
-        </div>
-        {result.failures > 0 && result.state === "LIVE" && (
-          <div className="terminal-note">
-            部分覆蓋：{result.failures} 檔公司重大訊息查詢失敗，所以這份消息流不是完整 universe。
+          <div>
+            <span className="tg soft">來源</span>
+            <strong>{result.source}</strong>
           </div>
-        )}
-        {result.state !== "LIVE" && (
-          <div className="terminal-note">
-            {stateLabel(result.state)}：{result.reason}
+          <div>
+            <span className="tg soft">覆蓋</span>
+            <strong>{sourceCoverageLabel(result)}</strong>
           </div>
-        )}
-      </Panel>
+          <div>
+            <span className="tg soft">更新</span>
+            <strong>{formatStamp(result.updatedAt)}</strong>
+          </div>
+          <p>
+            {result.state === "LIVE"
+              ? result.failures > 0
+                ? `部分覆蓋：${result.failures} 檔查詢失敗，這份消息流不是完整 universe。`
+                : "官方來源可讀；本頁只做公告整理，不作自動交易判斷。"
+              : result.reason}
+          </p>
+        </aside>
+      </section>
 
-      <Panel code="INT-FEED" title="重點消息流" sub="公司連結公告 / 只讀" right={result.state === "LIVE" ? `${result.items.length} 筆` : stateLabel(result.state)}>
+      <section className="intel-feed-surface">
+        <div className="intel-feed-head">
+          <div>
+            <div className="tg gold">消息流 / {formatStamp(result.updatedAt)}</div>
+            <h2>官方重大訊息</h2>
+          </div>
+          <span className={`tg ${stateTone(result.state)}`}>{sourceCoverageLabel(result)}</span>
+        </div>
         {result.state === "LIVE" ? (
-          <div className="market-intel-list">
-            <div className="row table-head telex-row">
-              <span>日期</span>
-              <span>代號</span>
-              <span>標題</span>
-              <span>分類</span>
-            </div>
-            {result.items.map((item) => (
-              <Link href={`/companies/${item.ticker}`} className="row telex-row" key={`${item.ticker}-${item.id}`}>
+          <div className="intel-feed-list">
+            {featured && (
+              <Link href={`/companies/${featured.ticker}`} className="intel-feature-card">
+                <span className={`badge ${categoryTone(featured.category)}`}>{categoryLabel(featured.category)}</span>
+                <strong>{intelTitleText(featured)}</strong>
+                <span className="tc soft">{featured.ticker} / {featured.companyName} / {formatDate(featured.date)}</span>
+              </Link>
+            )}
+            {feedItems.map((item) => (
+              <Link href={`/companies/${item.ticker}`} className="intel-feed-row" key={`${item.ticker}-${item.id}`}>
                 <span className="tg soft">{formatDate(item.date)}</span>
                 <span className="tg gold">{item.ticker}</span>
-                <span className="market-intel-title">
+                <span className="intel-feed-title">
                   {intelTitleText(item)}
-                  <small style={{ display: "block", marginTop: 3, color: "var(--night-soft)" }}>{item.companyName}</small>
+                  <small>{item.companyName}</small>
                 </span>
                 <span className={`badge ${categoryTone(item.category)}`}>{categoryLabel(item.category)}</span>
               </Link>
             ))}
           </div>
         ) : (
-          <div className="terminal-note">
-            {stateLabel(result.state)}：沒有真實重大訊息回應時，不渲染假消息。
+          <div className="intel-empty-state">
+            <strong>{stateLabel(result.state)}</strong>
+            <p>{result.reason}</p>
+            <span className="tg soft">追蹤：{sourceTickers}</span>
           </div>
         )}
-      </Panel>
+      </section>
     </PageFrame>
   );
 }
