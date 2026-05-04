@@ -79,6 +79,7 @@ function formatDateTime(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-TW", {
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -135,7 +136,7 @@ function categoryLabel(value: string | null | undefined) {
 
 function hasBrokenText(value: string | null | undefined) {
   if (!value) return false;
-  return /�|Ã|Â|undefined|null/i.test(value);
+  return /\uFFFD|Ã|Â|undefined|null/i.test(value);
 }
 
 function isEnglishHeavy(value: string | null | undefined) {
@@ -158,6 +159,10 @@ function signalTitle(signal: SignalRow) {
     return cleanExternalHeadline(cleaned, "外文訊號待整理；保留來源紀錄，不納入正式判讀。");
   }
   return cleanExternalHeadline(cleaned, "外文訊號待整理；保留來源紀錄，不納入正式判讀。");
+}
+
+function themeLinkLabel(theme: ThemeRow) {
+  return cleanExternalHeadline(theme.name.replace(/^\[ORPHAN\]\s*/i, "待歸檔："), "主題名稱待整理");
 }
 
 function firstTheme(signal: SignalRow, themes: ThemeRow[]) {
@@ -236,32 +241,40 @@ export default async function SignalsPage() {
           </div>
         )}
         <EmptyOrBlocked result={result} />
+        {result.state === "LIVE" && displaySignals.length === 0 && (
+          <div className="terminal-note">
+            <span className="tg gold">無資料</span>
+            目前沒有可進入正式判讀的訊號；內部 dry-run、smoke、驗證訊號已收納，不放進交易戰情。
+          </div>
+        )}
         {result.state === "LIVE" && (
-          <>
-            <div className="row signal-ledger-row table-head tg">
-              <span>日期時間</span><span>分類</span><span>方向</span><span>連結</span><span>訊號內容</span><span>信心</span>
-            </div>
+          <div className="signal-tape-grid">
             {displaySignals.map((signal) => {
               const company = firstCompany(signal, result.data.companies);
               const theme = firstTheme(signal, result.data.themes);
               return (
-                <div className="row signal-ledger-row" key={signal.id}>
-                  <span className="tg soft">{formatDateTime(signal.createdAt)}</span>
-                  <span className="tg gold">{categoryLabel(signal.category)}</span>
-                  <span className={`tg ${directionTone(signal.direction)}`}>{directionLabel(signal.direction)}</span>
-                  {company ? (
-                    <Link href={`/companies/${company.ticker}`} className="tg">{company.ticker}</Link>
-                  ) : theme ? (
-                    <Link href={`/themes/${theme.slug}`} className="tg">{theme.name}</Link>
-                  ) : (
-                    <span className="tg muted">未連結</span>
-                  )}
-                  <span className="tc signal-title">{signalTitle(signal)}</span>
-                  <span className={`tg ${confidenceTone(signal.confidence)}`}>信心 {signal.confidence}</span>
+                <div className="signal-tape-card" key={signal.id}>
+                  <div className="signal-tape-meta">
+                    <span className="tg soft">{formatDateTime(signal.createdAt)}</span>
+                    <span className="tg gold">{categoryLabel(signal.category)}</span>
+                    <span className={`tg ${directionTone(signal.direction)}`}>{directionLabel(signal.direction)}</span>
+                    <span className={`tg ${confidenceTone(signal.confidence)}`}>信心 {signal.confidence}</span>
+                  </div>
+                  <div className="tc signal-tape-title">{signalTitle(signal)}</div>
+                  <div className="signal-tape-links">
+                    {company ? (
+                      <Link href={`/companies/${company.ticker}`} className="mini-button">{company.ticker} {company.name}</Link>
+                    ) : theme ? (
+                      <Link href={`/themes/${theme.slug}`} className="mini-button">{themeLinkLabel(theme)}</Link>
+                    ) : (
+                      <span className="tg muted">未連結公司或主題</span>
+                    )}
+                    <span className="tg soft">來源：{result.source}</span>
+                  </div>
                 </div>
               );
             })}
-          </>
+          </div>
         )}
       </Panel>
     </PageFrame>
