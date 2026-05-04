@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip, signed, toneClass } from "@/components/RadarWidgets";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanNarrativeText } from "@/lib/operator-copy";
 import { labDisplay, radarLabApi, type LabBundleStatus, type LabSignalBundle } from "@/lib/radar-lab";
 
 type LabClientProps = {
@@ -31,6 +32,20 @@ function timeText(iso: string) {
 
 function errorText(error: unknown): string {
   return friendlyDataError(error, "量化研究資料暫時無法讀取。");
+}
+
+function safeSummary(value: string) {
+  return cleanNarrativeText(value, "策略包摘要尚未完成中文整理；保留正式資料來源，不顯示假績效。");
+}
+
+function shortBundleId(bundleId: string) {
+  return bundleId.length > 14 ? `${bundleId.slice(0, 8)}…${bundleId.slice(-4)}` : bundleId;
+}
+
+function labModeCopy(blockedReason: string | null, count: number) {
+  if (blockedReason) return "量化策略包 API 尚未接上，先顯示資料接線狀態。";
+  if (count === 0) return "後端目前回傳 0 包；不顯示假策略或假績效。";
+  return "只顯示正式策略包；審核動作寫回量化研究 API。";
 }
 
 export function LabClient({ initialBundles, initialBlockedReason }: LabClientProps) {
@@ -107,58 +122,83 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
     <PageFrame
       code="LAB"
       title="量化研究"
-      sub={blockedReason ? "資料暫停" : "策略包審核"}
-      note="此頁只顯示正式量化策略包；沒有真實資料時不以假策略包充數。"
+      sub={blockedReason ? "資料接線狀態" : "策略包收件台"}
+      note="此頁只顯示正式量化策略包；沒有真實資料時顯示接線狀態，不以假策略包或假績效充數。"
     >
       <MetricStrip columns={6} cells={cells} />
 
-      <div className="company-grid">
-        <Panel code="LAB-Q" title="策略包佇列" right={blockedReason ? "暫停" : `${bundles.length} 包`}>
+      <section className="lab-command-deck">
+        <div>
+          <span className="tg gold">量化研究 / 策略包收件台</span>
+          <h2>先收正式策略包，再談績效曲線。</h2>
+          <p>
+            這頁是 OpenAlice / Quant Lab 的交接面。沒有正式 bundle 時只顯示資料狀態；
+            有 bundle 才顯示回測摘要、審核狀態與分歧回饋。
+          </p>
+        </div>
+        <div className="lab-source-card">
+          <span>目前模式</span>
+          <strong className={blockedReason ? "status-bad" : "status-ok"}>
+            {blockedReason ? "資料待接" : "正式資料"}
+          </strong>
+          <p>{labModeCopy(blockedReason, bundles.length)}</p>
+        </div>
+      </section>
+
+      <div className="lab-workbench-grid">
+        <Panel code="LAB-Q" title="策略包收件" sub="正式資料 / 不顯示假績效" right={blockedReason ? "暫停" : `${bundles.length} 包`}>
           {blockedReason ? (
-            <div className="terminal-note">
-              暫停：量化策略包資料尚未啟用。負責人：量化研究交接管線。細節：{blockedReason}
+            <div className="lab-empty-state">
+              <strong>量化策略包資料尚未接上。</strong>
+              <p>負責人：量化研究交接管線。細節：{blockedReason}</p>
+              <div>
+                <span>接上後顯示：策略包、股票、主題、信心、回測摘要、分歧備註。</span>
+                <span>仍不會顯示：未驗證 Sharpe、假 equity curve、假交易紀錄。</span>
+              </div>
             </div>
           ) : bundles.length === 0 ? (
-            <div className="terminal-note">無資料：目前沒有待審策略包。</div>
+            <div className="lab-empty-state">
+              <strong>目前沒有待審策略包。</strong>
+              <p>後端正式回傳 0 包；頁面保留收件台與治理說明，不用範例數字冒充策略績效。</p>
+            </div>
           ) : (
-            <>
-              <div className="row table-head lab-row">
-                <span>ID</span>
-                <span>來源</span>
-                <span>標題</span>
-                <span>股票</span>
-                <span>信心</span>
-                <span>狀態</span>
-                <span>動作</span>
-              </div>
+            <div className="lab-bundle-stack">
               {bundles.map((bundle) => (
-                <div className="row lab-row" key={bundle.bundleId}>
-                  <button className="outline-button" type="button" onClick={() => setSelectedId(bundle.bundleId)}>
-                    {bundle.bundleId.split("-").slice(-2).join("-")}
-                  </button>
-                  <span className="tg gold">{labDisplay.producer[bundle.producer]}</span>
-                  <Link href={`/lab/${bundle.bundleId}`} className="tc">{bundle.title}</Link>
-                  <span className="tg">{bundle.symbol}</span>
-                  <span className="num">{Math.round(bundle.confidence * 100)}%</span>
-                  <span className={`tg ${statusTone(bundle.status)}`}>{labDisplay.status[bundle.status]}</span>
-                  <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
-                    <button className="mini-button" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "APPROVED", "APPROVE")}>
-                      核准
+                <article className={`lab-bundle-card ${selected?.bundleId === bundle.bundleId ? "is-selected" : ""}`} key={bundle.bundleId}>
+                  <div className="lab-bundle-head">
+                    <button className="outline-button" type="button" onClick={() => setSelectedId(bundle.bundleId)}>
+                      {shortBundleId(bundle.bundleId)}
                     </button>
-                    <button className="outline-button" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "REJECTED", "REJECT")}>
+                    <span className="tg gold">{labDisplay.producer[bundle.producer]}</span>
+                    <span className={statusTone(bundle.status)}>{labDisplay.status[bundle.status]}</span>
+                  </div>
+
+                  <Link href={`/lab/${bundle.bundleId}`} className="lab-bundle-title">
+                    {bundle.title}
+                  </Link>
+                  <p>{safeSummary(bundle.summary)}</p>
+
+                  <div className="lab-bundle-metrics">
+                    <span><b>{bundle.symbol}</b><small>股票</small></span>
+                    <span><b>{bundle.themeCode}</b><small>主題</small></span>
+                    <span><b>{Math.round(bundle.confidence * 100)}%</b><small>信心</small></span>
+                    <span><b className={toneClass(bundle.backtest.totalReturnPct)}>{signed(bundle.backtest.totalReturnPct, 1)}%</b><small>回測報酬</small></span>
+                  </div>
+
+                  <div className="lab-bundle-actions">
+                    <button className="mini-button" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "APPROVED", "APPROVE")}>
+                      通過
+                    </button>
+                    <button className="outline-button danger-soft" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "REJECTED", "REJECT")}>
                       退回
                     </button>
-                    <span
-                      className="outline-button"
-                      role="status"
-                      title="策略包轉模擬交易的後端契約尚未完成。"
-                    >
-                      待契約
+                    <span className="idea-promotion-block" role="status" title="策略包轉模擬交易的後端契約尚未完成。">
+                      轉單待接
                     </span>
-                  </span>
-                </div>
+                  </div>
+                </article>
               ))}
-            </>
+            </div>
           )}
           {(actionError || (!blockedReason && bundles.length > 0)) && (
             <div className="terminal-note" style={{ marginTop: 12 }}>
@@ -169,21 +209,18 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
           )}
         </Panel>
 
-        <div>
+        <div className="lab-side-stack">
           <Panel code="LAB-D" title="選取策略包" right={selected ? labDisplay.status[selected.status] : blockedReason ? "暫停" : "無資料"}>
             {selected ? (
-              <div className="ticket">
+              <div className="lab-selected-card">
                 <div className="tg gold">{selected.bundleId} / {labDisplay.producer[selected.producer]}</div>
-                <h2 className="tc" style={{ margin: "10px 0 6px", fontSize: 26 }}>{selected.title}</h2>
+                <h2>{selected.title}</h2>
                 <div className="tg soft">{selected.symbol} / {selected.themeCode} / {timeText(selected.createdAt)}</div>
-                <p className="tc" style={{ color: "var(--night-ink)", lineHeight: 1.8 }}>{selected.summary}</p>
-                <div className="row position-row">
-                  <span className="tg muted">勝率</span>
-                  <span className="num down">{Math.round(selected.backtest.winRate * 100)}%</span>
-                  <span className="tg muted">報酬</span>
-                  <span className={`num ${toneClass(selected.backtest.totalReturnPct)}`}>{signed(selected.backtest.totalReturnPct, 1)}%</span>
-                  <span className="tg muted">回撤</span>
-                  <span className="num up">{selected.backtest.maxDrawdownPct.toFixed(1)}%</span>
+                <p>{safeSummary(selected.summary)}</p>
+                <div className="lab-selected-metrics">
+                  <span><b>{Math.round(selected.backtest.winRate * 100)}%</b><small>勝率</small></span>
+                  <span><b className={toneClass(selected.backtest.totalReturnPct)}>{signed(selected.backtest.totalReturnPct, 1)}%</b><small>報酬</small></span>
+                  <span><b className="status-bad">{selected.backtest.maxDrawdownPct.toFixed(1)}%</b><small>最大回撤</small></span>
                 </div>
                 <Link className="mini-button" href={`/lab/${selected.bundleId}`} style={{ marginTop: 12 }}>
                   查看明細
@@ -197,8 +234,10 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
           </Panel>
 
           <Panel code="LAB-MEMO" title="治理邊界" right="不會實單">
-            <div className="terminal-note">
-              量化研究只寫入研究資料庫；不會建立券商委託、不會推進資料庫去重流程，也不會啟用正式下單。
+            <div className="lab-governance-list">
+              <span>只讀展示：策略包、回測摘要、分歧備註。</span>
+              <span>可寫動作：通過 / 退回 / 分歧回饋，只寫回量化研究 API。</span>
+              <span>禁止動作：建立券商委託、推 migration 0020、碰 KGI write-side。</span>
             </div>
           </Panel>
         </div>
