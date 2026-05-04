@@ -301,11 +301,11 @@ export default async function CompanyDetailPage({
             sourceState={ohlcvState}
             sourceReason={ohlcvReason}
           />
-          <CompanyInfoPanel company={company} />
+          <PaperOrderPanel symbol={company.ticker} lastPrice={quote?.last ?? null} />
         </div>
 
         <aside className="company-side-column">
-          <PaperOrderPanel symbol={company.ticker} lastPrice={quote?.last ?? null} />
+          <CompanyInfoPanel company={company} />
           <SourceStatusCard sources={sources} />
         </aside>
       </div>

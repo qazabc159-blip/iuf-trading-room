@@ -4507,3 +4507,155 @@ body:has(.login-route) > div {
     grid-template-columns: 1fr;
   }
 }
+
+/* Pass 86 - company workbench rhythm: chart first, order station as a real tool. */
+.company-detail-layout {
+  grid-template-columns: minmax(0, 1.38fr) minmax(280px, 0.62fr);
+  gap: clamp(24px, 2.4vw, 38px);
+}
+
+.company-main-column > .paper-order-panel {
+  margin-top: 2px;
+}
+
+.company-main-column .paper-order-panel {
+  padding: 18px clamp(18px, 2.1vw, 30px) 22px;
+  border-left: 2px solid rgba(226, 184, 92, 0.42);
+  border-top-color: rgba(226, 184, 92, 0.28);
+  background:
+    radial-gradient(circle at 0 0, rgba(226, 184, 92, 0.13), transparent 26%),
+    linear-gradient(110deg, rgba(226, 184, 92, 0.07), transparent 40%),
+    rgba(4, 8, 13, 0.38);
+}
+
+.company-main-column .paper-order-panel .ascii-head {
+  display: flex;
+  min-height: 0;
+  margin-bottom: 8px;
+  padding: 6px 6px 10px;
+}
+
+.company-main-column .paper-order-panel .ascii-head-bracket {
+  font-size: 12px;
+}
+
+.company-main-column .paper-order-source-row {
+  margin-bottom: 8px;
+  padding: 7px 6px 9px;
+  border-top: 0;
+}
+
+.company-main-column .paper-order-lock-note {
+  margin: 8px 0 12px;
+  padding: 9px 12px;
+  line-height: 1.75;
+}
+
+.company-main-column .paper-order-price-row {
+  grid-template-columns: auto auto minmax(180px, 1fr);
+  margin-bottom: 12px;
+  padding: 8px 10px;
+}
+
+.company-main-column .paper-order-grid {
+  grid-template-columns:
+    minmax(112px, 0.72fr)
+    minmax(112px, 0.72fr)
+    minmax(112px, 0.72fr)
+    minmax(128px, 0.82fr)
+    minmax(128px, 0.82fr);
+  gap: 10px 12px;
+  align-items: end;
+}
+
+.company-main-column .paper-order-panel .action-row {
+  margin-top: 2px;
+  margin-bottom: 12px;
+}
+
+.company-main-column .paper-order-panel .btn-sm {
+  min-height: 34px;
+}
+
+.company-main-column .paper-order-panel .terminal-note,
+.company-main-column .paper-order-panel [style*="border-top"] {
+  max-width: 100%;
+}
+
+.company-main-column .paper-order-panel + .panel {
+  margin-top: 0;
+}
+
+.company-side-column .company-info-panel {
+  background:
+    linear-gradient(160deg, rgba(104, 158, 255, 0.06), transparent 36%),
+    rgba(4, 8, 13, 0.3);
+}
+
+.company-data-tabs.finmind-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 7px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+}
+
+.company-data-tabs.finmind-tabs .mini-button,
+.company-data-tabs.finmind-tabs .outline-button {
+  flex: 0 0 auto;
+  min-width: 92px;
+  max-width: 142px;
+  min-height: 34px;
+  padding: 6px 10px;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.company-data-tabs.finmind-tabs .company-data-tab-main {
+  font-size: 12px;
+}
+
+.company-data-tabs.finmind-tabs .company-data-tab-meta {
+  font-size: 9.8px;
+}
+
+.company-finmind-table-shell {
+  max-height: 680px;
+  overflow: auto;
+  border-top: 1px solid rgba(220, 228, 240, 0.07);
+}
+
+.company-finmind-pagination {
+  position: sticky;
+  bottom: 0;
+  background:
+    linear-gradient(180deg, rgba(5, 8, 12, 0.84), rgba(5, 8, 12, 0.96));
+  backdrop-filter: blur(8px);
+}
+
+@media (max-width: 1500px) {
+  .company-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .company-main-column .paper-order-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .company-main-column .paper-order-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .company-main-column .paper-order-price-row {
+    grid-template-columns: auto auto;
+  }
+
+  .company-main-column .paper-order-price-row small {
+    grid-column: 1 / -1;
+  }
+}

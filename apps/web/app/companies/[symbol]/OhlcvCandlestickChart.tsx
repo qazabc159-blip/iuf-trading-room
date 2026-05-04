@@ -234,7 +234,7 @@ export function OhlcvCandlestickChart({
     }
     return filterRange(aggregateDailyBars(bars, interval), range);
   }, [bars, interval, kbarRows, range]);
-  const insufficientTrend = chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
+  const insufficientTrend = !isIntraday && chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
 
   useEffect(() => {
     if (!containerRef.current || !chartBars.length || insufficientTrend) return;

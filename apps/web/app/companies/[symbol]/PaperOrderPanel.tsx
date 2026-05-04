@@ -620,8 +620,8 @@ function KV({ k, v }: { k: string; v: React.ReactNode }) {
 }
 
 function StatePill({ state }: { state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING" }) {
-  const color = state === "LIVE" ? "var(--gold-bright)"
-    : state === "EMPTY" ? "var(--night-mid)"
+  const color = state === "LIVE" ? "var(--tw-dn-bright)"
+    : state === "EMPTY" ? "var(--gold-bright)"
       : state === "LOADING" ? "var(--gold)"
         : "var(--tw-up-bright)";
   return <span style={{ color, fontWeight: 700, letterSpacing: "0.16em" }}>{uiStateLabel(state)}</span>;
