@@ -5,6 +5,7 @@
 const INDUSTRY_LABEL: Record<string, string> = {
   // Internal slugs from our company master data.
   "building-materials": "建材",
+  "semiconductor": "半導體",
   "semiconductors": "半導體",
   "electronics": "電子",
   "finance": "金融",
@@ -17,6 +18,9 @@ const INDUSTRY_LABEL: Record<string, string> = {
 
   // Semiconductors / Electronics
   "Semiconductors": "半導體",
+  "Semiconductor": "半導體",
+  "Foundry": "晶圓代工",
+  "foundry": "晶圓代工",
   "Semiconductor Equipment & Materials": "半導體設備/材料",
   "Semiconductor Equipment": "半導體設備",
   "Semiconductor Materials": "半導體材料",
