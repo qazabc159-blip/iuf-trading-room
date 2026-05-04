@@ -407,6 +407,7 @@ export function OhlcvCandlestickChart({
 
       <div className="kline-toolbar">
         <div className="kline-control-group">
+          <span className="kline-toolbar-label">週期</span>
           {ENABLED_INTERVALS.map((item) => (
             <button
               key={item.value}
@@ -422,6 +423,7 @@ export function OhlcvCandlestickChart({
         </div>
         {!isIntraday && (
           <div className="kline-control-group">
+            <span className="kline-toolbar-label">範圍</span>
             {RANGE_OPTIONS.map((item) => (
               <button
                 key={item.value}
