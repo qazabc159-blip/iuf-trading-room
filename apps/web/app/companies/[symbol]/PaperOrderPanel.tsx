@@ -260,8 +260,10 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
     setDraftKey(null);
   };
 
+  const canPreview = input !== null && validationReason === null && preview.status !== "loading";
+
   const handlePreview = async () => {
-    if (!input) return;
+    if (!input || validationReason !== null) return;
     setPreview({ status: "loading" });
     setSubmit({ status: "idle" });
     // F2: generate a stable draft key on first preview; reuse it on retry so the server can
@@ -441,7 +443,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
             <button
               className="btn-sm"
               onClick={handlePreview}
-              disabled={input === null || preview.status === "loading"}
+              disabled={!canPreview}
               title={validationReason ?? (paperPreviewReady ? "執行模擬委託預覽" : "後端預覽閘門目前未開；仍可嘗試取得後端阻擋原因。")}
               type="button"
             >

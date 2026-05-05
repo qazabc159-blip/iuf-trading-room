@@ -3296,3 +3296,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; `git diff --check` PASS with CRLF warnings only.
 - Stop-line proof: no token value displayed/logged, no fake-live conversion, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no paper fill/risk source, no buy/sell recommendation wording.
 - Next: push PR, wait CI/review policy, then production-smoke dashboard FinMind panel after deploy.
+
+## 2026-05-06 02:55 Taipei - Codex paper order preview guard
+- Trade Capability Score: +1. Workflow improved: company-page paper ticket no longer lets an invalid or over-capital Taiwan-stock draft advance into the paper preview path.
+- Files changed: `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx`, `evidence/w7_paper_sprint/codex_paper_order_preview_guard_2026-05-06.md`, and this board.
+- Endpoints/sources: `GET /api/v1/paper/health`, `POST /api/v1/paper/preview`, `POST /api/v1/paper/submit`, `GET /api/v1/paper/orders`.
+- Behavior: the preview button and click handler now require the same validation as the visible warning: valid quantity, valid price, and notional within the demo capital cap. A 1-lot high-price draft stays blocked before preview rather than looking runnable.
+- Checks: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; `git diff --check` PASS with CRLF warnings only.
+- Stop-line proof: no token value displayed/logged, no fake-live conversion, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no paper fill/risk source, no buy/sell recommendation wording.
+- Next: push PR after final diff review; then continue Paper E2E UI with simulated fill / order ledger visibility.
