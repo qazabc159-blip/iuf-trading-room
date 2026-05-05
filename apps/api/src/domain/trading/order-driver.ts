@@ -1,14 +1,15 @@
 // W6 Paper Sprint — OrderDriver: state machine coordinator.
+// W8 2026-05-05 — wired to paper-ledger-db.ts for persistent storage.
 //
 // Orchestrates: PENDING → risk-check → ACCEPTED → paper executor → FILLED/REJECTED
 // Also supports cancellation stub (PENDING/ACCEPTED → CANCELLED).
 //
 // v0 stubs:
-//   - Risk check: always passes (hardcoded). Day 4: real risk engine.
-//   - Cancellation: stub only; Day 6+ will wire cancel-from-UI path.
+//   - Risk check: always passes (hardcoded). Future: real risk engine.
+//   - Cancellation: stub only; future will wire cancel-from-UI path.
 //
-// No KGI SDK import. No broker dependency. No DB (Day 3).
-// No HTTP route (Day 3 wires routes).
+// No KGI SDK import. No broker dependency.
+// Persistence: paper-ledger-db.ts (DB mode) or in-memory MapAdapter (memory mode).
 //
 // State machine:
 //   PENDING →[risk pass]→ ACCEPTED →[executor fill]→ FILLED
@@ -28,7 +29,7 @@ import {
   upsertOrder,
   recordFill,
   type OrderState
-} from "./paper-ledger.js";
+} from "./paper-ledger-db.js";
 
 // ---------------------------------------------------------------------------
 // Risk check (v0 stub)
@@ -80,13 +81,13 @@ export async function driveOrder(intent: OrderIntent): Promise<DriveOrderResult>
       reason: risk.reason ?? "risk check failed"
     });
     const finalState: OrderState = { intent: rejectedIntent, fill: null };
-    upsertOrder(finalState);
+    await upsertOrder(finalState);
     return { finalState, rejectionReason: rejectedIntent.reason ?? undefined };
   }
 
   // Step 2: PENDING → ACCEPTED
   const { intent: acceptedIntent } = transitionIntent(intent, "ACCEPTED");
-  upsertOrder({ intent: acceptedIntent, fill: null });
+  await upsertOrder({ intent: acceptedIntent, fill: null });
 
   // Step 3: PaperExecutor
   let executorResult: Awaited<ReturnType<typeof executeOrder>>;
@@ -98,16 +99,16 @@ export async function driveOrder(intent: OrderIntent): Promise<DriveOrderResult>
       reason: `executor threw: ${String(err)}`
     });
     const finalState: OrderState = { intent: rejectedIntent, fill: null };
-    upsertOrder(finalState);
+    await upsertOrder(finalState);
     return { finalState, rejectionReason: rejectedIntent.reason ?? undefined };
   }
 
   // Step 4a: FILLED
   if (executorResult.status === "FILLED") {
     const { intent: filledIntent } = transitionIntent(acceptedIntent, "FILLED");
-    recordFill(acceptedIntent.id, executorResult.fill);
+    await recordFill(acceptedIntent.id, executorResult.fill);
     const finalState: OrderState = { intent: filledIntent, fill: executorResult.fill };
-    upsertOrder(finalState);
+    await upsertOrder(finalState);
     return { finalState };
   }
 
@@ -116,7 +117,7 @@ export async function driveOrder(intent: OrderIntent): Promise<DriveOrderResult>
     reason: executorResult.reason
   });
   const finalState: OrderState = { intent: rejectedIntent, fill: null };
-  upsertOrder(finalState);
+  await upsertOrder(finalState);
   return { finalState, rejectionReason: rejectedIntent.reason ?? undefined };
 }
 
@@ -136,10 +137,10 @@ export interface CancelOrderResult {
  *   alreadyTerminal: true with current state unchanged.
  * - Persists CANCELLED transition to ledger.
  */
-export function cancelOrder(
+export async function cancelOrder(
   state: OrderState,
   reason?: string
-): CancelOrderResult {
+): Promise<CancelOrderResult> {
   const { intent } = state;
   const terminal = new Set(["FILLED", "REJECTED", "CANCELLED"]);
 
@@ -152,6 +153,6 @@ export function cancelOrder(
     reason: reason ?? "cancelled by user"
   });
   const finalState: OrderState = { intent: cancelledIntent, fill: state.fill };
-  upsertOrder(finalState);
+  await upsertOrder(finalState);
   return { finalState, alreadyTerminal: false };
 }

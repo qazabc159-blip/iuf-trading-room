@@ -1,23 +1,26 @@
 // W6 Day 4 — DB-backed paper ledger.
+// W8 2026-05-05 — wired to order-driver; fallback MapAdapter for memory mode.
 //
 // Drizzle queries against paper_orders + paper_fills tables (migration 0015).
 //
 // Public export shape intentionally mirrors paper-ledger.ts:
 //   upsertOrder / getOrder / listOrders / recordFill / deleteOrder
-// This allows Day 5 to swap the import with zero call-site changes.
+//   + findByIdempotencyKey (idempotency persistence, Task B)
 //
 // Architecture:
 //   - Internal `LedgerAdapter` interface abstracts storage operations.
 //   - `drizzleAdapter(db)` wraps a DatabaseClient with drizzle queries.
+//   - `mapAdapter()` provides in-memory fallback for memory mode (CI/local).
 //   - Each public function accepts an optional `adapter?: LedgerAdapter`.
-//     In production: omit `adapter` → uses getDb() via drizzle.
-//     In tests: pass a Map-backed `LedgerAdapter` (no native DB needed).
+//     In production (PERSISTENCE_MODE=database): omit → DrizzleAdapter.
+//     In memory mode (default): omit → MapAdapter (same process, non-persistent).
+//     In tests: pass a MapAdapter explicitly.
 //
 // Hard stops: no KGI SDK import, no broker, no market-data, no server.ts touch.
 
 import { and, asc, eq } from "drizzle-orm";
 
-import { getDb, paperFills, paperOrders } from "@iuf-trading-room/db";
+import { getDb, isDatabaseMode, paperFills, paperOrders } from "@iuf-trading-room/db";
 import type { DatabaseClient } from "@iuf-trading-room/db";
 
 import type { OrderIntent, OrderIntentStatus } from "./order-intent.js";
@@ -40,6 +43,8 @@ export interface LedgerAdapter {
   saveOrder(state: OrderState): Promise<void>;
   /** Find a single order by its id. */
   findOrder(orderId: string): Promise<OrderState | undefined>;
+  /** Find an order by idempotency key. Returns undefined if not found. */
+  findByIdempotencyKey(key: string): Promise<OrderState | undefined>;
   /** List orders for a userId, optionally filtered by status. Sorted createdAt ASC. */
   listOrders(userId: string, statusFilter?: OrderIntentStatus): Promise<OrderState[]>;
   /** Save a fill row. Returns false if orderId unknown. Idempotent if fill exists. */
@@ -145,6 +150,19 @@ export function drizzleAdapter(injectedDb?: DatabaseClient | null): LedgerAdapte
       return rowToOrderState(orderRow, fillRow ?? null);
     },
 
+    async findByIdempotencyKey(key: string): Promise<OrderState | undefined> {
+      const [orderRow] = await db
+        .select()
+        .from(paperOrders)
+        .where(eq(paperOrders.idempotencyKey, key));
+      if (!orderRow) return undefined;
+      const [fillRow] = await db
+        .select()
+        .from(paperFills)
+        .where(eq(paperFills.orderId, orderRow.id));
+      return rowToOrderState(orderRow, fillRow ?? null);
+    },
+
     async listOrders(
       userId: string,
       statusFilter?: OrderIntentStatus
@@ -206,14 +224,87 @@ export function drizzleAdapter(injectedDb?: DatabaseClient | null): LedgerAdapte
 }
 
 // ---------------------------------------------------------------------------
-// Module-level default adapter (lazy, uses getDb() singleton)
+// MapAdapter — in-memory fallback for memory mode (CI / local without DB)
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory LedgerAdapter backed by a Map + Set.
+ * Used when PERSISTENCE_MODE != "database".
+ * Same semantics as the old paper-ledger.ts but async and unified under
+ * the LedgerAdapter interface.
+ */
+export function mapAdapter(): LedgerAdapter {
+  const orders = new Map<string, OrderState>();
+  // idempotency_key → orderId index
+  const idempotencyIndex = new Map<string, string>();
+
+  return {
+    async saveOrder(state: OrderState): Promise<void> {
+      const existing = idempotencyIndex.get(state.intent.idempotencyKey);
+      if (existing && existing !== state.intent.id) {
+        // Key already registered to a different orderId — idempotent no-op
+        return;
+      }
+      orders.set(state.intent.id, state);
+      idempotencyIndex.set(state.intent.idempotencyKey, state.intent.id);
+    },
+
+    async findOrder(orderId: string): Promise<OrderState | undefined> {
+      return orders.get(orderId);
+    },
+
+    async findByIdempotencyKey(key: string): Promise<OrderState | undefined> {
+      const orderId = idempotencyIndex.get(key);
+      if (!orderId) return undefined;
+      return orders.get(orderId);
+    },
+
+    async listOrders(
+      userId: string,
+      statusFilter?: OrderIntentStatus
+    ): Promise<OrderState[]> {
+      const results: OrderState[] = [];
+      for (const state of orders.values()) {
+        if (state.intent.userId !== userId) continue;
+        if (statusFilter !== undefined && state.intent.status !== statusFilter) continue;
+        results.push(state);
+      }
+      results.sort((a, b) => a.intent.createdAt.localeCompare(b.intent.createdAt));
+      return results;
+    },
+
+    async saveFill(orderId: string, fill: SimulatedFill): Promise<boolean> {
+      const existing = orders.get(orderId);
+      if (!existing) return false;
+      if (existing.fill !== null) return true; // idempotent
+      orders.set(orderId, { ...existing, fill });
+      return true;
+    },
+
+    async removeOrder(orderId: string): Promise<boolean> {
+      const existing = orders.get(orderId);
+      if (!existing) return false;
+      idempotencyIndex.delete(existing.intent.idempotencyKey);
+      orders.delete(orderId);
+      return true;
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Module-level default adapter (lazy, picks DB or memory based on env)
 // ---------------------------------------------------------------------------
 
 let _defaultAdapter: LedgerAdapter | null = null;
 
+/** Exposed for test injection only. */
+export function _setDefaultAdapterForTest(adapter: LedgerAdapter | null): void {
+  _defaultAdapter = adapter;
+}
+
 function getDefaultAdapter(): LedgerAdapter {
   if (!_defaultAdapter) {
-    _defaultAdapter = drizzleAdapter();
+    _defaultAdapter = isDatabaseMode() ? drizzleAdapter() : mapAdapter();
   }
   return _defaultAdapter;
 }
@@ -278,4 +369,16 @@ export async function deleteOrder(
   adapter?: LedgerAdapter | null
 ): Promise<boolean> {
   return (adapter ?? getDefaultAdapter()).removeOrder(orderId);
+}
+
+/**
+ * Find an order by its idempotency key.
+ * Returns undefined if not found.
+ * Used by submit routes for persistent duplicate detection across restarts.
+ */
+export async function findByIdempotencyKey(
+  key: string,
+  adapter?: LedgerAdapter | null
+): Promise<OrderState | undefined> {
+  return (adapter ?? getDefaultAdapter()).findByIdempotencyKey(key);
 }

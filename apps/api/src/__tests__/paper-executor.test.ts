@@ -239,7 +239,7 @@ test("E1: cancelOrder on PENDING intent → CANCELLED", async () => {
   const state = { intent, fill: null };
   upsertOrder(state);
 
-  const result = cancelOrder(state, "user request");
+  const result = await cancelOrder(state, "user request");
   assert.equal(result.finalState.intent.status, "CANCELLED");
   assert.equal(result.alreadyTerminal, false);
   assert.ok(result.finalState.intent.reason !== null);
@@ -251,7 +251,7 @@ test("E2: cancelOrder on FILLED intent → alreadyTerminal, state unchanged", as
   const driverResult = await driveOrder(intent);
   assert.equal(driverResult.finalState.intent.status, "FILLED");
 
-  const cancel = cancelOrder(driverResult.finalState, "late cancel");
+  const cancel = await cancelOrder(driverResult.finalState, "late cancel");
   assert.equal(cancel.alreadyTerminal, true);
   assert.equal(cancel.finalState.intent.status, "FILLED");
 });
@@ -262,7 +262,7 @@ test("E3: cancelOrder on REJECTED intent → alreadyTerminal", async () => {
   const driverResult = await driveOrder(intent);
   assert.equal(driverResult.finalState.intent.status, "REJECTED");
 
-  const cancel = cancelOrder(driverResult.finalState);
+  const cancel = await cancelOrder(driverResult.finalState);
   assert.equal(cancel.alreadyTerminal, true);
   assert.equal(cancel.finalState.intent.status, "REJECTED");
 });
@@ -272,10 +272,10 @@ test("E4: cancelOrder on CANCELLED intent → alreadyTerminal (idempotent)", asy
   const intent = makeIntent({ orderType: "market" });
   const state = { intent, fill: null };
 
-  const first = cancelOrder(state);
+  const first = await cancelOrder(state);
   assert.equal(first.alreadyTerminal, false);
 
-  const second = cancelOrder(first.finalState);
+  const second = await cancelOrder(first.finalState);
   assert.equal(second.alreadyTerminal, true);
 });
 

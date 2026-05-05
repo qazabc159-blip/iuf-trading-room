@@ -84,6 +84,14 @@ function makeMapAdapter(): LedgerAdapter {
       return { ...state, fill: fills.get(orderId) ?? null };
     },
 
+    async findByIdempotencyKey(key: string): Promise<OrderState | undefined> {
+      const entry = [...orders.values()].find(
+        (s) => s.intent.idempotencyKey === key
+      );
+      if (!entry) return undefined;
+      return { ...entry, fill: fills.get(entry.intent.id) ?? null };
+    },
+
     async listOrders(
       userId: string,
       statusFilter?: OrderIntentStatus

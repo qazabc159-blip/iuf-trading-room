@@ -36,8 +36,7 @@ import {
   getExecutionFlagSnapshot
 } from "./domain/trading/execution-mode.js";
 import {
-  createOrderIntent,
-  _registerIdempotencyKey
+  createOrderIntent
 } from "./domain/trading/order-intent.js";
 import {
   driveOrder,
@@ -45,8 +44,9 @@ import {
 } from "./domain/trading/order-driver.js";
 import {
   getOrder,
-  listOrders
-} from "./domain/trading/paper-ledger.js";
+  listOrders,
+  findByIdempotencyKey as findOrderByIdempotencyKey
+} from "./domain/trading/paper-ledger-db.js";
 import { isDatabaseMode, getDb, dailyThemeSummaries } from "@iuf-trading-room/db";
 import { eq, and } from "drizzle-orm";
 import {
@@ -1837,8 +1837,9 @@ app.post("/api/v1/strategy/ideas/:ideaId/promote-to-paper-submit", async (c) => 
   const idempotencyKey = idempotencyKeyHeader
     ?? `idea-${ideaId}-${body.qty}-SHARE-${minuteBucket}`;
 
-  // Guard against duplicate submissions in the same minute window
-  if (_registerIdempotencyKey(idempotencyKey) === false) {
+  // Guard against duplicate submissions (persistent across restarts via DB/MapAdapter)
+  const existingPromote = await findOrderByIdempotencyKey(idempotencyKey);
+  if (existingPromote) {
     return c.json(
       { error: "DUPLICATE_IDEMPOTENCY_KEY", idempotencyKey },
       409
@@ -2905,8 +2906,10 @@ app.post("/api/v1/paper/orders", async (c) => {
     );
   }
 
-  // Idempotency: lightweight in-memory pre-check before DB round-trip
-  if (_registerIdempotencyKey(payload.idempotencyKey) === false) {
+  // Idempotency: persistent check against DB (or in-memory MapAdapter in memory mode).
+  // Returns existing order if key was already used — avoids duplicate fills on restart.
+  const existingByKey = await findOrderByIdempotencyKey(payload.idempotencyKey);
+  if (existingByKey) {
     return c.json(
       {
         error: "DUPLICATE_IDEMPOTENCY_KEY",
@@ -2929,18 +2932,18 @@ app.post("/api/v1/paper/orders", async (c) => {
     userId: session.user.id
   });
 
-  // Day 3: drive PENDING -> ACCEPTED -> FILLED|REJECTED through PaperExecutor.
-  // Ledger persists each transition (in-memory; Day 4 swaps to PG).
+  // Drive PENDING -> ACCEPTED -> FILLED|REJECTED through PaperExecutor.
+  // Ledger persists each transition to DB (or in-memory MapAdapter).
   const result = await driveOrder(intent);
   const status = result.finalState.intent.status === "REJECTED" ? 422 : 201;
   return c.json({ data: result.finalState }, status);
 });
 
 // GET /api/v1/paper/orders/:id — fetch a single order state from the ledger
-app.get("/api/v1/paper/orders/:id", (c) => {
+app.get("/api/v1/paper/orders/:id", async (c) => {
   const session = c.get("session");
   const orderId = c.req.param("id");
-  const state = getOrder(orderId);
+  const state = await getOrder(orderId);
   if (!state) return c.json({ error: "ORDER_NOT_FOUND" }, 404);
   if (state.intent.userId !== session.user.id) {
     return c.json({ error: "forbidden" }, 403);
@@ -2949,14 +2952,14 @@ app.get("/api/v1/paper/orders/:id", (c) => {
 });
 
 // GET /api/v1/paper/orders — list orders for the current user (optional ?status=)
-app.get("/api/v1/paper/orders", (c) => {
+app.get("/api/v1/paper/orders", async (c) => {
   const session = c.get("session");
   const statusParam = c.req.query("status");
   const allowed = ["PENDING", "ACCEPTED", "FILLED", "REJECTED", "CANCELLED"] as const;
   const status = (allowed as readonly string[]).includes(statusParam ?? "")
     ? (statusParam as (typeof allowed)[number])
     : undefined;
-  const orders = listOrders(session.user.id, status ? { status } : undefined);
+  const orders = await listOrders(session.user.id, status ? { status } : undefined);
   return c.json({ data: orders });
 });
 
@@ -2964,7 +2967,7 @@ app.get("/api/v1/paper/orders", (c) => {
 app.post("/api/v1/paper/orders/:id/cancel", async (c) => {
   const session = c.get("session");
   const orderId = c.req.param("id");
-  const state = getOrder(orderId);
+  const state = await getOrder(orderId);
   if (!state) return c.json({ error: "ORDER_NOT_FOUND" }, 404);
   if (state.intent.userId !== session.user.id) {
     return c.json({ error: "forbidden" }, 403);
@@ -2980,7 +2983,7 @@ app.post("/api/v1/paper/orders/:id/cancel", async (c) => {
     // empty body is fine
   }
 
-  const result = cancelPaperOrder(state, body.reason);
+  const result = await cancelPaperOrder(state, body.reason);
   return c.json({
     data: result.finalState,
     alreadyTerminal: result.alreadyTerminal
@@ -4466,8 +4469,9 @@ app.post("/api/v1/paper/submit", async (c) => {
     );
   }
 
-  // Idempotency pre-check
-  if (_registerIdempotencyKey(payload.idempotencyKey) === false) {
+  // Idempotency: persistent check (survives restarts via DB/MapAdapter)
+  const existingSubmit = await findOrderByIdempotencyKey(payload.idempotencyKey);
+  if (existingSubmit) {
     return c.json(
       { error: "DUPLICATE_IDEMPOTENCY_KEY", idempotencyKey: payload.idempotencyKey },
       409
@@ -4494,9 +4498,9 @@ app.post("/api/v1/paper/submit", async (c) => {
 // GET /api/v1/paper/fills
 // Returns all FILLED orders for the current user as a fills list.
 // Each fill includes orderId, symbol, side, fillQty, fillPrice, fillTime.
-app.get("/api/v1/paper/fills", (c) => {
+app.get("/api/v1/paper/fills", async (c) => {
   const session = c.get("session");
-  const orders = listOrders(session.user.id, { status: "FILLED" });
+  const orders = await listOrders(session.user.id, { status: "FILLED" });
   const fills = orders
     .filter((o) => o.fill !== null)
     .map((o) => ({
@@ -4521,10 +4525,9 @@ app.get("/api/v1/paper/fills", (c) => {
 // Aggregates FILLED orders into a per-symbol position snapshot.
 // Computation: net qty (buy positive, sell negative), weighted avg cost.
 // Returns 200 + { data: PortfolioPosition[] }.
-// No DB read — in-memory ledger only.
-app.get("/api/v1/paper/portfolio", (c) => {
+app.get("/api/v1/paper/portfolio", async (c) => {
   const session = c.get("session");
-  const orders = listOrders(session.user.id, { status: "FILLED" });
+  const orders = await listOrders(session.user.id, { status: "FILLED" });
 
   // Aggregate per symbol
   const positions = new Map<string, {
