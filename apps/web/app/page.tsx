@@ -95,11 +95,16 @@ function StatePill({ state }: { state: LoadState<unknown>["state"] | WatchlistSu
   return <span className={`tg ${stateTone(state)}`}>{stateText(state)}</span>;
 }
 
+function formatCount(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("zh-TW") : "--";
+}
+
 function finmindDatasetUiState(
   dataset: FinMindSourceStatus["datasets"][number],
   tokenPresent: boolean
 ): UiState {
   if (dataset.state === "READY") return "LIVE";
+  if (dataset.state === "DEGRADED") return "EMPTY";
   if (!tokenPresent) return "BLOCKED";
   if (dataset.blocker === "freeze_no_news_feature") return "BLOCKED";
   if (!dataset.implemented || dataset.blocker?.includes("pending")) return "EMPTY";
@@ -477,27 +482,35 @@ function FinMindStatusPanel({ finmind }: { finmind: LoadState<DashboardFinMindSt
   const data = finmind.data;
   const diagnostics = data?.diagnostics ?? null;
   const datasets = data?.datasets ?? [];
-  const ready = datasets.filter((dataset) => dataset.state === "READY");
   const tokenPresent = Boolean(diagnostics?.tokenPresent || data?.tokenPresent);
+  const ready = datasets.filter((dataset) => finmindDatasetUiState(dataset, tokenPresent) === "LIVE");
   const pending = datasets.filter((dataset) => finmindDatasetUiState(dataset, tokenPresent) === "EMPTY");
   const blocked = datasets.filter((dataset) => finmindDatasetUiState(dataset, tokenPresent) === "BLOCKED");
+  const orderedDatasets = [...datasets].sort((a, b) => {
+    const order = { LIVE: 0, EMPTY: 1, BLOCKED: 2 } satisfies Record<UiState, number>;
+    return order[finmindDatasetUiState(a, tokenPresent)] - order[finmindDatasetUiState(b, tokenPresent)];
+  });
+  const quotaUsed = data?.quota.used ?? diagnostics?.inProcess.requestCount ?? null;
+  const quotaLimit = data?.quota.limit ?? diagnostics?.quotaLimitPerHour ?? null;
   const tokenState: UiState = diagnostics?.tokenPresent || data?.tokenPresent ? "LIVE" : "BLOCKED";
-  const quotaState: UiState = diagnostics?.quotaTier === "sponsor999" ? "LIVE" : diagnostics?.quotaTier ? "EMPTY" : "BLOCKED";
+  const quotaState: UiState = diagnostics?.quotaTier === "sponsor999" || (quotaLimit ?? 0) >= 6000
+    ? "LIVE"
+    : quotaLimit ? "EMPTY" : "BLOCKED";
   const cacheState: UiState = diagnostics?.redisConfigured ? "LIVE" : diagnostics ? "BLOCKED" : "EMPTY";
   const fetchState: UiState = diagnostics?.inProcess.lastFetchTs ? "LIVE" : diagnostics ? "EMPTY" : "BLOCKED";
   const errorState: UiState = diagnostics?.inProcess.errorRatePct == null
     ? "EMPTY"
     : diagnostics.inProcess.errorRatePct <= 5 ? "LIVE" : "BLOCKED";
   const ohlcvState: UiState = diagnostics?.ohlcvSource === "finmind" ? "LIVE" : diagnostics ? "BLOCKED" : "EMPTY";
-  const quotaText = diagnostics?.quotaLimitPerHour
-    ? `${diagnostics.quotaLimitPerHour.toLocaleString("zh-TW")} / 小時`
+  const quotaText = quotaLimit
+    ? `${formatCount(quotaUsed)} / ${formatCount(quotaLimit)} / 小時`
     : diagnostics?.quotaTier ?? "--";
   const lastFetchText = diagnostics?.inProcess.lastFetchTs
     ? `${formatDateTime(diagnostics.inProcess.lastFetchTs)} / ${diagnostics.inProcess.lastDataset ?? "未標示資料集"}`
     : "程序重啟後尚未記錄 FinMind fetch";
   const diagnosticsRows = [
     { label: "TOKEN", state: tokenState, value: tokenState === "LIVE" ? "環境變數存在" : "未設定", note: "只顯示 presence，不顯示 token 值。" },
-    { label: "QUOTA", state: quotaState, value: quotaText, note: diagnostics?.quotaTier === "sponsor999" ? "Sponsor 999 配額層。" : "未確認 Sponsor 層級。" },
+    { label: "QUOTA", state: quotaState, value: quotaText, note: diagnostics?.quotaTier === "sponsor999" ? "Sponsor 999 配額層；每小時 6,000 次。" : "未確認 Sponsor 層級。" },
     { label: "CACHE", state: cacheState, value: diagnostics?.redisConfigured ? "Redis 已設定" : "Redis 未設定", note: "影響資料快取與重複請求壓力。" },
     { label: "FETCH", state: fetchState, value: lastFetchText, note: "後端 in-process counter，重啟會歸零。" },
     { label: "ERROR", state: errorState, value: diagnostics?.inProcess.errorRatePct == null ? "尚無請求" : `${diagnostics.inProcess.errorRatePct}%`, note: `${diagnostics?.inProcess.requestCount ?? 0} 次請求 / ${diagnostics?.inProcess.errorCount ?? 0} 次錯誤。` },
@@ -568,7 +581,7 @@ function FinMindStatusPanel({ finmind }: { finmind: LoadState<DashboardFinMindSt
       </div>
       <div className="dashboard-dataset-ribbon" aria-label="FinMind 資料集狀態">
         <span className="tg soft">資料集</span>
-        {datasets.slice(0, 14).map((dataset) => (
+        {orderedDatasets.map((dataset) => (
           <span
             className={`dashboard-dataset-token ${finmindDatasetChipClass(dataset, tokenPresent)}`}
             key={dataset.key}

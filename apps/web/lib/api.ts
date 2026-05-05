@@ -556,12 +556,12 @@ export type FinMindDatasetStatus = {
   label: string;
   implemented: boolean;
   blocker?: string;
-  state: "READY" | "BLOCKED";
+  state: "READY" | "DEGRADED" | "BLOCKED";
 };
 
 export type FinMindSourceStatus = {
   source: "FINMIND";
-  state: "LIVE_READY" | "BLOCKED";
+  state: "LIVE_READY" | "DEGRADED" | "BLOCKED";
   tokenPresent: boolean;
   quota: {
     used: number | null;
