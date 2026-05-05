@@ -271,11 +271,26 @@ function isDeviceAuthRoute(path: string): boolean {
   return false;
 }
 
+// Read-only diagnostics routes safe for unauthenticated smoke / uptime monitors.
+// Strict allow-list — only these two paths bypass cookie auth. Add new entries
+// only after Pete review confirms zero token / userId / order leakage.
+function isPublicDiagRoute(path: string): boolean {
+  if (path === "/api/v1/paper/health") return true;
+  if (path === "/api/v1/diagnostics/kbar") return true;
+  return false;
+}
+
 app.use("/api/v1/*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
 
   // Runner device-auth routes carry their own bearer-auth check; skip cookie gate.
   if (isDeviceAuthRoute(path)) {
+    c.set("repo", repository);
+    return next();
+  }
+
+  // Public read-only diagnostics for Bruce smoke / uptime monitors. Strict allow-list.
+  if (isPublicDiagRoute(path)) {
     c.set("repo", repository);
     return next();
   }
@@ -4794,7 +4809,7 @@ app.get("/api/v1/diagnostics/kbar", async (c) => {
   }
 
   let tfDay: {
-    state: "LIVE" | "STALE" | "MOCK" | "EMPTY" | "ERROR";
+    state: "LIVE" | "STALE" | "MOCK" | "EMPTY" | "ERROR" | "NO_DB";
     latestDate: string | null;
     rowCount: number;
     source: string | null;
@@ -4835,7 +4850,9 @@ app.get("/api/v1/diagnostics/kbar", async (c) => {
       // Determine freshness: LIVE if latestDate within 3 calendar days
       const latestMs = latestDate ? new Date(latestDate).getTime() : 0;
       const nowMs    = Date.now();
-      const staleThresholdMs = 3 * 24 * 60 * 60 * 1000;
+      // 4 calendar days covers TWS longest weekend gap (Fri close → Tue open after Mon holiday).
+      // Pete review 2026-05-05 PR-MERGE-1: 3 days produced false-STALE every weekend.
+      const staleThresholdMs = 4 * 24 * 60 * 60 * 1000;
       const isStale  = (nowMs - latestMs) > staleThresholdMs;
       tfDay = {
         state: isStale ? "STALE" : "LIVE",
