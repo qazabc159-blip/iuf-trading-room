@@ -3314,3 +3314,20 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: api typecheck PASS; web typecheck PASS; FinMind client tests PASS 11/11; api build PASS; web build PASS; targeted diff-check PASS with CRLF warnings only.
 - Stop-line proof: no token value displayed/logged, no fake-live conversion, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no paper fill/risk source, no buy/sell recommendation wording.
 - Next: open PR, wait for CI/deploy, then production-smoke `/companies/2330` 1/5/15/60 分 and 10日/20日 controls.
+## 2026-05-06 04:05 Taipei - Codex production K-line 20-day verification
+- Trade Capability Score: +1. Workflow improved: the production company page now has evidence that FinMind Sponsor KBar is actually being requested and used for daily and minute K-line rendering.
+- Deploy/source: main `2e8a91f` is deployed; one-time authenticated smoke hit `GET https://api.eycvector.com/api/v1/companies/2330/kbar?days=20` and received `source=FINMIND`, `state=LIVE`, `rowCount=5320`, `daysRequested=20`, `daysReturned=20`, `dateRange=2026-04-07..2026-05-05`.
+- FinMind quota proof: `GET /api/v1/data-sources/finmind/status` returned `state=LIVE_READY`, `tokenPresent=true`, Sponsor quota `2344 / 6000`, `datasetCount=16`, `readyCount=14`; no token value was displayed or written.
+- Browser proof: production `/companies/2330` has 7 visible chart canvases; click smoke passed for `1分`, `5分`, `15分`, `60分`, `10日`, and `20日`; none showed `no_kbar_rows` or `分 K 無資料`.
+- Screenshot manifest: `evidence/w7_paper_sprint/production_smoke_pass123_kline_autologin_2026-05-06/manifest.json`, `manifest-clicks.json`, and screenshots in the same folder.
+- Stop-line proof: no token value, no fake-live K-line, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no paper/risk source change, no buy/sell recommendation wording.
+- Next: genuine K-line next slice is interaction quality, not cosmetic: latest-day default for 1-minute, explicit 5/10/20-day ranges, and stronger crosshair/readout/pan behavior; otherwise move to Paper E2E UI.
+## 2026-05-06 04:40 Taipei - Codex K-line intraday readout PR prep
+- Trade Capability Score: +1. Workflow improved: company K-line now moves from static chart proof toward actual intraday inspection before paper-ticket preparation.
+- Change: switching from daily K into minute K resets the intraday range to the latest 1 trading day; 5 / 10 / 20-day ranges remain explicit; chart readout now shows hover/latest close, timestamp, open, high, low, and volume.
+- Source/endpoint: `/companies/[symbol]` uses `/api/v1/companies/:symbol/kbar?days=20`; FinMind remains the explicit KBar source and no fallback is promoted to live.
+- Browser QA: local production build on `http://127.0.0.1:3228`, authenticated session cookie held in memory only; screenshots and manifest at `evidence/w7_paper_sprint/local_visual_qa_kline_readout_2026-05-06/`.
+- Result: `canvasCount=7`, `visibleCanvasCount=7`, no `no_kbar_rows` markers; 1-minute and 5-minute views both render with 1-day range and readout ribbon.
+- Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only.
+- Stop-line proof: no token, no fake-live, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no paper/risk source change, no buy/sell recommendation wording.
+- Next: open PR; after deploy, run production authenticated smoke against `/companies/2330` for 1分/5分/readout/range behavior.
