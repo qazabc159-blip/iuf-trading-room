@@ -196,7 +196,7 @@ function suggestIntradayRange(rows: FinMindKBarRow[], minutes: number): Intraday
   const fiveDayRawRows = rawRowsInLastTradingDays(rows, 5);
   const oneDayBuckets = Math.ceil(oneDayRawRows / Math.max(1, minutes));
   const fiveDayBuckets = Math.ceil(fiveDayRawRows / Math.max(1, minutes));
-  const targetBuckets = minutes === 1 ? 160 : minutes === 5 ? 64 : minutes === 15 ? 30 : 12;
+  const targetBuckets = minutes === 1 ? 160 : minutes === 5 ? 48 : minutes === 15 ? 20 : 6;
 
   if (oneDayBuckets >= targetBuckets) return "1d";
   if (fiveDayBuckets >= targetBuckets) return "5d";
@@ -711,7 +711,7 @@ export function OhlcvCandlestickChart({
           <div>
             <span>視窗</span>
             <b>
-              {intradayRange !== "1d" && intradayCoverage.oneDayRawRows < 160 ? "自動展開" : "手動"}
+              {intradayRange !== "1d" && intradayRange === intradayCoverage.suggestedRange ? "自動展開" : "手動"}
               <small>{INTRADAY_RANGE_OPTIONS.find((item) => item.value === intradayRange)?.label}</small>
             </b>
           </div>
