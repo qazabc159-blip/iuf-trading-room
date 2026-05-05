@@ -77,6 +77,9 @@ const QUANTITY_UNITS: ReadonlyArray<{ value: QuantityUnit; label: string }> = [
   { value: "LOT", label: "整張" },
 ];
 
+const SHARE_QUANTITY_PRESETS = [1, 10, 100, 499, 999] as const;
+const LOT_QUANTITY_PRESETS = [1, 2, 5] as const;
+
 function uiStateLabel(state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING") {
   if (state === "LIVE") return "正常";
   if (state === "EMPTY") return "無資料";
@@ -183,6 +186,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
         : orders.items.length === 0
           ? "EMPTY"
           : "LIVE";
+  const quantityPresets = form.quantityUnit === "SHARE" ? SHARE_QUANTITY_PRESETS : LOT_QUANTITY_PRESETS;
 
   const refreshOrders = async () => {
     setOrders({ status: "loading" });
@@ -382,6 +386,27 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
               <small>模擬上限 {formatTwd(DEMO_CAPITAL_TWD)}</small>
             </div>
           </div>
+
+          <div className="paper-order-quick-row" aria-label={parsed.isShare ? "零股股數快選" : "整張張數快選"}>
+            <span>{parsed.isShare ? "零股快選" : "整張快選"}</span>
+            {quantityPresets.map((preset) => (
+              <button
+                key={`${form.quantityUnit}-${preset}`}
+                type="button"
+                className={Number(form.qty) === preset ? "is-active" : ""}
+                onClick={() => updateForm({ qty: String(preset) })}
+              >
+                {parsed.isShare ? `${preset} 股` : `${preset} 張`}
+              </button>
+            ))}
+          </div>
+
+          {!parsed.isShare && (
+            <TruthNote
+              state={parsed.notionalExceedsCap ? "BLOCKED" : "EMPTY"}
+              text={`整張模式會以 ${parsed.validQty ? parsed.effectiveShares.toLocaleString("zh-TW") : "--"} 股計算；高價股測試請切回零股。`}
+            />
+          )}
 
           {validationReason && <TruthNote state="BLOCKED" text={validationReason} />}
 
