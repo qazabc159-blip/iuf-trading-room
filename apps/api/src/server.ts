@@ -4794,7 +4794,7 @@ app.get("/api/v1/companies/:symbol/ohlcv", async (c) => {
   if (!company) return c.json({ error: "company_not_found" }, 404);
 
   const fromParam = c.req.query("from") ?? nDaysAgoDate(365);
-  const toParam   = c.req.query("to")   ?? todayDate();
+  const toParam   = c.req.query("to")   ?? null;
   const adjParam  = c.req.query("adj");
   const useAdj    = adjParam !== "false"; // default true
 
@@ -5076,7 +5076,6 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
     console.log(`[ohlcv-scheduler] Starting sync for ${tickers.length} tickers (workspace=${workspaceSlug})`);
     const result = await runOhlcvFinmindSync(tickers, {
       startDate: (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - 10); return d.toISOString().slice(0, 10); })(),
-      endDate: new Date().toISOString().slice(0, 10),
       forceFinmind: true  // bypass OHLCV_SOURCE=mock env check
     });
     console.log(`[ohlcv-scheduler] Done: success=${result.tickersSuccess} failed=${result.tickersFailed} durationMs=${result.durationMs}`);

@@ -55,8 +55,17 @@ function nDaysAgoIso(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+function canTryFinMindDaily(params: OhlcvQueryParams, interval: string): boolean {
+  return (
+    interval === "1d" &&
+    Boolean(params.ticker) &&
+    TAIWAN_TICKER_PATTERN.test(params.ticker ?? "") &&
+    Boolean(process.env.FINMIND_API_TOKEN)
+  );
+}
+
+function allBarsAreMock(bars: OhlcvBar[]): boolean {
+  return bars.length > 0 && bars.every((bar) => bar.source === "mock");
 }
 
 // ── Mock PRNG (mulberry32 seeded by companyId) ────────────────────────────────
@@ -210,7 +219,10 @@ export async function getCompanyOhlcv(
 
   // Try cache first
   const cached = await getCachedOhlcv(cacheKey);
-  if (cached) return cached;
+  const shouldTryFinMind = canTryFinMindDaily(params, interval);
+  if (cached && (!allBarsAreMock(cached) || !shouldTryFinMind)) {
+    return cached;
+  }
 
   const db = getDb();
   let bars: OhlcvBar[];
@@ -246,18 +258,20 @@ export async function getCompanyOhlcv(
         // F1 fix (2026-05-05): If ALL rows in DB are mock-sourced, treat as if DB
         // is empty for FinMind purposes — do not serve stale mock data as "live".
         // Real rows (source=tej or kgi) are served normally.
-        const allMock = bars.every((b) => b.source === "mock");
+        const allMock = allBarsAreMock(bars);
 
         if (
           interval === "1d" &&
           params.ticker &&
           TAIWAN_TICKER_PATTERN.test(params.ticker) &&
-          process.env.FINMIND_API_TOKEN &&
+          shouldTryFinMind &&
           (allMock || bars.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL)
         ) {
           try {
             const startDate = params.from ?? nDaysAgoIso(1095);
-            const endDate = params.to ?? todayIso();
+            // When the app clock is ahead of FinMind's latest trading date, sending
+            // end_date=today produces HTTP 400. Omit end_date for "latest" queries.
+            const endDate = params.to ?? null;
             const finmindBars = await getFinMindClient().getStockPriceAdj(params.ticker, startDate, endDate);
             if (finmindBars.length > 0) {
               await setCachedOhlcv(cacheKey, finmindBars);
@@ -286,11 +300,12 @@ export async function getCompanyOhlcv(
     interval === "1d" &&
     params.ticker &&
     TAIWAN_TICKER_PATTERN.test(params.ticker) &&
-    process.env.FINMIND_API_TOKEN
+    shouldTryFinMind
   ) {
     try {
       const startDate = params.from ?? nDaysAgoIso(280);
-      const endDate   = params.to ?? todayIso();
+      // Omit end_date for latest queries to avoid future-date HTTP 400 responses.
+      const endDate   = params.to ?? null;
       const finmindBars = await getFinMindClient().getStockPriceAdj(params.ticker, startDate, endDate);
       if (finmindBars.length > 0) {
         await setCachedOhlcv(cacheKey, finmindBars);
@@ -307,7 +322,9 @@ export async function getCompanyOhlcv(
   if (params.to)   mockBars = mockBars.filter((b) => b.dt <= params.to!);
 
   bars = mockBars;
-  await setCachedOhlcv(cacheKey, bars);
+  if (!shouldTryFinMind) {
+    await setCachedOhlcv(cacheKey, bars);
+  }
   return bars;
 }
 

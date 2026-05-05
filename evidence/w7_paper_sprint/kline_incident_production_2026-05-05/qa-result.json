@@ -1,0 +1,85 @@
+{
+  "checkedAt": "2026-05-05T14:00:01.521Z",
+  "route": {
+    "url": "https://app.eycvector.com/companies/2330?codexKlineIncident=2026-05-05T14%3A00%3A01.521Z",
+    "status": 200
+  },
+  "company": {
+    "id": "906c9073-d458-4fd9-8ed8-7dfcb745851c",
+    "ticker": "2330",
+    "name": "台積電"
+  },
+  "api": {
+    "companiesStatus": 200,
+    "ohlcvStatus": 200,
+    "ohlcvRows": 200,
+    "ohlcvNonMockRows": 0,
+    "ohlcvFirst": "2025-07-29",
+    "ohlcvLast": {
+      "dt": "2026-05-04",
+      "close": 115.73,
+      "source": "mock"
+    },
+    "kbarStatus": 200,
+    "kbarState": "EMPTY",
+    "kbarDate": "2026-05-05",
+    "kbarRows": 0,
+    "kbarReason": "no_kbar_rows_for_recent_dates",
+    "finmindDiagnostics": {
+      "tokenPresent": true,
+      "tokenSource": "env",
+      "ohlcvSource": "mock",
+      "quotaTier": "free",
+      "quotaLimitPerHour": 600,
+      "redisConfigured": true,
+      "inProcess": {
+        "requestCount": 357,
+        "errorCount": 357,
+        "errorRatePct": 100,
+        "lastFetchTs": "2026-05-05T14:00:38.389Z",
+        "lastDataset": "TaiwanStockKBar"
+      },
+      "health": "configured",
+      "note": "Counters reset on process restart. Token is NEVER returned."
+    }
+  },
+  "dom": {
+    "url": "https://app.eycvector.com/companies/2330?codexKlineIncident=2026-05-05T14%3A00%3A01.521Z",
+    "title": "IUF 交易戰情室",
+    "panelExists": true,
+    "panelBox": {
+      "x": 314.78125,
+      "y": 558.390625,
+      "width": 938.21875,
+      "height": 287.90625,
+      "display": "block",
+      "visibility": "visible"
+    },
+    "chartShellExists": false,
+    "chartShellBox": null,
+    "canvasHostExists": false,
+    "canvasHostBox": null,
+    "canvasCountInKline": 0,
+    "svgCountInKline": 0,
+    "terminalTexts": [
+      "無資料 正式日 K 目前沒有可用資料。"
+    ],
+    "badgeTexts": [
+      "無資料"
+    ],
+    "metaTexts": [],
+    "bodyHasOfficialNoData": false,
+    "bodyHasMockWord": false
+  },
+  "browser": {
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": []
+  },
+  "screenshots": {
+    "fullPage": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_demo_ui_repair\\evidence\\w7_paper_sprint\\kline_incident_production_2026-05-05\\companies-2330-production-1365.png",
+    "klinePanel": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_demo_ui_repair\\evidence\\w7_paper_sprint\\kline_incident_production_2026-05-05\\companies-2330-kline-panel-1365.png"
+  },
+  "verdict": "BROKEN",
+  "rootCauseClass": "API_RETURNS_MOCK_ONLY"
+}
