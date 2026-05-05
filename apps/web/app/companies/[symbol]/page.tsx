@@ -328,17 +328,31 @@ export default async function CompanyDetailPage({
         </aside>
       </div>
 
-      <div className="company-tabs-band">
-        <span className="tg gold">公司資料面板</span>
-        <span className="tg soft">價格 / 財報 / 籌碼 / 重大訊息 / 逐筆</span>
+      <div className="company-tabs-band company-data-dock-title">
+        <div>
+          <span className="tg gold">公司資料艙</span>
+          <strong>FinMind 與正式資料流</strong>
+          <small>財報、籌碼、公告與盤中資料各自揭露來源狀態；沒有資料就顯示無資料或暫停，不補假內容。</small>
+        </div>
+        <div className="company-data-dock-tags">
+          <span>價格</span>
+          <span>財報</span>
+          <span>籌碼</span>
+          <span>公告</span>
+          <span>逐筆</span>
+        </div>
       </div>
 
-      <div className="company-panels-grid">
+      <div className="company-data-dock">
         <FinancialsPanel companyId={company.id} />
-        <ChipsPanel companyId={company.id} />
-        <AnnouncementsPanel companyId={company.id} />
-        <DerivativesPanel />
-        <TickStreamPanel />
+        <div className="company-data-side-rail">
+          <ChipsPanel companyId={company.id} />
+          <AnnouncementsPanel companyId={company.id} />
+        </div>
+        <div className="company-data-status-rail">
+          <DerivativesPanel />
+          <TickStreamPanel />
+        </div>
       </div>
     </PageFrame>
   );

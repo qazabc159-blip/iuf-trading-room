@@ -179,7 +179,7 @@ export function ChipsPanel({ companyId }: { companyId: string }) {
   }, [companyId]);
 
   return (
-    <section className="panel hud-frame">
+    <section className="panel hud-frame company-intel-panel company-chips-console">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">[04]</span> 籌碼流向
         <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 三大法人 / 融資券</span>
