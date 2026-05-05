@@ -76,3 +76,31 @@ It displays:
 - error text if present
 
 This is not a publishing action and does not review, approve, reject, or mutate OpenAlice jobs. It only makes the stale daily-brief chain inspectable from the UI while the formal daily brief row remains old.
+
+## Production Follow-Up After PR #190
+
+Checked: 2026-05-05 19:56 Taipei
+
+PR #190 deployed successfully to the web service. Authenticated production smoke on `/briefs` confirmed:
+
+- `每日簡報`
+- `OpenAlice 最近任務`
+- `只讀佇列`
+- `資料過期`
+- old formal brief date `2026-04-25`
+
+No FinMind JWT, password, Railway secret, or token-like value appeared in the probed HTML. The page still keeps the old formal row marked expired; a recent OpenAlice job is not treated as a current published brief.
+
+## Draft Gate Follow-Up
+
+Checked locally before PR: 2026-05-05 20:06 Taipei
+
+Codex added a second `/briefs` read-only surface: `每日簡報草稿閘門`, powered by the existing `GET /api/v1/content-drafts?status=awaiting_review&limit=100` endpoint. The frontend filters `targetTable === "daily_briefs"` locally because the production endpoint currently does not reliably narrow by `targetTable`.
+
+The new surface separates three states:
+
+- formal brief freshness: still based only on `/api/v1/briefs`
+- OpenAlice job health: based on `/api/v1/openalice/jobs`
+- daily brief draft review gate: based on `/api/v1/content-drafts`
+
+This makes the actual stale-data chain visible: OpenAlice can produce draft-ready work while the formal daily brief remains old until a review/publish path writes a new official row. The patch is read-only and does not approve, reject, publish, or mutate drafts.

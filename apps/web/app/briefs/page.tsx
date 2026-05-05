@@ -1,10 +1,11 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
-import { getBriefs, getOpenAliceJobs, getOpenAliceObservability, type OpenAliceJobEntry, type OpenAliceObservability } from "@/lib/api";
+import { getBriefs, getContentDrafts, getOpenAliceJobs, getOpenAliceObservability, type ContentDraftEntry, type OpenAliceJobEntry, type OpenAliceObservability } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { briefAgeCopy, briefAgeDays, briefFreshnessBadge, briefFreshnessLabel, briefFreshnessTone, type BriefFreshness } from "@/lib/freshness";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,11 @@ type OpenAliceState =
 
 type OpenAliceJobsState =
   | { state: "LIVE"; data: OpenAliceJobEntry[]; updatedAt: string; source: string }
+  | { state: "EMPTY"; data: []; updatedAt: string; source: string; reason: string }
+  | { state: "BLOCKED"; data: []; updatedAt: string; source: string; reason: string };
+
+type DailyBriefDraftsState =
+  | { state: "LIVE"; data: ContentDraftEntry[]; updatedAt: string; source: string }
   | { state: "EMPTY"; data: []; updatedAt: string; source: string; reason: string }
   | { state: "BLOCKED"; data: []; updatedAt: string; source: string; reason: string };
 
@@ -44,6 +50,19 @@ function sortJobs(jobs: OpenAliceJobEntry[]) {
 
 function jobTime(job: OpenAliceJobEntry) {
   return job.completedAt ?? job.claimedAt ?? job.createdAt;
+}
+
+function draftTime(draft: ContentDraftEntry) {
+  return draft.updatedAt ?? draft.createdAt;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function statusBadge(status: DailyBrief["status"]) {
@@ -100,6 +119,27 @@ function taskTypeLabel(value: string | null | undefined) {
   if (value === "company_note") return "公司筆記";
   if (value === "signal_cluster") return "訊號彙整";
   return value ?? "--";
+}
+
+function draftTitle(draft: ContentDraftEntry) {
+  const payload = asRecord(draft.payload);
+  return stringField(payload, "date")
+    ?? stringField(payload, "title")
+    ?? stringField(payload, "heading")
+    ?? "每日簡報草稿";
+}
+
+function draftStatusLabel(value: string | null | undefined) {
+  if (value === "awaiting_review") return "待審";
+  if (value === "approved") return "已核准";
+  if (value === "rejected") return "已退回";
+  return value ?? "--";
+}
+
+function draftStatusBadge(value: string | null | undefined) {
+  if (value === "approved") return "badge-green";
+  if (value === "rejected") return "badge-red";
+  return "badge-yellow";
 }
 
 async function loadOpenAliceStatus(): Promise<OpenAliceState> {
@@ -160,6 +200,40 @@ async function loadOpenAliceJobs(): Promise<OpenAliceJobsState> {
       updatedAt,
       source: "OpenAlice job queue",
       reason: friendlyDataError(error, "OpenAlice 任務佇列暫時無法讀取。"),
+    };
+  }
+}
+
+async function loadDailyBriefDrafts(): Promise<DailyBriefDraftsState> {
+  const updatedAt = new Date().toISOString();
+  try {
+    const response = await getContentDrafts({ status: "awaiting_review", limit: 100 });
+    const drafts = (response.data ?? [])
+      .filter((draft) => draft.targetTable === "daily_briefs")
+      .sort((a, b) => Date.parse(draftTime(b)) - Date.parse(draftTime(a)))
+      .slice(0, 5);
+    if (drafts.length === 0) {
+      return {
+        state: "EMPTY",
+        data: [],
+        updatedAt,
+        source: "content_drafts",
+        reason: "目前沒有待審的每日簡報草稿。",
+      };
+    }
+    return {
+      state: "LIVE",
+      data: drafts,
+      updatedAt,
+      source: "content_drafts",
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      data: [],
+      updatedAt,
+      source: "content_drafts",
+      reason: friendlyDataError(error, "每日簡報草稿佇列暫時無法讀取。"),
     };
   }
 }
@@ -237,6 +311,47 @@ function StateBadge({ state }: { state: OpenAliceJobsState["state"] }) {
   return <span className={`badge ${klass}`}>{statusText(state)}</span>;
 }
 
+function DailyBriefDraftGate({ drafts }: { drafts: DailyBriefDraftsState }) {
+  return (
+    <Panel
+      code="BRF-DRAFT"
+      title="每日簡報草稿閘門"
+      sub="OpenAlice 產出後，正式簡報前的審核狀態"
+      right={drafts.state === "LIVE" ? `${drafts.data.length} 筆待審` : statusText(drafts.state)}
+    >
+      <div className="brief-draft-gate">
+        <div className="source-line">
+          <StateBadge state={drafts.state} />
+          <span>來源：{drafts.source}</span>
+          <span>檢查：{formatDateTime(drafts.updatedAt)}</span>
+          <span>{drafts.state === "LIVE" ? "草稿尚未核准成正式每日簡報。" : drafts.reason}</span>
+        </div>
+        {drafts.state === "LIVE" && (
+          <div className="brief-job-list">
+            {drafts.data.map((draft) => (
+              <div className="brief-job-row draft" key={draft.id}>
+                <span className="tg gold">{draftTitle(draft)}</span>
+                <span className={`badge ${draftStatusBadge(draft.status)}`}>{draftStatusLabel(draft.status)}</span>
+                <span className="tg soft">建立 {formatDateTime(draft.createdAt)}</span>
+                <span className="tg soft">更新 {formatDateTime(draft.updatedAt)}</span>
+                <span className="tg soft">來源 job {draft.sourceJobId?.slice(0, 8) ?? "--"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="brief-draft-actions">
+          <span className="state-reason">
+            這裡只揭露卡點；是否核准草稿仍是人工審核流程，前端不會自動發布每日簡報。
+          </span>
+          <Link className="mini-button" href="/admin/content-drafts?status=awaiting_review">
+            開啟審稿佇列
+          </Link>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function BriefStatePanel({
   state,
   reason,
@@ -264,6 +379,7 @@ export default async function BriefsPage() {
   const requestedAt = new Date().toISOString();
   const openAlice = await loadOpenAliceStatus();
   const openAliceJobs = await loadOpenAliceJobs();
+  const dailyBriefDrafts = await loadDailyBriefDrafts();
 
   try {
     const response = await getBriefs();
@@ -348,6 +464,8 @@ export default async function BriefsPage() {
       </Panel>
 
       <OpenAliceJobsPanel jobs={openAliceJobs} />
+
+      <DailyBriefDraftGate drafts={dailyBriefDrafts} />
 
       {(error || !latest) && (
         <div className="brief-empty-grid">
