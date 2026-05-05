@@ -95,6 +95,27 @@ function StatePill({ state }: { state: LoadState<unknown>["state"] | WatchlistSu
   return <span className={`tg ${stateTone(state)}`}>{stateText(state)}</span>;
 }
 
+function finmindDatasetUiState(
+  dataset: FinMindSourceStatus["datasets"][number],
+  tokenPresent: boolean
+): UiState {
+  if (dataset.state === "READY") return "LIVE";
+  if (!tokenPresent) return "BLOCKED";
+  if (dataset.blocker === "freeze_no_news_feature") return "BLOCKED";
+  if (!dataset.implemented || dataset.blocker?.includes("pending")) return "EMPTY";
+  return "BLOCKED";
+}
+
+function finmindDatasetChipClass(
+  dataset: FinMindSourceStatus["datasets"][number],
+  tokenPresent: boolean
+) {
+  const state = finmindDatasetUiState(dataset, tokenPresent);
+  if (state === "LIVE") return "is-ready";
+  if (state === "EMPTY") return "is-pending";
+  return "is-blocked";
+}
+
 function formatTime(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
@@ -457,7 +478,9 @@ function FinMindStatusPanel({ finmind }: { finmind: LoadState<DashboardFinMindSt
   const diagnostics = data?.diagnostics ?? null;
   const datasets = data?.datasets ?? [];
   const ready = datasets.filter((dataset) => dataset.state === "READY");
-  const blocked = datasets.filter((dataset) => dataset.state === "BLOCKED");
+  const tokenPresent = Boolean(diagnostics?.tokenPresent || data?.tokenPresent);
+  const pending = datasets.filter((dataset) => finmindDatasetUiState(dataset, tokenPresent) === "EMPTY");
+  const blocked = datasets.filter((dataset) => finmindDatasetUiState(dataset, tokenPresent) === "BLOCKED");
   const tokenState: UiState = diagnostics?.tokenPresent || data?.tokenPresent ? "LIVE" : "BLOCKED";
   const quotaState: UiState = diagnostics?.quotaTier === "sponsor999" ? "LIVE" : diagnostics?.quotaTier ? "EMPTY" : "BLOCKED";
   const cacheState: UiState = diagnostics?.redisConfigured ? "LIVE" : diagnostics ? "BLOCKED" : "EMPTY";
@@ -511,10 +534,18 @@ function FinMindStatusPanel({ finmind }: { finmind: LoadState<DashboardFinMindSt
         <div className="dashboard-readiness-lane">
           <div>
             <span className="tg gold">待接資料集</span>
+            <strong>{pending.length}</strong>
+          </div>
+          <StatePill state={pending.length > 0 ? "EMPTY" : "LIVE"} />
+          <p>黃色代表已列入路線圖但前後端還沒正式露出；不是錯誤，也不會用假資料補成正常。</p>
+        </div>
+        <div className="dashboard-readiness-lane">
+          <div>
+            <span className="tg gold">阻擋資料集</span>
             <strong>{blocked.length}</strong>
           </div>
           <StatePill state={blocked.length > 0 ? "BLOCKED" : "LIVE"} />
-          <p>紅色代表目前不可露出或被 freeze，不會用假資料補成正常。</p>
+          <p>紅色只給 token 缺失、讀取失敗或 freeze 禁止露出的項目；不把待接資料誤標成故障。</p>
         </div>
       </div>
       <div className="dashboard-diagnostics-grid" aria-label="FinMind 診斷細節">
@@ -539,7 +570,7 @@ function FinMindStatusPanel({ finmind }: { finmind: LoadState<DashboardFinMindSt
         <span className="tg soft">資料集</span>
         {datasets.slice(0, 14).map((dataset) => (
           <span
-            className={`dashboard-dataset-token ${dataset.state === "READY" ? "is-ready" : "is-blocked"}`}
+            className={`dashboard-dataset-token ${finmindDatasetChipClass(dataset, tokenPresent)}`}
             key={dataset.key}
             title={dataset.blocker ?? dataset.key}
           >

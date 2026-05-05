@@ -11,8 +11,18 @@ Scope: apps/web dashboard source-health panel
   - `/api/v1/data-sources/finmind/status` for dataset readiness.
   - `/api/v1/diagnostics/finmind` for token presence, quota tier, Redis cache, OHLCV source, fetch counters, and error rate.
 - `READY` datasets render green.
-- `BLOCKED` / freeze / not-surfaced datasets render red.
+- Pending / not-yet-surfaced datasets render amber when the token is present, so they do not look like production failures.
+- Hard blocked datasets render red only when token is missing, diagnostics fail, or the dataset is explicitly frozen from exposure.
 - `OHLCV_SOURCE !== finmind` renders blocked instead of fake green.
+
+## Follow-Up - 2026-05-05 Pass 118
+
+- Split FinMind dataset semantics into `READY` / `PENDING` / `BLOCKED`.
+- Dashboard summary now has separate rows for:
+  - 可用資料集: green, implemented and readable.
+  - 待接資料集: amber, roadmap/not-yet-exposed, not an error.
+  - 阻擋資料集: red, token/diagnostics/freeze failure only.
+- This addresses the operator issue where already connected datasets looked red on the dashboard.
 
 ## State Semantics
 
