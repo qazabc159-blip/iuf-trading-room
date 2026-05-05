@@ -7,8 +7,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
   ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
 
-// PaperOrderInput is the form-facing type (no idempotencyKey — added by withIdempotency).
-// quantity_unit is REQUIRED — no silent default. Caller must specify SHARE or LOT explicitly.
+// PaperOrderInput is the form-facing type (no idempotencyKey ??added by withIdempotency).
+// quantity_unit is REQUIRED ??no silent default. Caller must specify SHARE or LOT explicitly.
 export type PaperOrderInput = Omit<PaperOrderCreateInput, "idempotencyKey"> & {
   quantity_unit: "LOT" | "SHARE";
 };
@@ -143,7 +143,7 @@ export function isCancellablePaperOrder(status: PaperOrderStatus) {
 }
 
 export async function previewPaperOrder(input: PaperOrderInput, idempotencyKey?: string) {
-  return request<PreviewOrderResult>("/api/v1/paper/orders/preview", {
+  return request<PreviewOrderResult>("/api/v1/paper/preview", {
     method: "POST",
     body: JSON.stringify(withIdempotency(input, "preview", idempotencyKey)),
   });
@@ -155,7 +155,7 @@ export async function submitPaperOrder(input: PaperOrderInput, idempotencyKey?: 
   }
 
   const body = withIdempotency(input, "submit", idempotencyKey);
-  const response = await fetch(`${API_BASE}/api/v1/paper/orders`, {
+  const response = await fetch(`${API_BASE}/api/v1/paper/submit`, {
     method: "POST",
     credentials: "include",
     cache: "no-store",
@@ -210,14 +210,17 @@ export async function cancelPaperOrder(orderId: string, reason = "operator_cance
 export function formatPaperOrderError(error: unknown) {
   if (error instanceof PaperOrderApiError) {
     const layer = error.layer ? ` layer=${error.layer}` : "";
-    if (error.code === "API_BASE_UNCONFIGURED") return "前端尚未設定後端，無法讀取模擬委託。";
-    if (error.status === 401) return "登入狀態已失效，請重新登入。";
-    if (error.status === 404) return "後端端點尚未提供。";
-    if (error.status >= 500) return `後端暫時無法處理模擬委託（${error.status}${layer}）。`;
-    return `模擬委託被後端拒絕（${error.status}${layer}）。`;
+    if (error.code === "API_BASE_UNCONFIGURED") return "尚未設定 API 位置，無法連線到模擬交易後端。";
+    if (error.code === "paper_gate_blocked") return `模擬交易目前被風控閘門擋下：${error.message}${layer}`;
+    if (error.code === "DUPLICATE_IDEMPOTENCY_KEY") return "這張模擬委託已送出過，系統已阻擋重複送單。";
+    if (error.code === "VALIDATION_ERROR") return "委託欄位未通過檢查，請確認股票、價格、股數與零股/整張單位。";
+    if (error.status === 401) return "登入狀態已失效，請重新登入後再預覽模擬委託。";
+    if (error.status === 404) return "模擬交易端點尚未部署完成。";
+    if (error.status >= 500) return `模擬交易後端暫時異常（${error.status}${layer}）。`;
+    return `模擬委託未通過（${error.status}${layer}）：${error.message}`;
   }
   const message = error instanceof Error ? error.message : String(error);
-  if (/API_BASE|NEXT_PUBLIC_API_BASE_URL|base url/i.test(message)) return "前端尚未設定後端，無法讀取模擬交易資料。";
-  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "前端暫時無法連到後端。";
-  return message.trim() ? "模擬交易暫時無法處理，請稍後重試。" : "模擬交易暫時無法處理。";
+  if (/API_BASE|NEXT_PUBLIC_API_BASE_URL|base url/i.test(message)) return "尚未設定 API 位置，無法連線到模擬交易後端。";
+  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "模擬交易後端連線失敗，請稍後再試。";
+  return message.trim() ? `模擬委託發生錯誤：${message}` : "模擬委託發生未知錯誤。";
 }
