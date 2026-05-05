@@ -3277,3 +3277,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - State semantics: source row states stay LIVE/EMPTY/BLOCKED; text explicitly says `非交易時段壓縮` so this is chart-axis rendering, not fake time or fake price data.
 - Checks so far: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; diff-check + PR + production screenshot pending.
 - Stop-line proof: no token value, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live data, no paper/risk source change, and no buy/sell recommendation wording.
+
+## 2026-05-06 02:15 Taipei - Codex K-line minute-axis production verified
+- PR / deploy: #203 merged to main `d0b7633`; GitHub CI PASS; Railway Deploy to Railway PASS for `web`, `api`, and `worker`.
+- Trade Capability Score: +1. Workflow improved: `/companies/2330` production minute K now renders readable 1/5/15/60 分 views with 1日/3日/5日 intraday range controls and compressed non-trading spacing.
+- Endpoint/source proof: authenticated production browser fetch to `https://api.eycvector.com/api/v1/companies/2330/kbar?days=5` returned HTTP 200, `source=FINMIND`, `state=LIVE`, `rowCount=1330`, dates `2026-04-28, 2026-04-29, 2026-04-30, 2026-05-04, 2026-05-05`.
+- DOM/chart proof: production page has visible chart canvases; page text contains `非交易時段壓縮`; page text does not contain `分 K 無資料`, `分K無資料`, or `no_kbar_rows`.
+- Screenshot manifest: `evidence/w7_paper_sprint/production_smoke_pass122_kline_compressed_axis_2026-05-06/manifest.json` with screenshots for day, 1min, 5min, 15min, 60min, and intraday range states.
+- Notes: relative `/api/v1/companies/2330/kbar?days=5` on the web origin returns 404, but the production app uses the API origin and the API-origin request is LIVE; observed aborted RSC prefetch requests are navigation/prefetch cancellations, not K-line data failures.
+- Stop-line proof: no token value displayed/logged in evidence, no fake-live state, no order submitted, no KGI/broker write-side, no migration/schema/destructive DB, no paper/risk source change, no buy/sell recommendation wording.
+- Next: move to Paper E2E visible workflow and FinMind diagnostics only; no more K-line cosmetic work unless production behavior regresses.
