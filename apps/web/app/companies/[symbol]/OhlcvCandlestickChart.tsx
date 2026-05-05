@@ -46,6 +46,7 @@ const INTRADAY_RANGE_OPTIONS: ReadonlyArray<{ value: IntradayRangeKey; label: st
 
 const MIN_TREND_BARS = 12;
 const COMPRESSED_INTRADAY_BASE_TIME = Math.floor(Date.UTC(2026, 0, 5, 1, 0, 0) / 1000);
+const TWSE_INTRADAY_MINUTES = 270;
 
 function daysSince(dt: string): number {
   const now = Date.now();
@@ -172,6 +173,36 @@ function aggregateKBarRows(rows: FinMindKBarRow[], minutes: number): ChartBar[] 
   });
 }
 
+function intradayTradingDates(rows: FinMindKBarRow[]): string[] {
+  return Array.from(new Set(rows.map((row) => row.date).filter(Boolean))).sort();
+}
+
+function intradayDatesForRange(rows: FinMindKBarRow[], range: IntradayRangeKey): Set<string> {
+  const option = INTRADAY_RANGE_OPTIONS.find((item) => item.value === range);
+  const dates = intradayTradingDates(rows);
+  if (!option || dates.length === 0) return new Set(dates);
+  return new Set(dates.slice(-option.days));
+}
+
+function rawRowsInLastTradingDays(rows: FinMindKBarRow[], days: number): number {
+  const dates = intradayTradingDates(rows).slice(-days);
+  if (dates.length === 0) return 0;
+  const keep = new Set(dates);
+  return rows.filter((row) => keep.has(row.date)).length;
+}
+
+function suggestIntradayRange(rows: FinMindKBarRow[], minutes: number): IntradayRangeKey {
+  const oneDayRawRows = rawRowsInLastTradingDays(rows, 1);
+  const fiveDayRawRows = rawRowsInLastTradingDays(rows, 5);
+  const oneDayBuckets = Math.ceil(oneDayRawRows / Math.max(1, minutes));
+  const fiveDayBuckets = Math.ceil(fiveDayRawRows / Math.max(1, minutes));
+  const targetBuckets = minutes === 1 ? 160 : minutes === 5 ? 64 : minutes === 15 ? 30 : 12;
+
+  if (oneDayBuckets >= targetBuckets) return "1d";
+  if (fiveDayBuckets >= targetBuckets) return "5d";
+  return "20d";
+}
+
 function filterIntradayTradingDays(bars: ChartBar[], range: IntradayRangeKey): ChartBar[] {
   const option = INTRADAY_RANGE_OPTIONS.find((item) => item.value === range);
   if (!option || bars.length === 0) return bars;
@@ -247,6 +278,14 @@ function formatNumber(value: number | null | undefined, digits = 2) {
   return value.toLocaleString("zh-TW", { maximumFractionDigits: digits });
 }
 
+function formatPercent(value: number | null | undefined, digits = 0) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  return `${value.toLocaleString("zh-TW", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  })}%`;
+}
+
 function signedNumber(value: number | null | undefined, digits = 2) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "--";
   return `${value > 0 ? "+" : ""}${value.toLocaleString("zh-TW", {
@@ -303,13 +342,36 @@ export function OhlcvCandlestickChart({
     return filterRange(aggregateDailyBars(bars, interval), range);
   }, [bars, interval, intradayRange, kbarRows, range]);
   const insufficientTrend = !isIntraday && chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
+  const selectedIntradayDates = useMemo(() => intradayDatesForRange(kbarRows, intradayRange), [intradayRange, kbarRows]);
+  const intradayCoverage = useMemo(() => {
+    if (!isIntraday) return null;
+    const tradingDays = selectedIntradayDates.size;
+    const rawRows = kbarRows.filter((row) => selectedIntradayDates.has(row.date)).length;
+    const expectedRawRows = tradingDays * TWSE_INTRADAY_MINUTES;
+    const expectedAggregatedRows = Math.max(1, Math.ceil(expectedRawRows / activeIntradayMinutes));
+    const rawCoveragePct = expectedRawRows > 0 ? (rawRows / expectedRawRows) * 100 : 0;
+    const aggregatedCoveragePct = expectedAggregatedRows > 0 ? (chartBars.length / expectedAggregatedRows) * 100 : 0;
+    const suggestedRange = suggestIntradayRange(kbarRows, activeIntradayMinutes);
+    const oneDayRawRows = rawRowsInLastTradingDays(kbarRows, 1);
+
+    return {
+      tradingDays,
+      rawRows,
+      expectedRawRows,
+      rawCoveragePct,
+      aggregatedCoveragePct,
+      suggestedRange,
+      oneDayRawRows,
+      isSparse: rawCoveragePct > 0 && rawCoveragePct < 45,
+    };
+  }, [activeIntradayMinutes, chartBars.length, isIntraday, kbarRows, selectedIntradayDates]);
 
   const selectInterval = (nextInterval: EnabledInterval) => {
     const nextMeta = ENABLED_INTERVALS.find((item) => item.value === nextInterval);
     setInterval(nextInterval);
     setHoverBar(null);
     if (nextMeta?.kind === "intraday" && activeMeta?.kind !== "intraday") {
-      setIntradayRange("1d");
+      setIntradayRange(suggestIntradayRange(kbarRows, nextMeta.minutes ?? 1));
     }
   };
 
@@ -479,7 +541,7 @@ export function OhlcvCandlestickChart({
     : 0;
   const lastDisplayedIntradayDate = isIntraday ? chartBars.at(-1)?.dt.slice(0, 10) : null;
   const displayedIntradayRawRows = isIntraday && lastDisplayedIntradayDate
-    ? kbarRows.filter((row) => new Set(chartBars.map((bar) => bar.dt.slice(0, 10))).has(row.date)).length
+    ? kbarRows.filter((row) => selectedIntradayDates.has(row.date)).length
     : 0;
   const emptyReason =
     isIntraday
@@ -605,7 +667,7 @@ export function OhlcvCandlestickChart({
         <span className={`tg ${stateToneClass(kbarState)}`}>{stateLabel(kbarState)}</span>
         <span className="tg soft">
           {kbarState === "LIVE"
-            ? `FinMind Sponsor ${kbarDate ?? ""} 已回傳 ${kbarRows.length.toLocaleString("zh-TW")} 根 1 分 K${kbarTradingDays > 1 ? ` / ${kbarTradingDays} 個交易日` : ""}，分 K 圖已壓縮非交易時段，可彙整 1 / 5 / 15 / 60 分。`
+            ? `FinMind Sponsor ${kbarDate ?? ""} 已回傳 ${kbarRows.length.toLocaleString("zh-TW")} 根 1 分 K${kbarTradingDays > 1 ? ` / ${kbarTradingDays} 個交易日` : ""}，分 K 只畫真實成交分鐘；低流動空窗不補假線。`
             : kbarState === "BLOCKED"
               ? `分 K 無法顯示：${kbarReason}`
               : `分 K 無資料：${kbarReason}`}
@@ -618,10 +680,46 @@ export function OhlcvCandlestickChart({
           <span>{chartBars.length.toLocaleString("zh-TW")} 根</span>
           {isIntraday && displayedIntradayDays > 0 && <span>顯示 {displayedIntradayDays} / {kbarTradingDays} 個交易日</span>}
           {isIntraday && displayedIntradayRawRows > 0 && <span>原始 1 分 K {displayedIntradayRawRows.toLocaleString("zh-TW")} 根</span>}
-          {isIntraday && <span>非交易時段壓縮，可拖曳回看</span>}
+          {isIntraday && intradayCoverage && <span>成交覆蓋 {formatPercent(intradayCoverage.rawCoveragePct)}</span>}
+          {isIntraday && <span>空窗不補假線，可拖曳回看</span>}
           <span>{firstBar?.label} - {lastBar?.label}</span>
           <span>收 {formatNumber(lastBar?.close)}</span>
           <span>量 {formatNumber(lastBar?.volume, 0)}</span>
+        </div>
+      )}
+
+      {isIntraday && intradayCoverage && (
+        <div className={`kline-density-strip${intradayCoverage.isSparse ? " is-sparse" : ""}`}>
+          <div>
+            <span>成交密度</span>
+            <b>{intradayCoverage.isSparse ? "稀疏" : "足夠"}</b>
+          </div>
+          <div>
+            <span>成交分鐘</span>
+            <b>
+              {intradayCoverage.rawRows.toLocaleString("zh-TW")}
+              <small> / 約 {intradayCoverage.expectedRawRows.toLocaleString("zh-TW")}</small>
+            </b>
+          </div>
+          <div>
+            <span>彙整後</span>
+            <b>
+              {chartBars.length.toLocaleString("zh-TW")}
+              <small> 根 {activeMeta?.label}</small>
+            </b>
+          </div>
+          <div>
+            <span>視窗</span>
+            <b>
+              {intradayRange !== "1d" && intradayCoverage.oneDayRawRows < 160 ? "自動展開" : "手動"}
+              <small>{INTRADAY_RANGE_OPTIONS.find((item) => item.value === intradayRange)?.label}</small>
+            </b>
+          </div>
+          {intradayCoverage.isSparse && (
+            <p>
+              這檔最近成交分鐘偏少，圖上缺口是市場沒有成交，不是 FinMind 沒接；可改看 15 / 60 分或拉長到 20 日。
+            </p>
+          )}
         </div>
       )}
 
