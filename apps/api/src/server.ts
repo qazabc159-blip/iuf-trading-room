@@ -3799,28 +3799,53 @@ const finmindKBarQuerySchema = z.object({
 app.get("/api/v1/data-sources/finmind/status", async (c) => {
   const finmind = getFinMindClient();
   const tokenPresent = finmind.hasToken();
+  const stats = getFinMindStats();
+  const errorRatePct = stats.requestCount === 0
+    ? null
+    : Math.round((stats.errorCount / stats.requestCount) * 10000) / 100;
+  const degradedByErrors = Boolean(
+    tokenPresent &&
+    stats.requestCount >= 10 &&
+    errorRatePct !== null &&
+    errorRatePct >= 50
+  );
+  const sourceState = tokenPresent
+    ? degradedByErrors ? "DEGRADED" : "LIVE_READY"
+    : "BLOCKED";
+  const readyDatasetState = tokenPresent
+    ? degradedByErrors ? "DEGRADED" : "READY"
+    : "BLOCKED";
 
   return c.json({
     data: {
       source: "FINMIND",
-      state: tokenPresent ? "LIVE_READY" : "BLOCKED",
+      state: sourceState,
       tokenPresent,
       quota: {
         used: null,
         limit: null,
         source: "not_queried_token_safe_v1"
       },
+      health: {
+        requestCount: stats.requestCount,
+        errorCount: stats.errorCount,
+        errorRatePct,
+        lastFetchTs: stats.lastFetchTs,
+        lastDataset: stats.lastDataset,
+        degradedByErrors
+      },
       datasets: FINMIND_DATASET_STATUS.map((dataset) => ({
         ...dataset,
         state: tokenPresent
-          ? dataset.implemented ? "READY" : "BLOCKED"
+          ? dataset.implemented ? readyDatasetState : "BLOCKED"
           : "BLOCKED"
       })),
       notes: [
         "diagnostics_only",
         "token_never_returned",
         "finmind_does_not_enable_broker_submit",
-        "kbar_single_day_payload"
+        "kbar_single_day_payload",
+        ...(degradedByErrors ? ["recent_fetch_errors_high"] : [])
       ],
       updatedAt: new Date().toISOString()
     }
