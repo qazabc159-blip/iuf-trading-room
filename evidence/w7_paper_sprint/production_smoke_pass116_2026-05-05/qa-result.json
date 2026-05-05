@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-05-05T04:06:37.434Z",
+  "railwayDeployment": "d0074693-b2c8-4949-abb2-bffb3126bd9b",
+  "commit": "eac63ed75b1b5805d56485cc96ffb07a2e392ca0",
+  "login": {
+    "status": 200,
+    "url": "https://app.eycvector.com/login"
+  },
+  "protectedCompany": {
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/login?next=%2Fcompanies%2F2330",
+    "redirectedToLogin": true
+  },
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedResponses": []
+}

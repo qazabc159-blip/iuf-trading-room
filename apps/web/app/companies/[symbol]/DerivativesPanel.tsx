@@ -1,6 +1,6 @@
 export function DerivativesPanel() {
   return (
-    <section className="panel hud-frame">
+    <section className="panel hud-frame company-intel-panel company-secondary-status-panel company-derivatives-console">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">衍生品</span> 權證與選擇權
         <span className="dim" style={{ fontSize: 11, marginLeft: 10 }}>待正式資料</span>

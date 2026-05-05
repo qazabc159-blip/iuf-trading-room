@@ -1,0 +1,166 @@
+{
+  "url": "http://127.0.0.1:3052/companies/1101",
+  "generatedAt": "2026-05-05T05:00:09.187Z",
+  "fixture": "fake-api-pass31 on 127.0.0.1:3999; fixture-only missing endpoints recorded in knownFixtureMissing",
+  "results": [
+    {
+      "label": "desktop1365_company1101_data_dock_dev3052_final2",
+      "viewport": {
+        "width": 1365,
+        "height": 900
+      },
+      "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_demo_ui_repair\\evidence\\w7_paper_sprint\\local_visual_qa_pass117_company_data_dock_2026-05-05\\desktop1365_company1101_data_dock_dev3052_final2.png",
+      "events": {
+        "console": [],
+        "pageErrors": [],
+        "failed": [],
+        "badResponses": [],
+        "knownFixtureMissing": [
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/balance-sheet?years=5"
+          },
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/cash-flow?years=5"
+          },
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/valuation?days=365"
+          },
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/market-value?days=365"
+          },
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/shareholding?months=6"
+          }
+        ]
+      },
+      "metrics": {
+        "badChars": 0,
+        "docOverflow": 0,
+        "dockFound": true,
+        "dockRect": {
+          "width": 938,
+          "height": 794,
+          "top": 248
+        },
+        "panels": [
+          {
+            "title": "[03] 財報與估值FinMind：財報 / 月營收 / 資產負債 / 現金流 / PER / 市值 / 股利",
+            "width": 596,
+            "height": 412,
+            "top": 248
+          },
+          {
+            "title": "[04] 籌碼流向FinMind 三大法人 / 融資券",
+            "width": 320,
+            "height": 364,
+            "top": 248
+          },
+          {
+            "title": "[05] 重大訊息臺股公告 / 新聞線索",
+            "width": 320,
+            "height": 218,
+            "top": 627
+          },
+          {
+            "title": "衍生品 權證與選擇權待正式資料",
+            "width": 461,
+            "height": 175,
+            "top": 867
+          },
+          {
+            "title": "逐筆 盤中報價等待 KGI 唯讀資料",
+            "width": 461,
+            "height": 175,
+            "top": 867
+          }
+        ],
+        "narrowStacks": []
+      }
+    },
+    {
+      "label": "mobile390_company1101_data_dock_dev3052_final2",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_demo_ui_repair\\evidence\\w7_paper_sprint\\local_visual_qa_pass117_company_data_dock_2026-05-05\\mobile390_company1101_data_dock_dev3052_final2.png",
+      "events": {
+        "console": [],
+        "pageErrors": [],
+        "failed": [],
+        "badResponses": [],
+        "knownFixtureMissing": [
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/balance-sheet?years=5"
+          },
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/cash-flow?years=5"
+          },
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/shareholding?months=6"
+          },
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/valuation?days=365"
+          },
+          {
+            "status": 404,
+            "url": "http://127.0.0.1:3999/api/v1/companies/11111111-1111-4111-8111-111111111101/market-value?days=365"
+          }
+        ]
+      },
+      "metrics": {
+        "badChars": 0,
+        "docOverflow": 0,
+        "dockFound": true,
+        "dockRect": {
+          "width": 354,
+          "height": 1339,
+          "top": 181
+        },
+        "panels": [
+          {
+            "title": "[03] 財報與估值FinMind：財報 / 月營收 / 資產負債 / 現金流 / PER / 市值 / 股利",
+            "width": 354,
+            "height": 449,
+            "top": 181
+          },
+          {
+            "title": "[04] 籌碼流向FinMind 三大法人 / 融資券",
+            "width": 354,
+            "height": 334,
+            "top": 644
+          },
+          {
+            "title": "[05] 重大訊息臺股公告 / 新聞線索",
+            "width": 354,
+            "height": 170,
+            "top": 990
+          },
+          {
+            "title": "衍生品 權證與選擇權待正式資料",
+            "width": 354,
+            "height": 167,
+            "top": 1174
+          },
+          {
+            "title": "逐筆 盤中報價等待 KGI 唯讀資料",
+            "width": 354,
+            "height": 167,
+            "top": 1353
+          }
+        ],
+        "narrowStacks": []
+      }
+    }
+  ],
+  "pass": true
+}

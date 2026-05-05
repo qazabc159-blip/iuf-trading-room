@@ -91,7 +91,7 @@ export function AnnouncementsPanel({ companyId }: { companyId: string }) {
   }, [companyId]);
 
   return (
-    <section className="panel hud-frame">
+    <section className="panel hud-frame company-intel-panel company-announcements-console">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">[05]</span> 重大訊息
         <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>
