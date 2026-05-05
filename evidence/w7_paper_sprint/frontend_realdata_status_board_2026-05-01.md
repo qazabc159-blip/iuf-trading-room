@@ -3269,3 +3269,11 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Browser evidence: authenticated production Chromium smoke saved `evidence/w7_paper_sprint/production_smoke_pass120_company_source_kpi_2026-05-06/company2330_prod_after_pr200.png`, `company2330_prod_1min_after_pr200.png`, and `manifest.json`. Page text contains `日K已接`, `分K 1,330根`, and `1,330 根 1 分 K / 5 個交易日`; no `分K無資料` / `no_kbar_rows` appears.
 - Stop-line proof: no token value in UI/evidence, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, no paper/risk source change, and no buy/sell recommendation wording.
 - Next: move to Paper E2E UI proof: odd-lot/board-lot safety, notional display, simulated preview state, and visible no-broker-submit boundary.
+
+## 2026-05-06 01:45 Taipei - Codex K-line minute-axis breakthrough WIP
+- Trade Capability Score: +1. Workflow improved: company-page minute K is no longer plotted on raw wall-clock timestamps that squeeze candles through overnight/weekend gaps; it now uses FinMind OHLC rows with a compressed trading-session axis.
+- Files changed: `apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx`.
+- Behavior: 1/5/15/60 分 K still aggregate from real FinMind 1 分 K, but chart spacing removes non-trading empty time; toolbar adds 1日/3日/5日 range selection for intraday without changing daily/weekly/monthly controls.
+- State semantics: source row states stay LIVE/EMPTY/BLOCKED; text explicitly says `非交易時段壓縮` so this is chart-axis rendering, not fake time or fake price data.
+- Checks so far: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; diff-check + PR + production screenshot pending.
+- Stop-line proof: no token value, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live data, no paper/risk source change, and no buy/sell recommendation wording.
