@@ -38,6 +38,8 @@ type NewsItem = CompanyAnnouncement & {
   companyName: string;
 };
 
+const TAIPEI_TIME_ZONE = "Asia/Taipei";
+
 async function load<T>(
   source: string,
   emptyValue: T,
@@ -111,6 +113,66 @@ function formatDateTime(value: string | null | undefined) {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+function formatSourceTimestamp(value: string | null | undefined) {
+  if (!value) return "--";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value.replace(/-/g, "/");
+  return formatDateTime(value);
+}
+
+function taipeiDateKey(value?: string | null) {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-CA", { timeZone: TAIPEI_TIME_ZONE });
+}
+
+function todayTaipeiKey() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: TAIPEI_TIME_ZONE });
+}
+
+function daysBetweenDateKeys(left: string, right: string) {
+  const [ly, lm, ld] = left.split("-").map(Number);
+  const [ry, rm, rd] = right.split("-").map(Number);
+  if (!ly || !lm || !ld || !ry || !rm || !rd) return null;
+  return Math.floor((Date.UTC(ry, rm - 1, rd) - Date.UTC(ly, lm - 1, ld)) / 86_400_000);
+}
+
+function sourceFreshnessInfo(
+  state: LoadState<unknown>["state"] | WatchlistSurfaceState["state"],
+  updatedAt: string | null | undefined
+) {
+  if (state !== "LIVE") return null;
+  const updatedKey = taipeiDateKey(updatedAt);
+  const todayKey = todayTaipeiKey();
+  if (!updatedKey) return { label: "時間未知", tone: "gold" };
+  const age = daysBetweenDateKeys(updatedKey, todayKey);
+  if (age === null) return { label: "時間未知", tone: "gold" };
+  if (age <= 0) return { label: "今日資料", tone: "status-ok" };
+  if (age === 1) return { label: "昨日資料", tone: "status-ok" };
+  if (age <= 7) return { label: `偏舊 ${age} 天`, tone: "gold" };
+  return { label: `過期 ${age} 天`, tone: "status-bad" };
+}
+
+function latestIso(values: Array<string | null | undefined>) {
+  let latest: string | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (!value) continue;
+    const time = Date.parse(value);
+    if (Number.isFinite(time) && time > latestTime) {
+      latest = value;
+      latestTime = time;
+    }
+  }
+  return latest;
+}
+
+function withLatestUpdatedAt<T>(state: LoadState<T>, updatedAt: string | null | undefined): LoadState<T> {
+  if (state.state !== "LIVE" || !updatedAt) return state;
+  return { ...state, updatedAt };
 }
 
 function signed(value: number | null | undefined, digits = 2) {
@@ -231,11 +293,13 @@ function sourceReason(state: LoadState<unknown> | WatchlistSurfaceState) {
 }
 
 function SourceLine<T>({ state, label }: { state: LoadState<T>; label: string }) {
+  const freshness = sourceFreshnessInfo(state.state, state.updatedAt);
   return (
     <div className="tg soft" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
       <StatePill state={state.state} />
       <span>{label}</span>
-      <span>更新 {formatDateTime(state.updatedAt)}</span>
+      <span>更新 {formatSourceTimestamp(state.updatedAt)}</span>
+      {freshness && <span className={`tg ${freshness.tone}`}>{freshness.label}</span>}
       {state.state !== "LIVE" && <span>{state.reason}</span>}
     </div>
   );
@@ -271,16 +335,22 @@ function DashboardBlockedSummary({ sections }: { sections: DashboardSourceStatus
           </p>
         </div>
         <div className="blocked-source-grid" aria-label="資料來源狀態">
-          {sections.map((section) => (
-            <div className="blocked-source-row" key={section.label}>
-              <div>
-                <strong>{section.label}</strong>
-                <span className="tg soft">來源：{section.source} / 更新 {formatDateTime(section.updatedAt)}</span>
+          {sections.map((section) => {
+            const freshness = sourceFreshnessInfo(section.state, section.updatedAt);
+            return (
+              <div className="blocked-source-row" key={section.label}>
+                <div>
+                  <strong>{section.label}</strong>
+                  <span className="tg soft">
+                    來源：{section.source} / 更新 {formatSourceTimestamp(section.updatedAt)}
+                    {freshness ? ` / ${freshness.label}` : ""}
+                  </span>
+                </div>
+                <StatePill state={section.state} />
+                <p>{section.reason ?? section.next}</p>
               </div>
-              <StatePill state={section.state} />
-              <p>{section.reason ?? section.next}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </Panel>
@@ -605,7 +675,7 @@ async function loadNews(companies: LoadState<CompanyRow[]>, ideas: LoadState<Str
   );
 
   const rows = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-  const updatedAt = new Date().toISOString();
+  const updatedAt = latestIso(rows.map((row) => row.date)) ?? new Date().toISOString();
   const failures = settled.filter((result) => result.status === "rejected").length;
   const partialSource = failures > 0 ? `重大訊息；${failures}/${settled.length} 檔讀取失敗` : source;
 
@@ -709,6 +779,26 @@ export default async function DashboardPage() {
   const marketOverview = overview.state === "LIVE" && overview.data?.generatedAt
     ? { ...overview, updatedAt: overview.data.generatedAt }
     : overview;
+  const themesForStatus = withLatestUpdatedAt(
+    themes,
+    themes.state === "LIVE" ? latestIso(themes.data.map((theme) => theme.updatedAt)) : null
+  );
+  const ideasForStatus = withLatestUpdatedAt(
+    ideas,
+    ideas.state === "LIVE" && ideas.data ? ideas.data.generatedAt : null
+  );
+  const runsForStatus = withLatestUpdatedAt(
+    runs,
+    runs.state === "LIVE" && runs.data ? latestIso(runs.data.items.map((run) => run.generatedAt)) : null
+  );
+  const signalsForStatus = withLatestUpdatedAt(
+    signals,
+    signals.state === "LIVE" ? latestIso(signals.data.map((signal) => signal.createdAt)) : null
+  );
+  const newsForStatus = withLatestUpdatedAt(
+    news,
+    news.state === "LIVE" ? latestIso(news.data.map((item) => item.date)) : null
+  );
 
   const summary = [
     `主題 ${themes.state === "LIVE" ? themes.data.length : stateText(themes.state)}`,
@@ -752,34 +842,34 @@ export default async function DashboardPage() {
     },
     {
       label: "主題資料",
-      state: themes.state,
-      source: themes.source,
-      updatedAt: themes.updatedAt,
-      reason: sourceReason(themes),
+      state: themesForStatus.state,
+      source: themesForStatus.source,
+      updatedAt: themesForStatus.updatedAt,
+      reason: sourceReason(themesForStatus),
       next: "主題資料恢復後會顯示台股主題脈絡。",
     },
     {
       label: "策略想法",
-      state: ideas.state,
-      source: ideas.source,
-      updatedAt: ideas.updatedAt,
-      reason: sourceReason(ideas),
+      state: ideasForStatus.state,
+      source: ideasForStatus.source,
+      updatedAt: ideasForStatus.updatedAt,
+      reason: sourceReason(ideasForStatus),
       next: "策略想法恢復後只作紙上候選，不會自動送單。",
     },
     {
       label: "訊號證據",
-      state: signals.state,
-      source: signals.source,
-      updatedAt: signals.updatedAt,
-      reason: sourceReason(signals),
+      state: signalsForStatus.state,
+      source: signalsForStatus.source,
+      updatedAt: signalsForStatus.updatedAt,
+      reason: sourceReason(signalsForStatus),
       next: "訊號恢復後會顯示正式證據紀錄。",
     },
     {
       label: "重大訊息",
-      state: news.state,
-      source: news.source,
-      updatedAt: news.updatedAt,
-      reason: sourceReason(news),
+      state: newsForStatus.state,
+      source: newsForStatus.source,
+      updatedAt: newsForStatus.updatedAt,
+      reason: sourceReason(newsForStatus),
       next: "重大訊息恢復後會顯示公司公告與消息線索。",
     },
   ];
@@ -810,15 +900,19 @@ export default async function DashboardPage() {
           </div>
         </div>
         <div className="dashboard-source-rail" aria-label="資料來源狀態">
-          {sourceStatuses.map((section) => (
-            <div className="dashboard-source-chip" key={section.label}>
-              <div>
-                <span className="tg gold">{section.label}</span>
-                <span className="tg soft"> / {formatDateTime(section.updatedAt)}</span>
+          {sourceStatuses.map((section) => {
+            const freshness = sourceFreshnessInfo(section.state, section.updatedAt);
+            return (
+              <div className="dashboard-source-chip" key={section.label}>
+                <div>
+                  <span className="tg gold">{section.label}</span>
+                  <span className="tg soft"> / {formatSourceTimestamp(section.updatedAt)}</span>
+                  {freshness && <span className={`tg ${freshness.tone}`}> / {freshness.label}</span>}
+                </div>
+                <StatePill state={section.state} />
               </div>
-              <StatePill state={section.state} />
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -843,7 +937,7 @@ export default async function DashboardPage() {
         <div className="dashboard-mosaic-secondary">
           <MarketIntelPanel news={news} />
           <SignalsPanel signals={signals} />
-          <OpsPanel overview={marketOverview} runs={runs} />
+          <OpsPanel overview={marketOverview} runs={runsForStatus} />
         </div>
       </div>
     </PageFrame>
