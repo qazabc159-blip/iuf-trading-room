@@ -1,0 +1,15 @@
+{
+  "checkedAt": "2026-05-05T05:17:08.901Z",
+  "commit": "738d068af139ab60b37dedc2673463e254220225",
+  "railwayWebDeployment": "ed1df3c1-13b6-4e04-8066-69662341637c",
+  "loginStatus": 200,
+  "loginBodyTextLength": 463,
+  "companyStatus": 200,
+  "companyFinalUrl": "https://app.eycvector.com/login?next=%2Fcompanies%2F2330",
+  "protectedRouteRedirectedToLogin": true,
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "badResponses": [],
+  "pass": true
+}
