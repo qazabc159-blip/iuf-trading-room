@@ -2899,6 +2899,33 @@ button { font: inherit; }
   white-space: nowrap;
 }
 
+.brief-job-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.brief-job-list {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.brief-job-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) auto minmax(150px, 1fr) minmax(150px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 228, 240, 0.075);
+  background: rgba(3, 7, 12, 0.22);
+}
+
+.brief-job-row > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .brief-empty-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 0.72fr) minmax(300px, 0.72fr);

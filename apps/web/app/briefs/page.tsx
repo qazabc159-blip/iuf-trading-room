@@ -1,6 +1,6 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
-import { getBriefs, getOpenAliceObservability, type OpenAliceObservability } from "@/lib/api";
+import { getBriefs, getOpenAliceJobs, getOpenAliceObservability, type OpenAliceJobEntry, type OpenAliceObservability } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { briefAgeCopy, briefAgeDays, briefFreshnessBadge, briefFreshnessLabel, briefFreshnessTone, type BriefFreshness } from "@/lib/freshness";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
@@ -13,6 +13,11 @@ type OpenAliceSurface = "LIVE" | "STALE" | "BLOCKED";
 type OpenAliceState =
   | { state: "LIVE"; surface: OpenAliceSurface; data: OpenAliceObservability; updatedAt: string; source: string }
   | { state: "BLOCKED"; surface: "BLOCKED"; data: null; updatedAt: string; source: string; reason: string };
+
+type OpenAliceJobsState =
+  | { state: "LIVE"; data: OpenAliceJobEntry[]; updatedAt: string; source: string }
+  | { state: "EMPTY"; data: []; updatedAt: string; source: string; reason: string }
+  | { state: "BLOCKED"; data: []; updatedAt: string; source: string; reason: string };
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", {
@@ -31,6 +36,14 @@ function sortBriefs(briefs: DailyBrief[]) {
     const aTime = Date.parse(a.createdAt);
     return bTime - aTime;
   });
+}
+
+function sortJobs(jobs: OpenAliceJobEntry[]) {
+  return [...jobs].sort((a, b) => Date.parse(jobTime(b)) - Date.parse(jobTime(a)));
+}
+
+function jobTime(job: OpenAliceJobEntry) {
+  return job.completedAt ?? job.claimedAt ?? job.createdAt;
 }
 
 function statusBadge(status: DailyBrief["status"]) {
@@ -61,6 +74,31 @@ function producerLabel(value: string | null | undefined) {
   if (key.includes("openalice")) return "AI 摘要";
   if (key.includes("worker")) return "系統排程";
   if (key.includes("manual")) return "人工整理";
+  return value ?? "--";
+}
+
+function jobStatusLabel(value: string | null | undefined) {
+  if (value === "queued") return "排隊";
+  if (value === "running") return "執行中";
+  if (value === "draft_ready") return "草稿待審";
+  if (value === "validation_failed") return "驗證失敗";
+  if (value === "failed") return "失敗";
+  if (value === "published") return "已發布";
+  if (value === "rejected") return "已退回";
+  return value ?? "--";
+}
+
+function jobStatusBadge(value: string | null | undefined) {
+  if (value === "published" || value === "draft_ready") return "badge-green";
+  if (value === "queued" || value === "running") return "badge-yellow";
+  return "badge-red";
+}
+
+function taskTypeLabel(value: string | null | undefined) {
+  if (value === "daily_brief" || value === "daily-brief") return "每日簡報";
+  if (value === "theme_summary") return "主題摘要";
+  if (value === "company_note") return "公司筆記";
+  if (value === "signal_cluster") return "訊號彙整";
   return value ?? "--";
 }
 
@@ -95,6 +133,37 @@ async function loadOpenAliceStatus(): Promise<OpenAliceState> {
   }
 }
 
+async function loadOpenAliceJobs(): Promise<OpenAliceJobsState> {
+  const updatedAt = new Date().toISOString();
+  try {
+    const response = await getOpenAliceJobs();
+    const jobs = sortJobs(response.data ?? []).slice(0, 6);
+    if (jobs.length === 0) {
+      return {
+        state: "EMPTY",
+        data: [],
+        updatedAt,
+        source: "OpenAlice job queue",
+        reason: "目前沒有可顯示的 OpenAlice 任務紀錄。",
+      };
+    }
+    return {
+      state: "LIVE",
+      data: jobs,
+      updatedAt,
+      source: "OpenAlice job queue",
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      data: [],
+      updatedAt,
+      source: "OpenAlice job queue",
+      reason: friendlyDataError(error, "OpenAlice 任務佇列暫時無法讀取。"),
+    };
+  }
+}
+
 function openAliceLabel(state: OpenAliceSurface) {
   if (state === "LIVE") return "正常";
   if (state === "STALE") return "過期";
@@ -114,6 +183,9 @@ function openAliceTone(state: OpenAliceSurface) {
 }
 
 function statusText(value: string | null | undefined) {
+  if (value === "LIVE") return "正常";
+  if (value === "EMPTY") return "無資料";
+  if (value === "BLOCKED") return "暫停";
   if (value === "healthy") return "正常";
   if (value === "stale") return "過期";
   if (value === "missing") return "暫停";
@@ -126,6 +198,43 @@ function ageText(seconds: number | null | undefined) {
   if (seconds < 3600) return `${Math.round(seconds / 60)} 分前`;
   if (seconds < 86400) return `${Math.round(seconds / 3600)} 小時前`;
   return `${Math.round(seconds / 86400)} 天前`;
+}
+
+function OpenAliceJobsPanel({ jobs }: { jobs: OpenAliceJobsState }) {
+  return (
+    <Panel code="BRF-JOBS" title="OpenAlice 最近任務" sub="只讀佇列 / 協助判斷為何簡報未更新" right={statusText(jobs.state)}>
+      <div className="brief-job-panel">
+        <div className="source-line">
+          <StateBadge state={jobs.state} />
+          <span>來源：{jobs.source}</span>
+          <span>檢查：{formatDateTime(jobs.updatedAt)}</span>
+          <span>{jobs.state === "LIVE" ? `${jobs.data.length} 筆` : jobs.reason}</span>
+        </div>
+        {jobs.state === "LIVE" && (
+          <div className="brief-job-list">
+            {jobs.data.map((job) => (
+              <div className="brief-job-row" key={job.id}>
+                <span className="tg gold">{taskTypeLabel(job.taskType)}</span>
+                <span className={`badge ${jobStatusBadge(job.status)}`}>{jobStatusLabel(job.status)}</span>
+                <span className="tg soft">建立 {formatDateTime(job.createdAt)}</span>
+                <span className="tg soft">更新 {formatDateTime(jobTime(job))}</span>
+                <span className="tg soft">嘗試 {job.attemptCount ?? 0}/{job.maxAttempts ?? "--"}</span>
+                {job.error && <span className="status-bad">{job.error}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+        <span className="state-reason">
+          這裡只揭露產文管線狀態；若正式簡報仍停在舊日期，必須由 OpenAlice / daily brief pipeline 寫入新的正式 row。
+        </span>
+      </div>
+    </Panel>
+  );
+}
+
+function StateBadge({ state }: { state: OpenAliceJobsState["state"] }) {
+  const klass = state === "LIVE" ? "badge-green" : state === "EMPTY" ? "badge-yellow" : "badge-red";
+  return <span className={`badge ${klass}`}>{statusText(state)}</span>;
 }
 
 function BriefStatePanel({
@@ -154,6 +263,7 @@ export default async function BriefsPage() {
   let error: string | null = null;
   const requestedAt = new Date().toISOString();
   const openAlice = await loadOpenAliceStatus();
+  const openAliceJobs = await loadOpenAliceJobs();
 
   try {
     const response = await getBriefs();
@@ -177,7 +287,7 @@ export default async function BriefsPage() {
       note="每日簡報 / 真實資料；先建立資料框架，後續再接 OpenAlice 自動產文，不顯示假新聞或假建議。"
     >
       <MetricStrip
-        columns={7}
+        columns={8}
         cells={[
           { label: "狀態", value: briefFreshnessLabel(surfaceState), tone: briefFreshnessTone(surfaceState) },
           { label: "簡報數", value: briefs.length },
@@ -186,6 +296,7 @@ export default async function BriefsPage() {
           { label: "段落", value: latest ? totalSections : "--" },
           { label: "資料日", value: latest ? `${latest.date} / ${briefAgeCopy(latestAgeDays)}` : "--", tone: surfaceState === "STALE" ? "gold" : undefined },
           { label: "AI 產文", value: openAliceLabel(openAlice.surface), tone: openAliceTone(openAlice.surface) },
+          { label: "任務", value: openAliceJobs.state === "LIVE" ? openAliceJobs.data.length : statusText(openAliceJobs.state), tone: openAliceJobs.state === "LIVE" ? "status-ok" : openAliceJobs.state === "EMPTY" ? "gold" : "status-bad" },
         ]}
       />
 
@@ -235,6 +346,8 @@ export default async function BriefsPage() {
           </span>
         </div>
       </Panel>
+
+      <OpenAliceJobsPanel jobs={openAliceJobs} />
 
       {(error || !latest) && (
         <div className="brief-empty-grid">
