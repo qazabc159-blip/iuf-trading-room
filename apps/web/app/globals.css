@@ -3323,6 +3323,60 @@ button { font: inherit; }
   border-bottom: 1px solid rgba(220, 228, 240, 0.07);
 }
 
+.kline-density-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 8px 0 10px;
+  border: 1px solid rgba(46, 204, 113, 0.16);
+  background:
+    linear-gradient(90deg, rgba(46, 204, 113, 0.052), transparent 58%),
+    rgba(2, 7, 11, 0.48);
+}
+
+.kline-density-strip.is-sparse {
+  border-color: rgba(226, 184, 92, 0.28);
+  background:
+    linear-gradient(90deg, rgba(226, 184, 92, 0.065), transparent 58%),
+    rgba(3, 7, 12, 0.5);
+}
+
+.kline-density-strip > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid rgba(220, 228, 240, 0.06);
+}
+
+.kline-density-strip > div:last-of-type {
+  border-right: 0;
+}
+
+.kline-density-strip span,
+.kline-density-strip small {
+  color: var(--night-mid);
+  font: 750 10.5px/1.45 var(--sans-tc);
+}
+
+.kline-density-strip b {
+  color: var(--tw-dn-bright);
+  font: 850 15px/1.25 var(--sans-tc);
+}
+
+.kline-density-strip.is-sparse b {
+  color: var(--gold-bright);
+}
+
+.kline-density-strip p {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 9px 12px 10px;
+  border-top: 1px solid rgba(226, 184, 92, 0.12);
+  color: rgba(172, 198, 224, 0.9);
+  font: 700 12px/1.75 var(--sans-tc);
+}
+
 .kline-pending-chip {
   display: inline-flex;
   align-items: center;

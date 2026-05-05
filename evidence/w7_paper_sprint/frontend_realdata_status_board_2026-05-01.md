@@ -3349,3 +3349,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only.
 - Stop-line proof: no token, no fake-live, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no paper/risk source change, no buy/sell recommendation wording.
 - Next: open PR; after deploy, run production authenticated smoke against `/companies/2330` for 1分/5分/readout/range behavior.
+
+## Codex Update - 2026-05-06 05:30:23 +08:00 - K-line intraday density breakthrough
+- Branch/slice: K-line / company page trust. Trade Capability Score: +1.
+- Files: apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx; apps/web/app/globals.css; evidence/w7_paper_sprint/codex_kline_intraday_density_breakthrough_2026-05-06.md.
+- Endpoint/source: /api/v1/companies/:id/kbar?days=20, FinMind Sponsor minute K. No token displayed.
+- Behavior: minute K now auto-selects 1/5/20-day range by traded-minute density; low-liquidity symbols show sparse traded-minute coverage instead of looking broken. Missing minutes are not filled with fake candles.
+- Checks: web typecheck PASS; production build PASS with NEXT_PUBLIC_API_BASE_URL=https://api.eycvector.com.
+- Stop-lines: no order route, no KGI write-side, no fake-live, no FinMind-as-fill/risk.
+- Next: PR + CI + production screenshot manifest for 1104 and 2330 minute K.
