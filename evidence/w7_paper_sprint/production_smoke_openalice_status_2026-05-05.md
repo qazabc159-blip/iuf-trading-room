@@ -62,3 +62,17 @@ Backend/OpenAlice owner should expose a small read-only daily-brief status contr
 - `nextEligibleRunAt`
 
 Frontend can then show exactly why the brief is stale instead of only saying that the formal row is old.
+
+## Frontend Follow-Up Patch
+
+Codex added a `/briefs` OpenAlice recent-jobs panel using the already-existing read-only `GET /api/v1/openalice/jobs` endpoint.
+
+It displays:
+
+- latest task type
+- job status
+- created / updated time
+- attempt count
+- error text if present
+
+This is not a publishing action and does not review, approve, reject, or mutate OpenAlice jobs. It only makes the stale daily-brief chain inspectable from the UI while the formal daily brief row remains old.
