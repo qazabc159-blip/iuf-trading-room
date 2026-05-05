@@ -5,6 +5,7 @@ import { MetricStrip } from "@/components/RadarWidgets";
 import { getCompanies, getSignals, getThemes } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline } from "@/lib/operator-copy";
+import { formatSourceTimestamp, latestIso, sourceFreshnessLabel } from "@/lib/source-freshness";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,12 @@ async function loadSignals(): Promise<LoadState> {
         reason: "訊號資料庫目前回傳 0 筆，不顯示假訊號流。",
       };
     }
-    return { state: "LIVE", data, updatedAt, source };
+    return {
+      state: "LIVE",
+      data,
+      updatedAt: latestIso(data.signals.map((signal) => signal.createdAt)) ?? updatedAt,
+      source,
+    };
   } catch (error) {
     return {
       state: "BLOCKED",
@@ -65,13 +71,6 @@ async function loadSignals(): Promise<LoadState> {
       reason: friendlyError(error),
     };
   }
-}
-
-function formatTime(value: string | null | undefined) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-TW", { hour12: false });
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -176,11 +175,13 @@ function firstCompany(signal: SignalRow, companies: CompanyRow[]) {
 }
 
 function SourceLine({ result }: { result: LoadState }) {
+  const freshness = result.state === "LIVE" ? sourceFreshnessLabel(result.updatedAt) : null;
   return (
     <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
       <span>來源：{result.source}</span>
-      <span>更新 {formatDateTime(result.updatedAt)}</span>
+      <span>更新 {formatSourceTimestamp(result.updatedAt)}</span>
+      {freshness && <span className={`tg ${freshness.tone}`}>{freshness.label}</span>}
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );
