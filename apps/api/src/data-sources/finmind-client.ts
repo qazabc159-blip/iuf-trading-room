@@ -272,13 +272,16 @@ async function cacheSet(key: string, value: string, ttl: number, clientOverride?
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
 
-async function fetchWithRetry(url: string, maxRetries = 3): Promise<Response> {
+async function fetchWithRetry(url: string, maxRetries = 3, token?: string): Promise<Response> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let response: Response;
     try {
       response = await fetch(url, {
-        headers: { "Accept": "application/json" },
+        headers: {
+          "Accept": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        },
         signal: AbortSignal.timeout(15_000)
       });
     } catch (err) {
@@ -389,7 +392,7 @@ export class FinMindClient {
 
     let response: Response;
     try {
-      response = await fetchWithRetry(url, 3);
+      response = await fetchWithRetry(url, 3, token);
     } catch (err) {
       console.warn(`[finmind-client] fetch failed for ${logUrl}:`, err instanceof Error ? err.message : String(err));
       recordFinMindRequest({ dataset, ok: false });

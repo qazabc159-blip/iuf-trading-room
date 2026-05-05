@@ -3209,3 +3209,10 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: `pnpm.cmd --filter @iuf-trading-room/api typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/api exec node --test --import tsx src/data-sources/finmind-client.test.ts` PASS 11/11; inline latest URL probe PASS (`end_date` omitted).
 - Stop-line proof: no token display/logging, no Railway secret, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, and no paper/risk source change.
 - Next: commit/push/open K-line PR, wait for review/CI/deploy, then rerun production `/companies/2330` browser + endpoint smoke to confirm chart shell/canvas and non-mock OHLCV rows.
+
+## 2026-05-05 22:38-22:45 Taipei - Codex K-line post-deploy follow-up
+- PR #193 merged as `d7585d6`; GitHub CI passed. Railway GitHub deploy run reported web/worker timeout, but `railway deployment list` showed web/api/worker deployments from 22:27 Taipei are all `SUCCESS`.
+- Authenticated production endpoint smoke after deploy still returned `rows=200`, `nonMockRows=0`, `source=mock` for `/api/v1/companies/{id}/ohlcv?interval=1d&from=2023-05-05`.
+- Fresh API logs no longer showed future-date HTTP 400 for the target path; they showed FinMind HTTP 403 for `TaiwanStockPriceAdj` and `TaiwanStockPrice` with redacted token query. This means the date/cache fix landed, but FinMind authentication still fails.
+- Follow-up fix on the same branch: add `Authorization: Bearer <token>` header to FinMind HTTP requests while preserving redacted query token compatibility. No token is logged or returned.
+- Stop-line proof remains unchanged: no order route, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, and no paper/risk source change.
