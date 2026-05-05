@@ -1,0 +1,242 @@
+{
+  "checkedAt": "2026-05-05T20:34:10.642Z",
+  "target": "http://127.0.0.1:3228/companies/2330",
+  "source": "local production build using production API; session cookie held in memory only",
+  "screenshots": [
+    "company2330_local_day.png",
+    "company2330_local_1min_default_1day_readout.png",
+    "company2330_local_5min.png"
+  ],
+  "activeButtons": [
+    "5分",
+    "1日"
+  ],
+  "allButtons": [
+    "登出",
+    "日K",
+    "週K",
+    "月K",
+    "1分",
+    "5分",
+    "15分",
+    "60分",
+    "1日",
+    "5日",
+    "10日",
+    "20日",
+    "買進",
+    "賣出",
+    "市價",
+    "限價",
+    "零股",
+    "整張",
+    "1 股",
+    "10 股",
+    "100 股",
+    "499 股",
+    "999 股",
+    "預覽風控",
+    "檢查並送出",
+    "公司主檔工作區公司資料正常更新 04/30 10:51。已在登入工作區找到這檔股票。",
+    "K 線FinMind/TEJ 正式 K 線正常",
+    "重大訊息個股公告與新聞線索過期",
+    "分 KFinMind 2026-05-05 / 5320 根正常",
+    "逐筆資料等待凱基唯讀逐筆資料暫停",
+    "財報暫停",
+    "月營收暫停",
+    "資產負債暫停",
+    "現金流暫停",
+    "估值暫停",
+    "市值暫停",
+    "股利暫停"
+  ],
+  "readout": "分 K 最新\n2,250\n05-05 13:30\n開 2,250 / 高 2,250 / 低 2,250 / 量 2,844",
+  "canvasCount": 7,
+  "visibleCanvasCount": 7,
+  "noDataMarkers": [],
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/paper/health' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/paper/orders' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/balance-sheet?years=5' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/cash-flow?years=5' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/revenue?limit=36' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/financials?limit=24' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/dividend?years=10' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/market-value?days=365' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/valuation?days=365' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/chips?days=30' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/shareholding?months=6' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "type": "error",
+      "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/announcements?days=30' from origin 'http://127.0.0.1:3228' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    }
+  ],
+  "requestFailures": [
+    {
+      "url": "https://app.eycvector.com/?_rsc=5c339",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/themes?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/runs?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/ideas?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/portfolio?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/plans?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/market-intel?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/signals?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/ops?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3228/?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3228/themes?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3228/portfolio?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3228/signals?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3228/plans?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3228/ops?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3228/market-intel?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://api.eycvector.com/api/v1/paper/health",
+      "failure": "net::ERR_FAILED"
+    },
+    {
+      "url": "https://api.eycvector.com/api/v1/paper/orders",
+      "failure": "net::ERR_FAILED"
+    },
+    {
+      "url": "https://api.eycvector.com/api/v1/companies/906c9073-d458-4fd9-8ed8-7dfcb745851c/balance-sheet?years=5",
+      "failure": "net::ERR_FAILED"
+    }
+  ],
+  "proof": {
+    "noTokenWritten": true,
+    "noFakeLiveMarkers": true,
+    "noOrderSubmitTouched": true
+  }
+}

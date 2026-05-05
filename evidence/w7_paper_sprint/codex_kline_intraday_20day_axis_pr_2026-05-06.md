@@ -1,6 +1,6 @@
 # Codex K-line intraday 20-day axis PR — 2026-05-06
 
-Status: READY FOR PR
+Status: DEPLOYED + PRODUCTION VERIFIED
 
 Trade Capability Score: +1
 
@@ -54,3 +54,18 @@ Open PR, wait for CI/deploy, then production-smoke `/companies/2330` at desktop 
 - Page has chart canvas and 1分 / 5分 / 15分 / 60分 controls.
 - 10日 / 20日 controls render.
 - Tick labels do not show synthetic 2026-01 base date.
+
+## Production Verification
+
+PR #207 merged to main `2e8a91f`, Railway web/api deploy succeeded, and production smoke is complete.
+
+- One-time authenticated Playwright session succeeded; no credential or cookie value was written to evidence.
+- `GET https://api.eycvector.com/api/v1/companies/2330/kbar?days=20` returned HTTP 200, `source=FINMIND`, `state=LIVE`, `rowCount=5320`, `daysRequested=20`, `daysReturned=20`, `candidateDatesScanned=51`, `dateRange=2026-04-07..2026-05-05`.
+- `GET https://api.eycvector.com/api/v1/data-sources/finmind/status` returned HTTP 200, `state=LIVE_READY`, `tokenPresent=true`, Sponsor quota `2344 / 6000`, `datasetCount=16`, `readyCount=14`.
+- Browser DOM found 7 visible chart canvases on `/companies/2330`.
+- Browser click smoke passed for `1分`, `5分`, `15分`, `60分`, `10日`, and `20日`; each state kept a visible chart canvas and did not show `no_kbar_rows` or `分 K 無資料`.
+- Screenshot manifest: `evidence/w7_paper_sprint/production_smoke_pass123_kline_autologin_2026-05-06/manifest.json` and `manifest-clicks.json`.
+
+## Next Technical Slice
+
+- The next genuine K-line improvement is intraday interaction quality: make 1-minute default to the latest trading day, keep 5/10/20-day views as explicit range choices, and add pan/zoom/readout behavior so minute charts feel like an analysis tool instead of only a static verification chart.

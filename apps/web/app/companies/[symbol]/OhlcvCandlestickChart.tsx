@@ -286,7 +286,8 @@ export function OhlcvCandlestickChart({
   const [error, setError] = useState<string | null>(null);
   const [interval, setInterval] = useState<EnabledInterval>("1d");
   const [range, setRange] = useState<RangeKey>("all");
-  const [intradayRange, setIntradayRange] = useState<IntradayRangeKey>("5d");
+  const [intradayRange, setIntradayRange] = useState<IntradayRangeKey>("1d");
+  const [hoverBar, setHoverBar] = useState<ChartBar | null>(null);
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
   const chartHeight = isIntraday ? 460 : 440;
@@ -302,6 +303,19 @@ export function OhlcvCandlestickChart({
     return filterRange(aggregateDailyBars(bars, interval), range);
   }, [bars, interval, intradayRange, kbarRows, range]);
   const insufficientTrend = !isIntraday && chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
+
+  const selectInterval = (nextInterval: EnabledInterval) => {
+    const nextMeta = ENABLED_INTERVALS.find((item) => item.value === nextInterval);
+    setInterval(nextInterval);
+    setHoverBar(null);
+    if (nextMeta?.kind === "intraday" && activeMeta?.kind !== "intraday") {
+      setIntradayRange("1d");
+    }
+  };
+
+  useEffect(() => {
+    setHoverBar(null);
+  }, [chartBars]);
 
   useEffect(() => {
     if (!containerRef.current || !chartBars.length || insufficientTrend) return;
@@ -396,6 +410,13 @@ export function OhlcvCandlestickChart({
           color: bar.close >= bar.open ? "rgba(230,57,70,0.36)" : "rgba(46,204,113,0.36)",
         })));
 
+        const barsByTime = new Map(chartBars.map((bar) => [String(bar.time), bar]));
+        chart.subscribeCrosshairMove((param) => {
+          if (disposed) return;
+          const nextBar = param.time ? barsByTime.get(String(param.time)) ?? null : null;
+          setHoverBar(nextBar);
+        });
+
         const latestBar = chartBars.at(-1);
         if (latestBar) {
           candleSeries.createPriceLine({
@@ -444,7 +465,9 @@ export function OhlcvCandlestickChart({
   const lastBar = chartBars.at(-1);
   const firstBar = chartBars.at(0);
   const previousBar = chartBars.length >= 2 ? chartBars[chartBars.length - 2] : null;
+  const readoutBar = hoverBar ?? lastBar;
   const priceChange = lastBar && previousBar ? Number((lastBar.close - previousBar.close).toFixed(2)) : null;
+  const readoutChange = readoutBar ? Number((readoutBar.close - readoutBar.open).toFixed(2)) : priceChange;
   const priceChangePct = previousBar && previousBar.close > 0 && priceChange !== null
     ? Number(((priceChange / previousBar.close) * 100).toFixed(2))
     : null;
@@ -519,7 +542,7 @@ export function OhlcvCandlestickChart({
             <button
               key={item.value}
               type="button"
-              onClick={() => setInterval(item.value)}
+              onClick={() => selectInterval(item.value)}
               className={`kline-tab${interval === item.value ? " is-active" : ""}`}
               aria-pressed={interval === item.value}
               title={item.note}
@@ -534,7 +557,7 @@ export function OhlcvCandlestickChart({
             <button
               key={item.value}
               type="button"
-              onClick={() => setInterval(item.value)}
+              onClick={() => selectInterval(item.value)}
               className={`kline-tab${interval === item.value ? " is-active" : ""}`}
               aria-pressed={interval === item.value}
               title={kbarState === "LIVE" ? item.note : kbarReason}
@@ -595,7 +618,7 @@ export function OhlcvCandlestickChart({
           <span>{chartBars.length.toLocaleString("zh-TW")} 根</span>
           {isIntraday && displayedIntradayDays > 0 && <span>顯示 {displayedIntradayDays} / {kbarTradingDays} 個交易日</span>}
           {isIntraday && displayedIntradayRawRows > 0 && <span>原始 1 分 K {displayedIntradayRawRows.toLocaleString("zh-TW")} 根</span>}
-          {isIntraday && <span>非交易時段壓縮</span>}
+          {isIntraday && <span>非交易時段壓縮，可拖曳回看</span>}
           <span>{firstBar?.label} - {lastBar?.label}</span>
           <span>收 {formatNumber(lastBar?.close)}</span>
           <span>量 {formatNumber(lastBar?.volume, 0)}</span>
@@ -619,10 +642,17 @@ export function OhlcvCandlestickChart({
         />
       ) : (
         <div className="kline-chart-shell">
-          <div className="kline-price-ribbon" aria-hidden>
-            <span>{isIntraday ? "分 K 最新" : "最新收盤"}</span>
-            <b className={`num ${toneClass(priceChange)}`}>{formatNumber(lastBar?.close)}</b>
-            <small>{lastBar?.label ?? "--"}</small>
+          <div className="kline-price-ribbon kline-readout-ribbon" aria-live="polite">
+            <span>{hoverBar ? (isIntraday ? "游標分 K" : "游標 K") : (isIntraday ? "分 K 最新" : "最新收盤")}</span>
+            <b className={`num ${toneClass(readoutChange)}`}>
+              {formatNumber(readoutBar?.close)}
+            </b>
+            <small>{readoutBar?.label ?? "--"}</small>
+            {readoutBar && (
+              <small className="kline-readout-detail">
+                開 {formatNumber(readoutBar.open)} / 高 {formatNumber(readoutBar.high)} / 低 {formatNumber(readoutBar.low)} / 量 {formatNumber(readoutBar.volume, 0)}
+              </small>
+            )}
           </div>
           <div ref={containerRef} className="kline-chart-canvas" />
         </div>

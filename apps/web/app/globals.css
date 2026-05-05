@@ -7768,6 +7768,34 @@ body:has(.login-route) > div {
     linear-gradient(180deg, rgba(4, 8, 13, 0.9), rgba(4, 8, 13, 0.72));
 }
 
+.company-workbench-shell .kline-readout-ribbon {
+  min-width: min(260px, calc(100% - 28px));
+  max-width: min(360px, calc(100% - 28px));
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 10px;
+  align-items: baseline;
+  border-color: rgba(46, 204, 113, 0.22);
+}
+
+.company-workbench-shell .kline-readout-ribbon > span {
+  color: var(--night-mid);
+}
+
+.company-workbench-shell .kline-readout-ribbon > b {
+  justify-self: end;
+}
+
+.company-workbench-shell .kline-readout-ribbon > small {
+  grid-column: 1 / -1;
+}
+
+.company-workbench-shell .kline-readout-detail {
+  white-space: normal;
+  line-height: 1.55;
+  color: rgba(172, 198, 224, 0.78);
+}
+
 @media (max-width: 900px) {
   .company-workbench-shell .kline-toolbar {
     grid-template-columns: 1fr;
