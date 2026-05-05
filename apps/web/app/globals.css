@@ -7399,3 +7399,92 @@ body:has(.login-route) > div {
     border-top: 1px solid rgba(220, 228, 240, 0.075);
   }
 }
+
+/* Pass 108 - make the company K-line and order station behave like tools, not slabs. */
+.kline-tab.is-active,
+.kline-tab[aria-pressed="true"] {
+  border-color: rgba(226, 184, 92, 0.72);
+  color: var(--gold-bright);
+  background: rgba(226, 184, 92, 0.14);
+  box-shadow: inset 0 -1px 0 rgba(226, 184, 92, 0.42);
+}
+
+.company-workbench-shell .kline-tab.is-active,
+.company-workbench-shell .kline-tab[aria-pressed="true"] {
+  background:
+    linear-gradient(180deg, rgba(226, 184, 92, 0.2), rgba(226, 184, 92, 0.08));
+}
+
+.company-workbench-shell .kline-toolbar {
+  position: relative;
+  align-items: center;
+}
+
+.company-workbench-shell .kline-toolbar::after {
+  content: "";
+  flex: 1 1 80px;
+  min-width: 24px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(226, 184, 92, 0.18), transparent);
+}
+
+.company-workbench-shell .kline-chart-shell {
+  box-shadow:
+    inset 0 1px 0 rgba(226, 184, 92, 0.08),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.company-workbench-shell .paper-order-panel {
+  border-left: 0;
+  border-right: 0;
+  background:
+    linear-gradient(112deg, rgba(226, 184, 92, 0.075), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 48%),
+    rgba(2, 6, 10, 0.38);
+}
+
+.company-workbench-shell .paper-order-panel .ascii-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 14px;
+}
+
+.company-workbench-shell .paper-order-lock-note {
+  border-left: 2px solid rgba(226, 184, 92, 0.72);
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: linear-gradient(90deg, rgba(226, 184, 92, 0.08), transparent 78%);
+}
+
+.company-workbench-shell .paper-order-grid {
+  align-items: end;
+}
+
+.company-workbench-shell .paper-order-grid > div {
+  display: grid;
+  align-content: end;
+}
+
+.company-workbench-shell .paper-order-summary-strip > div {
+  border-color: rgba(220, 228, 240, 0.055);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent),
+    rgba(1, 5, 9, 0.28);
+}
+
+.company-workbench-shell .paper-order-summary-strip b {
+  font-size: clamp(15px, 1.1vw, 18px);
+}
+
+.company-workbench-shell .paper-order-sidecar {
+  background: linear-gradient(90deg, rgba(226, 184, 92, 0.035), transparent 68%);
+}
+
+.company-workbench-shell .paper-order-actions .btn-sm:not(:disabled):last-child {
+  border-color: rgba(46, 204, 113, 0.42);
+  color: var(--tw-dn-bright);
+  background: rgba(46, 204, 113, 0.05);
+}

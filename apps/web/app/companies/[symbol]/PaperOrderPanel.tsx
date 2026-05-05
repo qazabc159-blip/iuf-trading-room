@@ -401,7 +401,11 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
               disabled={!canSubmit || submit.status === "loading"}
               title={!canSubmit ? "請先完成通過的風控預覽。" : "送出前會開啟零股/整張確認視窗。"}
               type="button"
-              style={canSubmit ? { borderColor: "var(--gold, #b8960c)", color: "var(--gold, #b8960c)" } : {}}
+              style={canSubmit ? {
+                borderColor: "rgba(46,204,113,0.42)",
+                color: "var(--tw-dn-bright, #2ecc71)",
+                background: "rgba(46,204,113,0.05)",
+              } : {}}
             >
               {submit.status === "loading" ? "送出中" : "檢查並送出"}
             </button>
