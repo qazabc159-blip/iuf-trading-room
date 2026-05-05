@@ -5395,7 +5395,11 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // Idempotency: skip if today's brief already has a queued job
+  // Idempotency: skip if TODAY's brief already has a queued job.
+  // Pete review 2026-05-05 BLOCKER: must filter by parameters->>'targetDate'.
+  // Without the date filter, a stuck queued job from a prior day (e.g. when
+  // worker was in memory mode) would silently block every future tick — same
+  // class of silent failure as the original slug-mismatch bug.
   const [existingJob] = await db
     .select({ id: openAliceJobs.id })
     .from(openAliceJobs)
@@ -5403,12 +5407,13 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
       and(
         eq(openAliceJobs.workspaceId, workspace.id),
         eq(openAliceJobs.taskType, "daily_brief"),
-        eq(openAliceJobs.status, "queued")
+        eq(openAliceJobs.status, "queued"),
+        drizzleSql`${openAliceJobs.parameters}->>'targetDate' = ${todayStr}`
       )
     )
     .limit(1);
   if (existingJob) {
-    console.log(`[daily-brief-dispatcher] Job already queued (${existingJob.id}), skipping`);
+    console.log(`[daily-brief-dispatcher] Job already queued for ${todayStr} (${existingJob.id}), skipping`);
     return;
   }
 
