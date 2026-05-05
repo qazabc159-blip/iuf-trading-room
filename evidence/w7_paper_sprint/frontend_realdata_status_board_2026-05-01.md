@@ -3305,3 +3305,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; `git diff --check` PASS with CRLF warnings only.
 - Stop-line proof: no token value displayed/logged, no fake-live conversion, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no paper fill/risk source, no buy/sell recommendation wording.
 - Next: push PR after final diff review; then continue Paper E2E UI with simulated fill / order ledger visibility.
+
+## 2026-05-06 03:20 Taipei - Codex K-line intraday 20-day axis PR
+- Trade Capability Score: +1. Workflow improved: company-page minute K now has enough FinMind Sponsor history for 5/15/60-minute review and no longer risks showing synthetic compressed-axis dates.
+- Files changed: `apps/api/src/server.ts`, `apps/web/lib/api.ts`, `apps/web/app/companies/[symbol]/page.tsx`, `apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx`, `evidence/w7_paper_sprint/codex_kline_intraday_20day_axis_pr_2026-05-06.md`, and this board.
+- Endpoints/sources: `GET /api/v1/companies/:id/kbar?date=YYYY-MM-DD&days=20`; source is FinMind `TaiwanStockKBar` only.
+- Behavior: backend max KBar days rises from 5 to 20, candidate scan skips weekends and anchors default date in Taipei; frontend requests 20 days and exposes 1日/5日/10日/20日 intraday ranges; compressed tick labels map to nearest real KBar label.
+- Checks: api typecheck PASS; web typecheck PASS; FinMind client tests PASS 11/11; api build PASS; web build PASS; targeted diff-check PASS with CRLF warnings only.
+- Stop-line proof: no token value displayed/logged, no fake-live conversion, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no paper fill/risk source, no buy/sell recommendation wording.
+- Next: open PR, wait for CI/deploy, then production-smoke `/companies/2330` 1/5/15/60 分 and 10日/20日 controls.

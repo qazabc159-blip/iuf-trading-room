@@ -5,7 +5,7 @@ import type { FinMindKBarRow, OhlcvBar } from "@/lib/api";
 
 type EnabledInterval = "1d" | "1w" | "1mo" | "1min" | "5min" | "15min" | "60min";
 type RangeKey = "3m" | "6m" | "1y" | "2y" | "all";
-type IntradayRangeKey = "1d" | "3d" | "5d";
+type IntradayRangeKey = "1d" | "5d" | "10d" | "20d";
 type ChartTime = import("lightweight-charts").Time;
 type ChartBar = {
   dt: string;
@@ -39,8 +39,9 @@ const RANGE_OPTIONS: ReadonlyArray<{ value: RangeKey; label: string; days: numbe
 
 const INTRADAY_RANGE_OPTIONS: ReadonlyArray<{ value: IntradayRangeKey; label: string; days: number }> = [
   { value: "1d", label: "1日", days: 1 },
-  { value: "3d", label: "3日", days: 3 },
   { value: "5d", label: "5日", days: 5 },
+  { value: "10d", label: "10日", days: 10 },
+  { value: "20d", label: "20日", days: 20 },
 ];
 
 const MIN_TREND_BARS = 12;
@@ -214,10 +215,20 @@ function visibleBarsFor(interval: EnabledInterval, range: RangeKey) {
   return range === "3m" ? 8 : range === "6m" ? 14 : range === "1y" ? 24 : 42;
 }
 
-function formatChartAxisTime(time: ChartTime, labels: Map<number, string>): string {
+function formatChartAxisTime(time: ChartTime, labels: Map<number, string>, nearestLabels?: { baseTime: number; stepSeconds: number; labels: string[] }): string {
   if (typeof time === "number") {
     const exact = labels.get(time);
     if (exact) return exact;
+    if (nearestLabels && nearestLabels.labels.length > 0) {
+      const index = Math.max(
+        0,
+        Math.min(
+          nearestLabels.labels.length - 1,
+          Math.round((time - nearestLabels.baseTime) / nearestLabels.stepSeconds),
+        ),
+      );
+      return nearestLabels.labels[index] ?? nearestLabels.labels[nearestLabels.labels.length - 1] ?? "--";
+    }
     return new Date(time * 1000).toLocaleString("zh-TW", {
       timeZone: "Asia/Taipei",
       month: "2-digit",
@@ -279,6 +290,7 @@ export function OhlcvCandlestickChart({
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
   const chartHeight = isIntraday ? 460 : 440;
+  const activeIntradayMinutes = activeMeta?.kind === "intraday" ? activeMeta.minutes ?? 1 : 1;
   const chartBars = useMemo(() => {
     const meta = ENABLED_INTERVALS.find((item) => item.value === interval);
     if (meta?.kind === "intraday") {
@@ -304,6 +316,13 @@ export function OhlcvCandlestickChart({
             .map((bar) => [bar.time, bar.label])
         : [],
     );
+    const nearestIntradayLabels = isIntraday
+      ? {
+          baseTime: COMPRESSED_INTRADAY_BASE_TIME,
+          stepSeconds: activeIntradayMinutes * 60,
+          labels: chartBars.map((bar) => bar.label),
+        }
+      : undefined;
 
     setError(null);
 
@@ -328,14 +347,14 @@ export function OhlcvCandlestickChart({
             horzLines: { color: "rgba(255,255,255,0.05)" },
           },
           localization: {
-            timeFormatter: (time: ChartTime) => formatChartAxisTime(time, intradayAxisLabels),
+            timeFormatter: (time: ChartTime) => formatChartAxisTime(time, intradayAxisLabels, nearestIntradayLabels),
           },
           crosshair: { mode: 1 },
           rightPriceScale: { borderColor: "rgba(255,255,255,0.14)", scaleMargins: { top: 0.08, bottom: 0.22 } },
           timeScale: {
             borderColor: "rgba(255,255,255,0.14)",
             timeVisible: isIntraday || interval === "1d",
-            tickMarkFormatter: (time: ChartTime) => formatChartAxisTime(time, intradayAxisLabels),
+            tickMarkFormatter: (time: ChartTime) => formatChartAxisTime(time, intradayAxisLabels, nearestIntradayLabels),
             rightOffset: 10,
             barSpacing: isIntraday ? 5.8 : interval === "1d" ? 3.6 : interval === "1w" ? 6 : 8,
             fixLeftEdge: false,
@@ -414,7 +433,7 @@ export function OhlcvCandlestickChart({
       chart?.remove();
       chartRef.current = null;
     };
-  }, [chartBars, chartHeight, insufficientTrend, interval, isIntraday, range]);
+  }, [activeIntradayMinutes, chartBars, chartHeight, insufficientTrend, interval, isIntraday, range]);
 
   const badgeClass = isIntraday
     ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
@@ -434,6 +453,10 @@ export function OhlcvCandlestickChart({
   const kbarTradingDays = new Set(kbarRows.map((row) => row.date).filter(Boolean)).size;
   const displayedIntradayDays = isIntraday
     ? new Set(chartBars.map((bar) => bar.dt.slice(0, 10))).size
+    : 0;
+  const lastDisplayedIntradayDate = isIntraday ? chartBars.at(-1)?.dt.slice(0, 10) : null;
+  const displayedIntradayRawRows = isIntraday && lastDisplayedIntradayDate
+    ? kbarRows.filter((row) => new Set(chartBars.map((bar) => bar.dt.slice(0, 10))).has(row.date)).length
     : 0;
   const emptyReason =
     isIntraday
@@ -571,6 +594,7 @@ export function OhlcvCandlestickChart({
           <span>{activeMeta?.note}</span>
           <span>{chartBars.length.toLocaleString("zh-TW")} 根</span>
           {isIntraday && displayedIntradayDays > 0 && <span>顯示 {displayedIntradayDays} / {kbarTradingDays} 個交易日</span>}
+          {isIntraday && displayedIntradayRawRows > 0 && <span>原始 1 分 K {displayedIntradayRawRows.toLocaleString("zh-TW")} 根</span>}
           {isIntraday && <span>非交易時段壓縮</span>}
           <span>{firstBar?.label} - {lastBar?.label}</span>
           <span>收 {formatNumber(lastBar?.close)}</span>
