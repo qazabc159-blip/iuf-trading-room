@@ -47,7 +47,7 @@ import {
   listOrders,
   findByIdempotencyKey as findOrderByIdempotencyKey
 } from "./domain/trading/paper-ledger-db.js";
-import { isDatabaseMode, getDb, dailyThemeSummaries, companies, workspaces } from "@iuf-trading-room/db";
+import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql } from "drizzle-orm";
 import {
   getTradingRoomRepository,
@@ -5384,20 +5384,75 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
 }
 
 /**
- * F3: daily_brief dispatcher scheduler.
- * Enqueues one OpenAlice daily_brief job per day (23h interval, idempotent via date).
- * No-op when DB unavailable or workspace missing.
+ * F3 (patched 2026-05-05): daily_brief dispatcher scheduler.
+ *
+ * Bug fixed: original version passed workspaceSlug from env ("default" fallback)
+ * but DB workspace slug is "primary-desk" (set by seedOwnerIfEmpty). This caused
+ * loadWorkspaceBySlug() to return null → silent throw → zero jobs ever enqueued.
+ *
+ * Fix: resolve workspace by DB lookup (first row), not by slug env var.
+ * Added: date-based idempotency guard to prevent duplicate queued jobs per day.
  */
-async function runDailyBriefDispatcherTick(workspaceSlug: string): Promise<void> {
+async function runDailyBriefDispatcherTick(): Promise<void> {
   const db = getDb();
   if (!db) {
     console.warn("[daily-brief-dispatcher] DB unavailable, skipping tick");
     return;
   }
+
+  // Resolve workspace from DB directly — do not rely on DEFAULT_WORKSPACE_SLUG
+  const [workspace] = await db
+    .select({ id: workspaces.id, slug: workspaces.slug })
+    .from(workspaces)
+    .limit(1);
+  if (!workspace) {
+    console.warn("[daily-brief-dispatcher] No workspace found in DB, skipping tick");
+    return;
+  }
+
   const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Idempotency: skip if TODAY's brief already has a queued job.
+  // Pete review 2026-05-05 BLOCKER: must filter by parameters->>'targetDate'.
+  // Without the date filter, a stuck queued job from a prior day (e.g. when
+  // worker was in memory mode) would silently block every future tick — same
+  // class of silent failure as the original slug-mismatch bug.
+  const [existingJob] = await db
+    .select({ id: openAliceJobs.id })
+    .from(openAliceJobs)
+    .where(
+      and(
+        eq(openAliceJobs.workspaceId, workspace.id),
+        eq(openAliceJobs.taskType, "daily_brief"),
+        eq(openAliceJobs.status, "queued"),
+        drizzleSql`${openAliceJobs.parameters}->>'targetDate' = ${todayStr}`
+      )
+    )
+    .limit(1);
+  if (existingJob) {
+    console.log(`[daily-brief-dispatcher] Job already queued for ${todayStr} (${existingJob.id}), skipping`);
+    return;
+  }
+
+  // Idempotency: skip if today's brief formal row already exists
+  const [existingBrief] = await db
+    .select({ id: dailyBriefs.id })
+    .from(dailyBriefs)
+    .where(
+      and(
+        eq(dailyBriefs.workspaceId, workspace.id),
+        eq(dailyBriefs.date, todayStr)
+      )
+    )
+    .limit(1);
+  if (existingBrief) {
+    console.log(`[daily-brief-dispatcher] Brief already exists for ${todayStr}, skipping`);
+    return;
+  }
+
   try {
     const job = await enqueueOpenAliceJob({
-      workspaceSlug,
+      workspaceSlug: workspace.slug,
       taskType: "daily_brief",
       schemaName: "daily_brief_v1",
       instructions: `Generate the daily market intelligence brief for ${todayStr}. Summarize key themes, notable signals, and actionable insights from today's market data.`,
@@ -5430,11 +5485,12 @@ function startSchedulers(workspaceSlug: string): void {
   }, SIX_HOURS_MS);
 
   // F3: daily_brief dispatcher — immediate first run then every 23h
-  runDailyBriefDispatcherTick(workspaceSlug).catch((e) =>
+  // (workspaceSlug no longer passed — function resolves workspace from DB)
+  runDailyBriefDispatcherTick().catch((e) =>
     console.error("[daily-brief-dispatcher] Initial tick failed:", e)
   );
   setInterval(() => {
-    runDailyBriefDispatcherTick(workspaceSlug).catch((e) =>
+    runDailyBriefDispatcherTick().catch((e) =>
       console.error("[daily-brief-dispatcher] Interval tick failed:", e)
     );
   }, TWENTY_THREE_HOURS_MS);
