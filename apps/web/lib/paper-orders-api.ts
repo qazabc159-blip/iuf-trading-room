@@ -52,6 +52,28 @@ export type PaperOrderCancelResult = {
   alreadyTerminal: boolean;
 };
 
+export type PaperHealthState = {
+  previewReady: boolean;
+  submitReady: boolean;
+  fillsReady: boolean;
+  portfolioReady: boolean;
+  lastFillTs: string | null;
+  queueDepth: number;
+  gate: {
+    executionMode: string;
+    executionModeOk: boolean;
+    killSwitchOk: boolean;
+    paperModeOk: boolean;
+    gateOpen: boolean;
+  };
+  persistence: {
+    mode: string;
+    tableExists: boolean;
+    dbError: string | null;
+  };
+  paper_orders_500_root_cause_closed?: boolean;
+};
+
 type Envelope<T> = { data: T };
 
 type ApiErrorBody =
@@ -147,6 +169,10 @@ export async function previewPaperOrder(input: PaperOrderInput, idempotencyKey?:
     method: "POST",
     body: JSON.stringify(withIdempotency(input, "preview", idempotencyKey)),
   });
+}
+
+export async function getPaperHealth() {
+  return request<PaperHealthState>("/api/v1/paper/health");
 }
 
 export async function submitPaperOrder(input: PaperOrderInput, idempotencyKey?: string) {
