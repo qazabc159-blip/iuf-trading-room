@@ -7944,3 +7944,39 @@ body:has(.login-route) > div {
     grid-template-columns: 1fr;
   }
 }
+
+/* Pass 112 - company order unit safety: fast presets without turning odd lots into board lots. */
+.company-workbench-shell .paper-order-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 8px 0 10px;
+  padding: 7px 0 9px;
+  border-top: 1px solid rgba(220, 228, 240, 0.07);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.055);
+}
+
+.company-workbench-shell .paper-order-quick-row > span {
+  flex: 0 0 100%;
+  color: rgba(166, 194, 224, 0.78);
+  font: 750 10.5px/1.45 var(--sans-tc);
+}
+
+.company-workbench-shell .paper-order-quick-row button {
+  min-height: 27px;
+  padding: 4px 8px;
+  border: 1px solid rgba(220, 228, 240, 0.12);
+  background: rgba(1, 5, 9, 0.28);
+  color: var(--night-mid);
+  font: 800 11px/1 var(--sans-tc);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.company-workbench-shell .paper-order-quick-row button:hover,
+.company-workbench-shell .paper-order-quick-row button.is-active {
+  border-color: rgba(226, 184, 92, 0.56);
+  background: rgba(226, 184, 92, 0.13);
+  color: var(--gold-bright);
+}

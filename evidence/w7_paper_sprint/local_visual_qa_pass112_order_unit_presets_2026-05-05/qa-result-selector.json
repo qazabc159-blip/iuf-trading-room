@@ -1,0 +1,28 @@
+{
+  "clicked5": true,
+  "clicked100": true,
+  "clickedLot": true,
+  "clicked1Lot": true,
+  "metrics": {
+    "url": "http://127.0.0.1:3155/companies/2330",
+    "bodyWidth": 1365,
+    "viewportWidth": 1365,
+    "horizontalOverflow": false,
+    "activeKline": [
+      "5分"
+    ],
+    "visibleHasQuickRow": true,
+    "quickRowText": "整張快選1 張2 張5 張",
+    "panelTextHasLotConversion": true,
+    "panelTextHasShareCap": false,
+    "activeQuickButtonTexts": [
+      "1 張"
+    ],
+    "orderPanelWidth": 328,
+    "overflows": []
+  },
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "rawFailedRequests": []
+}

@@ -1,0 +1,26 @@
+{
+  "clicked5": false,
+  "clicked100": false,
+  "clickedLot": false,
+  "clicked1Lot": false,
+  "metrics": {
+    "url": "http://127.0.0.1:3155/companies/2330",
+    "title": "IUF 交易戰情室",
+    "bodyWidth": 1365,
+    "viewportWidth": 1365,
+    "horizontalOverflow": false,
+    "visibleHasQuickRow": true,
+    "quickRowText": "零股快選1 股10 股100 股499 股999 股",
+    "panelTextHasLotConversion": false,
+    "panelTextHasShareCap": false,
+    "activeButtonTexts": [
+      "1 股"
+    ],
+    "orderPanelWidth": 328,
+    "overflows": []
+  },
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "rawFailedRequests": []
+}
