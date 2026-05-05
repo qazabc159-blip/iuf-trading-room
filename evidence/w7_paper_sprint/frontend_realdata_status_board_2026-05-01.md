@@ -4,6 +4,23 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-05 18:10 Taipei - Codex pass 120 - dashboard source freshness truth
+
+**Scope**: manual-dispatch frontend PR for dashboard stale-source semantics. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no fake OpenAlice rewrite.
+
+**Files changed**:
+- `apps/web/app/page.tsx` - dashboard source rail now uses real row timestamps for themes, strategy ideas, signals, major info, and strategy runs instead of request time.
+
+**Behavior**:
+- Dashboard no longer implies old OpenAlice/theme/signal/major-info rows were freshly updated just because the page rendered now.
+- LIVE sources now display freshness labels: `今日資料`, `昨日資料`, `偏舊 N 天`, or `過期 N 天`.
+- Major-info source updatedAt is derived from the latest returned announcement date.
+- Strategy batches in the ops panel use latest run `generatedAt` instead of page-load time.
+- No data generation, recommendation, order submit, or backend schema behavior changed.
+
+**Checks**:
+- Pending in this cycle: web typecheck/build and diff check.
+
 ### 2026-05-04 00:23 Taipei - Codex heartbeat - FinMind Sponsor company research expansion
 
 **Scope**: read-only FinMind Sponsor 999 data expansion and company-page source truth. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no RSS/commercial/deferred news feature.
