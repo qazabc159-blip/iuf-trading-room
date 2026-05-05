@@ -1,0 +1,34 @@
+[
+  {
+    "viewport": "desktop1365-final",
+    "logs": [],
+    "metrics": {
+      "overflowX": false,
+      "scrollWidth": 1365,
+      "innerWidth": 1365,
+      "panelCount": 8,
+      "heroColumns": "507.281px 280px",
+      "heroHeight": 482,
+      "hasHealthAlert": true,
+      "healthAlertHeight": 404,
+      "mosaicGrid": "484.531px 412.75px",
+      "narrowText": []
+    }
+  },
+  {
+    "viewport": "mobile390",
+    "logs": [],
+    "metrics": {
+      "overflowX": false,
+      "scrollWidth": 390,
+      "innerWidth": 390,
+      "panelCount": 8,
+      "heroColumns": "316px",
+      "heroHeight": 1161,
+      "hasHealthAlert": true,
+      "healthAlertHeight": 714,
+      "mosaicGrid": "354px",
+      "narrowText": []
+    }
+  }
+]
