@@ -7515,6 +7515,88 @@ body:has(.login-route) > div {
   }
 }
 
+/* Pass 118 - keep K-line controls compact and price-readable. */
+.company-workbench-shell .kline-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  justify-content: start;
+  align-items: center;
+  gap: 7px 9px;
+  margin: 8px 0 6px;
+  padding: 0 0 8px;
+  border-bottom-color: rgba(220, 228, 240, 0.06);
+}
+
+.company-workbench-shell .kline-toolbar::after {
+  content: none;
+}
+
+.company-workbench-shell .kline-control-group {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 2px;
+  border: 1px solid rgba(220, 228, 240, 0.09);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent),
+    rgba(1, 5, 9, 0.42);
+}
+
+.company-workbench-shell .kline-control-group.is-muted {
+  border-color: rgba(220, 228, 240, 0.055);
+  background: rgba(1, 5, 9, 0.24);
+}
+
+.company-workbench-shell .kline-toolbar-label {
+  min-height: 24px;
+  padding: 0 7px 0 5px;
+  border-right: 1px solid rgba(226, 184, 92, 0.12);
+  color: var(--gold-bright);
+  font-size: 10.5px;
+}
+
+.company-workbench-shell .kline-tab {
+  min-width: 34px;
+  min-height: 24px;
+  padding: 3px 7px;
+  font-size: 10.8px;
+  line-height: 1.1;
+}
+
+.company-workbench-shell .kline-pending-line {
+  margin: 5px 0 7px;
+  padding: 6px 8px;
+  border-left: 2px solid rgba(226, 184, 92, 0.3);
+  background: linear-gradient(90deg, rgba(226, 184, 92, 0.045), transparent 72%);
+}
+
+.company-workbench-shell .kline-chart-shell,
+.company-workbench-shell .kline-chart-canvas {
+  min-height: clamp(460px, 50vh, 620px);
+}
+
+.company-workbench-shell .kline-price-ribbon {
+  top: 12px;
+  right: 14px;
+  background:
+    linear-gradient(180deg, rgba(4, 8, 13, 0.9), rgba(4, 8, 13, 0.72));
+}
+
+@media (max-width: 900px) {
+  .company-workbench-shell .kline-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .company-workbench-shell .kline-control-group {
+    width: 100%;
+    overflow-x: auto;
+  }
+}
+
 .company-workbench-shell .paper-order-panel {
   scrollbar-color: rgba(226, 184, 92, 0.35) rgba(1, 5, 9, 0.32);
   scrollbar-width: thin;
