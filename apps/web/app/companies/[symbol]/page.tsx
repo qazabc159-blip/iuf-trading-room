@@ -8,8 +8,8 @@
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
-import { getCompanies, getCompanyKBar, getCompanyOhlcv, type FinMindKBarView, type OhlcvBar } from "@/lib/api";
-import type { Company } from "@iuf-trading-room/contracts";
+import { getCompanies, getCompanyKBar, getCompanyOhlcv, getThemes, type FinMindKBarView, type OhlcvBar } from "@/lib/api";
+import type { Company, Theme } from "@iuf-trading-room/contracts";
 import {
   quoteFromOhlcvBars,
   type SourceStatus,
@@ -71,6 +71,12 @@ function friendlyError(error: unknown) {
 function companyTimestamp(company: Company) {
   const record = company as unknown as { updatedAt?: string; createdAt?: string };
   return record.updatedAt ?? record.createdAt ?? new Date().toISOString();
+}
+
+function displayThemeName(theme: Theme) {
+  const raw = (theme.name || theme.slug).trim();
+  if (!raw) return theme.slug;
+  return raw.replace(/^\[ORPHAN\]\s*/i, "待歸檔：").replace(/-\>/g, "→");
 }
 
 function buildSourceStatus(
@@ -237,7 +243,17 @@ export default async function CompanyDetailPage({
     ? `FinMind 分 K 暫時無法讀取：${kbarErrorMsg}`
     : kbarView?.reason ?? "FinMind 分 K 尚未回傳資料。";
 
-  const detail = toCompanyDetailView(company, symbol);
+  const themeLabelById = new Map<string, string>();
+  try {
+    const themeRes = await getThemes();
+    for (const theme of themeRes.data ?? []) {
+      themeLabelById.set(theme.id, displayThemeName(theme));
+    }
+  } catch (err) {
+    console.warn("[company-detail] getThemes failed; hiding raw theme ids", { symbol, err: friendlyError(err) });
+  }
+
+  const detail = toCompanyDetailView(company, symbol, themeLabelById);
   const quote = quoteFromOhlcvBars(bars);
   const sources = buildSourceStatus(company, bars, ohlcvReason, {
     state: kbarState,
@@ -285,7 +301,7 @@ export default async function CompanyDetailPage({
         </div>
         <div>
           <span className="tg soft">主題</span>
-          <b className="tg gold">{detail.themes.join(" / ") || "--"}</b>
+          <b className="tg gold">{detail.themes.join(" / ") || "主題待接"}</b>
         </div>
       </div>
 

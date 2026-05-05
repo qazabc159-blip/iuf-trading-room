@@ -7868,3 +7868,79 @@ body:has(.login-route) > div {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 }
+
+/* Pass 111 - company page cleanup: no UUID labels, no desktop overflow, less cramped data panels. */
+.company-workbench-shell .kline-panel .panel-head > .tg.soft {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px 7px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+.kline-symbol-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  color: var(--night-mid);
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.company-panels-grid > .company-finance-console {
+  grid-column: 1 / -1;
+}
+
+.company-finance-console {
+  background:
+    linear-gradient(112deg, rgba(226, 184, 92, 0.04), transparent 30%),
+    linear-gradient(180deg, rgba(105, 214, 142, 0.025), transparent 48%),
+    rgba(5, 9, 14, 0.24);
+}
+
+.company-finance-console .company-finance-toolbar {
+  grid-template-columns: minmax(280px, 0.46fr) minmax(0, 1fr);
+}
+
+.company-finance-console .company-finance-toolbar small {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.company-data-tabs.finmind-tabs.company-finance-tabs {
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: 7px;
+}
+
+.company-data-tabs.finmind-tabs.company-finance-tabs .mini-button,
+.company-data-tabs.finmind-tabs.company-finance-tabs .outline-button {
+  width: clamp(108px, 11vw, 148px);
+  max-width: 148px;
+}
+
+@media (min-width: 1201px) and (max-width: 1500px) {
+  .company-workbench-shell {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 328px);
+    gap: clamp(12px, 1.15vw, 16px);
+  }
+
+  .company-workbench-shell .kline-panel {
+    padding-inline: clamp(14px, 1.25vw, 18px);
+  }
+}
+
+@media (max-width: 1180px) {
+  .company-panels-grid > .company-finance-console {
+    grid-column: 1;
+  }
+
+  .company-finance-console .company-finance-toolbar {
+    grid-template-columns: 1fr;
+  }
+}

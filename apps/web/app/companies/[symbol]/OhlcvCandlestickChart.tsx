@@ -374,7 +374,7 @@ export function OhlcvCandlestickChart({
         </div>
         <div className="tg soft">
           <span className={`badge ${badgeClass}`}>{badgeLabel}</span>
-          <span style={{ marginLeft: 8 }}>{symbol}</span>
+          <span className="kline-symbol-chip">{symbol}</span>
         </div>
       </div>
 
