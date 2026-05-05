@@ -8101,3 +8101,318 @@ body:has(.login-route) > div {
 .company-workbench-shell .truth-note {
   line-height: 1.66;
 }
+
+/* Pass 114 - dashboard identity: keep truthful states, reduce slab weight. */
+.dashboard-command-deck {
+  isolation: isolate;
+  min-height: clamp(312px, 33vw, 420px);
+  border-left-color: rgba(226, 184, 92, 0.72);
+  background:
+    linear-gradient(90deg, rgba(226, 184, 92, 0.085), transparent 30%),
+    repeating-linear-gradient(90deg, rgba(220, 228, 240, 0.028) 0 1px, transparent 1px 76px),
+    repeating-linear-gradient(0deg, rgba(220, 228, 240, 0.018) 0 1px, transparent 1px 52px),
+    linear-gradient(116deg, rgba(12, 18, 26, 0.9), rgba(4, 8, 13, 0.72) 66%);
+}
+
+.dashboard-command-deck::before {
+  content: "";
+  position: absolute;
+  inset: clamp(18px, 2vw, 28px);
+  z-index: 0;
+  border: 1px solid rgba(226, 184, 92, 0.18);
+  border-left-color: rgba(226, 184, 92, 0.46);
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+.dashboard-command-deck .dashboard-hero-main,
+.dashboard-command-deck .dashboard-source-rail {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-command-deck h2 {
+  max-width: 760px;
+  letter-spacing: 0;
+}
+
+.dashboard-command-deck p {
+  max-width: 680px;
+}
+
+.dashboard-command-deck .dashboard-hero-kpis-inline {
+  max-width: 760px;
+  background: rgba(1, 5, 9, 0.18);
+  box-shadow: inset 0 1px 0 rgba(220, 228, 240, 0.06);
+}
+
+.dashboard-command-deck .dashboard-hero-stat {
+  min-height: 62px;
+  padding: 10px 12px 11px;
+}
+
+.dashboard-command-deck .dashboard-hero-stat strong {
+  font-size: 19px;
+}
+
+.dashboard-command-deck .dashboard-source-rail {
+  padding: 18px 0 18px clamp(16px, 1.8vw, 24px);
+  border-left-color: rgba(226, 184, 92, 0.34);
+  background: linear-gradient(180deg, rgba(1, 5, 9, 0.22), rgba(1, 5, 9, 0.04));
+}
+
+.dashboard-command-deck .dashboard-source-chip {
+  min-height: 42px;
+  padding: 8px 0;
+  border-bottom-color: rgba(220, 228, 240, 0.09);
+}
+
+.dashboard-command-deck .dashboard-source-chip .tg {
+  line-height: 1.5;
+}
+
+.dashboard-readiness-deck {
+  margin-top: clamp(18px, 2.4vw, 30px);
+  grid-template-columns: minmax(300px, 0.54fr) minmax(0, 1fr);
+  gap: clamp(18px, 2.4vw, 30px);
+  padding: clamp(22px, 2.8vw, 34px) clamp(24px, 3.2vw, 42px);
+  border: 0;
+  border-left: 2px solid rgba(75, 214, 140, 0.36);
+  border-top: 1px solid rgba(75, 214, 140, 0.13);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.075);
+  background:
+    linear-gradient(104deg, rgba(75, 214, 140, 0.055), transparent 35%),
+    linear-gradient(180deg, rgba(8, 14, 22, 0.58), rgba(4, 8, 13, 0.36));
+}
+
+.dashboard-readiness-copy h3 {
+  font-size: clamp(23px, 2vw, 30px);
+  line-height: 1.36;
+}
+
+.dashboard-readiness-copy p {
+  max-width: 560px;
+  font-size: 14.5px;
+}
+
+.dashboard-readiness-lanes {
+  gap: 0;
+  border-top: 1px solid rgba(220, 228, 240, 0.08);
+}
+
+.dashboard-readiness-lane {
+  grid-template-columns: minmax(132px, 0.34fr) auto minmax(0, 1fr);
+  gap: 12px 16px;
+  min-height: 0;
+  padding: 12px 0;
+}
+
+.dashboard-readiness-lane strong {
+  font-size: 17px;
+}
+
+.dashboard-readiness-lane p {
+  font-size: 13.5px;
+  line-height: 1.68;
+}
+
+.dashboard-dataset-ribbon {
+  padding-top: 12px;
+  gap: 7px;
+}
+
+.dashboard-dataset-token {
+  min-height: 25px;
+  padding: 4px 8px 5px;
+  font-size: 11.5px;
+}
+
+.dashboard-health-alert {
+  margin-top: clamp(18px, 2.2vw, 26px);
+}
+
+.dashboard-health-alert .panel {
+  padding: clamp(18px, 2.4vw, 28px);
+  border-left-width: 3px;
+  background:
+    linear-gradient(100deg, rgba(255, 82, 112, 0.07), transparent 34%),
+    rgba(7, 10, 15, 0.38);
+}
+
+.dashboard-health-alert .panel-head {
+  margin-bottom: 4px;
+  padding-bottom: 8px;
+}
+
+.dashboard-health-alert .dashboard-blocked-summary {
+  grid-template-columns: minmax(230px, 0.34fr) minmax(0, 1fr);
+  gap: clamp(14px, 2vw, 26px);
+  padding-top: 6px;
+}
+
+.dashboard-health-alert .dashboard-blocked-summary h3 {
+  margin-top: 6px;
+  font-size: clamp(17px, 1.35vw, 20px);
+}
+
+.dashboard-health-alert .dashboard-blocked-summary p {
+  font-size: 13.5px;
+  line-height: 1.72;
+}
+
+.dashboard-health-alert .blocked-source-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 16px;
+  max-height: 184px;
+  overflow: auto;
+}
+
+.dashboard-health-alert .blocked-source-row {
+  padding: 9px 0;
+  gap: 6px 10px;
+}
+
+.dashboard-health-alert .blocked-source-row strong,
+.dashboard-health-alert .blocked-source-row span {
+  line-height: 1.5;
+}
+
+.dashboard-health-alert .blocked-source-row p {
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.dashboard-mosaic-grid {
+  gap: clamp(22px, 3.2vw, 46px);
+}
+
+.dashboard-mosaic-grid .panel {
+  padding-inline: clamp(20px, 2.5vw, 36px);
+  background:
+    linear-gradient(120deg, rgba(226, 184, 92, 0.035), transparent 28%),
+    rgba(4, 8, 13, 0.36);
+}
+
+.dashboard-mosaic-grid .panel-head {
+  padding-bottom: 10px;
+}
+
+.dashboard-mosaic-grid .row {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-readiness-deck {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-health-alert .blocked-source-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-command-deck {
+    min-height: 0;
+  }
+
+  .dashboard-command-deck::before {
+    inset: 12px;
+  }
+
+  .dashboard-command-deck .dashboard-hero-kpis-inline {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dashboard-readiness-deck {
+    padding: 18px;
+  }
+
+  .dashboard-readiness-lane {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .dashboard-readiness-lane p {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-health-alert .blocked-source-grid {
+    grid-template-columns: 1fr;
+    max-height: 300px;
+  }
+}
+
+/* Pass 114 follow-up - mobile dashboard must scan, not become vertical stacks. */
+@media (max-width: 1024px) {
+  .dashboard-health-alert .dashboard-blocked-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-command-deck {
+    padding: 18px 14px;
+  }
+
+  .dashboard-command-deck .dashboard-hero-main {
+    padding-inline: 6px;
+  }
+
+  .dashboard-command-deck h2 {
+    font-size: clamp(31px, 10vw, 40px);
+  }
+
+  .dashboard-command-deck p {
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .dashboard-command-deck .dashboard-source-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 12px;
+    padding: 12px 0 0;
+  }
+
+  .dashboard-command-deck .dashboard-source-chip {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    min-height: 0;
+    padding: 8px 0;
+    gap: 4px;
+  }
+
+  .dashboard-command-deck .dashboard-source-chip .tg.soft {
+    display: block;
+    margin-top: 2px;
+    overflow-wrap: normal;
+    word-break: keep-all;
+  }
+
+  .dashboard-readiness-copy h3 {
+    font-size: 23px;
+  }
+
+  .dashboard-readiness-lane {
+    padding: 9px 0;
+  }
+
+  .dashboard-health-alert .blocked-source-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .dashboard-health-alert .blocked-source-row strong,
+  .dashboard-health-alert .blocked-source-row span,
+  .dashboard-health-alert .blocked-source-row p {
+    overflow-wrap: normal;
+    word-break: keep-all;
+  }
+
+  .dashboard-mosaic-grid .panel > .tg.soft,
+  .dashboard-mosaic-grid .panel .tg.soft {
+    min-width: 0;
+    overflow-wrap: normal;
+    word-break: keep-all;
+  }
+}

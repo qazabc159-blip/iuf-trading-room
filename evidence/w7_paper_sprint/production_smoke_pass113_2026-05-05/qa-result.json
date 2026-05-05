@@ -1,0 +1,17 @@
+{
+  "loginStatus": {
+    "url": "https://app.eycvector.com/login",
+    "bodyWidth": 1365,
+    "viewportWidth": 1365,
+    "textSample": "IUF\n交易戰情室 · 操作員登入\n台股 AI 交易戰情室\nIUF 帳號 · 台股交易工作台\n登入、建立帳號、之後綁券商都在這裡\n\n這裡是 IUF 網站帳號入口，不是券商下單登入。現階段用邀請碼開通測試帳號； 未來同一個帳號會承接證券帳號綁定、資料權限、月費方案與 AI 每日簡報。\n\n申請測試帳號\n已有邀請碼即可開通；未拿到邀請碼時，登入不會偷偷建立假帳號。\n網站帳號\n\n保存戰情台設定、觀察清單、策略偏好與模擬交易紀錄。\n\n可用\n模擬交易\n\n正式券商送單前，先做報價、風控、委"
+  },
+  "protectedStatus": {
+    "url": "https://app.eycvector.com/login?next=%2Fcompanies%2F2330",
+    "bodyWidth": 1365,
+    "viewportWidth": 1365,
+    "redirectedToLogin": true
+  },
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": []
+}
