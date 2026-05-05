@@ -233,7 +233,7 @@ export default async function CompanyDetailPage({
   let kbarView: FinMindKBarView | null = null;
   let kbarErrorMsg: string | null = null;
   try {
-    kbarView = (await getCompanyKBar(company.id, kbarDate, { days: 5 })).data;
+    kbarView = (await getCompanyKBar(company.id, kbarDate, { days: 20 })).data;
   } catch (err) {
     kbarErrorMsg = friendlyError(err);
     console.warn("[company-detail] getCompanyKBar failed", { id: company.id, date: kbarDate, err: kbarErrorMsg });

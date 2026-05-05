@@ -612,6 +612,7 @@ export type FinMindKBarView = {
   daysRequested?: number;
   daysReturned?: number;
   resolvedDates?: string[];
+  candidateDatesScanned?: number;
   requestedDate?: string;
   rows: FinMindKBarRow[];
   updatedAt: string;

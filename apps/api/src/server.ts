@@ -3771,6 +3771,12 @@ function nDaysAgoDate(days: number): string {
 }
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
+const taipeiDate = (date = new Date()) => new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Taipei",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit"
+}).format(date);
 
 function finmindQuotaTier(tokenPresent: boolean): string {
   if (!tokenPresent) return "none";
@@ -3787,15 +3793,25 @@ function finmindQuotaLimitPerHour(tier: string): number | null {
   return null;
 }
 
+function isWeekendDate(date: string): boolean {
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return false;
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return weekday === 0 || weekday === 6;
+}
+
 function recentKBarDateCandidates(primaryDate: string, lookbackDays = 10): string[] {
   const dates = new Set<string>();
-  for (const seed of [primaryDate, todayDate()]) {
+  const latestTaipeiDate = taipeiDate();
+  for (const seed of [primaryDate, latestTaipeiDate, todayDate()]) {
     const base = new Date(`${seed}T00:00:00Z`);
     if (Number.isNaN(base.getTime())) continue;
     for (let offset = 0; offset < lookbackDays; offset += 1) {
       const d = new Date(base);
       d.setUTCDate(base.getUTCDate() - offset);
-      dates.add(d.toISOString().slice(0, 10));
+      const candidate = d.toISOString().slice(0, 10);
+      if (candidate > latestTaipeiDate || isWeekendDate(candidate)) continue;
+      dates.add(candidate);
     }
   }
   return Array.from(dates);
@@ -3822,7 +3838,7 @@ const FINMIND_DATASET_STATUS = [
 
 const finmindKBarQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  days: z.coerce.number().int().min(1).max(5).default(1)
+  days: z.coerce.number().int().min(1).max(20).default(1)
 });
 
 // GET /api/v1/data-sources/finmind/status
@@ -3894,7 +3910,7 @@ app.get("/api/v1/companies/:id/kbar", async (c) => {
   });
   if (!company) return c.json({ error: "company_not_found" }, 404);
 
-  const date = query.date ?? todayDate();
+  const date = query.date ?? taipeiDate();
   const stockId = companyIdToTicker(company.ticker);
   const client = getFinMindClient();
   const tokenPresent = client.hasToken();
@@ -3913,8 +3929,9 @@ app.get("/api/v1/companies/:id/kbar", async (c) => {
   }
 
   const dayGroups: Array<{ date: string; rows: Awaited<ReturnType<typeof client.getStockKBar>> }> = [];
-  const lookbackDays = Math.max(10, query.days * 4 + 5);
-  for (const candidateDate of recentKBarDateCandidates(date, lookbackDays)) {
+  const lookbackDays = Math.max(12, query.days * 3 + 10);
+  const candidateDates = recentKBarDateCandidates(date, lookbackDays);
+  for (const candidateDate of candidateDates) {
     const candidateRows = await client.getStockKBar(stockId, candidateDate);
     if (candidateRows.length === 0) continue;
     dayGroups.push({ date: candidateDate, rows: candidateRows });
@@ -3937,6 +3954,7 @@ app.get("/api/v1/companies/:id/kbar", async (c) => {
       daysRequested: query.days,
       daysReturned: resolvedDates.length,
       resolvedDates,
+      candidateDatesScanned: candidateDates.length,
       requestedDate: date,
       rows,
       updatedAt: new Date().toISOString()
