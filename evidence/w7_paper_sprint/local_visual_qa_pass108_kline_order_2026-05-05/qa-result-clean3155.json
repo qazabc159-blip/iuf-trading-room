@@ -1,0 +1,152 @@
+[
+  {
+    "viewport": "desktop1365",
+    "logs": [],
+    "clicks": [
+      {
+        "label": "1分",
+        "active": [
+          "1分"
+        ],
+        "meta": "FinMind Sponsor 分 K240 根04-30 09:30 - 04-30 13:29收 1,126.48量 2,873",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "5分",
+        "active": [
+          "5分"
+        ],
+        "meta": "1 分 K 彙整48 根04-30 09:30 - 04-30 13:25收 1,126.48量 14,295",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "15分",
+        "active": [
+          "15分"
+        ],
+        "meta": "1 分 K 彙整16 根04-30 09:30 - 04-30 13:15收 1,126.48量 42,360",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "60分",
+        "active": [
+          "60分"
+        ],
+        "meta": "1 分 K 彙整5 根04-30 09:00 - 04-30 13:00收 1,126.48量 83,145",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "日K",
+        "active": [
+          "日K",
+          "全部"
+        ],
+        "meta": "正式 OHLCV90 根2026-01-01 - 2026-03-31收 1,141.06量 38,010,000",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "週K",
+        "active": [
+          "週K",
+          "全部"
+        ],
+        "meta": "日 K 彙整週線14 根2026-01-05 - 2026-03-31收 1,141.06量 38,010,000",
+        "terminal": "",
+        "chartChildren": 1
+      }
+    ],
+    "metrics": {
+      "overflowX": false,
+      "scrollWidth": 1365,
+      "innerWidth": 1365,
+      "klinePanelWidth": 938,
+      "chartShellWidth": 894,
+      "orderPanelWidth": 938,
+      "activeTabs": [
+        "5分"
+      ],
+      "orderSubmitColor": "rgb(145, 160, 181)",
+      "narrowText": []
+    }
+  },
+  {
+    "viewport": "mobile390",
+    "logs": [],
+    "clicks": [
+      {
+        "label": "1分",
+        "active": [
+          "1分"
+        ],
+        "meta": "FinMind Sponsor 分 K240 根04-30 09:30 - 04-30 13:29收 1,126.48量 2,873",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "5分",
+        "active": [
+          "5分"
+        ],
+        "meta": "1 分 K 彙整48 根04-30 09:30 - 04-30 13:25收 1,126.48量 14,295",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "15分",
+        "active": [
+          "15分"
+        ],
+        "meta": "1 分 K 彙整16 根04-30 09:30 - 04-30 13:15收 1,126.48量 42,360",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "60分",
+        "active": [
+          "60分"
+        ],
+        "meta": "1 分 K 彙整5 根04-30 09:00 - 04-30 13:00收 1,126.48量 83,145",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "日K",
+        "active": [
+          "日K",
+          "全部"
+        ],
+        "meta": "正式 OHLCV90 根2026-01-01 - 2026-03-31收 1,141.06量 38,010,000",
+        "terminal": "",
+        "chartChildren": 1
+      },
+      {
+        "label": "週K",
+        "active": [
+          "週K",
+          "全部"
+        ],
+        "meta": "日 K 彙整週線14 根2026-01-05 - 2026-03-31收 1,141.06量 38,010,000",
+        "terminal": "",
+        "chartChildren": 1
+      }
+    ],
+    "metrics": {
+      "overflowX": false,
+      "scrollWidth": 390,
+      "innerWidth": 390,
+      "klinePanelWidth": 354,
+      "chartShellWidth": 322,
+      "orderPanelWidth": 354,
+      "activeTabs": [
+        "5分"
+      ],
+      "orderSubmitColor": "rgb(145, 160, 181)",
+      "narrowText": []
+    }
+  }
+]

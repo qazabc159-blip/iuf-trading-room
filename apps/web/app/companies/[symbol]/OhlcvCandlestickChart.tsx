@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FinMindKBarRow, OhlcvBar } from "@/lib/api";
 
 type EnabledInterval = "1d" | "1w" | "1mo" | "1min" | "5min" | "15min" | "60min";
@@ -413,8 +413,8 @@ export function OhlcvCandlestickChart({
               key={item.value}
               type="button"
               onClick={() => setInterval(item.value)}
-              className="kline-tab"
-              style={interval === item.value ? activeButtonStyle : undefined}
+              className={`kline-tab${interval === item.value ? " is-active" : ""}`}
+              aria-pressed={interval === item.value}
               title={item.note}
             >
               {item.label}
@@ -429,8 +429,8 @@ export function OhlcvCandlestickChart({
                 key={item.value}
                 type="button"
                 onClick={() => setRange(item.value)}
-                className="kline-tab"
-                style={range === item.value ? activeButtonStyle : undefined}
+                className={`kline-tab${range === item.value ? " is-active" : ""}`}
+                aria-pressed={range === item.value}
               >
                 {item.label}
               </button>
@@ -529,9 +529,3 @@ function KlineInsufficientState({
     </div>
   );
 }
-
-const activeButtonStyle: CSSProperties = {
-  borderColor: "rgba(226,184,92,0.72)",
-  color: "var(--gold-bright)",
-  background: "rgba(226,184,92,0.14)",
-};
