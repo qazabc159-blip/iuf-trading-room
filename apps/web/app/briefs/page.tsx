@@ -13,6 +13,8 @@ type OpenAliceState =
   | { state: "LIVE"; surface: OpenAliceSurface; data: OpenAliceObservability; updatedAt: string; source: string }
   | { state: "BLOCKED"; surface: "BLOCKED"; data: null; updatedAt: string; source: string; reason: string };
 
+type BriefFreshness = "LIVE" | "STALE" | "EMPTY" | "BLOCKED";
+
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", {
     year: "numeric",
@@ -40,6 +42,49 @@ function statusLabel(status: DailyBrief["status"]) {
   if (status === "published") return "已發布";
   if (status === "draft") return "草稿";
   return status;
+}
+
+function taipeiTodayString() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function briefAgeDays(date: string | null | undefined) {
+  if (!date) return null;
+  const today = Date.parse(`${taipeiTodayString()}T00:00:00+08:00`);
+  const target = Date.parse(`${date}T00:00:00+08:00`);
+  if (!Number.isFinite(today) || !Number.isFinite(target)) return null;
+  return Math.round((today - target) / 86_400_000);
+}
+
+function briefFreshnessLabel(state: BriefFreshness) {
+  if (state === "LIVE") return "今日資料";
+  if (state === "STALE") return "資料過期";
+  if (state === "EMPTY") return "無資料";
+  return "暫停";
+}
+
+function briefFreshnessTone(state: BriefFreshness) {
+  if (state === "LIVE") return "status-ok";
+  if (state === "BLOCKED") return "status-bad";
+  return "gold";
+}
+
+function briefFreshnessBadge(state: BriefFreshness) {
+  if (state === "LIVE") return "badge-green";
+  if (state === "BLOCKED") return "badge-red";
+  return "badge-yellow";
+}
+
+function briefAgeCopy(days: number | null) {
+  if (days === null) return "無法判斷資料日";
+  if (days === 0) return "台北今日";
+  if (days > 0) return `落後 ${days} 天`;
+  return `日期超前 ${Math.abs(days)} 天`;
 }
 
 function surfaceLabel(state: "EMPTY" | "BLOCKED") {
@@ -165,7 +210,8 @@ export default async function BriefsPage() {
   const publishedCount = briefs.filter((brief) => brief.status === "published").length;
   const draftCount = briefs.filter((brief) => brief.status === "draft").length;
   const totalSections = latest?.sections.length ?? 0;
-  const surfaceState = error ? "BLOCKED" : latest ? "LIVE" : "EMPTY";
+  const latestAgeDays = latest ? briefAgeDays(latest.date) : null;
+  const surfaceState: BriefFreshness = error ? "BLOCKED" : latest ? (latestAgeDays === 0 ? "LIVE" : "STALE") : "EMPTY";
 
   return (
     <PageFrame
@@ -177,12 +223,12 @@ export default async function BriefsPage() {
       <MetricStrip
         columns={7}
         cells={[
-          { label: "狀態", value: surfaceState === "LIVE" ? "正常" : surfaceState === "EMPTY" ? "無資料" : "暫停", tone: surfaceState === "LIVE" ? "status-ok" : surfaceState === "EMPTY" ? "gold" : "status-bad" },
+          { label: "狀態", value: briefFreshnessLabel(surfaceState), tone: briefFreshnessTone(surfaceState) },
           { label: "簡報數", value: briefs.length },
           { label: "已發布", value: publishedCount, tone: publishedCount > 0 ? "status-ok" : "muted" },
           { label: "草稿", value: draftCount, tone: draftCount > 0 ? "gold" : "muted" },
           { label: "段落", value: latest ? totalSections : "--" },
-          { label: "最新日期", value: latest?.date ?? "--" },
+          { label: "資料日", value: latest ? `${latest.date} / ${briefAgeCopy(latestAgeDays)}` : "--", tone: surfaceState === "STALE" ? "gold" : undefined },
           { label: "AI 產文", value: openAliceLabel(openAlice.surface), tone: openAliceTone(openAlice.surface) },
         ]}
       />
@@ -198,10 +244,14 @@ export default async function BriefsPage() {
         </div>
         <div className="brief-source-card">
           <span>來源狀態</span>
-          <strong className={surfaceState === "LIVE" ? "status-ok" : surfaceState === "EMPTY" ? "gold" : "status-bad"}>
-            {surfaceState === "LIVE" ? "正式資料" : surfaceState === "EMPTY" ? "等待首份" : "資料暫停"}
+          <strong className={briefFreshnessTone(surfaceState)}>
+            {surfaceState === "LIVE" ? "今日正式資料" : surfaceState === "STALE" ? "舊資料保留" : surfaceState === "EMPTY" ? "等待首份" : "資料暫停"}
           </strong>
-          <p>{latest ? `最新簡報 ${latest.date}，共 ${latest.sections.length} 段。` : "尚未取得正式簡報資料，先顯示接線規格。"}</p>
+          <p>
+            {latest
+              ? `最新簡報 ${latest.date}（${briefAgeCopy(latestAgeDays)}），共 ${latest.sections.length} 段；未重產前不標示為今日 AI 報告。`
+              : "尚未取得正式簡報資料，先顯示接線規格。"}
+          </p>
         </div>
       </section>
 
@@ -265,6 +315,19 @@ export default async function BriefsPage() {
 
       {!error && latest && (
         <>
+          {surfaceState === "STALE" && (
+            <section className="brief-stale-warning" role="status">
+              <span className="badge badge-yellow">資料過期</span>
+              <div>
+                <strong>這份每日簡報不是今天產出的內容。</strong>
+                <p>
+                  最後資料日 {latest.date}（{briefAgeCopy(latestAgeDays)}）。
+                  需要 OpenAlice worker / daily brief pipeline 寫入新的 source-traced row；前端不會假裝更新。
+                </p>
+              </div>
+            </section>
+          )}
+
           <section className="daily-brief-sheet">
             <div className="daily-brief-head">
               <div>
@@ -273,7 +336,8 @@ export default async function BriefsPage() {
                 <p>台股操作摘要 / 正式資料庫</p>
               </div>
               <div className="daily-brief-meta">
-                <span className="badge badge-green">正常</span>
+                <span className={`badge ${briefFreshnessBadge(surfaceState)}`}>{briefFreshnessLabel(surfaceState)}</span>
+                <span>資料日：{latest.date}（{briefAgeCopy(latestAgeDays)}）</span>
                 <span>盤勢：{marketLabel(latest.marketState)}</span>
                 <span>來源：每日簡報資料庫</span>
                 <span>更新 {formatDateTime(latest.createdAt)}</span>

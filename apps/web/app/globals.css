@@ -5922,6 +5922,33 @@ body:has(.login-route) > div {
     rgba(5, 9, 14, 0.38);
 }
 
+.brief-stale-warning {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px 18px;
+  align-items: flex-start;
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(226, 184, 92, 0.38);
+  border-left: 3px solid var(--gold-bright);
+  background:
+    linear-gradient(90deg, rgba(226, 184, 92, 0.12), transparent 42%),
+    rgba(5, 9, 14, 0.46);
+}
+
+.brief-stale-warning strong {
+  display: block;
+  color: var(--night-ink);
+  font: 900 16px/1.45 var(--sans-tc);
+}
+
+.brief-stale-warning p {
+  margin: 6px 0 0;
+  color: var(--night-mid);
+  font: 650 13px/1.8 var(--sans-tc);
+  letter-spacing: 0;
+}
+
 .daily-brief-meta {
   display: flex;
   flex-wrap: wrap;
