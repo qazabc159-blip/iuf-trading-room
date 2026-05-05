@@ -160,17 +160,19 @@ async function syncTicker(
  *
  * @param tickers - Array of { companyId, ticker, workspaceId }
  * @param options - Optional overrides for startDate/endDate (defaults: 2 years back → today)
+ *   forceFinmind: true → bypass OHLCV_SOURCE=mock check (used by server scheduler)
  */
 export async function runOhlcvFinmindSync(
   tickers: Array<{ companyId: string; ticker: string; workspaceId: string }>,
   options?: {
     startDate?: string;
     endDate?: string;
+    forceFinmind?: boolean;
   }
 ): Promise<OhlcvSyncResult> {
   const startedAt = new Date().toISOString();
   const t0 = Date.now();
-  const source = getOhlcvSource();
+  const source = options?.forceFinmind ? "finmind" : getOhlcvSource();
   const dryRun = isDryRun();
 
   const startDate = options?.startDate ?? daysAgoIso(730);  // 2 years back

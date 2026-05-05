@@ -390,11 +390,13 @@ export class FinMindClient {
       response = await fetchWithRetry(url, 3);
     } catch (err) {
       console.warn(`[finmind-client] fetch failed for ${logUrl}:`, err instanceof Error ? err.message : String(err));
+      recordFinMindRequest({ dataset, ok: false });
       return [];
     }
 
     if (!response.ok) {
       console.warn(`[finmind-client] HTTP ${response.status} for ${logUrl}`);
+      recordFinMindRequest({ dataset, ok: false });
       return [];
     }
 
@@ -402,15 +404,18 @@ export class FinMindClient {
     try {
       json = await response.json();
     } catch (err) {
+      recordFinMindRequest({ dataset, ok: false });
       throw new FinMindParseError(`Failed to parse JSON for ${dataset}/${stockId}`, err);
     }
 
     const typed = json as FinMindResponse<T>;
     if (typed.status !== 200) {
       console.warn(`[finmind-client] API status ${typed.status} for ${dataset}/${stockId}: ${typed.msg}`);
+      recordFinMindRequest({ dataset, ok: false });
       return [];
     }
 
+    recordFinMindRequest({ dataset, ok: true });
     return typed.data ?? [];
   }
 
@@ -763,4 +768,43 @@ export function getFinMindClient(): FinMindClient {
     _defaultClient = new FinMindClient();
   }
   return _defaultClient;
+}
+
+// ── Module-level request counters (F4: wire diagnostics) ─────────────────────
+// Tracked here (not in server.ts) to avoid circular imports.
+// server.ts diagnostics route reads via getFinMindStats().
+
+let _requestCount = 0;
+let _errorCount = 0;
+let _lastFetchTs: string | null = null;
+let _lastDataset: string | null = null;
+
+/** Called after every FinMind HTTP fetch attempt. */
+export function recordFinMindRequest(opts: { dataset: string; ok: boolean }): void {
+  _requestCount++;
+  if (!opts.ok) _errorCount++;
+  _lastFetchTs = new Date().toISOString();
+  _lastDataset = opts.dataset;
+}
+
+export function getFinMindStats(): {
+  requestCount: number;
+  errorCount: number;
+  lastFetchTs: string | null;
+  lastDataset: string | null;
+} {
+  return {
+    requestCount: _requestCount,
+    errorCount: _errorCount,
+    lastFetchTs: _lastFetchTs,
+    lastDataset: _lastDataset
+  };
+}
+
+/** Reset counters — used in tests. */
+export function _resetFinMindStats(): void {
+  _requestCount = 0;
+  _errorCount = 0;
+  _lastFetchTs = null;
+  _lastDataset = null;
 }
