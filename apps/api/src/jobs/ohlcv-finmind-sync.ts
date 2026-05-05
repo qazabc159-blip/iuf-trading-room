@@ -76,7 +76,7 @@ async function syncTicker(
   companyId: string,
   ticker: string,
   startDate: string,
-  endDate: string,
+  endDate: string | null,
   dryRun: boolean
 ): Promise<OhlcvSyncTickerResult> {
   const client = getFinMindClient();
@@ -176,9 +176,11 @@ export async function runOhlcvFinmindSync(
   const dryRun = isDryRun();
 
   const startDate = options?.startDate ?? daysAgoIso(730);  // 2 years back
-  const endDate = options?.endDate ?? isoToYYYYMMDD(new Date());
+  // Omit endDate for default latest queries. The app/test clock can be ahead
+  // of the real FinMind trading calendar, and future end_date values get HTTP 400.
+  const endDate = options?.endDate ?? null;
 
-  console.log(`[ohlcv-finmind-sync] START source=${source} dryRun=${dryRun} tickers=${tickers.length} startDate=${startDate} endDate=${endDate}`);
+  console.log(`[ohlcv-finmind-sync] START source=${source} dryRun=${dryRun} tickers=${tickers.length} startDate=${startDate} endDate=${endDate ?? "latest"}`);
 
   if (source === "mock") {
     console.log("[ohlcv-finmind-sync] OHLCV_SOURCE=mock — sync skipped");

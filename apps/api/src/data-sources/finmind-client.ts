@@ -351,14 +351,16 @@ export class FinMindClient {
     return Boolean(this._getToken());
   }
 
-  private _buildUrl(dataset: string, stockId: string, startDate: string, endDate: string): string {
+  private _buildUrl(dataset: string, stockId: string, startDate: string, endDate?: string | null): string {
     const token = this._getToken();
     const params = new URLSearchParams({
       dataset,
       data_id: stockId,
-      start_date: startDate,
-      end_date: endDate
+      start_date: startDate
     });
+    if (endDate) {
+      params.set("end_date", endDate);
+    }
     if (token) {
       params.set("token", token);
     }
@@ -373,7 +375,7 @@ export class FinMindClient {
     dataset: string,
     stockId: string,
     startDate: string,
-    endDate: string
+    endDate?: string | null
   ): Promise<T[]> {
     const token = this._getToken();
     if (!token) {
@@ -438,8 +440,9 @@ export class FinMindClient {
    * Returns OhlcvBar[] sorted ascending by date.
    * Falls back to empty array (source=mock upstream) when token missing.
    */
-  async getStockPriceAdj(stockId: string, startDate: string, endDate: string): Promise<OhlcvBar[]> {
-    const cacheKey = `finmind:ohlcv:${stockId}:${startDate}:${endDate}`;
+  async getStockPriceAdj(stockId: string, startDate: string, endDate?: string | null): Promise<OhlcvBar[]> {
+    const endKey = endDate ?? "latest";
+    const cacheKey = `finmind:ohlcv:${stockId}:${startDate}:${endKey}`;
 
     // Cache read
     const cached = await cacheGet(cacheKey, this._redisOverride);
