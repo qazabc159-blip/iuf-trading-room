@@ -48,7 +48,7 @@ import {
   findByIdempotencyKey as findOrderByIdempotencyKey
 } from "./domain/trading/paper-ledger-db.js";
 import { isDatabaseMode, getDb, dailyThemeSummaries } from "@iuf-trading-room/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql as drizzleSql } from "drizzle-orm";
 import {
   getTradingRoomRepository,
   type TradingRoomRepository
@@ -4495,12 +4495,77 @@ app.post("/api/v1/paper/submit", async (c) => {
   return c.json({ data: result.finalState }, status);
 });
 
+// GET /api/v1/paper/db-probe
+// Diagnostic endpoint: reports DB connectivity + table existence + applied migrations.
+// Requires auth. Intended for ops use; safe to call repeatedly (read-only).
+app.get("/api/v1/paper/db-probe", async (c) => {
+  const persistenceMode = isDatabaseMode() ? "database" : "memory";
+  const db = isDatabaseMode() ? getDb() : null;
+
+  if (!db) {
+    return c.json({
+      persistenceMode,
+      dbAvailable: false,
+      note: "PERSISTENCE_MODE is not 'database' — using in-memory adapter"
+    });
+  }
+
+  try {
+    // Check table existence via regclass cast (null = missing)
+    const tableCheck = await db.execute(drizzleSql`
+      SELECT
+        to_regclass('public.paper_orders')  AS paper_orders,
+        to_regclass('public.paper_fills')   AS paper_fills,
+        to_regclass('public.paper_positions') AS paper_positions
+    `);
+    const tableRow = (tableCheck as { rows?: Record<string, unknown>[] })?.rows?.[0]
+      ?? (Array.isArray(tableCheck) ? tableCheck[0] : tableCheck);
+
+    // Check which migrations are applied (schema_migrations may not exist)
+    let appliedMigrations: string[] = [];
+    try {
+      const migCheck = await db.execute(drizzleSql`
+        SELECT version FROM schema_migrations
+        WHERE version LIKE '0015%' OR version LIKE '0020%' OR version LIKE '0021%'
+        ORDER BY version ASC
+      `);
+      const migRows = (migCheck as { rows?: Record<string, unknown>[] })?.rows
+        ?? (Array.isArray(migCheck) ? migCheck : [migCheck]);
+      appliedMigrations = migRows.map((r: Record<string, unknown>) => String(r.version ?? r.Version ?? "?"));
+    } catch {
+      appliedMigrations = ["schema_migrations_query_failed"];
+    }
+
+    return c.json({
+      persistenceMode,
+      dbAvailable: true,
+      tables: {
+        paper_orders: tableRow?.paper_orders !== null && tableRow?.paper_orders !== undefined,
+        paper_fills: tableRow?.paper_fills !== null && tableRow?.paper_fills !== undefined,
+        paper_positions: tableRow?.paper_positions !== null && tableRow?.paper_positions !== undefined
+      },
+      appliedMigrations,
+      raw: tableRow
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ persistenceMode, dbAvailable: false, error: msg }, 500);
+  }
+});
+
 // GET /api/v1/paper/fills
 // Returns all FILLED orders for the current user as a fills list.
 // Each fill includes orderId, symbol, side, fillQty, fillPrice, fillTime.
 app.get("/api/v1/paper/fills", async (c) => {
   const session = c.get("session");
-  const orders = await listOrders(session.user.id, { status: "FILLED" });
+  let orders;
+  try {
+    orders = await listOrders(session.user.id, { status: "FILLED" });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[paper/fills] listOrders failed:", detail);
+    return c.json({ error: "list_orders_failed", detail }, 500);
+  }
   const fills = orders
     .filter((o) => o.fill !== null)
     .map((o) => ({
@@ -4527,7 +4592,14 @@ app.get("/api/v1/paper/fills", async (c) => {
 // Returns 200 + { data: PortfolioPosition[] }.
 app.get("/api/v1/paper/portfolio", async (c) => {
   const session = c.get("session");
-  const orders = await listOrders(session.user.id, { status: "FILLED" });
+  let orders;
+  try {
+    orders = await listOrders(session.user.id, { status: "FILLED" });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[paper/portfolio] listOrders failed:", detail);
+    return c.json({ error: "list_orders_failed", detail }, 500);
+  }
 
   // Aggregate per symbol
   const positions = new Map<string, {
