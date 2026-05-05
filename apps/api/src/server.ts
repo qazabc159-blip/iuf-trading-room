@@ -3772,6 +3772,21 @@ function nDaysAgoDate(days: number): string {
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
+function finmindQuotaTier(tokenPresent: boolean): string {
+  if (!tokenPresent) return "none";
+  return process.env.FINMIND_QUOTA_TIER ?? process.env.FINMIND_TIER ?? "sponsor999";
+}
+
+function finmindQuotaLimitPerHour(tier: string): number | null {
+  const configured = Number(process.env.FINMIND_QUOTA_LIMIT_PER_HOUR ?? "");
+  if (Number.isFinite(configured) && configured > 0) {
+    return configured;
+  }
+  if (tier === "sponsor999") return 6000;
+  if (tier === "free") return 600;
+  return null;
+}
+
 function recentKBarDateCandidates(primaryDate: string): string[] {
   const dates = new Set<string>();
   for (const seed of [primaryDate, todayDate()]) {
@@ -3815,6 +3830,8 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
   const finmind = getFinMindClient();
   const tokenPresent = finmind.hasToken();
   const stats = getFinMindStats();
+  const quotaTier = finmindQuotaTier(tokenPresent);
+  const quotaLimitPerHour = finmindQuotaLimitPerHour(quotaTier);
   const errorRatePct = stats.requestCount === 0
     ? null
     : Math.round((stats.errorCount / stats.requestCount) * 10000) / 100;
@@ -3837,9 +3854,9 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
       state: sourceState,
       tokenPresent,
       quota: {
-        used: null,
-        limit: null,
-        source: "not_queried_token_safe_v1"
+        used: stats.requestCount,
+        limit: quotaLimitPerHour,
+        source: `process_counter:${quotaTier}`
       },
       health: {
         requestCount: stats.requestCount,
@@ -4387,17 +4404,17 @@ export function recordFinMindFetch(_opts: { dataset: string; ok: boolean }): voi
 
 app.get("/api/v1/diagnostics/finmind", (c) => {
   const tokenPresent = !!(process.env.FINMIND_API_TOKEN);
-  const ohlcvSource = process.env.OHLCV_SOURCE ?? "mock";
   const redisConfigured = !!(process.env.REDIS_URL);
 
-  // Quota: FinMind free tier = 600 req/hr, Sponsor 999 = unlimited (≈99999)
-  const quotaTier = tokenPresent ? (process.env.FINMIND_QUOTA_TIER ?? "free") : "none";
-  const quotaLimitPerHour = quotaTier === "sponsor999" ? 99999 : quotaTier === "free" ? 600 : null;
-
+  // Quota hint only: free = 600/hr; Sponsor 999 defaults to 6000/hr unless env overrides it.
   const stats = getFinMindStats();
   const errorRate = stats.requestCount === 0
     ? null
     : Math.round((stats.errorCount / stats.requestCount) * 10000) / 100;
+  const quotaTier = finmindQuotaTier(tokenPresent);
+  const quotaLimitPerHour = finmindQuotaLimitPerHour(quotaTier);
+  const ohlcvSource = process.env.OHLCV_SOURCE
+    ?? (tokenPresent && stats.requestCount > 0 && (errorRate === null || errorRate <= 5) ? "finmind" : "pending");
 
   return c.json({
     data: {
@@ -5040,8 +5057,8 @@ function buildFinMindMeta(opts: {
   cacheTtlSeconds: number;
   stalenessSeconds: number | null;
 }) {
-  const tier = process.env.FINMIND_TIER ?? (opts.tokenPresent ? "sponsor999" : "none");
-  const quotaPerHour = tier === "sponsor999" ? 99_999 : tier === "free" ? 600 : 0;
+  const tier = finmindQuotaTier(opts.tokenPresent);
+  const quotaPerHour = finmindQuotaLimitPerHour(tier) ?? 0;
   // Rough estimate: quota remaining = max(0, limit - requests seen in this process)
   // Not authoritative — FinMind resets per-hour server-side. This is a UI hint only.
   const quotaRemaining = opts.tokenPresent ? Math.max(0, quotaPerHour - opts.requestsThisProcess) : 0;

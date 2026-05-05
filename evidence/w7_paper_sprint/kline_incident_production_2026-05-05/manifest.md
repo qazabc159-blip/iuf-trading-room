@@ -52,3 +52,28 @@ BROKEN
 - Post-deploy smoke after PR #194 showed API deploy success and authenticated `/api/v1/companies/{id}/ohlcv` still returned `rows=200`, `nonMockRows=0`, `source=mock`. API logs still showed redacted FinMind HTTP 403/400, so the remaining K-line blocker is FinMind token/account/API acceptance rather than chart CSS or frontend rendering. Follow-up: diagnostics state must surface DEGRADED when recent FinMind fetch errors are high; do not show fake green while OHLCV is all mock.
 - Files: `apps/api/src/data-sources/finmind-client.ts`, `apps/api/src/companies-ohlcv.ts`, `apps/api/src/jobs/ohlcv-finmind-sync.ts`, `apps/api/src/server.ts`.
 - Local checks: `pnpm --filter @iuf-trading-room/api typecheck` PASS; `pnpm --filter @iuf-trading-room/api exec node --test --import tsx src/data-sources/finmind-client.test.ts` PASS 11/11; inline FinMind latest URL probe PASS (`end_date` omitted, rows mapped).
+
+## 2026-05-05 23:36 Taipei - Codex K-line production recheck after PR #195
+
+- Verdict update: `VERIFIED HEALTHY` for the checked production API + page path. The earlier `BROKEN` state was real at 22:00-23:10, but current production no longer matches that state.
+- Railway deploy state: web latest deployment is `SUCCESS` for `831a4b044f934c48e8bff6c28c4ef7bd1d6edc97`; api latest deployment is also on PR #195 code.
+- Authenticated API evidence, token-safe:
+  - `/api/v1/data-sources/finmind/status`: `state=LIVE_READY`, `tokenPresent=true`, `requestCount=1351`, `errorCount=0`, `errorRatePct=0`.
+  - `/api/v1/companies/1104/ohlcv?from=2026-04-25&interval=1d`: `rows=5`, `nonMock=5`, `firstSource=tej`, latest bar `2026-05-04`.
+  - `/api/v1/companies/1104/kbar?date=2026-04-29`: `state=LIVE`, `rows=49`, resolved date `2026-04-29`.
+  - `/api/v1/companies/2330/ohlcv?from=2026-04-25&interval=1d`: `rows=6`, `nonMock=6`, `firstSource=tej`, latest bar `2026-05-05`.
+  - `/api/v1/companies/2330/kbar?date=2026-04-29`: `state=LIVE`, `rows=266`, resolved date `2026-04-29`.
+- Railway log evidence: `ohlcv-finmind-sync` is actively fetching FinMind rows and upserting them, with recent lines such as `barsFromApi=5/6`, `barsUpserted=5/6`, `error=none`.
+- Browser evidence: Playwright authenticated production QA on `https://app.eycvector.com/companies/1104?codexQa=2` at 1365px saved:
+  - `evidence/w7_paper_sprint/kline_incident_production_2026-05-05/company1104_prod_1365.png`
+  - `evidence/w7_paper_sprint/kline_incident_production_2026-05-05/company1104_prod_1365.json`
+  The page text includes `FinMind / TEJ`, latest close `28.25`, latest date `2026-05-04`, daily `726 根K 線`, and minute K state `正常 / FinMind Sponsor 2026-05-04 已回傳 119 根 1 分 K，可彙整 1 / 5 / 15 / 60 分`.
+- Current user-visible discrepancy class: likely stale browser view, stale screenshot timing, or front-end diagnostics copy lag rather than missing Railway token or missing production FinMind requests.
+- Stop-line proof: no token displayed/logged; no order route changed; no KGI/broker write-side; no migration/schema/destructive DB; no fake-live chart.
+
+## 2026-05-05 23:55 Taipei - Diagnostics truth patch
+
+- Root-cause update: production FinMind requests are active and healthy, but diagnostics could still show misleading `free` / `600` / `mock` defaults when the optional quota/source env vars were not set.
+- Fix: `/api/v1/data-sources/finmind/status`, `/api/v1/diagnostics/finmind`, and shared FinMind metadata now derive tier/limit from token presence plus `FINMIND_QUOTA_TIER`, `FINMIND_TIER`, or `FINMIND_QUOTA_LIMIT_PER_HOUR`. Sponsor 999 defaults to the operator-declared 6000/hour.
+- Fix: diagnostics no longer defaults OHLCV source to `mock` when the token exists and recent in-process FinMind fetches are healthy; it reports `finmind` for a healthy active fetch path and `pending` if no successful path has been observed.
+- Stop-line proof: no token value is returned; only token presence, process counters, tier label, and quota limit are exposed. No order, broker/KGI, migration, schema, or destructive DB path changed.

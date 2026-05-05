@@ -3223,3 +3223,20 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - API logs still showed redacted FinMind HTTP 403/400 after bearer-header deploy. Current root cause class: `FINMIND_TOKEN_ACCOUNT_OR_API_ACCEPTANCE_BLOCKED`, not chart CSS/hydration/DOM.
 - Follow-up safe work: make `/api/v1/data-sources/finmind/status` return `DEGRADED` when in-process FinMind request error rate is high, so dashboard/diagnostics stop showing fake green while K-line remains all-mock.
 - Stop-line proof: no order route, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, no token display/logging.
+
+## 2026-05-05 23:36 Taipei - Codex K-line recheck after PR #195 deploy
+- Trade Capability Score: +1 verified. Current production API and page path are healthy for checked symbols; K-line incident is no longer reproducing on authenticated smoke.
+- Sources/endpoints: `/api/v1/data-sources/finmind/status`, `/api/v1/companies/1104/ohlcv`, `/api/v1/companies/1104/kbar`, `/api/v1/companies/2330/ohlcv`, `/api/v1/companies/2330/kbar`, plus Railway api logs.
+- Evidence: FinMind diagnostics returned `LIVE_READY`, `tokenPresent=true`, `requestCount=1351`, `errorCount=0`; `1104` OHLCV returned 5 non-mock TEJ rows and KBar returned 49 rows; `2330` OHLCV returned 6 non-mock TEJ rows and KBar returned 266 rows.
+- Browser QA: authenticated Playwright production check on `/companies/1104` at 1365px saved `evidence/w7_paper_sprint/kline_incident_production_2026-05-05/company1104_prod_1365.png` and JSON manifest. Page text includes `FinMind / TEJ`, `2026-05-04`, `726 根K 線`, and minute K normal state.
+- Current explanation for user screenshot: likely stale page/screenshot timing or diagnostics copy lag; production backend is actively fetching FinMind (`ohlcv-finmind-sync` logs show `barsFromApi`, `barsUpserted`, `error=none`).
+- Stop-line proof: no token displayed/logged, no order route, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart.
+- Next slice: fix FinMind diagnostics/source UI so quota/tier/error copy no longer misleads the operator when Sponsor 999 is active and the backend is healthy.
+
+## 2026-05-05 23:55 Taipei - Codex FinMind diagnostics truth patch
+- Trade Capability Score: +1. Workflow improved: operator can trust whether FinMind Sponsor is actually active instead of seeing stale `600/hr`, `mock`, or `0`-style defaults after healthy production fetches.
+- Files changed: `apps/api/src/server.ts`, `evidence/w7_paper_sprint/kline_incident_production_2026-05-05/manifest.md`, this board, and production K-line screenshot/json evidence.
+- Endpoints/sources: `/api/v1/data-sources/finmind/status`, `/api/v1/diagnostics/finmind`, `/api/v1/companies/{symbol}/ohlcv`, `/api/v1/companies/{symbol}/kbar`, Railway api FinMind sync logs.
+- Behavior: diagnostics now derives Sponsor 999 quota from env/tier helpers and defaults Sponsor to 6000/hour; OHLCV diagnostics reports `finmind` only when token-backed in-process fetches are active and healthy, otherwise `pending`/degraded rather than fake green.
+- Checks: `pnpm.cmd --filter @iuf-trading-room/api typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/api build` PASS; targeted `git diff --check` PASS with CRLF warnings only. Stop-line proof remains: no token value, no order route, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart.
+- Next: commit/push/open PR, wait CI, then production-smoke diagnostics and dashboard source panels after deploy.
