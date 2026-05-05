@@ -622,12 +622,12 @@ function StatePill({ state }: { state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING" 
     : state === "EMPTY" ? "var(--gold-bright)"
       : state === "LOADING" ? "var(--gold)"
         : "var(--tw-up-bright)";
-  return <span style={{ color, fontWeight: 700, letterSpacing: "0.16em" }}>{uiStateLabel(state)}</span>;
+  return <span className={`state-pill state-pill-${state.toLowerCase()}`} style={{ color, fontWeight: 700, letterSpacing: "0.10em" }}>{uiStateLabel(state)}</span>;
 }
 
 function TruthNote({ state, text }: { state: "LIVE" | "EMPTY" | "BLOCKED"; text: string }) {
   return (
-    <div style={truthNoteStyle}>
+    <div className={`truth-note truth-note-${state.toLowerCase()}`} style={truthNoteStyle}>
       <StatePill state={state} />
       <span>{text}</span>
     </div>
@@ -691,8 +691,8 @@ const inputStyle: React.CSSProperties = {
   color: "var(--night-ink, #d8d4c8)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 13,
-  minHeight: 34,
-  padding: "7px 10px",
+  minHeight: 38,
+  padding: "9px 11px",
   width: "100%",
   boxSizing: "border-box",
 };
@@ -701,7 +701,7 @@ const segmentedStyle: React.CSSProperties = {
   display: "flex",
   flexWrap: "nowrap",
   border: "1px solid var(--night-rule-strong, #333)",
-  minHeight: 32,
+  minHeight: 36,
   width: "100%",
   overflow: "hidden",
 };
@@ -709,15 +709,15 @@ const segmentedStyle: React.CSSProperties = {
 const segmentButtonStyle: React.CSSProperties = {
   flex: "1 1 70px",
   minWidth: 58,
-  minHeight: 30,
+  minHeight: 34,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   background: "transparent",
   border: "none",
-  padding: "6px 9px",
+  padding: "7px 10px",
   fontFamily: "var(--sans-tc)",
-  fontSize: 11.5,
+  fontSize: 12,
   fontWeight: 700,
   lineHeight: 1.25,
   whiteSpace: "nowrap",
@@ -726,15 +726,17 @@ const segmentButtonStyle: React.CSSProperties = {
 };
 
 const truthNoteStyle: React.CSSProperties = {
-  display: "flex",
+  display: "grid",
+  gridTemplateColumns: "auto minmax(0, 1fr)",
   gap: 10,
   alignItems: "flex-start",
   color: "var(--night-mid, #888)",
   fontFamily: "var(--mono, monospace)",
   fontSize: 11,
   lineHeight: 1.7,
-  padding: "12px 0",
-  borderTop: "1px solid var(--night-rule, #222)",
+  padding: "10px 11px",
+  border: "1px solid var(--night-rule, #222)",
+  background: "rgba(1,5,9,0.2)",
 };
 
 const previewBoxStyle: React.CSSProperties = {
@@ -764,8 +766,8 @@ const blockedGuardStyle: React.CSSProperties = {
 
 const ledgerStyle: React.CSSProperties = {
   borderTop: "1px solid var(--night-rule-strong, #333)",
-  marginTop: 22,
-  paddingTop: 16,
+  marginTop: 12,
+  paddingTop: 12,
 };
 
 const ledgerHeaderStyle: React.CSSProperties = {
