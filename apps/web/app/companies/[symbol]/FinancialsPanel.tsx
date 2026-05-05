@@ -40,7 +40,7 @@ type TabState =
 const PAGE_SIZE = 10;
 
 const TABS: Array<{ key: TabKey; label: string; short: string; source: string }> = [
-  { key: "financials", label: "財報", short: "EPS / 毛利 / 營益率", source: "FinMind 財報" },
+  { key: "financials", label: "財報", short: "EPS / 毛利率 / 營益率", source: "FinMind 財報" },
   { key: "revenue", label: "月營收", short: "每月營收", source: "FinMind 月營收" },
   { key: "balance", label: "資產負債", short: "資產 / 負債 / 權益", source: "FinMind 資產負債表" },
   { key: "cashFlow", label: "現金流", short: "營業 / 投資 / 融資", source: "FinMind 現金流量表" },
@@ -57,6 +57,7 @@ function formatTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", {
     timeZone: "Asia/Taipei",
     hour12: false,
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -97,7 +98,7 @@ function rowCount(state: TabState | undefined) {
 function statusLabel(status: TabState["status"]) {
   if (status === "live") return "正常";
   if (status === "empty") return "無資料";
-  if (status === "loading") return "讀取中";
+  if (status === "loading") return "載入中";
   return "暫停";
 }
 
@@ -108,8 +109,8 @@ function statusBadgeClass(status: TabState["status"]) {
   return "badge-blue";
 }
 
-function tabStateSummary(_tab: TabKey, state: TabState | undefined) {
-  if (!state || state.status === "loading") return "讀取中";
+function tabStateSummary(state: TabState | undefined) {
+  if (!state || state.status === "loading") return "載入中";
   if (state.status === "blocked") return "暫停";
   if (state.status === "empty") return "無資料";
   return `${rowCount(state)} 筆`;
@@ -240,7 +241,7 @@ function RevenueTable({ rows, page, onPage }: { rows: CompanyRevenueRow[]; page:
               <th><span>月份</span></th>
               <th><span>營收</span></th>
               <th><span>代號</span></th>
-              <th><span>市場</span></th>
+              <th><span>國別</span></th>
             </tr>
           </thead>
           <tbody>
@@ -286,7 +287,7 @@ function SourceItemsTable({
         <table className="data-table company-data-table-fit company-finance-table">
           <thead>
             <tr>
-              <th><span>項目</span></th>
+              <th><span>類別</span></th>
               <th><span>原始名稱</span></th>
               <th><span>數值</span></th>
             </tr>
@@ -295,7 +296,7 @@ function SourceItemsTable({
             {view.rows.map((item, index) => (
               <tr key={`${item.type}-${item.originName ?? "source"}-${index}`}>
                 <td><span>{item.type}</span></td>
-                <td><span>{item.originName ?? "未提供"}</span></td>
+                <td><span>{item.originName ?? "未標示"}</span></td>
                 <td className="num"><span>{money(item.value)}</span></td>
               </tr>
             ))}
@@ -325,8 +326,8 @@ function BalanceSheetTable({
         <span className="tg soft">來源：FinMind 資產負債表</span>
       </div>
       <div className="metric-grid compact-metric-grid company-finance-metric-grid">
-        <MetricTile label="總資產" value={money(row.totalAssets)} />
-        <MetricTile label="總負債" value={money(row.totalLiabilities)} />
+        <MetricTile label="資產總額" value={money(row.totalAssets)} />
+        <MetricTile label="負債總額" value={money(row.totalLiabilities)} />
         <MetricTile label="股東權益" value={money(row.equity)} />
         <MetricTile label="現金及約當現金" value={money(row.cashAndCashEquivalents)} />
         <MetricTile label="負債比" value={numberText(row.debtRatioPct, 1)} unit="%" />
@@ -377,10 +378,10 @@ function DividendTable({ rows, page, onPage }: { rows: CompanyDividendRow[]; pag
           <thead>
             <tr>
               <th><span>年度</span></th>
-              <th><span>合計股利</span></th>
+              <th><span>總股利</span></th>
               <th><span>現金股利</span></th>
               <th><span>股票股利</span></th>
-              <th><span>公告日</span></th>
+              <th><span>發放日</span></th>
             </tr>
           </thead>
           <tbody>
@@ -480,8 +481,8 @@ function Rows({
   if (state.status === "loading") {
     return (
       <div className="state-panel company-finance-state">
-        <span className="badge badge-blue">讀取中</span>
-        <span className="tg soft">正在讀取 {tabCopy(tab).label} 資料</span>
+        <span className="badge badge-blue">載入中</span>
+        <span className="tg soft">正在載入 {tabCopy(tab).label} 資料</span>
       </div>
     );
   }
@@ -544,7 +545,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         [tab]: {
           status: "blocked",
           fetchedAt,
-          reason: friendlyDataError(error, `${copy.label}資料暫時無法讀取。`),
+          reason: friendlyDataError(error, `${copy.label}資料暫時無法載入。`),
         },
       }));
     }
@@ -570,9 +571,9 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
 
       <div className="company-finance-toolbar">
         <div>
-          <span className="tg gold">目前檢視</span>
+          <span className="tg gold">資料表</span>
           <strong>{activeCopy.label}</strong>
-          <small>{activeCopy.short}；每頁固定 {PAGE_SIZE} 筆，避免資料撐破版面。</small>
+          <small>{activeCopy.short}，每頁 {PAGE_SIZE} 筆；可切換資料表，不把頁面往下撐爆。</small>
         </div>
         <div className="source-line compact">
           <span className={`badge ${statusBadgeClass(currentState.status)}`}>{statusLabel(currentState.status)}</span>
@@ -582,7 +583,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
         </div>
       </div>
 
-      <div className="company-data-tabs finmind-tabs company-finance-tabs" role="tablist" aria-label="公司 FinMind 資料集">
+      <div className="company-data-tabs finmind-tabs company-finance-tabs" role="tablist" aria-label="切換 FinMind 資料表">
         {TABS.map((tab) => {
           const state = states[tab.key];
           const active = activeTab === tab.key;
@@ -600,7 +601,7 @@ export function FinancialsPanel({ companyId }: { companyId: string }) {
               aria-selected={active}
             >
               <span className="company-data-tab-main">{tab.label}</span>
-              <span className="company-data-tab-meta">{tabStateSummary(tab.key, state)}</span>
+              <span className="company-data-tab-meta">{tabStateSummary(state)}</span>
             </button>
           );
         })}
