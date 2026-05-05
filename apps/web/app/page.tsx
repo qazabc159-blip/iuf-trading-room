@@ -825,25 +825,27 @@ export default async function DashboardPage() {
       <MarketStrip overview={marketOverview} />
       <FinMindStatusPanel finmind={finmind} />
 
-      {dashboardDegraded ? (
-        <DashboardBlockedSummary sections={sourceStatuses} />
-      ) : (
-        <div className="main-grid dashboard-mosaic-grid">
-          <div className="dashboard-mosaic-primary">
-            <Panel code="WCH-LST" title="觀察清單" sub="報價、風控與候選股" right={<StatePill state={watchlist.state} />}>
-              <WatchlistSurface result={watchlist} />
-            </Panel>
-            <ThemesPanel themes={themes} />
-            <IdeasPanel ideas={ideas} />
-          </div>
-
-          <div className="dashboard-mosaic-secondary">
-            <MarketIntelPanel news={news} />
-            <SignalsPanel signals={signals} />
-            <OpsPanel overview={marketOverview} runs={runs} />
-          </div>
+      {dashboardDegraded && (
+        <div className="dashboard-health-alert">
+          <DashboardBlockedSummary sections={sourceStatuses} />
         </div>
       )}
+
+      <div className={`main-grid dashboard-mosaic-grid ${dashboardDegraded ? "is-degraded" : ""}`}>
+        <div className="dashboard-mosaic-primary">
+          <Panel code="WCH-LST" title="觀察清單" sub="報價、風控與候選股" right={<StatePill state={watchlist.state} />}>
+            <WatchlistSurface result={watchlist} />
+          </Panel>
+          <ThemesPanel themes={themes} />
+          <IdeasPanel ideas={ideas} />
+        </div>
+
+        <div className="dashboard-mosaic-secondary">
+          <MarketIntelPanel news={news} />
+          <SignalsPanel signals={signals} />
+          <OpsPanel overview={marketOverview} runs={runs} />
+        </div>
+      </div>
     </PageFrame>
   );
 }
