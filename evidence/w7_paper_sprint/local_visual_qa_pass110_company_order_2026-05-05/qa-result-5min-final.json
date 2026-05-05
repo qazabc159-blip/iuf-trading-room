@@ -1,0 +1,108 @@
+[
+  {
+    "name": "company2330_desktop1365",
+    "viewport": {
+      "width": 1365,
+      "height": 900
+    },
+    "clickResult": {
+      "ok": true,
+      "target": "5分",
+      "buttons": [
+        "日K",
+        "週K",
+        "月K",
+        "1分",
+        "5分",
+        "15分",
+        "60分",
+        "3月",
+        "6月",
+        "1年",
+        "2年",
+        "全部"
+      ]
+    },
+    "logs": [],
+    "badResponses": [],
+    "metrics": {
+      "overflowX": false,
+      "rootWidth": 1365,
+      "viewportWidth": 1365,
+      "workbench": {
+        "x": 315,
+        "y": 558,
+        "w": 938,
+        "h": 896
+      },
+      "chart": {
+        "x": 337,
+        "y": 899,
+        "w": 576,
+        "h": 421
+      },
+      "order": {
+        "x": 955,
+        "y": 582,
+        "w": 318,
+        "h": 872
+      },
+      "narrowText": [],
+      "activeButton": "5分",
+      "metaLine": "1 分 K 彙整48 根04-30 09:30 - 04-30 13:25收 1,126.48量 14,295"
+    }
+  },
+  {
+    "name": "company2330_mobile390",
+    "viewport": {
+      "width": 390,
+      "height": 900
+    },
+    "clickResult": {
+      "ok": true,
+      "target": "5分",
+      "buttons": [
+        "日K",
+        "週K",
+        "月K",
+        "1分",
+        "5分",
+        "15分",
+        "60分",
+        "3月",
+        "6月",
+        "1年",
+        "2年",
+        "全部"
+      ]
+    },
+    "logs": [],
+    "badResponses": [],
+    "metrics": {
+      "overflowX": false,
+      "rootWidth": 390,
+      "viewportWidth": 390,
+      "workbench": {
+        "x": 18,
+        "y": 917,
+        "w": 354,
+        "h": 2155
+      },
+      "chart": {
+        "x": 34,
+        "y": 1417,
+        "w": 322,
+        "h": 421
+      },
+      "order": {
+        "x": 18,
+        "y": 1901,
+        "w": 354,
+        "h": 1171
+      },
+      "narrowText": [],
+      "activeButton": "5分",
+      "metaLine": "1 分 K 彙整48 根04-30 09:30 - 04-30 13:25收 1,126.48量 14,295"
+    }
+  }
+]

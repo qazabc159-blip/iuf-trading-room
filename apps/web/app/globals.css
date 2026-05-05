@@ -7489,6 +7489,178 @@ body:has(.login-route) > div {
   background: rgba(46, 204, 113, 0.05);
 }
 
+/* Pass 110 - keep the company page as a live trading desk at desktop widths. */
+@media (min-width: 1201px) and (max-width: 1500px) {
+  .company-workbench-shell {
+    grid-template-columns: minmax(620px, 1fr) minmax(318px, 360px);
+    gap: clamp(16px, 1.5vw, 22px);
+  }
+
+  .company-workbench-shell .paper-order-panel {
+    position: sticky;
+    top: 14px;
+    max-height: calc(100dvh - 28px);
+    overflow: auto;
+  }
+
+  .company-workbench-shell .paper-order-workbench {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .company-workbench-shell .paper-order-sidecar {
+    padding: 10px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(220, 228, 240, 0.075);
+  }
+}
+
+.company-workbench-shell .paper-order-panel {
+  scrollbar-color: rgba(226, 184, 92, 0.35) rgba(1, 5, 9, 0.32);
+  scrollbar-width: thin;
+}
+
+.company-workbench-shell .paper-order-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.company-workbench-shell .paper-order-panel::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(1, 5, 9, 0.82);
+  border-radius: 999px;
+  background: rgba(226, 184, 92, 0.42);
+}
+
+.company-workbench-shell .paper-order-source-row {
+  color: rgba(166, 194, 224, 0.78);
+}
+
+.company-workbench-shell .paper-order-lock-note {
+  margin: 8px 0 12px;
+  color: rgba(236, 241, 248, 0.88);
+}
+
+.company-workbench-shell .paper-order-price-row {
+  border-top: 1px solid rgba(220, 228, 240, 0.075);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.075);
+}
+
+.company-workbench-shell .paper-order-price-row b {
+  color: var(--gold-bright);
+}
+
+.company-workbench-shell .paper-order-panel label {
+  color: rgba(166, 194, 224, 0.78) !important;
+  line-height: 1.5 !important;
+  margin-bottom: 7px !important;
+}
+
+.company-workbench-shell .paper-order-panel input {
+  border-color: rgba(220, 228, 240, 0.16) !important;
+  background: rgba(1, 5, 9, 0.48) !important;
+}
+
+.company-workbench-shell .paper-order-panel input:focus {
+  outline: 1px solid rgba(226, 184, 92, 0.52);
+  outline-offset: 2px;
+}
+
+.company-workbench-shell .paper-order-grid {
+  gap: 10px;
+}
+
+.company-workbench-shell .paper-order-grid > div > div[style*="border"] {
+  border-color: rgba(220, 228, 240, 0.14) !important;
+  background: rgba(1, 5, 9, 0.28);
+}
+
+.company-workbench-shell .paper-order-grid button {
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.company-workbench-shell .paper-order-grid button:hover {
+  background: rgba(226, 184, 92, 0.085) !important;
+}
+
+.company-workbench-shell .paper-order-summary-strip {
+  border-top: 1px solid rgba(220, 228, 240, 0.075);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.075);
+  padding: 7px 0;
+}
+
+.company-workbench-shell .paper-order-summary-strip > div {
+  min-height: 58px;
+  border-color: rgba(220, 228, 240, 0.06);
+}
+
+.company-workbench-shell .truth-note {
+  min-width: 0;
+  border-color: rgba(220, 228, 240, 0.08) !important;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018), transparent),
+    rgba(1, 5, 9, 0.28) !important;
+}
+
+.company-workbench-shell .truth-note-live {
+  border-color: rgba(46, 204, 113, 0.24) !important;
+  background:
+    linear-gradient(90deg, rgba(46, 204, 113, 0.08), transparent 72%),
+    rgba(1, 5, 9, 0.28) !important;
+}
+
+.company-workbench-shell .truth-note-blocked {
+  border-color: rgba(230, 57, 70, 0.24) !important;
+  background:
+    linear-gradient(90deg, rgba(230, 57, 70, 0.075), transparent 72%),
+    rgba(1, 5, 9, 0.28) !important;
+}
+
+.company-workbench-shell .truth-note-empty {
+  border-color: rgba(226, 184, 92, 0.2) !important;
+  background:
+    linear-gradient(90deg, rgba(226, 184, 92, 0.07), transparent 72%),
+    rgba(1, 5, 9, 0.28) !important;
+}
+
+.company-workbench-shell .state-pill-live {
+  color: var(--tw-dn-bright) !important;
+}
+
+.company-workbench-shell .state-pill-blocked {
+  color: var(--tw-up-bright) !important;
+}
+
+.company-workbench-shell .state-pill-empty,
+.company-workbench-shell .state-pill-loading {
+  color: var(--gold-bright) !important;
+}
+
+.company-workbench-shell .paper-order-actions .btn-sm {
+  min-height: 38px;
+}
+
+.company-workbench-shell .paper-order-actions .btn-sm:not(:disabled):first-child {
+  border-color: rgba(226, 184, 92, 0.44);
+  color: var(--gold-bright);
+  background: rgba(226, 184, 92, 0.07);
+}
+
+.company-hero-bar,
+.company-info-panel,
+.source-status-card {
+  overflow-wrap: anywhere;
+}
+
+.company-hero-bar .badge,
+.company-info-panel .badge,
+.source-status-card .badge {
+  overflow-wrap: normal;
+}
+
+.company-hero-main .tg.soft {
+  max-width: 100%;
+  line-height: 1.7;
+}
+
 /* Pass 109 - dashboard should feel like a trading room, not a stack of identical blocks. */
 .dashboard-command-deck {
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.36fr);
