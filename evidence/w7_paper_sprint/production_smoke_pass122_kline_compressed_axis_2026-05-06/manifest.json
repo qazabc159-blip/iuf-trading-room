@@ -1,0 +1,280 @@
+{
+  "generatedAt": "2026-05-05T18:13:22.426Z",
+  "commit": "d0b7633bc899e3d6dd47fdacc97bc7a13adf670b",
+  "pr": 203,
+  "page": "/companies/2330",
+  "screenshots": [
+    "company2330_day_after_pr203.png",
+    "company2330_1min_after_pr203.png",
+    "company2330_5min_after_pr203.png",
+    "company2330_15min_after_pr203.png",
+    "company2330_60min_after_pr203.png",
+    "company2330_intraday_ranges_after_pr203.png"
+  ],
+  "apiSummary": [
+    {
+      "url": "/api/v1/companies/2330/kbar?days=5",
+      "status": 404,
+      "ok": false,
+      "source": null,
+      "state": null,
+      "rowCount": 0,
+      "dates": [],
+      "sampleKeys": []
+    },
+    {
+      "url": "api-origin/api/v1/companies/2330/kbar?days=5",
+      "status": 200,
+      "ok": true,
+      "source": "FINMIND",
+      "state": "LIVE",
+      "rowCount": 1330,
+      "dates": [
+        "2026-04-28",
+        "2026-04-29",
+        "2026-04-30",
+        "2026-05-04",
+        "2026-05-05"
+      ],
+      "sampleKeys": [
+        "close",
+        "date",
+        "high",
+        "low",
+        "minute",
+        "open",
+        "stock_id",
+        "volume"
+      ]
+    }
+  ],
+  "clickResults": [
+    {
+      "button": "intraday",
+      "clicked": false
+    },
+    {
+      "button": "1min",
+      "clicked": true
+    },
+    {
+      "button": "5min",
+      "clicked": true
+    },
+    {
+      "button": "15min",
+      "clicked": true
+    },
+    {
+      "button": "60min",
+      "clicked": true
+    },
+    {
+      "button": "1d",
+      "clicked": true
+    },
+    {
+      "button": "3d",
+      "clicked": true
+    },
+    {
+      "button": "5d",
+      "clicked": true
+    }
+  ],
+  "dom": {
+    "url": "https://app.eycvector.com/companies/2330",
+    "title": "IUF 交易戰情室",
+    "hasFinMind": true,
+    "hasLiveSource": true,
+    "hasCompressedAxisLabel": true,
+    "hasMinuteNoData": false,
+    "hasLoginForm": false,
+    "canvasCount": 7,
+    "canvases": [
+      {
+        "width": 834,
+        "height": 432,
+        "visible": true
+      },
+      {
+        "width": 834,
+        "height": 432,
+        "visible": true
+      },
+      {
+        "width": 60,
+        "height": 432,
+        "visible": true
+      },
+      {
+        "width": 60,
+        "height": 432,
+        "visible": true
+      },
+      {
+        "width": 834,
+        "height": 28,
+        "visible": true
+      },
+      {
+        "width": 834,
+        "height": 28,
+        "visible": true
+      },
+      {
+        "width": 60,
+        "height": 28,
+        "visible": true
+      }
+    ],
+    "chartTextSnippets": [
+      "分K",
+      "1,330根",
+      "日線、週線、月線與 FinMind 分 K；右側價格軸可直接讀價。",
+      "FinMind 分K",
+      "25 根分 K",
+      "分K",
+      "FinMind Sponsor 2026-05-05 已回傳 1,330 根 1 分 K / 5 個交易日，分 K 圖已壓縮非交易時段，可彙整 1 / 5 / 15 / 60 分。",
+      "25 根",
+      "非交易時段壓縮",
+      "尚未接到資金流、市場共識與相對強弱；等 FinMind 籌碼與策略驗證補齊後再顯示結論。",
+      "FinMind/TEJ 正式 K 線",
+      "FinMind 2026-05-05 / 1330 根",
+      "FinMind 與正式資料流",
+      "FinMind：財報 / 月營收 / 資產負債 / 現金流 / PER / 市值 / 股利",
+      "來源：FinMind 財報",
+      "FinMind 三大法人 / 融資券",
+      "來源：FinMind 籌碼 / 融資券",
+      "來源：FinMind 外資持股 / 股權分散"
+    ],
+    "buttons": [
+      "登出",
+      "日K",
+      "週K",
+      "月K",
+      "1分",
+      "5分",
+      "15分",
+      "60分",
+      "1日",
+      "3日",
+      "5日",
+      "買進",
+      "賣出",
+      "市價",
+      "限價",
+      "零股",
+      "整張",
+      "1 股",
+      "10 股",
+      "100 股",
+      "499 股",
+      "999 股",
+      "預覽風控",
+      "檢查並送出",
+      "公司主檔工作區公司資料正常更新 04/30 10:51。已在登入工作區找到這檔股票。",
+      "K 線FinMind/TEJ 正式 K 線正常",
+      "重大訊息個股公告與新聞線索過期",
+      "分 KFinMind 2026-05-05 / 1330 根正常",
+      "逐筆資料等待凱基唯讀逐筆資料暫停",
+      "財報24 筆",
+      "月營收36 筆",
+      "資產負債1 筆",
+      "現金流1 筆",
+      "估值244 筆",
+      "市值244 筆",
+      "股利31 筆",
+      "上一頁",
+      "下一頁"
+    ]
+  },
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Failed to load resource: the server responded with a status of 404 ()"
+  ],
+  "failedRequests": [
+    {
+      "url": "https://app.eycvector.com/?_rsc=5c339",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/ideas?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/themes?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/runs?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/portfolio?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/plans?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/signals?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/ops?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/market-intel?_rsc=3lb4g",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/themes?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/runs?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/plans?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/signals?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/portfolio?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/ops?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/market-intel?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://app.eycvector.com/lab?_rsc=1wwvh",
+      "failure": "net::ERR_ABORTED"
+    }
+  ],
+  "stopLineProof": {
+    "tokenDisplayed": false,
+    "fakeLive": false,
+    "orderSubmitted": false,
+    "brokerWriteTouched": false
+  }
+}
