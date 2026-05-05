@@ -3260,3 +3260,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - Stop-line proof: no token display/logging, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, no paper/risk source change, and no buy/sell recommendation wording.
 - Next: push a small source-KPI PR, then continue Paper E2E UI proof: preview notional, odd-lot/board-lot clarity, and simulated-state visibility without broker submit.
+
+## 2026-05-06 01:12 Taipei - Codex PR #200 deployed + production source KPI verified
+- Trade Capability Score: +1. Workflow improved: `/companies/2330` now shows the real-data KPI strip from the same FinMind K-line state used by the chart: `日K已接` and `分K 1,330根`, not stale `FinMind 接入中`.
+- Production deploy: PR #200 merged as `396c0bc`; GitHub main CI passed and Railway deploy run `25390436262` completed successfully for `web`, `api`, and `worker`.
+- Endpoint evidence: authenticated production `GET /api/v1/companies/2330/kbar?days=5` returned wrapper `data.source=FINMIND`, `data.state=LIVE`, `daysRequested=5`, `daysReturned=5`, `rows=1330`, dates `2026-04-28, 2026-04-29, 2026-04-30, 2026-05-04, 2026-05-05`.
+- FinMind evidence: authenticated production `GET /api/v1/data-sources/finmind/status` returned `state=LIVE_READY`, token presence true without token value, Sponsor quota `576 / 6000`, `errorCount=0`, `lastDataset=TaiwanStockKBar`, `datasetsReady=14 / 16`.
+- Browser evidence: authenticated production Chromium smoke saved `evidence/w7_paper_sprint/production_smoke_pass120_company_source_kpi_2026-05-06/company2330_prod_after_pr200.png`, `company2330_prod_1min_after_pr200.png`, and `manifest.json`. Page text contains `日K已接`, `分K 1,330根`, and `1,330 根 1 分 K / 5 個交易日`; no `分K無資料` / `no_kbar_rows` appears.
+- Stop-line proof: no token value in UI/evidence, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, no paper/risk source change, and no buy/sell recommendation wording.
+- Next: move to Paper E2E UI proof: odd-lot/board-lot safety, notional display, simulated preview state, and visible no-broker-submit boundary.

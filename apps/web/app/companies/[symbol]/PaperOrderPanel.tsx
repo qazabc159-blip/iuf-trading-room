@@ -4,9 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   formatPaperOrderError,
+  getPaperHealth,
   listPaperOrders,
   previewPaperOrder,
   submitPaperOrder,
+  type PaperHealthState,
   type PaperOrderInput,
   type PaperOrderState,
 } from "@/lib/paper-orders-api";
@@ -60,6 +62,11 @@ type SubmitState =
 type OrdersState =
   | { status: "loading" }
   | { status: "live"; items: PaperOrderState[]; updatedAt: string }
+  | { status: "blocked"; message: string; updatedAt: string };
+
+type PaperHealthUiState =
+  | { status: "loading" }
+  | { status: "live"; health: PaperHealthState; updatedAt: string }
   | { status: "blocked"; message: string; updatedAt: string };
 
 const SIDES: ReadonlyArray<{ value: PaperSide; label: string }> = [
@@ -119,6 +126,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
   const [orders, setOrders] = useState<OrdersState>({ status: "loading" });
+  const [paperHealth, setPaperHealth] = useState<PaperHealthUiState>({ status: "loading" });
   const [reviewOpen, setReviewOpen] = useState(false);
   const lastSymbolRef = useRef(symbol);
 
@@ -186,7 +194,23 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
         : orders.items.length === 0
           ? "EMPTY"
           : "LIVE";
+  const paperHealthReady = paperHealth.status === "live" && paperHealth.health.submitReady;
+  const paperPreviewReady = paperHealth.status === "live" && paperHealth.health.previewReady;
   const quantityPresets = form.quantityUnit === "SHARE" ? SHARE_QUANTITY_PRESETS : LOT_QUANTITY_PRESETS;
+
+  const refreshPaperHealth = async () => {
+    setPaperHealth({ status: "loading" });
+    try {
+      const health = await getPaperHealth();
+      setPaperHealth({ status: "live", health, updatedAt: new Date().toISOString() });
+    } catch (error) {
+      setPaperHealth({
+        status: "blocked",
+        message: formatPaperOrderError(error),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  };
 
   const refreshOrders = async () => {
     setOrders({ status: "loading" });
@@ -210,6 +234,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
   };
 
   useEffect(() => {
+    void refreshPaperHealth();
     void refreshOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
@@ -280,7 +305,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
     }
   };
 
-  const canSubmit = preview.status === "live" && !parsed.notionalExceedsCap;
+  const canSubmit = preview.status === "live" && !parsed.notionalExceedsCap && paperHealthReady;
 
   return (
     <section className="panel hud-frame paper-order-panel">
@@ -297,6 +322,8 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
       <div className="paper-order-lock-note">
         此區只建立模擬委託，不會送往凱基正式下單。正式送單等待 libCGCrypt.so 補齊後接上。
       </div>
+
+      <PaperHealthPanel state={paperHealth} />
 
       <div className="paper-order-price-row">
         <span>最新參考價</span>
@@ -415,7 +442,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
               className="btn-sm"
               onClick={handlePreview}
               disabled={input === null || preview.status === "loading"}
-              title={validationReason ?? "執行模擬委託預覽"}
+              title={validationReason ?? (paperPreviewReady ? "執行模擬委託預覽" : "後端預覽閘門目前未開；仍可嘗試取得後端阻擋原因。")}
               type="button"
             >
               {preview.status === "loading" ? "預覽中" : "預覽風控"}
@@ -424,7 +451,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
               className="btn-sm"
               onClick={() => setReviewOpen(true)}
               disabled={!canSubmit || submit.status === "loading"}
-              title={!canSubmit ? "請先完成通過的風控預覽。" : "送出前會開啟零股/整張確認視窗。"}
+              title={!paperHealthReady ? "Paper E2E 送出閘門尚未開啟；不會送出模擬單。" : !canSubmit ? "請先完成通過的風控預覽。" : "送出前會開啟零股/整張確認視窗。"}
               type="button"
               style={canSubmit ? {
                 borderColor: "rgba(46,204,113,0.42)",
@@ -500,6 +527,59 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
         />
       )}
     </section>
+  );
+}
+
+function PaperHealthPanel({ state }: { state: PaperHealthUiState }) {
+  if (state.status === "loading") {
+    return (
+      <div style={paperHealthShellStyle}>
+        <TruthNote state="EMPTY" text="正在確認 Paper E2E 後端閘門與委託資料庫狀態。" />
+      </div>
+    );
+  }
+  if (state.status === "blocked") {
+    return (
+      <div style={paperHealthShellStyle}>
+        <TruthNote state="BLOCKED" text={`Paper E2E 健康檢查無法讀取：${state.message}`} />
+      </div>
+    );
+  }
+
+  const h = state.health;
+  const gateText = h.gate.gateOpen
+    ? "後端 Paper 閘門已開"
+    : `後端 Paper 閘門未開：execution=${h.gate.executionMode} / kill=${h.gate.killSwitchOk ? "ok" : "blocked"} / paper=${h.gate.paperModeOk ? "ok" : "off"}`;
+  const persistenceText = h.persistence.dbError
+    ? `資料庫異常：${h.persistence.dbError}`
+    : `${h.persistence.mode} / paper_orders=${h.persistence.tableExists ? "可讀" : "未建立"}`;
+
+  return (
+    <div style={paperHealthShellStyle} aria-label="Paper E2E 後端健康狀態">
+      <div style={paperHealthHeaderStyle}>
+        <span>Paper E2E 閘門</span>
+        <span>{formatTime(state.updatedAt)}</span>
+      </div>
+      <div style={paperHealthGridStyle}>
+        <PaperHealthCell label="預覽" ready={h.previewReady} note={gateText} />
+        <PaperHealthCell label="送出" ready={h.submitReady} note={h.submitReady ? "可建立模擬委託" : "送出按鈕已鎖定"} />
+        <PaperHealthCell label="成交" ready={h.fillsReady} note={h.lastFillTs ? `最近成交 ${formatTime(h.lastFillTs)}` : "尚無成交"} />
+        <PaperHealthCell label="部位" ready={h.portfolioReady} note={persistenceText} />
+      </div>
+      <div style={paperHealthFootStyle}>
+        佇列 {h.queueDepth.toLocaleString("zh-TW")} 筆；此狀態只控制模擬交易，不觸碰凱基正式送單。
+      </div>
+    </div>
+  );
+}
+
+function PaperHealthCell({ label, ready, note }: { label: string; ready: boolean; note: string }) {
+  return (
+    <div style={paperHealthCellStyle}>
+      <span>{label}</span>
+      <StatePill state={ready ? "LIVE" : "BLOCKED"} />
+      <small>{note}</small>
+    </div>
   );
 }
 
@@ -762,6 +842,51 @@ const truthNoteStyle: React.CSSProperties = {
   padding: "10px 11px",
   border: "1px solid var(--night-rule, #222)",
   background: "rgba(1,5,9,0.2)",
+};
+
+const paperHealthShellStyle: React.CSSProperties = {
+  borderTop: "1px solid var(--night-rule-strong, #333)",
+  borderBottom: "1px solid var(--night-rule, #222)",
+  padding: "12px 0 14px",
+  marginBottom: 14,
+};
+
+const paperHealthHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 14,
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 10.5,
+  letterSpacing: "0.08em",
+  marginBottom: 10,
+};
+
+const paperHealthGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+  border: "1px solid var(--night-rule, #222)",
+};
+
+const paperHealthCellStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  gap: 6,
+  alignContent: "start",
+  borderRight: "1px solid var(--night-rule, #222)",
+  padding: "10px 12px",
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 10.5,
+  lineHeight: 1.45,
+};
+
+const paperHealthFootStyle: React.CSSProperties = {
+  marginTop: 9,
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 10.5,
+  lineHeight: 1.5,
 };
 
 const previewBoxStyle: React.CSSProperties = {
