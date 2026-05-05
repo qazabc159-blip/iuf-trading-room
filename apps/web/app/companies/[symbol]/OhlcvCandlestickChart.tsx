@@ -66,6 +66,12 @@ function stateLabel(state: "LIVE" | "EMPTY" | "BLOCKED") {
   return "無法顯示";
 }
 
+function stateToneClass(state: "LIVE" | "EMPTY" | "BLOCKED") {
+  if (state === "LIVE") return "state-ok";
+  if (state === "BLOCKED") return "state-bad";
+  return "gold";
+}
+
 function monthKey(dt: string) {
   return dt.slice(0, 7);
 }
@@ -174,11 +180,11 @@ function filterRange(bars: ChartBar[], range: RangeKey) {
 }
 
 function visibleBarsFor(interval: EnabledInterval, range: RangeKey) {
-  if (interval.endsWith("min")) return interval === "1min" ? 120 : interval === "5min" ? 96 : interval === "15min" ? 80 : 72;
+  if (interval.endsWith("min")) return interval === "1min" ? 240 : interval === "5min" ? 180 : interval === "15min" ? 140 : 110;
   if (range === "all") return interval === "1d" ? 720 : interval === "1w" ? 260 : 160;
-  if (interval === "1d") return range === "3m" ? 82 : range === "6m" ? 156 : range === "1y" ? 300 : 520;
-  if (interval === "1w") return range === "3m" ? 20 : range === "6m" ? 38 : range === "1y" ? 64 : 126;
-  return range === "3m" ? 6 : range === "6m" ? 12 : range === "1y" ? 18 : 36;
+  if (interval === "1d") return range === "3m" ? 92 : range === "6m" ? 184 : range === "1y" ? 320 : 560;
+  if (interval === "1w") return range === "3m" ? 24 : range === "6m" ? 44 : range === "1y" ? 72 : 132;
+  return range === "3m" ? 8 : range === "6m" ? 14 : range === "1y" ? 24 : 42;
 }
 
 function formatNumber(value: number | null | undefined, digits = 2) {
@@ -227,6 +233,7 @@ export function OhlcvCandlestickChart({
   const [range, setRange] = useState<RangeKey>("all");
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
+  const chartHeight = isIntraday ? 460 : 440;
   const chartBars = useMemo(() => {
     const meta = ENABLED_INTERVALS.find((item) => item.value === interval);
     if (meta?.kind === "intraday") {
@@ -255,7 +262,7 @@ export function OhlcvCandlestickChart({
 
         chart = lc.createChart(el, {
           width,
-          height: 420,
+          height: chartHeight,
           layout: {
             background: { color: "transparent" },
             textColor: "rgba(203,213,225,0.68)",
@@ -311,6 +318,18 @@ export function OhlcvCandlestickChart({
           color: bar.close >= bar.open ? "rgba(230,57,70,0.36)" : "rgba(46,204,113,0.36)",
         })));
 
+        const latestBar = chartBars.at(-1);
+        if (latestBar) {
+          candleSeries.createPriceLine({
+            price: latestBar.close,
+            color: latestBar.close >= (chartBars.at(-2)?.close ?? latestBar.open) ? "#e63946" : "#2ecc71",
+            lineWidth: 1,
+            lineStyle: lc.LineStyle.Solid,
+            axisLabelVisible: true,
+            title: isIntraday ? "分K 最新" : "最新",
+          });
+        }
+
         chart.timeScale().fitContent();
         if (chartBars.length > 12) {
           const count = visibleBarsFor(interval, range);
@@ -336,7 +355,7 @@ export function OhlcvCandlestickChart({
       chart?.remove();
       chartRef.current = null;
     };
-  }, [chartBars, insufficientTrend, interval, isIntraday, range]);
+  }, [chartBars, chartHeight, insufficientTrend, interval, isIntraday, range]);
 
   const badgeClass = isIntraday
     ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
@@ -362,6 +381,8 @@ export function OhlcvCandlestickChart({
         ? `K 線資料暫時無法讀取：${sourceReason}`
         : "正式日 K 目前沒有可用資料。";
   const activeState = isIntraday ? kbarState : sourceState;
+  const dailyIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "daily");
+  const intradayIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "intraday");
 
   return (
     <section className="panel hud-frame kline-panel">
@@ -407,8 +428,8 @@ export function OhlcvCandlestickChart({
 
       <div className="kline-toolbar">
         <div className="kline-control-group">
-          <span className="kline-toolbar-label">週期</span>
-          {ENABLED_INTERVALS.map((item) => (
+          <span className="kline-toolbar-label">日線</span>
+          {dailyIntervals.map((item) => (
             <button
               key={item.value}
               type="button"
@@ -416,6 +437,21 @@ export function OhlcvCandlestickChart({
               className={`kline-tab${interval === item.value ? " is-active" : ""}`}
               aria-pressed={interval === item.value}
               title={item.note}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className={`kline-control-group${kbarState === "LIVE" ? "" : " is-muted"}`}>
+          <span className="kline-toolbar-label">分K</span>
+          {intradayIntervals.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => setInterval(item.value)}
+              className={`kline-tab${interval === item.value ? " is-active" : ""}`}
+              aria-pressed={interval === item.value}
+              title={kbarState === "LIVE" ? item.note : kbarReason}
             >
               {item.label}
             </button>
@@ -440,7 +476,7 @@ export function OhlcvCandlestickChart({
       </div>
 
       <div className="kline-pending-line">
-        <span className="tg gold">分K</span>
+        <span className={`tg ${stateToneClass(kbarState)}`}>{stateLabel(kbarState)}</span>
         <span className="tg soft">
           {kbarState === "LIVE"
             ? `FinMind Sponsor ${kbarDate ?? ""} 已回傳 ${kbarRows.length.toLocaleString("zh-TW")} 根 1 分 K，可彙整 1 / 5 / 15 / 60 分。`
@@ -466,7 +502,7 @@ export function OhlcvCandlestickChart({
         </div>
       ) : chartBars.length === 0 ? (
         <div className="terminal-note">
-          <span className={activeState === "BLOCKED" ? "down" : "gold"}>{stateLabel(activeState)}</span>{" "}
+          <span className={stateToneClass(activeState)}>{stateLabel(activeState)}</span>{" "}
           {emptyReason}
         </div>
       ) : insufficientTrend ? (

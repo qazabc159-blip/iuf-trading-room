@@ -3102,3 +3102,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - PR/deploy: PR #176 merged as `738d068`; GitHub CI and Deploy to Railway both completed successfully. Railway web deployment `ed1df3c1-13b6-4e04-8066-69662341637c` is `SUCCESS`.
 - Production smoke: Playwright checked `/login` and protected `/companies/2330` at 1365px. Results: login 200, protected company route redirected to `/login?next=/companies/2330`, 0 console errors, 0 page errors, 0 failed requests, and 0 5xx responses. Evidence: `evidence/w7_paper_sprint/production_smoke_pass117_2026-05-05/qa-result.json`.
 - Next: continue with the next repair slice: dashboard readiness color verification in an authenticated session where possible, OpenAlice freshness surface, and then FinMind Sponsor dataset expansion only after UI truth surfaces remain stable.
+
+## 2026-05-05 17:32 Taipei - Codex PR #181 K-line usability follow-up
+- Files changed: `apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx`, `apps/web/app/globals.css`, and `evidence/w7_paper_sprint/codex_company_kline_order_polish_2026-05-05.md`.
+- Behavior: the company K-line toolbar is now compact and grouped by `日線` / `分K` / `範圍`, replacing the large block-like controls. FinMind minute intervals remain visible; if the source is empty or blocked, the UI explains that state instead of looking broken.
+- Behavior: the visible bar window is widened for daily and minute K, and the chart now draws a latest-price line with an axis label so the user can read price directly from the K-line surface.
+- Data / stop-line behavior: existing OHLCV and FinMind KBar rows only. No token, no Railway secret, no live submit, no broker/KGI write-side, no migration/schema, no fake paper fill, and no risk-source change. FinMind KBar remains display-only.
+- Tests: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; targeted `git diff --check` PASS with CRLF warnings only.
+- PR: updated #181 `fix(web): improve company order desk spacing` with commit `d213a47`; GitHub CI restarted and was running at note time.
+- OpenAlice note: stale OpenAlice / daily brief data is a backend production-chain freshness issue, not a frontend cache-only issue. Frontend PRs #178 and #185 surface stale/paused/freshness truthfully; fresh rows require OpenAlice worker + daily brief generation to write new source-traced data.
