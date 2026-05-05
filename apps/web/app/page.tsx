@@ -357,7 +357,7 @@ function DashboardBlockedSummary({ sections }: { sections: DashboardSourceStatus
       <div className="dashboard-blocked-summary">
         <div>
           <span className="tg gold">資料真實性</span>
-          <h3>部分資料來源暫時不可用，戰情台不會用假資料補畫面。</h3>
+          <h3>部分資料來源暫時不可用，戰情台會保留缺口並說明原因。</h3>
           <p>
             這裡只顯示正式來源回傳的狀態。缺資料就標出 owner、原因與下一步，不用裝飾面板假裝已經接好。
           </p>
@@ -537,7 +537,7 @@ function FinMindStatusPanel({ finmind }: { finmind: LoadState<DashboardFinMindSt
             <strong>{pending.length}</strong>
           </div>
           <StatePill state={pending.length > 0 ? "EMPTY" : "LIVE"} />
-          <p>黃色代表已列入路線圖但前後端還沒正式露出；不是錯誤，也不會用假資料補成正常。</p>
+          <p>黃色代表已列入路線圖但前後端還沒正式露出；不是錯誤，缺口會維持待接狀態。</p>
         </div>
         <div className="dashboard-readiness-lane">
           <div>
