@@ -43,6 +43,10 @@ export type SourceStatus = {
   queueDepth: number;
 };
 
+export type ThemeLabelMap = ReadonlyMap<string, string> | Record<string, string>;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
@@ -53,11 +57,51 @@ function optionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-export function toCompanyDetailView(company: ContractCompany, fallbackSymbol = "2330"): CompanyDetailView {
+function cleanThemeLabel(value: string | null | undefined) {
+  const label = value?.trim();
+  if (!label || UUID_PATTERN.test(label)) return null;
+  return label;
+}
+
+function themeLabelFromMap(themeLabelById: ThemeLabelMap | undefined, id: string) {
+  if (!themeLabelById) return null;
+  const maybeMap = themeLabelById as ReadonlyMap<string, string>;
+  if (typeof maybeMap.get === "function") return maybeMap.get(id) ?? null;
+  return (themeLabelById as Record<string, string | undefined>)[id] ?? null;
+}
+
+function uniqueLabels(labels: Array<string | null>) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const label of labels) {
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    result.push(label);
+  }
+  return result;
+}
+
+function resolveThemeLabels(
+  company: ContractCompany,
+  record: Record<string, unknown>,
+  themeLabelById?: ThemeLabelMap,
+) {
+  const themeNames = uniqueLabels(stringArray(record.themes).map(cleanThemeLabel));
+  if (themeNames.length > 0) return themeNames;
+
+  const themeCodes = uniqueLabels(stringArray(record.themeCodes).map(cleanThemeLabel));
+  if (themeCodes.length > 0) return themeCodes;
+
+  return uniqueLabels(company.themeIds.map((id) => cleanThemeLabel(themeLabelFromMap(themeLabelById, id))));
+}
+
+export function toCompanyDetailView(
+  company: ContractCompany,
+  fallbackSymbol = "2330",
+  themeLabelById?: ThemeLabelMap,
+): CompanyDetailView {
   const record = company as unknown as Record<string, unknown>;
   const symbol = company.ticker || fallbackSymbol;
-  const themeNames = stringArray(record.themes);
-  const themeCodes = stringArray(record.themeCodes);
 
   return {
     id: company.id,
@@ -70,7 +114,7 @@ export function toCompanyDetailView(company: ContractCompany, fallbackSymbol = "
     listing: optionalString(record.listing) ?? company.market,
     chainPosition: company.chainPosition,
     beneficiaryTier: company.beneficiaryTier,
-    themes: themeNames.length > 0 ? themeNames : themeCodes.length > 0 ? themeCodes : company.themeIds,
+    themes: resolveThemeLabels(company, record, themeLabelById),
     scorePct: null,
     momentum: "暫停",
     marketCapBn: null,
