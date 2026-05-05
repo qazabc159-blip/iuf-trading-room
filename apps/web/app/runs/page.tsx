@@ -5,6 +5,7 @@ import { MetricStrip } from "@/components/RadarWidgets";
 import { listStrategyRuns } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanNarrativeText } from "@/lib/operator-copy";
+import { formatSourceTimestamp, latestIso, sourceFreshnessLabel } from "@/lib/source-freshness";
 import { reasonLabel } from "@/lib/strategy-vocab";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +42,12 @@ async function loadRuns(): Promise<LoadState> {
         reason: "策略批次目前回傳 0 筆，不顯示假批次紀錄。",
       };
     }
-    return { state: "LIVE", data, updatedAt, source };
+    return {
+      state: "LIVE",
+      data,
+      updatedAt: latestIso(data.items.map((run) => run.generatedAt)) ?? updatedAt,
+      source,
+    };
   } catch (error) {
     return {
       state: "BLOCKED",
@@ -51,19 +57,6 @@ async function loadRuns(): Promise<LoadState> {
       reason: friendlyDataError(error, "策略批次暫時無法讀取。"),
     };
   }
-}
-
-function formatTime(value: string | null | undefined) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -130,11 +123,13 @@ function qualityPrimary(view: RunsView) {
 }
 
 function SourceLine({ result }: { result: LoadState }) {
+  const freshness = result.state === "LIVE" ? sourceFreshnessLabel(result.updatedAt) : null;
   return (
     <div className="runs-source-line">
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
       <span>來源：{result.source}</span>
-      <span>更新 {formatTime(result.updatedAt)}</span>
+      <span>更新 {formatSourceTimestamp(result.updatedAt)}</span>
+      {freshness && <span className={`tg ${freshness.tone}`}>{freshness.label}</span>}
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );

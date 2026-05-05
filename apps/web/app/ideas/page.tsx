@@ -5,6 +5,7 @@ import { MetricStrip } from "@/components/RadarWidgets";
 import { getStrategyIdeas } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanNarrativeText } from "@/lib/operator-copy";
+import { formatSourceTimestamp, sourceFreshnessLabel } from "@/lib/source-freshness";
 import { reasonLabel } from "@/lib/strategy-vocab";
 
 export const dynamic = "force-dynamic";
@@ -194,11 +195,13 @@ function PromotionBlockedCell() {
 }
 
 function SourceLine({ result }: { result: LoadState }) {
+  const freshness = result.state === "LIVE" ? sourceFreshnessLabel(result.updatedAt) : null;
   return (
     <div className="runs-source-line">
       <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
       <span>來源：{result.source}</span>
-      <span>更新 {formatTime(result.updatedAt)}</span>
+      <span>更新 {formatSourceTimestamp(result.updatedAt)}</span>
+      {freshness && <span className={`tg ${freshness.tone}`}>{freshness.label}</span>}
       {result.state !== "LIVE" && <span>{result.reason}</span>}
     </div>
   );

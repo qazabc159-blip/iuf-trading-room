@@ -4,6 +4,28 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+### 2026-05-05 18:30 Taipei - Codex pass 121 - secondary source freshness sweep
+
+**Scope**: manual-dispatch frontend PR for secondary page stale-source semantics. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no fake OpenAlice rewrite.
+
+**Files changed**:
+- `apps/web/lib/source-freshness.ts` - shared Taiwan/Taipei freshness formatter for source surfaces.
+- `apps/web/app/market-intel/page.tsx` - major-info page uses latest announcement date and freshness label.
+- `apps/web/app/signals/page.tsx` - signal page uses latest signal `createdAt` and freshness label.
+- `apps/web/app/themes/page.tsx` - themes page uses latest theme `updatedAt` and freshness label.
+- `apps/web/app/ideas/page.tsx` - ideas page shows generatedAt freshness label.
+- `apps/web/app/runs/page.tsx` - runs page uses latest run `generatedAt` and freshness label.
+
+**Behavior**:
+- Secondary pages no longer imply old formal rows were updated at page-render time.
+- Source lines now surface `今日資料`, `昨日資料`, `偏舊 N 天`, or `過期 N 天` where applicable.
+- This is a display truthfulness change only; it does not create OpenAlice content or loosen any strategy/paper/live gate.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `git diff --check` PASS with CRLF warnings only.
+
 ### 2026-05-05 18:10 Taipei - Codex pass 120 - dashboard source freshness truth
 
 **Scope**: manual-dispatch frontend PR for dashboard stale-source semantics. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no fake OpenAlice rewrite.
@@ -19,7 +41,9 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - No data generation, recommendation, order submit, or backend schema behavior changed.
 
 **Checks**:
-- Pending in this cycle: web typecheck/build and diff check.
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `git diff --check` PASS with CRLF warnings only.
 
 ### 2026-05-04 00:23 Taipei - Codex heartbeat - FinMind Sponsor company research expansion
 

@@ -9,6 +9,7 @@ import {
   type CompanyAnnouncement,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { formatSourceTimestamp, latestIso, sourceFreshnessLabel } from "@/lib/source-freshness";
 
 export const dynamic = "force-dynamic";
 
@@ -35,35 +36,6 @@ function formatDate(value: string | null | undefined) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  });
-}
-
-function formatStamp(value: string | null | undefined) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", {
-    timeZone: "Asia/Taipei",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-function formatShortStamp(value: string | null | undefined) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", {
-    timeZone: "Asia/Taipei",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
   });
 }
 
@@ -190,7 +162,14 @@ async function loadMarketIntel(): Promise<IntelState> {
     .slice(0, 60);
 
   if (rows.length > 0) {
-    return { state: "LIVE", items: rows, selected, updatedAt, source: partialSource, failures };
+    return {
+      state: "LIVE",
+      items: rows,
+      selected,
+      updatedAt: latestIso(rows.map((item) => item.date)) ?? updatedAt,
+      source: partialSource,
+      failures,
+    };
   }
 
   if (failures === settled.length) {
@@ -226,6 +205,7 @@ function stateLabel(state: IntelState["state"]) {
 
 export default async function MarketIntelPage() {
   const result = await loadMarketIntel();
+  const freshness = result.state === "LIVE" ? sourceFreshnessLabel(result.updatedAt) : null;
   const statsAvailable = result.state !== "BLOCKED";
   const sourceTickers = result.selected.map((company) => company.ticker).join(" / ") || "--";
   const uniqueCompanies = new Set(result.items.map((item) => item.ticker)).size;
@@ -246,7 +226,7 @@ export default async function MarketIntelPage() {
           { label: "消息", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "status-ok" : "muted" },
           { label: "公司", value: statsAvailable ? uniqueCompanies || result.selected.length : "--" },
           { label: "失敗", value: result.state === "BLOCKED" && result.failures === 0 ? "--" : result.failures, tone: result.failures > 0 ? "status-bad" : "muted" },
-          { label: "更新", value: formatShortStamp(result.updatedAt) },
+          { label: "更新", value: formatSourceTimestamp(result.updatedAt), tone: freshness?.tone },
         ]}
       />
 
@@ -281,7 +261,8 @@ export default async function MarketIntelPage() {
           </div>
           <div>
             <span className="tg soft">更新</span>
-            <strong>{formatStamp(result.updatedAt)}</strong>
+            <strong>{formatSourceTimestamp(result.updatedAt)}</strong>
+            {freshness && <span className={`tg ${freshness.tone}`}> {freshness.label}</span>}
           </div>
           <p>
             {result.state === "LIVE"
@@ -296,7 +277,10 @@ export default async function MarketIntelPage() {
       <section className="intel-feed-surface">
         <div className="intel-feed-head">
           <div>
-            <div className="tg gold">消息流 / {formatStamp(result.updatedAt)}</div>
+            <div className="tg gold">
+              消息流 / {formatSourceTimestamp(result.updatedAt)}
+              {freshness && <span className={`tg ${freshness.tone}`}> / {freshness.label}</span>}
+            </div>
             <h2>官方重大訊息</h2>
           </div>
           <span className={`tg ${stateTone(result.state)}`}>{sourceCoverageLabel(result)}</span>
