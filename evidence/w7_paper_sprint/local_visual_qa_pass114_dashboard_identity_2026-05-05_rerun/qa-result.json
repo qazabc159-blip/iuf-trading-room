@@ -1,0 +1,90 @@
+[
+  {
+    "name": "desktop1365",
+    "status": 200,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "metrics": {
+      "title": "交易戰情室",
+      "bodyWidth": 1365,
+      "viewportWidth": 1365,
+      "horizontalOverflow": false,
+      "hero": {
+        "x": 315,
+        "y": 306,
+        "width": 938,
+        "height": 474
+      },
+      "readiness": {
+        "x": 315,
+        "y": 976,
+        "width": 938,
+        "height": 483
+      },
+      "healthAlert": {
+        "x": 315,
+        "y": 1495,
+        "width": 938,
+        "height": 351
+      },
+      "mosaic": {
+        "x": 315,
+        "y": 1880,
+        "width": 938,
+        "height": 1040
+      },
+      "panelCount": 7,
+      "sourceChipCount": 7,
+      "datasetTokenCount": 1,
+      "narrowStacks": [],
+      "hasReplacementChar": false,
+      "hasPrivateUse": false,
+      "hasEnglishTitle": false
+    }
+  },
+  {
+    "name": "mobile390",
+    "status": 200,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "metrics": {
+      "title": "交易戰情室",
+      "bodyWidth": 390,
+      "viewportWidth": 390,
+      "horizontalOverflow": false,
+      "hero": {
+        "x": 18,
+        "y": 439,
+        "width": 354,
+        "height": 910
+      },
+      "readiness": {
+        "x": 18,
+        "y": 1542,
+        "width": 354,
+        "height": 713
+      },
+      "healthAlert": {
+        "x": 18,
+        "y": 2291,
+        "width": 354,
+        "height": 657
+      },
+      "mosaic": {
+        "x": 18,
+        "y": 2970,
+        "width": 354,
+        "height": 2305
+      },
+      "panelCount": 7,
+      "sourceChipCount": 7,
+      "datasetTokenCount": 1,
+      "narrowStacks": [],
+      "hasReplacementChar": false,
+      "hasPrivateUse": false,
+      "hasEnglishTitle": false
+    }
+  }
+]
