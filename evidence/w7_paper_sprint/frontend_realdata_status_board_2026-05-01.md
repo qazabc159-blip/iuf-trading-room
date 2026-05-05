@@ -3216,3 +3216,10 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Fresh API logs no longer showed future-date HTTP 400 for the target path; they showed FinMind HTTP 403 for `TaiwanStockPriceAdj` and `TaiwanStockPrice` with redacted token query. This means the date/cache fix landed, but FinMind authentication still fails.
 - Follow-up fix on the same branch: add `Authorization: Bearer <token>` header to FinMind HTTP requests while preserving redacted query token compatibility. No token is logged or returned.
 - Stop-line proof remains unchanged: no order route, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, and no paper/risk source change.
+
+## 2026-05-05 22:55-23:10 Taipei - Codex K-line blocker tightened
+- PR #194 merged as `5227580`; main CI passed and Railway `api` deployment `aefdbf5c` succeeded.
+- Authenticated production OHLCV smoke after #194 still returned `rows=200`, `nonMockRows=0`, `source=mock`; no token or credential was printed.
+- API logs still showed redacted FinMind HTTP 403/400 after bearer-header deploy. Current root cause class: `FINMIND_TOKEN_ACCOUNT_OR_API_ACCEPTANCE_BLOCKED`, not chart CSS/hydration/DOM.
+- Follow-up safe work: make `/api/v1/data-sources/finmind/status` return `DEGRADED` when in-process FinMind request error rate is high, so dashboard/diagnostics stop showing fake green while K-line remains all-mock.
+- Stop-line proof: no order route, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, no token display/logging.
