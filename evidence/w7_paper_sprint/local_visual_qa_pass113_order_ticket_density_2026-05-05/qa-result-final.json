@@ -1,0 +1,105 @@
+[
+  {
+    "name": "company2330_desktop1365_lot_5min",
+    "clicked5": true,
+    "clickedLot": true,
+    "metrics": {
+      "url": "http://127.0.0.1:3155/companies/2330",
+      "bodyWidth": 1365,
+      "viewportWidth": 1365,
+      "horizontalOverflow": false,
+      "panelWidth": 368,
+      "ticketBorder": "none",
+      "quickRowText": "整張快選1 張2 張5 張",
+      "hasLotConversion": true,
+      "activeKline": [
+        "5分"
+      ],
+      "overflows": [],
+      "narrowStacks": []
+    },
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedRequests": []
+  },
+  {
+    "name": "company2330_mobile390_lot_5min",
+    "clicked5": true,
+    "clickedLot": true,
+    "metrics": {
+      "url": "http://127.0.0.1:3155/companies/2330",
+      "bodyWidth": 390,
+      "viewportWidth": 390,
+      "horizontalOverflow": false,
+      "panelWidth": 354,
+      "ticketBorder": "none",
+      "quickRowText": "整張快選1 張2 張5 張",
+      "hasLotConversion": true,
+      "activeKline": [
+        "5分"
+      ],
+      "overflows": [
+        {
+          "tag": "A",
+          "cls": "nav-link",
+          "width": 126,
+          "right": 408,
+          "text": "公司板台股公司池"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "width": 64,
+          "right": 396,
+          "text": "公司板台股公司池"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "nav-label",
+          "width": 64,
+          "right": 396,
+          "text": "公司板"
+        },
+        {
+          "tag": "A",
+          "cls": "nav-link",
+          "width": 126,
+          "right": 544,
+          "text": "策略想法候選清單"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "nav-icon nav-icon-ideas",
+          "width": 26,
+          "right": 457,
+          "text": ""
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "width": 64,
+          "right": 532,
+          "text": "策略想法候選清單"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "nav-label",
+          "width": 64,
+          "right": 532,
+          "text": "策略想法"
+        },
+        {
+          "tag": "A",
+          "cls": "nav-link",
+          "width": 126,
+          "right": 680,
+          "text": "策略批次批次紀錄"
+        }
+      ],
+      "narrowStacks": []
+    },
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedRequests": []
+  }
+]
