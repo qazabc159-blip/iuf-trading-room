@@ -8519,3 +8519,208 @@ body:has(.login-route) > div {
     padding-inline: 2px;
   }
 }
+
+/* Pass 116 - company source/profile panels should read like an instrument strip, not two heavy boxes. */
+.company-side-column {
+  gap: clamp(14px, 1.6vw, 20px);
+}
+
+@media (min-width: 901px) and (max-width: 1500px) {
+  .company-side-column {
+    grid-template-columns: minmax(0, 1.08fr) minmax(310px, 0.92fr);
+    gap: 18px;
+  }
+}
+
+.company-side-column .company-info-card,
+.company-side-column .source-status-panel {
+  border-top-color: rgba(226, 184, 92, 0.28);
+  background:
+    linear-gradient(118deg, rgba(226, 184, 92, 0.055), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.014), transparent 60%),
+    rgba(3, 7, 12, 0.30);
+}
+
+.company-side-column .company-info-card {
+  padding: 14px 16px 15px;
+}
+
+.company-side-column .company-info-titlebar {
+  align-items: center;
+  padding-bottom: 9px;
+}
+
+.company-side-column .company-info-titlebar h3 {
+  font-size: 18px;
+}
+
+.company-side-column .company-info-titlebar p {
+  margin-top: 2px;
+  font-size: 11.5px;
+}
+
+.company-side-column .company-info-identity {
+  grid-template-columns: minmax(78px, 0.26fr) minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.06);
+}
+
+.company-side-column .company-info-identity .mono {
+  font-size: 22px;
+}
+
+.company-side-column .company-info-name strong {
+  font-size: 16px;
+}
+
+.company-side-column .company-info-name span {
+  margin-top: 2px;
+  font-size: 11.5px;
+}
+
+.company-side-column .company-info-tags {
+  grid-column: auto;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.company-side-column .company-info-grid-compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 10px;
+  border: 1px solid rgba(220, 228, 240, 0.06);
+  background: rgba(1, 5, 9, 0.22);
+}
+
+.company-side-column .company-info-card .company-info-grid-compact > div {
+  padding: 8px 9px;
+  border: 0;
+  border-right: 1px solid rgba(220, 228, 240, 0.055);
+  background: transparent;
+}
+
+.company-side-column .company-info-card .company-info-grid-compact > div:last-child {
+  border-right: 0;
+}
+
+.company-side-column .company-info-card .company-info-grid-compact dd {
+  margin-top: 3px;
+  font-size: 12.5px;
+}
+
+.company-side-column .company-info-section-compact {
+  margin-top: 11px;
+  padding-top: 10px;
+}
+
+.company-side-column .company-score-list-compact {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 8px;
+  border: 1px solid rgba(220, 228, 240, 0.055);
+  background: rgba(1, 5, 9, 0.20);
+}
+
+.company-side-column .company-score-row-compact {
+  grid-template-columns: 1fr;
+  justify-items: start;
+  gap: 5px;
+  min-height: 0;
+  padding: 8px;
+  border-bottom: 0;
+  border-right: 1px solid rgba(220, 228, 240, 0.05);
+}
+
+.company-side-column .company-score-row-compact:last-child {
+  border-right: 0;
+}
+
+.company-side-column .company-score-row-compact em {
+  display: none;
+}
+
+.company-side-column .company-score-meter span {
+  width: 8px;
+  height: 8px;
+}
+
+.company-side-column .company-validation-grid {
+  gap: 1px;
+  border: 1px solid rgba(220, 228, 240, 0.055);
+  background: rgba(1, 5, 9, 0.20);
+}
+
+.company-side-column .company-validation-pill {
+  padding: 7px 8px;
+  border: 0;
+  border-right: 1px solid rgba(220, 228, 240, 0.05);
+  background: transparent;
+}
+
+.company-side-column .company-validation-pill:last-child {
+  border-right: 0;
+}
+
+.company-side-column .company-inline-empty-compact,
+.company-side-column .company-notes-compact {
+  padding: 9px 10px;
+}
+
+.company-side-column .source-status-panel {
+  padding: 14px 16px 15px;
+}
+
+.company-side-column .source-status-panel .ascii-head {
+  margin-bottom: 6px;
+  padding: 0 0 10px;
+}
+
+.company-side-column .source-status-card {
+  gap: 1px;
+  border: 1px solid rgba(220, 228, 240, 0.055);
+  background: rgba(1, 5, 9, 0.22);
+}
+
+.company-side-column .source-status-row {
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 42px;
+  padding: 9px 10px;
+  border-bottom-color: rgba(220, 228, 240, 0.05);
+}
+
+.company-side-column .source-status-row small {
+  margin-top: 1px;
+  line-height: 1.35;
+}
+
+.company-side-column .source-status-detail {
+  padding: 8px 0 2px;
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .company-side-column .company-info-identity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .company-side-column .company-info-tags {
+    justify-content: flex-start;
+  }
+
+  .company-side-column .company-info-grid-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .company-side-column .company-score-list-compact {
+    grid-template-columns: 1fr;
+  }
+
+  .company-side-column .company-score-row-compact {
+    grid-template-columns: 42px minmax(74px, 1fr) 22px;
+    align-items: center;
+    border-right: 0;
+    border-bottom: 1px solid rgba(220, 228, 240, 0.05);
+  }
+}

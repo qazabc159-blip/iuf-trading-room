@@ -1,0 +1,169 @@
+{
+  "generatedAt": "2026-05-05T03:50:57.838Z",
+  "summary": [
+    {
+      "name": "desktop1365",
+      "status": 200,
+      "consoleErrors": 0,
+      "pageErrors": 0,
+      "failedResponses": 0,
+      "overflowX": false,
+      "badChars": 0,
+      "contentOverflows": 0,
+      "narrowStacks": 0,
+      "sideGridColumns": "496.906px 423.312px",
+      "sideHeight": 576,
+      "infoPanel": {
+        "x": 315,
+        "y": 311,
+        "width": 497,
+        "height": 576
+      },
+      "sourcePanel": {
+        "x": 830,
+        "y": 335,
+        "width": 423,
+        "height": 428
+      },
+      "financePanel": {
+        "x": 315,
+        "y": 979,
+        "width": 938,
+        "height": 666
+      }
+    },
+    {
+      "name": "mobile390",
+      "status": 200,
+      "consoleErrors": 0,
+      "pageErrors": 0,
+      "failedResponses": 0,
+      "overflowX": false,
+      "badChars": 0,
+      "contentOverflows": 0,
+      "narrowStacks": 0,
+      "sideGridColumns": "354px",
+      "sideHeight": 1425,
+      "infoPanel": {
+        "x": 18,
+        "y": -113,
+        "width": 354,
+        "height": 960
+      },
+      "sourcePanel": {
+        "x": 18,
+        "y": 885,
+        "width": 354,
+        "height": 428
+      },
+      "financePanel": {
+        "x": 18,
+        "y": 1404,
+        "width": 354,
+        "height": 743
+      }
+    }
+  ],
+  "results": [
+    {
+      "name": "desktop1365",
+      "status": 200,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "data": {
+        "overflowX": false,
+        "badChars": 0,
+        "contentOverflows": [],
+        "narrowStacks": [],
+        "companySideColumn": {
+          "x": 315,
+          "y": 311,
+          "width": 938,
+          "height": 576
+        },
+        "sideGridColumns": "496.906px 423.312px",
+        "infoPanel": {
+          "x": 315,
+          "y": 311,
+          "width": 497,
+          "height": 576
+        },
+        "sourcePanel": {
+          "x": 830,
+          "y": 335,
+          "width": 423,
+          "height": 428
+        },
+        "infoIdentity": {
+          "x": 343,
+          "y": 382,
+          "width": 441,
+          "height": 66
+        },
+        "sourceList": {
+          "x": 846,
+          "y": 394,
+          "width": 391,
+          "height": 353
+        },
+        "financePanel": {
+          "x": 315,
+          "y": 979,
+          "width": 938,
+          "height": 666
+        }
+      }
+    },
+    {
+      "name": "mobile390",
+      "status": 200,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "data": {
+        "overflowX": false,
+        "badChars": 0,
+        "contentOverflows": [],
+        "narrowStacks": [],
+        "companySideColumn": {
+          "x": 18,
+          "y": -113,
+          "width": 354,
+          "height": 1425
+        },
+        "sideGridColumns": "354px",
+        "infoPanel": {
+          "x": 18,
+          "y": -113,
+          "width": 354,
+          "height": 960
+        },
+        "sourcePanel": {
+          "x": 18,
+          "y": 885,
+          "width": 354,
+          "height": 428
+        },
+        "infoIdentity": {
+          "x": 36,
+          "y": -42,
+          "width": 318,
+          "height": 153
+        },
+        "sourceList": {
+          "x": 34,
+          "y": 944,
+          "width": 322,
+          "height": 353
+        },
+        "financePanel": {
+          "x": 18,
+          "y": 1404,
+          "width": 354,
+          "height": 743
+        }
+      }
+    }
+  ]
+}
