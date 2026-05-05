@@ -24,6 +24,9 @@ const GUARD_LABELS: Record<string, string> = {
   pre_trade: "送出前檢查",
   quote_gate: "報價門檻",
   stale_quote: "報價過舊",
+  trading_hours: "交易時段",
+  max_per_trade: "單筆風控上限",
+  max_single_position: "單一部位上限",
 };
 
 const REASON_LABELS: Record<string, string> = {
@@ -90,6 +93,24 @@ export function paperGateReasonLabel(value: string | null | undefined) {
 export function paperRiskMessageLabel(value: string | null | undefined) {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
+
+  const outsideTradingHours = raw.match(/^Current time is outside allowed trading hours \((.+)\)\.$/i);
+  if (outsideTradingHours) {
+    return `目前不在允許交易時段（${outsideTradingHours[1]}），只能做風控檢查，不能送出委託。`;
+  }
+
+  const noQuote = raw.match(/^No quote available for (.+)\.$/i);
+  if (noQuote) {
+    return `目前沒有 ${noQuote[1]} 的正式報價；可檢查限價與風控，但不會把 FinMind / K 線當成交價。`;
+  }
+
+  if (/Order size exceeds the per-trade risk budget\./i.test(raw)) {
+    return "委託金額超過單筆風控上限。";
+  }
+
+  if (/Resulting symbol exposure would exceed the single-position limit\./i.test(raw)) {
+    return "送出後個股曝險會超過單一部位上限。";
+  }
 
   const blocked = raw.match(/^Blocked by (.+)\.$/i);
   if (blocked) {

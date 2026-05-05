@@ -4,6 +4,24 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+## 2026-05-06 05:08 Taipei - Codex production K-line sparse-minute verification
+- PR / deploy: main `c690d4e32a14de39bd420138669a9f39487ae09c` is deployed on Railway web; this is the post-#208 K-line readout build.
+- Trade Capability Score: +1. Workflow improved: verified both high-liquidity `2330` and lower-liquidity `1104` minute K paths in production, so the remaining minute-K concern is interaction/readability, not missing FinMind ingestion.
+- Endpoint/source proof: authenticated production `GET /api/v1/companies/2330/kbar?days=20` returned `FINMIND / LIVE / 5320 rows / 20 days`; `GET /api/v1/companies/1104/kbar?days=20` returned `FINMIND / LIVE / 1901 rows / 20 days`; FinMind source status returned `LIVE_READY`, Sponsor quota counter `2109 / 6000`, token presence true without token value.
+- Browser proof: authenticated production Chromium screenshots and manifest at `evidence/w7_paper_sprint/production_smoke_pass125_kline_1104_2330_2026-05-06/`. Both symbols render chart canvases after clicking `1分` and `5分`; no `no_kbar_rows`, `分 K 無資料`, or fake mock marker appears.
+- Technical interpretation: `1104` is a sparse intraday stock. Its 5-minute view shows 37 effective aggregated bars from real 1-minute rows, not a data outage. The correct product treatment is sparse-minute truth: show effective bar count, raw 1-minute rows, trading-day coverage, and readable hover/latest OHLCV, while never fabricating empty candles.
+- Stop-line proof: no token value written, no fake-live K-line, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no FinMind/TradingView paper fill or risk source, and no buy/sell recommendation wording.
+- Next: move from K-line incident closure to Paper E2E UI proof unless a new production K-line regression appears; Paper slice should improve preview notional, odd-lot/board-lot safety, simulated state, and ledger visibility without broker submit.
+
+## 2026-05-06 05:18 Taipei - Codex Paper E2E preview reason translation
+- Trade Capability Score: +1. Workflow improved: production paper preview already returns real guard decisions, and this patch makes those decisions understandable in the company-page paper ticket.
+- Files changed: `apps/web/lib/paper-order-vocab.ts`, `evidence/w7_paper_sprint/codex_paper_preview_reason_i18n_2026-05-06.md`, and this board.
+- Endpoint/source proof: authenticated production `POST /api/v1/paper/preview` returned HTTP 200 for `1104` odd-lot, `2330` odd-lot, and `2330` board-lot test drafts. Results were blocked by real guard decisions (`trading_hours`, `stale_quote`, `max_per_trade`, `max_single_position`), not by frontend fake state.
+- Behavior: `trading_hours`, `max_per_trade`, and `max_single_position` now render as Traditional Chinese; common backend messages for outside trading hours, no formal quote, per-trade limit, and single-position limit now render in Chinese. The no-quote text explicitly says FinMind / K-line is not used as a fill price.
+- Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only.
+- Stop-line proof: preview only, no submit; no token value, no fake-live state, no KGI/broker write-side, no migration/schema/destructive DB, no paper fill/risk source change, no buy/sell recommendation wording.
+- Next: open PR for this scoped Paper E2E UI improvement, then after deploy capture a translated preview panel screenshot.
+
 ### 2026-05-05 18:30 Taipei - Codex pass 121 - secondary source freshness sweep
 
 **Scope**: manual-dispatch frontend PR for secondary page stale-source semantics. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no fake OpenAlice rewrite.
