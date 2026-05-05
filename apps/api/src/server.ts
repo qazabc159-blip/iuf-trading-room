@@ -271,11 +271,26 @@ function isDeviceAuthRoute(path: string): boolean {
   return false;
 }
 
+// Read-only diagnostics routes safe for unauthenticated smoke / uptime monitors.
+// Strict allow-list — only these two paths bypass cookie auth. Add new entries
+// only after Pete review confirms zero token / userId / order leakage.
+function isPublicDiagRoute(path: string): boolean {
+  if (path === "/api/v1/paper/health") return true;
+  if (path === "/api/v1/diagnostics/kbar") return true;
+  return false;
+}
+
 app.use("/api/v1/*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
 
   // Runner device-auth routes carry their own bearer-auth check; skip cookie gate.
   if (isDeviceAuthRoute(path)) {
+    c.set("repo", repository);
+    return next();
+  }
+
+  // Public read-only diagnostics for Bruce smoke / uptime monitors. Strict allow-list.
+  if (isPublicDiagRoute(path)) {
     c.set("repo", repository);
     return next();
   }
@@ -4654,6 +4669,248 @@ app.get("/api/v1/paper/portfolio", async (c) => {
   }));
 
   return c.json({ data });
+});
+
+// =============================================================================
+// 5/5 REOPEN — Product Block #1: Paper E2E health + KBar diagnostics
+// =============================================================================
+
+// GET /api/v1/paper/health
+// No auth required — safe for Bruce smoke scripts and uptime monitors.
+// Returns a snapshot of readiness for all four paper E2E paths:
+//   previewReady   — execution gate + kill switch + paper mode all clear
+//   submitReady    — same as previewReady (same gate, but submit also needs DB)
+//   fillsReady     — paper_orders table accessible (DB mode) or in-memory OK
+//   portfolioReady — same as fillsReady
+//   lastFillTs     — ISO timestamp of most recent FILLED order, or null
+//   queueDepth     — number of PENDING orders for all users
+// Hard lines:
+//   - Never exposes userId or order content.
+//   - DB probe is read-only. Safe to call at any rate.
+//   - paper_orders_500_root_cause_closed: reports whether the pg_advisory_lock
+//     fix (lock_timeout=15s in migrate.ts, 2026-05-05) appears to have taken
+//     effect by checking if paper_orders table exists.
+app.get("/api/v1/paper/health", async (c) => {
+  const flags = getExecutionFlagSnapshot();
+
+  // Layer-by-layer gate diagnosis
+  const executionModeOk = flags.executionMode === "paper";
+  const killSwitchOk    = !flags.killSwitchEnabled;
+  const paperModeOk     = flags.paperModeEnabled;
+  const gateOpen        = executionModeOk && killSwitchOk && paperModeOk;
+
+  // DB connectivity check (for fills/portfolio readiness)
+  const dbMode = isDatabaseMode();
+  let tableExists = false;
+  let lastFillTs: string | null = null;
+  let queueDepth = 0;
+  let dbError: string | null = null;
+
+  if (dbMode) {
+    const db = getDb();
+    if (!db) {
+      dbError = "getDb() returned null despite PERSISTENCE_MODE=database";
+    } else {
+      try {
+        // Check table existence
+        const tableCheck = await db.execute(drizzleSql`
+          SELECT to_regclass('public.paper_orders') AS paper_orders
+        `);
+        const row = (tableCheck as { rows?: Record<string, unknown>[] })?.rows?.[0]
+          ?? (Array.isArray(tableCheck) ? tableCheck[0] : tableCheck);
+        tableExists = row?.paper_orders !== null && row?.paper_orders !== undefined;
+
+        if (tableExists) {
+          // Most recent fill timestamp
+          const fillRow = await db.execute(drizzleSql`
+            SELECT MAX(updated_at) AS last_fill
+            FROM paper_orders
+            WHERE status = 'FILLED'
+          `);
+          const fillResult = (fillRow as { rows?: Record<string, unknown>[] })?.rows?.[0]
+            ?? (Array.isArray(fillRow) ? fillRow[0] : fillRow);
+          const rawTs = fillResult?.last_fill;
+          lastFillTs = rawTs instanceof Date
+            ? rawTs.toISOString()
+            : typeof rawTs === "string" ? rawTs : null;
+
+          // Pending queue depth (all users)
+          const queueRow = await db.execute(drizzleSql`
+            SELECT COUNT(*)::int AS depth
+            FROM paper_orders
+            WHERE status = 'PENDING'
+          `);
+          const queueResult = (queueRow as { rows?: Record<string, unknown>[] })?.rows?.[0]
+            ?? (Array.isArray(queueRow) ? queueRow[0] : queueRow);
+          queueDepth = typeof queueResult?.depth === "number"
+            ? queueResult.depth
+            : parseInt(String(queueResult?.depth ?? "0"), 10);
+        }
+      } catch (err) {
+        dbError = err instanceof Error ? err.message : String(err);
+      }
+    }
+  } else {
+    // Memory mode: adapter is always ready; no table check needed
+    tableExists = true;
+  }
+
+  const fillsReady     = dbError === null && tableExists;
+  const portfolioReady = fillsReady;
+  const previewReady   = gateOpen;
+  const submitReady    = gateOpen && fillsReady;
+
+  return c.json({
+    data: {
+      previewReady,
+      submitReady,
+      fillsReady,
+      portfolioReady,
+      lastFillTs,
+      queueDepth,
+      // Detailed gate breakdown for ops debugging
+      gate: {
+        executionMode:    flags.executionMode,
+        executionModeOk,
+        killSwitchOk,
+        paperModeOk,
+        gateOpen
+      },
+      persistence: {
+        mode: dbMode ? "database" : "memory",
+        tableExists,
+        dbError
+      },
+      // Root cause closed flag: paper_orders 500 from 2026-05-05 morning
+      paper_orders_500_root_cause_closed: tableExists
+    }
+  });
+});
+
+// GET /api/v1/diagnostics/kbar
+// Reports OHLCV / K-bar data state for ops + Bruce smoke.
+// Checks DB row counts and latest date for daily interval (tfDay).
+// 1m interval is gateway-only (KGI WS), not stored in companies_ohlcv.
+// No auth required — read-only diagnostics.
+//
+// State enum:
+//   LIVE   — DB has rows with source != 'mock' and latestDate within 3 days
+//   STALE  — DB has real rows but latestDate > 3 days ago
+//   MOCK   — DB has rows but all are source='mock'
+//   EMPTY  — no rows in DB
+//   ERROR  — DB query failed
+//   NO_DB  — memory mode, no DB to query
+app.get("/api/v1/diagnostics/kbar", async (c) => {
+  const dbMode = isDatabaseMode();
+
+  if (!dbMode) {
+    return c.json({
+      data: {
+        tfDay: { state: "NO_DB", latestDate: null, rowCount: 0, source: null },
+        tf1m:  { state: "NO_DB", latestDate: null, rowCount: 0, source: null,
+                  note: "1m bars are gateway-push only; not stored in companies_ohlcv" },
+        ohlcvSource: process.env.OHLCV_SOURCE ?? "mock",
+        finmindTokenPresent: !!(process.env.FINMIND_API_TOKEN),
+        schedulerConfigured: !!(process.env.FINMIND_API_TOKEN),
+        asOf: new Date().toISOString()
+      }
+    });
+  }
+
+  const db = getDb();
+  if (!db) {
+    return c.json({
+      data: {
+        tfDay: { state: "ERROR", latestDate: null, rowCount: 0, source: null,
+                  error: "getDb() returned null" },
+        tf1m:  { state: "NO_DB", latestDate: null, rowCount: 0, source: null,
+                  note: "1m bars are gateway-push only; not stored in companies_ohlcv" },
+        ohlcvSource: process.env.OHLCV_SOURCE ?? "mock",
+        finmindTokenPresent: false,
+        schedulerConfigured: false,
+        asOf: new Date().toISOString()
+      }
+    }, 503);
+  }
+
+  let tfDay: {
+    state: "LIVE" | "STALE" | "MOCK" | "EMPTY" | "ERROR" | "NO_DB";
+    latestDate: string | null;
+    rowCount: number;
+    source: string | null;
+    error?: string;
+    mockRowCount?: number;
+    realRowCount?: number;
+  };
+
+  try {
+    // Total row count + latest date + source breakdown for interval='1d'
+    const summary = await db.execute(drizzleSql`
+      SELECT
+        COUNT(*)::int                                        AS total_rows,
+        MAX(dt)::text                                        AS latest_date,
+        COUNT(*) FILTER (WHERE source = 'mock')::int         AS mock_rows,
+        COUNT(*) FILTER (WHERE source != 'mock')::int        AS real_rows,
+        (SELECT source FROM companies_ohlcv
+         WHERE interval = '1d'
+         ORDER BY dt DESC LIMIT 1)                          AS latest_source
+      FROM companies_ohlcv
+      WHERE interval = '1d'
+    `);
+    const r = (summary as { rows?: Record<string, unknown>[] })?.rows?.[0]
+      ?? (Array.isArray(summary) ? summary[0] : summary);
+
+    const totalRows   = typeof r?.total_rows  === "number" ? r.total_rows  : parseInt(String(r?.total_rows  ?? "0"), 10);
+    const mockRows    = typeof r?.mock_rows   === "number" ? r.mock_rows   : parseInt(String(r?.mock_rows   ?? "0"), 10);
+    const realRows    = typeof r?.real_rows   === "number" ? r.real_rows   : parseInt(String(r?.real_rows   ?? "0"), 10);
+    const latestDate  = typeof r?.latest_date === "string" ? r.latest_date : null;
+    const latestSrc   = typeof r?.latest_source === "string" ? r.latest_source : null;
+
+    if (totalRows === 0) {
+      tfDay = { state: "EMPTY", latestDate: null, rowCount: 0, source: null };
+    } else if (realRows === 0) {
+      tfDay = { state: "MOCK", latestDate, rowCount: totalRows, source: "mock",
+                mockRowCount: mockRows, realRowCount: 0 };
+    } else {
+      // Determine freshness: LIVE if latestDate within 3 calendar days
+      const latestMs = latestDate ? new Date(latestDate).getTime() : 0;
+      const nowMs    = Date.now();
+      // 4 calendar days covers TWS longest weekend gap (Fri close → Tue open after Mon holiday).
+      // Pete review 2026-05-05 PR-MERGE-1: 3 days produced false-STALE every weekend.
+      const staleThresholdMs = 4 * 24 * 60 * 60 * 1000;
+      const isStale  = (nowMs - latestMs) > staleThresholdMs;
+      tfDay = {
+        state: isStale ? "STALE" : "LIVE",
+        latestDate,
+        rowCount: totalRows,
+        source: latestSrc,
+        mockRowCount: mockRows,
+        realRowCount: realRows
+      };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    tfDay = { state: "ERROR", latestDate: null, rowCount: 0, source: null, error: msg };
+  }
+
+  const finmindToken = !!(process.env.FINMIND_API_TOKEN);
+
+  return c.json({
+    data: {
+      tfDay,
+      tf1m: {
+        state: "NO_DB",
+        latestDate: null,
+        rowCount: 0,
+        source: null,
+        note: "1m bars are gateway-push only (KGI WS); not stored in companies_ohlcv"
+      },
+      ohlcvSource:        process.env.OHLCV_SOURCE ?? "mock",
+      finmindTokenPresent: finmindToken,
+      schedulerConfigured: finmindToken,
+      asOf: new Date().toISOString()
+    }
+  });
 });
 
 // =============================================================================
