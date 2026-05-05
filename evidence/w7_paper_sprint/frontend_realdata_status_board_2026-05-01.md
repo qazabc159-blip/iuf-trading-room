@@ -3287,3 +3287,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Notes: relative `/api/v1/companies/2330/kbar?days=5` on the web origin returns 404, but the production app uses the API origin and the API-origin request is LIVE; observed aborted RSC prefetch requests are navigation/prefetch cancellations, not K-line data failures.
 - Stop-line proof: no token value displayed/logged in evidence, no fake-live state, no order submitted, no KGI/broker write-side, no migration/schema/destructive DB, no paper/risk source change, no buy/sell recommendation wording.
 - Next: move to Paper E2E visible workflow and FinMind diagnostics only; no more K-line cosmetic work unless production behavior regresses.
+
+## 2026-05-06 02:36 Taipei - Codex FinMind diagnostics UI trust PR
+- Trade Capability Score: +1. Workflow improved: dashboard FinMind panel now exposes Sponsor quota as used/limit/hour and keeps READY/DEGRADED/BLOCKED dataset semantics aligned with the backend status endpoints.
+- Files changed: `apps/web/app/page.tsx`, `apps/web/lib/api.ts`, `evidence/w7_paper_sprint/codex_finmind_diagnostics_ui_pr_2026-05-06.md`, and this board.
+- Endpoints/sources: `GET /api/v1/data-sources/finmind/status`, `GET /api/v1/diagnostics/finmind`.
+- Behavior: frontend types now accept backend `DEGRADED`; dataset counts are derived from the same UI state as chips; dashboard renders all FinMind dataset chips rather than truncating at 14; quota shows `used / 6000 / hour` when Sponsor 999 is active.
+- Checks: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; `git diff --check` PASS with CRLF warnings only.
+- Stop-line proof: no token value displayed/logged, no fake-live conversion, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no paper fill/risk source, no buy/sell recommendation wording.
+- Next: push PR, wait CI/review policy, then production-smoke dashboard FinMind panel after deploy.
