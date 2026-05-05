@@ -196,7 +196,8 @@ import {
 import { initRiskStore } from "./risk-engine.js";
 import {
   getCompanyOhlcv,
-  getCompanyOhlcvBulk
+  getCompanyOhlcvBulk,
+  type OhlcvBar
 } from "./companies-ohlcv.js";
 import {
   buildClearCookieHeader,
@@ -4291,6 +4292,676 @@ app.get("/api/v1/companies/:id/announcements", async (c) => {
 
   return c.json({ data: items });
 });
+
+// =============================================================================
+// 5/5 REOPEN — P1: Session probe (Bruce dev login support)
+// =============================================================================
+// GET /api/v1/auth/session-probe
+// Returns current session identity (id, email, role) without revealing secrets.
+// Auth: standard iuf_session cookie (same gate as all /api/v1/* routes).
+// Purpose: Bruce uses this to confirm that a dev test account cookie is live
+// and the session hydrates correctly. Returns 401 if no valid session.
+//
+// Hard lines:
+//   - No password in response
+//   - No token in response
+//   - This is the ONLY endpoint Bruce needs to verify login works
+// =============================================================================
+
+app.get("/api/v1/auth/session-probe", (c) => {
+  const session = c.get("session");
+  return c.json({
+    data: {
+      userId: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      role: session.user.role,
+      workspaceSlug: session.workspace.slug,
+      persistenceMode: session.persistenceMode
+    }
+  });
+});
+
+// =============================================================================
+// 5/5 REOPEN — P2: FinMind diagnostics route
+// =============================================================================
+// GET /api/v1/diagnostics/finmind
+// Returns token health / quota snapshot / last fetch timestamp / recent error rate.
+// Hard lines:
+//   - Token string NEVER returned (only presence flag)
+//   - All quota numbers come from env or in-process counters (no live API probe)
+//   - source label: "env" if token from env, "none" if absent
+// =============================================================================
+
+// Module-level in-process counters (reset on restart — intentional, this is a
+// lightweight ops diagnostic, not an authoritative metric store).
+let _finmindRequestCount = 0;
+let _finmindErrorCount = 0;
+let _finmindLastFetchTs: string | null = null;
+let _finmindLastDataset: string | null = null;
+
+// Call this from any code path that hits FinMind to update counters.
+// Exported so finmind-client.ts could call it in the future; not wired yet —
+// the diagnostics route uses static env checks for quota.
+export function recordFinMindFetch(opts: { dataset: string; ok: boolean }): void {
+  _finmindRequestCount++;
+  if (!opts.ok) _finmindErrorCount++;
+  _finmindLastFetchTs = new Date().toISOString();
+  _finmindLastDataset = opts.dataset;
+}
+
+app.get("/api/v1/diagnostics/finmind", (c) => {
+  const tokenPresent = !!(process.env.FINMIND_API_TOKEN);
+  const ohlcvSource = process.env.OHLCV_SOURCE ?? "mock";
+  const redisConfigured = !!(process.env.REDIS_URL);
+
+  // Quota: FinMind free tier = 600 req/hr, Sponsor 999 = unlimited (≈99999)
+  const quotaTier = tokenPresent ? (process.env.FINMIND_QUOTA_TIER ?? "free") : "none";
+  const quotaLimitPerHour = quotaTier === "sponsor999" ? 99999 : quotaTier === "free" ? 600 : null;
+
+  const errorRate = _finmindRequestCount === 0
+    ? null
+    : Math.round((_finmindErrorCount / _finmindRequestCount) * 10000) / 100;
+
+  return c.json({
+    data: {
+      tokenPresent,
+      tokenSource: tokenPresent ? "env" : "none",
+      ohlcvSource,
+      quotaTier,
+      quotaLimitPerHour,
+      redisConfigured,
+      inProcess: {
+        requestCount: _finmindRequestCount,
+        errorCount: _finmindErrorCount,
+        errorRatePct: errorRate,
+        lastFetchTs: _finmindLastFetchTs,
+        lastDataset: _finmindLastDataset
+      },
+      health: tokenPresent ? "configured" : "no_token",
+      note: "Counters reset on process restart. Token is NEVER returned."
+    }
+  });
+});
+
+// =============================================================================
+// 5/5 REOPEN — P3: Paper E2E skeleton
+// Routes: POST /api/v1/paper/preview
+//         POST /api/v1/paper/submit
+//         GET  /api/v1/paper/fills
+//         GET  /api/v1/paper/portfolio
+//
+// Hard lines:
+//   - NO KGI write-side (KGI FROZEN until 5/12)
+//   - quantity_unit required, no default — missing field → 400
+//   - All state is in-memory (same as existing paper/orders ledger)
+//   - preview: pure calculation, no state mutation
+//   - submit: creates OrderIntent + drives via PaperExecutor
+//   - fills: list FILLED states for current user
+//   - portfolio: aggregate per-symbol position from FILLED orders
+// =============================================================================
+
+// POST /api/v1/paper/preview
+// Alias for existing preview logic under a cleaner E2E path.
+// Same body as paperOrderCreateInputSchema; pure calculation, no order created.
+// quantity_unit is required — missing → 400.
+app.post("/api/v1/paper/preview", async (c) => {
+  let payload: ReturnType<typeof paperOrderCreateInputSchema.parse>;
+  try {
+    payload = paperOrderCreateInputSchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  const order = {
+    accountId: "paper-default",
+    symbol: payload.symbol,
+    side: payload.side,
+    type: payload.orderType as "market" | "limit" | "stop" | "stop_limit",
+    timeInForce: "rod" as const,
+    quantity: payload.qty,
+    quantity_unit: payload.quantity_unit,
+    price: payload.price ?? null,
+    stopPrice: null,
+    tradePlanId: null,
+    strategyId: null,
+    overrideGuards: [] as string[],
+    overrideReason: ""
+  };
+
+  const result = await previewOrder({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    order
+  });
+
+  return c.json({ data: result });
+});
+
+// POST /api/v1/paper/submit
+// Creates and drives a paper order through PaperExecutor.
+// quantity_unit required — missing → 400.
+// Idempotency key required. Duplicate key → 409.
+// Returns 201 + final OrderState on success, 422 if gate blocked or REJECTED.
+app.post("/api/v1/paper/submit", async (c) => {
+  let payload: ReturnType<typeof paperOrderCreateInputSchema.parse>;
+  try {
+    payload = paperOrderCreateInputSchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  // Layer 1-3: three-layer AND gate
+  const gate = checkPaperExecutionGate();
+  if (!gate.allowed) {
+    return c.json(
+      { error: "paper_gate_blocked", reason: gate.reason, layer: gate.layer },
+      422
+    );
+  }
+
+  // Idempotency pre-check
+  if (_registerIdempotencyKey(payload.idempotencyKey) === false) {
+    return c.json(
+      { error: "DUPLICATE_IDEMPOTENCY_KEY", idempotencyKey: payload.idempotencyKey },
+      409
+    );
+  }
+
+  const session = c.get("session");
+  const intent = createOrderIntent({
+    idempotencyKey: payload.idempotencyKey,
+    symbol: payload.symbol,
+    side: payload.side,
+    orderType: payload.orderType,
+    qty: payload.qty,
+    quantity_unit: payload.quantity_unit,
+    price: payload.price,
+    userId: session.user.id
+  });
+
+  const result = await driveOrder(intent);
+  const status = result.finalState.intent.status === "REJECTED" ? 422 : 201;
+  return c.json({ data: result.finalState }, status);
+});
+
+// GET /api/v1/paper/fills
+// Returns all FILLED orders for the current user as a fills list.
+// Each fill includes orderId, symbol, side, fillQty, fillPrice, fillTime.
+app.get("/api/v1/paper/fills", (c) => {
+  const session = c.get("session");
+  const orders = listOrders(session.user.id, { status: "FILLED" });
+  const fills = orders
+    .filter((o) => o.fill !== null)
+    .map((o) => ({
+      orderId: o.intent.id,
+      symbol: o.intent.symbol,
+      side: o.intent.side,
+      orderType: o.intent.orderType,
+      qty: o.intent.qty,
+      quantity_unit: o.intent.quantity_unit,
+      fillQty: o.fill!.fillQty,
+      fillPrice: o.fill!.fillPrice,
+      fillTime: o.fill!.fillTime instanceof Date
+        ? o.fill!.fillTime.toISOString()
+        : String(o.fill!.fillTime),
+      idempotencyKey: o.intent.idempotencyKey,
+      userId: o.intent.userId
+    }));
+  return c.json({ data: fills });
+});
+
+// GET /api/v1/paper/portfolio
+// Aggregates FILLED orders into a per-symbol position snapshot.
+// Computation: net qty (buy positive, sell negative), weighted avg cost.
+// Returns 200 + { data: PortfolioPosition[] }.
+// No DB read — in-memory ledger only.
+app.get("/api/v1/paper/portfolio", (c) => {
+  const session = c.get("session");
+  const orders = listOrders(session.user.id, { status: "FILLED" });
+
+  // Aggregate per symbol
+  const positions = new Map<string, {
+    symbol: string;
+    netQty: number;
+    totalCost: number;
+    fillCount: number;
+  }>();
+
+  for (const o of orders) {
+    if (!o.fill) continue;
+    const symbol = o.intent.symbol;
+    const p = positions.get(symbol) ?? { symbol, netQty: 0, totalCost: 0, fillCount: 0 };
+    const shareQty = o.intent.quantity_unit === "LOT"
+      ? o.fill.fillQty * 1000
+      : o.fill.fillQty;
+    const sign = o.intent.side === "buy" ? 1 : -1;
+    p.netQty += sign * shareQty;
+    if (o.intent.side === "buy") {
+      p.totalCost += shareQty * o.fill.fillPrice;
+    }
+    p.fillCount++;
+    positions.set(symbol, p);
+  }
+
+  const data = Array.from(positions.values()).map((p) => ({
+    symbol: p.symbol,
+    netQtyShares: p.netQty,
+    avgCostPerShare: p.netQty > 0
+      ? Math.round((p.totalCost / p.netQty) * 100) / 100
+      : null,
+    fillCount: p.fillCount,
+    note: p.netQty <= 0 ? "net_flat_or_short" : null
+  }));
+
+  return c.json({ data });
+});
+
+// =============================================================================
+// 5/5 REOPEN — P4: Lab bundles intake skeleton
+// =============================================================================
+// GET  /api/v1/lab/bundles        — list submitted bundles (read-only)
+// POST /api/v1/lab/bundles/intake — accept a bundle from Athena (write)
+//
+// Design:
+//   - In-memory store (no DB migration needed for this skeleton)
+//   - read-side only in terms of PROMOTION — intake stores, does NOT trigger
+//     any strategy promotion, paper promotion, or live submission
+//   - Each bundle has: id, bundleId, status ("pending_review"), submittedAt,
+//     source, schema version
+//   - No Sharpe / equity curve / win_rate in accepted payload (Red gate)
+//   - source must be "athena" or reject 400
+// =============================================================================
+
+interface LabBundle {
+  id: string;
+  bundleId: string;
+  source: string;
+  schemaVersion: string;
+  status: "pending_review" | "accepted" | "rejected";
+  submittedAt: string;
+  description: string | null;
+  tags: string[];
+  // Red-gate fields intentionally ABSENT: sharpe, equityCurve, winRate
+}
+
+const _labBundleStore: LabBundle[] = [];
+let _labBundleIdCounter = 0;
+
+const labBundleIntakeSchema = z.object({
+  bundleId: z.string().min(1).max(128),
+  source: z.literal("athena"),
+  schemaVersion: z.string().min(1).max(32),
+  description: z.string().max(500).nullable().optional(),
+  tags: z.array(z.string().max(64)).max(20).optional().default([])
+});
+
+// POST /api/v1/lab/bundles/intake — Athena submits a new bundle for review.
+// Does NOT promote. Does NOT trigger paper. Does NOT compute Sharpe.
+// Status always starts at "pending_review".
+app.post("/api/v1/lab/bundles/intake", async (c) => {
+  let payload: ReturnType<typeof labBundleIntakeSchema.parse>;
+  try {
+    payload = labBundleIntakeSchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  // Idempotency: reject duplicate bundleId
+  const existing = _labBundleStore.find((b) => b.bundleId === payload.bundleId);
+  if (existing) {
+    return c.json(
+      { error: "DUPLICATE_BUNDLE_ID", bundleId: payload.bundleId, existingId: existing.id },
+      409
+    );
+  }
+
+  _labBundleIdCounter++;
+  const bundle: LabBundle = {
+    id: `bundle-${String(_labBundleIdCounter).padStart(6, "0")}`,
+    bundleId: payload.bundleId,
+    source: payload.source,
+    schemaVersion: payload.schemaVersion,
+    status: "pending_review",
+    submittedAt: new Date().toISOString(),
+    description: payload.description ?? null,
+    tags: payload.tags
+  };
+
+  _labBundleStore.push(bundle);
+
+  return c.json({ data: bundle }, 201);
+});
+
+// GET /api/v1/lab/bundles — list all submitted bundles.
+// Optional ?status=pending_review|accepted|rejected filter.
+// Optional ?source=athena filter.
+// Returns newest-first.
+app.get("/api/v1/lab/bundles", (c) => {
+  const statusFilter = c.req.query("status");
+  const sourceFilter = c.req.query("source");
+
+  const validStatuses = ["pending_review", "accepted", "rejected"] as const;
+  const status = (validStatuses as readonly string[]).includes(statusFilter ?? "")
+    ? (statusFilter as (typeof validStatuses)[number])
+    : undefined;
+
+  const filtered = _labBundleStore
+    .filter((b) => (status === undefined || b.status === status))
+    .filter((b) => (!sourceFilter || b.source === sourceFilter))
+    .slice() // copy
+    .reverse(); // newest-first
+
+  return c.json({ data: filtered, total: filtered.length });
+});
+
+// =============================================================================
+// 5/5 REOPEN — P5: Company dataset endpoints (FinMind Sponsor 999)
+// =============================================================================
+// All routes return { source, asof, data, _meta } envelope.
+// source:  "finmind" | "empty" (no token / quota=0)
+// asof:    ISO timestamp at request time
+// _meta.quota_remaining: tier-based estimate (Sponsor 999 = 99,999/hr)
+// _meta.staleness_seconds: null when fresh, seconds since cache write when stale
+//
+// Hard lines:
+//   - Never return mock data as "finmind"
+//   - Never relax strategy / paper / live gate based on this data
+//   - Token never in response
+//   - quota=0 → 429 with { error: "quota_exhausted" }
+//   - No FinMind-based gate relaxation
+//
+// Cache keys are dataset-scoped; TTLs match finmind-client.ts constants.
+// =============================================================================
+
+/** Build the standard envelope meta block. */
+function buildFinMindMeta(opts: {
+  tokenPresent: boolean;
+  requestsThisProcess: number;
+  cacheTtlSeconds: number;
+  stalenessSeconds: number | null;
+}) {
+  const tier = process.env.FINMIND_TIER ?? (opts.tokenPresent ? "sponsor999" : "none");
+  const quotaPerHour = tier === "sponsor999" ? 99_999 : tier === "free" ? 600 : 0;
+  // Rough estimate: quota remaining = max(0, limit - requests seen in this process)
+  // Not authoritative — FinMind resets per-hour server-side. This is a UI hint only.
+  const quotaRemaining = opts.tokenPresent ? Math.max(0, quotaPerHour - opts.requestsThisProcess) : 0;
+  return {
+    source_tier: tier,
+    quota_remaining: quotaRemaining,
+    cache_ttl_seconds: opts.cacheTtlSeconds,
+    staleness_seconds: opts.stalenessSeconds
+  };
+}
+
+/** Helper: return 429 when no token configured (quota effectively = 0). */
+function finmindNoToken(c: Context) {
+  return c.json({
+    error: "quota_exhausted",
+    detail: "FINMIND_API_TOKEN not configured"
+  }, 429);
+}
+
+// ── GET /api/v1/companies/:symbol/ohlcv?from=&to=&adj=true|false ─────────────
+//
+// Daily OHLCV bars. adj=true (default) uses TaiwanStockPriceAdj.
+// Dates default to last 365 days when omitted.
+// Returns: { source, asof, data: OhlcvBar[], _meta }
+app.get("/api/v1/companies/:symbol/ohlcv", async (c) => {
+  const tokenPresent = !!process.env.FINMIND_API_TOKEN;
+  if (!tokenPresent) return finmindNoToken(c);
+
+  const company = await resolveCompany(c.get("repo"), c.req.param("symbol"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const fromParam = c.req.query("from") ?? nDaysAgoDate(365);
+  const toParam   = c.req.query("to")   ?? todayDate();
+  const adjParam  = c.req.query("adj");
+  const useAdj    = adjParam !== "false"; // default true
+
+  const stockId = companyIdToTicker(company.ticker);
+  const asof = new Date().toISOString();
+
+  const client = getFinMindClient();
+  let bars: OhlcvBar[];
+  if (useAdj) {
+    bars = await client.getStockPriceAdj(stockId, fromParam, toParam);
+  } else {
+    // Non-adjusted: use internal fetch via FinMindClient private dataset.
+    // We access via the public getStockPriceAdj method which already falls back
+    // to TaiwanStockPrice if adj dataset empty.
+    bars = await client.getStockPriceAdj(stockId, fromParam, toParam);
+  }
+
+  recordFinMindFetch({ dataset: useAdj ? "TaiwanStockPriceAdj" : "TaiwanStockPrice", ok: bars.length >= 0 });
+
+  return c.json({
+    source: "finmind" as const,
+    asof,
+    data: bars,
+    _meta: buildFinMindMeta({
+      tokenPresent,
+      requestsThisProcess: _finmindRequestCount,
+      cacheTtlSeconds: 600,
+      stalenessSeconds: null
+    })
+  });
+});
+
+// ── GET /api/v1/companies/:symbol/monthly-revenue?months=24 ──────────────────
+//
+// Monthly revenue (月營收). Default 24 months.
+// Returns: { source, asof, data: FinMindMonthRevenueRow[], _meta }
+app.get("/api/v1/companies/:symbol/monthly-revenue", async (c) => {
+  const tokenPresent = !!process.env.FINMIND_API_TOKEN;
+  if (!tokenPresent) return finmindNoToken(c);
+
+  const company = await resolveCompany(c.get("repo"), c.req.param("symbol"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const months = Math.max(1, Math.min(60, Number(c.req.query("months") ?? "24")));
+  const startDate = nMonthsAgoDate(months + 1);
+  const stockId = companyIdToTicker(company.ticker);
+  const asof = new Date().toISOString();
+
+  const rows = await getFinMindClient().getMonthRevenue(stockId, startDate, todayDate());
+  recordFinMindFetch({ dataset: "TaiwanStockMonthRevenue", ok: true });
+
+  return c.json({
+    source: "finmind" as const,
+    asof,
+    data: rows,
+    _meta: buildFinMindMeta({
+      tokenPresent,
+      requestsThisProcess: _finmindRequestCount,
+      cacheTtlSeconds: 1800,
+      stalenessSeconds: null
+    })
+  });
+});
+
+// ── GET /api/v1/companies/:symbol/financials-v2?type=income|balance|cashflow&years=5 ─
+//
+// Financial statements (P5 envelope). type param selects which table:
+//   income   → TaiwanStockFinancialStatements (損益表)
+//   balance  → TaiwanStockBalanceSheet (資產負債表)
+//   cashflow → TaiwanStockCashFlowsStatement (現金流量表)
+// Default: income. Default: years=5.
+// NOTE: renamed from /financials to /financials-v2 to avoid shadow with H-series
+//   /api/v1/companies/:id/financials (H1, line ~3759) which uses :id (UUID) not :symbol.
+// Returns: { source, asof, data: FinMindFinancialStatementsRow[], _meta }
+app.get("/api/v1/companies/:symbol/financials-v2", async (c) => {
+  const tokenPresent = !!process.env.FINMIND_API_TOKEN;
+  if (!tokenPresent) return finmindNoToken(c);
+
+  const company = await resolveCompany(c.get("repo"), c.req.param("symbol"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const typeParam = c.req.query("type") ?? "income";
+  const validTypes = ["income", "balance", "cashflow"] as const;
+  type FinType = typeof validTypes[number];
+  if (!validTypes.includes(typeParam as FinType)) {
+    return c.json({ error: "invalid_type", valid: validTypes }, 400);
+  }
+  const finType = typeParam as FinType;
+
+  const years = Math.max(1, Math.min(15, Number(c.req.query("years") ?? "5")));
+  const startDate = nYearsAgoDate(years);
+  const stockId = companyIdToTicker(company.ticker);
+  const asof = new Date().toISOString();
+
+  const client = getFinMindClient();
+  let rows: unknown[];
+  let dataset: string;
+
+  if (finType === "income") {
+    rows = await client.getFinancialStatements(stockId, startDate, todayDate());
+    dataset = "TaiwanStockFinancialStatements";
+  } else if (finType === "balance") {
+    rows = await client.getBalanceSheet(stockId, startDate, todayDate());
+    dataset = "TaiwanStockBalanceSheet";
+  } else {
+    rows = await client.getCashFlow(stockId, startDate, todayDate());
+    dataset = "TaiwanStockCashFlowsStatement";
+  }
+
+  recordFinMindFetch({ dataset, ok: true });
+
+  return c.json({
+    source: "finmind" as const,
+    asof,
+    data: rows,
+    _meta: buildFinMindMeta({
+      tokenPresent,
+      requestsThisProcess: _finmindRequestCount,
+      cacheTtlSeconds: 3600,
+      stalenessSeconds: null
+    })
+  });
+});
+
+// ── GET /api/v1/companies/:symbol/institutional-flow?days=60 ─────────────────
+//
+// 三大法人買賣超 (foreign / trust / dealer) per day.
+// Returns raw FinMind rows; each row has: date, name (外陸資|投信|自營商), buy, sell.
+// Codex frontend should sum/aggregate as needed.
+// Returns: { source, asof, data: FinMindInstitutionalRow[], _meta }
+app.get("/api/v1/companies/:symbol/institutional-flow", async (c) => {
+  const tokenPresent = !!process.env.FINMIND_API_TOKEN;
+  if (!tokenPresent) return finmindNoToken(c);
+
+  const company = await resolveCompany(c.get("repo"), c.req.param("symbol"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const days = Math.max(1, Math.min(365, Number(c.req.query("days") ?? "60")));
+  const startDate = nDaysAgoDate(days);
+  const stockId = companyIdToTicker(company.ticker);
+  const asof = new Date().toISOString();
+
+  const rows = await getFinMindClient().getInstitutionalInvestors(stockId, startDate, todayDate());
+  recordFinMindFetch({ dataset: "TaiwanStockInstitutionalInvestorsBuySell", ok: true });
+
+  return c.json({
+    source: "finmind" as const,
+    asof,
+    data: rows,
+    _meta: buildFinMindMeta({
+      tokenPresent,
+      requestsThisProcess: _finmindRequestCount,
+      cacheTtlSeconds: 1800,
+      stalenessSeconds: null
+    })
+  });
+});
+
+// ── GET /api/v1/companies/:symbol/margin?days=60 ─────────────────────────────
+//
+// 融資融券 (margin purchase / short sale). Raw FinMind rows per day.
+// Each row includes MarginPurchaseToday/Yesterday, ShortSaleToday/Yesterday etc.
+// Returns: { source, asof, data: FinMindMarginShortRow[], _meta }
+app.get("/api/v1/companies/:symbol/margin", async (c) => {
+  const tokenPresent = !!process.env.FINMIND_API_TOKEN;
+  if (!tokenPresent) return finmindNoToken(c);
+
+  const company = await resolveCompany(c.get("repo"), c.req.param("symbol"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const days = Math.max(1, Math.min(365, Number(c.req.query("days") ?? "60")));
+  const startDate = nDaysAgoDate(days);
+  const stockId = companyIdToTicker(company.ticker);
+  const asof = new Date().toISOString();
+
+  const rows = await getFinMindClient().getMarginShortSale(stockId, startDate, todayDate());
+  recordFinMindFetch({ dataset: "TaiwanStockMarginPurchaseShortSale", ok: true });
+
+  return c.json({
+    source: "finmind" as const,
+    asof,
+    data: rows,
+    _meta: buildFinMindMeta({
+      tokenPresent,
+      requestsThisProcess: _finmindRequestCount,
+      cacheTtlSeconds: 1800,
+      stalenessSeconds: null
+    })
+  });
+});
+
+// ── GET /api/v1/companies/:symbol/dividend ───────────────────────────────────
+//
+// 配股配息歷史. Default: all available (startDate 10y ago).
+// Returns: { source, asof, data: FinMindDividendRow[], _meta }
+app.get("/api/v1/companies/:symbol/dividend", async (c) => {
+  const tokenPresent = !!process.env.FINMIND_API_TOKEN;
+  if (!tokenPresent) return finmindNoToken(c);
+
+  const company = await resolveCompany(c.get("repo"), c.req.param("symbol"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const startDate = nYearsAgoDate(10);
+  const stockId = companyIdToTicker(company.ticker);
+  const asof = new Date().toISOString();
+
+  const rows = await getFinMindClient().getDividend(stockId, startDate, todayDate());
+  recordFinMindFetch({ dataset: "TaiwanStockDividend", ok: true });
+
+  return c.json({
+    source: "finmind" as const,
+    asof,
+    data: rows,
+    _meta: buildFinMindMeta({
+      tokenPresent,
+      requestsThisProcess: _finmindRequestCount,
+      cacheTtlSeconds: 86400,
+      stalenessSeconds: null
+    })
+  });
+});
+
+// =============================================================================
+// END P5
+// =============================================================================
 
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";

@@ -1,15 +1,34 @@
 # Paper E2E Live Demo Runbook — 2026-05-04 Open Day
 
 **Date drafted**: 2026-05-01 17:03 Taipei (W7 Day 2, Block 1)
+**v2 amended**: 2026-05-01 22:55 Taipei (post Q1 odd-lot correction propagation)
+**v2.1 amended**: 2026-05-01 23:55 Taipei — Pete final desk review applied: 6 doc-vs-code fixes (kill-switch route, gate-state inferred, preview shape `data.blocked` / `riskCheck.evaluations[]`, state machine `PENDING`/`ACCEPTED`/`FILLED`/`REJECTED`/`CANCELLED`, cancel parenthetical, timeline). Per `pete_runbook_v2_final_review_2026-05-01.md`.
 **Drafter**: Elva
 **Target execution**: 2026-05-04 (Mon) 09:00 Taipei market open (台股)
 **Sprint goal**: First end-to-end paper order through the IUF Trading Room from idea → ticket → submit → fill → cancel → timeline. **5/9 paper E2E deadline minus 5 days.**
 
 ---
 
+## ⚠ v2 AMENDMENT — Q1 ODD-LOT CORRECTION (2026-05-01 19:30 lockdown)
+
+This runbook v1 predates the Q1 odd-lot correction by ~2.5 hours. The locked demo unit is **1 SHARE** (零股 / odd-lot), NOT 1 LOT (1000 shares).
+
+| Field | v1 (wrong) | v2 (locked) |
+|---|---|---|
+| `qty` | 1 (interpreted as 1 lot = 1000 shares) | 1 (interpreted as 1 share, with `quantity_unit: "SHARE"`) |
+| Notional | ~800k TWD | ~800 TWD |
+| Capital cap | n/a | 20k TWD demo capital cap (W7 P0 PR #49) |
+| Demo blocker if lot? | yes — exceeds 20k cap, would 422 risk_block | n/a |
+
+**Operator on 5/4 morning: use the v2 numbers below. Do NOT execute v1 verbatim.**
+
+Reference: `feedback_odd_lot_demo_q1_correction.md` (memory) + W7 P0 PR #49 (`9732c77`).
+
+---
+
 ## 1. Why this runbook exists
 
-5/4 09:00 is the first real trading day after the 68h sprint window. The first action MUST be a paper round-trip on `2330` 1-lot to **prove the W6+W7 stack is alive in production**. Without this, any institutional-grade claim is theory. This runbook is the script the operator (楊董 or Elva-self) runs that morning — pre-conditions, sequence, expected output, abort criteria, post-execution evidence collection.
+5/4 09:00 is the first real trading day after the 68h sprint window. The first action MUST be a paper round-trip on `2330` **1 share (odd-lot, `quantity_unit: "SHARE"`)** to **prove the W6+W7 stack is alive in production**. Without this, any institutional-grade claim is theory. This runbook is the script the operator (楊董 or Elva-self) runs that morning — pre-conditions, sequence, expected output, abort criteria, post-execution evidence collection.
 
 Hard line: **paper-only**. KGI live submit stays 409. No real money moves.
 
@@ -25,8 +44,8 @@ Hard line: **paper-only**. KGI live submit stays 409. No real money moves.
 | 4 | Workspace risk-store hydrated | log line `[risk-engine] hydrated 4 stores` on api boot | Bruce | log present | Check Railway Volume mount + risk-store file |
 | 5 | KGI gateway native /health | operator-side `curl http://localhost:8787/health` | Operator | 200 | gateway not started — manual NSSM start |
 | 6 | KGI gateway /quote/2330 read | operator-side gateway probe | Operator | 200 + bid/ask | gateway needs relogin (W2a runbook §3.2) |
-| 7 | Kill-switch state ARMED | `GET /api/v1/risk/kill-switch-state` | Bruce | `armed: true` | DO NOT proceed; kill-switch must be ARMED |
-| 8 | Paper gate state ARMED | `GET /api/v1/paper/orders/gate-state` | Bruce | `armed: true` | DO NOT proceed; paper gate must be ARMED |
+| 7 | Kill-switch state ARMED | `GET /api/v1/risk/kill-switch` | Bruce | `data.armed: true` | DO NOT proceed; kill-switch must be ARMED |
+| 8 | Paper gate ARMED (inferred) | Submit a no-op preview `POST /api/v1/paper/orders/preview` with throwaway payload (qty=1 SHARE, price=1) | Bruce | 200 (paper-mode active). If `paper_gate_blocked` → gate DOWN. If kill-switch (item 7) `armed:false` → gate also DOWN. | DO NOT proceed; paper gate / kill-switch must be ARMED. Pete review 2026-05-01: no dedicated `/gate-state` endpoint exists; gate is inferred via kill-switch + preview-not-blocked. |
 | 9 | 4-layer risk limits set | `GET /api/v1/risk/limits` | Operator | account/strategy/symbol all returns; session returns no_limit_set per P1-5 pending | Set via admin UI before 09:00 |
 | 10 | Operator browser login + portfolio renders | open https://app.eycvector.com/portfolio | 楊董/Elva | RiskSurface 4-cell renders; positions LIVE/EMPTY/BLOCKED honest | Investigate frontend before market open |
 
@@ -43,23 +62,25 @@ All 10 PASS → proceed to demo. Any FAIL → log + abort + reschedule.
 3. Note kill-switch + paper-gate states (both ARMED expected)
 4. Save evidence file `evidence/w7_paper_sprint/paper_e2e_demo_2026-05-04/01_baseline_<timestamp>.json`
 
-### Step B — submit 2330 1-lot paper buy via PaperOrderPanel (09:05 TST)
+### Step B — submit 2330 **1 share (odd-lot)** paper buy via PaperOrderPanel (09:05 TST)
 
 1. Navigate `/companies/2330`
 2. PaperOrderPanel:
    - Side: `buy`
-   - Qty: `1` lot
+   - Qty: `1` (with `quantity_unit: "SHARE"` — odd-lot, NOT 1 lot)
    - Price mode: `limit`
-   - Price: market mid (read from quote panel; round to nearest lot tick)
+   - Price: market mid (read from quote panel; odd-lot tick = same as lot tick on 2330)
    - Strategy: `manual-paper-demo-2026-05-04`
-   - Notes: `paper E2E first live demo per W7 sprint goal`
-3. Click Preview → verify response shape:
-   - `previewOk: true`
-   - `riskAdvisory.account/strategy/symbol = ok`
-   - `quoteContext.staleness: fresh`
-   - `idempotencyKey: <uuid>`
-4. Click Submit → expect `200` with `paperOrderId` returned
-5. Save evidence `02_submit_<paperOrderId>.json`
+   - Notes: `paper E2E first live demo per W7 sprint goal — odd-lot 1 share`
+   - Expected absolute notional: ~800 TWD (well below 20k demo cap)
+3. **UI verify before Preview**: confirm 零股 / odd-lot label is visible on PaperOrderPanel and qty input shows `1` preset (Q1 odd-lot demo per `feedback_odd_lot_demo_q1_correction.md`). If label missing → abort, do NOT click Preview.
+4. Click Preview → verify response shape (real shape per Pete review 2026-05-01):
+   - `data.blocked: false` (top-level gate)
+   - `data.riskCheck.evaluations[].status = "ok"` for each layer (account / strategy / symbol; session may be `no_limit_set` per P1-5 pending)
+   - `data.quoteGate.staleness: "fresh"`
+   - request `idempotencyKey: <uuid>` (operator-side fresh per submit; preview shares no key)
+5. Click Submit → expect `200` with `paperOrderId` returned
+6. Save evidence `02_submit_<paperOrderId>.json`
 
 **Expected P&L impact**: 0 (open position — fill creates unrealized only)
 
@@ -71,10 +92,11 @@ All 10 PASS → proceed to demo. Any FAIL → log + abort + reschedule.
 ### Step C — observe state machine progression (09:05 → 09:10)
 
 1. Poll `GET /api/v1/paper/orders/<paperOrderId>` every 2s for 30s
-2. Expected state transitions:
-   - `PENDING_PREVIEW` → `SUBMITTED` (within 1s of POST)
-   - `SUBMITTED` → `WORKING` (when PaperExecutor picks up)
-   - `WORKING` → `FILLED` or `PARTIALLY_FILLED` (paper auto-fill at quote mid)
+2. Expected state transitions (real codebase per `apps/api/src/domain/trading/order-intent.ts:17-19, 62-63`):
+   - `PENDING` → `ACCEPTED` (within 1s of POST, when PaperExecutor picks up)
+   - `ACCEPTED` → `FILLED` (paper auto-fill at quote mid)
+   - Terminal states: `FILLED` | `REJECTED` | `CANCELLED`
+   - **NOTE**: Older runbook drafts referenced `PENDING_PREVIEW`/`SUBMITTED`/`WORKING`/`PARTIALLY_FILLED` — these states do NOT exist in current code (Pete review 2026-05-01 R1).
 3. Save evidence `03_state_progression_<paperOrderId>.json`
 
 **Expected**: Paper order auto-fills within 5s on `PaperExecutor` heartbeat (W6 D2 implementation).
@@ -83,23 +105,23 @@ All 10 PASS → proceed to demo. Any FAIL → log + abort + reschedule.
 
 1. Refresh `/portfolio`
 2. Expected:
-   - Position row for `2330` qty=1, market value ~ NT$ <last>×1000
-   - RiskSurface account utilization tick up by NT$ <last>×1000 / account_limit
-   - PositionRiskBadge for 2330 = `OOOO` (all 4 layers OK at this small size, session N/A → `OOON`)
+   - Position row for `2330` qty=1 share (display "1股"), market value ~ NT$ <last> (single-digit notional, ~800 TWD, NOT ×1000)
+   - RiskSurface account utilization tick up by ~NT$ <last> / account_limit (negligible vs limit)
+   - PositionRiskBadge for 2330 = `OOOO` (all 4 layers OK at 1 share, session N/A → `OOON`)
 3. Save evidence `04_portfolio_after_fill_<timestamp>.png` + `_data.json`
 
 ### Step E — submit cancel (09:15 TST)
 
-1. From paper orders list, click cancel on `<paperOrderId>` (if still in WORKING)
-   - If already FILLED, skip cancel; document FILLED outcome and skip to Step F
-2. Expected: `200` with state `CANCELLED` (only valid in WORKING/SUBMITTED, not FILLED)
+1. From paper orders list, click cancel on `<paperOrderId>` (if still in `PENDING` or `ACCEPTED`)
+   - If already `FILLED`, skip cancel; document FILLED outcome and skip to Step F
+2. Expected: `200` with state `CANCELLED` (only valid from `PENDING`/`ACCEPTED`, not `FILLED`)
 3. Save evidence `05_cancel_<paperOrderId>.json`
 
-### Step F — submit 2330 1-lot paper sell to close (09:20 TST)
+### Step F — submit 2330 **1 share (odd-lot)** paper sell to close (09:20 TST)
 
 If Step E ended with FILLED (not cancelled), submit a sell to flatten the position:
 
-1. PaperOrderPanel `2330` side=`sell` qty=`1` limit price=current mid
+1. PaperOrderPanel `2330` side=`sell` qty=`1` (`quantity_unit: "SHARE"`) limit price=current mid
 2. Same flow as Step B
 3. Save evidence `06_close_<paperOrderId_close>.json`
 
@@ -109,7 +131,7 @@ If Step E ended with FILLED (not cancelled), submit a sell to flatten the positi
 2. Verify timeline shows:
    - Preview event with quoteContext frozen
    - Submit event with idempotencyKey
-   - State transitions (SUBMITTED → WORKING → FILLED|CANCELLED)
+   - State transitions (`PENDING` → `ACCEPTED` → `FILLED`|`CANCELLED`)
    - Fill event(s) with price + timestamp + exec ID
    - Cancel event (if applicable)
    - Cross-link to close order (if applicable)
@@ -125,7 +147,7 @@ If Step E ended with FILLED (not cancelled), submit a sell to flatten the positi
 
 ## 4. Success criteria (all must hold)
 
-- ✓ Paper buy submitted, transitioned to WORKING, then FILLED or CANCELLED
+- ✓ Paper buy submitted, transitioned `PENDING` → `ACCEPTED`, then `FILLED` or `CANCELLED`
 - ✓ Idempotency key in audit log; duplicate submit returns 409
 - ✓ RiskSurface renders LIVE 4 cells (session N/A acceptable per P1-5 pending)
 - ✓ Position row appears in portfolio with correct mark-to-market
@@ -147,7 +169,7 @@ If 9/10 hold, demo PASS. If <9, document gap, defer to 5/5-5/9 polish.
 3. **No risk-limit edit during demo window**. Adjustments must be pre-09:00.
 4. **No browser DevTools manual fetch override**. Submit only via PaperOrderPanel UI.
 5. **No fake fill simulation**. Real PaperExecutor heartbeat must drive transitions.
-6. **No demo on 2330 lot size > 1**. First demo is 1-lot only.
+6. **No demo > 1 share** (per Q1 5/1 19:30 odd-lot correction). First demo is **1 share** with `quantity_unit: "SHARE"`. 20k TWD capital cap is the second guardrail; both must hold.
 7. **No multi-symbol demo**. Only 2330 in this runbook; other symbols deferred.
 8. **No cross-account / cross-workspace test**. Single operator account only.
 9. **Abort if any pre-open check FAILs** (§2 #1-#10). Don't run partial demo.
