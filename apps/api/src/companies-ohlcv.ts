@@ -243,18 +243,23 @@ export async function getCompanyOhlcv(
           source: r.source as "mock" | "kgi" | "tej"
         })).reverse(); // return ascending
 
+        // F1 fix (2026-05-05): If ALL rows in DB are mock-sourced, treat as if DB
+        // is empty for FinMind purposes — do not serve stale mock data as "live".
+        // Real rows (source=tej or kgi) are served normally.
+        const allMock = bars.every((b) => b.source === "mock");
+
         if (
           interval === "1d" &&
-          bars.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL &&
           params.ticker &&
           TAIWAN_TICKER_PATTERN.test(params.ticker) &&
-          process.env.FINMIND_API_TOKEN
+          process.env.FINMIND_API_TOKEN &&
+          (allMock || bars.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL)
         ) {
           try {
             const startDate = params.from ?? nDaysAgoIso(1095);
             const endDate = params.to ?? todayIso();
             const finmindBars = await getFinMindClient().getStockPriceAdj(params.ticker, startDate, endDate);
-            if (finmindBars.length > bars.length) {
+            if (finmindBars.length > 0) {
               await setCachedOhlcv(cacheKey, finmindBars);
               return finmindBars;
             }
@@ -263,8 +268,12 @@ export async function getCompanyOhlcv(
           }
         }
 
-        await setCachedOhlcv(cacheKey, bars);
-        return bars;
+        if (!allMock) {
+          // Only cache real data rows; mock rows should not block future FinMind attempts.
+          await setCachedOhlcv(cacheKey, bars);
+          return bars;
+        }
+        // allMock=true AND FinMind returned 0 — fall through to mock generator below.
       }
     } catch (e) {
       console.error("[companies-ohlcv] DB query failed, falling back to mock", e);

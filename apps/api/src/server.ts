@@ -47,7 +47,7 @@ import {
   listOrders,
   findByIdempotencyKey as findOrderByIdempotencyKey
 } from "./domain/trading/paper-ledger-db.js";
-import { isDatabaseMode, getDb, dailyThemeSummaries } from "@iuf-trading-room/db";
+import { isDatabaseMode, getDb, dailyThemeSummaries, companies, workspaces } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql } from "drizzle-orm";
 import {
   getTradingRoomRepository,
@@ -3726,8 +3726,9 @@ app.get("/internal/market/health", async (c) => {
 // Fallback: empty array when token missing (no throw).
 // Cache TTLs: OHLCV=600s / financials=3600s / chips=1800s / dividends=86400s.
 
-import { getFinMindClient } from "./data-sources/finmind-client.js";
+import { getFinMindClient, getFinMindStats } from "./data-sources/finmind-client.js";
 import { getTwseOpenApiClient } from "./data-sources/twse-openapi-client.js";
+import { runOhlcvFinmindSync } from "./jobs/ohlcv-finmind-sync.js";
 
 // Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
 function companyIdToTicker(ticker: string): string {
@@ -4336,21 +4337,12 @@ app.get("/api/v1/auth/session-probe", (c) => {
 //   - source label: "env" if token from env, "none" if absent
 // =============================================================================
 
-// Module-level in-process counters (reset on restart — intentional, this is a
-// lightweight ops diagnostic, not an authoritative metric store).
-let _finmindRequestCount = 0;
-let _finmindErrorCount = 0;
-let _finmindLastFetchTs: string | null = null;
-let _finmindLastDataset: string | null = null;
-
-// Call this from any code path that hits FinMind to update counters.
-// Exported so finmind-client.ts could call it in the future; not wired yet —
-// the diagnostics route uses static env checks for quota.
-export function recordFinMindFetch(opts: { dataset: string; ok: boolean }): void {
-  _finmindRequestCount++;
-  if (!opts.ok) _finmindErrorCount++;
-  _finmindLastFetchTs = new Date().toISOString();
-  _finmindLastDataset = opts.dataset;
+// F4 (2026-05-05): In-process counters now tracked in finmind-client.ts via
+// recordFinMindRequest() called inside _fetch(). No more stale module-level
+// counters here — diagnostics route reads getFinMindStats() from the client.
+// recordFinMindFetch kept as a no-op alias for any callers still referencing it.
+export function recordFinMindFetch(_opts: { dataset: string; ok: boolean }): void {
+  // Intentionally empty: real counting now done inside finmind-client._fetch().
 }
 
 app.get("/api/v1/diagnostics/finmind", (c) => {
@@ -4362,9 +4354,10 @@ app.get("/api/v1/diagnostics/finmind", (c) => {
   const quotaTier = tokenPresent ? (process.env.FINMIND_QUOTA_TIER ?? "free") : "none";
   const quotaLimitPerHour = quotaTier === "sponsor999" ? 99999 : quotaTier === "free" ? 600 : null;
 
-  const errorRate = _finmindRequestCount === 0
+  const stats = getFinMindStats();
+  const errorRate = stats.requestCount === 0
     ? null
-    : Math.round((_finmindErrorCount / _finmindRequestCount) * 10000) / 100;
+    : Math.round((stats.errorCount / stats.requestCount) * 10000) / 100;
 
   return c.json({
     data: {
@@ -4375,11 +4368,11 @@ app.get("/api/v1/diagnostics/finmind", (c) => {
       quotaLimitPerHour,
       redisConfigured,
       inProcess: {
-        requestCount: _finmindRequestCount,
-        errorCount: _finmindErrorCount,
+        requestCount: stats.requestCount,
+        errorCount: stats.errorCount,
         errorRatePct: errorRate,
-        lastFetchTs: _finmindLastFetchTs,
-        lastDataset: _finmindLastDataset
+        lastFetchTs: stats.lastFetchTs,
+        lastDataset: stats.lastDataset
       },
       health: tokenPresent ? "configured" : "no_token",
       note: "Counters reset on process restart. Token is NEVER returned."
@@ -4827,7 +4820,7 @@ app.get("/api/v1/companies/:symbol/ohlcv", async (c) => {
     data: bars,
     _meta: buildFinMindMeta({
       tokenPresent,
-      requestsThisProcess: _finmindRequestCount,
+      requestsThisProcess: getFinMindStats().requestCount,
       cacheTtlSeconds: 600,
       stalenessSeconds: null
     })
@@ -4861,7 +4854,7 @@ app.get("/api/v1/companies/:symbol/monthly-revenue", async (c) => {
     data: rows,
     _meta: buildFinMindMeta({
       tokenPresent,
-      requestsThisProcess: _finmindRequestCount,
+      requestsThisProcess: getFinMindStats().requestCount,
       cacheTtlSeconds: 1800,
       stalenessSeconds: null
     })
@@ -4923,7 +4916,7 @@ app.get("/api/v1/companies/:symbol/financials-v2", async (c) => {
     data: rows,
     _meta: buildFinMindMeta({
       tokenPresent,
-      requestsThisProcess: _finmindRequestCount,
+      requestsThisProcess: getFinMindStats().requestCount,
       cacheTtlSeconds: 3600,
       stalenessSeconds: null
     })
@@ -4959,7 +4952,7 @@ app.get("/api/v1/companies/:symbol/institutional-flow", async (c) => {
     data: rows,
     _meta: buildFinMindMeta({
       tokenPresent,
-      requestsThisProcess: _finmindRequestCount,
+      requestsThisProcess: getFinMindStats().requestCount,
       cacheTtlSeconds: 1800,
       stalenessSeconds: null
     })
@@ -4994,7 +4987,7 @@ app.get("/api/v1/companies/:symbol/margin", async (c) => {
     data: rows,
     _meta: buildFinMindMeta({
       tokenPresent,
-      requestsThisProcess: _finmindRequestCount,
+      requestsThisProcess: getFinMindStats().requestCount,
       cacheTtlSeconds: 1800,
       stalenessSeconds: null
     })
@@ -5027,7 +5020,7 @@ app.get("/api/v1/companies/:symbol/dividend", async (c) => {
     data: rows,
     _meta: buildFinMindMeta({
       tokenPresent,
-      requestsThisProcess: _finmindRequestCount,
+      requestsThisProcess: getFinMindStats().requestCount,
       cacheTtlSeconds: 86400,
       stalenessSeconds: null
     })
@@ -5037,6 +5030,119 @@ app.get("/api/v1/companies/:symbol/dividend", async (c) => {
 // =============================================================================
 // END P5
 // =============================================================================
+
+// =============================================================================
+// F2 + F3 (2026-05-05): ETL + daily_brief schedulers
+//
+// Root cause: runOhlcvFinmindSync() and daily_brief enqueue were never wired
+// to any periodic trigger — functions existed but nothing called them.
+// Fix: setInterval-based schedulers started once on server startup.
+// Interval: 6h for OHLCV (idempotent upsert), 23h for daily_brief (once/day).
+// =============================================================================
+
+/**
+ * F2: OHLCV daily sync scheduler.
+ * Runs runOhlcvFinmindSync for all workspace companies every 6 hours.
+ * Requires FINMIND_API_TOKEN to be set. Ignores OHLCV_SOURCE env (scheduler
+ * always tries finmind when token is present — OHLCV_SOURCE only guards the
+ * manual one-shot sync endpoint). No-op when DB unavailable.
+ */
+async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) {
+    console.log("[ohlcv-scheduler] FINMIND_API_TOKEN not set, skipping tick");
+    return;
+  }
+  const db = getDb();
+  if (!db) {
+    console.warn("[ohlcv-scheduler] DB unavailable, skipping tick");
+    return;
+  }
+  try {
+    const ws = await db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.slug, workspaceSlug)).limit(1);
+    if (ws.length === 0) {
+      console.warn(`[ohlcv-scheduler] workspace '${workspaceSlug}' not found`);
+      return;
+    }
+    const workspaceId = ws[0].id;
+    const rows = await db
+      .select({ id: companies.id, ticker: companies.ticker, workspaceId: companies.workspaceId })
+      .from(companies)
+      .where(eq(companies.workspaceId, workspaceId));
+
+    const tickers = rows
+      .filter((r) => /^\d{4}$/.test(r.ticker)) // Taiwan 4-digit only
+      .map((r) => ({ companyId: r.id, ticker: r.ticker, workspaceId: r.workspaceId }));
+
+    console.log(`[ohlcv-scheduler] Starting sync for ${tickers.length} tickers (workspace=${workspaceSlug})`);
+    const result = await runOhlcvFinmindSync(tickers, {
+      startDate: (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - 10); return d.toISOString().slice(0, 10); })(),
+      endDate: new Date().toISOString().slice(0, 10),
+      forceFinmind: true  // bypass OHLCV_SOURCE=mock env check
+    });
+    console.log(`[ohlcv-scheduler] Done: success=${result.tickersSuccess} failed=${result.tickersFailed} durationMs=${result.durationMs}`);
+  } catch (err) {
+    console.error("[ohlcv-scheduler] Tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * F3: daily_brief dispatcher scheduler.
+ * Enqueues one OpenAlice daily_brief job per day (23h interval, idempotent via date).
+ * No-op when DB unavailable or workspace missing.
+ */
+async function runDailyBriefDispatcherTick(workspaceSlug: string): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    console.warn("[daily-brief-dispatcher] DB unavailable, skipping tick");
+    return;
+  }
+  const todayStr = new Date().toISOString().slice(0, 10);
+  try {
+    const job = await enqueueOpenAliceJob({
+      workspaceSlug,
+      taskType: "daily_brief",
+      schemaName: "daily_brief_v1",
+      instructions: `Generate the daily market intelligence brief for ${todayStr}. Summarize key themes, notable signals, and actionable insights from today's market data.`,
+      contextRefs: [{ type: "date", id: todayStr }],
+      parameters: { targetDate: todayStr, autoDispatched: true }
+    });
+    console.log(`[daily-brief-dispatcher] Enqueued daily_brief for ${todayStr}: jobId=${job.jobId}`);
+  } catch (err) {
+    console.error("[daily-brief-dispatcher] Enqueue error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * Start both schedulers. Called once after server is ready.
+ * OHLCV: every 6 hours. Daily brief: every 23 hours (drift-safe).
+ * Both run an immediate first tick on startup to backfill any missed runs.
+ */
+function startSchedulers(workspaceSlug: string): void {
+  const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+  const TWENTY_THREE_HOURS_MS = 23 * 60 * 60 * 1000;
+
+  // F2: OHLCV sync — immediate first run then every 6h
+  runOhlcvSchedulerTick(workspaceSlug).catch((e) =>
+    console.error("[ohlcv-scheduler] Initial tick failed:", e)
+  );
+  setInterval(() => {
+    runOhlcvSchedulerTick(workspaceSlug).catch((e) =>
+      console.error("[ohlcv-scheduler] Interval tick failed:", e)
+    );
+  }, SIX_HOURS_MS);
+
+  // F3: daily_brief dispatcher — immediate first run then every 23h
+  runDailyBriefDispatcherTick(workspaceSlug).catch((e) =>
+    console.error("[daily-brief-dispatcher] Initial tick failed:", e)
+  );
+  setInterval(() => {
+    runDailyBriefDispatcherTick(workspaceSlug).catch((e) =>
+      console.error("[daily-brief-dispatcher] Interval tick failed:", e)
+    );
+  }, TWENTY_THREE_HOURS_MS);
+
+  console.log("[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) started");
+}
 
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -5053,5 +5159,7 @@ serve(
     await initRiskStore(defaultWorkspace);
     console.log(`[risk-store] Hydrated workspace "${defaultWorkspace}" from persistent store.`);
     await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
+    // F2 + F3: Start ETL schedulers after server is ready
+    startSchedulers(defaultWorkspace);
   }
 );
