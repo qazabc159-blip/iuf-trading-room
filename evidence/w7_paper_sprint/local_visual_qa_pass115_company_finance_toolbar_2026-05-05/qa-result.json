@@ -1,0 +1,714 @@
+{
+  "generatedAt": "2026-05-05T03:23:00.581Z",
+  "results": [
+    {
+      "name": "desktop1365",
+      "width": 1365,
+      "height": 1200,
+      "status": 200,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "initial": {
+        "url": "http://127.0.0.1:3155/companies/2330",
+        "title": "IUF 交易戰情室",
+        "bodyWidth": 1365,
+        "viewportWidth": 1365,
+        "overflowX": false,
+        "badCharCount": 0,
+        "hasBadChars": false,
+        "elementOverflows": [],
+        "narrowStacks": [],
+        "tabCount": 7,
+        "tabTexts": [
+          "財報24 筆",
+          "月營收36 筆",
+          "資產負債1 筆",
+          "現金流1 筆",
+          "估值80 筆",
+          "市值80 筆",
+          "股利8 筆"
+        ],
+        "activeTab": null,
+        "financePanel": {
+          "x": 315,
+          "y": 2483,
+          "width": 938,
+          "height": 666
+        },
+        "toolbar": {
+          "x": 342,
+          "y": 2567,
+          "width": 884,
+          "height": 103
+        },
+        "tabs": {
+          "x": 342,
+          "y": 2679,
+          "width": 884,
+          "height": 42
+        },
+        "tableShell": {
+          "x": 342,
+          "y": 2730,
+          "width": 884,
+          "height": 396
+        },
+        "pagination": {
+          "x": 342,
+          "y": 3080,
+          "width": 884,
+          "height": 45
+        }
+      },
+      "clickResults": [
+        {
+          "idx": 4,
+          "metrics": {
+            "url": "http://127.0.0.1:3155/companies/2330",
+            "title": "IUF 交易戰情室",
+            "bodyWidth": 1365,
+            "viewportWidth": 1365,
+            "overflowX": false,
+            "badCharCount": 0,
+            "hasBadChars": false,
+            "elementOverflows": [],
+            "narrowStacks": [],
+            "tabCount": 7,
+            "tabTexts": [
+              "財報24 筆",
+              "月營收36 筆",
+              "資產負債1 筆",
+              "現金流1 筆",
+              "估值80 筆",
+              "市值80 筆",
+              "股利8 筆"
+            ],
+            "activeTab": null,
+            "financePanel": {
+              "x": 315,
+              "y": 387,
+              "width": 938,
+              "height": 666
+            },
+            "toolbar": {
+              "x": 342,
+              "y": 471,
+              "width": 884,
+              "height": 103
+            },
+            "tabs": {
+              "x": 342,
+              "y": 583,
+              "width": 884,
+              "height": 42
+            },
+            "tableShell": {
+              "x": 342,
+              "y": 634,
+              "width": 884,
+              "height": 396
+            },
+            "pagination": {
+              "x": 342,
+              "y": 984,
+              "width": 884,
+              "height": 45
+            }
+          }
+        },
+        {
+          "idx": 5,
+          "metrics": {
+            "url": "http://127.0.0.1:3155/companies/2330",
+            "title": "IUF 交易戰情室",
+            "bodyWidth": 1365,
+            "viewportWidth": 1365,
+            "overflowX": false,
+            "badCharCount": 0,
+            "hasBadChars": false,
+            "elementOverflows": [],
+            "narrowStacks": [],
+            "tabCount": 7,
+            "tabTexts": [
+              "財報24 筆",
+              "月營收36 筆",
+              "資產負債1 筆",
+              "現金流1 筆",
+              "估值80 筆",
+              "市值80 筆",
+              "股利8 筆"
+            ],
+            "activeTab": null,
+            "financePanel": {
+              "x": 315,
+              "y": 387,
+              "width": 938,
+              "height": 666
+            },
+            "toolbar": {
+              "x": 342,
+              "y": 471,
+              "width": 884,
+              "height": 103
+            },
+            "tabs": {
+              "x": 342,
+              "y": 583,
+              "width": 884,
+              "height": 42
+            },
+            "tableShell": {
+              "x": 342,
+              "y": 634,
+              "width": 884,
+              "height": 396
+            },
+            "pagination": {
+              "x": 342,
+              "y": 984,
+              "width": 884,
+              "height": 45
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "mobile390",
+      "width": 390,
+      "height": 1200,
+      "status": 200,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "initial": {
+        "url": "http://127.0.0.1:3155/companies/2330",
+        "title": "IUF 交易戰情室",
+        "bodyWidth": 390,
+        "viewportWidth": 390,
+        "overflowX": false,
+        "badCharCount": 0,
+        "hasBadChars": false,
+        "elementOverflows": [
+          {
+            "tag": "A",
+            "className": "nav-link",
+            "text": "公司板台股公司池",
+            "rect": {
+              "left": 282,
+              "right": 408,
+              "width": 126
+            }
+          },
+          {
+            "tag": "SPAN",
+            "className": "",
+            "text": "公司板台股公司池",
+            "rect": {
+              "left": 332,
+              "right": 396,
+              "width": 64
+            }
+          },
+          {
+            "tag": "SPAN",
+            "className": "nav-label",
+            "text": "公司板",
+            "rect": {
+              "left": 332,
+              "right": 396,
+              "width": 64
+            }
+          },
+          {
+            "tag": "A",
+            "className": "nav-link",
+            "text": "策略想法候選清單",
+            "rect": {
+              "left": 418,
+              "right": 544,
+              "width": 126
+            }
+          },
+          {
+            "tag": "SPAN",
+            "className": "nav-icon nav-icon-ideas",
+            "text": "",
+            "rect": {
+              "left": 431,
+              "right": 457,
+              "width": 26
+            }
+          },
+          {
+            "tag": "SPAN",
+            "className": "",
+            "text": "策略想法候選清單",
+            "rect": {
+              "left": 468,
+              "right": 532,
+              "width": 64
+            }
+          },
+          {
+            "tag": "SPAN",
+            "className": "nav-label",
+            "text": "策略想法",
+            "rect": {
+              "left": 468,
+              "right": 532,
+              "width": 64
+            }
+          },
+          {
+            "tag": "A",
+            "className": "nav-link",
+            "text": "策略批次批次紀錄",
+            "rect": {
+              "left": 554,
+              "right": 680,
+              "width": 126
+            }
+          },
+          {
+            "tag": "SPAN",
+            "className": "nav-icon nav-icon-runs",
+            "text": "",
+            "rect": {
+              "left": 567,
+              "right": 593,
+              "width": 26
+            }
+          },
+          {
+            "tag": "SPAN",
+            "className": "",
+            "text": "策略批次批次紀錄",
+            "rect": {
+              "left": 604,
+              "right": 668,
+              "width": 64
+            }
+          },
+          {
+            "tag": "SPAN",
+            "className": "nav-label",
+            "text": "策略批次",
+            "rect": {
+              "left": 604,
+              "right": 668,
+              "width": 64
+            }
+          },
+          {
+            "tag": "A",
+            "className": "nav-link",
+            "text": "模擬交易室委託與部位",
+            "rect": {
+              "left": 690,
+              "right": 816,
+              "width": 126
+            }
+          }
+        ],
+        "narrowStacks": [],
+        "tabCount": 7,
+        "tabTexts": [
+          "財報24 筆",
+          "月營收36 筆",
+          "資產負債1 筆",
+          "現金流1 筆",
+          "估值80 筆",
+          "市值80 筆",
+          "股利8 筆"
+        ],
+        "activeTab": null,
+        "financePanel": {
+          "x": 18,
+          "y": 5132,
+          "width": 354,
+          "height": 743
+        },
+        "toolbar": {
+          "x": 36,
+          "y": 5245,
+          "width": 318,
+          "height": 148
+        },
+        "tabs": {
+          "x": 34,
+          "y": 5402,
+          "width": 322,
+          "height": 42
+        },
+        "tableShell": {
+          "x": 36,
+          "y": 5453,
+          "width": 318,
+          "height": 398
+        },
+        "pagination": {
+          "x": 36,
+          "y": 5805,
+          "width": 318,
+          "height": 45
+        }
+      },
+      "clickResults": [
+        {
+          "idx": 4,
+          "metrics": {
+            "url": "http://127.0.0.1:3155/companies/2330",
+            "title": "IUF 交易戰情室",
+            "bodyWidth": 390,
+            "viewportWidth": 390,
+            "overflowX": false,
+            "badCharCount": 0,
+            "hasBadChars": false,
+            "elementOverflows": [
+              {
+                "tag": "A",
+                "className": "nav-link",
+                "text": "公司板台股公司池",
+                "rect": {
+                  "left": 282,
+                  "right": 408,
+                  "width": 126
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "",
+                "text": "公司板台股公司池",
+                "rect": {
+                  "left": 332,
+                  "right": 396,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-label",
+                "text": "公司板",
+                "rect": {
+                  "left": 332,
+                  "right": 396,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "A",
+                "className": "nav-link",
+                "text": "策略想法候選清單",
+                "rect": {
+                  "left": 418,
+                  "right": 544,
+                  "width": 126
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-icon nav-icon-ideas",
+                "text": "",
+                "rect": {
+                  "left": 431,
+                  "right": 457,
+                  "width": 26
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "",
+                "text": "策略想法候選清單",
+                "rect": {
+                  "left": 468,
+                  "right": 532,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-label",
+                "text": "策略想法",
+                "rect": {
+                  "left": 468,
+                  "right": 532,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "A",
+                "className": "nav-link",
+                "text": "策略批次批次紀錄",
+                "rect": {
+                  "left": 554,
+                  "right": 680,
+                  "width": 126
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-icon nav-icon-runs",
+                "text": "",
+                "rect": {
+                  "left": 567,
+                  "right": 593,
+                  "width": 26
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "",
+                "text": "策略批次批次紀錄",
+                "rect": {
+                  "left": 604,
+                  "right": 668,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-label",
+                "text": "策略批次",
+                "rect": {
+                  "left": 604,
+                  "right": 668,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "A",
+                "className": "nav-link",
+                "text": "模擬交易室委託與部位",
+                "rect": {
+                  "left": 690,
+                  "right": 816,
+                  "width": 126
+                }
+              }
+            ],
+            "narrowStacks": [],
+            "tabCount": 7,
+            "tabTexts": [
+              "財報24 筆",
+              "月營收36 筆",
+              "資產負債1 筆",
+              "現金流1 筆",
+              "估值80 筆",
+              "市值80 筆",
+              "股利8 筆"
+            ],
+            "activeTab": null,
+            "financePanel": {
+              "x": 18,
+              "y": 313,
+              "width": 354,
+              "height": 743
+            },
+            "toolbar": {
+              "x": 36,
+              "y": 426,
+              "width": 318,
+              "height": 148
+            },
+            "tabs": {
+              "x": 34,
+              "y": 583,
+              "width": 322,
+              "height": 42
+            },
+            "tableShell": {
+              "x": 36,
+              "y": 634,
+              "width": 318,
+              "height": 398
+            },
+            "pagination": {
+              "x": 36,
+              "y": 986,
+              "width": 318,
+              "height": 45
+            }
+          }
+        },
+        {
+          "idx": 5,
+          "metrics": {
+            "url": "http://127.0.0.1:3155/companies/2330",
+            "title": "IUF 交易戰情室",
+            "bodyWidth": 390,
+            "viewportWidth": 390,
+            "overflowX": false,
+            "badCharCount": 0,
+            "hasBadChars": false,
+            "elementOverflows": [
+              {
+                "tag": "A",
+                "className": "nav-link",
+                "text": "公司板台股公司池",
+                "rect": {
+                  "left": 282,
+                  "right": 408,
+                  "width": 126
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "",
+                "text": "公司板台股公司池",
+                "rect": {
+                  "left": 332,
+                  "right": 396,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-label",
+                "text": "公司板",
+                "rect": {
+                  "left": 332,
+                  "right": 396,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "A",
+                "className": "nav-link",
+                "text": "策略想法候選清單",
+                "rect": {
+                  "left": 418,
+                  "right": 544,
+                  "width": 126
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-icon nav-icon-ideas",
+                "text": "",
+                "rect": {
+                  "left": 431,
+                  "right": 457,
+                  "width": 26
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "",
+                "text": "策略想法候選清單",
+                "rect": {
+                  "left": 468,
+                  "right": 532,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-label",
+                "text": "策略想法",
+                "rect": {
+                  "left": 468,
+                  "right": 532,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "A",
+                "className": "nav-link",
+                "text": "策略批次批次紀錄",
+                "rect": {
+                  "left": 554,
+                  "right": 680,
+                  "width": 126
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-icon nav-icon-runs",
+                "text": "",
+                "rect": {
+                  "left": 567,
+                  "right": 593,
+                  "width": 26
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "",
+                "text": "策略批次批次紀錄",
+                "rect": {
+                  "left": 604,
+                  "right": 668,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "SPAN",
+                "className": "nav-label",
+                "text": "策略批次",
+                "rect": {
+                  "left": 604,
+                  "right": 668,
+                  "width": 64
+                }
+              },
+              {
+                "tag": "A",
+                "className": "nav-link",
+                "text": "模擬交易室委託與部位",
+                "rect": {
+                  "left": 690,
+                  "right": 816,
+                  "width": 126
+                }
+              }
+            ],
+            "narrowStacks": [],
+            "tabCount": 7,
+            "tabTexts": [
+              "財報24 筆",
+              "月營收36 筆",
+              "資產負債1 筆",
+              "現金流1 筆",
+              "估值80 筆",
+              "市值80 筆",
+              "股利8 筆"
+            ],
+            "activeTab": null,
+            "financePanel": {
+              "x": 18,
+              "y": 313,
+              "width": 354,
+              "height": 743
+            },
+            "toolbar": {
+              "x": 36,
+              "y": 426,
+              "width": 318,
+              "height": 148
+            },
+            "tabs": {
+              "x": 34,
+              "y": 583,
+              "width": 322,
+              "height": 42
+            },
+            "tableShell": {
+              "x": 36,
+              "y": 634,
+              "width": 318,
+              "height": 398
+            },
+            "pagination": {
+              "x": 36,
+              "y": 986,
+              "width": 318,
+              "height": 45
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

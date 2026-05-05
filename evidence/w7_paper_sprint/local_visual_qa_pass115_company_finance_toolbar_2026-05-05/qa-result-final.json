@@ -1,0 +1,246 @@
+{
+  "generatedAt": "2026-05-05T03:30:48.284Z",
+  "note": "Expected internal scroll regions (mobile sidebar, finance tabs, finance table scroll) are excluded from content overflow counts; document overflow is still checked.",
+  "summary": [
+    {
+      "name": "desktop1365",
+      "status": 200,
+      "consoleErrors": 0,
+      "pageErrors": 0,
+      "failedResponses": 0,
+      "overflowX": false,
+      "badChars": 0,
+      "contentOverflows": 0,
+      "narrowStacks": 0,
+      "tabsHeight": 42,
+      "toolbarHeight": 103,
+      "panelHeight": 666,
+      "tableHeight": 396,
+      "clicked": [
+        {
+          "idx": 4,
+          "overflowX": false,
+          "badChars": 0,
+          "contentOverflows": 0,
+          "narrowStacks": 0,
+          "tabsHeight": 42,
+          "tableHeight": 396
+        },
+        {
+          "idx": 5,
+          "overflowX": false,
+          "badChars": 0,
+          "contentOverflows": 0,
+          "narrowStacks": 0,
+          "tabsHeight": 42,
+          "tableHeight": 396
+        }
+      ]
+    },
+    {
+      "name": "mobile390",
+      "status": 200,
+      "consoleErrors": 0,
+      "pageErrors": 0,
+      "failedResponses": 0,
+      "overflowX": false,
+      "badChars": 0,
+      "contentOverflows": 0,
+      "narrowStacks": 0,
+      "tabsHeight": 42,
+      "toolbarHeight": 148,
+      "panelHeight": 743,
+      "tableHeight": 398,
+      "clicked": [
+        {
+          "idx": 4,
+          "overflowX": false,
+          "badChars": 0,
+          "contentOverflows": 0,
+          "narrowStacks": 0,
+          "tabsHeight": 42,
+          "tableHeight": 398
+        },
+        {
+          "idx": 5,
+          "overflowX": false,
+          "badChars": 0,
+          "contentOverflows": 0,
+          "narrowStacks": 0,
+          "tabsHeight": 42,
+          "tableHeight": 398
+        }
+      ]
+    }
+  ],
+  "results": [
+    {
+      "name": "desktop1365",
+      "status": 200,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "initial": {
+        "overflowX": false,
+        "badCharCount": 0,
+        "contentOverflows": 0,
+        "overflowSamples": [],
+        "narrowStacks": 0,
+        "tabs": {
+          "width": 884,
+          "height": 42
+        },
+        "toolbar": {
+          "width": 884,
+          "height": 103
+        },
+        "panel": {
+          "width": 938,
+          "height": 666
+        },
+        "tableShell": {
+          "width": 884,
+          "height": 396
+        }
+      },
+      "clicked": [
+        {
+          "idx": 4,
+          "metrics": {
+            "overflowX": false,
+            "badCharCount": 0,
+            "contentOverflows": 0,
+            "overflowSamples": [],
+            "narrowStacks": 0,
+            "tabs": {
+              "width": 884,
+              "height": 42
+            },
+            "toolbar": {
+              "width": 884,
+              "height": 103
+            },
+            "panel": {
+              "width": 938,
+              "height": 666
+            },
+            "tableShell": {
+              "width": 884,
+              "height": 396
+            }
+          }
+        },
+        {
+          "idx": 5,
+          "metrics": {
+            "overflowX": false,
+            "badCharCount": 0,
+            "contentOverflows": 0,
+            "overflowSamples": [],
+            "narrowStacks": 0,
+            "tabs": {
+              "width": 884,
+              "height": 42
+            },
+            "toolbar": {
+              "width": 884,
+              "height": 103
+            },
+            "panel": {
+              "width": 938,
+              "height": 666
+            },
+            "tableShell": {
+              "width": 884,
+              "height": 396
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "mobile390",
+      "status": 200,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedResponses": [],
+      "initial": {
+        "overflowX": false,
+        "badCharCount": 0,
+        "contentOverflows": 0,
+        "overflowSamples": [],
+        "narrowStacks": 0,
+        "tabs": {
+          "width": 322,
+          "height": 42
+        },
+        "toolbar": {
+          "width": 318,
+          "height": 148
+        },
+        "panel": {
+          "width": 354,
+          "height": 743
+        },
+        "tableShell": {
+          "width": 318,
+          "height": 398
+        }
+      },
+      "clicked": [
+        {
+          "idx": 4,
+          "metrics": {
+            "overflowX": false,
+            "badCharCount": 0,
+            "contentOverflows": 0,
+            "overflowSamples": [],
+            "narrowStacks": 0,
+            "tabs": {
+              "width": 322,
+              "height": 42
+            },
+            "toolbar": {
+              "width": 318,
+              "height": 148
+            },
+            "panel": {
+              "width": 354,
+              "height": 743
+            },
+            "tableShell": {
+              "width": 318,
+              "height": 398
+            }
+          }
+        },
+        {
+          "idx": 5,
+          "metrics": {
+            "overflowX": false,
+            "badCharCount": 0,
+            "contentOverflows": 0,
+            "overflowSamples": [],
+            "narrowStacks": 0,
+            "tabs": {
+              "width": 322,
+              "height": 42
+            },
+            "toolbar": {
+              "width": 318,
+              "height": 148
+            },
+            "panel": {
+              "width": 354,
+              "height": 743
+            },
+            "tableShell": {
+              "width": 318,
+              "height": 398
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
