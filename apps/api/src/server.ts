@@ -4500,17 +4500,7 @@ app.post("/api/v1/paper/submit", async (c) => {
 // Each fill includes orderId, symbol, side, fillQty, fillPrice, fillTime.
 app.get("/api/v1/paper/fills", async (c) => {
   const session = c.get("session");
-  let orders;
-  try {
-    orders = await listOrders(session.user.id, { status: "FILLED" });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const stack = e instanceof Error ? (e.stack ?? "").split("\n").slice(0, 4).join(" | ") : "";
-    console.error("[paper/fills] listOrders threw:", msg, stack);
-    // Diagnostic: surface error in response so Elva can read root-cause without Railway log access.
-    // Remove after root-cause confirmed.
-    return c.json({ error: "list_orders_failed", detail: msg, stack }, 500);
-  }
+  const orders = await listOrders(session.user.id, { status: "FILLED" });
   const fills = orders
     .filter((o) => o.fill !== null)
     .map((o) => ({
@@ -4537,17 +4527,7 @@ app.get("/api/v1/paper/fills", async (c) => {
 // Returns 200 + { data: PortfolioPosition[] }.
 app.get("/api/v1/paper/portfolio", async (c) => {
   const session = c.get("session");
-  let orders;
-  try {
-    orders = await listOrders(session.user.id, { status: "FILLED" });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const stack = e instanceof Error ? (e.stack ?? "").split("\n").slice(0, 4).join(" | ") : "";
-    console.error("[paper/portfolio] listOrders threw:", msg, stack);
-    // Diagnostic: surface error in response so Elva can read root-cause without Railway log access.
-    // Remove after root-cause confirmed.
-    return c.json({ error: "list_orders_failed", detail: msg, stack }, 500);
-  }
+  const orders = await listOrders(session.user.id, { status: "FILLED" });
 
   // Aggregate per symbol
   const positions = new Map<string, {
