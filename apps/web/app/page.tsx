@@ -7,6 +7,7 @@ import {
   getCompanyAnnouncements,
   getFinMindStatus,
   getMarketDataOverview,
+  getOpenAliceObservability,
   getSignals,
   getStrategyIdeas,
   getThemes,
@@ -111,6 +112,17 @@ function formatDateTime(value: string | null | undefined) {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+function formatAge(value: string | null | undefined) {
+  if (!value) return "--";
+  const time = Date.parse(value);
+  if (Number.isNaN(time)) return "--";
+  const minutes = Math.max(0, Math.floor((Date.now() - time) / 60000));
+  if (minutes < 60) return `${minutes} 分鐘前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours} 小時前`;
+  return `${Math.floor(hours / 24)} 天前`;
 }
 
 function signed(value: number | null | undefined, digits = 2) {
@@ -694,8 +706,40 @@ async function loadFinMindStatus(): Promise<LoadState<FinMindSourceStatus | null
   }
 }
 
+async function loadOpenAliceStatus(): Promise<LoadState<Awaited<ReturnType<typeof getOpenAliceObservability>>["data"] | null>> {
+  const source = "OpenAlice";
+  const updatedAt = new Date().toISOString();
+  try {
+    const res = await getOpenAliceObservability();
+    const data = res.data;
+    if (data.workerStatus === "healthy" && data.sweepStatus === "healthy") {
+      return {
+        state: "LIVE",
+        data,
+        updatedAt: data.workerHeartbeatAt || data.lastSweepAt || updatedAt,
+        source,
+      };
+    }
+    return {
+      state: "BLOCKED",
+      data,
+      updatedAt: data.workerHeartbeatAt || data.lastSweepAt || updatedAt,
+      source,
+      reason: `OpenAlice worker=${data.workerStatus}、sweep=${data.sweepStatus}；最近心跳 ${formatAge(data.workerHeartbeatAt)}。舊簡報或舊摘要不能當成今日資料。`,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      data: null,
+      updatedAt,
+      source,
+      reason: friendlyDataError(error, "OpenAlice 觀測端點暫時無法讀取。"),
+    };
+  }
+}
+
 export default async function DashboardPage() {
-  const [overview, themes, companies, ideas, runs, signals, watchlist, finmind] = await Promise.all([
+  const [overview, themes, companies, ideas, runs, signals, watchlist, finmind, openalice] = await Promise.all([
     load("市場總覽", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 5 })).data, (value) => value === null || value.quotes.total === 0),
     load("主題資料", [], async () => (await getThemes()).data, (value) => value.length === 0),
     load("公司資料", [], async () => (await getCompanies()).data, (value) => value.length === 0),
@@ -704,6 +748,7 @@ export default async function DashboardPage() {
     load("訊號證據", [], async () => (await getSignals()).data, (value) => value.length === 0),
     loadWatchlist(),
     loadFinMindStatus(),
+    loadOpenAliceStatus(),
   ]);
   const news = await loadNews(companies, ideas);
   const marketOverview = overview.state === "LIVE" && overview.data?.generatedAt
@@ -716,6 +761,7 @@ export default async function DashboardPage() {
     `訊號 ${signals.state === "LIVE" ? signals.data.length : stateText(signals.state)}`,
     `重大訊息 ${news.state === "LIVE" ? news.data.length : stateText(news.state)}`,
     `FinMind ${stateText(finmind.state)}`,
+    `OpenAlice ${stateText(openalice.state)}`,
   ].join(" / ");
 
   const heroStats = [
@@ -724,6 +770,7 @@ export default async function DashboardPage() {
     { label: "策略想法", value: ideas.state === "LIVE" && ideas.data ? String(ideas.data.summary.total) : stateText(ideas.state), tone: ideas.state === "LIVE" ? "gold" : "muted" },
     { label: "訊號", value: signals.state === "LIVE" ? String(signals.data.filter((signal) => !isInternalTestSignal(signal)).length) : stateText(signals.state), tone: signals.state === "LIVE" ? "gold" : "muted" },
     { label: "FinMind", value: stateText(finmind.state), tone: finmind.state === "LIVE" ? "status-ok" : "status-bad" },
+    { label: "OpenAlice", value: stateText(openalice.state), tone: openalice.state === "LIVE" ? "status-ok" : "status-bad" },
   ];
   const sourceStatuses: DashboardSourceStatus[] = [
     {
@@ -733,6 +780,14 @@ export default async function DashboardPage() {
       updatedAt: finmind.updatedAt,
       reason: sourceReason(finmind),
       next: "FinMind 正常後會支援公司頁 K 線、財報、法人、融資券與股權資料。",
+    },
+    {
+      label: "OpenAlice",
+      state: openalice.state,
+      source: openalice.source,
+      updatedAt: openalice.updatedAt,
+      reason: sourceReason(openalice),
+      next: "OpenAlice 正常後才顯示今日 AI 摘要；過期摘要必須紅色揭露。",
     },
     {
       label: "市場總覽",

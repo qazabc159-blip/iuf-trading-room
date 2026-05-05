@@ -8,9 +8,9 @@ export const dynamic = "force-dynamic";
 
 type OpsSnapshot = Awaited<ReturnType<typeof getOpsSnapshot>>["data"];
 type LoadState =
-  | { state: "LIVE"; data: OpsSnapshot | null; updatedAt: string; source: string }
-  | { state: "EMPTY"; data: OpsSnapshot | null; updatedAt: string; source: string; reason: string }
-  | { state: "BLOCKED"; data: OpsSnapshot | null; updatedAt: string; source: string; reason: string };
+  | { state: "LIVE"; data: OpsSnapshot | null; updatedAt: string; source: string; warnings: string[] }
+  | { state: "EMPTY"; data: OpsSnapshot | null; updatedAt: string; source: string; reason: string; warnings: string[] }
+  | { state: "BLOCKED"; data: OpsSnapshot | null; updatedAt: string; source: string; reason: string; warnings: string[] };
 
 async function loadOps(): Promise<LoadState> {
   const source = "營運快照";
@@ -19,6 +19,17 @@ async function loadOps(): Promise<LoadState> {
   try {
     const envelope = await getOpsSnapshot({ auditHours: 24, recentLimit: 12 });
     const data = envelope.data;
+    const obs = data.openAlice.observability;
+    const warnings: string[] = [];
+    if (obs.workerStatus !== "healthy") {
+      warnings.push(`OpenAlice worker 目前是 ${healthLabel(obs.workerStatus)}，每日簡報與 AI 摘要可能停在舊資料。`);
+    }
+    if (obs.sweepStatus !== "healthy") {
+      warnings.push(`OpenAlice 掃描目前是 ${healthLabel(obs.sweepStatus)}，佇列清理與重派可能延遲。`);
+    }
+    if (obs.metrics.staleRunningJobs > 0) {
+      warnings.push(`有 ${obs.metrics.staleRunningJobs} 個過期執行中的 OpenAlice 工作，需要後端/runner 清理。`);
+    }
     const hasRows = data.stats.themes + data.stats.companies + data.audit.total + data.openAlice.queue.totalJobs > 0;
     if (!hasRows) {
       return {
@@ -27,6 +38,7 @@ async function loadOps(): Promise<LoadState> {
         updatedAt: data.generatedAt || updatedAt,
         source,
         reason: "營運快照目前沒有統計、稽核列或佇列工作。",
+        warnings,
       };
     }
     return {
@@ -34,6 +46,7 @@ async function loadOps(): Promise<LoadState> {
       data,
       updatedAt: data.generatedAt || updatedAt,
       source,
+      warnings,
     };
   } catch (error) {
     return {
@@ -42,6 +55,7 @@ async function loadOps(): Promise<LoadState> {
       updatedAt,
       source,
       reason: friendlyDataError(error, "營運監控暫時無法讀取。"),
+      warnings: [],
     };
   }
 }
@@ -102,6 +116,29 @@ function severityTone(value: string | undefined) {
   if (value === "warning") return "gold";
   if (value === "success") return "status-ok";
   return "muted";
+}
+
+function rowAgeHours(value: string | null | undefined) {
+  if (!value) return null;
+  const time = Date.parse(value);
+  if (Number.isNaN(time)) return null;
+  return Math.max(0, Math.floor((Date.now() - time) / 3600000));
+}
+
+function rowFreshnessTone(value: string | null | undefined) {
+  const age = rowAgeHours(value);
+  if (age === null) return "gold";
+  if (age > 72) return "status-bad";
+  if (age > 24) return "gold";
+  return "status-ok";
+}
+
+function rowFreshnessLabel(value: string | null | undefined) {
+  const age = rowAgeHours(value);
+  if (age === null) return "待確認";
+  if (age > 72) return "過期";
+  if (age > 24) return "偏舊";
+  return "新鮮";
 }
 
 function opsModeLabel(value: string | null | undefined) {
@@ -193,6 +230,19 @@ function SourceLine({ result }: { result: LoadState }) {
   );
 }
 
+function WarningList({ warnings }: { warnings: string[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className="ops-warning-list">
+      {warnings.map((warning) => (
+        <div className="terminal-note" key={warning}>
+          <span className="tg status-bad">注意</span> {warning}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function EmptyOrBlocked({ result }: { result: LoadState }) {
   if (result.state === "LIVE") return null;
   return (
@@ -234,6 +284,7 @@ export default async function OpsPage() {
         <div>
           <Panel code="OPS-SRC" title="營運快照" sub="資料來源與更新狀態" right={stateLabel(result.state)}>
             <SourceLine result={result} />
+            <WarningList warnings={result.warnings} />
             <EmptyOrBlocked result={result} />
             {data && (
               <div style={{ border: "1px solid var(--night-rule-strong)" }}>
@@ -286,9 +337,10 @@ export default async function OpsPage() {
             {!data && <div className="terminal-note"><span className="tg down">暫停</span> 營運快照無法讀取時，最新資料列先隱藏。</div>}
             {data && Object.entries(data.latest).flatMap(([bucket, rows]) =>
               rows.slice(0, 3).map((row) => (
-                <div className="row telex-row" style={{ gridTemplateColumns: "112px 82px 1fr" }} key={`${bucket}-${row.id}`}>
+                <div className="row telex-row" style={{ gridTemplateColumns: "112px 82px 72px 1fr" }} key={`${bucket}-${row.id}`}>
                   <span className="tg soft">{formatDateTime(row.timestamp)}</span>
                   <span className="tg gold">{latestBucketLabel(bucket)}</span>
+                  <span className={`tg ${rowFreshnessTone(row.timestamp)}`}>{rowFreshnessLabel(row.timestamp)}</span>
                   <span className="tg" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {latestRowText(row.label, row.subtitle)}
                   </span>

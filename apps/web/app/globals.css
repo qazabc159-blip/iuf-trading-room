@@ -2802,6 +2802,26 @@ button { font: inherit; }
   font: 900 30px/1.15 var(--sans-tc);
 }
 
+.brief-ops-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(18px, 2vw, 28px);
+  margin: 0 0 24px;
+}
+
+.brief-ops-strip .panel,
+.brief-ops-strip > * {
+  min-width: 0;
+}
+
+.brief-stale-warning {
+  margin: 0 0 18px;
+  border-color: rgba(255, 82, 105, 0.42);
+  background:
+    linear-gradient(90deg, rgba(255, 82, 105, 0.11), transparent 62%),
+    rgba(18, 4, 7, 0.48);
+}
+
 .brief-empty-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 0.72fr) minmax(300px, 0.72fr);
@@ -5907,6 +5927,12 @@ body:has(.login-route) > div {
   word-break: keep-all;
 }
 
+.ops-warning-list {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
 @media (max-width: 760px) {
   .daily-brief-sheet,
   .daily-brief-history,
@@ -5916,6 +5942,10 @@ body:has(.login-route) > div {
   }
 
   .daily-brief-body {
+    grid-template-columns: 1fr;
+  }
+
+  .brief-ops-strip {
     grid-template-columns: 1fr;
   }
 
