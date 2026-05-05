@@ -218,7 +218,7 @@ async function loadQuoteKline(symbol: string): Promise<KlineState> {
     let kbarReason = "FinMind 分 K 尚未回傳資料。";
     let resolvedKbarDate = kbarDate;
     try {
-      const kbar = (await getCompanyKBar(company.id, kbarDate)).data;
+      const kbar = (await getCompanyKBar(company.id, kbarDate, { days: 5 })).data;
       kbarRows = kbar.rows;
       kbarState = kbar.state;
       kbarReason = kbar.reason ?? (kbar.rows.length > 0 ? "已取得 FinMind Sponsor 分 K。" : "FinMind 分 K 尚未回傳資料。");

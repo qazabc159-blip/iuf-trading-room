@@ -372,6 +372,7 @@ export function OhlcvCandlestickChart({
     : null;
   const highInView = chartBars.length ? Math.max(...chartBars.map((bar) => bar.high)) : null;
   const lowInView = chartBars.length ? Math.min(...chartBars.map((bar) => bar.low)) : null;
+  const kbarTradingDays = new Set(kbarRows.map((row) => row.date).filter(Boolean)).size;
   const emptyReason =
     isIntraday
       ? kbarState === "BLOCKED"
@@ -479,7 +480,7 @@ export function OhlcvCandlestickChart({
         <span className={`tg ${stateToneClass(kbarState)}`}>{stateLabel(kbarState)}</span>
         <span className="tg soft">
           {kbarState === "LIVE"
-            ? `FinMind Sponsor ${kbarDate ?? ""} 已回傳 ${kbarRows.length.toLocaleString("zh-TW")} 根 1 分 K，可彙整 1 / 5 / 15 / 60 分。`
+            ? `FinMind Sponsor ${kbarDate ?? ""} 已回傳 ${kbarRows.length.toLocaleString("zh-TW")} 根 1 分 K${kbarTradingDays > 1 ? ` / ${kbarTradingDays} 個交易日` : ""}，可彙整 1 / 5 / 15 / 60 分。`
             : kbarState === "BLOCKED"
               ? `分 K 無法顯示：${kbarReason}`
               : `分 K 無資料：${kbarReason}`}
@@ -490,6 +491,7 @@ export function OhlcvCandlestickChart({
         <div className="kline-meta-line">
           <span>{activeMeta?.note}</span>
           <span>{chartBars.length.toLocaleString("zh-TW")} 根</span>
+          {isIntraday && kbarTradingDays > 0 && <span>{kbarTradingDays} 個交易日</span>}
           <span>{firstBar?.label} - {lastBar?.label}</span>
           <span>收 {formatNumber(lastBar?.close)}</span>
           <span>量 {formatNumber(lastBar?.volume, 0)}</span>

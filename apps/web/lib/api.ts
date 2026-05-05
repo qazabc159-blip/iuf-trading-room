@@ -608,6 +608,10 @@ export type FinMindKBarView = {
   reason: string | null;
   stockId: string;
   date: string;
+  dateRange?: { from: string; to: string } | null;
+  daysRequested?: number;
+  daysReturned?: number;
+  resolvedDates?: string[];
   requestedDate?: string;
   rows: FinMindKBarRow[];
   updatedAt: string;
@@ -621,9 +625,10 @@ export async function getFinMindDiagnostics() {
   return request<FinMindDiagnosticsStatus>("/api/v1/diagnostics/finmind");
 }
 
-export async function getCompanyKBar(id: string, date?: string) {
+export async function getCompanyKBar(id: string, date?: string, options?: { days?: number }) {
   const query = new URLSearchParams();
   if (date) query.set("date", date);
+  if (options?.days) query.set("days", String(options.days));
   const qs = query.toString();
   return request<FinMindKBarView>(`/api/v1/companies/${id}/kbar${qs ? `?${qs}` : ""}`);
 }
