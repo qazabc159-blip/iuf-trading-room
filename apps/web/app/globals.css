@@ -2867,6 +2867,38 @@ button { font: inherit; }
   font: 900 30px/1.15 var(--sans-tc);
 }
 
+.brief-openalice-state {
+  gap: 10px 14px;
+  margin: 0 0 22px;
+}
+
+.brief-openalice-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.brief-openalice-grid span {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(220, 228, 240, 0.075);
+  background: rgba(3, 7, 12, 0.24);
+  color: var(--night-mid);
+  font: 700 12px/1.35 var(--sans-tc);
+}
+
+.brief-openalice-grid strong {
+  color: var(--night-ink);
+  font: 900 13px/1.2 var(--mono);
+  white-space: nowrap;
+}
+
 .brief-empty-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 0.72fr) minmax(300px, 0.72fr);
@@ -8752,6 +8784,10 @@ body:has(.login-route) > div {
   .company-data-tabs.finmind-tabs.company-finance-tabs {
     margin-inline: -2px;
     padding-inline: 2px;
+  }
+
+  .brief-openalice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

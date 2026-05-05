@@ -1,11 +1,17 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
-import { getBriefs } from "@/lib/api";
+import { getBriefs, getOpenAliceObservability, type OpenAliceObservability } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
 
 export const dynamic = "force-dynamic";
+
+type OpenAliceSurface = "LIVE" | "STALE" | "BLOCKED";
+
+type OpenAliceState =
+  | { state: "LIVE"; surface: OpenAliceSurface; data: OpenAliceObservability; updatedAt: string; source: string }
+  | { state: "BLOCKED"; surface: "BLOCKED"; data: null; updatedAt: string; source: string; reason: string };
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", {
@@ -57,6 +63,70 @@ function producerLabel(value: string | null | undefined) {
   return value ?? "--";
 }
 
+async function loadOpenAliceStatus(): Promise<OpenAliceState> {
+  const updatedAt = new Date().toISOString();
+  try {
+    const response = await getOpenAliceObservability();
+    const data = response.data;
+    const surface: OpenAliceSurface =
+      data.workerStatus === "healthy" && data.sweepStatus === "healthy"
+        ? "LIVE"
+        : data.workerStatus === "missing" && data.sweepStatus === "missing"
+          ? "BLOCKED"
+          : "STALE";
+
+    return {
+      state: "LIVE",
+      surface,
+      data,
+      updatedAt,
+      source: data.source === "redis" ? "OpenAlice Redis 指標" : "OpenAlice bridge fallback",
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      surface: "BLOCKED",
+      data: null,
+      updatedAt,
+      source: "OpenAlice observability",
+      reason: friendlyDataError(error, "OpenAlice 產文狀態暫時無法讀取。"),
+    };
+  }
+}
+
+function openAliceLabel(state: OpenAliceSurface) {
+  if (state === "LIVE") return "正常";
+  if (state === "STALE") return "過期";
+  return "暫停";
+}
+
+function openAliceBadge(state: OpenAliceSurface) {
+  if (state === "LIVE") return "badge-green";
+  if (state === "STALE") return "badge-yellow";
+  return "badge-red";
+}
+
+function openAliceTone(state: OpenAliceSurface) {
+  if (state === "LIVE") return "status-ok";
+  if (state === "STALE") return "gold";
+  return "status-bad";
+}
+
+function statusText(value: string | null | undefined) {
+  if (value === "healthy") return "正常";
+  if (value === "stale") return "過期";
+  if (value === "missing") return "暫停";
+  return value ?? "--";
+}
+
+function ageText(seconds: number | null | undefined) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "--";
+  if (seconds < 60) return `${Math.round(seconds)} 秒前`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} 分前`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} 小時前`;
+  return `${Math.round(seconds / 86400)} 天前`;
+}
+
 function BriefStatePanel({
   state,
   reason,
@@ -82,6 +152,7 @@ export default async function BriefsPage() {
   let briefs: DailyBrief[] = [];
   let error: string | null = null;
   const requestedAt = new Date().toISOString();
+  const openAlice = await loadOpenAliceStatus();
 
   try {
     const response = await getBriefs();
@@ -104,7 +175,7 @@ export default async function BriefsPage() {
       note="每日簡報 / 真實資料；先建立資料框架，後續再接 OpenAlice 自動產文，不顯示假新聞或假建議。"
     >
       <MetricStrip
-        columns={6}
+        columns={7}
         cells={[
           { label: "狀態", value: surfaceState === "LIVE" ? "正常" : surfaceState === "EMPTY" ? "無資料" : "暫停", tone: surfaceState === "LIVE" ? "status-ok" : surfaceState === "EMPTY" ? "gold" : "status-bad" },
           { label: "簡報數", value: briefs.length },
@@ -112,6 +183,7 @@ export default async function BriefsPage() {
           { label: "草稿", value: draftCount, tone: draftCount > 0 ? "gold" : "muted" },
           { label: "段落", value: latest ? totalSections : "--" },
           { label: "最新日期", value: latest?.date ?? "--" },
+          { label: "AI 產文", value: openAliceLabel(openAlice.surface), tone: openAliceTone(openAlice.surface) },
         ]}
       />
 
@@ -132,6 +204,31 @@ export default async function BriefsPage() {
           <p>{latest ? `最新簡報 ${latest.date}，共 ${latest.sections.length} 段。` : "尚未取得正式簡報資料，先顯示接線規格。"}</p>
         </div>
       </section>
+
+      <Panel code="BRF-AI-STAT" title="OpenAlice 產文狀態" sub="worker / sweep / queue" right={openAliceLabel(openAlice.surface)}>
+        <div className="state-panel brief-openalice-state">
+          <span className={`badge ${openAliceBadge(openAlice.surface)}`}>{openAliceLabel(openAlice.surface)}</span>
+          <span className="tg soft">來源：{openAlice.source}</span>
+          <span className="tg soft">檢查：{formatDateTime(openAlice.updatedAt)}</span>
+          {openAlice.state === "BLOCKED" ? (
+            <span className="state-reason">{openAlice.reason}</span>
+          ) : (
+            <div className="brief-openalice-grid">
+              <span>worker：<strong>{statusText(openAlice.data.workerStatus)}</strong></span>
+              <span>sweep：<strong>{statusText(openAlice.data.sweepStatus)}</strong></span>
+              <span>最後心跳：<strong>{ageText(openAlice.data.workerHeartbeatAgeSeconds)}</strong></span>
+              <span>最後掃描：<strong>{ageText(openAlice.data.lastSweepAgeSeconds)}</strong></span>
+              <span>排隊：<strong>{openAlice.data.metrics.queuedJobs}</strong></span>
+              <span>執行中：<strong>{openAlice.data.metrics.runningJobs}</strong></span>
+              <span>過期執行：<strong>{openAlice.data.metrics.staleRunningJobs}</strong></span>
+              <span>裝置：<strong>{openAlice.data.metrics.activeDevices}</strong></span>
+            </div>
+          )}
+          <span className="state-reason">
+            此面板只揭露 OpenAlice 是否有新產文能力；不把舊簡報改寫成新簡報，也不產生買賣建議。
+          </span>
+        </div>
+      </Panel>
 
       {(error || !latest) && (
         <div className="brief-empty-grid">
