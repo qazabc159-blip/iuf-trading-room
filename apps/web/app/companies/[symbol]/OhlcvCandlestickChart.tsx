@@ -5,6 +5,7 @@ import type { FinMindKBarRow, OhlcvBar } from "@/lib/api";
 
 type EnabledInterval = "1d" | "1w" | "1mo" | "1min" | "5min" | "15min" | "60min";
 type RangeKey = "3m" | "6m" | "1y" | "2y" | "all";
+type IntradayRangeKey = "1d" | "3d" | "5d";
 type ChartTime = import("lightweight-charts").Time;
 type ChartBar = {
   dt: string;
@@ -36,7 +37,14 @@ const RANGE_OPTIONS: ReadonlyArray<{ value: RangeKey; label: string; days: numbe
   { value: "all", label: "全部", days: null },
 ];
 
+const INTRADAY_RANGE_OPTIONS: ReadonlyArray<{ value: IntradayRangeKey; label: string; days: number }> = [
+  { value: "1d", label: "1日", days: 1 },
+  { value: "3d", label: "3日", days: 3 },
+  { value: "5d", label: "5日", days: 5 },
+];
+
 const MIN_TREND_BARS = 12;
+const COMPRESSED_INTRADAY_BASE_TIME = Math.floor(Date.UTC(2026, 0, 5, 1, 0, 0) / 1000);
 
 function daysSince(dt: string): number {
   const now = Date.now();
@@ -163,6 +171,25 @@ function aggregateKBarRows(rows: FinMindKBarRow[], minutes: number): ChartBar[] 
   });
 }
 
+function filterIntradayTradingDays(bars: ChartBar[], range: IntradayRangeKey): ChartBar[] {
+  const option = INTRADAY_RANGE_OPTIONS.find((item) => item.value === range);
+  if (!option || bars.length === 0) return bars;
+
+  const tradingDates = Array.from(new Set(bars.map((bar) => bar.dt.slice(0, 10)))).sort();
+  const keepDates = new Set(tradingDates.slice(-option.days));
+  return bars.filter((bar) => keepDates.has(bar.dt.slice(0, 10)));
+}
+
+function compressIntradayTimeline(bars: ChartBar[], minutes: number): ChartBar[] {
+  return bars.map((bar, index) => ({
+    ...bar,
+    // Lightweight Charts treats real timestamps as wall-clock time, so multi-day minute K gets
+    // squeezed by overnight/weekend gaps. This synthetic axis keeps real OHLC + labels but removes
+    // non-trading empty time from the visible spacing.
+    time: (COMPRESSED_INTRADAY_BASE_TIME + index * minutes * 60) as ChartTime,
+  }));
+}
+
 function filterRange(bars: ChartBar[], range: RangeKey) {
   const option = RANGE_OPTIONS.find((item) => item.value === range);
   if (!option?.days || bars.length === 0) return bars;
@@ -180,11 +207,28 @@ function filterRange(bars: ChartBar[], range: RangeKey) {
 }
 
 function visibleBarsFor(interval: EnabledInterval, range: RangeKey) {
-  if (interval.endsWith("min")) return interval === "1min" ? 240 : interval === "5min" ? 180 : interval === "15min" ? 140 : 110;
+  if (interval.endsWith("min")) return interval === "1min" ? 320 : interval === "5min" ? 280 : interval === "15min" ? 150 : 90;
   if (range === "all") return interval === "1d" ? 720 : interval === "1w" ? 260 : 160;
   if (interval === "1d") return range === "3m" ? 92 : range === "6m" ? 184 : range === "1y" ? 320 : 560;
   if (interval === "1w") return range === "3m" ? 24 : range === "6m" ? 44 : range === "1y" ? 72 : 132;
   return range === "3m" ? 8 : range === "6m" ? 14 : range === "1y" ? 24 : 42;
+}
+
+function formatChartAxisTime(time: ChartTime, labels: Map<number, string>): string {
+  if (typeof time === "number") {
+    const exact = labels.get(time);
+    if (exact) return exact;
+    return new Date(time * 1000).toLocaleString("zh-TW", {
+      timeZone: "Asia/Taipei",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+  if (typeof time === "string") return time;
+  return `${time.year}-${String(time.month).padStart(2, "0")}-${String(time.day).padStart(2, "0")}`;
 }
 
 function formatNumber(value: number | null | undefined, digits = 2) {
@@ -231,16 +275,20 @@ export function OhlcvCandlestickChart({
   const [error, setError] = useState<string | null>(null);
   const [interval, setInterval] = useState<EnabledInterval>("1d");
   const [range, setRange] = useState<RangeKey>("all");
+  const [intradayRange, setIntradayRange] = useState<IntradayRangeKey>("5d");
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
   const chartHeight = isIntraday ? 460 : 440;
   const chartBars = useMemo(() => {
     const meta = ENABLED_INTERVALS.find((item) => item.value === interval);
     if (meta?.kind === "intraday") {
-      return aggregateKBarRows(kbarRows, meta.minutes ?? 1);
+      const minutes = meta.minutes ?? 1;
+      const aggregated = aggregateKBarRows(kbarRows, minutes);
+      const ranged = filterIntradayTradingDays(aggregated, intradayRange);
+      return compressIntradayTimeline(ranged, minutes);
     }
     return filterRange(aggregateDailyBars(bars, interval), range);
-  }, [bars, interval, kbarRows, range]);
+  }, [bars, interval, intradayRange, kbarRows, range]);
   const insufficientTrend = !isIntraday && chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
 
   useEffect(() => {
@@ -249,6 +297,13 @@ export function OhlcvCandlestickChart({
     let chart: import("lightweight-charts").IChartApi | null = null;
     let ro: ResizeObserver | null = null;
     let disposed = false;
+    const intradayAxisLabels = new Map<number, string>(
+      isIntraday
+        ? chartBars
+            .filter((bar): bar is ChartBar & { time: number } => typeof bar.time === "number")
+            .map((bar) => [bar.time, bar.label])
+        : [],
+    );
 
     setError(null);
 
@@ -272,11 +327,15 @@ export function OhlcvCandlestickChart({
             vertLines: { color: "rgba(255,255,255,0.04)" },
             horzLines: { color: "rgba(255,255,255,0.05)" },
           },
+          localization: {
+            timeFormatter: (time: ChartTime) => formatChartAxisTime(time, intradayAxisLabels),
+          },
           crosshair: { mode: 1 },
           rightPriceScale: { borderColor: "rgba(255,255,255,0.14)", scaleMargins: { top: 0.08, bottom: 0.22 } },
           timeScale: {
             borderColor: "rgba(255,255,255,0.14)",
             timeVisible: isIntraday || interval === "1d",
+            tickMarkFormatter: (time: ChartTime) => formatChartAxisTime(time, intradayAxisLabels),
             rightOffset: 10,
             barSpacing: isIntraday ? 5.8 : interval === "1d" ? 3.6 : interval === "1w" ? 6 : 8,
             fixLeftEdge: false,
@@ -373,6 +432,9 @@ export function OhlcvCandlestickChart({
   const highInView = chartBars.length ? Math.max(...chartBars.map((bar) => bar.high)) : null;
   const lowInView = chartBars.length ? Math.min(...chartBars.map((bar) => bar.low)) : null;
   const kbarTradingDays = new Set(kbarRows.map((row) => row.date).filter(Boolean)).size;
+  const displayedIntradayDays = isIntraday
+    ? new Set(chartBars.map((bar) => bar.dt.slice(0, 10))).size
+    : 0;
   const emptyReason =
     isIntraday
       ? kbarState === "BLOCKED"
@@ -474,13 +536,30 @@ export function OhlcvCandlestickChart({
             ))}
           </div>
         )}
+        {isIntraday && (
+          <div className="kline-control-group">
+            <span className="kline-toolbar-label">範圍</span>
+            {INTRADAY_RANGE_OPTIONS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setIntradayRange(item.value)}
+                className={`kline-tab${intradayRange === item.value ? " is-active" : ""}`}
+                aria-pressed={intradayRange === item.value}
+                title={`${item.label}真實分 K，排除夜間與週末空窗`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="kline-pending-line">
         <span className={`tg ${stateToneClass(kbarState)}`}>{stateLabel(kbarState)}</span>
         <span className="tg soft">
           {kbarState === "LIVE"
-            ? `FinMind Sponsor ${kbarDate ?? ""} 已回傳 ${kbarRows.length.toLocaleString("zh-TW")} 根 1 分 K${kbarTradingDays > 1 ? ` / ${kbarTradingDays} 個交易日` : ""}，可彙整 1 / 5 / 15 / 60 分。`
+            ? `FinMind Sponsor ${kbarDate ?? ""} 已回傳 ${kbarRows.length.toLocaleString("zh-TW")} 根 1 分 K${kbarTradingDays > 1 ? ` / ${kbarTradingDays} 個交易日` : ""}，分 K 圖已壓縮非交易時段，可彙整 1 / 5 / 15 / 60 分。`
             : kbarState === "BLOCKED"
               ? `分 K 無法顯示：${kbarReason}`
               : `分 K 無資料：${kbarReason}`}
@@ -491,7 +570,8 @@ export function OhlcvCandlestickChart({
         <div className="kline-meta-line">
           <span>{activeMeta?.note}</span>
           <span>{chartBars.length.toLocaleString("zh-TW")} 根</span>
-          {isIntraday && kbarTradingDays > 0 && <span>{kbarTradingDays} 個交易日</span>}
+          {isIntraday && displayedIntradayDays > 0 && <span>顯示 {displayedIntradayDays} / {kbarTradingDays} 個交易日</span>}
+          {isIntraday && <span>非交易時段壓縮</span>}
           <span>{firstBar?.label} - {lastBar?.label}</span>
           <span>收 {formatNumber(lastBar?.close)}</span>
           <span>量 {formatNumber(lastBar?.volume, 0)}</span>
