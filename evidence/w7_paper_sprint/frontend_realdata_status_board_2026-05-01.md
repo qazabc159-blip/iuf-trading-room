@@ -63,6 +63,7 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - `apps/web/app/m/page.tsx` - mobile latest daily brief now shows `資料過期` instead of implying current content.
 - `apps/web/app/globals.css` - added compact stale-brief warning styling.
 - `evidence/w7_paper_sprint/codex_openalice_brief_observability_2026-05-05.md` - recorded stale-data diagnosis and owner handoff.
+- `evidence/w7_paper_sprint/TO_JASON_openalice_daily_brief_freshness_diagnosis_2026-05-05.md` - backend/worker diagnosis packet for Elva dispatch.
 
 **Behavior**:
 - `/briefs` is no longer green just because a formal daily brief row exists.
@@ -75,6 +76,7 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - The frontend reads `GET /api/v1/daily-briefs`; it does not generate or overwrite the daily brief.
 - If old 4/22 or 4/25 style content remains, the producer chain likely did not write a new formal row, or a pending/stale draft/job is blocking generation.
 - Safe backend owner is Jason/OpenAlice worker lane: expose producer skip reason, latest formal date, draft date, job states, active device heartbeat, and a governed rerun path.
+- Code-level note: `daily-brief-producer.ts` currently derives `today` from UTC via `new Date().toISOString().split("T")[0]`; Jason should confirm whether the producer must use Asia/Taipei date to avoid early-morning date drift.
 
 **Checks**:
 - `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
