@@ -2904,6 +2904,12 @@ button { font: inherit; }
   gap: 14px;
 }
 
+.brief-draft-gate {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
 .brief-job-list {
   display: grid;
   gap: 8px;
@@ -2924,6 +2930,31 @@ button { font: inherit; }
 .brief-job-row > * {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.brief-job-row.draft {
+  grid-template-columns: minmax(130px, 1fr) auto minmax(150px, 1fr) minmax(150px, 1fr) minmax(120px, 0.8fr);
+}
+
+.brief-draft-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.brief-draft-actions .state-reason {
+  flex: 1 1 360px;
+  min-width: min(100%, 260px);
+}
+
+@media (max-width: 760px) {
+  .brief-job-row,
+  .brief-job-row.draft {
+    grid-template-columns: 1fr;
+  }
 }
 
 .brief-empty-grid {
