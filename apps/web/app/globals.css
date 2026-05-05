@@ -7980,3 +7980,124 @@ body:has(.login-route) > div {
   background: rgba(226, 184, 92, 0.13);
   color: var(--gold-bright);
 }
+
+/* Pass 113 - make the company order ticket feel like a trading tool, not a slab. */
+@media (min-width: 1201px) and (max-width: 1500px) {
+  .company-workbench-shell {
+    grid-template-columns: minmax(0, 1fr) minmax(348px, 368px);
+    gap: clamp(14px, 1.25vw, 18px);
+  }
+}
+
+.company-workbench-shell .paper-order-panel {
+  border-left: 1px solid rgba(226, 184, 92, 0.28);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(226, 184, 92, 0.065), transparent 34%),
+    linear-gradient(180deg, rgba(8, 14, 22, 0.82), rgba(3, 7, 12, 0.72));
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.16);
+}
+
+.company-workbench-shell .paper-order-panel .ascii-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 9px;
+  margin-bottom: 9px;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+}
+
+.company-workbench-shell .paper-order-panel .ascii-head .tg.soft {
+  max-width: 50%;
+  text-align: right;
+  line-height: 1.35;
+}
+
+.company-workbench-shell .paper-order-lock-note {
+  padding: 9px 11px;
+  border: 1px solid rgba(226, 184, 92, 0.22);
+  border-left: 2px solid rgba(226, 184, 92, 0.62);
+  background: rgba(226, 184, 92, 0.055);
+  font-size: 12.5px;
+  line-height: 1.72;
+}
+
+.company-workbench-shell .paper-order-price-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  align-items: baseline;
+  padding: 9px 0;
+}
+
+.company-workbench-shell .paper-order-price-row small {
+  grid-column: 1 / -1;
+  line-height: 1.55;
+}
+
+.company-workbench-shell .paper-order-ticket {
+  border: 0;
+  background: transparent;
+}
+
+.company-workbench-shell .paper-order-grid {
+  gap: 9px;
+}
+
+.company-workbench-shell .paper-order-grid > div {
+  min-width: 0;
+}
+
+.company-workbench-shell .paper-order-grid > div:nth-child(5) {
+  grid-column: 1 / -1;
+}
+
+.company-workbench-shell .paper-order-grid button {
+  min-height: 35px !important;
+}
+
+.company-workbench-shell .paper-order-panel input {
+  min-height: 38px !important;
+  padding: 8px 10px !important;
+  font-size: 14px !important;
+}
+
+.company-workbench-shell .paper-order-summary-strip {
+  gap: 6px;
+}
+
+.company-workbench-shell .paper-order-summary-strip > div {
+  min-height: 45px;
+  padding: 8px 9px;
+  border: 1px solid rgba(220, 228, 240, 0.075);
+  background: rgba(1, 5, 9, 0.2);
+}
+
+.company-workbench-shell .paper-order-summary-strip span {
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.company-workbench-shell .paper-order-summary-strip b {
+  font-size: 14.5px;
+}
+
+.company-workbench-shell .paper-order-quick-row {
+  gap: 6px;
+  margin: 6px 0 9px;
+  padding: 7px;
+  border: 1px solid rgba(220, 228, 240, 0.07);
+  background: rgba(1, 5, 9, 0.18);
+}
+
+.company-workbench-shell .paper-order-quick-row > span {
+  flex: 0 0 auto;
+  margin-right: 2px;
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.company-workbench-shell .truth-note {
+  line-height: 1.66;
+}
