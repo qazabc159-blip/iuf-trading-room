@@ -49,9 +49,14 @@
 param(
     [switch]$Watch,
     [string]$BaseUrl = "https://api.eycvector.com",
-    [string]$Email = "qazabc159@gmail.com",
-    [string]$Password = "qazabc159"
+    [string]$Email = $env:IUF_TEST_EMAIL,
+    [string]$Password = $env:IUF_TEST_PASSWORD
 )
+
+if (-not $Email -or -not $Password) {
+    Write-Error "Missing credentials. Set `$env:IUF_TEST_EMAIL and `$env:IUF_TEST_PASSWORD before running, or pass -Email and -Password explicitly. Hardcoding credentials in this script is forbidden by stop-line #14."
+    exit 1
+}
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
