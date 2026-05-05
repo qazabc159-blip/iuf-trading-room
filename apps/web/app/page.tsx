@@ -379,6 +379,13 @@ function FinMindStatusPanel({ finmind }: { finmind: LoadState<FinMindSourceStatu
   const datasets = finmind.state === "LIVE" && finmind.data ? finmind.data.datasets : [];
   const ready = datasets.filter((dataset) => dataset.state === "READY");
   const blocked = datasets.filter((dataset) => dataset.state === "BLOCKED");
+  const visibleReady = ready.slice(0, 12);
+  const visibleBlocked = blocked.slice(0, 6);
+  const blockerText = (blocker?: string) => {
+    if (blocker === "freeze_no_news_feature") return "新聞功能 freeze 中";
+    if (blocker === "quote_contract_pending") return "即時報價合約待定";
+    return blocker ?? "前後端尚未正式露出";
+  };
 
   return (
     <section className="dashboard-readiness-deck" aria-label="台股資料接線圖">
@@ -405,26 +412,42 @@ function FinMindStatusPanel({ finmind }: { finmind: LoadState<FinMindSourceStatu
             <strong>{ready.length}</strong>
           </div>
           <StatePill state={ready.length > 0 ? "LIVE" : "EMPTY"} />
-          <p>只計入已實作並可讀的官方 FinMind 資料集。</p>
+          <p>綠色只代表本站已實作、後端診斷可讀，不代表策略或下單 gate 通過。</p>
         </div>
         <div className="dashboard-readiness-lane">
           <div>
             <span className="tg gold">待接資料集</span>
             <strong>{blocked.length}</strong>
           </div>
-          <StatePill state={blocked.length > 0 ? "EMPTY" : "LIVE"} />
-          <p>待接不代表錯誤，只代表前後端還沒有正式露出該資料。</p>
+          <StatePill state={blocked.length > 0 ? "BLOCKED" : "LIVE"} />
+          <p>紅色代表目前不能在產品內顯示；不是用假資料補，也不會偷偷標成正常。</p>
         </div>
       </div>
       <div className="dashboard-dataset-ribbon" aria-label="FinMind 資料集狀態">
         <span className="tg soft">已接資料</span>
-        {(ready.length > 0 ? ready : blocked).slice(0, 9).map((dataset) => (
-          <span className={`dashboard-dataset-token ${dataset.state === "READY" ? "is-ready" : "is-pending"}`} key={dataset.key}>
+        {visibleReady.map((dataset) => (
+          <span className="dashboard-dataset-token is-ready" key={dataset.key}>
             {dataset.label}
           </span>
         ))}
+        {ready.length > visibleReady.length && (
+          <span className="dashboard-dataset-token is-ready">+{ready.length - visibleReady.length}</span>
+        )}
         {datasets.length === 0 && <span className="dashboard-dataset-token is-pending">等待資料源診斷</span>}
       </div>
+      {visibleBlocked.length > 0 && (
+        <div className="dashboard-dataset-grid" aria-label="FinMind 待接資料集">
+          <span className="tg soft">暫不可顯示</span>
+          {visibleBlocked.map((dataset) => (
+            <span className="dashboard-dataset-token is-blocked" key={dataset.key} title={blockerText(dataset.blocker)}>
+              {dataset.label}<small>{blockerText(dataset.blocker)}</small>
+            </span>
+          ))}
+          {blocked.length > visibleBlocked.length && (
+            <span className="dashboard-dataset-token is-blocked">+{blocked.length - visibleBlocked.length}</span>
+          )}
+        </div>
+      )}
     </section>
   );
 }
