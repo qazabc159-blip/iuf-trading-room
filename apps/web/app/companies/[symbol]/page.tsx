@@ -262,6 +262,8 @@ export default async function CompanyDetailPage({
     date: kbarView?.date ?? kbarDate,
   });
   const dailyChangePct = quote?.changePercent ?? null;
+  const kbarRowCount = kbarView?.rows.length ?? 0;
+  const kbarLive = kbarState === "LIVE" && kbarRowCount > 0;
 
   return (
     <PageFrame
@@ -285,15 +287,19 @@ export default async function CompanyDetailPage({
       <div className="company-kpi-strip">
         <div>
           <span className="tg soft">資料</span>
-          <b className="tg gold">{ohlcvState === "LIVE" ? "K線" : "待接"}</b>
+          <b className={`tg ${ohlcvState === "LIVE" ? "up" : ohlcvState === "BLOCKED" ? "down" : "gold"}`}>
+            {ohlcvState === "LIVE" ? "日K已接" : ohlcvState === "BLOCKED" ? "日K暫停" : "日K無資料"}
+          </b>
         </div>
         <div>
           <span className="tg soft">動能</span>
           <b className={`tg ${tone(dailyChangePct)}`}>{momentumFromChange(dailyChangePct)}</b>
         </div>
         <div>
-          <span className="tg soft">籌碼</span>
-          <b className="tg muted">FinMind 接入中</b>
+          <span className="tg soft">分K</span>
+          <b className={`tg ${kbarLive ? "up" : kbarState === "BLOCKED" ? "down" : "gold"}`}>
+            {kbarLive ? `${kbarRowCount.toLocaleString("zh-TW")}根` : kbarState === "BLOCKED" ? "分K暫停" : "分K無資料"}
+          </b>
         </div>
         <div>
           <span className="tg soft">日變動</span>

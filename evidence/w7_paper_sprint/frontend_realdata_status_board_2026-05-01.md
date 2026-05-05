@@ -3250,3 +3250,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: `pnpm.cmd --filter @iuf-trading-room/api typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd test` PASS 123/123; `pnpm.cmd --filter @iuf-trading-room/api build` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS; `git diff --check` PASS with CRLF warnings only.
 - Stop-line proof: no token display/logging, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, no paper/risk source change, and no buy/sell recommendation wording.
 - Next: commit/push/open PR, wait CI, then production-smoke `/companies/2330` and `/companies/1101` at desktop width to verify chart canvas, multi-day minute K, visible interval buttons, and order desk no-overlap.
+
+## 2026-05-06 00:55 Taipei - Codex production minute-K smoke + source KPI repair
+- Trade Capability Score: +1. Workflow improved: `/companies/2330` production now proves a real FinMind minute-K path and the company KPI strip no longer says `FinMind 接入中` after rows are live.
+- Production deploy: PR #199 merged as `496e233`; GitHub main CI passed and Railway deploy run `25388880288` completed successfully for `web`, `api`, and `worker`.
+- Endpoint evidence: authenticated production `GET /api/v1/companies/2330/kbar?days=5` returned `source=FINMIND`, `state=LIVE`, `daysRequested=5`, `daysReturned=5`, `rows=1330`, dates `2026-04-28, 2026-04-29, 2026-04-30, 2026-05-04, 2026-05-05`; `1104` returned `rows=398` across the same 5 trading days.
+- Browser evidence: authenticated production Chromium smoke saved `evidence/w7_paper_sprint/production_smoke_pass119_kline_multiday_2026-05-06/company2330_prod_day_after_pr199.png` and `company2330_prod_click_5min_after_pr199.png`. The minute chart renders with active `1分`, `1,330 根 1 分 K / 5 個交易日`, and the simulated order desk is below the chart rather than covering controls.
+- Files changed in follow-up: `apps/web/app/companies/[symbol]/page.tsx` only. The top KPI now derives `日K已接 / 日K暫停 / 日K無資料` and `分K 1,330根 / 分K暫停 / 分K無資料` from actual source state instead of a hard-coded `FinMind 接入中`.
+- Checks: `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS; `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- Stop-line proof: no token display/logging, no live submit, no KGI/broker write-side, no migration/schema/destructive DB, no fake-live chart, no paper/risk source change, and no buy/sell recommendation wording.
+- Next: push a small source-KPI PR, then continue Paper E2E UI proof: preview notional, odd-lot/board-lot clarity, and simulated-state visibility without broker submit.
