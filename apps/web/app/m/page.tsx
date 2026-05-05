@@ -8,6 +8,7 @@ import {
   getThemes,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { briefAgeCopy, briefAgeDays, briefFreshnessForDate, briefFreshnessLabel, briefFreshnessTone } from "@/lib/freshness";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { reasonLabel } from "@/lib/strategy-vocab";
 
@@ -128,15 +129,6 @@ function marketLabel(value: string | null | undefined) {
   return value ?? "--";
 }
 
-function briefStatusLabel(status: BriefRow["status"] | null | undefined) {
-  if (!status) return "無資料";
-  const key = status.toLowerCase();
-  if (key === "published" || key === "approved") return "已核准";
-  if (key === "draft") return "草稿";
-  if (key === "archived") return "封存";
-  return cleanNarrativeText(status, "狀態待整理");
-}
-
 function lifecycleLabel(value: string | null | undefined) {
   if (value === "active") return "啟用";
   if (value === "watch") return "觀察";
@@ -182,6 +174,8 @@ function directionTone(direction: IdeaRow["direction"]) {
 export default async function MobileBrief() {
   const result = await loadMobileBrief();
   const latestBrief = result.data.briefs.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0] ?? null;
+  const latestBriefAgeDays = briefAgeDays(latestBrief?.date);
+  const latestBriefFreshness = result.state === "LIVE" ? briefFreshnessForDate(latestBrief?.date) : "BLOCKED";
   const themes = result.data.themes.slice().sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)).slice(0, 5);
   const ideas = result.data.ideas.slice(0, 4);
   const overview = result.data.overview;
@@ -231,12 +225,19 @@ export default async function MobileBrief() {
         )}
       </MobileSection>
 
-      <MobileSection code="BRF" title="最新日報" right={mobileLive ? briefStatusLabel(latestBrief?.status) : stateLabel(result.state)}>
+      <MobileSection code="BRF" title="最新日報" right={mobileLive ? briefFreshnessLabel(latestBriefFreshness) : stateLabel(result.state)}>
         {!mobileLive && <div className="mobile-card"><div className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</div><div className="tc soft">日報資料先隱藏，等待行動簡報資料恢復正常。</div></div>}
         {mobileLive && !latestBrief && <div className="mobile-card"><div className="tg gold">無資料</div><div className="tc soft">目前沒有每日簡報。</div></div>}
         {mobileLive && latestBrief && (
           <div className="mobile-card">
-            <div className="tg gold">{latestBrief.date} / {marketLabel(latestBrief.marketState)}</div>
+            <div className={`tg ${briefFreshnessTone(latestBriefFreshness)}`}>
+              {latestBrief.date} / {briefAgeCopy(latestBriefAgeDays)} / {marketLabel(latestBrief.marketState)}
+            </div>
+            {latestBriefFreshness === "STALE" && (
+              <div className="tc soft" style={{ marginTop: 6 }}>
+                這不是今天的日報；等待 OpenAlice 重新產出今日來源追蹤列。
+              </div>
+            )}
             <div className="tc" style={{ fontSize: 18, marginTop: 8 }}>{cleanExternalHeadline(latestBrief.sections[0]?.heading, "日報")}</div>
             <div className="tc soft" style={{ marginTop: 7, lineHeight: 1.65 }}>{cleanNarrativeText(latestBrief.sections[0]?.body, "目前沒有日報內容。")}</div>
           </div>

@@ -58,6 +58,9 @@ Primary goal: make production UI meaningful, sourced, and operational.
 
 **Files changed**:
 - `apps/web/app/briefs/page.tsx` - added Taiwan/Taipei data-date freshness logic for daily briefs.
+- `apps/web/lib/freshness.ts` - shared Taiwan/Taipei daily brief freshness helpers.
+- `apps/web/app/plans/page.tsx` - trading-plan daily brief sidebar now uses the same stale-state language.
+- `apps/web/app/m/page.tsx` - mobile latest daily brief now shows `資料過期` instead of implying current content.
 - `apps/web/app/globals.css` - added compact stale-brief warning styling.
 - `evidence/w7_paper_sprint/codex_openalice_brief_observability_2026-05-05.md` - recorded stale-data diagnosis and owner handoff.
 
@@ -66,6 +69,7 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - Latest brief date must equal Taiwan/Taipei today to show `今日資料`.
 - Older rows show `資料過期`, last data date, age, and a warning that OpenAlice worker / daily brief pipeline must write a new source-traced row.
 - The UI still renders the old formal row for continuity, but explicitly states it is not today's AI report.
+- `/plans` and `/m` inherit the same daily-brief freshness semantics so stale OpenAlice content cannot appear green from secondary surfaces.
 
 **Why OpenAlice data can look old**:
 - The frontend reads `GET /api/v1/daily-briefs`; it does not generate or overwrite the daily brief.

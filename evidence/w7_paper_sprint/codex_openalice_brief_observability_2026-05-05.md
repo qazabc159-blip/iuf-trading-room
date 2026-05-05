@@ -18,6 +18,7 @@ Status: READY FOR REVIEW
 - Follow-up hardening: the daily brief page now compares the latest `daily_briefs.date` against Taiwan/Taipei today.
 - A brief is green only when the data date is today. Older rows are shown as `資料過期` with the last data date and age.
 - Stale briefs get an explicit warning that OpenAlice worker / daily brief pipeline must write a new source-traced row.
+- Shared freshness helpers now drive `/briefs`, `/plans`, and `/m` so the same stale daily brief cannot look current from another surface.
 
 ## Semantics
 
@@ -27,6 +28,7 @@ Status: READY FOR REVIEW
 - `今日資料`: latest formal brief date equals Taipei today.
 - `資料過期`: latest formal brief exists but is older than Taipei today.
 - `無資料`: no formal brief rows returned.
+- `/plans` and `/m` show the same `資料過期` / `今日資料` language when they preview the latest daily brief.
 
 ## Tests
 

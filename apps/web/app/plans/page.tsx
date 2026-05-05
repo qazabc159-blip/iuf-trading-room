@@ -12,6 +12,7 @@ import {
   getThemes,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { briefAgeCopy, briefAgeDays, briefFreshnessBadge, briefFreshnessForDate, briefFreshnessLabel, briefFreshnessTone } from "@/lib/freshness";
 import { cleanExternalHeadline, cleanNarrativeText, cleanRiskRewardText, cleanTradePlanText } from "@/lib/operator-copy";
 import { reasonLabel } from "@/lib/strategy-vocab";
 
@@ -185,15 +186,6 @@ function marketStateLabel(value: string | null | undefined) {
   return value ?? "--";
 }
 
-function briefStatusLabel(status: BriefRow["status"] | null | undefined) {
-  if (!status) return "無資料";
-  const key = status.toLowerCase();
-  if (key === "published" || key === "approved") return "已核准";
-  if (key === "draft") return "草稿";
-  if (key === "archived") return "封存";
-  return cleanNarrativeText(status, "狀態待整理");
-}
-
 function signalCategoryLabel(value: string | null | undefined) {
   if (!value) return "未分類";
   const key = value.toLowerCase();
@@ -243,9 +235,11 @@ export default async function PlansPage() {
   const result = await loadPlans();
   const plans = result.data.plans.slice().sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
   const latestBrief = result.data.briefs.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0] ?? null;
+  const contextLive = result.state === "LIVE";
+  const latestBriefAgeDays = briefAgeDays(latestBrief?.date);
+  const latestBriefFreshness = contextLive ? briefFreshnessForDate(latestBrief?.date) : "BLOCKED";
   const readyPlans = plans.filter((plan) => plan.status === "ready" || plan.status === "active").length;
   const reviewedPlanIds = new Set(result.data.reviews.map((review) => review.tradePlanId));
-  const contextLive = result.state === "LIVE";
   const countsAvailable = result.state !== "BLOCKED";
 
   return (
@@ -360,17 +354,27 @@ export default async function PlansPage() {
                 <h2>{contextLive ? latestBrief?.date ?? "無簡報" : "資料暫停"}</h2>
                 <p>正式資料庫；未來後台 AI 只負責產生草稿，前端不顯示假簡報。</p>
               </div>
-              <span className="tg soft">{contextLive ? briefStatusLabel(latestBrief?.status) : "暫停"}</span>
+              <span className={`badge ${briefFreshnessBadge(latestBriefFreshness)}`}>
+                {contextLive ? briefFreshnessLabel(latestBriefFreshness) : "暫停"}
+              </span>
             </div>
             {!contextLive && <div className="terminal-note"><span className="tg down">暫停</span> 交易計畫來源未正常時，簡報內容先隱藏。</div>}
             {contextLive && !latestBrief && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有每日簡報。</div>}
             {contextLive && latestBrief && (
               <div className="plans-brief-preview">
                 <div className="brief-snapshot">
-                  <span className="tg gold">盤勢</span>
+                  <span className={`tg ${briefFreshnessTone(latestBriefFreshness)}`}>
+                    {briefFreshnessLabel(latestBriefFreshness)}
+                  </span>
                   <strong>{marketStateLabel(latestBrief.marketState)}</strong>
+                  <span className="tg soft">資料日 {latestBrief.date} / {briefAgeCopy(latestBriefAgeDays)}</span>
                   <span className="tg soft">更新 {formatDateTime(latestBrief.createdAt)}</span>
                 </div>
+                {latestBriefFreshness === "STALE" && (
+                  <div className="terminal-note">
+                    <span className="tg gold">資料過期</span> 此交易計畫旁欄引用的是舊每日簡報，等待 OpenAlice 重新產出今日來源追蹤列。
+                  </div>
+                )}
                 {latestBrief.sections.slice(0, 4).map((section) => (
                   <article className="plans-brief-section" key={section.heading}>
                     <div className="tg gold">{cleanExternalHeadline(section.heading, "簡報段落")}</div>
