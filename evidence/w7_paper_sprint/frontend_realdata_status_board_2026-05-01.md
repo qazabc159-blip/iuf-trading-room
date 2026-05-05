@@ -45,6 +45,13 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
 - `git diff --check` PASS with CRLF warnings only.
 
+## 2026-05-05 23:18 Taipei - Codex pass118 FinMind readiness color semantics + OpenAlice stale diagnosis
+- Files changed: `apps/web/app/page.tsx`, `evidence/w7_paper_sprint/codex_finmind_diagnostics_dashboard_2026-05-05.md`, and this board.
+- Behavior: dashboard FinMind diagnostics now separates `可用資料集` (green), `待接資料集` (amber), and `阻擋資料集` (red). READY/implemented official FinMind datasets no longer look like failures; pending roadmap datasets no longer get red unless the token is missing, diagnostics fail, or a freeze/stop-line blocks exposure.
+- OpenAlice diagnosis: old daily-brief / OpenAlice content is not a frontend color problem. Current frontend PRs can only expose freshness/source truth. Fresh content requires the OpenAlice worker + daily brief generation chain to write new source-traced rows; until then the UI must show stale/paused rather than inventing a new report.
+- Stop-line proof: frontend semantics/evidence only. No token value, Railway secret, DB migration, KGI SDK/broker write-side, live submit, destructive DB, fake strategy metrics, buy/sell wording, or fake OpenAlice content was touched.
+- Checks: pending this cycle: web typecheck/build, diff check, PR #182 push/update, CI.
+
 ### 2026-05-04 00:23 Taipei - Codex heartbeat - FinMind Sponsor company research expansion
 
 **Scope**: read-only FinMind Sponsor 999 data expansion and company-page source truth. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no RSS/commercial/deferred news feature.
