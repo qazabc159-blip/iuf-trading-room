@@ -805,6 +805,71 @@ button { font: inherit; }
   background: rgba(226, 184, 92, 0.045);
 }
 
+.dashboard-dataset-token.is-blocked {
+  border-color: rgba(255, 82, 112, 0.34);
+  color: var(--tw-up-bright);
+  background: rgba(255, 82, 112, 0.045);
+}
+
+.dashboard-diagnostics-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(220, 228, 240, 0.08);
+}
+
+.dashboard-diagnostic-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  min-height: 132px;
+  padding: 12px 12px 13px;
+  border: 1px solid rgba(220, 228, 240, 0.09);
+  background: rgba(2, 6, 10, 0.34);
+}
+
+.dashboard-diagnostic-card strong {
+  min-width: 0;
+  color: var(--night-ink);
+  font: 800 15px/1.38 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
+.dashboard-diagnostic-card p {
+  margin: 0;
+  color: var(--night-mid);
+  font: 12px/1.55 var(--sans-tc);
+}
+
+.dashboard-diagnostic-card.is-live {
+  border-color: rgba(75, 214, 140, 0.22);
+  background: linear-gradient(180deg, rgba(75, 214, 140, 0.055), rgba(2, 6, 10, 0.3));
+}
+
+.dashboard-diagnostic-card.is-empty {
+  border-color: rgba(226, 184, 92, 0.18);
+  background: linear-gradient(180deg, rgba(226, 184, 92, 0.045), rgba(2, 6, 10, 0.3));
+}
+
+.dashboard-diagnostic-card.is-blocked {
+  border-color: rgba(255, 82, 112, 0.2);
+  background: linear-gradient(180deg, rgba(255, 82, 112, 0.045), rgba(2, 6, 10, 0.3));
+}
+
+@media (max-width: 1180px) {
+  .dashboard-diagnostics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .dashboard-diagnostics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .dashboard-blocked-summary {
   display: grid;
   grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1fr);

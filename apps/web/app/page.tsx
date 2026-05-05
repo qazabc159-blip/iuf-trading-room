@@ -5,6 +5,7 @@ import { WatchlistSurface, type WatchlistSurfaceState } from "@/components/watch
 import {
   getCompanies,
   getCompanyAnnouncements,
+  getFinMindDiagnostics,
   getFinMindStatus,
   getMarketDataOverview,
   getSignals,
@@ -13,6 +14,7 @@ import {
   getWatchlistOverview,
   listStrategyRuns,
   type CompanyAnnouncement,
+  type FinMindDiagnosticsStatus,
   type FinMindSourceStatus,
   type MarketDataOverview,
 } from "@/lib/api";
@@ -26,11 +28,16 @@ type CompanyRow = Awaited<ReturnType<typeof getCompanies>>["data"][number];
 type SignalRow = Awaited<ReturnType<typeof getSignals>>["data"][number];
 type StrategyIdeaData = Awaited<ReturnType<typeof getStrategyIdeas>>["data"];
 type StrategyRunData = Awaited<ReturnType<typeof listStrategyRuns>>["data"];
+type DashboardFinMindStatus = FinMindSourceStatus & {
+  diagnostics: FinMindDiagnosticsStatus | null;
+  diagnosticsError?: string;
+};
 
 type LoadState<T> =
   | { state: "LIVE"; data: T; updatedAt: string; source: string }
   | { state: "EMPTY"; data: T; updatedAt: string; source: string; reason: string }
   | { state: "BLOCKED"; data: T; updatedAt: string; source: string; reason: string };
+type UiState = LoadState<unknown>["state"];
 
 type NewsItem = CompanyAnnouncement & {
   companyId: string;
@@ -445,10 +452,34 @@ function MarketStrip({ overview }: { overview: LoadState<MarketDataOverview | nu
   );
 }
 
-function FinMindStatusPanel({ finmind }: { finmind: LoadState<FinMindSourceStatus | null> }) {
-  const datasets = finmind.state === "LIVE" && finmind.data ? finmind.data.datasets : [];
+function FinMindStatusPanel({ finmind }: { finmind: LoadState<DashboardFinMindStatus | null> }) {
+  const data = finmind.data;
+  const diagnostics = data?.diagnostics ?? null;
+  const datasets = data?.datasets ?? [];
   const ready = datasets.filter((dataset) => dataset.state === "READY");
   const blocked = datasets.filter((dataset) => dataset.state === "BLOCKED");
+  const tokenState: UiState = diagnostics?.tokenPresent || data?.tokenPresent ? "LIVE" : "BLOCKED";
+  const quotaState: UiState = diagnostics?.quotaTier === "sponsor999" ? "LIVE" : diagnostics?.quotaTier ? "EMPTY" : "BLOCKED";
+  const cacheState: UiState = diagnostics?.redisConfigured ? "LIVE" : diagnostics ? "BLOCKED" : "EMPTY";
+  const fetchState: UiState = diagnostics?.inProcess.lastFetchTs ? "LIVE" : diagnostics ? "EMPTY" : "BLOCKED";
+  const errorState: UiState = diagnostics?.inProcess.errorRatePct == null
+    ? "EMPTY"
+    : diagnostics.inProcess.errorRatePct <= 5 ? "LIVE" : "BLOCKED";
+  const ohlcvState: UiState = diagnostics?.ohlcvSource === "finmind" ? "LIVE" : diagnostics ? "BLOCKED" : "EMPTY";
+  const quotaText = diagnostics?.quotaLimitPerHour
+    ? `${diagnostics.quotaLimitPerHour.toLocaleString("zh-TW")} / 小時`
+    : diagnostics?.quotaTier ?? "--";
+  const lastFetchText = diagnostics?.inProcess.lastFetchTs
+    ? `${formatDateTime(diagnostics.inProcess.lastFetchTs)} / ${diagnostics.inProcess.lastDataset ?? "未標示資料集"}`
+    : "程序重啟後尚未記錄 FinMind fetch";
+  const diagnosticsRows = [
+    { label: "TOKEN", state: tokenState, value: tokenState === "LIVE" ? "環境變數存在" : "未設定", note: "只顯示 presence，不顯示 token 值。" },
+    { label: "QUOTA", state: quotaState, value: quotaText, note: diagnostics?.quotaTier === "sponsor999" ? "Sponsor 999 配額層。" : "未確認 Sponsor 層級。" },
+    { label: "CACHE", state: cacheState, value: diagnostics?.redisConfigured ? "Redis 已設定" : "Redis 未設定", note: "影響資料快取與重複請求壓力。" },
+    { label: "FETCH", state: fetchState, value: lastFetchText, note: "後端 in-process counter，重啟會歸零。" },
+    { label: "ERROR", state: errorState, value: diagnostics?.inProcess.errorRatePct == null ? "尚無請求" : `${diagnostics.inProcess.errorRatePct}%`, note: `${diagnostics?.inProcess.requestCount ?? 0} 次請求 / ${diagnostics?.inProcess.errorCount ?? 0} 次錯誤。` },
+    { label: "OHLCV", state: ohlcvState, value: diagnostics?.ohlcvSource ?? "--", note: ohlcvState === "LIVE" ? "日 K 來源指向 FinMind。" : "尚未確認 OHLCV source 切到 FinMind。" },
+  ];
 
   return (
     <section className="dashboard-readiness-deck" aria-label="台股資料接線圖">
@@ -482,14 +513,36 @@ function FinMindStatusPanel({ finmind }: { finmind: LoadState<FinMindSourceStatu
             <span className="tg gold">待接資料集</span>
             <strong>{blocked.length}</strong>
           </div>
-          <StatePill state={blocked.length > 0 ? "EMPTY" : "LIVE"} />
-          <p>待接不代表錯誤，只代表前後端還沒有正式露出該資料。</p>
+          <StatePill state={blocked.length > 0 ? "BLOCKED" : "LIVE"} />
+          <p>紅色代表目前不可露出或被 freeze，不會用假資料補成正常。</p>
         </div>
       </div>
+      <div className="dashboard-diagnostics-grid" aria-label="FinMind 診斷細節">
+        {diagnosticsRows.map((row) => (
+          <div className={`dashboard-diagnostic-card is-${row.state.toLowerCase()}`} key={row.label}>
+            <div className="tg soft">{row.label}</div>
+            <strong>{row.value}</strong>
+            <StatePill state={row.state} />
+            <p>{row.note}</p>
+          </div>
+        ))}
+        {data?.diagnosticsError && (
+          <div className="dashboard-diagnostic-card is-blocked">
+            <div className="tg soft">DIAG</div>
+            <strong>診斷讀取失敗</strong>
+            <StatePill state="BLOCKED" />
+            <p>{data.diagnosticsError}</p>
+          </div>
+        )}
+      </div>
       <div className="dashboard-dataset-ribbon" aria-label="FinMind 資料集狀態">
-        <span className="tg soft">已接資料</span>
-        {(ready.length > 0 ? ready : blocked).slice(0, 9).map((dataset) => (
-          <span className={`dashboard-dataset-token ${dataset.state === "READY" ? "is-ready" : "is-pending"}`} key={dataset.key}>
+        <span className="tg soft">資料集</span>
+        {datasets.slice(0, 14).map((dataset) => (
+          <span
+            className={`dashboard-dataset-token ${dataset.state === "READY" ? "is-ready" : "is-blocked"}`}
+            key={dataset.key}
+            title={dataset.blocker ?? dataset.key}
+          >
             {dataset.label}
           </span>
         ))}
@@ -732,36 +785,63 @@ async function loadWatchlist(): Promise<WatchlistSurfaceState> {
   }
 }
 
-async function loadFinMindStatus(): Promise<LoadState<FinMindSourceStatus | null>> {
+async function loadFinMindStatus(): Promise<LoadState<DashboardFinMindStatus | null>> {
   const source = "FinMind Sponsor";
   const updatedAt = new Date().toISOString();
-  try {
-    const res = await getFinMindStatus();
-    const data = res.data;
-    if (!data.tokenPresent || data.state === "BLOCKED") {
-      return {
-        state: "BLOCKED",
-        data,
-        updatedAt: data.updatedAt || updatedAt,
-        source,
-        reason: "FinMind token 或資料源診斷尚未就緒。",
-      };
-    }
-    return {
-      state: "LIVE",
-      data,
-      updatedAt: data.updatedAt || updatedAt,
-      source,
-    };
-  } catch (error) {
+  const [statusResult, diagnosticsResult] = await Promise.allSettled([
+    getFinMindStatus(),
+    getFinMindDiagnostics(),
+  ]);
+
+  if (statusResult.status === "rejected" && diagnosticsResult.status === "rejected") {
     return {
       state: "BLOCKED",
       data: null,
       updatedAt,
       source,
-      reason: friendlyDataError(error),
+      reason: `${friendlyDataError(statusResult.reason)} / ${friendlyDataError(diagnosticsResult.reason)}`,
     };
   }
+
+  const diagnostics = diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value.data : null;
+  const statusData = statusResult.status === "fulfilled"
+    ? statusResult.value.data
+    : {
+        source: "FINMIND" as const,
+        state: diagnostics?.tokenPresent ? "LIVE_READY" as const : "BLOCKED" as const,
+        tokenPresent: diagnostics?.tokenPresent ?? false,
+        quota: {
+          used: diagnostics?.inProcess.requestCount ?? null,
+          limit: diagnostics?.quotaLimitPerHour ?? null,
+          source: diagnostics ? `diagnostics:${diagnostics.quotaTier}` : "diagnostics_unavailable",
+        },
+        datasets: [],
+        notes: diagnostics ? [diagnostics.note] : [],
+        updatedAt,
+      };
+  const data: DashboardFinMindStatus = {
+    ...statusData,
+    diagnostics,
+    diagnosticsError: diagnosticsResult.status === "rejected" ? friendlyDataError(diagnosticsResult.reason) : undefined,
+  };
+  const tokenPresent = data.tokenPresent || diagnostics?.tokenPresent;
+
+  if (!tokenPresent || data.state === "BLOCKED" || diagnostics?.health === "no_token") {
+    return {
+      state: "BLOCKED",
+      data,
+      updatedAt: data.updatedAt || updatedAt,
+      source,
+      reason: "FinMind token 或資料源診斷尚未就緒。",
+    };
+  }
+
+  return {
+    state: "LIVE",
+    data,
+    updatedAt: data.updatedAt || updatedAt,
+    source,
+  };
 }
 
 export default async function DashboardPage() {

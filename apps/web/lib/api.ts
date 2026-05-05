@@ -573,6 +573,24 @@ export type FinMindSourceStatus = {
   updatedAt: string;
 };
 
+export type FinMindDiagnosticsStatus = {
+  tokenPresent: boolean;
+  tokenSource: "env" | "none" | string;
+  ohlcvSource: string;
+  quotaTier: "sponsor999" | "free" | "none" | string;
+  quotaLimitPerHour: number | null;
+  redisConfigured: boolean;
+  inProcess: {
+    requestCount: number;
+    errorCount: number;
+    errorRatePct: number | null;
+    lastFetchTs: string | null;
+    lastDataset: string | null;
+  };
+  health: "configured" | "no_token" | string;
+  note: string;
+};
+
 export type FinMindKBarRow = {
   date: string;
   minute: string;
@@ -597,6 +615,10 @@ export type FinMindKBarView = {
 
 export async function getFinMindStatus() {
   return request<FinMindSourceStatus>("/api/v1/data-sources/finmind/status");
+}
+
+export async function getFinMindDiagnostics() {
+  return request<FinMindDiagnosticsStatus>("/api/v1/diagnostics/finmind");
 }
 
 export async function getCompanyKBar(id: string, date?: string) {
