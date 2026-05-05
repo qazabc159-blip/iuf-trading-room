@@ -107,7 +107,10 @@ const RUN_ID = Date.now().toString(36);
 // ---------------------------------------------------------------------------
 
 test("T0: GET /api/v1/paper/flags returns 200, no auth token in body", async () => {
-  const { status, json } = await get("/api/v1/paper/flags", /* auth= */ false);
+  // NOTE: /api/v1/paper/flags is inside the /api/v1/* auth middleware.
+  // In DB mode (production), unauthenticated requests return 401.
+  // Send the session cookie even for this diagnostic endpoint.
+  const { status, json } = await get("/api/v1/paper/flags", /* auth= */ true);
   assert.equal(status, 200, `expected 200, got ${status}`);
 
   // Body must not contain any secret-looking keys

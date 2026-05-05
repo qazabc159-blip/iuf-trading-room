@@ -15,14 +15,14 @@ Method: Grep tool (Bash dead — 13th Bash-dead session)
 | `OPENAI_API_KEY\s*=\s*sk-` | apps/ | Grep | CLEAN |
 | `KGI_PERSON_ID\s*=\s*\w+` | apps/ | Grep | CLEAN |
 | `JWT_SECRET\s*=\s*[^$]` | apps/ | Grep | CLEAN |
-| `F131331910\|0308732` (live KGI PII) | apps/ | Grep | CLEAN |
+| `[REDACTED:KGI_ID_A]\|[REDACTED:KGI_ID_B]` (live KGI PII) | apps/ | Grep | CLEAN |
 | `FINMIND_API_TOKEN\s*=\s*[^\$]` | apps/ | Grep | CLEAN — .env.example has empty value only |
 | `RAILWAY_TOKEN` (live value) | evidence/ | Grep | CLEAN — only hit is regex pattern string in redaction_policy_v1.md |
 | `OPENAI_API_KEY` (live) | evidence/ | Grep | CLEAN — no live key values |
 | `JWT_SECRET` (live) | evidence/ | Grep | CLEAN |
-| `F131331910\|0308732` | evidence/ | Grep | SEE BELOW |
+| `[REDACTED:KGI_ID_A]\|[REDACTED:KGI_ID_B]` | evidence/ | Grep | SEE BELOW |
 | `RAILWAY_TOKEN\|JWT_SECRET\|OPENAI_API_KEY` | memory/board/ | Grep | CLEAN |
-| `F131331910\|0308732` | memory/board/ | Grep | CLEAN |
+| `[REDACTED:KGI_ID_A]\|[REDACTED:KGI_ID_B]` | memory/board/ | Grep | CLEAN |
 
 ---
 
@@ -36,10 +36,10 @@ Method: Grep tool (Bash dead — 13th Bash-dead session)
 
 ---
 
-## Detail: F131331910 / 0308732 Hits in Evidence
+## Detail: [REDACTED:KGI_ID_A] / [REDACTED:KGI_ID_B] Hits in Evidence
 
 Files with hits:
-1. `evidence/w7_paper_sprint/l5_housekeeping_audit_2026-04-30.md` — audit log describing the 14-file security issue; identifiers appear as part of audit narrative ("SECURITY FLAG FILES contain person_id=F131331910"). Not a new leak — this is the audit document itself.
+1. `evidence/w7_paper_sprint/l5_housekeeping_audit_2026-04-30.md` — audit log describing the 14-file security issue; identifiers appear as part of audit narrative ("SECURITY FLAG FILES contain person_id=[REDACTED:KGI_ID_A]"). Not a new leak — this is the audit document itself.
 2. `evidence/w7_paper_sprint/bruce_pr37_standby_2026-04-30.md` — references existing KGI probe runlog context.
 3. `evidence/w7_paper_sprint/bruce_p0_security_final_closeout_2026-04-30.md` — closeout doc referencing known PII in older evidence files.
 4. `evidence/w7_paper_sprint/bruce_4state_harness_v1_2026-05-01.md` — Sweep E grep command string (not live PII, just the command pattern to search for it).
