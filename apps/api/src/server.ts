@@ -5202,24 +5202,28 @@ app.get("/api/v1/paper/health/detail", async (c) => {
         state: submitState,
         endpoint: "/paper/submit",
         executionMode: flags.executionMode,
-        ...(submitDbError ? { dbError: submitDbError } : {})
+        // Pete review 2026-05-06: opaque code only (no raw Postgres error string on no-auth route)
+        ...(submitDbError ? { dbError: "db_query_failed" } : {})
       },
       fill: {
         state: fillState,
         endpoint: "/paper/fills",
         lastFillTs,
-        todayCount: todayFillCount
+        todayCount: todayFillCount,
+        todayCountTimezone: "UTC"
       },
       portfolio: {
         state: portfolioState,
         endpoint: "/paper/portfolio",
-        rowCount: portfolioRowCount
+        filledOrderCount: portfolioRowCount,
+        note: "filledOrderCount counts FILLED orders, not distinct-symbol positions"
       },
       auditLog: {
         state: auditLogState,
         endpoint: "/audit-log",
         todayEntries: auditLogTodayEntries,
-        ...(auditLogDbError ? { dbError: auditLogDbError } : {})
+        todayEntriesTimezone: "UTC",
+        ...(auditLogDbError ? { dbError: "db_query_failed" } : {})
       }
     }
   });
