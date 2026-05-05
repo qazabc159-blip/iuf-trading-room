@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const migrationTimeoutMs = Number(process.env.RAILWAY_MIGRATION_TIMEOUT_MS ?? 25_000);
+const migrationTimeoutMs = Number(process.env.RAILWAY_MIGRATION_TIMEOUT_MS ?? 120_000);
 const migrationRequired = process.env.RAILWAY_MIGRATION_REQUIRED === "1";
 
 function run(command, args, options = {}) {
