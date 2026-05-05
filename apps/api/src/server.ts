@@ -3787,18 +3787,18 @@ function finmindQuotaLimitPerHour(tier: string): number | null {
   return null;
 }
 
-function recentKBarDateCandidates(primaryDate: string): string[] {
+function recentKBarDateCandidates(primaryDate: string, lookbackDays = 10): string[] {
   const dates = new Set<string>();
   for (const seed of [primaryDate, todayDate()]) {
     const base = new Date(`${seed}T00:00:00Z`);
     if (Number.isNaN(base.getTime())) continue;
-    for (let offset = 0; offset < 7; offset += 1) {
+    for (let offset = 0; offset < lookbackDays; offset += 1) {
       const d = new Date(base);
       d.setUTCDate(base.getUTCDate() - offset);
       dates.add(d.toISOString().slice(0, 10));
     }
   }
-  return Array.from(dates).slice(0, 10);
+  return Array.from(dates);
 }
 
 const FINMIND_DATASET_STATUS = [
@@ -3821,7 +3821,8 @@ const FINMIND_DATASET_STATUS = [
 ] as const;
 
 const finmindKBarQuerySchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  days: z.coerce.number().int().min(1).max(5).default(1)
 });
 
 // GET /api/v1/data-sources/finmind/status
@@ -3911,13 +3912,19 @@ app.get("/api/v1/companies/:id/kbar", async (c) => {
     });
   }
 
-  let rows = [] as Awaited<ReturnType<typeof client.getStockKBar>>;
-  let resolvedDate = date;
-  for (const candidateDate of recentKBarDateCandidates(date)) {
-    rows = await client.getStockKBar(stockId, candidateDate);
-    resolvedDate = candidateDate;
-    if (rows.length > 0) break;
+  const dayGroups: Array<{ date: string; rows: Awaited<ReturnType<typeof client.getStockKBar>> }> = [];
+  const lookbackDays = Math.max(10, query.days * 4 + 5);
+  for (const candidateDate of recentKBarDateCandidates(date, lookbackDays)) {
+    const candidateRows = await client.getStockKBar(stockId, candidateDate);
+    if (candidateRows.length === 0) continue;
+    dayGroups.push({ date: candidateDate, rows: candidateRows });
+    if (dayGroups.length >= query.days) break;
   }
+  const resolvedDates = dayGroups.map((group) => group.date).sort();
+  const rows = dayGroups
+    .flatMap((group) => group.rows)
+    .sort((a, b) => `${a.date} ${a.minute}`.localeCompare(`${b.date} ${b.minute}`));
+  const resolvedDate = resolvedDates.at(-1) ?? date;
 
   return c.json({
     data: {
@@ -3926,6 +3933,10 @@ app.get("/api/v1/companies/:id/kbar", async (c) => {
       reason: rows.length > 0 ? null : "no_kbar_rows_for_recent_dates",
       stockId,
       date: resolvedDate,
+      dateRange: resolvedDates.length > 0 ? { from: resolvedDates[0], to: resolvedDates[resolvedDates.length - 1] } : null,
+      daysRequested: query.days,
+      daysReturned: resolvedDates.length,
+      resolvedDates,
       requestedDate: date,
       rows,
       updatedAt: new Date().toISOString()

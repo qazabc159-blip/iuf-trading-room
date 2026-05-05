@@ -7038,13 +7038,28 @@ test("R17 Case 6: dryRun=true + outside trading hours => blocked with trading_ho
   await setupR17Company({ repo, session, ticker: "R17C6", name: "R17 Case6 Co" });
   await seedReviewRequiredQuote({ session, symbol: "R17C6" });
 
-  // Narrow trading window that excludes current time
+  // Narrow trading window that deterministically excludes current Taipei time.
+  // A fixed "00:00-00:01" window becomes flaky when CI happens to run around
+  // midnight; this keeps Case 6 focused on trading_hours precedence.
+  const taipeiParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit"
+  }).formatToParts(new Date());
+  const taipeiHour = Number(taipeiParts.find((part) => part.type === "hour")?.value ?? "0") % 24;
+  const taipeiMinute = Number(taipeiParts.find((part) => part.type === "minute")?.value ?? "0");
+  const excludedWindowStart = (taipeiHour * 60 + taipeiMinute + 720) % 1440;
+  const excludedWindowEnd = (excludedWindowStart + 1) % 1440;
+  const formatTradingMinute = (minutes: number) =>
+    `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
   await upsertRiskLimitState({
     session,
     payload: {
       accountId: "paper-default",
-      tradingHoursStart: "00:00",
-      tradingHoursEnd: "00:01"
+      tradingHoursStart: formatTradingMinute(excludedWindowStart),
+      tradingHoursEnd: formatTradingMinute(excludedWindowEnd)
     }
   });
 
