@@ -52,6 +52,37 @@ Primary goal: make production UI meaningful, sourced, and operational.
 - Stop-line proof: frontend semantics/evidence only. No token value, Railway secret, DB migration, KGI SDK/broker write-side, live submit, destructive DB, fake strategy metrics, buy/sell wording, or fake OpenAlice content was touched.
 - Checks: pending this cycle: web typecheck/build, diff check, PR #182 push/update, CI.
 
+### 2026-05-05 17:44 Taipei - Codex pass 119 - daily brief freshness truth
+
+**Scope**: manual-dispatch frontend PR #185 update. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no fake OpenAlice rewrite.
+
+**Files changed**:
+- `apps/web/app/briefs/page.tsx` - added Taiwan/Taipei data-date freshness logic for daily briefs.
+- `apps/web/lib/freshness.ts` - shared Taiwan/Taipei daily brief freshness helpers.
+- `apps/web/app/plans/page.tsx` - trading-plan daily brief sidebar now uses the same stale-state language.
+- `apps/web/app/m/page.tsx` - mobile latest daily brief now shows `資料過期` instead of implying current content.
+- `apps/web/app/globals.css` - added compact stale-brief warning styling.
+- `evidence/w7_paper_sprint/codex_openalice_brief_observability_2026-05-05.md` - recorded stale-data diagnosis and owner handoff.
+- `evidence/w7_paper_sprint/TO_JASON_openalice_daily_brief_freshness_diagnosis_2026-05-05.md` - backend/worker diagnosis packet for Elva dispatch.
+
+**Behavior**:
+- `/briefs` is no longer green just because a formal daily brief row exists.
+- Latest brief date must equal Taiwan/Taipei today to show `今日資料`.
+- Older rows show `資料過期`, last data date, age, and a warning that OpenAlice worker / daily brief pipeline must write a new source-traced row.
+- The UI still renders the old formal row for continuity, but explicitly states it is not today's AI report.
+- `/plans` and `/m` inherit the same daily-brief freshness semantics so stale OpenAlice content cannot appear green from secondary surfaces.
+
+**Why OpenAlice data can look old**:
+- The frontend reads `GET /api/v1/daily-briefs`; it does not generate or overwrite the daily brief.
+- If old 4/22 or 4/25 style content remains, the producer chain likely did not write a new formal row, or a pending/stale draft/job is blocking generation.
+- Safe backend owner is Jason/OpenAlice worker lane: expose producer skip reason, latest formal date, draft date, job states, active device heartbeat, and a governed rerun path.
+- Code-level note: `daily-brief-producer.ts` currently derives `today` from UTC via `new Date().toISOString().split("T")[0]`; Jason should confirm whether the producer must use Asia/Taipei date to avoid early-morning date drift.
+
+**Checks**:
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS.
+- `pnpm.cmd --filter @iuf-trading-room/web build` PASS.
+- `git diff --check` PASS with CRLF warnings only.
+
 ### 2026-05-04 00:23 Taipei - Codex heartbeat - FinMind Sponsor company research expansion
 
 **Scope**: read-only FinMind Sponsor 999 data expansion and company-page source truth. No live submit, no Railway secrets, no migration 0020, no KGI SDK/broker write-side, no destructive DB, no RSS/commercial/deferred news feature.
