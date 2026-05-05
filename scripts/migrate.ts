@@ -35,7 +35,12 @@ export async function main() {
   });
 
   try {
+    // Cycle 9.6 fix: set lock_timeout so a stale advisory lock from a crashed
+    // prior deploy doesn't hang this process indefinitely (and cause the
+    // 25s Railway migration timeout → degraded start → SQL 500 errors).
+    await sql`SET lock_timeout = '15s'`;
     await sql`SELECT pg_advisory_lock(${lockKeyA}, ${lockKeyB})`;
+    await sql`RESET lock_timeout`;
     await sql`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         version TEXT PRIMARY KEY,
