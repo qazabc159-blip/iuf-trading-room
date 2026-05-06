@@ -1,0 +1,64 @@
+{
+  "generatedAt": "2026-05-06T05:48:24.711Z",
+  "route": "http://127.0.0.1:3360/portfolio",
+  "authNote": "Local QA used a non-secret presence cookie only; production API rejected as invalid session, so BLOCKED state is expected.",
+  "branch": "feat/web-paper-fills-readout-2026-05-06",
+  "sourceEndpoints": [
+    "GET /api/v1/paper/portfolio",
+    "GET /api/v1/paper/fills"
+  ],
+  "tradeCapabilityScore": "+1",
+  "noTokenProof": true,
+  "noInternalIdDisplayProof": true,
+  "noFakeLiveProof": "Invalid local auth renders safe BLOCKED state; no invented fills or positions.",
+  "noOrderProof": true,
+  "noOverflowProof": true,
+  "results": [
+    {
+      "viewport": {
+        "name": "desktop1365",
+        "width": 1365,
+        "height": 900
+      },
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_m3_fills_worktree\\evidence\\w7_paper_sprint\\local_visual_qa_m3_fills_2026-05-06\\desktop1365_portfolio_fills.png",
+      "facts": {
+        "url": "http://127.0.0.1:3360/portfolio",
+        "hasPaper": true,
+        "hasFillsPanel": true,
+        "hasSource": true,
+        "hasUserId": false,
+        "hasIdempotencyKey": false,
+        "hasOrderCreate": false,
+        "hasPaperSubmit": false,
+        "hasFakeFill": false,
+        "scrollWidth": 1365,
+        "clientWidth": 1365,
+        "overflow": false
+      },
+      "consoleErrors": []
+    },
+    {
+      "viewport": {
+        "name": "mobile390",
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_m3_fills_worktree\\evidence\\w7_paper_sprint\\local_visual_qa_m3_fills_2026-05-06\\mobile390_portfolio_fills.png",
+      "facts": {
+        "url": "http://127.0.0.1:3360/portfolio",
+        "hasPaper": true,
+        "hasFillsPanel": true,
+        "hasSource": true,
+        "hasUserId": false,
+        "hasIdempotencyKey": false,
+        "hasOrderCreate": false,
+        "hasPaperSubmit": false,
+        "hasFakeFill": false,
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "overflow": false
+      },
+      "consoleErrors": []
+    }
+  ]
+}

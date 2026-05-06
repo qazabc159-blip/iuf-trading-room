@@ -1,6 +1,11 @@
 import Link from "next/link";
 
-import { getPaperPortfolio, type PaperPortfolioPosition } from "@/lib/paper-orders-api";
+import {
+  getPaperPortfolio,
+  listPaperFills,
+  type PaperFillLedgerRow,
+  type PaperPortfolioPosition,
+} from "@/lib/paper-orders-api";
 import { friendlyDataError } from "@/lib/friendly-error";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +29,28 @@ type PortfolioState =
   | {
       state: "BLOCKED";
       positions: PaperPortfolioPosition[];
+      updatedAt: string;
+      source: string;
+      reason: string;
+    };
+
+type FillsState =
+  | {
+      state: "LIVE";
+      fills: PaperFillLedgerRow[];
+      updatedAt: string;
+      source: string;
+    }
+  | {
+      state: "EMPTY";
+      fills: PaperFillLedgerRow[];
+      updatedAt: string;
+      source: string;
+      reason: string;
+    }
+  | {
+      state: "BLOCKED";
+      fills: PaperFillLedgerRow[];
       updatedAt: string;
       source: string;
       reason: string;
@@ -62,6 +89,39 @@ async function loadPaperPortfolio(): Promise<PortfolioState> {
   }
 }
 
+async function loadPaperFills(): Promise<FillsState> {
+  const updatedAt = new Date().toISOString();
+  const source = "GET /api/v1/paper/fills";
+
+  try {
+    const fills = await listPaperFills();
+    if (fills.length === 0) {
+      return {
+        state: "EMPTY",
+        fills,
+        updatedAt,
+        source,
+        reason: "目前沒有已成交的模擬成交明細；這不是錯誤，也不補假成交。",
+      };
+    }
+
+    return {
+      state: "LIVE",
+      fills,
+      updatedAt: latestFillTime(fills) ?? updatedAt,
+      source,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      fills: [],
+      updatedAt,
+      source,
+      reason: friendlyDataError(error, "紙上成交明細 API 目前無法讀取。"),
+    };
+  }
+}
+
 function stateLabel(state: PortfolioState["state"]) {
   if (state === "LIVE") return "正常";
   if (state === "EMPTY") return "無部位";
@@ -72,6 +132,17 @@ function stateClass(state: PortfolioState["state"]) {
   if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
   return "status-bad";
+}
+
+function sideLabel(side: PaperFillLedgerRow["side"]) {
+  return side === "buy" ? "買進" : "賣出";
+}
+
+function orderTypeLabel(orderType: PaperFillLedgerRow["orderType"]) {
+  if (orderType === "market") return "市價";
+  if (orderType === "limit") return "限價";
+  if (orderType === "stop") return "停損";
+  return "停損限價";
 }
 
 function formatTime(value: string) {
@@ -87,9 +158,53 @@ function formatTime(value: string) {
   });
 }
 
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
 function formatTwd(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "--";
   return `NT$${value.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}`;
+}
+
+function actualFillShares(fill: PaperFillLedgerRow) {
+  return fill.quantity_unit === "LOT" ? fill.fillQty * 1000 : fill.fillQty;
+}
+
+function fillUnitLabel(fill: PaperFillLedgerRow) {
+  if (fill.quantity_unit === "LOT") return `${fill.fillQty.toLocaleString("zh-TW")} 張`;
+  return `${fill.fillQty.toLocaleString("zh-TW")} 股零股`;
+}
+
+function fillNotional(fill: PaperFillLedgerRow) {
+  return actualFillShares(fill) * fill.fillPrice;
+}
+
+function totalFillNotional(fills: PaperFillLedgerRow[]) {
+  return fills.reduce((sum, fill) => sum + fillNotional(fill), 0);
+}
+
+function latestFillTime(fills: PaperFillLedgerRow[]) {
+  return fills
+    .map((fill) => fill.fillTime)
+    .filter(Boolean)
+    .sort()
+    .at(-1) ?? null;
+}
+
+function shortOrderId(orderId: string) {
+  if (orderId.length <= 10) return orderId;
+  return `${orderId.slice(0, 6)}…${orderId.slice(-4)}`;
 }
 
 function formatShares(value: number) {
@@ -134,9 +249,11 @@ function estimatedCost(positions: PaperPortfolioPosition[]) {
 }
 
 export default async function PortfolioPage() {
-  const result = await loadPaperPortfolio();
+  const [result, fillsResult] = await Promise.all([loadPaperPortfolio(), loadPaperFills()]);
   const paperCost = estimatedCost(result.positions);
   const availableCapital = Math.max(PAPER_CAPITAL_TWD - paperCost, 0);
+  const fillNotionalTotal = totalFillNotional(fillsResult.fills);
+  const recentFills = fillsResult.fills.slice(0, 12);
 
   return (
     <main className="page-frame portfolio-page">
@@ -200,6 +317,14 @@ export default async function PortfolioPage() {
           <div className="tg quote-symbol">持股總量</div>
           <div className="quote-last num">{formatShares(totalShares(result.positions))}</div>
         </div>
+        <div className="quote-card">
+          <div className="tg quote-symbol">成交筆數</div>
+          <div className="quote-last num">{fillsResult.fills.length.toLocaleString("zh-TW")}</div>
+        </div>
+        <div className="quote-card">
+          <div className="tg quote-symbol">成交金額</div>
+          <div className="quote-last num gold">{formatTwd(fillNotionalTotal)}</div>
+        </div>
       </section>
 
       <section className="panel portfolio-readout">
@@ -248,6 +373,64 @@ export default async function PortfolioPage() {
         )}
       </section>
 
+      <section className="panel portfolio-readout portfolio-fill-readout">
+        <div className="panel-head">
+          <div>
+            <span className="tg panel-code">FILL</span>
+            <span className="tg muted"> / </span>
+            <span className="tg gold">紙上成交明細</span>
+            <div className="panel-sub">
+              只讀取後端 FILLED 模擬成交；不顯示內部使用者欄位與去重鍵，不拿 FinMind 或 K 線當成交價。
+            </div>
+          </div>
+          <div className={`tg ${stateClass(fillsResult.state)}`}>{stateLabel(fillsResult.state)}</div>
+        </div>
+
+        {fillsResult.state !== "LIVE" && (
+          <div className="terminal-note portfolio-empty-note">
+            <span className={`tg ${stateClass(fillsResult.state)}`}>{stateLabel(fillsResult.state)}</span>
+            <span>{fillsResult.reason}</span>
+          </div>
+        )}
+
+        <div className="portfolio-fill-source">
+          <span>來源：{fillsResult.source}</span>
+          <span>更新：{formatTime(fillsResult.updatedAt)}</span>
+          <span>安全：只讀 / PAPER / no broker</span>
+        </div>
+
+        {recentFills.length > 0 && (
+          <div className="portfolio-fill-table" role="table" aria-label="紙上成交明細">
+            <div className="portfolio-fill-row portfolio-fill-head" role="row">
+              <span>時間</span>
+              <span>股票</span>
+              <span>方向</span>
+              <span>類型</span>
+              <span>單位</span>
+              <span>實際股數</span>
+              <span>成交價</span>
+              <span>成交金額</span>
+              <span>訂單</span>
+            </div>
+            {recentFills.map((fill) => (
+              <div className="portfolio-fill-row" role="row" key={`${fill.orderId}:${fill.fillTime}`}>
+                <span>{formatDateTime(fill.fillTime)}</span>
+                <Link className="tg gold" href={`/companies/${fill.symbol}`}>
+                  {fill.symbol}
+                </Link>
+                <span className={fill.side === "buy" ? "status-ok" : "status-bad"}>{sideLabel(fill.side)}</span>
+                <span>{orderTypeLabel(fill.orderType)}</span>
+                <span>{fillUnitLabel(fill)}</span>
+                <span className="num">{formatShares(actualFillShares(fill))}</span>
+                <span className="num">{formatTwd(fill.fillPrice)} / 股</span>
+                <span className="num gold">{formatTwd(fillNotional(fill))}</span>
+                <span className="tg muted">{shortOrderId(fill.orderId)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="portfolio-next-actions" aria-label="下一步">
         <div className="panel portfolio-action-panel">
           <div className="panel-head">
@@ -279,8 +462,10 @@ export default async function PortfolioPage() {
           </div>
           <ul className="portfolio-proof-list">
             <li>讀取端點：{result.source}</li>
+            <li>成交端點：{fillsResult.source}</li>
             <li>紙上基準資金：{formatTwd(PAPER_CAPITAL_TWD)}</li>
             <li>部位數：{result.positions.length.toLocaleString("zh-TW")}</li>
+            <li>成交筆數：{fillsResult.fills.length.toLocaleString("zh-TW")}；UI 不顯示內部使用者欄位與去重鍵。</li>
             <li>台股單位：1 張 = 1,000 股；本頁永遠顯示實際股數。</li>
           </ul>
         </div>
