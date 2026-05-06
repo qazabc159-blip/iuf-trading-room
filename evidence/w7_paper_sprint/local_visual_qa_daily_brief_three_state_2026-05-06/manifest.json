@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-05-06T06:22:24.550Z",
+  "route": "/briefs",
+  "fakeApiMode": "awaiting_review",
+  "checks": [
+    {
+      "viewport": "desktop1365",
+      "url": "http://127.0.0.1:3370/briefs?qa=1778048541143",
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_daily_brief_worktree\\evidence\\w7_paper_sprint\\local_visual_qa_daily_brief_three_state_2026-05-06\\desktop1365_briefs_awaiting_review_authed.png",
+      "hasAwaiting": true,
+      "hasOwnerApprove": true,
+      "hasOldAsToday": false,
+      "hasToken": false,
+      "hasOrderCreate": false,
+      "hasConsoleErrors": false,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "mobile390",
+      "url": "http://127.0.0.1:3370/briefs?qa=1778048542954",
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_daily_brief_worktree\\evidence\\w7_paper_sprint\\local_visual_qa_daily_brief_three_state_2026-05-06\\mobile390_briefs_awaiting_review_authed.png",
+      "hasAwaiting": true,
+      "hasOwnerApprove": true,
+      "hasOldAsToday": false,
+      "hasToken": false,
+      "hasOrderCreate": false,
+      "hasConsoleErrors": false,
+      "consoleErrors": []
+    }
+  ],
+  "noToken": true,
+  "noOrder": true,
+  "noFakeToday": true,
+  "awaitingVisible": true,
+  "ownerOverrideVisible": true,
+  "stopLineViolations": 0
+}

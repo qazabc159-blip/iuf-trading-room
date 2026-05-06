@@ -3368,7 +3368,6 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: web typecheck PASS; production build PASS with NEXT_PUBLIC_API_BASE_URL=https://api.eycvector.com.
 - Stop-lines: no order route, no KGI write-side, no fake-live, no FinMind-as-fill/risk.
 - Next: PR + CI + production screenshot manifest for 1104 and 2330 minute K.
-
 ## Codex Update - 2026-05-06 05:56:02 +08:00 - K-line density deployed/threshold pending
 - PR #210 merged and deployed at commit 38ba5f3; production smoke PASS for 1104/2330 FinMind minute K.
 - Evidence: evidence/w7_paper_sprint/production_smoke_pass127_kline_intraday_density_2026-05-06/manifest.json.
@@ -3406,3 +3405,11 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior: LIVE/READY = normal; STALE/EMPTY/FALLBACK/DEGRADED = pending/degraded; BLOCKED/ERROR/MOCK/CLOSED = blocked. Dataset ribbon displays state, row count, latest date when the API provides them.
 - Stop-lines: no token display/logging, no KGI/broker write-side, no order path, no fake-live dataset state, no directional trade recommendation, no strategy metrics.
 - Checks: contracts build PASS; web typecheck PASS; web build PASS; diff stop-line grep PASS.
+
+## 2026-05-06 14:22 TST — Codex BLOCK #5 Daily Brief Three-State Surface
+
+- Files: `apps/web/app/briefs/page.tsx`, `apps/web/components/ContentDraftOverrideActions.tsx`, `apps/web/app/globals.css`, `evidence/w7_paper_sprint/codex_daily_brief_three_state_surface_2026-05-06.md`, `evidence/w7_paper_sprint/local_visual_qa_daily_brief_three_state_2026-05-06/manifest.json`
+- Endpoint/source: `GET /api/v1/briefs`, `GET /api/v1/content-drafts?status=awaiting_review&limit=100`, `GET /api/v1/session`, `GET /api/v1/openalice/observability`, `GET /api/v1/openalice/jobs`, Owner fallback `POST /api/v1/content-drafts/:id/{approve,reject}`
+- Behavior: `/briefs` now separates today's `PUBLISHED`, `AWAITING_REVIEW`, `MISSING`, and `ERROR`; awaiting-review OpenAlice drafts are no longer rendered as stale failure, and old published rows are not marked as today's brief.
+- Tests: contracts build PASS; web typecheck PASS; web build PASS; local authenticated 1365/390 visual QA PASS.
+- Stop-lines: no token, no fake-live, no order route, no KGI write-side, no strategy metrics; published section text masks obvious buy/sell advice wording.
