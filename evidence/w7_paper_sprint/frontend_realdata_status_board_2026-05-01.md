@@ -3555,3 +3555,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: FinMind scheduler logs, `GET /api/v1/data-sources/finmind/status` state, existing FinMind ETL jobs.
 - Checks: api typecheck PASS; api build PASS; diff-check PASS with CRLF warnings only.
 - Stop-lines: no token value, no Railway env edit, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no strategy metric.
+
+## 2026-05-07 04:24 TPE - Codex FinMind OHLCV circuit abort repair
+
+- Branch: `fix-api-finmind-abort-batch-on-circuit-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/api/src/jobs/ohlcv-finmind-sync.ts`, `evidence/w7_paper_sprint/codex_finmind_abort_batch_on_circuit_2026-05-07.md`, `C:\Users\User\.claude\projects\C--Users-User\memory\board\codex_channel\codex_to_elva_2026-05-07_finmind_abort_batch_on_circuit.md`
+- Behavior: OHLCV sync now aborts the current local batch as soon as the FinMind circuit is open, and reports actual attempted ticker count instead of the requested batch size.
+- Sources: existing FinMind OHLCV scheduler path and FinMind client circuit state.
+- Checks: api typecheck PASS; api build PASS; diff-check PASS with CRLF warning only.
+- Stop-lines: no token value, no Railway env edit, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no strategy metric.
