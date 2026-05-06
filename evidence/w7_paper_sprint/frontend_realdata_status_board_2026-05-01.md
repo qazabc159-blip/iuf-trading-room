@@ -3595,3 +3595,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: briefs, content drafts, OpenAlice jobs, OpenAlice observability, dispatcher debug.
 - Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warning only; mojibake marker scan PASS; stop-line grep PASS.
 - Stop-lines: no token value, no OpenAI secret touch, no auto-publish, no order route, no KGI write-side, no migration/schema/destructive DB, no fake daily brief, no buy/sell wording.
+
+## 2026-05-07 06:10 TPE - Codex OpenAlice daily brief publish status repair
+
+- Branch: `fix-openalice-brief-published-status-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/api/src/content-draft-store.ts`, `apps/worker/src/jobs/daily-brief-producer.ts`, `packages/domain/src/postgres-repository.ts`, `evidence/w7_paper_sprint/codex_openalice_brief_publish_status_repair_2026-05-07.md`
+- Behavior: OpenAlice-approved daily briefs and worker fallback formal briefs now surface as `published` through `GET /api/v1/briefs`; legacy `approved` rows and legacy worker `draft` rows are normalized at the repository boundary so `/briefs` does not show empty when automation already produced a formal row.
+- Sources: `GET /api/v1/briefs`, `POST /api/v1/content-drafts/:draftId/approve`, worker daily brief producer.
+- Checks: api typecheck PASS; worker typecheck PASS; domain build PASS; web typecheck PASS; api build PASS; worker build PASS; web build PASS; diff-check PASS with CRLF warning only.
+- Stop-lines: no token value, no OpenAI/FinMind secret touch, no order route, no KGI write-side, no migration/schema/destructive DB, no fake daily brief, no buy/sell wording, no strategy metric.

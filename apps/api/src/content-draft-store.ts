@@ -344,7 +344,7 @@ export async function approveContentDraft(input: {
             marketState: payload.marketState,
             sections: payload.sections,
             generatedBy: "openalice",
-            status: "approved"
+            status: "published"
           })
           .where(eq(dailyBriefs.id, existingRows[0]!.id))
           .returning();
@@ -361,7 +361,7 @@ export async function approveContentDraft(input: {
             marketState: payload.marketState,
             sections: payload.sections,
             generatedBy: "openalice",
-            status: "approved"
+            status: "published"
           })
           .returning();
         if (!inserted) {

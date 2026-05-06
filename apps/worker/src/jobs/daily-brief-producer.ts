@@ -224,7 +224,7 @@ export async function runDailyBriefProducer(): Promise<{
       marketState,
       sections,
       generatedBy: "worker",
-      status: "draft"
+      status: "published"
     })
     .returning();
 
