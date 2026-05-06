@@ -1,0 +1,93 @@
+{
+  "schema": "iuf_strategy_snapshot_v1",
+  "sourceRepo": "IUF_QUANT_LAB",
+  "sourceFile": "registry/strategies.json",
+  "snapshotAt": "2026-05-07T00:30:00+08:00",
+  "notes": [
+    "Trimmed snapshot for IUF Trading Room daily brief — no strategy code internals.",
+    "Published by Athena (IUF Quant Lab CEO) per axis 4 dispatch.",
+    "All strategies are BACKTESTED_RAW — NOT paper-ready. Caveats must accompany any mention.",
+    "AI reviewer hard reject rules apply: no buy/sell/target price/必賺/勝率/guaranteed return."
+  ],
+  "strategies": [
+    {
+      "strategyId": "strategy_001_inst_followon",
+      "name": "法人連續同向跟單 (Institutional Follow-on)",
+      "type": "short_term",
+      "status": "BACKTESTED_RAW",
+      "latestSummary": {
+        "totalTrades": 87,
+        "rawPnl": 12269.78,
+        "maxDd": 7488.03,
+        "avgHoldingDays": 2.10
+      },
+      "caveats": [
+        "NOT_PAPER_READY",
+        "single_window_outlier_W2_drives_total",
+        "bootstrap_CI_lower_bound_crosses_zero",
+        "alpha_decay_observed_W2_to_W4",
+        "survivorship_bias_not_audited",
+        "87_trades_small_sample"
+      ]
+    },
+    {
+      "strategyId": "strategy_002_revenue_yoy_surprise",
+      "name": "月營收驚喜 (Monthly Revenue YoY Surprise)",
+      "type": "mid_term",
+      "status": "BACKTESTED_RAW",
+      "latestSummary": {
+        "totalTrades": 107,
+        "rawPnl": 75781.39,
+        "maxDd": 21691.48,
+        "avgHoldingDays": 9.55
+      },
+      "caveats": [
+        "NOT_PAPER_READY",
+        "robustness_audit_not_yet_performed",
+        "announcement_date_proxy_conservative",
+        "survivorship_bias_not_audited",
+        "cache_not_strict_PIT"
+      ]
+    },
+    {
+      "strategyId": "strategy_003_ma200_trend_follow",
+      "name": "200-day MA Trend Follow",
+      "type": "long_term",
+      "status": "BACKTESTED_RAW",
+      "latestSummary": {
+        "totalTrades": 106,
+        "rawPnl": 113804.31,
+        "maxDd": 34233.39,
+        "avgHoldingDays": 8.49
+      },
+      "caveats": [
+        "NOT_PAPER_READY",
+        "backtest_window_6_months_too_short_for_long_term",
+        "horizon_mismatch_design_vs_empirical",
+        "single_window_result_not_robustness_evidence",
+        "survivorship_bias_not_audited",
+        "cache_extension_to_36_months_required"
+      ]
+    },
+    {
+      "strategyId": "strategy_004_oversold_bounce",
+      "name": "Oversold Bounce (Mean-Reversion)",
+      "type": "short_term",
+      "status": "BACKTESTED_RAW",
+      "latestSummary": {
+        "totalTrades": 180,
+        "rawPnl": 15793.20,
+        "maxDd": 13191.85,
+        "avgHoldingDays": 2.59
+      },
+      "caveats": [
+        "NOT_PAPER_READY",
+        "thin_edge_per_trade",
+        "calibration_v1_to_v2_rsI_removed",
+        "regime_filter_missing",
+        "survivorship_bias_not_audited",
+        "robustness_audit_deferred_to_portfolio_phase"
+      ]
+    }
+  ]
+}
