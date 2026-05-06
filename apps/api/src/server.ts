@@ -4021,11 +4021,13 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
   const errorRatePct = stats.requestCount === 0
     ? null
     : Math.round((stats.errorCount / stats.requestCount) * 10000) / 100;
+  const circuitOpen = stats.circuitOpen;
   const degradedByErrors = Boolean(
     tokenPresent &&
-    stats.requestCount >= 10 &&
-    errorRatePct !== null &&
-    errorRatePct >= 50
+    (
+      circuitOpen ||
+      (stats.requestCount >= 10 && errorRatePct !== null && errorRatePct >= 50)
+    )
   );
   const sourceState = tokenPresent
     ? degradedByErrors ? "DEGRADED" : "LIVE_READY"
@@ -4355,7 +4357,14 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
         errorRatePct,
         lastFetchTs: stats.lastFetchTs,
         lastDataset: stats.lastDataset,
-        degradedByErrors
+        degradedByErrors,
+        circuitOpen,
+        circuitOpenUntil: stats.circuitOpenUntil,
+        circuitReason: stats.circuitReason,
+        circuitDataset: stats.circuitDataset,
+        circuitOpenedAt: stats.circuitOpenedAt,
+        circuitSkipCount: stats.circuitSkipCount,
+        forbiddenCount: stats.forbiddenCount
       },
       datasets,
       notes: [
@@ -4365,6 +4374,7 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
         "kbar_single_day_payload",
         "ohlcv_datasets_db_backed_others_api_only",
         "state_fallback_means_api_queryable_no_local_persist",
+        ...(circuitOpen ? ["finmind_upstream_circuit_open"] : []),
         ...(degradedByErrors ? ["recent_fetch_errors_high"] : [])
       ],
       updatedAt: new Date().toISOString()
@@ -6274,6 +6284,10 @@ app.get("/api/v1/companies/:symbol/dividend", async (c) => {
  * manual one-shot sync endpoint). No-op when DB unavailable.
  */
 async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
+  if (process.env.FINMIND_KILL_SWITCH === "true") {
+    console.log("[ohlcv-scheduler] FINMIND_KILL_SWITCH=true, skipping tick");
+    return;
+  }
   if (!process.env.FINMIND_API_TOKEN) {
     console.log("[ohlcv-scheduler] FINMIND_API_TOKEN not set, skipping tick");
     return;
