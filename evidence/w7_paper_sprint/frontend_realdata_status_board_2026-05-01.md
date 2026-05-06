@@ -3575,3 +3575,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: FinMind status/diagnostics, market-data overview, OpenAlice ops/briefs/content drafts, paper health, strategy ideas/runs.
 - Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only; 1365px browser screenshot PASS.
 - Stop-lines: no token value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no unapproved strategy metrics, no buy/sell wording.
+
+## 2026-05-07 05:18 TPE - Codex paper portfolio SSR auth repair
+
+- Branch: `fix-web-paper-portfolio-ssr-cookie-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/lib/paper-orders-api.ts`, `evidence/w7_paper_sprint/codex_paper_portfolio_ssr_cookie_forward_2026-05-07.md`
+- Behavior: server-rendered paper pages now forward the browser cookie to paper API calls, so `/portfolio` can authenticate `paper/portfolio`, `paper/fills`, `paper/orders`, and `paper/health` instead of showing false login-expired/empty states.
+- Sources: existing paper endpoints only; no endpoint behavior changed.
+- Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warning only.
+- Stop-lines: no token value, no `/order/create`, no KGI write-side, no migration/schema/destructive DB, no fake position/fill, no paper/live gate relaxation.

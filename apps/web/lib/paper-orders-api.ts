@@ -138,11 +138,24 @@ async function readJson(response: Response): Promise<ApiErrorBody> {
   }
 }
 
+async function ssrCookieHeader() {
+  if (typeof window !== "undefined") return null;
+
+  try {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    return h.get("cookie");
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!API_BASE) {
     throw new PaperOrderApiError(503, { error: "API_BASE_UNCONFIGURED" }, "PAPER_ORDER_API_BASE_UNCONFIGURED");
   }
 
+  const cookie = await ssrCookieHeader();
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     cache: "no-store",
@@ -150,6 +163,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       "Content-Type": "application/json",
       "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -201,6 +215,7 @@ export async function submitPaperOrder(input: PaperOrderInput, idempotencyKey?: 
   }
 
   const body = withIdempotency(input, "submit", idempotencyKey);
+  const cookie = await ssrCookieHeader();
   const response = await fetch(`${API_BASE}/api/v1/paper/submit`, {
     method: "POST",
     credentials: "include",
@@ -208,6 +223,7 @@ export async function submitPaperOrder(input: PaperOrderInput, idempotencyKey?: 
     headers: {
       "Content-Type": "application/json",
       "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
     },
     body: JSON.stringify(body),
   });
@@ -244,6 +260,7 @@ export async function cancelPaperOrder(orderId: string, reason = "operator_cance
     throw new PaperOrderApiError(503, { error: "API_BASE_UNCONFIGURED" }, "PAPER_ORDER_API_BASE_UNCONFIGURED");
   }
 
+  const cookie = await ssrCookieHeader();
   const response = await fetch(`${API_BASE}/api/v1/paper/orders/${encodeURIComponent(orderId)}/cancel`, {
     method: "POST",
     credentials: "include",
@@ -251,6 +268,7 @@ export async function cancelPaperOrder(orderId: string, reason = "operator_cance
     headers: {
       "Content-Type": "application/json",
       "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
     },
     body: JSON.stringify({ reason }),
   });
