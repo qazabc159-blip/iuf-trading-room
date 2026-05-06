@@ -1,424 +1,290 @@
 import Link from "next/link";
 
-import { PageFrame, Panel } from "@/components/PageFrame";
-import { OrderTicketForm } from "@/components/portfolio/OrderTicket";
-import { KillSwitch } from "@/components/portfolio/KillSwitch";
-import type { KillMode } from "@/components/portfolio/KillSwitch";
-import { PositionRiskBadge } from "@/components/portfolio/PositionRiskBadge";
-import { RiskSurface } from "@/components/portfolio/RiskSurface";
-import type { RiskSurfaceState } from "@/components/portfolio/RiskSurface";
-import {
-  getExecutionEvents,
-  getKillSwitch,
-  getRiskPortfolioOverview,
-  getRiskLimit,
-  getTradingBalance,
-  getTradingOrders,
-  getTradingPositions,
-  listStrategyRiskLimits,
-  listSymbolRiskLimits,
-} from "@/lib/api";
+import { getPaperPortfolio, type PaperPortfolioPosition } from "@/lib/paper-orders-api";
 import { friendlyDataError } from "@/lib/friendly-error";
 
 export const dynamic = "force-dynamic";
 
-const ACCOUNT_ID = "paper-default";
+const PAPER_CAPITAL_TWD = 20_000;
 
-type BalanceRow = Awaited<ReturnType<typeof getTradingBalance>>["data"];
-type PositionRow = Awaited<ReturnType<typeof getTradingPositions>>["data"][number];
-type OrderRow = Awaited<ReturnType<typeof getTradingOrders>>["data"][number];
-type EventRow = Awaited<ReturnType<typeof getExecutionEvents>>["data"][number];
-type RiskRow = Awaited<ReturnType<typeof getRiskLimit>>["data"];
-type StrategyLimitRow = Awaited<ReturnType<typeof listStrategyRiskLimits>>["data"][number];
-type SymbolLimitRow = Awaited<ReturnType<typeof listSymbolRiskLimits>>["data"][number];
-type KillState = Awaited<ReturnType<typeof getKillSwitch>>["data"];
-type PortfolioData = {
-  balance: BalanceRow;
-  positions: PositionRow[];
-  orders: OrderRow[];
-  events: EventRow[];
-  risk: RiskRow;
-  strategyLimits: StrategyLimitRow[];
-  symbolLimits: SymbolLimitRow[];
-  kill: KillState;
-};
-type LoadState =
-  | { state: "LIVE"; data: PortfolioData | null; updatedAt: string; source: string }
-  | { state: "EMPTY"; data: PortfolioData | null; updatedAt: string; source: string; reason: string }
-  | { state: "BLOCKED"; data: PortfolioData | null; updatedAt: string; source: string; reason: string };
+type PortfolioState =
+  | {
+      state: "LIVE";
+      positions: PaperPortfolioPosition[];
+      updatedAt: string;
+      source: string;
+    }
+  | {
+      state: "EMPTY";
+      positions: PaperPortfolioPosition[];
+      updatedAt: string;
+      source: string;
+      reason: string;
+    }
+  | {
+      state: "BLOCKED";
+      positions: PaperPortfolioPosition[];
+      updatedAt: string;
+      source: string;
+      reason: string;
+    };
 
-function friendlyError(error: unknown) {
-  return friendlyDataError(error, "交易室資料暫時無法讀取。");
+async function loadPaperPortfolio(): Promise<PortfolioState> {
+  const updatedAt = new Date().toISOString();
+  const source = "GET /api/v1/paper/portfolio";
+
+  try {
+    const positions = await getPaperPortfolio();
+    if (positions.length === 0) {
+      return {
+        state: "EMPTY",
+        positions,
+        updatedAt,
+        source,
+        reason: "目前沒有已成交的模擬委託，因此沒有紙上部位。這不是錯誤，也沒有補假資料。",
+      };
+    }
+
+    return {
+      state: "LIVE",
+      positions,
+      updatedAt,
+      source,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      positions: [],
+      updatedAt,
+      source,
+      reason: friendlyDataError(error, "紙上投資組合 API 目前無法讀取。"),
+    };
+  }
 }
 
-function displayState(state: LoadState["state"]) {
+function stateLabel(state: PortfolioState["state"]) {
   if (state === "LIVE") return "正常";
-  if (state === "EMPTY") return "無資料";
+  if (state === "EMPTY") return "無部位";
   return "暫停";
 }
 
-async function loadPortfolio(): Promise<LoadState> {
-  const source = `GET trading/risk endpoints for accountId=${ACCOUNT_ID}`;
-  const updatedAt = new Date().toISOString();
-
-  try {
-    const [balance, positions, orders, events, risk, strategyLimits, symbolLimits, kill] = await Promise.all([
-      getTradingBalance(ACCOUNT_ID),
-      getTradingPositions(ACCOUNT_ID),
-      getTradingOrders({ accountId: ACCOUNT_ID }),
-      getExecutionEvents({ accountId: ACCOUNT_ID, limit: 20 }),
-      getRiskLimit(ACCOUNT_ID),
-      listStrategyRiskLimits(ACCOUNT_ID),
-      listSymbolRiskLimits(ACCOUNT_ID),
-      getKillSwitch(ACCOUNT_ID),
-    ]);
-    const data: PortfolioData = {
-      balance: balance.data,
-      positions: positions.data,
-      orders: orders.data,
-      events: events.data,
-      risk: risk.data,
-      strategyLimits: strategyLimits.data,
-      symbolLimits: symbolLimits.data,
-      kill: kill.data,
-    };
-    if (data.positions.length === 0 && data.orders.length === 0 && data.events.length === 0) {
-      return {
-        state: "EMPTY",
-        data,
-        updatedAt: data.balance.updatedAt || updatedAt,
-        source,
-        reason: "目前沒有部位、委託或成交事件。",
-      };
-    }
-    return {
-      state: "LIVE",
-      data,
-      updatedAt: data.balance.updatedAt || updatedAt,
-      source,
-    };
-  } catch (error) {
-    return {
-      state: "BLOCKED",
-      data: null,
-      updatedAt,
-      source,
-      reason: friendlyError(error),
-    };
-  }
-}
-
-async function loadRiskSurface(): Promise<RiskSurfaceState> {
-  const source = "GET /api/v1/risk/portfolio-overview";
-  const updatedAt = new Date().toISOString();
-
-  try {
-    const overview = await getRiskPortfolioOverview();
-    return {
-      state: "LIVE",
-      data: overview.data,
-      updatedAt: overview.data.generatedAt || updatedAt,
-      source,
-    };
-  } catch (error) {
-    return {
-      state: "BLOCKED",
-      updatedAt,
-      source,
-      reason: friendlyError(error),
-    };
-  }
-}
-
-function formatTime(value: string | null | undefined) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-TW", { hour12: false });
-}
-
-function money(value: number | null | undefined) {
-  if (typeof value !== "number") return "--";
-  return value.toLocaleString("zh-TW", { maximumFractionDigits: 0 });
-}
-
-function pct(value: number | null | undefined) {
-  if (typeof value !== "number") return "--";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
-}
-
-function tone(value: number | null | undefined) {
-  if (typeof value !== "number") return "muted";
-  if (value > 0) return "up";
-  if (value < 0) return "down";
-  return "muted";
-}
-
-function stateTone(state: LoadState["state"]) {
+function stateClass(state: PortfolioState["state"]) {
   if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
   return "status-bad";
 }
 
-function mapKillMode(kill: KillState | null): KillMode {
-  if (!kill) return "FROZEN";
-  if (kill.mode === "halted") return "FROZEN";
-  if (kill.mode === "liquidate_only") return "SAFE";
-  if (kill.mode === "paper_only") return "PEEK";
-  return kill.engaged ? "FROZEN" : "ARMED";
+function formatTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
-function killModeLabel(mode: string | null | undefined) {
-  if (mode === "trading") return "可交易";
-  if (mode === "paper_only") return "模擬模式";
-  if (mode === "liquidate_only") return "只減倉";
-  if (mode === "halted") return "全鎖定";
-  return "保守鎖定";
+function formatTwd(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  return `NT$${value.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}`;
 }
 
-function accountLabel(value: string | null | undefined) {
-  if (!value) return "模擬帳戶";
-  if (value === ACCOUNT_ID) return "模擬帳戶";
-  return value;
+function formatShares(value: number) {
+  return `${value.toLocaleString("zh-TW")} 股`;
 }
 
-function durationLabel(ms: number | null | undefined) {
-  if (typeof ms !== "number") return "--";
-  if (ms >= 1000 && ms % 1000 === 0) return `${ms / 1000} 秒`;
-  return `${ms} ms`;
+function formatLotBreakdown(value: number) {
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  const lots = Math.floor(abs / 1000);
+  const oddLots = abs % 1000;
+  if (lots === 0) return `${sign}${oddLots.toLocaleString("zh-TW")} 股零股`;
+  if (oddLots === 0) return `${sign}${lots.toLocaleString("zh-TW")} 張`;
+  return `${sign}${lots.toLocaleString("zh-TW")} 張 + ${oddLots.toLocaleString("zh-TW")} 股`;
 }
 
-function statusTone(status: OrderRow["status"]) {
-  if (status === "filled" || status === "acknowledged") return "status-ok";
-  if (status === "rejected" || status === "expired") return "status-bad";
-  if (status === "pending" || status === "submitted" || status === "partial") return "gold";
-  return "muted";
+function avgCostLabel(position: PaperPortfolioPosition) {
+  if (position.avgCostPerShare === null) return "--";
+  return `${formatTwd(position.avgCostPerShare)} / 股`;
 }
 
-function orderStatusLabel(status: OrderRow["status"]) {
-  if (status === "filled") return "已成交";
-  if (status === "acknowledged") return "已回報";
-  if (status === "rejected") return "已拒絕";
-  if (status === "expired") return "已逾時";
-  if (status === "pending") return "待處理";
-  if (status === "submitted") return "已送出";
-  if (status === "partial") return "部分成交";
-  return status;
+function notionalLabel(position: PaperPortfolioPosition) {
+  if (position.avgCostPerShare === null || position.netQtyShares <= 0) return "--";
+  return formatTwd(position.avgCostPerShare * position.netQtyShares);
 }
 
-function sideLabel(side: string) {
-  if (side.toLowerCase() === "buy") return "買進";
-  if (side.toLowerCase() === "sell") return "賣出";
-  return side;
+function noteLabel(note: string | null) {
+  if (!note) return "持有中";
+  if (note === "net_flat_or_short") return "淨部位非多方或已歸零";
+  return note;
 }
 
-function eventTypeLabel(type: string) {
-  if (type === "order_submitted") return "委託送出";
-  if (type === "order_acknowledged") return "委託回報";
-  if (type === "order_rejected") return "委託拒絕";
-  if (type === "order_filled") return "成交";
-  if (type === "order_cancelled") return "撤單";
-  if (type === "fill") return "成交";
-  return type;
+function totalShares(positions: PaperPortfolioPosition[]) {
+  return positions.reduce((sum, position) => sum + Math.abs(position.netQtyShares), 0);
 }
 
-function eventStatusLabel(status: string) {
-  if (status === "filled") return "已成交";
-  if (status === "acknowledged") return "已回報";
-  if (status === "rejected") return "已拒絕";
-  if (status === "cancelled") return "已撤單";
-  if (status === "submitted") return "已送出";
-  if (status === "pending") return "待處理";
-  return status;
-}
-
-function SourceLine({ result }: { result: LoadState }) {
-  return (
-    <div className="tg soft" style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "10px 0 12px" }}>
-      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{displayState(result.state)}</span>
-      <span>模擬交易資料</span>
-      <span>更新 {formatTime(result.updatedAt)}</span>
-      {result.state !== "LIVE" && <span>{result.reason}</span>}
-    </div>
-  );
-}
-
-function EmptyOrBlocked({ result }: { result: LoadState }) {
-  if (result.state === "LIVE") return null;
-  return (
-    <div className="terminal-note">
-      <span className={`tg ${stateTone(result.state)}`}>{displayState(result.state)}</span>{" "}
-      {result.reason}
-    </div>
-  );
+function estimatedCost(positions: PaperPortfolioPosition[]) {
+  return positions.reduce((sum, position) => {
+    if (position.avgCostPerShare === null || position.netQtyShares <= 0) return sum;
+    return sum + position.avgCostPerShare * position.netQtyShares;
+  }, 0);
 }
 
 export default async function PortfolioPage() {
-  const [result, riskSurface] = await Promise.all([loadPortfolio(), loadRiskSurface()]);
-  const data = result.data;
-  const killMode = mapKillMode(data?.kill ?? null);
-  const riskAttributionBySymbol = new Map(
-    riskSurface.state === "LIVE"
-      ? riskSurface.data.positionAttribution.map((row) => [row.symbol, row])
-      : []
-  );
+  const result = await loadPaperPortfolio();
+  const paperCost = estimatedCost(result.positions);
+  const availableCapital = Math.max(PAPER_CAPITAL_TWD - paperCost, 0);
 
   return (
-    <PageFrame
-      code="06-PORT"
-      title="交易室"
-      sub="部位 / 委託 / 風控"
-      exec
-      note="交易室目前使用模擬委託與真實後端資料；正式券商送單等待凱基 libCGCrypt.so 後再接上。"
-    >
-      <div className="quote-strip portfolio-account-strip">
-        {[
-          ["狀態", displayState(result.state), stateTone(result.state)],
-          ["權益", money(data?.balance.equity), tone(data?.balance.unrealizedPnl)],
-          ["現金", money(data?.balance.cash), "muted"],
-          ["可用資金", money(data?.balance.availableCash), "gold"],
-          ["市值", money(data?.balance.marketValue), "muted"],
-          ["未實現損益", money(data?.balance.unrealizedPnl), tone(data?.balance.unrealizedPnl)],
-          ["交易模式", data?.kill.mode ? "模擬" : "保守鎖定", data?.kill.engaged || !data?.kill ? "down" : "gold"],
-        ].map(([label, value, cls]) => (
-          <div className="quote-card" key={String(label)}>
-            <div className="tg quote-symbol">{label}</div>
-            <div className={`quote-last num ${cls}`}>{value}</div>
+    <main className="page-frame portfolio-page">
+      <header className="page-head portfolio-hero">
+        <div className="page-title">
+          <span className="tg page-code">06 / 紙上投資組合</span>
+          <h1>紙上部位</h1>
+          <span className="tc">模擬成交後的持倉與成本，不連接真實券商。</span>
+        </div>
+        <div className="tg meta-strip" suppressHydrationWarning>
+          <span>
+            狀態 / <b className={stateClass(result.state)}>{stateLabel(result.state)}</b>
+          </span>
+          <span>
+            來源 / <b>{result.source}</b>
+          </span>
+          <span>
+            更新 / <b>{formatTime(result.updatedAt)}</b>
+          </span>
+        </div>
+        <div className="tg session-pill exec">PAPER / READ ONLY</div>
+      </header>
+
+      <section className="portfolio-truth-strip" aria-label="紙上交易邊界">
+        <div>
+          <span className="tg gold">紙上模式</span>
+          <strong>這裡只讀取模擬部位，不建立委託。</strong>
+        </div>
+        <div>
+          <span className="tg status-ok">安全邊界</span>
+          <strong>不呼叫 KGI、不碰正式下單路由、不使用 FinMind 作為成交價。</strong>
+        </div>
+        <div>
+          <span className="tg muted">台股單位</span>
+          <strong>1 張 = 1,000 股；零股以實際股數顯示。</strong>
+        </div>
+      </section>
+
+      <section className="quote-strip portfolio-account-strip" aria-label="紙上帳戶摘要">
+        <div className="quote-card">
+          <div className="tg quote-symbol">狀態</div>
+          <div className={`quote-last ${stateClass(result.state)}`}>{stateLabel(result.state)}</div>
+        </div>
+        <div className="quote-card">
+          <div className="tg quote-symbol">測試資金</div>
+          <div className="quote-last num">{formatTwd(PAPER_CAPITAL_TWD)}</div>
+        </div>
+        <div className="quote-card">
+          <div className="tg quote-symbol">估算占用</div>
+          <div className="quote-last num gold">{formatTwd(paperCost)}</div>
+        </div>
+        <div className="quote-card">
+          <div className="tg quote-symbol">剩餘基準</div>
+          <div className="quote-last num">{formatTwd(availableCapital)}</div>
+        </div>
+        <div className="quote-card">
+          <div className="tg quote-symbol">部位數</div>
+          <div className="quote-last num">{result.positions.length.toLocaleString("zh-TW")}</div>
+        </div>
+        <div className="quote-card">
+          <div className="tg quote-symbol">持股總量</div>
+          <div className="quote-last num">{formatShares(totalShares(result.positions))}</div>
+        </div>
+      </section>
+
+      <section className="panel portfolio-readout">
+        <div className="panel-head">
+          <div>
+            <span className="tg panel-code">PORT</span>
+            <span className="tg muted"> / </span>
+            <span className="tg gold">紙上部位清單</span>
+            <div className="panel-sub">只統計後端回傳的 FILLED 紙上委託；沒有資料時不補假部位。</div>
           </div>
-        ))}
-      </div>
+          <div className={`tg ${stateClass(result.state)}`}>{stateLabel(result.state)}</div>
+        </div>
 
-      <div className="portfolio-risk-overview">
-        <Panel code="RSK-SFC" title="風控總覽" sub="帳戶 / 策略 / 個股 / 盤中" right={riskSurface.state === "LIVE" ? "即時" : "待啟用"}>
-          <RiskSurface result={riskSurface} />
-        </Panel>
-      </div>
-
-      <div className="portfolio-workbench-grid">
-        <div>
-          <div id="order-ticket">
-            <Panel code="ORD-TKT" title="委託單" sub="模擬交易預覽" right={displayState(result.state)}>
-              <SourceLine result={result} />
-              <EmptyOrBlocked result={result} />
-              <OrderTicketForm killMode={killMode} />
-            </Panel>
+        {result.state !== "LIVE" && (
+          <div className="terminal-note portfolio-empty-note">
+            <span className={`tg ${stateClass(result.state)}`}>{stateLabel(result.state)}</span>
+            <span>{result.reason}</span>
           </div>
+        )}
 
-          <Panel code="POS-OPN" title="模擬部位" sub="目前持倉" right={data ? `${data.positions.length} 筆` : "暫停"}>
-            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得模擬部位。</div>}
-            {data?.positions.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有模擬部位。</div>}
-            {data && data.positions.length > 0 && (
-              <div className="row position-row table-head tg" style={positionRiskRowStyle}>
-                <span>股票</span><span>市場</span><span>股數</span><span>均價</span><span>損益</span><span>%</span><span>風控</span>
-              </div>
-            )}
-            {data?.positions.map((position) => (
-              <div className="row position-row" key={`${position.accountId}-${position.symbol}`} style={positionRiskRowStyle}>
-                <Link className="tg gold" href={`/companies/${position.symbol}`}>{position.symbol}</Link>
-                <span className="tg muted">{position.market}</span>
-                <span className="num">{position.quantity.toLocaleString()}</span>
-                <span className="num">{money(position.avgPrice)}</span>
-                <span className={`num ${tone(position.unrealizedPnl)}`}>{money(position.unrealizedPnl)}</span>
-                <span className={`tg ${tone(position.unrealizedPnlPct)}`}>{pct(position.unrealizedPnlPct)}</span>
-                <PositionRiskBadge
-                  blockedReason={riskSurface.state === "BLOCKED" ? riskSurface.reason : undefined}
-                  layers={riskSurface.state === "LIVE" ? riskSurface.data.layers : null}
-                  overviewState={riskSurface.state}
-                  row={riskAttributionBySymbol.get(position.symbol) ?? null}
-                />
+        {result.positions.length > 0 && (
+          <div className="portfolio-position-table" role="table" aria-label="紙上部位">
+            <div className="portfolio-position-row portfolio-position-head" role="row">
+              <span>股票</span>
+              <span>實際股數</span>
+              <span>張 / 零股</span>
+              <span>均價</span>
+              <span>估算成本</span>
+              <span>成交筆數</span>
+              <span>狀態</span>
+            </div>
+            {result.positions.map((position) => (
+              <div className="portfolio-position-row" role="row" key={position.symbol}>
+                <Link className="tg gold" href={`/companies/${position.symbol}`}>
+                  {position.symbol}
+                </Link>
+                <span className="num">{formatShares(position.netQtyShares)}</span>
+                <span>{formatLotBreakdown(position.netQtyShares)}</span>
+                <span className="num">{avgCostLabel(position)}</span>
+                <span className="num">{notionalLabel(position)}</span>
+                <span className="num">{position.fillCount.toLocaleString("zh-TW")}</span>
+                <span className={position.netQtyShares > 0 ? "status-ok" : "gold"}>{noteLabel(position.note)}</span>
               </div>
             ))}
-          </Panel>
+          </div>
+        )}
+      </section>
+
+      <section className="portfolio-next-actions" aria-label="下一步">
+        <div className="panel portfolio-action-panel">
+          <div className="panel-head">
+            <div>
+              <span className="tg panel-code">NEXT</span>
+              <span className="tg muted"> / </span>
+              <span className="tg gold">下一步 workflow</span>
+              <div className="panel-sub">Portfolio 只負責讀取結果；建立模擬委託請從公司頁 preview 開始。</div>
+            </div>
+          </div>
+          <div className="portfolio-action-grid">
+            <Link className="terminal-button primary" href="/companies/2330">
+              開啟 2330 公司頁
+            </Link>
+            <Link className="terminal-button" href="/companies">
+              回公司列表
+            </Link>
+          </div>
         </div>
 
-        <div>
-          <Panel code="KIL-SW" title="交易模式" sub="後端控管 / 前端唯讀" right={killModeLabel(data?.kill.mode)}>
-            <KillSwitch mode={killMode} />
-            {!data?.kill && (
-              <div className="terminal-note" style={{ marginTop: 12 }}>
-                未取得可信交易模式，委託區採保守鎖定。
-              </div>
-            )}
-            {data?.kill && (
-              <div className="tg soft" style={{ display: "grid", gap: 6, marginTop: 12 }}>
-                <span>帳戶：{accountLabel(data.kill.accountId)}</span>
-                <span>鎖定：{data.kill.engaged ? "是" : "否"} / 原因：{data.kill.reason || "--"}</span>
-                <span>更新：{formatTime(data.kill.updatedAt)}</span>
-              </div>
-            )}
-          </Panel>
-
-          <Panel code="RISK-BASE" title="帳戶風控限制" sub="模擬交易限制" right={accountLabel(ACCOUNT_ID)}>
-            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得風控限制。</div>}
-            {data && [
-              ["單筆上限", `${data.risk.maxPerTradePct}%`],
-              ["單日虧損", `${data.risk.maxDailyLossPct}%`],
-              ["個股上限", `${data.risk.maxSinglePositionPct}%`],
-              ["主題曝險", `${data.risk.maxThemeCorrelatedPct}%`],
-              ["總曝險", `${data.risk.maxGrossExposurePct}%`],
-              ["開放委託", String(data.risk.maxOpenOrders)],
-              ["每分鐘委託", String(data.risk.maxOrdersPerMinute)],
-              ["報價過期", durationLabel(data.risk.staleQuoteMs)],
-            ].map(([label, value]) => (
-              <div className="row limit-row" key={label}>
-                <span className="tg gold">{label}</span>
-                <span className="tg" style={{ gridColumn: "span 2", textAlign: "right" }}>{value}</span>
-              </div>
-            ))}
-          </Panel>
-
-          <Panel code="RISK-OVR" title="策略 / 個股限制" sub="唯讀" right={data ? `${data.strategyLimits.length + data.symbolLimits.length} 筆` : "暫停"}>
-            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得策略與個股限制。</div>}
-            {data?.strategyLimits.slice(0, 3).map((limit) => (
-              <div className="row limit-row" key={limit.id}>
-                <span className="tg gold">策略</span>
-                <span className="tg" style={{ gridColumn: "span 2", textAlign: "right" }}>{limit.strategyId} / {limit.enabled ? "啟用" : "停用"}</span>
-              </div>
-            ))}
-            {data?.symbolLimits.slice(0, 5).map((limit) => (
-              <div className="row limit-row" key={limit.id}>
-                <span className="tg gold">個股</span>
-                <span className="tg" style={{ gridColumn: "span 2", textAlign: "right" }}>{limit.symbol} / {limit.enabled ? "啟用" : "停用"}</span>
-              </div>
-            ))}
-            {data && data.strategyLimits.length === 0 && data.symbolLimits.length === 0 && (
-              <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有策略或個股覆寫限制。</div>
-            )}
-          </Panel>
+        <div className="panel portfolio-action-panel">
+          <div className="panel-head">
+            <div>
+              <span className="tg panel-code">LOCK</span>
+              <span className="tg muted"> / </span>
+              <span className="tg gold">送單鎖定</span>
+              <div className="panel-sub">本頁不提供 submit，也不讀真實券商帳戶。</div>
+            </div>
+          </div>
+          <ul className="portfolio-proof-list">
+            <li>讀取端點：{result.source}</li>
+            <li>紙上基準資金：{formatTwd(PAPER_CAPITAL_TWD)}</li>
+            <li>部位數：{result.positions.length.toLocaleString("zh-TW")}</li>
+            <li>台股單位：1 張 = 1,000 股；本頁永遠顯示實際股數。</li>
+          </ul>
         </div>
-
-        <div>
-          <Panel code="ORD-LDG" title="模擬委託" sub="委託紀錄" right={data ? `${data.orders.length} 筆` : "暫停"}>
-            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得模擬委託紀錄。</div>}
-            {data?.orders.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有模擬委託。</div>}
-            {data?.orders.slice(0, 10).map((order) => (
-              <div className="row timeline-row" key={order.id}>
-                <span className="tg soft">{formatTime(order.updatedAt)}</span>
-                <span className={`tg ${statusTone(order.status)}`}>{orderStatusLabel(order.status)}</span>
-                <span className="tg">{order.symbol} / {sideLabel(order.side)} / {order.quantity.toLocaleString()} @ {order.price ?? "市價"}</span>
-                <span className="tg muted">{order.broker}</span>
-              </div>
-            ))}
-          </Panel>
-
-          <Panel code="EXC-TML" title="成交事件" sub="模擬交易事件" right={data ? `${data.events.length} 筆` : "暫停"}>
-            {!data && <div className="terminal-note"><span className="tg down">暫停</span> 暫時無法取得成交事件。</div>}
-            {data?.events.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有成交事件。</div>}
-            {data?.events.slice(0, 12).map((event) => (
-              <div className="row timeline-row" key={`${event.orderId}-${event.timestamp}-${event.type}`}>
-                <span className="tg soft">{formatTime(event.timestamp)}</span>
-                <span className={`tg ${statusTone(event.status)}`}>{eventTypeLabel(event.type)}</span>
-                <span className="tg">{event.clientOrderId} / {eventStatusLabel(event.status)}</span>
-                <span className="tg muted">{event.message ?? "--"}</span>
-              </div>
-            ))}
-          </Panel>
-        </div>
-      </div>
-    </PageFrame>
+      </section>
+    </main>
   );
 }
-
-const positionRiskRowStyle: React.CSSProperties = {
-  gridTemplateColumns: "48px minmax(54px, 1fr) 62px 62px 78px 54px 76px",
-};

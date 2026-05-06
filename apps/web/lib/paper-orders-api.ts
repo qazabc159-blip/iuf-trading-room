@@ -47,6 +47,14 @@ export type PaperOrderState = {
   fill: PaperFill | null;
 };
 
+export type PaperPortfolioPosition = {
+  symbol: string;
+  netQtyShares: number;
+  avgCostPerShare: number | null;
+  fillCount: number;
+  note: string | null;
+};
+
 export type PaperOrderCancelResult = {
   data: PaperOrderState;
   alreadyTerminal: boolean;
@@ -209,6 +217,10 @@ export async function getPaperOrder(orderId: string) {
 export async function listPaperOrders(status?: PaperOrderStatus) {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   return request<PaperOrderState[]>(`/api/v1/paper/orders${query}`);
+}
+
+export async function getPaperPortfolio() {
+  return request<PaperPortfolioPosition[]>("/api/v1/paper/portfolio");
 }
 
 export async function cancelPaperOrder(orderId: string, reason = "operator_cancelled_from_frontend") {
