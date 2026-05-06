@@ -3413,3 +3413,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior: `/briefs` now separates today's `PUBLISHED`, `AWAITING_REVIEW`, `MISSING`, and `ERROR`; awaiting-review OpenAlice drafts are no longer rendered as stale failure, and old published rows are not marked as today's brief.
 - Tests: contracts build PASS; web typecheck PASS; web build PASS; local authenticated 1365/390 visual QA PASS.
 - Stop-lines: no token, no fake-live, no order route, no KGI write-side, no strategy metrics; published section text masks obvious buy/sell advice wording.
+
+## Codex Update - 2026-05-06 13:50 Taipei - M-3 paper fills readout
+- Branch/slice: Paper E2E UI / portfolio readout. Trade Capability Score: +1.
+- Files: apps/web/app/portfolio/page.tsx; apps/web/lib/paper-orders-api.ts; apps/web/app/globals.css; evidence/w7_paper_sprint/codex_m3_paper_fills_readout_2026-05-06.md.
+- Endpoint/source: GET /api/v1/paper/portfolio + GET /api/v1/paper/fills.
+- Behavior: /portfolio now shows paper fill count, fill notional, and a paper fill ledger section; EMPTY/BLOCKED states do not invent fills or positions.
+- Checks: contracts build PASS; web typecheck PASS; web build PASS; local 1365/390 visual QA PASS.
+- Stop-lines: no token, no internal user/idempotency display, no real-order route, no paper-submit route, no KGI write-side, no FinMind/K-line fill price.
+- Blocker: authenticated production smoke still requires a real valid session after PR deploy; local QA intentionally used a non-secret presence cookie and verified safe BLOCKED state.
+- Next: open stacked PR after PR #216 base; if backend exposes paper audit route, wire audit timeline as the next read-only slice.
