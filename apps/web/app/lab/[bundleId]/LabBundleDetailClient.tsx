@@ -3,49 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip, signed, toneClass } from "@/components/RadarWidgets";
-import { labDisplay, radarLabApi, type LabBacktestPoint, type LabSignalBundle } from "@/lib/radar-lab";
-
-function pointsFor(points: LabBacktestPoint[]) {
-  if (points.length === 0) return "";
-  const values = points.map((point) => point.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = Math.max(1, max - min);
-  return points
-    .map((point, index) => {
-      const x = 12 + (index / Math.max(1, points.length - 1)) * 296;
-      const y = 142 - ((point.value - min) / span) * 116;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
-
-function LabLineChart({
-  points,
-  stroke,
-  label,
-}: {
-  points: LabBacktestPoint[];
-  stroke: string;
-  label: string;
-}) {
-  const pointString = pointsFor(points);
-  const coords = pointString ? pointString.split(" ") : [];
-
-  return (
-    <svg className="lab-chart" viewBox="0 0 320 160" role="img" aria-label={label}>
-      {[28, 66, 104, 142].map((y) => (
-        <line key={y} x1="10" x2="310" y1={y} y2={y} stroke="var(--night-rule)" />
-      ))}
-      <polyline points={pointString} fill="none" stroke={stroke} strokeWidth="2" />
-      {points.map((point, index) => {
-        const [x, y] = coords[index]?.split(",") ?? ["0", "0"];
-        return <circle key={point.t} cx={x} cy={y} r="2.5" fill={stroke} />;
-      })}
-    </svg>
-  );
-}
+import { MetricStrip } from "@/components/RadarWidgets";
+import { labDisplay, radarLabApi, type LabSignalBundle } from "@/lib/radar-lab";
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -61,10 +20,10 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
   const cells = [
     { label: "股票", value: bundle.symbol, tone: "gold" as const },
     { label: "主題", value: bundle.themeCode, tone: "muted" as const },
-    { label: "信心", value: `${Math.round(bundle.confidence * 100)}%`, tone: "muted" as const },
-    { label: "勝率", value: `${Math.round(bundle.backtest.winRate * 100)}%`, tone: "down" as const },
-    { label: "報酬", value: `${signed(bundle.backtest.totalReturnPct, 1)}%`, tone: toneClass(bundle.backtest.totalReturnPct) },
-    { label: "最大回撤", value: `${bundle.backtest.maxDrawdownPct.toFixed(1)}%`, tone: "status-bad" as const },
+    { label: "來源", value: labDisplay.producer[bundle.producer], tone: "muted" as const },
+    { label: "狀態", value: labDisplay.status[status], tone: status === "REJECTED" ? "status-bad" as const : status === "APPROVED" ? "status-ok" as const : "gold" as const },
+    { label: "績效", value: "未核准", tone: "gold" as const },
+    { label: "交易", value: "不送單", tone: "muted" as const },
   ];
 
   async function applyAction(nextStatus: typeof status, action: "APPROVE" | "REJECT") {
@@ -106,33 +65,32 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
       <MetricStrip columns={6} cells={cells} />
 
       <div className="lab-detail-grid">
-        <Panel code="BT-RPT" title="回測報告" right={`${bundle.backtest.tradeCount} 筆交易`}>
-          <div className="ticket">
-            <div className="tg gold">權益曲線</div>
-            <LabLineChart points={bundle.backtest.equityCurve} stroke="var(--gold-bright)" label="權益曲線" />
-            <div className="tg gold" style={{ marginTop: 14 }}>回撤</div>
-            <LabLineChart points={bundle.backtest.drawdown} stroke="var(--tw-up-bright)" label="回撤" />
+        <Panel code="BNDL-SRC" title="策略包來源" right="只讀">
+          <div className="ticket lab-truth-ticket">
+            <div className="tg gold">來源與治理狀態</div>
+            <h2>{bundle.title}</h2>
+            <p>{bundle.summary}</p>
+            <div className="lab-selected-metrics">
+              <span><b>{bundle.symbol}</b><small>股票</small></span>
+              <span><b>{bundle.themeCode}</b><small>主題</small></span>
+              <span><b>{labDisplay.producer[bundle.producer]}</b><small>來源</small></span>
+              <span><b>{labDisplay.status[status]}</b><small>審核狀態</small></span>
+            </div>
+            <div className="terminal-note" style={{ marginTop: 14 }}>
+              此頁不顯示未經 Athena bundle schema 與 Bruce harness 核准的勝率、報酬、最大回撤、權益曲線或分期統計。
+            </div>
           </div>
         </Panel>
 
-        <Panel code="BT-STAT" title="分期統計" right="區間">
-          <div className="row table-head" style={{ gridTemplateColumns: "70px 70px 80px 80px", gap: 10 }}>
-            <span>區間</span>
-            <span>交易</span>
-            <span>勝率</span>
-            <span>報酬</span>
+        <Panel code="BNDL-GATE" title="審核與轉單邊界" right="不建立委託">
+          <div className="lab-governance-list">
+            <span>審核通過只代表研究收件狀態，不代表可交易、可回測、可 paper 或可 live。</span>
+            <span>轉入模擬交易需等待 strategy bundle contract、paper risk gate、Bruce harness 全部通過。</span>
+            <span>本頁不呼叫 KGI、不呼叫正式下單路由，也不使用 FinMind/K 線作為成交價。</span>
           </div>
-          {bundle.backtest.periodStats.map((period) => (
-            <div className="row" key={period.label} style={{ gridTemplateColumns: "70px 70px 80px 80px", gap: 10, padding: "10px 0" }}>
-              <span className="tg gold">{period.label}</span>
-              <span className="num">{period.trades}</span>
-              <span className="num down">{Math.round(period.winRate * 100)}%</span>
-              <span className={`num ${toneClass(period.returnPct)}`}>{signed(period.returnPct, 1)}%</span>
-            </div>
-          ))}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-            <button className="mini-button" type="button" disabled={busy} onClick={() => applyAction("APPROVED", "APPROVE")}>核准</button>
-            <button className="outline-button" type="button" disabled={busy} onClick={() => applyAction("REJECTED", "REJECT")}>退回</button>
+            <button className="mini-button" type="button" disabled={busy} onClick={() => applyAction("APPROVED", "APPROVE")}>標記通過</button>
+            <button className="outline-button" type="button" disabled={busy} onClick={() => applyAction("REJECTED", "REJECT")}>退回研究</button>
             <span className="outline-button" role="status" title="策略包轉模擬交易的後端契約尚未完成。">待契約</span>
             <Link className="outline-button" href="/lab">返回</Link>
           </div>

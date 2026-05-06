@@ -3431,3 +3431,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Behavior: daily brief page now shows pipeline badge and `lastGeneratedAt`, `lastReviewedAt`, `lastPublishedAt`, `nextRunAt`, `lastFailureReason`, `sourcePackCount`, `reviewerVerdict`.
 - Stop-lines: no token, no fake published brief, no buy/sell recommendation, no fake metrics, no order route, no KGI write-side, no migration/schema/destructive DB.
 - Checks: contracts build PASS; web typecheck PASS; web build PASS; added-line stop-line grep PASS; diff-check PASS with CRLF warnings only.
+
+## Codex Update - 2026-05-06 23:59 Taipei - Product truth repair for lab / portfolio / overflow
+- Trade Capability Score: +1. Workflow improved: Quant Lab no longer presents unapproved performance-looking surfaces, and paper portfolio no longer looks like an empty broken product when the real state is expired authentication.
+- Files: apps/web/app/lab/LabClient.tsx; apps/web/app/lab/[bundleId]/LabBundleDetailClient.tsx; apps/web/app/portfolio/page.tsx; apps/web/app/globals.css; evidence/w7_paper_sprint/codex_product_truth_repair_quant_portfolio_scroll_2026-05-06.md.
+- Endpoint/source: GET /api/v1/lab/bundles; GET /api/v1/lab/bundles/:id; GET /api/v1/paper/portfolio; GET /api/v1/paper/fills.
+- Behavior: Quant bundle inbox/detail now shows source, review state, and governance boundary instead of unapproved win-rate/return/drawdown/equity surfaces; portfolio shows a login-repair BLOCKED panel for expired session; long operational labels no longer create bright horizontal overflow bars.
+- Checks: web typecheck PASS; web build PASS; git diff --check PASS with CRLF warnings only; added-line stop-line grep PASS.
+- Stop-lines: no token, no fake live, no broker write path, no formal order route, no migration/schema/destructive DB, no FinMind/K-line fill or risk source, no unapproved strategy metric exposure.
+- Next: push PR, then continue Paper E2E company-to-portfolio guide and OpenAlice daily brief automation source trail.
