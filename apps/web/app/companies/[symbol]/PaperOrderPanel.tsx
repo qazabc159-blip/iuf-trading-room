@@ -86,6 +86,7 @@ const QUANTITY_UNITS: ReadonlyArray<{ value: QuantityUnit; label: string }> = [
 
 const SHARE_QUANTITY_PRESETS = [1, 10, 100, 499, 999] as const;
 const LOT_QUANTITY_PRESETS = [1, 2, 5] as const;
+const COMPANY_PAGE_PAPER_SUBMIT_ENABLED = false;
 
 function uiStateLabel(state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING") {
   if (state === "LIVE") return "正常";
@@ -109,9 +110,40 @@ function orderStatusLabel(status: string) {
   return status;
 }
 
+function orderTypeLabel(type: PaperOrderType | string) {
+  if (type === "market") return "市價";
+  if (type === "limit") return "限價";
+  if (type === "stop") return "停損";
+  if (type === "stop_limit") return "停損限價";
+  return String(type);
+}
+
 function formatPrice(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "--";
   return value.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+}
+
+function quoteFreshnessLabel(value: string | null | undefined) {
+  if (value === "fresh") return "報價新鮮";
+  if (value === "stale") return "報價過舊";
+  if (value === "missing") return "缺少報價";
+  return "尚未取得";
+}
+
+function quoteReadinessLabel(value: string | null | undefined) {
+  if (value === "ready") return "可用";
+  if (value === "degraded") return "降級";
+  if (value === "blocked") return "阻擋";
+  return "待檢查";
+}
+
+function guardReasonList(result: Awaited<ReturnType<typeof previewPaperOrder>> | null) {
+  if (!result) return [];
+  const guards = result.riskCheck.guards
+    .filter((guard) => guard.decision === "block" || guard.decision === "warn")
+    .map((guard) => `${paperRiskGuardLabel(guard.guard)}：${paperRiskMessageLabel(guard.message) || guard.message}`);
+  const quoteReasons = result.quoteGate?.reasons?.map((reason) => `報價：${paperGateReasonLabel(reason)}`) ?? [];
+  return [...guards, ...quoteReasons];
 }
 
 export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; lastPrice?: number | null }) {
@@ -307,7 +339,11 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
     }
   };
 
-  const canSubmit = preview.status === "live" && !parsed.notionalExceedsCap && paperHealthReady;
+  const canSubmit =
+    COMPANY_PAGE_PAPER_SUBMIT_ENABLED
+    && preview.status === "live"
+    && !parsed.notionalExceedsCap
+    && paperHealthReady;
 
   return (
     <section className="panel hud-frame paper-order-panel">
@@ -416,6 +452,17 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
             </div>
           </div>
 
+          <PaperPreviewTruthPanel
+            form={form}
+            preview={preview}
+            validationReason={validationReason}
+            symbol={symbol}
+            effectiveShares={parsed.effectiveShares}
+            estimatedNotional={parsed.estimatedNotional}
+            demoCapital={DEMO_CAPITAL_TWD}
+            lastPrice={lastPrice}
+          />
+
           <div className="paper-order-quick-row" aria-label={parsed.isShare ? "零股股數快選" : "整張張數快選"}>
             <span>{parsed.isShare ? "零股快選" : "整張快選"}</span>
             {quantityPresets.map((preset) => (
@@ -453,7 +500,15 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
               className="btn-sm"
               onClick={() => setReviewOpen(true)}
               disabled={!canSubmit || submit.status === "loading"}
-              title={!paperHealthReady ? "Paper E2E 送出閘門尚未開啟；不會送出模擬單。" : !canSubmit ? "請先完成通過的風控預覽。" : "送出前會開啟零股/整張確認視窗。"}
+              title={
+                !COMPANY_PAGE_PAPER_SUBMIT_ENABLED
+                  ? "本輪公司頁只開放預覽與風控檢查，不建立 paper order。"
+                  : !paperHealthReady
+                    ? "Paper E2E 送出閘門尚未開啟；不會送出模擬單。"
+                    : !canSubmit
+                      ? "請先完成通過的風控預覽。"
+                      : "送出前會開啟零股/整張確認視窗。"
+              }
               type="button"
               style={canSubmit ? {
                 borderColor: "rgba(46,204,113,0.42)",
@@ -461,7 +516,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
                 background: "rgba(46,204,113,0.05)",
               } : {}}
             >
-              {submit.status === "loading" ? "送出中" : "檢查並送出"}
+              {submit.status === "loading" ? "送出中" : COMPANY_PAGE_PAPER_SUBMIT_ENABLED ? "檢查並送出" : "送出暫停"}
             </button>
           </div>
         </div>
@@ -580,6 +635,98 @@ function PaperHealthCell({ label, ready, note }: { label: string; ready: boolean
     <div style={paperHealthCellStyle}>
       <span>{label}</span>
       <StatePill state={ready ? "LIVE" : "BLOCKED"} />
+      <small>{note}</small>
+    </div>
+  );
+}
+
+function PaperPreviewTruthPanel({
+  form,
+  preview,
+  validationReason,
+  symbol,
+  effectiveShares,
+  estimatedNotional,
+  demoCapital,
+  lastPrice,
+}: {
+  form: FormState;
+  preview: PreviewState;
+  validationReason: string | null;
+  symbol: string;
+  effectiveShares: number;
+  estimatedNotional: number | null;
+  demoCapital: number;
+  lastPrice: number | null;
+}) {
+  const result = preview.status === "live" || preview.status === "blocked" ? preview.result : null;
+  const unitLabel = form.quantityUnit === "SHARE" ? "零股 / SHARE" : "整張 / LOT";
+  const boardLabel = form.quantityUnit === "SHARE" ? "零股盤（1 股起，最多 999 股）" : "整股盤（1 張 = 1,000 股）";
+  const riskLabel = result ? paperRiskDecisionLabel(result.riskCheck.decision) : validationReason ? "前端阻擋" : "尚未預覽";
+  const quoteLabel = result?.quoteGate ? paperQuoteDecisionLabel(result.quoteGate.decision) : "尚未預覽";
+  const quoteSource = result?.quoteGate?.selectedSource ? paperQuoteSourceLabel(result.quoteGate.selectedSource) : "尚未選定";
+  const previewTime = result?.riskCheck.createdAt ? formatTime(result.riskCheck.createdAt) : "--";
+  const reasons = guardReasonList(result);
+  const quoteContext = result?.quoteGate?.quoteContext;
+  const referencePrice = quoteContext?.last ?? lastPrice;
+  const quoteUpdatedAt = quoteContext?.capturedAt ? formatTime(quoteContext.capturedAt) : "--";
+  const warningText = form.quantityUnit === "LOT"
+    ? "整張模式一定用張數 × 1,000 股計算；高價股測試請改零股。"
+    : "零股模式送出資料會明確標記 quantity_unit=SHARE；1 股就是 1 股。";
+
+  return (
+    <div className="paper-preview-truth-panel" aria-label="模擬委託預覽真實狀態">
+      <div style={truthPanelHeaderStyle}>
+        <span style={paperBadgeStyle}>PAPER / PREVIEW ONLY</span>
+        <span>此區只做風控與報價預覽，不建立 paper order，不送券商。</span>
+      </div>
+      <div style={truthPanelGridStyle}>
+        <TruthCell label="股票" value={symbol.toUpperCase()} note="公司頁草稿" />
+        <TruthCell label="方向 / 類型" value={`${sideLabel(form.side)} / ${orderTypeLabel(form.orderType)}`} note="不是投資建議" />
+        <TruthCell label="單位" value={unitLabel} note={boardLabel} tone={form.quantityUnit === "LOT" ? "warn" : "ok"} />
+        <TruthCell label="數量" value={`${Number(form.qty || 0).toLocaleString("zh-TW")} ${form.quantityUnit === "LOT" ? "張" : "股"}`} note={`實際 ${effectiveShares.toLocaleString("zh-TW")} 股`} />
+        <TruthCell label="預估金額" value={estimatedNotional === null ? "--" : formatTwd(estimatedNotional)} note={`模擬資金 ${formatTwd(demoCapital)}`} tone={estimatedNotional !== null && estimatedNotional > demoCapital ? "bad" : "ok"} />
+        <TruthCell label="參考價" value={referencePrice ? formatPrice(referencePrice) : "--"} note={quoteContext ? `報價更新 ${quoteUpdatedAt}` : "來自最新 K 線或手動限價；不作為成交價"} />
+        <TruthCell label="風控結果" value={riskLabel} note={preview.status === "loading" ? "預覽中" : `預覽時間 ${previewTime}`} tone={result?.blocked || validationReason ? "bad" : result ? "ok" : "warn"} />
+        <TruthCell label="報價狀態" value={quoteLabel} note={`${quoteSource} / ${quoteReadinessLabel(result?.quoteGate?.readiness)} / ${quoteFreshnessLabel(result?.quoteGate?.freshnessStatus)}`} tone={result?.quoteGate?.blocked ? "bad" : result?.quoteGate ? "ok" : "warn"} />
+      </div>
+      <div style={truthPanelFootStyle}>
+        <TruthNote state={validationReason || result?.blocked ? "BLOCKED" : result ? "LIVE" : "EMPTY"} text={validationReason ?? (reasons[0] ?? warningText)} />
+        <TruthNote state="EMPTY" text="FinMind 與 K 線只提供資料檢視，不當作成交價、fill price 或風控來源；正式成交仍等待後端 paper pipeline 與審計路徑。" />
+      </div>
+      {reasons.length > 1 && (
+        <div style={truthReasonListStyle}>
+          {reasons.slice(1, 5).map((reason) => (
+            <div key={reason}>{reason}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TruthCell({
+  label,
+  value,
+  note,
+  tone = "neutral",
+}: {
+  label: string;
+  value: React.ReactNode;
+  note: string;
+  tone?: "neutral" | "ok" | "warn" | "bad";
+}) {
+  const color = tone === "ok"
+    ? "var(--tw-dn-bright, #2ecc71)"
+    : tone === "bad"
+      ? "var(--tw-up-bright, #ff4d5f)"
+      : tone === "warn"
+        ? "var(--gold-bright, #f0b429)"
+        : "var(--night-ink, #d8d4c8)";
+  return (
+    <div style={truthCellStyle}>
+      <span>{label}</span>
+      <b style={{ color }}>{value}</b>
       <small>{note}</small>
     </div>
   );
@@ -889,6 +1036,69 @@ const paperHealthFootStyle: React.CSSProperties = {
   fontFamily: "var(--mono, monospace)",
   fontSize: 10.5,
   lineHeight: 1.5,
+};
+
+const truthPanelHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--sans-tc)",
+  fontSize: 11,
+  lineHeight: 1.5,
+  paddingBottom: 10,
+};
+
+const paperBadgeStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 24,
+  padding: "3px 8px",
+  border: "1px solid rgba(240,180,41,0.46)",
+  background: "rgba(184,138,62,0.12)",
+  color: "var(--gold-bright, #f0b429)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 10.5,
+  fontWeight: 800,
+  letterSpacing: "0.04em",
+};
+
+const truthPanelGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(132px, 1fr))",
+  border: "1px solid var(--night-rule, #222)",
+  background: "rgba(1,5,9,0.16)",
+};
+
+const truthPanelFootStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 8,
+  marginTop: 10,
+};
+
+const truthCellStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  gap: 5,
+  alignContent: "start",
+  borderRight: "1px solid var(--night-rule, #222)",
+  borderBottom: "1px solid var(--night-rule, #222)",
+  padding: "10px 12px",
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 10.5,
+  lineHeight: 1.35,
+};
+
+const truthReasonListStyle: React.CSSProperties = {
+  marginTop: 10,
+  display: "grid",
+  gap: 7,
+  color: "var(--tw-up-bright, #ff4d5f)",
+  fontFamily: "var(--sans-tc)",
+  fontSize: 11,
+  lineHeight: 1.55,
 };
 
 const previewBoxStyle: React.CSSProperties = {
