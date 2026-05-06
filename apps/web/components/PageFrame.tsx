@@ -13,7 +13,7 @@ function formatTpeParts(date: Date) {
 export function statusLabel(value: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING" | string) {
   if (value === "LIVE") return "真實資料";
   if (value === "EMPTY") return "無資料";
-  if (value === "BLOCKED") return "暫停";
+  if (value === "BLOCKED") return "受阻";
   if (value === "LOADING") return "讀取中";
   return value;
 }
@@ -31,9 +31,9 @@ function displayCode(code: string) {
     "09": "營運監控",
     "10": "重大訊息",
     "11": "量化研究",
-    "03-ERR": "公司板 / 載入錯誤",
+    "03-ERR": "公司板 / 讀取失敗",
     "03-NF": "公司板 / 找不到公司",
-    "05-D": "策略批次 / 明細",
+    "05-D": "策略批次 / 詳細",
     "06-PORT": "紙上交易 / 部位",
     "LAB-D": "量化研究 / 策略包",
   };
@@ -51,14 +51,14 @@ function displayCode(code: string) {
     DIV: "股利",
     DRF: "草稿",
     DUP: "公司去重",
-    EXC: "執行紀錄",
+    EXC: "執行層",
     IDA: "策略想法",
     IDEA: "策略想法",
     INT: "重大訊息",
     JOB: "工作佇列",
-    KIL: "風控開關",
+    KIL: "停損開關",
     LAB: "量化研究",
-    LAT: "延遲狀態",
+    LAT: "延遲監控",
     MEM: "備忘",
     MKT: "市場資料",
     OPS: "營運監控",
@@ -66,7 +66,7 @@ function displayCode(code: string) {
     PLAN: "交易計畫",
     PLN: "交易計畫",
     POS: "部位",
-    PROMO: "轉單",
+    PROMO: "發布",
     QTE: "報價",
     REV: "審核",
     RISK: "風控",
@@ -112,11 +112,11 @@ export function PageFrame({
           <span>
             產生 / <b suppressHydrationWarning>{generatedAt.date} {generatedAt.time}</b> 台北
           </span>
-          <span>資料 / <b className="gold">真實資料</b></span>
+          <span>資料 / <b className="gold">真實狀態</b></span>
           <span>模式 / <b>{exec ? "紙上交易" : "觀察"}</b></span>
         </div>
         <div className={`tg session-pill ${exec ? "exec" : ""}`}>
-          {exec ? "執行層 / 紙上" : "盤面 / 真實資料"}
+          {exec ? "PAPER / READ ONLY" : "戰情 / 真實資料"}
         </div>
       </header>
       {note && <div className="terminal-note">{note}</div>}
