@@ -3497,3 +3497,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: existing FinMind diagnostics, OpenAlice, market-data overview, paper health, strategy ideas/runs; no endpoint changed.
 - Checks: contracts build PASS; web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only.
 - Stop-lines: no token value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no unapproved strategy metrics.
+
+## 2026-05-07 02:40 TPE - Codex strategy-to-paper preview flow
+
+- Branch: `fix-web-strategy-paper-flow-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/app/ideas/page.tsx`, `apps/web/app/runs/[id]/page.tsx`, `evidence/w7_paper_sprint/codex_strategy_to_paper_preview_flow_2026-05-07.md`
+- Behavior: strategy idea rows and strategy batch detail rows now provide a safe `紙上預覽` path to `/companies/:symbol#paper-order`, while explicitly saying candidates are not buy/sell advice and do not create orders.
+- Sources: `/api/v1/strategy-ideas`, `/api/v1/strategy-runs/:id`, downstream company page paper preview anchor.
+- Checks: pending.
+- Stop-lines: no submit enablement, no `/order/create`, no KGI write-side, no fake fill/position, no token value, no FinMind/K-line fill source, no buy/sell wording.

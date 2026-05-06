@@ -183,11 +183,15 @@ function sourceLabel(idea: IdeaRow) {
   return idea.marketData.selectedSource ?? "正式市場資料";
 }
 
+function companyPaperPreviewHref(symbol: string) {
+  return `/companies/${encodeURIComponent(symbol)}#paper-order`;
+}
+
 function PromotionBlockedCell() {
   return (
     <span
       className="idea-promotion-block"
-      title="策略想法轉模擬委託的正式轉單端點尚未開通。"
+      title="策略想法轉模擬委託的正式轉單端點尚未開通；目前只能到公司頁做紙上預覽與風控檢查。"
     >
       轉單待接
     </span>
@@ -232,6 +236,7 @@ function IdeaRowView({ idea }: { idea: IdeaRow }) {
         <div className="strategy-idea-actions">
           <span className={directionTone(idea.direction)}>{directionLabel(idea.direction)}</span>
           <Link href={`/companies/${idea.symbol}`} className="mini-button">公司頁</Link>
+          <Link href={companyPaperPreviewHref(idea.symbol)} className="mini-button">紙上預覽</Link>
           <PromotionBlockedCell />
         </div>
       </div>
@@ -296,7 +301,7 @@ export default async function IdeasPage() {
           <h2>先看資料是否夠真，再看股票是否值得追蹤。</h2>
           <p>
             這頁只呈現後端策略引擎產出的台股候選、主題連結、訊號數與資料品質。
-            它不是下單頁，也不會把任何候選直接變成委託。
+            它不是買賣建議，也不是下單頁；候選只能先進公司頁查看 K 線、來源狀態與紙上預覽。
           </p>
         </div>
         <div className="ideas-summary-grid">
@@ -349,7 +354,7 @@ export default async function IdeasPage() {
             </div>
             <div>
               <span>轉單政策</span>
-              <strong>正式轉成模擬委託前一律暫停；本頁不建立券商委託。</strong>
+              <strong>正式轉單仍暫停；本頁只引導到公司頁紙上預覽，不建立券商委託。</strong>
             </div>
           </div>
           <div className="idea-source-note">
