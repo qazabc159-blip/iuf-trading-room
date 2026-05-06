@@ -41,6 +41,9 @@ type DailyBriefDashboard = {
   reason?: string;
 };
 
+type StrategyIdeasData = Awaited<ReturnType<typeof getStrategyIdeas>>["data"];
+type StrategyRunsData = Awaited<ReturnType<typeof listStrategyRuns>>["data"];
+
 const TAIPEI_TIME_ZONE = "Asia/Taipei";
 
 function nowIso() {
@@ -97,7 +100,7 @@ function formatCount(value: number | null | undefined) {
 function stateLabel(state: SourceState) {
   if (state === "LIVE") return "正常";
   if (state === "EMPTY") return "無資料";
-  return "受阻";
+  return "阻擋";
 }
 
 function stateTone(state: SourceState) {
@@ -112,16 +115,21 @@ function StatusPill({ state, label }: { state: SourceState; label?: string }) {
 
 function datasetState(dataset: FinMindDatasetStatus): SourceState {
   if (dataset.state === "LIVE" || dataset.state === "READY") return "LIVE";
-  if (dataset.state === "EMPTY" || dataset.state === "STALE" || dataset.state === "FALLBACK" || dataset.state === "DEGRADED") return "EMPTY";
-  return "BLOCKED";
+  if (dataset.state === "BLOCKED" || dataset.state === "ERROR" || dataset.state === "MOCK" || dataset.state === "CLOSED") {
+    return "BLOCKED";
+  }
+  return "EMPTY";
 }
 
 function datasetLabel(dataset: FinMindDatasetStatus) {
   if (dataset.state === "LIVE" || dataset.state === "READY") return "正常";
-  if (dataset.state === "EMPTY") return "無資料";
   if (dataset.state === "STALE") return "過期";
   if (dataset.state === "DEGRADED" || dataset.state === "FALLBACK") return "降級";
-  return "受阻";
+  if (dataset.state === "BLOCKED") return "阻擋";
+  if (dataset.state === "ERROR") return "錯誤";
+  if (dataset.state === "MOCK") return "假資料停用";
+  if (dataset.state === "CLOSED") return "關閉";
+  return "無資料";
 }
 
 function datasetClass(dataset: FinMindDatasetStatus) {
@@ -188,16 +196,18 @@ async function loadFinMindDashboard(): Promise<LoadState<FinMindDashboard | null
         data,
         updatedAt: status.data.updatedAt ?? updatedAt,
         source: "FinMind",
-        reason: "FinMind token 尚未就緒或資料源受阻。",
+        reason: "FinMind token 或後端資料源目前不可用。",
       };
     }
-    return {
-      state: status.data.state === "LIVE_READY" ? "LIVE" : "EMPTY",
-      data,
-      updatedAt: status.data.updatedAt ?? updatedAt,
-      source: "FinMind",
-      ...(status.data.state === "LIVE_READY" ? {} : { reason: "FinMind 已設定，但仍有資料集尚未正式回補。" }),
-    } as LoadState<FinMindDashboard | null>;
+    return status.data.state === "LIVE_READY"
+      ? { state: "LIVE", data, updatedAt: status.data.updatedAt ?? updatedAt, source: "FinMind" }
+      : {
+        state: "EMPTY",
+        data,
+        updatedAt: status.data.updatedAt ?? updatedAt,
+        source: "FinMind",
+        reason: "FinMind 已設定，但仍有資料集等待排程或回補。",
+      };
   } catch (error) {
     return {
       state: "BLOCKED",
@@ -241,7 +251,7 @@ async function loadDailyBriefDashboard(): Promise<LoadState<DailyBriefDashboard>
         state: "MISSING" as const,
         latestDate: latest?.date.slice(0, 10) ?? null,
         draftCount: todayDrafts.length,
-        reason: "今天尚未看到 published 簡報，也沒有待審草稿。",
+        reason: "今天尚未發布每日簡報，也沒有等待審核的今日草稿。",
       };
     },
     (value) => value.state === "MISSING",
@@ -255,7 +265,7 @@ async function loadPaperHealthState(): Promise<LoadState<PaperHealthState | null
     null,
     async () => getPaperHealth(),
     (value) => value === null,
-    "紙上交易健康檢查目前沒有資料。",
+    "紙上交易健康檢查目前沒有回傳資料。",
   );
 }
 
@@ -272,26 +282,28 @@ function finMindPanel(finmind: LoadState<FinMindDashboard | null>) {
   const quotaOverride = hasSponsorQuotaOverride(status, diagnostics);
 
   return (
-    <Panel code="SRC" title="FinMind 資料燃料" sub="Sponsor 999 / token 安全 / 資料集回補" right={<StatusPill state={finmind.state} />}>
+    <Panel code="SRC" title="FinMind 資料中樞" sub="Sponsor 999 / token 安全 / 官方資料流" right={<StatusPill state={finmind.state} />}>
       {sourceLine({ state: finmind, label: "FinMind 診斷" })}
       <MetricStrip
         columns={4}
         cells={[
           { label: "Token", value: status?.tokenPresent ? "存在" : "缺少", tone: status?.tokenPresent ? "status-ok" : "status-bad" },
-          { label: "用量", value: `${formatCount(status?.quota.used)} / ${formatCount(status?.quota.limit)}`, tone: "muted" },
+          { label: "配額", value: `${formatCount(status?.quota.used)} / ${formatCount(status?.quota.limit)}`, tone: "muted" },
           { label: "方案", value: quotaTierLabel(quotaTier), tone: quotaTier === "sponsor999" ? "status-ok" : "gold" },
-          { label: "上限", value: `${formatCount(quotaLimit)} / 小時`, tone: quotaOverride ? "status-bad" : quotaLimit ? "status-ok" : "gold" },
-          { label: "正常資料集", value: live, tone: live > 0 ? "status-ok" : "gold" },
-          { label: "最近請求", value: latestDataset, tone: "muted" },
+          { label: "每小時", value: quotaLimit ? `${formatCount(quotaLimit)} 次` : "--", tone: quotaOverride ? "status-bad" : quotaLimit ? "status-ok" : "gold" },
+          { label: "可用資料集", value: live, tone: live > 0 ? "status-ok" : "gold" },
+          { label: "等待回補", value: pending, tone: pending ? "gold" : "muted" },
+          { label: "阻擋資料集", value: blocked, tone: blocked ? "status-bad" : "muted" },
+          { label: "最新請求", value: latestDataset, tone: "muted" },
         ]}
       />
       {quotaOverride && (
         <div className="terminal-note compact">
-          <span className="tg status-bad">Quota 設定異常</span>
-          Sponsor 999 應顯示 6,000 次 / 小時；目前後端回傳 {formatCount(quotaLimit)}。請檢查 Railway 的 `FINMIND_QUOTA_LIMIT_PER_HOUR` 是否仍被舊值覆寫。
+          <span className="tg status-bad">配額設定異常</span>
+          Sponsor 999 應為每小時 6,000 次；目前後端回報 {formatCount(quotaLimit)} 次，請檢查 Railway 的配額設定。
         </div>
       )}
-      <div className="dashboard-dataset-ribbon" aria-label="FinMind 資料集狀態">
+      <div className="dashboard-dataset-ribbon" aria-label="FinMind dataset readiness">
         {datasets.slice(0, 14).map((dataset) => (
           <span className={`dashboard-dataset-token ${datasetClass(dataset)}`} key={dataset.key}>
             {dataset.label} / {datasetLabel(dataset)}
@@ -299,21 +311,18 @@ function finMindPanel(finmind: LoadState<FinMindDashboard | null>) {
             {dataset.latestDate ? ` · ${dataset.latestDate}` : ""}
           </span>
         ))}
-        {datasets.length === 0 && <span className="dashboard-dataset-token is-blocked">尚未讀到資料集狀態</span>}
-      </div>
-      <div className="terminal-note compact">
-        FinMind 只負責正式資料顯示與研究燃料；不作為成交價、風控放行或策略有效性的替代證據。
+        {datasets.length === 0 && <span className="dashboard-dataset-token is-blocked">後端尚未回傳資料集狀態</span>}
       </div>
       <div className="dashboard-workflow-grid">
         <Link className="dashboard-command-card" href="/companies/2330">
-          <span>檢查台積電公司頁</span>
-          <strong>K 線、財務、籌碼與委託預覽</strong>
-          <small>確認資料是否真的從 FinMind / DB 回來。</small>
+          <span>公司頁實測</span>
+          <strong>看 K 線、FinMind、紙上 preview 是否通</strong>
+          <small>用 2330 當基準，不發送真實委託。</small>
         </Link>
         <Link className="dashboard-command-card" href="/market-intel">
-          <span>市場情報</span>
-          <strong>重大訊息與新聞等待正式接通</strong>
-          <small>未接通時保持無資料，不用舊內容假裝新消息。</small>
+          <span>重大訊息</span>
+          <strong>檢查公告、新聞與 FinMind 資料狀態</strong>
+          <small>沒有 source trail 的內容不當作投資依據。</small>
         </Link>
       </div>
     </Panel>
@@ -325,14 +334,14 @@ function marketPanel(market: LoadState<MarketDataOverview | null>) {
   const readiness = data?.quotes.readiness.effectiveSelection;
   const barQuality = data?.quality.bars;
   return (
-    <Panel code="MKT" title="市場資料可用性" sub="報價、K 線與 paper preview 前置品質" right={<StatusPill state={market.state} />}>
+    <Panel code="MKT" title="市場資料可用度" sub="報價、K 線與 paper preview 可用性" right={<StatusPill state={market.state} />}>
       {sourceLine({ state: market, label: "市場資料總覽" })}
       <MetricStrip
         columns={5}
         cells={[
-          { label: "追蹤標的", value: formatCount(data?.symbols.total), tone: data?.symbols.total ? "status-ok" : "muted" },
-          { label: "紙上可用", value: formatCount(readiness?.paperUsable), tone: readiness?.paperUsable ? "status-ok" : "gold" },
-          { label: "受阻標的", value: formatCount(readiness?.blocked), tone: readiness?.blocked ? "status-bad" : "muted" },
+          { label: "追蹤股票", value: formatCount(data?.symbols.total), tone: data?.symbols.total ? "status-ok" : "muted" },
+          { label: "可紙上預覽", value: formatCount(readiness?.paperUsable), tone: readiness?.paperUsable ? "status-ok" : "gold" },
+          { label: "阻擋", value: formatCount(readiness?.blocked), tone: readiness?.blocked ? "status-bad" : "muted" },
           { label: "K 線可用", value: formatCount(barQuality?.ready), tone: barQuality?.ready ? "status-ok" : "gold" },
           { label: "最新報價", value: formatDateTime(data?.quotes.latestQuoteTimestamp), tone: "muted" },
         ]}
@@ -351,7 +360,7 @@ function openAlicePanel(ops: LoadState<OpsSnapshotData | null>, brief: LoadState
   const briefUiState: SourceState = briefState === "PUBLISHED" ? "LIVE" : briefState === "AWAITING_REVIEW" || briefState === "MISSING" ? "EMPTY" : "BLOCKED";
 
   return (
-    <Panel code="BRF" title="OpenAlice 每日簡報" sub="自動產文、AI 審核、source trail、發布狀態" right={<StatusPill state={ops.state} />}>
+    <Panel code="BRF" title="OpenAlice 每日工作流" sub="自動產生、審核佇列與 source trail" right={<StatusPill state={ops.state} />}>
       {sourceLine({ state: ops, label: "OpenAlice 營運快照" })}
       <MetricStrip
         columns={4}
@@ -359,17 +368,17 @@ function openAlicePanel(ops: LoadState<OpsSnapshotData | null>, brief: LoadState
           { label: "Runner", value: workerOk ? "healthy" : obs?.workerStatus ?? stateLabel(ops.state), tone: workerOk ? "status-ok" : "status-bad" },
           { label: "Dispatcher", value: sweepOk ? "healthy" : obs?.sweepStatus ?? stateLabel(ops.state), tone: sweepOk ? "status-ok" : "status-bad" },
           { label: "Queue", value: formatCount(queue?.totalJobs), tone: queue?.running ? "gold" : "muted" },
-          { label: "今日簡報", value: briefState === "PUBLISHED" ? "已發布" : briefState === "AWAITING_REVIEW" ? "待審" : "缺稿", tone: stateTone(briefUiState) },
+          { label: "每日簡報", value: briefState === "PUBLISHED" ? "已發布" : briefState === "AWAITING_REVIEW" ? "待審核" : "未產生", tone: stateTone(briefUiState) },
         ]}
       />
       <div className="dashboard-workflow-grid">
         <Link className="dashboard-command-card" href="/briefs">
-          <span>每日簡報流程</span>
-          <strong>{briefState === "PUBLISHED" ? "查看今日報告" : briefState === "AWAITING_REVIEW" ? "審核今日草稿" : "檢查產生流程"}</strong>
-          <small>最新發布：{brief.data.latestDate ?? "--"} / 待審草稿：{brief.data.draftCount}</small>
+          <span>每日簡報</span>
+          <strong>{briefState === "PUBLISHED" ? "今日簡報已發布" : briefState === "AWAITING_REVIEW" ? "今日草稿等待審核" : "今日簡報尚未閉環"}</strong>
+          <small>最後發布：{brief.data.latestDate ?? "--"} / 今日草稿：{brief.data.draftCount}</small>
         </Link>
         <Link className="dashboard-command-card" href="/ops">
-          <span>OpenAlice 狀態</span>
+          <span>OpenAlice 監控</span>
           <strong>檢查 runner、dispatcher、queue</strong>
           <small>心跳：{formatDateTime(obs?.workerHeartbeatAt)} / 掃描：{formatDateTime(obs?.lastSweepAt)}</small>
         </Link>
@@ -383,50 +392,52 @@ function paperPanel(paper: LoadState<PaperHealthState | null>) {
   const gateOpen = Boolean(data?.gate.gateOpen);
   const submitReady = Boolean(data?.submitReady);
   return (
-    <Panel code="06-PORT" title="紙上交易工作流" sub="委託預覽、風控結果、部位回放 / 不連真實券商" right={<StatusPill state={paper.state} />}>
+    <Panel code="06-PORT" title="紙上交易狀態" sub="preview、風控與部位讀取；不連接真實券商" right={<StatusPill state={paper.state} />}>
       {sourceLine({ state: paper, label: "Paper health" })}
       <MetricStrip
         columns={5}
         cells={[
-          { label: "Preview", value: data?.previewReady ? "可預覽" : "受阻", tone: data?.previewReady ? "status-ok" : "status-bad" },
-          { label: "Submit", value: submitReady ? "紙上可送" : "尚未啟用", tone: submitReady ? "gold" : "muted" },
-          { label: "Gate", value: gateOpen ? "開啟" : "關閉", tone: gateOpen ? "status-ok" : "status-bad" },
+          { label: "Preview", value: data?.previewReady ? "可預覽" : "阻擋", tone: data?.previewReady ? "status-ok" : "status-bad" },
+          { label: "送出", value: submitReady ? "後端允許" : "前端鎖定", tone: submitReady ? "gold" : "muted" },
+          { label: "Gate", value: gateOpen ? "通過" : "鎖定", tone: gateOpen ? "status-ok" : "status-bad" },
           { label: "Queue", value: formatCount(data?.queueDepth), tone: data?.queueDepth ? "gold" : "muted" },
-          { label: "最近成交", value: formatDateTime(data?.lastFillTs), tone: "muted" },
+          { label: "最後成交", value: formatDateTime(data?.lastFillTs), tone: "muted" },
         ]}
       />
       <div className="terminal-note compact">
-        紙上交易只顯示模擬流程；1 張等於 1,000 股，零股以實際股數計算。此處不呼叫真實下單路由。
+        台股單位固定揭露：1 張 = 1,000 股；零股以實際股數計算。公司頁預設使用 1 股零股 preview，不送真實委託。
       </div>
     </Panel>
   );
 }
 
-function strategyPanel(ideas: LoadState<Awaited<ReturnType<typeof getStrategyIdeas>>["data"] | null>, runs: LoadState<Awaited<ReturnType<typeof listStrategyRuns>>["data"] | null>) {
+function strategyPanel(ideas: LoadState<StrategyIdeasData | null>, runs: LoadState<StrategyRunsData | null>) {
   const ideaCount = ideas.data?.items.length ?? 0;
   const blockedIdeas = ideas.data?.items.filter((item) => item.marketData.decision === "block").length ?? 0;
   const runCount = runs.data?.items.length ?? 0;
+  const panelState = ideas.state === "LIVE" || runs.state === "LIVE" ? "LIVE" : ideas.state;
+
   return (
-    <Panel code="LAB" title="策略與量化入口" sub="只顯示候選狀態；績效必須等 Athena + Bruce 核准" right={<StatusPill state={ideas.state === "LIVE" || runs.state === "LIVE" ? "LIVE" : ideas.state} />}>
+    <Panel code="LAB" title="策略與量化入口" sub="只顯示資料狀態；未核准績效不展示" right={<StatusPill state={panelState} />}>
       <MetricStrip
         columns={4}
         cells={[
           { label: "候選想法", value: formatCount(ideaCount), tone: ideaCount ? "gold" : "muted" },
-          { label: "資料受阻", value: formatCount(blockedIdeas), tone: blockedIdeas ? "status-bad" : "muted" },
-          { label: "批次紀錄", value: formatCount(runCount), tone: runCount ? "gold" : "muted" },
-          { label: "治理狀態", value: "待核准", tone: "gold" },
+          { label: "資料阻擋", value: formatCount(blockedIdeas), tone: blockedIdeas ? "status-bad" : "muted" },
+          { label: "批次", value: formatCount(runCount), tone: runCount ? "gold" : "muted" },
+          { label: "績效", value: "待 Athena / Bruce", tone: "gold" },
         ]}
       />
       <div className="dashboard-workflow-grid">
         <Link className="dashboard-command-card" href="/ideas">
-          <span>策略想法清單</span>
-          <strong>看候選是否被資料品質擋下</strong>
-          <small>不顯示未核准績效，不給方向建議。</small>
+          <span>策略想法</span>
+          <strong>先確認候選資料是否足夠</strong>
+          <small>不顯示買賣建議，不把分數當績效。</small>
         </Link>
         <Link className="dashboard-command-card" href="/lab">
-          <span>量化研究包</span>
+          <span>量化研究</span>
           <strong>等待 Athena bundle 與 Bruce harness</strong>
-          <small>未核准前只顯示 source、schema、review 狀態。</small>
+          <small>只有通過審核的指標才會上線。</small>
         </Link>
       </div>
     </Panel>
@@ -435,13 +446,13 @@ function strategyPanel(ideas: LoadState<Awaited<ReturnType<typeof getStrategyIde
 
 function actionDeck() {
   const actions = [
-    { href: "/companies/2330", title: "檢查 2330 公司頁", sub: "K 線、FinMind、紙上 preview 都在同一條流程。" },
-    { href: "/briefs", title: "每日簡報", sub: "看今天是否已發布、待審或缺稿。" },
-    { href: "/portfolio", title: "紙上部位", sub: "確認預覽、成交回放、部位與稽核狀態。" },
-    { href: "/market-intel", title: "重大訊息", sub: "等待 FinMind/news backend 完整接通後顯示。" },
+    { href: "/companies/2330#paper-order", title: "檢查 2330 公司頁", sub: "K 線、FinMind、紙上 preview 是否通。" },
+    { href: "/briefs", title: "每日簡報", sub: "確認 OpenAlice 今日草稿、source trail 與發布狀態。" },
+    { href: "/portfolio", title: "紙上交易部位", sub: "看部位、fills、readiness rail，不連真實券商。" },
+    { href: "/market-intel", title: "重大訊息", sub: "追 FinMind news、公告與市場資料缺口。" },
   ];
   return (
-    <Panel code="OPS" title="下一步工作流" sub="能推進的 workflow；不能推進的會說清楚">
+    <Panel code="OPS" title="下一步交易工作流" sub="能推進的 workflow 要清楚；不能推進的要說明原因">
       <div className="dashboard-workflow-grid">
         {actions.map((action) => (
           <Link href={action.href} className="dashboard-command-card" key={action.href}>
@@ -470,7 +481,7 @@ export default async function DashboardPage() {
       null,
       async () => (await getOpsSnapshot({ auditHours: 24, recentLimit: 6 })).data,
       (value) => value === null,
-      "OpenAlice 營運快照目前沒有資料。",
+      "OpenAlice 營運快照目前沒有回傳資料。",
     ),
     loadDailyBriefDashboard(),
     loadPaperHealthState(),
@@ -479,14 +490,14 @@ export default async function DashboardPage() {
       null,
       async () => (await getStrategyIdeas({ limit: 8, includeBlocked: true, decisionMode: "paper", sort: "score" })).data,
       (value) => value === null || value.items.length === 0,
-      "策略想法目前沒有可顯示資料。",
+      "策略想法目前沒有可用候選。",
     ),
     load(
       "Strategy runs",
       null,
       async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data,
       (value) => value === null || value.items.length === 0,
-      "策略批次目前沒有可顯示資料。",
+      "策略批次目前沒有可用紀錄。",
     ),
   ]);
 
@@ -494,21 +505,21 @@ export default async function DashboardPage() {
     <PageFrame
       code="01"
       title="台股 AI 交易戰情室"
-      sub="把資料、AI 簡報、量化候選、紙上交易與風控放進同一條作業流"
-      note="這裡只顯示真實資料狀態。沒有資料就標示無資料；流程受阻就標示受阻；不使用舊內容或假資料填版面。"
+      sub="資料中樞、AI 簡報、策略候選與紙上交易工作流"
+      note="首頁只呈現可驗證資料狀態與下一步工作流；沒有來源的內容不當作投資依據。"
     >
       <section className="dashboard-hero">
         <div className="dashboard-hero-main">
-          <span className="tg gold">IUF / 台股研究與交易作業系統</span>
-          <h2>先知道今天能做什麼，再進公司頁、簡報、紙上流程。</h2>
+          <span className="tg gold">IUF / 台股投資作業系統</span>
+          <h2>把散亂資訊變成可驗證、可風控、可執行的交易流程。</h2>
           <p>
-            FinMind 負責台股資料燃料，OpenAlice 負責每日摘要與 source trail，Paper workflow 負責委託前風控與部位回放。
-            首頁不再堆舊主題或舊訊號，而是告訴操盤者現在有哪些資料、哪些流程可用、哪些還需要接通。
+            FinMind 負責官方台股資料，OpenAlice 負責每日自動整理與 source trail，Paper workflow 負責 preview、風控與部位回寫。
+            這裡不顯示未核准績效、不提供買賣建議，也不把 K 線或 FinMind 當成交價。
           </p>
           <div className="dashboard-hero-kpis-inline">
             <div className="dashboard-hero-stat"><span>FinMind</span><strong className={stateTone(finmind.state)}>{stateLabel(finmind.state)}</strong></div>
             <div className="dashboard-hero-stat"><span>OpenAlice</span><strong className={stateTone(ops.state)}>{stateLabel(ops.state)}</strong></div>
-            <div className="dashboard-hero-stat"><span>每日簡報</span><strong className={stateTone(brief.state)}>{brief.data.state === "PUBLISHED" ? "已發布" : brief.data.state === "AWAITING_REVIEW" ? "待審" : "待產生"}</strong></div>
+            <div className="dashboard-hero-stat"><span>每日簡報</span><strong className={stateTone(brief.state)}>{brief.data.state === "PUBLISHED" ? "已發布" : brief.data.state === "AWAITING_REVIEW" ? "待審核" : "未產生"}</strong></div>
             <div className="dashboard-hero-stat"><span>Paper</span><strong className={stateTone(paper.state)}>{stateLabel(paper.state)}</strong></div>
           </div>
         </div>
@@ -524,9 +535,9 @@ export default async function DashboardPage() {
         <div className="dashboard-mosaic-secondary">
           {actionDeck()}
           {strategyPanel(ideas, runs)}
-          <Panel code="INT" title="重大訊息與新聞" sub="等待正式 news / announcement backend 接通" right={<StatusPill state="EMPTY" />}>
+          <Panel code="INT" title="重大訊息與新聞" sub="FinMind news / TWSE announcement backend" right={<StatusPill state="EMPTY" />}>
             <div className="terminal-note compact">
-              這裡不放過期新聞，也不把外部摘要當正式消息。等 FinMind / news ingestion 完整部署後，會顯示 source trail、發布時間與影響分類。
+              新聞與公告必須帶來源與時間；如果 ingestion 尚未完整回補，就顯示缺口，不補假內容。
             </div>
             <Link className="mini-button" href="/market-intel">打開重大訊息</Link>
           </Panel>
