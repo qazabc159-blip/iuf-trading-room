@@ -1851,11 +1851,15 @@ app.post("/api/v1/strategy/ideas/:ideaId/promote-to-paper-submit", async (c) => 
     return c.json({ error: "BAD_REQUEST" }, 400);
   }
 
-  // Idempotency key: header-first, fallback to deterministic key (minute-level)
+  // Idempotency key: header-first, fallback to deterministic key (minute-level).
+  // Pete BLOCKER-2: scope key with TW market date (Asia/Taipei) so a prior-day
+  // header-supplied key cannot 409 today's submit.
   const idempotencyKeyHeader = c.req.header("Idempotency-Key");
   const minuteBucket = Math.floor(Date.now() / 60_000);
+  const twDate = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const idempotencyKey = idempotencyKeyHeader
-    ?? `idea-${ideaId}-${body.qty}-SHARE-${minuteBucket}`;
+    ? `${twDate}:${idempotencyKeyHeader}`
+    : `${twDate}:idea-${ideaId}-${body.qty}-SHARE-${minuteBucket}`;
 
   // Guard against duplicate submissions (persistent across restarts via DB/MapAdapter)
   const existingPromote = await findOrderByIdempotencyKey(idempotencyKey);
@@ -1863,6 +1867,36 @@ app.post("/api/v1/strategy/ideas/:ideaId/promote-to-paper-submit", async (c) => 
     return c.json(
       { error: "DUPLICATE_IDEMPOTENCY_KEY", idempotencyKey },
       409
+    );
+  }
+
+  // Pete BLOCKER-1: M-1 risk engine must run on this third paper-submit surface.
+  // Previously promote-to-paper-submit bypassed evaluatePaperOrderRisk entirely,
+  // letting max_per_trade / max_single_position / stale_quote / kill_switch /
+  // capital all be silently skipped. Wire it now.
+  const promoteOrder = buildPaperOrderContext({
+    symbol: company.ticker,
+    side: body.side,
+    orderType: body.orderType,
+    qty: body.qty,
+    quantity_unit: "SHARE",
+    price: body.price,
+    idempotencyKey
+  });
+  const promoteRiskGate = await evaluatePaperOrderRisk({
+    session, repo, order: promoteOrder, commit: true
+  });
+  if (promoteRiskGate.blocked) {
+    return c.json(
+      {
+        blocked: true,
+        decision: promoteRiskGate.decision,
+        riskCheck: promoteRiskGate.riskCheck,
+        quoteGate: promoteRiskGate.quoteGate,
+        guards: promoteRiskGate.guards,
+        reasonCodes: promoteRiskGate.reasonCodes
+      },
+      422
     );
   }
 
