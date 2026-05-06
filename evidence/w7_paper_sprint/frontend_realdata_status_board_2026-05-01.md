@@ -4,6 +4,15 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+## 2026-05-07 03:21 Taipei - Codex scheduler workspace resolution fix
+- Branch/slice: `fix-api-scheduler-workspace-resolution-2026-05-07`; Trade Capability Score: +1.
+- Workflow improved: FinMind/OpenAlice schedulers no longer depend on `DEFAULT_WORKSPACE_SLUG ?? "default"` pointing at a real production workspace. They resolve an actual DB workspace after owner/workspace seed, then hydrate risk store and start schedulers with that slug.
+- Files changed: `apps/api/src/server.ts`, `evidence/w7_paper_sprint/codex_scheduler_workspace_resolution_fix_2026-05-07.md`, Elva channel memo.
+- Root cause addressed: token can exist while FinMind usage remains 0 if scheduler slug is wrong, because ticker resolution returns 0 rows before any FinMind API call.
+- Checks: contracts/db/domain/integrations build PASS; api typecheck PASS; api build PASS; diff-check PASS with CRLF warning only; code-only stop-line grep PASS.
+- Stop-lines: no token value, no Railway secret edit, no migration/schema/destructive DB, no KGI/broker write-side, no order route, no fake-live, no buy/sell, no strategy metric promotion.
+- Deploy verify needed: confirm API logs show `[schedulers] Using workspace "..."`; FinMind official/request counters should increase after a scheduler tick if token and companies exist.
+
 ## 2026-05-06 12:58 Taipei - Codex dashboard data-truth repair
 - Branch/slice: `feat/web-dashboard-data-truth-2026-05-06-v2`; Trade Capability Score: +1.
 - Workflow improved: the homepage no longer treats stale signals, empty OpenAlice rows, failed auth, or blocked backend sources as today trading intelligence. It now routes the operator toward company K-line/paper preview, paper portfolio, daily-brief status, and ops diagnostics.

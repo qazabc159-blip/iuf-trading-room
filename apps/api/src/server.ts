@@ -6971,6 +6971,39 @@ function startSchedulers(workspaceSlug: string): void {
   );
 }
 
+async function resolveDatabaseWorkspaceSlug(fallbackSlug: string): Promise<string> {
+  const db = getDb();
+  if (!db) return fallbackSlug;
+
+  const configuredSlug = process.env.DEFAULT_WORKSPACE_SLUG?.trim();
+
+  try {
+    if (configuredSlug) {
+      const configuredWorkspace = await db
+        .select({ slug: workspaces.slug })
+        .from(workspaces)
+        .where(eq(workspaces.slug, configuredSlug))
+        .limit(1);
+
+      if (configuredWorkspace[0]?.slug) return configuredWorkspace[0].slug;
+
+      console.warn(
+        `[schedulers] DEFAULT_WORKSPACE_SLUG '${configuredSlug}' not found; falling back to first DB workspace`
+      );
+    }
+
+    const firstWorkspace = await db.select({ slug: workspaces.slug }).from(workspaces).limit(1);
+    if (firstWorkspace[0]?.slug) return firstWorkspace[0].slug;
+  } catch (error) {
+    console.warn(
+      "[schedulers] workspace resolution failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+
+  return fallbackSlug;
+}
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
@@ -6983,10 +7016,12 @@ serve(
   async (info) => {
     console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
     const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
-    await initRiskStore(defaultWorkspace);
-    console.log(`[risk-store] Hydrated workspace "${defaultWorkspace}" from persistent store.`);
     await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
+    const schedulerWorkspace = await resolveDatabaseWorkspaceSlug(defaultWorkspace);
+    await initRiskStore(schedulerWorkspace);
+    console.log(`[risk-store] Hydrated workspace "${schedulerWorkspace}" from persistent store.`);
     // F2 + F3: Start ETL schedulers after server is ready
-    startSchedulers(defaultWorkspace);
+    console.log(`[schedulers] Using workspace "${schedulerWorkspace}" for FinMind/OpenAlice schedulers.`);
+    startSchedulers(schedulerWorkspace);
   }
 );
