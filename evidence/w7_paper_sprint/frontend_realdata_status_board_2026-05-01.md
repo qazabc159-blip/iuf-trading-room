@@ -3565,3 +3565,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: existing FinMind OHLCV scheduler path and FinMind client circuit state.
 - Checks: api typecheck PASS; api build PASS; diff-check PASS with CRLF warning only.
 - Stop-lines: no token value, no Railway env edit, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no strategy metric.
+
+## 2026-05-07 05:00 TPE - Codex homepage trading cockpit truth repair
+
+- Branch: `fix-web-homepage-trading-cockpit-truth-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/app/page.tsx`, `apps/web/components/PageFrame.tsx`, `evidence/w7_paper_sprint/codex_homepage_trading_cockpit_truth_repair_2026-05-07.md`, `evidence/w7_paper_sprint/homepage_truth_repair_2026-05-07_1365_auth.png`
+- Behavior: `/` is no longer a stale display wall; it now shows the trading-room workflow truth surface: FinMind data hub, market/K-line readiness, OpenAlice daily workflow, paper preview state, quant bundle gate, and next verification actions.
+- Sources: FinMind status/diagnostics, market-data overview, OpenAlice ops/briefs/content drafts, paper health, strategy ideas/runs.
+- Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only; 1365px browser screenshot PASS.
+- Stop-lines: no token value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no unapproved strategy metrics, no buy/sell wording.
