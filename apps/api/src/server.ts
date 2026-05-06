@@ -3891,6 +3891,15 @@ import {
   isFridayTriggerDay,
   queryTradingFlowDatasetStats
 } from "./jobs/trading-flow-finmind-sync.js";
+import {
+  runDividendSync,
+  runMarketValueSync,
+  runValuationSync,
+  runStockNewsSync,
+  isWeekendTriggerDay,
+  isSundayTriggerDay,
+  queryMarketIntelDatasetStats
+} from "./jobs/market-intel-finmind-sync.js";
 
 // Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
 function companyIdToTicker(ticker: string): string {
@@ -4081,6 +4090,13 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
   let marginShortStats: TradingFlowStats          = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
   let shareholdingStats: TradingFlowStats         = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
 
+  // PR C: market-intel dataset stats from DB (if tables exist)
+  type MarketIntelStats = Awaited<ReturnType<typeof queryMarketIntelDatasetStats>>;
+  let dividendStats: MarketIntelStats    = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+  let marketValueStats: MarketIntelStats = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+  let valuationStats: MarketIntelStats   = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+  let stockNewsStats: MarketIntelStats   = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+
   if (tokenPresent && db) {
     [ohlcvAdjStats, ohlcvRawStats, kbarStats] = await Promise.all([
       queryOhlcvStats("1d", "finmind_adj"),
@@ -4106,6 +4122,14 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
       queryTradingFlowDatasetStats("tw_institutional_buysell", 5),
       queryTradingFlowDatasetStats("tw_margin_short", 5),
       queryTradingFlowDatasetStats("tw_shareholding", 10)
+    ]);
+    // PR C: query market-intel dataset stats in parallel
+    // dividend/market_value: weekly (staleDays=10); valuation: daily (staleDays=5); news: 30min (staleDays=1)
+    [dividendStats, marketValueStats, valuationStats, stockNewsStats] = await Promise.all([
+      queryMarketIntelDatasetStats("tw_dividend", 10),
+      queryMarketIntelDatasetStats("tw_market_value", 10),
+      queryMarketIntelDatasetStats("tw_valuation", 5),
+      queryMarketIntelDatasetStats("tw_stock_news", 1, "fetched_at")
     ]);
   } else if (!db) {
     const noDbEntry: OhlcvDbStats = { rowCount: 0, latestDate: null, dbState: "EMPTY", missingReason: "memory_mode", degradedReason: null };
@@ -4139,6 +4163,7 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
     latestDate: string | null;
     missingReason: string | null;
     degradedReason: string | null;
+    experimental?: boolean;
   };
 
   const datasets: DatasetEntry[] = [
@@ -4216,31 +4241,34 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
     {
       key: "TaiwanStockPER",
       label: "PER / PBR / 殖利率",
-      state: apiOnlyDatasetState(true),
+      // PR C: DB-backed state from tw_valuation; BLOCKED when no token
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : valuationStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockPER" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? valuationStats.rowCount : null,
+      latestDate: valuationStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : valuationStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
       key: "TaiwanStockMarketValue",
       label: "股價市值",
-      state: apiOnlyDatasetState(true),
+      // PR C: DB-backed state from tw_market_value; BLOCKED when no token
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : marketValueStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockMarketValue" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? marketValueStats.rowCount : null,
+      latestDate: marketValueStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : marketValueStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
       key: "TaiwanStockDividend",
       label: "股利",
-      state: apiOnlyDatasetState(true),
+      // PR C: DB-backed state from tw_dividend; BLOCKED when no token
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : dividendStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockDividend" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? dividendStats.rowCount : null,
+      latestDate: dividendStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : dividendStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
@@ -4278,13 +4306,16 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
     },
     {
       key: "TaiwanStockNews",
-      label: "台股新聞",
-      state: "CLOSED",
-      lastFetchTs: null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: "freeze_no_news_feature",
-      degradedReason: null
+      label: "台股新聞 (experimental)",
+      // PR C: DB-backed EXPERIMENTAL. If endpoint unstable → stays DEGRADED/EMPTY.
+      // Never faked. state=LIVE only when real rows exist in tw_stock_news.
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : stockNewsStats.state),
+      lastFetchTs: stats.lastDataset === "TaiwanStockNews" ? stats.lastFetchTs : null,
+      rowCount: db ? stockNewsStats.rowCount : null,
+      latestDate: stockNewsStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : (stockNewsStats.missingReason ?? "experimental_may_degrade"),
+      degradedReason: degradedByErrors ? "high_error_rate" : null,
+      experimental: true
     },
     {
       key: "taiwan_stock_tick_snapshot",
@@ -6435,6 +6466,106 @@ async function runTradingFlowShareholdingTick(workspaceSlug: string): Promise<vo
   }
 }
 
+// ── PR C: Market-intel scheduler tick helpers ─────────────────────────────────
+
+/**
+ * PR C: Dividend scheduler tick.
+ * Weekly on Sunday; boot run always fires to catch any missed window.
+ * Pete PR #232 fix: was isWeekendTriggerDay (Sat+Sun) — Athena spec says Sunday only.
+ */
+async function runMarketIntelDividendTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) return;
+  if (!isSundayTriggerDay()) {
+    console.log("[market-intel-scheduler] dividend skipped=cadence_not_due (not Sunday)");
+    return;
+  }
+  try {
+    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    if (tickers.length === 0) {
+      console.warn("[market-intel-scheduler] no tickers found for dividend sync");
+      return;
+    }
+    const result = await runDividendSync(tickers);
+    console.log(
+      `[market-intel-scheduler] dividend DONE rowsUpserted=${result.rowsUpserted} ` +
+      `skipped=${result.skipped} skipReason=${result.skipReason ?? "none"}`
+    );
+  } catch (err) {
+    console.error("[market-intel-scheduler] dividend tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * PR C: Market value scheduler tick.
+ * Weekly on weekends; boot run always fires.
+ */
+async function runMarketIntelMarketValueTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) return;
+  if (!isWeekendTriggerDay()) {
+    console.log("[market-intel-scheduler] market-value skipped=cadence_not_due (not weekend)");
+    return;
+  }
+  try {
+    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    if (tickers.length === 0) {
+      console.warn("[market-intel-scheduler] no tickers found for market-value sync");
+      return;
+    }
+    const result = await runMarketValueSync(tickers);
+    console.log(
+      `[market-intel-scheduler] market-value DONE rowsUpserted=${result.rowsUpserted} ` +
+      `skipped=${result.skipped} skipReason=${result.skipReason ?? "none"}`
+    );
+  } catch (err) {
+    console.error("[market-intel-scheduler] market-value tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * PR C: Valuation (PER/PBR) scheduler tick.
+ * Every trading day 盤後 — runs every 24h; cadence is loose (daily panel refresh acceptable).
+ */
+async function runMarketIntelValuationTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) return;
+  try {
+    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    if (tickers.length === 0) {
+      console.warn("[market-intel-scheduler] no tickers found for valuation sync");
+      return;
+    }
+    const result = await runValuationSync(tickers);
+    console.log(
+      `[market-intel-scheduler] valuation DONE rowsUpserted=${result.rowsUpserted} ` +
+      `skipped=${result.skipped} skipReason=${result.skipReason ?? "none"}`
+    );
+  } catch (err) {
+    console.error("[market-intel-scheduler] valuation tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * PR C: Stock news scheduler tick [EXPERIMENTAL].
+ * Every 30min, pull last 24h incremental.
+ * If endpoint returns empty/403 consistently, runStockNewsSync logs DEGRADED signal.
+ */
+async function runMarketIntelNewsTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) return;
+  try {
+    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    if (tickers.length === 0) {
+      console.warn("[market-intel-scheduler] no tickers found for stock-news sync");
+      return;
+    }
+    const result = await runStockNewsSync(tickers);
+    console.log(
+      `[market-intel-scheduler] stock-news (experimental) DONE rowsUpserted=${result.rowsUpserted} ` +
+      `skipped=${result.skipped} skipReason=${result.skipReason ?? "none"}`
+    );
+  } catch (err) {
+    console.error("[market-intel-scheduler] stock-news tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
 /**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: every 23 hours (drift-safe).
@@ -6518,6 +6649,47 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, TWENTY_FOUR_HOURS_MS);
 
+  // PR C: Dividend — every 24h, cadence guard weekend-only
+  runMarketIntelDividendTick(workspaceSlug).catch((e) =>
+    console.error("[market-intel-scheduler] dividend initial tick failed:", e)
+  );
+  setInterval(() => {
+    runMarketIntelDividendTick(workspaceSlug).catch((e) =>
+      console.error("[market-intel-scheduler] dividend interval tick failed:", e)
+    );
+  }, TWENTY_FOUR_HOURS_MS);
+
+  // PR C: Market value — every 24h, cadence guard weekend-only
+  runMarketIntelMarketValueTick(workspaceSlug).catch((e) =>
+    console.error("[market-intel-scheduler] market-value initial tick failed:", e)
+  );
+  setInterval(() => {
+    runMarketIntelMarketValueTick(workspaceSlug).catch((e) =>
+      console.error("[market-intel-scheduler] market-value interval tick failed:", e)
+    );
+  }, TWENTY_FOUR_HOURS_MS);
+
+  // PR C: Valuation (PER/PBR) — every 24h
+  runMarketIntelValuationTick(workspaceSlug).catch((e) =>
+    console.error("[market-intel-scheduler] valuation initial tick failed:", e)
+  );
+  setInterval(() => {
+    runMarketIntelValuationTick(workspaceSlug).catch((e) =>
+      console.error("[market-intel-scheduler] valuation interval tick failed:", e)
+    );
+  }, TWENTY_FOUR_HOURS_MS);
+
+  // PR C: Stock news (experimental) — every 30min
+  const THIRTY_MIN_MS_NEWS = 30 * 60 * 1000;
+  runMarketIntelNewsTick(workspaceSlug).catch((e) =>
+    console.error("[market-intel-scheduler] stock-news initial tick failed:", e)
+  );
+  setInterval(() => {
+    runMarketIntelNewsTick(workspaceSlug).catch((e) =>
+      console.error("[market-intel-scheduler] stock-news interval tick failed:", e)
+    );
+  }, THIRTY_MIN_MS_NEWS);
+
   // P0-C: OpenAlice Autonomous Daily Pipeline — 3 ticks per trading day (TST)
   // pre-market 08:30, close-watch 13:45, close-brief 16:30
   // Each tick runs every 15 min and checks its Taipei time window internally.
@@ -6557,6 +6729,7 @@ function startSchedulers(workspaceSlug: string): void {
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
     "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) + " +
+    "PR-C dividend (24h) + PR-C market-value (24h) + PR-C valuation (24h) + PR-C stock-news (30min) + " +
     "P0-C pipeline pre_market/close_watch/close_brief (15min) started"
   );
 }
