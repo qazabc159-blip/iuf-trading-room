@@ -277,7 +277,11 @@ export async function approveContentDraft(input: {
       return { error: "content_draft_not_found" };
     }
 
-    if (draft.status !== "awaiting_review") {
+    // Pete PR #218 BLOCKER-1: allow human override of AI-rejected drafts.
+    // AI reviewer auto-rejects set status='rejected'; Owner manual approve must
+    // still work (per 楊董 governance — AI is reviewer, human can override).
+    // Approved / promoted drafts cannot be re-approved (idempotency).
+    if (draft.status !== "awaiting_review" && draft.status !== "rejected") {
       return { error: `content_draft_not_reviewable:${draft.status}` };
     }
 
