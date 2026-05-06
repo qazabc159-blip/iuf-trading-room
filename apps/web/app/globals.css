@@ -1221,6 +1221,91 @@ button { font: inherit; }
   margin-top: 26px;
 }
 
+.portfolio-readiness-panel {
+  margin-top: 24px;
+  border-top-color: rgba(46, 204, 113, 0.22);
+}
+
+.paper-readiness-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 18px;
+  border: 1px solid rgba(220, 228, 240, 0.10);
+  background: rgba(220, 228, 240, 0.08);
+}
+
+.paper-readiness-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+  min-height: 150px;
+  padding: 18px;
+  background:
+    linear-gradient(135deg, rgba(46, 204, 113, 0.045), transparent 58%),
+    rgba(4, 8, 12, 0.92);
+}
+
+.paper-readiness-index {
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.paper-readiness-body {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.paper-readiness-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.paper-readiness-title strong {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.paper-readiness-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.paper-readiness-meta {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.paper-readiness-meta > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.paper-readiness-proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 18px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .portfolio-empty-note {
   display: flex;
   flex-wrap: wrap;
@@ -4671,6 +4756,7 @@ button { font: inherit; }
   }
 
   .portfolio-truth-strip,
+  .paper-readiness-rail,
   .portfolio-next-actions {
     grid-template-columns: 1fr;
   }
@@ -4731,6 +4817,10 @@ button { font: inherit; }
   .portfolio-truth-strip > div {
     min-height: 0;
     padding: 16px 18px;
+  }
+
+  .paper-readiness-card {
+    min-height: 0;
   }
 
   .portfolio-position-row {

@@ -94,6 +94,32 @@ export type PaperHealthState = {
   paper_orders_500_root_cause_closed?: boolean;
 };
 
+export type PaperHealthDetailStageState = "READY" | "DEGRADED" | "BLOCKED" | "ERROR";
+
+export type PaperHealthDetailStage = {
+  state: PaperHealthDetailStageState;
+  endpoint: string;
+  executionMode?: string;
+  blockReason?: string;
+  dbError?: string;
+  note?: string;
+  lastFillTs?: string | null;
+  todayCount?: number;
+  todayCountTimezone?: string;
+  filledOrderCount?: number;
+  todayEntries?: number;
+  todayEntriesTimezone?: string;
+};
+
+export type PaperHealthDetail = {
+  preview: PaperHealthDetailStage;
+  orderTicket: PaperHealthDetailStage;
+  submit: PaperHealthDetailStage;
+  fill: PaperHealthDetailStage;
+  portfolio: PaperHealthDetailStage;
+  auditLog: PaperHealthDetailStage;
+};
+
 type Envelope<T> = { data: T };
 
 type ApiErrorBody =
@@ -193,6 +219,10 @@ export async function previewPaperOrder(input: PaperOrderInput, idempotencyKey?:
 
 export async function getPaperHealth() {
   return request<PaperHealthState>("/api/v1/paper/health");
+}
+
+export async function getPaperHealthDetail() {
+  return request<PaperHealthDetail>("/api/v1/paper/health/detail");
 }
 
 export async function submitPaperOrder(input: PaperOrderInput, idempotencyKey?: string) {

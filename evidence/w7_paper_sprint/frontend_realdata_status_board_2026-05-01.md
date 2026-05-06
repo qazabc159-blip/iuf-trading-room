@@ -3423,3 +3423,14 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Stop-lines: no token, no internal user/idempotency display, no real-order route, no paper-submit route, no KGI write-side, no FinMind/K-line fill price.
 - Blocker: authenticated production smoke still requires a real valid session after PR deploy; local QA intentionally used a non-secret presence cookie and verified safe BLOCKED state.
 - Next: open stacked PR after PR #216 base; if backend exposes paper audit route, wire audit timeline as the next read-only slice.
+
+## Codex Update - 2026-05-06 15:05 Taipei - M-4 paper readiness rail
+- Branch/slice: Paper E2E UI / readiness visibility. Trade Capability Score: +1.
+- Files: apps/web/app/portfolio/page.tsx; apps/web/lib/paper-orders-api.ts; apps/web/app/globals.css; evidence/w7_paper_sprint/codex_m4_paper_readiness_rail_2026-05-06.md.
+- Endpoint/source: GET /api/v1/paper/health/detail + existing GET /api/v1/paper/portfolio + GET /api/v1/paper/fills.
+- Behavior: /portfolio now shows a six-stage paper workflow rail for preview, ticket, paper submit, fills, portfolio, and audit log; each stage keeps READY/DEGRADED/BLOCKED/ERROR semantics without creating orders or fake fills.
+- Checks: contracts build PASS; api build PASS for local QA dependency; web typecheck PASS; web build PASS; local 1365/390 visual QA PASS.
+- Screenshot manifest: evidence/w7_paper_sprint/local_visual_qa_m4_paper_readiness_2026-05-06/manifest.json.
+- Stop-lines: no token, no real-order route, no paper-submit route, no KGI write-side, no internal user/idempotency display, no FinMind/K-line fill price, no fake-live state.
+- Blocker: stacked behind #216 and #219; do not self-merge under current Elva policy.
+- Next: open stacked PR on feat/web-paper-fills-readout-2026-05-06 and notify Elva channel.
