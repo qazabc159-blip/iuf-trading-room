@@ -1,6 +1,7 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
-import { getBriefs, getContentDrafts, getOpenAliceJobs, getOpenAliceObservability, type ContentDraftEntry, type OpenAliceJobEntry, type OpenAliceObservability } from "@/lib/api";
+import { ContentDraftOverrideActions } from "@/components/ContentDraftOverrideActions";
+import { getBriefs, getContentDrafts, getOpenAliceJobs, getOpenAliceObservability, getSession, type ContentDraftEntry, type OpenAliceJobEntry, type OpenAliceObservability } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { briefAgeCopy, briefAgeDays, briefFreshnessBadge, briefFreshnessLabel, briefFreshnessTone, type BriefFreshness } from "@/lib/freshness";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
@@ -25,6 +26,12 @@ type DailyBriefDraftsState =
   | { state: "EMPTY"; data: []; updatedAt: string; source: string; reason: string }
   | { state: "BLOCKED"; data: []; updatedAt: string; source: string; reason: string };
 
+type DailyBriefSurfaceState =
+  | { state: "PUBLISHED"; today: string; brief: DailyBrief; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
+  | { state: "AWAITING_REVIEW"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
+  | { state: "MISSING"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
+  | { state: "ERROR"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[]; reason: string };
+
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", {
     year: "numeric",
@@ -33,6 +40,92 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+  });
+}
+
+function todayTaipeiDate() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+}
+
+function loadBriefDate(brief: DailyBrief) {
+  return brief.date.slice(0, 10);
+}
+
+function draftTargetDate(draft: ContentDraftEntry) {
+  const payload = asRecord(draft.payload);
+  return stringField(payload, "date")
+    ?? stringField(payload, "targetDate")
+    ?? draft.targetEntityId
+    ?? null;
+}
+
+function isTodayDailyBriefDraft(draft: ContentDraftEntry, today: string) {
+  return draft.targetTable === "daily_briefs" && draftTargetDate(draft)?.slice(0, 10) === today;
+}
+
+function buildDailyBriefSurface(
+  params: {
+    today: string;
+    briefs: DailyBrief[];
+    drafts: ContentDraftEntry[];
+    error: string | null;
+  }
+): DailyBriefSurfaceState {
+  const latest = params.briefs[0] ?? null;
+  const todayBrief = params.briefs.find((brief) => loadBriefDate(brief) === params.today && brief.status === "published") ?? null;
+  const todayDrafts = params.drafts.filter((draft) => isTodayDailyBriefDraft(draft, params.today));
+
+  if (params.error) {
+    return { state: "ERROR", today: params.today, latest, drafts: todayDrafts, reason: params.error };
+  }
+  if (todayBrief) {
+    return { state: "PUBLISHED", today: params.today, brief: todayBrief, latest, drafts: todayDrafts };
+  }
+  if (todayDrafts.length > 0) {
+    return { state: "AWAITING_REVIEW", today: params.today, latest, drafts: todayDrafts };
+  }
+  return { state: "MISSING", today: params.today, latest, drafts: todayDrafts };
+}
+
+function dailyBriefSurfaceLabel(state: DailyBriefSurfaceState["state"]) {
+  if (state === "PUBLISHED") return "今日已發布";
+  if (state === "AWAITING_REVIEW") return "AI 審核中";
+  if (state === "MISSING") return "尚未生成";
+  return "讀取錯誤";
+}
+
+function dailyBriefSurfaceBadge(state: DailyBriefSurfaceState["state"]) {
+  if (state === "PUBLISHED") return "badge-green";
+  if (state === "AWAITING_REVIEW") return "badge-yellow";
+  if (state === "MISSING") return "badge-yellow";
+  return "badge-red";
+}
+
+function dailyBriefSurfaceTone(state: DailyBriefSurfaceState["state"]) {
+  if (state === "PUBLISHED") return "status-ok";
+  if (state === "ERROR") return "status-bad";
+  return "gold";
+}
+
+const ADVICE_PATTERNS = [
+  /強烈買進/g,
+  /建議買進/g,
+  /買進/g,
+  /賣出/g,
+  /目標價/g,
+  /必賺/g,
+  /保證獲利/g,
+  /all\s*in/gi,
+];
+
+function maskInvestmentAdvice(text: string) {
+  return ADVICE_PATTERNS.reduce((next, pattern) => next.replace(pattern, "【已遮蔽投資建議字眼】"), text);
+}
+
+function hasInvestmentAdvice(text: string) {
+  return ADVICE_PATTERNS.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(text);
   });
 }
 
@@ -211,7 +304,7 @@ async function loadDailyBriefDrafts(): Promise<DailyBriefDraftsState> {
     const drafts = (response.data ?? [])
       .filter((draft) => draft.targetTable === "daily_briefs")
       .sort((a, b) => Date.parse(draftTime(b)) - Date.parse(draftTime(a)))
-      .slice(0, 5);
+      .slice(0, 20);
     if (drafts.length === 0) {
       return {
         state: "EMPTY",
@@ -235,6 +328,15 @@ async function loadDailyBriefDrafts(): Promise<DailyBriefDraftsState> {
       source: "content_drafts",
       reason: friendlyDataError(error, "每日簡報草稿佇列暫時無法讀取。"),
     };
+  }
+}
+
+async function loadCanOwnerOverride() {
+  try {
+    const session = await getSession();
+    return session.data.user.role === "Owner";
+  } catch {
+    return false;
   }
 }
 
@@ -352,6 +454,69 @@ function DailyBriefDraftGate({ drafts }: { drafts: DailyBriefDraftsState }) {
   );
 }
 
+function DailyBriefThreeStatePanel({
+  surface,
+  canOwnerOverride,
+}: {
+  surface: DailyBriefSurfaceState;
+  canOwnerOverride: boolean;
+}) {
+  const latestDate = surface.latest?.date ?? "--";
+  const latestCopy = surface.latest ? `${surface.latest.date} / ${briefAgeCopy(briefAgeDays(surface.latest.date))}` : "尚無正式簡報";
+  const reason =
+    surface.state === "PUBLISHED"
+      ? "今日正式簡報已發布；頁面顯示資料庫 row，不重寫內容。"
+      : surface.state === "AWAITING_REVIEW"
+        ? "今日簡報已生成，正在 AI reviewer / Owner fallback 審核佇列中；這不是錯誤，也不標示成今日正式資料。"
+        : surface.state === "MISSING"
+          ? "今天尚未看到正式簡報或待審草稿；顯示缺口，不用舊資料假裝今日內容。"
+          : `每日簡報讀取錯誤：${surface.reason}`;
+
+  return (
+    <Panel
+      code="BRF-STATE"
+      title="今日簡報狀態"
+      sub="PUBLISHED / AWAITING_REVIEW / MISSING / ERROR"
+      right={dailyBriefSurfaceLabel(surface.state)}
+    >
+      <div className={`brief-three-state ${surface.state.toLowerCase()}`}>
+        <span className={`badge ${dailyBriefSurfaceBadge(surface.state)}`}>
+          {dailyBriefSurfaceLabel(surface.state)}
+        </span>
+        <span className="tg soft">目標日期：{surface.today}</span>
+        <span className="tg soft">最新正式資料：{latestCopy}</span>
+        <span className="state-reason">{reason}</span>
+        {surface.state === "AWAITING_REVIEW" && (
+          <div className="brief-today-drafts">
+            {surface.drafts.map((draft) => (
+              <div className="brief-today-draft" key={draft.id}>
+                <div>
+                  <span className="tg gold">待審草稿</span>
+                  <strong>{draftTitle(draft)}</strong>
+                  <small>
+                    來源 job {draft.sourceJobId?.slice(0, 8) ?? "--"} / 產生者 {draft.producerVersion} / 更新 {formatDateTime(draft.updatedAt)}
+                  </small>
+                </div>
+                <Link className="outline-button" href={`/admin/content-drafts/${draft.id}`}>
+                  查看來源
+                </Link>
+                {canOwnerOverride && <ContentDraftOverrideActions draftId={draft.id} />}
+              </div>
+            ))}
+          </div>
+        )}
+        {surface.state === "MISSING" && (
+          <div className="brief-source-trail">
+            <span>OpenAlice 若已產文，應在 content_drafts 出現 today's daily_briefs draft。</span>
+            <span>若 AI reviewer 已通過，應在 /api/v1/briefs 出現今日 published row。</span>
+            <span>目前最新正式資料日：{latestDate}。</span>
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 function BriefStatePanel({
   state,
   reason,
@@ -377,9 +542,13 @@ export default async function BriefsPage() {
   let briefs: DailyBrief[] = [];
   let error: string | null = null;
   const requestedAt = new Date().toISOString();
-  const openAlice = await loadOpenAliceStatus();
-  const openAliceJobs = await loadOpenAliceJobs();
-  const dailyBriefDrafts = await loadDailyBriefDrafts();
+  const today = todayTaipeiDate();
+  const [openAlice, openAliceJobs, dailyBriefDrafts, canOwnerOverride] = await Promise.all([
+    loadOpenAliceStatus(),
+    loadOpenAliceJobs(),
+    loadDailyBriefDrafts(),
+    loadCanOwnerOverride(),
+  ]);
 
   try {
     const response = await getBriefs();
@@ -391,9 +560,11 @@ export default async function BriefsPage() {
   const latest = briefs[0] ?? null;
   const publishedCount = briefs.filter((brief) => brief.status === "published").length;
   const draftCount = briefs.filter((brief) => brief.status === "draft").length;
-  const totalSections = latest?.sections.length ?? 0;
+  const surface = buildDailyBriefSurface({ today, briefs, drafts: dailyBriefDrafts.data, error });
+  const displayBrief = surface.state === "PUBLISHED" ? surface.brief : null;
+  const totalSections = displayBrief?.sections.length ?? 0;
   const latestAgeDays = latest ? briefAgeDays(latest.date) : null;
-  const surfaceState: BriefFreshness = error ? "BLOCKED" : latest ? (latestAgeDays === 0 ? "LIVE" : "STALE") : "EMPTY";
+  const historyFreshness: BriefFreshness = error ? "BLOCKED" : latest ? (latestAgeDays === 0 ? "LIVE" : "STALE") : "EMPTY";
 
   return (
     <PageFrame
@@ -405,16 +576,18 @@ export default async function BriefsPage() {
       <MetricStrip
         columns={8}
         cells={[
-          { label: "狀態", value: briefFreshnessLabel(surfaceState), tone: briefFreshnessTone(surfaceState) },
+          { label: "今日狀態", value: dailyBriefSurfaceLabel(surface.state), tone: dailyBriefSurfaceTone(surface.state) },
           { label: "簡報數", value: briefs.length },
           { label: "已發布", value: publishedCount, tone: publishedCount > 0 ? "status-ok" : "muted" },
           { label: "草稿", value: draftCount, tone: draftCount > 0 ? "gold" : "muted" },
-          { label: "段落", value: latest ? totalSections : "--" },
-          { label: "資料日", value: latest ? `${latest.date} / ${briefAgeCopy(latestAgeDays)}` : "--", tone: surfaceState === "STALE" ? "gold" : undefined },
+          { label: "今日段落", value: displayBrief ? totalSections : "--" },
+          { label: "最新正式", value: latest ? `${latest.date} / ${briefAgeCopy(latestAgeDays)}` : "--", tone: historyFreshness === "STALE" ? "gold" : undefined },
           { label: "AI 產文", value: openAliceLabel(openAlice.surface), tone: openAliceTone(openAlice.surface) },
           { label: "任務", value: openAliceJobs.state === "LIVE" ? openAliceJobs.data.length : statusText(openAliceJobs.state), tone: openAliceJobs.state === "LIVE" ? "status-ok" : openAliceJobs.state === "EMPTY" ? "gold" : "status-bad" },
         ]}
       />
+
+      <DailyBriefThreeStatePanel surface={surface} canOwnerOverride={canOwnerOverride} />
 
       <section className="brief-command-deck">
         <div>
@@ -427,13 +600,17 @@ export default async function BriefsPage() {
         </div>
         <div className="brief-source-card">
           <span>來源狀態</span>
-          <strong className={briefFreshnessTone(surfaceState)}>
-            {surfaceState === "LIVE" ? "今日正式資料" : surfaceState === "STALE" ? "舊資料保留" : surfaceState === "EMPTY" ? "等待首份" : "資料暫停"}
+          <strong className={dailyBriefSurfaceTone(surface.state)}>
+            {dailyBriefSurfaceLabel(surface.state)}
           </strong>
           <p>
-            {latest
-              ? `最新簡報 ${latest.date}（${briefAgeCopy(latestAgeDays)}），共 ${latest.sections.length} 段；未重產前不標示為今日 AI 報告。`
-              : "尚未取得正式簡報資料，先顯示接線規格。"}
+            {surface.state === "PUBLISHED"
+              ? `今日簡報 ${surface.brief.date} 已發布，共 ${surface.brief.sections.length} 段；來源為正式每日簡報資料庫。`
+              : surface.state === "AWAITING_REVIEW"
+                ? `今日草稿 ${surface.drafts.length} 筆正在審核，不把舊簡報誤標成今日內容。`
+                : latest
+                  ? `最新正式簡報仍停在 ${latest.date}（${briefAgeCopy(latestAgeDays)}），前端只揭露狀態。`
+                  : "尚未取得正式簡報資料，先顯示接線規格。"}
           </p>
         </div>
       </section>
@@ -467,18 +644,22 @@ export default async function BriefsPage() {
 
       <DailyBriefDraftGate drafts={dailyBriefDrafts} />
 
-      {(error || !latest) && (
+      {surface.state !== "PUBLISHED" && (
         <div className="brief-empty-grid">
-          {error ? (
+          {surface.state === "ERROR" ? (
             <BriefStatePanel
               state="BLOCKED"
-              reason={`簡報資料暫時無法讀取。負責：內容與後端資料管線。${error}`}
+              reason={`簡報資料暫時無法讀取。負責：內容與後端資料管線。${surface.reason}`}
               updatedAt={requestedAt}
             />
           ) : (
             <BriefStatePanel
               state="EMPTY"
-              reason="目前工作區沒有每日簡報資料列，不顯示假簡報。"
+              reason={
+                surface.state === "AWAITING_REVIEW"
+                  ? "今日簡報草稿已生成但尚未審核通過；不把草稿或舊資料顯示成正式簡報。"
+                  : "今天尚未生成正式每日簡報；不顯示假簡報。"
+              }
               updatedAt={requestedAt}
             />
           )}
@@ -500,44 +681,42 @@ export default async function BriefsPage() {
         </div>
       )}
 
-      {!error && latest && (
+      {surface.state === "PUBLISHED" && displayBrief && (
         <>
-          {surfaceState === "STALE" && (
-            <section className="brief-stale-warning" role="status">
-              <span className="badge badge-yellow">資料過期</span>
-              <div>
-                <strong>這份每日簡報不是今天產出的內容。</strong>
-                <p>
-                  最後資料日 {latest.date}（{briefAgeCopy(latestAgeDays)}）。
-                  需要 OpenAlice worker / daily brief pipeline 寫入新的 source-traced row；前端不會假裝更新。
-                </p>
-              </div>
-            </section>
-          )}
-
           <section className="daily-brief-sheet">
             <div className="daily-brief-head">
               <div>
                 <span className="tg panel-code">每日簡報</span>
-                <h2>{latest.date}</h2>
+                <h2>{displayBrief.date}</h2>
                 <p>台股操作摘要 / 正式資料庫</p>
               </div>
               <div className="daily-brief-meta">
-                <span className={`badge ${briefFreshnessBadge(surfaceState)}`}>{briefFreshnessLabel(surfaceState)}</span>
-                <span>資料日：{latest.date}（{briefAgeCopy(latestAgeDays)}）</span>
-                <span>盤勢：{marketLabel(latest.marketState)}</span>
+                <span className={`badge ${briefFreshnessBadge("LIVE")}`}>{briefFreshnessLabel("LIVE")}</span>
+                <span>資料日：{displayBrief.date}（今日）</span>
+                <span>盤勢：{marketLabel(displayBrief.marketState)}</span>
                 <span>來源：每日簡報資料庫</span>
-                <span>更新 {formatDateTime(latest.createdAt)}</span>
+                <span>更新 {formatDateTime(displayBrief.createdAt)}</span>
               </div>
             </div>
 
             <div className="daily-brief-body">
-              {latest.sections.map((section) => (
-                <article className="brief-section" key={`${latest.id}-${section.heading}`}>
+              {displayBrief.sections.map((section) => {
+                const heading = cleanExternalHeadline(section.heading, "日報段落");
+                const body = cleanNarrativeText(section.body, "段落尚未完成中文整理；保留來源紀錄。");
+                const safeBody = maskInvestmentAdvice(body);
+                const warning = hasInvestmentAdvice(`${heading}\n${body}`);
+                return (
+                <article className="brief-section" key={`${displayBrief.id}-${section.heading}`}>
                   <h2>{cleanExternalHeadline(section.heading, "日報段落")}</h2>
-                  <p>{cleanNarrativeText(section.body, "段落尚未完成中文整理；保留來源紀錄。")}</p>
+                  {warning && <span className="badge badge-yellow">已遮蔽疑似投資建議字眼</span>}
+                  <p>{safeBody}</p>
+                  <div className="brief-source-trail compact">
+                    <span>source: daily_briefs</span>
+                    <span>row: {displayBrief.id.slice(0, 8)}</span>
+                    <span>generatedBy: {producerLabel(displayBrief.generatedBy)}</span>
+                  </div>
                 </article>
-              ))}
+              );})}
             </div>
           </section>
 
