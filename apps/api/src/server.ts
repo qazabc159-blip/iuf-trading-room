@@ -3897,6 +3897,7 @@ import {
   runValuationSync,
   runStockNewsSync,
   isWeekendTriggerDay,
+  isSundayTriggerDay,
   queryMarketIntelDatasetStats
 } from "./jobs/market-intel-finmind-sync.js";
 
@@ -6470,11 +6471,12 @@ async function runTradingFlowShareholdingTick(workspaceSlug: string): Promise<vo
 /**
  * PR C: Dividend scheduler tick.
  * Weekly on Sunday; boot run always fires to catch any missed window.
+ * Pete PR #232 fix: was isWeekendTriggerDay (Sat+Sun) — Athena spec says Sunday only.
  */
 async function runMarketIntelDividendTick(workspaceSlug: string): Promise<void> {
   if (!process.env.FINMIND_API_TOKEN) return;
-  if (!isWeekendTriggerDay()) {
-    console.log("[market-intel-scheduler] dividend skipped=cadence_not_due (not weekend)");
+  if (!isSundayTriggerDay()) {
+    console.log("[market-intel-scheduler] dividend skipped=cadence_not_due (not Sunday)");
     return;
   }
   try {
