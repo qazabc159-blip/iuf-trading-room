@@ -19,7 +19,10 @@
  * ADDITIVE ONLY — does not modify existing dispatcher (PR #198).
  */
 
+import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { and, desc, eq, gte, sql as drizzleSql } from "drizzle-orm";
 import {
@@ -81,6 +84,70 @@ export type PipelineRunResult = {
   durationMs: number;
   error: string | null;
 };
+
+// ── Strategy registry snapshot (axis 4) ──────────────────────────────────────
+
+/**
+ * Trimmed shape of each strategy entry in the Lab snapshot.
+ * No code internals — summary metrics + caveats only.
+ */
+export type StrategyRegistryEntry = {
+  strategyId: string;
+  name: string;
+  type: "short_term" | "mid_term" | "long_term" | "reversal";
+  status: "BACKTESTED_RAW" | "PORTFOLIO_BACKTESTED_RAW" | "PAPER_PROPOSED" | "PAPER_LIVE";
+  latestSummary: {
+    totalTrades: number;
+    rawPnl: number;
+    maxDd: number;
+    avgHoldingDays: number;
+  };
+  caveats: string[];
+};
+
+type StrategySnapshot = {
+  schema: string;
+  snapshotAt: string;
+  strategies: StrategyRegistryEntry[];
+};
+
+/**
+ * Load the Lab strategy snapshot from `data/lab/strategies-snapshot.json`
+ * (published by Athena and committed into the IUF Trading Room repo).
+ *
+ * Returns null (never throws) when:
+ *  - file does not exist (Lab hasn't pushed a snapshot yet)
+ *  - file is malformed JSON
+ *  - strategies array is missing or empty
+ *
+ * Callers treat null as "no strategy section this run" — graceful skip.
+ * NEVER returns fake data or placeholder values.
+ */
+export function loadStrategySnapshot(): StrategyRegistryEntry[] | null {
+  try {
+    // Resolve path relative to this file: apps/api/src/ → 3 levels up → monorepo root
+    const __file = fileURLToPath(import.meta.url);
+    const __dir = dirname(__file);
+    const snapshotPath = join(__dir, "..", "..", "..", "data", "lab", "strategies-snapshot.json");
+    const raw = readFileSync(snapshotPath, "utf-8");
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("strategies" in parsed) ||
+      !Array.isArray((parsed as StrategySnapshot).strategies) ||
+      (parsed as StrategySnapshot).strategies.length === 0
+    ) {
+      console.warn("[pipeline] strategies-snapshot.json malformed or empty — skipping strategy section");
+      return null;
+    }
+    const snapshot = parsed as StrategySnapshot;
+    return snapshot.strategies;
+  } catch {
+    // File not found or JSON parse error — degrade silently
+    return null;
+  }
+}
 
 // ── In-memory debug surface (aligns with PR #215 dispatcher-debug pattern) ───
 

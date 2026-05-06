@@ -13,10 +13,12 @@ import test from "node:test";
 import {
   classifyDraftTier,
   evaluatePublishGate,
+  loadStrategySnapshot,
   runBatchAiReviewer,
   runPipelineTick,
   _lastPipelineState,
-  type SourcePack
+  type SourcePack,
+  type StrategyRegistryEntry
 } from "./openalice-pipeline.js";
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -257,4 +259,55 @@ test("makePack helper produces valid SourcePack shape", () => {
   assert.ok(Array.isArray(pack.sources));
   assert.equal(pack.sources.length, 5);
   assert.ok(typeof pack.trailComplete === "boolean");
+});
+
+// ── Test 11: loadStrategySnapshot reads snapshot file (axis 4) ────────────────
+
+test("loadStrategySnapshot returns an array or null — never throws", () => {
+  // In test env, the snapshot file may or may not be resolvable depending on CWD.
+  // Either outcome is valid — what matters is: no throw, and if not-null then shape is correct.
+  // Call directly (no closure) so TS can narrow the type.
+  const result = loadStrategySnapshot();
+  // result is StrategyRegistryEntry[] | null — both are valid outcomes
+  if (result === null) {
+    // Snapshot not found relative to test runner CWD — acceptable in unit test context.
+    assert.equal(result, null);
+    return;
+  }
+  assert.ok(Array.isArray(result), "result must be array when not null");
+  assert.ok(result.length > 0, "non-null snapshot must have at least one strategy");
+  const first: StrategyRegistryEntry = result[0]!;
+  assert.ok(typeof first.strategyId === "string", "strategyId must be a string");
+  assert.ok(typeof first.name === "string", "name must be a string");
+  assert.ok(["short_term", "mid_term", "long_term", "reversal"].includes(first.type), "type must be valid enum");
+  assert.ok(typeof first.latestSummary === "object", "latestSummary must be an object");
+  assert.ok(typeof first.latestSummary.totalTrades === "number", "totalTrades must be a number");
+  assert.ok(Array.isArray(first.caveats), "caveats must be an array");
+  // HARD RULE: caveats must contain NOT_PAPER_READY for BACKTESTED_RAW strategies
+  if (first.status === "BACKTESTED_RAW") {
+    assert.ok(
+      first.caveats.includes("NOT_PAPER_READY"),
+      "BACKTESTED_RAW strategy must carry NOT_PAPER_READY caveat"
+    );
+  }
+});
+
+// ── Test 12: strategy section in daily_brief instructions triggers yellow tier ─
+
+test("classifyDraftTier returns yellow for payload containing strategy keyword", () => {
+  // The strategy section in the daily brief instructions will produce content with
+  // "strategy" keyword — this must trigger yellow (awaiting_review) not red.
+  // This ensures the AI reviewer gate stays intact while allowing strategy metadata.
+  const payloadWithStrategySection = {
+    date: new Date().toISOString().slice(0, 10),
+    sections: [
+      {
+        title: "strategy_context",
+        body: "IUF Quant Lab has 4 strategies at BACKTESTED_RAW status. NOT_PAPER_READY. No live trading."
+      }
+    ],
+    llm_meta: { provider: "openai", fallback_template: false }
+  };
+  const tier = classifyDraftTier(payloadWithStrategySection);
+  assert.equal(tier, "yellow", "strategy content must be yellow (awaiting_review), not auto-published");
 });

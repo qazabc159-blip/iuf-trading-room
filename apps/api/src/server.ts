@@ -220,6 +220,7 @@ import {
 import {
   _lastPipelineState,
   getPipelineObservabilityAddendum,
+  loadStrategySnapshot,
   runBatchAiReviewer,
   runPipelineCloseBriefTick,
   runPipelineCloseWatchTick,
@@ -6409,14 +6410,35 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
     return;
   }
 
+  // Axis 4: load Lab strategy snapshot (graceful — null if snapshot absent)
+  const strategyRegistry = loadStrategySnapshot();
+  const strategyInstructions = strategyRegistry
+    ? `
+
+Strategy Registry (IUF Quant Lab — ${strategyRegistry.length} strategies, all BACKTESTED_RAW):
+${strategyRegistry.map((s) => `- ${s.strategyId} (${s.name}, type=${s.type}): totalTrades=${s.latestSummary.totalTrades}, rawPnl=${s.latestSummary.rawPnl} TWD, maxDd=${s.latestSummary.maxDd} TWD, avgHold=${s.latestSummary.avgHoldingDays}d. Caveats: ${s.caveats.join(", ")}.`).join("\n")}
+
+Include a "strategy_context" section in the brief: describe what each strategy's entry signals look like in today's market conditions. STRICT constraints for this section:
+- Do NOT state any buy / sell / 進場 / 賣出 / 買進 / 出脫 action.
+- Do NOT mention target price / 目標價 or specific price forecasts.
+- Do NOT claim guaranteed profit / 必賺 / 保證.
+- Do NOT cite win rate (勝率) as a performance claim.
+- Do NOT promote any strategy beyond BACKTESTED_RAW status.
+- Always prefix each strategy mention with its caveats (e.g. "NOT_PAPER_READY").`
+    : "";
+
   try {
     const job = await enqueueOpenAliceJob({
       workspaceSlug: workspace.slug,
       taskType: "daily_brief",
       schemaName: "daily_brief_v1",
-      instructions: `Generate the daily market intelligence brief for ${todayStr}. Summarize key themes, notable signals, and actionable insights from today's market data.`,
+      instructions: `Generate the daily market intelligence brief for ${todayStr}. Summarize key themes, notable signals, and actionable insights from today's market data.${strategyInstructions}`,
       contextRefs: [{ type: "date", id: todayStr }],
-      parameters: { targetDate: todayStr, autoDispatched: true }
+      parameters: {
+        targetDate: todayStr,
+        autoDispatched: true,
+        ...(strategyRegistry ? { strategyRegistry } : {})
+      }
     });
     console.log(`[daily-brief-dispatcher] Enqueued daily_brief for ${todayStr}: jobId=${job.jobId}`);
     _lastTickState.lastTickResult = "enqueued";
