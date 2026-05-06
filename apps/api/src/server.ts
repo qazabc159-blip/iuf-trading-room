@@ -47,6 +47,10 @@ import {
   listOrders,
   findByIdempotencyKey as findOrderByIdempotencyKey
 } from "./domain/trading/paper-ledger-db.js";
+import {
+  buildPaperOrderContext,
+  evaluatePaperOrderRisk
+} from "./domain/trading/paper-risk-bridge.js";
 import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql } from "drizzle-orm";
 import {
@@ -1847,11 +1851,15 @@ app.post("/api/v1/strategy/ideas/:ideaId/promote-to-paper-submit", async (c) => 
     return c.json({ error: "BAD_REQUEST" }, 400);
   }
 
-  // Idempotency key: header-first, fallback to deterministic key (minute-level)
+  // Idempotency key: header-first, fallback to deterministic key (minute-level).
+  // Pete BLOCKER-2: scope key with TW market date (Asia/Taipei) so a prior-day
+  // header-supplied key cannot 409 today's submit.
   const idempotencyKeyHeader = c.req.header("Idempotency-Key");
   const minuteBucket = Math.floor(Date.now() / 60_000);
+  const twDate = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const idempotencyKey = idempotencyKeyHeader
-    ?? `idea-${ideaId}-${body.qty}-SHARE-${minuteBucket}`;
+    ? `${twDate}:${idempotencyKeyHeader}`
+    : `${twDate}:idea-${ideaId}-${body.qty}-SHARE-${minuteBucket}`;
 
   // Guard against duplicate submissions (persistent across restarts via DB/MapAdapter)
   const existingPromote = await findOrderByIdempotencyKey(idempotencyKey);
@@ -1859,6 +1867,36 @@ app.post("/api/v1/strategy/ideas/:ideaId/promote-to-paper-submit", async (c) => 
     return c.json(
       { error: "DUPLICATE_IDEMPOTENCY_KEY", idempotencyKey },
       409
+    );
+  }
+
+  // Pete BLOCKER-1: M-1 risk engine must run on this third paper-submit surface.
+  // Previously promote-to-paper-submit bypassed evaluatePaperOrderRisk entirely,
+  // letting max_per_trade / max_single_position / stale_quote / kill_switch /
+  // capital all be silently skipped. Wire it now.
+  const promoteOrder = buildPaperOrderContext({
+    symbol: company.ticker,
+    side: body.side,
+    orderType: body.orderType,
+    qty: body.qty,
+    quantity_unit: "SHARE",
+    price: body.price,
+    idempotencyKey
+  });
+  const promoteRiskGate = await evaluatePaperOrderRisk({
+    session, repo, order: promoteOrder, commit: true
+  });
+  if (promoteRiskGate.blocked) {
+    return c.json(
+      {
+        blocked: true,
+        decision: promoteRiskGate.decision,
+        riskCheck: promoteRiskGate.riskCheck,
+        quoteGate: promoteRiskGate.quoteGate,
+        guards: promoteRiskGate.guards,
+        reasonCodes: promoteRiskGate.reasonCodes
+      },
+      422
     );
   }
 
@@ -2896,7 +2934,9 @@ app.get("/api/v1/paper/flags", (c) => {
 });
 
 // POST /api/v1/paper/orders — create a paper order intent
-// Returns 422 if any of the three execution gate layers blocks
+// M-1 2026-05-06: now wired to real risk engine + quote gate (same as /paper/submit).
+// Returns 422 with rich { blocked, decision, riskCheck, quoteGate, guards, reasonCodes }
+// if risk or gate blocks; otherwise 201 + { data: OrderState }.
 app.post("/api/v1/paper/orders", async (c) => {
   // Layer 0: parse + validate input
   let payload: ReturnType<typeof paperOrderCreateInputSchema.parse>;
@@ -2935,8 +2975,28 @@ app.post("/api/v1/paper/orders", async (c) => {
     );
   }
 
-  // Build the order intent (pure domain object)
   const session = c.get("session");
+  const repo = c.get("repo");
+
+  // Layer 4 (M-1): Real risk engine + quote gate. Blocked → 422, no order/fill.
+  const order = buildPaperOrderContext(payload);
+  const riskGate = await evaluatePaperOrderRisk({ session, repo, order, commit: true });
+
+  if (riskGate.blocked) {
+    return c.json(
+      {
+        blocked: true,
+        decision: riskGate.decision,
+        riskCheck: riskGate.riskCheck,
+        quoteGate: riskGate.quoteGate,
+        guards: riskGate.guards,
+        reasonCodes: riskGate.reasonCodes
+      },
+      422
+    );
+  }
+
+  // Build the order intent (pure domain object)
   const intent = createOrderIntent({
     idempotencyKey: payload.idempotencyKey,
     symbol: payload.symbol,
@@ -4782,10 +4842,23 @@ app.post("/api/v1/paper/preview", async (c) => {
 });
 
 // POST /api/v1/paper/submit
-// Creates and drives a paper order through PaperExecutor.
-// quantity_unit required — missing → 400.
-// Idempotency key required. Duplicate key → 409.
-// Returns 201 + final OrderState on success, 422 if gate blocked or REJECTED.
+// M-1 2026-05-06: now enforces real risk engine + quote gate before creating
+// any order or fill row.
+//
+// Flow:
+//   1. Parse + validate input (quantity_unit required → 400 if missing)
+//   2. Three-layer paper execution gate (EXECUTION_MODE/PAPER_KILL_SWITCH/PAPER_MODE_ENABLED)
+//   3. Idempotency check (persistent via DB or in-memory MapAdapter)
+//   4. *** NEW *** Real risk check (evaluateRiskCheck commit=true) + quote gate
+//        → blocked → 422 with { blocked, decision, riskCheck, quoteGate, guards, reasonCodes }
+//        → no order row / fill row created on block
+//   5. If allowed: createOrderIntent → driveOrder → FILLED/REJECTED
+//   6. Return { blocked, decision, riskCheck, quoteGate, guards, reasonCodes, orderState }
+//
+// Hard lines:
+//   - No KGI write-side. No /order/create. No live submit.
+//   - Idempotency preserved (existing behavior not regressed).
+//   - Blocked order: zero fill rows, zero portfolio change.
 app.post("/api/v1/paper/submit", async (c) => {
   let payload: ReturnType<typeof paperOrderCreateInputSchema.parse>;
   try {
@@ -4797,7 +4870,7 @@ app.post("/api/v1/paper/submit", async (c) => {
     return c.json({ error: "BAD_REQUEST" }, 400);
   }
 
-  // Layer 1-3: three-layer AND gate
+  // Layer 1-3: three-layer AND gate (paper mode must be enabled)
   const gate = checkPaperExecutionGate();
   if (!gate.allowed) {
     return c.json(
@@ -4816,6 +4889,30 @@ app.post("/api/v1/paper/submit", async (c) => {
   }
 
   const session = c.get("session");
+  const repo = c.get("repo");
+
+  // Layer 4 (M-1): Real risk engine + quote gate.
+  // commit=true: records order intent in risk engine rate-limit window.
+  // Blocked → 422 with rich diagnostic body; no order/fill created.
+  const order = buildPaperOrderContext(payload);
+  const riskGate = await evaluatePaperOrderRisk({ session, repo, order, commit: true });
+
+  if (riskGate.blocked) {
+    return c.json(
+      {
+        blocked: true,
+        decision: riskGate.decision,
+        riskCheck: riskGate.riskCheck,
+        quoteGate: riskGate.quoteGate,
+        guards: riskGate.guards,
+        reasonCodes: riskGate.reasonCodes
+      },
+      422
+    );
+  }
+
+  // Risk + gate passed: create the OrderIntent and drive through PaperExecutor.
+  // driveOrder() internal stub always passes — real enforcement already done above.
   const intent = createOrderIntent({
     idempotencyKey: payload.idempotencyKey,
     symbol: payload.symbol,
@@ -4828,8 +4925,21 @@ app.post("/api/v1/paper/submit", async (c) => {
   });
 
   const result = await driveOrder(intent);
-  const status = result.finalState.intent.status === "REJECTED" ? 422 : 201;
-  return c.json({ data: result.finalState }, status);
+  const isRejected = result.finalState.intent.status === "REJECTED";
+  return c.json(
+    {
+      blocked: isRejected,
+      decision: isRejected ? "block" : "pass",
+      riskCheck: riskGate.riskCheck,
+      quoteGate: riskGate.quoteGate,
+      guards: riskGate.guards,
+      reasonCodes: isRejected
+        ? [result.finalState.intent.reason ?? "executor_rejected"]
+        : [],
+      orderState: result.finalState
+    },
+    isRejected ? 422 : 201
+  );
 });
 
 // GET /api/v1/paper/db-probe
