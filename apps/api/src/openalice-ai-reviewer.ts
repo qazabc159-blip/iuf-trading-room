@@ -17,10 +17,14 @@ import { approveContentDraft, rejectContentDraft } from "./content-draft-store.j
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const AI_REVIEWER_ID = "ai-reviewer:gpt-5.4-mini";
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-// Locked model — do NOT read from env (same pattern as daily-theme-summary-producer).
-const OPENAI_MODEL = "gpt-5.4-mini";
+// E2E fail diagnosis 2026-05-06 (Elva): "gpt-5.4-mini" was a Codex CLI internal
+// namespace name, not a real OpenAI public-API model. OpenAI returned 4xx
+// model_not_found, AI reviewer fell back to human (audit_log.ai_approved=0).
+// Read from env so operator can set the real OpenAI model id without code change.
+// Default to gpt-4o-mini (cheapest current OpenAI mini model, ~$0.150/$0.600 per 1M tokens).
+const OPENAI_MODEL = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
+const AI_REVIEWER_ID = `ai-reviewer:${OPENAI_MODEL}`;
 const CALL_TIMEOUT_MS = 10_000;
 const MAX_TOKENS = 300;
 
