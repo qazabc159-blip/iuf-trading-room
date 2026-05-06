@@ -276,6 +276,7 @@ function isDeviceAuthRoute(path: string): boolean {
 // only after Pete review confirms zero token / userId / order leakage.
 function isPublicDiagRoute(path: string): boolean {
   if (path === "/api/v1/paper/health") return true;
+  if (path === "/api/v1/paper/health/detail") return true;
   if (path === "/api/v1/diagnostics/kbar") return true;
   return false;
 }
@@ -3842,7 +3843,14 @@ const finmindKBarQuerySchema = z.object({
 });
 
 // GET /api/v1/data-sources/finmind/status
-// Authenticated diagnostics only. Never returns the token or any value derived from it.
+// B3-1 (2026-05-06): Productized dataset readiness panel.
+// Returns global token/quota info + per-dataset state with DB-backed rowCount/latestDate
+// for OHLCV datasets, and FALLBACK for non-persisted financial datasets.
+// Hard lines:
+//   - Token value NEVER returned (only boolean presence)
+//   - rowCount / latestDate come from real SQL (companies_ohlcv) — no faking
+//   - Non-OHLCV datasets have no local DB table → state=FALLBACK when token present
+//   - state enum: LIVE / STALE / EMPTY / BLOCKED / DEGRADED / ERROR / MOCK / FALLBACK / CLOSED
 app.get("/api/v1/data-sources/finmind/status", async (c) => {
   const finmind = getFinMindClient();
   const tokenPresent = finmind.hasToken();
@@ -3861,15 +3869,268 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
   const sourceState = tokenPresent
     ? degradedByErrors ? "DEGRADED" : "LIVE_READY"
     : "BLOCKED";
-  const readyDatasetState = tokenPresent
-    ? degradedByErrors ? "DEGRADED" : "READY"
-    : "BLOCKED";
+
+  // B3-1: Query companies_ohlcv for OHLCV-backed dataset row counts and freshness.
+  // Only OHLCV datasets (PriceAdj, Price, KBar) are persisted locally.
+  // All other FinMind datasets are API-only (no local table).
+  type OhlcvDbStats = {
+    rowCount: number;
+    latestDate: string | null;
+    dbState: "LIVE" | "STALE" | "EMPTY" | "MOCK" | "ERROR";
+    missingReason: string | null;
+    degradedReason: string | null;
+  };
+  let ohlcvAdjStats: OhlcvDbStats  = { rowCount: 0, latestDate: null, dbState: "EMPTY", missingReason: "no_db_query", degradedReason: null };
+  let ohlcvRawStats: OhlcvDbStats  = { rowCount: 0, latestDate: null, dbState: "EMPTY", missingReason: "no_db_query", degradedReason: null };
+  let kbarStats: OhlcvDbStats      = { rowCount: 0, latestDate: null, dbState: "EMPTY", missingReason: "no_db_query", degradedReason: null };
+
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+
+  async function queryOhlcvStats(interval: string, sourceFilter?: string): Promise<OhlcvDbStats> {
+    if (!db) return { rowCount: 0, latestDate: null, dbState: "EMPTY", missingReason: "no_database", degradedReason: null };
+    try {
+      const result = await db.execute(drizzleSql`
+        SELECT
+          COUNT(*)::int                                         AS total_rows,
+          MAX(dt)::text                                         AS latest_date,
+          COUNT(*) FILTER (WHERE source = 'mock')::int          AS mock_rows,
+          COUNT(*) FILTER (WHERE source != 'mock')::int         AS real_rows
+        FROM companies_ohlcv
+        WHERE interval = ${interval}
+        ${sourceFilter ? drizzleSql`AND source = ${sourceFilter}` : drizzleSql``}
+      `);
+      const r = (result as { rows?: Record<string, unknown>[] })?.rows?.[0]
+        ?? (Array.isArray(result) ? result[0] : result);
+      const totalRows  = typeof r?.total_rows  === "number" ? r.total_rows  : parseInt(String(r?.total_rows  ?? "0"), 10);
+      const mockRows   = typeof r?.mock_rows   === "number" ? r.mock_rows   : parseInt(String(r?.mock_rows   ?? "0"), 10);
+      const realRows   = typeof r?.real_rows   === "number" ? r.real_rows   : parseInt(String(r?.real_rows   ?? "0"), 10);
+      const latestDate = typeof r?.latest_date === "string" ? r.latest_date : null;
+
+      if (totalRows === 0) return { rowCount: 0, latestDate: null, dbState: "EMPTY", missingReason: "no_rows", degradedReason: null };
+      if (realRows === 0)  return { rowCount: totalRows, latestDate, dbState: "MOCK", missingReason: null, degradedReason: "all_rows_are_mock" };
+
+      // 4-day stale threshold covers TWSE longest gap (Fri→Tue after Mon holiday)
+      const staleMs = 4 * 24 * 60 * 60 * 1000;
+      const isStale = latestDate ? (Date.now() - new Date(latestDate).getTime()) > staleMs : true;
+      const dbState = isStale ? "STALE" : "LIVE";
+      const degradedReason = isStale ? `latest_date_${latestDate}_beyond_4d` : null;
+      return { rowCount: totalRows, latestDate, dbState, missingReason: null, degradedReason };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { rowCount: 0, latestDate: null, dbState: "ERROR", missingReason: msg, degradedReason: null };
+    }
+  }
+
+  if (tokenPresent && db) {
+    [ohlcvAdjStats, ohlcvRawStats, kbarStats] = await Promise.all([
+      queryOhlcvStats("1d", "finmind_adj"),
+      queryOhlcvStats("1d", "finmind"),
+      queryOhlcvStats("1m")
+    ]);
+    // PriceAdj fallback: if finmind_adj has no rows, fall back to any 1d real rows
+    if (ohlcvAdjStats.rowCount === 0) {
+      const anyDayStats = await queryOhlcvStats("1d");
+      if (anyDayStats.rowCount > 0) {
+        ohlcvAdjStats = { ...anyDayStats, degradedReason: "source_not_tagged_adj" };
+      }
+    }
+  } else if (!db) {
+    const noDbEntry: OhlcvDbStats = { rowCount: 0, latestDate: null, dbState: "EMPTY", missingReason: "memory_mode", degradedReason: null };
+    ohlcvAdjStats = noDbEntry;
+    ohlcvRawStats = noDbEntry;
+    kbarStats = noDbEntry;
+  }
+
+  // Derive per-dataset state for OHLCV-backed datasets
+  function ohlcvDatasetState(s: OhlcvDbStats, degraded: boolean): string {
+    if (!tokenPresent) return "BLOCKED";
+    if (degraded) return "DEGRADED";
+    return s.dbState; // LIVE / STALE / EMPTY / MOCK / ERROR
+  }
+
+  // Non-OHLCV datasets: no local DB table. state=FALLBACK when token present.
+  // FALLBACK = token present + can query API on demand, but no local persistence proof.
+  function apiOnlyDatasetState(implemented: boolean): string {
+    if (!implemented) return "CLOSED";
+    if (!tokenPresent) return "BLOCKED";
+    if (degradedByErrors) return "DEGRADED";
+    return "FALLBACK";
+  }
+
+  type DatasetEntry = {
+    key: string;
+    label: string;
+    state: string;
+    lastFetchTs: string | null;
+    rowCount: number | null;
+    latestDate: string | null;
+    missingReason: string | null;
+    degradedReason: string | null;
+  };
+
+  const datasets: DatasetEntry[] = [
+    {
+      key: "TaiwanStockPriceAdj",
+      label: "OHLCV/KBar adj",
+      state: ohlcvDatasetState(ohlcvAdjStats, degradedByErrors),
+      lastFetchTs: stats.lastDataset?.startsWith("TaiwanStockPriceAdj") ? stats.lastFetchTs : null,
+      rowCount: db ? ohlcvAdjStats.rowCount : null,
+      latestDate: ohlcvAdjStats.latestDate,
+      missingReason: ohlcvAdjStats.missingReason,
+      degradedReason: ohlcvAdjStats.degradedReason
+    },
+    {
+      key: "TaiwanStockPrice",
+      label: "日 K 備援",
+      state: ohlcvDatasetState(ohlcvRawStats, degradedByErrors),
+      lastFetchTs: stats.lastDataset?.startsWith("TaiwanStockPrice") ? stats.lastFetchTs : null,
+      rowCount: db ? ohlcvRawStats.rowCount : null,
+      latestDate: ohlcvRawStats.latestDate,
+      missingReason: ohlcvRawStats.missingReason,
+      degradedReason: ohlcvRawStats.degradedReason
+    },
+    {
+      key: "TaiwanStockKBar",
+      label: "分 K",
+      state: ohlcvDatasetState(kbarStats, degradedByErrors),
+      lastFetchTs: stats.lastDataset?.startsWith("TaiwanStockKBar") ? stats.lastFetchTs : null,
+      rowCount: db ? kbarStats.rowCount : null,
+      latestDate: kbarStats.latestDate,
+      missingReason: kbarStats.missingReason,
+      degradedReason: kbarStats.degradedReason
+    },
+    {
+      key: "TaiwanStockMonthRevenue",
+      label: "月營收",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockMonthRevenue" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockFinancialStatements",
+      label: "損益表",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockFinancialStatements" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockBalanceSheet",
+      label: "資產負債表",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockBalanceSheet" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockCashFlowsStatement",
+      label: "現金流量表",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockCashFlowsStatement" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockPER",
+      label: "PER / PBR / 殖利率",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockPER" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockMarketValue",
+      label: "股價市值",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockMarketValue" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockDividend",
+      label: "股利",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockDividend" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockInstitutionalInvestorsBuySell",
+      label: "三大法人",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockInstitutionalInvestorsBuySell" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockMarginPurchaseShortSale",
+      label: "融資融券",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockMarginPurchaseShortSale" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockShareholding",
+      label: "外資持股",
+      state: apiOnlyDatasetState(true),
+      lastFetchTs: stats.lastDataset === "TaiwanStockShareholding" ? stats.lastFetchTs : null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: tokenPresent ? null : "no_token",
+      degradedReason: degradedByErrors ? "high_error_rate" : null
+    },
+    {
+      key: "TaiwanStockNews",
+      label: "台股新聞",
+      state: "CLOSED",
+      lastFetchTs: null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: "freeze_no_news_feature",
+      degradedReason: null
+    },
+    {
+      key: "taiwan_stock_tick_snapshot",
+      label: "即時快照",
+      state: "CLOSED",
+      lastFetchTs: null,
+      rowCount: null,
+      latestDate: null,
+      missingReason: "quote_contract_pending",
+      degradedReason: null
+    }
+  ];
 
   return c.json({
     data: {
       source: "FINMIND",
       state: sourceState,
-      tokenPresent,
+      global: {
+        tokenPresent,
+        quotaTier,
+        rateLimitPerHour: quotaLimitPerHour
+      },
       quota: {
         used: stats.requestCount,
         limit: quotaLimitPerHour,
@@ -3883,17 +4144,14 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
         lastDataset: stats.lastDataset,
         degradedByErrors
       },
-      datasets: FINMIND_DATASET_STATUS.map((dataset) => ({
-        ...dataset,
-        state: tokenPresent
-          ? dataset.implemented ? readyDatasetState : "BLOCKED"
-          : "BLOCKED"
-      })),
+      datasets,
       notes: [
         "diagnostics_only",
         "token_never_returned",
         "finmind_does_not_enable_broker_submit",
         "kbar_single_day_payload",
+        "ohlcv_datasets_db_backed_others_api_only",
+        "state_fallback_means_api_queryable_no_local_persist",
         ...(degradedByErrors ? ["recent_fetch_errors_high"] : [])
       ],
       updatedAt: new Date().toISOString()
@@ -4829,6 +5087,173 @@ app.get("/api/v1/paper/health", async (c) => {
       },
       // Root cause closed flag: paper_orders 500 from 2026-05-05 morning
       paper_orders_500_root_cause_closed: tableExists
+    }
+  });
+});
+
+// GET /api/v1/paper/health/detail
+// B3-2 (2026-05-06): Per-stage paper E2E readiness panel.
+// No auth required — safe for Bruce smoke scripts and uptime monitors.
+// Covers all stages of the paper E2E flow:
+//   preview     → pure calculation gate (no DB needed)
+//   submit      → gate + DB table existence
+//   fill        → FILLED order count + last fill timestamp
+//   portfolio   → FILLED orders aggregated into positions
+//   orderTicket → submission channel (paper mode; not KGI)
+//   auditLog    → audit_logs table accessibility + today's entry count
+//
+// Hard lines:
+//   - NEVER exposes userId or any order content
+//   - NEVER exposes user-specific row data
+//   - All DB probes are read-only aggregate queries
+//   - state enum per stage: READY / DEGRADED / BLOCKED / ERROR
+app.get("/api/v1/paper/health/detail", async (c) => {
+  const flags = getExecutionFlagSnapshot();
+
+  const executionModeOk = flags.executionMode === "paper";
+  const killSwitchOk    = !flags.killSwitchEnabled;
+  const paperModeOk     = flags.paperModeEnabled;
+  const gateOpen        = executionModeOk && killSwitchOk && paperModeOk;
+
+  const dbMode = isDatabaseMode();
+  const db     = dbMode ? getDb() : null;
+
+  type StageState = "READY" | "DEGRADED" | "BLOCKED" | "ERROR";
+
+  // ── preview: pure calculation, needs only gate ──────────────────────────────
+  const previewState: StageState = gateOpen ? "READY" : "BLOCKED";
+  const previewBlockReason = gateOpen ? null : [
+    !executionModeOk ? `executionMode=${flags.executionMode}` : null,
+    !killSwitchOk    ? "killSwitch=ON" : null,
+    !paperModeOk     ? "paperMode=OFF" : null
+  ].filter(Boolean).join(";");
+
+  // ── submit: gate + DB table ─────────────────────────────────────────────────
+  let tableExists = false;
+  let submitDbError: string | null = null;
+  let lastFillTs: string | null = null;
+  let todayFillCount = 0;
+  let portfolioRowCount = 0;
+  let auditLogTodayEntries = 0;
+  let auditLogDbError: string | null = null;
+
+  if (db) {
+    try {
+      const tableCheck = await db.execute(drizzleSql`
+        SELECT to_regclass('public.paper_orders') AS paper_orders
+      `);
+      const tableRow = (tableCheck as { rows?: Record<string, unknown>[] })?.rows?.[0]
+        ?? (Array.isArray(tableCheck) ? tableCheck[0] : tableCheck);
+      tableExists = tableRow?.paper_orders !== null && tableRow?.paper_orders !== undefined;
+    } catch (err) {
+      submitDbError = err instanceof Error ? err.message : String(err);
+    }
+
+    if (tableExists && !submitDbError) {
+      try {
+        // Last fill timestamp + today's fill count (all users, no userId leak)
+        const today = new Date().toISOString().slice(0, 10);
+        const fillStats = await db.execute(drizzleSql`
+          SELECT
+            MAX(updated_at)::text               AS last_fill_ts,
+            COUNT(*) FILTER (
+              WHERE status = 'FILLED'
+              AND   updated_at::date = ${today}::date
+            )::int                              AS today_fills,
+            COUNT(*) FILTER (WHERE status = 'FILLED')::int AS total_filled_orders
+          FROM paper_orders
+        `);
+        const fr = (fillStats as { rows?: Record<string, unknown>[] })?.rows?.[0]
+          ?? (Array.isArray(fillStats) ? fillStats[0] : fillStats);
+        lastFillTs = typeof fr?.last_fill_ts === "string" ? fr.last_fill_ts : null;
+        todayFillCount = typeof fr?.today_fills === "number"
+          ? fr.today_fills : parseInt(String(fr?.today_fills ?? "0"), 10);
+        // portfolio row count = distinct symbols with net FILLED qty != 0 (approximation: count FILLED)
+        portfolioRowCount = typeof fr?.total_filled_orders === "number"
+          ? fr.total_filled_orders : parseInt(String(fr?.total_filled_orders ?? "0"), 10);
+      } catch (err) {
+        submitDbError = err instanceof Error ? err.message : String(err);
+      }
+    }
+  } else if (!dbMode) {
+    // Memory mode: in-memory adapter always ready, no table needed
+    tableExists = true;
+  }
+
+  // ── auditLog: today's entries count ─────────────────────────────────────────
+  if (db) {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const auditCheck = await db.execute(drizzleSql`
+        SELECT COUNT(*)::int AS today_entries
+        FROM audit_logs
+        WHERE created_at::date = ${today}::date
+      `);
+      const ar = (auditCheck as { rows?: Record<string, unknown>[] })?.rows?.[0]
+        ?? (Array.isArray(auditCheck) ? auditCheck[0] : auditCheck);
+      auditLogTodayEntries = typeof ar?.today_entries === "number"
+        ? ar.today_entries : parseInt(String(ar?.today_entries ?? "0"), 10);
+    } catch (err) {
+      auditLogDbError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // ── Derive stage states ──────────────────────────────────────────────────────
+  const submitState: StageState = !gateOpen ? "BLOCKED"
+    : submitDbError ? "ERROR"
+    : !tableExists && dbMode ? "DEGRADED"
+    : "READY";
+
+  const fillState: StageState = !tableExists && dbMode ? "BLOCKED"
+    : submitDbError ? "ERROR"
+    : "READY";
+
+  const portfolioState: StageState = fillState;
+
+  const orderTicketState: StageState = !gateOpen ? "BLOCKED" : "READY";
+
+  const auditLogState: StageState = auditLogDbError ? "ERROR" : "READY";
+
+  return c.json({
+    data: {
+      preview: {
+        state: previewState,
+        endpoint: "/paper/preview",
+        ...(previewBlockReason ? { blockReason: previewBlockReason } : {})
+      },
+      orderTicket: {
+        state: orderTicketState,
+        endpoint: "/paper/submit",
+        executionMode: flags.executionMode,
+        note: "paper mode only; KGI write-side is frozen"
+      },
+      submit: {
+        state: submitState,
+        endpoint: "/paper/submit",
+        executionMode: flags.executionMode,
+        // Pete review 2026-05-06: opaque code only (no raw Postgres error string on no-auth route)
+        ...(submitDbError ? { dbError: "db_query_failed" } : {})
+      },
+      fill: {
+        state: fillState,
+        endpoint: "/paper/fills",
+        lastFillTs,
+        todayCount: todayFillCount,
+        todayCountTimezone: "UTC"
+      },
+      portfolio: {
+        state: portfolioState,
+        endpoint: "/paper/portfolio",
+        filledOrderCount: portfolioRowCount,
+        note: "filledOrderCount counts FILLED orders, not distinct-symbol positions"
+      },
+      auditLog: {
+        state: auditLogState,
+        endpoint: "/audit-log",
+        todayEntries: auditLogTodayEntries,
+        todayEntriesTimezone: "UTC",
+        ...(auditLogDbError ? { dbError: "db_query_failed" } : {})
+      }
     }
   });
 });
