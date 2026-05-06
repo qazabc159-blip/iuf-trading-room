@@ -606,10 +606,23 @@ export type FinMindSourceStatus = {
   source: "FINMIND";
   state: "LIVE_READY" | "DEGRADED" | "BLOCKED";
   tokenPresent: boolean;
+  global?: {
+    tokenPresent: boolean;
+    quotaTier: "sponsor999" | "free" | "none" | string;
+    rateLimitPerHour: number | null;
+  };
   quota: {
     used: number | null;
     limit: number | null;
     source: string;
+  };
+  health?: {
+    requestCount: number;
+    errorCount: number;
+    errorRatePct: number | null;
+    lastFetchTs: string | null;
+    lastDataset: string | null;
+    degradedByErrors: boolean;
   };
   datasets: FinMindDatasetStatus[];
   notes: string[];

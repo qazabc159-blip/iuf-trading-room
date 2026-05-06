@@ -131,6 +131,27 @@ function datasetClass(dataset: FinMindDatasetStatus) {
   return "is-blocked";
 }
 
+function quotaTierLabel(value: string | null | undefined) {
+  if (value === "sponsor999") return "Sponsor 999";
+  if (value === "free") return "Free";
+  if (value === "none") return "未設定";
+  return value ?? "--";
+}
+
+function finmindQuotaTier(status: FinMindSourceStatus | null | undefined, diagnostics: FinMindDiagnosticsStatus | null | undefined) {
+  return status?.global?.quotaTier ?? diagnostics?.quotaTier ?? "none";
+}
+
+function finmindQuotaLimit(status: FinMindSourceStatus | null | undefined, diagnostics: FinMindDiagnosticsStatus | null | undefined) {
+  return status?.quota.limit ?? status?.global?.rateLimitPerHour ?? diagnostics?.quotaLimitPerHour ?? null;
+}
+
+function hasSponsorQuotaOverride(status: FinMindSourceStatus | null | undefined, diagnostics: FinMindDiagnosticsStatus | null | undefined) {
+  const tier = finmindQuotaTier(status, diagnostics);
+  const limit = finmindQuotaLimit(status, diagnostics);
+  return tier === "sponsor999" && typeof limit === "number" && limit < 6000;
+}
+
 function sourceLine<T>({ state, label }: { state: LoadState<T>; label: string }) {
   return (
     <div className="tg soft source-line">
@@ -246,6 +267,9 @@ function finMindPanel(finmind: LoadState<FinMindDashboard | null>) {
   const pending = datasets.filter((item) => datasetState(item) === "EMPTY").length;
   const blocked = datasets.filter((item) => datasetState(item) === "BLOCKED").length;
   const latestDataset = diagnostics?.inProcess.lastDataset ?? datasets.find((item) => item.latestDate)?.label ?? "--";
+  const quotaTier = finmindQuotaTier(status, diagnostics);
+  const quotaLimit = finmindQuotaLimit(status, diagnostics);
+  const quotaOverride = hasSponsorQuotaOverride(status, diagnostics);
 
   return (
     <Panel code="SRC" title="FinMind 資料燃料" sub="Sponsor 999 / token 安全 / 資料集回補" right={<StatusPill state={finmind.state} />}>
@@ -255,10 +279,18 @@ function finMindPanel(finmind: LoadState<FinMindDashboard | null>) {
         cells={[
           { label: "Token", value: status?.tokenPresent ? "存在" : "缺少", tone: status?.tokenPresent ? "status-ok" : "status-bad" },
           { label: "用量", value: `${formatCount(status?.quota.used)} / ${formatCount(status?.quota.limit)}`, tone: "muted" },
+          { label: "方案", value: quotaTierLabel(quotaTier), tone: quotaTier === "sponsor999" ? "status-ok" : "gold" },
+          { label: "上限", value: `${formatCount(quotaLimit)} / 小時`, tone: quotaOverride ? "status-bad" : quotaLimit ? "status-ok" : "gold" },
           { label: "正常資料集", value: live, tone: live > 0 ? "status-ok" : "gold" },
           { label: "最近請求", value: latestDataset, tone: "muted" },
         ]}
       />
+      {quotaOverride && (
+        <div className="terminal-note compact">
+          <span className="tg status-bad">Quota 設定異常</span>
+          Sponsor 999 應顯示 6,000 次 / 小時；目前後端回傳 {formatCount(quotaLimit)}。請檢查 Railway 的 `FINMIND_QUOTA_LIMIT_PER_HOUR` 是否仍被舊值覆寫。
+        </div>
+      )}
       <div className="dashboard-dataset-ribbon" aria-label="FinMind 資料集狀態">
         {datasets.slice(0, 14).map((dataset) => (
           <span className={`dashboard-dataset-token ${datasetClass(dataset)}`} key={dataset.key}>

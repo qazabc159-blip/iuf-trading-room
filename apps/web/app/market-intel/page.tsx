@@ -108,6 +108,27 @@ function datasetStateLabel(state: FinMindDatasetStatus["state"]) {
   return labels[state] ?? state;
 }
 
+function formatCount(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("zh-TW") : "--";
+}
+
+function quotaTierLabel(value: string | null | undefined) {
+  if (value === "sponsor999") return "Sponsor 999";
+  if (value === "free") return "Free";
+  if (value === "none") return "未設定";
+  return value ?? "--";
+}
+
+function quotaLimit(finmind: FinMindSourceStatus | null) {
+  return finmind?.quota.limit ?? finmind?.global?.rateLimitPerHour ?? null;
+}
+
+function quotaOverrideWarning(finmind: FinMindSourceStatus | null) {
+  const tier = finmind?.global?.quotaTier ?? "none";
+  const limit = quotaLimit(finmind);
+  return tier === "sponsor999" && typeof limit === "number" && limit < 6000;
+}
+
 function categoryTone(category: string | null | undefined) {
   const key = (category ?? "").toLowerCase();
   if (/dividend|股利|配息|配股/.test(key)) return "badge-yellow";
@@ -417,6 +438,12 @@ export default async function MarketIntelPage() {
             {stockNews
               ? `列數 ${stockNews.rowCount ?? 0}，最新日期 ${stockNews.latestDate ?? "--"}，狀態原因：${missingReasonText(stockNews.missingReason ?? stockNews.degradedReason)}。`
               : sourceHealth.error ?? "目前仍以重大訊息與已審核每日簡報為正式顯示來源。"}
+          </p>
+          <p>
+            方案 {quotaTierLabel(finmind?.global?.quotaTier)}；
+            API 上限 {formatCount(quotaLimit(finmind))} / 小時；
+            本程序已記錄請求 {formatCount(finmind?.quota.used)} 次。
+            {quotaOverrideWarning(finmind) ? " Sponsor 999 應為 6,000 / 小時，目前疑似被舊環境變數覆寫。" : ""}
           </p>
           <span className="tg soft">
             FinMind token 只顯示是否存在；不顯示 token 值。新聞資料若為 EMPTY/BLOCKED，不會被包裝成正式新聞。
