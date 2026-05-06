@@ -26,9 +26,9 @@ export function contentDraftTargetLabel(draft: ContentDraftEntry) {
     theme_summaries: "主題摘要",
     signals: "訊號證據",
     companies: "公司資料",
-    company_notes: "公司筆記",
+    company_notes: "公司備註",
     trade_plans: "交易計畫",
-    reviews: "檢討紀錄",
+    reviews: "審核紀錄",
   };
   return labels[draft.targetTable] ?? draft.targetTable.replace(/_/g, " ");
 }
@@ -103,12 +103,12 @@ export function contentDraftReviewActor(draft: ContentDraftEntry) {
 
 export function contentDraftReviewNote(draft: ContentDraftEntry) {
   if (draft.status === "awaiting_review") {
-    return "等待 AI 或人工審核；尚未寫入正式資料表。";
+    return "等待 AI reviewer 或 Owner fallback 審核；尚未寫入正式資料表。";
   }
   if (draft.status === "approved") {
     return draft.approvedRefId
-      ? `已核准並連到正式資料 ${draft.approvedRefId}`
-      : "已核准；正式資料參照尚未回填。";
+      ? `已核准並寫入正式資料：${draft.approvedRefId}`
+      : "已核准，正式資料 id 尚未回傳。";
   }
   return draft.rejectReason ?? "已退回；未提供退回原因。";
 }
