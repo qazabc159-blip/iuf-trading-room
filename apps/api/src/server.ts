@@ -217,6 +217,15 @@ import {
   registerWithInvite,
   seedOwnerIfEmpty
 } from "./auth-store.js";
+import {
+  _lastPipelineState,
+  getPipelineObservabilityAddendum,
+  runBatchAiReviewer,
+  runPipelineCloseBriefTick,
+  runPipelineCloseWatchTick,
+  runPipelinePreMarketTick,
+  runPipelineTick
+} from "./openalice-pipeline.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -2293,9 +2302,65 @@ app.patch("/api/v1/openalice/jobs/:jobId/review", async (c) => {
 app.get("/api/v1/openalice/observability", async (c) => {
   const denial = requireOpenAliceAdmin(c);
   if (denial) return denial;
+  const base = await getOpenAliceObservabilitySnapshot(c.get("session").workspace.slug);
+  // P0-C: extend observability with pipeline-specific fields
+  const pipelineAddendum = getPipelineObservabilityAddendum();
   return c.json({
-    data: await getOpenAliceObservabilitySnapshot(c.get("session").workspace.slug)
+    data: {
+      ...base,
+      pipeline: pipelineAddendum
+    }
   });
+});
+
+// P0-C: Admin trigger endpoint — fire pipeline tick on demand (Owner/Admin only)
+app.post("/api/v1/internal/openalice/pipeline/trigger", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
+
+  let body: { tick?: string } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  const validTicks = ["pre_market", "close_watch", "close_brief"] as const;
+  type ValidTick = (typeof validTicks)[number];
+  const rawTick = typeof body.tick === "string" ? body.tick : "close_brief";
+  const tick: ValidTick = (validTicks as readonly string[]).includes(rawTick)
+    ? (rawTick as ValidTick)
+    : "close_brief";
+
+  const workspaceSlug = c.get("session").workspace.slug;
+  const result = await runPipelineTick(tick, workspaceSlug).catch((e: unknown) => ({
+    error: e instanceof Error ? e.message : String(e)
+  }));
+
+  return c.json({ data: result }, 200);
+});
+
+// P0-D: Batch AI reviewer endpoint (Owner/Admin only)
+// POST /api/v1/internal/openalice/ai-reviewer/run-batch
+// params: { taskType?, limit=20, dryRun=true|false }
+// rate-limit: max 10 concurrent OpenAI calls (enforced in runBatchAiReviewer)
+app.post("/api/v1/internal/openalice/ai-reviewer/run-batch", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
+
+  let body: { taskType?: string; limit?: number; dryRun?: boolean } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  const limit = typeof body.limit === "number" ? Math.min(Math.max(1, body.limit), 50) : 20;
+  const dryRun = body.dryRun === true;
+  const taskType = typeof body.taskType === "string" ? body.taskType : undefined;
+
+  const result = await runBatchAiReviewer({ taskType, limit, dryRun });
+  return c.json({ data: result });
 });
 
 app.post("/api/v1/openalice/jobs", async (c) => {
@@ -6453,10 +6518,46 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, TWENTY_FOUR_HOURS_MS);
 
+  // P0-C: OpenAlice Autonomous Daily Pipeline — 3 ticks per trading day (TST)
+  // pre-market 08:30, close-watch 13:45, close-brief 16:30
+  // Each tick runs every 15 min and checks its Taipei time window internally.
+  const FIFTEEN_MIN_MS = 15 * 60 * 1000;
+
+  // Pre-market tick (08:30–09:00 TST window, check every 15min)
+  runPipelinePreMarketTick(workspaceSlug).catch((e) =>
+    console.error("[pipeline-scheduler] pre_market initial tick failed:", e)
+  );
+  setInterval(() => {
+    runPipelinePreMarketTick(workspaceSlug).catch((e) =>
+      console.error("[pipeline-scheduler] pre_market interval tick failed:", e)
+    );
+  }, FIFTEEN_MIN_MS);
+
+  // Close-watch tick (13:45–14:15 TST window, check every 15min)
+  runPipelineCloseWatchTick(workspaceSlug).catch((e) =>
+    console.error("[pipeline-scheduler] close_watch initial tick failed:", e)
+  );
+  setInterval(() => {
+    runPipelineCloseWatchTick(workspaceSlug).catch((e) =>
+      console.error("[pipeline-scheduler] close_watch interval tick failed:", e)
+    );
+  }, FIFTEEN_MIN_MS);
+
+  // Close-brief tick (16:30–17:00 TST window, check every 15min)
+  runPipelineCloseBriefTick(workspaceSlug).catch((e) =>
+    console.error("[pipeline-scheduler] close_brief initial tick failed:", e)
+  );
+  setInterval(() => {
+    runPipelineCloseBriefTick(workspaceSlug).catch((e) =>
+      console.error("[pipeline-scheduler] close_brief interval tick failed:", e)
+    );
+  }, FIFTEEN_MIN_MS);
+
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
-    "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) started"
+    "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) + " +
+    "P0-C pipeline pre_market/close_watch/close_brief (15min) started"
   );
 }
 
