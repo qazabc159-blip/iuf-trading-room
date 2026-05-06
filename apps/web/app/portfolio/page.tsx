@@ -1,9 +1,13 @@
 import Link from "next/link";
 
 import {
+  getPaperHealthDetail,
   getPaperPortfolio,
   listPaperFills,
   type PaperFillLedgerRow,
+  type PaperHealthDetail,
+  type PaperHealthDetailStage,
+  type PaperHealthDetailStageState,
   type PaperPortfolioPosition,
 } from "@/lib/paper-orders-api";
 import { friendlyDataError } from "@/lib/friendly-error";
@@ -51,6 +55,21 @@ type FillsState =
   | {
       state: "BLOCKED";
       fills: PaperFillLedgerRow[];
+      updatedAt: string;
+      source: string;
+      reason: string;
+    };
+
+type PaperReadinessState =
+  | {
+      state: "LIVE";
+      detail: PaperHealthDetail;
+      updatedAt: string;
+      source: string;
+    }
+  | {
+      state: "BLOCKED";
+      detail: null;
       updatedAt: string;
       source: string;
       reason: string;
@@ -122,6 +141,29 @@ async function loadPaperFills(): Promise<FillsState> {
   }
 }
 
+async function loadPaperReadiness(): Promise<PaperReadinessState> {
+  const updatedAt = new Date().toISOString();
+  const source = "GET /api/v1/paper/health/detail";
+
+  try {
+    const detail = await getPaperHealthDetail();
+    return {
+      state: "LIVE",
+      detail,
+      updatedAt,
+      source,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      detail: null,
+      updatedAt,
+      source,
+      reason: friendlyDataError(error, "紙上交易健康檢查 API 目前無法讀取。"),
+    };
+  }
+}
+
 function stateLabel(state: PortfolioState["state"]) {
   if (state === "LIVE") return "正常";
   if (state === "EMPTY") return "無部位";
@@ -132,6 +174,19 @@ function stateClass(state: PortfolioState["state"]) {
   if (state === "LIVE") return "status-ok";
   if (state === "EMPTY") return "gold";
   return "status-bad";
+}
+
+function readinessStateClass(state: PaperHealthDetailStageState | PaperReadinessState["state"]) {
+  if (state === "READY" || state === "LIVE") return "status-ok";
+  if (state === "DEGRADED") return "gold";
+  return "status-bad";
+}
+
+function readinessStateLabel(state: PaperHealthDetailStageState | PaperReadinessState["state"]) {
+  if (state === "READY" || state === "LIVE") return "可用";
+  if (state === "DEGRADED") return "降級";
+  if (state === "BLOCKED") return "阻擋";
+  return "錯誤";
 }
 
 function sideLabel(side: PaperFillLedgerRow["side"]) {
@@ -170,6 +225,11 @@ function formatDateTime(value: string) {
     second: "2-digit",
     hour12: false,
   });
+}
+
+function formatNullableTime(value: string | null | undefined) {
+  if (!value) return "尚無成交";
+  return formatDateTime(value);
 }
 
 function formatTwd(value: number | null | undefined) {
@@ -248,8 +308,69 @@ function estimatedCost(positions: PaperPortfolioPosition[]) {
   }, 0);
 }
 
+function readinessRows(detail: PaperHealthDetail) {
+  return [
+    {
+      id: "preview",
+      title: "風控預覽",
+      description: "只做計算檢查，不建立委託。",
+      stage: detail.preview,
+    },
+    {
+      id: "ticket",
+      title: "委託草稿",
+      description: "公司頁建立 PAPER ticket，不碰 KGI。",
+      stage: detail.orderTicket,
+    },
+    {
+      id: "submit",
+      title: "紙上送出",
+      description: "僅送到 paper_orders；不是正式下單。",
+      stage: detail.submit,
+    },
+    {
+      id: "fill",
+      title: "模擬成交",
+      description: "讀取後端 FILLED 狀態，不用 K 線當成交價。",
+      stage: detail.fill,
+    },
+    {
+      id: "portfolio",
+      title: "部位回寫",
+      description: "FILLED 委託彙總成紙上部位。",
+      stage: detail.portfolio,
+    },
+    {
+      id: "audit",
+      title: "稽核紀錄",
+      description: "讀取今日 audit log 聚合狀態。",
+      stage: detail.auditLog,
+    },
+  ];
+}
+
+function stageDetailLine(stage: PaperHealthDetailStage) {
+  if (stage.blockReason) return stage.blockReason;
+  if (stage.dbError) return `資料庫檢查：${stage.dbError}`;
+  if (stage.endpoint === "/paper/fills") {
+    return `今日成交 ${stage.todayCount ?? 0} 筆；最近成交 ${formatNullableTime(stage.lastFillTs)}`;
+  }
+  if (stage.endpoint === "/paper/portfolio") {
+    return `已成交委託 ${stage.filledOrderCount ?? 0} 筆；彙總後才形成部位`;
+  }
+  if (stage.endpoint === "/audit-log") {
+    return `今日稽核 ${stage.todayEntries ?? 0} 筆`;
+  }
+  if (stage.executionMode) return `模式：${stage.executionMode}`;
+  return stage.note ?? "後端健康檢查已回覆。";
+}
+
 export default async function PortfolioPage() {
-  const [result, fillsResult] = await Promise.all([loadPaperPortfolio(), loadPaperFills()]);
+  const [result, fillsResult, readinessResult] = await Promise.all([
+    loadPaperPortfolio(),
+    loadPaperFills(),
+    loadPaperReadiness(),
+  ]);
   const paperCost = estimatedCost(result.positions);
   const availableCapital = Math.max(PAPER_CAPITAL_TWD - paperCost, 0);
   const fillNotionalTotal = totalFillNotional(fillsResult.fills);
@@ -289,6 +410,62 @@ export default async function PortfolioPage() {
         <div>
           <span className="tg muted">台股單位</span>
           <strong>1 張 = 1,000 股；零股以實際股數顯示。</strong>
+        </div>
+      </section>
+
+      <section className="panel portfolio-readiness-panel" aria-label="紙上交易流程健康軌">
+        <div className="panel-head">
+          <div>
+            <span className="tg panel-code">FLOW</span>
+            <span className="tg muted"> / </span>
+            <span className="tg gold">紙上交易流程健康軌</span>
+            <div className="panel-sub">
+              從風控預覽到部位回寫逐段讀取後端健康檢查；本區只顯示狀態，不送出委託。
+            </div>
+          </div>
+          <div className={`tg ${readinessStateClass(readinessResult.state)}`}>
+            {readinessStateLabel(readinessResult.state)}
+          </div>
+        </div>
+
+        <div className="portfolio-fill-source">
+          <span>來源：{readinessResult.source}</span>
+          <span>更新：{formatTime(readinessResult.updatedAt)}</span>
+          <span>安全：read-only / no broker / no submit</span>
+        </div>
+
+        {readinessResult.state === "BLOCKED" ? (
+          <div className="terminal-note portfolio-empty-note">
+            <span className="tg status-bad">阻擋</span>
+            <span>{readinessResult.reason}</span>
+          </div>
+        ) : (
+          <div className="paper-readiness-rail">
+            {readinessRows(readinessResult.detail).map((row, index) => (
+              <article className="paper-readiness-card" key={row.id}>
+                <div className="paper-readiness-index">{String(index + 1).padStart(2, "0")}</div>
+                <div className="paper-readiness-body">
+                  <div className="paper-readiness-title">
+                    <strong>{row.title}</strong>
+                    <span className={`tg ${readinessStateClass(row.stage.state)}`}>
+                      {readinessStateLabel(row.stage.state)}
+                    </span>
+                  </div>
+                  <p>{row.description}</p>
+                  <div className="paper-readiness-meta">
+                    <span>{row.stage.endpoint}</span>
+                    <span>{stageDetailLine(row.stage)}</span>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+
+        <div className="paper-readiness-proof">
+          <span>正式券商：未連接</span>
+          <span>成交來源：paper_orders 後端狀態</span>
+          <span>價格提醒：FinMind / K 線只作參考，不作 fill price</span>
         </div>
       </section>
 
