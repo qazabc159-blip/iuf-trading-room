@@ -3819,6 +3819,13 @@ import {
   isWeeklyTriggerDay,
   queryFundamentalDatasetStats
 } from "./jobs/fundamentals-finmind-sync.js";
+import {
+  runInstitutionalBuySellSync,
+  runMarginShortSync,
+  runShareholdingSync,
+  isFridayTriggerDay,
+  queryTradingFlowDatasetStats
+} from "./jobs/trading-flow-finmind-sync.js";
 
 // Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
 function companyIdToTicker(ticker: string): string {
@@ -4003,6 +4010,12 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
   let balanceSheetStats: FundamentalStats    = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
   let cashflowStats: FundamentalStats        = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
 
+  // PR B: trading-flow dataset stats from DB (if tables exist)
+  type TradingFlowStats = Awaited<ReturnType<typeof queryTradingFlowDatasetStats>>;
+  let institutionalBuySellStats: TradingFlowStats = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+  let marginShortStats: TradingFlowStats          = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+  let shareholdingStats: TradingFlowStats         = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+
   if (tokenPresent && db) {
     [ohlcvAdjStats, ohlcvRawStats, kbarStats] = await Promise.all([
       queryOhlcvStats("1d", "finmind_adj"),
@@ -4022,6 +4035,12 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
       queryFundamentalDatasetStats("tw_financial_statements"),
       queryFundamentalDatasetStats("tw_balance_sheet"),
       queryFundamentalDatasetStats("tw_cashflow_statement")
+    ]);
+    // PR B: query trading-flow dataset stats in parallel (staleDays: daily=5, weekly=10)
+    [institutionalBuySellStats, marginShortStats, shareholdingStats] = await Promise.all([
+      queryTradingFlowDatasetStats("tw_institutional_buysell", 5),
+      queryTradingFlowDatasetStats("tw_margin_short", 5),
+      queryTradingFlowDatasetStats("tw_shareholding", 10)
     ]);
   } else if (!db) {
     const noDbEntry: OhlcvDbStats = { rowCount: 0, latestDate: null, dbState: "EMPTY", missingReason: "memory_mode", degradedReason: null };
@@ -4162,31 +4181,34 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
     {
       key: "TaiwanStockInstitutionalInvestorsBuySell",
       label: "三大法人",
-      state: apiOnlyDatasetState(true),
+      // PR B: DB-backed state from tw_institutional_buysell; BLOCKED when no token
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : institutionalBuySellStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockInstitutionalInvestorsBuySell" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? institutionalBuySellStats.rowCount : null,
+      latestDate: institutionalBuySellStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : institutionalBuySellStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
       key: "TaiwanStockMarginPurchaseShortSale",
       label: "融資融券",
-      state: apiOnlyDatasetState(true),
+      // PR B: DB-backed state from tw_margin_short; BLOCKED when no token
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : marginShortStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockMarginPurchaseShortSale" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? marginShortStats.rowCount : null,
+      latestDate: marginShortStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : marginShortStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
       key: "TaiwanStockShareholding",
-      label: "外資持股",
-      state: apiOnlyDatasetState(true),
+      label: "外資持股/集保戶數",
+      // PR B: DB-backed state from tw_shareholding; BLOCKED when no token
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : shareholdingStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockShareholding" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? shareholdingStats.rowCount : null,
+      latestDate: shareholdingStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : shareholdingStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
@@ -6243,6 +6265,111 @@ async function runFinancialsSchedulerTick(workspaceSlug: string): Promise<void> 
   }
 }
 
+// ── PR B: Trading-flow scheduler tick helpers ─────────────────────────────────
+
+/** Returns Taipei time as HHMM integer (e.g. 14:30 → 1430). */
+function getTaipeiHHMM(): number {
+  const now = new Date();
+  const formatted = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(now);
+  return parseInt(formatted.replace(":", ""), 10);
+}
+
+/** Returns true if current Taipei time is between 14:30 and 17:00 (institutional window). */
+function isTaipei1430to1700(): boolean {
+  const hhmm = getTaipeiHHMM();
+  return hhmm >= 1430 && hhmm < 1700;
+}
+
+/** Returns true if current Taipei time is between 17:00 and 21:00 (margin-short window). */
+function isTaipei1700to2100(): boolean {
+  const hhmm = getTaipeiHHMM();
+  return hhmm >= 1700 && hhmm < 2100;
+}
+
+/**
+ * PR B: Institutional buysell scheduler tick.
+ * Panel-critical: runs every 30min, actually syncs only when Taipei time 14:30–17:00.
+ * Boot run always executes (catches up any missed window).
+ */
+async function runTradingFlowInstitutionalTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) return;
+  if (!isTaipei1430to1700()) {
+    console.log("[trading-flow-scheduler] institutional skipped=outside_cadence_window");
+    return;
+  }
+  try {
+    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    if (tickers.length === 0) {
+      console.warn("[trading-flow-scheduler] no tickers found for institutional buysell sync");
+      return;
+    }
+    const result = await runInstitutionalBuySellSync(tickers);
+    console.log(
+      `[trading-flow-scheduler] institutional DONE rowsUpserted=${result.rowsUpserted} ` +
+      `skipped=${result.skipped} skipReason=${result.skipReason ?? "none"}`
+    );
+  } catch (err) {
+    console.error("[trading-flow-scheduler] institutional tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * PR B: Margin/short scheduler tick.
+ * Runs every 30min, actually syncs only when Taipei time 17:00–21:00.
+ */
+async function runTradingFlowMarginShortTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) return;
+  if (!isTaipei1700to2100()) {
+    console.log("[trading-flow-scheduler] margin-short skipped=outside_cadence_window");
+    return;
+  }
+  try {
+    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    if (tickers.length === 0) {
+      console.warn("[trading-flow-scheduler] no tickers found for margin-short sync");
+      return;
+    }
+    const result = await runMarginShortSync(tickers);
+    console.log(
+      `[trading-flow-scheduler] margin-short DONE rowsUpserted=${result.rowsUpserted} ` +
+      `skipped=${result.skipped} skipReason=${result.skipReason ?? "none"}`
+    );
+  } catch (err) {
+    console.error("[trading-flow-scheduler] margin-short tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * PR B: Shareholding scheduler tick.
+ * Runs every 24h, actually syncs only on Friday.
+ */
+async function runTradingFlowShareholdingTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) return;
+  if (!isFridayTriggerDay()) {
+    console.log("[trading-flow-scheduler] shareholding skipped=cadence_not_due (not Friday)");
+    return;
+  }
+  try {
+    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    if (tickers.length === 0) {
+      console.warn("[trading-flow-scheduler] no tickers found for shareholding sync");
+      return;
+    }
+    const result = await runShareholdingSync(tickers);
+    console.log(
+      `[trading-flow-scheduler] shareholding DONE rowsUpserted=${result.rowsUpserted} ` +
+      `skipped=${result.skipped} skipReason=${result.skipReason ?? "none"}`
+    );
+  } catch (err) {
+    console.error("[trading-flow-scheduler] shareholding tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
 /**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: every 23 hours (drift-safe).
@@ -6295,7 +6422,42 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, TWENTY_FOUR_HOURS_MS);
 
-  console.log("[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + PR-A monthly-revenue (24h) + PR-A financials (24h) started");
+  // PR B: Institutional buysell — every 30min, cadence guard 14:30–17:00 Taipei
+  const THIRTY_MIN_MS = 30 * 60 * 1000;
+  runTradingFlowInstitutionalTick(workspaceSlug).catch((e) =>
+    console.error("[trading-flow-scheduler] institutional initial tick failed:", e)
+  );
+  setInterval(() => {
+    runTradingFlowInstitutionalTick(workspaceSlug).catch((e) =>
+      console.error("[trading-flow-scheduler] institutional interval tick failed:", e)
+    );
+  }, THIRTY_MIN_MS);
+
+  // PR B: Margin/short — every 30min, cadence guard 17:00–21:00 Taipei
+  runTradingFlowMarginShortTick(workspaceSlug).catch((e) =>
+    console.error("[trading-flow-scheduler] margin-short initial tick failed:", e)
+  );
+  setInterval(() => {
+    runTradingFlowMarginShortTick(workspaceSlug).catch((e) =>
+      console.error("[trading-flow-scheduler] margin-short interval tick failed:", e)
+    );
+  }, THIRTY_MIN_MS);
+
+  // PR B: Shareholding — every 24h, cadence guard Friday-only
+  runTradingFlowShareholdingTick(workspaceSlug).catch((e) =>
+    console.error("[trading-flow-scheduler] shareholding initial tick failed:", e)
+  );
+  setInterval(() => {
+    runTradingFlowShareholdingTick(workspaceSlug).catch((e) =>
+      console.error("[trading-flow-scheduler] shareholding interval tick failed:", e)
+    );
+  }, TWENTY_FOUR_HOURS_MS);
+
+  console.log(
+    "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
+    "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
+    "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) started"
+  );
 }
 
 const port = Number(process.env.PORT ?? 3001);
