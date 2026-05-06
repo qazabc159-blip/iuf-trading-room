@@ -3434,3 +3434,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Stop-lines: no token, no real-order route, no paper-submit route, no KGI write-side, no internal user/idempotency display, no FinMind/K-line fill price, no fake-live state.
 - Blocker: stacked behind #216 and #219; do not self-merge under current Elva policy.
 - Next: open stacked PR on feat/web-paper-fills-readout-2026-05-06 and notify Elva channel.
+
+## Codex Update - 2026-05-06 19:20 Taipei - M-5 company paper flow guide
+- Branch/slice: Paper E2E UI / company-to-portfolio workflow. Trade Capability Score: +1.
+- Files: apps/web/app/companies/[symbol]/PaperOrderPanel.tsx; apps/web/app/portfolio/page.tsx; evidence/w7_paper_sprint/codex_m5_paper_preview_to_portfolio_flow_2026-05-06.md.
+- Endpoint/source: existing paper preview/health/orders plus portfolio anchors for GET /api/v1/paper/health/detail, GET /api/v1/paper/portfolio, and GET /api/v1/paper/fills.
+- Behavior: company page now explains preview vs submit, shows symbol/unit/actual shares/notional/demo capital, repeats 1 lot = 1,000 shares, and links directly to portfolio readiness + paper fills.
+- Checks: web typecheck PASS; web build PASS; api build PASS; local Chrome CDP 1365/390 visual QA PASS.
+- Screenshot manifest: evidence/w7_paper_sprint/local_visual_qa_m5_paper_flow_2026-05-06/manifest.json.
+- Stop-lines: no token, no real-order route, no new submit call, no KGI write-side, no fake fill, no FinMind/K-line fill price, no paper/live readiness wording.
+- Blocker: stacked behind #216/#219/#221; do not self-merge under current Elva policy.

@@ -413,7 +413,7 @@ export default async function PortfolioPage() {
         </div>
       </section>
 
-      <section className="panel portfolio-readiness-panel" aria-label="紙上交易流程健康軌">
+      <section className="panel portfolio-readiness-panel" id="paper-readiness" aria-label="紙上交易流程健康軌">
         <div className="panel-head">
           <div>
             <span className="tg panel-code">FLOW</span>
@@ -550,7 +550,7 @@ export default async function PortfolioPage() {
         )}
       </section>
 
-      <section className="panel portfolio-readout portfolio-fill-readout">
+      <section className="panel portfolio-readout portfolio-fill-readout" id="paper-fills">
         <div className="panel-head">
           <div>
             <span className="tg panel-code">FILL</span>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -532,6 +533,16 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
             <PreviewResult result={preview.result} />
           )}
 
+          <PaperFlowGuide
+            canSubmit={canSubmit}
+            demoCapital={DEMO_CAPITAL_TWD}
+            estimatedNotional={parsed.estimatedNotional}
+            input={input}
+            notionalExceedsCap={parsed.notionalExceedsCap}
+            previewStatus={preview.status}
+            symbol={symbol}
+          />
+
           {submit.status === "error" && (
             <TruthNote state="BLOCKED" text={submit.message} />
           )}
@@ -584,6 +595,88 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
         />
       )}
     </section>
+  );
+}
+
+function PaperFlowGuide({
+  canSubmit,
+  demoCapital,
+  estimatedNotional,
+  input,
+  notionalExceedsCap,
+  previewStatus,
+  symbol,
+}: {
+  canSubmit: boolean;
+  demoCapital: number;
+  estimatedNotional: number | null;
+  input: PaperOrderInput | null;
+  notionalExceedsCap: boolean;
+  previewStatus: PreviewState["status"];
+  symbol: string;
+}) {
+  const unit = input?.quantity_unit ?? "SHARE";
+  const qty = input?.qty ?? 1;
+  const shares = input ? toTaiwanStockShareCount(qty, unit) : 1;
+  const previewDone = previewStatus === "live" || previewStatus === "blocked";
+  const isBlocked = previewStatus === "blocked" || notionalExceedsCap;
+  const state: "LIVE" | "EMPTY" | "BLOCKED" = isBlocked ? "BLOCKED" : previewDone ? "LIVE" : "EMPTY";
+
+  return (
+    <div style={flowGuideStyle} aria-label="紙上交易流程導引">
+      <div style={flowGuideHeaderStyle}>
+        <span className="tg gold">流程導引</span>
+        <span className="tg muted">公司頁 → 紙上投資組合</span>
+      </div>
+      <TruthNote
+        state={state}
+        text={
+          previewStatus === "idle"
+            ? "這是紙上交易預覽，尚未送出委託。先按「預覽風控」取得後端風控與報價結果。"
+            : isBlocked
+              ? "目前只停在預覽或阻擋狀態，沒有建立紙上委託、成交或稽核紀錄。"
+              : canSubmit
+                ? "預覽已通過；若選擇送出，會先開確認視窗，送出後再到紙上投資組合看部位、成交與健康軌。"
+                : "預覽已回覆，但紙上送出閘門尚未開啟；目前只可查看風控結果。"
+        }
+      />
+
+      <div style={flowGuideGridStyle}>
+        <div style={flowGuideCellStyle}>
+          <span>股票</span>
+          <b style={flowGuideValueStyle}>{symbol.toUpperCase()}</b>
+        </div>
+        <div style={flowGuideCellStyle}>
+          <span>單位</span>
+          <b style={flowGuideValueStyle}>{unit === "SHARE" ? "零股 / SHARE" : "整張 / LOT"}</b>
+        </div>
+        <div style={flowGuideCellStyle}>
+          <span>實際股數</span>
+          <b style={flowGuideValueStyle}>{shares.toLocaleString("zh-TW")} 股</b>
+        </div>
+        <div style={flowGuideCellStyle}>
+          <span>預估佔用</span>
+          <b className={notionalExceedsCap ? "status-bad" : ""} style={flowGuideValueStyle}>
+            {estimatedNotional === null ? "待後端報價" : formatTwd(estimatedNotional)}
+          </b>
+        </div>
+      </div>
+
+      <div style={flowGuideFootStyle}>
+        <span>模擬資金：{formatTwd(demoCapital)}</span>
+        <span>1 張 = 1,000 股；2330 整張測試會以 1,000 股計算。</span>
+        <span>FinMind / K 線只作參考，不作成交價。</span>
+      </div>
+
+      <div style={flowGuideActionsStyle}>
+        <Link className="terminal-button" href="/portfolio#paper-readiness">
+          查看流程健康軌
+        </Link>
+        <Link className="terminal-button" href="/portfolio#paper-fills">
+          查看紙上成交
+        </Link>
+      </div>
+    </div>
   );
 }
 
@@ -1106,6 +1199,70 @@ const previewBoxStyle: React.CSSProperties = {
   borderBottom: "1px solid var(--night-rule, #222)",
   padding: "14px 0 16px",
   marginBottom: 18,
+};
+
+const flowGuideStyle: React.CSSProperties = {
+  borderTop: "1px solid var(--night-rule-strong, #333)",
+  borderBottom: "1px solid var(--night-rule, #222)",
+  padding: "14px 0 16px",
+  marginBottom: 18,
+};
+
+const flowGuideHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 10.5,
+  letterSpacing: "0.08em",
+  marginBottom: 10,
+};
+
+const flowGuideGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 1,
+  marginTop: 12,
+  border: "1px solid var(--night-rule, #222)",
+  background: "rgba(220, 228, 240, 0.07)",
+};
+
+const flowGuideCellStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 6,
+  minWidth: 0,
+  padding: "10px 12px",
+  background: "rgba(1,5,9,0.56)",
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 10.5,
+  lineHeight: 1.4,
+};
+
+const flowGuideValueStyle: React.CSSProperties = {
+  color: "var(--night-ink, #d8d4c8)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 12.5,
+  lineHeight: 1.35,
+  overflowWrap: "anywhere",
+};
+
+const flowGuideFootStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 6,
+  marginTop: 12,
+  color: "var(--night-mid, #888)",
+  fontFamily: "var(--mono, monospace)",
+  fontSize: 10.5,
+  lineHeight: 1.65,
+};
+
+const flowGuideActionsStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+  marginTop: 14,
 };
 
 const kvStyle: React.CSSProperties = {
