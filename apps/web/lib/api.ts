@@ -556,7 +556,22 @@ export type FinMindDatasetStatus = {
   label: string;
   implemented: boolean;
   blocker?: string;
-  state: "READY" | "DEGRADED" | "BLOCKED";
+  state:
+    | "READY"
+    | "LIVE"
+    | "STALE"
+    | "EMPTY"
+    | "FALLBACK"
+    | "DEGRADED"
+    | "BLOCKED"
+    | "ERROR"
+    | "MOCK"
+    | "CLOSED";
+  lastFetchTs?: string | null;
+  rowCount?: number | null;
+  latestDate?: string | null;
+  missingReason?: string | null;
+  degradedReason?: string | null;
 };
 
 export type FinMindSourceStatus = {

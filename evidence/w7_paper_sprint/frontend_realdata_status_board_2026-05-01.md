@@ -3398,3 +3398,11 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Screenshot manifest: evidence/w7_paper_sprint/local_visual_qa_pass129_paper_truth_panel_2026-05-06/manifest.json.
 - Stop-lines: no token, no fake live, no order submit, no /order/create, no KGI write-side, no FinMind/K-line as fill or risk source, no buy/sell recommendation.
 - Next: open PR B and, after deploy, run authenticated production preview smoke for 1104 SHARE=1, 2330 SHARE=1, and 2330 LOT=1.
+
+## Codex Update - 2026-05-06 21:55:00 +08:00 - FinMind dataset state semantics
+- Trade Capability Score: +1. Workflow improved: dashboard FinMind diagnostics now counts API `LIVE` datasets as usable instead of only accepting obsolete `READY`.
+- Files: `apps/web/lib/api.ts`, `apps/web/app/page.tsx`, `evidence/w7_paper_sprint/codex_finmind_dataset_state_semantics_2026-05-06.md`.
+- Endpoints/sources: `GET /api/v1/data-sources/finmind/status`, `GET /api/v1/diagnostics/finmind`.
+- Behavior: LIVE/READY = normal; STALE/EMPTY/FALLBACK/DEGRADED = pending/degraded; BLOCKED/ERROR/MOCK/CLOSED = blocked. Dataset ribbon displays state, row count, latest date when the API provides them.
+- Stop-lines: no token display/logging, no KGI/broker write-side, no order path, no fake-live dataset state, no directional trade recommendation, no strategy metrics.
+- Checks: contracts build PASS; web typecheck PASS; web build PASS; diff stop-line grep PASS.
