@@ -4,7 +4,11 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { getContentDrafts, type ContentDraftEntry } from "@/lib/api";
 import {
   contentDraftBody,
+  contentDraftDate,
   contentDraftPayloadText,
+  contentDraftReviewActor,
+  contentDraftReviewNote,
+  contentDraftSections,
   contentDraftStatusBadge,
   contentDraftStatusLabel,
   contentDraftTargetLabel,
@@ -40,6 +44,8 @@ function DetailStatePanel({
 
 function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
   const body = contentDraftBody(draft);
+  const sections = contentDraftSections(draft);
+  const draftDate = contentDraftDate(draft);
 
   return (
     <div className="main-grid">
@@ -57,10 +63,44 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
           {body ? (
             <p>{body}</p>
           ) : (
-            <p className="tg soft">payload 沒有可直接顯示的正文欄位，以下顯示原始內容。</p>
+            <p className="tg soft">payload 沒有 summary / note / body 欄位，改用下方結構化段落與原始內容檢查。</p>
+          )}
+          {sections.length > 0 && (
+            <div className="content-draft-section-list">
+              {sections.map((section, index) => (
+                <section className="content-draft-section" key={`${section.heading}-${index}`}>
+                  <span className="tg gold">{String(index + 1).padStart(2, "0")}</span>
+                  <div>
+                    <h3>{section.heading}</h3>
+                    <p>{section.body || "本段沒有正文，不應發布到正式每日簡報。"}</p>
+                  </div>
+                </section>
+              ))}
+            </div>
           )}
           <pre className="payload-pre">{contentDraftPayloadText(draft)}</pre>
         </article>
+      </Panel>
+
+      <Panel code="DRF-TRAIL" title="來源與審核軌跡" right={draftDate ?? "未標日期"}>
+        <div className="content-draft-trail-grid">
+          {[
+            ["來源工作", draft.sourceJobId ?? "無來源工作"],
+            ["產生者", draft.producerVersion],
+            ["目標", contentDraftTargetLabel(draft)],
+            ["目標 ID", draft.targetEntityId ?? "無"],
+            ["審核者", contentDraftReviewActor(draft)],
+            ["審核結論", contentDraftReviewNote(draft)],
+          ].map(([key, value]) => (
+            <div key={key}>
+              <span>{key}</span>
+              <b>{value}</b>
+            </div>
+          ))}
+        </div>
+        <p className="tg soft" style={{ lineHeight: 1.7, marginTop: 14 }}>
+          這裡只呈現 OpenAlice 草稿與審核線索；未核准內容不會顯示在正式每日簡報，也不會被包裝成投資建議。
+        </p>
       </Panel>
 
       <Panel code="DRF-META" title="中繼資料">
@@ -87,10 +127,10 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
 
       <Panel code="DRF-ACT" title="寫入動作" right="受控">
         <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">負責：內容與後端資料管線</span>
+          <span className="badge badge-yellow">受控</span>
+          <span className="tg soft">來源：content-drafts approve / reject endpoint</span>
           <span className="state-reason">
-            核准與退回的正式後端路徑已存在，但本輪介面先不啟用寫入。舊的本機假按鈕已移除，避免把模擬核准誤認成正式資料庫決策。
+            核准與退回的正式後端路徑已存在；本頁先清楚揭露目前狀態、來源與審核結果。若要開放按鈕，必須接正式 endpoint、記錄稽核，不得使用本機假成功。
           </span>
         </div>
       </Panel>

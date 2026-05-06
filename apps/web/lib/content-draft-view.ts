@@ -44,6 +44,15 @@ function stringField(record: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function arrayField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return Array.isArray(value) ? value : [];
+}
+
+export function contentDraftPayloadRecord(draft: ContentDraftEntry) {
+  return asRecord(draft.payload);
+}
+
 export function contentDraftTitle(draft: ContentDraftEntry) {
   const payload = asRecord(draft.payload);
   const explicit = stringField(payload, "title")
@@ -63,6 +72,45 @@ export function contentDraftBody(draft: ContentDraftEntry) {
     ?? stringField(payload, "note")
     ?? stringField(payload, "body")
     ?? null;
+}
+
+export function contentDraftMarketState(draft: ContentDraftEntry) {
+  const payload = asRecord(draft.payload);
+  return stringField(payload, "marketState");
+}
+
+export function contentDraftDate(draft: ContentDraftEntry) {
+  const payload = asRecord(draft.payload);
+  return stringField(payload, "date");
+}
+
+export function contentDraftSections(draft: ContentDraftEntry) {
+  const payload = asRecord(draft.payload);
+  return arrayField(payload, "sections")
+    .map((item) => asRecord(item))
+    .map((item) => ({
+      heading: stringField(item, "heading") ?? "未命名段落",
+      body: stringField(item, "body") ?? "",
+    }))
+    .filter((item) => item.heading || item.body);
+}
+
+export function contentDraftReviewActor(draft: ContentDraftEntry) {
+  if (draft.reviewedBy) return draft.reviewedBy;
+  if (draft.status === "approved" || draft.status === "rejected") return "AI reviewer / system";
+  return "尚未審核";
+}
+
+export function contentDraftReviewNote(draft: ContentDraftEntry) {
+  if (draft.status === "awaiting_review") {
+    return "等待 AI 或人工審核；尚未寫入正式資料表。";
+  }
+  if (draft.status === "approved") {
+    return draft.approvedRefId
+      ? `已核准並連到正式資料 ${draft.approvedRefId}`
+      : "已核准；正式資料參照尚未回填。";
+  }
+  return draft.rejectReason ?? "已退回；未提供退回原因。";
 }
 
 export function contentDraftPayloadText(draft: ContentDraftEntry) {

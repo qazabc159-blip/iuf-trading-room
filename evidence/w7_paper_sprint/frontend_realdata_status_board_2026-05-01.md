@@ -3423,3 +3423,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Stop-lines: no token, no internal user/idempotency display, no real-order route, no paper-submit route, no KGI write-side, no FinMind/K-line fill price.
 - Blocker: authenticated production smoke still requires a real valid session after PR deploy; local QA intentionally used a non-secret presence cookie and verified safe BLOCKED state.
 - Next: open stacked PR after PR #216 base; if backend exposes paper audit route, wire audit timeline as the next read-only slice.
+
+## Codex Update - 2026-05-06 22:17 +08:00 - OpenAlice content draft review queue source trail
+- Trade Capability Score: +1. Workflow improved: OpenAlice-generated daily brief / content drafts can now be reviewed with source trail and structured sections before publication.
+- Files changed: `apps/web/app/admin/content-drafts/page.tsx`, `apps/web/app/admin/content-drafts/[id]/page.tsx`, `apps/web/lib/content-draft-view.ts`, `apps/web/app/globals.css`, `evidence/w7_paper_sprint/codex_openalice_content_draft_review_queue_2026-05-06.md`, and this board.
+- Endpoint/source: `GET /api/v1/content-drafts`; source is content draft DB only.
+- Behavior: list row now shows source job, producer, date / market state, reviewer state; detail page shows structured daily-brief sections and source/review trail; CSS grid fixed from 6 columns to 7 columns to avoid admin row overlap.
+- Checks: contracts build PASS; web typecheck PASS; web build PASS; git diff --check PASS with CRLF warnings only; added-line stop-line grep PASS; UTF-8 replacement char check PASS.
+- Stop-lines: no token value, no fake live, no fake approval success, no order route, no KGI write-side, no migration/schema/destructive DB, no strategy metric, no buy/sell recommendation.
+- Next: open PR, wait CI/review; after merge, production smoke `/admin/content-drafts` and one draft detail.
