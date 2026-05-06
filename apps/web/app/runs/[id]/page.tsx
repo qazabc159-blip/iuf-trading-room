@@ -175,7 +175,7 @@ function PromotionBlockedCell() {
   return (
     <span
       className="tg down"
-      title="策略想法轉模擬委託預覽的後端契約尚未完成。負責人：策略交接與風控管線。"
+      title="策略想法轉模擬委託預覽的後端契約尚未完成；目前只能進公司頁做紙上預覽與風控檢查。"
       style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.45 }}
     >
       <span>轉單暫停</span>
@@ -184,6 +184,10 @@ function PromotionBlockedCell() {
       </span>
     </span>
   );
+}
+
+function companyPaperPreviewHref(symbol: string) {
+  return `/companies/${encodeURIComponent(symbol)}#paper-order`;
 }
 
 function barWidth(value: number, total: number) {
@@ -257,7 +261,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
       code="05-D"
       title="批次明細"
       sub={run ? `${shortRunId(run.id)} / ${modeLabel(run.query.decisionMode)}` : `${shortRunId(id)} / 暫停`}
-      note="此頁讀取正式策略批次資料；候選轉模擬委託會保持暫停，直到後端預覽契約與風控 gate 啟用。"
+      note="此頁讀取正式策略批次資料；候選不是買賣建議，只能先進公司頁看 K 線、來源狀態與紙上預覽。"
     >
       <MetricStrip
         cells={[
@@ -313,6 +317,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                 </div>
                 <p>{ideaReasonText(idea)}</p>
                 <Link href={`/companies/${idea.symbol}`} className="mini-button">公司頁</Link>
+                <Link href={companyPaperPreviewHref(idea.symbol)} className="mini-button">紙上預覽</Link>
                 <PromotionBlockedCell />
               </div>
             ))}
@@ -348,7 +353,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                 <div className="tg soft" style={{ display: "grid", gap: 6, padding: "12px 0" }}>
                   <span>產生：{formatDateTime(run.generatedAt)}</span>
                   <span>平均信心：{outputs.length ? percent(outputs.reduce((sum, item) => sum + item.confidence, 0) / outputs.length) : "--"}</span>
-                  <span>寫入邊界：下單/執行控制在後端契約與風控 gate 通過前保持隱藏。</span>
+                  <span>寫入邊界：候選不是買賣建議；下單/執行控制在後端契約與風控 gate 通過前保持隱藏。</span>
                 </div>
               </>
             )}
