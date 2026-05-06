@@ -279,6 +279,21 @@ export type OpenAliceObservability = {
   };
 };
 
+export type OpenAliceDispatcherTickResult =
+  | "enqueued"
+  | "skipped_existing_job"
+  | "skipped_existing_brief"
+  | "no_workspace"
+  | "no_db"
+  | "enqueue_failed";
+
+export type OpenAliceDispatcherDebug = {
+  lastTickAt: string | null;
+  lastTickResult: OpenAliceDispatcherTickResult | null;
+  lastEnqueueError: string | null;
+  lastEnqueueErrorStack: string | null;
+};
+
 export type OpenAliceDevice = {
   deviceId: string;
   deviceName: string;
@@ -292,6 +307,10 @@ export type OpenAliceDevice = {
 
 export async function getOpenAliceObservability() {
   return request<OpenAliceObservability>("/api/v1/openalice/observability");
+}
+
+export async function getOpenAliceDispatcherDebug() {
+  return request<OpenAliceDispatcherDebug>("/api/v1/internal/openalice/dispatcher-debug");
 }
 
 export async function getOpenAliceDevices() {

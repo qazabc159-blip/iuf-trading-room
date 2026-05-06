@@ -6,10 +6,12 @@ import { MetricStrip } from "@/components/RadarWidgets";
 import {
   getBriefs,
   getContentDrafts,
+  getOpenAliceDispatcherDebug,
   getOpenAliceJobs,
   getOpenAliceObservability,
   getSession,
   type ContentDraftEntry,
+  type OpenAliceDispatcherDebug,
   type OpenAliceJobEntry,
   type OpenAliceObservability,
 } from "@/lib/api";
@@ -208,6 +210,34 @@ function reviewerVerdictLabel(value: NonNullable<OpenAliceObservability["pipelin
   return "--";
 }
 
+function dispatcherResultLabel(value: OpenAliceDispatcherDebug["lastTickResult"]) {
+  if (value === "enqueued") return "已派工";
+  if (value === "skipped_existing_job") return "已有今日工作";
+  if (value === "skipped_existing_brief") return "今日已發布";
+  if (value === "no_workspace") return "找不到工作區";
+  if (value === "no_db") return "資料庫未連線";
+  if (value === "enqueue_failed") return "派工失敗";
+  return "尚未掃描";
+}
+
+function dispatcherResultTone(value: OpenAliceDispatcherDebug["lastTickResult"]) {
+  if (value === "enqueued" || value === "skipped_existing_brief") return "status-ok";
+  if (value === "skipped_existing_job") return "gold";
+  if (value === "enqueue_failed" || value === "no_workspace" || value === "no_db") return "status-bad";
+  return "muted";
+}
+
+function dispatcherNextStep(debug: OpenAliceDispatcherDebug | null) {
+  if (!debug) return "無法讀取派工狀態，先看 OpenAlice jobs 與待審草稿。";
+  if (debug.lastTickResult === "enqueued") return "今日工作已建立；下一站是 runner claim、產生草稿與 reviewer verdict。";
+  if (debug.lastTickResult === "skipped_existing_job") return "今日已有 queued job；若長時間沒有草稿，卡點在 runner claim/result 或 reviewer。";
+  if (debug.lastTickResult === "skipped_existing_brief") return "今日正式簡報已存在；檢查下方正式內容與 source trail。";
+  if (debug.lastTickResult === "no_workspace") return "派工器找不到工作區；需要 Jason 檢查 workspace seed / DB。";
+  if (debug.lastTickResult === "no_db") return "派工器沒有 DB 連線；需要 Jason 檢查 production DATABASE_URL / worker DB。";
+  if (debug.lastTickResult === "enqueue_failed") return "派工器 enqueue 失敗；錯誤如下，後端需要修 enqueue/schema。";
+  return "派工器尚未留下 tick；確認 API deploy 是否啟動 scheduler。";
+}
+
 function ageText(seconds: number | null | undefined) {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "--";
   if (seconds < 60) return `${Math.round(seconds)} 秒`;
@@ -283,6 +313,16 @@ async function loadOpenAlice(): Promise<LoadState<OpenAliceObservability | null>
   }
 }
 
+async function loadDispatcherDebug(): Promise<LoadState<OpenAliceDispatcherDebug | null>> {
+  const updatedAt = nowIso();
+  try {
+    const response = await getOpenAliceDispatcherDebug();
+    return { state: "LIVE", data: response.data, updatedAt, source: "OpenAlice dispatcher debug" };
+  } catch (error) {
+    return { state: "BLOCKED", data: null, updatedAt, source: "OpenAlice dispatcher debug", reason: friendlyDataError(error, "每日簡報派工診斷讀取失敗。") };
+  }
+}
+
 async function loadCanOwnerOverride() {
   try {
     const session = await getSession();
@@ -334,6 +374,30 @@ function OpenAlicePanel({ openAlice }: { openAlice: LoadState<OpenAliceObservabi
           {data.pipeline?.lastFailureReason && <span className="status-bad">{data.pipeline.lastFailureReason}</span>}
         </div>
       )}
+    </Panel>
+  );
+}
+
+function DispatcherDebugPanel({ dispatcher }: { dispatcher: LoadState<OpenAliceDispatcherDebug | null> }) {
+  const debug = dispatcher.data;
+  const tone = dispatcher.state === "LIVE" ? dispatcherResultTone(debug?.lastTickResult ?? null) : "status-bad";
+  return (
+    <Panel code="BRF-DSP" title="每日簡報派工診斷" sub="排程 / 派工 / 下一個卡點" right={dispatcher.state === "LIVE" ? dispatcherResultLabel(debug?.lastTickResult ?? null) : "受阻"}>
+      <SourceLine state={dispatcher} label="只讀診斷，不觸發產文或發布" />
+      <MetricStrip
+        columns={4}
+        cells={[
+          { label: "最後掃描", value: formatDateTime(debug?.lastTickAt), tone },
+          { label: "派工結果", value: dispatcherResultLabel(debug?.lastTickResult ?? null), tone },
+          { label: "派工錯誤", value: debug?.lastEnqueueError ? "有錯誤" : "無錯誤", tone: debug?.lastEnqueueError ? "status-bad" : "status-ok" },
+          { label: "下一站", value: debug?.lastTickResult === "skipped_existing_job" ? "runner/reviewer" : debug?.lastTickResult === "enqueued" ? "runner" : "scheduler", tone },
+        ]}
+      />
+      <div className="brief-openalice-grid">
+        <span>判讀 <strong>{dispatcherNextStep(debug)}</strong></span>
+        {debug?.lastEnqueueError && <span className="status-bad">錯誤 {debug.lastEnqueueError}</span>}
+        {debug?.lastEnqueueErrorStack && <span className="tg soft">stack 已截斷顯示；不含 token。</span>}
+      </div>
     </Panel>
   );
 }
@@ -494,11 +558,12 @@ function DraftSourceTrailPanel({ drafts }: { drafts: ContentDraftEntry[] }) {
 
 export default async function BriefsPage() {
   const today = todayTaipeiDate();
-  const [briefData, drafts, jobs, openAlice, canOwnerOverride] = await Promise.all([
+  const [briefData, drafts, jobs, openAlice, dispatcher, canOwnerOverride] = await Promise.all([
     loadBriefsData(),
     loadDrafts(),
     loadJobs(),
     loadOpenAlice(),
+    loadDispatcherDebug(),
     loadCanOwnerOverride(),
   ]);
 
@@ -527,6 +592,7 @@ export default async function BriefsPage() {
           { label: "正式簡報", value: formatCount(briefData.briefs.length), tone: briefData.briefs.length ? "status-ok" : "muted" },
           { label: "待審草稿", value: formatCount(drafts.data.length), tone: drafts.data.length ? "gold" : "muted" },
           { label: "OpenAlice", value: openAlice.state === "LIVE" ? surfaceStateLabel(openAliceSurface(openAlice.data)) : "受阻", tone: openAlice.state === "LIVE" ? surfaceStateTone(openAliceSurface(openAlice.data)) : "status-bad" },
+          { label: "派工", value: dispatcher.state === "LIVE" ? dispatcherResultLabel(dispatcher.data?.lastTickResult ?? null) : "受阻", tone: dispatcher.state === "LIVE" ? dispatcherResultTone(dispatcher.data?.lastTickResult ?? null) : "status-bad" },
           { label: "工作佇列", value: jobs.state === "LIVE" ? jobs.data.length : jobs.state === "EMPTY" ? 0 : "--", tone: jobs.state === "LIVE" ? "status-ok" : jobs.state === "EMPTY" ? "muted" : "status-bad" },
           { label: "最新正式", value: latest ? `${latest.date} / ${briefAgeCopy(latestAgeDays)}` : "--", tone: freshness === "STALE" ? "gold" : freshness === "BLOCKED" ? "status-bad" : undefined },
           { label: "今日段落", value: displayedBrief ? displayedBrief.sections.length : "--" },
@@ -553,6 +619,7 @@ export default async function BriefsPage() {
       </section>
 
       <OpenAlicePanel openAlice={openAlice} />
+      <DispatcherDebugPanel dispatcher={dispatcher} />
       <JobsPanel jobs={jobs} />
       <DraftQueuePanel drafts={drafts} />
       <PublishedBriefPanel brief={displayedBrief} />
