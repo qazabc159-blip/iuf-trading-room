@@ -14,7 +14,15 @@ const lockKeyB = 20260413;
 export function getMigrationFiles(directory = migrationsDir) {
   return fs
     .readdirSync(directory)
-    .filter((file) => file.endsWith(".sql") && !file.endsWith(".down.sql"))
+    .filter(
+      (file) =>
+        file.endsWith(".sql") &&
+        !file.endsWith(".down.sql") &&
+        // Mike + Bruce PR #224 audit BLOCKER 2026-05-06:
+        // .DRAFT.sql migrations must NOT auto-apply. Strip the .DRAFT. infix
+        // (rename file) only after Mike audit + Owner promote.
+        !file.includes(".DRAFT.")
+    )
     .sort((left, right) => left.localeCompare(right));
 }
 
