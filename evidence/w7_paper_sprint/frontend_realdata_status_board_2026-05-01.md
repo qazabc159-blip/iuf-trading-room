@@ -3467,3 +3467,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: `/api/v1/briefs`, `/api/v1/content-drafts`, `/api/v1/openalice/jobs`, `/api/v1/openalice/observability`, `/api/v1/session`.
 - Checks: contracts build PASS; web build PASS; web typecheck PASS; mojibake scan PASS; diff-check PASS; added-line stop-line grep PASS.
 - Stop-lines: no token value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake published brief, no unapproved strategy metrics.
+
+## 2026-05-07 01:51 TPE - Codex market intel source-trail repair
+
+- Branch: `fix-web-market-intel-source-trail-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/app/market-intel/page.tsx`, `evidence/w7_paper_sprint/codex_market_intel_source_trail_repair_2026-05-07.md`
+- Behavior: `/market-intel` now renders clean Traditional Chinese official-market-intel states: TWSE announcement queue, selected symbol coverage, query failures, FinMind TaiwanStockNews dataset status, and explicit EMPTY/BLOCKED messaging.
+- Sources: `/api/v1/companies`, `/api/v1/strategy-ideas`, `/api/v1/companies/:id/announcements?days=30`, `/api/v1/data-sources/finmind/status`.
+- Checks: contracts build PASS; web typecheck PASS; web build PASS; diff-check PASS; mojibake scan PASS; added-line stop-line grep PASS.
+- Stop-lines: no token value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake news/live, no buy/sell wording, no unapproved strategy metrics.
