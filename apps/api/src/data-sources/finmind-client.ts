@@ -222,6 +222,55 @@ const TTL_FINANCIAL = 3600;   // 1h — quarterly data
 const TTL_CHIP      = 1800;   // 30 min — institutional daily
 const TTL_DIVIDEND  = 86400;  // 1d — rarely changes
 
+// ── 4xx circuit breaker ─────────────────────────────────────────────────────
+//
+// FinMind can temporarily block clients after repeated 4xx responses. A bad
+// token, missing entitlement, or accidental oversized scheduler sweep must not
+// keep hammering the upstream API. Keep the breaker process-local: it protects
+// production immediately without storing token-adjacent state anywhere.
+
+const DEFAULT_4XX_COOLDOWN_MS = 30 * 60 * 1000;
+const DEFAULT_QUOTA_COOLDOWN_MS = 60 * 60 * 1000;
+
+let _circuitOpenUntilMs = 0;
+let _lastCircuitOpenedAt: string | null = null;
+let _lastCircuitReason: string | null = null;
+let _lastCircuitDataset: string | null = null;
+let _forbiddenCount = 0;
+let _circuitSkipCount = 0;
+let _lastCircuitSkipLogMs = 0;
+
+function envPositiveInt(name: string, fallback: number): number {
+  const raw = Number(process.env[name] ?? "");
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : fallback;
+}
+
+function openFinMindCircuit(dataset: string, status: number, reason?: string | null): void {
+  const cooldownMs = status === 402 || status === 429
+    ? envPositiveInt("FINMIND_QUOTA_COOLDOWN_MS", DEFAULT_QUOTA_COOLDOWN_MS)
+    : envPositiveInt("FINMIND_4XX_COOLDOWN_MS", DEFAULT_4XX_COOLDOWN_MS);
+  const untilMs = Date.now() + cooldownMs;
+  if (untilMs > _circuitOpenUntilMs) {
+    _circuitOpenUntilMs = untilMs;
+  }
+  _lastCircuitOpenedAt = new Date().toISOString();
+  _lastCircuitReason = reason ? `http_${status}:${reason}` : `http_${status}`;
+  _lastCircuitDataset = dataset;
+  _forbiddenCount++;
+  console.warn(
+    `[finmind-client] upstream circuit opened status=${status} dataset=${dataset} ` +
+    `cooldownMs=${cooldownMs} reason=${reason ?? "none"}`
+  );
+}
+
+function finMindCircuitOpen(): boolean {
+  return Date.now() < _circuitOpenUntilMs;
+}
+
+function finMindCircuitOpenUntilIso(): string | null {
+  return finMindCircuitOpen() ? new Date(_circuitOpenUntilMs).toISOString() : null;
+}
+
 // ── Redis lazy-connect ────────────────────────────────────────────────────────
 
 let _finmindRedisClient: ReturnType<typeof createClient> | null = null;
@@ -397,6 +446,18 @@ export class FinMindClient {
       return [];
     }
 
+    if (finMindCircuitOpen()) {
+      _circuitSkipCount++;
+      const now = Date.now();
+      if (now - _lastCircuitSkipLogMs > 60_000) {
+        _lastCircuitSkipLogMs = now;
+        console.warn(
+          `[finmind-client] circuit open; skipping upstream requests until ${finMindCircuitOpenUntilIso()}`
+        );
+      }
+      return [];
+    }
+
     const url = this._buildUrl(dataset, stockId, startDate, endDate);
     // Build a log-safe URL (strip token)
     const logUrl = url.replace(/token=[^&]+/, "token=<REDACTED>");
@@ -406,12 +467,29 @@ export class FinMindClient {
       response = await fetchWithRetry(url, 3, token);
     } catch (err) {
       console.warn(`[finmind-client] fetch failed for ${logUrl}:`, err instanceof Error ? err.message : String(err));
+      if (err instanceof FinMindRateLimitError) {
+        openFinMindCircuit(dataset, 429, err.message);
+      }
       recordFinMindRequest({ dataset, ok: false });
       return [];
     }
 
     if (!response.ok) {
-      console.warn(`[finmind-client] HTTP ${response.status} for ${logUrl}`);
+      let upstreamMsg: string | null = null;
+      try {
+        const body = await response.clone().json() as { msg?: unknown; message?: unknown };
+        upstreamMsg = typeof body.msg === "string"
+          ? body.msg
+          : typeof body.message === "string"
+            ? body.message
+            : null;
+      } catch {
+        // Response body may be empty or non-JSON.
+      }
+      console.warn(`[finmind-client] HTTP ${response.status} for ${logUrl}${upstreamMsg ? ` msg=${upstreamMsg}` : ""}`);
+      if (response.status >= 400 && response.status < 500) {
+        openFinMindCircuit(dataset, response.status, upstreamMsg);
+      }
       recordFinMindRequest({ dataset, ok: false });
       return [];
     }
@@ -836,12 +914,26 @@ export function getFinMindStats(): {
   errorCount: number;
   lastFetchTs: string | null;
   lastDataset: string | null;
+  circuitOpen: boolean;
+  circuitOpenUntil: string | null;
+  circuitReason: string | null;
+  circuitDataset: string | null;
+  circuitOpenedAt: string | null;
+  circuitSkipCount: number;
+  forbiddenCount: number;
 } {
   return {
     requestCount: _requestCount,
     errorCount: _errorCount,
     lastFetchTs: _lastFetchTs,
-    lastDataset: _lastDataset
+    lastDataset: _lastDataset,
+    circuitOpen: finMindCircuitOpen(),
+    circuitOpenUntil: finMindCircuitOpenUntilIso(),
+    circuitReason: _lastCircuitReason,
+    circuitDataset: _lastCircuitDataset,
+    circuitOpenedAt: _lastCircuitOpenedAt,
+    circuitSkipCount: _circuitSkipCount,
+    forbiddenCount: _forbiddenCount
   };
 }
 
@@ -851,4 +943,11 @@ export function _resetFinMindStats(): void {
   _errorCount = 0;
   _lastFetchTs = null;
   _lastDataset = null;
+  _circuitOpenUntilMs = 0;
+  _lastCircuitOpenedAt = null;
+  _lastCircuitReason = null;
+  _lastCircuitDataset = null;
+  _forbiddenCount = 0;
+  _circuitSkipCount = 0;
+  _lastCircuitSkipLogMs = 0;
 }
