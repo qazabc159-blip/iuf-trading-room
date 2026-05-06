@@ -268,6 +268,15 @@ export type OpenAliceObservability = {
     expiredJobsRequeued: number;
     expiredJobsFailed: number;
   };
+  pipeline?: {
+    lastGeneratedAt: string | null;
+    lastReviewedAt: string | null;
+    lastPublishedAt: string | null;
+    nextRunAt: string | null;
+    lastFailureReason: string | null;
+    sourcePackCount: number;
+    reviewerVerdict: "approve" | "reject" | "manual_review" | null;
+  };
 };
 
 export type OpenAliceDevice = {
