@@ -1,0 +1,151 @@
+name: Daily Production Smoke
+
+on:
+  schedule:
+    # Trading day ticks (Mon-Fri UTC) = 09:30 / 13:30 / 17:30 TST
+    - cron: '30 1 * * 1-5'
+    - cron: '30 5 * * 1-5'
+    - cron: '30 9 * * 1-5'
+    # Weekend / holiday single tick = 17:00 TST Sat/Sun
+    - cron: '0 9 * * 6,0'
+  workflow_dispatch:
+
+jobs:
+  # ------------------------------------------------------------------ #
+  # Job 1: Skip early if secrets are absent                             #
+  # ------------------------------------------------------------------ #
+  skip-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - id: check
+        name: Check secrets presence
+        run: |
+          if [[ -z "${{ secrets.IUF_TEST_EMAIL }}" || -z "${{ secrets.IUF_TEST_PASSWORD }}" ]]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "SKIPPED_MISSING_TEST_SECRETS — set IUF_TEST_EMAIL and IUF_TEST_PASSWORD in repo secrets."
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ------------------------------------------------------------------ #
+  # Job 2: Run all four smoke scripts                                   #
+  # ------------------------------------------------------------------ #
+  run-smoke:
+    needs: skip-check
+    if: ${{ needs.skip-check.outputs.should_run == 'true' }}
+    runs-on: windows-latest
+    env:
+      IUF_TEST_EMAIL: ${{ secrets.IUF_TEST_EMAIL }}
+      IUF_TEST_PASSWORD: ${{ secrets.IUF_TEST_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Production Smoke (12-item ETL freshness)
+        id: prod_smoke
+        shell: pwsh
+        run: |
+          $ts = (Get-Date -Format "yyyyMMdd-HHmm")
+          $out = "evidence/w7_paper_sprint/gha_prod_smoke_$ts.md"
+          pwsh -NoProfile -ExecutionPolicy Bypass `
+            -File scripts/verify/Invoke-ProductionSmoke.ps1 `
+            -OutFile $out
+          echo "PROD_SMOKE_OUT=$out" >> $env:GITHUB_ENV
+        continue-on-error: true
+
+      - name: Run Auth Smoke (5 T-cases)
+        id: auth_smoke
+        shell: pwsh
+        run: |
+          $ts = (Get-Date -Format "yyyyMMdd-HHmm")
+          $out = "evidence/w7_paper_sprint/gha_auth_smoke_$ts.md"
+          pwsh -NoProfile -ExecutionPolicy Bypass `
+            -File scripts/verify/Invoke-AuthSmoke.ps1 `
+            -OutFile $out
+          echo "AUTH_SMOKE_OUT=$out" >> $env:GITHUB_ENV
+        continue-on-error: true
+
+      - name: Run K-line Smoke (real-data authenticity)
+        id: kline_smoke
+        shell: pwsh
+        run: |
+          $ts = (Get-Date -Format "yyyyMMdd-HHmm")
+          $out = "evidence/w7_paper_sprint/gha_kline_smoke_$ts.md"
+          pwsh -NoProfile -ExecutionPolicy Bypass `
+            -File scripts/verify/Invoke-KlineSmoke.ps1 `
+            -OutFile $out
+          echo "KLINE_SMOKE_OUT=$out" >> $env:GITHUB_ENV
+        continue-on-error: true
+
+      - name: Run Paper Smoke (SL-08 gate + risk block)
+        id: paper_smoke
+        shell: pwsh
+        run: |
+          $ts = (Get-Date -Format "yyyyMMdd-HHmm")
+          $out = "evidence/w7_paper_sprint/gha_paper_smoke_$ts.md"
+          pwsh -NoProfile -ExecutionPolicy Bypass `
+            -File scripts/verify/Invoke-PaperSmoke.ps1 `
+            -OutFile $out
+          echo "PAPER_SMOKE_OUT=$out" >> $env:GITHUB_ENV
+        continue-on-error: true
+
+      - name: Check overall result
+        id: result_check
+        shell: pwsh
+        run: |
+          $failed = @()
+          if ('${{ steps.prod_smoke.outcome }}'  -eq 'failure') { $failed += 'prod' }
+          if ('${{ steps.auth_smoke.outcome }}'  -eq 'failure') { $failed += 'auth' }
+          if ('${{ steps.kline_smoke.outcome }}' -eq 'failure') { $failed += 'kline' }
+          if ('${{ steps.paper_smoke.outcome }}' -eq 'failure') { $failed += 'paper' }
+          if ($failed.Count -gt 0) {
+            echo "SMOKE_FAILED=true"  >> $env:GITHUB_ENV
+            echo "SMOKE_FAIL_LIST=$($failed -join ',')" >> $env:GITHUB_ENV
+          } else {
+            echo "SMOKE_FAILED=false" >> $env:GITHUB_ENV
+            echo "SMOKE_FAIL_LIST=" >> $env:GITHUB_ENV
+          }
+
+      - name: Upload smoke artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-results-${{ github.run_id }}
+          path: evidence/w7_paper_sprint/gha_*_smoke_*.md
+          retention-days: 30
+
+      # ---------------------------------------------------------------- #
+      # Alert: create or comment on a standing GitHub Issue on failure   #
+      # TODO: set ALERT_ISSUE_NUMBER after operator creates standing issue #
+      # ---------------------------------------------------------------- #
+      - name: Alert on failure
+        if: env.SMOKE_FAILED == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const failList = process.env.SMOKE_FAIL_LIST || 'unknown';
+            const runUrl   = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body     = `## Daily Smoke FAIL\n\n` +
+                             `**Failed lanes:** ${failList}\n` +
+                             `**Run:** ${runUrl}\n` +
+                             `**Time (UTC):** ${new Date().toISOString()}\n\n` +
+                             `Investigate stop-lines in smoke artifact before next trading session.`;
+            // TODO: replace 0 with the actual standing alert issue number
+            const ALERT_ISSUE_NUMBER = 0;
+            if (ALERT_ISSUE_NUMBER > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                issue_number: ALERT_ISSUE_NUMBER,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                title: `[SMOKE ALERT] Daily smoke failed: ${failList}`,
+                body,
+                labels: ['smoke-fail', 'needs-triage']
+              });
+            }
