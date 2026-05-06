@@ -24,6 +24,7 @@ type ThemeRow = Awaited<ReturnType<typeof getThemes>>["data"][number];
 type SignalRow = Awaited<ReturnType<typeof getSignals>>["data"][number];
 type StrategyIdeaView = Awaited<ReturnType<typeof getStrategyIdeas>>["data"];
 type StrategyRunView = Awaited<ReturnType<typeof listStrategyRuns>>["data"];
+type FinMindDataset = FinMindSourceStatus["datasets"][number];
 
 type DashboardFinMindStatus = FinMindSourceStatus & {
   diagnostics: FinMindDiagnosticsStatus | null;
@@ -85,6 +86,36 @@ function StatusPill({ state, label }: { state: SourceState; label?: string }) {
 
 function formatCount(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("zh-TW") : "--";
+}
+
+function isFinMindDatasetLive(dataset: FinMindDataset) {
+  return dataset.state === "LIVE" || dataset.state === "READY";
+}
+
+function isFinMindDatasetPending(dataset: FinMindDataset) {
+  return dataset.state === "STALE" || dataset.state === "EMPTY" || dataset.state === "FALLBACK" || dataset.state === "DEGRADED";
+}
+
+function isFinMindDatasetBlocked(dataset: FinMindDataset) {
+  return dataset.state === "BLOCKED" || dataset.state === "ERROR" || dataset.state === "MOCK" || dataset.state === "CLOSED";
+}
+
+function finMindDatasetClass(dataset: FinMindDataset) {
+  if (isFinMindDatasetLive(dataset)) return "is-ready";
+  if (isFinMindDatasetPending(dataset)) return "is-pending";
+  return "is-blocked";
+}
+
+function finMindDatasetLabel(dataset: FinMindDataset) {
+  if (dataset.state === "LIVE" || dataset.state === "READY") return "正常";
+  if (dataset.state === "STALE") return "過期";
+  if (dataset.state === "EMPTY") return "無資料";
+  if (dataset.state === "FALLBACK") return "待接";
+  if (dataset.state === "DEGRADED") return "降級";
+  if (dataset.state === "ERROR") return "錯誤";
+  if (dataset.state === "MOCK") return "停用";
+  if (dataset.state === "CLOSED") return "暫停";
+  return "阻擋";
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -317,9 +348,9 @@ function FinMindPanel({ finmind }: { finmind: LoadState<DashboardFinMindStatus |
   const data = finmind.data;
   const diagnostics = data?.diagnostics ?? null;
   const datasets = data?.datasets ?? [];
-  const ready = datasets.filter((dataset) => dataset.state === "READY");
-  const degraded = datasets.filter((dataset) => dataset.state === "DEGRADED");
-  const blocked = datasets.filter((dataset) => dataset.state === "BLOCKED");
+  const ready = datasets.filter(isFinMindDatasetLive);
+  const degraded = datasets.filter(isFinMindDatasetPending);
+  const blocked = datasets.filter(isFinMindDatasetBlocked);
   const quotaLimit = data?.quota.limit ?? diagnostics?.quotaLimitPerHour ?? null;
   const quotaUsed = data?.quota.used ?? diagnostics?.inProcess.requestCount ?? null;
 
@@ -342,7 +373,7 @@ function FinMindPanel({ finmind }: { finmind: LoadState<DashboardFinMindStatus |
         <div className="quote-card">
           <div className="tg">資料集</div>
           <div className="quote-last num status-ok">{ready.length}</div>
-          <div className="tg soft">正常 {ready.length} / 降級 {degraded.length} / 阻擋 {blocked.length}</div>
+          <div className="tg soft">正常 {ready.length} / 待補 {degraded.length} / 阻擋 {blocked.length}</div>
         </div>
         <div className="quote-card">
           <div className="tg">最近請求</div>
@@ -350,6 +381,24 @@ function FinMindPanel({ finmind }: { finmind: LoadState<DashboardFinMindStatus |
           <div className="tg soft">{formatDateTime(diagnostics?.inProcess.lastFetchTs)}</div>
         </div>
       </div>
+      {datasets.length > 0 && (
+        <div className="dashboard-dataset-ribbon" aria-label="FinMind 資料集狀態">
+          <span className="tg soft">資料集</span>
+          {datasets.map((dataset) => {
+            const count = typeof dataset.rowCount === "number" ? ` · ${formatCount(dataset.rowCount)} 筆` : "";
+            const latest = dataset.latestDate ? ` · ${dataset.latestDate}` : "";
+            return (
+              <span
+                className={`dashboard-dataset-token ${finMindDatasetClass(dataset)}`}
+                key={dataset.key}
+                title={`${dataset.key}: ${dataset.state}${dataset.missingReason ? ` / ${dataset.missingReason}` : ""}`}
+              >
+                {dataset.label} / {finMindDatasetLabel(dataset)}{count}{latest}
+              </span>
+            );
+          })}
+        </div>
+      )}
       {finmind.state !== "LIVE" && <EmptyOrBlocked state={finmind} />}
     </Panel>
   );
