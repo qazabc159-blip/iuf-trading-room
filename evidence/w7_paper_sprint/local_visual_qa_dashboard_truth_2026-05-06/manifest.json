@@ -1,0 +1,77 @@
+{
+  "generatedAt": "2026-05-06T04:53:23.273Z",
+  "target": "http://127.0.0.1:3350/",
+  "branch": "feat/web-dashboard-data-truth-2026-05-06-v2",
+  "pass": true,
+  "screenshots": [
+    {
+      "label": "desktop1365_dashboard_truth",
+      "width": 1365,
+      "height": 1000,
+      "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_demo_ui_repair\\evidence\\w7_paper_sprint\\local_visual_qa_dashboard_truth_2026-05-06\\desktop1365_dashboard_truth.png",
+      "metrics": {
+        "url": "http://127.0.0.1:3350/",
+        "path": "/",
+        "title": "IUF 交易戰情室",
+        "viewport": {
+          "width": 1365,
+          "height": 1000
+        },
+        "scroll": {
+          "document": 1365,
+          "body": 1365,
+          "client": 1365
+        },
+        "styleSheets": 4,
+        "bodyBg": "rgb(8, 11, 16)",
+        "textLength": 2163,
+        "hasDashboardTitle": true,
+        "hasNoFakeWarning": true,
+        "hasFinMind": true,
+        "hasPaperBoundary": true,
+        "hasStaleDisclosure": true,
+        "tokenLeak": false,
+        "mojibakeMarkers": false,
+        "horizontalOverflow": false,
+        "sample": "IUF\n台股 AI 交易戰情室\n操作員 / IUF-01\n模擬模式 / 風控守門\n戰情台總覽\n盤勢與任務\n主題板\n產業主題\n公司板\n台股公司池\n策略想法\n候選清單\n策略批次\n批次紀錄\n模擬交易室\n委託與部位\n訊號證據\n訊號與依據\n交易計畫\n計畫註記\n營運監控\n系統狀態\n重大訊息\n公告與新聞\n量化研究\n策略包\n搜尋 / 台股公司池\n命令面板 / Ctrl+K\n交易模式 / 風控監管\n登出\n戰情台總覽\n交易戰情台\n資料健康與交易工作流\n產生 / 2026/5/6 12:53:16 台北\n資料 / 真實資料\n模式 / 觀察\n盤面 / 真實資料\n資料狀態 / FinMind 暫停 / 市場資料 暫停 / OpenAlice 暫停 / 主題資料 暫停 / 策略想法 暫停 / 訊號證據 暫停\nIUF 台股戰情室\n先確認資料能不能用，再進交易工作流。\n\n這一頁只呈現真實來源狀態。過期、空資料、登入失效或後端阻擋都會被標示出來，不會把舊訊號包裝成今日情報。 KGI 正式下單仍鎖在 libCGCrypt.so 之外；紙上交易只做預覽與風控說明。\n\n可用來源\n0\n需處理\n6\n交易能力\nPaper\n正式下單\n封鎖\nFinMind / 05/06 12:53 / 今日資料\n暫停\n市場資料 / 05/06 12:53 / 今日資料\n暫停\nOpenAlice / 05/06 12:53 / 今日資料\n暫停\n主題資料 / 05/06 12:53 / 今日資料\n暫停\n策略想法 / 05/06 12:53 / 今日資料\n暫停\n訊號證據 / 05/06 12:53 / 今日資料\n暫停\n資料來源 / FinMind 資料源\nSponsor 999 / 不顯示 token 值\n暫停\n暫停\nFinMind 診斷\n來源：FinMind\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。 / 登入狀態已失效，請重新登入。\nToken\n缺少\n只顯示 presence，不顯示 token 值。\nQuota\n-- / 小時\n後端目前記錄使用 -- 次。\n資料集\n0\n正常 0 / 降級 0 / 阻擋 0\n最近請求\n--\n--\n暫停 登入狀態已失效，請重新登入。 / 登入狀態已失效，請重新登入。\n市場資料 / 市場資料\n報價 / 可用性\n暫停\n暫停\n市場資料\n來源：市場資料 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n每日簡報 / OpenAlice / 每日簡報\n來源追蹤與工作佇列\n暫停\n暫停\n營運快照\n來源：營運快照 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\nRunner\n暫停\n心跳：--\nDispatcher\n暫停\n掃描：--\nQueue\n--\nqueued -- / running -- / review --\n已發布簡報\n--\n沒有 source trail 時不當作投資建議。\n暫停 OpenAlice 沒有健康心跳；每日簡報區只顯示狀態，不產生建議文字。\n營運監控 / 下一步交易工作流\n能推進的 workflow，不能推進的會說清楚\n檢查 2330 公司頁\nK 線、FinMind、紙上 preview 都在同一頁確認。\n紙上交易投組\n只讀 paper portfolio，不連真實券商。\n每日簡報\n等待 OpenAlice source trail 完整後才放入判讀。\n營運監控\n檢查 OpenAlice、資料佇列與工作心跳。\n主題 / 主題資料\n資料庫主題 / 過期不進今日戰情\n暫停\n暫停\n主題資料\n來源：主題資料庫\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n策略想法 / 策略想法\n只顯示候選，不等於下單建議\n暫停\n暫停\n策略想法 API\n來源：策略想法 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n訊號證據 / 訊號證據\n過期與內部測試訊號不放入戰情\n暫停\n暫停\n訊號證據 API\n來源：訊號證據 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n策略批次 / 策略批次\n只顯示產出狀態，不顯示績效假數字\n暫停\n暫停\n策略批次 API\n來源：策略批次 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n資料來源 / 暫不當作今日情報的區塊\n不是刪除功能，而是阻止舊資料誤導\n重大訊息\n尚未接到可驗證來源與篩選規則。\n等待 OpenAlice 或正式新聞 adapter 提供 source trail。\n量化研究\n沒有 Athena + Bruce approval 前不顯示 Sharpe、勝率或 equity curve。\n只顯示 bundle 狀態，不顯示假績效。\n訊號證據\n過期或內部測試訊號不進首頁戰情。\n等來源追蹤與時間新鮮度通過。\n策略想法\n候選想法不是買賣建議。\n等 paper gate、風控與資料品質都通過。"
+      }
+    },
+    {
+      "label": "mobile390_dashboard_truth",
+      "width": 390,
+      "height": 1100,
+      "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_demo_ui_repair\\evidence\\w7_paper_sprint\\local_visual_qa_dashboard_truth_2026-05-06\\mobile390_dashboard_truth.png",
+      "metrics": {
+        "url": "http://127.0.0.1:3350/",
+        "path": "/",
+        "title": "IUF 交易戰情室",
+        "viewport": {
+          "width": 390,
+          "height": 1100
+        },
+        "scroll": {
+          "document": 390,
+          "body": 390,
+          "client": 390
+        },
+        "styleSheets": 4,
+        "bodyBg": "rgb(8, 11, 16)",
+        "textLength": 2039,
+        "hasDashboardTitle": true,
+        "hasNoFakeWarning": true,
+        "hasFinMind": true,
+        "hasPaperBoundary": true,
+        "hasStaleDisclosure": true,
+        "tokenLeak": false,
+        "mojibakeMarkers": false,
+        "horizontalOverflow": false,
+        "sample": "IUF\n台股 AI 交易戰情室\n戰情台總覽\n主題板\n公司板\n策略想法\n策略批次\n模擬交易室\n訊號證據\n交易計畫\n營運監控\n重大訊息\n量化研究\n戰情台總覽\n交易戰情台\n資料健康與交易工作流\n產生 / 2026/5/6 12:53:19 台北\n資料 / 真實資料\n模式 / 觀察\n盤面 / 真實資料\n資料狀態 / FinMind 暫停 / 市場資料 暫停 / OpenAlice 暫停 / 主題資料 暫停 / 策略想法 暫停 / 訊號證據 暫停\nIUF 台股戰情室\n先確認資料能不能用，再進交易工作流。\n\n這一頁只呈現真實來源狀態。過期、空資料、登入失效或後端阻擋都會被標示出來，不會把舊訊號包裝成今日情報。 KGI 正式下單仍鎖在 libCGCrypt.so 之外；紙上交易只做預覽與風控說明。\n\n可用來源\n0\n需處理\n6\n交易能力\nPaper\n正式下單\n封鎖\nFinMind\n/ 05/06 12:53\n/ 今日資料\n暫停\n市場資料\n/ 05/06 12:53\n/ 今日資料\n暫停\nOpenAlice\n/ 05/06 12:53\n/ 今日資料\n暫停\n主題資料\n/ 05/06 12:53\n/ 今日資料\n暫停\n策略想法\n/ 05/06 12:53\n/ 今日資料\n暫停\n訊號證據\n/ 05/06 12:53\n/ 今日資料\n暫停\n資料來源 / FinMind 資料源\nSponsor 999 / 不顯示 token 值\n暫停\n暫停\nFinMind 診斷\n來源：FinMind\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。 / 登入狀態已失效，請重新登入。\nToken\n缺少\n只顯示 presence，不顯示 token 值。\nQuota\n-- / 小時\n後端目前記錄使用 -- 次。\n資料集\n0\n正常 0 / 降級 0 / 阻擋 0\n最近請求\n--\n--\n暫停 登入狀態已失效，請重新登入。 / 登入狀態已失效，請重新登入。\n市場資料 / 市場資料\n報價 / 可用性\n暫停\n暫停\n市場資料\n來源：市場資料 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n每日簡報 / OpenAlice / 每日簡報\n來源追蹤與工作佇列\n暫停\n暫停\n營運快照\n來源：營運快照 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\nRunner\n暫停\n心跳：--\nDispatcher\n暫停\n掃描：--\nQueue\n--\nqueued -- / running -- / review --\n已發布簡報\n--\n沒有 source trail 時不當作投資建議。\n暫停 OpenAlice 沒有健康心跳；每日簡報區只顯示狀態，不產生建議文字。\n營運監控 / 下一步交易工作流\n能推進的 workflow，不能推進的會說清楚\n檢查 2330 公司頁\nK 線、FinMind、紙上 preview 都在同一頁確認。\n紙上交易投組\n只讀 paper portfolio，不連真實券商。\n每日簡報\n等待 OpenAlice source trail 完整後才放入判讀。\n營運監控\n檢查 OpenAlice、資料佇列與工作心跳。\n主題 / 主題資料\n資料庫主題 / 過期不進今日戰情\n暫停\n暫停\n主題資料\n來源：主題資料庫\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n策略想法 / 策略想法\n只顯示候選，不等於下單建議\n暫停\n暫停\n策略想法 API\n來源：策略想法 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n訊號證據 / 訊號證據\n過期與內部測試訊號不放入戰情\n暫停\n暫停\n訊號證據 API\n來源：訊號證據 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n策略批次 / 策略批次\n只顯示產出狀態，不顯示績效假數字\n暫停\n暫停\n策略批次 API\n來源：策略批次 API\n更新：05/06 12:53\n今日資料\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n資料來源 / 暫不當作今日情報的區塊\n不是刪除功能，而是阻止舊資料誤導\n重大訊息\n尚未接到可驗證來源與篩選規則。\n等待 OpenAlice 或正式新聞 adapter 提供 source trail。\n量化研究\n沒有 Athena + Bruce approval 前不顯示 Sharpe、勝率或 equity curve。\n只顯示 bundle 狀態，不顯示假績效。\n訊號證據\n過期或內部測試訊號不進首頁戰情。\n等來源追蹤與時間新鮮度通過。\n策略想法\n候選想法不是買賣建議。\n等 paper gate、風控與資料品質都通過。"
+      }
+    }
+  ],
+  "qaNotes": [
+    "Local visual QA uses a non-secret session marker; API correctly returns blocked/unauthenticated, so source panels show blocked instead of fake live.",
+    "Verified Traditional Chinese render, no mojibake markers, no token/email leak, and no horizontal overflow at 1365px and 390px.",
+    "Production logged-in data health still needs Bruce/user-session smoke; this PR does not store or print credentials."
+  ]
+}

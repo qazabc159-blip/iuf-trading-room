@@ -4,6 +4,16 @@ Owner: Codex
 Cadence: Codex update every 30 minutes during overnight run. Elva lane may update every 20 minutes.
 Primary goal: make production UI meaningful, sourced, and operational.
 
+## 2026-05-06 12:58 Taipei - Codex dashboard data-truth repair
+- Branch/slice: `feat/web-dashboard-data-truth-2026-05-06-v2`; Trade Capability Score: +1.
+- Workflow improved: the homepage no longer treats stale signals, empty OpenAlice rows, failed auth, or blocked backend sources as today trading intelligence. It now routes the operator toward company K-line/paper preview, paper portfolio, daily-brief status, and ops diagnostics.
+- Files changed: `apps/web/app/page.tsx`, `apps/web/components/PageFrame.tsx`, `apps/web/app/globals.css`.
+- Endpoints/sources: FinMind status/diagnostics, market overview, ops snapshot, themes, ideas, signals, runs.
+- State semantics: LIVE / EMPTY / BLOCKED shown per source group; unavailable/stale groups are explicitly held out of today's intelligence lane instead of being removed or shown as live.
+- Checks: web typecheck PASS; web build PASS; local production visual QA PASS at 1365 desktop + 390 mobile.
+- Evidence: `evidence/w7_paper_sprint/codex_dashboard_data_truth_2026-05-06.md`; screenshots/manifest under `evidence/w7_paper_sprint/local_visual_qa_dashboard_truth_2026-05-06/`.
+- Stop-lines: no token, no fake-live, no order submit, no KGI write-side, no migration/DB, no buy/sell, no fake strategy metrics.
+
 ## 2026-05-06 05:08 Taipei - Codex production K-line sparse-minute verification
 - PR / deploy: main `c690d4e32a14de39bd420138669a9f39487ae09c` is deployed on Railway web; this is the post-#208 K-line readout build.
 - Trade Capability Score: +1. Workflow improved: verified both high-liquidity `2330` and lower-liquidity `1104` minute K paths in production, so the remaining minute-K concern is interaction/readability, not missing FinMind ingestion.
