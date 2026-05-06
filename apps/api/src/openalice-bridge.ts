@@ -24,6 +24,7 @@ import {
   createContentDraft,
   type ContentDraftTargetTable
 } from "./content-draft-store.js";
+import { fireAiReviewerForDraft } from "./openalice-ai-reviewer.js";
 
 const OPENALICE_TASK_TO_TARGET_TABLE: Partial<Record<OpenAliceBridgeTaskType, ContentDraftTargetTable>> = {
   theme_summary: "theme_summaries",
@@ -1058,13 +1059,19 @@ export async function submitOpenAliceResult(input: {
         payloadWithMeta.llm_meta = input.result.llmMeta;
       }
 
-      await createContentDraft({
+      const draft = await createContentDraft({
         workspaceId: input.device.workspaceId,
         sourceJobId: job.id,
         targetTable,
         targetEntityId,
         payload: payloadWithMeta
       });
+
+      // Option Y: async fire AI reviewer — non-blocking, does not affect response latency.
+      // fireAiReviewerForDraft never throws; errors go to _lastReviewerErrors debug surface.
+      if (draft) {
+        void fireAiReviewerForDraft(draft.id);
+      }
     }
   }
 
