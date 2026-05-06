@@ -1,7 +1,9 @@
 # Codex OpenAlice Briefs Truth Surface - 2026-05-07
 
-Status: READY FOR PR
+Status: PRODUCTION DEPLOYED
 Branch: `fix-web-briefs-openalice-truth-surface-2026-05-07`
+PR: #253 merged to main as `44d2c6e`
+Production web deployment: `3b62bb48-8f67-4244-95c4-3126c7c855bd` SUCCESS
 Trade Capability Score: `+1`
 
 ## Why This Exists
@@ -44,6 +46,8 @@ Trade Capability Score: `+1`
 - `git diff --check` - PASS with CRLF warning only
 - Mojibake marker scan on `apps/web/app/briefs/page.tsx` - PASS
 - Stop-line grep - PASS
+- Main CI for merge commit `44d2c6e` - PASS
+- Railway web production deploy `3b62bb48-8f67-4244-95c4-3126c7c855bd` - SUCCESS
 
 ## Stop-Line Proof
 

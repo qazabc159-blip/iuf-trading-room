@@ -1003,13 +1003,25 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       .orderBy(desc(dailyBriefsTable.createdAt))
       .limit(30);
 
+    const normalizeBriefStatus = (row: typeof rows[number]): DailyBrief["status"] => {
+      // Legacy OpenAlice-approved rows used "approved" even though the public
+      // contract only exposes draft/published. Treat them as published so the
+      // daily brief surface does not hide already-approved formal rows.
+      if (row.status === "published" || row.status === "approved") return "published";
+      // Legacy worker fallback wrote a formal daily_briefs row with status=draft.
+      // That row was already used as the producer's "existing formal row" gate,
+      // so expose it as published instead of making the website look empty.
+      if (row.status === "draft" && row.generatedBy === "worker") return "published";
+      return "draft";
+    };
+
     return rows.map((row) => ({
       id: row.id,
       date: row.date,
       marketState: row.marketState,
       sections: (row.sections ?? []) as Array<{ heading: string; body: string }>,
       generatedBy: (row.generatedBy ?? "worker") as DailyBrief["generatedBy"],
-      status: (row.status ?? "draft") as DailyBrief["status"],
+      status: normalizeBriefStatus(row),
       createdAt: row.createdAt.toISOString()
     }));
   }
