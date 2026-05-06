@@ -196,6 +196,25 @@ test("classifyDraftTier returns green for clean content", () => {
   assert.equal(tier, "green");
 });
 
+test("classifyDraftTier keeps institutional buy/sell source labels green", () => {
+  const tier = classifyDraftTier({
+    date: "2026-05-06",
+    sourcePack: {
+      sources: [
+        { source: "tw_institutional_buysell", status: "LIVE" },
+        { source: "TaiwanStockInstitutionalInvestorsBuySell", status: "LIVE" }
+      ]
+    },
+    sections: [
+      {
+        heading: "籌碼資料",
+        body: "三大法人與外資買賣超屬於來源欄位；這裡只描述歷史資料，不給交易指令。"
+      }
+    ]
+  });
+  assert.equal(tier, "green");
+});
+
 test("classifyDraftTier returns red for guarantee keyword", () => {
   const tier = classifyDraftTier({ text: "This investment is guaranteed to return 20%." });
   assert.equal(tier, "red");
