@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 
 import {
   formatPaperOrderError,
@@ -346,7 +347,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
     && paperHealthReady;
 
   return (
-    <section className="panel hud-frame paper-order-panel">
+    <section className="panel hud-frame paper-order-panel" id="paper-order">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">模擬委託</span>
         <span className="tg soft">零股 / 整張防呆</span>
@@ -518,6 +519,21 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
             >
               {submit.status === "loading" ? "送出中" : COMPANY_PAGE_PAPER_SUBMIT_ENABLED ? "檢查並送出" : "送出暫停"}
             </button>
+          </div>
+
+          <div className="paper-flow-guide" aria-label="紙上交易流程導引">
+            <div>
+              <span className="tg gold">流程導引</span>
+              <strong>
+                {preview.status === "live" || preview.status === "blocked"
+                  ? "預覽結果已回來，下一步看紙上部位與成交明細。"
+                  : "先做風控預覽，再到紙上部位確認是否有模擬結果。"}
+              </strong>
+              <small>公司頁目前只做 preview/check；不建立正式委託、不送券商、不用 FinMind 或 K 線當成交價。</small>
+            </div>
+            <Link className="terminal-button" href="/portfolio">
+              查看紙上部位
+            </Link>
           </div>
         </div>
 

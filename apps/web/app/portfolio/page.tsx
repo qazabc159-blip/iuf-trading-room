@@ -465,8 +465,8 @@ export default async function PortfolioPage() {
             </div>
           </div>
           <div className="portfolio-action-grid">
-            <Link className="terminal-button primary" href="/companies/2330">
-              開啟 2330 公司頁
+            <Link className="terminal-button primary" href="/companies/2330#paper-order">
+              從 2330 預覽開始
             </Link>
             <Link className="terminal-button" href="/companies">
               回公司列表

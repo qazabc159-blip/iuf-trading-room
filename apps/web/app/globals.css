@@ -10134,6 +10134,42 @@ body:has(.login-route) > div {
   overflow-x: clip;
 }
 
+.paper-flow-guide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(46, 204, 113, 0.22);
+  background:
+    linear-gradient(105deg, rgba(46, 204, 113, 0.08), transparent 50%),
+    rgba(0, 0, 0, 0.16);
+}
+
+.paper-flow-guide > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.paper-flow-guide strong {
+  color: var(--night-ink);
+  font: 850 14px/1.55 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
+.paper-flow-guide small {
+  color: var(--night-mid);
+  font: 650 11px/1.7 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
+.paper-flow-guide .terminal-button {
+  min-height: 38px;
+  white-space: nowrap;
+}
+
 .dashboard-mosaic-grid {
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
   gap: clamp(18px, 2vw, 30px);
@@ -10167,6 +10203,15 @@ body:has(.login-route) > div {
 }
 
 @media (max-width: 720px) {
+  .paper-flow-guide {
+    grid-template-columns: 1fr;
+  }
+
+  .paper-flow-guide .terminal-button {
+    width: 100%;
+    justify-content: center;
+  }
+
   .dashboard-command-deck .dashboard-source-rail,
   .dashboard-source-rail {
     grid-template-columns: 1fr;
