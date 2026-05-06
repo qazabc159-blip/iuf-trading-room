@@ -10083,6 +10083,18 @@ body:has(.login-route) > div {
   min-width: 0;
 }
 
+.dashboard-mosaic-grid .panel,
+.dashboard-mosaic-primary,
+.dashboard-mosaic-secondary,
+.brief-command-deck,
+.brief-job-panel,
+.brief-draft-gate,
+.brief-three-state,
+.company-workbench-shell,
+.company-detail-layout {
+  overflow-x: clip;
+}
+
 .source-line {
   display: flex;
   flex-wrap: wrap;
@@ -10090,6 +10102,36 @@ body:has(.login-route) > div {
   align-items: center;
   margin-bottom: 12px;
   line-height: 1.7;
+}
+
+.source-line > span,
+.dashboard-command-card,
+.dashboard-command-card *,
+.dashboard-dataset-token,
+.dashboard-mosaic-grid .quote-card,
+.dashboard-mosaic-grid .quote-card *,
+.brief-job-row,
+.brief-job-row *,
+.brief-source-card,
+.brief-source-card * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-mosaic-grid .quote-strip {
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr)) !important;
+}
+
+.dashboard-mosaic-grid .quote-last {
+  max-width: 100%;
+  font-size: clamp(22px, 2vw, 34px);
+  line-height: 1.15;
+}
+
+.dashboard-dataset-ribbon {
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .dashboard-mosaic-grid {

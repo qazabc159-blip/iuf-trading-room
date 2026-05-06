@@ -3449,3 +3449,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: contracts build PASS; web typecheck PASS; web build PASS; mojibake sentinel scan PASS; diff-check PASS; added-line stop-line grep PASS.
 - Stop-lines: no token, no fake live, no broker write path, no formal order route, no migration/schema/destructive DB, no FinMind/K-line fill or risk source, no unapproved strategy metric exposure.
 - Next: push PR; then continue OpenAlice daily brief automation closure and Market Intel live frontend once backend deploy is confirmed.
+## 2026-05-07 01:14 TPE - Codex homepage mojibake / overflow repair
+
+- Branch: `fix-web-overflow-product-usability-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/components/PageFrame.tsx`, `apps/web/app/page.tsx`, `apps/web/app/globals.css`, `evidence/w7_paper_sprint/codex_homepage_mojibake_overflow_repair_2026-05-07.md`
+- Behavior: shared frame labels and homepage cockpit text are clean Traditional Chinese; long source/status rows wrap inside dashboard/brief/company panels instead of creating bright horizontal browser scrollbars.
+- Sources: FinMind status/diagnostics, market-data overview, ops snapshot, briefs, content drafts, paper health, strategy ideas/runs.
+- Checks: web typecheck PASS; web build PASS; diff-check PASS; added-line stop-line grep PASS.
+- Stop-lines: no token value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no unapproved strategy metrics.
