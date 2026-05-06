@@ -3585,3 +3585,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: existing paper endpoints only; no endpoint behavior changed.
 - Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warning only.
 - Stop-lines: no token value, no `/order/create`, no KGI write-side, no migration/schema/destructive DB, no fake position/fill, no paper/live gate relaxation.
+
+## 2026-05-07 05:38 TPE - Codex OpenAlice briefs truth surface
+
+- Branch: `fix-web-briefs-openalice-truth-surface-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/app/briefs/page.tsx`, `evidence/w7_paper_sprint/codex_openalice_briefs_truth_surface_2026-05-07.md`
+- Behavior: `/briefs` is rebuilt as a clean Traditional Chinese OpenAlice control surface with daily brief state, runner/dispatcher/queue, publisher timestamps, reviewer verdict, dispatcher next action, awaiting-review drafts, and published source-traced content only when a real row exists.
+- Sources: briefs, content drafts, OpenAlice jobs, OpenAlice observability, dispatcher debug.
+- Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warning only; mojibake marker scan PASS; stop-line grep PASS.
+- Stop-lines: no token value, no OpenAI secret touch, no auto-publish, no order route, no KGI write-side, no migration/schema/destructive DB, no fake daily brief, no buy/sell wording.
