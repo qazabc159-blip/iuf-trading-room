@@ -9,7 +9,6 @@ import {
   getOpenAliceDispatcherDebug,
   getOpenAliceJobs,
   getOpenAliceObservability,
-  getSession,
   type ContentDraftEntry,
   type OpenAliceDispatcherDebug,
   type OpenAliceJobEntry,
@@ -64,7 +63,7 @@ function formatCount(value: number | null | undefined) {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function stringField(record: Record<string, unknown>, key: string) {
@@ -74,10 +73,7 @@ function stringField(record: Record<string, unknown>, key: string) {
 
 function draftTargetDate(draft: ContentDraftEntry) {
   const payload = asRecord(draft.payload);
-  return stringField(payload, "date")
-    ?? stringField(payload, "targetDate")
-    ?? draft.targetEntityId
-    ?? null;
+  return stringField(payload, "date") ?? stringField(payload, "targetDate") ?? draft.targetEntityId ?? null;
 }
 
 function isTodayDailyBriefDraft(draft: ContentDraftEntry, today: string) {
@@ -110,23 +106,17 @@ function buildSurface(params: {
   const todayBrief = params.briefs.find((brief) => brief.date.slice(0, 10) === params.today && brief.status === "published") ?? null;
   const todayDrafts = params.drafts.filter((draft) => isTodayDailyBriefDraft(draft, params.today));
 
-  if (params.error) {
-    return { state: "BLOCKED", today: params.today, latest, drafts: todayDrafts, reason: params.error };
-  }
-  if (todayBrief) {
-    return { state: "PUBLISHED", today: params.today, brief: todayBrief, latest, drafts: todayDrafts };
-  }
-  if (todayDrafts.length > 0) {
-    return { state: "AWAITING_REVIEW", today: params.today, latest, drafts: todayDrafts };
-  }
+  if (params.error) return { state: "BLOCKED", today: params.today, latest, drafts: todayDrafts, reason: params.error };
+  if (todayBrief) return { state: "PUBLISHED", today: params.today, brief: todayBrief, latest, drafts: todayDrafts };
+  if (todayDrafts.length > 0) return { state: "AWAITING_REVIEW", today: params.today, latest, drafts: todayDrafts };
   return { state: "MISSING", today: params.today, latest, drafts: todayDrafts };
 }
 
 function surfaceLabel(state: DailyBriefSurface["state"]) {
-  if (state === "PUBLISHED") return "今日已發布";
-  if (state === "AWAITING_REVIEW") return "草稿待審";
-  if (state === "MISSING") return "今日缺稿";
-  return "讀取受阻";
+  if (state === "PUBLISHED") return "已發布";
+  if (state === "AWAITING_REVIEW") return "待審核";
+  if (state === "MISSING") return "未產生";
+  return "受阻";
 }
 
 function surfaceTone(state: DailyBriefSurface["state"]) {
@@ -142,9 +132,9 @@ function surfaceBadge(state: DailyBriefSurface["state"]) {
 }
 
 function jobStatusLabel(value: string | null | undefined) {
-  if (value === "queued") return "排隊";
+  if (value === "queued") return "排隊中";
   if (value === "running") return "執行中";
-  if (value === "draft_ready") return "草稿完成";
+  if (value === "draft_ready") return "草稿待審";
   if (value === "validation_failed") return "驗證失敗";
   if (value === "failed") return "失敗";
   if (value === "published") return "已發布";
@@ -161,8 +151,8 @@ function jobStatusBadge(value: string | null | undefined) {
 function taskTypeLabel(value: string | null | undefined) {
   if (value === "daily_brief" || value === "daily-brief") return "每日簡報";
   if (value === "theme_summary") return "主題摘要";
-  if (value === "company_note") return "公司備註";
-  if (value === "signal_cluster") return "訊號整理";
+  if (value === "company_note") return "公司筆記";
+  if (value === "signal_cluster") return "訊號彙整";
   return value ?? "--";
 }
 
@@ -186,14 +176,14 @@ function surfaceStateTone(state: OpenAliceSurface) {
 }
 
 function pipelineStatusLabel(pipeline: OpenAliceObservability["pipeline"] | undefined) {
-  if (!pipeline) return "未回傳";
+  if (!pipeline) return "尚未回報";
   if (pipeline.lastFailureReason) return "最近失敗";
   if (pipeline.lastPublishedAt) return "已發布";
   if (pipeline.reviewerVerdict === "approve") return "AI 已核准";
   if (pipeline.reviewerVerdict === "manual_review") return "人工待審";
   if (pipeline.reviewerVerdict === "reject") return "AI 退回";
   if (pipeline.lastGeneratedAt) return "已產生草稿";
-  return "待產生";
+  return "等待產生";
 }
 
 function pipelineStatusBadge(pipeline: OpenAliceObservability["pipeline"] | undefined) {
@@ -211,13 +201,13 @@ function reviewerVerdictLabel(value: NonNullable<OpenAliceObservability["pipelin
 }
 
 function dispatcherResultLabel(value: OpenAliceDispatcherDebug["lastTickResult"]) {
-  if (value === "enqueued") return "已派工";
-  if (value === "skipped_existing_job") return "已有今日工作";
-  if (value === "skipped_existing_brief") return "今日已發布";
-  if (value === "no_workspace") return "找不到工作區";
-  if (value === "no_db") return "資料庫未連線";
-  if (value === "enqueue_failed") return "派工失敗";
-  return "尚未掃描";
+  if (value === "enqueued") return "已排入佇列";
+  if (value === "skipped_existing_job") return "已有今日任務";
+  if (value === "skipped_existing_brief") return "已有正式簡報";
+  if (value === "no_workspace") return "缺 workspace";
+  if (value === "no_db") return "缺資料庫";
+  if (value === "enqueue_failed") return "排程失敗";
+  return "尚未執行";
 }
 
 function dispatcherResultTone(value: OpenAliceDispatcherDebug["lastTickResult"]) {
@@ -228,14 +218,14 @@ function dispatcherResultTone(value: OpenAliceDispatcherDebug["lastTickResult"])
 }
 
 function dispatcherNextStep(debug: OpenAliceDispatcherDebug | null) {
-  if (!debug) return "無法讀取派工狀態，先看 OpenAlice jobs 與待審草稿。";
-  if (debug.lastTickResult === "enqueued") return "今日工作已建立；下一站是 runner claim、產生草稿與 reviewer verdict。";
-  if (debug.lastTickResult === "skipped_existing_job") return "今日已有 queued job；若長時間沒有草稿，卡點在 runner claim/result 或 reviewer。";
-  if (debug.lastTickResult === "skipped_existing_brief") return "今日正式簡報已存在；檢查下方正式內容與 source trail。";
-  if (debug.lastTickResult === "no_workspace") return "派工器找不到工作區；需要 Jason 檢查 workspace seed / DB。";
-  if (debug.lastTickResult === "no_db") return "派工器沒有 DB 連線；需要 Jason 檢查 production DATABASE_URL / worker DB。";
-  if (debug.lastTickResult === "enqueue_failed") return "派工器 enqueue 失敗；錯誤如下，後端需要修 enqueue/schema。";
-  return "派工器尚未留下 tick；確認 API deploy 是否啟動 scheduler。";
+  if (!debug) return "讀不到 dispatcher debug，先確認 API 與登入狀態。";
+  if (debug.lastTickResult === "enqueued") return "任務已排入佇列，下一步看 runner 是否 claim、產生草稿與 reviewer verdict。";
+  if (debug.lastTickResult === "skipped_existing_job") return "今日已有任務，若簡報未出現，檢查該 job 的 claim、result 與 reviewer 狀態。";
+  if (debug.lastTickResult === "skipped_existing_brief") return "今日已有正式簡報，前端應顯示 published row 與 source trail。";
+  if (debug.lastTickResult === "no_workspace") return "排程找不到 workspace，請 Jason 檢查 production workspace seed。";
+  if (debug.lastTickResult === "no_db") return "排程沒有 DB 連線，請 Jason 檢查 production DATABASE_URL。";
+  if (debug.lastTickResult === "enqueue_failed") return "排程 enqueue 失敗，檢查 queue schema 或 job payload。";
+  return "尚未看到 dispatcher tick，確認 worker 啟動與排程設定。";
 }
 
 function ageText(seconds: number | null | undefined) {
@@ -248,14 +238,14 @@ function ageText(seconds: number | null | undefined) {
 
 function maskUnsafeAdviceText(text: string) {
   const patterns = [
-    new RegExp("\\u8cb7\\u9032", "g"),
-    new RegExp("\\u8ce3\\u51fa", "g"),
-    new RegExp("\\u76ee\\u6a19\\u50f9", "g"),
-    new RegExp("\\u5fc5\\u8cfa", "g"),
-    new RegExp("\\u4fdd\\u8b49", "g"),
-    new RegExp("\\u52dd\\u7387", "g"),
+    /買進/g,
+    /賣出/g,
+    /目標價/g,
+    /必賺/g,
+    /保證/g,
+    /勝率/g,
   ];
-  return patterns.reduce((next, pattern) => next.replace(pattern, "已遮蔽的投資建議字詞"), text);
+  return patterns.reduce((next, pattern) => next.replace(pattern, "[投資建議字詞已遮蔽]"), text);
 }
 
 function safeBriefText(text: string) {
@@ -281,7 +271,7 @@ async function loadDrafts(): Promise<LoadState<ContentDraftEntry[]>> {
       .sort((a, b) => Date.parse(draftTime(b)) - Date.parse(draftTime(a)))
       .slice(0, 20);
     if (drafts.length === 0) {
-      return { state: "EMPTY", data: [], updatedAt, source: "content_drafts", reason: "目前沒有待審的每日簡報草稿。" };
+      return { state: "EMPTY", data: [], updatedAt, source: "content_drafts", reason: "目前沒有等待審核的每日簡報草稿。" };
     }
     return { state: "LIVE", data: drafts, updatedAt, source: "content_drafts" };
   } catch (error) {
@@ -295,11 +285,11 @@ async function loadJobs(): Promise<LoadState<OpenAliceJobEntry[]>> {
     const response = await getOpenAliceJobs();
     const jobs = sortJobs(response.data ?? []).slice(0, 8);
     if (jobs.length === 0) {
-      return { state: "EMPTY", data: [], updatedAt, source: "OpenAlice jobs", reason: "目前沒有 OpenAlice 工作紀錄。" };
+      return { state: "EMPTY", data: [], updatedAt, source: "OpenAlice jobs", reason: "目前沒有 OpenAlice 任務。" };
     }
     return { state: "LIVE", data: jobs, updatedAt, source: "OpenAlice jobs" };
   } catch (error) {
-    return { state: "BLOCKED", data: [], updatedAt, source: "OpenAlice jobs", reason: friendlyDataError(error, "OpenAlice 工作佇列讀取失敗。") };
+    return { state: "BLOCKED", data: [], updatedAt, source: "OpenAlice jobs", reason: friendlyDataError(error, "OpenAlice 任務佇列讀取失敗。") };
   }
 }
 
@@ -307,9 +297,9 @@ async function loadOpenAlice(): Promise<LoadState<OpenAliceObservability | null>
   const updatedAt = nowIso();
   try {
     const response = await getOpenAliceObservability();
-    return { state: "LIVE", data: response.data, updatedAt, source: response.data.source === "redis" ? "OpenAlice Redis" : "OpenAlice fallback" };
+    return { state: "LIVE", data: response.data, updatedAt, source: "OpenAlice observability" };
   } catch (error) {
-    return { state: "BLOCKED", data: null, updatedAt, source: "OpenAlice observability", reason: friendlyDataError(error, "OpenAlice 狀態讀取失敗。") };
+    return { state: "BLOCKED", data: null, updatedAt, source: "OpenAlice observability", reason: friendlyDataError(error, "OpenAlice 監控讀取失敗。") };
   }
 }
 
@@ -319,28 +309,19 @@ async function loadDispatcherDebug(): Promise<LoadState<OpenAliceDispatcherDebug
     const response = await getOpenAliceDispatcherDebug();
     return { state: "LIVE", data: response.data, updatedAt, source: "OpenAlice dispatcher debug" };
   } catch (error) {
-    return { state: "BLOCKED", data: null, updatedAt, source: "OpenAlice dispatcher debug", reason: friendlyDataError(error, "每日簡報派工診斷讀取失敗。") };
-  }
-}
-
-async function loadCanOwnerOverride() {
-  try {
-    const session = await getSession();
-    return session.data.user.role === "Owner";
-  } catch {
-    return false;
+    return { state: "BLOCKED", data: null, updatedAt, source: "OpenAlice dispatcher debug", reason: friendlyDataError(error, "Dispatcher debug 讀取失敗。") };
   }
 }
 
 function SourceLine<T>({ state, label }: { state: LoadState<T>; label: string }) {
-  const tone = state.state === "LIVE" ? "badge-green" : state.state === "EMPTY" ? "badge-yellow" : "badge-red";
+  const badge = state.state === "LIVE" ? "badge-green" : state.state === "EMPTY" ? "badge-yellow" : "badge-red";
+  const text = state.state === "LIVE" ? "正常" : state.state === "EMPTY" ? "無資料" : "受阻";
   return (
     <div className="source-line">
-      <span className={`badge ${tone}`}>{state.state === "LIVE" ? "正常" : state.state === "EMPTY" ? "無資料" : "受阻"}</span>
+      <span className={`badge ${badge}`}>{text}</span>
       <span>來源：{state.source}</span>
       <span>更新：{formatDateTime(state.updatedAt)}</span>
       <span>{label}</span>
-      {"reason" in state && <span className="state-reason">{state.reason}</span>}
     </div>
   );
 }
@@ -350,7 +331,7 @@ function OpenAlicePanel({ openAlice }: { openAlice: LoadState<OpenAliceObservabi
   const data = openAlice.data;
   return (
     <Panel code="BRF-AI" title="OpenAlice 自動化狀態" sub="runner / dispatcher / reviewer / publish" right={surfaceStateLabel(surface)}>
-      <SourceLine state={openAlice} label="每日簡報主腦狀態" />
+      <SourceLine state={openAlice} label="OpenAlice 是否正在自動跑每日內容流程" />
       <MetricStrip
         columns={4}
         cells={[
@@ -361,17 +342,21 @@ function OpenAlicePanel({ openAlice }: { openAlice: LoadState<OpenAliceObservabi
         ]}
       />
       {data && (
-        <div className="brief-openalice-grid">
-          <span>Worker 心跳 <strong>{ageText(data.workerHeartbeatAgeSeconds)}</strong></span>
-          <span>Dispatcher 掃描 <strong>{ageText(data.lastSweepAgeSeconds)}</strong></span>
-          <span>最後產文 <strong>{formatDateTime(data.pipeline?.lastGeneratedAt)}</strong></span>
+        <div className="brief-pipeline-grid">
+          <span>心跳 <strong>{ageText(data.workerHeartbeatAgeSeconds)}</strong></span>
+          <span>掃描 <strong>{ageText(data.lastSweepAgeSeconds)}</strong></span>
+          <span>最後產生 <strong>{formatDateTime(data.pipeline?.lastGeneratedAt)}</strong></span>
           <span>最後審核 <strong>{formatDateTime(data.pipeline?.lastReviewedAt)}</strong></span>
           <span>最後發布 <strong>{formatDateTime(data.pipeline?.lastPublishedAt)}</strong></span>
-          <span>下次排程 <strong>{formatDateTime(data.pipeline?.nextRunAt)}</strong></span>
+          <span>下次執行 <strong>{formatDateTime(data.pipeline?.nextRunAt)}</strong></span>
           <span>source pack <strong>{data.pipeline?.sourcePackCount ?? "--"}</strong></span>
           <span>AI verdict <strong>{reviewerVerdictLabel(data.pipeline?.reviewerVerdict)}</strong></span>
-          <span className={`badge ${pipelineStatusBadge(data.pipeline)}`}>{pipelineStatusLabel(data.pipeline)}</span>
-          {data.pipeline?.lastFailureReason && <span className="status-bad">{data.pipeline.lastFailureReason}</span>}
+        </div>
+      )}
+      {data?.pipeline?.lastFailureReason && (
+        <div className="terminal-note compact">
+          <span className="tg status-bad">最近失敗</span>
+          {data.pipeline.lastFailureReason}
         </div>
       )}
     </Panel>
@@ -382,62 +367,52 @@ function DispatcherDebugPanel({ dispatcher }: { dispatcher: LoadState<OpenAliceD
   const debug = dispatcher.data;
   const tone = dispatcher.state === "LIVE" ? dispatcherResultTone(debug?.lastTickResult ?? null) : "status-bad";
   return (
-    <Panel code="BRF-DSP" title="每日簡報派工診斷" sub="排程 / 派工 / 下一個卡點" right={dispatcher.state === "LIVE" ? dispatcherResultLabel(debug?.lastTickResult ?? null) : "受阻"}>
-      <SourceLine state={dispatcher} label="只讀診斷，不觸發產文或發布" />
+    <Panel code="BRF-DSP" title="每日簡報排程診斷" sub="tick / enqueue / 下一步" right={dispatcher.state === "LIVE" ? dispatcherResultLabel(debug?.lastTickResult ?? null) : "受阻"}>
+      <SourceLine state={dispatcher} label="用來判斷今日簡報為什麼沒有發布" />
       <MetricStrip
-        columns={4}
+        columns={3}
         cells={[
-          { label: "最後掃描", value: formatDateTime(debug?.lastTickAt), tone },
-          { label: "派工結果", value: dispatcherResultLabel(debug?.lastTickResult ?? null), tone },
-          { label: "派工錯誤", value: debug?.lastEnqueueError ? "有錯誤" : "無錯誤", tone: debug?.lastEnqueueError ? "status-bad" : "status-ok" },
-          { label: "下一站", value: debug?.lastTickResult === "skipped_existing_job" ? "runner/reviewer" : debug?.lastTickResult === "enqueued" ? "runner" : "scheduler", tone },
+          { label: "最後 tick", value: formatDateTime(debug?.lastTickAt), tone: "muted" },
+          { label: "結果", value: dispatcherResultLabel(debug?.lastTickResult ?? null), tone },
+          { label: "錯誤", value: debug?.lastEnqueueError ? "有" : "無", tone: debug?.lastEnqueueError ? "status-bad" : "status-ok" },
         ]}
       />
-      <div className="brief-openalice-grid">
-        <span>判讀 <strong>{dispatcherNextStep(debug)}</strong></span>
-        {debug?.lastEnqueueError && <span className="status-bad">錯誤 {debug.lastEnqueueError}</span>}
-        {debug?.lastEnqueueErrorStack && <span className="tg soft">stack 已截斷顯示；不含 token。</span>}
+      <div className="terminal-note compact">
+        <span className={`tg ${tone}`}>下一步</span>
+        {dispatcherNextStep(debug ?? null)}
       </div>
     </Panel>
   );
 }
 
-function BriefSurfacePanel({ surface, canOwnerOverride }: { surface: DailyBriefSurface; canOwnerOverride: boolean }) {
+function BriefStatePanel({ surface }: { surface: DailyBriefSurface }) {
   const latestCopy = surface.latest ? `${surface.latest.date} / ${briefAgeCopy(briefAgeDays(surface.latest.date))}` : "尚無正式簡報";
   return (
-    <Panel code="BRF-STATE" title="今日簡報狀態" sub="published / awaiting review / missing / blocked" right={surfaceLabel(surface.state)}>
+    <Panel code="BRF-STATE" title="每日簡報狀態" sub="published / awaiting review / missing / blocked" right={surfaceLabel(surface.state)}>
       <div className={`brief-three-state ${surface.state.toLowerCase()}`}>
         <span className={`badge ${surfaceBadge(surface.state)}`}>{surfaceLabel(surface.state)}</span>
-        <span className="tg soft">日期：{surface.today}</span>
-        <span className="tg soft">最新正式：{latestCopy}</span>
+        <span className="tg soft">今日：{surface.today}</span>
+        <span className="tg soft">最後正式版：{latestCopy}</span>
         {surface.state === "PUBLISHED" && (
-          <p className="state-reason">今日簡報已寫入正式資料表，共 {surface.brief.sections.length} 段。下方只顯示 source-traced 內容，不顯示投資建議。</p>
+          <p className="state-reason">今日簡報已發布，含 {surface.brief.sections.length} 段內容；頁面只顯示 source-traced 內容，並遮蔽投資建議字詞。</p>
         )}
         {surface.state === "AWAITING_REVIEW" && (
           <>
-            <p className="state-reason">OpenAlice 已產出今日草稿，但尚未通過 AI reviewer / Owner fallback；首頁不會把草稿當正式簡報。</p>
+            <p className="state-reason">OpenAlice 已產生今日草稿，但尚未發布；請檢查 AI reviewer / Owner fallback 與 source trail。</p>
             <div className="brief-today-drafts">
               {surface.drafts.map((draft) => (
-                <div className="brief-today-draft" key={draft.id}>
-                  <div>
-                    <span className="tg gold">待審草稿</span>
-                    <strong>{contentDraftTitle(draft)}</strong>
-                    <small>job {draft.sourceJobId?.slice(0, 8) ?? "--"} / producer {draft.producerVersion} / 更新 {formatDateTime(draft.updatedAt)}</small>
-                  </div>
-                  <Link className="outline-button" href={`/admin/content-drafts/${draft.id}`}>
-                    查看 source
-                  </Link>
-                  {canOwnerOverride && <ContentDraftOverrideActions draftId={draft.id} />}
-                </div>
+                <Link href={`/admin/content-drafts/${draft.id}`} key={draft.id}>
+                  {contentDraftTitle(draft)}
+                </Link>
               ))}
             </div>
           </>
         )}
         {surface.state === "MISSING" && (
           <div className="brief-source-trail">
-            <span>沒有今日 published row。</span>
-            <span>沒有今日待審 daily_briefs draft。</span>
-            <span>需要檢查 OpenAlice dispatcher、source pack 與 reviewer verdict。</span>
+            <span>沒有今日 published row</span>
+            <span>沒有今日 awaiting_review daily_briefs draft</span>
+            <span>下一步看 dispatcher、source pack 與 reviewer verdict</span>
           </div>
         )}
         {surface.state === "BLOCKED" && <p className="state-reason">{surface.reason}</p>}
@@ -448,23 +423,23 @@ function BriefSurfacePanel({ surface, canOwnerOverride }: { surface: DailyBriefS
 
 function JobsPanel({ jobs }: { jobs: LoadState<OpenAliceJobEntry[]> }) {
   return (
-    <Panel code="BRF-JOBS" title="OpenAlice 工作佇列" sub="最近工作、狀態、錯誤" right={jobs.state === "LIVE" ? `${jobs.data.length} 筆` : jobs.state === "EMPTY" ? "無資料" : "受阻"}>
+    <Panel code="BRF-JOBS" title="OpenAlice 任務佇列" sub="最近任務與失敗線索" right={jobs.state === "LIVE" ? `${jobs.data.length} 筆` : jobs.state === "EMPTY" ? "無資料" : "受阻"}>
       <div className="brief-job-panel">
-        <SourceLine state={jobs} label="最近 OpenAlice 工作" />
+        <SourceLine state={jobs} label="最近 OpenAlice 任務" />
         {jobs.state === "LIVE" && (
           <div className="brief-job-list">
             {jobs.data.map((job) => (
               <div className="brief-job-row" key={job.id}>
-                <span className="tg gold">{taskTypeLabel(job.taskType)}</span>
                 <span className={`badge ${jobStatusBadge(job.status)}`}>{jobStatusLabel(job.status)}</span>
-                <span className="tg soft">建立 {formatDateTime(job.createdAt)}</span>
-                <span className="tg soft">更新 {formatDateTime(jobTime(job))}</span>
-                <span className="tg soft">嘗試 {job.attemptCount ?? 0}/{job.maxAttempts ?? "--"}</span>
-                {job.error && <span className="status-bad">{job.error}</span>}
+                <strong>{taskTypeLabel(job.taskType)}</strong>
+                <span>{formatDateTime(jobTime(job))}</span>
+                <span>attempt {job.attemptCount ?? 0}/{job.maxAttempts ?? "--"}</span>
+                {job.error && <small className="status-bad">{job.error}</small>}
               </div>
             ))}
           </div>
         )}
+        {jobs.state !== "LIVE" && <p className="state-reason">{jobs.reason}</p>}
       </div>
     </Panel>
   );
@@ -472,23 +447,24 @@ function JobsPanel({ jobs }: { jobs: LoadState<OpenAliceJobEntry[]> }) {
 
 function DraftQueuePanel({ drafts }: { drafts: LoadState<ContentDraftEntry[]> }) {
   return (
-    <Panel code="BRF-DRAFT" title="待審草稿" sub="OpenAlice 產出後必須保留 source trail" right={drafts.state === "LIVE" ? `${drafts.data.length} 筆待審` : drafts.state === "EMPTY" ? "無資料" : "受阻"}>
+    <Panel code="BRF-DRAFT" title="待審草稿" sub="OpenAlice 產出的每日簡報草稿與 source trail" right={drafts.state === "LIVE" ? `${drafts.data.length} 筆待審` : drafts.state === "EMPTY" ? "無資料" : "受阻"}>
       <div className="brief-draft-gate">
         <SourceLine state={drafts} label="content_drafts / daily_briefs" />
         {drafts.state === "LIVE" && (
           <div className="brief-job-list">
             {drafts.data.map((draft) => (
               <div className="brief-job-row draft" key={draft.id}>
-                <span className="tg gold">{contentDraftTitle(draft)}</span>
                 <span className="badge badge-yellow">待審</span>
-                <span className="tg soft">建立 {formatDateTime(draft.createdAt)}</span>
-                <span className="tg soft">更新 {formatDateTime(draft.updatedAt)}</span>
-                <span className="tg soft">source job {draft.sourceJobId?.slice(0, 8) ?? "--"}</span>
-                <Link className="mini-button" href={`/admin/content-drafts/${draft.id}`}>查看</Link>
+                <strong>{contentDraftTitle(draft)}</strong>
+                <span>目標日期：{draftTargetDate(draft) ?? "--"}</span>
+                <span>更新：{formatDateTime(draftTime(draft))}</span>
+                <Link href={`/admin/content-drafts/${draft.id}`}>打開審核</Link>
+                <ContentDraftOverrideActions draftId={draft.id} />
               </div>
             ))}
           </div>
         )}
+        {drafts.state !== "LIVE" && <p className="state-reason">{drafts.reason}</p>}
       </div>
     </Panel>
   );
@@ -498,26 +474,22 @@ function PublishedBriefPanel({ brief }: { brief: DailyBrief | null }) {
   if (!brief) {
     return (
       <Panel code="BRF-PUB" title="正式簡報內容" sub="今日尚未發布" right="無資料">
-        <div className="state-panel">
-          <span className="badge badge-yellow">無資料</span>
-          <span className="state-reason">沒有正式簡報時不補假內容；請看上方 OpenAlice 與待審草稿狀態。</span>
-        </div>
+        <p className="state-reason">沒有可展示的正式每日簡報。頁面不會用舊內容或假文案補位。</p>
       </Panel>
     );
   }
 
   return (
-    <Panel code="BRF-PUB" title="正式簡報內容" sub={`${brief.date} / ${brief.generatedBy}`} right="正式資料">
-      <div className="brief-section-list">
-        <div className="brief-source-card">
-          <span>市場狀態</span>
+    <Panel code="BRF-PUB" title="正式簡報內容" sub={`${brief.date} / ${brief.generatedBy}`} right={brief.status}>
+      <div className="brief-published">
+        <div className="brief-market-state">
+          <span className="tg gold">盤勢狀態</span>
           <strong>{cleanExternalHeadline(brief.marketState)}</strong>
-          <p>來源：正式 daily_briefs row / 建立 {formatDateTime(brief.createdAt)}</p>
         </div>
         {brief.sections.map((section, index) => (
-          <article className="brief-source-card" key={`${section.heading}-${index}`}>
-            <span>段落 {index + 1}</span>
-            <strong>{cleanExternalHeadline(section.heading)}</strong>
+          <article className="brief-section" key={`${section.heading}:${index}`}>
+            <span className="tg muted">#{String(index + 1).padStart(2, "0")}</span>
+            <h3>{cleanExternalHeadline(section.heading)}</h3>
             <p>{safeBriefText(section.body)}</p>
           </article>
         ))}
@@ -527,44 +499,44 @@ function PublishedBriefPanel({ brief }: { brief: DailyBrief | null }) {
 }
 
 function DraftSourceTrailPanel({ drafts }: { drafts: ContentDraftEntry[] }) {
-  const first = drafts[0] ?? null;
-  const sections = first ? contentDraftSections(first).slice(0, 4) : [];
+  const draft = drafts[0] ?? null;
+  if (!draft) {
+    return (
+      <Panel code="BRF-SRC" title="Source Trail" sub="尚未產生今日草稿" right="無資料">
+        <p className="state-reason">沒有 source-traced 草稿可檢查；先處理 OpenAlice producer / dispatcher / reviewer。</p>
+      </Panel>
+    );
+  }
+
+  const sections = contentDraftSections(draft);
   return (
-    <Panel code="SRC" title="草稿 source trail" sub="只顯示待審來源，不當正式簡報" right={first ? "待審" : "無資料"}>
-      {first ? (
-        <div className="brief-section-list">
-          <div className="brief-source-card">
-            <span>草稿</span>
-            <strong>{contentDraftTitle(first)}</strong>
-            <p>source job {first.sourceJobId?.slice(0, 8) ?? "--"} / producer {first.producerVersion} / 更新 {formatDateTime(first.updatedAt)}</p>
-          </div>
-          {sections.map((section, index) => (
-            <article className="brief-source-card" key={`${section.heading}-${index}`}>
-              <span>待審段落 {index + 1}</span>
-              <strong>{cleanExternalHeadline(section.heading)}</strong>
-              <p>{safeBriefText(section.body)}</p>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <div className="state-panel">
-          <span className="badge badge-yellow">無資料</span>
-          <span className="state-reason">尚未有可追蹤草稿；這是 pipeline blocker，不用舊簡報填補。</span>
-        </div>
-      )}
+    <Panel code="BRF-SRC" title="Source Trail" sub="草稿段落與來源檢查" right={`${sections.length} 段`}>
+      <div className="brief-source-trail">
+        <span>draft id: {draft.id}</span>
+        <span>source job: {draft.sourceJobId ?? "--"}</span>
+        <span>dedupe: {draft.dedupeKey}</span>
+        <span>producer: {draft.producerVersion}</span>
+      </div>
+      <div className="brief-source-sections">
+        {sections.map((section, index) => (
+          <article className="brief-section compact" key={`${section.heading}:${index}`}>
+            <h3>{cleanExternalHeadline(section.heading)}</h3>
+            <p>{safeBriefText(section.body)}</p>
+          </article>
+        ))}
+      </div>
     </Panel>
   );
 }
 
 export default async function BriefsPage() {
   const today = todayTaipeiDate();
-  const [briefData, drafts, jobs, openAlice, dispatcher, canOwnerOverride] = await Promise.all([
+  const [briefData, drafts, jobs, openAlice, dispatcher] = await Promise.all([
     loadBriefsData(),
     loadDrafts(),
     loadJobs(),
     loadOpenAlice(),
     loadDispatcherDebug(),
-    loadCanOwnerOverride(),
   ]);
 
   const surface = buildSurface({
@@ -580,46 +552,50 @@ export default async function BriefsPage() {
 
   return (
     <PageFrame
-      code="BRF"
+      code="08"
       title="每日簡報"
-      sub="OpenAlice 自動產文、AI 審核、source trail、正式發布"
-      note="每日簡報只顯示正式資料或待審草稿。沒有今日內容就說明缺口，不用過期內容假裝今日報告。"
+      sub="OpenAlice 自動產生、AI 審核與 source trail"
+      note="每日簡報只顯示已發布或待審來源；沒有 source trail 的內容不當作投資依據，也不提供買賣建議。"
     >
       <MetricStrip
-        columns={8}
+        columns={4}
         cells={[
-          { label: "今日狀態", value: surfaceLabel(surface.state), tone: surfaceTone(surface.state) },
           { label: "正式簡報", value: formatCount(briefData.briefs.length), tone: briefData.briefs.length ? "status-ok" : "muted" },
           { label: "待審草稿", value: formatCount(drafts.data.length), tone: drafts.data.length ? "gold" : "muted" },
           { label: "OpenAlice", value: openAlice.state === "LIVE" ? surfaceStateLabel(openAliceSurface(openAlice.data)) : "受阻", tone: openAlice.state === "LIVE" ? surfaceStateTone(openAliceSurface(openAlice.data)) : "status-bad" },
-          { label: "派工", value: dispatcher.state === "LIVE" ? dispatcherResultLabel(dispatcher.data?.lastTickResult ?? null) : "受阻", tone: dispatcher.state === "LIVE" ? dispatcherResultTone(dispatcher.data?.lastTickResult ?? null) : "status-bad" },
-          { label: "工作佇列", value: jobs.state === "LIVE" ? jobs.data.length : jobs.state === "EMPTY" ? 0 : "--", tone: jobs.state === "LIVE" ? "status-ok" : jobs.state === "EMPTY" ? "muted" : "status-bad" },
-          { label: "最新正式", value: latest ? `${latest.date} / ${briefAgeCopy(latestAgeDays)}` : "--", tone: freshness === "STALE" ? "gold" : freshness === "BLOCKED" ? "status-bad" : undefined },
+          { label: "排程", value: dispatcher.state === "LIVE" ? dispatcherResultLabel(dispatcher.data?.lastTickResult ?? null) : "受阻", tone: dispatcher.state === "LIVE" ? dispatcherResultTone(dispatcher.data?.lastTickResult ?? null) : "status-bad" },
+          { label: "任務佇列", value: jobs.state === "LIVE" ? jobs.data.length : jobs.state === "EMPTY" ? 0 : "--", tone: jobs.state === "LIVE" ? "status-ok" : jobs.state === "EMPTY" ? "muted" : "status-bad" },
+          { label: "最後正式版", value: latest ? `${latest.date} / ${briefAgeCopy(latestAgeDays)}` : "--", tone: freshness === "STALE" ? "gold" : freshness === "BLOCKED" ? "status-bad" : undefined },
           { label: "今日段落", value: displayedBrief ? displayedBrief.sections.length : "--" },
-          { label: "來源狀態", value: displayedBrief ? "正式資料" : drafts.data.length ? "待審 source" : "缺口", tone: displayedBrief ? "status-ok" : "gold" },
+          { label: "來源狀態", value: displayedBrief ? "正式資料" : drafts.data.length ? "待審 source" : "未閉環", tone: displayedBrief ? "status-ok" : "gold" },
         ]}
       />
+      <div className="brief-command-strip">
+        <Link className="terminal-button primary" href="/admin/content-drafts">
+          打開草稿審核
+        </Link>
+        <Link className="terminal-button" href="/ops">
+          查看營運監控
+        </Link>
+        <Link className="terminal-button" href="/market-intel">
+          檢查重大訊息
+        </Link>
+      </div>
 
-      <BriefSurfacePanel surface={surface} canOwnerOverride={canOwnerOverride} />
+      <section className="brief-overview-grid">
+        <BriefStatePanel surface={surface} />
+        <OpenAlicePanel openAlice={openAlice} />
+        <DispatcherDebugPanel dispatcher={dispatcher} />
+      </section>
 
-      <section className="brief-command-deck">
-        <div>
-          <span className="tg gold">OpenAlice / 每日台股作業流</span>
-          <h2>每天要自動產生、審核、保留來源，再發布到戰情室。</h2>
-          <p>
-            這頁不是文章列表，而是每日簡報的控制面板：你可以看到產文主腦是否健康、今天是否已發布、
-            草稿是否待審、source trail 是否存在，以及是哪一段流程卡住。
-          </p>
-        </div>
+      <section className="brief-workflow-note">
         <div className="brief-source-card">
           <span>下一步</span>
-          <strong>{surface.state === "PUBLISHED" ? "檢查正式內容" : surface.state === "AWAITING_REVIEW" ? "審核今日草稿" : "補 OpenAlice pipeline"}</strong>
-          <p>正式報告缺失時，請先看 OpenAlice runner / dispatcher / reviewer，而不是用舊資料補畫面。</p>
+          <strong>{surface.state === "PUBLISHED" ? "檢查正式 source trail" : surface.state === "AWAITING_REVIEW" ? "審核今日草稿" : "追 OpenAlice pipeline"}</strong>
+          <p>目標是每日自動產生、AI 審核、source trail 可查、正式發布後進入首頁與簡報頁；未閉環時要說清楚卡在哪一層。</p>
         </div>
       </section>
 
-      <OpenAlicePanel openAlice={openAlice} />
-      <DispatcherDebugPanel dispatcher={dispatcher} />
       <JobsPanel jobs={jobs} />
       <DraftQueuePanel drafts={drafts} />
       <PublishedBriefPanel brief={displayedBrief} />
