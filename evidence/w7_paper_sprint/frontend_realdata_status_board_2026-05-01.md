@@ -3517,3 +3517,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: `GET /api/v1/internal/openalice/dispatcher-debug`, `/api/v1/openalice/observability`, `/api/v1/openalice/jobs`, `/api/v1/content-drafts`, `/api/v1/briefs`.
 - Checks: contracts build PASS; web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only; stop-line grep PASS.
 - Stop-lines: no token value, no OpenAI trigger, no auto-publish, no order route, no KGI write-side, no migration/schema/destructive DB, no fake daily brief, no buy/sell wording.
+
+## 2026-05-07 03:10 TPE - Codex FinMind quota truth surface
+
+- Branch: `fix-web-finmind-quota-truth-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/lib/api.ts`, `apps/web/app/page.tsx`, `apps/web/app/market-intel/page.tsx`, `evidence/w7_paper_sprint/codex_finmind_quota_truth_surface_2026-05-07.md`
+- Behavior: homepage and market-intel now show FinMind quota tier and per-hour limit, and flag `Sponsor 999` if production reports less than 6,000/hour so the team can distinguish quota/env misconfiguration from dataset ingestion failure.
+- Sources: `/api/v1/data-sources/finmind/status`, `/api/v1/diagnostics/finmind`.
+- Checks: contracts build PASS; web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only; code-only stop-line grep PASS.
+- Stop-lines: no token value, no forced FinMind fetch, no Railway env edit, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no strategy metric.
