@@ -3809,6 +3809,16 @@ app.get("/internal/market/health", async (c) => {
 import { getFinMindClient, getFinMindStats } from "./data-sources/finmind-client.js";
 import { getTwseOpenApiClient } from "./data-sources/twse-openapi-client.js";
 import { runOhlcvFinmindSync } from "./jobs/ohlcv-finmind-sync.js";
+import {
+  runMonthlyRevenueSync,
+  runFinancialStatementsSync,
+  runBalanceSheetSync,
+  runCashFlowsSync,
+  isMonthlyRevenueBurstDay,
+  isInQuarterlyReleaseWindow,
+  isWeeklyTriggerDay,
+  queryFundamentalDatasetStats
+} from "./jobs/fundamentals-finmind-sync.js";
 
 // Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
 function companyIdToTicker(ticker: string): string {
@@ -3986,6 +3996,13 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
     }
   }
 
+  // PR A: fundamental dataset stats from DB (if tables exist)
+  type FundamentalStats = Awaited<ReturnType<typeof queryFundamentalDatasetStats>>;
+  let monthlyRevenueStats: FundamentalStats  = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+  let financialStmtStats: FundamentalStats   = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+  let balanceSheetStats: FundamentalStats    = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+  let cashflowStats: FundamentalStats        = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
+
   if (tokenPresent && db) {
     [ohlcvAdjStats, ohlcvRawStats, kbarStats] = await Promise.all([
       queryOhlcvStats("1d", "finmind_adj"),
@@ -3999,6 +4016,13 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
         ohlcvAdjStats = { ...anyDayStats, degradedReason: "source_not_tagged_adj" };
       }
     }
+    // PR A: query fundamental dataset stats in parallel
+    [monthlyRevenueStats, financialStmtStats, balanceSheetStats, cashflowStats] = await Promise.all([
+      queryFundamentalDatasetStats("tw_monthly_revenue"),
+      queryFundamentalDatasetStats("tw_financial_statements"),
+      queryFundamentalDatasetStats("tw_balance_sheet"),
+      queryFundamentalDatasetStats("tw_cashflow_statement")
+    ]);
   } else if (!db) {
     const noDbEntry: OhlcvDbStats = { rowCount: 0, latestDate: null, dbState: "EMPTY", missingReason: "memory_mode", degradedReason: null };
     ohlcvAdjStats = noDbEntry;
@@ -4067,41 +4091,42 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
     {
       key: "TaiwanStockMonthRevenue",
       label: "月營收",
-      state: apiOnlyDatasetState(true),
+      // PR A: DB-backed state from tw_monthly_revenue; BLOCKED when no token
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : monthlyRevenueStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockMonthRevenue" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? monthlyRevenueStats.rowCount : null,
+      latestDate: monthlyRevenueStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : monthlyRevenueStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
       key: "TaiwanStockFinancialStatements",
       label: "損益表",
-      state: apiOnlyDatasetState(true),
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : financialStmtStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockFinancialStatements" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? financialStmtStats.rowCount : null,
+      latestDate: financialStmtStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : financialStmtStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
       key: "TaiwanStockBalanceSheet",
       label: "資產負債表",
-      state: apiOnlyDatasetState(true),
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : balanceSheetStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockBalanceSheet" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? balanceSheetStats.rowCount : null,
+      latestDate: balanceSheetStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : balanceSheetStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
       key: "TaiwanStockCashFlowsStatement",
       label: "現金流量表",
-      state: apiOnlyDatasetState(true),
+      state: !tokenPresent ? "BLOCKED" : (degradedByErrors ? "DEGRADED" : cashflowStats.state),
       lastFetchTs: stats.lastDataset === "TaiwanStockCashFlowsStatement" ? stats.lastFetchTs : null,
-      rowCount: null,
-      latestDate: null,
-      missingReason: tokenPresent ? null : "no_token",
+      rowCount: db ? cashflowStats.rowCount : null,
+      latestDate: cashflowStats.latestDate,
+      missingReason: !tokenPresent ? "no_token" : cashflowStats.missingReason,
       degradedReason: degradedByErrors ? "high_error_rate" : null
     },
     {
@@ -6132,13 +6157,102 @@ app.post("/api/v1/internal/openalice/ai-reviewer/run-on/:draftId", async (c) => 
 });
 
 /**
- * Start both schedulers. Called once after server is ready.
+ * Resolve all Taiwan 4-digit tickers for the workspace.
+ * Returns empty array if workspace not found or DB unavailable.
+ */
+async function resolveWorkspaceTickers(workspaceSlug: string): Promise<Array<{ ticker: string }>> {
+  const db = getDb();
+  if (!db) return [];
+  try {
+    const ws = await db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.slug, workspaceSlug)).limit(1);
+    if (ws.length === 0) return [];
+    const workspaceId = ws[0].id;
+    const rows = await db
+      .select({ ticker: companies.ticker })
+      .from(companies)
+      .where(eq(companies.workspaceId, workspaceId));
+    return rows.filter(r => /^\d{4}$/.test(r.ticker));
+  } catch (err) {
+    console.warn("[schedulers] resolveWorkspaceTickers error:", err instanceof Error ? err.message : String(err));
+    return [];
+  }
+}
+
+/**
+ * PR A: Monthly revenue scheduler tick.
+ * Runs on the 10th of the month (burst) AND every 24h for the last-30d sweep.
+ * Cadence guard: skips if not burst day and not daily sweep window (19:30 TST → 20:30 TST).
+ */
+async function runMonthlyRevenueSchedulerTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) {
+    console.log("[fundamentals-scheduler] FINMIND_API_TOKEN not set, skipping monthly revenue tick");
+    return;
+  }
+  try {
+    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    if (tickers.length === 0) {
+      console.warn("[fundamentals-scheduler] no tickers found for monthly revenue sync");
+      return;
+    }
+    const startDate = isMonthlyRevenueBurstDay()
+      ? (() => { const d = new Date(); d.setUTCMonth(d.getUTCMonth() - 2); return d.toISOString().slice(0, 7) + "-01"; })()
+      : (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - 30); return d.toISOString().slice(0, 10); })();
+    const result = await runMonthlyRevenueSync(tickers, { startDate });
+    console.log(`[fundamentals-scheduler] monthly-revenue DONE rowsUpserted=${result.rowsUpserted} skipped=${result.skipped} skipReason=${result.skipReason ?? "none"}`);
+  } catch (err) {
+    console.error("[fundamentals-scheduler] monthly-revenue tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * PR A: Financial statements scheduler tick (income / balance / cashflow).
+ * Runs daily during quarterly release window T-2..T+14, weekly (Sunday) otherwise.
+ */
+async function runFinancialsSchedulerTick(workspaceSlug: string): Promise<void> {
+  if (!process.env.FINMIND_API_TOKEN) {
+    console.log("[fundamentals-scheduler] FINMIND_API_TOKEN not set, skipping financials tick");
+    return;
+  }
+
+  const inWindow = isInQuarterlyReleaseWindow();
+  const isWeekly = isWeeklyTriggerDay();
+
+  if (!inWindow && !isWeekly) {
+    console.log("[fundamentals-scheduler] financials skipped=cadence_not_due (not in release window, not Sunday)");
+    return;
+  }
+
+  try {
+    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    if (tickers.length === 0) {
+      console.warn("[fundamentals-scheduler] no tickers found for financials sync");
+      return;
+    }
+
+    // 2 years back on first sync; 90d sweep otherwise
+    const startDate = (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - (inWindow ? 90 : 730)); return d.toISOString().slice(0, 10); })();
+
+    const [fsResult, bsResult, cfResult] = await Promise.all([
+      runFinancialStatementsSync(tickers, { startDate }),
+      runBalanceSheetSync(tickers, { startDate }),
+      runCashFlowsSync(tickers, { startDate })
+    ]);
+    console.log(`[fundamentals-scheduler] financials tick DONE fs=${fsResult.rowsUpserted} bs=${bsResult.rowsUpserted} cf=${cfResult.rowsUpserted} rows`);
+  } catch (err) {
+    console.error("[fundamentals-scheduler] financials tick error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: every 23 hours (drift-safe).
- * Both run an immediate first tick on startup to backfill any missed runs.
+ * PR A: Monthly revenue: every 24h. Financials: every 24h (cadence guard inside tick).
+ * All run an immediate first tick on startup to backfill any missed runs.
  */
 function startSchedulers(workspaceSlug: string): void {
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
   const TWENTY_THREE_HOURS_MS = 23 * 60 * 60 * 1000;
+  const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
   // F2: OHLCV sync — immediate first run then every 6h
   runOhlcvSchedulerTick(workspaceSlug).catch((e) =>
@@ -6161,7 +6275,27 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, TWENTY_THREE_HOURS_MS);
 
-  console.log("[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) started");
+  // PR A: Monthly revenue sync — every 24h (burst on 10th, sweep otherwise)
+  runMonthlyRevenueSchedulerTick(workspaceSlug).catch((e) =>
+    console.error("[fundamentals-scheduler] monthly-revenue initial tick failed:", e)
+  );
+  setInterval(() => {
+    runMonthlyRevenueSchedulerTick(workspaceSlug).catch((e) =>
+      console.error("[fundamentals-scheduler] monthly-revenue interval tick failed:", e)
+    );
+  }, TWENTY_FOUR_HOURS_MS);
+
+  // PR A: Financial statements / balance sheet / cashflow — every 24h (cadence guard inside)
+  runFinancialsSchedulerTick(workspaceSlug).catch((e) =>
+    console.error("[fundamentals-scheduler] financials initial tick failed:", e)
+  );
+  setInterval(() => {
+    runFinancialsSchedulerTick(workspaceSlug).catch((e) =>
+      console.error("[fundamentals-scheduler] financials interval tick failed:", e)
+    );
+  }, TWENTY_FOUR_HOURS_MS);
+
+  console.log("[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + PR-A monthly-revenue (24h) + PR-A financials (24h) started");
 }
 
 const port = Number(process.env.PORT ?? 3001);
