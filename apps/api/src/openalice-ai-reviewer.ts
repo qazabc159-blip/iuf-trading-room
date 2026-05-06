@@ -14,6 +14,7 @@ import { auditLogs, contentDrafts, getDb, isDatabaseMode } from "@iuf-trading-ro
 import { eq } from "drizzle-orm";
 
 import { approveContentDraft, rejectContentDraft } from "./content-draft-store.js";
+import { recordReviewerVerdict } from "./openalice-pipeline.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -283,7 +284,51 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
 
   const workspaceId = draftRow.workspaceId;
 
+  // Bruce PR #230 F1 fix: wire 3-tier publish gate. Even when AI says approve,
+  // a Red-tier classification (buy/sell/target price/guarantee/Sharpe/勝率) MUST
+  // override and force reject. Yellow tier holds in awaiting_review for human.
+  // Pete F2 fix: recordReviewerVerdict updates lastReviewedAt + reviewerVerdict
+  // observability fields atomically.
+  const { tier } = recordReviewerVerdict({
+    payload: draftRow.payload,
+    verdict: result.verdict
+  });
+
+  if (result.verdict === "approve" && tier === "red") {
+    // Red-tier override — force reject regardless of AI verdict
+    const rejectResult = await rejectContentDraft({
+      draftId,
+      reviewerId: null,
+      reason: `[ai-reviewer] Red-tier content blocked by publish gate (tier=red). AI verdict=${result.verdict} but content matched red-tier policy patterns (buy/sell/target/guarantee/Sharpe/勝率). | reason: ${result.reason}`
+    });
+    if ("error" in rejectResult) {
+      _lastReviewerErrors.set(draftId, `red_override_reject_failed: ${rejectResult.error}`);
+      return;
+    }
+    await writeAiReviewAuditLog({
+      workspaceId,
+      draftId,
+      action: "content_draft.ai_rejected",
+      result: { ...result, verdict: "reject", reason: `RED_TIER_OVERRIDE: ${result.reason}` }
+    });
+    console.info(`[ai-reviewer] Draft ${draftId} RED-TIER OVERRIDE (was approve, forced reject)`);
+    return;
+  }
+
+  if (result.verdict === "approve" && tier === "yellow") {
+    // Yellow-tier hold — keep awaiting_review for human review
+    await writeAiReviewAuditLog({
+      workspaceId,
+      draftId,
+      action: "content_draft.ai_yellow_held",
+      result
+    });
+    console.info(`[ai-reviewer] Draft ${draftId} YELLOW-TIER HELD for human review (AI approved but tier=yellow)`);
+    return;
+  }
+
   if (result.verdict === "approve") {
+    // Green tier — proceed with auto-publish
     const approveResult = await approveContentDraft({
       draftId,
       reviewerId: null // AI reviewer — no user UUID; identity stored in audit log
@@ -301,7 +346,7 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
       result
     });
 
-    console.info(`[ai-reviewer] Draft ${draftId} AUTO-APPROVED (confidence=${result.confidence})`);
+    console.info(`[ai-reviewer] Draft ${draftId} AUTO-APPROVED (Green tier, confidence=${result.confidence})`);
     return;
   }
 

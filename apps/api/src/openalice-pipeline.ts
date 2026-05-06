@@ -455,11 +455,13 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
   const text = JSON.stringify(payload ?? "").toLowerCase();
 
   // Red tier keywords
+  // Pete PR #230 F3 fix: 勝率 (win rate) added — was missing from red-tier classifier
   const redPatterns = [
     /buy\b/, /sell\b/, /進場/, /賣出/, /買進/, /出脫/,
     /目標價/, /target price/, /price target/,
     /guarantee/, /必賺/, /保證/, /翻倍/,
-    /sharpe ratio\s*[=:>]\s*[\d.]+/
+    /sharpe ratio\s*[=:>]\s*[\d.]+/,
+    /勝率/, /win rate\s*[=:>]\s*[\d.]+/
   ];
   for (const p of redPatterns) {
     if (p.test(text)) {
@@ -1009,16 +1011,36 @@ export async function runPipelineCloseBriefTick(workspaceSlug: string): Promise<
 }
 
 function computeNextRunAt(now: Date): string {
-  // Next tick is the nearest future window start
-  const hhmm = getTaipeiHHMM(now);
-  let minutesToAdd = 0;
-  if (hhmm < 830) minutesToAdd = 830 - hhmm;
-  else if (hhmm < 1345) minutesToAdd = 1345 - hhmm;
-  else if (hhmm < 1630) minutesToAdd = 1630 - hhmm;
-  else minutesToAdd = 24 * 60 + 830 - hhmm; // next day pre-market
+  // Pete PR #230 F1 fix: HHMM is encoded as decimal (0830/1345/1630),
+  // simple subtraction (1345 - 1230 = 115) yields garbage — must convert to
+  // real minutes-of-day first.
+  const hhmmToMinutes = (hhmm: number): number => Math.floor(hhmm / 100) * 60 + (hhmm % 100);
+  const nowMin = hhmmToMinutes(getTaipeiHHMM(now));
+  const targets = [830, 1345, 1630].map(hhmmToMinutes);
+  let minutesToAdd: number;
+  if (nowMin < targets[0]) minutesToAdd = targets[0] - nowMin;
+  else if (nowMin < targets[1]) minutesToAdd = targets[1] - nowMin;
+  else if (nowMin < targets[2]) minutesToAdd = targets[2] - nowMin;
+  else minutesToAdd = 24 * 60 + targets[0] - nowMin; // next day pre-market
 
   const next = new Date(now.getTime() + minutesToAdd * 60 * 1000);
   return next.toISOString();
+}
+
+// Pete PR #230 F2 fix + Bruce F1 wiring helper:
+// Exported so openalice-ai-reviewer can record verdict + update lastReviewedAt
+// directly without re-invoking the full evaluatePipelinePublishGate flow.
+// Also returns classifyDraftTier output for the caller to honor red-tier override.
+export function recordReviewerVerdict(input: {
+  payload: unknown;
+  verdict: "approve" | "reject" | "manual_review";
+}): { tier: PublishGateTier } {
+  const tier = classifyDraftTier(input.payload);
+  updatePipelineState({
+    lastReviewedAt: new Date().toISOString(),
+    reviewerVerdict: input.verdict
+  });
+  return { tier };
 }
 
 // ── Observability additions (exported for server.ts extension) ────────────────
