@@ -19,7 +19,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { companiesOhlcv, getDb } from "@iuf-trading-room/db";
-import { getFinMindClient } from "../data-sources/finmind-client.js";
+import { getFinMindClient, getFinMindStats } from "../data-sources/finmind-client.js";
 import type { OhlcvBar } from "../companies-ohlcv.js";
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -200,6 +200,14 @@ export async function runOhlcvFinmindSync(
   const results: OhlcvSyncTickerResult[] = [];
 
   for (const { companyId, ticker, workspaceId } of tickers) {
+    const finmindStats = getFinMindStats();
+    if (finmindStats.circuitOpen) {
+      console.warn(
+        `[ohlcv-finmind-sync] aborting batch because FinMind circuit is open until ` +
+        `${finmindStats.circuitOpenUntil ?? "unknown"} reason=${finmindStats.circuitReason ?? "unknown"}`
+      );
+      break;
+    }
     const result = await syncTicker(workspaceId, companyId, ticker, startDate, endDate, dryRun);
     results.push(result);
     console.log(`[ohlcv-finmind-sync] ticker=${ticker} barsFromApi=${result.barsFromApi} barsUpserted=${result.barsUpserted} error=${result.error ?? "none"}`);
@@ -214,7 +222,7 @@ export async function runOhlcvFinmindSync(
   return {
     source,
     dryRun,
-    tickersAttempted: tickers.length,
+    tickersAttempted: results.length,
     tickersSuccess,
     tickersFailed,
     results,
