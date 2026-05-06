@@ -5,6 +5,9 @@ import { getContentDrafts, type ContentDraftEntry, type ContentDraftStatus } fro
 import {
   CONTENT_DRAFT_STATUSES,
   contentDraftBody,
+  contentDraftDate,
+  contentDraftMarketState,
+  contentDraftReviewActor,
   contentDraftStatusBadge,
   contentDraftStatusLabel,
   contentDraftTargetLabel,
@@ -50,13 +53,15 @@ function AdminDraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
         <span>ID</span>
         <span>目標</span>
         <span>標題</span>
+        <span>來源線索</span>
         <span>狀態</span>
-        <span>產生者</span>
         <span>更新</span>
         <span>開啟</span>
       </div>
       {drafts.map((draft) => {
         const body = contentDraftBody(draft);
+        const draftDate = contentDraftDate(draft);
+        const marketState = contentDraftMarketState(draft);
         return (
           <div className="content-draft-row admin" key={draft.id}>
             <span className="tg gold">{draft.id.slice(0, 8)}</span>
@@ -65,10 +70,17 @@ function AdminDraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
               {contentDraftTitle(draft)}
               {body && <small>{body}</small>}
             </span>
+            <span className="content-draft-trail">
+              <b>{draft.producerVersion}</b>
+              <small>{draft.sourceJobId ? `job ${draft.sourceJobId.slice(0, 8)}` : "無來源工作"}</small>
+              {(draftDate || marketState) && (
+                <small>{[draftDate, marketState].filter(Boolean).join(" / ")}</small>
+              )}
+              <small>{contentDraftReviewActor(draft)}</small>
+            </span>
             <span className={`badge ${contentDraftStatusBadge(draft.status)}`}>
               {contentDraftStatusLabel(draft.status)}
             </span>
-            <span className="tg soft">{draft.producerVersion}</span>
             <span className="tg soft">{formatDateTime(draft.updatedAt)}</span>
             <Link className="mini-button" href={`/admin/content-drafts/${draft.id}`}>查看</Link>
           </div>
@@ -108,7 +120,7 @@ export default async function ContentDraftsAdminPage({
       title="內容草稿審核"
       sub="AI 內容審稿佇列"
       exec
-      note="內容草稿審核 / 只讀佇列；核准與退回動作仍在明確閘門後才開。"
+      note="內容草稿審核 / 顯示 OpenAlice 產文、來源線索、審核狀態；尚未核准的草稿不會進正式頁面。"
     >
       <Panel code="ADM-FLT" title="狀態篩選" right={status ? contentDraftStatusLabel(status) : "全部"}>
         <div className="filter-row">
