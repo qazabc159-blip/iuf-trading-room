@@ -9663,3 +9663,69 @@ body:has(.login-route) > div {
     padding-top: 14px;
   }
 }
+
+/* Dashboard data-truth repair: prevent stale/status panels from pushing the page wider than the viewport. */
+.dashboard-command-deck,
+.dashboard-mosaic-grid,
+.dashboard-mosaic-primary,
+.dashboard-mosaic-secondary,
+.dashboard-mosaic-grid .panel,
+.dashboard-source-rail,
+.dashboard-source-chip,
+.source-line {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.source-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  line-height: 1.7;
+}
+
+.dashboard-mosaic-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+  gap: clamp(18px, 2vw, 30px);
+}
+
+.dashboard-mosaic-grid .row,
+.dashboard-mosaic-grid .tc,
+.dashboard-mosaic-grid .tg,
+.dashboard-source-chip,
+.dashboard-source-chip * {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1380px) {
+  .dashboard-command-deck,
+  .dashboard-mosaic-grid,
+  .dashboard-mosaic-grid.is-degraded {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-command-deck {
+    min-height: 0;
+  }
+
+  .dashboard-command-deck .dashboard-source-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 16px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(226, 184, 92, 0.22);
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-command-deck .dashboard-source-rail,
+  .dashboard-source-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-command-deck .dashboard-hero-kpis-inline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
