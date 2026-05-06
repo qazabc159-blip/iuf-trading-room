@@ -6292,6 +6292,7 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
     console.log("[ohlcv-scheduler] FINMIND_API_TOKEN not set, skipping tick");
     return;
   }
+  if (finMindSchedulerCircuitOpen("ohlcv")) return;
   const db = getDb();
   if (!db) {
     console.warn("[ohlcv-scheduler] DB unavailable, skipping tick");
@@ -6309,11 +6310,16 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
       .from(companies)
       .where(eq(companies.workspaceId, workspaceId));
 
-    const tickers = rows
+    const allTickers = rows
       .filter((r) => /^\d{4}$/.test(r.ticker)) // Taiwan 4-digit only
       .map((r) => ({ companyId: r.id, ticker: r.ticker, workspaceId: r.workspaceId }));
+    const tickers = takeFinMindSchedulerBatch(
+      "ohlcv",
+      allTickers,
+      schedulerPositiveInt("FINMIND_OHLCV_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 500))
+    );
 
-    console.log(`[ohlcv-scheduler] Starting sync for ${tickers.length} tickers (workspace=${workspaceSlug})`);
+    console.log(`[ohlcv-scheduler] Starting sync for ${tickers.length}/${allTickers.length} tickers (workspace=${workspaceSlug})`);
     const result = await runOhlcvFinmindSync(tickers, {
       startDate: (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - 10); return d.toISOString().slice(0, 10); })(),
       forceFinmind: true  // bypass OHLCV_SOURCE=mock env check
@@ -6547,6 +6553,51 @@ async function resolveWorkspaceTickers(workspaceSlug: string): Promise<Array<{ t
   }
 }
 
+type SchedulerTicker = { ticker: string };
+
+const _finMindSchedulerCursors = new Map<string, number>();
+
+function schedulerPositiveInt(name: string, fallback: number): number {
+  const raw = Number(process.env[name] ?? "");
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : fallback;
+}
+
+function finMindSchedulerCircuitOpen(job: string): boolean {
+  const stats = getFinMindStats();
+  if (!stats.circuitOpen) return false;
+  console.log(
+    `[schedulers] ${job} skipped=finmind_circuit_open until=${stats.circuitOpenUntil ?? "unknown"} ` +
+    `reason=${stats.circuitReason ?? "unknown"}`
+  );
+  return true;
+}
+
+function takeFinMindSchedulerBatch<T extends SchedulerTicker>(
+  job: string,
+  tickers: T[],
+  maxBatchSize: number
+): T[] {
+  if (tickers.length === 0) return [];
+  const ordered = [...tickers].sort((a, b) => a.ticker.localeCompare(b.ticker));
+  const batchSize = Math.min(Math.max(1, maxBatchSize), ordered.length);
+  const start = (_finMindSchedulerCursors.get(job) ?? 0) % ordered.length;
+  const first = ordered.slice(start, start + batchSize);
+  const overflow = Math.max(0, start + batchSize - ordered.length);
+  const batch = overflow > 0 ? first.concat(ordered.slice(0, overflow)) : first;
+  const next = (start + batch.length) % ordered.length;
+  _finMindSchedulerCursors.set(job, next);
+  console.log(
+    `[schedulers] ${job} batch start=${start} size=${batch.length}/${ordered.length} next=${next}`
+  );
+  return batch;
+}
+
+function scheduleInitialSchedulerTick(name: string, delayMs: number, fn: () => Promise<void>): void {
+  setTimeout(() => {
+    fn().catch((e) => console.error(`[${name}] Initial tick failed:`, e));
+  }, delayMs);
+}
+
 /**
  * PR A: Monthly revenue scheduler tick.
  * Runs on the 10th of the month (burst) AND every 24h for the last-30d sweep.
@@ -6557,12 +6608,18 @@ async function runMonthlyRevenueSchedulerTick(workspaceSlug: string): Promise<vo
     console.log("[fundamentals-scheduler] FINMIND_API_TOKEN not set, skipping monthly revenue tick");
     return;
   }
+  if (finMindSchedulerCircuitOpen("monthly-revenue")) return;
   try {
-    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    let tickers = await resolveWorkspaceTickers(workspaceSlug);
     if (tickers.length === 0) {
       console.warn("[fundamentals-scheduler] no tickers found for monthly revenue sync");
       return;
     }
+    tickers = takeFinMindSchedulerBatch(
+      "monthly-revenue",
+      tickers,
+      schedulerPositiveInt("FINMIND_MONTHLY_REVENUE_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 120))
+    );
     const startDate = isMonthlyRevenueBurstDay()
       ? (() => { const d = new Date(); d.setUTCMonth(d.getUTCMonth() - 2); return d.toISOString().slice(0, 7) + "-01"; })()
       : (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - 30); return d.toISOString().slice(0, 10); })();
@@ -6582,6 +6639,7 @@ async function runFinancialsSchedulerTick(workspaceSlug: string): Promise<void> 
     console.log("[fundamentals-scheduler] FINMIND_API_TOKEN not set, skipping financials tick");
     return;
   }
+  if (finMindSchedulerCircuitOpen("financials")) return;
 
   const inWindow = isInQuarterlyReleaseWindow();
   const isWeekly = isWeeklyTriggerDay();
@@ -6592,11 +6650,16 @@ async function runFinancialsSchedulerTick(workspaceSlug: string): Promise<void> 
   }
 
   try {
-    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    let tickers = await resolveWorkspaceTickers(workspaceSlug);
     if (tickers.length === 0) {
       console.warn("[fundamentals-scheduler] no tickers found for financials sync");
       return;
     }
+    tickers = takeFinMindSchedulerBatch(
+      "financials",
+      tickers,
+      schedulerPositiveInt("FINMIND_FINANCIALS_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 50))
+    );
 
     // 2 years back on first sync; 90d sweep otherwise
     const startDate = (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - (inWindow ? 90 : 730)); return d.toISOString().slice(0, 10); })();
@@ -6645,16 +6708,22 @@ function isTaipei1700to2100(): boolean {
  */
 async function runTradingFlowInstitutionalTick(workspaceSlug: string): Promise<void> {
   if (!process.env.FINMIND_API_TOKEN) return;
+  if (finMindSchedulerCircuitOpen("institutional")) return;
   if (!isTaipei1430to1700()) {
     console.log("[trading-flow-scheduler] institutional skipped=outside_cadence_window");
     return;
   }
   try {
-    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    let tickers = await resolveWorkspaceTickers(workspaceSlug);
     if (tickers.length === 0) {
       console.warn("[trading-flow-scheduler] no tickers found for institutional buysell sync");
       return;
     }
+    tickers = takeFinMindSchedulerBatch(
+      "institutional",
+      tickers,
+      schedulerPositiveInt("FINMIND_INSTITUTIONAL_BATCH_SIZE", schedulerPositiveInt("FINMIND_INTRADAY_DATASET_BATCH_SIZE", 80))
+    );
     const result = await runInstitutionalBuySellSync(tickers);
     console.log(
       `[trading-flow-scheduler] institutional DONE rowsUpserted=${result.rowsUpserted} ` +
@@ -6671,16 +6740,22 @@ async function runTradingFlowInstitutionalTick(workspaceSlug: string): Promise<v
  */
 async function runTradingFlowMarginShortTick(workspaceSlug: string): Promise<void> {
   if (!process.env.FINMIND_API_TOKEN) return;
+  if (finMindSchedulerCircuitOpen("margin-short")) return;
   if (!isTaipei1700to2100()) {
     console.log("[trading-flow-scheduler] margin-short skipped=outside_cadence_window");
     return;
   }
   try {
-    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    let tickers = await resolveWorkspaceTickers(workspaceSlug);
     if (tickers.length === 0) {
       console.warn("[trading-flow-scheduler] no tickers found for margin-short sync");
       return;
     }
+    tickers = takeFinMindSchedulerBatch(
+      "margin-short",
+      tickers,
+      schedulerPositiveInt("FINMIND_MARGIN_SHORT_BATCH_SIZE", schedulerPositiveInt("FINMIND_INTRADAY_DATASET_BATCH_SIZE", 80))
+    );
     const result = await runMarginShortSync(tickers);
     console.log(
       `[trading-flow-scheduler] margin-short DONE rowsUpserted=${result.rowsUpserted} ` +
@@ -6697,16 +6772,22 @@ async function runTradingFlowMarginShortTick(workspaceSlug: string): Promise<voi
  */
 async function runTradingFlowShareholdingTick(workspaceSlug: string): Promise<void> {
   if (!process.env.FINMIND_API_TOKEN) return;
+  if (finMindSchedulerCircuitOpen("shareholding")) return;
   if (!isFridayTriggerDay()) {
     console.log("[trading-flow-scheduler] shareholding skipped=cadence_not_due (not Friday)");
     return;
   }
   try {
-    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    let tickers = await resolveWorkspaceTickers(workspaceSlug);
     if (tickers.length === 0) {
       console.warn("[trading-flow-scheduler] no tickers found for shareholding sync");
       return;
     }
+    tickers = takeFinMindSchedulerBatch(
+      "shareholding",
+      tickers,
+      schedulerPositiveInt("FINMIND_SHAREHOLDING_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 80))
+    );
     const result = await runShareholdingSync(tickers);
     console.log(
       `[trading-flow-scheduler] shareholding DONE rowsUpserted=${result.rowsUpserted} ` +
@@ -6726,16 +6807,22 @@ async function runTradingFlowShareholdingTick(workspaceSlug: string): Promise<vo
  */
 async function runMarketIntelDividendTick(workspaceSlug: string): Promise<void> {
   if (!process.env.FINMIND_API_TOKEN) return;
+  if (finMindSchedulerCircuitOpen("dividend")) return;
   if (!isSundayTriggerDay()) {
     console.log("[market-intel-scheduler] dividend skipped=cadence_not_due (not Sunday)");
     return;
   }
   try {
-    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    let tickers = await resolveWorkspaceTickers(workspaceSlug);
     if (tickers.length === 0) {
       console.warn("[market-intel-scheduler] no tickers found for dividend sync");
       return;
     }
+    tickers = takeFinMindSchedulerBatch(
+      "dividend",
+      tickers,
+      schedulerPositiveInt("FINMIND_DIVIDEND_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 120))
+    );
     const result = await runDividendSync(tickers);
     console.log(
       `[market-intel-scheduler] dividend DONE rowsUpserted=${result.rowsUpserted} ` +
@@ -6752,16 +6839,22 @@ async function runMarketIntelDividendTick(workspaceSlug: string): Promise<void> 
  */
 async function runMarketIntelMarketValueTick(workspaceSlug: string): Promise<void> {
   if (!process.env.FINMIND_API_TOKEN) return;
+  if (finMindSchedulerCircuitOpen("market-value")) return;
   if (!isWeekendTriggerDay()) {
     console.log("[market-intel-scheduler] market-value skipped=cadence_not_due (not weekend)");
     return;
   }
   try {
-    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    let tickers = await resolveWorkspaceTickers(workspaceSlug);
     if (tickers.length === 0) {
       console.warn("[market-intel-scheduler] no tickers found for market-value sync");
       return;
     }
+    tickers = takeFinMindSchedulerBatch(
+      "market-value",
+      tickers,
+      schedulerPositiveInt("FINMIND_MARKET_VALUE_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 120))
+    );
     const result = await runMarketValueSync(tickers);
     console.log(
       `[market-intel-scheduler] market-value DONE rowsUpserted=${result.rowsUpserted} ` +
@@ -6778,12 +6871,18 @@ async function runMarketIntelMarketValueTick(workspaceSlug: string): Promise<voi
  */
 async function runMarketIntelValuationTick(workspaceSlug: string): Promise<void> {
   if (!process.env.FINMIND_API_TOKEN) return;
+  if (finMindSchedulerCircuitOpen("valuation")) return;
   try {
-    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    let tickers = await resolveWorkspaceTickers(workspaceSlug);
     if (tickers.length === 0) {
       console.warn("[market-intel-scheduler] no tickers found for valuation sync");
       return;
     }
+    tickers = takeFinMindSchedulerBatch(
+      "valuation",
+      tickers,
+      schedulerPositiveInt("FINMIND_VALUATION_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 120))
+    );
     const result = await runValuationSync(tickers);
     console.log(
       `[market-intel-scheduler] valuation DONE rowsUpserted=${result.rowsUpserted} ` +
@@ -6801,12 +6900,18 @@ async function runMarketIntelValuationTick(workspaceSlug: string): Promise<void>
  */
 async function runMarketIntelNewsTick(workspaceSlug: string): Promise<void> {
   if (!process.env.FINMIND_API_TOKEN) return;
+  if (finMindSchedulerCircuitOpen("stock-news")) return;
   try {
-    const tickers = await resolveWorkspaceTickers(workspaceSlug);
+    let tickers = await resolveWorkspaceTickers(workspaceSlug);
     if (tickers.length === 0) {
       console.warn("[market-intel-scheduler] no tickers found for stock-news sync");
       return;
     }
+    tickers = takeFinMindSchedulerBatch(
+      "stock-news",
+      tickers,
+      schedulerPositiveInt("FINMIND_STOCK_NEWS_BATCH_SIZE", schedulerPositiveInt("FINMIND_INTRADAY_DATASET_BATCH_SIZE", 40))
+    );
     const result = await runStockNewsSync(tickers);
     console.log(
       `[market-intel-scheduler] stock-news (experimental) DONE rowsUpserted=${result.rowsUpserted} ` +
@@ -6827,11 +6932,10 @@ function startSchedulers(workspaceSlug: string): void {
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
   const TWENTY_THREE_HOURS_MS = 23 * 60 * 60 * 1000;
   const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+  const INITIAL_STAGGER_MS = schedulerPositiveInt("FINMIND_SCHEDULER_INITIAL_STAGGER_MS", 15_000);
 
   // F2: OHLCV sync — immediate first run then every 6h
-  runOhlcvSchedulerTick(workspaceSlug).catch((e) =>
-    console.error("[ohlcv-scheduler] Initial tick failed:", e)
-  );
+  scheduleInitialSchedulerTick("ohlcv-scheduler", 0, () => runOhlcvSchedulerTick(workspaceSlug));
   setInterval(() => {
     runOhlcvSchedulerTick(workspaceSlug).catch((e) =>
       console.error("[ohlcv-scheduler] Interval tick failed:", e)
@@ -6840,9 +6944,7 @@ function startSchedulers(workspaceSlug: string): void {
 
   // F3: daily_brief dispatcher — immediate first run then every 23h
   // (workspaceSlug no longer passed — function resolves workspace from DB)
-  runDailyBriefDispatcherTick().catch((e) =>
-    console.error("[daily-brief-dispatcher] Initial tick failed:", e)
-  );
+  scheduleInitialSchedulerTick("daily-brief-dispatcher", 5_000, () => runDailyBriefDispatcherTick());
   setInterval(() => {
     runDailyBriefDispatcherTick().catch((e) =>
       console.error("[daily-brief-dispatcher] Interval tick failed:", e)
@@ -6850,8 +6952,8 @@ function startSchedulers(workspaceSlug: string): void {
   }, TWENTY_THREE_HOURS_MS);
 
   // PR A: Monthly revenue sync — every 24h (burst on 10th, sweep otherwise)
-  runMonthlyRevenueSchedulerTick(workspaceSlug).catch((e) =>
-    console.error("[fundamentals-scheduler] monthly-revenue initial tick failed:", e)
+  scheduleInitialSchedulerTick("fundamentals-scheduler/monthly-revenue", INITIAL_STAGGER_MS, () =>
+    runMonthlyRevenueSchedulerTick(workspaceSlug)
   );
   setInterval(() => {
     runMonthlyRevenueSchedulerTick(workspaceSlug).catch((e) =>
@@ -6860,8 +6962,8 @@ function startSchedulers(workspaceSlug: string): void {
   }, TWENTY_FOUR_HOURS_MS);
 
   // PR A: Financial statements / balance sheet / cashflow — every 24h (cadence guard inside)
-  runFinancialsSchedulerTick(workspaceSlug).catch((e) =>
-    console.error("[fundamentals-scheduler] financials initial tick failed:", e)
+  scheduleInitialSchedulerTick("fundamentals-scheduler/financials", INITIAL_STAGGER_MS * 2, () =>
+    runFinancialsSchedulerTick(workspaceSlug)
   );
   setInterval(() => {
     runFinancialsSchedulerTick(workspaceSlug).catch((e) =>
@@ -6871,8 +6973,8 @@ function startSchedulers(workspaceSlug: string): void {
 
   // PR B: Institutional buysell — every 30min, cadence guard 14:30–17:00 Taipei
   const THIRTY_MIN_MS = 30 * 60 * 1000;
-  runTradingFlowInstitutionalTick(workspaceSlug).catch((e) =>
-    console.error("[trading-flow-scheduler] institutional initial tick failed:", e)
+  scheduleInitialSchedulerTick("trading-flow-scheduler/institutional", INITIAL_STAGGER_MS * 3, () =>
+    runTradingFlowInstitutionalTick(workspaceSlug)
   );
   setInterval(() => {
     runTradingFlowInstitutionalTick(workspaceSlug).catch((e) =>
@@ -6881,8 +6983,8 @@ function startSchedulers(workspaceSlug: string): void {
   }, THIRTY_MIN_MS);
 
   // PR B: Margin/short — every 30min, cadence guard 17:00–21:00 Taipei
-  runTradingFlowMarginShortTick(workspaceSlug).catch((e) =>
-    console.error("[trading-flow-scheduler] margin-short initial tick failed:", e)
+  scheduleInitialSchedulerTick("trading-flow-scheduler/margin-short", INITIAL_STAGGER_MS * 4, () =>
+    runTradingFlowMarginShortTick(workspaceSlug)
   );
   setInterval(() => {
     runTradingFlowMarginShortTick(workspaceSlug).catch((e) =>
@@ -6891,8 +6993,8 @@ function startSchedulers(workspaceSlug: string): void {
   }, THIRTY_MIN_MS);
 
   // PR B: Shareholding — every 24h, cadence guard Friday-only
-  runTradingFlowShareholdingTick(workspaceSlug).catch((e) =>
-    console.error("[trading-flow-scheduler] shareholding initial tick failed:", e)
+  scheduleInitialSchedulerTick("trading-flow-scheduler/shareholding", INITIAL_STAGGER_MS * 5, () =>
+    runTradingFlowShareholdingTick(workspaceSlug)
   );
   setInterval(() => {
     runTradingFlowShareholdingTick(workspaceSlug).catch((e) =>
@@ -6901,8 +7003,8 @@ function startSchedulers(workspaceSlug: string): void {
   }, TWENTY_FOUR_HOURS_MS);
 
   // PR C: Dividend — every 24h, cadence guard weekend-only
-  runMarketIntelDividendTick(workspaceSlug).catch((e) =>
-    console.error("[market-intel-scheduler] dividend initial tick failed:", e)
+  scheduleInitialSchedulerTick("market-intel-scheduler/dividend", INITIAL_STAGGER_MS * 6, () =>
+    runMarketIntelDividendTick(workspaceSlug)
   );
   setInterval(() => {
     runMarketIntelDividendTick(workspaceSlug).catch((e) =>
@@ -6911,8 +7013,8 @@ function startSchedulers(workspaceSlug: string): void {
   }, TWENTY_FOUR_HOURS_MS);
 
   // PR C: Market value — every 24h, cadence guard weekend-only
-  runMarketIntelMarketValueTick(workspaceSlug).catch((e) =>
-    console.error("[market-intel-scheduler] market-value initial tick failed:", e)
+  scheduleInitialSchedulerTick("market-intel-scheduler/market-value", INITIAL_STAGGER_MS * 7, () =>
+    runMarketIntelMarketValueTick(workspaceSlug)
   );
   setInterval(() => {
     runMarketIntelMarketValueTick(workspaceSlug).catch((e) =>
@@ -6921,8 +7023,8 @@ function startSchedulers(workspaceSlug: string): void {
   }, TWENTY_FOUR_HOURS_MS);
 
   // PR C: Valuation (PER/PBR) — every 24h
-  runMarketIntelValuationTick(workspaceSlug).catch((e) =>
-    console.error("[market-intel-scheduler] valuation initial tick failed:", e)
+  scheduleInitialSchedulerTick("market-intel-scheduler/valuation", INITIAL_STAGGER_MS * 8, () =>
+    runMarketIntelValuationTick(workspaceSlug)
   );
   setInterval(() => {
     runMarketIntelValuationTick(workspaceSlug).catch((e) =>
@@ -6932,8 +7034,8 @@ function startSchedulers(workspaceSlug: string): void {
 
   // PR C: Stock news (experimental) — every 30min
   const THIRTY_MIN_MS_NEWS = 30 * 60 * 1000;
-  runMarketIntelNewsTick(workspaceSlug).catch((e) =>
-    console.error("[market-intel-scheduler] stock-news initial tick failed:", e)
+  scheduleInitialSchedulerTick("market-intel-scheduler/stock-news", INITIAL_STAGGER_MS * 9, () =>
+    runMarketIntelNewsTick(workspaceSlug)
   );
   setInterval(() => {
     runMarketIntelNewsTick(workspaceSlug).catch((e) =>

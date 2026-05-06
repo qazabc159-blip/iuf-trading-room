@@ -3545,3 +3545,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: `/api/v1/data-sources/finmind/status`, `/api/v1/diagnostics/finmind`.
 - Checks: contracts build PASS; web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only; code-only stop-line grep PASS.
 - Stop-lines: no token value, no forced FinMind fetch, no Railway env edit, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no strategy metric.
+
+## 2026-05-07 04:10 TPE - Codex FinMind scheduler budget repair
+
+- Branch: `fix-api-finmind-scheduler-budget-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/api/src/server.ts`, `evidence/w7_paper_sprint/codex_finmind_scheduler_budget_2026-05-07.md`, `C:\Users\User\.claude\projects\C--Users-User\memory\board\codex_channel\codex_to_elva_2026-05-07_finmind_scheduler_budget.md`
+- Behavior: production proved token + OHLCV ingestion work, but boot tried 3,469 tickers plus other FinMind datasets and hit `402 Requests reach the upper limit`; schedulers now use rotating batches, initial stagger, and circuit-open skip.
+- Sources: FinMind scheduler logs, `GET /api/v1/data-sources/finmind/status` state, existing FinMind ETL jobs.
+- Checks: api typecheck PASS; api build PASS; diff-check PASS with CRLF warnings only.
+- Stop-lines: no token value, no Railway env edit, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no strategy metric.
