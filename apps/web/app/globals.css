@@ -712,6 +712,53 @@ button { font: inherit; }
   border-bottom: 1px solid rgba(220, 228, 240, 0.075);
 }
 
+.dashboard-workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.dashboard-command-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  min-height: 118px;
+  padding: 18px 18px 20px;
+  border: 1px solid rgba(226, 184, 92, 0.18);
+  background:
+    linear-gradient(128deg, rgba(226, 184, 92, 0.08), transparent 42%),
+    rgba(3, 8, 14, 0.38);
+  color: var(--night-mid);
+  text-decoration: none;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.dashboard-command-card:hover {
+  border-color: rgba(226, 184, 92, 0.42);
+  background:
+    linear-gradient(128deg, rgba(226, 184, 92, 0.13), transparent 46%),
+    rgba(6, 12, 20, 0.56);
+  transform: translateY(-1px);
+}
+
+.dashboard-command-card span {
+  color: var(--gold-bright);
+  font: 800 12px/1.4 var(--sans-tc);
+}
+
+.dashboard-command-card strong {
+  color: var(--night-ink);
+  font: 760 16px/1.58 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
+.dashboard-command-card small {
+  color: var(--night-soft);
+  font: 12px/1.55 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
 .dashboard-readiness-deck {
   display: grid;
   grid-template-columns: minmax(280px, 0.68fr) minmax(0, 1fr);
