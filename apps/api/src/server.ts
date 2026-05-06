@@ -5947,6 +5947,31 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
   }
 }
 
+// ── Daily-brief dispatcher tick state (in-memory, not persisted) ─────────────
+// Written by runDailyBriefDispatcherTick on every tick. Used by the diag
+// endpoint GET /api/v1/internal/openalice/dispatcher-debug (Owner-only).
+type DispatcherTickResult =
+  | "enqueued"
+  | "skipped_existing_job"
+  | "skipped_existing_brief"
+  | "no_workspace"
+  | "no_db"
+  | "enqueue_failed";
+
+interface DispatcherTickState {
+  lastTickAt: string | null;
+  lastTickResult: DispatcherTickResult | null;
+  lastEnqueueError: string | null;
+  lastEnqueueErrorStack: string | null;
+}
+
+const _lastTickState: DispatcherTickState = {
+  lastTickAt: null,
+  lastTickResult: null,
+  lastEnqueueError: null,
+  lastEnqueueErrorStack: null
+};
+
 /**
  * F3 (patched 2026-05-05): daily_brief dispatcher scheduler.
  *
@@ -5956,11 +5981,16 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
  *
  * Fix: resolve workspace by DB lookup (first row), not by slug env var.
  * Added: date-based idempotency guard to prevent duplicate queued jobs per day.
+ * Added (2026-05-06): explicit try/catch with full error visibility + _lastTickState.
  */
 async function runDailyBriefDispatcherTick(): Promise<void> {
+  const tickAt = new Date().toISOString();
+  _lastTickState.lastTickAt = tickAt;
+
   const db = getDb();
   if (!db) {
     console.warn("[daily-brief-dispatcher] DB unavailable, skipping tick");
+    _lastTickState.lastTickResult = "no_db";
     return;
   }
 
@@ -5971,6 +6001,7 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
     .limit(1);
   if (!workspace) {
     console.warn("[daily-brief-dispatcher] No workspace found in DB, skipping tick");
+    _lastTickState.lastTickResult = "no_workspace";
     return;
   }
 
@@ -5995,6 +6026,7 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
     .limit(1);
   if (existingJob) {
     console.log(`[daily-brief-dispatcher] Job already queued for ${todayStr} (${existingJob.id}), skipping`);
+    _lastTickState.lastTickResult = "skipped_existing_job";
     return;
   }
 
@@ -6011,6 +6043,7 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
     .limit(1);
   if (existingBrief) {
     console.log(`[daily-brief-dispatcher] Brief already exists for ${todayStr}, skipping`);
+    _lastTickState.lastTickResult = "skipped_existing_brief";
     return;
   }
 
@@ -6024,10 +6057,46 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
       parameters: { targetDate: todayStr, autoDispatched: true }
     });
     console.log(`[daily-brief-dispatcher] Enqueued daily_brief for ${todayStr}: jobId=${job.jobId}`);
+    _lastTickState.lastTickResult = "enqueued";
+    _lastTickState.lastEnqueueError = null;
+    _lastTickState.lastEnqueueErrorStack = null;
   } catch (err) {
-    console.error("[daily-brief-dispatcher] Enqueue error:", err instanceof Error ? err.message : String(err));
+    const errName = err instanceof Error ? err.name : "UnknownError";
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const errStack = err instanceof Error && err.stack ? err.stack : null;
+    console.error(
+      "[daily-brief-dispatcher] enqueue threw:",
+      errName,
+      errMsg,
+      errStack ?? "(no stack)"
+    );
+    _lastTickState.lastTickResult = "enqueue_failed";
+    _lastTickState.lastEnqueueError = `${errName}: ${errMsg}`;
+    _lastTickState.lastEnqueueErrorStack = errStack ? errStack.slice(0, 1024) : null;
+    // Do NOT return early — let next tick retry naturally via setInterval.
   }
 }
+
+// ── Dispatcher diag endpoint (Owner-only, internal) ──────────────────────────
+// GET /api/v1/internal/openalice/dispatcher-debug
+// Returns the last tick state written by runDailyBriefDispatcherTick.
+// Requires Owner role — authenticated via the normal iuf_session cookie gate.
+// Does NOT expose any secret, token, or password. Schema/FK error messages are
+// safe to surface (they contain DB schema names, not user data or credentials).
+app.get("/api/v1/internal/openalice/dispatcher-debug", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  return c.json({
+    data: {
+      lastTickAt: _lastTickState.lastTickAt,
+      lastTickResult: _lastTickState.lastTickResult,
+      lastEnqueueError: _lastTickState.lastEnqueueError,
+      lastEnqueueErrorStack: _lastTickState.lastEnqueueErrorStack
+    }
+  });
+});
 
 /**
  * Start both schedulers. Called once after server is ready.
