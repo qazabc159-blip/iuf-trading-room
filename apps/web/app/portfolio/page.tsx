@@ -248,12 +248,19 @@ function estimatedCost(positions: PaperPortfolioPosition[]) {
   }, 0);
 }
 
+function isAuthExpired(reason: string | undefined) {
+  return Boolean(reason?.includes("登入狀態已失效"));
+}
+
 export default async function PortfolioPage() {
   const [result, fillsResult] = await Promise.all([loadPaperPortfolio(), loadPaperFills()]);
   const paperCost = estimatedCost(result.positions);
   const availableCapital = Math.max(PAPER_CAPITAL_TWD - paperCost, 0);
   const fillNotionalTotal = totalFillNotional(fillsResult.fills);
   const recentFills = fillsResult.fills.slice(0, 12);
+  const authExpired =
+    (result.state === "BLOCKED" && isAuthExpired(result.reason))
+    || (fillsResult.state === "BLOCKED" && isAuthExpired(fillsResult.reason));
 
   return (
     <main className="page-frame portfolio-page">
@@ -291,6 +298,22 @@ export default async function PortfolioPage() {
           <strong>1 張 = 1,000 股；零股以實際股數顯示。</strong>
         </div>
       </section>
+
+      {authExpired && (
+        <section className="portfolio-auth-repair" aria-label="登入狀態修復">
+          <div>
+            <span className="tg status-bad">登入狀態失效</span>
+            <h2>紙上交易資料需要重新登入後才能讀取。</h2>
+            <p>
+              這不是紙上交易資料被刪掉，也不是後端沒有接；目前是瀏覽器 session 過期，
+              前端先鎖住讀取結果，避免把 401 誤顯示成真無資料。
+            </p>
+          </div>
+          <Link className="terminal-button primary" href="/login">
+            重新登入
+          </Link>
+        </section>
+      )}
 
       <section className="quote-strip portfolio-account-strip" aria-label="紙上帳戶摘要">
         <div className="quote-card">

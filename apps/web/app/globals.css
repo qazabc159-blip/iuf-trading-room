@@ -970,10 +970,8 @@ button { font: inherit; }
   grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
   max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
+  overflow-x: clip;
   overflow-y: hidden;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
   border-bottom: 1px solid var(--night-rule-strong);
   margin: 18px 0 28px;
 }
@@ -993,8 +991,56 @@ button { font: inherit; }
   font-size: 26px;
   font-weight: 700;
   line-height: 1.16;
+  min-width: 0;
+  max-width: 100%;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.quote-last.num {
   word-break: keep-all;
   overflow-wrap: normal;
+}
+
+.table-scroll,
+.company-data-tabs.finmind-tabs,
+.company-data-tabs.finmind-tabs.company-finance-tabs,
+.company-finance-table-wrap,
+.company-workbench-shell .kline-control-group,
+.company-workbench-shell .paper-order-panel {
+  scrollbar-color: rgba(226, 184, 92, 0.42) rgba(2, 6, 11, 0.56);
+  scrollbar-width: thin;
+}
+
+.table-scroll::-webkit-scrollbar,
+.company-data-tabs.finmind-tabs::-webkit-scrollbar,
+.company-data-tabs.finmind-tabs.company-finance-tabs::-webkit-scrollbar,
+.company-finance-table-wrap::-webkit-scrollbar,
+.company-workbench-shell .kline-control-group::-webkit-scrollbar,
+.company-workbench-shell .paper-order-panel::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.table-scroll::-webkit-scrollbar-track,
+.company-data-tabs.finmind-tabs::-webkit-scrollbar-track,
+.company-data-tabs.finmind-tabs.company-finance-tabs::-webkit-scrollbar-track,
+.company-finance-table-wrap::-webkit-scrollbar-track,
+.company-workbench-shell .kline-control-group::-webkit-scrollbar-track,
+.company-workbench-shell .paper-order-panel::-webkit-scrollbar-track {
+  background: rgba(2, 6, 11, 0.56);
+  border-radius: 999px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb,
+.company-data-tabs.finmind-tabs::-webkit-scrollbar-thumb,
+.company-data-tabs.finmind-tabs.company-finance-tabs::-webkit-scrollbar-thumb,
+.company-finance-table-wrap::-webkit-scrollbar-thumb,
+.company-workbench-shell .kline-control-group::-webkit-scrollbar-thumb,
+.company-workbench-shell .paper-order-panel::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(2, 6, 11, 0.72);
+  border-radius: 999px;
+  background: rgba(226, 184, 92, 0.42);
 }
 
 .market-command-strip {
@@ -1215,6 +1261,33 @@ button { font: inherit; }
   font-size: clamp(15px, 0.95vw, 17px);
   line-height: 1.8;
   letter-spacing: 0;
+}
+
+.portfolio-auth-repair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+  margin-top: 18px;
+  padding: 22px 24px;
+  border: 1px solid rgba(255, 91, 107, 0.26);
+  background:
+    linear-gradient(112deg, rgba(255, 91, 107, 0.08), rgba(226, 184, 92, 0.045) 44%, rgba(5, 9, 14, 0.72)),
+    rgba(6, 10, 15, 0.82);
+}
+
+.portfolio-auth-repair h2 {
+  margin: 6px 0 8px;
+  color: var(--night-ink);
+  font: 900 clamp(20px, 1.8vw, 28px)/1.25 var(--sans-tc);
+  letter-spacing: 0;
+}
+
+.portfolio-auth-repair p {
+  margin: 0;
+  max-width: 760px;
+  color: var(--night-mid);
+  line-height: 1.75;
 }
 
 .portfolio-readout {
@@ -3045,6 +3118,7 @@ button { font: inherit; }
 
 .brief-openalice-grid span {
   display: flex;
+  min-width: 0;
   min-height: 38px;
   align-items: center;
   justify-content: space-between;
@@ -3058,8 +3132,11 @@ button { font: inherit; }
 
 .brief-openalice-grid strong {
   color: var(--night-ink);
+  min-width: 0;
   font: 900 13px/1.2 var(--mono);
-  white-space: nowrap;
+  text-align: right;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .brief-job-panel {
@@ -4671,6 +4748,7 @@ button { font: inherit; }
   }
 
   .portfolio-truth-strip,
+  .portfolio-auth-repair,
   .portfolio-next-actions {
     grid-template-columns: 1fr;
   }

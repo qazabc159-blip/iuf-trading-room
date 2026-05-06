@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip, signed, toneClass } from "@/components/RadarWidgets";
+import { MetricStrip } from "@/components/RadarWidgets";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanNarrativeText } from "@/lib/operator-copy";
 import { labDisplay, radarLabApi, type LabBundleStatus, type LabSignalBundle } from "@/lib/radar-lab";
@@ -79,28 +79,26 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
   const cells = useMemo(() => {
     if (!statsAvailable) {
       return [
+        { label: "總包數", value: "--", tone: "muted" as const },
         { label: "待審", value: "--", tone: "muted" as const },
         { label: "已核准", value: "--", tone: "muted" as const },
+        { label: "已退回", value: "--", tone: "muted" as const },
         { label: "已送出", value: "--", tone: "muted" as const },
-        { label: "平均信心", value: "--", tone: "muted" as const },
-        { label: "平均報酬", value: "--", tone: "muted" as const },
-        { label: "最大回撤", value: "--", tone: "muted" as const },
+        { label: "績效", value: "隱藏", tone: "gold" as const },
       ];
     }
 
     const pending = bundles.filter((bundle) => bundle.status === "NEW").length;
     const approved = bundles.filter((bundle) => bundle.status === "APPROVED").length;
+    const rejected = bundles.filter((bundle) => bundle.status === "REJECTED").length;
     const pushed = bundles.filter((bundle) => bundle.status === "PUSHED").length;
-    const avgConfidence = bundles.length ? bundles.reduce((sum, bundle) => sum + bundle.confidence, 0) / bundles.length : null;
-    const avgReturn = bundles.length ? bundles.reduce((sum, bundle) => sum + bundle.backtest.totalReturnPct, 0) / bundles.length : null;
-    const worstDrawdown = bundles.length ? Math.min(...bundles.map((bundle) => bundle.backtest.maxDrawdownPct)) : null;
     return [
+      { label: "總包數", value: bundles.length, tone: "muted" as const },
       { label: "待審", value: pending, tone: "muted" as const },
       { label: "已核准", value: approved, tone: "status-ok" as const },
+      { label: "已退回", value: rejected, tone: rejected > 0 ? "status-bad" as const : "muted" as const },
       { label: "已送出", value: pushed, tone: "gold" as const },
-      { label: "平均信心", value: avgConfidence === null ? "--" : `${Math.round(avgConfidence * 100)}%`, tone: "muted" as const },
-      { label: "平均報酬", value: avgReturn === null ? "--" : `${signed(avgReturn, 1)}%`, tone: avgReturn === null ? "muted" as const : toneClass(avgReturn) },
-      { label: "最大回撤", value: worstDrawdown === null ? "--" : `${worstDrawdown.toFixed(1)}%`, tone: worstDrawdown !== null && worstDrawdown < -6 ? "status-bad" as const : "muted" as const },
+      { label: "績效", value: "待核准", tone: "gold" as const },
     ];
   }, [bundles, statsAvailable]);
 
@@ -133,7 +131,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
           <h2>先收正式策略包，再談績效曲線。</h2>
           <p>
             這頁是 OpenAlice / Quant Lab 的交接面。沒有正式 bundle 時只顯示資料狀態；
-            有 bundle 才顯示回測摘要、審核狀態與分歧回饋。
+            有 bundle 也只先顯示來源、狀態與分歧回饋；未經 Athena schema 與 Bruce harness 核准前，不顯示勝率、報酬或權益曲線。
           </p>
         </div>
         <div className="lab-source-card">
@@ -152,7 +150,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
               <strong>量化策略包資料尚未接上。</strong>
               <p>負責人：量化研究交接管線。細節：{blockedReason}</p>
               <div>
-                <span>接上後顯示：策略包、股票、主題、信心、回測摘要、分歧備註。</span>
+                <span>接上後顯示：策略包、股票、主題、來源、審核狀態、分歧備註。</span>
                 <span>仍不會顯示：未驗證 Sharpe、假 equity curve、假交易紀錄。</span>
               </div>
             </div>
@@ -181,8 +179,8 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
                   <div className="lab-bundle-metrics">
                     <span><b>{bundle.symbol}</b><small>股票</small></span>
                     <span><b>{bundle.themeCode}</b><small>主題</small></span>
-                    <span><b>{Math.round(bundle.confidence * 100)}%</b><small>信心</small></span>
-                    <span><b className={toneClass(bundle.backtest.totalReturnPct)}>{signed(bundle.backtest.totalReturnPct, 1)}%</b><small>回測報酬</small></span>
+                    <span><b>{timeText(bundle.createdAt)}</b><small>建立</small></span>
+                    <span><b className="gold">待核准</b><small>績效隱藏</small></span>
                   </div>
 
                   <div className="lab-bundle-actions">
@@ -218,9 +216,9 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
                 <div className="tg soft">{selected.symbol} / {selected.themeCode} / {timeText(selected.createdAt)}</div>
                 <p>{safeSummary(selected.summary)}</p>
                 <div className="lab-selected-metrics">
-                  <span><b>{Math.round(selected.backtest.winRate * 100)}%</b><small>勝率</small></span>
-                  <span><b className={toneClass(selected.backtest.totalReturnPct)}>{signed(selected.backtest.totalReturnPct, 1)}%</b><small>報酬</small></span>
-                  <span><b className="status-bad">{selected.backtest.maxDrawdownPct.toFixed(1)}%</b><small>最大回撤</small></span>
+                  <span><b>{selected.symbol}</b><small>股票</small></span>
+                  <span><b>{selected.themeCode}</b><small>主題</small></span>
+                  <span><b className="gold">未核准</b><small>績效不顯示</small></span>
                 </div>
                 <Link className="mini-button" href={`/lab/${selected.bundleId}`} style={{ marginTop: 12 }}>
                   查看明細
