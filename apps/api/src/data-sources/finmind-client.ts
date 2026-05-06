@@ -203,6 +203,17 @@ export interface FinMindKBarRow {
   volume: number;
 }
 
+// FinMindNewsRow — TaiwanStockNews (個股新聞)
+// EXPERIMENTAL: endpoint availability depends on sponsor tier.
+// title + url + date used for deduplication hash.
+export interface FinMindNewsRow {
+  date: string;           // 'YYYY-MM-DD HH:mm:ss' or 'YYYY-MM-DD'
+  stock_id: string;
+  title: string;
+  url?: string;
+  source_name?: string;   // news outlet, may not be present in all tiers
+}
+
 // ── Cache TTL constants (seconds) ─────────────────────────────────────────────
 
 const TTL_OHLCV     = 600;    // 10 min — refreshed daily but cache hits during day
@@ -737,6 +748,33 @@ export class FinMindClient {
 
     if (rows.length > 0) {
       await cacheSet(cacheKey, JSON.stringify(rows), TTL_CHIP, this._redisOverride);
+    }
+    return rows;
+  }
+
+  // ── Stock News [EXPERIMENTAL] ─────────────────────────────────────────────
+  // TaiwanStockNews — 30min incremental pull (last 24h).
+  // Availability depends on sponsor tier; may return empty on restricted accounts.
+  // Callers MUST treat empty response as state=DEGRADED, not as an error.
+
+  async getStockNews(stockId: string, startDate: string, endDate: string): Promise<FinMindNewsRow[]> {
+    const cacheKey = `finmind:news:${stockId}:${startDate}:${endDate}`;
+
+    const cached = await cacheGet(cacheKey, this._redisOverride);
+    if (cached) {
+      try { return JSON.parse(cached) as FinMindNewsRow[]; } catch { /* fall through */ }
+    }
+
+    const rows = await this._fetch<FinMindNewsRow>(
+      "TaiwanStockNews",
+      stockId,
+      startDate,
+      endDate
+    );
+
+    // Short TTL for news — 5 min (reviewer keystone, needs freshness)
+    if (rows.length > 0) {
+      await cacheSet(cacheKey, JSON.stringify(rows), 300, this._redisOverride);
     }
     return rows;
   }
