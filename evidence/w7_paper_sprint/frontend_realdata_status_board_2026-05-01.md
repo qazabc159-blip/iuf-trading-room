@@ -3477,3 +3477,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: `/api/v1/companies`, `/api/v1/strategy-ideas`, `/api/v1/companies/:id/announcements?days=30`, `/api/v1/data-sources/finmind/status`.
 - Checks: contracts build PASS; web typecheck PASS; web build PASS; diff-check PASS; mojibake scan PASS; added-line stop-line grep PASS.
 - Stop-lines: no token value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake news/live, no buy/sell wording, no unapproved strategy metrics.
+
+## 2026-05-07 02:05 TPE - Codex paper company-to-portfolio flow guide
+
+- Branch: `fix-web-paper-flow-guide-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/app/companies/[symbol]/PaperOrderPanel.tsx`, `apps/web/app/portfolio/page.tsx`, `apps/web/app/globals.css`, `evidence/w7_paper_sprint/codex_paper_company_to_portfolio_flow_guide_2026-05-07.md`
+- Behavior: company-page paper panel now has a stable `#paper-order` anchor and a `查看紙上部位` flow guide; portfolio next action now returns directly to `/companies/2330#paper-order`.
+- Sources: existing paper preview/health/orders, portfolio, and fills endpoints only.
+- Checks: contracts build PASS; web typecheck PASS; web build PASS; diff-check PASS; added-line stop-line grep PASS.
+- Stop-lines: no submit enablement, no `/order/create`, no KGI write-side, no fake fill/position, no token value, no FinMind/K-line fill source, no buy/sell wording.
