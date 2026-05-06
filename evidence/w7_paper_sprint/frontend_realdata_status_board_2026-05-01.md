@@ -3440,3 +3440,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: web typecheck PASS; web build PASS; git diff --check PASS with CRLF warnings only; added-line stop-line grep PASS.
 - Stop-lines: no token, no fake live, no broker write path, no formal order route, no migration/schema/destructive DB, no FinMind/K-line fill or risk source, no unapproved strategy metric exposure.
 - Next: push PR, then continue Paper E2E company-to-portfolio guide and OpenAlice daily brief automation source trail.
+
+## Codex Update - 2026-05-07 00:45 Taipei - Homepage workflow repair
+- Trade Capability Score: +1. Workflow improved: homepage now acts as the trading workflow cockpit instead of a stale information wall.
+- Files: apps/web/components/PageFrame.tsx; apps/web/app/page.tsx; apps/web/app/globals.css; evidence/w7_paper_sprint/codex_homepage_workflow_repair_2026-05-06.md.
+- Endpoint/source: FinMind status/diagnostics, market-data overview, ops snapshot, briefs, content-drafts, paper health, strategy ideas, strategy runs.
+- Behavior: shared PageFrame labels are readable Traditional Chinese; homepage only shows FinMind, market data, OpenAlice daily brief, paper health, strategy/quant intake, and next workflow links; stale themes/signals/runs tables are removed from the homepage path.
+- Checks: contracts build PASS; web typecheck PASS; web build PASS; mojibake sentinel scan PASS; diff-check PASS; added-line stop-line grep PASS.
+- Stop-lines: no token, no fake live, no broker write path, no formal order route, no migration/schema/destructive DB, no FinMind/K-line fill or risk source, no unapproved strategy metric exposure.
+- Next: push PR; then continue OpenAlice daily brief automation closure and Market Intel live frontend once backend deploy is confirmed.

@@ -1,14 +1,15 @@
 import Link from "next/link";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
+import { MetricStrip } from "@/components/RadarWidgets";
 import {
+  getBriefs,
+  getContentDrafts,
   getFinMindDiagnostics,
   getFinMindStatus,
   getMarketDataOverview,
   getOpsSnapshot,
-  getSignals,
   getStrategyIdeas,
-  getThemes,
   listStrategyRuns,
   type FinMindDiagnosticsStatus,
   type FinMindSourceStatus,
@@ -16,26 +17,28 @@ import {
   type OpsSnapshotData,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
-import { cleanExternalHeadline, cleanThemeThesis } from "@/lib/operator-copy";
+import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
 
 export const dynamic = "force-dynamic";
-
-type ThemeRow = Awaited<ReturnType<typeof getThemes>>["data"][number];
-type SignalRow = Awaited<ReturnType<typeof getSignals>>["data"][number];
-type StrategyIdeaView = Awaited<ReturnType<typeof getStrategyIdeas>>["data"];
-type StrategyRunView = Awaited<ReturnType<typeof listStrategyRuns>>["data"];
-type FinMindDataset = FinMindSourceStatus["datasets"][number];
-
-type DashboardFinMindStatus = FinMindSourceStatus & {
-  diagnostics: FinMindDiagnosticsStatus | null;
-  diagnosticsError?: string;
-};
 
 type SourceState = "LIVE" | "EMPTY" | "BLOCKED";
 type LoadState<T> =
   | { state: "LIVE"; data: T; updatedAt: string; source: string }
   | { state: "EMPTY"; data: T; updatedAt: string; source: string; reason: string }
   | { state: "BLOCKED"; data: T; updatedAt: string; source: string; reason: string };
+
+type FinMindDashboard = {
+  status: FinMindSourceStatus;
+  diagnostics: FinMindDiagnosticsStatus | null;
+};
+
+type DailyBriefDashboard = {
+  today: string;
+  state: "PUBLISHED" | "AWAITING_REVIEW" | "MISSING" | "BLOCKED";
+  latestDate: string | null;
+  draftCount: number;
+  reason?: string;
+};
 
 const TAIPEI_TIME_ZONE = "Asia/Taipei";
 
@@ -48,7 +51,7 @@ async function load<T>(
   emptyValue: T,
   fn: () => Promise<T>,
   isEmpty: (value: T) => boolean,
-  emptyReason = "正式資料來源目前回傳 0 筆。"
+  emptyReason: string,
 ): Promise<LoadState<T>> {
   const updatedAt = nowIso();
   try {
@@ -68,54 +71,16 @@ async function load<T>(
   }
 }
 
-function statusText(state: SourceState) {
-  if (state === "LIVE") return "正常";
-  if (state === "EMPTY") return "無資料";
-  return "暫停";
+function todayTaipeiDate() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: TAIPEI_TIME_ZONE });
 }
 
-function statusTone(state: SourceState) {
-  if (state === "LIVE") return "status-ok";
-  if (state === "EMPTY") return "gold";
-  return "status-bad";
-}
-
-function StatusPill({ state, label }: { state: SourceState; label?: string }) {
-  return <span className={`tg ${statusTone(state)}`}>{label ?? statusText(state)}</span>;
-}
-
-function formatCount(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("zh-TW") : "--";
-}
-
-function isFinMindDatasetLive(dataset: FinMindDataset) {
-  return dataset.state === "LIVE" || dataset.state === "READY";
-}
-
-function isFinMindDatasetPending(dataset: FinMindDataset) {
-  return dataset.state === "STALE" || dataset.state === "EMPTY" || dataset.state === "FALLBACK" || dataset.state === "DEGRADED";
-}
-
-function isFinMindDatasetBlocked(dataset: FinMindDataset) {
-  return dataset.state === "BLOCKED" || dataset.state === "ERROR" || dataset.state === "MOCK" || dataset.state === "CLOSED";
-}
-
-function finMindDatasetClass(dataset: FinMindDataset) {
-  if (isFinMindDatasetLive(dataset)) return "is-ready";
-  if (isFinMindDatasetPending(dataset)) return "is-pending";
-  return "is-blocked";
-}
-
-function finMindDatasetLabel(dataset: FinMindDataset) {
-  if (dataset.state === "LIVE" || dataset.state === "READY") return "正常";
-  if (dataset.state === "STALE") return "過期";
-  if (dataset.state === "EMPTY") return "無資料";
-  if (dataset.state === "FALLBACK") return "待接";
-  if (dataset.state === "DEGRADED") return "降級";
-  if (dataset.state === "ERROR") return "錯誤";
-  if (dataset.state === "MOCK") return "停用";
-  if (dataset.state === "CLOSED") return "暫停";
-  return "阻擋";
+function dateKey(value?: string | null) {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-CA", { timeZone: TAIPEI_TIME_ZONE });
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -132,473 +97,320 @@ function formatDateTime(value: string | null | undefined) {
   });
 }
 
-function taipeiDateKey(value?: string | null) {
-  if (!value) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("en-CA", { timeZone: TAIPEI_TIME_ZONE });
+function formatCount(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("zh-TW") : "--";
 }
 
-function todayTaipeiKey() {
-  return new Date().toLocaleDateString("en-CA", { timeZone: TAIPEI_TIME_ZONE });
+function stateLabel(state: SourceState) {
+  if (state === "LIVE") return "正常";
+  if (state === "EMPTY") return "無資料";
+  return "暫停";
 }
 
-function daysBetweenDateKeys(left: string, right: string) {
-  const [ly, lm, ld] = left.split("-").map(Number);
-  const [ry, rm, rd] = right.split("-").map(Number);
-  if (!ly || !lm || !ld || !ry || !rm || !rd) return null;
-  return Math.floor((Date.UTC(ry, rm - 1, rd) - Date.UTC(ly, lm - 1, ld)) / 86_400_000);
+function stateTone(state: SourceState) {
+  if (state === "LIVE") return "status-ok";
+  if (state === "EMPTY") return "gold";
+  return "status-bad";
 }
 
-function freshness(value: string | null | undefined) {
-  const key = taipeiDateKey(value);
-  if (!key) return { label: "時間未知", tone: "gold", ageDays: null as number | null };
-  const ageDays = daysBetweenDateKeys(key, todayTaipeiKey());
-  if (ageDays === null) return { label: "時間未知", tone: "gold", ageDays };
-  if (ageDays <= 0) return { label: "今日資料", tone: "status-ok", ageDays };
-  if (ageDays === 1) return { label: "昨日資料", tone: "status-ok", ageDays };
-  if (ageDays <= 7) return { label: `過期 ${ageDays} 天`, tone: "gold", ageDays };
-  return { label: `過期 ${ageDays} 天`, tone: "status-bad", ageDays };
+function StatusPill({ state, label }: { state: SourceState; label?: string }) {
+  return <span className={`tg ${stateTone(state)}`}>{label ?? stateLabel(state)}</span>;
 }
 
-function latestIso(values: Array<string | null | undefined>) {
-  let latest: string | null = null;
-  let latestTime = Number.NEGATIVE_INFINITY;
-  for (const value of values) {
-    if (!value) continue;
-    const time = Date.parse(value);
-    if (Number.isFinite(time) && time > latestTime) {
-      latest = value;
-      latestTime = time;
-    }
-  }
-  return latest;
+function datasetState(dataset: FinMindSourceStatus["datasets"][number]): SourceState {
+  if (dataset.state === "LIVE" || dataset.state === "READY") return "LIVE";
+  if (dataset.state === "EMPTY" || dataset.state === "STALE" || dataset.state === "FALLBACK" || dataset.state === "DEGRADED") return "EMPTY";
+  return "BLOCKED";
 }
 
-function sourceLine<T>({ state, label, maxAgeDays = 1 }: { state: LoadState<T>; label: string; maxAgeDays?: number }) {
-  const info = freshness(state.updatedAt);
-  const stale = state.state === "LIVE" && info.ageDays !== null && info.ageDays > maxAgeDays;
-  return {
-    label,
-    source: state.source,
-    state: stale ? "BLOCKED" as const : state.state,
-    updatedAt: state.updatedAt,
-    freshness: info,
-    reason: stale ? `資料已${info.label}，不放入今日戰情判讀。` : state.state === "LIVE" ? undefined : state.reason,
-  };
+function datasetLabel(dataset: FinMindSourceStatus["datasets"][number]) {
+  if (dataset.state === "LIVE" || dataset.state === "READY") return "正常";
+  if (dataset.state === "EMPTY") return "無資料";
+  if (dataset.state === "STALE") return "過期";
+  if (dataset.state === "DEGRADED" || dataset.state === "FALLBACK") return "降級";
+  return "暫停";
 }
 
-function SourceLine<T>({ state, label, maxAgeDays = 1 }: { state: LoadState<T>; label: string; maxAgeDays?: number }) {
-  const line = sourceLine({ state, label, maxAgeDays });
+function datasetClass(dataset: FinMindSourceStatus["datasets"][number]) {
+  const state = datasetState(dataset);
+  if (state === "LIVE") return "is-ready";
+  if (state === "EMPTY") return "is-pending";
+  return "is-blocked";
+}
+
+function sourceLine<T>({ state, label }: { state: LoadState<T>; label: string }) {
   return (
     <div className="tg soft source-line">
-      <StatusPill state={line.state} label={line.state === "BLOCKED" && line.reason?.includes("過期") ? "過期" : undefined} />
+      <StatusPill state={state.state} />
       <span>{label}</span>
-      <span>來源：{line.source}</span>
-      <span>更新：{formatDateTime(line.updatedAt)}</span>
-      <span className={`tg ${line.freshness.tone}`}>{line.freshness.label}</span>
-      {line.reason && <span>{line.reason}</span>}
+      <span>來源：{state.source}</span>
+      <span>更新：{formatDateTime(state.updatedAt)}</span>
+      {"reason" in state && <span>{state.reason}</span>}
     </div>
   );
 }
 
-function EmptyOrBlocked<T>({ state, maxAgeDays = 1 }: { state: LoadState<T>; maxAgeDays?: number }) {
-  const info = freshness(state.updatedAt);
-  const stale = state.state === "LIVE" && info.ageDays !== null && info.ageDays > maxAgeDays;
-  if (state.state === "LIVE" && !stale) return null;
-  const reason = state.state === "LIVE" ? "" : state.reason;
-  return (
-    <div className="terminal-note">
-      <StatusPill state={stale ? "BLOCKED" : state.state} label={stale ? "過期" : undefined} />{" "}
-      {stale ? `資料已${info.label}，暫不放入今日決策區。` : reason}
-    </div>
-  );
+function asDraftRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function themeName(theme: ThemeRow) {
-  return theme.name.replace(/^\[ORPHAN\]\s*/i, "待整理：");
+function draftDate(payload: unknown, fallback: string | null) {
+  const record = asDraftRecord(payload);
+  const value = record.date ?? record.targetDate;
+  return typeof value === "string" ? value.slice(0, 10) : fallback?.slice(0, 10) ?? null;
 }
 
-function isInternalTestSignal(signal: SignalRow) {
-  const text = `${signal.title} ${signal.summary ?? ""} ${signal.category}`.toLowerCase();
-  return /bruce|dryrun|smoke|test signal|verify/.test(text);
-}
-
-function directionText(value: string) {
-  if (value === "bullish") return "正向";
-  if (value === "bearish") return "負向";
-  return "中性";
-}
-
-function decisionText(value: string) {
-  if (value === "allow") return "可觀察";
-  if (value === "review") return "需審核";
-  if (value === "block") return "阻擋";
-  return value;
-}
-
-function tone(value: number | null | undefined) {
-  if (typeof value !== "number") return "muted";
-  if (value > 0) return "up";
-  if (value < 0) return "down";
-  return "muted";
-}
-
-function signedPct(value: number | null | undefined) {
-  if (typeof value !== "number") return "--";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
-}
-
-async function loadFinMindStatus(): Promise<LoadState<DashboardFinMindStatus | null>> {
+async function loadFinMindDashboard(): Promise<LoadState<FinMindDashboard | null>> {
   const updatedAt = nowIso();
-  const [statusResult, diagnosticsResult] = await Promise.allSettled([
-    getFinMindStatus(),
-    getFinMindDiagnostics(),
-  ]);
-
-  if (statusResult.status === "rejected" && diagnosticsResult.status === "rejected") {
+  try {
+    const [status, diagnostics] = await Promise.all([
+      getFinMindStatus(),
+      getFinMindDiagnostics().then((response) => response.data).catch(() => null),
+    ]);
+    const data = { status: status.data, diagnostics };
+    if (!status.data.tokenPresent || status.data.state === "BLOCKED") {
+      return {
+        state: "BLOCKED",
+        data,
+        updatedAt: status.data.updatedAt ?? updatedAt,
+        source: "FinMind",
+        reason: "FinMind token 或資料源目前不可用。",
+      };
+    }
+    return {
+      state: status.data.state === "LIVE_READY" ? "LIVE" : "EMPTY",
+      data,
+      updatedAt: status.data.updatedAt ?? updatedAt,
+      source: "FinMind",
+      ...(status.data.state === "LIVE_READY" ? {} : { reason: "FinMind 可連線，但部分資料集仍待接或降級。" }),
+    } as LoadState<FinMindDashboard | null>;
+  } catch (error) {
     return {
       state: "BLOCKED",
       data: null,
       updatedAt,
       source: "FinMind",
-      reason: `${friendlyDataError(statusResult.reason)} / ${friendlyDataError(diagnosticsResult.reason)}`,
+      reason: friendlyDataError(error),
     };
   }
+}
 
-  const diagnostics = diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value.data : null;
-  const status = statusResult.status === "fulfilled"
-    ? statusResult.value.data
-    : {
-        source: "FINMIND" as const,
-        state: diagnostics?.tokenPresent ? "LIVE_READY" as const : "BLOCKED" as const,
-        tokenPresent: diagnostics?.tokenPresent ?? false,
-        quota: {
-          used: diagnostics?.inProcess.requestCount ?? null,
-          limit: diagnostics?.quotaLimitPerHour ?? null,
-          source: diagnostics ? `diagnostics:${diagnostics.quotaTier}` : "diagnostics_unavailable",
-        },
-        datasets: [],
-        notes: diagnostics ? [diagnostics.note] : [],
-        updatedAt,
+async function loadDailyBriefDashboard(): Promise<LoadState<DailyBriefDashboard>> {
+  const today = todayTaipeiDate();
+  return load<DailyBriefDashboard>(
+    "OpenAlice / Daily Brief",
+    { today, state: "BLOCKED", latestDate: null, draftCount: 0, reason: "每日簡報資料暫時不可讀。" },
+    async () => {
+      const [briefsResult, draftsResult] = await Promise.allSettled([
+        getBriefs(),
+        getContentDrafts({ status: "awaiting_review", limit: 50 }),
+      ]);
+      if (briefsResult.status === "rejected" && draftsResult.status === "rejected") {
+        throw briefsResult.reason;
+      }
+
+      const briefs = briefsResult.status === "fulfilled" ? briefsResult.value.data : [];
+      const drafts = draftsResult.status === "fulfilled" ? draftsResult.value.data : [];
+      const sortedBriefs = [...briefs].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+      const latest = sortedBriefs[0] ?? null;
+      const todayBrief = sortedBriefs.find((brief) => brief.status === "published" && brief.date.slice(0, 10) === today);
+      const todayDrafts = drafts.filter((draft) => draft.targetTable === "daily_briefs" && draftDate(draft.payload, draft.targetEntityId) === today);
+
+      if (todayBrief) {
+        return { today, state: "PUBLISHED" as const, latestDate: todayBrief.date.slice(0, 10), draftCount: todayDrafts.length };
+      }
+      if (todayDrafts.length > 0) {
+        return { today, state: "AWAITING_REVIEW" as const, latestDate: latest?.date.slice(0, 10) ?? null, draftCount: todayDrafts.length };
+      }
+      return {
+        today,
+        state: "MISSING" as const,
+        latestDate: latest?.date.slice(0, 10) ?? null,
+        draftCount: todayDrafts.length,
+        reason: "今天尚未發布每日簡報，也沒有待審草稿。",
       };
-
-  const data: DashboardFinMindStatus = {
-    ...status,
-    diagnostics,
-    diagnosticsError: diagnosticsResult.status === "rejected" ? friendlyDataError(diagnosticsResult.reason) : undefined,
-  };
-
-  if (!data.tokenPresent && !diagnostics?.tokenPresent) {
-    return { state: "BLOCKED", data, updatedAt: data.updatedAt || updatedAt, source: "FinMind", reason: "後端未偵測到 FinMind token。" };
-  }
-
-  return { state: "LIVE", data, updatedAt: data.updatedAt || updatedAt, source: "FinMind" };
-}
-
-function Hero({ sources }: { sources: Array<ReturnType<typeof sourceLine>> }) {
-  const healthy = sources.filter((item) => item.state === "LIVE").length;
-  const blocked = sources.filter((item) => item.state === "BLOCKED").length;
-  return (
-    <section className="dashboard-hero dashboard-command-deck" aria-label="戰情台資料健康">
-      <div className="dashboard-hero-main">
-        <span className="tg gold">IUF 台股戰情室</span>
-        <h2>先確認資料能不能用，再進交易工作流。</h2>
-        <p>
-          這一頁只呈現真實來源狀態。過期、空資料、登入失效或後端阻擋都會被標示出來，不會把舊訊號包裝成今日情報。
-          KGI 正式下單仍鎖在 <code>libCGCrypt.so</code> 之外；紙上交易只做預覽與風控說明。
-        </p>
-        <div className="dashboard-hero-kpis dashboard-hero-kpis-inline">
-          <div className="dashboard-hero-stat">
-            <span className="tg soft">可用來源</span>
-            <strong className="num status-ok">{healthy}</strong>
-          </div>
-          <div className="dashboard-hero-stat">
-            <span className="tg soft">需處理</span>
-            <strong className={`num ${blocked > 0 ? "down" : "status-ok"}`}>{blocked}</strong>
-          </div>
-          <div className="dashboard-hero-stat">
-            <span className="tg soft">交易能力</span>
-            <strong className="num gold">Paper</strong>
-          </div>
-          <div className="dashboard-hero-stat">
-            <span className="tg soft">正式下單</span>
-            <strong className="num down">封鎖</strong>
-          </div>
-        </div>
-      </div>
-      <div className="dashboard-source-rail" aria-label="資料來源狀態">
-        {sources.map((section) => (
-          <div className="dashboard-source-chip" key={section.label}>
-            <div>
-              <span className="tg gold">{section.label}</span>
-              <span className="tg soft"> / {formatDateTime(section.updatedAt)}</span>
-              <span className={`tg ${section.freshness.tone}`}> / {section.freshness.label}</span>
-            </div>
-            <StatusPill state={section.state} label={section.state === "BLOCKED" && section.reason?.includes("過期") ? "過期" : undefined} />
-          </div>
-        ))}
-      </div>
-    </section>
+    },
+    (value) => value.state === "MISSING",
+    "今天尚未發布每日簡報。",
   );
 }
 
-function FinMindPanel({ finmind }: { finmind: LoadState<DashboardFinMindStatus | null> }) {
-  const data = finmind.data;
-  const diagnostics = data?.diagnostics ?? null;
-  const datasets = data?.datasets ?? [];
-  const ready = datasets.filter(isFinMindDatasetLive);
-  const degraded = datasets.filter(isFinMindDatasetPending);
-  const blocked = datasets.filter(isFinMindDatasetBlocked);
-  const quotaLimit = data?.quota.limit ?? diagnostics?.quotaLimitPerHour ?? null;
-  const quotaUsed = data?.quota.used ?? diagnostics?.inProcess.requestCount ?? null;
-
-  return (
-    <Panel code="SRC-FIN" title="FinMind 資料源" sub="Sponsor 999 / 不顯示 token 值" right={<StatusPill state={finmind.state} />}>
-      <SourceLine state={finmind} label="FinMind 診斷" maxAgeDays={1} />
-      <div className="quote-strip">
-        <div className="quote-card">
-          <div className="tg">Token</div>
-          <div className={`quote-last ${data?.tokenPresent || diagnostics?.tokenPresent ? "up" : "down"}`}>
-            {data?.tokenPresent || diagnostics?.tokenPresent ? "存在" : "缺少"}
-          </div>
-          <div className="tg soft">只顯示 presence，不顯示 token 值。</div>
-        </div>
-        <div className="quote-card">
-          <div className="tg">Quota</div>
-          <div className="quote-last num">{formatCount(quotaLimit)} / 小時</div>
-          <div className="tg soft">後端目前記錄使用 {formatCount(quotaUsed)} 次。</div>
-        </div>
-        <div className="quote-card">
-          <div className="tg">資料集</div>
-          <div className="quote-last num status-ok">{ready.length}</div>
-          <div className="tg soft">正常 {ready.length} / 待補 {degraded.length} / 阻擋 {blocked.length}</div>
-        </div>
-        <div className="quote-card">
-          <div className="tg">最近請求</div>
-          <div className="quote-last">{diagnostics?.inProcess.lastDataset ?? "--"}</div>
-          <div className="tg soft">{formatDateTime(diagnostics?.inProcess.lastFetchTs)}</div>
-        </div>
-      </div>
-      {datasets.length > 0 && (
-        <div className="dashboard-dataset-ribbon" aria-label="FinMind 資料集狀態">
-          <span className="tg soft">資料集</span>
-          {datasets.map((dataset) => {
-            const count = typeof dataset.rowCount === "number" ? ` · ${formatCount(dataset.rowCount)} 筆` : "";
-            const latest = dataset.latestDate ? ` · ${dataset.latestDate}` : "";
-            return (
-              <span
-                className={`dashboard-dataset-token ${finMindDatasetClass(dataset)}`}
-                key={dataset.key}
-                title={`${dataset.key}: ${dataset.state}${dataset.missingReason ? ` / ${dataset.missingReason}` : ""}`}
-              >
-                {dataset.label} / {finMindDatasetLabel(dataset)}{count}{latest}
-              </span>
-            );
-          })}
-        </div>
-      )}
-      {finmind.state !== "LIVE" && <EmptyOrBlocked state={finmind} />}
-    </Panel>
+async function loadPaperHealthState(): Promise<LoadState<PaperHealthState | null>> {
+  return load(
+    "Paper Health",
+    null,
+    async () => getPaperHealth(),
+    (value) => value === null,
+    "紙上交易健康檢查目前沒有回傳資料。",
   );
 }
 
-function MarketPanel({ overview }: { overview: LoadState<MarketDataOverview | null> }) {
-  if (overview.state !== "LIVE" || !overview.data) {
-    return (
-      <Panel code="MKT" title="市場資料" sub="報價 / 可用性" right={<StatusPill state={overview.state} />}>
-        <SourceLine state={overview} label="市場資料" />
-        <EmptyOrBlocked state={overview} />
-      </Panel>
-    );
-  }
-
-  const data = overview.data;
-  const leaders = [...data.leaders.topGainers.slice(0, 3), ...data.leaders.topLosers.slice(0, 3)];
-  return (
-    <Panel code="MKT" title="市場資料" sub="行情覆蓋與 paper 可用性" right={<StatusPill state="LIVE" />}>
-      <SourceLine state={overview} label="市場資料" />
-      <div className="quote-strip">
-        <div className="quote-card">
-          <div className="tg">報價總數</div>
-          <div className="quote-last num">{formatCount(data.quotes.total)}</div>
-          <div className="tg soft">新鮮 {formatCount(data.quotes.fresh)} / 過期 {formatCount(data.quotes.stale)}</div>
-        </div>
-        <div className="quote-card">
-          <div className="tg">Paper 可用</div>
-          <div className="quote-last num status-ok">{formatCount(data.quotes.readiness.effectiveSelection.paperUsable)}</div>
-          <div className="tg soft">阻擋 {formatCount(data.quotes.readiness.effectiveSelection.blocked)}</div>
-        </div>
-        <div className="quote-card">
-          <div className="tg">資料來源</div>
-          <div className="quote-last">{data.quotes.readiness.connectedSources.join(" / ") || "--"}</div>
-          <div className="tg soft">只做資料狀態，不作為成交價。</div>
-        </div>
-      </div>
-      {leaders.length > 0 && (
-        <div className="data-table compact">
-          {leaders.map((item) => (
-            <div className="row" key={`${item.source}-${item.symbol}-${item.changePct}`}>
-              <span className="tg gold">{item.symbol}</span>
-              <span className={`num ${tone(item.changePct)}`}>{signedPct(item.changePct)}</span>
-              <span className="tg soft">{item.source.toUpperCase()}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-function OpenAlicePanel({ ops }: { ops: LoadState<OpsSnapshotData | null> }) {
-  const openAlice = ops.data?.openAlice;
-  const obs = openAlice?.observability;
-  const workerState: SourceState = obs?.workerStatus === "healthy" ? "LIVE" : obs ? "BLOCKED" : ops.state;
-  const sweepState: SourceState = obs?.sweepStatus === "healthy" ? "LIVE" : obs ? "BLOCKED" : ops.state;
+function finMindPanel(finmind: LoadState<FinMindDashboard | null>) {
+  const status = finmind.data?.status;
+  const diagnostics = finmind.data?.diagnostics;
+  const datasets = status?.datasets ?? [];
+  const live = datasets.filter((item) => datasetState(item) === "LIVE").length;
+  const pending = datasets.filter((item) => datasetState(item) === "EMPTY").length;
+  const blocked = datasets.filter((item) => datasetState(item) === "BLOCKED").length;
+  const latestDataset = diagnostics?.inProcess.lastDataset ?? datasets.find((item) => item.latestDate)?.label ?? "--";
 
   return (
-    <Panel code="BRF" title="OpenAlice / 每日簡報" sub="來源追蹤與工作佇列" right={<StatusPill state={workerState} />}>
-      <SourceLine state={ops} label="營運快照" />
-      <div className="quote-strip">
-        <div className="quote-card">
-          <div className="tg">Runner</div>
-          <div className={`quote-last ${statusTone(workerState)}`}>{obs?.workerStatus ?? statusText(ops.state)}</div>
-          <div className="tg soft">心跳：{formatDateTime(obs?.workerHeartbeatAt)}</div>
-        </div>
-        <div className="quote-card">
-          <div className="tg">Dispatcher</div>
-          <div className={`quote-last ${statusTone(sweepState)}`}>{obs?.sweepStatus ?? statusText(ops.state)}</div>
-          <div className="tg soft">掃描：{formatDateTime(obs?.lastSweepAt)}</div>
-        </div>
-        <div className="quote-card">
-          <div className="tg">Queue</div>
-          <div className="quote-last num">{formatCount(openAlice?.queue.totalJobs)}</div>
-          <div className="tg soft">queued {formatCount(openAlice?.queue.queued)} / running {formatCount(openAlice?.queue.running)} / review {formatCount(openAlice?.queue.reviewable)}</div>
-        </div>
-        <div className="quote-card">
-          <div className="tg">已發布簡報</div>
-          <div className="quote-last num">{formatCount(ops.data?.stats.publishedBriefs)}</div>
-          <div className="tg soft">沒有 source trail 時不當作投資建議。</div>
-        </div>
-      </div>
-      {workerState !== "LIVE" && (
-        <div className="terminal-note">
-          <StatusPill state="BLOCKED" /> OpenAlice 沒有健康心跳；每日簡報區只顯示狀態，不產生建議文字。
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-function ThemesPanel({ themes }: { themes: LoadState<ThemeRow[]> }) {
-  const updatedAt = themes.state === "LIVE" ? latestIso(themes.data.map((item) => item.updatedAt)) ?? themes.updatedAt : themes.updatedAt;
-  const view = { ...themes, updatedAt } as LoadState<ThemeRow[]>;
-  const fresh = freshness(updatedAt);
-  const stale = fresh.ageDays !== null && fresh.ageDays > 7;
-  const rows = themes.state === "LIVE" && !stale ? themes.data.slice(0, 6) : [];
-
-  return (
-    <Panel code="THM" title="主題資料" sub="資料庫主題 / 過期不進今日戰情" right={<StatusPill state={stale ? "BLOCKED" : themes.state} label={stale ? "過期" : undefined} />}>
-      <SourceLine state={view} label="主題資料" maxAgeDays={7} />
-      <EmptyOrBlocked state={view} maxAgeDays={7} />
-      {rows.map((theme) => (
-        <Link href={`/themes/${theme.slug}`} className="row dashboard-theme-row" key={theme.id}>
-          <span className="tg soft">{theme.priority}</span>
-          <span>
-            <strong className="tc" style={{ color: "var(--night-ink)", fontSize: 16 }}>{themeName(theme)}</strong>
-            <span className="tg soft" style={{ display: "block", marginTop: 4 }}>{cleanThemeThesis(theme.slug, theme.thesis)}</span>
+    <Panel code="SRC" title="FinMind 資料源" sub="Sponsor 999 / token 不顯示 / 只顯示資料健康" right={<StatusPill state={finmind.state} />}>
+      {sourceLine({ state: finmind, label: "FinMind 診斷" })}
+      <MetricStrip
+        columns={4}
+        cells={[
+          { label: "Token", value: status?.tokenPresent ? "存在" : "缺失", tone: status?.tokenPresent ? "status-ok" : "status-bad" },
+          { label: "Quota", value: `${formatCount(status?.quota.used)} / ${formatCount(status?.quota.limit)}`, tone: "muted" },
+          { label: "正常資料集", value: live, tone: live > 0 ? "status-ok" : "status-bad" },
+          { label: "最近請求", value: latestDataset, tone: "muted" },
+        ]}
+      />
+      <div className="dashboard-dataset-ribbon">
+        {datasets.slice(0, 14).map((dataset) => (
+          <span className={`dashboard-dataset-token ${datasetClass(dataset)}`} key={dataset.key}>
+            {dataset.label} / {datasetLabel(dataset)}
+            {typeof dataset.rowCount === "number" ? ` ・ ${dataset.rowCount.toLocaleString("zh-TW")} 筆` : ""}
+            {dataset.latestDate ? ` ・ ${dataset.latestDate}` : ""}
           </span>
-          <span className="tg gold">觀察</span>
-          <span className="tg soft">{formatDateTime(theme.updatedAt)}</span>
-        </Link>
-      ))}
+        ))}
+        {datasets.length === 0 && <span className="dashboard-dataset-token is-blocked">尚未收到資料集狀態。</span>}
+      </div>
+      <div className="terminal-note compact">
+        正常資料集可以用來顯示 K 線、財報、月營收與籌碼；仍不會直接變成策略績效、成交價或正式下單依據。
+      </div>
     </Panel>
   );
 }
 
-function IdeasPanel({ ideas }: { ideas: LoadState<StrategyIdeaView | null> }) {
-  const updatedAt = ideas.state === "LIVE" && ideas.data ? ideas.data.generatedAt : ideas.updatedAt;
-  const view = { ...ideas, updatedAt } as LoadState<StrategyIdeaView | null>;
-  const fresh = freshness(updatedAt);
-  const stale = fresh.ageDays !== null && fresh.ageDays > 1;
-  const rows = ideas.state === "LIVE" && ideas.data && !stale ? ideas.data.items.slice(0, 5) : [];
+function marketPanel(market: LoadState<MarketDataOverview | null>) {
+  const data = market.data;
+  const readiness = data?.quotes.readiness.effectiveSelection;
+  const barQuality = data?.quality.bars;
+  return (
+    <Panel code="MKT" title="市場資料可用度" sub="報價與 K 線品質，決定公司頁與 paper preview 能不能繼續" right={<StatusPill state={market.state} />}>
+      {sourceLine({ state: market, label: "市場資料總覽" })}
+      <MetricStrip
+        columns={5}
+        cells={[
+          { label: "追蹤代號", value: formatCount(data?.symbols.total), tone: data?.symbols.total ? "status-ok" : "muted" },
+          { label: "報價可用", value: formatCount(readiness?.paperUsable), tone: readiness?.paperUsable ? "status-ok" : "gold" },
+          { label: "報價阻擋", value: formatCount(readiness?.blocked), tone: readiness?.blocked ? "status-bad" : "muted" },
+          { label: "K 線正常", value: formatCount(barQuality?.ready), tone: barQuality?.ready ? "status-ok" : "gold" },
+          { label: "最新報價", value: formatDateTime(data?.quotes.latestQuoteTimestamp), tone: "muted" },
+        ]}
+      />
+      {"reason" in market && <div className="terminal-note compact"><StatusPill state={market.state} /> {market.reason}</div>}
+    </Panel>
+  );
+}
+
+function openAlicePanel(ops: LoadState<OpsSnapshotData | null>, brief: LoadState<DailyBriefDashboard>) {
+  const obs = ops.data?.openAlice.observability;
+  const queue = ops.data?.openAlice.queue;
+  const workerOk = obs?.workerStatus === "healthy";
+  const sweepOk = obs?.sweepStatus === "healthy";
+  const briefState = brief.data.state;
+  const briefUiState: SourceState = briefState === "PUBLISHED" ? "LIVE" : briefState === "AWAITING_REVIEW" || briefState === "MISSING" ? "EMPTY" : "BLOCKED";
 
   return (
-    <Panel code="IDEA" title="策略想法" sub="只顯示候選，不等於下單建議" right={<StatusPill state={stale ? "BLOCKED" : ideas.state} label={stale ? "過期" : undefined} />}>
-      <SourceLine state={view} label="策略想法 API" maxAgeDays={1} />
-      <EmptyOrBlocked state={view} maxAgeDays={1} />
-      {rows.map((idea) => (
-        <Link href={`/companies/${idea.symbol}`} className="row idea-row" key={`${idea.companyId}-${idea.symbol}`}>
-          <span className="tg gold">{idea.symbol}</span>
-          <span className="tg soft">{idea.companyName}</span>
-          <span className="tg">{directionText(idea.direction)}</span>
-          <span className="num">{idea.score.toFixed(1)}</span>
-          <span className="tg gold">{decisionText(idea.marketData.decision)}</span>
+    <Panel code="BRF" title="OpenAlice 每日簡報" sub="產生 → AI 審核 → source trail → 發布" right={<StatusPill state={ops.state} />}>
+      {sourceLine({ state: ops, label: "OpenAlice 營運快照" })}
+      <MetricStrip
+        columns={4}
+        cells={[
+          { label: "Runner", value: workerOk ? "healthy" : obs?.workerStatus ?? stateLabel(ops.state), tone: workerOk ? "status-ok" : "status-bad" },
+          { label: "Dispatcher", value: sweepOk ? "healthy" : obs?.sweepStatus ?? stateLabel(ops.state), tone: sweepOk ? "status-ok" : "status-bad" },
+          { label: "Queue", value: formatCount(queue?.totalJobs), tone: queue?.running ? "gold" : "muted" },
+          { label: "今日簡報", value: briefState === "PUBLISHED" ? "已發布" : briefState === "AWAITING_REVIEW" ? "待審" : "缺稿", tone: stateTone(briefUiState) },
+        ]}
+      />
+      <div className="dashboard-workflow-grid">
+        <Link className="dashboard-command-card" href="/briefs">
+          <span>每日簡報工作台</span>
+          <strong>{briefState === "PUBLISHED" ? "查看今日報告" : briefState === "AWAITING_REVIEW" ? "審核今日草稿" : "檢查產生流程"}</strong>
+          <small>最新發布：{brief.data.latestDate ?? "--"} / 待審草稿：{brief.data.draftCount}</small>
         </Link>
-      ))}
-    </Panel>
-  );
-}
-
-function SignalsPanel({ signals }: { signals: LoadState<SignalRow[]> }) {
-  const cleanSignals = signals.state === "LIVE" ? signals.data.filter((signal) => !isInternalTestSignal(signal)) : [];
-  const updatedAt = signals.state === "LIVE" ? latestIso(cleanSignals.map((item) => item.createdAt)) ?? signals.updatedAt : signals.updatedAt;
-  const view = { ...signals, updatedAt } as LoadState<SignalRow[]>;
-  const fresh = freshness(updatedAt);
-  const stale = fresh.ageDays !== null && fresh.ageDays > 1;
-  const rows = signals.state === "LIVE" && !stale ? cleanSignals.slice(0, 5) : [];
-
-  return (
-    <Panel code="SIG" title="訊號證據" sub="過期與內部測試訊號不放入戰情" right={<StatusPill state={stale ? "BLOCKED" : signals.state} label={stale ? "過期" : undefined} />}>
-      <SourceLine state={view} label="訊號證據 API" maxAgeDays={1} />
-      <EmptyOrBlocked state={view} maxAgeDays={1} />
-      {rows.map((signal) => (
-        <div className="row dashboard-signal-row" key={signal.id}>
-          <span className="tg soft">{formatDateTime(signal.createdAt)}</span>
-          <span className="tc signal-title-main">{cleanExternalHeadline(signal.title || signal.summary || "未命名訊號")}</span>
-          <span className="tg gold">信心 {signal.confidence}</span>
-          <span className="tg soft">{directionText(signal.direction)}</span>
-        </div>
-      ))}
-    </Panel>
-  );
-}
-
-function RunsPanel({ runs }: { runs: LoadState<StrategyRunView | null> }) {
-  const updatedAt = runs.state === "LIVE" && runs.data ? latestIso(runs.data.items.map((item) => item.generatedAt)) ?? runs.updatedAt : runs.updatedAt;
-  const view = { ...runs, updatedAt } as LoadState<StrategyRunView | null>;
-  const rows = runs.state === "LIVE" && runs.data ? runs.data.items.slice(0, 4) : [];
-
-  return (
-    <Panel code="RUNS" title="策略批次" sub="只顯示產出狀態，不顯示績效假數字" right={<StatusPill state={runs.state} />}>
-      <SourceLine state={view} label="策略批次 API" maxAgeDays={7} />
-      <EmptyOrBlocked state={view} maxAgeDays={7} />
-      {rows.map((run) => (
-        <Link href={`/runs/${run.id}`} className="row telex-row" key={run.id} style={{ gridTemplateColumns: "120px 1fr 80px" }}>
-          <span className="tg soft">{formatDateTime(run.generatedAt)}</span>
-          <span className="tg">{run.topSymbols.join(" / ") || "未列候選股"}</span>
-          <span className="num">{run.summary.total}</span>
+        <Link className="dashboard-command-card" href="/ops">
+          <span>OpenAlice 監控</span>
+          <strong>檢查 runner、dispatcher、queue</strong>
+          <small>心跳：{formatDateTime(obs?.workerHeartbeatAt)} / 掃描：{formatDateTime(obs?.lastSweepAt)}</small>
         </Link>
-      ))}
+      </div>
     </Panel>
   );
 }
 
-function ActionDeck() {
+function paperPanel(paper: LoadState<PaperHealthState | null>) {
+  const data = paper.data;
+  const gateOpen = Boolean(data?.gate.gateOpen);
+  const submitReady = Boolean(data?.submitReady);
+  return (
+    <Panel code="06-PORT" title="紙上交易工作流" sub="公司頁 preview → 風控 → 紙上部位 / 不接真實券商" right={<StatusPill state={paper.state} />}>
+      {sourceLine({ state: paper, label: "Paper health" })}
+      <MetricStrip
+        columns={5}
+        cells={[
+          { label: "Preview", value: data?.previewReady ? "可檢查" : "暫停", tone: data?.previewReady ? "status-ok" : "status-bad" },
+          { label: "Submit", value: submitReady ? "紙上可送" : "尚未啟用", tone: submitReady ? "gold" : "muted" },
+          { label: "Gate", value: gateOpen ? "開啟" : "關閉", tone: gateOpen ? "status-ok" : "status-bad" },
+          { label: "Queue", value: formatCount(data?.queueDepth), tone: data?.queueDepth ? "gold" : "muted" },
+          { label: "最後成交", value: formatDateTime(data?.lastFillTs), tone: "muted" },
+        ]}
+      />
+      <div className="terminal-note compact">
+        預設流程只做紙上預覽與紙上部位檢視；一股零股和一張整股必須清楚顯示，正式券商送單仍維持鎖定。
+      </div>
+    </Panel>
+  );
+}
+
+function strategyPanel(ideas: LoadState<Awaited<ReturnType<typeof getStrategyIdeas>>["data"] | null>, runs: LoadState<Awaited<ReturnType<typeof listStrategyRuns>>["data"] | null>) {
+  const ideaCount = ideas.data?.items.length ?? 0;
+  const blockedIdeas = ideas.data?.items.filter((item) => item.marketData.decision === "block").length ?? 0;
+  const runCount = runs.data?.items.length ?? 0;
+  return (
+    <Panel code="LAB" title="策略與量化收件" sub="候選、批次、量化包只顯示真狀態，不顯示未核准績效" right={<StatusPill state={ideas.state === "LIVE" || runs.state === "LIVE" ? "LIVE" : ideas.state} />}>
+      <MetricStrip
+        columns={4}
+        cells={[
+          { label: "策略候選", value: formatCount(ideaCount), tone: ideaCount ? "gold" : "muted" },
+          { label: "風控阻擋", value: formatCount(blockedIdeas), tone: blockedIdeas ? "status-bad" : "muted" },
+          { label: "策略批次", value: formatCount(runCount), tone: runCount ? "gold" : "muted" },
+          { label: "績效顯示", value: "待核准", tone: "gold" },
+        ]}
+      />
+      <div className="dashboard-workflow-grid">
+        <Link className="dashboard-command-card" href="/ideas">
+          <span>策略想法</span>
+          <strong>只看候選與阻擋原因</strong>
+          <small>不顯示買賣建議，不宣稱可交易。</small>
+        </Link>
+        <Link className="dashboard-command-card" href="/lab">
+          <span>量化研究</span>
+          <strong>等待 Athena bundle 與 Bruce harness</strong>
+          <small>未核准前不顯示勝率、報酬、權益曲線。</small>
+        </Link>
+      </div>
+    </Panel>
+  );
+}
+
+function actionDeck() {
   const actions = [
-    { href: "/companies/2330", title: "檢查 2330 公司頁", sub: "K 線、FinMind、紙上 preview 都在同一頁確認。" },
-    { href: "/portfolio", title: "紙上交易投組", sub: "只讀 paper portfolio，不連真實券商。" },
-    { href: "/briefs", title: "每日簡報", sub: "等待 OpenAlice source trail 完整後才放入判讀。" },
-    { href: "/ops", title: "營運監控", sub: "檢查 OpenAlice、資料佇列與工作心跳。" },
+    { href: "/companies/2330", title: "檢查台積電", sub: "K 線、FinMind 財務、紙上 preview 從這裡開始。" },
+    { href: "/briefs", title: "每日簡報", sub: "看今天是否已發布、待審或缺稿。" },
+    { href: "/portfolio", title: "紙上部位", sub: "檢查紙上資金、部位、成交與登入狀態。" },
+    { href: "/market-intel", title: "重大訊息", sub: "等 FinMind/news backend 完全部署後接入首頁。" },
   ];
   return (
-    <Panel code="OPS" title="下一步交易工作流" sub="能推進的 workflow，不能推進的會說清楚">
-      <div className="quote-strip">
+    <Panel code="OPS" title="下一步交易工作流" sub="首頁只放能推動操作的入口">
+      <div className="dashboard-workflow-grid">
         {actions.map((action) => (
-          <Link href={action.href} className="quote-card" key={action.href}>
-            <div className="tg gold">{action.title}</div>
-            <div className="tg soft" style={{ marginTop: 8 }}>{action.sub}</div>
+          <Link href={action.href} className="dashboard-command-card" key={action.href}>
+            <span>{action.title}</span>
+            <strong>{action.sub}</strong>
+            <small>打開</small>
           </Link>
         ))}
       </div>
@@ -606,80 +418,81 @@ function ActionDeck() {
   );
 }
 
-function NotReadyPanel() {
-  const rows = [
-    { label: "重大訊息", reason: "尚未接到可驗證來源與篩選規則。", next: "等待 OpenAlice 或正式新聞 adapter 提供 source trail。" },
-    { label: "量化研究", reason: "沒有 Athena + Bruce approval 前不顯示 Sharpe、勝率或 equity curve。", next: "只顯示 bundle 狀態，不顯示假績效。" },
-    { label: "訊號證據", reason: "過期或內部測試訊號不進首頁戰情。", next: "等來源追蹤與時間新鮮度通過。" },
-    { label: "策略想法", reason: "候選想法不是買賣建議。", next: "等 paper gate、風控與資料品質都通過。" },
-  ];
-
-  return (
-    <Panel code="SRC" title="暫不當作今日情報的區塊" sub="不是刪除功能，而是阻止舊資料誤導">
-      <div className="data-table compact">
-        {rows.map((row) => (
-          <div className="row" key={row.label}>
-            <span className="tg gold">{row.label}</span>
-            <span className="tc soft">{row.reason}</span>
-            <span className="tg soft">{row.next}</span>
-          </div>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
 export default async function DashboardPage() {
-  const [overview, themes, ideas, runs, signals, ops, finmind] = await Promise.all([
-    load("市場資料 API", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 5 })).data, (value) => value === null || value.quotes.total === 0, "市場資料目前回傳 0 筆，不能顯示盤勢。"),
-    load("主題資料庫", [], async () => (await getThemes()).data, (value) => value.length === 0, "主題資料庫目前沒有可顯示項目。"),
-    load("策略想法 API", null, async () => (await getStrategyIdeas({ limit: 8, includeBlocked: true, decisionMode: "paper", sort: "score" })).data, (value) => value === null || value.items.length === 0, "策略想法目前沒有可顯示候選。"),
-    load("策略批次 API", null, async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data, (value) => value === null || value.items.length === 0, "策略批次目前沒有產出紀錄。"),
-    load("訊號證據 API", [], async () => (await getSignals()).data, (value) => value.length === 0, "訊號證據目前沒有正式資料。"),
-    load("營運快照 API", null, async () => (await getOpsSnapshot({ auditHours: 24, recentLimit: 6 })).data, (value) => value === null, "營運快照目前沒有資料。"),
-    loadFinMindStatus(),
+  const [finmind, market, ops, brief, paper, ideas, runs] = await Promise.all([
+    loadFinMindDashboard(),
+    load(
+      "Market data overview",
+      null,
+      async () => (await getMarketDataOverview({ includeStale: true, topLimit: 5 })).data,
+      (value) => value === null || value.quotes.total === 0,
+      "市場資料總覽目前沒有回傳可用報價。",
+    ),
+    load(
+      "OpenAlice / Ops snapshot",
+      null,
+      async () => (await getOpsSnapshot({ auditHours: 24, recentLimit: 6 })).data,
+      (value) => value === null,
+      "OpenAlice 營運快照目前沒有回傳資料。",
+    ),
+    loadDailyBriefDashboard(),
+    loadPaperHealthState(),
+    load(
+      "Strategy ideas",
+      null,
+      async () => (await getStrategyIdeas({ limit: 8, includeBlocked: true, decisionMode: "paper", sort: "score" })).data,
+      (value) => value === null || value.items.length === 0,
+      "策略候選目前沒有回傳資料。",
+    ),
+    load(
+      "Strategy runs",
+      null,
+      async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data,
+      (value) => value === null || value.items.length === 0,
+      "策略批次目前沒有回傳資料。",
+    ),
   ]);
-
-  const marketUpdatedAt = overview.state === "LIVE" && overview.data?.generatedAt ? overview.data.generatedAt : overview.updatedAt;
-  const opsUpdatedAt = ops.state === "LIVE" && ops.data ? ops.data.generatedAt : ops.updatedAt;
-  const ideasUpdatedAt = ideas.state === "LIVE" && ideas.data ? ideas.data.generatedAt : ideas.updatedAt;
-  const signalsUpdatedAt = signals.state === "LIVE" ? latestIso(signals.data.map((item) => item.createdAt)) ?? signals.updatedAt : signals.updatedAt;
-  const themesUpdatedAt = themes.state === "LIVE" ? latestIso(themes.data.map((item) => item.updatedAt)) ?? themes.updatedAt : themes.updatedAt;
-
-  const sourceStatuses = [
-    sourceLine({ state: { ...finmind, updatedAt: finmind.updatedAt }, label: "FinMind", maxAgeDays: 1 }),
-    sourceLine({ state: { ...overview, updatedAt: marketUpdatedAt }, label: "市場資料", maxAgeDays: 1 }),
-    sourceLine({ state: { ...ops, updatedAt: opsUpdatedAt }, label: "OpenAlice", maxAgeDays: 1 }),
-    sourceLine({ state: { ...themes, updatedAt: themesUpdatedAt }, label: "主題資料", maxAgeDays: 7 }),
-    sourceLine({ state: { ...ideas, updatedAt: ideasUpdatedAt }, label: "策略想法", maxAgeDays: 1 }),
-    sourceLine({ state: { ...signals, updatedAt: signalsUpdatedAt }, label: "訊號證據", maxAgeDays: 1 }),
-  ];
-
-  const summary = sourceStatuses
-    .map((item) => `${item.label} ${item.state === "LIVE" ? "正常" : item.reason?.includes("過期") ? "過期" : statusText(item.state)}`)
-    .join(" / ");
 
   return (
     <PageFrame
       code="01"
-      title="交易戰情台"
-      sub="資料健康與交易工作流"
-      note={`資料狀態 / ${summary}`}
+      title="台股 AI 交易戰情室"
+      sub="資料、簡報、策略與紙上交易的作業中樞"
+      note="首頁只顯示能推動交易工作流的真狀態；過期、缺稿、未接線會明確標示，不用舊資料或假面板充數。"
     >
-      <Hero sources={sourceStatuses} />
-      <FinMindPanel finmind={finmind} />
+      <section className="dashboard-hero">
+        <div className="dashboard-hero-main">
+          <span className="tg gold">IUF / 台股操盤 OS</span>
+          <h2>把資料接滿，再把決策變成可驗證流程。</h2>
+          <p>
+            FinMind 負責台股資料燃料，OpenAlice 負責每日摘要與 source trail，Paper workflow 負責委託前風控與部位回放。
+            首頁不再當舊資訊牆，而是告訴你今天哪條流程能繼續、哪條卡住、下一步該打開哪裡。
+          </p>
+          <div className="dashboard-hero-kpis-inline">
+            <div className="dashboard-hero-stat"><span>FinMind</span><strong className={stateTone(finmind.state)}>{stateLabel(finmind.state)}</strong></div>
+            <div className="dashboard-hero-stat"><span>OpenAlice</span><strong className={stateTone(ops.state)}>{stateLabel(ops.state)}</strong></div>
+            <div className="dashboard-hero-stat"><span>每日簡報</span><strong className={stateTone(brief.state)}>{brief.data.state === "PUBLISHED" ? "已發布" : brief.data.state === "AWAITING_REVIEW" ? "待審" : "待產生"}</strong></div>
+            <div className="dashboard-hero-stat"><span>Paper</span><strong className={stateTone(paper.state)}>{stateLabel(paper.state)}</strong></div>
+          </div>
+        </div>
+      </section>
+
       <div className="main-grid dashboard-mosaic-grid">
         <div className="dashboard-mosaic-primary">
-          <MarketPanel overview={{ ...overview, updatedAt: marketUpdatedAt }} />
-          <OpenAlicePanel ops={{ ...ops, updatedAt: opsUpdatedAt }} />
-          <ActionDeck />
+          {finMindPanel(finmind)}
+          {marketPanel(market)}
+          {openAlicePanel(ops, brief)}
+          {paperPanel(paper)}
         </div>
         <div className="dashboard-mosaic-secondary">
-          <ThemesPanel themes={{ ...themes, updatedAt: themesUpdatedAt }} />
-          <IdeasPanel ideas={{ ...ideas, updatedAt: ideasUpdatedAt }} />
-          <SignalsPanel signals={{ ...signals, updatedAt: signalsUpdatedAt }} />
-          <RunsPanel runs={runs} />
-          <NotReadyPanel />
+          {actionDeck()}
+          {strategyPanel(ideas, runs)}
+          <Panel code="INT" title="重大訊息 / 新聞" sub="等 FinMind news backend 與 migration 完整上線後，首頁只接真資料" right={<StatusPill state="EMPTY" />}>
+            <div className="terminal-note compact">
+              這裡不再顯示舊新聞或假新聞。後端資料源完成部署後，會顯示台股重大訊息、公司新聞、source trail、更新時間與缺漏原因。
+            </div>
+            <Link className="mini-button" href="/market-intel">打開重大訊息頁</Link>
+          </Panel>
         </div>
       </div>
     </PageFrame>
