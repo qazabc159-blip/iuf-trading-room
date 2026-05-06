@@ -1049,6 +1049,15 @@ button { font: inherit; }
   overflow-wrap: normal;
 }
 
+.quote-last-text {
+  font-family: var(--sans-tc);
+  font-size: clamp(18px, 1.65vw, 24px);
+  line-height: 1.34;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
 .table-scroll,
 .company-data-tabs.finmind-tabs,
 .company-data-tabs.finmind-tabs.company-finance-tabs,
