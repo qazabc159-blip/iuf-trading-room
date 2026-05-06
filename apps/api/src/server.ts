@@ -3994,7 +3994,12 @@ const FINMIND_DATASET_STATUS = [
 
 const finmindKBarQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  days: z.coerce.number().int().min(1).max(20).default(1)
+  days: z.coerce.number().int().min(1).max(20).default(1),
+  // 5/7 production regression fix: frontend Codex K-line series queries with
+  // ?freq=1d expecting daily candles. Was silently ignored → route always
+  // hit FinMind minute-K live API → empty during pre-market hours / when
+  // minute data lags. freq=1d now reads from companies_ohlcv DB cache.
+  freq: z.enum(["1d", "1m"]).default("1m")
 });
 
 // GET /api/v1/data-sources/finmind/status
@@ -4377,6 +4382,79 @@ app.get("/api/v1/companies/:id/kbar", async (c) => {
 
   const date = query.date ?? taipeiDate();
   const stockId = companyIdToTicker(company.ticker);
+
+  // 5/7 production regression fix: freq=1d → read companies_ohlcv DB cache
+  // (daily candles, already populated via /ohlcv path). Avoids FinMind
+  // minute-K live API empty results during pre-market / weekend / holiday.
+  if (query.freq === "1d") {
+    const db = getDb();
+    if (!db || !isDatabaseMode()) {
+      return c.json({
+        data: {
+          source: "FINMIND",
+          state: "BLOCKED",
+          reason: "db_unavailable_for_daily_kbar",
+          stockId, date, rows: [],
+          updatedAt: new Date().toISOString()
+        }
+      });
+    }
+    try {
+      const dailyRows = await db.execute(drizzleSql`
+        SELECT dt::text AS dt, open, high, low, close, volume, source
+        FROM companies_ohlcv
+        WHERE company_id = ${company.id}
+          AND interval = '1d'
+        ORDER BY dt DESC
+        LIMIT ${query.days * 30}
+      `);
+      const rawRows = (dailyRows as { rows?: Record<string, unknown>[] })?.rows
+        ?? (Array.isArray(dailyRows) ? dailyRows : []);
+      const rows = rawRows
+        .map((r) => ({
+          date: String(r.dt ?? ""),
+          minute: "13:30:00",
+          stock_id: stockId,
+          open: Number(r.open ?? 0),
+          high: Number(r.high ?? 0),
+          low: Number(r.low ?? 0),
+          close: Number(r.close ?? 0),
+          volume: Number(r.volume ?? 0)
+        }))
+        .reverse(); // oldest → newest
+      const resolvedDates = Array.from(new Set(rows.map((r) => r.date))).sort();
+      const latestDate = resolvedDates.at(-1) ?? date;
+      return c.json({
+        data: {
+          source: "FINMIND",
+          state: rows.length > 0 ? "LIVE" : "EMPTY",
+          reason: rows.length > 0 ? null : "no_daily_kbar_in_companies_ohlcv",
+          stockId,
+          date: latestDate,
+          dateRange: resolvedDates.length > 0 ? { from: resolvedDates[0], to: resolvedDates[resolvedDates.length - 1] } : null,
+          daysRequested: query.days,
+          daysReturned: resolvedDates.length,
+          resolvedDates,
+          candidateDatesScanned: 0,
+          requestedDate: date,
+          rows,
+          updatedAt: new Date().toISOString()
+        }
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[kbar-1d] DB query failed:", msg);
+      return c.json({
+        data: {
+          source: "FINMIND", state: "ERROR",
+          reason: "db_query_failed", stockId, date, rows: [],
+          updatedAt: new Date().toISOString()
+        }
+      }, 503);
+    }
+  }
+
+  // freq=1m (default) — existing FinMind live minute-K path unchanged
   const client = getFinMindClient();
   const tokenPresent = client.hasToken();
   if (!tokenPresent) {
