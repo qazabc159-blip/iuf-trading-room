@@ -4927,6 +4927,143 @@ app.get("/api/v1/companies/:id/announcements", async (c) => {
 });
 
 // =============================================================================
+// W7 BLOCK #5 Axis 2 — KGI realtime quote for company page frontend
+// =============================================================================
+//
+// GET /api/v1/companies/:id/quote/realtime
+//
+// Aggregates last tick + bidask into a single frontend-consumable snapshot.
+// Frontend polls this every 5s for the company page quote widget.
+//
+// Design:
+//   - Resolves company by UUID or ticker via resolveCompany
+//   - Maps company.ticker → KGI symbol (same value for TW stocks)
+//   - If symbol not whitelisted → state=BLOCKED, reason=symbol_not_whitelisted
+//   - If gateway disabled/unreachable → state=BLOCKED, reason=<error_code>
+//   - On success: merges latest tick (lastPrice, volume) + bidask (bid, ask)
+//   - Freshness from stale detection (D-W2D-1): fresh | stale | not-available
+//   - source: 'kgi-gateway' always (no mock fallback — honest about state)
+//
+// Hard lines:
+//   - NO order surface
+//   - NO token / session / account number in response
+//   - NO real submit
+//   - read-only (GET only)
+//   - 4xx on missing company, BLOCKED on gateway issues (no fake 200+data)
+//
+// Response shape:
+//   { data: { symbol, lastPrice, bid, ask, volume, freshness, state, source, updatedAt } }
+//   state: 'LIVE' | 'STALE' | 'BLOCKED' | 'NO_DATA'
+// =============================================================================
+
+app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
+  // 1. Resolve company
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const symbol = companyIdToTicker(company.ticker);
+  const client = getKgiQuoteClient();
+  const updatedAt = new Date().toISOString();
+
+  // 2. Whitelist check — surface BLOCKED early (no network call)
+  if (!client.isSymbolAllowed(symbol)) {
+    return c.json({
+      data: {
+        symbol,
+        lastPrice: null,
+        bid: null,
+        ask: null,
+        volume: null,
+        freshness: "not-available" as const,
+        state: "BLOCKED" as const,
+        reason: "symbol_not_whitelisted",
+        source: "kgi-gateway" as const,
+        updatedAt
+      }
+    });
+  }
+
+  // 3. Fetch latest tick + bidask in parallel (fail-soft per leg)
+  let lastPrice: number | null = null;
+  let volume: number | null = null;
+  let bid: number | null = null;
+  let ask: number | null = null;
+  let freshness: "fresh" | "stale" | "not-available" = "not-available";
+  let blockedReason: string | null = null;
+
+  const [tickResult, bidaskResult] = await Promise.allSettled([
+    client.getRecentTicks(symbol, 1),
+    client.getLatestBidAsk(symbol),
+  ]);
+
+  // Parse tick leg
+  if (tickResult.status === "fulfilled") {
+    const td = tickResult.value;
+    freshness = td.freshness;
+    if (td.ticks.length > 0) {
+      const last = td.ticks[td.ticks.length - 1];
+      lastPrice = last.close ?? null;
+      volume = last.total_volume ?? last.volume ?? null;
+    }
+  } else {
+    const err = tickResult.reason;
+    if (err instanceof KgiQuoteDisabledError) {
+      blockedReason = "quote_disabled";
+    } else if (err instanceof KgiQuoteAuthError) {
+      blockedReason = "gateway_auth_error";
+    } else if (err instanceof KgiQuoteUnreachableError) {
+      blockedReason = "gateway_unreachable";
+    } else if (err instanceof KgiQuoteNotAvailableError) {
+      blockedReason = "symbol_not_subscribed";
+    } else {
+      blockedReason = "gateway_error";
+    }
+  }
+
+  // Parse bidask leg (best-effort — don't block if tick succeeded)
+  if (bidaskResult.status === "fulfilled") {
+    const ba = bidaskResult.value.bidask;
+    if (ba) {
+      bid = ba.bid_prices?.[0] ?? null;
+      ask = ba.ask_prices?.[0] ?? null;
+      // Use bidask freshness if tick freshness is not-available
+      if (freshness === "not-available") {
+        freshness = bidaskResult.value.freshness;
+      }
+    }
+  }
+
+  // 4. Determine state
+  let state: "LIVE" | "STALE" | "BLOCKED" | "NO_DATA";
+  if (blockedReason) {
+    state = "BLOCKED";
+  } else if (freshness === "fresh" && lastPrice !== null) {
+    state = "LIVE";
+  } else if (freshness === "stale" && lastPrice !== null) {
+    state = "STALE";
+  } else {
+    state = "NO_DATA";
+  }
+
+  return c.json({
+    data: {
+      symbol,
+      lastPrice,
+      bid,
+      ask,
+      volume,
+      freshness,
+      state,
+      ...(blockedReason ? { reason: blockedReason } : {}),
+      source: "kgi-gateway" as const,
+      updatedAt
+    }
+  });
+});
+
+// =============================================================================
 // 5/5 REOPEN — P1: Session probe (Bruce dev login support)
 // =============================================================================
 // GET /api/v1/auth/session-probe
