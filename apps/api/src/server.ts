@@ -51,6 +51,10 @@ import {
   buildPaperOrderContext,
   evaluatePaperOrderRisk
 } from "./domain/trading/paper-risk-bridge.js";
+import {
+  fireAiReviewerForDraft,
+  _getLastReviewerError
+} from "./openalice-ai-reviewer.js";
 import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql } from "drizzle-orm";
 import {
@@ -6094,6 +6098,35 @@ app.get("/api/v1/internal/openalice/dispatcher-debug", async (c) => {
       lastTickResult: _lastTickState.lastTickResult,
       lastEnqueueError: _lastTickState.lastEnqueueError,
       lastEnqueueErrorStack: _lastTickState.lastEnqueueErrorStack
+    }
+  });
+});
+
+// POST /api/v1/internal/openalice/ai-reviewer/run-on/:draftId
+// Owner-only. Force AI reviewer to fire on an existing awaiting_review draft.
+// Used for controlled e2e verification of the auto-approve path without waiting
+// for the natural 23h dispatcher tick. Caller should subsequently query
+// GET /api/v1/content-drafts to observe status transition (approved/rejected/awaiting_review).
+// Does NOT expose any secret. lastReviewerError surfaces only schema/network/timeout text.
+app.post("/api/v1/internal/openalice/ai-reviewer/run-on/:draftId", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const draftId = c.req.param("draftId");
+  if (!draftId || draftId.length < 8) {
+    return c.json({ error: "invalid_draft_id" }, 400);
+  }
+  const startedAt = new Date().toISOString();
+  await fireAiReviewerForDraft(draftId);
+  const endedAt = new Date().toISOString();
+  return c.json({
+    data: {
+      draftId,
+      startedAt,
+      endedAt,
+      lastReviewerError: _getLastReviewerError(draftId) ?? null,
+      hint: "Query GET /api/v1/content-drafts/:id to observe final status (approved/rejected/awaiting_review)"
     }
   });
 });
