@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-05-06T11:15:02.547Z",
+  "branch": "feat/web-guide-paper-preview-to-portfolio-2026-05-06",
+  "route": "/companies/2330 -> /portfolio#paper-readiness",
+  "source": "local web + local memory API; no production credentials; API persistence memory only",
+  "tradeCapabilityScore": "+1",
+  "endpoints": [
+    "GET /api/v1/companies",
+    "GET /api/v1/paper/health/detail",
+    "paper preview links only; no submit called"
+  ],
+  "screenshots": {
+    "companyDefault1365": "evidence/w7_paper_sprint/local_visual_qa_m5_paper_flow_2026-05-06/desktop1365_company2330_flow_default.png",
+    "companyLot1365": "evidence/w7_paper_sprint/local_visual_qa_m5_paper_flow_2026-05-06/desktop1365_company2330_lot_unit.png",
+    "portfolioReadiness1365": "evidence/w7_paper_sprint/local_visual_qa_m5_paper_flow_2026-05-06/desktop1365_portfolio_readiness_anchor.png",
+    "companyMobile390": "evidence/w7_paper_sprint/local_visual_qa_m5_paper_flow_2026-05-06/mobile390_company2330_flow.png"
+  },
+  "checks": {
+    "companyFlowGuideVisible": true,
+    "companyPreviewCopyVisible": true,
+    "companyPortfolioReadinessLink": true,
+    "companyPortfolioFillsLink": true,
+    "companyDefaultShareOddLotVisible": true,
+    "boardLotRuleVisible": true,
+    "noFinMindKlineFillPriceCopy": true,
+    "lotToggleEvidence": {
+      "lotUnitTextSeen": true,
+      "thousandShareTextSeen": true,
+      "demoCapitalTextSeen": true
+    },
+    "portfolioReadinessAnchor": true,
+    "portfolioFillsAnchor": true,
+    "desktopNoHorizontalOverflow": true,
+    "mobileNoHorizontalOverflow": true,
+    "noTokenInDom": true,
+    "noOrderCreate": true,
+    "noFakeFill": true,
+    "noNewSubmitCall": true
+  },
+  "note": "CDP text extraction on this Windows shell can mojibake zh-TW; manifest keeps boolean checks only. Screenshots are the source of visual truth."
+}
