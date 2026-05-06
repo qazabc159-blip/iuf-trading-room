@@ -358,6 +358,35 @@ function openAliceTone(state: OpenAliceSurface) {
   return "status-bad";
 }
 
+function pipelineStatusLabel(pipeline: OpenAliceObservability["pipeline"] | undefined) {
+  if (!pipeline) return "未回傳";
+  if (pipeline.lastFailureReason) return "錯誤";
+  if (pipeline.lastPublishedAt) return "已發布";
+  if (pipeline.reviewerVerdict === "approve") return "AI 通過";
+  if (pipeline.reviewerVerdict === "manual_review") return "待人工";
+  if (pipeline.reviewerVerdict === "reject") return "已退回";
+  if (pipeline.lastGeneratedAt) return "待 AI 審核";
+  return "待產生";
+}
+
+function pipelineStatusBadge(pipeline: OpenAliceObservability["pipeline"] | undefined) {
+  if (!pipeline) return "badge-yellow";
+  if (pipeline.lastFailureReason || pipeline.reviewerVerdict === "reject") return "badge-red";
+  if (pipeline.lastPublishedAt || pipeline.reviewerVerdict === "approve") return "badge-green";
+  return "badge-yellow";
+}
+
+function pipelineTime(value: string | null | undefined) {
+  return value ? formatDateTime(value) : "--";
+}
+
+function reviewerVerdictLabel(value: NonNullable<OpenAliceObservability["pipeline"]>["reviewerVerdict"] | undefined) {
+  if (value === "approve") return "AI 通過";
+  if (value === "manual_review") return "待人工";
+  if (value === "reject") return "已退回";
+  return "--";
+}
+
 function statusText(value: string | null | undefined) {
   if (value === "LIVE") return "正常";
   if (value === "EMPTY") return "無資料";
@@ -623,16 +652,28 @@ export default async function BriefsPage() {
           {openAlice.state === "BLOCKED" ? (
             <span className="state-reason">{openAlice.reason}</span>
           ) : (
-            <div className="brief-openalice-grid">
-              <span>worker：<strong>{statusText(openAlice.data.workerStatus)}</strong></span>
-              <span>sweep：<strong>{statusText(openAlice.data.sweepStatus)}</strong></span>
-              <span>最後心跳：<strong>{ageText(openAlice.data.workerHeartbeatAgeSeconds)}</strong></span>
-              <span>最後掃描：<strong>{ageText(openAlice.data.lastSweepAgeSeconds)}</strong></span>
-              <span>排隊：<strong>{openAlice.data.metrics.queuedJobs}</strong></span>
-              <span>執行中：<strong>{openAlice.data.metrics.runningJobs}</strong></span>
-              <span>過期執行：<strong>{openAlice.data.metrics.staleRunningJobs}</strong></span>
-              <span>裝置：<strong>{openAlice.data.metrics.activeDevices}</strong></span>
-            </div>
+            <>
+              <span className={`badge ${pipelineStatusBadge(openAlice.data.pipeline)}`}>
+                管線：{pipelineStatusLabel(openAlice.data.pipeline)}
+              </span>
+              <div className="brief-openalice-grid">
+                <span>worker：<strong>{statusText(openAlice.data.workerStatus)}</strong></span>
+                <span>sweep：<strong>{statusText(openAlice.data.sweepStatus)}</strong></span>
+                <span>最後心跳：<strong>{ageText(openAlice.data.workerHeartbeatAgeSeconds)}</strong></span>
+                <span>最後掃描：<strong>{ageText(openAlice.data.lastSweepAgeSeconds)}</strong></span>
+                <span>排隊：<strong>{openAlice.data.metrics.queuedJobs}</strong></span>
+                <span>執行中：<strong>{openAlice.data.metrics.runningJobs}</strong></span>
+                <span>過期執行：<strong>{openAlice.data.metrics.staleRunningJobs}</strong></span>
+                <span>裝置：<strong>{openAlice.data.metrics.activeDevices}</strong></span>
+                <span>最近產文：<strong>{pipelineTime(openAlice.data.pipeline?.lastGeneratedAt)}</strong></span>
+                <span>最近審核：<strong>{pipelineTime(openAlice.data.pipeline?.lastReviewedAt)}</strong></span>
+                <span>最近發布：<strong>{pipelineTime(openAlice.data.pipeline?.lastPublishedAt)}</strong></span>
+                <span>下次排程：<strong>{pipelineTime(openAlice.data.pipeline?.nextRunAt)}</strong></span>
+                <span>來源包：<strong>{openAlice.data.pipeline?.sourcePackCount ?? "--"}</strong></span>
+                <span>AI 判定：<strong>{reviewerVerdictLabel(openAlice.data.pipeline?.reviewerVerdict)}</strong></span>
+                <span>最近錯誤：<strong>{openAlice.data.pipeline?.lastFailureReason ?? "--"}</strong></span>
+              </div>
+            </>
           )}
           <span className="state-reason">
             此面板只揭露 OpenAlice 是否有新產文能力；不把舊簡報改寫成新簡報，也不產生買賣建議。
