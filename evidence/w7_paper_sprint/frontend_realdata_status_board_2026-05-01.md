@@ -3507,3 +3507,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: `/api/v1/strategy-ideas`, `/api/v1/strategy-runs/:id`, downstream company page paper preview anchor.
 - Checks: pending.
 - Stop-lines: no submit enablement, no `/order/create`, no KGI write-side, no fake fill/position, no token value, no FinMind/K-line fill source, no buy/sell wording.
+
+## 2026-05-07 02:54 TPE - Codex OpenAlice dispatcher debug surface
+
+- Branch: `fix-web-openalice-dispatch-debug-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/lib/api.ts`, `apps/web/app/briefs/page.tsx`, `evidence/w7_paper_sprint/codex_openalice_dispatcher_debug_surface_2026-05-07.md`
+- Behavior: `/briefs` now exposes the existing Owner-only dispatcher tick diagnostics so stale/missing daily briefs can be traced to scheduler/enqueue, runner/reviewer, or publish instead of showing a vague healthy OpenAlice state.
+- Sources: `GET /api/v1/internal/openalice/dispatcher-debug`, `/api/v1/openalice/observability`, `/api/v1/openalice/jobs`, `/api/v1/content-drafts`, `/api/v1/briefs`.
+- Checks: contracts build PASS; web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only; stop-line grep PASS.
+- Stop-lines: no token value, no OpenAI trigger, no auto-publish, no order route, no KGI write-side, no migration/schema/destructive DB, no fake daily brief, no buy/sell wording.
