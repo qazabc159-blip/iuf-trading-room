@@ -3458,3 +3458,12 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: FinMind status/diagnostics, market-data overview, ops snapshot, briefs, content drafts, paper health, strategy ideas/runs.
 - Checks: web typecheck PASS; web build PASS; diff-check PASS; added-line stop-line grep PASS.
 - Stop-lines: no token value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake live data, no unapproved strategy metrics.
+## 2026-05-07 01:31 TPE - Codex daily brief source-trail repair
+
+- Branch: `fix-web-briefs-source-trail-repair-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/app/briefs/page.tsx`, `apps/web/lib/content-draft-view.ts`, `apps/web/components/ContentDraftOverrideActions.tsx`, `evidence/w7_paper_sprint/codex_daily_brief_source_trail_mojibake_repair_2026-05-07.md`
+- Behavior: `/briefs` now shows a clean Traditional Chinese OpenAlice workflow surface: published / awaiting review / missing / blocked, runner / dispatcher / reviewer / publish timestamps, jobs, content drafts, and draft source trail.
+- Sources: `/api/v1/briefs`, `/api/v1/content-drafts`, `/api/v1/openalice/jobs`, `/api/v1/openalice/observability`, `/api/v1/session`.
+- Checks: contracts build PASS; web build PASS; web typecheck PASS; mojibake scan PASS; diff-check PASS; added-line stop-line grep PASS.
+- Stop-lines: no token value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake published brief, no unapproved strategy metrics.

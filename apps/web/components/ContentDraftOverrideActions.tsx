@@ -25,17 +25,17 @@ export function ContentDraftOverrideActions({ draftId }: { draftId: string }) {
     if (!response.ok) {
       const text = await response.text();
       setState("error");
-      setMessage(text || "後端拒絕這次 override。");
+      setMessage(text || "Owner fallback 執行失敗。");
       return;
     }
 
     setState("done");
-    setMessage(action === "approve" ? "已送出核准 override，重新讀取狀態。" : "已送出退回 override，重新讀取狀態。");
+    setMessage(action === "approve" ? "已核准草稿，等待正式資料回寫。" : "已退回草稿。");
     startTransition(() => router.refresh());
   }
 
   return (
-    <div className="draft-override-actions" aria-label="Owner override fallback">
+    <div className="draft-override-actions" aria-label="Owner fallback actions">
       <button
         className="mini-button"
         disabled={isPending}
