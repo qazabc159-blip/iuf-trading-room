@@ -3358,3 +3358,33 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Checks: web typecheck PASS; production build PASS with NEXT_PUBLIC_API_BASE_URL=https://api.eycvector.com.
 - Stop-lines: no order route, no KGI write-side, no fake-live, no FinMind-as-fill/risk.
 - Next: PR + CI + production screenshot manifest for 1104 and 2330 minute K.
+
+## Codex Update - 2026-05-06 05:56:02 +08:00 - K-line density deployed/threshold pending
+- PR #210 merged and deployed at commit 38ba5f3; production smoke PASS for 1104/2330 FinMind minute K.
+- Evidence: evidence/w7_paper_sprint/production_smoke_pass127_kline_intraday_density_2026-05-06/manifest.json.
+- 1104: API 200 FINMIND LIVE, 1,901 rows / 20 days; 5分 shows sparse density, 398 traded minutes / ~1,350, auto-expanded 5日.
+- 2330: API 200 FINMIND LIVE, 5,320 rows / 20 days; 5分 shows sufficient density, visible canvas, no token.
+- PR #211 merged at commit 839a4b5 to tune threshold so liquid 5分 can stay closer to 1日; CI PASS. Railway deploy currently BUILDING, previous production remains healthy at 38ba5f3.
+- Checks: #211 typecheck PASS, build PASS, Secret Regression PASS, No-Real-Order PASS, validate PASS.
+- Stop-lines: no token, no fake candles, no order route, no KGI write-side, no FinMind-as-fill/risk.
+- Next: wait for 839a4b5 deploy success then rerun 1104/2330 manifest; meanwhile continue Paper E2E UI visible workflow.
+
+## Codex Update - 2026-05-06 09:55:00 +08:00 - K-line density final smoke PASS
+- PR/deploy: #211 merged as 839a4b5; direct 839a4b5 Railway deploy failed, but latest successful web deploy 152b496 includes 839a4b5 and supersedes it.
+- Final state: KLINE_INTRADAY_DENSITY_RESOLVED.
+- Verdict wording: K-line production path is currently healthy for 2330 and 1104 with FinMind-backed daily/minute data and sparse-minute semantics.
+- Evidence: evidence/w7_paper_sprint/production_smoke_pass128_kline_density_final_2026-05-06/manifest.json with screenshots for 2330/1104 daily, 1分, and 5分.
+- 2330: API 200 FINMIND LIVE, 5,320 raw 1分 rows / 20 trading days; daily/1分/5分 canvas rendered; 5分 selected 1日, autoExpanded=false, coverage=98.5%.
+- 1104: API 200 FINMIND LIVE, 1,901 raw 1分 rows / 20 trading days; daily/1分/5分 canvas rendered; sparse-minute state shown, selected 5日, autoExpanded=true, coverage=29.5%, no fake candles filled.
+- Checks: no token in DOM/evidence, no fake candle proof, no order submit call, no 5xx, no KGI write-side, no FinMind-as-fill/risk.
+- Next: stop K-line polish and move to Paper E2E UI truth panel: notional, capital, SHARE/LOT, guard reasons, warnings, quote status, preview-only wording.
+
+## Codex Update - 2026-05-06 10:15:00 +08:00 - Paper preview truth panel PR prep
+- Trade Capability Score: +1. Workflow improved: company-page paper draft now shows a preview-only truth panel before any submit flow, including PAPER badge, symbol, side/type, SHARE/LOT, actual shares, estimated notional, demo capital, risk result, quote state, and preview timestamp.
+- Files changed: apps/web/app/companies/[symbol]/PaperOrderPanel.tsx; evidence/w7_paper_sprint/codex_paper_preview_truth_panel_2026-05-06.md; local QA manifest.
+- Endpoint/source list: GET /api/v1/paper/health, GET /api/v1/paper/orders, POST /api/v1/paper/preview only. Company-page submit is locked as "送出暫停".
+- Behavior: 2330 default remains SHARE qty=1, actual 1 share; LOT mode displays 1 張 = 1,000 股 and actual 1,000 shares; notional is compared to NT$20,000 demo capital.
+- Checks: web typecheck PASS; web build PASS; git diff --check PASS with CRLF warnings only; local visual QA PASS.
+- Screenshot manifest: evidence/w7_paper_sprint/local_visual_qa_pass129_paper_truth_panel_2026-05-06/manifest.json.
+- Stop-lines: no token, no fake live, no order submit, no /order/create, no KGI write-side, no FinMind/K-line as fill or risk source, no buy/sell recommendation.
+- Next: open PR B and, after deploy, run authenticated production preview smoke for 1104 SHARE=1, 2330 SHARE=1, and 2330 LOT=1.

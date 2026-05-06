@@ -1,0 +1,86 @@
+{
+  "generatedAt": "2026-05-06T02:10:47.511Z",
+  "route": "http://127.0.0.1:3336/companies/2330",
+  "screenshots": [
+    "company2330_paper_truth_share_default.png",
+    "company2330_paper_truth_lot_warning.png"
+  ],
+  "checks": {
+    "hasPreviewOnlyBadge": true,
+    "shareDefault": true,
+    "hasDemoCapital": true,
+    "submitLocked": true,
+    "lotShowsThousandShares": true,
+    "lotWarning": true,
+    "noTokenProof": true,
+    "noOrderProof": true
+  },
+  "buttons": [
+    {
+      "i": 0,
+      "text": "買進",
+      "disabled": false
+    },
+    {
+      "i": 1,
+      "text": "賣出",
+      "disabled": false
+    },
+    {
+      "i": 2,
+      "text": "市價",
+      "disabled": false
+    },
+    {
+      "i": 3,
+      "text": "限價",
+      "disabled": false
+    },
+    {
+      "i": 4,
+      "text": "零股",
+      "disabled": false
+    },
+    {
+      "i": 5,
+      "text": "整張",
+      "disabled": false
+    },
+    {
+      "i": 6,
+      "text": "1 股",
+      "disabled": false
+    },
+    {
+      "i": 7,
+      "text": "10 股",
+      "disabled": false
+    },
+    {
+      "i": 8,
+      "text": "100 股",
+      "disabled": false
+    },
+    {
+      "i": 9,
+      "text": "499 股",
+      "disabled": false
+    },
+    {
+      "i": 10,
+      "text": "999 股",
+      "disabled": false
+    },
+    {
+      "i": 11,
+      "text": "預覽風控",
+      "disabled": false
+    },
+    {
+      "i": 12,
+      "text": "送出暫停",
+      "disabled": true
+    }
+  ],
+  "orderCalls": []
+}
