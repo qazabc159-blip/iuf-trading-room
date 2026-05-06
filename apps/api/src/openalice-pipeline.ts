@@ -520,6 +520,39 @@ export type PublishGateResult =
  */
 export function classifyDraftTier(payload: unknown): PublishGateTier {
   const text = JSON.stringify(payload ?? "").toLowerCase();
+  const policyText = text
+    .replace(/taiwanstockinstitutionalinvestorsbuysell/g, "institutional_flow_dataset")
+    .replace(/tw_institutional_buysell/g, "institutional_flow_dataset")
+    .replace(/institutional buy\/sell/g, "institutional_flow_dataset")
+    .replace(/foreign investor buy\/sell/g, "institutional_flow_dataset")
+    .replace(/\bbuy\/sell\b/g, "flow_dataset")
+    .replace(/\bbuy\b/g, "data_buy")
+    .replace(/\bsell\b/g, "data_sell");
+
+  const actionAdvicePatterns = [
+    /\b(?:you should|should|recommend(?:ed)? to|recommendation[:\s-]*)\s+(?:buy|sell)\b/,
+    /\b(?:buy|sell)\b.{0,40}\b(?:now|immediately|before earnings|your positions)\b/,
+    /(建議|應該|可以|請|立刻|現在|操作上|策略上).{0,20}(買進|買入|賣出|出脫|進場|加碼|減碼|做多|做空)/,
+    /(買進|買入|賣出|出脫|進場|加碼|減碼|做多|做空).{0,20}(建議|訊號|操作|目標價)/
+  ];
+  for (const p of actionAdvicePatterns) {
+    if (p.test(text)) {
+      return "red";
+    }
+  }
+
+  const redSemanticPatterns = [
+    /(?:target price|price target)\s*[=:：]?\s*\d+(?:\.\d+)?/,
+    /(目標價|預測股價).{0,12}\d+(?:\.\d+)?/,
+    /(guarantee|guaranteed profit|保證獲利|必漲|穩賺)/,
+    /sharpe ratio\s*[=:>]\s*[\d.]+/,
+    /(勝率|win rate)\s*[=:：>]?\s*[\d.]+/
+  ];
+  for (const p of redSemanticPatterns) {
+    if (p.test(policyText)) {
+      return "red";
+    }
+  }
 
   // Red tier keywords
   // Pete PR #230 F3 fix: 勝率 (win rate) added — was missing from red-tier classifier
@@ -531,7 +564,7 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
     /勝率/, /win rate\s*[=:>]\s*[\d.]+/
   ];
   for (const p of redPatterns) {
-    if (p.test(text)) {
+    if (p.test(policyText)) {
       return "red";
     }
   }

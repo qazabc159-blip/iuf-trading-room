@@ -68,6 +68,49 @@ function buildReviewPrompt(draft: {
 
   const payloadStr = JSON.stringify(draft.payload, null, 2).slice(0, 3000);
 
+  return `You are a compliance reviewer for a Taiwan-stock financial research platform.
+Review the following content draft and return ONLY valid JSON.
+
+## Hard Reject Rules (any match => verdict: "reject")
+1. Contains actionable trading advice: "you should buy/sell", "recommend buy/sell",
+   "buy now", "sell immediately", 建議買進, 建議賣出, 進場, 出脫, 加碼, 減碼,
+   or similar wording that tells the reader what trade to do.
+2. Contains target price / 目標價 / 預測股價 with a specific number.
+3. Contains guarantee / 保證獲利 / 必漲 / 穩賺.
+4. Contains hallucinated news (specific event, number, or company name cited WITHOUT a source URL).
+5. payload.llm_meta.fallback_template === true OR payload.llm_meta.provider === "fallback".
+6. Any section body is empty OR shorter than 50 characters.
+7. payload.date (if present) does not equal today's date: ${today}.
+
+## Important Non-Reject Examples
+- Do NOT reject factual source or dataset labels such as "institutional buy/sell",
+  "foreign investor buy/sell", "tw_institutional_buysell",
+  "TaiwanStockInstitutionalInvestorsBuySell", "成交量", "買賣超", or "三大法人".
+- Do NOT reject factual historical descriptions like "外資買超 2,000 張" when it is
+  clearly describing source data and does not tell the reader to trade.
+- If a draft is descriptive but weak, prefer "manual_review" over "reject".
+
+## Draft Metadata
+- draftId: ${draft.id}
+- targetTable: ${draft.targetTable}
+- createdAt: ${draft.createdAt}
+
+## Draft Payload
+\`\`\`json
+${payloadStr}
+\`\`\`
+
+## Instructions
+- Check each hard reject rule strictly, but distinguish source labels from advice.
+- If ANY hard reject rule triggers => verdict MUST be "reject".
+- If content passes all rules but quality is uncertain => verdict "manual_review".
+- If content passes all rules and quality is clearly acceptable => verdict "approve".
+- confidence: 0.0-1.0 (your certainty in the verdict).
+- flagged_issues: list each rule violation found (empty array if none).
+
+Return ONLY this JSON (no markdown fence, no extra text):
+{"verdict":"approve|reject|manual_review","reason":"<1 sentence>","flagged_issues":[],"confidence":0.9}`;
+
   return `You are a compliance reviewer for a financial research platform.
 Review the following content draft and return ONLY valid JSON.
 
