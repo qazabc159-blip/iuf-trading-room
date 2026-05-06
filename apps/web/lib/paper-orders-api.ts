@@ -55,6 +55,18 @@ export type PaperPortfolioPosition = {
   note: string | null;
 };
 
+export type PaperFillLedgerRow = {
+  orderId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  orderType: "market" | "limit" | "stop" | "stop_limit";
+  qty: number;
+  quantity_unit: "SHARE" | "LOT";
+  fillQty: number;
+  fillPrice: number;
+  fillTime: string;
+};
+
 export type PaperOrderCancelResult = {
   data: PaperOrderState;
   alreadyTerminal: boolean;
@@ -221,6 +233,10 @@ export async function listPaperOrders(status?: PaperOrderStatus) {
 
 export async function getPaperPortfolio() {
   return request<PaperPortfolioPosition[]>("/api/v1/paper/portfolio");
+}
+
+export async function listPaperFills() {
+  return request<PaperFillLedgerRow[]>("/api/v1/paper/fills");
 }
 
 export async function cancelPaperOrder(orderId: string, reason = "operator_cancelled_from_frontend") {
