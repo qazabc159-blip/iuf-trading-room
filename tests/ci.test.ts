@@ -8096,3 +8096,99 @@ test("hallucination-rag: flag shape has required sourceMatch fields", () => {
   assert.ok("sourceId" in flag.sourceMatch, "sourceMatch must have sourceId");
   assert.ok("similarity" in flag.sourceMatch, "sourceMatch must have similarity");
 });
+
+// ── Adversarial Reviewer unit tests (parseAdversarialJson pure-fn) ─────────────
+
+import {
+  parseAdversarialJson,
+  runAdversarialReview
+} from "../apps/api/src/openalice-adversarial-reviewer.ts";
+
+test("adversarial-reviewer: parseAdversarialJson returns valid result with all three flags", () => {
+  const raw = JSON.stringify({
+    adversarialFlags: [
+      "CATEGORY_A: Brief uses '穩健成長' without citing a data source for the claim.",
+      "CATEGORY_B: Short interest increased 12% over the review period but is not mentioned.",
+      "CATEGORY_C: Source pack contained 15 themes; brief only covers 2 bullish ones."
+    ],
+    severityScore: 8,
+    reasoning: "The brief is materially one-sided. Bearish indicators in the raw data are systematically omitted."
+  });
+  const result = parseAdversarialJson(raw);
+  assert.ok(result, "should parse successfully");
+  assert.equal(result!.severityScore, 8);
+  assert.equal(result!.adversarialFlags.length, 3);
+  assert.ok(result!.reasoning.length > 0);
+});
+
+test("adversarial-reviewer: parseAdversarialJson returns empty flags for clean brief", () => {
+  const raw = JSON.stringify({
+    adversarialFlags: [],
+    severityScore: 2,
+    reasoning: "Brief is appropriately hedged with both upside and downside factors cited."
+  });
+  const result = parseAdversarialJson(raw);
+  assert.ok(result, "should parse clean brief");
+  assert.equal(result!.severityScore, 2);
+  assert.deepEqual(result!.adversarialFlags, []);
+});
+
+test("adversarial-reviewer: parseAdversarialJson clamps score to 0-10 range", () => {
+  const rawOver = JSON.stringify({ adversarialFlags: [], severityScore: 99, reasoning: "extreme" });
+  const rawUnder = JSON.stringify({ adversarialFlags: [], severityScore: -5, reasoning: "negative" });
+  const over = parseAdversarialJson(rawOver);
+  const under = parseAdversarialJson(rawUnder);
+  assert.ok(over && over.severityScore === 10, "score above 10 should be clamped to 10");
+  assert.ok(under && under.severityScore === 0, "score below 0 should be clamped to 0");
+});
+
+test("adversarial-reviewer: parseAdversarialJson returns null on missing severityScore", () => {
+  const raw = JSON.stringify({ adversarialFlags: [], reasoning: "missing score" });
+  const result = parseAdversarialJson(raw);
+  assert.equal(result, null, "missing severityScore should return null");
+});
+
+test("adversarial-reviewer: parseAdversarialJson returns null on malformed JSON", () => {
+  const result = parseAdversarialJson("{ not valid json }}}");
+  assert.equal(result, null, "malformed JSON should return null");
+});
+
+test("adversarial-reviewer: parseAdversarialJson strips markdown fence", () => {
+  const raw = "```json\n" + JSON.stringify({
+    adversarialFlags: ["CATEGORY_A: cherry-picked data"],
+    severityScore: 5,
+    reasoning: "Mild lean toward positive framing."
+  }) + "\n```";
+  const result = parseAdversarialJson(raw);
+  assert.ok(result, "should strip fence and parse");
+  assert.equal(result!.severityScore, 5);
+});
+
+test("adversarial-reviewer: parseAdversarialJson caps adversarialFlags to 3 items", () => {
+  // Model might return extra items; we enforce max 3
+  const raw = JSON.stringify({
+    adversarialFlags: [
+      "CATEGORY_A: flag one",
+      "CATEGORY_B: flag two",
+      "CATEGORY_C: flag three",
+      "CATEGORY_A: extra flag four"
+    ],
+    severityScore: 6,
+    reasoning: "Moderate bias."
+  });
+  const result = parseAdversarialJson(raw);
+  assert.ok(result, "should parse");
+  assert.equal(result!.adversarialFlags.length, 3, "should cap at 3 flags");
+});
+
+test("adversarial-reviewer: runAdversarialReview is safe-default null without API key", async () => {
+  // Remove key from env, verify no throw and returns null
+  const originalKey = process.env["OPENAI_API_KEY"];
+  delete process.env["OPENAI_API_KEY"];
+  try {
+    const result = await runAdversarialReview({ test: "payload" }, "test-draft-id");
+    assert.equal(result, null, "should return null without API key");
+  } finally {
+    if (originalKey !== undefined) process.env["OPENAI_API_KEY"] = originalKey;
+  }
+});

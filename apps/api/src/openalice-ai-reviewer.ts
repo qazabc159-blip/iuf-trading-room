@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 
 import { approveContentDraft, rejectContentDraft } from "./content-draft-store.js";
 import { recordReviewerVerdict } from "./openalice-pipeline.js";
+import { runAdversarialReview, type AdversarialReviewResult } from "./openalice-adversarial-reviewer.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -233,6 +234,42 @@ async function writeAiReviewAuditLog(input: {
   }
 }
 
+// ── Adversarial audit log writer ───────────────────────────────────────────────
+
+async function writeAdversarialAuditLog(input: {
+  workspaceId: string;
+  draftId: string;
+  adversarialResult: AdversarialReviewResult;
+  intercepted: boolean; // true if severityScore >= 7 and auto-approve was blocked
+}): Promise<void> {
+  if (!isDatabaseMode()) return;
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    await db.insert(auditLogs).values({
+      workspaceId: input.workspaceId,
+      actorId: null, // adversarial reviewer has no user UUID
+      action: "content_draft.adversarial_audit",
+      entityType: "content_draft",
+      entityId: input.draftId,
+      payload: {
+        reviewer: `adversarial-reviewer:${process.env["OPENAI_ADVERSARIAL_REVIEWER_MODEL"] ?? "gpt-4.1"}`,
+        adversarialFlags: input.adversarialResult.adversarialFlags,
+        severityScore: input.adversarialResult.severityScore,
+        reasoning: input.adversarialResult.reasoning,
+        intercepted: input.intercepted
+      }
+    });
+  } catch (e) {
+    // Non-critical — do not throw
+    console.warn(
+      `[adversarial-reviewer] Audit log write failed for draft ${input.draftId}:`,
+      e instanceof Error ? e.message : e
+    );
+  }
+}
+
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 /**
@@ -338,7 +375,44 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
   }
 
   if (result.verdict === "approve") {
-    // Green tier — proceed with auto-publish
+    // Green tier — run adversarial second-pass before auto-publish
+    // Safe-default: null on any failure → auto-publish proceeds unchanged
+    const adversarialResult = await runAdversarialReview(
+      draftRow.payload,
+      draftId,
+      null // sourcePackSummary: not available from this call-site; Category C degrades gracefully
+    );
+
+    if (adversarialResult) {
+      // Always write audit log, even for low scores — paper trail for Elva/楊董
+      await writeAdversarialAuditLog({
+        workspaceId,
+        draftId,
+        adversarialResult,
+        intercepted: adversarialResult.severityScore >= 7
+      });
+
+      if (adversarialResult.severityScore >= 7) {
+        // Intercept: route to manual_review instead of auto-approve
+        await writeAiReviewAuditLog({
+          workspaceId,
+          draftId,
+          action: "content_draft.ai_yellow_held",
+          result: {
+            verdict: "manual_review",
+            reason: `[adversarial-reviewer] severityScore=${adversarialResult.severityScore} >= 7. ${adversarialResult.reasoning}`,
+            flagged_issues: adversarialResult.adversarialFlags,
+            confidence: result.confidence
+          }
+        });
+        console.info(
+          `[adversarial-reviewer] Draft ${draftId} HELD for human review (adversarial score=${adversarialResult.severityScore})`
+        );
+        return; // do NOT call approveContentDraft — leave status as awaiting_review
+      }
+    }
+
+    // severityScore < 7 OR adversarialResult === null → proceed with normal auto-approve
     const approveResult = await approveContentDraft({
       draftId,
       reviewerId: null // AI reviewer — no user UUID; identity stored in audit log
