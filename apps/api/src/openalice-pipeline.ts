@@ -185,6 +185,35 @@ function updatePipelineState(partial: Partial<PipelineState>) {
   _lastPipelineState = { ..._lastPipelineState, ...partial };
 }
 
+// ── Job → sourcePackSummary registry (Gap 2 fix: adversarial reviewer needs sourcePack context) ──
+//
+// Maps jobId → sourcePackSummary string so that fireAiReviewerForDraft can pass
+// a real summary to runAdversarialReview (Category C bias detection).
+// In-memory only — process restart is acceptable (summary is non-critical context).
+
+const _jobSourcePackSummaryMap = new Map<string, string>();
+
+/**
+ * Register a sourcePackSummary for a given pipeline jobId.
+ * Called from generateDailyBrief immediately after enqueueOpenAliceJob succeeds.
+ */
+export function registerJobSourcePackSummary(jobId: string, summary: string): void {
+  _jobSourcePackSummaryMap.set(jobId, summary);
+  // Cap map size to prevent unbounded growth (keep last 100 jobs)
+  if (_jobSourcePackSummaryMap.size > 100) {
+    const firstKey = _jobSourcePackSummaryMap.keys().next().value;
+    if (firstKey !== undefined) _jobSourcePackSummaryMap.delete(firstKey);
+  }
+}
+
+/**
+ * Look up sourcePackSummary by jobId.
+ * Returns null if the job was not registered (e.g., non-pipeline draft or process restart).
+ */
+export function lookupJobSourcePackSummary(jobId: string): string | null {
+  return _jobSourcePackSummaryMap.get(jobId) ?? null;
+}
+
 // ── Taipei time helpers ───────────────────────────────────────────────────────
 
 function getTaipeiDate(now: Date = new Date()): string {
@@ -488,6 +517,7 @@ Rules (STRICT — any violation → reject):
 - date field MUST equal "${sourcePack.tradingDate}".
 - Each section body MUST be >= 50 characters.
 - Only reference data that exists in the source pack above.
+- NEVER include metadata tokens such as [BROKEN-N], [DEPRECATED], [ORPHAN], or [placeholder] in any output field. These are internal DB maintenance markers and must not appear in published content.
 
 Output schema: daily_brief_v1`;
 
@@ -512,6 +542,13 @@ Output schema: daily_brief_v1`;
         }
       }
     });
+
+    // Gap 2 fix: register sourcePackSummary so adversarial reviewer can use it for Category C bias detection
+    const summary = sourcePack.sources
+      .map((s) => `${s.source}(${s.status})`)
+      .join(", ");
+    registerJobSourcePackSummary(job.jobId, summary);
+
     return { jobId: job.jobId };
   } catch (e) {
     console.error("[pipeline] enqueueOpenAliceJob failed:", e instanceof Error ? e.message : String(e));
@@ -990,6 +1027,23 @@ export async function evaluatePipelinePublishGate(
     };
   }
 
+  // ── Gap 3: BROKEN/DEPRECATED token leak guard ────────────────────────────────
+  // If the runner somehow included [BROKEN-N], [DEPRECATED], or [ORPHAN] tokens
+  // in the generated content (leaked from stale DB theme names), route to
+  // awaiting_review so a human can verify and clean before publish.
+  const draftPayloadStr = JSON.stringify(draft.payload ?? "");
+  const BROKEN_TOKEN_PATTERN = /\[(?:BROKEN(?:-\d+)?|DEPRECATED|ORPHAN)\]/i;
+  if (BROKEN_TOKEN_PATTERN.test(draftPayloadStr)) {
+    console.warn(
+      `[pipeline-gate] Draft ${draftId} contains BROKEN/DEPRECATED metadata tokens — routing to awaiting_review`
+    );
+    return {
+      action: "queued_for_review",
+      briefId: null,
+      reason: "broken_deprecated_token_in_content"
+    };
+  }
+
   // ── Hallucination RAG gate (BLOCK #6) ───────────────────────────────────────
   // Runs AFTER AI reviewer 7-hard-reject, BEFORE auto-publish.
   // HALLUCINATED         → force reject + audit_log HALLUCINATION_REJECT
@@ -1010,11 +1064,29 @@ export async function evaluatePipelinePublishGate(
     if (draftContent) {
       try {
         const { runRagHallucinationCheck } = await import("./hallucination-rag.js");
+
+        // Gap 1 fix: extract real rawSources from sourcePack instead of hardcoded []
+        // Each SourcePackEntry becomes a RawSourceEntry with sourceId=source name and
+        // content=JSON of its status/rowCount/latestDate for the RAG cross-validator.
+        const rawSources = sourcePack
+          ? sourcePack.sources.map((entry) => ({
+              sourceId: entry.source,
+              content: JSON.stringify({
+                status: entry.status,
+                rowCount: entry.rowCount,
+                latestDate: entry.latestDate,
+                note: entry.note
+              }),
+              sha256: null,
+              url: null
+            }))
+          : [];
+
         const ragResult = await runRagHallucinationCheck({
           apiKey: ragApiKey,
           content: draftContent,
           sourceTrail: sourcePack ? sourcePack.sources : null,
-          rawSources: [], // pipeline path: no rawSources passed at publish time → single-pass fallback
+          rawSources, // Gap 1 fix: real sources enable 2-pass RAG (was always [] → single-pass fallback)
           claimExtractModel: process.env["OPENAI_CLAIM_EXTRACT_MODEL"] ?? "gpt-4o-mini",
           crossValidateModel: process.env["OPENAI_HALLUCINATION_VERIFY_MODEL"] ?? "gpt-4.1"
         });
