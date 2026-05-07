@@ -16,6 +16,24 @@ import kgisuperpy
 from schemas import Account
 
 
+# ---------------------------------------------------------------------------
+# Custom exceptions
+# ---------------------------------------------------------------------------
+
+class KgiLoginFailedError(Exception):
+    """
+    Raised when kgisuperpy.login() returns an object with IsSucceed=False.
+    Carries the KGI error code (int) and the raw ReplyString from the SDK.
+    Distinct from unexpected exceptions (AttributeError, network errors, etc.)
+    so the HTTP handler can return 401 (auth failure) vs 400 (bad request).
+    """
+
+    def __init__(self, error_code: int, reply_string: str) -> None:
+        self.error_code = error_code
+        self.reply_string = reply_string
+        super().__init__(f"KGI login failed (code={error_code}): {reply_string}")
+
+
 class KgiSession:
     """Singleton holder for the live kgisuperpy API handle."""
 
@@ -56,15 +74,43 @@ class KgiSession:
 
         person_id MUST be uppercase — KGI is case-sensitive.
         Source: feedback_kgi_env_var_uppercase_rule.md
+
+        Raises KgiLoginFailedError when the SDK returns IsSucceed=False.
+        CRITICAL: show_account() MUST NOT be called when IsSucceed=False —
+        the login object does not carry that method in the failed state.
         """
+        import logging
+        _log = logging.getLogger("kgi_session")
+        _log.debug("[kgi-session] login attempt simulation=%s", simulation)
+
         with self._lock:
-            api = kgisuperpy.login(
+            login_result = kgisuperpy.login(
                 person_id=person_id.upper(),
                 person_pwd=person_pwd,
                 simulation=simulation,
             )
-            self._api = api
-            raw_accounts = api.show_account()
+
+            # --- IsSucceed guard ---
+            # When KGI rejects credentials, login() returns an object where
+            # IsSucceed=False.  Calling show_account() on that object raises
+            # AttributeError (the method does not exist on the failure stub).
+            # We must check IsSucceed BEFORE touching any other attribute.
+            is_succeed = getattr(login_result, "IsSucceed", None)
+            if is_succeed is False:
+                error_code = int(getattr(login_result, "RtnCode", -1))
+                reply_string = str(getattr(login_result, "ReplyString", "登入失敗"))
+                _log.warning(
+                    "[kgi-session] login IsSucceed=False error_code=%d reply=%s",
+                    error_code,
+                    reply_string,
+                )
+                # Do NOT store the failed api object in self._api.
+                # Do NOT call login_result.show_account().
+                raise KgiLoginFailedError(error_code=error_code, reply_string=reply_string)
+
+            # Login succeeded — safe to call show_account()
+            self._api = login_result
+            raw_accounts = login_result.show_account()
             self._accounts = [
                 Account(
                     account=a["account"],
