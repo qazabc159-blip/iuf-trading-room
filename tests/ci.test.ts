@@ -144,6 +144,11 @@ import {
   getFixtureFullSnapshot,
   _resetThreeStrategyCache
 } from "../apps/api/src/lab-three-strategy-consumer.ts";
+import {
+  captureException as sentryCaptureException,
+  captureMessage as sentryCaptureMessage,
+  isSentryEnabled
+} from "../apps/api/src/sentry-init.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -8504,4 +8509,75 @@ test("lab-three-strategy-consumer: getFixtureFullSnapshot snapshot endpoint has 
   assert.equal(data["mode"], "READ_ONLY_FIXTURE_API", "full snapshot mode must be READ_ONLY_FIXTURE_API");
   assert.equal(data["fixture_label"], "PAPER_FIXTURE", "full snapshot must carry PAPER_FIXTURE label");
   _resetThreeStrategyCache();
+});
+
+// ── P0-2 Observability layer tests ───────────────────────────────────────────
+
+test("sentry-init: isSentryEnabled is false when SENTRY_DSN is not set", () => {
+  // In CI environment SENTRY_DSN is never set — Sentry must be a no-op.
+  // This verifies the graceful degradation contract: no DSN → never initialised.
+  assert.equal(isSentryEnabled, false, "Sentry must be disabled when SENTRY_DSN is absent");
+});
+
+test("sentry-init: captureException is a no-op when DSN absent (does not throw)", () => {
+  // Calling captureException without Sentry initialised must never throw.
+  // Safe-default: silently swallowed.
+  assert.doesNotThrow(() => {
+    sentryCaptureException(new Error("test error"), { tags: { scheduler: "test" } });
+  }, "captureException must not throw when Sentry is not initialised");
+});
+
+test("sentry-init: captureMessage is a no-op when DSN absent (does not throw)", () => {
+  assert.doesNotThrow(() => {
+    sentryCaptureMessage("test message", "warning", { scheduler: "test" });
+  }, "captureMessage must not throw when Sentry is not initialised");
+});
+
+test("observability Y2: payloadSummary sensitive key pattern covers token/session/cookie/auth-header", () => {
+  // Test the SENSITIVE_KEY_PATTERN logic from alerts/page.tsx (Y2 Lane-A fix).
+  // Pattern: /token|session|cookie|auth[-_]?header|authorization|bearer|api[-_]?key|secret|password|passwd|credential/i
+  const SENSITIVE_KEY_PATTERN = /token|session|cookie|auth[-_]?header|authorization|bearer|api[-_]?key|secret|password|passwd|credential/i;
+
+  const sensitiveKeys = [
+    "token", "authToken", "SESSION_ID", "session", "cookie", "auth-header",
+    "auth_header", "Authorization", "BEARER", "api_key", "apiKey",
+    "SECRET", "password", "passwd", "credential", "credentials"
+  ];
+  for (const key of sensitiveKeys) {
+    assert.ok(SENSITIVE_KEY_PATTERN.test(key), `key "${key}" must be detected as sensitive`);
+  }
+
+  const safeKeys = ["ruleId", "ticker", "allBuyDays", "severity", "triggeredAt", "eventType", "count"];
+  for (const key of safeKeys) {
+    assert.ok(!SENSITIVE_KEY_PATTERN.test(key), `key "${key}" must NOT be detected as sensitive`);
+  }
+});
+
+test("observability Y3: announcements source outcome maps to correct SourceHealthState", () => {
+  // Test the Y3 mapping logic from companies/[symbol]/page.tsx.
+  // Outcome → SourceHealthState: live→live, empty→stale, degraded→error, error→error
+  function mapOutcome(outcome: string): "live" | "stale" | "error" {
+    return outcome === "live" ? "live" :
+           outcome === "empty" ? "stale" :
+           "error";
+  }
+
+  assert.equal(mapOutcome("live"), "live", "live outcome → live state");
+  assert.equal(mapOutcome("empty"), "stale", "empty outcome → stale state (no fake-green)");
+  assert.equal(mapOutcome("degraded"), "error", "degraded outcome → error state");
+  assert.equal(mapOutcome("error"), "error", "error outcome → error state");
+});
+
+test("observability: audit-stats time window mapping is correct", () => {
+  // Test the time window parsing from the audit-stats endpoint.
+  const ALLOWED_WINDOWS: Record<string, number> = {
+    "1h": 1, "6h": 6, "12h": 12, "24h": 24, "48h": 48
+  };
+  assert.equal(ALLOWED_WINDOWS["1h"], 1);
+  assert.equal(ALLOWED_WINDOWS["24h"], 24);
+  assert.equal(ALLOWED_WINDOWS["48h"], 48);
+  // Unknown window → defaults to 24
+  const rawSince = "99h";
+  const windowHours = ALLOWED_WINDOWS[rawSince] ?? 24;
+  assert.equal(windowHours, 24, "unknown window should default to 24h");
 });

@@ -16,6 +16,7 @@
     "@iuf-trading-room/db": "workspace:*",
     "@iuf-trading-room/domain": "workspace:*",
     "@iuf-trading-room/integrations": "workspace:*",
+    "@sentry/node": "^10.52.0",
     "drizzle-orm": "^0.44.5",
     "hono": "^4.12.8",
     "redis": "^5.9.0",

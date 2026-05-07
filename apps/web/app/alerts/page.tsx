@@ -77,6 +77,25 @@ function eventTypeFromPayload(payload: Record<string, unknown>): string | null {
   return null;
 }
 
+/**
+ * Keys that must never be surfaced in UI — Lane-A security fix (Y2).
+ * Covers: token/session/cookie/auth-header patterns.
+ * Any key matching this pattern → value replaced with [REDACTED].
+ */
+const SENSITIVE_KEY_PATTERN = /token|session|cookie|auth[-_]?header|authorization|bearer|api[-_]?key|secret|password|passwd|credential/i;
+
+/** Redact sensitive string values (e.g. JWT, session ID, API key). */
+function redactValue(key: string, v: unknown): string {
+  if (SENSITIVE_KEY_PATTERN.test(key)) return "[REDACTED]";
+  if (typeof v === "string") {
+    // Redact anything that looks like a JWT (three base64url segments separated by dots)
+    if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(v)) return "[REDACTED]";
+    return v;
+  }
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return "…";
+}
+
 function payloadSummary(payload: Record<string, unknown>): string {
   const keys = Object.keys(payload);
   if (keys.length === 0) return "—";
@@ -85,7 +104,7 @@ function payloadSummary(payload: Record<string, unknown>): string {
     const v = payload[key];
     if (v === null || v === undefined) continue;
     if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-      parts.push(`${key}=${v}`);
+      parts.push(`${key}=${redactValue(key, v)}`);
     } else {
       parts.push(`${key}=…`);
     }
