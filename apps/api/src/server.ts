@@ -56,6 +56,12 @@ import {
   _getLastReviewerError
 } from "./openalice-ai-reviewer.js";
 import { runEmailDigestTick, getDigestState } from "./openalice-email-digest.js";
+import {
+  runEventEngineTick,
+  getEventEngineState,
+  listEvents,
+  acknowledgeEvent
+} from "./openalice-event-rule-engine.js";
 import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql } from "drizzle-orm";
 import {
@@ -7252,6 +7258,7 @@ app.post("/api/v1/internal/openalice/ai-reviewer/run-on/:draftId", async (c) => 
   });
 });
 
+<<<<<<< HEAD
 // ── BLOCK #6: Email digest internal endpoint ──────────────────────────────────
 
 /**
@@ -7260,11 +7267,113 @@ app.post("/api/v1/internal/openalice/ai-reviewer/run-on/:draftId", async (c) => 
  * Owner only.
  */
 app.post("/api/v1/internal/openalice/email-digest/trigger", async (c) => {
+=======
+// ── BLOCK #6: Event alerts endpoints ─────────────────────────────────────────
+
+/**
+ * GET /api/v1/alerts
+ * List triggered events. Auth required.
+ * Query params: limit (default 50, max 200), unread (default false)
+ */
+app.get("/api/v1/alerts", async (c) => {
+  const session = c.var.session;
+  if (!session) return c.json({ error: "auth_required" }, 401);
+
+  const limitParam = c.req.query("limit");
+  const unreadParam = c.req.query("unread");
+  const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 50, 200) : 50;
+  const unreadOnly = unreadParam === "true";
+
+  const events = await listEvents({ limit, unreadOnly });
+  return c.json({
+    data: events,
+    meta: { count: events.length, unreadOnly, engineState: getEventEngineState() }
+  });
+});
+
+/**
+ * POST /api/v1/alerts/:id/ack
+ * Mark an event as acknowledged. Auth required.
+ */
+app.post("/api/v1/alerts/:id/ack", async (c) => {
+  const session = c.var.session;
+  if (!session) return c.json({ error: "auth_required" }, 401);
+
+  const id = c.req.param("id");
+  if (!id) return c.json({ error: "missing_id" }, 400);
+
+  const result = await acknowledgeEvent(id);
+  if (!result.ok) {
+    return c.json({ error: result.reason ?? "ack_failed" }, 500);
+  }
+  return c.json({ ok: true, id });
+});
+
+/**
+ * GET /api/v1/alerts/sse
+ * Server-Sent Events stream for real-time alert delivery. Auth required.
+ * Pushes unacknowledged events every 15s (same pattern as /api/v1/trading/stream).
+ */
+app.get("/api/v1/alerts/sse", async (c) => {
+  const session = c.var.session;
+  if (!session) {
+    return c.json({ error: "auth_required" }, 401);
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+
+      // Heartbeat every 15s to keep connection alive
+      const heartbeat = setInterval(() => {
+        controller.enqueue(encoder.encode(": ping\n\n"));
+      }, 15_000);
+
+      // Push unacked events every 15s
+      const pushEvents = setInterval(async () => {
+        try {
+          const events = await listEvents({ limit: 20, unreadOnly: true });
+          if (events.length > 0) {
+            controller.enqueue(
+              encoder.encode(`event: alerts\ndata: ${JSON.stringify(events)}\n\n`)
+            );
+          }
+        } catch {
+          // Non-critical — miss a push, client retries on next interval
+        }
+      }, 15_000);
+
+      const cleanup = () => {
+        clearInterval(heartbeat);
+        clearInterval(pushEvents);
+        controller.close();
+      };
+      c.req.raw.signal.addEventListener("abort", cleanup);
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no"
+    }
+  });
+});
+
+/**
+ * POST /api/v1/internal/alerts/dispatch
+ * Internal: manually push a synthetic event (Owner only, for testing).
+ */
+app.post("/api/v1/internal/alerts/dispatch", async (c) => {
+>>>>>>> d14a89c (feat(api): OpenAlice event rule engine + REST/SSE alert endpoints (BLOCK #6 B+C))
   const session = c.var.session;
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "forbidden_role" }, 403);
   }
 
+<<<<<<< HEAD
   const body = await c.req.json().catch(() => ({})) as { force?: boolean };
   const force = body.force === true;
 
@@ -7292,6 +7401,24 @@ app.get("/api/v1/internal/openalice/email-digest/state", async (c) => {
     return c.json({ error: "forbidden_role" }, 403);
   }
   return c.json({ data: getDigestState() });
+=======
+  // Force a manual engine tick — triggers all 10 rules against current DB state
+  const before = getEventEngineState();
+  await runEventEngineTick().catch((e) => {
+    console.error("[alerts/dispatch] Manual tick error:", e instanceof Error ? e.message : e);
+  });
+  const after = getEventEngineState();
+
+  return c.json({
+    data: {
+      eventsBefore: before.totalEventsThisProcess,
+      eventsAfter: after.totalEventsThisProcess,
+      newEvents: after.totalEventsThisProcess - before.totalEventsThisProcess,
+      tickAt: after.lastTickAt,
+      lastError: after.lastError
+    }
+  });
+>>>>>>> d14a89c (feat(api): OpenAlice event rule engine + REST/SSE alert endpoints (BLOCK #6 B+C))
 });
 
 /**
@@ -7841,6 +7968,7 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, FIFTEEN_MIN_MS);
 
+<<<<<<< HEAD
   // BLOCK #6: Email digest scheduler — fires every 5min, window-guarded to 17:00–17:30 TST
   // Graceful: iuf_events table absent → empty digest → dry-run log (no email)
   // Graceful: RESEND_API_KEY absent → dry-run log (no email sent)
@@ -7849,6 +7977,23 @@ function startSchedulers(workspaceSlug: string): void {
       console.error("[email-digest] Interval tick failed:", e instanceof Error ? e.message : e)
     );
   }, 5 * 60 * 1000);
+=======
+  // BLOCK #6: Event rule engine — poll every 5min, evaluate 10 rules, write iuf_events
+  // Table iuf_events lives in DRAFT migration 0025 (not promoted yet).
+  // Engine degrades gracefully when table is missing (safe-default empty results).
+  const FIVE_MIN_MS = 5 * 60 * 1000;
+  // Initial tick delayed 30s to let DB connection stabilise after boot
+  setTimeout(() => {
+    runEventEngineTick().catch((e) =>
+      console.error("[event-engine] Initial tick failed:", e)
+    );
+  }, 30_000);
+  setInterval(() => {
+    runEventEngineTick().catch((e) =>
+      console.error("[event-engine] Interval tick failed:", e)
+    );
+  }, FIVE_MIN_MS);
+>>>>>>> d14a89c (feat(api): OpenAlice event rule engine + REST/SSE alert endpoints (BLOCK #6 B+C))
 
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
@@ -7856,7 +8001,11 @@ function startSchedulers(workspaceSlug: string): void {
     "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) + " +
     "PR-C dividend (24h) + PR-C market-value (24h) + PR-C valuation (24h) + PR-C stock-news (30min) + " +
     "P0-C pipeline pre_market/close_watch/close_brief (15min) + " +
+<<<<<<< HEAD
     "BLOCK#6 email-digest (5min, fires at 17:00–17:30 TST) started"
+=======
+    "BLOCK#6 event-rule-engine (5min) started"
+>>>>>>> d14a89c (feat(api): OpenAlice event rule engine + REST/SSE alert endpoints (BLOCK #6 B+C))
   );
 }
 
