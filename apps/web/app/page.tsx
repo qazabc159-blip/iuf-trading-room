@@ -104,13 +104,6 @@ type HeatTileLayout = HeatTile & {
   compact: boolean;
 };
 
-type HeatmapSectorGroup = {
-  sector: string;
-  weight: number;
-  tiles: HeatTile[];
-  layout: HeatTileLayout[];
-};
-
 type TapeQuote = {
   sym: string;
   name: string;
@@ -707,61 +700,6 @@ function buildTreemapLayout(items: HeatTile[]): HeatTileLayout[] {
       return Math.abs(right.pct ?? 0) - Math.abs(left.pct ?? 0);
     });
   return splitTreemapRows(sorted, 0, 0, 100, 100);
-}
-
-function sectorLabel(raw: string | null | undefined) {
-  const normalized = (raw ?? "").trim();
-  if (!normalized) return "其他產業";
-  const labels: Record<string, string> = {
-    "Semiconductors": "半導體",
-    "Electronic Components": "電子零組件",
-    "Computer Hardware": "電腦及週邊",
-    "Communication Equipment": "通訊設備",
-    "Electrical Equipment & Parts": "電機設備",
-    "Specialty Industrial Machinery": "工業機械",
-    "Specialty Chemicals": "化學材料",
-    "Semiconductor Equipment & Materials": "半導體設備",
-    "Information Technology Services": "資訊服務",
-    "Consumer Electronics": "消費電子",
-    "Auto Parts": "汽車零組件",
-    "Steel": "鋼鐵",
-    "Banks": "金融銀行",
-    "Insurance": "保險",
-    "Asset Management": "金融控股",
-    "Marine Shipping": "航運",
-    "Airlines": "航空",
-    "Real Estate": "營建地產",
-    "Textile Manufacturing": "紡織",
-    "Biotechnology": "生技醫療",
-    "Pharmaceuticals": "製藥",
-    "Food Distribution": "食品通路",
-    "Packaged Foods": "食品",
-    "Oil & Gas Refining & Marketing": "油電燃氣",
-    "Utilities": "公用事業",
-  };
-  return labels[normalized] ?? normalized;
-}
-
-function buildHeatmapSectorGroups(rows: HeatTile[]): HeatmapSectorGroup[] {
-  const realRows = rows.filter((row) => !row.placeholder);
-  const grouped = new Map<string, HeatTile[]>();
-
-  for (const row of realRows) {
-    const sector = sectorLabel(row.sector);
-    const items = grouped.get(sector) ?? [];
-    items.push(row);
-    grouped.set(sector, items);
-  }
-
-  return [...grouped.entries()]
-    .map(([sector, tiles]) => ({
-      sector,
-      tiles: tiles.sort((left, right) => Math.max(0.1, right.weight) - Math.max(0.1, left.weight)),
-      weight: tiles.reduce((sum, tile) => sum + Math.max(0.1, tile.weight), 0),
-      layout: buildTreemapLayout(tiles),
-    }))
-    .sort((left, right) => right.weight - left.weight)
-    .slice(0, 12);
 }
 
 function hasMarketOverviewData(value: MarketDataOverview | null): boolean {
@@ -1371,38 +1309,21 @@ function FreshnessPanel({ sources }: { sources: SourceTile[] }) {
 function HeatmapPanel({ heatmap, market }: { heatmap: HeatTile[]; market: LoadState<MarketDataOverview | null> }) {
   const rows = heatmap.length > 0 ? heatmap : EMPTY_HEATMAP;
   const hasRealHeatmap = rows.some((row) => !row.placeholder);
-  const sectorGroups = buildHeatmapSectorGroups(rows);
   const heatmapSource = market.data?.marketContext.source === "finmind:official-daily" ? "FinMind 官方日資料" : "正式行情";
   return (
     <Panel
       eyebrow="HEATMAP"
       title="台股市場熱力圖"
-      sub={hasRealHeatmap ? `區分產業 · 顯示個股 · 面積=成交量 · 顏色=今日漲跌 · ${heatmapSource}` : "等待後端行情回補；不顯示假價格。"}
+      sub={hasRealHeatmap ? `全市場盤面 · 面積=成交量 · 顏色=今日漲跌 · ${heatmapSource}` : "等待後端行情回補；不顯示假價格。"}
       right={<div className="tac-heat-legend"><span>上市/上櫃</span><span>成交量</span><span>今日</span></div>}
     >
       <div className="tac-heatmap">
-        {hasRealHeatmap ? (
-          <div className="tac-heatmap-groups">
-            {sectorGroups.map((group) => (
-              <section className="tac-heat-sector" key={group.sector}>
-                <header className="tac-heat-sector-head">
-                  <strong>{group.sector}</strong>
-                  <span>{group.tiles.length} 檔</span>
-                </header>
-                <div className="tac-heat-sector-canvas">
-                  {group.layout.map((tile, index) => <HeatTileView tile={tile} key={`${group.sector}-${tile.symbol}-${index}`} />)}
-                </div>
-              </section>
-            ))}
-          </div>
-        ) : (
-          <div className="tac-heatmap-canvas">
-            {buildTreemapLayout(rows).map((tile, index) => <HeatTileView tile={tile} key={`${tile.symbol}-${index}`} />)}
-          </div>
-        )}
+        <div className="tac-heatmap-canvas tac-market-heatmap-canvas">
+          {buildTreemapLayout(rows).map((tile, index) => <HeatTileView tile={tile} key={`${tile.symbol}-${index}`} />)}
+        </div>
       </div>
       <div className="tac-heat-footer">
-        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · {hasRealHeatmap ? `${sectorGroups.length} 個產業` : "EMPTY"}</span>
+        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · 大盤熱力圖</span>
         <span>-3% <i /> +3%</span>
       </div>
     </Panel>
