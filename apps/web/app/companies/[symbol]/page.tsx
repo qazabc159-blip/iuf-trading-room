@@ -27,6 +27,7 @@ import { PaperOrderPanel }     from "./PaperOrderPanel";
 import { SourceStatusCard }    from "./SourceStatusCard";
 import { DerivativesPanel }    from "./DerivativesPanel";
 import { TickStreamPanel }     from "./TickStreamPanel";
+import { FullProfilePanels }   from "./FullProfilePanels";
 
 function tone(value: number | null | undefined) {
   if (typeof value !== "number") return "muted";
@@ -360,6 +361,25 @@ export default async function CompanyDetailPage({
           <TickStreamPanel />
         </div>
       </div>
+
+      {/* BLOCK #8 Lane C — sections [06]-[11] off /full-profile (PR #259) + DEGRADED announcements */}
+      <div className="company-tabs-band company-data-dock-title">
+        <div>
+          <span className="tg gold">完整資料區</span>
+          <strong>FinMind 11 資料集（[06]–[11]）</strong>
+          <small>財報、月營收、法人籌碼、融資融券、股利政策、重大訊息；任何資料源 STALE / EMPTY / BLOCKED / DEGRADED 均誠實揭露，不補假。</small>
+        </div>
+        <div className="company-data-dock-tags">
+          <span>財報</span>
+          <span>月營收</span>
+          <span>法人</span>
+          <span>融資券</span>
+          <span>股利</span>
+          <span>公告</span>
+        </div>
+      </div>
+
+      <FullProfilePanels companyId={company.id} />
     </PageFrame>
   );
 }

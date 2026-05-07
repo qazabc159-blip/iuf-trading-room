@@ -1777,6 +1777,134 @@ export async function getCompanyShareholding(companyId: string, params?: { month
   return request<CompanyShareholdingData>(`/api/v1/companies/${companyId}/shareholding${qs ? `?${qs}` : ""}`);
 }
 
+// =============================================================================
+// BLOCK #5 Axis 4+5 — full-profile aggregating envelope (PR #259)
+// Mirrors apps/api/src/server.ts FullProfileSection<T>; tolerant of unknown
+// state strings (server may add new states without breaking the client).
+// =============================================================================
+
+export type FullProfileSourceState =
+  | "LIVE"
+  | "STALE"
+  | "EMPTY"
+  | "BLOCKED"
+  | "DEGRADED"
+  | "ERROR"
+  | "MOCK"
+  | "FALLBACK"
+  | "CLOSED";
+
+export interface FullProfileSourceTrail {
+  source: string;
+  datasetKey: string;
+  recordCount: number;
+  degradedReason: string | null;
+}
+
+export interface FullProfileSection<T> {
+  state: FullProfileSourceState;
+  latest: T | null;
+  history: T[];
+  updatedAt: string;
+  sourceTrail: FullProfileSourceTrail;
+}
+
+export interface FullProfileMonthlyRevenueLatest {
+  date: string;
+  stock_id: string;
+  revenue: number;
+  revenue_month: number;
+  revenue_year: number;
+  country: string;
+  yoyGrowth: number | null;
+}
+
+export interface FullProfileMonthlyRevenueRow {
+  date: string;
+  stock_id: string;
+  revenue: number;
+  revenue_month: number;
+  revenue_year: number;
+  country: string;
+}
+
+export interface FullProfileFinancialLatest {
+  date: string;
+  eps: number | null;
+  revenue: number | null;
+  operatingIncome: number | null;
+}
+
+export interface FullProfileFinancialRow {
+  date: string;
+  stock_id: string;
+  type: string;
+  value: number;
+  origin_name?: string;
+}
+
+export interface FullProfileInstitutionalRow {
+  date: string;
+  foreign: number;
+  investmentTrust: number;
+  dealer: number;
+  totalNetBuy: number;
+}
+
+export interface FullProfileMarginShortRow {
+  date: string;
+  marginBalance: number | null;
+  shortBalance: number | null;
+  marginChange: number | null;
+  shortChange: number | null;
+}
+
+export interface FullProfileDividendRow {
+  year: number;
+  cashDividend: number;
+  stockDividend: number;
+  totalDividend: number;
+  announcementDate: string | null;
+}
+
+export interface FullProfileNewsRow {
+  date: string;
+  title: string;
+  url: string | null;
+  sourceName: string | null;
+}
+
+export interface FullProfileEnvelope {
+  company: {
+    id: string;
+    ticker: string;
+    name: string;
+    market: string;
+    country: string;
+  };
+  fundamentals: {
+    monthlyRevenue: FullProfileSection<FullProfileMonthlyRevenueRow> & { latest: FullProfileMonthlyRevenueLatest | null };
+    financialStatement: FullProfileSection<FullProfileFinancialRow> & { latest: FullProfileFinancialLatest | null };
+    cashFlow: FullProfileSection<FullProfileFinancialRow>;
+    balanceSheet: FullProfileSection<FullProfileFinancialRow>;
+  };
+  tradingFlow: {
+    institutional: FullProfileSection<FullProfileInstitutionalRow>;
+    marginShort: FullProfileSection<FullProfileMarginShortRow>;
+    shareholding: FullProfileSection<{ date: string; foreignRatio: number | null; foreignRemainRatio: number | null; sharesIssued: number | null }>;
+  };
+  marketIntel: {
+    dividend: FullProfileSection<FullProfileDividendRow>;
+    marketValue: FullProfileSection<{ date: string; marketValue: number }>;
+    valuation: FullProfileSection<{ date: string; pe: number | null; pbr: number | null; dividendYield: number | null }>;
+    news: FullProfileSection<FullProfileNewsRow> & { experimental?: true };
+  };
+}
+
+export async function getCompanyFullProfile(companyId: string) {
+  return request<FullProfileEnvelope>(`/api/v1/companies/${companyId}/full-profile`);
+}
+
 // Paper orders live in a dedicated no-mock client so both company and portfolio
 // order panels share the Contract 1 shape.
 export {

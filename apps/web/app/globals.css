@@ -10417,3 +10417,116 @@ body:has(.login-route) > div {
     flex: 1 1 100%;
   }
 }
+
+/* BLOCK #8 Lane C — full-profile sections [06]-[11] grid.
+   Mirrors company-data-dock vibe: 2-up on desktop, single column on mobile.
+   Tables inside use `table-scroll` so 390px viewport never overflows. */
+.full-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(14px, 1.6vw, 22px);
+  align-items: start;
+  margin-top: clamp(12px, 1.4vw, 18px);
+}
+
+.full-profile-grid > .company-intel-panel {
+  min-width: 0;
+  border: 0;
+  border-top: 1px solid rgba(226, 184, 92, 0.22);
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+  background:
+    linear-gradient(108deg, rgba(226, 184, 92, 0.052), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent 62%),
+    rgba(3, 7, 12, 0.26);
+  box-shadow: none;
+  padding: clamp(14px, 1.35vw, 18px) clamp(14px, 1.5vw, 20px);
+}
+
+.full-profile-grid .ascii-head {
+  min-height: 0;
+  margin-bottom: 10px;
+  padding: 0 0 10px;
+  align-items: center;
+}
+
+.full-profile-grid .ascii-head .dim {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.full-profile-grid .source-line {
+  gap: 7px 10px;
+  margin: 6px 0 12px;
+}
+
+.full-profile-grid .metric-grid.compact-metric-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.full-profile-grid .metric-tile {
+  padding: 10px 11px;
+  min-width: 0;
+}
+
+.full-profile-grid .table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.full-profile-grid .data-table {
+  width: 100%;
+  table-layout: auto;
+}
+
+.full-profile-grid .data-table th,
+.full-profile-grid .data-table td {
+  padding-inline: 7px;
+  white-space: nowrap;
+}
+
+.full-profile-grid .market-intel-list {
+  margin-top: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.full-profile-grid .market-intel-button {
+  grid-template-columns: 74px minmax(48px, max-content) minmax(0, 1fr) auto;
+  min-height: 36px;
+  padding: 9px 0;
+  gap: 10px;
+  border-bottom-color: rgba(220, 228, 240, 0.055);
+}
+
+.full-profile-grid .market-intel-title,
+.full-profile-grid .state-reason {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+@media (max-width: 1180px) {
+  .full-profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .full-profile-grid > .company-intel-panel {
+    padding-inline: 14px;
+  }
+
+  .full-profile-grid .metric-grid.compact-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .full-profile-grid .market-intel-button {
+    grid-template-columns: 68px minmax(40px, max-content) minmax(0, 1fr);
+  }
+
+  .full-profile-grid .market-intel-button > .tg:last-child {
+    display: none;
+  }
+}
+
