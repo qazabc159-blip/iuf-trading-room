@@ -4989,35 +4989,6 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
   }
   const activeDb = db;
 
-  function sqlBoolean(value: unknown): boolean {
-    return value === true || value === 1 || value === "1" || value === "t" || value === "true";
-  }
-
-  async function tableExists(tableName: string): Promise<boolean> {
-    const result = await activeDb.execute(drizzleSql`
-      SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists
-    `);
-    const row = (result as { rows?: Array<{ exists?: unknown }> }).rows?.[0];
-    return sqlBoolean(row?.exists);
-  }
-
-  async function tableHasColumns(tableName: string, columns: string[]): Promise<boolean> {
-    const checks = await Promise.all(columns.map(async (columnName) => {
-      const result = await activeDb.execute(drizzleSql`
-        SELECT EXISTS (
-          SELECT 1
-          FROM information_schema.columns
-          WHERE table_schema = 'public'
-            AND table_name = ${tableName}
-            AND column_name = ${columnName}
-        ) AS exists
-      `);
-      const row = (result as { rows?: Array<{ exists?: unknown }> }).rows?.[0];
-      return sqlBoolean(row?.exists);
-    }));
-    return checks.every(Boolean);
-  }
-
   type IntelRow = {
     id: string | null;
     ticker: string | null;
@@ -5030,18 +5001,10 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     source: string | null;
   };
 
-  const [hasAnnouncements, hasNews] = await Promise.all([
-    tableExists("tw_announcements").then((exists) => exists
-      ? tableHasColumns("tw_announcements", ["ticker_symbol", "announced_at", "title"])
-      : false),
-    tableExists("tw_stock_news").then((exists) => exists
-      ? tableHasColumns("tw_stock_news", ["id", "stock_id", "title", "url", "published_at", "source_name", "fetched_at"])
-      : false)
-  ]);
   const rows: IntelRow[] = [];
   let source: "twse_announcements" | "finmind_stock_news" | "mixed" | "empty" = "empty";
 
-  if (hasAnnouncements) {
+  try {
     const result = await activeDb.execute(drizzleSql`
       SELECT
         CONCAT(a.ticker_symbol, '-', a.announced_at::text, '-', a.title) AS id,
@@ -5064,39 +5027,45 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     `);
     rows.push(...(((result as { rows?: IntelRow[] }).rows) ?? []));
     if (rows.length > 0) source = "twse_announcements";
+  } catch (err) {
+    console.warn("[market-intel/announcements] tw_announcements unavailable:", err instanceof Error ? err.message : String(err));
   }
 
-  if (rows.length < limit && hasNews) {
-    const result = await activeDb.execute(drizzleSql`
-      SELECT
-        n.id::text AS id,
-        n.stock_id AS ticker,
-        COALESCE(c.name, n.stock_id) AS company_name,
-        COALESCE(NULLIF(n.published_at, ''), n.fetched_at::text) AS date,
-        n.title AS title,
-        COALESCE(NULLIF(n.source_name, ''), '台股新聞') AS category,
-        NULL::text AS body,
-        n.url AS url,
-        'finmind_stock_news' AS source
-      FROM tw_stock_news n
-      LEFT JOIN companies c
-        ON c.ticker = n.stock_id
-       AND c.workspace_id = ${session.workspace.id}
-      WHERE n.fetched_at >= NOW() - (${days}::text || ' days')::interval
-        AND COALESCE(n.title, '') <> ''
-      ORDER BY n.fetched_at DESC
-      LIMIT ${Math.max(limit, 12)}
-    `);
-    const seen = new Set(rows.map((row) => `${row.ticker ?? ""}:${row.title ?? ""}`));
-    for (const row of ((result as { rows?: IntelRow[] }).rows) ?? []) {
-      const key = `${row.ticker ?? ""}:${row.title ?? ""}`;
-      if (seen.has(key)) continue;
-      rows.push(row);
-      seen.add(key);
-      if (rows.length >= limit) break;
-    }
-    if (rows.length > 0) {
-      source = source === "twse_announcements" ? "mixed" : "finmind_stock_news";
+  if (rows.length < limit) {
+    try {
+      const result = await activeDb.execute(drizzleSql`
+        SELECT
+          n.id::text AS id,
+          n.stock_id AS ticker,
+          COALESCE(c.name, n.stock_id) AS company_name,
+          COALESCE(NULLIF(n.published_at, ''), n.fetched_at::text) AS date,
+          n.title AS title,
+          COALESCE(NULLIF(n.source_name, ''), '台股新聞') AS category,
+          NULL::text AS body,
+          n.url AS url,
+          'finmind_stock_news' AS source
+        FROM tw_stock_news n
+        LEFT JOIN companies c
+          ON c.ticker = n.stock_id
+         AND c.workspace_id = ${session.workspace.id}
+        WHERE n.fetched_at >= NOW() - (${days}::text || ' days')::interval
+          AND COALESCE(n.title, '') <> ''
+        ORDER BY n.fetched_at DESC
+        LIMIT ${Math.max(limit, 12)}
+      `);
+      const seen = new Set(rows.map((row) => `${row.ticker ?? ""}:${row.title ?? ""}`));
+      for (const row of ((result as { rows?: IntelRow[] }).rows) ?? []) {
+        const key = `${row.ticker ?? ""}:${row.title ?? ""}`;
+        if (seen.has(key)) continue;
+        rows.push(row);
+        seen.add(key);
+        if (rows.length >= limit) break;
+      }
+      if (rows.length > 0) {
+        source = source === "twse_announcements" ? "mixed" : "finmind_stock_news";
+      }
+    } catch (err) {
+      console.warn("[market-intel/announcements] tw_stock_news unavailable:", err instanceof Error ? err.message : String(err));
     }
   }
 
