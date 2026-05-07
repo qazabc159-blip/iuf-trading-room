@@ -4132,17 +4132,17 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
       queryFundamentalDatasetStats("tw_balance_sheet"),
       queryFundamentalDatasetStats("tw_cashflow_statement")
     ]);
-    // PR B: query trading-flow dataset stats in parallel (staleDays: daily=5, weekly=10)
+    // PR B: query trading-flow dataset stats in parallel (staleDays: daily=5)
     [institutionalBuySellStats, marginShortStats, shareholdingStats] = await Promise.all([
       queryTradingFlowDatasetStats("tw_institutional_buysell", 5),
       queryTradingFlowDatasetStats("tw_margin_short", 5),
-      queryTradingFlowDatasetStats("tw_shareholding", 10)
+      queryTradingFlowDatasetStats("tw_shareholding", 5)   // S2: align to daily=5 (was 10)
     ]);
     // PR C: query market-intel dataset stats in parallel
-    // dividend/market_value: weekly (staleDays=10); valuation: daily (staleDays=5); news: 30min (staleDays=1)
+    // dividend: weekly (staleDays=10); market_value/valuation: daily (staleDays=5); news: 30min (staleDays=1)
     [dividendStats, marketValueStats, valuationStats, stockNewsStats] = await Promise.all([
       queryMarketIntelDatasetStats("tw_dividend", 10),
-      queryMarketIntelDatasetStats("tw_market_value", 10),
+      queryMarketIntelDatasetStats("tw_market_value", 5),  // S2: align to daily=5 (was 10)
       queryMarketIntelDatasetStats("tw_valuation", 5),
       queryMarketIntelDatasetStats("tw_stock_news", 1, "fetched_at")
     ]);
@@ -4922,7 +4922,21 @@ app.get("/api/v1/companies/:id/announcements", async (c) => {
   const days = Math.max(1, Math.min(365, Number(c.req.query("days") ?? "30")));
   const stockId = companyIdToTicker(company.ticker);
 
-  const rows = await getTwseOpenApiClient().getMaterialAnnouncements(stockId, days);
+  // F3: wrap in try/catch — fetchTwse now throws TwseNonJsonError on HTML-200 maintenance response.
+  // Previously swallowed error into {data:[]}; now surfaces DEGRADED state to frontend.
+  let rows: Awaited<ReturnType<ReturnType<typeof getTwseOpenApiClient>["getMaterialAnnouncements"]>>;
+  try {
+    rows = await getTwseOpenApiClient().getMaterialAnnouncements(stockId, days);
+  } catch (err) {
+    const isNonJson = err instanceof Error && err.name === "TwseNonJsonError";
+    const degradedReason = isNonJson ? "twse_upstream_non_json" : "twse_fetch_error";
+    console.warn(`[announcements] ${degradedReason}:`, err instanceof Error ? err.message : String(err));
+    return c.json({
+      data: [],
+      state: "DEGRADED" as const,
+      degradedReason
+    });
+  }
 
   const items = rows.map((r, i) => {
     const dateIso = r.Date ? r.Date.replace(/\//g, "-") : "";
@@ -5427,7 +5441,10 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
         marginChange: prev && r.MarginPurchaseTodayBalance != null && (prev as MarginRow).MarginPurchaseTodayBalance != null
           ? r.MarginPurchaseTodayBalance! - (prev as MarginRow).MarginPurchaseTodayBalance!
           : null,
-        shortChange: null
+        // S3: symmetric compute — mirror marginChange pattern for ShortSaleTodayBalance
+        shortChange: prev && r.ShortSaleTodayBalance != null && (prev as MarginRow).ShortSaleTodayBalance != null
+          ? r.ShortSaleTodayBalance! - (prev as MarginRow).ShortSaleTodayBalance!
+          : null
       };
     });
     const latest = hist[0] ?? null;
