@@ -5001,6 +5001,11 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     source: string | null;
   };
 
+  function readRows<T>(result: unknown): T[] {
+    if (Array.isArray(result)) return result as T[];
+    return ((result as { rows?: T[] })?.rows) ?? [];
+  }
+
   const rows: IntelRow[] = [];
   let source: "twse_announcements" | "finmind_stock_news" | "mixed" | "empty" = "empty";
 
@@ -5025,7 +5030,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       ORDER BY a.announced_at DESC
       LIMIT ${limit}
     `);
-    rows.push(...(((result as { rows?: IntelRow[] }).rows) ?? []));
+    rows.push(...readRows<IntelRow>(result));
     if (rows.length > 0) source = "twse_announcements";
   } catch (err) {
     console.warn("[market-intel/announcements] tw_announcements unavailable:", err instanceof Error ? err.message : String(err));
@@ -5054,7 +5059,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
         LIMIT ${Math.max(limit, 12)}
       `);
       const seen = new Set(rows.map((row) => `${row.ticker ?? ""}:${row.title ?? ""}`));
-      for (const row of ((result as { rows?: IntelRow[] }).rows) ?? []) {
+      for (const row of readRows<IntelRow>(result)) {
         const key = `${row.ticker ?? ""}:${row.title ?? ""}`;
         if (seen.has(key)) continue;
         rows.push(row);
