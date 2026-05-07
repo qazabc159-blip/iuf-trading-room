@@ -646,6 +646,25 @@ function buildHeatmap(market: LoadState<MarketDataOverview | null>): HeatTile[] 
     }));
 }
 
+function hasMarketOverviewData(value: MarketDataOverview | null): boolean {
+  if (!value) return false;
+  return (
+    value.quotes.total > 0 ||
+    value.marketContext.index.last !== null ||
+    value.marketContext.breadth.total > 0 ||
+    value.marketContext.heatmap.length > 0
+  );
+}
+
+function marketCoverageText(market: LoadState<MarketDataOverview | null>) {
+  const quoteTotal = market.data?.quotes.total ?? 0;
+  if (quoteTotal > 0) {
+    return `${formatNumber(market.data?.quotes.fresh)} / ${formatNumber(quoteTotal)}`;
+  }
+  const dailyTotal = market.data?.marketContext.heatmap.length ?? 0;
+  return dailyTotal > 0 ? `${formatNumber(dailyTotal)} 檔` : "0 檔";
+}
+
 function buildTapeQuotes(heatmap: HeatTile[], market: LoadState<MarketDataOverview | null>): TapeQuote[] {
   const index = market.data?.marketContext?.index;
   const breadth = market.data?.marketContext?.breadth;
@@ -872,7 +891,7 @@ function Ticker({ quotes, market }: { quotes: TapeQuote[]; market: LoadState<Mar
   const hasRealQuotes = quotes.some((quote) => !quote.placeholder);
   return (
     <div className="tac-ticker">
-      <div className="tac-ticker-label"><span />LIVE FEED</div>
+      <div className="tac-ticker-label"><span />正式資料</div>
       <div className="tac-ticker-track-wrap">
         {!hasRealQuotes && (
           <span className="tac-demo-badge">
@@ -900,7 +919,7 @@ function TopCommandBar({ now, market }: { now: string; market: LoadState<MarketD
         <PulseBars state={market.state === "LIVE" ? "LIVE" : "EMPTY"} />
         <span suppressHydrationWarning>{formatDateTime(now)} 台北</span>
         <button type="button">搜尋 <kbd>⌘ K</kbd></button>
-        <StatusChip state={market.state === "LIVE" ? "LIVE" : "EMPTY"} label="真實資料" />
+        <StatusChip state={market.state === "LIVE" ? "LIVE" : "EMPTY"} label="正式資料" />
       </div>
     </header>
   );
@@ -1036,7 +1055,7 @@ function HeroPanel({
       </div>
 
       <div className="tac-hero-kpis">
-        <Metric label="市場覆蓋" value={`${formatNumber(market.data?.quotes.fresh)} / ${formatNumber(market.data?.quotes.total)}`} sub={market.state === "LIVE" ? "可用報價 / 監看股票" : "市場資料未完整回傳"} tone={market.state === "LIVE" ? "live" : "empty"} />
+        <Metric label="市場覆蓋" value={marketCoverageText(market)} sub={(market.data?.quotes.total ?? 0) > 0 ? "可用報價 / 監看股票" : "FinMind 官方日資料 / 公司池"} tone={market.state === "LIVE" ? "live" : "empty"} />
         <Metric label="重大訊息" value={formatNumber(intel.data.items.length)} sub={`${formatNumber(intel.data.selected.length)} 檔公司 · ${ANNOUNCEMENT_DAYS} 天`} tone={intel.state === "LIVE" ? "live" : intel.state === "EMPTY" ? "empty" : "blocked"} />
         <Metric label="AI 簡報" value={briefState} sub={brief.data.latestDate ? `最新 ${brief.data.latestDate}` : "等待發布或審核"} tone={brief.data.state === "PUBLISHED" ? "live" : brief.data.state === "AWAITING_REVIEW" ? "review" : "empty"} />
         <Metric label="模擬交易" value={paperState} sub="僅 paper preview / 風控檢查" tone={paper.data?.previewReady ? "live" : "empty"} />
@@ -1115,9 +1134,9 @@ function MarketMoversPanel({ market }: { market: LoadState<MarketDataOverview | 
   return (
     <Panel
       eyebrow="MARKET MOVERS"
-      title="盤中排行"
-      sub={hasRealLeaders ? "即時報價來源回傳的漲跌與成交排行" : "等待後端行情回補真實排行；不顯示假股票。"}
-      right={<><PulseBars state={hasRealLeaders ? "LIVE" : "EMPTY"} /><span>{hasRealLeaders ? "REAL" : "EMPTY"}</span></>}
+      title="盤勢排行"
+      sub={hasRealLeaders ? "正式資料來源回傳的漲跌與成交排行" : "等待後端行情回補真實排行；不顯示假股票。"}
+      right={<><PulseBars state={hasRealLeaders ? "LIVE" : "EMPTY"} /><span>{hasRealLeaders ? "正式" : "EMPTY"}</span></>}
       className="tac-movers-panel"
     >
       <div className="tac-mover-board">
@@ -1178,14 +1197,14 @@ function HeatmapPanel({ heatmap, market }: { heatmap: HeatTile[]; market: LoadSt
     <Panel
       eyebrow="HEATMAP"
       title="台股公司池 · HEATMAP"
-      sub={hasRealHeatmap ? "市值權重 × 漲跌幅" : "等待後端行情回補；不顯示假價格。"}
+      sub={hasRealHeatmap ? "成交量權重 × 漲跌幅；quote 不足時使用 FinMind 官方日資料" : "等待後端行情回補；不顯示假價格。"}
       right={<div className="tac-heat-legend"><span>▲ 漲</span><span>— 平</span><span>▼ 跌</span></div>}
     >
       <div className="tac-heatmap">
         {rows.map((tile, index) => <HeatTileView tile={tile} index={index} key={`${tile.symbol}-${index}`} />)}
       </div>
       <div className="tac-heat-footer">
-        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · {hasRealHeatmap ? "真實 quote leaders" : "EMPTY quote leaders"}</span>
+        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · {hasRealHeatmap ? "正式資料" : "EMPTY"}</span>
         <span>-2% <i /> +2%</span>
       </div>
     </Panel>
@@ -1463,8 +1482,8 @@ export default async function DashboardPage() {
       "Market data overview",
       null,
       async () => (await getMarketDataOverview({ includeStale: true, topLimit: 12 })).data,
-      (value) => value === null || value.quotes.total === 0,
-      "市場資料總覽目前沒有可用報價。",
+      (value) => !hasMarketOverviewData(value),
+      "市場資料總覽目前沒有可用正式資料。",
     ),
     load(
       "OpenAlice / Ops snapshot",

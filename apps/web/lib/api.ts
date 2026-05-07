@@ -1054,7 +1054,7 @@ export type MarketDataOverviewLeader = {
   symbol: string;
   market: string;
   name?: string;
-  source: QuoteSource;
+  source: string;
   last: number | null;
   changePct?: number | null;
   volume?: number | null;
@@ -1067,7 +1067,7 @@ export type MarketDataOverviewHeatTile = {
   symbol: string;
   market: string;
   name: string;
-  source: QuoteSource;
+  source: string;
   last: number | null;
   changePct: number | null;
   volume: number | null;
@@ -1085,7 +1085,7 @@ export type MarketDataOverviewContext = {
     symbol: string | null;
     market: string;
     name: string;
-    source: QuoteSource | null;
+    source: string | null;
     last: number | null;
     change: number | null;
     changePct: number | null;

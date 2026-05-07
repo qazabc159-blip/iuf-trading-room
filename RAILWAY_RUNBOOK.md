@@ -6,8 +6,8 @@ This runbook is for day-to-day operations of the live Railway deployment.
 
 - Project: `iuf-trading-room`
 - Environment: `production`
-- Web: `https://web-production-7896c.up.railway.app`
-- API: `https://api-production-8f08.up.railway.app`
+- Web: `https://app.eycvector.com`
+- API: `https://api.eycvector.com`
 - Active services: `web`, `api`, `worker`, `pg`, `cache`
 
 ## Health Commands
@@ -26,11 +26,11 @@ railway.cmd service status --service cache
 Quick production checks:
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing "https://api-production-8f08.up.railway.app/health"
-Invoke-WebRequest -UseBasicParsing "https://api-production-8f08.up.railway.app/api/v1/session"
-Invoke-WebRequest -UseBasicParsing "https://api-production-8f08.up.railway.app/api/v1/openalice/observability" -Headers @{"x-workspace-slug"="primary-desk"}
-Invoke-WebRequest -UseBasicParsing "https://api-production-8f08.up.railway.app/api/v1/openalice/devices" -Headers @{"x-workspace-slug"="primary-desk"}
-Invoke-WebRequest -UseBasicParsing "https://web-production-7896c.up.railway.app"
+Invoke-WebRequest -UseBasicParsing "https://api.eycvector.com/health"
+Invoke-WebRequest -UseBasicParsing "https://api.eycvector.com/api/v1/session"
+Invoke-WebRequest -UseBasicParsing "https://api.eycvector.com/api/v1/openalice/observability" -Headers @{"x-workspace-slug"="primary-desk"}
+Invoke-WebRequest -UseBasicParsing "https://api.eycvector.com/api/v1/openalice/devices" -Headers @{"x-workspace-slug"="primary-desk"}
+Invoke-WebRequest -UseBasicParsing "https://app.eycvector.com"
 ```
 
 ## Logs
@@ -137,7 +137,7 @@ railway.cmd variable set -s api TV_WEBHOOK_DEDUP_TTL_SECONDS=300 TV_WEBHOOK_TIME
 ### Web loads but data is empty or broken
 
 1. Confirm `NEXT_PUBLIC_API_BASE_URL` still points to the live API domain.
-2. Check browser requests against `api-production-8f08.up.railway.app`.
+2. Check browser requests against `api.eycvector.com`.
 3. Verify `/api/v1/session` works from the public API domain.
 
 ### Postgres issues

@@ -83,8 +83,8 @@ pnpm verify:execution:live     # 打 production
 
 ## Production
 
-- **web**: https://web-production-7896c.up.railway.app
-- **api**: https://api-production-8f08.up.railway.app
+- **web**: https://app.eycvector.com
+- **api**: https://api.eycvector.com
 
 **部署管線**：`git push main` → GitHub Actions CI（typecheck + build + test + smoke）→ `workflow_run` 觸發 Railway deploy（web / api / worker matrix 並行）
 

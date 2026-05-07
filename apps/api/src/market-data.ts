@@ -23,9 +23,12 @@ import {
   type QuoteSource,
   type SymbolMaster
 } from "@iuf-trading-room/contracts";
+import { companiesOhlcv, getDb } from "@iuf-trading-room/db";
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 
+import { getFinMindClient } from "./data-sources/finmind-client.js";
 import {
   appendPersistedQuoteEntries,
   loadPersistedQuoteEntries
@@ -126,6 +129,33 @@ type MarketContextState = "LIVE" | "STALE" | "EMPTY" | "BLOCKED";
 type EffectiveQuoteRow = {
   item: EffectiveMarketQuote;
   quote: Quote;
+};
+
+type DailyBarContextRow = {
+  symbol: string;
+  market: Market;
+  name: string;
+  last: number;
+  prevClose: number | null;
+  change: number | null;
+  changePct: number | null;
+  volume: number | null;
+  timestamp: string;
+  source: string;
+  weight: number;
+};
+
+type OverviewLeader = {
+  symbol: string;
+  market: Market;
+  name: string;
+  source: string;
+  last: number | null;
+  changePct: number | null;
+  volume: number | null;
+  timestamp: string;
+  readiness: EffectiveQuoteReadiness;
+  freshnessStatus: QuoteResolutionFreshnessStatus;
 };
 
 const manualQuoteUpsertItemSchema = z.object({
@@ -1068,6 +1098,261 @@ function buildMarketContext(input: {
       reason: breadthRows.length > 0 ? null : "quote_change_pct_missing"
     },
     heatmap
+  };
+}
+
+function dateOnly(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+function dateToTaipeiIso(date: string): string {
+  return new Date(`${date}T00:00:00+08:00`).toISOString();
+}
+
+function daysAgoIsoDate(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
+function finiteNumber(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function dailyBarToContextRow(input: {
+  symbol: string;
+  market: Market;
+  name: string;
+  latest: { dt: string; close: unknown; volume: unknown };
+  previous?: { close: unknown } | null;
+  source: string;
+  index?: number;
+}): DailyBarContextRow | null {
+  const last = finiteNumber(input.latest.close);
+  if (last === null) return null;
+  const prevClose = input.previous ? finiteNumber(input.previous.close) : null;
+  const change = prevClose && prevClose !== 0 ? round(last - prevClose) : null;
+  const changePct = prevClose && prevClose !== 0 ? round((last - prevClose) / prevClose * 100) : null;
+  const volume = finiteNumber(input.latest.volume);
+  const index = input.index ?? 0;
+
+  return {
+    symbol: input.symbol,
+    market: input.market,
+    name: input.name,
+    last,
+    prevClose,
+    change,
+    changePct,
+    volume,
+    timestamp: dateToTaipeiIso(input.latest.dt),
+    source: input.source,
+    weight: volume !== null && volume > 0
+      ? round(Math.max(1, Math.min(8, Math.log10(volume + 10))), 3)
+      : round(Math.max(1, 6 - index * 0.18), 3)
+  };
+}
+
+async function loadFinMindTaiexIndexRow(): Promise<DailyBarContextRow | null> {
+  if (!process.env.FINMIND_API_TOKEN) return null;
+
+  try {
+    const bars = await getFinMindClient().getStockPriceAdj("TAIEX", daysAgoIsoDate(30), null);
+    if (bars.length === 0) return null;
+    const latest = bars.at(-1);
+    const previous = bars.length > 1 ? bars.at(-2) : null;
+    if (!latest) return null;
+    return dailyBarToContextRow({
+      symbol: "TAIEX",
+      market: "TW_INDEX",
+      name: "加權指數",
+      latest: { dt: latest.dt, close: latest.close, volume: latest.volume },
+      previous: previous ? { close: previous.close } : null,
+      source: "finmind:TaiwanStockPrice"
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function loadDailyBarRowsFromDb(input: {
+  session: AppSession;
+  companies: Company[];
+}): Promise<DailyBarContextRow[]> {
+  const db = getDb();
+  if (!db || input.companies.length === 0) return [];
+
+  const companyIds = input.companies.map((company) => company.id);
+  const companyById = new Map(input.companies.map((company) => [company.id, company]));
+
+  const rows = await db
+    .select({
+      companyId: companiesOhlcv.companyId,
+      dt: companiesOhlcv.dt,
+      close: companiesOhlcv.close,
+      volume: companiesOhlcv.volume
+    })
+    .from(companiesOhlcv)
+    .where(and(
+      eq(companiesOhlcv.workspaceId, input.session.workspace.id),
+      eq(companiesOhlcv.interval, "1d"),
+      ne(companiesOhlcv.source, "mock"),
+      inArray(companiesOhlcv.companyId, companyIds)
+    ))
+    .orderBy(desc(companiesOhlcv.dt))
+    .limit(Math.max(250, Math.min(5000, companyIds.length * 5)));
+
+  const byCompany = new Map<string, Array<{ dt: string; close: unknown; volume: unknown }>>();
+  for (const row of rows) {
+    const list = byCompany.get(row.companyId) ?? [];
+    if (list.length >= 2) continue;
+    const dt = dateOnly(row.dt);
+    if (list.some((item) => item.dt === dt)) continue;
+    list.push({ dt, close: row.close, volume: row.volume });
+    byCompany.set(row.companyId, list);
+  }
+
+  const contextRows: DailyBarContextRow[] = [];
+  for (const [companyId, bars] of byCompany.entries()) {
+    const company = companyById.get(companyId);
+    const latest = bars[0];
+    if (!company || !latest) continue;
+    const row = dailyBarToContextRow({
+      symbol: company.ticker.trim().toUpperCase(),
+      market: mapCompanyMarket(company.market),
+      name: company.name,
+      latest,
+      previous: bars[1] ?? null,
+      source: "finmind:companies_ohlcv",
+      index: contextRows.length
+    });
+    if (row) contextRows.push(row);
+  }
+
+  return contextRows;
+}
+
+async function buildDailyBarMarketContext(input: {
+  session: AppSession;
+  companies: Company[];
+}) {
+  const [indexRow, stockRows] = await Promise.all([
+    loadFinMindTaiexIndexRow(),
+    loadDailyBarRowsFromDb(input)
+  ]);
+
+  const breadthRows = stockRows.filter((row) => row.changePct !== null);
+  const up = breadthRows.filter((row) => (row.changePct ?? 0) > 0).length;
+  const down = breadthRows.filter((row) => (row.changePct ?? 0) < 0).length;
+  const flat = breadthRows.length - up - down;
+  const freshestBreadthTimestamp = breadthRows
+    .map((row) => row.timestamp)
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
+  const heatmap = [...stockRows]
+    .filter((row) => row.last !== null || row.changePct !== null || row.volume !== null)
+    .sort((left, right) => {
+      const volumeDelta = (right.volume ?? -Infinity) - (left.volume ?? -Infinity);
+      if (volumeDelta !== 0) return volumeDelta;
+      return Math.abs(right.changePct ?? 0) - Math.abs(left.changePct ?? 0);
+    })
+    .slice(0, 24)
+    .map((row) => ({
+      symbol: row.symbol,
+      market: row.market,
+      name: row.name,
+      source: row.source,
+      last: row.last,
+      changePct: row.changePct,
+      volume: row.volume,
+      timestamp: row.timestamp,
+      weight: row.weight,
+      readiness: "degraded" as const,
+      freshnessStatus: "stale" as const
+    }));
+
+  if (!indexRow && heatmap.length === 0) return null;
+
+  return {
+    state: "STALE" as const,
+    source: "finmind:official-daily",
+    index: indexRow ? {
+      state: "STALE" as const,
+      symbol: indexRow.symbol,
+      market: indexRow.market,
+      name: indexRow.name,
+      source: indexRow.source,
+      last: indexRow.last,
+      change: indexRow.change,
+      changePct: indexRow.changePct,
+      timestamp: indexRow.timestamp,
+      freshnessStatus: "stale" as const,
+      reason: "official_daily_index"
+    } : {
+      state: "EMPTY" as const,
+      symbol: null,
+      market: "TW_INDEX" as const,
+      name: "加權指數",
+      source: null,
+      last: null,
+      change: null,
+      changePct: null,
+      timestamp: null,
+      freshnessStatus: "missing" as const,
+      reason: "market_index_daily_missing"
+    },
+    breadth: {
+      state: breadthRows.length > 0 ? "STALE" as const : "EMPTY" as const,
+      up,
+      down,
+      flat,
+      total: breadthRows.length,
+      updatedAt: freshestBreadthTimestamp,
+      source: "finmind:companies_ohlcv",
+      reason: breadthRows.length > 0 ? "official_daily_breadth" : "daily_change_pct_missing"
+    },
+    heatmap
+  };
+}
+
+function leadersFromHeatmap(heatmap: Array<{
+  symbol: string;
+  market: Market;
+  name: string;
+  source: string;
+  last: number | null;
+  changePct: number | null;
+  volume: number | null;
+  timestamp: string;
+  readiness?: EffectiveQuoteReadiness;
+  freshnessStatus?: QuoteResolutionFreshnessStatus;
+}>, topLimit: number) {
+  const rows = heatmap.map((row) => ({
+    symbol: row.symbol,
+    market: row.market,
+    name: row.name,
+    source: row.source,
+    last: row.last,
+    changePct: row.changePct,
+    volume: row.volume,
+    timestamp: row.timestamp,
+    readiness: row.readiness ?? "degraded",
+    freshnessStatus: row.freshnessStatus ?? "stale"
+  }));
+
+  const withChange = rows.filter((row) => row.changePct !== null);
+  return {
+    topGainers: [...withChange]
+      .sort((left, right) => (right.changePct ?? -Infinity) - (left.changePct ?? -Infinity))
+      .slice(0, topLimit),
+    topLosers: [...withChange]
+      .sort((left, right) => (left.changePct ?? Infinity) - (right.changePct ?? Infinity))
+      .slice(0, topLimit),
+    mostActive: [...rows]
+      .filter((row) => row.volume !== null)
+      .sort((left, right) => (right.volume ?? -Infinity) - (left.volume ?? -Infinity))
+      .slice(0, topLimit)
   };
 }
 
@@ -2402,26 +2687,47 @@ export async function getMarketDataOverview(input: {
   const effectiveQuoteRows = effectiveRows(effectiveItems)
     .filter((row) => !isMarketIndexSymbol(row.quote.symbol, row.quote.market, resolveName(row.quote.symbol, row.quote.market)));
   const quotesWithChange = effectiveQuoteRows.filter((row) => row.quote.changePct !== null);
-  const topGainers = [...quotesWithChange]
+  let topGainers: OverviewLeader[] = [...quotesWithChange]
     .sort((left, right) => (right.quote.changePct ?? -Infinity) - (left.quote.changePct ?? -Infinity))
     .slice(0, topLimit)
     .map((row) => toOverviewLeader(row, resolveName));
 
-  const topLosers = [...quotesWithChange]
+  let topLosers: OverviewLeader[] = [...quotesWithChange]
     .sort((left, right) => (left.quote.changePct ?? Infinity) - (right.quote.changePct ?? Infinity))
     .slice(0, topLimit)
     .map((row) => toOverviewLeader(row, resolveName));
 
-  const mostActive = [...effectiveQuoteRows]
+  let mostActive: OverviewLeader[] = [...effectiveQuoteRows]
     .filter((row) => row.quote.volume !== null)
     .sort((left, right) => (right.quote.volume ?? -Infinity) - (left.quote.volume ?? -Infinity))
     .slice(0, topLimit)
     .map((row) => toOverviewLeader(row, resolveName));
 
-  const marketContext = buildMarketContext({
+  const quoteMarketContext = buildMarketContext({
     effectiveItems,
     companies
   });
+  const dailyMarketContext = quoteMarketContext.state === "EMPTY"
+    ? await buildDailyBarMarketContext({
+      session: input.session,
+      companies
+    })
+    : null;
+  const marketContext = quoteMarketContext.state === "EMPTY" && dailyMarketContext
+    ? dailyMarketContext
+    : quoteMarketContext;
+
+  if (
+    topGainers.length === 0 &&
+    topLosers.length === 0 &&
+    mostActive.length === 0 &&
+    marketContext.heatmap.length > 0
+  ) {
+    const fallbackLeaders = leadersFromHeatmap(marketContext.heatmap, topLimit);
+    topGainers = fallbackLeaders.topGainers;
+    topLosers = fallbackLeaders.topLosers;
+    mostActive = fallbackLeaders.mostActive;
+  }
 
   const latestQuoteTimestamp = quotes
     .map((quote) => quote.timestamp)
