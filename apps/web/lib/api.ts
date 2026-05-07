@@ -1611,6 +1611,17 @@ export interface CompanyAnnouncement {
   title: string;
   category: string;
   body?: string;
+  ticker?: string;
+  companyName?: string;
+  url?: string | null;
+  source?: string;
+}
+
+export interface MarketIntelAnnouncementsData {
+  items: CompanyAnnouncement[];
+  selected: Array<{ id: string; ticker: string; name: string }>;
+  failures: number;
+  source: "twse_announcements" | "finmind_stock_news" | "mixed" | "empty";
 }
 
 export interface CompanyFinancialRow {
@@ -1761,6 +1772,14 @@ export async function getCompanyAnnouncements(companyId: string, params?: { days
   if (params?.days) query.set("days", String(params.days));
   const qs = query.toString();
   return request<CompanyAnnouncement[]>(`/api/v1/companies/${companyId}/announcements${qs ? `?${qs}` : ""}`);
+}
+
+export async function getMarketIntelAnnouncements(params?: { days?: number; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.days) query.set("days", String(params.days));
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<MarketIntelAnnouncementsData>(`/api/v1/market-intel/announcements${qs ? `?${qs}` : ""}`);
 }
 
 export async function getCompanyFinancials(companyId: string, params?: { limit?: number }) {

@@ -187,8 +187,8 @@ kgisuperpy.login(person_id, person_pwd, simulation)
 
 The SDK log at `kgisuperpy/log/20260507/Login.log` confirms:
 ```
-Successfully obtained ranking token for uid: F131331910
-Successfully retrieved ranking for uid: F131331910, level:
+Successfully obtained ranking token for uid: REDACTED_PERSON_ID
+Successfully retrieved ranking for uid: REDACTED_PERSON_ID, level:
 ```
 Layer 1 (web token) is succeeding. Layer 2 (TradeCom DLL) is failing at backend permission check.
 

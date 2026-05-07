@@ -9,6 +9,7 @@ import {
   getFinMindDiagnostics,
   getFinMindStatus,
   getMarketDataOverview,
+  getMarketIntelAnnouncements,
   getOpsSnapshot,
   getStrategyIdeas,
   listStrategyRuns,
@@ -56,14 +57,14 @@ type StrategyIdeaItem = StrategyIdeasData["items"][number];
 type CompanyRow = Awaited<ReturnType<typeof getCompanies>>["data"][number];
 
 type IntelItem = CompanyAnnouncement & {
-  companyId: string;
+  companyId?: string;
   ticker: string;
   companyName: string;
 };
 
 type MarketIntelDashboard = {
   items: IntelItem[];
-  selected: CompanyRow[];
+  selected: Array<{ id: string; ticker: string; name: string }>;
   failures: number;
 };
 
@@ -89,6 +90,14 @@ type HeatTile = {
   readiness?: "ready" | "degraded" | "blocked";
   freshnessStatus?: "fresh" | "stale" | "missing";
   placeholder?: boolean;
+};
+
+type HeatTileLayout = HeatTile & {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  compact: boolean;
 };
 
 type TapeQuote = {
@@ -439,6 +448,24 @@ async function loadMarketIntelDashboard(ideas: LoadState<StrategyIdeasData | nul
     "TWSE OpenAPI 重大訊息",
     { items: [], selected: [], failures: 0 },
     async () => {
+      const aggregate = await getMarketIntelAnnouncements({
+        days: ANNOUNCEMENT_DAYS,
+        limit: MAX_INTEL_ROWS,
+      });
+      if (aggregate.data.items.length > 0) {
+        return {
+          items: aggregate.data.items
+            .filter((item) => item.ticker)
+            .map((item) => ({
+              ...item,
+              ticker: item.ticker as string,
+              companyName: item.companyName ?? (item.ticker as string),
+            })),
+          selected: aggregate.data.selected,
+          failures: aggregate.data.failures,
+        };
+      }
+
       const companies = (await getCompanies()).data ?? [];
       if (companies.length === 0) {
         return { items: [], selected: [], failures: 0 };
@@ -607,7 +634,7 @@ function buildSources(params: {
 function buildHeatmap(market: LoadState<MarketDataOverview | null>): HeatTile[] {
   const contextRows = market.data?.marketContext?.heatmap ?? [];
   if (contextRows.length > 0) {
-    return contextRows.slice(0, 23).map((item) => ({
+    return contextRows.slice(0, 30).map((item) => ({
       symbol: item.symbol,
       name: item.name,
       pct: typeof item.changePct === "number" ? item.changePct : null,
@@ -633,7 +660,7 @@ function buildHeatmap(market: LoadState<MarketDataOverview | null>): HeatTile[] 
       seen.add(item.symbol);
       return true;
     })
-    .slice(0, 23)
+    .slice(0, 30)
     .map((item, index) => ({
       symbol: item.symbol,
       name: item.name ?? item.market,
@@ -644,6 +671,64 @@ function buildHeatmap(market: LoadState<MarketDataOverview | null>): HeatTile[] 
       readiness: item.readiness,
       freshnessStatus: item.freshnessStatus,
     }));
+}
+
+function splitTreemapRows(items: HeatTile[], x: number, y: number, w: number, h: number): HeatTileLayout[] {
+  if (items.length === 0) return [];
+  if (items.length === 1) {
+    return [{
+      ...items[0],
+      x,
+      y,
+      w,
+      h,
+      compact: w < 15 || h < 14,
+    }];
+  }
+
+  const total = items.reduce((sum, item) => sum + Math.max(0.1, item.weight), 0);
+  const half = total / 2;
+  let running = 0;
+  let splitAt = 1;
+
+  for (let index = 0; index < items.length - 1; index += 1) {
+    const next = running + Math.max(0.1, items[index].weight);
+    if (Math.abs(next - half) <= Math.abs(running - half)) {
+      running = next;
+      splitAt = index + 1;
+    } else {
+      break;
+    }
+  }
+
+  const left = items.slice(0, splitAt);
+  const right = items.slice(splitAt);
+  const leftWeight = left.reduce((sum, item) => sum + Math.max(0.1, item.weight), 0);
+  const ratio = total > 0 ? leftWeight / total : 0.5;
+
+  if (w >= h) {
+    const leftW = w * ratio;
+    return [
+      ...splitTreemapRows(left, x, y, leftW, h),
+      ...splitTreemapRows(right, x + leftW, y, w - leftW, h),
+    ];
+  }
+
+  const topH = h * ratio;
+  return [
+    ...splitTreemapRows(left, x, y, w, topH),
+    ...splitTreemapRows(right, x, y + topH, w, h - topH),
+  ];
+}
+
+function buildTreemapLayout(items: HeatTile[]): HeatTileLayout[] {
+  const sorted = [...items]
+    .sort((left, right) => {
+      const weightDelta = Math.max(0.1, right.weight) - Math.max(0.1, left.weight);
+      if (Math.abs(weightDelta) > 0.001) return weightDelta;
+      return Math.abs(right.pct ?? 0) - Math.abs(left.pct ?? 0);
+    });
+  return splitTreemapRows(sorted, 0, 0, 100, 100);
 }
 
 function hasMarketOverviewData(value: MarketDataOverview | null): boolean {
@@ -1192,37 +1277,45 @@ function FreshnessPanel({ sources }: { sources: SourceTile[] }) {
 
 function HeatmapPanel({ heatmap, market }: { heatmap: HeatTile[]; market: LoadState<MarketDataOverview | null> }) {
   const rows = heatmap.length > 0 ? heatmap : EMPTY_HEATMAP;
-  const hasRealHeatmap = market.state === "LIVE" && rows.some((row) => !row.placeholder);
+  const layoutRows = buildTreemapLayout(rows);
+  const hasRealHeatmap = rows.some((row) => !row.placeholder);
+  const heatmapSource = market.data?.marketContext.source === "finmind:official-daily" ? "FinMind 官方日資料" : "正式行情";
   return (
     <Panel
       eyebrow="HEATMAP"
       title="台股公司池 · HEATMAP"
-      sub={hasRealHeatmap ? "成交量權重 × 漲跌幅；quote 不足時使用 FinMind 官方日資料" : "等待後端行情回補；不顯示假價格。"}
+      sub={hasRealHeatmap ? `面積代表成交量權重，顏色代表漲跌幅 · ${heatmapSource}` : "等待後端行情回補；不顯示假價格。"}
       right={<div className="tac-heat-legend"><span>▲ 漲</span><span>— 平</span><span>▼ 跌</span></div>}
     >
       <div className="tac-heatmap">
-        {rows.map((tile, index) => <HeatTileView tile={tile} index={index} key={`${tile.symbol}-${index}`} />)}
+        <div className="tac-heatmap-canvas">
+          {layoutRows.map((tile, index) => <HeatTileView tile={tile} key={`${tile.symbol}-${index}`} />)}
+        </div>
       </div>
       <div className="tac-heat-footer">
-        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · {hasRealHeatmap ? "正式資料" : "EMPTY"}</span>
+        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · {hasRealHeatmap ? heatmapSource : "EMPTY"}</span>
         <span>-2% <i /> +2%</span>
       </div>
     </Panel>
   );
 }
 
-function HeatTileView({ tile, index }: { tile: HeatTile; index: number }) {
+function HeatTileView({ tile }: { tile: HeatTileLayout }) {
   const pct = tile.pct ?? 0;
   const tone = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
   const abs = Math.min(1, Math.abs(pct) / 2.2);
   const style = {
     "--heat": String(0.18 + abs * 0.42),
     "--weight": String(Math.max(1, Math.min(8, tile.weight))),
+    left: `${tile.x}%`,
+    top: `${tile.y}%`,
+    width: `${tile.w}%`,
+    height: `${tile.h}%`,
   } as CSSProperties;
   if (tile.placeholder) {
     return (
       <div
-        className={`tac-heat-tile placeholder ${index === 0 ? "major" : index === 1 ? "secondary" : ""}`}
+        className={`tac-heat-tile placeholder ${tile.compact ? "compact" : ""}`}
         style={style}
       >
         <span>EMPTY</span>
@@ -1233,12 +1326,13 @@ function HeatTileView({ tile, index }: { tile: HeatTile; index: number }) {
   }
   return (
     <Link
-      className={`tac-heat-tile ${tone} ${index === 0 ? "major" : index === 1 ? "secondary" : ""}`}
+      className={`tac-heat-tile ${tone} ${tile.compact ? "compact" : ""}`}
       href={`/companies/${encodeURIComponent(tile.symbol)}`}
       style={style}
+      title={`${tile.symbol} ${tile.name} ${formatPercent(tile.pct)} · ${formatPrice(tile.price)}`}
     >
       <span>{tile.symbol}</span>
-      <small>{tile.name}</small>
+      {!tile.compact && <small>{tile.name}</small>}
       <b>{formatPercent(tile.pct)}</b>
     </Link>
   );
