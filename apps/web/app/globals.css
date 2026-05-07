@@ -10302,3 +10302,118 @@ body:has(.login-route) > div {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ── BLOCK #8 Lane A — /alerts page ────────────────────────────────────────── */
+.alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.alert-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(220, 228, 240, 0.10);
+  border-left: 3px solid rgba(220, 228, 240, 0.18);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 2px;
+}
+
+.alert-row[data-severity="critical"] {
+  border-left-color: rgba(230, 57, 70, 0.85);
+  background: rgba(230, 57, 70, 0.04);
+}
+
+.alert-row[data-severity="warning"] {
+  border-left-color: rgba(184, 150, 12, 0.85);
+  background: rgba(184, 150, 12, 0.04);
+}
+
+.alert-row[data-severity="info"] {
+  border-left-color: rgba(220, 228, 240, 0.30);
+}
+
+.alert-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.alert-rule-name {
+  font: 700 13px/1.45 var(--sans-tc);
+  color: var(--night-ink, #d8d4c8);
+  letter-spacing: 0.02em;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.alert-ticker {
+  font: 700 11px/1.55 var(--sans-tc);
+  letter-spacing: 0.04em;
+  color: var(--gold-bright, #d4b94a);
+  border: 1px solid rgba(226, 184, 92, 0.35);
+  padding: 2px 8px;
+  border-radius: 2px;
+}
+
+.alert-row-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+}
+
+.alert-row-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.alert-row-meta dt {
+  font: 600 10px/1.4 var(--sans-tc);
+  letter-spacing: 0.06em;
+  color: var(--night-soft, rgba(216, 212, 200, 0.55));
+  text-transform: uppercase;
+}
+
+.alert-row-meta dd {
+  margin: 0;
+  font: 500 12px/1.5 var(--sans-tc);
+  color: var(--night-ink, #d8d4c8);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.alert-row-payload {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 720px) {
+  .alert-row-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .alert-row {
+    padding: 12px 12px;
+  }
+
+  .alert-row-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .alert-row-head {
+    gap: 6px;
+  }
+
+  .alert-rule-name {
+    flex: 1 1 100%;
+  }
+}

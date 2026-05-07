@@ -202,6 +202,94 @@ export async function createBrief(input: DailyBriefCreateInput) {
   });
 }
 
+// Event Alerts (BLOCK #6 / #8 — event-engine triggered events)
+
+export type AlertSeverity = "info" | "warning" | "critical";
+
+export type AlertEntry = {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  severity: AlertSeverity;
+  ticker: string | null;
+  payload: Record<string, unknown>;
+  triggeredAt: string;
+  acknowledged: boolean;
+};
+
+export type AlertsEngineState = {
+  lastTickAt: string | null;
+  lastTickEvents: number;
+  totalEventsThisProcess: number;
+  lastError: string | null;
+};
+
+export type AlertsListResponse = {
+  data: AlertEntry[];
+  meta: {
+    count: number;
+    unreadOnly: boolean;
+    engineState: AlertsEngineState;
+  };
+};
+
+export class AlertsAuthError extends Error {
+  constructor(message = "auth_required") {
+    super(message);
+    this.name = "AlertsAuthError";
+  }
+}
+
+export async function getAlerts(params?: { limit?: number; unreadOnly?: boolean }): Promise<AlertsListResponse> {
+  if (!API_BASE) {
+    throw new Error("後端位址尚未設定");
+  }
+
+  const query = new URLSearchParams();
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  if (params?.unreadOnly) query.set("unread", "true");
+  const qs = query.toString();
+
+  // SSR cookie forwarding (same pattern as request())
+  let ssrCookie: string | null = null;
+  if (typeof window === "undefined") {
+    try {
+      const { headers } = await import("next/headers");
+      const h = await headers();
+      ssrCookie = h.get("cookie");
+    } catch {
+      // outside request context — leave cookie unset
+    }
+  }
+
+  const response = await fetch(`${API_BASE}/api/v1/alerts${qs ? `?${qs}` : ""}`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "x-workspace-slug": WORKSPACE_SLUG,
+      ...(ssrCookie ? { Cookie: ssrCookie } : {}),
+    },
+  });
+
+  if (response.status === 401) {
+    throw new AlertsAuthError("auth_required");
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+
+  const json = (await response.json()) as Partial<AlertsListResponse>;
+  const data = Array.isArray(json.data) ? json.data : [];
+  const meta = json.meta ?? {
+    count: data.length,
+    unreadOnly: Boolean(params?.unreadOnly),
+    engineState: { lastTickAt: null, lastTickEvents: 0, totalEventsThisProcess: 0, lastError: null },
+  };
+  return { data, meta };
+}
+
 // OpenAlice Jobs (Draft Review Queue)
 
 export type OpenAliceJobEntry = {
