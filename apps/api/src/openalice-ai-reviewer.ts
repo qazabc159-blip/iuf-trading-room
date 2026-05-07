@@ -110,39 +110,6 @@ ${payloadStr}
 
 Return ONLY this JSON (no markdown fence, no extra text):
 {"verdict":"approve|reject|manual_review","reason":"<1 sentence>","flagged_issues":[],"confidence":0.9}`;
-
-  return `You are a compliance reviewer for a financial research platform.
-Review the following content draft and return ONLY valid JSON.
-
-## Hard Reject Rules (any match → verdict: "reject")
-1. Contains trading action words: buy / sell / 進場 / 賣出 / 買進 / 出脫
-2. Contains target price / 目標價 / 預測股價 with a specific number
-3. Contains guarantee / 必賺 / 翻倍 / 保證
-4. Contains hallucinated news (specific event, number, or company name cited WITHOUT a source URL)
-5. payload.llm_meta.fallback_template === true OR payload.llm_meta.provider === "fallback"
-6. Any section body is empty OR shorter than 50 characters
-7. payload.date (if present) does not equal today's date: ${today}
-
-## Draft Metadata
-- draftId: ${draft.id}
-- targetTable: ${draft.targetTable}
-- createdAt: ${draft.createdAt}
-
-## Draft Payload
-\`\`\`json
-${payloadStr}
-\`\`\`
-
-## Instructions
-- Check each hard reject rule strictly.
-- If ANY rule triggers → verdict MUST be "reject".
-- If content passes all rules but quality is uncertain → verdict "manual_review".
-- If content passes all rules and quality is clearly acceptable → verdict "approve".
-- confidence: 0.0–1.0 (your certainty in the verdict).
-- flagged_issues: list each rule violation found (empty array if none).
-
-Return ONLY this JSON (no markdown fence, no extra text):
-{"verdict":"approve|reject|manual_review","reason":"<1 sentence>","flagged_issues":[],"confidence":0.9}`;
 }
 
 // ── OpenAI call ───────────────────────────────────────────────────────────────
