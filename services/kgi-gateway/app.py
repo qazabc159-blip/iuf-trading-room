@@ -53,7 +53,7 @@ from kgi_kbar import (
     SUPPORTED_INTERVALS,
     UNSUPPORTED_INTERVAL_MATRIX,
 )
-from kgi_session import session
+from kgi_session import session, KgiLoginFailedError
 from schemas import (
     CreateOrderRequest,
     DealsResponse,
@@ -143,29 +143,82 @@ async def health() -> HealthResponse:
 # Session
 # ---------------------------------------------------------------------------
 
+def _mask_person_id(person_id: str) -> str:
+    """
+    Mask the middle portion of person_id for safe logging / response.
+    e.g. "A123456789" → "A12*****89"
+    Keeps first 3 and last 2 chars; replaces middle with '*'.
+    For IDs shorter than 6 chars, returns a fixed mask.
+    """
+    pid = str(person_id)
+    if len(pid) <= 5:
+        return "***"
+    keep_head = 3
+    keep_tail = 2
+    masked_len = len(pid) - keep_head - keep_tail
+    return pid[:keep_head] + "*" * masked_len + pid[-keep_tail:]
+
+
 @app.post("/session/login", response_model=LoginResponse)
 async def login(body: LoginRequest) -> LoginResponse:
     """
     Login to KGI via kgisuperpy.login().
     Does NOT call set_Account — caller must POST /session/set-account separately.
+
+    Error handling:
+      KgiLoginFailedError  → 401 KGI_LOGIN_FAILED  (wrong credentials, KGI rejected)
+      Other exceptions     → 400 KGI_LOGIN_ERROR    (network / unexpected failure)
+
+    SECURITY:
+      - person_id is masked in logs (middle chars replaced with '*')
+      - password is NEVER logged or included in any response
+      - raw error messages are trimmed to safe wording only
     """
+    masked_pid = _mask_person_id(body.person_id)
+
     try:
         accounts = session.login(
             person_id=body.person_id,
             person_pwd=body.person_pwd,
             simulation=body.simulation,
         )
-        logger.info("Login OK: person_id=%s accounts=%d", body.person_id.upper(), len(accounts))
+        logger.info("Login OK: person_id=%s simulation=%s accounts=%d",
+                    masked_pid, body.simulation, len(accounts))
         return LoginResponse(ok=True, accounts=accounts)
-    except Exception as exc:
-        logger.error("Login failed: %s", exc)
+
+    except KgiLoginFailedError as exc:
+        # KGI explicitly rejected credentials — return 401 with safe wording only.
+        # Log KGI error code + ReplyString (safe — no credentials here).
+        # NEVER include person_id literal / password in log or response.
+        logger.warning(
+            "Login rejected by KGI: person_id=%s simulation=%s error_code=%d reply=%s",
+            masked_pid, body.simulation, exc.error_code, exc.reply_string,
+        )
         raise HTTPException(
-            status_code=502,
+            status_code=401,
             detail=ErrorEnvelope(
                 error=ErrorDetail(
                     code="KGI_LOGIN_FAILED",
-                    message=str(exc),
-                    upstream=str(exc),
+                    message="KGI 帳密驗證失敗",
+                    upstream=f"code={exc.error_code}",
+                )
+            ).model_dump(),
+        ) from exc
+
+    except Exception as exc:
+        # Unexpected error (network, SDK crash, etc.) — return 400, log class only.
+        # str(exc) might contain credentials if SDK formats its own errors — log class only.
+        logger.error(
+            "Login error (unexpected): person_id=%s simulation=%s exc_class=%s",
+            masked_pid, body.simulation, type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="KGI_LOGIN_ERROR",
+                    message="KGI 登入失敗：連線或系統錯誤",
+                    upstream=type(exc).__name__,
                 )
             ).model_dump(),
         ) from exc
