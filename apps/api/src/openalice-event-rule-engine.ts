@@ -139,7 +139,7 @@ const RULES: EventRule[] = [
             WITH daily_net AS (
               SELECT stock_id,
                      date,
-                     SUM(CASE WHEN name LIKE '%外資%' THEN (buy - sell) ELSE 0 END) AS foreign_net,
+                     SUM(CASE WHEN name LIKE '%外%' OR name LIKE '%陸%' THEN (buy - sell) ELSE 0 END) AS foreign_net,
                      SUM(CASE WHEN name = '投信'      THEN (buy - sell) ELSE 0 END) AS trust_net,
                      SUM(CASE WHEN name LIKE '%自營%'  THEN (buy - sell) ELSE 0 END) AS dealer_net
               FROM tw_institutional_buysell
@@ -186,7 +186,7 @@ const RULES: EventRule[] = [
             WITH daily_net AS (
               SELECT stock_id,
                      date,
-                     SUM(CASE WHEN name LIKE '%外資%' THEN (buy - sell) ELSE 0 END) AS foreign_net,
+                     SUM(CASE WHEN name LIKE '%外%' OR name LIKE '%陸%' THEN (buy - sell) ELSE 0 END) AS foreign_net,
                      SUM(CASE WHEN name = '投信'      THEN (buy - sell) ELSE 0 END) AS trust_net,
                      SUM(CASE WHEN name LIKE '%自營%'  THEN (buy - sell) ELSE 0 END) AS dealer_net
               FROM tw_institutional_buysell
