@@ -17,7 +17,7 @@
     "smoke:autopilot:dryrun": "node --import tsx ./scripts/smoke-autopilot-dryrun.ts",
     "verify:execution": "node --import tsx ./apps/api/src/broker/verify-execution-lane.ts",
     "verify:execution:local": "pnpm verify:execution -- --base http://127.0.0.1:3001 --web-base http://127.0.0.1:3000",
-    "verify:execution:live": "pnpm verify:execution -- --base https://api-production-8f08.up.railway.app --web-base https://web-production-7896c.up.railway.app",
+    "verify:execution:live": "pnpm verify:execution -- --base https://api.eycvector.com --web-base https://app.eycvector.com",
     "migrate": "node --import tsx ./scripts/migrate.ts",
     "sync:tw-coverage": "node --import tsx ./scripts/sync-my-tw-coverage-to-production.ts",
     "sync:tw-coverage:graph": "node --import tsx ./scripts/sync-my-tw-coverage-graph-to-production.ts",

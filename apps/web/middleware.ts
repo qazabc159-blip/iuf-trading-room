@@ -14,6 +14,11 @@ import { type NextRequest, NextResponse } from "next/server";
 const PUBLIC_PATHS = new Set(["/login", "/register"]);
 const PRESENCE_COOKIE = "iuf_auth";
 const SESSION_COOKIE = "iuf_session";
+const CANONICAL_APP_ORIGIN = "https://app.eycvector.com";
+
+function isRailwayPublicHost(host: string): boolean {
+  return host.endsWith(".up.railway.app");
+}
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
@@ -42,6 +47,13 @@ function clearPresenceCookie(response: ReturnType<typeof NextResponse.next> | Re
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const host = request.headers.get("host") ?? "";
+
+  if (process.env.NODE_ENV === "production" && isRailwayPublicHost(host)) {
+    const canonicalUrl = new URL(request.nextUrl.pathname + request.nextUrl.search, CANONICAL_APP_ORIGIN);
+    return addNoindex(NextResponse.redirect(canonicalUrl, 308));
+  }
+
   const hasSessionCookie = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (isPublicPath(pathname)) {

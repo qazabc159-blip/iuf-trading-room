@@ -10,8 +10,8 @@ This repo is deployed on Railway as a single project with five active services:
 
 Current production endpoints:
 
-- `web`: `https://web-production-7896c.up.railway.app`
-- `api`: `https://api-production-8f08.up.railway.app`
+- `web`: `https://app.eycvector.com`
+- `api`: `https://api.eycvector.com`
 
 There is also one legacy failed service named `redis` left over from an early image-tag mistake. It is not used by production and can be deleted from the Railway dashboard.
 
@@ -110,7 +110,7 @@ RAILPACK_START_CMD=pnpm start:worker
 ### web
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=https://api-production-8f08.up.railway.app
+NEXT_PUBLIC_API_BASE_URL=https://api.eycvector.com
 NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG=primary-desk
 HOST=0.0.0.0
 RAILPACK_INSTALL_CMD=pnpm install --frozen-lockfile
