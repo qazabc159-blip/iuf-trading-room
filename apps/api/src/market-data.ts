@@ -121,6 +121,13 @@ const effectiveMarketQuoteSchema = z.object({
   candidates: z.array(quoteResolutionCandidateSchema)
 });
 
+type EffectiveMarketQuote = z.infer<typeof effectiveMarketQuoteSchema>;
+type MarketContextState = "LIVE" | "STALE" | "EMPTY" | "BLOCKED";
+type EffectiveQuoteRow = {
+  item: EffectiveMarketQuote;
+  quote: Quote;
+};
+
 const manualQuoteUpsertItemSchema = z.object({
   symbol: z.string().min(1).max(32),
   market: marketSchema,
@@ -888,6 +895,180 @@ function dedupeSymbolMasters(companies: Company[]) {
   }
 
   return [...bestByKey.values()];
+}
+
+function buildSymbolNameLookup(companies: Company[]) {
+  const bySymbol = new Map<string, string>();
+  const byMarketSymbol = new Map<string, string>();
+
+  for (const company of companies) {
+    const symbol = company.ticker.trim().toUpperCase();
+    if (!symbol) continue;
+    const market = mapCompanyMarket(company.market);
+    bySymbol.set(symbol, company.name);
+    byMarketSymbol.set(`${market}:${symbol}`, company.name);
+  }
+
+  return (symbol: string, market?: Market) => {
+    const normalized = symbol.trim().toUpperCase();
+    const marketKey = market ? `${market}:${normalized}` : "";
+    return (
+      (marketKey ? byMarketSymbol.get(marketKey) : null)
+      ?? bySymbol.get(normalized)
+      ?? indexNameForSymbol(normalized)
+      ?? normalized
+    );
+  };
+}
+
+function indexNameForSymbol(symbol: string) {
+  const normalized = symbol.replace(/^\^/, "").toUpperCase();
+  if (["TWII", "TAIEX", "Y9999"].includes(normalized)) return "加權指數";
+  if (["TPEX", "OTC", "TWO"].includes(normalized)) return "櫃買指數";
+  return null;
+}
+
+function isMarketIndexSymbol(symbol: string, market: Market, name: string) {
+  const normalized = symbol.trim().replace(/^\^/, "").toUpperCase();
+  return (
+    market === "TW_INDEX"
+    || ["TWII", "TAIEX", "Y9999", "TPEX", "OTC", "TWO"].includes(normalized)
+    || name.includes("加權指數")
+    || name.includes("櫃買指數")
+  );
+}
+
+function quoteChangeValue(quote: Quote) {
+  if (quote.last === null) return null;
+  if (quote.prevClose !== null && quote.prevClose !== 0) {
+    return round(quote.last - quote.prevClose);
+  }
+  if (quote.changePct !== null && quote.changePct !== -100) {
+    return round(quote.last - (quote.last / (1 + quote.changePct / 100)));
+  }
+  return null;
+}
+
+function stateFromEffectiveQuote(item: EffectiveMarketQuote): MarketContextState {
+  if (!item.selectedQuote) return "EMPTY";
+  if (item.freshnessStatus === "fresh") return "LIVE";
+  if (item.freshnessStatus === "stale") return "STALE";
+  return "BLOCKED";
+}
+
+function effectiveRows(items: EffectiveMarketQuote[]) {
+  return items
+    .filter((item): item is EffectiveMarketQuote & { selectedQuote: Quote } => item.selectedQuote !== null)
+    .map((item) => ({ item, quote: item.selectedQuote }));
+}
+
+function toOverviewLeader(row: EffectiveQuoteRow, resolveName: (symbol: string, market?: Market) => string) {
+  return {
+    symbol: row.quote.symbol,
+    market: row.quote.market,
+    name: resolveName(row.quote.symbol, row.quote.market),
+    source: row.item.selectedSource ?? row.quote.source,
+    last: row.quote.last,
+    changePct: row.quote.changePct !== null ? round(row.quote.changePct) : null,
+    volume: row.quote.volume,
+    timestamp: row.quote.timestamp,
+    readiness: row.item.readiness,
+    freshnessStatus: row.item.freshnessStatus
+  };
+}
+
+function buildMarketContext(input: {
+  effectiveItems: EffectiveMarketQuote[];
+  companies: Company[];
+}) {
+  const resolveName = buildSymbolNameLookup(input.companies);
+  const rows = effectiveRows(input.effectiveItems);
+  const rowWithNames = rows.map((row) => ({
+    ...row,
+    name: resolveName(row.quote.symbol, row.quote.market)
+  }));
+  const indexRow = rowWithNames.find((row) => isMarketIndexSymbol(row.quote.symbol, row.quote.market, row.name)) ?? null;
+  const stockRows = rowWithNames.filter((row) => !isMarketIndexSymbol(row.quote.symbol, row.quote.market, row.name));
+  const breadthRows = stockRows.filter((row) => row.quote.changePct !== null);
+  const up = breadthRows.filter((row) => (row.quote.changePct ?? 0) > 0).length;
+  const down = breadthRows.filter((row) => (row.quote.changePct ?? 0) < 0).length;
+  const flat = breadthRows.length - up - down;
+  const freshestBreadthTimestamp = breadthRows
+    .map((row) => row.quote.timestamp)
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
+  const liveBreadthCount = breadthRows.filter((row) => row.item.freshnessStatus === "fresh").length;
+  const heatmap = [...stockRows]
+    .filter((row) => row.quote.last !== null || row.quote.changePct !== null || row.quote.volume !== null)
+    .sort((left, right) => {
+      const volumeDelta = (right.quote.volume ?? -Infinity) - (left.quote.volume ?? -Infinity);
+      if (volumeDelta !== 0) return volumeDelta;
+      return Math.abs(right.quote.changePct ?? 0) - Math.abs(left.quote.changePct ?? 0);
+    })
+    .slice(0, 24)
+    .map((row, index) => ({
+      symbol: row.quote.symbol,
+      market: row.quote.market,
+      name: row.name,
+      source: row.item.selectedSource ?? row.quote.source,
+      last: row.quote.last,
+      changePct: row.quote.changePct !== null ? round(row.quote.changePct) : null,
+      volume: row.quote.volume,
+      timestamp: row.quote.timestamp,
+      weight: row.quote.volume !== null && row.quote.volume > 0
+        ? round(Math.max(1, Math.min(8, Math.log10(row.quote.volume + 10))), 3)
+        : round(Math.max(1, 6 - index * 0.18), 3),
+      readiness: row.item.readiness,
+      freshnessStatus: row.item.freshnessStatus
+    }));
+
+  return {
+    state: rows.length > 0
+      ? rows.some((row) => row.item.freshnessStatus === "fresh")
+        ? "LIVE"
+        : "STALE"
+      : "EMPTY",
+    source: "market-data/effective-quotes",
+    index: indexRow ? {
+      state: stateFromEffectiveQuote(indexRow.item),
+      symbol: indexRow.quote.symbol,
+      market: indexRow.quote.market,
+      name: indexRow.name,
+      source: indexRow.item.selectedSource ?? indexRow.quote.source,
+      last: indexRow.quote.last,
+      change: quoteChangeValue(indexRow.quote),
+      changePct: indexRow.quote.changePct !== null ? round(indexRow.quote.changePct) : null,
+      timestamp: indexRow.quote.timestamp,
+      freshnessStatus: indexRow.item.freshnessStatus,
+      reason: indexRow.item.reasons.join(", ")
+    } : {
+      state: "EMPTY" as const,
+      symbol: null,
+      market: "TW_INDEX" as const,
+      name: "加權指數",
+      source: null,
+      last: null,
+      change: null,
+      changePct: null,
+      timestamp: null,
+      freshnessStatus: "missing" as const,
+      reason: "market_index_quote_missing"
+    },
+    breadth: {
+      state: breadthRows.length > 0
+        ? liveBreadthCount > 0
+          ? "LIVE"
+          : "STALE"
+        : "EMPTY",
+      up,
+      down,
+      flat,
+      total: breadthRows.length,
+      updatedAt: freshestBreadthTimestamp,
+      source: "market-data/effective-quotes",
+      reason: breadthRows.length > 0 ? null : "quote_change_pct_missing"
+    },
+    heatmap
+  };
 }
 
 function buildCachedProvider(
@@ -2216,46 +2397,31 @@ export async function getMarketDataOverview(input: {
     }))
     .sort((left, right) => right.total - left.total || left.market.localeCompare(right.market));
 
-  const quotesWithChange = quotes.filter((quote) => quote.changePct !== null);
+  const effectiveItems = effectiveSelection.items as EffectiveMarketQuote[];
+  const resolveName = buildSymbolNameLookup(companies);
+  const effectiveQuoteRows = effectiveRows(effectiveItems)
+    .filter((row) => !isMarketIndexSymbol(row.quote.symbol, row.quote.market, resolveName(row.quote.symbol, row.quote.market)));
+  const quotesWithChange = effectiveQuoteRows.filter((row) => row.quote.changePct !== null);
   const topGainers = [...quotesWithChange]
-    .sort((left, right) => (right.changePct ?? -Infinity) - (left.changePct ?? -Infinity))
+    .sort((left, right) => (right.quote.changePct ?? -Infinity) - (left.quote.changePct ?? -Infinity))
     .slice(0, topLimit)
-    .map((quote) => ({
-      symbol: quote.symbol,
-      market: quote.market,
-      source: quote.source,
-      last: quote.last,
-      changePct: round(quote.changePct ?? 0),
-      volume: quote.volume,
-      timestamp: quote.timestamp
-    }));
+    .map((row) => toOverviewLeader(row, resolveName));
 
   const topLosers = [...quotesWithChange]
-    .sort((left, right) => (left.changePct ?? Infinity) - (right.changePct ?? Infinity))
+    .sort((left, right) => (left.quote.changePct ?? Infinity) - (right.quote.changePct ?? Infinity))
     .slice(0, topLimit)
-    .map((quote) => ({
-      symbol: quote.symbol,
-      market: quote.market,
-      source: quote.source,
-      last: quote.last,
-      changePct: round(quote.changePct ?? 0),
-      volume: quote.volume,
-      timestamp: quote.timestamp
-    }));
+    .map((row) => toOverviewLeader(row, resolveName));
 
-  const mostActive = [...quotes]
-    .filter((quote) => quote.volume !== null)
-    .sort((left, right) => (right.volume ?? -Infinity) - (left.volume ?? -Infinity))
+  const mostActive = [...effectiveQuoteRows]
+    .filter((row) => row.quote.volume !== null)
+    .sort((left, right) => (right.quote.volume ?? -Infinity) - (left.quote.volume ?? -Infinity))
     .slice(0, topLimit)
-    .map((quote) => ({
-      symbol: quote.symbol,
-      market: quote.market,
-      source: quote.source,
-      last: quote.last,
-      volume: quote.volume,
-      changePct: quote.changePct !== null ? round(quote.changePct) : null,
-      timestamp: quote.timestamp
-    }));
+    .map((row) => toOverviewLeader(row, resolveName));
+
+  const marketContext = buildMarketContext({
+    effectiveItems,
+    companies
+  });
 
   const latestQuoteTimestamp = quotes
     .map((quote) => quote.timestamp)
@@ -2266,6 +2432,7 @@ export async function getMarketDataOverview(input: {
     policy: getMarketDataPolicy(),
     surface: getMarketDataSurfaceMetadata(),
     providers,
+    marketContext,
     symbols: {
       total: symbols.length,
       byMarket: symbolsByMarket

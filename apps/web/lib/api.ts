@@ -1032,6 +1032,8 @@ export type EffectiveQuotesResponse = {
   items: EffectiveMarketQuote[];
 };
 
+export type MarketDataOverviewState = "LIVE" | "STALE" | "EMPTY" | "BLOCKED";
+
 export async function getEffectiveQuotes(params: {
   symbols: string;
   market?: string;
@@ -1051,16 +1053,63 @@ export async function getEffectiveQuotes(params: {
 export type MarketDataOverviewLeader = {
   symbol: string;
   market: string;
+  name?: string;
   source: QuoteSource;
   last: number | null;
   changePct?: number | null;
   volume?: number | null;
   timestamp: string;
+  readiness?: EffectiveQuoteReadiness;
+  freshnessStatus?: EffectiveMarketQuote["freshnessStatus"];
+};
+
+export type MarketDataOverviewHeatTile = {
+  symbol: string;
+  market: string;
+  name: string;
+  source: QuoteSource;
+  last: number | null;
+  changePct: number | null;
+  volume: number | null;
+  timestamp: string;
+  weight: number;
+  readiness: EffectiveQuoteReadiness;
+  freshnessStatus: EffectiveMarketQuote["freshnessStatus"];
+};
+
+export type MarketDataOverviewContext = {
+  state: MarketDataOverviewState;
+  source: string;
+  index: {
+    state: MarketDataOverviewState;
+    symbol: string | null;
+    market: string;
+    name: string;
+    source: QuoteSource | null;
+    last: number | null;
+    change: number | null;
+    changePct: number | null;
+    timestamp: string | null;
+    freshnessStatus: EffectiveMarketQuote["freshnessStatus"];
+    reason: string | null;
+  };
+  breadth: {
+    state: MarketDataOverviewState;
+    up: number;
+    down: number;
+    flat: number;
+    total: number;
+    updatedAt: string | null;
+    source: string;
+    reason: string | null;
+  };
+  heatmap: MarketDataOverviewHeatTile[];
 };
 
 export type MarketDataOverview = {
   generatedAt: string;
   providers: QuoteProviderStatus[];
+  marketContext: MarketDataOverviewContext;
   symbols: {
     total: number;
     byMarket: Array<{ market: string; total: number }>;
