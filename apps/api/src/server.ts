@@ -5299,6 +5299,31 @@ app.post("/api/v1/paper/submit", async (c) => {
 
   const result = await driveOrder(intent);
   const isRejected = result.finalState.intent.status === "REJECTED";
+
+  // Audit log: write paper submit entry regardless of FILLED/REJECTED outcome.
+  // paperMode=true + simulated=true flags are mandatory per BLOCK #5 §5.
+  // Fire-and-forget: audit failure must not block the paper order response.
+  writeAuditLog({
+    session,
+    method: "POST",
+    path: "/api/v1/paper/submit",
+    status: isRejected ? 422 : 201,
+    payload: {
+      paperMode: true,
+      simulated: true,
+      symbol: payload.symbol,
+      side: payload.side,
+      orderType: payload.orderType,
+      qty: payload.qty,
+      quantity_unit: payload.quantity_unit,
+      outcome: isRejected ? "REJECTED" : "FILLED",
+      idempotencyKey: payload.idempotencyKey,
+      intentId: intent.id
+    }
+  }).catch((err) => {
+    console.error("[paper/submit] audit log write failed:", err instanceof Error ? err.message : String(err));
+  });
+
   return c.json(
     {
       blocked: isRejected,
@@ -5445,7 +5470,7 @@ app.get("/api/v1/paper/portfolio", async (c) => {
     positions.set(symbol, p);
   }
 
-  const data = Array.from(positions.values()).map((p) => ({
+  const positionList = Array.from(positions.values()).map((p) => ({
     symbol: p.symbol,
     netQtyShares: p.netQty,
     avgCostPerShare: p.netQty > 0
@@ -5455,7 +5480,31 @@ app.get("/api/v1/paper/portfolio", async (c) => {
     note: p.netQty <= 0 ? "net_flat_or_short" : null
   }));
 
-  return c.json({ data });
+  // Base capital per BLOCK #5 §5: paper E2E must show simulated capital, not null.
+  // PAPER_BROKER_INITIAL_CASH env var overrides; default 20,000 TWD per product spec.
+  const baseCapitalRaw = Number(process.env.PAPER_BROKER_INITIAL_CASH);
+  const baseCapitalTWD = Number.isFinite(baseCapitalRaw) && baseCapitalRaw > 0
+    ? baseCapitalRaw
+    : 20_000;
+
+  // Compute invested capital from current open positions (buy cost basis only)
+  const investedCost = Array.from(positions.values())
+    .filter((p) => p.netQty > 0)
+    .reduce((acc, p) => acc + p.totalCost, 0);
+
+  const summary = {
+    baseCapitalTWD,
+    currency: "TWD",
+    simulated: true,
+    paperMode: true,
+    positionCount: positionList.filter((p) => (p.netQtyShares ?? 0) > 0).length,
+    investedCostTWD: Math.round(investedCost * 100) / 100,
+    note: positionList.length === 0
+      ? "empty_state: no filled orders yet; base capital available"
+      : "positions computed from filled paper orders"
+  };
+
+  return c.json({ data: positionList, summary });
 });
 
 // =============================================================================
@@ -5596,18 +5645,25 @@ app.get("/api/v1/paper/health/detail", async (c) => {
   const executionModeOk = flags.executionMode === "paper";
   const killSwitchOk    = !flags.killSwitchEnabled;
   const paperModeOk     = flags.paperModeEnabled;
-  const gateOpen        = executionModeOk && killSwitchOk && paperModeOk;
+
+  // Two separate gate concepts:
+  //   previewGateOpen  — for preview + order-ticket UI: needs executionMode=paper + paperMode=ON.
+  //                      Kill switch is intentionally excluded: preview is pure calculation, no
+  //                      order rows created. Order-ticket UI rendering is also pure display.
+  //   submitGateOpen   — for actual paper order submission: all three layers must pass.
+  //                      Kill switch ON (stop-line #2, frozen until 5/12) keeps this BLOCKED.
+  const previewGateOpen = executionModeOk && paperModeOk;
+  const submitGateOpen  = executionModeOk && killSwitchOk && paperModeOk;
 
   const dbMode = isDatabaseMode();
   const db     = dbMode ? getDb() : null;
 
   type StageState = "READY" | "DEGRADED" | "BLOCKED" | "ERROR";
 
-  // ── preview: pure calculation, needs only gate ──────────────────────────────
-  const previewState: StageState = gateOpen ? "READY" : "BLOCKED";
-  const previewBlockReason = gateOpen ? null : [
+  // ── preview: pure calculation, needs only previewGate ──────────────────────
+  const previewState: StageState = previewGateOpen ? "READY" : "BLOCKED";
+  const previewBlockReason = previewGateOpen ? null : [
     !executionModeOk ? `executionMode=${flags.executionMode}` : null,
-    !killSwitchOk    ? "killSwitch=ON" : null,
     !paperModeOk     ? "paperMode=OFF" : null
   ].filter(Boolean).join(";");
 
@@ -5682,7 +5738,9 @@ app.get("/api/v1/paper/health/detail", async (c) => {
   }
 
   // ── Derive stage states ──────────────────────────────────────────────────────
-  const submitState: StageState = !gateOpen ? "BLOCKED"
+  // submit requires the full three-layer gate (killSwitch must be OFF).
+  // Kill switch is deliberately ON (stop-line #2) → submit stays BLOCKED.
+  const submitState: StageState = !submitGateOpen ? "BLOCKED"
     : submitDbError ? "ERROR"
     : !tableExists && dbMode ? "DEGRADED"
     : "READY";
@@ -5693,7 +5751,9 @@ app.get("/api/v1/paper/health/detail", async (c) => {
 
   const portfolioState: StageState = fillState;
 
-  const orderTicketState: StageState = !gateOpen ? "BLOCKED" : "READY";
+  // orderTicket is UI-only (displaying the ticket form) — uses previewGate so
+  // it shows READY when executionMode=paper + paperMode=ON, even with killSwitch ON.
+  const orderTicketState: StageState = !previewGateOpen ? "BLOCKED" : "READY";
 
   const auditLogState: StageState = auditLogDbError ? "ERROR" : "READY";
 
@@ -5708,12 +5768,16 @@ app.get("/api/v1/paper/health/detail", async (c) => {
         state: orderTicketState,
         endpoint: "/paper/submit",
         executionMode: flags.executionMode,
-        note: "paper mode only; KGI write-side is frozen"
+        // orderTicket uses previewGate (executionMode + paperMode only).
+        // Kill switch is intentionally ON — submission is blocked, but the
+        // order-ticket UI can still render and calculate previews.
+        note: "order-ticket UI ready; actual submission blocked by kill-switch until 5/12"
       },
       submit: {
         state: submitState,
         endpoint: "/paper/submit",
         executionMode: flags.executionMode,
+        killSwitchBlocked: !killSwitchOk,
         // Pete review 2026-05-06: opaque code only (no raw Postgres error string on no-auth route)
         ...(submitDbError ? { dbError: "db_query_failed" } : {})
       },

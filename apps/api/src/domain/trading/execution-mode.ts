@@ -1,11 +1,15 @@
 // W6 Paper Sprint — Execution mode + kill switch + paper mode flags.
 //
-// Three-layer AND gate:
-//   executionMode !== 'disabled'   (layer 1 — global enable)
+// Three-layer AND gate (for full paper order SUBMISSION):
+//   executionMode !== 'disabled'   (layer 1 — global enable; default "paper")
 //   killSwitchEnabled === false    (layer 2 — safety halt; default ON = blocked)
-//   paperModeEnabled === true      (layer 3 — paper path explicitly on; default OFF)
+//   paperModeEnabled === true      (layer 3 — paper path explicitly on; default ON)
 //
 // All three must be satisfied for a paper order to proceed; any failure → 422.
+//
+// Preview + order-ticket UI use a lighter gate (layers 1 + 3 only; no kill-switch).
+// This lets the frontend render the order form and run previews even while the
+// kill switch keeps actual submission locked (stop-line #2, frozen until 5/12).
 //
 // No KGI SDK import. No KGI broker dependency. Completely standalone.
 
@@ -16,10 +20,13 @@ export type ExecutionMode = "disabled" | "paper" | "live";
 // ---------------------------------------------------------------------------
 
 function readExecutionMode(): ExecutionMode {
-  const raw = process.env.EXECUTION_MODE ?? "disabled";
+  // Default is now "paper" so paper E2E routes are open out-of-the-box.
+  // Set EXECUTION_MODE=disabled in env to explicitly shut down all order paths.
+  const raw = process.env.EXECUTION_MODE ?? "paper";
   if (raw === "paper" || raw === "live") return raw;
-  // Anything else (including 'disabled', unset, or unknown) → disabled.
-  return "disabled";
+  if (raw === "disabled") return "disabled";
+  // Unknown value → paper (safe default; paper gate still requires kill-switch OFF).
+  return "paper";
 }
 
 function readKillSwitchEnabled(): boolean {
@@ -30,9 +37,10 @@ function readKillSwitchEnabled(): boolean {
 }
 
 function readPaperModeEnabled(): boolean {
-  // Paper mode default is OFF. Must be explicitly set to 'true'.
-  const raw = process.env.PAPER_MODE_ENABLED ?? "false";
-  return raw === "true";
+  // Paper mode default is now ON so preview + order-ticket UI surfaces are live.
+  // Set PAPER_MODE_ENABLED=false in env to disable paper order submissions.
+  const raw = process.env.PAPER_MODE_ENABLED ?? "true";
+  return raw !== "false";
 }
 
 // ---------------------------------------------------------------------------
