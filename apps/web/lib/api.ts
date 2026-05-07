@@ -195,6 +195,47 @@ export async function getBriefs() {
   return request<DailyBrief[]>("/api/v1/briefs");
 }
 
+// BLOCK #8 Lane B — brief detail with audit chain
+export type BriefDetailAuditChain = {
+  hardReject: {
+    rules: string[];
+    rejected: boolean;
+  };
+  adversarialReview: {
+    ran: boolean;
+    verdict: "OK" | "INTERCEPTED";
+    severityScore: number | null;
+    flags: string[];
+    reviewerModel: string;
+    auditedAt: string | null;
+  } | null;
+  hallucinationCheck: {
+    ran: boolean;
+    verdict: "OK" | "PARTIAL_HALLUCINATED" | "HALLUCINATED" | "ERROR";
+    confidence: number | null;
+    flags: unknown[];
+    ragUsed: boolean;
+    modelChain: string;
+    auditedAt: string | null;
+  } | null;
+};
+
+export type BriefDetail = {
+  id: string;
+  date: string;
+  title: string;
+  status: string;
+  marketState: string;
+  generatedBy: string;
+  createdAt: string;
+  sections: Array<{ heading: string; body: string; sourceTrail: string | null }>;
+  auditChain: BriefDetailAuditChain;
+};
+
+export async function getBriefDetail(id: string) {
+  return request<BriefDetail>(`/api/v1/briefs/${encodeURIComponent(id)}`);
+}
+
 export async function createBrief(input: DailyBriefCreateInput) {
   return request<DailyBrief>("/api/v1/briefs", {
     method: "POST",

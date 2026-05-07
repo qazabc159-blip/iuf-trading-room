@@ -1,0 +1,2 @@
+
+typecheck PASS (no output above = no errors)
