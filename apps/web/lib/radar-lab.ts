@@ -41,6 +41,74 @@ export type LabSignalBundle = {
 
 type LabAction = "APPROVE" | "REJECT" | "PUSH_TO_PORTFOLIO" | "DIVERGENCE_FEEDBACK";
 
+// =============================================================================
+// Lab sanctioned strategy snapshot — read-only consume
+// =============================================================================
+// Source endpoint: GET /api/v1/lab/strategies (alias) or /api/v1/lab/strategy-snapshot
+// Backed by lab-strategy-consumer.ts which reads sanctioned lab JSON.
+//
+// Per Lab/TR alignment lock 2026-05-07:
+//  - All candidates are RESEARCH_ONLY; no Sharpe / equity / win-rate / allocation %
+//  - status verbatim from lab JSON (TR must NEVER rename / soften)
+//  - blocked state when source='unavailable' → display 「目前無 Lab approved 策略可推廣」
+// =============================================================================
+
+export type LabStrategyCandidate = {
+  strategyId: string;
+  displayName: string;
+  status: string;
+  researchOnlyFlag: "RESEARCH_ONLY";
+  disclaimer: string;
+  caveats: string[];
+  labGovernanceSource: string;
+  nextAction: string;
+};
+
+export type LabSanctionedSnapshot = {
+  sanctioned: true;
+  sourcePath: string;
+  sprintId: string;
+  collectedAt: string;
+  researchOnly: true;
+  portfolioVerdict: string;
+  candidates: LabStrategyCandidate[];
+  strongCandidateCount: number;
+};
+
+export type LabStrategiesResponse = {
+  data: LabSanctionedSnapshot | null;
+  meta: {
+    source: "lab_sanctioned" | "unavailable";
+    sprintId?: string;
+    collectedAt?: string;
+    candidateCount?: number;
+    researchOnly?: boolean;
+    note?: string;
+    reason?: string;
+    labGovernancePath?: string;
+    labTrAlignmentLock?: string;
+  };
+};
+
+// Variant of getApi that returns full envelope (data + meta) — needed for
+// /lab/strategies because meta.source distinguishes lab_sanctioned vs unavailable.
+async function getApiEnvelope<T>(path: string): Promise<T> {
+  if (!API_BASE) throw missingApiError(path);
+
+  const cookie = await ssrCookieHeader();
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    headers: {
+      "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`${response.status} ${path}`);
+
+  return (await response.json()) as T;
+}
+
 function missingApiError(path: string): Error {
   return new Error(`量化研究後端尚未設定：${path}`);
 }
@@ -125,4 +193,31 @@ export const radarLabApi = {
     getApi<LabSignalBundle | null>(`/api/v1/lab/bundles/${encodeURIComponent(bundleId)}`),
   bundleAction: (bundleId: string, action: LabAction, payload?: unknown) =>
     postApi(`/api/v1/lab/bundles/${encodeURIComponent(bundleId)}/action`, { action, payload }),
+  strategies: () => getApiEnvelope<LabStrategiesResponse>("/api/v1/lab/strategies"),
 };
+
+// Lab status enum → display wording (verbatim from board/lab_tr_alignment_lock_2026-05-07.md)
+// TR must use lab wording, not softened translations.
+export function labStatusDisplayWording(status: string): string {
+  const map: Record<string, string> = {
+    STRONG_CANDIDATE: "研究系統 / 未批准 TR 推廣",
+    STRATEGY2_RS2060_CONFIRMED: "研究系統 / 未批准 TR 推廣",
+    STRATEGY3_TURNOVER_REPAIRED: "研究系統 / 未批准 TR 推廣",
+    RESEARCH_SYSTEM: "研究系統 / 未批准 TR 推廣",
+    BACKTESTED_RAW: "研究 raw",
+    KILL_NO_EDGE: "研究 kill / 沒 edge",
+    KILL_INFORMATIVE: "研究 kill / informative only",
+    PAPER_PROPOSED: "Paper 候選 / 待 Bruce 雙簽",
+    PAPER_LIVE: "Paper 進行中",
+    LIVE_CANDIDATE: "Live 候選 / 待楊董明示",
+    IN_LIVE: "Live 進行中",
+    RETIRED: "退役",
+    NO_APPROVED_STRATEGY: "目前無 approved 策略可推廣",
+    PROBATION: "試察期",
+    LIBRARY_ONLY: "函式庫元件 / 非獨立策略",
+    FALLBACK_NOT_USED: "備援（未啟用）",
+    META_ALLOCATOR_RESEARCH_LEAD_NEEDS_APPEND: "研究領先 / 需補充資料",
+    HOLD: "暫停 / 無當前 edge",
+  };
+  return map[status] ?? `研究系統 (${status})`;
+}
