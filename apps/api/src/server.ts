@@ -5738,6 +5738,67 @@ app.post("/api/v1/internal/openalice/hallucination-check", async (c) => {
 });
 
 // =============================================================================
+// BLOCK #7 Axis 1 — GET /api/v1/lab/strategy-snapshot
+// =============================================================================
+// Returns the IUF Quant Lab sanctioned strategy snapshot (read-only consume).
+//
+// Source path (sibling repo, local dev only):
+//   IUF_QUANT_LAB/research/finmind_sponsor_999_data_factory/codex_next/
+//     final_strategy_count_board_v15.json
+//
+// Lab / TR alignment lock rules (board/lab_tr_alignment_lock_2026-05-07.md):
+//   - TR is read-only consumer; lab repo is NEVER mutated from TR
+//   - All candidates carry researchOnly=true + mandatory disclaimer
+//   - No promotion wording / buy / sell / allocation % / 必賺 / 勝率
+//   - status preserved verbatim from lab JSON (never renamed / softened)
+//   - Lab path unavailable in prod/Railway → 200 with meta.source='unavailable'
+//
+// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES gate)
+// Hard lines:
+//   - Never return fake/fabricated strategy data
+//   - Never imply strategies are paper-ready or live-ready
+//   - Never expose Sharpe / equity curve / win rate / annualised return
+// =============================================================================
+
+app.get("/api/v1/lab/strategy-snapshot", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { loadLabSanctionedSnapshot } = await import("./lab-strategy-consumer.js");
+  const snapshot = loadLabSanctionedSnapshot();
+
+  if (snapshot === null) {
+    return c.json({
+      data: null,
+      meta: {
+        source: "unavailable" as const,
+        reason:
+          "Lab sanctioned snapshot not found at expected sibling path. " +
+          "This is expected in prod/Railway (lab repo not deployed). " +
+          "In local dev: ensure IUF_QUANT_LAB repo is present as sibling to IUF_TRADING_ROOM_APP.",
+        labGovernancePath:
+          "IUF_QUANT_LAB/research/finmind_sponsor_999_data_factory/codex_next/final_strategy_count_board_v15.json",
+        labTrAlignmentLock: "board/lab_tr_alignment_lock_2026-05-07.md"
+      }
+    });
+  }
+
+  return c.json({
+    data: snapshot,
+    meta: {
+      source: "lab_sanctioned" as const,
+      sprintId: snapshot.sprintId,
+      collectedAt: snapshot.collectedAt,
+      candidateCount: snapshot.candidates.length,
+      researchOnly: true,
+      note: "Research candidates only. No strategy is approved for paper or live trading. Awaiting Athena/Bruce gates."
+    }
+  });
+});
+
+// =============================================================================
 // 5/5 REOPEN — P1: Session probe (Bruce dev login support)
 // =============================================================================
 // GET /api/v1/auth/session-probe

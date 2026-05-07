@@ -128,6 +128,10 @@ import {
   resolveCompanyReference
 } from "../packages/integrations/src/my-tw-coverage/index.ts";
 import { buildModeHintRows } from "../apps/web/lib/quote-vocab.ts";
+import {
+  loadLabSanctionedSnapshot,
+  labStatusDisplayWording
+} from "../apps/api/src/lab-strategy-consumer.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -8283,4 +8287,68 @@ test("event-engine: acknowledgeEvent returns not-ok in memory mode", async () =>
   const result = await acknowledgeEvent("00000000-0000-0000-0000-000000000001");
   assert.equal(result.ok, false, "should return ok=false in memory mode");
   assert.ok(result.reason, "should include a reason string");
+});
+
+// =============================================================================
+// lab-strategy-consumer tests
+// =============================================================================
+
+test("lab-strategy-consumer: loadLabSanctionedSnapshot returns null or valid snapshot (graceful on path absence)", () => {
+  // In CI / prod, IUF_QUANT_LAB sibling dir likely absent → should return null
+  // In local dev with sibling repo, should return a valid LabSnapshot
+  const result = loadLabSanctionedSnapshot();
+
+  if (result === null) {
+    // Graceful path — lab repo not present (expected in CI)
+    assert.equal(result, null, "should return null when lab path is absent");
+  } else {
+    // Valid snapshot path — verify required fields and alignment lock compliance
+    assert.equal(result.sanctioned, true, "sanctioned must always be true");
+    assert.equal(result.researchOnly, true, "researchOnly must always be true");
+    assert.ok(typeof result.sprintId === "string" && result.sprintId.startsWith("v"), "sprintId must be v-prefixed");
+    assert.ok(typeof result.collectedAt === "string", "collectedAt must be a string");
+    assert.ok(Array.isArray(result.candidates), "candidates must be an array");
+    assert.ok(result.candidates.length > 0, "must have at least one candidate when snapshot is found");
+
+    // Verify every candidate has alignment lock mandatory fields
+    for (const candidate of result.candidates) {
+      assert.equal(candidate.researchOnlyFlag, "RESEARCH_ONLY", "every candidate must carry RESEARCH_ONLY flag");
+      assert.ok(candidate.disclaimer.includes("Not approved for paper/live"), "disclaimer must contain research-only wording");
+      assert.ok(
+        candidate.caveats.some((c) => c.includes("RESEARCH_ONLY")),
+        "caveats must include mandatory RESEARCH_ONLY caveat"
+      );
+      assert.ok(typeof candidate.strategyId === "string" && candidate.strategyId.length > 0, "strategyId must be non-empty");
+      assert.ok(typeof candidate.labGovernanceSource === "string", "labGovernanceSource must be present");
+    }
+  }
+});
+
+test("lab-strategy-consumer: labStatusDisplayWording maps known statuses to non-empty Chinese wording", () => {
+  const knownStatuses = [
+    "STRONG_CANDIDATE",
+    "STRATEGY2_RS2060_CONFIRMED",
+    "STRATEGY3_TURNOVER_REPAIRED",
+    "RESEARCH_SYSTEM",
+    "BACKTESTED_RAW",
+    "KILL_NO_EDGE",
+    "PAPER_LIVE",
+    "IN_LIVE",
+    "RETIRED"
+  ];
+  for (const status of knownStatuses) {
+    const wording = labStatusDisplayWording(status);
+    assert.ok(typeof wording === "string" && wording.length > 0, `wording for ${status} must be non-empty`);
+    // Alignment lock: must NOT contain promotion wording
+    const forbidden = ["buy", "sell", "必賺", "勝率", "目標價", "approved for live"];
+    for (const f of forbidden) {
+      assert.ok(!wording.toLowerCase().includes(f.toLowerCase()), `wording for ${status} must not contain forbidden term: ${f}`);
+    }
+  }
+});
+
+test("lab-strategy-consumer: labStatusDisplayWording falls back gracefully for unknown status", () => {
+  const wording = labStatusDisplayWording("SOME_UNKNOWN_FUTURE_STATUS");
+  assert.ok(typeof wording === "string" && wording.length > 0, "should return non-empty fallback string");
+  assert.ok(wording.includes("SOME_UNKNOWN_FUTURE_STATUS"), "fallback should include the original status value");
 });

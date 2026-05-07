@@ -843,11 +843,14 @@ export class FinMindClient {
       try { return JSON.parse(cached) as FinMindNewsRow[]; } catch { /* fall through */ }
     }
 
+    // FinMind constraint: TaiwanStockNews rejects requests with end_date parameter
+    // (HTTP 400: "the dataset TaiwanStockNews size is too large, we only send one day data,
+    // so end_date parameter need be none"). Always omit end_date for this dataset.
     const rows = await this._fetch<FinMindNewsRow>(
       "TaiwanStockNews",
       stockId,
       startDate,
-      endDate
+      null   // end_date must be omitted — FinMind constraint
     );
 
     // Short TTL for news — 5 min (reviewer keystone, needs freshness)
