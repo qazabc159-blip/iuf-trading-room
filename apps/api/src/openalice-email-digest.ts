@@ -20,7 +20,7 @@ import { getDb, isDatabaseMode } from "@iuf-trading-room/db";
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const RESEND_API_URL = "https://api.resend.com/emails";
-const DIGEST_FROM = "OpenAlice <noreply@eycvector.com>";
+const DIGEST_FROM = process.env["DIGEST_FROM"] ?? "IUF Trading Room <onboarding@resend.dev>";
 const DIGEST_EMAIL = process.env["DIGEST_EMAIL"] ?? "";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
