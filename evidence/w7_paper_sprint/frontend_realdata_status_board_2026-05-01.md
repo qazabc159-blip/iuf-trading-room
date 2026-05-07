@@ -3625,3 +3625,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: production worker logs showed approved OpenAlice drafts but producer selection still included cleanup themes; fix operates on `themes`, `theme_summaries`, `company_theme_links`, `company_notes`, and worker content producers.
 - Checks: worker typecheck PASS; worker build PASS; api typecheck PASS; compiled theme-quality unit test PASS; diff-check PASS.
 - Stop-lines: no token value, no OpenAI key value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake daily brief, no buy/sell recommendation, no strategy metric.
+
+## 2026-05-07 07:55 TPE - Codex homepage OpenAlice workflow truth
+
+- Branch: `investigate-homepage-workflow-truth-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/web/app/page.tsx`, `apps/web/app/globals.css`, `evidence/w7_paper_sprint/codex_homepage_openalice_workflow_truth_2026-05-07.md`, `C:\Users\User\.claude\projects\C--Users-User\memory\board\codex_channel\codex_to_elva_2026-05-07_homepage_openalice_workflow_truth.md`
+- Behavior: `/` now surfaces the latest published OpenAlice daily brief content, distinguishes today's formal brief from stale latest brief, and explains missing/awaiting-review states instead of showing only runner/queue counters.
+- Sources: `GET /api/v1/briefs`, `GET /api/v1/content-drafts?status=awaiting_review`, `GET /api/v1/ops/snapshot`.
+- Checks: web typecheck PASS; web build PASS; diff-check PASS with CRLF warnings only; stop-line grep PASS except advice words in the mask list.
+- Stop-lines: no token value, no `/order/create`, no KGI write-side, no migration/schema/destructive DB, no fake daily brief, no fake strategy metric, no use of FinMind/K-line as fill price.
