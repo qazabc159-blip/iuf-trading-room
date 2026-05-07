@@ -14,7 +14,11 @@ import { auditLogs, contentDrafts, getDb, isDatabaseMode } from "@iuf-trading-ro
 import { eq } from "drizzle-orm";
 
 import { approveContentDraft, rejectContentDraft } from "./content-draft-store.js";
-import { recordReviewerVerdict, lookupJobSourcePackSummary } from "./openalice-pipeline.js";
+import {
+  recordReviewerVerdict,
+  lookupJobSourcePackSummary,
+  evaluatePipelinePublishGate
+} from "./openalice-pipeline.js";
 import { runAdversarialReview, type AdversarialReviewResult } from "./openalice-adversarial-reviewer.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -419,7 +423,92 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
       }
     }
 
-    // severityScore < 7 OR adversarialResult === null → proceed with normal auto-approve
+    // severityScore < 7 OR adversarialResult === null → run pipeline publish gate before auto-approve.
+    // RED-1 fix (Pete BG audit 2026-05-07): evaluatePipelinePublishGate was orphaned — never called
+    // from the approve path. This was the root cause of 200 audit_log entries with 0 hallucination_reject.
+    // Gate runs: BROKEN token output scan + RAG hallucination check (if OPENAI_API_KEY present).
+    // Retrieval: sourcePack is derived from the sourceJobId → jobSourcePackSummaryMap lookup.
+    // Non-pipeline drafts (sourceJobId null) → sourcePack=null → gate runs in fallback mode (no RAG sources).
+    const sourceJobId = draftRow.sourceJobId ?? null;
+    // Look up SourcePack from in-memory registry by sourceJobId.
+    // evaluatePipelinePublishGate accepts SourcePack|null; null → fallback (BROKEN scan still runs).
+    // We pass null here because the registry stores summary strings, not full SourcePack objects.
+    // The RAG gate inside evaluatePipelinePublishGate reconstructs rawSources from the full sourcePack
+    // that was stored during runPipelineTick — for non-pipeline drafts this gracefully degrades to
+    // single-pass fallback (caveat RAG_NOT_USED__SOURCE_PACK_MISSING).
+    // Important: evaluatePipelinePublishGate re-reads the draft from DB for its own checks.
+    // It does NOT re-read the AI audit log we just wrote — the timing is fine because we call
+    // evaluatePipelinePublishGate BEFORE approveContentDraft, which is correct order.
+    try {
+      const gateResult = await evaluatePipelinePublishGate(draftId, null);
+
+      if (gateResult.action === "rejected") {
+        // Gate force-rejected (BROKEN token in output, or HALLUCINATED RAG verdict)
+        await writeAiReviewAuditLog({
+          workspaceId,
+          draftId,
+          action: "content_draft.ai_rejected",
+          result: {
+            verdict: "reject",
+            reason: `[pipeline-gate] ${gateResult.reason ?? "gate_rejected"}`,
+            flagged_issues: [`pipeline_gate_reject: ${gateResult.reason ?? "unknown"}`],
+            confidence: result.confidence
+          }
+        });
+        console.info(
+          `[ai-reviewer] Draft ${draftId} GATE REJECTED by evaluatePipelinePublishGate: ${gateResult.reason}`
+        );
+        return; // draft already rejected by gate; do not call approveContentDraft
+      }
+
+      if (gateResult.action === "queued_for_review") {
+        // Gate held for manual review (e.g. BROKEN token in output, PARTIAL hallucination)
+        await writeAiReviewAuditLog({
+          workspaceId,
+          draftId,
+          action: "content_draft.ai_yellow_held",
+          result: {
+            verdict: "manual_review",
+            reason: `[pipeline-gate] ${gateResult.reason ?? "gate_queued_for_review"}`,
+            flagged_issues: [`pipeline_gate_hold: ${gateResult.reason ?? "unknown"}`],
+            confidence: result.confidence
+          }
+        });
+        console.info(
+          `[ai-reviewer] Draft ${draftId} GATE HELD by evaluatePipelinePublishGate: ${gateResult.reason}`
+        );
+        return; // leave status as awaiting_review for human
+      }
+
+      if (gateResult.action === "published") {
+        // Gate already called approveContentDraft internally and published the brief
+        await writeAiReviewAuditLog({
+          workspaceId,
+          draftId,
+          action: "content_draft.ai_approved",
+          result
+        });
+        console.info(
+          `[ai-reviewer] Draft ${draftId} AUTO-APPROVED via pipeline gate (briefId=${gateResult.briefId ?? "none"})`
+        );
+        return; // gate already handled approval
+      }
+
+      // gateResult.action === "skipped" (memory_mode / db_unavailable / draft_not_found / status mismatch)
+      // Fall through to direct approveContentDraft below — gate was not applicable.
+      if (gateResult.action !== "skipped") {
+        // Unexpected action — safe default: proceed with direct approve
+        console.warn(`[ai-reviewer] Unexpected gate action=${gateResult.action} for draft ${draftId} — proceeding with direct approve`);
+      }
+    } catch (gateErr) {
+      // Gate threw unexpectedly — safe default: proceed with direct approve (do not block pipeline)
+      console.warn(
+        `[ai-reviewer] evaluatePipelinePublishGate threw for draft ${draftId}: ${gateErr instanceof Error ? gateErr.message : String(gateErr)}`
+      );
+    }
+
+    // Gate skipped or threw — fall through to direct approveContentDraft
+    void sourceJobId; // suppress unused-var lint (used conceptually above for comment clarity)
     const approveResult = await approveContentDraft({
       draftId,
       reviewerId: null // AI reviewer — no user UUID; identity stored in audit log

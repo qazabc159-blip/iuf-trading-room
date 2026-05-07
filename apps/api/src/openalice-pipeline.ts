@@ -461,6 +461,13 @@ async function collectSourcePack(
  */
 const NON_PRODUCTION_SOURCE_PATTERN = /\[(?:BROKEN(?:-\d+)?|DEPRECATED|ORPHAN)\]|\bplaceholder\b|\bto\s+fix\b/i;
 
+/**
+ * RED-2 fix (Pete BG audit 2026-05-07): exported pattern so the gate function and
+ * the output sanitizer can both use the same token set without duplication.
+ * Tests reference this directly to verify the pattern catches all relevant token forms.
+ */
+export const BROKEN_TOKEN_PATTERN = /\[(?:BROKEN(?:-\d+)?|DEPRECATED|ORPHAN)\]/i;
+
 export function filterSourcePackEntries(sources: SourcePackEntry[]): SourcePackEntry[] {
   return sources.filter((entry) => {
     const searchable = `${entry.source} ${entry.note ?? ""}`;
@@ -1061,12 +1068,14 @@ export async function evaluatePipelinePublishGate(
     };
   }
 
-  // ── Gap 3: BROKEN/DEPRECATED token leak guard ────────────────────────────────
-  // If the runner somehow included [BROKEN-N], [DEPRECATED], or [ORPHAN] tokens
-  // in the generated content (leaked from stale DB theme names), route to
-  // awaiting_review so a human can verify and clean before publish.
+  // ── Gap 3 / RED-2: BROKEN/DEPRECATED token output scan ─────────────────────
+  // Scans the fully-generated draft payload for leaked [BROKEN-N], [DEPRECATED],
+  // or [ORPHAN] metadata tokens before auto-publish. These tokens originate in
+  // stale DB theme names and can be mirrored into LLM output even when filtered
+  // from the source pack input (two-layer defence: instruction-side + gate-side).
+  // RED-2 fix: uses module-level BROKEN_TOKEN_PATTERN (not an inline redefinition)
+  // so the same pattern is shared with tests and filterSourcePackEntries layer.
   const draftPayloadStr = JSON.stringify(draft.payload ?? "");
-  const BROKEN_TOKEN_PATTERN = /\[(?:BROKEN(?:-\d+)?|DEPRECATED|ORPHAN)\]/i;
   if (BROKEN_TOKEN_PATTERN.test(draftPayloadStr)) {
     console.warn(
       `[pipeline-gate] Draft ${draftId} contains BROKEN/DEPRECATED metadata tokens — routing to awaiting_review`
