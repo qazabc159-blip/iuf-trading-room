@@ -5908,8 +5908,8 @@ app.get("/api/v1/briefs/:id", async (c) => {
 
   // ── Resolve linked content_draft by dedupeKey pattern ─────────────────────
   // daily_briefs are produced by approving a content_draft with targetTable=daily_briefs
-  // dedupeKey = `daily_brief:${workspaceId}:${date}` (pipeline convention)
-  const dedupeKey = `daily_brief:${workspaceId}:${brief.date}`;
+  // dedupeKey format matches computeContentDraftDedupeKey() in content-draft-store.ts
+  const dedupeKey = `${workspaceId}:daily_briefs:${brief.date}:v1`;
   const draftRows = await db
     .select({ id: contentDrafts.id })
     .from(contentDrafts)
