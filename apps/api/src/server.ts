@@ -5013,7 +5013,8 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     if (scope !== "market") return true;
     if (row.source === "twse_announcements") return true;
 
-    const text = `${row.title ?? ""} ${row.category ?? ""} ${row.company_name ?? ""}`.toLowerCase();
+    const titleText = `${row.title ?? ""}`.toLowerCase();
+    const auxiliaryText = `${row.category ?? ""} ${row.company_name ?? ""}`.toLowerCase();
     const blockedTerms = [
       "股市爆料同學會",
       "cmoney",
@@ -5024,7 +5025,57 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       "老師",
       "同學會"
     ];
-    if (blockedTerms.some((term) => text.includes(term.toLowerCase()))) return false;
+    if (blockedTerms.some((term) => titleText.includes(term.toLowerCase()) || auxiliaryText.includes(term.toLowerCase()))) {
+      return false;
+    }
+
+    const companyReportTerms = [
+      "\u8ca1\u5831",
+      "eps",
+      "\u6de8\u5229",
+      "\u71df\u6536",
+      "\u9664\u6b0a",
+      "\u9664\u606f",
+      "\u914d\u606f",
+      "\u6cd5\u8aaa",
+      "\u589e\u8cc7",
+      "\u6e1b\u8cc7"
+    ];
+    const highSignalMarketTerms = [
+      "\u53f0\u80a1",
+      "\u5927\u76e4",
+      "\u52a0\u6b0a",
+      "\u52a0\u6b0a\u6307\u6578",
+      "\u6ac3\u8cb7",
+      "\u76e4\u52e2",
+      "\u76e4\u4e2d",
+      "\u76e4\u5f8c",
+      "\u958b\u76e4",
+      "\u6536\u76e4",
+      "\u4e09\u5927\u6cd5\u4eba",
+      "\u5916\u8cc7",
+      "\u6295\u4fe1",
+      "\u81ea\u71df\u5546",
+      "\u6b0a\u503c",
+      "\u985e\u80a1",
+      "\u65cf\u7fa4",
+      "\u534a\u5c0e\u9ad4",
+      "etf",
+      "msci",
+      "fed",
+      "nasdaq",
+      "\u6a19\u666e",
+      "\u7f8e\u80a1",
+      "\u532f\u7387",
+      "\u53f0\u5e63",
+      "\u7f8e\u5143",
+      "\u592e\u884c",
+      "\u901a\u81a8",
+      "\u5229\u7387"
+    ];
+    const hasHighSignalMarketTerm = highSignalMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
+    const isCompanyReport = companyReportTerms.some((term) => titleText.includes(term.toLowerCase()));
+    if (isCompanyReport && !hasHighSignalMarketTerm) return false;
 
     const marketTerms = [
       "台股",
@@ -5064,7 +5115,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       "證交所",
       "櫃買中心"
     ];
-    return marketTerms.some((term) => text.includes(term.toLowerCase()));
+    return hasHighSignalMarketTerm || marketTerms.some((term) => titleText.includes(term.toLowerCase()));
   }
 
   const rows: IntelRow[] = [];
