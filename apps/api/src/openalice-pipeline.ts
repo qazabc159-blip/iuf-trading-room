@@ -990,6 +990,108 @@ export async function evaluatePipelinePublishGate(
     };
   }
 
+  // ── Hallucination RAG gate (BLOCK #6) ───────────────────────────────────────
+  // Runs AFTER AI reviewer 7-hard-reject, BEFORE auto-publish.
+  // HALLUCINATED         → force reject + audit_log HALLUCINATION_REJECT
+  // PARTIAL + conf<0.7   → manual_review queue
+  // OK or PARTIAL≥0.7    → pass through to auto-publish
+  // ERROR                → safe-default: manual_review (block publish)
+  const ragApiKey = process.env["OPENAI_API_KEY"];
+  if (ragApiKey) {
+    const draftContent =
+      draft.payload &&
+      typeof draft.payload === "object" &&
+      !Array.isArray(draft.payload) &&
+      "content" in draft.payload &&
+      typeof (draft.payload as { content?: unknown }).content === "string"
+        ? (draft.payload as { content: string }).content
+        : null;
+
+    if (draftContent) {
+      try {
+        const { runRagHallucinationCheck } = await import("./hallucination-rag.js");
+        const ragResult = await runRagHallucinationCheck({
+          apiKey: ragApiKey,
+          content: draftContent,
+          sourceTrail: sourcePack ? sourcePack.sources : null,
+          rawSources: [], // pipeline path: no rawSources passed at publish time → single-pass fallback
+          claimExtractModel: process.env["OPENAI_CLAIM_EXTRACT_MODEL"] ?? "gpt-4o-mini",
+          crossValidateModel: process.env["OPENAI_HALLUCINATION_VERIFY_MODEL"] ?? "gpt-4.1"
+        });
+
+        console.info(
+          `[pipeline-gate] hallucination-RAG verdict=${ragResult.verdict} ` +
+          `confidence=${ragResult.confidence.toFixed(2)} flags=${ragResult.flags.length} ` +
+          `ragUsed=${ragResult.ragUsed} draftId=${draftId}`
+        );
+
+        if (ragResult.verdict === "HALLUCINATED") {
+          // Force reject — write audit log
+          try {
+            const db2 = getDb();
+            if (db2) {
+              await db2.insert(auditLogs).values({
+                workspaceId: draft.workspaceId,
+                actorId: null,
+                action: "hallucination_reject",
+                entityId: draftId,
+                entityType: "content_draft",
+                payload: {
+                  type: "HALLUCINATION_REJECT",
+                  verdict: ragResult.verdict,
+                  confidence: ragResult.confidence,
+                  flags: ragResult.flags,
+                  reasoning: ragResult.reasoning,
+                  ragUsed: ragResult.ragUsed
+                }
+              });
+            }
+          } catch {
+            // audit log failure is non-critical
+          }
+          try {
+            const { rejectContentDraft } = await import("./content-draft-store.js");
+            await rejectContentDraft({
+              draftId,
+              reviewerId: null,
+              reason: `[hallucination-gate] HALLUCINATED confidence=${ragResult.confidence.toFixed(2)}`
+            });
+          } catch {
+            // Non-critical
+          }
+          return {
+            action: "rejected",
+            briefId: null,
+            reason: `hallucination_detected: confidence=${ragResult.confidence.toFixed(2)}`
+          };
+        }
+
+        if (
+          ragResult.verdict === "ERROR" ||
+          (ragResult.verdict === "PARTIAL_HALLUCINATED" && ragResult.confidence < 0.7)
+        ) {
+          return {
+            action: "queued_for_review",
+            briefId: null,
+            reason: `hallucination_gate_manual_review: verdict=${ragResult.verdict} confidence=${ragResult.confidence.toFixed(2)}`
+          };
+        }
+        // OK or PARTIAL_HALLUCINATED with confidence>=0.7 → fall through to publish
+      } catch (ragErr) {
+        // RAG check threw unexpectedly — safe default: queue for human review
+        console.warn(
+          `[pipeline-gate] hallucination-RAG threw: ${ragErr instanceof Error ? ragErr.message : String(ragErr)}`
+        );
+        return {
+          action: "queued_for_review",
+          briefId: null,
+          reason: `hallucination_gate_exception: ${ragErr instanceof Error ? ragErr.message : String(ragErr)}`
+        };
+      }
+    }
+  }
+  // ── end hallucination RAG gate ───────────────────────────────────────────────
+
   // Green + gate pass → auto-publish via approveContentDraft
   try {
     const { approveContentDraft } = await import("./content-draft-store.js");

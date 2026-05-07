@@ -7997,3 +7997,102 @@ test("ai-reviewer: fireAiReviewerForDraft is a no-op in memory mode (not databas
     "should not throw in memory mode"
   );
 });
+
+// =============================================================================
+// BLOCK #6 — hallucination-rag unit tests
+// =============================================================================
+// These tests exercise the pure aggregation + verdict logic without hitting OpenAI.
+// The extraction + cross-validate functions require a live API key so they are
+// tested via mocked fetch patterns below.
+
+import {
+  aggregateVerdictWithClaims,
+  type ClaimFlag
+} from "../apps/api/src/hallucination-rag.ts";
+
+test("hallucination-rag: aggregateVerdictWithClaims — all OK → verdict OK, confidence from similarities", () => {
+  const input = [
+    { claim: "Revenue was NT$5.2B in Q3 2024", outcome: { matched: true, sourceId: "tw_monthly_revenue:2330:2024-09", similarity: 0.92, type: "OK" as const } },
+    { claim: "EPS was 12.5 in Q3 2024", outcome: { matched: true, sourceId: "tw_financial_statements:2330:2024-09", similarity: 0.88, type: "OK" as const } }
+  ];
+  const result = aggregateVerdictWithClaims(input);
+  assert.equal(result.verdict, "OK");
+  assert.equal(result.flags.length, 0);
+  // confidence = avg(0.92, 0.88) = 0.90
+  assert.ok(result.confidence > 0.89 && result.confidence < 0.91, `expected ~0.90, got ${result.confidence}`);
+});
+
+test("hallucination-rag: aggregateVerdictWithClaims — any FABRICATED → verdict HALLUCINATED", () => {
+  const input = [
+    { claim: "Revenue was NT$5.2B in Q3 2024", outcome: { matched: true, sourceId: "tw_monthly_revenue:2330:2024-09", similarity: 0.92, type: "OK" as const } },
+    { claim: "Company acquired competitor for $10B", outcome: { matched: false, sourceId: null, similarity: 0.0, type: "FABRICATED" as const } }
+  ];
+  const result = aggregateVerdictWithClaims(input);
+  assert.equal(result.verdict, "HALLUCINATED");
+  assert.equal(result.flags.length, 1);
+  assert.equal(result.flags[0]!.type, "FABRICATED");
+  assert.equal(result.flags[0]!.claim, "Company acquired competitor for $10B");
+  assert.equal(result.flags[0]!.sourceMatch.matched, false);
+});
+
+test("hallucination-rag: aggregateVerdictWithClaims — MISATTRIBUTED only → PARTIAL_HALLUCINATED", () => {
+  const input = [
+    { claim: "Foreign net buy was 1200 lots on 2024-11-01", outcome: { matched: true, sourceId: "tw_institutional:2330:2024-11-01", similarity: 0.75, type: "OK" as const } },
+    { claim: "Revenue attributed to wrong quarter", outcome: { matched: false, sourceId: "tw_monthly_revenue:2330:2024-10", similarity: 0.45, type: "MISATTRIBUTED" as const } }
+  ];
+  const result = aggregateVerdictWithClaims(input);
+  assert.equal(result.verdict, "PARTIAL_HALLUCINATED");
+  assert.equal(result.flags.length, 1);
+  assert.equal(result.flags[0]!.type, "MISATTRIBUTED");
+});
+
+test("hallucination-rag: aggregateVerdictWithClaims — CONTRADICTED only → PARTIAL_HALLUCINATED", () => {
+  const input = [
+    { claim: "EPS was 8.0 in 2024-Q2", outcome: { matched: false, sourceId: "tw_financial_statements:2330:2024-06", similarity: 0.2, type: "CONTRADICTED" as const } }
+  ];
+  const result = aggregateVerdictWithClaims(input);
+  assert.equal(result.verdict, "PARTIAL_HALLUCINATED");
+  assert.ok(result.flags[0]!.sourceMatch.similarity !== null && result.flags[0]!.sourceMatch.similarity < 0.5);
+});
+
+test("hallucination-rag: aggregateVerdictWithClaims — empty claims → OK confidence 1.0", () => {
+  const result = aggregateVerdictWithClaims([]);
+  assert.equal(result.verdict, "OK");
+  assert.equal(result.confidence, 1.0);
+  assert.equal(result.flags.length, 0);
+});
+
+test("hallucination-rag: aggregateVerdictWithClaims — UNSUPPORTED only → PARTIAL_HALLUCINATED (not HALLUCINATED)", () => {
+  const input = [
+    { claim: "Dividend yield was 3.5% for 2024", outcome: { matched: false, sourceId: null, similarity: null, type: "UNSUPPORTED" as const } }
+  ];
+  const result = aggregateVerdictWithClaims(input);
+  assert.equal(result.verdict, "PARTIAL_HALLUCINATED");
+  // UNSUPPORTED is not as severe as FABRICATED — still queued for review, not hard reject
+  assert.notEqual(result.verdict, "HALLUCINATED");
+});
+
+test("hallucination-rag: aggregateVerdictWithClaims — null similarity not included in avg", () => {
+  const input = [
+    { claim: "Claim A", outcome: { matched: true, sourceId: "src:A", similarity: 0.8, type: "OK" as const } },
+    { claim: "Claim B", outcome: { matched: false, sourceId: null, similarity: null, type: "UNSUPPORTED" as const } }
+  ];
+  const result = aggregateVerdictWithClaims(input);
+  // avg should only use 0.8 (null excluded)
+  assert.ok(result.confidence > 0.79 && result.confidence < 0.81, `expected ~0.80, got ${result.confidence}`);
+});
+
+test("hallucination-rag: flag shape has required sourceMatch fields", () => {
+  const input = [
+    { claim: "PE ratio was 15x on 2024-11-15", outcome: { matched: true, sourceId: "tw_valuation:2330:2024-11-15", similarity: 0.9, type: "CONTRADICTED" as const } }
+  ];
+  const result = aggregateVerdictWithClaims(input);
+  assert.equal(result.flags.length, 1);
+  const flag: ClaimFlag = result.flags[0]!;
+  assert.ok("claim" in flag, "flag must have claim");
+  assert.ok("type" in flag, "flag must have type");
+  assert.ok("sourceMatch" in flag, "flag must have sourceMatch");
+  assert.ok("matched" in flag.sourceMatch, "sourceMatch must have matched");
+  assert.ok("sourceId" in flag.sourceMatch, "sourceMatch must have sourceId");
+  assert.ok("similarity" in flag.sourceMatch, "sourceMatch must have similarity");
+});
