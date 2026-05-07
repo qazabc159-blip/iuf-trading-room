@@ -13,7 +13,9 @@ export type AuditAction =
   | "review"
   | "ingest"
   | "import"
-  | "replace";
+  | "replace"
+  | "paper_submit"
+  | "paper_preview";
 
 export type AuditEntry = {
   id: string;
@@ -121,6 +123,20 @@ const specialAuditRoutes: Array<{
     action: "create",
     entityType: "risk_check",
     entityId: "pending"
+  },
+  // Pete BLOCK#8 fix: paper submit/preview need distinct action strings so that
+  // audit-stats can query them without falling back to the generic "create" action.
+  {
+    matcher: /^\/api\/v1\/paper\/submit$/,
+    action: "paper_submit",
+    entityType: "paper",
+    entityId: "submit"
+  },
+  {
+    matcher: /^\/api\/v1\/paper\/preview$/,
+    action: "paper_preview",
+    entityType: "paper",
+    entityId: "preview"
   }
 ];
 

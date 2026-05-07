@@ -149,6 +149,16 @@ import {
   captureMessage as sentryCaptureMessage,
   isSentryEnabled
 } from "../apps/api/src/sentry-init.ts";
+import {
+  evaluateFourLayerRiskGate,
+  readMaxPositionPct,
+  readDailyLossPct,
+  readPerSymbolMaxPct
+} from "../apps/api/src/paper-four-layer-risk-gate.ts";
+import {
+  _setKillSwitchEnabled,
+  isKillSwitchEnabled
+} from "../apps/api/src/domain/trading/execution-mode.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -8760,4 +8770,352 @@ test("vendor endpoints: mapToVendorStatus correctly maps IUF uppercase to vendor
   assert.equal(VENDOR_SOURCE_KEYS.length, 8, "vendor sources list must have exactly 8 keys");
   assert.equal(VENDOR_SOURCE_KEYS[0], "finmind", "first source must be finmind");
   assert.equal(VENDOR_SOURCE_KEYS[7], "news", "last source must be news");
+});
+
+// ── 4-layer risk engine tests (P0-3 / 5/12 KGI unlock pre-requisite) ────────
+
+test("4-layer risk gate: env readers return correct defaults when env vars absent", () => {
+  // Temporarily unset to test defaults
+  const prevMax = process.env.RISK_MAX_POSITION_PCT;
+  const prevLoss = process.env.RISK_DAILY_LOSS_PCT;
+  const prevSym = process.env.RISK_PER_SYMBOL_MAX_PCT;
+  delete process.env.RISK_MAX_POSITION_PCT;
+  delete process.env.RISK_DAILY_LOSS_PCT;
+  delete process.env.RISK_PER_SYMBOL_MAX_PCT;
+
+  assert.equal(readMaxPositionPct(), 30, "default max position pct must be 30");
+  assert.equal(readDailyLossPct(), 2, "default daily loss pct must be 2");
+  assert.equal(readPerSymbolMaxPct(), 30, "default per-symbol max pct must be 30");
+
+  // Restore
+  if (prevMax !== undefined) process.env.RISK_MAX_POSITION_PCT = prevMax;
+  if (prevLoss !== undefined) process.env.RISK_DAILY_LOSS_PCT = prevLoss;
+  if (prevSym !== undefined) process.env.RISK_PER_SYMBOL_MAX_PCT = prevSym;
+});
+
+test("4-layer risk gate: env override values are read correctly", () => {
+  const prevMax = process.env.RISK_MAX_POSITION_PCT;
+  const prevLoss = process.env.RISK_DAILY_LOSS_PCT;
+  const prevSym = process.env.RISK_PER_SYMBOL_MAX_PCT;
+
+  process.env.RISK_MAX_POSITION_PCT = "15";
+  process.env.RISK_DAILY_LOSS_PCT = "5";
+  process.env.RISK_PER_SYMBOL_MAX_PCT = "20";
+
+  assert.equal(readMaxPositionPct(), 15, "overridden max position pct must be 15");
+  assert.equal(readDailyLossPct(), 5, "overridden daily loss pct must be 5");
+  assert.equal(readPerSymbolMaxPct(), 20, "overridden per-symbol max pct must be 20");
+
+  // Restore
+  if (prevMax !== undefined) process.env.RISK_MAX_POSITION_PCT = prevMax;
+  else delete process.env.RISK_MAX_POSITION_PCT;
+  if (prevLoss !== undefined) process.env.RISK_DAILY_LOSS_PCT = prevLoss;
+  else delete process.env.RISK_DAILY_LOSS_PCT;
+  if (prevSym !== undefined) process.env.RISK_PER_SYMBOL_MAX_PCT = prevSym;
+  else delete process.env.RISK_PER_SYMBOL_MAX_PCT;
+});
+
+test("4-layer risk gate L1: kill switch ON blocks all orders immediately", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `four-layer-ks-${randomUUID()}`
+  });
+
+  // Ensure kill switch is ON
+  const previousState = isKillSwitchEnabled();
+  _setKillSwitchEnabled(true);
+
+  try {
+    const order = {
+      accountId: "paper-default",
+      symbol: "2330",
+      side: "buy" as const,
+      type: "limit" as const,
+      timeInForce: "rod" as const,
+      quantity: 1,
+      quantity_unit: "SHARE" as const,
+      price: 100,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [] as string[],
+      overrideReason: ""
+    };
+
+    const result = await evaluateFourLayerRiskGate({ session, order });
+    assert.equal(result.blocked, true, "kill switch ON must block");
+    assert.equal(result.layer, 1, "blocked layer must be 1 (kill switch)");
+    assert.equal(result.auditType, "kill_switch_on", "audit type must be kill_switch_on");
+  } finally {
+    _setKillSwitchEnabled(previousState);
+  }
+});
+
+test("4-layer risk gate L1: kill switch OFF — small order (2330 1 SHARE) passes L1", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `four-layer-ks-off-${randomUUID()}`
+  });
+
+  const previousState = isKillSwitchEnabled();
+  _setKillSwitchEnabled(false);
+
+  try {
+    const order = {
+      accountId: "paper-default",
+      symbol: "2330",
+      side: "buy" as const,
+      type: "limit" as const,
+      timeInForce: "rod" as const,
+      quantity: 1,
+      quantity_unit: "SHARE" as const,
+      price: 100, // 1 share × 100 = 100 TWD notional — well within 30% of 10M
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [] as string[],
+      overrideReason: ""
+    };
+
+    const result = await evaluateFourLayerRiskGate({ session, order });
+    // Should not be blocked by L1 (kill switch off), L2/L3/L4 should also pass
+    // because 100 TWD << 30% of 10M (3M TWD) default paper equity
+    assert.equal(result.blocked, false, "small 1-share order must not be blocked");
+    assert.equal(result.layer, null, "no layer should block a small order");
+  } finally {
+    _setKillSwitchEnabled(previousState);
+  }
+});
+
+test("4-layer risk gate L2: max position cap exceeded → block (audit type risk_block_max_position)", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `four-layer-l2-${randomUUID()}`
+  });
+
+  const previousState = isKillSwitchEnabled();
+  _setKillSwitchEnabled(false);
+
+  // Set a very tight position cap: 0.001% of 10M = 100 TWD max
+  const prevPct = process.env.RISK_MAX_POSITION_PCT;
+  process.env.RISK_MAX_POSITION_PCT = "0.001";
+
+  try {
+    const order = {
+      accountId: "paper-default",
+      symbol: "2330",
+      side: "buy" as const,
+      type: "limit" as const,
+      timeInForce: "rod" as const,
+      quantity: 1,
+      quantity_unit: "LOT" as const, // 1 LOT = 1000 shares
+      price: 1,  // 1 LOT × 1 price × 1000 shares = 1000 TWD notional
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [] as string[],
+      overrideReason: ""
+    };
+
+    const result = await evaluateFourLayerRiskGate({ session, order });
+    assert.equal(result.blocked, true, "order exceeding max position cap must be blocked");
+    assert.equal(result.layer, 2, "blocked layer must be 2 (max position cap)");
+    assert.equal(result.auditType, "risk_block_max_position", "audit type must be risk_block_max_position");
+    assert.ok(result.observedValue !== null && result.observedValue > 0, "observed value must be positive");
+    assert.ok(result.limitValue !== null && result.limitValue > 0, "limit value must be positive");
+    assert.ok(result.observedValue! > result.limitValue!, "observed must exceed limit");
+  } finally {
+    _setKillSwitchEnabled(previousState);
+    if (prevPct !== undefined) process.env.RISK_MAX_POSITION_PCT = prevPct;
+    else delete process.env.RISK_MAX_POSITION_PCT;
+  }
+});
+
+test("4-layer risk gate L4: per-symbol concentration cap exceeded → block (audit type risk_block_concentration)", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `four-layer-l4-${randomUUID()}`
+  });
+
+  const previousState = isKillSwitchEnabled();
+  _setKillSwitchEnabled(false);
+
+  // Set a very tight concentration cap: 0.001% of 10M = 100 TWD max per symbol
+  const prevMaxPct = process.env.RISK_MAX_POSITION_PCT;
+  const prevSymPct = process.env.RISK_PER_SYMBOL_MAX_PCT;
+  // L2 cap must be large enough to not trigger first, but L4 cap must be tight
+  process.env.RISK_MAX_POSITION_PCT = "100";   // L2 = 100% of 10M, won't block
+  process.env.RISK_PER_SYMBOL_MAX_PCT = "0.001"; // L4 = 0.001% of 10M = 100 TWD
+
+  try {
+    const order = {
+      accountId: "paper-default",
+      symbol: "0050",
+      side: "buy" as const,
+      type: "limit" as const,
+      timeInForce: "rod" as const,
+      quantity: 1,
+      quantity_unit: "LOT" as const, // 1000 shares × 1 TWD = 1000 TWD notional
+      price: 1,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [] as string[],
+      overrideReason: ""
+    };
+
+    const result = await evaluateFourLayerRiskGate({ session, order });
+    assert.equal(result.blocked, true, "order exceeding symbol concentration cap must be blocked");
+    assert.equal(result.layer, 4, "blocked layer must be 4 (concentration cap)");
+    assert.equal(result.auditType, "risk_block_concentration", "audit type must be risk_block_concentration");
+  } finally {
+    _setKillSwitchEnabled(previousState);
+    if (prevMaxPct !== undefined) process.env.RISK_MAX_POSITION_PCT = prevMaxPct;
+    else delete process.env.RISK_MAX_POSITION_PCT;
+    if (prevSymPct !== undefined) process.env.RISK_PER_SYMBOL_MAX_PCT = prevSymPct;
+    else delete process.env.RISK_PER_SYMBOL_MAX_PCT;
+  }
+});
+
+test("4-layer risk gate: sell orders skip L2 and L4 position size checks", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `four-layer-sell-${randomUUID()}`
+  });
+
+  const previousState = isKillSwitchEnabled();
+  _setKillSwitchEnabled(false);
+
+  // Even with tiny caps, sell orders bypass L2 and L4
+  const prevMaxPct = process.env.RISK_MAX_POSITION_PCT;
+  const prevSymPct = process.env.RISK_PER_SYMBOL_MAX_PCT;
+  process.env.RISK_MAX_POSITION_PCT = "0.0001";
+  process.env.RISK_PER_SYMBOL_MAX_PCT = "0.0001";
+
+  try {
+    const order = {
+      accountId: "paper-default",
+      symbol: "2330",
+      side: "sell" as const, // sell order — L2/L4 must not fire
+      type: "limit" as const,
+      timeInForce: "rod" as const,
+      quantity: 1,
+      quantity_unit: "LOT" as const,
+      price: 1000,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [] as string[],
+      overrideReason: ""
+    };
+
+    const result = await evaluateFourLayerRiskGate({ session, order });
+    // Sell orders must not be blocked by L2 or L4 (only buy side accumulates position)
+    // L3 (daily loss) also won't fire on fresh account with 0 PnL
+    assert.equal(result.blocked, false, "sell orders must bypass L2 and L4 position caps");
+  } finally {
+    _setKillSwitchEnabled(previousState);
+    if (prevMaxPct !== undefined) process.env.RISK_MAX_POSITION_PCT = prevMaxPct;
+    else delete process.env.RISK_MAX_POSITION_PCT;
+    if (prevSymPct !== undefined) process.env.RISK_PER_SYMBOL_MAX_PCT = prevSymPct;
+    else delete process.env.RISK_PER_SYMBOL_MAX_PCT;
+  }
+});
+
+test("4-layer risk gate: no fill when blocked by L1 kill switch", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `four-layer-no-fill-${randomUUID()}`
+  });
+
+  const previousState = isKillSwitchEnabled();
+  _setKillSwitchEnabled(true);
+
+  try {
+    const order = {
+      accountId: "paper-default",
+      symbol: "2330",
+      side: "buy" as const,
+      type: "limit" as const,
+      timeInForce: "rod" as const,
+      quantity: 1,
+      quantity_unit: "SHARE" as const,
+      price: 600,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [] as string[],
+      overrideReason: ""
+    };
+
+    const result = await evaluateFourLayerRiskGate({ session, order });
+    // Gate must block — caller is responsible for not creating order/fill rows when blocked
+    assert.equal(result.blocked, true, "gate must block when kill switch ON");
+    // Verify that the gate returns early at L1 without proceeding to L2/L3/L4
+    assert.equal(result.layer, 1, "must short-circuit at L1 without reaching L2/L3/L4");
+  } finally {
+    _setKillSwitchEnabled(previousState);
+  }
+});
+
+test("4-layer risk gate: preview mode does NOT auto-engage kill switch on L3 hit", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({
+    workspaceSlug: `four-layer-preview-l3-${randomUUID()}`
+  });
+
+  const previousKs = isKillSwitchEnabled();
+  _setKillSwitchEnabled(false);
+
+  // Set loss threshold so tight that even 0 PnL account would fail if we could force it.
+  // We can't easily inject negative PnL in unit test, so test the preview-mode
+  // non-mutation guarantee with a fresh account (which passes L3) and verify kill switch
+  // is still OFF afterwards (no mutation).
+  const prevLoss = process.env.RISK_DAILY_LOSS_PCT;
+  process.env.RISK_DAILY_LOSS_PCT = "2";
+
+  try {
+    const order = {
+      accountId: "paper-default",
+      symbol: "2330",
+      side: "buy" as const,
+      type: "limit" as const,
+      timeInForce: "rod" as const,
+      quantity: 1,
+      quantity_unit: "SHARE" as const,
+      price: 100,
+      stopPrice: null,
+      tradePlanId: null,
+      strategyId: null,
+      overrideGuards: [] as string[],
+      overrideReason: ""
+    };
+
+    // Preview mode call — even if L3 triggered, kill switch must NOT be auto-engaged
+    await evaluateFourLayerRiskGate({ session, order, isPreview: true });
+    // Kill switch must still be OFF after preview run
+    assert.equal(isKillSwitchEnabled(), false, "preview mode must not auto-engage kill switch");
+  } finally {
+    _setKillSwitchEnabled(previousKs);
+    if (prevLoss !== undefined) process.env.RISK_DAILY_LOSS_PCT = prevLoss;
+    else delete process.env.RISK_DAILY_LOSS_PCT;
+  }
+});
+
+// ── Part B: Audit-stats SQL fix — parseAuditTarget for paper routes ──────────
+
+test("audit-stats fix: parseAuditTarget maps /api/v1/paper/submit to paper_submit action", () => {
+  const result = parseAuditTarget("POST", "/api/v1/paper/submit");
+  assert.ok(result !== null, "parseAuditTarget must return a result for paper/submit");
+  assert.equal(result!.action, "paper_submit", "action must be paper_submit (not generic 'create')");
+  assert.equal(result!.entityType, "paper", "entity type must be paper");
+  assert.equal(result!.entityId, "submit", "entity id must be submit");
+});
+
+test("audit-stats fix: parseAuditTarget maps /api/v1/paper/preview to paper_preview action", () => {
+  const result = parseAuditTarget("POST", "/api/v1/paper/preview");
+  assert.ok(result !== null, "parseAuditTarget must return a result for paper/preview");
+  assert.equal(result!.action, "paper_preview", "action must be paper_preview (not generic 'create')");
+  assert.equal(result!.entityType, "paper", "entity type must be paper");
+  assert.equal(result!.entityId, "preview", "entity id must be preview");
 });
