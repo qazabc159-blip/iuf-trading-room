@@ -3,8 +3,6 @@ import type { CSSProperties, ReactNode } from "react";
 
 import {
   getBriefs,
-  getCompanies,
-  getCompanyAnnouncements,
   getContentDrafts,
   getFinMindDiagnostics,
   getFinMindStatus,
@@ -54,7 +52,6 @@ type DailyBriefDashboard = {
 type StrategyIdeasData = Awaited<ReturnType<typeof getStrategyIdeas>>["data"];
 type StrategyRunsData = Awaited<ReturnType<typeof listStrategyRuns>>["data"];
 type StrategyIdeaItem = StrategyIdeasData["items"][number];
-type CompanyRow = Awaited<ReturnType<typeof getCompanies>>["data"][number];
 
 type IntelItem = CompanyAnnouncement & {
   companyId?: string;
@@ -83,10 +80,17 @@ type SourceTile = {
 type HeatTile = {
   symbol: string;
   name: string;
+  sector?: string | null;
   pct: number | null;
   weight: number;
   source: string;
   price: number | null;
+  date?: string | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  close?: number | null;
+  volume?: number | null;
   readiness?: "ready" | "degraded" | "blocked";
   freshnessStatus?: "fresh" | "stale" | "missing";
   placeholder?: boolean;
@@ -98,6 +102,13 @@ type HeatTileLayout = HeatTile & {
   w: number;
   h: number;
   compact: boolean;
+};
+
+type HeatmapSectorGroup = {
+  sector: string;
+  weight: number;
+  tiles: HeatTile[];
+  layout: HeatTileLayout[];
 };
 
 type TapeQuote = {
@@ -114,8 +125,8 @@ type TapeQuote = {
 const TAIPEI_TIME_ZONE = "Asia/Taipei";
 const PAPER_PREVIEW_CAPITAL_TWD = 20_000;
 const ANNOUNCEMENT_DAYS = 30;
-const MAX_INTEL_COMPANIES = 16;
 const MAX_INTEL_ROWS = 12;
+const MAX_HEATMAP_TILES = 180;
 
 const EMPTY_TAPE_QUOTES: TapeQuote[] = [
   { sym: "TAIEX", name: "加權指數", price: null, chg: null, pct: null, placeholder: true },
@@ -443,7 +454,7 @@ async function loadPaperHealthState(): Promise<LoadState<PaperHealthState | null
   );
 }
 
-async function loadMarketIntelDashboard(ideas: LoadState<StrategyIdeasData | null>): Promise<LoadState<MarketIntelDashboard>> {
+async function loadMarketIntelDashboard(): Promise<LoadState<MarketIntelDashboard>> {
   return load<MarketIntelDashboard>(
     "TWSE OpenAPI 重大訊息",
     { items: [], selected: [], failures: 0 },
@@ -451,60 +462,20 @@ async function loadMarketIntelDashboard(ideas: LoadState<StrategyIdeasData | nul
       const aggregate = await getMarketIntelAnnouncements({
         days: ANNOUNCEMENT_DAYS,
         limit: MAX_INTEL_ROWS,
+        scope: "market",
       });
-      if (aggregate.data.items.length > 0) {
-        return {
-          items: aggregate.data.items
-            .filter((item) => item.ticker)
-            .map((item) => ({
-              ...item,
-              ticker: item.ticker as string,
-              companyName: item.companyName ?? (item.ticker as string),
-            })),
-          selected: aggregate.data.selected,
-          failures: aggregate.data.failures,
-        };
-      }
-
-      const companies = (await getCompanies()).data ?? [];
-      if (companies.length === 0) {
-        return { items: [], selected: [], failures: 0 };
-      }
-
-      const byId = new Map(companies.map((company) => [company.id, company]));
-      const ideaCompanies = (ideas.data?.items ?? [])
-        .map((idea) => byId.get(idea.companyId))
-        .filter((company): company is CompanyRow => Boolean(company));
-      const selected = [...ideaCompanies, ...companies]
-        .filter((company, index, all) => all.findIndex((item) => item.id === company.id) === index)
-        .slice(0, MAX_INTEL_COMPANIES);
-
-      const settled = await Promise.allSettled(
-        selected.map(async (company) => {
-          const response = await getCompanyAnnouncements(company.id, { days: ANNOUNCEMENT_DAYS });
-          return (response.data ?? []).map((item) => ({
-            ...item,
-            companyId: company.id,
-            ticker: company.ticker,
-            companyName: company.name,
-          }));
-        }),
-      );
-
-      const failures = settled.filter((result) => result.status === "rejected").length;
-      if (selected.length > 0 && failures === settled.length) {
-        throw new Error("重大訊息 API 目前全部查詢失敗。");
-      }
-
-      const items = settled
-        .flatMap((result) => result.status === "fulfilled" ? result.value : [])
-        .sort((left, right) => right.date.localeCompare(left.date) || left.ticker.localeCompare(right.ticker))
-        .slice(0, MAX_INTEL_ROWS);
-
-      return { items, selected, failures };
+      return {
+        items: aggregate.data.items.map((item) => ({
+          ...item,
+          ticker: item.ticker ?? "MARKET",
+          companyName: item.companyName ?? "大盤",
+        })),
+        selected: aggregate.data.selected,
+        failures: aggregate.data.failures,
+      };
     },
     (value) => value.items.length === 0,
-    `選定公司近 ${ANNOUNCEMENT_DAYS} 天沒有重大訊息。`,
+    `近 ${ANNOUNCEMENT_DAYS} 天沒有可顯示的大盤新聞或官方重大訊息。`,
   );
 }
 
@@ -634,13 +605,20 @@ function buildSources(params: {
 function buildHeatmap(market: LoadState<MarketDataOverview | null>): HeatTile[] {
   const contextRows = market.data?.marketContext?.heatmap ?? [];
   if (contextRows.length > 0) {
-    return contextRows.slice(0, 30).map((item) => ({
+    return contextRows.slice(0, MAX_HEATMAP_TILES).map((item) => ({
       symbol: item.symbol,
       name: item.name,
+      sector: item.sector,
       pct: typeof item.changePct === "number" ? item.changePct : null,
       weight: item.weight,
       source: item.source,
       price: typeof item.last === "number" ? item.last : null,
+      date: item.date,
+      open: item.open ?? null,
+      high: item.high ?? null,
+      low: item.low ?? null,
+      close: item.close ?? (typeof item.last === "number" ? item.last : null),
+      volume: item.volume,
       readiness: item.readiness,
       freshnessStatus: item.freshnessStatus,
     }));
@@ -729,6 +707,61 @@ function buildTreemapLayout(items: HeatTile[]): HeatTileLayout[] {
       return Math.abs(right.pct ?? 0) - Math.abs(left.pct ?? 0);
     });
   return splitTreemapRows(sorted, 0, 0, 100, 100);
+}
+
+function sectorLabel(raw: string | null | undefined) {
+  const normalized = (raw ?? "").trim();
+  if (!normalized) return "其他產業";
+  const labels: Record<string, string> = {
+    "Semiconductors": "半導體",
+    "Electronic Components": "電子零組件",
+    "Computer Hardware": "電腦及週邊",
+    "Communication Equipment": "通訊設備",
+    "Electrical Equipment & Parts": "電機設備",
+    "Specialty Industrial Machinery": "工業機械",
+    "Specialty Chemicals": "化學材料",
+    "Semiconductor Equipment & Materials": "半導體設備",
+    "Information Technology Services": "資訊服務",
+    "Consumer Electronics": "消費電子",
+    "Auto Parts": "汽車零組件",
+    "Steel": "鋼鐵",
+    "Banks": "金融銀行",
+    "Insurance": "保險",
+    "Asset Management": "金融控股",
+    "Marine Shipping": "航運",
+    "Airlines": "航空",
+    "Real Estate": "營建地產",
+    "Textile Manufacturing": "紡織",
+    "Biotechnology": "生技醫療",
+    "Pharmaceuticals": "製藥",
+    "Food Distribution": "食品通路",
+    "Packaged Foods": "食品",
+    "Oil & Gas Refining & Marketing": "油電燃氣",
+    "Utilities": "公用事業",
+  };
+  return labels[normalized] ?? normalized;
+}
+
+function buildHeatmapSectorGroups(rows: HeatTile[]): HeatmapSectorGroup[] {
+  const realRows = rows.filter((row) => !row.placeholder);
+  const grouped = new Map<string, HeatTile[]>();
+
+  for (const row of realRows) {
+    const sector = sectorLabel(row.sector);
+    const items = grouped.get(sector) ?? [];
+    items.push(row);
+    grouped.set(sector, items);
+  }
+
+  return [...grouped.entries()]
+    .map(([sector, tiles]) => ({
+      sector,
+      tiles: tiles.sort((left, right) => Math.max(0.1, right.weight) - Math.max(0.1, left.weight)),
+      weight: tiles.reduce((sum, tile) => sum + Math.max(0.1, tile.weight), 0),
+      layout: buildTreemapLayout(tiles),
+    }))
+    .sort((left, right) => right.weight - left.weight)
+    .slice(0, 12);
 }
 
 function hasMarketOverviewData(value: MarketDataOverview | null): boolean {
@@ -1121,7 +1154,7 @@ function HeroPanel({
             </span>
             <span className={(twii.pct ?? 0) > 0 ? "price-up" : (twii.pct ?? 0) < 0 ? "price-down" : ""}>{formatPercent(twii.pct)}</span>
           </div>
-          <IntradayChart points={makeSpark("twii", (twii.pct ?? 0) < 0 ? "BLOCKED" : indexReady ? "LIVE" : "EMPTY", 60)} />
+          <IndexOhlcChart history={index?.history ?? []} />
         </div>
         <div className="tac-breadth">
           <div className="tac-index-title"><b>BREADTH</b><span>漲跌家數</span></div>
@@ -1159,12 +1192,72 @@ function Metric({ label, value, sub, tone }: { label: string; value: ReactNode; 
   );
 }
 
-function IntradayChart({ points }: { points: number[] }) {
-  const path = sparkPath(points, 360, 46);
+function IndexOhlcChart({ history }: { history: NonNullable<MarketDataOverview["marketContext"]["index"]["history"]> }) {
+  const rows = history
+    .filter((row) => typeof row.close === "number" && Number.isFinite(row.close))
+    .slice(-64);
+
+  if (rows.length < 2) {
+    return (
+      <svg className="tac-intraday tac-index-ohlc empty" viewBox="0 0 360 58" preserveAspectRatio="none" role="img" aria-label="加權指數日 K 資料等待回補">
+        <path d="M0,52 L360,52" />
+      </svg>
+    );
+  }
+
+  const width = 360;
+  const height = 58;
+  const values = rows.flatMap((row) => [
+    row.high ?? row.close ?? 0,
+    row.low ?? row.close ?? 0,
+    row.open ?? row.close ?? 0,
+    row.close ?? 0,
+  ]);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const xFor = (index: number) => (index / (rows.length - 1)) * width;
+  const yFor = (value: number | null | undefined) => {
+    const safe = typeof value === "number" && Number.isFinite(value) ? value : min;
+    return height - 6 - ((safe - min) / range) * (height - 12);
+  };
+  const closePath = rows.map((row, index) => {
+    const x = xFor(index);
+    const y = yFor(row.close);
+    return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const areaPath = `${closePath} L${width},${height} L0,${height} Z`;
+  const hitWidth = Math.max(4, width / rows.length);
+
   return (
-    <svg className="tac-intraday" viewBox="0 0 360 46" preserveAspectRatio="none" aria-hidden>
-      <path d={`${path} L360,46 L0,46 Z`} />
-      <path d={path} />
+    <svg className="tac-intraday tac-index-ohlc" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="加權指數日 K 線圖">
+      <path className="area" d={areaPath} />
+      {rows.map((row, index) => {
+        const x = xFor(index);
+        const highY = yFor(row.high ?? row.close);
+        const lowY = yFor(row.low ?? row.close);
+        const openY = yFor(row.open ?? row.close);
+        const closeY = yFor(row.close);
+        const up = (row.close ?? 0) >= (row.open ?? row.close ?? 0);
+        return (
+          <g key={`${row.date}-${index}`} className={up ? "up" : "down"}>
+            <line className="range" x1={x} x2={x} y1={highY} y2={lowY} />
+            <line className="open" x1={x - 2.4} x2={x} y1={openY} y2={openY} />
+            <line className="close" x1={x} x2={x + 2.4} y1={closeY} y2={closeY} />
+            <rect className="hit" x={x - hitWidth / 2} y="0" width={hitWidth} height={height}>
+              <title>{[
+                `日期 ${row.date}`,
+                `開 ${formatPrice(row.open)}`,
+                `高 ${formatPrice(row.high)}`,
+                `低 ${formatPrice(row.low)}`,
+                `收 ${formatPrice(row.close)}`,
+                `量 ${formatNumber(row.volume)}`,
+              ].join("\n")}</title>
+            </rect>
+          </g>
+        );
+      })}
+      <path className="close-line" d={closePath} />
     </svg>
   );
 }
@@ -1277,24 +1370,40 @@ function FreshnessPanel({ sources }: { sources: SourceTile[] }) {
 
 function HeatmapPanel({ heatmap, market }: { heatmap: HeatTile[]; market: LoadState<MarketDataOverview | null> }) {
   const rows = heatmap.length > 0 ? heatmap : EMPTY_HEATMAP;
-  const layoutRows = buildTreemapLayout(rows);
   const hasRealHeatmap = rows.some((row) => !row.placeholder);
+  const sectorGroups = buildHeatmapSectorGroups(rows);
   const heatmapSource = market.data?.marketContext.source === "finmind:official-daily" ? "FinMind 官方日資料" : "正式行情";
   return (
     <Panel
       eyebrow="HEATMAP"
-      title="台股公司池 · HEATMAP"
-      sub={hasRealHeatmap ? `面積代表成交量權重，顏色代表漲跌幅 · ${heatmapSource}` : "等待後端行情回補；不顯示假價格。"}
-      right={<div className="tac-heat-legend"><span>▲ 漲</span><span>— 平</span><span>▼ 跌</span></div>}
+      title="台股市場熱力圖"
+      sub={hasRealHeatmap ? `區分產業 · 顯示個股 · 面積=成交量 · 顏色=今日漲跌 · ${heatmapSource}` : "等待後端行情回補；不顯示假價格。"}
+      right={<div className="tac-heat-legend"><span>上市/上櫃</span><span>成交量</span><span>今日</span></div>}
     >
       <div className="tac-heatmap">
-        <div className="tac-heatmap-canvas">
-          {layoutRows.map((tile, index) => <HeatTileView tile={tile} key={`${tile.symbol}-${index}`} />)}
-        </div>
+        {hasRealHeatmap ? (
+          <div className="tac-heatmap-groups">
+            {sectorGroups.map((group) => (
+              <section className="tac-heat-sector" key={group.sector}>
+                <header className="tac-heat-sector-head">
+                  <strong>{group.sector}</strong>
+                  <span>{group.tiles.length} 檔</span>
+                </header>
+                <div className="tac-heat-sector-canvas">
+                  {group.layout.map((tile, index) => <HeatTileView tile={tile} key={`${group.sector}-${tile.symbol}-${index}`} />)}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <div className="tac-heatmap-canvas">
+            {buildTreemapLayout(rows).map((tile, index) => <HeatTileView tile={tile} key={`${tile.symbol}-${index}`} />)}
+          </div>
+        )}
       </div>
       <div className="tac-heat-footer">
-        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · {hasRealHeatmap ? heatmapSource : "EMPTY"}</span>
-        <span>-2% <i /> +2%</span>
+        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · {hasRealHeatmap ? `${sectorGroups.length} 個產業` : "EMPTY"}</span>
+        <span>-3% <i /> +3%</span>
       </div>
     </Panel>
   );
@@ -1303,9 +1412,9 @@ function HeatmapPanel({ heatmap, market }: { heatmap: HeatTile[]; market: LoadSt
 function HeatTileView({ tile }: { tile: HeatTileLayout }) {
   const pct = tile.pct ?? 0;
   const tone = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
-  const abs = Math.min(1, Math.abs(pct) / 2.2);
+  const abs = Math.min(1, Math.abs(pct) / 3);
   const style = {
-    "--heat": String(0.18 + abs * 0.42),
+    "--heat": String(0.22 + abs * 0.52),
     "--weight": String(Math.max(1, Math.min(8, tile.weight))),
     left: `${tile.x}%`,
     top: `${tile.y}%`,
@@ -1329,7 +1438,16 @@ function HeatTileView({ tile }: { tile: HeatTileLayout }) {
       className={`tac-heat-tile ${tone} ${tile.compact ? "compact" : ""}`}
       href={`/companies/${encodeURIComponent(tile.symbol)}`}
       style={style}
-      title={`${tile.symbol} ${tile.name} ${formatPercent(tile.pct)} · ${formatPrice(tile.price)}`}
+      title={[
+        `${tile.symbol} ${tile.name}`,
+        `日期 ${tile.date ?? "--"}`,
+        `開 ${formatPrice(tile.open)}`,
+        `高 ${formatPrice(tile.high)}`,
+        `低 ${formatPrice(tile.low)}`,
+        `收 ${formatPrice(tile.close ?? tile.price)}`,
+        `漲跌 ${formatPercent(tile.pct)}`,
+        `成交量 ${formatNumber(tile.volume)}`,
+      ].join("\n")}
     >
       <span>{tile.symbol}</span>
       {!tile.compact && <small>{tile.name}</small>}
@@ -1341,16 +1459,17 @@ function HeatTileView({ tile }: { tile: HeatTileLayout }) {
 function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> }) {
   const featured = intel.data.items[0] ?? null;
   const rows = intel.data.items.slice(featured ? 1 : 0, featured ? 7 : 6);
+  const itemHref = (item: IntelItem) => item.url ?? (item.ticker === "MARKET" ? "/market-intel" : `/companies/${encodeURIComponent(item.ticker)}`);
   return (
     <Panel
       eyebrow="MARKET INTEL"
-      title="重大訊息與市場情報"
-      sub={intel.state === "LIVE" ? "官方公告進入今日工作流" : intel.reason}
+      title="重要公告與大盤新聞"
+      sub={intel.state === "LIVE" ? "只顯示官方重大訊息、台股大盤或市場級新聞" : intel.reason}
       right={<StatusChip state={stateFromLoad(intel)} label={`${formatNumber(intel.data.items.length)} 筆`} />}
       className="tac-intel-panel"
     >
       {featured ? (
-        <Link href={`/companies/${encodeURIComponent(featured.ticker)}`} className="tac-intel-feature">
+        <Link href={itemHref(featured)} className="tac-intel-feature">
           <span>{categoryLabel(featured.category)}</span>
           <strong>{intelTitleText(featured)}</strong>
           <small>{featured.ticker} · {featured.companyName} · {formatDate(featured.date)}</small>
@@ -1360,7 +1479,7 @@ function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> })
       )}
       <div className="tac-intel-list">
         {rows.map((item) => (
-          <Link href={`/companies/${encodeURIComponent(item.ticker)}`} key={`${item.ticker}-${item.id}`}>
+          <Link href={itemHref(item)} key={`${item.ticker}-${item.id}`}>
             <b>{item.ticker}</b>
             <span>{intelTitleText(item)}</span>
             <small>{formatDate(item.date)}</small>
@@ -1369,8 +1488,8 @@ function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> })
         ))}
       </div>
       <div className="tac-intel-foot">
-        <span>查詢 {formatNumber(intel.data.selected.length)} 檔公司</span>
-        <span>{intel.data.failures > 0 ? `${intel.data.failures} 檔查詢失敗` : "官方路徑可讀"}</span>
+        <span>篩選大盤 / 市場級內容</span>
+        <span>{intel.data.failures > 0 ? `${intel.data.failures} 路徑查詢失敗` : "來源路徑可讀"}</span>
       </div>
     </Panel>
   );
@@ -1604,7 +1723,7 @@ export default async function DashboardPage() {
     ),
   ]);
 
-  const intel = await loadMarketIntelDashboard(ideas);
+  const intel = await loadMarketIntelDashboard();
   const sources = buildSources({ finmind, market, ops, brief, paper, ideas, runs, intel });
   const realHeatmap = buildHeatmap(market);
   const heatmap = realHeatmap.length > 0 ? realHeatmap : EMPTY_HEATMAP;

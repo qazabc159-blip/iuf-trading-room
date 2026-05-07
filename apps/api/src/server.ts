@@ -4976,6 +4976,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
 
   const days = readBoundedInt("days", 30, 1, 90);
   const limit = readBoundedInt("limit", 10, 1, 24);
+  const scope = c.req.query("scope") === "market" ? "market" : "company_pool";
   const db = getDb();
   const session = c.get("session");
 
@@ -5006,6 +5007,64 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
   function readRows<T>(result: unknown): T[] {
     if (Array.isArray(result)) return result as T[];
     return ((result as { rows?: T[] })?.rows) ?? [];
+  }
+
+  function isMarketWideNews(row: IntelRow): boolean {
+    if (scope !== "market") return true;
+    if (row.source === "twse_announcements") return true;
+
+    const text = `${row.title ?? ""} ${row.category ?? ""} ${row.company_name ?? ""}`.toLowerCase();
+    const blockedTerms = [
+      "股市爆料同學會",
+      "cmoney",
+      "理財寶",
+      "奇摩股市",
+      "存股",
+      "達人",
+      "老師",
+      "同學會"
+    ];
+    if (blockedTerms.some((term) => text.includes(term.toLowerCase()))) return false;
+
+    const marketTerms = [
+      "台股",
+      "大盤",
+      "加權",
+      "櫃買",
+      "盤勢",
+      "盤中",
+      "盤後",
+      "開盤",
+      "收盤",
+      "權值",
+      "三大法人",
+      "外資",
+      "投信",
+      "自營商",
+      "美股",
+      "fed",
+      "聯準會",
+      "央行",
+      "利率",
+      "通膨",
+      "匯率",
+      "新台幣",
+      "半導體",
+      "ai",
+      "台積電",
+      "鴻海",
+      "etf",
+      "期貨",
+      "景氣",
+      "出口",
+      "msci",
+      "關稅",
+      "政策",
+      "金管會",
+      "證交所",
+      "櫃買中心"
+    ];
+    return marketTerms.some((term) => text.includes(term.toLowerCase()));
   }
 
   const rows: IntelRow[] = [];
@@ -5058,10 +5117,11 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
         WHERE n.fetched_at >= NOW() - (${days}::text || ' days')::interval
           AND COALESCE(n.title, '') <> ''
         ORDER BY n.fetched_at DESC
-        LIMIT ${Math.max(limit, 12)}
+        LIMIT ${scope === "market" ? Math.max(limit * 8, 80) : Math.max(limit, 12)}
       `);
       const seen = new Set(rows.map((row) => `${row.ticker ?? ""}:${row.title ?? ""}`));
       for (const row of readRows<IntelRow>(result)) {
+        if (!isMarketWideNews(row)) continue;
         const key = `${row.ticker ?? ""}:${row.title ?? ""}`;
         if (seen.has(key)) continue;
         rows.push(row);

@@ -12598,6 +12598,57 @@ body:has(.tactical-dashboard) .app-sidebar {
   stroke-linecap: round;
 }
 
+.tac-index-ohlc {
+  height: 58px;
+}
+
+.tac-index-ohlc.empty path {
+  stroke: var(--tac-fg-3);
+  opacity: 0.55;
+}
+
+.tac-index-ohlc .area {
+  fill: var(--tac-ok);
+  opacity: 0.12;
+}
+
+.tac-index-ohlc .close-line {
+  fill: none;
+  stroke: var(--tac-ok);
+  stroke-width: 1.9;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.tac-index-ohlc line {
+  vector-effect: non-scaling-stroke;
+}
+
+.tac-index-ohlc .range {
+  stroke: rgba(231, 236, 243, 0.34);
+  stroke-width: 1;
+}
+
+.tac-index-ohlc .open,
+.tac-index-ohlc .close {
+  stroke-width: 1.2;
+}
+
+.tac-index-ohlc .up .open,
+.tac-index-ohlc .up .close {
+  stroke: var(--tac-bad);
+}
+
+.tac-index-ohlc .down .open,
+.tac-index-ohlc .down .close {
+  stroke: var(--tac-ok);
+}
+
+.tac-index-ohlc .hit {
+  fill: transparent;
+  pointer-events: all;
+}
+
 .tac-breadth-counts {
   display: grid;
   grid-template-columns: repeat(3, auto 1fr);
@@ -12917,6 +12968,68 @@ body:has(.tactical-dashboard) .app-sidebar {
   padding: 16px;
 }
 
+.tac-heatmap-groups {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: minmax(148px, 1fr);
+  gap: 8px;
+  min-height: clamp(430px, 42vw, 620px);
+}
+
+.tac-heat-sector {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  border: 1px solid rgba(220, 228, 240, 0.1);
+  background:
+    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.014) 1px, transparent 1px),
+    rgba(7, 11, 16, 0.70);
+  background-size: 22px 22px, 22px 22px, 100% 100%;
+  overflow: hidden;
+}
+
+.tac-heat-sector:nth-child(1) {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+
+.tac-heat-sector:nth-child(2),
+.tac-heat-sector:nth-child(3) {
+  grid-row: span 2;
+}
+
+.tac-heat-sector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 9px;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+  color: var(--tac-fg-1);
+  font: 820 11px/1.2 var(--sans-tc);
+}
+
+.tac-heat-sector-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tac-heat-sector-head span {
+  flex: 0 0 auto;
+  color: var(--tac-fg-3);
+  font: 800 10px/1 var(--mono);
+}
+
+.tac-heat-sector-canvas {
+  position: relative;
+  min-height: 116px;
+  overflow: hidden;
+}
+
 .tac-heatmap-canvas {
   position: relative;
   min-height: clamp(360px, 38vw, 520px);
@@ -12940,6 +13053,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   color: var(--night-ink);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
   transition: transform 140ms ease, filter 140ms ease;
+  overflow: hidden;
 }
 
 .tac-heat-tile:hover {
@@ -13009,6 +13123,14 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-heat-tile.compact b {
   justify-self: start;
   font-size: 11px;
+}
+
+.tac-heat-sector-canvas .tac-heat-tile.compact {
+  padding: 4px;
+}
+
+.tac-heat-sector-canvas .tac-heat-tile.compact small {
+  display: none;
 }
 
 .tac-heat-footer {
@@ -13586,6 +13708,10 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-heatmap {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+
+  .tac-heatmap-groups {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 620px) {
@@ -13660,6 +13786,19 @@ body:has(.tactical-dashboard) .app-sidebar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .tac-heatmap-groups {
+    grid-template-columns: 1fr;
+    grid-auto-rows: minmax(190px, auto);
+  }
+
+  .tac-heat-sector,
+  .tac-heat-sector:nth-child(1),
+  .tac-heat-sector:nth-child(2),
+  .tac-heat-sector:nth-child(3) {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
   .tac-heat-tile.major,
   .tac-heat-tile.secondary {
     grid-column: span 1;
@@ -13678,6 +13817,10 @@ body:has(.tactical-dashboard) .app-sidebar {
 
   .tac-heatmap {
     grid-template-columns: 1fr;
+  }
+
+  .tac-heatmap-groups {
+    min-height: 0;
   }
 
   .tac-chip {
