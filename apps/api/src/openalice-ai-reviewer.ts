@@ -14,7 +14,7 @@ import { auditLogs, contentDrafts, getDb, isDatabaseMode } from "@iuf-trading-ro
 import { eq } from "drizzle-orm";
 
 import { approveContentDraft, rejectContentDraft } from "./content-draft-store.js";
-import { recordReviewerVerdict } from "./openalice-pipeline.js";
+import { recordReviewerVerdict, lookupJobSourcePackSummary } from "./openalice-pipeline.js";
 import { runAdversarialReview, type AdversarialReviewResult } from "./openalice-adversarial-reviewer.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -377,10 +377,17 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
   if (result.verdict === "approve") {
     // Green tier — run adversarial second-pass before auto-publish
     // Safe-default: null on any failure → auto-publish proceeds unchanged
+
+    // Gap 2 fix: look up sourcePackSummary from the pipeline job registry via sourceJobId.
+    // Enables Category C (source selection bias) detection in the adversarial reviewer.
+    const sourcePackSummary = draftRow.sourceJobId
+      ? lookupJobSourcePackSummary(draftRow.sourceJobId)
+      : null;
+
     const adversarialResult = await runAdversarialReview(
       draftRow.payload,
       draftId,
-      null // sourcePackSummary: not available from this call-site; Category C degrades gracefully
+      sourcePackSummary // Gap 2 fix: real summary if pipeline draft, null for non-pipeline drafts
     );
 
     if (adversarialResult) {
