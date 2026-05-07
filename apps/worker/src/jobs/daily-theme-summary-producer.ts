@@ -34,6 +34,7 @@ import {
   themes,
   workspaces
 } from "@iuf-trading-room/db";
+import { filterProductionThemeCandidates } from "./theme-quality.js";
 
 const OPENAI_MODEL = "gpt-5.4-mini"; // locked, do NOT flip
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -217,12 +218,13 @@ export async function runDailyThemeSummaryProducer(): Promise<DailyThemeSummaryR
   }
 
   // Gather data
-  const topThemes = await db
+  const candidateThemes = await db
     .select()
     .from(themes)
     .where(eq(themes.workspaceId, workspace.id))
     .orderBy(desc(themes.priority), desc(themes.updatedAt))
-    .limit(MAX_PROMPT_THEMES);
+    .limit(MAX_PROMPT_THEMES * 6);
+  const topThemes = filterProductionThemeCandidates(candidateThemes).slice(0, MAX_PROMPT_THEMES);
 
   // Count companies as proxy for "market change signal"
   const companyRows = await db
@@ -260,8 +262,9 @@ export async function runDailyThemeSummaryProducer(): Promise<DailyThemeSummaryR
     "Line 1: THEME_LABEL: <dominant theme label ≤80 chars>",
     "Line 2: ---",
     "Lines 3+: Markdown summary body (200-300 words). Highlight the most active theme, why it matters today, key risks, and watch-list implications.",
+    "Do not include buy/sell instructions, target prices, guarantees, Sharpe, win rate, or strategy performance claims.",
     "Do NOT include any preamble or explanation outside this format.",
-    "Write in English."
+    "Write in Traditional Chinese for a Taiwan stock operator."
   ].join(" ");
 
   const userContent = [

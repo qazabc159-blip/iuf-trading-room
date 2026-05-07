@@ -31,6 +31,7 @@ import {
   decideProducerRoute,
   enqueueOpenAliceJobFromWorker
 } from "../openalice-router.js";
+import { filterProductionThemeCandidates } from "./theme-quality.js";
 
 const PRODUCER_VERSION = "v1";
 const TASK_TYPE = "daily_brief";
@@ -97,19 +98,25 @@ export async function runDailyBriefProducer(): Promise<{
   }
 
   // --- gather data for both paths ---
-  const topThemes = await db
+  const themeCandidates = await db
     .select()
     .from(themes)
     .where(eq(themes.workspaceId, workspace.id))
     .orderBy(desc(themes.priority), desc(themes.updatedAt))
-    .limit(5);
+    .limit(50);
+  const productionThemes = filterProductionThemeCandidates(themeCandidates);
+  const productionThemeIds = new Set(productionThemes.map((theme) => theme.id));
+  const topThemes = productionThemes.slice(0, 5);
 
   const recentSummaries = await db
     .select()
     .from(themeSummaries)
     .where(eq(themeSummaries.workspaceId, workspace.id))
     .orderBy(desc(themeSummaries.generatedAt))
-    .limit(5);
+    .limit(20)
+    .then((rows) =>
+      rows.filter((summary) => productionThemeIds.has(summary.themeId)).slice(0, 5)
+    );
 
   const recentNotes = await db
     .select()

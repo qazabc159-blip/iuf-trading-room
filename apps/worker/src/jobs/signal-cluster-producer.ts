@@ -23,6 +23,7 @@ import {
   themes,
   workspaces
 } from "@iuf-trading-room/db";
+import { filterProductionThemeCandidates } from "./theme-quality.js";
 
 type ClusterCandidate = {
   companyId: string;
@@ -66,10 +67,11 @@ export async function runSignalClusterProducer(): Promise<{
     .then((rows) => rows.filter((r) => companyIdList.includes(r.companyId)));
 
   // load theme names
-  const allThemes = await db
-    .select({ id: themes.id, name: themes.name })
+  const themeCandidates = await db
+    .select({ id: themes.id, name: themes.name, slug: themes.slug, priority: themes.priority })
     .from(themes)
     .where(eq(themes.workspaceId, workspace.id));
+  const allThemes = filterProductionThemeCandidates(themeCandidates);
 
   const themeNameById = new Map(allThemes.map((t) => [t.id, t.name]));
 
@@ -86,6 +88,7 @@ export async function runSignalClusterProducer(): Promise<{
     });
   }
   for (const link of allLinks) {
+    if (!themeNameById.has(link.themeId)) continue;
     const cand = candidateMap.get(link.companyId);
     if (cand) {
       cand.themeIds.push(link.themeId);
