@@ -44,6 +44,34 @@
   --tw-dn: #2ecc71;
   --tw-dn-bright: #4adb88;
   --tw-dn-faint: rgba(46, 204, 113, 0.15);
+
+  --tac-bg-0: var(--night);
+  --tac-bg-1: var(--night-1);
+  --tac-bg-2: var(--night-2);
+  --tac-bg-3: var(--night-3);
+  --tac-line: var(--night-rule);
+  --tac-line-strong: var(--night-rule-strong);
+  --tac-grid: rgba(220, 228, 240, 0.018);
+  --tac-fg-0: var(--night-ink);
+  --tac-fg-1: #c6d0de;
+  --tac-fg-2: var(--night-mid);
+  --tac-fg-3: var(--night-soft);
+  --tac-fg-4: var(--night-faint);
+  --tac-brand: var(--gold);
+  --tac-brand-2: var(--gold-bright);
+  --tac-brand-glow: rgba(200, 148, 63, 0.11);
+  --tac-ok: var(--tw-dn);
+  --tac-ok-bg: rgba(46, 204, 113, 0.075);
+  --tac-ok-line: rgba(46, 204, 113, 0.22);
+  --tac-warn: var(--gold);
+  --tac-warn-bg: rgba(200, 148, 63, 0.075);
+  --tac-warn-line: rgba(200, 148, 63, 0.24);
+  --tac-bad: var(--tw-up);
+  --tac-bad-bg: rgba(230, 57, 70, 0.075);
+  --tac-bad-line: rgba(230, 57, 70, 0.24);
+  --tac-empty: var(--night-mid);
+  --tac-empty-bg: rgba(145, 160, 181, 0.055);
+  --tac-empty-line: rgba(145, 160, 181, 0.18);
 }
 
 html,
@@ -11735,33 +11763,6 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tactical-dashboard {
-  --tac-bg-0: var(--night);
-  --tac-bg-1: var(--night-1);
-  --tac-bg-2: var(--night-2);
-  --tac-bg-3: var(--night-3);
-  --tac-line: var(--night-rule);
-  --tac-line-strong: var(--night-rule-strong);
-  --tac-grid: rgba(220, 228, 240, 0.018);
-  --tac-fg-0: var(--night-ink);
-  --tac-fg-1: #c6d0de;
-  --tac-fg-2: var(--night-mid);
-  --tac-fg-3: var(--night-soft);
-  --tac-fg-4: var(--night-faint);
-  --tac-brand: var(--gold);
-  --tac-brand-2: var(--gold-bright);
-  --tac-brand-glow: rgba(200, 148, 63, 0.11);
-  --tac-ok: var(--tw-dn);
-  --tac-ok-bg: rgba(46, 204, 113, 0.075);
-  --tac-ok-line: rgba(46, 204, 113, 0.22);
-  --tac-warn: var(--gold);
-  --tac-warn-bg: rgba(200, 148, 63, 0.075);
-  --tac-warn-line: rgba(200, 148, 63, 0.24);
-  --tac-bad: var(--tw-up);
-  --tac-bad-bg: rgba(230, 57, 70, 0.075);
-  --tac-bad-line: rgba(230, 57, 70, 0.24);
-  --tac-empty: var(--night-mid);
-  --tac-empty-bg: rgba(145, 160, 181, 0.055);
-  --tac-empty-line: rgba(145, 160, 181, 0.18);
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
   width: 100%;
@@ -11774,7 +11775,6 @@ body:has(.tactical-dashboard) .app-sidebar {
     radial-gradient(circle at 78% 0%, rgba(200, 148, 63, 0.055), transparent 29%),
     var(--tac-bg-0);
   background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%;
-  animation: tac-grid-drift 34s linear infinite;
   font-family: var(--sans-tc);
   font-feature-settings: "tnum";
 }
@@ -11809,6 +11809,42 @@ body:has(.tactical-dashboard) .app-sidebar {
   min-height: 100vh;
   border-right: 1px solid var(--tac-line);
   background: linear-gradient(180deg, rgba(12, 17, 24, 0.96), rgba(8, 11, 16, 0.98));
+}
+
+.app-tactical-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  width: 240px;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(200, 148, 63, 0.38) rgba(8, 11, 16, 0.94);
+}
+
+.app-tactical-sidebar .tac-nav {
+  flex: 1 1 auto;
+}
+
+.tac-sidebar-logout {
+  appearance: none;
+  margin: 0 16px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--tac-line-strong);
+  border-radius: 4px;
+  color: var(--tac-fg-2);
+  background: rgba(255, 255, 255, 0.018);
+  cursor: pointer;
+  font: 850 11px/1.2 var(--sans-tc);
+  text-align: left;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.tac-sidebar-logout:hover {
+  color: var(--tac-fg-0);
+  border-color: var(--tac-warn-line);
+  background: var(--tac-warn-bg);
 }
 
 .tac-brand {
@@ -12659,7 +12695,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-source-table a {
   display: grid;
-  grid-template-columns: 78px minmax(112px, 1fr) 48px 68px 72px;
+  grid-template-columns: minmax(76px, 0.7fr) minmax(150px, 1.35fr) 56px minmax(72px, auto) minmax(80px, auto);
   gap: 8px;
   align-items: center;
   min-height: 48px;
@@ -12682,8 +12718,8 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-source-table small {
   color: var(--tac-fg-2);
   font: 720 12px/1.35 var(--sans-tc);
-  word-break: keep-all;
-  overflow-wrap: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .tac-source-table small {
@@ -12692,6 +12728,11 @@ body:has(.tactical-dashboard) .app-sidebar {
   font-family: var(--mono);
   font-size: 10px;
   white-space: nowrap;
+}
+
+.tac-source-table .tac-chip {
+  justify-self: end;
+  max-width: 100%;
 }
 
 .tac-mover-board {
@@ -12873,37 +12914,38 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-fresh-legend i.blocked { background: var(--tac-bad); }
 
 .tac-heatmap {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-auto-rows: minmax(72px, auto);
-  grid-auto-flow: dense;
-  gap: 4px;
   padding: 16px;
 }
 
+.tac-heatmap-canvas {
+  position: relative;
+  min-height: clamp(360px, 38vw, 520px);
+  border: 1px solid rgba(7, 9, 13, 0.72);
+  background:
+    linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px),
+    rgba(7, 11, 16, 0.78);
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+  overflow: hidden;
+}
+
 .tac-heat-tile {
+  position: absolute;
   display: grid;
   align-content: space-between;
   gap: 8px;
-  min-height: calc(60px + var(--weight) * 4px);
-  padding: 12px;
+  min-height: 0;
+  padding: clamp(7px, 0.8vw, 12px);
   border: 1px solid rgba(7, 9, 13, 0.75);
   color: var(--night-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
   transition: transform 140ms ease, filter 140ms ease;
 }
 
 .tac-heat-tile:hover {
-  transform: translateY(-1px);
+  transform: scale(1.006);
   filter: brightness(1.08);
-}
-
-.tac-heat-tile.major {
-  grid-column: span 2;
-  grid-row: span 2;
-}
-
-.tac-heat-tile.secondary {
-  grid-row: span 2;
+  z-index: 2;
 }
 
 .tac-heat-tile.up {
@@ -12937,17 +12979,36 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-heat-tile span {
   font: 900 14px/1 var(--mono);
+  white-space: nowrap;
 }
 
 .tac-heat-tile small {
   color: rgba(245, 247, 250, 0.78);
   font: 760 11px/1.25 var(--sans-tc);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .tac-heat-tile b {
   justify-self: end;
   align-self: end;
   font: 900 20px/1 var(--mono);
+}
+
+.tac-heat-tile.compact {
+  gap: 4px;
+  padding: 6px;
+}
+
+.tac-heat-tile.compact span {
+  font-size: 10px;
+}
+
+.tac-heat-tile.compact b {
+  justify-self: start;
+  font-size: 11px;
 }
 
 .tac-heat-footer {
@@ -13306,7 +13367,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-workflow a {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 92px 92px;
+  grid-template-columns: 30px minmax(0, 1fr) minmax(76px, max-content) minmax(84px, max-content);
   gap: 12px;
   align-items: center;
   min-height: 58px;
@@ -13348,6 +13409,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   font: 850 11px/1.25 var(--sans-tc);
   text-align: right;
   overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .tac-blocked {
@@ -13621,6 +13683,82 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-chip {
     white-space: normal;
   }
+}
+
+/* Product shell alignment: pages outside the homepage inherit the same tactical room language. */
+.app-main-shell > .page-frame {
+  color: var(--tac-fg-1);
+  background:
+    linear-gradient(var(--tac-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tac-grid) 1px, transparent 1px),
+    radial-gradient(circle at 78% 0%, rgba(200, 148, 63, 0.045), transparent 29%),
+    var(--tac-bg-0);
+  background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%;
+}
+
+.app-main-shell > .page-frame .page-head {
+  border-bottom-color: var(--tac-line-strong);
+}
+
+.app-main-shell > .page-frame .page-title h1 {
+  color: var(--tac-fg-0);
+  font-family: var(--sans-tc);
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.app-main-shell > .page-frame .panel {
+  overflow: hidden;
+  border: 1px solid var(--tac-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(200, 148, 63, 0.032), transparent 42%),
+    rgba(11, 16, 23, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.028);
+}
+
+.app-main-shell > .page-frame .panel:hover {
+  border-color: rgba(200, 148, 63, 0.25);
+  background:
+    linear-gradient(135deg, rgba(200, 148, 63, 0.052), transparent 42%),
+    rgba(12, 18, 26, 0.88);
+}
+
+.app-main-shell > .page-frame .panel-head {
+  border-bottom-color: var(--tac-line);
+}
+
+.route-loading-panel {
+  min-height: 260px;
+}
+
+.route-loading-bars {
+  display: grid;
+  gap: 12px;
+}
+
+.route-loading-bars span {
+  height: 16px;
+  max-width: 760px;
+  border: 1px solid var(--tac-line);
+  background:
+    linear-gradient(90deg, rgba(200, 148, 63, 0.18), rgba(200, 148, 63, 0.035), rgba(200, 148, 63, 0.18));
+  background-size: 240% 100%;
+  animation: tac-loading-sweep 1.2s linear infinite;
+}
+
+.route-loading-bars span:nth-child(2) {
+  max-width: 560px;
+}
+
+.route-loading-bars span:nth-child(3) {
+  max-width: 680px;
+}
+
+@keyframes tac-loading-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

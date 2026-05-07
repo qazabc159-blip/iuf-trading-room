@@ -4965,6 +4965,166 @@ app.get("/api/v1/companies/:id/announcements", async (c) => {
   return c.json({ data: items });
 });
 
+app.get("/api/v1/market-intel/announcements", async (c) => {
+  function readBoundedInt(name: string, fallback: number, min: number, max: number): number {
+    const raw = Number(c.req.query(name));
+    const value = Number.isFinite(raw) ? Math.trunc(raw) : fallback;
+    return Math.max(min, Math.min(max, value));
+  }
+
+  const days = readBoundedInt("days", 30, 1, 90);
+  const limit = readBoundedInt("limit", 10, 1, 24);
+  const db = getDb();
+  const session = c.get("session");
+
+  if (!db) {
+    return c.json({
+      data: {
+        items: [],
+        selected: [],
+        failures: 0,
+        source: "empty"
+      }
+    });
+  }
+  const activeDb = db;
+
+  async function tableExists(tableName: string): Promise<boolean> {
+    const result = await activeDb.execute(drizzleSql`
+      SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists
+    `);
+    const row = (result as { rows?: Array<{ exists?: boolean }> }).rows?.[0];
+    return row?.exists === true;
+  }
+
+  async function tableHasColumns(tableName: string, columns: string[]): Promise<boolean> {
+    const checks = await Promise.all(columns.map(async (columnName) => {
+      const result = await activeDb.execute(drizzleSql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = ${tableName}
+            AND column_name = ${columnName}
+        ) AS exists
+      `);
+      const row = (result as { rows?: Array<{ exists?: boolean }> }).rows?.[0];
+      return row?.exists === true;
+    }));
+    return checks.every(Boolean);
+  }
+
+  type IntelRow = {
+    id: string | null;
+    ticker: string | null;
+    company_name: string | null;
+    date: string | null;
+    title: string | null;
+    category: string | null;
+    body: string | null;
+    url: string | null;
+    source: string | null;
+  };
+
+  const [hasAnnouncements, hasNews] = await Promise.all([
+    tableExists("tw_announcements").then((exists) => exists
+      ? tableHasColumns("tw_announcements", ["ticker_symbol", "announced_at", "title"])
+      : false),
+    tableExists("tw_stock_news").then((exists) => exists
+      ? tableHasColumns("tw_stock_news", ["id", "stock_id", "title", "url", "published_at", "source_name", "fetched_at"])
+      : false)
+  ]);
+  const rows: IntelRow[] = [];
+  let source: "twse_announcements" | "finmind_stock_news" | "mixed" | "empty" = "empty";
+
+  if (hasAnnouncements) {
+    const result = await activeDb.execute(drizzleSql`
+      SELECT
+        CONCAT(a.ticker_symbol, '-', a.announced_at::text, '-', a.title) AS id,
+        a.ticker_symbol AS ticker,
+        COALESCE(c.name, a.ticker_symbol) AS company_name,
+        a.announced_at::text AS date,
+        a.title AS title,
+        '重大訊息' AS category,
+        NULL::text AS body,
+        NULL::text AS url,
+        'twse_announcements' AS source
+      FROM tw_announcements a
+      LEFT JOIN companies c
+        ON c.ticker = a.ticker_symbol
+       AND c.workspace_id = ${session.workspace.id}
+      WHERE a.announced_at >= NOW() - (${days}::text || ' days')::interval
+        AND COALESCE(a.title, '') <> ''
+      ORDER BY a.announced_at DESC
+      LIMIT ${limit}
+    `);
+    rows.push(...(((result as { rows?: IntelRow[] }).rows) ?? []));
+    if (rows.length > 0) source = "twse_announcements";
+  }
+
+  if (rows.length < limit && hasNews) {
+    const result = await activeDb.execute(drizzleSql`
+      SELECT
+        n.id::text AS id,
+        n.stock_id AS ticker,
+        COALESCE(c.name, n.stock_id) AS company_name,
+        COALESCE(NULLIF(n.published_at, ''), n.fetched_at::text) AS date,
+        n.title AS title,
+        COALESCE(NULLIF(n.source_name, ''), '台股新聞') AS category,
+        NULL::text AS body,
+        n.url AS url,
+        'finmind_stock_news' AS source
+      FROM tw_stock_news n
+      LEFT JOIN companies c
+        ON c.ticker = n.stock_id
+       AND c.workspace_id = ${session.workspace.id}
+      WHERE n.fetched_at >= NOW() - (${days}::text || ' days')::interval
+        AND COALESCE(n.title, '') <> ''
+      ORDER BY n.fetched_at DESC
+      LIMIT ${Math.max(limit, 12)}
+    `);
+    const seen = new Set(rows.map((row) => `${row.ticker ?? ""}:${row.title ?? ""}`));
+    for (const row of ((result as { rows?: IntelRow[] }).rows) ?? []) {
+      const key = `${row.ticker ?? ""}:${row.title ?? ""}`;
+      if (seen.has(key)) continue;
+      rows.push(row);
+      seen.add(key);
+      if (rows.length >= limit) break;
+    }
+    if (rows.length > 0) {
+      source = source === "twse_announcements" ? "mixed" : "finmind_stock_news";
+    }
+  }
+
+  const items = rows.slice(0, limit).map((row, index) => ({
+    id: row.id ?? `${row.ticker ?? "market"}-${index}`,
+    date: String(row.date ?? "").slice(0, 10),
+    title: row.title ?? "",
+    category: row.category ?? "市場情報",
+    body: row.body ?? undefined,
+    ticker: row.ticker ?? undefined,
+    companyName: row.company_name ?? row.ticker ?? undefined,
+    url: row.url,
+    source: row.source ?? source
+  }));
+  const selected = [...new Map(items
+    .filter((item) => item.ticker)
+    .map((item) => [item.ticker as string, {
+      id: item.ticker as string,
+      ticker: item.ticker as string,
+      name: item.companyName ?? item.ticker as string
+    }])).values()];
+
+  return c.json({
+    data: {
+      items,
+      selected,
+      failures: 0,
+      source: items.length > 0 ? source : "empty"
+    }
+  });
+});
+
 // =============================================================================
 // W7 BLOCK #5 Axis 2 — KGI realtime quote for company page frontend
 // =============================================================================
