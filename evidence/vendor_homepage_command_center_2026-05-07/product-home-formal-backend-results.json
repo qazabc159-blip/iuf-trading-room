@@ -1,0 +1,17 @@
+{
+  "hasTactical": true,
+  "hasOldHero": false,
+  "hasLogin": false,
+  "hasError": false,
+  "hasBackendUnset": false,
+  "hasFakeTaiex": false,
+  "hasFakeTsmc": false,
+  "moverRows": 0,
+  "heatTiles": 12,
+  "placeholderHeatTiles": 12,
+  "sourceRows": 8,
+  "scrollWidth": 1350,
+  "clientWidth": 1350,
+  "bodyHeight": 2930,
+  "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_vendor_homepage_worktree\\evidence\\vendor_homepage_command_center_2026-05-07\\product_home_formal_backend_desktop_1365.png"
+}
