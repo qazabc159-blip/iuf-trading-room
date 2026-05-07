@@ -3615,3 +3615,13 @@ Backend ready 將隨 Jason contract 落地逐條補入上方 `Backend Ready` 區
 - Sources: production OpenAlice job logs, content draft reviewer, pipeline publish gate.
 - Checks: api typecheck PASS; openalice-pipeline tests PASS (20); api build PASS; diff-check PASS with CRLF warnings only.
 - Stop-lines: no token value, no OpenAI key value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake daily brief, no buy/sell recommendation, no strategy metric.
+
+## 2026-05-07 07:20 TPE - Codex OpenAlice producer theme quality filter
+
+- Branch: `fix-openalice-skip-placeholder-themes-2026-05-07`
+- Trade Capability Score: `+1`
+- Files: `apps/worker/src/jobs/theme-quality.ts`, `apps/worker/src/jobs/theme-quality.test.ts`, `apps/worker/src/jobs/theme-summary-producer.ts`, `apps/worker/src/jobs/review-summary-producer.ts`, `apps/worker/src/jobs/daily-theme-summary-producer.ts`, `apps/worker/src/jobs/daily-brief-producer.ts`, `apps/worker/src/jobs/company-note-producer.ts`, `apps/worker/src/jobs/signal-cluster-producer.ts`, `evidence/w7_paper_sprint/codex_openalice_producer_theme_quality_filter_2026-05-07.md`
+- Behavior: OpenAlice/worker-generated operator content no longer selects cleanup themes such as `[BROKEN-*]`, `[DEPRECATED]`, placeholder, `To Fix`, or priority `<=0` rows as the source for theme summaries, review summaries, daily theme summaries, daily briefs, company note linked-theme context, or signal cluster labels.
+- Sources: production worker logs showed approved OpenAlice drafts but producer selection still included cleanup themes; fix operates on `themes`, `theme_summaries`, `company_theme_links`, `company_notes`, and worker content producers.
+- Checks: worker typecheck PASS; worker build PASS; api typecheck PASS; compiled theme-quality unit test PASS; diff-check PASS.
+- Stop-lines: no token value, no OpenAI key value, no order route, no KGI write-side, no migration/schema/destructive DB, no fake daily brief, no buy/sell recommendation, no strategy metric.

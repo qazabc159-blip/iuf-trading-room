@@ -20,6 +20,7 @@ import {
   themes,
   workspaces
 } from "@iuf-trading-room/db";
+import { filterProductionThemeCandidates } from "./theme-quality.js";
 
 export async function runReviewSummaryProducer(): Promise<{
   themeId: string;
@@ -37,15 +38,17 @@ export async function runReviewSummaryProducer(): Promise<{
   if (!workspace) throw new Error("[review-summary] No workspace found");
 
   // pick the most recently updated themes
-  const allThemes = await db
+  const candidateThemes = await db
     .select()
     .from(themes)
     .where(eq(themes.workspaceId, workspace.id))
     .orderBy(desc(themes.updatedAt))
-    .limit(20);
+    .limit(50);
+
+  const allThemes = filterProductionThemeCandidates(candidateThemes);
 
   if (allThemes.length === 0) {
-    throw new Error("[review-summary] No themes in workspace");
+    throw new Error("[review-summary] No production themes in workspace");
   }
 
   // round-robin by (minute / 2) mod count so 30-min intervals hit different themes

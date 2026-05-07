@@ -27,6 +27,7 @@ import {
   decideProducerRoute,
   enqueueOpenAliceJobFromWorker
 } from "../openalice-router.js";
+import { filterProductionThemeCandidates } from "./theme-quality.js";
 
 const PRODUCER_VERSION = "v1";
 const TASK_TYPE = "theme_summary";
@@ -54,15 +55,17 @@ export async function runThemeSummaryProducer(): Promise<{
   const [workspace] = await db.select().from(workspaces).limit(1);
   if (!workspace) throw new Error("[theme-summary] No workspace found");
 
-  const allThemes = await db
+  const candidateThemes = await db
     .select()
     .from(themes)
     .where(eq(themes.workspaceId, workspace.id))
     .orderBy(desc(themes.updatedAt))
-    .limit(20);
+    .limit(50);
+
+  const allThemes = filterProductionThemeCandidates(candidateThemes);
 
   if (allThemes.length === 0) {
-    throw new Error("[theme-summary] No themes in workspace");
+    throw new Error("[theme-summary] No production themes in workspace");
   }
 
   const idx = new Date().getUTCHours() % allThemes.length;

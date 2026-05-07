@@ -27,6 +27,7 @@ import {
   decideProducerRoute,
   enqueueOpenAliceJobFromWorker
 } from "../openalice-router.js";
+import { filterProductionThemeCandidates } from "./theme-quality.js";
 
 const PRODUCER_VERSION = "v1";
 const TASK_TYPE = "company_note";
@@ -111,9 +112,17 @@ export async function runCompanyNoteProducer(): Promise<{
   const themeRows =
     themeIds.length > 0
       ? await db
-          .select({ id: themes.id, name: themes.name, lifecycle: themes.lifecycle })
+          .select({
+            id: themes.id,
+            name: themes.name,
+            slug: themes.slug,
+            lifecycle: themes.lifecycle,
+            priority: themes.priority
+          })
           .from(themes)
-          .then((rows) => rows.filter((r) => themeIds.includes(r.id)).slice(0, 5))
+          .then((rows) =>
+            filterProductionThemeCandidates(rows.filter((r) => themeIds.includes(r.id))).slice(0, 5)
+          )
       : [];
 
   const relations = await db
