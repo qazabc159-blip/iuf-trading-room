@@ -4989,12 +4989,16 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
   }
   const activeDb = db;
 
+  function sqlBoolean(value: unknown): boolean {
+    return value === true || value === 1 || value === "1" || value === "t" || value === "true";
+  }
+
   async function tableExists(tableName: string): Promise<boolean> {
     const result = await activeDb.execute(drizzleSql`
       SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists
     `);
-    const row = (result as { rows?: Array<{ exists?: boolean }> }).rows?.[0];
-    return row?.exists === true;
+    const row = (result as { rows?: Array<{ exists?: unknown }> }).rows?.[0];
+    return sqlBoolean(row?.exists);
   }
 
   async function tableHasColumns(tableName: string, columns: string[]): Promise<boolean> {
@@ -5008,8 +5012,8 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
             AND column_name = ${columnName}
         ) AS exists
       `);
-      const row = (result as { rows?: Array<{ exists?: boolean }> }).rows?.[0];
-      return row?.exists === true;
+      const row = (result as { rows?: Array<{ exists?: unknown }> }).rows?.[0];
+      return sqlBoolean(row?.exists);
     }));
     return checks.every(Boolean);
   }
