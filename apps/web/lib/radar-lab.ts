@@ -53,12 +53,28 @@ function isArray<T>(value: unknown): value is T[] {
   return Array.isArray(value);
 }
 
+async function ssrCookieHeader(): Promise<string | null> {
+  if (typeof window !== "undefined") return null;
+
+  try {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    return h.get("cookie");
+  } catch {
+    return null;
+  }
+}
+
 async function getApi<T>(path: string, accept?: (value: unknown) => value is T): Promise<T> {
   if (!API_BASE) throw missingApiError(path);
 
+  const cookie = await ssrCookieHeader();
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
-    headers: { "x-workspace-slug": WORKSPACE_SLUG },
+    headers: {
+      "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`${response.status} ${path}`);
@@ -72,10 +88,15 @@ async function getApi<T>(path: string, accept?: (value: unknown) => value is T):
 async function postApi<T>(path: string, body: unknown): Promise<T> {
   if (!API_BASE) throw missingApiError(path);
 
+  const cookie = await ssrCookieHeader();
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json", "x-workspace-slug": WORKSPACE_SLUG },
+    headers: {
+      "Content-Type": "application/json",
+      "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`${response.status} ${path}`);
