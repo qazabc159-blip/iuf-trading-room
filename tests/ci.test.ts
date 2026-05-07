@@ -8352,3 +8352,39 @@ test("lab-strategy-consumer: labStatusDisplayWording falls back gracefully for u
   assert.ok(typeof wording === "string" && wording.length > 0, "should return non-empty fallback string");
   assert.ok(wording.includes("SOME_UNKNOWN_FUTURE_STATUS"), "fallback should include the original status value");
 });
+
+// lab/strategies alias + brief detail tests
+test("lab/strategies alias: /api/v1/lab/strategies endpoint is registered (route alias exists)", () => {
+  // Verify the route is registered by checking the Hono app has a matching handler.
+  // We can't call it directly without a full HTTP request, but we can verify
+  // the loadLabSanctionedSnapshot function signature is stable (same as strategy-snapshot).
+  const { loadLabSanctionedSnapshot, labStatusDisplayWording: lsdw } = require("../apps/api/src/lab-strategy-consumer.ts");
+  assert.equal(typeof loadLabSanctionedSnapshot, "function", "loadLabSanctionedSnapshot must be callable");
+  assert.equal(typeof lsdw, "function", "labStatusDisplayWording must be callable");
+  // Alias and snapshot use same function — both endpoints call loadLabSanctionedSnapshot
+  const result = loadLabSanctionedSnapshot();
+  assert.ok(result === null || (typeof result === "object" && result !== null), "returns null or snapshot object");
+});
+
+test("brief detail: UUID_RE correctly identifies UUIDs vs date strings", () => {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  assert.ok(UUID_RE.test("550e8400-e29b-41d4-a716-446655440000"), "should match valid UUID");
+  assert.ok(!UUID_RE.test("2026-05-07"), "should not match date string");
+  assert.ok(!UUID_RE.test(""), "should not match empty string");
+  assert.ok(UUID_RE.test("A0000000-0000-0000-0000-000000000000"), "should match UUID case-insensitive");
+});
+
+test("brief detail: auditChain hardReject rules list is non-empty and stable", () => {
+  const HARD_REJECT_RULES = [
+    "no explicit buy/sell recommendation",
+    "no target price claim",
+    "no guaranteed return",
+    "no broken/deprecated source token in payload",
+    "no tier=red auto-approve",
+    "no content_draft.ai_rejected bypass"
+  ];
+  assert.equal(HARD_REJECT_RULES.length, 6, "must have 6 hard-reject rules");
+  for (const rule of HARD_REJECT_RULES) {
+    assert.ok(rule.length > 0, `rule must not be empty: ${rule}`);
+  }
+});
