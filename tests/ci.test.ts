@@ -8243,3 +8243,44 @@ test("email-digest: getDigestState returns valid state shape", () => {
     "lastDigestAt should be null or string"
   );
 });
+
+// ── Event Rule Engine unit tests ───────────────────────────────────────────────
+
+import {
+  runEventEngineTick,
+  getEventEngineState,
+  listEvents,
+  acknowledgeEvent,
+  type IufEvent,
+  type EngineStateSnapshot
+} from "../apps/api/src/openalice-event-rule-engine.ts";
+
+test("event-engine: getEventEngineState returns initial state before any tick", () => {
+  const state = getEventEngineState();
+  // lastTickAt may be null or string depending on test ordering
+  assert.ok(typeof state.totalEventsThisProcess === "number", "totalEventsThisProcess should be number");
+  assert.ok(typeof state.lastTickEvents === "number", "lastTickEvents should be number");
+});
+
+test("event-engine: runEventEngineTick is a no-op in memory mode (isDatabaseMode=false)", async () => {
+  // Engine skips processing when not in database mode
+  const before = getEventEngineState().totalEventsThisProcess;
+  await assert.doesNotReject(
+    () => runEventEngineTick(),
+    "should not throw in memory mode"
+  );
+  const after = getEventEngineState().totalEventsThisProcess;
+  // No events should be written in memory mode
+  assert.equal(after, before, "totalEventsThisProcess should not increase in memory mode");
+});
+
+test("event-engine: listEvents returns empty array in memory mode", async () => {
+  const events = await listEvents({ limit: 10, unreadOnly: false });
+  assert.deepEqual(events, [], "should return empty array when not in database mode");
+});
+
+test("event-engine: acknowledgeEvent returns not-ok in memory mode", async () => {
+  const result = await acknowledgeEvent("00000000-0000-0000-0000-000000000001");
+  assert.equal(result.ok, false, "should return ok=false in memory mode");
+  assert.ok(result.reason, "should include a reason string");
+});
