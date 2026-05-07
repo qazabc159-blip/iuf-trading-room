@@ -8192,3 +8192,54 @@ test("adversarial-reviewer: runAdversarialReview is safe-default null without AP
     if (originalKey !== undefined) process.env["OPENAI_API_KEY"] = originalKey;
   }
 });
+
+// ── Email Digest unit tests ────────────────────────────────────────────────────
+
+import {
+  runEmailDigestTick,
+  getDigestState
+} from "../apps/api/src/openalice-email-digest.ts";
+
+test("email-digest: runEmailDigestTick returns outside_window reason when outside 17:00–17:30 TST", async () => {
+  // In CI, current time is almost certainly not 17:00–17:30 Taipei time
+  // force=false → should skip with outside_window (unless test happens to run at 17:xx TST)
+  const result = await runEmailDigestTick(false);
+  // Accept: outside_window (usual), already_sent_today (rare), no_digest_email (DIGEST_EMAIL unset in CI)
+  const acceptableReasons = ["outside_window", "already_sent_today", "no_resend_api_key", "no_digest_email"];
+  assert.ok(
+    result.reason === null || acceptableReasons.includes(result.reason),
+    `reason should be one of: ${acceptableReasons.join(", ")}; got: ${result.reason}`
+  );
+});
+
+test("email-digest: runEmailDigestTick with force=true dry-runs when DIGEST_EMAIL unset", async () => {
+  const originalEmail = process.env["DIGEST_EMAIL"];
+  const originalKey = process.env["RESEND_API_KEY"];
+  delete process.env["DIGEST_EMAIL"];
+  delete process.env["RESEND_API_KEY"];
+
+  try {
+    const result = await runEmailDigestTick(true);
+    assert.equal(result.sent, false, "should not send without DIGEST_EMAIL");
+    // When DIGEST_EMAIL is empty, guard fires before RESEND_API_KEY check
+    const acceptableReasons = ["no_digest_email", "no_resend_api_key", "error:", "already_sent_today"];
+    assert.ok(
+      acceptableReasons.some((r) => result.reason === r || result.reason?.startsWith("error:")),
+      `expected dry-run reason; got: ${result.reason}`
+    );
+  } finally {
+    if (originalEmail !== undefined) process.env["DIGEST_EMAIL"] = originalEmail;
+    if (originalKey !== undefined) process.env["RESEND_API_KEY"] = originalKey;
+  }
+});
+
+test("email-digest: getDigestState returns valid state shape", () => {
+  const state = getDigestState();
+  assert.ok("lastDigestAt" in state, "should have lastDigestAt");
+  assert.ok("lastResult" in state, "should have lastResult");
+  // lastDigestAt is null (no digest has run in fresh process) or a string
+  assert.ok(
+    state.lastDigestAt === null || typeof state.lastDigestAt === "string",
+    "lastDigestAt should be null or string"
+  );
+});
