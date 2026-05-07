@@ -58,6 +58,8 @@ export type SourcePackEntry = {
   rowCount: number | null;
   latestDate: string | null;
   note: string | null;
+  /** Up to 3 real DB rows for RAG cross-validation. Null when no DB or table missing. */
+  sampleRows?: Record<string, unknown>[] | null;
 };
 
 export type SourcePack = {
@@ -296,7 +298,8 @@ async function collectSourcePack(
       status: "MOCK",
       rowCount: 0,
       latestDate: null,
-      note: "memory_mode_no_db"
+      note: "memory_mode_no_db",
+      sampleRows: null
     });
     sources.push(
       mockEntry("companies_ohlcv"),
@@ -322,7 +325,8 @@ async function collectSourcePack(
       status: "ERROR",
       rowCount: null,
       latestDate: null,
-      note: "db_unavailable"
+      note: "db_unavailable",
+      sampleRows: null
     });
     sources.push(
       errEntry("companies_ohlcv"),
@@ -351,12 +355,25 @@ async function collectSourcePack(
         : ohlcvLatest && new Date(ohlcvLatest) < staleThreshold
         ? "STALE"
         : "LIVE";
+    // Fetch up to 3 recent rows as real row sample for RAG cross-validation
+    let ohlcvSampleRows: Record<string, unknown>[] | null = null;
+    if (ohlcvCount > 0) {
+      try {
+        const sampleRes = await db.execute(
+          drizzleSql`SELECT ticker, dt, open, high, low, close, volume FROM companies_ohlcv WHERE workspace_id = ${workspaceId} ORDER BY dt DESC LIMIT 3`
+        );
+        ohlcvSampleRows = ((sampleRes as { rows?: Record<string, unknown>[] }).rows ?? []);
+      } catch {
+        // sample fetch failure is non-fatal — leave null
+      }
+    }
     sources.push({
       source: "companies_ohlcv",
       status: ohlcvStatus,
       rowCount: ohlcvCount,
       latestDate: ohlcvLatest,
-      note: null
+      note: null,
+      sampleRows: ohlcvSampleRows
     });
   } catch (e) {
     sources.push({
@@ -364,7 +381,8 @@ async function collectSourcePack(
       status: "ERROR",
       rowCount: null,
       latestDate: null,
-      note: e instanceof Error ? e.message.slice(0, 100) : "unknown_error"
+      note: e instanceof Error ? e.message.slice(0, 100) : "unknown_error",
+      sampleRows: null
     });
   }
 
@@ -393,7 +411,8 @@ async function collectSourcePack(
       status: overviewStatus,
       rowCount: latestBrief ? 1 : 0,
       latestDate: latestBrief?.date ?? null,
-      note: null
+      note: null,
+      sampleRows: null  // market_overview derives from brief recency; no raw row sample applicable
     });
   } catch (e) {
     sources.push({
@@ -401,7 +420,8 @@ async function collectSourcePack(
       status: "ERROR",
       rowCount: null,
       latestDate: null,
-      note: e instanceof Error ? e.message.slice(0, 100) : "unknown_error"
+      note: e instanceof Error ? e.message.slice(0, 100) : "unknown_error",
+      sampleRows: null
     });
   }
 
@@ -472,12 +492,25 @@ async function collectTableSource(
         : latest && new Date(latest) < adjustedThreshold
         ? "STALE"
         : "LIVE";
+    // Fetch up to 3 recent rows as real row sample for RAG cross-validation (non-fatal if fails)
+    let sampleRows: Record<string, unknown>[] | null = null;
+    if (count > 0) {
+      try {
+        const sampleRes = await db.execute(
+          drizzleSql.raw(`SELECT * FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') ORDER BY date DESC LIMIT 3`)
+        );
+        sampleRows = ((sampleRes as { rows?: Record<string, unknown>[] }).rows ?? []);
+      } catch {
+        // sample fetch failure is non-fatal
+      }
+    }
     sources.push({
       source: tableName,
       status,
       rowCount: count,
       latestDate: latest,
-      note: null
+      note: null,
+      sampleRows
     });
   } catch {
     // Table may not exist (DRAFT migration not promoted) — mark DEGRADED (not ERROR)
@@ -486,7 +519,8 @@ async function collectTableSource(
       status: "DEGRADED",
       rowCount: null,
       latestDate: null,
-      note: "table_not_found_or_draft_not_promoted"
+      note: "table_not_found_or_draft_not_promoted",
+      sampleRows: null
     });
   }
 }
@@ -1066,17 +1100,21 @@ export async function evaluatePipelinePublishGate(
         const { runRagHallucinationCheck } = await import("./hallucination-rag.js");
 
         // Gap 1 fix: extract real rawSources from sourcePack instead of hardcoded []
-        // Each SourcePackEntry becomes a RawSourceEntry with sourceId=source name and
-        // content=JSON of its status/rowCount/latestDate for the RAG cross-validator.
+        // Gap 3 fix (Pete BG audit): use real sampleRows for RAG content when available.
+        // sampleRows = up to 3 actual DB rows fetched in collectSourcePack/collectTableSource.
+        // Fallback to metadata-only when sampleRows is null (memory mode / table missing / DRAFT migration).
+        // Cap at 3 rows to keep gpt-4.1 input token cost bounded.
         const rawSources = sourcePack
           ? sourcePack.sources.map((entry) => ({
               sourceId: entry.source,
-              content: JSON.stringify({
-                status: entry.status,
-                rowCount: entry.rowCount,
-                latestDate: entry.latestDate,
-                note: entry.note
-              }),
+              content: entry.sampleRows && entry.sampleRows.length > 0
+                ? JSON.stringify(entry.sampleRows.slice(0, 3))
+                : JSON.stringify({
+                    status: entry.status,
+                    rowCount: entry.rowCount,
+                    latestDate: entry.latestDate,
+                    note: entry.note
+                  }),
               sha256: null,
               url: null
             }))
