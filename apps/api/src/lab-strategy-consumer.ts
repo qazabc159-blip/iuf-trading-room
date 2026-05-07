@@ -134,19 +134,29 @@ const CURRENT_SPRINT_VERSION = "v15";
  * In Railway / prod this path does NOT exist (lab repo is not deployed).
  * loadLabSanctionedSnapshot() handles FileNotFound gracefully → returns null.
  */
-function resolveLabJsonPath(version: string): string {
+function resolveLabJsonPaths(version: string): string[] {
   const __file = fileURLToPath(import.meta.url);
   const __dir = dirname(__file);
-  // apps/api/src → ../../.. → monorepo root → ../IUF_QUANT_LAB → research/...
+  // apps/api/src → ../../.. → monorepo root
   const monorepoRoot = join(__dir, "..", "..", "..");
+  // Path 1: sibling IUF_QUANT_LAB (dev / local)
   const labRoot = join(monorepoRoot, "..", "IUF_QUANT_LAB");
-  return join(
+  const sibling = join(
     labRoot,
     "research",
     "finmind_sponsor_999_data_factory",
     "codex_next",
     `final_strategy_count_board_${version}.json`
   );
+  // Path 2: embedded snapshot (prod / Railway — lab JSON copied into TR repo)
+  const embedded = join(
+    monorepoRoot,
+    "data",
+    "lab",
+    "sanctioned",
+    `final_strategy_count_board_${version}.json`
+  );
+  return [sibling, embedded];
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -162,17 +172,26 @@ function resolveLabJsonPath(version: string): string {
  * Callers must treat null as meta.source='unavailable'.
  */
 export function loadLabSanctionedSnapshot(): LabSnapshot | null {
-  const jsonPath = resolveLabJsonPath(CURRENT_SPRINT_VERSION);
+  const candidatePaths = resolveLabJsonPaths(CURRENT_SPRINT_VERSION);
 
-  let raw: string;
-  try {
-    raw = readFileSync(jsonPath, "utf-8");
-  } catch {
+  let raw: string | null = null;
+  let resolvedPath: string | null = null;
+  for (const path of candidatePaths) {
+    try {
+      raw = readFileSync(path, "utf-8");
+      resolvedPath = path;
+      break;
+    } catch {
+      // try next
+    }
+  }
+  if (raw === null || resolvedPath === null) {
     console.warn(
-      `[lab-consumer] Lab snapshot not found at ${jsonPath} — returning null (expected in prod/Railway)`
+      `[lab-consumer] Lab snapshot not found at any candidate path (sibling IUF_QUANT_LAB or embedded data/lab/sanctioned) — returning null`
     );
     return null;
   }
+  const jsonPath = resolvedPath;
 
   let parsed: unknown;
   try {
