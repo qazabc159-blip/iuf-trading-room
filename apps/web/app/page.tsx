@@ -18,7 +18,9 @@ import {
   type OpsSnapshotData,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
+import type { DailyBrief } from "@iuf-trading-room/contracts";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +39,8 @@ type DailyBriefDashboard = {
   today: string;
   state: "PUBLISHED" | "AWAITING_REVIEW" | "MISSING" | "BLOCKED";
   latestDate: string | null;
+  latest: DailyBrief | null;
+  todayBrief: DailyBrief | null;
   draftCount: number;
   reason?: string;
 };
@@ -182,6 +186,15 @@ function draftDate(payload: unknown, fallback: string | null) {
   return typeof value === "string" ? value.slice(0, 10) : fallback?.slice(0, 10) ?? null;
 }
 
+function maskUnsafeAdviceText(text: string) {
+  const patterns = [/買進/g, /賣出/g, /目標價/g, /必賺/g, /保證/g, /勝率/g];
+  return patterns.reduce((next, pattern) => next.replace(pattern, "[投資建議字詞已遮蔽]"), text);
+}
+
+function safeBriefText(text: string) {
+  return maskUnsafeAdviceText(cleanNarrativeText(text));
+}
+
 async function loadFinMindDashboard(): Promise<LoadState<FinMindDashboard | null>> {
   const updatedAt = nowIso();
   try {
@@ -223,7 +236,7 @@ async function loadDailyBriefDashboard(): Promise<LoadState<DailyBriefDashboard>
   const today = todayTaipeiDate();
   return load<DailyBriefDashboard>(
     "OpenAlice / Daily Brief",
-    { today, state: "BLOCKED", latestDate: null, draftCount: 0, reason: "每日簡報資料讀取失敗。" },
+    { today, state: "BLOCKED", latestDate: null, latest: null, todayBrief: null, draftCount: 0, reason: "每日簡報資料讀取失敗。" },
     async () => {
       const [briefsResult, draftsResult] = await Promise.allSettled([
         getBriefs(),
@@ -241,15 +254,31 @@ async function loadDailyBriefDashboard(): Promise<LoadState<DailyBriefDashboard>
       const todayDrafts = drafts.filter((draft) => draft.targetTable === "daily_briefs" && draftDate(draft.payload, draft.targetEntityId) === today);
 
       if (todayBrief) {
-        return { today, state: "PUBLISHED" as const, latestDate: todayBrief.date.slice(0, 10), draftCount: todayDrafts.length };
+        return {
+          today,
+          state: "PUBLISHED" as const,
+          latestDate: todayBrief.date.slice(0, 10),
+          latest,
+          todayBrief,
+          draftCount: todayDrafts.length,
+        };
       }
       if (todayDrafts.length > 0) {
-        return { today, state: "AWAITING_REVIEW" as const, latestDate: latest?.date.slice(0, 10) ?? null, draftCount: todayDrafts.length };
+        return {
+          today,
+          state: "AWAITING_REVIEW" as const,
+          latestDate: latest?.date.slice(0, 10) ?? null,
+          latest,
+          todayBrief: null,
+          draftCount: todayDrafts.length,
+        };
       }
       return {
         today,
         state: "MISSING" as const,
         latestDate: latest?.date.slice(0, 10) ?? null,
+        latest,
+        todayBrief: null,
         draftCount: todayDrafts.length,
         reason: "今天尚未發布每日簡報，也沒有等待審核的今日草稿。",
       };
@@ -358,6 +387,10 @@ function openAlicePanel(ops: LoadState<OpsSnapshotData | null>, brief: LoadState
   const sweepOk = obs?.sweepStatus === "healthy";
   const briefState = brief.data.state;
   const briefUiState: SourceState = briefState === "PUBLISHED" ? "LIVE" : briefState === "AWAITING_REVIEW" || briefState === "MISSING" ? "EMPTY" : "BLOCKED";
+  const displayBrief = brief.data.todayBrief ?? brief.data.latest;
+  const displayBriefDate = displayBrief?.date.slice(0, 10) ?? null;
+  const isStaleBrief = Boolean(displayBriefDate && displayBriefDate !== brief.data.today);
+  const previewSections = displayBrief?.sections.slice(0, 2) ?? [];
 
   return (
     <Panel code="BRF" title="OpenAlice 每日工作流" sub="自動產生、審核佇列與 source trail" right={<StatusPill state={ops.state} />}>
@@ -371,6 +404,28 @@ function openAlicePanel(ops: LoadState<OpsSnapshotData | null>, brief: LoadState
           { label: "每日簡報", value: briefState === "PUBLISHED" ? "已發布" : briefState === "AWAITING_REVIEW" ? "待審核" : "未產生", tone: stateTone(briefUiState) },
         ]}
       />
+      <div className="homepage-brief-preview">
+        <header>
+          <span className={`tg ${stateTone(isStaleBrief ? "EMPTY" : briefUiState)}`}>
+            {displayBrief ? (isStaleBrief ? "最新正式版過期" : "今日正式版") : "尚無正式版"}
+          </span>
+          <strong>{displayBriefDate ?? "等待 OpenAlice 產生每日簡報"}</strong>
+          <small>source trail 未閉環時不當作投資依據；投資建議字詞會遮蔽。</small>
+        </header>
+        {previewSections.length > 0 ? (
+          <div className="homepage-brief-section-grid">
+            {previewSections.map((section, index) => (
+              <article className="homepage-brief-section" key={`${section.heading}:${index}`}>
+                <span>#{String(index + 1).padStart(2, "0")}</span>
+                <h3>{cleanExternalHeadline(section.heading)}</h3>
+                <p>{safeBriefText(section.body)}</p>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="state-reason">{brief.data.reason ?? "目前沒有可展示的正式簡報段落；請看草稿佇列與 reviewer 狀態。"}</p>
+        )}
+      </div>
       <div className="dashboard-workflow-grid">
         <Link className="dashboard-command-card" href="/briefs">
           <span>每日簡報</span>
