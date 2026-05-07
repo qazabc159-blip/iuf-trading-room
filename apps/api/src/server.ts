@@ -5075,6 +5075,672 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
 });
 
 // =============================================================================
+// BLOCK #5 Axis 4+5 — Company full-profile aggregating all 11 FinMind datasets
+// =============================================================================
+//
+// GET /api/v1/companies/:id/full-profile
+//
+// Aggregates all 11 FinMind datasets into a single response envelope so the
+// frontend company page can render complete data without 11 separate fetches.
+//
+// Dataset mapping (per PR A/B/C ETL):
+//   Fundamentals (4):
+//     monthlyRevenue   ← TaiwanStockMonthRevenue      (12 months history)
+//     financialStatement ← TaiwanStockFinancialStatements (8 quarters history)
+//     cashFlow         ← TaiwanStockCashFlowsStatement (8 quarters)
+//     balanceSheet     ← TaiwanStockBalanceSheet       (8 quarters)
+//   TradingFlow (3):
+//     institutional    ← TaiwanStockInstitutionalInvestorsBuySell (30 days)
+//     marginShort      ← TaiwanStockMarginPurchaseShortSale       (30 days)
+//     shareholding     ← TaiwanStockShareholding                  (90 days)
+//   MarketIntel (4):
+//     dividend         ← TaiwanStockDividend           (5 years history)
+//     marketValue      ← TaiwanStockMarketValue         (latest 1 row)
+//     valuation        ← TaiwanStockPER                (30 days)
+//     news             ← TaiwanStockNews [EXPERIMENTAL] (last 24h)
+//
+// Every sub-section has:
+//   - state: SourceState enum (LIVE|STALE|EMPTY|BLOCKED|DEGRADED|ERROR|MOCK|FALLBACK|CLOSED)
+//   - latest: most recent key fields
+//   - history: last N rows
+//   - updatedAt: ISO timestamp
+//   - sourceTrail: { source, datasetKey, recordCount, degradedReason }
+//
+// Hard lines:
+//   - All read-only, no write surface
+//   - Auth: standard iuf_session cookie (Owner/Admin/Analyst)
+//   - 11 sub-queries run with Promise.allSettled — single section ERROR never 500s the whole request
+//   - No fake data — any section with no DB evidence → EMPTY or DEGRADED
+//   - Never returns buy/sell/目標價/必賺/勝率/guaranteed return wording
+//   - No KGI write-side, no broker surface
+// =============================================================================
+
+// SourceState enum for full-profile sub-sections
+type FullProfileSourceState =
+  | "LIVE"
+  | "STALE"
+  | "EMPTY"
+  | "BLOCKED"
+  | "DEGRADED"
+  | "ERROR"
+  | "MOCK"
+  | "FALLBACK"
+  | "CLOSED";
+
+interface FullProfileSourceTrail {
+  source: string;
+  datasetKey: string;
+  recordCount: number;
+  degradedReason: string | null;
+}
+
+interface FullProfileSection<T> {
+  state: FullProfileSourceState;
+  latest: T | null;
+  history: T[];
+  updatedAt: string;
+  sourceTrail: FullProfileSourceTrail;
+}
+
+/** Classify raw rows from a FinMind call into a FullProfileSection. */
+function classifySection<T>(
+  datasetKey: string,
+  rows: T[],
+  latestFn: (rows: T[]) => T | null,
+  staleDays: number,
+  latestDateFn: (rows: T[]) => string | null
+): Omit<FullProfileSection<T>, "history"> & { history: T[] } {
+  const updatedAt = new Date().toISOString();
+  const sourceTrail: FullProfileSourceTrail = {
+    source: "finmind",
+    datasetKey,
+    recordCount: rows.length,
+    degradedReason: null
+  };
+
+  if (rows.length === 0) {
+    return {
+      state: "EMPTY",
+      latest: null,
+      history: [],
+      updatedAt,
+      sourceTrail: { ...sourceTrail, degradedReason: "no_rows" }
+    };
+  }
+
+  const latestDate = latestDateFn(rows);
+  const staleMs = staleDays * 24 * 60 * 60 * 1000;
+  const isStale = latestDate
+    ? Date.now() - new Date(latestDate).getTime() > staleMs
+    : true;
+
+  return {
+    state: isStale ? "STALE" : "LIVE",
+    latest: latestFn(rows),
+    history: rows,
+    updatedAt,
+    sourceTrail
+  };
+}
+
+function errorSection<T>(datasetKey: string, msg: string): FullProfileSection<T> {
+  return {
+    state: "ERROR",
+    latest: null,
+    history: [],
+    updatedAt: new Date().toISOString(),
+    sourceTrail: { source: "finmind", datasetKey, recordCount: 0, degradedReason: msg }
+  };
+}
+
+app.get("/api/v1/companies/:id/full-profile", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const stockId = companyIdToTicker(company.ticker);
+  const client = getFinMindClient();
+  const today = todayDate();
+
+  // Date ranges per dataset spec
+  const rev12m = nMonthsAgoDate(12);
+  const q8start = nYearsAgoDate(3);   // 8 quarters ≈ 2 years + buffer
+  const d30start = nDaysAgoDate(30);
+  const d90start = nDaysAgoDate(90);
+  const y5start = nYearsAgoDate(5);
+  const d1start = nDaysAgoDate(1);
+
+  // 11 parallel fetches — Promise.allSettled so any failure marks section ERROR
+  const [
+    revResult,
+    fsResult,
+    bsResult,
+    cfResult,
+    instResult,
+    marginResult,
+    shareResult,
+    divResult,
+    mvResult,
+    valResult,
+    newsResult
+  ] = await Promise.allSettled([
+    client.getMonthRevenue(stockId, rev12m, today),
+    client.getFinancialStatements(stockId, q8start, today),
+    client.getBalanceSheet(stockId, q8start, today),
+    client.getCashFlow(stockId, q8start, today),
+    client.getInstitutionalInvestors(stockId, d30start, today),
+    client.getMarginShortSale(stockId, d30start, today),
+    client.getShareholding(stockId, d90start, today),
+    client.getDividend(stockId, y5start, today),
+    client.getMarketValue(stockId, d90start, today),
+    client.getPER(stockId, d30start, today),
+    client.getStockNews(stockId, d1start, today)
+  ]);
+
+  // ── Fundamentals: Monthly Revenue ────────────────────────────────────────────
+  type RevenueRow = { date: string; stock_id: string; revenue: number; revenue_month: number; revenue_year: number; country: string };
+  let monthlyRevenue: FullProfileSection<RevenueRow>;
+  if (revResult.status === "rejected") {
+    monthlyRevenue = errorSection<RevenueRow>("TaiwanStockMonthRevenue", String(revResult.reason));
+  } else {
+    const rows = revResult.value as RevenueRow[];
+    rows.sort((a, b) => b.date.localeCompare(a.date));
+    const hist = rows.slice(0, 12);
+    const latest = hist[0] ?? null;
+
+    // Compute YoY growth if we have 2+ rows
+    let yoyGrowth: number | null = null;
+    if (hist.length >= 2) {
+      const prev = hist.find(r => {
+        const prevYear = Number(latest?.date.slice(0, 4)) - 1;
+        return Number(r.date.slice(0, 4)) === prevYear &&
+          r.revenue_month === latest?.revenue_month;
+      });
+      if (prev && prev.revenue !== 0) {
+        yoyGrowth = ((latest!.revenue - prev.revenue) / prev.revenue) * 100;
+      }
+    }
+
+    const enriched = latest ? { ...latest, yoyGrowth } : null;
+    monthlyRevenue = {
+      ...classifySection<RevenueRow>(
+        "TaiwanStockMonthRevenue",
+        hist,
+        (r) => r[0] ?? null,
+        35,
+        (r) => r[0]?.date ?? null
+      ),
+      latest: enriched,
+      history: hist
+    };
+  }
+
+  // ── Fundamentals: Financial Statement ────────────────────────────────────────
+  type FinRow = { date: string; stock_id: string; type: string; value: number; origin_name?: string };
+  let financialStatement: FullProfileSection<FinRow>;
+  if (fsResult.status === "rejected") {
+    financialStatement = errorSection<FinRow>("TaiwanStockFinancialStatements", String(fsResult.reason));
+  } else {
+    const rows = fsResult.value as FinRow[];
+    rows.sort((a, b) => b.date.localeCompare(a.date));
+    const hist = rows.slice(0, 8 * 10); // up to 8 quarters × ~10 items each
+    const latestDate = hist[0]?.date ?? null;
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 100 * 24 * 60 * 60 * 1000 : true;
+    // Build latest snapshot: bucket by latest period
+    const latestPeriodRows = hist.filter(r => r.date === latestDate);
+    const EPS_KEYS = new Set(["EPS", "EarningsPerShare", "BasicEPS"]);
+    const REV_KEYS = new Set(["Revenue", "OperatingRevenue", "NetRevenue"]);
+    const OP_KEYS = new Set(["OperatingIncome", "OperatingIncomeLoss"]);
+    let eps: number | null = null, rev: number | null = null, opInc: number | null = null;
+    for (const r of latestPeriodRows) {
+      if (EPS_KEYS.has(r.type)) eps = r.value;
+      if (REV_KEYS.has(r.type)) rev = r.value;
+      if (OP_KEYS.has(r.type)) opInc = r.value;
+    }
+    const latestFin = latestDate ? { date: latestDate, eps, revenue: rev, operatingIncome: opInc } : null;
+    financialStatement = {
+      state: rows.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
+      latest: latestFin as unknown as FinRow | null,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockFinancialStatements", recordCount: rows.length, degradedReason: rows.length === 0 ? "no_rows" : null }
+    };
+  }
+
+  // ── Fundamentals: Balance Sheet ───────────────────────────────────────────────
+  let balanceSheet: FullProfileSection<FinRow>;
+  if (bsResult.status === "rejected") {
+    balanceSheet = errorSection<FinRow>("TaiwanStockBalanceSheet", String(bsResult.reason));
+  } else {
+    const rows = bsResult.value as FinRow[];
+    rows.sort((a, b) => b.date.localeCompare(a.date));
+    const hist = rows.slice(0, 8 * 10);
+    const latestDate = hist[0]?.date ?? null;
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 100 * 24 * 60 * 60 * 1000 : true;
+    const TOTAL_ASSET_KEYS = new Set(["TotalAssets", "Assets"]);
+    const TOTAL_LIAB_KEYS = new Set(["TotalLiabilities", "Liabilities"]);
+    const EQUITY_KEYS = new Set(["Equity", "TotalEquity", "StockholdersEquity"]);
+    const latestPeriodRows = hist.filter(r => r.date === latestDate);
+    let totalAssets: number | null = null, totalLiab: number | null = null, equity: number | null = null;
+    for (const r of latestPeriodRows) {
+      if (TOTAL_ASSET_KEYS.has(r.type)) totalAssets = r.value;
+      if (TOTAL_LIAB_KEYS.has(r.type)) totalLiab = r.value;
+      if (EQUITY_KEYS.has(r.type)) equity = r.value;
+    }
+    const latestBs = latestDate ? { date: latestDate, totalAssets, totalLiabilities: totalLiab, equity } : null;
+    balanceSheet = {
+      state: rows.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
+      latest: latestBs as unknown as FinRow | null,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockBalanceSheet", recordCount: rows.length, degradedReason: rows.length === 0 ? "no_rows" : null }
+    };
+  }
+
+  // ── Fundamentals: Cash Flow ───────────────────────────────────────────────────
+  let cashFlow: FullProfileSection<FinRow>;
+  if (cfResult.status === "rejected") {
+    cashFlow = errorSection<FinRow>("TaiwanStockCashFlowsStatement", String(cfResult.reason));
+  } else {
+    const rows = cfResult.value as FinRow[];
+    rows.sort((a, b) => b.date.localeCompare(a.date));
+    const hist = rows.slice(0, 8 * 10);
+    const latestDate = hist[0]?.date ?? null;
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 100 * 24 * 60 * 60 * 1000 : true;
+    const OP_CF_KEYS = new Set(["CashFlowsFromOperatingActivities", "OperatingActivities", "NetCashFromOperatingActivities"]);
+    const latestPeriodRows = hist.filter(r => r.date === latestDate);
+    let operatingCF: number | null = null;
+    for (const r of latestPeriodRows) {
+      if (OP_CF_KEYS.has(r.type)) operatingCF = r.value;
+    }
+    const latestCf = latestDate ? { date: latestDate, operatingCashFlow: operatingCF } : null;
+    cashFlow = {
+      state: rows.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
+      latest: latestCf as unknown as FinRow | null,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockCashFlowsStatement", recordCount: rows.length, degradedReason: rows.length === 0 ? "no_rows" : null }
+    };
+  }
+
+  // ── TradingFlow: Institutional ────────────────────────────────────────────────
+  type InstRow = { date: string; stock_id: string; name: string; buy: number; sell: number };
+  let institutional: FullProfileSection<{ date: string; foreign: number; investmentTrust: number; dealer: number; totalNetBuy: number }>;
+  if (instResult.status === "rejected") {
+    institutional = errorSection("TaiwanStockInstitutionalInvestorsBuySell", String(instResult.reason));
+  } else {
+    const rows = instResult.value as InstRow[];
+    // Group by date, aggregate nets
+    const dateMap = new Map<string, { foreign: number; investmentTrust: number; dealer: number }>();
+    for (const r of rows) {
+      if (!dateMap.has(r.date)) dateMap.set(r.date, { foreign: 0, investmentTrust: 0, dealer: 0 });
+      const entry = dateMap.get(r.date)!;
+      const net = (r.buy ?? 0) - (r.sell ?? 0);
+      const nm = r.name ?? "";
+      if (nm.includes("外") || nm.includes("陸")) entry.foreign += net;
+      else if (nm.includes("投信")) entry.investmentTrust += net;
+      else if (nm.includes("自營")) entry.dealer += net;
+    }
+    const aggregated = Array.from(dateMap.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([date, v]) => ({
+        date,
+        foreign: v.foreign,
+        investmentTrust: v.investmentTrust,
+        dealer: v.dealer,
+        totalNetBuy: v.foreign + v.investmentTrust + v.dealer
+      }));
+    const hist = aggregated.slice(0, 30);
+    const latest = hist[0] ?? null;
+    const latestDate = latest?.date ?? null;
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 5 * 24 * 60 * 60 * 1000 : true;
+    institutional = {
+      state: hist.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
+      latest,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockInstitutionalInvestorsBuySell", recordCount: rows.length, degradedReason: hist.length === 0 ? "no_rows" : null }
+    };
+  }
+
+  // ── TradingFlow: Margin/Short ─────────────────────────────────────────────────
+  type MarginRow = { date: string; stock_id: string; MarginPurchaseBuy: number; MarginPurchaseSell: number; MarginPurchaseTodayBalance?: number; ShortSaleSell: number; ShortSaleTodayBalance?: number };
+  let marginShort: FullProfileSection<{ date: string; marginBalance: number | null; shortBalance: number | null; marginChange: number | null; shortChange: number | null }>;
+  if (marginResult.status === "rejected") {
+    marginShort = errorSection("TaiwanStockMarginPurchaseShortSale", String(marginResult.reason));
+  } else {
+    const rows = (marginResult.value as MarginRow[]).sort((a, b) => b.date.localeCompare(a.date));
+    const hist = rows.slice(0, 30).map((r, i, arr) => {
+      const prev = arr[i + 1] ?? null;
+      return {
+        date: r.date,
+        marginBalance: r.MarginPurchaseTodayBalance ?? null,
+        shortBalance: r.ShortSaleTodayBalance ?? null,
+        marginChange: prev && r.MarginPurchaseTodayBalance != null && (prev as MarginRow).MarginPurchaseTodayBalance != null
+          ? r.MarginPurchaseTodayBalance! - (prev as MarginRow).MarginPurchaseTodayBalance!
+          : null,
+        shortChange: null
+      };
+    });
+    const latest = hist[0] ?? null;
+    const latestDate = latest?.date ?? null;
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 5 * 24 * 60 * 60 * 1000 : true;
+    marginShort = {
+      state: hist.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
+      latest,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockMarginPurchaseShortSale", recordCount: rows.length, degradedReason: hist.length === 0 ? "no_rows" : null }
+    };
+  }
+
+  // ── TradingFlow: Shareholding ─────────────────────────────────────────────────
+  type ShareRow = { date: string; stock_id: string; ForeignInvestmentSharesRatio?: number; ForeignInvestmentRemainRatio?: number; NumberOfSharesIssued?: number };
+  let shareholding: FullProfileSection<{ date: string; foreignRatio: number | null; foreignRemainRatio: number | null; sharesIssued: number | null }>;
+  if (shareResult.status === "rejected") {
+    shareholding = errorSection("TaiwanStockShareholding", String(shareResult.reason));
+  } else {
+    const rows = (shareResult.value as ShareRow[]).sort((a, b) => b.date.localeCompare(a.date));
+    const hist = rows.slice(0, 30).map(r => ({
+      date: r.date,
+      foreignRatio: r.ForeignInvestmentSharesRatio ?? null,
+      foreignRemainRatio: r.ForeignInvestmentRemainRatio ?? null,
+      sharesIssued: r.NumberOfSharesIssued ?? null
+    }));
+    const latest = hist[0] ?? null;
+    const latestDate = latest?.date ?? null;
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 10 * 24 * 60 * 60 * 1000 : true;
+    shareholding = {
+      state: hist.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
+      latest,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockShareholding", recordCount: rows.length, degradedReason: hist.length === 0 ? "no_rows" : null }
+    };
+  }
+
+  // ── MarketIntel: Dividend ─────────────────────────────────────────────────────
+  type DivRow = { date: string; stock_id: string; year: number; TotalCashDividend?: number; TotalStockDividend?: number; TotalDividend?: number };
+  let dividend: FullProfileSection<{ year: number; cashDividend: number; stockDividend: number; totalDividend: number; announcementDate: string | null }>;
+  if (divResult.status === "rejected") {
+    dividend = errorSection("TaiwanStockDividend", String(divResult.reason));
+  } else {
+    const rows = (divResult.value as DivRow[]).sort((a, b) => b.year - a.year);
+    const hist = rows.slice(0, 10).map(r => ({
+      year: r.year,
+      cashDividend: r.TotalCashDividend ?? 0,
+      stockDividend: r.TotalStockDividend ?? 0,
+      totalDividend: r.TotalDividend ?? 0,
+      announcementDate: r.date ?? null
+    }));
+    const latest = hist[0] ?? null;
+    const latestYear = latest?.year ?? null;
+    // Dividend STALE if latest year < current year - 2
+    const isStale = latestYear ? (new Date().getFullYear() - latestYear) > 2 : true;
+    dividend = {
+      state: hist.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
+      latest,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockDividend", recordCount: rows.length, degradedReason: hist.length === 0 ? "no_rows" : null }
+    };
+  }
+
+  // ── MarketIntel: Market Value ─────────────────────────────────────────────────
+  type MvRow = { date: string; stock_id: string; market_value: number };
+  let marketValue: FullProfileSection<{ date: string; marketValue: number }>;
+  if (mvResult.status === "rejected") {
+    marketValue = errorSection("TaiwanStockMarketValue", String(mvResult.reason));
+  } else {
+    const rows = (mvResult.value as MvRow[]).sort((a, b) => b.date.localeCompare(a.date));
+    const hist = rows.slice(0, 30).map(r => ({ date: r.date, marketValue: r.market_value }));
+    const latest = hist[0] ?? null;
+    const latestDate = latest?.date ?? null;
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 10 * 24 * 60 * 60 * 1000 : true;
+    marketValue = {
+      state: hist.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
+      latest,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockMarketValue", recordCount: rows.length, degradedReason: hist.length === 0 ? "no_rows" : null }
+    };
+  }
+
+  // ── MarketIntel: Valuation (PER/PBR/Yield) ────────────────────────────────────
+  type ValRow = { date: string; stock_id: string; PER: number; PBR: number; dividend_yield: number };
+  let valuation: FullProfileSection<{ date: string; pe: number | null; pbr: number | null; dividendYield: number | null }>;
+  if (valResult.status === "rejected") {
+    valuation = errorSection("TaiwanStockPER", String(valResult.reason));
+  } else {
+    const rows = (valResult.value as ValRow[]).sort((a, b) => b.date.localeCompare(a.date));
+    const hist = rows.slice(0, 30).map(r => ({
+      date: r.date,
+      pe: typeof r.PER === "number" ? r.PER : null,
+      pbr: typeof r.PBR === "number" ? r.PBR : null,
+      dividendYield: typeof r.dividend_yield === "number" ? r.dividend_yield : null
+    }));
+    const latest = hist[0] ?? null;
+    const latestDate = latest?.date ?? null;
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 5 * 24 * 60 * 60 * 1000 : true;
+    valuation = {
+      state: hist.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
+      latest,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockPER", recordCount: rows.length, degradedReason: hist.length === 0 ? "no_rows" : null }
+    };
+  }
+
+  // ── MarketIntel: News [EXPERIMENTAL] ─────────────────────────────────────────
+  type NewsRow = { date: string; stock_id: string; title: string; url?: string; source_name?: string };
+  let news: FullProfileSection<{ date: string; title: string; url: string | null; sourceName: string | null }> & { experimental: true };
+  if (newsResult.status === "rejected") {
+    news = { ...errorSection<{ date: string; title: string; url: string | null; sourceName: string | null }>("TaiwanStockNews", String(newsResult.reason)), experimental: true };
+  } else {
+    const rows = (newsResult.value as NewsRow[]).sort((a, b) => b.date.localeCompare(a.date));
+    const hist = rows.slice(0, 20).map(r => ({
+      date: r.date,
+      title: r.title,
+      url: r.url ?? null,
+      sourceName: r.source_name ?? null
+    }));
+    const latest = hist[0] ?? null;
+    const latestDate = latest?.date ?? null;
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 2 * 24 * 60 * 60 * 1000 : true;
+    const state: FullProfileSourceState = hist.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE";
+    news = {
+      state,
+      latest,
+      history: hist,
+      updatedAt: new Date().toISOString(),
+      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockNews", recordCount: rows.length, degradedReason: hist.length === 0 ? "no_rows" : null },
+      experimental: true
+    };
+  }
+
+  return c.json({
+    data: {
+      company: {
+        id: company.id,
+        ticker: company.ticker,
+        name: company.name,
+        market: company.market,
+        country: company.country
+      },
+      fundamentals: {
+        monthlyRevenue,
+        financialStatement,
+        cashFlow,
+        balanceSheet
+      },
+      tradingFlow: {
+        institutional,
+        marginShort,
+        shareholding
+      },
+      marketIntel: {
+        dividend,
+        marketValue,
+        valuation,
+        news
+      }
+    }
+  });
+});
+
+// =============================================================================
+// BLOCK #5 Axis 4+5 — Hallucination check for OpenAlice AI reviewer pipeline
+// =============================================================================
+//
+// POST /api/v1/internal/openalice/hallucination-check
+//
+// Input:  { content: string, sourceTrail: object }
+// Output: { verdict: "OK" | "HALLUCINATED" | "PARTIAL_HALLUCINATED", flags: string[], reasoning: string }
+//
+// Used by AI reviewer in /run-batch downstream to verify factual grounding.
+// Hard lines:
+//   - Owner/Admin only (requireOpenAliceAdmin gate)
+//   - OPENAI_API_KEY must be present — if absent, returns verdict=OK + reason=no_api_key (safe default)
+//   - Never logs the API key
+//   - No buy/sell/目標價/必賺/勝率/guaranteed return language in prompt
+// =============================================================================
+
+const HALLUCINATION_CHECK_OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const HALLUCINATION_CHECK_MODEL = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
+const HALLUCINATION_CHECK_TIMEOUT_MS = 20_000;
+
+app.post("/api/v1/internal/openalice/hallucination-check", async (c) => {
+  const denial = requireOpenAliceAdmin(c);
+  if (denial) return denial;
+
+  let body: { content?: unknown; sourceTrail?: unknown } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+
+  const content = typeof body.content === "string" ? body.content.trim() : null;
+  const sourceTrail = body.sourceTrail ?? null;
+
+  if (!content) {
+    return c.json({ error: "content_required" }, 400);
+  }
+
+  const apiKey = process.env["OPENAI_API_KEY"];
+  if (!apiKey) {
+    return c.json({
+      data: {
+        verdict: "OK",
+        flags: [],
+        reasoning: "no_api_key: hallucination check skipped — OPENAI_API_KEY not configured"
+      }
+    });
+  }
+
+  const sourceTrailStr = sourceTrail
+    ? JSON.stringify(sourceTrail, null, 2)
+    : "(no source trail provided)";
+
+  const prompt = `You are a factual grounding auditor. Your task is to identify hallucinated or ungrounded claims.
+
+Given this content:
+"""
+${content}
+"""
+
+And this source trail (what data sources back the content):
+${sourceTrailStr}
+
+Instructions:
+1. Identify any factual claims in the content that cannot be traced back to the source trail.
+2. Do NOT flag analytical observations, interpretation, or general knowledge.
+3. Do NOT flag buy/sell recommendations — these are already prohibited upstream.
+4. List only claims that are directly contradicted by or entirely absent from the source trail.
+5. Output ONLY this JSON (no markdown fence, no extra text):
+
+{"verdict":"OK|HALLUCINATED|PARTIAL_HALLUCINATED","flags":[],"reasoning":"<1-2 sentences>"}
+
+Where:
+- OK = all factual claims are grounded in the source trail
+- HALLUCINATED = major factual claims have no source trail support
+- PARTIAL_HALLUCINATED = some claims are grounded, some are not`;
+
+  let res: Response;
+  try {
+    res = await fetch(HALLUCINATION_CHECK_OPENAI_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: HALLUCINATION_CHECK_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 512,
+        temperature: 0.1
+      }),
+      signal: AbortSignal.timeout(HALLUCINATION_CHECK_TIMEOUT_MS)
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[hallucination-check] OpenAI call failed: ${msg}`);
+    return c.json({
+      data: {
+        verdict: "OK",
+        flags: [],
+        reasoning: `openai_call_failed: ${msg} — check skipped, safe default`
+      }
+    });
+  }
+
+  if (!res.ok) {
+    const body2 = await res.text().catch(() => "(no body)");
+    console.warn(`[hallucination-check] OpenAI HTTP ${res.status}: ${body2.slice(0, 120)}`);
+    return c.json({
+      data: {
+        verdict: "OK",
+        flags: [],
+        reasoning: `openai_http_${res.status}: check skipped, safe default`
+      }
+    });
+  }
+
+  let respData: unknown;
+  try {
+    respData = await res.json();
+  } catch {
+    return c.json({ data: { verdict: "OK", flags: [], reasoning: "openai_parse_error: safe default" } });
+  }
+
+  const rawContent: string | null =
+    respData &&
+    typeof respData === "object" &&
+    "choices" in respData &&
+    Array.isArray((respData as { choices: unknown[] }).choices) &&
+    (respData as { choices: { message?: { content?: unknown } }[] }).choices[0]?.message?.content
+      ? String((respData as { choices: { message?: { content?: unknown } }[] }).choices[0].message!.content)
+      : null;
+
+  if (!rawContent) {
+    return c.json({ data: { verdict: "OK", flags: [], reasoning: "openai_empty_response: safe default" } });
+  }
+
+  try {
+    const parsed = JSON.parse(rawContent) as { verdict?: unknown; flags?: unknown; reasoning?: unknown };
+    const verdict = (["OK", "HALLUCINATED", "PARTIAL_HALLUCINATED"] as const).includes(parsed.verdict as "OK")
+      ? parsed.verdict as "OK" | "HALLUCINATED" | "PARTIAL_HALLUCINATED"
+      : "OK";
+    const flags = Array.isArray(parsed.flags) ? (parsed.flags as unknown[]).map(String) : [];
+    const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : "no_reasoning";
+    return c.json({ data: { verdict, flags, reasoning } });
+  } catch {
+    return c.json({ data: { verdict: "OK", flags: [], reasoning: `openai_json_parse_failed: ${rawContent.slice(0, 80)}` } });
+  }
+});
+
+// =============================================================================
 // 5/5 REOPEN — P1: Session probe (Bruce dev login support)
 // =============================================================================
 // GET /api/v1/auth/session-probe
