@@ -9132,8 +9132,8 @@ app.get("/api/v1/internal/openalice/email-digest/state", async (c) => {
  * since= accepts: 1h / 6h / 12h / 24h / 48h (default: 24h)
  *
  * Returned fields:
- *   ai_approved, ai_rejected, hallucination_reject, adversarial_intercept,
- *   paper_submit, paper_submit_rejected, total, windowHours, since (ISO)
+ *   ai_approved, ai_rejected, hallucination_reject, adversarial_intercept (severityScore>=7),
+ *   ai_yellow_held, paper_submit, paper_submit_rejected, total, windowHours, since (ISO)
  *
  * Owner only. DB unavailable → graceful zero counts.
  */
@@ -9160,6 +9160,7 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
         ai_rejected: 0,
         hallucination_reject: 0,
         adversarial_intercept: 0,
+        ai_yellow_held: 0,
         paper_submit: 0,
         paper_submit_rejected: 0,
         total: 0,
@@ -9169,10 +9170,11 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
   }
 
   try {
-    // Pete BLOCK#8 fix: use two queries — one GROUP BY for content-draft/hallucination
-    // actions, one separate COUNT for paper_submit with optional status filter for rejected.
-    // The paper_submit action is set by the specialAuditRoute entry in audit-log-store.ts.
-    // Before this fix the SQL queried 'paper.order.submit' which was never written → always 0.
+    // audit-stats action string fix (2026-05-07):
+    //   Real action strings written to audit_logs use the 'content_draft.' prefix.
+    //   PR #292 introduced bare names (ai_approved etc) → silent zero.
+    //   PR #296 fixed the prefix. This PR adds ai_yellow_held and precise
+    //   adversarial_intercept count (JSONB severityScore >= 7 subquery).
     const rows = await db.execute(
       drizzleSql`
         SELECT
@@ -9185,6 +9187,7 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
             'content_draft.ai_rejected',
             'hallucination_reject',
             'content_draft.adversarial_audit',
+            'content_draft.ai_yellow_held',
             'paper_submit'
           )
         GROUP BY action
@@ -9202,6 +9205,18 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
       `
     ) as { rows?: Array<{ cnt?: number | string }> };
 
+    // adversarial_intercept = adversarial_audit rows where severityScore >= 7
+    // (rows with score < 7 are paper-trail only; only >= 7 actually held the draft)
+    const adversarialRows = await db.execute(
+      drizzleSql`
+        SELECT COUNT(*)::int AS cnt
+        FROM audit_logs
+        WHERE created_at >= ${since}::timestamptz
+          AND action = 'content_draft.adversarial_audit'
+          AND (payload->>'severityScore')::int >= 7
+      `
+    ) as { rows?: Array<{ cnt?: number | string }> };
+
     const counts: Record<string, number> = {};
     for (const row of rows.rows ?? []) {
       if (row.action) {
@@ -9213,12 +9228,12 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
     const aiApproved = counts["content_draft.ai_approved"] ?? 0;
     const aiRejected = counts["content_draft.ai_rejected"] ?? 0;
     const hallucinationReject = counts["hallucination_reject"] ?? 0;
-    // adversarial_intercept = adversarial_audit rows with severityScore >= 7
-    // We count all adversarial_audit entries (precise intercept check would require JSONB query)
-    const adversarialIntercept = counts["content_draft.adversarial_audit"] ?? 0;
+    // adversarial_intercept: JSONB-filtered count (severityScore >= 7 only)
+    const adversarialIntercept = Number(adversarialRows.rows?.[0]?.cnt ?? 0);
+    const aiYellowHeld = counts["content_draft.ai_yellow_held"] ?? 0;
     const paperSubmit = counts["paper_submit"] ?? 0;
     const paperSubmitRejected = paperSubmitRejectedCount;
-    const total = aiApproved + aiRejected + hallucinationReject + adversarialIntercept + paperSubmit;
+    const total = aiApproved + aiRejected + hallucinationReject + adversarialIntercept + aiYellowHeld + paperSubmit;
 
     return c.json({
       data: {
@@ -9228,6 +9243,7 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
         ai_rejected: aiRejected,
         hallucination_reject: hallucinationReject,
         adversarial_intercept: adversarialIntercept,
+        ai_yellow_held: aiYellowHeld,
         paper_submit: paperSubmit,
         paper_submit_rejected: paperSubmitRejected,
         total,
@@ -9244,6 +9260,7 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
         ai_rejected: 0,
         hallucination_reject: 0,
         adversarial_intercept: 0,
+        ai_yellow_held: 0,
         paper_submit: 0,
         paper_submit_rejected: 0,
         total: 0,

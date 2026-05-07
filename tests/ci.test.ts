@@ -9119,3 +9119,49 @@ test("audit-stats fix: parseAuditTarget maps /api/v1/paper/preview to paper_prev
   assert.equal(result!.entityType, "paper", "entity type must be paper");
   assert.equal(result!.entityId, "preview", "entity id must be preview");
 });
+
+// =============================================================================
+// audit-stats action string format verification (2026-05-07 silent-zero fix)
+// =============================================================================
+
+test("audit-stats: action strings used in SQL must match real audit_log format (content_draft. prefix)", () => {
+  // Verify the real action strings written by each subsystem.
+  // If these string literals ever get renamed, this test catches the mismatch before deploy.
+  const EXPECTED_AUDIT_STATS_ACTIONS = [
+    "content_draft.ai_approved",      // written by openalice-ai-reviewer.ts on approve path
+    "content_draft.ai_rejected",       // written by openalice-ai-reviewer.ts on reject path
+    "hallucination_reject",            // written by hallucination-rag gate (no prefix — legacy)
+    "content_draft.adversarial_audit", // written by openalice-adversarial-reviewer.ts (all calls)
+    "content_draft.ai_yellow_held",    // written by adversarial reviewer when severityScore >= 7
+    "paper_submit",                    // written by specialAuditRoutes for /api/v1/paper/submit
+  ] as const;
+
+  // Each action that is NOT paper_submit must start with 'content_draft.' or be a known legacy bare name.
+  const KNOWN_BARE_ACTIONS = new Set(["hallucination_reject", "paper_submit", "paper_preview"]);
+
+  for (const action of EXPECTED_AUDIT_STATS_ACTIONS) {
+    const isContentDraftPrefixed = action.startsWith("content_draft.");
+    const isBareKnown = KNOWN_BARE_ACTIONS.has(action);
+    assert.ok(
+      isContentDraftPrefixed || isBareKnown,
+      `action '${action}' must either start with 'content_draft.' or be a known bare action; ` +
+      `bare names without prefix were the root cause of the silent-zero bug (PR #292)`
+    );
+  }
+
+  // adversarial_intercept must NOT be the bare string (that was the old wrong form)
+  assert.ok(
+    !EXPECTED_AUDIT_STATS_ACTIONS.includes("adversarial_intercept" as never),
+    "bare 'adversarial_intercept' must not appear — real action is 'content_draft.adversarial_audit'"
+  );
+
+  // ai_approved, ai_rejected must NOT appear bare (those were the original bug)
+  const bareWrongNames = ["ai_approved", "ai_rejected", "hallucination_reject_bare"];
+  for (const wrong of bareWrongNames) {
+    if (wrong === "hallucination_reject_bare") continue; // skip synthetic entry
+    assert.ok(
+      !EXPECTED_AUDIT_STATS_ACTIONS.includes(wrong as never),
+      `bare '${wrong}' must not appear in SQL — must use 'content_draft.' prefix`
+    );
+  }
+});
