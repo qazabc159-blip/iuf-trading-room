@@ -400,7 +400,23 @@ async function collectSourcePack(
       );
     });
 
-  return { packId, tick, collectedAt, tradingDate, sources, trailComplete };
+  return { packId, tick, collectedAt, tradingDate, sources: filterSourcePackEntries(sources), trailComplete };
+}
+
+/**
+ * F1 fix (Pete BLOCK#5 followup): strip source pack entries whose name or note
+ * contains BROKEN/ORPHAN/DEPRECATED metadata tokens. These tokens come from
+ * theme-registry names that were never cleaned up in the DB and must not leak
+ * into brief generator instructions or content. The AI reviewer should not be
+ * responsible for this cleanup — filter upstream before sources enter the generator.
+ */
+const NON_PRODUCTION_SOURCE_PATTERN = /\[(?:BROKEN(?:-\d+)?|DEPRECATED|ORPHAN)\]|\bplaceholder\b|\bto\s+fix\b/i;
+
+export function filterSourcePackEntries(sources: SourcePackEntry[]): SourcePackEntry[] {
+  return sources.filter((entry) => {
+    const searchable = `${entry.source} ${entry.note ?? ""}`;
+    return !NON_PRODUCTION_SOURCE_PATTERN.test(searchable);
+  });
 }
 
 async function collectTableSource(
@@ -525,18 +541,40 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
     .replace(/tw_institutional_buysell/g, "institutional_flow_dataset")
     .replace(/institutional buy\/sell/g, "institutional_flow_dataset")
     .replace(/foreign investor buy\/sell/g, "institutional_flow_dataset")
+    // F2 fix (Pete BLOCK#5 followup): normalize Chinese institutional source labels so that
+    // factual descriptions like "外資連續3日買進" or "投信賣出科技股" are not misclassified
+    // as action advice. These labels describe historical data flow (source labels), not trade
+    // recommendations. The regex allows intervening characters between the institution name and
+    // the buy/sell verb (e.g. "外資連續3日買進", "外資買超", "投信買進台積電").
+    .replace(/外資.{0,12}(?:買進|賣出|買超|賣超|買入|出脫)/g, "institutional_flow_data")
+    .replace(/投信.{0,12}(?:買進|賣出|買超|賣超|買入|出脫)/g, "institutional_flow_data")
+    .replace(/自營商.{0,12}(?:買進|賣出|買超|賣超|買入|出脫)/g, "institutional_flow_data")
+    .replace(/法人.{0,12}(?:買進|賣出|買超|賣超|買入|出脫)/g, "institutional_flow_data")
+    .replace(/三大法人.{0,20}(?:買進|賣出|買超|賣超|淨買超|淨賣超)/g, "institutional_flow_data")
     .replace(/\bbuy\/sell\b/g, "flow_dataset")
     .replace(/\bbuy\b/g, "data_buy")
     .replace(/\bsell\b/g, "data_sell");
 
-  const actionAdvicePatterns = [
+  // English action advice patterns: run on raw text (buy/sell not yet neutralized).
+  const englishAdvicePatterns = [
     /\b(?:you should|should|recommend(?:ed)? to|recommendation[:\s-]*)\s+(?:buy|sell)\b/,
-    /\b(?:buy|sell)\b.{0,40}\b(?:now|immediately|before earnings|your positions)\b/,
+    /\b(?:buy|sell)\b.{0,40}\b(?:now|immediately|before earnings|your positions)\b/
+  ];
+  for (const p of englishAdvicePatterns) {
+    if (p.test(text)) {
+      return "red";
+    }
+  }
+
+  // Chinese action advice patterns: run on policyText (institutional labels already normalized).
+  // This prevents "外資連續3日買進" (institutional source data) from triggering a false positive
+  // while still catching "建議買進" / "買進 訊號" type action advice patterns.
+  const chineseAdvicePatterns = [
     /(建議|應該|可以|請|立刻|現在|操作上|策略上).{0,20}(買進|買入|賣出|出脫|進場|加碼|減碼|做多|做空)/,
     /(買進|買入|賣出|出脫|進場|加碼|減碼|做多|做空).{0,20}(建議|訊號|操作|目標價)/
   ];
-  for (const p of actionAdvicePatterns) {
-    if (p.test(text)) {
+  for (const p of chineseAdvicePatterns) {
+    if (p.test(policyText)) {
       return "red";
     }
   }

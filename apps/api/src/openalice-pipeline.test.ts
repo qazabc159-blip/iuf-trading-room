@@ -13,11 +13,13 @@ import test from "node:test";
 import {
   classifyDraftTier,
   evaluatePublishGate,
+  filterSourcePackEntries,
   loadStrategySnapshot,
   runBatchAiReviewer,
   runPipelineTick,
   _lastPipelineState,
   type SourcePack,
+  type SourcePackEntry,
   type StrategyRegistryEntry
 } from "./openalice-pipeline.js";
 
@@ -312,6 +314,106 @@ test("loadStrategySnapshot returns an array or null — never throws", () => {
 });
 
 // ── Test 12: strategy section in daily_brief instructions triggers yellow tier ─
+
+// ── Test 13 (F1): filterSourcePackEntries strips BROKEN/ORPHAN/DEPRECATED entries ─
+
+test("filterSourcePackEntries removes BROKEN-tagged source entries", () => {
+  const entries: SourcePackEntry[] = [
+    { source: "companies_ohlcv", status: "LIVE", rowCount: 500, latestDate: "2026-05-06", note: null },
+    { source: "[BROKEN-1] tw_theme_legacy", status: "DEGRADED", rowCount: null, latestDate: null, note: "broken theme" },
+    { source: "tw_institutional_buysell", status: "LIVE", rowCount: 300, latestDate: "2026-05-06", note: null }
+  ];
+  const filtered = filterSourcePackEntries(entries);
+  assert.equal(filtered.length, 2, "BROKEN entry must be removed");
+  assert.ok(filtered.every((e) => !e.source.includes("[BROKEN")), "No BROKEN source names in output");
+});
+
+test("filterSourcePackEntries removes ORPHAN-tagged source entries", () => {
+  const entries: SourcePackEntry[] = [
+    { source: "companies_ohlcv", status: "LIVE", rowCount: 100, latestDate: "2026-05-06", note: null },
+    { source: "[ORPHAN] abandoned_source", status: "EMPTY", rowCount: 0, latestDate: null, note: null },
+    { source: "market_overview", status: "LIVE", rowCount: 1, latestDate: "2026-05-06", note: null }
+  ];
+  const filtered = filterSourcePackEntries(entries);
+  assert.equal(filtered.length, 2, "ORPHAN entry must be removed");
+});
+
+test("filterSourcePackEntries removes DEPRECATED-tagged source entries", () => {
+  const entries: SourcePackEntry[] = [
+    { source: "[DEPRECATED] old_theme_source", status: "EMPTY", rowCount: 0, latestDate: null, note: null },
+    { source: "tw_monthly_revenue", status: "LIVE", rowCount: 800, latestDate: "2026-04-30", note: null }
+  ];
+  const filtered = filterSourcePackEntries(entries);
+  assert.equal(filtered.length, 1, "DEPRECATED entry must be removed");
+  assert.equal(filtered[0]!.source, "tw_monthly_revenue");
+});
+
+test("filterSourcePackEntries strips entry when BROKEN token is in note field", () => {
+  const entries: SourcePackEntry[] = [
+    { source: "some_source", status: "DEGRADED", rowCount: null, latestDate: null, note: "[BROKEN-2] theme not promoted" },
+    { source: "companies_ohlcv", status: "LIVE", rowCount: 500, latestDate: "2026-05-06", note: null }
+  ];
+  const filtered = filterSourcePackEntries(entries);
+  assert.equal(filtered.length, 1, "Entry with BROKEN note must be removed");
+  assert.equal(filtered[0]!.source, "companies_ohlcv");
+});
+
+test("filterSourcePackEntries passes all clean standard source entries", () => {
+  const entries: SourcePackEntry[] = [
+    { source: "companies_ohlcv", status: "LIVE", rowCount: 500, latestDate: "2026-05-06", note: null },
+    { source: "tw_monthly_revenue", status: "LIVE", rowCount: 1200, latestDate: "2026-04-30", note: null },
+    { source: "tw_institutional_buysell", status: "LIVE", rowCount: 300, latestDate: "2026-05-06", note: null },
+    { source: "tw_margin_short", status: "LIVE", rowCount: 300, latestDate: "2026-05-06", note: null },
+    { source: "market_overview", status: "LIVE", rowCount: 1, latestDate: "2026-05-06", note: null }
+  ];
+  const filtered = filterSourcePackEntries(entries);
+  assert.equal(filtered.length, 5, "All clean entries must pass through");
+});
+
+// ── Test 14 (F2): Chinese institutional label normalization ──────────────────
+
+test("classifyDraftTier: 外資買進 as source label stays GREEN (not red)", () => {
+  // Pete BLOCK#5 F2: factual historical description with Chinese institutional label
+  // must NOT trigger red tier. "外資連續3日買進" describes source data, not advice.
+  const tier = classifyDraftTier({
+    date: "2026-05-07",
+    sections: [
+      {
+        heading: "機構動向",
+        body: "外資連續3日買進，買超金額合計約50億元。投信賣出科技股，自營商買進金融類股。此為歷史資料彙整，不構成操作建議。"
+      }
+    ]
+  });
+  assert.equal(tier, "green", "Chinese institutional source labels must not trigger red tier");
+});
+
+test("classifyDraftTier: 法人買進 historical description stays GREEN", () => {
+  const tier = classifyDraftTier({
+    date: "2026-05-07",
+    sections: [
+      {
+        heading: "法人動向",
+        body: "法人買進超過1000張，法人賣出電子權值股。三大法人合計淨買超200億元。資料來源：FinMind tw_institutional_buysell。"
+      }
+    ]
+  });
+  assert.equal(tier, "green", "法人買進/賣出 as source data description must be green");
+});
+
+test("classifyDraftTier: actual action advice with 外資 still triggers RED", () => {
+  // Even with 外資, if combined with action advice pattern, must still reject
+  const tier = classifyDraftTier({
+    date: "2026-05-07",
+    sections: [
+      {
+        heading: "操作建議",
+        body: "建議跟隨外資買進台積電，現在進場機會佳，預期必漲。"
+      }
+    ]
+  });
+  // 必漲 matches redSemanticPatterns → must be red regardless
+  assert.equal(tier, "red", "Action advice with guarantee keyword must still be red");
+});
 
 test("classifyDraftTier returns yellow for payload containing strategy keyword", () => {
   // The strategy section in the daily brief instructions will produce content with
