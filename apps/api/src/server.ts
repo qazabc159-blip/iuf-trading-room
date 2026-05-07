@@ -62,8 +62,8 @@ import {
   listEvents,
   acknowledgeEvent
 } from "./openalice-event-rule-engine.js";
-import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces } from "@iuf-trading-room/db";
-import { eq, and, sql as drizzleSql } from "drizzle-orm";
+import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs } from "@iuf-trading-room/db";
+import { eq, and, sql as drizzleSql, desc, inArray } from "drizzle-orm";
 import {
   getTradingRoomRepository,
   type TradingRoomRepository
@@ -5794,6 +5794,276 @@ app.get("/api/v1/lab/strategy-snapshot", async (c) => {
       candidateCount: snapshot.candidates.length,
       researchOnly: true,
       note: "Research candidates only. No strategy is approved for paper or live trading. Awaiting Athena/Bruce gates."
+    }
+  });
+});
+
+// =============================================================================
+// BLOCK #7 Axis 1 — GET /api/v1/lab/strategies  (alias for strategy-snapshot)
+// =============================================================================
+// Codex frontend /lab page calls /api/v1/lab/strategies — alias to exact same
+// handler as /api/v1/lab/strategy-snapshot so both paths work identically.
+// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES gate)
+// =============================================================================
+
+app.get("/api/v1/lab/strategies", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { loadLabSanctionedSnapshot } = await import("./lab-strategy-consumer.js");
+  const snapshot = loadLabSanctionedSnapshot();
+
+  if (snapshot === null) {
+    return c.json({
+      data: null,
+      meta: {
+        source: "unavailable" as const,
+        reason:
+          "Lab sanctioned snapshot not found at expected sibling path. " +
+          "This is expected in prod/Railway (lab repo not deployed). " +
+          "In local dev: ensure IUF_QUANT_LAB repo is present as sibling to IUF_TRADING_ROOM_APP.",
+        labGovernancePath:
+          "IUF_QUANT_LAB/research/finmind_sponsor_999_data_factory/codex_next/final_strategy_count_board_v15.json",
+        labTrAlignmentLock: "board/lab_tr_alignment_lock_2026-05-07.md"
+      }
+    });
+  }
+
+  return c.json({
+    data: snapshot,
+    meta: {
+      source: "lab_sanctioned" as const,
+      sprintId: snapshot.sprintId,
+      collectedAt: snapshot.collectedAt,
+      candidateCount: snapshot.candidates.length,
+      researchOnly: true,
+      note: "Research candidates only. No strategy is approved for paper or live trading. Awaiting Athena/Bruce gates."
+    }
+  });
+});
+
+// =============================================================================
+// Letter D — GET /api/v1/briefs/:id  (brief detail with audit chain)
+// =============================================================================
+// Returns a single daily_brief by UUID or date string (YYYY-MM-DD), plus
+// the full audit chain: hard-reject rules, adversarial review, hallucination
+// check — reconstructed from audit_logs + content_drafts.
+//
+// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES gate)
+//
+// auditChain fields:
+//   hardReject      — rules checked by classifyDraftTier + BROKEN token scan
+//   adversarialReview — from audit_log action=content_draft.adversarial_audit
+//   hallucinationCheck — from audit_log action=hallucination_reject or
+//                         content_draft.ai_approved (with hc payload)
+//
+// If no audit log entries found → null fields (graceful, not 500).
+// =============================================================================
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+app.get("/api/v1/briefs/:id", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const id = c.req.param("id");
+  if (!id) {
+    return c.json({ error: "missing_id" }, 400);
+  }
+
+  const db = getDb();
+  if (!isDatabaseMode() || !db) {
+    return c.json({ error: "database_unavailable" }, 503);
+  }
+
+  const workspaceId = c.get("session").workspace.id;
+
+  // Look up brief by UUID or date string
+  const isUuid = UUID_RE.test(id);
+  const briefRows = await db
+    .select()
+    .from(dailyBriefs)
+    .where(
+      and(
+        eq(dailyBriefs.workspaceId, workspaceId),
+        isUuid ? eq(dailyBriefs.id, id) : eq(dailyBriefs.date, id)
+      )
+    )
+    .orderBy(desc(dailyBriefs.createdAt))
+    .limit(1);
+
+  if (briefRows.length === 0) {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  const brief = briefRows[0]!;
+
+  // Derive title from first section heading (no top-level title in schema)
+  const firstSection = (brief.sections as Array<{ heading: string; body: string }>)[0];
+  const title = firstSection?.heading ?? `Brief ${brief.date}`;
+
+  // ── Resolve linked content_draft by dedupeKey pattern ─────────────────────
+  // daily_briefs are produced by approving a content_draft with targetTable=daily_briefs
+  // dedupeKey = `daily_brief:${workspaceId}:${date}` (pipeline convention)
+  const dedupeKey = `daily_brief:${workspaceId}:${brief.date}`;
+  const draftRows = await db
+    .select({ id: contentDrafts.id })
+    .from(contentDrafts)
+    .where(
+      and(
+        eq(contentDrafts.workspaceId, workspaceId),
+        eq(contentDrafts.dedupeKey, dedupeKey)
+      )
+    )
+    .orderBy(desc(contentDrafts.createdAt))
+    .limit(5);
+
+  const draftIds = draftRows.map((r) => r.id);
+
+  // ── Read audit chain from audit_logs ───────────────────────────────────────
+  type RawAuditRow = {
+    action: string;
+    entityId: string;
+    payload: unknown;
+    createdAt: Date;
+  };
+
+  let auditRows: RawAuditRow[] = [];
+  if (draftIds.length > 0) {
+    const AUDIT_ACTIONS = [
+      "content_draft.adversarial_audit",
+      "content_draft.ai_yellow_held",
+      "content_draft.ai_approved",
+      "content_draft.ai_rejected",
+      "content_draft.ai_manual_review",
+      "hallucination_reject"
+    ];
+    auditRows = await db
+      .select({
+        action: auditLogs.action,
+        entityId: auditLogs.entityId,
+        payload: auditLogs.payload,
+        createdAt: auditLogs.createdAt
+      })
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.workspaceId, workspaceId),
+          inArray(auditLogs.entityId, draftIds),
+          inArray(auditLogs.action, AUDIT_ACTIONS)
+        )
+      )
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(50);
+  }
+
+  // ── Parse adversarial review from audit rows ───────────────────────────────
+  type AdversarialReviewResult = {
+    ran: boolean;
+    verdict: "OK" | "INTERCEPTED";
+    severityScore: number | null;
+    flags: string[];
+    reviewerModel: string;
+    auditedAt: string | null;
+  };
+
+  let adversarialReview: AdversarialReviewResult | null = null;
+  const adversarialRow = auditRows.find((r) => r.action === "content_draft.adversarial_audit");
+  if (adversarialRow) {
+    const p = adversarialRow.payload as Record<string, unknown> | null;
+    const score = typeof p?.["severityScore"] === "number" ? (p["severityScore"] as number) : null;
+    adversarialReview = {
+      ran: true,
+      verdict: (score !== null && score >= 7) ? "INTERCEPTED" : "OK",
+      severityScore: score,
+      flags: Array.isArray(p?.["adversarialFlags"]) ? (p["adversarialFlags"] as string[]) : [],
+      reviewerModel: typeof p?.["model"] === "string" ? (p["model"] as string) : (process.env["OPENAI_ADVERSARIAL_REVIEWER_MODEL"] ?? "gpt-4.1"),
+      auditedAt: adversarialRow.createdAt.toISOString()
+    };
+  }
+
+  // ── Parse hallucination check from audit rows ──────────────────────────────
+  type HallucinationCheckResult = {
+    ran: boolean;
+    verdict: "OK" | "PARTIAL_HALLUCINATED" | "HALLUCINATED" | "ERROR";
+    confidence: number | null;
+    flags: unknown[];
+    ragUsed: boolean;
+    modelChain: string;
+    auditedAt: string | null;
+  };
+
+  let hallucinationCheck: HallucinationCheckResult | null = null;
+  const hcRow = auditRows.find(
+    (r) => r.action === "hallucination_reject" || r.action === "content_draft.ai_approved"
+  );
+  if (hcRow) {
+    const p = hcRow.payload as Record<string, unknown> | null;
+    const hcPayload = (p?.["hallucinationCheck"] as Record<string, unknown> | null) ?? p;
+    const verdict = (hcPayload?.["verdict"] as string | undefined) ?? null;
+    if (verdict && ["OK", "PARTIAL_HALLUCINATED", "HALLUCINATED", "ERROR"].includes(verdict)) {
+      hallucinationCheck = {
+        ran: true,
+        verdict: verdict as HallucinationCheckResult["verdict"],
+        confidence:
+          typeof hcPayload?.["confidence"] === "number" ? (hcPayload["confidence"] as number) : null,
+        flags: Array.isArray(hcPayload?.["flags"]) ? (hcPayload["flags"] as unknown[]) : [],
+        ragUsed: hcPayload?.["ragUsed"] === true,
+        modelChain:
+          typeof hcPayload?.["modelChain"] === "string"
+            ? (hcPayload["modelChain"] as string)
+            : `${process.env["OPENAI_CLAIM_EXTRACT_MODEL"] ?? "gpt-4o-mini"} → ${process.env["OPENAI_HALLUCINATION_VERIFY_MODEL"] ?? "gpt-4.1"}`,
+        auditedAt: hcRow.createdAt.toISOString()
+      };
+    }
+  }
+
+  // ── Build hard-reject summary ──────────────────────────────────────────────
+  // Hard-reject rules are policy constants — report them verbatim so frontend
+  // can show what safety gates were in effect for this brief.
+  const HARD_REJECT_RULES = [
+    "no explicit buy/sell recommendation",
+    "no target price claim",
+    "no guaranteed return",
+    "no broken/deprecated source token in payload",
+    "no tier=red auto-approve",
+    "no content_draft.ai_rejected bypass"
+  ];
+  const wasRejected = auditRows.some(
+    (r) => r.action === "content_draft.ai_rejected" || r.action === "hallucination_reject"
+  );
+
+  const auditChain = {
+    hardReject: {
+      rules: HARD_REJECT_RULES,
+      rejected: wasRejected
+    },
+    adversarialReview,
+    hallucinationCheck
+  };
+
+  // ── Build sections with sourceTrail (sourceTrail not in DB; omit gracefully) ─
+  const sections = (brief.sections as Array<{ heading: string; body: string }>).map((s) => ({
+    heading: s.heading,
+    body: s.body,
+    sourceTrail: null as string | null  // not persisted in daily_briefs; available on content_drafts.payload
+  }));
+
+  return c.json({
+    data: {
+      id: brief.id,
+      date: brief.date,
+      title,
+      status: brief.status,
+      marketState: brief.marketState,
+      generatedBy: brief.generatedBy,
+      createdAt: brief.createdAt.toISOString(),
+      sections,
+      auditChain
     }
   });
 });
