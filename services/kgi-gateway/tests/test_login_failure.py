@@ -164,7 +164,7 @@ def test_no_credential_in_response_body():
     client = TestClient(app)
 
     person_id = "A123456789"
-    password = "S3cr3tPwd!"
+    password = "pwd"
 
     with patch("app.session") as mock_session:
         mock_session.login.side_effect = KgiLoginFailedError(

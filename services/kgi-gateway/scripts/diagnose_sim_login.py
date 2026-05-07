@@ -28,7 +28,7 @@ Error code 78 (from errMsg.ini):
 
 Usage:
   # Using environment variables (recommended — avoids shell history exposure):
-  set KGI_PERSON_ID=A123456789
+  set KGI_PERSON_ID=<person-id>
   set KGI_PASSWORD=yourpwd
   set KGI_SIMULATION=true
   python diagnose_sim_login.py
