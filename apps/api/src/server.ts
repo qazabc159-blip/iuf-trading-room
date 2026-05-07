@@ -55,6 +55,7 @@ import {
   fireAiReviewerForDraft,
   _getLastReviewerError
 } from "./openalice-ai-reviewer.js";
+import { runEmailDigestTick, getDigestState } from "./openalice-email-digest.js";
 import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql } from "drizzle-orm";
 import {
@@ -7251,6 +7252,48 @@ app.post("/api/v1/internal/openalice/ai-reviewer/run-on/:draftId", async (c) => 
   });
 });
 
+// ── BLOCK #6: Email digest internal endpoint ──────────────────────────────────
+
+/**
+ * POST /api/v1/internal/openalice/email-digest/trigger
+ * Manually trigger the email digest (force=true bypasses 17:00–17:30 window).
+ * Owner only.
+ */
+app.post("/api/v1/internal/openalice/email-digest/trigger", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const body = await c.req.json().catch(() => ({})) as { force?: boolean };
+  const force = body.force === true;
+
+  const result = await runEmailDigestTick(force).catch((e) => ({
+    sent: false,
+    eventCount: 0,
+    criticalCount: 0,
+    warningCount: 0,
+    infoCount: 0,
+    recipient: "unknown",
+    reason: `error:${e instanceof Error ? e.message : String(e)}`
+  }));
+
+  return c.json({ data: result });
+});
+
+/**
+ * GET /api/v1/internal/openalice/email-digest/state
+ * Returns last digest state.
+ * Owner only.
+ */
+app.get("/api/v1/internal/openalice/email-digest/state", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  return c.json({ data: getDigestState() });
+});
+
 /**
  * Resolve all Taiwan 4-digit tickers for the workspace.
  * Returns empty array if workspace not found or DB unavailable.
@@ -7798,12 +7841,22 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, FIFTEEN_MIN_MS);
 
+  // BLOCK #6: Email digest scheduler — fires every 5min, window-guarded to 17:00–17:30 TST
+  // Graceful: iuf_events table absent → empty digest → dry-run log (no email)
+  // Graceful: RESEND_API_KEY absent → dry-run log (no email sent)
+  setInterval(() => {
+    runEmailDigestTick().catch((e) =>
+      console.error("[email-digest] Interval tick failed:", e instanceof Error ? e.message : e)
+    );
+  }, 5 * 60 * 1000);
+
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
     "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) + " +
     "PR-C dividend (24h) + PR-C market-value (24h) + PR-C valuation (24h) + PR-C stock-news (30min) + " +
-    "P0-C pipeline pre_market/close_watch/close_brief (15min) started"
+    "P0-C pipeline pre_market/close_watch/close_brief (15min) + " +
+    "BLOCK#6 email-digest (5min, fires at 17:00–17:30 TST) started"
   );
 }
 
