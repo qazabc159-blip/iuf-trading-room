@@ -1575,7 +1575,7 @@ export default async function DashboardPage() {
     load(
       "Market data overview",
       null,
-      async () => (await getMarketDataOverview({ includeStale: true, topLimit: 12 })).data,
+      async () => (await getMarketDataOverview({ includeStale: true, topLimit: 20 })).data,
       (value) => !hasMarketOverviewData(value),
       "市場資料總覽目前沒有可用正式資料。",
     ),
