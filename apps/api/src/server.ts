@@ -1585,11 +1585,18 @@ app.patch("/api/v1/themes/:id", async (c) => {
 
 app.get("/api/v1/companies", async (c) => {
   const themeId = c.req.query("themeId");
-  return c.json({
-    data: await c.get("repo").listCompanies(themeId, {
-      workspaceSlug: c.get("session").workspace.slug
-    })
+  const tickerFilter = c.req.query("ticker")?.trim().toUpperCase();
+
+  let data = await c.get("repo").listCompanies(themeId, {
+    workspaceSlug: c.get("session").workspace.slug
   });
+
+  // B1 P1 perf fix: ticker lookup returns 1 row instead of transmitting all 3470
+  if (tickerFilter) {
+    data = data.filter((company) => company.ticker.toUpperCase() === tickerFilter);
+  }
+
+  return c.json({ data });
 });
 
 app.post("/api/v1/companies", async (c) => {
