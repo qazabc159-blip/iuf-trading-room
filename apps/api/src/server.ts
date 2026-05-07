@@ -5597,31 +5597,45 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
 });
 
 // =============================================================================
-// BLOCK #5 Axis 4+5 — Hallucination check for OpenAlice AI reviewer pipeline
+// BLOCK #6 — Hallucination check (RAG upgrade): gpt-4.1 cross-validate + confidence
 // =============================================================================
 //
 // POST /api/v1/internal/openalice/hallucination-check
 //
-// Input:  { content: string, sourceTrail: object }
-// Output: { verdict: "OK" | "HALLUCINATED" | "PARTIAL_HALLUCINATED", flags: string[], reasoning: string }
+// Input (extended):
+//   { content: string, sourceTrail: SourceTrailEntry[], rawSources?: RawSourceEntry[] }
 //
-// Used by AI reviewer in /run-batch downstream to verify factual grounding.
+// Output (extended):
+//   { verdict: "OK"|"HALLUCINATED"|"PARTIAL_HALLUCINATED"|"ERROR",
+//     confidence: number (0-1),
+//     flags: Array<{ claim, type, sourceMatch }>,
+//     reasoning: string,
+//     ragUsed: boolean }
+//
+// Algorithm:
+//   Pass 1 (OPENAI_CLAIM_EXTRACT_MODEL, default gpt-4o-mini): extract atomic factual claims
+//   Pass 2 (OPENAI_HALLUCINATION_VERIFY_MODEL, default gpt-4.1): cross-validate each claim
+//     vs rawSources (FinMind raw row JSON / URL / sha256)
+//   No rawSources → single-pass fallback + caveat RAG_NOT_USED__SOURCE_PACK_MISSING
+//
+// Pipeline integration:
+//   HALLUCINATED             → force reject + audit_log type=HALLUCINATION_REJECT
+//   PARTIAL_HALLUCINATED + confidence<0.7 → manual_review queue
+//   OK or PARTIAL high-conf  → normal pass
+//   ERROR                    → safe-default block publish (treat as manual_review)
+//
 // Hard lines:
 //   - Owner/Admin only (requireOpenAliceAdmin gate)
-//   - OPENAI_API_KEY must be present — if absent, returns verdict=OK + reason=no_api_key (safe default)
-//   - Never logs the API key
-//   - No buy/sell/目標價/必賺/勝率/guaranteed return language in prompt
+//   - OPENAI_API_KEY absent → verdict=OK + caveat (safe non-blocking default)
+//   - Never log API key
+//   - No buy/sell/目標價/必賺/勝率/guaranteed return language in prompts
 // =============================================================================
-
-const HALLUCINATION_CHECK_OPENAI_URL = "https://api.openai.com/v1/chat/completions";
-const HALLUCINATION_CHECK_MODEL = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
-const HALLUCINATION_CHECK_TIMEOUT_MS = 20_000;
 
 app.post("/api/v1/internal/openalice/hallucination-check", async (c) => {
   const denial = requireOpenAliceAdmin(c);
   if (denial) return denial;
 
-  let body: { content?: unknown; sourceTrail?: unknown } = {};
+  let body: { content?: unknown; sourceTrail?: unknown; rawSources?: unknown } = {};
   try {
     body = await c.req.json();
   } catch {
@@ -5630,6 +5644,7 @@ app.post("/api/v1/internal/openalice/hallucination-check", async (c) => {
 
   const content = typeof body.content === "string" ? body.content.trim() : null;
   const sourceTrail = body.sourceTrail ?? null;
+  const rawSourcesRaw = Array.isArray(body.rawSources) ? body.rawSources : [];
 
   if (!content) {
     return c.json({ error: "content_required" }, 400);
@@ -5640,111 +5655,62 @@ app.post("/api/v1/internal/openalice/hallucination-check", async (c) => {
     return c.json({
       data: {
         verdict: "OK",
+        confidence: 1.0,
         flags: [],
-        reasoning: "no_api_key: hallucination check skipped — OPENAI_API_KEY not configured"
+        reasoning: "no_api_key: hallucination check skipped — OPENAI_API_KEY not configured",
+        ragUsed: false
       }
     });
   }
 
-  const sourceTrailStr = sourceTrail
-    ? JSON.stringify(sourceTrail, null, 2)
-    : "(no source trail provided)";
+  const { runRagHallucinationCheck } = await import("./hallucination-rag.js");
 
-  const prompt = `You are a factual grounding auditor. Your task is to identify hallucinated or ungrounded claims.
+  const claimExtractModel =
+    process.env["OPENAI_CLAIM_EXTRACT_MODEL"] ?? "gpt-4o-mini";
+  const crossValidateModel =
+    process.env["OPENAI_HALLUCINATION_VERIFY_MODEL"] ?? "gpt-4.1";
 
-Given this content:
-"""
-${content}
-"""
+  // Coerce rawSources: keep entries that have sourceId + content strings
+  type RawSrc = { sourceId?: unknown; content?: unknown; sha256?: unknown; url?: unknown };
+  const rawSources = (rawSourcesRaw as RawSrc[])
+    .filter((e) => typeof e.sourceId === "string" && typeof e.content === "string")
+    .map((e) => ({
+      sourceId: e.sourceId as string,
+      content: e.content as string,
+      sha256: typeof e.sha256 === "string" ? e.sha256 : null,
+      url: typeof e.url === "string" ? e.url : null
+    }));
 
-And this source trail (what data sources back the content):
-${sourceTrailStr}
-
-Instructions:
-1. Identify any factual claims in the content that cannot be traced back to the source trail.
-2. Do NOT flag analytical observations, interpretation, or general knowledge.
-3. Do NOT flag buy/sell recommendations — these are already prohibited upstream.
-4. List only claims that are directly contradicted by or entirely absent from the source trail.
-5. Output ONLY this JSON (no markdown fence, no extra text):
-
-{"verdict":"OK|HALLUCINATED|PARTIAL_HALLUCINATED","flags":[],"reasoning":"<1-2 sentences>"}
-
-Where:
-- OK = all factual claims are grounded in the source trail
-- HALLUCINATED = major factual claims have no source trail support
-- PARTIAL_HALLUCINATED = some claims are grounded, some are not`;
-
-  let res: Response;
+  let result: Awaited<ReturnType<typeof runRagHallucinationCheck>>;
   try {
-    res = await fetch(HALLUCINATION_CHECK_OPENAI_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: HALLUCINATION_CHECK_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 512,
-        temperature: 0.1
-      }),
-      signal: AbortSignal.timeout(HALLUCINATION_CHECK_TIMEOUT_MS)
+    result = await runRagHallucinationCheck({
+      apiKey,
+      content,
+      sourceTrail,
+      rawSources,
+      claimExtractModel,
+      crossValidateModel
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.warn(`[hallucination-check] OpenAI call failed: ${msg}`);
+    console.warn(`[hallucination-check] runRagHallucinationCheck threw: ${msg}`);
     return c.json({
       data: {
-        verdict: "OK",
+        verdict: "ERROR",
+        confidence: 0,
         flags: [],
-        reasoning: `openai_call_failed: ${msg} — check skipped, safe default`
+        reasoning: `rag_check_exception: ${msg} — safe default block`,
+        ragUsed: false
       }
     });
   }
 
-  if (!res.ok) {
-    const body2 = await res.text().catch(() => "(no body)");
-    console.warn(`[hallucination-check] OpenAI HTTP ${res.status}: ${body2.slice(0, 120)}`);
-    return c.json({
-      data: {
-        verdict: "OK",
-        flags: [],
-        reasoning: `openai_http_${res.status}: check skipped, safe default`
-      }
-    });
-  }
+  console.info(
+    `[hallucination-check] verdict=${result.verdict} confidence=${result.confidence.toFixed(2)} ` +
+    `flags=${result.flags.length} ragUsed=${result.ragUsed}`
+  );
 
-  let respData: unknown;
-  try {
-    respData = await res.json();
-  } catch {
-    return c.json({ data: { verdict: "OK", flags: [], reasoning: "openai_parse_error: safe default" } });
-  }
-
-  const rawContent: string | null =
-    respData &&
-    typeof respData === "object" &&
-    "choices" in respData &&
-    Array.isArray((respData as { choices: unknown[] }).choices) &&
-    (respData as { choices: { message?: { content?: unknown } }[] }).choices[0]?.message?.content
-      ? String((respData as { choices: { message?: { content?: unknown } }[] }).choices[0].message!.content)
-      : null;
-
-  if (!rawContent) {
-    return c.json({ data: { verdict: "OK", flags: [], reasoning: "openai_empty_response: safe default" } });
-  }
-
-  try {
-    const parsed = JSON.parse(rawContent) as { verdict?: unknown; flags?: unknown; reasoning?: unknown };
-    const verdict = (["OK", "HALLUCINATED", "PARTIAL_HALLUCINATED"] as const).includes(parsed.verdict as "OK")
-      ? parsed.verdict as "OK" | "HALLUCINATED" | "PARTIAL_HALLUCINATED"
-      : "OK";
-    const flags = Array.isArray(parsed.flags) ? (parsed.flags as unknown[]).map(String) : [];
-    const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : "no_reasoning";
-    return c.json({ data: { verdict, flags, reasoning } });
-  } catch {
-    return c.json({ data: { verdict: "OK", flags: [], reasoning: `openai_json_parse_failed: ${rawContent.slice(0, 80)}` } });
-  }
+  return c.json({ data: result });
 });
 
 // =============================================================================
