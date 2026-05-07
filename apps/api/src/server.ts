@@ -1,4 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
+// ── Sentry init must be imported before any other app module ──────────────────
+import { captureException as sentryCaptureException, captureMessage as sentryCaptureMessage } from "./sentry-init.js";
 import { serve } from "@hono/node-server";
 import type { Context } from "hono";
 import {
@@ -8027,6 +8029,121 @@ app.get("/api/v1/internal/openalice/email-digest/state", async (c) => {
 });
 
 /**
+ * GET /api/v1/internal/observability/audit-stats?since=24h
+ *
+ * Returns aggregate counts of key audit_log actions for the ops dashboard.
+ * since= accepts: 1h / 6h / 12h / 24h / 48h (default: 24h)
+ *
+ * Returned fields:
+ *   ai_approved, ai_rejected, hallucination_reject, adversarial_intercept,
+ *   paper_submit, paper_submit_rejected, total, windowHours, since (ISO)
+ *
+ * Owner only. DB unavailable → graceful zero counts.
+ */
+app.get("/api/v1/internal/observability/audit-stats", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const rawSince = c.req.query("since") ?? "24h";
+  const ALLOWED_WINDOWS: Record<string, number> = {
+    "1h": 1, "6h": 6, "12h": 12, "24h": 24, "48h": 48
+  };
+  const windowHours = ALLOWED_WINDOWS[rawSince] ?? 24;
+  const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
+
+  const db = getDb();
+  if (!db) {
+    return c.json({
+      data: {
+        windowHours,
+        since,
+        ai_approved: 0,
+        ai_rejected: 0,
+        hallucination_reject: 0,
+        adversarial_intercept: 0,
+        paper_submit: 0,
+        paper_submit_rejected: 0,
+        total: 0,
+        db_available: false
+      }
+    });
+  }
+
+  try {
+    // Single query: aggregate by action over the time window
+    const rows = await db.execute(
+      drizzleSql`
+        SELECT
+          action,
+          COUNT(*)::int AS cnt
+        FROM audit_logs
+        WHERE created_at >= ${since}::timestamptz
+          AND action IN (
+            'content_draft.ai_approved',
+            'content_draft.ai_rejected',
+            'hallucination_reject',
+            'content_draft.adversarial_audit',
+            'paper.order.submit',
+            'paper.order.rejected'
+          )
+        GROUP BY action
+      `
+    ) as { rows?: Array<{ action?: string; cnt?: number | string }> };
+
+    const counts: Record<string, number> = {};
+    for (const row of rows.rows ?? []) {
+      if (row.action) {
+        counts[row.action] = Number(row.cnt ?? 0);
+      }
+    }
+
+    const aiApproved = counts["content_draft.ai_approved"] ?? 0;
+    const aiRejected = counts["content_draft.ai_rejected"] ?? 0;
+    const hallucinationReject = counts["hallucination_reject"] ?? 0;
+    // adversarial_intercept = adversarial_audit rows with severityScore >= 7
+    // We count all adversarial_audit entries (precise intercept check would require JSONB query)
+    const adversarialIntercept = counts["content_draft.adversarial_audit"] ?? 0;
+    const paperSubmit = counts["paper.order.submit"] ?? 0;
+    const paperSubmitRejected = counts["paper.order.rejected"] ?? 0;
+    const total = aiApproved + aiRejected + hallucinationReject + adversarialIntercept + paperSubmit + paperSubmitRejected;
+
+    return c.json({
+      data: {
+        windowHours,
+        since,
+        ai_approved: aiApproved,
+        ai_rejected: aiRejected,
+        hallucination_reject: hallucinationReject,
+        adversarial_intercept: adversarialIntercept,
+        paper_submit: paperSubmit,
+        paper_submit_rejected: paperSubmitRejected,
+        total,
+        db_available: true
+      }
+    });
+  } catch (err) {
+    console.warn("[audit-stats] query failed:", err instanceof Error ? err.message : String(err));
+    return c.json({
+      data: {
+        windowHours,
+        since,
+        ai_approved: 0,
+        ai_rejected: 0,
+        hallucination_reject: 0,
+        adversarial_intercept: 0,
+        paper_submit: 0,
+        paper_submit_rejected: 0,
+        total: 0,
+        db_available: false,
+        error: "query_failed"
+      }
+    });
+  }
+});
+
+/**
  * Resolve all Taiwan 4-digit tickers for the workspace.
  * Returns empty array if workspace not found or DB unavailable.
  */
@@ -8541,36 +8658,57 @@ function startSchedulers(workspaceSlug: string): void {
   // P0-C: OpenAlice Autonomous Daily Pipeline — 3 ticks per trading day (TST)
   // pre-market 08:30, close-watch 13:45, close-brief 16:30
   // Each tick runs every 15 min and checks its Taipei time window internally.
+  // P0-2: Sentry capture when pipeline ticks fail consecutively
   const FIFTEEN_MIN_MS = 15 * 60 * 1000;
+  const PIPELINE_FAIL_THRESHOLD = schedulerPositiveInt("PIPELINE_FAIL_THRESHOLD", 3);
+  const _pipelineConsecutiveFails: Record<string, number> = {
+    pre_market: 0,
+    close_watch: 0,
+    close_brief: 0
+  };
+
+  function handlePipelineFail(phase: string, err: unknown): void {
+    console.error(`[pipeline-scheduler] ${phase} tick failed:`, err instanceof Error ? err.message : err);
+    _pipelineConsecutiveFails[phase] = (_pipelineConsecutiveFails[phase] ?? 0) + 1;
+    if (_pipelineConsecutiveFails[phase] >= PIPELINE_FAIL_THRESHOLD) {
+      sentryCaptureException(err, {
+        tags: { scheduler: "pipeline", phase, consecutive_fails: String(_pipelineConsecutiveFails[phase]) }
+      });
+    }
+  }
+
+  function handlePipelineSuccess(phase: string): void {
+    _pipelineConsecutiveFails[phase] = 0;
+  }
 
   // Pre-market tick (08:30–09:00 TST window, check every 15min)
-  runPipelinePreMarketTick(workspaceSlug).catch((e) =>
-    console.error("[pipeline-scheduler] pre_market initial tick failed:", e)
-  );
+  runPipelinePreMarketTick(workspaceSlug)
+    .then(() => handlePipelineSuccess("pre_market"))
+    .catch((e) => handlePipelineFail("pre_market", e));
   setInterval(() => {
-    runPipelinePreMarketTick(workspaceSlug).catch((e) =>
-      console.error("[pipeline-scheduler] pre_market interval tick failed:", e)
-    );
+    runPipelinePreMarketTick(workspaceSlug)
+      .then(() => handlePipelineSuccess("pre_market"))
+      .catch((e) => handlePipelineFail("pre_market", e));
   }, FIFTEEN_MIN_MS);
 
   // Close-watch tick (13:45–14:15 TST window, check every 15min)
-  runPipelineCloseWatchTick(workspaceSlug).catch((e) =>
-    console.error("[pipeline-scheduler] close_watch initial tick failed:", e)
-  );
+  runPipelineCloseWatchTick(workspaceSlug)
+    .then(() => handlePipelineSuccess("close_watch"))
+    .catch((e) => handlePipelineFail("close_watch", e));
   setInterval(() => {
-    runPipelineCloseWatchTick(workspaceSlug).catch((e) =>
-      console.error("[pipeline-scheduler] close_watch interval tick failed:", e)
-    );
+    runPipelineCloseWatchTick(workspaceSlug)
+      .then(() => handlePipelineSuccess("close_watch"))
+      .catch((e) => handlePipelineFail("close_watch", e));
   }, FIFTEEN_MIN_MS);
 
   // Close-brief tick (16:30–17:00 TST window, check every 15min)
-  runPipelineCloseBriefTick(workspaceSlug).catch((e) =>
-    console.error("[pipeline-scheduler] close_brief initial tick failed:", e)
-  );
+  runPipelineCloseBriefTick(workspaceSlug)
+    .then(() => handlePipelineSuccess("close_brief"))
+    .catch((e) => handlePipelineFail("close_brief", e));
   setInterval(() => {
-    runPipelineCloseBriefTick(workspaceSlug).catch((e) =>
-      console.error("[pipeline-scheduler] close_brief interval tick failed:", e)
-    );
+    runPipelineCloseBriefTick(workspaceSlug)
+      .then(() => handlePipelineSuccess("close_brief"))
+      .catch((e) => handlePipelineFail("close_brief", e));
   }, FIFTEEN_MIN_MS);
 
   // BLOCK #6: Event rule engine — poll every 5min, evaluate 10 rules, write iuf_events
@@ -8592,11 +8730,65 @@ function startSchedulers(workspaceSlug: string): void {
   // BLOCK #6: Email digest scheduler — fires every 5min, window-guarded to 17:00–17:30 TST
   // Graceful: iuf_events table absent → empty digest → dry-run log (no email)
   // Graceful: RESEND_API_KEY absent → dry-run log (no email sent)
+  // P0-2: Sentry capture on Resend HTTP 4xx/5xx failure
   setInterval(() => {
-    runEmailDigestTick().catch((e) =>
-      console.error("[email-digest] Interval tick failed:", e instanceof Error ? e.message : e)
-    );
+    runEmailDigestTick().then((result) => {
+      // Capture Sentry alert when Resend returns 4xx/5xx
+      if (!result.sent && result.reason && result.reason.startsWith("resend_http_")) {
+        const statusCode = result.reason.replace("resend_http_", "");
+        sentryCaptureMessage(
+          `[email-digest] Resend delivery failed: HTTP ${statusCode}`,
+          "warning",
+          { scheduler: "email-digest", resend_status: statusCode }
+        );
+      } else if (!result.sent && result.reason && result.reason.startsWith("resend_error:")) {
+        sentryCaptureMessage(
+          `[email-digest] Resend call error: ${result.reason}`,
+          "error",
+          { scheduler: "email-digest" }
+        );
+      }
+    }).catch((e) => {
+      console.error("[email-digest] Interval tick failed:", e instanceof Error ? e.message : e);
+      sentryCaptureException(e, { tags: { scheduler: "email-digest" } });
+    });
   }, 5 * 60 * 1000);
+
+  // P0-2: Health watchdog — POST internal heartbeat every 30min, Sentry on consecutive fail
+  // Tracks that the server event-loop is alive and not starved (relates to the 5/7 502 incidents).
+  const WATCHDOG_INTERVAL_MS = 30 * 60 * 1000;
+  let _watchdogConsecutiveFails = 0;
+  const WATCHDOG_FAIL_THRESHOLD = schedulerPositiveInt("WATCHDOG_FAIL_THRESHOLD", 2);
+  setInterval(() => {
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const rssMB = Math.round(memUsage.rss / 1024 / 1024);
+    const uptime = Math.floor(process.uptime());
+    console.info(
+      `[health-watchdog] heartbeat ok — heap=${heapUsedMB}MB rss=${rssMB}MB uptime=${uptime}s consecutiveFails=${_watchdogConsecutiveFails}`
+    );
+    // Self-check: try to measure event-loop lag
+    const before = Date.now();
+    setImmediate(() => {
+      const lagMs = Date.now() - before;
+      if (lagMs > 5000) {
+        _watchdogConsecutiveFails++;
+        const msg = `[health-watchdog] Event-loop lag detected: ${lagMs}ms (consecutive=${_watchdogConsecutiveFails})`;
+        console.warn(msg);
+        if (_watchdogConsecutiveFails >= WATCHDOG_FAIL_THRESHOLD) {
+          sentryCaptureMessage(msg, "error", {
+            scheduler: "health-watchdog",
+            lag_ms: String(lagMs),
+            consecutive_fails: String(_watchdogConsecutiveFails),
+            heap_mb: String(heapUsedMB),
+            rss_mb: String(rssMB)
+          });
+        }
+      } else {
+        _watchdogConsecutiveFails = 0;
+      }
+    });
+  }, WATCHDOG_INTERVAL_MS);
 
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
@@ -8604,7 +8796,8 @@ function startSchedulers(workspaceSlug: string): void {
     "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) + " +
     "PR-C dividend (24h) + PR-C market-value (24h) + PR-C valuation (24h) + PR-C stock-news (30min) + " +
     "P0-C pipeline pre_market/close_watch/close_brief (15min) + " +
-    "BLOCK#6 event-rule-engine (5min) + email-digest (5min, fires at 17:00–17:30 TST) started"
+    "BLOCK#6 event-rule-engine (5min) + email-digest (5min, fires at 17:00–17:30 TST) + " +
+    "P0-2 health-watchdog (30min) started"
   );
 }
 

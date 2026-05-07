@@ -8,7 +8,7 @@
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
-import { getCompanies, getCompanyKBar, getCompanyOhlcv, getThemes, type FinMindKBarView, type OhlcvBar } from "@/lib/api";
+import { getCompanies, getCompanyAnnouncements, getCompanyKBar, getCompanyOhlcv, getThemes, type FinMindKBarView, type OhlcvBar } from "@/lib/api";
 import type { Company, Theme } from "@iuf-trading-room/contracts";
 import {
   quoteFromOhlcvBars,
@@ -80,16 +80,46 @@ function displayThemeName(theme: Theme) {
   return raw.replace(/^\[ORPHAN\]\s*/i, "待歸檔：").replace(/-\>/g, "→");
 }
 
+/** Y3 fix: map real announcements fetch result to SourceHealthState (no hardcoded "stale"). */
+type AnnouncementsSourceState =
+  | { outcome: "live"; count: number; fetchedAt: string }
+  | { outcome: "empty"; fetchedAt: string }
+  | { outcome: "degraded"; fetchedAt: string }
+  | { outcome: "error"; fetchedAt: string };
+
 function buildSourceStatus(
   company: Company,
   bars: OhlcvBar[],
   ohlcvReason: string,
   kbar: { state: string; reason: string; rows: number; date: string },
+  announcementsSource: AnnouncementsSourceState,
 ): SourceStatus[] {
   const lastBar = bars.at(-1);
   const lastBarTime = lastBar ? new Date(`${lastBar.dt}T13:30:00+08:00`).toISOString() : new Date().toISOString();
   const priceSource = lastBar?.source === "tej" ? "FinMind/TEJ 正式 K 線" : lastBar?.source === "kgi" ? "KGI 唯讀報價" : null;
   const kbarLive = kbar.state === "LIVE" && kbar.rows > 0;
+
+  // Map announcements outcome → SourceHealthState (LIVE/STALE/EMPTY/BLOCKED/DEGRADED/ERROR all supported by SourceStatusCard)
+  const annState: SourceStatus["state"] =
+    announcementsSource.outcome === "live" ? "live" :
+    announcementsSource.outcome === "empty" ? "stale" :
+    "error";
+
+  const annSummary =
+    announcementsSource.outcome === "live"
+      ? `${announcementsSource.count} 則重大訊息 (近 30 日)`
+      : announcementsSource.outcome === "empty"
+      ? "近 30 日無重大訊息"
+      : "重大訊息資料暫時無法讀取";
+
+  const annDetail =
+    announcementsSource.outcome === "live"
+      ? `已從臺灣證交所取得 ${announcementsSource.count} 則近 30 日重大訊息。`
+      : announcementsSource.outcome === "empty"
+      ? "TWSE 回傳空資料 — 近 30 日無重大訊息，非異常。"
+      : announcementsSource.outcome === "degraded"
+      ? "TWSE OpenAPI 返回非 JSON 內容 (維護模式)；重大訊息暫時無法讀取。"
+      : "無法連線至 TWSE OpenAPI，請稍後重試。";
 
   return [
     {
@@ -115,10 +145,10 @@ function buildSourceStatus(
     {
       id: "twse-announcements",
       label: "重大訊息",
-      state: "stale",
-      summary: "個股公告與新聞線索",
-      lastSeen: new Date().toISOString(),
-      detail: "重大訊息欄會自行顯示正常、無資料或暫停。",
+      state: annState,
+      summary: annSummary,
+      lastSeen: announcementsSource.fetchedAt,
+      detail: annDetail,
       queueDepth: 0,
     },
     {
@@ -254,6 +284,30 @@ export default async function CompanyDetailPage({
     console.warn("[company-detail] getThemes failed; hiding raw theme ids", { symbol, err: friendlyError(err) });
   }
 
+  // Y3 fix: fetch announcements server-side (lightweight, fail-soft) to get real state.
+  // AnnouncementsPanel still fetches client-side for rendering — this is a HEAD-style probe
+  // only used to populate the SourceStatusCard badge (honest state, not hardcoded "stale").
+  let announcementsSource: Parameters<typeof buildSourceStatus>[4];
+  {
+    const fetchedAt = new Date().toISOString();
+    try {
+      const annRes = await getCompanyAnnouncements(company.id, { days: 30 });
+      // Detect degraded envelope (state="DEGRADED" field appended by PR #265 F3 fix)
+      const envelope = annRes as typeof annRes & { state?: string };
+      if (envelope.state === "DEGRADED") {
+        announcementsSource = { outcome: "degraded", fetchedAt };
+      } else {
+        const items = annRes.data ?? [];
+        announcementsSource = items.length > 0
+          ? { outcome: "live", count: items.length, fetchedAt }
+          : { outcome: "empty", fetchedAt };
+      }
+    } catch (err) {
+      console.warn("[company-detail] getCompanyAnnouncements probe failed", { id: company.id, err: friendlyError(err) });
+      announcementsSource = { outcome: "error", fetchedAt };
+    }
+  }
+
   const detail = toCompanyDetailView(company, symbol, themeLabelById);
   const quote = quoteFromOhlcvBars(bars);
   const sources = buildSourceStatus(company, bars, ohlcvReason, {
@@ -261,7 +315,7 @@ export default async function CompanyDetailPage({
     reason: kbarReason,
     rows: kbarView?.rows.length ?? 0,
     date: kbarView?.date ?? kbarDate,
-  });
+  }, announcementsSource);
   const dailyChangePct = quote?.changePercent ?? null;
   const kbarRowCount = kbarView?.rows.length ?? 0;
   const kbarLive = kbarState === "LIVE" && kbarRowCount > 0;
