@@ -5983,6 +5983,141 @@ app.get("/api/v1/lab/strategies", async (c) => {
 });
 
 // =============================================================================
+// BLOCK #9 — GET /api/v1/lab/three-strategy/*  (14 endpoints)
+// =============================================================================
+// Lab → TR data flow: three-strategy paper fixture consume (read-only).
+//
+// Source: data/lab/three-strategy/three_strategy_paper_fixture_api_snapshot_v1.json
+// (embedded from IUF_QUANT_LAB/reports/trading_room — lab is never called at runtime)
+//
+// Lab / TR alignment lock rules:
+//   - TR is read-only consumer; never writes to lab
+//   - cash_order_path = BLOCKED_until_Yang_final_manual_ACK always enforced
+//   - mode = READ_ONLY_FIXTURE_API + fixture_label = PAPER_FIXTURE on all responses
+//   - No broker write-side fields, no credentials, no raw engineering semantics
+//   - Graceful null when embedded file missing (200, ok: false, meta.source=unavailable)
+//
+// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES gate)
+// Optional query param ?strategy_id= on signals/paper-orders/positions/risk-events
+// =============================================================================
+
+app.get("/api/v1/lab/three-strategy/health", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureHealth } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureHealth();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/status", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureStatus } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureStatus();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/files", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureFiles } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureFiles();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/strategies", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureStrategies } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureStrategies();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/signals", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureSignals } = await import("./lab-three-strategy-consumer.js");
+  const strategyId = c.req.query("strategy_id");
+  const result = getFixtureSignals(strategyId);
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/paper-orders", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixturePaperOrders } = await import("./lab-three-strategy-consumer.js");
+  const strategyId = c.req.query("strategy_id");
+  const result = getFixturePaperOrders(strategyId);
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/positions", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixturePositions } = await import("./lab-three-strategy-consumer.js");
+  const strategyId = c.req.query("strategy_id");
+  const result = getFixturePositions(strategyId);
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/risk-events", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureRiskEvents } = await import("./lab-three-strategy-consumer.js");
+  const strategyId = c.req.query("strategy_id");
+  const result = getFixtureRiskEvents(strategyId);
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/risk-config", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureRiskConfig } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureRiskConfig();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/decision-matrix", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureDecisionMatrix } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureDecisionMatrix();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/execution-board", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureExecutionBoard } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureExecutionBoard();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/position-sensitivity", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixturePositionSensitivity } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixturePositionSensitivity();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/master-index", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureMasterIndex } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureMasterIndex();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/snapshot", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureFullSnapshot } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureFullSnapshot();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+// =============================================================================
 // Letter D — GET /api/v1/briefs/:id  (brief detail with audit chain)
 // =============================================================================
 // Returns a single daily_brief by UUID or date string (YYYY-MM-DD), plus

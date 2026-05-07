@@ -132,6 +132,18 @@ import {
   loadLabSanctionedSnapshot,
   labStatusDisplayWording
 } from "../apps/api/src/lab-strategy-consumer.ts";
+import {
+  loadThreeStrategySnapshot,
+  getFixtureHealth,
+  getFixtureStatus,
+  getFixtureStrategies,
+  getFixtureSignals,
+  getFixturePaperOrders,
+  getFixturePositions,
+  getFixtureRiskEvents,
+  getFixtureFullSnapshot,
+  _resetThreeStrategyCache
+} from "../apps/api/src/lab-three-strategy-consumer.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -8387,4 +8399,109 @@ test("brief detail: auditChain hardReject rules list is non-empty and stable", (
   for (const rule of HARD_REJECT_RULES) {
     assert.ok(rule.length > 0, `rule must not be empty: ${rule}`);
   }
+});
+
+// =============================================================================
+// lab-three-strategy-consumer tests (BLOCK #9)
+// =============================================================================
+
+test("lab-three-strategy-consumer: loadThreeStrategySnapshot returns valid snapshot from embedded file", () => {
+  _resetThreeStrategyCache();
+  const snapshot = loadThreeStrategySnapshot();
+  assert.ok(snapshot !== null, "snapshot must not be null — embedded file should be present");
+  assert.ok(typeof snapshot!.schema_version === "string", "schema_version must be string");
+  assert.equal(snapshot!.cash_order_path, "BLOCKED_until_Yang_final_manual_ACK", "cash_order_path must be BLOCKED");
+  assert.equal(snapshot!.mode, "READ_ONLY_FIXTURE_API", "mode must be READ_ONLY_FIXTURE_API");
+  assert.ok(Array.isArray(snapshot!.strategies), "strategies must be array");
+  assert.ok(snapshot!.strategies.length >= 3, "must have at least 3 strategies");
+  assert.ok(Array.isArray(snapshot!.signals), "signals must be array");
+  assert.ok(snapshot!.signals.length > 0, "signals must be non-empty");
+  assert.ok(Array.isArray(snapshot!.paper_orders), "paper_orders must be array");
+  assert.ok(snapshot!.paper_orders.length > 0, "paper_orders must be non-empty");
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixtureStrategies enforces alignment lock on all 3 strategies", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureStrategies();
+  assert.ok(result.ok, "getFixtureStrategies must succeed when embedded file is present");
+  assert.ok(Array.isArray(result.data) && result.data!.length >= 3, "must return at least 3 strategies");
+  for (const s of result.data!) {
+    assert.equal(s.cash_order_path, "BLOCKED_until_Yang_final_manual_ACK", `strategy ${s.strategy_id} must have BLOCKED cash_order_path`);
+    assert.equal(s.broker_route, "NONE_PAPER_ONLY", `strategy ${s.strategy_id} must have NONE_PAPER_ONLY broker_route`);
+    assert.equal(s.fixture_label, "PAPER_FIXTURE", `strategy ${s.strategy_id} must carry PAPER_FIXTURE label`);
+    assert.ok(typeof s.strategy_id === "string" && s.strategy_id.length > 0, "strategy_id must be non-empty");
+    assert.ok(typeof s.display_name_zh === "string", "display_name_zh must be present");
+  }
+  // Verify the three known strategies are present
+  const ids = result.data!.map((s) => s.strategy_id);
+  assert.ok(ids.includes("MAIN_execution_rank_buffer_top20"), "MAIN strategy must be present");
+  assert.ok(ids.includes("rs_20_60_low_drawdown__h20__top5"), "rs_20_60 strategy must be present");
+  assert.ok(ids.includes("cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25"), "cont_liq strategy must be present");
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixtureSignals returns 20 signals and strategy_id filter works", () => {
+  _resetThreeStrategyCache();
+  const all = getFixtureSignals();
+  assert.ok(all.ok, "getFixtureSignals (no filter) must succeed");
+  assert.ok(Array.isArray(all.data) && all.data!.length === 20, `must return 20 signals (got ${all.data?.length})`);
+
+  // Filter by MAIN strategy
+  const mainOnly = getFixtureSignals("MAIN_execution_rank_buffer_top20");
+  assert.ok(mainOnly.ok, "filtered query must succeed");
+  assert.ok(Array.isArray(mainOnly.data) && mainOnly.data!.length > 0, "MAIN strategy must have signals");
+  for (const sig of mainOnly.data!) {
+    assert.equal(sig["strategy_id"], "MAIN_execution_rank_buffer_top20", "all signals must belong to MAIN strategy");
+    // Alignment lock: no cash order fields should leak
+    assert.ok(!("password" in sig) && !("token" in sig) && !("api_key" in sig), "no credential fields in signal");
+  }
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixturePaperOrders returns 20 filled orders, all BLOCKED cash path", () => {
+  _resetThreeStrategyCache();
+  const result = getFixturePaperOrders();
+  assert.ok(result.ok, "getFixturePaperOrders must succeed");
+  assert.ok(Array.isArray(result.data) && result.data!.length === 20, `must return 20 paper orders (got ${result.data?.length})`);
+  for (const order of result.data!) {
+    assert.equal(order["cash_order_blocked"], true, "every order must have cash_order_blocked=true");
+    assert.equal(order["broker_route"], "NONE_PAPER_ONLY", "every order must have NONE_PAPER_ONLY broker_route");
+    assert.equal(order["paper_status"], "FILLED", "all orders must be FILLED (per fixture spec)");
+  }
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixtureRiskEvents returns 25 risk events", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureRiskEvents();
+  assert.ok(result.ok, "getFixtureRiskEvents must succeed");
+  assert.ok(Array.isArray(result.data) && result.data!.length === 25, `must return 25 risk events (got ${result.data?.length})`);
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: meta always carries BLOCKED cash_order_path and PAPER_FIXTURE label", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureHealth();
+  assert.ok(result.meta.cashOrderPath === "BLOCKED_until_Yang_final_manual_ACK", "meta.cashOrderPath must be BLOCKED");
+  assert.equal(result.meta.fixtureLabel, "PAPER_FIXTURE", "meta.fixtureLabel must be PAPER_FIXTURE");
+  assert.equal(result.meta.mode, "READ_ONLY_FIXTURE_API", "meta.mode must be READ_ONLY_FIXTURE_API");
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixtureFullSnapshot snapshot endpoint has all 14 section keys present", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureFullSnapshot();
+  assert.ok(result.ok, "full snapshot must succeed");
+  const data = result.data as Record<string, unknown>;
+  const requiredKeys = ["strategies", "signals", "paper_orders", "positions", "risk_events",
+    "risk_config", "decision_matrix", "execution_board", "position_sensitivity",
+    "master_index", "status", "files", "health", "contract"];
+  for (const key of requiredKeys) {
+    assert.ok(key in data, `snapshot must have key: ${key}`);
+  }
+  assert.equal(data["cash_order_path"], "BLOCKED_until_Yang_final_manual_ACK", "full snapshot must enforce BLOCKED cash path");
+  assert.equal(data["mode"], "READ_ONLY_FIXTURE_API", "full snapshot mode must be READ_ONLY_FIXTURE_API");
+  assert.equal(data["fixture_label"], "PAPER_FIXTURE", "full snapshot must carry PAPER_FIXTURE label");
+  _resetThreeStrategyCache();
 });
