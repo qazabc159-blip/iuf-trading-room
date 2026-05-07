@@ -1,0 +1,104 @@
+{
+  "createdAtTaipei": "2026-05-07T00:43:55+08:00",
+  "current_strategy_count": {
+    "do_we_have_3_strategy_candidates_now": true,
+    "killed_hold": 2,
+    "killed_hold_names": [
+      "FAST/MID",
+      "VAFT"
+    ],
+    "missing_to_target_3": 0,
+    "probation": 1,
+    "probation_names": [
+      "Family C"
+    ],
+    "serious_research_lead_names": [
+      "Meta Allocator"
+    ],
+    "serious_research_leads": 1,
+    "strong_candidate_names": [
+      "MAIN_execution_rank_buffer_top20",
+      "rs_20_60_low_drawdown__h20__top5",
+      "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25"
+    ],
+    "strong_candidates": 3
+  },
+  "plainLanguageAnswer": "YES",
+  "portfolioVerdict": "THREE_STRATEGY_PORTFOLIO_VALID_RESEARCH_SYSTEM",
+  "rows": [
+    {
+      "biggest_caveat": "sector/regime dependent",
+      "candidate_id": "MAIN_execution_rank_buffer_top20",
+      "counts_as_strategy_candidate": true,
+      "key_metrics": "strict-OOS 120bps approx +5.60%; 200bps approx +4.80%",
+      "next_action": "fresh overlay-open append",
+      "status": "STRONG_CANDIDATE",
+      "verdict": "MAIN_STRONG"
+    },
+    {
+      "biggest_caveat": "short history / 12 rebalance primary",
+      "candidate_id": "rs_20_60_low_drawdown__h20__top5",
+      "counts_as_strategy_candidate": true,
+      "key_metrics": "strict-OOS 120bps 0.16112419514350995",
+      "next_action": "append and longer validation",
+      "status": "STRATEGY2_RS2060_CONFIRMED",
+      "verdict": "STRATEGY2_RS2060_CONFIRMED"
+    },
+    {
+      "biggest_caveat": "needs append confirmation after turnover repair",
+      "candidate_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "counts_as_strategy_candidate": true,
+      "key_metrics": "{\"execution_variant\": \"turnover_cap_0.25\", \"full_120bps\": 0.058180902032968336, \"strict_oos_120bps\": 0.08717103399327547, \"strict_oos_150bps\": 0.08642103399327547, \"strict_oos_200bps\": 0.08517103399327547, \"strict_oos_250bps\": 0.08392103399327547, \"turnover\": 0.3142857142857142, \"turnoverReductionPct\": 0.6764705882352942, \"maxDD120\": -0.07474473831287076, \"ir120\": 3.388280233862295, \"hitRate120\": 0.7142857142857143, \"top3StockOut120\": 0.027040634771349683, \"leaveLargestSectorOut120\": 0.047856489042112295, \"transactionCount\": 22, \"averageHoldingAgeProxy\": 3.1818181818181825, \"capacityProxyMedianDollarVolume\": 3039992721.57, \"passesRepair\": true}",
+      "next_action": "append and concentration monitoring",
+      "status": "STRATEGY3_TURNOVER_REPAIRED",
+      "verdict": "STRATEGY3_TURNOVER_REPAIRED"
+    },
+    {
+      "biggest_caveat": "fallback is only counted through Strategy #3 row if selected",
+      "candidate_id": "none",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "{}",
+      "next_action": "formal append if selected",
+      "status": "FALLBACK_NOT_USED",
+      "verdict": "FALLBACK_NOT_USED"
+    },
+    {
+      "biggest_caveat": "state sample",
+      "candidate_id": "Meta Allocator",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "random state placebo weak",
+      "next_action": "append more joint panel dates",
+      "status": "META_ALLOCATOR_RESEARCH_LEAD_NEEDS_APPEND",
+      "verdict": "META_ALLOCATOR_RESEARCH_LEAD_NEEDS_APPEND"
+    },
+    {
+      "biggest_caveat": "non-overlap validation failed",
+      "candidate_id": "Family C",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "executable decay",
+      "next_action": "append-only",
+      "status": "PROBATION",
+      "verdict": "FAMILYC_EXECUTION_DECAY_PROBATION"
+    },
+    {
+      "biggest_caveat": "old shapes killed",
+      "candidate_id": "FAST/MID",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "no current edge",
+      "next_action": "no old rescue",
+      "status": "HOLD",
+      "verdict": "HOLD_NO_CURRENT_EDGE"
+    },
+    {
+      "biggest_caveat": "not standalone",
+      "candidate_id": "VAFT",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "feature library",
+      "next_action": "library only",
+      "status": "LIBRARY_ONLY",
+      "verdict": "LIBRARY_ONLY"
+    }
+  ],
+  "schema": "final_strategy_count_board_v15",
+  "selectedStrategy3": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25"
+}
