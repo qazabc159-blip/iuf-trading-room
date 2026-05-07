@@ -1,0 +1,2197 @@
+{
+  "schema_version": "three_strategy_paper_fixture_api_v1",
+  "created_at_taipei": "2026-05-07T23:59:00+08:00",
+  "mode": "READ_ONLY_FIXTURE_API",
+  "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+  "broker_write_side_touched": false,
+  "broker_route": "NONE_PAPER_ONLY",
+  "health": {
+    "ok": true,
+    "endpoint_count": 14,
+    "source_file_count": 14,
+    "missing_source_files": []
+  },
+  "contract": {
+    "schema_version": "three_strategy_paper_fixture_api_contract_v1",
+    "created_at_taipei": "2026-05-07T23:59:00+08:00",
+    "base_url_default": "http://127.0.0.1:8765",
+    "mode": "READ_ONLY_FIXTURE_API",
+    "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+    "broker_write_side_required": false,
+    "broker_route": "NONE_PAPER_ONLY",
+    "endpoints": [
+      {
+        "path": "/health",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/status",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/files",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/strategies",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/signals",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/paper-orders",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/positions",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/risk-events",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/risk-config",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/decision-matrix",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/execution-board",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/position-sensitivity",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/master-index",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      },
+      {
+        "path": "/api/trading-room/three-strategy/snapshot",
+        "method": "GET",
+        "auth": "none_local_fixture",
+        "returns": "application/json",
+        "cash_order_side_effect": false
+      }
+    ],
+    "source_files": {
+      "readiness_summary": "reports/trading_room/three_strategy_micro_live_summary_v1.json",
+      "risk_config": "reports/trading_room/three_strategy_micro_live_risk_engine_config_v1.json",
+      "signal_schema": "reports/trading_room/three_strategy_micro_live_signal_export_schema_v1.json",
+      "signals": "reports/trading_room/three_strategy_micro_signal_samples_v1.csv",
+      "orders": "reports/trading_room/three_strategy_micro_paper_orders_v1.csv",
+      "positions": "reports/trading_room/three_strategy_micro_paper_positions_v1.csv",
+      "risk_events": "reports/trading_room/three_strategy_micro_paper_risk_events_v1.csv",
+      "paper_summary": "reports/trading_room/three_strategy_micro_paper_harness_smoke_v1.json",
+      "position_sensitivity": "reports/trading_room/three_strategy_micro_pilot_position_cap_sensitivity_v1.json",
+      "decision_matrix": "reports/trading_room/yang_three_strategy_micro_pilot_decision_matrix_v1.json",
+      "execution_board": "reports/trading_room/three_strategy_week1_execution_board_v1.csv",
+      "master_index": "reports/trading_room/three_strategy_3week_acceleration_master_index_v1.json",
+      "jason_fixture": "reports/trading_room/jason_three_strategy_paper_harness_fixture_pack_v1.json",
+      "bruce_queue": "reports/trading_room/bruce_three_strategy_review_queue_v1.json"
+    },
+    "client_notes": [
+      "This is a local read-only mock backend for TR/frontend wiring.",
+      "It never sends broker orders and never calls external APIs.",
+      "Use query parameter ?strategy_id=... on signals, paper-orders, positions, and risk-events to filter."
+    ]
+  },
+  "files": [
+    {
+      "key": "readiness_summary",
+      "path": "reports/trading_room/three_strategy_micro_live_summary_v1.json",
+      "exists": true,
+      "bytes": 16359
+    },
+    {
+      "key": "risk_config",
+      "path": "reports/trading_room/three_strategy_micro_live_risk_engine_config_v1.json",
+      "exists": true,
+      "bytes": 1801
+    },
+    {
+      "key": "signal_schema",
+      "path": "reports/trading_room/three_strategy_micro_live_signal_export_schema_v1.json",
+      "exists": true,
+      "bytes": 1551
+    },
+    {
+      "key": "signals",
+      "path": "reports/trading_room/three_strategy_micro_signal_samples_v1.csv",
+      "exists": true,
+      "bytes": 4961
+    },
+    {
+      "key": "orders",
+      "path": "reports/trading_room/three_strategy_micro_paper_orders_v1.csv",
+      "exists": true,
+      "bytes": 4722
+    },
+    {
+      "key": "positions",
+      "path": "reports/trading_room/three_strategy_micro_paper_positions_v1.csv",
+      "exists": true,
+      "bytes": 847
+    },
+    {
+      "key": "risk_events",
+      "path": "reports/trading_room/three_strategy_micro_paper_risk_events_v1.csv",
+      "exists": true,
+      "bytes": 4543
+    },
+    {
+      "key": "paper_summary",
+      "path": "reports/trading_room/three_strategy_micro_paper_harness_smoke_v1.json",
+      "exists": true,
+      "bytes": 1182
+    },
+    {
+      "key": "position_sensitivity",
+      "path": "reports/trading_room/three_strategy_micro_pilot_position_cap_sensitivity_v1.json",
+      "exists": true,
+      "bytes": 10202
+    },
+    {
+      "key": "decision_matrix",
+      "path": "reports/trading_room/yang_three_strategy_micro_pilot_decision_matrix_v1.json",
+      "exists": true,
+      "bytes": 4620
+    },
+    {
+      "key": "execution_board",
+      "path": "reports/trading_room/three_strategy_week1_execution_board_v1.csv",
+      "exists": true,
+      "bytes": 899
+    },
+    {
+      "key": "master_index",
+      "path": "reports/trading_room/three_strategy_3week_acceleration_master_index_v1.json",
+      "exists": true,
+      "bytes": 1483
+    },
+    {
+      "key": "jason_fixture",
+      "path": "reports/trading_room/jason_three_strategy_paper_harness_fixture_pack_v1.json",
+      "exists": true,
+      "bytes": 5253
+    },
+    {
+      "key": "bruce_queue",
+      "path": "reports/trading_room/bruce_three_strategy_review_queue_v1.json",
+      "exists": true,
+      "bytes": 3163
+    }
+  ],
+  "status": {
+    "readiness_validation_passed": true,
+    "paper_harness_ready_for_jason_wireup": true,
+    "paper_filled_orders": 20,
+    "paper_rejected_orders": 0,
+    "paper_open_positions_after_replay": 0,
+    "paper_blocking_risk_events": 1,
+    "codex_preferred_option": "A_full_basket_paper_observation_cash_path_blocked",
+    "next_step": "Jason wires paper fixture; Bruce reviews concentration; Yang chooses A/B/C.",
+    "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK"
+  },
+  "strategies": [
+    {
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "display_name_zh": "主控排序緩衝策略",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "pilot_status": "READINESS_REVIEW_ONLY",
+      "capital_cap_twd_max": 50000,
+      "position_cap": 2,
+      "latest_state": "core research candidate; append not open without adjusted-close finality plus overlay-open validation.",
+      "caveat": "sector/regime dependent; this is a controlled pilot candidate, not a clean stock-picking claim.",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "display_name_zh": "穩健強勢低回撤策略",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "pilot_status": "READINESS_REVIEW_ONLY",
+      "capital_cap_twd_max": 20000,
+      "position_cap": 1,
+      "latest_state": "strongest non-MAIN research candidate; latest append positive with concentration caveat.",
+      "caveat": "short h20 realized history; high information value but still needs append tracking.",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "display_name_zh": "流動強勢延續策略",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "pilot_status": "READINESS_REVIEW_ONLY",
+      "capital_cap_twd_max": 10000,
+      "position_cap": 1,
+      "latest_state": "WATCH: v23/v25 latest append underperformed due to concentration, not broad signal failure.",
+      "caveat": "WATCH state after latest negative append; canary sizing only if later gates pass.",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    }
+  ],
+  "risk_config": {
+    "schema_version": "three_strategy_micro_live_risk_engine_config_v1",
+    "mode_default": "PAPER",
+    "portfolio_caps": {
+      "total_capital_twd_max": 80000,
+      "daily_total_loss_pct_stop_new_signals": -3,
+      "cumulative_total_loss_pct_rollback_all": -6,
+      "quote_outage_min_halt_new_orders": 15,
+      "broker_mismatch_action": "HALT_ALL",
+      "yang_manual_halt_action": "IMMEDIATE_FREEZE_FLAT"
+    },
+    "per_strategy": [
+      {
+        "strategy_id": "MAIN_execution_rank_buffer_top20",
+        "display_name_zh": "主控排序緩衝策略",
+        "pilot_role": "MICRO_LIVE_CORE",
+        "capital_cap_twd_max": 50000,
+        "position_cap": 2,
+        "daily_loss_pct_freeze": -5,
+        "two_negative_append_action": "DOWNGRADE_RESEARCH"
+      },
+      {
+        "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+        "display_name_zh": "穩健強勢低回撤策略",
+        "pilot_role": "MICRO_LIVE_SATELLITE",
+        "capital_cap_twd_max": 20000,
+        "position_cap": 1,
+        "daily_loss_pct_freeze": -5,
+        "two_negative_append_action": "DOWNGRADE_RESEARCH"
+      },
+      {
+        "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+        "display_name_zh": "流動強勢延續策略",
+        "pilot_role": "CANARY_MICRO_LIVE",
+        "capital_cap_twd_max": 10000,
+        "position_cap": 1,
+        "daily_loss_pct_freeze": -5,
+        "two_negative_append_action": "DOWNGRADE_RESEARCH",
+        "andy_v3_row3_state": "1st_mark_NEG_v25_pending_v26_confirm"
+      }
+    ],
+    "global": {
+      "no_leverage": true,
+      "no_averaging_down": true,
+      "no_discretionary_override": true,
+      "kill_switch_manual": true,
+      "kill_switch_automatic": true,
+      "eod_position_confirm": true,
+      "cash_order_requires_yang_final_manual_ack": true
+    }
+  },
+  "signal_schema": {
+    "schema_version": "three_strategy_micro_live_signal_export_schema_v1",
+    "classification": "paper_translation_schema",
+    "common_signal_record": {
+      "signal_id": "string",
+      "strategy_id": [
+        "MAIN_execution_rank_buffer_top20",
+        "rs_20_60_low_drawdown__h20__top5",
+        "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25"
+      ],
+      "pilot_role": [
+        "MICRO_LIVE_CORE",
+        "MICRO_LIVE_SATELLITE",
+        "CANARY_MICRO_LIVE"
+      ],
+      "ts_emit": "ISO8601",
+      "session_date": "YYYY-MM-DD",
+      "symbol": "string",
+      "side_proposed": "BUY|SELL|HOLD",
+      "qty_shares_proposed": "integer",
+      "rank_top_n": "integer",
+      "buffer_status": "ENTER|HOLD|EXIT",
+      "rationale_compact": "string"
+    },
+    "per_strategy_extensions": {
+      "MAIN_execution_rank_buffer_top20": {
+        "sector_cap_check": "boolean"
+      },
+      "rs_20_60_low_drawdown__h20__top5": {
+        "drawdown_filter_check": "boolean"
+      },
+      "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
+        "turnover_cap_check": "boolean",
+        "canary_flag": true,
+        "andy_v3_row3_state": "1st_mark_NEG_v25_pending_v26_confirm"
+      }
+    },
+    "order_translation": {
+      "from_signal_to_paper_order": "1:1",
+      "from_signal_to_cash_order": "BLOCKED_until_Yang_final_manual_ACK"
+    },
+    "no_token_in_payload": true,
+    "no_credentials_in_payload": true,
+    "notes": [
+      "No broker write-side fields are included.",
+      "Payload is sufficient for paper harness and display wiring."
+    ]
+  },
+  "signals": [
+    {
+      "signal_id": "SIG-TSMPH1-0001",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "ts_emit": "2026-01-13T09:00:00+08:00",
+      "session_date": "2026-01-13",
+      "symbol": 3231,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 169,
+      "rank_top_n": 1,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0002",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "ts_emit": "2026-01-27T13:30:00+08:00",
+      "session_date": "2026-01-27",
+      "symbol": 3231,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 169,
+      "rank_top_n": 1,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0003",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "ts_emit": "2026-01-13T09:00:00+08:00",
+      "session_date": "2026-01-13",
+      "symbol": 2408,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 102,
+      "rank_top_n": 2,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0004",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "ts_emit": "2026-01-27T13:30:00+08:00",
+      "session_date": "2026-01-27",
+      "symbol": 2408,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 102,
+      "rank_top_n": 2,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0005",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "ts_emit": "2026-03-06T09:00:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 3231,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 196,
+      "rank_top_n": 1,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0006",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "ts_emit": "2026-03-20T13:30:00+08:00",
+      "session_date": "2026-03-20",
+      "symbol": 3231,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 196,
+      "rank_top_n": 1,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0007",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "ts_emit": "2026-03-06T09:00:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 2408,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 96,
+      "rank_top_n": 2,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0008",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "ts_emit": "2026-03-20T13:30:00+08:00",
+      "session_date": "2026-03-20",
+      "symbol": 2408,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 96,
+      "rank_top_n": 2,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0009",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "ts_emit": "2026-01-27T09:00:00+08:00",
+      "session_date": "2026-01-27",
+      "symbol": 2337,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 260,
+      "rank_top_n": 1,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0010",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "ts_emit": "2026-03-06T13:30:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 2337,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 260,
+      "rank_top_n": 1,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0011",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "ts_emit": "2026-03-06T09:00:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 2489,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 460,
+      "rank_top_n": 1,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0012",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "ts_emit": "2026-04-07T13:30:00+08:00",
+      "session_date": "2026-04-07",
+      "symbol": 2489,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 460,
+      "rank_top_n": 1,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0013",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "ts_emit": "2026-04-07T09:00:00+08:00",
+      "session_date": "2026-04-07",
+      "symbol": 2313,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 74,
+      "rank_top_n": 1,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0014",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "ts_emit": "2026-05-06T13:30:00+08:00",
+      "session_date": "2026-05-06",
+      "symbol": 2313,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 74,
+      "rank_top_n": 1,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0015",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "ts_emit": "2026-01-27T09:00:00+08:00",
+      "session_date": "2026-01-27",
+      "symbol": 6285,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 63,
+      "rank_top_n": 1,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0016",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "ts_emit": "2026-03-06T13:30:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 6285,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 63,
+      "rank_top_n": 1,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0017",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "ts_emit": "2026-03-06T09:00:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 3081,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 7,
+      "rank_top_n": 1,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0018",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "ts_emit": "2026-04-07T13:30:00+08:00",
+      "session_date": "2026-04-07",
+      "symbol": 3081,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 7,
+      "rank_top_n": 1,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0019",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "ts_emit": "2026-04-07T09:00:00+08:00",
+      "session_date": "2026-04-07",
+      "symbol": 3167,
+      "side_proposed": "BUY",
+      "qty_shares_proposed": 20,
+      "rank_top_n": 1,
+      "buffer_status": "ENTER",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "signal_id": "SIG-TSMPH1-0020",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "ts_emit": "2026-05-06T13:30:00+08:00",
+      "session_date": "2026-05-06",
+      "symbol": 3167,
+      "side_proposed": "SELL",
+      "qty_shares_proposed": 20,
+      "rank_top_n": 1,
+      "buffer_status": "EXIT",
+      "rationale_compact": "paper_harness_smoke_replay_from_codex_readiness_pack",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_route": "NONE_PAPER_ONLY"
+    }
+  ],
+  "paper_orders": [
+    {
+      "paper_order_id": "PO-TSMPH1-0001",
+      "source_trade_id": "TSMLV1-0001",
+      "signal_id": "SIG-TSMPH1-0001",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "order_ts": "2026-01-13T09:00:00+08:00",
+      "session_date": "2026-01-13",
+      "symbol": 3231,
+      "side": "BUY",
+      "qty_shares": 169,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 147.5,
+      "fee_est_twd": 299.13,
+      "cash_delta_twd": -25226.63,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0002",
+      "source_trade_id": "TSMLV1-0003",
+      "signal_id": "SIG-TSMPH1-0003",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "order_ts": "2026-01-13T09:00:00+08:00",
+      "session_date": "2026-01-13",
+      "symbol": 2408,
+      "side": "BUY",
+      "qty_shares": 102,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 245.0,
+      "fee_est_twd": 299.88,
+      "cash_delta_twd": -25289.88,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0003",
+      "source_trade_id": "TSMLV1-0002",
+      "signal_id": "SIG-TSMPH1-0002",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "order_ts": "2026-01-27T13:30:00+08:00",
+      "session_date": "2026-01-27",
+      "symbol": 3231,
+      "side": "SELL",
+      "qty_shares": 169,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 134.5,
+      "fee_est_twd": 272.77,
+      "cash_delta_twd": 22457.73,
+      "realized_pnl_twd": -2469.77,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0004",
+      "source_trade_id": "TSMLV1-0004",
+      "signal_id": "SIG-TSMPH1-0004",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "order_ts": "2026-01-27T13:30:00+08:00",
+      "session_date": "2026-01-27",
+      "symbol": 2408,
+      "side": "SELL",
+      "qty_shares": 102,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 277.0,
+      "fee_est_twd": 339.05,
+      "cash_delta_twd": 27914.95,
+      "realized_pnl_twd": 2924.95,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0005",
+      "source_trade_id": "TSMLV1-0009",
+      "signal_id": "SIG-TSMPH1-0009",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "order_ts": "2026-01-27T09:00:00+08:00",
+      "session_date": "2026-01-27",
+      "symbol": 2337,
+      "side": "BUY",
+      "qty_shares": 260,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 76.9,
+      "fee_est_twd": 239.93,
+      "cash_delta_twd": -20233.93,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0006",
+      "source_trade_id": "TSMLV1-0015",
+      "signal_id": "SIG-TSMPH1-0015",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "order_ts": "2026-01-27T09:00:00+08:00",
+      "session_date": "2026-01-27",
+      "symbol": 6285,
+      "side": "BUY",
+      "qty_shares": 63,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 157.5,
+      "fee_est_twd": 119.07,
+      "cash_delta_twd": -10041.57,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0007",
+      "source_trade_id": "TSMLV1-0010",
+      "signal_id": "SIG-TSMPH1-0010",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "order_ts": "2026-03-06T13:30:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 2337,
+      "side": "SELL",
+      "qty_shares": 260,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 102.5,
+      "fee_est_twd": 319.8,
+      "cash_delta_twd": 26330.2,
+      "realized_pnl_twd": 6336.2,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0008",
+      "source_trade_id": "TSMLV1-0016",
+      "signal_id": "SIG-TSMPH1-0016",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "order_ts": "2026-03-06T13:30:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 6285,
+      "side": "SELL",
+      "qty_shares": 63,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 166.0,
+      "fee_est_twd": 125.5,
+      "cash_delta_twd": 10332.5,
+      "realized_pnl_twd": 410.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0009",
+      "source_trade_id": "TSMLV1-0005",
+      "signal_id": "SIG-TSMPH1-0005",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "order_ts": "2026-03-06T09:00:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 3231,
+      "side": "BUY",
+      "qty_shares": 196,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 127.5,
+      "fee_est_twd": 299.88,
+      "cash_delta_twd": -25289.88,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0010",
+      "source_trade_id": "TSMLV1-0007",
+      "signal_id": "SIG-TSMPH1-0007",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "order_ts": "2026-03-06T09:00:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 2408,
+      "side": "BUY",
+      "qty_shares": 96,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 259.0,
+      "fee_est_twd": 298.37,
+      "cash_delta_twd": -25162.37,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0011",
+      "source_trade_id": "TSMLV1-0011",
+      "signal_id": "SIG-TSMPH1-0011",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "order_ts": "2026-03-06T09:00:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 2489,
+      "side": "BUY",
+      "qty_shares": 460,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 43.45,
+      "fee_est_twd": 239.84,
+      "cash_delta_twd": -20226.84,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0012",
+      "source_trade_id": "TSMLV1-0017",
+      "signal_id": "SIG-TSMPH1-0017",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "order_ts": "2026-03-06T09:00:00+08:00",
+      "session_date": "2026-03-06",
+      "symbol": 3081,
+      "side": "BUY",
+      "qty_shares": 7,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 1330.0,
+      "fee_est_twd": 111.72,
+      "cash_delta_twd": -9421.72,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0013",
+      "source_trade_id": "TSMLV1-0006",
+      "signal_id": "SIG-TSMPH1-0006",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "order_ts": "2026-03-20T13:30:00+08:00",
+      "session_date": "2026-03-20",
+      "symbol": 3231,
+      "side": "SELL",
+      "qty_shares": 196,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 130.0,
+      "fee_est_twd": 305.76,
+      "cash_delta_twd": 25174.24,
+      "realized_pnl_twd": 184.24,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0014",
+      "source_trade_id": "TSMLV1-0008",
+      "signal_id": "SIG-TSMPH1-0008",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "pilot_role": "MICRO_LIVE_CORE",
+      "order_ts": "2026-03-20T13:30:00+08:00",
+      "session_date": "2026-03-20",
+      "symbol": 2408,
+      "side": "SELL",
+      "qty_shares": 96,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 234.0,
+      "fee_est_twd": 269.57,
+      "cash_delta_twd": 22194.43,
+      "realized_pnl_twd": -2669.57,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0015",
+      "source_trade_id": "TSMLV1-0012",
+      "signal_id": "SIG-TSMPH1-0012",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "order_ts": "2026-04-07T13:30:00+08:00",
+      "session_date": "2026-04-07",
+      "symbol": 2489,
+      "side": "SELL",
+      "qty_shares": 460,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 35.4,
+      "fee_est_twd": 195.41,
+      "cash_delta_twd": 16088.59,
+      "realized_pnl_twd": -3898.41,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0016",
+      "source_trade_id": "TSMLV1-0018",
+      "signal_id": "SIG-TSMPH1-0018",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "order_ts": "2026-04-07T13:30:00+08:00",
+      "session_date": "2026-04-07",
+      "symbol": 3081,
+      "side": "SELL",
+      "qty_shares": 7,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 2005.0,
+      "fee_est_twd": 168.42,
+      "cash_delta_twd": 13866.58,
+      "realized_pnl_twd": 4556.58,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0017",
+      "source_trade_id": "TSMLV1-0013",
+      "signal_id": "SIG-TSMPH1-0013",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "order_ts": "2026-04-07T09:00:00+08:00",
+      "session_date": "2026-04-07",
+      "symbol": 2313,
+      "side": "BUY",
+      "qty_shares": 74,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 268.5,
+      "fee_est_twd": 238.43,
+      "cash_delta_twd": -20107.43,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0018",
+      "source_trade_id": "TSMLV1-0019",
+      "signal_id": "SIG-TSMPH1-0019",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "order_ts": "2026-04-07T09:00:00+08:00",
+      "session_date": "2026-04-07",
+      "symbol": 3167,
+      "side": "BUY",
+      "qty_shares": 20,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 484.0,
+      "fee_est_twd": 116.16,
+      "cash_delta_twd": -9796.16,
+      "realized_pnl_twd": 0.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0019",
+      "source_trade_id": "TSMLV1-0014",
+      "signal_id": "SIG-TSMPH1-0014",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "pilot_role": "MICRO_LIVE_SATELLITE",
+      "order_ts": "2026-05-06T13:30:00+08:00",
+      "session_date": "2026-05-06",
+      "symbol": 2313,
+      "side": "SELL",
+      "qty_shares": 74,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 250.0,
+      "fee_est_twd": 222.0,
+      "cash_delta_twd": 18278.0,
+      "realized_pnl_twd": -1591.0,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    },
+    {
+      "paper_order_id": "PO-TSMPH1-0020",
+      "source_trade_id": "TSMLV1-0020",
+      "signal_id": "SIG-TSMPH1-0020",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "pilot_role": "CANARY_MICRO_LIVE",
+      "order_ts": "2026-05-06T13:30:00+08:00",
+      "session_date": "2026-05-06",
+      "symbol": 3167,
+      "side": "SELL",
+      "qty_shares": 20,
+      "paper_order_type": "MARKET_PAPER",
+      "paper_status": "FILLED",
+      "reject_reason": null,
+      "fill_price": 795.0,
+      "fee_est_twd": 190.8,
+      "cash_delta_twd": 15709.2,
+      "realized_pnl_twd": 6029.2,
+      "broker_route": "NONE_PAPER_ONLY",
+      "cash_order_blocked": true
+    }
+  ],
+  "positions": [
+    {
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 2408,
+      "final_qty_shares": 0,
+      "avg_cost": 0.0,
+      "realized_pnl_twd": 255.38,
+      "fees_twd": 1206.86,
+      "open_position": false,
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 3231,
+      "final_qty_shares": 0,
+      "avg_cost": 0.0,
+      "realized_pnl_twd": -2285.53,
+      "fees_twd": 1177.54,
+      "open_position": false,
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "symbol": 3081,
+      "final_qty_shares": 0,
+      "avg_cost": 0.0,
+      "realized_pnl_twd": 4556.58,
+      "fees_twd": 280.14,
+      "open_position": false,
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "symbol": 3167,
+      "final_qty_shares": 0,
+      "avg_cost": 0.0,
+      "realized_pnl_twd": 6029.2,
+      "fees_twd": 306.96,
+      "open_position": false,
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "symbol": 6285,
+      "final_qty_shares": 0,
+      "avg_cost": 0.0,
+      "realized_pnl_twd": 410.0,
+      "fees_twd": 244.57,
+      "open_position": false,
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "symbol": 2313,
+      "final_qty_shares": 0,
+      "avg_cost": 0.0,
+      "realized_pnl_twd": -1591.0,
+      "fees_twd": 460.43,
+      "open_position": false,
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "symbol": 2337,
+      "final_qty_shares": 0,
+      "avg_cost": 0.0,
+      "realized_pnl_twd": 6336.2,
+      "fees_twd": 559.73,
+      "open_position": false,
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "symbol": 2489,
+      "final_qty_shares": 0,
+      "avg_cost": 0.0,
+      "realized_pnl_twd": -3898.41,
+      "fees_twd": 435.25,
+      "open_position": false,
+      "broker_route": "NONE_PAPER_ONLY"
+    }
+  ],
+  "risk_events": [
+    {
+      "event_id": "RISK-TSMPH1-0001",
+      "event_ts": "2026-01-13T09:00:00+08:00",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 3231.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0002",
+      "event_ts": "2026-01-13T09:00:00+08:00",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 2408.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0003",
+      "event_ts": "2026-01-27T13:30:00+08:00",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 3231.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0004",
+      "event_ts": "2026-01-27T13:30:00+08:00",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 2408.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0005",
+      "event_ts": "2026-01-27T09:00:00+08:00",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "symbol": 2337.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0006",
+      "event_ts": "2026-01-27T09:00:00+08:00",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "symbol": 6285.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0007",
+      "event_ts": "2026-03-06T13:30:00+08:00",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "symbol": 2337.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0008",
+      "event_ts": "2026-03-06T13:30:00+08:00",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "symbol": 6285.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0009",
+      "event_ts": "2026-03-06T09:00:00+08:00",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 3231.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0010",
+      "event_ts": "2026-03-06T09:00:00+08:00",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 2408.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0011",
+      "event_ts": "2026-03-06T09:00:00+08:00",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "symbol": 2489.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0012",
+      "event_ts": "2026-03-06T09:00:00+08:00",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "symbol": 3081.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0013",
+      "event_ts": "2026-03-20T13:30:00+08:00",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 3231.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0014",
+      "event_ts": "2026-03-20T13:30:00+08:00",
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "symbol": 2408.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0015",
+      "event_ts": "2026-04-07T13:30:00+08:00",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "symbol": 2489.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0016",
+      "event_ts": "2026-04-07T13:30:00+08:00",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "symbol": 3081.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0017",
+      "event_ts": "2026-04-07T09:00:00+08:00",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "symbol": 2313.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0018",
+      "event_ts": "2026-04-07T09:00:00+08:00",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "symbol": 3167.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0019",
+      "event_ts": "2026-05-06T13:30:00+08:00",
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "symbol": 2313.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-0020",
+      "event_ts": "2026-05-06T13:30:00+08:00",
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "symbol": 3167.0,
+      "event_type": "PRE_ORDER_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "ALLOW_PAPER_ORDER",
+      "reason": "caps_ok_paper_only",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-DAY-2026-01-27",
+      "event_ts": "2026-01-27T15:00:00+08:00",
+      "strategy_id": "PORTFOLIO_AGGREGATE",
+      "symbol": null,
+      "event_type": "EOD_PORTFOLIO_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "CONTINUE_PAPER",
+      "reason": "daily_pnl_pct=0.5690; cumulative_pnl_pct=0.5690",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-DAY-2026-03-06",
+      "event_ts": "2026-03-06T15:00:00+08:00",
+      "strategy_id": "PORTFOLIO_AGGREGATE",
+      "symbol": null,
+      "event_type": "EOD_PORTFOLIO_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "CONTINUE_PAPER",
+      "reason": "daily_pnl_pct=8.4328; cumulative_pnl_pct=9.0017",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-DAY-2026-03-20",
+      "event_ts": "2026-03-20T15:00:00+08:00",
+      "strategy_id": "PORTFOLIO_AGGREGATE",
+      "symbol": null,
+      "event_type": "EOD_PORTFOLIO_RISK_CHECK",
+      "severity": "WARN",
+      "status": "BLOCK",
+      "action": "TRIGGER_REVIEW",
+      "reason": "daily_pnl_pct=-3.1067; cumulative_pnl_pct=5.8951",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-DAY-2026-04-07",
+      "event_ts": "2026-04-07T15:00:00+08:00",
+      "strategy_id": "PORTFOLIO_AGGREGATE",
+      "symbol": null,
+      "event_type": "EOD_PORTFOLIO_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "CONTINUE_PAPER",
+      "reason": "daily_pnl_pct=0.8227; cumulative_pnl_pct=6.7178",
+      "broker_route": "NONE_PAPER_ONLY"
+    },
+    {
+      "event_id": "RISK-TSMPH1-DAY-2026-05-06",
+      "event_ts": "2026-05-06T15:00:00+08:00",
+      "strategy_id": "PORTFOLIO_AGGREGATE",
+      "symbol": null,
+      "event_type": "EOD_PORTFOLIO_RISK_CHECK",
+      "severity": "INFO",
+      "status": "PASS",
+      "action": "CONTINUE_PAPER",
+      "reason": "daily_pnl_pct=5.5477; cumulative_pnl_pct=12.2655",
+      "broker_route": "NONE_PAPER_ONLY"
+    }
+  ],
+  "paper_summary": {
+    "schema_version": "three_strategy_micro_paper_harness_smoke_v1",
+    "created_at_taipei": "2026-05-07T23:30:00+08:00",
+    "mode": "PAPER_ONLY",
+    "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+    "broker_write_side_touched": false,
+    "order_attempts": 20,
+    "filled_orders": 20,
+    "rejected_orders": 0,
+    "open_positions_after_replay": 0,
+    "realized_pnl_by_strategy_twd": {
+      "MAIN_execution_rank_buffer_top20": -2030.14,
+      "rs_20_60_low_drawdown__h20__top5": 846.79,
+      "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": 10995.78
+    },
+    "total_realized_pnl_twd": 9812.43,
+    "risk_event_count": 25,
+    "blocking_risk_event_count": 1,
+    "cash_order_attempts": 0,
+    "paper_harness_ready_for_jason_wireup": true,
+    "requires_yang_final_manual_ack_before_cash_path": true,
+    "schema_source": "reports\\trading_room\\three_strategy_micro_live_signal_export_schema_v1.json",
+    "risk_source": "reports\\trading_room\\three_strategy_micro_live_risk_engine_config_v1.json",
+    "trade_source": "reports\\trading_room\\three_strategy_micro_live_trades_v1.csv",
+    "signal_schema_cash_order_block": "BLOCKED_until_Yang_final_manual_ACK"
+  },
+  "position_sensitivity": {
+    "schema_version": "three_strategy_micro_pilot_position_cap_sensitivity_v1",
+    "created_at_taipei": "2026-05-07T23:45:00+08:00",
+    "mode": "PAPER_ANALYSIS_ONLY",
+    "scenario_count": 6,
+    "best_scenario_no_daily_stop": {
+      "scenario": "full_basket_paper_5_5_5",
+      "position_caps": "{\"MAIN\": 5, \"rs_20_60\": 5, \"cont_liq\": 5}",
+      "portfolio_cap_twd": 80000,
+      "total_pnl_twd": 35246.2,
+      "return_on_portfolio_cap": 0.44057749999999996,
+      "worst_daily_pnl_twd": 2107.5,
+      "worst_daily_pnl_pct_of_cap": 0.026343747500000018,
+      "daily_stop_new_signal_hit": false
+    },
+    "scenarios": [
+      {
+        "scenario": "current_micro_caps_2_1_1",
+        "position_caps": {
+          "MAIN": 2,
+          "rs_20_60": 1,
+          "cont_liq": 1
+        },
+        "portfolio_cap_twd": 80000,
+        "total_pnl_twd": 7550.02,
+        "return_on_portfolio_cap": 0.09437525000000001,
+        "worst_daily_pnl_twd": -3083.58,
+        "worst_daily_pnl_pct_of_cap": -0.0385447,
+        "daily_stop_new_signal_hit": true,
+        "strategy_metrics": {
+          "MAIN_execution_rank_buffer_top20": {
+            "position_cap_tested": 2,
+            "capital_cap_twd": 50000,
+            "total_pnl_twd": -3227.4,
+            "return_on_cap": -0.064548,
+            "order_tickets": 8,
+            "best_trade_pnl_twd": 2625.07,
+            "worst_trade_pnl_twd": -2967.94,
+            "data_ready_count": 4
+          },
+          "rs_20_60_low_drawdown__h20__top5": {
+            "position_cap_tested": 1,
+            "capital_cap_twd": 20000,
+            "total_pnl_twd": 128.59,
+            "return_on_cap": 0.0064295999999998,
+            "order_tickets": 6,
+            "best_trade_pnl_twd": 6096.27,
+            "worst_trade_pnl_twd": -4138.25,
+            "data_ready_count": 3
+          },
+          "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
+            "position_cap_tested": 1,
+            "capital_cap_twd": 10000,
+            "total_pnl_twd": 10648.83,
+            "return_on_cap": 1.0648833999999998,
+            "order_tickets": 6,
+            "best_trade_pnl_twd": 5913.04,
+            "worst_trade_pnl_twd": 0.0,
+            "data_ready_count": 3
+          }
+        }
+      },
+      {
+        "scenario": "ultra_small_caps_1_1_1",
+        "position_caps": {
+          "MAIN": 1,
+          "rs_20_60": 1,
+          "cont_liq": 1
+        },
+        "portfolio_cap_twd": 80000,
+        "total_pnl_twd": 5008.35,
+        "return_on_portfolio_cap": 0.062604375,
+        "worst_daily_pnl_twd": -5537.79,
+        "worst_daily_pnl_pct_of_cap": -0.06922239999999999,
+        "daily_stop_new_signal_hit": true,
+        "strategy_metrics": {
+          "MAIN_execution_rank_buffer_top20": {
+            "position_cap_tested": 1,
+            "capital_cap_twd": 50000,
+            "total_pnl_twd": -5769.07,
+            "return_on_cap": -0.11538143999999999,
+            "order_tickets": 4,
+            "best_trade_pnl_twd": 0.0,
+            "worst_trade_pnl_twd": -5537.79,
+            "data_ready_count": 2
+          },
+          "rs_20_60_low_drawdown__h20__top5": {
+            "position_cap_tested": 1,
+            "capital_cap_twd": 20000,
+            "total_pnl_twd": 128.59,
+            "return_on_cap": 0.0064295999999998,
+            "order_tickets": 6,
+            "best_trade_pnl_twd": 6096.27,
+            "worst_trade_pnl_twd": -4138.25,
+            "data_ready_count": 3
+          },
+          "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
+            "position_cap_tested": 1,
+            "capital_cap_twd": 10000,
+            "total_pnl_twd": 10648.83,
+            "return_on_cap": 1.0648833999999998,
+            "order_tickets": 6,
+            "best_trade_pnl_twd": 5913.04,
+            "worst_trade_pnl_twd": 0.0,
+            "data_ready_count": 3
+          }
+        }
+      },
+      {
+        "scenario": "main_full_rs1_cont1",
+        "position_caps": {
+          "MAIN": 5,
+          "rs_20_60": 1,
+          "cont_liq": 1
+        },
+        "portfolio_cap_twd": 80000,
+        "total_pnl_twd": 26327.08,
+        "return_on_portfolio_cap": 0.3290885,
+        "worst_daily_pnl_twd": 306.61,
+        "worst_daily_pnl_pct_of_cap": 0.003832599999999968,
+        "daily_stop_new_signal_hit": false,
+        "strategy_metrics": {
+          "MAIN_execution_rank_buffer_top20": {
+            "position_cap_tested": 5,
+            "capital_cap_twd": 50000,
+            "total_pnl_twd": 15549.66,
+            "return_on_cap": 0.310993132,
+            "order_tickets": 20,
+            "best_trade_pnl_twd": 5932.5,
+            "worst_trade_pnl_twd": -1174.81,
+            "data_ready_count": 10
+          },
+          "rs_20_60_low_drawdown__h20__top5": {
+            "position_cap_tested": 1,
+            "capital_cap_twd": 20000,
+            "total_pnl_twd": 128.59,
+            "return_on_cap": 0.0064295999999998,
+            "order_tickets": 6,
+            "best_trade_pnl_twd": 6096.27,
+            "worst_trade_pnl_twd": -4138.25,
+            "data_ready_count": 3
+          },
+          "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
+            "position_cap_tested": 1,
+            "capital_cap_twd": 10000,
+            "total_pnl_twd": 10648.83,
+            "return_on_cap": 1.0648833999999998,
+            "order_tickets": 6,
+            "best_trade_pnl_twd": 5913.04,
+            "worst_trade_pnl_twd": 0.0,
+            "data_ready_count": 3
+          }
+        }
+      },
+      {
+        "scenario": "main2_rs_full_cont1",
+        "position_caps": {
+          "MAIN": 2,
+          "rs_20_60": 5,
+          "cont_liq": 1
+        },
+        "portfolio_cap_twd": 80000,
+        "total_pnl_twd": 22458.91,
+        "return_on_portfolio_cap": 0.280736375,
+        "worst_daily_pnl_twd": -3083.58,
+        "worst_daily_pnl_pct_of_cap": -0.0385447,
+        "daily_stop_new_signal_hit": true,
+        "strategy_metrics": {
+          "MAIN_execution_rank_buffer_top20": {
+            "position_cap_tested": 2,
+            "capital_cap_twd": 50000,
+            "total_pnl_twd": -3227.4,
+            "return_on_cap": -0.064548,
+            "order_tickets": 8,
+            "best_trade_pnl_twd": 2625.07,
+            "worst_trade_pnl_twd": -2967.94,
+            "data_ready_count": 4
+          },
+          "rs_20_60_low_drawdown__h20__top5": {
+            "position_cap_tested": 5,
+            "capital_cap_twd": 20000,
+            "total_pnl_twd": 15037.48,
+            "return_on_cap": 0.7518737799999999,
+            "order_tickets": 30,
+            "best_trade_pnl_twd": 3474.74,
+            "worst_trade_pnl_twd": -955.4,
+            "data_ready_count": 15
+          },
+          "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
+            "position_cap_tested": 1,
+            "capital_cap_twd": 10000,
+            "total_pnl_twd": 10648.83,
+            "return_on_cap": 1.0648833999999998,
+            "order_tickets": 6,
+            "best_trade_pnl_twd": 5913.04,
+            "worst_trade_pnl_twd": 0.0,
+            "data_ready_count": 3
+          }
+        }
+      },
+      {
+        "scenario": "main2_rs1_cont_full",
+        "position_caps": {
+          "MAIN": 2,
+          "rs_20_60": 1,
+          "cont_liq": 5
+        },
+        "portfolio_cap_twd": 80000,
+        "total_pnl_twd": 1560.25,
+        "return_on_portfolio_cap": 0.019503125000000007,
+        "worst_daily_pnl_twd": -3083.58,
+        "worst_daily_pnl_pct_of_cap": -0.0385447,
+        "daily_stop_new_signal_hit": true,
+        "strategy_metrics": {
+          "MAIN_execution_rank_buffer_top20": {
+            "position_cap_tested": 2,
+            "capital_cap_twd": 50000,
+            "total_pnl_twd": -3227.4,
+            "return_on_cap": -0.064548,
+            "order_tickets": 8,
+            "best_trade_pnl_twd": 2625.07,
+            "worst_trade_pnl_twd": -2967.94,
+            "data_ready_count": 4
+          },
+          "rs_20_60_low_drawdown__h20__top5": {
+            "position_cap_tested": 1,
+            "capital_cap_twd": 20000,
+            "total_pnl_twd": 128.59,
+            "return_on_cap": 0.0064295999999998,
+            "order_tickets": 6,
+            "best_trade_pnl_twd": 6096.27,
+            "worst_trade_pnl_twd": -4138.25,
+            "data_ready_count": 3
+          },
+          "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
+            "position_cap_tested": 5,
+            "capital_cap_twd": 10000,
+            "total_pnl_twd": 4659.06,
+            "return_on_cap": 0.46590577600000005,
+            "order_tickets": 30,
+            "best_trade_pnl_twd": 1182.61,
+            "worst_trade_pnl_twd": -378.45,
+            "data_ready_count": 15
+          }
+        }
+      },
+      {
+        "scenario": "full_basket_paper_5_5_5",
+        "position_caps": {
+          "MAIN": 5,
+          "rs_20_60": 5,
+          "cont_liq": 5
+        },
+        "portfolio_cap_twd": 80000,
+        "total_pnl_twd": 35246.2,
+        "return_on_portfolio_cap": 0.44057749999999996,
+        "worst_daily_pnl_twd": 2107.5,
+        "worst_daily_pnl_pct_of_cap": 0.026343747500000018,
+        "daily_stop_new_signal_hit": false,
+        "strategy_metrics": {
+          "MAIN_execution_rank_buffer_top20": {
+            "position_cap_tested": 5,
+            "capital_cap_twd": 50000,
+            "total_pnl_twd": 15549.66,
+            "return_on_cap": 0.310993132,
+            "order_tickets": 20,
+            "best_trade_pnl_twd": 5932.5,
+            "worst_trade_pnl_twd": -1174.81,
+            "data_ready_count": 10
+          },
+          "rs_20_60_low_drawdown__h20__top5": {
+            "position_cap_tested": 5,
+            "capital_cap_twd": 20000,
+            "total_pnl_twd": 15037.48,
+            "return_on_cap": 0.7518737799999999,
+            "order_tickets": 30,
+            "best_trade_pnl_twd": 3474.74,
+            "worst_trade_pnl_twd": -955.4,
+            "data_ready_count": 15
+          },
+          "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
+            "position_cap_tested": 5,
+            "capital_cap_twd": 10000,
+            "total_pnl_twd": 4659.06,
+            "return_on_cap": 0.46590577600000005,
+            "order_tickets": 30,
+            "best_trade_pnl_twd": 1182.61,
+            "worst_trade_pnl_twd": -378.45,
+            "data_ready_count": 15
+          }
+        }
+      }
+    ],
+    "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+    "broker_write_side_touched": false
+  },
+  "decision_matrix": {
+    "schema_version": "yang_three_strategy_micro_pilot_decision_matrix_v1",
+    "created_at_taipei": "2026-05-07T23:55:00+08:00",
+    "decision_options": [
+      {
+        "option": "A",
+        "name": "Paper observation with full basket display",
+        "cash_cap_change": 0,
+        "position_caps": "5/5/5 display and paper replay",
+        "evidence": {
+          "scenario": "full_basket_paper_5_5_5",
+          "position_caps": "{\"MAIN\": 5, \"rs_20_60\": 5, \"cont_liq\": 5}",
+          "portfolio_cap_twd": 80000,
+          "total_pnl_twd": 35246.2,
+          "return_on_portfolio_cap": 0.44057749999999996,
+          "worst_daily_pnl_twd": 2107.5,
+          "worst_daily_pnl_pct_of_cap": 0.026343747500000018,
+          "daily_stop_new_signal_hit": false
+        },
+        "risk": "More symbols to monitor; lower concentration in paper analysis.",
+        "codex_view": "best engineering next step"
+      },
+      {
+        "option": "B",
+        "name": "Current micro 2/1/1 cap",
+        "cash_cap_change": 0,
+        "position_caps": "MAIN 2, rs_20_60 1, cont_liq 1",
+        "evidence": {
+          "scenario": "current_micro_caps_2_1_1",
+          "position_caps": {
+            "MAIN": 2,
+            "rs_20_60": 1,
+            "cont_liq": 1
+          },
+          "portfolio_cap_twd": 80000,
+          "total_pnl_twd": 7550.02,
+          "return_on_portfolio_cap": 0.09437525000000001,
+          "worst_daily_pnl_twd": -3083.58,
+          "worst_daily_pnl_pct_of_cap": -0.0385447,
+          "daily_stop_new_signal_hit": true,
+          "strategy_metrics": {
+            "MAIN_execution_rank_buffer_top20": {
+              "position_cap_tested": 2,
+              "capital_cap_twd": 50000,
+              "total_pnl_twd": -3227.4,
+              "return_on_cap": -0.064548,
+              "order_tickets": 8,
+              "best_trade_pnl_twd": 2625.07,
+              "worst_trade_pnl_twd": -2967.94,
+              "data_ready_count": 4
+            },
+            "rs_20_60_low_drawdown__h20__top5": {
+              "position_cap_tested": 1,
+              "capital_cap_twd": 20000,
+              "total_pnl_twd": 128.59,
+              "return_on_cap": 0.0064295999999998,
+              "order_tickets": 6,
+              "best_trade_pnl_twd": 6096.27,
+              "worst_trade_pnl_twd": -4138.25,
+              "data_ready_count": 3
+            },
+            "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
+              "position_cap_tested": 1,
+              "capital_cap_twd": 10000,
+              "total_pnl_twd": 10648.83,
+              "return_on_cap": 1.0648833999999998,
+              "order_tickets": 6,
+              "best_trade_pnl_twd": 5913.04,
+              "worst_trade_pnl_twd": 0.0,
+              "data_ready_count": 3
+            }
+          }
+        },
+        "risk": "Hit stop-new-signals threshold in paper analysis; too concentrated.",
+        "codex_view": "not preferred until Bruce reviews concentration"
+      },
+      {
+        "option": "C",
+        "name": "MAIN-only pilot while two sleeves observe",
+        "cash_cap_change": 0,
+        "position_caps": "MAIN only",
+        "evidence": "Lower operational scope, but does not satisfy Yang's three-strategy preference.",
+        "risk": "Faster operational path, weaker three-sleeve proof.",
+        "codex_view": "fallback if Bruce blocks B1"
+      }
+    ],
+    "paper_harness_summary": {
+      "schema_version": "three_strategy_micro_paper_harness_smoke_v1",
+      "created_at_taipei": "2026-05-07T23:30:00+08:00",
+      "mode": "PAPER_ONLY",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_write_side_touched": false,
+      "order_attempts": 20,
+      "filled_orders": 20,
+      "rejected_orders": 0,
+      "open_positions_after_replay": 0,
+      "realized_pnl_by_strategy_twd": {
+        "MAIN_execution_rank_buffer_top20": -2030.14,
+        "rs_20_60_low_drawdown__h20__top5": 846.79,
+        "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": 10995.78
+      },
+      "total_realized_pnl_twd": 9812.43,
+      "risk_event_count": 25,
+      "blocking_risk_event_count": 1,
+      "cash_order_attempts": 0,
+      "paper_harness_ready_for_jason_wireup": true,
+      "requires_yang_final_manual_ack_before_cash_path": true,
+      "schema_source": "reports\\trading_room\\three_strategy_micro_live_signal_export_schema_v1.json",
+      "risk_source": "reports\\trading_room\\three_strategy_micro_live_risk_engine_config_v1.json",
+      "trade_source": "reports\\trading_room\\three_strategy_micro_live_trades_v1.csv",
+      "signal_schema_cash_order_block": "BLOCKED_until_Yang_final_manual_ACK"
+    },
+    "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK"
+  },
+  "execution_board": [
+    {
+      "task_id": "W1-CODEX-01",
+      "owner": "Codex",
+      "task": "Readiness pack",
+      "status": "DONE",
+      "artifact": "reports/trading_room/three_strategy_micro_live_dossier_v1.md",
+      "blocker": null
+    },
+    {
+      "task_id": "W1-CODEX-02",
+      "owner": "Codex",
+      "task": "Paper harness smoke",
+      "status": "DONE",
+      "artifact": "reports/trading_room/three_strategy_micro_paper_harness_smoke_v1.json",
+      "blocker": null
+    },
+    {
+      "task_id": "W1-CODEX-03",
+      "owner": "Codex",
+      "task": "Position-cap sensitivity",
+      "status": "DONE",
+      "artifact": "reports/trading_room/three_strategy_micro_pilot_position_cap_sensitivity_v1.md",
+      "blocker": null
+    },
+    {
+      "task_id": "W1-JASON-01",
+      "owner": "Jason",
+      "task": "Wire fixture pack to TR frontend and paper harness",
+      "status": "READY_FOR_OWNER",
+      "artifact": "reports/trading_room/jason_three_strategy_paper_harness_fixture_pack_v1.json",
+      "blocker": "owner execution"
+    },
+    {
+      "task_id": "W1-BRUCE-01",
+      "owner": "Bruce",
+      "task": "Review concentration, canary state, and risk events",
+      "status": "READY_FOR_OWNER",
+      "artifact": "reports/trading_room/bruce_three_strategy_review_queue_v1.md",
+      "blocker": "owner verdict"
+    },
+    {
+      "task_id": "W1-YANG-01",
+      "owner": "Yang",
+      "task": "Choose option A/B/C for next pilot path",
+      "status": "READY_FOR_OWNER",
+      "artifact": "reports/trading_room/yang_three_strategy_micro_pilot_decision_matrix_v1.md",
+      "blocker": "manual decision"
+    }
+  ],
+  "master_index": {
+    "schema_version": "three_strategy_3week_acceleration_master_index_v1",
+    "created_at_taipei": "2026-05-07T23:55:00+08:00",
+    "classification": "master_index",
+    "readiness_manifest": "reports/trading_room/three_strategy_micro_live_readiness_pack_v1_manifest.json",
+    "paper_harness_manifest": "reports/trading_room/three_strategy_micro_paper_harness_smoke_v1_manifest.json",
+    "position_cap_manifest": "reports/trading_room/three_strategy_micro_pilot_position_cap_sensitivity_v1_manifest.json",
+    "jason_fixture_pack": "reports\\trading_room\\jason_three_strategy_paper_harness_fixture_pack_v1.json",
+    "bruce_review_queue": "reports\\trading_room\\bruce_three_strategy_review_queue_v1.md",
+    "yang_decision_matrix": "reports\\trading_room\\yang_three_strategy_micro_pilot_decision_matrix_v1.md",
+    "week1_execution_board": "reports\\trading_room\\three_strategy_week1_execution_board_v1.md",
+    "recommendation": {
+      "next_step": "Jason wires paper fixture; Bruce reviews concentration; Yang chooses A/B/C.",
+      "codex_preferred_option": "A_full_basket_paper_observation_cash_path_blocked",
+      "reason": "Current 2/1/1 micro caps are too concentrated and hit stop-new-signals in paper analysis."
+    },
+    "hard_lines": {
+      "no_real_orders": true,
+      "no_broker_write_side_touched": true,
+      "no_registry_or_shared_contract_edits": true,
+      "cash_order_path_blocked_until_yang_final_manual_ack": true,
+      "no_credential_values_written": true
+    }
+  },
+  "jason_fixture": {
+    "schema_version": "jason_three_strategy_paper_harness_fixture_pack_v1",
+    "created_at_taipei": "2026-05-07T23:55:00+08:00",
+    "purpose": "TR frontend and paper harness fixture binding",
+    "mode": "PAPER_ONLY",
+    "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+    "broker_write_side_required": false,
+    "broker_route": "NONE_PAPER_ONLY",
+    "source_files": {
+      "signal_schema": "reports/trading_room/three_strategy_micro_live_signal_export_schema_v1.json",
+      "risk_config": "reports/trading_room/three_strategy_micro_live_risk_engine_config_v1.json",
+      "signal_samples": "reports/trading_room/three_strategy_micro_signal_samples_v1.csv",
+      "paper_orders": "reports/trading_room/three_strategy_micro_paper_orders_v1.csv",
+      "paper_positions": "reports/trading_room/three_strategy_micro_paper_positions_v1.csv",
+      "risk_events": "reports/trading_room/three_strategy_micro_paper_risk_events_v1.csv",
+      "daily_report": "reports/trading_room/three_strategy_micro_paper_daily_report_v1.md"
+    },
+    "acceptance_checks": [
+      {
+        "id": "J1",
+        "check": "load all source files",
+        "expected": "no missing file"
+      },
+      {
+        "id": "J2",
+        "check": "render three strategy statuses",
+        "expected": "MAIN/rs_20_60/cont_liq visible"
+      },
+      {
+        "id": "J3",
+        "check": "render paper order lifecycle",
+        "expected": "20 filled paper orders"
+      },
+      {
+        "id": "J4",
+        "check": "render risk panel",
+        "expected": "25 risk events"
+      },
+      {
+        "id": "J5",
+        "check": "cash route guard",
+        "expected": "cash-order controls hidden/disabled until Yang final manual ACK"
+      },
+      {
+        "id": "J6",
+        "check": "credential payload guard",
+        "expected": "no credentials in signal payload"
+      }
+    ],
+    "readiness_manifest": {
+      "outputs": {
+        "dossier_md": "reports\\trading_room\\three_strategy_micro_live_dossier_v1.md",
+        "dossier_json": "reports\\trading_room\\three_strategy_micro_live_dossier_v1.json",
+        "trades_csv": "reports\\trading_room\\three_strategy_micro_live_trades_v1.csv",
+        "equity_csv": "reports\\trading_room\\three_strategy_micro_live_equity_curve_v1.csv",
+        "summary_json": "reports\\trading_room\\three_strategy_micro_live_summary_v1.json",
+        "risk_json": "reports\\trading_room\\three_strategy_micro_live_risk_engine_config_v1.json",
+        "schema_json": "reports\\trading_room\\three_strategy_micro_live_signal_export_schema_v1.json",
+        "monitoring_md": "reports\\trading_room\\three_strategy_micro_live_daily_monitoring_template_v1.md",
+        "rollback_md": "reports\\trading_room\\three_strategy_micro_live_rollback_checklist_v1.md",
+        "bruce_md": "reports\\trading_room\\bruce_three_strategy_micro_live_review_addendum_v1.md"
+      },
+      "main_compatibility_outputs": {
+        "main_trades_csv": "reports\\trading_room\\main_pilot_trades_v1.csv",
+        "main_equity_csv": "reports\\trading_room\\main_pilot_equity_curve_v1.csv",
+        "main_summary_json": "reports\\trading_room\\main_pilot_summary_v1.json",
+        "main_risk_json": "reports\\trading_room\\main_pilot_risk_engine_config_v1.json",
+        "main_schema_json": "reports\\trading_room\\main_pilot_signal_export_schema_v1.json",
+        "main_monitoring_md": "reports\\trading_room\\main_pilot_daily_monitoring_template_v1.md",
+        "main_rollback_md": "reports\\trading_room\\main_pilot_rollback_checklist_v1.md"
+      },
+      "existing_review_inputs_checked": [
+        "reports\\trading_room\\main_pilot_backtest_dossier_v1.md",
+        "reports\\trading_room\\main_pilot_backtest_dossier_v1.json"
+      ],
+      "validation": "reports\\trading_room\\three_strategy_micro_live_readiness_pack_v1_validation.json",
+      "closeout": "reports\\memos\\codex_notes\\dm_2026_05_07_codex_three_strategy_micro_live_readiness_pack_v1_closeout.md",
+      "validation_passed": true,
+      "trade_rows": 20,
+      "equity_rows": 13
+    },
+    "paper_harness_summary": {
+      "schema_version": "three_strategy_micro_paper_harness_smoke_v1",
+      "created_at_taipei": "2026-05-07T23:30:00+08:00",
+      "mode": "PAPER_ONLY",
+      "cash_order_path": "BLOCKED_until_Yang_final_manual_ACK",
+      "broker_write_side_touched": false,
+      "order_attempts": 20,
+      "filled_orders": 20,
+      "rejected_orders": 0,
+      "open_positions_after_replay": 0,
+      "realized_pnl_by_strategy_twd": {
+        "MAIN_execution_rank_buffer_top20": -2030.14,
+        "rs_20_60_low_drawdown__h20__top5": 846.79,
+        "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": 10995.78
+      },
+      "total_realized_pnl_twd": 9812.43,
+      "risk_event_count": 25,
+      "blocking_risk_event_count": 1,
+      "cash_order_attempts": 0,
+      "paper_harness_ready_for_jason_wireup": true,
+      "requires_yang_final_manual_ack_before_cash_path": true,
+      "schema_source": "reports\\trading_room\\three_strategy_micro_live_signal_export_schema_v1.json",
+      "risk_source": "reports\\trading_room\\three_strategy_micro_live_risk_engine_config_v1.json",
+      "trade_source": "reports\\trading_room\\three_strategy_micro_live_trades_v1.csv",
+      "signal_schema_cash_order_block": "BLOCKED_until_Yang_final_manual_ACK"
+    }
+  },
+  "bruce_queue": {
+    "schema_version": "bruce_three_strategy_review_queue_v1",
+    "created_at_taipei": "2026-05-07T23:55:00+08:00",
+    "review_scope": "paper and micro-pilot readiness evidence",
+    "questions": [
+      {
+        "id": "B1",
+        "topic": "position cap concentration",
+        "evidence": "current_micro_caps_2_1_1 hit daily stop threshold in paper analysis",
+        "decision_needed": "Use broader paper display basket or keep 2/1/1 only after explicit caveat."
+      },
+      {
+        "id": "B2",
+        "topic": "cont_liq canary state",
+        "evidence": "WATCH state and Andy v3 row 3 first negative mark recorded",
+        "decision_needed": "Confirm canary handling or keep cont_liq paper-only observation."
+      },
+      {
+        "id": "B3",
+        "topic": "risk event handling",
+        "evidence": "1 blocking EOD review event in smoke replay",
+        "decision_needed": "Confirm daily stop-new-signals behavior."
+      },
+      {
+        "id": "B4",
+        "topic": "cash-order path",
+        "evidence": "cash_order_attempts = 0 and broker route NONE_PAPER_ONLY",
+        "decision_needed": "Confirm no cash-order path before Yang final manual ACK."
+      }
+    ],
+    "recommended_review_order": [
+      "B1",
+      "B3",
+      "B2",
+      "B4"
+    ],
+    "best_no_stop_scenario": {
+      "scenario": "full_basket_paper_5_5_5",
+      "position_caps": "{\"MAIN\": 5, \"rs_20_60\": 5, \"cont_liq\": 5}",
+      "portfolio_cap_twd": 80000,
+      "total_pnl_twd": 35246.2,
+      "return_on_portfolio_cap": 0.44057749999999996,
+      "worst_daily_pnl_twd": 2107.5,
+      "worst_daily_pnl_pct_of_cap": 0.026343747500000018,
+      "daily_stop_new_signal_hit": false
+    },
+    "current_micro_scenario": {
+      "scenario": "current_micro_caps_2_1_1",
+      "position_caps": {
+        "MAIN": 2,
+        "rs_20_60": 1,
+        "cont_liq": 1
+      },
+      "portfolio_cap_twd": 80000,
+      "total_pnl_twd": 7550.02,
+      "return_on_portfolio_cap": 0.09437525000000001,
+      "worst_daily_pnl_twd": -3083.58,
+      "worst_daily_pnl_pct_of_cap": -0.0385447,
+      "daily_stop_new_signal_hit": true,
+      "strategy_metrics": {
+        "MAIN_execution_rank_buffer_top20": {
+          "position_cap_tested": 2,
+          "capital_cap_twd": 50000,
+          "total_pnl_twd": -3227.4,
+          "return_on_cap": -0.064548,
+          "order_tickets": 8,
+          "best_trade_pnl_twd": 2625.07,
+          "worst_trade_pnl_twd": -2967.94,
+          "data_ready_count": 4
+        },
+        "rs_20_60_low_drawdown__h20__top5": {
+          "position_cap_tested": 1,
+          "capital_cap_twd": 20000,
+          "total_pnl_twd": 128.59,
+          "return_on_cap": 0.0064295999999998,
+          "order_tickets": 6,
+          "best_trade_pnl_twd": 6096.27,
+          "worst_trade_pnl_twd": -4138.25,
+          "data_ready_count": 3
+        },
+        "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
+          "position_cap_tested": 1,
+          "capital_cap_twd": 10000,
+          "total_pnl_twd": 10648.83,
+          "return_on_cap": 1.0648833999999998,
+          "order_tickets": 6,
+          "best_trade_pnl_twd": 5913.04,
+          "worst_trade_pnl_twd": 0.0,
+          "data_ready_count": 3
+        }
+      }
+    }
+  }
+}
