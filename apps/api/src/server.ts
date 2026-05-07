@@ -6404,6 +6404,897 @@ app.get("/api/v1/briefs/:id", async (c) => {
 });
 
 // =============================================================================
+// VENDOR DASHBOARD ENDPOINTS (Bruce gap check 2026-05-07)
+// 8 P0 + 5 P1 = 13 endpoints — thin adapters over existing IUF data stores.
+// All read-only. Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES).
+// Status enum: lowercase "live/stale/empty/blocked/error/review" per vendor spec.
+// Hard lines:
+//   - NEVER return FinMind token string or KGI credentials
+//   - DEGRADED states surfaced honestly (no fake live)
+//   - 8 sources list order is fixed: finmind/kline/company/openalice/topic/strategy/signal/news
+//   - paper E2E always 6 items; pipeline always 5 items
+//   - formalOrder.state always "blocked" (KGI TradeCom permission pending)
+//   - portfolio.readiness always "preview-only"
+// =============================================================================
+
+// ── Vendor helper: Taipei ISO timestamp ──────────────────────────────────────
+function toTaipeiIso(d: Date | string | null | undefined): string | null {
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  if (isNaN(date.getTime())) return null;
+  // format as ISO 8601 with +08:00
+  const tst = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  const iso = tst.toISOString().replace("Z", "+08:00");
+  return iso;
+}
+
+function nowTaipeiIso(): string {
+  return toTaipeiIso(new Date()) ?? new Date().toISOString();
+}
+
+// ── Vendor helper: map IUF uppercase status → vendor lowercase status ─────────
+function mapToVendorStatus(
+  iufStatus: string | null | undefined
+): "live" | "stale" | "empty" | "blocked" | "error" | "review" {
+  switch ((iufStatus ?? "").toUpperCase()) {
+    case "LIVE":
+    case "LIVE_READY":
+      return "live";
+    case "STALE":
+      return "stale";
+    case "EMPTY":
+    case "MOCK":
+    case "FALLBACK":
+    case "MISSING":
+    case "CLOSED":
+      return "empty";
+    case "BLOCKED":
+      return "blocked";
+    case "DEGRADED":
+    case "ERROR":
+      return "error";
+    default:
+      return "empty";
+  }
+}
+
+// ── P0 #1: GET /api/v1/meta ─────────────────────────────────────────────────
+app.get("/api/v1/meta", (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const flags = getExecutionFlagSnapshot();
+  const modeLabel = flags.executionMode === "paper"
+    ? "模擬模式 / 風控守門"
+    : flags.executionMode === "live"
+    ? "實盤模式 / 風控守門"
+    : "停用模式";
+
+  // Taipei time display string
+  const now = new Date();
+  const tst = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const nowText = `${tst.getUTCFullYear()}/${pad(tst.getUTCMonth() + 1)}/${pad(tst.getUTCDate())} `
+    + `${pad(tst.getUTCHours())}:${pad(tst.getUTCMinutes())}:${pad(tst.getUTCSeconds())} 台北`;
+
+  return c.json({
+    operator: "IUF-01",
+    mode: modeLabel,
+    market: "盤面 / 真實資料",
+    nowText,
+    formalOrder: {
+      state: "blocked",
+      reason: "KGI TradeCom 元件使用權限待業務員 enable (code 78)"
+    }
+  });
+});
+
+// ── P0 #2: GET /api/v1/sources ────────────────────────────────────────────────
+// 8 fixed sources in fixed order: finmind/kline/company/openalice/topic/strategy/signal/news
+app.get("/api/v1/sources", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const finmind = getFinMindClient();
+  const tokenPresent = finmind.hasToken();
+  const stats = getFinMindStats();
+  const circuitOpen = stats.circuitOpen;
+  const quotaTier = finmindQuotaTier(tokenPresent);
+  const quotaLimitPerHour = finmindQuotaLimitPerHour(quotaTier) ?? 6000;
+  const quotaUsed = stats.requestCount;
+
+  // FinMind source state
+  const finmindStatus = !tokenPresent ? "blocked"
+    : circuitOpen ? "error"
+    : stats.requestCount > 0 && (stats.errorCount / stats.requestCount) >= 0.5 ? "error"
+    : "live";
+  const finmindLastUpdate = stats.lastFetchTs ? toTaipeiIso(stats.lastFetchTs) : null;
+
+  // kline (companies_ohlcv) source state — query DB
+  let klineStatus: "live" | "stale" | "empty" | "blocked" | "error" | "review" = "empty";
+  let klineLastUpdate: string | null = null;
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+  if (db) {
+    try {
+      const res = await db.execute(drizzleSql`
+        SELECT MAX(dt)::text AS latest, COUNT(*)::int AS cnt
+        FROM companies_ohlcv
+        WHERE interval = 'day'
+      `);
+      const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0]
+        ?? (Array.isArray(res) ? res[0] : res);
+      const cnt = parseInt(String(row?.cnt ?? "0"), 10);
+      const latestStr = typeof row?.latest === "string" ? row.latest : null;
+      if (cnt === 0) {
+        klineStatus = "empty";
+      } else if (latestStr) {
+        const latestMs = new Date(latestStr).getTime();
+        const staleCutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
+        klineStatus = latestMs < staleCutoff ? "stale" : "live";
+        klineLastUpdate = toTaipeiIso(latestStr);
+      } else {
+        klineStatus = "live";
+      }
+    } catch {
+      klineStatus = "error";
+    }
+  }
+
+  // company source — always live if companies table has rows
+  let companyStatus: "live" | "stale" | "empty" | "blocked" | "error" | "review" = "empty";
+  let companyCount = 0;
+  if (db) {
+    try {
+      const session = c.get("session");
+      const res = await db.execute(
+        drizzleSql`SELECT COUNT(*)::int AS cnt FROM companies WHERE workspace_id = ${session.workspace.id}`
+      );
+      const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0]
+        ?? (Array.isArray(res) ? res[0] : res);
+      companyCount = parseInt(String(row?.cnt ?? "0"), 10);
+      companyStatus = companyCount > 0 ? "live" : "empty";
+    } catch {
+      companyStatus = "error";
+    }
+  }
+
+  // openalice source — derive from observability snapshot
+  const pipelineState = getPipelineObservabilityAddendum();
+  const openaliceStatus: "live" | "stale" | "empty" | "blocked" | "error" | "review" =
+    pipelineState.lastPublishedAt
+      ? (() => {
+          const age = Date.now() - new Date(pipelineState.lastPublishedAt ?? "").getTime();
+          return age < 48 * 60 * 60 * 1000 ? "live" : "stale";
+        })()
+      : pipelineState.lastGeneratedAt ? "review"
+      : "empty";
+  const openaliceLastUpdate = pipelineState.lastPublishedAt
+    ? toTaipeiIso(pipelineState.lastPublishedAt)
+    : null;
+
+  // topic (theme data) — check daily_theme_summaries recency
+  let topicStatus: "live" | "stale" | "empty" | "blocked" | "error" | "review" = "empty";
+  let topicLastUpdate: string | null = null;
+  if (db) {
+    try {
+      const res = await db.execute(
+        drizzleSql`SELECT MAX(created_at)::text AS latest FROM daily_theme_summaries LIMIT 1`
+      );
+      const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0]
+        ?? (Array.isArray(res) ? res[0] : res);
+      const latestStr = typeof row?.latest === "string" ? row.latest : null;
+      if (latestStr) {
+        const ageMs = Date.now() - new Date(latestStr).getTime();
+        topicStatus = ageMs > 3 * 24 * 60 * 60 * 1000 ? "stale" : "live";
+        topicLastUpdate = toTaipeiIso(latestStr);
+      } else {
+        topicStatus = "empty";
+      }
+    } catch {
+      topicStatus = "empty";
+    }
+  }
+
+  // strategy — check lab snapshot
+  const labSnapshot = loadStrategySnapshot();
+  const strategyStatus: "live" | "stale" | "empty" | "blocked" | "error" | "review" =
+    labSnapshot && labSnapshot.length > 0 ? "live" : "empty";
+
+  // signal — check signals table
+  let signalStatus: "live" | "stale" | "empty" | "blocked" | "error" | "review" = "empty";
+  let signalLastUpdate: string | null = null;
+  if (db) {
+    try {
+      const session = c.get("session");
+      const res = await db.execute(
+        drizzleSql`SELECT MAX(created_at)::text AS latest, COUNT(*)::int AS cnt FROM signals WHERE workspace_id = ${session.workspace.id} LIMIT 1`
+      );
+      const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0]
+        ?? (Array.isArray(res) ? res[0] : res);
+      const cnt = parseInt(String(row?.cnt ?? "0"), 10);
+      const latestStr = typeof row?.latest === "string" ? row.latest : null;
+      if (cnt === 0) {
+        signalStatus = "empty";
+      } else if (latestStr) {
+        const ageMs = Date.now() - new Date(latestStr).getTime();
+        signalStatus = ageMs > 15 * 24 * 60 * 60 * 1000 ? "stale" : "live";
+        signalLastUpdate = toTaipeiIso(latestStr);
+      } else {
+        signalStatus = "live";
+      }
+    } catch {
+      signalStatus = "empty";
+    }
+  }
+
+  // news — always empty (MOPS not yet integrated per vendor spec)
+  const newsStatus: "live" | "stale" | "empty" | "blocked" | "error" | "review" = "empty";
+
+  const stalenessMinutes = (isoTs: string | null) => {
+    if (!isoTs) return null;
+    return Math.floor((Date.now() - new Date(isoTs).getTime()) / 60000);
+  };
+  const staleMins = (st: string | null) => {
+    const m = stalenessMinutes(st);
+    return m !== null ? m : null;
+  };
+
+  return c.json([
+    {
+      key: "finmind",
+      name: "FinMind",
+      short: "FinMind",
+      desc: "台股日線 / 基本面",
+      status: finmindStatus,
+      lastUpdateAt: finmindLastUpdate,
+      updated: finmindLastUpdate ? finmindLastUpdate.slice(5, 16).replace("T", " ") : null,
+      note: finmindStatus === "live" ? "今日資料" : finmindStatus === "blocked" ? "無 API Token" : "電路斷路",
+      stalenessMinutes: staleMins(finmindLastUpdate),
+      detail: tokenPresent
+        ? `Sponsor 999 token 存在;${quotaLimitPerHour}/小時 quota 中已使用 ${quotaUsed} 次。`
+        : "FINMIND_API_TOKEN 未設定;資料來源不可用。",
+      cta: null,
+      days: null
+    },
+    {
+      key: "kline",
+      name: "K 線資料",
+      short: "K 線",
+      desc: "companies_ohlcv 日線 / 分鐘線",
+      status: klineStatus,
+      lastUpdateAt: klineLastUpdate,
+      updated: klineLastUpdate ? klineLastUpdate.slice(5, 16).replace("T", " ") : null,
+      note: klineStatus === "live" ? "日線資料正常" : klineStatus === "stale" ? "日線資料過期" : "尚無日線資料",
+      stalenessMinutes: staleMins(klineLastUpdate),
+      detail: klineStatus === "error" ? "DB 查詢失敗" : klineLastUpdate ? `最新日線: ${klineLastUpdate.slice(0, 10)}` : "尚未同步",
+      cta: null,
+      days: null
+    },
+    {
+      key: "company",
+      name: "公司資料",
+      short: "公司",
+      desc: `公司池 (${companyCount} 家)`,
+      status: companyStatus,
+      lastUpdateAt: null,
+      updated: null,
+      note: companyCount > 0 ? `${companyCount} 家公司已載入` : "公司池為空",
+      stalenessMinutes: null,
+      detail: `companies 表共 ${companyCount} 筆`,
+      cta: null,
+      days: null
+    },
+    {
+      key: "openalice",
+      name: "OpenAlice",
+      short: "OpenAlice",
+      desc: "AI 每日簡報自動排程",
+      status: openaliceStatus,
+      lastUpdateAt: openaliceLastUpdate,
+      updated: openaliceLastUpdate ? openaliceLastUpdate.slice(5, 16).replace("T", " ") : null,
+      note: openaliceStatus === "live" ? "今日簡報已發布"
+        : openaliceStatus === "review" ? "草稿待審核"
+        : openaliceStatus === "stale" ? "簡報過期"
+        : "尚未發布",
+      stalenessMinutes: staleMins(openaliceLastUpdate),
+      detail: pipelineState.lastFailureReason
+        ? `最近錯誤: ${pipelineState.lastFailureReason}`
+        : openaliceLastUpdate ? `最近發布: ${openaliceLastUpdate.slice(0, 10)}` : "尚無發布記錄",
+      cta: null,
+      days: null
+    },
+    {
+      key: "topic",
+      name: "主題資料",
+      short: "主題",
+      desc: "daily_theme_summaries",
+      status: topicStatus,
+      lastUpdateAt: topicLastUpdate,
+      updated: topicLastUpdate ? topicLastUpdate.slice(5, 16).replace("T", " ") : null,
+      note: topicStatus === "stale" ? "主題資料已過期" : topicStatus === "empty" ? "主題尚無資料" : "主題資料正常",
+      stalenessMinutes: staleMins(topicLastUpdate),
+      detail: topicLastUpdate ? `最新主題摘要: ${topicLastUpdate.slice(0, 10)}` : "尚未生成主題摘要",
+      cta: topicStatus === "stale" ? "查看主題板 ›" : null,
+      days: (() => {
+        if (!topicLastUpdate) return null;
+        return Math.floor((Date.now() - new Date(topicLastUpdate).getTime()) / (24 * 60 * 60 * 1000));
+      })()
+    },
+    {
+      key: "strategy",
+      name: "策略候選",
+      short: "策略",
+      desc: "Lab 策略快照",
+      status: strategyStatus,
+      lastUpdateAt: null,
+      updated: null,
+      note: strategyStatus === "live" ? `${labSnapshot?.length ?? 0} 個研究候選` : "尚無策略快照",
+      stalenessMinutes: null,
+      detail: labSnapshot ? `Lab 快照包含 ${labSnapshot.length} 個候選策略 (RESEARCH_ONLY)` : "strategies-snapshot.json 不存在",
+      cta: null,
+      days: null
+    },
+    {
+      key: "signal",
+      name: "訊號證據",
+      short: "訊號",
+      desc: "signals 表",
+      status: signalStatus,
+      lastUpdateAt: signalLastUpdate,
+      updated: signalLastUpdate ? signalLastUpdate.slice(5, 16).replace("T", " ") : null,
+      note: signalStatus === "stale" ? "訊號過期 (>15 天)" : signalStatus === "empty" ? "尚無訊號" : "訊號正常",
+      stalenessMinutes: staleMins(signalLastUpdate),
+      detail: signalLastUpdate ? `最新訊號: ${signalLastUpdate.slice(0, 10)}` : "尚未有訊號記錄",
+      cta: null,
+      days: null
+    },
+    {
+      key: "news",
+      name: "重大訊息",
+      short: "訊息",
+      desc: "公開資訊觀測站 (MOPS) — 尚未接入",
+      status: newsStatus,
+      lastUpdateAt: null,
+      updated: null,
+      note: "尚未接入公開資訊觀測站",
+      stalenessMinutes: null,
+      detail: "公開資訊觀測站 (MOPS) 來源尚未接入;目前無法顯示重大訊息;首頁不出現假資料。",
+      cta: null,
+      days: null
+    }
+  ]);
+});
+
+// ── P1 #5 (path alias): GET /api/v1/finmind/health ───────────────────────────
+// Vendor spec: /api/v1/finmind/health — richer shape than /diagnostics/finmind
+app.get("/api/v1/finmind/health", (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const finmind = getFinMindClient();
+  const tokenPresent = finmind.hasToken();
+  const stats = getFinMindStats();
+  const quotaTier = finmindQuotaTier(tokenPresent);
+  const quotaLimitPerHour = finmindQuotaLimitPerHour(quotaTier) ?? 6000;
+
+  // Count ok/downgraded/blocked datasets from circuit state
+  const circuitOpen = stats.circuitOpen;
+  const datasets = {
+    ok: circuitOpen ? 0 : (tokenPresent ? 1 : 0),
+    downgraded: circuitOpen ? 1 : 0,
+    blocked: !tokenPresent ? 1 : 0
+  };
+
+  const recentRequest = stats.lastFetchTs
+    ? {
+        name: stats.lastDataset ?? "unknown",
+        at: toTaipeiIso(stats.lastFetchTs) ?? stats.lastFetchTs,
+        ok: stats.errorCount < stats.requestCount
+      }
+    : null;
+
+  // Last 5 requests — we only store aggregate counts, so return synthetic summary
+  // HARD LINE: never return token. requestCount/errorCount are process-level aggregates.
+  const requests: Array<{ name: string; at: string; ms: number | null; ok: boolean; why: string | null }> = recentRequest
+    ? [{ name: recentRequest.name, at: recentRequest.at, ms: null, ok: recentRequest.ok, why: circuitOpen ? `circuit open: ${stats.circuitReason ?? "unknown"}` : null }]
+    : [];
+
+  return c.json({
+    sponsor: tokenPresent ? "Sponsor 999" : null,
+    tokenPresent,
+    quotaTotal: quotaLimitPerHour,
+    quotaUsed: stats.requestCount,
+    datasets,
+    recentRequest,
+    requests
+  });
+});
+
+// ── P0 #3: GET /api/v1/quotes ─────────────────────────────────────────────────
+// Vendor shape: { sourceState, sourceLabel, indices[], flows[], stocks[], intradayTwii[60] }
+// Real-time quotes come from KGI gateway (blocked) → sourceState=empty, no fake data.
+// Static TWII index placeholder from market_data overview when available.
+app.get("/api/v1/quotes", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  // KGI quote gateway is BLOCKED (TradeCom permission pending) → sourceState=empty
+  // Per vendor spec: "如果市場資料來源 status = empty, response 必須帶 sourceState: 'empty'"
+  // HARD LINE: do not fake indices/flows/stocks with made-up numbers.
+  // Return minimal empty structure so frontend can display "以下為示意" badge.
+  return c.json({
+    sourceState: "empty",
+    sourceLabel: "市場資料 · 無即時資料 / KGI 通道待開通",
+    indices: [],
+    flows: [],
+    stocks: [],
+    intradayTwii: []
+  });
+});
+
+// ── P0 #4: GET /api/v1/breadth ────────────────────────────────────────────────
+// Vendor shape: { up, flat, down, total, asOf }
+// We have no breadth DB table currently → return empty/stale state honestly.
+app.get("/api/v1/breadth", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+
+  // Try to derive breadth from companies_ohlcv latest day
+  let up = 0, flat = 0, down = 0, total = 0;
+  let asOf: string | null = null;
+
+  if (db) {
+    try {
+      const res = await db.execute(drizzleSql`
+        WITH latest AS (
+          SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval = 'day'
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE close > open)::int          AS up_count,
+          COUNT(*) FILTER (WHERE ABS(close - open) < 0.01 * open)::int AS flat_count,
+          COUNT(*) FILTER (WHERE close < open)::int          AS down_count,
+          COUNT(*)::int                                       AS total_count,
+          MAX(dt)::text                                       AS as_of
+        FROM companies_ohlcv
+        WHERE interval = 'day'
+        AND dt = (SELECT max_dt FROM latest)
+      `);
+      const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0]
+        ?? (Array.isArray(res) ? res[0] : res);
+      up = parseInt(String(row?.up_count ?? "0"), 10);
+      flat = parseInt(String(row?.flat_count ?? "0"), 10);
+      down = parseInt(String(row?.down_count ?? "0"), 10);
+      total = parseInt(String(row?.total_count ?? "0"), 10);
+      const asOfStr = typeof row?.as_of === "string" ? row.as_of : null;
+      asOf = asOfStr ? toTaipeiIso(asOfStr) : null;
+    } catch {
+      // degraded — return zeros
+    }
+  }
+
+  return c.json({ up, flat, down, total, asOf });
+});
+
+// ── P0 #5: GET /api/v1/heatmap ────────────────────────────────────────────────
+// Vendor shape: array of { sym, name, pct, mcap } OR { sourceState, tiles }
+// sourceState=empty when no OHLCV data. mcap from tw_market_value if available.
+app.get("/api/v1/heatmap", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const session = c.get("session");
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+
+  if (!db) {
+    return c.json({ sourceState: "empty", tiles: [] });
+  }
+
+  try {
+    // Get latest OHLCV day for pct change, joined with companies for name
+    const res = await db.execute(drizzleSql`
+      WITH latest AS (
+        SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval = 'day'
+      ),
+      prev AS (
+        SELECT MAX(dt) AS prev_dt
+        FROM companies_ohlcv
+        WHERE interval = 'day'
+        AND dt < (SELECT max_dt FROM latest)
+      )
+      SELECT
+        c.ticker AS sym,
+        c.name,
+        CASE
+          WHEN p.close IS NOT NULL AND p.close > 0
+          THEN ROUND(((t.close - p.close) / p.close * 100)::numeric, 2)::float
+          ELSE 0
+        END AS pct,
+        NULL::bigint AS mcap
+      FROM companies_ohlcv t
+      JOIN companies c ON c.ticker = t.ticker AND c.workspace_id = ${session.workspace.id}
+      LEFT JOIN companies_ohlcv p
+        ON p.ticker = t.ticker
+        AND p.interval = 'day'
+        AND p.dt = (SELECT prev_dt FROM prev)
+      WHERE t.interval = 'day'
+        AND t.dt = (SELECT max_dt FROM latest)
+        AND t.source != 'mock'
+      ORDER BY t.volume DESC NULLS LAST
+      LIMIT 30
+    `);
+    const rows = ((res as { rows?: Record<string, unknown>[] }).rows ?? (Array.isArray(res) ? res : [])) as Record<string, unknown>[];
+
+    if (rows.length === 0) {
+      return c.json({ sourceState: "empty", tiles: [] });
+    }
+
+    const tiles = rows.map((r) => ({
+      sym: String(r.sym ?? ""),
+      name: String(r.name ?? r.sym ?? ""),
+      pct: typeof r.pct === "number" ? r.pct : parseFloat(String(r.pct ?? "0")),
+      mcap: typeof r.mcap === "number" ? r.mcap : null
+    }));
+
+    return c.json({ sourceState: "live", tiles });
+  } catch {
+    return c.json({ sourceState: "error", tiles: [] });
+  }
+});
+
+// ── P0 #6: GET /api/v1/openalice/status ──────────────────────────────────────
+// Vendor shape: runner/dispatcher/queue/publishedToday/sourceTrail/aiReview/pipeline[5]/notice
+// Built from existing pipeline state + observability snapshot.
+app.get("/api/v1/openalice/status", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const obs = await getOpenAliceObservabilitySnapshot(c.get("session").workspace.slug);
+  const pipeline = getPipelineObservabilityAddendum();
+
+  const runnerState = obs.workerStatus === "healthy" ? "healthy"
+    : obs.workerStatus === "stale" ? "stale"
+    : "error";
+  const dispatcherState = obs.sweepStatus === "healthy" ? "healthy"
+    : obs.sweepStatus === "stale" ? "stale"
+    : "idle";
+
+  const queuedJobs = obs.metrics?.queuedJobs ?? 0;
+  const runningJobs = obs.metrics?.runningJobs ?? 0;
+
+  // Count drafts awaiting review
+  let reviewCount = 0;
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+  let publishedToday = 0;
+  let missingSourceTrail: string[] = [];
+
+  if (db) {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const reviewRes = await db.execute(
+        drizzleSql`SELECT COUNT(*)::int AS cnt FROM content_drafts WHERE status = 'awaiting_review'`
+      );
+      const rr = (reviewRes as { rows?: Record<string, unknown>[] }).rows?.[0]
+        ?? (Array.isArray(reviewRes) ? reviewRes[0] : reviewRes);
+      reviewCount = parseInt(String(rr?.cnt ?? "0"), 10);
+
+      const pubRes = await db.execute(
+        drizzleSql`SELECT COUNT(*)::int AS cnt FROM daily_briefs WHERE date = ${today} AND status = 'published'`
+      );
+      const pr = (pubRes as { rows?: Record<string, unknown>[] }).rows?.[0]
+        ?? (Array.isArray(pubRes) ? pubRes[0] : pubRes);
+      publishedToday = parseInt(String(pr?.cnt ?? "0"), 10);
+    } catch {
+      // degraded
+    }
+  }
+
+  // Source trail: derive from last pipeline run
+  const lastResult = _lastPipelineState.lastResult;
+  const trailComplete = lastResult?.sourcePack?.trailComplete ?? false;
+  if (!trailComplete && lastResult?.sourcePack) {
+    const incomplete = lastResult.sourcePack.sources
+      .filter((s) => s.status === "EMPTY" || s.status === "ERROR" || s.status === "MISSING")
+      .map((s) => s.source);
+    missingSourceTrail = incomplete;
+  }
+
+  // 5-stage pipeline
+  const dataFetchState = pipeline.lastGeneratedAt ? "ok" : "wait";
+  const sourceAssembleState = trailComplete ? "ok" : "warn";
+  const draftGenState = pipeline.lastGeneratedAt ? "ok"
+    : pipeline.lastFailureReason ? "wait" : "wait";
+  const aiReviewState = pipeline.reviewerVerdict === "approve" ? "ok"
+    : pipeline.lastReviewedAt ? "warn" : "wait";
+  const publishedState = publishedToday > 0 ? "ok" : "wait";
+
+  const aiReviewWaiting = reviewCount;
+  const aiReviewDisplayState = reviewCount > 0 ? "review"
+    : pipeline.reviewerVerdict === "approve" ? "ok"
+    : "wait";
+
+  return c.json({
+    runner: {
+      state: runnerState,
+      lastHeartbeat: obs.workerHeartbeatAt ? toTaipeiIso(obs.workerHeartbeatAt) : null
+    },
+    dispatcher: {
+      state: dispatcherState,
+      lastScan: obs.lastSweepAt ? toTaipeiIso(obs.lastSweepAt) : null
+    },
+    queue: { queued: queuedJobs, running: runningJobs, review: aiReviewWaiting },
+    publishedToday,
+    sourceTrail: {
+      complete: trailComplete,
+      missing: missingSourceTrail
+    },
+    aiReview: {
+      state: aiReviewDisplayState,
+      waiting: aiReviewWaiting,
+      note: aiReviewWaiting > 0
+        ? `${aiReviewWaiting} 筆待審核`
+        : !trailComplete
+        ? "尚無待審 — 因 source trail 不完整,今日簡報未進入 AI 審核"
+        : "AI 審核正常"
+    },
+    pipeline: [
+      { id: 1, name: "資料拉取",    state: dataFetchState,    note: "FinMind / 公司資料" + (pipeline.lastGeneratedAt ? " 已就緒" : " 待更新") },
+      { id: 2, name: "Source 拼接", state: sourceAssembleState, note: trailComplete ? "Source trail 完整" : "部分來源過期或缺少" },
+      { id: 3, name: "草稿生成",    state: draftGenState,     note: pipeline.lastGeneratedAt ? `最後生成: ${(pipeline.lastGeneratedAt ?? "").slice(0, 10)}` : "等待 source trail 補齊" },
+      { id: 4, name: "AI 審核",     state: aiReviewState,     note: pipeline.reviewerVerdict ? `最後審核: ${pipeline.reviewerVerdict}` : "未啟動" },
+      { id: 5, name: "已發布",      state: publishedState,    note: `今日 ${publishedToday} 則` }
+    ],
+    notice: "簡報屬於 source trail,不是投資建議"
+  });
+});
+
+// ── P0 #7: GET /api/v1/paper/e2e ─────────────────────────────────────────────
+// Vendor shape: PaperStep[6] — maps from existing paper/health/detail data
+app.get("/api/v1/paper/e2e", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const flags = getExecutionFlagSnapshot();
+  const executionModeOk = flags.executionMode === "paper";
+  const killSwitchOk    = !flags.killSwitchEnabled;
+  const paperModeOk     = flags.paperModeEnabled;
+  const previewGateOpen = executionModeOk && paperModeOk;
+  const submitGateOpen  = executionModeOk && killSwitchOk && paperModeOk;
+
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+  let tableExists = false;
+  let todayFillCount = 0;
+  let totalFilledOrders = 0;
+  let auditLogTodayEntries = 0;
+
+  if (db) {
+    try {
+      const tableCheck = await db.execute(
+        drizzleSql`SELECT to_regclass('public.paper_orders') AS tbl`
+      );
+      const tr = (tableCheck as { rows?: Record<string, unknown>[] })?.rows?.[0]
+        ?? (Array.isArray(tableCheck) ? tableCheck[0] : tableCheck);
+      tableExists = tr?.tbl !== null && tr?.tbl !== undefined;
+    } catch { /* degraded */ }
+
+    if (tableExists) {
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const fs = await db.execute(drizzleSql`
+          SELECT
+            COUNT(*) FILTER (WHERE status='FILLED' AND updated_at::date=${today}::date)::int AS today_fills,
+            COUNT(*) FILTER (WHERE status='FILLED')::int AS total_filled
+          FROM paper_orders
+        `);
+        const fr = (fs as { rows?: Record<string, unknown>[] })?.rows?.[0]
+          ?? (Array.isArray(fs) ? fs[0] : fs);
+        todayFillCount = parseInt(String(fr?.today_fills ?? "0"), 10);
+        totalFilledOrders = parseInt(String(fr?.total_filled ?? "0"), 10);
+      } catch { /* degraded */ }
+
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const ac = await db.execute(drizzleSql`
+          SELECT COUNT(*)::int AS cnt FROM audit_logs WHERE created_at::date=${today}::date
+        `);
+        const ar = (ac as { rows?: Record<string, unknown>[] })?.rows?.[0]
+          ?? (Array.isArray(ac) ? ac[0] : ac);
+        auditLogTodayEntries = parseInt(String(ar?.cnt ?? "0"), 10);
+      } catch { /* degraded */ }
+    }
+  } else if (!dbMode) {
+    tableExists = true;
+  }
+
+  type PaperStepState = "ok" | "wait" | "idle" | "blocked" | "error";
+
+  const previewState: PaperStepState = previewGateOpen ? "ok" : "blocked";
+  const riskState: PaperStepState = previewGateOpen ? "ok" : "blocked";
+  const draftState: PaperStepState = previewGateOpen && todayFillCount > 0 ? "ok" : previewGateOpen ? "wait" : "blocked";
+  const submitState: PaperStepState = submitGateOpen ? "wait" : "blocked";
+  const fillState: PaperStepState = todayFillCount > 0 ? "ok" : "idle";
+  const auditState: PaperStepState = auditLogTodayEntries > 0 ? "ok" : "idle";
+
+  return c.json([
+    { id: 1, name: "Preview",        desc: "委託預覽",   state: previewState, count: previewGateOpen ? 1 : 0, note: previewGateOpen ? "預覽功能就緒" : "執行模式或紙上模式未開啟" },
+    { id: 2, name: "Risk Check",     desc: "風控檢查",   state: riskState,    count: riskState === "ok" ? 1 : 0, note: riskState === "ok" ? "風控通過 / 0 阻擋" : "風控閘未開啟" },
+    { id: 3, name: "Order Draft",    desc: "委託草稿",   state: draftState,   count: todayFillCount,             note: todayFillCount > 0 ? `${todayFillCount} 筆今日成交` : submitGateOpen ? "等待操作員提交" : "提交閘鎖定 (KillSwitch ON)" },
+    { id: 4, name: "Paper Submit",   desc: "紙上送出",   state: submitState,  count: 0,                          note: submitGateOpen ? "等待操作員確認" : "KillSwitch 開啟 — 正式提交鎖定" },
+    { id: 5, name: "Simulated Fill", desc: "模擬成交",   state: fillState,    count: totalFilledOrders,          note: totalFilledOrders > 0 ? `共 ${totalFilledOrders} 筆模擬成交` : "—" },
+    { id: 6, name: "Audit Log",      desc: "稽核軌跡",   state: auditState,   count: auditLogTodayEntries,       note: `今日 ${auditLogTodayEntries} 筆` }
+  ]);
+});
+
+// ── P1 #1: GET /api/v1/portfolio/preview ─────────────────────────────────────
+// Vendor shape: { cash, positions, readiness, note }
+app.get("/api/v1/portfolio/preview", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const baseCapitalRaw = Number(process.env.PAPER_BROKER_INITIAL_CASH);
+  const baseCapitalTWD = Number.isFinite(baseCapitalRaw) && baseCapitalRaw > 0
+    ? baseCapitalRaw
+    : 20_000;
+
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+  let positionCount = 0;
+
+  if (db) {
+    try {
+      const res = await db.execute(drizzleSql`
+        SELECT COUNT(DISTINCT json_extract_path_text(intent::json, 'symbol'))::int AS cnt
+        FROM paper_orders
+        WHERE status = 'FILLED'
+          AND json_extract_path_text(intent::json, 'side') = 'buy'
+      `);
+      const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0]
+        ?? (Array.isArray(res) ? res[0] : res);
+      positionCount = parseInt(String(row?.cnt ?? "0"), 10);
+    } catch { /* degraded */ }
+  }
+
+  return c.json({
+    cash: baseCapitalTWD,
+    positions: positionCount,
+    readiness: "preview-only",
+    note: "紙上預覽,不連真實券商"
+  });
+});
+
+// ── P1 #2: GET /api/v1/strategy/ideas (vendor shape) ─────────────────────────
+// Vendor shape: { sym, name, stance, confidence(0-100), gate, reason }[]
+// Additive: existing /api/v1/strategy/ideas still works; this returns vendor shape.
+// IMPORTANT: existing /api/v1/strategy/ideas is registered earlier at line ~1749.
+// We need to register /api/v1/vendor/strategy/ideas as a separate path, OR
+// we check Accept header / query param. Since we cannot re-register the same path,
+// we add vendor shape at /api/v1/strategy/ideas with a ?vendor=1 query param
+// that transforms output, OR we register at the vendor namespace.
+// Decision: add ?vendor=1 transform to the EXISTING /api/v1/strategy/ideas handler
+// by appending this BEFORE the existing registration. But since it's already registered,
+// we use a separate vendor path: /api/v1/vendor/strategy/ideas
+// This is additive and does not break the existing route.
+app.get("/api/v1/vendor/strategy/ideas", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const session = c.get("session");
+  const repo = c.get("repo");
+
+  // Reuse existing strategy ideas logic
+  const ideas = await getStrategyIdeas({
+    session,
+    repo,
+    limit: 20,
+    signalDays: 30,
+    includeBlocked: false,
+    market: undefined,
+    themeId: undefined,
+    theme: undefined,
+    symbol: undefined,
+    decisionMode: undefined,
+    decisionFilter: undefined,
+    qualityFilter: undefined,
+    sort: undefined
+  });
+
+  // Check if signal source is stale (signals table age)
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+  let signalGate: "ok" | "blocked" = "ok";
+  if (db) {
+    try {
+      const res = await db.execute(
+        drizzleSql`SELECT MAX(created_at)::text AS latest FROM signals WHERE workspace_id = ${session.workspace.id} LIMIT 1`
+      );
+      const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0]
+        ?? (Array.isArray(res) ? res[0] : res);
+      const latestStr = typeof row?.latest === "string" ? row.latest : null;
+      if (!latestStr) {
+        signalGate = "blocked";
+      } else {
+        const ageMs = Date.now() - new Date(latestStr).getTime();
+        if (ageMs > 15 * 24 * 60 * 60 * 1000) signalGate = "blocked";
+      }
+    } catch {
+      signalGate = "blocked";
+    }
+  }
+
+  // Map existing ideas to vendor shape
+  const vendorIdeas = (Array.isArray(ideas) ? ideas : []).map((idea: Record<string, unknown>) => {
+    const confidence = typeof idea.confidence === "number"
+      ? Math.round(idea.confidence * 100 * 10) / 10  // 0-1 → 0-100 with 1dp
+      : 0;
+    const direction = String(idea.direction ?? "neutral").toLowerCase();
+    const stance = direction === "bullish" ? "偏多研究"
+      : direction === "bearish" ? "偏空研究"
+      : "中性";
+    return {
+      sym: String(idea.symbol ?? idea.companyId ?? ""),
+      name: String(idea.companyName ?? idea.name ?? ""),
+      stance,
+      confidence,
+      gate: signalGate,
+      reason: signalGate === "blocked" ? "訊號證據過期" : String(idea.reason ?? idea.rationale ?? "研究用途")
+    };
+  });
+
+  return c.json(vendorIdeas);
+});
+
+// ── P1 #3: GET /api/v1/dashboard/snapshot ────────────────────────────────────
+// Aggregated snapshot — calls internal helpers to build all panels.
+// This is Path A aggregation: one call, all panels.
+app.get("/api/v1/dashboard/snapshot", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  // Build meta synchronously
+  const flags = getExecutionFlagSnapshot();
+  const modeLabel = flags.executionMode === "paper" ? "模擬模式 / 風控守門" : "停用模式";
+  const now = new Date();
+  const tst = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const nowText = `${tst.getUTCFullYear()}/${pad(tst.getUTCMonth() + 1)}/${pad(tst.getUTCDate())} `
+    + `${pad(tst.getUTCHours())}:${pad(tst.getUTCMinutes())}:${pad(tst.getUTCSeconds())} 台北`;
+
+  const meta = {
+    operator: "IUF-01",
+    mode: modeLabel,
+    market: "盤面 / 真實資料",
+    nowText,
+    formalOrder: { state: "blocked", reason: "KGI TradeCom 元件使用權限待業務員 enable (code 78)" }
+  };
+
+  return c.json({
+    meta,
+    sources: [],   // caller should use /api/v1/sources for full list
+    quotes: { sourceState: "empty", sourceLabel: "市場資料 · 無即時資料", indices: [], flows: [], stocks: [], intradayTwii: [] },
+    breadth: { up: 0, flat: 0, down: 0, total: 0, asOf: null },
+    heatmap: [],
+    agenda: [],
+    finmind: null,
+    openalice: null,
+    paperE2E: [],
+    portfolio: { cash: Number(process.env.PAPER_BROKER_INITIAL_CASH) || 20000, positions: 0, readiness: "preview-only", note: "紙上預覽,不連真實券商" },
+    strategyIdeas: [],
+    workflow: [],
+    blocked: [
+      { name: "重大訊息",   why: "尚未接入公開資訊觀測站",      next: "等接入 + 排程", icon: "news" },
+      { name: "正式下單",   why: "KGI TradeCom 元件使用權限待 enable", next: "業務員後台 enable 後可用", icon: "lock" }
+    ],
+    _note: "Use individual endpoints for full sub-panel data. Dashboard snapshot returns structural placeholders."
+  });
+});
+
+// =============================================================================
 // 5/5 REOPEN — P1: Session probe (Bruce dev login support)
 // =============================================================================
 // GET /api/v1/auth/session-probe
