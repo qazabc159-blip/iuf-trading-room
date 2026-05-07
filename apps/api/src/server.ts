@@ -53,6 +53,7 @@ import {
   buildPaperOrderContext,
   evaluatePaperOrderRisk
 } from "./domain/trading/paper-risk-bridge.js";
+import { evaluateFourLayerRiskGate } from "./paper-four-layer-risk-gate.js";
 import {
   fireAiReviewerForDraft,
   _getLastReviewerError
@@ -7460,6 +7461,9 @@ app.post("/api/v1/paper/preview", async (c) => {
     return c.json({ error: "BAD_REQUEST" }, 400);
   }
 
+  const session = c.get("session");
+  const repo = c.get("repo");
+
   const order = {
     accountId: "paper-default",
     symbol: payload.symbol,
@@ -7476,11 +7480,23 @@ app.post("/api/v1/paper/preview", async (c) => {
     overrideReason: ""
   };
 
-  const result = await previewOrder({
-    session: c.get("session"),
-    repo: c.get("repo"),
-    order
-  });
+  // 4-layer risk gate (preview mode: L3 will NOT auto-engage kill switch)
+  const fourLayerResult = await evaluateFourLayerRiskGate({ session, order, isPreview: true });
+  if (fourLayerResult.blocked) {
+    return c.json(
+      {
+        blocked: true,
+        layer: fourLayerResult.layer,
+        reason: fourLayerResult.reason,
+        auditType: fourLayerResult.auditType,
+        observedValue: fourLayerResult.observedValue,
+        limitValue: fourLayerResult.limitValue
+      },
+      422
+    );
+  }
+
+  const result = await previewOrder({ session, repo, order });
 
   return c.json({ data: result });
 });
@@ -7535,10 +7551,56 @@ app.post("/api/v1/paper/submit", async (c) => {
   const session = c.get("session");
   const repo = c.get("repo");
 
+  const order = buildPaperOrderContext(payload);
+
+  // 4-layer risk gate (new, P0-3 5/12 pre-requisite).
+  // Must run BEFORE evaluatePaperOrderRisk — this gate is order-lifecycle-aware:
+  // L1=kill switch, L2=max position cap, L3=daily loss (auto-engages ks), L4=concentration.
+  const fourLayerGate = await evaluateFourLayerRiskGate({ session, order, isPreview: false });
+  if (fourLayerGate.blocked) {
+    // Audit log for 4-layer gate block (fire-and-forget, same as submit audit).
+    writeAuditLog({
+      session,
+      method: "POST",
+      path: "/api/v1/paper/submit",
+      status: 422,
+      payload: {
+        paperMode: true,
+        simulated: true,
+        symbol: payload.symbol,
+        side: payload.side,
+        orderType: payload.orderType,
+        qty: payload.qty,
+        quantity_unit: payload.quantity_unit,
+        outcome: "BLOCKED",
+        blockedByLayer: fourLayerGate.layer,
+        auditType: fourLayerGate.auditType,
+        reason: fourLayerGate.reason
+      }
+    }).catch((err) => {
+      console.error("[paper/submit] 4-layer gate audit log failed:", err instanceof Error ? err.message : String(err));
+    });
+    return c.json(
+      {
+        blocked: true,
+        layer: fourLayerGate.layer,
+        reason: fourLayerGate.reason,
+        auditType: fourLayerGate.auditType,
+        observedValue: fourLayerGate.observedValue,
+        limitValue: fourLayerGate.limitValue,
+        decision: "block",
+        riskCheck: null,
+        quoteGate: null,
+        guards: [],
+        reasonCodes: [fourLayerGate.auditType ?? "four_layer_block"]
+      },
+      422
+    );
+  }
+
   // Layer 4 (M-1): Real risk engine + quote gate.
   // commit=true: records order intent in risk engine rate-limit window.
   // Blocked → 422 with rich diagnostic body; no order/fill created.
-  const order = buildPaperOrderContext(payload);
   const riskGate = await evaluatePaperOrderRisk({ session, repo, order, commit: true });
 
   if (riskGate.blocked) {
@@ -9074,7 +9136,10 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
   }
 
   try {
-    // Single query: aggregate by action over the time window
+    // Pete BLOCK#8 fix: use two queries — one GROUP BY for content-draft/hallucination
+    // actions, one separate COUNT for paper_submit with optional status filter for rejected.
+    // The paper_submit action is set by the specialAuditRoute entry in audit-log-store.ts.
+    // Before this fix the SQL queried 'paper.order.submit' which was never written → always 0.
     const rows = await db.execute(
       drizzleSql`
         SELECT
@@ -9087,12 +9152,22 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
             'content_draft.ai_rejected',
             'hallucination_reject',
             'content_draft.adversarial_audit',
-            'paper.order.submit',
-            'paper.order.rejected'
+            'paper_submit'
           )
         GROUP BY action
       `
     ) as { rows?: Array<{ action?: string; cnt?: number | string }> };
+
+    // paper_submit_rejected = paper_submit rows where payload status >= 422
+    const rejRows = await db.execute(
+      drizzleSql`
+        SELECT COUNT(*)::int AS cnt
+        FROM audit_logs
+        WHERE created_at >= ${since}::timestamptz
+          AND action = 'paper_submit'
+          AND (payload->>'status')::int >= 422
+      `
+    ) as { rows?: Array<{ cnt?: number | string }> };
 
     const counts: Record<string, number> = {};
     for (const row of rows.rows ?? []) {
@@ -9100,6 +9175,7 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
         counts[row.action] = Number(row.cnt ?? 0);
       }
     }
+    const paperSubmitRejectedCount = Number(rejRows.rows?.[0]?.cnt ?? 0);
 
     const aiApproved = counts["content_draft.ai_approved"] ?? 0;
     const aiRejected = counts["content_draft.ai_rejected"] ?? 0;
@@ -9107,9 +9183,9 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
     // adversarial_intercept = adversarial_audit rows with severityScore >= 7
     // We count all adversarial_audit entries (precise intercept check would require JSONB query)
     const adversarialIntercept = counts["content_draft.adversarial_audit"] ?? 0;
-    const paperSubmit = counts["paper.order.submit"] ?? 0;
-    const paperSubmitRejected = counts["paper.order.rejected"] ?? 0;
-    const total = aiApproved + aiRejected + hallucinationReject + adversarialIntercept + paperSubmit + paperSubmitRejected;
+    const paperSubmit = counts["paper_submit"] ?? 0;
+    const paperSubmitRejected = paperSubmitRejectedCount;
+    const total = aiApproved + aiRejected + hallucinationReject + adversarialIntercept + paperSubmit;
 
     return c.json({
       data: {
