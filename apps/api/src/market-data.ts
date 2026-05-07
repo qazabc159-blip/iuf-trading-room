@@ -131,10 +131,26 @@ type EffectiveQuoteRow = {
   quote: Quote;
 };
 
+type IndexOhlcHistoryRow = {
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  source: string;
+};
+
 type DailyBarContextRow = {
   symbol: string;
   market: Market;
   name: string;
+  sector: string | null;
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
   last: number;
   prevClose: number | null;
   change: number | null;
@@ -144,6 +160,8 @@ type DailyBarContextRow = {
   source: string;
   weight: number;
 };
+
+const MARKET_HEATMAP_LIMIT = 180;
 
 type OverviewLeader = {
   symbol: string;
@@ -1069,7 +1087,8 @@ function buildMarketContext(input: {
       changePct: indexRow.quote.changePct !== null ? round(indexRow.quote.changePct) : null,
       timestamp: indexRow.quote.timestamp,
       freshnessStatus: indexRow.item.freshnessStatus,
-      reason: indexRow.item.reasons.join(", ")
+      reason: indexRow.item.reasons.join(", "),
+      history: []
     } : {
       state: "EMPTY" as const,
       symbol: null,
@@ -1081,7 +1100,8 @@ function buildMarketContext(input: {
       changePct: null,
       timestamp: null,
       freshnessStatus: "missing" as const,
-      reason: "market_index_quote_missing"
+      reason: "market_index_quote_missing",
+      history: []
     },
     breadth: {
       state: breadthRows.length > 0
@@ -1125,13 +1145,17 @@ function dailyBarToContextRow(input: {
   symbol: string;
   market: Market;
   name: string;
-  latest: { dt: string; close: unknown; volume: unknown };
+  sector?: string | null;
+  latest: { dt: string; open?: unknown; high?: unknown; low?: unknown; close: unknown; volume: unknown };
   previous?: { close: unknown } | null;
   source: string;
   index?: number;
 }): DailyBarContextRow | null {
   const last = finiteNumber(input.latest.close);
   if (last === null) return null;
+  const open = finiteNumber(input.latest.open);
+  const high = finiteNumber(input.latest.high);
+  const low = finiteNumber(input.latest.low);
   const prevClose = input.previous ? finiteNumber(input.previous.close) : null;
   const change = prevClose && prevClose !== 0 ? round(last - prevClose) : null;
   const changePct = prevClose && prevClose !== 0 ? round((last - prevClose) / prevClose * 100) : null;
@@ -1142,6 +1166,12 @@ function dailyBarToContextRow(input: {
     symbol: input.symbol,
     market: input.market,
     name: input.name,
+    sector: input.sector?.trim() || null,
+    date: input.latest.dt,
+    open,
+    high,
+    low,
+    close: last,
     last,
     prevClose,
     change,
@@ -1155,25 +1185,38 @@ function dailyBarToContextRow(input: {
   };
 }
 
-async function loadFinMindTaiexIndexRow(): Promise<DailyBarContextRow | null> {
-  if (!process.env.FINMIND_API_TOKEN) return null;
+async function loadFinMindTaiexIndexContext(): Promise<{ row: DailyBarContextRow | null; history: IndexOhlcHistoryRow[] }> {
+  if (!process.env.FINMIND_API_TOKEN) return { row: null, history: [] };
 
   try {
-    const bars = await getFinMindClient().getStockPriceAdj("TAIEX", daysAgoIsoDate(30), null);
-    if (bars.length === 0) return null;
+    const bars = await getFinMindClient().getStockPriceAdj("TAIEX", daysAgoIsoDate(140), null);
+    if (bars.length === 0) return { row: null, history: [] };
     const latest = bars.at(-1);
     const previous = bars.length > 1 ? bars.at(-2) : null;
-    if (!latest) return null;
-    return dailyBarToContextRow({
+    if (!latest) return { row: null, history: [] };
+
+    const history = bars.slice(-70).map((bar) => ({
+      date: bar.dt,
+      open: finiteNumber(bar.open),
+      high: finiteNumber(bar.high),
+      low: finiteNumber(bar.low),
+      close: finiteNumber(bar.close),
+      volume: finiteNumber(bar.volume),
+      source: "finmind:TaiwanStockPrice"
+    }));
+
+    const row = dailyBarToContextRow({
       symbol: "TAIEX",
       market: "TW_INDEX",
       name: "加權指數",
-      latest: { dt: latest.dt, close: latest.close, volume: latest.volume },
+      latest,
       previous: previous ? { close: previous.close } : null,
       source: "finmind:TaiwanStockPrice"
     });
+
+    return { row, history };
   } catch {
-    return null;
+    return { row: null, history: [] };
   }
 }
 
@@ -1191,6 +1234,9 @@ async function loadDailyBarRowsFromDb(input: {
     .select({
       companyId: companiesOhlcv.companyId,
       dt: companiesOhlcv.dt,
+      open: companiesOhlcv.open,
+      high: companiesOhlcv.high,
+      low: companiesOhlcv.low,
       close: companiesOhlcv.close,
       volume: companiesOhlcv.volume
     })
@@ -1204,13 +1250,27 @@ async function loadDailyBarRowsFromDb(input: {
     .orderBy(desc(companiesOhlcv.dt))
     .limit(Math.max(250, Math.min(5000, companyIds.length * 5)));
 
-  const byCompany = new Map<string, Array<{ dt: string; close: unknown; volume: unknown }>>();
+  const byCompany = new Map<string, Array<{
+    dt: string;
+    open: unknown;
+    high: unknown;
+    low: unknown;
+    close: unknown;
+    volume: unknown;
+  }>>();
   for (const row of rows) {
     const list = byCompany.get(row.companyId) ?? [];
     if (list.length >= 2) continue;
     const dt = dateOnly(row.dt);
     if (list.some((item) => item.dt === dt)) continue;
-    list.push({ dt, close: row.close, volume: row.volume });
+    list.push({
+      dt,
+      open: row.open,
+      high: row.high,
+      low: row.low,
+      close: row.close,
+      volume: row.volume
+    });
     byCompany.set(row.companyId, list);
   }
 
@@ -1223,6 +1283,7 @@ async function loadDailyBarRowsFromDb(input: {
       symbol: company.ticker.trim().toUpperCase(),
       market: mapCompanyMarket(company.market),
       name: company.name,
+      sector: company.chainPosition,
       latest,
       previous: bars[1] ?? null,
       source: "finmind:companies_ohlcv",
@@ -1231,17 +1292,37 @@ async function loadDailyBarRowsFromDb(input: {
     if (row) contextRows.push(row);
   }
 
-  return contextRows;
+  const bySymbol = new Map<string, DailyBarContextRow>();
+  for (const row of contextRows) {
+    const key = `${row.market}:${row.symbol}`;
+    const existing = bySymbol.get(key);
+    if (!existing) {
+      bySymbol.set(key, row);
+      continue;
+    }
+
+    const rowDate = row.date.localeCompare(existing.date);
+    if (
+      rowDate > 0
+      || (rowDate === 0 && (row.volume ?? -Infinity) > (existing.volume ?? -Infinity))
+      || (rowDate === 0 && (row.volume ?? null) === (existing.volume ?? null) && row.name.length > existing.name.length)
+    ) {
+      bySymbol.set(key, row);
+    }
+  }
+
+  return [...bySymbol.values()];
 }
 
 async function buildDailyBarMarketContext(input: {
   session: AppSession;
   companies: Company[];
 }) {
-  const [indexRow, stockRows] = await Promise.all([
-    loadFinMindTaiexIndexRow(),
+  const [indexContext, stockRows] = await Promise.all([
+    loadFinMindTaiexIndexContext(),
     loadDailyBarRowsFromDb(input)
   ]);
+  const indexRow = indexContext.row;
 
   const breadthRows = stockRows.filter((row) => row.changePct !== null);
   const up = breadthRows.filter((row) => (row.changePct ?? 0) > 0).length;
@@ -1257,12 +1338,18 @@ async function buildDailyBarMarketContext(input: {
       if (volumeDelta !== 0) return volumeDelta;
       return Math.abs(right.changePct ?? 0) - Math.abs(left.changePct ?? 0);
     })
-    .slice(0, 24)
+    .slice(0, MARKET_HEATMAP_LIMIT)
     .map((row) => ({
       symbol: row.symbol,
       market: row.market,
       name: row.name,
+      sector: row.sector,
       source: row.source,
+      date: row.date,
+      open: row.open,
+      high: row.high,
+      low: row.low,
+      close: row.close,
       last: row.last,
       changePct: row.changePct,
       volume: row.volume,
@@ -1288,7 +1375,8 @@ async function buildDailyBarMarketContext(input: {
       changePct: indexRow.changePct,
       timestamp: indexRow.timestamp,
       freshnessStatus: "stale" as const,
-      reason: "official_daily_index"
+      reason: "official_daily_index",
+      history: indexContext.history
     } : {
       state: "EMPTY" as const,
       symbol: null,
@@ -1300,7 +1388,8 @@ async function buildDailyBarMarketContext(input: {
       changePct: null,
       timestamp: null,
       freshnessStatus: "missing" as const,
-      reason: "market_index_daily_missing"
+      reason: "market_index_daily_missing",
+      history: indexContext.history
     },
     breadth: {
       state: breadthRows.length > 0 ? "STALE" as const : "EMPTY" as const,

@@ -1067,7 +1067,13 @@ export type MarketDataOverviewHeatTile = {
   symbol: string;
   market: string;
   name: string;
+  sector?: string | null;
   source: string;
+  date?: string | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  close?: number | null;
   last: number | null;
   changePct: number | null;
   volume: number | null;
@@ -1092,6 +1098,15 @@ export type MarketDataOverviewContext = {
     timestamp: string | null;
     freshnessStatus: EffectiveMarketQuote["freshnessStatus"];
     reason: string | null;
+    history?: Array<{
+      date: string;
+      open: number | null;
+      high: number | null;
+      low: number | null;
+      close: number | null;
+      volume: number | null;
+      source: string;
+    }>;
   };
   breadth: {
     state: MarketDataOverviewState;
@@ -1774,10 +1789,11 @@ export async function getCompanyAnnouncements(companyId: string, params?: { days
   return request<CompanyAnnouncement[]>(`/api/v1/companies/${companyId}/announcements${qs ? `?${qs}` : ""}`);
 }
 
-export async function getMarketIntelAnnouncements(params?: { days?: number; limit?: number }) {
+export async function getMarketIntelAnnouncements(params?: { days?: number; limit?: number; scope?: "market" | "company_pool" }) {
   const query = new URLSearchParams();
   if (params?.days) query.set("days", String(params.days));
   if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.scope) query.set("scope", params.scope);
   const qs = query.toString();
   return request<MarketIntelAnnouncementsData>(`/api/v1/market-intel/announcements${qs ? `?${qs}` : ""}`);
 }
