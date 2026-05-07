@@ -150,10 +150,24 @@ async function fetchTwse<T>(path: string): Promise<T[]> {
     return [];
   }
 
+  // Guard: TWSE maintenance windows can return HTML with HTTP 200.
+  // Detect non-JSON responses before attempting parse.
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    const err = new Error(
+      `[twse-openapi-client] upstream_returned_non_json for ${path}: content-type=${contentType}`
+    );
+    err.name = "TwseNonJsonError";
+    console.warn(err.message);
+    throw err;
+  }
+
   try {
     const json = await response.json() as T[];
     return Array.isArray(json) ? json : [];
-  } catch {
+  } catch (e) {
+    // Re-throw TwseNonJsonError so handler can classify state=DEGRADED
+    if (e instanceof Error && e.name === "TwseNonJsonError") throw e;
     console.warn(`[twse-openapi-client] JSON parse error for ${path}`);
     return [];
   }
