@@ -86,6 +86,14 @@ function marketTone(state: ThemeRow["marketState"]) {
   return "gold";
 }
 
+function marketBadgeColor(state: ThemeRow["marketState"]) {
+  if (state === "Attack") return "#ff6b35";
+  if (state === "Selective Attack") return "#ffb800";
+  if (state === "Defense") return "#4fc3f7";
+  if (state === "Preservation") return "#7986cb";
+  return "#888";
+}
+
 function lifecycleLabel(value: string | null | undefined) {
   if (value === "Discovery") return "探索";
   if (value === "Validation") return "驗證";
@@ -101,15 +109,23 @@ function lifecycleLabel(value: string | null | undefined) {
   return value ?? "--";
 }
 
+function lifecycleBadgeColor(value: string | null | undefined) {
+  if (value === "Expansion" || value === "active") return "rgba(76,175,80,0.25)";
+  if (value === "Discovery" || value === "Validation") return "rgba(255,184,0,0.2)";
+  if (value === "Crowded" || value === "Distribution") return "rgba(255,107,53,0.2)";
+  if (value === "retired" || value === "paused") return "rgba(120,120,120,0.2)";
+  return "rgba(100,100,100,0.2)";
+}
+
 function hasBrokenText(value: string | null | undefined) {
   if (!value) return false;
-  return /\uFFFD|Ã|Â|undefined|null/i.test(value);
+  return /�|Ã|Â|undefined|null/i.test(value);
 }
 
 function isEnglishHeavy(value: string | null | undefined) {
   if (!value) return false;
   const latin = value.match(/[A-Za-z]/g)?.length ?? 0;
-  const cjk = value.match(/[\u4e00-\u9fff]/g)?.length ?? 0;
+  const cjk = value.match(/[一-鿿]/g)?.length ?? 0;
   return latin >= 12 && latin > cjk * 2;
 }
 
@@ -173,6 +189,164 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
   );
 }
 
+const THEMES_CSS = `
+  ._bty-theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+  ._bty-theme-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  ._bty-theme-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--_accent, #ffb800);
+    opacity: 0.7;
+  }
+  ._bty-theme-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.055);
+  }
+  ._bty-theme-card.priority-1 {
+    border-color: rgba(255,184,0,0.25);
+    background: rgba(255,184,0,0.04);
+  }
+  ._bty-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  ._bty-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  ._bty-p-badge {
+    background: rgba(255,184,0,0.18);
+    color: #ffb800;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  ._bty-p1-badge {
+    background: rgba(255,184,0,0.3);
+    color: #ffd04d;
+  }
+  ._bty-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--night-ink, #e0e0e0);
+  }
+  ._bty-card-slug {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+    font-family: var(--mono, monospace);
+  }
+  ._bty-card-thesis {
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.6);
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  ._bty-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+  }
+  ._bty-pool-row {
+    display: flex;
+    gap: 10px;
+  }
+  ._bty-pool-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  ._bty-pool-num {
+    font-size: 16px;
+    font-weight: 700;
+    color: #ffb800;
+    font-family: var(--mono, monospace);
+    line-height: 1;
+  }
+  ._bty-pool-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.4);
+  }
+  ._bty-hero-kpi {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 1px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 6px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  ._bty-kpi-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 8px;
+    background: rgba(0,0,0,0.25);
+    gap: 4px;
+  }
+  ._bty-kpi-val {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: var(--mono, monospace);
+    line-height: 1;
+    color: #e0e0e0;
+  }
+  ._bty-kpi-val.ok { color: #4fc3f7; }
+  ._bty-kpi-val.up { color: #ff6b35; }
+  ._bty-kpi-val.down { color: #4fc3f7; }
+  ._bty-kpi-val.gold { color: #ffb800; }
+  ._bty-kpi-lbl {
+    font-size: 10px;
+    color: rgba(255,255,255,0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    ._bty-theme-card { transition: none !important; }
+    ._bty-theme-card:hover { transform: none; }
+  }
+`;
+
 export default async function ThemesPage() {
   const result = await loadThemes();
   const themes = result.data.slice().sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
@@ -192,6 +366,40 @@ export default async function ThemesPage() {
       sub="台股主題階梯"
       note="主題板 / 正式主題資料；只顯示已連結公司池與可追蹤狀態。"
     >
+      <style>{THEMES_CSS}</style>
+
+      {/* Hero KPI strip */}
+      <div className="_bty-hero-kpi">
+        <div className="_bty-kpi-cell">
+          <span className={`_bty-kpi-val ${result.state === "LIVE" ? "ok" : "gold"}`}>{stateLabel(result.state)}</span>
+          <span className="_bty-kpi-lbl">狀態</span>
+        </div>
+        <div className="_bty-kpi-cell">
+          <span className="_bty-kpi-val gold">{countsAvailable ? visibleThemes.length : "--"}</span>
+          <span className="_bty-kpi-lbl">主題總數</span>
+        </div>
+        <div className="_bty-kpi-cell">
+          <span className="_bty-kpi-val up">{countsAvailable ? attackCount : "--"}</span>
+          <span className="_bty-kpi-lbl">進攻主題</span>
+        </div>
+        <div className="_bty-kpi-cell">
+          <span className="_bty-kpi-val down">{countsAvailable ? defenseCount : "--"}</span>
+          <span className="_bty-kpi-lbl">防守主題</span>
+        </div>
+        <div className="_bty-kpi-cell">
+          <span className="_bty-kpi-val gold">{countsAvailable ? coreTotal : "--"}</span>
+          <span className="_bty-kpi-lbl">核心公司</span>
+        </div>
+        <div className="_bty-kpi-cell">
+          <span className="_bty-kpi-val">{countsAvailable ? observationTotal : "--"}</span>
+          <span className="_bty-kpi-lbl">觀察公司</span>
+        </div>
+        <div className="_bty-kpi-cell">
+          <span className="_bty-kpi-val gold">{countsAvailable ? priorityOneCount : "--"}</span>
+          <span className="_bty-kpi-lbl">P1 主題</span>
+        </div>
+      </div>
+
       <MetricStrip
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
@@ -219,26 +427,63 @@ export default async function ThemesPage() {
         )}
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && (
-          <div className="theme-board-grid">
-            {visibleThemes.map((theme) => (
-              <Link href={`/themes/${theme.slug}`} className={`theme-card ${theme.priority === 1 ? "theme-card-priority" : ""}`} key={theme.id}>
-                <div className="theme-card-top">
-                  <span className="tg theme-priority">P{theme.priority}</span>
-                  <span className={`tg theme-state ${marketTone(theme.marketState)}`}>{marketLabel(theme.marketState)}</span>
-                  <span className="tg soft">{formatDate(theme.updatedAt)}</span>
-                </div>
-                <div className="theme-card-title">
-                  <strong className="tc">{themeDisplayName(theme)}</strong>
-                  <span className="tg soft">{theme.slug}</span>
-                </div>
-                <p className="tc theme-card-thesis">{themeThesisText(theme)}</p>
-                <div className="theme-card-bottom">
-                  <span className="tg">{themeStageText(theme)}</span>
-                  <span className="tg soft">核心 {theme.corePoolCount}</span>
-                  <span className="tg soft">觀察 {theme.observationPoolCount}</span>
-                </div>
-              </Link>
-            ))}
+          <div className="_bty-theme-grid">
+            {visibleThemes.map((theme) => {
+              const accentColor = marketBadgeColor(theme.marketState);
+              return (
+                <Link
+                  href={`/themes/${theme.slug}`}
+                  className={`_bty-theme-card${theme.priority === 1 ? " priority-1" : ""}`}
+                  key={theme.id}
+                  style={{ "--_accent": accentColor } as React.CSSProperties}
+                >
+                  <div className="_bty-card-header">
+                    <span className={`_bty-p-badge${theme.priority === 1 ? " _bty-p1-badge" : ""}`}>P{theme.priority}</span>
+                    <span
+                      className="_bty-badge"
+                      style={{
+                        background: `${accentColor}22`,
+                        color: accentColor,
+                        border: `1px solid ${accentColor}44`,
+                      }}
+                    >
+                      {marketLabel(theme.marketState)}
+                    </span>
+                    <span
+                      className="_bty-badge"
+                      style={{
+                        background: lifecycleBadgeColor(theme.lifecycle),
+                        color: "rgba(255,255,255,0.7)",
+                      }}
+                    >
+                      {lifecycleLabel(theme.lifecycle)}
+                    </span>
+                    <span className="tg soft" style={{ marginLeft: "auto", fontSize: 11 }}>{formatDate(theme.updatedAt)}</span>
+                  </div>
+
+                  <div>
+                    <div className="_bty-card-title">{themeDisplayName(theme)}</div>
+                    <div className="_bty-card-slug">{theme.slug}</div>
+                  </div>
+
+                  <p className="_bty-card-thesis">{themeThesisText(theme)}</p>
+
+                  <div className="_bty-card-footer">
+                    <span className="tg soft" style={{ fontSize: 11 }}>{themeStageText(theme)}</span>
+                    <div className="_bty-pool-row">
+                      <div className="_bty-pool-cell">
+                        <span className="_bty-pool-num">{theme.corePoolCount}</span>
+                        <span className="_bty-pool-label">核心</span>
+                      </div>
+                      <div className="_bty-pool-cell">
+                        <span className="_bty-pool-num" style={{ color: "rgba(255,255,255,0.5)" }}>{theme.observationPoolCount}</span>
+                        <span className="_bty-pool-label">觀察</span>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         )}
       </Panel>
