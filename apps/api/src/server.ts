@@ -9218,12 +9218,26 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
   }
 
   try {
+    // execRows: defensive helper for drizzle-orm/postgres-js raw execute results.
+    // postgres-js driver returns a FLAT ARRAY from db.execute(), not { rows: [...] }.
+    // Casting to { rows?: T[] } and reading .rows always yields undefined → silent zero.
+    // This helper mirrors the proven pattern at server.ts line 4083-4084.
+    // Root cause documented in evidence/w7_paper_sprint/BRUCE_AUDIT_STATS_SILENT_ZERO_ROOT_CAUSE_2026-05-08.md
+    function execRows<T>(result: unknown): T[] {
+      if (Array.isArray(result)) return result as T[];
+      const r = result as { rows?: T[] };
+      return r.rows ?? [];
+    }
+    function execFirstRow<T>(result: unknown): T | undefined {
+      return execRows<T>(result)[0];
+    }
+
     // audit-stats action string fix (2026-05-07):
     //   Real action strings written to audit_logs use the 'content_draft.' prefix.
     //   PR #292 introduced bare names (ai_approved etc) → silent zero.
     //   PR #296 fixed the prefix. This PR adds ai_yellow_held and precise
     //   adversarial_intercept count (JSONB severityScore >= 7 subquery).
-    const rows = await db.execute(
+    const rawRows = await db.execute(
       drizzleSql`
         SELECT
           action,
@@ -9240,10 +9254,16 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
           )
         GROUP BY action
       `
-    ) as { rows?: Array<{ action?: string; cnt?: number | string }> };
+    );
+    const rows = execRows<{ action?: string; cnt?: number | string }>(rawRows);
 
-    // paper_submit_rejected = paper_submit rows where payload status >= 422
-    const rejRows = await db.execute(
+    // paper_submit_rejected = paper_submit rows where payload->>'status' >= 422.
+    // This is a JSONB-filtered SUBSET of paper_submit rows — NOT a separate
+    // audit_log action. Therefore paper_submit_rejected is NOT included in `total`
+    // (total comes from the GROUP BY aggregate above which only counts distinct
+    // action strings; 'paper_submit_rejected' is never written as an action).
+    // Consumer note: paper_submit_rejected <= paper_submit always holds.
+    const rawRejRows = await db.execute(
       drizzleSql`
         SELECT COUNT(*)::int AS cnt
         FROM audit_logs
@@ -9251,11 +9271,12 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
           AND action = 'paper_submit'
           AND (payload->>'status')::int >= 422
       `
-    ) as { rows?: Array<{ cnt?: number | string }> };
+    );
+    const rejFirstRow = execFirstRow<{ cnt?: number | string }>(rawRejRows);
 
     // adversarial_intercept = adversarial_audit rows where severityScore >= 7
     // (rows with score < 7 are paper-trail only; only >= 7 actually held the draft)
-    const adversarialRows = await db.execute(
+    const rawAdversarialRows = await db.execute(
       drizzleSql`
         SELECT COUNT(*)::int AS cnt
         FROM audit_logs
@@ -9263,21 +9284,22 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
           AND action = 'content_draft.adversarial_audit'
           AND (payload->>'severityScore')::int >= 7
       `
-    ) as { rows?: Array<{ cnt?: number | string }> };
+    );
+    const adversarialFirstRow = execFirstRow<{ cnt?: number | string }>(rawAdversarialRows);
 
     const counts: Record<string, number> = {};
-    for (const row of rows.rows ?? []) {
+    for (const row of rows) {
       if (row.action) {
         counts[row.action] = Number(row.cnt ?? 0);
       }
     }
-    const paperSubmitRejectedCount = Number(rejRows.rows?.[0]?.cnt ?? 0);
+    const paperSubmitRejectedCount = Number(rejFirstRow?.cnt ?? 0);
 
     const aiApproved = counts["content_draft.ai_approved"] ?? 0;
     const aiRejected = counts["content_draft.ai_rejected"] ?? 0;
     const hallucinationReject = counts["hallucination_reject"] ?? 0;
     // adversarial_intercept: JSONB-filtered count (severityScore >= 7 only)
-    const adversarialIntercept = Number(adversarialRows.rows?.[0]?.cnt ?? 0);
+    const adversarialIntercept = Number(adversarialFirstRow?.cnt ?? 0);
     const aiYellowHeld = counts["content_draft.ai_yellow_held"] ?? 0;
     const paperSubmit = counts["paper_submit"] ?? 0;
     const paperSubmitRejected = paperSubmitRejectedCount;
