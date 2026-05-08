@@ -1,0 +1,446 @@
+openapi: 3.1.0
+info:
+  title: IUF 戰情台 API
+  version: 1.0.0
+  description: 後端對接 spec。所有 endpoint 詳見 BACKEND_SPEC.md。
+servers:
+  - url: /api/v1
+paths:
+  /dashboard/snapshot:
+    get:
+      summary: 一次取得整個 dashboard
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSnapshot'
+  /sources:
+    get:
+      summary: 8 個資料來源狀態
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SourceStatus' }
+  /sources/{key}:
+    get:
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/SourceKey' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceDetail' }
+  /quotes:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quotes' }
+  /breadth:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Breadth' }
+  /heatmap:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HeatmapResponse' }
+  /agenda:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AgendaItem' }
+  /finmind/health:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FinmindHealth' }
+  /openalice/status:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OpenAliceStatus' }
+  /paper/e2e:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PaperStep' }
+  /portfolio/preview:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortfolioPreview' }
+  /strategy/ideas:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StrategyIdea' }
+  /workflow/today:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WorkflowItem' }
+  /blocked:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BlockedItem' }
+  /meta:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Meta' }
+
+components:
+  schemas:
+    SourceKey:
+      type: string
+      enum: [finmind, kline, company, openalice, topic, strategy, signal, news]
+    SourceState:
+      type: string
+      enum: [live, stale, empty, review, blocked, error]
+    StepState:
+      type: string
+      enum: [ok, warn, wait, idle]
+    AgendaState:
+      type: string
+      enum: [done, doing, now, todo]
+    WorkflowState:
+      type: string
+      enum: [ok, wait]
+
+    DashboardSnapshot:
+      type: object
+      required: [meta, sources, quotes, breadth, heatmap, agenda, finmind, openalice, paperE2E, portfolio, strategyIdeas, workflow, blocked]
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        sources:
+          type: array
+          items: { $ref: '#/components/schemas/SourceStatus' }
+        quotes: { $ref: '#/components/schemas/Quotes' }
+        breadth: { $ref: '#/components/schemas/Breadth' }
+        heatmap: { $ref: '#/components/schemas/HeatmapResponse' }
+        agenda:
+          type: array
+          items: { $ref: '#/components/schemas/AgendaItem' }
+        finmind: { $ref: '#/components/schemas/FinmindHealth' }
+        openalice: { $ref: '#/components/schemas/OpenAliceStatus' }
+        paperE2E:
+          type: array
+          items: { $ref: '#/components/schemas/PaperStep' }
+        portfolio: { $ref: '#/components/schemas/PortfolioPreview' }
+        strategyIdeas:
+          type: array
+          items: { $ref: '#/components/schemas/StrategyIdea' }
+        workflow:
+          type: array
+          items: { $ref: '#/components/schemas/WorkflowItem' }
+        blocked:
+          type: array
+          items: { $ref: '#/components/schemas/BlockedItem' }
+
+    Meta:
+      type: object
+      required: [operator, mode, market, nowText, formalOrder]
+      properties:
+        operator: { type: string }
+        mode: { type: string }
+        market: { type: string }
+        nowText: { type: string }
+        formalOrder:
+          type: object
+          required: [state, reason]
+          properties:
+            state: { type: string, enum: [blocked] }
+            reason: { type: string }
+
+    SourceStatus:
+      type: object
+      required: [key, name, short, desc, status, updated, note, detail]
+      properties:
+        key: { $ref: '#/components/schemas/SourceKey' }
+        name: { type: string }
+        short: { type: string }
+        desc: { type: string }
+        status: { $ref: '#/components/schemas/SourceState' }
+        lastUpdateAt: { type: string, format: date-time, nullable: true }
+        updated: { type: string }
+        note: { type: string }
+        stalenessMinutes: { type: integer, nullable: true }
+        days: { type: integer, nullable: true }
+        detail: { type: string }
+        cta: { type: string, nullable: true }
+
+    SourceDetail:
+      allOf:
+        - $ref: '#/components/schemas/SourceStatus'
+        - type: object
+          properties:
+            events:
+              type: array
+              items:
+                type: object
+                required: [at, level, message]
+                properties:
+                  at: { type: string, format: date-time }
+                  level: { type: string, enum: [info, warn, error] }
+                  message: { type: string }
+
+    Quotes:
+      type: object
+      required: [sourceState, sourceLabel, indices, flows, stocks, intradayTwii]
+      properties:
+        sourceState: { $ref: '#/components/schemas/SourceState' }
+        sourceLabel: { type: string }
+        indices:
+          type: array
+          items: { $ref: '#/components/schemas/Index' }
+        flows:
+          type: array
+          items: { $ref: '#/components/schemas/Flow' }
+        stocks:
+          type: array
+          items: { $ref: '#/components/schemas/Stock' }
+        intradayTwii:
+          type: array
+          items: { type: number }
+
+    Index:
+      type: object
+      required: [sym, name, price, chg, pct]
+      properties:
+        sym: { type: string }
+        name: { type: string }
+        price: { type: number }
+        chg: { type: number }
+        pct: { type: number }
+    Flow:
+      type: object
+      required: [sym, name, price, unit]
+      properties:
+        sym: { type: string }
+        name: { type: string }
+        price: { type: number }
+        unit: { type: string }
+    Stock:
+      type: object
+      required: [sym, name, price, chg, pct]
+      properties:
+        sym: { type: string }
+        name: { type: string }
+        price: { type: number }
+        chg: { type: number }
+        pct: { type: number }
+
+    Breadth:
+      type: object
+      required: [up, flat, down, total, asOf]
+      properties:
+        up: { type: integer }
+        flat: { type: integer }
+        down: { type: integer }
+        total: { type: integer }
+        asOf: { type: string, format: date-time }
+
+    HeatmapResponse:
+      type: object
+      required: [sourceState, tiles]
+      properties:
+        sourceState: { $ref: '#/components/schemas/SourceState' }
+        tiles:
+          type: array
+          items: { $ref: '#/components/schemas/HeatmapTile' }
+    HeatmapTile:
+      type: object
+      required: [sym, name, pct, mcap]
+      properties:
+        sym: { type: string }
+        name: { type: string }
+        pct: { type: number }
+        mcap: { type: number }
+
+    AgendaItem:
+      type: object
+      required: [time, label, state]
+      properties:
+        time: { type: string }
+        label: { type: string }
+        state: { $ref: '#/components/schemas/AgendaState' }
+
+    FinmindHealth:
+      type: object
+      required: [sponsor, tokenPresent, quotaTotal, quotaUsed, datasets, recentRequest, requests]
+      properties:
+        sponsor: { type: string }
+        tokenPresent: { type: boolean }
+        quotaTotal: { type: integer }
+        quotaUsed: { type: integer }
+        datasets:
+          type: object
+          required: [ok, downgraded, blocked]
+          properties:
+            ok: { type: integer }
+            downgraded: { type: integer }
+            blocked: { type: integer }
+        recentRequest:
+          type: object
+          required: [name, at, ok]
+          properties:
+            name: { type: string }
+            at: { type: string, format: date-time }
+            ok: { type: boolean }
+        requests:
+          type: array
+          items:
+            type: object
+            required: [name, at, ms, ok]
+            properties:
+              name: { type: string }
+              at: { type: string, format: date-time }
+              ms: { type: integer }
+              ok: { type: boolean }
+              why: { type: string, nullable: true }
+
+    OpenAliceStatus:
+      type: object
+      required: [runner, dispatcher, queue, publishedToday, sourceTrail, aiReview, pipeline, notice]
+      properties:
+        runner:
+          type: object
+          properties:
+            state: { type: string, enum: [healthy, degraded, error] }
+            lastHeartbeat: { type: string, format: date-time }
+        dispatcher:
+          type: object
+          properties:
+            state: { type: string, enum: [healthy, degraded, error] }
+            lastScan: { type: string, format: date-time }
+        queue:
+          type: object
+          required: [queued, running, review]
+          properties:
+            queued: { type: integer }
+            running: { type: integer }
+            review: { type: integer }
+        publishedToday: { type: integer }
+        sourceTrail:
+          type: object
+          required: [complete, missing]
+          properties:
+            complete: { type: boolean }
+            missing:
+              type: array
+              items: { type: string }
+        aiReview:
+          type: object
+          required: [state, waiting, note]
+          properties:
+            state: { type: string, enum: [review, idle, running] }
+            waiting: { type: integer }
+            note: { type: string }
+        pipeline:
+          type: array
+          items:
+            type: object
+            required: [id, name, state, note]
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              state: { $ref: '#/components/schemas/StepState' }
+              note: { type: string }
+        notice: { type: string }
+
+    PaperStep:
+      type: object
+      required: [id, name, desc, state, count, note]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        desc: { type: string }
+        state: { $ref: '#/components/schemas/StepState' }
+        count: { type: integer }
+        note: { type: string }
+
+    PortfolioPreview:
+      type: object
+      required: [cash, positions, readiness, note]
+      properties:
+        cash: { type: number }
+        positions: { type: integer }
+        readiness: { type: string, enum: [preview-only] }
+        note: { type: string }
+
+    StrategyIdea:
+      type: object
+      required: [sym, name, stance, confidence, gate, reason]
+      properties:
+        sym: { type: string }
+        name: { type: string }
+        stance: { type: string, enum: ["中性", "偏多研究", "偏空研究"] }
+        confidence: { type: number }
+        gate: { type: string, enum: [ok, blocked] }
+        reason: { type: string }
+
+    WorkflowItem:
+      type: object
+      required: [id, title, desc, cta, state, href]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        desc: { type: string }
+        cta: { type: string }
+        state: { $ref: '#/components/schemas/WorkflowState' }
+        href: { type: string }
+
+    BlockedItem:
+      type: object
+      required: [name, why, next, icon]
+      properties:
+        name: { type: string }
+        why: { type: string }
+        next: { type: string }
+        icon: { type: string, enum: [news, signal, lab, lock] }
