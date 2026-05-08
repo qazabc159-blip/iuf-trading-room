@@ -46,14 +46,19 @@ const API_BASE =
 async function postStrategyToggle(
   strategyId: string,
   mode: ToggleMode,
-  amountTwd: number | null,
+  capitalTwd: number | null,
+  yangExplicitAck?: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch(`${API_BASE}/api/v1/strategy/${encodeURIComponent(strategyId)}/toggle-mode`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, amountTwd }),
+      body: JSON.stringify({
+        mode,
+        capital_twd: capitalTwd ?? 0,
+        yang_explicit_ack: yangExplicitAck ?? false,
+      }),
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -529,11 +534,11 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
     [currentMode],
   );
 
-  async function applyMode(mode: ToggleMode) {
+  async function applyMode(mode: ToggleMode, yangExplicitAck?: boolean) {
     setToggleState({ status: "loading" });
     const amtNum = amountTwd.trim() ? parseInt(amountTwd.replace(/,/g, ""), 10) : null;
 
-    const result = await postStrategyToggle(data.strategyId, mode, amtNum);
+    const result = await postStrategyToggle(data.strategyId, mode, amtNum, yangExplicitAck);
     if (result.ok) {
       setCurrentMode(mode);
       setToggleState({ status: "success", mode });
@@ -553,7 +558,8 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
   function handleConfirmLive() {
     setShowConfirmModal(false);
     if (pendingMode) {
-      applyMode(pendingMode);
+      // Pass yang_explicit_ack=true — this is the explicit owner ack from the confirm modal
+      applyMode(pendingMode, true);
       setPendingMode(null);
     }
   }
