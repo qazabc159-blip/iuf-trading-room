@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
+import { IndustryHeatmap, type IndustryHeatmapTile } from "./components/industry-heatmap";
 import {
   getBriefs,
   getContentDrafts,
@@ -87,22 +88,7 @@ type SourceTile = {
   href: string;
 };
 
-type HeatTile = {
-  symbol: string;
-  name: string;
-  sector?: string | null;
-  pct: number | null;
-  weight: number;
-  source: string;
-  price: number | null;
-  date?: string | null;
-  open?: number | null;
-  high?: number | null;
-  low?: number | null;
-  close?: number | null;
-  volume?: number | null;
-  readiness?: "ready" | "degraded" | "blocked";
-  freshnessStatus?: "fresh" | "stale" | "missing";
+type HeatTile = IndustryHeatmapTile & {
   placeholder?: boolean;
 };
 
@@ -130,7 +116,7 @@ const TAIPEI_TIME_ZONE = "Asia/Taipei";
 const PAPER_PREVIEW_CAPITAL_TWD = 20_000;
 const ANNOUNCEMENT_DAYS = 30;
 const MAX_INTEL_ROWS = 12;
-const MAX_HEATMAP_TILES = 96;
+const MAX_HEATMAP_TILES = 240;
 const HEATMAP_DISPLAY_TILES = 28;
 const HEATMAP_SECTOR_OPTION_LIMIT = 8;
 const HEATMAP_SECTOR_LABELS: Record<string, string> = {
@@ -1517,45 +1503,23 @@ function HeatmapPanel({
   market: LoadState<MarketDataOverview | null>;
   selectedSectorParam?: string | null;
 }) {
-  const hasRealHeatmap = heatmap.some((row) => !row.placeholder);
-  const sectorOptions = buildHeatmapSectorOptions(heatmap);
-  const selectedSector = selectedHeatmapSector(sectorOptions, selectedSectorParam);
-  const selectedRows = hasRealHeatmap ? heatmapRowsForSector(heatmap, selectedSector) : [];
-  const rows = selectedRows.length > 0 ? selectedRows : EMPTY_HEATMAP;
   const heatmapSource = market.data?.marketContext.source === "finmind:official-daily" ? "FinMind 官方日資料" : "正式行情";
   const updatedAt = market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null;
-  const selectedChange = selectedRows.length > 0
-    ? selectedRows.reduce((sum, item) => sum + (item.pct ?? 0), 0) / selectedRows.length
-    : null;
   return (
     <Panel
       eyebrow="HEATMAP"
-      title={`${selectedSector.label}熱力圖`}
-      sub={hasRealHeatmap ? `產業分區 · 面積=成交量權重 · 顏色=今日漲跌 · ${heatmapSource}` : "登入後顯示官方行情；不使用示意價格。"}
-      right={<div className="tac-heat-legend"><span>{selectedRows.length} 檔</span><span>均幅 {formatPercent(selectedChange)}</span></div>}
+      title="台股產業熱力圖"
+      sub="依產業查看代表股表現"
+      right={<div className="tac-heat-legend"><span>產業切換</span><span>真實資料</span></div>}
     >
-      <div className="tac-heat-sector-tabs" aria-label="選擇熱力圖產業">
-        {sectorOptions.map((option) => (
-          <Link
-            href={option.key === "ALL" ? "/" : `/?sector=${encodeURIComponent(option.key)}`}
-            className={option.key === selectedSector.key ? "is-active" : ""}
-            aria-current={option.key === selectedSector.key ? "page" : undefined}
-            key={option.key}
-          >
-            <b>{option.label}</b>
-            <span>{option.count} 檔</span>
-          </Link>
-        ))}
-      </div>
-      <div className="tac-heatmap">
-        <div className="tac-heatmap-canvas tac-market-heatmap-canvas">
-          {buildTreemapLayout(rows).map((tile, index) => <HeatTileView tile={tile} key={`${tile.symbol}-${index}`} />)}
-        </div>
-      </div>
-      <div className="tac-heat-footer">
-        <span>精選 {hasRealHeatmap ? selectedRows.length : 0} 檔 · {sectorOptions.length} 個產業可切換 · 更新 {formatDateTime(updatedAt)}</span>
-        <span className="tac-heat-scale"><em>-3%</em><i /><em>+3%</em></span>
-      </div>
+      <IndustryHeatmap
+        heatmap={heatmap}
+        initialSector={selectedSectorParam}
+        updatedAt={updatedAt}
+        sourceLabel={heatmapSource}
+        marketState={stateFromLoad(market)}
+        reason={market.state === "BLOCKED" ? market.reason : undefined}
+      />
     </Panel>
   );
 }
@@ -1898,7 +1862,7 @@ export default async function DashboardPage({
   const intel = await loadMarketIntelDashboard();
   const sources = buildSources({ finmind, market, ops, brief, paper, ideas, runs, intel });
   const realHeatmap = buildHeatmap(market);
-  const heatmap = realHeatmap.length > 0 ? realHeatmap : EMPTY_HEATMAP;
+  const heatmap = realHeatmap;
   const quotes = buildTapeQuotes(realHeatmap, market);
   const liveCount = sources.filter((source) => source.state === "LIVE").length;
   const alertCount = sources.length - liveCount;
@@ -1916,9 +1880,11 @@ export default async function DashboardPage({
             <HeroPanel heatmap={heatmap} market={market} paper={paper} broker={broker} brief={brief} intel={intel} now={now} />
             <MarketMoversPanel market={market} />
           </section>
-          <section className="tac-two-grid tac-fresh-heat">
-            <FreshnessPanel sources={sources} />
+          <section className="tac-heatmap-wide">
             <HeatmapPanel heatmap={realHeatmap} market={market} selectedSectorParam={selectedSectorParam} />
+          </section>
+          <section className="tac-single-panel tac-fresh-heat">
+            <FreshnessPanel sources={sources} />
           </section>
           <section className="tac-two-grid">
             <MarketIntelPanel intel={intel} />

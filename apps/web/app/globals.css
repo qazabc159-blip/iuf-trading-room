@@ -12325,7 +12325,9 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tac-hero-grid,
-.tac-two-grid {
+.tac-two-grid,
+.tac-heatmap-wide,
+.tac-single-panel {
   display: grid;
   gap: 16px;
   align-items: stretch;
@@ -12342,6 +12344,11 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-fresh-heat {
   grid-template-columns: minmax(420px, 0.72fr) minmax(0, 1fr);
+}
+
+.tac-heatmap-wide,
+.tac-single-panel {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .tac-paper-grid {
@@ -13418,6 +13425,372 @@ body:has(.tactical-dashboard) .app-sidebar {
   gap: 8px;
 }
 
+.tac-industry-heatmap {
+  display: grid;
+  gap: 0;
+}
+
+.tac-heat-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 18px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.08);
+}
+
+.tac-heat-toolbar > div:first-child {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tac-heat-kicker {
+  color: var(--tac-gold);
+  font: 850 11px/1 var(--mono);
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.tac-heat-toolbar strong {
+  color: var(--tac-fg-1);
+  font: 760 14px/1.4 var(--sans-tc);
+}
+
+.tac-heat-stats {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: min(100%, 420px);
+}
+
+.tac-heat-stats span {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid rgba(220, 228, 240, 0.11);
+  border-radius: 4px;
+  background: rgba(7, 11, 16, 0.58);
+  color: var(--tac-fg-2);
+  font: 820 11px/1 var(--sans-tc);
+  white-space: nowrap;
+}
+
+.tac-heat-stats .up {
+  border-color: rgba(235, 83, 96, 0.24);
+  color: #ff7a86;
+}
+
+.tac-heat-stats .down {
+  border-color: rgba(46, 204, 113, 0.24);
+  color: #4ee08e;
+}
+
+.tac-heat-stats .flat {
+  color: var(--tac-fg-3);
+}
+
+.tac-industry-heatmap .tac-heat-sector-tabs {
+  gap: 10px;
+  padding: 12px 18px 10px;
+  border-bottom: 1px solid rgba(220, 228, 240, 0.07);
+}
+
+.tac-heat-sector-tabs button {
+  flex: 0 0 auto;
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 132px;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid rgba(220, 228, 240, 0.11);
+  border-radius: 999px;
+  background: rgba(7, 11, 16, 0.72);
+  color: var(--tac-fg-2);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.tac-heat-sector-tabs button:hover,
+.tac-heat-sector-tabs button:focus-visible {
+  border-color: rgba(226, 184, 92, 0.44);
+  background: rgba(200, 148, 63, 0.1);
+  color: var(--tac-fg-0);
+  outline: none;
+}
+
+.tac-heat-sector-tabs button.is-active {
+  border-color: rgba(226, 184, 92, 0.72);
+  background:
+    linear-gradient(135deg, rgba(226, 184, 92, 0.18), rgba(226, 184, 92, 0.04)),
+    rgba(12, 18, 27, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(226, 184, 92, 0.08), 0 0 26px rgba(226, 184, 92, 0.08);
+  color: var(--tac-fg-0);
+}
+
+.tac-heat-sector-tabs button.is-muted {
+  opacity: 0.52;
+}
+
+.tac-heat-sector-tabs button b {
+  font: 900 12px/1.15 var(--sans-tc);
+}
+
+.tac-heat-sector-tabs button span {
+  color: var(--tac-fg-3);
+  font: 850 10px/1 var(--mono);
+}
+
+.tac-industry-heatmap .tac-heatmap {
+  display: block;
+  padding: 16px 18px 12px;
+}
+
+.tac-industry-heatmap .tac-heatmap.is-switching .tac-market-heatmap-canvas {
+  opacity: 0.62;
+  transform: translateY(3px);
+}
+
+.tac-industry-heatmap .tac-market-heatmap-canvas {
+  min-height: clamp(470px, 42vw, 660px);
+  border: 1px solid rgba(220, 228, 240, 0.13);
+  border-radius: 8px;
+  background:
+    linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.016) 1px, transparent 1px),
+    radial-gradient(circle at 20% 0%, rgba(226, 184, 92, 0.07), transparent 30%),
+    rgba(5, 9, 14, 0.94);
+  background-size: 28px 28px, 28px 28px, 100% 100%, 100% 100%;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 90px rgba(0, 0, 0, 0.24);
+  overflow: visible;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.tac-industry-heatmap .tac-heat-tile {
+  position: absolute;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(8px, 0.86vw, 16px);
+  border: 2px solid rgba(4, 8, 13, 0.92);
+  border-radius: 7px;
+  color: #f7f9fc;
+  text-decoration: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -18px 48px rgba(0, 0, 0, 0.16);
+  overflow: visible;
+  transform-origin: center;
+  transition: transform 150ms ease, filter 150ms ease, box-shadow 150ms ease;
+}
+
+.tac-industry-heatmap .tac-heat-tile:hover,
+.tac-industry-heatmap .tac-heat-tile:focus-visible {
+  transform: scale(1.012);
+  filter: brightness(1.08) saturate(1.08);
+  z-index: 5;
+  outline: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 14px 34px rgba(0, 0, 0, 0.32);
+}
+
+.tac-industry-heatmap .tac-heat-tile.up {
+  background:
+    linear-gradient(135deg, rgb(240 64 82 / var(--heat)), rgba(82, 20, 32, 0.94)),
+    #39131b;
+}
+
+.tac-industry-heatmap .tac-heat-tile.down {
+  background:
+    linear-gradient(135deg, rgb(34 197 94 / var(--heat)), rgba(12, 73, 51, 0.94)),
+    #0d2c24;
+}
+
+.tac-industry-heatmap .tac-heat-tile.flat {
+  background:
+    linear-gradient(135deg, rgba(83, 97, 116, 0.82), rgba(32, 41, 55, 0.96)),
+    #141b26;
+}
+
+.tac-industry-heatmap .tile-symbol {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.92);
+  font: 950 clamp(15px, 1.25vw, 25px)/1 var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tac-industry-heatmap .tile-name {
+  color: rgba(255, 255, 255, 0.84);
+  font: 850 clamp(13px, 1vw, 20px)/1.16 var(--sans-tc);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tac-industry-heatmap .tile-pct {
+  align-self: end;
+  justify-self: end;
+  color: rgba(255, 255, 255, 0.96);
+  font: 950 clamp(18px, 1.65vw, 34px)/1 var(--mono);
+  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.28);
+  white-space: nowrap;
+}
+
+.tac-industry-heatmap .tile-meta {
+  color: rgba(255, 255, 255, 0.68);
+  font: 780 11px/1 var(--sans-tc);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tac-industry-heatmap .tac-heat-tile.large .tile-symbol {
+  font-size: clamp(14px, 1.05vw, 20px);
+}
+
+.tac-industry-heatmap .tac-heat-tile.large .tile-pct {
+  font-size: clamp(17px, 1.35vw, 26px);
+}
+
+.tac-industry-heatmap .tac-heat-tile.medium {
+  gap: 3px;
+  padding: clamp(7px, 0.72vw, 11px);
+}
+
+.tac-industry-heatmap .tac-heat-tile.medium .tile-symbol {
+  font-size: clamp(12px, 0.92vw, 17px);
+}
+
+.tac-industry-heatmap .tac-heat-tile.medium .tile-name {
+  font-size: clamp(10px, 0.76vw, 13px);
+}
+
+.tac-industry-heatmap .tac-heat-tile.medium .tile-pct {
+  justify-self: start;
+  font-size: clamp(13px, 0.92vw, 18px);
+}
+
+.tac-industry-heatmap .tac-heat-tile.small {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 7px;
+}
+
+.tac-industry-heatmap .tac-heat-tile.small .tile-symbol {
+  font-size: 11px;
+}
+
+.tac-industry-heatmap .tac-heat-tile.small .tile-name,
+.tac-industry-heatmap .tac-heat-tile.small .tile-meta {
+  display: none;
+}
+
+.tac-industry-heatmap .tac-heat-tile.small .tile-pct {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.tac-heat-tooltip {
+  position: absolute;
+  left: min(12px, 4%);
+  bottom: calc(100% + 10px);
+  display: grid;
+  gap: 5px;
+  min-width: 210px;
+  max-width: 270px;
+  padding: 10px 12px;
+  border: 1px solid rgba(226, 184, 92, 0.34);
+  border-radius: 6px;
+  background: rgba(7, 11, 16, 0.96);
+  color: var(--tac-fg-1);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.38);
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+  z-index: 20;
+}
+
+.tac-heat-tooltip strong {
+  color: var(--tac-fg-0);
+  font: 900 13px/1.2 var(--sans-tc);
+}
+
+.tac-heat-tooltip span {
+  color: var(--tac-fg-2);
+  font: 760 11px/1.25 var(--sans-tc);
+}
+
+.tac-heat-tile:hover .tac-heat-tooltip,
+.tac-heat-tile:focus-visible .tac-heat-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tac-heat-empty {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  min-height: clamp(360px, 38vw, 540px);
+  padding: 28px;
+  border: 1px solid rgba(220, 228, 240, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.014) 1px, transparent 1px),
+    rgba(5, 9, 14, 0.9);
+  background-size: 28px 28px, 28px 28px, 100% 100%;
+  text-align: center;
+}
+
+.tac-heat-empty span {
+  color: var(--tac-gold);
+  font: 850 11px/1 var(--mono);
+}
+
+.tac-heat-empty strong {
+  max-width: 520px;
+  color: var(--tac-fg-1);
+  font: 850 20px/1.35 var(--sans-tc);
+}
+
+.tac-heat-empty small {
+  color: var(--tac-fg-3);
+  font: 760 12px/1.35 var(--sans-tc);
+}
+
+.tac-industry-heatmap .tac-heat-footer {
+  padding: 0 18px 16px;
+}
+
+.tac-industry-heatmap .tac-heat-scale {
+  gap: 7px;
+  color: var(--tac-fg-3);
+  font: 850 10px/1 var(--mono);
+}
+
+.tac-industry-heatmap .tac-heat-scale i {
+  width: 72px;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #23c566, rgba(131, 145, 166, 0.62), #f04452);
+}
+
 .tac-heat-scale em {
   color: var(--tac-fg-3);
   font: 900 10px/1 var(--mono);
@@ -14183,6 +14556,87 @@ body:has(.tactical-dashboard) .app-sidebar {
   to { background-position: -120% 0; }
 }
 
+@media (max-width: 860px) {
+  .tac-heat-toolbar {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .tac-heat-stats {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .tac-industry-heatmap .tac-market-heatmap-canvas {
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 620px) {
+  .tac-heat-toolbar {
+    padding: 13px 13px 10px;
+  }
+
+  .tac-heat-toolbar strong {
+    font-size: 13px;
+  }
+
+  .tac-industry-heatmap .tac-heat-sector-tabs {
+    padding: 10px 13px 8px;
+  }
+
+  .tac-heat-sector-tabs button {
+    min-width: 138px;
+    min-height: 46px;
+    padding: 9px 11px;
+  }
+
+  .tac-industry-heatmap .tac-heatmap {
+    padding: 12px 13px 10px;
+  }
+
+  .tac-industry-heatmap .tac-market-heatmap-canvas {
+    min-height: 520px;
+    border-radius: 6px;
+  }
+
+  .tac-industry-heatmap .tac-heat-tile {
+    border-width: 1px;
+    border-radius: 5px;
+    padding: 6px;
+  }
+
+  .tac-industry-heatmap .tile-symbol {
+    font-size: 12px;
+  }
+
+  .tac-industry-heatmap .tile-name {
+    font-size: 11px;
+  }
+
+  .tac-industry-heatmap .tile-pct {
+    justify-self: start;
+    font-size: 12px;
+  }
+
+  .tac-industry-heatmap .tac-heat-tile.hero .tile-pct,
+  .tac-industry-heatmap .tac-heat-tile.large .tile-pct {
+    font-size: 16px;
+  }
+
+  .tac-industry-heatmap .tac-heat-tile.small .tile-pct {
+    display: none;
+  }
+
+  .tac-heat-tooltip {
+    display: none;
+  }
+
+  .tac-industry-heatmap .tac-heat-footer {
+    padding: 0 13px 14px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tactical-dashboard,
   .tac-scanline::before,
@@ -14192,7 +14646,10 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-corner,
   .tac-mode span,
   .tac-ticker-label span,
-  .tac-hero-status > span i {
+  .tac-hero-status > span i,
+  .tac-industry-heatmap .tac-heat-tile,
+  .tac-industry-heatmap .tac-market-heatmap-canvas {
     animation: none !important;
+    transition: none !important;
   }
 }
