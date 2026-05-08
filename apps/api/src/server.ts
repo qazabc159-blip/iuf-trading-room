@@ -4090,17 +4090,12 @@ app.get("/api/v1/themes/daily/:date", async (c) => {
 
   const db = getDb();
   if (!db) {
-    // Memory mode: return a mock summary
-    const mockSummary = {
-      id: "mock-summary-" + dateParam,
-      dt: dateParam,
-      summaryMd: `## Daily Theme Summary — ${dateParam}\n\n_No data available in memory mode._`,
-      themeLabel: "No data (memory mode)",
-      sourceEventCount: 0,
-      generatedBy: "mock",
-      createdAt: new Date().toISOString()
-    };
-    return c.json({ data: mockSummary });
+    // Memory mode: no DB available — return honest empty state, never fake data.
+    return c.json({
+      data: null,
+      source: "no_db",
+      stale_reason: "database_not_connected"
+    });
   }
 
   const session = c.get("session");
@@ -8101,7 +8096,10 @@ app.post("/api/v1/paper/submit", async (c) => {
         outcome: "BLOCKED",
         blockedByLayer: fourLayerGate.layer,
         auditType: fourLayerGate.auditType,
-        reason: fourLayerGate.reason
+        reason: fourLayerGate.reason,
+        // Bruce TR-3-C1: strategy run context fields (audit observability)
+        strategy_run_mode: "paper",
+        yang_explicit_ack: false
       }
     }).catch((err) => {
       console.error("[paper/submit] 4-layer gate audit log failed:", err instanceof Error ? err.message : String(err));
@@ -8177,7 +8175,10 @@ app.post("/api/v1/paper/submit", async (c) => {
       quantity_unit: payload.quantity_unit,
       outcome: isRejected ? "REJECTED" : "FILLED",
       idempotencyKey: payload.idempotencyKey,
-      intentId: intent.id
+      intentId: intent.id,
+      // Bruce TR-3-C1: strategy run context fields (audit observability)
+      strategy_run_mode: "paper",
+      yang_explicit_ack: false
     }
   }).catch((err) => {
     console.error("[paper/submit] audit log write failed:", err instanceof Error ? err.message : String(err));
