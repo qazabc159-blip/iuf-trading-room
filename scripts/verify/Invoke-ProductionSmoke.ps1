@@ -135,6 +135,14 @@ function CheckBody {
     }
 }
 
+function Field {
+    param([object]$obj, [string]$name)
+    if ($null -eq $obj) { return $null }
+    $prop = $obj.PSObject.Properties[$name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
+}
+
 function SafeGet {
     param([string]$uri, [object]$webSession)
     try {
@@ -270,10 +278,11 @@ function Invoke-SmokeRun {
     $r4 = SafeGet "$BaseUrl/api/v1/companies/2330/kbar?freq=1d" $session
     if ($r4.StatusCode -eq 200 -and $r4.Content) {
         $j4 = $r4.Content | ConvertFrom-Json
-        $d4 = if ($j4.data) { $j4.data } else { $j4 }
-        $kstate  = $d4.state
-        $rows    = $d4.rows
-        $kdate   = $d4.date
+        $d4 = Field $j4 "data"
+        if (-not $d4) { $d4 = $j4 }
+        $kstate  = Field $d4 "state"
+        $rows    = Field $d4 "rows"
+        $kdate   = Field $d4 "date"
         $rowCount = if ($rows) { $rows.Count } else { 0 }
         $parsedDate = ParseDate $kdate
 
@@ -318,7 +327,8 @@ function Invoke-SmokeRun {
         if ($mockHit) {
             # Confirm via parsed JSON
             $j5 = $r5.Content | ConvertFrom-Json
-            $data5 = if ($j5.data) { $j5.data } else { $j5 }
+            $data5 = Field $j5 "data"
+            if (-not $data5) { $data5 = $j5 }
             $mockEntries = @()
             if ($data5 -is [array]) {
                 $mockEntries = $data5 | Where-Object { $_.source -eq "mock" }
@@ -327,7 +337,8 @@ function Invoke-SmokeRun {
             StopLine "item-5/SL-07" "GET /ohlcv: $mockCount entries have source=mock (stop-line violation — mock pretending live in prod)"
         } else {
             $j5 = $r5.Content | ConvertFrom-Json
-            $data5 = if ($j5.data) { $j5.data } else { $j5 }
+            $data5 = Field $j5 "data"
+            if (-not $data5) { $data5 = $j5 }
             $entryCount = if ($data5 -is [array]) { $data5.Count } else { 0 }
             Pass "item-5" "GET /api/v1/companies/2330/ohlcv" "HTTP 200 | entries=$entryCount | no source=mock"
         }
@@ -344,10 +355,14 @@ function Invoke-SmokeRun {
     if ($r6.StatusCode -eq 200 -and $r6.Content) {
         $j6 = $r6.Content | ConvertFrom-Json
         # Navigate common response shapes: data.inProcess or direct fields
-        $d6 = if ($j6.data) { $j6.data } else { $j6 }
-        $reqCount   = if ($d6.inProcess) { $d6.inProcess.requestCount } else { $d6.requestCount }
-        $ohlcvSrc   = if ($d6.ohlcvSource) { $d6.ohlcvSource } else { $d6.source }
-        $lastFetch  = if ($d6.lastFetchTs) { $d6.lastFetchTs } else { $d6.lastFetch }
+        $d6 = Field $j6 "data"
+        if (-not $d6) { $d6 = $j6 }
+        $inProcess = Field $d6 "inProcess"
+        $reqCount   = if ($inProcess) { Field $inProcess "requestCount" } else { Field $d6 "requestCount" }
+        $ohlcvSrc   = Field $d6 "ohlcvSource"
+        if (-not $ohlcvSrc) { $ohlcvSrc = Field $d6 "source" }
+        $lastFetch  = Field $d6 "lastFetchTs"
+        if (-not $lastFetch) { $lastFetch = Field $d6 "lastFetch" }
 
         $i6Fail = $false
         $reasons6 = @()
@@ -379,8 +394,9 @@ function Invoke-SmokeRun {
     $r7 = SafeGet "$BaseUrl/api/v1/data-sources/finmind/status" $session
     if ($r7.StatusCode -eq 200 -and $r7.Content) {
         $j7 = $r7.Content | ConvertFrom-Json
-        $d7 = if ($j7.data) { $j7.data } else { $j7 }
-        $fmState = $d7.state
+        $d7 = Field $j7 "data"
+        if (-not $d7) { $d7 = $j7 }
+        $fmState = Field $d7 "state"
         if ($fmState -eq "LIVE_READY") {
             Pass "item-7" "GET /api/v1/data-sources/finmind/status" "state=$fmState"
         } else {
@@ -398,7 +414,8 @@ function Invoke-SmokeRun {
     $r8 = SafeGet "$BaseUrl/api/v1/briefs" $session
     if ($r8.StatusCode -eq 200 -and $r8.Content) {
         $j8 = $r8.Content | ConvertFrom-Json
-        $briefs = if ($j8.data) { $j8.data } else { $j8 }
+        $briefs = Field $j8 "data"
+        if (-not $briefs) { $briefs = $j8 }
         if ($briefs -is [array] -and $briefs.Count -gt 0) {
             $latestDate = ParseDate $briefs[0].date
             if ($latestDate -and $latestDate -lt $STALE_THRESHOLD) {
@@ -423,10 +440,13 @@ function Invoke-SmokeRun {
     $r9 = SafeGet "$BaseUrl/api/v1/openalice/observability" $session
     if ($r9.StatusCode -eq 200 -and $r9.Content) {
         $j9 = $r9.Content | ConvertFrom-Json
-        $d9 = if ($j9.data) { $j9.data } else { $j9 }
-        $workerStatus  = $d9.workerStatus
-        $queuedJobs    = [int]($d9.queuedJobs)
-        $terminalJobs  = [int]($d9.terminalJobs)
+        $d9 = Field $j9 "data"
+        if (-not $d9) { $d9 = $j9 }
+        $workerStatus  = Field $d9 "workerStatus"
+        $queuedJobsRaw = Field $d9 "queuedJobs"
+        $terminalJobsRaw = Field $d9 "terminalJobs"
+        $queuedJobs    = if ($null -ne $queuedJobsRaw) { [int]$queuedJobsRaw } else { 0 }
+        $terminalJobs  = if ($null -ne $terminalJobsRaw) { [int]$terminalJobsRaw } else { 0 }
 
         $i9Fail = $false
         $reasons9 = @()
