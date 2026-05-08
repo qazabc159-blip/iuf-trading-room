@@ -38,7 +38,8 @@ class KgiLoginFailedError(Exception):
 
 class KgiPermissionOrCredentialRejected(Exception):
     """
-    Raised when kgisuperpy.login() returns IsSucceed=False with error code 78.
+    Raised when kgisuperpy.login() returns IsSucceed=False with error code 78
+    on the LIVE (simulation=False) environment.
     Code 78 = 「您尚未申請使用元件，請洽營業員」(TradeCom 元件使用權限 not enabled).
     Distinct from generic auth failure — action required: contact KGI 業務窗口.
     Maps to HTTP 401.
@@ -47,6 +48,24 @@ class KgiPermissionOrCredentialRejected(Exception):
     def __init__(self, code: int = 78) -> None:
         self.error_code = code
         super().__init__(f"KGI permission/credential rejected (code={code}): TradeCom 元件使用權限未啟用")
+
+
+class KgiSimEnvNotAuthorized(Exception):
+    """
+    Raised when kgisuperpy.login() returns IsSucceed=False with error code 78
+    on the SIMULATION (simulation=True) environment.
+    This is NOT a credential error — it means the sim-env TradeCom permission
+    has not been granted (broker may only have opened live API access, not sim).
+    Action: use simulation=False (live, read-only) instead.
+    Maps to HTTP 400 SIM_ENV_NOT_AVAILABLE_OR_NOT_AUTHORIZED.
+    """
+
+    def __init__(self, code: int = 78) -> None:
+        self.error_code = code
+        super().__init__(
+            f"KGI sim-env not authorized (code={code}): "
+            "測試環境權限未開或不同步，請改用 simulation=false 正式環境（read-only only）"
+        )
 
 
 class KgiLoginObjectMissingAttr(Exception):
@@ -253,6 +272,11 @@ class KgiSession:
                 # Do NOT store the failed api object in self._api.
                 # Do NOT call login_result.show_account() or any account method.
                 if error_code == 78:
+                    # sim vs live split: same code 78, different root cause and remedy.
+                    # simulation=True → SIM env permission not granted (use live instead).
+                    # simulation=False → live TradeCom 元件使用權限 not enabled (contact 業務窗口).
+                    if simulation:
+                        raise KgiSimEnvNotAuthorized(code=error_code)
                     raise KgiPermissionOrCredentialRejected(code=error_code)
                 raise KgiLoginFailedError(error_code=error_code, reply_string=reply_string)
 

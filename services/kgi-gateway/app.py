@@ -37,6 +37,7 @@ from fastapi.responses import JSONResponse
 
 from config import settings
 from kgi_events import order_event_manager
+from read_only_guard import require_read_only
 from kgi_quote import (
     get_latest_bidask,
     get_quote_status,
@@ -58,6 +59,7 @@ from kgi_session import (
     KgiLoginFailedError,
     KgiLoginObjectMissingAttr,
     KgiPermissionOrCredentialRejected,
+    KgiSimEnvNotAuthorized,
 )
 from schemas import (
     CreateOrderRequest,
@@ -194,9 +196,13 @@ async def login(body: LoginRequest) -> LoginResponse:
     Login to KGI via kgisuperpy.login().
     Does NOT call set_Account — caller must POST /session/set-account separately.
 
-    Error handling (3 distinct codes, no more 502 vague):
+    Error handling (4 distinct codes, no more 502 vague):
+      KgiSimEnvNotAuthorized            → 400 SIM_ENV_NOT_AVAILABLE_OR_NOT_AUTHORIZED
+          (simulation=True + error code 78: sim env permission not granted;
+           remedy: switch to simulation=false — live env read-only access works)
       KgiPermissionOrCredentialRejected → 401 KGI_PERMISSION_OR_CREDENTIAL_REJECTED
-          (error code 78: TradeCom 元件使用權限 not enabled — action: contact KGI 業務窗口)
+          (simulation=False + error code 78: TradeCom 元件使用權限 not enabled;
+           action: contact KGI 業務窗口)
       KgiLoginFailedError               → 401 KGI_LOGIN_FAILED
           (wrong credentials, account locked, or other KGI rejection)
       KgiLoginObjectMissingAttr         → 400 KGI_LOGIN_OBJECT_MISSING_ATTR
@@ -224,8 +230,30 @@ async def login(body: LoginRequest) -> LoginResponse:
                     masked_pid, body.simulation, len(accounts))
         return LoginResponse(ok=True, accounts=accounts)
 
+    except KgiSimEnvNotAuthorized as exc:
+        # Code 78 on simulation=True → sim env permission not granted.
+        # This is NOT a credential error. Business meaning: broker opened live-only API access.
+        # Safe remedy message: switch to simulation=False (live, read-only).
+        # NEVER include person_id literal / password in log or response.
+        logger.warning(
+            "Login rejected (sim env code 78): person_id=%s simulation=%s error_code=%d",
+            masked_pid, body.simulation, exc.error_code,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="SIM_ENV_NOT_AVAILABLE_OR_NOT_AUTHORIZED",
+                    message=(
+                        "測試環境權限未開或不同步，請改用 simulation=false 正式環境（read-only only）"
+                    ),
+                    upstream=f"code={exc.error_code}",
+                )
+            ).model_dump(),
+        ) from exc
+
     except KgiPermissionOrCredentialRejected as exc:
-        # Code 78: TradeCom 元件使用權限 not enabled.
+        # Code 78 on simulation=False: TradeCom 元件使用權限 not enabled.
         # Distinct from generic auth failure — tells caller exactly what to do.
         # NEVER include person_id literal / password in log or response.
         logger.warning(
@@ -325,6 +353,23 @@ async def login(body: LoginRequest) -> LoginResponse:
 @app.get("/session/show-account", response_model=ShowAccountResponse)
 async def show_account() -> ShowAccountResponse:
     """Return cached account list (populated after login)."""
+    if not session.is_logged_in:
+        raise HTTPException(
+            status_code=401,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(code="NOT_LOGGED_IN", message="Call POST /session/login first.")
+            ).model_dump(),
+        )
+    return ShowAccountResponse(accounts=session.show_account())
+
+
+@app.get("/account/list", response_model=ShowAccountResponse)
+async def account_list() -> ShowAccountResponse:
+    """
+    GET /account/list — read-only alias for /session/show-account.
+    Returns cached account list (populated after login).
+    Allowed in read-only mode (楊董 2026-05-08: tonight read-only scope includes account list).
+    """
     if not session.is_logged_in:
         raise HTTPException(
             status_code=401,
