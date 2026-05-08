@@ -14,8 +14,10 @@ import {
   classifyDraftTier,
   evaluatePublishGate,
   filterSourcePackEntries,
+  isBriefBootRecoveryWindow,
   loadStrategySnapshot,
   runBatchAiReviewer,
+  runPipelinePreMarketBootRecovery,
   runPipelineTick,
   _lastPipelineState,
   type SourcePack,
@@ -431,4 +433,28 @@ test("classifyDraftTier returns yellow for payload containing strategy keyword",
   };
   const tier = classifyDraftTier(payloadWithStrategySection);
   assert.equal(tier, "yellow", "strategy content must be yellow (awaiting_review), not auto-published");
+});
+
+// -- Test BR1-BR3: isBriefBootRecoveryWindow (2026-05-09 cron timing fix) ------
+
+test("BR1: isBriefBootRecoveryWindow returns true for 07:30-09:29 TST (recovery window)", () => {
+  // 08:44 TST = 00:44 UTC (Asia/Taipei = UTC+8). Root cause of 5/8 missing-fire.
+  const at0844 = new Date("2026-05-08T00:44:00.000Z");
+  assert.equal(isBriefBootRecoveryWindow(at0844), true, "08:44 TST must be inside recovery window 07:30-09:30");
+});
+
+test("BR2: isBriefBootRecoveryWindow returns false outside the recovery window", () => {
+  const at1000 = new Date("2026-05-08T02:00:00.000Z"); // 10:00 TST
+  assert.equal(isBriefBootRecoveryWindow(at1000), false, "10:00 TST must be outside recovery window");
+  const at0600 = new Date("2026-05-07T22:00:00.000Z"); // 06:00 TST
+  assert.equal(isBriefBootRecoveryWindow(at0600), false, "06:00 TST must be outside recovery window");
+});
+
+test("BR3: runPipelinePreMarketBootRecovery does not throw in memory mode (no DB)", async () => {
+  try {
+    await runPipelinePreMarketBootRecovery("default");
+    assert.ok(true, "boot recovery must not throw in memory mode");
+  } catch (err) {
+    assert.fail("runPipelinePreMarketBootRecovery threw unexpectedly: " + String(err));
+  }
 });

@@ -234,6 +234,7 @@ import {
   runBatchAiReviewer,
   runPipelineCloseBriefTick,
   runPipelineCloseWatchTick,
+  runPipelinePreMarketBootRecovery,
   runPipelinePreMarketTick,
   runPipelineTick
 } from "./openalice-pipeline.js";
@@ -10215,7 +10216,8 @@ function startSchedulers(workspaceSlug: string): void {
   }, THIRTY_MIN_MS_NEWS);
 
   // P0-C: OpenAlice Autonomous Daily Pipeline — 3 ticks per trading day (TST)
-  // pre-market 08:30, close-watch 13:45, close-brief 16:30
+  // pre-market 07:30 (changed 2026-05-09: was 08:30 — 楊董 requires brief by 08:00 TST)
+  // close-watch 13:45, close-brief 16:30
   // Each tick runs every 15 min and checks its Taipei time window internally.
   // P0-2: Sentry capture when pipeline ticks fail consecutively
   const FIFTEEN_MIN_MS = 15 * 60 * 1000;
@@ -10240,10 +10242,15 @@ function startSchedulers(workspaceSlug: string): void {
     _pipelineConsecutiveFails[phase] = 0;
   }
 
-  // Pre-market tick (08:30–09:00 TST window, check every 15min)
-  runPipelinePreMarketTick(workspaceSlug)
-    .then(() => handlePipelineSuccess("pre_market"))
-    .catch((e) => handlePipelineFail("pre_market", e));
+  // Pre-market tick (07:30–08:00 TST window, check every 15min)
+  // Boot-recovery fires once at startup (10s delay): handles restarts between
+  // 07:30 and 09:30 TST where the narrow window may have already passed.
+  // Root cause of 5/8 missing-fire: process restarted at 08:44 TST.
+  setTimeout(() => {
+    runPipelinePreMarketBootRecovery(workspaceSlug)
+      .then(() => handlePipelineSuccess("pre_market"))
+      .catch((e: unknown) => handlePipelineFail("pre_market", e));
+  }, 10_000);
   setInterval(() => {
     runPipelinePreMarketTick(workspaceSlug)
       .then(() => handlePipelineSuccess("pre_market"))
