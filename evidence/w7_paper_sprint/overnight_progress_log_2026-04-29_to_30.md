@@ -387,7 +387,7 @@ C. **PR #24 squash merge** — initially CONFLICTING after A merged (additive ov
 - Bruce L5 produced `evidence/w7_paper_sprint/l5_housekeeping_audit_2026-04-30.md`.
 - Categorized 33 candidate files: Cat-A `.tmp_pr*` (4 → DELETE), Cat-B `.codex-web-dev.*` (5 → GITIGNORE), Cat-C scripts one-shot (10 → DELETE), Cat-D evidence security (14 → ARCHIVE/redact), Cat-E root scratch (4 → DELETE), `secret_inventory.md` (KEEP).
 - 9 .gitignore lines proposed.
-- **★ SECURITY** — 14 evidence files contain live KGI broker identifiers (person_id=F131331910, account=0308732, broker_id=9204). Private repo so no immediate exposure, but must redact before any public visibility change. Flagged for next-cycle decision.
+- **★ SECURITY** — 14 evidence files contain live KGI broker identifiers (person_id=F131331910, account=***0732, broker_id=9204). Private repo so no immediate exposure, but must redact before any public visibility change. Flagged for next-cycle decision.
 
 ### Hard lines re-checked (post Cycle 8.5)
 - `/order/create` 409 untouched ✓
@@ -443,7 +443,7 @@ C. **PR #24 squash merge** — initially CONFLICTING after A merged (additive ov
 
 ### 派 — 3 parallel background lanes
 - **K — Bruce post-merge regression** (agentId `a1c416d97dc8e7aa4`) — 8-point checklist on `7a473ec`. Output → `evidence/w7_paper_sprint/post_merge_regression_2026-04-30_cycle8_6.md`.
-- **L — Bruce L5 secret_inventory reconciliation** (agentId `ab27c6b227ed44a0f`) — cross-reference `secret_inventory.md` against L5 14-file SECURITY list, grep for `F131331910` / `0308732` / `9204`, propose redaction format (no execution). Output → `evidence/w7_paper_sprint/l5_secret_inventory_reconciliation_2026-04-30.md`.
+- **L — Bruce L5 secret_inventory reconciliation** (agentId `ab27c6b227ed44a0f`) — cross-reference `secret_inventory.md` against L5 14-file SECURITY list, grep for `F131331910` / `***0732` / `9204`, propose redaction format (no execution). Output → `evidence/w7_paper_sprint/l5_secret_inventory_reconciliation_2026-04-30.md`.
 - **M — Jason L4 OpenAlice 5 task types design** (agentId `ab0da6a2421b8f58d`) — design only, no code. 5 candidate types: `theme_signal`, `risk_brief`, `news_synthesis`, `weekly_review`, `pre_market_brief`. Schema deltas, cron schedule, cost estimate, hard-line conformance, D5/D6/D7 roadmap, open Qs for 楊董. Output → `evidence/w7_paper_sprint/l4_openalice_5_task_types_design.md`.
 
 ### Hard lines (post-merge `7a473ec`)
