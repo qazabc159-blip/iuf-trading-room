@@ -53,7 +53,12 @@ from kgi_kbar import (
     SUPPORTED_INTERVALS,
     UNSUPPORTED_INTERVAL_MATRIX,
 )
-from kgi_session import session, KgiLoginFailedError
+from kgi_session import (
+    session,
+    KgiLoginFailedError,
+    KgiLoginObjectMissingAttr,
+    KgiPermissionOrCredentialRejected,
+)
 from schemas import (
     CreateOrderRequest,
     DealsResponse,
@@ -165,14 +170,21 @@ async def login(body: LoginRequest) -> LoginResponse:
     Login to KGI via kgisuperpy.login().
     Does NOT call set_Account — caller must POST /session/set-account separately.
 
-    Error handling:
-      KgiLoginFailedError  → 401 KGI_LOGIN_FAILED  (wrong credentials, KGI rejected)
-      Other exceptions     → 400 KGI_LOGIN_ERROR    (network / unexpected failure)
+    Error handling (3 distinct codes, no more 502 vague):
+      KgiPermissionOrCredentialRejected → 401 KGI_PERMISSION_OR_CREDENTIAL_REJECTED
+          (error code 78: TradeCom 元件使用權限 not enabled — action: contact KGI 業務窗口)
+      KgiLoginFailedError               → 401 KGI_LOGIN_FAILED
+          (wrong credentials, account locked, or other KGI rejection)
+      KgiLoginObjectMissingAttr         → 400 KGI_LOGIN_OBJECT_MISSING_ATTR
+          (login result missing expected method — SDK shape mismatch)
+      Other exceptions                  → 400 KGI_LOGIN_ERROR
+          (network / unexpected failure)
 
     SECURITY:
       - person_id is masked in logs (middle chars replaced with '*')
       - password is NEVER logged or included in any response
       - raw error messages are trimmed to safe wording only
+      - attr_name in OBJECT_MISSING_ATTR is an attribute name string only (no data values)
     """
     masked_pid = _mask_person_id(body.person_id)
 
@@ -186,8 +198,27 @@ async def login(body: LoginRequest) -> LoginResponse:
                     masked_pid, body.simulation, len(accounts))
         return LoginResponse(ok=True, accounts=accounts)
 
+    except KgiPermissionOrCredentialRejected as exc:
+        # Code 78: TradeCom 元件使用權限 not enabled.
+        # Distinct from generic auth failure — tells caller exactly what to do.
+        # NEVER include person_id literal / password in log or response.
+        logger.warning(
+            "Login rejected (code 78 permission): person_id=%s simulation=%s error_code=%d",
+            masked_pid, body.simulation, exc.error_code,
+        )
+        raise HTTPException(
+            status_code=401,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="KGI_PERMISSION_OR_CREDENTIAL_REJECTED",
+                    message="KGI 登入拒絕：TradeCom 元件使用權限未啟用，請洽凱基業務窗口申請開通",
+                    upstream=f"code={exc.error_code}",
+                )
+            ).model_dump(),
+        ) from exc
+
     except KgiLoginFailedError as exc:
-        # KGI explicitly rejected credentials — return 401 with safe wording only.
+        # KGI explicitly rejected credentials (non-78 code) — return 401 with safe wording.
         # Log KGI error code + ReplyString (safe — no credentials here).
         # NEVER include person_id literal / password in log or response.
         logger.warning(
@@ -201,6 +232,26 @@ async def login(body: LoginRequest) -> LoginResponse:
                     code="KGI_LOGIN_FAILED",
                     message="KGI 帳密驗證失敗",
                     upstream=f"code={exc.error_code}",
+                )
+            ).model_dump(),
+        ) from exc
+
+    except KgiLoginObjectMissingAttr as exc:
+        # SDK returned a result without expected attribute (show_account etc).
+        # This is an SDK contract issue, not a credential problem → 400.
+        # attr_name is safe to include (it's an attribute name, not a data value).
+        # NEVER include person_id literal / password.
+        logger.error(
+            "Login result missing attribute: person_id=%s simulation=%s attr=%s",
+            masked_pid, body.simulation, exc.attr_name,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="KGI_LOGIN_OBJECT_MISSING_ATTR",
+                    message="KGI SDK 回傳物件缺少必要屬性，請確認 SDK 版本或聯絡技術支援",
+                    upstream=f"attr={exc.attr_name}",
                 )
             ).model_dump(),
         ) from exc
