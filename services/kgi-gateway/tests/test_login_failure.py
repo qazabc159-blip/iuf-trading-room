@@ -413,7 +413,14 @@ def test_actual_sdk_fislogon_false_code_78_skips_show_account():
     """
     Installed kgisuperpy does not expose IsSucceed/RtnCode on the outer object.
     It exposes _ObjOrder.FIsLogon. When that is False, account methods must not
-    be touched, and native TradeCom code 78 maps to the permission bucket.
+    be touched.
+
+    2026-05-08 update: code 78 with simulation=True now raises KgiSimEnvNotAuthorized
+    (not KgiPermissionOrCredentialRejected). The test is updated to use simulation=False
+    (live env) which correctly raises KgiPermissionOrCredentialRejected for code 78.
+
+    The split: sim=True + 78 → KgiSimEnvNotAuthorized (400 SIM_ENV_NOT_AVAILABLE_OR_NOT_AUTHORIZED)
+               sim=False + 78 → KgiPermissionOrCredentialRejected (401 KGI_PERMISSION_OR_CREDENTIAL_REJECTED)
     """
     failed_stub = MagicMock()
     failed_stub._ObjOrder = MagicMock()
@@ -425,8 +432,9 @@ def test_actual_sdk_fislogon_false_code_78_skips_show_account():
         "kgi_session._latest_tradecom_login_code", return_value=78
     ):
         mock_kgi.login.return_value = failed_stub
+        # Use simulation=False (live) — code 78 on live env raises KgiPermissionOrCredentialRejected
         with pytest.raises(KgiPermissionOrCredentialRejected) as exc_info:
-            session.login(person_id="A123456789", person_pwd="wrongpwd", simulation=True)
+            session.login(person_id="A123456789", person_pwd="wrongpwd", simulation=False)
 
     assert exc_info.value.error_code == 78
     failed_stub.show_account.assert_not_called()
