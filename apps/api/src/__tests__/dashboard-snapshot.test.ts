@@ -22,6 +22,7 @@ import test from "node:test";
 import {
   buildDashboardSnapshot,
   _clearDashboardCache,
+  sanitizePanelError,
 } from "../dashboard-snapshot-aggregator.js";
 
 // ── T1: All panels succeed ─────────────────────────────────────────────────────
@@ -210,6 +211,75 @@ test("T4: panel fallback shapes are valid — no throw on complete degradation",
       `errors['${panelName}'] must be a string message`
     );
   }
+
+  _clearDashboardCache();
+});
+
+// ── T5: S2 — error sanitization strips host:port and connection strings ────────
+
+test("T5: sanitizePanelError strips host:port and postgres connection strings", () => {
+  // host:port variant (postgres connection error style)
+  const withHostPort = "connection failed at db.internal.eycvector.com:5432 — ECONNREFUSED";
+  const sanitized1 = sanitizePanelError(withHostPort);
+  assert.ok(!sanitized1.includes(":5432"), "host:port must be stripped");
+  assert.ok(!sanitized1.includes("db.internal.eycvector.com"), "host must be stripped");
+  assert.ok(sanitized1.length > 0, "result must not be empty");
+  assert.ok(sanitized1.length <= 80, "result must be at most 80 chars");
+
+  // postgres:// connection string variant
+  const withConnStr = "cannot connect: postgres://user:pass@db.host:5432/iuf_db?sslmode=require";
+  const sanitized2 = sanitizePanelError(withConnStr);
+  assert.ok(!sanitized2.includes("postgres://"), "postgres:// must be stripped");
+  assert.ok(!sanitized2.includes("user:pass"), "credentials must be stripped");
+  assert.ok(sanitized2.length <= 80, "result must be at most 80 chars");
+
+  // Clean message should pass through (truncated at 80)
+  const clean = "table tw_stock_news does not exist";
+  const sanitized3 = sanitizePanelError(clean);
+  assert.equal(sanitized3, clean, "clean message must pass through unchanged");
+
+  // A message that is entirely a host:port pattern gets replaced with [redacted],
+  // which is non-empty, so the result is "[redacted]" (not the panel_fetch_failed constant).
+  const onlyHostPort = "db.host:5432";
+  const sanitized4 = sanitizePanelError(onlyHostPort);
+  assert.ok(!sanitized4.includes("db.host"), "host must be stripped from pure host:port message");
+  assert.ok(!sanitized4.includes(":5432"), "port must be stripped from pure host:port message");
+  assert.ok(sanitized4.length > 0, "result must be non-empty even for pure host:port input");
+
+  // Empty string input → panel_fetch_failed constant
+  const sanitized5 = sanitizePanelError("");
+  assert.equal(sanitized5, "panel_fetch_failed", "empty input must return panel_fetch_failed");
+});
+
+// ── T6: S4 — cache size cap evicts oldest entry at MAX_CACHE ──────────────────
+
+test("T6: cache size cap — 501 entries evicts oldest, size stays at 500", async () => {
+  _clearDashboardCache();
+
+  // Fill cache to just over MAX_CACHE (500) by calling buildDashboardSnapshot
+  // with unique userIds. Each call inserts 1 entry (memory-mode, no DB, fast).
+  const MAX_CACHE = 500;
+  const OVER = MAX_CACHE + 1; // 501 entries
+
+  // First userId — we'll check it gets evicted after 501 inserts
+  const firstUserId = "cache-cap-test-user-0000";
+
+  for (let i = 0; i < OVER; i++) {
+    await buildDashboardSnapshot({
+      userId: i === 0 ? firstUserId : `cache-cap-test-user-${i.toString().padStart(4, "0")}`,
+      workspaceSlug: "default",
+      workspaceId: `ws-cap-${i}`,
+    });
+  }
+
+  // After 501 unique inserts the first entry should be evicted (FIFO).
+  // Re-requesting firstUserId should return fromCache=false (miss).
+  const { fromCache } = await buildDashboardSnapshot({
+    userId: firstUserId,
+    workspaceSlug: "default",
+    workspaceId: "ws-cap-0",
+  });
+  assert.equal(fromCache, false, "oldest entry (user-0000) must have been evicted by FIFO cap");
 
   _clearDashboardCache();
 });

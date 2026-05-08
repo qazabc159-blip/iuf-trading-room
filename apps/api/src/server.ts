@@ -7746,7 +7746,7 @@ app.get("/api/v1/dashboard/snapshot", async (c) => {
   const role = session.user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
 
-  const { buildDashboardSnapshot } = await import("./dashboard-snapshot-aggregator.js");
+  const { buildDashboardSnapshot, sanitizePanelError } = await import("./dashboard-snapshot-aggregator.js");
 
   try {
     const { snapshot, fromCache } = await buildDashboardSnapshot({
@@ -7761,7 +7761,9 @@ app.get("/api/v1/dashboard/snapshot", async (c) => {
     });
   } catch (err) {
     // Last-resort: all panels failed entirely — return shell rather than 5xx.
-    console.error("[dashboard-snapshot] fatal aggregation error:", err instanceof Error ? err.message : String(err));
+    const rawMsg = err instanceof Error ? err.message : String(err);
+    console.error("[dashboard-snapshot] fatal aggregation error:", rawMsg);
+    // S2: sanitize before exposing to caller (callers are authenticated but defense-in-depth).
     const as_of = new Date().toISOString();
     return c.json({
       as_of,
@@ -7774,7 +7776,7 @@ app.get("/api/v1/dashboard/snapshot", async (c) => {
         watchlist_quotes: [],
       },
       stale_panels: ["industry_heatmap", "news_recent", "brief_today", "lab_strategies", "audit_stats", "watchlist_quotes"],
-      errors: { _fatal: err instanceof Error ? err.message : String(err) },
+      errors: { _fatal: sanitizePanelError(rawMsg) },
       _cache_hit: false,
     });
   }

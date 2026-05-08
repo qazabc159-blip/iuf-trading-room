@@ -55,6 +55,7 @@ interface CacheEntry {
 
 const _cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 30_000;
+const MAX_CACHE = 500;
 
 export function _clearDashboardCache(): void {
   _cache.clear();
@@ -71,7 +72,35 @@ function getCached(userId: string): DashboardSnapshot | null {
 }
 
 function setCache(userId: string, snapshot: DashboardSnapshot): void {
+  // S4: FIFO size cap — evict oldest entry when at capacity to prevent unbounded growth.
+  if (_cache.size >= MAX_CACHE) {
+    const oldestKey = _cache.keys().next().value;
+    if (oldestKey) _cache.delete(oldestKey);
+  }
   _cache.set(userId, { snapshot, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+// ── S2: Error sanitization ────────────────────────────────────────────────────
+//
+// Defense-in-depth: callers are authenticated (Owner/Admin/Analyst) but we still
+// must not leak postgres host:port, schema names, or connection strings.
+// Full raw message is always written to console.warn/error first (never swallowed).
+//
+// Sanitization rules (applied in order):
+//   1. Strip anything matching host:port patterns (e.g. "db.host:5432")
+//   2. Strip PG connection string prefixes (e.g. "postgres://...", "postgresql://...")
+//   3. Truncate to 80 characters
+//   4. If the result is empty after stripping, return the constant "panel_fetch_failed"
+
+// Visible for testing (S2 test)
+export function sanitizePanelError(raw: string): string {
+  // Remove postgres connection strings
+  let s = raw.replace(/postgres(?:ql)?:\/\/[^\s]*/gi, "[redacted]");
+  // Remove host:port patterns (word chars + dots/hyphens followed by colon + digits)
+  s = s.replace(/[\w.-]+:\d{2,5}/g, "[redacted]");
+  // Truncate
+  s = s.slice(0, 80).trim();
+  return s.length > 0 ? s : "panel_fetch_failed";
 }
 
 // ── execRows helper (mirrors server.ts pattern for drizzle-orm/postgres-js) ───
@@ -354,13 +383,14 @@ export async function buildDashboardSnapshot(
     fallback: T
   ): T {
     if (result.status === "rejected") {
-      const msg =
+      const rawMsg =
         result.reason instanceof Error
           ? result.reason.message
           : String(result.reason);
       stale_panels.push(name);
-      errors[name] = msg;
-      console.warn(`[dashboard-snapshot] panel '${name}' failed:`, msg);
+      // S2: log full raw message server-side, expose only sanitized string to callers.
+      console.warn(`[dashboard-snapshot] panel '${name}' failed:`, rawMsg);
+      errors[name] = sanitizePanelError(rawMsg);
       return fallback;
     }
     return result.value;
