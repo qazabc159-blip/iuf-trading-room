@@ -1093,6 +1093,8 @@ export type MarketDataOverviewHeatTile = {
   low?: number | null;
   close?: number | null;
   last: number | null;
+  prevClose?: number | null;
+  change?: number | null;
   changePct: number | null;
   volume: number | null;
   timestamp: string;

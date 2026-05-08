@@ -16,6 +16,8 @@ export type IndustryHeatmapTile = {
   high?: number | null;
   low?: number | null;
   close?: number | null;
+  prevClose?: number | null;
+  change?: number | null;
   volume?: number | null;
   readiness?: "ready" | "degraded" | "blocked";
   freshnessStatus?: "fresh" | "stale" | "missing";
@@ -44,6 +46,9 @@ type PreparedTile = IndustryHeatmapTile & {
   tradingValue: number | null;
   areaWeight: number;
   weightLabel: string;
+  displayPct: number;
+  displayChange: number | null;
+  isSupplemental?: boolean;
 };
 
 type SectorOption = SectorDefinition & {
@@ -70,7 +75,8 @@ type IndustryHeatmapProps = {
 };
 
 const MAX_TILES_PER_SECTOR = 13;
-const MIN_PRODUCT_COUNT = 6;
+const TARGET_TILES_PER_SECTOR = 12;
+const MIN_PRODUCT_COUNT = 10;
 
 const SECTORS: SectorDefinition[] = [
   {
@@ -192,6 +198,87 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "2633": "shipping",
   "2606": "shipping",
   "2617": "shipping",
+  "1560": "components",
+  "1582": "components",
+  "2059": "components",
+  "2317": "components",
+  "2337": "semiconductor",
+  "2360": "computer",
+  "2362": "computer",
+  "2365": "computer",
+  "2385": "computer",
+  "2409": "semiconductor",
+  "2439": "components",
+  "2474": "computer",
+  "2481": "components",
+  "2492": "communication",
+  "3005": "computer",
+  "3013": "components",
+  "3042": "computer",
+  "3044": "computer",
+  "3090": "components",
+  "3234": "computer",
+  "3299": "semiconductor",
+  "3481": "computer",
+  "3532": "semiconductor",
+  "3653": "semiconductor",
+  "3702": "computer",
+  "3707": "semiconductor",
+  "3714": "computer",
+  "4915": "components",
+  "4991": "semiconductor",
+  "5269": "components",
+  "5347": "semiconductor",
+  "5483": "semiconductor",
+  "6182": "computer",
+  "6147": "computer",
+  "6770": "semiconductor",
+  "8150": "semiconductor",
+  "1605": "components",
+  "1717": "components",
+  "1802": "steel",
+  "2006": "steel",
+  "2007": "steel",
+  "2008": "steel",
+  "2009": "steel",
+  "2010": "steel",
+  "2012": "steel",
+  "2013": "steel",
+  "2017": "steel",
+  "2020": "steel",
+  "2022": "steel",
+  "2024": "steel",
+  "2025": "steel",
+  "2028": "steel",
+  "2029": "steel",
+  "2030": "steel",
+  "2032": "steel",
+  "2033": "steel",
+  "2034": "steel",
+  "2314": "communication",
+  "2332": "communication",
+  "2354": "communication",
+  "2419": "communication",
+  "2450": "communication",
+  "3025": "communication",
+  "3062": "communication",
+  "3380": "communication",
+  "3491": "communication",
+  "4906": "communication",
+  "6152": "communication",
+  "6416": "communication",
+  "6462": "communication",
+  "2601": "shipping",
+  "2607": "shipping",
+  "2608": "shipping",
+  "2611": "shipping",
+  "2612": "shipping",
+  "2613": "shipping",
+  "2614": "shipping",
+  "2616": "shipping",
+  "2634": "shipping",
+  "5607": "shipping",
+  "5608": "shipping",
 };
 
 const REPRESENTATIVE_ORDER = Object.keys(SYMBOL_SECTOR).reduce<Record<string, number>>((acc, symbol, index) => {
@@ -233,8 +320,62 @@ function normalizeSector(tile: IndustryHeatmapTile): SectorKey | null {
   return null;
 }
 
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function roundMove(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function deriveMove(tile: IndustryHeatmapTile) {
+  const close = finiteNumber(tile.close ?? tile.price);
+  const prevClose = finiteNumber(tile.prevClose);
+  if (close !== null && prevClose !== null && prevClose > 0) {
+    const change = roundMove(close - prevClose);
+    return {
+      pct: roundMove((change / prevClose) * 100),
+      change,
+    };
+  }
+
+  const change = finiteNumber(tile.change);
+  if (close !== null && change !== null) {
+    const derivedPrevClose = close - change;
+    if (derivedPrevClose > 0) {
+      return {
+        pct: roundMove((change / derivedPrevClose) * 100),
+        change: roundMove(change),
+      };
+    }
+  }
+
+  const pct = finiteNumber(tile.pct);
+  if (pct !== null) {
+    const derivedChange = close !== null && pct > -99.99 ? roundMove(close - close / (1 + pct / 100)) : null;
+    return {
+      pct: roundMove(pct),
+      change: derivedChange,
+    };
+  }
+
+  const open = finiteNumber(tile.open);
+  if (close !== null && open !== null && open > 0) {
+    const intradayChange = roundMove(close - open);
+    return {
+      pct: roundMove((intradayChange / open) * 100),
+      change: intradayChange,
+    };
+  }
+
+  return {
+    pct: null,
+    change: null,
+  };
+}
+
 function validMove(tile: IndustryHeatmapTile) {
-  return typeof tile.pct === "number" && Number.isFinite(tile.pct);
+  return deriveMove(tile).pct !== null;
 }
 
 function isUsableTile(tile: IndustryHeatmapTile) {
@@ -287,6 +428,8 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
     if (!isUsableTile(tile)) return;
     const sectorKey = normalizeSector(tile);
     if (!sectorKey) return;
+    const move = deriveMove(tile);
+    if (move.pct === null) return;
     const rank = REPRESENTATIVE_ORDER[tile.symbol] ?? 1000 + index;
     const weight = preparedWeight(tile, rank);
     const definition = sectorDefinition(sectorKey);
@@ -295,6 +438,8 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
       sectorKey,
       sectorLabel: definition.label,
       rank,
+      displayPct: move.pct,
+      displayChange: move.change,
       ...weight,
     });
   });
@@ -302,23 +447,46 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
   return rows;
 }
 
-function rowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
+function sortByHeatmapPriority(left: PreparedTile, right: PreparedTile) {
+  const tradingDelta = (right.tradingValue ?? 0) - (left.tradingValue ?? 0);
+  if (Math.abs(tradingDelta) > 0.001) return tradingDelta;
+  const weightDelta = right.areaWeight - left.areaWeight;
+  if (Math.abs(weightDelta) > 0.001) return weightDelta;
+  const moveDelta = Math.abs(right.displayPct) - Math.abs(left.displayPct);
+  if (Math.abs(moveDelta) > 0.001) return moveDelta;
+  return left.rank - right.rank;
+}
+
+function primaryRowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
   return prepared
     .filter((tile) => tile.sectorKey === sectorKey)
-    .sort((left, right) => {
-      const tradingDelta = (right.tradingValue ?? 0) - (left.tradingValue ?? 0);
-      if (Math.abs(tradingDelta) > 0.001) return tradingDelta;
-      const weightDelta = right.areaWeight - left.areaWeight;
-      if (Math.abs(weightDelta) > 0.001) return weightDelta;
-      return left.rank - right.rank;
-    })
+    .sort(sortByHeatmapPriority)
     .slice(0, MAX_TILES_PER_SECTOR);
+}
+
+function rowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
+  const primary = primaryRowsForSector(prepared, sectorKey);
+  if (primary.length >= MIN_PRODUCT_COUNT) return primary.slice(0, MAX_TILES_PER_SECTOR);
+
+  const selected = new Set(primary.map((tile) => tile.symbol));
+  const supplementTarget = Math.min(MAX_TILES_PER_SECTOR, Math.max(TARGET_TILES_PER_SECTOR, MIN_PRODUCT_COUNT));
+  const supplements = prepared
+    .filter((tile) => tile.sectorKey !== sectorKey && !selected.has(tile.symbol))
+    .sort(sortByHeatmapPriority)
+    .slice(0, Math.max(0, supplementTarget - primary.length))
+    .map((tile) => ({ ...tile, isSupplemental: true }));
+
+  return [...primary, ...supplements].slice(0, MAX_TILES_PER_SECTOR);
 }
 
 function buildOptions(prepared: PreparedTile[]): SectorOption[] {
   return SECTORS.map((sector) => {
     const rows = rowsForSector(prepared, sector.key);
-    const avgPct = rows.length > 0 ? rows.reduce((sum, tile) => sum + (tile.pct ?? 0), 0) / rows.length : null;
+    const primaryRows = primaryRowsForSector(prepared, sector.key);
+    const averageRows = primaryRows.length > 0 ? primaryRows : rows;
+    const avgPct = averageRows.length > 0
+      ? averageRows.reduce((sum, tile) => sum + tile.displayPct, 0) / averageRows.length
+      : null;
     return {
       ...sector,
       count: rows.length,
@@ -476,7 +644,8 @@ function TileTooltip({ tile }: { tile: LayoutTile }) {
   return (
     <span className="tac-heat-tooltip" role="tooltip">
       <strong>{tile.symbol} {tile.name}</strong>
-      <span>漲跌幅 {formatPercent(tile.pct)}</span>
+      <span>漲跌幅 {formatPercent(tile.displayPct)}</span>
+      {tile.displayChange !== null && <span>漲跌 {formatPrice(tile.displayChange)}</span>}
       <span>{tile.weightLabel}</span>
       <span>收盤 {formatPrice(tile.close ?? tile.price)}</span>
       {tile.date && <span>日期 {tile.date}</span>}
@@ -485,7 +654,7 @@ function TileTooltip({ tile }: { tile: LayoutTile }) {
 }
 
 function HeatmapTile({ tile }: { tile: LayoutTile }) {
-  const pct = tile.pct ?? 0;
+  const pct = tile.displayPct;
   const abs = Math.min(1, Math.abs(pct) / 3);
   const tone = toneForMove(pct);
   const style = {
@@ -495,12 +664,12 @@ function HeatmapTile({ tile }: { tile: LayoutTile }) {
     width: `${tile.w}%`,
     height: `${tile.h}%`,
   } as CSSProperties;
-  const title = `${tile.symbol} ${tile.name}，漲跌幅 ${formatPercent(tile.pct)}，${tile.weightLabel}`;
+  const title = `${tile.symbol} ${tile.name}，漲跌幅 ${formatPercent(tile.displayPct)}，${tile.weightLabel}`;
 
   return (
     <Link
       href={`/companies/${encodeURIComponent(tile.symbol)}`}
-      className={`tac-heat-tile ${tone} ${tile.labelMode}`}
+      className={`tac-heat-tile ${tone} ${tile.labelMode} ${tile.isSupplemental ? "is-supplemental" : ""}`}
       style={style}
       aria-label={title}
     >
@@ -508,7 +677,7 @@ function HeatmapTile({ tile }: { tile: LayoutTile }) {
       {(tile.labelMode === "hero" || tile.labelMode === "large" || tile.labelMode === "medium") && (
         <small className="tile-name">{tile.name}</small>
       )}
-      <b className="tile-pct">{formatPercent(tile.pct)}</b>
+      <b className="tile-pct">{formatPercent(tile.displayPct)}</b>
       {tile.labelMode === "hero" && <em className="tile-meta">{tile.weightLabel}</em>}
       <TileTooltip tile={tile} />
     </Link>

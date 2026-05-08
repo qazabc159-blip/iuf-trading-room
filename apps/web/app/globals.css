@@ -12343,7 +12343,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tac-fresh-heat {
-  grid-template-columns: minmax(420px, 0.72fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .tac-heatmap-wide,
@@ -13557,7 +13557,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tac-industry-heatmap .tac-market-heatmap-canvas {
-  min-height: clamp(470px, 42vw, 660px);
+  min-height: clamp(350px, 30vw, 480px);
   border: 1px solid rgba(220, 228, 240, 0.13);
   border-radius: 8px;
   background:
@@ -13581,7 +13581,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   gap: 6px;
   min-width: 0;
   min-height: 0;
-  padding: clamp(8px, 0.86vw, 16px);
+  padding: clamp(7px, 0.7rem, 12px);
   border: 2px solid rgba(4, 8, 13, 0.92);
   border-radius: 7px;
   color: #f7f9fc;
@@ -13626,7 +13626,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-industry-heatmap .tile-symbol {
   min-width: 0;
   color: rgba(255, 255, 255, 0.92);
-  font: 950 clamp(15px, 1.25vw, 25px)/1 var(--mono);
+  font: 950 1rem/1 var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -13634,7 +13634,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-industry-heatmap .tile-name {
   color: rgba(255, 255, 255, 0.84);
-  font: 850 clamp(13px, 1vw, 20px)/1.16 var(--sans-tc);
+  font: 850 0.88rem/1.16 var(--sans-tc);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -13644,7 +13644,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   align-self: end;
   justify-self: end;
   color: rgba(255, 255, 255, 0.96);
-  font: 950 clamp(18px, 1.65vw, 34px)/1 var(--mono);
+  font: 950 1.35rem/1 var(--mono);
   text-shadow: 0 1px 18px rgba(0, 0, 0, 0.28);
   white-space: nowrap;
 }
@@ -13658,29 +13658,29 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tac-industry-heatmap .tac-heat-tile.large .tile-symbol {
-  font-size: clamp(14px, 1.05vw, 20px);
+  font-size: 0.95rem;
 }
 
 .tac-industry-heatmap .tac-heat-tile.large .tile-pct {
-  font-size: clamp(17px, 1.35vw, 26px);
+  font-size: 1.18rem;
 }
 
 .tac-industry-heatmap .tac-heat-tile.medium {
   gap: 3px;
-  padding: clamp(7px, 0.72vw, 11px);
+  padding: 7px;
 }
 
 .tac-industry-heatmap .tac-heat-tile.medium .tile-symbol {
-  font-size: clamp(12px, 0.92vw, 17px);
+  font-size: 0.82rem;
 }
 
 .tac-industry-heatmap .tac-heat-tile.medium .tile-name {
-  font-size: clamp(10px, 0.76vw, 13px);
+  font-size: 0.68rem;
 }
 
 .tac-industry-heatmap .tac-heat-tile.medium .tile-pct {
   justify-self: start;
-  font-size: clamp(13px, 0.92vw, 18px);
+  font-size: 0.85rem;
 }
 
 .tac-industry-heatmap .tac-heat-tile.small {
@@ -14568,7 +14568,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   }
 
   .tac-industry-heatmap .tac-market-heatmap-canvas {
-    min-height: 560px;
+    min-height: 480px;
   }
 }
 
@@ -14596,7 +14596,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   }
 
   .tac-industry-heatmap .tac-market-heatmap-canvas {
-    min-height: 520px;
+    min-height: 440px;
     border-radius: 6px;
   }
 
