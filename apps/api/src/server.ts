@@ -243,6 +243,10 @@ import {
   runNewsAiSelection,
   runNewsAiSelectionTick
 } from "./news-ai-selector.js";
+import {
+  evaluateToggleMode,
+  flipPaperObservationsToComplete
+} from "./strategy-toggle-mode.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -2061,6 +2065,91 @@ app.post("/api/v1/strategy/runs/:id/execute", async (c) => {
   }
 
   return c.json({ data: result });
+});
+
+// ---------------------------------------------------------------------------
+// BLOCK #TOGGLE — POST /api/v1/strategy/:strategyId/toggle-mode
+//
+// True-money self-service toggle gate for strategy run modes.
+// Auth: Owner only (hard rule — not Admin, not Analyst).
+//
+// Body: { mode: 'OFF' | 'PAPER' | 'LIVE', capital_twd: number, yang_explicit_ack?: boolean }
+//
+// State machine: OFF → paper_observing → paper_complete → live
+//   - First PAPER flip: writes strategy_run_state (paper_observing + start_at)
+//   - First LIVE flip: requires paper_complete + yang_explicit_ack=true
+//   - Kill switch ON: all non-OFF toggles forced to OFF + audit
+//   - 4-layer risk preview ALWAYS runs (never skipped)
+//
+// stop-line: NEVER bypass 4-layer gate / NEVER allow LIVE without yang_explicit_ack
+// ---------------------------------------------------------------------------
+const toggleModeBodySchema = z.object({
+  mode: z.enum(["OFF", "PAPER", "LIVE"]),
+  capital_twd: z.number().positive("capital_twd must be a positive number"),
+  yang_explicit_ack: z.boolean().optional().default(false)
+});
+
+app.post("/api/v1/strategy/:strategyId/toggle-mode", async (c) => {
+  const session = c.get("session");
+  const role = session.user.role as string;
+
+  // Owner-only — this endpoint controls real-money mode transitions
+  if (role !== "Owner") {
+    return c.json(
+      { error: "FORBIDDEN", message: "Only Owner may toggle strategy run mode." },
+      403
+    );
+  }
+
+  const strategyId = c.req.param("strategyId");
+  if (!strategyId) {
+    return c.json({ error: "MISSING_STRATEGY_ID" }, 400);
+  }
+
+  let body: ReturnType<typeof toggleModeBodySchema.parse>;
+  try {
+    const raw = await c.req.json().catch(() => ({}));
+    body = toggleModeBodySchema.parse(raw);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  const outcome = await evaluateToggleMode({
+    session,
+    strategyId,
+    mode: body.mode,
+    capital_twd: body.capital_twd,
+    yang_explicit_ack: body.yang_explicit_ack
+  });
+
+  if (!outcome.ok) {
+    const err = outcome.error;
+    switch (err.code) {
+      case "KILL_SWITCH_FORCED_OFF":
+        return c.json({ error: err.code, message: err.message }, 409);
+      case "PAPER_OBSERVATION_NOT_COMPLETE":
+        return c.json(
+          { error: err.code, message: err.message, current_state: err.current_state },
+          422
+        );
+      case "YANG_EXPLICIT_ACK_REQUIRED":
+        return c.json({ error: err.code, message: err.message }, 422);
+      case "FOUR_LAYER_BLOCKED":
+        return c.json(
+          { error: err.code, message: err.message, layer: err.layer, reason: err.reason },
+          422
+        );
+      case "DB_UNAVAILABLE":
+        return c.json({ error: err.code, message: err.message }, 503);
+      default:
+        return c.json({ error: "TOGGLE_MODE_ERROR" }, 500);
+    }
+  }
+
+  return c.json({ data: outcome.result }, 200);
 });
 
 app.post("/api/v1/signals", async (c) => {
@@ -10386,6 +10475,39 @@ function startSchedulers(workspaceSlug: string): void {
     });
   }, WATCHDOG_INTERVAL_MS);
 
+  // BLOCK #TOGGLE — paper observation cron: 17:00 TST daily
+  // Flips paper_observing → paper_complete for strategies that started before 13:30 TST.
+  // Cadence: every 15min with a 17:00–17:30 TST window guard.
+  const _paperObsCronMs = 15 * 60 * 1000;
+  setInterval(async () => {
+    try {
+      const now = new Date();
+      // TST = UTC+8. 17:00–17:30 TST = 09:00–09:30 UTC.
+      const hourUTC = now.getUTCHours();
+      const minUTC = now.getUTCMinutes();
+      const inWindow = hourUTC === 9 && minUTC >= 0 && minUTC < 30;
+      if (!inWindow) return;
+
+      const db = getDb();
+      if (!db) return;
+      const [ws] = await db.select({ id: workspaces.id, slug: workspaces.slug }).from(workspaces).limit(1);
+      if (!ws) return;
+
+      // Build a minimal session for audit log writes
+      const cronSession = {
+        workspace: { id: ws.id, slug: ws.slug },
+        user: { id: "system-cron", role: "Owner" }
+      } as unknown as import("@iuf-trading-room/contracts").AppSession;
+
+      const flipped = await flipPaperObservationsToComplete(cronSession);
+      if (flipped.length > 0) {
+        console.info(`[paper-obs-cron] flipped ${flipped.length} strategy_run_states paper_observing → paper_complete`);
+      }
+    } catch (e) {
+      console.error("[paper-obs-cron] tick failed:", e instanceof Error ? e.message : e);
+    }
+  }, _paperObsCronMs);
+
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
@@ -10394,7 +10516,8 @@ function startSchedulers(workspaceSlug: string): void {
     "P0-C pipeline pre_market/close_watch/close_brief (15min) + " +
     "BLOCK#6 event-rule-engine (5min) + email-digest (5min, fires at 17:00–17:30 TST) + " +
     "BLOCK#NEWS news-ai-selector (15min poll, fires at 08:00/12:00/18:00/24:00 TST) + " +
-    "P0-2 health-watchdog (30min) started"
+    "P0-2 health-watchdog (30min) + " +
+    "BLOCK#TOGGLE paper-obs-cron (15min poll, fires at 17:00–17:30 TST) started"
   );
 }
 
