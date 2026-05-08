@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { IndustryHeatmap, type IndustryHeatmapTile } from "./components/industry-heatmap";
 import {
   getBriefs,
   getContentDrafts,
+  getDashboardSnapshot,
   getFinMindDiagnostics,
   getFinMindStatus,
   getMarketDataOverview,
@@ -14,6 +16,7 @@ import {
   getStrategyIdeas,
   listStrategyRuns,
   type CompanyAnnouncement,
+  type DashboardSnapshot,
   type FinMindDatasetStatus,
   type FinMindDiagnosticsStatus,
   type FinMindSourceStatus,
@@ -1818,15 +1821,80 @@ function DataGapPanel({ sources }: { sources: SourceTile[] }) {
   );
 }
 
-export default async function DashboardPage({
-  searchParams,
+// ── Dashboard skeleton shown immediately while DashboardContent streams ─────
+// Inline <style> avoids touching globals.css (Codex own).
+function DashboardSkeleton() {
+  const pulse = "@keyframes _tac-pulse { 0%,100%{opacity:.18} 50%{opacity:.38} }";
+  const skelCss = "._tac-skel { background:rgba(0,255,180,.07); border:1px solid rgba(0,255,180,.13); border-radius:2px; animation:_tac-pulse 1.6s ease-in-out infinite; }";
+  const rowCss = "._tac-skel-row { display:flex; gap:8px; margin-bottom:8px; }";
+  return (
+    <>
+      <style>{pulse + " " + skelCss + " " + rowCss}</style>
+      <div className="tactical-dashboard">
+        <div className="tac-scanline" />
+        <aside style={{ width:200, minWidth:200, padding:"16px 12px", borderRight:"1px solid rgba(0,255,180,.15)", display:"flex", flexDirection:"column", gap:8 }}>
+          <div className="_tac-skel" style={{ height:20, width:"80%" }} />
+          <div className="_tac-skel" style={{ height:14, width:"60%" }} />
+          <div style={{ marginTop:16, display:"flex", flexDirection:"column", gap:6 }}>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="_tac-skel" style={{ height:12, width:`${55 + (i % 3) * 15}%` }} />
+            ))}
+          </div>
+        </aside>
+        <main className="tac-main" style={{ flex:1, overflow:"hidden" }}>
+          <div className="_tac-skel" style={{ height:28, margin:"0 0 8px", borderRadius:0 }} />
+          <div className="tac-content">
+            <div className="_tac-skel-row">
+              <div className="_tac-skel" style={{ height:36, flex:1 }} />
+              <div className="_tac-skel" style={{ height:36, width:120 }} />
+            </div>
+            <div className="_tac-skel" style={{ height:40, marginBottom:8 }} />
+            <div className="_tac-skel-row" style={{ height:220 }}>
+              <div className="_tac-skel" style={{ flex:2 }} />
+              <div className="_tac-skel" style={{ flex:1 }} />
+            </div>
+            <div className="_tac-skel-row" style={{ height:180 }}>
+              <div className="_tac-skel" style={{ flex:3 }} />
+              <div className="_tac-skel" style={{ flex:1 }} />
+            </div>
+            <div className="_tac-skel-row" style={{ height:160 }}>
+              <div className="_tac-skel" style={{ flex:1 }} />
+              <div className="_tac-skel" style={{ flex:1 }} />
+            </div>
+            <div className="_tac-skel-row" style={{ height:140 }}>
+              <div className="_tac-skel" style={{ flex:1 }} />
+              <div className="_tac-skel" style={{ flex:1 }} />
+            </div>
+          </div>
+        </main>
+      </div>
+    </>
+  );
+}
+
+// ── All data fetching lives here — streamed behind Suspense ──────────────────
+async function DashboardContent({
+  selectedSectorParam,
 }: {
-  searchParams?: Promise<{ sector?: string }>;
+  selectedSectorParam: string | null;
 }) {
   const now = nowIso();
-  const params = await searchParams;
-  const selectedSectorParam = params?.sector ?? null;
-  const [finmind, market, ops, brief, paper, broker, ideas, runs] = await Promise.all([
+
+  // All 9 fetches fire in parallel.
+  // Previously intel ran SEQUENTIALLY after Promise.all — now it is concurrent.
+  // getDashboardSnapshot provides 30s-cached brief/news/lab/audit aggregation.
+  const [
+    finmindResult,
+    marketResult,
+    opsResult,
+    briefResult,
+    paperResult,
+    brokerResult,
+    ideasResult,
+    runsResult,
+    intelResult,
+    snapshotResult,
+  ] = await Promise.allSettled([
     loadFinMindDashboard(),
     load(
       "Market data overview",
@@ -1859,9 +1927,57 @@ export default async function DashboardPage({
       (value) => value === null || value.items.length === 0,
       "策略批次目前沒有可用紀錄。",
     ),
+    loadMarketIntelDashboard(),
+    getDashboardSnapshot(),
   ]);
 
-  const intel = await loadMarketIntelDashboard();
+  const updatedAt = nowIso();
+  const emptyBrief: DailyBriefDashboard = {
+    today: todayTaipeiDate(),
+    state: "BLOCKED",
+    latestDate: null,
+    latest: null,
+    todayBrief: null,
+    draftCount: 0,
+    reason: "載入失敗",
+  };
+  const emptyIntel: MarketIntelDashboard = { items: [], selected: [], failures: 0 };
+
+  const finmind = finmindResult.status === "fulfilled"
+    ? finmindResult.value
+    : { state: "BLOCKED" as const, data: null, updatedAt, source: "FinMind", reason: "載入失敗" };
+  const market = marketResult.status === "fulfilled"
+    ? marketResult.value
+    : { state: "BLOCKED" as const, data: null, updatedAt, source: "Market data overview", reason: "載入失敗" };
+  const ops = opsResult.status === "fulfilled"
+    ? opsResult.value
+    : { state: "BLOCKED" as const, data: null, updatedAt, source: "OpenAlice / Ops snapshot", reason: "載入失敗" };
+  const brief = briefResult.status === "fulfilled"
+    ? briefResult.value
+    : { state: "BLOCKED" as const, data: emptyBrief, updatedAt, source: "OpenAlice / Daily Brief", reason: "載入失敗" };
+  const paper = paperResult.status === "fulfilled"
+    ? paperResult.value
+    : { state: "BLOCKED" as const, data: null, updatedAt, source: "Paper Health", reason: "載入失敗" };
+  const broker = brokerResult.status === "fulfilled"
+    ? brokerResult.value
+    : { state: "EMPTY" as const, data: null, updatedAt, source: "正式券商只讀狀態", reason: "載入失敗" };
+  const ideas = ideasResult.status === "fulfilled"
+    ? ideasResult.value
+    : { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy ideas", reason: "載入失敗" };
+  const runs = runsResult.status === "fulfilled"
+    ? runsResult.value
+    : { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy runs", reason: "載入失敗" };
+  const intel = intelResult.status === "fulfilled"
+    ? intelResult.value
+    : { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "TWSE OpenAPI 重大訊息", reason: "載入失敗" };
+  const snapshot: DashboardSnapshot | null = snapshotResult.status === "fulfilled" ? snapshotResult.value : null;
+
+  if (snapshot) {
+    console.info(
+      `[dashboard] snapshot cache_hit=${snapshot._cache_hit} as_of=${snapshot.as_of} stale=${snapshot.stale_panels.join(",") || "none"}`
+    );
+  }
+
   const sources = buildSources({ finmind, market, ops, brief, paper, ideas, runs, intel });
   const realHeatmap = buildHeatmap(market);
   const heatmap = realHeatmap;
@@ -1901,5 +2017,21 @@ export default async function DashboardPage({
         </div>
       </main>
     </div>
+  );
+}
+
+// ── Page entry point — sync shell + streamed data content ────────────────────
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ sector?: string }>;
+}) {
+  const params = await searchParams;
+  const selectedSectorParam = params?.sector ?? null;
+
+  return (
+    <Suspense fallback={<DashboardSkeleton />}>
+      <DashboardContent selectedSectorParam={selectedSectorParam} />
+    </Suspense>
   );
 }
