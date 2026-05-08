@@ -24,8 +24,33 @@
 
 import type { AppSession, OrderCreateInput } from "@iuf-trading-room/contracts";
 
-import { getPaperBalance, listPaperPositions } from "./broker/paper-broker.js";
+import { getPaperBalance as _getPaperBalance, listPaperPositions as _listPaperPositions } from "./broker/paper-broker.js";
 import { isKillSwitchEnabled, _setKillSwitchEnabled } from "./domain/trading/execution-mode.js";
+
+// ---------------------------------------------------------------------------
+// Test injection (ESM live-binding workaround for unit tests)
+// ---------------------------------------------------------------------------
+
+type PaperBalanceFn = typeof _getPaperBalance;
+type PaperPositionsFn = typeof _listPaperPositions;
+
+let _getPaperBalanceImpl: PaperBalanceFn = _getPaperBalance;
+let _listPaperPositionsImpl: PaperPositionsFn = _listPaperPositions;
+
+/** For unit tests only — inject mock implementations to avoid DB/broker deps. */
+export function _setPaperBrokerOverride(overrides: {
+  getPaperBalance?: PaperBalanceFn;
+  listPaperPositions?: PaperPositionsFn;
+}): void {
+  if (overrides.getPaperBalance) _getPaperBalanceImpl = overrides.getPaperBalance;
+  if (overrides.listPaperPositions) _listPaperPositionsImpl = overrides.listPaperPositions;
+}
+
+/** Reset to real implementations (call in test cleanup). */
+export function _resetPaperBrokerOverride(): void {
+  _getPaperBalanceImpl = _getPaperBalance;
+  _listPaperPositionsImpl = _listPaperPositions;
+}
 
 // ---------------------------------------------------------------------------
 // Env-sourced thresholds
@@ -131,12 +156,12 @@ export async function evaluateFourLayerRiskGate(input: {
   let unrealizedPnl = 0;
 
   try {
-    const balance = await getPaperBalance(session, accountId);
+    const balance = await _getPaperBalanceImpl(session, accountId);
     equity = balance.equity > 0 ? balance.equity : 1;
     realizedPnlToday = balance.realizedPnlToday;
     unrealizedPnl = balance.unrealizedPnl;
 
-    const positions = await listPaperPositions(session, accountId);
+    const positions = await _listPaperPositionsImpl(session, accountId);
     const symPos = positions.find(
       (p) => p.symbol.toUpperCase() === order.symbol.toUpperCase()
     );
@@ -161,6 +186,10 @@ export async function evaluateFourLayerRiskGate(input: {
   if (order.side === "buy") {
     const maxPositionPct = readMaxPositionPct();
     const refPrice = referencePrice(order);
+    // Market orders (price=null, stopPrice=null): refPrice is null → L2 skipped.
+    // By design: notional cannot be calculated without a reference price.
+    // Market order risk is handled upstream by the stale_quote guard in
+    // evaluatePaperOrderRisk (paper-risk-bridge.ts).
     if (refPrice !== null && refPrice > 0) {
       const shares = effectiveShares(order);
       const orderNotional = refPrice * shares;
@@ -209,6 +238,9 @@ export async function evaluateFourLayerRiskGate(input: {
   if (order.side === "buy") {
     const perSymbolMaxPct = readPerSymbolMaxPct();
     const refPrice = referencePrice(order);
+    // Market orders (price=null, stopPrice=null): refPrice is null → L4 skipped.
+    // By design: same rationale as L2 above — notional undefined without price.
+    // Upstream stale_quote guard in evaluatePaperOrderRisk covers market order risk.
     if (refPrice !== null && refPrice > 0) {
       const shares = effectiveShares(order);
       const orderNotional = refPrice * shares;

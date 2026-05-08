@@ -164,6 +164,30 @@ def _mask_person_id(person_id: str) -> str:
     return pid[:keep_head] + "*" * masked_len + pid[-keep_tail:]
 
 
+def _safe_attr_name(value: object) -> str:
+    text = str(value)
+    marker = "has no attribute "
+    if marker in text:
+        text = text.rsplit(marker, 1)[1].strip().strip("'\"")
+    candidate = text.strip().strip("'\"")
+    if candidate.replace("_", "").isalnum() and candidate[:1].isalpha():
+        return candidate[:64]
+    return "unknown"
+
+
+def _redact_sensitive_text(text: object, *secrets: object) -> str:
+    safe = str(text)
+    for secret in secrets:
+        if secret is None:
+            continue
+        value = str(secret)
+        if not value:
+            continue
+        safe = safe.replace(value, "[REDACTED]")
+        safe = safe.replace(value.upper(), "[REDACTED]")
+    return safe
+
+
 @app.post("/session/login", response_model=LoginResponse)
 async def login(body: LoginRequest) -> LoginResponse:
     """
@@ -177,6 +201,8 @@ async def login(body: LoginRequest) -> LoginResponse:
           (wrong credentials, account locked, or other KGI rejection)
       KgiLoginObjectMissingAttr         → 400 KGI_LOGIN_OBJECT_MISSING_ATTR
           (login result missing expected method — SDK shape mismatch)
+      AttributeError                    → 400 KGI_LOGIN_OBJECT_MISSING_ATTR
+          (raw SDK attr miss, redacted to attr=<name>)
       Other exceptions                  → 400 KGI_LOGIN_ERROR
           (network / unexpected failure)
 
@@ -221,9 +247,10 @@ async def login(body: LoginRequest) -> LoginResponse:
         # KGI explicitly rejected credentials (non-78 code) — return 401 with safe wording.
         # Log KGI error code + ReplyString (safe — no credentials here).
         # NEVER include person_id literal / password in log or response.
+        safe_reply = _redact_sensitive_text(exc.reply_string, body.person_id, body.person_pwd)
         logger.warning(
             "Login rejected by KGI: person_id=%s simulation=%s error_code=%d reply=%s",
-            masked_pid, body.simulation, exc.error_code, exc.reply_string,
+            masked_pid, body.simulation, exc.error_code, safe_reply,
         )
         raise HTTPException(
             status_code=401,
@@ -241,9 +268,10 @@ async def login(body: LoginRequest) -> LoginResponse:
         # This is an SDK contract issue, not a credential problem → 400.
         # attr_name is safe to include (it's an attribute name, not a data value).
         # NEVER include person_id literal / password.
+        safe_attr = _safe_attr_name(exc.attr_name)
         logger.error(
             "Login result missing attribute: person_id=%s simulation=%s attr=%s",
-            masked_pid, body.simulation, exc.attr_name,
+            masked_pid, body.simulation, safe_attr,
         )
         raise HTTPException(
             status_code=400,
@@ -251,7 +279,26 @@ async def login(body: LoginRequest) -> LoginResponse:
                 error=ErrorDetail(
                     code="KGI_LOGIN_OBJECT_MISSING_ATTR",
                     message="KGI SDK 回傳物件缺少必要屬性，請確認 SDK 版本或聯絡技術支援",
-                    upstream=f"attr={exc.attr_name}",
+                    upstream=f"attr={safe_attr}",
+                )
+            ).model_dump(),
+        ) from exc
+
+    except AttributeError as exc:
+        # Raw SDK AttributeError is also an object-shape issue. Keep the response
+        # redacted and specific instead of falling through to KGI_LOGIN_ERROR.
+        safe_attr = _safe_attr_name(exc)
+        logger.error(
+            "Login raw AttributeError: person_id=%s simulation=%s attr=%s",
+            masked_pid, body.simulation, safe_attr,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="KGI_LOGIN_OBJECT_MISSING_ATTR",
+                    message="KGI SDK 回傳物件缺少必要屬性，請確認 SDK 版本或聯絡技術支援",
+                    upstream=f"attr={safe_attr}",
                 )
             ).model_dump(),
         ) from exc
