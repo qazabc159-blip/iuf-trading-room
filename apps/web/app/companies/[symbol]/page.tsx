@@ -8,7 +8,7 @@
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
-import { getCompanies, getCompanyAnnouncements, getCompanyKBar, getCompanyOhlcv, getCompanyQuoteRealtime, getThemes, type CompanyRealtimeQuote, type FinMindKBarView, type OhlcvBar } from "@/lib/api";
+import { getCompanies, getCompanyAnnouncements, getCompanyKBar, getCompanyOhlcv, getThemes, type FinMindKBarView, type OhlcvBar } from "@/lib/api";
 import type { Company, Theme } from "@iuf-trading-room/contracts";
 import {
   quoteFromOhlcvBars,
@@ -247,7 +247,6 @@ export default async function CompanyDetailPage({
     );
   }
 
-  // ── Phase 1: fetch OHLCV (needed for kbarDate) ──────────────────────────────
   let ohlcvErrorMsg: string | null = null;
   const from = new Date();
   from.setFullYear(from.getFullYear() - 3);
@@ -262,24 +261,12 @@ export default async function CompanyDetailPage({
     ? `K 線資料暫時無法讀取：${ohlcvErrorMsg}`
     : "此股票目前沒有可用的正式 K 線資料。";
   const kbarDate = bars.at(-1)?.dt ?? new Date().toISOString().slice(0, 10);
-
-  // ── Phase 2: kbar + themes + announcements + realtime quote in parallel ──────
-  // Previously sequential (kbar → themes → announcements). Now 4 concurrent fetches.
-  const fetchedAt = new Date().toISOString();
-  const [kbarResult, themesResult, announcementsResult, realtimeResult] = await Promise.allSettled([
-    getCompanyKBar(company.id, kbarDate, { days: 20 }),
-    getThemes(),
-    getCompanyAnnouncements(company.id, { days: 30 }),
-    getCompanyQuoteRealtime(company.id),
-  ]);
-
-  // kbar
   let kbarView: FinMindKBarView | null = null;
   let kbarErrorMsg: string | null = null;
-  if (kbarResult.status === "fulfilled") {
-    kbarView = kbarResult.value.data;
-  } else {
-    kbarErrorMsg = friendlyError(kbarResult.reason);
+  try {
+    kbarView = (await getCompanyKBar(company.id, kbarDate, { days: 20 })).data;
+  } catch (err) {
+    kbarErrorMsg = friendlyError(err);
     console.warn("[company-detail] getCompanyKBar failed", { id: company.id, date: kbarDate, err: kbarErrorMsg });
   }
   const kbarState = kbarErrorMsg ? "BLOCKED" : kbarView?.state ?? "EMPTY";
@@ -287,38 +274,39 @@ export default async function CompanyDetailPage({
     ? `FinMind 分 K 暫時無法讀取：${kbarErrorMsg}`
     : kbarView?.reason ?? "FinMind 分 K 尚未回傳資料。";
 
-  // themes
   const themeLabelById = new Map<string, string>();
-  if (themesResult.status === "fulfilled") {
-    for (const theme of themesResult.value.data ?? []) {
+  try {
+    const themeRes = await getThemes();
+    for (const theme of themeRes.data ?? []) {
       themeLabelById.set(theme.id, displayThemeName(theme));
     }
-  } else {
-    console.warn("[company-detail] getThemes failed; hiding raw theme ids", { symbol, err: friendlyError(themesResult.reason) });
+  } catch (err) {
+    console.warn("[company-detail] getThemes failed; hiding raw theme ids", { symbol, err: friendlyError(err) });
   }
 
-  // announcements probe (for SourceStatusCard badge only)
+  // Y3 fix: fetch announcements server-side (lightweight, fail-soft) to get real state.
+  // AnnouncementsPanel still fetches client-side for rendering — this is a HEAD-style probe
+  // only used to populate the SourceStatusCard badge (honest state, not hardcoded "stale").
   let announcementsSource: Parameters<typeof buildSourceStatus>[4];
-  if (announcementsResult.status === "fulfilled") {
-    const annRes = announcementsResult.value;
-    const envelope = annRes as typeof annRes & { state?: string };
-    if (envelope.state === "DEGRADED") {
-      announcementsSource = { outcome: "degraded", fetchedAt };
-    } else {
-      const items = annRes.data ?? [];
-      announcementsSource = items.length > 0
-        ? { outcome: "live", count: items.length, fetchedAt }
-        : { outcome: "empty", fetchedAt };
+  {
+    const fetchedAt = new Date().toISOString();
+    try {
+      const annRes = await getCompanyAnnouncements(company.id, { days: 30 });
+      // Detect degraded envelope (state="DEGRADED" field appended by PR #265 F3 fix)
+      const envelope = annRes as typeof annRes & { state?: string };
+      if (envelope.state === "DEGRADED") {
+        announcementsSource = { outcome: "degraded", fetchedAt };
+      } else {
+        const items = annRes.data ?? [];
+        announcementsSource = items.length > 0
+          ? { outcome: "live", count: items.length, fetchedAt }
+          : { outcome: "empty", fetchedAt };
+      }
+    } catch (err) {
+      console.warn("[company-detail] getCompanyAnnouncements probe failed", { id: company.id, err: friendlyError(err) });
+      announcementsSource = { outcome: "error", fetchedAt };
     }
-  } else {
-    console.warn("[company-detail] getCompanyAnnouncements probe failed", { id: company.id, err: friendlyError(announcementsResult.reason) });
-    announcementsSource = { outcome: "error", fetchedAt };
   }
-
-  // realtime quote (fail-soft: null = gateway not reachable or BLOCKED)
-  const realtimeQuote: CompanyRealtimeQuote | null =
-    realtimeResult.status === "fulfilled" ? realtimeResult.value : null;
-  const realtimeLive = realtimeQuote?.state === "LIVE" || realtimeQuote?.state === "STALE";
 
   const detail = toCompanyDetailView(company, symbol, themeLabelById);
   const quote = quoteFromOhlcvBars(bars);
@@ -371,15 +359,6 @@ export default async function CompanyDetailPage({
         <div>
           <span className="tg soft">日變動</span>
           <b className={`num ${tone(dailyChangePct)}`}>{signed(dailyChangePct)}%</b>
-        </div>
-        {/* Realtime badge — shows LIVE when EC2 KGI gateway returns fresh tick */}
-        <div>
-          <span className="tg soft">即時</span>
-          <b className={`tg ${realtimeLive ? "up" : "muted"}`}>
-            {realtimeLive
-              ? `${realtimeQuote?.state === "LIVE" ? "即時" : "略舊"}${realtimeQuote?.lastPrice != null ? ` ${realtimeQuote.lastPrice}` : ""}`
-              : "等待即時"}
-          </b>
         </div>
         <div>
           <span className="tg soft">主題</span>
