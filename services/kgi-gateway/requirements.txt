@@ -1,0 +1,9 @@
+# KGI Gateway — Python dependencies
+# kgisuperpy is a KGI-provided proprietary SDK installed separately.
+# All other packages are standard PyPI.
+
+fastapi>=0.111.0,<1.0.0
+uvicorn[standard]>=0.29.0,<1.0.0
+pydantic>=2.7.0,<3.0.0
+websockets>=12.0,<14.0
+pandas>=2.2.0,<3.0.0
