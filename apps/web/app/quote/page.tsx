@@ -3,7 +3,9 @@ import {
   getCompanies,
   getCompanyKBar,
   getCompanyOhlcv,
+  getCompanyQuoteRealtime,
   getEffectiveQuotes,
+  type CompanyRealtimeQuote,
   type EffectiveMarketQuote,
   type FinMindKBarRow,
   type OhlcvBar,
@@ -250,6 +252,61 @@ async function loadQuoteKline(symbol: string): Promise<KlineState> {
   }
 }
 
+function KgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote | null }) {
+  if (!realtime || realtime.state === "BLOCKED" || realtime.state === "NO_DATA") {
+    const reason = realtime?.reason ?? (realtime ? "此股無即時報價資料。" : "KGI gateway (EC2) 尚未回傳即時報價。");
+    return (
+      <Panel code="QTE-KGI" title="凱基即時報價 (EC2)" right="source=BLOCKED">
+        <div className="state-panel">
+          <span className="badge badge-red">等待即時</span>
+          <span className="tg soft">source=BLOCKED / 不顯示假報價</span>
+          <span className="state-reason">{reason}</span>
+        </div>
+      </Panel>
+    );
+  }
+
+  const sourceBadge = realtime.state === "LIVE" ? "badge-green" : "badge-yellow";
+  const sourceLabel = realtime.state === "LIVE" ? "即時" : "略舊";
+
+  return (
+    <Panel
+      code="QTE-KGI"
+      title="凱基即時報價 (EC2)"
+      right={
+        <span className="source-line" style={{ margin: 0 }}>
+          <span className={`badge ${sourceBadge}`}>{sourceLabel}</span>
+          <span>source=LIVE / kgi-gateway</span>
+          <span>更新 {formatDateTime(realtime.updatedAt)}</span>
+        </span>
+      }
+    >
+      <div className="quote-snapshot-grid">
+        <div>
+          <span className="tg soft">即時成交</span>
+          <b className="num">{realtime.lastPrice !== null ? realtime.lastPrice.toLocaleString("zh-TW", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "--"}</b>
+        </div>
+        <div>
+          <span className="tg soft">買價</span>
+          <b className="num up">{realtime.bid !== null ? realtime.bid.toLocaleString("zh-TW", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "--"}</b>
+        </div>
+        <div>
+          <span className="tg soft">賣價</span>
+          <b className="num down">{realtime.ask !== null ? realtime.ask.toLocaleString("zh-TW", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "--"}</b>
+        </div>
+        <div>
+          <span className="tg soft">成交量</span>
+          <b className="num">{realtime.volume !== null ? realtime.volume.toLocaleString("zh-TW") : "--"}</b>
+        </div>
+        <div>
+          <span className="tg soft">新鮮度</span>
+          <b className="tg">{realtime.freshness === "fresh" ? "新鮮" : realtime.freshness === "stale" ? "略舊" : "無資料"}</b>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 export default async function QuotePage({
   searchParams,
 }: {
@@ -260,14 +317,38 @@ export default async function QuotePage({
   let item: EffectiveMarketQuote | null = null;
   let generatedAt: string | null = null;
   let error: string | null = null;
-  const kline = await loadQuoteKline(symbol);
 
-  try {
-    const response = await getEffectiveQuotes({ symbols: symbol, includeStale: true, limit: 1 });
-    generatedAt = response.data.generatedAt;
-    item = response.data.items[0] ?? null;
-  } catch (err) {
-    error = friendlyDataError(err, "報價請求失敗。");
+  // Parallel: kline + effective quote + companies (need ID for realtime)
+  const [klineResult, effectiveResult, companiesResult] = await Promise.allSettled([
+    loadQuoteKline(symbol),
+    getEffectiveQuotes({ symbols: symbol, includeStale: true, limit: 1 }),
+    getCompanies(),
+  ]);
+
+  if (effectiveResult.status === "fulfilled") {
+    generatedAt = effectiveResult.value.data.generatedAt;
+    item = effectiveResult.value.data.items[0] ?? null;
+  } else {
+    error = friendlyDataError(effectiveResult.reason, "報價請求失敗。");
+  }
+
+  const kline = klineResult.status === "fulfilled" ? klineResult.value : {
+    state: "BLOCKED" as const,
+    bars: [],
+    reason: friendlyDataError(klineResult.reason, "K 線資料暫時無法讀取。"),
+    kbarRows: [],
+    kbarState: "BLOCKED" as const,
+    kbarReason: "K 線資料暫時無法讀取。",
+    kbarDate: new Date().toISOString().slice(0, 10),
+  };
+
+  // KGI realtime quote: resolve company ID first, then fetch.
+  let realtimeQuote: CompanyRealtimeQuote | null = null;
+  if (companiesResult.status === "fulfilled") {
+    const company = companiesResult.value.data.find((c) => c.ticker.toUpperCase() === symbol) ?? null;
+    if (company) {
+      realtimeQuote = await getCompanyQuoteRealtime(company.id);
+    }
   }
 
   return (
@@ -275,7 +356,7 @@ export default async function QuotePage({
       code="QTE"
       title={`台股報價 ${symbol}`}
       sub="報價 / K 線 / 五檔與逐筆"
-      note="此頁只顯示正式資料；尚未接上的即時五檔與逐筆會清楚標示暫停。"
+      note="此頁只顯示正式資料；KGI EC2 即時報價標示 source=LIVE；未接上的欄位會清楚標示暫停。"
     >
       <Panel code="QTE-SRC" title="股票查詢" right={generatedAt ? `更新 ${formatDateTime(generatedAt)}` : "市場資料"}>
         <form action="/quote" className="filter-row">
@@ -297,6 +378,9 @@ export default async function QuotePage({
           <button className="mini-button" type="submit">查詢</button>
         </form>
       </Panel>
+
+      {/* KGI EC2 realtime — always first, state honest, never mock */}
+      <KgiRealtimePanel realtime={realtimeQuote} />
 
       {error && (
         <QuoteStatePanel

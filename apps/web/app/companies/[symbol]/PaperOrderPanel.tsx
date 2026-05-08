@@ -359,7 +359,12 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
       </div>
 
       <div className="paper-order-lock-note">
-        此區只建立模擬委託，不會送往凱基正式下單。正式送單等待 libCGCrypt.so 補齊後接上。
+        目前 paper 模式（虛擬下單）：所有委託只在模擬帳戶執行，不送凱基正式下單。
+        {paperHealth.status === "live" && !paperHealth.health.gate.killSwitchOk && (
+          <span style={{ color: "var(--tw-up-bright, #ff4d5f)", fontWeight: 700, marginLeft: 8 }}>
+            killSwitch 守住
+          </span>
+        )}
       </div>
 
       <PaperHealthPanel state={paperHealth} />
@@ -503,12 +508,14 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
               disabled={!canSubmit || submit.status === "loading"}
               title={
                 !COMPANY_PAGE_PAPER_SUBMIT_ENABLED
-                  ? "本輪公司頁只開放預覽與風控檢查，不建立 paper order。"
-                  : !paperHealthReady
-                    ? "Paper E2E 送出閘門尚未開啟；不會送出模擬單。"
-                    : !canSubmit
-                      ? "請先完成通過的風控預覽。"
-                      : "送出前會開啟零股/整張確認視窗。"
+                  ? "目前 paper 模式（虛擬下單）：送出等待楊董明示後開啟。"
+                  : paperHealth.status === "live" && !paperHealth.health.gate.killSwitchOk
+                    ? "killSwitch 守住 — 全部送單暫停，等待楊董明示解除。"
+                    : !paperHealthReady
+                      ? "Paper E2E 送出閘門尚未開啟；不會送出模擬單。"
+                      : !canSubmit
+                        ? "請先完成通過的風控預覽。"
+                        : "送出前會開啟零股/整張確認視窗。"
               }
               type="button"
               style={canSubmit ? {
@@ -517,7 +524,11 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
                 background: "rgba(46,204,113,0.05)",
               } : {}}
             >
-              {submit.status === "loading" ? "送出中" : COMPANY_PAGE_PAPER_SUBMIT_ENABLED ? "檢查並送出" : "送出暫停"}
+              {submit.status === "loading"
+                ? "送出中"
+                : !COMPANY_PAGE_PAPER_SUBMIT_ENABLED
+                  ? (paperHealth.status === "live" && !paperHealth.health.gate.killSwitchOk ? "killSwitch 守住" : "目前 Paper 模式")
+                  : "檢查並送出"}
             </button>
           </div>
 
@@ -620,9 +631,29 @@ function PaperHealthPanel({ state }: { state: PaperHealthUiState }) {
   }
 
   const h = state.health;
-  const gateText = h.gate.gateOpen
-    ? "後端 Paper 閘門已開"
-    : `後端 Paper 閘門未開：execution=${h.gate.executionMode} / kill=${h.gate.killSwitchOk ? "ok" : "blocked"} / paper=${h.gate.paperModeOk ? "ok" : "off"}`;
+  const killSwitchOn = !h.gate.killSwitchOk;
+  const paperModeOff = !h.gate.paperModeOk;
+
+  function execModeLabel(mode: string) {
+    if (mode === "trading") return "可交易";
+    if (mode === "paper_only") return "模擬模式";
+    if (mode === "liquidate_only") return "只減倉";
+    if (mode === "halted") return "全鎖定";
+    return mode.replace(/_/g, " ");
+  }
+
+  // Honest gate note — name the exact blocker, never hide.
+  let gateNote: string;
+  if (h.gate.gateOpen) {
+    gateNote = "閘門已開，可送出模擬委託。";
+  } else if (killSwitchOn) {
+    gateNote = "killSwitch 守住 — 全部送單已暫停，等待楊董明示解除。";
+  } else if (paperModeOff) {
+    gateNote = `目前執行模式：「${execModeLabel(h.gate.executionMode)}」，模擬送出功能未啟用。`;
+  } else {
+    gateNote = `後端 Paper 閘門未開；執行模式：${execModeLabel(h.gate.executionMode)}。`;
+  }
+
   const persistenceText = h.persistence.dbError
     ? `資料庫異常：${h.persistence.dbError}`
     : `${h.persistence.mode} / paper_orders=${h.persistence.tableExists ? "可讀" : "未建立"}`;
@@ -630,12 +661,18 @@ function PaperHealthPanel({ state }: { state: PaperHealthUiState }) {
   return (
     <div style={paperHealthShellStyle} aria-label="Paper E2E 後端健康狀態">
       <div style={paperHealthHeaderStyle}>
-        <span>Paper E2E 閘門</span>
-        <span>{formatTime(state.updatedAt)}</span>
+        <span>目前模式：紙上交易 (paper)</span>
+        <span style={killSwitchOn ? { color: "var(--tw-up-bright, #ff4d5f)", fontWeight: 800 } : {}}>
+          {killSwitchOn ? "killSwitch 守住" : "正常"} / {formatTime(state.updatedAt)}
+        </span>
       </div>
       <div style={paperHealthGridStyle}>
-        <PaperHealthCell label="預覽" ready={h.previewReady} note={gateText} />
-        <PaperHealthCell label="送出" ready={h.submitReady} note={h.submitReady ? "可建立模擬委託" : "送出按鈕已鎖定"} />
+        <PaperHealthCell label="預覽" ready={h.previewReady} note={gateNote} />
+        <PaperHealthCell
+          label="送出"
+          ready={h.submitReady}
+          note={h.submitReady ? "可建立模擬委託" : killSwitchOn ? "killSwitch 守住，送出暫停" : "送出閘門未開"}
+        />
         <PaperHealthCell label="成交" ready={h.fillsReady} note={h.lastFillTs ? `最近成交 ${formatTime(h.lastFillTs)}` : "尚無成交"} />
         <PaperHealthCell label="部位" ready={h.portfolioReady} note={persistenceText} />
       </div>
