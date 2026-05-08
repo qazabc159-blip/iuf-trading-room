@@ -6,7 +6,7 @@
  * Pipeline = scheduler → source pack collector → generator → AI reviewer (PR #218) → publisher gate → audit log.
  *
  * Scheduler ticks (TST = Taipei Standard Time UTC+8):
- *   - pre-market  08:30 TST  (pre-open context)
+ *   - pre-market  07:30 TST  (pre-open; generate here, published by 08:00 TST)
  *   - close-watch 13:45 TST  (intraday near-close)
  *   - close-brief 16:30 TST  (post-close daily summary)
  *
@@ -1480,10 +1480,24 @@ export async function runBatchAiReviewer(input: {
 
 // ── Scheduler tick helpers (called from startSchedulers) ─────────────────────
 
-/** Taipei HHMM 08:30 → 09:00: pre-market window */
+/**
+ * Taipei HHMM 07:30 → 08:00: pre-market window.
+ * Changed 2026-05-09 (was 08:30–09:00): 楊董 requires brief ready by 08:00 TST.
+ */
 function isPreMarketWindow(now: Date): boolean {
   const hhmm = getTaipeiHHMM(now);
-  return hhmm >= 830 && hhmm < 900;
+  return hhmm >= 730 && hhmm < 800;
+}
+
+/**
+ * Taipei HHMM 07:30 → 09:30: boot-recovery window.
+ * Exported for startSchedulers boot-recovery path in server.ts.
+ * If process boots between 07:30 and 09:30 TST and no brief exists for today,
+ * fire the pipeline immediately (covers the 5/8 incident: process at 08:44 TST).
+ */
+export function isBriefBootRecoveryWindow(now: Date = new Date()): boolean {
+  const hhmm = getTaipeiHHMM(now);
+  return hhmm >= 730 && hhmm < 930;
 }
 
 /** Taipei HHMM 13:45 → 14:15: close-watch window */
@@ -1510,6 +1524,25 @@ export async function runPipelinePreMarketTick(workspaceSlug: string): Promise<v
     return null;
   });
   if (result) updatePipelineState({ nextRunAt: computeNextRunAt(new Date()) });
+}
+
+export async function runPipelinePreMarketBootRecovery(workspaceSlug: string): Promise<void> {
+  const now = new Date();
+  if (!isBriefBootRecoveryWindow(now)) {
+    console.log("[pipeline-scheduler] boot_recovery skipped=outside_recovery_window");
+    return;
+  }
+  console.log("[pipeline-scheduler] boot_recovery firing pre_market (recovery window 07:30–09:30 TST)");
+  const result = await runPipelineTick("pre_market", workspaceSlug).catch((e: unknown) => {
+    console.error("[pipeline-scheduler] boot_recovery error:", e instanceof Error ? e.message : String(e));
+    return null;
+  });
+  if (result) {
+    console.log(
+      `[pipeline-scheduler] boot_recovery complete: publishedBriefId=${result.publishedBriefId ?? "n/a"} skippedReason=${result.skippedReason ?? "none"}`
+    );
+    updatePipelineState({ nextRunAt: computeNextRunAt(new Date()) });
+  }
 }
 
 export async function runPipelineCloseWatchTick(workspaceSlug: string): Promise<void> {
@@ -1540,7 +1573,8 @@ function computeNextRunAt(now: Date): string {
   // real minutes-of-day first.
   const hhmmToMinutes = (hhmm: number): number => Math.floor(hhmm / 100) * 60 + (hhmm % 100);
   const nowMin = hhmmToMinutes(getTaipeiHHMM(now));
-  const targets = [830, 1345, 1630].map(hhmmToMinutes);
+  // pre-market target updated to 07:30 (was 08:30 before 2026-05-09 timing fix)
+  const targets = [730, 1345, 1630].map(hhmmToMinutes);
   let minutesToAdd: number;
   if (nowMin < targets[0]) minutesToAdd = targets[0] - nowMin;
   else if (nowMin < targets[1]) minutesToAdd = targets[1] - nowMin;
