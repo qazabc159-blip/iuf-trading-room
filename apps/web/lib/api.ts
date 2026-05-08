@@ -997,6 +997,108 @@ export async function getKgiQuoteStatus() {
   return response.data;
 }
 
+// ── Realtime quote for company detail page (PR #306 + EC2 KGI gateway) ────────
+// GET /api/v1/companies/:id/quote/realtime
+// :id may be UUID or ticker symbol.
+// state: 'LIVE' | 'STALE' | 'BLOCKED' | 'NO_DATA'
+// source: 'kgi-gateway' always (no mock fallback)
+export type CompanyRealtimeQuote = {
+  symbol: string;
+  lastPrice: number | null;
+  bid: number | null;
+  ask: number | null;
+  volume: number | null;
+  freshness: "fresh" | "stale" | "not-available";
+  state: "LIVE" | "STALE" | "BLOCKED" | "NO_DATA";
+  reason?: string;
+  source: "kgi-gateway";
+  updatedAt: string;
+};
+
+export async function getCompanyQuoteRealtime(companyId: string): Promise<CompanyRealtimeQuote | null> {
+  try {
+    const res = await request<CompanyRealtimeQuote>(`/api/v1/companies/${companyId}/quote/realtime`);
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
+// ── Dashboard Snapshot (PR #326 — 6-panel aggregation, 30s cache) ─────────────
+// GET /api/v1/dashboard/snapshot
+// Returns 6 panels in 1 fetch: industry_heatmap, news_recent, brief_today,
+// lab_strategies, audit_stats, watchlist_quotes.
+// partial-success: stale_panels + errors map let consumers degrade gracefully.
+export type DashboardSnapshotPanels = {
+  industry_heatmap: unknown;
+  news_recent: unknown;
+  brief_today: unknown;
+  lab_strategies: unknown[];
+  audit_stats: unknown;
+  watchlist_quotes: unknown;
+};
+
+export type DashboardSnapshot = {
+  as_of: string;
+  panels: DashboardSnapshotPanels;
+  stale_panels: string[];
+  errors: Record<string, string>;
+  _cache_hit: boolean;
+};
+
+export async function getDashboardSnapshot(): Promise<DashboardSnapshot | null> {
+  try {
+    const res = await request<DashboardSnapshot>("/api/v1/dashboard/snapshot");
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
+// ── Brief search (PR #325 — FTS / ILIKE fallback) ─────────────────────────────
+// GET /api/v1/briefs/search?q=...&from=...&to=...&limit=...&offset=...
+export type BriefSearchResult = {
+  id: string;
+  date: string;
+  status: string;
+  sections: Array<{ heading: string; body: string }>;
+  rank: number;
+  matchedIn: string;
+  createdAt: string;
+};
+
+export type BriefSearchResponse = {
+  query: string;
+  from: string;
+  to: string;
+  limit: number;
+  offset: number;
+  count: number;
+  results: BriefSearchResult[];
+  fallback: boolean;
+};
+
+export async function searchBriefs(params: {
+  q: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<BriefSearchResponse | null> {
+  const query = new URLSearchParams();
+  query.set("q", params.q);
+  if (params.from) query.set("from", params.from);
+  if (params.to) query.set("to", params.to);
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+  try {
+    const res = await request<BriefSearchResponse>(`/api/v1/briefs/search?${query.toString()}`);
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
 // ── Market data ──
 //
 // These types mirror the response of /api/v1/market-data/effective-quotes
