@@ -26,6 +26,11 @@ Not a blocker. Can be dropped in a future cleanup migration.
 
 0027-0030 NOT YET WRITTEN. Slot numbers reserved. Design proposal in section D.
 
+> ⚠️ **2026-05-08 RENUMBER**: PR #325 took 0027 for `brief_search_index`. KGI write-side schemas
+> shift to **0028-0031** (kgi_orders → 0028, kgi_fills → 0029, kgi_positions → 0030, kgi_reconciliation → 0031).
+> Mike audit MIKE_MIGRATION_0027_AUDIT_2026-05-08 documented the collision. When promoting these,
+> Jason must rename schema files + update the section D headings below, but design content is unchanged.
+
 ---
 
 ## B. 5/12 ACTUAL-DAY PLAYBOOK (11 steps ordered)
