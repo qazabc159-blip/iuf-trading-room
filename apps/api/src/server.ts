@@ -66,7 +66,7 @@ import {
   acknowledgeEvent
 } from "./openalice-event-rule-engine.js";
 import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs } from "@iuf-trading-room/db";
-import { eq, and, sql as drizzleSql, desc, inArray } from "drizzle-orm";
+import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like } from "drizzle-orm";
 import {
   getTradingRoomRepository,
   type TradingRoomRepository
@@ -2163,6 +2163,271 @@ app.get("/api/v1/briefs", async (c) =>
     })
   })
 );
+
+// =============================================================================
+// GET /api/v1/briefs/search — keyword search across published daily briefs
+// =============================================================================
+// Query params:
+//   q        — keyword string (required; min 1 char)
+//   from     — ISO date lower bound (optional; defaults to 90 days ago)
+//   to       — ISO date upper bound (optional; defaults to today)
+//   limit    — results per page (optional; default 20, max 50)
+//   offset   — pagination offset (optional; default 0)
+//
+// Uses Postgres FTS (to_tsvector + plainto_tsquery) on sections JSONB text.
+// Falls back to ILIKE if FTS index is not available.
+// Only returns rows where status IN ('published','approved') or
+// (status='draft' AND generated_by='worker') — mirrors listBriefs normalization.
+//
+// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES)
+// =============================================================================
+app.get("/api/v1/briefs/search", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const db = getDb();
+  if (!isDatabaseMode() || !db) {
+    return c.json({ error: "database_unavailable" }, 503);
+  }
+
+  // ── Parse + validate query params ─────────────────────────────────────────
+  const rawQ = c.req.query("q") ?? "";
+  if (!rawQ.trim()) {
+    return c.json({ error: "missing_q", message: "query param 'q' is required and must be non-empty" }, 400);
+  }
+  const q = rawQ.trim();
+
+  const rawLimit = parseInt(c.req.query("limit") ?? "20", 10);
+  const limit = isNaN(rawLimit) ? 20 : Math.min(Math.max(1, rawLimit), 50);
+
+  const rawOffset = parseInt(c.req.query("offset") ?? "0", 10);
+  const offset = isNaN(rawOffset) ? 0 : Math.max(0, rawOffset);
+
+  // Date range: defaults to 90 days ago → today
+  const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const fromDate = c.req.query("from") ?? ninetyDaysAgo;
+  const toDate = c.req.query("to") ?? todayStr;
+
+  // Validate date format loosely (YYYY-MM-DD)
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  if (!DATE_RE.test(fromDate) || !DATE_RE.test(toDate)) {
+    return c.json({ error: "invalid_date", message: "from/to must be YYYY-MM-DD" }, 400);
+  }
+
+  const workspaceId = c.get("session").workspace.id;
+
+  // ── Published-only filter (mirrors listBriefs normalization) ──────────────
+  // published | approved | (draft + generated_by=worker)
+  const publishedFilter = or(
+    eq(dailyBriefs.status, "published"),
+    eq(dailyBriefs.status, "approved"),
+    and(eq(dailyBriefs.status, "draft"), eq(dailyBriefs.generatedBy, "worker"))
+  );
+
+  // ── FTS search using raw SQL ───────────────────────────────────────────────
+  // sections is JSONB array of {heading,body}. We concatenate all heading+body
+  // text by casting to text and stripping JSON noise, then apply FTS.
+  // The GIN index on to_tsvector('simple', ...) accelerates this.
+  //
+  // Fallback: ILIKE search on sections::text when FTS errors.
+  type SearchRow = {
+    id: string;
+    date: string;
+    status: string;
+    generatedBy: string;
+    sections: Array<{ heading: string; body: string }>;
+    createdAt: Date;
+    rank: number;
+    matchedIn: string;
+  };
+
+  // Build the full-text search query. We extract sections text for ranking.
+  // sections_text = concat of all heading + body values from JSONB array.
+  const ftsQuery = drizzleSql<SearchRow[]>`
+    SELECT
+      id,
+      date,
+      status,
+      generated_by  AS "generatedBy",
+      sections,
+      created_at    AS "createdAt",
+      ts_rank(
+        to_tsvector('simple',
+          COALESCE(
+            (SELECT string_agg(
+               COALESCE(s->>'heading','') || ' ' || COALESCE(s->>'body',''),
+               ' '
+             ) FROM jsonb_array_elements(sections) AS s),
+            ''
+          )
+        ),
+        plainto_tsquery('simple', ${q})
+      ) AS rank,
+      CASE
+        WHEN to_tsvector('simple', COALESCE((
+          SELECT string_agg(COALESCE(s->>'heading',''), ' ')
+          FROM jsonb_array_elements(sections) AS s
+        ), '')) @@ plainto_tsquery('simple', ${q})
+          THEN 'title'
+        ELSE 'body'
+      END AS "matchedIn"
+    FROM daily_briefs
+    WHERE workspace_id = ${workspaceId}
+      AND date >= ${fromDate}
+      AND date <= ${toDate}
+      AND (
+        status IN ('published','approved')
+        OR (status = 'draft' AND generated_by = 'worker')
+      )
+      AND to_tsvector('simple',
+        COALESCE(
+          (SELECT string_agg(
+             COALESCE(s->>'heading','') || ' ' || COALESCE(s->>'body',''),
+             ' '
+           ) FROM jsonb_array_elements(sections) AS s),
+          ''
+        )
+      ) @@ plainto_tsquery('simple', ${q})
+    ORDER BY rank DESC, date DESC
+    LIMIT ${limit + 1}
+    OFFSET ${offset}
+  `;
+
+  let rows: SearchRow[] = [];
+  let usedFts = true;
+
+  try {
+    const result = await db.execute(ftsQuery);
+    // drizzle-orm/postgres-js db.execute() returns flat array (not {rows:[...]})
+    rows = Array.isArray(result) ? (result as unknown as SearchRow[]) : ((result as unknown as { rows?: SearchRow[] }).rows ?? []);
+  } catch (ftsErr) {
+    // FTS failed (e.g. index not yet applied) — fall back to ILIKE
+    usedFts = false;
+    const ilikePattern = `%${q}%`;
+    try {
+      const ilikeQuery = drizzleSql<SearchRow[]>`
+        SELECT
+          id,
+          date,
+          status,
+          generated_by  AS "generatedBy",
+          sections,
+          created_at    AS "createdAt",
+          0.5           AS rank,
+          'body'        AS "matchedIn"
+        FROM daily_briefs
+        WHERE workspace_id = ${workspaceId}
+          AND date >= ${fromDate}
+          AND date <= ${toDate}
+          AND (
+            status IN ('published','approved')
+            OR (status = 'draft' AND generated_by = 'worker')
+          )
+          AND sections::text ILIKE ${ilikePattern}
+        ORDER BY date DESC
+        LIMIT ${limit + 1}
+        OFFSET ${offset}
+      `;
+      const ilikeResult = await db.execute(ilikeQuery);
+      rows = Array.isArray(ilikeResult) ? (ilikeResult as unknown as SearchRow[]) : ((ilikeResult as unknown as { rows?: SearchRow[] }).rows ?? []);
+    } catch (ilikeErr) {
+      console.error("[briefs/search] ILIKE fallback also failed:", ilikeErr);
+      return c.json({ error: "search_failed" }, 500);
+    }
+  }
+
+  // ── Paginate: fetch limit+1 to determine hasMore, then slice ─────────────
+  const hasMore = rows.length > limit;
+  if (hasMore) rows = rows.slice(0, limit);
+
+  // ── Build response items ───────────────────────────────────────────────────
+  const SUMMARY_PREVIEW_LENGTH = 200;
+
+  const items = rows.map((row) => {
+    const sections = (row.sections ?? []) as Array<{ heading: string; body: string }>;
+
+    // Derive title from first section heading (no top-level title in daily_briefs schema)
+    const title = sections[0]?.heading ?? `Brief ${row.date}`;
+
+    // Build summary_preview: first 200 chars of the first body section
+    // (or the body section most likely to contain the match)
+    const allBody = sections.map((s) => s.body).join(" ");
+    const summaryPreview = allBody.slice(0, SUMMARY_PREVIEW_LENGTH) + (allBody.length > SUMMARY_PREVIEW_LENGTH ? "…" : "");
+
+    return {
+      id: row.id,
+      date: row.date,
+      title,
+      summary_preview: summaryPreview,
+      matched_in: row.matchedIn ?? "body",
+      rank: typeof row.rank === "number" ? Math.round(row.rank * 100) / 100 : 0
+    };
+  });
+
+  // ── Count total matching rows (separate COUNT query) ──────────────────────
+  let total = 0;
+  try {
+    if (usedFts) {
+      const countQuery = drizzleSql`
+        SELECT COUNT(*)::int AS cnt
+        FROM daily_briefs
+        WHERE workspace_id = ${workspaceId}
+          AND date >= ${fromDate}
+          AND date <= ${toDate}
+          AND (
+            status IN ('published','approved')
+            OR (status = 'draft' AND generated_by = 'worker')
+          )
+          AND to_tsvector('simple',
+            COALESCE(
+              (SELECT string_agg(
+                 COALESCE(s->>'heading','') || ' ' || COALESCE(s->>'body',''),
+                 ' '
+               ) FROM jsonb_array_elements(sections) AS s),
+              ''
+            )
+          ) @@ plainto_tsquery('simple', ${q})
+      `;
+      const countResult = await db.execute(countQuery);
+      const countRows = Array.isArray(countResult) ? countResult : ((countResult as unknown as { rows?: unknown[] }).rows ?? []);
+      const countRow = countRows[0] as { cnt?: number } | undefined;
+      total = countRow?.cnt ?? 0;
+    } else {
+      // ILIKE fallback count
+      const ilikePattern = `%${q}%`;
+      const countQuery = drizzleSql`
+        SELECT COUNT(*)::int AS cnt
+        FROM daily_briefs
+        WHERE workspace_id = ${workspaceId}
+          AND date >= ${fromDate}
+          AND date <= ${toDate}
+          AND (
+            status IN ('published','approved')
+            OR (status = 'draft' AND generated_by = 'worker')
+          )
+          AND sections::text ILIKE ${ilikePattern}
+      `;
+      const countResult = await db.execute(countQuery);
+      const countRows = Array.isArray(countResult) ? countResult : ((countResult as unknown as { rows?: unknown[] }).rows ?? []);
+      const countRow = countRows[0] as { cnt?: number } | undefined;
+      total = countRow?.cnt ?? 0;
+    }
+  } catch {
+    // Count failure is non-fatal; best-effort
+    total = offset + items.length + (hasMore ? 1 : 0);
+  }
+
+  return c.json({
+    items,
+    total,
+    limit,
+    offset,
+    search_mode: usedFts ? "fts" : "ilike"
+  });
+});
 
 app.post("/api/v1/briefs", async (c) => {
   const payload = dailyBriefCreateInputSchema.parse(await c.req.json());
