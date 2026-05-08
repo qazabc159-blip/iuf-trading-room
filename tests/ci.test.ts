@@ -8230,6 +8230,148 @@ test("adversarial-reviewer: runAdversarialReview is safe-default null without AP
   }
 });
 
+// ── BLOCK #10 — factual-reviewer unit tests ────────────────────────────────────
+
+import {
+  parseFactualJson,
+  runFactualReview,
+  type FactualReviewResult
+} from "../apps/api/src/openalice-factual-reviewer.ts";
+
+test("factual-reviewer: parseFactualJson returns FACTUAL_OK with empty driftFlags", () => {
+  const raw = JSON.stringify({
+    factualVerdict: "FACTUAL_OK",
+    driftFlags: [],
+    reasoning: "All claims align with the raw data provided."
+  });
+  const result = parseFactualJson(raw);
+  assert.ok(result, "should parse successfully");
+  assert.equal(result!.factualVerdict, "FACTUAL_OK");
+  assert.deepEqual(result!.driftFlags, []);
+  assert.ok(result!.reasoning.length > 0);
+});
+
+test("factual-reviewer: parseFactualJson returns FACTUAL_DRIFT with driftFlags", () => {
+  const raw = JSON.stringify({
+    factualVerdict: "FACTUAL_DRIFT",
+    driftFlags: [
+      "Brief states YoY revenue +50% but raw data shows +20%",
+      "Brief says 外資連5日買進 but raw data shows 連3日"
+    ],
+    reasoning: "Two numeric claims partially misrepresent the raw FinMind data."
+  });
+  const result = parseFactualJson(raw);
+  assert.ok(result, "should parse FACTUAL_DRIFT");
+  assert.equal(result!.factualVerdict, "FACTUAL_DRIFT");
+  assert.equal(result!.driftFlags.length, 2);
+});
+
+test("factual-reviewer: parseFactualJson returns FACTUAL_FALSE with contradiction flags", () => {
+  const raw = JSON.stringify({
+    factualVerdict: "FACTUAL_FALSE",
+    driftFlags: [
+      "Brief claims stock closed up +3% but OHLCV raw row shows close < open (down day)"
+    ],
+    reasoning: "A specific directional claim directly contradicts the raw OHLCV data."
+  });
+  const result = parseFactualJson(raw);
+  assert.ok(result, "should parse FACTUAL_FALSE");
+  assert.equal(result!.factualVerdict, "FACTUAL_FALSE");
+  assert.equal(result!.driftFlags.length, 1);
+});
+
+test("factual-reviewer: parseFactualJson returns null on invalid factualVerdict", () => {
+  const raw = JSON.stringify({
+    factualVerdict: "UNKNOWN_VERDICT",
+    driftFlags: [],
+    reasoning: "Some reasoning"
+  });
+  const result = parseFactualJson(raw);
+  assert.equal(result, null, "invalid verdict should return null");
+});
+
+test("factual-reviewer: parseFactualJson returns null on malformed JSON", () => {
+  const result = parseFactualJson("not json at all {{{");
+  assert.equal(result, null, "malformed JSON should return null");
+});
+
+test("factual-reviewer: parseFactualJson strips markdown fence", () => {
+  const raw = "```json\n" + JSON.stringify({
+    factualVerdict: "FACTUAL_OK",
+    driftFlags: [],
+    reasoning: "Clean brief, all data aligned."
+  }) + "\n```";
+  const result = parseFactualJson(raw);
+  assert.ok(result, "should strip markdown fence and parse");
+  assert.equal(result!.factualVerdict, "FACTUAL_OK");
+});
+
+test("factual-reviewer: parseFactualJson caps driftFlags to 10 items", () => {
+  const manyFlags = Array.from({ length: 15 }, (_, i) => `Flag ${i + 1}: some drift`);
+  const raw = JSON.stringify({
+    factualVerdict: "FACTUAL_DRIFT",
+    driftFlags: manyFlags,
+    reasoning: "Many flags."
+  });
+  const result = parseFactualJson(raw);
+  assert.ok(result, "should parse");
+  assert.equal(result!.driftFlags.length, 10, "should cap driftFlags at 10");
+});
+
+test("factual-reviewer: runFactualReview returns null when rawSources is empty (cost guard)", async () => {
+  // Cost guard: skip entirely when no sources to check against
+  const result = await runFactualReview(
+    "Some brief content about Taiwan stocks.",
+    [], // empty rawSources
+    "test-draft-cost-guard"
+  );
+  assert.equal(result, null, "should return null (cost guard) when rawSources is empty");
+});
+
+test("factual-reviewer: runFactualReview returns null when rawSources has no real rows (metadata-only)", async () => {
+  // Cost guard: skip when sources only have metadata, not actual data rows
+  const metadataOnlySources = [
+    {
+      sourceId: "companies_ohlcv",
+      content: JSON.stringify({ status: "STALE", rowCount: 0, latestDate: null, note: null })
+    },
+    {
+      sourceId: "tw_monthly_revenue",
+      content: JSON.stringify({ status: "DEGRADED", rowCount: null, latestDate: null, note: "table_not_found" })
+    }
+  ];
+  const result = await runFactualReview(
+    "Some brief content.",
+    metadataOnlySources,
+    "test-draft-metadata-only"
+  );
+  assert.equal(result, null, "should return null when no real row arrays in sources");
+});
+
+test("factual-reviewer: runFactualReview is safe-default null without API key", async () => {
+  // With real rows present but no API key → should return null (safe-default)
+  const originalKey = process.env["OPENAI_API_KEY"];
+  delete process.env["OPENAI_API_KEY"];
+  try {
+    const realRowSources = [
+      {
+        sourceId: "companies_ohlcv",
+        content: JSON.stringify([
+          { ticker: "2330", dt: "2026-05-07", open: 950, high: 970, low: 948, close: 965, volume: 12000000 }
+        ])
+      }
+    ];
+    const result = await runFactualReview(
+      "台積電 (2330) 昨日收盤價 965 元。",
+      realRowSources,
+      "test-draft-no-api-key"
+    );
+    assert.equal(result, null, "should return null without API key (safe-default)");
+  } finally {
+    if (originalKey !== undefined) process.env["OPENAI_API_KEY"] = originalKey;
+  }
+});
+
 // ── Email Digest unit tests ────────────────────────────────────────────────────
 
 import {

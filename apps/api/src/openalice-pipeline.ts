@@ -1211,6 +1211,128 @@ export async function evaluatePipelinePublishGate(
   }
   // ── end hallucination RAG gate ───────────────────────────────────────────────
 
+  // ── Factual reviewer gate (BLOCK #10) ────────────────────────────────────────
+  // Runs AFTER hallucination RAG gate, BEFORE auto-publish.
+  // Uses raw FinMind sampleRows (up to 3 per source) as ground-truth.
+  // FACTUAL_FALSE  → force reject + audit_log type=content_draft.factual_reject
+  // FACTUAL_DRIFT  → manual_review queue (same threshold as adversarial score>=7)
+  // FACTUAL_OK     → pass through to auto-publish
+  // null (skipped or error) → safe-default: pass through (never block on null)
+  const factualApiKey = process.env["OPENAI_API_KEY"];
+  if (factualApiKey) {
+    const draftContentForFactual =
+      draft.payload &&
+      typeof draft.payload === "object" &&
+      !Array.isArray(draft.payload) &&
+      "content" in draft.payload &&
+      typeof (draft.payload as { content?: unknown }).content === "string"
+        ? (draft.payload as { content: string }).content
+        : null;
+
+    if (draftContentForFactual && sourcePack) {
+      // Build raw sources — only entries with real sampleRows (arrays with length > 0)
+      const factualRawSources = sourcePack.sources
+        .filter((entry) => entry.sampleRows && entry.sampleRows.length > 0)
+        .map((entry) => ({
+          sourceId: entry.source,
+          content: JSON.stringify((entry.sampleRows ?? []).slice(0, 3))
+        }));
+
+      try {
+        const { runFactualReview } = await import("./openalice-factual-reviewer.js");
+        const factualResult = await runFactualReview(
+          draftContentForFactual,
+          factualRawSources,
+          draftId
+        );
+
+        if (factualResult) {
+          console.info(
+            `[pipeline-gate] factual-reviewer verdict=${factualResult.factualVerdict} ` +
+            `flags=${factualResult.driftFlags.length} draftId=${draftId}`
+          );
+
+          if (factualResult.factualVerdict === "FACTUAL_FALSE") {
+            // Force reject — write audit log
+            try {
+              const db3 = getDb();
+              if (db3) {
+                await db3.insert(auditLogs).values({
+                  workspaceId: draft.workspaceId,
+                  actorId: null,
+                  action: "content_draft.factual_reject",
+                  entityId: draftId,
+                  entityType: "content_draft",
+                  payload: {
+                    type: "FACTUAL_FALSE_REJECT",
+                    factualVerdict: factualResult.factualVerdict,
+                    driftFlags: factualResult.driftFlags,
+                    reasoning: factualResult.reasoning
+                  }
+                });
+              }
+            } catch {
+              // audit log failure is non-critical
+            }
+            try {
+              const { rejectContentDraft } = await import("./content-draft-store.js");
+              await rejectContentDraft({
+                draftId,
+                reviewerId: null,
+                reason: `[factual-gate] FACTUAL_FALSE: ${factualResult.driftFlags.join("; ")}`
+              });
+            } catch {
+              // Non-critical
+            }
+            return {
+              action: "rejected",
+              briefId: null,
+              reason: `factual_false_detected: ${factualResult.driftFlags.slice(0, 2).join("; ")}`
+            };
+          }
+
+          if (factualResult.factualVerdict === "FACTUAL_DRIFT") {
+            // Route to manual review — write audit log
+            try {
+              const db4 = getDb();
+              if (db4) {
+                await db4.insert(auditLogs).values({
+                  workspaceId: draft.workspaceId,
+                  actorId: null,
+                  action: "content_draft.factual_reject",
+                  entityId: draftId,
+                  entityType: "content_draft",
+                  payload: {
+                    type: "FACTUAL_DRIFT_HOLD",
+                    factualVerdict: factualResult.factualVerdict,
+                    driftFlags: factualResult.driftFlags,
+                    reasoning: factualResult.reasoning
+                  }
+                });
+              }
+            } catch {
+              // audit log failure is non-critical
+            }
+            return {
+              action: "queued_for_review",
+              briefId: null,
+              reason: `factual_drift_detected: ${factualResult.driftFlags.slice(0, 2).join("; ")}`
+            };
+          }
+          // FACTUAL_OK → fall through to auto-publish
+        }
+        // null (skipped / no real rows / API error) → safe-default: fall through
+      } catch (factualErr) {
+        // Factual reviewer threw unexpectedly — safe-default: pass through (do not block publish)
+        console.warn(
+          `[pipeline-gate] factual-reviewer threw: ${factualErr instanceof Error ? factualErr.message : String(factualErr)}`
+        );
+        // Do NOT return here — let publish proceed
+      }
+    }
+  }
+  // ── end factual reviewer gate ─────────────────────────────────────────────────
+
   // Green + gate pass → auto-publish via approveContentDraft
   try {
     const { approveContentDraft } = await import("./content-draft-store.js");
