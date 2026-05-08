@@ -444,10 +444,19 @@ function formatDateTime(value: string | null | undefined) {
   if (!value) return "尚未更新";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const month = lookup.month ?? "??";
+  const day = lookup.day ?? "??";
+  const hour = lookup.hour ?? "??";
+  const minute = lookup.minute ?? "??";
   return `${month}/${day} ${hour}:${minute}`;
 }
 
