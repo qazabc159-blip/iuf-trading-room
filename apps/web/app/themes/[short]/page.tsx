@@ -236,6 +236,158 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
   );
 }
 
+const DETAIL_CSS = `
+  ._bty-detail-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    ._bty-detail-layout { grid-template-columns: 1fr; }
+  }
+  ._bty-hero-accent {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  ._bty-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  ._bty-theme-title {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--night-ink, #e0e0e0);
+    margin-bottom: 4px;
+  }
+  ._bty-theme-thesis {
+    font-size: 13px;
+    line-height: 1.7;
+    color: rgba(255,255,255,0.65);
+    margin: 10px 0 0;
+  }
+  ._bty-notes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  @media (max-width: 600px) {
+    ._bty-notes-grid { grid-template-columns: 1fr; }
+  }
+  ._bty-note-box {
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 6px;
+  }
+  ._bty-note-label {
+    font-size: 10px;
+    color: #ffb800;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 5px;
+  }
+  ._bty-note-text {
+    font-size: 12px;
+    color: rgba(255,255,255,0.6);
+    line-height: 1.6;
+  }
+  ._bty-member-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+  ._bty-member-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,184,0,0.15);
+    border-radius: 6px;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  ._bty-member-card:hover {
+    background: rgba(255,184,0,0.06);
+    border-color: rgba(255,184,0,0.35);
+  }
+  ._bty-member-ticker {
+    font-size: 15px;
+    font-weight: 700;
+    color: #ffb800;
+    font-family: var(--mono, monospace);
+  }
+  ._bty-member-name {
+    font-size: 12px;
+    color: rgba(255,255,255,0.8);
+    font-weight: 500;
+  }
+  ._bty-member-meta {
+    font-size: 10px;
+    color: rgba(255,255,255,0.4);
+  }
+  ._bty-idea-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  ._bty-idea-card {
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-left: 3px solid rgba(255,184,0,0.4);
+    border-radius: 4px;
+  }
+  ._bty-idea-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  ._bty-signal-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  ._bty-signal-card {
+    padding: 9px 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 4px;
+  }
+  ._bty-signal-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 5px;
+  }
+  ._bty-signal-text {
+    font-size: 12px;
+    color: rgba(255,255,255,0.75);
+    line-height: 1.5;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    ._bty-member-card { transition: none !important; }
+  }
+`;
+
 export default async function ThemeDetailPage({ params }: { params: Promise<{ short: string }> }) {
   const { short } = await params;
   const result = await loadThemeDetail(short);
@@ -261,6 +413,8 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
       sub={theme ? `${theme.slug} / ${marketStateLabel(theme.marketState)}` : "主題明細暫停"}
       note="此頁讀取正式主題、公司、訊號與策略想法；只顯示已接上來源的研究資料，不提供下單動作。"
     >
+      <style>{DETAIL_CSS}</style>
+
       <MetricStrip
         cells={[
           { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
@@ -274,32 +428,44 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
         columns={7}
       />
 
-      <div className="theme-detail-layout">
-        <div className="theme-detail-main">
+      <div className="_bty-detail-layout">
+        <div>
           <Panel code="THM-SRC" title="主題工作頁" sub="投資命題 / 現在性" right={stateLabel(result.state)}>
             <SourceLine result={result} />
             <EmptyOrBlocked result={result} />
             {theme && (
-              <div className="theme-detail-hero">
-                <div className="theme-detail-hero-top">
-                  <span className={`tg ${marketTone(theme.marketState)}`}>{marketStateLabel(theme.marketState)}</span>
-                  <span className="tg gold">{lifecycleLabel(theme.lifecycle)}</span>
-                  <span className="tg soft">更新 {formatDate(theme.updatedAt)}</span>
+              <div>
+                <div className="_bty-hero-accent">
+                  <span
+                    className="_bty-badge"
+                    style={{
+                      background: marketTone(theme.marketState) === "up" ? "rgba(255,107,53,0.2)" : "rgba(79,195,247,0.2)",
+                      color: marketTone(theme.marketState) === "up" ? "#ff6b35" : "#4fc3f7",
+                      border: `1px solid ${marketTone(theme.marketState) === "up" ? "rgba(255,107,53,0.4)" : "rgba(79,195,247,0.4)"}`,
+                    }}
+                  >
+                    {marketStateLabel(theme.marketState)}
+                  </span>
+                  <span className="_bty-badge" style={{ background: "rgba(255,184,0,0.15)", color: "#ffb800", border: "1px solid rgba(255,184,0,0.3)" }}>
+                    {lifecycleLabel(theme.lifecycle)}
+                  </span>
+                  <span className="_bty-badge" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.5)" }}>
+                    P{theme.priority} 優先序
+                  </span>
+                  <span className="tg soft" style={{ fontSize: 11, marginLeft: "auto" }}>更新 {formatDate(theme.updatedAt)}</span>
                 </div>
-                <div className="theme-detail-titleline">
-                  <div>
-                    <div className="tc theme-detail-title">{themeDisplayName(theme)}</div>
-                    <div className="tg soft">{theme.slug} / 正式主題主檔</div>
+                <div className="_bty-theme-title">{themeDisplayName(theme)}</div>
+                <div className="tg soft" style={{ fontSize: 11 }}>{theme.slug} / 正式主題主檔</div>
+                <p className="_bty-theme-thesis">{themeThesisText(theme)}</p>
+                <div className="_bty-notes-grid">
+                  <div className="_bty-note-box">
+                    <div className="_bty-note-label">現在性</div>
+                    <div className="_bty-note-text">{themeNarrative(theme.whyNow)}</div>
                   </div>
-                  <div className="theme-detail-priority">
-                    <span className="num">{theme.priority}</span>
-                    <span className="tg gold">優先序</span>
+                  <div className="_bty-note-box">
+                    <div className="_bty-note-label">瓶頸</div>
+                    <div className="_bty-note-text">{themeNarrative(theme.bottleneck)}</div>
                   </div>
-                </div>
-                <p className="tc theme-detail-thesis">{themeThesisText(theme)}</p>
-                <div className="theme-detail-notes">
-                  <span><b>現在性</b>{themeNarrative(theme.whyNow)}</span>
-                  <span><b>瓶頸</b>{themeNarrative(theme.bottleneck)}</span>
                 </div>
               </div>
             )}
@@ -309,13 +475,13 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
             {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
             {detailLive && result.data.companies.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有公司掛在此主題。</div>}
             {detailLive && result.data.companies.length > 0 && (
-              <div className="theme-member-grid">
+              <div className="_bty-member-grid">
                 {result.data.companies.map((company) => (
-                  <Link className="theme-member-card" href={`/companies/${company.ticker}`} key={company.id}>
-                    <span className="tg gold">{company.ticker}</span>
-                    <strong className="tc">{company.name}</strong>
-                    <span className="tg soft">{company.market} / {company.chainPosition}</span>
-                    <span className="tg">{company.beneficiaryTier} / 更新 {formatDate(company.updatedAt)}</span>
+                  <Link className="_bty-member-card" href={`/companies/${company.ticker}`} key={company.id}>
+                    <span className="_bty-member-ticker">{company.ticker}</span>
+                    <span className="_bty-member-name">{company.name}</span>
+                    <span className="_bty-member-meta">{company.market} / {company.chainPosition}</span>
+                    <span className="_bty-member-meta">{company.beneficiaryTier}</span>
                   </Link>
                 ))}
               </div>
@@ -323,21 +489,21 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
           </Panel>
         </div>
 
-        <div className="theme-detail-side">
+        <div>
           <Panel code="IDEA-ATT" title="連結策略想法" sub="依主題篩選正式策略資料" right={detailLive ? `${result.data.ideas.length} 筆` : stateLabel(dependentState)}>
             {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
             {detailLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有策略想法掛在此主題。</div>}
             {detailLive && result.data.ideas.length > 0 && (
-              <div className="theme-idea-stack">
+              <div className="_bty-idea-stack">
                 {result.data.ideas.slice(0, 8).map((idea) => (
-                  <div className="theme-idea-card" key={`${idea.companyId}-${idea.symbol}`}>
-                    <div className="theme-card-top">
-                      <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
-                      <span className={`tg ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
-                      <span className={`tg ${decisionTone(idea.marketData.decision)}`}>{decisionLabel(idea.marketData.decision)}</span>
-                      <span className="num">{idea.score.toFixed(1)}</span>
+                  <div className="_bty-idea-card" key={`${idea.companyId}-${idea.symbol}`}>
+                    <div className="_bty-idea-row">
+                      <Link href={`/companies/${idea.symbol}`} className="tg gold" style={{ fontWeight: 700, fontSize: 14 }}>{idea.symbol}</Link>
+                      <span className={`tg ${directionTone(idea.direction)}`} style={{ fontSize: 11 }}>{directionLabel(idea.direction)}</span>
+                      <span className={`tg ${decisionTone(idea.marketData.decision)}`} style={{ fontSize: 11 }}>{decisionLabel(idea.marketData.decision)}</span>
+                      <span className="num" style={{ marginLeft: "auto", fontSize: 16, fontWeight: 700 }}>{idea.score.toFixed(1)}</span>
                     </div>
-                    <div className="tc soft">{cleanNarrativeText(idea.rationale.primaryReason, "策略原因待整理；只保留候選列，不自動轉委託。")}</div>
+                    <div className="tc soft" style={{ fontSize: 11 }}>{cleanNarrativeText(idea.rationale.primaryReason, "策略原因待整理；只保留候選列，不自動轉委託。")}</div>
                   </div>
                 ))}
               </div>
@@ -348,16 +514,16 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
             {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
             {detailLive && displaySignals.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有正式訊號掛在此主題；驗證訊號不顯示。</div>}
             {detailLive && displaySignals.length > 0 && (
-              <div className="signal-tape-grid compact">
+              <div className="_bty-signal-stack">
                 {displaySignals.slice(0, 10).map((signal) => (
-                  <div className="signal-tape-card compact" key={signal.id}>
-                    <div className="signal-tape-meta">
-                      <span className="tg soft">{formatTime(signal.createdAt)}</span>
-                      <span className="tg gold">{categoryLabel(signal.category)}</span>
-                      <span className={`tg ${directionTone(signal.direction)}`}>{directionLabel(signal.direction)}</span>
-                      <span className="tg soft">信心 {signal.confidence}</span>
+                  <div className="_bty-signal-card" key={signal.id}>
+                    <div className="_bty-signal-meta">
+                      <span className="tg soft" style={{ fontSize: 10 }}>{formatTime(signal.createdAt)}</span>
+                      <span className="_bty-badge" style={{ background: "rgba(255,184,0,0.12)", color: "#ffb800", padding: "1px 6px", fontSize: 10 }}>{categoryLabel(signal.category)}</span>
+                      <span className={`tg ${directionTone(signal.direction)}`} style={{ fontSize: 11 }}>{directionLabel(signal.direction)}</span>
+                      <span className="tg soft" style={{ fontSize: 10 }}>信心 {signal.confidence}</span>
                     </div>
-                    <div className="tc signal-tape-title">{signalText(signal)}</div>
+                    <div className="_bty-signal-text">{signalText(signal)}</div>
                   </div>
                 ))}
               </div>
