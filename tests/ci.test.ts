@@ -8372,6 +8372,80 @@ test("factual-reviewer: runFactualReview is safe-default null without API key", 
   }
 });
 
+// ── BLOCK #10 Addendum — factual reviewer sourcePack pipe-through (Pete audit 2026-05-08) ──
+
+import {
+  registerJobSourcePack,
+  loadSourcePackForDraft,
+  type SourcePack as PipelineSourcePack,
+  type SourcePackEntry as PipelineSourcePackEntry
+} from "../apps/api/src/openalice-pipeline.ts";
+
+function _makePipelineSourcePack(jobId: string, sampleRows?: Record<string, unknown>[]): PipelineSourcePack {
+  const entry: PipelineSourcePackEntry = {
+    source: "companies_ohlcv",
+    status: "LIVE",
+    rowCount: 10,
+    latestDate: "2026-05-08",
+    note: null,
+    sampleRows: sampleRows ?? null
+  };
+  return {
+    packId: `pack-${jobId}`,
+    tick: "close_brief",
+    collectedAt: new Date().toISOString(),
+    tradingDate: "2026-05-08",
+    sources: [entry],
+    trailComplete: true
+  };
+}
+
+test("factual-reviewer sourcepack: registerJobSourcePack → loadSourcePackForDraft round-trips", () => {
+  const jobId = `ci-fs01-${Date.now()}`;
+  const pack = _makePipelineSourcePack(jobId);
+  registerJobSourcePack(jobId, pack);
+  const result = loadSourcePackForDraft(jobId);
+  assert.ok(result !== null, "should return non-null pack for registered jobId");
+  assert.strictEqual(result!.packId, pack.packId, "packId should match");
+  assert.strictEqual(result!.sources.length, 1, "sources array should have 1 entry");
+});
+
+test("factual-reviewer sourcepack: loadSourcePackForDraft(null) returns null (non-pipeline draft)", () => {
+  assert.strictEqual(loadSourcePackForDraft(null), null, "null sourceJobId → null (graceful degradation)");
+});
+
+test("factual-reviewer sourcepack: loadSourcePackForDraft unknown jobId returns null (process restart)", () => {
+  assert.strictEqual(
+    loadSourcePackForDraft("ci-never-registered-xyzzy-" + Date.now()),
+    null,
+    "unregistered jobId → null"
+  );
+});
+
+test("factual-reviewer sourcepack: sampleRows preserved through registry", () => {
+  const jobId = `ci-fs05-${Date.now()}`;
+  const sampleRows = [{ ticker: "2330", close: 850 }, { ticker: "2317", close: 105 }];
+  registerJobSourcePack(jobId, _makePipelineSourcePack(jobId, sampleRows));
+  const result = loadSourcePackForDraft(jobId);
+  assert.ok(result !== null, "should return pack");
+  assert.ok(Array.isArray(result!.sources[0]!.sampleRows), "sampleRows should be array");
+  assert.strictEqual(result!.sources[0]!.sampleRows!.length, 2, "should have 2 sample rows");
+  assert.strictEqual(result!.sources[0]!.sampleRows![0]!["ticker"], "2330", "first row ticker should be 2330");
+});
+
+test("factual-reviewer sourcepack: audit-stats IN clause includes content_draft.factual_reject", () => {
+  // Regression guard: Pete audit 2026-05-08 finding #2.
+  // Ensure server.ts audit-stats query string contains the factual_reject action.
+  // This is a static text check — if the string disappears, this test fails.
+  const fs = require("node:fs") as typeof import("node:fs");
+  const serverPath = require("node:path").join(__dirname, "../apps/api/src/server.ts");
+  const serverSrc = fs.readFileSync(serverPath, "utf-8");
+  assert.ok(
+    serverSrc.includes("'content_draft.factual_reject'"),
+    "server.ts audit-stats IN clause must include 'content_draft.factual_reject'"
+  );
+});
+
 // ── Email Digest unit tests ────────────────────────────────────────────────────
 
 import {
