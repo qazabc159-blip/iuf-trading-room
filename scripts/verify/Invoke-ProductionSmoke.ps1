@@ -50,7 +50,8 @@ param(
     [switch]$Watch,
     [string]$BaseUrl = "https://api.eycvector.com",
     [string]$Email = $env:IUF_TEST_EMAIL,
-    [string]$Password = $env:IUF_TEST_PASSWORD
+    [string]$Password = $env:IUF_TEST_PASSWORD,
+    [string]$OutFile = ""
 )
 
 if (-not $Email -or -not $Password) {
@@ -525,7 +526,11 @@ function Summarize {
 function Write-Evidence {
     param([string]$runLabel, [bool]$isAppend = $false)
 
-    $runFile = "$EVIDENCE_DIR\bruce_smoke_run_$($script:runTs).md"
+    $runFile = if ($OutFile) { $OutFile } else { "$EVIDENCE_DIR\bruce_smoke_run_$($script:runTs).md" }
+    $runDir = Split-Path -Parent $runFile
+    if ($runDir -and -not (Test-Path -LiteralPath $runDir)) {
+        New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+    }
 
     # Build run block
     $block = @"
@@ -653,4 +658,7 @@ if ($Watch) {
 
     $runFile = Write-Evidence "baseline-$(Get-Date -Format 'yyyyMMdd-HHmm')"
     Write-HarnessDoc $runFile
+    if ($script:failCount -gt 0 -or $script:stopLinesHit -gt 0) {
+        exit 1
+    }
 }
