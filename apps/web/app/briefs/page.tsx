@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { BriefSearchPanel } from "./BriefSearchPanel";
 import { ContentDraftOverrideActions } from "@/components/ContentDraftOverrideActions";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
@@ -580,6 +581,9 @@ export default async function BriefsPage() {
           檢查重大訊息
         </Link>
       </div>
+
+      {/* PR #325 brief search — FTS endpoint (ILIKE fallback) */}
+      <BriefSearchPanel />
 
       <section className="brief-overview-grid">
         <BriefStatePanel surface={surface} />
