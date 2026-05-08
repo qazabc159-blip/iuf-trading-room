@@ -7723,48 +7723,50 @@ app.get("/api/v1/vendor/strategy/ideas", async (c) => {
 });
 
 // ── P1 #3: GET /api/v1/dashboard/snapshot ────────────────────────────────────
-// Aggregated snapshot — calls internal helpers to build all panels.
-// This is Path A aggregation: one call, all panels.
+// Aggregated snapshot — fans out to all panel fetchers via Promise.allSettled.
+// Codex vendor Path A: single call replaces 14+ individual panel fetches.
+//
+// Auth:    READ_DRAFT_ROLES (Owner / Admin / Analyst)
+// Cache:   30s TTL per userId (handles tab-switch refresh storm)
+// Partial: 1 panel fail → added to stale_panels+errors, others unaffected
+// Never:   5xx if at least 1 panel succeeds
 app.get("/api/v1/dashboard/snapshot", async (c) => {
-  const role = c.get("session").user.role;
+  const session = c.get("session");
+  const role = session.user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
 
-  // Build meta synchronously
-  const flags = getExecutionFlagSnapshot();
-  const modeLabel = flags.executionMode === "paper" ? "模擬模式 / 風控守門" : "停用模式";
-  const now = new Date();
-  const tst = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const nowText = `${tst.getUTCFullYear()}/${pad(tst.getUTCMonth() + 1)}/${pad(tst.getUTCDate())} `
-    + `${pad(tst.getUTCHours())}:${pad(tst.getUTCMinutes())}:${pad(tst.getUTCSeconds())} 台北`;
+  const { buildDashboardSnapshot } = await import("./dashboard-snapshot-aggregator.js");
 
-  const meta = {
-    operator: "IUF-01",
-    mode: modeLabel,
-    market: "盤面 / 真實資料",
-    nowText,
-    formalOrder: { state: "blocked", reason: "KGI TradeCom 元件使用權限待業務員 enable (code 78)" }
-  };
+  try {
+    const { snapshot, fromCache } = await buildDashboardSnapshot({
+      userId: session.user.id,
+      workspaceSlug: session.workspace.slug,
+      workspaceId: session.workspace.id,
+    });
 
-  return c.json({
-    meta,
-    sources: [],   // caller should use /api/v1/sources for full list
-    quotes: { sourceState: "empty", sourceLabel: "市場資料 · 無即時資料", indices: [], flows: [], stocks: [], intradayTwii: [] },
-    breadth: { up: 0, flat: 0, down: 0, total: 0, asOf: null },
-    heatmap: [],
-    agenda: [],
-    finmind: null,
-    openalice: null,
-    paperE2E: [],
-    portfolio: { cash: Number(process.env.PAPER_BROKER_INITIAL_CASH) || 20000, positions: 0, readiness: "preview-only", note: "紙上預覽,不連真實券商" },
-    strategyIdeas: [],
-    workflow: [],
-    blocked: [
-      { name: "重大訊息",   why: "尚未接入公開資訊觀測站",      next: "等接入 + 排程", icon: "news" },
-      { name: "正式下單",   why: "KGI TradeCom 元件使用權限待 enable", next: "業務員後台 enable 後可用", icon: "lock" }
-    ],
-    _note: "Use individual endpoints for full sub-panel data. Dashboard snapshot returns structural placeholders."
-  });
+    return c.json({
+      ...snapshot,
+      _cache_hit: fromCache,
+    });
+  } catch (err) {
+    // Last-resort: all panels failed entirely — return shell rather than 5xx.
+    console.error("[dashboard-snapshot] fatal aggregation error:", err instanceof Error ? err.message : String(err));
+    const as_of = new Date().toISOString();
+    return c.json({
+      as_of,
+      panels: {
+        industry_heatmap: { sourceState: "error", tiles: [] },
+        news_recent: { items: [] },
+        brief_today: { data: null, meta: { reason: "aggregation_error" } },
+        lab_strategies: [],
+        audit_stats: { windowHours: 24, total: 0, db_available: false },
+        watchlist_quotes: [],
+      },
+      stale_panels: ["industry_heatmap", "news_recent", "brief_today", "lab_strategies", "audit_stats", "watchlist_quotes"],
+      errors: { _fatal: err instanceof Error ? err.message : String(err) },
+      _cache_hit: false,
+    });
+  }
 });
 
 // =============================================================================
