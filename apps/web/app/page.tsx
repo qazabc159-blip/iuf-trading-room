@@ -662,6 +662,8 @@ function buildHeatmap(market: LoadState<MarketDataOverview | null>): HeatTile[] 
       high: item.high ?? null,
       low: item.low ?? null,
       close: item.close ?? (typeof item.last === "number" ? item.last : null),
+      prevClose: item.prevClose ?? null,
+      change: item.change ?? null,
       volume: item.volume,
       readiness: item.readiness,
       freshnessStatus: item.freshnessStatus,
@@ -1880,10 +1882,8 @@ export default async function DashboardPage({
             <HeroPanel heatmap={heatmap} market={market} paper={paper} broker={broker} brief={brief} intel={intel} now={now} />
             <MarketMoversPanel market={market} />
           </section>
-          <section className="tac-heatmap-wide">
+          <section className="tac-two-grid tac-fresh-heat">
             <HeatmapPanel heatmap={realHeatmap} market={market} selectedSectorParam={selectedSectorParam} />
-          </section>
-          <section className="tac-single-panel tac-fresh-heat">
             <FreshnessPanel sources={sources} />
           </section>
           <section className="tac-two-grid">
