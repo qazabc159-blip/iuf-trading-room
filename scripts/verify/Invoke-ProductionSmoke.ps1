@@ -496,7 +496,7 @@ function Invoke-SmokeRun {
 function Invoke-SmokeRunSafe {
     $runStart = Get-Date
     try {
-        Invoke-SmokeRunSafe
+        Invoke-SmokeRun
     } catch {
         Out ""
         Fail "fatal" "Unhandled smoke harness exception" $_.Exception.Message
@@ -643,7 +643,7 @@ if ($Watch) {
     $watchRun = 1
     while ($true) {
         $script:lines = [System.Collections.Generic.List[string]]::new()
-        Invoke-SmokeRun
+        Invoke-SmokeRunSafe
 
         $runFile = Write-Evidence "watch-$watchRun-$(Get-Date -Format 'HHmm')" ($watchRun -gt 1)
 
