@@ -6130,7 +6130,7 @@ app.get("/api/v1/lab/strategies", async (c) => {
 });
 
 // =============================================================================
-// BLOCK #9 — GET /api/v1/lab/three-strategy/*  (14 endpoints)
+// BLOCK #9 — GET /api/v1/lab/three-strategy/*  (20 endpoints)
 // =============================================================================
 // Lab → TR data flow: three-strategy paper fixture consume (read-only).
 //
@@ -6221,6 +6221,54 @@ app.get("/api/v1/lab/three-strategy/risk-config", async (c) => {
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
   const { getFixtureRiskConfig } = await import("./lab-three-strategy-consumer.js");
   const result = getFixtureRiskConfig();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/daily-health", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureDailyHealth } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureDailyHealth();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/next-signal-readiness", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureNextSignalReadiness } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureNextSignalReadiness();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/frozen-signal-snapshot", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureFrozenSignalSnapshot } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureFrozenSignalSnapshot();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/main-overlay-validation", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureMainOverlayValidation } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureMainOverlayValidation();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/cont-liq-canary-guard", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureContLiqCanaryGuard } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureContLiqCanaryGuard();
+  return c.json(result, result.ok ? 200 : 503);
+});
+
+app.get("/api/v1/lab/three-strategy/quality-scorecard", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+  const { getFixtureQualityScorecard } = await import("./lab-three-strategy-consumer.js");
+  const result = getFixtureQualityScorecard();
   return c.json(result, result.ok ? 200 : 503);
 });
 

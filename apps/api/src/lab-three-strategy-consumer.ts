@@ -75,6 +75,13 @@ type SnapshotJson = {
   execution_board: unknown[];
   position_sensitivity: Record<string, unknown>;
   master_index: Record<string, unknown>;
+  // New in 20-endpoint upgrade (Athena P0 2026-05-08)
+  daily_health: Record<string, unknown>;
+  next_signal_readiness: Record<string, unknown>;
+  frozen_signal_snapshot: Record<string, unknown>;
+  main_overlay_validation: Record<string, unknown>;
+  cont_liq_canary_guard: Record<string, unknown>;
+  quality_scorecard: Record<string, unknown>;
 };
 
 // ── Public output shape ────────────────────────────────────────────────────────
@@ -345,6 +352,56 @@ export function getFixtureMasterIndex(): ThreeStrategyFixtureResult<Record<strin
   const meta = makeMeta(snapshot);
   if (!snapshot) return { ok: false, data: null, meta };
   return { ok: true, data: snapshot.master_index ?? {}, meta };
+}
+
+// ── New 20-endpoint accessors (Athena P0 upgrade 2026-05-08) ──────────────────
+
+/** GET /api/trading-room/three-strategy/daily-health */
+export function getFixtureDailyHealth(): ThreeStrategyFixtureResult<Record<string, unknown>> {
+  const snapshot = loadThreeStrategySnapshot();
+  const meta = makeMeta(snapshot);
+  if (!snapshot) return { ok: false, data: null, meta };
+  return { ok: true, data: snapshot.daily_health ?? {}, meta };
+}
+
+/** GET /api/trading-room/three-strategy/next-signal-readiness */
+export function getFixtureNextSignalReadiness(): ThreeStrategyFixtureResult<Record<string, unknown>> {
+  const snapshot = loadThreeStrategySnapshot();
+  const meta = makeMeta(snapshot);
+  if (!snapshot) return { ok: false, data: null, meta };
+  return { ok: true, data: snapshot.next_signal_readiness ?? {}, meta };
+}
+
+/** GET /api/trading-room/three-strategy/frozen-signal-snapshot */
+export function getFixtureFrozenSignalSnapshot(): ThreeStrategyFixtureResult<Record<string, unknown>> {
+  const snapshot = loadThreeStrategySnapshot();
+  const meta = makeMeta(snapshot);
+  if (!snapshot) return { ok: false, data: null, meta };
+  return { ok: true, data: snapshot.frozen_signal_snapshot ?? {}, meta };
+}
+
+/** GET /api/trading-room/three-strategy/main-overlay-validation */
+export function getFixtureMainOverlayValidation(): ThreeStrategyFixtureResult<Record<string, unknown>> {
+  const snapshot = loadThreeStrategySnapshot();
+  const meta = makeMeta(snapshot);
+  if (!snapshot) return { ok: false, data: null, meta };
+  return { ok: true, data: snapshot.main_overlay_validation ?? {}, meta };
+}
+
+/** GET /api/trading-room/three-strategy/cont-liq-canary-guard */
+export function getFixtureContLiqCanaryGuard(): ThreeStrategyFixtureResult<Record<string, unknown>> {
+  const snapshot = loadThreeStrategySnapshot();
+  const meta = makeMeta(snapshot);
+  if (!snapshot) return { ok: false, data: null, meta };
+  return { ok: true, data: snapshot.cont_liq_canary_guard ?? {}, meta };
+}
+
+/** GET /api/trading-room/three-strategy/quality-scorecard */
+export function getFixtureQualityScorecard(): ThreeStrategyFixtureResult<Record<string, unknown>> {
+  const snapshot = loadThreeStrategySnapshot();
+  const meta = makeMeta(snapshot);
+  if (!snapshot) return { ok: false, data: null, meta };
+  return { ok: true, data: snapshot.quality_scorecard ?? {}, meta };
 }
 
 /** GET /api/trading-room/three-strategy/snapshot — full payload */
