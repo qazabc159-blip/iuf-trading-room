@@ -36,7 +36,7 @@
         SL-05 "password" not in any 200 body
         SL-06 "secret" not in any 200 body
         SL-07 source==mock in prod = VIOLATION
-        SL-08 POST /order/create must not return 200 (KGI FROZEN, must 409)
+        SL-08 /order/create is not probed by production smoke (write-side stop-line)
         SL-09 iuf_session cookie value never printed to stdout
         SL-10 cookie length only — no full value
         SL-11 kbar state!=LIVE is FAIL
@@ -484,17 +484,9 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── SL-08: POST /order/create must NOT return 200 ────────────────────────
-    Out "--- SL-08: POST /order/create (KGI FROZEN gate) ---"
-    $slBody = '{"symbol":"2330","side":"buy","qty":1}'
-    $rSL = SafePost "$BaseUrl/order/create" $slBody $session
-    if ($rSL.StatusCode -eq 200) {
-        StopLine "SL-08" "POST /order/create returned 200 — KGI FROZEN gate broken! Expected 409 NOT_ENABLED"
-    } elseif ($rSL.StatusCode -eq 409 -or $rSL.StatusCode -eq 404 -or $rSL.StatusCode -eq 403 -or $rSL.StatusCode -eq 401) {
-        Pass "SL-08" "POST /order/create" "HTTP $($rSL.StatusCode) (not 200 — gate holding)"
-    } else {
-        Warn "SL-08" "POST /order/create" "HTTP $($rSL.StatusCode) — unexpected but not 200 | $($rSL.Error)"
-    }
+    # ── SL-08: Do not probe /order/create in production smoke ────────────────
+    Out "--- SL-08: /order/create write-side stop-line ---"
+    Pass "SL-08" "/order/create not probed" "production smoke remains read-only; W6 No-Real-Order Audit covers static regression"
     Out ""
 
     Summarize $runStart
@@ -598,7 +590,7 @@ function Write-HarnessDoc {
 | SL-05 | password in body | Security leak |
 | SL-06 | secret in body | Security leak |
 | SL-07 | source==mock in prod | ETL dead / mock pretending live |
-| SL-08 | POST /order/create returns 200 | KGI FROZEN gate broken |
+| SL-08 | /order/create production probe | Forbidden; smoke harness stays read-only |
 | SL-09/10 | Cookie value printed | Internal — enforced by script design |
 | SL-11 | kbar state!=LIVE | ETL not live |
 | SL-12 | kbar rows.length==0 | ETL not writing |
