@@ -143,9 +143,35 @@ Invoke-Action "Stop and remove existing '$ServiceName' service" {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($svc) {
         Write-Info "  Found existing service — stopping + removing..."
-        & $NssmExe stop $ServiceName 2>&1 | Out-Null
-        & $NssmExe remove $ServiceName confirm 2>&1 | Out-Null
-        Write-Info "  Old service removed."
+        if ($svc.Status -ne "Stopped") {
+            try {
+                & $NssmExe stop $ServiceName 2>&1 | ForEach-Object { Write-Info "  nssm stop: $_" }
+            } catch {
+                Write-Warn "  nssm stop failed/ignored: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds 2
+        } else {
+            Write-Info "  Service already stopped."
+        }
+
+        try {
+            & $NssmExe remove $ServiceName confirm 2>&1 | ForEach-Object { Write-Info "  nssm remove: $_" }
+        } catch {
+            Write-Warn "  nssm remove failed, falling back to sc.exe delete: $($_.Exception.Message)"
+            sc.exe delete $ServiceName 2>&1 | ForEach-Object { Write-Info "  sc delete: $_" }
+        }
+
+        $deadline = (Get-Date).AddSeconds(20)
+        do {
+            Start-Sleep -Seconds 1
+            $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        } while ($svc -and (Get-Date) -lt $deadline)
+
+        if ($svc) {
+            Write-Warn "  Service still visible after removal; Windows may have it marked for deletion."
+        } else {
+            Write-Info "  Old service removed."
+        }
     } else {
         Write-Info "  No existing service found."
     }
