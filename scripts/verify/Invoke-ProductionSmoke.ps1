@@ -270,9 +270,10 @@ function Invoke-SmokeRun {
     $r4 = SafeGet "$BaseUrl/api/v1/companies/2330/kbar?freq=1d" $session
     if ($r4.StatusCode -eq 200 -and $r4.Content) {
         $j4 = $r4.Content | ConvertFrom-Json
-        $kstate  = $j4.state
-        $rows    = $j4.rows
-        $kdate   = $j4.date
+        $d4 = if ($j4.data) { $j4.data } else { $j4 }
+        $kstate  = $d4.state
+        $rows    = $d4.rows
+        $kdate   = $d4.date
         $rowCount = if ($rows) { $rows.Count } else { 0 }
         $parsedDate = ParseDate $kdate
 
@@ -492,6 +493,17 @@ function Invoke-SmokeRun {
     Summarize $runStart
 }
 
+function Invoke-SmokeRunSafe {
+    $runStart = Get-Date
+    try {
+        Invoke-SmokeRunSafe
+    } catch {
+        Out ""
+        Fail "fatal" "Unhandled smoke harness exception" $_.Exception.Message
+        Summarize $runStart
+    }
+}
+
 function Summarize {
     param([datetime]$runStart)
     $elapsed = ((Get-Date) - $runStart).TotalSeconds
@@ -646,7 +658,7 @@ if ($Watch) {
     }
 } else {
     $script:lines = [System.Collections.Generic.List[string]]::new()
-    Invoke-SmokeRun
+    Invoke-SmokeRunSafe
 
     $runFile = Write-Evidence "baseline-$(Get-Date -Format 'yyyyMMdd-HHmm')"
     Write-HarnessDoc $runFile
