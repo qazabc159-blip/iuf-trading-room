@@ -229,6 +229,7 @@ async function fetchAuditStatsPanel(): Promise<unknown> {
       hallucination_reject: 0,
       adversarial_intercept: 0,
       ai_yellow_held: 0,
+      factual_reject: 0,
       paper_submit: 0,
       paper_submit_rejected: 0,
       total: 0,
@@ -247,6 +248,7 @@ async function fetchAuditStatsPanel(): Promise<unknown> {
           'hallucination_reject',
           'content_draft.adversarial_audit',
           'content_draft.ai_yellow_held',
+          'content_draft.factual_reject',
           'paper_submit'
         )
       GROUP BY action
@@ -286,9 +288,10 @@ async function fetchAuditStatsPanel(): Promise<unknown> {
   const hallucinationReject = counts["hallucination_reject"] ?? 0;
   const adversarialIntercept = Number(advFirstRow?.cnt ?? 0);
   const aiYellowHeld = counts["content_draft.ai_yellow_held"] ?? 0;
+  const factualReject = counts["content_draft.factual_reject"] ?? 0;
   const paperSubmit = counts["paper_submit"] ?? 0;
   const paperSubmitRejected = Number(rejFirstRow?.cnt ?? 0);
-  const total = aiApproved + aiRejected + hallucinationReject + adversarialIntercept + aiYellowHeld + paperSubmit;
+  const total = aiApproved + aiRejected + hallucinationReject + adversarialIntercept + aiYellowHeld + factualReject + paperSubmit;
 
   return {
     windowHours,
@@ -298,6 +301,7 @@ async function fetchAuditStatsPanel(): Promise<unknown> {
     hallucination_reject: hallucinationReject,
     adversarial_intercept: adversarialIntercept,
     ai_yellow_held: aiYellowHeld,
+    factual_reject: factualReject,
     paper_submit: paperSubmit,
     paper_submit_rejected: paperSubmitRejected,
     total,
@@ -390,7 +394,7 @@ export async function buildDashboardSnapshot(
         windowHours: 24,
         since: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
         ai_approved: 0, ai_rejected: 0, hallucination_reject: 0,
-        adversarial_intercept: 0, ai_yellow_held: 0,
+        adversarial_intercept: 0, ai_yellow_held: 0, factual_reject: 0,
         paper_submit: 0, paper_submit_rejected: 0, total: 0,
         db_available: false,
       }
