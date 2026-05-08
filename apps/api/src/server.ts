@@ -7043,7 +7043,11 @@ app.get("/api/v1/breadth", async (c) => {
     try {
       const res = await db.execute(drizzleSql`
         WITH latest AS (
-          SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval = 'day'
+          SELECT MAX(dt) AS max_dt
+          FROM companies_ohlcv
+          WHERE interval = '1d'
+            AND workspace_id = ${c.get("session").workspace.id}
+            AND source != 'mock'
         )
         SELECT
           COUNT(*) FILTER (WHERE close > open)::int          AS up_count,
@@ -7052,8 +7056,10 @@ app.get("/api/v1/breadth", async (c) => {
           COUNT(*)::int                                       AS total_count,
           MAX(dt)::text                                       AS as_of
         FROM companies_ohlcv
-        WHERE interval = 'day'
-        AND dt = (SELECT max_dt FROM latest)
+        WHERE interval = '1d'
+          AND workspace_id = ${c.get("session").workspace.id}
+          AND source != 'mock'
+          AND dt = (SELECT max_dt FROM latest)
       `);
       const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0]
         ?? (Array.isArray(res) ? res[0] : res);
@@ -7090,13 +7096,19 @@ app.get("/api/v1/heatmap", async (c) => {
     // Get latest OHLCV day for pct change, joined with companies for name
     const res = await db.execute(drizzleSql`
       WITH latest AS (
-        SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval = 'day'
+        SELECT MAX(dt) AS max_dt
+        FROM companies_ohlcv
+        WHERE interval = '1d'
+          AND workspace_id = ${session.workspace.id}
+          AND source != 'mock'
       ),
       prev AS (
         SELECT MAX(dt) AS prev_dt
         FROM companies_ohlcv
-        WHERE interval = 'day'
-        AND dt < (SELECT max_dt FROM latest)
+        WHERE interval = '1d'
+          AND workspace_id = ${session.workspace.id}
+          AND source != 'mock'
+          AND dt < (SELECT max_dt FROM latest)
       )
       SELECT
         c.ticker AS sym,
@@ -7108,12 +7120,16 @@ app.get("/api/v1/heatmap", async (c) => {
         END AS pct,
         NULL::bigint AS mcap
       FROM companies_ohlcv t
-      JOIN companies c ON c.ticker = t.ticker AND c.workspace_id = ${session.workspace.id}
+      JOIN companies c
+        ON c.id = t.company_id
+        AND c.workspace_id = ${session.workspace.id}
       LEFT JOIN companies_ohlcv p
-        ON p.ticker = t.ticker
-        AND p.interval = 'day'
+        ON p.company_id = t.company_id
+        AND p.workspace_id = t.workspace_id
+        AND p.interval = '1d'
         AND p.dt = (SELECT prev_dt FROM prev)
-      WHERE t.interval = 'day'
+      WHERE t.interval = '1d'
+        AND t.workspace_id = ${session.workspace.id}
         AND t.dt = (SELECT max_dt FROM latest)
         AND t.source != 'mock'
       ORDER BY t.volume DESC NULLS LAST
