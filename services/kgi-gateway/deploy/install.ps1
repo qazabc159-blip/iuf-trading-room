@@ -94,6 +94,9 @@ Write-Info "KGI Gateway EC2 Install Script"
 Write-Info "DryRun=$DryRun  SourceDir=$SourceDir  InstallDir=$GatewayInstallDir"
 Write-Info "========================================"
 
+$env:PYTHONUTF8 = "1"
+$env:PIP_NO_WARN_SCRIPT_LOCATION = "0"
+
 if (-not $DryRun) {
     $currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)

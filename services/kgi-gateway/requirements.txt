@@ -1,4 +1,4 @@
-# KGI Gateway — Python dependencies
+# KGI Gateway - Python dependencies
 # kgisuperpy is a KGI-provided proprietary SDK installed separately.
 # All other packages are standard PyPI.
 
