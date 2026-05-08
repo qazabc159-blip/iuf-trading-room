@@ -26,7 +26,7 @@
 .NOTES
     Run as Administrator.
     NSSM source: https://nssm.cc (freeware, LGPL-like)
-    No KGI credentials are written by this script — they are read from registry
+    No KGI credentials are written by this script - they are read from registry
     (set by install.ps1 step 6).
 #>
 
@@ -142,7 +142,7 @@ Write-Info "--- Step 2: Remove old service (if any) ---"
 Invoke-Action "Stop and remove existing '$ServiceName' service" {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($svc) {
-        Write-Info "  Found existing service — stopping + removing..."
+        Write-Info "  Found existing service - stopping + removing..."
         if ($svc.Status -ne "Stopped") {
             try {
                 & $NssmExe stop $ServiceName 2>&1 | ForEach-Object { Write-Info "  nssm stop: $_" }
@@ -215,7 +215,7 @@ Invoke-Action "Set AppDirectory to $GatewayInstallDir" {
 
 Invoke-Action "Set service DisplayName + Description" {
     & $NssmExe set $ServiceName DisplayName "IUF KGI Gateway"
-    & $NssmExe set $ServiceName Description "KGI Trading Gateway — FastAPI/uvicorn bridge for kgisuperpy"
+    & $NssmExe set $ServiceName Description "KGI Trading Gateway - FastAPI/uvicorn bridge for kgisuperpy"
 }
 
 # Start mode: auto (starts with Windows)
@@ -251,9 +251,9 @@ Invoke-Action "Set failure restart policy (30s delay, 3 max)" {
 
 # ---------------------------------------------------------------------------
 # 7. Inject environment variables from Machine registry into service
-#    NSSM reads from its own AppEnvironmentExtra key — we set each var.
+#    NSSM reads from its own AppEnvironmentExtra key - we set each var.
 #    Credentials (KGI_PERSON_ID, KGI_PERSON_PWD) are read from registry by
-#    config.py at runtime via os.environ — NSSM inherits system env vars.
+#    config.py at runtime via os.environ - NSSM inherits system env vars.
 # ---------------------------------------------------------------------------
 Write-Info "--- Step 6: Environment variable inheritance ---"
 
@@ -265,7 +265,7 @@ $machinePwd = [System.Environment]::GetEnvironmentVariable("KGI_PERSON_PWD", "Ma
 
 if ($machinePid -and $machinePwd) {
     Invoke-Action "Set AppEnvironmentExtra with KGI env vars" {
-        # Redact actual values from log — only record that they were set
+        # Redact actual values from log - only record that they were set
         $envExtra = @(
             "KGI_PERSON_ID=$machinePid",
             "KGI_PERSON_PWD=$machinePwd",
@@ -293,7 +293,7 @@ if ($machinePid -and $machinePwd) {
 Write-Info "--- Step 7: Start service ---"
 Invoke-Action "nssm start $ServiceName" {
     & $NssmExe start $ServiceName
-    if ($LASTEXITCODE -ne 0) { Write-Warn "nssm start returned $LASTEXITCODE — check logs" }
+    if ($LASTEXITCODE -ne 0) { Write-Warn "nssm start returned $LASTEXITCODE - check logs" }
     else { Write-Info "  Service started." }
 }
 
@@ -311,7 +311,7 @@ Invoke-Action "GET http://127.0.0.1:8787/health" {
             Write-Warn "  /health $($resp.StatusCode): $($resp.Content)"
         }
     } catch {
-        Write-Warn "  /health not reachable: $_ — check $LogDir\gateway.stdout.log"
+        Write-Warn "  /health not reachable: $_ - check $LogDir\gateway.stdout.log"
     }
 }
 
