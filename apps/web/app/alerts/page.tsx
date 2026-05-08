@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { PageFrame, Panel } from "@/components/PageFrame";
+import { PageFrame } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import {
   AlertsAuthError,
@@ -40,24 +40,56 @@ function formatDateTime(value: string | null | undefined) {
   });
 }
 
+function formatTimeShort(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleTimeString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
 function severityLabel(severity: AlertSeverity) {
   if (severity === "critical") return "緊急";
   if (severity === "warning") return "注意";
   return "提醒";
 }
 
-function severityBadgeClass(severity: AlertSeverity) {
-  if (severity === "critical") return "badge badge-red";
-  if (severity === "warning") return "badge badge-yellow";
-  return "badge";
+function severityColors(severity: AlertSeverity) {
+  if (severity === "critical") return {
+    border: "rgba(230,57,70,0.7)",
+    bg: "rgba(230,57,70,0.06)",
+    glow: "rgba(230,57,70,0.18)",
+    text: "#ff6b77",
+    badge: "rgba(230,57,70,0.18)",
+    badgeBorder: "rgba(230,57,70,0.55)",
+  };
+  if (severity === "warning") return {
+    border: "rgba(200,148,63,0.7)",
+    bg: "rgba(200,148,63,0.05)",
+    glow: "rgba(200,148,63,0.15)",
+    text: "#e2b85c",
+    badge: "rgba(200,148,63,0.15)",
+    badgeBorder: "rgba(200,148,63,0.5)",
+  };
+  return {
+    border: "rgba(145,160,181,0.28)",
+    bg: "rgba(145,160,181,0.04)",
+    glow: "rgba(145,160,181,0.10)",
+    text: "#91a0b5",
+    badge: "rgba(145,160,181,0.10)",
+    badgeBorder: "rgba(145,160,181,0.28)",
+  };
 }
 
-function statusBadgeClass(ack: boolean) {
-  return ack ? "badge badge-green" : "badge badge-yellow";
-}
-
-function statusLabel(ack: boolean) {
-  return ack ? "已確認" : "待處理";
+function statusColors(ack: boolean) {
+  return ack
+    ? { badge: "rgba(46,204,113,0.12)", border: "rgba(46,204,113,0.4)", text: "#4adb88", label: "已確認" }
+    : { badge: "rgba(200,148,63,0.12)", border: "rgba(200,148,63,0.4)", text: "#e2b85c", label: "待處理" };
 }
 
 function userFacingReason(error: unknown) {
@@ -123,73 +155,222 @@ async function loadAlertsSurface(): Promise<AlertsSurface> {
   }
 }
 
-function EngineStateLine({ engineState }: { engineState: AlertsEngineState }) {
-  const hasTick = Boolean(engineState.lastTickAt);
-  return (
-    <div className="source-line">
-      <span className={hasTick ? "badge badge-green" : "badge badge-yellow"}>{hasTick ? "已巡檢" : "等待巡檢"}</span>
-      <span>最近巡檢 {formatDateTime(engineState.lastTickAt)}</span>
-      <span>本輪觸發 {engineState.lastTickEvents.toLocaleString("zh-TW")} 筆</span>
-      {engineState.lastError && <span className="status-bad">警示讀取異常</span>}
-    </div>
-  );
+const ALERTS_CSS = `
+._alr-hero-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 1px;
+  background: rgba(220,228,240,0.09);
+  border: 1px solid rgba(220,228,240,0.13);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 28px;
 }
-
-function AlertRow({ alert }: { alert: AlertEntry }) {
-  return (
-    <article className="alert-row" data-severity={alert.severity}>
-      <header className="alert-row-head">
-        <span className={severityBadgeClass(alert.severity)}>{severityLabel(alert.severity)}</span>
-        <span className={statusBadgeClass(alert.acknowledged)}>{statusLabel(alert.acknowledged)}</span>
-        <strong className="alert-rule-name">{alert.ruleName}</strong>
-        {alert.ticker && <span className="alert-ticker">{alert.ticker}</span>}
-      </header>
-      <dl className="alert-row-meta">
-        <div>
-          <dt>標的</dt>
-          <dd>{alert.ticker ?? "全市場"}</dd>
-        </div>
-        <div>
-          <dt>嚴重度</dt>
-          <dd>{severityLabel(alert.severity)}</dd>
-        </div>
-        <div>
-          <dt>觸發時間</dt>
-          <dd>{formatDateTime(alert.triggeredAt)}</dd>
-        </div>
-        <div>
-          <dt>處理狀態</dt>
-          <dd>{statusLabel(alert.acknowledged)}</dd>
-        </div>
-        <div className="alert-row-payload">
-          <dt>摘要</dt>
-          <dd>{payloadSummary(alert.payload)}</dd>
-        </div>
-      </dl>
-    </article>
-  );
+._alr-hero-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 24px 28px;
+  background: rgba(8,11,16,0.86);
 }
-
-function StatePanel({
-  variant,
-  message,
-  updatedAt,
-}: {
-  variant: "EMPTY" | "BLOCKED";
-  message: string;
-  updatedAt: string;
-}) {
-  const label = variant === "EMPTY" ? "目前沒有待處理警示" : "警示資料需要重新整理";
-  return (
-    <Panel code={`ALR-${variant}`} title={label} right="風控提醒">
-      <div className="state-panel">
-        <span className={`badge ${variant === "EMPTY" ? "badge-green" : "badge-red"}`}>{variant === "EMPTY" ? "乾淨" : "注意"}</span>
-        <span className="tg soft">更新 {formatDateTime(updatedAt)}</span>
-        <span className="state-reason">{message}</span>
-      </div>
-    </Panel>
-  );
+._alr-hero-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 22px;
+  background: rgba(8,11,16,0.82);
+  transition: background 0.15s;
 }
+._alr-hero-cell:hover { background: rgba(255,255,255,0.03); }
+._alr-hero-big {
+  font-size: 52px;
+  font-weight: 900;
+  letter-spacing: -2px;
+  line-height: 1;
+  font-family: var(--mono, monospace);
+  font-variant-numeric: tabular-nums;
+}
+._alr-hero-val {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1;
+  font-family: var(--mono, monospace);
+  font-variant-numeric: tabular-nums;
+}
+._alr-hero-lbl {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(145,160,181,0.65);
+  font-family: var(--mono, monospace);
+}
+._alr-engine-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: rgba(220,228,240,0.03);
+  border: 1px solid rgba(220,228,240,0.08);
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+._alr-engine-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+._alr-engine-dot-ok {
+  background: #4adb88;
+  box-shadow: 0 0 6px rgba(46,204,113,0.6);
+  animation: _alr-pulse 2s ease-in-out infinite;
+}
+._alr-engine-dot-warn {
+  background: #e2b85c;
+}
+@keyframes _alr-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+._alr-list {
+  display: grid;
+  gap: 12px;
+}
+._alr-card {
+  position: relative;
+  padding: 18px 22px;
+  border-radius: 4px;
+  border: 1px solid rgba(220,228,240,0.08);
+  border-left: 3px solid;
+  background: rgba(8,11,16,0.58);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s;
+  overflow: hidden;
+}
+._alr-card:hover {
+  transform: translateY(-2px);
+  background: rgba(14,18,26,0.82);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.38);
+}
+@media (prefers-reduced-motion: reduce) {
+  ._alr-card { transition: none; }
+  ._alr-card:hover { transform: none; }
+}
+._alr-card-glow {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 70px;
+  pointer-events: none;
+}
+._alr-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  position: relative;
+  z-index: 1;
+}
+._alr-sev-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-family: var(--mono, monospace);
+  border: 1px solid;
+}
+._alr-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-family: var(--mono, monospace);
+  border: 1px solid;
+}
+._alr-rule-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e7ecf3;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+._alr-ticker {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--mono, monospace);
+  letter-spacing: 0.04em;
+  color: #e2b85c;
+  background: rgba(200,148,63,0.10);
+  border: 1px solid rgba(200,148,63,0.30);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+._alr-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 2fr;
+  gap: 10px 16px;
+  position: relative;
+  z-index: 1;
+}
+._alr-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+._alr-meta-dt {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(145,160,181,0.55);
+  font-family: var(--mono, monospace);
+}
+._alr-meta-dd {
+  font-size: 12px;
+  color: rgba(220,228,240,0.8);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+._alr-meta-wide {
+  grid-column: 1 / -1;
+}
+._alr-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 64px 32px;
+  text-align: center;
+}
+._alr-empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+._alr-clean-ring {
+  border: 2px solid rgba(46,204,113,0.45);
+  background: rgba(46,204,113,0.07);
+}
+._alr-blocked-ring {
+  border: 2px solid rgba(230,57,70,0.45);
+  background: rgba(230,57,70,0.07);
+}
+@media (max-width: 640px) {
+  ._alr-hero-row { grid-template-columns: 1fr 1fr; }
+  ._alr-hero-main { grid-column: 1 / -1; }
+  ._alr-meta-grid { grid-template-columns: 1fr 1fr; }
+}
+`;
 
 export default async function AlertsPage() {
   let surface: AlertsSurface;
@@ -205,6 +386,10 @@ export default async function AlertsPage() {
   const active = activeCount(alerts);
   const engineState = surface.state === "LIVE" || surface.state === "EMPTY" ? surface.engineState : null;
 
+  const heroColor = active > 0
+    ? (counts.critical > 0 ? "#ff6b77" : "#e2b85c")
+    : "#4adb88";
+
   return (
     <PageFrame
       code="ALR"
@@ -212,6 +397,36 @@ export default async function AlertsPage() {
       sub="風控提醒、待處理事項與市場監看"
       note="警示頁只顯示可行動資訊；敏感內容與系統細節不出現在畫面上。"
     >
+      <style>{ALERTS_CSS}</style>
+
+      {/* Hero KPI row */}
+      <div className="_alr-hero-row">
+        <div className="_alr-hero-main">
+          <span className="_alr-hero-big" style={{ color: heroColor }}>
+            {surface.state === "BLOCKED" ? "--" : alerts.length}
+          </span>
+          <span className="_alr-hero-lbl">今日警示</span>
+        </div>
+        <div className="_alr-hero-cell">
+          <span className="_alr-hero-val" style={{ color: active > 0 ? "#e2b85c" : "#566276" }}>
+            {surface.state === "BLOCKED" ? "--" : active}
+          </span>
+          <span className="_alr-hero-lbl">待處理</span>
+        </div>
+        <div className="_alr-hero-cell">
+          <span className="_alr-hero-val" style={{ color: counts.critical > 0 ? "#ff6b77" : "#566276" }}>
+            {surface.state === "BLOCKED" ? "--" : counts.critical}
+          </span>
+          <span className="_alr-hero-lbl">緊急</span>
+        </div>
+        <div className="_alr-hero-cell">
+          <span className="_alr-hero-val" style={{ color: counts.warning > 0 ? "#e2b85c" : "#566276" }}>
+            {surface.state === "BLOCKED" ? "--" : counts.warning}
+          </span>
+          <span className="_alr-hero-lbl">注意</span>
+        </div>
+      </div>
+
       <MetricStrip
         columns={4}
         cells={[
@@ -226,36 +441,113 @@ export default async function AlertsPage() {
         ]}
       />
 
+      {/* Engine status bar */}
+      {engineState && (
+        <div className="_alr-engine-bar">
+          <div
+            className={`_alr-engine-dot ${engineState.lastTickAt ? "_alr-engine-dot-ok" : "_alr-engine-dot-warn"}`}
+          />
+          <span className="tg soft" style={{ fontSize: 12 }}>
+            {engineState.lastTickAt ? `最近巡檢 ${formatTimeShort(engineState.lastTickAt)}` : "等待巡檢"}
+          </span>
+          <span className="tg soft" style={{ fontSize: 12 }}>
+            本輪觸發 {engineState.lastTickEvents.toLocaleString("zh-TW")} 筆
+          </span>
+          {engineState.lastError && (
+            <span style={{ fontSize: 12, color: "#ff6b77" }}>警示引擎異常</span>
+          )}
+        </div>
+      )}
+
+      {/* BLOCKED state */}
       {surface.state === "BLOCKED" && (
-        <StatePanel
-          variant="BLOCKED"
-          message={surface.reason}
-          updatedAt={surface.updatedAt}
-        />
-      )}
-
-      {surface.state === "EMPTY" && (
-        <StatePanel
-          variant="EMPTY"
-          message="目前沒有未確認的風控提醒；系統仍會持續巡檢。"
-          updatedAt={surface.updatedAt}
-        />
-      )}
-
-      {surface.state === "LIVE" && (
-        <Panel
-          code="ALR-LIVE"
-          title="待處理警示"
-          sub={`${alerts.length} 筆警示，優先看緊急與未確認項目。`}
-          right={<span className="tg soft">更新 {formatDateTime(surface.updatedAt)}</span>}
-        >
-          <EngineStateLine engineState={surface.engineState} />
-          <div className="alert-list">
-            {alerts.map((alert) => (
-              <AlertRow key={alert.id} alert={alert} />
-            ))}
+        <div className="_alr-empty-state">
+          <div className="_alr-empty-icon _alr-blocked-ring">
+            <span style={{ color: "#ff6b77", fontSize: 24 }}>✕</span>
           </div>
-        </Panel>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#c6d0de", marginBottom: 6 }}>警示資料需要重新整理</div>
+            <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
+              {surface.reason}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EMPTY state — clean */}
+      {surface.state === "EMPTY" && (
+        <div className="_alr-empty-state">
+          <div className="_alr-empty-icon _alr-clean-ring">
+            <span style={{ color: "#4adb88", fontSize: 26 }}>✓</span>
+          </div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#c6d0de", marginBottom: 6 }}>目前沒有待處理警示</div>
+            <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
+              風控引擎持續巡檢中；觸發條件符合時警示會即時出現。
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LIVE alerts */}
+      {surface.state === "LIVE" && (
+        <div className="_alr-list">
+          {alerts.map((alert) => {
+            const sc = severityColors(alert.severity);
+            const st = statusColors(alert.acknowledged);
+            return (
+              <div
+                key={alert.id}
+                className="_alr-card"
+                style={{ borderLeftColor: sc.border }}
+              >
+                {/* Glow */}
+                <div
+                  className="_alr-card-glow"
+                  style={{ background: `radial-gradient(ellipse at 0% 0%, ${sc.glow}, transparent 55%)` }}
+                />
+
+                {/* Head */}
+                <div className="_alr-card-head">
+                  <span
+                    className="_alr-sev-badge"
+                    style={{ background: sc.badge, borderColor: sc.badgeBorder, color: sc.text }}
+                  >
+                    {severityLabel(alert.severity)}
+                  </span>
+                  <span
+                    className="_alr-status-badge"
+                    style={{ background: st.badge, borderColor: st.border, color: st.text }}
+                  >
+                    {st.label}
+                  </span>
+                  <span className="_alr-rule-name">{alert.ruleName}</span>
+                  {alert.ticker && <span className="_alr-ticker">{alert.ticker}</span>}
+                </div>
+
+                {/* Meta */}
+                <div className="_alr-meta-grid">
+                  <div className="_alr-meta-item">
+                    <span className="_alr-meta-dt">標的</span>
+                    <span className="_alr-meta-dd">{alert.ticker ?? "全市場"}</span>
+                  </div>
+                  <div className="_alr-meta-item">
+                    <span className="_alr-meta-dt">嚴重度</span>
+                    <span className="_alr-meta-dd" style={{ color: sc.text }}>{severityLabel(alert.severity)}</span>
+                  </div>
+                  <div className="_alr-meta-item">
+                    <span className="_alr-meta-dt">觸發時間</span>
+                    <span className="_alr-meta-dd">{formatDateTime(alert.triggeredAt)}</span>
+                  </div>
+                  <div className="_alr-meta-item _alr-meta-wide">
+                    <span className="_alr-meta-dt">摘要</span>
+                    <span className="_alr-meta-dd">{payloadSummary(alert.payload)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </PageFrame>
   );
