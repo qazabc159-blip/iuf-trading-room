@@ -284,7 +284,7 @@ Handler structure at line 266:
 3. Read prior audit files (bruce_w4_partA_partB_lane4_audit.md, bruce_w4_lane4_phase2_audit.md)
 4. Audit 1: Grep `/order/create`, `NOT_ENABLED_IN_W1` in server.ts + app.py; Read app.py lines 920–946; Read config.py
 5. Audit 2+3: Grep readiness language patterns in apps/ + services/ + evidence/w3/
-6. Audit 4: Grep `person_id=`, `password=`, `api_key=`, `secret=`, `token=`, `broker_id=` in apps/api + services + evidence/w3; Grep `0308732` in w3 evidence
+6. Audit 4: Grep `person_id=`, `password=`, `api_key=`, `secret=`, `token=`, `broker_id=` in apps/api + services + evidence/w3; Grep `***0732` in w3 evidence
 7. Audit 5: Grep T6/T7/T8/T12/B2 in evidence/w3; Cross-reference prior audit file labels
 8. Audit 6: Grep `/quote/kbar/intervals`, `/quote/kbar/unsubscribe` in evidence + services
 9. Audit 7: Grep `POSITION_DISABLED` in app.py; Read app.py lines 259–276; Read config.py

@@ -63,7 +63,7 @@ The entire Cat-D SECURITY list is absent from `secret_inventory.md`. The invento
 
 Additionally, the following identifier patterns are not tracked in `secret_inventory.md`:
 - `person_id` / `KGI_PERSON_ID` — not mentioned
-- `account` (broker account number format `0308732`) — not mentioned
+- `account` (broker account number format `***0732`) — not mentioned
 - `broker_id` (value `9204`) — not mentioned
 
 ---
@@ -90,7 +90,7 @@ Grep returned 13 files. Breakdown:
 | `evidence/w7_paper_sprint/l5_housekeeping_audit_2026-04-30.md` | audit document itself | |
 | `evidence/w7_paper_sprint/overnight_progress_log_2026-04-29_to_30.md` | references security flag summary | |
 
-### Identifier: `0308732` (account)
+### Identifier: `***0732` (account)
 
 Grep returned 31 files. Categories:
 
@@ -113,12 +113,12 @@ These files contain the identifiers as **live forensic values or example literal
 | File | Identifiers Present | Nature | Risk |
 |---|---|---|---|
 | `evidence_content_sprint_2026-04-23/bruce_b1_w1_runtime_verify.md` | `<REDACTED:KGI_PERSON_ID>`, `<REDACTED:KGI_ACCOUNT>`, `<REDACTED:KGI_BROKER_ID>` | Live runtime verify log — includes raw HTTP body with person_id + password + account + broker_id. [A1+A2 COMPLETE 2026-04-30] | **RESOLVED** |
-| `services/kgi-gateway/README.md` | `F131331910`, `0308732`, `9204` | Source doc — curl examples with literal person_id and account values | HIGH — source tree, committed |
-| `services/kgi-gateway/schemas.py` | `0308732`, `9204` | Source code — sample values in docstring | MEDIUM — illustrative, not functional |
-| `services/kgi-gateway/SCHEMA_MAPPING.md` | `0308732`, `9204` | Source doc — sample values in table | MEDIUM — illustrative |
-| `services/kgi-gateway/tests/test_health_account_set.py` | `0308732` | Test fixture — `_active_account = "0308732"` | MEDIUM — hardcoded in test |
-| `apps/api/src/broker/broker-port.ts` | `F131331910`, `0308732`, `9204` | Source code — JSDoc comment examples | MEDIUM — illustrative, not functional |
-| `apps/api/src/broker/kgi-broker.ts` | `0308732` | Source code — inline comment | LOW — illustrative |
+| `services/kgi-gateway/README.md` | `F131331910`, `***0732`, `9204` | Source doc — curl examples with literal person_id and account values | HIGH — source tree, committed |
+| `services/kgi-gateway/schemas.py` | `***0732`, `9204` | Source code — sample values in docstring | MEDIUM — illustrative, not functional |
+| `services/kgi-gateway/SCHEMA_MAPPING.md` | `***0732`, `9204` | Source doc — sample values in table | MEDIUM — illustrative |
+| `services/kgi-gateway/tests/test_health_account_set.py` | `***0732` | Test fixture — `_active_account = "***0732"` | MEDIUM — hardcoded in test |
+| `apps/api/src/broker/broker-port.ts` | `F131331910`, `***0732`, `9204` | Source code — JSDoc comment examples | MEDIUM — illustrative, not functional |
+| `apps/api/src/broker/kgi-broker.ts` | `***0732` | Source code — inline comment | LOW — illustrative |
 
 ---
 
@@ -151,7 +151,7 @@ Decision already deferred to Cycle 9. Proposed replacement values apply when exe
 | File | Replace | With |
 |---|---|---|
 | All 13 L5 Cat-D evidence files | `F131331910` | `<REDACTED:person_id>` |
-| All 13 L5 Cat-D evidence files | `0308732` | `<REDACTED:account>` |
+| All 13 L5 Cat-D evidence files | `***0732` | `<REDACTED:account>` |
 | All 13 L5 Cat-D evidence files | `9204` | `<REDACTED:broker_id>` |
 
 ### Group B: Untracked files — new findings requiring flagging
@@ -159,18 +159,18 @@ Decision already deferred to Cycle 9. Proposed replacement values apply when exe
 | File | Replace | With | Priority |
 |---|---|---|---|
 | `evidence_content_sprint_2026-04-23/bruce_b1_w1_runtime_verify.md` | `<REDACTED:KGI_PERSON_ID>` | `<REDACTED:KGI_PERSON_ID>` | DONE — also contained plaintext password `<REDACTED:KGI_PASSWORD_OLD_ROTATED>` → replaced with `<REDACTED:KGI_PASSWORD_OLD_ROTATED>`. [A2 2026-04-30] |
-| `evidence_content_sprint_2026-04-23/bruce_b1_w1_runtime_verify.md` | `0308732` | `<REDACTED:account>` | P0 |
+| `evidence_content_sprint_2026-04-23/bruce_b1_w1_runtime_verify.md` | `***0732` | `<REDACTED:account>` | P0 |
 | `evidence_content_sprint_2026-04-23/bruce_b1_w1_runtime_verify.md` | `9204` (live values only) | `<REDACTED:broker_id>` | P0 |
 | `services/kgi-gateway/README.md` | `F131331910` (in curl examples) | `<YOUR_PERSON_ID>` | P1 — source tree |
-| `services/kgi-gateway/README.md` | `0308732` (in curl examples) | `<YOUR_ACCOUNT>` | P1 |
+| `services/kgi-gateway/README.md` | `***0732` (in curl examples) | `<YOUR_ACCOUNT>` | P1 |
 | `services/kgi-gateway/README.md` | `9204` (in curl examples) | `<YOUR_BROKER_ID>` | P1 |
-| `services/kgi-gateway/schemas.py` | `"0308732"` (docstring) | `"<YOUR_ACCOUNT>"` | P2 — illustrative |
-| `services/kgi-gateway/SCHEMA_MAPPING.md` | `"0308732"` (table) | `"<YOUR_ACCOUNT>"` | P2 — illustrative |
-| `services/kgi-gateway/tests/test_health_account_set.py` | `"0308732"` (fixture) | `"TEST_ACCOUNT_SENTINEL"` | P2 — test fixture |
+| `services/kgi-gateway/schemas.py` | `"***0732"` (docstring) | `"<YOUR_ACCOUNT>"` | P2 — illustrative |
+| `services/kgi-gateway/SCHEMA_MAPPING.md` | `"***0732"` (table) | `"<YOUR_ACCOUNT>"` | P2 — illustrative |
+| `services/kgi-gateway/tests/test_health_account_set.py` | `"***0732"` (fixture) | `"TEST_ACCOUNT_SENTINEL"` | P2 — test fixture |
 | `apps/api/src/broker/broker-port.ts` | `"F131331910"` (JSDoc) | `"YOUR_PERSON_ID"` | P2 — illustrative |
-| `apps/api/src/broker/broker-port.ts` | `"0308732"` (JSDoc + comment) | `"YOUR_ACCOUNT"` | P2 — illustrative |
+| `apps/api/src/broker/broker-port.ts` | `"***0732"` (JSDoc + comment) | `"YOUR_ACCOUNT"` | P2 — illustrative |
 | `apps/api/src/broker/broker-port.ts` | `"9204"` (JSDoc) | `"YOUR_BROKER_ID"` | P2 — illustrative |
-| `apps/api/src/broker/kgi-broker.ts` | `"0308732"` (comment) | `"YOUR_ACCOUNT"` | P2 — illustrative |
+| `apps/api/src/broker/kgi-broker.ts` | `"***0732"` (comment) | `"YOUR_ACCOUNT"` | P2 — illustrative |
 
 ---
 

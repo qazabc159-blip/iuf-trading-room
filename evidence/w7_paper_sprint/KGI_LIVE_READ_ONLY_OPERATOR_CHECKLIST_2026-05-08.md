@@ -1,6 +1,6 @@
 ---
 name: KGI Live Read-Only Operator Checklist
-description: Formal login success (simulation=False / broker_id=9204 / account=0308732); read-only path readiness + e2e dry-run sequence
+description: Formal login success (simulation=False / broker_id=9204 / account=***0732); read-only path readiness + e2e dry-run sequence
 type: checklist
 date: 2026-05-08
 status: READ_ONLY_FORMAL
@@ -15,7 +15,7 @@ gate: BRUCE_HL2_DUAL_SIGNATURE_PENDING_E2E
 |------|-------|--------|
 | Login mode | simulation=False (LIVE) | CONFIRMED |
 | broker_id | 9204 | CONFIRMED |
-| account | 0308732 | CONFIRMED |
+| account | ***0732 | CONFIRMED |
 | account_flag | 證券 | CONFIRMED |
 | sim env auth | NOT_AUTHORIZED (per spec) | EXPECTED |
 | TradeCom component permission | business-side enable required (live env only) | CONFIRMED — 楊董 5/8 business contact complete |
@@ -69,7 +69,7 @@ Step 2.  Start gateway with read-only env:
 
 Step 3.  Login — confirm broker_id=9204 in response:
          curl http://127.0.0.1:8787/session/show-account
-         Expected: {"broker_id":"9204","account":"0308732","account_flag":"證券"}
+         Expected: {"broker_id":"9204","account":"***0732","account_flag":"證券"}
 
 Step 4.  /health — expect 200:
          curl http://127.0.0.1:8787/health
@@ -168,4 +168,4 @@ This signature does NOT gate: order submission (requires separate 楊董 explici
 ---
 
 Prepared by: Bruce (verifier / release engineer)
-Trigger: 楊董 KGI live login confirmed 2026-05-08 (simulation=False / broker_id=9204 / account=0308732)
+Trigger: 楊董 KGI live login confirmed 2026-05-08 (simulation=False / broker_id=9204 / account=***0732)
