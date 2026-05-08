@@ -10,6 +10,10 @@ on:
     - cron: '0 9 * * 6,0'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   # ------------------------------------------------------------------ #
   # Job 1: Skip early if secrets are absent                             #
@@ -30,7 +34,7 @@ jobs:
           fi
 
   # ------------------------------------------------------------------ #
-  # Job 2: Run all four smoke scripts                                   #
+  # Job 2: Run the production smoke harness                             #
   # ------------------------------------------------------------------ #
   run-smoke:
     needs: skip-check
@@ -54,51 +58,12 @@ jobs:
           echo "PROD_SMOKE_OUT=$out" >> $env:GITHUB_ENV
         continue-on-error: true
 
-      - name: Run Auth Smoke (5 T-cases)
-        id: auth_smoke
-        shell: pwsh
-        run: |
-          $ts = (Get-Date -Format "yyyyMMdd-HHmm")
-          $out = "evidence/w7_paper_sprint/gha_auth_smoke_$ts.md"
-          pwsh -NoProfile -ExecutionPolicy Bypass `
-            -File scripts/verify/Invoke-AuthSmoke.ps1 `
-            -OutFile $out
-          echo "AUTH_SMOKE_OUT=$out" >> $env:GITHUB_ENV
-        continue-on-error: true
-
-      - name: Run K-line Smoke (real-data authenticity)
-        id: kline_smoke
-        shell: pwsh
-        run: |
-          $ts = (Get-Date -Format "yyyyMMdd-HHmm")
-          $out = "evidence/w7_paper_sprint/gha_kline_smoke_$ts.md"
-          pwsh -NoProfile -ExecutionPolicy Bypass `
-            -File scripts/verify/Invoke-KlineSmoke.ps1 `
-            -OutFile $out
-          echo "KLINE_SMOKE_OUT=$out" >> $env:GITHUB_ENV
-        continue-on-error: true
-
-      - name: Run Paper Smoke (SL-08 gate + risk block)
-        id: paper_smoke
-        shell: pwsh
-        run: |
-          $ts = (Get-Date -Format "yyyyMMdd-HHmm")
-          $out = "evidence/w7_paper_sprint/gha_paper_smoke_$ts.md"
-          pwsh -NoProfile -ExecutionPolicy Bypass `
-            -File scripts/verify/Invoke-PaperSmoke.ps1 `
-            -OutFile $out
-          echo "PAPER_SMOKE_OUT=$out" >> $env:GITHUB_ENV
-        continue-on-error: true
-
       - name: Check overall result
         id: result_check
         shell: pwsh
         run: |
           $failed = @()
           if ('${{ steps.prod_smoke.outcome }}'  -eq 'failure') { $failed += 'prod' }
-          if ('${{ steps.auth_smoke.outcome }}'  -eq 'failure') { $failed += 'auth' }
-          if ('${{ steps.kline_smoke.outcome }}' -eq 'failure') { $failed += 'kline' }
-          if ('${{ steps.paper_smoke.outcome }}' -eq 'failure') { $failed += 'paper' }
           if ($failed.Count -gt 0) {
             echo "SMOKE_FAILED=true"  >> $env:GITHUB_ENV
             echo "SMOKE_FAIL_LIST=$($failed -join ',')" >> $env:GITHUB_ENV
@@ -112,7 +77,9 @@ jobs:
         if: always()
         with:
           name: smoke-results-${{ github.run_id }}
-          path: evidence/w7_paper_sprint/gha_*_smoke_*.md
+          path: |
+            evidence/w7_paper_sprint/gha_prod_smoke_*.md
+            evidence/w7_paper_sprint/bruce_powershell_smoke_harness_*.md
           retention-days: 30
 
       # ---------------------------------------------------------------- #
@@ -149,3 +116,8 @@ jobs:
                 labels: ['smoke-fail', 'needs-triage']
               });
             }
+
+      - name: Fail workflow on smoke failure
+        if: env.SMOKE_FAILED == 'true'
+        shell: pwsh
+        run: exit 1
