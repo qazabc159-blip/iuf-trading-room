@@ -11,11 +11,11 @@ import {
   flipPaperObservationsToComplete,
   marketClose1330TodayTST,
   _resetToggleModeStore
-} from "../strategy-toggle-mode.ts";
+} from "../strategy-toggle-mode.js";
 import {
   _setKillSwitchEnabled,
   isKillSwitchEnabled
-} from "../domain/trading/execution-mode.ts";
+} from "../domain/trading/execution-mode.js";
 
 function makeToggleSession(workspaceId: string) {
   return {
