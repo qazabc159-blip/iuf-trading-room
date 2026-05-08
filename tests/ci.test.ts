@@ -142,6 +142,12 @@ import {
   getFixturePositions,
   getFixtureRiskEvents,
   getFixtureFullSnapshot,
+  getFixtureDailyHealth,
+  getFixtureNextSignalReadiness,
+  getFixtureFrozenSignalSnapshot,
+  getFixtureMainOverlayValidation,
+  getFixtureContLiqCanaryGuard,
+  getFixtureQualityScorecard,
   _resetThreeStrategyCache
 } from "../apps/api/src/lab-three-strategy-consumer.ts";
 import {
@@ -8504,20 +8510,80 @@ test("lab-three-strategy-consumer: meta always carries BLOCKED cash_order_path a
   _resetThreeStrategyCache();
 });
 
-test("lab-three-strategy-consumer: getFixtureFullSnapshot snapshot endpoint has all 14 section keys present", () => {
+test("lab-three-strategy-consumer: getFixtureFullSnapshot snapshot endpoint has all 20 section keys present", () => {
   _resetThreeStrategyCache();
   const result = getFixtureFullSnapshot();
   assert.ok(result.ok, "full snapshot must succeed");
   const data = result.data as Record<string, unknown>;
   const requiredKeys = ["strategies", "signals", "paper_orders", "positions", "risk_events",
     "risk_config", "decision_matrix", "execution_board", "position_sensitivity",
-    "master_index", "status", "files", "health", "contract"];
+    "master_index", "status", "files", "health", "contract",
+    "daily_health", "next_signal_readiness", "frozen_signal_snapshot",
+    "main_overlay_validation", "cont_liq_canary_guard", "quality_scorecard"];
   for (const key of requiredKeys) {
     assert.ok(key in data, `snapshot must have key: ${key}`);
   }
   assert.equal(data["cash_order_path"], "BLOCKED_until_Yang_final_manual_ACK", "full snapshot must enforce BLOCKED cash path");
   assert.equal(data["mode"], "READ_ONLY_FIXTURE_API", "full snapshot mode must be READ_ONLY_FIXTURE_API");
   assert.equal(data["fixture_label"], "PAPER_FIXTURE", "full snapshot must carry PAPER_FIXTURE label");
+  _resetThreeStrategyCache();
+});
+
+// ── 20-endpoint upgrade tests (Athena P0 2026-05-08) ─────────────────────────
+
+test("lab-three-strategy-consumer: getFixtureDailyHealth returns daily health data with schema_version", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureDailyHealth();
+  assert.ok(result.ok, "getFixtureDailyHealth must succeed when embedded file is present");
+  assert.ok(result.data !== null, "daily_health data must not be null");
+  assert.equal(result.meta.cashOrderPath, "BLOCKED_until_Yang_final_manual_ACK", "meta cashOrderPath must be BLOCKED");
+  assert.equal(result.meta.mode, "READ_ONLY_FIXTURE_API", "meta mode must be READ_ONLY_FIXTURE_API");
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixtureNextSignalReadiness returns readiness data", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureNextSignalReadiness();
+  assert.ok(result.ok, "getFixtureNextSignalReadiness must succeed when embedded file is present");
+  assert.ok(result.data !== null, "next_signal_readiness data must not be null");
+  assert.equal(result.meta.cashOrderPath, "BLOCKED_until_Yang_final_manual_ACK", "meta cashOrderPath must be BLOCKED");
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixtureFrozenSignalSnapshot returns frozen snapshot data", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureFrozenSignalSnapshot();
+  assert.ok(result.ok, "getFixtureFrozenSignalSnapshot must succeed when embedded file is present");
+  assert.ok(result.data !== null, "frozen_signal_snapshot data must not be null");
+  assert.equal(result.meta.fixtureLabel, "PAPER_FIXTURE", "meta fixtureLabel must be PAPER_FIXTURE");
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixtureMainOverlayValidation returns validation data", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureMainOverlayValidation();
+  assert.ok(result.ok, "getFixtureMainOverlayValidation must succeed when embedded file is present");
+  assert.ok(result.data !== null, "main_overlay_validation data must not be null");
+  assert.equal(result.meta.cashOrderPath, "BLOCKED_until_Yang_final_manual_ACK", "meta cashOrderPath must be BLOCKED");
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixtureContLiqCanaryGuard returns canary guard data", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureContLiqCanaryGuard();
+  assert.ok(result.ok, "getFixtureContLiqCanaryGuard must succeed when embedded file is present");
+  assert.ok(result.data !== null, "cont_liq_canary_guard data must not be null");
+  assert.equal(result.meta.mode, "READ_ONLY_FIXTURE_API", "meta mode must be READ_ONLY_FIXTURE_API");
+  _resetThreeStrategyCache();
+});
+
+test("lab-three-strategy-consumer: getFixtureQualityScorecard returns scorecard data", () => {
+  _resetThreeStrategyCache();
+  const result = getFixtureQualityScorecard();
+  assert.ok(result.ok, "getFixtureQualityScorecard must succeed when embedded file is present");
+  assert.ok(result.data !== null, "quality_scorecard data must not be null");
+  assert.equal(result.meta.fixtureLabel, "PAPER_FIXTURE", "meta fixtureLabel must be PAPER_FIXTURE");
+  assert.equal(result.meta.cashOrderPath, "BLOCKED_until_Yang_final_manual_ACK", "meta cashOrderPath must be BLOCKED");
   _resetThreeStrategyCache();
 });
 
