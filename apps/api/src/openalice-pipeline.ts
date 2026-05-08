@@ -216,6 +216,44 @@ export function lookupJobSourcePackSummary(jobId: string): string | null {
   return _jobSourcePackSummaryMap.get(jobId) ?? null;
 }
 
+// ── Job → full SourcePack registry (Layer 5 factual reviewer fix 2026-05-08) ──
+//
+// Maps jobId → full SourcePack object so evaluatePipelinePublishGate can pass
+// real sampleRows to the factual reviewer (Layer 5).
+// Pete audit finding: sourcePack=null at call-site → Layer 5 condition
+//   `if (draftContentForFactual && sourcePack)` is always false → 0% activation.
+// Fix: store full SourcePack per jobId (parallel to summary map above).
+// In-memory only — process restart means legacy drafts (before restart) still
+// degrade gracefully to null → single-pass fallback, never blocking.
+
+const _jobSourcePackMap = new Map<string, SourcePack>();
+
+/**
+ * Register the full SourcePack for a given pipeline jobId.
+ * Called from generateDailyBrief immediately after enqueueOpenAliceJob succeeds.
+ * Used by loadSourcePackForDraft to pipe real sampleRows to Layer 5 factual reviewer.
+ */
+export function registerJobSourcePack(jobId: string, pack: SourcePack): void {
+  _jobSourcePackMap.set(jobId, pack);
+  // Cap map size to prevent unbounded growth (keep last 100 jobs, same as summary map)
+  if (_jobSourcePackMap.size > 100) {
+    const firstKey = _jobSourcePackMap.keys().next().value;
+    if (firstKey !== undefined) _jobSourcePackMap.delete(firstKey);
+  }
+}
+
+/**
+ * Resolve the full SourcePack for a given content_draft by looking up its sourceJobId.
+ * Returns null if:
+ *   - draft has no sourceJobId (non-pipeline draft)
+ *   - job was not in registry (process restart, legacy brief)
+ * Caller MUST treat null as graceful degradation (single-pass fallback), not an error.
+ */
+export function loadSourcePackForDraft(draftSourceJobId: string | null | undefined): SourcePack | null {
+  if (!draftSourceJobId) return null;
+  return _jobSourcePackMap.get(draftSourceJobId) ?? null;
+}
+
 // ── Taipei time helpers ───────────────────────────────────────────────────────
 
 function getTaipeiDate(now: Date = new Date()): string {
@@ -589,6 +627,11 @@ Output schema: daily_brief_v1`;
       .map((s) => `${s.source}(${s.status})`)
       .join(", ");
     registerJobSourcePackSummary(job.jobId, summary);
+
+    // Layer 5 fix (Pete audit 2026-05-08): register full SourcePack so factual reviewer
+    // receives real sampleRows instead of null. loadSourcePackForDraft() looks this up
+    // by sourceJobId at evaluatePipelinePublishGate call-site in openalice-ai-reviewer.ts.
+    registerJobSourcePack(job.jobId, sourcePack);
 
     return { jobId: job.jobId };
   } catch (e) {

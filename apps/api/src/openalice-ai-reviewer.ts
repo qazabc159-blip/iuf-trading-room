@@ -17,6 +17,7 @@ import { approveContentDraft, rejectContentDraft } from "./content-draft-store.j
 import {
   recordReviewerVerdict,
   lookupJobSourcePackSummary,
+  loadSourcePackForDraft,
   evaluatePipelinePublishGate
 } from "./openalice-pipeline.js";
 import { runAdversarialReview, type AdversarialReviewResult } from "./openalice-adversarial-reviewer.js";
@@ -425,22 +426,22 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
 
     // severityScore < 7 OR adversarialResult === null → run pipeline publish gate before auto-approve.
     // RED-1 fix (Pete BG audit 2026-05-07): evaluatePipelinePublishGate was orphaned — never called
-    // from the approve path. This was the root cause of 200 audit_log entries with 0 hallucination_reject.
-    // Gate runs: BROKEN token output scan + RAG hallucination check (if OPENAI_API_KEY present).
-    // Retrieval: sourcePack is derived from the sourceJobId → jobSourcePackSummaryMap lookup.
-    // Non-pipeline drafts (sourceJobId null) → sourcePack=null → gate runs in fallback mode (no RAG sources).
-    const sourceJobId = draftRow.sourceJobId ?? null;
-    // Look up SourcePack from in-memory registry by sourceJobId.
-    // evaluatePipelinePublishGate accepts SourcePack|null; null → fallback (BROKEN scan still runs).
-    // We pass null here because the registry stores summary strings, not full SourcePack objects.
-    // The RAG gate inside evaluatePipelinePublishGate reconstructs rawSources from the full sourcePack
-    // that was stored during runPipelineTick — for non-pipeline drafts this gracefully degrades to
-    // single-pass fallback (caveat RAG_NOT_USED__SOURCE_PACK_MISSING).
+    // from the approve path.
+    // Layer 5 fix (Pete audit 2026-05-08): pass real SourcePack instead of null.
+    // Previously: evaluatePipelinePublishGate(draftId, null) → Layer 5 condition
+    //   `if (draftContentForFactual && sourcePack)` was always false → 0% activation.
+    // Now: loadSourcePackForDraft(sourceJobId) retrieves the full SourcePack registered
+    //   during generateDailyBrief (registerJobSourcePack), keyed by sourceJobId.
+    // Graceful fallback: null if non-pipeline draft or process restarted since generation.
+    //   null → gate still runs (BROKEN scan + single-pass RAG fallback); Layer 5 also
+    //   gracefully degrades (rawSources=[] → skip factual reviewer per cost-guard).
     // Important: evaluatePipelinePublishGate re-reads the draft from DB for its own checks.
     // It does NOT re-read the AI audit log we just wrote — the timing is fine because we call
     // evaluatePipelinePublishGate BEFORE approveContentDraft, which is correct order.
+    const sourceJobId = draftRow.sourceJobId ?? null;
+    const sourcePack = loadSourcePackForDraft(sourceJobId);
     try {
-      const gateResult = await evaluatePipelinePublishGate(draftId, null);
+      const gateResult = await evaluatePipelinePublishGate(draftId, sourcePack);
 
       if (gateResult.action === "rejected") {
         // Gate force-rejected (BROKEN token in output, or HALLUCINATED RAG verdict)
@@ -508,7 +509,6 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
     }
 
     // Gate skipped or threw — fall through to direct approveContentDraft
-    void sourceJobId; // suppress unused-var lint (used conceptually above for comment clarity)
     const approveResult = await approveContentDraft({
       draftId,
       reviewerId: null // AI reviewer — no user UUID; identity stored in audit log

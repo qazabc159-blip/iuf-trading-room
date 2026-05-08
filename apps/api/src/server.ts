@@ -5275,8 +5275,10 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     return ((result as { rows?: T[] })?.rows) ?? [];
   }
 
-  function marketNewsScore(row: IntelRow): number {
-    if (scope !== "market") return 10;
+  function isMarketWideNews(row: IntelRow): boolean {
+    if (scope !== "market") return true;
+    if (row.source === "twse_announcements") return true;
+
     const titleText = `${row.title ?? ""} ${row.body ?? ""}`.toLowerCase();
     const auxiliaryText = `${row.category ?? ""} ${row.company_name ?? ""}`.toLowerCase();
     const blockedTerms = [
@@ -5295,7 +5297,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       "同學會"
     ];
     if (blockedTerms.some((term) => titleText.includes(term.toLowerCase()) || auxiliaryText.includes(term.toLowerCase()))) {
-      return -100;
+      return false;
     }
 
     const companyReportTerms = [
@@ -5343,18 +5345,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       "美元",
       "央行",
       "通膨",
-      "利率",
-      "降息",
-      "升息",
-      "cpi",
-      "pce",
-      "非農",
-      "財測",
-      "半導體展",
-      "computex",
-      "ai伺服器",
-      "輝達",
-      "nvidia"
+      "利率"
     ];
     const broaderMarketTerms = [
       ...highSignalMarketTerms,
@@ -5378,43 +5369,19 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       "韓股",
       "陸股",
       "港股",
-      "選擇權",
-      "記憶體",
-      "晶片",
-      "先進製程",
-      "封測",
-      "電子零組件",
-      "電源",
-      "散熱",
-      "光通訊",
-      "伺服器",
-      "機器人",
-      "資金行情",
-      "成交量",
-      "融資",
-      "融券"
+      "選擇權"
     ];
     const hasHighSignalMarketTerm = highSignalMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
     const hasBroaderMarketTerm = broaderMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
+    if (!hasBroaderMarketTerm) return false;
+
     const isCompanyReport = companyReportTerms.some((term) => titleText.includes(term.toLowerCase()));
+    if (isCompanyReport && !hasHighSignalMarketTerm) return false;
+
     const isTickerSpecific = Boolean(row.ticker && row.ticker !== "market");
+    if (isTickerSpecific && isCompanyReport && !hasHighSignalMarketTerm) return false;
 
-    let score = 0;
-    if (row.source === "twse_announcements") score += 2;
-    if (hasHighSignalMarketTerm) score += 4;
-    if (hasBroaderMarketTerm) score += 2;
-    if (/台股|大盤|加權|櫃買|盤勢|盤中|盤後|開盤|收盤/.test(titleText)) score += 3;
-    if (/外資|投信|三大法人|權值|類股|族群/.test(titleText)) score += 2;
-    if (/美股|聯準會|匯率|台幣|美元|通膨|利率|關稅|政策/.test(titleText)) score += 2;
-    if (isTickerSpecific) score -= 1;
-    if (isCompanyReport && !hasHighSignalMarketTerm) score -= 3;
-    if (!hasBroaderMarketTerm && row.source !== "twse_announcements") score -= 4;
-
-    return score;
-  }
-
-  function isMarketWideNews(row: IntelRow): boolean {
-    return marketNewsScore(row) >= 2;
+    return true;
   }
 
   const rows: IntelRow[] = [];
@@ -5467,16 +5434,11 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
         WHERE n.fetched_at >= NOW() - (${days}::text || ' days')::interval
           AND COALESCE(n.title, '') <> ''
         ORDER BY n.fetched_at DESC
-        LIMIT ${scope === "market" ? Math.max(limit * 20, 240) : Math.max(limit, 12)}
+        LIMIT ${scope === "market" ? Math.max(limit * 8, 80) : Math.max(limit, 12)}
       `);
       const seen = new Set(rows.map((row) => `${row.ticker ?? ""}:${row.title ?? ""}`));
-      const candidates = readRows<IntelRow>(result)
-        .map((row) => ({ row, score: marketNewsScore(row) }))
-        .filter((item) => scope !== "market" || item.score > -50)
-        .sort((left, right) => right.score - left.score);
-      for (const { row, score } of candidates) {
-        if (scope === "market" && rows.length < Math.min(limit, 10) && score < 1) continue;
-        if (scope === "market" && rows.length >= Math.min(limit, 10) && !isMarketWideNews(row)) continue;
+      for (const row of readRows<IntelRow>(result)) {
+        if (!isMarketWideNews(row)) continue;
         const key = `${row.ticker ?? ""}:${row.title ?? ""}`;
         if (seen.has(key)) continue;
         rows.push(row);
@@ -7308,11 +7270,7 @@ app.get("/api/v1/breadth", async (c) => {
     try {
       const res = await db.execute(drizzleSql`
         WITH latest AS (
-          SELECT MAX(dt) AS max_dt
-          FROM companies_ohlcv
-          WHERE interval = '1d'
-            AND workspace_id = ${c.get("session").workspace.id}
-            AND source != 'mock'
+          SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval = 'day'
         )
         SELECT
           COUNT(*) FILTER (WHERE close > open)::int          AS up_count,
@@ -7321,10 +7279,8 @@ app.get("/api/v1/breadth", async (c) => {
           COUNT(*)::int                                       AS total_count,
           MAX(dt)::text                                       AS as_of
         FROM companies_ohlcv
-        WHERE interval = '1d'
-          AND workspace_id = ${c.get("session").workspace.id}
-          AND source != 'mock'
-          AND dt = (SELECT max_dt FROM latest)
+        WHERE interval = 'day'
+        AND dt = (SELECT max_dt FROM latest)
       `);
       const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0]
         ?? (Array.isArray(res) ? res[0] : res);
@@ -7361,19 +7317,13 @@ app.get("/api/v1/heatmap", async (c) => {
     // Get latest OHLCV day for pct change, joined with companies for name
     const res = await db.execute(drizzleSql`
       WITH latest AS (
-        SELECT MAX(dt) AS max_dt
-        FROM companies_ohlcv
-        WHERE interval = '1d'
-          AND workspace_id = ${session.workspace.id}
-          AND source != 'mock'
+        SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval = 'day'
       ),
       prev AS (
         SELECT MAX(dt) AS prev_dt
         FROM companies_ohlcv
-        WHERE interval = '1d'
-          AND workspace_id = ${session.workspace.id}
-          AND source != 'mock'
-          AND dt < (SELECT max_dt FROM latest)
+        WHERE interval = 'day'
+        AND dt < (SELECT max_dt FROM latest)
       )
       SELECT
         c.ticker AS sym,
@@ -7385,16 +7335,12 @@ app.get("/api/v1/heatmap", async (c) => {
         END AS pct,
         NULL::bigint AS mcap
       FROM companies_ohlcv t
-      JOIN companies c
-        ON c.id = t.company_id
-        AND c.workspace_id = ${session.workspace.id}
+      JOIN companies c ON c.ticker = t.ticker AND c.workspace_id = ${session.workspace.id}
       LEFT JOIN companies_ohlcv p
-        ON p.company_id = t.company_id
-        AND p.workspace_id = t.workspace_id
-        AND p.interval = '1d'
+        ON p.ticker = t.ticker
+        AND p.interval = 'day'
         AND p.dt = (SELECT prev_dt FROM prev)
-      WHERE t.interval = '1d'
-        AND t.workspace_id = ${session.workspace.id}
+      WHERE t.interval = 'day'
         AND t.dt = (SELECT max_dt FROM latest)
         AND t.source != 'mock'
       ORDER BY t.volume DESC NULLS LAST
@@ -9592,6 +9538,7 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
             'hallucination_reject',
             'content_draft.adversarial_audit',
             'content_draft.ai_yellow_held',
+            'content_draft.factual_reject',
             'paper_submit'
           )
         GROUP BY action
@@ -9643,9 +9590,14 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
     // adversarial_intercept: JSONB-filtered count (severityScore >= 7 only)
     const adversarialIntercept = Number(adversarialFirstRow?.cnt ?? 0);
     const aiYellowHeld = counts["content_draft.ai_yellow_held"] ?? 0;
+    // factual_reject: Layer 5 rejections (FACTUAL_FALSE or FACTUAL_DRIFT hold).
+    // Pete audit 2026-05-08: this action was never in the IN clause; added alongside
+    // the sourcePack pipe-through fix so Layer 5 activations become visible in ops dashboard.
+    const factualReject = counts["content_draft.factual_reject"] ?? 0;
     const paperSubmit = counts["paper_submit"] ?? 0;
     const paperSubmitRejected = paperSubmitRejectedCount;
-    const total = aiApproved + aiRejected + hallucinationReject + adversarialIntercept + aiYellowHeld + paperSubmit;
+    // factual_reject counted in total (same semantic as hallucination_reject — a content rejection)
+    const total = aiApproved + aiRejected + hallucinationReject + adversarialIntercept + aiYellowHeld + factualReject + paperSubmit;
 
     return c.json({
       data: {
@@ -9656,6 +9608,7 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
         hallucination_reject: hallucinationReject,
         adversarial_intercept: adversarialIntercept,
         ai_yellow_held: aiYellowHeld,
+        factual_reject: factualReject,
         paper_submit: paperSubmit,
         paper_submit_rejected: paperSubmitRejected,
         total,
@@ -9673,6 +9626,7 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
         hallucination_reject: 0,
         adversarial_intercept: 0,
         ai_yellow_held: 0,
+        factual_reject: 0,
         paper_submit: 0,
         paper_submit_rejected: 0,
         total: 0,
