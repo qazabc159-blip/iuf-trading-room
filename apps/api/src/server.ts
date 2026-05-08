@@ -237,6 +237,11 @@ import {
   runPipelinePreMarketTick,
   runPipelineTick
 } from "./openalice-pipeline.js";
+import {
+  getNewsTop10WithStaleness,
+  runNewsAiSelection,
+  runNewsAiSelectionTick
+} from "./news-ai-selector.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -5483,6 +5488,66 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
 });
 
 // =============================================================================
+// BLOCK #NEWS — AI-selected top-10 market news (4-window cron)
+// =============================================================================
+//
+// GET /api/v1/market-intel/news-top10
+// Auth required.
+//
+// Returns the most-recent AI-selected top-10 news batch:
+//   { data: { run_id, as_of, next_refresh_at, window_label, selection_mode,
+//             items: [...], input_row_count, ai_call_success, stale_reason } }
+//
+// If never run (server just restarted) → 200 with empty items + stale_reason=never_run
+// If stale (last run > 7h ago) → 200 with items + stale_reason=last_run_over_Xh_ago
+// If no DB → 200 with empty items (memory mode)
+//
+// POST /api/v1/internal/market-intel/news-top10/trigger
+// Owner-only manual trigger — runs the AI selector immediately.
+// =============================================================================
+
+app.get("/api/v1/market-intel/news-top10", async (c) => {
+  const session = c.get("session");
+  if (!session) return c.json({ error: "auth_required" }, 401);
+
+  const cached = getNewsTop10WithStaleness();
+
+  if (!cached) {
+    // Never run yet
+    return c.json({
+      data: {
+        run_id: null,
+        as_of: null,
+        next_refresh_at: null,
+        window_label: null,
+        selection_mode: null,
+        items: [],
+        input_row_count: 0,
+        ai_call_success: false,
+        stale_reason: "never_run"
+      }
+    });
+  }
+
+  return c.json({ data: cached });
+});
+
+app.post("/api/v1/internal/market-intel/news-top10/trigger", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const workspaceId = session.workspace.id;
+  const result = await runNewsAiSelection({
+    workspaceId,
+    forcedWindowLabel: "08:00"  // manual trigger always labels as 08:00; window_label is informational
+  });
+
+  return c.json({ data: result });
+});
+
+// =============================================================================
 // W7 BLOCK #5 Axis 2 — KGI realtime quote for company page frontend
 // =============================================================================
 //
@@ -10248,6 +10313,34 @@ function startSchedulers(workspaceSlug: string): void {
     });
   }, 5 * 60 * 1000);
 
+  // BLOCK #NEWS: AI news selector — poll every 15min; fires only within ±30min of
+  // 08:00 / 12:00 / 18:00 / 24:00 TST. isWithinNewsWindowTrigger() enforces the gate
+  // and prevents double-fire within 45min. workspaceId resolved from DB at tick time.
+  const NEWS_AI_POLL_MS = 15 * 60 * 1000;
+  setInterval(async () => {
+    try {
+      const db = getDb();
+      if (!db) return;
+      const [ws] = await db.select({ id: workspaces.id }).from(workspaces).limit(1);
+      if (!ws) return;
+      await runNewsAiSelectionTick(ws.id);
+    } catch (e) {
+      console.error("[news-ai-selector] scheduler tick failed:", e instanceof Error ? e.message : e);
+    }
+  }, NEWS_AI_POLL_MS);
+  // Initial delayed tick (60s after boot) to catch server restarts near a window
+  setTimeout(async () => {
+    try {
+      const db = getDb();
+      if (!db) return;
+      const [ws] = await db.select({ id: workspaces.id }).from(workspaces).limit(1);
+      if (!ws) return;
+      await runNewsAiSelectionTick(ws.id);
+    } catch (e) {
+      console.error("[news-ai-selector] initial tick failed:", e instanceof Error ? e.message : e);
+    }
+  }, 60_000);
+
   // P0-2: Health watchdog — POST internal heartbeat every 30min, Sentry on consecutive fail
   // Tracks that the server event-loop is alive and not starved (relates to the 5/7 502 incidents).
   const WATCHDOG_INTERVAL_MS = 30 * 60 * 1000;
@@ -10291,6 +10384,7 @@ function startSchedulers(workspaceSlug: string): void {
     "PR-C dividend (24h) + PR-C market-value (24h) + PR-C valuation (24h) + PR-C stock-news (30min) + " +
     "P0-C pipeline pre_market/close_watch/close_brief (15min) + " +
     "BLOCK#6 event-rule-engine (5min) + email-digest (5min, fires at 17:00–17:30 TST) + " +
+    "BLOCK#NEWS news-ai-selector (15min poll, fires at 08:00/12:00/18:00/24:00 TST) + " +
     "P0-2 health-watchdog (30min) started"
   );
 }
