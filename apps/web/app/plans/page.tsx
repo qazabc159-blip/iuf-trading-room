@@ -50,7 +50,7 @@ const emptyData: PlansData = {
 };
 
 async function loadPlans(): Promise<LoadState> {
-  const source = "交易計畫資料庫";
+  const source = "正式交易計畫資料";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -155,7 +155,7 @@ function directionLabel(direction: IdeaRow["direction"]) {
 function decisionLabel(decision: IdeaRow["marketData"]["decision"]) {
   if (decision === "allow") return "可觀察";
   if (decision === "review") return "待審";
-  return "阻擋";
+  return "不進流程";
 }
 
 function statusTone(status: PlanRow["status"]) {
@@ -198,7 +198,7 @@ function signalCategoryLabel(value: string | null | undefined) {
   if (key === "market") return "市場";
   if (key === "technical") return "技術";
   if (key === "fundamental") return "基本面";
-  if (key === "test" || key === "dryrun") return "內部測試";
+  if (key === "test" || key === "dryrun") return "驗證";
   return value.replace(/[_-]/g, " ");
 }
 
@@ -244,7 +244,7 @@ export default async function PlansPage() {
 
   return (
     <PageFrame
-      code="08"
+      code="09"
       title="交易計畫"
       sub="計畫書與審核佇列"
       note="交易計畫 / 正式交易計畫、簡報、覆盤、訊號與策略想法；本頁不提供模擬或實盤下單。"
@@ -269,7 +269,7 @@ export default async function PlansPage() {
               <div>
                 <span className="tg panel-code">交易計畫</span>
                 <h2>決策工作台</h2>
-                <p>正式資料庫，僅顯示可追溯來源；本頁不送單。</p>
+                <p>正式資料，僅顯示可追溯來源；本頁不送單。</p>
               </div>
               <span className={`badge ${result.state === "LIVE" ? "badge-green" : result.state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>
                 {stateLabel(result.state)}
@@ -324,7 +324,7 @@ export default async function PlansPage() {
               <span className="tg soft">{contextLive ? `${result.data.ideas.length} 筆` : "暫停"}</span>
             </div>
             {!contextLive && <div className="terminal-note"><span className="tg down">暫停</span> 交易計畫來源未正常時，策略想法先隱藏。</div>}
-            {contextLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有模擬決策想法。</div>}
+            {contextLive && result.data.ideas.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有策略想法。</div>}
             {contextLive && result.data.ideas.length > 0 && (
               <div className="ideas-rail">
                 {result.data.ideas.slice(0, 8).map((idea) => (
@@ -352,7 +352,7 @@ export default async function PlansPage() {
               <div>
                 <span className="tg panel-code">每日簡報</span>
                 <h2>{contextLive ? latestBrief?.date ?? "無簡報" : "資料暫停"}</h2>
-                <p>正式資料庫；未來後台 AI 只負責產生草稿，前端不顯示假簡報。</p>
+                <p>正式每日簡報；未發布內容不顯示。</p>
               </div>
               <span className={`badge ${briefFreshnessBadge(latestBriefFreshness)}`}>
                 {contextLive ? briefFreshnessLabel(latestBriefFreshness) : "暫停"}
@@ -431,9 +431,9 @@ export default async function PlansPage() {
             ))}
           </section>
 
-          <Panel code="PLAN-LOCK" title="寫入控管" sub="真實性閘門" right="暫停">
+          <Panel code="PLAN-LOCK" title="交易邊界" sub="只讀工作台" right="暫停">
             <div className="terminal-note">
-              <span className="tg down">暫停</span> 本頁是只讀計畫面板。模擬委託預覽與送出已放在模擬交易頁；實盤送單仍需風控閘門與操作員明示。
+              <span className="tg down">暫停</span> 本頁是只讀計畫面板。模擬委託預覽與送出已放在模擬交易頁；實盤送單仍需完整風控與操作員明示。
             </div>
           </Panel>
         </aside>

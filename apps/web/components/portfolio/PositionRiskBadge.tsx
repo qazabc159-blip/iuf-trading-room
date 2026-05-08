@@ -17,7 +17,7 @@ function statusChar(status: RiskLayerCell["status"]) {
 
 function titleFor(layer: RiskLayerName, cell: RiskLayerCell, row: PositionRiskRow) {
   if (row.hypotheticalBlockingLayer === layer) {
-    return row.hypotheticalBlockReason ?? `${layerName(layer)}會阻擋下一筆試算委託。`;
+  return row.hypotheticalBlockReason ?? `${layerName(layer)}未通過下一筆試算委託。`;
   }
   return cell.reason ?? `${layerName(layer)}：${statusText(cell.status)}`;
 }
@@ -32,7 +32,7 @@ function layerName(layer: RiskLayerName) {
 function statusText(status: RiskLayerCell["status"]) {
   if (status === "ok") return "正常";
   if (status === "warn") return "注意";
-  if (status === "block") return "阻擋";
+  if (status === "block") return "未通過";
   if (status === "blocked_killswitch") return "交易鎖定";
   return "未設定";
 }
@@ -67,7 +67,7 @@ export function PositionRiskBadge({
         aria-label="此股票尚未回傳風控歸因"
         className="tg"
         style={unknownStyle}
-        title="後端總覽尚未提供此股票的風控歸因。"
+        title="風控總覽尚未提供此股票的歸因。"
       >
         ----
       </span>

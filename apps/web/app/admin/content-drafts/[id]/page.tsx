@@ -5,7 +5,6 @@ import { getContentDrafts, type ContentDraftEntry } from "@/lib/api";
 import {
   contentDraftBody,
   contentDraftDate,
-  contentDraftPayloadText,
   contentDraftReviewActor,
   contentDraftReviewNote,
   contentDraftSections,
@@ -34,7 +33,7 @@ function DetailStatePanel({
     <Panel code={`DRF-${state}`} title={label} right="草稿明細">
       <div className="state-panel">
         <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{label}</span>
-        <span className="tg soft">來源：審稿草稿資料庫</span>
+        <span className="tg soft">來源：審稿草稿</span>
         <span className="tg soft">更新 {formatDateTime(updatedAt)}</span>
         <span className="state-reason">{reason}</span>
       </div>
@@ -52,7 +51,7 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
       <Panel code="DRF-BODY" title={contentDraftTargetLabel(draft)}>
         <div className="source-line">
           <span className="badge badge-green">正常</span>
-          <span className="tg soft">來源：審稿草稿資料庫</span>
+          <span className="tg soft">來源：審稿草稿</span>
           <span>更新 {formatDateTime(draft.updatedAt)}</span>
           <span className={`badge ${contentDraftStatusBadge(draft.status)}`}>
             {contentDraftStatusLabel(draft.status)}
@@ -63,7 +62,7 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
           {body ? (
             <p>{body}</p>
           ) : (
-            <p className="tg soft">payload 沒有 summary / note / body 欄位，改用下方結構化段落與原始內容檢查。</p>
+            <p className="tg soft">草稿沒有摘要欄位，改用下方段落檢查。</p>
           )}
           {sections.length > 0 && (
             <div className="content-draft-section-list">
@@ -78,17 +77,15 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
               ))}
             </div>
           )}
-          <pre className="payload-pre">{contentDraftPayloadText(draft)}</pre>
         </article>
       </Panel>
 
       <Panel code="DRF-TRAIL" title="來源與審核軌跡" right={draftDate ?? "未標日期"}>
         <div className="content-draft-trail-grid">
           {[
-            ["來源工作", draft.sourceJobId ?? "無來源工作"],
-            ["產生者", draft.producerVersion],
+            ["來源工作", draft.sourceJobId ? "已連結" : "尚未連結"],
+            ["產生流程", "每日內容流程"],
             ["目標", contentDraftTargetLabel(draft)],
-            ["目標 ID", draft.targetEntityId ?? "無"],
             ["審核者", contentDraftReviewActor(draft)],
             ["審核結論", contentDraftReviewNote(draft)],
           ].map(([key, value]) => (
@@ -99,21 +96,17 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
           ))}
         </div>
         <p className="tg soft" style={{ lineHeight: 1.7, marginTop: 14 }}>
-          這裡只呈現 OpenAlice 草稿與審核線索；未核准內容不會顯示在正式每日簡報，也不會被包裝成投資建議。
+          這裡只呈現 AI 草稿與審核線索；未核准內容不會顯示在正式每日簡報，也不會被包裝成投資建議。
         </p>
       </Panel>
 
-      <Panel code="DRF-META" title="中繼資料">
+      <Panel code="DRF-META" title="審核資料">
         {[
-          ["ID", draft.id],
-          ["目標表", draft.targetTable],
-          ["目標 ID", draft.targetEntityId ?? "無"],
-          ["來源工作", draft.sourceJobId ?? "無"],
-          ["產生者", draft.producerVersion],
-          ["去重鍵", draft.dedupeKey],
+          ["目標", contentDraftTargetLabel(draft)],
+          ["來源工作", draft.sourceJobId ? "已連結" : "尚未連結"],
+          ["產生流程", "每日內容流程"],
           ["審核者", draft.reviewedBy ?? "無"],
           ["審核時間", formatDateTime(draft.reviewedAt)],
-          ["核准參照", draft.approvedRefId ?? "無"],
           ["退回原因", draft.rejectReason ?? "無"],
           ["建立", formatDateTime(draft.createdAt)],
           ["更新", formatDateTime(draft.updatedAt)],
@@ -128,9 +121,9 @@ function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
       <Panel code="DRF-ACT" title="寫入動作" right="受控">
         <div className="state-panel">
           <span className="badge badge-yellow">受控</span>
-          <span className="tg soft">來源：content-drafts approve / reject endpoint</span>
+          <span className="tg soft">來源：草稿審核流程</span>
           <span className="state-reason">
-            核准與退回的正式後端路徑已存在；本頁先清楚揭露目前狀態、來源與審核結果。若要開放按鈕，必須接正式 endpoint、記錄稽核，不得使用本機假成功。
+            本頁先清楚揭露目前狀態、來源與審核結果；核准與退回必須留下正式稽核紀錄。
           </span>
         </div>
       </Panel>
@@ -155,9 +148,9 @@ export default async function ContentDraftDetailPage({ params }: { params: Promi
     <PageFrame
       code="ADM-DRF-D"
       title={draft ? contentDraftTitle(draft) : "內容草稿明細"}
-      sub={id}
+      sub="草稿審核"
       exec
-      note="內容草稿明細 / 只讀；無資料或後端暫停時不顯示假內容。"
+      note="內容草稿明細 / 只讀；無資料或資料服務暫停時不顯示假內容。"
     >
       <div style={{ marginBottom: 12 }}>
         <Link className="btn-sm" href="/admin/content-drafts">返回草稿列表</Link>
@@ -166,14 +159,14 @@ export default async function ContentDraftDetailPage({ params }: { params: Promi
       {error && (
         <DetailStatePanel
           state="BLOCKED"
-          reason={`草稿明細暫時無法讀取或權限不足。負責：內容與後端資料管線。細節：${error}`}
+          reason="草稿明細暫時無法讀取或權限不足。"
           updatedAt={requestedAt}
         />
       )}
       {!error && !draft && (
         <DetailStatePanel
           state="EMPTY"
-          reason="後端有回傳草稿，但沒有符合這個 ID 的資料；不顯示假草稿。"
+          reason="找不到指定草稿；不顯示假草稿。"
           updatedAt={requestedAt}
         />
       )}

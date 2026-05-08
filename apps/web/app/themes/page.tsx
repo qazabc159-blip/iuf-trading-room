@@ -20,7 +20,7 @@ function friendlyError(error: unknown) {
 }
 
 async function loadThemes(): Promise<LoadState> {
-  const source = "主題資料庫";
+  const source = "正式主題資料";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -32,7 +32,7 @@ async function loadThemes(): Promise<LoadState> {
         data,
         updatedAt,
         source,
-        reason: "主題資料庫目前回傳 0 筆，不顯示假主題。",
+        reason: "目前沒有可顯示的正式主題。",
       };
     }
     return {
@@ -115,7 +115,7 @@ function isEnglishHeavy(value: string | null | undefined) {
 
 function themeDisplayName(theme: ThemeRow) {
   const bySlug: Record<string, string> = {
-    "orphan-audit-trail": "內部稽核軌跡",
+    "orphan-audit-trail": "待歸檔稽核軌跡",
     "orphan-ai-optics": "AI 光通訊封裝",
     "5g": "5G 通訊",
     abf: "ABF 載板",
@@ -187,10 +187,10 @@ export default async function ThemesPage() {
 
   return (
     <PageFrame
-      code="02"
+      code="10"
       title="主題板"
       sub="台股主題階梯"
-      note="主題板 / 正式主題資料；沒有真端點的熱度與脈衝指標先不顯示。"
+      note="主題板 / 正式主題資料；只顯示已連結公司池與可追蹤狀態。"
     >
       <MetricStrip
         cells={[
@@ -214,7 +214,7 @@ export default async function ThemesPage() {
         <SourceLine result={result} />
         {result.state === "LIVE" && hiddenCleanupCount > 0 && (
           <div className="terminal-note compact">
-            已收納內部清理主題 {hiddenCleanupCount} 筆；不在正式主題表顯示待修、佔位或退役項目。
+            待整理主題 {hiddenCleanupCount} 筆已收納；不在正式主題表顯示待修、佔位或退役項目。
           </div>
         )}
         <EmptyOrBlocked result={result} />

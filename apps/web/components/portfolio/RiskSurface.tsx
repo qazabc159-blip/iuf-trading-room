@@ -12,7 +12,7 @@ const LAYERS: RiskLayerName[] = ["account", "strategy", "symbol", "session"];
 function statusLabel(status: RiskLayerCell["status"]) {
   if (status === "ok") return "正常";
   if (status === "warn") return "注意";
-  if (status === "block") return "阻擋";
+  if (status === "block") return "未通過";
   if (status === "blocked_killswitch") return "鎖定";
   return "未設定";
 }
@@ -116,7 +116,7 @@ function rowStatusLabel(status: string) {
   if (status === "halted") return "全鎖定";
   if (status === "ok") return "正常";
   if (status === "warn") return "注意";
-  if (status === "block") return "阻擋";
+  if (status === "block") return "未通過";
   if (status === "blocked_killswitch") return "鎖定";
   if (status === "no_limit_set") return "未設定";
   return status;
@@ -157,7 +157,7 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
           <span>檢查 {formatTime(result.updatedAt)}</span>
         </div>
         <div className="terminal-note">
-          風控總覽資料尚未接上。模擬委託仍會在送出前執行風控預檢；此區待後端總覽資料啟用後會顯示帳戶、策略、個股與盤中四層曝險。
+            風控總覽資料尚未接上。模擬委託仍會在送出前執行風控預檢；此區待總覽資料啟用後會顯示帳戶、策略、個股與盤中四層曝險。
         </div>
       </div>
     );

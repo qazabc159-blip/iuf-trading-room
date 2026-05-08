@@ -110,7 +110,7 @@ async function getApiEnvelope<T>(path: string): Promise<T> {
 }
 
 function missingApiError(path: string): Error {
-  return new Error(`量化研究後端尚未設定：${path}`);
+  return new Error(`量化研究資料服務尚未設定：${path}`);
 }
 
 function invalidShapeError(path: string): Error {
@@ -200,24 +200,24 @@ export const radarLabApi = {
 // TR must use lab wording, not softened translations.
 export function labStatusDisplayWording(status: string): string {
   const map: Record<string, string> = {
-    STRONG_CANDIDATE: "研究系統 / 未批准 TR 推廣",
-    STRATEGY2_RS2060_CONFIRMED: "研究系統 / 未批准 TR 推廣",
-    STRATEGY3_TURNOVER_REPAIRED: "研究系統 / 未批准 TR 推廣",
-    RESEARCH_SYSTEM: "研究系統 / 未批准 TR 推廣",
-    BACKTESTED_RAW: "研究 raw",
-    KILL_NO_EDGE: "研究 kill / 沒 edge",
-    KILL_INFORMATIVE: "研究 kill / informative only",
-    PAPER_PROPOSED: "Paper 候選 / 待 Bruce 雙簽",
-    PAPER_LIVE: "Paper 進行中",
-    LIVE_CANDIDATE: "Live 候選 / 待楊董明示",
-    IN_LIVE: "Live 進行中",
+    STRONG_CANDIDATE: "研究候選 / 未進交易流程",
+    STRATEGY2_RS2060_CONFIRMED: "研究候選 / 未進交易流程",
+    STRATEGY3_TURNOVER_REPAIRED: "研究候選 / 未進交易流程",
+    RESEARCH_SYSTEM: "研究系統 / 未進交易流程",
+    BACKTESTED_RAW: "原始研究",
+    KILL_NO_EDGE: "研究退場 / 無優勢",
+    KILL_INFORMATIVE: "研究退場 / 僅供參考",
+    PAPER_PROPOSED: "紙上候選 / 待驗證",
+    PAPER_LIVE: "紙上驗證中",
+    LIVE_CANDIDATE: "實盤候選 / 待明示",
+    IN_LIVE: "實盤流程中",
     RETIRED: "退役",
-    NO_APPROVED_STRATEGY: "目前無 approved 策略可推廣",
+    NO_APPROVED_STRATEGY: "目前沒有可推進策略",
     PROBATION: "試察期",
     LIBRARY_ONLY: "函式庫元件 / 非獨立策略",
     FALLBACK_NOT_USED: "備援（未啟用）",
     META_ALLOCATOR_RESEARCH_LEAD_NEEDS_APPEND: "研究領先 / 需補充資料",
     HOLD: "暫停 / 無當前 edge",
   };
-  return map[status] ?? `研究系統 (${status})`;
+  return map[status] ?? "研究狀態待整理";
 }

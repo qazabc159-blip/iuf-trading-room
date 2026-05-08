@@ -102,6 +102,7 @@ type HeatTileLayout = HeatTile & {
   w: number;
   h: number;
   compact: boolean;
+  labelMode: "full" | "compact" | "micro";
 };
 
 type TapeQuote = {
@@ -119,7 +120,7 @@ const TAIPEI_TIME_ZONE = "Asia/Taipei";
 const PAPER_PREVIEW_CAPITAL_TWD = 20_000;
 const ANNOUNCEMENT_DAYS = 30;
 const MAX_INTEL_ROWS = 12;
-const MAX_HEATMAP_TILES = 180;
+const MAX_HEATMAP_TILES = 96;
 
 const EMPTY_TAPE_QUOTES: TapeQuote[] = [
   { sym: "TAIEX", name: "加權指數", price: null, chg: null, pct: null, placeholder: true },
@@ -133,7 +134,7 @@ const EMPTY_TAPE_QUOTES: TapeQuote[] = [
 ];
 
 const EMPTY_HEATMAP: HeatTile[] = Array.from({ length: 12 }, (_, index) => ({
-  symbol: `EMPTY-${String(index + 1).padStart(2, "0")}`,
+  symbol: `待${String(index + 1).padStart(2, "0")}`,
   name: "等待真實行情",
   pct: null,
   weight: index < 2 ? 3.4 : 2.2,
@@ -243,9 +244,9 @@ function stateLabel(state: DashboardState) {
   const labels: Record<DashboardState, string> = {
     LIVE: "正常",
     STALE: "過期",
-    EMPTY: "無資料",
+    EMPTY: "待資料",
     REVIEW: "AI 審核中",
-    BLOCKED: "阻擋",
+    BLOCKED: "需處理",
     DEGRADED: "降級",
   };
   return labels[state];
@@ -253,12 +254,12 @@ function stateLabel(state: DashboardState) {
 
 function statusCode(status: TacticalStatus) {
   const labels: Record<TacticalStatus, string> = {
-    live: "LIVE",
-    stale: "STALE",
-    empty: "EMPTY",
-    review: "AI_REVIEWING",
-    blocked: "BLOCKED",
-    degraded: "DEGRADED",
+    live: "可用",
+    stale: "待更新",
+    empty: "待資料",
+    review: "審核中",
+    blocked: "需處理",
+    degraded: "降級",
   };
   return labels[status];
 }
@@ -267,9 +268,9 @@ function statusZh(status: TacticalStatus) {
   const labels: Record<TacticalStatus, string> = {
     live: "正常",
     stale: "過期",
-    empty: "無資料",
+    empty: "待資料",
     review: "AI 審核中",
-    blocked: "阻擋",
+    blocked: "需處理",
     degraded: "降級",
   };
   return labels[status];
@@ -644,54 +645,6 @@ function buildHeatmap(market: LoadState<MarketDataOverview | null>): HeatTile[] 
     }));
 }
 
-function splitTreemapRows(items: HeatTile[], x: number, y: number, w: number, h: number): HeatTileLayout[] {
-  if (items.length === 0) return [];
-  if (items.length === 1) {
-    return [{
-      ...items[0],
-      x,
-      y,
-      w,
-      h,
-      compact: w < 15 || h < 14,
-    }];
-  }
-
-  const total = items.reduce((sum, item) => sum + Math.max(0.1, item.weight), 0);
-  const half = total / 2;
-  let running = 0;
-  let splitAt = 1;
-
-  for (let index = 0; index < items.length - 1; index += 1) {
-    const next = running + Math.max(0.1, items[index].weight);
-    if (Math.abs(next - half) <= Math.abs(running - half)) {
-      running = next;
-      splitAt = index + 1;
-    } else {
-      break;
-    }
-  }
-
-  const left = items.slice(0, splitAt);
-  const right = items.slice(splitAt);
-  const leftWeight = left.reduce((sum, item) => sum + Math.max(0.1, item.weight), 0);
-  const ratio = total > 0 ? leftWeight / total : 0.5;
-
-  if (w >= h) {
-    const leftW = w * ratio;
-    return [
-      ...splitTreemapRows(left, x, y, leftW, h),
-      ...splitTreemapRows(right, x + leftW, y, w - leftW, h),
-    ];
-  }
-
-  const topH = h * ratio;
-  return [
-    ...splitTreemapRows(left, x, y, w, topH),
-    ...splitTreemapRows(right, x, y + topH, w, h - topH),
-  ];
-}
-
 function buildTreemapLayout(items: HeatTile[]): HeatTileLayout[] {
   const sorted = [...items]
     .sort((left, right) => {
@@ -699,7 +652,76 @@ function buildTreemapLayout(items: HeatTile[]): HeatTileLayout[] {
       if (Math.abs(weightDelta) > 0.001) return weightDelta;
       return Math.abs(right.pct ?? 0) - Math.abs(left.pct ?? 0);
     });
-  return splitTreemapRows(sorted, 0, 0, 100, 100);
+  const totalWeight = sorted.reduce((sum, item) => sum + Math.sqrt(Math.max(0.1, item.weight)), 0);
+  if (totalWeight <= 0) return [];
+
+  const nodes = sorted.map((item) => ({
+    item,
+    area: (Math.sqrt(Math.max(0.1, item.weight)) / totalWeight) * 10_000,
+  }));
+  const rect = { x: 0, y: 0, w: 100, h: 100 };
+  const layout: HeatTileLayout[] = [];
+  let row: typeof nodes = [];
+
+  function worstAspect(candidate: typeof nodes, side: number) {
+    if (candidate.length === 0 || side <= 0) return Number.POSITIVE_INFINITY;
+    const areas = candidate.map((node) => Math.max(0.01, node.area));
+    const sum = areas.reduce((acc, area) => acc + area, 0);
+    const max = Math.max(...areas);
+    const min = Math.min(...areas);
+    return Math.max((side * side * max) / (sum * sum), (sum * sum) / (side * side * min));
+  }
+
+  function labelMode(w: number, h: number): HeatTileLayout["labelMode"] {
+    const area = w * h;
+    if (area >= 150 && w >= 9 && h >= 9) return "full";
+    if (area >= 62 && w >= 5.5 && h >= 5.5) return "compact";
+    return "micro";
+  }
+
+  function pushRow(nodesInRow: typeof nodes) {
+    if (nodesInRow.length === 0 || rect.w <= 0 || rect.h <= 0) return;
+    const rowArea = nodesInRow.reduce((sum, node) => sum + node.area, 0);
+
+    if (rect.w >= rect.h) {
+      const rowH = Math.min(rect.h, rowArea / rect.w);
+      let xCursor = rect.x;
+      nodesInRow.forEach((node, index) => {
+        const tileW = index === nodesInRow.length - 1 ? rect.x + rect.w - xCursor : node.area / rowH;
+        const mode = labelMode(tileW, rowH);
+        layout.push({ ...node.item, x: xCursor, y: rect.y, w: tileW, h: rowH, compact: mode !== "full", labelMode: mode });
+        xCursor += tileW;
+      });
+      rect.y += rowH;
+      rect.h -= rowH;
+      return;
+    }
+
+    const rowW = Math.min(rect.w, rowArea / rect.h);
+    let yCursor = rect.y;
+    nodesInRow.forEach((node, index) => {
+      const tileH = index === nodesInRow.length - 1 ? rect.y + rect.h - yCursor : node.area / rowW;
+      const mode = labelMode(rowW, tileH);
+      layout.push({ ...node.item, x: rect.x, y: yCursor, w: rowW, h: tileH, compact: mode !== "full", labelMode: mode });
+      yCursor += tileH;
+    });
+    rect.x += rowW;
+    rect.w -= rowW;
+  }
+
+  for (const node of nodes) {
+    const side = Math.min(rect.w, rect.h);
+    const nextRow = [...row, node];
+    if (row.length === 0 || worstAspect(nextRow, side) <= worstAspect(row, side)) {
+      row = nextRow;
+    } else {
+      pushRow(row);
+      row = [node];
+    }
+  }
+  pushRow(row);
+
+  return layout;
 }
 
 function hasMarketOverviewData(value: MarketDataOverview | null): boolean {
@@ -875,7 +897,7 @@ function QuoteTapeItem({ quote }: { quote: TapeQuote }) {
         <b>{quote.sym}</b>
         <span>{quote.name}</span>
         <strong className={tone}>{quote.price !== null && quote.price > 0 ? "+" : ""}{formatNumber(quote.price)} {quote.unit}</strong>
-        {quote.placeholder && <em>EMPTY</em>}
+        {quote.placeholder && <em>待資料</em>}
       </span>
     );
   }
@@ -885,7 +907,7 @@ function QuoteTapeItem({ quote }: { quote: TapeQuote }) {
       <span>{quote.name}</span>
       <strong>{formatPrice(quote.price)}</strong>
       <strong className={tone}>{change > 0 ? "+" : ""}{formatPrice(quote.chg)} ({formatPercent(quote.pct)})</strong>
-      {quote.placeholder && <em>EMPTY</em>}
+      {quote.placeholder && <em>待資料</em>}
     </span>
   );
 }
@@ -896,11 +918,14 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
     { href: "/market-intel", title: "市場情報", sub: "重大訊息", code: "02" },
     { href: "/companies", title: "公司板", sub: "台股公司池", code: "03" },
     { href: "/ideas", title: "策略想法", sub: "候選清單", code: "04" },
-    { href: "/runs", title: "策略批次", sub: "批次紀錄", code: "05" },
+    { href: "/runs", title: "策略批次", sub: "量化紀錄", code: "05" },
     { href: "/portfolio", title: "模擬交易室", sub: "委託與部位", code: "06" },
-    { href: "/signals", title: "訊號證據", sub: "訊號與依據", code: "07" },
-    { href: "/plans", title: "交易計畫", sub: "計畫註記", code: "08" },
-    { href: "/themes", title: "主題板", sub: "產業主題", code: "09" },
+    { href: "/alerts", title: "警示", sub: "風控提醒", code: "07" },
+    { href: "/signals", title: "訊號證據", sub: "訊號與依據", code: "08" },
+    { href: "/plans", title: "交易計畫", sub: "計畫註記", code: "09" },
+    { href: "/themes", title: "主題板", sub: "產業主題", code: "10" },
+    { href: "/lab", title: "量化研究", sub: "策略包", code: "11" },
+    { href: "/briefs", title: "AI 每日簡報", sub: "OpenAlice", code: "12" },
   ];
   return (
     <aside className="tac-sidebar">
@@ -932,7 +957,7 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
         <span className="tac-mini-radar" />
         <div>
           <small>MARKET · INTEL</small>
-          <b>{liveCount} LIVE / {alertCount} ALERT</b>
+          <b>{liveCount} 項可用 / {alertCount} 件提醒</b>
         </div>
       </div>
       <div className="tac-sidebar-clock">
@@ -951,7 +976,7 @@ function Ticker({ quotes, market }: { quotes: TapeQuote[]; market: LoadState<Mar
       <div className="tac-ticker-track-wrap">
         {!hasRealQuotes && (
           <span className="tac-demo-badge">
-            市場資料 {market.state} · 等待後端真資料
+            登入後讀取正式行情
           </span>
         )}
         <div className="tac-ticker-track">
@@ -1251,8 +1276,8 @@ function MarketMoversPanel({ market }: { market: LoadState<MarketDataOverview | 
     <Panel
       eyebrow="MARKET MOVERS"
       title="盤勢排行"
-      sub={hasRealLeaders ? "正式資料來源回傳的漲跌與成交排行" : "等待後端行情回補真實排行；不顯示假股票。"}
-      right={<><PulseBars state={hasRealLeaders ? "LIVE" : "EMPTY"} /><span>{hasRealLeaders ? "正式" : "EMPTY"}</span></>}
+      sub={hasRealLeaders ? "正式資料來源回傳的漲跌與成交排行" : "等待正式排行回傳；不顯示示意股票。"}
+      right={<><PulseBars state={hasRealLeaders ? "LIVE" : "EMPTY"} /><span>{hasRealLeaders ? "正式" : "待資料"}</span></>}
       className="tac-movers-panel"
     >
       <div className="tac-mover-board">
@@ -1310,11 +1335,12 @@ function HeatmapPanel({ heatmap, market }: { heatmap: HeatTile[]; market: LoadSt
   const rows = heatmap.length > 0 ? heatmap : EMPTY_HEATMAP;
   const hasRealHeatmap = rows.some((row) => !row.placeholder);
   const heatmapSource = market.data?.marketContext.source === "finmind:official-daily" ? "FinMind 官方日資料" : "正式行情";
+  const updatedAt = market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null;
   return (
     <Panel
       eyebrow="HEATMAP"
       title="台股市場熱力圖"
-      sub={hasRealHeatmap ? `全市場盤面 · 面積=成交量 · 顏色=今日漲跌 · ${heatmapSource}` : "等待後端行情回補；不顯示假價格。"}
+      sub={hasRealHeatmap ? `全市場盤面 · 面積=成交量權重 · 顏色=今日漲跌 · ${heatmapSource}` : "登入後顯示官方行情；不使用示意價格。"}
       right={<div className="tac-heat-legend"><span>上市/上櫃</span><span>成交量</span><span>今日</span></div>}
     >
       <div className="tac-heatmap">
@@ -1323,8 +1349,8 @@ function HeatmapPanel({ heatmap, market }: { heatmap: HeatTile[]; market: LoadSt
         </div>
       </div>
       <div className="tac-heat-footer">
-        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · 大盤熱力圖</span>
-        <span>-3% <i /> +3%</span>
+        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · 更新 {formatDateTime(updatedAt)}</span>
+        <span className="tac-heat-scale"><em>-3%</em><i /><em>+3%</em></span>
       </div>
     </Panel>
   );
@@ -1334,6 +1360,7 @@ function HeatTileView({ tile }: { tile: HeatTileLayout }) {
   const pct = tile.pct ?? 0;
   const tone = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
   const abs = Math.min(1, Math.abs(pct) / 3);
+  const labelMode = tile.labelMode;
   const style = {
     "--heat": String(0.22 + abs * 0.52),
     "--weight": String(Math.max(1, Math.min(8, tile.weight))),
@@ -1345,34 +1372,36 @@ function HeatTileView({ tile }: { tile: HeatTileLayout }) {
   if (tile.placeholder) {
     return (
       <div
-        className={`tac-heat-tile placeholder ${tile.compact ? "compact" : ""}`}
+        className={`tac-heat-tile placeholder ${labelMode}`}
         style={style}
       >
-        <span>EMPTY</span>
-        <small>{tile.name}</small>
-        <b>--</b>
+        <span>待資料</span>
+        {labelMode === "full" && <small>{tile.name}</small>}
+        {labelMode !== "micro" && <b>--</b>}
       </div>
     );
   }
+  const title = [
+    `${tile.symbol} ${tile.name}`,
+    `日期 ${tile.date ?? "--"}`,
+    `開 ${formatPrice(tile.open)}`,
+    `高 ${formatPrice(tile.high)}`,
+    `低 ${formatPrice(tile.low)}`,
+    `收 ${formatPrice(tile.close ?? tile.price)}`,
+    `漲跌 ${formatPercent(tile.pct)}`,
+    `成交量 ${formatNumber(tile.volume)}`,
+  ].join("\n");
   return (
     <Link
-      className={`tac-heat-tile ${tone} ${tile.compact ? "compact" : ""}`}
+      className={`tac-heat-tile ${tone} ${labelMode}`}
       href={`/companies/${encodeURIComponent(tile.symbol)}`}
       style={style}
-      title={[
-        `${tile.symbol} ${tile.name}`,
-        `日期 ${tile.date ?? "--"}`,
-        `開 ${formatPrice(tile.open)}`,
-        `高 ${formatPrice(tile.high)}`,
-        `低 ${formatPrice(tile.low)}`,
-        `收 ${formatPrice(tile.close ?? tile.price)}`,
-        `漲跌 ${formatPercent(tile.pct)}`,
-        `成交量 ${formatNumber(tile.volume)}`,
-      ].join("\n")}
+      title={title}
+      aria-label={title.replace(/\n/g, "，")}
     >
       <span>{tile.symbol}</span>
-      {!tile.compact && <small>{tile.name}</small>}
-      <b>{formatPercent(tile.pct)}</b>
+      {labelMode === "full" && <small>{tile.name}</small>}
+      {labelMode !== "micro" && <b>{formatPercent(tile.pct)}</b>}
     </Link>
   );
 }
@@ -1680,9 +1709,6 @@ export default async function DashboardPage() {
           <section className="tac-two-grid tac-bottom-grid">
             <WorkflowPanel market={market} intel={intel} brief={brief} paper={paper} />
             <DataReadinessPanel sources={sources} />
-          </section>
-          <section className="tac-single-grid">
-            <DataGapPanel sources={sources} />
           </section>
         </div>
       </main>

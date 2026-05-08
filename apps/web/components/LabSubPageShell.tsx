@@ -1,21 +1,7 @@
 /**
- * LabSubPageShell — shared shell for /lab/strategies, /lab/candidates, /lab/research
- *
- * Per Lab/TR Alignment Lock 2026-05-07 (board/lab_tr_alignment_lock_2026-05-07.md):
- *   - All candidates are RESEARCH_ONLY; no Sharpe / equity / win-rate / allocation %
- *   - status verbatim from lab JSON (TR must NEVER rename / soften)
- *   - blocked state when source='unavailable' → 「目前無 Lab approved 策略可推廣」 grey
- *   - Header MUST contain:
- *       Quant Lab status: RESEARCH_SYSTEM
- *       No strategy approved for Trading Room promotion
- *       Latest Lab frame: v11 KILL_NO_EDGE / v15 research candidates
- *   - Each candidate row MUST contain:
- *       strategyId, "research-only" amber pill, "Awaiting Athena/Bruce gates" caption,
- *       caveats list (from endpoint, verbatim)
- *   - Forbidden display: Sharpe / equity / win-rate / total trades / P&L / allocation %
- *
- * This component is server-only-friendly (no useState/useEffect); SSR fetch happens
- * in each page.tsx via radarLabApi.strategies(), then passed in as props.
+ * Shared shell for Lab research pages.
+ * Keep research candidates separate from paper trading and real orders, and do not
+ * display unverified performance, allocation, or trading advice.
  */
 
 import type { ReactNode } from "react";
@@ -41,20 +27,20 @@ const MODE_META: Record<LabSubPageMode, { code: string; title: string; sub: stri
   strategies: {
     code: "LAB",
     title: "量化研究 / 候選策略",
-    sub: "research-only · 未批准 TR 推廣",
-    note: "本頁僅顯示 IUF Quant Lab 釋出的「研究候選」清單；未經 Athena schema 與 Bruce harness 雙簽前，皆 NOT approved for paper/live。本頁不顯示 Sharpe、equity curve、勝率、配置比例。",
+    sub: "研究候選 / 未進交易流程",
+    note: "本頁僅顯示正式量化研究候選；未經完整驗證前，不進紙上或實盤流程，也不顯示未驗證績效、勝率或配置比例。",
   },
   candidates: {
     code: "LAB",
     title: "量化研究 / 候選名單",
-    sub: "research-only · awaiting gates",
-    note: "與「候選策略」同一份來源；此頁強調候選審核排程，等 Athena 把 status 推進 PAPER_PROPOSED / PAPER_LIVE 才會出現在 Trading Room 交易模組。",
+    sub: "審核排程 / 紙上驗證前",
+    note: "與「候選策略」同一份來源；此頁強調候選審核排程，通過完整驗證後才會進入紙上交易模組。",
   },
   research: {
     code: "LAB",
     title: "量化研究 / Lab 進度",
-    sub: "v11 KILL_NO_EDGE · v15 研究系統",
-    note: "整體 Lab 狀態框架：v11 sprint 已 KILL_NO_EDGE（沒 edge 退場）；v15 sprint 產出 3 個研究候選但未批准。Trading Room 不會替 Lab 改寫狀態 enum。",
+    sub: "研究批次 / 候選狀態",
+    note: "整體量化研究狀態：只顯示正式候選與限制；未通過完整驗證前不進紙上或實盤流程。",
   },
 };
 
@@ -75,7 +61,7 @@ function ResearchOnlyPill() {
         fontWeight: 600,
       }}
     >
-      research-only
+      研究候選
     </span>
   );
 }
@@ -83,9 +69,13 @@ function ResearchOnlyPill() {
 function GatesCaption() {
   return (
     <span className="tg soft" style={{ display: "block", marginTop: 4 }}>
-      Awaiting Athena schema gate &amp; Bruce harness gate · Not approved for paper/live
+      等待完整驗證；尚未進入紙上或實盤流程
     </span>
   );
+}
+
+function shortStrategyId(value: string) {
+  return value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
 }
 
 function CandidateRow({ candidate }: { candidate: LabStrategyCandidate }) {
@@ -110,11 +100,11 @@ function CandidateRow({ candidate }: { candidate: LabStrategyCandidate }) {
           className="tg gold"
           style={{ fontFamily: "monospace", fontSize: 12, letterSpacing: 0.4 }}
         >
-          {candidate.strategyId}
+          策略 {shortStrategyId(candidate.strategyId)}
         </span>
         <ResearchOnlyPill />
         <span className="tg soft" style={{ marginLeft: "auto", fontSize: 11 }}>
-          status / {labStatusDisplayWording(candidate.status)}
+          狀態 / {labStatusDisplayWording(candidate.status)}
         </span>
       </div>
 
@@ -128,7 +118,7 @@ function CandidateRow({ candidate }: { candidate: LabStrategyCandidate }) {
       {candidate.caveats.length > 0 && (
         <div>
           <span className="tg soft" style={{ fontSize: 11, fontWeight: 600 }}>
-            Caveats（Lab 原文）
+            限制與注意事項
           </span>
           <ul style={{ margin: "6px 0 0", paddingLeft: 18, color: "#cfcfcf", fontSize: 12 }}>
             {candidate.caveats.map((c, idx) => (
@@ -142,12 +132,12 @@ function CandidateRow({ candidate }: { candidate: LabStrategyCandidate }) {
 
       {candidate.nextAction && (
         <div className="tg soft" style={{ fontSize: 11 }}>
-          Next action（Lab 指示）/ {candidate.nextAction}
+          下一步 / {candidate.nextAction}
         </div>
       )}
 
       <div className="tg soft" style={{ fontSize: 10, opacity: 0.65 }}>
-        source / {candidate.labGovernanceSource}
+        來源 / 量化研究正式快照
       </div>
     </article>
   );
@@ -158,10 +148,7 @@ function HeaderDisclaimerBlock({
 }: {
   payload: LabStrategiesResponse | null;
 }) {
-  const sprintId = payload?.meta.sprintId ?? "v15";
   const candidateCount = payload?.meta.candidateCount ?? 0;
-  const portfolioVerdict =
-    payload?.data?.portfolioVerdict ?? "THREE_STRATEGY_PORTFOLIO_VALID_RESEARCH_SYSTEM";
 
   return (
     <section
@@ -177,14 +164,13 @@ function HeaderDisclaimerBlock({
       }}
     >
       <div className="tg gold" style={{ fontSize: 12, letterSpacing: 0.6 }}>
-        Quant Lab status: RESEARCH_SYSTEM
+        量化研究狀態
       </div>
       <div style={{ fontSize: 13, color: "#e0e0e0", fontWeight: 600 }}>
-        No strategy approved for Trading Room promotion
+        目前沒有策略進入交易流程
       </div>
       <div className="tg soft" style={{ fontSize: 11 }}>
-        Latest Lab frame: v11 KILL_NO_EDGE / v15 research candidates · sprint {sprintId} ·{" "}
-        {candidateCount} 候選 · verdict {portfolioVerdict}
+        正式候選 {candidateCount} 個；未驗證績效與配置比例不顯示。
       </div>
     </section>
   );
@@ -192,7 +178,7 @@ function HeaderDisclaimerBlock({
 
 function BlockedState({ reason }: { reason: string }) {
   return (
-    <Panel code="LAB" title="目前無 Lab approved 策略可推廣" right="暫停">
+    <Panel code="LAB" title="目前沒有可推進策略" right="暫停">
       <div
         style={{
           padding: 18,
@@ -205,14 +191,14 @@ function BlockedState({ reason }: { reason: string }) {
         }}
       >
         <div style={{ fontWeight: 600, color: "#ddd", marginBottom: 8 }}>
-          Quant Lab snapshot 暫時無法讀取
+          量化研究資料暫時無法讀取
         </div>
         <div className="tg soft" style={{ fontSize: 11, marginBottom: 12 }}>
-          來源狀態 / source=unavailable · 沒有可推廣的 approved 策略
+          來源狀態 / 沒有可推進策略
         </div>
         <div style={{ fontSize: 12 }}>{reason}</div>
         <div className="tg soft" style={{ fontSize: 11, marginTop: 14, opacity: 0.8 }}>
-          Trading Room 永遠不會用假策略 / 假績效 / 假配置比例填補空狀態。
+          交易戰情室不會用假策略、假績效或假配置比例填補空狀態。
         </div>
       </div>
     </Panel>
@@ -237,7 +223,7 @@ export function LabSubPageShell({
   const blockedReason =
     fetchError ??
     payload?.meta.reason ??
-    "目前無 Lab approved 策略可推廣（source=unavailable）";
+    "目前沒有可推進策略。";
 
   return (
     <PageFrame code={meta.code} title={meta.title} sub={meta.sub} note={meta.note}>
@@ -248,8 +234,8 @@ export function LabSubPageShell({
       ) : (
         <Panel
           code="LAB"
-          title="研究候選（research-only）"
-          sub="未經 Athena schema + Bruce harness 雙簽，不可進 paper/live"
+          title="研究候選"
+          sub="未經完整驗證，不進紙上或實盤流程"
           right={`${candidates.length} 候選`}
         >
           <div
@@ -268,7 +254,7 @@ export function LabSubPageShell({
             className="terminal-note"
             style={{ marginTop: 14, fontSize: 11, lineHeight: 1.6 }}
           >
-            禁止顯示欄位（per Lab/TR alignment lock）：Sharpe、equity curve、勝率、總交易數、P&amp;L、配置比例 %、買賣建議、目標價、必賺 wording。違反 = stop-line。
+            本頁只顯示候選狀態與限制；未驗證績效、配置比例與買賣建議不顯示。
           </div>
         </Panel>
       )}

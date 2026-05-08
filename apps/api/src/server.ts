@@ -5014,14 +5014,18 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     if (scope !== "market") return true;
     if (row.source === "twse_announcements") return true;
 
-    const titleText = `${row.title ?? ""}`.toLowerCase();
+    const titleText = `${row.title ?? ""} ${row.body ?? ""}`.toLowerCase();
     const auxiliaryText = `${row.category ?? ""} ${row.company_name ?? ""}`.toLowerCase();
     const blockedTerms = [
       "股市爆料同學會",
       "cmoney",
-      "yahoo\u80a1\u5e02",
-      "理財寶",
+      "yahoo股市",
       "奇摩股市",
+      "理財寶",
+      "知新聞",
+      "moneydj",
+      "非凡新聞",
+      "股海老牛",
       "存股",
       "達人",
       "老師",
@@ -5032,124 +5036,87 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     }
 
     const companyReportTerms = [
-      "\u8ca1\u5831",
+      "財報",
       "eps",
-      "\u6de8\u5229",
-      "\u71df\u6536",
-      "\u9664\u6b0a",
-      "\u9664\u606f",
-      "\u914d\u606f",
-      "\u6cd5\u8aaa",
-      "\u589e\u8cc7",
-      "\u6e1b\u8cc7"
+      "淨利",
+      "營收",
+      "除權",
+      "除息",
+      "配息",
+      "法說",
+      "增資",
+      "減資"
     ];
     const highSignalMarketTerms = [
-      "\u53f0\u80a1",
-      "\u5927\u76e4",
-      "\u52a0\u6b0a",
-      "\u52a0\u6b0a\u6307\u6578",
-      "\u6ac3\u8cb7",
-      "\u76e4\u52e2",
-      "\u76e4\u4e2d",
-      "\u76e4\u5f8c",
-      "\u958b\u76e4",
-      "\u6536\u76e4",
-      "\u4e09\u5927\u6cd5\u4eba",
-      "\u5916\u8cc7",
-      "\u6295\u4fe1",
-      "\u81ea\u71df\u5546",
-      "\u6b0a\u503c",
-      "\u985e\u80a1",
-      "\u65cf\u7fa4",
-      "\u534a\u5c0e\u9ad4",
-      "etf",
-      "msci",
-      "fed",
-      "nasdaq",
-      "\u6a19\u666e",
-      "\u7f8e\u80a1",
-      "\u532f\u7387",
-      "\u53f0\u5e63",
-      "\u7f8e\u5143",
-      "\u592e\u884c",
-      "\u901a\u81a8",
-      "\u5229\u7387"
-    ];
-    const hasHighSignalMarketTerm = highSignalMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
-    const broaderMarketTerms = [
-      "\u53f0\u80a1",
-      "\u5927\u76e4",
-      "\u52a0\u6b0a",
-      "\u52a0\u6b0a\u6307\u6578",
-      "\u6ac3\u8cb7",
-      "\u4e09\u5927\u6cd5\u4eba",
-      "\u5916\u8cc7",
-      "\u6295\u4fe1",
-      "\u81ea\u71df\u5546",
-      "\u6b0a\u503c",
-      "\u985e\u80a1",
-      "\u65cf\u7fa4",
-      "\u534a\u5c0e\u9ad4",
-      "etf",
-      "adr",
-      "msci",
-      "fed",
-      "nasdaq",
-      "\u6a19\u666e",
-      "\u7f8e\u80a1",
-      "\u532f\u7387",
-      "\u53f0\u5e63",
-      "\u7f8e\u5143",
-      "\u592e\u884c",
-      "\u901a\u81a8",
-      "\u5229\u7387"
-    ];
-    const hasBroaderMarketTerm = broaderMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
-    const isTickerSpecific = Boolean(row.ticker && row.ticker !== "market");
-    if (isTickerSpecific && !hasBroaderMarketTerm) return false;
-
-    const isCompanyReport = companyReportTerms.some((term) => titleText.includes(term.toLowerCase()));
-    if (isCompanyReport && !hasHighSignalMarketTerm) return false;
-
-    const marketTerms = [
       "台股",
       "大盤",
       "加權",
+      "加權指數",
       "櫃買",
       "盤勢",
       "盤中",
       "盤後",
       "開盤",
       "收盤",
-      "權值",
       "三大法人",
       "外資",
       "投信",
       "自營商",
-      "美股",
-      "fed",
-      "聯準會",
-      "央行",
-      "利率",
-      "通膨",
-      "匯率",
-      "新台幣",
+      "權值",
+      "類股",
+      "族群",
       "半導體",
-      "ai",
-      "台積電",
-      "鴻海",
       "etf",
       "期貨",
+      "msci",
+      "fed",
+      "聯準會",
+      "nasdaq",
+      "標普",
+      "美股",
+      "匯率",
+      "台幣",
+      "新台幣",
+      "美元",
+      "央行",
+      "通膨",
+      "利率"
+    ];
+    const broaderMarketTerms = [
+      ...highSignalMarketTerms,
+      "電子股",
+      "金融股",
+      "航運股",
+      "ai",
+      "adr",
       "景氣",
       "出口",
-      "msci",
       "關稅",
       "政策",
       "金管會",
       "證交所",
-      "櫃買中心"
+      "櫃買中心",
+      "台積電",
+      "鴻海",
+      "聯發科",
+      "美債",
+      "日股",
+      "韓股",
+      "陸股",
+      "港股",
+      "選擇權"
     ];
-    return hasHighSignalMarketTerm || marketTerms.some((term) => titleText.includes(term.toLowerCase()));
+    const hasHighSignalMarketTerm = highSignalMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
+    const hasBroaderMarketTerm = broaderMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
+    if (!hasBroaderMarketTerm) return false;
+
+    const isCompanyReport = companyReportTerms.some((term) => titleText.includes(term.toLowerCase()));
+    if (isCompanyReport && !hasHighSignalMarketTerm) return false;
+
+    const isTickerSpecific = Boolean(row.ticker && row.ticker !== "market");
+    if (isTickerSpecific && isCompanyReport && !hasHighSignalMarketTerm) return false;
+
+    return true;
   }
 
   const rows: IntelRow[] = [];

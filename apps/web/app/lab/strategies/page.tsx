@@ -22,7 +22,7 @@ export default async function LabStrategiesPage() {
   try {
     payload = await radarLabApi.strategies();
   } catch (error) {
-    fetchError = friendlyDataError(error, "量化研究 /strategies API 暫時無法讀取。");
+    fetchError = friendlyDataError(error, "候選策略暫時無法讀取。");
   }
 
   return <LabSubPageShell mode="strategies" payload={payload} fetchError={fetchError} />;

@@ -38,7 +38,7 @@ function AdminDraftStatePanel({
     <Panel code={`ADM-${state}`} title={label} right="審稿草稿來源">
       <div className="state-panel">
         <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{label}</span>
-        <span className="tg soft">來源：審稿草稿資料庫</span>
+        <span className="tg soft">來源：審稿草稿</span>
         <span className="tg soft">更新 {formatDateTime(updatedAt)}</span>
         <span className="state-reason">{reason}</span>
       </div>
@@ -50,10 +50,10 @@ function AdminDraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
   return (
     <div className="content-draft-table">
       <div className="content-draft-row admin table-head">
-        <span>ID</span>
+        <span>編號</span>
         <span>目標</span>
         <span>標題</span>
-        <span>來源線索</span>
+        <span>來源</span>
         <span>狀態</span>
         <span>更新</span>
         <span>開啟</span>
@@ -71,8 +71,8 @@ function AdminDraftRows({ drafts }: { drafts: ContentDraftEntry[] }) {
               {body && <small>{body}</small>}
             </span>
             <span className="content-draft-trail">
-              <b>{draft.producerVersion}</b>
-              <small>{draft.sourceJobId ? `job ${draft.sourceJobId.slice(0, 8)}` : "無來源工作"}</small>
+              <b>每日內容流程</b>
+              <small>{draft.sourceJobId ? "來源工作已連結" : "尚未連結來源工作"}</small>
               {(draftDate || marketState) && (
                 <small>{[draftDate, marketState].filter(Boolean).join(" / ")}</small>
               )}
@@ -120,7 +120,7 @@ export default async function ContentDraftsAdminPage({
       title="內容草稿審核"
       sub="AI 內容審稿佇列"
       exec
-      note="內容草稿審核 / 顯示 OpenAlice 產文、來源線索、審核狀態；尚未核准的草稿不會進正式頁面。"
+      note="內容草稿審核 / 顯示 AI 產文、來源線索與審核狀態；尚未核准的草稿不會進正式頁面。"
     >
       <Panel code="ADM-FLT" title="狀態篩選" right={status ? contentDraftStatusLabel(status) : "全部"}>
         <div className="filter-row">
@@ -140,7 +140,7 @@ export default async function ContentDraftsAdminPage({
       {error && (
         <AdminDraftStatePanel
           state="BLOCKED"
-          reason={`審稿草稿暫時無法讀取或權限不足。負責：內容與後端資料管線。細節：${error}`}
+          reason="審稿草稿暫時無法讀取或權限不足。"
           updatedAt={requestedAt}
         />
       )}
@@ -160,7 +160,7 @@ export default async function ContentDraftsAdminPage({
           right={
             <span className="source-line" style={{ margin: 0 }}>
               <span className="badge badge-green">正常</span>
-              <span>來源：審稿草稿資料庫</span>
+              <span>來源：審稿草稿</span>
               <span>更新 {formatDateTime(latestUpdatedAt(drafts))}</span>
               <span>{drafts.length} 筆</span>
             </span>

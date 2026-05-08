@@ -77,7 +77,7 @@ type Envelope<T> = {
 
 async function request<T>(path: string, init?: RequestInit) {
   if (!API_BASE) {
-    throw new Error("後端位址尚未設定");
+    throw new Error("資料服務位置尚未設定");
   }
 
   // SSR (server component) calls don't get the browser's cookie automatically.
@@ -283,7 +283,7 @@ export class AlertsAuthError extends Error {
 
 export async function getAlerts(params?: { limit?: number; unreadOnly?: boolean }): Promise<AlertsListResponse> {
   if (!API_BASE) {
-    throw new Error("後端位址尚未設定");
+    throw new Error("資料服務位置尚未設定");
   }
 
   const query = new URLSearchParams();

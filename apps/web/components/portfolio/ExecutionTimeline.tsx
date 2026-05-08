@@ -196,7 +196,7 @@ export function ExecutionTimeline() {
                 <span style={{ color: "var(--exec-soft)", textAlign: "right" }}>{isOpen ? "-" : "+"}</span>
               </button>
               {isOpen && (
-                <pre
+                <div
                   style={{
                     margin: 0,
                     padding: "10px 14px",
@@ -210,8 +210,8 @@ export function ExecutionTimeline() {
                     borderTop: "1px solid var(--exec-rule)"
                   }}
                 >
-                  {JSON.stringify(event.payload, null, 2)}
-                </pre>
+                  事件已記錄於模擬交易流水；詳細欄位保留在稽核紀錄，不在交易畫面展開。
+                </div>
               )}
             </div>
           );
@@ -219,7 +219,7 @@ export function ExecutionTimeline() {
         {!events.length && (
           <div style={{ padding: "20px 4px", color: "var(--exec-soft)", fontFamily: "var(--mono)", fontSize: 11 }}>
             {streamState === "blocked"
-              ? "暫停 | 模擬交易事件端點暫時無法讀取"
+              ? "暫停 | 模擬交易事件暫時無法讀取"
               : "無資料 | 模擬帳戶目前沒有交易事件"}
           </div>
         )}

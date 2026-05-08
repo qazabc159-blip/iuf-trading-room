@@ -614,12 +614,12 @@ function OrderReviewModal({
           />
           <KV k={unit === "LOT" ? "張數" : "股數"} v={qty.toLocaleString("zh-TW")} />
           <KV k="實際股數" v={`${shares.toLocaleString("zh-TW")} 股`} />
-          <KV k="委託價格" v={price === null ? "市價，送出時依後端報價門檻處理" : formatTwd(price)} />
+          <KV k="委託價格" v={price === null ? "市價，送出時依系統報價門檻處理" : formatTwd(price)} />
           <KV
             k="金額算式"
             v={
               notional === null
-                ? "市價單待後端報價門檻計算"
+            ? "市價單待系統報價門檻計算"
                 : `${unitFormula} = ${formatTwd(notional)}`
             }
           />
@@ -865,7 +865,7 @@ function PreviewResult({ result }: { result: Awaited<ReturnType<typeof previewPa
       />
       <div style={kvListStyle}>
         <KV k="風控" v={riskDecision} />
-        <KV k="檢查項目" v={`${result.riskCheck.guards.length} 項 / ${blockedGuards.length} 項阻擋`} />
+            <KV k="檢查項目" v={`${result.riskCheck.guards.length} 項 / ${blockedGuards.length} 項未通過`} />
         <KV k="更新" v={formatTime(result.riskCheck.createdAt)} />
         <KV k="報價" v={result.quoteGate ? paperQuoteDecisionLabel(result.quoteGate.decision) : "尚未檢查"} />
         {result.quoteGate?.selectedSource && <KV k="報價來源" v={paperQuoteSourceLabel(result.quoteGate.selectedSource)} />}
