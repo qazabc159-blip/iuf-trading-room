@@ -170,7 +170,7 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "5388": "communication",
   "6285": "communication",
   "2345": "communication",
-  "3706": "communication",
+  "3706": "computer",
   "2881": "finance",
   "2882": "finance",
   "2883": "finance",
@@ -211,7 +211,7 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "2439": "components",
   "2474": "computer",
   "2481": "components",
-  "2492": "communication",
+  "2492": "components",
   "3005": "computer",
   "3013": "components",
   "3042": "computer",
@@ -236,7 +236,6 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "8150": "semiconductor",
   "1605": "components",
   "1717": "components",
-  "1802": "steel",
   "2006": "steel",
   "2007": "steel",
   "2008": "steel",
@@ -257,9 +256,10 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "2034": "steel",
   "2314": "communication",
   "2332": "communication",
-  "2354": "communication",
+  "2354": "components",
   "2419": "communication",
   "2450": "communication",
+  "2485": "communication",
   "3025": "communication",
   "3062": "communication",
   "3380": "communication",
@@ -465,33 +465,20 @@ function primaryRowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
 }
 
 function rowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
-  const primary = primaryRowsForSector(prepared, sectorKey);
-  if (primary.length >= MIN_PRODUCT_COUNT) return primary.slice(0, MAX_TILES_PER_SECTOR);
-
-  const selected = new Set(primary.map((tile) => tile.symbol));
-  const supplementTarget = Math.min(MAX_TILES_PER_SECTOR, Math.max(TARGET_TILES_PER_SECTOR, MIN_PRODUCT_COUNT));
-  const supplements = prepared
-    .filter((tile) => tile.sectorKey !== sectorKey && !selected.has(tile.symbol))
-    .sort(sortByHeatmapPriority)
-    .slice(0, Math.max(0, supplementTarget - primary.length))
-    .map((tile) => ({ ...tile, isSupplemental: true }));
-
-  return [...primary, ...supplements].slice(0, MAX_TILES_PER_SECTOR);
+  return primaryRowsForSector(prepared, sectorKey);
 }
 
 function buildOptions(prepared: PreparedTile[]): SectorOption[] {
   return SECTORS.map((sector) => {
-    const rows = rowsForSector(prepared, sector.key);
     const primaryRows = primaryRowsForSector(prepared, sector.key);
-    const averageRows = primaryRows.length > 0 ? primaryRows : rows;
-    const avgPct = averageRows.length > 0
-      ? averageRows.reduce((sum, tile) => sum + tile.displayPct, 0) / averageRows.length
+    const avgPct = primaryRows.length > 0
+      ? primaryRows.reduce((sum, tile) => sum + tile.displayPct, 0) / primaryRows.length
       : null;
     return {
       ...sector,
-      count: rows.length,
+      count: primaryRows.length,
       avgPct,
-      hasData: rows.length > 0,
+      hasData: primaryRows.length > 0,
     };
   });
 }

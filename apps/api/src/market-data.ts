@@ -28,7 +28,8 @@ import type { TradingRoomRepository } from "@iuf-trading-room/domain";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 
-import { getFinMindClient } from "./data-sources/finmind-client.js";
+import { getFinMindClient, getFinMindStats } from "./data-sources/finmind-client.js";
+import { runOhlcvFinmindSync } from "./jobs/ohlcv-finmind-sync.js";
 import {
   appendPersistedQuoteEntries,
   loadPersistedQuoteEntries
@@ -162,6 +163,128 @@ type DailyBarContextRow = {
 };
 
 const MARKET_HEATMAP_LIMIT = 180;
+const DAILY_CONTEXT_SELF_HEAL_DEFAULT_LIMIT = 12;
+const DAILY_CONTEXT_SELF_HEAL_MAX_LIMIT = 30;
+const DAILY_CONTEXT_SELF_HEAL_LOOKBACK_DAYS = 14;
+const DAILY_CONTEXT_SELF_HEAL_COOLDOWN_MS = 15 * 60 * 1000;
+const DAILY_CONTEXT_PRIORITY_SYMBOLS = [
+  "2330",
+  "2317",
+  "2454",
+  "2308",
+  "2382",
+  "2881",
+  "2882",
+  "2412",
+  "2603",
+  "2002",
+  "2303",
+  "2379",
+  "3034",
+  "3711",
+  "3443",
+  "3661",
+  "6488",
+  "2408",
+  "2344",
+  "2449",
+  "6239",
+  "3260",
+  "6531",
+  "3105",
+  "2327",
+  "2313",
+  "2368",
+  "3037",
+  "8046",
+  "4958",
+  "6176",
+  "6269",
+  "3189",
+  "3533",
+  "5439",
+  "2356",
+  "3231",
+  "6669",
+  "2357",
+  "2376",
+  "2377",
+  "2395",
+  "3017",
+  "2301",
+  "2353",
+  "3045",
+  "4904",
+  "3596",
+  "5388",
+  "6285",
+  "2345",
+  "3706",
+  "2883",
+  "2884",
+  "2885",
+  "2886",
+  "2887",
+  "2890",
+  "2891",
+  "2892",
+  "5880",
+  "5876",
+  "2014",
+  "2015",
+  "2023",
+  "2027",
+  "2031",
+  "9958",
+  "2609",
+  "2615",
+  "2618",
+  "2610",
+  "2633",
+  "2606",
+  "2617"
+] as const;
+const dailyContextSelfHealCooldown = new Map<string, number>();
+const MARKET_HEATMAP_SECTOR_SYMBOLS = {
+  "半導體業": [
+    "2330", "2454", "2303", "2379", "3034", "3711", "3443", "3661", "6488", "2408", "2344", "2449",
+    "6239", "3260", "6531", "3105", "2337", "2409", "3299", "3532", "3653", "3707", "4991", "5347",
+    "5483", "6770", "8150"
+  ],
+  "電子零組件": [
+    "2327", "2308", "2313", "2368", "3037", "8046", "4958", "6176", "6269", "3189", "3533", "5439",
+    "1560", "1582", "2059", "2317", "2439", "2481", "2492", "3013", "3090", "4915", "5269", "2354"
+  ],
+  "電腦及週邊設備": [
+    "2382", "2356", "3231", "6669", "2357", "2376", "2377", "2395", "3017", "2301", "2353", "2360",
+    "2362", "2365", "2385", "2474", "3005", "3042", "3044", "3234", "3481", "3702", "3714", "6182",
+    "6147", "3706"
+  ],
+  "通信網路": [
+    "2412", "3045", "4904", "3596", "5388", "6285", "2345", "2314", "2332", "2419", "2450", "2485",
+    "3025", "3062", "3380", "3491", "4906", "6152", "6416", "6462"
+  ],
+  "金融保險": [
+    "2881", "2882", "2883", "2884", "2885", "2886", "2887", "2890", "2891", "2892", "5880", "5876"
+  ],
+  "鋼鐵工業": [
+    "2002", "2014", "2015", "2023", "2027", "2031", "9958", "2006", "2007", "2008", "2009", "2010",
+    "2012", "2013", "2017", "2020", "2022", "2024", "2025", "2028", "2029", "2030", "2032", "2033",
+    "2034"
+  ],
+  "航運業": [
+    "2603", "2609", "2615", "2618", "2610", "2633", "2606", "2617", "2601", "2607", "2608", "2611",
+    "2612", "2613", "2614", "2616", "5607", "5608"
+  ]
+} as const;
+const MARKET_HEATMAP_SYMBOL_SECTOR_LABELS = new Map<string, string>(
+  Object.entries(MARKET_HEATMAP_SECTOR_SYMBOLS).flatMap(([sector, symbols]) =>
+    symbols.map((symbol) => [symbol, sector] as const)
+  )
+);
+const MARKET_HEATMAP_REQUIRED_SYMBOL_RANK = new Map<string, number>(
+  [...MARKET_HEATMAP_SYMBOL_SECTOR_LABELS.keys()].map((symbol, index) => [symbol, index])
+);
 
 type OverviewLeader = {
   symbol: string;
@@ -1057,6 +1180,7 @@ function buildMarketContext(input: {
       symbol: row.quote.symbol,
       market: row.quote.market,
       name: row.name,
+      sector: officialHeatmapSectorForSymbol(row.quote.symbol, null),
       source: row.item.selectedSource ?? row.quote.source,
       last: row.quote.last,
       prevClose: row.quote.prevClose,
@@ -1143,6 +1267,93 @@ function finiteNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function boundedPositiveEnvInt(name: string, fallback: number, max: number): number {
+  const raw = Number(process.env[name] ?? "");
+  if (!Number.isFinite(raw) || raw <= 0) return fallback;
+  return Math.min(Math.floor(raw), max);
+}
+
+function normalizeTwTicker(value: unknown): string | null {
+  const symbol = String(value ?? "").trim().toUpperCase();
+  return /^\d{4}$/.test(symbol) ? symbol : null;
+}
+
+function officialHeatmapSectorForSymbol(symbol: string, fallback?: string | null): string | null {
+  const normalized = normalizeTwTicker(symbol);
+  const fallbackSector = fallback?.trim() || null;
+  return normalized
+    ? MARKET_HEATMAP_SYMBOL_SECTOR_LABELS.get(normalized) ?? fallbackSector
+    : fallbackSector;
+}
+
+function heatmapRequiredRank(symbol: string): number | null {
+  const normalized = normalizeTwTicker(symbol);
+  if (!normalized) return null;
+  return MARKET_HEATMAP_REQUIRED_SYMBOL_RANK.get(normalized) ?? null;
+}
+
+function isDailyRowStale(
+  row: { date: string } | undefined,
+  targetDate: string
+): boolean {
+  if (!row) return true;
+  const rowDate = dateOnly(row.date);
+  return rowDate.length < 10 || rowDate < targetDate;
+}
+
+export function selectDailyContextOhlcvSelfHealSymbols(input: {
+  companies: Array<{ ticker: string }>;
+  rows: Array<{ symbol: string; date: string; volume?: number | null }>;
+  targetDate: string | null;
+  limit: number;
+  prioritySymbols?: readonly string[];
+}): string[] {
+  const targetDate = input.targetDate ? dateOnly(input.targetDate) : null;
+  const limit = Math.max(0, Math.floor(input.limit));
+  if (!targetDate || targetDate.length < 10 || limit === 0) return [];
+
+  const eligibleSymbols = new Set<string>();
+  for (const company of input.companies) {
+    const symbol = normalizeTwTicker(company.ticker);
+    if (symbol) eligibleSymbols.add(symbol);
+  }
+
+  const rowBySymbol = new Map<string, { symbol: string; date: string; volume?: number | null }>();
+  for (const row of input.rows) {
+    const symbol = normalizeTwTicker(row.symbol);
+    if (!symbol || !eligibleSymbols.has(symbol)) continue;
+    const existing = rowBySymbol.get(symbol);
+    if (!existing || dateOnly(row.date) > dateOnly(existing.date)) {
+      rowBySymbol.set(symbol, row);
+    }
+  }
+
+  const selected: string[] = [];
+  const selectedSet = new Set<string>();
+  const addCandidate = (value: unknown) => {
+    if (selected.length >= limit) return;
+    const symbol = normalizeTwTicker(value);
+    if (!symbol || !eligibleSymbols.has(symbol) || selectedSet.has(symbol)) return;
+    const row = rowBySymbol.get(symbol);
+    if (!isDailyRowStale(row, targetDate)) return;
+    selected.push(symbol);
+    selectedSet.add(symbol);
+  };
+
+  for (const symbol of input.prioritySymbols ?? DAILY_CONTEXT_PRIORITY_SYMBOLS) {
+    addCandidate(symbol);
+  }
+
+  const staleRowsByVolume = [...rowBySymbol.values()]
+    .filter((row) => isDailyRowStale(row, targetDate))
+    .sort((left, right) => (right.volume ?? 0) - (left.volume ?? 0));
+  for (const row of staleRowsByVolume) {
+    addCandidate(row.symbol);
+  }
+
+  return selected;
+}
+
 function dailyBarToContextRow(input: {
   symbol: string;
   market: Market;
@@ -1163,12 +1374,13 @@ function dailyBarToContextRow(input: {
   const changePct = prevClose && prevClose !== 0 ? round((last - prevClose) / prevClose * 100) : null;
   const volume = finiteNumber(input.latest.volume);
   const index = input.index ?? 0;
+  const symbol = input.symbol.trim().toUpperCase();
 
   return {
-    symbol: input.symbol,
+    symbol,
     market: input.market,
     name: input.name,
-    sector: input.sector?.trim() || null,
+    sector: officialHeatmapSectorForSymbol(symbol, input.sector),
     date: input.latest.dt,
     open,
     high,
@@ -1316,15 +1528,160 @@ async function loadDailyBarRowsFromDb(input: {
   return [...bySymbol.values()];
 }
 
+function getLatestDailyContextDate(
+  rows: DailyBarContextRow[],
+  indexRow: DailyBarContextRow | null
+): string | null {
+  const dates = [
+    ...rows.map((row) => row.date),
+    indexRow?.date ?? null
+  ]
+    .filter((date): date is string => Boolean(date))
+    .map((date) => dateOnly(date))
+    .filter((date) => date.length >= 10)
+    .sort((left, right) => right.localeCompare(left));
+
+  return dates[0] ?? null;
+}
+
+function selectDailyContextOhlcvSelfHealTargets(input: {
+  session: AppSession;
+  companies: Company[];
+  rows: DailyBarContextRow[];
+  indexRow: DailyBarContextRow | null;
+}): Array<{ companyId: string; ticker: string; workspaceId: string }> {
+  const targetDate = getLatestDailyContextDate(input.rows, input.indexRow);
+  if (!targetDate) return [];
+
+  const limit = boundedPositiveEnvInt(
+    "FINMIND_DAILY_CONTEXT_SELF_HEAL_LIMIT",
+    DAILY_CONTEXT_SELF_HEAL_DEFAULT_LIMIT,
+    DAILY_CONTEXT_SELF_HEAL_MAX_LIMIT
+  );
+  const symbols = selectDailyContextOhlcvSelfHealSymbols({
+    companies: input.companies,
+    rows: input.rows,
+    targetDate,
+    limit
+  });
+  if (symbols.length === 0) return [];
+
+  const companyBySymbol = new Map<string, Company>();
+  for (const company of input.companies) {
+    const symbol = normalizeTwTicker(company.ticker);
+    if (symbol && !companyBySymbol.has(symbol)) {
+      companyBySymbol.set(symbol, company);
+    }
+  }
+
+  const now = Date.now();
+  if (dailyContextSelfHealCooldown.size > 5000) {
+    for (const [key, expiresAt] of dailyContextSelfHealCooldown.entries()) {
+      if (expiresAt <= now) dailyContextSelfHealCooldown.delete(key);
+    }
+  }
+
+  const targets: Array<{ companyId: string; ticker: string; workspaceId: string }> = [];
+  for (const symbol of symbols) {
+    const company = companyBySymbol.get(symbol);
+    if (!company) continue;
+    const cooldownKey = `${input.session.workspace.id}:${symbol}`;
+    const cooldownUntil = dailyContextSelfHealCooldown.get(cooldownKey) ?? 0;
+    if (cooldownUntil > now) continue;
+    dailyContextSelfHealCooldown.set(cooldownKey, now + DAILY_CONTEXT_SELF_HEAL_COOLDOWN_MS);
+    targets.push({
+      companyId: company.id,
+      ticker: symbol,
+      workspaceId: input.session.workspace.id
+    });
+  }
+
+  return targets;
+}
+
+async function maybeSelfHealDailyBarRows(input: {
+  session: AppSession;
+  companies: Company[];
+  stockRows: DailyBarContextRow[];
+  indexRow: DailyBarContextRow | null;
+}): Promise<DailyBarContextRow[]> {
+  if (process.env.FINMIND_KILL_SWITCH === "true") return input.stockRows;
+  if (!getDb()) return input.stockRows;
+  if (!getFinMindClient().hasToken()) return input.stockRows;
+
+  const finmindStats = getFinMindStats();
+  if (finmindStats.circuitOpen) return input.stockRows;
+
+  const targets = selectDailyContextOhlcvSelfHealTargets({
+    session: input.session,
+    companies: input.companies,
+    rows: input.stockRows,
+    indexRow: input.indexRow
+  });
+  if (targets.length === 0) return input.stockRows;
+
+  const targetDate = getLatestDailyContextDate(input.stockRows, input.indexRow);
+  console.log(
+    `[market-data] FinMind OHLCV self-heal targetDate=${targetDate ?? "unknown"} tickers=${targets.length}`
+  );
+
+  try {
+    await runOhlcvFinmindSync(targets, {
+      startDate: daysAgoIsoDate(DAILY_CONTEXT_SELF_HEAL_LOOKBACK_DAYS),
+      forceFinmind: true
+    });
+    return await loadDailyBarRowsFromDb({
+      session: input.session,
+      companies: input.companies
+    });
+  } catch (err) {
+    console.warn(
+      "[market-data] FinMind OHLCV self-heal failed:",
+      err instanceof Error ? err.message : String(err)
+    );
+    return input.stockRows;
+  }
+}
+
+function selectDailyHeatmapRows(rows: DailyBarContextRow[]): DailyBarContextRow[] {
+  const usableRows = rows.filter((row) => row.last !== null || row.changePct !== null || row.volume !== null);
+  const volumeSorted = [...usableRows].sort((left, right) => {
+    const volumeDelta = (right.volume ?? -Infinity) - (left.volume ?? -Infinity);
+    if (volumeDelta !== 0) return volumeDelta;
+    return Math.abs(right.changePct ?? 0) - Math.abs(left.changePct ?? 0);
+  });
+  const requiredRows = usableRows
+    .filter((row) => heatmapRequiredRank(row.symbol) !== null)
+    .sort((left, right) => {
+      const rankDelta = (heatmapRequiredRank(left.symbol) ?? 9999) - (heatmapRequiredRank(right.symbol) ?? 9999);
+      if (rankDelta !== 0) return rankDelta;
+      return (right.volume ?? -Infinity) - (left.volume ?? -Infinity);
+    });
+
+  const bySymbol = new Map<string, DailyBarContextRow>();
+  for (const row of requiredRows) bySymbol.set(row.symbol, row);
+  for (const row of volumeSorted) {
+    if (!bySymbol.has(row.symbol)) bySymbol.set(row.symbol, row);
+  }
+
+  return [...bySymbol.values()].slice(0, MARKET_HEATMAP_LIMIT);
+}
+
 async function buildDailyBarMarketContext(input: {
   session: AppSession;
   companies: Company[];
 }) {
-  const [indexContext, stockRows] = await Promise.all([
+  const [indexContext, initialStockRows] = await Promise.all([
     loadFinMindTaiexIndexContext(),
     loadDailyBarRowsFromDb(input)
   ]);
   const indexRow = indexContext.row;
+  const stockRows = await maybeSelfHealDailyBarRows({
+    session: input.session,
+    companies: input.companies,
+    stockRows: initialStockRows,
+    indexRow
+  });
 
   const breadthRows = stockRows.filter((row) => row.changePct !== null);
   const up = breadthRows.filter((row) => (row.changePct ?? 0) > 0).length;
@@ -1333,19 +1690,12 @@ async function buildDailyBarMarketContext(input: {
   const freshestBreadthTimestamp = breadthRows
     .map((row) => row.timestamp)
     .sort((left, right) => right.localeCompare(left))[0] ?? null;
-  const heatmap = [...stockRows]
-    .filter((row) => row.last !== null || row.changePct !== null || row.volume !== null)
-    .sort((left, right) => {
-      const volumeDelta = (right.volume ?? -Infinity) - (left.volume ?? -Infinity);
-      if (volumeDelta !== 0) return volumeDelta;
-      return Math.abs(right.changePct ?? 0) - Math.abs(left.changePct ?? 0);
-    })
-    .slice(0, MARKET_HEATMAP_LIMIT)
+  const heatmap = selectDailyHeatmapRows(stockRows)
     .map((row) => ({
       symbol: row.symbol,
       market: row.market,
       name: row.name,
-      sector: row.sector,
+      sector: officialHeatmapSectorForSymbol(row.symbol, row.sector),
       source: row.source,
       date: row.date,
       open: row.open,
@@ -2800,13 +3150,16 @@ export async function getMarketDataOverview(input: {
     effectiveItems,
     companies
   });
-  const dailyMarketContext = quoteMarketContext.state === "EMPTY"
+  const shouldLoadDailyMarketContext = quoteMarketContext.state === "EMPTY" || quoteMarketContext.heatmap.length < MARKET_HEATMAP_LIMIT / 2;
+  const dailyMarketContext = shouldLoadDailyMarketContext
     ? await buildDailyBarMarketContext({
       session: input.session,
       companies
     })
     : null;
-  const marketContext = quoteMarketContext.state === "EMPTY" && dailyMarketContext
+  const marketContext = dailyMarketContext && (
+    quoteMarketContext.state === "EMPTY" || dailyMarketContext.heatmap.length > quoteMarketContext.heatmap.length
+  )
     ? dailyMarketContext
     : quoteMarketContext;
 

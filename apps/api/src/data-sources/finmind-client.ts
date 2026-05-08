@@ -221,6 +221,7 @@ const TTL_KBAR      = 300;    // 5 min — sponsor KBar is one-day payload
 const TTL_FINANCIAL = 3600;   // 1h — quarterly data
 const TTL_CHIP      = 1800;   // 30 min — institutional daily
 const TTL_DIVIDEND  = 86400;  // 1d — rarely changes
+const DEFAULT_OHLCV_LATEST_RAW_FILL_LOOKBACK_DAYS = 21;
 
 // ── 4xx circuit breaker ─────────────────────────────────────────────────────
 //
@@ -243,6 +244,49 @@ let _lastCircuitSkipLogMs = 0;
 function envPositiveInt(name: string, fallback: number): number {
   const raw = Number(process.env[name] ?? "");
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : fallback;
+}
+
+function shouldAttemptLatestRawFill(startDate: string, endDate?: string | null): boolean {
+  if (endDate) return false;
+  if (process.env.FINMIND_OHLCV_LATEST_RAW_FILL === "false") return false;
+
+  const startMs = Date.parse(`${startDate}T00:00:00Z`);
+  if (!Number.isFinite(startMs)) return false;
+
+  const lookbackDays = Math.min(
+    envPositiveInt(
+      "FINMIND_OHLCV_LATEST_RAW_FILL_LOOKBACK_DAYS",
+      DEFAULT_OHLCV_LATEST_RAW_FILL_LOOKBACK_DAYS
+    ),
+    60
+  );
+  return Date.now() - startMs <= lookbackDays * 24 * 60 * 60 * 1000;
+}
+
+function latestPriceRowDate(rows: FinMindPriceAdjRow[]): string | null {
+  let latest: string | null = null;
+  for (const row of rows) {
+    if (!row.date) continue;
+    if (!latest || row.date > latest) latest = row.date;
+  }
+  return latest;
+}
+
+function appendNewerRawPriceRows(
+  adjustedRows: FinMindPriceAdjRow[],
+  rawRows: FinMindPriceAdjRow[]
+): FinMindPriceAdjRow[] {
+  const adjustedLatestDate = latestPriceRowDate(adjustedRows);
+  if (!adjustedLatestDate) return rawRows;
+
+  const byDate = new Map(adjustedRows.map((row) => [row.date, row]));
+  for (const row of rawRows) {
+    if (row.date > adjustedLatestDate) {
+      byDate.set(row.date, row);
+    }
+  }
+
+  return [...byDate.values()].sort((left, right) => left.date.localeCompare(right.date));
 }
 
 function openFinMindCircuit(dataset: string, status: number, reason?: string | null): void {
@@ -535,14 +579,17 @@ export class FinMindClient {
   async getStockPriceAdj(stockId: string, startDate: string, endDate?: string | null): Promise<OhlcvBar[]> {
     const endKey = endDate ?? "latest";
     const cacheKey = `finmind:ohlcv:${stockId}:${startDate}:${endKey}`;
+    const shouldRawFill = shouldAttemptLatestRawFill(startDate, endDate);
 
     // Cache read
-    const cached = await cacheGet(cacheKey, this._redisOverride);
-    if (cached) {
-      try {
-        return JSON.parse(cached) as OhlcvBar[];
-      } catch {
-        // bad cache entry — fall through to fetch
+    if (!shouldRawFill) {
+      const cached = await cacheGet(cacheKey, this._redisOverride);
+      if (cached) {
+        try {
+          return JSON.parse(cached) as OhlcvBar[];
+        } catch {
+          // bad cache entry — fall through to fetch
+        }
       }
     }
 
@@ -553,13 +600,23 @@ export class FinMindClient {
       endDate
     );
 
-    if (rows.length === 0 && this._getToken()) {
-      rows = await this._fetch<FinMindPriceAdjRow>(
-        "TaiwanStockPrice",
-        stockId,
-        startDate,
-        endDate
-      );
+    if (this._getToken()) {
+      if (rows.length === 0) {
+        rows = await this._fetch<FinMindPriceAdjRow>(
+          "TaiwanStockPrice",
+          stockId,
+          startDate,
+          endDate
+        );
+      } else if (shouldRawFill) {
+        const rawRows = await this._fetch<FinMindPriceAdjRow>(
+          "TaiwanStockPrice",
+          stockId,
+          startDate,
+          endDate
+        );
+        rows = appendNewerRawPriceRows(rows, rawRows);
+      }
     }
 
     const bars = this._priceRowsToBars(rows);
