@@ -979,6 +979,24 @@ export async function getBrokerStatus(accountId: string) {
   );
 }
 
+export type KgiQuoteStatus = {
+  subscribed_symbols: {
+    tick: string[];
+    bidask: string[];
+  };
+  buffer: {
+    tick: Record<string, { count: number; maxlen: number; last_received_at: string | null }>;
+    bidask: Record<string, { present: boolean; last_received_at: string | null }>;
+  };
+  kgi_logged_in: boolean;
+  quote_disabled_flag: boolean;
+};
+
+export async function getKgiQuoteStatus() {
+  const response = await request<KgiQuoteStatus>("/api/v1/kgi/quote/status");
+  return response.data;
+}
+
 // ── Market data ──
 //
 // These types mirror the response of /api/v1/market-data/effective-quotes

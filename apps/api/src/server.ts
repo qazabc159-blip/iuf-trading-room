@@ -5010,10 +5010,8 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     return ((result as { rows?: T[] })?.rows) ?? [];
   }
 
-  function isMarketWideNews(row: IntelRow): boolean {
-    if (scope !== "market") return true;
-    if (row.source === "twse_announcements") return true;
-
+  function marketNewsScore(row: IntelRow): number {
+    if (scope !== "market") return 10;
     const titleText = `${row.title ?? ""} ${row.body ?? ""}`.toLowerCase();
     const auxiliaryText = `${row.category ?? ""} ${row.company_name ?? ""}`.toLowerCase();
     const blockedTerms = [
@@ -5032,7 +5030,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       "同學會"
     ];
     if (blockedTerms.some((term) => titleText.includes(term.toLowerCase()) || auxiliaryText.includes(term.toLowerCase()))) {
-      return false;
+      return -100;
     }
 
     const companyReportTerms = [
@@ -5080,7 +5078,18 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       "美元",
       "央行",
       "通膨",
-      "利率"
+      "利率",
+      "降息",
+      "升息",
+      "cpi",
+      "pce",
+      "非農",
+      "財測",
+      "半導體展",
+      "computex",
+      "ai伺服器",
+      "輝達",
+      "nvidia"
     ];
     const broaderMarketTerms = [
       ...highSignalMarketTerms,
@@ -5104,19 +5113,43 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       "韓股",
       "陸股",
       "港股",
-      "選擇權"
+      "選擇權",
+      "記憶體",
+      "晶片",
+      "先進製程",
+      "封測",
+      "電子零組件",
+      "電源",
+      "散熱",
+      "光通訊",
+      "伺服器",
+      "機器人",
+      "資金行情",
+      "成交量",
+      "融資",
+      "融券"
     ];
     const hasHighSignalMarketTerm = highSignalMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
     const hasBroaderMarketTerm = broaderMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
-    if (!hasBroaderMarketTerm) return false;
-
     const isCompanyReport = companyReportTerms.some((term) => titleText.includes(term.toLowerCase()));
-    if (isCompanyReport && !hasHighSignalMarketTerm) return false;
-
     const isTickerSpecific = Boolean(row.ticker && row.ticker !== "market");
-    if (isTickerSpecific && isCompanyReport && !hasHighSignalMarketTerm) return false;
 
-    return true;
+    let score = 0;
+    if (row.source === "twse_announcements") score += 2;
+    if (hasHighSignalMarketTerm) score += 4;
+    if (hasBroaderMarketTerm) score += 2;
+    if (/台股|大盤|加權|櫃買|盤勢|盤中|盤後|開盤|收盤/.test(titleText)) score += 3;
+    if (/外資|投信|三大法人|權值|類股|族群/.test(titleText)) score += 2;
+    if (/美股|聯準會|匯率|台幣|美元|通膨|利率|關稅|政策/.test(titleText)) score += 2;
+    if (isTickerSpecific) score -= 1;
+    if (isCompanyReport && !hasHighSignalMarketTerm) score -= 3;
+    if (!hasBroaderMarketTerm && row.source !== "twse_announcements") score -= 4;
+
+    return score;
+  }
+
+  function isMarketWideNews(row: IntelRow): boolean {
+    return marketNewsScore(row) >= 2;
   }
 
   const rows: IntelRow[] = [];
@@ -5169,11 +5202,16 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
         WHERE n.fetched_at >= NOW() - (${days}::text || ' days')::interval
           AND COALESCE(n.title, '') <> ''
         ORDER BY n.fetched_at DESC
-        LIMIT ${scope === "market" ? Math.max(limit * 8, 80) : Math.max(limit, 12)}
+        LIMIT ${scope === "market" ? Math.max(limit * 20, 240) : Math.max(limit, 12)}
       `);
       const seen = new Set(rows.map((row) => `${row.ticker ?? ""}:${row.title ?? ""}`));
-      for (const row of readRows<IntelRow>(result)) {
-        if (!isMarketWideNews(row)) continue;
+      const candidates = readRows<IntelRow>(result)
+        .map((row) => ({ row, score: marketNewsScore(row) }))
+        .filter((item) => scope !== "market" || item.score > -50)
+        .sort((left, right) => right.score - left.score);
+      for (const { row, score } of candidates) {
+        if (scope === "market" && rows.length < Math.min(limit, 10) && score < 1) continue;
+        if (scope === "market" && rows.length >= Math.min(limit, 10) && !isMarketWideNews(row)) continue;
         const key = `${row.ticker ?? ""}:${row.title ?? ""}`;
         if (seen.has(key)) continue;
         rows.push(row);

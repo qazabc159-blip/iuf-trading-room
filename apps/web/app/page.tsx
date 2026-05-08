@@ -9,12 +9,14 @@ import {
   getMarketDataOverview,
   getMarketIntelAnnouncements,
   getOpsSnapshot,
+  getKgiQuoteStatus,
   getStrategyIdeas,
   listStrategyRuns,
   type CompanyAnnouncement,
   type FinMindDatasetStatus,
   type FinMindDiagnosticsStatus,
   type FinMindSourceStatus,
+  type KgiQuoteStatus,
   type MarketDataOverview,
   type MarketDataOverviewLeader,
   type OpsSnapshotData,
@@ -63,6 +65,14 @@ type MarketIntelDashboard = {
   items: IntelItem[];
   selected: Array<{ id: string; ticker: string; name: string }>;
   failures: number;
+};
+
+type BrokerAccessDashboard = {
+  formalReadOnlyConnected: boolean;
+  quoteDisabled: boolean;
+  tickSubscriptions: number;
+  bidAskSubscriptions: number;
+  note: string;
 };
 
 type SourceTile = {
@@ -121,6 +131,30 @@ const PAPER_PREVIEW_CAPITAL_TWD = 20_000;
 const ANNOUNCEMENT_DAYS = 30;
 const MAX_INTEL_ROWS = 12;
 const MAX_HEATMAP_TILES = 96;
+const HEATMAP_DISPLAY_TILES = 28;
+const HEATMAP_SECTOR_OPTION_LIMIT = 8;
+const HEATMAP_SECTOR_LABELS: Record<string, string> = {
+  semiconductors: "半導體業",
+  "semiconductor equipment & materials": "半導體設備材料",
+  "electronic components": "電子零組件",
+  "computer hardware": "電腦及週邊設備",
+  "electronics & computer distribution": "電子通路",
+  "consumer electronics": "消費性電子",
+  "communication equipment": "通信網路",
+  "banks - regional": "金融銀行",
+  steel: "鋼鐵工業",
+  "specialty chemicals": "化學工業",
+  chemicals: "化學工業",
+  "auto parts": "汽車零組件",
+  biotechnology: "生技醫療",
+  "medical devices": "醫療器材",
+  "real estate": "建材營造",
+  construction: "建材營造",
+  "packaged foods": "食品工業",
+  "textile manufacturing": "紡織纖維",
+  "shipping & ports": "航運業",
+  "airlines": "航空運輸",
+};
 
 const EMPTY_TAPE_QUOTES: TapeQuote[] = [
   { sym: "TAIEX", name: "加權指數", price: null, chg: null, pct: null, placeholder: true },
@@ -130,7 +164,7 @@ const EMPTY_TAPE_QUOTES: TapeQuote[] = [
   { sym: "排行", name: "盤中排行", price: null, chg: null, pct: null, placeholder: true },
   { sym: "熱力圖", name: "台股公司池", price: null, chg: null, pct: null, placeholder: true },
   { sym: "重大訊息", name: "官方資訊流", price: null, chg: null, pct: null, placeholder: true },
-  { sym: "Paper", name: "紙上交易", price: null, chg: null, pct: null, placeholder: true },
+  { sym: "紙上", name: "紙上交易", price: null, chg: null, pct: null, placeholder: true },
 ];
 
 const EMPTY_HEATMAP: HeatTile[] = Array.from({ length: 12 }, (_, index) => ({
@@ -245,7 +279,7 @@ function stateLabel(state: DashboardState) {
     LIVE: "正常",
     STALE: "過期",
     EMPTY: "待資料",
-    REVIEW: "AI 審核中",
+    REVIEW: "整理中",
     BLOCKED: "需處理",
     DEGRADED: "降級",
   };
@@ -257,7 +291,7 @@ function statusCode(status: TacticalStatus) {
     live: "可用",
     stale: "待更新",
     empty: "待資料",
-    review: "審核中",
+    review: "待確認",
     blocked: "需處理",
     degraded: "降級",
   };
@@ -269,7 +303,7 @@ function statusZh(status: TacticalStatus) {
     live: "正常",
     stale: "過期",
     empty: "待資料",
-    review: "AI 審核中",
+    review: "待確認",
     blocked: "需處理",
     degraded: "降級",
   };
@@ -430,7 +464,7 @@ async function loadDailyBriefDashboard(): Promise<LoadState<DailyBriefDashboard>
         latest,
         todayBrief: null,
         draftCount: todayDrafts.length,
-        reason: "今天尚未發布每日簡報，也沒有等待審核的今日草稿。",
+        reason: "今天尚未發布每日簡報，也沒有等待確認的今日草稿。",
       };
     },
     (value) => value.state === "MISSING",
@@ -446,6 +480,36 @@ async function loadPaperHealthState(): Promise<LoadState<PaperHealthState | null
     (value) => value === null,
     "紙上交易健康檢查目前沒有回傳資料。",
   );
+}
+
+function brokerAccessFromStatus(status: KgiQuoteStatus): BrokerAccessDashboard {
+  const tickSubscriptions = status.subscribed_symbols?.tick?.length ?? 0;
+  const bidAskSubscriptions = status.subscribed_symbols?.bidask?.length ?? 0;
+  return {
+    formalReadOnlyConnected: Boolean(status.kgi_logged_in),
+    quoteDisabled: Boolean(status.quote_disabled_flag),
+    tickSubscriptions,
+    bidAskSubscriptions,
+    note: status.kgi_logged_in
+      ? "正式券商環境已登入；首頁維持只讀，不提供真實委託入口。"
+      : "正式券商環境尚未回報登入狀態；首頁只顯示紙上交易與風控。"
+  };
+}
+
+async function loadBrokerAccessState(): Promise<LoadState<BrokerAccessDashboard | null>> {
+  const updatedAt = nowIso();
+  try {
+    const data = brokerAccessFromStatus(await getKgiQuoteStatus());
+    return { state: "LIVE", data, updatedAt, source: "正式券商只讀狀態" };
+  } catch {
+    return {
+      state: "EMPTY",
+      data: null,
+      updatedAt,
+      source: "正式券商只讀狀態",
+      reason: "正式券商只讀狀態暫時無法確認；首頁仍維持紙上交易與風控流程。"
+    };
+  }
 }
 
 async function loadMarketIntelDashboard(): Promise<LoadState<MarketIntelDashboard>> {
@@ -551,7 +615,7 @@ function buildSources(params: {
       key: "strategy",
       name: "策略候選",
       short: "策略",
-      desc: "候選觀察 / gate reason",
+      desc: "候選觀察 / 篩選理由",
       state: ideas.state === "LIVE" ? "LIVE" : stateFromLoad(ideas),
       updatedAt: ideas.data?.generatedAt ?? ideas.updatedAt,
       note: `${formatNumber(ideas.data?.items.length)} 候選 / ${formatNumber(ideas.data?.summary.block)} 阻擋`,
@@ -565,18 +629,18 @@ function buildSources(params: {
       desc: "盤後整理 / 已審發布",
       state: openAliceDashboardState(ops, brief),
       updatedAt: brief.data.todayBrief?.createdAt ?? brief.data.latest?.createdAt ?? brief.updatedAt,
-      note: brief.data.state === "PUBLISHED" ? "今日已發布" : brief.data.state === "AWAITING_REVIEW" ? `${brief.data.draftCount} 草稿待審` : "待產生",
-      detail: brief.data.reason ?? "每日簡報只顯示已發布或待審狀態，不偽裝成正式新聞。",
+      note: brief.data.state === "PUBLISHED" ? "今日已發布" : brief.data.state === "AWAITING_REVIEW" ? `${brief.data.draftCount} 草稿待確認` : "待產生",
+      detail: brief.data.reason ?? "每日簡報只顯示已發布或待確認狀態，不偽裝成正式新聞。",
       href: "/briefs",
     },
     {
       key: "paper",
-      name: "模擬交易",
-      short: "Paper",
+      name: "紙上交易",
+      short: "紙上",
       desc: "預覽 / 風控 / 部位",
       state: paperState,
       updatedAt: paper.data?.lastFillTs ?? paper.updatedAt,
-      note: paper.data?.previewReady ? "可預覽" : "待開啟",
+      note: paper.data?.previewReady ? "可預覽" : "等待預覽",
       detail: "首頁只導向紙上交易與風控預覽，不送出真實委託。",
       href: "/portfolio",
     },
@@ -643,6 +707,92 @@ function buildHeatmap(market: LoadState<MarketDataOverview | null>): HeatTile[] 
       readiness: item.readiness,
       freshnessStatus: item.freshnessStatus,
     }));
+}
+
+type HeatmapSectorOption = {
+  key: string;
+  label: string;
+  count: number;
+  up: number;
+  down: number;
+  weight: number;
+};
+
+function heatmapSectorName(tile: HeatTile) {
+  const sector = tile.sector?.trim();
+  return sector && sector.length > 0 ? sector : "其他";
+}
+
+function heatmapSectorLabel(sector: string) {
+  const normalized = sector.trim().toLowerCase();
+  if (HEATMAP_SECTOR_LABELS[normalized]) return HEATMAP_SECTOR_LABELS[normalized];
+  if (normalized.includes("semiconductor")) return "半導體業";
+  if (normalized.includes("electronic")) return "電子類股";
+  if (normalized.includes("bank")) return "金融銀行";
+  if (normalized.includes("steel")) return "鋼鐵工業";
+  if (normalized.includes("chemical")) return "化學工業";
+  if (sector === "其他") return "其他";
+  return sector;
+}
+
+function buildHeatmapSectorOptions(heatmap: HeatTile[]): HeatmapSectorOption[] {
+  const bySector = new Map<string, HeatmapSectorOption>();
+  for (const tile of heatmap.filter((item) => !item.placeholder)) {
+    const key = heatmapSectorName(tile);
+    const current = bySector.get(key) ?? { key, label: heatmapSectorLabel(key), count: 0, up: 0, down: 0, weight: 0 };
+    current.count += 1;
+    current.weight += Math.max(0.1, tile.weight);
+    if ((tile.pct ?? 0) > 0) current.up += 1;
+    if ((tile.pct ?? 0) < 0) current.down += 1;
+    bySector.set(key, current);
+  }
+
+  const sectors = [...bySector.values()]
+    .filter((sector) => sector.count > 0)
+    .sort((left, right) => {
+      const rightSemiconductor = right.label.includes("半導體") || right.key.toLowerCase().includes("semiconductor");
+      const leftSemiconductor = left.label.includes("半導體") || left.key.toLowerCase().includes("semiconductor");
+      const semiconductorBias = (rightSemiconductor ? 10_000 : 0) - (leftSemiconductor ? 10_000 : 0);
+      if (semiconductorBias !== 0) return semiconductorBias;
+      return right.weight - left.weight;
+    })
+    .slice(0, HEATMAP_SECTOR_OPTION_LIMIT);
+
+  const total = heatmap.filter((item) => !item.placeholder).length;
+  const allOption = {
+    key: "ALL",
+    label: "大盤精選",
+    count: total,
+    up: heatmap.filter((item) => !item.placeholder && (item.pct ?? 0) > 0).length,
+    down: heatmap.filter((item) => !item.placeholder && (item.pct ?? 0) < 0).length,
+    weight: heatmap.reduce((sum, item) => sum + Math.max(0.1, item.weight), 0),
+  };
+  return total > 0 ? [allOption, ...sectors] : [allOption];
+}
+
+function selectedHeatmapSector(options: HeatmapSectorOption[], requested: string | null | undefined) {
+  const fallback = options[0] ?? { key: "ALL", label: "大盤精選", count: 0, up: 0, down: 0, weight: 0 };
+  if (requested) {
+    const matched = options.find((option) => option.key === requested || option.label === requested);
+    if (matched) return matched;
+  }
+  return options.find((option) => option.label.includes("半導體") || option.key.toLowerCase().includes("semiconductor"))
+    ?? options.find((option) => option.key !== "ALL")
+    ?? fallback;
+}
+
+function heatmapRowsForSector(heatmap: HeatTile[], sector: HeatmapSectorOption) {
+  const rows = sector.key === "ALL"
+    ? heatmap
+    : heatmap.filter((tile) => heatmapSectorName(tile) === sector.key);
+  return rows
+    .filter((item) => !item.placeholder)
+    .sort((left, right) => {
+      const weightDelta = Math.max(0.1, right.weight) - Math.max(0.1, left.weight);
+      if (Math.abs(weightDelta) > 0.001) return weightDelta;
+      return Math.abs(right.pct ?? 0) - Math.abs(left.pct ?? 0);
+    })
+    .slice(0, HEATMAP_DISPLAY_TILES);
 }
 
 function buildTreemapLayout(items: HeatTile[]): HeatTileLayout[] {
@@ -789,7 +939,7 @@ function directionLabel(direction: StrategyIdeaItem["direction"]) {
 
 function decisionLabel(decision: StrategyIdeaItem["marketData"]["decision"]) {
   if (decision === "allow") return "可觀察";
-  if (decision === "review") return "待審";
+  if (decision === "review") return "待確認";
   return "阻擋";
 }
 
@@ -919,7 +1069,7 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
     { href: "/companies", title: "公司板", sub: "台股公司池", code: "03" },
     { href: "/ideas", title: "策略想法", sub: "候選清單", code: "04" },
     { href: "/runs", title: "策略批次", sub: "量化紀錄", code: "05" },
-    { href: "/portfolio", title: "模擬交易室", sub: "委託與部位", code: "06" },
+    { href: "/portfolio", title: "紙上交易室", sub: "委託與部位", code: "06" },
     { href: "/alerts", title: "警示", sub: "風控提醒", code: "07" },
     { href: "/signals", title: "訊號證據", sub: "訊號與依據", code: "08" },
     { href: "/plans", title: "交易計畫", sub: "計畫註記", code: "09" },
@@ -939,7 +1089,7 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
         </div>
         <strong>台股 AI 交易戰情室</strong>
         <small>操作員 · IUF-01</small>
-        <div className="tac-mode"><span />模擬模式 / 風控守門</div>
+        <div className="tac-mode"><span />觀察模式 / 風控守門</div>
       </div>
       <nav className="tac-nav">
         {nav.map((item) => (
@@ -993,7 +1143,7 @@ function TopCommandBar({ now, market }: { now: string; market: LoadState<MarketD
     <header className="tac-topbar">
       <div>
         <h1>交易戰情台</h1>
-        <span>盤勢總覽 · AI 簡報 · 模擬交易工作流</span>
+          <span>盤勢總覽 · AI 簡報 · 紙上交易工作流</span>
         <b>D+0 · 觀察日</b>
       </div>
       <div>
@@ -1051,6 +1201,7 @@ function HeroPanel({
   heatmap,
   market,
   paper,
+  broker,
   brief,
   intel,
   now,
@@ -1058,6 +1209,7 @@ function HeroPanel({
   heatmap: HeatTile[];
   market: LoadState<MarketDataOverview | null>;
   paper: LoadState<PaperHealthState | null>;
+  broker: LoadState<BrokerAccessDashboard | null>;
   brief: LoadState<DailyBriefDashboard>;
   intel: LoadState<MarketIntelDashboard>;
   now: string;
@@ -1088,8 +1240,9 @@ function HeroPanel({
   const flatCount = breadth && breadth.total > 0 ? breadth.flat : fallbackFlat;
   const breadthTotal = breadth && breadth.total > 0 ? breadth.total : actualHeatmap.length;
   const downPct = breadthTotal ? Math.round((downCount / breadthTotal) * 1000) / 10 : 0;
-  const briefState = brief.data.state === "PUBLISHED" ? "已發布" : brief.data.state === "AWAITING_REVIEW" ? "待審" : "待產生";
-  const paperState = paper.data?.previewReady ? "可預覽" : "待開啟";
+  const briefState = brief.data.state === "PUBLISHED" ? "已發布" : brief.data.latest ? "有最新" : "待產生";
+  const tradeState = broker.data?.formalReadOnlyConnected ? "正式可登入" : paper.data?.previewReady ? "紙上可預覽" : "待檢查";
+  const tradeTone: TacticalStatus = broker.data?.formalReadOnlyConnected || paper.data?.previewReady ? "live" : paper.state === "BLOCKED" ? "blocked" : "empty";
   const focusText = brief.data.state === "PUBLISHED"
     ? "閱讀今日 AI 簡報"
     : intel.data.items.length > 0
@@ -1138,8 +1291,8 @@ function HeroPanel({
       <div className="tac-hero-kpis">
         <Metric label="市場覆蓋" value={marketCoverageText(market)} sub={(market.data?.quotes.total ?? 0) > 0 ? "可用報價 / 監看股票" : "FinMind 官方日資料 / 公司池"} tone={market.state === "LIVE" ? "live" : "empty"} />
         <Metric label="重大訊息" value={formatNumber(intel.data.items.length)} sub={`${formatNumber(intel.data.selected.length)} 檔公司 · ${ANNOUNCEMENT_DAYS} 天`} tone={intel.state === "LIVE" ? "live" : intel.state === "EMPTY" ? "empty" : "blocked"} />
-        <Metric label="AI 簡報" value={briefState} sub={brief.data.latestDate ? `最新 ${brief.data.latestDate}` : "等待發布或審核"} tone={brief.data.state === "PUBLISHED" ? "live" : brief.data.state === "AWAITING_REVIEW" ? "review" : "empty"} />
-        <Metric label="模擬交易" value={paperState} sub="僅 paper preview / 風控檢查" tone={paper.data?.previewReady ? "live" : "empty"} />
+        <Metric label="AI 簡報" value={briefState} sub={brief.data.latestDate ? `最新 ${brief.data.latestDate}` : "等待今日整理"} tone={brief.data.state === "PUBLISHED" ? "live" : brief.data.latest ? "review" : "empty"} />
+        <Metric label="交易環境" value={tradeState} sub={broker.data?.formalReadOnlyConnected ? "正式只讀 / 下單入口關閉" : "紙上預覽 / 風控檢查"} tone={tradeTone} />
       </div>
     </section>
   );
@@ -1191,37 +1344,61 @@ function IndexOhlcChart({ history }: { history: NonNullable<MarketDataOverview["
   }).join(" ");
   const areaPath = `${closePath} L${width},${height} L0,${height} Z`;
   const hitWidth = Math.max(4, width / rows.length);
+  const hitPct = Math.max(3, 100 / rows.length);
 
   return (
-    <svg className="tac-intraday tac-index-ohlc" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="加權指數日 K 線圖">
-      <path className="area" d={areaPath} />
-      {rows.map((row, index) => {
-        const x = xFor(index);
-        const highY = yFor(row.high ?? row.close);
-        const lowY = yFor(row.low ?? row.close);
-        const openY = yFor(row.open ?? row.close);
-        const closeY = yFor(row.close);
-        const up = (row.close ?? 0) >= (row.open ?? row.close ?? 0);
-        return (
-          <g key={`${row.date}-${index}`} className={up ? "up" : "down"}>
-            <line className="range" x1={x} x2={x} y1={highY} y2={lowY} />
-            <line className="open" x1={x - 2.4} x2={x} y1={openY} y2={openY} />
-            <line className="close" x1={x} x2={x + 2.4} y1={closeY} y2={closeY} />
-            <rect className="hit" x={x - hitWidth / 2} y="0" width={hitWidth} height={height}>
-              <title>{[
-                `日期 ${row.date}`,
-                `開 ${formatPrice(row.open)}`,
-                `高 ${formatPrice(row.high)}`,
-                `低 ${formatPrice(row.low)}`,
-                `收 ${formatPrice(row.close)}`,
-                `量 ${formatNumber(row.volume)}`,
-              ].join("\n")}</title>
-            </rect>
-          </g>
-        );
-      })}
-      <path className="close-line" d={closePath} />
-    </svg>
+    <div className="tac-index-chart-wrap" role="img" aria-label="加權指數日 K 折線圖，滑過可查看日期、開高低收與成交量">
+      <svg className="tac-intraday tac-index-ohlc" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+        <path className="area" d={areaPath} />
+        {rows.map((row, index) => {
+          const x = xFor(index);
+          const highY = yFor(row.high ?? row.close);
+          const lowY = yFor(row.low ?? row.close);
+          const openY = yFor(row.open ?? row.close);
+          const closeY = yFor(row.close);
+          const up = (row.close ?? 0) >= (row.open ?? row.close ?? 0);
+          return (
+            <g key={`${row.date}-${index}`} className={up ? "up" : "down"}>
+              <line className="range" x1={x} x2={x} y1={highY} y2={lowY} />
+              <line className="open" x1={x - 2.4} x2={x} y1={openY} y2={openY} />
+              <line className="close" x1={x} x2={x + 2.4} y1={closeY} y2={closeY} />
+              <rect className="hit" x={x - hitWidth / 2} y="0" width={hitWidth} height={height} />
+            </g>
+          );
+        })}
+        <path className="close-line" d={closePath} />
+      </svg>
+      <div className="tac-index-hover-layer">
+        {rows.map((row, index) => {
+          const xPct = (xFor(index) / width) * 100;
+          const closeY = yFor(row.close);
+          return (
+            <div
+              className="tac-index-point"
+              key={`${row.date}-hit-${index}`}
+              tabIndex={0}
+              style={{
+                left: `${xPct}%`,
+                width: `${hitPct}%`,
+                "--marker-y": `${closeY}px`,
+                "--tip-x": xPct > 78 ? "-92%" : xPct < 22 ? "-8%" : "-50%",
+              } as CSSProperties}
+              aria-label={`日期 ${row.date}，開 ${formatPrice(row.open)}，高 ${formatPrice(row.high)}，低 ${formatPrice(row.low)}，收 ${formatPrice(row.close)}，量 ${formatNumber(row.volume)}`}
+            >
+              <span className="tac-index-crosshair" />
+              <div className="tac-index-tooltip">
+                <b>{row.date}</b>
+                <span>開 {formatPrice(row.open)}</span>
+                <span>高 {formatPrice(row.high)}</span>
+                <span>低 {formatPrice(row.low)}</span>
+                <span>收 {formatPrice(row.close)}</span>
+                <small>量 {formatNumber(row.volume)}</small>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -1331,25 +1508,52 @@ function FreshnessPanel({ sources }: { sources: SourceTile[] }) {
   );
 }
 
-function HeatmapPanel({ heatmap, market }: { heatmap: HeatTile[]; market: LoadState<MarketDataOverview | null> }) {
-  const rows = heatmap.length > 0 ? heatmap : EMPTY_HEATMAP;
-  const hasRealHeatmap = rows.some((row) => !row.placeholder);
+function HeatmapPanel({
+  heatmap,
+  market,
+  selectedSectorParam,
+}: {
+  heatmap: HeatTile[];
+  market: LoadState<MarketDataOverview | null>;
+  selectedSectorParam?: string | null;
+}) {
+  const hasRealHeatmap = heatmap.some((row) => !row.placeholder);
+  const sectorOptions = buildHeatmapSectorOptions(heatmap);
+  const selectedSector = selectedHeatmapSector(sectorOptions, selectedSectorParam);
+  const selectedRows = hasRealHeatmap ? heatmapRowsForSector(heatmap, selectedSector) : [];
+  const rows = selectedRows.length > 0 ? selectedRows : EMPTY_HEATMAP;
   const heatmapSource = market.data?.marketContext.source === "finmind:official-daily" ? "FinMind 官方日資料" : "正式行情";
   const updatedAt = market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null;
+  const selectedChange = selectedRows.length > 0
+    ? selectedRows.reduce((sum, item) => sum + (item.pct ?? 0), 0) / selectedRows.length
+    : null;
   return (
     <Panel
       eyebrow="HEATMAP"
-      title="台股市場熱力圖"
-      sub={hasRealHeatmap ? `全市場盤面 · 面積=成交量權重 · 顏色=今日漲跌 · ${heatmapSource}` : "登入後顯示官方行情；不使用示意價格。"}
-      right={<div className="tac-heat-legend"><span>上市/上櫃</span><span>成交量</span><span>今日</span></div>}
+      title={`${selectedSector.label}熱力圖`}
+      sub={hasRealHeatmap ? `產業分區 · 面積=成交量權重 · 顏色=今日漲跌 · ${heatmapSource}` : "登入後顯示官方行情；不使用示意價格。"}
+      right={<div className="tac-heat-legend"><span>{selectedRows.length} 檔</span><span>均幅 {formatPercent(selectedChange)}</span></div>}
     >
+      <div className="tac-heat-sector-tabs" aria-label="選擇熱力圖產業">
+        {sectorOptions.map((option) => (
+          <Link
+            href={option.key === "ALL" ? "/" : `/?sector=${encodeURIComponent(option.key)}`}
+            className={option.key === selectedSector.key ? "is-active" : ""}
+            aria-current={option.key === selectedSector.key ? "page" : undefined}
+            key={option.key}
+          >
+            <b>{option.label}</b>
+            <span>{option.count} 檔</span>
+          </Link>
+        ))}
+      </div>
       <div className="tac-heatmap">
         <div className="tac-heatmap-canvas tac-market-heatmap-canvas">
           {buildTreemapLayout(rows).map((tile, index) => <HeatTileView tile={tile} key={`${tile.symbol}-${index}`} />)}
         </div>
       </div>
       <div className="tac-heat-footer">
-        <span>顯示 {hasRealHeatmap ? rows.length : 0} 檔 · 更新 {formatDateTime(updatedAt)}</span>
+        <span>精選 {hasRealHeatmap ? selectedRows.length : 0} 檔 · {sectorOptions.length} 個產業可切換 · 更新 {formatDateTime(updatedAt)}</span>
         <span className="tac-heat-scale"><em>-3%</em><i /><em>+3%</em></span>
       </div>
     </Panel>
@@ -1460,15 +1664,15 @@ function DailyBriefPanel({
   const steps = [
     { id: "01", name: "市場資料", state: stateFromLoad(market), note: market.state === "LIVE" ? "盤勢與公司資料" : "等待行情回補" },
     { id: "02", name: "重大訊息", state: stateFromLoad(intel), note: intel.state === "LIVE" ? `${intel.data.items.length} 筆官方訊息` : "公告與新聞缺口分開標示" },
-    { id: "03", name: "草稿", state: brief.data.draftCount > 0 || displayBrief ? "LIVE" as DashboardState : "EMPTY" as DashboardState, note: `${brief.data.draftCount} 份待審` },
-    { id: "04", name: "審核", state: brief.data.state === "AWAITING_REVIEW" ? "REVIEW" as DashboardState : brief.data.state === "PUBLISHED" ? "LIVE" as DashboardState : "EMPTY" as DashboardState, note: brief.data.state === "PUBLISHED" ? "已通過" : "等待人工確認" },
+    { id: "03", name: "草稿", state: brief.data.draftCount > 0 || displayBrief ? "LIVE" as DashboardState : "EMPTY" as DashboardState, note: `${brief.data.draftCount} 份待確認` },
+    { id: "04", name: "確認", state: brief.data.state === "AWAITING_REVIEW" ? "REVIEW" as DashboardState : brief.data.state === "PUBLISHED" ? "LIVE" as DashboardState : "EMPTY" as DashboardState, note: brief.data.state === "PUBLISHED" ? "已通過" : "等待確認" },
     { id: "05", name: "發布", state: brief.data.state === "PUBLISHED" ? "LIVE" as DashboardState : "EMPTY" as DashboardState, note: brief.data.latestDate ?? "今日未發布" },
   ];
   return (
-    <Panel eyebrow="AI BRIEF" title="AI 每日簡報" sub="只展示已發布或待審狀態；不把摘要偽裝成買賣建議" right={<StatusChip state={panelState} />}>
+    <Panel eyebrow="AI BRIEF" title="AI 每日簡報" sub="只展示已發布或待確認狀態；不把摘要偽裝成買賣建議" right={<StatusChip state={panelState} />}>
       <div className="tac-openalice-top">
-        <Metric label="今日狀態" value={brief.data.state === "PUBLISHED" ? "已發布" : brief.data.state === "AWAITING_REVIEW" ? "待審" : "待產生"} sub={brief.data.today} tone={panelState === "LIVE" ? "live" : panelState === "REVIEW" ? "review" : "empty"} />
-        <Metric label="待審草稿" value={brief.data.draftCount} sub="只讀審核佇列" tone={brief.data.draftCount > 0 ? "review" : "empty"} />
+        <Metric label="今日狀態" value={brief.data.state === "PUBLISHED" ? "已發布" : brief.data.state === "AWAITING_REVIEW" ? "待確認" : "待產生"} sub={brief.data.today} tone={panelState === "LIVE" ? "live" : panelState === "REVIEW" ? "review" : "empty"} />
+        <Metric label="待確認草稿" value={brief.data.draftCount} sub="簡報確認佇列" tone={brief.data.draftCount > 0 ? "review" : "empty"} />
         <Metric label="最新日期" value={brief.data.latestDate ?? "--"} sub="已發布簡報日期" tone={brief.data.latestDate ? "live" : "empty"} />
         <Metric label="摘要段落" value={formatNumber(displayBrief?.sections.length)} sub="遮蔽交易建議字詞" tone={displayBrief ? "live" : "empty"} />
       </div>
@@ -1516,17 +1720,27 @@ function DataReadinessPanel({ sources }: { sources: SourceTile[] }) {
   );
 }
 
-function PaperPanel({ paper }: { paper: LoadState<PaperHealthState | null> }) {
+function PaperPanel({
+  paper,
+  broker,
+}: {
+  paper: LoadState<PaperHealthState | null>;
+  broker: LoadState<BrokerAccessDashboard | null>;
+}) {
   const data = paper.data;
+  const brokerReady = Boolean(broker.data?.formalReadOnlyConnected);
   const steps = [
-    { id: "1", name: "公司頁預覽", desc: "委託前檢查", state: data?.previewReady ? "LIVE" : stateFromLoad(paper), count: data?.previewReady ? 1 : 0, note: data?.previewReady ? "可做風控預覽" : "等待開啟" },
-    { id: "2", name: "風控檢查", desc: "限制與閘門", state: data?.gate.gateOpen ? "LIVE" : "BLOCKED", count: data?.gate.gateOpen ? 1 : 0, note: data?.gate.gateOpen ? "可檢查" : "目前關閉" },
-    { id: "3", name: "委託草稿", desc: "只做紙上流程", state: data?.previewReady ? "LIVE" : "EMPTY", count: data?.queueDepth ?? 0, note: `${formatNumber(data?.queueDepth)} 筆等待` },
-    { id: "4", name: "紙上送出", desc: "模擬環境", state: data?.submitReady ? "DEGRADED" : "EMPTY", count: data?.submitReady ? 1 : 0, note: "仍需確認流程" },
-    { id: "5", name: "部位回寫", desc: "Portfolio / fills", state: data?.fillsReady || data?.portfolioReady ? "LIVE" : "EMPTY", count: data?.lastFillTs ? 1 : 0, note: data?.lastFillTs ? formatDateTime(data.lastFillTs) : "--" },
+    { id: "1", name: "正式環境", desc: "券商只讀登入", state: brokerReady ? "LIVE" : stateFromLoad(broker), count: brokerReady ? 1 : 0, note: brokerReady ? "已登入" : "等待回報" },
+    { id: "2", name: "公司頁預覽", desc: "委託前檢查", state: data?.previewReady ? "LIVE" : stateFromLoad(paper), count: data?.previewReady ? 1 : 0, note: data?.previewReady ? "可做風控預覽" : "等待預覽" },
+    { id: "3", name: "風控檢查", desc: "限制與守門", state: data?.gate.gateOpen ? "LIVE" : "BLOCKED", count: data?.gate.gateOpen ? 1 : 0, note: data?.gate.gateOpen ? "可檢查" : "目前關閉" },
+    { id: "4", name: "委託草稿", desc: "只做紙上流程", state: data?.previewReady ? "LIVE" : "EMPTY", count: data?.queueDepth ?? 0, note: `${formatNumber(data?.queueDepth)} 筆等待` },
+    { id: "5", name: "紙上送出", desc: "紙上流程", state: data?.submitReady ? "DEGRADED" : "EMPTY", count: data?.submitReady ? 1 : 0, note: "需操作員確認" },
+    { id: "6", name: "部位回寫", desc: "部位 / 成交", state: data?.fillsReady || data?.portfolioReady ? "LIVE" : "EMPTY", count: data?.lastFillTs ? 1 : 0, note: data?.lastFillTs ? formatDateTime(data.lastFillTs) : "--" },
   ] satisfies Array<{ id: string; name: string; desc: string; state: DashboardState; count: number; note: string }>;
+  const panelState: DashboardState = brokerReady ? "LIVE" : data?.previewReady ? "LIVE" : stateFromLoad(paper);
+  const brokerNote = broker.data?.note ?? (broker.state === "LIVE" ? "等待只讀狀態回報" : broker.reason);
   return (
-    <Panel eyebrow="PAPER FLOW" title="模擬交易流程" sub="preview / risk / draft / fill · 只做紙上交易與風控驗證" right={<StatusChip state={data?.previewReady ? "LIVE" : stateFromLoad(paper)} label="PAPER" />}>
+    <Panel eyebrow="TRADE FLOW" title="交易環境與紙上流程" sub="正式環境只讀確認；首頁仍只做紙上預覽與風控驗證" right={<StatusChip state={panelState} label={brokerReady ? "正式只讀" : "紙上"} />}>
       <div className="tac-paper-steps">
         {steps.map((step) => (
           <div className={tacticalStatus(step.state)} key={step.id}>
@@ -1539,9 +1753,10 @@ function PaperPanel({ paper }: { paper: LoadState<PaperHealthState | null> }) {
         ))}
       </div>
       <div className="tac-paper-bottom">
-        <div><span>測試資金</span><b>NT$ {formatNumber(PAPER_PREVIEW_CAPITAL_TWD)}</b><small>preview 使用明確 SHARE / LOT。</small></div>
+        <div><span>正式券商</span><b>{brokerReady ? "可登入" : "未連線"}</b><small>{brokerNote}</small></div>
+        <div><span>測試資金</span><b>NT$ {formatNumber(PAPER_PREVIEW_CAPITAL_TWD)}</b><small>紙上預覽使用明確股數 / 張數。</small></div>
         <div><span>單位提示</span><b>1 張 = 1,000 股</b><small>零股以實際股數計算。</small></div>
-        <div className="blocked"><span>安全狀態</span><b>只允許紙上流程</b><small>首頁不送出真實委託。</small></div>
+        <div className="blocked"><span>安全狀態</span><b>下單入口關閉</b><small>首頁不送出真實委託。</small></div>
       </div>
     </Panel>
   );
@@ -1585,9 +1800,9 @@ function WorkflowPanel({
   const items = [
     { id: "1", title: "看盤勢總覽", desc: market.state === "LIVE" ? "報價、排行與熱力圖已回傳。" : "行情不足時只標示缺口，不顯示假價格。", href: "/companies", state: stateFromLoad(market), cta: "查看公司池" },
     { id: "2", title: "讀重大訊息", desc: intel.data.items.length > 0 ? `今日工作流有 ${intel.data.items.length} 筆官方訊息。` : "目前沒有可顯示的官方重大訊息。", href: "/market-intel", state: stateFromLoad(intel), cta: "打開情報" },
-    { id: "3", title: "確認 AI 簡報", desc: brief.data.state === "PUBLISHED" ? "今日正式簡報已發布。" : "等待草稿、審核或發布。", href: "/briefs", state: brief.data.state === "PUBLISHED" ? "LIVE" as DashboardState : brief.data.state === "AWAITING_REVIEW" ? "REVIEW" as DashboardState : "EMPTY" as DashboardState, cta: "查看簡報" },
-    { id: "4", title: "紙上交易預覽", desc: paper.data?.previewReady ? "可進公司頁做風控預覽。" : "等待 paper preview 開啟。", href: "/companies/2330#paper-order", state: paper.data?.previewReady ? "LIVE" as DashboardState : stateFromLoad(paper), cta: "開啟預覽" },
-    { id: "5", title: "部位與成交回顧", desc: "只看 paper portfolio / fills，不連真實券商。", href: "/portfolio", state: paper.data?.portfolioReady || paper.data?.fillsReady ? "LIVE" as DashboardState : "EMPTY" as DashboardState, cta: "查看部位" },
+    { id: "3", title: "確認 AI 簡報", desc: brief.data.state === "PUBLISHED" ? "今日正式簡報已發布。" : "等待整理、確認或發布。", href: "/briefs", state: brief.data.state === "PUBLISHED" ? "LIVE" as DashboardState : brief.data.state === "AWAITING_REVIEW" ? "REVIEW" as DashboardState : "EMPTY" as DashboardState, cta: "查看簡報" },
+    { id: "4", title: "紙上交易預覽", desc: paper.data?.previewReady ? "可進公司頁做風控預覽。" : "等待紙上預覽開啟。", href: "/companies/2330#paper-order", state: paper.data?.previewReady ? "LIVE" as DashboardState : stateFromLoad(paper), cta: "開啟預覽" },
+    { id: "5", title: "部位與成交回顧", desc: "只看紙上部位與成交紀錄，不連真實券商委託。", href: "/portfolio", state: paper.data?.portfolioReady || paper.data?.fillsReady ? "LIVE" as DashboardState : "EMPTY" as DashboardState, cta: "查看部位" },
   ];
   return (
     <Panel eyebrow="WORKFLOW" title="今日交易工作流" right={<span>{items.length} steps</span>}>
@@ -1637,9 +1852,15 @@ function DataGapPanel({ sources }: { sources: SourceTile[] }) {
   );
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ sector?: string }>;
+}) {
   const now = nowIso();
-  const [finmind, market, ops, brief, paper, ideas, runs] = await Promise.all([
+  const params = await searchParams;
+  const selectedSectorParam = params?.sector ?? null;
+  const [finmind, market, ops, brief, paper, broker, ideas, runs] = await Promise.all([
     loadFinMindDashboard(),
     load(
       "Market data overview",
@@ -1657,6 +1878,7 @@ export default async function DashboardPage() {
     ),
     loadDailyBriefDashboard(),
     loadPaperHealthState(),
+    loadBrokerAccessState(),
     load(
       "Strategy ideas",
       null,
@@ -1691,19 +1913,19 @@ export default async function DashboardPage() {
           <TopCommandBar now={now} market={market} />
           <AgendaStrip market={market} intel={intel} brief={brief} now={now} />
           <section className="tac-hero-grid">
-            <HeroPanel heatmap={heatmap} market={market} paper={paper} brief={brief} intel={intel} now={now} />
+            <HeroPanel heatmap={heatmap} market={market} paper={paper} broker={broker} brief={brief} intel={intel} now={now} />
             <MarketMoversPanel market={market} />
           </section>
           <section className="tac-two-grid tac-fresh-heat">
             <FreshnessPanel sources={sources} />
-            <HeatmapPanel heatmap={realHeatmap} market={market} />
+            <HeatmapPanel heatmap={realHeatmap} market={market} selectedSectorParam={selectedSectorParam} />
           </section>
           <section className="tac-two-grid">
             <MarketIntelPanel intel={intel} />
             <DailyBriefPanel market={market} intel={intel} brief={brief} />
           </section>
           <section className="tac-two-grid tac-paper-grid">
-            <PaperPanel paper={paper} />
+            <PaperPanel paper={paper} broker={broker} />
             <StrategyPanel ideas={ideas} />
           </section>
           <section className="tac-two-grid tac-bottom-grid">
