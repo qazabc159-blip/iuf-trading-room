@@ -43,9 +43,9 @@ function shortBundleId(bundleId: string) {
 }
 
 function labModeCopy(blockedReason: string | null, count: number) {
-  if (blockedReason) return "量化策略包 API 尚未接上，先顯示資料接線狀態。";
-  if (count === 0) return "後端目前回傳 0 包；不顯示假策略或假績效。";
-  return "只顯示正式策略包；審核動作寫回量化研究 API。";
+  if (blockedReason) return "量化研究資料尚未完成同步，先顯示資料狀態。";
+  if (count === 0) return "目前沒有正式策略包；不顯示假策略或假績效。";
+  return "只顯示正式策略包；審核動作會更新量化研究紀錄。";
 }
 
 export function LabClient({ initialBundles, initialBlockedReason }: LabClientProps) {
@@ -120,8 +120,8 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
     <PageFrame
       code="LAB"
       title="量化研究"
-      sub={blockedReason ? "資料接線狀態" : "策略包收件台"}
-      note="此頁只顯示正式量化策略包；沒有真實資料時顯示接線狀態，不以假策略包或假績效充數。"
+      sub={blockedReason ? "資料同步狀態" : "策略包收件台"}
+      note="此頁只顯示正式量化策略包；沒有真實資料時顯示同步狀態，不以假策略包或假績效充數。"
     >
       <MetricStrip columns={6} cells={cells} />
 
@@ -130,14 +130,14 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
           <span className="tg gold">量化研究 / 策略包收件台</span>
           <h2>先收正式策略包，再談績效曲線。</h2>
           <p>
-            這頁是 OpenAlice / Quant Lab 的交接面。沒有正式 bundle 時只顯示資料狀態；
-            有 bundle 也只先顯示來源、狀態與分歧回饋；未經 Athena schema 與 Bruce harness 核准前，不顯示勝率、報酬或權益曲線。
+            這頁是量化研究與紙上驗證的交接台。沒有正式策略包時只顯示資料狀態；
+            有策略包也只先顯示來源、狀態與分歧回饋；未經完整驗證前，不顯示勝率、報酬或權益曲線。
           </p>
         </div>
         <div className="lab-source-card">
           <span>目前模式</span>
           <strong className={blockedReason ? "status-bad" : "status-ok"}>
-            {blockedReason ? "資料待接" : "正式資料"}
+            {blockedReason ? "同步待處理" : "正式資料"}
           </strong>
           <p>{labModeCopy(blockedReason, bundles.length)}</p>
         </div>
@@ -147,17 +147,17 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
         <Panel code="LAB-Q" title="策略包收件" sub="正式資料 / 不顯示假績效" right={blockedReason ? "暫停" : `${bundles.length} 包`}>
           {blockedReason ? (
             <div className="lab-empty-state">
-              <strong>量化策略包資料尚未接上。</strong>
-              <p>負責人：量化研究交接管線。細節：{blockedReason}</p>
+              <strong>量化研究資料尚未完成同步。</strong>
+              <p>{blockedReason}</p>
               <div>
                 <span>接上後顯示：策略包、股票、主題、來源、審核狀態、分歧備註。</span>
-                <span>仍不會顯示：未驗證 Sharpe、假 equity curve、假交易紀錄。</span>
+                <span>仍不會顯示：未驗證績效、假曲線、假交易紀錄。</span>
               </div>
             </div>
           ) : bundles.length === 0 ? (
             <div className="lab-empty-state">
               <strong>目前沒有待審策略包。</strong>
-              <p>後端正式回傳 0 包；頁面保留收件台與治理說明，不用範例數字冒充策略績效。</p>
+              <p>目前沒有正式策略包；頁面保留收件台與治理說明，不用範例數字冒充策略績效。</p>
             </div>
           ) : (
             <div className="lab-bundle-stack">
@@ -190,8 +190,8 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
                     <button className="outline-button danger-soft" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "REJECTED", "REJECT")}>
                       退回
                     </button>
-                    <span className="idea-promotion-block" role="status" title="策略包轉模擬交易的後端契約尚未完成。">
-                      轉單待接
+                    <span className="idea-promotion-block" role="status" title="策略包轉入紙上驗證仍需完成交接流程。">
+                      紙上驗證待開啟
                     </span>
                   </div>
                 </article>
@@ -202,7 +202,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
             <div className="terminal-note" style={{ marginTop: 12 }}>
               {actionError
                 ? `暫停：量化研究動作失敗。${actionError}`
-                : "轉入模擬交易需等待 量化研究交接管線 完成交接契約；核准/退回會寫入量化研究正式資料。"}
+                : "轉入紙上驗證需等待量化研究交接流程完成；核准/退回會更新量化研究正式資料。"}
             </div>
           )}
         </Panel>
@@ -211,7 +211,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
           <Panel code="LAB-D" title="選取策略包" right={selected ? labDisplay.status[selected.status] : blockedReason ? "暫停" : "無資料"}>
             {selected ? (
               <div className="lab-selected-card">
-                <div className="tg gold">{selected.bundleId} / {labDisplay.producer[selected.producer]}</div>
+                <div className="tg gold">策略包 {shortBundleId(selected.bundleId)} / {labDisplay.producer[selected.producer]}</div>
                 <h2>{selected.title}</h2>
                 <div className="tg soft">{selected.symbol} / {selected.themeCode} / {timeText(selected.createdAt)}</div>
                 <p>{safeSummary(selected.summary)}</p>
@@ -234,8 +234,8 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
           <Panel code="LAB-MEMO" title="治理邊界" right="不會實單">
             <div className="lab-governance-list">
               <span>只讀展示：策略包、回測摘要、分歧備註。</span>
-              <span>可寫動作：通過 / 退回 / 分歧回饋，只寫回量化研究 API。</span>
-              <span>禁止動作：建立券商委託、推 migration 0020、碰 KGI write-side。</span>
+              <span>可寫動作：通過 / 退回 / 分歧回饋，只更新量化研究紀錄。</span>
+              <span>禁止動作：建立真實券商委託。</span>
             </div>
           </Panel>
         </div>

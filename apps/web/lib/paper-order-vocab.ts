@@ -1,7 +1,7 @@
 const RISK_DECISION_LABELS: Record<string, string> = {
   allow: "通過",
   warn: "提醒",
-  block: "阻擋",
+  block: "未通過",
 };
 
 const QUOTE_DECISION_LABELS: Record<string, string> = {
@@ -9,7 +9,7 @@ const QUOTE_DECISION_LABELS: Record<string, string> = {
   review_accepted: "覆核已接受",
   review_required: "需要覆核",
   review_unusable: "覆核不可用",
-  block: "阻擋",
+  block: "未通過",
   quote_unknown: "報價未知",
 };
 
@@ -30,8 +30,8 @@ const GUARD_LABELS: Record<string, string> = {
 };
 
 const REASON_LABELS: Record<string, string> = {
-  blocked: "已阻擋",
-  decision_block: "報價決策阻擋",
+  blocked: "未通過",
+  decision_block: "報價決策未通過",
   decision_review_accepted: "報價覆核已接受",
   decision_review_not_usable: "報價覆核不可用",
   decision_review_required_override: "需要覆核或人工放行",
@@ -114,7 +114,7 @@ export function paperRiskMessageLabel(value: string | null | undefined) {
 
   const blocked = raw.match(/^Blocked by (.+)\.$/i);
   if (blocked) {
-    return `被「${blocked[1].split(",").map((item) => paperRiskGuardLabel(item.trim())).join("、")}」阻擋。`;
+  return `未通過「${blocked[1].split(",").map((item) => paperRiskGuardLabel(item.trim())).join("、")}」。`;
   }
 
   const warned = raw.match(/^Allowed with warnings: (.+)\.$/i);

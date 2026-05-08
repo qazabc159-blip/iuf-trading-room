@@ -4,10 +4,20 @@ import { useState } from "react";
 import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
+import { friendlyDataError } from "@/lib/friendly-error";
+import { cleanNarrativeText } from "@/lib/operator-copy";
 import { labDisplay, radarLabApi, type LabSignalBundle } from "@/lib/radar-lab";
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return friendlyDataError(error, "量化研究動作暫時無法完成。");
+}
+
+function shortBundleId(bundleId: string) {
+  return bundleId.length > 14 ? `${bundleId.slice(0, 8)}…${bundleId.slice(-4)}` : bundleId;
+}
+
+function safeSummary(value: string) {
+  return cleanNarrativeText(value, "策略包摘要尚未完成中文整理；保留正式資料來源，不顯示假績效。");
 }
 
 export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
@@ -59,7 +69,7 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
     <PageFrame
       code="LAB-D"
       title="量化策略包明細"
-      sub={bundle.bundleId}
+      sub={`策略包 ${shortBundleId(bundle.bundleId)}`}
       note={`${labDisplay.producer[bundle.producer]} / ${labDisplay.status[status]} / 分歧回饋通道`}
     >
       <MetricStrip columns={6} cells={cells} />
@@ -69,7 +79,7 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
           <div className="ticket lab-truth-ticket">
             <div className="tg gold">來源與治理狀態</div>
             <h2>{bundle.title}</h2>
-            <p>{bundle.summary}</p>
+            <p>{safeSummary(bundle.summary)}</p>
             <div className="lab-selected-metrics">
               <span><b>{bundle.symbol}</b><small>股票</small></span>
               <span><b>{bundle.themeCode}</b><small>主題</small></span>
@@ -77,25 +87,25 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
               <span><b>{labDisplay.status[status]}</b><small>審核狀態</small></span>
             </div>
             <div className="terminal-note" style={{ marginTop: 14 }}>
-              此頁不顯示未經 Athena bundle schema 與 Bruce harness 核准的勝率、報酬、最大回撤、權益曲線或分期統計。
+              此頁不顯示未經完整驗證的勝率、報酬、最大回撤、權益曲線或分期統計。
             </div>
           </div>
         </Panel>
 
         <Panel code="BNDL-GATE" title="審核與轉單邊界" right="不建立委託">
           <div className="lab-governance-list">
-            <span>審核通過只代表研究收件狀態，不代表可交易、可回測、可 paper 或可 live。</span>
-            <span>轉入模擬交易需等待 strategy bundle contract、paper risk gate、Bruce harness 全部通過。</span>
-            <span>本頁不呼叫 KGI、不呼叫正式下單路由，也不使用 FinMind/K 線作為成交價。</span>
+            <span>審核通過只代表研究收件狀態，不代表可交易或可進紙上/實盤流程。</span>
+            <span>轉入模擬交易需等待策略包交接、紙上風控與完整驗證全部通過。</span>
+            <span>本頁不建立真實券商委託，也不把行情資料當作成交價。</span>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
             <button className="mini-button" type="button" disabled={busy} onClick={() => applyAction("APPROVED", "APPROVE")}>標記通過</button>
             <button className="outline-button" type="button" disabled={busy} onClick={() => applyAction("REJECTED", "REJECT")}>退回研究</button>
-            <span className="outline-button" role="status" title="策略包轉模擬交易的後端契約尚未完成。">待契約</span>
+            <span className="outline-button" role="status" title="策略包轉入模擬交易的交接流程尚未完成。">待交接</span>
             <Link className="outline-button" href="/lab">返回</Link>
           </div>
           <div className="terminal-note" style={{ marginTop: 12 }}>
-            轉入模擬交易需等待 量化研究交接管線 完成交接契約；此頁不會建立券商委託。
+            轉入模擬交易需等待量化研究交接流程完成；此頁不會建立券商委託。
           </div>
           {actionError && (
             <div className="terminal-note" style={{ marginTop: 12 }}>
@@ -106,7 +116,7 @@ export function LabBundleDetailClient({ bundle }: { bundle: LabSignalBundle }) {
 
         <div>
           <Panel code="PROMO" title="轉入摘要" right={labDisplay.status[status]}>
-            <div className="lab-memo">{bundle.promotionMemo}</div>
+            <div className="lab-memo">{safeSummary(bundle.promotionMemo)}</div>
           </Panel>
 
           <Panel code="DIV-FB" title="分歧回饋" right={`${notes.length} 則`}>

@@ -25,7 +25,7 @@ type LoadState =
 const emptyRuns: RunsView = { total: 0, items: [] };
 
 async function loadDetail(id: string): Promise<LoadState> {
-  const source = "策略批次資料庫 / 批次明細";
+  const source = "正式策略批次 / 批次明細";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -112,7 +112,7 @@ function decisionTone(decision: RunOutput["marketDecision"]) {
 function decisionLabel(decision: RunOutput["marketDecision"]) {
   if (decision === "allow") return "可觀察";
   if (decision === "review") return "待審";
-  return "阻擋";
+  return "不進流程";
 }
 
 function directionTone(direction: RunOutput["direction"]) {
@@ -122,14 +122,14 @@ function directionTone(direction: RunOutput["direction"]) {
 }
 
 function directionLabel(direction: RunOutput["direction"]) {
-  if (direction === "bullish") return "看多";
-  if (direction === "bearish") return "看空";
+  if (direction === "bullish") return "偏多";
+  if (direction === "bearish") return "偏空";
   return "中性";
 }
 
 function modeLabel(mode: string | null | undefined) {
   if (mode === "paper") return "模擬候選";
-  if (mode === "live") return "正式模式";
+  if (mode === "live") return "正式檢查";
   if (mode === "strategy") return "策略篩選";
   return mode ?? "--";
 }
@@ -142,7 +142,7 @@ function queryLabel(key: string) {
   const labels: Record<string, string> = {
     limit: "候選上限",
     signalDays: "訊號天數",
-    includeBlocked: "包含阻擋",
+    includeBlocked: "包含不進流程",
     market: "市場",
     themeId: "主題 ID",
     theme: "主題",
@@ -160,7 +160,7 @@ function formatQueryValue(value: unknown) {
   if (typeof value === "boolean") return value ? "是" : "否";
   if (value === null || value === undefined || value === "") return "--";
   if (value === "paper") return "模擬候選";
-  if (value === "live") return "正式模式";
+  if (value === "live") return "正式檢查";
   if (value === "strategy") return "策略篩選";
   if (value === "score") return "分數";
   if (value === "created_at") return "建立時間";
@@ -175,12 +175,12 @@ function PromotionBlockedCell() {
   return (
     <span
       className="tg down"
-      title="策略想法轉模擬委託預覽的後端契約尚未完成；目前只能進公司頁做紙上預覽與風控檢查。"
+      title="策略想法尚未開放轉入模擬委託；目前只能進公司頁做紙上預覽與風控檢查。"
       style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.45 }}
     >
       <span>轉單暫停</span>
       <span className="tc soft">
-        等待後端預覽契約
+        等待紙上預覽交接
       </span>
     </span>
   );
@@ -209,7 +209,7 @@ function SourceLine({ result }: { result: LoadState }) {
 function ideaReasonText(idea: RunOutput) {
   return cleanNarrativeText(
     `${idea.companyName} / ${idea.topThemeName ?? "未連結主題"} / ${reasonLabel(idea.primaryReason)}`,
-    `${idea.companyName} / 原因待後端整理`
+    `${idea.companyName} / 原因待整理`
   );
 }
 
@@ -269,7 +269,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
           { label: "總數", value: runAvailable ? summary.total : "--" },
           { label: "可觀察", value: runAvailable ? summary.allow : "--", tone: "status-ok" },
           { label: "待審", value: runAvailable ? summary.review : "--", tone: "gold" },
-          { label: "阻擋", value: runAvailable ? summary.block : "--", tone: "status-bad" },
+          { label: "不進流程", value: runAvailable ? summary.block : "--", tone: "status-bad" },
           { label: "可用", value: runAvailable ? summary.quality.strategyReady : "--", tone: runAvailable && summary.quality.strategyReady > 0 ? "status-ok" : "muted" },
         ]}
         columns={6}
@@ -325,7 +325,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
         </div>
 
         <div>
-          <Panel code="RUN-OUT" title="結果分布" sub="後端摘要" right={run ? shortRunId(run.id) : "暫停"}>
+          <Panel code="RUN-OUT" title="結果分布" sub="批次摘要" right={run ? shortRunId(run.id) : "暫停"}>
             {!runAvailable && (
               <div className="terminal-note">
                 <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span> {unavailableReason}
@@ -336,7 +336,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                 {[
                   ["可觀察", summary.allow, "up"],
                   ["待審", summary.review, "gold"],
-                  ["阻擋", summary.block, "down"],
+                  ["不進流程", summary.block, "down"],
                   ["偏多", summary.bullish, "up"],
                   ["偏空", summary.bearish, "down"],
                   ["中性", summary.neutral, "muted"],
@@ -353,7 +353,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                 <div className="tg soft" style={{ display: "grid", gap: 6, padding: "12px 0" }}>
                   <span>產生：{formatDateTime(run.generatedAt)}</span>
                   <span>平均信心：{outputs.length ? percent(outputs.reduce((sum, item) => sum + item.confidence, 0) / outputs.length) : "--"}</span>
-                  <span>寫入邊界：候選不是買賣建議；下單/執行控制在後端契約與風控 gate 通過前保持隱藏。</span>
+                  <span>交易邊界：候選不是買賣建議；下單與執行在紙上預覽與風控檢查通過前保持隱藏。</span>
                 </div>
               </>
             )}

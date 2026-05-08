@@ -12,20 +12,6 @@ import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 
 export const dynamic = "force-dynamic";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOCK #8 Lane B — /briefs/[id] detail page with audit chain visualization
-// SSR fetch GET /api/v1/briefs/{id} (Owner/Admin/Analyst auth, cookie forwarded
-// by lib/api request()).
-//
-// Hard rules:
-//   - never display OpenAI key / FinMind token / API secrets
-//   - mask 買進 / 賣出 / 目標價 / 必賺 / 保證 / 勝率 in body text
-//   - never render fake guarantee / strategy approved wording
-//   - fallback_template generated brief still shown but flagged so it is NOT
-//     rendered as a "live brief" (status badge reflects reality)
-//   - 404 when brief not found → "Brief 不存在" message, no fake content
-// ─────────────────────────────────────────────────────────────────────────────
-
 type LoadResult =
   | { kind: "OK"; data: BriefDetail }
   | { kind: "NOT_FOUND" }
@@ -89,17 +75,17 @@ async function loadBrief(id: string): Promise<LoadResult> {
     }
     return {
       kind: "ERROR",
-      reason: friendlyDataError(error, "簡報詳情讀取失敗。"),
+      reason: friendlyDataError(error, "簡報明細暫時無法讀取。"),
     };
   }
 }
 
 function statusLabel(status: string) {
-  if (status === "published") return "PUBLISHED";
-  if (status === "awaiting_review") return "AWAITING_REVIEW";
-  if (status === "rejected") return "REJECTED";
-  if (status === "error") return "ERROR";
-  return status.toUpperCase();
+  if (status === "published") return "已發布";
+  if (status === "awaiting_review") return "待審核";
+  if (status === "rejected") return "已退回";
+  if (status === "error") return "需處理";
+  return status;
 }
 
 function statusBadgeClass(status: string) {
@@ -110,24 +96,40 @@ function statusBadgeClass(status: string) {
 }
 
 function statusZh(status: string) {
-  if (status === "published") return "已發布";
-  if (status === "awaiting_review") return "待審核";
-  if (status === "rejected") return "已退回";
-  if (status === "error") return "產生失敗";
-  return status;
+  return statusLabel(status);
 }
 
-// ── Audit chain rendering ────────────────────────────────────────────────────
+function auditVerdictLabel(value: string | null | undefined) {
+  if (value === "OK") return "通過";
+  if (value === "INTERCEPTED") return "攔截";
+  if (value === "PARTIAL_HALLUCINATED") return "部分需查核";
+  if (value === "HALLUCINATED") return "未通過";
+  return "尚未完成";
+}
+
+function auditVerdictTone(value: string | null | undefined) {
+  if (value === "OK") return "status-ok";
+  if (value === "PARTIAL_HALLUCINATED") return "gold";
+  if (value) return "status-bad";
+  return "muted";
+}
+
+function auditVerdictBadge(value: string | null | undefined) {
+  if (value === "OK") return "badge-green";
+  if (value === "PARTIAL_HALLUCINATED") return "badge-yellow";
+  if (value) return "badge-red";
+  return "badge-yellow";
+}
 
 function HardRejectPanel({ chain }: { chain: BriefDetailAuditChain }) {
   const { rules, rejected } = chain.hardReject;
   const tone = rejected ? "status-bad" : "status-ok";
-  const label = rejected ? "已觸發 hard-reject" : "未觸發 hard-reject";
+  const label = rejected ? "不可發布" : "通過";
   return (
     <Panel
       code="BRF-HR"
-      title="Hard Reject 規則"
-      sub="政策層的硬性拒絕條款"
+      title="政策檢查"
+      sub="不可發布條件"
       right={label}
     >
       <div className="brief-three-state">
@@ -154,19 +156,19 @@ function AdversarialReviewPanel({ chain }: { chain: BriefDetailAuditChain }) {
     return (
       <Panel
         code="BRF-ADV"
-        title="對抗式審核"
-        sub="adversarial reviewer / GPT-4.1"
+        title="風險審核"
+        sub="內容風險與發布檢查"
         right="未審核"
       >
         <p className="state-reason">
-          這份簡報尚未經過對抗式審核，沒有 audit_log 對應紀錄。
+          這份簡報尚未完成風險審核；不會把未審核內容當成正式通過。
         </p>
       </Panel>
     );
   }
 
-  const verdictBadge = review.verdict === "OK" ? "badge-green" : "badge-red";
-  const verdictTone = review.verdict === "OK" ? "status-ok" : "status-bad";
+  const verdictBadge = auditVerdictBadge(review.verdict);
+  const verdictTone = auditVerdictTone(review.verdict);
   const severityText =
     typeof review.severityScore === "number"
       ? review.severityScore.toFixed(1)
@@ -175,24 +177,24 @@ function AdversarialReviewPanel({ chain }: { chain: BriefDetailAuditChain }) {
   return (
     <Panel
       code="BRF-ADV"
-      title="對抗式審核"
-      sub="adversarial reviewer / GPT-4.1"
-      right={review.verdict}
+      title="風險審核"
+      sub="內容風險與發布檢查"
+      right={auditVerdictLabel(review.verdict)}
     >
       <div className="brief-three-state">
-        <span className={`badge ${verdictBadge}`}>{review.verdict}</span>
-        <span className={`tg ${verdictTone}`}>severity {severityText}</span>
+        <span className={`badge ${verdictBadge}`}>{auditVerdictLabel(review.verdict)}</span>
+        <span className={`tg ${verdictTone}`}>風險分數 {severityText}</span>
       </div>
       <MetricStrip
         columns={3}
         cells={[
           {
-            label: "判決",
-            value: review.verdict,
-            tone: review.verdict === "OK" ? "status-ok" : "status-bad",
+            label: "判定",
+            value: auditVerdictLabel(review.verdict),
+            tone: auditVerdictTone(review.verdict),
           },
           {
-            label: "嚴重度",
+            label: "風險分數",
             value: severityText,
             tone:
               typeof review.severityScore === "number" && review.severityScore >= 7
@@ -200,15 +202,15 @@ function AdversarialReviewPanel({ chain }: { chain: BriefDetailAuditChain }) {
                 : "muted",
           },
           {
-            label: "審核模型",
-            value: review.reviewerModel,
+            label: "旗標",
+            value: review.flags.length,
             tone: "muted",
           },
         ]}
       />
       <div className="brief-source-trail">
         <span>審核時間：{formatDateTime(review.auditedAt)}</span>
-        <span>flags 數：{review.flags.length}</span>
+        <span>旗標數：{review.flags.length}</span>
       </div>
       {review.flags.length > 0 && (
         <ul
@@ -230,71 +232,55 @@ function HallucinationPanel({ chain }: { chain: BriefDetailAuditChain }) {
     return (
       <Panel
         code="BRF-HC"
-        title="幻覺檢查"
-        sub="claim-extract → verify (GPT-4o-mini → GPT-4.1)"
+        title="事實查核"
+        sub="敘述與來源比對"
         right="未審核"
       >
         <p className="state-reason">
-          這份簡報尚未經過幻覺檢查，沒有 audit_log 對應紀錄。
+          這份簡報尚未完成事實查核；不會把未查核內容當成正式通過。
         </p>
       </Panel>
     );
   }
 
-  const verdictBadge =
-    hc.verdict === "OK"
-      ? "badge-green"
-      : hc.verdict === "PARTIAL_HALLUCINATED"
-        ? "badge-yellow"
-        : "badge-red";
-  const verdictTone =
-    hc.verdict === "OK"
-      ? "status-ok"
-      : hc.verdict === "PARTIAL_HALLUCINATED"
-        ? "gold"
-        : "status-bad";
+  const verdictBadge = auditVerdictBadge(hc.verdict);
+  const verdictTone = auditVerdictTone(hc.verdict);
   const confidenceText =
     typeof hc.confidence === "number" ? hc.confidence.toFixed(2) : "--";
 
   return (
     <Panel
       code="BRF-HC"
-      title="幻覺檢查"
-      sub="claim-extract → verify"
-      right={hc.verdict}
+      title="事實查核"
+      sub="敘述與來源比對"
+      right={auditVerdictLabel(hc.verdict)}
     >
       <div className="brief-three-state">
-        <span className={`badge ${verdictBadge}`}>{hc.verdict}</span>
+        <span className={`badge ${verdictBadge}`}>{auditVerdictLabel(hc.verdict)}</span>
         <span className={`tg ${verdictTone}`}>信心度 {confidenceText}</span>
         <span className={`tg ${hc.ragUsed ? "status-ok" : "muted"}`}>
-          RAG {hc.ragUsed ? "已啟用" : "未使用"}
+          來源比對 {hc.ragUsed ? "已執行" : "待補"}
         </span>
       </div>
       <MetricStrip
         columns={3}
         cells={[
           {
-            label: "判決",
-            value: hc.verdict,
-            tone:
-              hc.verdict === "OK"
-                ? "status-ok"
-                : hc.verdict === "PARTIAL_HALLUCINATED"
-                  ? "gold"
-                  : "status-bad",
+            label: "判定",
+            value: auditVerdictLabel(hc.verdict),
+            tone: auditVerdictTone(hc.verdict),
           },
           { label: "信心度", value: confidenceText, tone: "muted" },
           {
-            label: "RAG",
-            value: hc.ragUsed ? "已啟用" : "未使用",
+            label: "來源比對",
+            value: hc.ragUsed ? "已執行" : "待補",
             tone: hc.ragUsed ? "status-ok" : "muted",
           },
         ]}
       />
       <div className="brief-source-trail">
-        <span>模型鏈：{hc.modelChain}</span>
         <span>審核時間：{formatDateTime(hc.auditedAt)}</span>
-        <span>flags 數：{hc.flags.length}</span>
+        <span>旗標數：{hc.flags.length}</span>
       </div>
       {hc.flags.length > 0 && (
         <ul
@@ -316,7 +302,7 @@ function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
     <Panel
       code="BRF-PUB"
       title="簡報內容"
-      sub={`${brief.date} / ${brief.generatedBy}`}
+      sub={`${brief.date} / 正式內容`}
       right={statusZh(brief.status)}
     >
       <div className="brief-published">
@@ -326,7 +312,7 @@ function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
         </div>
         {brief.sections.length === 0 && (
           <p className="state-reason">
-            這份簡報沒有段落內容。可能是 fallback_template 或產生失敗。
+            這份簡報沒有段落內容；請回每日簡報頁確認來源與審核狀態。
           </p>
         )}
         {brief.sections.map((section, index) => (
@@ -343,7 +329,7 @@ function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
             {!section.sourceTrail && (
               <div className="brief-source-trail">
                 <span className="tg muted">
-                  來源未持久化於 daily_briefs（僅留於草稿層）
+                  來源紀錄尚未完整，這段不作投資依據。
                 </span>
               </div>
             )}
@@ -354,23 +340,23 @@ function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
   );
 }
 
-function NotFoundView({ id }: { id: string }) {
+function NotFoundView() {
   return (
     <PageFrame
       code="BRF-NF"
-      title="Brief 不存在"
-      sub={`找不到 id=${id} 的簡報`}
-      note="這個簡報可能已被刪除、尚未產生，或 id 輸入錯誤。請確認 daily_briefs.id (uuid) 或 date (YYYY-MM-DD) 後再試。"
+      title="簡報不存在"
+      sub="找不到指定簡報"
+      note="這份簡報可能已被刪除或尚未產生；頁面不會用假內容補位。"
     >
       <Panel
         code="BRF-NF"
-        title="Brief 不存在"
-        sub="404 / not_found"
+        title="簡報不存在"
+        sub="請回列表確認"
         right="無資料"
       >
         <div className="brief-three-state">
-          <span className="badge badge-red">404</span>
-          <span className="tg status-bad">Brief 不存在</span>
+          <span className="badge badge-red">無資料</span>
+          <span className="tg status-bad">簡報不存在</span>
         </div>
         <p className="state-reason">
           請改回 <Link href="/briefs">每日簡報列表</Link> 或檢查 id 是否正確。
@@ -380,15 +366,15 @@ function NotFoundView({ id }: { id: string }) {
   );
 }
 
-function ErrorView({ id, reason }: { id: string; reason: string }) {
+function ErrorView({ reason }: { reason: string }) {
   return (
     <PageFrame
       code="BRF-ERR"
-      title="簡報詳情讀取失敗"
-      sub={`id=${id}`}
-      note="後端回應錯誤；不顯示任何快取或假資料。"
+      title="簡報明細讀取失敗"
+      sub="請稍後重試"
+      note="簡報明細暫時無法讀取；不顯示任何快取或假資料。"
     >
-      <Panel code="BRF-ERR" title="讀取失敗" sub="API error" right="受阻">
+      <Panel code="BRF-ERR" title="讀取失敗" sub="簡報明細" right="需處理">
         <p className="state-reason">{reason}</p>
         <p className="state-reason">
           請改回 <Link href="/briefs">每日簡報列表</Link> 重試。
@@ -407,11 +393,11 @@ export default async function BriefDetailPage({
   const result = await loadBrief(id);
 
   if (result.kind === "NOT_FOUND") {
-    return <NotFoundView id={id} />;
+    return <NotFoundView />;
   }
 
   if (result.kind === "ERROR") {
-    return <ErrorView id={id} reason={result.reason} />;
+    return <ErrorView reason={result.reason} />;
   }
 
   const brief = result.data;
@@ -422,8 +408,8 @@ export default async function BriefDetailPage({
     <PageFrame
       code="BRF-D"
       title={safeHeadline(brief.title)}
-      sub={`${brief.date} / ${brief.generatedBy}`}
-      note="此頁顯示單份簡報詳情與 audit chain（hard-reject / 對抗式審核 / 幻覺檢查），不提供買賣建議。"
+      sub={`${brief.date} / 正式簡報`}
+      note="此頁顯示單份簡報內容、政策檢查、風險審核與事實查核，不提供買賣建議。"
     >
       <div className="brief-three-state">
         <span className={`badge ${statusBadgeClass(brief.status)}`}>
@@ -431,10 +417,9 @@ export default async function BriefDetailPage({
         </span>
         <span className="tg soft">日期：{brief.date}</span>
         <span className="tg soft">建立：{formatDateTime(brief.createdAt)}</span>
-        <span className="tg soft">產生者：{brief.generatedBy}</span>
         {!isPublished && (
           <span className="tg status-bad">
-            非 published 狀態，請勿視為正式可用內容
+            尚未發布，請勿視為正式內容
           </span>
         )}
       </div>
@@ -449,27 +434,14 @@ export default async function BriefDetailPage({
           },
           { label: "段落數", value: totalSections, tone: "muted" },
           {
-            label: "對抗式審核",
-            value: brief.auditChain.adversarialReview?.verdict ?? "未審核",
-            tone:
-              brief.auditChain.adversarialReview?.verdict === "OK"
-                ? "status-ok"
-                : brief.auditChain.adversarialReview?.verdict === "INTERCEPTED"
-                  ? "status-bad"
-                  : "muted",
+            label: "風險審核",
+            value: auditVerdictLabel(brief.auditChain.adversarialReview?.verdict),
+            tone: auditVerdictTone(brief.auditChain.adversarialReview?.verdict),
           },
           {
-            label: "幻覺檢查",
-            value: brief.auditChain.hallucinationCheck?.verdict ?? "未審核",
-            tone:
-              brief.auditChain.hallucinationCheck?.verdict === "OK"
-                ? "status-ok"
-                : brief.auditChain.hallucinationCheck?.verdict ===
-                    "PARTIAL_HALLUCINATED"
-                  ? "gold"
-                  : brief.auditChain.hallucinationCheck
-                    ? "status-bad"
-                    : "muted",
+            label: "事實查核",
+            value: auditVerdictLabel(brief.auditChain.hallucinationCheck?.verdict),
+            tone: auditVerdictTone(brief.auditChain.hallucinationCheck?.verdict),
           },
         ]}
       />

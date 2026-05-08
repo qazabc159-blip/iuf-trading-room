@@ -97,18 +97,18 @@ export function contentDraftSections(draft: ContentDraftEntry) {
 
 export function contentDraftReviewActor(draft: ContentDraftEntry) {
   if (draft.reviewedBy) return draft.reviewedBy;
-  if (draft.status === "approved" || draft.status === "rejected") return "AI reviewer / system";
+  if (draft.status === "approved" || draft.status === "rejected") return "系統審核";
   return "尚未審核";
 }
 
 export function contentDraftReviewNote(draft: ContentDraftEntry) {
   if (draft.status === "awaiting_review") {
-    return "等待 AI reviewer 或 Owner fallback 審核；尚未寫入正式資料表。";
+    return "等待審核；尚未寫入正式內容。";
   }
   if (draft.status === "approved") {
     return draft.approvedRefId
-      ? `已核准並寫入正式資料：${draft.approvedRefId}`
-      : "已核准，正式資料 id 尚未回傳。";
+      ? "已核准並寫入正式內容。"
+      : "已核准，正式內容尚未回報。";
   }
   return draft.rejectReason ?? "已退回；未提供退回原因。";
 }

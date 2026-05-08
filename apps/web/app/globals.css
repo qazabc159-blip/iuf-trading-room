@@ -6327,6 +6327,45 @@ body:has(.login-route) > div {
   font: 500 15px/1.85 var(--sans-tc);
 }
 
+.intel-dataset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.intel-dataset-card {
+  display: grid;
+  align-content: space-between;
+  gap: 14px;
+  min-height: 156px;
+  padding: 18px;
+  border: 1px solid rgba(220, 228, 240, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 42%),
+    rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+
+.intel-dataset-card > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.intel-dataset-card strong {
+  color: var(--night-ink);
+  font: 800 15px/1.6 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
+.intel-dataset-card small {
+  color: var(--night-soft);
+  font: 760 11px/1.5 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
 .company-finmind-snapshot {
   display: grid;
   gap: 18px;
@@ -13043,7 +13082,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tac-market-heatmap-canvas {
-  min-height: clamp(430px, 39vw, 580px);
+  min-height: clamp(460px, 42vw, 640px);
   border-color: rgba(220, 228, 240, 0.1);
   background:
     radial-gradient(circle at 20% 0%, rgba(214, 158, 46, 0.08), transparent 34%),
@@ -13072,6 +13111,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.035),
     0 0 0 1px rgba(0, 0, 0, 0.18);
+  outline: 1px solid rgba(0, 0, 0, 0.18);
 }
 
 .tac-heat-tile:hover {
@@ -13112,6 +13152,8 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-heat-tile span {
   font: 900 14px/1 var(--mono);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tac-heat-tile small {
@@ -13127,6 +13169,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   justify-self: end;
   align-self: end;
   font: 900 20px/1 var(--mono);
+  white-space: nowrap;
 }
 
 .tac-heat-tile.compact {
@@ -13143,6 +13186,17 @@ body:has(.tactical-dashboard) .app-sidebar {
   font-size: 11px;
 }
 
+.tac-heat-tile.micro {
+  display: block;
+  padding: 0;
+}
+
+.tac-heat-tile.micro span,
+.tac-heat-tile.micro small,
+.tac-heat-tile.micro b {
+  display: none;
+}
+
 .tac-market-heatmap-canvas .tac-heat-tile.compact {
   padding: 4px;
 }
@@ -13156,6 +13210,12 @@ body:has(.tactical-dashboard) .app-sidebar {
   opacity: 0.92;
 }
 
+.tac-market-heatmap-canvas .tac-heat-tile.micro:hover {
+  transform: none;
+  filter: brightness(1.16);
+  z-index: 3;
+}
+
 .tac-heat-sector-canvas .tac-heat-tile.compact {
   padding: 4px;
 }
@@ -13165,8 +13225,14 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tac-heat-footer {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 16px;
   padding: 0 16px 16px;
+  color: var(--tac-fg-3);
+  font: 760 11px/1.35 var(--sans-tc);
+  flex-wrap: wrap;
 }
 
 .tac-heat-footer i {
@@ -13174,6 +13240,18 @@ body:has(.tactical-dashboard) .app-sidebar {
   width: 78px;
   height: 6px;
   background: linear-gradient(90deg, var(--tac-ok), var(--tac-fg-3), var(--tac-bad));
+}
+
+.tac-heat-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tac-heat-scale em {
+  color: var(--tac-fg-3);
+  font: 900 10px/1 var(--mono);
+  font-style: normal;
 }
 
 .tac-finmind-top,

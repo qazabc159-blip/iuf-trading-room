@@ -10,13 +10,14 @@ const NAV = [
   { path: "/market-intel", title: "市場情報", sub: "重大訊息", code: "02" },
   { path: "/companies", title: "公司板", sub: "台股公司池", code: "03" },
   { path: "/ideas", title: "策略想法", sub: "候選清單", code: "04" },
-  { path: "/runs", title: "策略批次", sub: "批次紀錄", code: "05" },
+  { path: "/runs", title: "策略批次", sub: "量化紀錄", code: "05" },
   { path: "/portfolio", title: "模擬交易室", sub: "委託與部位", code: "06" },
-  { path: "/signals", title: "訊號證據", sub: "訊號與依據", code: "07" },
-  { path: "/plans", title: "交易計畫", sub: "計畫註記", code: "08" },
-  { path: "/themes", title: "主題板", sub: "產業主題", code: "09" },
-  { path: "/ops", title: "營運監控", sub: "系統狀態", code: "10" },
+  { path: "/alerts", title: "警示", sub: "風控提醒", code: "07" },
+  { path: "/signals", title: "訊號證據", sub: "訊號與依據", code: "08" },
+  { path: "/plans", title: "交易計畫", sub: "計畫註記", code: "09" },
+  { path: "/themes", title: "主題板", sub: "產業主題", code: "10" },
   { path: "/lab", title: "量化研究", sub: "策略包", code: "11" },
+  { path: "/briefs", title: "AI 每日簡報", sub: "OpenAlice", code: "12" },
 ];
 
 export function Sidebar() {

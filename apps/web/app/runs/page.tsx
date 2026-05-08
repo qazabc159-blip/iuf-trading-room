@@ -22,8 +22,13 @@ const emptyRuns: RunsView = {
   items: [],
 };
 
+function userFacingReason(error: unknown, fallback: string) {
+  return friendlyDataError(error, fallback)
+    .replace(/token|secret|session|cookie|authorization|bearer|api[-_]?key|env|database|redis|model|chain/gi, "資料來源");
+}
+
 async function loadRuns(): Promise<LoadState> {
-  const source = "策略批次資料庫";
+  const source = "量化研究批次";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -39,7 +44,7 @@ async function loadRuns(): Promise<LoadState> {
         data,
         updatedAt,
         source,
-        reason: "策略批次目前回傳 0 筆，不顯示假批次紀錄。",
+        reason: "目前沒有紙上交易研究批次；等候選資料與市場資料到齊後再產生。",
       };
     }
     return {
@@ -54,7 +59,7 @@ async function loadRuns(): Promise<LoadState> {
       data: emptyRuns,
       updatedAt,
       source,
-      reason: friendlyDataError(error, "策略批次暫時無法讀取。"),
+      reason: userFacingReason(error, "量化研究讀取失敗"),
     };
   }
 }
@@ -84,26 +89,26 @@ function stateTone(state: LoadState["state"]) {
 }
 
 function stateLabel(state: LoadState["state"]) {
-  if (state === "LIVE") return "正常";
-  if (state === "EMPTY") return "無資料";
-  return "暫停";
+  if (state === "LIVE") return "可用";
+  if (state === "EMPTY") return "尚無批次";
+  return "需處理";
 }
 
 function decisionModeLabel(value: string) {
-  if (value === "paper") return "模擬候選";
-  if (value === "live") return "正式模式";
-  if (value === "strategy") return "策略篩選";
+  if (value === "paper") return "紙上交易研究";
+  if (value === "live") return "實盤前檢查";
+  if (value === "strategy") return "策略研究";
   return value;
 }
 
 function directionLabel(value: string) {
-  if (value === "bullish") return "看多";
-  if (value === "bearish") return "看空";
-  if (value === "neutral") return "中性";
+  if (value === "bullish") return "偏多研究";
+  if (value === "bearish") return "偏空研究";
+  if (value === "neutral") return "中性觀察";
   return value;
 }
 
-function decisionTone(decision: RunRow["summary"] extends { allow: number } ? "allow" | "review" | "block" : never) {
+function decisionTone(decision: "allow" | "review" | "block") {
   if (decision === "allow") return "up";
   if (decision === "review") return "gold";
   return "down";
@@ -140,25 +145,25 @@ function shortRunId(id: string) {
 }
 
 function modeCopy(value: string) {
-  if (value === "paper") return "只產生模擬候選，不會送單";
-  if (value === "strategy") return "僅做策略篩選，不連交易流程";
-  if (value === "live") return "正式模式需後端與風控 gate 明確放行";
-  return "讀取後端批次設定";
+  if (value === "paper") return "只產生紙上交易候選與風控檢查。";
+  if (value === "strategy") return "研究模式，只看資料品質與候選理由。";
+  if (value === "live") return "實盤前檢查，不在頁面送出委託。";
+  return "研究批次。";
 }
 
 function topIdeaText(run: RunRow) {
-  if (!run.topIdea) return "此批次沒有主要候選；保留批次紀錄，不產生假結論。";
+  if (!run.topIdea) return "這個批次沒有足夠候選，不產生交易訊號。";
   const idea = run.topIdea;
   const reason = reasonLabel(idea.primaryReason);
   return cleanNarrativeText(
     `${idea.symbol} ${idea.companyName} / ${directionLabel(idea.direction)} / ${reason}`,
-    `${idea.symbol} ${idea.companyName} / ${directionLabel(idea.direction)} / 原因待後端整理`
+    `${idea.symbol} ${idea.companyName} / 研究候選 / 資料理由待確認`
   );
 }
 
 function qualityText(run: RunRow) {
   const reason = reasonLabel(run.quality.primaryReason);
-  return cleanNarrativeText(reason, "品質原因待後端整理。");
+  return cleanNarrativeText(reason, "資料品質待確認");
 }
 
 function EmptyOrBlocked({ result }: { result: LoadState }) {
@@ -192,33 +197,32 @@ export default async function RunsPage() {
     <PageFrame
       code="05"
       title="策略批次"
-      sub="候選名單快照"
-      note="策略批次 / 正式資料庫；每一批都是一次策略篩選快照，本頁只讀，永遠不送出委託。"
+      sub="候選批次、資料品質與紙上交易入口"
+      note="這裡只顯示研究狀態與候選理由；未驗證績效不展示，也不提供買賣建議。"
     >
       <MetricStrip
         cells={[
-          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
+          { label: "研究狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
           { label: "批次", value: statsAvailable ? result.data.total : "--" },
-          { label: "可觀察", value: statsAvailable ? totals.allow : "--", tone: "status-ok" },
+          { label: "可進研究", value: statsAvailable ? totals.allow : "--", tone: "status-ok" },
           { label: "待審", value: statsAvailable ? totals.review : "--", tone: "gold" },
-          { label: "阻擋", value: statsAvailable ? totals.block : "--", tone: "status-bad" },
-          { label: "可用", value: statsAvailable ? counts.ready : "--", tone: statsAvailable && counts.ready > 0 ? "status-ok" : "muted" },
-          { label: "信心", value: statsAvailable && result.data.items.length ? percent(avgConfidence) : "--" },
+          { label: "不進流程", value: statsAvailable ? totals.block : "--", tone: "status-bad" },
+          { label: "資料足夠", value: statsAvailable ? counts.ready : "--", tone: statsAvailable && counts.ready > 0 ? "status-ok" : "muted" },
+          { label: "平均信心", value: statsAvailable && result.data.items.length ? percent(avgConfidence) : "--" },
         ]}
         columns={7}
       />
 
       <section className="runs-command-deck">
         <div>
-          <span className="tg gold">策略批次 / 批次監控</span>
-          <h2>這裡不是下單台，是策略引擎每次篩選留下的候選快照。</h2>
+          <span className="tg gold">策略批次 / 紙上交易研究</span>
+          <h2>先確認候選資料足夠，再進紙上交易驗證。</h2>
           <p>
-            每一個批次記錄當時的資料條件、候選股票、品質原因與可觀察狀態。
-            只有後端風控與轉單契約完成後，候選才會進入模擬委託預覽；本頁永遠不直接送單。
+            批次把市場資料、公司資料與候選理由整理在一起。頁面呈現的是研究可用性，不是績效宣傳，也不是買賣建議。
           </p>
         </div>
         <div className="runs-command-rail">
-          <span>資料狀態</span>
+          <span>研究狀態</span>
           <strong className={stateTone(result.state)}>{stateLabel(result.state)}</strong>
           <span>{result.source}</span>
         </div>
@@ -227,8 +231,8 @@ export default async function RunsPage() {
       <div className="runs-layout">
         <Panel
           code="RUN-Q"
-          title="批次佇列"
-          sub="策略批次 / 模擬候選 / 只讀"
+          title="研究批次"
+          sub="紙上交易模式下的候選清單與資料品質。"
           right={stateLabel(result.state)}
         >
           <SourceLine result={result} />
@@ -246,10 +250,10 @@ export default async function RunsPage() {
                     <span>{modeCopy(run.decisionMode)}</span>
                   </div>
                   <div className="run-card-metrics">
-                    <span><b className={decisionTone("allow")}>{run.summary.allow}</b><small>可觀察</small></span>
+                    <span><b className={decisionTone("allow")}>{run.summary.allow}</b><small>可進研究</small></span>
                     <span><b className={decisionTone("review")}>{run.summary.review}</b><small>待審</small></span>
-                    <span><b className={decisionTone("block")}>{run.summary.block}</b><small>阻擋</small></span>
-                    <span><b>{run.quality.strategyReady}</b><small>可用</small></span>
+                    <span><b className={decisionTone("block")}>{run.summary.block}</b><small>不進流程</small></span>
+                    <span><b>{run.quality.strategyReady}</b><small>資料足夠</small></span>
                   </div>
                   <p>{topIdeaText(run)}</p>
                   <div className="run-card-foot">
@@ -262,14 +266,12 @@ export default async function RunsPage() {
           )}
         </Panel>
 
-        <Panel code="RUN-QA" title="真實狀態檢查" sub="端點真實性 / 不靜默造假" right={result.source}>
+        <Panel code="RUN-QA" title="研究邊界" sub="避免把候選批次誤讀成績效或建議。" right={result.source}>
           <div className="runs-truth-stack">
-            <span>來源：{result.source}</span>
-            <span>
-              品質：{statsAvailable ? `可用 ${counts.ready} / 參考 ${counts.reference} / 不足 ${counts.insufficient}` : "策略批次來源恢復前維持暫停"}
-            </span>
-            <span>寫入政策：本頁只看列表與明細；策略執行、轉單與下單不在本頁。</span>
-            <span>轉單狀態：後端預覽契約尚未啟用前，前端只顯示候選與風險原因。</span>
+            <span>資料品質：{statsAvailable ? `足夠 ${counts.ready} / 參考 ${counts.reference} / 不足 ${counts.insufficient}` : "等待讀取"}</span>
+            <span>候選分數只代表研究排序，不等於未來報酬。</span>
+            <span>批次只做紙上交易與研究入口，不會送真實委託。</span>
+            <span>需要回到公司頁看 K 線、重大訊息、財務與 paper preview。</span>
           </div>
         </Panel>
       </div>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import { getCompanies, getSignals, getStrategyIdeas, getThemes } from "@/lib/api";
+import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText, cleanThemeThesis } from "@/lib/operator-copy";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ const emptyData: DetailData = {
 };
 
 async function loadThemeDetail(slug: string): Promise<LoadState> {
-  const source = "主題資料庫 / 公司主檔 / 訊號資料庫 / 策略想法";
+  const source = "正式主題資料 / 公司主檔 / 訊號資料 / 策略想法";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -75,7 +76,7 @@ async function loadThemeDetail(slug: string): Promise<LoadState> {
       data: emptyData,
       updatedAt,
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: friendlyDataError(error, "主題明細暫時無法讀取。"),
     };
   }
 }
@@ -163,7 +164,7 @@ function decisionTone(decision: IdeaRow["marketData"]["decision"]) {
 function decisionLabel(decision: IdeaRow["marketData"]["decision"]) {
   if (decision === "allow") return "可觀察";
   if (decision === "review") return "待審";
-  return "阻擋";
+  return "不進流程";
 }
 
 function categoryLabel(value: string | null | undefined) {
@@ -178,13 +179,13 @@ function categoryLabel(value: string | null | undefined) {
   if (key === "theme") return "主題";
   if (key === "technical") return "技術";
   if (key === "fundamental") return "基本面";
-  if (key === "test" || key === "dryrun") return "內部測試";
+  if (key === "test" || key === "dryrun") return "驗證";
   return value.replace(/[_-]/g, " ");
 }
 
 function themeDisplayName(theme: ThemeRow) {
   const bySlug: Record<string, string> = {
-    "orphan-audit-trail": "內部稽核軌跡",
+    "orphan-audit-trail": "待歸檔稽核軌跡",
     "orphan-ai-optics": "AI 光通訊封裝",
     "5g": "5G 通訊",
     abf: "ABF 載板",
@@ -255,10 +256,10 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
 
   return (
     <PageFrame
-      code={theme ? `02-${theme.priority}` : "02-D"}
+      code={theme ? `10-${theme.priority}` : "10-D"}
       title={theme ? themeDisplayName(theme) : short}
       sub={theme ? `${theme.slug} / ${marketStateLabel(theme.marketState)}` : "主題明細暫停"}
-      note="此頁讀取正式主題、公司、訊號與策略想法；沒有後端契約的熱度、脈衝與下單動作不顯示。"
+      note="此頁讀取正式主題、公司、訊號與策略想法；只顯示已接上來源的研究資料，不提供下單動作。"
     >
       <MetricStrip
         cells={[
@@ -345,7 +346,7 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
 
           <Panel code="SIG-TAPE" title="主題訊號流" sub="正式訊號資料" right={detailLive ? `${displaySignals.length} 則` : stateLabel(dependentState)}>
             {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
-            {detailLive && displaySignals.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有正式訊號掛在此主題；內部測試訊號不顯示。</div>}
+            {detailLive && displaySignals.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有正式訊號掛在此主題；驗證訊號不顯示。</div>}
             {detailLive && displaySignals.length > 0 && (
               <div className="signal-tape-grid compact">
                 {displaySignals.slice(0, 10).map((signal) => (

@@ -30,7 +30,7 @@ export const QUOTE_GATE_LABEL: Record<ExecutionGateDecision, string> = {
 export const MODE_DECISION_HINT: Record<"allow" | "review" | "block", string> = {
   allow: "送單可直接通過閘道",
   review: "送單需勾選接受 REVIEW 報價（quote_review 覆寫）才能通過",
-  block: "報價不可執行 · 送單會被伺服器閘阻擋"
+  block: "報價不可執行 · 送單會被系統攔下"
 };
 
 export type QuoteDecisionModeSummary = {

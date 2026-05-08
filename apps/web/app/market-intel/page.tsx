@@ -3,10 +3,8 @@ import Link from "next/link";
 import { PageFrame } from "@/components/PageFrame";
 import { MetricStrip } from "@/components/RadarWidgets";
 import {
-  getCompanies,
-  getCompanyAnnouncements,
   getFinMindStatus,
-  getStrategyIdeas,
+  getMarketIntelAnnouncements,
   type CompanyAnnouncement,
   type FinMindDatasetStatus,
   type FinMindSourceStatus,
@@ -16,11 +14,10 @@ import { formatSourceTimestamp, latestIso, sourceFreshnessLabel } from "@/lib/so
 
 export const dynamic = "force-dynamic";
 
-type CompanyRow = Awaited<ReturnType<typeof getCompanies>>["data"][number];
-type IdeaView = Awaited<ReturnType<typeof getStrategyIdeas>>["data"];
+type IntelSelectedCompany = { id: string; ticker: string; name: string };
 
 type IntelItem = CompanyAnnouncement & {
-  companyId: string;
+  companyId?: string;
   ticker: string;
   companyName: string;
 };
@@ -29,7 +26,7 @@ type IntelState =
   | {
       state: "LIVE";
       items: IntelItem[];
-      selected: CompanyRow[];
+      selected: IntelSelectedCompany[];
       updatedAt: string;
       source: string;
       failures: number;
@@ -37,7 +34,7 @@ type IntelState =
   | {
       state: "EMPTY";
       items: IntelItem[];
-      selected: CompanyRow[];
+      selected: IntelSelectedCompany[];
       updatedAt: string;
       source: string;
       reason: string;
@@ -46,7 +43,7 @@ type IntelState =
   | {
       state: "BLOCKED";
       items: IntelItem[];
-      selected: CompanyRow[];
+      selected: IntelSelectedCompany[];
       updatedAt: string;
       source: string;
       reason: string;
@@ -60,7 +57,7 @@ type SourceHealth = {
 
 const ANNOUNCEMENT_DAYS = 30;
 const MAX_QUERY_COMPANIES = 16;
-const MAX_FEED_ROWS = 60;
+const MAX_FEED_ROWS = 24;
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "--";
@@ -75,9 +72,9 @@ function formatDate(value: string | null | undefined) {
 }
 
 function stateLabel(state: IntelState["state"]) {
-  if (state === "LIVE") return "正常";
-  if (state === "EMPTY") return "無資料";
-  return "暫停";
+  if (state === "LIVE") return "可用";
+  if (state === "EMPTY") return "無新訊";
+  return "需登入";
 }
 
 function stateTone(state: IntelState["state"]) {
@@ -88,22 +85,22 @@ function stateTone(state: IntelState["state"]) {
 
 function datasetTone(state: FinMindDatasetStatus["state"]) {
   if (state === "LIVE" || state === "READY") return "status-ok";
-  if (state === "STALE" || state === "EMPTY" || state === "DEGRADED") return "gold";
+  if (state === "STALE" || state === "EMPTY" || state === "DEGRADED" || state === "FALLBACK") return "gold";
   return "status-bad";
 }
 
 function datasetStateLabel(state: FinMindDatasetStatus["state"]) {
   const labels: Record<FinMindDatasetStatus["state"], string> = {
-    READY: "已接",
-    LIVE: "正常",
-    STALE: "過期",
-    EMPTY: "無資料",
-    FALLBACK: "備援",
-    DEGRADED: "降級",
-    BLOCKED: "阻擋",
+    READY: "可用",
+    LIVE: "可用",
+    STALE: "需更新",
+    EMPTY: "待補",
+    FALLBACK: "參考",
+    DEGRADED: "需確認",
+    BLOCKED: "需處理",
     ERROR: "錯誤",
-    MOCK: "禁止",
-    CLOSED: "收盤",
+    MOCK: "需處理",
+    CLOSED: "休市",
   };
   return labels[state] ?? state;
 }
@@ -112,246 +109,217 @@ function formatCount(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("zh-TW") : "--";
 }
 
-function quotaTierLabel(value: string | null | undefined) {
-  if (value === "sponsor999") return "Sponsor 999";
-  if (value === "free") return "Free";
-  if (value === "none") return "未設定";
-  return value ?? "--";
-}
-
-function quotaLimit(finmind: FinMindSourceStatus | null) {
-  return finmind?.quota.limit ?? finmind?.global?.rateLimitPerHour ?? null;
-}
-
-function quotaOverrideWarning(finmind: FinMindSourceStatus | null) {
-  const tier = finmind?.global?.quotaTier ?? "none";
-  const limit = quotaLimit(finmind);
-  return tier === "sponsor999" && typeof limit === "number" && limit < 6000;
-}
-
 function categoryTone(category: string | null | undefined) {
   const key = (category ?? "").toLowerCase();
-  if (/dividend|股利|配息|配股/.test(key)) return "badge-yellow";
-  if (/financial|revenue|eps|earnings|財報|營收/.test(key)) return "badge-green";
-  if (/material|announcement|news|公告|重大|訊息/.test(key)) return "badge-blue";
-  return "badge";
+  if (/material|announcement|重大|公告/.test(key)) return "badge-green";
+  if (/market|macro|index|news|台股|市場|大盤/.test(key)) return "badge-blue";
+  return "badge-yellow";
 }
 
 function categoryLabel(category: string | null | undefined) {
-  if (!category) return "重大訊息";
+  if (!category) return "市場情報";
   const key = category.toLowerCase();
-  if (key === "earnings" || key === "financial") return "財報";
-  if (key === "revenue") return "營收";
-  if (key === "news") return "新聞";
-  if (key === "theme") return "主題";
-  if (key === "industry") return "產業";
-  if (key === "supply_chain") return "供應鏈";
-  if (key === "technical") return "技術面";
-  if (key === "fundamental") return "基本面";
-  if (key === "material" || key === "announcement") return "重大訊息";
+  if (key.includes("material") || key.includes("announcement") || category.includes("重大")) return "重大訊息";
+  if (key.includes("market") || key.includes("macro") || key.includes("index")) return "大盤";
+  if (key.includes("news")) return "台股新聞";
   return category.replace(/[_-]/g, " ");
 }
 
-function hasBrokenText(value: string | null | undefined) {
-  if (!value) return false;
-  return /[\uFFFD\uE000-\uF8FF]|undefined|null/i.test(value);
-}
-
 function intelTitleText(item: IntelItem) {
-  const raw = item.title?.trim();
-  if (!raw) return "重大訊息標題未回傳";
-  if (hasBrokenText(raw)) return "標題編碼異常，請回公司頁查看來源狀態";
-  return raw;
+  return item.title?.trim() || "市場消息尚未提供標題";
 }
 
 function sourceCoverageLabel(result: IntelState) {
-  if (result.state === "BLOCKED") return "來源暫停";
+  if (result.state === "BLOCKED") return "需要登入";
   if (result.items.length === 0) return `近 ${ANNOUNCEMENT_DAYS} 天 0 筆`;
-  return `${result.items.length} 筆 / ${new Set(result.items.map((item) => item.ticker)).size} 檔`;
+  const companies = new Set(
+    result.items.map((item) => item.ticker).filter((ticker) => ticker && ticker !== "MARKET")
+  ).size;
+  return companies > 0 ? `${result.items.length} 筆 / ${companies} 檔` : `${result.items.length} 筆市場級`;
 }
 
-function missingReasonText(reason: string | null | undefined) {
-  if (!reason) return "後端尚未回報原因";
-  const labels: Record<string, string> = {
-    no_token: "FinMind token 未設定",
-    not_queried: "排程尚未查詢",
-    experimental_may_degrade: "資料集仍在觀察，可能尚未穩定回傳",
-    freeze_no_news_feature: "新聞功能仍在凍結，不在前端假裝可用",
-  };
-  return labels[reason] ?? reason;
-}
-
-async function loadIdeas(): Promise<IdeaView | null> {
-  try {
-    return (await getStrategyIdeas({
-      decisionMode: "paper",
-      includeBlocked: true,
-      limit: 20,
-      sort: "score",
-    })).data;
-  } catch {
-    return null;
-  }
+function userFacingReason(reason: string | null | undefined) {
+  if (!reason) return "目前沒有可顯示的市場級消息。";
+  if (/unauth|auth|session|login|cookie|401/i.test(reason)) return "登入狀態需要更新，重新登入後即可讀取市場情報。";
+  if (/fetch failed|network|ECONNREFUSED|API_BASE|base url/i.test(reason)) return "市場情報連線失敗，請稍後重新整理。";
+  return reason.replace(/token|secret|session|cookie|authorization|bearer|api[-_]?key|env|database|redis/gi, "資料來源");
 }
 
 async function loadSourceHealth(): Promise<SourceHealth> {
   try {
     return { finmind: (await getFinMindStatus()).data, error: null };
   } catch (error) {
-    return { finmind: null, error: friendlyDataError(error, "FinMind 診斷 API 暫時無法讀取") };
+    return { finmind: null, error: userFacingReason(friendlyDataError(error, "資料來源狀態讀取失敗")) };
   }
 }
 
+function marketIntelSourceLabel(source: "twse_announcements" | "finmind_stock_news" | "mixed" | "empty") {
+  if (source === "twse_announcements") return "官方重大訊息";
+  if (source === "finmind_stock_news") return "FinMind 台股新聞";
+  if (source === "mixed") return "官方重大訊息 + FinMind 台股新聞";
+  return "市場情報";
+}
+
 async function loadMarketIntel(): Promise<IntelState> {
-  const source = "TWSE OpenAPI 重大訊息";
   const updatedAt = new Date().toISOString();
 
-  let companies: CompanyRow[];
   try {
-    companies = (await getCompanies()).data ?? [];
+    const aggregate = await getMarketIntelAnnouncements({
+      days: ANNOUNCEMENT_DAYS,
+      limit: MAX_FEED_ROWS,
+      scope: "market",
+    });
+    const source = marketIntelSourceLabel(aggregate.data.source);
+    const selected = aggregate.data.selected.slice(0, MAX_QUERY_COMPANIES);
+    const items = aggregate.data.items.map((item) => ({
+      ...item,
+      ticker: item.ticker ?? "MARKET",
+      companyName: item.companyName ?? (item.ticker && item.ticker !== "MARKET" ? item.ticker : "大盤"),
+    }));
+
+    if (items.length > 0) {
+      return {
+        state: "LIVE",
+        items,
+        selected,
+        updatedAt: latestIso(items.map((item) => item.date)) ?? updatedAt,
+        source,
+        failures: aggregate.data.failures,
+      };
+    }
+
+    return {
+      state: "EMPTY",
+      items: [],
+      selected,
+      updatedAt,
+      source,
+      reason: `近 ${ANNOUNCEMENT_DAYS} 天沒有市場級新聞或官方重大訊息。`,
+      failures: aggregate.data.failures,
+    };
   } catch (error) {
     return {
       state: "BLOCKED",
       items: [],
       selected: [],
       updatedAt,
-      source,
-      reason: friendlyDataError(error, "公司清單 API 暫時無法讀取"),
-      failures: 0,
+      source: "市場情報",
+      reason: userFacingReason(friendlyDataError(error, "市場情報讀取失敗")),
+      failures: 1,
     };
   }
-
-  if (companies.length === 0) {
-    return {
-      state: "EMPTY",
-      items: [],
-      selected: [],
-      updatedAt,
-      source,
-      reason: "公司清單目前 0 筆，所以重大訊息沒有可查詢的股票。",
-      failures: 0,
-    };
-  }
-
-  const byId = new Map(companies.map((company) => [company.id, company]));
-  const ideas = await loadIdeas();
-  const ideaItems = Array.isArray(ideas?.items) ? ideas.items : [];
-  const ideaCompanies = ideaItems
-    .map((idea) => byId.get(idea.companyId))
-    .filter((company): company is CompanyRow => Boolean(company));
-
-  const selected = [...ideaCompanies, ...companies]
-    .filter((company, index, all) => all.findIndex((item) => item.id === company.id) === index)
-    .slice(0, MAX_QUERY_COMPANIES);
-
-  const settled = await Promise.allSettled(
-    selected.map(async (company) => {
-      const response = await getCompanyAnnouncements(company.id, { days: ANNOUNCEMENT_DAYS });
-      return (response.data ?? []).map((item) => ({
-        ...item,
-        companyId: company.id,
-        ticker: company.ticker,
-        companyName: company.name,
-      }));
-    })
-  );
-
-  const failures = settled.filter((result) => result.status === "rejected").length;
-  const partialSource = failures > 0 ? `${source}，${failures}/${settled.length} 檔查詢失敗` : source;
-  const rows = settled
-    .flatMap((result) => result.status === "fulfilled" ? result.value : [])
-    .sort((left, right) => right.date.localeCompare(left.date) || left.ticker.localeCompare(right.ticker))
-    .slice(0, MAX_FEED_ROWS);
-
-  if (rows.length > 0) {
-    return {
-      state: "LIVE",
-      items: rows,
-      selected,
-      updatedAt: latestIso(rows.map((item) => item.date)) ?? updatedAt,
-      source: partialSource,
-      failures,
-    };
-  }
-
-  if (failures === settled.length) {
-    return {
-      state: "BLOCKED",
-      items: [],
-      selected,
-      updatedAt,
-      source,
-      reason: "所有重大訊息查詢都失敗，請檢查 TWSE OpenAPI 或後端路由。",
-      failures,
-    };
-  }
-
-  return {
-    state: "EMPTY",
-    items: [],
-    selected,
-    updatedAt,
-    source: partialSource,
-    reason: failures > 0
-      ? `成功查詢的公司近 ${ANNOUNCEMENT_DAYS} 天沒有重大訊息；部分公司查詢失敗。`
-      : `選定公司近 ${ANNOUNCEMENT_DAYS} 天沒有重大訊息。`,
-    failures,
-  };
 }
 
 function datasetSummary(datasets: FinMindDatasetStatus[]) {
   const live = datasets.filter((item) => item.state === "LIVE" || item.state === "READY").length;
   const blocked = datasets.filter((item) => item.state === "BLOCKED" || item.state === "ERROR" || item.state === "MOCK").length;
-  const stale = datasets.filter((item) => item.state === "STALE" || item.state === "DEGRADED" || item.state === "EMPTY").length;
+  const stale = datasets.filter((item) => item.state === "STALE" || item.state === "DEGRADED" || item.state === "EMPTY" || item.state === "FALLBACK").length;
   return { live, blocked, stale };
+}
+
+function datasetDisplayLabel(dataset: FinMindDatasetStatus) {
+  const labels: Record<string, string> = {
+    TaiwanStockNews: "台股新聞",
+    TaiwanStockInfo: "基本資料",
+    TaiwanStockPrice: "日成交資料",
+    TaiwanStockPriceAdj: "還原日 K",
+    TaiwanStockMarketValue: "市值",
+    TaiwanStockPER: "本益比 / 殖利率",
+    TaiwanStockMonthRevenue: "月營收",
+    TaiwanStockDividend: "股利",
+  };
+  return labels[dataset.key] ?? dataset.label;
+}
+
+function datasetReadinessCopy(dataset: FinMindDatasetStatus) {
+  if (dataset.state === "LIVE" || dataset.state === "READY") return "已可支援頁面資料、篩選與研究流程。";
+  if (dataset.state === "STALE" || dataset.state === "DEGRADED" || dataset.state === "FALLBACK") return "可作參考，盤面會以最新可用資料標示。";
+  if (dataset.state === "EMPTY") return "尚無本地資料列，等待下一輪資料同步。";
+  return userFacingReason(dataset.missingReason ?? dataset.degradedReason ?? dataset.blocker);
+}
+
+function intelHref(item: IntelItem) {
+  if (item.url) return item.url;
+  if (item.ticker && item.ticker !== "MARKET") return `/companies/${encodeURIComponent(item.ticker)}`;
+  return "/market-intel";
+}
+
+function isExternalHref(href: string) {
+  return /^https?:\/\//i.test(href);
+}
+
+function targetLabel(item: IntelItem) {
+  if (!item.ticker || item.ticker === "MARKET") return "市場";
+  return item.ticker;
+}
+
+function targetName(item: IntelItem) {
+  if (!item.ticker || item.ticker === "MARKET") return "大盤";
+  return item.companyName || item.ticker;
 }
 
 export default async function MarketIntelPage() {
   const [result, sourceHealth] = await Promise.all([loadMarketIntel(), loadSourceHealth()]);
   const freshness = result.state === "LIVE" ? sourceFreshnessLabel(result.updatedAt) : null;
   const statsAvailable = result.state !== "BLOCKED";
-  const sourceTickers = result.selected.map((company) => company.ticker).join(" / ") || "--";
-  const uniqueCompanies = new Set(result.items.map((item) => item.ticker)).size;
+  const companyCount = new Set(
+    result.items.map((item) => item.ticker).filter((ticker) => ticker && ticker !== "MARKET")
+  ).size;
   const featured = result.items[0] ?? null;
   const feedItems = result.items.slice(featured ? 1 : 0);
   const finmind = sourceHealth.finmind;
   const datasets = finmind?.datasets ?? [];
   const summary = datasetSummary(datasets);
-  const stockNews = datasets.find((item) => item.key === "TaiwanStockNews");
+  const visibleDatasets = datasets.slice(0, 8);
+  const channelState = finmind?.state === "LIVE_READY" ? "可用" : finmind ? "需注意" : "需登入";
+  const channelTone = finmind?.state === "LIVE_READY" ? "status-ok" : finmind ? "gold" : "status-bad";
+  const focusChips = result.selected.length > 0
+    ? result.selected.slice(0, 8)
+    : [
+        { id: "market-taiex", ticker: "TAIEX", name: "加權指數" },
+        { id: "market-sector", ticker: "SECTOR", name: "類股" },
+        { id: "market-fund", ticker: "FLOW", name: "法人資金" },
+        { id: "market-macro", ticker: "MACRO", name: "總經" },
+      ];
 
   return (
     <PageFrame
-      code="10"
-      title="重大訊息"
-      sub="台股公告與市場情報"
-      note={`重大訊息 / ${stateLabel(result.state)} / ${result.state === "LIVE" ? `${result.items.length} 筆` : "尚無可發布項目"} / 來源：${result.source}`}
+      code="MKT"
+      title="市場情報"
+      sub="大盤新聞、官方重大訊息與資料通道"
+      note="這頁只收市場級消息與官方重大訊息；個股雜訊不進首頁工作流。"
     >
       <MetricStrip
         columns={5}
         cells={[
-          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "訊息", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "status-ok" : "muted" },
-          { label: "股票", value: statsAvailable ? uniqueCompanies || result.selected.length : "--" },
-          { label: "查詢失敗", value: result.failures, tone: result.failures > 0 ? "status-bad" : "muted" },
+          { label: "情報狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
+          { label: "市場級消息", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "status-ok" : "muted" },
+          { label: "涵蓋標的", value: statsAvailable ? (companyCount > 0 ? `${companyCount} 檔` : "大盤") : "--" },
+          { label: "資料通道", value: channelState, tone: channelTone },
           { label: "更新", value: formatSourceTimestamp(result.updatedAt), tone: freshness?.tone },
         ]}
       />
 
       <section className="intel-command-deck">
         <div className="intel-command-copy">
-          <div className="tg gold">市場情報 / 官方公告</div>
-          <h2>先把可驗證消息排進工作流，不把空資料包裝成新聞。</h2>
+          <div className="tg gold">MARKET INTEL / 台股大盤情報</div>
+          <h2>先看大盤消息，再決定要不要進公司研究。</h2>
           <p>
-            這一頁目前只顯示官方來源：TWSE OpenAPI 重大訊息與 FinMind 資料源狀態。
-            若沒有資料，會明確標成無資料或暫停；不會抓未核准 RSS、不會把 AI 摘要偽裝成正式新聞，
-            也不產生買賣建議。
+            這裡接官方重大訊息與 FinMind 台股新聞，並用市場詞篩掉個股雜訊。內容只作為研究入口，不提供買賣建議。
           </p>
-          <div className="intel-chip-rail" aria-label="目前查詢股票池">
-            {result.selected.slice(0, MAX_QUERY_COMPANIES).map((company) => (
-              <Link href={`/companies/${company.ticker}`} key={company.id} className="intel-chip">
-                <span>{company.ticker}</span>
-                <small>{company.name}</small>
-              </Link>
+          <div className="intel-chip-rail" aria-label="市場情報焦點">
+            {focusChips.map((item) => (
+              item.ticker !== "TAIEX" && item.ticker !== "SECTOR" && item.ticker !== "FLOW" && item.ticker !== "MACRO" ? (
+                <Link href={`/companies/${encodeURIComponent(item.ticker)}`} key={item.id} className="intel-chip">
+                  <span>{item.ticker}</span>
+                  <small>{item.name}</small>
+                </Link>
+              ) : (
+                <span key={item.id} className="intel-chip">
+                  <span>{item.ticker}</span>
+                  <small>{item.name}</small>
+                </span>
+              )
             ))}
           </div>
         </div>
@@ -360,23 +328,21 @@ export default async function MarketIntelPage() {
             {stateLabel(result.state)}
           </span>
           <div>
-            <span className="tg soft">公告來源</span>
+            <span className="tg soft">來源</span>
             <strong>{result.source}</strong>
           </div>
           <div>
-            <span className="tg soft">查詢覆蓋</span>
+            <span className="tg soft">範圍</span>
             <strong>{sourceCoverageLabel(result)}</strong>
           </div>
           <div>
-            <span className="tg soft">查詢股票</span>
-            <strong>{sourceTickers}</strong>
+            <span className="tg soft">取用</span>
+            <strong>{result.failures > 0 ? "部分來源需重試" : "可讀"}</strong>
           </div>
           <p>
             {result.state === "LIVE"
-              ? result.failures > 0
-                ? `目前有 ${result.failures} 檔查詢失敗；頁面只列成功回傳的官方資料。`
-                : "官方重大訊息路徑可讀；下方每一筆都可回到公司頁繼續驗證。"
-              : result.reason}
+              ? "大盤消息已整理成研究入口；點開新聞或公司代號可回到對應頁面。"
+              : userFacingReason(result.reason)}
           </p>
         </aside>
       </section>
@@ -385,39 +351,57 @@ export default async function MarketIntelPage() {
         <div className="intel-feed-head">
           <div>
             <div className="tg gold">
-              官方訊息 / {formatSourceTimestamp(result.updatedAt)}
+              市場訊息 / {formatSourceTimestamp(result.updatedAt)}
               {freshness && <span className={`tg ${freshness.tone}`}> / {freshness.label}</span>}
             </div>
-            <h2>重大訊息工作佇列</h2>
+            <h2>今日要先讀的市場消息</h2>
           </div>
           <span className={`tg ${stateTone(result.state)}`}>{sourceCoverageLabel(result)}</span>
         </div>
+
         {result.state === "LIVE" ? (
           <div className="intel-feed-list">
             {featured && (
-              <Link href={`/companies/${featured.ticker}`} className="intel-feature-card">
+              <Link
+                href={intelHref(featured)}
+                className="intel-feature-card"
+                target={isExternalHref(intelHref(featured)) ? "_blank" : undefined}
+                rel={isExternalHref(intelHref(featured)) ? "noreferrer" : undefined}
+              >
                 <span className={`badge ${categoryTone(featured.category)}`}>{categoryLabel(featured.category)}</span>
                 <strong>{intelTitleText(featured)}</strong>
-                <span className="tc soft">{featured.ticker} / {featured.companyName} / {formatDate(featured.date)}</span>
+                <span className="tc soft">
+                  {targetLabel(featured)} / {targetName(featured)} / {formatDate(featured.date)}
+                </span>
               </Link>
             )}
-            {feedItems.map((item) => (
-              <Link href={`/companies/${item.ticker}`} className="intel-feed-row" key={`${item.ticker}-${item.id}`}>
-                <span className="tg soft">{formatDate(item.date)}</span>
-                <span className="tg gold">{item.ticker}</span>
-                <span className="intel-feed-title">
-                  {intelTitleText(item)}
-                  <small>{item.companyName}</small>
-                </span>
-                <span className={`badge ${categoryTone(item.category)}`}>{categoryLabel(item.category)}</span>
-              </Link>
-            ))}
+            {feedItems.map((item) => {
+              const href = intelHref(item);
+              const external = isExternalHref(href);
+              return (
+                <Link
+                  href={href}
+                  className="intel-feed-row"
+                  key={`${item.ticker}-${item.id}`}
+                  target={external ? "_blank" : undefined}
+                  rel={external ? "noreferrer" : undefined}
+                >
+                  <span className="tg soft">{formatDate(item.date)}</span>
+                  <span className="tg gold">{targetLabel(item)}</span>
+                  <span className="intel-feed-title">
+                    {intelTitleText(item)}
+                    <small>{targetName(item)}</small>
+                  </span>
+                  <span className={`badge ${categoryTone(item.category)}`}>{categoryLabel(item.category)}</span>
+                </Link>
+              );
+            })}
           </div>
         ) : (
           <div className="intel-empty-state">
             <strong>{stateLabel(result.state)}</strong>
-            <p>{result.reason}</p>
-            <span className="tg soft">查詢股票：{sourceTickers}</span>
+            <p>{userFacingReason(result.reason)}</p>
+            <span className="tg soft">篩選範圍：官方重大訊息、台股大盤、類股、法人、匯率與總經消息。</span>
           </div>
         )}
       </section>
@@ -425,30 +409,41 @@ export default async function MarketIntelPage() {
       <section className="intel-feed-surface">
         <div className="intel-feed-head">
           <div>
-            <div className="tg gold">FinMind / 資料集狀態</div>
-            <h2>新聞與市場資料接入狀態</h2>
+            <div className="tg gold">DATA READINESS / 資料通道</div>
+            <h2>市場頁面使用的資料集</h2>
           </div>
-          <span className={`tg ${finmind?.state === "LIVE_READY" ? "status-ok" : finmind ? "gold" : "status-bad"}`}>
-            {finmind ? `已接 ${summary.live} / 待處理 ${summary.stale} / 阻擋 ${summary.blocked}` : "診斷暫停"}
+          <span className={`tg ${channelTone}`}>
+            {finmind ? `可用 ${summary.live} / 注意 ${summary.stale} / 需處理 ${summary.blocked}` : "需要登入"}
           </span>
         </div>
-        <div className="intel-empty-state">
-          <strong>{stockNews ? `台股新聞：${datasetStateLabel(stockNews.state)}` : "台股新聞：尚未接入前端列表"}</strong>
-          <p>
-            {stockNews
-              ? `列數 ${stockNews.rowCount ?? 0}，最新日期 ${stockNews.latestDate ?? "--"}，狀態原因：${missingReasonText(stockNews.missingReason ?? stockNews.degradedReason)}。`
-              : sourceHealth.error ?? "目前仍以重大訊息與已審核每日簡報為正式顯示來源。"}
-          </p>
-          <p>
-            方案 {quotaTierLabel(finmind?.global?.quotaTier)}；
-            API 上限 {formatCount(quotaLimit(finmind))} / 小時；
-            本程序已記錄請求 {formatCount(finmind?.quota.used)} 次。
-            {quotaOverrideWarning(finmind) ? " Sponsor 999 應為 6,000 / 小時，目前疑似被舊環境變數覆寫。" : ""}
-          </p>
-          <span className="tg soft">
-            FinMind token 只顯示是否存在；不顯示 token 值。新聞資料若為 EMPTY/BLOCKED，不會被包裝成正式新聞。
-          </span>
-        </div>
+
+        {finmind ? (
+          <div className="intel-dataset-grid">
+            {visibleDatasets.map((dataset) => (
+              <div className="intel-dataset-card" key={dataset.key}>
+                <div>
+                  <span className="tg gold">{datasetDisplayLabel(dataset)}</span>
+                  <span className={`badge ${datasetTone(dataset.state)}`}>{datasetStateLabel(dataset.state)}</span>
+                </div>
+                <strong>{datasetReadinessCopy(dataset)}</strong>
+                <small>
+                  最新 {dataset.latestDate ?? formatSourceTimestamp(dataset.lastFetchTs)} / 筆數 {formatCount(dataset.rowCount)}
+                </small>
+              </div>
+            ))}
+            {visibleDatasets.length === 0 && (
+              <div className="intel-empty-state">
+                <strong>沒有資料集狀態</strong>
+                <p>後端尚未回傳 FinMind 資料集列表。</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="intel-empty-state">
+            <strong>需要登入</strong>
+            <p>{sourceHealth.error ?? "重新登入後即可讀取資料通道狀態。"}</p>
+          </div>
+        )}
       </section>
     </PageFrame>
   );

@@ -21,17 +21,14 @@ function ResearchFrameExtra({
 }: {
   payload: LabStrategiesResponse | null;
 }) {
-  const sprintId = payload?.meta.sprintId ?? "v15";
-  const portfolioVerdict =
-    payload?.data?.portfolioVerdict ?? "THREE_STRATEGY_PORTFOLIO_VALID_RESEARCH_SYSTEM";
   const candidateCount = payload?.meta.candidateCount ?? 0;
 
   return (
     <Panel
       code="LAB"
       title="Lab 研究進度框架"
-      sub="verbatim from Athena · TR 不可改寫"
-      right={`sprint ${sprintId}`}
+      sub="研究批次與候選狀態"
+      right={`${candidateCount} 候選`}
     >
       <div
         style={{
@@ -53,14 +50,14 @@ function ResearchFrameExtra({
             className="tg gold"
             style={{ fontSize: 11, letterSpacing: 0.5, color: "rgba(220, 120, 120, 0.95)" }}
           >
-            v11 sprint
+            前一批研究
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#e8e8e8", margin: "6px 0" }}>
-            KILL_NO_EDGE
+            已退場
           </div>
           <div className="tg soft" style={{ fontSize: 12, lineHeight: 1.6 }}>
-            v11 sprint 結果：沒 edge，正式退場。<br />
-            不會被軟化為「待重啟」或「研究 ongoing」；TR 顯示遵循 Lab 原文。
+            前一批研究沒有穩定優勢，已正式退場。<br />
+            不會被重新包裝為待重啟或可交易策略。
           </div>
         </div>
 
@@ -74,15 +71,15 @@ function ResearchFrameExtra({
           }}
         >
           <div className="tg gold" style={{ fontSize: 11, letterSpacing: 0.5 }}>
-            {sprintId} sprint
+            最新研究批次
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#e8e8e8", margin: "6px 0" }}>
             研究系統 / 候選 {candidateCount} 個
           </div>
           <div className="tg soft" style={{ fontSize: 12, lineHeight: 1.6 }}>
-            產出 research candidates，皆 RESEARCH_ONLY。
+            已產出研究候選。
             <br />
-            未過 Athena schema + Bruce harness 雙簽前，不入 paper / live。
+            未通過完整驗證前，不進紙上或實盤流程。
           </div>
         </div>
 
@@ -99,7 +96,7 @@ function ResearchFrameExtra({
             className="tg gold"
             style={{ fontSize: 11, letterSpacing: 0.5, color: "rgba(180, 210, 255, 0.95)" }}
           >
-            portfolio verdict
+            整體結論
           </div>
           <div
             style={{
@@ -111,11 +108,10 @@ function ResearchFrameExtra({
               wordBreak: "break-word",
             }}
           >
-            {portfolioVerdict}
+            研究系統有效，但尚未批准進入交易流程
           </div>
           <div className="tg soft" style={{ fontSize: 12, lineHeight: 1.6 }}>
-            Lab 整體框架語義：「3 策略組合 valid 但仍是研究系統，未批准推廣」。
-            TR 不會顯示為 approved。
+            候選策略可以被追蹤與審核，但不會被顯示為已可交易。
           </div>
         </div>
       </div>
@@ -129,9 +125,7 @@ function ResearchFrameExtra({
           color: "#bbb",
         }}
       >
-        Source of truth / Athena (Lab CEO) + IUF_QUANT_LAB sanctioned snapshots only.
-        TR 是 read-only consumer；TR 永遠不會替 Lab 寫狀態、不會替 Lab 改名 enum、不會把
-        KILL_NO_EDGE 改寫為「待重啟」、不會自建假 strategy snapshot 冒充 Lab registry。
+        來源：量化研究正式快照。交易戰情室只讀呈現，不改寫研究狀態，也不用假策略快照填補空狀態。
       </div>
     </Panel>
   );
@@ -143,7 +137,7 @@ export default async function LabResearchPage() {
   try {
     payload = await radarLabApi.strategies();
   } catch (error) {
-    fetchError = friendlyDataError(error, "量化研究 /research API 暫時無法讀取。");
+    fetchError = friendlyDataError(error, "量化研究進度暫時無法讀取。");
   }
 
   return (

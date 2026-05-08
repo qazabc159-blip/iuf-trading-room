@@ -33,7 +33,7 @@ function friendlyError(error: unknown) {
 }
 
 async function loadSignals(): Promise<LoadState> {
-  const source = "訊號資料庫";
+  const source = "正式訊號資料";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -53,7 +53,7 @@ async function loadSignals(): Promise<LoadState> {
         data,
         updatedAt,
         source,
-        reason: "訊號資料庫目前回傳 0 筆，不顯示假訊號流。",
+        reason: "目前沒有可顯示的正式訊號。",
       };
     }
     return {
@@ -129,7 +129,7 @@ function categoryLabel(value: string | null | undefined) {
   if (key === "theme") return "主題";
   if (key === "technical") return "技術";
   if (key === "fundamental") return "基本面";
-  if (key === "test" || key === "dryrun") return "內部測試";
+  if (key === "test" || key === "dryrun") return "驗證";
   return value.replace(/[_-]/g, " ");
 }
 
@@ -153,7 +153,7 @@ function isInternalTestSignal(signal: SignalRow) {
 function signalTitle(signal: SignalRow) {
   const value = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
   if (hasBrokenText(value)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
-  const cleaned = value.replace(/^bruce-wave\d*-verify:\s*/i, "內部驗證：");
+  const cleaned = value.replace(/^bruce-wave\d*-verify:\s*/i, "驗證訊號：");
   if ((/^[\x00-\x7F\s%.,:;()/-]+$/.test(cleaned) && /[A-Za-z]/.test(cleaned)) || isEnglishHeavy(cleaned)) {
     return cleanExternalHeadline(cleaned, "外文訊號待整理；保留來源紀錄，不納入正式判讀。");
   }
@@ -211,7 +211,7 @@ export default async function SignalsPage() {
 
   return (
     <PageFrame
-      code="07"
+      code="08"
       title="訊號證據"
       sub="訊號流"
       note="訊號證據 / 正式訊號資料；連結主題與公司，不顯示假訊號。"
@@ -238,14 +238,14 @@ export default async function SignalsPage() {
         <SourceLine result={result} />
         {hiddenInternalCount > 0 && (
           <div className="terminal-note compact">
-            內部測試訊號 {hiddenInternalCount} 筆已收納，不放入正式訊號清單；正式清單只顯示可連結主題或公司的資料列。
+            驗證訊號 {hiddenInternalCount} 筆已收納，不放入正式訊號清單；正式清單只顯示可連結主題或公司的資料列。
           </div>
         )}
         <EmptyOrBlocked result={result} />
         {result.state === "LIVE" && displaySignals.length === 0 && (
           <div className="terminal-note">
             <span className="tg gold">無資料</span>
-            目前沒有可進入正式判讀的訊號；內部 dry-run、smoke、驗證訊號已收納，不放進交易戰情。
+            目前沒有可進入正式判讀的訊號；驗證資料已收納，不放進交易戰情。
           </div>
         )}
         {result.state === "LIVE" && (

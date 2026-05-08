@@ -176,7 +176,7 @@ export function authErrorMessage(error: string): string {
     case "email_already_registered":
       return "這個信箱已經註冊。";
     case "no_workspace":
-      return "這個帳號尚未連到 workspace。";
+      return "這個帳號尚未連到交易工作台。";
     case "unauthenticated":
       return "登入狀態已失效，請重新登入。";
     case "forbidden_role":
@@ -184,7 +184,7 @@ export function authErrorMessage(error: string): string {
     case "user_not_found":
       return "找不到目前登入帳號，請重新登入。";
     case "api_base_unconfigured":
-      return "前端尚未設定後端 API，登入功能暫時不可用。";
+      return "登入資料服務尚未設定，登入功能暫時不可用。";
     case "network_error":
       return "連線失敗，請稍後再試。";
     default:

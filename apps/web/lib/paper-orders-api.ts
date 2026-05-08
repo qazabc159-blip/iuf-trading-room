@@ -282,17 +282,17 @@ export async function cancelPaperOrder(orderId: string, reason = "operator_cance
 export function formatPaperOrderError(error: unknown) {
   if (error instanceof PaperOrderApiError) {
     const layer = error.layer ? ` layer=${error.layer}` : "";
-    if (error.code === "API_BASE_UNCONFIGURED") return "尚未設定 API 位置，無法連線到模擬交易後端。";
+    if (error.code === "API_BASE_UNCONFIGURED") return "尚未設定資料服務位置，無法連線到模擬交易。";
     if (error.code === "paper_gate_blocked") return `模擬交易目前被風控閘門擋下：${error.message}${layer}`;
-    if (error.code === "DUPLICATE_IDEMPOTENCY_KEY") return "這張模擬委託已送出過，系統已阻擋重複送單。";
+    if (error.code === "DUPLICATE_IDEMPOTENCY_KEY") return "這張模擬委託已送出過，系統不會重複送單。";
     if (error.code === "VALIDATION_ERROR") return "委託欄位未通過檢查，請確認股票、價格、股數與零股/整張單位。";
     if (error.status === 401) return "登入狀態已失效，請重新登入後再預覽模擬委託。";
-    if (error.status === 404) return "模擬交易端點尚未部署完成。";
-    if (error.status >= 500) return `模擬交易後端暫時異常（${error.status}${layer}）。`;
+    if (error.status === 404) return "模擬交易服務尚未提供這項內容。";
+    if (error.status >= 500) return `模擬交易服務暫時異常（${error.status}${layer}）。`;
     return `模擬委託未通過（${error.status}${layer}）：${error.message}`;
   }
   const message = error instanceof Error ? error.message : String(error);
-  if (/API_BASE|NEXT_PUBLIC_API_BASE_URL|base url/i.test(message)) return "尚未設定 API 位置，無法連線到模擬交易後端。";
-  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "模擬交易後端連線失敗，請稍後再試。";
+  if (/API_BASE|NEXT_PUBLIC_API_BASE_URL|base url/i.test(message)) return "尚未設定資料服務位置，無法連線到模擬交易。";
+  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "模擬交易服務連線失敗，請稍後再試。";
   return message.trim() ? `模擬委託發生錯誤：${message}` : "模擬委託發生未知錯誤。";
 }

@@ -38,7 +38,7 @@ const emptyIdeas: IdeasView = {
 };
 
 async function loadIdeas(): Promise<LoadState> {
-  const source = "策略想法資料庫";
+  const source = "正式策略資料";
   const updatedAt = new Date().toISOString();
 
   try {
@@ -55,7 +55,7 @@ async function loadIdeas(): Promise<LoadState> {
         data,
         updatedAt: data.generatedAt || updatedAt,
         source,
-        reason: "正式策略想法資料庫目前回傳 0 筆。",
+        reason: "目前沒有可顯示的正式策略想法。",
       };
     }
     return {
@@ -119,15 +119,15 @@ function stateLabel(state: LoadState["state"]) {
 }
 
 function directionLabel(direction: IdeaRow["direction"]) {
-  if (direction === "bullish") return "看多";
-  if (direction === "bearish") return "看空";
+  if (direction === "bullish") return "偏多";
+  if (direction === "bearish") return "偏空";
   return "中性";
 }
 
 function decisionLabel(decision: IdeaRow["marketData"]["decision"]) {
   if (decision === "allow") return "可觀察";
   if (decision === "review") return "待審";
-  return "阻擋";
+  return "不進流程";
 }
 
 function decisionTone(decision: IdeaRow["marketData"]["decision"]) {
@@ -154,8 +154,8 @@ function qualityLabel(grade: IdeaRow["quality"]["grade"]) {
 
 function readinessLabel(value: IdeaRow["marketData"]["readiness"]) {
   if (value === "ready") return "資料可用";
-  if (value === "degraded") return "資料降級";
-  return "資料阻擋";
+  if (value === "degraded") return "資料待補";
+  return "資料不足";
 }
 
 function freshnessLabel(value: IdeaRow["marketData"]["freshnessStatus"]) {
@@ -191,9 +191,9 @@ function PromotionBlockedCell() {
   return (
     <span
       className="idea-promotion-block"
-      title="策略想法轉模擬委託的正式轉單端點尚未開通；目前只能到公司頁做紙上預覽與風控檢查。"
+      title="策略想法尚未開放轉入委託流程；目前只能到公司頁做紙上預覽與風控檢查。"
     >
-      轉單待接
+      只做觀察
     </span>
   );
 }
@@ -288,7 +288,7 @@ export default async function IdeasPage() {
           { label: "總數", value: statsAvailable ? summary.total : "--" },
           { label: "可觀察", value: statsAvailable ? summary.allow : "--", tone: "status-ok" },
           { label: "待審", value: statsAvailable ? summary.review : "--", tone: "gold" },
-          { label: "阻擋", value: statsAvailable ? summary.block : "--", tone: "status-bad" },
+          { label: "不進流程", value: statsAvailable ? summary.block : "--", tone: "status-bad" },
           { label: "可用", value: statsAvailable ? summary.quality.strategyReady : "--", tone: statsAvailable && summary.quality.strategyReady > 0 ? "status-ok" : "muted" },
           { label: "更新", value: formatTime(result.updatedAt) },
         ]}
@@ -300,14 +300,14 @@ export default async function IdeasPage() {
           <span className="tg gold">策略想法 / 候選觀察</span>
           <h2>先看資料是否夠真，再看股票是否值得追蹤。</h2>
           <p>
-            這頁只呈現後端策略引擎產出的台股候選、主題連結、訊號數與資料品質。
+            這頁只呈現系統整理出的台股候選、主題連結、訊號數與資料品質。
             它不是買賣建議，也不是下單頁；候選只能先進公司頁查看 K 線、來源狀態與紙上預覽。
           </p>
         </div>
         <div className="ideas-summary-grid">
           <span><b className="status-ok">{statsAvailable ? summary.allow : "--"}</b><small>可觀察</small></span>
           <span><b className="gold">{statsAvailable ? summary.review : "--"}</b><small>待審</small></span>
-          <span><b className="status-bad">{statsAvailable ? summary.block : "--"}</b><small>阻擋</small></span>
+          <span><b className="status-bad">{statsAvailable ? summary.block : "--"}</b><small>不進流程</small></span>
         </div>
       </section>
 
@@ -338,7 +338,7 @@ export default async function IdeasPage() {
           <div className="ideas-quality-stack">
             <div>
               <span>方向分布</span>
-              <strong>{statsAvailable ? `${summary.bullish} 看多 / ${summary.bearish} 看空 / ${summary.neutral} 中性` : "--"}</strong>
+              <strong>{statsAvailable ? `${summary.bullish} 偏多 / ${summary.bearish} 偏空 / ${summary.neutral} 中性` : "--"}</strong>
             </div>
             <div>
               <span>可用性</span>
@@ -354,7 +354,7 @@ export default async function IdeasPage() {
             </div>
             <div>
               <span>轉單政策</span>
-              <strong>正式轉單仍暫停；本頁只引導到公司頁紙上預覽，不建立券商委託。</strong>
+              <strong>轉入委託流程仍暫停；本頁只引導到公司頁紙上預覽，不建立券商委託。</strong>
             </div>
           </div>
           <div className="idea-source-note">
