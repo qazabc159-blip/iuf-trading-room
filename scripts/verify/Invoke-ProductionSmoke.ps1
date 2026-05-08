@@ -467,6 +467,8 @@ function Invoke-SmokeRun {
             Pass "item-9" "GET /api/v1/openalice/observability" "workerStatus=$workerStatus | queuedJobs=$queuedJobs | terminalJobs=$terminalJobs"
         }
         CheckBody "item-9" $r9.Content
+    } elseif ($r9.StatusCode -eq 403 -and $r9.Error -match "forbidden_role") {
+        Warn "item-9" "GET /api/v1/openalice/observability" "403 forbidden_role — owner-only diagnostic skipped for daily test user; briefs freshness covers user-facing OpenAlice output"
     } else {
         Fail "item-9" "GET /api/v1/openalice/observability" "HTTP $($r9.StatusCode) | $($r9.Error)"
     }
