@@ -8,6 +8,9 @@ quote callbacks run in the kgisuperpy internal thread — gate access with a loc
 
 from __future__ import annotations
 
+import glob
+import os
+import re
 import threading
 from typing import Optional
 
@@ -30,7 +33,7 @@ class KgiLoginFailedError(Exception):
     def __init__(self, error_code: int, reply_string: str) -> None:
         self.error_code = error_code
         self.reply_string = reply_string
-        super().__init__(f"KGI login failed (code={error_code}): {reply_string}")
+        super().__init__(f"KGI login failed (code={error_code})")
 
 
 class KgiPermissionOrCredentialRejected(Exception):
@@ -57,8 +60,8 @@ class KgiLoginObjectMissingAttr(Exception):
     """
 
     def __init__(self, attr_name: str) -> None:
-        self.attr_name = attr_name
-        super().__init__(f"KGI login result object missing attribute: {attr_name}")
+        self.attr_name = _safe_attr_name(attr_name)
+        super().__init__(f"KGI login result object missing attribute: {self.attr_name}")
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +82,87 @@ def _mask_person_id_for_log(person_id: str) -> str:
     keep_tail = 2
     masked_len = len(pid) - keep_head - keep_tail
     return pid[:keep_head] + "*" * masked_len + pid[-keep_tail:]
+
+
+def _safe_attr_name(value: object) -> str:
+    text = str(value)
+    marker = "has no attribute "
+    if marker in text:
+        text = text.rsplit(marker, 1)[1].strip().strip("'\"")
+    candidate = text.strip().strip("'\"")
+    if candidate.replace("_", "").isalnum() and candidate[:1].isalpha():
+        return candidate[:64]
+    return "unknown"
+
+
+def _safe_int(value: object, default: int = -1) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if re.fullmatch(r"-?\d+", text):
+            return int(text)
+    return default
+
+
+def _redact_sensitive_text(text: object, *secrets: object) -> str:
+    safe = str(text)
+    for secret in secrets:
+        if secret is None:
+            continue
+        value = str(secret)
+        if not value:
+            continue
+        safe = safe.replace(value, "[REDACTED]")
+        safe = safe.replace(value.upper(), "[REDACTED]")
+    return safe
+
+
+def _latest_tradecom_login_code(person_id: str) -> int:
+    """
+    kgisuperpy exposes login success as _ObjOrder.FIsLogon, but the native
+    TradeCom code (for example 78) is only written to its rotating log.
+    Best-effort parse; failures fall back to -1 without leaking log content.
+    """
+    try:
+        push_dir = os.path.join(os.path.dirname(kgisuperpy.__file__), "pushClient")
+        pattern = os.path.join(push_dir, f"TradeCom.*-{person_id.upper()}_*.log")
+        paths = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+    except OSError:
+        return -1
+
+    code_pattern = re.compile(r"Login Failed\s*\.\.\.\s*\((\d+)\)")
+    for path in paths[:5]:
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                content = handle.read()
+        except OSError:
+            continue
+        matches = code_pattern.findall(content)
+        if matches:
+            return _safe_int(matches[-1])
+    return -1
+
+
+def _sdk_login_state(login_result: object) -> tuple[object, str]:
+    """
+    Support both the actual kgisuperpy shape (_ObjOrder.FIsLogon) and older
+    test/mocked shapes (IsSucceed).
+    """
+    missing = object()
+    obj_order = getattr(login_result, "_ObjOrder", missing)
+    if obj_order is not missing:
+        f_is_logon = getattr(obj_order, "FIsLogon", missing)
+        if f_is_logon is not missing:
+            return f_is_logon, "_ObjOrder.FIsLogon"
+
+    is_succeed = getattr(login_result, "IsSucceed", missing)
+    if is_succeed is not missing:
+        return is_succeed, "IsSucceed"
+
+    return missing, "_ObjOrder.FIsLogon"
 
 
 class KgiSession:
@@ -149,35 +233,51 @@ class KgiSession:
                 simulation=simulation,
             )
 
-            # --- Layer 1: IsSucceed guard ---
-            # When KGI rejects credentials, login() returns an object where
-            # IsSucceed=False.  Calling show_account() on that object raises
-            # AttributeError (the method does not exist on the failure stub).
-            # We must check IsSucceed BEFORE touching any other attribute.
-            is_succeed = getattr(login_result, "IsSucceed", None)
-            if is_succeed is False:
-                error_code = int(getattr(login_result, "RtnCode", -1))
+            # --- Layer 1: login-state guard ---
+            # Actual kgisuperpy exposes _ObjOrder.FIsLogon, not IsSucceed.
+            # Mock/older shapes may expose IsSucceed. Account methods are only
+            # allowed after a positive True from one of those known state flags.
+            login_state, state_attr = _sdk_login_state(login_result)
+            if login_state is False:
+                error_code = _safe_int(getattr(login_result, "RtnCode", -1))
+                if error_code == -1 and state_attr == "_ObjOrder.FIsLogon":
+                    error_code = _latest_tradecom_login_code(person_id)
                 reply_string = str(getattr(login_result, "ReplyString", "登入失敗"))
+                safe_reply = _redact_sensitive_text(reply_string, person_id, person_pwd)
                 # Log safe diagnostic fields (no password, masked person_id)
                 _log.warning(
-                    "[kgi-session] login IsSucceed=False simulation=%s person_id=%s "
+                    "[kgi-session] login rejected state_attr=%s simulation=%s person_id=%s "
                     "error_code=%d reply=%s",
-                    simulation, masked_pid, error_code, reply_string,
+                    state_attr, simulation, masked_pid, error_code, safe_reply,
                 )
                 # Do NOT store the failed api object in self._api.
-                # Do NOT call login_result.show_account().
+                # Do NOT call login_result.show_account() or any account method.
                 if error_code == 78:
                     raise KgiPermissionOrCredentialRejected(code=error_code)
                 raise KgiLoginFailedError(error_code=error_code, reply_string=reply_string)
 
             # --- Layer 2: Positive confirmation guard ---
-            # Even when IsSucceed is not False, verify the expected method exists
-            # before calling it.  An SDK version mismatch or unexpected object shape
-            # could produce a result without show_account — we must not 502 on that.
+            if login_state is not True:
+                _log.error(
+                    "[kgi-session] login not positively confirmed simulation=%s "
+                    "person_id=%s attr=%s value_type=%s",
+                    simulation, masked_pid, state_attr, type(login_state).__name__,
+                )
+                raise KgiLoginObjectMissingAttr(attr_name=state_attr)
+
+            show_account = getattr(login_result, "show_account", None)
+            if not callable(show_account):
+                _log.error(
+                    "[kgi-session] login result missing callable simulation=%s "
+                    "person_id=%s attr=%s",
+                    simulation, masked_pid, "show_account",
+                )
+                raise KgiLoginObjectMissingAttr(attr_name="show_account")
+
             try:
-                raw_accounts = login_result.show_account()
+                raw_accounts = show_account()
             except AttributeError as e:
-                attr_name = str(e)
+                attr_name = _safe_attr_name(e)
                 _log.error(
                     "[kgi-session] login result missing attribute simulation=%s "
                     "person_id=%s attr=%s",
