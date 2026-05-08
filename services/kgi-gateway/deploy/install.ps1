@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    KGI Gateway EC2 install script — installs Python, gateway source, deps, env vars.
+    KGI Gateway EC2 install script - installs Python, gateway source, deps, env vars.
 
 .DESCRIPTION
     Runs on Windows Server 2022 EC2 (i-0b02f62220f422349 / 54.249.139.28).
@@ -106,7 +106,7 @@ if (-not $DryRun) {
     }
 }
 
-# Verify SourceDir contains app.py (skipped in dry-run — SourceDir may not exist on local machine)
+# Verify SourceDir contains app.py (skipped in dry-run - SourceDir may not exist on local machine)
 if (-not $DryRun) {
     if (-not (Test-Path "$SourceDir\app.py")) {
         Write-Err "SourceDir '$SourceDir' does not contain app.py. Check -SourceDir parameter."
@@ -114,7 +114,7 @@ if (-not $DryRun) {
     }
 } else {
     if (-not (Test-Path "$SourceDir\app.py")) {
-        Write-Info "[DRY-RUN] Note: SourceDir '$SourceDir' does not contain app.py — ok in dry-run (pass -SourceDir on EC2)"
+        Write-Info "[DRY-RUN] Note: SourceDir '$SourceDir' does not contain app.py - ok in dry-run (pass -SourceDir on EC2)"
     }
 }
 
@@ -144,7 +144,7 @@ if ($null -eq $pythonExe) {
 if ($null -ne $pythonExe) {
     Write-Info "Python 3.11 found: $pythonExe"
 } else {
-    Write-Info "Python 3.11 not found — installing via winget..."
+    Write-Info "Python 3.11 not found - installing via winget..."
     Invoke-Action "winget install Python 3.11" {
         # winget: package ID for Python 3.11 on Windows
         $result = winget install --id Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements
@@ -163,7 +163,7 @@ if ($null -ne $pythonExe) {
     $pyCmd = Get-Command python -ErrorAction SilentlyContinue
     if ($null -ne $pyCmd) { $pythonExe = $pyCmd.Source }
     if ($null -eq $pythonExe) {
-        Write-Err "Python install failed — python.exe not found after install."
+        Write-Err "Python install failed - python.exe not found after install."
         exit 1
     }
     Write-Info "Python installed: $pythonExe"
@@ -188,7 +188,7 @@ $vcInstalled = Get-ItemProperty HKLM:\SOFTWARE\Microsoft\VisualStudio\*\VC\Runti
 if ($vcInstalled) {
     Write-Info "Visual C++ Runtime 2015-2022 already present."
 } else {
-    Write-Info "Visual C++ Runtime not detected — installing..."
+    Write-Info "Visual C++ Runtime not detected - installing..."
     Invoke-Action "Install VC++ Runtime" {
         $vcUrl  = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
         $vcPath = "$env:TEMP\vc_redist.x64.exe"
@@ -206,7 +206,7 @@ Invoke-Action "Create install dir + copy files" {
     if (-not (Test-Path $GatewayInstallDir)) {
         New-Item -ItemType Directory -Path $GatewayInstallDir -Force | Out-Null
     }
-    # Copy all .py files, schemas, config, errMsg.ini — no tests/deploy/scripts
+    # Copy all .py files, schemas, config, errMsg.ini - no tests/deploy/scripts
     $filesToCopy = @(
         "app.py", "config.py", "kgi_session.py", "kgi_quote.py",
         "kgi_kbar.py", "kgi_events.py", "read_only_guard.py",
@@ -227,7 +227,7 @@ Invoke-Action "Create install dir + copy files" {
         Copy-Item -Path $reqSrc -Destination $GatewayInstallDir -Force
         Write-Info "  Copied: requirements.txt"
     } else {
-        Write-Warn "  requirements.txt not found in SourceDir — will install known packages directly"
+        Write-Warn "  requirements.txt not found in SourceDir - will install known packages directly"
     }
 }
 
@@ -256,7 +256,7 @@ Invoke-Action "pip install gateway dependencies" {
         & $pythonExe -m pip install $wheel.FullName --upgrade
     } else {
         Write-Info "  Installing kgisuperpy from PyPI (if available)..."
-        # kgisuperpy is a proprietary KGI SDK — PyPI availability not guaranteed.
+        # kgisuperpy is a proprietary KGI SDK - PyPI availability not guaranteed.
         # If this fails the operator must copy the wheel manually to $SourceDir.
         & $pythonExe -m pip install kgisuperpy --upgrade
         if ($LASTEXITCODE -ne 0) {
@@ -267,7 +267,7 @@ Invoke-Action "pip install gateway dependencies" {
 }
 
 # ---------------------------------------------------------------------------
-# 6. Environment variables — SSM or interactive prompt
+# 6. Environment variables - SSM or interactive prompt
 # ---------------------------------------------------------------------------
 Write-Info "--- Step 6: Environment variables ---"
 
@@ -294,7 +294,7 @@ if ($UseSSM) {
         $envVars["KGI_PERSON_PWD"] = "DRY_RUN_PLACEHOLDER"
     }
 } else {
-    Write-Info "SSM disabled — prompting for credentials interactively..."
+    Write-Info "SSM disabled - prompting for credentials interactively..."
     if (-not $DryRun) {
         $personId  = Read-Host "Enter KGI_PERSON_ID (uppercase, e.g. A123456789)"
         $personPwd = Read-Host "Enter KGI_PERSON_PWD (electronic trading password)" -AsSecureString
@@ -333,7 +333,7 @@ Invoke-Action "Write env vars to Machine registry (system-wide)" {
 # 7. Smoke-test: start gateway, curl /health, stop
 # ---------------------------------------------------------------------------
 Write-Info "--- Step 7: Smoke test ---"
-Invoke-Action "Run gateway smoke test (start → /health → stop)" {
+Invoke-Action "Run gateway smoke test (start -> /health -> stop)" {
     # Temporarily set env for this process
     foreach ($kv in $envVars.GetEnumerator()) {
         [System.Environment]::SetEnvironmentVariable($kv.Key, $kv.Value, "Process")
@@ -344,7 +344,7 @@ Invoke-Action "Run gateway smoke test (start → /health → stop)" {
                              -ArgumentList "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8787" `
                              -WorkingDirectory $GatewayInstallDir `
                              -PassThru -WindowStyle Hidden
-    Write-Info "  Gateway PID=$($gwProc.Id) — waiting 8s for startup..."
+    Write-Info "  Gateway PID=$($gwProc.Id) - waiting 8s for startup..."
     Start-Sleep -Seconds 8
 
     try {
@@ -391,6 +391,6 @@ Invoke-Action "Write $evidencePath" {
 
 Write-Info "========================================"
 Write-Info "Install script complete."
-if ($DryRun) { Write-Info "DRY-RUN mode — no changes were made." }
+if ($DryRun) { Write-Info "DRY-RUN mode - no changes were made." }
 Write-Info "Next step: run nssm_install.ps1 to register as Windows service."
 Write-Info "========================================"

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    KGI Gateway health watchdog — restarts NSSM service after 3 consecutive /health failures.
+    KGI Gateway health watchdog - restarts NSSM service after 3 consecutive /health failures.
 
 .DESCRIPTION
     Designed to run as a Windows Scheduled Task every 1 minute.
@@ -84,13 +84,13 @@ function Save-WatchdogState {
 }
 
 # ---------------------------------------------------------------------------
-# Sentry capture (optional — only if SENTRY_DSN env var is set)
+# Sentry capture (optional - only if SENTRY_DSN env var is set)
 # ---------------------------------------------------------------------------
 function Send-SentryEvent {
     param([string]$Message)
     $dsn = [System.Environment]::GetEnvironmentVariable("SENTRY_DSN", "Machine")
     if (-not $dsn) {
-        Write-Info "SENTRY_DSN not set — skipping Sentry notification."
+        Write-Info "SENTRY_DSN not set - skipping Sentry notification."
         return
     }
     try {
@@ -118,7 +118,7 @@ function Send-SentryEvent {
             Invoke-RestMethod -Uri $storeUrl -Method Post -Body $body -Headers $headers -TimeoutSec 10 | Out-Null
             Write-Info "Sentry event sent: $eventId"
         } else {
-            Write-Warn "SENTRY_DSN format not recognized — skipping."
+            Write-Warn "SENTRY_DSN format not recognized - skipping."
         }
     } catch {
         Write-Warn "Sentry send failed: $_"
@@ -130,7 +130,7 @@ function Send-SentryEvent {
 # ---------------------------------------------------------------------------
 $state = Get-WatchdogState
 
-Write-Info "Watchdog tick — probing $HealthUrl  (consecutive_fails=$($state.consecutive_fails))"
+Write-Info "Watchdog tick - probing $HealthUrl  (consecutive_fails=$($state.consecutive_fails))"
 
 # Probe /health
 $healthy = $false
@@ -149,7 +149,7 @@ try {
 if ($healthy) {
     # Reset failure counter on success
     if ($state.consecutive_fails -gt 0) {
-        Write-Info "Service recovered — resetting failure counter (was $($state.consecutive_fails))"
+        Write-Info "Service recovered - resetting failure counter (was $($state.consecutive_fails))"
     }
     $state["consecutive_fails"] = 0
     Save-WatchdogState $state
@@ -162,14 +162,14 @@ Write-Warn "Failure $($state.consecutive_fails) / $MaxFails"
 Save-WatchdogState $state
 
 if ($state.consecutive_fails -lt $MaxFails) {
-    Write-Info "Below threshold — waiting for next tick."
+    Write-Info "Below threshold - waiting for next tick."
     exit 0
 }
 
 # ---------------------------------------------------------------------------
 # Threshold reached: restart service
 # ---------------------------------------------------------------------------
-$msg = "KGI Gateway /health failed $($state.consecutive_fails) consecutive times — restarting service '$ServiceName'"
+$msg = "KGI Gateway /health failed $($state.consecutive_fails) consecutive times - restarting service '$ServiceName'"
 Write-Warn $msg
 
 if ($DryRun) {
