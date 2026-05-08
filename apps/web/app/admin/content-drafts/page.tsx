@@ -231,7 +231,7 @@ const ADM_DRAFTS_CSS = `
 function statusColorVar(status: string): string {
   if (status === "approved") return "#4caf50";
   if (status === "rejected") return "#ef5350";
-  if (status === "pending") return "#ffb800";
+  if (status === "awaiting_review") return "#ffb800";
   return "#888";
 }
 
@@ -316,7 +316,7 @@ export default async function ContentDraftsAdminPage({
   }
 
   const approvedCount = drafts.filter((d) => d.status === "approved").length;
-  const pendingCount = drafts.filter((d) => d.status === "pending").length;
+  const pendingCount = drafts.filter((d) => d.status === "awaiting_review").length;
   const rejectedCount = drafts.filter((d) => d.status === "rejected").length;
 
   return (

@@ -28,7 +28,7 @@ function parseStatus(value: string | undefined): ContentDraftStatus | undefined 
 function statusAccentColor(status: string) {
   if (status === "approved") return "#4caf50";
   if (status === "rejected") return "#ef5350";
-  if (status === "pending") return "#ffb800";
+  if (status === "awaiting_review") return "#ffb800";
   if (status === "draft") return "#888";
   return "#888";
 }
@@ -224,7 +224,7 @@ const DRAFTS_CSS = `
 function statusColors(status: string): { bg: string; color: string; border: string } {
   if (status === "approved") return { bg: "rgba(76,175,80,0.15)", color: "#4caf50", border: "rgba(76,175,80,0.35)" };
   if (status === "rejected") return { bg: "rgba(239,83,80,0.15)", color: "#ef5350", border: "rgba(239,83,80,0.35)" };
-  if (status === "pending") return { bg: "rgba(255,184,0,0.15)", color: "#ffb800", border: "rgba(255,184,0,0.35)" };
+  if (status === "awaiting_review") return { bg: "rgba(255,184,0,0.15)", color: "#ffb800", border: "rgba(255,184,0,0.35)" };
   return { bg: "rgba(100,100,100,0.15)", color: "#888", border: "rgba(100,100,100,0.3)" };
 }
 
@@ -301,7 +301,7 @@ export default async function DraftsPage({
   const hiddenCount = Math.max(0, drafts.length - visibleDrafts.length);
 
   const approvedCount = drafts.filter((d) => d.status === "approved").length;
-  const pendingCount = drafts.filter((d) => d.status === "pending").length;
+  const pendingCount = drafts.filter((d) => d.status === "awaiting_review").length;
   const rejectedCount = drafts.filter((d) => d.status === "rejected").length;
 
   return (
