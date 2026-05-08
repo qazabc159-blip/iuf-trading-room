@@ -1,4 +1,4 @@
-import { PageFrame, Panel } from "@/components/PageFrame";
+import { PageFrame } from "@/components/PageFrame";
 import { getReviews } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanNarrativeText, cleanTradePlanText } from "@/lib/operator-copy";
@@ -8,40 +8,226 @@ function formatDateTime(value: string) {
   return new Date(value).toLocaleString("zh-TW", { hour12: false });
 }
 
+function formatDateShort(value: string) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("zh-TW", { month: "2-digit", day: "2-digit" });
+}
+
 function sortReviews(reviews: ReviewEntry[]) {
   return [...reviews].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-function qualityBadge(value: number) {
-  if (value >= 4) return "badge-green";
-  if (value <= 2) return "badge-red";
-  return "badge-yellow";
+function qualityColor(value: number) {
+  if (value >= 4) return { border: "rgba(46,204,113,0.55)", bg: "rgba(46,204,113,0.08)", text: "#4adb88" };
+  if (value <= 2) return { border: "rgba(230,57,70,0.55)", bg: "rgba(230,57,70,0.08)", text: "#ff6b77" };
+  return { border: "rgba(200,148,63,0.55)", bg: "rgba(200,148,63,0.08)", text: "#e2b85c" };
 }
 
-function surfaceLabel(state: "EMPTY" | "BLOCKED") {
-  return state === "EMPTY" ? "無資料" : "暫停";
+function qualityLabel(value: number) {
+  if (value >= 4) return "執行優";
+  if (value <= 2) return "待改善";
+  return "尚可";
 }
 
-function ReviewStatePanel({
-  state,
-  reason,
-  updatedAt,
-}: {
-  state: "EMPTY" | "BLOCKED";
-  reason: string;
-  updatedAt: string;
-}) {
-  return (
-    <Panel code={`REV-${state}`} title={surfaceLabel(state)} right="交易檢討資料">
-      <div className="state-panel">
-        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{surfaceLabel(state)}</span>
-        <span className="tg soft">交易檢討資料</span>
-        <span className="tg soft">更新 {formatDateTime(updatedAt)}</span>
-        <span className="state-reason">{reason}</span>
-      </div>
-    </Panel>
-  );
+const REVIEWS_CSS = `
+._rev-hero-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 1px;
+  background: rgba(220,228,240,0.09);
+  border: 1px solid rgba(220,228,240,0.13);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 28px;
 }
+._rev-hero-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 22px;
+  background: rgba(8,11,16,0.82);
+  transition: background 0.15s;
+}
+._rev-hero-cell:hover { background: rgba(255,255,255,0.03); }
+._rev-hero-val {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1;
+  font-family: var(--mono, monospace);
+  font-variant-numeric: tabular-nums;
+}
+._rev-hero-lbl {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(145,160,181,0.7);
+  font-family: var(--mono, monospace);
+}
+._rev-panel {
+  margin-bottom: 0;
+}
+._rev-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
+}
+._rev-card {
+  position: relative;
+  padding: 22px 26px;
+  border-radius: 4px;
+  border: 1px solid rgba(220,228,240,0.08);
+  border-left: 3px solid;
+  background: rgba(8,11,16,0.58);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s;
+  overflow: hidden;
+}
+._rev-card:hover {
+  transform: translateY(-2px);
+  background: rgba(14,18,26,0.82);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  ._rev-card { transition: none; }
+  ._rev-card:hover { transform: none; }
+}
+._rev-card-glow {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 60px;
+  pointer-events: none;
+}
+._rev-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  position: relative;
+  z-index: 1;
+}
+._rev-q-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid;
+  font-size: 16px;
+  font-weight: 800;
+  font-family: var(--mono, monospace);
+  flex-shrink: 0;
+}
+._rev-date {
+  font-size: 12px;
+  font-family: var(--mono, monospace);
+  color: rgba(145,160,181,0.7);
+  letter-spacing: 0.02em;
+}
+._rev-plan-id {
+  font-size: 10px;
+  font-family: var(--mono, monospace);
+  color: rgba(145,160,181,0.4);
+  letter-spacing: 0.02em;
+  margin-left: auto;
+}
+._rev-outcome {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e7ecf3;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  position: relative;
+  z-index: 1;
+}
+._rev-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+  position: relative;
+  z-index: 1;
+}
+._rev-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+._rev-detail-label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(145,160,181,0.55);
+  font-family: var(--mono, monospace);
+}
+._rev-detail-text {
+  font-size: 12px;
+  color: rgba(220,228,240,0.75);
+  line-height: 1.55;
+}
+._rev-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+  position: relative;
+  z-index: 1;
+}
+._rev-tag {
+  font-size: 10px;
+  font-family: var(--mono, monospace);
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: rgba(220,228,240,0.05);
+  border: 1px solid rgba(220,228,240,0.12);
+  color: rgba(145,160,181,0.8);
+}
+._rev-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 56px 32px;
+  text-align: center;
+}
+._rev-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(220,228,240,0.04);
+  border: 1px solid rgba(220,228,240,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+._rev-note {
+  padding: 16px 20px;
+  border-radius: 4px;
+  background: rgba(200,148,63,0.06);
+  border: 1px solid rgba(200,148,63,0.2);
+  border-left: 3px solid rgba(200,148,63,0.55);
+  margin-top: 24px;
+}
+._rev-note-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #e2b85c;
+  font-family: var(--mono, monospace);
+  margin-bottom: 6px;
+}
+._rev-note-body {
+  font-size: 12px;
+  color: rgba(145,160,181,0.8);
+  line-height: 1.6;
+}
+@media (max-width: 640px) {
+  ._rev-detail-grid { grid-template-columns: 1fr; }
+}
+`;
 
 export default async function ReviewsPage() {
   let reviews: ReviewEntry[] = [];
@@ -55,6 +241,12 @@ export default async function ReviewsPage() {
     error = friendlyDataError(err, "交易檢討暫時無法讀取。");
   }
 
+  const totalQ = reviews.length > 0 ? reviews.reduce((s, r) => s + r.executionQuality, 0) : 0;
+  const avgQ = reviews.length > 0 ? (totalQ / reviews.length).toFixed(1) : "--";
+  const highQ = reviews.filter((r) => r.executionQuality >= 4).length;
+  const lowQ = reviews.filter((r) => r.executionQuality <= 2).length;
+  const taggedCount = reviews.filter((r) => r.setupTags.length > 0).length;
+
   return (
     <PageFrame
       code="REV"
@@ -62,74 +254,155 @@ export default async function ReviewsPage() {
       sub="成交後復盤與執行品質"
       note="此頁只讀取正式資料庫的交易檢討，不顯示假資料，也不提供本地模擬動作。"
     >
+      <style>{REVIEWS_CSS}</style>
+
+      {/* Hero KPI bar */}
+      <div className="_rev-hero-row">
+        <div className="_rev-hero-cell">
+          <span className="_rev-hero-val" style={{ color: reviews.length > 0 ? "#e7ecf3" : "#566276" }}>
+            {reviews.length}
+          </span>
+          <span className="_rev-hero-lbl">覆盤紀錄</span>
+        </div>
+        <div className="_rev-hero-cell">
+          <span className="_rev-hero-val" style={{ color: avgQ !== "--" ? "#e2b85c" : "#566276" }}>
+            {avgQ}
+          </span>
+          <span className="_rev-hero-lbl">平均品質 Q</span>
+        </div>
+        <div className="_rev-hero-cell">
+          <span className="_rev-hero-val" style={{ color: highQ > 0 ? "#4adb88" : "#566276" }}>
+            {highQ}
+          </span>
+          <span className="_rev-hero-lbl">優質執行</span>
+        </div>
+        <div className="_rev-hero-cell">
+          <span className="_rev-hero-val" style={{ color: lowQ > 0 ? "#ff6b77" : "#566276" }}>
+            {lowQ}
+          </span>
+          <span className="_rev-hero-lbl">待改善</span>
+        </div>
+        <div className="_rev-hero-cell">
+          <span className="_rev-hero-val" style={{ color: taggedCount > 0 ? "#91a0b5" : "#566276" }}>
+            {taggedCount}
+          </span>
+          <span className="_rev-hero-lbl">有標籤</span>
+        </div>
+      </div>
+
       {error && (
-        <ReviewStatePanel
-          state="BLOCKED"
-          reason={`交易檢討資料暫時無法讀取；後端負責人 內容與後端資料管線。${error}`}
-          updatedAt={requestedAt}
-        />
+        <div className="_rev-empty-state">
+          <div className="_rev-empty-icon">
+            <span style={{ color: "#e63946", fontSize: 22 }}>✕</span>
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#c6d0de", marginBottom: 6 }}>資料來源暫停</div>
+            <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
+              交易檢討資料暫時無法讀取。系統持續嘗試重連；請稍候重新整理。
+            </div>
+          </div>
+        </div>
       )}
 
       {!error && reviews.length === 0 && (
-        <ReviewStatePanel
-          state="EMPTY"
-          reason="目前工作區沒有交易檢討紀錄。"
-          updatedAt={requestedAt}
-        />
+        <div className="_rev-empty-state">
+          <div className="_rev-empty-icon">
+            <span style={{ color: "#e2b85c", fontSize: 22 }}>◌</span>
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#c6d0de", marginBottom: 6 }}>尚無覆盤紀錄</div>
+            <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
+              目前工作區沒有交易檢討紀錄。完成交易後由操作員建立覆盤條目。
+            </div>
+          </div>
+        </div>
       )}
 
       {!error && reviews.length > 0 && (
-        <Panel
-          code="REV-LIVE"
-          title="交易檢討紀錄"
-          right={
-            <span className="source-line" style={{ margin: 0 }}>
-              <span className="badge badge-green">正常</span>
-              <span>交易檢討資料</span>
-              <span>更新 {formatDateTime(reviews[0].createdAt)}</span>
-              <span>{reviews.length} 筆</span>
-            </span>
-          }
-        >
-          <div className="review-ledger-list">
-            {reviews.map((review) => (
-              <article className="review-ledger-card" key={review.id}>
-                <div className="review-ledger-head">
-                  <span className="tg gold">{formatDateTime(review.createdAt)}</span>
-                  <span className={`badge ${qualityBadge(review.executionQuality)}`}>
+        <div className="_rev-list">
+          {reviews.map((review) => {
+            const qc = qualityColor(review.executionQuality);
+            return (
+              <div
+                key={review.id}
+                className="_rev-card"
+                style={{ borderLeftColor: qc.border }}
+              >
+                {/* Glow */}
+                <div
+                  className="_rev-card-glow"
+                  style={{ background: `radial-gradient(ellipse at 0% 0%, ${qc.bg.replace("0.08", "0.14")}, transparent 60%)` }}
+                />
+
+                {/* Head */}
+                <div className="_rev-head">
+                  <div
+                    className="_rev-q-badge"
+                    style={{
+                      borderColor: qc.border,
+                      background: qc.bg,
+                      color: qc.text,
+                    }}
+                  >
                     Q{review.executionQuality}
-                  </span>
-                  <span className="tg soft">計畫 {review.tradePlanId.slice(0, 8)}</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: qc.text, fontFamily: "var(--mono, monospace)" }}>
+                      {qualityLabel(review.executionQuality)}
+                    </span>
+                    <span className="_rev-date">{formatDateShort(review.createdAt)}</span>
+                  </div>
+                  <span className="_rev-plan-id">計畫 {review.tradePlanId.slice(0, 8)}</span>
                 </div>
-                <h2>{cleanTradePlanText(review.outcome, "未命名檢討")}</h2>
-                {review.attribution && (
-                  <p><b>歸因：</b>{cleanNarrativeText(review.attribution, "歸因尚未完成中文整理。")}</p>
+
+                {/* Outcome */}
+                <div className="_rev-outcome">
+                  {cleanTradePlanText(review.outcome, "未命名檢討")}
+                </div>
+
+                {/* Attribution + Lesson */}
+                {(review.attribution || review.lesson) && (
+                  <div className="_rev-detail-grid">
+                    {review.attribution && (
+                      <div className="_rev-detail-item">
+                        <span className="_rev-detail-label">歸因</span>
+                        <span className="_rev-detail-text">
+                          {cleanNarrativeText(review.attribution, "歸因尚未完成中文整理。")}
+                        </span>
+                      </div>
+                    )}
+                    {review.lesson && (
+                      <div className="_rev-detail-item">
+                        <span className="_rev-detail-label">教訓</span>
+                        <span className="_rev-detail-text">
+                          {cleanNarrativeText(review.lesson, "教訓尚未完成中文整理。")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 )}
-                {review.lesson && (
-                  <p><b>教訓：</b>{cleanNarrativeText(review.lesson, "教訓尚未完成中文整理。")}</p>
-                )}
+
+                {/* Setup tags */}
                 {review.setupTags.length > 0 && (
-                  <div className="review-tag-row">
+                  <div className="_rev-tag-row">
                     {review.setupTags.map((tag) => (
-                      <span className="badge" key={`${review.id}-${tag}`}>{tag}</span>
+                      <span key={`${review.id}-${tag}`} className="_rev-tag">{tag}</span>
                     ))}
                   </div>
                 )}
-              </article>
-            ))}
-          </div>
-        </Panel>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      <Panel code="REV-ACTION" title="審核動作" right="待後端契約">
-        <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">負責人：內容與後端資料管線</span>
-          <span className="state-reason">
-            目前沒有正式後端契約可在此頁核准或退回檢討。舊的本地按鈕已移除，避免把模擬動作誤認為已寫入資料庫。
-          </span>
+      {/* Read-only boundary note */}
+      <div className="_rev-note" style={{ marginTop: reviews.length > 0 ? 24 : 16 }}>
+        <div className="_rev-note-title">READ-ONLY 邊界</div>
+        <div className="_rev-note-body">
+          本頁是只讀覆盤面板。模擬委託預覽與送出已放在個股頁；核准或退回動作尚未有正式後端契約，舊的本地按鈕已移除。
         </div>
-      </Panel>
+      </div>
     </PageFrame>
   );
 }
