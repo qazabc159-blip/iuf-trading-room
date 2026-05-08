@@ -255,7 +255,8 @@ export function parseSymbolWhitelist(raw: string | undefined): string[] {
 export interface KgiQuoteClientConfig {
   /**
    * Base URL of the KGI Windows gateway.
-   * Default: process.env.KGI_GATEWAY_BASE_URL ?? "http://127.0.0.1:8787"
+   * Reads from env: KGI_GATEWAY_URL (preferred) OR KGI_GATEWAY_BASE_URL (legacy alias).
+   * Default: "http://127.0.0.1:8787"
    */
   gatewayBaseUrl?: string;
 
@@ -340,8 +341,9 @@ export class KgiQuoteClient {
   private readonly staleThresholdMs: number;
 
   constructor(config: KgiQuoteClientConfig = {}) {
+    // KGI_GATEWAY_URL is the preferred env var; KGI_GATEWAY_BASE_URL is a legacy alias.
     this.baseUrl =
-      (config.gatewayBaseUrl ?? process.env["KGI_GATEWAY_BASE_URL"] ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+      (config.gatewayBaseUrl ?? process.env["KGI_GATEWAY_URL"] ?? process.env["KGI_GATEWAY_BASE_URL"] ?? "http://127.0.0.1:8787").replace(/\/$/, "");
     this.timeoutMs = config.connectTimeoutMs ?? 5_000;
     this.whitelist =
       config.symbolWhitelist ??

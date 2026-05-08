@@ -5231,9 +5231,12 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
 //   - Maps company.ticker → KGI symbol (same value for TW stocks)
 //   - If symbol not whitelisted → state=BLOCKED, reason=symbol_not_whitelisted
 //   - If gateway disabled/unreachable → state=BLOCKED, reason=<error_code>
+//   - Step A: subscribe tick + bidask (idempotent on gateway; per-process cache avoids redundant calls)
+//   - Step B: poll tick + bidask in parallel (fail-soft per leg)
 //   - On success: merges latest tick (lastPrice, volume) + bidask (bid, ask)
 //   - Freshness from stale detection (D-W2D-1): fresh | stale | not-available
 //   - source: 'kgi-gateway' always (no mock fallback — honest about state)
+//   - Gateway URL from env KGI_GATEWAY_URL (preferred) or KGI_GATEWAY_BASE_URL (legacy)
 //
 // Hard lines:
 //   - NO order surface
@@ -5246,6 +5249,15 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
 //   { data: { symbol, lastPrice, bid, ask, volume, freshness, state, source, updatedAt } }
 //   state: 'LIVE' | 'STALE' | 'BLOCKED' | 'NO_DATA'
 // =============================================================================
+
+// Per-process subscribe cache: tracks which symbols have been successfully subscribed
+// for tick. Avoids redundant subscribe calls on every 5s poll.
+const _realtimeSubscribedSymbols = new Set<string>();
+
+/** Reset subscribe cache — for tests only. */
+export function _resetRealtimeSubscribeCache(): void {
+  _realtimeSubscribedSymbols.clear();
+}
 
 app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   // 1. Resolve company
@@ -5276,7 +5288,47 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     });
   }
 
-  // 3. Fetch latest tick + bidask in parallel (fail-soft per leg)
+  // 3. Subscribe tick + bidask (idempotent on gateway; cache prevents redundant calls)
+  //    Tick subscribe failure → BLOCKED immediately (no data to return).
+  //    Bidask subscribe failure → non-fatal (tick-only data is still useful).
+  if (!_realtimeSubscribedSymbols.has(symbol)) {
+    const [subTickResult, subBidAskResult] = await Promise.allSettled([
+      client.subscribeSymbolTick(symbol),
+      client.subscribeSymbolBidAsk(symbol),
+    ]);
+
+    if (subTickResult.status !== "fulfilled") {
+      const err = subTickResult.reason;
+      let subscribeBlockReason = "subscribe_failed";
+      if (err instanceof KgiQuoteUnreachableError) subscribeBlockReason = "gateway_unreachable";
+      else if (err instanceof KgiQuoteAuthError) subscribeBlockReason = "gateway_auth_error";
+      else if (err instanceof KgiQuoteDisabledError) subscribeBlockReason = "quote_disabled";
+
+      return c.json({
+        data: {
+          symbol,
+          lastPrice: null,
+          bid: null,
+          ask: null,
+          volume: null,
+          freshness: "not-available" as const,
+          state: "BLOCKED" as const,
+          reason: subscribeBlockReason,
+          source: "kgi-gateway" as const,
+          updatedAt
+        }
+      });
+    }
+
+    // Mark subscribed once tick succeeds
+    _realtimeSubscribedSymbols.add(symbol);
+
+    if (subBidAskResult.status !== "fulfilled") {
+      console.warn(`[realtime] bidask subscribe failed for ${symbol}, continuing tick-only`);
+    }
+  }
+
+  // 4. Fetch latest tick + bidask in parallel (fail-soft per leg)
   let lastPrice: number | null = null;
   let volume: number | null = null;
   let bid: number | null = null;
@@ -5307,10 +5359,13 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     } else if (err instanceof KgiQuoteUnreachableError) {
       blockedReason = "gateway_unreachable";
     } else if (err instanceof KgiQuoteNotAvailableError) {
+      // Subscribed but no data yet (e.g. after-hours, subscribe lag)
       blockedReason = "symbol_not_subscribed";
     } else {
       blockedReason = "gateway_error";
     }
+    // Evict so next request re-subscribes (session may have expired)
+    _realtimeSubscribedSymbols.delete(symbol);
   }
 
   // Parse bidask leg (best-effort — don't block if tick succeeded)
@@ -5319,14 +5374,13 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     if (ba) {
       bid = ba.bid_prices?.[0] ?? null;
       ask = ba.ask_prices?.[0] ?? null;
-      // Use bidask freshness if tick freshness is not-available
       if (freshness === "not-available") {
         freshness = bidaskResult.value.freshness;
       }
     }
   }
 
-  // 4. Determine state
+  // 5. Determine state
   let state: "LIVE" | "STALE" | "BLOCKED" | "NO_DATA";
   if (blockedReason) {
     state = "BLOCKED";
