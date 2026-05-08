@@ -11,7 +11,7 @@
  *   - HMAC secret read only from process.env.MARKET_AGENT_HMAC_SECRET
  *   - Secret NEVER written to Redis or Postgres
  *   - Stale data → warning in result, never silent fill (W7 hard line #11)
- *   - No KGI SDK import here (mock-only for now; see TODO markers below)
+ *   - No KGI SDK import here
  *   - No /order/create, no kill-switch state machine
  *
  * Redis hot-cache keys:
@@ -28,6 +28,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { createClient } from "redis";
+import { sql as drizzleSql } from "drizzle-orm";
+import { getDb } from "@iuf-trading-room/db";
 import type { MarketEvent, MarketAgentHeartbeat } from "@iuf-trading-room/contracts";
 
 // ── HMAC helpers ──────────────────────────────────────────────────────────────
@@ -126,7 +128,7 @@ export const _seqTracker = new IngestSequenceTracker();
 
 // ── Redis stub ────────────────────────────────────────────────────────────────
 //
-// Real Redis is wired when REDIS_URL is set (future W7 D2).
+// Real Redis is wired when REDIS_URL is set.
 // For now: in-memory Map that mirrors the Redis key semantics so tests can
 // exercise the full ingest flow without a real Redis instance.
 
@@ -240,10 +242,11 @@ class RedisCacheBackend implements CacheBackend {
 
 const cache: CacheBackend = new RedisCacheBackend();
 
-// ── Postgres stub ─────────────────────────────────────────────────────────────
+// ── Postgres persistence ───────────────────────────────────────────────────────
 //
-// Real Postgres write via Drizzle when DATABASE_URL is set (future W7 D2).
-// For now: in-memory array that mirrors the market_events table columns.
+// Attempts a real INSERT INTO market_events when DATABASE_URL is set.
+// Falls back to in-memory array when DB is unavailable.
+// HARD LINE: DB write failures are logged — never silently dropped.
 
 export interface MarketEventRow {
   id: string;
@@ -258,13 +261,52 @@ export interface MarketEventRow {
   received_at: string;
 }
 
-// TODO(W7-D2): replace with real Drizzle write when DATABASE_URL set.
+// In-memory fallback buffer (process lifetime; lost on restart).
+// Used when DB is unavailable or market_events table is missing.
 export const _persistedEvents: MarketEventRow[] = [];
 
+/**
+ * Persist a market event to Postgres market_events table.
+ * - DB available: INSERT via raw SQL (market_events not in Drizzle schema.ts).
+ * - DB unavailable / table missing: append to _persistedEvents in-memory buffer
+ *   and log a warning (never silent).
+ * Returns { persisted, mode } — mode="db" for real write, "memory" for fallback.
+ */
 async function persistEventToDb(
   event: MarketEvent,
   eventId: string
-): Promise<boolean> {
+): Promise<{ persisted: boolean; mode: "db" | "memory" }> {
+  const db = getDb();
+  if (db) {
+    try {
+      await db.execute(drizzleSql`
+        INSERT INTO market_events (id, event_type, symbol, agent_ts, seq, hmac_hex, data, received_at)
+        VALUES (
+          ${eventId}::uuid,
+          ${event.type},
+          ${event.symbol},
+          ${event.ts}::timestamptz,
+          ${event.seq},
+          ${event.hmac},
+          ${JSON.stringify(event.data)}::jsonb,
+          NOW()
+        )
+        ON CONFLICT (symbol, event_type, seq) DO NOTHING
+      `);
+      return { persisted: true, mode: "db" };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Non-fatal: table may not exist in this env (migration not promoted).
+      // Log warning so ops can see it; fall through to in-memory buffer.
+      console.warn(
+        `[market-ingest] DB persist failed (falling back to memory) ` +
+        `symbol=${event.symbol} type=${event.type} seq=${event.seq}: ${msg}`
+      );
+    }
+  }
+
+  // In-memory fallback — used when DB unavailable or table absent.
+  // This is an honest degraded state, not a silent fake persist.
   try {
     _persistedEvents.push({
       id: eventId,
@@ -276,9 +318,9 @@ async function persistEventToDb(
       data: event.data as Record<string, unknown>,
       received_at: new Date().toISOString()
     });
-    return true;
+    return { persisted: true, mode: "memory" };
   } catch {
-    return false;
+    return { persisted: false, mode: "memory" };
   }
 }
 
@@ -289,6 +331,8 @@ export interface IngestEventResult {
   eventId?: string;
   cached: boolean;
   persisted: boolean;
+  /** "db" when row written to Postgres, "memory" when in-memory fallback used. */
+  persistMode?: "db" | "memory";
   rejectedReason?: string;
 }
 
@@ -297,7 +341,7 @@ export interface IngestEventResult {
  *   1. HMAC verify
  *   2. Sequence ordering check
  *   3. Write to Redis hot cache
- *   4. Append to Postgres market_events
+ *   4. Write to Postgres market_events (or in-memory fallback with warning)
  */
 export async function ingestMarketEvent(
   event: MarketEvent
@@ -329,10 +373,16 @@ export async function ingestMarketEvent(
     // Non-fatal — proceed to DB write
   }
 
-  // Step 4: Persist to Postgres
-  const persisted = await persistEventToDb(event, eventId);
+  // Step 4: Persist to Postgres (or in-memory fallback with warning)
+  const dbResult = await persistEventToDb(event, eventId);
 
-  return { ok: true, eventId, cached, persisted };
+  return {
+    ok: true,
+    eventId,
+    cached,
+    persisted: dbResult.persisted,
+    persistMode: dbResult.mode
+  };
 }
 
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
@@ -361,18 +411,17 @@ export async function getAgentHealth(): Promise<{
 
   let parsed: { agentId: string; ts: string; symbols: string[]; version: string | null };
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(raw) as typeof parsed;
   } catch {
     return { agentId: null, lastSeenAt: null, isStale: true, staleThresholdMs: HEARTBEAT_STALE_MS };
   }
 
-  const ageMs = Date.now() - new Date(parsed.ts).getTime();
-  const isStale = ageMs > HEARTBEAT_STALE_MS;
-
+  const lastSeenAt = parsed.ts;
+  const ageMs = Date.now() - new Date(lastSeenAt).getTime();
   return {
     agentId: parsed.agentId,
-    lastSeenAt: parsed.ts,
-    isStale,
+    lastSeenAt,
+    isStale: ageMs > HEARTBEAT_STALE_MS,
     staleThresholdMs: HEARTBEAT_STALE_MS
   };
 }

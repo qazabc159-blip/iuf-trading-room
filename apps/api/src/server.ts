@@ -4203,7 +4203,8 @@ app.post("/internal/market/ingest", async (c) => {
     ok: true,
     eventId: result.eventId,
     cached: result.cached,
-    persisted: result.persisted
+    persisted: result.persisted,
+    persistMode: result.persistMode ?? "memory"
   }, 201);
 });
 
@@ -7928,12 +7929,20 @@ app.get("/api/v1/diagnostics/finmind", (c) => {
   const quotaLimitPerHour = finmindQuotaLimitPerHour(quotaTier);
   const ohlcvSource = process.env.OHLCV_SOURCE
     ?? (tokenPresent && stats.requestCount > 0 && (errorRate === null || errorRate <= 5) ? "finmind" : "pending");
+  // ohlcv_scheduler_active: scheduler always calls runOhlcvFinmindSync with
+  // forceFinmind:true when FINMIND_API_TOKEN is set — bypasses OHLCV_SOURCE env.
+  // So even if OHLCV_SOURCE is "mock" in env, scheduler will still attempt finmind.
+  const ohlcvSchedulerActive = tokenPresent;
 
   return c.json({
     data: {
       tokenPresent,
       tokenSource: tokenPresent ? "env" : "none",
       ohlcvSource,
+      ohlcvSchedulerActive,
+      ohlcvSchedulerNote: ohlcvSchedulerActive
+        ? "scheduler uses forceFinmind:true — OHLCV_SOURCE env ignored by scheduler"
+        : "scheduler skipped — FINMIND_API_TOKEN not set",
       quotaTier,
       quotaLimitPerHour,
       redisConfigured,
