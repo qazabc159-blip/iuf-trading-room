@@ -32,3 +32,23 @@ apps/web/.codex-web-dev-*.log
 # Evidence files containing live runtime captures (gitignore future ones)
 evidence_*_runtime_*.md
 .gstack/
+
+# Per-agent local memory (machine-specific, not source-controlled)
+.claude/agent-memory/
+
+# Git worktree directories (always machine-local)
+.claude/worktrees/
+.worktrees/
+
+# Python compile artifacts (KGI gateway tests + scripts)
+__pycache__/
+*.pyc
+
+# KGI SDK runtime logs (never commit; per 楊董 5/8 directive)
+TradeCom*.log
+services/kgi-gateway/log/
+services/kgi-gateway/Login.log
+services/kgi-gateway/kgisuperpy/log/
+
+# KGI SDK errMsg.ini is bundled with kgisuperpy package (do not commit)
+services/kgi-gateway/errMsg.ini
