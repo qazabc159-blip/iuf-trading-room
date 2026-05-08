@@ -12641,6 +12641,12 @@ body:has(.tactical-dashboard) .app-sidebar {
   height: 58px;
 }
 
+.tac-index-chart-wrap {
+  position: relative;
+  min-height: 74px;
+  overflow: visible;
+}
+
 .tac-index-ohlc.empty path {
   stroke: var(--tac-fg-3);
   opacity: 0.55;
@@ -12686,6 +12692,93 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-index-ohlc .hit {
   fill: transparent;
   pointer-events: all;
+}
+
+.tac-index-hover-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.tac-index-point {
+  position: absolute;
+  top: 0;
+  bottom: 16px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  outline: none;
+}
+
+.tac-index-crosshair {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: rgba(226, 184, 92, 0.72);
+  opacity: 0;
+  transform: translateX(-50%);
+}
+
+.tac-index-crosshair::after {
+  content: "";
+  position: absolute;
+  top: var(--marker-y);
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--tac-brand-2);
+  border-radius: 50%;
+  background: var(--tac-bg-0);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 14px rgba(226, 184, 92, 0.42);
+}
+
+.tac-index-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 4px 10px;
+  min-width: 174px;
+  padding: 9px 10px;
+  border: 1px solid rgba(226, 184, 92, 0.38);
+  background: rgba(6, 9, 13, 0.96);
+  color: var(--tac-fg-1);
+  font: 800 10px/1.25 var(--mono);
+  opacity: 0;
+  transform: translateX(var(--tip-x)) translateY(3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  pointer-events: none;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.38);
+}
+
+.tac-index-tooltip b,
+.tac-index-tooltip small {
+  grid-column: 1 / -1;
+}
+
+.tac-index-tooltip b {
+  color: var(--tac-brand-2);
+  font: 900 11px/1.2 var(--mono);
+}
+
+.tac-index-tooltip small {
+  color: var(--tac-fg-3);
+}
+
+.tac-index-point:hover .tac-index-crosshair,
+.tac-index-point:focus .tac-index-crosshair,
+.tac-index-point:hover .tac-index-tooltip,
+.tac-index-point:focus .tac-index-tooltip {
+  opacity: 1;
+}
+
+.tac-index-point:hover .tac-index-tooltip,
+.tac-index-point:focus .tac-index-tooltip {
+  transform: translateX(var(--tip-x)) translateY(0);
 }
 
 .tac-breadth-counts {
@@ -13004,7 +13097,63 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-fresh-legend i.blocked { background: var(--tac-bad); }
 
 .tac-heatmap {
-  padding: 16px;
+  padding: 12px 16px 16px;
+}
+
+.tac-heat-sector-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(226, 184, 92, 0.38) rgba(255, 255, 255, 0.05);
+}
+
+.tac-heat-sector-tabs::-webkit-scrollbar {
+  height: 5px;
+}
+
+.tac-heat-sector-tabs::-webkit-scrollbar-thumb {
+  background: rgba(226, 184, 92, 0.42);
+}
+
+.tac-heat-sector-tabs::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tac-heat-sector-tabs a {
+  flex: 0 0 auto;
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  gap: 4px 8px;
+  align-items: baseline;
+  min-width: 116px;
+  padding: 8px 10px;
+  border: 1px solid rgba(220, 228, 240, 0.11);
+  border-radius: 4px;
+  background: rgba(7, 11, 16, 0.72);
+  color: var(--tac-fg-2);
+  text-decoration: none;
+}
+
+.tac-heat-sector-tabs a:hover,
+.tac-heat-sector-tabs a.is-active {
+  border-color: rgba(226, 184, 92, 0.48);
+  background: rgba(200, 148, 63, 0.12);
+  color: var(--tac-fg-0);
+}
+
+.tac-heat-sector-tabs b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 850 12px/1.2 var(--sans-tc);
+}
+
+.tac-heat-sector-tabs span {
+  color: var(--tac-fg-3);
+  font: 850 10px/1 var(--mono);
 }
 
 .tac-heatmap-groups {
@@ -13082,7 +13231,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tac-market-heatmap-canvas {
-  min-height: clamp(460px, 42vw, 640px);
+  min-height: clamp(430px, 38vw, 590px);
   border-color: rgba(220, 228, 240, 0.1);
   background:
     radial-gradient(circle at 20% 0%, rgba(214, 158, 46, 0.08), transparent 34%),
@@ -13112,6 +13261,27 @@ body:has(.tactical-dashboard) .app-sidebar {
     inset 0 1px 0 rgba(255, 255, 255, 0.035),
     0 0 0 1px rgba(0, 0, 0, 0.18);
   outline: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.tac-market-heatmap-canvas .tac-heat-tile.full {
+  align-content: center;
+  gap: 6px;
+  padding: clamp(10px, 1vw, 15px);
+}
+
+.tac-market-heatmap-canvas .tac-heat-tile.full span {
+  font-size: clamp(15px, 1.55vw, 24px);
+  line-height: 1.08;
+}
+
+.tac-market-heatmap-canvas .tac-heat-tile.full small {
+  font-size: clamp(12px, 0.98vw, 16px);
+  line-height: 1.12;
+}
+
+.tac-market-heatmap-canvas .tac-heat-tile.full b {
+  font-size: clamp(18px, 1.65vw, 27px);
+  line-height: 1.04;
 }
 
 .tac-heat-tile:hover {
@@ -13483,7 +13653,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-paper-steps {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   padding: 16px;
 }
@@ -13527,7 +13697,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-paper-steps .degraded { border-top-color: var(--tac-warn); }
 
 .tac-paper-bottom {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   border-top: 1px solid var(--tac-line);
   border-bottom: 0;
 }
