@@ -11,6 +11,7 @@ import { friendlyDataError } from "@/lib/friendly-error";
 import { briefAgeCopy, briefAgeDays, briefFreshnessForDate, briefFreshnessLabel, briefFreshnessTone } from "@/lib/freshness";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { reasonLabel } from "@/lib/strategy-vocab";
+import { MobileKgiWatchlist } from "./MobileKgiWatchlist";
 
 export const dynamic = "force-dynamic";
 
@@ -521,6 +522,9 @@ export default async function MobileBrief() {
           </Link>
         ))}
       </section>
+
+      {/* KGI Realtime Quote Watchlist (PR brief-search-mobile-kgi-quote) */}
+      <MobileKgiWatchlist />
     </main>
   );
 }
