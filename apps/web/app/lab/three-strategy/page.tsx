@@ -1,30 +1,41 @@
 /**
- * /lab/three-strategy page upgraded 2026-05-09
- * Product-grade 3-column cards (Yang ack item 3)
- * Source: athena_truth_board_v1 (2026-05-08)
+ * /lab/three-strategy page — Stage 1 live endpoint wiring
+ * 2026-05-09: 拔 hardcode → 改打 /api/v1/lab/three-strategy/snapshot
+ *
+ * Data layer:
+ *   Primary: getLabThreeStrategySnapshot() → /api/v1/lab/three-strategy/snapshot
+ *   Overlay: Athena 5/9 morning truth (cont_liq v36 9/9 PASS + 四重魯棒; rs_20_60 RETIRED;
+ *            strategy_002/003 walk-forward in progress)
+ *   Fallback: if endpoint fails → hardcode Athena 5/9 morning data with source label
+ *
+ * Stage 2 (DEFER): equity curve / monthly bar / drawdown / Sharpe / win rate / sample trades
+ *   → pending Athena schema ship
  *
  * HARD LINES:
  *   - No "已驗證" / "approved" / "可上線" / "strategy approved"
  *   - No caveat truncation
  *   - No fake metrics
  *   - No broker/execution/risk backend touch
- *
- * Three strategies (updated per task spec):
- *   cont_liq_h20_top3  → amber / L9_MARGINAL_PASS
- *   strategy_002_rev   → blue  / PAPER_LIVE_OBSERVING (2026-05-09)
- *   strategy_003_ma200 → violet / BACKTESTED_RAW
+ *   - Endpoint error → show specific reason, not generic "載入中"
  */
 
 import Link from "next/link";
 import { PageFrame } from "@/components/PageFrame";
+import { getLabThreeStrategySnapshot } from "@/lib/api";
+import type { LabThreeStrategyEntry } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-const TRUTH_BOARD_SOURCE = "athena_truth_board_v1 (2026-05-08)";
+// ── Athena 5/9 morning truth overlay ──────────────────────────────────────────
+// Source: athena morning 5/9 chat update
+// Applied on top of endpoint data (which may reflect 5/7 stale state)
 
-type BadgeVariant = "amber" | "blue" | "violet";
+const ATHENA_5_9_SOURCE = "athena_morning_5_9_chat_update";
+const ATHENA_5_9_DATE = "2026-05-09";
 
-type StrategyMeta = {
+type BadgeVariant = "amber" | "blue" | "violet" | "gray";
+
+type StrategyDisplayCard = {
   strategyId: string;
   displayName: string;
   tagline: string;
@@ -32,56 +43,110 @@ type StrategyMeta = {
   badgeLabel: string;
   governanceState: string;
   caveat: string;
-  metricsLabel: string | null;
-  sharpeNote: string | null;
-  winRateNote: string | null;
-  maxDdNote: string | null;
+  metricsLabel: string;
+  isRetired: boolean;
+  retiredReason?: string;
+  dataSource: string;
 };
 
-const THREE_STRATEGIES: StrategyMeta[] = [
-  {
-    strategyId: "cont_liq_h20_top3_market_trail20_gt_5pct",
-    displayName: "流動順勢三強",
-    tagline: "持有流動性相對強的前三名股票，等市場落後再進場，20 個交易日換倉一次。",
+// ── 5/9 override registry ──────────────────────────────────────────────────────
+// These overrides reflect Athena 5/9 morning truth.
+// When the endpoint ships updated schema, these will be replaced by live data.
+
+type OverrideEntry = Omit<StrategyDisplayCard, "strategyId">;
+
+const ATHENA_5_9_OVERRIDES: Record<string, OverrideEntry> = {
+  // cont_liq v36 — 9/9 PASS + 四重魯棒
+  cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25: {
+    displayName: "流動強勢延續策略 v36",
+    tagline: "流動性相對強度選股，h20 持有期框架，前五名等權。v36 通過 9/9 驗證項目 + 四重魯棒性確認。",
     badge: "amber",
-    badgeLabel: "觀察中",
-    governanceState: "L9_MARGINAL_PASS + forward observation pending",
+    badgeLabel: "9/9 PASS",
+    governanceState: "cont_liq_v36 · 9/9 PASS + 四重魯棒 · forward observation 進行中",
     caveat:
-      "Bonferroni p=0.048 borderline（非 p<0.001）/ CPCV PBO 18.2% borderline（非 <5%）/ DSR（deflated Sharpe）計算中 / 需 >=12 個 matured h20 forward observation 才算 process pass / 不是已驗證策略 / 僅通過 strict gate，不代表策略已驗證可上線",
-    metricsLabel: "research_only / not validated",
-    sharpeNote: "待 >=12 obs 後計算",
-    winRateNote: "待觀察期完成",
-    maxDdNote: "回測僅供參考",
+      "9/9 驗證項目通過（截至 2026-05-09 Athena morning update）/ 四重魯棒：Horizon ±5d NEAR_PASS / Regime ±2% FULL_PASS / Cost 40-250bps script done / Universe K=68→20 PARTIAL（K≥50 liquid universe required）/ 仍需完整 forward observation 才算 process pass / 不是已驗證可上線策略 / capacity note: K≥50 流動性股票宇宙必要條件",
+    metricsLabel: "research_only / 9/9 pass / forward obs pending",
+    isRetired: false,
+    dataSource: ATHENA_5_9_SOURCE,
   },
-  {
-    strategyId: "strategy_002_revenue_yoy_surprise",
-    displayName: "營收動能驚喜",
-    tagline: "選出營收年增率大幅優於預期的個股，捕捉市場對基本面修正的動能。",
+  // rs_20_60 — RETIRED (sector-pinned, family-level no-edge)
+  rs_20_60_low_drawdown__h20__top5: {
+    displayName: "穩健強勢低回撤策略",
+    tagline: "rs_20_60 family — 因 sector-pinned 特性，family 層面 no-edge 確認，已退場。",
+    badge: "gray",
+    badgeLabel: "RETIRED",
+    governanceState: "RETIRED · sector-pinned · family-level no-edge 2026-05-09",
+    caveat:
+      "rs_20_60 family 已於 2026-05-09 Athena morning update 正式退場（RETIRED）/ 根本原因：sector-pinned — 策略表現高度依賴特定板塊曝險，非獨立 alpha 來源 / family-level no-edge 確認 / 不再進行任何 forward observation 或 paper trade / 此 slot 未來由 Athena 新候選策略填補",
+    metricsLabel: "RETIRED / no further observation",
+    isRetired: true,
+    retiredReason: "sector-pinned · family-level no-edge",
+    dataSource: ATHENA_5_9_SOURCE,
+  },
+  // MAIN — unchanged from 5/7 (no specific 5/9 update)
+  MAIN_execution_rank_buffer_top20: {
+    displayName: "主控排序緩衝策略",
+    tagline: "MAIN core research candidate — 執行強度排序緩衝，20 股候選池，sector/regime dependent。",
     badge: "blue",
-    badgeLabel: "Paper 觀察中",
-    governanceState: "PAPER_LIVE_OBSERVING (2026-05-09 起)",
+    badgeLabel: "研究候選",
+    governanceState: "MAIN · RESEARCH_CANDIDATE · core pilot role · strategy_002/003 walk-forward in progress (Task #400)",
     caveat:
-      "2026-05-09 起進入 paper live 觀察階段 / 尚無 matured forward observation / 回測數字僅供研究用，未通過完整 L9 gate / 不是已驗證策略 / 金額不顯示（detail panel 才顯示）",
-    metricsLabel: "paper_observing / backtested_raw",
-    sharpeNote: "paper 期間累積",
-    winRateNote: "paper 期間累積",
-    maxDdNote: "回測僅供參考",
+      "MAIN 策略保持 RESEARCH_CANDIDATE 狀態 / strategy_002 + strategy_003 walk-forward + bootstrap CI 進行中（Task #400）/ 尚未進入 forward observation / sector/regime dependent — 非 clean stock-picking claim / 不是已驗證策略 / cash_order_path: BLOCKED_until_Yang_final_manual_ACK",
+    metricsLabel: "research_only / not validated",
+    isRetired: false,
+    dataSource: ATHENA_5_9_SOURCE,
+  },
+};
+
+// ── Fallback hardcode (used if endpoint fails entirely) ───────────────────────
+// Source: athena_morning_5_9_chat_update
+
+const FALLBACK_STRATEGIES: StrategyDisplayCard[] = [
+  {
+    strategyId: "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+    ...ATHENA_5_9_OVERRIDES["cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25"],
   },
   {
-    strategyId: "strategy_003_ma200_trend_follow",
-    displayName: "200 日均線順勢",
-    tagline: "追蹤股價站穩 200 日均線的個股，順大趨勢方向持有，依 cache 換倉。",
-    badge: "violet",
-    badgeLabel: "回測原始",
-    governanceState: "BACKTESTED_RAW + cache 短（尚未 forward test）",
-    caveat:
-      "僅有回測數字，尚未進行 forward observation / cache 持有期較短，換倉頻率敏感 / 未通過 L9 gate / 不是已驗證策略 / 研究中，下一步需 forward test 設計",
-    metricsLabel: "research_only / backtested_raw",
-    sharpeNote: "回測僅供參考",
-    winRateNote: "回測僅供參考",
-    maxDdNote: "回測僅供參考",
+    strategyId: "MAIN_execution_rank_buffer_top20",
+    ...ATHENA_5_9_OVERRIDES["MAIN_execution_rank_buffer_top20"],
+  },
+  {
+    strategyId: "rs_20_60_low_drawdown__h20__top5",
+    ...ATHENA_5_9_OVERRIDES["rs_20_60_low_drawdown__h20__top5"],
   },
 ];
+
+// ── Map endpoint strategy entry to display card ───────────────────────────────
+
+function mapEntryToCard(entry: LabThreeStrategyEntry): StrategyDisplayCard {
+  const override = ATHENA_5_9_OVERRIDES[entry.strategy_id];
+  if (override) {
+    return {
+      strategyId: entry.strategy_id,
+      ...override,
+    };
+  }
+
+  // No override — use raw endpoint data with conservative display
+  const isRetired =
+    entry.pilot_status === "RETIRED" ||
+    entry.latest_state?.toLowerCase().includes("retired");
+
+  return {
+    strategyId: entry.strategy_id,
+    displayName: entry.display_name_zh || entry.strategy_id,
+    tagline: entry.latest_state || "—",
+    badge: isRetired ? "gray" : "amber",
+    badgeLabel: isRetired ? "RETIRED" : entry.pilot_status ?? "READINESS_REVIEW",
+    governanceState: entry.pilot_status ?? "READINESS_REVIEW_ONLY",
+    caveat: entry.caveat || "詳細 caveat 待 Athena 更新",
+    metricsLabel: "research_only / not validated",
+    isRetired,
+    dataSource: "embedded_lab_fixture",
+  };
+}
+
+// ── CSS ────────────────────────────────────────────────────────────────────────
 
 const BADGE_STYLES: Record<BadgeVariant, React.CSSProperties> = {
   amber: {
@@ -99,19 +164,28 @@ const BADGE_STYLES: Record<BadgeVariant, React.CSSProperties> = {
     border: "1px solid rgba(139, 92, 246, 0.5)",
     color: "#a78bfa",
   },
+  gray: {
+    background: "rgba(100, 100, 100, 0.12)",
+    border: "1px solid rgba(140, 140, 140, 0.35)",
+    color: "#888888",
+  },
 };
 
 const CARD_ACCENT: Record<BadgeVariant, string> = {
   amber: "#ffb800",
   blue: "#60a5fa",
   violet: "#a78bfa",
+  gray: "#666666",
 };
 
 const CARD_GLOW: Record<BadgeVariant, string> = {
   amber: "rgba(255,184,0,0.06)",
   blue: "rgba(59,130,246,0.06)",
   violet: "rgba(139,92,246,0.06)",
+  gray: "rgba(100,100,100,0.04)",
 };
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
 function GovernanceBadge({ variant, label }: { variant: BadgeVariant; label: string }) {
   return (
@@ -132,41 +206,43 @@ function GovernanceBadge({ variant, label }: { variant: BadgeVariant; label: str
   );
 }
 
-function MetricCell({ label, value }: { label: string; value: string | null }) {
-  if (!value) return null;
+function RetiredBanner({ reason }: { reason?: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 80 }}>
-      <span
+    <div
+      style={{
+        padding: "8px 12px",
+        background: "rgba(140,140,140,0.06)",
+        border: "1px solid rgba(140,140,140,0.22)",
+        borderRadius: 5,
+        marginBottom: 14,
+      }}
+    >
+      <div
         style={{
           fontSize: 10,
-          color: "#666",
-          fontFamily: "var(--mono, monospace)",
-          letterSpacing: 0.4,
+          fontWeight: 700,
+          color: "#888",
+          letterSpacing: 0.5,
+          marginBottom: 3,
           textTransform: "uppercase" as const,
-        }}
-      >
-        {label}
-      </span>
-      <span
-        style={{
-          fontSize: 12,
-          color: "#a0a0a0",
           fontFamily: "var(--mono, monospace)",
-          fontWeight: 600,
         }}
       >
-        {value}
-      </span>
+        策略已退場
+      </div>
+      <div style={{ fontSize: 12, color: "#666", lineHeight: 1.6 }}>
+        {reason ?? "此策略已從候選名單中移除，不再進行觀察或 paper trade。"}
+      </div>
     </div>
   );
 }
 
-function StrategyCard({ s }: { s: StrategyMeta }) {
+function StrategyCard({ s }: { s: StrategyDisplayCard }) {
   const accent = CARD_ACCENT[s.badge];
   const glow = CARD_GLOW[s.badge];
 
   return (
-    <article className="_strat-card" data-badge={s.badge}>
+    <article className="_strat-card" data-badge={s.badge} data-retired={s.isRetired ? "true" : "false"}>
       <div className="_strat-card-inner">
         <div
           style={{
@@ -175,7 +251,9 @@ function StrategyCard({ s }: { s: StrategyMeta }) {
             left: 0,
             right: 0,
             height: 2,
-            background: "linear-gradient(90deg, " + accent + ", transparent 72%)",
+            background: s.isRetired
+              ? "rgba(140,140,140,0.25)"
+              : "linear-gradient(90deg, " + accent + ", transparent 72%)",
             borderRadius: "8px 8px 0 0",
             opacity: 0.85,
           }}
@@ -206,6 +284,7 @@ function StrategyCard({ s }: { s: StrategyMeta }) {
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
+              title={s.strategyId}
             >
               {s.strategyId}
             </span>
@@ -216,103 +295,163 @@ function StrategyCard({ s }: { s: StrategyMeta }) {
                 margin: 0,
                 fontSize: 22,
                 fontWeight: 850,
-                color: "#f0f0f0",
+                color: s.isRetired ? "#666" : "#f0f0f0",
                 letterSpacing: -0.3,
                 lineHeight: 1.2,
                 fontFamily: "var(--sans-tc, sans-serif)",
+                textDecoration: s.isRetired ? "line-through" : "none",
               }}
             >
               {s.displayName}
             </h2>
           </div>
-          <p style={{ margin: "0 0 16px", fontSize: 13, color: "#9aa0ab", lineHeight: 1.6, flexGrow: 1 }}>
+          <p style={{ margin: "0 0 12px", fontSize: 13, color: s.isRetired ? "#555" : "#9aa0ab", lineHeight: 1.6, flexGrow: 1 }}>
             {s.tagline}
           </p>
+
+          {s.isRetired && <RetiredBanner reason={s.retiredReason} />}
+
           <div
             style={{
               display: "flex",
-              gap: 20,
-              padding: "10px 0",
+              gap: 8,
+              padding: "8px 0",
               borderTop: "1px solid rgba(255,255,255,0.06)",
               borderBottom: "1px solid rgba(255,255,255,0.06)",
-              marginBottom: 14,
+              marginBottom: 12,
               flexWrap: "wrap",
+              alignItems: "center",
             }}
           >
-            <MetricCell label="Sharpe" value={s.sharpeNote} />
-            <MetricCell label="勝率" value={s.winRateNote} />
-            <MetricCell label="Max DD" value={s.maxDdNote} />
-            {s.metricsLabel && (
-              <span
-                style={{
-                  alignSelf: "center",
-                  marginLeft: "auto",
-                  fontSize: 10,
-                  fontFamily: "var(--mono, monospace)",
-                  color: "#555",
-                  letterSpacing: 0.3,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {s.metricsLabel}
-              </span>
-            )}
-          </div>
-          <div
-            style={{
-              padding: "10px 12px",
-              background: "rgba(255,200,0,0.04)",
-              border: "1px solid rgba(255,184,0,0.2)",
-              borderRadius: 5,
-              marginBottom: 16,
-            }}
-          >
-            <div
+            <span
               style={{
                 fontSize: 10,
-                fontWeight: 700,
-                color: "#ffb800",
-                letterSpacing: 0.5,
-                marginBottom: 5,
-                textTransform: "uppercase" as const,
                 fontFamily: "var(--mono, monospace)",
+                color: "#555",
+                letterSpacing: 0.3,
               }}
             >
-              注意事項（全文）
-            </div>
+              {s.metricsLabel}
+            </span>
+          </div>
+
+          {!s.isRetired && (
             <div
               style={{
-                fontSize: 12,
-                color: "#c8c8c8",
-                lineHeight: 1.75,
-                whiteSpace: "normal" as const,
-                overflow: "visible" as const,
+                padding: "10px 12px",
+                background: "rgba(255,200,0,0.04)",
+                border: "1px solid rgba(255,184,0,0.2)",
+                borderRadius: 5,
+                marginBottom: 16,
               }}
             >
-              {s.caveat}
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "#ffb800",
+                  letterSpacing: 0.5,
+                  marginBottom: 5,
+                  textTransform: "uppercase" as const,
+                  fontFamily: "var(--mono, monospace)",
+                }}
+              >
+                注意事項（全文）
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#c8c8c8",
+                  lineHeight: 1.75,
+                  whiteSpace: "normal" as const,
+                  overflow: "visible" as const,
+                }}
+              >
+                {s.caveat}
+              </div>
             </div>
-          </div>
-          <Link
-            href={"/lab/three-strategy/" + s.strategyId}
-            className="_strat-cta"
-            style={{ color: accent }}
-          >
-            進入 detail panel
-            <span style={{ marginLeft: 5, fontSize: 14 }}>→</span>
-          </Link>
+          )}
+
+          {s.isRetired ? (
+            <div
+              style={{
+                fontSize: 11,
+                fontFamily: "var(--mono, monospace)",
+                color: "#555",
+                borderTop: "1px solid rgba(255,255,255,0.05)",
+                paddingTop: 8,
+                marginTop: "auto",
+              }}
+            >
+              退場 caveat
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "#666",
+                  lineHeight: 1.7,
+                  marginTop: 4,
+                  whiteSpace: "normal" as const,
+                }}
+              >
+                {s.caveat}
+              </div>
+            </div>
+          ) : (
+            <Link
+              href={"/lab/three-strategy/" + s.strategyId}
+              className="_strat-cta"
+              style={{ color: accent }}
+            >
+              進入 detail panel
+              <span style={{ marginLeft: 5, fontSize: 14 }}>→</span>
+            </Link>
+          )}
         </div>
       </div>
     </article>
   );
 }
 
-export default function LabThreeStrategyPage() {
+// ── Page ───────────────────────────────────────────────────────────────────────
+
+export default async function LabThreeStrategyPage() {
+  // Fetch from live endpoint
+  let snapshot = await getLabThreeStrategySnapshot();
+  let fetchError: string | null = null;
+  let isStale = false;
+  let cards: StrategyDisplayCard[];
+
+  if (!snapshot) {
+    fetchError =
+      "lab snapshot endpoint 未回應或回傳 ok=false。顯示 Athena 5/9 morning fallback 資料。";
+    cards = FALLBACK_STRATEGIES;
+    isStale = true;
+  } else {
+    // Check staleness: created_at is 5/7, we know 5/9 has updates
+    const createdAt = snapshot.created_at_taipei ?? "";
+    isStale = !createdAt.startsWith("2026-05-09");
+
+    if (snapshot.strategies.length === 0) {
+      fetchError = "endpoint 回傳 strategies: [] (空陣列)。顯示 Athena 5/9 morning fallback 資料。";
+      cards = FALLBACK_STRATEGIES;
+    } else {
+      // Map endpoint entries → display cards (with Athena 5/9 overlay)
+      cards = snapshot.strategies.map(mapEntryToCard);
+    }
+  }
+
+  const displaySource = isStale || !snapshot
+    ? ATHENA_5_9_SOURCE
+    : (snapshot?.meta?.schemaVersion ?? "embedded_lab_fixture");
+
+  const displayDate = ATHENA_5_9_DATE;
+
   return (
     <PageFrame
       code="LAB"
       title="量化研究 / 三條策略狀態"
       sub="Athena truth board v1 / 邊跑邊修"
-      note="本頁顯示 IUF Quant Lab 三條策略的真實治理狀態，來源為 Athena truth board v1 (2026-05-08)。所有 caveat 全文顯示，不截斷。不顯示已驗證、approved、可上線或任何背書字樣。"
+      note="本頁顯示 IUF Quant Lab 三條策略的真實治理狀態。所有 caveat 全文顯示，不截斷。不顯示已驗證、approved、可上線或任何背書字樣。"
     >
       <style>{`
         ._strat-grid {
@@ -340,15 +479,19 @@ export default function LabThreeStrategyPage() {
                       box-shadow 0.18s cubic-bezier(.2,.8,.2,1),
                       border-color 0.18s;
         }
-        ._strat-card:hover {
+        ._strat-card[data-retired="true"] {
+          opacity: 0.52;
+          filter: grayscale(0.7);
+        }
+        ._strat-card:not([data-retired="true"]):hover {
           transform: translateY(-4px);
           box-shadow:
             inset 0 1px 0 rgba(255,255,255,0.04),
             0 18px 48px rgba(0,0,0,0.35);
         }
-        ._strat-card[data-badge="amber"]:hover { border-color: rgba(255,184,0,0.3); }
-        ._strat-card[data-badge="blue"]:hover  { border-color: rgba(59,130,246,0.3); }
-        ._strat-card[data-badge="violet"]:hover{ border-color: rgba(139,92,246,0.28); }
+        ._strat-card[data-badge="amber"]:not([data-retired="true"]):hover { border-color: rgba(255,184,0,0.3); }
+        ._strat-card[data-badge="blue"]:not([data-retired="true"]):hover  { border-color: rgba(59,130,246,0.3); }
+        ._strat-card[data-badge="violet"]:not([data-retired="true"]):hover{ border-color: rgba(139,92,246,0.28); }
         ._strat-card::before {
           content: "";
           position: absolute;
@@ -385,11 +528,51 @@ export default function LabThreeStrategyPage() {
         ._strat-cta:hover { opacity: 0.72; }
         @media (prefers-reduced-motion: reduce) {
           ._strat-card { transition: none; }
-          ._strat-card:hover { transform: none; }
+          ._strat-card:not([data-retired="true"]):hover { transform: none; }
           ._strat-cta { transition: none; }
         }
       `}</style>
 
+      {/* Stage 2 sync banner */}
+      <div
+        style={{
+          padding: "8px 14px",
+          marginBottom: 16,
+          background: "rgba(59,130,246,0.04)",
+          border: "1px solid rgba(59,130,246,0.18)",
+          borderLeft: "3px solid #3b82f6",
+          borderRadius: 5,
+          fontSize: 11,
+          color: "#60a5fa",
+          lineHeight: 1.6,
+        }}
+      >
+        Stage 1 live wiring 完成（2026-05-09）— 等 Athena Stage 1 contract ship 後將自動同步 caveat_verdicts 欄位。
+        Stage 2（equity curve / monthly bar / Sharpe / win rate / sample trades）pending Athena schema ship。
+      </div>
+
+      {/* Fetch error / stale banner */}
+      {(fetchError || isStale) && (
+        <div
+          style={{
+            padding: "8px 14px",
+            marginBottom: 16,
+            background: "rgba(255,150,0,0.04)",
+            border: "1px solid rgba(255,150,0,0.25)",
+            borderLeft: "3px solid #f97316",
+            borderRadius: 5,
+            fontSize: 11,
+            color: "#fb923c",
+            lineHeight: 1.6,
+          }}
+        >
+          {fetchError
+            ? `資料層：${fetchError}`
+            : `endpoint 資料為 5/7 版本（stale）— 套用 Athena 5/9 morning 覆蓋層 (${ATHENA_5_9_SOURCE})。等 endpoint 更新至 5/9 後 banner 將消失。`}
+        </div>
+      )}
+
+      {/* Main disclaimer */}
       <section
         style={{
           display: "flex",
@@ -416,17 +599,17 @@ export default function LabThreeStrategyPage() {
           重要聲明 — 此頁為邊跑邊修狀態
         </div>
         <div style={{ fontSize: 13, color: "#ddd", lineHeight: 1.6 }}>
-          以下 3 條策略均為{" "}
+          以下策略均為{" "}
           <strong style={{ color: "#ffb800" }}>研究狀態，尚未進入任何交易流程</strong>
-          。無策略通過完整驗證。不顯示任何勝率、報酬率或配置建議（金額見各策略 detail panel）。
+          。無策略通過完整驗證。不顯示任何勝率、報酬率或配置建議。
         </div>
         <div style={{ fontSize: 11, color: "#888" }}>
-          狀態來源 / {TRUTH_BOARD_SOURCE} · 下次更新 / 2026-05-15 或 Athena 發布新 truth board 時
+          狀態來源 / {displaySource} · {displayDate} · 下次更新 / Athena 發布新 truth board 時
         </div>
       </section>
 
       <div className="_strat-grid">
-        {THREE_STRATEGIES.map((s) => (
+        {cards.map((s) => (
           <StrategyCard key={s.strategyId} s={s} />
         ))}
       </div>
@@ -443,7 +626,8 @@ export default function LabThreeStrategyPage() {
           marginBottom: 16,
         }}
       >
-        本頁只顯示候選狀態與限制。未驗證績效、配置比例與買賣建議不顯示（金額僅在各策略 detail panel 顯示，限 owner 可見）。治理資料來源：IUF Quant Lab / Athena truth board v1 / dm_2026_05_08_athena_yang_truth_board_v1.md
+        本頁只顯示候選狀態與限制。未驗證績效、配置比例與買賣建議不顯示（金額僅在各策略 detail panel 顯示，限 owner 可見）。
+        治理資料來源：IUF Quant Lab / Athena / {displaySource}
       </div>
 
       <Link

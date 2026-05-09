@@ -2111,6 +2111,72 @@ export async function getCompanyFullProfile(companyId: string) {
   return request<FullProfileEnvelope>(`/api/v1/companies/${companyId}/full-profile`);
 }
 
+
+// ── Lab three-strategy snapshot ────────────────────────────────────────────────
+// GET /api/v1/lab/three-strategy/snapshot
+// Returns the full fixture snapshot (strategies, health, meta).
+// On error → returns null (never throws). The caller handles fallback display.
+
+export type LabThreeStrategyEntry = {
+  strategy_id: string;
+  display_name_zh: string;
+  pilot_role: string;
+  pilot_status: string;
+  capital_cap_twd_max: number;
+  position_cap: number;
+  latest_state: string;
+  caveat: string;
+  cash_order_path: string;
+  broker_route: string;
+};
+
+export type LabThreeStrategySnapshotMeta = {
+  source: "embedded_lab_fixture" | "unavailable";
+  mode: "READ_ONLY_FIXTURE_API";
+  cashOrderPath: "BLOCKED_until_Yang_final_manual_ACK";
+  fixtureLabel: "PAPER_FIXTURE";
+  schemaVersion: string;
+  createdAtTaipei: string;
+  reason?: string;
+};
+
+export type LabThreeStrategySnapshotResult = {
+  ok: boolean;
+  data: Record<string, unknown> | null;
+  meta: LabThreeStrategySnapshotMeta;
+};
+
+export type LabThreeStrategySnapshot = {
+  strategies: LabThreeStrategyEntry[];
+  health: { ok: boolean; endpoint_count: number };
+  schema_version: string;
+  created_at_taipei: string;
+  mode: string;
+  cash_order_path: string;
+  meta: LabThreeStrategySnapshotMeta;
+};
+
+export async function getLabThreeStrategySnapshot(): Promise<LabThreeStrategySnapshot | null> {
+  try {
+    const res = await request<LabThreeStrategySnapshotResult>("/api/v1/lab/three-strategy/snapshot");
+    const payload = res.data;
+    if (!payload || !payload.ok || !payload.data) return null;
+    const raw = payload.data as Record<string, unknown>;
+    const strategies = (raw["strategies"] as LabThreeStrategyEntry[] | undefined) ?? [];
+    return {
+      strategies,
+      health: (raw["health"] as { ok: boolean; endpoint_count: number }) ?? { ok: false, endpoint_count: 0 },
+      schema_version: (raw["schema_version"] as string) ?? "",
+      created_at_taipei: (raw["created_at_taipei"] as string) ?? "",
+      mode: (raw["mode"] as string) ?? "READ_ONLY_FIXTURE_API",
+      cash_order_path: (raw["cash_order_path"] as string) ?? "BLOCKED_until_Yang_final_manual_ACK",
+      meta: payload.meta,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Paper orders live in a dedicated no-mock client so both company and portfolio
 // order panels share the Contract 1 shape.
 export {
