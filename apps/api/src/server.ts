@@ -4544,6 +4544,12 @@ import {
   isSundayTriggerDay,
   queryMarketIntelDatasetStats
 } from "./jobs/market-intel-finmind-sync.js";
+import {
+  runFullIngest,
+  getLastFullIngestResult,
+  isFullIngestRunning,
+  queryAllDatasetStatus
+} from "./jobs/finmind-full-ingest.js";
 
 // Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
 function companyIdToTicker(ticker: string): string {
@@ -5902,6 +5908,97 @@ app.post("/api/v1/internal/market-intel/news-top10/trigger", async (c) => {
   });
 
   return c.json({ data: result });
+});
+
+// =============================================================================
+// FINMIND SPONSOR FULL INGEST — POST + GET admin endpoints
+// =============================================================================
+//
+// POST /api/v1/internal/finmind/sync-now
+//   Owner-only. Triggers an immediate full 11-dataset ingest for the workspace.
+//   Returns run result with per-dataset row counts.
+//   Quota guard: respects 6000/hr FinMind sponsor limit via batch size.
+//
+// GET /api/v1/internal/finmind/ingest-status
+//   Owner-only. Returns last run result + per-dataset DB row counts.
+//   Used for production verify evidence.
+//
+// Hard lines:
+//   - Token NEVER in response (boolean only)
+//   - No fake data
+//   - Concurrent trigger guard (returns already_running if in progress)
+//   - Audit: action='finmind.ingest' per dataset (in finmind-full-ingest.ts)
+// =============================================================================
+
+const finmindSyncNowBodySchema = z.object({
+  batch_size: z.number().int().min(1).max(200).optional()
+});
+
+app.post("/api/v1/internal/finmind/sync-now", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  let batchSize: number | undefined;
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const parsed = finmindSyncNowBodySchema.safeParse(body);
+    if (parsed.success) batchSize = parsed.data.batch_size;
+  } catch {
+    // Body optional — proceed with defaults
+  }
+
+  if (!process.env.FINMIND_API_TOKEN) {
+    return c.json({
+      error: "no_token",
+      message: "FINMIND_API_TOKEN not configured — set the env var and redeploy"
+    }, 422);
+  }
+
+  const workspaceSlug = session.workspace.slug ?? "default";
+
+  // Fire ingest asynchronously so the HTTP response returns immediately,
+  // then client can poll GET /ingest-status for results.
+  // For sync-now we run in-process and await (reasonable for manual trigger).
+  const result = await runFullIngest({
+    workspaceSlug,
+    triggeredBy: "manual",
+    batchSize
+  });
+
+  return c.json({
+    data: result
+  });
+});
+
+app.get("/api/v1/internal/finmind/ingest-status", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const [lastRun, running, datasetStatus] = await Promise.all([
+    Promise.resolve(getLastFullIngestResult()),
+    Promise.resolve(isFullIngestRunning()),
+    queryAllDatasetStatus().catch((err) => {
+      console.warn("[finmind-ingest-status] queryAllDatasetStatus error:", err instanceof Error ? err.message : String(err));
+      return [];
+    })
+  ]);
+
+  const tokenPresent = Boolean(process.env.FINMIND_API_TOKEN);
+
+  return c.json({
+    data: {
+      tokenPresent,
+      ingestRunning: running,
+      lastRun: lastRun ?? null,
+      datasetStatus,
+      quotaLimit: tokenPresent ? 6000 : null,
+      quotaTier: tokenPresent ? "sponsor" : "no_token"
+    }
+  });
 });
 
 // =============================================================================
@@ -10992,11 +11089,46 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, QUOTE_BREAKOUT_POLL_MS);
 
-    console.log(
+  // FINMIND SPONSOR BOOT INGEST — 楊董 mandate: "所有資源你都給我活用起來"
+  setTimeout(() => {
+    if (!process.env.FINMIND_API_TOKEN) {
+      console.log("[finmind-boot-ingest] FINMIND_API_TOKEN not set, skipping boot full ingest");
+      return;
+    }
+    console.log("[finmind-boot-ingest] Firing 11-dataset full ingest 60s after boot (sponsor activation)");
+    runFullIngest({
+      workspaceSlug,
+      triggeredBy: "cron",
+      batchSize: Number(process.env.FINMIND_BOOT_INGEST_BATCH_SIZE ?? "50")
+    }).catch((e) =>
+      console.error("[finmind-boot-ingest] Boot full ingest error:", e instanceof Error ? e.message : String(e))
+    );
+  }, 60_000);
+
+  // Recurring 6h full ingest — all 11 datasets, bypasses cadence guards
+  const SIX_HOURS_FULL_INGEST_MS = 6 * 60 * 60 * 1000;
+  setInterval(() => {
+    if (!process.env.FINMIND_API_TOKEN) return;
+    if (isFullIngestRunning()) {
+      console.log("[finmind-6h-ingest] already running, skipping interval tick");
+      return;
+    }
+    console.log("[finmind-6h-ingest] Firing 11-dataset full ingest (6h interval)");
+    runFullIngest({
+      workspaceSlug,
+      triggeredBy: "cron",
+      batchSize: Number(process.env.FINMIND_BOOT_INGEST_BATCH_SIZE ?? "50")
+    }).catch((e) =>
+      console.error("[finmind-6h-ingest] Full ingest error:", e instanceof Error ? e.message : String(e))
+    );
+  }, SIX_HOURS_FULL_INGEST_MS);
+
+  console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
     "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) + " +
     "PR-C dividend (24h) + PR-C market-value (24h) + PR-C valuation (24h) + PR-C stock-news (30min) + " +
+    "FINMIND-FULL-11-DATASET boot(60s)+recurring(6h) + " +
     "P0-C pipeline pre_market/close_watch/close_brief (15min) + " +
     "BLOCK#6 event-rule-engine (5min) + email-digest (5min, fires at 17:00–17:30 TST) + " +
     "BLOCK#NEWS news-ai-selector (15min poll, fires at 08:00/12:00/18:00/24:00 TST) + " +
