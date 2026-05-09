@@ -413,16 +413,18 @@ export default async function ThemesPage() {
           <span className="parity-kpi-sub">台股主題</span>
         </div>
         <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">成員總計</span>
-          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.reduce((s: number, t: { memberCount?: number }) => s + (t.memberCount ?? 0), 0) : "--"}</span>
-          <span className="parity-kpi-sub">連結成員</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">活躍</span>
-          <span className={`parity-kpi-value ${result.state !== "BLOCKED" && result.data.some((t: { lifecycle?: string }) => t.lifecycle === "Expansion" || t.lifecycle === "Validation") ? "ok" : "dim"}`}>
-            {result.state !== "BLOCKED" ? result.data.filter((t: { lifecycle?: string }) => t.lifecycle === "Expansion" || t.lifecycle === "Validation").length : "--"}
+          <span className="parity-kpi-label">活躍主題</span>
+          <span className={`parity-kpi-value ${result.state !== "BLOCKED" && result.data.some((t) => t.lifecycle === "Expansion" || t.lifecycle === "Validation") ? "ok" : "dim"}`}>
+            {result.state !== "BLOCKED" ? String(result.data.filter((t) => t.lifecycle === "Expansion" || t.lifecycle === "Validation").length) : "--"}
           </span>
           <span className="parity-kpi-sub">成長/驗證期</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">研究中</span>
+          <span className={`parity-kpi-value ${result.state !== "BLOCKED" && result.data.some((t) => t.lifecycle === "Discovery") ? "warn" : "dim"}`}>
+            {result.state !== "BLOCKED" ? String(result.data.filter((t) => t.lifecycle === "Discovery").length) : "--"}
+          </span>
+          <span className="parity-kpi-sub">探索期</span>
         </div>
       </div>
 
