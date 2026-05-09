@@ -256,6 +256,15 @@ import {
   runQuoteBreakoutEmitterTick,
   isStrategyEmitWindow
 } from "./signal-auto-emitter.js";
+// OpenAI multi-scenario (2026-05-08)
+import { rerankStrategyIdeasWithAi } from "./openai-strategy-ranker.js";
+import { enrichNewsWithSentiment } from "./openai-news-sentiment.js";
+import {
+  getBriefStrategyCommentaryWithStaleness,
+  runBriefStrategyCommentary
+} from "./openai-brief-strategy-commentary.js";
+import { assessSignalConfidence } from "./openai-signal-confidence.js";
+import { getQuotaStatus } from "./openai-quota-guard.js";
 
 type Variables = {
   repo: TradingRoomRepository;
