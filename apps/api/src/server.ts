@@ -5896,97 +5896,6 @@ app.post("/api/v1/internal/market-intel/news-top10/trigger", async (c) => {
 });
 
 // =============================================================================
-// OPENAI MULTI-SCENARIO (2026-05-08) — 4 endpoints + quota
-// =============================================================================
-
-// S1: AI rerank strategy ideas — GET /api/v1/strategy/ideas/ai-rerank
-app.get("/api/v1/strategy/ideas/ai-rerank", async (c) => {
-  const session = c.get("session");
-  if (!session) return c.json({ error: "auth_required" }, 401);
-  const query = strategyIdeasQuerySchema.parse(c.req.query());
-  const limit = Math.min(query.limit ?? 12, 20);
-  const ideasView = await getStrategyIdeas({ session, repo: c.get("repo"), limit, signalDays: query.signalDays, includeBlocked: query.includeBlocked, market: query.market, themeId: query.themeId, theme: query.theme, symbol: query.symbol, decisionMode: query.decisionMode, decisionFilter: query.decisionFilter, qualityFilter: query.qualityFilter, sort: query.sort });
-  const rerankResult = await rerankStrategyIdeasWithAi(ideasView.items);
-  return c.json({ data: { ...rerankResult, generatedAt: ideasView.generatedAt, summary: ideasView.summary, quota: getQuotaStatus() } });
-});
-
-// S2: News sentiment — GET /api/v1/market-intel/news-top10/with-sentiment
-app.get("/api/v1/market-intel/news-top10/with-sentiment", async (c) => {
-  const session = c.get("session");
-  if (!session) return c.json({ error: "auth_required" }, 401);
-  const cached = getNewsTop10WithStaleness();
-  if (!cached || cached.items.length === 0) {
-    return c.json({ data: { run_id: cached?.run_id ?? null, as_of: cached?.as_of ?? null, stale_reason: cached?.stale_reason ?? "never_run", items: [], sentiment_mode: "no_items", quota: getQuotaStatus() } });
-  }
-  const enrichedItems = await enrichNewsWithSentiment(cached.items);
-  const sentimentMode = enrichedItems.some((i) => i.sentiment !== null) ? "ai" : "fallback";
-  return c.json({ data: { run_id: cached.run_id, as_of: cached.as_of, stale_reason: cached.stale_reason, items: enrichedItems, sentiment_mode: sentimentMode, quota: getQuotaStatus() } });
-});
-
-// S3: Strategy brief commentary — GET /api/v1/strategy/brief-commentary
-app.get("/api/v1/strategy/brief-commentary", async (c) => {
-  const session = c.get("session");
-  if (!session) return c.json({ error: "auth_required" }, 401);
-  const result = getBriefStrategyCommentaryWithStaleness();
-  if (!result) return c.json({ data: { generated_at: null, trading_date: null, strategies: [], generation_mode: null, stale_reason: "never_run", quota: getQuotaStatus() } });
-  return c.json({ data: { ...result, quota: getQuotaStatus() } });
-});
-
-const _briefCommentaryFireSchema = z.object({
-  trading_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  market_summary: z.string().max(500).optional()
-});
-
-// S3: fire-now — POST /api/v1/internal/strategy/brief-commentary/fire-now (Owner)
-app.post("/api/v1/internal/strategy/brief-commentary/fire-now", async (c) => {
-  const session = c.get("session");
-  if (!session || session.user.role !== "Owner") return c.json({ error: "forbidden_role" }, 403);
-  let body: z.infer<typeof _briefCommentaryFireSchema>;
-  try { body = _briefCommentaryFireSchema.parse(await c.req.json().catch(() => ({}))); } catch { return c.json({ error: "BAD_REQUEST" }, 400); }
-  const tradingDate = body.trading_date ?? new Date().toISOString().slice(0, 10);
-  const marketSummary = body.market_summary ?? "今日台股市場狀況正常，資料載入中。";
-  const result = await runBriefStrategyCommentary({ tradingDate, marketSummary });
-  return c.json({ data: { ...result, quota: getQuotaStatus() } });
-});
-
-// S4: Signal AI confidence — POST /api/v1/internal/signals/:signalId/assess-confidence (Owner)
-app.post("/api/v1/internal/signals/:signalId/assess-confidence", async (c) => {
-  const session = c.get("session");
-  if (!session || session.user.role !== "Owner") return c.json({ error: "forbidden_role" }, 403);
-  const signalId = c.req.param("signalId");
-  const repo = c.get("repo");
-  let signal: Awaited<ReturnType<typeof repo.listSignals>>[number] | undefined;
-  try {
-    const signals = await repo.listSignals(undefined, { workspaceSlug: session.workspace.slug });
-    signal = signals.find((s) => s.id === signalId);
-  } catch (e) {
-    console.warn("[signal-confidence] listSignals failed:", e instanceof Error ? e.message : String(e));
-    return c.json({ error: "signal_fetch_failed" }, 500);
-  }
-  if (!signal) return c.json({ error: "signal_not_found", signalId }, 404);
-  const assessment = await assessSignalConfidence(signal);
-  return c.json({ data: { ...assessment, quota: getQuotaStatus() } });
-});
-
-// S4: GET cached confidence — GET /api/v1/signals/:signalId/confidence (any auth)
-app.get("/api/v1/signals/:signalId/confidence", async (c) => {
-  const session = c.get("session");
-  if (!session) return c.json({ error: "auth_required" }, 401);
-  const signalId = c.req.param("signalId");
-  const { getSignalConfidenceAssessment } = await import("./openai-signal-confidence.js");
-  const cached = getSignalConfidenceAssessment(signalId);
-  if (!cached) return c.json({ error: "not_assessed_yet", signalId }, 404);
-  return c.json({ data: { ...cached, quota: getQuotaStatus() } });
-});
-
-// OpenAI quota — GET /api/v1/internal/openai/quota (Owner)
-app.get("/api/v1/internal/openai/quota", async (c) => {
-  const session = c.get("session");
-  if (!session || session.user.role !== "Owner") return c.json({ error: "forbidden_role" }, 403);
-  return c.json({ data: getQuotaStatus() });
-});
-
-// =============================================================================
 // W7 BLOCK #5 Axis 2 — KGI realtime quote for company page frontend
 // =============================================================================
 //
@@ -11033,10 +10942,7 @@ function startSchedulers(workspaceSlug: string): void {
     }
   }, _paperObsCronMs);
 
-  // BLOCK #SIGNAL-STRATEGY — Source 1: strategy.cont_liq_v36
-  // Fires daily at ~14:00 TST (after Taiwan market close).
-  // Poll every 15min; isStrategyEmitWindow() enforces 13:45–14:30 TST gate.
-  // One signal per top-pick in cont_liq_v36 snapshot (max 4 signals/day).
+  // BLOCK #SIGNAL-STRATEGY
   const STRATEGY_SIGNAL_POLL_MS = 15 * 60 * 1000;
   setInterval(() => {
     if (!isStrategyEmitWindow()) return;
@@ -11045,16 +10951,13 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, STRATEGY_SIGNAL_POLL_MS);
 
-  // BLOCK #SIGNAL-NEWS — Source 2: news.<window_label>
-  // Fires synced with news-ai-selector 4-window cron (08:00/12:00/18:00/24:00 TST).
-  // Poll every 15min; matches UTC window when news_top10 just updated.
-  // OpenAI cap: max 10 calls per window fire.
+  // BLOCK #SIGNAL-NEWS
   type NewsWindowLabel = "08:00" | "12:00" | "18:00" | "24:00";
   const NEWS_WINDOWS: Array<{ label: NewsWindowLabel; utcHour: number }> = [
-    { label: "08:00", utcHour: 0 },   // 08:00 TST = 00:00 UTC
-    { label: "12:00", utcHour: 4 },   // 12:00 TST = 04:00 UTC
-    { label: "18:00", utcHour: 10 },  // 18:00 TST = 10:00 UTC
-    { label: "24:00", utcHour: 16 }   // 00:00+1 TST = 16:00 UTC
+    { label: "08:00", utcHour: 0 },
+    { label: "12:00", utcHour: 4 },
+    { label: "18:00", utcHour: 10 },
+    { label: "24:00", utcHour: 16 }
   ];
   const NEWS_SIGNAL_POLL_MS = 15 * 60 * 1000;
   setInterval(() => {
@@ -11072,10 +10975,7 @@ function startSchedulers(workspaceSlug: string): void {
     }
   }, NEWS_SIGNAL_POLL_MS);
 
-  // BLOCK #SIGNAL-QUOTE — Source 3: quote.breakout
-  // Runs every 30min, window-guarded to 09:00–13:30 TST inside the tick function.
-  // Rule: close > 5d SMA AND volume > 5d avg × 2 → bullish breakout signal.
-  // Skips gracefully if no real OHLCV bars in DB (no faking).
+  // BLOCK #SIGNAL-QUOTE
   const QUOTE_BREAKOUT_POLL_MS = 30 * 60 * 1000;
   setInterval(() => {
     runQuoteBreakoutEmitterTick().catch((e) =>
@@ -11083,7 +10983,7 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, QUOTE_BREAKOUT_POLL_MS);
 
-  console.log(
+    console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
     "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) + " +
