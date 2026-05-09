@@ -548,3 +548,31 @@ export const dailyThemeSummaries = pgTable(
     dtIdx: index("daily_theme_summaries_dt_idx").on(table.dt)
   })
 );
+
+// ── Strategy Runs — migration 0029_strategy_runs.sql ──────────────────────────
+// Replaces ephemeral filesystem JSONL (runtime-data/strategy-runs/).
+// One row per strategy run; payload JSONB holds full StrategyRunRecord.
+
+export const strategyRuns = pgTable(
+  "strategy_runs",
+  {
+    id:                 uuid("id").defaultRandom().primaryKey(),
+    workspaceId:        uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    strategyId:         text("strategy_id").notNull(),
+    runLabel:           text("run_label").notNull(),
+    status:             text("status", { enum: ["queued", "running", "passed", "failed", "blocked"] })
+                          .notNull()
+                          .default("queued"),
+    createdAt:          timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:          timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    candidatesCount:    integer("candidates_count").notNull().default(0),
+    observableCount:    integer("observable_count").notNull().default(0),
+    pendingReviewCount: integer("pending_review_count").notNull().default(0),
+    rejectedCount:      integer("rejected_count").notNull().default(0),
+    payload:            jsonb("payload").notNull().default({})
+  },
+  (table) => ({
+    workspaceCreatedIdx: index("idx_strategy_runs_workspace_created").on(table.workspaceId, table.createdAt),
+    workspaceStatusIdx:  index("idx_strategy_runs_workspace_status").on(table.workspaceId, table.status)
+  })
+);
