@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { BeneficiaryTier, Company } from "@iuf-trading-room/contracts";
 
-import { PageFrame } from "@/components/PageFrame";
+import { PageFrame, Panel } from "@/components/PageFrame";
 import { getCompanies } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { industryLabel } from "@/lib/industry-i18n";
@@ -167,22 +167,22 @@ export default function CompaniesPage() {
           </div>
           <div className="parity-kpi-cell">
             <span className="parity-kpi-label">總公司數</span>
-            <span className="parity-kpi-value">{total}</span>
+            <span className="parity-kpi-value">{rawTotal}</span>
             <span className="parity-kpi-sub">台股公司池</span>
           </div>
           <div className="parity-kpi-cell">
             <span className="parity-kpi-label">篩選結果</span>
-            <span className="parity-kpi-value ok">{filtered}</span>
+            <span className="parity-kpi-value ok">{filtered.length}</span>
             <span className="parity-kpi-sub">符合條件</span>
           </div>
           <div className="parity-kpi-cell">
             <span className="parity-kpi-label">頁次</span>
-            <span className="parity-kpi-value">{Math.ceil(filtered / PAGE_SIZE) || 1}</span>
-            <span className="parity-kpi-sub">共 {Math.ceil(filtered / PAGE_SIZE) || 1} 頁</span>
+            <span className="parity-kpi-value">{totalPages}</span>
+            <span className="parity-kpi-sub">共 {totalPages} 頁</span>
           </div>
           <div className="parity-kpi-cell">
             <span className="parity-kpi-label">更新</span>
-            <span className="parity-kpi-value" style={{ fontSize: 12 }}>{formatTime(updatedAt)}</span>
+            <span className="parity-kpi-value" style={{ fontSize: 12 }}>{formatTime(fetchedAt)}</span>
             <span className="parity-kpi-sub">資料時間</span>
           </div>
         </div>

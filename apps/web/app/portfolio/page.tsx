@@ -332,13 +332,13 @@ export default async function PortfolioPage() {
               </thead>
               <tbody>
                 {portfolio.positions.map((pos) => (
-                  <tr key={pos.companyId}>
+                  <tr key={pos.symbol}>
                     <td>
-                      <Link href={`/companies/${encodeURIComponent(pos.symbol ?? pos.companyId)}`} className="tg gold">
-                        {pos.symbol ?? pos.companyId.slice(0, 8)}
+                      <Link href={`/companies/${encodeURIComponent(pos.symbol)}`} className="tg gold">
+                        {pos.symbol}
                       </Link>
                     </td>
-                    <td>{pos.companyName}</td>
+                    <td className="tg muted">—</td>
                     <td className="num-cell">{formatShares(pos.netQtyShares)}</td>
                     <td className="num-cell">{avgCostLabel(pos)}</td>
                     <td className="num-cell">{notionalLabel(pos)}</td>
@@ -382,9 +382,9 @@ export default async function PortfolioPage() {
               </thead>
               <tbody>
                 {recentFills.map((fill) => (
-                  <tr key={fill.orderId + (fill.fillTime ?? "")}>
+                  <tr key={fill.orderId + fill.fillTime}>
                     <td>{formatTime(fill.fillTime)}</td>
-                    <td className="tg gold">{fill.ticker ?? fill.orderId.slice(0, 6)}</td>
+                    <td className="tg gold">{fill.symbol}</td>
                     <td><span className={`parity-badge ${fill.side === "buy" ? "ok" : "bad"}`}>{sideLabel(fill.side)}</span></td>
                     <td>{fillUnitLabel(fill)}</td>
                     <td className="num-cell">{formatTwd(fill.fillPrice)}</td>
