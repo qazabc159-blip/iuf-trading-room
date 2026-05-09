@@ -24,6 +24,92 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { StrategyDetailData, CaveatEntry } from "./page";
 import { apiGetMe } from "@/lib/auth-client";
+import { StrategyChartPanel } from "./StrategyChartPanel";
+import type { LabStrategySnapshot } from "@/lib/api";
+
+// ── Embedded snapshot — cont_liq_v36 (Athena snapshot_v0, 2026-05-09) ─────────
+// Jason per-strategy endpoint (/api/v1/lab/strategy/:strategyId/snapshot) is now
+// shipped on this branch (commit 85a1132). Frontend uses embedded fallback data
+// until LAB_SNAPSHOT_BASE_URL is confirmed live in production environment.
+const CONT_LIQ_V36_SNAPSHOT: LabStrategySnapshot = {
+  schema: "lab_tr_strategy_snapshot_v0",
+  strategyId: "cont_liq_v36",
+  displayName: "Continuous Liquidity Relative Strength",
+  displayName_zh: "\u6301\u7e8c\u6d41\u52d5\u6027 + \u76f8\u5c0d\u5f37\u5f31",
+  status: "PAPER_LIVE_PROPOSED",
+  headlineMetrics: {
+    compoundReturn: 2.2202, sharpeAnnualized: 3.027, sortinoAnnualized: 3.912,
+    maxDrawdown: -0.1051, maxDrawdownDate: "2025-05-29",
+    winRate: 0.8462, hitRate: 0.9231, averageHoldingDays: 20,
+    robustness: {
+      horizonSweep: "NEAR_PASS_v37", regimeBandSweep: "FULL_PASS_v38",
+      costStressSweep: "PASS_AT_60_120_BPS_v39", universeShrinkage: "PARTIAL_K_GE_50_REQUIRED_v40",
+    },
+  },
+  equityCurve: { points: [
+    { date: "2024-05-30", cumReturn: 0.0138, drawdown: 0.0 },
+    { date: "2024-06-28", cumReturn: 0.2504, drawdown: 0.0 },
+    { date: "2025-05-29", cumReturn: 0.119, drawdown: -0.1051 },
+    { date: "2025-06-27", cumReturn: 0.2547, drawdown: 0.0 },
+    { date: "2025-07-25", cumReturn: 0.6097, drawdown: 0.0 },
+    { date: "2025-08-22", cumReturn: 0.491, drawdown: -0.0737 },
+    { date: "2025-09-19", cumReturn: 0.8008, drawdown: 0.0 },
+    { date: "2025-10-22", cumReturn: 0.967, drawdown: 0.0 },
+    { date: "2025-11-20", cumReturn: 0.968, drawdown: 0.0 },
+    { date: "2025-12-18", cumReturn: 1.143, drawdown: 0.0 },
+    { date: "2026-01-19", cumReturn: 1.3663, drawdown: 0.0 },
+    { date: "2026-02-25", cumReturn: 1.8553, drawdown: 0.0 },
+    { date: "2026-03-26", cumReturn: 2.2202, drawdown: 0.0 },
+  ]},
+  monthlyReturns: { bars: [
+    { yearMonth: "2024-05", monthReturn: 0.0138, tradeCount: 1 },
+    { yearMonth: "2024-06", monthReturn: 0.2333, tradeCount: 1 },
+    { yearMonth: "2025-05", monthReturn: -0.1051, tradeCount: 1 },
+    { yearMonth: "2025-06", monthReturn: 0.1213, tradeCount: 1 },
+    { yearMonth: "2025-07", monthReturn: 0.2829, tradeCount: 1 },
+    { yearMonth: "2025-08", monthReturn: -0.0737, tradeCount: 1 },
+    { yearMonth: "2025-09", monthReturn: 0.2078, tradeCount: 1 },
+    { yearMonth: "2025-10", monthReturn: 0.0923, tradeCount: 1 },
+    { yearMonth: "2025-11", monthReturn: 0.0005, tradeCount: 1 },
+    { yearMonth: "2025-12", monthReturn: 0.0889, tradeCount: 1 },
+    { yearMonth: "2026-01", monthReturn: 0.1042, tradeCount: 1 },
+    { yearMonth: "2026-02", monthReturn: 0.2067, tradeCount: 1 },
+    { yearMonth: "2026-03", monthReturn: 0.1278, tradeCount: 1 },
+  ]},
+  drawdownSeries: { points: [
+    { date: "2024-05-30", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2024-06-28", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2025-05-29", drawdown: -0.1051, underwaterDays: 0 },
+    { date: "2025-06-27", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2025-07-25", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2025-08-22", drawdown: -0.0737, underwaterDays: 0 },
+    { date: "2025-09-19", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2025-10-22", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2025-11-20", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2025-12-18", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2026-01-19", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2026-02-25", drawdown: 0.0, underwaterDays: 0 },
+    { date: "2026-03-26", drawdown: 0.0, underwaterDays: 0 },
+  ]},
+  sampleTrades: { entries: [
+    { rebalanceDate: "2025-08-22", exitDateApprox: "2025-08-22", holdingDays: 20, holdingCount: 4, turnover: 1.0, grossReturn: 0.0373, netReturn120bps: 0.0253, benchmarkReturn: 0.0991, excessReturn120bps: -0.0737, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
+    { rebalanceDate: "2025-09-19", exitDateApprox: "2025-09-19", holdingDays: 20, holdingCount: 4, turnover: 1.0, grossReturn: 0.2655, netReturn120bps: 0.2535, benchmarkReturn: 0.0457, excessReturn120bps: 0.2078, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
+    { rebalanceDate: "2025-10-22", exitDateApprox: "2025-10-22", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.1447, netReturn120bps: 0.1357, benchmarkReturn: 0.0434, excessReturn120bps: 0.0923, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
+    { rebalanceDate: "2025-11-20", exitDateApprox: "2025-11-20", holdingDays: 20, holdingCount: 4, turnover: 1.0, grossReturn: 0.0401, netReturn120bps: 0.0281, benchmarkReturn: 0.0275, excessReturn120bps: 0.0005, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
+    { rebalanceDate: "2025-12-18", exitDateApprox: "2025-12-18", holdingDays: 20, holdingCount: 4, turnover: 1.0, grossReturn: 0.3667, netReturn120bps: 0.3547, benchmarkReturn: 0.2658, excessReturn120bps: 0.0889, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
+    { rebalanceDate: "2026-01-19", exitDateApprox: "2026-01-19", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.2672, netReturn120bps: 0.2582, benchmarkReturn: 0.154, excessReturn120bps: 0.1042, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
+    { rebalanceDate: "2026-02-25", exitDateApprox: "2026-02-25", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.2285, netReturn120bps: 0.2195, benchmarkReturn: 0.0128, excessReturn120bps: 0.2067, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
+    { rebalanceDate: "2026-03-26", exitDateApprox: "2026-03-26", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.3139, netReturn120bps: 0.3049, benchmarkReturn: 0.1772, excessReturn120bps: 0.1278, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
+  ]},
+  spec: { capacityCaveat: "Requires liquid pool >= 50 names by 20d dollar volume; alpha degrades sharply below K=40 (v40 evidence)." },
+  uiCopyHints: { warningBanner_zh: "\u7b56\u7565\u9700 \u226550 \u6a94\u6d41\u52d5\u6027 universe\uff1b\u8cc7\u91d1\u904e\u5ea6\u96c6\u4e2d\u65bc <40 \u6a94\u6642 alpha \u5931\u6548" },
+};
+
+const STAGE2_SNAPSHOTS: Record<string, LabStrategySnapshot> = {
+  "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": CONT_LIQ_V36_SNAPSHOT,
+  cont_liq_h20_top3_market_trail20_gt_5pct: CONT_LIQ_V36_SNAPSHOT,
+};
+
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -777,6 +863,12 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
           來源 / athena_lane_e_8_caveat_sweep · athena_truth_board_v1 (2026-05-08)
         </div>
       </div>
+
+
+      {/* ── Section 3 [Stage 2]: Chart panel (cont_liq_v36 only) ─────────── */}
+      {STAGE2_SNAPSHOTS[data.strategyId] !== undefined && (
+        <StrategyChartPanel snapshot={STAGE2_SNAPSHOTS[data.strategyId]!} />
+      )}
 
       {/* ── Section 3: Owner-only toggle area ───────────────────────────── */}
       {isOwner === null && (
