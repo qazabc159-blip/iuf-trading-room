@@ -195,6 +195,50 @@ async function load<T>(
   }
 }
 
+// ── Per-fetch timeout wrapper ─────────────────────────────────────────────────
+// Returns either the real result or { _timeout: "<label>_<ms>ms" } sentinel.
+// Caller detects _timeout and maps to BLOCKED with stale_reason (never fake-green).
+const FETCH_SOFT_MS = 3000; // 3s soft budget — market/ops/brief/paper/broker/ideas/runs
+const FETCH_HARD_MS = 5000; // 5s hard budget — finmind/intel(TWSE crawl)/snapshot
+
+function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T | { _timeout: string }> {
+  return Promise.race([
+    p,
+    new Promise<{ _timeout: string }>((resolve) =>
+      setTimeout(() => resolve({ _timeout: `timeout_${ms}ms_${label}` }), ms),
+    ),
+  ]);
+}
+
+// ── Per-fetch telemetry ───────────────────────────────────────────────────────
+// Wraps a promise, logs duration + status, then returns result.
+// Bruce: grep prod logs for "[homepage-fetch]" to identify culprit panels.
+async function timedFetch<T>(
+  label: string,
+  ms: number,
+  p: Promise<T>,
+): Promise<T | { _timeout: string }> {
+  const t0 = Date.now();
+  const result = await withTimeout(p, ms, label);
+  const elapsed = Date.now() - t0;
+  const isTimeout = typeof result === "object" && result !== null && "_timeout" in result;
+  if (isTimeout) {
+    console.warn(`[homepage-fetch] ${label} TIMEOUT after ${elapsed}ms (budget: ${ms}ms)`);
+  } else {
+    console.warn(`[homepage-fetch] ${label} took ${elapsed}ms (status: ok)`);
+  }
+  return result;
+}
+
+// ── Detect timeout sentinel ───────────────────────────────────────────────────
+function isTimeoutSentinel(value: unknown): value is { _timeout: string } {
+  return typeof value === "object" && value !== null && "_timeout" in value;
+}
+
 function todayTaipeiDate() {
   return new Date().toLocaleDateString("en-CA", { timeZone: TAIPEI_TIME_ZONE });
 }
@@ -1880,9 +1924,17 @@ async function DashboardContent({
 }) {
   const now = nowIso();
 
-  // All 9 fetches fire in parallel.
-  // Previously intel ran SEQUENTIALLY after Promise.all — now it is concurrent.
-  // getDashboardSnapshot provides 30s-cached brief/news/lab/audit aggregation.
+  // ── Timeout-budgeted parallel fetches ──────────────────────────────────────
+  // Each fetch is wrapped with timedFetch(label, budgetMs, promise).
+  // Budget:
+  //   FETCH_SOFT_MS (3s) — most panels: market, ops, brief, paper, broker, ideas, runs
+  //   FETCH_HARD_MS (5s) — heavy queries: finmind (multi-dataset), intel (TWSE crawl), snapshot
+  // If a fetch exceeds budget, timedFetch returns { _timeout: "..." } sentinel.
+  // Result handler maps sentinel -> BLOCKED with real reason (never fake-green).
+  //
+  // Telemetry: grep prod logs for "[homepage-fetch]" to find culprit panels.
+  const fetchT0 = Date.now();
+
   const [
     finmindResult,
     marketResult,
@@ -1895,41 +1947,44 @@ async function DashboardContent({
     intelResult,
     snapshotResult,
   ] = await Promise.allSettled([
-    loadFinMindDashboard(),
-    load(
+    timedFetch("finmind", FETCH_HARD_MS, loadFinMindDashboard()),
+    timedFetch("market", FETCH_SOFT_MS, load(
       "Market data overview",
       null,
       async () => (await getMarketDataOverview({ includeStale: true, topLimit: 20 })).data,
       (value) => !hasMarketOverviewData(value),
       "市場資料總覽目前沒有可用正式資料。",
-    ),
-    load(
+    )),
+    timedFetch("ops", FETCH_SOFT_MS, load(
       "OpenAlice / Ops snapshot",
       null,
       async () => (await getOpsSnapshot({ auditHours: 24, recentLimit: 6 })).data,
       (value) => value === null,
       "OpenAlice 營運快照目前沒有回傳資料。",
-    ),
-    loadDailyBriefDashboard(),
-    loadPaperHealthState(),
-    loadBrokerAccessState(),
-    load(
+    )),
+    timedFetch("brief", FETCH_SOFT_MS, loadDailyBriefDashboard()),
+    timedFetch("paper", FETCH_SOFT_MS, loadPaperHealthState()),
+    timedFetch("broker", FETCH_SOFT_MS, loadBrokerAccessState()),
+    timedFetch("ideas", FETCH_SOFT_MS, load(
       "Strategy ideas",
       null,
       async () => (await getStrategyIdeas({ limit: 8, includeBlocked: true, decisionMode: "paper", sort: "score" })).data,
       (value) => value === null || value.items.length === 0,
       "策略想法目前沒有可用候選。",
-    ),
-    load(
+    )),
+    timedFetch("runs", FETCH_SOFT_MS, load(
       "Strategy runs",
       null,
       async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data,
       (value) => value === null || value.items.length === 0,
       "策略批次目前沒有可用紀錄。",
-    ),
-    loadMarketIntelDashboard(),
-    getDashboardSnapshot(),
+    )),
+    timedFetch("intel", FETCH_HARD_MS, loadMarketIntelDashboard()),
+    timedFetch("snapshot", FETCH_HARD_MS, getDashboardSnapshot()),
   ]);
+
+  const totalElapsed = Date.now() - fetchT0;
+  console.warn(`[homepage-fetch] ALL_PANELS total=${totalElapsed}ms`);
 
   const updatedAt = nowIso();
   const emptyBrief: DailyBriefDashboard = {
@@ -1943,34 +1998,71 @@ async function DashboardContent({
   };
   const emptyIntel: MarketIntelDashboard = { items: [], selected: [], failures: 0 };
 
-  const finmind = finmindResult.status === "fulfilled"
-    ? finmindResult.value
-    : { state: "BLOCKED" as const, data: null, updatedAt, source: "FinMind", reason: "載入失敗" };
-  const market = marketResult.status === "fulfilled"
-    ? marketResult.value
-    : { state: "BLOCKED" as const, data: null, updatedAt, source: "Market data overview", reason: "載入失敗" };
-  const ops = opsResult.status === "fulfilled"
-    ? opsResult.value
-    : { state: "BLOCKED" as const, data: null, updatedAt, source: "OpenAlice / Ops snapshot", reason: "載入失敗" };
-  const brief = briefResult.status === "fulfilled"
-    ? briefResult.value
-    : { state: "BLOCKED" as const, data: emptyBrief, updatedAt, source: "OpenAlice / Daily Brief", reason: "載入失敗" };
-  const paper = paperResult.status === "fulfilled"
-    ? paperResult.value
-    : { state: "BLOCKED" as const, data: null, updatedAt, source: "Paper Health", reason: "載入失敗" };
-  const broker = brokerResult.status === "fulfilled"
-    ? brokerResult.value
-    : { state: "EMPTY" as const, data: null, updatedAt, source: "正式券商只讀狀態", reason: "載入失敗" };
-  const ideas = ideasResult.status === "fulfilled"
-    ? ideasResult.value
-    : { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy ideas", reason: "載入失敗" };
-  const runs = runsResult.status === "fulfilled"
-    ? runsResult.value
-    : { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy runs", reason: "載入失敗" };
-  const intel = intelResult.status === "fulfilled"
-    ? intelResult.value
-    : { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "TWSE OpenAPI 重大訊息", reason: "載入失敗" };
-  const snapshot: DashboardSnapshot | null = snapshotResult.status === "fulfilled" ? snapshotResult.value : null;
+  // ── Result unwrap: detect timeout sentinel -> BLOCKED with real reason ───────
+  // isTimeoutSentinel() guards against fake-green: timeout is never silently swallowed.
+  const finmind = (() => {
+    if (finmindResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "FinMind", reason: "載入失敗" };
+    const v = finmindResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "FinMind", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
+  const market = (() => {
+    if (marketResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Market data overview", reason: "載入失敗" };
+    const v = marketResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Market data overview", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
+  const ops = (() => {
+    if (opsResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "OpenAlice / Ops snapshot", reason: "載入失敗" };
+    const v = opsResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "OpenAlice / Ops snapshot", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
+  const brief = (() => {
+    if (briefResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyBrief, updatedAt, source: "OpenAlice / Daily Brief", reason: "載入失敗" };
+    const v = briefResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyBrief, updatedAt, source: "OpenAlice / Daily Brief", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
+  const paper = (() => {
+    if (paperResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Paper Health", reason: "載入失敗" };
+    const v = paperResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Paper Health", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
+  const broker = (() => {
+    if (brokerResult.status === "rejected") return { state: "EMPTY" as const, data: null, updatedAt, source: "正式券商只讀狀態", reason: "載入失敗" };
+    const v = brokerResult.value;
+    if (isTimeoutSentinel(v)) return { state: "EMPTY" as const, data: null, updatedAt, source: "正式券商只讀狀態", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
+  const ideas = (() => {
+    if (ideasResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy ideas", reason: "載入失敗" };
+    const v = ideasResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy ideas", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
+  const runs = (() => {
+    if (runsResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy runs", reason: "載入失敗" };
+    const v = runsResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy runs", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
+  const intel = (() => {
+    if (intelResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "TWSE OpenAPI 重大訊息", reason: "載入失敗" };
+    const v = intelResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "TWSE OpenAPI 重大訊息", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
+  const snapshot: DashboardSnapshot | null = (() => {
+    if (snapshotResult.status === "rejected") return null;
+    const v = snapshotResult.value;
+    if (isTimeoutSentinel(v)) {
+      console.warn("[homepage-fetch] snapshot timeout -- dashboard renders without aggregated panel");
+      return null;
+    }
+    return v as DashboardSnapshot | null;
+  })();
 
   if (snapshot) {
     console.info(
