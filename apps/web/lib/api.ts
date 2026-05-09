@@ -2177,6 +2177,106 @@ export async function getLabThreeStrategySnapshot(): Promise<LabThreeStrategySna
   }
 }
 
+// ── Lab per-strategy snapshot (Stage 2 charts) ─────────────────────────────
+// GET /api/v1/lab/strategy/:strategyId/snapshot
+// Response envelope: { data: { schema, strategyId, snapshot: {...}, cache_hit, stale_reason, fetched_at } }
+// snapshot field = Athena snapshot_v0 data. Falls back to null (caller handles).
+
+export type LabStrategySnapshotEquityPoint = {
+  date: string;
+  cumReturn: number;
+  drawdown: number;
+};
+
+export type LabStrategySnapshotDrawdownPoint = {
+  date: string;
+  drawdown: number;
+  underwaterDays: number;
+};
+
+export type LabStrategySnapshotMonthlyBar = {
+  yearMonth: string;
+  monthReturn: number;
+  tradeCount: number;
+};
+
+export type LabStrategySnapshotSampleTrade = {
+  rebalanceDate: string;
+  exitDateApprox: string;
+  holdingDays: number;
+  holdingCount: number;
+  turnover: number;
+  grossReturn: number;
+  netReturn120bps: number;
+  benchmarkReturn: number;
+  excessReturn120bps: number;
+  rationale: string;
+  source: string;
+  uiLabel_zh: string;
+};
+
+export type LabStrategySnapshotRobustness = {
+  horizonSweep: string;
+  regimeBandSweep: string;
+  costStressSweep: string;
+  universeShrinkage: string;
+};
+
+export type LabStrategySnapshotHeadlineMetrics = {
+  compoundReturn: number;
+  sharpeAnnualized: number;
+  sortinoAnnualized: number;
+  maxDrawdown: number;
+  maxDrawdownDate?: string;
+  winRate: number;
+  hitRate: number;
+  averageHoldingDays: number;
+  robustness: LabStrategySnapshotRobustness;
+};
+
+export type LabStrategySnapshot = {
+  schema: string;
+  strategyId: string;
+  displayName: string;
+  displayName_zh: string;
+  status: string;
+  headlineMetrics: LabStrategySnapshotHeadlineMetrics;
+  equityCurve: { points: LabStrategySnapshotEquityPoint[] };
+  monthlyReturns: { bars: LabStrategySnapshotMonthlyBar[] };
+  drawdownSeries?: { points: LabStrategySnapshotDrawdownPoint[] };
+  sampleTrades: { entries: LabStrategySnapshotSampleTrade[] };
+  spec: {
+    capacityCaveat?: string;
+  };
+  uiCopyHints?: {
+    warningBanner_zh?: string;
+  };
+};
+
+type LabStrategySnapshotApiResponse = {
+  schema: string;
+  strategyId: string;
+  snapshot: LabStrategySnapshot;
+  cache_hit: boolean;
+  stale_reason: string | null;
+  fetched_at: string;
+};
+
+export async function getLabStrategySnapshot(
+  strategyId: string,
+): Promise<LabStrategySnapshot | null> {
+  try {
+    const res = await request<LabStrategySnapshotApiResponse>(
+      `/api/v1/lab/strategy/${encodeURIComponent(strategyId)}/snapshot`,
+    );
+    const payload = res.data;
+    if (!payload || !payload.snapshot) return null;
+    return payload.snapshot;
+  } catch {
+    return null;
+  }
+}
+
 // Paper orders live in a dedicated no-mock client so both company and portfolio
 // order panels share the Contract 1 shape.
 export {
