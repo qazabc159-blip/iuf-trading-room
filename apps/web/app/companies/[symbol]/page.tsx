@@ -347,7 +347,12 @@ export default async function CompanyDetailPage({
         </a>
       </div>
 
-      <CompanyHeroBar company={detail} quote={quote} />
+      <CompanyHeroBar
+        company={detail}
+        quote={quote}
+        realtimeQuote={realtimeQuote}
+        lastBar={bars.length > 0 ? bars[bars.length - 1] : null}
+      />
 
       <div className="company-kpi-strip">
         <div>
