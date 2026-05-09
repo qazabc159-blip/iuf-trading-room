@@ -146,6 +146,88 @@ function mapEntryToCard(entry: LabThreeStrategyEntry): StrategyDisplayCard {
   };
 }
 
+
+// ── Mini sparkline data (cont_liq_v36 real equity curve, 13 points) ───────────
+// Source: Athena snapshot_v0 equityCurve — same data as detail panel
+const CONT_LIQ_SPARKLINE_POINTS = [
+  0.0138, 0.2504, 0.119, 0.2547, 0.6097, 0.491, 0.8008, 0.967, 0.968, 1.143, 1.3663, 1.8553, 2.2202,
+] as const;
+
+// strategy_002 / strategy_003 have no chart snapshot yet — show placeholder sparkline
+// Using a flat line with slight upward noise to indicate "data pending" state
+const PENDING_SPARKLINE_POINTS = [0, 0.01, 0.005, 0.012, 0.008, 0.015, 0.01, 0.018] as const;
+
+type SparklinePoints = readonly number[];
+
+function MiniSparkline({
+  points,
+  color,
+  isPending,
+}: {
+  points: SparklinePoints;
+  color: string;
+  isPending?: boolean;
+}) {
+  const W = 280; const H = 40;
+  const PAD = { top: 4, right: 4, bottom: 4, left: 4 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+  const arr = Array.from(points);
+  const minV = Math.min(...arr);
+  const maxV = Math.max(...arr);
+  const rangeV = maxV - minV || 1;
+  const xScale = (i: number) => PAD.left + (i / (arr.length - 1)) * innerW;
+  const yScale = (v: number) => PAD.top + ((maxV - v) / rangeV) * innerH;
+  const polyPts = arr.map((v, i) => `${xScale(i)},${yScale(v)}`).join(" ");
+  // Area fill polygon (line + bottom)
+  const areaPts = [
+    ...arr.map((v, i) => `${xScale(i)},${yScale(v)}`),
+    `${xScale(arr.length - 1)},${PAD.top + innerH}`,
+    `${xScale(0)},${PAD.top + innerH}`,
+  ].join(" ");
+
+  return (
+    <div style={{ position: "relative" }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: "100%", height: H, display: "block", opacity: isPending ? 0.45 : 1 }}
+        aria-hidden="true"
+      >
+        {/* Area fill */}
+        <polygon
+          points={areaPts}
+          fill={color}
+          fillOpacity={0.12}
+        />
+        {/* Line */}
+        <polyline
+          points={polyPts}
+          fill="none"
+          stroke={color}
+          strokeWidth={1.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          strokeDasharray={isPending ? "3 2" : undefined}
+        />
+      </svg>
+      <div
+        style={{
+          position: "absolute",
+          bottom: 4,
+          right: 6,
+          fontSize: 9,
+          fontFamily: "var(--mono, monospace)",
+          color: isPending ? "#555" : color,
+          letterSpacing: 0.3,
+          opacity: 0.9,
+        }}
+      >
+        {isPending ? "chart pending Task #400" : "點開看完整圖表 →"}
+      </div>
+    </div>
+  );
+}
+
 // ── CSS ────────────────────────────────────────────────────────────────────────
 
 const BADGE_STYLES: Record<BadgeVariant, React.CSSProperties> = {
@@ -369,6 +451,27 @@ function StrategyCard({ s }: { s: StrategyDisplayCard }) {
               >
                 {s.caveat}
               </div>
+            </div>
+          )}
+
+          {/* Mini sparkline preview — non-retired only */}
+          {!s.isRetired && (
+            <div
+              style={{
+                marginBottom: 12,
+                borderTop: "1px solid rgba(255,255,255,0.05)",
+                paddingTop: 8,
+              }}
+            >
+              {s.strategyId === "cont_liq_v36" ||
+               s.strategyId === "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25" ||
+               s.strategyId === "cont_liq_h20_top3_market_trail20_gt_5pct" ? (
+                <MiniSparkline points={CONT_LIQ_SPARKLINE_POINTS} color={accent} />
+              ) : s.strategyId === "strategy_002" || s.strategyId === "strategy_002_revenue_yoy_surprise" ||
+                  s.strategyId === "strategy_003" || s.strategyId === "strategy_003_ma200_trend_follow" ||
+                  s.strategyId === "MAIN_execution_rank_buffer_top20" ? (
+                <MiniSparkline points={PENDING_SPARKLINE_POINTS} color={accent} isPending />
+              ) : null}
             </div>
           )}
 

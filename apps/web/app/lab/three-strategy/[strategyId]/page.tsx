@@ -16,7 +16,7 @@
  *   - 不准 mock 真實 quote / fake metric
  */
 
-import { notFound } from "next/navigation";
+// notFound removed — using defensive fallback rendering instead
 import Link from "next/link";
 import { PageFrame } from "@/components/PageFrame";
 import { StrategyDetailClient } from "./StrategyDetailClient";
@@ -622,8 +622,64 @@ export default async function StrategyDetailPage({
   const { strategyId } = await params;
   const data = STRATEGY_REGISTRY[strategyId];
 
+  // Defensive fallback — show a friendly "unknown strategy" page instead of black-screen 404
   if (!data) {
-    notFound();
+    return (
+      <PageFrame
+        code="LAB"
+        title="策略 ID 不認識"
+        sub="此 strategyId 不在已知清單中"
+        note="不顯示已驗證、approved、可上線或任何背書字樣。"
+      >
+        <div
+          style={{
+            padding: "20px 24px",
+            marginBottom: 20,
+            background: "rgba(11,16,23,0.88)",
+            border: "1px solid rgba(220,60,60,0.25)",
+            borderLeft: "3px solid #e05050",
+            borderRadius: 8,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#e05050",
+              letterSpacing: 0.8,
+              textTransform: "uppercase" as const,
+              fontFamily: "var(--mono, monospace)",
+              marginBottom: 8,
+            }}
+          >
+            Strategy ID Not Found
+          </div>
+          <div style={{ fontSize: 14, color: "#c8c8c8", lineHeight: 1.7, marginBottom: 12 }}>
+            策略 ID <code style={{ fontFamily: "var(--mono, monospace)", color: "#ffb800", background: "rgba(255,184,0,0.08)", padding: "1px 6px", borderRadius: 3 }}>{strategyId}</code> 不在已知策略清單中。
+          </div>
+          <div style={{ fontSize: 13, color: "#888", lineHeight: 1.6 }}>
+            可能原因：<br />
+            · 此 ID 已更新為新版本（請回列表查看最新 ID）<br />
+            · URL 有誤<br />
+            · 策略已從 registry 移除
+          </div>
+        </div>
+        <Link
+          href="/lab/three-strategy"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 13,
+            color: "#ffb800",
+            textDecoration: "underline",
+            fontFamily: "var(--mono, monospace)",
+          }}
+        >
+          ← 返回 /lab/three-strategy 查看所有策略
+        </Link>
+      </PageFrame>
+    );
   }
 
   return (

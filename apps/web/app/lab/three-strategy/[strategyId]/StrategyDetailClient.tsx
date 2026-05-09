@@ -106,8 +106,14 @@ const CONT_LIQ_V36_SNAPSHOT: LabStrategySnapshot = {
 };
 
 const STAGE2_SNAPSHOTS: Record<string, LabStrategySnapshot> = {
+  // Long canonical ID
   "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": CONT_LIQ_V36_SNAPSHOT,
+  // Athena canonical short ID
+  cont_liq_v36: CONT_LIQ_V36_SNAPSHOT,
+  // Legacy short alias
   cont_liq_h20_top3_market_trail20_gt_5pct: CONT_LIQ_V36_SNAPSHOT,
+  // strategy_002 and strategy_003 have no chart snapshot yet (BACKTESTED_RAW, Task #400 pending)
+  // They will be added when Athena ships snapshot schema for these strategies
 };
 
 
