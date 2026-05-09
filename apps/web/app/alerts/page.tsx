@@ -9,6 +9,8 @@ import {
   type AlertsEngineState,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { AlertDispatchButton } from "./AlertDispatchButton";
+import { apiGetMe } from "@/lib/auth-client";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,84 @@ type AlertsSurface =
   | { state: "LIVE"; alerts: AlertEntry[]; engineState: AlertsEngineState; updatedAt: string }
   | { state: "EMPTY"; engineState: AlertsEngineState; updatedAt: string }
   | { state: "BLOCKED"; reason: string; updatedAt: string };
+
+// ── Rule catalogue (mirrors openalice-event-rule-engine.ts) ──────────────────
+// These are static UI descriptions — NOT synthesised events.
+// "最近觸發" is derived from fetched AlertEntry[] by ruleId match.
+const RULE_CATALOGUE = [
+  {
+    id: "R01_REVENUE_SURGE_YOY50",
+    label: "月營收大幅成長",
+    desc: "月營收 YoY > 50%（近 35 天）",
+    dep: "FinMind tw_monthly_revenue",
+    severity: "warning" as AlertSeverity,
+  },
+  {
+    id: "R02_INSTITUTIONAL_CONSECUTIVE_BUY_5D",
+    label: "三大法人連5日同向買進",
+    desc: "外資 + 投信 + 自營商 5 日均淨買（近 7 日）",
+    dep: "FinMind tw_institutional_buysell",
+    severity: "info" as AlertSeverity,
+  },
+  {
+    id: "R03_INSTITUTIONAL_CONSECUTIVE_SELL_5D",
+    label: "三大法人連5日同向賣出",
+    desc: "外資 + 投信 + 自營商 5 日均淨賣（近 7 日）",
+    dep: "FinMind tw_institutional_buysell",
+    severity: "warning" as AlertSeverity,
+  },
+  {
+    id: "R04_SHAREHOLDING_HHI_BREAKOUT",
+    label: "籌碼集中度突破 N 日高",
+    desc: "大股東持股 HHI 突破近期高點（集中度異常）",
+    dep: "FinMind tw_shareholding",
+    severity: "info" as AlertSeverity,
+  },
+  {
+    id: "R05_REVENUE_DECLINE_YOY30",
+    label: "月營收大幅衰退",
+    desc: "月營收 YoY < -30%（近 35 天）",
+    dep: "FinMind tw_monthly_revenue",
+    severity: "warning" as AlertSeverity,
+  },
+  {
+    id: "R06_MAJOR_SHAREHOLDER_THRESHOLD",
+    label: "大股東持股異動",
+    desc: "主要股東持股比例觸及門檻（異常集中或分散）",
+    dep: "FinMind tw_shareholding",
+    severity: "info" as AlertSeverity,
+  },
+  {
+    id: "R07_ANNOUNCEMENT_NEW",
+    label: "公開資訊觀測站重大公告",
+    desc: "重大公告事件（每輪巡檢後新增）",
+    dep: "FinMind tw_company_announcement",
+    severity: "warning" as AlertSeverity,
+  },
+  {
+    id: "R08_BRIEF_PUBLISHED",
+    label: "AI 每日簡報發布",
+    desc: "Pipeline 自動發布 AI 簡報",
+    dep: "audit_log (brief publish)",
+    severity: "info" as AlertSeverity,
+  },
+  {
+    id: "R09_HALLUCINATION_REJECTED",
+    label: "AI hallucination reject",
+    desc: "簡報因幻覺比率超標被退件（Layer 5 factual reviewer）",
+    dep: "audit_log (hallucination reject)",
+    severity: "warning" as AlertSeverity,
+  },
+  {
+    id: "R10_KGI_GATEWAY_STATE",
+    label: "KGI gateway 連線狀態",
+    desc: "KGI 下單閘道連線狀態變更（斷線 / 恢復）",
+    dep: "EC2 gateway /health",
+    severity: "critical" as AlertSeverity,
+  },
+] as const;
+
+type RuleId = typeof RULE_CATALOGUE[number]["id"];
 
 function nowIso() {
   return new Date().toISOString();
@@ -66,6 +146,7 @@ function severityColors(severity: AlertSeverity) {
     text: "#ff6b77",
     badge: "rgba(230,57,70,0.18)",
     badgeBorder: "rgba(230,57,70,0.55)",
+    ruleDot: "#ff6b77",
   };
   if (severity === "warning") return {
     border: "rgba(200,148,63,0.7)",
@@ -74,6 +155,7 @@ function severityColors(severity: AlertSeverity) {
     text: "#e2b85c",
     badge: "rgba(200,148,63,0.15)",
     badgeBorder: "rgba(200,148,63,0.5)",
+    ruleDot: "#e2b85c",
   };
   return {
     border: "rgba(145,160,181,0.28)",
@@ -82,6 +164,7 @@ function severityColors(severity: AlertSeverity) {
     text: "#91a0b5",
     badge: "rgba(145,160,181,0.10)",
     badgeBorder: "rgba(145,160,181,0.28)",
+    ruleDot: "#566276",
   };
 }
 
@@ -131,9 +214,22 @@ function activeCount(alerts: AlertEntry[]) {
   return alerts.filter((alert) => !alert.acknowledged).length;
 }
 
+/** Build map: ruleId → most recent triggeredAt ISO string from fetched events */
+function buildLastFiredMap(alerts: AlertEntry[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const alert of alerts) {
+    const existing = map.get(alert.ruleId);
+    if (!existing || alert.triggeredAt > existing) {
+      map.set(alert.ruleId, alert.triggeredAt);
+    }
+  }
+  return map;
+}
+
 async function loadAlertsSurface(): Promise<AlertsSurface> {
   const updatedAt = nowIso();
   try {
+    // Fetch with higher limit to get better last_fired_at coverage per ruleId
     const response = await getAlerts({ limit: ALERTS_LIMIT });
     if (response.data.length === 0) {
       return { state: "EMPTY", engineState: response.meta.engineState, updatedAt };
@@ -233,6 +329,87 @@ const ALERTS_CSS = `
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+._alr-rule-panel {
+  border: 1px solid rgba(220,228,240,0.10);
+  border-radius: 4px;
+  background: rgba(8,11,16,0.55);
+  margin-bottom: 28px;
+  overflow: hidden;
+}
+._alr-rule-panel-header {
+  padding: 14px 20px;
+  background: rgba(220,228,240,0.04);
+  border-bottom: 1px solid rgba(220,228,240,0.10);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+._alr-rule-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-family: var(--mono, monospace);
+  color: rgba(145,160,181,0.75);
+}
+._alr-rule-panel-sub {
+  font-size: 11px;
+  color: rgba(145,160,181,0.45);
+  font-family: var(--mono, monospace);
+}
+._alr-rule-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: rgba(220,228,240,0.07);
+}
+._alr-rule-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 18px;
+  background: rgba(8,11,16,0.72);
+  transition: background 0.12s;
+}
+._alr-rule-row:hover { background: rgba(14,18,26,0.88); }
+._alr-rule-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+._alr-rule-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+._alr-rule-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #c6d0de;
+  line-height: 1.3;
+}
+._alr-rule-desc {
+  font-size: 11px;
+  color: rgba(145,160,181,0.65);
+  line-height: 1.4;
+}
+._alr-rule-fired {
+  font-size: 10px;
+  font-family: var(--mono, monospace);
+  margin-top: 3px;
+}
+._alr-rule-fired-yes { color: #e2b85c; }
+._alr-rule-fired-no  { color: rgba(145,160,181,0.38); }
+._alr-rule-dep {
+  font-size: 10px;
+  color: rgba(145,160,181,0.32);
+  font-family: var(--mono, monospace);
+  margin-top: 1px;
+}
 ._alr-list {
   display: grid;
   gap: 12px;
@@ -255,6 +432,8 @@ const ALERTS_CSS = `
 @media (prefers-reduced-motion: reduce) {
   ._alr-card { transition: none; }
   ._alr-card:hover { transform: none; }
+  ._alr-rule-row { transition: none; }
+  ._alr-engine-dot-ok { animation: none; }
 }
 ._alr-card-glow {
   position: absolute;
@@ -364,6 +543,21 @@ const ALERTS_CSS = `
   border: 2px solid rgba(230,57,70,0.45);
   background: rgba(230,57,70,0.07);
 }
+._alr-empty-admin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+._alr-finmind-note {
+  font-size: 11px;
+  color: rgba(145,160,181,0.45);
+  font-family: var(--mono, monospace);
+}
+@media (max-width: 768px) {
+  ._alr-rule-list { grid-template-columns: 1fr; }
+}
 @media (max-width: 640px) {
   ._alr-hero-row { grid-template-columns: 1fr 1fr; }
   ._alr-hero-main { grid-column: 1 / -1; }
@@ -380,6 +574,15 @@ export default async function AlertsPage() {
     throw error;
   }
 
+  // Owner check for admin dispatch button (server-side, best-effort)
+  let isOwner = false;
+  try {
+    const me = await apiGetMe();
+    if (me.ok && me.user.role === "Owner") isOwner = true;
+  } catch {
+    // non-critical — dispatch button stays hidden for non-owners
+  }
+
   const alerts = surface.state === "LIVE" ? surface.alerts : [];
   const counts = severityCounts(alerts);
   const active = activeCount(alerts);
@@ -388,6 +591,9 @@ export default async function AlertsPage() {
   const heroColor = active > 0
     ? (counts.critical > 0 ? "#ff6b77" : "#e2b85c")
     : "#4adb88";
+
+  // Build last-fired map from fetched events
+  const lastFiredMap = buildLastFiredMap(alerts);
 
   return (
     <PageFrame
@@ -470,6 +676,44 @@ export default async function AlertsPage() {
         </div>
       )}
 
+      {/* ── 10 Rule Explanation Panel ────────────────────────────────────────── */}
+      <div className="_alr-rule-panel">
+        <div className="_alr-rule-panel-header">
+          <span className="_alr-rule-panel-title">監控規則 — 10 類事件</span>
+          <span className="_alr-rule-panel-sub">引擎每 5 分鐘巡檢一次；FinMind 資料同步完成後規則自動啟用</span>
+        </div>
+        <div className="_alr-rule-list">
+          {RULE_CATALOGUE.map((rule, idx) => {
+            const sc = severityColors(rule.severity);
+            const lastFiredIso = lastFiredMap.get(rule.id) ?? null;
+            return (
+              <div key={rule.id} className="_alr-rule-row">
+                <div
+                  className="_alr-rule-dot"
+                  style={{ background: sc.ruleDot }}
+                  title={severityLabel(rule.severity)}
+                />
+                <div className="_alr-rule-body">
+                  <span className="_alr-rule-label">
+                    <span style={{ color: "rgba(145,160,181,0.38)", fontFamily: "var(--mono, monospace)", fontSize: 10, marginRight: 6 }}>
+                      R{String(idx + 1).padStart(2, "0")}
+                    </span>
+                    {rule.label}
+                  </span>
+                  <span className="_alr-rule-desc">{rule.desc}</span>
+                  <span className={`_alr-rule-fired ${lastFiredIso ? "_alr-rule-fired-yes" : "_alr-rule-fired-no"}`}>
+                    {lastFiredIso
+                      ? `最近觸發 ${formatDateTime(lastFiredIso)}`
+                      : "24h 內無觸發記錄"}
+                  </span>
+                  <span className="_alr-rule-dep">依賴: {rule.dep}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* BLOCKED state */}
       {surface.state === "BLOCKED" && (
         <div className="_alr-empty-state">
@@ -485,80 +729,97 @@ export default async function AlertsPage() {
         </div>
       )}
 
-      {/* EMPTY state — clean */}
+      {/* EMPTY state — updated copy per task spec */}
       {surface.state === "EMPTY" && (
         <div className="_alr-empty-state">
           <div className="_alr-empty-icon _alr-clean-ring">
             <span style={{ color: "#4adb88", fontSize: 26 }}>✓</span>
           </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#c6d0de", marginBottom: 6 }}>目前沒有待處理警示</div>
-            <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
-              風控引擎持續巡檢中；觸發條件符合時警示會即時出現。
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#c6d0de", marginBottom: 6 }}>
+              目前 24h 無事件觸發
+            </div>
+            <div style={{ fontSize: 13, color: "#7a8a9e", lineHeight: 1.7, maxWidth: 440 }}>
+              引擎正常運行，無資料波動達到觸發門檻。
+              <br />
+              如預期看到事件未顯示，請告知（可能 FinMind sync 異常）。
             </div>
           </div>
+          {isOwner && (
+            <div className="_alr-empty-admin">
+              <AlertDispatchButton />
+              <span className="_alr-finmind-note">Admin only — 強制觸發一輪引擎巡檢</span>
+            </div>
+          )}
         </div>
       )}
 
       {/* LIVE alerts */}
       {surface.state === "LIVE" && (
-        <div className="_alr-list">
-          {alerts.map((alert) => {
-            const sc = severityColors(alert.severity);
-            const st = statusColors(alert.acknowledged);
-            return (
-              <div
-                key={alert.id}
-                className="_alr-card"
-                style={{ borderLeftColor: sc.border }}
-              >
-                {/* Glow */}
+        <>
+          {isOwner && (
+            <div style={{ marginBottom: 16, display: "flex", justifyContent: "flex-end" }}>
+              <AlertDispatchButton />
+            </div>
+          )}
+          <div className="_alr-list">
+            {alerts.map((alert) => {
+              const sc = severityColors(alert.severity);
+              const st = statusColors(alert.acknowledged);
+              return (
                 <div
-                  className="_alr-card-glow"
-                  style={{ background: `radial-gradient(ellipse at 0% 0%, ${sc.glow}, transparent 55%)` }}
-                />
+                  key={alert.id}
+                  className="_alr-card"
+                  style={{ borderLeftColor: sc.border }}
+                >
+                  {/* Glow */}
+                  <div
+                    className="_alr-card-glow"
+                    style={{ background: `radial-gradient(ellipse at 0% 0%, ${sc.glow}, transparent 55%)` }}
+                  />
 
-                {/* Head */}
-                <div className="_alr-card-head">
-                  <span
-                    className="_alr-sev-badge"
-                    style={{ background: sc.badge, borderColor: sc.badgeBorder, color: sc.text }}
-                  >
-                    {severityLabel(alert.severity)}
-                  </span>
-                  <span
-                    className="_alr-status-badge"
-                    style={{ background: st.badge, borderColor: st.border, color: st.text }}
-                  >
-                    {st.label}
-                  </span>
-                  <span className="_alr-rule-name">{alert.ruleName}</span>
-                  {alert.ticker && <span className="_alr-ticker">{alert.ticker}</span>}
-                </div>
+                  {/* Head */}
+                  <div className="_alr-card-head">
+                    <span
+                      className="_alr-sev-badge"
+                      style={{ background: sc.badge, borderColor: sc.badgeBorder, color: sc.text }}
+                    >
+                      {severityLabel(alert.severity)}
+                    </span>
+                    <span
+                      className="_alr-status-badge"
+                      style={{ background: st.badge, borderColor: st.border, color: st.text }}
+                    >
+                      {st.label}
+                    </span>
+                    <span className="_alr-rule-name">{alert.ruleName}</span>
+                    {alert.ticker && <span className="_alr-ticker">{alert.ticker}</span>}
+                  </div>
 
-                {/* Meta */}
-                <div className="_alr-meta-grid">
-                  <div className="_alr-meta-item">
-                    <span className="_alr-meta-dt">標的</span>
-                    <span className="_alr-meta-dd">{alert.ticker ?? "全市場"}</span>
-                  </div>
-                  <div className="_alr-meta-item">
-                    <span className="_alr-meta-dt">嚴重度</span>
-                    <span className="_alr-meta-dd" style={{ color: sc.text }}>{severityLabel(alert.severity)}</span>
-                  </div>
-                  <div className="_alr-meta-item">
-                    <span className="_alr-meta-dt">觸發時間</span>
-                    <span className="_alr-meta-dd">{formatDateTime(alert.triggeredAt)}</span>
-                  </div>
-                  <div className="_alr-meta-item _alr-meta-wide">
-                    <span className="_alr-meta-dt">摘要</span>
-                    <span className="_alr-meta-dd">{payloadSummary(alert.payload)}</span>
+                  {/* Meta */}
+                  <div className="_alr-meta-grid">
+                    <div className="_alr-meta-item">
+                      <span className="_alr-meta-dt">標的</span>
+                      <span className="_alr-meta-dd">{alert.ticker ?? "全市場"}</span>
+                    </div>
+                    <div className="_alr-meta-item">
+                      <span className="_alr-meta-dt">嚴重度</span>
+                      <span className="_alr-meta-dd" style={{ color: sc.text }}>{severityLabel(alert.severity)}</span>
+                    </div>
+                    <div className="_alr-meta-item">
+                      <span className="_alr-meta-dt">觸發時間</span>
+                      <span className="_alr-meta-dd">{formatDateTime(alert.triggeredAt)}</span>
+                    </div>
+                    <div className="_alr-meta-item _alr-meta-wide">
+                      <span className="_alr-meta-dt">摘要</span>
+                      <span className="_alr-meta-dd">{payloadSummary(alert.payload)}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </PageFrame>
   );
