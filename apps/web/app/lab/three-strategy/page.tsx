@@ -57,7 +57,7 @@ type OverrideEntry = Omit<StrategyDisplayCard, "strategyId">;
 
 const ATHENA_5_9_OVERRIDES: Record<string, OverrideEntry> = {
   // cont_liq v36 — 9/9 PASS + 四重魯棒
-  cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25: {
+  "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
     displayName: "流動強勢延續策略 v36",
     tagline: "流動性相對強度選股，h20 持有期框架，前五名等權。v36 通過 9/9 驗證項目 + 四重魯棒性確認。",
     badge: "amber",
