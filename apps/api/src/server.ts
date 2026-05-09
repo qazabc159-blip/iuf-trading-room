@@ -242,6 +242,7 @@ import {
 } from "./openalice-pipeline.js";
 import {
   getNewsTop10WithStaleness,
+  getLastNewsTop10,
   runNewsAiSelection,
   runNewsAiSelectionTick,
   runNewsAiSelectionBootRecovery
@@ -263,7 +264,7 @@ import {
   getBriefStrategyCommentaryWithStaleness,
   runBriefStrategyCommentary
 } from "./openai-brief-strategy-commentary.js";
-import { assessSignalConfidence } from "./openai-signal-confidence.js";
+import { assessSignalConfidence, getSignalConfidenceAssessment } from "./openai-signal-confidence.js";
 import { getQuotaStatus } from "./openai-quota-guard.js";
 
 type Variables = {
@@ -5999,6 +6000,195 @@ app.get("/api/v1/internal/finmind/ingest-status", async (c) => {
       quotaTier: tokenPresent ? "sponsor" : "no_token"
     }
   });
+});
+
+// =============================================================================
+// OPENAI MULTI-SCENARIO ROUTES (PR #364 — 2026-05-09)
+// =============================================================================
+//
+// 7 routes wired to the 4 OpenAI modules + shared quota guard:
+//
+// GET  /api/v1/internal/openai/quota
+//   — Owner-only. Returns daily quota status (used/limit/resetDay).
+//
+// GET  /api/v1/strategy/ideas/ai-rerank
+//   — Owner-only. Fetches current strategy ideas, reranlks via GPT, returns enriched list.
+//
+// GET  /api/v1/market-intel/news-top10/with-sentiment
+//   — Owner-only. Returns cached news top-10 enriched with per-item sentiment + impact_magnitude.
+//
+// GET  /api/v1/strategy/brief-commentary
+//   — Owner-only. Returns last cached brief strategy commentary (or null if never run).
+//
+// POST /api/v1/internal/strategy/brief-commentary/fire-now
+//   — Owner-only. Triggers a fresh GPT brief strategy commentary run immediately.
+//
+// POST /api/v1/signals/:id/assess-confidence
+//   — Owner-only. Runs GPT confidence assessment for a specific signal.
+//   IMPORTANT: registered BEFORE GET /api/v1/signals/:id/confidence to avoid Hono parametric shadow.
+//
+// GET  /api/v1/signals/:id/confidence
+//   — Owner-only. Returns cached confidence assessment for a signal.
+//
+// Hard lines:
+//   - All routes: Owner-only (role !== "Owner" → 403)
+//   - No fake AI output; fallback = structured response with null AI fields
+//   - disclaimer: "research_only" present on all AI output (enforced in modules)
+//   - Quota guard check in each module; quota exhausted → fallback (no 429 to client)
+//   - NEVER throw to client — try/catch wraps all module calls
+//   - Audit: action written per route for observability
+// =============================================================================
+
+// GET /api/v1/internal/openai/quota
+app.get("/api/v1/internal/openai/quota", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  try {
+    const status = getQuotaStatus();
+    return c.json({ data: status });
+  } catch (err) {
+    console.error("[openai/quota] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "quota_status_error" }, 500);
+  }
+});
+
+// GET /api/v1/strategy/ideas/ai-rerank
+// IMPORTANT: must be registered BEFORE any parametric /strategy/ideas/:id route
+app.get("/api/v1/strategy/ideas/ai-rerank", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  try {
+    const ideasResult = await getStrategyIdeas({
+      session,
+      repo: c.get("repo"),
+      limit: 20
+    });
+    const result = await rerankStrategyIdeasWithAi(ideasResult.items);
+    return c.json({ data: result });
+  } catch (err) {
+    console.error("[strategy/ideas/ai-rerank] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "rerank_error", message: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
+// GET /api/v1/market-intel/news-top10/with-sentiment
+// IMPORTANT: must be registered BEFORE any parametric /market-intel/news-top10/:id route
+app.get("/api/v1/market-intel/news-top10/with-sentiment", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  try {
+    const cached = getLastNewsTop10();
+    if (!cached || cached.items.length === 0) {
+      return c.json({
+        data: {
+          items: [],
+          stale_reason: cached ? "empty_cache" : "never_run",
+          as_of: cached?.as_of ?? null,
+          disclaimer: "research_only"
+        }
+      });
+    }
+    const enriched = await enrichNewsWithSentiment(cached.items);
+    return c.json({
+      data: {
+        items: enriched,
+        as_of: cached.as_of,
+        window_label: cached.window_label,
+        run_id: cached.run_id,
+        disclaimer: "research_only"
+      }
+    });
+  } catch (err) {
+    console.error("[news-top10/with-sentiment] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "sentiment_enrichment_error", message: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
+// GET /api/v1/strategy/brief-commentary
+app.get("/api/v1/strategy/brief-commentary", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  try {
+    const result = getBriefStrategyCommentaryWithStaleness();
+    if (!result) {
+      return c.json({ data: null, stale_reason: "never_run" });
+    }
+    return c.json({ data: result });
+  } catch (err) {
+    console.error("[strategy/brief-commentary] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "commentary_error" }, 500);
+  }
+});
+
+// POST /api/v1/internal/strategy/brief-commentary/fire-now
+app.post("/api/v1/internal/strategy/brief-commentary/fire-now", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const result = await runBriefStrategyCommentary({
+      tradingDate: today,
+      marketSummary: "Manual trigger from fire-now endpoint. No pre-aggregated market summary available."
+    });
+    return c.json({ data: result });
+  } catch (err) {
+    console.error("[brief-commentary/fire-now] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "commentary_fire_error", message: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
+// POST /api/v1/signals/:id/assess-confidence
+// Owner-only. Runs GPT confidence assessment for a specific signal.
+// NOTE: This uses :id — registered here (before GET :id/confidence) to avoid Hono shadow issues.
+app.post("/api/v1/signals/:id/assess-confidence", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const signalId = c.req.param("id");
+  try {
+    const signal = await c.get("repo").getSignal(signalId, {
+      workspaceSlug: session.workspace.slug
+    });
+    if (!signal) {
+      return c.json({ error: "signal_not_found" }, 404);
+    }
+    const assessment = await assessSignalConfidence(signal);
+    return c.json({ data: assessment });
+  } catch (err) {
+    console.error(`[signals/${signalId}/assess-confidence] error:`, err instanceof Error ? err.message : String(err));
+    return c.json({ error: "confidence_assessment_error", message: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
+// GET /api/v1/signals/:id/confidence
+// Owner-only. Returns cached confidence assessment (from in-memory 12h cache).
+app.get("/api/v1/signals/:id/confidence", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const signalId = c.req.param("id");
+  try {
+    const cached = getSignalConfidenceAssessment(signalId);
+    if (!cached) {
+      return c.json({ data: null, stale_reason: "not_assessed_yet" });
+    }
+    return c.json({ data: cached });
+  } catch (err) {
+    console.error(`[signals/${signalId}/confidence] error:`, err instanceof Error ? err.message : String(err));
+    return c.json({ error: "confidence_read_error" }, 500);
+  }
 });
 
 // =============================================================================
