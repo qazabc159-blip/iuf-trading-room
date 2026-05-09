@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
 import {
   getBriefDetail,
   type BriefDetail,
@@ -56,8 +55,6 @@ function safeHeadline(text: string) {
 }
 
 function isNotFoundError(message: string) {
-  // server returns { error: "not_found" } body with 404 — request() throws
-  // Error(text). Match either the JSON body or HTTP 404 marker.
   if (!message) return false;
   if (message.includes("not_found")) return true;
   if (message.includes("Request failed: 404")) return true;
@@ -88,15 +85,11 @@ function statusLabel(status: string) {
   return status;
 }
 
-function statusBadgeClass(status: string) {
-  if (status === "published") return "badge-green";
-  if (status === "awaiting_review") return "badge-yellow";
-  if (status === "rejected" || status === "error") return "badge-red";
-  return "badge-yellow";
-}
-
-function statusZh(status: string) {
-  return statusLabel(status);
+function statusParityClass(status: string) {
+  if (status === "published") return "ok";
+  if (status === "awaiting_review") return "warn";
+  if (status === "rejected" || status === "error") return "bad";
+  return "dim";
 }
 
 function auditVerdictLabel(value: string | null | undefined) {
@@ -107,23 +100,15 @@ function auditVerdictLabel(value: string | null | undefined) {
   return "尚未完成";
 }
 
-function auditVerdictTone(value: string | null | undefined) {
-  if (value === "OK") return "status-ok";
-  if (value === "PARTIAL_HALLUCINATED") return "gold";
-  if (value) return "status-bad";
-  return "muted";
-}
-
-function auditVerdictBadge(value: string | null | undefined) {
-  if (value === "OK") return "badge-green";
-  if (value === "PARTIAL_HALLUCINATED") return "badge-yellow";
-  if (value) return "badge-red";
-  return "badge-yellow";
+function auditVerdictParityClass(value: string | null | undefined) {
+  if (value === "OK") return "ok";
+  if (value === "PARTIAL_HALLUCINATED") return "warn";
+  if (value) return "bad";
+  return "dim";
 }
 
 function HardRejectPanel({ chain }: { chain: BriefDetailAuditChain }) {
   const { rules, rejected } = chain.hardReject;
-  const tone = rejected ? "status-bad" : "status-ok";
   const label = rejected ? "不可發布" : "通過";
   return (
     <Panel
@@ -133,10 +118,10 @@ function HardRejectPanel({ chain }: { chain: BriefDetailAuditChain }) {
       right={label}
     >
       <div className="brief-three-state">
-        <span className={`badge ${rejected ? "badge-red" : "badge-green"}`}>
+        <span className={`parity-badge ${rejected ? "bad" : "ok"}`}>
           {label}
         </span>
-        <span className={`tg ${tone}`}>共 {rules.length} 條規則</span>
+        <span className="tg soft">共 {rules.length} 條規則</span>
       </div>
       <ul
         className="brief-source-trail"
@@ -160,15 +145,16 @@ function AdversarialReviewPanel({ chain }: { chain: BriefDetailAuditChain }) {
         sub="內容風險與發布檢查"
         right="未審核"
       >
-        <p className="state-reason">
-          這份簡報尚未完成風險審核；不會把未審核內容當成正式通過。
-        </p>
+        <div className="parity-empty" style={{ minHeight: 100 }}>
+          <div className="parity-empty-icon">?</div>
+          <h3>尚未審核</h3>
+          <p>這份簡報尚未完成風險審核；不會把未審核內容當成正式通過。</p>
+        </div>
       </Panel>
     );
   }
 
-  const verdictBadge = auditVerdictBadge(review.verdict);
-  const verdictTone = auditVerdictTone(review.verdict);
+  const verdictClass = auditVerdictParityClass(review.verdict);
   const severityText =
     typeof review.severityScore === "number"
       ? review.severityScore.toFixed(1)
@@ -181,36 +167,29 @@ function AdversarialReviewPanel({ chain }: { chain: BriefDetailAuditChain }) {
       sub="內容風險與發布檢查"
       right={auditVerdictLabel(review.verdict)}
     >
-      <div className="brief-three-state">
-        <span className={`badge ${verdictBadge}`}>{auditVerdictLabel(review.verdict)}</span>
-        <span className={`tg ${verdictTone}`}>風險分數 {severityText}</span>
+      {/* parity-kpi-bar for audit metrics */}
+      <div className="parity-kpi-bar" style={{ margin: "0 0 14px" }}>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">判定</span>
+          <span className={`parity-kpi-value ${verdictClass}`} style={{ fontSize: 16 }}>
+            {auditVerdictLabel(review.verdict)}
+          </span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">風險分數</span>
+          <span className={`parity-kpi-value ${typeof review.severityScore === "number" && review.severityScore >= 7 ? "bad" : "dim"}`}>
+            {severityText}
+          </span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">旗標數</span>
+          <span className={`parity-kpi-value ${review.flags.length > 0 ? "warn" : "dim"}`}>
+            {review.flags.length}
+          </span>
+        </div>
       </div>
-      <MetricStrip
-        columns={3}
-        cells={[
-          {
-            label: "判定",
-            value: auditVerdictLabel(review.verdict),
-            tone: auditVerdictTone(review.verdict),
-          },
-          {
-            label: "風險分數",
-            value: severityText,
-            tone:
-              typeof review.severityScore === "number" && review.severityScore >= 7
-                ? "status-bad"
-                : "muted",
-          },
-          {
-            label: "旗標",
-            value: review.flags.length,
-            tone: "muted",
-          },
-        ]}
-      />
       <div className="brief-source-trail">
         <span>審核時間：{formatDateTime(review.auditedAt)}</span>
-        <span>旗標數：{review.flags.length}</span>
       </div>
       {review.flags.length > 0 && (
         <ul
@@ -236,15 +215,16 @@ function HallucinationPanel({ chain }: { chain: BriefDetailAuditChain }) {
         sub="敘述與來源比對"
         right="未審核"
       >
-        <p className="state-reason">
-          這份簡報尚未完成事實查核；不會把未查核內容當成正式通過。
-        </p>
+        <div className="parity-empty" style={{ minHeight: 100 }}>
+          <div className="parity-empty-icon">?</div>
+          <h3>尚未查核</h3>
+          <p>這份簡報尚未完成事實查核；不會把未查核內容當成正式通過。</p>
+        </div>
       </Panel>
     );
   }
 
-  const verdictBadge = auditVerdictBadge(hc.verdict);
-  const verdictTone = auditVerdictTone(hc.verdict);
+  const verdictClass = auditVerdictParityClass(hc.verdict);
   const confidenceText =
     typeof hc.confidence === "number" ? hc.confidence.toFixed(2) : "--";
 
@@ -255,29 +235,27 @@ function HallucinationPanel({ chain }: { chain: BriefDetailAuditChain }) {
       sub="敘述與來源比對"
       right={auditVerdictLabel(hc.verdict)}
     >
-      <div className="brief-three-state">
-        <span className={`badge ${verdictBadge}`}>{auditVerdictLabel(hc.verdict)}</span>
-        <span className={`tg ${verdictTone}`}>信心度 {confidenceText}</span>
-        <span className={`tg ${hc.ragUsed ? "status-ok" : "muted"}`}>
-          來源比對 {hc.ragUsed ? "已執行" : "待補"}
-        </span>
+      {/* parity-kpi-bar for hallucination metrics */}
+      <div className="parity-kpi-bar" style={{ margin: "0 0 14px" }}>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">判定</span>
+          <span className={`parity-kpi-value ${verdictClass}`} style={{ fontSize: 16 }}>
+            {auditVerdictLabel(hc.verdict)}
+          </span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">信心度</span>
+          <span className="parity-kpi-value dim">
+            {confidenceText}
+          </span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">來源比對</span>
+          <span className={`parity-kpi-value ${hc.ragUsed ? "ok" : "dim"}`} style={{ fontSize: 16 }}>
+            {hc.ragUsed ? "已執行" : "待補"}
+          </span>
+        </div>
       </div>
-      <MetricStrip
-        columns={3}
-        cells={[
-          {
-            label: "判定",
-            value: auditVerdictLabel(hc.verdict),
-            tone: auditVerdictTone(hc.verdict),
-          },
-          { label: "信心度", value: confidenceText, tone: "muted" },
-          {
-            label: "來源比對",
-            value: hc.ragUsed ? "已執行" : "待補",
-            tone: hc.ragUsed ? "status-ok" : "muted",
-          },
-        ]}
-      />
       <div className="brief-source-trail">
         <span>審核時間：{formatDateTime(hc.auditedAt)}</span>
         <span>旗標數：{hc.flags.length}</span>
@@ -303,7 +281,7 @@ function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
       code="BRF-PUB"
       title="簡報內容"
       sub={`${brief.date} / 正式內容`}
-      right={statusZh(brief.status)}
+      right={statusLabel(brief.status)}
     >
       <div className="brief-published">
         <div className="brief-market-state">
@@ -311,9 +289,11 @@ function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
           <strong>{safeHeadline(brief.marketState)}</strong>
         </div>
         {brief.sections.length === 0 && (
-          <p className="state-reason">
-            這份簡報沒有段落內容；請回每日簡報頁確認來源與審核狀態。
-          </p>
+          <div className="parity-empty" style={{ minHeight: 120 }}>
+            <div className="parity-empty-icon">◌</div>
+            <h3>沒有段落內容</h3>
+            <p>這份簡報沒有段落內容；請回每日簡報頁確認來源與審核狀態。</p>
+          </div>
         )}
         {brief.sections.map((section, index) => (
           <article className="brief-section" key={`${section.heading}:${index}`}>
@@ -348,20 +328,11 @@ function NotFoundView() {
       sub="找不到指定簡報"
       note="這份簡報可能已被刪除或尚未產生；頁面不會用假內容補位。"
     >
-      <Panel
-        code="BRF-NF"
-        title="簡報不存在"
-        sub="請回列表確認"
-        right="無資料"
-      >
-        <div className="brief-three-state">
-          <span className="badge badge-red">無資料</span>
-          <span className="tg status-bad">簡報不存在</span>
-        </div>
-        <p className="state-reason">
-          請改回 <Link href="/briefs">每日簡報列表</Link> 或檢查 id 是否正確。
-        </p>
-      </Panel>
+      <div className="parity-empty">
+        <div className="parity-empty-icon">✕</div>
+        <h3>簡報不存在</h3>
+        <p>請改回 <Link href="/briefs">每日簡報列表</Link> 或檢查 id 是否正確。</p>
+      </div>
     </PageFrame>
   );
 }
@@ -374,12 +345,12 @@ function ErrorView({ reason }: { reason: string }) {
       sub="請稍後重試"
       note="簡報明細暫時無法讀取；不顯示任何快取或假資料。"
     >
-      <Panel code="BRF-ERR" title="讀取失敗" sub="簡報明細" right="需處理">
-        <p className="state-reason">{reason}</p>
-        <p className="state-reason">
-          請改回 <Link href="/briefs">每日簡報列表</Link> 重試。
-        </p>
-      </Panel>
+      <div className="parity-empty">
+        <div className="parity-empty-icon">!</div>
+        <h3>讀取失敗</h3>
+        <p>{reason}</p>
+        <p style={{ marginTop: 8 }}>請改回 <Link href="/briefs">每日簡報列表</Link> 重試。</p>
+      </div>
     </PageFrame>
   );
 }
@@ -411,40 +382,52 @@ export default async function BriefDetailPage({
       sub={`${brief.date} / 正式簡報`}
       note="此頁顯示單份簡報內容、政策檢查、風險審核與事實查核，不提供買賣建議。"
     >
-      <div className="brief-three-state">
-        <span className={`badge ${statusBadgeClass(brief.status)}`}>
-          {statusLabel(brief.status)}
-        </span>
-        <span className="tg soft">日期：{brief.date}</span>
-        <span className="tg soft">建立：{formatDateTime(brief.createdAt)}</span>
-        {!isPublished && (
-          <span className="tg status-bad">
-            尚未發布，請勿視為正式內容
+      {/* parity-hero: title + status hero */}
+      <div className="parity-hero">
+        <div className="parity-hero-eyebrow">DAILY BRIEF — {brief.date}</div>
+        <h2>{safeHeadline(brief.title)}</h2>
+        <p style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+          <span className={`parity-badge ${statusParityClass(brief.status)}`}>
+            {statusLabel(brief.status)}
           </span>
-        )}
+          <span style={{ color: "var(--tac-fg-3)", fontSize: 13 }}>建立 {formatDateTime(brief.createdAt)}</span>
+          {!isPublished && (
+            <span className="parity-badge bad">尚未發布 — 請勿視為正式內容</span>
+          )}
+        </p>
       </div>
 
-      <MetricStrip
-        columns={4}
-        cells={[
-          {
-            label: "狀態",
-            value: statusZh(brief.status),
-            tone: isPublished ? "status-ok" : "status-bad",
-          },
-          { label: "段落數", value: totalSections, tone: "muted" },
-          {
-            label: "風險審核",
-            value: auditVerdictLabel(brief.auditChain.adversarialReview?.verdict),
-            tone: auditVerdictTone(brief.auditChain.adversarialReview?.verdict),
-          },
-          {
-            label: "事實查核",
-            value: auditVerdictLabel(brief.auditChain.hallucinationCheck?.verdict),
-            tone: auditVerdictTone(brief.auditChain.hallucinationCheck?.verdict),
-          },
-        ]}
-      />
+      {/* parity-kpi-bar: brief metrics */}
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">發布狀態</span>
+          <span className={`parity-kpi-value ${statusParityClass(brief.status)}`} style={{ fontSize: 18 }}>
+            {statusLabel(brief.status)}
+          </span>
+          <span className="parity-kpi-sub">{brief.date}</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">段落數</span>
+          <span className={`parity-kpi-value ${totalSections > 0 ? "warn" : "dim"}`}>
+            {totalSections}
+          </span>
+          <span className="parity-kpi-sub">已包含段落</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">風險審核</span>
+          <span className={`parity-kpi-value ${auditVerdictParityClass(brief.auditChain.adversarialReview?.verdict)}`} style={{ fontSize: 16 }}>
+            {auditVerdictLabel(brief.auditChain.adversarialReview?.verdict)}
+          </span>
+          <span className="parity-kpi-sub">內容安全閘</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">事實查核</span>
+          <span className={`parity-kpi-value ${auditVerdictParityClass(brief.auditChain.hallucinationCheck?.verdict)}`} style={{ fontSize: 16 }}>
+            {auditVerdictLabel(brief.auditChain.hallucinationCheck?.verdict)}
+          </span>
+          <span className="parity-kpi-sub">來源比對</span>
+        </div>
+      </div>
 
       <div className="brief-command-strip">
         <Link className="terminal-button" href="/briefs">

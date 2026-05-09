@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
 import { getStrategyRunById, listStrategyRuns } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanNarrativeText } from "@/lib/operator-copy";
@@ -92,9 +91,9 @@ function percent(value: number) {
 }
 
 function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "status-ok";
-  if (state === "EMPTY") return "gold";
-  return "status-bad";
+  if (state === "LIVE") return "ok";
+  if (state === "EMPTY") return "warn";
+  return "bad";
 }
 
 function stateLabel(state: LoadState["state"]) {
@@ -198,7 +197,7 @@ function barWidth(value: number, total: number) {
 function SourceLine({ result }: { result: LoadState }) {
   return (
     <div className="runs-source-line">
-      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
+      <span className={`parity-badge ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>
       <span>來源：{result.source}</span>
       <span>更新 {formatTime(result.updatedAt)}</span>
       {result.state !== "LIVE" && <span>{result.reason}</span>}
@@ -217,7 +216,7 @@ function EmptyOrBlocked({ result }: { result: LoadState }) {
   if (result.state === "LIVE") return null;
   return (
     <div className="terminal-note">
-      <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>{" "}
+      <span className={`parity-badge ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>{" "}
       {result.reason}
     </div>
   );
@@ -263,17 +262,51 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
       sub={run ? `${shortRunId(run.id)} / ${modeLabel(run.query.decisionMode)}` : `${shortRunId(id)} / 暫停`}
       note="此頁讀取正式策略批次資料；候選不是買賣建議，只能先進公司頁看 K 線、來源狀態與紙上預覽。"
     >
-      <MetricStrip
-        cells={[
-          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "總數", value: runAvailable ? summary.total : "--" },
-          { label: "可觀察", value: runAvailable ? summary.allow : "--", tone: "status-ok" },
-          { label: "待審", value: runAvailable ? summary.review : "--", tone: "gold" },
-          { label: "不進流程", value: runAvailable ? summary.block : "--", tone: "status-bad" },
-          { label: "可用", value: runAvailable ? summary.quality.strategyReady : "--", tone: runAvailable && summary.quality.strategyReady > 0 ? "status-ok" : "muted" },
-        ]}
-        columns={6}
-      />
+      {/* parity-kpi-bar hero */}
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">狀態</span>
+          <span className={`parity-kpi-value ${stateTone(result.state)}`}>
+            {stateLabel(result.state)}
+          </span>
+          <span className="parity-kpi-sub">{result.source}</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">總候選數</span>
+          <span className={`parity-kpi-value ${runAvailable && summary.total > 0 ? "warn" : "dim"}`}>
+            {runAvailable ? summary.total : "--"}
+          </span>
+          <span className="parity-kpi-sub">本批次</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">可觀察</span>
+          <span className={`parity-kpi-value ${runAvailable && summary.allow > 0 ? "ok" : "dim"}`}>
+            {runAvailable ? summary.allow : "--"}
+          </span>
+          <span className="parity-kpi-sub">通過決策門檻</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">待審</span>
+          <span className={`parity-kpi-value ${runAvailable && summary.review > 0 ? "warn" : "dim"}`}>
+            {runAvailable ? summary.review : "--"}
+          </span>
+          <span className="parity-kpi-sub">需人工確認</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">不進流程</span>
+          <span className={`parity-kpi-value ${runAvailable && summary.block > 0 ? "bad" : "dim"}`}>
+            {runAvailable ? summary.block : "--"}
+          </span>
+          <span className="parity-kpi-sub">已篩除</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">策略可用</span>
+          <span className={`parity-kpi-value ${runAvailable && summary.quality.strategyReady > 0 ? "ok" : "dim"}`}>
+            {runAvailable ? summary.quality.strategyReady : "--"}
+          </span>
+          <span className="parity-kpi-sub">品質達標</span>
+        </div>
+      </div>
 
       <div className="runs-detail-layout">
         <div>
@@ -295,12 +328,14 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
           <Panel code="RUN-IDEA" title="候選股票" sub="公司連結與轉單狀態" right={runAvailable ? `${outputs.length} 筆` : stateLabel(result.state)}>
             {!runAvailable && (
               <div className="terminal-note">
-                <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span> {unavailableReason}
+                <span className={`parity-badge ${stateTone(result.state)}`}>{stateLabel(result.state)}</span> {unavailableReason}
               </div>
             )}
             {runAvailable && outputs.length === 0 && (
-              <div className="terminal-note">
-                <span className="tg gold">無資料</span> 此批次沒有候選股票。
+              <div className="parity-empty" style={{ minHeight: 120 }}>
+                <div className="parity-empty-icon">◌</div>
+                <h3>此批次沒有候選股票</h3>
+                <p>策略批次存在但無候選輸出；不補假資料。</p>
               </div>
             )}
             {runAvailable && outputs.map((idea) => (
@@ -328,7 +363,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
           <Panel code="RUN-OUT" title="結果分布" sub="批次摘要" right={run ? shortRunId(run.id) : "暫停"}>
             {!runAvailable && (
               <div className="terminal-note">
-                <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span> {unavailableReason}
+                <span className={`parity-badge ${stateTone(result.state)}`}>{stateLabel(result.state)}</span> {unavailableReason}
               </div>
             )}
             {runAvailable && (
@@ -360,8 +395,12 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
           </Panel>
 
           <Panel code="RUN-LIN" title="批次脈絡" sub="較新 / 較舊批次" right="瀏覽">
-            {!runAvailable && <div className="terminal-note"><span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span> {unavailableReason}</div>}
-            {runAvailable && lineage.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 沒有可用批次脈絡。</div>}
+            {!runAvailable && <div className="terminal-note"><span className={`parity-badge ${stateTone(result.state)}`}>{stateLabel(result.state)}</span> {unavailableReason}</div>}
+            {runAvailable && lineage.length === 0 && (
+              <div className="parity-empty" style={{ minHeight: 80 }}>
+                <h3>沒有可用批次脈絡</h3>
+              </div>
+            )}
             {runAvailable && lineage.map(({ label, item }) => (
               <div className="row telex-row" style={{ gridTemplateColumns: "70px 1fr" }} key={label}>
                 <span className="tg gold">{label}</span>
