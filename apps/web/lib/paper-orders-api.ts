@@ -279,6 +279,61 @@ export async function cancelPaperOrder(orderId: string, reason = "operator_cance
   return json as PaperOrderCancelResult;
 }
 
+// ---------------------------------------------------------------------------
+// KGI Live Positions (北極星訴求 #9 — 真實倉位 read-only)
+// ---------------------------------------------------------------------------
+
+export type KgiLivePosition = {
+  symbol: string;
+  netQtyShares: number;
+  unrealizedPnl: number;
+  realizedPnl: number;
+  lastPrice: number;
+  boardLot: number;
+};
+
+export type KgiPositionsResponse = {
+  source: "kgi_live";
+  status: "ok" | "gateway_unreachable" | "gateway_not_authenticated" | "gateway_error";
+  positions: KgiLivePosition[];
+  fetchedAt: string;
+  note?: string;
+};
+
+export async function getKgiPositions(): Promise<KgiPositionsResponse> {
+  // Returns the envelope data directly (never throws on gateway degraded states — those are 200)
+  const cookie = await ssrCookieHeader();
+  const url = `${API_BASE}/api/v1/portfolio/kgi/positions`;
+  const response = await fetch(url, {
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+  });
+
+  const body = await readJson(response);
+
+  if (!response.ok) {
+    // 403 Owner-only — surface as unavailable rather than crashing the page
+    if (response.status === 403) {
+      return {
+        source: "kgi_live",
+        status: "gateway_error",
+        positions: [],
+        fetchedAt: new Date().toISOString(),
+        note: "此資訊僅限帳號擁有者檢視。",
+      };
+    }
+    throw new PaperOrderApiError(response.status, body, "KGI_POSITIONS_FAILED");
+  }
+
+  const envelope = body as { data: KgiPositionsResponse };
+  return envelope.data;
+}
+
 export function formatPaperOrderError(error: unknown) {
   if (error instanceof PaperOrderApiError) {
     const layer = error.layer ? ` layer=${error.layer}` : "";

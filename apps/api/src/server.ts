@@ -10321,6 +10321,101 @@ app.get("/api/v1/internal/observability/audit-stats", async (c) => {
   }
 });
 
+// =============================================================================
+// GET /api/v1/portfolio/kgi/positions
+//
+// Owner-only, read-only proxy to KGI gateway /position.
+// Returns the live KGI position snapshot tagged source='kgi_live'.
+//
+// Hard lines:
+//   - NEVER writes to KGI side (read-only, KGI_READ_ONLY_MODE=true honoured)
+//   - NEVER mocks or fakes position data
+//   - Gateway unreachable / not logged in → 200 with positions=[] + status='unavailable'
+//   - Credentials NEVER leaked in response
+//   - Owner-only (楊董 only sees real money position)
+// =============================================================================
+app.get("/api/v1/portfolio/kgi/positions", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  // Import the KgiGatewayClient lazily using the same env-var convention as kgi-quote-client.ts
+  const gatewayBaseUrl =
+    process.env["KGI_GATEWAY_URL"] ??
+    process.env["KGI_GATEWAY_BASE_URL"] ??
+    "http://127.0.0.1:8787";
+
+  const {
+    KgiGatewayClient,
+    KgiGatewayUnreachableError,
+    KgiGatewayAuthError,
+  } = await import("./broker/kgi-gateway-client.js");
+
+  const client = new KgiGatewayClient({
+    gatewayBaseUrl,
+    connectTimeoutMs: 8_000,
+  });
+
+  try {
+    const rawPositions = await client.getPosition();
+
+    // Map KgiPosition → slimmer API shape; never include credentials or raw auth data
+    const positions = rawPositions
+      .filter((p) => {
+        // Only include symbols with non-zero net quantity (avoid stale zero-position noise)
+        const net = (p.quantityCashYd + p.quantityCashTd) - (p.quantitySoldCash + p.quantitySoldOdd);
+        // Use netQuantity from adapter (quantityCashTd + quantityMarginTd) as primary indicator
+        return p.netQuantity !== 0 || p.unrealized !== 0 || p.realized !== 0;
+      })
+      .map((p) => ({
+        symbol: p.symbol,
+        // Net qty: board-lot normalised (KGI returns share-level values)
+        netQtyShares: p.netQuantity,
+        // Unrealised / realised P&L (TWD)
+        unrealizedPnl: p.unrealized,
+        realizedPnl: p.realized,
+        // Last price (TWD) from KGI Position DataFrame
+        lastPrice: p.lastPrice,
+        // Board lot info for display (1000 = regular stock)
+        boardLot: p.boardLot,
+      }));
+
+    return c.json({
+      data: {
+        source: "kgi_live",
+        status: "ok",
+        positions,
+        fetchedAt: new Date().toISOString(),
+        gatewayUrl: gatewayBaseUrl.replace(/\/\/[^@]*@/, "//***@"), // scrub any embedded creds
+      },
+    });
+  } catch (err) {
+    // Graceful degradation — gateway unreachable or not logged in → return empty, not 500
+    const isUnreachable = err instanceof KgiGatewayUnreachableError;
+    const isAuth = err instanceof KgiGatewayAuthError;
+
+    const statusCode = isUnreachable ? "gateway_unreachable" : isAuth ? "gateway_not_authenticated" : "gateway_error";
+    const detail = err instanceof Error ? err.message : String(err);
+
+    console.warn(`[portfolio/kgi/positions] ${statusCode}:`, detail);
+
+    return c.json({
+      data: {
+        source: "kgi_live",
+        status: statusCode,
+        positions: [],
+        fetchedAt: new Date().toISOString(),
+        note: isAuth
+          ? "KGI gateway session not established. Please login via gateway first."
+          : isUnreachable
+            ? "KGI gateway is unreachable. Check gateway process on EC2."
+            : "KGI gateway returned an unexpected error.",
+      },
+    });
+  }
+});
+
 /**
  * Resolve all Taiwan 4-digit tickers for the workspace.
  * Returns empty array if workspace not found or DB unavailable.

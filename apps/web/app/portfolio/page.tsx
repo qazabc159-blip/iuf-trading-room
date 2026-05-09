@@ -6,9 +6,12 @@ import {
   getPaperHealth,
   getPaperPortfolio,
   listPaperFills,
+  getKgiPositions,
   type PaperFillLedgerRow,
   type PaperHealthState,
   type PaperPortfolioPosition,
+  type KgiLivePosition,
+  type KgiPositionsResponse,
 } from "@/lib/paper-orders-api";
 
 export const dynamic = "force-dynamic";
@@ -84,6 +87,40 @@ async function loadPaperFills(): Promise<FillsState> {
       fills: [],
       updatedAt,
       reason: userFacingReason(error, "模擬成交讀取失敗"),
+    };
+  }
+}
+
+type KgiState =
+  | { state: "LIVE"; data: KgiPositionsResponse; updatedAt: string }
+  | { state: "UNAVAILABLE"; data: KgiPositionsResponse; updatedAt: string; reason: string }
+  | { state: "BLOCKED"; data: null; updatedAt: string; reason: string };
+
+async function loadKgiPositions(): Promise<KgiState> {
+  const updatedAt = nowIso();
+  try {
+    const data = await getKgiPositions();
+    if (data.status === "ok" && data.positions.length > 0) {
+      return { state: "LIVE", data, updatedAt };
+    }
+    const reasonMap: Record<string, string> = {
+      gateway_unreachable: "凱基 gateway 目前無法連線（EC2 進程可能已停止）。",
+      gateway_not_authenticated: "凱基 gateway 尚未登入，請先在 gateway 端執行登入。",
+      gateway_error: "凱基 gateway 發生未預期錯誤。",
+    };
+    const reason = data.note ?? reasonMap[data.status] ?? "目前無持倉資料。";
+    return {
+      state: "UNAVAILABLE",
+      data,
+      updatedAt,
+      reason: data.status === "ok" ? "目前無持倉" : reason,
+    };
+  } catch (error) {
+    return {
+      state: "BLOCKED",
+      data: null,
+      updatedAt,
+      reason: userFacingReason(error, "凱基真實倉位讀取失敗"),
     };
   }
 }
@@ -235,11 +272,40 @@ function gateLabel(health: PaperHealthState | null) {
   if (health.previewReady) return "僅預覽";
   return "待開啟";
 }
+function kgiStatusBadge(status: KgiPositionsResponse["status"]) {
+  if (status === "ok") return "ok";
+  if (status === "gateway_unreachable" || status === "gateway_error") return "bad";
+  return "warn";
+}
+
+function kgiStatusLabel(kgi: KgiState) {
+  if (kgi.state === "LIVE") return "即時";
+  if (kgi.state === "UNAVAILABLE") {
+    const s = kgi.data.status;
+    if (s === "ok") return "無持倉";
+    if (s === "gateway_not_authenticated") return "未登入";
+    return "離線";
+  }
+  return "無法連線";
+}
+
+function formatPnl(value: number) {
+  if (!Number.isFinite(value)) return "--";
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}NT$${Math.abs(value).toLocaleString("zh-TW", { maximumFractionDigits: 0 })}`;
+}
+
+function pnlClass(value: number) {
+  if (!Number.isFinite(value) || value === 0) return "dim";
+  return value > 0 ? "ok" : "status-bad";
+}
+
 export default async function PortfolioPage() {
-  const [portfolio, fillsResult, healthResult] = await Promise.all([
+  const [portfolio, fillsResult, healthResult, kgiResult] = await Promise.all([
     loadPaperPortfolio(),
     loadPaperFills(),
     loadPaperHealth(),
+    loadKgiPositions(),
   ]);
   const health = healthResult.state === "LIVE" ? healthResult.health : null;
   const paperCost = estimatedCost(portfolio.positions);
@@ -353,6 +419,66 @@ export default async function PortfolioPage() {
               <p>先從公司頁開啟紙上交易預覽。</p>
             </div>
           ) : null}
+        </div>
+      </section>
+
+      {/* ── 凱基真實倉位 (北極星訴求 #9) ── */}
+      <section className="parity-section" style={{ marginTop: 20 }}>
+        <div className="parity-section-head">
+          <h3>凱基真實倉位</h3>
+          <span className="spacer" />
+          <span className={`parity-badge ${kgiResult.state === "LIVE" ? "ok" : kgiResult.state === "BLOCKED" ? "bad" : "warn"}`}>
+            {kgiStatusLabel(kgiResult)}
+          </span>
+          {kgiResult.state === "LIVE" && kgiResult.data.positions.length > 0 && (
+            <span className="tg muted" style={{ fontSize: 10 }}>共 {kgiResult.data.positions.length} 檔 · 來源: KGI LIVE</span>
+          )}
+        </div>
+        <div className="parity-section-body">
+          {kgiResult.state !== "LIVE" && (
+            <div className="terminal-note compact">
+              <span className={`tg ${kgiResult.state === "BLOCKED" ? "status-bad" : "gold"}`}>
+                {kgiResult.state === "BLOCKED" ? "錯誤" : "提示"}
+              </span>{" "}
+              {kgiResult.state === "BLOCKED" ? kgiResult.reason : kgiResult.reason}
+            </div>
+          )}
+          {kgiResult.state === "LIVE" && kgiResult.data.positions.length > 0 ? (
+            <table className="parity-table">
+              <thead>
+                <tr>
+                  <th>代號</th>
+                  <th className="num-cell">淨股數</th>
+                  <th className="num-cell">現價</th>
+                  <th className="num-cell">未實現損益</th>
+                  <th className="num-cell">已實現損益</th>
+                </tr>
+              </thead>
+              <tbody>
+                {kgiResult.data.positions.map((pos: KgiLivePosition) => (
+                  <tr key={pos.symbol}>
+                    <td>
+                      <Link href={`/companies/${encodeURIComponent(pos.symbol)}`} className="tg gold">
+                        {pos.symbol}
+                      </Link>
+                    </td>
+                    <td className="num-cell">{formatLotBreakdown(pos.netQtyShares)}</td>
+                    <td className="num-cell">{pos.lastPrice > 0 ? formatTwd(pos.lastPrice) : "--"}</td>
+                    <td className={`num-cell ${pnlClass(pos.unrealizedPnl)}`}>{formatPnl(pos.unrealizedPnl)}</td>
+                    <td className={`num-cell ${pnlClass(pos.realizedPnl)}`}>{formatPnl(pos.realizedPnl)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : kgiResult.state === "LIVE" ? (
+            <div className="parity-empty" style={{ minHeight: 80 }}>
+              <h3>目前無持倉</h3>
+              <p>凱基帳戶目前沒有持有任何部位。</p>
+            </div>
+          ) : null}
+          <div className="terminal-note" style={{ marginTop: 8, fontSize: 11 }}>
+            <span className="tg muted">此資料直接來自凱基 gateway（read-only），不假設、不模擬。更新時間：{kgiResult.updatedAt ? formatDateTime(kgiResult.updatedAt) : "--"}</span>
+          </div>
         </div>
       </section>
 
