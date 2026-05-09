@@ -234,6 +234,8 @@ import {
   runBatchAiReviewer,
   runPipelineCloseBriefTick,
   runPipelineCloseWatchTick,
+  runPipelineForDate,
+  runPipelineMissedDayCatchUp,
   runPipelinePreMarketBootRecovery,
   runPipelinePreMarketTick,
   runPipelineTick
@@ -2713,6 +2715,52 @@ app.post("/api/v1/internal/openalice/pipeline/trigger", async (c) => {
 
   const workspaceSlug = c.get("session").workspace.slug;
   const result = await runPipelineTick(tick, workspaceSlug).catch((e: unknown) => ({
+    error: e instanceof Error ? e.message : String(e)
+  }));
+
+  return c.json({ data: result }, 200);
+});
+
+// Manual brief fire for a specific date — Owner only.
+// POST /api/v1/internal/openalice/brief/fire-now
+// Body: { date: "YYYY-MM-DD" }
+// Purpose: recover from missed brief days (e.g., deploy-interrupted window).
+// All 5 review layers still run — never skips the gate. Only bypasses window/weekend check.
+// Dedup: skips silently if a brief already exists for the requested date.
+app.post("/api/v1/internal/openalice/brief/fire-now", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: { date?: string } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  // Validate date format YYYY-MM-DD
+  const dateParam = typeof body.date === "string" ? body.date.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+    return c.json(
+      { error: "INVALID_DATE", message: "Body must include { date: 'YYYY-MM-DD' }" },
+      400
+    );
+  }
+
+  // Sanity: date must not be in the future (more than 1 day ahead)
+  const requestedMs = new Date(dateParam + "T00:00:00+08:00").getTime();
+  const tomorrowMs = Date.now() + 26 * 60 * 60 * 1000; // +26h buffer for TST offset
+  if (requestedMs > tomorrowMs) {
+    return c.json(
+      { error: "DATE_IN_FUTURE", message: "Cannot fire brief for a future date" },
+      400
+    );
+  }
+
+  const workspaceSlug = session.workspace.slug;
+  const result = await runPipelineForDate(workspaceSlug, dateParam).catch((e: unknown) => ({
     error: e instanceof Error ? e.message : String(e)
   }));
 
@@ -10616,6 +10664,17 @@ function startSchedulers(workspaceSlug: string): void {
   function handlePipelineSuccess(phase: string): void {
     _pipelineConsecutiveFails[phase] = 0;
   }
+
+  // Missed-day catch-up: fires 15s after boot to cover:
+  // (a) deploy-interrupted pre-market windows (root cause of 5/8 miss)
+  // (b) any trading day where the process was down for the full brief window
+  // Only catches the most recent missed trading day (not multi-day backfill).
+  // All 5-layer review gates still run — no content shortcuts.
+  setTimeout(() => {
+    runPipelineMissedDayCatchUp(workspaceSlug).catch((e: unknown) =>
+      console.error("[pipeline-catchup] boot catch-up error:", e instanceof Error ? e.message : String(e))
+    );
+  }, 15_000);
 
   // Pre-market tick (07:30–08:00 TST window, check every 15min)
   // Boot-recovery fires once at startup (10s delay): handles restarts between

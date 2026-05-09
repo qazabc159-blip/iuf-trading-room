@@ -850,12 +850,21 @@ async function writePipelineAuditLog(input: {
  */
 export async function runPipelineTick(
   tick: SourcePack["tick"],
-  workspaceSlug: string
+  workspaceSlug: string,
+  options?: {
+    /**
+     * Override the trading date (YYYY-MM-DD) for catch-up / manual fire.
+     * When set, ALSO bypasses the isTwTradingDay check so Owner can force-generate
+     * a brief for a specific date (e.g., Friday that was missed due to deploys).
+     */
+    forceDate?: string;
+  }
 ): Promise<PipelineRunResult> {
   const runId = randomUUID();
   const startMs = Date.now();
   const now = new Date();
-  const tradingDate = getTaipeiDate(now);
+  // forceDate: allow manual fire for a specific trading date (e.g., missed Friday)
+  const tradingDate = options?.forceDate ?? getTaipeiDate(now);
 
   const baseResult = (): PipelineRunResult => ({
     runId,
@@ -881,16 +890,21 @@ export async function runPipelineTick(
   });
 
   // 1. Trading day check
-  const isTradingDay = await isTwTradingDay(tradingDate);
-  if (!isTradingDay) {
-    const result: PipelineRunResult = {
-      ...baseResult(),
-      skippedReason: "not_a_trading_day",
-      durationMs: Date.now() - startMs
-    };
-    updatePipelineState({ lastResult: result });
-    console.log(`[pipeline] tick=${tick} date=${tradingDate} SKIPPED: not_a_trading_day`);
-    return result;
+  // forceDate bypasses this check — Owner explicitly requested a specific date.
+  if (!options?.forceDate) {
+    const isTradingDay = await isTwTradingDay(tradingDate);
+    if (!isTradingDay) {
+      const result: PipelineRunResult = {
+        ...baseResult(),
+        skippedReason: "not_a_trading_day",
+        durationMs: Date.now() - startMs
+      };
+      updatePipelineState({ lastResult: result });
+      console.log(`[pipeline] tick=${tick} date=${tradingDate} SKIPPED: not_a_trading_day`);
+      return result;
+    }
+  } else {
+    console.log(`[pipeline] tick=${tick} date=${tradingDate} forceDate=true (trading day check bypassed)`);
   }
 
   // 2. Resolve workspace
@@ -930,6 +944,37 @@ export async function runPipelineTick(
     };
     updatePipelineState({ lastResult: result, lastFailureReason: result.error });
     return result;
+  }
+
+  // 2b. Dedup check — skip if a published/approved brief already exists for today's date.
+  // Applies on both normal and forceDate runs to prevent duplicate content.
+  // forceDate can still override by passing forceDate with allowDuplicate=true (reserved for future).
+  if (!options?.forceDate) {
+    // Normal run: skip if brief already published today
+    try {
+      const existingBriefs = await db
+        .select({ id: dailyBriefs.id })
+        .from(dailyBriefs)
+        .where(
+          and(
+            eq(dailyBriefs.workspaceId, workspace.id),
+            eq(dailyBriefs.date, tradingDate)
+          )
+        )
+        .limit(1);
+      if (existingBriefs.length > 0) {
+        const result: PipelineRunResult = {
+          ...baseResult(),
+          skippedReason: `brief_already_exists_for_date:${tradingDate}`,
+          durationMs: Date.now() - startMs
+        };
+        updatePipelineState({ lastResult: result });
+        console.log(`[pipeline] tick=${tick} date=${tradingDate} SKIPPED: brief_already_exists`);
+        return result;
+      }
+    } catch {
+      // DB check failed — proceed anyway (non-fatal dedup, better than blocking)
+    }
   }
 
   // 3. Source pack collection
@@ -1599,6 +1644,132 @@ export function recordReviewerVerdict(input: {
     reviewerVerdict: input.verdict
   });
   return { tier };
+}
+
+// ── Manual fire + catch-up ────────────────────────────────────────────────────
+
+/**
+ * Fire the pipeline for a specific trading date (Owner-only manual fire).
+ * Bypasses window check and isTwTradingDay check.
+ * Skips if a brief already exists for that date (dedup).
+ * Does NOT skip the 5-layer review pipeline — all gates still run.
+ */
+export async function runPipelineForDate(
+  workspaceSlug: string,
+  date: string
+): Promise<PipelineRunResult> {
+  return runPipelineTick("pre_market", workspaceSlug, { forceDate: date });
+}
+
+/**
+ * Boot catch-up: check if the last published brief is older than the most recent
+ * trading day. If so, fire the pipeline for the missed date.
+ *
+ * Called once at startup (after 15s delay) to auto-recover from:
+ *   - Deploy-interrupted brief windows (root cause of 5/8 miss)
+ *   - Process crashes during pre-market window
+ *
+ * Only fires for the most recent missed trading day (not multi-day backfill).
+ * Non-fatal: any error is logged and swallowed.
+ */
+export async function runPipelineMissedDayCatchUp(workspaceSlug: string): Promise<void> {
+  if (!isDatabaseMode()) return;
+  const db = getDb();
+  if (!db) return;
+
+  const now = new Date();
+  const todayTST = getTaipeiDate(now);
+
+  try {
+    // Find the workspace
+    const [workspace] = await db
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(eq(workspaces.slug, workspaceSlug))
+      .limit(1)
+      .catch(() => [undefined]);
+
+    if (!workspace) {
+      console.warn("[pipeline-catchup] workspace not found, skipping catch-up");
+      return;
+    }
+
+    // Find most recent published brief date
+    const latestBriefRows = await db
+      .select({ date: dailyBriefs.date })
+      .from(dailyBriefs)
+      .where(eq(dailyBriefs.workspaceId, workspace.id))
+      .orderBy(desc(dailyBriefs.date))
+      .limit(1)
+      .catch(() => [] as { date: string }[]);
+
+    const lastBriefDate = latestBriefRows[0]?.date ?? null;
+
+    // Find the most recent prior trading day (scan back up to 5 calendar days)
+    let mostRecentTradingDay: string | null = null;
+    for (let i = 1; i <= 5; i++) {
+      const candidate = new Date(now);
+      candidate.setDate(candidate.getDate() - i);
+      const candidateDate = getTaipeiDate(candidate);
+      const isTrading = await isTwTradingDay(candidateDate);
+      if (isTrading) {
+        mostRecentTradingDay = candidateDate;
+        break;
+      }
+    }
+
+    if (!mostRecentTradingDay) {
+      console.log("[pipeline-catchup] no recent trading day found in 5-day window, skipping");
+      return;
+    }
+
+    // If last brief is from the most recent trading day → nothing to catch up
+    if (lastBriefDate && lastBriefDate >= mostRecentTradingDay) {
+      console.log(`[pipeline-catchup] last brief date=${lastBriefDate} >= mostRecentTradingDay=${mostRecentTradingDay}, no catch-up needed`);
+      return;
+    }
+
+    // Don't fire catch-up if it's a weekend and mostRecentTradingDay is "old" (>3 days)
+    // to avoid generating a brief for an old trading day on long weekends
+    const daysDiff = Math.round(
+      (now.getTime() - new Date(mostRecentTradingDay + "T00:00:00+08:00").getTime()) / (1000 * 60 * 60 * 24)
+    );
+    if (daysDiff > 3) {
+      console.log(`[pipeline-catchup] mostRecentTradingDay=${mostRecentTradingDay} is ${daysDiff} days ago (>3), skipping catch-up to avoid stale brief`);
+      return;
+    }
+
+    // Don't fire catch-up if today IS a trading day and we're in pre-market window (cron will handle it)
+    const isTodayTrading = await isTwTradingDay(todayTST);
+    const hhmm = getTaipeiHHMM(now);
+    if (isTodayTrading && hhmm >= 700 && hhmm < 900) {
+      // Pre-market window — regular cron + boot recovery will handle today
+      // Only catch up for yesterday if it was missed
+      if (mostRecentTradingDay === todayTST) {
+        console.log("[pipeline-catchup] today is trading day in pre-market window, skipping (regular cron will handle)");
+        return;
+      }
+    }
+
+    console.log(
+      `[pipeline-catchup] CATCH-UP FIRE: lastBriefDate=${lastBriefDate ?? "none"} mostRecentTradingDay=${mostRecentTradingDay} — generating missed brief`
+    );
+
+    const result = await runPipelineForDate(workspaceSlug, mostRecentTradingDay).catch((e: unknown) => {
+      console.error("[pipeline-catchup] catch-up fire error:", e instanceof Error ? e.message : String(e));
+      return null;
+    });
+
+    if (result) {
+      console.log(
+        `[pipeline-catchup] catch-up complete: date=${mostRecentTradingDay} ` +
+        `jobId=${result.jobId ?? "n/a"} skippedReason=${result.skippedReason ?? "none"} ` +
+        `error=${result.error ?? "none"}`
+      );
+    }
+  } catch (e) {
+    console.error("[pipeline-catchup] unexpected error:", e instanceof Error ? e.message : String(e));
+  }
 }
 
 // ── Observability additions (exported for server.ts extension) ────────────────
