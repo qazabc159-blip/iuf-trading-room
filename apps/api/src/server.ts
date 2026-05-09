@@ -2211,14 +2211,372 @@ app.post("/api/v1/plans", async (c) => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// plans/brief, plans/review, plans/weekly MUST be registered BEFORE plans/:id.
+// Hono 4.x matches routes in registration order; the parametric /:id would
+// shadow these literal paths and call getTradePlan("brief",...) → PostgreSQL
+// invalid UUID syntax error → HTTP 500.
+// ---------------------------------------------------------------------------
+
+app.get("/api/v1/plans/brief", async (c) => {
+  try {
+    const session = c.get("session");
+    const repo = c.get("repo");
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Compose all fields in parallel — use allSettled so a DB error in any one
+    // sub-call does NOT propagate as an unhandled rejection and return HTTP 500.
+    // Each field has a typed fallback so the handler always returns 200 with
+    // partial data + stale_reason where applicable.
+    const [themesResult, ideasResult, riskResult] = await Promise.allSettled([
+      repo.listThemes({ workspaceSlug: session.workspace.slug }),
+      getStrategyIdeas({ session, repo, limit: 10 }),
+      getRiskLimitState({ session, accountId: "paper-default" })
+    ]);
+
+    const themes = themesResult.status === "fulfilled" ? themesResult.value : [];
+    if (themesResult.status === "rejected") {
+      console.warn("[plans/brief] listThemes failed:", themesResult.reason instanceof Error ? themesResult.reason.message : String(themesResult.reason));
+    }
+
+    const ideasView = ideasResult.status === "fulfilled" ? ideasResult.value : { items: [], total: 0 };
+    if (ideasResult.status === "rejected") {
+      console.warn("[plans/brief] getStrategyIdeas failed:", ideasResult.reason instanceof Error ? ideasResult.reason.message : String(ideasResult.reason));
+    }
+
+    const riskState = riskResult.status === "fulfilled" ? riskResult.value : {
+      maxPerTradePct: null, maxSinglePositionPct: null, maxGrossExposurePct: null
+    };
+    if (riskResult.status === "rejected") {
+      console.warn("[plans/brief] getRiskLimitState failed:", riskResult.reason instanceof Error ? riskResult.reason.message : String(riskResult.reason));
+    }
+
+    // market: derive from wall clock
+    const market = composeTaiwanMarketState();
+
+    // topThemes: top 6 by priority ascending (lower number = higher priority)
+    const sortedThemes = [...themes].sort((a, b) => a.priority - b.priority).slice(0, 6);
+    const topThemes = sortedThemes.map((t, i) => backendThemeToRadar(t, i + 1));
+
+    // ideasOpen: map StrategyIdea → RADAR Idea
+    const nowIso = new Date().toISOString();
+    const expiresIso = new Date(Date.now() + 86_400_000).toISOString(); // +24h
+    const ideasOpen = ideasView.items.slice(0, 10).map((idea) => {
+      const side =
+        idea.direction === "bullish" ? "LONG" as const
+        : idea.direction === "bearish" ? "SHORT" as const
+        : "EXIT" as const;
+      const score01 = idea.score / 100;
+      const quality =
+        score01 >= 0.66 ? "HIGH" as const
+        : score01 >= 0.33 ? "MED" as const
+        : "LOW" as const;
+      const themeCode = idea.topThemes[0]?.name ?? "GENERAL";
+      return {
+        id: `ID-${idea.companyId.slice(0, 8).toUpperCase()}`,
+        symbol: idea.symbol,
+        side,
+        quality,
+        confidence: idea.confidence,
+        score: score01,
+        themeCode,
+        rationale: idea.rationale.primaryReason,
+        emittedAt: nowIso,
+        expiresAt: expiresIso,
+        runId: "current"
+      };
+    });
+
+    // watchlist: no backing table yet — return empty typed array + stale_reason so frontend
+    // can display "觀察清單尚未設定" rather than silently empty.
+    const watchlist: { symbol: string; name: string; themeCode: string | null; note?: string }[] = [];
+    const watchlistMeta = { stale_reason: "no_watchlist_table", source: "no_db" };
+
+    // riskTodayLimits: map account risk limit → RADAR RiskLimit[] (3 key rules)
+    const riskTodayLimits: {
+      rule: string;
+      limit: string;
+      current: string;
+      result: "PASS" | "WARN" | "BLOCK";
+      layer?: "ACCT" | "STRAT" | "SYM" | "SESS";
+    }[] = [
+      {
+        rule: "MAX·TRADE %",
+        limit: `${riskState.maxPerTradePct?.toFixed(1) ?? "1.0"}%`,
+        current: "0.0%",
+        result: "PASS",
+        layer: "ACCT"
+      },
+      {
+        rule: "MAX·SYMBOL %",
+        limit: `${riskState.maxSinglePositionPct?.toFixed(1) ?? "8.0"}%`,
+        current: "0.0%",
+        result: "PASS",
+        layer: "ACCT"
+      },
+      {
+        rule: "MAX·GROSS %",
+        limit: `${riskState.maxGrossExposurePct?.toFixed(1) ?? "100.0"}%`,
+        current: "0.0%",
+        result: "PASS",
+        layer: "ACCT"
+      }
+    ];
+
+    // Surface any sub-call failures as stale_reason so frontend can show degraded state.
+    const briefStaleReasons: string[] = [];
+    if (themesResult.status === "rejected") briefStaleReasons.push("themes_db_error");
+    if (ideasResult.status === "rejected") briefStaleReasons.push("ideas_db_error");
+    if (riskResult.status === "rejected") briefStaleReasons.push("risk_db_error");
+
+    const bundle = {
+      date: today,
+      market,
+      topThemes,
+      ideasOpen,
+      watchlist,
+      watchlistMeta,
+      riskTodayLimits,
+      ...(briefStaleReasons.length > 0 ? { stale_reason: briefStaleReasons.join(","), source: "partial_db" } : { source: "db" })
+    };
+
+    return c.json({ data: bundle });
+  } catch (err) {
+    console.error("[plans/brief] unhandled error:", err instanceof Error ? err.stack ?? err.message : String(err));
+    return c.json({ data: { date: new Date().toISOString().slice(0, 10), stale_reason: "handler_error", source: "error", market: null, topThemes: [], ideasOpen: [], watchlist: [], watchlistMeta: { stale_reason: "handler_error", source: "error" }, riskTodayLimits: [] } });
+  }
+});
+
+app.get("/api/v1/plans/review", async (c) => {
+  try {
+    const session = c.get("session");
+    const today = new Date().toISOString().slice(0, 10);
+
+    // ReviewBundle shape per radar-types.ts:
+    //   trades: ExecutionEvent[]   — paper orders filled today
+    //   signalsSummary: { channel: SignalChannel; count: number }[]
+    //
+    // Wave-2 live-wire: pull today's FILLED orders from paper_orders table.
+    // Fallback: honest empty + stale_reason when DB unavailable or table missing.
+
+    type ReviewTrade = {
+      id: string; kind: string; ts: string; orderId: string | null;
+      clientOrderId: string | null; symbol: string; side: string | null;
+      qty: number | null; price: number | null; fee: number | null;
+      tax: number | null; raw: Record<string, unknown>;
+    };
+
+    const trades: ReviewTrade[] = [];
+    let realizedPnl = 0;
+    let totalFillCost = 0;
+    let staleReason: string | null = null;
+
+    // getDb() can throw (DATABASE_URL missing); move inside try/catch so any
+    // failure degrades gracefully to stale_reason=db_init_failed rather than 500.
+    let db: ReturnType<typeof getDb> | null = null;
+    try {
+      db = isDatabaseMode() ? getDb() : null;
+    } catch (innerErr) {
+      console.warn("[plans/review] getDb() failed:", innerErr instanceof Error ? innerErr.message : String(innerErr));
+      staleReason = "db_init_failed";
+    }
+
+    if (db) {
+      try {
+        // Pull today's FILLED paper_orders for this user.
+        // Date filter uses updated_at (fill time) in UTC; today in TST ≈ today in UTC (safe approximation).
+        const res = await db.execute(drizzleSql`
+          SELECT
+            id,
+            intent,
+            fill,
+            status,
+            updated_at
+          FROM paper_orders
+          WHERE user_id = ${session.user.id}
+            AND status = 'FILLED'
+            AND DATE(updated_at AT TIME ZONE 'Asia/Taipei') = ${today}
+          ORDER BY updated_at DESC
+          LIMIT 50
+        `);
+        const rows = ((res as { rows?: Record<string, unknown>[] }).rows ?? (Array.isArray(res) ? res as Record<string, unknown>[] : []));
+
+        for (const row of rows) {
+          let intent: Record<string, unknown> = {};
+          let fill: Record<string, unknown> = {};
+          try {
+            intent = typeof row.intent === "string" ? JSON.parse(row.intent) : (row.intent as Record<string, unknown>) ?? {};
+            fill = typeof row.fill === "string" ? JSON.parse(row.fill) : (row.fill as Record<string, unknown>) ?? {};
+          } catch { /* skip malformed */ }
+
+          const fillPrice = typeof fill.fillPrice === "number" ? fill.fillPrice : parseFloat(String(fill.fillPrice ?? "0"));
+          const fillQty = typeof fill.fillQty === "number" ? fill.fillQty : parseFloat(String(fill.fillQty ?? "0"));
+          const side = String(intent.side ?? "");
+
+          if (side === "buy") totalFillCost += fillPrice * fillQty;
+          else if (side === "sell") realizedPnl += fillPrice * fillQty; // simplified realized: sell proceeds
+
+          const updatedAt = row.updated_at instanceof Date
+            ? row.updated_at.toISOString()
+            : typeof row.updated_at === "string" ? row.updated_at : new Date().toISOString();
+
+          trades.push({
+            id: String(row.id ?? ""),
+            kind: "paper_fill",
+            ts: updatedAt,
+            orderId: String(row.id ?? ""),
+            clientOrderId: typeof intent.idempotencyKey === "string" ? intent.idempotencyKey : null,
+            symbol: String(intent.symbol ?? ""),
+            side,
+            qty: fillQty || null,
+            price: fillPrice || null,
+            fee: null,
+            tax: null,
+            raw: { intent, fill }
+          });
+        }
+        if (rows.length === 0) staleReason = "no_fills_today";
+      } catch (innerErr) {
+        console.warn("[plans/review] DB query failed:", innerErr instanceof Error ? innerErr.message : String(innerErr));
+        staleReason = "db_query_failed";
+      }
+    } else {
+      staleReason = "database_not_connected";
+    }
+
+    // Idea hit rate: emitted = count of ideas (strategy ideas); filled = today fill count
+    const emittedCount = 0; // no real-time ideas counter yet — honest zero
+    const filledCount = trades.length;
+    const hitPct = emittedCount > 0 ? Math.round((filledCount / emittedCount) * 100) : 0;
+
+    const bundle = {
+      date: today,
+      pnl: {
+        realized: Math.round(realizedPnl * 100) / 100,
+        unrealized: 0,  // no live price feed for unrealized — honest zero
+        navStart: 0,
+        navEnd: Math.round((realizedPnl - totalFillCost) * 100) / 100
+      },
+      trades,
+      ideaHitRate: { emitted: emittedCount, filled: filledCount, pct: hitPct },
+      signalsSummary: [] as { channel: "MOM"|"FII"|"KW"|"VOL"|"THM"|"MAN"; count: number }[],
+      ...(staleReason ? { stale_reason: staleReason } : {}),
+      source: db ? "paper_orders_db" : "no_db"
+    };
+
+    return c.json({ data: bundle });
+  } catch (err) {
+    console.error("[plans/review] unhandled error:", err instanceof Error ? err.stack ?? err.message : String(err));
+    return c.json({ data: { date: new Date().toISOString().slice(0, 10), stale_reason: "handler_error", source: "error", pnl: { realized: 0, unrealized: 0, navStart: 0, navEnd: 0 }, trades: [], ideaHitRate: { emitted: 0, filled: 0, pct: 0 }, signalsSummary: [] } });
+  }
+});
+
+app.get("/api/v1/plans/weekly", async (c) => {
+  try {
+    const session = c.get("session");
+    const now = new Date();
+    const weekNo = (() => {
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const weekNum = Math.ceil(((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+      return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+    })();
+
+    // WeeklyPlan shape per radar-types.ts:
+    //   themeRotation: { code; heatStart; heatEnd; delta }[]
+    //   strategyTweaks: { strategyId; change; ts }[]
+    //
+    // Wave-2 live-wire: pull this week's FILLED paper_orders from DB.
+    // Week boundary: ISO week Mon–Sun in TST.
+    // themeRotation + strategyTweaks: no backing data table yet → honest empty.
+
+    let tradeCount = 0;
+    let cumPnl = 0;
+    let staleReason: string | null = null;
+
+    // ISO week start (Monday) in UTC.
+    const weekStartUTC = (() => {
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const day = d.getUTCDay(); // 0=Sun
+      const offsetToMon = day === 0 ? -6 : 1 - day;
+      d.setUTCDate(d.getUTCDate() + offsetToMon);
+      return d.toISOString().slice(0, 10);
+    })();
+
+    // getDb() can throw (DATABASE_URL missing); move inside try/catch.
+    let db: ReturnType<typeof getDb> | null = null;
+    try {
+      db = isDatabaseMode() ? getDb() : null;
+    } catch (innerErr) {
+      console.warn("[plans/weekly] getDb() failed:", innerErr instanceof Error ? innerErr.message : String(innerErr));
+      staleReason = "db_init_failed";
+    }
+
+    if (db) {
+      try {
+        const res = await db.execute(drizzleSql`
+          SELECT
+            COUNT(*)::int                                         AS trade_count,
+            SUM(
+              CASE
+                WHEN (intent->>'side') = 'sell'
+                THEN (fill->>'fillPrice')::float * (fill->>'fillQty')::float
+                ELSE -1 * (fill->>'fillPrice')::float * (fill->>'fillQty')::float
+              END
+            )                                                     AS cum_pnl
+          FROM paper_orders
+          WHERE user_id = ${session.user.id}
+            AND status = 'FILLED'
+            AND DATE(updated_at AT TIME ZONE 'Asia/Taipei') >= ${weekStartUTC}
+        `);
+        const row = ((res as { rows?: Record<string, unknown>[] }).rows ?? (Array.isArray(res) ? res as Record<string, unknown>[] : []))[0];
+        if (row) {
+          tradeCount = typeof row.trade_count === "number" ? row.trade_count : parseInt(String(row.trade_count ?? "0"), 10);
+          cumPnl = typeof row.cum_pnl === "number" ? row.cum_pnl : parseFloat(String(row.cum_pnl ?? "0"));
+          if (isNaN(cumPnl)) cumPnl = 0;
+          cumPnl = Math.round(cumPnl * 100) / 100;
+        }
+        if (tradeCount === 0) staleReason = "no_fills_this_week";
+      } catch (innerErr) {
+        console.warn("[plans/weekly] DB query failed:", innerErr instanceof Error ? innerErr.message : String(innerErr));
+        staleReason = "db_query_failed";
+      }
+    } else {
+      staleReason = "database_not_connected";
+    }
+
+    const bundle = {
+      weekNo,
+      summary: { trades: tradeCount, cumPnl, themeWinRate: 0, bestTheme: "" },
+      themeRotation: [] as { code: string; heatStart: number; heatEnd: number; delta: number }[],
+      strategyTweaks: [] as { strategyId: string; change: string; ts: string }[],
+      ...(staleReason ? { stale_reason: staleReason } : {}),
+      source: db ? "paper_orders_db" : "no_db"
+    };
+
+    return c.json({ data: bundle });
+  } catch (err) {
+    console.error("[plans/weekly] unhandled error:", err instanceof Error ? err.stack ?? err.message : String(err));
+    return c.json({ data: { weekNo: "unknown", stale_reason: "handler_error", source: "error", summary: { trades: 0, cumPnl: 0, themeWinRate: 0, bestTheme: "" }, themeRotation: [], strategyTweaks: [] } });
+  }
+});
+
 app.get("/api/v1/plans/:id", async (c) => {
-  const plan = await c.get("repo").getTradePlan(c.req.param("id"), {
-    workspaceSlug: c.get("session").workspace.slug
-  });
-  if (!plan) {
+  try {
+    const plan = await c.get("repo").getTradePlan(c.req.param("id"), {
+      workspaceSlug: c.get("session").workspace.slug
+    });
+    if (!plan) {
+      return c.json({ error: "plan_not_found" }, 404);
+    }
+    return c.json({ data: plan });
+  } catch (err) {
+    // getTradePlan with a non-UUID string (e.g. from a misrouted request) throws
+    // PostgreSQL "invalid input syntax for type uuid". Return 404 rather than 500.
+    console.warn("[plans/:id] getTradePlan failed for id=%s:", c.req.param("id"), err instanceof Error ? err.message : String(err));
     return c.json({ error: "plan_not_found" }, 404);
   }
-  return c.json({ data: plan });
 });
 
 app.patch("/api/v1/plans/:id", async (c) => {
@@ -3796,336 +4154,6 @@ function backendThemeToRadar(theme: {
     pulse: Array(7).fill(heat)
   };
 }
-
-app.get("/api/v1/plans/brief", async (c) => {
-  const session = c.get("session");
-  const repo = c.get("repo");
-  const today = new Date().toISOString().slice(0, 10);
-
-  // Compose all fields in parallel — use allSettled so a DB error in any one
-  // sub-call does NOT propagate as an unhandled rejection and return HTTP 500.
-  // Each field has a typed fallback so the handler always returns 200 with
-  // partial data + stale_reason where applicable.
-  const [themesResult, ideasResult, riskResult] = await Promise.allSettled([
-    repo.listThemes({ workspaceSlug: session.workspace.slug }),
-    getStrategyIdeas({ session, repo, limit: 10 }),
-    getRiskLimitState({ session, accountId: "paper-default" })
-  ]);
-
-  const themes = themesResult.status === "fulfilled" ? themesResult.value : [];
-  if (themesResult.status === "rejected") {
-    console.warn("[plans/brief] listThemes failed:", themesResult.reason instanceof Error ? themesResult.reason.message : String(themesResult.reason));
-  }
-
-  const ideasView = ideasResult.status === "fulfilled" ? ideasResult.value : { items: [], total: 0 };
-  if (ideasResult.status === "rejected") {
-    console.warn("[plans/brief] getStrategyIdeas failed:", ideasResult.reason instanceof Error ? ideasResult.reason.message : String(ideasResult.reason));
-  }
-
-  const riskState = riskResult.status === "fulfilled" ? riskResult.value : {
-    maxPerTradePct: null, maxSinglePositionPct: null, maxGrossExposurePct: null
-  };
-  if (riskResult.status === "rejected") {
-    console.warn("[plans/brief] getRiskLimitState failed:", riskResult.reason instanceof Error ? riskResult.reason.message : String(riskResult.reason));
-  }
-
-  // market: derive from wall clock
-  const market = composeTaiwanMarketState();
-
-  // topThemes: top 6 by priority ascending (lower number = higher priority)
-  const sortedThemes = [...themes].sort((a, b) => a.priority - b.priority).slice(0, 6);
-  const topThemes = sortedThemes.map((t, i) => backendThemeToRadar(t, i + 1));
-
-  // ideasOpen: map StrategyIdea → RADAR Idea
-  const nowIso = new Date().toISOString();
-  const expiresIso = new Date(Date.now() + 86_400_000).toISOString(); // +24h
-  const ideasOpen = ideasView.items.slice(0, 10).map((idea) => {
-    const side =
-      idea.direction === "bullish" ? "LONG" as const
-      : idea.direction === "bearish" ? "SHORT" as const
-      : "EXIT" as const;
-    const score01 = idea.score / 100;
-    const quality =
-      score01 >= 0.66 ? "HIGH" as const
-      : score01 >= 0.33 ? "MED" as const
-      : "LOW" as const;
-    const themeCode = idea.topThemes[0]?.name ?? "GENERAL";
-    return {
-      id: `ID-${idea.companyId.slice(0, 8).toUpperCase()}`,
-      symbol: idea.symbol,
-      side,
-      quality,
-      confidence: idea.confidence,
-      score: score01,
-      themeCode,
-      rationale: idea.rationale.primaryReason,
-      emittedAt: nowIso,
-      expiresAt: expiresIso,
-      runId: "current"
-    };
-  });
-
-  // watchlist: no backing table yet — return empty typed array + stale_reason so frontend
-  // can display "觀察清單尚未設定" rather than silently empty.
-  const watchlist: { symbol: string; name: string; themeCode: string | null; note?: string }[] = [];
-  const watchlistMeta = { stale_reason: "no_watchlist_table", source: "no_db" };
-
-  // riskTodayLimits: map account risk limit → RADAR RiskLimit[] (3 key rules)
-  const riskTodayLimits: {
-    rule: string;
-    limit: string;
-    current: string;
-    result: "PASS" | "WARN" | "BLOCK";
-    layer?: "ACCT" | "STRAT" | "SYM" | "SESS";
-  }[] = [
-    {
-      rule: "MAX·TRADE %",
-      limit: `${riskState.maxPerTradePct?.toFixed(1) ?? "1.0"}%`,
-      current: "0.0%",
-      result: "PASS",
-      layer: "ACCT"
-    },
-    {
-      rule: "MAX·SYMBOL %",
-      limit: `${riskState.maxSinglePositionPct?.toFixed(1) ?? "8.0"}%`,
-      current: "0.0%",
-      result: "PASS",
-      layer: "ACCT"
-    },
-    {
-      rule: "MAX·GROSS %",
-      limit: `${riskState.maxGrossExposurePct?.toFixed(1) ?? "100.0"}%`,
-      current: "0.0%",
-      result: "PASS",
-      layer: "ACCT"
-    }
-  ];
-
-  // Surface any sub-call failures as stale_reason so frontend can show degraded state.
-  const briefStaleReasons: string[] = [];
-  if (themesResult.status === "rejected") briefStaleReasons.push("themes_db_error");
-  if (ideasResult.status === "rejected") briefStaleReasons.push("ideas_db_error");
-  if (riskResult.status === "rejected") briefStaleReasons.push("risk_db_error");
-
-  const bundle = {
-    date: today,
-    market,
-    topThemes,
-    ideasOpen,
-    watchlist,
-    watchlistMeta,
-    riskTodayLimits,
-    ...(briefStaleReasons.length > 0 ? { stale_reason: briefStaleReasons.join(","), source: "partial_db" } : { source: "db" })
-  };
-
-  return c.json({ data: bundle });
-});
-
-app.get("/api/v1/plans/review", async (c) => {
-  const session = c.get("session");
-  const today = new Date().toISOString().slice(0, 10);
-
-  // ReviewBundle shape per radar-types.ts:
-  //   trades: ExecutionEvent[]   — paper orders filled today
-  //   signalsSummary: { channel: SignalChannel; count: number }[]
-  //
-  // Wave-2 live-wire: pull today's FILLED orders from paper_orders table.
-  // Fallback: honest empty + stale_reason when DB unavailable or table missing.
-
-  type ReviewTrade = {
-    id: string; kind: string; ts: string; orderId: string | null;
-    clientOrderId: string | null; symbol: string; side: string | null;
-    qty: number | null; price: number | null; fee: number | null;
-    tax: number | null; raw: Record<string, unknown>;
-  };
-
-  const trades: ReviewTrade[] = [];
-  let realizedPnl = 0;
-  let totalFillCost = 0;
-  let staleReason: string | null = null;
-
-  // getDb() can throw (DATABASE_URL missing); move inside try/catch so any
-  // failure degrades gracefully to stale_reason=db_init_failed rather than 500.
-  let db: ReturnType<typeof getDb> | null = null;
-  try {
-    db = isDatabaseMode() ? getDb() : null;
-  } catch (err) {
-    console.warn("[plans/review] getDb() failed:", err instanceof Error ? err.message : String(err));
-    staleReason = "db_init_failed";
-  }
-
-  if (db) {
-    try {
-      // Pull today's FILLED paper_orders for this user.
-      // Date filter uses updated_at (fill time) in UTC; today in TST ≈ today in UTC (safe approximation).
-      const res = await db.execute(drizzleSql`
-        SELECT
-          id,
-          intent,
-          fill,
-          status,
-          updated_at
-        FROM paper_orders
-        WHERE user_id = ${session.user.id}
-          AND status = 'FILLED'
-          AND DATE(updated_at AT TIME ZONE 'Asia/Taipei') = ${today}
-        ORDER BY updated_at DESC
-        LIMIT 50
-      `);
-      const rows = ((res as { rows?: Record<string, unknown>[] }).rows ?? (Array.isArray(res) ? res as Record<string, unknown>[] : []));
-
-      for (const row of rows) {
-        let intent: Record<string, unknown> = {};
-        let fill: Record<string, unknown> = {};
-        try {
-          intent = typeof row.intent === "string" ? JSON.parse(row.intent) : (row.intent as Record<string, unknown>) ?? {};
-          fill = typeof row.fill === "string" ? JSON.parse(row.fill) : (row.fill as Record<string, unknown>) ?? {};
-        } catch { /* skip malformed */ }
-
-        const fillPrice = typeof fill.fillPrice === "number" ? fill.fillPrice : parseFloat(String(fill.fillPrice ?? "0"));
-        const fillQty = typeof fill.fillQty === "number" ? fill.fillQty : parseFloat(String(fill.fillQty ?? "0"));
-        const side = String(intent.side ?? "");
-
-        if (side === "buy") totalFillCost += fillPrice * fillQty;
-        else if (side === "sell") realizedPnl += fillPrice * fillQty; // simplified realized: sell proceeds
-
-        const updatedAt = row.updated_at instanceof Date
-          ? row.updated_at.toISOString()
-          : typeof row.updated_at === "string" ? row.updated_at : new Date().toISOString();
-
-        trades.push({
-          id: String(row.id ?? ""),
-          kind: "paper_fill",
-          ts: updatedAt,
-          orderId: String(row.id ?? ""),
-          clientOrderId: typeof intent.idempotencyKey === "string" ? intent.idempotencyKey : null,
-          symbol: String(intent.symbol ?? ""),
-          side,
-          qty: fillQty || null,
-          price: fillPrice || null,
-          fee: null,
-          tax: null,
-          raw: { intent, fill }
-        });
-      }
-      if (rows.length === 0) staleReason = "no_fills_today";
-    } catch (err) {
-      console.warn("[plans/review] DB query failed:", err instanceof Error ? err.message : String(err));
-      staleReason = "db_query_failed";
-    }
-  } else {
-    staleReason = "database_not_connected";
-  }
-
-  // Idea hit rate: emitted = count of ideas (strategy ideas); filled = today fill count
-  const emittedCount = 0; // no real-time ideas counter yet — honest zero
-  const filledCount = trades.length;
-  const hitPct = emittedCount > 0 ? Math.round((filledCount / emittedCount) * 100) : 0;
-
-  const bundle = {
-    date: today,
-    pnl: {
-      realized: Math.round(realizedPnl * 100) / 100,
-      unrealized: 0,  // no live price feed for unrealized — honest zero
-      navStart: 0,
-      navEnd: Math.round((realizedPnl - totalFillCost) * 100) / 100
-    },
-    trades,
-    ideaHitRate: { emitted: emittedCount, filled: filledCount, pct: hitPct },
-    signalsSummary: [] as { channel: "MOM"|"FII"|"KW"|"VOL"|"THM"|"MAN"; count: number }[],
-    ...(staleReason ? { stale_reason: staleReason } : {}),
-    source: db ? "paper_orders_db" : "no_db"
-  };
-
-  return c.json({ data: bundle });
-});
-
-app.get("/api/v1/plans/weekly", async (c) => {
-  const session = c.get("session");
-  const now = new Date();
-  const weekNo = (() => {
-    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    const weekNum = Math.ceil(((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
-    return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
-  })();
-
-  // WeeklyPlan shape per radar-types.ts:
-  //   themeRotation: { code; heatStart; heatEnd; delta }[]
-  //   strategyTweaks: { strategyId; change; ts }[]
-  //
-  // Wave-2 live-wire: pull this week's FILLED paper_orders from DB.
-  // Week boundary: ISO week Mon–Sun in TST.
-  // themeRotation + strategyTweaks: no backing data table yet → honest empty.
-
-  let tradeCount = 0;
-  let cumPnl = 0;
-  let staleReason: string | null = null;
-
-  // ISO week start (Monday) in UTC.
-  const weekStartUTC = (() => {
-    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const day = d.getUTCDay(); // 0=Sun
-    const offsetToMon = day === 0 ? -6 : 1 - day;
-    d.setUTCDate(d.getUTCDate() + offsetToMon);
-    return d.toISOString().slice(0, 10);
-  })();
-
-  // getDb() can throw (DATABASE_URL missing); move inside try/catch.
-  let db: ReturnType<typeof getDb> | null = null;
-  try {
-    db = isDatabaseMode() ? getDb() : null;
-  } catch (err) {
-    console.warn("[plans/weekly] getDb() failed:", err instanceof Error ? err.message : String(err));
-    staleReason = "db_init_failed";
-  }
-
-  if (db) {
-    try {
-      const res = await db.execute(drizzleSql`
-        SELECT
-          COUNT(*)::int                                         AS trade_count,
-          SUM(
-            CASE
-              WHEN (intent->>'side') = 'sell'
-              THEN (fill->>'fillPrice')::float * (fill->>'fillQty')::float
-              ELSE -1 * (fill->>'fillPrice')::float * (fill->>'fillQty')::float
-            END
-          )                                                     AS cum_pnl
-        FROM paper_orders
-        WHERE user_id = ${session.user.id}
-          AND status = 'FILLED'
-          AND DATE(updated_at AT TIME ZONE 'Asia/Taipei') >= ${weekStartUTC}
-      `);
-      const row = ((res as { rows?: Record<string, unknown>[] }).rows ?? (Array.isArray(res) ? res as Record<string, unknown>[] : []))[0];
-      if (row) {
-        tradeCount = typeof row.trade_count === "number" ? row.trade_count : parseInt(String(row.trade_count ?? "0"), 10);
-        cumPnl = typeof row.cum_pnl === "number" ? row.cum_pnl : parseFloat(String(row.cum_pnl ?? "0"));
-        if (isNaN(cumPnl)) cumPnl = 0;
-        cumPnl = Math.round(cumPnl * 100) / 100;
-      }
-      if (tradeCount === 0) staleReason = "no_fills_this_week";
-    } catch (err) {
-      console.warn("[plans/weekly] DB query failed:", err instanceof Error ? err.message : String(err));
-      staleReason = "db_query_failed";
-    }
-  } else {
-    staleReason = "database_not_connected";
-  }
-
-  const bundle = {
-    weekNo,
-    summary: { trades: tradeCount, cumPnl, themeWinRate: 0, bestTheme: "" },
-    themeRotation: [] as { code: string; heatStart: number; heatEnd: number; delta: number }[],
-    strategyTweaks: [] as { strategyId: string; change: string; ts: string }[],
-    ...(staleReason ? { stale_reason: staleReason } : {}),
-    source: db ? "paper_orders_db" : "no_db"
-  };
-
-  return c.json({ data: bundle });
-});
-
 // ---------------------------------------------------------------------------
 // Item 5 — POST /api/v1/portfolio/kill-mode  (thin adapter)
 //
