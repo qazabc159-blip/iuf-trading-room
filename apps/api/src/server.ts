@@ -11039,7 +11039,6 @@ function startSchedulers(workspaceSlug: string): void {
     }
   }, _paperObsCronMs);
 
-<<<<<<< HEAD
   // BLOCK #SIGNAL-STRATEGY
   const STRATEGY_SIGNAL_POLL_MS = 15 * 60 * 1000;
   setInterval(() => {
@@ -11081,14 +11080,7 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, QUOTE_BREAKOUT_POLL_MS);
 
-    console.log(
-=======
   // FINMIND SPONSOR BOOT INGEST — 楊董 mandate: "所有資源你都給我活用起來"
-  // Fires 60s after boot: forces all 11 datasets to ingest regardless of cadence windows.
-  // This bypasses the narrow time-window guards on institutional/margin/shareholding
-  // (those guards apply to the 30min/24h cron ticks but NOT to this orchestrated run).
-  // Quota: batchSize=50 → ~550 API calls; well within 6000/hr sponsor limit.
-  // Non-fatal: any individual dataset failure degrades gracefully (logged, not thrown).
   setTimeout(() => {
     if (!process.env.FINMIND_API_TOKEN) {
       console.log("[finmind-boot-ingest] FINMIND_API_TOKEN not set, skipping boot full ingest");
@@ -11105,7 +11097,6 @@ function startSchedulers(workspaceSlug: string): void {
   }, 60_000);
 
   // Recurring 6h full ingest — all 11 datasets, bypasses cadence guards
-  // Complements the individual cron ticks (which have narrower windows).
   const SIX_HOURS_FULL_INGEST_MS = 6 * 60 * 60 * 1000;
   setInterval(() => {
     if (!process.env.FINMIND_API_TOKEN) return;
@@ -11124,7 +11115,6 @@ function startSchedulers(workspaceSlug: string): void {
   }, SIX_HOURS_FULL_INGEST_MS);
 
   console.log(
->>>>>>> fa9b77e (feat(api): FinMind sponsor 11 dataset ingest cron 全活用 + alerts R01-R07 連鎖)
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
     "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) + " +
