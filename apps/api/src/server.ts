@@ -241,7 +241,8 @@ import {
 import {
   getNewsTop10WithStaleness,
   runNewsAiSelection,
-  runNewsAiSelectionTick
+  runNewsAiSelectionTick,
+  runNewsAiSelectionBootRecovery
 } from "./news-ai-selector.js";
 import {
   evaluateToggleMode,
@@ -10709,18 +10710,20 @@ function startSchedulers(workspaceSlug: string): void {
       console.error("[news-ai-selector] scheduler tick failed:", e instanceof Error ? e.message : e);
     }
   }, NEWS_AI_POLL_MS);
-  // Initial delayed tick (60s after boot) to catch server restarts near a window
+  // Boot-recovery: fire unconditionally 30s after startup (bypasses window gate, respects 45min guard).
+  // Ensures the endpoint never returns stale_reason=never_run for hours when server restarts
+  // outside the 4 trigger windows (08:00/12:00/18:00/24:00 TST).
   setTimeout(async () => {
     try {
       const db = getDb();
       if (!db) return;
       const [ws] = await db.select({ id: workspaces.id }).from(workspaces).limit(1);
       if (!ws) return;
-      await runNewsAiSelectionTick(ws.id);
+      await runNewsAiSelectionBootRecovery(ws.id);
     } catch (e) {
-      console.error("[news-ai-selector] initial tick failed:", e instanceof Error ? e.message : e);
+      console.error("[news-ai-selector] boot recovery failed:", e instanceof Error ? e.message : e);
     }
-  }, 60_000);
+  }, 30_000);
 
   // P0-2: Health watchdog — POST internal heartbeat every 30min, Sentry on consecutive fail
   // Tracks that the server event-loop is alive and not starved (relates to the 5/7 502 incidents).

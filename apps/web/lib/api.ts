@@ -1761,6 +1761,37 @@ export interface MarketIntelAnnouncementsData {
   source: "twse_announcements" | "finmind_stock_news" | "mixed" | "empty";
 }
 
+// ── AI-selected top-10 news (4-window cron) ────────────────────────────────
+export interface NewsAiItem {
+  id: string;
+  headline: string;
+  date: string;
+  ticker?: string;
+  companyName?: string;
+  source: "twse_announcements" | "finmind_stock_news" | "mixed";
+  url?: string;
+  why_matters: string | null;
+  impact_tier: "HIGH" | "MID" | "LOW" | null;
+  tags: string[];
+  rank: number;
+}
+
+export interface NewsTop10Data {
+  run_id: string | null;
+  as_of: string | null;
+  next_refresh_at: string | null;
+  window_label: "08:00" | "12:00" | "18:00" | "24:00" | null;
+  selection_mode: "ai" | "fallback" | null;
+  items: NewsAiItem[];
+  input_row_count: number;
+  ai_call_success: boolean;
+  stale_reason: string | null;
+}
+
+export async function getNewsTop10(): Promise<{ data: NewsTop10Data }> {
+  return request<NewsTop10Data>("/api/v1/market-intel/news-top10");
+}
+
 export interface CompanyFinancialRow {
   period: string;
   revenue: number | null;
