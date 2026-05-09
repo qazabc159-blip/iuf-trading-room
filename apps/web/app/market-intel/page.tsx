@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
 import {
   getFinMindStatus,
   getMarketIntelAnnouncements,
@@ -289,16 +288,33 @@ export default async function MarketIntelPage() {
       sub="大盤新聞、官方重大訊息與資料通道"
       note="這頁只收市場級消息與官方重大訊息；個股雜訊不進首頁工作流。"
     >
-      <MetricStrip
-        columns={5}
-        cells={[
-          { label: "情報狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "市場級消息", value: statsAvailable ? result.items.length : "--", tone: result.items.length > 0 ? "status-ok" : "muted" },
-          { label: "涵蓋標的", value: statsAvailable ? (companyCount > 0 ? `${companyCount} 檔` : "大盤") : "--" },
-          { label: "資料通道", value: channelState, tone: channelTone },
-          { label: "更新", value: formatSourceTimestamp(result.updatedAt), tone: freshness?.tone },
-        ]}
-      />
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">情報狀態</span>
+          <span className={`parity-kpi-value ${result.state === "LIVE" ? "ok" : result.state === "EMPTY" ? "warn" : "bad"}`}>{stateLabel(result.state)}</span>
+          <span className="parity-kpi-sub">{result.source}</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">市場級消息</span>
+          <span className={`parity-kpi-value ${result.items.length > 0 ? "ok" : "dim"}`}>{statsAvailable ? result.items.length : "--"}</span>
+          <span className="parity-kpi-sub">則訊息</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">涵蓋標的</span>
+          <span className="parity-kpi-value">{statsAvailable ? (companyCount > 0 ? `${companyCount}` : "大盤") : "--"}</span>
+          <span className="parity-kpi-sub">{companyCount > 0 ? "檔公司" : "市場級"}</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">資料通道</span>
+          <span className={`parity-kpi-value ${finmind?.state === "LIVE_READY" ? "ok" : finmind ? "warn" : "bad"}`}>{channelState}</span>
+          <span className="parity-kpi-sub">FinMind</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">更新</span>
+          <span className="parity-kpi-value" style={{ fontSize: 14 }}>{formatSourceTimestamp(result.updatedAt)}</span>
+          <span className="parity-kpi-sub">{freshness ? freshness.label : "資料新鮮度"}</span>
+        </div>
+      </div>
 
       <section className="intel-command-deck">
         <div className="intel-command-copy">
