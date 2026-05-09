@@ -16,7 +16,7 @@
  *   - 不准 mock 真實 quote / fake metric
  */
 
-import { notFound } from "next/navigation";
+// notFound removed — using defensive fallback rendering instead
 import Link from "next/link";
 import { PageFrame } from "@/components/PageFrame";
 import { StrategyDetailClient } from "./StrategyDetailClient";
@@ -463,7 +463,118 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     },
     dataSource: "athena_morning_5_9_chat_update",
   },
+
+  // ── Aliases for endpoint-side short IDs (defensive coverage) ─────────────────
+
+  // cont_liq_v36 = Athena canonical short ID
+  cont_liq_v36: {
+    strategyId: "cont_liq_v36",
+    displayName: "\u6d41\u52d5\u5f37\u52e2\u5ef6\u7e8c\u7b56\u7565 v36",
+    tagline:
+      "\u6d41\u52d5\u6027\u76f8\u5c0d\u5f37\u5ea6\u9078\u80a1\uff0ch20 \u6301\u6709\u671f\u6846\u67b6\uff0c\u524d\u4e94\u540d\u7b49\u6b0a\u3002v36 \u901a\u904e 9/9 \u9a57\u8b49\u9805\u76ee + \u56db\u91cd\u9b4f\u68d2\u6027\u78ba\u8a8d\u3002",
+    badgeVariant: "amber" as const,
+    badgeLabel: "9/9 PASS",
+    governanceState:
+      "cont_liq_v36 \u00b7 9/9 PASS + \u56db\u91cd\u9b4f\u68d2 \u00b7 forward observation \u9032\u884c\u4e2d",
+    isRetired: false,
+    fullCaveat:
+      "9/9 \u9a57\u8b49\u9805\u76ee\u901a\u904e\uff08\u622a\u81f3 2026-05-09 Athena morning update\uff09/ \u56db\u91cd\u9b4f\u68d2\uff1aHorizon \u00b15d NEAR_PASS / Regime \u00b12% FULL_PASS / Cost 40-250bps script done / Universe K=68\u219220 PARTIAL\uff08K\u226550 liquid universe required\uff09/ \u4ecd\u9700\u5b8c\u6574 forward observation \u624d\u7b97 process pass / \u4e0d\u662f\u5df2\u9a57\u8b49\u53ef\u4e0a\u7dda\u7b56\u7565 / capacity note: K\u226550 \u6d41\u52d5\u6027\u80a1\u7968\u5b87\u5b99\u5fc5\u8981\u689d\u4ef6",
+    spec: {
+      intro:
+        "cont_liq v36 \u7b56\u7565\u5728 h20\uff0820 \u500b\u4ea4\u6613\u65e5\uff09\u6301\u6709\u671f\u6846\u67b6\u4e0b\uff0c\u9078\u53d6\u6d41\u52d5\u6027\u76f8\u5c0d\u5f37\u5ea6\u6392\u524d\u4e94\u7684\u80a1\u7968\u3002v36 \u901a\u904e 9/9 Athena \u9a57\u8b49\u9805\u76ee\u3002",
+      signalLogic:
+        "\u8a08\u7b97\u6bcf\u6a94\u80a1\u7968\u904e\u53bb 20 \u65e5\u6d41\u52d5\u6027\u76f8\u5c0d\u5e02\u5834\u7684\u5f37\u5ea6\u5206\u6578\u3002\u6392\u5e8f\u53d6\u524d\u4e94\u540d\u3002Turnover cap 0.25\u3002\u80a1\u7968\u5b87\u5b99\u9700 K\u226550\u3002",
+      sizing:
+        "\u7b49\u6b0a\u91cd\u6301\u6709 5 \u6a94\u500b\u80a1\u3002\u6bcf\u6a94\u6700\u9ad8 20%\u3002\u8abf\u6574\u983b\u7387 h20\u3002capital_cap_twd_max: 10,000 TWD\uff08pilot canary sizing\uff09\u3002",
+      exitRule:
+        "\u6301\u6709 20 \u500b\u4ea4\u6613\u65e5\u5f8c\u5168\u90e8\u63db\u5009\u3002\u82e5\u89f8\u767c\u5e02\u5834\u6574\u9ad4 kill switch \u689d\u4ef6\uff0c\u5168\u90e8\u6e05\u5009\u3002",
+    },
+    caveatVerdicts: [
+      { icon: "pass" as const, label: "\u7d71\u8a08\u986f\u8457\u6027", detail: "9/9 PASS\uff08Athena 5/9 update\uff09" },
+      { icon: "pass" as const, label: "CPCV PBO", detail: "9/9 PASS" },
+      { icon: "pass" as const, label: "DSR\uff08Deflated Sharpe\uff09", detail: "9/9 PASS" },
+      { icon: "warn" as const, label: "Horizon \u9b4f\u68d2\u6027", detail: "Horizon \u00b15d: NEAR_PASS" },
+      { icon: "pass" as const, label: "Regime \u9b4f\u68d2\u6027", detail: "FULL_PASS" },
+      { icon: "pass" as const, label: "Cost \u9b4f\u68d2\u6027", detail: "Cost 40-250bps: script done" },
+      { icon: "warn" as const, label: "Universe \u9b4f\u68d2\u6027 / capacity", detail: "Universe K=68\u219220: PARTIAL \u2014 K\u226550 required" },
+      { icon: "fail" as const, label: "Forward observation / \u53ef\u4e0a\u7dda\u80cc\u66f8", detail: "\u4ecd\u9700\u5b8c\u6574 forward observation\uff0c\u4e0d\u5f97\u80cc\u66f8\u53ef\u4e0a\u7dda" },
+    ],
+    paperObservation: { startDate: null, expectedUnlockDate: null, status: "not_started" as const },
+    dataSource: "athena_morning_5_9_chat_update",
+  },
+
+  // strategy_002 = endpoint short ID (BACKTESTED_RAW, Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA)
+  strategy_002: {
+    strategyId: "strategy_002",
+    displayName: "\u71df\u6536\u52d5\u80fd\u9a5a\u559c",
+    tagline:
+      "\u9078\u51fa\u71df\u6536\u5e74\u5897\u7387\u5927\u5e45\u512a\u65bc\u9810\u671f\u7684\u500b\u80a1\u3002BACKTESTED_RAW \u2014 Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA\u3002",
+    badgeVariant: "blue" as const,
+    badgeLabel: "Walk-forward \u9032\u884c\u4e2d",
+    governanceState:
+      "strategy_002 \u00b7 BACKTESTED_RAW \u00b7 walk-forward + bootstrap CI in progress \u00b7 Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA",
+    isRetired: false,
+    fullCaveat:
+      "BACKTESTED_RAW \u2014 walk-forward + bootstrap CI \u9032\u884c\u4e2d\uff08Task #400\uff0c2026-05-09\uff09/ Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA / \u4e0d\u5177 matured forward observation / \u56de\u6e2c\u6578\u5b57\u50c5\u4f9b\u7814\u7a76\u7528\uff0c\u672a\u901a\u904e\u5b8c\u6574 L9 gate / \u4e0d\u662f\u5df2\u9a57\u8b49\u7b56\u7565 / \u6b64\u70ba strategy_002 endpoint short ID alias",
+    spec: {
+      intro:
+        "strategy_002 \u4ee5\u6708\u5ea6/\u5b63\u5ea6\u71df\u6536\u5e74\u5897\u7387\u7684\u300c\u8d85\u9810\u671f\u5e45\u5ea6\u300d\u4f5c\u70ba\u4e3b\u8981\u9078\u80a1\u8a0a\u865f\u3002BACKTESTED_RAW \u72c0\u614b\uff0cwalk-forward \u9032\u884c\u4e2d\u3002",
+      signalLogic:
+        "\u8a08\u7b97\u500b\u80a1\u6700\u65b0\u4e00\u671f\u71df\u6536\u5e74\u5897\u7387\u76f8\u5c0d\u5e02\u5834\u5206\u6790\u5e2b\u9810\u671f\u4e2d\u4f4d\u6578\u7684\u504f\u5dee\uff08surprise ratio > 15%\uff09\uff0c\u642d\u914d\u80a1\u50f9\u52d5\u80fd\u78ba\u8a8d\u3002",
+      sizing: "\u7b49\u6b0a\u91cd\u6301\u6709\u6700\u591a 5 \u6a94\uff0c\u6bcf\u6a94\u6700\u9ad8 20%\u3002\u63db\u5009\u983b\u7387\uff1a\u6bcf\u6708\u672b\u91cd\u65b0\u8a55\u4f30\u3002\u4e0d\u4f7f\u7528\u69d3\u687f\u3002",
+      exitRule: "\u6301\u6709\u671f\u6700\u9577 3 \u500b\u6708\u3002\u82e5 surprise ratio \u964d\u81f3 5% \u4ee5\u4e0b\uff0c\u6216\u80a1\u50f9\u52d5\u80fd\u53cd\u8f49\uff0c\u63d0\u524d\u6e05\u5009\u3002",
+    },
+    caveatVerdicts: [
+      { icon: "warn" as const, label: "Walk-forward \u72c0\u614b", detail: "walk-forward + bootstrap CI in progress\uff08Task #400, 2026-05-09\uff09" },
+      { icon: "warn" as const, label: "Task #400 \u9032\u5ea6", detail: "PARTIAL_PASS_PENDING_EXTENDED_DATA \u2014 \u5ef6\u4f38\u8cc7\u6599\u5f85\u88dc" },
+      { icon: "fail" as const, label: "\u7d71\u8a08\u986f\u8457\u6027", detail: "\u5f85 walk-forward \u5b8c\u6210\u5f8c\u8a08\u7b97" },
+      { icon: "fail" as const, label: "CPCV PBO", detail: "\u5c1a\u672a\u8a08\u7b97\uff0c\u5f85 Task #400 \u5b8c\u6210" },
+      { icon: "fail" as const, label: "DSR\uff08Deflated Sharpe\uff09", detail: "\u5c1a\u672a\u8a08\u7b97" },
+      { icon: "fail" as const, label: "Forward observation", detail: "\u5c1a\u7121 matured forward observation" },
+      { icon: "warn" as const, label: "\u56de\u6e2c\u6a23\u672c", detail: "2018\u20132024\uff0c\u53f0\u80a1\u6708\u5831\u516c\u544a\u6a5f\u5236\u56de\u6e2c" },
+      { icon: "fail" as const, label: "\u53ef\u4e0a\u7dda\u80cc\u66f8", detail: "BACKTESTED_RAW \u671f\u9593\uff0c\u4e0d\u5177\u4efb\u4f55\u53ef\u4e0a\u7dda\u80cc\u66f8" },
+    ],
+    paperObservation: { startDate: null, expectedUnlockDate: null, status: "not_started" as const },
+    dataSource: "athena_morning_5_9_chat_update",
+  },
+
+  // strategy_003 = endpoint short ID (BACKTESTED_RAW, Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA)
+  strategy_003: {
+    strategyId: "strategy_003",
+    displayName: "200 \u65e5\u5747\u7dda\u9806\u52e2",
+    tagline:
+      "\u8ffd\u8e64\u80a1\u50f9\u7ad9\u7a69 200 \u65e5\u5747\u7dda\u7684\u500b\u80a1\uff0c\u9806\u5927\u8da8\u52e2\u65b9\u5411\u6301\u6709\u3002BACKTESTED_RAW \u2014 Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA\u3002",
+    badgeVariant: "violet" as const,
+    badgeLabel: "Walk-forward \u9032\u884c\u4e2d",
+    governanceState:
+      "strategy_003 \u00b7 BACKTESTED_RAW \u00b7 walk-forward + bootstrap CI in progress \u00b7 Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA",
+    isRetired: false,
+    fullCaveat:
+      "BACKTESTED_RAW \u2014 walk-forward + bootstrap CI \u9032\u884c\u4e2d\uff08Task #400\uff0c2026-05-09\uff09/ Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA / \u50c5\u6709\u56de\u6e2c\u6578\u5b57\uff0c\u5c1a\u672a\u9032\u884c forward observation / cache \u6301\u6709\u671f\u8f03\u77ed\uff0c\u63db\u5009\u983b\u7387\u654f\u611f / \u672a\u901a\u904e L9 gate / \u4e0d\u662f\u5df2\u9a57\u8b49\u7b56\u7565 / \u6b64\u70ba strategy_003 endpoint short ID alias",
+    spec: {
+      intro:
+        "strategy_003 \u4ee5\u500b\u80a1\u80a1\u50f9\u76f8\u5c0d 200 \u65e5\u79fb\u52d5\u5e73\u5747\u7684\u4f4d\u7f6e\u70ba\u6838\u5fc3\u6fe3\u7db2\uff0c\u5728\u5927\u8da8\u52e2\u5411\u4e0a\u6642\u6301\u6709\u3002BACKTESTED_RAW \u72c0\u614b\u3002",
+      signalLogic:
+        "\u8a08\u7b97\u500b\u80a1\u6536\u76e4\u50f9 / MA200 \u6bd4\u5024 > 1.0 \u4e14\u4e0a\u5347\u8da8\u52e2\u78ba\u8a8d\u8005\u9032\u5165\u5019\u9078\u6c60\u3002\u5c31\u524d 10 \u540d\u3002\u82e5\u5927\u76e4 MA200 \u4e0b\u65b9\u5247\u6240\u6709\u6301\u5009\u6e05\u7a7a\u3002",
+      sizing: "\u7b49\u6b0a\u91cd\u6700\u591a 10 \u6a94\uff0c\u6bcf\u6a94\u6700\u9ad8 10%\u3002\u6301\u5009 cache \u9031\u671f\uff1a10\u201330 \u65e5\u6e2c\u8a66\u4e2d\u3002\u4e0d\u4f7f\u7528\u69d3\u687f\u3002",
+      exitRule: "\u500b\u80a1\u8dcc\u7834 MA200 \u6642\u6e05\u5009\u3002\u5927\u76e4\u6574\u9ad4\u89f8\u767c kill switch \u6642\u5168\u6e05\u3002",
+    },
+    caveatVerdicts: [
+      { icon: "warn" as const, label: "Walk-forward \u72c0\u614b", detail: "walk-forward + bootstrap CI in progress\uff08Task #400, 2026-05-09\uff09" },
+      { icon: "warn" as const, label: "Task #400 \u9032\u5ea6", detail: "PARTIAL_PASS_PENDING_EXTENDED_DATA \u2014 \u5ef6\u4f38\u8cc7\u6599\u5f85\u88dc" },
+      { icon: "fail" as const, label: "\u7d71\u8a08\u986f\u8457\u6027", detail: "\u5f85 walk-forward \u5b8c\u6210\u5f8c\u8a08\u7b97" },
+      { icon: "fail" as const, label: "CPCV PBO", detail: "\u5c1a\u672a\u8a08\u7b97" },
+      { icon: "fail" as const, label: "DSR\uff08Deflated Sharpe\uff09", detail: "\u5c1a\u672a\u8a08\u7b97" },
+      { icon: "fail" as const, label: "Forward observation", detail: "\u5c1a\u672a\u555f\u52d5 forward obs" },
+      { icon: "warn" as const, label: "\u63db\u5009\u6210\u672c\u654f\u611f", detail: "cache \u6301\u5009\u671f\u77ed\uff0810\u201330 \u65e5\uff09\uff0ctransaction cost \u5f71\u97ff\u672a\u5b8c\u6574\u8a55\u4f30" },
+      { icon: "fail" as const, label: "\u53ef\u4e0a\u7dda\u80cc\u66f8", detail: "BACKTESTED_RAW \u671f\u9593\uff0c\u7121\u4efb\u4f55 forward evidence\uff0c\u4e0d\u5f97\u4e0a\u7dda" },
+    ],
+    paperObservation: { startDate: null, expectedUnlockDate: null, status: "not_started" as const },
+    dataSource: "athena_morning_5_9_chat_update",
+  },
 };
+
+// ── Sub-components (server-side only) ─────────────────────────────────────────────
 
 // ── Sub-components (server-side only) ─────────────────────────────────────────
 
@@ -622,8 +733,64 @@ export default async function StrategyDetailPage({
   const { strategyId } = await params;
   const data = STRATEGY_REGISTRY[strategyId];
 
+  // Defensive fallback — show a friendly "unknown strategy" page instead of black-screen 404
   if (!data) {
-    notFound();
+    return (
+      <PageFrame
+        code="LAB"
+        title="策略 ID 不認識"
+        sub="此 strategyId 不在已知清單中"
+        note="不顯示已驗證、approved、可上線或任何背書字樣。"
+      >
+        <div
+          style={{
+            padding: "20px 24px",
+            marginBottom: 20,
+            background: "rgba(11,16,23,0.88)",
+            border: "1px solid rgba(220,60,60,0.25)",
+            borderLeft: "3px solid #e05050",
+            borderRadius: 8,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#e05050",
+              letterSpacing: 0.8,
+              textTransform: "uppercase" as const,
+              fontFamily: "var(--mono, monospace)",
+              marginBottom: 8,
+            }}
+          >
+            Strategy ID Not Found
+          </div>
+          <div style={{ fontSize: 14, color: "#c8c8c8", lineHeight: 1.7, marginBottom: 12 }}>
+            策略 ID <code style={{ fontFamily: "var(--mono, monospace)", color: "#ffb800", background: "rgba(255,184,0,0.08)", padding: "1px 6px", borderRadius: 3 }}>{strategyId}</code> 不在已知策略清單中。
+          </div>
+          <div style={{ fontSize: 13, color: "#888", lineHeight: 1.6 }}>
+            可能原因：<br />
+            · 此 ID 已更新為新版本（請回列表查看最新 ID）<br />
+            · URL 有誤<br />
+            · 策略已從 registry 移除
+          </div>
+        </div>
+        <Link
+          href="/lab/three-strategy"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 13,
+            color: "#ffb800",
+            textDecoration: "underline",
+            fontFamily: "var(--mono, monospace)",
+          }}
+        >
+          ← 返回 /lab/three-strategy 查看所有策略
+        </Link>
+      </PageFrame>
+    );
   }
 
   return (
