@@ -2320,3 +2320,70 @@ export {
   previewPaperOrder,
   submitPaperOrder,
 } from "./paper-orders-api";
+
+// ── KGI quote streaming — bid/ask (5-level) + tick stream ───────────────────
+// Consumed by BidAskPanel + LiveTickStreamPanel on /companies/[symbol].
+// Both endpoints are proxy routes through our Railway API (auth required).
+// Hard line: these are read-only consumer functions. No order surface.
+
+export interface KgiBidAskData {
+  exchange?: string;
+  symbol?: string;
+  bid_prices?: number[];
+  bid_volumes?: number[];
+  ask_prices?: number[];
+  ask_volumes?: number[];
+  diff_ask_vol?: number[];
+  diff_bid_vol?: number[];
+  simtrade?: number;
+  suspend?: number;
+  delay_time?: number;
+  odd_lot?: boolean;
+  datetime?: string;
+  _received_at?: string;
+}
+
+export interface KgiTickEntry {
+  exchange?: string;
+  symbol?: string;
+  close?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  volume?: number;
+  total_volume?: number;
+  chg_type?: number;
+  price_chg?: number;
+  pct_chg?: number;
+  simtrade?: number;
+  suspend?: number;
+  amount?: number;
+  delay_time?: number;
+  odd_lot?: boolean;
+  datetime?: string;
+  _received_at?: string;
+}
+
+export interface KgiTicksResult {
+  symbol: string;
+  ticks: KgiTickEntry[];
+  count: number;
+  buffer_size: number;
+  buffer_used: number;
+}
+
+// GET /api/v1/kgi/quote/bidask?symbol=<S>
+// Returns null when not available (not subscribed, gateway offline, etc.)
+export async function getKgiBidAsk(symbol: string): Promise<KgiBidAskData | null> {
+  const qs = new URLSearchParams({ symbol }).toString();
+  const res = await request<KgiBidAskData>(`/api/v1/kgi/quote/bidask?${qs}`);
+  return res.data ?? null;
+}
+
+// GET /api/v1/kgi/quote/ticks?symbol=<S>&limit=<N>
+// Returns null when not available.
+export async function getKgiTicks(symbol: string, limit = 20): Promise<KgiTicksResult | null> {
+  const qs = new URLSearchParams({ symbol, limit: String(limit) }).toString();
+  const res = await request<KgiTicksResult>(`/api/v1/kgi/quote/ticks?${qs}`);
+  return res.data ?? null;
+}

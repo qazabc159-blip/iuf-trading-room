@@ -29,6 +29,10 @@ import { DerivativesPanel }    from "./DerivativesPanel";
 import { TickStreamPanel }     from "./TickStreamPanel";
 import { FullProfilePanels }   from "./FullProfilePanels";
 import { CompanyPageStyleBlock } from "./CompanyPageStyleBlock";
+import { BidAskPanel }           from "./BidAskPanel";
+import { LiveTickStreamPanel }   from "./LiveTickStreamPanel";
+import { InstitutionalPanel }    from "./InstitutionalPanel";
+import { MarginShortPanel }      from "./MarginShortPanel";
 
 function tone(value: number | null | undefined) {
   if (typeof value !== "number") return "muted";
@@ -409,6 +413,11 @@ export default async function CompanyDetailPage({
 
         <aside className="company-side-column">
           <CompanyInfoPanel company={company} />
+          {/* ── 4 KGI/FinMind streaming panels ── */}
+          <BidAskPanel symbol={company.ticker} />
+          <LiveTickStreamPanel symbol={company.ticker} />
+          <InstitutionalPanel companyId={company.id} />
+          <MarginShortPanel companyId={company.id} />
           <SourceStatusCard sources={sources} />
         </aside>
       </div>
