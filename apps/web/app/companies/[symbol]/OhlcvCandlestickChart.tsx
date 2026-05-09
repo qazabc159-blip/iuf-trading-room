@@ -19,6 +19,180 @@ type ChartBar = {
   source: "tej" | "kgi" | "finmind-kbar";
 };
 
+// ── Indicator toggle state (persisted in localStorage) ─────────────────────
+type MaKey = "ma5" | "ma10" | "ma20" | "ma60";
+type IndicatorKey = "ma" | "rsi" | "macd";
+
+const MA_CONFIG: ReadonlyArray<{ key: MaKey; period: number; color: string; label: string }> = [
+  { key: "ma5",  period: 5,  color: "#FFD600", label: "MA5"  },
+  { key: "ma10", period: 10, color: "#FF8C00", label: "MA10" },
+  { key: "ma20", period: 20, color: "#00E5FF", label: "MA20" },
+  { key: "ma60", period: 60, color: "#B388FF", label: "MA60" },
+];
+
+const LS_KEY_INDICATOR = "iuf_kline_indicators_v1";
+const LS_KEY_MA        = "iuf_kline_ma_v1";
+
+function loadIndicatorPrefs(): { ma: boolean; rsi: boolean; macd: boolean } {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(LS_KEY_INDICATOR) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<{ ma: boolean; rsi: boolean; macd: boolean }>;
+      return {
+        ma:   parsed.ma   ?? true,
+        rsi:  parsed.rsi  ?? false,
+        macd: parsed.macd ?? false,
+      };
+    }
+  } catch { /* ignore */ }
+  return { ma: true, rsi: false, macd: false };
+}
+
+function saveIndicatorPrefs(prefs: { ma: boolean; rsi: boolean; macd: boolean }) {
+  try { if (typeof window !== "undefined") localStorage.setItem(LS_KEY_INDICATOR, JSON.stringify(prefs)); } catch { /* ignore */ }
+}
+
+function loadMaPrefs(): Record<MaKey, boolean> {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(LS_KEY_MA) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<Record<MaKey, boolean>>;
+      return {
+        ma5:  parsed.ma5  ?? true,
+        ma10: parsed.ma10 ?? false,
+        ma20: parsed.ma20 ?? true,
+        ma60: parsed.ma60 ?? false,
+      };
+    }
+  } catch { /* ignore */ }
+  return { ma5: true, ma10: false, ma20: true, ma60: false };
+}
+
+function saveMaPrefs(prefs: Record<MaKey, boolean>) {
+  try { if (typeof window !== "undefined") localStorage.setItem(LS_KEY_MA, JSON.stringify(prefs)); } catch { /* ignore */ }
+}
+
+// ── Technical Indicator Calculations ────────────────────────────────────────
+
+/** Simple Moving Average — returns array same length as input; leading values = null */
+function calcSMA(closes: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  for (let i = period - 1; i < closes.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += closes[j];
+    result[i] = Number((sum / period).toFixed(3));
+  }
+  return result;
+}
+
+/** RSI (14-period) — Wilder smoothing.  Returns array same length as input; leading = null */
+function calcRSI(closes: number[], period = 14): (number | null)[] {
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  if (closes.length < period + 1) return result;
+
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff > 0) avgGain += diff;
+    else avgLoss += Math.abs(diff);
+  }
+  avgGain /= period;
+  avgLoss /= period;
+
+  const rs0 = avgLoss === 0 ? 100 : avgGain / avgLoss;
+  result[period] = Number((100 - 100 / (1 + rs0)).toFixed(2));
+
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? Math.abs(diff) : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    result[i] = Number((100 - 100 / (1 + rs)).toFixed(2));
+  }
+  return result;
+}
+
+/** EMA helper */
+function calcEMA(closes: number[], period: number): (number | null)[] {
+  const k = 2 / (period + 1);
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  if (closes.length < period) return result;
+  let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  result[period - 1] = Number(ema.toFixed(4));
+  for (let i = period; i < closes.length; i++) {
+    ema = closes[i] * k + ema * (1 - k);
+    result[i] = Number(ema.toFixed(4));
+  }
+  return result;
+}
+
+/** MACD = DIF (12 - 26 EMA), DEA = 9 EMA of DIF, Hist = DIF - DEA */
+function calcMACD(closes: number[]): {
+  dif: (number | null)[];
+  dea: (number | null)[];
+  hist: (number | null)[];
+} {
+  const ema12 = calcEMA(closes, 12);
+  const ema26 = calcEMA(closes, 26);
+  const dif: (number | null)[] = closes.map((_, i) => {
+    const e12 = ema12[i]; const e26 = ema26[i];
+    return e12 !== null && e26 !== null ? Number((e12 - e26).toFixed(4)) : null;
+  });
+  // DEA = 9-period EMA of DIF values (skip nulls by treating them as 0 for seeding)
+  const difValues = dif.map((v) => v ?? 0);
+  const deaRaw = calcEMA(difValues, 9);
+  const dea: (number | null)[] = dif.map((d, i) => (d !== null && deaRaw[i] !== null ? deaRaw[i] : null));
+  const hist: (number | null)[] = dif.map((d, i) => {
+    const de = dea[i];
+    return d !== null && de !== null ? Number((d - de).toFixed(4)) : null;
+  });
+  return { dif, dea, hist };
+}
+
+// ── SVG sub-chart helpers ───────────────────────────────────────────────────
+
+type SubChartPoint = { idx: number; value: number };
+
+function toPoints(values: (number | null)[]): SubChartPoint[][] {
+  // Split at nulls into contiguous segments
+  const segments: SubChartPoint[][] = [];
+  let seg: SubChartPoint[] = [];
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v !== null) {
+      seg.push({ idx: i, value: v });
+    } else {
+      if (seg.length > 1) segments.push(seg);
+      seg = [];
+    }
+  }
+  if (seg.length > 1) segments.push(seg);
+  return segments;
+}
+
+function makePolyline(
+  segs: SubChartPoint[][],
+  n: number,
+  w: number,
+  h: number,
+  minV: number,
+  maxV: number,
+  pad = 6,
+): string[] {
+  const range = maxV - minV || 1;
+  return segs.map((seg) =>
+    seg.map(({ idx, value }) => {
+      const x = ((idx / Math.max(n - 1, 1)) * (w - pad * 2) + pad).toFixed(1);
+      const y = (h - pad - ((value - minV) / range) * (h - pad * 2)).toFixed(1);
+      return `${x},${y}`;
+    }).join(" "),
+  );
+}
+
+// ── Existing helpers (unchanged) ─────────────────────────────────────────────
+
 const ENABLED_INTERVALS: ReadonlyArray<{ value: EnabledInterval; label: string; note: string; kind: "daily" | "intraday"; minutes?: number }> = [
   { value: "1d", label: "日K", note: "正式 OHLCV", kind: "daily" },
   { value: "1w", label: "週K", note: "日 K 彙整週線", kind: "daily" },
@@ -215,9 +389,6 @@ function filterIntradayTradingDays(bars: ChartBar[], range: IntradayRangeKey): C
 function compressIntradayTimeline(bars: ChartBar[], minutes: number): ChartBar[] {
   return bars.map((bar, index) => ({
     ...bar,
-    // Lightweight Charts treats real timestamps as wall-clock time, so multi-day minute K gets
-    // squeezed by overnight/weekend gaps. This synthetic axis keeps real OHLC + labels but removes
-    // non-trading empty time from the visible spacing.
     time: (COMPRESSED_INTRADAY_BASE_TIME + index * minutes * 60) as ChartTime,
   }));
 }
@@ -301,6 +472,217 @@ function toneClass(value: number | null | undefined) {
   return "muted";
 }
 
+// ── RSI Sub-chart SVG ────────────────────────────────────────────────────────
+
+function RsiSubChart({ rsiValues, n }: { rsiValues: (number | null)[]; n: number }) {
+  const W = 600; // SVG viewBox width (scales via 100% width)
+  const H = 72;
+  const PAD = 6;
+  const segs = toPoints(rsiValues);
+  const polylines = makePolyline(segs, n, W, H, 0, 100, PAD);
+  const y30 = (H - PAD - (30 / 100) * (H - PAD * 2)).toFixed(1);
+  const y70 = (H - PAD - (70 / 100) * (H - PAD * 2)).toFixed(1);
+  const lastRsi = [...rsiValues].reverse().find((v) => v !== null);
+
+  return (
+    <div style={{ marginTop: 2 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 6px 2px 4px", fontFamily: "var(--mono)", fontSize: 10, color: "rgba(203,213,225,0.55)" }}>
+        <span style={{ color: "#a78bfa", fontWeight: 700 }}>RSI(14)</span>
+        {lastRsi !== null && lastRsi !== undefined && (
+          <span style={{ color: lastRsi > 70 ? "#e63946" : lastRsi < 30 ? "#4ade80" : "rgba(203,213,225,0.75)" }}>
+            {lastRsi.toFixed(2)}
+            {lastRsi > 70 ? " 超買" : lastRsi < 30 ? " 超賣" : ""}
+          </span>
+        )}
+        <span style={{ marginLeft: "auto" }}>30 / 70</span>
+      </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        height={H}
+        style={{ display: "block", overflow: "visible" }}
+        aria-label="RSI 指標子圖"
+      >
+        {/* Background */}
+        <rect x={0} y={0} width={W} height={H} fill="rgba(0,0,0,0.18)" />
+        {/* Overbought zone */}
+        <rect
+          x={PAD} y={Number(y70)}
+          width={W - PAD * 2}
+          height={Number(y30) - Number(y70)}
+          fill="rgba(166,139,250,0.06)"
+        />
+        {/* 70 line */}
+        <line x1={PAD} y1={y70} x2={W - PAD} y2={y70} stroke="rgba(230,57,70,0.45)" strokeWidth={1} strokeDasharray="3 3" />
+        {/* 30 line */}
+        <line x1={PAD} y1={y30} x2={W - PAD} y2={y30} stroke="rgba(74,222,128,0.45)" strokeWidth={1} strokeDasharray="3 3" />
+        {/* 50 midline */}
+        {(() => {
+          const y50 = (H - PAD - (50 / 100) * (H - PAD * 2)).toFixed(1);
+          return <line x1={PAD} y1={y50} x2={W - PAD} y2={y50} stroke="rgba(255,255,255,0.08)" strokeWidth={1} />;
+        })()}
+        {/* RSI line segments */}
+        {polylines.map((pts, i) => (
+          <polyline key={i} points={pts} fill="none" stroke="#a78bfa" strokeWidth={1.5} />
+        ))}
+        {/* Labels */}
+        <text x={W - PAD - 2} y={Number(y70) - 2} textAnchor="end" fontSize={8} fill="rgba(230,57,70,0.7)">70</text>
+        <text x={W - PAD - 2} y={Number(y30) + 9} textAnchor="end" fontSize={8} fill="rgba(74,222,128,0.7)">30</text>
+      </svg>
+    </div>
+  );
+}
+
+// ── MACD Sub-chart SVG ───────────────────────────────────────────────────────
+
+function MacdSubChart({
+  difValues,
+  deaValues,
+  histValues,
+  n,
+}: {
+  difValues: (number | null)[];
+  deaValues: (number | null)[];
+  histValues: (number | null)[];
+  n: number;
+}) {
+  const W = 600;
+  const H = 80;
+  const PAD = 6;
+
+  // Compute range across all non-null values
+  const allVals = [...difValues, ...deaValues, ...histValues].filter((v): v is number => v !== null);
+  const minV = allVals.length ? Math.min(...allVals) : -1;
+  const maxV = allVals.length ? Math.max(...allVals) : 1;
+
+  const difSegs = toPoints(difValues);
+  const deaSegs = toPoints(deaValues);
+  const difLines = makePolyline(difSegs, n, W, H, minV, maxV, PAD);
+  const deaLines = makePolyline(deaSegs, n, W, H, minV, maxV, PAD);
+
+  // Zero line
+  const range = maxV - minV || 1;
+  const y0 = (H - PAD - ((0 - minV) / range) * (H - PAD * 2)).toFixed(1);
+
+  // Histogram bars
+  const barW = Math.max(1, Math.floor((W - PAD * 2) / Math.max(n, 1)) - 1);
+  const histBars: { x: number; y: number; h: number; positive: boolean }[] = [];
+  for (let i = 0; i < n; i++) {
+    const v = histValues[i];
+    if (v === null) continue;
+    const x = ((i / Math.max(n - 1, 1)) * (W - PAD * 2) + PAD);
+    const yVal = H - PAD - ((v - minV) / range) * (H - PAD * 2);
+    const yZero = Number(y0);
+    const positive = v >= 0;
+    const top = positive ? yVal : yZero;
+    const bot = positive ? yZero : yVal;
+    histBars.push({ x: x - barW / 2, y: top, h: Math.max(1, bot - top), positive });
+  }
+
+  const lastDif = [...difValues].reverse().find((v) => v !== null);
+  const lastDea = [...deaValues].reverse().find((v) => v !== null);
+
+  return (
+    <div style={{ marginTop: 2 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 6px 2px 4px", fontFamily: "var(--mono)", fontSize: 10, color: "rgba(203,213,225,0.55)" }}>
+        <span style={{ color: "#fb923c", fontWeight: 700 }}>MACD(12,26,9)</span>
+        {lastDif !== null && lastDif !== undefined && (
+          <span>DIF <span style={{ color: "#60a5fa" }}>{lastDif.toFixed(3)}</span></span>
+        )}
+        {lastDea !== null && lastDea !== undefined && (
+          <span>DEA <span style={{ color: "#f97316" }}>{lastDea.toFixed(3)}</span></span>
+        )}
+      </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        height={H}
+        style={{ display: "block", overflow: "visible" }}
+        aria-label="MACD 指標子圖"
+      >
+        <rect x={0} y={0} width={W} height={H} fill="rgba(0,0,0,0.18)" />
+        {/* Zero line */}
+        <line x1={PAD} y1={y0} x2={W - PAD} y2={y0} stroke="rgba(255,255,255,0.18)" strokeWidth={1} />
+        {/* Histogram */}
+        {histBars.map((bar, i) => (
+          <rect
+            key={i}
+            x={bar.x}
+            y={bar.y}
+            width={barW}
+            height={bar.h}
+            fill={bar.positive ? "rgba(230,57,70,0.52)" : "rgba(74,222,128,0.52)"}
+          />
+        ))}
+        {/* DIF line */}
+        {difLines.map((pts, i) => (
+          <polyline key={`dif-${i}`} points={pts} fill="none" stroke="#60a5fa" strokeWidth={1.5} />
+        ))}
+        {/* DEA line */}
+        {deaLines.map((pts, i) => (
+          <polyline key={`dea-${i}`} points={pts} fill="none" stroke="#f97316" strokeWidth={1.5} />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+// ── Indicator Toggle Bar ─────────────────────────────────────────────────────
+
+const INDICATOR_CSS = `
+._ind-toggle-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  background: rgba(5,8,12,0.52);
+  border-bottom: 1px solid rgba(220,228,240,0.07);
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+}
+._ind-toggle-bar-label {
+  color: rgba(203,213,225,0.38);
+  letter-spacing: 0.06em;
+  margin-right: 2px;
+}
+._ind-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 1px solid rgba(220,228,240,0.14);
+  background: transparent;
+  color: rgba(203,213,225,0.5);
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+._ind-toggle-btn:hover {
+  border-color: rgba(220,228,240,0.32);
+  color: rgba(203,213,225,0.85);
+}
+._ind-toggle-btn.is-on {
+  border-color: rgba(226,184,92,0.42);
+  color: #e2b85c;
+  background: rgba(226,184,92,0.06);
+}
+._ind-toggle-btn._ma5.is-on  { border-color: rgba(255,214,0,0.52); color: #FFD600; background: rgba(255,214,0,0.06); }
+._ind-toggle-btn._ma10.is-on { border-color: rgba(255,140,0,0.52); color: #FF8C00; background: rgba(255,140,0,0.06); }
+._ind-toggle-btn._ma20.is-on { border-color: rgba(0,229,255,0.52); color: #00E5FF; background: rgba(0,229,255,0.06); }
+._ind-toggle-btn._ma60.is-on { border-color: rgba(179,136,255,0.52); color: #B388FF; background: rgba(179,136,255,0.06); }
+._ind-ma-expand { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+._ind-divider { width: 1px; height: 14px; background: rgba(220,228,240,0.12); margin: 0 2px; }
+._ind-sub-section { border-top: 1px solid rgba(220,228,240,0.06); }
+@media (prefers-reduced-motion: reduce) {
+  ._ind-toggle-btn { transition: none; }
+}
+`;
+
+// ── Main Chart Component ─────────────────────────────────────────────────────
+
 export function OhlcvCandlestickChart({
   bars,
   kbarRows = [],
@@ -327,6 +709,33 @@ export function OhlcvCandlestickChart({
   const [range, setRange] = useState<RangeKey>("all");
   const [intradayRange, setIntradayRange] = useState<IntradayRangeKey>("1d");
   const [hoverBar, setHoverBar] = useState<ChartBar | null>(null);
+
+  // Indicator toggles — initialized from localStorage on first render
+  const [indicators, setIndicators] = useState<{ ma: boolean; rsi: boolean; macd: boolean }>(() => {
+    if (typeof window === "undefined") return { ma: true, rsi: false, macd: false };
+    return loadIndicatorPrefs();
+  });
+  const [maEnabled, setMaEnabled] = useState<Record<MaKey, boolean>>(() => {
+    if (typeof window === "undefined") return { ma5: true, ma10: false, ma20: true, ma60: false };
+    return loadMaPrefs();
+  });
+
+  const toggleIndicator = (key: IndicatorKey) => {
+    setIndicators((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      saveIndicatorPrefs(next);
+      return next;
+    });
+  };
+
+  const toggleMa = (key: MaKey) => {
+    setMaEnabled((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      saveMaPrefs(next);
+      return next;
+    });
+  };
+
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
   const chartHeight = isIntraday ? 460 : 440;
@@ -366,6 +775,20 @@ export function OhlcvCandlestickChart({
     };
   }, [activeIntradayMinutes, chartBars.length, isIntraday, kbarRows, selectedIntradayDates]);
 
+  // ── Derived indicator values from chartBars.closes ────────────────────────
+  const closes = useMemo(() => chartBars.map((b) => b.close), [chartBars]);
+
+  const maValues = useMemo(() => ({
+    ma5:  calcSMA(closes, 5),
+    ma10: calcSMA(closes, 10),
+    ma20: calcSMA(closes, 20),
+    ma60: calcSMA(closes, 60),
+  }), [closes]);
+
+  const rsiValues = useMemo(() => calcRSI(closes, 14), [closes]);
+
+  const macdResult = useMemo(() => calcMACD(closes), [closes]);
+
   const selectInterval = (nextInterval: EnabledInterval) => {
     const nextMeta = ENABLED_INTERVALS.find((item) => item.value === nextInterval);
     setInterval(nextInterval);
@@ -379,6 +802,7 @@ export function OhlcvCandlestickChart({
     setHoverBar(null);
   }, [chartBars]);
 
+  // ── Lightweight-charts effect (candlestick + MA overlays) ──────────────────
   useEffect(() => {
     if (!containerRef.current || !chartBars.length || insufficientTrend) return;
 
@@ -472,6 +896,26 @@ export function OhlcvCandlestickChart({
           color: bar.close >= bar.open ? "rgba(230,57,70,0.36)" : "rgba(46,204,113,0.36)",
         })));
 
+        // ── MA overlays (LineSeries) ───────────────────────────────────────
+        if (indicators.ma) {
+          for (const cfg of MA_CONFIG) {
+            if (!maEnabled[cfg.key]) continue;
+            const vals = maValues[cfg.key];
+            const data = chartBars
+              .map((bar, i) => ({ time: bar.time, value: vals[i] }))
+              .filter((d): d is { time: ChartTime; value: number } => d.value !== null);
+            if (data.length === 0) continue;
+            const maSeries = chart.addSeries(lc.LineSeries, {
+              color: cfg.color,
+              lineWidth: 1,
+              priceLineVisible: false,
+              lastValueVisible: true,
+              crosshairMarkerVisible: false,
+            });
+            maSeries.setData(data);
+          }
+        }
+
         const barsByTime = new Map(chartBars.map((bar) => [String(bar.time), bar]));
         chart.subscribeCrosshairMove((param) => {
           if (disposed) return;
@@ -516,7 +960,7 @@ export function OhlcvCandlestickChart({
       chart?.remove();
       chartRef.current = null;
     };
-  }, [activeIntradayMinutes, chartBars, chartHeight, insufficientTrend, interval, isIntraday, range]);
+  }, [activeIntradayMinutes, chartBars, chartHeight, insufficientTrend, interval, isIntraday, range, indicators.ma, maEnabled, maValues]);
 
   const badgeClass = isIntraday
     ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
@@ -555,8 +999,11 @@ export function OhlcvCandlestickChart({
   const dailyIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "daily");
   const intradayIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "intraday");
 
+  const showSubCharts = chartBars.length >= MIN_TREND_BARS && !insufficientTrend;
+
   return (
     <section className="panel hud-frame kline-panel">
+      <style>{INDICATOR_CSS}</style>
       <div className="panel-head">
         <div>
           <span className="tg panel-code">K線</span>
@@ -568,6 +1015,64 @@ export function OhlcvCandlestickChart({
           <span className={`badge ${badgeClass}`}>{badgeLabel}</span>
           <span className="kline-symbol-chip">{symbol}</span>
         </div>
+      </div>
+
+      {/* ── Indicator Toggle Bar ─────────────────────────────────────────── */}
+      <div className="_ind-toggle-bar">
+        <span className="_ind-toggle-bar-label">指標</span>
+
+        {/* MA master toggle */}
+        <button
+          type="button"
+          className={`_ind-toggle-btn${indicators.ma ? " is-on" : ""}`}
+          onClick={() => toggleIndicator("ma")}
+          aria-pressed={indicators.ma}
+          title="均線疊加"
+        >
+          均線
+        </button>
+
+        {/* MA sub-toggles — only show when MA is on */}
+        {indicators.ma && (
+          <div className="_ind-ma-expand">
+            {MA_CONFIG.map((cfg) => (
+              <button
+                key={cfg.key}
+                type="button"
+                className={`_ind-toggle-btn _${cfg.key}${maEnabled[cfg.key] ? " is-on" : ""}`}
+                onClick={() => toggleMa(cfg.key)}
+                aria-pressed={maEnabled[cfg.key]}
+                title={`${cfg.label} ${cfg.period} 日均線`}
+              >
+                {cfg.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="_ind-divider" />
+
+        {/* RSI toggle */}
+        <button
+          type="button"
+          className={`_ind-toggle-btn${indicators.rsi ? " is-on" : ""}`}
+          onClick={() => toggleIndicator("rsi")}
+          aria-pressed={indicators.rsi}
+          title="RSI 14 相對強弱"
+        >
+          RSI
+        </button>
+
+        {/* MACD toggle */}
+        <button
+          type="button"
+          className={`_ind-toggle-btn${indicators.macd ? " is-on" : ""}`}
+          onClick={() => toggleIndicator("macd")}
+          aria-pressed={indicators.macd}
+          title="MACD 12/26/9"
+        >
+          MACD
+        </button>
       </div>
 
       {lastBar && (
@@ -753,6 +1258,25 @@ export function OhlcvCandlestickChart({
             )}
           </div>
           <div ref={containerRef} className="kline-chart-canvas" />
+
+          {/* ── RSI sub-chart ─────────────────────────────────────── */}
+          {showSubCharts && indicators.rsi && (
+            <div className="_ind-sub-section">
+              <RsiSubChart rsiValues={rsiValues} n={chartBars.length} />
+            </div>
+          )}
+
+          {/* ── MACD sub-chart ────────────────────────────────────── */}
+          {showSubCharts && indicators.macd && (
+            <div className="_ind-sub-section">
+              <MacdSubChart
+                difValues={macdResult.dif}
+                deaValues={macdResult.dea}
+                histValues={macdResult.hist}
+                n={chartBars.length}
+              />
+            </div>
+          )}
         </div>
       )}
     </section>
