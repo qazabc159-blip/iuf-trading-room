@@ -19,26 +19,11 @@ function formatDateTime(value: string | null) {
   return new Date(value).toLocaleString("zh-TW", { hour12: false });
 }
 
-function DetailStatePanel({
-  state,
-  reason,
-  updatedAt,
-}: {
-  state: "EMPTY" | "BLOCKED";
-  reason: string;
-  updatedAt: string;
-}) {
-  const label = state === "EMPTY" ? "無資料" : "暫停";
-  return (
-    <Panel code={`DRF-${state}`} title={label} right="草稿明細">
-      <div className="state-panel">
-        <span className={`badge ${state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>{label}</span>
-        <span className="tg soft">來源：審稿草稿</span>
-        <span className="tg soft">更新 {formatDateTime(updatedAt)}</span>
-        <span className="state-reason">{reason}</span>
-      </div>
-    </Panel>
-  );
+function statusParityClass(status: string): string {
+  if (status === "approved") return "ok";
+  if (status === "rejected") return "bad";
+  if (status === "awaiting_review") return "warn";
+  return "dim";
 }
 
 const DETAIL_CSS = `
@@ -51,30 +36,12 @@ const DETAIL_CSS = `
   @media (max-width: 860px) {
     ._bty-adm-detail-grid { grid-template-columns: 1fr; }
   }
-  ._bty-adm-status-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    padding: 10px 14px;
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 6px;
-    margin-bottom: 14px;
-  }
-  ._bty-adm-status-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 3px 10px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-  }
   ._bty-adm-article {
     padding: 16px;
     background: rgba(255,255,255,0.02);
     border: 1px solid rgba(255,255,255,0.07);
     border-radius: 6px;
+    margin-top: 14px;
   }
   ._bty-adm-article h2 {
     font-size: 16px;
@@ -193,111 +160,139 @@ const DETAIL_CSS = `
   }
 `;
 
-function statusProps(status: string): React.CSSProperties {
-  if (status === "approved") return { background: "rgba(76,175,80,0.15)", color: "#4caf50", border: "1px solid rgba(76,175,80,0.35)" };
-  if (status === "rejected") return { background: "rgba(239,83,80,0.15)", color: "#ef5350", border: "1px solid rgba(239,83,80,0.35)" };
-  if (status === "pending") return { background: "rgba(255,184,0,0.15)", color: "#ffb800", border: "1px solid rgba(255,184,0,0.35)" };
-  return { background: "rgba(100,100,100,0.15)", color: "#888", border: "1px solid rgba(100,100,100,0.3)" };
-}
-
 function DraftDetail({ draft }: { draft: ContentDraftEntry }) {
   const body = contentDraftBody(draft);
   const sections = contentDraftSections(draft);
   const draftDate = contentDraftDate(draft);
+  const statusClass = statusParityClass(draft.status);
 
   return (
-    <div className="_bty-adm-detail-grid">
-      {/* Left: content */}
-      <div>
-        <Panel code="DRF-BODY" title={contentDraftTargetLabel(draft)}>
-          <div className="_bty-adm-status-bar">
-            <span className="badge badge-green">正常</span>
-            <span className="tg soft" style={{ fontSize: 12 }}>來源：審稿草稿</span>
-            <span className="tg soft" style={{ fontSize: 12 }}>更新 {formatDateTime(draft.updatedAt)}</span>
-            <span
-              className="_bty-adm-status-badge"
-              style={statusProps(draft.status)}
-            >
-              {contentDraftStatusLabel(draft.status)}
-            </span>
-          </div>
-          <div className="_bty-adm-article">
-            <h2>{contentDraftTitle(draft)}</h2>
-            {body ? (
-              <p>{body}</p>
-            ) : (
-              <p className="tg soft" style={{ fontSize: 12 }}>草稿沒有摘要欄位，改用下方段落檢查。</p>
-            )}
-          </div>
-          {sections.length > 0 && (
-            <div className="_bty-adm-sections">
-              {sections.map((section, index) => (
-                <div className="_bty-adm-section" key={`${section.heading}-${index}`}>
-                  <span className="_bty-adm-section-num">{String(index + 1).padStart(2, "0")}</span>
-                  <div>
-                    <h3>{section.heading}</h3>
-                    <p>{section.body || "本段沒有正文，不應發布到正式每日簡報。"}</p>
+    <>
+      {/* parity-kpi-bar: draft metadata KPIs */}
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">審核狀態</span>
+          <span className={`parity-kpi-value ${statusClass}`} style={{ fontSize: 18 }}>
+            {contentDraftStatusLabel(draft.status)}
+          </span>
+          <span className="parity-kpi-sub">{draftDate ?? "未標日期"}</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">段落數</span>
+          <span className={`parity-kpi-value ${sections.length > 0 ? "warn" : "dim"}`}>
+            {sections.length}
+          </span>
+          <span className="parity-kpi-sub">草稿段落</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">來源工作</span>
+          <span className={`parity-kpi-value ${draft.sourceJobId ? "ok" : "dim"}`} style={{ fontSize: 16 }}>
+            {draft.sourceJobId ? "已連結" : "尚未連結"}
+          </span>
+          <span className="parity-kpi-sub">流水工作 ID</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">審核時間</span>
+          <span className="parity-kpi-value dim" style={{ fontSize: 13 }}>
+            {draft.reviewedAt ? formatDateTime(draft.reviewedAt) : "--"}
+          </span>
+          <span className="parity-kpi-sub">審核者：{draft.reviewedBy ?? "無"}</span>
+        </div>
+      </div>
+
+      <div className="_bty-adm-detail-grid">
+        {/* Left: content */}
+        <div>
+          <Panel code="DRF-BODY" title={contentDraftTargetLabel(draft)}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+              <span className={`parity-badge ${statusClass}`}>{contentDraftStatusLabel(draft.status)}</span>
+              <span className="tg soft" style={{ fontSize: 12 }}>更新 {formatDateTime(draft.updatedAt)}</span>
+            </div>
+            <div className="_bty-adm-article">
+              <h2>{contentDraftTitle(draft)}</h2>
+              {body ? (
+                <p>{body}</p>
+              ) : (
+                <p className="tg soft" style={{ fontSize: 12 }}>草稿沒有摘要欄位，改用下方段落檢查。</p>
+              )}
+            </div>
+            {sections.length > 0 && (
+              <div className="_bty-adm-sections">
+                {sections.map((section, index) => (
+                  <div className="_bty-adm-section" key={`${section.heading}-${index}`}>
+                    <span className="_bty-adm-section-num">{String(index + 1).padStart(2, "0")}</span>
+                    <div>
+                      <h3>{section.heading}</h3>
+                      <p>{section.body || "本段沒有正文，不應發布到正式每日簡報。"}</p>
+                    </div>
                   </div>
+                ))}
+              </div>
+            )}
+            {sections.length === 0 && !body && (
+              <div className="parity-empty" style={{ minHeight: 100 }}>
+                <div className="parity-empty-icon">◌</div>
+                <h3>草稿沒有正文段落</h3>
+                <p>此草稿無段落內容，不顯示假資料。</p>
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        {/* Right: trail + meta */}
+        <div>
+          <Panel code="DRF-TRAIL" title="來源與審核軌跡" right={draftDate ?? "未標日期"}>
+            <div className="_bty-trail-grid">
+              {[
+                ["來源工作", draft.sourceJobId ? "已連結" : "尚未連結"],
+                ["產生流程", "每日內容流程"],
+                ["目標", contentDraftTargetLabel(draft)],
+                ["審核者", contentDraftReviewActor(draft)],
+                ["審核結論", contentDraftReviewNote(draft)],
+              ].map(([key, value]) => (
+                <div className="_bty-trail-row" key={key}>
+                  <span className="_bty-trail-key">{key}</span>
+                  <span className="_bty-trail-val">{value}</span>
                 </div>
               ))}
             </div>
-          )}
-        </Panel>
+            <p className="tg soft" style={{ lineHeight: 1.7, marginTop: 12, fontSize: 11 }}>
+              這裡只呈現 AI 草稿與審核線索；未核准內容不會顯示在正式每日簡報，也不會被包裝成投資建議。
+            </p>
+          </Panel>
+
+          <Panel code="DRF-META" title="審核資料">
+            <div className="_bty-meta-grid">
+              {[
+                ["目標", contentDraftTargetLabel(draft)],
+                ["來源工作", draft.sourceJobId ? "已連結" : "尚未連結"],
+                ["產生流程", "每日內容流程"],
+                ["審核者", draft.reviewedBy ?? "無"],
+                ["審核時間", formatDateTime(draft.reviewedAt)],
+                ["退回原因", draft.rejectReason ?? "無"],
+                ["建立", formatDateTime(draft.createdAt)],
+                ["更新", formatDateTime(draft.updatedAt)],
+              ].map(([key, value]) => (
+                <div className="_bty-meta-row" key={key}>
+                  <span className="_bty-meta-key">{key}</span>
+                  <span className="_bty-meta-val">{value}</span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel code="DRF-ACT" title="寫入動作" right="受控">
+            <div className="state-panel">
+              <span className="parity-badge warn">受控</span>
+              <span className="tg soft">來源：草稿審核流程</span>
+              <span className="state-reason">
+                本頁先清楚揭露目前狀態、來源與審核結果；核准與退回必須留下正式稽核紀錄。
+              </span>
+            </div>
+          </Panel>
+        </div>
       </div>
-
-      {/* Right: trail + meta */}
-      <div>
-        <Panel code="DRF-TRAIL" title="來源與審核軌跡" right={draftDate ?? "未標日期"}>
-          <div className="_bty-trail-grid">
-            {[
-              ["來源工作", draft.sourceJobId ? "已連結" : "尚未連結"],
-              ["產生流程", "每日內容流程"],
-              ["目標", contentDraftTargetLabel(draft)],
-              ["審核者", contentDraftReviewActor(draft)],
-              ["審核結論", contentDraftReviewNote(draft)],
-            ].map(([key, value]) => (
-              <div className="_bty-trail-row" key={key}>
-                <span className="_bty-trail-key">{key}</span>
-                <span className="_bty-trail-val">{value}</span>
-              </div>
-            ))}
-          </div>
-          <p className="tg soft" style={{ lineHeight: 1.7, marginTop: 12, fontSize: 11 }}>
-            這裡只呈現 AI 草稿與審核線索；未核准內容不會顯示在正式每日簡報，也不會被包裝成投資建議。
-          </p>
-        </Panel>
-
-        <Panel code="DRF-META" title="審核資料">
-          <div className="_bty-meta-grid">
-            {[
-              ["目標", contentDraftTargetLabel(draft)],
-              ["來源工作", draft.sourceJobId ? "已連結" : "尚未連結"],
-              ["產生流程", "每日內容流程"],
-              ["審核者", draft.reviewedBy ?? "無"],
-              ["審核時間", formatDateTime(draft.reviewedAt)],
-              ["退回原因", draft.rejectReason ?? "無"],
-              ["建立", formatDateTime(draft.createdAt)],
-              ["更新", formatDateTime(draft.updatedAt)],
-            ].map(([key, value]) => (
-              <div className="_bty-meta-row" key={key}>
-                <span className="_bty-meta-key">{key}</span>
-                <span className="_bty-meta-val">{value}</span>
-              </div>
-            ))}
-          </div>
-        </Panel>
-
-        <Panel code="DRF-ACT" title="寫入動作" right="受控">
-          <div className="state-panel">
-            <span className="badge badge-yellow">受控</span>
-            <span className="tg soft">來源：草稿審核流程</span>
-            <span className="state-reason">
-              本頁先清楚揭露目前狀態、來源與審核結果；核准與退回必須留下正式稽核紀錄。
-            </span>
-          </div>
-        </Panel>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -327,18 +322,18 @@ export default async function ContentDraftDetailPage({ params }: { params: Promi
       <Link className="_bty-back-btn" href="/admin/content-drafts">← 返回草稿列表</Link>
 
       {error && (
-        <DetailStatePanel
-          state="BLOCKED"
-          reason="草稿明細暫時無法讀取或權限不足。"
-          updatedAt={requestedAt}
-        />
+        <div className="parity-empty">
+          <div className="parity-empty-icon">!</div>
+          <h3>資料暫停</h3>
+          <p>草稿明細暫時無法讀取或權限不足。</p>
+        </div>
       )}
       {!error && !draft && (
-        <DetailStatePanel
-          state="EMPTY"
-          reason="找不到指定草稿；不顯示假草稿。"
-          updatedAt={requestedAt}
-        />
+        <div className="parity-empty">
+          <div className="parity-empty-icon">◌</div>
+          <h3>找不到指定草稿</h3>
+          <p>草稿不存在或尚未建立；不顯示假草稿。</p>
+        </div>
       )}
       {!error && draft && <DraftDetail draft={draft} />}
     </PageFrame>

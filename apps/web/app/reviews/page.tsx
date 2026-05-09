@@ -4,10 +4,6 @@ import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanNarrativeText, cleanTradePlanText } from "@/lib/operator-copy";
 import type { ReviewEntry } from "@iuf-trading-room/contracts";
 
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString("zh-TW", { hour12: false });
-}
-
 function formatDateShort(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
@@ -30,41 +26,15 @@ function qualityLabel(value: number) {
   return "尚可";
 }
 
+function qualityKpiClass(value: number | string) {
+  if (value === "--") return "dim";
+  const n = typeof value === "number" ? value : parseFloat(String(value));
+  if (n >= 4) return "ok";
+  if (n <= 2) return "bad";
+  return "warn";
+}
+
 const REVIEWS_CSS = `
-._rev-hero-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 1px;
-  background: rgba(220,228,240,0.09);
-  border: 1px solid rgba(220,228,240,0.13);
-  border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 28px;
-}
-._rev-hero-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 18px 22px;
-  background: rgba(8,11,16,0.82);
-  transition: background 0.15s;
-}
-._rev-hero-cell:hover { background: rgba(255,255,255,0.03); }
-._rev-hero-val {
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: -1px;
-  line-height: 1;
-  font-family: var(--mono, monospace);
-  font-variant-numeric: tabular-nums;
-}
-._rev-hero-lbl {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(145,160,181,0.7);
-  font-family: var(--mono, monospace);
-}
 ._rev-panel {
   margin-bottom: 0;
 }
@@ -185,24 +155,6 @@ const REVIEWS_CSS = `
   border: 1px solid rgba(220,228,240,0.12);
   color: rgba(145,160,181,0.8);
 }
-._rev-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 56px 32px;
-  text-align: center;
-}
-._rev-empty-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: rgba(220,228,240,0.04);
-  border: 1px solid rgba(220,228,240,0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 ._rev-note {
   padding: 16px 20px;
   border-radius: 4px;
@@ -232,7 +184,6 @@ const REVIEWS_CSS = `
 export default async function ReviewsPage() {
   let reviews: ReviewEntry[] = [];
   let error: string | null = null;
-  const requestedAt = new Date().toISOString();
 
   try {
     const response = await getReviews();
@@ -256,65 +207,58 @@ export default async function ReviewsPage() {
     >
       <style>{REVIEWS_CSS}</style>
 
-      {/* Hero KPI bar */}
-      <div className="_rev-hero-row">
-        <div className="_rev-hero-cell">
-          <span className="_rev-hero-val" style={{ color: reviews.length > 0 ? "#e7ecf3" : "#566276" }}>
+      {/* parity-kpi-bar hero */}
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">覆盤紀錄</span>
+          <span className={`parity-kpi-value ${reviews.length > 0 ? "ok" : "dim"}`}>
             {reviews.length}
           </span>
-          <span className="_rev-hero-lbl">覆盤紀錄</span>
+          <span className="parity-kpi-sub">份已記錄</span>
         </div>
-        <div className="_rev-hero-cell">
-          <span className="_rev-hero-val" style={{ color: avgQ !== "--" ? "#e2b85c" : "#566276" }}>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">平均品質 Q</span>
+          <span className={`parity-kpi-value ${qualityKpiClass(avgQ)}`}>
             {avgQ}
           </span>
-          <span className="_rev-hero-lbl">平均品質 Q</span>
+          <span className="parity-kpi-sub">滿分 5 分</span>
         </div>
-        <div className="_rev-hero-cell">
-          <span className="_rev-hero-val" style={{ color: highQ > 0 ? "#4adb88" : "#566276" }}>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">優質執行</span>
+          <span className={`parity-kpi-value ${highQ > 0 ? "ok" : "dim"}`}>
             {highQ}
           </span>
-          <span className="_rev-hero-lbl">優質執行</span>
+          <span className="parity-kpi-sub">Q≥4 標準</span>
         </div>
-        <div className="_rev-hero-cell">
-          <span className="_rev-hero-val" style={{ color: lowQ > 0 ? "#ff6b77" : "#566276" }}>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">待改善</span>
+          <span className={`parity-kpi-value ${lowQ > 0 ? "bad" : "dim"}`}>
             {lowQ}
           </span>
-          <span className="_rev-hero-lbl">待改善</span>
+          <span className="parity-kpi-sub">Q≤2 需檢討</span>
         </div>
-        <div className="_rev-hero-cell">
-          <span className="_rev-hero-val" style={{ color: taggedCount > 0 ? "#91a0b5" : "#566276" }}>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">有標籤</span>
+          <span className={`parity-kpi-value ${taggedCount > 0 ? "warn" : "dim"}`}>
             {taggedCount}
           </span>
-          <span className="_rev-hero-lbl">有標籤</span>
+          <span className="parity-kpi-sub">標籤化覆盤</span>
         </div>
       </div>
 
       {error && (
-        <div className="_rev-empty-state">
-          <div className="_rev-empty-icon">
-            <span style={{ color: "#e63946", fontSize: 22 }}>✕</span>
-          </div>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#c6d0de", marginBottom: 6 }}>資料來源暫停</div>
-            <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
-              交易檢討資料暫時無法讀取。系統持續嘗試重連；請稍候重新整理。
-            </div>
-          </div>
+        <div className="parity-empty">
+          <div className="parity-empty-icon">✕</div>
+          <h3>資料來源暫停</h3>
+          <p>交易檢討資料暫時無法讀取。系統持續嘗試重連；請稍候重新整理。</p>
         </div>
       )}
 
       {!error && reviews.length === 0 && (
-        <div className="_rev-empty-state">
-          <div className="_rev-empty-icon">
-            <span style={{ color: "#e2b85c", fontSize: 22 }}>◌</span>
-          </div>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#c6d0de", marginBottom: 6 }}>尚無覆盤紀錄</div>
-            <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
-              目前工作區沒有交易檢討紀錄。完成交易後由操作員建立覆盤條目。
-            </div>
-          </div>
+        <div className="parity-empty">
+          <div className="parity-empty-icon">◌</div>
+          <h3>尚無覆盤紀錄</h3>
+          <p>目前工作區沒有交易檢討紀錄。完成交易後由操作員建立覆盤條目，數據不補假值。</p>
         </div>
       )}
 
@@ -347,7 +291,10 @@ export default async function ReviewsPage() {
                     Q{review.executionQuality}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: qc.text, fontFamily: "var(--mono, monospace)" }}>
+                    <span
+                      className="parity-badge"
+                      style={{ color: qc.text, borderColor: qc.border, background: qc.bg }}
+                    >
                       {qualityLabel(review.executionQuality)}
                     </span>
                     <span className="_rev-date">{formatDateShort(review.createdAt)}</span>
