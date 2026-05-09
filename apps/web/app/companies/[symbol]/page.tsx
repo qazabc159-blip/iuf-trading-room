@@ -28,6 +28,7 @@ import { SourceStatusCard }    from "./SourceStatusCard";
 import { DerivativesPanel }    from "./DerivativesPanel";
 import { TickStreamPanel }     from "./TickStreamPanel";
 import { FullProfilePanels }   from "./FullProfilePanels";
+import { CompanyPageStyleBlock } from "./CompanyPageStyleBlock";
 
 function tone(value: number | null | undefined) {
   if (typeof value !== "number") return "muted";
@@ -339,17 +340,19 @@ export default async function CompanyDetailPage({
       sub={`${company.name} / ${marketLabel[company.market] ?? company.market}`}
       note={`公司板 / ${company.ticker} / ${industryLabel(company.chainPosition)} / ${tierLabel[company.beneficiaryTier] ?? company.beneficiaryTier}`}
     >
-      <div style={{ marginBottom: 8 }}>
-        <Link
-          href="/companies"
-          className="btn-sm"
-          style={{ fontFamily: "var(--mono, monospace)", fontSize: 11 }}
-        >
-          返回公司列表
-        </Link>
+      <CompanyPageStyleBlock />
+      <div style={{ marginBottom: 10 }}>
+        <a href="/companies" className="_co-back-btn">
+          ← 返回公司列表
+        </a>
       </div>
 
-      <CompanyHeroBar company={detail} quote={quote} />
+      <CompanyHeroBar
+        company={detail}
+        quote={quote}
+        realtimeQuote={realtimeQuote}
+        lastBar={bars.length > 0 ? bars[bars.length - 1] : null}
+      />
 
       <div className="company-kpi-strip">
         <div>
@@ -409,6 +412,23 @@ export default async function CompanyDetailPage({
           <SourceStatusCard sources={sources} />
         </aside>
       </div>
+
+      {detail.themes.length > 0 && (
+        <div className="panel hud-frame" style={{ marginBottom: 0, padding: "16px clamp(16px,2vw,26px) 20px" }}>
+          <h3 className="ascii-head">
+            <span className="ascii-head-bracket">主題受惠</span>
+            <span className="tg soft" style={{ marginLeft: 8, fontSize: 10 }}>產業主題 / 受惠分類</span>
+          </h3>
+          <div className="_co-theme-grid">
+            {detail.themes.map((theme) => (
+              <div key={theme} className="_co-theme-card" style={{ "--_accent": "rgba(200,148,63,0.62)" } as React.CSSProperties}>
+                <div className="_co-theme-name">{theme}</div>
+                <div className="_co-theme-tier">{tierLabel[detail.beneficiaryTier] ?? detail.beneficiaryTier}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="company-tabs-band company-data-dock-title">
         <div>
