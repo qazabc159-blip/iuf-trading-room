@@ -250,6 +250,12 @@ import {
   evaluateToggleMode,
   flipPaperObservationsToComplete
 } from "./strategy-toggle-mode.js";
+import {
+  runStrategySignalEmitterTick,
+  runNewsSignalEmitterTick,
+  runQuoteBreakoutEmitterTick,
+  isStrategyEmitWindow
+} from "./signal-auto-emitter.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -10936,7 +10942,48 @@ function startSchedulers(workspaceSlug: string): void {
     }
   }, _paperObsCronMs);
 
-  console.log(
+  // BLOCK #SIGNAL-STRATEGY
+  const STRATEGY_SIGNAL_POLL_MS = 15 * 60 * 1000;
+  setInterval(() => {
+    if (!isStrategyEmitWindow()) return;
+    runStrategySignalEmitterTick().catch((e) =>
+      console.error("[signal-emitter/strategy] tick failed:", e instanceof Error ? e.message : e)
+    );
+  }, STRATEGY_SIGNAL_POLL_MS);
+
+  // BLOCK #SIGNAL-NEWS
+  type NewsWindowLabel = "08:00" | "12:00" | "18:00" | "24:00";
+  const NEWS_WINDOWS: Array<{ label: NewsWindowLabel; utcHour: number }> = [
+    { label: "08:00", utcHour: 0 },
+    { label: "12:00", utcHour: 4 },
+    { label: "18:00", utcHour: 10 },
+    { label: "24:00", utcHour: 16 }
+  ];
+  const NEWS_SIGNAL_POLL_MS = 15 * 60 * 1000;
+  setInterval(() => {
+    const nowDate = new Date();
+    const nowTotalMin = nowDate.getUTCHours() * 60 + nowDate.getUTCMinutes();
+    for (const { label, utcHour } of NEWS_WINDOWS) {
+      const windowMin = utcHour * 60;
+      const diffMin = ((nowTotalMin - windowMin) + 1440) % 1440;
+      if (diffMin <= 30 || diffMin >= 1410) {
+        runNewsSignalEmitterTick(label).catch((e) =>
+          console.error(`[signal-emitter/news:${label}] tick failed:`, e instanceof Error ? e.message : e)
+        );
+        break;
+      }
+    }
+  }, NEWS_SIGNAL_POLL_MS);
+
+  // BLOCK #SIGNAL-QUOTE
+  const QUOTE_BREAKOUT_POLL_MS = 30 * 60 * 1000;
+  setInterval(() => {
+    runQuoteBreakoutEmitterTick().catch((e) =>
+      console.error("[signal-emitter/quote] tick failed:", e instanceof Error ? e.message : e)
+    );
+  }, QUOTE_BREAKOUT_POLL_MS);
+
+    console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
     "PR-B institutional (30min) + PR-B margin-short (30min) + PR-B shareholding (24h) + " +
@@ -10945,7 +10992,8 @@ function startSchedulers(workspaceSlug: string): void {
     "BLOCK#6 event-rule-engine (5min) + email-digest (5min, fires at 17:00–17:30 TST) + " +
     "BLOCK#NEWS news-ai-selector (15min poll, fires at 08:00/12:00/18:00/24:00 TST) + " +
     "P0-2 health-watchdog (30min) + " +
-    "BLOCK#TOGGLE paper-obs-cron (15min poll, fires at 17:00–17:30 TST) started"
+    "BLOCK#TOGGLE paper-obs-cron (15min poll, fires at 17:00–17:30 TST) + " +
+    "BLOCK#SIGNAL strategy(15min,13:45-14:30TST) + news(15min,4-window) + quote.breakout(30min,09:00-13:30TST) started"
   );
 }
 
