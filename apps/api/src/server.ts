@@ -8626,11 +8626,11 @@ app.get("/api/v1/paper/db-probe", async (c) => {
       ?? (Array.isArray(tableCheck) ? tableCheck[0] : tableCheck);
 
     // Check which migrations are applied (schema_migrations may not exist)
+    // Returns ALL applied versions for full visibility (not just paper-related)
     let appliedMigrations: string[] = [];
     try {
       const migCheck = await db.execute(drizzleSql`
         SELECT version FROM schema_migrations
-        WHERE version LIKE '0015%' OR version LIKE '0020%' OR version LIKE '0021%'
         ORDER BY version ASC
       `);
       const migRows = (migCheck as { rows?: Record<string, unknown>[] })?.rows
@@ -8640,15 +8640,30 @@ app.get("/api/v1/paper/db-probe", async (c) => {
       appliedMigrations = ["schema_migrations_query_failed"];
     }
 
+    // Check strategy_runs table existence (for Bruce R3 / migration-deploy-gap verify)
+    let strategyRunsTableExists = false;
+    try {
+      const srCheck = await db.execute(drizzleSql`
+        SELECT to_regclass('public.strategy_runs') AS strategy_runs
+      `);
+      const srRow = (srCheck as { rows?: Record<string, unknown>[] })?.rows?.[0]
+        ?? (Array.isArray(srCheck) ? srCheck[0] : srCheck);
+      strategyRunsTableExists = srRow?.strategy_runs !== null && srRow?.strategy_runs !== undefined;
+    } catch {
+      strategyRunsTableExists = false;
+    }
+
     return c.json({
       persistenceMode,
       dbAvailable: true,
       tables: {
         paper_orders: tableRow?.paper_orders !== null && tableRow?.paper_orders !== undefined,
         paper_fills: tableRow?.paper_fills !== null && tableRow?.paper_fills !== undefined,
-        paper_positions: tableRow?.paper_positions !== null && tableRow?.paper_positions !== undefined
+        paper_positions: tableRow?.paper_positions !== null && tableRow?.paper_positions !== undefined,
+        strategy_runs: strategyRunsTableExists
       },
       appliedMigrations,
+      appliedMigrationsCount: appliedMigrations.length,
       raw: tableRow
     });
   } catch (err) {

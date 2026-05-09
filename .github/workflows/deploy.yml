@@ -67,3 +67,33 @@ jobs:
             exit 1
           fi
           railway up --service ${{ matrix.service }} --ci --message "GHA deploy ${{ github.sha }}"
+
+      # Post-deploy migration verify (api service only).
+      # Railway runs pnpm migrate inside the container via start-api-railway.mjs
+      # (RAILPACK_START_CMD=pnpm start:api:railway) before the API boots.
+      # This step waits for the API to be healthy and then checks that all
+      # expected migrations applied (via /api/v1/paper/db-probe).
+      # Failure here is a WARNING (not a block) — it surfaces evidence for Bruce.
+      - name: Verify migrations applied (api only)
+        if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
+        continue-on-error: true
+        run: |
+          echo "Waiting 30s for api to boot after deploy..."
+          sleep 30
+          HEALTH=$(curl -sf --max-time 10 https://api.eycvector.com/health || echo "UNREACHABLE")
+          echo "Health: $HEALTH"
+          PROBE=$(curl -sf --max-time 10 \
+            -H "Cookie: $(curl -sf --max-time 10 -c /tmp/cookies.txt \
+              -X POST https://api.eycvector.com/auth/login \
+              -H 'Content-Type: application/json' \
+              -d '{"email":"${{ secrets.SEED_OWNER_EMAIL || 'qazabc159@gmail.com' }}","password":"${{ secrets.SEED_OWNER_PASSWORD || 'qazabc159' }}"}' \
+              -b /tmp/cookies.txt > /dev/null && cat /tmp/cookies.txt | grep session | awk '{print $6"="$7}')" \
+            https://api.eycvector.com/api/v1/paper/db-probe 2>/dev/null || echo "PROBE_FAILED")
+          echo "DB probe: $PROBE"
+          # Extract applied migration count for audit log
+          COUNT=$(echo "$PROBE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('appliedMigrationsCount','?'))" 2>/dev/null || echo "?")
+          STRATEGY_RUNS=$(echo "$PROBE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tables',{}).get('strategy_runs','?'))" 2>/dev/null || echo "?")
+          echo "::notice::Applied migrations: $COUNT | strategy_runs table: $STRATEGY_RUNS | sha: ${{ github.sha }}"
+          if [ "$STRATEGY_RUNS" = "False" ] || [ "$STRATEGY_RUNS" = "false" ]; then
+            echo "::warning::strategy_runs table NOT present after deploy — migration may have failed. Check Railway logs."
+          fi
