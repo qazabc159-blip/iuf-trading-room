@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
 import { getThemes } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanThemeThesis } from "@/lib/operator-copy";
@@ -400,18 +399,32 @@ export default async function ThemesPage() {
         </div>
       </div>
 
-      <MetricStrip
-        cells={[
-          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "總數", value: countsAvailable ? visibleThemes.length : "--" },
-          { label: "進攻", value: countsAvailable ? attackCount : "--", tone: "up" },
-          { label: "防守", value: countsAvailable ? defenseCount : "--", tone: "down" },
-          { label: "核心", value: countsAvailable ? coreTotal : "--", tone: coreTotal > 0 ? "gold" : "muted" },
-          { label: "觀察", value: countsAvailable ? observationTotal : "--" },
-          { label: "P1", value: countsAvailable ? priorityOneCount : "--", tone: "gold" },
-        ]}
-        columns={7}
-      />
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">主題狀態</span>
+          <span className={`parity-kpi-value ${result.state === "LIVE" ? "ok" : result.state === "EMPTY" ? "warn" : "bad"}`}>
+            {result.state === "LIVE" ? "可用" : result.state === "EMPTY" ? "無主題" : "需處理"}
+          </span>
+          <span className="parity-kpi-sub">主題板</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">主題數</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.length : "--"}</span>
+          <span className="parity-kpi-sub">台股主題</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">成員總計</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.reduce((s: number, t: { memberCount?: number }) => s + (t.memberCount ?? 0), 0) : "--"}</span>
+          <span className="parity-kpi-sub">連結成員</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">活躍</span>
+          <span className={`parity-kpi-value ${result.state !== "BLOCKED" && result.data.some((t: { lifecycle?: string }) => t.lifecycle === "Expansion" || t.lifecycle === "Validation") ? "ok" : "dim"}`}>
+            {result.state !== "BLOCKED" ? result.data.filter((t: { lifecycle?: string }) => t.lifecycle === "Expansion" || t.lifecycle === "Validation").length : "--"}
+          </span>
+          <span className="parity-kpi-sub">成長/驗證期</span>
+        </div>
+      </div>
 
       <Panel
         code="THM-LDR"

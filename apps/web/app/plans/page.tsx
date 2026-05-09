@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
 import {
   getBriefs,
   getCompanies,
@@ -629,18 +628,30 @@ export default async function PlansPage() {
         </div>
       </div>
 
-      <MetricStrip
-        cells={[
-          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "計畫", value: countsAvailable ? plans.length : "--" },
-          { label: "就緒", value: countsAvailable ? readyPlans : "--", tone: countsAvailable && readyPlans > 0 ? "status-ok" : "muted" },
-          { label: "覆盤", value: countsAvailable ? result.data.reviews.length : "--" },
-          { label: "簡報", value: countsAvailable ? result.data.briefs.length : "--", tone: countsAvailable && result.data.briefs.length > 0 ? "gold" : "muted" },
-          { label: "想法", value: countsAvailable ? result.data.ideas.length : "--", tone: countsAvailable && result.data.ideas.length > 0 ? "up" : "muted" },
-          { label: "訊號", value: countsAvailable ? result.data.signals.length : "--" },
-        ]}
-        columns={7}
-      />
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">計畫狀態</span>
+          <span className={`parity-kpi-value ${result.state === "LIVE" ? "ok" : result.state === "EMPTY" ? "warn" : "bad"}`}>
+            {result.state === "LIVE" ? "可用" : result.state === "EMPTY" ? "無計畫" : "需處理"}
+          </span>
+          <span className="parity-kpi-sub">交易計畫</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">計畫數</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.plans.length : "--"}</span>
+          <span className="parity-kpi-sub">本輪計畫</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">想法</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.ideas.length : "--"}</span>
+          <span className="parity-kpi-sub">策略想法</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">審核</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.reviews.length : "--"}</span>
+          <span className="parity-kpi-sub">審核紀錄</span>
+        </div>
+      </div>
 
       <div className="_pln-workbench">
         {/* Primary column */}

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { PageFrame } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
 import {
   AlertsAuthError,
   getAlerts,
@@ -427,19 +426,31 @@ export default async function AlertsPage() {
         </div>
       </div>
 
-      <MetricStrip
-        columns={4}
-        cells={[
-          { label: "警示總數", value: alerts.length, tone: alerts.length ? "gold" : "status-ok" },
-          { label: "待處理", value: active, tone: active ? "gold" : "status-ok" },
-          { label: "緊急", value: counts.critical, tone: counts.critical ? "status-bad" : "muted" },
-          { label: "注意", value: counts.warning, tone: counts.warning ? "gold" : "muted" },
-          { label: "提醒", value: counts.info, tone: "muted" },
-          { label: "最近巡檢", value: engineState?.lastTickAt ? formatDateTime(engineState.lastTickAt) : "--", tone: engineState?.lastTickAt ? "status-ok" : "gold" },
-          { label: "本輪觸發", value: engineState?.lastTickEvents ?? "--" },
-          { label: "資料狀態", value: surface.state === "BLOCKED" ? "注意" : "可用", tone: surface.state === "BLOCKED" ? "status-bad" : "status-ok" },
-        ]}
-      />
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">警示狀態</span>
+          <span className={`parity-kpi-value ${surface.state === "LIVE" ? "ok" : surface.state === "EMPTY" ? "warn" : "bad"}`}>
+            {surface.state === "LIVE" ? "可用" : surface.state === "EMPTY" ? "無警示" : "需處理"}
+          </span>
+          <span className="parity-kpi-sub">警示引擎</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">今日警示</span>
+          <span className={`parity-kpi-value ${surface.state === "LIVE" && surface.alerts.length > 0 ? "bad" : "dim"}`}>
+            {surface.state === "LIVE" ? surface.alerts.length : "--"}
+          </span>
+          <span className="parity-kpi-sub">待處理</span>
+        </div>
+        {surface.state !== "BLOCKED" && (
+          <div className="parity-kpi-cell">
+            <span className="parity-kpi-label">引擎狀態</span>
+            <span className={`parity-kpi-value ${surface.engineState.lastTickAt ? "ok" : "warn"}`}>
+              {surface.engineState.lastTickAt ? "運行" : "等待巡檢"}
+            </span>
+            <span className="parity-kpi-sub">風控引擎</span>
+          </div>
+        )}
+      </div>
 
       {/* Engine status bar */}
       {engineState && (

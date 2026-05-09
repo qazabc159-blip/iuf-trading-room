@@ -1,5 +1,4 @@
 import { PageFrame } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
 import { getOpsSnapshot } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText, cleanRiskRewardText, cleanTradePlanText } from "@/lib/operator-copy";
@@ -445,18 +444,32 @@ export default async function OpsPage() {
         </div>
       </div>
 
-      <MetricStrip
-        cells={[
-          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "主題", value: data ? stats?.themes ?? 0 : "--" },
-          { label: "主檔列數", value: data ? stats?.companies ?? 0 : "--" },
-          { label: "訊號", value: data ? stats?.signals ?? 0 : "--" },
-          { label: "佇列", value: data ? queue?.totalJobs ?? 0 : "--", tone: (queue?.failed ?? 0) > 0 ? "status-bad" : "muted" },
-          { label: "稽核", value: data ? data.audit.total : "--", tone: data && data.audit.total > 0 ? "gold" : "muted" },
-          { label: "背景服務", value: healthLabel(obs?.workerStatus), tone: obs ? (obs.workerStatus === "healthy" ? "status-ok" : "gold") : "muted" },
-        ]}
-        columns={7}
-      />
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">系統狀態</span>
+          <span className={`parity-kpi-value ${result.state === "LIVE" ? "ok" : result.state === "EMPTY" ? "warn" : "bad"}`}>
+            {result.state === "LIVE" ? "可用" : result.state === "EMPTY" ? "待補" : "需處理"}
+          </span>
+          <span className="parity-kpi-sub">營運監控</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">主題</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" && result.data ? result.data.stats.themes : "--"}</span>
+          <span className="parity-kpi-sub">台股主題</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">公司</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" && result.data ? result.data.stats.companies : "--"}</span>
+          <span className="parity-kpi-sub">公司池</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">訊號</span>
+          <span className={`parity-kpi-value ${result.state !== "BLOCKED" && result.data && result.data.stats.signals > 0 ? "ok" : "dim"}`}>
+            {result.state !== "BLOCKED" && result.data ? result.data.stats.signals : "--"}
+          </span>
+          <span className="parity-kpi-sub">本輪訊號</span>
+        </div>
+      </div>
 
       {/* BLOCKED */}
       {result.state === "BLOCKED" && (

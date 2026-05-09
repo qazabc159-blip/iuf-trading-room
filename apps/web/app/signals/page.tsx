@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
 import { getCompanies, getSignals, getThemes } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline } from "@/lib/operator-copy";
@@ -443,18 +442,30 @@ export default async function SignalsPage() {
         </div>
       </div>
 
-      <MetricStrip
-        cells={[
-          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "總數", value: countsAvailable ? displaySignals.length : "--" },
-          { label: "偏多", value: countsAvailable ? bullCount : "--", tone: "up" },
-          { label: "偏空", value: countsAvailable ? bearCount : "--", tone: "down" },
-          { label: "中性", value: countsAvailable ? neutralCount : "--", tone: "muted" },
-          { label: "分類", value: countsAvailable ? categories.size : "--" },
-          { label: "高信心", value: countsAvailable ? highConfidenceCount : "--", tone: "gold" },
-        ]}
-        columns={7}
-      />
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">訊號狀態</span>
+          <span className={`parity-kpi-value ${result.state === "LIVE" ? "ok" : result.state === "EMPTY" ? "warn" : "bad"}`}>
+            {result.state === "LIVE" ? "可用" : result.state === "EMPTY" ? "無資料" : "需處理"}
+          </span>
+          <span className="parity-kpi-sub">訊號引擎</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">訊號總數</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.signals.length : "--"}</span>
+          <span className="parity-kpi-sub">本輪訊號</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">主題連結</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.themes.length : "--"}</span>
+          <span className="parity-kpi-sub">關聯主題</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">公司池</span>
+          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.companies.length : "--"}</span>
+          <span className="parity-kpi-sub">可觀察公司</span>
+        </div>
+      </div>
 
       <Panel
         code="SIG-TAPE"
