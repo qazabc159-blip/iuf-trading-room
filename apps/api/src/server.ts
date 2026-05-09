@@ -3754,12 +3754,32 @@ app.get("/api/v1/plans/brief", async (c) => {
   const repo = c.get("repo");
   const today = new Date().toISOString().slice(0, 10);
 
-  // Compose all fields in parallel
-  const [themes, ideasView, riskState] = await Promise.all([
+  // Compose all fields in parallel — use allSettled so a DB error in any one
+  // sub-call does NOT propagate as an unhandled rejection and return HTTP 500.
+  // Each field has a typed fallback so the handler always returns 200 with
+  // partial data + stale_reason where applicable.
+  const [themesResult, ideasResult, riskResult] = await Promise.allSettled([
     repo.listThemes({ workspaceSlug: session.workspace.slug }),
     getStrategyIdeas({ session, repo, limit: 10 }),
     getRiskLimitState({ session, accountId: "paper-default" })
   ]);
+
+  const themes = themesResult.status === "fulfilled" ? themesResult.value : [];
+  if (themesResult.status === "rejected") {
+    console.warn("[plans/brief] listThemes failed:", themesResult.reason instanceof Error ? themesResult.reason.message : String(themesResult.reason));
+  }
+
+  const ideasView = ideasResult.status === "fulfilled" ? ideasResult.value : { items: [], total: 0 };
+  if (ideasResult.status === "rejected") {
+    console.warn("[plans/brief] getStrategyIdeas failed:", ideasResult.reason instanceof Error ? ideasResult.reason.message : String(ideasResult.reason));
+  }
+
+  const riskState = riskResult.status === "fulfilled" ? riskResult.value : {
+    maxPerTradePct: null, maxSinglePositionPct: null, maxGrossExposurePct: null
+  };
+  if (riskResult.status === "rejected") {
+    console.warn("[plans/brief] getRiskLimitState failed:", riskResult.reason instanceof Error ? riskResult.reason.message : String(riskResult.reason));
+  }
 
   // market: derive from wall clock
   const market = composeTaiwanMarketState();
@@ -3833,6 +3853,12 @@ app.get("/api/v1/plans/brief", async (c) => {
     }
   ];
 
+  // Surface any sub-call failures as stale_reason so frontend can show degraded state.
+  const briefStaleReasons: string[] = [];
+  if (themesResult.status === "rejected") briefStaleReasons.push("themes_db_error");
+  if (ideasResult.status === "rejected") briefStaleReasons.push("ideas_db_error");
+  if (riskResult.status === "rejected") briefStaleReasons.push("risk_db_error");
+
   const bundle = {
     date: today,
     market,
@@ -3840,7 +3866,8 @@ app.get("/api/v1/plans/brief", async (c) => {
     ideasOpen,
     watchlist,
     watchlistMeta,
-    riskTodayLimits
+    riskTodayLimits,
+    ...(briefStaleReasons.length > 0 ? { stale_reason: briefStaleReasons.join(","), source: "partial_db" } : { source: "db" })
   };
 
   return c.json({ data: bundle });
@@ -3869,8 +3896,15 @@ app.get("/api/v1/plans/review", async (c) => {
   let totalFillCost = 0;
   let staleReason: string | null = null;
 
-  const dbMode = isDatabaseMode();
-  const db = dbMode ? getDb() : null;
+  // getDb() can throw (DATABASE_URL missing); move inside try/catch so any
+  // failure degrades gracefully to stale_reason=db_init_failed rather than 500.
+  let db: ReturnType<typeof getDb> | null = null;
+  try {
+    db = isDatabaseMode() ? getDb() : null;
+  } catch (err) {
+    console.warn("[plans/review] getDb() failed:", err instanceof Error ? err.message : String(err));
+    staleReason = "db_init_failed";
+  }
 
   if (db) {
     try {
@@ -3990,8 +4024,14 @@ app.get("/api/v1/plans/weekly", async (c) => {
     return d.toISOString().slice(0, 10);
   })();
 
-  const dbMode = isDatabaseMode();
-  const db = dbMode ? getDb() : null;
+  // getDb() can throw (DATABASE_URL missing); move inside try/catch.
+  let db: ReturnType<typeof getDb> | null = null;
+  try {
+    db = isDatabaseMode() ? getDb() : null;
+  } catch (err) {
+    console.warn("[plans/weekly] getDb() failed:", err instanceof Error ? err.message : String(err));
+    staleReason = "db_init_failed";
+  }
 
   if (db) {
     try {
