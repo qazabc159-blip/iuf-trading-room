@@ -4,9 +4,11 @@ import { PageFrame } from "@/components/PageFrame";
 import {
   getFinMindStatus,
   getMarketIntelAnnouncements,
+  getNewsTop10,
   type CompanyAnnouncement,
   type FinMindDatasetStatus,
   type FinMindSourceStatus,
+  type NewsAiItem,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { formatSourceTimestamp, latestIso, sourceFreshnessLabel } from "@/lib/source-freshness";
@@ -159,9 +161,85 @@ function marketIntelSourceLabel(source: "twse_announcements" | "finmind_stock_ne
   return "市場情報";
 }
 
+/** Map a NewsAiItem (from news-top10 endpoint) to the IntelItem shape used by the page. */
+function newsAiItemToIntelItem(item: NewsAiItem, index: number): IntelItem {
+  const sourceLabel =
+    item.source === "twse_announcements"
+      ? "重大訊息"
+      : item.source === "finmind_stock_news"
+      ? "台股新聞"
+      : "市場情報";
+
+  return {
+    id: item.id ?? `ai-${index}`,
+    date: item.date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    title: item.headline ?? "",
+    category: item.impact_tier
+      ? `${sourceLabel} (${item.impact_tier})`
+      : sourceLabel,
+    body: item.why_matters ?? undefined,
+    ticker: item.ticker ?? undefined,
+    companyName: item.companyName ?? (item.ticker ? item.ticker : undefined),
+    url: item.url ?? undefined,
+    source: item.source,
+  } as IntelItem & { companyName: string; ticker: string };
+}
+
 async function loadMarketIntel(): Promise<IntelState> {
   const updatedAt = new Date().toISOString();
 
+  // ── Primary: AI top-10 endpoint ──────────────────────────────────────────
+  // Preferred source: news-top10 AI selector (PR #334). Falls through to old
+  // announcements endpoint when:
+  //   (a) server just restarted and boot recovery hasn't fired yet
+  //   (b) no DB rows in the past 6h (weekend / holiday)
+  //   (c) stale_reason set (last run > 7h ago — should not happen with boot recovery)
+  try {
+    const top10res = await getNewsTop10();
+    const top10 = top10res.data;
+
+    if (top10.items.length >= 1 && !top10.stale_reason) {
+      // AI result is fresh — use it
+      const items: IntelItem[] = top10.items.map((item, i) => ({
+        ...newsAiItemToIntelItem(item, i),
+        ticker: item.ticker ?? "MARKET",
+        companyName: item.companyName ?? (item.ticker && item.ticker !== "MARKET" ? item.ticker : "大盤"),
+      }));
+
+      const selected: IntelSelectedCompany[] = [
+        ...new Map(
+          items
+            .filter((item) => item.ticker && item.ticker !== "MARKET")
+            .map((item) => [
+              item.ticker as string,
+              { id: item.ticker as string, ticker: item.ticker as string, name: item.companyName ?? item.ticker as string },
+            ])
+        ).values(),
+      ].slice(0, MAX_QUERY_COMPANIES);
+
+      const asOfIso = top10.as_of ?? updatedAt;
+      const selectionMode = top10.selection_mode === "ai" ? "AI 精選" : "系統排序";
+      const sourceLabel =
+        top10.items[0]?.source === "twse_announcements"
+          ? "官方重大訊息"
+          : top10.items[0]?.source === "finmind_stock_news"
+          ? "FinMind 台股新聞"
+          : "官方重大訊息 + FinMind 台股新聞";
+
+      return {
+        state: "LIVE",
+        items,
+        selected,
+        updatedAt: asOfIso,
+        source: `${sourceLabel}（${selectionMode}）`,
+        failures: 0,
+      };
+    }
+  } catch {
+    // news-top10 call failed — fall through to legacy announcements endpoint
+  }
+
+  // ── Fallback: legacy announcements endpoint ───────────────────────────────
   try {
     const aggregate = await getMarketIntelAnnouncements({
       days: ANNOUNCEMENT_DAYS,

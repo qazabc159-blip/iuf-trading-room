@@ -638,3 +638,20 @@ export async function runNewsAiSelectionTick(workspaceId: string): Promise<void>
   }
   await runNewsAiSelection({ workspaceId });
 }
+
+/**
+ * Boot-recovery runner — fires unconditionally on server start (no window gate).
+ * Called once with a short delay after startup so the endpoint is never stale_reason=never_run
+ * for long stretches outside the 4 trigger windows.
+ *
+ * Unlike runNewsAiSelectionTick, this bypasses isWithinNewsWindowTrigger().
+ * It still respects the 45-min double-fire guard (_lastRunAt).
+ */
+export async function runNewsAiSelectionBootRecovery(workspaceId: string): Promise<void> {
+  // Skip if already ran in the last 45 minutes (e.g. server restarted near a window)
+  if (_lastRunAt) {
+    const elapsedMs = Date.now() - _lastRunAt.getTime();
+    if (elapsedMs < 45 * 60 * 1000) return;
+  }
+  await runNewsAiSelection({ workspaceId });
+}

@@ -26,6 +26,7 @@ import {
   getNewsTop10WithStaleness,
   isWithinNewsWindowTrigger,
   runNewsAiSelection,
+  runNewsAiSelectionBootRecovery,
 } from "../news-ai-selector.js";
 
 // ── NS1: null before any run ──────────────────────────────────────────────────
@@ -153,4 +154,38 @@ test("NS8: items.length is never more than 10", async () => {
   });
 
   assert.ok(result.items.length <= 10, `items.length must be <= 10, got ${result.items.length}`);
+});
+
+// ── NS9: boot recovery fires unconditionally; respects 45min guard ────────────
+
+test("NS9: runNewsAiSelectionBootRecovery() fires when never run before", async () => {
+  _resetNewsAiSelectorState();
+
+  // Before recovery: state is null
+  assert.equal(getLastNewsTop10(), null, "state must be null before boot recovery");
+
+  // Run boot recovery — should always fire when never run
+  await runNewsAiSelectionBootRecovery("test-ws-ns9");
+
+  // After recovery: state must be populated (even in no-DB memory mode)
+  const result = getLastNewsTop10();
+  assert.ok(result !== null, "boot recovery must populate state regardless of window");
+  assert.ok(typeof result!.run_id === "string", "run_id must be set after boot recovery");
+});
+
+test("NS9b: runNewsAiSelectionBootRecovery() skips if ran within 45 minutes", async () => {
+  _resetNewsAiSelectorState();
+
+  // First run
+  await runNewsAiSelectionBootRecovery("test-ws-ns9b");
+  const firstRunAt = getLastNewsRunAt();
+  assert.ok(firstRunAt instanceof Date, "firstRunAt must be set");
+
+  // Second call should be a no-op (45min guard)
+  await runNewsAiSelectionBootRecovery("test-ws-ns9b");
+  const secondRunAt = getLastNewsRunAt();
+
+  // The run timestamp should be the same (no second run happened)
+  assert.ok(secondRunAt instanceof Date, "secondRunAt must still be a Date");
+  assert.equal(firstRunAt!.getTime(), secondRunAt!.getTime(), "45min guard: lastRunAt must not change on second call");
 });
