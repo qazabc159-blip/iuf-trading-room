@@ -534,24 +534,27 @@ export async function runNewsAiSelection(params: {
       // Map AI selection back to full row data
       const rowById = new Map(rawRows.map((r, idx) => [r.id ?? `row-${idx}`, r]));
 
-      items = aiResponse.selected.slice(0, TOP_N).map((sel, idx) => {
+      // Map AI-selected ids back to the original row data.
+      // If the AI hallucinated an id that doesn't exist in rawRows, skip that item
+      // rather than storing a "(id not found: …)" placeholder in the persistent state.
+      // After filtering out bad ids, fill any remaining slots with deterministic-ranked
+      // rows that were NOT already selected, so we always try to surface TOP_N items.
+      const aiMappedItems: NewsAiItem[] = [];
+      const aiSelectedIds = new Set<string>();
+
+      for (let idx = 0; idx < aiResponse.selected.length && aiMappedItems.length < TOP_N; idx++) {
+        const sel = aiResponse.selected[idx]!;
         const row = rowById.get(sel.id);
         if (!row) {
-          // AI hallucinated an id — synthesise minimal item
-          return {
-            id: sel.id,
-            headline: `(id not found: ${sel.id})`,
-            date: asOf.slice(0, 10),
-            source: "mixed" as const,
-            why_matters: sel.why_matters ?? null,
-            impact_tier: (["HIGH", "MID", "LOW"].includes(sel.impact_tier ?? "") ? sel.impact_tier : null) as "HIGH" | "MID" | "LOW" | null,
-            tags: Array.isArray(sel.tags) ? sel.tags.slice(0, 3) : [],
-            rank: sel.rank ?? idx + 1
-          };
+          // AI returned an id that doesn't match any fetched row — skip silently.
+          // Log for debugging but do NOT surface "(id not found: …)" to the client.
+          console.warn(`[news-ai-selector] AI returned unknown id="${sel.id}" — skipping`);
+          continue;
         }
-        return {
+        aiSelectedIds.add(sel.id);
+        aiMappedItems.push({
           id: row.id ?? sel.id,
-          headline: row.title ?? sel.id,
+          headline: row.title ?? "(no title)",
           date: row.date ?? asOf.slice(0, 10),
           ticker: row.ticker ?? undefined,
           companyName: row.company_name ?? undefined,
@@ -561,8 +564,28 @@ export async function runNewsAiSelection(params: {
           impact_tier: (["HIGH", "MID", "LOW"].includes(sel.impact_tier ?? "") ? sel.impact_tier : null) as "HIGH" | "MID" | "LOW" | null,
           tags: Array.isArray(sel.tags) ? sel.tags.slice(0, 3) : [],
           rank: sel.rank ?? idx + 1
-        };
-      });
+        });
+      }
+
+      // If AI hallucination left us short of TOP_N, pad with deterministic fallback items
+      // that were not already selected by AI.
+      if (aiMappedItems.length < TOP_N) {
+        const deterministic = deterministicTop10(rawRows);
+        for (const fallbackItem of deterministic) {
+          if (aiMappedItems.length >= TOP_N) break;
+          if (aiSelectedIds.has(fallbackItem.id)) continue;
+          aiMappedItems.push({
+            ...fallbackItem,
+            rank: aiMappedItems.length + 1,
+            // Clear AI-enriched fields since this is a fallback item
+            why_matters: null,
+            impact_tier: null,
+            tags: []
+          });
+        }
+      }
+
+      items = aiMappedItems;
 
       aiCallSuccess = true;
       selectionMode = "ai";
