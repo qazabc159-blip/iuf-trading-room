@@ -6745,8 +6745,142 @@ app.get("/api/v1/lab/three-strategy/snapshot", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
   const { getFixtureFullSnapshot } = await import("./lab-three-strategy-consumer.js");
-  const result = getFixtureFullSnapshot();
-  return c.json(result, result.ok ? 200 : 503);
+  const { fetchStrategyIndex } = await import("./lab-strategy-snapshot-fetcher.js");
+
+  // Embed cross-reference from _index.json (3-card list for frontend).
+  // Non-fatal: if index fetch fails, result still includes fixture snapshot.
+  const [result, indexResult] = await Promise.all([
+    Promise.resolve(getFixtureFullSnapshot()),
+    fetchStrategyIndex()
+  ]);
+
+  const strategyIndex = indexResult.ok
+    ? {
+        ok: true,
+        strategies: indexResult.strategies,
+        cache_hit: indexResult.cache_hit,
+        fetched_at: indexResult.fetched_at
+      }
+    : {
+        ok: false,
+        strategies: indexResult.strategies,
+        cache_hit: indexResult.cache_hit,
+        stale_reason: indexResult.stale_reason
+      };
+
+  return c.json({ ...result, strategy_index: strategyIndex }, result.ok ? 200 : 503);
+});
+
+// =============================================================================
+// BLOCK #10 — GET /api/v1/lab/strategy/:strategyId/snapshot
+// =============================================================================
+// Per-strategy snapshot consumer (Lab → TR Stage 1, Athena ACK locked 2026-05-09).
+//
+// Fetches static JSON from GitHub raw URL with 30s ETag cache + 5s timeout +
+// circuit breaker (3 fails → 60s backoff). Stale cache served on error.
+//
+// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES, same as three-strategy endpoints)
+//
+// Schema: lab_tr_strategy_snapshot_v0 (§2 of dm_2026_05_09_lab_tr_strategy_snapshot_endpoint_v0.md)
+//
+// Hard lines:
+//   - strategyId must be in ALLOWED_STRATEGY_IDS (cont_liq_v36 / strategy_002 / strategy_003)
+//   - No broker write / no risk mutation / no migration
+//   - stale_reason always surfaced on error — never silent fail
+//   - Circuit open → 503 with stale cache (if available) or 404
+//   - sampleTrades source field enforced by Lab JSON schema (A4 ACK)
+// =============================================================================
+
+app.get("/api/v1/lab/strategy/:strategyId/snapshot", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const strategyId = c.req.param("strategyId");
+  const {
+    ALLOWED_STRATEGY_IDS,
+    fetchStrategySnapshot,
+    getSnapshotFromCacheOnly
+  } = await import("./lab-strategy-snapshot-fetcher.js");
+
+  if (!ALLOWED_STRATEGY_IDS.has(strategyId)) {
+    return c.json(
+      {
+        error: "unknown_strategy_id",
+        reason: `strategyId "${strategyId}" is not in the allowed set`,
+        allowed: [...ALLOWED_STRATEGY_IDS],
+        lab_repo_path: `reports/trading_room/strategy_snapshots/${strategyId}_snapshot_v0.json`
+      },
+      404
+    );
+  }
+
+  const session = c.get("session");
+  const auditCtx = {
+    workspaceId: session.workspace.id,
+    actorId: session.user.id
+  };
+
+  // Short-circuit: serve from in-process cache if within TTL (no HTTP)
+  const cached = getSnapshotFromCacheOnly(strategyId);
+  if (cached) {
+    return c.json(
+      {
+        schema: "lab_tr_strategy_snapshot_v0",
+        strategyId,
+        snapshot: cached.snapshot,
+        cache_hit: true,
+        stale_reason: null,
+        fetched_at: cached.fetched_at
+      },
+      200
+    );
+  }
+
+  // Fetch from GitHub raw URL (ETag-aware, circuit-protected)
+  const result = await fetchStrategySnapshot(strategyId, auditCtx);
+
+  if (result.ok) {
+    return c.json(
+      {
+        schema: "lab_tr_strategy_snapshot_v0",
+        strategyId,
+        snapshot: result.snapshot,
+        cache_hit: result.cache_hit,
+        stale_reason: null,
+        fetched_at: result.fetched_at
+      },
+      200
+    );
+  }
+
+  // Error path: stale cache available → 200 with stale metadata
+  if (result.snapshot !== null) {
+    return c.json(
+      {
+        schema: "lab_tr_strategy_snapshot_v0",
+        strategyId,
+        snapshot: result.snapshot,
+        cache_hit: result.cache_hit,
+        stale_reason: result.stale_reason,
+        fetched_at: result.fetched_at
+      },
+      200
+    );
+  }
+
+  // No cache at all → 503 (circuit) or 404 (not found)
+  const statusCode =
+    result.stale_reason === "snapshot_not_found" ? 404 : 503;
+  return c.json(
+    {
+      error: result.stale_reason,
+      strategyId,
+      snapshot: null,
+      cache_hit: false,
+      lab_repo_path: `reports/trading_room/strategy_snapshots/${strategyId}_snapshot_v0.json`
+    },
+    statusCode
+  );
 });
 
 // =============================================================================
