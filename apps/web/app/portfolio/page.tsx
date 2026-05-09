@@ -1,7 +1,6 @@
 import Link from "next/link";
 
-import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
+import { PageFrame } from "@/components/PageFrame";
 import { friendlyDataError } from "@/lib/friendly-error";
 import {
   getPaperHealth,
@@ -236,7 +235,6 @@ function gateLabel(health: PaperHealthState | null) {
   if (health.previewReady) return "僅預覽";
   return "待開啟";
 }
-
 export default async function PortfolioPage() {
   const [portfolio, fillsResult, healthResult] = await Promise.all([
     loadPaperPortfolio(),
@@ -248,178 +246,160 @@ export default async function PortfolioPage() {
   const availableCapital = Math.max(PAPER_CAPITAL_TWD - paperCost, 0);
   const fillNotionalTotal = totalFillNotional(fillsResult.fills);
   const recentFills = fillsResult.fills.slice(0, 12);
+  const posState = portfolio.state === "LIVE" ? "ok" : portfolio.state === "EMPTY" ? "warn" : "bad";
+  const fillState = fillsResult.state === "LIVE" ? "ok" : fillsResult.state === "EMPTY" ? "warn" : "bad";
 
   return (
-    <PageFrame
-      code="06"
-      title="模擬交易室"
-      sub="紙上委託、成交回顧與部位風控"
-      exec
-      note="這裡只處理 paper preview、paper submit、fills 與 portfolio；不連真實券商下單。"
-    >
-      <MetricStrip
-        columns={4}
-        cells={[
-          { label: "模擬交易", value: gateLabel(health), tone: health?.previewReady ? "status-ok" : "gold" },
-          { label: "風控閘門", value: health?.gate.gateOpen ? "開啟" : "守門", tone: health?.gate.gateOpen ? "status-ok" : "gold" },
-          { label: "部位檔數", value: portfolio.positions.length, tone: portfolio.positions.length ? "gold" : "muted" },
-          { label: "成交筆數", value: fillsResult.fills.length, tone: fillsResult.fills.length ? "status-ok" : "muted" },
-          { label: "紙上資金", value: formatTwd(PAPER_CAPITAL_TWD) },
-          { label: "已投入", value: formatTwd(paperCost), tone: paperCost > 0 ? "gold" : "muted" },
-          { label: "可用資金", value: formatTwd(availableCapital), tone: "status-ok" },
-          { label: "最近成交", value: formatTime(latestFillTime(fillsResult.fills)) },
-        ]}
-      />
+    <PageFrame code="06" title="模擬交易室" sub="紙上委託、成交回顧與部位風控" exec
+      note="這裡只處理 paper preview、paper submit、fills 與 portfolio；不連真實券商下單。">
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">模擬交易</span>
+          <span className={`parity-kpi-value ${health?.previewReady ? "ok" : "warn"}`}>{gateLabel(health)}</span>
+          <span className="parity-kpi-sub">Paper 模式</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">風控閘門</span>
+          <span className={`parity-kpi-value ${health?.gate.gateOpen ? "ok" : "warn"}`}>{health?.gate.gateOpen ? "開啟" : "守門"}</span>
+          <span className="parity-kpi-sub">Gate 狀態</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">部位檔數</span>
+          <span className={`parity-kpi-value ${portfolio.positions.length ? "warn" : "dim"}`}>{portfolio.positions.length}</span>
+          <span className="parity-kpi-sub">模擬持倉</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">成交筆數</span>
+          <span className={`parity-kpi-value ${fillsResult.fills.length ? "ok" : "dim"}`}>{fillsResult.fills.length}</span>
+          <span className="parity-kpi-sub">已成交</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">紙上資金</span>
+          <span className="parity-kpi-value">{formatTwd(PAPER_CAPITAL_TWD)}</span>
+          <span className="parity-kpi-sub">模擬本金</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">已投入</span>
+          <span className={`parity-kpi-value ${paperCost > 0 ? "warn" : "dim"}`}>{formatTwd(paperCost)}</span>
+          <span className="parity-kpi-sub">持倉估算</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">可用資金</span>
+          <span className="parity-kpi-value ok">{formatTwd(availableCapital)}</span>
+          <span className="parity-kpi-sub">尚未投入</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">最近成交</span>
+          <span className="parity-kpi-value" style={{ fontSize: 14 }}>{formatTime(latestFillTime(fillsResult.fills))}</span>
+          <span className="parity-kpi-sub">成交時間</span>
+        </div>
+      </div>
 
-      <section className="portfolio-truth-strip" aria-label="模擬交易原則">
-        <div>
-          <span className="tg gold">交易模式</span>
-          <strong>紙上交易先走預覽與風控，不送真實委託。</strong>
+      <div className="parity-hero">
+        <div className="parity-hero-eyebrow">IUF / PAPER PORTFOLIO / 模擬交易室</div>
+        <h2>紙上交易先走預覽與風控，不送真實委託。</h2>
+        <p>部位與成交直接讀 paper ledger，價格研究仍回到公司頁與 FinMind。台股單位：1 張 = 1,000 股；整股與零股都以股數統一回算。</p>
+      </div>
+
+      {healthResult.state === "BLOCKED" && (
+        <div className="terminal-note">
+          <span className="tg status-bad">需處理</span>{" "}
+          模擬交易狀態尚未讀取成功：{healthResult.reason}
         </div>
-        <div>
-          <span className="tg status-ok">資料來源</span>
-          <strong>部位與成交直接讀 paper ledger，價格研究仍回到公司頁與 FinMind。</strong>
+      )}
+
+      <section className="parity-section">
+        <div className="parity-section-head">
+          <h3>持倉</h3>
+          <span className="spacer" />
+          <span className={`parity-badge ${posState}`}>{stateLabel(portfolio.state)}</span>
+          <span className="tg muted" style={{ fontSize: 10 }}>只呈現 FILLED 後形成的紙上部位</span>
         </div>
-        <div>
-          <span className="tg muted">台股單位</span>
-          <strong>1 張 = 1,000 股；整股與零股都以股數統一回算。</strong>
+        <div className="parity-section-body">
+          {portfolio.state !== "LIVE" && (
+            <div className="terminal-note compact">
+              <span className={`tg ${"reason" in portfolio ? (portfolio.state === "EMPTY" ? "gold" : "status-bad") : "muted"}`}>{stateLabel(portfolio.state)}</span>{" "}
+              {"reason" in portfolio ? portfolio.reason : ""}
+            </div>
+          )}
+          {portfolio.positions.length > 0 ? (
+            <table className="parity-table">
+              <thead>
+                <tr>
+                  <th>代號</th><th>公司</th><th className="num-cell">淨股數</th>
+                  <th className="num-cell">平均成本</th><th className="num-cell">估算市值</th><th>狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portfolio.positions.map((pos) => (
+                  <tr key={pos.companyId}>
+                    <td>
+                      <Link href={`/companies/${encodeURIComponent(pos.symbol ?? pos.companyId)}`} className="tg gold">
+                        {pos.symbol ?? pos.companyId.slice(0, 8)}
+                      </Link>
+                    </td>
+                    <td>{pos.companyName}</td>
+                    <td className="num-cell">{formatShares(pos.netQtyShares)}</td>
+                    <td className="num-cell">{avgCostLabel(pos)}</td>
+                    <td className="num-cell">{notionalLabel(pos)}</td>
+                    <td><span className="parity-badge warn">{noteLabel(pos.note)}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : portfolio.state === "LIVE" ? (
+            <div className="parity-empty" style={{ minHeight: 100 }}>
+              <h3>目前沒有模擬持倉</h3>
+              <p>先從公司頁開啟紙上交易預覽。</p>
+            </div>
+          ) : null}
         </div>
       </section>
 
-      {healthResult.state === "BLOCKED" && (
-        <section className="portfolio-auth-repair" aria-label="模擬交易狀態">
-          <div>
-            <span className="tg status-bad">需處理</span>
-            <h2>模擬交易狀態尚未讀取成功</h2>
-            <p>{healthResult.reason}</p>
-          </div>
-          <Link className="terminal-button primary" href="/login">
-            重新登入
-          </Link>
-        </section>
-      )}
-
-      <section className="portfolio-workbench-grid">
-        <div>
-          <Panel
-            code="06-PORT"
-            title="持倉"
-            sub="只呈現 FILLED 後形成的紙上部位。"
-            right={<span className={stateClass(portfolio.state)}>{stateLabel(portfolio.state)}</span>}
-          >
-            {portfolio.state !== "LIVE" && (
-              <div className="terminal-note portfolio-empty-note">
-                <span className={`tg ${stateClass(portfolio.state)}`}>{stateLabel(portfolio.state)}</span>
-                <span>{portfolio.reason}</span>
-              </div>
-            )}
-
-            {portfolio.positions.length > 0 && (
-              <div className="portfolio-position-table" role="table" aria-label="紙上持倉">
-                <div className="portfolio-position-row portfolio-position-head" role="row">
-                  <span>代號</span>
-                  <span>股數</span>
-                  <span>張 / 股</span>
-                  <span>均價</span>
-                  <span>投入金額</span>
-                  <span>成交</span>
-                  <span>狀態</span>
-                </div>
-                {portfolio.positions.map((position) => (
-                  <div className="portfolio-position-row" role="row" key={position.symbol}>
-                    <Link className="tg gold" href={`/companies/${position.symbol}`}>
-                      {position.symbol}
-                    </Link>
-                    <span className="num">{formatShares(position.netQtyShares)}</span>
-                    <span>{formatLotBreakdown(position.netQtyShares)}</span>
-                    <span className="num">{avgCostLabel(position)}</span>
-                    <span className="num">{notionalLabel(position)}</span>
-                    <span className="num">{position.fillCount.toLocaleString("zh-TW")}</span>
-                    <span className={position.netQtyShares > 0 ? "status-ok" : "gold"}>{noteLabel(position.note)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-          <Panel
-            code="FILL"
-            title="成交回顧"
-            sub="紙上成交明細，方便回看委託與資金使用。"
-            right={<span className={stateClass(fillsResult.state)}>{stateLabel(fillsResult.state)}</span>}
-          >
-            {fillsResult.state !== "LIVE" && (
-              <div className="terminal-note portfolio-empty-note">
-                <span className={`tg ${stateClass(fillsResult.state)}`}>{stateLabel(fillsResult.state)}</span>
-                <span>{fillsResult.reason}</span>
-              </div>
-            )}
-
-            {recentFills.length > 0 && (
-              <div className="portfolio-fill-table" role="table" aria-label="紙上成交紀錄">
-                <div className="portfolio-fill-row portfolio-fill-head" role="row">
-                  <span>時間</span>
-                  <span>代號</span>
-                  <span>方向</span>
-                  <span>型態</span>
-                  <span>單位</span>
-                  <span>股數</span>
-                  <span>成交價</span>
-                  <span>金額</span>
-                  <span>委託</span>
-                </div>
+      <section className="parity-section" style={{ marginTop: 20 }}>
+        <div className="parity-section-head">
+          <h3>成交紀錄</h3>
+          <span className="spacer" />
+          <span className={`parity-badge ${fillState}`}>{stateLabel(fillsResult.state)}</span>
+          {fillsResult.fills.length > 0 && (
+            <span className="tg muted" style={{ fontSize: 10 }}>共 {fillsResult.fills.length} 筆 / 成交總額 {formatTwd(fillNotionalTotal)}</span>
+          )}
+        </div>
+        <div className="parity-section-body">
+          {fillsResult.state !== "LIVE" && (
+            <div className="terminal-note compact">
+              <span className={`tg ${"reason" in fillsResult ? (fillsResult.state === "EMPTY" ? "gold" : "status-bad") : "muted"}`}>{stateLabel(fillsResult.state)}</span>{" "}
+              {"reason" in fillsResult ? fillsResult.reason : ""}
+            </div>
+          )}
+          {recentFills.length > 0 ? (
+            <table className="parity-table">
+              <thead>
+                <tr>
+                  <th>時間</th><th>代號</th><th>方向</th><th>數量</th>
+                  <th className="num-cell">成交價</th><th className="num-cell">金額</th><th>委託類型</th>
+                </tr>
+              </thead>
+              <tbody>
                 {recentFills.map((fill) => (
-                  <div className="portfolio-fill-row" role="row" key={`${fill.orderId}:${fill.fillTime}`}>
-                    <span>{formatDateTime(fill.fillTime)}</span>
-                    <Link className="tg gold" href={`/companies/${fill.symbol}`}>
-                      {fill.symbol}
-                    </Link>
-                    <span className={fill.side === "buy" ? "status-ok" : "status-bad"}>{sideLabel(fill.side)}</span>
-                    <span>{orderTypeLabel(fill.orderType)}</span>
-                    <span>{fillUnitLabel(fill)}</span>
-                    <span className="num">{formatShares(actualFillShares(fill))}</span>
-                    <span className="num">{formatTwd(fill.fillPrice)} / 股</span>
-                    <span className="num gold">{formatTwd(fillNotional(fill))}</span>
-                    <span className="tg muted">{shortOrderId(fill.orderId)}</span>
-                  </div>
+                  <tr key={fill.orderId + (fill.fillTime ?? "")}>
+                    <td>{formatTime(fill.fillTime)}</td>
+                    <td className="tg gold">{fill.ticker ?? fill.orderId.slice(0, 6)}</td>
+                    <td><span className={`parity-badge ${fill.side === "buy" ? "ok" : "bad"}`}>{sideLabel(fill.side)}</span></td>
+                    <td>{fillUnitLabel(fill)}</td>
+                    <td className="num-cell">{formatTwd(fill.fillPrice)}</td>
+                    <td className="num-cell">{formatTwd(fillNotional(fill))}</td>
+                    <td>{orderTypeLabel(fill.orderType)}</td>
+                  </tr>
                 ))}
-              </div>
-            )}
-          </Panel>
-        </div>
-
-        <div>
-          <Panel code="RISK" title="風控摘要" sub="確認能不能進下一步，而不是直接下單。" right={gateLabel(health)}>
-            <div className="runs-truth-stack">
-              <span>預覽：{health?.previewReady ? "可用" : "待開啟"}</span>
-              <span>成交回顧：{health?.fillsReady ? "可用" : "待同步"}</span>
-              <span>部位：{health?.portfolioReady ? "可用" : "待同步"}</span>
-              <span>佇列：{health?.queueDepth ?? 0} 筆待處理</span>
+              </tbody>
+            </table>
+          ) : fillsResult.state === "LIVE" ? (
+            <div className="parity-empty" style={{ minHeight: 100 }}>
+              <h3>目前沒有成交紀錄</h3>
+              <p>送出 paper 委託後會出現在這裡。</p>
             </div>
-          </Panel>
-
-          <Panel code="NEXT" title="下一步" sub="回公司頁做 paper preview，這裡看結果與部位。" right="Paper">
-            <div className="portfolio-action-grid">
-              <Link className="terminal-button primary" href="/companies/2330#paper-order">
-                開啟 2330 紙上預覽
-              </Link>
-              <Link className="terminal-button" href="/companies">
-                回公司池
-              </Link>
-            </div>
-          </Panel>
-        </div>
-
-        <div>
-          <Panel code="CAP" title="資金摘要" sub="用紙上資金估算占用，不當作實際券商餘額。" right={formatTwd(fillNotionalTotal)}>
-            <ul className="portfolio-proof-list">
-              <li>紙上資金：{formatTwd(PAPER_CAPITAL_TWD)}</li>
-              <li>已投入：{formatTwd(paperCost)}</li>
-              <li>可用資金：{formatTwd(availableCapital)}</li>
-              <li>持倉股數：{formatShares(totalShares(portfolio.positions))}</li>
-              <li>成交總額：{formatTwd(fillNotionalTotal)}</li>
-            </ul>
-          </Panel>
+          ) : null}
         </div>
       </section>
     </PageFrame>

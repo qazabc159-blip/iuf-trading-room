@@ -1,7 +1,6 @@
 import Link from "next/link";
 
-import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
+import { PageFrame } from "@/components/PageFrame";
 import { getStrategyIdeas } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanNarrativeText } from "@/lib/operator-copy";
@@ -19,251 +18,113 @@ type LoadState =
 
 const emptyIdeas: IdeasView = {
   generatedAt: new Date(0).toISOString(),
-  summary: {
-    total: 0,
-    allow: 0,
-    review: 0,
-    block: 0,
-    bullish: 0,
-    bearish: 0,
-    neutral: 0,
-    quality: {
-      strategyReady: 0,
-      referenceOnly: 0,
-      insufficient: 0,
-      primaryReasons: [],
-    },
-  },
+  summary: { total: 0, allow: 0, review: 0, block: 0, bullish: 0, bearish: 0, neutral: 0,
+    quality: { strategyReady: 0, referenceOnly: 0, insufficient: 0, primaryReasons: [] } },
   items: [],
 };
 
 async function loadIdeas(): Promise<LoadState> {
   const source = "正式策略資料";
   const updatedAt = new Date().toISOString();
-
   try {
-    const envelope = await getStrategyIdeas({
-      decisionMode: "paper",
-      includeBlocked: true,
-      limit: 30,
-      sort: "score",
-    });
+    const envelope = await getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 30, sort: "score" });
     const data = envelope.data;
     if (data.items.length === 0) {
-      return {
-        state: "EMPTY",
-        data,
-        updatedAt: data.generatedAt || updatedAt,
-        source,
-        reason: "目前沒有可顯示的正式策略想法。",
-      };
+      return { state: "EMPTY", data, updatedAt: data.generatedAt || updatedAt, source, reason: "目前沒有可顯示的正式策略想法。" };
     }
-    return {
-      state: "LIVE",
-      data,
-      updatedAt: data.generatedAt || updatedAt,
-      source,
-    };
+    return { state: "LIVE", data, updatedAt: data.generatedAt || updatedAt, source };
   } catch (error) {
-    return {
-      state: "BLOCKED",
-      data: emptyIdeas,
-      updatedAt,
-      source,
-      reason: friendlyDataError(error, "策略想法暫時無法讀取。"),
-    };
+    return { state: "BLOCKED", data: emptyIdeas, updatedAt, source, reason: friendlyDataError(error, "策略想法暫時無法讀取。") };
   }
 }
 
-function formatTime(value: string | null | undefined) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+function formatTime(v: string | null | undefined) {
+  if (!v) return "--";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return d.toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+function formatDateTime(v: string | null | undefined) {
+  if (!v) return "--";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return d.toLocaleString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function percent(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
+function percent(v: number) { return `${Math.round(v * 100)}%`; }
 
-function stateTone(state: LoadState["state"]) {
-  if (state === "LIVE") return "status-ok";
-  if (state === "EMPTY") return "gold";
-  return "status-bad";
+function stateTone(s: LoadState["state"]): "ok" | "warn" | "bad" {
+  return s === "LIVE" ? "ok" : s === "EMPTY" ? "warn" : "bad";
 }
-
-function stateLabel(state: LoadState["state"]) {
-  if (state === "LIVE") return "正常";
-  if (state === "EMPTY") return "無資料";
-  return "暫停";
+function stateLabel(s: LoadState["state"]) {
+  return s === "LIVE" ? "正常" : s === "EMPTY" ? "無資料" : "暫停";
 }
-
-function directionLabel(direction: IdeaRow["direction"]) {
-  if (direction === "bullish") return "偏多";
-  if (direction === "bearish") return "偏空";
-  return "中性";
+function directionLabel(d: IdeaRow["direction"]) {
+  return d === "bullish" ? "偏多" : d === "bearish" ? "偏空" : "中性";
 }
-
-function decisionLabel(decision: IdeaRow["marketData"]["decision"]) {
-  if (decision === "allow") return "可觀察";
-  if (decision === "review") return "待審";
-  return "不進流程";
+function decisionLabel(d: IdeaRow["marketData"]["decision"]) {
+  return d === "allow" ? "可觀察" : d === "review" ? "待審" : "不進流程";
 }
-
-function decisionTone(decision: IdeaRow["marketData"]["decision"]) {
-  if (decision === "allow") return "up";
-  if (decision === "review") return "gold";
-  return "down";
+function decisionTone(d: IdeaRow["marketData"]["decision"]): "ok" | "warn" | "bad" {
+  return d === "allow" ? "ok" : d === "review" ? "warn" : "bad";
 }
-
-function directionTone(direction: IdeaRow["direction"]) {
-  if (direction === "bullish") return "up";
-  if (direction === "bearish") return "down";
-  return "muted";
+function directionState(d: IdeaRow["direction"]): "ok" | "review" | "blue" {
+  return d === "bullish" ? "ok" : d === "bearish" ? "review" : "blue";
 }
-
-function reasonText(value: string | null | undefined) {
-  return cleanNarrativeText(reasonLabel(value), "原因尚未完成中文整理。");
+function reasonText(v: string | null | undefined) {
+  return cleanNarrativeText(reasonLabel(v), "原因尚未完成中文整理。");
 }
-
-function qualityLabel(grade: IdeaRow["quality"]["grade"]) {
-  if (grade === "strategy_ready") return "可策略觀察";
-  if (grade === "reference_only") return "僅供參考";
-  return "資料不足";
+function qualityLabel(g: IdeaRow["quality"]["grade"]) {
+  return g === "strategy_ready" ? "可策略觀察" : g === "reference_only" ? "僅供參考" : "資料不足";
 }
-
-function readinessLabel(value: IdeaRow["marketData"]["readiness"]) {
-  if (value === "ready") return "資料可用";
-  if (value === "degraded") return "資料待補";
-  return "資料不足";
+function qualityBadge(g: IdeaRow["quality"]["grade"]): "ok" | "warn" | "bad" {
+  return g === "strategy_ready" ? "ok" : g === "reference_only" ? "warn" : "bad";
 }
-
-function freshnessLabel(value: IdeaRow["marketData"]["freshnessStatus"]) {
-  if (value === "fresh") return "資料新鮮";
-  if (value === "stale") return "資料偏舊";
-  return "缺資料";
+function readinessLabel(v: IdeaRow["marketData"]["readiness"]) {
+  return v === "ready" ? "資料可用" : v === "degraded" ? "資料待補" : "資料不足";
 }
-
-function qualityTone(grade: IdeaRow["quality"]["grade"]) {
-  if (grade === "strategy_ready") return "status-ok";
-  if (grade === "reference_only") return "gold";
-  return "status-bad";
+function freshnessLabel(v: IdeaRow["marketData"]["freshnessStatus"]) {
+  return v === "fresh" ? "資料新鮮" : v === "stale" ? "資料偏舊" : "缺資料";
 }
-
 function ideaSummary(idea: IdeaRow) {
   const theme = idea.topThemes[0]?.name ?? "尚未連結主題";
-  const primary = reasonText(idea.rationale.primaryReason);
   return cleanNarrativeText(
-    `${idea.companyName} / ${theme} / ${primary}`,
+    `${idea.companyName} / ${theme} / ${reasonText(idea.rationale.primaryReason)}`,
     `${idea.companyName} / ${theme} / 策略理由尚未整理完成。`
   );
 }
+function companyPaperHref(symbol: string) { return `/companies/${encodeURIComponent(symbol)}#paper-order`; }
 
-function sourceLabel(idea: IdeaRow) {
-  return idea.marketData.selectedSource ?? "正式市場資料";
-}
-
-function companyPaperPreviewHref(symbol: string) {
-  return `/companies/${encodeURIComponent(symbol)}#paper-order`;
-}
-
-function PromotionBlockedCell() {
-  return (
-    <span
-      className="idea-promotion-block"
-      title="策略想法尚未開放轉入委託流程；目前只能到公司頁做紙上預覽與風控檢查。"
-    >
-      只做觀察
-    </span>
-  );
-}
-
-function SourceLine({ result }: { result: LoadState }) {
-  const freshness = result.state === "LIVE" ? sourceFreshnessLabel(result.updatedAt) : null;
-  return (
-    <div className="runs-source-line">
-      <span className={stateTone(result.state)} style={{ fontWeight: 700 }}>{stateLabel(result.state)}</span>
-      <span>來源：{result.source}</span>
-      <span>更新 {formatSourceTimestamp(result.updatedAt)}</span>
-      {freshness && <span className={`tg ${freshness.tone}`}>{freshness.label}</span>}
-      {result.state !== "LIVE" && <span>{result.reason}</span>}
-    </div>
-  );
-}
-
-function EmptyOrBlocked({ result }: { result: LoadState }) {
-  if (result.state === "LIVE") return null;
-  return (
-    <div className="terminal-note">
-      <span className={`tg ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>{" "}
-      {result.reason}
-    </div>
-  );
-}
-
-function IdeaRowView({ idea }: { idea: IdeaRow }) {
+function IdeaCard({ idea }: { idea: IdeaRow }) {
   const themes = idea.topThemes.length ? idea.topThemes : [];
   return (
-    <article className="strategy-idea-card" key={`${idea.companyId}-${idea.symbol}`}>
-      <div className="strategy-idea-head">
-        <div className="strategy-idea-symbol">
-          <Link href={`/companies/${idea.symbol}`} className="tg gold">
-            {idea.symbol}
-          </Link>
-          <strong>{idea.companyName}</strong>
-          <span>{idea.market} / {idea.beneficiaryTier}</span>
+    <article className="parity-card" data-state={directionState(idea.direction)}>
+      <div className="parity-card-eyebrow">
+        <Link href={`/companies/${idea.symbol}`} className="tg gold">{idea.symbol}</Link>
+        <span className={`parity-badge ${qualityBadge(idea.quality.grade)}`}>{qualityLabel(idea.quality.grade)}</span>
+        <span className="spacer" />
+        <span className={`parity-badge ${decisionTone(idea.marketData.decision)}`}>{decisionLabel(idea.marketData.decision)}</span>
+      </div>
+      <div className="parity-card-title">{idea.companyName}</div>
+      <div className="parity-card-sub">{ideaSummary(idea)}</div>
+      {themes.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {themes.map((t) => <span key={t.themeId} className="parity-badge warn">{t.name}</span>)}
         </div>
-        <div className="strategy-idea-actions">
-          <span className={directionTone(idea.direction)}>{directionLabel(idea.direction)}</span>
-          <Link href={`/companies/${idea.symbol}`} className="mini-button">公司頁</Link>
-          <Link href={companyPaperPreviewHref(idea.symbol)} className="mini-button">紙上預覽</Link>
-          <PromotionBlockedCell />
-        </div>
+      )}
+      <div className="parity-card-metrics">
+        <span><b className="num">{idea.score.toFixed(1)}</b><small>分數</small></span>
+        <span><b className="num">{percent(idea.confidence)}</b><small>信心</small></span>
+        <span><b className="num">{idea.signalCount}</b><small>訊號</small></span>
+        <span><b>{directionLabel(idea.direction)}</b><small>方向</small></span>
       </div>
-
-      <p className="strategy-idea-copy">{ideaSummary(idea)}</p>
-
-      <div className="strategy-idea-metrics">
-        <span><b>{idea.score.toFixed(1)}</b><small>分數</small></span>
-        <span><b>{percent(idea.confidence)}</b><small>信心</small></span>
-        <span><b>{idea.signalCount}</b><small>訊號</small></span>
-        <span className={decisionTone(idea.marketData.decision)}>
-          <b>{decisionLabel(idea.marketData.decision)}</b><small>決策</small>
+      <div className="parity-card-foot">
+        <Link href={`/companies/${idea.symbol}`}>公司頁</Link>
+        <Link href={companyPaperHref(idea.symbol)}>紙上預覽</Link>
+        <span style={{ marginLeft: "auto", color: "var(--night-soft)", fontSize: 11 }}>
+          {readinessLabel(idea.marketData.readiness)} / {freshnessLabel(idea.marketData.freshnessStatus)}
         </span>
-      </div>
-
-      <div className="strategy-idea-tags">
-        {themes.length ? themes.map((theme) => (
-          <span key={theme.themeId}>{theme.name} / {theme.score.toFixed(0)}</span>
-        )) : <span>尚未連結主題</span>}
-      </div>
-
-      <div className="strategy-idea-footer">
-        <span className={qualityTone(idea.quality.grade)}>
-          {qualityLabel(idea.quality.grade)} / {reasonText(idea.quality.primaryReason)}
-        </span>
-        <span>{readinessLabel(idea.marketData.readiness)} / {freshnessLabel(idea.marketData.freshnessStatus)}</span>
-        <span>來源：{sourceLabel(idea)}</span>
       </div>
     </article>
   );
@@ -273,97 +134,114 @@ export default async function IdeasPage() {
   const result = await loadIdeas();
   const summary = result.data.summary;
   const statsAvailable = result.state !== "BLOCKED";
-  const topReason = summary.quality.primaryReasons[0]?.reason ?? "尚無主要原因";
+  const topReason = summary.quality.primaryReasons[0]?.reason ?? null;
+  const freshness = result.state === "LIVE" ? sourceFreshnessLabel(result.updatedAt) : null;
+  const avgConf = result.state === "LIVE" && result.data.items.length
+    ? result.data.items.reduce((s, i) => s + i.confidence, 0) / result.data.items.length : null;
 
   return (
-    <PageFrame
-      code="04"
-      title="策略想法"
-      sub="台股候選工作台"
-      note="策略想法 / 正式策略資料；只做候選觀察與品質揭露，轉成模擬委託前維持暫停。"
-    >
-      <MetricStrip
-        cells={[
-          { label: "狀態", value: stateLabel(result.state), tone: stateTone(result.state) },
-          { label: "總數", value: statsAvailable ? summary.total : "--" },
-          { label: "可觀察", value: statsAvailable ? summary.allow : "--", tone: "status-ok" },
-          { label: "待審", value: statsAvailable ? summary.review : "--", tone: "gold" },
-          { label: "不進流程", value: statsAvailable ? summary.block : "--", tone: "status-bad" },
-          { label: "可用", value: statsAvailable ? summary.quality.strategyReady : "--", tone: statsAvailable && summary.quality.strategyReady > 0 ? "status-ok" : "muted" },
-          { label: "更新", value: formatTime(result.updatedAt) },
-        ]}
-        columns={7}
-      />
-
-      <section className="ideas-command-deck">
-        <div>
-          <span className="tg gold">策略想法 / 候選觀察</span>
-          <h2>先看資料是否夠真，再看股票是否值得追蹤。</h2>
-          <p>
-            這頁只呈現系統整理出的台股候選、主題連結、訊號數與資料品質。
-            它不是買賣建議，也不是下單頁；候選只能先進公司頁查看 K 線、來源狀態與紙上預覽。
-          </p>
+    <PageFrame code="04" title="策略想法" sub="台股候選工作台"
+      note="策略想法 / 正式策略資料；只做候選觀察與品質揭露，轉成模擬委託前維持暫停。">
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">資料狀態</span>
+          <span className={`parity-kpi-value ${stateTone(result.state)}`}>{stateLabel(result.state)}</span>
+          <span className="parity-kpi-sub">{result.source}</span>
         </div>
-        <div className="ideas-summary-grid">
-          <span><b className="status-ok">{statsAvailable ? summary.allow : "--"}</b><small>可觀察</small></span>
-          <span><b className="gold">{statsAvailable ? summary.review : "--"}</b><small>待審</small></span>
-          <span><b className="status-bad">{statsAvailable ? summary.block : "--"}</b><small>不進流程</small></span>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">總候選</span>
+          <span className="parity-kpi-value">{statsAvailable ? summary.total : "--"}</span>
+          <span className="parity-kpi-sub">候選想法</span>
         </div>
-      </section>
-
-      <div className="ideas-workbench-layout">
-        <Panel
-          code="IDEA-OPN"
-          title="候選清單"
-          sub="紙上決策 / 只讀"
-          right={stateLabel(result.state)}
-        >
-          <SourceLine result={result} />
-          <EmptyOrBlocked result={result} />
-          {result.state === "LIVE" && (
-            <div className="strategy-idea-stack">
-              {result.data.items.map((idea) => (
-                <IdeaRowView idea={idea} key={`${idea.companyId}-${idea.symbol}`} />
-              ))}
-            </div>
-          )}
-        </Panel>
-
-        <Panel
-          code="IDEA-QA"
-          title="品質檢查"
-          sub="策略想法 / 資料完整性"
-          right={statsAvailable ? reasonText(topReason) : stateLabel(result.state)}
-        >
-          <div className="ideas-quality-stack">
-            <div>
-              <span>方向分布</span>
-              <strong>{statsAvailable ? `${summary.bullish} 偏多 / ${summary.bearish} 偏空 / ${summary.neutral} 中性` : "--"}</strong>
-            </div>
-            <div>
-              <span>可用性</span>
-              <strong>{statsAvailable ? `${summary.quality.strategyReady} 可策略觀察 / ${summary.quality.referenceOnly} 參考 / ${summary.quality.insufficient} 不足` : "--"}</strong>
-            </div>
-            <div>
-              <span>平均信心</span>
-              <strong>
-                {statsAvailable && result.data.items.length
-                  ? percent(result.data.items.reduce((sum, idea) => sum + idea.confidence, 0) / result.data.items.length)
-                  : "--"}
-              </strong>
-            </div>
-            <div>
-              <span>轉單政策</span>
-              <strong>轉入委託流程仍暫停；本頁只引導到公司頁紙上預覽，不建立券商委託。</strong>
-            </div>
-          </div>
-          <div className="idea-source-note">
-            <span>來源：{result.source}</span>
-            <span>產生：{statsAvailable ? formatDateTime(result.data.generatedAt) : "策略想法來源未回應"}</span>
-            <span>主要品質原因：{statsAvailable ? reasonText(topReason) : stateLabel(result.state)}</span>
-          </div>
-        </Panel>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">可觀察</span>
+          <span className="parity-kpi-value ok">{statsAvailable ? summary.allow : "--"}</span>
+          <span className="parity-kpi-sub">通過決策門</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">待審</span>
+          <span className="parity-kpi-value warn">{statsAvailable ? summary.review : "--"}</span>
+          <span className="parity-kpi-sub">資料或訊號不足</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">不進流程</span>
+          <span className="parity-kpi-value bad">{statsAvailable ? summary.block : "--"}</span>
+          <span className="parity-kpi-sub">市場或品質阻擋</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">資料足夠</span>
+          <span className={`parity-kpi-value ${statsAvailable && summary.quality.strategyReady > 0 ? "ok" : "dim"}`}>
+            {statsAvailable ? summary.quality.strategyReady : "--"}
+          </span>
+          <span className="parity-kpi-sub">可策略觀察</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">平均信心</span>
+          <span className="parity-kpi-value">{avgConf !== null ? percent(avgConf) : "--"}</span>
+          <span className="parity-kpi-sub">{freshness ? freshness.label : "更新 " + formatTime(result.updatedAt)}</span>
+        </div>
       </div>
+
+      <div className="parity-hero">
+        <div className="parity-hero-eyebrow">IUF / STRATEGY IDEAS / 候選工作台</div>
+        <h2>先看資料是否夠真，再看股票是否值得追蹤。</h2>
+        <p>這頁只呈現系統整理出的台股候選、主題連結、訊號數與資料品質。它不是買賣建議，也不是下單頁；候選只能先進公司頁查看 K 線、來源狀態與紙上預覽。</p>
+      </div>
+
+      {result.state !== "LIVE" && (
+        <div className="terminal-note">
+          <span className={`tg ${result.state === "EMPTY" ? "gold" : "status-bad"}`}>{stateLabel(result.state)}</span>{" "}
+          {"reason" in result ? result.reason : ""}
+        </div>
+      )}
+
+      {result.state === "LIVE" && result.data.items.length > 0 && (
+        <section className="parity-section">
+          <div className="parity-section-head">
+            <h3>候選清單</h3>
+            <span className="spacer" />
+            <span className="parity-badge ok">正常</span>
+            {freshness && <span className={`parity-badge ${freshness.tone === "status-ok" ? "ok" : "warn"}`}>{freshness.label}</span>}
+            <span className="tg muted" style={{ fontSize: 10 }}>產生：{formatDateTime(result.data.generatedAt)}</span>
+          </div>
+          <div className="parity-section-body">
+            <div className="parity-card-grid">
+              {result.data.items.map((idea) => <IdeaCard idea={idea} key={`${idea.companyId}-${idea.symbol}`} />)}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {result.state === "LIVE" && result.data.items.length === 0 && (
+        <div className="parity-empty">
+          <div className="parity-empty-icon">∅</div>
+          <h3>目前沒有候選想法</h3>
+          <p>策略想法尚未產生，或市場資料還未到齊。請等待下一次批次執行後再查看。</p>
+        </div>
+      )}
+
+      {statsAvailable && (
+        <section className="parity-section" style={{ marginTop: 20 }}>
+          <div className="parity-section-head">
+            <h3>品質總覽</h3>
+            <span className="spacer" />
+            {topReason && <span className="tg muted" style={{ fontSize: 10 }}>{reasonText(topReason)}</span>}
+          </div>
+          <div className="parity-section-body">
+            <div className="parity-kpi-bar" style={{ margin: 0 }}>
+              <div className="parity-kpi-cell"><span className="parity-kpi-label">偏多</span><span className="parity-kpi-value ok">{summary.bullish}</span></div>
+              <div className="parity-kpi-cell"><span className="parity-kpi-label">偏空</span><span className="parity-kpi-value bad">{summary.bearish}</span></div>
+              <div className="parity-kpi-cell"><span className="parity-kpi-label">中性</span><span className="parity-kpi-value dim">{summary.neutral}</span></div>
+              <div className="parity-kpi-cell"><span className="parity-kpi-label">策略可用</span><span className="parity-kpi-value ok">{summary.quality.strategyReady}</span></div>
+              <div className="parity-kpi-cell"><span className="parity-kpi-label">僅供參考</span><span className="parity-kpi-value warn">{summary.quality.referenceOnly}</span></div>
+              <div className="parity-kpi-cell"><span className="parity-kpi-label">資料不足</span><span className="parity-kpi-value bad">{summary.quality.insufficient}</span></div>
+            </div>
+            <p style={{ marginTop: 12, color: "var(--night-soft)", fontSize: 13, lineHeight: 1.75 }}>
+              轉入委託流程仍暫停；本頁只引導到公司頁紙上預覽，不建立券商委託。
+            </p>
+          </div>
+        </section>
+      )}
     </PageFrame>
   );
 }

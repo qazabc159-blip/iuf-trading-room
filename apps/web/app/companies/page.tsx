@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { BeneficiaryTier, Company } from "@iuf-trading-room/contracts";
 
-import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
+import { PageFrame } from "@/components/PageFrame";
 import { getCompanies } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { industryLabel } from "@/lib/industry-i18n";
@@ -160,17 +159,33 @@ export default function CompaniesPage() {
       sub="台股公司池"
       note="公司板 / 正式公司主檔；前端先以代號去重，正式資料庫去重仍維持審核閘門"
     >
-      <MetricStrip
-        columns={6}
-        cells={[
-          { label: "狀態", value: registryLabel(state), tone: registryTone(state) },
-          { label: "公司", value: metric(companies.length) },
-          { label: "上市", value: metric(twseCount) },
-          { label: "上櫃", value: metric(tpexCount) },
-          { label: "核心", value: metric(coreCount), tone: !error && coreCount > 0 ? "gold" : "muted" },
-          { label: "篩選", value: metric(filtered.length) },
-        ]}
-      />
+      <div className="parity-kpi-bar">
+          <div className="parity-kpi-cell">
+            <span className="parity-kpi-label">狀態</span>
+            <span className={`parity-kpi-value ${state === "LIVE" ? "ok" : state === "LOADING" ? "warn" : state === "BLOCKED" ? "bad" : "dim"}`}>{registryLabel(state)}</span>
+            <span className="parity-kpi-sub">公司資料庫</span>
+          </div>
+          <div className="parity-kpi-cell">
+            <span className="parity-kpi-label">總公司數</span>
+            <span className="parity-kpi-value">{total}</span>
+            <span className="parity-kpi-sub">台股公司池</span>
+          </div>
+          <div className="parity-kpi-cell">
+            <span className="parity-kpi-label">篩選結果</span>
+            <span className="parity-kpi-value ok">{filtered}</span>
+            <span className="parity-kpi-sub">符合條件</span>
+          </div>
+          <div className="parity-kpi-cell">
+            <span className="parity-kpi-label">頁次</span>
+            <span className="parity-kpi-value">{Math.ceil(filtered / PAGE_SIZE) || 1}</span>
+            <span className="parity-kpi-sub">共 {Math.ceil(filtered / PAGE_SIZE) || 1} 頁</span>
+          </div>
+          <div className="parity-kpi-cell">
+            <span className="parity-kpi-label">更新</span>
+            <span className="parity-kpi-value" style={{ fontSize: 12 }}>{formatTime(updatedAt)}</span>
+            <span className="parity-kpi-sub">資料時間</span>
+          </div>
+        </div>
 
       <Panel
         code="CO-REG"

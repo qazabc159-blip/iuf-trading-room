@@ -3,7 +3,7 @@ import Link from "next/link";
 import { BriefSearchPanel } from "./BriefSearchPanel";
 import { ContentDraftOverrideActions } from "@/components/ContentDraftOverrideActions";
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { MetricStrip } from "@/components/RadarWidgets";
+
 import {
   getBriefs,
   getContentDrafts,
@@ -332,15 +332,19 @@ function OpenAlicePanel({ openAlice }: { openAlice: LoadState<OpenAliceObservabi
   return (
     <Panel code="BRF-AI" title="AI 每日簡報流程" sub="整理、審核與發布" right={surfaceStateLabel(surface)}>
       <SourceLine state={openAlice} label="確認今日簡報是否正在自動整理與審核" />
-      <MetricStrip
-        columns={4}
-        cells={[
-          { label: "整理器", value: data?.workerStatus === "healthy" ? "正常" : data?.workerStatus === "missing" ? "需處理" : "--", tone: data?.workerStatus === "healthy" ? "status-ok" : "status-bad" },
-          { label: "排程", value: data?.sweepStatus === "healthy" ? "正常" : data?.sweepStatus === "missing" ? "需處理" : "--", tone: data?.sweepStatus === "healthy" ? "status-ok" : "status-bad" },
-          { label: "待處理", value: formatCount(data?.metrics.queuedJobs), tone: data?.metrics.queuedJobs ? "gold" : "muted" },
-          { label: "狀態", value: surfaceStateLabel(surface), tone: surfaceStateTone(surface) },
-        ]}
-      />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, background: "var(--night-rule-strong)", margin: "12px 0" }}>
+        {[
+          { l: "整理器", v: data?.workerStatus === "healthy" ? "正常" : data?.workerStatus === "missing" ? "需處理" : "--", c: data?.workerStatus === "healthy" ? "ok" : "bad" },
+          { l: "排程", v: data?.sweepStatus === "healthy" ? "正常" : "--", c: data?.sweepStatus === "healthy" ? "ok" : "bad" },
+          { l: "待處理", v: formatCount(data?.metrics.queuedJobs), c: data?.metrics.queuedJobs ? "warn" : "dim" },
+          { l: "狀態", v: surfaceStateLabel(surface), c: surfaceStateTone(surface) === "status-ok" ? "ok" : surfaceStateTone(surface) === "gold" ? "warn" : "bad" },
+        ].map(({ l, v, c }) => (
+          <div key={l} style={{ padding: "10px 14px", background: "var(--night-1)" }}>
+            <div className="parity-kpi-label">{l}</div>
+            <div className={`parity-kpi-value ${c}`} style={{ fontSize: 18 }}>{v}</div>
+          </div>
+        ))}
+      </div>
       {data && (
         <div className="brief-pipeline-grid">
           <span>心跳 <strong>{ageText(data.workerHeartbeatAgeSeconds)}</strong></span>
@@ -369,14 +373,18 @@ function DispatcherDebugPanel({ dispatcher }: { dispatcher: LoadState<OpenAliceD
   return (
     <Panel code="BRF-DSP" title="今日簡報排程" sub="今天是否已排入工作流" right={dispatcher.state === "LIVE" ? dispatcherResultLabel(debug?.lastTickResult ?? null) : "需處理"}>
       <SourceLine state={dispatcher} label="用來確認今日簡報是否已進入整理與審核流程" />
-      <MetricStrip
-        columns={3}
-        cells={[
-          { label: "最近檢查", value: formatDateTime(debug?.lastTickAt), tone: "muted" },
-          { label: "結果", value: dispatcherResultLabel(debug?.lastTickResult ?? null), tone },
-          { label: "需處理", value: debug?.lastEnqueueError ? "是" : "否", tone: debug?.lastEnqueueError ? "status-bad" : "status-ok" },
-        ]}
-      />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 1, background: "var(--night-rule-strong)", margin: "12px 0" }}>
+        {[
+          { l: "最近檢查", v: formatDateTime(debug?.lastTickAt), c: "dim" },
+          { l: "結果", v: dispatcherResultLabel(debug?.lastTickResult ?? null), c: tone === "status-ok" ? "ok" : tone === "gold" ? "warn" : "bad" },
+          { l: "需處理", v: debug?.lastEnqueueError ? "是" : "否", c: debug?.lastEnqueueError ? "bad" : "ok" },
+        ].map(({ l, v, c }) => (
+          <div key={l} style={{ padding: "10px 14px", background: "var(--night-1)" }}>
+            <div className="parity-kpi-label">{l}</div>
+            <div className={`parity-kpi-value ${c}`} style={{ fontSize: 18 }}>{v}</div>
+          </div>
+        ))}
+      </div>
       <div className="terminal-note compact">
         <span className={`tg ${tone}`}>下一步</span>
         {dispatcherNextStep(debug ?? null)}
@@ -557,19 +565,58 @@ export default async function BriefsPage() {
       sub="OpenAlice 每日整理、AI 審核與發布"
       note="每日簡報只顯示已發布或待審來源；沒有來源紀錄的內容不當作投資依據，也不提供買賣建議。"
     >
-      <MetricStrip
-        columns={4}
-        cells={[
-          { label: "正式簡報", value: formatCount(briefData.briefs.length), tone: briefData.briefs.length ? "status-ok" : "muted" },
-          { label: "待審草稿", value: formatCount(drafts.data.length), tone: drafts.data.length ? "gold" : "muted" },
-          { label: "OpenAlice", value: openAlice.state === "LIVE" ? surfaceStateLabel(openAliceSurface(openAlice.data)) : "需處理", tone: openAlice.state === "LIVE" ? surfaceStateTone(openAliceSurface(openAlice.data)) : "status-bad" },
-          { label: "排程", value: dispatcher.state === "LIVE" ? dispatcherResultLabel(dispatcher.data?.lastTickResult ?? null) : "需處理", tone: dispatcher.state === "LIVE" ? dispatcherResultTone(dispatcher.data?.lastTickResult ?? null) : "status-bad" },
-          { label: "任務佇列", value: jobs.state === "LIVE" ? jobs.data.length : jobs.state === "EMPTY" ? 0 : "--", tone: jobs.state === "LIVE" ? "status-ok" : jobs.state === "EMPTY" ? "muted" : "status-bad" },
-          { label: "最後正式版", value: latest ? `${latest.date} / ${briefAgeCopy(latestAgeDays)}` : "--", tone: freshness === "STALE" ? "gold" : freshness === "BLOCKED" ? "status-bad" : undefined },
-          { label: "今日段落", value: displayedBrief ? displayedBrief.sections.length : "--" },
-          { label: "來源狀態", value: displayedBrief ? "正式資料" : drafts.data.length ? "待審來源" : "未閉環", tone: displayedBrief ? "status-ok" : "gold" },
-        ]}
-      />
+      <div className="parity-kpi-bar">
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">正式簡報</span>
+          <span className={`parity-kpi-value ${briefData.briefs.length ? "ok" : "dim"}`}>{formatCount(briefData.briefs.length)}</span>
+          <span className="parity-kpi-sub">已發布</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">待審草稿</span>
+          <span className={`parity-kpi-value ${drafts.data.length ? "warn" : "dim"}`}>{formatCount(drafts.data.length)}</span>
+          <span className="parity-kpi-sub">等待審核</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">OpenAlice</span>
+          <span className={`parity-kpi-value ${openAlice.state === "LIVE" ? "ok" : "bad"}`}>
+            {openAlice.state === "LIVE" ? surfaceStateLabel(openAliceSurface(openAlice.data)) : "需處理"}
+          </span>
+          <span className="parity-kpi-sub">AI 流程</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">排程</span>
+          <span className={`parity-kpi-value ${dispatcher.state === "LIVE" ? "ok" : "bad"}`}>
+            {dispatcher.state === "LIVE" ? dispatcherResultLabel(dispatcher.data?.lastTickResult ?? null) : "需處理"}
+          </span>
+          <span className="parity-kpi-sub">每日排程</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">任務佇列</span>
+          <span className={`parity-kpi-value ${jobs.state === "LIVE" && jobs.data.length > 0 ? "ok" : "dim"}`}>
+            {jobs.state === "LIVE" ? jobs.data.length : jobs.state === "EMPTY" ? "0" : "--"}
+          </span>
+          <span className="parity-kpi-sub">工作紀錄</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">最後正式版</span>
+          <span className={`parity-kpi-value ${freshness === "STALE" ? "warn" : freshness === "BLOCKED" ? "bad" : "ok"}`} style={{ fontSize: 13 }}>
+            {latest ? latest.date : "--"}
+          </span>
+          <span className="parity-kpi-sub">{latest ? briefAgeCopy(latestAgeDays) : "尚無正式版"}</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">今日段落</span>
+          <span className={`parity-kpi-value ${displayedBrief ? "ok" : "dim"}`}>{displayedBrief ? displayedBrief.sections.length : "--"}</span>
+          <span className="parity-kpi-sub">內容段落</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">來源狀態</span>
+          <span className={`parity-kpi-value ${displayedBrief ? "ok" : "warn"}`}>
+            {displayedBrief ? "正式資料" : drafts.data.length ? "待審來源" : "未閉環"}
+          </span>
+          <span className="parity-kpi-sub">閉環確認</span>
+        </div>
+      </div>
       <div className="brief-command-strip">
         <Link className="terminal-button primary" href="/admin/content-drafts">
           打開草稿審核
