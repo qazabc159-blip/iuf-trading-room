@@ -85,10 +85,7 @@ jobs:
           PROBE=$(curl -sf --max-time 10 \
             -H "Cookie: $(curl -sf --max-time 10 -c /tmp/cookies.txt \
               -X POST https://api.eycvector.com/auth/login \
-              -H 'Content-Type: application/json' \
-              -d '{"email":"${{ secrets.SEED_OWNER_EMAIL || 'qazabc159@gmail.com' }}","password":"${{ secrets.SEED_OWNER_PASSWORD || 'qazabc159' }}"}' \
-              -b /tmp/cookies.txt > /dev/null && cat /tmp/cookies.txt | grep session | awk '{print $6"="$7}')" \
-            https://api.eycvector.com/api/v1/paper/db-probe 2>/dev/null || echo "PROBE_FAILED")
+              -H 'Content-Type: application/json' 
           echo "DB probe: $PROBE"
           # Extract applied migration count for audit log
           COUNT=$(echo "$PROBE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('appliedMigrationsCount','?'))" 2>/dev/null || echo "?")
