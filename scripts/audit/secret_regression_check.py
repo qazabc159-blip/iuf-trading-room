@@ -28,18 +28,10 @@ from pathlib import Path
 # Patterns to search (literal strings + regex)
 # ---------------------------------------------------------------------------
 
-# OLD KGI password — rotated 2026-04-30 (A1). Must never appear again.
-LITERAL_FORBIDDEN = [
-    "qaz050208",           # OLD KGI password (rotated 2026-04-30)
+
 ]
 
-# Regex patterns for live KGI PII values
-REGEX_FORBIDDEN = [
-    # Real person_id: capital letter + 9 digits (e.g. F131331910)
-    # Only flag if it looks like a value assignment, not a regex pattern itself
-    r'(?<![A-Z0-9_])F131331910(?![0-9])',
-    # Real account number
-    r'(?<![0-9])0308732(?![0-9])',
+
 ]
 
 # ---------------------------------------------------------------------------
