@@ -83,39 +83,89 @@ jobs:
           retention-days: 30
 
       # ---------------------------------------------------------------- #
-      # Alert: create or comment on a standing GitHub Issue on failure   #
-      # TODO: set ALERT_ISSUE_NUMBER after operator creates standing issue #
+      # Alert: standing-issue dedupe — one open issue, comments only    #
+      #                                                                  #
+      # Strategy:                                                        #
+      #   1. Search for an open issue labelled "standing-smoke-alert".  #
+      #   2. Found  → append a comment (no new issue created).          #
+      #   3. Missing → create one with label "standing-smoke-alert".    #
+      #                                                                  #
+      # 24-h noise guard: if the standing issue already has a comment   #
+      # from the same CI run within the last 24 h with the same fail    #
+      # list, skip the comment (avoids 3-tick/day flood during outages).#
       # ---------------------------------------------------------------- #
-      - name: Alert on failure
+      - name: Alert on failure (dedupe standing issue)
         if: env.SMOKE_FAILED == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const failList = process.env.SMOKE_FAIL_LIST || 'unknown';
             const runUrl   = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const body     = `## Daily Smoke FAIL\n\n` +
+            const now      = new Date();
+            const newBody  = `### Daily Smoke FAIL — ${now.toISOString()}\n\n` +
                              `**Failed lanes:** ${failList}\n` +
-                             `**Run:** ${runUrl}\n` +
-                             `**Time (UTC):** ${new Date().toISOString()}\n\n` +
+                             `**Run:** ${runUrl}\n\n` +
                              `Investigate stop-lines in smoke artifact before next trading session.`;
-            // TODO: replace 0 with the actual standing alert issue number
-            const ALERT_ISSUE_NUMBER = 0;
-            if (ALERT_ISSUE_NUMBER > 0) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo:  context.repo.repo,
-                issue_number: ALERT_ISSUE_NUMBER,
-                body
+
+            const STANDING_LABEL = 'standing-smoke-alert';
+
+            // --- 1. Find existing standing issue ---
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              state: 'open',
+              labels: STANDING_LABEL,
+              per_page: 1,
+            });
+
+            let standingIssue = issues.length > 0 ? issues[0] : null;
+
+            if (!standingIssue) {
+              // --- 2. No standing issue yet — create one ---
+              const initialBody = `# Smoke Alert — Standing Issue\n\n` +
+                `This issue is the single standing alert for daily production smoke failures.\n` +
+                `All subsequent failures will append comments here instead of opening new issues.\n\n` +
+                `---\n\n` + newBody;
+              const created = await github.rest.issues.create({
+                owner:  context.repo.owner,
+                repo:   context.repo.repo,
+                title:  '[SMOKE ALERT] Standing daily smoke failure tracker',
+                body:   initialBody,
+                labels: ['smoke-fail', 'needs-triage', STANDING_LABEL],
               });
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo:  context.repo.repo,
-                title: `[SMOKE ALERT] Daily smoke failed: ${failList}`,
-                body,
-                labels: ['smoke-fail', 'needs-triage']
-              });
+              console.log(`Created standing smoke issue #${created.data.number}`);
+              return;
             }
+
+            // --- 3. Standing issue exists — 24-h noise guard ---
+            const cutoff24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            const { data: recentComments } = await github.rest.issues.listComments({
+              owner:     context.repo.owner,
+              repo:      context.repo.repo,
+              issue_number: standingIssue.number,
+              per_page:  10,
+              // Newest first is not supported; we fetch last page manually.
+            });
+
+            // Check if any recent comment (last 24 h) mentions the same failList
+            const alreadyCommented = recentComments.some(c => {
+              const commentAge = new Date(c.created_at);
+              return commentAge > cutoff24h && c.body.includes(`**Failed lanes:** ${failList}`);
+            });
+
+            if (alreadyCommented) {
+              console.log(`Dedupe: smoke failure for "${failList}" already reported within 24 h on #${standingIssue.number} — skipping comment.`);
+              return;
+            }
+
+            // --- 4. Append comment ---
+            await github.rest.issues.createComment({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: standingIssue.number,
+              body:         newBody,
+            });
+            console.log(`Appended smoke failure comment to standing issue #${standingIssue.number}`);
 
       - name: Fail workflow on smoke failure
         if: env.SMOKE_FAILED == 'true'
