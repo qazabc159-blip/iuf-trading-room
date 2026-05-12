@@ -606,6 +606,18 @@ function trimForBrief(value: string, max = 1_200): string {
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
 }
 
+const SOURCE_PRODUCT_LABELS: Record<string, string> = {
+  companies_ohlcv: "台股日線資料",
+  tw_monthly_revenue: "月營收資料",
+  tw_institutional_buysell: "法人籌碼資料",
+  tw_margin_short: "信用交易資料",
+  market_overview: "市場總覽資料"
+};
+
+function formatSourceLabel(source: string): string {
+  return SOURCE_PRODUCT_LABELS[source] ?? source.replace(/_/g, " ");
+}
+
 function buildSourcePackContext(sourcePack: SourcePack): string {
   return sourcePack.sources
     .map((source) => {
@@ -613,7 +625,7 @@ function buildSourcePackContext(sourcePack: SourcePack): string {
         ? `\n    sample=${trimForBrief(JSON.stringify(source.sampleRows), 600)}`
         : "";
       return [
-        `- ${source.source}`,
+        `- ${formatSourceLabel(source.source)}`,
         `status=${source.status}`,
         `rows=${source.rowCount ?? "n/a"}`,
         `latest=${source.latestDate ?? "n/a"}`,
@@ -637,13 +649,13 @@ function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<string, unk
   );
 
   const liveLine = liveSources.length
-    ? liveSources.map((source) => `${source.source}（${source.rowCount ?? "n/a"} 筆，最新 ${source.latestDate ?? "未標示"}）`).join("、")
+    ? liveSources.map((source) => `${formatSourceLabel(source.source)}（${source.rowCount ?? "n/a"} 筆，最新 ${source.latestDate ?? "未標示"}）`).join("、")
     : "目前沒有足夠的新鮮來源可列為主要依據";
   const staleLine = staleSources.length
-    ? staleSources.map((source) => `${source.source}（最新 ${source.latestDate ?? "未標示"}）`).join("、")
+    ? staleSources.map((source) => `${formatSourceLabel(source.source)}（最新 ${source.latestDate ?? "未標示"}）`).join("、")
     : "沒有明顯過期來源";
   const blockedLine = blockedSources.length
-    ? blockedSources.map((source) => `${source.source}（${source.note ?? source.status}）`).join("、")
+    ? blockedSources.map((source) => `${formatSourceLabel(source.source)}（${source.note ?? source.status}）`).join("、")
     : "沒有主要資料缺口";
 
   return dailyBriefPayloadSchema.parse({
@@ -1197,7 +1209,7 @@ export async function runPipelineTick(
   updatePipelineState({ sourcePackCount: sourcePack.sources.length });
 
   // 4. Generator — enqueue OpenAlice job
-  const genResult = await generateDailyBrief(workspaceSlug, sourcePack);
+  const genResult = await generateDailyBrief(workspaceSlug, workspace.id, sourcePack);
   if (!genResult) {
     const result: PipelineRunResult = {
       ...baseResult(),
