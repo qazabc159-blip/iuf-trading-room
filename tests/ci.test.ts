@@ -9685,6 +9685,7 @@ test("TM8: four_layer_preview is included in all successful toggle results and n
 import {
   runPipelineBackfillRange,
   runPipelineMissedDayCatchUp as _catchUpForTest,
+  runPipelineMissedDayCatchUpForAllWorkspaces,
   buildSourceOnlyBriefPayload,
   evaluatePublishGate,
   evaluateSourceOnlyBackfillGate
@@ -9717,6 +9718,12 @@ test("BF3: runPipelineMissedDayCatchUp resolves without throwing in memory mode 
   await assert.doesNotReject(async () => {
     await _catchUpForTest("default");
   }, "runPipelineMissedDayCatchUp must not throw");
+});
+
+test("BF3b: runPipelineMissedDayCatchUpForAllWorkspaces falls back cleanly in memory mode", async () => {
+  await assert.doesNotReject(async () => {
+    await runPipelineMissedDayCatchUpForAllWorkspaces("default");
+  }, "all-workspace catch-up must not throw");
 });
 
 // BF4: evaluatePublishGate approves green brief with full trail

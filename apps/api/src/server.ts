@@ -236,7 +236,7 @@ import {
   runPipelineCloseBriefTick,
   runPipelineCloseWatchTick,
   runPipelineForDate,
-  runPipelineMissedDayCatchUp,
+  runPipelineMissedDayCatchUpForAllWorkspaces,
   runPipelineBackfillRange,
   runPipelinePreMarketBootRecovery,
   runPipelinePreMarketTick,
@@ -10297,7 +10297,12 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
     .where(
       and(
         eq(dailyBriefs.workspaceId, workspace.id),
-        eq(dailyBriefs.date, todayStr)
+        eq(dailyBriefs.date, todayStr),
+        or(
+          eq(dailyBriefs.status, "published"),
+          eq(dailyBriefs.status, "approved"),
+          and(eq(dailyBriefs.status, "draft"), eq(dailyBriefs.generatedBy, "worker"))
+        )
       )
     )
     .limit(1);
@@ -11494,10 +11499,11 @@ function startSchedulers(workspaceSlug: string): void {
   // Missed-day catch-up: fires 15s after boot to cover:
   // (a) deploy-interrupted pre-market windows (root cause of 5/8 miss)
   // (b) any trading day where the process was down for the full brief window
-  // Only catches the most recent missed trading day (not multi-day backfill).
+  // Scans all DB workspaces so the public smoke user cannot drift away from
+  // the single scheduler workspace selected at boot.
   // All 5-layer review gates still run — no content shortcuts.
   setTimeout(() => {
-    runPipelineMissedDayCatchUp(workspaceSlug).catch((e: unknown) =>
+    runPipelineMissedDayCatchUpForAllWorkspaces(workspaceSlug).catch((e: unknown) =>
       console.error("[pipeline-catchup] boot catch-up error:", e instanceof Error ? e.message : String(e))
     );
   }, 15_000);
