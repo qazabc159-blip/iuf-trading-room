@@ -21,6 +21,7 @@
 
 import { randomUUID } from "node:crypto";
 import { isDatabaseMode, getDb, auditLogs } from "@iuf-trading-room/db";
+import { and, eq, gte, like } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Env helpers — never export raw credentials
@@ -140,7 +141,7 @@ export function _resetKgiSimState(): void {
 
 async function writeKgiAuditLog(params: {
   workspaceId: string | null;
-  action: "kgi.sim.quote_smoke" | "kgi.sim.trade_smoke";
+  action: "kgi.sim.quote_smoke" | "kgi.sim.trade_smoke" | "kgi.sim.daily_smoke";
   entityId: string;
   payload: Record<string, unknown>;
 }): Promise<void> {
@@ -537,6 +538,236 @@ export async function runSimTradeSmoke(params: {
 
 // ---------------------------------------------------------------------------
 // Internal helper
+
+// ---------------------------------------------------------------------------
+// Daily smoke cron --- 08:00 TST window + 7-day in-memory history
+// ---------------------------------------------------------------------------
+
+/** One entry in the daily smoke history ring buffer (max 7 entries). */
+export interface DailySmokeHistoryEntry {
+  /** SIM_ONLY tag - always present. */
+  sim_only: true;
+  /** Unique run ID for this daily smoke execution. */
+  runId: string;
+  /** ISO timestamp when this smoke run fired. */
+  firedAt: string;
+  /** Overall pass/fail of the combined quote+trade smoke. */
+  overallStatus: "pass" | "fail" | "partial";
+  /** Quote smoke result summary. */
+  quoteCheck: {
+    gatewayReachable: boolean;
+    loggedIn: boolean;
+    tickReceived: boolean;
+    error: string | null;
+  };
+  /**
+   * Trade smoke result summary (null = skipped, dual-confirm not provided).
+   * Daily cron leaves confirmedByBruce/confirmedByJason unset by default.
+   */
+  tradeCheck: {
+    gatewayReachable: boolean;
+    loggedIn: boolean;
+    orderOutcome: string;
+    error: string | null;
+  } | null;
+  /**
+   * Prod write audit: broker.* audit_log entries in the last 24h.
+   * 0 = clean (expected). >0 = ALERT.
+   */
+  prodBrokerAuditCount: number;
+  /** Duration of the full daily smoke run in ms. */
+  durationMs: number;
+}
+
+/** Ring buffer: last 7 daily smoke runs (in-memory, not persisted). */
+const _dailySmokeHistory: DailySmokeHistoryEntry[] = [];
+
+/** Returns the last 7 daily smoke entries, newest first. */
+export function getDailySmokeHistory(): DailySmokeHistoryEntry[] {
+  return [..._dailySmokeHistory].reverse();
+}
+
+/** For test reset only. */
+export function _resetDailySmokeHistory(): void {
+  _dailySmokeHistory.length = 0;
+}
+
+/**
+ * runKgiSimDailySmokeSchedulerTick - combined daily smoke.
+ *
+ * Steps:
+ *   1. Quote smoke (login + subscribe 0050 + receive tick)
+ *   2. Prod-write audit check (broker.* audit_log entries in last 24h == 0)
+ *   3. Trade smoke (only if env=sim AND confirmedByBruce AND confirmedByJason)
+ *
+ * Window: 08:00-08:30 TST (00:00-00:30 UTC). Call from 15-min polling cron.
+ * Idempotent: skips if already fired today (TST wall-clock date).
+ * forceRun=true bypasses window+idempotency (manual trigger / tests).
+ *
+ * Hard lines:
+ *   - NEVER submits to production broker.
+ *   - NEVER logs credentials.
+ *   - prodWriteBlocked: always true.
+ */
+export async function runKgiSimDailySmokeSchedulerTick(params: {
+  workspaceId?: string | null;
+  confirmedByBruce?: boolean;
+  confirmedByJason?: boolean;
+  forceRun?: boolean;
+}): Promise<DailySmokeHistoryEntry | null> {
+  // Window check: 08:00-08:30 TST = 00:00-00:30 UTC
+  if (!params.forceRun) {
+    const now = new Date();
+    const hourUTC = now.getUTCHours();
+    const minUTC = now.getUTCMinutes();
+    const inWindow = hourUTC === 0 && minUTC < 30;
+    if (!inWindow) return null;
+
+    // Idempotent: skip if already fired today (TST wall-clock)
+    const todayTST = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const lastEntry = _dailySmokeHistory[_dailySmokeHistory.length - 1];
+    if (lastEntry) {
+      const lastDayTST = new Date(new Date(lastEntry.firedAt).getTime() + 8 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10);
+      if (lastDayTST === todayTST) {
+        console.log(`[kgi-sim-daily-smoke] already fired today (${todayTST}), skipping`);
+        return null;
+      }
+    }
+  }
+
+  const runId = randomUUID();
+  const firedAt = new Date().toISOString();
+  const t0 = Date.now();
+
+  console.log(`[kgi-sim-daily-smoke] Starting daily smoke run=${runId}`);
+
+  // Step 1: Quote smoke
+  const workspaceId = params.workspaceId ?? await resolveDefaultWorkspaceId();
+  const quoteResult = await runSimQuoteSmoke({ workspaceId, symbol: "0050" });
+  console.log(
+    `[kgi-sim-daily-smoke] quote: reachable=${quoteResult.gatewayReachable} ` +
+    `loggedIn=${quoteResult.loggedIn} tickReceived=${quoteResult.tickReceived} ` +
+    `error=${quoteResult.error ?? "none"}`
+  );
+
+  // Step 2: Prod-write audit probe (broker.* actions in last 24h must be 0)
+  let prodBrokerAuditCount = 0;
+  if (isDatabaseMode()) {
+    const db = getDb();
+    if (db && workspaceId) {
+      try {
+        const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const rows = await db
+          .select({ id: auditLogs.id })
+          .from(auditLogs)
+          .where(
+            and(
+              eq(auditLogs.workspaceId, workspaceId),
+              gte(auditLogs.createdAt, since24h),
+              like(auditLogs.action, "broker.%")
+            )
+          );
+        prodBrokerAuditCount = rows.length;
+        if (prodBrokerAuditCount > 0) {
+          console.warn(
+            `[kgi-sim-daily-smoke] ALERT: ${prodBrokerAuditCount} broker.* audit entries in last 24h - ` +
+            "prod write may have occurred. Investigate immediately."
+          );
+        }
+      } catch (err) {
+        console.warn("[kgi-sim-daily-smoke] audit probe failed:", err instanceof Error ? err.message : String(err));
+      }
+    }
+  }
+
+  // Step 3: Trade smoke (gated by env=sim + dual-confirm)
+  let tradeCheck: DailySmokeHistoryEntry["tradeCheck"] = null;
+  const env = resolveKgiEnv();
+  if (env === "sim" && params.confirmedByBruce && params.confirmedByJason) {
+    const tradeResult = await runSimTradeSmoke({
+      workspaceId,
+      symbol: "0050",
+      confirmedByBruce: params.confirmedByBruce,
+      confirmedByJason: params.confirmedByJason,
+    });
+    tradeCheck = {
+      gatewayReachable: tradeResult.gatewayReachable,
+      loggedIn: tradeResult.loggedIn,
+      orderOutcome: tradeResult.orderOutcome,
+      error: tradeResult.error,
+    };
+    console.log(
+      `[kgi-sim-daily-smoke] trade: reachable=${tradeResult.gatewayReachable} ` +
+      `outcome=${tradeResult.orderOutcome} error=${tradeResult.error ?? "none"}`
+    );
+  } else if (env !== "sim") {
+    console.log(`[kgi-sim-daily-smoke] trade smoke skipped: KGI_ENV=${env}`);
+  } else {
+    console.log("[kgi-sim-daily-smoke] trade smoke skipped: dual-confirm not provided");
+  }
+
+  // Compute overall status
+  const quotePass = quoteResult.gatewayReachable && quoteResult.loggedIn;
+  const tradePass = tradeCheck === null || ["accepted", "not_enabled"].includes(tradeCheck.orderOutcome);
+  const auditClean = prodBrokerAuditCount === 0;
+  let overallStatus: DailySmokeHistoryEntry["overallStatus"];
+  if (quotePass && tradePass && auditClean) {
+    overallStatus = "pass";
+  } else if (!quotePass) {
+    overallStatus = "fail";
+  } else {
+    overallStatus = "partial";
+  }
+
+  const durationMs = Date.now() - t0;
+
+  const entry: DailySmokeHistoryEntry = {
+    sim_only: true,
+    runId,
+    firedAt,
+    overallStatus,
+    quoteCheck: {
+      gatewayReachable: quoteResult.gatewayReachable,
+      loggedIn: quoteResult.loggedIn,
+      tickReceived: quoteResult.tickReceived,
+      error: quoteResult.error,
+    },
+    tradeCheck,
+    prodBrokerAuditCount,
+    durationMs,
+  };
+
+  // Append to ring buffer (max 7 entries)
+  _dailySmokeHistory.push(entry);
+  if (_dailySmokeHistory.length > 7) {
+    _dailySmokeHistory.shift();
+  }
+
+  // Write audit log (no credentials ever)
+  await writeKgiAuditLog({
+    workspaceId,
+    action: "kgi.sim.daily_smoke",
+    entityId: runId,
+    payload: {
+      sim_only: true,
+      run_id: runId,
+      fired_at: firedAt,
+      overall_status: overallStatus,
+      quote_gateway_reachable: quoteResult.gatewayReachable,
+      quote_logged_in: quoteResult.loggedIn,
+      quote_tick_received: quoteResult.tickReceived,
+      quote_error: quoteResult.error,
+      trade_check: tradeCheck,
+      prod_broker_audit_count: prodBrokerAuditCount,
+      duration_ms: durationMs,
+    },
+  });
+
+  console.log(`[kgi-sim-daily-smoke] Done: status=${overallStatus} durationMs=${durationMs}`);
+  return entry;
+}
+
 // ---------------------------------------------------------------------------
 
 function finalise<T extends { finishedAt: string; durationMs: number }>(
