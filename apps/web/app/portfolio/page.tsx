@@ -1,22 +1,30 @@
-import Link from "next/link";
-
-import { PageFrame } from "@/components/PageFrame";
+import {
+  getCompanyByTicker,
+  getCompanyOhlcv,
+  getCompanyQuoteRealtime,
+  getStrategyIdeas,
+  type CompanyRealtimeQuote,
+  type OhlcvBar,
+} from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import {
+  getKgiPositions,
   getPaperHealth,
   getPaperPortfolio,
   listPaperFills,
-  getKgiPositions,
+  listPaperOrders,
+  type KgiPositionsResponse,
   type PaperFillLedgerRow,
   type PaperHealthState,
+  type PaperOrderState,
   type PaperPortfolioPosition,
-  type KgiLivePosition,
-  type KgiPositionsResponse,
 } from "@/lib/paper-orders-api";
+
+import { PaperRoomV03Client, type PaperCandidateV03 } from "./PaperRoomV03Client";
 
 export const dynamic = "force-dynamic";
 
-const PAPER_CAPITAL_TWD = 20_000;
+const DEFAULT_SYMBOL = "2330";
 
 type PortfolioState =
   | { state: "LIVE"; positions: PaperPortfolioPosition[]; updatedAt: string }
@@ -28,9 +36,40 @@ type FillsState =
   | { state: "EMPTY"; fills: PaperFillLedgerRow[]; updatedAt: string; reason: string }
   | { state: "BLOCKED"; fills: PaperFillLedgerRow[]; updatedAt: string; reason: string };
 
+type OrdersState =
+  | { state: "LIVE"; orders: PaperOrderState[]; updatedAt: string }
+  | { state: "EMPTY"; orders: PaperOrderState[]; updatedAt: string; reason: string }
+  | { state: "BLOCKED"; orders: PaperOrderState[]; updatedAt: string; reason: string };
+
 type HealthState =
   | { state: "LIVE"; health: PaperHealthState; updatedAt: string }
   | { state: "BLOCKED"; health: null; updatedAt: string; reason: string };
+
+type KgiState =
+  | { state: "LIVE"; data: KgiPositionsResponse; updatedAt: string }
+  | { state: "UNAVAILABLE"; data: KgiPositionsResponse; updatedAt: string; reason: string }
+  | { state: "BLOCKED"; data: null; updatedAt: string; reason: string };
+
+type MarketState =
+  | {
+      state: "LIVE";
+      symbol: string;
+      companyName: string;
+      bars: OhlcvBar[];
+      quote: CompanyRealtimeQuote | null;
+      updatedAt: string;
+      source: string;
+    }
+  | {
+      state: "EMPTY" | "BLOCKED";
+      symbol: string;
+      companyName: string;
+      bars: OhlcvBar[];
+      quote: CompanyRealtimeQuote | null;
+      updatedAt: string;
+      source: string;
+      reason: string;
+    };
 
 function nowIso() {
   return new Date().toISOString();
@@ -46,21 +85,11 @@ async function loadPaperPortfolio(): Promise<PortfolioState> {
   try {
     const positions = await getPaperPortfolio();
     if (positions.length === 0) {
-      return {
-        state: "EMPTY",
-        positions,
-        updatedAt,
-        reason: "目前沒有模擬持倉；先從公司頁開啟紙上交易預覽。",
-      };
+      return { state: "EMPTY", positions, updatedAt, reason: "目前沒有模擬持倉。" };
     }
     return { state: "LIVE", positions, updatedAt };
   } catch (error) {
-    return {
-      state: "BLOCKED",
-      positions: [],
-      updatedAt,
-      reason: userFacingReason(error, "模擬部位讀取失敗"),
-    };
+    return { state: "BLOCKED", positions: [], updatedAt, reason: userFacingReason(error, "模擬部位讀取失敗") };
   }
 }
 
@@ -69,32 +98,35 @@ async function loadPaperFills(): Promise<FillsState> {
   try {
     const fills = await listPaperFills();
     if (fills.length === 0) {
-      return {
-        state: "EMPTY",
-        fills,
-        updatedAt,
-        reason: "目前沒有模擬成交紀錄；送出 paper 委託後會出現在這裡。",
-      };
+      return { state: "EMPTY", fills, updatedAt, reason: "目前沒有模擬成交紀錄。" };
     }
-    return {
-      state: "LIVE",
-      fills,
-      updatedAt: latestFillTime(fills) ?? updatedAt,
-    };
+    return { state: "LIVE", fills, updatedAt: fills.map((fill) => fill.fillTime).sort().at(-1) ?? updatedAt };
   } catch (error) {
-    return {
-      state: "BLOCKED",
-      fills: [],
-      updatedAt,
-      reason: userFacingReason(error, "模擬成交讀取失敗"),
-    };
+    return { state: "BLOCKED", fills: [], updatedAt, reason: userFacingReason(error, "模擬成交讀取失敗") };
   }
 }
 
-type KgiState =
-  | { state: "LIVE"; data: KgiPositionsResponse; updatedAt: string }
-  | { state: "UNAVAILABLE"; data: KgiPositionsResponse; updatedAt: string; reason: string }
-  | { state: "BLOCKED"; data: null; updatedAt: string; reason: string };
+async function loadPaperOrders(): Promise<OrdersState> {
+  const updatedAt = nowIso();
+  try {
+    const orders = await listPaperOrders();
+    if (orders.length === 0) {
+      return { state: "EMPTY", orders, updatedAt, reason: "目前沒有模擬委託。" };
+    }
+    return { state: "LIVE", orders: orders.slice().reverse(), updatedAt };
+  } catch (error) {
+    return { state: "BLOCKED", orders: [], updatedAt, reason: userFacingReason(error, "模擬委託讀取失敗") };
+  }
+}
+
+async function loadPaperHealth(): Promise<HealthState> {
+  const updatedAt = nowIso();
+  try {
+    return { state: "LIVE", health: await getPaperHealth(), updatedAt };
+  } catch (error) {
+    return { state: "BLOCKED", health: null, updatedAt, reason: userFacingReason(error, "模擬交易狀態讀取失敗") };
+  }
+}
 
 async function loadKgiPositions(): Promise<KgiState> {
   const updatedAt = nowIso();
@@ -104,430 +136,132 @@ async function loadKgiPositions(): Promise<KgiState> {
       return { state: "LIVE", data, updatedAt };
     }
     const reasonMap: Record<string, string> = {
-      gateway_unreachable: "凱基 gateway 目前無法連線（EC2 進程可能已停止）。",
-      gateway_not_authenticated: "凱基 gateway 尚未登入，請先在 gateway 端執行登入。",
-      gateway_error: "凱基 gateway 發生未預期錯誤。",
+      gateway_unreachable: "凱基 gateway 目前無法連線。",
+      gateway_not_authenticated: "凱基 gateway 尚未登入。",
+      gateway_error: "凱基唯讀資料暫時無法取得。",
     };
-    const reason = data.note ?? reasonMap[data.status] ?? "目前無持倉資料。";
     return {
       state: "UNAVAILABLE",
       data,
       updatedAt,
-      reason: data.status === "ok" ? "目前無持倉" : reason,
+      reason: data.note ?? (data.status === "ok" ? "目前無真實持倉。" : reasonMap[data.status] ?? "凱基唯讀資料暫時無法取得。"),
     };
   } catch (error) {
-    return {
-      state: "BLOCKED",
-      data: null,
-      updatedAt,
-      reason: userFacingReason(error, "凱基真實倉位讀取失敗"),
-    };
+    return { state: "BLOCKED", data: null, updatedAt, reason: userFacingReason(error, "凱基真實倉位讀取失敗") };
   }
 }
 
-async function loadPaperHealth(): Promise<HealthState> {
+async function loadCandidates(): Promise<PaperCandidateV03[]> {
+  try {
+    const data = (await getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 12, sort: "score" })).data;
+    return data.items.map((item) => ({
+      symbol: item.symbol,
+      name: item.companyName,
+      score: item.score,
+      confidence: item.confidence,
+      signalCount: item.signalCount,
+      decision: item.marketData.decision,
+      theme: item.topThemes[0]?.name ?? "策略候選",
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function loadMarketForSymbol(symbol: string): Promise<MarketState> {
   const updatedAt = nowIso();
   try {
-    return { state: "LIVE", health: await getPaperHealth(), updatedAt };
+    const company = await getCompanyByTicker(symbol);
+    if (!company) {
+      return {
+        state: "EMPTY",
+        symbol,
+        companyName: symbol,
+        bars: [],
+        quote: null,
+        updatedAt,
+        source: "公司資料",
+        reason: "尚未找到這檔股票的公司資料。",
+      };
+    }
+
+    const [bars, quote] = await Promise.all([
+      getCompanyOhlcv(company.id, { interval: "1d" }).catch(() => [] as OhlcvBar[]),
+      getCompanyQuoteRealtime(company.id),
+    ]);
+
+    if (bars.length === 0 && !quote) {
+      return {
+        state: "EMPTY",
+        symbol: company.ticker,
+        companyName: company.name,
+        bars,
+        quote,
+        updatedAt,
+        source: "K 線 / 即時報價",
+        reason: "目前沒有可用 K 線或唯讀報價。",
+      };
+    }
+
+    return {
+      state: "LIVE",
+      symbol: company.ticker,
+      companyName: company.name,
+      bars,
+      quote,
+      updatedAt: quote?.updatedAt ?? bars.at(-1)?.dt ?? updatedAt,
+      source: quote?.state === "LIVE" ? "凱基唯讀報價 + 日 K" : "日 K 資料",
+    };
   } catch (error) {
     return {
       state: "BLOCKED",
-      health: null,
+      symbol,
+      companyName: symbol,
+      bars: [],
+      quote: null,
       updatedAt,
-      reason: userFacingReason(error, "模擬交易狀態讀取失敗"),
+      source: "K 線 / 即時報價",
+      reason: userFacingReason(error, "市場資料讀取失敗"),
     };
   }
 }
 
-function stateLabel(state: PortfolioState["state"] | FillsState["state"] | HealthState["state"]) {
-  if (state === "LIVE") return "可用";
-  if (state === "EMPTY") return "尚無紀錄";
-  return "需處理";
+function chooseSeedSymbol(
+  querySymbol: string | undefined,
+  portfolio: PortfolioState,
+  candidates: PaperCandidateV03[],
+) {
+  const query = querySymbol?.trim().toUpperCase();
+  if (query && /^[0-9A-Z]{2,10}$/.test(query)) return query;
+  return portfolio.positions[0]?.symbol ?? candidates[0]?.symbol ?? DEFAULT_SYMBOL;
 }
 
-function stateClass(state: PortfolioState["state"] | FillsState["state"] | HealthState["state"]) {
-  if (state === "LIVE") return "status-ok";
-  if (state === "EMPTY") return "gold";
-  return "status-bad";
-}
-
-function sideLabel(side: PaperFillLedgerRow["side"]) {
-  return side === "buy" ? "買進" : "賣出";
-}
-
-function orderTypeLabel(orderType: PaperFillLedgerRow["orderType"]) {
-  if (orderType === "market") return "市價";
-  if (orderType === "limit") return "限價";
-  if (orderType === "stop") return "停損";
-  return "停損限價";
-}
-
-function formatTime(value: string | null | undefined) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", {
-    timeZone: "Asia/Taipei",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", {
-    timeZone: "Asia/Taipei",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
-
-function formatTwd(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
-  return `NT$${value.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}`;
-}
-
-function actualFillShares(fill: PaperFillLedgerRow) {
-  return fill.quantity_unit === "LOT" ? fill.fillQty * 1000 : fill.fillQty;
-}
-
-function fillUnitLabel(fill: PaperFillLedgerRow) {
-  if (fill.quantity_unit === "LOT") return `${fill.fillQty.toLocaleString("zh-TW")} 張`;
-  return `${fill.fillQty.toLocaleString("zh-TW")} 股`;
-}
-
-function fillNotional(fill: PaperFillLedgerRow) {
-  return actualFillShares(fill) * fill.fillPrice;
-}
-
-function totalFillNotional(fills: PaperFillLedgerRow[]) {
-  return fills.reduce((sum, fill) => sum + fillNotional(fill), 0);
-}
-
-function latestFillTime(fills: PaperFillLedgerRow[]) {
-  return fills
-    .map((fill) => fill.fillTime)
-    .filter(Boolean)
-    .sort()
-    .at(-1) ?? null;
-}
-
-function shortOrderId(orderId: string) {
-  if (orderId.length <= 10) return orderId;
-  return `${orderId.slice(0, 6)}…${orderId.slice(-4)}`;
-}
-
-function formatShares(value: number) {
-  return `${value.toLocaleString("zh-TW")} 股`;
-}
-
-function formatLotBreakdown(value: number) {
-  const sign = value < 0 ? "-" : "";
-  const abs = Math.abs(value);
-  const lots = Math.floor(abs / 1000);
-  const oddLots = abs % 1000;
-  if (lots === 0) return `${sign}${oddLots.toLocaleString("zh-TW")} 股`;
-  if (oddLots === 0) return `${sign}${lots.toLocaleString("zh-TW")} 張`;
-  return `${sign}${lots.toLocaleString("zh-TW")} 張 + ${oddLots.toLocaleString("zh-TW")} 股`;
-}
-
-function avgCostLabel(position: PaperPortfolioPosition) {
-  if (position.avgCostPerShare === null) return "--";
-  return `${formatTwd(position.avgCostPerShare)} / 股`;
-}
-
-function notionalLabel(position: PaperPortfolioPosition) {
-  if (position.avgCostPerShare === null || position.netQtyShares <= 0) return "--";
-  return formatTwd(position.avgCostPerShare * position.netQtyShares);
-}
-
-function noteLabel(note: string | null) {
-  if (!note) return "持倉中";
-  if (note === "net_flat_or_short") return "已沖銷或淨空";
-  return note;
-}
-
-function totalShares(positions: PaperPortfolioPosition[]) {
-  return positions.reduce((sum, position) => sum + Math.abs(position.netQtyShares), 0);
-}
-
-function estimatedCost(positions: PaperPortfolioPosition[]) {
-  return positions.reduce((sum, position) => {
-    if (position.avgCostPerShare === null || position.netQtyShares <= 0) return sum;
-    return sum + position.avgCostPerShare * position.netQtyShares;
-  }, 0);
-}
-
-function gateLabel(health: PaperHealthState | null) {
-  if (!health) return "需檢查";
-  if (health.previewReady && health.gate.gateOpen) return "可預覽";
-  if (health.previewReady) return "僅預覽";
-  return "待開啟";
-}
-function kgiStatusBadge(status: KgiPositionsResponse["status"]) {
-  if (status === "ok") return "ok";
-  if (status === "gateway_unreachable" || status === "gateway_error") return "bad";
-  return "warn";
-}
-
-function kgiStatusLabel(kgi: KgiState) {
-  if (kgi.state === "LIVE") return "即時";
-  if (kgi.state === "UNAVAILABLE") {
-    const s = kgi.data.status;
-    if (s === "ok") return "無持倉";
-    if (s === "gateway_not_authenticated") return "未登入";
-    return "離線";
-  }
-  return "無法連線";
-}
-
-function formatPnl(value: number) {
-  if (!Number.isFinite(value)) return "--";
-  const sign = value >= 0 ? "+" : "";
-  return `${sign}NT$${Math.abs(value).toLocaleString("zh-TW", { maximumFractionDigits: 0 })}`;
-}
-
-function pnlClass(value: number) {
-  if (!Number.isFinite(value) || value === 0) return "dim";
-  return value > 0 ? "ok" : "status-bad";
-}
-
-export default async function PortfolioPage() {
-  const [portfolio, fillsResult, healthResult, kgiResult] = await Promise.all([
+export default async function PortfolioPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ symbol?: string }>;
+}) {
+  const params = await searchParams;
+  const [portfolio, fills, orders, health, kgi, candidates] = await Promise.all([
     loadPaperPortfolio(),
     loadPaperFills(),
+    loadPaperOrders(),
     loadPaperHealth(),
     loadKgiPositions(),
+    loadCandidates(),
   ]);
-  const health = healthResult.state === "LIVE" ? healthResult.health : null;
-  const paperCost = estimatedCost(portfolio.positions);
-  const availableCapital = Math.max(PAPER_CAPITAL_TWD - paperCost, 0);
-  const fillNotionalTotal = totalFillNotional(fillsResult.fills);
-  const recentFills = fillsResult.fills.slice(0, 12);
-  const posState = portfolio.state === "LIVE" ? "ok" : portfolio.state === "EMPTY" ? "warn" : "bad";
-  const fillState = fillsResult.state === "LIVE" ? "ok" : fillsResult.state === "EMPTY" ? "warn" : "bad";
+  const seedSymbol = chooseSeedSymbol(params?.symbol, portfolio, candidates);
+  const market = await loadMarketForSymbol(seedSymbol);
 
   return (
-    <PageFrame code="06" title="模擬交易室" sub="紙上委託、成交回顧與部位風控" exec
-      note="這裡只處理 paper preview、paper submit、fills 與 portfolio；不連真實券商下單。">
-      <div className="parity-kpi-bar">
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">模擬交易</span>
-          <span className={`parity-kpi-value ${health?.previewReady ? "ok" : "warn"}`}>{gateLabel(health)}</span>
-          <span className="parity-kpi-sub">Paper 模式</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">風控閘門</span>
-          <span className={`parity-kpi-value ${health?.gate.gateOpen ? "ok" : "warn"}`}>{health?.gate.gateOpen ? "開啟" : "守門"}</span>
-          <span className="parity-kpi-sub">Gate 狀態</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">部位檔數</span>
-          <span className={`parity-kpi-value ${portfolio.positions.length ? "warn" : "dim"}`}>{portfolio.positions.length}</span>
-          <span className="parity-kpi-sub">模擬持倉</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">成交筆數</span>
-          <span className={`parity-kpi-value ${fillsResult.fills.length ? "ok" : "dim"}`}>{fillsResult.fills.length}</span>
-          <span className="parity-kpi-sub">已成交</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">紙上資金</span>
-          <span className="parity-kpi-value">{formatTwd(PAPER_CAPITAL_TWD)}</span>
-          <span className="parity-kpi-sub">模擬本金</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">已投入</span>
-          <span className={`parity-kpi-value ${paperCost > 0 ? "warn" : "dim"}`}>{formatTwd(paperCost)}</span>
-          <span className="parity-kpi-sub">持倉估算</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">可用資金</span>
-          <span className="parity-kpi-value ok">{formatTwd(availableCapital)}</span>
-          <span className="parity-kpi-sub">尚未投入</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">最近成交</span>
-          <span className="parity-kpi-value" style={{ fontSize: 14 }}>{formatTime(latestFillTime(fillsResult.fills))}</span>
-          <span className="parity-kpi-sub">成交時間</span>
-        </div>
-      </div>
-
-      <div className="parity-hero">
-        <div className="parity-hero-eyebrow">IUF / PAPER PORTFOLIO / 模擬交易室</div>
-        <h2>紙上交易先走預覽與風控，不送真實委託。</h2>
-        <p>部位與成交直接讀 paper ledger，價格研究仍回到公司頁與 FinMind。台股單位：1 張 = 1,000 股；整股與零股都以股數統一回算。</p>
-      </div>
-
-      {healthResult.state === "BLOCKED" && (
-        <div className="terminal-note">
-          <span className="tg status-bad">需處理</span>{" "}
-          模擬交易狀態尚未讀取成功：{healthResult.reason}
-        </div>
-      )}
-
-      <section className="parity-section">
-        <div className="parity-section-head">
-          <h3>持倉</h3>
-          <span className="spacer" />
-          <span className={`parity-badge ${posState}`}>{stateLabel(portfolio.state)}</span>
-          <span className="tg muted" style={{ fontSize: 10 }}>只呈現 FILLED 後形成的紙上部位</span>
-        </div>
-        <div className="parity-section-body">
-          {portfolio.state !== "LIVE" && (
-            <div className="terminal-note compact">
-              <span className={`tg ${"reason" in portfolio ? (portfolio.state === "EMPTY" ? "gold" : "status-bad") : "muted"}`}>{stateLabel(portfolio.state)}</span>{" "}
-              {"reason" in portfolio ? portfolio.reason : ""}
-            </div>
-          )}
-          {portfolio.positions.length > 0 ? (
-            <table className="parity-table">
-              <thead>
-                <tr>
-                  <th>代號</th><th>公司</th><th className="num-cell">淨股數</th>
-                  <th className="num-cell">平均成本</th><th className="num-cell">估算市值</th><th>狀態</th>
-                </tr>
-              </thead>
-              <tbody>
-                {portfolio.positions.map((pos) => (
-                  <tr key={pos.symbol}>
-                    <td>
-                      <Link href={`/companies/${encodeURIComponent(pos.symbol)}`} className="tg gold">
-                        {pos.symbol}
-                      </Link>
-                    </td>
-                    <td className="tg muted">—</td>
-                    <td className="num-cell">{formatShares(pos.netQtyShares)}</td>
-                    <td className="num-cell">{avgCostLabel(pos)}</td>
-                    <td className="num-cell">{notionalLabel(pos)}</td>
-                    <td><span className="parity-badge warn">{noteLabel(pos.note)}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : portfolio.state === "LIVE" ? (
-            <div className="parity-empty" style={{ minHeight: 100 }}>
-              <h3>目前沒有模擬持倉</h3>
-              <p>先從公司頁開啟紙上交易預覽。</p>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      {/* ── 凱基真實倉位 (北極星訴求 #9) ── */}
-      <section className="parity-section" style={{ marginTop: 20 }}>
-        <div className="parity-section-head">
-          <h3>凱基真實倉位</h3>
-          <span className="spacer" />
-          <span className={`parity-badge ${kgiResult.state === "LIVE" ? "ok" : kgiResult.state === "BLOCKED" ? "bad" : "warn"}`}>
-            {kgiStatusLabel(kgiResult)}
-          </span>
-          {kgiResult.state === "LIVE" && kgiResult.data.positions.length > 0 && (
-            <span className="tg muted" style={{ fontSize: 10 }}>共 {kgiResult.data.positions.length} 檔 · 來源: KGI LIVE</span>
-          )}
-        </div>
-        <div className="parity-section-body">
-          {kgiResult.state !== "LIVE" && (
-            <div className="terminal-note compact">
-              <span className={`tg ${kgiResult.state === "BLOCKED" ? "status-bad" : "gold"}`}>
-                {kgiResult.state === "BLOCKED" ? "錯誤" : "提示"}
-              </span>{" "}
-              {kgiResult.state === "BLOCKED" ? kgiResult.reason : kgiResult.reason}
-            </div>
-          )}
-          {kgiResult.state === "LIVE" && kgiResult.data.positions.length > 0 ? (
-            <table className="parity-table">
-              <thead>
-                <tr>
-                  <th>代號</th>
-                  <th className="num-cell">淨股數</th>
-                  <th className="num-cell">現價</th>
-                  <th className="num-cell">未實現損益</th>
-                  <th className="num-cell">已實現損益</th>
-                </tr>
-              </thead>
-              <tbody>
-                {kgiResult.data.positions.map((pos: KgiLivePosition) => (
-                  <tr key={pos.symbol}>
-                    <td>
-                      <Link href={`/companies/${encodeURIComponent(pos.symbol)}`} className="tg gold">
-                        {pos.symbol}
-                      </Link>
-                    </td>
-                    <td className="num-cell">{formatLotBreakdown(pos.netQtyShares)}</td>
-                    <td className="num-cell">{pos.lastPrice > 0 ? formatTwd(pos.lastPrice) : "--"}</td>
-                    <td className={`num-cell ${pnlClass(pos.unrealizedPnl)}`}>{formatPnl(pos.unrealizedPnl)}</td>
-                    <td className={`num-cell ${pnlClass(pos.realizedPnl)}`}>{formatPnl(pos.realizedPnl)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : kgiResult.state === "LIVE" ? (
-            <div className="parity-empty" style={{ minHeight: 80 }}>
-              <h3>目前無持倉</h3>
-              <p>凱基帳戶目前沒有持有任何部位。</p>
-            </div>
-          ) : null}
-          <div className="terminal-note" style={{ marginTop: 8, fontSize: 11 }}>
-            <span className="tg muted">此資料直接來自凱基 gateway（read-only），不假設、不模擬。更新時間：{kgiResult.updatedAt ? formatDateTime(kgiResult.updatedAt) : "--"}</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="parity-section" style={{ marginTop: 20 }}>
-        <div className="parity-section-head">
-          <h3>成交紀錄</h3>
-          <span className="spacer" />
-          <span className={`parity-badge ${fillState}`}>{stateLabel(fillsResult.state)}</span>
-          {fillsResult.fills.length > 0 && (
-            <span className="tg muted" style={{ fontSize: 10 }}>共 {fillsResult.fills.length} 筆 / 成交總額 {formatTwd(fillNotionalTotal)}</span>
-          )}
-        </div>
-        <div className="parity-section-body">
-          {fillsResult.state !== "LIVE" && (
-            <div className="terminal-note compact">
-              <span className={`tg ${"reason" in fillsResult ? (fillsResult.state === "EMPTY" ? "gold" : "status-bad") : "muted"}`}>{stateLabel(fillsResult.state)}</span>{" "}
-              {"reason" in fillsResult ? fillsResult.reason : ""}
-            </div>
-          )}
-          {recentFills.length > 0 ? (
-            <table className="parity-table">
-              <thead>
-                <tr>
-                  <th>時間</th><th>代號</th><th>方向</th><th>數量</th>
-                  <th className="num-cell">成交價</th><th className="num-cell">金額</th><th>委託類型</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentFills.map((fill) => (
-                  <tr key={fill.orderId + fill.fillTime}>
-                    <td>{formatTime(fill.fillTime)}</td>
-                    <td className="tg gold">{fill.symbol}</td>
-                    <td><span className={`parity-badge ${fill.side === "buy" ? "ok" : "bad"}`}>{sideLabel(fill.side)}</span></td>
-                    <td>{fillUnitLabel(fill)}</td>
-                    <td className="num-cell">{formatTwd(fill.fillPrice)}</td>
-                    <td className="num-cell">{formatTwd(fillNotional(fill))}</td>
-                    <td>{orderTypeLabel(fill.orderType)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : fillsResult.state === "LIVE" ? (
-            <div className="parity-empty" style={{ minHeight: 100 }}>
-              <h3>目前沒有成交紀錄</h3>
-              <p>送出 paper 委託後會出現在這裡。</p>
-            </div>
-          ) : null}
-        </div>
-      </section>
-    </PageFrame>
+    <PaperRoomV03Client
+      candidates={candidates}
+      fillsState={fills}
+      healthState={health}
+      kgiState={kgi}
+      marketState={market}
+      ordersState={orders}
+      portfolioState={portfolio}
+    />
   );
 }

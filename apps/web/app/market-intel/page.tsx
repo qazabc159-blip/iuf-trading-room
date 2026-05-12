@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { PageFrame } from "@/components/PageFrame";
 import {
   getFinMindStatus,
   getMarketIntelAnnouncements,
@@ -11,7 +10,8 @@ import {
   type NewsAiItem,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
-import { formatSourceTimestamp, latestIso, sourceFreshnessLabel } from "@/lib/source-freshness";
+
+import styles from "./market-intel-v03.module.css";
 
 export const dynamic = "force-dynamic";
 
@@ -66,28 +66,44 @@ function formatDate(value: string | null | undefined) {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("zh-TW", {
     timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
 }
 
 function stateLabel(state: IntelState["state"]) {
   if (state === "LIVE") return "可用";
   if (state === "EMPTY") return "無新訊";
-  return "需登入";
+  return "需處理";
 }
 
 function stateTone(state: IntelState["state"]) {
-  if (state === "LIVE") return "status-ok";
-  if (state === "EMPTY") return "gold";
-  return "status-bad";
+  if (state === "LIVE") return styles.ok;
+  if (state === "EMPTY") return styles.warn;
+  return styles.bad;
 }
 
 function datasetTone(state: FinMindDatasetStatus["state"]) {
-  if (state === "LIVE" || state === "READY") return "status-ok";
-  if (state === "STALE" || state === "EMPTY" || state === "DEGRADED" || state === "FALLBACK") return "gold";
-  return "status-bad";
+  if (state === "LIVE" || state === "READY") return styles.ok;
+  if (state === "STALE" || state === "EMPTY" || state === "DEGRADED" || state === "FALLBACK" || state === "CLOSED") {
+    return styles.warn;
+  }
+  return styles.bad;
 }
 
 function datasetStateLabel(state: FinMindDatasetStatus["state"]) {
@@ -100,21 +116,10 @@ function datasetStateLabel(state: FinMindDatasetStatus["state"]) {
     DEGRADED: "需確認",
     BLOCKED: "需處理",
     ERROR: "錯誤",
-    MOCK: "需處理",
+    MOCK: "待確認",
     CLOSED: "休市",
   };
   return labels[state] ?? state;
-}
-
-function formatCount(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("zh-TW") : "--";
-}
-
-function categoryTone(category: string | null | undefined) {
-  const key = (category ?? "").toLowerCase();
-  if (/material|announcement|重大|公告/.test(key)) return "badge-green";
-  if (/market|macro|index|news|台股|市場|大盤/.test(key)) return "badge-blue";
-  return "badge-yellow";
 }
 
 function categoryLabel(category: string | null | undefined) {
@@ -126,24 +131,11 @@ function categoryLabel(category: string | null | undefined) {
   return category.replace(/[_-]/g, " ");
 }
 
-function intelTitleText(item: IntelItem) {
-  return item.title?.trim() || "市場消息尚未提供標題";
-}
-
-function sourceCoverageLabel(result: IntelState) {
-  if (result.state === "BLOCKED") return "需要登入";
-  if (result.items.length === 0) return `近 ${ANNOUNCEMENT_DAYS} 天 0 筆`;
-  const companies = new Set(
-    result.items.map((item) => item.ticker).filter((ticker) => ticker && ticker !== "MARKET")
-  ).size;
-  return companies > 0 ? `${result.items.length} 筆 / ${companies} 檔` : `${result.items.length} 筆市場級`;
-}
-
 function userFacingReason(reason: string | null | undefined) {
   if (!reason) return "目前沒有可顯示的市場級消息。";
   if (/unauth|auth|session|login|cookie|401/i.test(reason)) return "登入狀態需要更新，重新登入後即可讀取市場情報。";
   if (/fetch failed|network|ECONNREFUSED|API_BASE|base url/i.test(reason)) return "市場情報連線失敗，請稍後重新整理。";
-  return reason.replace(/token|secret|session|cookie|authorization|bearer|api[-_]?key|env|database|redis/gi, "資料來源");
+  return reason.replace(/token|secret|session|cookie|authorization|bearer|api[-_]?key|env|database|redis|timeout_[a-z0-9_]+/gi, "資料來源");
 }
 
 async function loadSourceHealth(): Promise<SourceHealth> {
@@ -161,92 +153,67 @@ function marketIntelSourceLabel(source: "twse_announcements" | "finmind_stock_ne
   return "市場情報";
 }
 
-/** Map a NewsAiItem (from news-top10 endpoint) to the IntelItem shape used by the page. */
 function newsAiItemToIntelItem(item: NewsAiItem, index: number): IntelItem {
   const sourceLabel =
     item.source === "twse_announcements"
       ? "重大訊息"
       : item.source === "finmind_stock_news"
-      ? "台股新聞"
-      : "市場情報";
+        ? "台股新聞"
+        : "市場情報";
 
   return {
     id: item.id ?? `ai-${index}`,
     date: item.date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
     title: item.headline ?? "",
-    category: item.impact_tier
-      ? `${sourceLabel} (${item.impact_tier})`
-      : sourceLabel,
+    category: item.impact_tier ? `${sourceLabel} (${item.impact_tier})` : sourceLabel,
     body: item.why_matters ?? undefined,
-    ticker: item.ticker ?? undefined,
-    companyName: item.companyName ?? (item.ticker ? item.ticker : undefined),
+    ticker: item.ticker ?? "MARKET",
+    companyName: item.companyName ?? (item.ticker && item.ticker !== "MARKET" ? item.ticker : "大盤"),
     url: item.url ?? undefined,
     source: item.source,
-  } as IntelItem & { companyName: string; ticker: string };
+  };
 }
 
 async function loadMarketIntel(): Promise<IntelState> {
   const updatedAt = new Date().toISOString();
 
-  // ── Primary: AI top-10 endpoint ──────────────────────────────────────────
-  // Preferred source: news-top10 AI selector (PR #334). Falls through to old
-  // announcements endpoint when:
-  //   (a) server just restarted and boot recovery hasn't fired yet
-  //   (b) no DB rows in the past 6h (weekend / holiday)
-  //   (c) stale_reason set (last run > 7h ago — should not happen with boot recovery)
   try {
-    const top10res = await getNewsTop10();
-    const top10 = top10res.data;
-
+    const top10 = (await getNewsTop10()).data;
     if (top10.items.length >= 1 && !top10.stale_reason) {
-      // AI result is fresh — use it
-      const items: IntelItem[] = top10.items.map((item, i) => ({
-        ...newsAiItemToIntelItem(item, i),
-        ticker: item.ticker ?? "MARKET",
-        companyName: item.companyName ?? (item.ticker && item.ticker !== "MARKET" ? item.ticker : "大盤"),
-      }));
-
-      const selected: IntelSelectedCompany[] = [
+      const items = top10.items.map(newsAiItemToIntelItem);
+      const selected = [
         ...new Map(
           items
             .filter((item) => item.ticker && item.ticker !== "MARKET")
             .map((item) => [
-              item.ticker as string,
-              { id: item.ticker as string, ticker: item.ticker as string, name: item.companyName ?? item.ticker as string },
+              item.ticker,
+              { id: item.ticker, ticker: item.ticker, name: item.companyName ?? item.ticker },
             ])
         ).values(),
       ].slice(0, MAX_QUERY_COMPANIES);
-
-      const asOfIso = top10.as_of ?? updatedAt;
-      const selectionMode = top10.selection_mode === "ai" ? "AI 精選" : "系統排序";
-      const sourceLabel =
-        top10.items[0]?.source === "twse_announcements"
-          ? "官方重大訊息"
-          : top10.items[0]?.source === "finmind_stock_news"
-          ? "FinMind 台股新聞"
-          : "官方重大訊息 + FinMind 台股新聞";
-
+      const source =
+        top10.selection_mode === "ai"
+          ? "OpenAI 每日市場篩選"
+          : marketIntelSourceLabel(top10.items[0]?.source ?? "mixed");
       return {
         state: "LIVE",
         items,
         selected,
-        updatedAt: asOfIso,
-        source: `${sourceLabel}（${selectionMode}）`,
+        updatedAt: top10.as_of ?? updatedAt,
+        source,
         failures: 0,
       };
     }
   } catch {
-    // news-top10 call failed — fall through to legacy announcements endpoint
+    // Fall through to official announcement aggregate.
   }
 
-  // ── Fallback: legacy announcements endpoint ───────────────────────────────
   try {
     const aggregate = await getMarketIntelAnnouncements({
       days: ANNOUNCEMENT_DAYS,
       limit: MAX_FEED_ROWS,
       scope: "market",
     });
-    const source = marketIntelSourceLabel(aggregate.data.source);
     const selected = aggregate.data.selected.slice(0, MAX_QUERY_COMPANIES);
     const items = aggregate.data.items.map((item) => ({
       ...item,
@@ -259,19 +226,19 @@ async function loadMarketIntel(): Promise<IntelState> {
         state: "LIVE",
         items,
         selected,
-        updatedAt: latestIso(items.map((item) => item.date)) ?? updatedAt,
-        source,
+        updatedAt,
+        source: marketIntelSourceLabel(aggregate.data.source),
         failures: aggregate.data.failures,
       };
     }
 
     return {
       state: "EMPTY",
-      items: [],
+      items,
       selected,
       updatedAt,
-      source,
-      reason: `近 ${ANNOUNCEMENT_DAYS} 天沒有市場級新聞或官方重大訊息。`,
+      source: marketIntelSourceLabel(aggregate.data.source),
+      reason: `近 ${ANNOUNCEMENT_DAYS} 天沒有新的市場級情報。`,
       failures: aggregate.data.failures,
     };
   } catch (error) {
@@ -287,258 +254,197 @@ async function loadMarketIntel(): Promise<IntelState> {
   }
 }
 
-function datasetSummary(datasets: FinMindDatasetStatus[]) {
-  const live = datasets.filter((item) => item.state === "LIVE" || item.state === "READY").length;
-  const blocked = datasets.filter((item) => item.state === "BLOCKED" || item.state === "ERROR" || item.state === "MOCK").length;
-  const stale = datasets.filter((item) => item.state === "STALE" || item.state === "DEGRADED" || item.state === "EMPTY" || item.state === "FALLBACK").length;
-  return { live, blocked, stale };
+function sourceCoverageLabel(result: IntelState) {
+  if (result.items.length === 0) return `近 ${ANNOUNCEMENT_DAYS} 天 0 筆`;
+  const companies = new Set(result.items.map((item) => item.ticker).filter((ticker) => ticker && ticker !== "MARKET")).size;
+  return companies > 0 ? `${result.items.length} 筆 / ${companies} 檔` : `${result.items.length} 筆市場級`;
 }
 
-function datasetDisplayLabel(dataset: FinMindDatasetStatus) {
-  const labels: Record<string, string> = {
-    TaiwanStockNews: "台股新聞",
-    TaiwanStockInfo: "基本資料",
-    TaiwanStockPrice: "日成交資料",
-    TaiwanStockPriceAdj: "還原日 K",
-    TaiwanStockMarketValue: "市值",
-    TaiwanStockPER: "本益比 / 殖利率",
-    TaiwanStockMonthRevenue: "月營收",
-    TaiwanStockDividend: "股利",
-  };
-  return labels[dataset.key] ?? dataset.label;
+function datasetAge(dataset: FinMindDatasetStatus) {
+  return dataset.latestDate ? formatDate(dataset.latestDate) : formatDateTime(dataset.lastFetchTs);
 }
 
-function datasetReadinessCopy(dataset: FinMindDatasetStatus) {
-  if (dataset.state === "LIVE" || dataset.state === "READY") return "已可支援頁面資料、篩選與研究流程。";
-  if (dataset.state === "STALE" || dataset.state === "DEGRADED" || dataset.state === "FALLBACK") return "可作參考，盤面會以最新可用資料標示。";
-  if (dataset.state === "EMPTY") return "尚無本地資料列，等待下一輪資料同步。";
-  return userFacingReason(dataset.missingReason ?? dataset.degradedReason ?? dataset.blocker);
+function readinessPct(result: IntelState, finmind: FinMindSourceStatus | null) {
+  if (result.state !== "LIVE") return 0;
+  const sourceScore = finmind?.state === "LIVE_READY" ? 42 : finmind ? 24 : 10;
+  const newsScore = Math.min(result.items.length, 10) * 4;
+  const datasetScore = Math.min(finmind?.datasets.filter((item) => item.state === "LIVE" || item.state === "READY").length ?? 0, 6) * 3;
+  return Math.min(96, sourceScore + newsScore + datasetScore);
 }
 
-function intelHref(item: IntelItem) {
-  if (item.url) return item.url;
-  if (item.ticker && item.ticker !== "MARKET") return `/companies/${encodeURIComponent(item.ticker)}`;
-  return "/market-intel";
-}
-
-function isExternalHref(href: string) {
-  return /^https?:\/\//i.test(href);
-}
-
-function targetLabel(item: IntelItem) {
-  if (!item.ticker || item.ticker === "MARKET") return "市場";
-  return item.ticker;
-}
-
-function targetName(item: IntelItem) {
-  if (!item.ticker || item.ticker === "MARKET") return "大盤";
-  return item.companyName || item.ticker;
+function timelineRows(result: IntelState, finmind: FinMindSourceStatus | null) {
+  const datasets = finmind?.datasets ?? [];
+  return [
+    { label: "市場情報", state: result.state === "LIVE" ? "fresh" : "review", time: formatDateTime(result.updatedAt) },
+    { label: "重大訊息", state: result.items.some((item) => categoryLabel(item.category) === "重大訊息") ? "fresh" : "review", time: sourceCoverageLabel(result) },
+    { label: "FinMind", state: finmind?.state === "LIVE_READY" ? "fresh" : "review", time: finmind ? `${datasets.length} 組資料` : "待連線" },
+    { label: "策略入口", state: result.state === "LIVE" ? "fresh" : "review", time: result.state === "LIVE" ? "可進研究" : "先補資料" },
+  ] as const;
 }
 
 export default async function MarketIntelPage() {
-  const [result, sourceHealth] = await Promise.all([loadMarketIntel(), loadSourceHealth()]);
-  const freshness = result.state === "LIVE" ? sourceFreshnessLabel(result.updatedAt) : null;
-  const statsAvailable = result.state !== "BLOCKED";
-  const companyCount = new Set(
-    result.items.map((item) => item.ticker).filter((ticker) => ticker && ticker !== "MARKET")
-  ).size;
-  const featured = result.items[0] ?? null;
-  const feedItems = result.items.slice(featured ? 1 : 0);
-  const finmind = sourceHealth.finmind;
-  const datasets = finmind?.datasets ?? [];
-  const summary = datasetSummary(datasets);
-  const visibleDatasets = datasets.slice(0, 8);
-  const channelState = finmind?.state === "LIVE_READY" ? "可用" : finmind ? "需注意" : "需登入";
-  const channelTone = finmind?.state === "LIVE_READY" ? "status-ok" : finmind ? "gold" : "status-bad";
-  const focusChips = result.selected.length > 0
-    ? result.selected.slice(0, 8)
-    : [
-        { id: "market-taiex", ticker: "TAIEX", name: "加權指數" },
-        { id: "market-sector", ticker: "SECTOR", name: "類股" },
-        { id: "market-fund", ticker: "FLOW", name: "法人資金" },
-        { id: "market-macro", ticker: "MACRO", name: "總經" },
-      ];
+  const [result, health] = await Promise.all([loadMarketIntel(), loadSourceHealth()]);
+  const finmind = health.finmind;
+  const datasets = finmind?.datasets.slice(0, 8) ?? [];
+  const readiness = readinessPct(result, finmind);
+  const importantItems = result.items.slice(0, 8);
+  const highImpact = result.items.filter((item) => /HIGH|重大|material|announcement/i.test(item.category ?? "")).length;
+  const mode = readiness >= 80 ? "ACCURATE" : readiness >= 55 ? "FAST" : "RESEARCH";
 
   return (
-    <PageFrame
-      code="MKT"
-      title="市場情報"
-      sub="大盤新聞、官方重大訊息與資料通道"
-      note="這頁只收市場級消息與官方重大訊息；個股雜訊不進首頁工作流。"
-    >
-      <div className="parity-kpi-bar">
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">情報狀態</span>
-          <span className={`parity-kpi-value ${result.state === "LIVE" ? "ok" : result.state === "EMPTY" ? "warn" : "bad"}`}>{stateLabel(result.state)}</span>
-          <span className="parity-kpi-sub">{result.source}</span>
+    <div className={styles.page}>
+      <div className={styles.bgGrid} />
+      <aside className={styles.nav}>
+        <div className={styles.brandBar}>
+          <i />
+          <span>IUF · CMD</span>
         </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">市場級消息</span>
-          <span className={`parity-kpi-value ${result.items.length > 0 ? "ok" : "dim"}`}>{statsAvailable ? result.items.length : "--"}</span>
-          <span className="parity-kpi-sub">則訊息</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">涵蓋標的</span>
-          <span className="parity-kpi-value">{statsAvailable ? (companyCount > 0 ? `${companyCount}` : "大盤") : "--"}</span>
-          <span className="parity-kpi-sub">{companyCount > 0 ? "檔公司" : "市場級"}</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">資料通道</span>
-          <span className={`parity-kpi-value ${finmind?.state === "LIVE_READY" ? "ok" : finmind ? "warn" : "bad"}`}>{channelState}</span>
-          <span className="parity-kpi-sub">FinMind</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">更新</span>
-          <span className="parity-kpi-value" style={{ fontSize: 14 }}>{formatSourceTimestamp(result.updatedAt)}</span>
-          <span className="parity-kpi-sub">{freshness ? freshness.label : "資料新鮮度"}</span>
-        </div>
-      </div>
+        <h1>情報—決策—倉位</h1>
+        <p>市場情報</p>
 
-      <section className="intel-command-deck">
-        <div className="intel-command-copy">
-          <div className="tg gold">MARKET INTEL / 台股大盤情報</div>
-          <h2>先看大盤消息，再決定要不要進公司研究。</h2>
-          <p>
-            這裡接官方重大訊息與 FinMind 台股新聞，並用市場詞篩掉個股雜訊。內容只作為研究入口，不提供買賣建議。
-          </p>
-          <div className="intel-chip-rail" aria-label="市場情報焦點">
-            {focusChips.map((item) => (
-              item.ticker !== "TAIEX" && item.ticker !== "SECTOR" && item.ticker !== "FLOW" && item.ticker !== "MACRO" ? (
-                <Link href={`/companies/${encodeURIComponent(item.ticker)}`} key={item.id} className="intel-chip">
-                  <span>{item.ticker}</span>
-                  <small>{item.name}</small>
-                </Link>
-              ) : (
-                <span key={item.id} className="intel-chip">
-                  <span>{item.ticker}</span>
-                  <small>{item.name}</small>
-                </span>
-              )
-            ))}
-          </div>
-        </div>
-        <aside className="intel-source-card">
-          <span className={`badge ${result.state === "LIVE" ? "badge-green" : result.state === "EMPTY" ? "badge-yellow" : "badge-red"}`}>
-            {stateLabel(result.state)}
-          </span>
-          <div>
-            <span className="tg soft">來源</span>
-            <strong>{result.source}</strong>
-          </div>
-          <div>
-            <span className="tg soft">範圍</span>
-            <strong>{sourceCoverageLabel(result)}</strong>
-          </div>
-          <div>
-            <span className="tg soft">取用</span>
-            <strong>{result.failures > 0 ? "部分來源需重試" : "可讀"}</strong>
-          </div>
-          <p>
-            {result.state === "LIVE"
-              ? "大盤消息已整理成研究入口；點開新聞或公司代號可回到對應頁面。"
-              : userFacingReason(result.reason)}
-          </p>
-        </aside>
-      </section>
+        <div className={styles.navGroup}>情報入口</div>
+        <Link className={`${styles.navLink} ${styles.active}`} href="/market-intel"><span>7a</span>市場情報</Link>
 
-      <section className="intel-feed-surface">
-        <div className="intel-feed-head">
+        <div className={styles.navGroup}>策略決策</div>
+        <Link className={styles.navLink} href="/ideas"><span>7b</span>策略想法</Link>
+        <Link className={styles.navLinkMuted} href="/runs"><span>7c</span>策略批次</Link>
+
+        <div className={styles.navGroup}>執行</div>
+        <Link className={styles.navLink} href="/portfolio"><span>7d</span>模擬交易室</Link>
+        <Link className={styles.navLinkMuted} href="/alerts"><span>07</span>警示</Link>
+      </aside>
+
+      <main className={styles.content}>
+        <header className={styles.header}>
           <div>
-            <div className="tg gold">
-              市場訊息 / {formatSourceTimestamp(result.updatedAt)}
-              {freshness && <span className={`tg ${freshness.tone}`}> / {freshness.label}</span>}
+            <div className={styles.crumb}>IUF / 情報—決策—倉位 / 市場情報</div>
+            <h1>研究 · 從三項判讀進入策略入口</h1>
+            <p>先確認市場情報、資料新鮮度與來源健康，再決定是否進入策略想法與模擬交易室。</p>
+          </div>
+          <div className={styles.headerRight}>
+            <span>{formatDateTime(result.updatedAt)} TPE</span>
+            <b>RESEARCH MODE</b>
+          </div>
+        </header>
+
+        <div className={styles.safety}>
+          <i />
+          <span>本頁只做市場研究與來源判讀，不顯示目標價、勝率或買賣建議。</span>
+          <b>RESEARCH ONLY</b>
+        </div>
+
+        <section className={styles.hero}>
+          <div>
+            <div className={styles.code}>M-B3 · DECISION GATE</div>
+            <h2>三模式 readiness · 現在落在 <b>{mode}</b></h2>
+            <p>RESEARCH 是寬鬆研究，FAST 是一般決策，ACCURATE 是高門檻決策。模式由來源覆蓋、新鮮度與訊號量推估，不直接代表交易結論。</p>
+            <div className={styles.metaline}>
+              <span>市場情報 · <b>{sourceCoverageLabel(result)}</b></span>
+              <span className={result.state === "LIVE" ? styles.okText : styles.warnText}>資料狀態 · <b>{stateLabel(result.state)}</b></span>
+              <span>來源 · <b>{result.source}</b></span>
             </div>
-            <h2>今日要先讀的市場消息</h2>
           </div>
-          <span className={`tg ${stateTone(result.state)}`}>{sourceCoverageLabel(result)}</span>
-        </div>
 
-        {result.state === "LIVE" ? (
-          <div className="intel-feed-list">
-            {featured && (
-              <Link
-                href={intelHref(featured)}
-                className="intel-feature-card"
-                target={isExternalHref(intelHref(featured)) ? "_blank" : undefined}
-                rel={isExternalHref(intelHref(featured)) ? "noreferrer" : undefined}
-              >
-                <span className={`badge ${categoryTone(featured.category)}`}>{categoryLabel(featured.category)}</span>
-                <strong>{intelTitleText(featured)}</strong>
-                <span className="tc soft">
-                  {targetLabel(featured)} / {targetName(featured)} / {formatDate(featured.date)}
-                </span>
-              </Link>
-            )}
-            {feedItems.map((item) => {
-              const href = intelHref(item);
-              const external = isExternalHref(href);
-              return (
-                <Link
-                  href={href}
-                  className="intel-feed-row"
-                  key={`${item.ticker}-${item.id}`}
-                  target={external ? "_blank" : undefined}
-                  rel={external ? "noreferrer" : undefined}
-                >
-                  <span className="tg soft">{formatDate(item.date)}</span>
-                  <span className="tg gold">{targetLabel(item)}</span>
-                  <span className="intel-feed-title">
-                    {intelTitleText(item)}
-                    <small>{targetName(item)}</small>
-                  </span>
-                  <span className={`badge ${categoryTone(item.category)}`}>{categoryLabel(item.category)}</span>
-                </Link>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="intel-empty-state">
-            <strong>{stateLabel(result.state)}</strong>
-            <p>{userFacingReason(result.reason)}</p>
-            <span className="tg soft">篩選範圍：官方重大訊息、台股大盤、類股、法人、匯率與總經消息。</span>
-          </div>
-        )}
-      </section>
-
-      <section className="intel-feed-surface">
-        <div className="intel-feed-head">
-          <div>
-            <div className="tg gold">DATA READINESS / 資料通道</div>
-            <h2>市場頁面使用的資料集</h2>
-          </div>
-          <span className={`tg ${channelTone}`}>
-            {finmind ? `可用 ${summary.live} / 注意 ${summary.stale} / 需處理 ${summary.blocked}` : "需要登入"}
-          </span>
-        </div>
-
-        {finmind ? (
-          <div className="intel-dataset-grid">
-            {visibleDatasets.map((dataset) => (
-              <div className="intel-dataset-card" key={dataset.key}>
-                <div>
-                  <span className="tg gold">{datasetDisplayLabel(dataset)}</span>
-                  <span className={`badge ${datasetTone(dataset.state)}`}>{datasetStateLabel(dataset.state)}</span>
-                </div>
-                <strong>{datasetReadinessCopy(dataset)}</strong>
-                <small>
-                  最新 {dataset.latestDate ?? formatSourceTimestamp(dataset.lastFetchTs)} / 筆數 {formatCount(dataset.rowCount)}
-                </small>
+          <div className={styles.modeStack}>
+            {[
+              { name: "RESEARCH", need: "30%", value: Math.max(readiness, 30), current: mode === "RESEARCH" },
+              { name: "FAST", need: "55%", value: Math.max(Math.min(readiness, 100), 12), current: mode === "FAST" },
+              { name: "ACCURATE", need: "80%", value: Math.min(readiness, 100), current: mode === "ACCURATE" },
+            ].map((item) => (
+              <div className={styles.modeCard} key={item.name}>
+                <div className={item.current ? styles.currentMode : ""}>{item.name}{item.current ? "  ◂ 當前" : ""}</div>
+                <div className={styles.gauge}><i style={{ width: `${Math.min(item.value, 100)}%` }} /></div>
+                <div className={styles.modeMeta}><span>門檻 {item.need}</span><b>{readiness}%</b></div>
               </div>
             ))}
-            {visibleDatasets.length === 0 && (
-              <div className="intel-empty-state">
-                <strong>沒有資料集狀態</strong>
-                <p>後端尚未回傳 FinMind 資料集列表。</p>
-              </div>
-            )}
           </div>
-        ) : (
-          <div className="intel-empty-state">
-            <strong>需要登入</strong>
-            <p>{sourceHealth.error ?? "重新登入後即可讀取資料通道狀態。"}</p>
+        </section>
+
+        <section className={styles.kpiGrid}>
+          <div className={styles.kpi}><span>市場情報</span><b>{result.items.length}</b><small>{result.source}</small></div>
+          <div className={styles.kpi}><span>重大訊息</span><b>{highImpact}</b><small>近 {ANNOUNCEMENT_DAYS} 天</small></div>
+          <div className={styles.kpi}><span>追蹤公司</span><b>{result.selected.length}</b><small>情報連結公司池</small></div>
+          <div className={styles.kpi}><span>FinMind</span><b>{finmind?.state === "LIVE_READY" ? "正常" : "待確認"}</b><small>官方資料流</small></div>
+        </section>
+
+        {result.state !== "LIVE" && (
+          <div className={styles.notice}>
+            <b>{stateLabel(result.state)}</b>
+            <span>{"reason" in result ? result.reason : "目前沒有可顯示的市場情報。"}</span>
           </div>
         )}
-      </section>
-    </PageFrame>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <span className={styles.code}>M-B5</span>
+            <h2>今日重點訊號</h2>
+            <em>{importantItems.length} / {result.items.length}</em>
+          </div>
+          <div className={styles.feed}>
+            {importantItems.length > 0 ? importantItems.map((item, index) => (
+              <Link
+                className={styles.feedRow}
+                href={item.ticker && item.ticker !== "MARKET" ? `/companies/${encodeURIComponent(item.ticker)}` : item.url ?? "#"}
+                key={`${item.id}-${index}`}
+              >
+                <span className={styles.sym}>{item.ticker ?? "市場"}</span>
+                <div>
+                  <b>{item.title || "市場消息尚未提供標題"}</b>
+                  <small>{categoryLabel(item.category)} · {item.companyName ?? "大盤"}{item.body ? ` · ${item.body}` : ""}</small>
+                </div>
+                <strong>{formatDate(item.date)}</strong>
+              </Link>
+            )) : (
+              <div className={styles.emptyState}>目前沒有新的市場級情報，等待下一輪正式資料更新。</div>
+            )}
+          </div>
+        </section>
+
+        <div className={styles.twoCol}>
+          <section className={styles.section}>
+            <div className={styles.sectionHead}>
+              <span className={styles.code}>M-B6</span>
+              <h2>來源健康</h2>
+              <em>{finmind ? finmind.datasets.length : 0} 組</em>
+            </div>
+            <div className={styles.sourceGrid}>
+              {datasets.length > 0 ? datasets.map((dataset) => (
+                <div className={styles.sourceCard} key={dataset.key}>
+                  <div>
+                    <span>{dataset.label}</span>
+                    <b className={datasetTone(dataset.state)}>{datasetStateLabel(dataset.state)}</b>
+                  </div>
+                  <p>{dataset.key}</p>
+                  <small>{dataset.rowCount?.toLocaleString("zh-TW") ?? "--"} 筆 · {datasetAge(dataset)}</small>
+                </div>
+              )) : (
+                <div className={styles.emptyState}>{health.error ?? "FinMind 來源狀態待連線。"}</div>
+              )}
+            </div>
+          </section>
+
+          <section className={styles.section}>
+            <div className={styles.sectionHead}>
+              <span className={styles.code}>M-B8</span>
+              <h2>Data readiness</h2>
+              <em>{readiness}%</em>
+            </div>
+            <div className={styles.timeline}>
+              {timelineRows(result, finmind).map((row) => (
+                <div className={styles.timelineRow} key={row.label}>
+                  <span>{row.label}</span>
+                  <i className={row.state === "fresh" ? styles.freshDot : styles.reviewDot} />
+                  <b>{row.time}</b>
+                </div>
+              ))}
+            </div>
+            <div className={styles.legend}>
+              <span><i className={styles.freshDot} />新鮮</span>
+              <span><i className={styles.reviewDot} />待確認</span>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
   );
 }
