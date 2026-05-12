@@ -1,0 +1,684 @@
+{
+  "schema": "lab_tr_strategy_snapshot_v0",
+  "strategyId": "strategy_002",
+  "displayName": "Strategy 002 — Revenue YoY Surprise (legacy 12mo BT)",
+  "displayName_zh": "策略 002 — 月營收 YoY surprise (12個月 BT)",
+  "status": "BACKTESTED_RAW",
+  "labGateLevel": null,
+  "labGatePassed": null,
+  "asOfDateTaipei": "2026-05-09T15:30:14+08:00",
+  "panelWindow": {
+    "start": "2025-05-01",
+    "end": "2026-04-30",
+    "distinctDates": 243,
+    "rebalancePeriods": null
+  },
+  "spec": {
+    "specVersion": "legacy_12mo_2026_05_06",
+    "yoyThreshold": 0.5,
+    "gapThreshold": 0.05,
+    "announcementTradableNth": 10,
+    "holdDays": 25,
+    "takeProfit": 0.15,
+    "stopLoss": -0.08,
+    "notionalPerPosTwd": 20000,
+    "maxConcurrent": 10,
+    "frozenAt": "2026-05-06",
+    "capacityCaveat": "12-month BT only (n=107 trades). Bootstrap CI PARTIAL_PASS_PENDING_EXTENDED_DATA per Task #400. Full caveat #7 (≥6 rolling 6m windows) requires Task #405 extended-window backtest."
+  },
+  "headlineMetrics": {
+    "returnConventionVersion": "explicit_absolute_vs_excess_v1",
+    "returnConventionNote": "v41 fix 2026-05-12: strategy_002 uses TWD/PnL convention (totalPnlTwd / capitalBaseAssumedTwd), not compoundReturn. No reversed-name field exists here — labelling for cross-strategy consistency only. UI MUST display netAbsoluteReturnAfterCost on strategy detail pages; for strategy_002 derive netAbsoluteReturnAfterCost = totalPnlTwd / capitalBaseAssumedTwd = 0.378907 (i.e. +37.89% absolute on the 200k capital base, 12mo BT).",
+    "netAbsoluteReturnAfterCost": 0.378907,
+    "totalTrades": 107,
+    "winCount": 59,
+    "lossCount": 48,
+    "totalPnlTwd": 75781.3873,
+    "capitalBaseAssumedTwd": 200000.0,
+    "avgHoldingDays": 9.5514,
+    "maxDrawdownTwd": 21691.484,
+    "maxDrawdownPctOfPeakCapital": 0.108457,
+    "exitReasonBreakdown": {
+      "take_profit": 51,
+      "stop_loss": 45,
+      "time": 9,
+      "end_of_backtest": 2
+    },
+    "bootstrapCi": {
+      "nResamples": 10000,
+      "totalReturnPct_observed": 3.7836819999999998,
+      "totalReturnPct_p05": 1.9308259999999977,
+      "totalReturnPct_p95": 5.644277000000003,
+      "winRate_observed": 0.5514018691588785,
+      "winRate_p05": 0.4672897196261682,
+      "winRate_p95": 0.6261682242990654
+    },
+    "robustness": {
+      "horizonSweep": "PENDING_TASK_405",
+      "regimeBandSweep": "PENDING_TASK_405",
+      "costStressSweep": "PENDING_TASK_405",
+      "universeShrinkage": "PENDING_TASK_405",
+      "walkForward6mWindows": "PARTIAL_PASS_PENDING_EXTENDED_DATA (n_3m_windows=3 only; ≥6 rolling 6m needs 24mo panel)"
+    },
+    "nonClaims": [
+      "Raw counts and TWD numbers only.",
+      "No Sharpe / Sortino / annualised return / win-rate% surfaced as a polished metric tag.",
+      "Bruce harness double-sign required to escalate status beyond BACKTESTED_RAW.",
+      "Cache manifest carries `backtestAllowedNow:false` — Lab-internal research mode only; promotion memo phase requires a strict-PIT rerun."
+    ]
+  },
+  "equityCurve": {
+    "frequency": "daily_downsampled",
+    "points": [
+      {
+        "date": "2025-05-02",
+        "cumReturn": 0.0,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-05-12",
+        "cumReturn": 0.0,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-05-20",
+        "cumReturn": -0.0057,
+        "drawdown": -0.0057
+      },
+      {
+        "date": "2025-05-28",
+        "cumReturn": 0.0278,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-06-06",
+        "cumReturn": 0.0461,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-06-16",
+        "cumReturn": 0.0776,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-06-24",
+        "cumReturn": 0.062,
+        "drawdown": -0.0144
+      },
+      {
+        "date": "2025-07-02",
+        "cumReturn": 0.0787,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-07-10",
+        "cumReturn": 0.1183,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-07-18",
+        "cumReturn": 0.1587,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-07-28",
+        "cumReturn": 0.1725,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-08-05",
+        "cumReturn": 0.1878,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-08-13",
+        "cumReturn": 0.1875,
+        "drawdown": -0.0002
+      },
+      {
+        "date": "2025-08-21",
+        "cumReturn": 0.1818,
+        "drawdown": -0.0051
+      },
+      {
+        "date": "2025-08-29",
+        "cumReturn": 0.2051,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-09-08",
+        "cumReturn": 0.1879,
+        "drawdown": -0.0142
+      },
+      {
+        "date": "2025-09-16",
+        "cumReturn": 0.1552,
+        "drawdown": -0.0414
+      },
+      {
+        "date": "2025-09-24",
+        "cumReturn": 0.1388,
+        "drawdown": -0.055
+      },
+      {
+        "date": "2025-10-03",
+        "cumReturn": 0.1492,
+        "drawdown": -0.0464
+      },
+      {
+        "date": "2025-10-15",
+        "cumReturn": 0.167,
+        "drawdown": -0.0316
+      },
+      {
+        "date": "2025-10-23",
+        "cumReturn": 0.1864,
+        "drawdown": -0.0155
+      },
+      {
+        "date": "2025-11-03",
+        "cumReturn": 0.2255,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2025-11-11",
+        "cumReturn": 0.2089,
+        "drawdown": -0.0136
+      },
+      {
+        "date": "2025-11-19",
+        "cumReturn": 0.1442,
+        "drawdown": -0.0664
+      },
+      {
+        "date": "2025-11-27",
+        "cumReturn": 0.1788,
+        "drawdown": -0.0381
+      },
+      {
+        "date": "2025-12-05",
+        "cumReturn": 0.1746,
+        "drawdown": -0.0415
+      },
+      {
+        "date": "2025-12-15",
+        "cumReturn": 0.2012,
+        "drawdown": -0.0198
+      },
+      {
+        "date": "2025-12-23",
+        "cumReturn": 0.2213,
+        "drawdown": -0.0034
+      },
+      {
+        "date": "2026-01-02",
+        "cumReturn": 0.2163,
+        "drawdown": -0.0075
+      },
+      {
+        "date": "2026-01-12",
+        "cumReturn": 0.2226,
+        "drawdown": -0.0024
+      },
+      {
+        "date": "2026-01-20",
+        "cumReturn": 0.2239,
+        "drawdown": -0.0013
+      },
+      {
+        "date": "2026-01-28",
+        "cumReturn": 0.2361,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2026-02-05",
+        "cumReturn": 0.2266,
+        "drawdown": -0.0077
+      },
+      {
+        "date": "2026-02-24",
+        "cumReturn": 0.2266,
+        "drawdown": -0.0077
+      },
+      {
+        "date": "2026-03-05",
+        "cumReturn": 0.2407,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2026-03-13",
+        "cumReturn": 0.2327,
+        "drawdown": -0.0064
+      },
+      {
+        "date": "2026-03-23",
+        "cumReturn": 0.2379,
+        "drawdown": -0.0022
+      },
+      {
+        "date": "2026-03-31",
+        "cumReturn": 0.2273,
+        "drawdown": -0.0108
+      },
+      {
+        "date": "2026-04-10",
+        "cumReturn": 0.2592,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2026-04-20",
+        "cumReturn": 0.2976,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2026-04-28",
+        "cumReturn": 0.3864,
+        "drawdown": 0.0
+      },
+      {
+        "date": "2026-04-30",
+        "cumReturn": 0.3789,
+        "drawdown": -0.0054
+      }
+    ],
+    "note": "Downsampled from daily equity curve (capital_base=200k TWD). cumReturn = totalPnl / capital_base. Drawdown vs running peak equity."
+  },
+  "monthlyReturns": {
+    "frequency": "calendar_month",
+    "bars": [
+      {
+        "yearMonth": "2025-05",
+        "monthReturn": 0.0407,
+        "tradeCount": 1
+      },
+      {
+        "yearMonth": "2025-06",
+        "monthReturn": 0.0548,
+        "tradeCount": 10
+      },
+      {
+        "yearMonth": "2025-07",
+        "monthReturn": 0.1076,
+        "tradeCount": 11
+      },
+      {
+        "yearMonth": "2025-08",
+        "monthReturn": 0.0168,
+        "tradeCount": 8
+      },
+      {
+        "yearMonth": "2025-09",
+        "monthReturn": -0.0532,
+        "tradeCount": 9
+      },
+      {
+        "yearMonth": "2025-10",
+        "monthReturn": 0.0853,
+        "tradeCount": 9
+      },
+      {
+        "yearMonth": "2025-11",
+        "monthReturn": -0.044,
+        "tradeCount": 12
+      },
+      {
+        "yearMonth": "2025-12",
+        "monthReturn": 0.0555,
+        "tradeCount": 5
+      },
+      {
+        "yearMonth": "2026-01",
+        "monthReturn": 0.0111,
+        "tradeCount": 12
+      },
+      {
+        "yearMonth": "2026-02",
+        "monthReturn": 0.0234,
+        "tradeCount": 2
+      },
+      {
+        "yearMonth": "2026-03",
+        "monthReturn": -0.0458,
+        "tradeCount": 15
+      },
+      {
+        "yearMonth": "2026-04",
+        "monthReturn": 0.1329,
+        "tradeCount": 13
+      }
+    ],
+    "note": "Monthly delta of total_pnl_twd / capital_base. tradeCount = closed trades exiting in that month."
+  },
+  "drawdownSeries": {
+    "frequency": "daily_downsampled",
+    "points": [
+      {
+        "date": "2025-05-02",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-05-12",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-05-20",
+        "drawdown": -0.0057,
+        "underwaterDays": 1
+      },
+      {
+        "date": "2025-05-28",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-06-06",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-06-16",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-06-24",
+        "drawdown": -0.0144,
+        "underwaterDays": 1
+      },
+      {
+        "date": "2025-07-02",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-07-10",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-07-18",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-07-28",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-08-05",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-08-13",
+        "drawdown": -0.0002,
+        "underwaterDays": 1
+      },
+      {
+        "date": "2025-08-21",
+        "drawdown": -0.0051,
+        "underwaterDays": 2
+      },
+      {
+        "date": "2025-08-29",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-09-08",
+        "drawdown": -0.0142,
+        "underwaterDays": 1
+      },
+      {
+        "date": "2025-09-16",
+        "drawdown": -0.0414,
+        "underwaterDays": 2
+      },
+      {
+        "date": "2025-09-24",
+        "drawdown": -0.055,
+        "underwaterDays": 3
+      },
+      {
+        "date": "2025-10-03",
+        "drawdown": -0.0464,
+        "underwaterDays": 4
+      },
+      {
+        "date": "2025-10-15",
+        "drawdown": -0.0316,
+        "underwaterDays": 5
+      },
+      {
+        "date": "2025-10-23",
+        "drawdown": -0.0155,
+        "underwaterDays": 6
+      },
+      {
+        "date": "2025-11-03",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2025-11-11",
+        "drawdown": -0.0136,
+        "underwaterDays": 1
+      },
+      {
+        "date": "2025-11-19",
+        "drawdown": -0.0664,
+        "underwaterDays": 2
+      },
+      {
+        "date": "2025-11-27",
+        "drawdown": -0.0381,
+        "underwaterDays": 3
+      },
+      {
+        "date": "2025-12-05",
+        "drawdown": -0.0415,
+        "underwaterDays": 4
+      },
+      {
+        "date": "2025-12-15",
+        "drawdown": -0.0198,
+        "underwaterDays": 5
+      },
+      {
+        "date": "2025-12-23",
+        "drawdown": -0.0034,
+        "underwaterDays": 6
+      },
+      {
+        "date": "2026-01-02",
+        "drawdown": -0.0075,
+        "underwaterDays": 7
+      },
+      {
+        "date": "2026-01-12",
+        "drawdown": -0.0024,
+        "underwaterDays": 8
+      },
+      {
+        "date": "2026-01-20",
+        "drawdown": -0.0013,
+        "underwaterDays": 9
+      },
+      {
+        "date": "2026-01-28",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2026-02-05",
+        "drawdown": -0.0077,
+        "underwaterDays": 1
+      },
+      {
+        "date": "2026-02-24",
+        "drawdown": -0.0077,
+        "underwaterDays": 2
+      },
+      {
+        "date": "2026-03-05",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2026-03-13",
+        "drawdown": -0.0064,
+        "underwaterDays": 1
+      },
+      {
+        "date": "2026-03-23",
+        "drawdown": -0.0022,
+        "underwaterDays": 2
+      },
+      {
+        "date": "2026-03-31",
+        "drawdown": -0.0108,
+        "underwaterDays": 3
+      },
+      {
+        "date": "2026-04-10",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2026-04-20",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2026-04-28",
+        "drawdown": 0.0,
+        "underwaterDays": 0
+      },
+      {
+        "date": "2026-04-30",
+        "drawdown": -0.0054,
+        "underwaterDays": 1
+      }
+    ]
+  },
+  "sampleTrades": {
+    "limit": 8,
+    "entries": [
+      {
+        "symbol": "5274",
+        "entryDate": "2026-04-17",
+        "exitDate": "2026-04-22",
+        "holdingDays": 3,
+        "pnlPct": 0.143168,
+        "pnlTwd": 2867.44,
+        "exitReason": "take_profit",
+        "rationale": "Monthly revenue YoY 63.6% → entry on announcement+10 trading days",
+        "source": "mock_for_demo",
+        "uiLabel_zh": "示範交易（非真實成交）"
+      },
+      {
+        "symbol": "8996",
+        "entryDate": "2026-04-17",
+        "exitDate": "2026-04-22",
+        "holdingDays": 3,
+        "pnlPct": 0.143168,
+        "pnlTwd": 2867.44,
+        "exitReason": "take_profit",
+        "rationale": "Monthly revenue YoY 205.3% → entry on announcement+10 trading days",
+        "source": "mock_for_demo",
+        "uiLabel_zh": "示範交易（非真實成交）"
+      },
+      {
+        "symbol": "8299",
+        "entryDate": "2026-04-17",
+        "exitDate": "2026-04-23",
+        "holdingDays": 4,
+        "pnlPct": 0.143168,
+        "pnlTwd": 2867.44,
+        "exitReason": "take_profit",
+        "rationale": "Monthly revenue YoY 221.5% → entry on announcement+10 trading days",
+        "source": "mock_for_demo",
+        "uiLabel_zh": "示範交易（非真實成交）"
+      },
+      {
+        "symbol": "3017",
+        "entryDate": "2026-04-17",
+        "exitDate": "2026-04-23",
+        "holdingDays": 4,
+        "pnlPct": 0.143168,
+        "pnlTwd": 2867.44,
+        "exitReason": "take_profit",
+        "rationale": "Monthly revenue YoY 111.7% → entry on announcement+10 trading days",
+        "source": "mock_for_demo",
+        "uiLabel_zh": "示範交易（非真實成交）"
+      },
+      {
+        "symbol": "2383",
+        "entryDate": "2026-04-17",
+        "exitDate": "2026-04-23",
+        "holdingDays": 4,
+        "pnlPct": 0.143168,
+        "pnlTwd": 2867.44,
+        "exitReason": "take_profit",
+        "rationale": "Monthly revenue YoY 56.6% → entry on announcement+10 trading days",
+        "source": "mock_for_demo",
+        "uiLabel_zh": "示範交易（非真實成交）"
+      },
+      {
+        "symbol": "6805",
+        "entryDate": "2026-04-17",
+        "exitDate": "2026-04-28",
+        "holdingDays": 7,
+        "pnlPct": 0.143168,
+        "pnlTwd": 2867.44,
+        "exitReason": "take_profit",
+        "rationale": "Monthly revenue YoY 95.0% → entry on announcement+10 trading days",
+        "source": "mock_for_demo",
+        "uiLabel_zh": "示範交易（非真實成交）"
+      },
+      {
+        "symbol": "2360",
+        "entryDate": "2026-04-17",
+        "exitDate": "2026-04-30",
+        "holdingDays": 9,
+        "pnlPct": 0.053597,
+        "pnlTwd": 1073.47,
+        "exitReason": "end_of_backtest",
+        "rationale": "Monthly revenue YoY 63.5% → entry on announcement+10 trading days",
+        "source": "mock_for_demo",
+        "uiLabel_zh": "示範交易（非真實成交）"
+      },
+      {
+        "symbol": "2408",
+        "entryDate": "2026-04-17",
+        "exitDate": "2026-04-30",
+        "holdingDays": 9,
+        "pnlPct": -0.003729,
+        "pnlTwd": -74.69,
+        "exitReason": "end_of_backtest",
+        "rationale": "Monthly revenue YoY 560.0% → entry on announcement+10 trading days",
+        "source": "mock_for_demo",
+        "uiLabel_zh": "示範交易（非真實成交）"
+      }
+    ],
+    "note": "Top 8 by exit_date desc, then re-sorted asc. Source=mock_for_demo per Elva A4 ACK 2026-05-09. uiLabel_zh '示範交易（非真實成交）' surfaced when Stage 1 endpoint serves to TR."
+  },
+  "uiCopyHints": {
+    "headline_zh": "策略 002 — 月營收 YoY surprise",
+    "subhead_zh": "12個月 BT｜107 筆 trades｜總損益 +75,781 TWD",
+    "warningBanner_zh": "策略尚在觀察期 — 12個月 BT (n=107)，bootstrap CI 已跑（winRate 55.1% CI [1.93%, 5.64%]），但 walk-forward ≥6 rolling 6m windows 受限 BT 長度，full robustness verdict 等 Task #405 extended-window backtest。請勿視為已驗證 alpha。",
+    "showInDemo": true,
+    "demoOrder": 2
+  },
+  "hardLines": {
+    "no_real_orders": true,
+    "no_broker_write": true,
+    "no_finmind_fetch": true,
+    "no_inflate": true,
+    "no_frozen_spec_change": true,
+    "no_status_upgrade_from_BACKTESTED_RAW": true
+  }
+}

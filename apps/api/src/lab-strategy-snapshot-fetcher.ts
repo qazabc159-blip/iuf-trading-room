@@ -29,6 +29,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { auditLogs, getDb, isDatabaseMode } from "@iuf-trading-room/db";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -42,9 +43,20 @@ const SNAPSHOT_PATH_TEMPLATE = (strategyId: string) =>
 
 const INDEX_URL = `${LAB_SNAPSHOT_BASE_URL}/reports/trading_room/strategy_snapshots/_index.json`;
 
+// Option A: resolve relative to compiled file — CWD-agnostic.
+// Compiled to apps/api/dist/lab-strategy-snapshot-fetcher.js
+// → ../../data/lab/strategy_snapshots = apps/api/data/lab/strategy_snapshots (Railway-safe)
+// → ../../../../data/lab/strategy_snapshots = monorepo root data/ (Railway-safe fallback)
+const _fileDir = fileURLToPath(new URL(".", import.meta.url));
 const LOCAL_SNAPSHOT_DIRS = [
   process.env["LAB_SNAPSHOT_LOCAL_DIR"],
+  // Option A primary: relative to compiled file → apps/api/data/lab/strategy_snapshots/
+  join(_fileDir, "..", "..", "data", "lab", "strategy_snapshots"),
+  // Option A fallback: relative to compiled file → monorepo root data/lab/strategy_snapshots/
+  join(_fileDir, "..", "..", "..", "..", "data", "lab", "strategy_snapshots"),
+  // Option B: CWD-relative (works when CWD = apps/api, e.g. Railway)
   join(process.cwd(), "data", "lab", "strategy_snapshots"),
+  // Legacy path aliases
   join(process.cwd(), "lab-strategy-snapshots")
 ].filter((dir): dir is string => typeof dir === "string" && dir.length > 0);
 
