@@ -619,7 +619,9 @@ export async function queryAllDatasetStatus(): Promise<DatasetStatusRow[]> {
       const countRes = await db.execute(
         drizzleSql`SELECT COUNT(*)::int AS cnt, MAX(dt)::text AS latest FROM companies_ohlcv`
       );
-      const r = (countRes as { rows?: Record<string, unknown>[] })?.rows?.[0] as Record<string, unknown> | undefined;
+      const _countRows = (countRes as { rows?: Record<string, unknown>[] })?.rows
+        ?? (Array.isArray(countRes) ? countRes : []) as Record<string, unknown>[];
+      const r = _countRows[0] as Record<string, unknown> | undefined;
       const rowCount = r ? (typeof r.cnt === "number" ? r.cnt : parseInt(String(r.cnt ?? "0"), 10)) : 0;
       const latestDate = r && typeof r.latest === "string" ? r.latest : null;
       const extents = rowCount > 0 ? await queryOhlcvDateExtents() : { minDate: null, maxDate: null, lastIngestedAt: null };
@@ -779,7 +781,8 @@ export async function runDatasetBackfill(params: {
         WHERE workspace_id = ${workspaceId}
           AND ticker ~ '^[0-9]{4}$'
       `);
-      const allCompanies = ((companyRows as { rows?: Record<string, unknown>[] })?.rows ?? []) as Record<string, unknown>[];
+      const allCompanies = ((companyRows as { rows?: Record<string, unknown>[] })?.rows
+        ?? (Array.isArray(companyRows) ? companyRows : []) as Record<string, unknown>[]) as Record<string, unknown>[];
       const ohlcvTickers = allCompanies
         .map((r) => ({ companyId: String(r.id ?? ""), ticker: String(r.ticker ?? ""), workspaceId }))
         .filter((r) => /^\d{4}$/.test(r.ticker))
