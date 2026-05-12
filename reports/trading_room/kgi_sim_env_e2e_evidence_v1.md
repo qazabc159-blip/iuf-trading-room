@@ -27,7 +27,7 @@ KGI SIM environment接通 e2e — 4 deliverables:
 - `resolveKgiEnv()` — reads `KGI_ENV` env var, default `"sim"` (never defaults to `"prod"`)
 - `simQuoteHost()` / `simTradeHost()` — display-only host names (no credentials)
 - `maskAccount(account)` — `9228-001282-6` → `9228-***-6`
-- `maskPersonId(personId)` — `F131331910` → `F13133****`
+- `maskPersonId(personId)` — `<TAIWAN_ID_LITERAL_REMOVED>` → `F13133****`
 - `getKgiSimState()` — returns current in-process state snapshot
 - `runSimQuoteSmoke(params)` — health probe → subscribe 0050 → poll ticks → audit log
 - `runSimTradeSmoke(params)` — dual-confirm guard → health probe → odd-lot SIM order → audit log
