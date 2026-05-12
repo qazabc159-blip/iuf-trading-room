@@ -64,13 +64,23 @@ export function _getLastReviewerError(draftId: string): string | undefined {
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 
+export function resolveDraftReviewDate(payload: unknown, fallbackDate = new Date().toISOString().slice(0, 10)): string {
+  if (payload && typeof payload === "object" && "date" in payload) {
+    const date = (payload as { date?: unknown }).date;
+    if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return date;
+    }
+  }
+  return fallbackDate;
+}
+
 function buildReviewPrompt(draft: {
   id: string;
   targetTable: string;
   payload: unknown;
   createdAt: string;
 }): string {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const expectedDate = resolveDraftReviewDate(draft.payload);
 
   const payloadStr = JSON.stringify(draft.payload, null, 2).slice(0, 3000);
 
@@ -86,7 +96,7 @@ Review the following content draft and return ONLY valid JSON.
 4. Contains hallucinated news (specific event, number, or company name cited WITHOUT a source URL).
 5. payload.llm_meta.fallback_template === true OR payload.llm_meta.provider === "fallback".
 6. Any section body is empty OR shorter than 50 characters.
-7. payload.date (if present) does not equal today's date: ${today}.
+7. payload.date (if present) does not equal the expected brief date: ${expectedDate}.
 
 ## Important Non-Reject Examples
 - Do NOT reject factual source or dataset labels such as "institutional buy/sell",
@@ -108,6 +118,7 @@ ${payloadStr}
 
 ## Instructions
 - Check each hard reject rule strictly, but distinguish source labels from advice.
+- For daily brief backfills, payload.date is the expected date; do not reject a valid historical brief only because createdAt or the current calendar date is newer.
 - If ANY hard reject rule triggers => verdict MUST be "reject".
 - If content passes all rules but quality is uncertain => verdict "manual_review".
 - If content passes all rules and quality is clearly acceptable => verdict "approve".
