@@ -9800,3 +9800,34 @@ test("BF6: runEventEngineTickForce returns memory_mode error in memory mode", as
     `Expected memory_mode in errors, got: ${JSON.stringify(result.errors)}`
   );
 });
+
+// BF8: audit_logs gate query — adversarial_audit must NOT be a primary-review action.
+// Root cause of R6 bug: gate read adversarial_audit row (no verdict) → verdict=null →
+// reviewerGrantsPublish=false → approved brief never published (8-iteration loop).
+// Fix: inArray filter whitelists only actions that carry a verdict field.
+test("BF8: adversarial_audit action is NOT a primary-review action (gate query filter)", () => {
+  // These are the action types that the gate now filters IN (have a verdict field).
+  const PRIMARY_REVIEW_ACTIONS = new Set([
+    "content_draft.ai_approved",
+    "content_draft.ai_rejected",
+    "content_draft.ai_manual_review",
+    "content_draft.factual_reject",
+  ]);
+
+  // Adversarial audit: no verdict field → must NOT be in the primary-review set.
+  assert.ok(
+    !PRIMARY_REVIEW_ACTIONS.has("content_draft.adversarial_audit"),
+    "content_draft.adversarial_audit must NOT be in PRIMARY_REVIEW_ACTIONS — it carries no verdict field"
+  );
+
+  // ai_yellow_held written as intercept hold is also not a final verdict from primary review.
+  assert.ok(
+    !PRIMARY_REVIEW_ACTIONS.has("content_draft.ai_yellow_held"),
+    "content_draft.ai_yellow_held must NOT be in PRIMARY_REVIEW_ACTIONS — it is a hold, not a final primary-review verdict"
+  );
+
+  // The actual verdict-bearing actions must all be present.
+  assert.ok(PRIMARY_REVIEW_ACTIONS.has("content_draft.ai_approved"), "ai_approved must be a primary-review action");
+  assert.ok(PRIMARY_REVIEW_ACTIONS.has("content_draft.ai_rejected"), "ai_rejected must be a primary-review action");
+  assert.ok(PRIMARY_REVIEW_ACTIONS.has("content_draft.factual_reject"), "factual_reject must be a primary-review action");
+});
