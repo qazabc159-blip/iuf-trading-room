@@ -1,0 +1,826 @@
+{
+    "schema": "lab_tr_strategy_snapshot_v0",
+    "strategyId": "strategy_003",
+    "displayName": "Strategy 003 — MA200 Trend Follow (legacy 6mo BT)",
+    "displayName_zh": "策略 003 — MA200 趨勢跟隨 (6個月 BT)",
+    "status": "BACKTESTED_RAW",
+    "labGateLevel": null,
+    "labGatePassed": null,
+    "asOfDateTaipei": "2026-05-09T15:30:14+08:00",
+    "panelWindow": {
+        "start": "2025-11-01",
+        "end": "2026-04-30",
+        "distinctDates": 117,
+        "rebalancePeriods": null
+    },
+    "spec": {
+        "specVersion": "legacy_6mo_2026_05_06",
+        "maLong": 200,
+        "maTrail": 50,
+        "momLookback": 5,
+        "highLookback": 20,
+        "holdDaysMax": 120,
+        "holdDaysMin": 5,
+        "takeProfit": 0.2,
+        "stopLoss": -0.08,
+        "notionalPerPosTwd": 30000,
+        "maxConcurrent": 8,
+        "frozenAt": "2026-05-06",
+        "capacityCaveat": "6-month BT only (n=106 trades). BT window << target hold (60-120d) → single-window feasibility evidence not robustness. Bootstrap CI PARTIAL_PASS. Full caveat #7 needs Task #405 extended-window."
+    },
+    "headlineMetrics": {
+        "returnConventionVersion": "explicit_absolute_vs_excess_v1",
+        "returnConventionNote": "v41 fix 2026-05-12: strategy_003 uses TWD/PnL convention (totalPnlTwd / capitalBaseAssumedTwd), not compoundReturn. No reversed-name field exists here — labelling for cross-strategy consistency only. UI MUST display netAbsoluteReturnAfterCost on strategy detail pages; for strategy_003 derive netAbsoluteReturnAfterCost = totalPnlTwd / capitalBaseAssumedTwd = 0.474185 (i.e. +47.42% absolute on the 240k capital base, 6mo BT). BT window << target hold (60-120d) → single-window feasibility evidence not robustness.",
+        "netAbsoluteReturnAfterCost": 0.474185,
+        "totalTrades": 106,
+        "winCount": 46,
+        "lossCount": 60,
+        "totalPnlTwd": 113804.3106,
+        "capitalBaseAssumedTwd": 240000.0,
+        "avgHoldingDays": 8.4906,
+        "maxDrawdownTwd": 34233.3899,
+        "maxDrawdownPctOfPeakCapital": 0.142639,
+        "exitReasonBreakdown": {
+            "stop_loss": 46,
+            "take_profit": 42,
+            "trailing_break": 10,
+            "end_of_backtest": 8
+        },
+        "bootstrapCi": {
+            "nResamples": 10000,
+            "totalReturnPct_observed": 3.7880829999999994,
+            "totalReturnPct_p05": 1.6099279999999982,
+            "totalReturnPct_p95": 6.0090140000000005,
+            "winRate_observed": 0.4339622641509434,
+            "winRate_p05": 0.3584905660377358,
+            "winRate_p95": 0.5094339622641509
+        },
+        "robustness": {
+            "horizonSweep": "PENDING_TASK_405",
+            "regimeBandSweep": "PENDING_TASK_405",
+            "costStressSweep": "PENDING_TASK_405",
+            "universeShrinkage": "PENDING_TASK_405",
+            "walkForward6mWindows": "PARTIAL_PASS_PENDING_EXTENDED_DATA (n_3m_windows=1 only; BT 6mo << target hold 60-120d)"
+        },
+        "nonClaims": [
+            "Raw counts and TWD numbers only.",
+            "No Sharpe / Sortino / annualised return / win-rate% surfaced as polished metric.",
+            "BT window (6 months) << target hold (60-120 days); single-window result is feasibility evidence not robustness evidence.",
+            "Bruce harness double-sign required to escalate beyond BACKTESTED_RAW."
+        ]
+    },
+    "equityCurve": {
+        "frequency": "daily_downsampled",
+        "points": [
+            {
+                "date": "2025-11-03",
+                "cumReturn": 0.0,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-11-05",
+                "cumReturn": -0.0744,
+                "drawdown": -0.0744
+            },
+            {
+                "date": "2025-11-07",
+                "cumReturn": -0.0904,
+                "drawdown": -0.0904
+            },
+            {
+                "date": "2025-11-11",
+                "cumReturn": -0.0415,
+                "drawdown": -0.0415
+            },
+            {
+                "date": "2025-11-13",
+                "cumReturn": -0.0281,
+                "drawdown": -0.0281
+            },
+            {
+                "date": "2025-11-17",
+                "cumReturn": -0.0326,
+                "drawdown": -0.0326
+            },
+            {
+                "date": "2025-11-19",
+                "cumReturn": -0.0866,
+                "drawdown": -0.0866
+            },
+            {
+                "date": "2025-11-21",
+                "cumReturn": -0.0977,
+                "drawdown": -0.0977
+            },
+            {
+                "date": "2025-11-25",
+                "cumReturn": -0.0579,
+                "drawdown": -0.0579
+            },
+            {
+                "date": "2025-11-27",
+                "cumReturn": -0.0122,
+                "drawdown": -0.0122
+            },
+            {
+                "date": "2025-12-01",
+                "cumReturn": 0.0336,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-12-03",
+                "cumReturn": 0.009,
+                "drawdown": -0.0238
+            },
+            {
+                "date": "2025-12-05",
+                "cumReturn": 0.042,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-12-09",
+                "cumReturn": 0.0636,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-12-11",
+                "cumReturn": 0.0702,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-12-15",
+                "cumReturn": 0.0746,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-12-17",
+                "cumReturn": 0.0472,
+                "drawdown": -0.0255
+            },
+            {
+                "date": "2025-12-19",
+                "cumReturn": 0.0523,
+                "drawdown": -0.0207
+            },
+            {
+                "date": "2025-12-23",
+                "cumReturn": 0.0804,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-12-26",
+                "cumReturn": 0.1224,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-12-30",
+                "cumReturn": 0.1483,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-01-02",
+                "cumReturn": 0.1898,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-01-06",
+                "cumReturn": 0.2639,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-01-08",
+                "cumReturn": 0.2566,
+                "drawdown": -0.0058
+            },
+            {
+                "date": "2026-01-12",
+                "cumReturn": 0.2432,
+                "drawdown": -0.0164
+            },
+            {
+                "date": "2026-01-14",
+                "cumReturn": 0.2412,
+                "drawdown": -0.018
+            },
+            {
+                "date": "2026-01-16",
+                "cumReturn": 0.2655,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-01-20",
+                "cumReturn": 0.2874,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-01-22",
+                "cumReturn": 0.2948,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-01-26",
+                "cumReturn": 0.301,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-01-28",
+                "cumReturn": 0.3204,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-01-30",
+                "cumReturn": 0.2934,
+                "drawdown": -0.0205
+            },
+            {
+                "date": "2026-02-03",
+                "cumReturn": 0.263,
+                "drawdown": -0.0434
+            },
+            {
+                "date": "2026-02-05",
+                "cumReturn": 0.2542,
+                "drawdown": -0.0501
+            },
+            {
+                "date": "2026-02-09",
+                "cumReturn": 0.2515,
+                "drawdown": -0.0522
+            },
+            {
+                "date": "2026-02-11",
+                "cumReturn": 0.2812,
+                "drawdown": -0.0297
+            },
+            {
+                "date": "2026-02-24",
+                "cumReturn": 0.269,
+                "drawdown": -0.0389
+            },
+            {
+                "date": "2026-02-26",
+                "cumReturn": 0.3111,
+                "drawdown": -0.007
+            },
+            {
+                "date": "2026-03-03",
+                "cumReturn": 0.2606,
+                "drawdown": -0.0453
+            },
+            {
+                "date": "2026-03-05",
+                "cumReturn": 0.2468,
+                "drawdown": -0.0557
+            },
+            {
+                "date": "2026-03-09",
+                "cumReturn": 0.1777,
+                "drawdown": -0.108
+            },
+            {
+                "date": "2026-03-11",
+                "cumReturn": 0.2874,
+                "drawdown": -0.025
+            },
+            {
+                "date": "2026-03-13",
+                "cumReturn": 0.2833,
+                "drawdown": -0.0281
+            },
+            {
+                "date": "2026-03-17",
+                "cumReturn": 0.3091,
+                "drawdown": -0.0086
+            },
+            {
+                "date": "2026-03-19",
+                "cumReturn": 0.3687,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-03-23",
+                "cumReturn": 0.3263,
+                "drawdown": -0.031
+            },
+            {
+                "date": "2026-03-25",
+                "cumReturn": 0.3384,
+                "drawdown": -0.0221
+            },
+            {
+                "date": "2026-03-27",
+                "cumReturn": 0.3367,
+                "drawdown": -0.0234
+            },
+            {
+                "date": "2026-03-31",
+                "cumReturn": 0.2458,
+                "drawdown": -0.0898
+            },
+            {
+                "date": "2026-04-02",
+                "cumReturn": 0.2638,
+                "drawdown": -0.0766
+            },
+            {
+                "date": "2026-04-08",
+                "cumReturn": 0.3361,
+                "drawdown": -0.0238
+            },
+            {
+                "date": "2026-04-10",
+                "cumReturn": 0.3958,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-04-14",
+                "cumReturn": 0.4194,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-04-16",
+                "cumReturn": 0.4561,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-04-20",
+                "cumReturn": 0.4791,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-04-22",
+                "cumReturn": 0.4926,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-04-24",
+                "cumReturn": 0.5007,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-04-28",
+                "cumReturn": 0.5064,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-04-30",
+                "cumReturn": 0.4742,
+                "drawdown": -0.0214
+            }
+        ],
+        "note": "Downsampled from daily equity curve (capital_base=240k TWD). cumReturn = totalPnl / capital_base. Drawdown vs running peak equity."
+    },
+    "monthlyReturns": {
+        "frequency": "calendar_month",
+        "bars": [
+            {
+                "yearMonth": "2025-11",
+                "monthReturn": 0.0402,
+                "tradeCount": 21
+            },
+            {
+                "yearMonth": "2025-12",
+                "monthReturn": 0.1269,
+                "tradeCount": 11
+            },
+            {
+                "yearMonth": "2026-01",
+                "monthReturn": 0.1036,
+                "tradeCount": 13
+            },
+            {
+                "yearMonth": "2026-02",
+                "monthReturn": 0.0784,
+                "tradeCount": 12
+            },
+            {
+                "yearMonth": "2026-03",
+                "monthReturn": -0.0405,
+                "tradeCount": 23
+            },
+            {
+                "yearMonth": "2026-04",
+                "monthReturn": 0.1741,
+                "tradeCount": 26
+            }
+        ],
+        "note": "Monthly delta of total_pnl_twd / capital_base. tradeCount = closed trades exiting in that month."
+    },
+    "drawdownSeries": {
+        "frequency": "daily_downsampled",
+        "points": [
+            {
+                "date": "2025-11-03",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-11-05",
+                "drawdown": -0.0744,
+                "underwaterDays": 1
+            },
+            {
+                "date": "2025-11-07",
+                "drawdown": -0.0904,
+                "underwaterDays": 2
+            },
+            {
+                "date": "2025-11-11",
+                "drawdown": -0.0415,
+                "underwaterDays": 3
+            },
+            {
+                "date": "2025-11-13",
+                "drawdown": -0.0281,
+                "underwaterDays": 4
+            },
+            {
+                "date": "2025-11-17",
+                "drawdown": -0.0326,
+                "underwaterDays": 5
+            },
+            {
+                "date": "2025-11-19",
+                "drawdown": -0.0866,
+                "underwaterDays": 6
+            },
+            {
+                "date": "2025-11-21",
+                "drawdown": -0.0977,
+                "underwaterDays": 7
+            },
+            {
+                "date": "2025-11-25",
+                "drawdown": -0.0579,
+                "underwaterDays": 8
+            },
+            {
+                "date": "2025-11-27",
+                "drawdown": -0.0122,
+                "underwaterDays": 9
+            },
+            {
+                "date": "2025-12-01",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-12-03",
+                "drawdown": -0.0238,
+                "underwaterDays": 1
+            },
+            {
+                "date": "2025-12-05",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-12-09",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-12-11",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-12-15",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-12-17",
+                "drawdown": -0.0255,
+                "underwaterDays": 1
+            },
+            {
+                "date": "2025-12-19",
+                "drawdown": -0.0207,
+                "underwaterDays": 2
+            },
+            {
+                "date": "2025-12-23",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-12-26",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-12-30",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-01-02",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-01-06",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-01-08",
+                "drawdown": -0.0058,
+                "underwaterDays": 1
+            },
+            {
+                "date": "2026-01-12",
+                "drawdown": -0.0164,
+                "underwaterDays": 2
+            },
+            {
+                "date": "2026-01-14",
+                "drawdown": -0.018,
+                "underwaterDays": 3
+            },
+            {
+                "date": "2026-01-16",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-01-20",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-01-22",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-01-26",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-01-28",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-01-30",
+                "drawdown": -0.0205,
+                "underwaterDays": 1
+            },
+            {
+                "date": "2026-02-03",
+                "drawdown": -0.0434,
+                "underwaterDays": 2
+            },
+            {
+                "date": "2026-02-05",
+                "drawdown": -0.0501,
+                "underwaterDays": 3
+            },
+            {
+                "date": "2026-02-09",
+                "drawdown": -0.0522,
+                "underwaterDays": 4
+            },
+            {
+                "date": "2026-02-11",
+                "drawdown": -0.0297,
+                "underwaterDays": 5
+            },
+            {
+                "date": "2026-02-24",
+                "drawdown": -0.0389,
+                "underwaterDays": 6
+            },
+            {
+                "date": "2026-02-26",
+                "drawdown": -0.007,
+                "underwaterDays": 7
+            },
+            {
+                "date": "2026-03-03",
+                "drawdown": -0.0453,
+                "underwaterDays": 8
+            },
+            {
+                "date": "2026-03-05",
+                "drawdown": -0.0557,
+                "underwaterDays": 9
+            },
+            {
+                "date": "2026-03-09",
+                "drawdown": -0.108,
+                "underwaterDays": 10
+            },
+            {
+                "date": "2026-03-11",
+                "drawdown": -0.025,
+                "underwaterDays": 11
+            },
+            {
+                "date": "2026-03-13",
+                "drawdown": -0.0281,
+                "underwaterDays": 12
+            },
+            {
+                "date": "2026-03-17",
+                "drawdown": -0.0086,
+                "underwaterDays": 13
+            },
+            {
+                "date": "2026-03-19",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-03-23",
+                "drawdown": -0.031,
+                "underwaterDays": 1
+            },
+            {
+                "date": "2026-03-25",
+                "drawdown": -0.0221,
+                "underwaterDays": 2
+            },
+            {
+                "date": "2026-03-27",
+                "drawdown": -0.0234,
+                "underwaterDays": 3
+            },
+            {
+                "date": "2026-03-31",
+                "drawdown": -0.0898,
+                "underwaterDays": 4
+            },
+            {
+                "date": "2026-04-02",
+                "drawdown": -0.0766,
+                "underwaterDays": 5
+            },
+            {
+                "date": "2026-04-08",
+                "drawdown": -0.0238,
+                "underwaterDays": 6
+            },
+            {
+                "date": "2026-04-10",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-04-14",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-04-16",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-04-20",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-04-22",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-04-24",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-04-28",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-04-30",
+                "drawdown": -0.0214,
+                "underwaterDays": 1
+            }
+        ]
+    },
+    "sampleTrades": {
+        "limit": 8,
+        "entries": [
+            {
+                "symbol": "2408",
+                "entryDate": "2026-04-28",
+                "exitDate": "2026-04-30",
+                "holdingDays": 2,
+                "pnlPct": -0.085466,
+                "pnlTwd": -2567.63,
+                "exitReason": "stop_loss",
+                "rationale": "Price > MA200 + new 20d high + above 50d trail → momentum entry",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "symbol": "2330",
+                "entryDate": "2026-04-09",
+                "exitDate": "2026-04-30",
+                "holdingDays": 15,
+                "pnlPct": 0.091056,
+                "pnlTwd": 2735.57,
+                "exitReason": "end_of_backtest",
+                "rationale": "Price > MA200 + new 20d high + above 50d trail → momentum entry",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "symbol": "2327",
+                "entryDate": "2026-04-14",
+                "exitDate": "2026-04-30",
+                "holdingDays": 12,
+                "pnlPct": 0.011509,
+                "pnlTwd": 345.77,
+                "exitReason": "end_of_backtest",
+                "rationale": "Price > MA200 + new 20d high + above 50d trail → momentum entry",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "symbol": "2454",
+                "entryDate": "2026-04-23",
+                "exitDate": "2026-04-30",
+                "holdingDays": 5,
+                "pnlPct": 0.1158,
+                "pnlTwd": 3478.94,
+                "exitReason": "end_of_backtest",
+                "rationale": "Price > MA200 + new 20d high + above 50d trail → momentum entry",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "symbol": "2317",
+                "entryDate": "2026-04-23",
+                "exitDate": "2026-04-30",
+                "holdingDays": 5,
+                "pnlPct": -0.04935,
+                "pnlTwd": -1482.62,
+                "exitReason": "end_of_backtest",
+                "rationale": "Price > MA200 + new 20d high + above 50d trail → momentum entry",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "symbol": "2308",
+                "entryDate": "2026-04-23",
+                "exitDate": "2026-04-30",
+                "holdingDays": 5,
+                "pnlPct": 0.024725,
+                "pnlTwd": 742.8,
+                "exitReason": "end_of_backtest",
+                "rationale": "Price > MA200 + new 20d high + above 50d trail → momentum entry",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "symbol": "6669",
+                "entryDate": "2026-04-27",
+                "exitDate": "2026-04-30",
+                "holdingDays": 3,
+                "pnlPct": -0.066916,
+                "pnlTwd": -2010.33,
+                "exitReason": "end_of_backtest",
+                "rationale": "Price > MA200 + new 20d high + above 50d trail → momentum entry",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "symbol": "8299",
+                "entryDate": "2026-04-29",
+                "exitDate": "2026-04-30",
+                "holdingDays": 1,
+                "pnlPct": -0.03892,
+                "pnlTwd": -1169.25,
+                "exitReason": "end_of_backtest",
+                "rationale": "Price > MA200 + new 20d high + above 50d trail → momentum entry",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            }
+        ],
+        "note": "Top 8 by exit_date desc, then re-sorted asc. Source=mock_for_demo per Elva A4 ACK 2026-05-09. uiLabel_zh '示範交易（非真實成交）' surfaced when Stage 1 endpoint serves to TR."
+    },
+    "uiCopyHints": {
+        "headline_zh": "策略 003 — MA200 趨勢跟隨",
+        "subhead_zh": "6個月 BT｜106 筆 trades｜總損益 +113,804 TWD",
+        "warningBanner_zh": "策略尚在觀察期 — 6個月 BT (n=106) 視窗短於目標持有期 (60-120日)，bootstrap CI 已跑（winRate 43.4% CI [1.61%, 6.01%]），單一視窗 feasibility ≠ robustness。Full verdict 等 Task #405 extended-window backtest。請勿視為已驗證 alpha。",
+        "showInDemo": true,
+        "demoOrder": 3
+    },
+    "hardLines": {
+        "no_real_orders": true,
+        "no_broker_write": true,
+        "no_finmind_fetch": true,
+        "no_inflate": true,
+        "no_frozen_spec_change": true,
+        "no_status_upgrade_from_BACKTESTED_RAW": true
+    }
+}

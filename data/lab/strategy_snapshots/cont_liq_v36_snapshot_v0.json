@@ -1,0 +1,407 @@
+{
+    "schema": "lab_tr_strategy_snapshot_v0",
+    "strategyId": "cont_liq_v36",
+    "displayName": "Continuous Liquidity Relative Strength",
+    "displayName_zh": "持續流動性 + 相對強弱",
+    "status": "RESEARCH_FORWARD_OBSERVATION",
+    "labGateLevel": 9,
+    "labGatePassed": 9,
+    "asOfDateTaipei": "2026-05-09T14:05:26+08:00",
+    "panelWindow": {
+        "start": "2024-05-30",
+        "end": "2026-03-26",
+        "distinctDates": 487,
+        "rebalancePeriods": 13
+    },
+    "spec": {
+        "horizonDays": 20,
+        "topN": 4,
+        "regimeThreshold": 0.06,
+        "scoreFormula": "z[volumeRatio5To20] + z[trailRet20d]",
+        "specVersion": "v36_canonical",
+        "frozenAt": "2026-05-09",
+        "capacityCaveat": "Requires liquid pool >= 50 names by 20d dollar volume; alpha degrades sharply below K=40 (v40 evidence)."
+    },
+    "headlineMetrics": {
+        "returnConventionVersion": "explicit_absolute_vs_excess_v1",
+        "returnConventionNote": "v47 fix 2026-05-12: legacy reversed-name return fields removed. UI must read explicit absolute, benchmark, and excess fields only.",
+        "netAbsoluteReturnAfterCost": 7.5987,
+        "netAbsoluteReturnAfterCostAnnualized": 2.1064,
+        "excessReturnOverBenchmark": 2.2202,
+        "sharpeAnnualized": 3.027,
+        "sortinoAnnualized": 3.912,
+        "maxDrawdown": -0.1051,
+        "maxDrawdownDate": "2025-05-29",
+        "winRate": 0.8462,
+        "hitRate": 0.9231,
+        "averageHoldingDays": 20,
+        "averagePositions": 4,
+        "totalRebalances": 13,
+        "costBpsApplied": 120,
+        "strictOosLast": 0.5027,
+        "ci90Low": 1.0975,
+        "pbo": 0.1538,
+        "pValueSignalShuffle": 0.000999,
+        "robustness": {
+            "horizonSweep": "NEAR_PASS_v37",
+            "regimeBandSweep": "FULL_PASS_v38",
+            "costStressSweep": "PASS_AT_60_120_BPS_v39",
+            "universeShrinkage": "PARTIAL_K_GE_50_REQUIRED_v40"
+        }
+    },
+    "equityCurve": {
+        "frequency": "rebalance",
+        "points": [
+            {
+                "date": "2024-05-30",
+                "cumReturn": 0.0138,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2024-06-28",
+                "cumReturn": 0.2504,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-05-29",
+                "cumReturn": 0.119,
+                "drawdown": -0.1051
+            },
+            {
+                "date": "2025-06-27",
+                "cumReturn": 0.2547,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-07-25",
+                "cumReturn": 0.6097,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-08-22",
+                "cumReturn": 0.491,
+                "drawdown": -0.0737
+            },
+            {
+                "date": "2025-09-19",
+                "cumReturn": 0.8008,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-10-22",
+                "cumReturn": 0.967,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-11-20",
+                "cumReturn": 0.968,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2025-12-18",
+                "cumReturn": 1.143,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-01-19",
+                "cumReturn": 1.3663,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-02-25",
+                "cumReturn": 1.8553,
+                "drawdown": 0.0
+            },
+            {
+                "date": "2026-03-26",
+                "cumReturn": 2.2202,
+                "drawdown": 0.0
+            }
+        ],
+        "note": "cumReturn = compounded net return after 120bps cost; drawdown = peak-to-trough fraction."
+    },
+    "monthlyReturns": {
+        "frequency": "calendar_month",
+        "bars": [
+            {
+                "yearMonth": "2024-05",
+                "monthReturn": 0.0138,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2024-06",
+                "monthReturn": 0.2333,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2025-05",
+                "monthReturn": -0.1051,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2025-06",
+                "monthReturn": 0.1213,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2025-07",
+                "monthReturn": 0.2829,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2025-08",
+                "monthReturn": -0.0737,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2025-09",
+                "monthReturn": 0.2078,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2025-10",
+                "monthReturn": 0.0923,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2025-11",
+                "monthReturn": 0.0005,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2025-12",
+                "monthReturn": 0.0889,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2026-01",
+                "monthReturn": 0.1042,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2026-02",
+                "monthReturn": 0.2067,
+                "tradeCount": 1
+            },
+            {
+                "yearMonth": "2026-03",
+                "monthReturn": 0.1278,
+                "tradeCount": 1
+            }
+        ],
+        "note": "Months without rebalance carry forward last cumReturn delta. h=20 monthly cadence."
+    },
+    "drawdownSeries": {
+        "frequency": "rebalance",
+        "points": [
+            {
+                "date": "2024-05-30",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2024-06-28",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-05-29",
+                "drawdown": -0.1051,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-06-27",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-07-25",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-08-22",
+                "drawdown": -0.0737,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-09-19",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-10-22",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-11-20",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2025-12-18",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-01-19",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-02-25",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            },
+            {
+                "date": "2026-03-26",
+                "drawdown": 0.0,
+                "underwaterDays": 0
+            }
+        ]
+    },
+    "sampleTrades": {
+        "limit": 8,
+        "entries": [
+            {
+                "rebalanceDate": "2025-08-22",
+                "exitDateApprox": "2025-08-22",
+                "holdingDays": 20,
+                "holdingCount": 4,
+                "turnover": 1.0,
+                "grossReturn": 0.0373,
+                "netReturn120bps": 0.0253,
+                "benchmarkReturn": 0.0991,
+                "excessReturn120bps": -0.0737,
+                "rationale": "Top-N by score=z(vol5/20)+z(ret20d) at regime>=+6%",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "rebalanceDate": "2025-09-19",
+                "exitDateApprox": "2025-09-19",
+                "holdingDays": 20,
+                "holdingCount": 4,
+                "turnover": 1.0,
+                "grossReturn": 0.2655,
+                "netReturn120bps": 0.2535,
+                "benchmarkReturn": 0.0457,
+                "excessReturn120bps": 0.2078,
+                "rationale": "Top-N by score=z(vol5/20)+z(ret20d) at regime>=+6%",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "rebalanceDate": "2025-10-22",
+                "exitDateApprox": "2025-10-22",
+                "holdingDays": 20,
+                "holdingCount": 4,
+                "turnover": 0.75,
+                "grossReturn": 0.1447,
+                "netReturn120bps": 0.1357,
+                "benchmarkReturn": 0.0434,
+                "excessReturn120bps": 0.0923,
+                "rationale": "Top-N by score=z(vol5/20)+z(ret20d) at regime>=+6%",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "rebalanceDate": "2025-11-20",
+                "exitDateApprox": "2025-11-20",
+                "holdingDays": 20,
+                "holdingCount": 4,
+                "turnover": 1.0,
+                "grossReturn": 0.0401,
+                "netReturn120bps": 0.0281,
+                "benchmarkReturn": 0.0275,
+                "excessReturn120bps": 0.0005,
+                "rationale": "Top-N by score=z(vol5/20)+z(ret20d) at regime>=+6%",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "rebalanceDate": "2025-12-18",
+                "exitDateApprox": "2025-12-18",
+                "holdingDays": 20,
+                "holdingCount": 4,
+                "turnover": 1.0,
+                "grossReturn": 0.3667,
+                "netReturn120bps": 0.3547,
+                "benchmarkReturn": 0.2658,
+                "excessReturn120bps": 0.0889,
+                "rationale": "Top-N by score=z(vol5/20)+z(ret20d) at regime>=+6%",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "rebalanceDate": "2026-01-19",
+                "exitDateApprox": "2026-01-19",
+                "holdingDays": 20,
+                "holdingCount": 4,
+                "turnover": 0.75,
+                "grossReturn": 0.2672,
+                "netReturn120bps": 0.2582,
+                "benchmarkReturn": 0.154,
+                "excessReturn120bps": 0.1042,
+                "rationale": "Top-N by score=z(vol5/20)+z(ret20d) at regime>=+6%",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "rebalanceDate": "2026-02-25",
+                "exitDateApprox": "2026-02-25",
+                "holdingDays": 20,
+                "holdingCount": 4,
+                "turnover": 0.75,
+                "grossReturn": 0.2285,
+                "netReturn120bps": 0.2195,
+                "benchmarkReturn": 0.0128,
+                "excessReturn120bps": 0.2067,
+                "rationale": "Top-N by score=z(vol5/20)+z(ret20d) at regime>=+6%",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            },
+            {
+                "rebalanceDate": "2026-03-26",
+                "exitDateApprox": "2026-03-26",
+                "holdingDays": 20,
+                "holdingCount": 4,
+                "turnover": 0.75,
+                "grossReturn": 0.3139,
+                "netReturn120bps": 0.3049,
+                "benchmarkReturn": 0.1772,
+                "excessReturn120bps": 0.1278,
+                "rationale": "Top-N by score=z(vol5/20)+z(ret20d) at regime>=+6%",
+                "source": "mock_for_demo",
+                "uiLabel_zh": "示範交易（非真實成交）"
+            }
+        ],
+        "note": "Recent {limit} rebalances. holdingCount/turnover from CSV; entryPrices/exitPrices NOT populated in Stage 1 (would require FinMind close_adj fetch). Stage 2 wires real prices."
+    },
+    "labContractRef": {
+        "promotionMemo": "reports/trading_room/cont_liq_v36_pbo_repair.md",
+        "robustnessReports": [
+            "reports/trading_room/cont_liq_v37_horizon_robustness.json",
+            "reports/trading_room/cont_liq_v38_regime_band_robustness.json",
+            "reports/trading_room/cont_liq_v39_cost_stress_robustness.json",
+            "reports/trading_room/cont_liq_v40_universe_shrinkage_robustness.json"
+        ],
+        "headlineReport": "reports/trading_room/three_strategy_headline_report_v0_overnight_2026_05_09.md",
+        "returnsCsv": "reports/trading_room/cont_liq_v36_pbo_repair_returns.csv"
+    },
+    "uiCopyHints": {
+        "headline_zh": "持續流動性 × 相對強弱 — 9 層風控全通過 + 四重魯棒",
+        "subhead_zh": "K≥50 名 liquid pool 容量上限；KGI 60bps cost 安全餘量 2x",
+        "warningBanner_zh": "策略需 ≥50 檔流動性 universe；資金過度集中於 <40 檔時 alpha 失效",
+        "showInDemo": true,
+        "demoOrder": 1
+    },
+    "hardLines": {
+        "no_real_orders": true,
+        "no_broker_write": true,
+        "no_finmind_fetch": true,
+        "no_inflate": true,
+        "no_frozen_spec_change": true
+    }
+}

@@ -27,6 +27,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { auditLogs, getDb, isDatabaseMode } from "@iuf-trading-room/db";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -39,6 +41,12 @@ const SNAPSHOT_PATH_TEMPLATE = (strategyId: string) =>
   `${LAB_SNAPSHOT_BASE_URL}/reports/trading_room/strategy_snapshots/${strategyId}_snapshot_v0.json`;
 
 const INDEX_URL = `${LAB_SNAPSHOT_BASE_URL}/reports/trading_room/strategy_snapshots/_index.json`;
+
+const LOCAL_SNAPSHOT_DIRS = [
+  process.env["LAB_SNAPSHOT_LOCAL_DIR"],
+  join(process.cwd(), "data", "lab", "strategy_snapshots"),
+  join(process.cwd(), "lab-strategy-snapshots")
+].filter((dir): dir is string => typeof dir === "string" && dir.length > 0);
 
 /** Allowed strategyId values (A2 ACK — resolver locked). */
 export const ALLOWED_STRATEGY_IDS = new Set([
@@ -54,6 +62,8 @@ const CIRCUIT_BREAKER_BACKOFF_MS = 60_000;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+export type LabSnapshotSource = "github" | "local_embedded" | "stale_cache";
+
 export type LabSnapshotFetchResult =
   | {
       ok: true;
@@ -61,6 +71,7 @@ export type LabSnapshotFetchResult =
       cache_hit: boolean;
       stale_reason: null;
       fetched_at: string;
+      source: LabSnapshotSource;
     }
   | {
       ok: false;
@@ -68,6 +79,7 @@ export type LabSnapshotFetchResult =
       cache_hit: boolean;
       stale_reason: string;
       fetched_at: string | null;
+      source: LabSnapshotSource;
     };
 
 export type LabIndexFetchResult =
@@ -198,6 +210,7 @@ async function writeSnapshotAudit(params: {
   cacheHit: boolean;
   ok: boolean;
   staleReason: string | null;
+  source?: LabSnapshotSource;
 }): Promise<void> {
   if (!isDatabaseMode()) return;
   const db = getDb();
@@ -213,7 +226,8 @@ async function writeSnapshotAudit(params: {
         strategyId: params.strategyId,
         cache_hit: params.cacheHit,
         ok: params.ok,
-        stale_reason: params.staleReason
+        stale_reason: params.staleReason,
+        source: params.source ?? null
       }
     });
   } catch (err) {
@@ -235,6 +249,91 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function readLocalJson(fileName: string): Promise<Record<string, unknown> | null> {
+  for (const dir of LOCAL_SNAPSHOT_DIRS) {
+    try {
+      const raw = await readFile(join(dir, fileName), "utf8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (typeof parsed === "object" && parsed !== null) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") continue;
+      console.warn(
+        `[lab-snapshot] local bundle read failed for "${fileName}":`,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+  return null;
+}
+
+async function readLocalSnapshot(strategyId: string): Promise<Record<string, unknown> | null> {
+  return readLocalJson(`${strategyId}_snapshot_v0.json`);
+}
+
+async function readLocalIndex(): Promise<Record<string, unknown> | null> {
+  return readLocalJson("_index.json");
+}
+
+async function serveLocalSnapshotFallback(params: {
+  strategyId: string;
+  fetchedAt: string;
+  auditCtx?: { workspaceId: string; actorId: string | null };
+}): Promise<LabSnapshotFetchResult | null> {
+  const local = await readLocalSnapshot(params.strategyId);
+  if (!local) return null;
+
+  _snapshotCache.set(params.strategyId, {
+    data: local,
+    etag: "local-bundle",
+    expiresAt: Date.now() + CACHE_TTL_MS
+  });
+  recordSuccess(params.strategyId);
+
+  if (params.auditCtx) {
+    void writeSnapshotAudit({
+      workspaceId: params.auditCtx.workspaceId,
+      actorId: params.auditCtx.actorId,
+      strategyId: params.strategyId,
+      cacheHit: false,
+      ok: true,
+      staleReason: null
+    });
+  }
+
+  return {
+    ok: true,
+    snapshot: local,
+    cache_hit: false,
+    stale_reason: null,
+    fetched_at: params.fetchedAt,
+    source: "local_embedded" as LabSnapshotSource
+  };
+}
+
+async function serveLocalIndexFallback(fetchedAt: string): Promise<LabIndexFetchResult | null> {
+  const local = await readLocalIndex();
+  if (!local) return null;
+
+  _indexCache.set(INDEX_CACHE_KEY, {
+    data: local,
+    etag: "local-bundle",
+    expiresAt: Date.now() + CACHE_TTL_MS
+  });
+  _indexCircuit.consecutiveFails = 0;
+  _indexCircuit.backoffUntil = 0;
+
+  return {
+    ok: true,
+    strategies: parseIndexData(local),
+    cache_hit: false,
+    stale_reason: null,
+    fetched_at: fetchedAt
+  };
 }
 
 // ── Per-strategy snapshot fetch ───────────────────────────────────────────────
@@ -266,13 +365,16 @@ export async function fetchStrategySnapshot(
         staleReason
       });
     }
+    const localFallback = await serveLocalSnapshotFallback({ strategyId, fetchedAt, auditCtx });
+    if (localFallback) return localFallback;
     if (cached) {
       return {
         ok: false,
         snapshot: cached.data,
         cache_hit: true,
         stale_reason: staleReason,
-        fetched_at: null
+        fetched_at: null,
+        source: "stale_cache" as LabSnapshotSource
       };
     }
     return {
@@ -280,7 +382,8 @@ export async function fetchStrategySnapshot(
       snapshot: null,
       cache_hit: false,
       stale_reason: staleReason,
-      fetched_at: null
+      fetched_at: null,
+      source: "stale_cache" as LabSnapshotSource
     };
   }
 
@@ -315,6 +418,9 @@ export async function fetchStrategySnapshot(
       });
     }
 
+    const localFallback = await serveLocalSnapshotFallback({ strategyId, fetchedAt, auditCtx });
+    if (localFallback) return localFallback;
+
     if (cached) {
       console.warn(`[lab-snapshot] fetch failed for "${strategyId}"; serving stale cache. reason=${reason}`);
       return {
@@ -322,7 +428,8 @@ export async function fetchStrategySnapshot(
         snapshot: cached.data,
         cache_hit: true,
         stale_reason: reason,
-        fetched_at: null
+        fetched_at: null,
+        source: "stale_cache" as LabSnapshotSource
       };
     }
     return {
@@ -330,7 +437,8 @@ export async function fetchStrategySnapshot(
       snapshot: null,
       cache_hit: false,
       stale_reason: reason,
-      fetched_at: null
+      fetched_at: null,
+      source: "stale_cache" as LabSnapshotSource
     };
   }
 
@@ -354,7 +462,8 @@ export async function fetchStrategySnapshot(
       snapshot: cached.data,
       cache_hit: true,
       stale_reason: null,
-      fetched_at: fetchedAt
+      fetched_at: fetchedAt,
+      source: "github" as LabSnapshotSource
     };
   }
 
@@ -377,6 +486,9 @@ export async function fetchStrategySnapshot(
       });
     }
 
+    const localFallback = await serveLocalSnapshotFallback({ strategyId, fetchedAt, auditCtx });
+    if (localFallback) return localFallback;
+
     if (cached) {
       console.warn(`[lab-snapshot] HTTP ${res.status} for "${strategyId}"; serving stale cache.`);
       return {
@@ -384,7 +496,8 @@ export async function fetchStrategySnapshot(
         snapshot: cached.data,
         cache_hit: true,
         stale_reason: reason,
-        fetched_at: null
+        fetched_at: null,
+        source: "stale_cache" as LabSnapshotSource
       };
     }
     return {
@@ -392,7 +505,8 @@ export async function fetchStrategySnapshot(
       snapshot: null,
       cache_hit: false,
       stale_reason: reason,
-      fetched_at: null
+      fetched_at: null,
+      source: "stale_cache" as LabSnapshotSource
     };
   }
 
@@ -419,7 +533,8 @@ export async function fetchStrategySnapshot(
         snapshot: cached.data,
         cache_hit: true,
         stale_reason: reason,
-        fetched_at: null
+        fetched_at: null,
+        source: "stale_cache" as LabSnapshotSource
       };
     }
     return {
@@ -427,7 +542,8 @@ export async function fetchStrategySnapshot(
       snapshot: null,
       cache_hit: false,
       stale_reason: reason,
-      fetched_at: null
+      fetched_at: null,
+      source: "stale_cache" as LabSnapshotSource
     };
   }
 
@@ -445,9 +561,9 @@ export async function fetchStrategySnapshot(
       });
     }
     if (cached) {
-      return { ok: false, snapshot: cached.data, cache_hit: true, stale_reason: reason, fetched_at: null };
+      return { ok: false, snapshot: cached.data, cache_hit: true, stale_reason: reason, fetched_at: null, source: "stale_cache" as LabSnapshotSource };
     }
-    return { ok: false, snapshot: null, cache_hit: false, stale_reason: reason, fetched_at: null };
+    return { ok: false, snapshot: null, cache_hit: false, stale_reason: reason, fetched_at: null, source: "stale_cache" as LabSnapshotSource };
   }
 
   // 7. Store in cache with ETag
@@ -476,7 +592,8 @@ export async function fetchStrategySnapshot(
     snapshot: data,
     cache_hit: false,
     stale_reason: null,
-    fetched_at: fetchedAt
+    fetched_at: fetchedAt,
+    source: "github" as LabSnapshotSource
   };
 }
 
@@ -495,7 +612,8 @@ export function getSnapshotFromCacheOnly(strategyId: string): LabSnapshotFetchRe
     snapshot: cached.data,
     cache_hit: true,
     stale_reason: null,
-    fetched_at: new Date(now).toISOString()
+    fetched_at: new Date(now).toISOString(),
+    source: "github" as LabSnapshotSource
   };
 }
 
@@ -520,6 +638,8 @@ export async function fetchStrategyIndex(auditCtx?: {
   ) {
     const cached = _indexCache.get(INDEX_CACHE_KEY);
     const staleReason = `circuit_open_${CIRCUIT_BREAKER_BACKOFF_MS / 1000}s_backoff`;
+    const localFallback = await serveLocalIndexFallback(fetchedAt);
+    if (localFallback) return localFallback;
     if (cached) {
       const entries = parseIndexData(cached.data);
       return { ok: false, strategies: entries, cache_hit: true, stale_reason: staleReason, fetched_at: null };
@@ -546,6 +666,8 @@ export async function fetchStrategyIndex(auditCtx?: {
       err instanceof Error && err.name === "AbortError"
         ? "fetch_timeout_5s"
         : `fetch_error:${err instanceof Error ? err.message.slice(0, 80) : "unknown"}`;
+    const localFallback = await serveLocalIndexFallback(fetchedAt);
+    if (localFallback) return localFallback;
     if (cached) {
       const entries = parseIndexData(cached.data);
       return { ok: false, strategies: entries, cache_hit: true, stale_reason: reason, fetched_at: null };
@@ -564,6 +686,8 @@ export async function fetchStrategyIndex(auditCtx?: {
   if (!res.ok) {
     _indexCircuit.consecutiveFails += 1;
     const reason = res.status === 404 ? "index_not_found" : `github_http_${res.status}`;
+    const localFallback = await serveLocalIndexFallback(fetchedAt);
+    if (localFallback) return localFallback;
     if (cached) {
       const entries = parseIndexData(cached.data);
       return { ok: false, strategies: entries, cache_hit: true, stale_reason: reason, fetched_at: null };
