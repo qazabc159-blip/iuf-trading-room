@@ -235,6 +235,7 @@ ALLOWLIST_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 EVIDENCE_OR_TEST_DIR_PREFIXES = {
     "evidence/",
     ".claude/agent-memory/",
+    "reports/",
 }
 
 # Directories that are FULLY SKIPPED for all secret patterns.
