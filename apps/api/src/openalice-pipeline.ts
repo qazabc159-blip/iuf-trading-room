@@ -24,7 +24,7 @@ import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { and, desc, eq, gte, sql as drizzleSql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql as drizzleSql } from "drizzle-orm";
 import {
   auditLogs,
   companiesOhlcv,
@@ -1290,14 +1290,35 @@ export async function evaluatePipelinePublishGate(
     return { action: "skipped", briefId: null, reason: `status=${draft.status}` };
   }
 
-  // Load latest AI reviewer audit log for this draft
+  // Load latest PRIMARY-REVIEW audit log for this draft.
+  //
+  // BUG FIX (R6 2026-05-12): The previous query had no action filter — it fetched
+  // the most-recent row for this draft by createdAt DESC. The adversarial reviewer
+  // (`content_draft.adversarial_audit`) runs AFTER the primary review and writes its
+  // own audit row WITHOUT a `verdict` field. Because it is written last it was always
+  // the row returned here → `verdict=undefined → null` → `reviewerGrantsPublish=false`
+  // → gate blocked ALL approved briefs → 8-iteration self-confirming loop on draft 267476f5.
+  //
+  // Fix: whitelist the action types that carry a meaningful `verdict` field.
+  // `content_draft.adversarial_audit` and `content_draft.ai_yellow_held` (written as
+  // an intercept hold, not a final verdict) must not be consulted for gate purposes.
+  // Using a positive filter (inArray) is safer than an exclusion list — new audit action
+  // types added in future are automatically excluded until explicitly opted in.
+  const PRIMARY_REVIEW_ACTIONS = [
+    "content_draft.ai_approved",
+    "content_draft.ai_rejected",
+    "content_draft.ai_manual_review",
+    "content_draft.factual_reject",
+  ] as const;
+
   const auditRows = await db
     .select()
     .from(auditLogs)
     .where(
       and(
         eq(auditLogs.entityId, draftId),
-        eq(auditLogs.entityType, "content_draft")
+        eq(auditLogs.entityType, "content_draft"),
+        inArray(auditLogs.action, [...PRIMARY_REVIEW_ACTIONS])
       )
     )
     .orderBy(desc(auditLogs.createdAt))
