@@ -1,0 +1,24 @@
+{
+  "schema": "lab_tr_strategy_snapshot_index_v0",
+  "createdAtTaipei": "2026-05-09T14:05:26+08:00",
+  "strategies": [
+    {
+      "strategyId": "cont_liq_v36",
+      "snapshotPath": "reports/trading_room/strategy_snapshots/cont_liq_v36_snapshot_v0.json",
+      "status": "RESEARCH_FORWARD_OBSERVATION",
+      "demoOrder": 1
+    },
+    {
+      "strategyId": "strategy_002",
+      "snapshotPath": "reports/trading_room/strategy_snapshots/strategy_002_snapshot_v0.json",
+      "status": "PAPER_LIVE_OBSERVING",
+      "demoOrder": 2
+    },
+    {
+      "strategyId": "strategy_003",
+      "snapshotPath": "reports/trading_room/strategy_snapshots/strategy_003_snapshot_v0.json",
+      "status": "BACKTESTED_RAW",
+      "demoOrder": 3
+    }
+  ]
+}
