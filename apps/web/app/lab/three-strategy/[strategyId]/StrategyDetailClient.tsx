@@ -50,7 +50,8 @@ const CONT_LIQ_V36_SNAPSHOT: LabStrategySnapshot = {
     maxDrawdownNetPct: -0.1051,
     maxDrawdownInternalExcessPct: -0.0737,
     estimatedEntryTicketCount: 4,
-    compoundReturn: 2.2202, sharpeAnnualized: 3.027, sortinoAnnualized: 3.912,
+    // compoundReturn removed (v47) — use strategyNetAbsoluteReturnPct
+    sharpeAnnualized: 3.027, sortinoAnnualized: 3.912,
     maxDrawdown: -0.1051, maxDrawdownDate: "2025-05-29",
     winRate: 0.8462, hitRate: 0.9231, averageHoldingDays: 20,
     robustness: {
@@ -115,12 +116,12 @@ const CONT_LIQ_V36_SNAPSHOT: LabStrategySnapshot = {
   ]},
   spec: {
     capacityCaveat: "Requires liquid pool >= 50 names by 20d dollar volume; alpha degrades sharply below K=40 (v40 evidence).",
-    commonWindowStart: "2024-05-30",
-    commonWindowEnd: "2026-03-26",
+    commonWindowStart: "2025-04-10",  // v47 canonical common-window
+    commonWindowEnd: "2026-03-06",  // v47 canonical common-window
   },
   uiCopyHints: {
     warningBanner_zh: "策略需 ≥50 檔流動性 universe；資金過度集中於 <40 檔時 alpha 失效",
-    commonWindowCaveat_zh: "基準為 0050，同一時間窗口（2024-05-30 → 2026-03-26）一個共同數字，三大策略共用。假設 0050 基準報酬 38.40%，尚待 Codex v46 確認。",
+    commonWindowCaveat_zh: "基準為 0050，common-window：2025-04-10 → 2026-03-06（11 個月）。三大策略共用同一時間窗口比較基準。0050 同窗 +95.25%（Codex v47 Athena Codex v46 confirmed）。",
   },
 };
 const STAGE2_SNAPSHOTS: Record<string, LabStrategySnapshot> = {
