@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "schema_name": "tr_strategy_snapshot_api_contract_v47",
+    "version": "47",
+    "author": "Jason (backend-strategy)",
+    "created": "2026-05-13",
+    "status": "ACTIVE",
+    "supersedes": "tr_strategy_snapshot_api_contract_v46",
+    "description": "v47 closes compoundReturn / compoundReturnNetOfBenchmark from API surface. Returns fields promoted into dedicated `returns` object. schemaVersion field added to endpoint response for scanner verification."
+  },
+  "endpoint": "GET /api/v1/lab/strategy/:strategyId/snapshot",
+  "response_envelope": {
+    "schema": "tr_strategy_snapshot_api_contract_v47",
+    "strategyId": "string",
+    "cache_hit": "boolean",
+    "stale_reason": "string | null",
+    "fetched_at": "string (ISO-8601)",
+    "snapshot": "SnapshotV47 | null"
+  },
+  "SnapshotV47": {
+    "schemaVersion": "tr_strategy_snapshot_api_contract_v47",
+    "returns": {
+      "strategyNetAbsoluteReturnPct": "number | null",
+      "benchmark0050ReturnPct": "number | null",
+      "excessVs0050Pp": "number | null"
+    },
+    "displayMode": "string (default: research_only)",
+    "orderState": "string (default: blocked)",
+    "brokerWriteAllowed": "boolean (default: false)",
+    "realOrderAllowed": "boolean (default: false)",
+    "registryChangeAllowed": "boolean (default: false)",
+    "headlineMetrics": {
+      "strategyNetAbsoluteReturnPct": "number | null",
+      "benchmark0050ReturnPct": "number | null",
+      "excessVs0050Pp": "number | null",
+      "hitRatePct": "number | null",
+      "maxDrawdownNetPct": "number | null",
+      "maxDrawdownInternalExcessPct": "number | null",
+      "estimatedEntryTicketCount": "number | null",
+      "_NOTE_compoundReturn": "REMOVED — not emitted in v47",
+      "_NOTE_compoundReturnNetOfBenchmark": "REMOVED — not emitted in v46/v47"
+    },
+    "_v47Mapped": true
+  },
+  "breaking_changes_from_v46": [
+    "compoundReturn removed from headlineMetrics and top-level snapshot",
+    "compoundReturnNetOfBenchmark removed (was already removed in v46 from top-level; now also enforced in headlineMetrics)",
+    "returns object added at top-level snapshot with strategyNetAbsoluteReturnPct / benchmark0050ReturnPct / excessVs0050Pp",
+    "schemaVersion field added to snapshot object (value: tr_strategy_snapshot_api_contract_v47)",
+    "schema field in response envelope updated from lab_tr_strategy_snapshot_v0 to tr_strategy_snapshot_api_contract_v47",
+    "_v47Mapped marker replaces _v46Mapped"
+  ],
+  "scanner_verification": {
+    "P0_findings_resolved": 16,
+    "P1_findings_resolved": 8,
+    "total_resolved": 24,
+    "zero_compoundReturn_check": "grep compoundReturn in API response must return 0 matches",
+    "schemaVersion_check": "response.snapshot.schemaVersion must equal tr_strategy_snapshot_api_contract_v47",
+    "returns_check": "response.snapshot.returns must be an object with strategyNetAbsoluteReturnPct / benchmark0050ReturnPct / excessVs0050Pp"
+  }
+}

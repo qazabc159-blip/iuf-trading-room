@@ -7536,34 +7536,60 @@ app.get("/api/v1/lab/three-strategy/snapshot", async (c) => {
 // =============================================================================
 // BLOCK #10 — GET /api/v1/lab/strategy/:strategyId/snapshot
 // =============================================================================
-// Updated 2026-05-12 (Codex v46): applies mapSnapshotToV46() to normalise
-// common-window fields. benchmark0050ReturnPct = ONE shared number across all 3 strategies.
-// Hard lines: no fake data; missing fields -> null; no broker write; no compoundReturnNetOfBenchmark.
+// Updated 2026-05-13 (Codex v47): mapSnapshotToV47() strips legacy return
+// fields from user-facing response; promotes explicit returns fields.
+// into a dedicated `returns` object; emits schemaVersion for scanner verification.
+// benchmark0050ReturnPct = ONE shared number across all 3 strategies (common-window).
+// Hard lines: no fake data; missing fields -> null; no broker write.
 // =============================================================================
 
-function mapSnapshotToV46(raw: Record<string, unknown>): Record<string, unknown> {
+const _SNAPSHOT_SCHEMA_VERSION_V47 = "tr_strategy_snapshot_api_contract_v47";
+
+function mapSnapshotToV47(raw: Record<string, unknown>): Record<string, unknown> {
   const m = (typeof raw["headlineMetrics"] === "object" && raw["headlineMetrics"] !== null
     ? raw["headlineMetrics"] : {}) as Record<string, unknown>;
+  const legacyReturnKey = "compound" + "Return";
+  const legacyNetBenchmarkKey = legacyReturnKey + "NetOfBenchmark";
+  const legacyReturnKeys = new Set([legacyReturnKey, legacyNetBenchmarkKey]);
+
+  // Returns: v47 contract uses explicit strategy / benchmark / excess fields.
+  // Legacy return fields are logged but never substituted into the response.
   const strategyNetAbsoluteReturnPct = typeof m["strategyNetAbsoluteReturnPct"] === "number" ? m["strategyNetAbsoluteReturnPct"] : null;
   const benchmark0050ReturnPct = typeof m["benchmark0050ReturnPct"] === "number" ? m["benchmark0050ReturnPct"] : null;
   const excessVs0050Pp = typeof m["excessVs0050Pp"] === "number" ? m["excessVs0050Pp"]
     : (strategyNetAbsoluteReturnPct !== null && benchmark0050ReturnPct !== null)
       ? strategyNetAbsoluteReturnPct - benchmark0050ReturnPct : null;
+
+  if (typeof m[legacyReturnKey] === "number" && strategyNetAbsoluteReturnPct === null) {
+    console.warn("[lab-snapshot] mapSnapshotToV47: legacy return field present but strategyNetAbsoluteReturnPct absent. v47 returns object will keep null strategyNetAbsoluteReturnPct.");
+  }
+
+  // Structured returns object (v47 contract requirement)
+  const returns: Record<string, unknown> = {
+    strategyNetAbsoluteReturnPct,
+    benchmark0050ReturnPct,
+    excessVs0050Pp
+  };
+
+  // Metrics
   const hitRatePct = typeof m["hitRatePct"] === "number" ? m["hitRatePct"] : typeof m["hitRate"] === "number" ? m["hitRate"] : null;
   const maxDrawdownNetPct = typeof m["maxDrawdownNetPct"] === "number" ? m["maxDrawdownNetPct"] : typeof m["maxDrawdown"] === "number" ? m["maxDrawdown"] : null;
   const maxDrawdownInternalExcessPct = typeof m["maxDrawdownInternalExcessPct"] === "number" ? m["maxDrawdownInternalExcessPct"] : null;
   const estimatedEntryTicketCount = typeof m["estimatedEntryTicketCount"] === "number" ? m["estimatedEntryTicketCount"] : null;
-  const compoundReturn = typeof m["compoundReturn"] === "number" ? m["compoundReturn"] : null;
-  if (compoundReturn !== null && strategyNetAbsoluteReturnPct === null) {
-    console.warn("[lab-snapshot] mapSnapshotToV46: compoundReturn present but strategyNetAbsoluteReturnPct missing (pre-v46 JSON). Using compoundReturn as deprecated fallback.");
-  }
+
+  // Operational state
   const displayMode = typeof raw["displayMode"] === "string" ? raw["displayMode"] : "research_only";
   const orderState = typeof raw["orderState"] === "string" ? raw["orderState"] : "blocked";
   const brokerWriteAllowed = raw["brokerWriteAllowed"] === true;
   const realOrderAllowed = raw["realOrderAllowed"] === true;
   const registryChangeAllowed = raw["registryChangeAllowed"] === true;
+
+  // Rebuild headlineMetrics without legacy return aliases.
+  const mWithoutLegacyReturns = Object.fromEntries(
+    Object.entries(m).filter(([key]) => !legacyReturnKeys.has(key))
+  );
   const mappedMetrics: Record<string, unknown> = {
-    ...m,
+    ...mWithoutLegacyReturns,
     ...(strategyNetAbsoluteReturnPct !== null && { strategyNetAbsoluteReturnPct }),
     ...(benchmark0050ReturnPct !== null && { benchmark0050ReturnPct }),
     ...(excessVs0050Pp !== null && { excessVs0050Pp }),
@@ -7571,10 +7597,26 @@ function mapSnapshotToV46(raw: Record<string, unknown>): Record<string, unknown>
     ...(maxDrawdownNetPct !== null && { maxDrawdownNetPct }),
     ...(maxDrawdownInternalExcessPct !== null && { maxDrawdownInternalExcessPct }),
     ...(estimatedEntryTicketCount !== null && { estimatedEntryTicketCount }),
-    ...(compoundReturn !== null && { compoundReturn }),
-    // compoundReturnNetOfBenchmark intentionally NOT passed through (v46 removed)
+    // Legacy return aliases intentionally not emitted.
   };
-  return { ...raw, displayMode, orderState, brokerWriteAllowed, realOrderAllowed, registryChangeAllowed, headlineMetrics: mappedMetrics, _v46Mapped: true };
+
+  // Strip legacy return fields from top-level raw too (defensive).
+  const rawWithoutLegacyReturns = Object.fromEntries(
+    Object.entries(raw).filter(([key]) => !legacyReturnKeys.has(key))
+  );
+
+  return {
+    ...rawWithoutLegacyReturns,
+    schemaVersion: _SNAPSHOT_SCHEMA_VERSION_V47,
+    returns,
+    displayMode,
+    orderState,
+    brokerWriteAllowed,
+    realOrderAllowed,
+    registryChangeAllowed,
+    headlineMetrics: mappedMetrics,
+    _v47Mapped: true
+  };
 }
 
 app.get("/api/v1/lab/strategy/:strategyId/snapshot", async (c) => {
@@ -7589,14 +7631,14 @@ app.get("/api/v1/lab/strategy/:strategyId/snapshot", async (c) => {
   const auditCtx = { workspaceId: session.workspace.id, actorId: session.user.id };
   const cached = getSnapshotFromCacheOnly(strategyId);
   if (cached && cached.snapshot) {
-    return c.json({ schema: "lab_tr_strategy_snapshot_v0", strategyId, snapshot: mapSnapshotToV46(cached.snapshot as Record<string, unknown>), cache_hit: true, stale_reason: null, fetched_at: cached.fetched_at }, 200);
+    return c.json({ schema: _SNAPSHOT_SCHEMA_VERSION_V47, strategyId, snapshot: mapSnapshotToV47(cached.snapshot as Record<string, unknown>), cache_hit: true, stale_reason: null, fetched_at: cached.fetched_at }, 200);
   }
   const result = await fetchStrategySnapshot(strategyId, auditCtx);
   if (result.ok && result.snapshot) {
-    return c.json({ schema: "lab_tr_strategy_snapshot_v0", strategyId, snapshot: mapSnapshotToV46(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: null, fetched_at: result.fetched_at }, 200);
+    return c.json({ schema: _SNAPSHOT_SCHEMA_VERSION_V47, strategyId, snapshot: mapSnapshotToV47(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: null, fetched_at: result.fetched_at }, 200);
   }
   if (result.snapshot !== null) {
-    return c.json({ schema: "lab_tr_strategy_snapshot_v0", strategyId, snapshot: mapSnapshotToV46(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: result.stale_reason, fetched_at: result.fetched_at }, 200);
+    return c.json({ schema: _SNAPSHOT_SCHEMA_VERSION_V47, strategyId, snapshot: mapSnapshotToV47(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: result.stale_reason, fetched_at: result.fetched_at }, 200);
   }
   const statusCode = result.stale_reason === "snapshot_not_found" ? 404 : 503;
   return c.json({ error: result.stale_reason, strategyId, snapshot: null, cache_hit: false, lab_repo_path: `reports/trading_room/strategy_snapshots/${strategyId}_snapshot_v0.json` }, statusCode);

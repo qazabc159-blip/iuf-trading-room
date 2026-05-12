@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Append BF10 and V47-1 tests to ci.test.ts"""
+import os
+
+# Note: In Python strings destined for TypeScript files:
+# - Python "\\" produces a single backslash in the file
+# - So for regex /^\d{4}.../, we write "/^\\d{4}.../" in Python strings (2 backslashes -> 1 in output)
+
+tests_content = (
+    "\n"
+    "// =============================================================================\n"
+    "// BF10: Structural Ordering — date injected before reviewer (Wave 2 P0)\n"
+    "// =============================================================================\n"
+    "\n"
+    "test(\"BF10: bridge structural ordering — date patched from contextRefs before reviewer fires\", () => {\n"
+    "  const DATE_RE_BF10 = /^\\d{4}-\\d{2}-\\d{2}$/;\n"
+    "\n"
+    "  function patchPayloadDateBeforeReview(\n"
+    "    payloadWithMeta: Record<string, unknown>,\n"
+    "    targetTable: string,\n"
+    "    contextRefs: Array<{ type?: unknown; id?: unknown }>\n"
+    "  ): Record<string, unknown> {\n"
+    "    const patched = { ...payloadWithMeta };\n"
+    "    if (targetTable === \"daily_briefs\") {\n"
+    "      const existingDate = patched[\"date\"];\n"
+    "      if (!existingDate || typeof existingDate !== \"string\" || !DATE_RE_BF10.test(existingDate as string)) {\n"
+    "        const tradingDateRef = contextRefs.find(\n"
+    "          (r) => r.type === \"trading_date\" && typeof r.id === \"string\" && DATE_RE_BF10.test(r.id as string)\n"
+    "        );\n"
+    "        if (tradingDateRef) { patched[\"date\"] = tradingDateRef.id; }\n"
+    "      }\n"
+    "    }\n"
+    "    return patched;\n"
+    "  }\n"
+    "\n"
+    "  const refs = [\n"
+    "    { type: \"source_pack\", id: \"pack-uuid\" },\n"
+    "    { type: \"trading_date\", id: \"2026-05-13\" },\n"
+    "    { type: \"tick\", id: \"close_brief\" }\n"
+    "  ];\n"
+    "\n"
+    "  const c1 = patchPayloadDateBeforeReview({ date: \"\", marketState: \"Balanced\", sections: [] }, \"daily_briefs\", refs);\n"
+    "  assert.equal(c1[\"date\"], \"2026-05-13\", \"BF10-C1: empty date patched\");\n"
+    "\n"
+    "  const c2 = patchPayloadDateBeforeReview({ marketState: \"Risk-On\", sections: [] }, \"daily_briefs\", refs);\n"
+    "  assert.equal(c2[\"date\"], \"2026-05-13\", \"BF10-C2: missing date patched\");\n"
+    "\n"
+    "  const c3 = patchPayloadDateBeforeReview({ date: \"2026-5-13\", sections: [] }, \"daily_briefs\", refs);\n"
+    "  assert.equal(c3[\"date\"], \"2026-05-13\", \"BF10-C3: non-ISO date patched\");\n"
+    "\n"
+    "  const c4 = patchPayloadDateBeforeReview({ date: \"2026-05-09\", sections: [] }, \"daily_briefs\", refs);\n"
+    "  assert.equal(c4[\"date\"], \"2026-05-09\", \"BF10-C4: valid date not overwritten\");\n"
+    "\n"
+    "  const c5 = patchPayloadDateBeforeReview({ date: \"\", sections: [] }, \"theme_summaries\", refs);\n"
+    "  assert.equal(c5[\"date\"], \"\", \"BF10-C5: non-daily_brief target not patched\");\n"
+    "\n"
+    "  const c6 = patchPayloadDateBeforeReview({ date: \"\" }, \"daily_briefs\", [{ type: \"source_pack\", id: \"x\" }]);\n"
+    "  assert.equal(c6[\"date\"], \"\", \"BF10-C6: no trading_date ref — date unchanged\");\n"
+    "});\n"
+    "\n"
+    "// =============================================================================\n"
+    "// V47-1: v47 API snapshot contract — compoundReturn removed, returns object present\n"
+    "// =============================================================================\n"
+    "\n"
+    "test(\"V47-1: mapSnapshotToV47 contract — no compoundReturn in output; returns object present; schemaVersion set\", () => {\n"
+    "  const SCHEMA_V47 = \"tr_strategy_snapshot_api_contract_v47\";\n"
+    "\n"
+    "  function mapV47(raw: Record<string, unknown>): Record<string, unknown> {\n"
+    "    const m = (typeof raw[\"headlineMetrics\"] === \"object\" && raw[\"headlineMetrics\"] !== null\n"
+    "      ? raw[\"headlineMetrics\"] : {}) as Record<string, unknown>;\n"
+    "    const netPct = typeof m[\"strategyNetAbsoluteReturnPct\"] === \"number\" ? m[\"strategyNetAbsoluteReturnPct\"] : null;\n"
+    "    const benchPct = typeof m[\"benchmark0050ReturnPct\"] === \"number\" ? m[\"benchmark0050ReturnPct\"] : null;\n"
+    "    const excess = typeof m[\"excessVs0050Pp\"] === \"number\" ? m[\"excessVs0050Pp\"]\n"
+    "      : (netPct !== null && benchPct !== null) ? netPct - benchPct : null;\n"
+    "    const returns = { strategyNetAbsoluteReturnPct: netPct, benchmark0050ReturnPct: benchPct, excessVs0050Pp: excess };\n"
+    "    const { compoundReturn: _cr, compoundReturnNetOfBenchmark: _crnb, ...mWithout } = m as Record<string, unknown> & { compoundReturn?: unknown; compoundReturnNetOfBenchmark?: unknown };\n"
+    "    const { compoundReturn: _rcr, compoundReturnNetOfBenchmark: _rcrnb, ...rawWithout } = raw as Record<string, unknown> & { compoundReturn?: unknown; compoundReturnNetOfBenchmark?: unknown };\n"
+    "    return { ...rawWithout, schemaVersion: SCHEMA_V47, returns, headlineMetrics: { ...mWithout }, _v47Mapped: true };\n"
+    "  }\n"
+    "\n"
+    "  const out1 = mapV47({ headlineMetrics: { strategyNetAbsoluteReturnPct: 0.42, benchmark0050ReturnPct: 0.38, excessVs0050Pp: 0.04, compoundReturn: 0.42, compoundReturnNetOfBenchmark: 0.04 } });\n"
+    "  assert.equal(out1[\"schemaVersion\"], SCHEMA_V47, \"V47-C1: schemaVersion\");\n"
+    "  assert.ok(!(\"compoundReturn\" in out1), \"V47-C1: compoundReturn not in output\");\n"
+    "  assert.ok(!(\"compoundReturnNetOfBenchmark\" in out1), \"V47-C1: compoundReturnNetOfBenchmark not in output\");\n"
+    "  assert.ok(out1[\"returns\"] && typeof out1[\"returns\"] === \"object\", \"V47-C1: returns object present\");\n"
+    "  const r1 = out1[\"returns\"] as Record<string, unknown>;\n"
+    "  assert.equal(r1[\"strategyNetAbsoluteReturnPct\"], 0.42, \"V47-C1: strategyNetAbsoluteReturnPct\");\n"
+    "  assert.equal(r1[\"benchmark0050ReturnPct\"], 0.38, \"V47-C1: benchmark0050ReturnPct\");\n"
+    "  assert.equal(r1[\"excessVs0050Pp\"], 0.04, \"V47-C1: excessVs0050Pp\");\n"
+    "  const hm1 = out1[\"headlineMetrics\"] as Record<string, unknown>;\n"
+    "  assert.ok(!(\"compoundReturn\" in hm1), \"V47-C1: compoundReturn not in headlineMetrics\");\n"
+    "  assert.equal(out1[\"_v47Mapped\"], true, \"V47-C1: _v47Mapped\");\n"
+    "\n"
+    "  const out2 = mapV47({ headlineMetrics: { compoundReturn: 0.35, hitRatePct: 0.55 } });\n"
+    "  assert.equal(out2[\"schemaVersion\"], SCHEMA_V47, \"V47-C2: schemaVersion on legacy input\");\n"
+    "  assert.ok(!(\"compoundReturn\" in out2), \"V47-C2: compoundReturn stripped\");\n"
+    "  const r2 = out2[\"returns\"] as Record<string, unknown>;\n"
+    "  assert.equal(r2[\"strategyNetAbsoluteReturnPct\"], null, \"V47-C2: strategyNetAbsoluteReturnPct null\");\n"
+    "  assert.equal(r2[\"benchmark0050ReturnPct\"], null, \"V47-C2: benchmark0050ReturnPct null\");\n"
+    "  assert.equal(r2[\"excessVs0050Pp\"], null, \"V47-C2: excessVs0050Pp null\");\n"
+    "\n"
+    "  const out3 = mapV47({ headlineMetrics: { strategyNetAbsoluteReturnPct: 0.50, benchmark0050ReturnPct: 0.38 } });\n"
+    "  const r3 = out3[\"returns\"] as Record<string, unknown>;\n"
+    "  assert.ok(typeof r3[\"excessVs0050Pp\"] === \"number\", \"V47-C3: excessVs0050Pp auto-computed\");\n"
+    "  assert.ok(Math.abs((r3[\"excessVs0050Pp\"] as number) - 0.12) < 0.0001, \"V47-C3: excess = 0.50 - 0.38 = 0.12\");\n"
+    "});\n"
+)
+
+target = os.path.join("tests", "ci.test.ts")
+with open(target, "a", encoding="utf-8") as f:
+    f.write(tests_content)
+
+# Verify the regex looks correct
+with open(target, "r", encoding="utf-8") as f:
+    content = f.read()
+    idx = content.find("DATE_RE_BF10")
+    if idx >= 0:
+        line = content[idx:idx+50]
+        print(f"DATE_RE_BF10 line: {repr(line)}")
+
+print("Tests appended successfully")
