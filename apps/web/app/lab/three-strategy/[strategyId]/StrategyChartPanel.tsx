@@ -331,13 +331,8 @@ function DrawdownChart({ points, maxDrawdown, maxDrawdownDate }: { points: { dat
 // ── D. KPI Grid (v46 common-window fields) ────────────────────────────────────────
 
 function HeadlineKpiGrid({ metrics }: { metrics: LabStrategySnapshot["headlineMetrics"] }) {
-  let netReturn: number | null = null;
-  if (metrics.strategyNetAbsoluteReturnPct != null) {
-    netReturn = metrics.strategyNetAbsoluteReturnPct;
-  } else if (metrics.compoundReturn != null) {
-    if (typeof console !== "undefined") console.warn("[StrategyChartPanel] compoundReturn is deprecated (v46). Use strategyNetAbsoluteReturnPct.");
-    netReturn = metrics.compoundReturn;
-  }
+  // v47: only use strategyNetAbsoluteReturnPct (compoundReturn removed from render path)
+  const netReturn: number | null = metrics.strategyNetAbsoluteReturnPct ?? null;
   const hitRatePct = metrics.hitRatePct != null ? metrics.hitRatePct : metrics.hitRate;
   const maxDD = metrics.maxDrawdownNetPct != null ? metrics.maxDrawdownNetPct : metrics.maxDrawdown;
   const cells: { label: string; value: string; color: string; sub?: string; glow?: boolean }[] = [
@@ -368,7 +363,8 @@ function HeadlineKpiGrid({ metrics }: { metrics: LabStrategySnapshot["headlineMe
 function ExcessVs0050Card({ metrics, spec, uiCopyHints }: { metrics: LabStrategySnapshot["headlineMetrics"]; spec: LabStrategySnapshot["spec"]; uiCopyHints?: LabStrategySnapshot["uiCopyHints"]; }) {
   const excess = metrics.excessVs0050Pp;
   const benchmark = metrics.benchmark0050ReturnPct;
-  const netReturn = metrics.strategyNetAbsoluteReturnPct ?? metrics.compoundReturn;
+  // v47: only use strategyNetAbsoluteReturnPct
+  const netReturn = metrics.strategyNetAbsoluteReturnPct ?? null;
   const windowStart = spec.commonWindowStart;
   const windowEnd = spec.commonWindowEnd;
   const caveat = uiCopyHints?.commonWindowCaveat_zh ?? "基準為 0050，同一時間窗口（common-window）一個共同數字，三大策略共用。";
@@ -378,10 +374,23 @@ function ExcessVs0050Card({ metrics, spec, uiCopyHints }: { metrics: LabStrategy
   return (
     <div style={{ padding: "14px 16px", marginBottom: 16, background: "rgba(46,204,113,0.04)", border: "1px solid rgba(46,204,113,0.18)", borderLeft: "3px solid #2ecc71", borderRadius: 5 }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: "#2ecc71", letterSpacing: "0.8px", textTransform: "uppercase", fontFamily: "var(--mono,monospace)", marginBottom: 10 }}>vs 0050 基準比較（common-window）</div>
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
-        {netReturn != null && <div><div style={{ fontSize: 22, fontWeight: 800, color: netReturn > 0 ? "#ffb800" : "#e63946", fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{fmtPct(netReturn, 1)}</div><div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>策略淨報酬</div></div>}
-        {benchmark != null && <div><div style={{ fontSize: 22, fontWeight: 800, color: "#c8c8c8", fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{fmtPct(benchmark, 1)}</div><div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>0050 同窗</div></div>}
-        {excess != null && <div><div style={{ fontSize: 28, fontWeight: 900, color: excessColor, fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{excessSign}{fmtPct(excess, 1)} pp</div><div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>超額報酬 (excess)</div></div>}
+      {/* 3-column grid: 策略絕對 / 0050 同窗 / 超額 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1px", background: "rgba(255,255,255,0.06)", borderRadius: 5, overflow: "hidden", marginBottom: 10 }}>
+        <div style={{ background: "rgba(11,16,23,0.9)", padding: "12px 14px" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: (netReturn ?? 0) > 0 ? "#ef5350" : "#e63946", fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{netReturn != null ? fmtPct(netReturn, 1) : "—"}</div>
+          <div style={{ fontSize: 10, color: "#888", fontFamily: "var(--mono,monospace)", marginTop: 4 }}>策略絕對報酬</div>
+          <div style={{ fontSize: 9, color: "#555", fontFamily: "var(--mono,monospace)", marginTop: 2 }}>strategyNetAbsoluteReturnPct</div>
+        </div>
+        <div style={{ background: "rgba(11,16,23,0.9)", padding: "12px 14px" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#c8c8c8", fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{benchmark != null ? fmtPct(benchmark, 1) : "—"}</div>
+          <div style={{ fontSize: 10, color: "#888", fontFamily: "var(--mono,monospace)", marginTop: 4 }}>0050 同窗報酬</div>
+          <div style={{ fontSize: 9, color: "#555", fontFamily: "var(--mono,monospace)", marginTop: 2 }}>benchmark0050ReturnPct</div>
+        </div>
+        <div style={{ background: "rgba(11,16,23,0.9)", padding: "12px 14px" }}>
+          <div style={{ fontSize: 28, fontWeight: 900, color: excessColor, fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{excess != null ? `${excessSign}${fmtPct(excess, 1)} pp` : "—"}</div>
+          <div style={{ fontSize: 10, color: "#888", fontFamily: "var(--mono,monospace)", marginTop: 4 }}>超額報酬</div>
+          <div style={{ fontSize: 9, color: "#555", fontFamily: "var(--mono,monospace)", marginTop: 2 }}>excessVs0050Pp</div>
+        </div>
       </div>
       {(windowStart || windowEnd) && <div style={{ marginTop: 8, fontSize: 10, color: "#555", fontFamily: "var(--mono,monospace)" }}>測量窗口: {windowStart ?? "—"} → {windowEnd ?? "—"}</div>}
       <div style={{ marginTop: 6, fontSize: 10, color: "#555", fontFamily: "var(--mono,monospace)" }}>{caveat}</div>

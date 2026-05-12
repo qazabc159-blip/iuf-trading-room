@@ -78,7 +78,7 @@ const ATHENA_5_9_OVERRIDES: Record<string, OverrideEntry> = {
     governanceState: "RETIRED · sector-pinned · family-level no-edge 2026-05-09",
     caveat:
       "rs_20_60 family 已於 2026-05-09 Athena morning update 正式退場（RETIRED）/ 根本原因：sector-pinned — 策略表現高度依賴特定板塊曝險，非獨立 alpha 來源 / family-level no-edge 確認 / 不再進行任何 forward observation 或 paper trade / 此 slot 未來由 Athena 新候選策略填補",
-    metricsLabel: "RETIRED / no further observation",
+    metricsLabel: "legacy/retired tracking — sector-pinned, no further observation",
     isRetired: true,
     retiredReason: "sector-pinned · family-level no-edge",
     dataSource: ATHENA_5_9_SOURCE,
@@ -92,7 +92,7 @@ const ATHENA_5_9_OVERRIDES: Record<string, OverrideEntry> = {
     governanceState: "MAIN · RESEARCH_CANDIDATE · core pilot role · strategy_002/003 walk-forward in progress (Task #400)",
     caveat:
       "MAIN 策略保持 RESEARCH_CANDIDATE 狀態 / strategy_002 + strategy_003 walk-forward + bootstrap CI 進行中（Task #400）/ 尚未進入 forward observation / sector/regime dependent — 非 clean stock-picking claim / 不是已驗證策略 / cash_order_path: BLOCKED_until_Yang_final_manual_ACK",
-    metricsLabel: "research_only / not validated",
+    metricsLabel: "research_only / methodology caveat — sector/regime dependent, not validated",
     isRetired: false,
     dataSource: ATHENA_5_9_SOURCE,
   },
@@ -140,7 +140,7 @@ function mapEntryToCard(entry: LabThreeStrategyEntry): StrategyDisplayCard {
     badgeLabel: isRetired ? "RETIRED" : entry.pilot_status ?? "READINESS_REVIEW",
     governanceState: entry.pilot_status ?? "READINESS_REVIEW_ONLY",
     caveat: entry.caveat || "詳細 caveat 待 Athena 更新",
-    metricsLabel: "research_only / not validated",
+    metricsLabel: "research_only / methodology caveat — sector/regime dependent, not validated",
     isRetired,
     dataSource: "embedded_lab_fixture",
   };
