@@ -17,7 +17,7 @@
  *   10. KGI gateway state change  (connectivity event — active post-5/12)
  *
  * Persistence: writes triggered events to `iuf_events` table.
- * DRAFT migration 0025 — not promoted until Mike audit.
+ * Migration 0025_iuf_events.sql PROMOTED (2026-05-12 P0 unblock — Bruce R5 confirmed table missing).
  *
  * Engine: poll tick every 5 min via scheduler in server.ts.
  * Safe-default: any rule evaluation error is contained and logged; engine continues.
@@ -539,7 +539,7 @@ async function isDuplicateEvent(ruleId: string, ticker: string | null): Promise<
     ) as { rows?: unknown[] };
     return (rows.rows?.length ?? 0) > 0;
   } catch {
-    // Table not migrated yet → no dedup check
+    // Table missing or query failed → no dedup check (safe-default)
     return false;
   }
 }
@@ -568,9 +568,9 @@ async function writeEvent(event: Omit<IufEvent, "id" | "triggeredAt" | "acknowle
       `[event-engine] Event written: rule=${event.ruleId} ticker=${event.ticker ?? "system"} severity=${event.severity}`
     );
   } catch (e) {
-    // Table not migrated (DRAFT) — log and continue
+    // INSERT failed — log for diagnosis (table should exist after 0025 promotion)
     console.warn(
-      `[event-engine] Failed to write event (table not migrated?): ${e instanceof Error ? e.message : String(e)}`
+      `[event-engine] Failed to write event: ${e instanceof Error ? e.message : String(e)}`
     );
   }
 }

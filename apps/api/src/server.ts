@@ -8945,16 +8945,22 @@ app.get("/api/v1/paper/db-probe", async (c) => {
     }
 
     // Check strategy_runs table existence (for Bruce R3 / migration-deploy-gap verify)
+    // Check iuf_events table existence (for Bruce R5 / 0025 promote verify)
     let strategyRunsTableExists = false;
+    let iufEventsTableExists = false;
     try {
       const srCheck = await db.execute(drizzleSql`
-        SELECT to_regclass('public.strategy_runs') AS strategy_runs
+        SELECT
+          to_regclass('public.strategy_runs') AS strategy_runs,
+          to_regclass('public.iuf_events')    AS iuf_events
       `);
       const srRow = (srCheck as { rows?: Record<string, unknown>[] })?.rows?.[0]
         ?? (Array.isArray(srCheck) ? srCheck[0] : srCheck);
       strategyRunsTableExists = srRow?.strategy_runs !== null && srRow?.strategy_runs !== undefined;
+      iufEventsTableExists = srRow?.iuf_events !== null && srRow?.iuf_events !== undefined;
     } catch {
       strategyRunsTableExists = false;
+      iufEventsTableExists = false;
     }
 
     return c.json({
@@ -8964,7 +8970,8 @@ app.get("/api/v1/paper/db-probe", async (c) => {
         paper_orders: tableRow?.paper_orders !== null && tableRow?.paper_orders !== undefined,
         paper_fills: tableRow?.paper_fills !== null && tableRow?.paper_fills !== undefined,
         paper_positions: tableRow?.paper_positions !== null && tableRow?.paper_positions !== undefined,
-        strategy_runs: strategyRunsTableExists
+        strategy_runs: strategyRunsTableExists,
+        iuf_events: iufEventsTableExists
       },
       appliedMigrations,
       appliedMigrationsCount: appliedMigrations.length,
@@ -11303,7 +11310,7 @@ function startSchedulers(workspaceSlug: string): void {
   }, FIFTEEN_MIN_MS);
 
   // BLOCK #6: Event rule engine — poll every 5min, evaluate 10 rules, write iuf_events
-  // Table iuf_events lives in DRAFT migration 0025 (not promoted yet).
+  // Table iuf_events: migration 0025_iuf_events.sql PROMOTED (2026-05-12 P0 unblock).
   // Engine degrades gracefully when table is missing (safe-default empty results).
   const FIVE_MIN_MS = 5 * 60 * 1000;
   // Initial tick delayed 30s to let DB connection stabilise after boot

@@ -9743,6 +9743,53 @@ test("BF5: evaluatePublishGate blocks when trailComplete=false and verdict is ma
   assert.equal(gate.shouldAutoPublish, false, "fallback pack without approval should not auto-publish");
 });
 
+// BF7: evaluatePublishGate — empty-source override: weekend/holiday pack (all EMPTY)
+// approved by reviewer must publish (simulates the gatePack patch in evaluatePipelinePublishGate)
+test("BF7: evaluatePublishGate with all-EMPTY sources + trailComplete=true (gateway patch) approves", () => {
+  // This represents the state AFTER evaluatePipelinePublishGate applies the empty-source override:
+  // sourcePack exists, all sources are EMPTY (weekend), reviewer approved → gatePack.trailComplete=true
+  const gate = evaluatePublishGate({
+    sourcePack: {
+      packId: "weekend-pack",
+      tick: "close_brief",
+      collectedAt: new Date().toISOString(),
+      tradingDate: "2026-05-11", // Sunday — all sources EMPTY
+      sources: [
+        { source: "companies_ohlcv", status: "EMPTY", rowCount: 0, latestDate: null, note: "weekend" },
+        { source: "tw_institutional_buysell", status: "EMPTY", rowCount: 0, latestDate: null, note: "weekend" }
+      ],
+      trailComplete: true // patched by evaluatePipelinePublishGate empty-source override
+    },
+    reviewerVerdict: "approve",
+    confidence: 0.82,
+    flaggedIssueCount: 0,
+    draftPayload: { type: "daily_brief", content: "weekend market commentary" }
+  });
+  assert.equal(gate.shouldAutoPublish, true, "empty-source pack with reviewer override should auto-publish");
+  assert.equal(gate.tier, "green");
+});
+
+// BF7b: evaluatePublishGate — empty-source pack WITHOUT override (trailComplete=false) must NOT publish
+test("BF7b: evaluatePublishGate with all-EMPTY sources + trailComplete=false (no override) blocks", () => {
+  const gate = evaluatePublishGate({
+    sourcePack: {
+      packId: "weekend-pack-no-override",
+      tick: "close_brief",
+      collectedAt: new Date().toISOString(),
+      tradingDate: "2026-05-11",
+      sources: [
+        { source: "companies_ohlcv", status: "EMPTY", rowCount: 0, latestDate: null, note: "weekend" }
+      ],
+      trailComplete: false // not patched — reviewer did not meet threshold
+    },
+    reviewerVerdict: "approve",
+    confidence: 0.6, // below 0.7 threshold — no override applied
+    flaggedIssueCount: 1,
+    draftPayload: { type: "daily_brief", content: "weekend market commentary" }
+  });
+  assert.equal(gate.shouldAutoPublish, false, "empty-source pack without override must not auto-publish");
+});
+
 // BF6: runEventEngineTickForce returns memory_mode in CI (no DB)
 test("BF6: runEventEngineTickForce returns memory_mode error in memory mode", async () => {
   const result = await runEventEngineTickForce();

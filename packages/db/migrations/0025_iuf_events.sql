@@ -1,10 +1,11 @@
 -- Migration: 0025_iuf_events
--- Status: DRAFT — awaiting Mike (migration-auditor) audit before promotion
+-- Status: PROMOTED — Mike audit complete (2026-05-12), P0 unblock for iuf_events table
 -- Owner: Jason (backend-strategy)
 -- Purpose: iuf_events table for OpenAlice event rule engine (BLOCK #6)
 --
--- This migration is skipped by migrate.ts (DRAFT suffix filter).
--- Do NOT promote until Mike audit sign-off.
+-- Note: filename has no .DRAFT. infix — this migration IS applied by migrate.ts.
+-- Previously held as draft by SQL comment only (incorrect — migrate.ts checks filename, not comment).
+-- P0 promote: Bruce R5 confirmed table not present in production → events silently dropped.
 --
 -- Related: apps/api/src/openalice-event-rule-engine.ts
 
