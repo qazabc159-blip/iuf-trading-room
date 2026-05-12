@@ -4654,7 +4654,9 @@ import {
   runFullIngest,
   getLastFullIngestResult,
   isFullIngestRunning,
-  queryAllDatasetStatus
+  queryAllDatasetStatus,
+  runDatasetBackfill,
+  type BackfillDataset
 } from "./jobs/finmind-full-ingest.js";
 
 // Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
@@ -6076,6 +6078,103 @@ app.post("/api/v1/internal/finmind/sync-now", async (c) => {
   return c.json({
     data: result
   });
+});
+
+// POST /api/v1/internal/finmind/backfill
+//   Owner-only. Targeted date-range backfill for the 3 source-pack core tables:
+//     companies_ohlcv, tw_institutional_buysell, tw_margin_short
+//
+//   Body: { dataset: "companies_ohlcv" | "tw_institutional_buysell" | "tw_margin_short",
+//            from: "YYYY-MM-DD", to: "YYYY-MM-DD", batch_size?: number }
+//
+//   Hard lines:
+//     - Owner role required (403 otherwise)
+//     - FINMIND_API_TOKEN required (422 otherwise)
+//     - from/to must be valid ISO dates, from <= to (400 otherwise)
+//     - Respects FINMIND_KILL_SWITCH
+//     - No fake data; real FinMind API calls only
+//     - batchSize max 200 (sponsor quota guard)
+//     - Audit log written per backfill run
+
+const finmindBackfillBodySchema = z.object({
+  dataset: z.enum(["companies_ohlcv", "tw_institutional_buysell", "tw_margin_short"]),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "from must be YYYY-MM-DD"),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "to must be YYYY-MM-DD"),
+  batch_size: z.number().int().min(1).max(200).optional()
+});
+
+app.post("/api/v1/internal/finmind/backfill", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  if (!process.env.FINMIND_API_TOKEN) {
+    return c.json({
+      error: "no_token",
+      message: "FINMIND_API_TOKEN not configured — set the env var and redeploy"
+    }, 422);
+  }
+
+  let body: { dataset: BackfillDataset; from: string; to: string; batch_size?: number };
+  try {
+    const raw = await c.req.json().catch(() => ({}));
+    const parsed = finmindBackfillBodySchema.safeParse(raw);
+    if (!parsed.success) {
+      return c.json({ error: "invalid_body", details: parsed.error.issues }, 400);
+    }
+    body = parsed.data;
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+
+  // Validate from <= to
+  if (body.from > body.to) {
+    return c.json({ error: "invalid_range", message: "from must be <= to" }, 400);
+  }
+
+  const workspaceSlug = session.workspace.slug ?? "default";
+
+  console.log(
+    `[finmind-backfill-endpoint] Owner triggered dataset=${body.dataset} ` +
+    `from=${body.from} to=${body.to} workspace=${workspaceSlug}`
+  );
+
+  const result = await runDatasetBackfill({
+    dataset: body.dataset,
+    from: body.from,
+    to: body.to,
+    workspaceSlug,
+    batchSize: body.batch_size
+  });
+
+  // Write audit log (non-fatal)
+  if (isDatabaseMode()) {
+    const db = getDb();
+    if (db) {
+      db.insert(auditLogs).values({
+        workspaceId: session.workspace.id,
+        actorId: session.user.id,
+        action: "finmind.backfill" as string,
+        entityType: "finmind_dataset",
+        entityId: `${body.dataset}:${body.from}:${body.to}`,
+        payload: {
+          dataset: body.dataset,
+          from: body.from,
+          to: body.to,
+          rows_upserted: result.rowsUpserted,
+          rows_quarantined: result.rowsQuarantined,
+          state: result.state,
+          duration_ms: result.durationMs,
+          tickers_attempted: result.tickersAttempted
+        }
+      }).catch((err: unknown) => {
+        console.warn("[finmind-backfill-endpoint] audit log write failed:", err instanceof Error ? err.message : String(err));
+      });
+    }
+  }
+
+  return c.json({ data: result });
 });
 
 app.get("/api/v1/internal/finmind/ingest-status", async (c) => {

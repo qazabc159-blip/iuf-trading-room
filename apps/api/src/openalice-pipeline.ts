@@ -1336,6 +1336,35 @@ export async function runPipelineTick(
 
   updatePipelineState({ sourcePackCount: sourcePack.sources.length });
 
+  // 3b. All-sources-empty guard — if EVERY source is EMPTY/ERROR/MOCK/MISSING,
+  //     there is no data for the LLM to reason about. Skip enqueue entirely.
+  //     This prevents hallucinated content when the market data tables are unfilled.
+  //     (Different from empty-source-override in evaluatePipelinePublishGate which
+  //     allows publishing reviewer-approved drafts on holidays — that path still applies
+  //     after backfill fills the tables.)
+  const DATA_PRESENT_STATUSES: SourceStatus[] = ["LIVE", "STALE", "DEGRADED", "FALLBACK", "CLOSED"];
+  const anySourceHasData = sourcePack.sources.some((s) =>
+    (DATA_PRESENT_STATUSES as string[]).includes(s.status)
+  );
+  if (!anySourceHasData) {
+    const emptySourceNames = sourcePack.sources
+      .map((s) => `${s.source}=${s.status}`)
+      .join(", ");
+    const result: PipelineRunResult = {
+      ...baseResult(),
+      sourcePack,
+      skippedReason: `all_sources_empty_no_data_for_llm: [${emptySourceNames}]`,
+      durationMs: Date.now() - startMs
+    };
+    updatePipelineState({ lastResult: result });
+    await writePipelineAuditLog({ workspaceId: workspace.id, result });
+    console.log(
+      `[pipeline] tick=${tick} date=${tradingDate} SKIPPED: all_sources_empty — ` +
+      `backfill required for: ${emptySourceNames}`
+    );
+    return result;
+  }
+
   // 4. Generator — enqueue OpenAlice job
   const genResult = await generateDailyBrief(workspaceSlug, workspace.id, sourcePack);
   if (!genResult) {

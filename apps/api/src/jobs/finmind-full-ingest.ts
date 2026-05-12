@@ -519,10 +519,71 @@ export interface DatasetStatusRow {
   dataset: string;
   table: string;
   rowCount: number;
+  minDate: string | null;
   latestDate: string | null;
+  lastIngestedAt: string | null;
+  source: string;
   state: "LIVE" | "STALE" | "EMPTY" | "ERROR" | "DEGRADED";
   missingReason: string | null;
   experimental?: boolean;
+}
+
+/**
+ * Query MIN(date), MAX(date), and MAX(fetched_at) for a table that has
+ * a `date` column (text ISO) and a `fetched_at` column (timestamptz).
+ * Returns nulls safely if the table is empty or missing.
+ */
+async function queryTableDateExtents(
+  tableName: string
+): Promise<{ minDate: string | null; maxDate: string | null; lastIngestedAt: string | null }> {
+  const db = getDb();
+  if (!db) return { minDate: null, maxDate: null, lastIngestedAt: null };
+  try {
+    const result = await db.execute(drizzleSql`
+      SELECT
+        MIN(date)::text       AS min_date,
+        MAX(date)::text       AS max_date,
+        MAX(fetched_at)::text AS last_ingested_at
+      FROM ${drizzleSql.identifier(tableName)}
+    `);
+    const rawRow = (result as { rows?: Record<string, unknown>[] })?.rows?.[0]
+      ?? (Array.isArray(result) ? (result as unknown[])[0] : result);
+    const row = rawRow as Record<string, unknown>;
+    return {
+      minDate: typeof row?.min_date === "string" ? row.min_date : null,
+      maxDate: typeof row?.max_date === "string" ? row.max_date : null,
+      lastIngestedAt: typeof row?.last_ingested_at === "string" ? row.last_ingested_at : null
+    };
+  } catch {
+    return { minDate: null, maxDate: null, lastIngestedAt: null };
+  }
+}
+
+/**
+ * Query MIN(dt), MAX(dt), and MAX(updated_at or fetched_at) for companies_ohlcv.
+ * companies_ohlcv uses `dt` not `date`, and has no `fetched_at`.
+ */
+async function queryOhlcvDateExtents(): Promise<{ minDate: string | null; maxDate: string | null; lastIngestedAt: string | null }> {
+  const db = getDb();
+  if (!db) return { minDate: null, maxDate: null, lastIngestedAt: null };
+  try {
+    const result = await db.execute(drizzleSql`
+      SELECT
+        MIN(dt)::text AS min_date,
+        MAX(dt)::text AS max_date
+      FROM companies_ohlcv
+    `);
+    const rawRow = (result as { rows?: Record<string, unknown>[] })?.rows?.[0]
+      ?? (Array.isArray(result) ? (result as unknown[])[0] : result);
+    const row = rawRow as Record<string, unknown>;
+    return {
+      minDate: typeof row?.min_date === "string" ? row.min_date : null,
+      maxDate: typeof row?.max_date === "string" ? row.max_date : null,
+      lastIngestedAt: null  // companies_ohlcv has no fetched_at column
+    };
+  } catch {
+    return { minDate: null, maxDate: null, lastIngestedAt: null };
+  }
 }
 
 export async function queryAllDatasetStatus(): Promise<DatasetStatusRow[]> {
@@ -546,26 +607,237 @@ export async function queryAllDatasetStatus(): Promise<DatasetStatusRow[]> {
     { table: "tw_stock_news", dataset: "TaiwanStockNews", staleDays: 1, dateCol: "fetched_at", experimental: true }
   ];
 
-  const results: DatasetStatusRow[] = await Promise.all([
+  // companies_ohlcv is not in the 3 registry groups above — handle separately
+  const ohlcvStatusPromise: Promise<DatasetStatusRow> = (async () => {
+    try {
+      const db = getDb();
+      if (!db) return {
+        dataset: "TaiwanStockPriceAdj", table: "companies_ohlcv",
+        rowCount: 0, minDate: null, latestDate: null, lastIngestedAt: null,
+        source: "finmind", state: "EMPTY" as const, missingReason: "no_database"
+      };
+      const countRes = await db.execute(
+        drizzleSql`SELECT COUNT(*)::int AS cnt, MAX(dt)::text AS latest FROM companies_ohlcv`
+      );
+      const r = (countRes as { rows?: Record<string, unknown>[] })?.rows?.[0] as Record<string, unknown> | undefined;
+      const rowCount = r ? (typeof r.cnt === "number" ? r.cnt : parseInt(String(r.cnt ?? "0"), 10)) : 0;
+      const latestDate = r && typeof r.latest === "string" ? r.latest : null;
+      const extents = rowCount > 0 ? await queryOhlcvDateExtents() : { minDate: null, maxDate: null, lastIngestedAt: null };
+      const staleMs = 5 * 24 * 60 * 60 * 1000;
+      const isStale = latestDate ? (Date.now() - new Date(latestDate).getTime()) > staleMs : true;
+      const state: DatasetStatusRow["state"] = rowCount === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE";
+      return {
+        dataset: "TaiwanStockPriceAdj", table: "companies_ohlcv",
+        rowCount, minDate: extents.minDate, latestDate, lastIngestedAt: null,
+        source: "finmind", state, missingReason: rowCount === 0 ? "no_rows" : null
+      };
+    } catch (err) {
+      return {
+        dataset: "TaiwanStockPriceAdj", table: "companies_ohlcv",
+        rowCount: 0, minDate: null, latestDate: null, lastIngestedAt: null,
+        source: "finmind", state: "ERROR" as const,
+        missingReason: err instanceof Error ? err.message.slice(0, 100) : "query_failed"
+      };
+    }
+  })();
+
+  const [ohlcvRow, ...otherRows] = await Promise.all([
+    ohlcvStatusPromise,
     ...fundamentalTables.map(async ({ table, dataset }) => {
       const s = await queryFundamentalDatasetStats(table).catch(() => ({
         rowCount: 0, latestDate: null, state: "ERROR" as const, missingReason: "query_failed"
       }));
-      return { dataset, table, ...s };
+      const extents = s.rowCount > 0 ? await queryTableDateExtents(table).catch(() => ({ minDate: null, maxDate: null, lastIngestedAt: null })) : { minDate: null, maxDate: null, lastIngestedAt: null };
+      return { dataset, table, source: "finmind", minDate: extents.minDate, lastIngestedAt: extents.lastIngestedAt, ...s };
     }),
     ...tradingFlowTables.map(async ({ table, dataset, staleDays }) => {
       const s = await queryTradingFlowDatasetStats(table, staleDays ?? 5).catch(() => ({
         rowCount: 0, latestDate: null, state: "ERROR" as const, missingReason: "query_failed"
       }));
-      return { dataset, table, ...s };
+      const extents = s.rowCount > 0 ? await queryTableDateExtents(table).catch(() => ({ minDate: null, maxDate: null, lastIngestedAt: null })) : { minDate: null, maxDate: null, lastIngestedAt: null };
+      return { dataset, table, source: "finmind", minDate: extents.minDate, lastIngestedAt: extents.lastIngestedAt, ...s };
     }),
     ...marketIntelTables.map(async ({ table, dataset, staleDays, dateCol, experimental }) => {
       const s = await queryMarketIntelDatasetStats(table, staleDays ?? 7, dateCol ?? "date").catch(() => ({
         rowCount: 0, latestDate: null, state: "ERROR" as const, missingReason: "query_failed"
       }));
-      return { dataset, table, ...(experimental ? { experimental } : {}), ...s };
+      const extents = s.rowCount > 0 ? await queryTableDateExtents(table).catch(() => ({ minDate: null, maxDate: null, lastIngestedAt: null })) : { minDate: null, maxDate: null, lastIngestedAt: null };
+      return { dataset, table, source: "finmind", minDate: extents.minDate, lastIngestedAt: extents.lastIngestedAt, ...(experimental ? { experimental } : {}), ...s };
     })
   ]);
 
-  return results;
+  return [ohlcvRow, ...otherRows];
+}
+
+// ── Per-dataset backfill (for POST /api/v1/internal/finmind/backfill) ──────────
+
+export type BackfillDataset = "companies_ohlcv" | "tw_institutional_buysell" | "tw_margin_short";
+
+export interface DatasetBackfillResult {
+  dataset: BackfillDataset;
+  table: string;
+  from: string;
+  to: string;
+  tickersAttempted: number;
+  rowsUpserted: number;
+  rowsQuarantined: number;
+  skipped: boolean;
+  skipReason: string | null;
+  durationMs: number;
+  state: "synced" | "skipped" | "error";
+  error?: string;
+}
+
+/**
+ * runDatasetBackfill — targeted date-range backfill for the 3 source-pack core tables.
+ *
+ * Designed for the admin endpoint POST /api/v1/internal/finmind/backfill.
+ * Uses the existing sync functions with explicit startDate/endDate.
+ *
+ * Hard lines:
+ *   - Owner-only (enforced at route level)
+ *   - FINMIND_API_TOKEN required
+ *   - No fake data
+ *   - batchSize default 50 (sponsor quota: 6000/hr)
+ *   - Respects FINMIND_KILL_SWITCH
+ *   - from/to validated as YYYY-MM-DD; from <= to
+ */
+export async function runDatasetBackfill(params: {
+  dataset: BackfillDataset;
+  from: string;
+  to: string;
+  workspaceSlug: string;
+  batchSize?: number;
+}): Promise<DatasetBackfillResult> {
+  const t0 = Date.now();
+  const { dataset, from, to, workspaceSlug } = params;
+
+  const tableMap: Record<BackfillDataset, string> = {
+    companies_ohlcv: "companies_ohlcv",
+    tw_institutional_buysell: "tw_institutional_buysell",
+    tw_margin_short: "tw_margin_short"
+  };
+  const table = tableMap[dataset];
+
+  const baseResult = (
+    state: DatasetBackfillResult["state"],
+    extra: Partial<DatasetBackfillResult> = {}
+  ): DatasetBackfillResult => ({
+    dataset,
+    table,
+    from,
+    to,
+    tickersAttempted: 0,
+    rowsUpserted: 0,
+    rowsQuarantined: 0,
+    skipped: state === "skipped",
+    skipReason: null,
+    durationMs: Date.now() - t0,
+    state,
+    ...extra
+  });
+
+  if (process.env.FINMIND_KILL_SWITCH === "true") {
+    return baseResult("skipped", { skipReason: "kill_switch_active" });
+  }
+
+  if (!process.env.FINMIND_API_TOKEN) {
+    return baseResult("skipped", { skipReason: "no_finmind_token" });
+  }
+
+  // Resolve workspace tickers
+  const tickers = await resolveWorkspaceTickers(workspaceSlug);
+  if (tickers.length === 0) {
+    return baseResult("skipped", { skipReason: "no_tickers_in_workspace" });
+  }
+
+  const batchSize = params.batchSize ?? 50;
+  const tickerBatch = tickers.length > batchSize
+    ? [...tickers].sort((a, b) => a.ticker.localeCompare(b.ticker)).slice(0, batchSize)
+    : tickers;
+
+  console.log(
+    `[finmind-backfill] START dataset=${dataset} from=${from} to=${to} ` +
+    `tickers=${tickerBatch.length} workspace=${workspaceSlug}`
+  );
+
+  try {
+    if (dataset === "companies_ohlcv") {
+      // OHLCV uses runOhlcvFinmindSync which takes { companyId, ticker, workspaceId }
+      // We need workspaceId for that — resolve it
+      const workspaceId = await resolveWorkspaceId(workspaceSlug);
+      if (!workspaceId) {
+        return baseResult("skipped", { skipReason: "workspace_not_found" });
+      }
+      const db = getDb();
+      if (!db) {
+        return baseResult("skipped", { skipReason: "db_unavailable" });
+      }
+      // Fetch full company rows with IDs for OHLCV sync
+      const companyRows = await db.execute(drizzleSql`
+        SELECT id, ticker FROM companies
+        WHERE workspace_id = ${workspaceId}
+          AND ticker ~ '^[0-9]{4}$'
+      `);
+      const allCompanies = ((companyRows as { rows?: Record<string, unknown>[] })?.rows ?? []) as Record<string, unknown>[];
+      const ohlcvTickers = allCompanies
+        .map((r) => ({ companyId: String(r.id ?? ""), ticker: String(r.ticker ?? ""), workspaceId }))
+        .filter((r) => /^\d{4}$/.test(r.ticker))
+        .slice(0, batchSize);
+
+      // Import runOhlcvFinmindSync dynamically to avoid circular dep
+      const { runOhlcvFinmindSync } = await import("./ohlcv-finmind-sync.js");
+      const result = await runOhlcvFinmindSync(ohlcvTickers, {
+        startDate: from,
+        endDate: to,
+        forceFinmind: true
+      });
+      return {
+        dataset,
+        table,
+        from,
+        to,
+        tickersAttempted: result.tickersAttempted,
+        rowsUpserted: result.tickersSuccess > 0
+          ? result.results.reduce((s, r) => s + r.barsUpserted, 0)
+          : 0,
+        rowsQuarantined: 0,
+        skipped: result.tickersAttempted === 0,
+        skipReason: result.tickersAttempted === 0 ? "no_tickers" : null,
+        durationMs: result.durationMs,
+        state: result.tickersFailed === result.tickersAttempted && result.tickersAttempted > 0
+          ? "error"
+          : "synced"
+      };
+    } else if (dataset === "tw_institutional_buysell") {
+      const result = await runInstitutionalBuySellSync(tickerBatch, { startDate: from, endDate: to });
+      return {
+        dataset, table, from, to,
+        tickersAttempted: tickerBatch.length,
+        rowsUpserted: result.rowsUpserted,
+        rowsQuarantined: result.rowsQuarantined,
+        skipped: result.skipped,
+        skipReason: result.skipReason,
+        durationMs: Date.now() - t0,
+        state: result.skipped ? "skipped" : "synced"
+      };
+    } else {
+      // tw_margin_short
+      const result = await runMarginShortSync(tickerBatch, { startDate: from, endDate: to });
+      return {
+        dataset, table, from, to,
+        tickersAttempted: tickerBatch.length,
+        rowsUpserted: result.rowsUpserted,
+        rowsQuarantined: result.rowsQuarantined,
+        skipped: result.skipped,
+        skipReason: result.skipReason,
+        durationMs: Date.now() - t0,
+        state: result.skipped ? "skipped" : "synced"
+      };
+    }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[finmind-backfill] dataset=${dataset} ERROR: ${errMsg}`);
+    return baseResult("error", { error: errMsg, durationMs: Date.now() - t0 });
+  }
 }

@@ -9943,3 +9943,81 @@ test('BF9: date-empty patch recovers tradingDate from contextRefs when LLM retur
   const case6 = patchBriefPayloadDate({ date: '', marketState: 'Balanced', sections: [] }, [{ type: 'trading_date', id: 'not-a-date' }]);
   assert.equal(case6['date'], '', 'malformed trading_date ref must not be applied');
 });
+
+// =============================================================================
+// Wave 2 P0: market data source backfill tests (BF10-BF12)
+// =============================================================================
+
+import {
+  runDatasetBackfill,
+  type BackfillDataset
+} from '../apps/api/src/jobs/finmind-full-ingest.ts';
+
+// BF10: runDatasetBackfill returns skipped/no_finmind_token when token absent
+test('BF10: runDatasetBackfill returns no_finmind_token skip when FINMIND_API_TOKEN absent', async () => {
+  const savedToken = process.env.FINMIND_API_TOKEN;
+  try {
+    delete process.env.FINMIND_API_TOKEN;
+    const result = await runDatasetBackfill({
+      dataset: 'tw_institutional_buysell' as BackfillDataset,
+      from: '2026-04-01',
+      to: '2026-05-01',
+      workspaceSlug: 'default'
+    });
+    assert.equal(result.state, 'skipped', 'state must be skipped without token');
+    assert.equal(result.skipReason, 'no_finmind_token', 'skipReason must be no_finmind_token');
+    assert.equal(result.dataset, 'tw_institutional_buysell');
+    assert.equal(result.table, 'tw_institutional_buysell');
+    assert.equal(result.from, '2026-04-01');
+    assert.equal(result.to, '2026-05-01');
+  } finally {
+    if (savedToken !== undefined) process.env.FINMIND_API_TOKEN = savedToken;
+  }
+});
+
+// BF11: runDatasetBackfill returns kill_switch_active skip when kill switch set
+test('BF11: runDatasetBackfill returns kill_switch_active when FINMIND_KILL_SWITCH=true', async () => {
+  const savedKill = process.env.FINMIND_KILL_SWITCH;
+  const savedToken = process.env.FINMIND_API_TOKEN;
+  try {
+    process.env.FINMIND_KILL_SWITCH = 'true';
+    process.env.FINMIND_API_TOKEN = 'test-token';
+    const result = await runDatasetBackfill({
+      dataset: 'tw_margin_short' as BackfillDataset,
+      from: '2026-04-01',
+      to: '2026-05-01',
+      workspaceSlug: 'default'
+    });
+    assert.equal(result.state, 'skipped', 'state must be skipped on kill switch');
+    assert.equal(result.skipReason, 'kill_switch_active', 'skipReason must be kill_switch_active');
+  } finally {
+    if (savedKill !== undefined) process.env.FINMIND_KILL_SWITCH = savedKill;
+    else delete process.env.FINMIND_KILL_SWITCH;
+    if (savedToken !== undefined) process.env.FINMIND_API_TOKEN = savedToken;
+    else delete process.env.FINMIND_API_TOKEN;
+  }
+});
+
+// BF12: runDatasetBackfill returns no_tickers_in_workspace in memory mode (no DB)
+test('BF12: runDatasetBackfill returns no_tickers_in_workspace in memory mode (no DB)', async () => {
+  const savedToken = process.env.FINMIND_API_TOKEN;
+  try {
+    process.env.FINMIND_API_TOKEN = 'test-token';
+    // In memory mode getDb() returns null => resolveWorkspaceTickers returns []
+    const result = await runDatasetBackfill({
+      dataset: 'companies_ohlcv' as BackfillDataset,
+      from: '2026-04-01',
+      to: '2026-05-01',
+      workspaceSlug: 'default'
+    });
+    // Either no_tickers_in_workspace or workspace_not_found are acceptable in memory mode
+    assert.equal(result.state, 'skipped', 'state must be skipped in memory mode');
+    assert.ok(
+      result.skipReason === 'no_tickers_in_workspace' || result.skipReason === 'workspace_not_found' || result.skipReason === 'db_unavailable',
+      'skipReason must indicate no data in memory mode, got: ' + result.skipReason
+    );
+  } finally {
+    if (savedToken !== undefined) process.env.FINMIND_API_TOKEN = savedToken;
+    else delete process.env.FINMIND_API_TOKEN;
+  }
+});
