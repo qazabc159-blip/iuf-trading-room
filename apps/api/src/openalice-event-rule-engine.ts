@@ -655,6 +655,111 @@ export async function runEventEngineTick(): Promise<void> {
   }
 }
 
+/**
+ * Force-dispatch tick: evaluate all rules, write ALL triggered events (bypasses 1h dedup).
+ * Writes audit_logs entries with action="alerts.dispatch" (dispatch start) and
+ * "alert.fire" (per event fired). Used by POST /api/v1/internal/alerts/force-dispatch.
+ *
+ * 5/12 FIX: Normal tick's 1h dedup prevented testing / manual recovery when engine
+ * had 0 events due to missing iuf_events table or no qualifying data in trading windows.
+ * Force-dispatch lets Bruce verify the engine can write events to iuf_events.
+ */
+export async function runEventEngineTickForce(): Promise<{
+  eventsWritten: number;
+  rulesEvaluated: number;
+  errors: string[];
+}> {
+  const result = { eventsWritten: 0, rulesEvaluated: 0, errors: [] as string[] };
+
+  if (!isDatabaseMode()) {
+    result.errors.push("memory_mode");
+    return result;
+  }
+  const db = getDb();
+  if (!db) {
+    result.errors.push("db_unavailable");
+    return result;
+  }
+
+  const tickStart = Date.now();
+
+  // Write dispatch-start audit log via raw SQL (workspace_id nullable workaround)
+  try {
+    await db.execute(
+      drizzleSql`
+        INSERT INTO audit_logs (id, workspace_id, actor_id, action, entity_type, entity_id, payload, created_at)
+        SELECT gen_random_uuid(), w.id, NULL, 'alerts.dispatch', 'event_engine',
+               ${'force-' + new Date().toISOString()}, ${JSON.stringify({ trigger: "force_dispatch", rulesCount: RULES.length })}::jsonb, NOW()
+        FROM workspaces w
+        LIMIT 1
+      `
+    );
+  } catch {
+    // Non-critical — continue
+  }
+
+  try {
+    const state = await collectEngineState();
+
+    for (const rule of RULES) {
+      result.rulesEvaluated++;
+      let candidates: Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">[] = [];
+
+      try {
+        candidates = await rule.trigger(state);
+      } catch (e) {
+        const msg = `rule ${rule.id}: ${e instanceof Error ? e.message : String(e)}`;
+        result.errors.push(msg);
+        console.warn(`[event-engine/force] Rule ${rule.id} trigger error: ${e instanceof Error ? e.message : String(e)}`);
+        continue;
+      }
+
+      for (const candidate of candidates) {
+        try {
+          // Force-dispatch: SKIP dedup check, always write
+          await writeEvent(candidate);
+          result.eventsWritten++;
+
+          // Write per-event audit log via raw SQL (workspace_id via subquery)
+          try {
+            await db.execute(
+              drizzleSql`
+                INSERT INTO audit_logs (id, workspace_id, actor_id, action, entity_type, entity_id, payload, created_at)
+                SELECT gen_random_uuid(), w.id, NULL, 'alert.fire', 'iuf_event', ${candidate.ruleId},
+                       ${JSON.stringify({ ruleId: candidate.ruleId, ticker: candidate.ticker, severity: candidate.severity, forced: true })}::jsonb, NOW()
+                FROM workspaces w
+                LIMIT 1
+              `
+            );
+          } catch {
+            // Non-critical — event was written, audit is best-effort
+          }
+        } catch (e) {
+          const msg = `write ${candidate.ruleId}: ${e instanceof Error ? e.message : String(e)}`;
+          result.errors.push(msg);
+        }
+      }
+    }
+
+    _engineState = {
+      lastTickAt: new Date().toISOString(),
+      lastTickEvents: result.eventsWritten,
+      totalEventsThisProcess: _engineState.totalEventsThisProcess + result.eventsWritten,
+      lastError: null
+    };
+
+    const elapsed = Date.now() - tickStart;
+    console.info(`[event-engine/force] Force-dispatch complete: events=${result.eventsWritten} elapsed=${elapsed}ms`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    _engineState = { ..._engineState, lastError: msg };
+    result.errors.push(`tick_error:${msg}`);
+    console.error(`[event-engine/force] Force-dispatch error: ${msg}`);
+  }
+
+  return result;
+}
+
 // ── List/ack helpers (used by notification endpoints) ─────────────────────────
 
 export async function listEvents(opts: {

@@ -61,6 +61,7 @@ import {
 import { runEmailDigestTick, getDigestState } from "./openalice-email-digest.js";
 import {
   runEventEngineTick,
+  runEventEngineTickForce,
   getEventEngineState,
   listEvents,
   acknowledgeEvent
@@ -236,6 +237,7 @@ import {
   runPipelineCloseWatchTick,
   runPipelineForDate,
   runPipelineMissedDayCatchUp,
+  runPipelineBackfillRange,
   runPipelinePreMarketBootRecovery,
   runPipelinePreMarketTick,
   runPipelineTick
@@ -10289,6 +10291,115 @@ app.post("/api/v1/internal/alerts/dispatch", async (c) => {
       newEvents: after.totalEventsThisProcess - before.totalEventsThisProcess,
       tickAt: after.lastTickAt,
       lastError: after.lastError
+    }
+  });
+});
+
+/**
+ * GET /api/v1/iuf-events
+ * 5/12 FIX: Dedicated route for iuf_events table.
+ * Bruce verify found this URL returning 404 — route was missing.
+ * Functionally identical to GET /api/v1/alerts but explicitly named for the iuf_events table.
+ * Auth required.
+ */
+app.get("/api/v1/iuf-events", async (c) => {
+  const session = c.var.session;
+  if (!session) return c.json({ error: "auth_required" }, 401);
+
+  const limitParam = c.req.query("limit");
+  const unreadParam = c.req.query("unread");
+  const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 50, 200) : 50;
+  const unreadOnly = unreadParam === "true";
+
+  const events = await listEvents({ limit, unreadOnly });
+  return c.json({
+    data: events,
+    meta: { count: events.length, unreadOnly, source: "iuf_events", engineState: getEventEngineState() }
+  });
+});
+
+/**
+ * POST /api/v1/internal/alerts/force-dispatch
+ * 5/12 FIX: Force-runs the event rule engine, bypassing the 1h dedup window.
+ * Writes audit_logs action=alerts.dispatch + alert.fire per event.
+ * Owner only. Used by Bruce for production verify and manual testing.
+ */
+app.post("/api/v1/internal/alerts/force-dispatch", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const before = getEventEngineState();
+  const result = await runEventEngineTickForce().catch((e) => ({
+    eventsWritten: 0,
+    rulesEvaluated: 0,
+    errors: [e instanceof Error ? e.message : String(e)]
+  }));
+  const after = getEventEngineState();
+
+  return c.json({
+    data: {
+      eventsWritten: result.eventsWritten,
+      rulesEvaluated: result.rulesEvaluated,
+      errors: result.errors,
+      totalEventsBefore: before.totalEventsThisProcess,
+      totalEventsAfter: after.totalEventsThisProcess,
+      tickAt: after.lastTickAt,
+      lastError: after.lastError
+    }
+  });
+});
+
+/**
+ * POST /api/v1/admin/brief/backfill
+ * 5/12 FIX: Backfill missing briefs for a date range (Owner only).
+ * Body: { from: "2026-05-08", to: "2026-05-11" }
+ * Fires pipeline for each trading day in range that doesn't have a brief.
+ * All 5-layer review gates still run — never skips content checks.
+ */
+app.post("/api/v1/admin/brief/backfill", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: { from?: string; to?: string } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  // Also support query params for convenience
+  const fromParam = body.from ?? c.req.query("from") ?? "";
+  const toParam = body.to ?? c.req.query("to") ?? "";
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromParam) || !/^\d{4}-\d{2}-\d{2}$/.test(toParam)) {
+    return c.json(
+      { error: "INVALID_DATE_RANGE", message: "Body must include { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }" },
+      400
+    );
+  }
+
+  if (fromParam > toParam) {
+    return c.json({ error: "INVALID_RANGE", message: "from must be <= to" }, 400);
+  }
+
+  const workspaceSlug = session.workspace.slug;
+  const backfillResult = await runPipelineBackfillRange(workspaceSlug, fromParam, toParam).catch((e: unknown) => ({
+    fired: [] as string[],
+    skipped: [] as string[],
+    errors: [e instanceof Error ? e.message : String(e)]
+  }));
+
+  return c.json({
+    data: {
+      from: fromParam,
+      to: toParam,
+      fired: backfillResult.fired,
+      skipped: backfillResult.skipped,
+      errors: backfillResult.errors
     }
   });
 });

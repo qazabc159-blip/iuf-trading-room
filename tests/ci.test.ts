@@ -9664,3 +9664,92 @@ test("TM8: four_layer_preview is included in all successful toggle results and n
     _resetToggleModeStore();
   }
 });
+
+// =============================================================================
+// 5/12 P1 Fix: brief backfill + alerts engine + iuf_events route
+// =============================================================================
+
+import {
+  runPipelineBackfillRange,
+  runPipelineMissedDayCatchUp as _catchUpForTest,
+  evaluatePublishGate
+} from "../apps/api/src/openalice-pipeline.ts";
+
+import { runEventEngineTickForce } from "../apps/api/src/openalice-event-rule-engine.ts";
+
+// BF1: runPipelineBackfillRange returns memory_mode_not_supported in CI (no DB)
+test("BF1: runPipelineBackfillRange returns memory_mode_not_supported in memory mode", async () => {
+  const result = await runPipelineBackfillRange("default", "2026-05-08", "2026-05-11");
+  assert.ok(result, "must return result");
+  assert.ok(Array.isArray(result.errors), "errors must be array");
+  assert.ok(
+    result.errors.includes("memory_mode_not_supported"),
+    `Expected memory_mode_not_supported in errors, got: ${JSON.stringify(result.errors)}`
+  );
+});
+
+// BF2: runPipelineBackfillRange from_after_to returns error without crash
+test("BF2: runPipelineBackfillRange from > to returns error without crash", async () => {
+  const result = await runPipelineBackfillRange("default", "2026-05-11", "2026-05-08");
+  assert.ok(result, "must return result");
+  assert.ok(Array.isArray(result.errors), "errors must be array");
+  // In memory mode: hits memory_mode_not_supported before from_after_to; that's fine
+  assert.ok(result.errors.length > 0, "must have at least 1 error");
+});
+
+// BF3: runPipelineMissedDayCatchUp resolves without throwing (memory mode)
+test("BF3: runPipelineMissedDayCatchUp resolves without throwing in memory mode (multi-day path)", async () => {
+  await assert.doesNotReject(async () => {
+    await _catchUpForTest("default");
+  }, "runPipelineMissedDayCatchUp must not throw");
+});
+
+// BF4: evaluatePublishGate approves green brief with full trail
+test("BF4: evaluatePublishGate approves green brief with trailComplete=true + approve verdict", () => {
+  const gate = evaluatePublishGate({
+    sourcePack: {
+      packId: "test",
+      tick: "pre_market",
+      collectedAt: new Date().toISOString(),
+      tradingDate: "2026-05-12",
+      sources: [{ source: "market", status: "LIVE", rowCount: 10, latestDate: "2026-05-12", note: null }],
+      trailComplete: true
+    },
+    reviewerVerdict: "approve",
+    confidence: 0.85,
+    flaggedIssueCount: 0,
+    draftPayload: { type: "daily_brief", content: "market was stable today" }
+  });
+  assert.equal(gate.shouldAutoPublish, true, "green brief with full trail + approve should auto-publish");
+  assert.equal(gate.tier, "green");
+});
+
+// BF5: evaluatePublishGate blocks when trailComplete=false + manual_review
+test("BF5: evaluatePublishGate blocks when trailComplete=false and verdict is manual_review", () => {
+  const gate = evaluatePublishGate({
+    sourcePack: {
+      packId: "fallback",
+      tick: "close_brief",
+      collectedAt: new Date().toISOString(),
+      tradingDate: "2026-05-12",
+      sources: [],
+      trailComplete: false
+    },
+    reviewerVerdict: "manual_review",
+    confidence: 0.5,
+    flaggedIssueCount: 0,
+    draftPayload: { type: "daily_brief", content: "market commentary" }
+  });
+  assert.equal(gate.shouldAutoPublish, false, "fallback pack without approval should not auto-publish");
+});
+
+// BF6: runEventEngineTickForce returns memory_mode in CI (no DB)
+test("BF6: runEventEngineTickForce returns memory_mode error in memory mode", async () => {
+  const result = await runEventEngineTickForce();
+  assert.ok(result, "must return result");
+  assert.equal(result.eventsWritten, 0, "no events in memory mode");
+  assert.ok(
+    result.errors.includes("memory_mode"),
+    `Expected memory_mode in errors, got: ${JSON.stringify(result.errors)}`
+  );
+});

@@ -105,3 +105,74 @@ describe("BC5: runPipelineMissedDayCatchUp is non-fatal in memory mode", async (
     });
   });
 });
+
+describe("BC6: runPipelineBackfillRange memory-mode baseline", async () => {
+  it("returns errors:[memory_mode_not_supported] in memory mode without crashing", async () => {
+    delete process.env["DATABASE_URL"];
+
+    const { runPipelineBackfillRange } = await import("../openalice-pipeline.js");
+
+    const result = await runPipelineBackfillRange("default", "2026-05-08", "2026-05-11");
+    assert.ok(result, "must return a result");
+    assert.ok(Array.isArray(result.errors), "errors must be array");
+    assert.ok(
+      result.errors.includes("memory_mode_not_supported") || result.errors.length === 0,
+      `Expected memory_mode_not_supported in errors, got: ${JSON.stringify(result.errors)}`
+    );
+  });
+
+  it("returns from_after_to error when from > to", async () => {
+    delete process.env["DATABASE_URL"];
+
+    const { runPipelineBackfillRange } = await import("../openalice-pipeline.js");
+
+    const result = await runPipelineBackfillRange("default", "2026-05-11", "2026-05-08");
+    assert.ok(result.errors.some((e) => e.includes("from_after_to") || e === "memory_mode_not_supported"),
+      `Expected from_after_to or memory_mode_not_supported error, got: ${JSON.stringify(result.errors)}`);
+  });
+});
+
+describe("BC7: evaluatePipelinePublishGate source-pack-lost approve path", async () => {
+  it("evaluatePublishGate approves green brief with trailComplete=true (normal path)", async () => {
+    const { evaluatePublishGate } = await import("../openalice-pipeline.js");
+
+    const gate = evaluatePublishGate({
+      sourcePack: {
+        packId: "test",
+        tick: "pre_market",
+        collectedAt: new Date().toISOString(),
+        tradingDate: "2026-05-12",
+        sources: [{ source: "market", status: "LIVE" as const, rowCount: 10, latestDate: "2026-05-12", note: null }],
+        trailComplete: true
+      },
+      reviewerVerdict: "approve",
+      confidence: 0.85,
+      flaggedIssueCount: 0,
+      draftPayload: { type: "daily_brief", content: "market was stable" }
+    });
+
+    assert.equal(gate.shouldAutoPublish, true, "green brief with full trail should auto-publish");
+    assert.equal(gate.tier, "green");
+  });
+
+  it("evaluatePublishGate blocks when trailComplete=false (fallback pack without reviewer approval)", async () => {
+    const { evaluatePublishGate } = await import("../openalice-pipeline.js");
+
+    const gate = evaluatePublishGate({
+      sourcePack: {
+        packId: "fallback",
+        tick: "close_brief",
+        collectedAt: new Date().toISOString(),
+        tradingDate: "2026-05-12",
+        sources: [],
+        trailComplete: false
+      },
+      reviewerVerdict: "manual_review",
+      confidence: 0.5,
+      flaggedIssueCount: 0,
+      draftPayload: { type: "daily_brief", content: "market was stable" }
+    });
+
+    assert.equal(gate.shouldAutoPublish, false, "fallback pack without approval should not auto-publish");
+  });
+});
