@@ -379,17 +379,17 @@ function ExcessVs0050Card({ metrics, spec, uiCopyHints }: { metrics: LabStrategy
         <div style={{ background: "rgba(11,16,23,0.9)", padding: "12px 14px" }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: (netReturn ?? 0) > 0 ? "#ef5350" : "#e63946", fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{netReturn != null ? fmtPct(netReturn, 1) : "—"}</div>
           <div style={{ fontSize: 10, color: "#888", fontFamily: "var(--mono,monospace)", marginTop: 4 }}>策略絕對報酬</div>
-          <div style={{ fontSize: 9, color: "#555", fontFamily: "var(--mono,monospace)", marginTop: 2 }}>strategyNetAbsoluteReturnPct</div>
+          <div style={{ fontSize: 9, color: "#555", fontFamily: "var(--mono,monospace)", marginTop: 2 }}>同窗口淨報酬</div>
         </div>
         <div style={{ background: "rgba(11,16,23,0.9)", padding: "12px 14px" }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: "#c8c8c8", fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{benchmark != null ? fmtPct(benchmark, 1) : "—"}</div>
           <div style={{ fontSize: 10, color: "#888", fontFamily: "var(--mono,monospace)", marginTop: 4 }}>0050 同窗報酬</div>
-          <div style={{ fontSize: 9, color: "#555", fontFamily: "var(--mono,monospace)", marginTop: 2 }}>benchmark0050ReturnPct</div>
+          <div style={{ fontSize: 9, color: "#555", fontFamily: "var(--mono,monospace)", marginTop: 2 }}>同窗口基準報酬</div>
         </div>
         <div style={{ background: "rgba(11,16,23,0.9)", padding: "12px 14px" }}>
           <div style={{ fontSize: 28, fontWeight: 900, color: excessColor, fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{excess != null ? `${excessSign}${fmtPct(excess, 1)} pp` : "—"}</div>
-          <div style={{ fontSize: 10, color: "#888", fontFamily: "var(--mono,monospace)", marginTop: 4 }}>超額報酬</div>
-          <div style={{ fontSize: 9, color: "#555", fontFamily: "var(--mono,monospace)", marginTop: 2 }}>excessVs0050Pp</div>
+          <div style={{ fontSize: 10, color: "#888", fontFamily: "var(--mono,monospace)", marginTop: 4 }}>超額報酬 (vs 0050)</div>
+          <div style={{ fontSize: 9, color: "#555", fontFamily: "var(--mono,monospace)", marginTop: 2 }}>策略報酬 − 基準報酬</div>
         </div>
       </div>
       {(windowStart || windowEnd) && <div style={{ marginTop: 8, fontSize: 10, color: "#555", fontFamily: "var(--mono,monospace)" }}>測量窗口: {windowStart ?? "—"} → {windowEnd ?? "—"}</div>}
