@@ -9685,7 +9685,9 @@ test("TM8: four_layer_preview is included in all successful toggle results and n
 import {
   runPipelineBackfillRange,
   runPipelineMissedDayCatchUp as _catchUpForTest,
-  evaluatePublishGate
+  buildSourceOnlyBriefPayload,
+  evaluatePublishGate,
+  evaluateSourceOnlyBackfillGate
 } from "../apps/api/src/openalice-pipeline.ts";
 
 import { runEventEngineTickForce } from "../apps/api/src/openalice-event-rule-engine.ts";
@@ -9735,6 +9737,47 @@ test("BF4: evaluatePublishGate approves green brief with trailComplete=true + ap
   });
   assert.equal(gate.shouldAutoPublish, true, "green brief with full trail + approve should auto-publish");
   assert.equal(gate.tier, "green");
+});
+
+test("BF4b: source-only historical backfill payload stays green and can auto-publish", () => {
+  const sourcePack = {
+    packId: "backfill-source-only",
+    tick: "pre_market" as const,
+    collectedAt: new Date().toISOString(),
+    tradingDate: "2026-05-11",
+    sources: [
+      { source: "companies_ohlcv", status: "LIVE" as const, rowCount: 58412, latestDate: "2026-05-11", note: null },
+      { source: "tw_institutional_buysell", status: "LIVE" as const, rowCount: 1200, latestDate: "2026-05-11", note: null },
+      { source: "tw_margin_short", status: "EMPTY" as const, rowCount: 0, latestDate: null, note: "provider_empty" },
+      { source: "market_overview", status: "LIVE" as const, rowCount: 1, latestDate: "2026-05-08", note: null }
+    ],
+    trailComplete: true
+  };
+
+  const payload = buildSourceOnlyBriefPayload(sourcePack);
+  assert.equal(classifyDraftTier(payload), "green", "source-only backfill text must not trip yellow/red policy tier");
+
+  const gate = evaluateSourceOnlyBackfillGate({ sourcePack, payload });
+  assert.equal(gate.tier, "green");
+  assert.equal(gate.shouldAutoPublish, true);
+});
+
+test("BF4c: source-only historical backfill does not bypass incomplete source trail", () => {
+  const sourcePack = {
+    packId: "backfill-incomplete",
+    tick: "pre_market" as const,
+    collectedAt: new Date().toISOString(),
+    tradingDate: "2026-05-11",
+    sources: [
+      { source: "companies_ohlcv", status: "ERROR" as const, rowCount: null, latestDate: null, note: "db_error" }
+    ],
+    trailComplete: false
+  };
+
+  const payload = buildSourceOnlyBriefPayload(sourcePack);
+  const gate = evaluateSourceOnlyBackfillGate({ sourcePack, payload });
+  assert.equal(gate.shouldAutoPublish, false);
+  assert.match(gate.rejectReason ?? "", /source_trail_incomplete/);
 });
 
 // BF5: evaluatePublishGate blocks when trailComplete=false + manual_review
