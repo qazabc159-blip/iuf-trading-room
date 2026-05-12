@@ -7918,6 +7918,7 @@ test("api-gap Item 3b: ActivityEvent slug generation from path", () => {
 import {
   _getLastReviewerError,
   fireAiReviewerForDraft,
+  resolveDraftReviewDate,
   type AiReviewResult
 } from "../apps/api/src/openalice-ai-reviewer.ts";
 import { createContentDraft, approveContentDraft } from "../apps/api/src/content-draft-store.ts";
@@ -7954,6 +7955,18 @@ function parseReviewerJson(raw: string): AiReviewResult | null {
     return null;
   }
 }
+
+test("ai-reviewer: backfill date uses payload.date instead of current calendar date", () => {
+  assert.equal(
+    resolveDraftReviewDate({ date: "2026-05-11", sections: [] }, "2026-05-12"),
+    "2026-05-11"
+  );
+});
+
+test("ai-reviewer: review date falls back when payload date is absent or malformed", () => {
+  assert.equal(resolveDraftReviewDate({ sections: [] }, "2026-05-12"), "2026-05-12");
+  assert.equal(resolveDraftReviewDate({ date: "2026/05/11" }, "2026-05-12"), "2026-05-12");
+});
 
 test("ai-reviewer: parses approve verdict correctly", () => {
   const raw = JSON.stringify({
