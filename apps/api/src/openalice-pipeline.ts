@@ -718,7 +718,7 @@ function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Re
 async function generateDirectDailyBriefDraft(input: {
   workspaceId: string;
   sourcePack: SourcePack;
-  reason: "no_active_openalice_device" | "enqueue_failed";
+  reason: "historical_backfill" | "no_active_openalice_device" | "enqueue_failed";
 }): Promise<{ draftId: string } | null> {
   const sourceContext = buildSourcePackContext(input.sourcePack);
   const prompt = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列真實資料狀態產生繁體中文 JSON。
@@ -767,6 +767,17 @@ ${sourceContext}`;
   return { draftId: draft.id };
 }
 
+export function shouldUseDirectBriefDraft(input: {
+  tradingDate: string;
+  todayDate: string;
+  activeDevice: boolean;
+}): boolean {
+  // Historical missed-day/backfill briefs must close without waiting on a runner
+  // that may have been the source of the outage. YYYY-MM-DD sorts lexicographically.
+  if (input.tradingDate < input.todayDate) return true;
+  return !input.activeDevice;
+}
+
 async function generateDailyBrief(
   workspaceSlug: string,
   workspaceId: string,
@@ -797,11 +808,22 @@ Rules (STRICT — any violation → reject):
 Output schema: daily_brief_v1`;
 
   const activeDevice = await hasActiveOpenAliceDevice(workspaceId);
-  if (!activeDevice) {
+  const todayDate = getTaipeiDate();
+  const directReason = sourcePack.tradingDate < todayDate
+    ? "historical_backfill"
+    : "no_active_openalice_device";
+
+  if (
+    shouldUseDirectBriefDraft({
+      tradingDate: sourcePack.tradingDate,
+      todayDate,
+      activeDevice
+    })
+  ) {
     const directDraft = await generateDirectDailyBriefDraft({
       workspaceId,
       sourcePack,
-      reason: "no_active_openalice_device"
+      reason: directReason
     });
     if (directDraft) {
       return { jobId: `direct:${directDraft.draftId}` };
