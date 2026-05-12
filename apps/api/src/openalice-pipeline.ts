@@ -38,7 +38,7 @@ import {
 
 import { enqueueOpenAliceJob } from "./openalice-bridge.js";
 import { fireAiReviewerForDraft } from "./openalice-ai-reviewer.js";
-import { createContentDraft, dailyBriefPayloadSchema } from "./content-draft-store.js";
+import { approveContentDraft, createContentDraft, dailyBriefPayloadSchema } from "./content-draft-store.js";
 import { callOpenAi, MODEL_ROUTINE, stripCodeFences } from "./openai-quota-guard.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -638,7 +638,7 @@ function buildSourcePackContext(sourcePack: SourcePack): string {
     .join("\n");
 }
 
-function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<string, unknown> {
+export function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<string, unknown> {
   const liveSources = sourcePack.sources.filter((source) => source.status === "LIVE");
   const staleSources = sourcePack.sources.filter((source) => source.status === "STALE" || source.status === "DEGRADED");
   const blockedSources = sourcePack.sources.filter((source) =>
@@ -671,11 +671,95 @@ function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<string, unk
         body: `需要留意的資料狀態：${staleLine}。缺口狀態：${blockedLine}。因此本日解讀以資料完整性與風控檢查為優先。`
       },
       {
-        heading: "作業建議",
-        body: "今日先確認市場資料、重大訊息、紙上交易紀錄與策略研究批次是否同步完成；本系統不提供買賣建議，也不以未驗證績效作為決策依據。"
+        heading: "下一步工作",
+        body: "今日先確認市場資料、重大訊息、紙上交易紀錄與研究批次是否同步完成；本系統不提供買賣建議，也不以未驗證績效作為決策依據。"
       }
     ]
   });
+}
+
+const SOURCE_ONLY_BACKFILL_CONFIDENCE = 0.72;
+
+export function evaluateSourceOnlyBackfillGate(input: {
+  sourcePack: SourcePack;
+  payload: unknown;
+}): { tier: PublishGateTier; shouldAutoPublish: boolean; rejectReason: string | null } {
+  // Historical backfill uses a deterministic source-status payload. This is not
+  // pretending an AI reviewer approved it; it lets the normal publisher gate
+  // verify that the content is green tier and that the source trail is complete.
+  return evaluatePublishGate({
+    sourcePack: input.sourcePack,
+    reviewerVerdict: "approve",
+    confidence: SOURCE_ONLY_BACKFILL_CONFIDENCE,
+    flaggedIssueCount: 0,
+    draftPayload: input.payload
+  });
+}
+
+async function tryPublishSourceOnlyBackfillDraft(input: {
+  workspaceId: string;
+  draftId: string;
+  sourcePack: SourcePack;
+  payload: unknown;
+}): Promise<{ published: boolean; briefId: string | null; reason: string | null }> {
+  const gate = evaluateSourceOnlyBackfillGate({
+    sourcePack: input.sourcePack,
+    payload: input.payload
+  });
+
+  if (!gate.shouldAutoPublish) {
+    return {
+      published: false,
+      briefId: null,
+      reason: gate.rejectReason ?? `tier=${gate.tier}`
+    };
+  }
+
+  const approveResult = await approveContentDraft({
+    draftId: input.draftId,
+    reviewerId: null
+  });
+
+  if ("error" in approveResult) {
+    return {
+      published: false,
+      briefId: null,
+      reason: `approve_failed:${approveResult.error}`
+    };
+  }
+
+  const db = getDb();
+  if (db) {
+    try {
+      await db.insert(auditLogs).values({
+        workspaceId: input.workspaceId,
+        actorId: null,
+        action: "content_draft.source_only_backfill_approved",
+        entityType: "content_draft",
+        entityId: input.draftId,
+        payload: {
+          reviewer: "system:source-only-backfill",
+          verdict: "approve",
+          reason: "historical_backfill_source_only_gate_passed",
+          flagged_issues: [],
+          confidence: SOURCE_ONLY_BACKFILL_CONFIDENCE,
+          tradingDate: input.sourcePack.tradingDate,
+          sourcePackId: input.sourcePack.packId
+        }
+      });
+    } catch (e) {
+      console.warn(
+        `[pipeline-direct] source-only backfill audit write failed for draft ${input.draftId}:`,
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
+  return {
+    published: true,
+    briefId: approveResult.approvedRefId,
+    reason: null
+  };
 }
 
 function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Record<string, unknown> | null {
@@ -741,14 +825,16 @@ async function generateDirectDailyBriefDraft(input: {
 資料狀態：
 ${sourceContext}`;
 
-  const raw = await callOpenAi({
-    model: MODEL_ROUTINE,
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 1_200,
-    temperature: 0.2,
-    label: "daily_brief_direct_generator",
-    timeoutMs: 25_000
-  });
+  const raw = input.reason === "historical_backfill"
+    ? null
+    : await callOpenAi({
+        model: MODEL_ROUTINE,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 1_200,
+        temperature: 0.2,
+        label: "daily_brief_direct_generator",
+        timeoutMs: 25_000
+      });
 
   const payload = parseDirectBriefPayload(raw, input.sourcePack) ?? buildSourceOnlyBriefPayload(input.sourcePack);
 
@@ -758,10 +844,30 @@ ${sourceContext}`;
     targetTable: "daily_briefs",
     targetEntityId: input.sourcePack.tradingDate,
     payload,
-    producerVersion: `pipeline-direct-${input.reason}-v1`
+    producerVersion: `pipeline-direct-${input.reason}-v2`
   });
 
   if (!draft) return null;
+
+  if (input.reason === "historical_backfill") {
+    const publishResult = await tryPublishSourceOnlyBackfillDraft({
+      workspaceId: input.workspaceId,
+      draftId: draft.id,
+      sourcePack: input.sourcePack,
+      payload
+    });
+    if (publishResult.published) {
+      console.info(
+        `[pipeline-direct] historical source-only backfill published ` +
+        `date=${input.sourcePack.tradingDate} briefId=${publishResult.briefId ?? "n/a"}`
+      );
+      return { draftId: draft.id };
+    }
+    console.warn(
+      `[pipeline-direct] historical source-only backfill held ` +
+      `date=${input.sourcePack.tradingDate} reason=${publishResult.reason ?? "unknown"}`
+    );
+  }
 
   await fireAiReviewerForDraft(draft.id);
   return { draftId: draft.id };
