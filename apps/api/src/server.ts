@@ -7658,14 +7658,14 @@ app.get("/api/v1/lab/strategy/:strategyId/snapshot", async (c) => {
   const auditCtx = { workspaceId: session.workspace.id, actorId: session.user.id };
   const cached = getSnapshotFromCacheOnly(strategyId);
   if (cached && cached.snapshot) {
-    return c.json({ schema: _SNAPSHOT_SCHEMA_VERSION_V47, strategyId, snapshot: mapSnapshotToV47(cached.snapshot as Record<string, unknown>), cache_hit: true, stale_reason: null, fetched_at: cached.fetched_at }, 200);
+    return c.json({ schema: _SNAPSHOT_SCHEMA_VERSION_V47, strategyId, snapshot: mapSnapshotToV47(cached.snapshot as Record<string, unknown>), cache_hit: true, stale_reason: null, fetched_at: cached.fetched_at, source: cached.source }, 200);
   }
   const result = await fetchStrategySnapshot(strategyId, auditCtx);
   if (result.ok && result.snapshot) {
-    return c.json({ schema: _SNAPSHOT_SCHEMA_VERSION_V47, strategyId, snapshot: mapSnapshotToV47(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: null, fetched_at: result.fetched_at }, 200);
+    return c.json({ schema: _SNAPSHOT_SCHEMA_VERSION_V47, strategyId, snapshot: mapSnapshotToV47(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: null, fetched_at: result.fetched_at, source: result.source }, 200);
   }
   if (result.snapshot !== null) {
-    return c.json({ schema: _SNAPSHOT_SCHEMA_VERSION_V47, strategyId, snapshot: mapSnapshotToV47(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: result.stale_reason, fetched_at: result.fetched_at }, 200);
+    return c.json({ schema: _SNAPSHOT_SCHEMA_VERSION_V47, strategyId, snapshot: mapSnapshotToV47(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: result.stale_reason, fetched_at: result.fetched_at, source: result.source }, 200);
   }
   const statusCode = result.stale_reason === "snapshot_not_found" ? 404 : 503;
   return c.json({ error: result.stale_reason, strategyId, snapshot: null, cache_hit: false, lab_repo_path: `reports/trading_room/strategy_snapshots/${strategyId}_snapshot_v0.json` }, statusCode);
