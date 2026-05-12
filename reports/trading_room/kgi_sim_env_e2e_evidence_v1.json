@@ -1,0 +1,85 @@
+{
+  "report_version": "v1",
+  "date": "2026-05-08",
+  "branch": "feat/api-kgi-sim-env-e2e-2026-05-12",
+  "pr_title": "feat(api): KGI SIM env 接通 e2e (quote/trade smoke + env switch + status endpoint + log redact)",
+  "environment": "SIM_ONLY",
+  "status": "READY_FOR_BRUCE_VERIFY",
+  "security_compliance": {
+    "credentials_in_env_only": true,
+    "no_credentials_in_code": true,
+    "no_credentials_in_logs": true,
+    "no_prod_write_path": true,
+    "sim_only_label": true,
+    "prod_write_blocked_constant": true,
+    "account_masked_pattern": "9228-***-6",
+    "person_id_masked_pattern": "F13133****",
+    "password_never_logged": true
+  },
+  "deliverables": {
+    "kgi_env_switch": {
+      "file": "apps/api/src/broker/kgi-sim-env.ts",
+      "env_var": "KGI_ENV",
+      "values": ["sim", "prod", "blocked"],
+      "default": "sim",
+      "prod_default_blocked": true
+    },
+    "sim_quote_smoke": {
+      "endpoint": "POST /api/v1/kgi/sim/quote-smoke",
+      "auth": "Owner",
+      "audit_action": "kgi.sim.quote_smoke",
+      "default_symbol": "0050",
+      "steps": ["health_probe", "subscribe_tick", "poll_ticks_3_attempts"]
+    },
+    "sim_trade_smoke": {
+      "endpoint": "POST /api/v1/kgi/sim/trade-smoke",
+      "auth": "Owner",
+      "audit_action": "kgi.sim.trade_smoke",
+      "dual_confirm_required": true,
+      "confirm_fields": ["confirmedByBruce", "confirmedByJason"],
+      "order_type": "odd_lot_1_share",
+      "order_cond": "Cash",
+      "time_in_force": "ROD",
+      "sim_label_in_name": "SIM_SMOKE_TEST"
+    },
+    "status_endpoint": {
+      "endpoint": "GET /api/v1/kgi/status",
+      "auth": "Owner",
+      "fields": [
+        "sim_only",
+        "kgi_env",
+        "quote_connected",
+        "trade_connected",
+        "last_quote_time",
+        "last_sim_order_status",
+        "last_sim_order_detail",
+        "last_quote_smoke_at",
+        "last_trade_smoke_at",
+        "prod_write_blocked",
+        "sim_quote_host",
+        "sim_trade_host"
+      ],
+      "prod_write_blocked_always": true
+    }
+  },
+  "ci_results": {
+    "tests_total": 240,
+    "tests_pass": 240,
+    "tests_fail": 0,
+    "new_tests": ["KS1", "KS2", "KS3", "KS4", "KS5", "KS6", "KS7"],
+    "typecheck_errors": 0,
+    "build": "clean"
+  },
+  "bruce_verify": {
+    "SIM_QUOTE_PASS": "gatewayReachable=true AND loggedIn=true AND subscribed=true",
+    "SIM_TRADE_CALLBACK_PASS": "orderSubmitted=true AND orderOutcome in [not_enabled, accepted, rejected]",
+    "TOKEN_LEAKAGE_FALSE": "no person_id/person_pwd/password/token fields in audit payloads"
+  },
+  "files_changed": [
+    "apps/api/src/broker/kgi-sim-env.ts",
+    "apps/api/src/server.ts",
+    "tests/ci.test.ts",
+    "reports/trading_room/kgi_sim_env_e2e_evidence_v1.md",
+    "reports/trading_room/kgi_sim_env_e2e_evidence_v1.json"
+  ]
+}
