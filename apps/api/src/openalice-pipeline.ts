@@ -24,7 +24,7 @@ import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { and, desc, eq, gte, inArray, sql as drizzleSql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or, sql as drizzleSql } from "drizzle-orm";
 import {
   auditLogs,
   companiesOhlcv,
@@ -284,6 +284,14 @@ function getTaipeiDayOfWeek(now: Date = new Date()): number {
   return new Date(dateStr + "T00:00:00+08:00").getDay();
 }
 
+function visibleDailyBriefCondition() {
+  return or(
+    eq(dailyBriefs.status, "published"),
+    eq(dailyBriefs.status, "approved"),
+    and(eq(dailyBriefs.status, "draft"), eq(dailyBriefs.generatedBy, "worker"))
+  );
+}
+
 // ── Trading calendar check ────────────────────────────────────────────────────
 
 /**
@@ -441,7 +449,7 @@ async function collectSourcePack(
     const briefRows = await db
       .select({ id: dailyBriefs.id, date: dailyBriefs.date })
       .from(dailyBriefs)
-      .where(eq(dailyBriefs.workspaceId, workspaceId))
+      .where(and(eq(dailyBriefs.workspaceId, workspaceId), visibleDailyBriefCondition()))
       .orderBy(desc(dailyBriefs.date))
       .limit(1);
 
@@ -1299,7 +1307,8 @@ export async function runPipelineTick(
         .where(
           and(
             eq(dailyBriefs.workspaceId, workspace.id),
-            eq(dailyBriefs.date, tradingDate)
+            eq(dailyBriefs.date, tradingDate),
+            visibleDailyBriefCondition()
           )
         )
         .limit(1);
@@ -2132,7 +2141,7 @@ export async function runPipelineMissedDayCatchUp(workspaceSlug: string): Promis
     const existingBriefRows = await db
       .select({ date: dailyBriefs.date })
       .from(dailyBriefs)
-      .where(eq(dailyBriefs.workspaceId, workspace.id))
+      .where(and(eq(dailyBriefs.workspaceId, workspace.id), visibleDailyBriefCondition()))
       .orderBy(desc(dailyBriefs.date))
       .limit(10)
       .catch(() => [] as { date: string }[]);
@@ -2187,6 +2196,43 @@ export async function runPipelineMissedDayCatchUp(workspaceSlug: string): Promis
     }
   } catch (e) {
     console.error("[pipeline-catchup] unexpected error:", e instanceof Error ? e.message : String(e));
+  }
+}
+
+export async function runPipelineMissedDayCatchUpForAllWorkspaces(fallbackSlug: string): Promise<void> {
+  if (!isDatabaseMode()) {
+    await runPipelineMissedDayCatchUp(fallbackSlug);
+    return;
+  }
+
+  const db = getDb();
+  if (!db) {
+    await runPipelineMissedDayCatchUp(fallbackSlug);
+    return;
+  }
+
+  const slugs = new Set<string>();
+  const trimmedFallback = fallbackSlug.trim();
+  if (trimmedFallback) slugs.add(trimmedFallback);
+
+  try {
+    const rows = await db
+      .select({ slug: workspaces.slug })
+      .from(workspaces)
+      .orderBy(desc(workspaces.createdAt))
+      .limit(10);
+    for (const row of rows) {
+      if (row.slug) slugs.add(row.slug);
+    }
+  } catch (e) {
+    console.warn(
+      "[pipeline-catchup] workspace sweep failed; falling back to scheduler workspace:",
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
+  for (const slug of slugs) {
+    await runPipelineMissedDayCatchUp(slug);
   }
 }
 

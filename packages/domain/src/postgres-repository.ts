@@ -3,7 +3,8 @@ import {
   asc,
   desc,
   eq,
-  inArray
+  inArray,
+  or
 } from "drizzle-orm";
 
 import {
@@ -999,8 +1000,17 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
     const rows = await db
       .select()
       .from(dailyBriefsTable)
-      .where(eq(dailyBriefsTable.workspaceId, workspace.id))
-      .orderBy(desc(dailyBriefsTable.createdAt))
+      .where(
+        and(
+          eq(dailyBriefsTable.workspaceId, workspace.id),
+          or(
+            eq(dailyBriefsTable.status, "published"),
+            eq(dailyBriefsTable.status, "approved"),
+            and(eq(dailyBriefsTable.status, "draft"), eq(dailyBriefsTable.generatedBy, "worker"))
+          )
+        )
+      )
+      .orderBy(desc(dailyBriefsTable.date), desc(dailyBriefsTable.createdAt))
       .limit(30);
 
     const normalizeBriefStatus = (row: typeof rows[number]): DailyBrief["status"] => {
