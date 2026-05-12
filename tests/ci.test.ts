@@ -10021,3 +10021,100 @@ test('BF12: runDatasetBackfill returns no_tickers_in_workspace in memory mode (n
     else delete process.env.FINMIND_API_TOKEN;
   }
 });
+
+// =============================================================================
+// BF13: Structural Ordering — date injected before reviewer (Wave 2 P0)
+// =============================================================================
+
+test("BF13: bridge structural ordering — date patched from contextRefs before reviewer fires", () => {
+  const DATE_RE_BF10 = /^\d{4}-\d{2}-\d{2}$/;
+
+  function patchPayloadDateBeforeReview(
+    payloadWithMeta: Record<string, unknown>,
+    targetTable: string,
+    contextRefs: Array<{ type?: unknown; id?: unknown }>
+  ): Record<string, unknown> {
+    const patched = { ...payloadWithMeta };
+    if (targetTable === "daily_briefs") {
+      const existingDate = patched["date"];
+      if (!existingDate || typeof existingDate !== "string" || !DATE_RE_BF10.test(existingDate as string)) {
+        const tradingDateRef = contextRefs.find(
+          (r) => r.type === "trading_date" && typeof r.id === "string" && DATE_RE_BF10.test(r.id as string)
+        );
+        if (tradingDateRef) { patched["date"] = tradingDateRef.id; }
+      }
+    }
+    return patched;
+  }
+
+  const refs = [
+    { type: "source_pack", id: "pack-uuid" },
+    { type: "trading_date", id: "2026-05-13" },
+    { type: "tick", id: "close_brief" }
+  ];
+
+  const c1 = patchPayloadDateBeforeReview({ date: "", marketState: "Balanced", sections: [] }, "daily_briefs", refs);
+  assert.equal(c1["date"], "2026-05-13", "BF13-C1: empty date patched");
+
+  const c2 = patchPayloadDateBeforeReview({ marketState: "Risk-On", sections: [] }, "daily_briefs", refs);
+  assert.equal(c2["date"], "2026-05-13", "BF13-C2: missing date patched");
+
+  const c3 = patchPayloadDateBeforeReview({ date: "2026-5-13", sections: [] }, "daily_briefs", refs);
+  assert.equal(c3["date"], "2026-05-13", "BF13-C3: non-ISO date patched");
+
+  const c4 = patchPayloadDateBeforeReview({ date: "2026-05-09", sections: [] }, "daily_briefs", refs);
+  assert.equal(c4["date"], "2026-05-09", "BF13-C4: valid date not overwritten");
+
+  const c5 = patchPayloadDateBeforeReview({ date: "", sections: [] }, "theme_summaries", refs);
+  assert.equal(c5["date"], "", "BF13-C5: non-daily_brief target not patched");
+
+  const c6 = patchPayloadDateBeforeReview({ date: "" }, "daily_briefs", [{ type: "source_pack", id: "x" }]);
+  assert.equal(c6["date"], "", "BF13-C6: no trading_date ref — date unchanged");
+});
+
+// =============================================================================
+// V47-1: v47 API snapshot contract — compoundReturn removed, returns object present
+// =============================================================================
+
+test("V47-1: mapSnapshotToV47 contract — no compoundReturn in output; returns object present; schemaVersion set", () => {
+  const SCHEMA_V47 = "tr_strategy_snapshot_api_contract_v47";
+
+  function mapV47(raw: Record<string, unknown>): Record<string, unknown> {
+    const m = (typeof raw["headlineMetrics"] === "object" && raw["headlineMetrics"] !== null
+      ? raw["headlineMetrics"] : {}) as Record<string, unknown>;
+    const netPct = typeof m["strategyNetAbsoluteReturnPct"] === "number" ? m["strategyNetAbsoluteReturnPct"] : null;
+    const benchPct = typeof m["benchmark0050ReturnPct"] === "number" ? m["benchmark0050ReturnPct"] : null;
+    const excess = typeof m["excessVs0050Pp"] === "number" ? m["excessVs0050Pp"]
+      : (netPct !== null && benchPct !== null) ? netPct - benchPct : null;
+    const returns = { strategyNetAbsoluteReturnPct: netPct, benchmark0050ReturnPct: benchPct, excessVs0050Pp: excess };
+    const { compoundReturn: _cr, compoundReturnNetOfBenchmark: _crnb, ...mWithout } = m as Record<string, unknown> & { compoundReturn?: unknown; compoundReturnNetOfBenchmark?: unknown };
+    const { compoundReturn: _rcr, compoundReturnNetOfBenchmark: _rcrnb, ...rawWithout } = raw as Record<string, unknown> & { compoundReturn?: unknown; compoundReturnNetOfBenchmark?: unknown };
+    return { ...rawWithout, schemaVersion: SCHEMA_V47, returns, headlineMetrics: { ...mWithout }, _v47Mapped: true };
+  }
+
+  const out1 = mapV47({ headlineMetrics: { strategyNetAbsoluteReturnPct: 0.42, benchmark0050ReturnPct: 0.38, excessVs0050Pp: 0.04, compoundReturn: 0.42, compoundReturnNetOfBenchmark: 0.04 } });
+  assert.equal(out1["schemaVersion"], SCHEMA_V47, "V47-C1: schemaVersion");
+  assert.ok(!("compoundReturn" in out1), "V47-C1: compoundReturn not in output");
+  assert.ok(!("compoundReturnNetOfBenchmark" in out1), "V47-C1: compoundReturnNetOfBenchmark not in output");
+  assert.ok(out1["returns"] && typeof out1["returns"] === "object", "V47-C1: returns object present");
+  const r1 = out1["returns"] as Record<string, unknown>;
+  assert.equal(r1["strategyNetAbsoluteReturnPct"], 0.42, "V47-C1: strategyNetAbsoluteReturnPct");
+  assert.equal(r1["benchmark0050ReturnPct"], 0.38, "V47-C1: benchmark0050ReturnPct");
+  assert.equal(r1["excessVs0050Pp"], 0.04, "V47-C1: excessVs0050Pp");
+  const hm1 = out1["headlineMetrics"] as Record<string, unknown>;
+  assert.ok(!("compoundReturn" in hm1), "V47-C1: compoundReturn not in headlineMetrics");
+  assert.equal(out1["_v47Mapped"], true, "V47-C1: _v47Mapped");
+
+  const out2 = mapV47({ headlineMetrics: { compoundReturn: 0.35, hitRatePct: 0.55 } });
+  assert.equal(out2["schemaVersion"], SCHEMA_V47, "V47-C2: schemaVersion on legacy input");
+  assert.ok(!("compoundReturn" in out2), "V47-C2: compoundReturn stripped");
+  const r2 = out2["returns"] as Record<string, unknown>;
+  assert.equal(r2["strategyNetAbsoluteReturnPct"], null, "V47-C2: strategyNetAbsoluteReturnPct null");
+  assert.equal(r2["benchmark0050ReturnPct"], null, "V47-C2: benchmark0050ReturnPct null");
+  assert.equal(r2["excessVs0050Pp"], null, "V47-C2: excessVs0050Pp null");
+
+  const out3 = mapV47({ headlineMetrics: { strategyNetAbsoluteReturnPct: 0.50, benchmark0050ReturnPct: 0.38 } });
+  const r3 = out3["returns"] as Record<string, unknown>;
+  assert.ok(typeof r3["excessVs0050Pp"] === "number", "V47-C3: excessVs0050Pp auto-computed");
+  assert.ok(Math.abs((r3["excessVs0050Pp"] as number) - 0.12) < 0.0001, "V47-C3: excess = 0.50 - 0.38 = 0.12");
+});

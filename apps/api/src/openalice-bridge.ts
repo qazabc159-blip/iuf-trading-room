@@ -1045,19 +1045,54 @@ export async function submitOpenAliceResult(input: {
           ? (input.result.structured as Record<string, unknown>)
           : {};
 
-      const targetEntityId =
-        typeof structured.themeId === "string"
-          ? (structured.themeId as string)
-          : typeof structured.companyId === "string"
-          ? (structured.companyId as string)
-          : typeof structured.date === "string"
-          ? (structured.date as string)
-          : null;
-
       const payloadWithMeta: Record<string, unknown> = { ...structured };
       if (input.result.llmMeta && typeof input.result.llmMeta === "object") {
         payloadWithMeta.llm_meta = input.result.llmMeta;
       }
+
+      // Structural ordering fix (2026-05-13 Wave 2 P0):
+      // The AI reviewer checks payload.date against the expected trading date.
+      // When gpt-5.4-mini returns date="" for weekend/holiday OHLCV-empty runs,
+      // the reviewer sees a mismatched date and rejects the draft before
+      // approveContentDraft can apply the contextRefs fallback (PR #384).
+      // Fix: inject the authoritative tradingDate HERE — before createContentDraft
+      // and before fireAiReviewerForDraft — so the reviewer always sees a valid date.
+      // Source of truth: job.contextRefs trading_date ref (injected by generateDailyBrief).
+      // Hard lines: never fake a date; only apply if date is absent/malformed.
+      if (targetTable === "daily_briefs") {
+        const _DATE_RE_BRIDGE = /^\d{4}-\d{2}-\d{2}$/;
+        const existingDate = payloadWithMeta["date"];
+        if (
+          !existingDate ||
+          typeof existingDate !== "string" ||
+          !_DATE_RE_BRIDGE.test(existingDate)
+        ) {
+          const jobRefs = Array.isArray(job.contextRefs)
+            ? (job.contextRefs as Array<{ type?: unknown; id?: unknown }>)
+            : [];
+          const tradingDateRef = jobRefs.find(
+            (r) => r.type === "trading_date" && typeof r.id === "string" && _DATE_RE_BRIDGE.test(r.id as string)
+          );
+          if (tradingDateRef) {
+            console.warn(
+              `[openalice-bridge] submitOpenAliceResult: patching malformed/empty date="${String(existingDate ?? "")}" ` +
+              `→ "${tradingDateRef.id}" from job contextRefs (jobId=${job.id}) BEFORE reviewer fires`
+            );
+            payloadWithMeta["date"] = tradingDateRef.id;
+          }
+        }
+      }
+
+      // Derive targetEntityId from payloadWithMeta so the date patch above is reflected
+      // (structured.date may have been empty before the patch).
+      const targetEntityId =
+        typeof payloadWithMeta["themeId"] === "string"
+          ? (payloadWithMeta["themeId"] as string)
+          : typeof payloadWithMeta["companyId"] === "string"
+          ? (payloadWithMeta["companyId"] as string)
+          : typeof payloadWithMeta["date"] === "string"
+          ? (payloadWithMeta["date"] as string)
+          : null;
 
       const draft = await createContentDraft({
         workspaceId: input.device.workspaceId,
