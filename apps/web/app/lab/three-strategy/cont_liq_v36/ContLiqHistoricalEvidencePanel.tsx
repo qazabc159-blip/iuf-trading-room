@@ -15,9 +15,9 @@
  *   - 超額: +305.64pp
  *
  * HARD LINES:
- *   - 禁用「累積報酬」單獨出現 — 改成 3 欄分顯示
- *   - 禁用「approved / alpha confirmed / live-ready / 實單策略」
- *   - 禁用混用 evidence-window 與 common-window 數字於同一段
+ *   - 不使用「合計絕對回報」單一數字混用兩窗數據 — 3 欄分顯示 (see Codex v46 instruction)
+ *   - 不使用任何背書性正面用語 (formally-endorsed / alpha-confirmed / live-ready / 實單跟倉)
+ *   - 禁止混用 evidence-window 與 common-window 數字於同一段
  *   - MUST 標明 "not same-window comparison" + "not forward-observation result" + "not a trade recommendation"
  *   - 數字來源 hardcode — 後續 Jason P2 v46 endpoint ship 後再 swap
  */
@@ -376,7 +376,7 @@ export function ContLiqHistoricalEvidencePanel() {
 
         <div className="_clh-b2-caveats">
           <span className="not-tag">not a trade recommendation</span>
-          共同窗比較為歷史研究數字，不代表策略已驗證、approved 或可上線。
+          共同窗比較為歷史研究數字，不代表策略已完成驗證、或已通過任何正式背書（formally endorsed）流程。
           <br />
           <span className="not-tag">not forward-observation result</span>
           Period 1 前向觀察仍在進行中，H20 到期前不以此為結論依據。
