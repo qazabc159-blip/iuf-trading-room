@@ -16,6 +16,7 @@ import {
   getDb,
   isDatabaseMode,
   openAliceDevices,
+  openAliceJobs,
   themeSummaries,
   workspaces
 } from "@iuf-trading-room/db";
@@ -323,7 +324,63 @@ export async function approveContentDraft(input: {
       approvedRefId = inserted.id;
     } else {
       // daily_briefs — upsert by workspaceId + date (insert or replace)
-      const payload = dailyBriefPayloadSchema.parse(draft.payload);
+      //
+      // LLM date-empty safeguard (2026-05-12 R7):
+      // When OHLCV sources are EMPTY (weekend/holiday), gpt-5.4-mini sometimes
+      // returns structured.date="" (empty string). The Zod regex /^\d{4}-\d{2}-\d{2}$/
+      // rejects this -> throws -> publish_exception -> queued_for_review -> brief
+      // never auto-publishes for 5/8, 5/11, 5/12.
+      //
+      // Fix: post-process the raw payload — if date is missing or fails the regex,
+      // recover the authoritative tradingDate from the originating job's contextRefs
+      // ({ type: "trading_date", id: "<YYYY-MM-DD>" }). This ref is injected by
+      // openalice-pipeline.ts at job-enqueue time (always from SourcePack.tradingDate).
+      // We NEVER fake a date; if contextRefs has no trading_date, the Zod parse
+      // still throws and the draft stays in awaiting_review as normal.
+      const _DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+      const rawBriefPayload: Record<string, unknown> =
+        draft.payload && typeof draft.payload === "object" && !Array.isArray(draft.payload)
+          ? { ...(draft.payload as Record<string, unknown>) }
+          : {};
+
+      if (
+        !rawBriefPayload["date"] ||
+        typeof rawBriefPayload["date"] !== "string" ||
+        !_DATE_RE.test(rawBriefPayload["date"] as string)
+      ) {
+        // Date is absent or malformed — attempt to recover from job contextRefs.
+        if (draft.sourceJobId) {
+          try {
+            const [_jobRow] = await tx
+              .select({ contextRefs: openAliceJobs.contextRefs })
+              .from(openAliceJobs)
+              .where(eq(openAliceJobs.id, draft.sourceJobId))
+              .limit(1);
+            const _refs = Array.isArray(_jobRow?.contextRefs)
+              ? (_jobRow.contextRefs as Array<{ type?: unknown; id?: unknown }>)
+              : [];
+            const _tradingDateRef = _refs.find(
+              (r) => r.type === "trading_date" && typeof r.id === "string" && _DATE_RE.test(r.id as string)
+            );
+            if (_tradingDateRef) {
+              console.warn(
+                `[content-draft-store] draft ${draft.id} had malformed/empty date="${String(rawBriefPayload["date"] ?? "")}"; ` +
+                  `recovered tradingDate="${_tradingDateRef.id}" from job contextRefs (jobId=${draft.sourceJobId})`
+              );
+              rawBriefPayload["date"] = _tradingDateRef.id;
+            }
+          } catch (_ctxErr) {
+            // Non-critical: if contextRefs lookup fails, fall through to normal Zod
+            // parse which will throw with a clear "date must be YYYY-MM-DD" message.
+            console.warn(
+              `[content-draft-store] contextRefs lookup failed for jobId=${draft.sourceJobId}: ` +
+                String(_ctxErr)
+            );
+          }
+        }
+      }
+
+      const payload = dailyBriefPayloadSchema.parse(rawBriefPayload);
       // Use insert with onConflictDoUpdate keyed on (workspaceId, date).
       // The schema has a composite index but not a unique constraint; we fall
       // back to a delete+insert pattern to stay compatible without a migration.

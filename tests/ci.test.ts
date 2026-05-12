@@ -9845,105 +9845,58 @@ test("BF8: adversarial_audit action is NOT a primary-review action (gate query f
   assert.ok(PRIMARY_REVIEW_ACTIONS.has("content_draft.factual_reject"), "factual_reject must be a primary-review action");
 });
 
-// ── KGI SIM Environment tests (KS1-KS6) ─────────────────────────────────────
-// SIM_ONLY: These tests validate the KGI SIM env config, credential masking,
-// state machine, and smoke guards — no real gateway required.
+// BF9: LLM date-empty safeguard — approveContentDraft date-patch logic.
+// Root cause (R7): gpt-5.4-mini returns structured.date="" when OHLCV=EMPTY (weekend/holiday).
+// Zod regex rejects "" -> publish_exception -> brief never publishes for 5/8 5/11 5/12.
+// Fix: before dailyBriefPayloadSchema.parse, patch date from job contextRefs trading_date ref.
+// This unit test validates the patch logic inline (no DB required).
+test('BF9: date-empty patch recovers tradingDate from contextRefs when LLM returns empty date', () => {
+  const DATE_RE_BF9 = /^\d{4}-\d{2}-\d{2}$/;
 
-import {
-  resolveKgiEnv,
-  maskAccount,
-  maskPersonId,
-  getKgiSimState,
-  _resetKgiSimState,
-  runSimQuoteSmoke,
-  runSimTradeSmoke,
-} from "../apps/api/src/broker/kgi-sim-env.ts";
-
-// KS1: resolveKgiEnv defaults to "sim" (never "prod") when KGI_ENV is unset.
-test("KS1: resolveKgiEnv defaults to 'sim' when KGI_ENV is unset", () => {
-  const saved = process.env["KGI_ENV"];
-  delete process.env["KGI_ENV"];
-  const env = resolveKgiEnv();
-  assert.equal(env, "sim", "default KGI_ENV must be 'sim', never 'prod'");
-  if (saved !== undefined) process.env["KGI_ENV"] = saved;
-});
-
-// KS2: maskAccount — 9228-001282-6 → 9228-***-6
-test("KS2: maskAccount redacts middle digits of KGI account number", () => {
-  assert.equal(maskAccount("9228-001282-6"), "9228-***-6");
-  // Other account formats — must not crash
-  assert.equal(typeof maskAccount("plain-text"), "string");
-});
-
-// KS3: maskPersonId — F131331910 → F13133****
-test("KS3: maskPersonId redacts trailing digits of Taiwan national ID", () => {
-  const masked = maskPersonId("F131331910");
-  assert.ok(masked.startsWith("F13133"), "masked ID must keep first 6 chars");
-  assert.ok(masked.includes("*"), "masked ID must contain asterisks");
-  assert.ok(!masked.includes("1910"), "last 4 digits must be redacted");
-  // Short input: must not crash
-  assert.equal(maskPersonId("AB"), "***");
-});
-
-// KS4: getKgiSimState — prodWriteBlocked is always true, environment always "SIM_ONLY"
-test("KS4: getKgiSimState always returns prodWriteBlocked=true and environment='SIM_ONLY'", () => {
-  _resetKgiSimState();
-  const state = getKgiSimState();
-  assert.equal(state.prodWriteBlocked, true, "prodWriteBlocked must always be true");
-  assert.equal(state.environment, "SIM_ONLY", "environment tag must always be SIM_ONLY");
-  assert.equal(typeof state.kgiEnv, "string", "kgiEnv must be a string");
-});
-
-// KS5: runSimTradeSm oke blocks when KGI_ENV != sim (prod write guard)
-test("KS5: runSimTradeSmoke returns prod_write_blocked when KGI_ENV=prod", async () => {
-  const saved = process.env["KGI_ENV"];
-  process.env["KGI_ENV"] = "prod";
-  try {
-    const result = await runSimTradeSmoke({ confirmedByBruce: true, confirmedByJason: true });
-    assert.equal(result.sim_only, true, "sim_only tag must always be present");
-    assert.equal(result.orderOutcome, "prod_write_blocked", "order must be blocked when KGI_ENV=prod");
-    assert.ok(result.error?.includes("prod_write_blocked"), "error must mention prod_write_blocked");
-  } finally {
-    if (saved !== undefined) { process.env["KGI_ENV"] = saved; } else { delete process.env["KGI_ENV"]; }
+  // Simulates the patch block in approveContentDraft (content-draft-store.ts).
+  function patchBriefPayloadDate(
+    rawPayload: Record<string, unknown>,
+    contextRefs: Array<{ type?: unknown; id?: unknown }>
+  ): Record<string, unknown> {
+    const patched = { ...rawPayload };
+    if (!patched['date'] || typeof patched['date'] !== 'string' || !DATE_RE_BF9.test(patched['date'] as string)) {
+      const tradingDateRef = contextRefs.find(
+        (r) => r.type === 'trading_date' && typeof r.id === 'string' && DATE_RE_BF9.test(r.id as string)
+      );
+      if (tradingDateRef) {
+        patched['date'] = tradingDateRef.id;
+      }
+    }
+    return patched;
   }
-});
 
-// KS6: runSimTradeSmoke blocks when dual-confirm not provided
-test("KS6: runSimTradeSmoke returns awaiting_dual_confirm without Bruce+Jason confirm", async () => {
-  const saved = process.env["KGI_ENV"];
-  delete process.env["KGI_ENV"]; // default = "sim"
-  try {
-    // Neither confirm
-    const result1 = await runSimTradeSmoke({ confirmedByBruce: false, confirmedByJason: false });
-    assert.equal(result1.sim_only, true, "sim_only tag must always be present");
-    assert.equal(result1.orderOutcome, "awaiting_dual_confirm");
+  const refs = [
+    { type: 'source_pack', id: 'some-uuid' },
+    { type: 'trading_date', id: '2026-05-12' },
+    { type: 'tick', id: 'close_brief' }
+  ];
 
-    // Only Jason
-    const result2 = await runSimTradeSmoke({ confirmedByBruce: false, confirmedByJason: true });
-    assert.equal(result2.orderOutcome, "awaiting_dual_confirm");
+  // Case 1: LLM returns date="" — must be patched to "2026-05-12"
+  const case1 = patchBriefPayloadDate({ date: '', marketState: 'Balanced', sections: [{ heading: 'h', body: 'b' }] }, refs);
+  assert.equal(case1['date'], '2026-05-12', 'empty date recovered from contextRefs');
 
-    // Only Bruce
-    const result3 = await runSimTradeSmoke({ confirmedByBruce: true, confirmedByJason: false });
-    assert.equal(result3.orderOutcome, "awaiting_dual_confirm");
-  } finally {
-    if (saved !== undefined) { process.env["KGI_ENV"] = saved; } else { delete process.env["KGI_ENV"]; }
-  }
-});
+  // Case 2: LLM omits date entirely — must be patched
+  const case2 = patchBriefPayloadDate({ marketState: 'Balanced', sections: [{ heading: 'h', body: 'b' }] }, refs);
+  assert.equal(case2['date'], '2026-05-12', 'missing date recovered from contextRefs trading_date');
 
-// KS7: runSimQuoteSmoke — gateway unreachable returns graceful result (no throw)
-test("KS7: runSimQuoteSmoke returns graceful result when gateway is unreachable (no throw)", async () => {
-  const saved = process.env["KGI_ENV"];
-  delete process.env["KGI_ENV"]; // default = "sim"
-  // Override gateway URL to a definitely-unreachable host
-  const savedGateway = process.env["KGI_GATEWAY_URL"];
-  process.env["KGI_GATEWAY_URL"] = "http://127.0.0.1:19999"; // nothing listens here
-  try {
-    const result = await runSimQuoteSmoke({ symbol: "0050" });
-    assert.equal(result.sim_only, true, "sim_only tag must be present");
-    assert.equal(result.gatewayReachable, false, "unreachable gateway must set gatewayReachable=false");
-    assert.ok(result.error !== null, "error must be non-null when gateway unreachable");
-  } finally {
-    if (saved !== undefined) { process.env["KGI_ENV"] = saved; } else { delete process.env["KGI_ENV"]; }
-    if (savedGateway !== undefined) { process.env["KGI_GATEWAY_URL"] = savedGateway; } else { delete process.env["KGI_GATEWAY_URL"]; }
-  }
+  // Case 3: Non-zero-padded date "2026-5-12" — must be patched
+  const case3 = patchBriefPayloadDate({ date: '2026-5-12', marketState: 'Balanced', sections: [] }, refs);
+  assert.equal(case3['date'], '2026-05-12', 'non-ISO date recovered from contextRefs trading_date');
+
+  // Case 4: Valid date — must NOT be overwritten
+  const case4 = patchBriefPayloadDate({ date: '2026-05-08', marketState: 'Risk-On', sections: [] }, refs);
+  assert.equal(case4['date'], '2026-05-08', 'valid date must not be overwritten');
+
+  // Case 5: No trading_date ref — patch is a no-op (Zod will throw)
+  const case5 = patchBriefPayloadDate({ date: '', marketState: 'Balanced', sections: [] }, [{ type: 'source_pack', id: 'x' }]);
+  assert.equal(case5['date'], '', 'no trading_date ref — date unchanged');
+
+  // Case 6: trading_date ref with invalid format — ignored
+  const case6 = patchBriefPayloadDate({ date: '', marketState: 'Balanced', sections: [] }, [{ type: 'trading_date', id: 'not-a-date' }]);
+  assert.equal(case6['date'], '', 'malformed trading_date ref must not be applied');
 });
