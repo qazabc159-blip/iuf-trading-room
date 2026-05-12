@@ -3548,6 +3548,8 @@ import {
   getKgiSimState,
   runSimQuoteSmoke,
   runSimTradeSmoke,
+  runKgiSimDailySmokeSchedulerTick,
+  getDailySmokeHistory,
   resolveKgiEnv,
 } from "./broker/kgi-sim-env.js";
 
@@ -3634,6 +3636,31 @@ app.post("/api/v1/kgi/sim/trade-smoke", async (c) => {
   });
 
   return c.json({ sim_only: true, data: result });
+});
+
+// GET /api/v1/internal/kgi/sim/daily-smoke-status
+// Owner-only. Returns last 7 daily smoke run results (in-memory ring buffer).
+// Shows: overall pass/fail per day, quote check, prod-broker audit count.
+// Hard lines: no credentials, no prod broker writes surfaced.
+app.get("/api/v1/internal/kgi/sim/daily-smoke-status", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const history = getDailySmokeHistory();
+  const last = history[0] ?? null;
+
+  return c.json({
+    sim_only: true,
+    prod_write_blocked: true,
+    lastRunAt: last?.firedAt ?? null,
+    lastRunStatus: last?.overallStatus ?? null,
+    lastProdBrokerAuditCount: last?.prodBrokerAuditCount ?? null,
+    history,
+    scheduledWindow: "08:00-08:30 TST (00:00-00:30 UTC) daily",
+    auditAction: "kgi.sim.daily_smoke",
+  });
 });
 
 // ── KGI Quote proxy (/api/v1/kgi/quote/*) ────────────────────────────────────
@@ -11727,6 +11754,17 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, SIX_HOURS_FULL_INGEST_MS);
 
+  // KGI SIM daily smoke cron: 08:00-08:30 TST (00:00-00:30 UTC), polls every 15min.
+  // Window + idempotency guard inside runKgiSimDailySmokeSchedulerTick.
+  // Steps: quote smoke + prod-broker audit (broker.* in 24h == 0) + trade smoke (dual-confirm gated).
+  // Result: audit_logs action=kgi.sim.daily_smoke + ring buffer (GET .../daily-smoke-status).
+  const KGI_SIM_DAILY_SMOKE_POLL_MS = 15 * 60 * 1000;
+  setInterval(() => {
+    runKgiSimDailySmokeSchedulerTick({ forceRun: false }).catch((e) =>
+      console.error("[kgi-sim-daily-smoke] scheduler tick failed:", e instanceof Error ? e.message : e)
+    );
+  }, KGI_SIM_DAILY_SMOKE_POLL_MS);
+
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
@@ -11738,7 +11776,8 @@ function startSchedulers(workspaceSlug: string): void {
     "BLOCK#NEWS news-ai-selector (15min poll, fires at 08:00/12:00/18:00/24:00 TST) + " +
     "P0-2 health-watchdog (30min) + " +
     "BLOCK#TOGGLE paper-obs-cron (15min poll, fires at 17:00–17:30 TST) + " +
-    "BLOCK#SIGNAL strategy(15min,13:45-14:30TST) + news(15min,4-window) + quote.breakout(30min,09:00-13:30TST) started"
+    "BLOCK#SIGNAL strategy(15min,13:45-14:30TST) + news(15min,4-window) + quote.breakout(30min,09:00-13:30TST) + " +
+    "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) started"
   );
 }
 

@@ -10118,3 +10118,98 @@ test("V47-1: mapSnapshotToV47 contract — no compoundReturn in output; returns 
   assert.ok(typeof r3["excessVs0050Pp"] === "number", "V47-C3: excessVs0050Pp auto-computed");
   assert.ok(Math.abs((r3["excessVs0050Pp"] as number) - 0.12) < 0.0001, "V47-C3: excess = 0.50 - 0.38 = 0.12");
 });
+
+// -- KGI SIM Daily Smoke Tests (DS1-DS4) -------------------------------------
+//
+// Tests for runKgiSimDailySmokeSchedulerTick, getDailySmokeHistory,
+// and _resetDailySmokeHistory from kgi-sim-env.ts.
+//
+// Tests run in real-network mode (no gateway mock). The gateway may or may not
+// be reachable depending on test environment. All assertions on structure only;
+// no assertion on overallStatus outcome (depends on gateway connectivity).
+
+import {
+  runKgiSimDailySmokeSchedulerTick,
+  getDailySmokeHistory,
+  _resetDailySmokeHistory,
+  _resetKgiSimState,
+} from "../apps/api/src/broker/kgi-sim-env.ts";
+
+test("DS1: getDailySmokeHistory returns empty array on fresh start", () => {
+  _resetDailySmokeHistory();
+  const hist = getDailySmokeHistory();
+  assert.ok(Array.isArray(hist), "DS1: getDailySmokeHistory returns array");
+  assert.equal(hist.length, 0, "DS1: no entries before first run");
+});
+
+test("DS2: runKgiSimDailySmokeSchedulerTick with forceRun=true returns valid entry", async () => {
+  _resetDailySmokeHistory();
+  _resetKgiSimState();
+  const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+  // Must return an entry (not null) when forceRun=true
+  assert.ok(entry !== null, "DS2: entry returned with forceRun=true");
+  assert.equal(entry!.sim_only, true, "DS2: sim_only must always be true");
+  assert.ok(typeof entry!.runId === "string" && entry!.runId.length > 0, "DS2: runId is a non-empty string");
+  assert.ok(typeof entry!.firedAt === "string" && entry!.firedAt.length > 0, "DS2: firedAt is a non-empty string");
+  assert.ok(typeof entry!.durationMs === "number" && entry!.durationMs >= 0, "DS2: durationMs is a non-negative number");
+  assert.ok(
+    ["pass", "fail", "partial"].includes(entry!.overallStatus),
+    `DS2: overallStatus must be pass/fail/partial, got: ${entry!.overallStatus}`
+  );
+  // In memory mode (no DB): prodBrokerAuditCount must be 0 (DB unavailable = defaults to 0)
+  assert.equal(entry!.prodBrokerAuditCount, 0, "DS2: prodBrokerAuditCount=0 when DB unavailable");
+  // tradeCheck must be null: confirmedByBruce/confirmedByJason not provided
+  assert.equal(entry!.tradeCheck, null, "DS2: tradeCheck=null when dual-confirm not provided");
+  // quoteCheck structure must always be present
+  assert.ok(entry!.quoteCheck && typeof entry!.quoteCheck === "object", "DS2: quoteCheck object present");
+  assert.ok(typeof entry!.quoteCheck.gatewayReachable === "boolean", "DS2: quoteCheck.gatewayReachable is boolean");
+  assert.ok(typeof entry!.quoteCheck.loggedIn === "boolean", "DS2: quoteCheck.loggedIn is boolean");
+  assert.ok(typeof entry!.quoteCheck.tickReceived === "boolean", "DS2: quoteCheck.tickReceived is boolean");
+  // Entry must be stored in ring buffer
+  const hist = getDailySmokeHistory();
+  assert.equal(hist.length, 1, "DS2: entry stored in history buffer");
+  assert.equal(hist[0]!.runId, entry!.runId, "DS2: stored entry matches returned entry");
+});
+
+test("DS3: ring buffer capped at 7 entries; getDailySmokeHistory returns newest-first", async () => {
+  _resetDailySmokeHistory();
+  _resetKgiSimState();
+  // Fire 8 times (forceRun bypasses window + idempotency)
+  for (let i = 0; i < 8; i++) {
+    await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+  }
+  const hist = getDailySmokeHistory();
+  assert.equal(hist.length, 7, "DS3: ring buffer capped at 7 entries");
+  // Verify newest-first ordering
+  if (hist.length >= 2) {
+    const firstTime = new Date(hist[0]!.firedAt).getTime();
+    const secondTime = new Date(hist[1]!.firedAt).getTime();
+    assert.ok(firstTime >= secondTime, "DS3: history is newest-first");
+  }
+  // All entries have sim_only=true and valid overallStatus
+  for (const e of hist) {
+    assert.equal(e.sim_only, true, "DS3: sim_only=true on all entries");
+    assert.ok(["pass", "fail", "partial"].includes(e.overallStatus), "DS3: overallStatus valid");
+  }
+});
+
+test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) returns null", async () => {
+  _resetDailySmokeHistory();
+  const now = new Date();
+  const hourUTC = now.getUTCHours();
+  const minUTC = now.getUTCMinutes();
+  const inWindow = hourUTC === 0 && minUTC < 30;
+  if (!inWindow) {
+    // Outside 08:00-08:30 TST window: must return null without running
+    const result = await runKgiSimDailySmokeSchedulerTick({ forceRun: false });
+    assert.equal(result, null, "DS4: returns null when outside 08:00-08:30 TST window");
+    // Ring buffer must remain empty (no run fired)
+    const hist = getDailySmokeHistory();
+    assert.equal(hist.length, 0, "DS4: ring buffer empty when skipped outside window");
+  } else {
+    // Window is currently open: use forceRun to verify normal execution path
+    const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+    assert.ok(entry !== null, "DS4 (window-open): forceRun=true returns entry");
+    assert.equal(entry!.sim_only, true, "DS4 (window-open): sim_only=true");
+  }
+});
