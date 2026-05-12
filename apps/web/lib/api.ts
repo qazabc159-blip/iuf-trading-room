@@ -2254,7 +2254,15 @@ export type LabStrategySnapshotRobustness = {
 };
 
 export type LabStrategySnapshotHeadlineMetrics = {
-  compoundReturn: number;
+  // v46 canonical fields (Codex 5/12 unified common-window)
+  strategyNetAbsoluteReturnPct?: number;
+  benchmark0050ReturnPct?: number;
+  excessVs0050Pp?: number;
+  hitRatePct?: number;
+  maxDrawdownNetPct?: number;
+  maxDrawdownInternalExcessPct?: number;
+  estimatedEntryTicketCount?: number;
+  // Existing fields
   sharpeAnnualized: number;
   sortinoAnnualized: number;
   maxDrawdown: number;
@@ -2263,6 +2271,8 @@ export type LabStrategySnapshotHeadlineMetrics = {
   hitRate: number;
   averageHoldingDays: number;
   robustness: LabStrategySnapshotRobustness;
+  /** @deprecated Use strategyNetAbsoluteReturnPct (v46). */
+  compoundReturn?: number;
 };
 
 export type LabStrategySnapshot = {
@@ -2271,6 +2281,12 @@ export type LabStrategySnapshot = {
   displayName: string;
   displayName_zh: string;
   status: string;
+  // v46 operational state
+  displayMode?: "paper" | "shadow" | "live" | "research_only";
+  orderState?: "blocked" | "paper_allowed" | "live_allowed";
+  brokerWriteAllowed?: boolean;
+  realOrderAllowed?: boolean;
+  registryChangeAllowed?: boolean;
   headlineMetrics: LabStrategySnapshotHeadlineMetrics;
   equityCurve: { points: LabStrategySnapshotEquityPoint[] };
   monthlyReturns: { bars: LabStrategySnapshotMonthlyBar[] };
@@ -2278,9 +2294,12 @@ export type LabStrategySnapshot = {
   sampleTrades: { entries: LabStrategySnapshotSampleTrade[] };
   spec: {
     capacityCaveat?: string;
+    commonWindowStart?: string;
+    commonWindowEnd?: string;
   };
   uiCopyHints?: {
     warningBanner_zh?: string;
+    commonWindowCaveat_zh?: string;
   };
 };
 

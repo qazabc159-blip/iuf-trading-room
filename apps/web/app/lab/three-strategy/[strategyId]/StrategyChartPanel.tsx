@@ -328,18 +328,28 @@ function DrawdownChart({ points, maxDrawdown, maxDrawdownDate }: { points: { dat
   );
 }
 
-// ── D. KPI Grid ───────────────────────────────────────────────────────────────
+// ── D. KPI Grid (v46 common-window fields) ────────────────────────────────────────
 
-function HeadlineKpiGrid({ metrics }: { metrics: { compoundReturn: number; sharpeAnnualized: number; sortinoAnnualized: number; maxDrawdown: number; winRate: number; hitRate: number; averageHoldingDays: number } }) {
-  const cells = [
-    { label: "\u7d2f\u7a4d\u5831\u916c", value: fmtPct(metrics.compoundReturn, 1), color: metrics.compoundReturn > 0 ? "#ffb800" : "#e63946" },
-    { label: "Sharpe (\u5e74\u5316)", value: fmtFixed(metrics.sharpeAnnualized, 2), color: metrics.sharpeAnnualized >= 2 ? "#ffb800" : metrics.sharpeAnnualized >= 1 ? "#c8c8c8" : "#e63946", sub: metrics.sharpeAnnualized >= 2 ? "\u2605 \u512a\u7570" : undefined, glow: metrics.sharpeAnnualized >= 2 },
-    { label: "Sortino (\u5e74\u5316)", value: fmtFixed(metrics.sortinoAnnualized, 2), color: metrics.sortinoAnnualized >= 2 ? "#a78bfa" : "#c8c8c8" },
-    { label: "\u6700\u5927\u56de\u64a4", value: fmtPct(metrics.maxDrawdown, 1), color: "#e63946" },
-    { label: "\u52dd\u7387", value: fmtPct(metrics.winRate, 1), color: metrics.winRate >= 0.7 ? "#2ecc71" : "#c8c8c8" },
-    { label: "Hit Rate", value: fmtPct(metrics.hitRate, 1), color: metrics.hitRate >= 0.8 ? "#2ecc71" : "#c8c8c8" },
-    { label: "\u5e73\u5747\u6301\u6709\u5929\u6578", value: `${metrics.averageHoldingDays}d`, color: "#c8c8c8" },
-  ] as { label: string; value: string; color: string; sub?: string; glow?: boolean }[];
+function HeadlineKpiGrid({ metrics }: { metrics: LabStrategySnapshot["headlineMetrics"] }) {
+  let netReturn: number | null = null;
+  if (metrics.strategyNetAbsoluteReturnPct != null) {
+    netReturn = metrics.strategyNetAbsoluteReturnPct;
+  } else if (metrics.compoundReturn != null) {
+    if (typeof console !== "undefined") console.warn("[StrategyChartPanel] compoundReturn is deprecated (v46). Use strategyNetAbsoluteReturnPct.");
+    netReturn = metrics.compoundReturn;
+  }
+  const hitRatePct = metrics.hitRatePct != null ? metrics.hitRatePct : metrics.hitRate;
+  const maxDD = metrics.maxDrawdownNetPct != null ? metrics.maxDrawdownNetPct : metrics.maxDrawdown;
+  const cells: { label: string; value: string; color: string; sub?: string; glow?: boolean }[] = [
+    { label: "策略淨報酬", value: netReturn != null ? fmtPct(netReturn, 1) : "—", color: (netReturn ?? 0) > 0 ? "#ffb800" : "#e63946", sub: "策略純報酬 (net)" },
+    { label: "Sharpe (年化)", value: fmtFixed(metrics.sharpeAnnualized, 2), color: metrics.sharpeAnnualized >= 2 ? "#ffb800" : metrics.sharpeAnnualized >= 1 ? "#c8c8c8" : "#e63946", sub: metrics.sharpeAnnualized >= 2 ? "★ 優異" : undefined, glow: metrics.sharpeAnnualized >= 2 },
+    { label: "Sortino (年化)", value: fmtFixed(metrics.sortinoAnnualized, 2), color: metrics.sortinoAnnualized >= 2 ? "#a78bfa" : "#c8c8c8" },
+    { label: "最大回撤 (net)", value: fmtPct(maxDD, 1), color: "#e63946" },
+    { label: "Hit Rate", value: fmtPct(hitRatePct, 1), color: hitRatePct >= 0.8 ? "#2ecc71" : "#c8c8c8" },
+    { label: "勝率", value: fmtPct(metrics.winRate, 1), color: metrics.winRate >= 0.7 ? "#2ecc71" : "#c8c8c8" },
+    { label: "平均持有天數", value: `${metrics.averageHoldingDays}d`, color: "#c8c8c8" },
+  ];
+  if (metrics.estimatedEntryTicketCount != null) cells.push({ label: "預估入場筆數", value: String(metrics.estimatedEntryTicketCount), color: "#c8c8c8" });
   return (
     <div className="_chart-kpi-grid">
       {cells.map((c) => (
@@ -349,6 +359,57 @@ function HeadlineKpiGrid({ metrics }: { metrics: { compoundReturn: number; sharp
           {c.sub && <div className="_chart-kpi-sub">{c.sub}</div>}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── D2. Excess vs 0050 card ────────────────────────────────────────────────
+
+function ExcessVs0050Card({ metrics, spec, uiCopyHints }: { metrics: LabStrategySnapshot["headlineMetrics"]; spec: LabStrategySnapshot["spec"]; uiCopyHints?: LabStrategySnapshot["uiCopyHints"]; }) {
+  const excess = metrics.excessVs0050Pp;
+  const benchmark = metrics.benchmark0050ReturnPct;
+  const netReturn = metrics.strategyNetAbsoluteReturnPct ?? metrics.compoundReturn;
+  const windowStart = spec.commonWindowStart;
+  const windowEnd = spec.commonWindowEnd;
+  const caveat = uiCopyHints?.commonWindowCaveat_zh ?? "基準為 0050，同一時間窗口（common-window）一個共同數字，三大策略共用。";
+  if (excess == null && benchmark == null) return null;
+  const excessColor = (excess ?? 0) >= 0 ? "#2ecc71" : "#e63946";
+  const excessSign = (excess ?? 0) >= 0 ? "+" : "";
+  return (
+    <div style={{ padding: "14px 16px", marginBottom: 16, background: "rgba(46,204,113,0.04)", border: "1px solid rgba(46,204,113,0.18)", borderLeft: "3px solid #2ecc71", borderRadius: 5 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#2ecc71", letterSpacing: "0.8px", textTransform: "uppercase", fontFamily: "var(--mono,monospace)", marginBottom: 10 }}>vs 0050 基準比較（common-window）</div>
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
+        {netReturn != null && <div><div style={{ fontSize: 22, fontWeight: 800, color: netReturn > 0 ? "#ffb800" : "#e63946", fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{fmtPct(netReturn, 1)}</div><div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>策略淨報酬</div></div>}
+        {benchmark != null && <div><div style={{ fontSize: 22, fontWeight: 800, color: "#c8c8c8", fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{fmtPct(benchmark, 1)}</div><div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>0050 同窗</div></div>}
+        {excess != null && <div><div style={{ fontSize: 28, fontWeight: 900, color: excessColor, fontFamily: "var(--mono,monospace)", fontVariantNumeric: "tabular-nums" }}>{excessSign}{fmtPct(excess, 1)} pp</div><div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>超額報酬 (excess)</div></div>}
+      </div>
+      {(windowStart || windowEnd) && <div style={{ marginTop: 8, fontSize: 10, color: "#555", fontFamily: "var(--mono,monospace)" }}>測量窗口: {windowStart ?? "—"} → {windowEnd ?? "—"}</div>}
+      <div style={{ marginTop: 6, fontSize: 10, color: "#555", fontFamily: "var(--mono,monospace)" }}>{caveat}</div>
+    </div>
+  );
+}
+
+// ── D3. displayMode / orderState banner ──────────────────────────────────
+
+function OperationalStateBanner({ snapshot }: { snapshot: LabStrategySnapshot }) {
+  const mode = snapshot.displayMode ?? "research_only";
+  const orderState = snapshot.orderState ?? "blocked";
+  const brokerWrite = snapshot.brokerWriteAllowed ?? false;
+  const realOrder = snapshot.realOrderAllowed ?? false;
+  const modeConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
+    research_only: { label: "研究階段（非交易）", color: "#888", bg: "rgba(128,128,128,0.05)", border: "rgba(128,128,128,0.2)" },
+    paper: { label: "Paper Trading 模擬", color: "#ffb800", bg: "rgba(255,184,0,0.05)", border: "rgba(255,184,0,0.2)" },
+    shadow: { label: "Shadow Mode", color: "#a78bfa", bg: "rgba(167,139,250,0.05)", border: "rgba(167,139,250,0.2)" },
+    live: { label: "實盤上線", color: "#2ecc71", bg: "rgba(46,204,113,0.05)", border: "rgba(46,204,113,0.2)" },
+  };
+  const cfg = modeConfig[mode] ?? modeConfig["research_only"]!;
+  const orderLabel = orderState === "live_allowed" ? "真實下單開放" : orderState === "paper_allowed" ? "Paper 下單開放" : "下單封鎖";
+  return (
+    <div style={{ padding: "10px 14px", marginBottom: 12, background: cfg.bg, border: `1px solid ${cfg.border}`, borderLeft: `3px solid ${cfg.color}`, borderRadius: 5, display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: cfg.color, letterSpacing: "0.8px", textTransform: "uppercase", fontFamily: "var(--mono,monospace)" }}>{cfg.label}</div>
+      <div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>下單狀態: <span style={{ color: orderState === "blocked" ? "#e63946" : "#2ecc71", fontWeight: 700 }}>{orderLabel}</span></div>
+      {brokerWrite && <div style={{ fontSize: 10, color: "#e63946", fontFamily: "var(--mono,monospace)", fontWeight: 700 }}>BROKER_WRITE=ON</div>}
+      {realOrder && <div style={{ fontSize: 10, color: "#e63946", fontFamily: "var(--mono,monospace)", fontWeight: 700 }}>REAL_ORDER=ON</div>}
     </div>
   );
 }
@@ -408,51 +469,55 @@ function SampleTradesSection({ entries }: { entries: { rebalanceDate: string; ho
   );
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────
+// ── Main export ───────────────────────────────────────────────────────────────────────
 
 export function StrategyChartPanel({ snapshot }: { snapshot: LabStrategySnapshot }) {
   const m = snapshot.headlineMetrics;
-  const capacityWarning = snapshot.uiCopyHints?.warningBanner_zh ?? snapshot.spec.capacityCaveat ?? "\u9700\u6ce8\u610f\u5bb9\u91cf\u9650\u5236\uff0c\u8a73\u898b Athena \u9b4f\u68d2\u6027\u5831\u544a\u3002";
+  const capacityWarning = snapshot.uiCopyHints?.warningBanner_zh ?? snapshot.spec.capacityCaveat ?? "需注意容量限制，詳見 Athena 魏棒性報告。";
   return (
     <>
       <style>{CHART_CSS}</style>
+      {/* D3. Operational state banner */}
+      <OperationalStateBanner snapshot={snapshot} />
       {/* E. Capacity Warning — always visible */}
       <div className="_chart-capacity-banner">
-        <div className="_chart-capacity-label">\u5bb9\u91cf\u8b66\u544a\uff08\u6c38\u9060\u986f\u793a\uff09</div>
+        <div className="_chart-capacity-label">容量警告（永遠顯示）</div>
         {capacityWarning}
       </div>
+      {/* D2. Excess vs 0050 基準比較卡 */}
+      <ExcessVs0050Card metrics={m} spec={snapshot.spec} uiCopyHints={snapshot.uiCopyHints} />
       {/* D. KPI Grid */}
       <div className="_chart-section">
-        <div className="_chart-section-title">\u7e3e\u6548\u95dc\u9375\u6307\u6a19</div>
-        <HeadlineKpiGrid metrics={{ compoundReturn: m.compoundReturn, sharpeAnnualized: m.sharpeAnnualized, sortinoAnnualized: m.sortinoAnnualized, maxDrawdown: m.maxDrawdown, winRate: m.winRate, hitRate: m.hitRate, averageHoldingDays: m.averageHoldingDays }} />
+        <div className="_chart-section-title">績效關鍵指標</div>
+        <HeadlineKpiGrid metrics={m} />
       </div>
       {/* Robustness */}
       <div className="_chart-section">
-        <div className="_chart-section-title">\u56db\u91cd\u9b4f\u68d2\u6027\u71c8\u865f</div>
+        <div className="_chart-section-title">四重魏棒性燈號</div>
         <RobustnessPanel robustness={m.robustness} />
       </div>
       {/* A. Equity Curve */}
       <div className="_chart-section">
-        <div className="_chart-section-title">\u7d2f\u7a4d\u5831\u916c\u6298\u7dda\u5716\uff08Equity Curve\uff09</div>
+        <div className="_chart-section-title">累積報酬折線圖（Equity Curve）</div>
         <EquityCurveChart points={snapshot.equityCurve.points} />
       </div>
       {/* B. Monthly Returns */}
       <div className="_chart-section">
-        <div className="_chart-section-title">\u6708\u5ea6\u5831\u916c\u67f1\u72c0\u5716</div>
+        <div className="_chart-section-title">月度報酬柱狀圖</div>
         <MonthlyReturnsChart bars={snapshot.monthlyReturns.bars} />
       </div>
       {/* C. Drawdown */}
       <div className="_chart-section">
-        <div className="_chart-section-title">\u56de\u64a4\u5716\uff08Drawdown\uff09</div>
+        <div className="_chart-section-title">回撤圖（Drawdown）</div>
         <DrawdownChart
           points={snapshot.drawdownSeries?.points ?? snapshot.equityCurve.points.map((p) => ({ date: p.date, drawdown: p.drawdown }))}
-          maxDrawdown={m.maxDrawdown}
+          maxDrawdown={m.maxDrawdownNetPct ?? m.maxDrawdown}
           maxDrawdownDate={m.maxDrawdownDate}
         />
       </div>
       {/* F. Sample Trades */}
       <div className="_chart-section">
-        <div className="_chart-section-title">\u793a\u7bc4\u518d\u5e73\u8861\u7d00\u9304\uff08Sample Trades\uff09</div>
+        <div className="_chart-section-title">示範再平衡紀錄（Sample Trades）</div>
         <SampleTradesSection entries={snapshot.sampleTrades.entries} />
       </div>
     </>
