@@ -3533,6 +3533,109 @@ app.post("/api/v1/import/my-tw-coverage", async (c) => {
   });
 });
 
+// ── KGI SIM Environment Status + Smoke (/api/v1/kgi/status, /api/v1/kgi/sim/*) ───────────────
+//
+// SIM_ONLY: All endpoints in this block target KGI SIM infrastructure only.
+// KGI_ENV=sim (default) — production write path is permanently hard-blocked.
+//
+// Hard lines:
+//   - prodWriteBlocked always true in all responses
+//   - credentials NEVER in logs, audit payloads, or API responses
+//   - account masked as 9228-***-6, personId masked as F13133****
+//   - SIM_ONLY tag on all responses
+
+import {
+  getKgiSimState,
+  runSimQuoteSmoke,
+  runSimTradeSmoke,
+  resolveKgiEnv,
+} from "./broker/kgi-sim-env.js";
+
+// GET /api/v1/kgi/status — Owner only. Returns KGI env, connection state, SIM smoke results.
+// LITERAL route registered BEFORE any parametric /api/v1/kgi/:* to avoid Hono shadow.
+app.get("/api/v1/kgi/status", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const state = getKgiSimState();
+
+  return c.json({
+    sim_only: true,
+    kgi_env: state.kgiEnv,
+    quote_connected: state.quoteConnected,
+    trade_connected: state.tradeConnected,
+    last_quote_time: state.lastQuoteTime,
+    last_sim_order_status: state.lastSimOrderStatus,
+    last_sim_order_detail: state.lastSimOrderDetail,
+    last_quote_smoke_at: state.lastQuoteSmokeAt,
+    last_trade_smoke_at: state.lastTradeSmokeAt,
+    prod_write_blocked: true, // permanent hard guard — never false
+    sim_quote_host: process.env["KGI_SIM_QUOTE_HOST"] ?? "iquotetest.kgi.com.tw",
+    sim_trade_host: process.env["KGI_SIM_TRADE_HOST"] ?? "itradetest.kgi.com.tw",
+  });
+});
+
+// POST /api/v1/kgi/sim/quote-smoke — Owner only. Run SIM quote smoke (login, subscribe 0050, receive tick).
+// Writes audit log action='kgi.sim.quote_smoke'.
+app.post("/api/v1/kgi/sim/quote-smoke", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const env = resolveKgiEnv();
+  if (env !== "sim") {
+    return c.json({
+      error: "NOT_SIM_ENV",
+      message: `KGI_ENV=${env}. Quote smoke only runs in sim mode.`,
+      prod_write_blocked: true,
+    }, 409);
+  }
+
+  let body: { symbol?: string } = {};
+  try { body = await c.req.json(); } catch { body = {}; }
+
+  const result = await runSimQuoteSmoke({
+    workspaceId: session.workspace.id,
+    symbol: typeof body.symbol === "string" ? body.symbol : "0050",
+  });
+
+  return c.json({ sim_only: true, data: result });
+});
+
+// POST /api/v1/kgi/sim/trade-smoke — Owner only. Run SIM trade smoke (submit 1 odd-lot order).
+// Requires confirmedByBruce=true AND confirmedByJason=true in body (dual-confirm).
+// Writes audit log action='kgi.sim.trade_smoke'.
+app.post("/api/v1/kgi/sim/trade-smoke", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const env = resolveKgiEnv();
+  if (env !== "sim") {
+    return c.json({
+      error: "NOT_SIM_ENV",
+      message: `KGI_ENV=${env}. Trade smoke only runs in sim mode.`,
+      prod_write_blocked: true,
+    }, 409);
+  }
+
+  let body: { symbol?: string; confirmedByBruce?: boolean; confirmedByJason?: boolean } = {};
+  try { body = await c.req.json(); } catch { body = {}; }
+
+  const result = await runSimTradeSmoke({
+    workspaceId: session.workspace.id,
+    symbol: typeof body.symbol === "string" ? body.symbol : "0050",
+    confirmedByBruce: body.confirmedByBruce === true,
+    confirmedByJason: body.confirmedByJason === true,
+  });
+
+  return c.json({ sim_only: true, data: result });
+});
+
 // ── KGI Quote proxy (/api/v1/kgi/quote/*) ────────────────────────────────────
 //
 // W2d: read-only consumption of gateway quote data.
