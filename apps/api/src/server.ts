@@ -7334,113 +7334,70 @@ app.get("/api/v1/lab/three-strategy/snapshot", async (c) => {
 // =============================================================================
 // BLOCK #10 — GET /api/v1/lab/strategy/:strategyId/snapshot
 // =============================================================================
-// Per-strategy snapshot consumer (Lab → TR Stage 1, Athena ACK locked 2026-05-09).
-//
-// Fetches static JSON from GitHub raw URL with 30s ETag cache + 5s timeout +
-// circuit breaker (3 fails → 60s backoff). Stale cache served on error.
-//
-// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES, same as three-strategy endpoints)
-//
-// Schema: lab_tr_strategy_snapshot_v0 (§2 of dm_2026_05_09_lab_tr_strategy_snapshot_endpoint_v0.md)
-//
-// Hard lines:
-//   - strategyId must be in ALLOWED_STRATEGY_IDS (cont_liq_v36 / strategy_002 / strategy_003)
-//   - No broker write / no risk mutation / no migration
-//   - stale_reason always surfaced on error — never silent fail
-//   - Circuit open → 503 with stale cache (if available) or 404
-//   - sampleTrades source field enforced by Lab JSON schema (A4 ACK)
+// Updated 2026-05-12 (Codex v46): applies mapSnapshotToV46() to normalise
+// common-window fields. benchmark0050ReturnPct = ONE shared number across all 3 strategies.
+// Hard lines: no fake data; missing fields -> null; no broker write; no compoundReturnNetOfBenchmark.
 // =============================================================================
+
+function mapSnapshotToV46(raw: Record<string, unknown>): Record<string, unknown> {
+  const m = (typeof raw["headlineMetrics"] === "object" && raw["headlineMetrics"] !== null
+    ? raw["headlineMetrics"] : {}) as Record<string, unknown>;
+  const strategyNetAbsoluteReturnPct = typeof m["strategyNetAbsoluteReturnPct"] === "number" ? m["strategyNetAbsoluteReturnPct"] : null;
+  const benchmark0050ReturnPct = typeof m["benchmark0050ReturnPct"] === "number" ? m["benchmark0050ReturnPct"] : null;
+  const excessVs0050Pp = typeof m["excessVs0050Pp"] === "number" ? m["excessVs0050Pp"]
+    : (strategyNetAbsoluteReturnPct !== null && benchmark0050ReturnPct !== null)
+      ? strategyNetAbsoluteReturnPct - benchmark0050ReturnPct : null;
+  const hitRatePct = typeof m["hitRatePct"] === "number" ? m["hitRatePct"] : typeof m["hitRate"] === "number" ? m["hitRate"] : null;
+  const maxDrawdownNetPct = typeof m["maxDrawdownNetPct"] === "number" ? m["maxDrawdownNetPct"] : typeof m["maxDrawdown"] === "number" ? m["maxDrawdown"] : null;
+  const maxDrawdownInternalExcessPct = typeof m["maxDrawdownInternalExcessPct"] === "number" ? m["maxDrawdownInternalExcessPct"] : null;
+  const estimatedEntryTicketCount = typeof m["estimatedEntryTicketCount"] === "number" ? m["estimatedEntryTicketCount"] : null;
+  const compoundReturn = typeof m["compoundReturn"] === "number" ? m["compoundReturn"] : null;
+  if (compoundReturn !== null && strategyNetAbsoluteReturnPct === null) {
+    console.warn("[lab-snapshot] mapSnapshotToV46: compoundReturn present but strategyNetAbsoluteReturnPct missing (pre-v46 JSON). Using compoundReturn as deprecated fallback.");
+  }
+  const displayMode = typeof raw["displayMode"] === "string" ? raw["displayMode"] : "research_only";
+  const orderState = typeof raw["orderState"] === "string" ? raw["orderState"] : "blocked";
+  const brokerWriteAllowed = raw["brokerWriteAllowed"] === true;
+  const realOrderAllowed = raw["realOrderAllowed"] === true;
+  const registryChangeAllowed = raw["registryChangeAllowed"] === true;
+  const mappedMetrics: Record<string, unknown> = {
+    ...m,
+    ...(strategyNetAbsoluteReturnPct !== null && { strategyNetAbsoluteReturnPct }),
+    ...(benchmark0050ReturnPct !== null && { benchmark0050ReturnPct }),
+    ...(excessVs0050Pp !== null && { excessVs0050Pp }),
+    ...(hitRatePct !== null && { hitRatePct }),
+    ...(maxDrawdownNetPct !== null && { maxDrawdownNetPct }),
+    ...(maxDrawdownInternalExcessPct !== null && { maxDrawdownInternalExcessPct }),
+    ...(estimatedEntryTicketCount !== null && { estimatedEntryTicketCount }),
+    ...(compoundReturn !== null && { compoundReturn }),
+    // compoundReturnNetOfBenchmark intentionally NOT passed through (v46 removed)
+  };
+  return { ...raw, displayMode, orderState, brokerWriteAllowed, realOrderAllowed, registryChangeAllowed, headlineMetrics: mappedMetrics, _v46Mapped: true };
+}
 
 app.get("/api/v1/lab/strategy/:strategyId/snapshot", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const strategyId = c.req.param("strategyId");
-  const {
-    ALLOWED_STRATEGY_IDS,
-    fetchStrategySnapshot,
-    getSnapshotFromCacheOnly
-  } = await import("./lab-strategy-snapshot-fetcher.js");
-
+  const { ALLOWED_STRATEGY_IDS, fetchStrategySnapshot, getSnapshotFromCacheOnly } = await import("./lab-strategy-snapshot-fetcher.js");
   if (!ALLOWED_STRATEGY_IDS.has(strategyId)) {
-    return c.json(
-      {
-        error: "unknown_strategy_id",
-        reason: `strategyId "${strategyId}" is not in the allowed set`,
-        allowed: [...ALLOWED_STRATEGY_IDS],
-        lab_repo_path: `reports/trading_room/strategy_snapshots/${strategyId}_snapshot_v0.json`
-      },
-      404
-    );
+    return c.json({ error: "unknown_strategy_id", reason: `strategyId "${strategyId}" is not in the allowed set`, allowed: [...ALLOWED_STRATEGY_IDS], lab_repo_path: `reports/trading_room/strategy_snapshots/${strategyId}_snapshot_v0.json` }, 404);
   }
-
   const session = c.get("session");
-  const auditCtx = {
-    workspaceId: session.workspace.id,
-    actorId: session.user.id
-  };
-
-  // Short-circuit: serve from in-process cache if within TTL (no HTTP)
+  const auditCtx = { workspaceId: session.workspace.id, actorId: session.user.id };
   const cached = getSnapshotFromCacheOnly(strategyId);
-  if (cached) {
-    return c.json(
-      {
-        schema: "lab_tr_strategy_snapshot_v0",
-        strategyId,
-        snapshot: cached.snapshot,
-        cache_hit: true,
-        stale_reason: null,
-        fetched_at: cached.fetched_at
-      },
-      200
-    );
+  if (cached && cached.snapshot) {
+    return c.json({ schema: "lab_tr_strategy_snapshot_v0", strategyId, snapshot: mapSnapshotToV46(cached.snapshot as Record<string, unknown>), cache_hit: true, stale_reason: null, fetched_at: cached.fetched_at }, 200);
   }
-
-  // Fetch from GitHub raw URL (ETag-aware, circuit-protected)
   const result = await fetchStrategySnapshot(strategyId, auditCtx);
-
-  if (result.ok) {
-    return c.json(
-      {
-        schema: "lab_tr_strategy_snapshot_v0",
-        strategyId,
-        snapshot: result.snapshot,
-        cache_hit: result.cache_hit,
-        stale_reason: null,
-        fetched_at: result.fetched_at
-      },
-      200
-    );
+  if (result.ok && result.snapshot) {
+    return c.json({ schema: "lab_tr_strategy_snapshot_v0", strategyId, snapshot: mapSnapshotToV46(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: null, fetched_at: result.fetched_at }, 200);
   }
-
-  // Error path: stale cache available → 200 with stale metadata
   if (result.snapshot !== null) {
-    return c.json(
-      {
-        schema: "lab_tr_strategy_snapshot_v0",
-        strategyId,
-        snapshot: result.snapshot,
-        cache_hit: result.cache_hit,
-        stale_reason: result.stale_reason,
-        fetched_at: result.fetched_at
-      },
-      200
-    );
+    return c.json({ schema: "lab_tr_strategy_snapshot_v0", strategyId, snapshot: mapSnapshotToV46(result.snapshot as Record<string, unknown>), cache_hit: result.cache_hit, stale_reason: result.stale_reason, fetched_at: result.fetched_at }, 200);
   }
-
-  // No cache at all → 503 (circuit) or 404 (not found)
-  const statusCode =
-    result.stale_reason === "snapshot_not_found" ? 404 : 503;
-  return c.json(
-    {
-      error: result.stale_reason,
-      strategyId,
-      snapshot: null,
-      cache_hit: false,
-      lab_repo_path: `reports/trading_room/strategy_snapshots/${strategyId}_snapshot_v0.json`
-    },
-    statusCode
-  );
+  const statusCode = result.stale_reason === "snapshot_not_found" ? 404 : 503;
+  return c.json({ error: result.stale_reason, strategyId, snapshot: null, cache_hit: false, lab_repo_path: `reports/trading_room/strategy_snapshots/${strategyId}_snapshot_v0.json` }, statusCode);
 });
 
 // =============================================================================

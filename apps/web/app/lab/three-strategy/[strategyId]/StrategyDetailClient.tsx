@@ -37,7 +37,19 @@ const CONT_LIQ_V36_SNAPSHOT: LabStrategySnapshot = {
   displayName: "Continuous Liquidity Relative Strength",
   displayName_zh: "\u6301\u7e8c\u6d41\u52d5\u6027 + \u76f8\u5c0d\u5f37\u5f31",
   status: "PAPER_LIVE_PROPOSED",
+  displayMode: "research_only",
+  orderState: "blocked",
+  brokerWriteAllowed: false,
+  realOrderAllowed: false,
+  registryChangeAllowed: false,
   headlineMetrics: {
+    strategyNetAbsoluteReturnPct: 2.2202,
+    benchmark0050ReturnPct: 0.3840,
+    excessVs0050Pp: 2.2202 - 0.3840,
+    hitRatePct: 0.9231,
+    maxDrawdownNetPct: -0.1051,
+    maxDrawdownInternalExcessPct: -0.0737,
+    estimatedEntryTicketCount: 4,
     compoundReturn: 2.2202, sharpeAnnualized: 3.027, sortinoAnnualized: 3.912,
     maxDrawdown: -0.1051, maxDrawdownDate: "2025-05-29",
     winRate: 0.8462, hitRate: 0.9231, averageHoldingDays: 20,
@@ -101,10 +113,16 @@ const CONT_LIQ_V36_SNAPSHOT: LabStrategySnapshot = {
     { rebalanceDate: "2026-02-25", exitDateApprox: "2026-02-25", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.2285, netReturn120bps: 0.2195, benchmarkReturn: 0.0128, excessReturn120bps: 0.2067, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
     { rebalanceDate: "2026-03-26", exitDateApprox: "2026-03-26", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.3139, netReturn120bps: 0.3049, benchmarkReturn: 0.1772, excessReturn120bps: 0.1278, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
   ]},
-  spec: { capacityCaveat: "Requires liquid pool >= 50 names by 20d dollar volume; alpha degrades sharply below K=40 (v40 evidence)." },
-  uiCopyHints: { warningBanner_zh: "\u7b56\u7565\u9700 \u226550 \u6a94\u6d41\u52d5\u6027 universe\uff1b\u8cc7\u91d1\u904e\u5ea6\u96c6\u4e2d\u65bc <40 \u6a94\u6642 alpha \u5931\u6548" },
+  spec: {
+    capacityCaveat: "Requires liquid pool >= 50 names by 20d dollar volume; alpha degrades sharply below K=40 (v40 evidence).",
+    commonWindowStart: "2024-05-30",
+    commonWindowEnd: "2026-03-26",
+  },
+  uiCopyHints: {
+    warningBanner_zh: "策略需 ≥50 檔流動性 universe；資金過度集中於 <40 檔時 alpha 失效",
+    commonWindowCaveat_zh: "基準為 0050，同一時間窗口（2024-05-30 → 2026-03-26）一個共同數字，三大策略共用。假設 0050 基準報酬 38.40%，尚待 Codex v46 確認。",
+  },
 };
-
 const STAGE2_SNAPSHOTS: Record<string, LabStrategySnapshot> = {
   // Long canonical ID
   "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": CONT_LIQ_V36_SNAPSHOT,
