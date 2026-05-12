@@ -21,6 +21,7 @@ import {
 } from "@/lib/api";
 import { ContLiqPeriod1Panel } from "./ContLiqPeriod1Panel";
 import type { HoldingEntryInput } from "./ContLiqPeriod1Panel";
+import { ContLiqHistoricalEvidencePanel } from "./ContLiqHistoricalEvidencePanel";
 
 export const dynamic = "force-dynamic";
 
@@ -115,10 +116,14 @@ export default async function ContLiqV36Period1Page() {
       sub={`Day-0: ${DAY0} · Holdings: ${TICKERS.join(" / ")} · 預期退出: 2026-06-03 · ${entryDataNote}`}
       note="研究前向觀察記錄。不顯示已驗證、approved、可上線或任何背書字樣。非交易建議。"
     >
+      {/* A 區 — Forward Observation Period 1 */}
       <ContLiqPeriod1Panel
         holdings={holdingResults}
         bench0050EntryPrice={bench0050Entry}
       />
+
+      {/* B 區 — 歷史研究證據 (hardcode Codex v46 verbatim numbers) */}
+      <ContLiqHistoricalEvidencePanel />
 
       <div style={{ marginTop: 28, display: "flex", gap: 16, alignItems: "center" }}>
         <Link
