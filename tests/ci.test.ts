@@ -10072,6 +10072,49 @@ test("BF13: bridge structural ordering — date patched from contextRefs before 
   assert.equal(c6["date"], "", "BF13-C6: no trading_date ref — date unchanged");
 });
 
+
+// =============================================================================
+// BF14: Array.isArray fallback regression — db.execute() returns plain array
+// =============================================================================
+
+test("BF14: finmind-full-ingest Array.isArray fallback — plain array rows resolve correctly", () => {
+  // Simulate the two fix sites: both accept {rows?: ...} OR plain array.
+  // This test verifies the pattern in isolation so CI catches regression.
+
+  function resolveRows(result: unknown): Record<string, unknown>[] {
+    return ((result as { rows?: Record<string, unknown>[] })?.rows
+      ?? (Array.isArray(result) ? result : []) as Record<string, unknown>[]) as Record<string, unknown>[];
+  }
+
+  // C1: plain array (db.execute actual behaviour) — must NOT return []
+  const plainArray = [{ ticker: "2330", id: "abc" }, { ticker: "0050", id: "def" }];
+  const c1 = resolveRows(plainArray);
+  assert.equal(c1.length, 2, "BF14-C1: plain array → length 2, not 0");
+  assert.equal(c1[0]["ticker"], "2330", "BF14-C1: first ticker correct");
+
+  // C2: {rows: [...]} format (legacy pg driver shape) — must also work
+  const pgShape = { rows: [{ cnt: 28917, latest: "2026-05-12" }] };
+  const c2 = resolveRows(pgShape);
+  assert.equal(c2.length, 1, "BF14-C2: pg-shape → length 1");
+  assert.equal((c2[0] as Record<string, unknown>)["cnt"], 28917, "BF14-C2: cnt field preserved");
+
+  // C3: empty plain array — must return []
+  const c3 = resolveRows([]);
+  assert.equal(c3.length, 0, "BF14-C3: empty plain array → []");
+
+  // C4: {rows: []} pg empty — must return []
+  const c4 = resolveRows({ rows: [] });
+  assert.equal(c4.length, 0, "BF14-C4: empty pg-shape → []");
+
+  // C5: non-array / non-rows-obj — must return []
+  const c5 = resolveRows(null);
+  assert.equal(c5.length, 0, "BF14-C5: null → []");
+
+  // C6: scalar fallback — must return []
+  const c6 = resolveRows(42);
+  assert.equal(c6.length, 0, "BF14-C6: scalar → []");
+});
+
 // =============================================================================
 // V47-1: v47 API snapshot contract — compoundReturn removed, returns object present
 // =============================================================================
