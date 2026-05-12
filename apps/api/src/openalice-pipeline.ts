@@ -32,11 +32,14 @@ import {
   dailyBriefs,
   getDb,
   isDatabaseMode,
+  openAliceDevices,
   workspaces
 } from "@iuf-trading-room/db";
 
 import { enqueueOpenAliceJob } from "./openalice-bridge.js";
 import { fireAiReviewerForDraft } from "./openalice-ai-reviewer.js";
+import { createContentDraft, dailyBriefPayloadSchema } from "./content-draft-store.js";
+import { callOpenAi, MODEL_ROUTINE, stripCodeFences } from "./openai-quota-guard.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -572,8 +575,189 @@ async function collectTableSource(
 
 // ── Generator ─────────────────────────────────────────────────────────────────
 
+const OPENALICE_ACTIVE_DEVICE_SECONDS = Number(
+  process.env["OPENALICE_ACTIVE_DEVICE_SECONDS"] ?? 5 * 60
+);
+
+async function hasActiveOpenAliceDevice(workspaceId: string): Promise<boolean> {
+  if (!isDatabaseMode()) return false;
+  const db = getDb();
+  if (!db) return false;
+
+  const cutoff = new Date(Date.now() - OPENALICE_ACTIVE_DEVICE_SECONDS * 1000);
+  const rows = await db
+    .select({ id: openAliceDevices.id })
+    .from(openAliceDevices)
+    .where(
+      and(
+        eq(openAliceDevices.workspaceId, workspaceId),
+        eq(openAliceDevices.status, "active"),
+        gte(openAliceDevices.lastSeenAt, cutoff)
+      )
+    )
+    .limit(1)
+    .catch(() => []);
+
+  return rows.length > 0;
+}
+
+function trimForBrief(value: string, max = 1_200): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
+}
+
+function buildSourcePackContext(sourcePack: SourcePack): string {
+  return sourcePack.sources
+    .map((source) => {
+      const sample = source.sampleRows?.length
+        ? `\n    sample=${trimForBrief(JSON.stringify(source.sampleRows), 600)}`
+        : "";
+      return [
+        `- ${source.source}`,
+        `status=${source.status}`,
+        `rows=${source.rowCount ?? "n/a"}`,
+        `latest=${source.latestDate ?? "n/a"}`,
+        source.note ? `note=${source.note}` : null,
+        sample
+      ]
+        .filter(Boolean)
+        .join(" | ");
+    })
+    .join("\n");
+}
+
+function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<string, unknown> {
+  const liveSources = sourcePack.sources.filter((source) => source.status === "LIVE");
+  const staleSources = sourcePack.sources.filter((source) => source.status === "STALE" || source.status === "DEGRADED");
+  const blockedSources = sourcePack.sources.filter((source) =>
+    source.status === "EMPTY" ||
+    source.status === "BLOCKED" ||
+    source.status === "ERROR" ||
+    source.status === "MISSING"
+  );
+
+  const liveLine = liveSources.length
+    ? liveSources.map((source) => `${source.source}（${source.rowCount ?? "n/a"} 筆，最新 ${source.latestDate ?? "未標示"}）`).join("、")
+    : "目前沒有足夠的新鮮來源可列為主要依據";
+  const staleLine = staleSources.length
+    ? staleSources.map((source) => `${source.source}（最新 ${source.latestDate ?? "未標示"}）`).join("、")
+    : "沒有明顯過期來源";
+  const blockedLine = blockedSources.length
+    ? blockedSources.map((source) => `${source.source}（${source.note ?? source.status}）`).join("、")
+    : "沒有主要資料缺口";
+
+  return dailyBriefPayloadSchema.parse({
+    date: sourcePack.tradingDate,
+    marketState: "Balanced",
+    sections: [
+      {
+        heading: "今日資料狀態",
+        body: `本簡報依 ${sourcePack.tradingDate} 可取得的台股資料整理。可用來源：${liveLine}。資料不足或過期來源不會被當成投資依據。`
+      },
+      {
+        heading: "資料品質提醒",
+        body: `需要留意的資料狀態：${staleLine}。缺口狀態：${blockedLine}。因此本日解讀以資料完整性與風控檢查為優先。`
+      },
+      {
+        heading: "作業建議",
+        body: "今日先確認市場資料、重大訊息、紙上交易紀錄與策略研究批次是否同步完成；本系統不提供買賣建議，也不以未驗證績效作為決策依據。"
+      }
+    ]
+  });
+}
+
+function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(stripCodeFences(raw)) as {
+      marketState?: unknown;
+      sections?: unknown;
+    };
+    const marketState =
+      parsed.marketState === "Risk-On" ||
+      parsed.marketState === "Risk-Off" ||
+      parsed.marketState === "Balanced"
+        ? parsed.marketState
+        : "Balanced";
+    const sections = Array.isArray(parsed.sections)
+      ? parsed.sections
+          .map((section) => {
+            const value = section as { heading?: unknown; body?: unknown };
+            const heading = typeof value.heading === "string" ? trimForBrief(value.heading, 80) : "";
+            const body = typeof value.body === "string" ? trimForBrief(value.body, 1_400) : "";
+            return { heading, body };
+          })
+          .filter((section) => section.heading.length > 0 && section.body.length >= 50)
+          .slice(0, 6)
+      : [];
+
+    if (sections.length === 0) return null;
+
+    return dailyBriefPayloadSchema.parse({
+      date: sourcePack.tradingDate,
+      marketState,
+      sections
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function generateDirectDailyBriefDraft(input: {
+  workspaceId: string;
+  sourcePack: SourcePack;
+  reason: "no_active_openalice_device" | "enqueue_failed";
+}): Promise<{ draftId: string } | null> {
+  const sourceContext = buildSourcePackContext(input.sourcePack);
+  const prompt = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列真實資料狀態產生繁體中文 JSON。
+
+硬規則：
+- 只能輸出 JSON，不要 markdown。
+- 不提供買賣建議、不寫目標價、不保證報酬、不提勝率或績效承諾。
+- 不臆測資料來源沒有提供的新聞或事件。
+- 若資料不足，直接寫成資料品質提醒。
+- date 必須等於 ${input.sourcePack.tradingDate}。
+
+輸出 schema：
+{
+  "marketState": "Risk-On" | "Balanced" | "Risk-Off",
+  "sections": [
+    { "heading": "章節標題", "body": "至少 50 字，最多 1200 字" }
+  ]
+}
+
+資料狀態：
+${sourceContext}`;
+
+  const raw = await callOpenAi({
+    model: MODEL_ROUTINE,
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 1_200,
+    temperature: 0.2,
+    label: "daily_brief_direct_generator",
+    timeoutMs: 25_000
+  });
+
+  const payload = parseDirectBriefPayload(raw, input.sourcePack) ?? buildSourceOnlyBriefPayload(input.sourcePack);
+
+  const draft = await createContentDraft({
+    workspaceId: input.workspaceId,
+    sourceJobId: null,
+    targetTable: "daily_briefs",
+    targetEntityId: input.sourcePack.tradingDate,
+    payload,
+    producerVersion: `pipeline-direct-${input.reason}-v1`
+  });
+
+  if (!draft) return null;
+
+  await fireAiReviewerForDraft(draft.id);
+  return { draftId: draft.id };
+}
+
 async function generateDailyBrief(
   workspaceSlug: string,
+  workspaceId: string,
   sourcePack: SourcePack
 ): Promise<{ jobId: string } | null> {
   const sourcesSummary = sourcePack.sources
@@ -599,6 +783,18 @@ Rules (STRICT — any violation → reject):
 - NEVER include metadata tokens such as [BROKEN-N], [DEPRECATED], [ORPHAN], or [placeholder] in any output field. These are internal DB maintenance markers and must not appear in published content.
 
 Output schema: daily_brief_v1`;
+
+  const activeDevice = await hasActiveOpenAliceDevice(workspaceId);
+  if (!activeDevice) {
+    const directDraft = await generateDirectDailyBriefDraft({
+      workspaceId,
+      sourcePack,
+      reason: "no_active_openalice_device"
+    });
+    if (directDraft) {
+      return { jobId: `direct:${directDraft.draftId}` };
+    }
+  }
 
   try {
     const job = await enqueueOpenAliceJob({
@@ -636,7 +832,12 @@ Output schema: daily_brief_v1`;
     return { jobId: job.jobId };
   } catch (e) {
     console.error("[pipeline] enqueueOpenAliceJob failed:", e instanceof Error ? e.message : String(e));
-    return null;
+    const directDraft = await generateDirectDailyBriefDraft({
+      workspaceId,
+      sourcePack,
+      reason: "enqueue_failed"
+    });
+    return directDraft ? { jobId: `direct:${directDraft.draftId}` } : null;
   }
 }
 
@@ -1110,7 +1311,7 @@ export async function evaluatePipelinePublishGate(
     ? (auditPayload.flagged_issues as unknown[]).length
     : 0;
 
-  // 5/12 FIX: When sourcePack is null (process restarted — in-memory jobId→pack cache
+  // 5/12 FIX (Part 1): When sourcePack is null (process restarted — in-memory jobId→pack cache
   // cleared between generation and review), the fallback pack has trailComplete=false which
   // blocks an AI-approved brief from publishing. Resolution: if reviewer approved with
   // high confidence and no flagged issues, treat as trail-complete for gate purposes.
@@ -1123,6 +1324,17 @@ export async function evaluatePipelinePublishGate(
     (confidence ?? 0) >= 0.7 &&
     flaggedIssueCount === 0;
 
+  // 5/12 FIX (Part 2): When sourcePack exists but all sources report EMPTY status
+  // (weekend / public holiday — no OHLCV, no institutional data), trailComplete=false
+  // because collectSourcePack requires OHLCV to be LIVE or STALE, not EMPTY.
+  // On a non-trading day this is correct data absence, not a data quality failure.
+  // If reviewer approved with confidence>=0.7 and 0 flagged issues, treat as
+  // trail-complete so the AI-reviewed brief can publish rather than being silently blocked.
+  const sourcePackAllSourcesEmpty =
+    sourcePack !== null &&
+    sourcePack.sources.length > 0 &&
+    sourcePack.sources.every((s) => s.status === "EMPTY");
+
   const effectivePack: SourcePack = sourcePack ?? {
     packId: "fallback",
     tick: "close_brief",
@@ -1134,8 +1346,22 @@ export async function evaluatePipelinePublishGate(
     trailComplete: sourcePaGkWasLost && reviewerGrantsPublish ? true : false
   };
 
+  // Apply empty-source override: if pack exists but all-EMPTY and reviewer grants publish,
+  // patch effectivePack.trailComplete so the gate condition passes.
+  const applyEmptySourceOverride = sourcePackAllSourcesEmpty && reviewerGrantsPublish;
+  if (applyEmptySourceOverride) {
+    console.info(
+      `[pipeline-gate] Empty-source override applied for draftId=${draftId}: ` +
+      `all ${sourcePack!.sources.length} source(s) are EMPTY (weekend/holiday), ` +
+      `reviewer approved with confidence=${confidence?.toFixed(2)} flagged=${flaggedIssueCount} — treating trailComplete=true`
+    );
+  }
+  const gatePack: SourcePack = applyEmptySourceOverride
+    ? { ...effectivePack, trailComplete: true }
+    : effectivePack;
+
   const gate = evaluatePublishGate({
-    sourcePack: effectivePack,
+    sourcePack: gatePack,
     reviewerVerdict: verdict,
     confidence,
     flaggedIssueCount,
