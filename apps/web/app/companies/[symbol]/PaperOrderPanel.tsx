@@ -31,8 +31,8 @@ import {
   paperRiskMessageLabel,
 } from "@/lib/paper-order-vocab";
 
-// Demo capital constant — must match DEMO_CAPITAL_TWD in order-intent.ts.
-const DEMO_CAPITAL_TWD = 20_000;
+// Demo capital constant — must match PAPER_BROKER_INITIAL_CASH in Railway env (default 10,000,000).
+const DEMO_CAPITAL_TWD = 10_000_000;
 
 type PaperSide = PaperOrderInput["side"];
 type PaperOrderType = PaperOrderInput["orderType"];
