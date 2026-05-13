@@ -776,6 +776,54 @@ async function tryPublishSourceOnlyBackfillDraft(input: {
   };
 }
 
+/**
+ * Post-process guard: if LLM outputs an English-heavy heading, replace with a
+ * safe Chinese fallback. Prevents "Market Overview" etc. from reaching the frontend
+ * isEnglishHeavy() detector and triggering the fallback copy.
+ *
+ * Known English headings are mapped to canonical Chinese equivalents.
+ * Any unrecognised English-heavy heading falls back to "今日市場簡報".
+ */
+const ENGLISH_HEADING_MAP: Record<string, string> = {
+  "market overview": "市場總覽",
+  "technical analysis": "技術觀察",
+  "risk alert": "風控警示",
+  "risk alerts": "風控警示",
+  "strategy observation": "策略觀察",
+  "strategy observations": "策略觀察",
+  "signal today": "今日訊號狀態",
+  "signals today": "今日訊號狀態",
+  "today's signals": "今日訊號狀態",
+  "summary": "綜合觀察",
+  "market summary": "市場總覽",
+  "daily summary": "每日簡報摘要",
+  "data status": "今日資料狀態",
+  "data quality": "資料品質提醒",
+  "commentary": "綜合觀察",
+  "next steps": "下一步工作",
+  "overview": "總覽",
+  "institutional flow": "法人動向",
+  "sector analysis": "類股分析",
+  "sector overview": "類股總覽",
+};
+
+function sanitizeBriefHeading(raw: string): string {
+  const trimmed = raw.trim();
+  const lower = trimmed.toLowerCase();
+  if (ENGLISH_HEADING_MAP[lower]) {
+    console.warn(`[pipeline] brief heading English fallback: "${trimmed}" → "${ENGLISH_HEADING_MAP[lower]}"`);
+    return ENGLISH_HEADING_MAP[lower];
+  }
+  // Detect English-heavy heading: >= 8 alpha chars AND more latin than CJK
+  const latin = (trimmed.match(/[A-Za-z]/g) ?? []).length;
+  const cjk = (trimmed.match(/[一-鿿]/g) ?? []).length;
+  if (latin >= 8 && latin > cjk) {
+    console.warn(`[pipeline] brief heading English-heavy detected: "${trimmed}" → "今日市場簡報"`);
+    return "今日市場簡報";
+  }
+  return trimmed;
+}
+
 function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Record<string, unknown> | null {
   if (!raw) return null;
   try {
@@ -793,7 +841,8 @@ function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Re
       ? parsed.sections
           .map((section) => {
             const value = section as { heading?: unknown; body?: unknown };
-            const heading = typeof value.heading === "string" ? trimForBrief(value.heading, 80) : "";
+            const rawHeading = typeof value.heading === "string" ? trimForBrief(value.heading, 80) : "";
+            const heading = rawHeading ? sanitizeBriefHeading(rawHeading) : "";
             const body = typeof value.body === "string" ? trimForBrief(value.body, 1_400) : "";
             return { heading, body };
           })
@@ -821,18 +870,22 @@ async function generateDirectDailyBriefDraft(input: {
   const sourceContext = buildSourcePackContext(input.sourcePack);
   const prompt = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列真實資料狀態產生繁體中文 JSON。
 
-硬規則：
+硬規則（任何違反 → 退件）：
 - 只能輸出 JSON，不要 markdown。
+- 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
+- heading 範例：「市場總覽」/「技術觀察」/「風控警示」/「策略觀察」/「今日資料狀態」/「資料品質提醒」/「下一步工作」。
 - 不提供買賣建議、不寫目標價、不保證報酬、不提勝率或績效承諾。
 - 不臆測資料來源沒有提供的新聞或事件。
-- 若資料不足，直接寫成資料品質提醒。
+- 若資料不足，直接寫成資料品質提醒（中文）。
 - date 必須等於 ${input.sourcePack.tradingDate}。
 
 輸出 schema：
 {
   "marketState": "Risk-On" | "Balanced" | "Risk-Off",
   "sections": [
-    { "heading": "章節標題", "body": "至少 50 字，最多 1200 字" }
+    { "heading": "市場總覽", "body": "至少 50 字，最多 1200 字" },
+    { "heading": "技術觀察", "body": "至少 50 字，最多 1200 字" },
+    { "heading": "風控警示", "body": "至少 50 字，最多 1200 字" }
   ]
 }
 
@@ -907,23 +960,24 @@ async function generateDailyBrief(
     .map((s) => `  - ${s.source}: ${s.status} (rows=${s.rowCount ?? "n/a"}, latestDate=${s.latestDate ?? "n/a"})`)
     .join("\n");
 
-  const instructions = `Generate a structured daily brief for Taiwan stock market date ${sourcePack.tradingDate}.
-Tick context: ${sourcePack.tick}.
-Source pack ID: ${sourcePack.packId}.
-Trail complete: ${sourcePack.trailComplete}.
+  const instructions = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列資料狀態，產生台灣股市 ${sourcePack.tradingDate} 的每日簡報（繁體中文 JSON）。
+交易日：${sourcePack.tradingDate}。Tick context: ${sourcePack.tick}。Source pack ID: ${sourcePack.packId}。Trail complete: ${sourcePack.trailComplete}.
 
-Available data sources:
+可用資料來源：
 ${sourcesSummary}
 
-Rules (STRICT — any violation → reject):
-- Do NOT generate buy/sell/進場/賣出/買進/出脫 recommendations.
-- Do NOT include price targets (目標價) or guarantees (必賺/保證).
-- Do NOT hallucinate news events without source URLs.
-- Mark each section clearly if data was MISSING/DEGRADED.
-- date field MUST equal "${sourcePack.tradingDate}".
-- Each section body MUST be >= 50 characters.
-- Only reference data that exists in the source pack above.
-- NEVER include metadata tokens such as [BROKEN-N], [DEPRECATED], [ORPHAN], or [placeholder] in any output field. These are internal DB maintenance markers and must not appear in published content.
+硬規則（任何違反 → 退件）：
+- 只輸出 JSON，不要 markdown。
+- 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
+- heading 範例：「市場總覽」/「技術觀察」/「風控警示」/「策略觀察」/「今日資料狀態」/「資料品質提醒」。
+- 禁止買賣建議、禁止進場/賣出/買進/出脫。
+- 禁止目標價（目標價）或報酬承諾（必賺/保證）。
+- 禁止臆測資料來源未提供的新聞或事件，禁止無來源 URL 的新聞。
+- 若資料不足，直接寫成資料品質提醒（中文）。
+- date 欄位必須等於 "${sourcePack.tradingDate}"。
+- 每個 section body 至少 50 字。
+- 只引用上方資料包中存在的資料。
+- 禁止在任何輸出欄位中出現 [BROKEN-N]、[DEPRECATED]、[ORPHAN]、[placeholder] 等內部 DB 維護標記。
 
 Output schema: daily_brief_v1`;
 

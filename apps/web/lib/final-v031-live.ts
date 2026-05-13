@@ -16,7 +16,7 @@ import type { StrategyIdeasView } from "@iuf-trading-room/contracts";
 import {
   getKgiPositions,
   getPaperHealth,
-  getPaperPortfolio,
+  getPaperPortfolioRaw,
   listPaperFills,
   listPaperOrders,
   type KgiPositionsResponse,
@@ -274,9 +274,9 @@ function latestOhlcv(ohlcv: OhlcvBar[]) {
 }
 
 async function buildPaperPayload() {
-  const [healthResult, portfolioResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.allSettled([
+  const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.allSettled([
     getPaperHealth(),
-    getPaperPortfolio(),
+    getPaperPortfolioRaw(),
     listPaperFills(),
     listPaperOrders(),
     getKgiPositions(),
@@ -284,7 +284,9 @@ async function buildPaperPayload() {
   ]);
 
   const health = okValue<PaperHealthState | null>(healthResult, null);
-  const portfolio = okValue<PaperPortfolioPosition[]>(portfolioResult, []);
+  const portfolioRaw = okValue(portfolioRawResult, { positions: [] as PaperPortfolioPosition[], summary: { baseCapitalTWD: 10_000_000, currency: "TWD", simulated: true, paperMode: true, positionCount: 0, investedCostTWD: 0, note: "" } });
+  const portfolio = portfolioRaw.positions;
+  const baseCapitalTWD = portfolioRaw.summary.baseCapitalTWD;
   const fills = okValue<PaperFillLedgerRow[]>(fillsResult, []);
   const orders = okValue<PaperOrderState[]>(ordersResult, []);
   const kgi = okValue<KgiPositionsResponse | null>(kgiResult, null);
@@ -334,6 +336,7 @@ async function buildPaperPayload() {
     screen: "paper-trading-room" as const,
     generatedAt: new Date().toISOString(),
     health,
+    baseCapitalTWD,
     selected: {
       symbol: selectedSymbol,
       name: company?.name ?? selectedSymbol,
@@ -570,15 +573,17 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
   }
 
   async function clientPaperPayload() {
-    const [healthResult, portfolioResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.all([
+    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
-      soft(apiGet("/api/v1/paper/portfolio")),
+      soft(fetch(apiBase + "/api/v1/paper/portfolio", { credentials:"include", cache:"no-store", headers:{ "Content-Type":"application/json", "x-workspace-slug":workspaceSlug } }).then((r) => r.json().then((j) => j))),
       soft(apiGet("/api/v1/paper/fills")),
       soft(apiGet("/api/v1/paper/orders")),
       soft(apiGet("/api/v1/portfolio/kgi/positions")),
       soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score"))
     ]);
-    const portfolio = portfolioResult.ok ? portfolioResult.data || [] : [];
+    const portfolioEnvelope = portfolioRawResult.ok ? portfolioRawResult.data : null;
+    const portfolio = (portfolioEnvelope && Array.isArray(portfolioEnvelope.data) ? portfolioEnvelope.data : (portfolioRawResult.ok && Array.isArray(portfolioRawResult.data) ? portfolioRawResult.data : []));
+    const baseCapitalTWD = (portfolioEnvelope?.summary?.baseCapitalTWD) ?? 10_000_000;
     const fills = fillsResult.ok ? fillsResult.data || [] : [];
     const orders = ordersResult.ok ? ordersResult.data || [] : [];
     const ideas = ideasResult.ok ? (ideasResult.data?.items || []).map(clientMapIdea) : [];
@@ -607,6 +612,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       screen:"paper-trading-room",
       generatedAt:new Date().toISOString(),
       health: healthResult.ok ? healthResult.data : null,
+      baseCapitalTWD,
       selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:company?.chainPosition || ideas[0]?.sector || "台股", price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
       watchlist,
       ideas,
@@ -766,6 +772,35 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       const max = Math.max(1, ...asks.map((x) => x[1]), ...bids.map((x) => x[1]));
       depth.innerHTML = asks.map(([p,q]) => '<div class="row"><span class="px up">'+price(p)+'</span><div class="bar"><i class="ask" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("") + '<div class="row last"><span class="px">'+price(selected.price)+'</span><span class="qty" style="text-align:center;color:var(--fg-3)">成交</span><span class="qty">—</span></div>' + bids.map(([p,q]) => '<div class="row"><span class="px dn">'+price(p)+'</span><div class="bar"><i class="bid" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("");
     }
+    // BUG_006 — tape: 最近成交 ticks
+    const tape = $("#tape");
+    if (tape) {
+      const ticks = live.ticks || [];
+      if (ticks.length) {
+        tape.innerHTML = ticks.slice(0, 12).map((t) => {
+          const px = t.price ?? t.closePrice ?? t.close ?? null;
+          const qty = t.volume ?? t.qty ?? t.quantity ?? null;
+          const ts = t.time ?? t.timestamp ?? t.ts ?? "";
+          const tone = (selected.previous != null && px != null) ? (Number(px) >= Number(selected.previous) ? "up" : "dn") : "up";
+          return '<div class="row" style="grid-template-columns:80px 1fr 70px"><span class="px '+esc(tone)+'">'+price(px)+'</span><span class="qty" style="color:var(--fg-3);text-align:left">'+esc(String(ts).slice(11,19) || String(ts).slice(0,8) || "—")+'</span><span class="qty">'+esc(qty ?? "—")+'</span></div>';
+        }).join("");
+      }
+    }
+    // BUG_006 — OHLCV legend in chart bar
+    const ohlcvLast = (live.ohlcv || []).length ? live.ohlcv[live.ohlcv.length - 1] : null;
+    if (ohlcvLast) {
+      const ohlcO = $("#ohlc-o"); if (ohlcO) ohlcO.textContent = price(ohlcvLast.open);
+      const ohlcH = $("#ohlc-h"); if (ohlcH) ohlcH.textContent = price(ohlcvLast.high);
+      const ohlcL = $("#ohlc-l"); if (ohlcL) ohlcL.textContent = price(ohlcvLast.low);
+      const ohlcC = $("#ohlc-c"); if (ohlcC) ohlcC.textContent = price(ohlcvLast.close ?? selected.price);
+    }
+    // BUG_005 — capital: 模擬本金 / 可用資金 DOM update
+    const capitalTWD = live.baseCapitalTWD ?? 10_000_000;
+    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = n(capitalTWD);
+    const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = n(capitalTWD);
+    // expose to updPreview() in vendor HTML
+    (window as unknown as Record<string, unknown>).__IUF_AVAIL_CASH__ = capitalTWD;
+    const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = n(capitalTWD);
     const submit = $("#submit-btn");
     if (submit) submit.addEventListener("click", async (event) => {
       event.preventDefault();
