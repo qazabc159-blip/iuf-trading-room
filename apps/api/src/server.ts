@@ -7280,32 +7280,57 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
     let dbInstRows: InstRow[] = [];
     if (activeDb) {
       try {
+        // P1-A FIX (2026-05-14): cast to float8 so postgres.js returns JS numbers directly (not strings).
+        // Also use verified row-extraction pattern: .rows first, then Array.isArray fallback.
         const result = await activeDb.execute(drizzleSql`
           SELECT stock_id, date, name,
-                 buy::numeric AS buy,
-                 sell::numeric AS sell
+                 buy::float8  AS buy,
+                 sell::float8 AS sell
           FROM tw_institutional_buysell
           WHERE stock_id = ${stockId}
             AND date >= ${d30start}
           ORDER BY date DESC
           LIMIT 150
         `);
-        dbInstRows = (Array.isArray(result) ? result : ((result as { rows?: InstRow[] })?.rows ?? [])) as InstRow[];
+        const rawRows = (result as { rows?: unknown[] })?.rows
+          ?? (Array.isArray(result) ? (result as unknown[]) : []);
+        dbInstRows = rawRows as InstRow[];
+        if (dbInstRows.length > 0) {
+          console.info(`[full-profile/institutional] db returned ${dbInstRows.length} rows for ${stockId}; sample buy=${dbInstRows[0]?.buy} sell=${dbInstRows[0]?.sell} name="${dbInstRows[0]?.name}"`);
+        }
       } catch (dbErr) {
         console.warn("[full-profile/institutional] db query failed:", dbErr instanceof Error ? dbErr.message : String(dbErr));
       }
     }
 
-    if (dbInstRows.length > 0) {
-      // DB has data — use it directly, no FinMind call needed
-      institutional = aggregateInstRows(dbInstRows);
+    // Aggregate DB rows. If DB has data with non-zero net, use it.
+    // If DB rows exist but all net = 0 (e.g. holiday data only), fall through to FinMind.
+    const dbAgg = dbInstRows.length > 0 ? aggregateInstRows(dbInstRows) : null;
+    const dbHasSignal = dbAgg !== null && dbAgg.history.some(
+      h => h.foreign !== 0 || h.investmentTrust !== 0 || h.dealer !== 0
+    );
+
+    if (dbHasSignal) {
+      // DB has meaningful non-zero data — use it directly
+      institutional = dbAgg!;
     } else if (instResult.status === "rejected") {
-      institutional = errorSection("TaiwanStockInstitutionalInvestorsBuySell", String(instResult.reason));
+      if (dbAgg && dbAgg.history.length > 0) {
+        // DB returned rows (even if all-zero); prefer DB over error
+        institutional = dbAgg;
+      } else {
+        institutional = errorSection("TaiwanStockInstitutionalInvestorsBuySell", String(instResult.reason));
+      }
     } else {
-      // DB empty → fallback to FinMind live result
+      // DB empty or all-zero → use FinMind live result
       const rows = instResult.value as InstRow[];
-      institutional = aggregateInstRows(rows);
-      institutional = { ...institutional, sourceTrail: { ...institutional.sourceTrail, source: "finmind_fallback" } };
+      const fmAgg = aggregateInstRows(rows);
+      if (dbAgg && dbAgg.history.length > 0 && fmAgg.history.length === 0) {
+        // DB has rows (even if all-zero), FinMind has nothing → prefer DB
+        institutional = dbAgg;
+      } else {
+        institutional = fmAgg;
+        institutional = { ...institutional, sourceTrail: { ...institutional.sourceTrail, source: "finmind_fallback" } };
+      }
     }
   }
 
