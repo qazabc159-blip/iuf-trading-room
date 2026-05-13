@@ -1184,19 +1184,39 @@ function marketCoverageText(market: LoadState<MarketDataOverview | null>) {
   return dailyTotal > 0 ? `${formatNumber(dailyTotal)} 檔` : "0 檔";
 }
 
-function buildTapeQuotes(heatmap: HeatTile[], market: LoadState<MarketDataOverview | null>): TapeQuote[] {
-  const index = market.data?.marketContext?.index;
+function buildTapeQuotes(heatmap: HeatTile[], realtimeMarket: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>): TapeQuote[] {
+  const realtimeData = loadStateData(realtimeMarket);
+  const kgi = realtimeData?.kgiOverview?.taiex ?? null;
+  const twse = realtimeData?.twseOverview?.taiex ?? null;
+  const legacyIndex = market.data?.marketContext?.index;
   const legacyBreadth = market.data?.marketContext?.breadth;
   const breadth = legacyBreadth;
   const realQuotes: TapeQuote[] = [];
 
-  if (index && index.last !== null && index.state !== "EMPTY") {
+  // BUG_001 fix: 優先 KGI tick → TWSE EOD → legacy fallback
+  if (kgi && typeof kgi.value === "number" && Number.isFinite(kgi.value)) {
     realQuotes.push({
-      sym: index.symbol ?? "TWII",
-      name: index.name,
-      price: index.last,
-      chg: index.change ?? 0,
-      pct: index.changePct ?? 0,
+      sym: "TAIEX",
+      name: "加權指數",
+      price: kgi.value,
+      chg: typeof kgi.change === "number" ? kgi.change : 0,
+      pct: typeof kgi.changePct === "number" ? kgi.changePct : 0,
+    });
+  } else if (twse && typeof twse.value === "number" && Number.isFinite(twse.value)) {
+    realQuotes.push({
+      sym: "TAIEX",
+      name: "加權指數",
+      price: twse.value,
+      chg: typeof twse.change === "number" ? twse.change : 0,
+      pct: typeof twse.changePct === "number" ? twse.changePct : 0,
+    });
+  } else if (legacyIndex && legacyIndex.last !== null && legacyIndex.state !== "EMPTY") {
+    realQuotes.push({
+      sym: legacyIndex.symbol ?? "TWII",
+      name: legacyIndex.name,
+      price: legacyIndex.last,
+      chg: legacyIndex.change ?? 0,
+      pct: legacyIndex.changePct ?? 0,
     });
   }
 
@@ -1728,7 +1748,8 @@ function MarketMoversPanel({ market }: { market: LoadState<MarketDataOverview | 
     leaders.topLosers.length === 0 &&
     leaders.mostActive.length === 0
   ) : false;
-  const hasRealLeaders = market.state === "LIVE" && hasLeaderRows;
+  // BUG_002 fix: backend leaders 有 fallback chain（market-data.ts:3173），即使 market.state=EMPTY 也可能補上 leaders。前端不再被 state gate 擋。
+  const hasRealLeaders = hasLeaderRows;
   const groups = [
     {
       key: "up",
@@ -2465,7 +2486,7 @@ async function DashboardContent({
   const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
   const realHeatmap = coreHeatmap.length > 0 ? coreHeatmap : buildHeatmap(market);
   const heatmap = realHeatmap;
-  const quotes = buildTapeQuotes(realHeatmap, market);
+  const quotes = buildTapeQuotes(realHeatmap, realtimeMarket, market);
   const liveCount = sources.filter((source) => source.state === "LIVE").length;
   const alertCount = sources.length - liveCount;
 
