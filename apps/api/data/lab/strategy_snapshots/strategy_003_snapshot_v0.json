@@ -6,7 +6,14 @@
   "status": "BACKTESTED_RAW",
   "labGateLevel": null,
   "labGatePassed": null,
-  "asOfDateTaipei": "2026-05-09T15:30:14+08:00",
+  "asOfDateTaipei": "2026-05-13T16:30:00+08:00",
+  "returnConventionVersion": "v47",
+  "displayReturnMode": "net_absolute",
+  "sourceWindowType": "6mo_full",
+  "commonWindowStart": null,
+  "commonWindowEnd": null,
+  "commonWindowTradingDays": null,
+  "caveatTextZh": "歷史研究數字 — 不可外推為未來表現預期。本策略 BT 視窗僅 6 個月 (2025-11 → 2026-04)，目標持有期 60-120 日，BT 視窗 << 目標持有 → single-window feasibility evidence not robustness；BT 視窗與三策略共同窗 (2025-04-10 → 2026-03-06) 不重疊，無法與 0050 同窗基準直接比較。",
   "panelWindow": {
     "start": "2025-11-01",
     "end": "2026-04-30",
@@ -30,7 +37,13 @@
   },
   "headlineMetrics": {
     "returnConventionVersion": "explicit_absolute_vs_excess_v1",
-    "returnConventionNote": "v41 fix 2026-05-12: strategy_003 uses TWD/PnL convention (totalPnlTwd / capitalBaseAssumedTwd), not compoundReturn. No reversed-name field exists here — labelling for cross-strategy consistency only. UI MUST display netAbsoluteReturnAfterCost on strategy detail pages; for strategy_003 derive netAbsoluteReturnAfterCost = totalPnlTwd / capitalBaseAssumedTwd = 0.474185 (i.e. +47.42% absolute on the 240k capital base, 6mo BT). BT window << target hold (60-120d) → single-window feasibility evidence not robustness.",
+    "returnConventionNote": "v47 fix 2026-05-13: strategy_003 uses TWD/PnL convention (totalPnlTwd / capitalBaseAssumedTwd). Strategy 6mo NET (after cost, as pct of capital base) = +47.42%. BT window 2025-11-01 -> 2026-04-30 partially overlaps the common-window endpoint (2026-03-06) but BT length (6mo) << target hold (60-120d), so it is single-window feasibility not robustness; therefore benchmark0050ReturnPct + excessVs0050Pp are null with explicit null_reason. strategyNetAbsoluteReturnPct is reported on the same absolute-pct scale as cont_liq for cross-card parity (47.4185 ~= +47.42%).",
+    "strategyNetAbsoluteReturnPct": 47.4185,
+    "benchmark0050ReturnPct": null,
+    "excessVs0050Pp": null,
+    "null_reason": "no_common_window_with_0050_BT_window_shorter_than_target_hold_and_not_aligned_with_common_window",
+    "hitRatePct": 0.434,
+    "maxDrawdownNetPct": -0.1426,
     "netAbsoluteReturnAfterCost": 0.474185,
     "totalTrades": 106,
     "winCount": 46,
@@ -818,7 +831,6 @@
   "hardLines": {
     "no_real_orders": true,
     "no_broker_write": true,
-    "no_finmind_fetch": true,
     "no_inflate": true,
     "no_frozen_spec_change": true,
     "no_status_upgrade_from_BACKTESTED_RAW": true
