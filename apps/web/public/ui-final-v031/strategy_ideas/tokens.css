@@ -1,0 +1,73 @@
+/* ============================================================
+   IUF · Step 7 Style Correction Pass
+   tokens.css v0.2 · 沉金 / 黑藍夜盤
+   ============================================================
+   原則：
+   · 70% 深色中性底
+   · 20% 灰藍文字 / 次資訊
+   · 10% 金 / 紅 / 綠 等語意重點色
+   · 行情：漲紅 跌綠   · 系統：OK 綠 / BLOCK 紅 / REVIEW 金
+   ============================================================ */
+:root{
+  /* —— 深色底層 (70%) —— */
+  --bg-0: #080b10;   /* viewport */
+  --bg-1: #0c1118;   /* panel */
+  --bg-2: #111822;   /* panel inner */
+  --bg-3: #171f2b;   /* deepest hover / inset */
+
+  /* —— 文字 (20%) —— */
+  --fg-0: #e7ecf3;   /* 主文字 */
+  --fg-1: #c6d0de;   /* 次文字 */
+  --fg-2: #91a0b5;   /* 次次文字 / metadata */
+  --fg-3: #566276;   /* 弱文字 — 僅 micro meta */
+
+  /* —— Line —— */
+  --line:        rgba(198,208,222,.08);
+  --line-strong: rgba(198,208,222,.16);
+
+  /* —— 品牌 · 沉金 (10%) —— */
+  --brand:       #c8943f;   /* primary amber */
+  --brand-2:     #e2b85c;   /* light amber · 細節高光 */
+  --brand-dark:  #6d4a18;
+  --brand-line:  rgba(200,148,63,.30);
+  --brand-bg:    rgba(200,148,63,.06);
+  --brand-glow:  rgba(200,148,63,.14);
+
+  /* —— 系統 OK · 綠 (≠ 台股跌綠語意) —— */
+  --ok:        #2ecc71;
+  --ok-light:  #4adb88;
+  --ok-line:   rgba(46,204,113,.32);
+  --ok-bg:     rgba(46,204,113,.06);
+
+  /* —— 系統 BLOCKED · 紅 (≠ 台股漲紅語意) —— */
+  --bad:        #e63946;
+  --bad-light:  #ff5b6b;
+  --bad-line:   rgba(230,57,70,.32);
+  --bad-bg:     rgba(230,57,70,.06);
+
+  /* —— REVIEW / PENDING / WARN —— 一律金 —— */
+  --warn:      #c8943f;
+  --warn-2:    #e2b85c;
+  --warn-line: rgba(200,148,63,.32);
+  --warn-bg:   rgba(200,148,63,.06);
+
+  /* —— INFO —— 安靜的霧藍 (取代過亮的 royal blue) —— */
+  --info:      #6b8aa6;
+  --info-line: rgba(107,138,166,.32);
+  --info-bg:   rgba(107,138,166,.06);
+
+  /* —— EMPTY —— 灰 —— */
+  --empty:      #6b7689;
+  --empty-line: rgba(107,118,137,.32);
+  --empty-bg:   rgba(107,118,137,.06);
+
+  /* —— 行情 (僅供盤口 / 漲跌數字使用) —— */
+  --mkt-up:     #e63946;   /* 漲 紅 */
+  --mkt-up-2:   #ff5b6b;
+  --mkt-down:   #2ecc71;   /* 跌 綠 */
+  --mkt-down-2: #4adb88;
+
+  /* —— pending schema · 不再用紫，改用沉金 + dashed —— */
+  --pending:      #c8943f;
+  --pending-line: rgba(200,148,63,.32);
+}
