@@ -5791,7 +5791,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
   }
 
   const days = readBoundedInt("days", 30, 1, 90);
-  const limit = readBoundedInt("limit", 10, 1, 24);
+  const limit = readBoundedInt("limit", 30, 1, 50);
   const scope = c.req.query("scope") === "market" ? "market" : "company_pool";
   const db = getDb();
   const session = c.get("session");
@@ -5832,17 +5832,14 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
 
     const titleText = `${row.title ?? ""} ${row.body ?? ""}`.toLowerCase();
     const auxiliaryText = `${row.category ?? ""} ${row.company_name ?? ""}`.toLowerCase();
+    // Block only pure retail noise / social-media opinion sources
     const blockedTerms = [
       "股市爆料同學會",
-      "cmoney",
       "yahoo股市",
       "奇摩股市",
       "理財寶",
       "知新聞",
-      "moneydj",
-      "非凡新聞",
       "股海老牛",
-      "存股",
       "達人",
       "老師",
       "同學會"
@@ -5851,87 +5848,9 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       return false;
     }
 
-    const companyReportTerms = [
-      "財報",
-      "eps",
-      "淨利",
-      "營收",
-      "除權",
-      "除息",
-      "配息",
-      "法說",
-      "增資",
-      "減資"
-    ];
-    const highSignalMarketTerms = [
-      "台股",
-      "大盤",
-      "加權",
-      "加權指數",
-      "櫃買",
-      "盤勢",
-      "盤中",
-      "盤後",
-      "開盤",
-      "收盤",
-      "三大法人",
-      "外資",
-      "投信",
-      "自營商",
-      "權值",
-      "類股",
-      "族群",
-      "半導體",
-      "etf",
-      "期貨",
-      "msci",
-      "fed",
-      "聯準會",
-      "nasdaq",
-      "標普",
-      "美股",
-      "匯率",
-      "台幣",
-      "新台幣",
-      "美元",
-      "央行",
-      "通膨",
-      "利率"
-    ];
-    const broaderMarketTerms = [
-      ...highSignalMarketTerms,
-      "電子股",
-      "金融股",
-      "航運股",
-      "ai",
-      "adr",
-      "景氣",
-      "出口",
-      "關稅",
-      "政策",
-      "金管會",
-      "證交所",
-      "櫃買中心",
-      "台積電",
-      "鴻海",
-      "聯發科",
-      "美債",
-      "日股",
-      "韓股",
-      "陸股",
-      "港股",
-      "選擇權"
-    ];
-    const hasHighSignalMarketTerm = highSignalMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
-    const hasBroaderMarketTerm = broaderMarketTerms.some((term) => titleText.includes(term.toLowerCase()));
-    if (!hasBroaderMarketTerm) return false;
-
-    const isCompanyReport = companyReportTerms.some((term) => titleText.includes(term.toLowerCase()));
-    if (isCompanyReport && !hasHighSignalMarketTerm) return false;
-
-    const isTickerSpecific = Boolean(row.ticker && row.ticker !== "market");
-    if (isTickerSpecific && isCompanyReport && !hasHighSignalMarketTerm) return false;
-
+    // moneydj / cmoney / 非凡新聞 are legitimate financial news sources — allow through
+    // Company reports (財報/EPS/營收/法說) are high-value for market intel — allow through
+    // Only hard-filter pure retail opinion pieces (covered by blockedTerms above)
     return true;
   }
 
@@ -5965,7 +5884,10 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     console.warn("[market-intel/announcements] tw_announcements unavailable:", err instanceof Error ? err.message : String(err));
   }
 
-  if (rows.length < limit) {
+  // FinMind fallback fires when tw_announcements has fewer than 15 items (not just < limit)
+  // because tw_announcements is sparse (30-day window often yields only 6 official posts)
+  const FINMIND_FALLBACK_THRESHOLD = 15;
+  if (rows.length < FINMIND_FALLBACK_THRESHOLD) {
     try {
       const result = await activeDb.execute(drizzleSql`
         SELECT
