@@ -6156,10 +6156,10 @@ app.post("/api/v1/internal/finmind/sync-now", async (c) => {
 });
 
 // POST /api/v1/internal/finmind/backfill
-//   Owner-only. Targeted date-range backfill for the 3 source-pack core tables:
-//     companies_ohlcv, tw_institutional_buysell, tw_margin_short
+//   Owner-only. Targeted date-range backfill for 4 datasets:
+//     companies_ohlcv, tw_institutional_buysell, tw_margin_short, tw_dividend
 //
-//   Body: { dataset: "companies_ohlcv" | "tw_institutional_buysell" | "tw_margin_short",
+//   Body: { dataset: "companies_ohlcv" | "tw_institutional_buysell" | "tw_margin_short" | "tw_dividend",
 //            from: "YYYY-MM-DD", to: "YYYY-MM-DD", batch_size?: number }
 //
 //   Hard lines:
@@ -6172,7 +6172,7 @@ app.post("/api/v1/internal/finmind/sync-now", async (c) => {
 //     - Audit log written per backfill run
 
 const finmindBackfillBodySchema = z.object({
-  dataset: z.enum(["companies_ohlcv", "tw_institutional_buysell", "tw_margin_short"]),
+  dataset: z.enum(["companies_ohlcv", "tw_institutional_buysell", "tw_margin_short", "tw_dividend"]),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "from must be YYYY-MM-DD"),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "to must be YYYY-MM-DD"),
   batch_size: z.number().int().min(1).max(200).optional()

@@ -673,7 +673,7 @@ export async function queryAllDatasetStatus(): Promise<DatasetStatusRow[]> {
 
 // ── Per-dataset backfill (for POST /api/v1/internal/finmind/backfill) ──────────
 
-export type BackfillDataset = "companies_ohlcv" | "tw_institutional_buysell" | "tw_margin_short";
+export type BackfillDataset = "companies_ohlcv" | "tw_institutional_buysell" | "tw_margin_short" | "tw_dividend";
 
 export interface DatasetBackfillResult {
   dataset: BackfillDataset;
@@ -717,7 +717,8 @@ export async function runDatasetBackfill(params: {
   const tableMap: Record<BackfillDataset, string> = {
     companies_ohlcv: "companies_ohlcv",
     tw_institutional_buysell: "tw_institutional_buysell",
-    tw_margin_short: "tw_margin_short"
+    tw_margin_short: "tw_margin_short",
+    tw_dividend: "tw_dividend"
   };
   const table = tableMap[dataset];
 
@@ -824,8 +825,7 @@ export async function runDatasetBackfill(params: {
         durationMs: Date.now() - t0,
         state: result.skipped ? "skipped" : "synced"
       };
-    } else {
-      // tw_margin_short
+    } else if (dataset === "tw_margin_short") {
       const result = await runMarginShortSync(tickerBatch, { startDate: from, endDate: to });
       return {
         dataset, table, from, to,
@@ -836,6 +836,19 @@ export async function runDatasetBackfill(params: {
         skipReason: result.skipReason,
         durationMs: Date.now() - t0,
         state: result.skipped ? "skipped" : "synced"
+      };
+    } else {
+      // tw_dividend
+      const result = await runDividendSync(tickerBatch, { startDate: from, endDate: to });
+      return {
+        dataset, table, from, to,
+        tickersAttempted: tickerBatch.length,
+        rowsUpserted: result.rowsUpserted,
+        rowsQuarantined: result.rowsQuarantined,
+        skipped: result.skipped,
+        skipReason: result.skipReason ?? null,
+        durationMs: Date.now() - t0,
+        state: result.skipped ? "skipped" : result.rowsUpserted >= 0 ? "synced" : "error"
       };
     }
   } catch (err) {
