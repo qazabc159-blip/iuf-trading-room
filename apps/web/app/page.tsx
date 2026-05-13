@@ -236,8 +236,11 @@ async function load<T>(
 // ── Per-fetch timeout wrapper ─────────────────────────────────────────────────
 // Returns either the real result or { _timeout: "<label>_<ms>ms" } sentinel.
 // Caller detects _timeout and maps to BLOCKED with stale_reason (never fake-green).
-const FETCH_SOFT_MS = 3000; // 3s soft budget — market/ops/brief/paper/broker/ideas/runs
-const FETCH_HARD_MS = 5000; // 5s hard budget — finmind/intel(TWSE crawl)/snapshot
+const FETCH_SOFT_MS = 3000; // 3s soft budget – ops/brief/paper/broker/ideas/runs
+const FETCH_HARD_MS = 5000; // 5s hard budget – finmind/intel(TWSE crawl)/snapshot
+const FETCH_MARKET_MS = 8000; // market has realtime + public fallback; do not blank the hero at 3s
+const KGI_MARKET_ENDPOINT_MS = 3500;
+const PUBLIC_MARKET_ENDPOINT_MS = 6000;
 
 function withTimeout<T>(
   p: Promise<T>,
@@ -640,20 +643,33 @@ async function loadRealtimeMarketDashboard(): Promise<LoadState<RealtimeMarketDa
     null,
     async () => {
       const [kgiOverview, kgiCoreHeatmap, twseOverview, twseHeatmap] = await Promise.allSettled([
-        getKgiMarketOverview(),
-        getKgiCoreHeatmap(),
-        getTwseMarketOverview(),
-        getTwseMarketHeatmap(),
+        withTimeout(getKgiMarketOverview(), KGI_MARKET_ENDPOINT_MS, "kgi_overview"),
+        withTimeout(getKgiCoreHeatmap(), KGI_MARKET_ENDPOINT_MS, "kgi_core_heatmap"),
+        withTimeout(getTwseMarketOverview(), PUBLIC_MARKET_ENDPOINT_MS, "twse_overview"),
+        withTimeout(getTwseMarketHeatmap(), PUBLIC_MARKET_ENDPOINT_MS, "twse_heatmap"),
       ]);
 
-      const kgiCoreHeatmapValue = kgiCoreHeatmap.status === "fulfilled"
-        ? unwrapKgiCoreHeatmap(kgiCoreHeatmap.value)
+      const kgiOverviewValue =
+        kgiOverview.status === "fulfilled" && !isTimeoutSentinel(kgiOverview.value)
+          ? unwrapMaybeData(kgiOverview.value)
+          : null;
+      const kgiCoreHeatmapValue =
+        kgiCoreHeatmap.status === "fulfilled" && !isTimeoutSentinel(kgiCoreHeatmap.value)
+          ? unwrapKgiCoreHeatmap(kgiCoreHeatmap.value)
+          : null;
+      const twseOverviewValue =
+        twseOverview.status === "fulfilled" && !isTimeoutSentinel(twseOverview.value)
+          ? twseOverview.value
+          : null;
+      const twseHeatmapValue =
+        twseHeatmap.status === "fulfilled" && !isTimeoutSentinel(twseHeatmap.value)
+          ? twseHeatmap.value
         : null;
       return {
-        kgiOverview: kgiOverview.status === "fulfilled" ? unwrapMaybeData(kgiOverview.value) : null,
+        kgiOverview: kgiOverviewValue,
         kgiCoreHeatmap: kgiCoreHeatmapValue,
-        twseOverview: twseOverview.status === "fulfilled" ? twseOverview.value : null,
-        twseHeatmap: twseHeatmap.status === "fulfilled" ? twseHeatmap.value : null,
+        twseOverview: twseOverviewValue,
+        twseHeatmap: twseHeatmapValue,
       };
     },
     (value) => {
@@ -2316,8 +2332,8 @@ async function DashboardContent({
     snapshotResult,
   ] = await Promise.allSettled([
     timedFetch("finmind", FETCH_HARD_MS, loadFinMindDashboard()),
-    timedFetch("main_market_feed", FETCH_SOFT_MS, loadRealtimeMarketDashboard()),
-    timedFetch("market", FETCH_SOFT_MS, load(
+    timedFetch("main_market_feed", FETCH_MARKET_MS, loadRealtimeMarketDashboard()),
+    timedFetch("market", FETCH_MARKET_MS, load(
       "Market data overview",
       null,
       async () => (await getMarketDataOverview({ includeStale: true, topLimit: 20 })).data,
