@@ -5876,7 +5876,11 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
         a.title AS title,
         '重大訊息' AS category,
         NULL::text AS body,
-        NULL::text AS url,
+        CASE
+          WHEN a.ticker_symbol IS NOT NULL AND a.ticker_symbol <> ''
+          THEN 'https://mops.twse.com.tw/mops/web/t05st02_sii?TYPEK=sii&code=' || a.ticker_symbol
+          ELSE NULL
+        END AS url,
         'twse_announcements' AS source
       FROM tw_announcements a
       LEFT JOIN companies c
@@ -5893,10 +5897,10 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     console.warn("[market-intel/announcements] tw_announcements unavailable:", err instanceof Error ? err.message : String(err));
   }
 
-  // FinMind fallback fires when tw_announcements has fewer than 15 items (not just < limit)
-  // because tw_announcements is sparse (30-day window often yields only 6 official posts)
-  const FINMIND_FALLBACK_THRESHOLD = 15;
-  if (rows.length < FINMIND_FALLBACK_THRESHOLD) {
+  // FinMind fallback always fires when tw_announcements has fewer than limit items,
+  // because tw_announcements is sparse (30-day window often yields only 6-14 official posts).
+  // Threshold lowered to limit itself so we always attempt to fill to 30 items.
+  if (rows.length < limit) {
     try {
       const result = await activeDb.execute(drizzleSql`
         SELECT
@@ -5916,7 +5920,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
         WHERE n.fetched_at >= NOW() - (${days}::text || ' days')::interval
           AND COALESCE(n.title, '') <> ''
         ORDER BY n.fetched_at DESC
-        LIMIT ${scope === "market" ? Math.max(limit * 8, 80) : Math.max(limit, 12)}
+        LIMIT ${scope === "market" ? Math.max(limit * 8, 80) : Math.max(limit * 2, 30)}
       `);
       const seen = new Set(rows.map((row) => `${row.ticker ?? ""}:${row.title ?? ""}`));
       for (const row of readRows<IntelRow>(result)) {
@@ -7231,18 +7235,19 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
   }
 
   // ── TradingFlow: Institutional ────────────────────────────────────────────────
+  // P0 FIX (2026-05-14): DB-first path. FinMind live API returned all-zero values
+  // because name-matching failed off-hours (name="" or different convention).
+  // Now: query tw_institutional_buysell by ticker (stock_id), last 30 calendar days.
+  // Only fallback to FinMind if DB has 0 rows for this ticker.
   type InstRow = { date: string; stock_id: string; name: string; buy: number; sell: number };
   let institutional: FullProfileSection<{ date: string; foreign: number; investmentTrust: number; dealer: number; totalNetBuy: number }>;
-  if (instResult.status === "rejected") {
-    institutional = errorSection("TaiwanStockInstitutionalInvestorsBuySell", String(instResult.reason));
-  } else {
-    const rows = instResult.value as InstRow[];
-    // Group by date, aggregate nets
+
+  function aggregateInstRows(rows: InstRow[]): FullProfileSection<{ date: string; foreign: number; investmentTrust: number; dealer: number; totalNetBuy: number }> {
     const dateMap = new Map<string, { foreign: number; investmentTrust: number; dealer: number }>();
     for (const r of rows) {
       if (!dateMap.has(r.date)) dateMap.set(r.date, { foreign: 0, investmentTrust: 0, dealer: 0 });
       const entry = dateMap.get(r.date)!;
-      const net = (r.buy ?? 0) - (r.sell ?? 0);
+      const net = (Number(r.buy) || 0) - (Number(r.sell) || 0);
       const nm = r.name ?? "";
       if (nm.includes("外") || nm.includes("陸")) entry.foreign += net;
       else if (nm.includes("投信")) entry.investmentTrust += net;
@@ -7261,13 +7266,47 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
     const latest = hist[0] ?? null;
     const latestDate = latest?.date ?? null;
     const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 5 * 24 * 60 * 60 * 1000 : true;
-    institutional = {
+    return {
       state: hist.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
       latest,
       history: hist,
       updatedAt: new Date().toISOString(),
-      sourceTrail: { source: "finmind", datasetKey: "TaiwanStockInstitutionalInvestorsBuySell", recordCount: rows.length, degradedReason: hist.length === 0 ? "no_rows" : null }
+      sourceTrail: { source: "db_tw_institutional_buysell", datasetKey: "TaiwanStockInstitutionalInvestorsBuySell", recordCount: rows.length, degradedReason: hist.length === 0 ? "no_rows" : null }
     };
+  }
+
+  {
+    const activeDb = getDb();
+    let dbInstRows: InstRow[] = [];
+    if (activeDb) {
+      try {
+        const result = await activeDb.execute(drizzleSql`
+          SELECT stock_id, date, name,
+                 buy::numeric AS buy,
+                 sell::numeric AS sell
+          FROM tw_institutional_buysell
+          WHERE stock_id = ${stockId}
+            AND date >= ${d30start}
+          ORDER BY date DESC
+          LIMIT 150
+        `);
+        dbInstRows = (Array.isArray(result) ? result : ((result as { rows?: InstRow[] })?.rows ?? [])) as InstRow[];
+      } catch (dbErr) {
+        console.warn("[full-profile/institutional] db query failed:", dbErr instanceof Error ? dbErr.message : String(dbErr));
+      }
+    }
+
+    if (dbInstRows.length > 0) {
+      // DB has data — use it directly, no FinMind call needed
+      institutional = aggregateInstRows(dbInstRows);
+    } else if (instResult.status === "rejected") {
+      institutional = errorSection("TaiwanStockInstitutionalInvestorsBuySell", String(instResult.reason));
+    } else {
+      // DB empty → fallback to FinMind live result
+      const rows = instResult.value as InstRow[];
+      institutional = aggregateInstRows(rows);
+      institutional = { ...institutional, sourceTrail: { ...institutional.sourceTrail, source: "finmind_fallback" } };
+    }
   }
 
   // ── TradingFlow: Margin/Short ─────────────────────────────────────────────────
