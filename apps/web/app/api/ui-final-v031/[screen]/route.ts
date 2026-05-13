@@ -1,6 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import {
+  buildFinalV031LivePayload,
+  finalV031HydrationScript,
+  type FinalV031Screen,
+} from "@/lib/final-v031-live";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -128,6 +133,11 @@ async function renderFinalHtml(screen: ScreenKey) {
     .replace("</head>", `${styleTags}\n${contentShellOverrides(screen)}\n</head>`);
 }
 
+async function injectLiveData(screen: ScreenKey, html: string) {
+  const payload = await buildFinalV031LivePayload(screen as FinalV031Screen);
+  return html.replace("</body>", `${finalV031HydrationScript(payload)}\n</body>`);
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ screen: string }> }
@@ -140,7 +150,7 @@ export async function GET(
     );
   }
 
-  const html = stripVendorChrome(screen, await renderFinalHtml(screen));
+  const html = await injectLiveData(screen, stripVendorChrome(screen, await renderFinalHtml(screen)));
   return new NextResponse(html, {
     status: 200,
     headers: {
