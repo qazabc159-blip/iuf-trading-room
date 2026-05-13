@@ -215,33 +215,91 @@ async function fetchHeatmapPanel(workspaceId: string): Promise<unknown> {
 }
 
 /**
- * news_recent — last 10 news items from tw_stock_news.
- * Mirrors the finmind_stock_news sub-query in server.ts announcements handler.
+ * news_recent — last 10 news items from tw_announcements (today-first) + tw_stock_news fallback.
+ * ISSUE_03 fix (2026-05-14): previously only queried tw_stock_news, causing all items to show
+ * yesterday's date when FinMind ingest ran on 5/12 but tw_announcements has today's data.
+ * Now uses UNION ALL: tw_announcements rows appear first (real announced_at timestamps),
+ * tw_stock_news rows fill remainder — deduped by (ticker, title).
  */
 async function fetchNewsPanel(workspaceId: string): Promise<{ items: unknown[] }> {
   const db = isDatabaseMode() ? getDb() : null;
   if (!db) return { items: [] };
 
-  const res = await db.execute(drizzleSql`
-    SELECT
-      n.id::text AS id,
-      n.stock_id AS ticker,
-      COALESCE(c.name, n.stock_id) AS company_name,
-      COALESCE(NULLIF(n.published_at, ''), n.fetched_at::text) AS date,
-      n.title AS title,
-      COALESCE(NULLIF(n.source_name, ''), '台股新聞') AS category,
-      n.url AS url
-    FROM tw_stock_news n
-    LEFT JOIN companies c
-      ON c.ticker = n.stock_id
-     AND c.workspace_id = ${workspaceId}
-    WHERE n.fetched_at >= NOW() - INTERVAL '7 days'
-      AND COALESCE(n.title, '') <> ''
-    ORDER BY n.fetched_at DESC
-    LIMIT 10
-  `);
-  const rows = execRows<Record<string, unknown>>(res);
-  const items = rows.map((r, i) => ({
+  // Primary: tw_announcements (real TWSE timestamps — today's data shows immediately)
+  type NewsRow = {
+    id: string;
+    ticker: string | null;
+    company_name: string | null;
+    date: string | null;
+    title: string | null;
+    category: string | null;
+    url: string | null;
+    sort_ts: string | null;
+  };
+
+  const rawItems: NewsRow[] = [];
+
+  try {
+    const annRes = await db.execute(drizzleSql`
+      SELECT
+        CONCAT(a.ticker_symbol, '-', a.announced_at::text, '-', a.title) AS id,
+        a.ticker_symbol AS ticker,
+        COALESCE(c.name, a.ticker_symbol) AS company_name,
+        a.announced_at::text AS date,
+        a.title AS title,
+        '重大訊息' AS category,
+        NULL::text AS url,
+        a.announced_at::text AS sort_ts
+      FROM tw_announcements a
+      LEFT JOIN companies c
+        ON c.ticker = a.ticker_symbol
+       AND c.workspace_id = ${workspaceId}
+      WHERE a.announced_at >= NOW() - INTERVAL '7 days'
+        AND COALESCE(a.title, '') <> ''
+      ORDER BY a.announced_at DESC
+      LIMIT 15
+    `);
+    rawItems.push(...execRows<NewsRow>(annRes));
+  } catch (err) {
+    console.warn("[dashboard/news_recent] tw_announcements unavailable:", err instanceof Error ? err.message : String(err));
+  }
+
+  // Supplement with tw_stock_news when tw_announcements has fewer than 10 items
+  if (rawItems.length < 10) {
+    try {
+      const newsRes = await db.execute(drizzleSql`
+        SELECT
+          n.id::text AS id,
+          n.stock_id AS ticker,
+          COALESCE(c.name, n.stock_id) AS company_name,
+          COALESCE(NULLIF(n.published_at, ''), n.fetched_at::text) AS date,
+          n.title AS title,
+          COALESCE(NULLIF(n.source_name, ''), '台股新聞') AS category,
+          n.url AS url,
+          n.fetched_at::text AS sort_ts
+        FROM tw_stock_news n
+        LEFT JOIN companies c
+          ON c.ticker = n.stock_id
+         AND c.workspace_id = ${workspaceId}
+        WHERE n.fetched_at >= NOW() - INTERVAL '7 days'
+          AND COALESCE(n.title, '') <> ''
+        ORDER BY n.fetched_at DESC
+        LIMIT 30
+      `);
+      const seen = new Set(rawItems.map((r) => `${r.ticker ?? ""}:${r.title ?? ""}`));
+      for (const row of execRows<NewsRow>(newsRes)) {
+        const key = `${row.ticker ?? ""}:${row.title ?? ""}`;
+        if (seen.has(key)) continue;
+        rawItems.push(row);
+        seen.add(key);
+        if (rawItems.length >= 15) break;
+      }
+    } catch (err) {
+      console.warn("[dashboard/news_recent] tw_stock_news unavailable:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  const items = rawItems.slice(0, 10).map((r, i) => ({
     id: String(r.id ?? `news-${i}`),
     date: String(r.date ?? "").slice(0, 10),
     title: String(r.title ?? ""),

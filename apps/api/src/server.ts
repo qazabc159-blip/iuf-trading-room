@@ -5956,6 +5956,124 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
 });
 
 // =============================================================================
+// ISSUE_03 FIX — GET /api/v1/announcements (2026-05-14)
+// =============================================================================
+//
+// Bruce audit found this route returning 404 — it did not exist.
+// Frontend announcements panel routes to this path expecting:
+//   { items: [...], total: N, asOf: "YYYY-MM-DD" }
+//
+// Auth: READ_DRAFT_ROLES (Owner / Admin / Analyst)
+// Source: tw_announcements (today + 30 days) + tw_stock_news FinMind fallback
+// =============================================================================
+app.get("/api/v1/announcements", async (c) => {
+  const session = c.get("session");
+  const role = session.user.role;
+  if (!READ_DRAFT_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const db = getDb();
+  const asOf = new Date().toISOString().slice(0, 10);
+
+  if (!db) {
+    return c.json({ items: [], total: 0, asOf });
+  }
+
+  function readRows<T>(result: unknown): T[] {
+    if (Array.isArray(result)) return result as T[];
+    return ((result as { rows?: T[] })?.rows) ?? [];
+  }
+
+  type AnnRow = {
+    id: string | null;
+    ticker: string | null;
+    company_name: string | null;
+    date: string | null;
+    title: string | null;
+    category: string | null;
+    url: string | null;
+    source: string | null;
+  };
+
+  const rawItems: AnnRow[] = [];
+
+  // Primary: tw_announcements (today + 30 days)
+  try {
+    const result = await db.execute(drizzleSql`
+      SELECT
+        CONCAT(a.ticker_symbol, '-', a.announced_at::text, '-', a.title) AS id,
+        a.ticker_symbol AS ticker,
+        COALESCE(c.name, a.ticker_symbol) AS company_name,
+        a.announced_at::text AS date,
+        a.title AS title,
+        '重大訊息' AS category,
+        NULL::text AS url,
+        'twse_announcements' AS source
+      FROM tw_announcements a
+      LEFT JOIN companies c
+        ON c.ticker = a.ticker_symbol
+       AND c.workspace_id = ${session.workspace.id}
+      WHERE a.announced_at >= NOW() - INTERVAL '30 days'
+        AND COALESCE(a.title, '') <> ''
+      ORDER BY a.announced_at DESC
+      LIMIT 50
+    `);
+    rawItems.push(...readRows<AnnRow>(result));
+  } catch (err) {
+    console.warn("[announcements] tw_announcements unavailable:", err instanceof Error ? err.message : String(err));
+  }
+
+  // Fallback: tw_stock_news (FinMind) when tw_announcements has fewer than 15 items
+  if (rawItems.length < 15) {
+    try {
+      const result = await db.execute(drizzleSql`
+        SELECT
+          n.id::text AS id,
+          n.stock_id AS ticker,
+          COALESCE(c.name, n.stock_id) AS company_name,
+          COALESCE(NULLIF(n.published_at, ''), n.fetched_at::text) AS date,
+          n.title AS title,
+          COALESCE(NULLIF(n.source_name, ''), '台股新聞') AS category,
+          n.url AS url,
+          'finmind_stock_news' AS source
+        FROM tw_stock_news n
+        LEFT JOIN companies c
+          ON c.ticker = n.stock_id
+         AND c.workspace_id = ${session.workspace.id}
+        WHERE n.fetched_at >= NOW() - INTERVAL '30 days'
+          AND COALESCE(n.title, '') <> ''
+        ORDER BY n.fetched_at DESC
+        LIMIT 80
+      `);
+      const seen = new Set(rawItems.map((r) => `${r.ticker ?? ""}:${r.title ?? ""}`));
+      for (const row of readRows<AnnRow>(result)) {
+        const key = `${row.ticker ?? ""}:${row.title ?? ""}`;
+        if (seen.has(key)) continue;
+        rawItems.push(row);
+        seen.add(key);
+        if (rawItems.length >= 50) break;
+      }
+    } catch (err) {
+      console.warn("[announcements] tw_stock_news unavailable:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  const items = rawItems.slice(0, 50).map((row, index) => ({
+    id: row.id ?? `ann-${index}`,
+    date: String(row.date ?? "").slice(0, 10),
+    title: row.title ?? "",
+    category: row.category ?? "市場情報",
+    ticker: row.ticker ?? undefined,
+    companyName: row.company_name ?? row.ticker ?? undefined,
+    url: row.url ?? null,
+    source: row.source ?? "unknown",
+  }));
+
+  return c.json({ items, total: items.length, asOf });
+});
+
+// =============================================================================
 // BLOCK #NEWS — AI-selected top-10 market news (4-window cron)
 // =============================================================================
 //
