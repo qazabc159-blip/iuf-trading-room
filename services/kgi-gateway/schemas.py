@@ -178,7 +178,7 @@ class OrderEventMessage(BaseModel):
 # ---------------------------------------------------------------------------
 
 class CreateOrderRequest(BaseModel):
-    """Input shape — validated even though W1 handler returns 409."""
+    """Input shape — validated only in SIM session path (Gate 3)."""
     action: Literal["Buy", "Sell"]
     symbol: str
     qty: int
@@ -187,6 +187,18 @@ class CreateOrderRequest(BaseModel):
     order_cond: Literal["Cash", "CashSelling", "Margin", "MarginDayTrade", "ShortSelling", "LendSelling"] = "Cash"
     odd_lot: Union[bool, Literal["Common", "Fixing", "Odd", "OddAfterMarket"]] = False
     name: str = ""
+
+
+class OrderCreateResponse(BaseModel):
+    """
+    SIM-only order create response (Gate 3 — simulation session).
+    sim_only=true is a hard literal — LIVE order path returns 409 LIVE_ORDER_BLOCKED, never reaches here.
+    """
+    ok: bool
+    sim_only: Literal[True]
+    status: str
+    kgi_response_repr: Optional[str] = None
+    note: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
