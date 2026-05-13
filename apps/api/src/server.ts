@@ -3740,6 +3740,37 @@ const kgiSubscribeSchema = z.object({
 app.post("/api/v1/kgi/quote/subscribe", async (c) => {
   try {
     const body = kgiSubscribeSchema.parse(await c.req.json());
+
+    // ── Quota check via subscription manager ──────────────────────────────
+    const { initSubscriptionManager, subscribeSymbol: qmSubscribe, getSubscriptionStatus, TIER } =
+      await import("./kgi-subscription-manager.js");
+    initSubscriptionManager();
+    const statusBefore = getSubscriptionStatus();
+
+    if (statusBefore.slotsUsed >= statusBefore.slotsMax) {
+      // Symbol may already be in pool (already_subscribed is ok)
+      const alreadyInPool = statusBefore.slots.some((s) => s.symbol === body.symbol);
+      if (!alreadyInPool) {
+        const quotaResult = await qmSubscribe(body.symbol, TIER.BUFFER, false);
+        if (!quotaResult.ok && quotaResult.action === "quota_exceeded") {
+          return c.json(
+            {
+              error: "QUOTA_EXCEEDED",
+              message: `KGI subscription quota full (${statusBefore.slotsUsed}/${statusBefore.slotsMax}).`,
+              slotsUsed: statusBefore.slotsUsed,
+              slotsMax: statusBefore.slotsMax,
+              suggestion: quotaResult.suggestion,
+            },
+            429
+          );
+        }
+      }
+    } else {
+      // Register in quota pool (BUFFER tier for ad-hoc subscriptions)
+      await qmSubscribe(body.symbol, TIER.BUFFER, false);
+    }
+
+    // ── Proceed with actual gateway subscription ──────────────────────────
     const client = getKgiQuoteClient();
     const results: Record<string, string> = {};
     if (body.type === "tick" || body.type === "both") {
@@ -3748,7 +3779,16 @@ app.post("/api/v1/kgi/quote/subscribe", async (c) => {
     if (body.type === "bidask" || body.type === "both") {
       results.bidAskLabel = await client.subscribeSymbolBidAsk(body.symbol, { oddLot: body.oddLot });
     }
-    return c.json({ data: { symbol: body.symbol, ...results } });
+
+    const statusAfter = getSubscriptionStatus();
+    return c.json({
+      data: {
+        symbol: body.symbol,
+        ...results,
+        quotaUsed: statusAfter.slotsUsed,
+        quotaMax: statusAfter.slotsMax,
+      },
+    });
   } catch (err) {
     if (err instanceof ZodError) {
       return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
@@ -8526,6 +8566,207 @@ app.get("/api/v1/market/heatmap/twse", async (c) => {
     industryCount: tiles.length,
     mappedTickers: tickerToIndustry.size
   });
+});
+
+// =============================================================================
+// KGI 40-slot Subscription Quota Manager + Main Page Realtime Endpoints
+// =============================================================================
+//
+// 凱基新星等級：2 條連線 × 20 檔 = 40 檔上限
+//
+// GET  /api/v1/kgi/quote/subscription-status (Owner)
+//   — Current quota allocation, connection distribution, per-symbol last_tick_at
+//
+// POST /api/v1/kgi/quote/subscribe  (upgraded — quota check, 429 on full)
+//   — Already handled above; quota check layer added here via manager
+//
+// POST /api/v1/kgi/watchlist/sync (Owner)
+//   — Sync user watchlist → subscription pool (auto LRU swap)
+//
+// POST /api/v1/kgi/holdings/sync (Owner)
+//   — Sync user holdings → subscription pool (auto LRU swap)
+//
+// GET  /api/v1/market/overview/kgi (Owner)
+//   — TAIEX + OTC realtime tick; fallback → TWSE OpenAPI EOD
+//
+// GET  /api/v1/market/heatmap/kgi-core (Owner)
+//   — Core 15 + strategy holdings + 持倉 KGI tick aggregate; fallback → TWSE EOD
+//
+// Hard lines:
+//   - MAX_SLOTS = 40 enforced in manager
+//   - Permanent tiers (INDEX/STRATEGY/CORE) never swapped
+//   - No broker.* import
+//   - No contracts change
+//   - No DB migration
+// =============================================================================
+
+// GET /api/v1/kgi/quote/subscription-status — quota allocation (Owner only)
+app.get("/api/v1/kgi/quote/subscription-status", async (c) => {
+  const role = c.get("session").user.role;
+  if (role !== "Owner") return c.json({ error: "forbidden_role", message: "Owner only" }, 403);
+
+  const { initSubscriptionManager, getSubscriptionStatus } = await import("./kgi-subscription-manager.js");
+  initSubscriptionManager();
+  const status = getSubscriptionStatus();
+  return c.json({ data: status });
+});
+
+// POST /api/v1/kgi/watchlist/sync — sync watchlist symbols (Owner only)
+const kgiWatchlistSyncSchema = z.object({
+  symbols: z.array(z.string().min(1).max(20)).min(0).max(20),
+});
+
+app.post("/api/v1/kgi/watchlist/sync", async (c) => {
+  const role = c.get("session").user.role;
+  if (role !== "Owner") return c.json({ error: "forbidden_role", message: "Owner only" }, 403);
+
+  try {
+    const body = kgiWatchlistSyncSchema.parse(await c.req.json());
+    const { initSubscriptionManager, syncWatchlist } = await import("./kgi-subscription-manager.js");
+    initSubscriptionManager();
+    const result = await syncWatchlist(body.symbols);
+    return c.json({ data: result });
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "SYNC_ERROR", message: String(err) }, 500);
+  }
+});
+
+// POST /api/v1/kgi/holdings/sync — sync holdings symbols (Owner only)
+const kgiHoldingsSyncSchema = z.object({
+  symbols: z.array(z.string().min(1).max(20)).min(0).max(5),
+});
+
+app.post("/api/v1/kgi/holdings/sync", async (c) => {
+  const role = c.get("session").user.role;
+  if (role !== "Owner") return c.json({ error: "forbidden_role", message: "Owner only" }, 403);
+
+  try {
+    const body = kgiHoldingsSyncSchema.parse(await c.req.json());
+    const { initSubscriptionManager, syncHoldings } = await import("./kgi-subscription-manager.js");
+    initSubscriptionManager();
+    const result = await syncHoldings(body.symbols);
+    return c.json({ data: result });
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "SYNC_ERROR", message: String(err) }, 500);
+  }
+});
+
+// GET /api/v1/market/overview/kgi — TAIEX + OTC realtime (KGI tick → TWSE fallback)
+app.get("/api/v1/market/overview/kgi", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  try {
+    const { getKgiMarketOverview } = await import("./kgi-subscription-manager.js");
+    const kgiResult = await getKgiMarketOverview();
+
+    // If KGI returned real values for TAIEX, return KGI source
+    if (kgiResult.taiex.value !== null) {
+      return c.json({ ...kgiResult, sourceState: "live" });
+    }
+
+    // Fallback: TWSE OpenAPI EOD
+    const { getTwseMarketOverview } = await import("./data-sources/twse-openapi-client.js");
+    const twseResult = await getTwseMarketOverview();
+
+    if (twseResult) {
+      return c.json({
+        taiex: {
+          symbol: "^TWII",
+          value: twseResult.taiex.value,
+          change: twseResult.taiex.change,
+          changePct: twseResult.taiex.changePct,
+          ts: twseResult.taiex.ts,
+          source: "twse_openapi_eod",
+          staleSec: null,
+        },
+        otc: twseResult.otc ? {
+          symbol: "^TPEX",
+          value: twseResult.otc.value,
+          change: twseResult.otc.change,
+          changePct: twseResult.otc.changePct,
+          ts: twseResult.otc.ts,
+          source: "twse_openapi_eod",
+          staleSec: null,
+        } : {
+          symbol: "^TPEX",
+          value: null,
+          change: null,
+          changePct: null,
+          ts: null,
+          source: "twse_openapi_eod",
+          staleSec: null,
+        },
+        source: "twse_openapi_eod",
+        staleAfterSec: 60,
+        sourceState: "fallback_eod",
+      });
+    }
+
+    // Both unavailable
+    return c.json({
+      taiex: kgiResult.taiex,
+      otc: kgiResult.otc,
+      source: "kgi_tick",
+      staleAfterSec: 5,
+      sourceState: "unavailable",
+    });
+  } catch (err) {
+    console.warn("[market/overview/kgi] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "MARKET_OVERVIEW_ERROR", message: String(err) }, 503);
+  }
+});
+
+// GET /api/v1/market/heatmap/kgi-core — core heatmap (KGI tick → TWSE fallback)
+app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  try {
+    const { initSubscriptionManager, getKgiCoreHeatmap } = await import("./kgi-subscription-manager.js");
+    initSubscriptionManager();
+    const kgiResult = await getKgiCoreHeatmap();
+
+    // If KGI returned any live data (at least some tiles have real prices)
+    const liveTiles = kgiResult.tiles.filter((t) => t.price !== null);
+
+    if (liveTiles.length > 0) {
+      return c.json({ ...kgiResult, sourceState: "live", liveTileCount: liveTiles.length });
+    }
+
+    // Fallback: TWSE OpenAPI EOD — return TWSE heatmap instead
+    // (build a simplified per-symbol view for the core symbols)
+    const { CORE_SYMBOLS, STRATEGY_SYMBOLS } = await import("./kgi-subscription-manager.js");
+    const allCoreSymbols = [...CORE_SYMBOLS, ...STRATEGY_SYMBOLS];
+
+    // Build minimal ticker→industry map (symbol=ticker, industry=core_equity)
+    const tickerToIndustry = new Map<string, string>();
+    for (const sym of allCoreSymbols) {
+      tickerToIndustry.set(sym, "core_equity");
+    }
+
+    const { getTwseIndustryHeatmap } = await import("./data-sources/twse-openapi-client.js");
+    const twseTiles = await getTwseIndustryHeatmap(tickerToIndustry);
+
+    return c.json({
+      tiles: kgiResult.tiles, // shapes preserved, prices null
+      twseFallback: twseTiles,
+      source: "kgi_tick",
+      staleAfterSec: 5,
+      sourceState: "fallback_eod",
+      tileCount: kgiResult.tiles.length,
+      liveTileCount: 0,
+    });
+  } catch (err) {
+    console.warn("[market/heatmap/kgi-core] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "HEATMAP_ERROR", message: String(err) }, 503);
+  }
 });
 
 // ── P0 #6: GET /api/v1/openalice/status ──────────────────────────────────────
