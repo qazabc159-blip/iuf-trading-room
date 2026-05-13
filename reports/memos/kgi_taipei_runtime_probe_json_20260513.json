@@ -1,0 +1,201 @@
+﻿{
+    "schemaVersion":  "kgi_taipei_runtime_probe_v1",
+    "generatedAt":  "2026-05-13T05:47:48.5669697+00:00",
+    "hardLines":  {
+                      "submitsOrder":  false,
+                      "callsOrderCreate":  false,
+                      "printsSecrets":  false
+                  },
+    "results":  [
+                    {
+                        "name":  "host_context",
+                        "status":  "PASS",
+                        "detail":  {
+                                       "computerName":  "EC2AMAZ-OI3DFSG",
+                                       "user":  "NT AUTHORITY\\SYSTEM",
+                                       "isAdmin":  true,
+                                       "sessionName":  null,
+                                       "cwd":  "C:\\Windows\\system32",
+                                       "os":  "Microsoft Windows Server 2022 Datacenter",
+                                       "startedAt":  "2026-05-13T05:47:44.8398888+00:00"
+                                   }
+                    },
+                    {
+                        "name":  "service_context",
+                        "status":  "PASS",
+                        "detail":  {
+                                       "name":  "KGIGateway",
+                                       "state":  "Stopped",
+                                       "startMode":  "Auto",
+                                       "startName":  "LocalSystem",
+                                       "processId":  0,
+                                       "pathName":  "C:\\nssm\\nssm.exe",
+                                       "nssm":  {
+                                                    "Application":  "C\u0000:\u0000\\\u0000P\u0000y\u0000t\u0000h\u0000o\u0000n\u00003\u00001\u00001\u0000\\\u0000p\u0000y\u0000t\u0000h\u0000o\u0000n\u0000.\u0000e\u0000x\u0000e\u0000\n\u0000\n\u0000",
+                                                    "AppDirectory":  "C\u0000:\u0000\\\u0000k\u0000g\u0000i\u0000-\u0000g\u0000a\u0000t\u0000e\u0000w\u0000a\u0000y\u0000\n\u0000\n\u0000",
+                                                    "AppParameters":  "-\u0000m\u0000 \u0000u\u0000v\u0000i\u0000c\u0000o\u0000r\u0000n\u0000 \u0000a\u0000p\u0000p\u0000:\u0000a\u0000p\u0000p\u0000 \u0000-\u0000-\u0000h\u0000o\u0000s\u0000t\u0000 \u00000\u0000.\u00000\u0000.\u00000\u0000.\u00000\u0000 \u0000-\u0000-\u0000p\u0000o\u0000r\u0000t\u0000 \u00008\u00007\u00008\u00007\u0000\n\u0000\n\u0000",
+                                                    "AppStdout":  "C\u0000:\u0000\\\u0000k\u0000g\u0000i\u0000-\u0000g\u0000a\u0000t\u0000e\u0000w\u0000a\u0000y\u0000-\u0000l\u0000o\u0000g\u0000s\u0000\\\u0000g\u0000a\u0000t\u0000e\u0000w\u0000a\u0000y\u0000.\u0000s\u0000t\u0000d\u0000o\u0000u\u0000t\u0000.\u0000l\u0000o\u0000g\u0000\n\u0000\n\u0000",
+                                                    "AppStderr":  "C\u0000:\u0000\\\u0000k\u0000g\u0000i\u0000-\u0000g\u0000a\u0000t\u0000e\u0000w\u0000a\u0000y\u0000-\u0000l\u0000o\u0000g\u0000s\u0000\\\u0000g\u0000a\u0000t\u0000e\u0000w\u0000a\u0000y\u0000.\u0000s\u0000t\u0000d\u0000e\u0000r\u0000r\u0000.\u0000l\u0000o\u0000g\u0000\n\u0000\n\u0000",
+                                                    "ObjectName":  "L\u0000o\u0000c\u0000a\u0000l\u0000S\u0000y\u0000s\u0000t\u0000e\u0000m\u0000\n\u0000\n\u0000"
+                                                }
+                                   }
+                    },
+                    {
+                        "name":  "python_kgisuperpy",
+                        "status":  "FAIL",
+                        "detail":  "The property \u0027Source\u0027 cannot be found on this object. Verify that the property exists."
+                    },
+                    {
+                        "name":  "servisign_com",
+                        "status":  "PASS",
+                        "detail":  {
+                                       "installRootExists":  true,
+                                       "files":  [
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGIServiSign.exe",
+                                                         "length":  660624
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGIServiSignMonitor.exe",
+                                                         "length":  507536
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGIServiSignWorker.exe",
+                                                         "length":  267928
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libffi-6.dll",
+                                                         "length":  41864
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libgcc_s_sjlj-1.dll",
+                                                         "length":  921152
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libgmp-10.dll",
+                                                         "length":  425952
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libgnutls-30.dll",
+                                                         "length":  1782248
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libhogweed-4.dll",
+                                                         "length":  193360
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libidn2-0.dll",
+                                                         "length":  342456
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libnettle-6.dll",
+                                                         "length":  253912
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libp11-kit-0.dll",
+                                                         "length":  968896
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libwinpthread-1.dll",
+                                                         "length":  63632
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGI\\KGICGCAPIATL2ADPTSetupUninstall.exe",
+                                                         "length":  136480
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGI\\KGICGCAPIATLSVIAdapter.dll",
+                                                         "length":  408216
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGI\\KGICGCAPIATLSVI_1.3.25.0418.dll",
+                                                         "length":  2509464
+                                                     }
+                                                 ],
+                                       "processes":  [
+                                                         {
+                                                             "processName":  "MpDefenderCoreService",
+                                                             "id":  2928,
+                                                             "path":  null
+                                                         },
+                                                         {
+                                                             "processName":  "services",
+                                                             "id":  644,
+                                                             "path":  null
+                                                         }
+                                                     ],
+                                       "com":  [
+                                                   {
+                                                       "progId":  "KGICGCAPIATLSVI.KGICGCAPISVI Test-ComProgId",
+                                                       "typeFound":  false,
+                                                       "createInstanceOk":  false,
+                                                       "createError":  null
+                                                   }
+                                               ]
+                                   }
+                    },
+                    {
+                        "name":  "kgi_sim_tcp",
+                        "status":  "PASS",
+                        "detail":  [
+                                       {
+                                           "host":  "itradetest.kgi.com.tw",
+                                           "port":  443,
+                                           "tcpOk":  true
+                                       },
+                                       {
+                                           "host":  "itradetest.kgi.com.tw",
+                                           "port":  8000,
+                                           "tcpOk":  true
+                                       },
+                                       {
+                                           "host":  "iquotetest.kgi.com.tw",
+                                           "port":  443,
+                                           "tcpOk":  true
+                                       },
+                                       {
+                                           "host":  "iquotetest.kgi.com.tw",
+                                           "port":  8000,
+                                           "tcpOk":  true
+                                       }
+                                   ]
+                    },
+                    {
+                        "name":  "gateway_health",
+                        "status":  "FAIL",
+                        "detail":  "Unable to connect to the remote server"
+                    },
+                    {
+                        "name":  "machine_env_presence",
+                        "status":  "PASS",
+                        "detail":  {
+                                       "KGI_PERSON_ID":  {
+                                                             "present":  true,
+                                                             "value":  "F1***10"
+                                                         },
+                                       "KGI_PERSON_PWD":  {
+                                                              "present":  true,
+                                                              "value":  "QA***08"
+                                                          },
+                                       "KGI_SIMULATION":  {
+                                                              "present":  true,
+                                                              "value":  "false"
+                                                          },
+                                       "KGI_READ_ONLY_MODE":  {
+                                                                  "present":  true,
+                                                                  "value":  "true"
+                                                              },
+                                       "GATEWAY_HOST":  {
+                                                            "present":  true,
+                                                            "value":  "0.0.0.0"
+                                                        },
+                                       "GATEWAY_PORT":  {
+                                                            "present":  true,
+                                                            "value":  "8787"
+                                                        }
+                                   }
+                    }
+                ]
+}
+
+

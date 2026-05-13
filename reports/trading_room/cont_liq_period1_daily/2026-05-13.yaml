@@ -1,0 +1,230 @@
+schema: athena_cont_liq_v36_period1_daily_capture_v1
+date: 2026-05-13
+strategy_id: cont_liq_v36_h20_top4_regime_pos006
+frozen_rule_hash: be90a2babe661717e8c5e02b3ba8e022ca6627272bf82d1664a4a06aab3cf8e8
+anchor_signal_date: 2026-05-06
+tradeable_at: 2026-05-07T09:00:00+08:00
+provisional_forward_end: 2026-06-03
+days_held: 5
+period_day_of_20: 5
+trading_calendar_note: |
+  Day 1 = 2026-05-07 (tradeable_at), Day 2 = 2026-05-08, Day 3 = 2026-05-09,
+  Day 4 = 2026-05-12 (2026-05-10/11 weekend skipped),
+  Day 5 = 2026-05-13.
+adjusted_close_source: FINMIND_RETRO_VERIFIED_2426_6205_2486_0050_TWSE_MIS_PROVISIONAL_3707
+adjusted_close_source_note: |
+  DIANA_RETRO_VERIFY COMPLETE 2026-05-13 (post Bruce 14:36 token refresh).
+  2426/6205/2486/0050: FinMind TaiwanStockPrice 2026-05-13 rows confirmed.
+  All 4 match Athena TWSE-MIS fallback exactly (delta=0.0 all, tolerance=0.1 TWD).
+  3707: FinMind TaiwanStockPrice AND TaiwanStockPriceAdj have NO row for 2026-05-13
+  as of retro-verify run time — FinMind ingestion lag for this symbol on this date.
+  3707 latest FinMind row is 2026-05-12 close=77.2, which matches Athena
+  today_source_y_crosscheck=77.2 exactly (confirming no CA event 5/12→5/13).
+  3707 today_close_adj=72.8 from Athena TWSE-MIS fallback remains the operative
+  figure; FinMind cannot contradict it (no row), and TWSE y-field cross-check
+  already excludes CA distortion. 3707 status: PROVISIONAL_TWSE_MIS_FINMIND_LAG.
+basket:
+  - symbol: "3707"
+    sector_tag: semiconductor_wafer_power_ic
+    entry_close_adj: 73.1
+    today_close_adj: 72.8
+    unrealized_return_pct: -0.4103967168262652
+    adv_proxy_20d_twd: 1533778171
+    adv_proxy_20d_note: "Diana retro-fill via FinMind TaiwanStockPrice 2026-04-15..2026-05-12 (19 trading days; 5/13 row absent in FinMind — ingestion lag). ADV computed from Trading_money mean."
+    adv_proxy_5d_twd: null
+    adv_proxy_5d_note: "5d ADV proxy not separately computed; use adv_proxy_20d_twd"
+    today_source: "TWSE_MIS otc_3707.tw z field at t=13:30:00 d=20260513 [PROVISIONAL_FINMIND_LAG: no FinMind row for 2026-05-13]"
+    today_source_y_crosscheck: 77.2
+    today_source_y_vs_day4_yaml: "y=77.2 matches Day-4 yaml today_close_adj=77.2 EXACTLY → no CA event 5/12→5/13"
+    note: ""
+  - symbol: "2426"
+    sector_tag: optoelectronics_led
+    entry_close_adj: 76.2
+    today_close_adj: 68.0
+    unrealized_return_pct: -10.761154855643044
+    adv_proxy_20d_twd: 957717224
+    adv_proxy_20d_note: "Diana retro-fill via FinMind TaiwanStockPrice 2026-04-15..2026-05-13 (20 trading days). ADV computed from Trading_money mean."
+    adv_proxy_5d_twd: null
+    adv_proxy_5d_note: "5d ADV proxy not separately computed; use adv_proxy_20d_twd"
+    today_source: "FinMind_TaiwanStockPrice tse_2426 2026-05-13 close=68.0 [DIANA_VERIFIED delta=0.0 vs TWSE_MIS]"
+    today_source_y_crosscheck: 69.9
+    today_source_y_vs_day4_yaml: "y=69.9 matches Day-4 yaml today_close_adj=69.9 EXACTLY → no CA event 5/12→5/13"
+    note: "Day-5 single-day drop -2.72% vs 5/12; cumulative since anchor -10.76% breaches -10% individually but basket avg still > -10%"
+  - symbol: "6205"
+    sector_tag: electronic_components_connector
+    entry_close_adj: 94.1
+    today_close_adj: 80.4
+    unrealized_return_pct: -14.558979808714134
+    adv_proxy_20d_twd: 818652529
+    adv_proxy_20d_note: "Diana retro-fill via FinMind TaiwanStockPrice 2026-04-15..2026-05-13 (20 trading days). ADV computed from Trading_money mean."
+    adv_proxy_5d_twd: null
+    adv_proxy_5d_note: "5d ADV proxy not separately computed; use adv_proxy_20d_twd"
+    today_source: "FinMind_TaiwanStockPrice tse_6205 2026-05-13 close=80.4 [DIANA_VERIFIED delta=0.0 vs TWSE_MIS]"
+    today_source_y_crosscheck: 85.9
+    today_source_y_vs_day4_yaml: "y=85.9 matches Day-4 yaml today_close_adj=85.9 EXACTLY → no CA event 5/12→5/13"
+    note: "Single-stock cumulative -14.56% breaches -15% by 0.44pp at single-stock level; basket avg dilutes; not a basket-level kill-switch event"
+  - symbol: "2486"
+    sector_tag: optoelectronics_led
+    entry_close_adj: 288.0
+    today_close_adj: 255.0
+    unrealized_return_pct: -11.458333333333329
+    adv_proxy_20d_twd: 2120369374
+    adv_proxy_20d_note: "Diana retro-fill via FinMind TaiwanStockPrice 2026-04-15..2026-05-13 (20 trading days). ADV computed from Trading_money mean."
+    adv_proxy_5d_twd: null
+    adv_proxy_5d_note: "5d ADV proxy not separately computed; use adv_proxy_20d_twd"
+    today_source: "FinMind_TaiwanStockPrice tse_2486 2026-05-13 close=255.0 [DIANA_VERIFIED delta=0.0 vs TWSE_MIS]"
+    today_source_y_crosscheck: 270.5
+    today_source_y_vs_day4_yaml: "y=270.5 matches Day-4 yaml today_close_adj=270.5 EXACTLY → no CA event 5/12→5/13"
+    note: "Day-5 single-day drop -5.73% vs 5/12; cumulative since anchor -11.46%"
+basket_equal_weight_unrealized_pct: -9.297216
+benchmark_0050_same_period_pct: -0.261097
+benchmark_0050_today_close: 95.5
+benchmark_0050_entry_close_derived: 95.7503
+benchmark_0050_entry_close_finmind_verified: 95.75
+benchmark_0050_entry_delta: 0.0003
+benchmark_0050_entry_derivation_note: |
+  DIANA_RETRO_VERIFY: FinMind TaiwanStockPrice 0050 2026-05-06 close=95.75.
+  Athena derived entry was 95.7503 (delta=0.0003, within 0.1 TWD tolerance). PASS.
+  Original derivation note: TWSE MIS does not provide historical close; derived
+  from Day-4 yaml benchmark_0050_same_period_pct=1.1488% + TWSE MIS y(5/13)=96.85.
+  Formula: entry = 96.85 / (1 + 0.011488) = 95.7503.
+excess_pct: -9.036120
+no_retune_attestation: true
+no_retune: true
+no_symbol_swap: true
+no_premature_pass: true
+spec_sha256_match_day0_ledger: true
+status_enum: L10_DAY5_FORWARD_OBSERVING_DRAWDOWN_ACTIVE
+andy_concentration_verdict: PERIOD1_WATCH_CONCENTRATION
+andy_liquidity_verdict: PERIOD1_ADV_RETRO_FILLED_DIANA
+diana_data_quality_verdict: DATA_QUALITY_OK_WITH_CAVEATS
+diana_data_quality_verdict_source: |
+  DIANA_RETRO_VERIFY completed 2026-05-13 (post Bruce 14:36 token restoration).
+  2426/6205/2486/0050: FinMind TaiwanStockPrice 2026-05-13 rows fetched; all 4
+  match Athena TWSE-MIS fallback exactly (delta=0.0, tolerance=0.1 TWD). PASS.
+  3707: FinMind has NO row for 2026-05-13 (ingestion lag — latest is 2026-05-12).
+  3707 TWSE-MIS fallback value 72.8 is uncontradicted by FinMind; y-field CA
+  check already excluded corporate action distortion. CAVEAT: 3707 today_close_adj
+  remains PROVISIONAL_FINMIND_LAG until FinMind backfills 2026-05-13.
+  0050 anchor entry cross-check: FinMind=95.75 vs derived=95.7503, delta=0.0003. PASS.
+  ADV proxy filled for all 5 symbols via FinMind TaiwanStockPrice 20d window.
+  Evidence: evidence/w7_paper_sprint/DIANA_CONT_LIQ_DAY5_RETRO_VERIFY_2026-05-13.md
+  Audit script: data/audits/diana_day5_retro_verify_2026_05_13.py
+  Result JSON SHA256: cd9bc60c922361039b279987934c52cd0e3e92256e485e56e857b22b76b85d59
+data_finality: FINAL_VERIFIED
+data_finality_status: FINAL_VERIFIED_WITH_CAVEAT_3707_FINMIND_LAG
+data_finality_note: |
+  DIANA_RETRO_VERIFY completed. 2426/6205/2486/0050: FinMind TaiwanStockPrice
+  confirmed exact match (delta=0.0 all). 3707: FinMind ingestion lag — no row
+  for 2026-05-13; TWSE-MIS fallback 72.8 uncontradicted; CA excluded by y-field
+  cross-check. status flipped to FINAL_VERIFIED_WITH_CAVEAT_3707_FINMIND_LAG.
+  Original fallback note: Numbers computed from TWSE MIS post-13:30 final close;
+  TWSE raw used as fallback per Athena escalation due to FinMind token failure
+  at 14:14 TST. Token refreshed by Bruce 14:36 TST; Diana retro-verify run
+  same session.
+concentration_rationale: |
+  Same as Day-4: 3/4 basket in optoelectronics/LED/semiconductor downstream
+  upstream electronics components family (2426 LED, 2486 LED, 6205 connector,
+  3707 wafer/power IC). PERIOD1_WATCH_CONCENTRATION carries forward.
+  Day-5 evidence: 3 of 4 stocks (2426, 6205, 2486) all breach -10% cumulative
+  drawdown individually; 3707 (the odd-sector one) is the only stock NOT
+  in drawdown (-0.41% cumulative). Concentration risk materialised on Day-5
+  as a sector-correlated single-day drop.
+liquidity_rationale: |
+  DIANA_RETRO_FILL: ADV_20d proxy filled via FinMind TaiwanStockPrice 2026-04-15..2026-05-13.
+  3707: 1,533,778,171 TWD (19 days, 5/13 absent in FinMind).
+  2426: 957,717,224 TWD (20 days).
+  6205: 818,652,529 TWD (20 days).
+  2486: 2,120,369,374 TWD (20 days).
+  0050: 10,269,469,215 TWD (20 days).
+  All basket symbols well above 6e8 TWD ADV floor — no liquidity concern.
+  andy_liquidity_verdict updated to PERIOD1_ADV_RETRO_FILLED_DIANA.
+kill_switch_check:
+  basket_lt_minus_15_pct: false
+  intra_period_dd_gt_minus_10_pct_today_close_only: false
+  basket_today_pct: -9.297216
+  benchmark_today_pct: -0.261097
+  kill_switch_evaluable: true
+  kill_switch_note: |
+    Basket -9.30% is ABOVE (less negative than) -10% threshold by 0.70pp;
+    NOT triggered. However Day-5 single-day delta vs Day-4 is -4.93pp,
+    the largest single-day basket drop observed since anchor; alert escalated
+    to alert_triggers list. Individual stocks: 6205 (-14.56%) close to -15%
+    threshold at SINGLE-STOCK level but basket-equal-weight avg dilutes.
+    Spec kill-switch is BASKET-level (-15% wake / -10% alert), not single-stock,
+    so no kill-switch fires.
+alert_triggers:
+  - concentration_high_broad_sector_optoelectronics_semi_3of4_materialising_day5
+  - basket_drawdown_within_1pp_of_minus_10pct_threshold_day5
+  - single_day_basket_drop_minus_4_93pp_largest_since_anchor
+  - single_stock_6205_cumulative_minus_14_56_pct_close_to_minus_15pct
+hard_lines:
+  no_real_orders: true
+  no_broker_write: true
+  no_finmind_token_leak: true
+  no_retune: true
+  no_inflate: true
+  no_fabricate_result: true
+  no_premature_pass_wording: true
+  no_symbol_swap: true
+  no_spec_edit: true
+  fallback_source_explicitly_marked: true
+ca_dividend_split_window_check:
+  window: "2026-05-12 to 2026-05-13"
+  symbols_checked: 4
+  check_method: TWSE_MIS_y_field_vs_day4_yaml_today_close_adj
+  check_results:
+    - symbol: "3707"
+      twse_y_5_13: 77.2
+      day4_yaml_today_close_adj: 77.2
+      match: true
+    - symbol: "2426"
+      twse_y_5_13: 69.9
+      day4_yaml_today_close_adj: 69.9
+      match: true
+    - symbol: "6205"
+      twse_y_5_13: 85.9
+      day4_yaml_today_close_adj: 85.9
+      match: true
+    - symbol: "2486"
+      twse_y_5_13: 270.5
+      day4_yaml_today_close_adj: 270.5
+      match: true
+  ca_event_5_12_to_5_13: NO_EVENT_VERIFIED_VIA_PRIOR_CLOSE_MATCH
+  ca_event_5_6_to_5_12: VERIFIED_CLEAN_VIA_DAY4_YAML_DIANA_SIGN
+  check_note: |
+    Day-5 (5/12→5/13) CA event check via TWSE MIS y-field: ALL MATCH EXACTLY
+    (4/4 PASS). Earlier window (5/6→5/12) was verified by Day-4 diana_data_quality_verdict.
+    DIANA_RETRO_VERIFY confirms FinMind data for 2426/6205/2486 on 2026-05-13 matches
+    TWSE-MIS fallback (delta=0.0), further corroborating no CA distortion for these
+    3 symbols. 3707 FinMind lag does not introduce CA doubt given y-field cross-check pass.
+day_over_day_delta:
+  basket_day4_to_day5_pct_pp: -4.934845
+  benchmark_day4_to_day5_pct_pp: -1.409922
+  excess_day4_to_day5_pct_pp: -3.524923
+  largest_single_day_basket_drop_in_period_1_so_far: true
+  delta_note: |
+    Day-4 basket -4.36% → Day-5 basket -9.30% = -4.93pp single-day drop.
+    Day-4 benchmark +1.15% → Day-5 benchmark -0.26% = -1.41pp.
+    Excess Day-4 -5.51pp → Day-5 -9.04pp = -3.52pp.
+    This is the largest single-day basket drop observed since Period 1 anchor.
+    Surfaced as alert_trigger but does NOT cross basket-level kill-switch.
+reproduction_command: |
+  Diana retro-verify command (run 2026-05-13 post Bruce token refresh):
+    python data/audits/diana_day5_retro_verify_2026_05_13.py
+  Result JSON: data/audits/diana_day5_retro_verify_2026_05_13_result.json (SHA256: cd9bc60c922361039b279987934c52cd0e3e92256e485e56e857b22b76b85d59)
+  Canonical daily command (for Day-6+):
+    python scripts/andy_period1_daily_quote_pull.py --anchor 2026-05-06 --today <date>
+  Original fallback command (Athena, 14:14 TST):
+    Invoke-WebRequest -Uri "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_3707.tw|tse_2426.tw|tse_6205.tw|tse_2486.tw|tse_0050.tw&json=1"
+diana_retro_verify_at: 2026-05-13T15:00:00+08:00
+author: Athena (IUF Quant Lab CEO) — Andy sub-agent fallback; Diana retro-verify post Bruce token restore
+filed_at_taipei: 2026-05-13T14:25:00+08:00
+diana_retro_filed_at_taipei: 2026-05-13T15:00:00+08:00
+reports_to: Athena
+escalation_note: |
+  RESOLVED: FinMind token refreshed by Bruce 14:36 TST. Diana retro-verify complete.
+  Day-5 yaml status: FINAL_VERIFIED_WITH_CAVEAT_3707_FINMIND_LAG.
+  3707 FinMind ingestion lag: monitor whether 2026-05-13 row appears in FinMind
+  next session (Day-6). If backfilled and differs from 72.8, escalate to Athena.
+  Day-6 (2026-05-14): token now valid, Andy canonical script should run normally.

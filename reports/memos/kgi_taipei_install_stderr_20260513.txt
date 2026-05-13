@@ -1,0 +1,11 @@
+﻿C:\iuf-kgi-src\deploy\install.ps1 : The term 'winget' is not recognized as the name of a cmdlet, function, script 
+file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct 
+and try again.
+At C:\ProgramData\Amazon\SSM\InstanceData\i-03762861d4ce08932\document\orchestration\247394f0-a093-4783-8f1a-83ae2ba97b
+04\awsrunPowerShellScript\0.awsrunPowerShellScript\_script.ps1:18 char:1
++ & "C:\iuf-kgi-src\deploy\install.ps1" -UseSSM -SourceDir "C:\iuf-kgi- ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (winget:String) [install.ps1], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException,install.ps1
+ 
+failed to run commands: exit status 1

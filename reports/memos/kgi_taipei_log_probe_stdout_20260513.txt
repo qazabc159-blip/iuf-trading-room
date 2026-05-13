@@ -1,0 +1,62 @@
+﻿=== stderr tail ===
+INFO:     Started server process [3188]
+INFO:     Waiting for application startup.
+2026-05-13 05:21:47,253 kgi_gateway INFO KGI Gateway starting on 0.0.0.0:8787 �?" waiting for POST /session/login
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8787 (Press CTRL+C to quit)
+[2026-05-13 05:26:00.019408] INFO - Successfully obtained ranking token for uid: F131331910
+[2026-05-13 05:26:03.426798] INFO - Successfully retrieved ranking for uid: F131331910, level: 
+2026-05-13 05:26:14,546 kgi_session ERROR [kgi-session] login not positively confirmed simulation=True person_id=F13*****10 attr=_ObjOrder.FIsLogon value_type=NoneType
+2026-05-13 05:26:14,546 kgi_gateway ERROR Login result missing attribute: person_id=F13*****10 simulation=True attr=unknown
+=== stdout tail ===
+----- TradeCom Python API detect : Windows platform -----
+Load[C:\Python311\Lib\site-packages\kgisuperpy\pushClient/tradecom_windows_bridge64.dll]
+INFO:     127.0.0.1:49900 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49901 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49909 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49909 - "GET /quote/status HTTP/1.1" 200 OK
+INFO:     61.218.159.149:50987 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49925 - "POST /session/logout HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:49940 - "POST /session/logout HTTP/1.1" 401 Unauthorized
+* PushClient_Win
+* pid(3188)
+* process_name(python.exe)
+* InitSocket OK
+* heartbeat_run...start
+* [CreateLogWriter] ./TradeCom.20260513-F131331910_0.log
+* InitRetriveTime
+* MyIP = 43.213.204.233
+[Login][CheckCAComponent]...(F131331910  )
+CoCreateInstance() fail!
+Package install directory: C:\Python311\Lib\site-packages\kgisuperpy\pushClient
+Current working directory: C:\kgi-gateway
+[�3�����"S�?_] ��_�_`�"-�rs�rO�^?��^�'����=�T>�"��,<�-r�'������%a?,
+��<�����?�c��3��^��S�T?
+-------------- OnConnected() --------------
+[�3�����"S�?_] �-%�_.�T��.��>z������-��O��<����Y��+`�-%�<?�.<a?,
+[�3�����"S�?_] API �S���%�rO�^?��O�-���Z����""a?,
+INFO:     127.0.0.1:49940 - "POST /session/login HTTP/1.1" 400 Bad Request
+=== install evidence ===
+{
+    "smoke_test":  "see_log",
+    "install_dir":  "C:\\kgi-gateway",
+    "python_version":  "Python 3.11.9",
+    "ssm_used":  true,
+    "dry_run":  false,
+    "timestamp":  "2026-05-13T05:21:32+00:00",
+    "script_version":  "1.0.0",
+    "ec2_instance":  "i-0b02f62220f422349",
+    "public_ip":  "54.249.139.28",
+    "python_exe":  "C:\\Python311\\python.exe",
+    "env_vars_written":  [
+                             "KGI_GATEWAY_POSITION_DISABLED",
+                             "AUTO_LOGIN",
+                             "KGI_GATEWAY_QUOTE_DISABLED",
+                             "GATEWAY_HOST",
+                             "KGI_SIMULATION",
+                             "GATEWAY_PORT",
+                             "KGI_READ_ONLY_MODE"
+                         ]
+}
+=== env safe ===
+

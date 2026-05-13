@@ -1,0 +1,14 @@
+﻿=== normalize PowerShell script encoding to UTF-8 BOM ===
+normalized install.ps1
+normalized nssm_install.ps1
+normalized test_dry_run.ps1
+normalized watchdog.ps1
+=== install gateway ===
+[2026-05-13T05:13:10+00:00] [INFO ] ========================================
+[2026-05-13T05:13:10+00:00] [INFO ] KGI Gateway EC2 Install Script
+[2026-05-13T05:13:10+00:00] [INFO ] DryRun=False  SourceDir=C:\iuf-kgi-src  InstallDir=C:\kgi-gateway
+[2026-05-13T05:13:10+00:00] [INFO ] ========================================
+[2026-05-13T05:13:10+00:00] [INFO ] --- Step 1: Python 3.11 ---
+[2026-05-13T05:13:10+00:00] [INFO ] Python 3.11 not found - installing via winget...
+[2026-05-13T05:13:10+00:00] [INFO ] EXEC: winget install Python 3.11
+

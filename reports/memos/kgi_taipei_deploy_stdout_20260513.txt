@@ -1,0 +1,29 @@
+﻿=== preflight ===
+User=EC2AMAZ-OI3DFSG$ Computer=EC2AMAZ-OI3DFSG Region=ap-east-2
+=== ensure AWS CLI ===
+AWS=C:\Program Files\Amazon\AWSCLIV2\aws.exe
+aws-cli/2.34.45 Python/3.14.4 Windows/2022Server exec-env/EC2 exe/AMD64
+=== download gateway package via instance role ===
+Completed 90.4 KiB/90.4 KiB (154.5 KiB/s) with 1 file(s) remainingdownload: s3://iuf-kgi-taipei-deploy-027903151493-20260513-130910/deploy/kgi-gateway-pr406-f2a-20260513-130910.zip to ..\..\iuf-kgi-gateway.zip
+
+Name               Length Mode  
+----               ------ ----  
+deploy                    d-----
+scripts                   d-----
+tests                     d-----
+.env.example       425    -a----
+app.py             49962  -a----
+config.py          1444   -a----
+kgi_events.py      5066   -a----
+kgi_kbar.py        16607  -a----
+kgi_quote.py       12154  -a----
+kgi_session.py     16087  -a----
+README.md          7273   -a----
+read_only_guard.py 3370   -a----
+requirements.txt   281    -a----
+schemas.py         9738   -a----
+SCHEMA_MAPPING.md  6600   -a----
+
+
+=== install gateway ===
+

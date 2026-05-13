@@ -1,0 +1,10 @@
+﻿aws : The term 'aws' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the 
+spelling of the name, or if a path was included, verify that the path is correct and try again.
+At C:\ProgramData\Amazon\SSM\InstanceData\i-03762861d4ce08932\document\orchestration\1f2228f6-cc5d-403b-b66e-d553e1d56d
+16\awsrunPowerShellScript\0.awsrunPowerShellScript\_script.ps1:8 char:11
++ $simId = (aws ssm get-parameter --region ap-east-2 --name /iuf/kgi/si ...
++           ~~~
+    + CategoryInfo          : ObjectNotFound: (aws:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+failed to run commands: exit status 1

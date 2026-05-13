@@ -1,0 +1,24 @@
+﻿At C:\iuf-kgi-src\deploy\install.ps1:296 char:63
++ ...       $personId  = Read-Host "Enter KGI_PERSON_ID (uppercase, e.g. A1 ...
++                                                                 ~
+Missing argument in parameter list.
+At C:\iuf-kgi-src\deploy\install.ps1:393 char:53
++ Write-Info "========================================"
++                                                     ~
+The string is missing the terminator: ".
+At C:\iuf-kgi-src\deploy\install.ps1:391 char:14
++ if ($DryRun) { Write-Info "DRY-RUN mode �?" no changes were made." }
++              ~
+Missing closing '}' in statement block or type definition.
+At C:\iuf-kgi-src\deploy\install.ps1:113 char:47
++     if (-not (Test-Path "$SourceDir\app.py")) {
++                                               ~
+Missing closing '}' in statement block or type definition.
+At C:\iuf-kgi-src\deploy\install.ps1:112 char:8
++ } else {
++        ~
+Missing closing '}' in statement block or type definition.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : MissingArgument
+ 
+failed to run commands: exit status 1

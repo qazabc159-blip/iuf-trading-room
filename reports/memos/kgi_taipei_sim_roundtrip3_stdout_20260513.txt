@@ -1,0 +1,6 @@
+﻿=== clean logout if needed ===
+logout_status=skip
+=== SIM login ===
+login_error_status=400
+
+

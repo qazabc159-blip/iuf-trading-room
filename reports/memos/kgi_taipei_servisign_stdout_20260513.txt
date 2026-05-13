@@ -1,0 +1,152 @@
+﻿=== download ServiSign ===
+installer_size=2739032
+
+
+FileDescription  : 
+ProductName      : 
+FileVersion      : 
+ProductVersion   : 
+OriginalFilename : 
+
+
+
+=== try installer args:  ===
+installer_timeout=true pid=
+=== try installer args:  ===
+installer_timeout=true pid=
+=== try installer args:  ===
+installer_timeout=true pid=
+installed_attempt_success=False
+=== registry probe ===
+
+PSChildName                                                       
+-----------                                                       
+CImeDictAPIWebServiceComment                                      
+CImeDictAPIWebServiceComment.15                                   
+COMSNAP.ComponentServicesExtensionSnapin                          
+COMSNAP.ComponentServicesExtensionSnapin.1                        
+COMSVCS.CServiceConfig                                            
+COMSVCS.CServiceConfig.1                                          
+IAS.SdoService                                                    
+IAS.SdoService.1                                                  
+Microsoft.Update.ServiceManager                                   
+Microsoft.Update.ServiceManager.1                                 
+MicrosoftEdgeUpdate.Update3COMClassService                        
+MicrosoftEdgeUpdate.Update3COMClassService.1.0                    
+POSyncServices                                                    
+Schedule.Service                                                  
+Schedule.Service.1                                                
+service4                                                          
+STSInproc.SpeechTextService                                       
+STSInproc.SpeechTextService.1                                     
+System.EnterpriseServices.CompensatingResourceManager.ClerkMonitor
+System.EnterpriseServices.CompensatingResourceManager.Compensator 
+System.EnterpriseServices.Internal.AppDomainHelper                
+System.EnterpriseServices.Internal.AssemblyLocator                
+System.EnterpriseServices.Internal.ClientRemotingConfig           
+System.EnterpriseServices.Internal.ClrObjectFactory               
+System.EnterpriseServices.Internal.ComManagedImportUtil           
+System.EnterpriseServices.Internal.ComSoapPublishError            
+System.EnterpriseServices.Internal.GenerateMetadata               
+System.EnterpriseServices.Internal.IISVirtualRoot                 
+System.EnterpriseServices.Internal.Publish                        
+System.EnterpriseServices.Internal.ServerWebConfig                
+System.EnterpriseServices.Internal.SoapClientImport               
+System.EnterpriseServices.Internal.SoapServerTlb                  
+System.EnterpriseServices.Internal.SoapServerVRoot                
+System.EnterpriseServices.Internal.SoapUtility                    
+System.EnterpriseServices.RegistrationConfig                      
+System.EnterpriseServices.RegistrationHelper                      
+System.EnterpriseServices.RegistrationHelperTx                    
+System.Runtime.CompilerServices.CallConvCdecl                     
+System.Runtime.CompilerServices.CallConvFastcall                  
+System.Runtime.CompilerServices.CallConvStdcall                   
+
+
+=== file probe ===
+
+FullName                                                                                                        Length
+--------                                                                                                        ------
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\accessanalyzer\2019-11-01\service-2.json                  213009
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\account\2021-02-01\service-2.json                          63331
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\acm\2015-12-08\service-2.json                             109283
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\acm-pca\2017-08-22\service-2.json                         142692
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\aiops\2018-05-10\service-2.json                            39844
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\amp\2020-08-01\service-2.json                             158681
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\amplify\2017-07-25\service-2.json                         145830
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\amplifybackend\2020-08-11\service-2.json                  161973
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\amplifyuibuilder\2021-08-11\service-2.json                131777
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\apigateway\2015-07-09\service-2.json                      325630
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\apigatewaymanagementapi\2018-11-29\service-2.json           7609
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\apigatewayv2\2018-11-29\service-2.json                    623149
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\appconfig\2019-10-09\service-2.json                       142398
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\appconfigdata\2021-11-11\service-2.json                    14648
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\appfabric\2023-05-19\service-2.json                        86773
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\appflow\2020-08-23\service-2.json                         235499
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\appintegrations\2020-07-29\service-2.json                  74087
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\application-autoscaling\2016-02-06\service-2.json         230124
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\application-insights\2018-11-25\service-2.json             96390
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\application-signals\2024-04-15\service-2.json             183094
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\applicationcostprofiler\2020-09-10\service-2.json          17096
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\appmesh\2019-01-25\service-2.json                         239752
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\apprunner\2020-05-15\service-2.json                       145851
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\appstream\2016-12-01\service-2.json                       298086
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\appsync\2017-07-25\service-2.json                         240048
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\arc-region-switch\2022-07-26\service-2.json               107272
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\arc-zonal-shift\2022-10-30\service-2.json                  88079
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\artifact\2018-05-10\service-2.json                         28927
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\athena\2017-05-18\service-2.json                          241641
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\auditmanager\2017-07-25\service-2.json                    225517
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\autoscaling\2011-01-01\service-2.json                     416260
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\autoscaling-plans\2018-01-06\service-2.json                54523
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\b2bi\2022-06-23\service-2.json                            152896
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\backup\2018-11-15\service-2.json                          506493
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\backup-gateway\2021-01-01\service-2.json                   61173
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\backupsearch\2018-05-10\service-2.json                     60285
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\batch\2016-08-10\service-2.json                           464746
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bcm-dashboards\2025-08-18\service-2.json                   60740
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bcm-data-exports\2023-11-26\service-2.json                 37365
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bcm-pricing-calculator\2024-06-19\service-2.json          151071
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bcm-recommended-actions\2024-11-14\service-2.json          10325
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bedrock\2023-04-20\service-2.json                         619048
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bedrock-agent\2023-06-05\service-2.json                   482997
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bedrock-agent-runtime\2023-07-26\service-2.json           366689
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bedrock-agentcore\2024-02-28\service-2.json               418998
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bedrock-agentcore-control\2023-06-05\service-2.json       722585
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bedrock-data-automation\2023-07-26\service-2.json          94400
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bedrock-data-automation-runtime\2024-06-13\service-2.json  23220
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\bedrock-runtime\2023-09-30\service-2.json                 198982
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\billing\2023-09-07\service-2.json                          40370
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\billingconductor\2021-07-30\service-2.json                135548
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\braket\2019-09-01\service-2.json                           81636
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\budgets\2016-10-20\service-2.json                         101281
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\ce\2017-10-25\service-2.json                              315461
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\chatbot\2017-10-11\service-2.json                         106204
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\chime\2018-05-01\service-2.json                           146358
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\chime-sdk-identity\2021-04-20\service-2.json               80539
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\chime-sdk-media-pipelines\2021-07-15\service-2.json       154591
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\chime-sdk-meetings\2021-07-15\service-2.json               89427
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\chime-sdk-messaging\2021-05-15\service-2.json             166967
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\chime-sdk-voice\2022-08-03\service-2.json                 228315
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cleanrooms\2022-02-17\service-2.json                      442747
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cleanroomsml\2023-09-06\service-2.json                    281675
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloud9\2017-09-23\service-2.json                           43983
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudcontrol\2021-09-30\service-2.json                     52664
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\clouddirectory\2017-01-11\service-2.json                  236358
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudformation\2010-05-15\service-2.json                  588128
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudfront\2020-05-31\service-2.json                      782103
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudfront-keyvaluestore\2022-07-26\service-2.json         18231
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudhsm\2014-05-30\service-2.json                         56290
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudhsmv2\2017-04-28\service-2.json                       56622
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudsearch\2013-01-01\service-2.json                      96775
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudsearchdomain\2013-01-01\service-2.json                43705
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudtrail\2013-11-01\service-2.json                      310396
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudtrail-data\2021-08-11\service-2.json                   8459
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\cloudwatch\2010-08-01\service-2.json                      269902
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\codeartifact\2018-09-22\service-2.json                    220147
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\codebuild\2016-10-06\service-2.json                       321147
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\codecatalyst\2022-09-28\service-2.json                    143811
+C:\Program Files\Amazon\AWSCLIV2\awscli\botocore\data\codecommit\2015-04-13\service-2.json                      353243
+
+
+
