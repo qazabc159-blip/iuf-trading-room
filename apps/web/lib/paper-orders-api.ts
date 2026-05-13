@@ -251,6 +251,47 @@ export async function getPaperPortfolio() {
   return request<PaperPortfolioPosition[]>("/api/v1/paper/portfolio");
 }
 
+export type PaperPortfolioSummary = {
+  baseCapitalTWD: number;
+  currency: string;
+  simulated: boolean;
+  paperMode: boolean;
+  positionCount: number;
+  investedCostTWD: number;
+  note: string;
+};
+
+export type PaperPortfolioRawResponse = {
+  positions: PaperPortfolioPosition[];
+  summary: PaperPortfolioSummary;
+};
+
+/** Returns positions + summary (baseCapitalTWD etc.) without envelope unwrapping. */
+export async function getPaperPortfolioRaw(): Promise<PaperPortfolioRawResponse> {
+  if (!API_BASE) {
+    throw new PaperOrderApiError(503, { error: "API_BASE_UNCONFIGURED" }, "PAPER_ORDER_API_BASE_UNCONFIGURED");
+  }
+  const cookie = await ssrCookieHeader();
+  const response = await fetch(`${API_BASE}/api/v1/paper/portfolio`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+  });
+  const body = await readJson(response);
+  if (!response.ok) {
+    throw new PaperOrderApiError(response.status, body, "PAPER_PORTFOLIO_RAW_FAILED");
+  }
+  const envelope = body as { data: PaperPortfolioPosition[]; summary: PaperPortfolioSummary };
+  return {
+    positions: envelope.data ?? [],
+    summary: envelope.summary ?? { baseCapitalTWD: 10_000_000, currency: "TWD", simulated: true, paperMode: true, positionCount: 0, investedCostTWD: 0, note: "" },
+  };
+}
+
 export async function listPaperFills() {
   return request<PaperFillLedgerRow[]>("/api/v1/paper/fills");
 }

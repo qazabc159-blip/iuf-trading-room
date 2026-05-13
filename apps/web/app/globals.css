@@ -14391,9 +14391,20 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-intel-list a,
   .tac-strategy-table > div,
   .tac-strategy-table > a,
-  .tac-workflow a,
   .tac-request-list > div {
     grid-template-columns: 1fr;
+  }
+
+  /* BUG_004: keep step-id + title on same row; chip + CTA wrap to col 2 */
+  .tac-workflow a {
+    grid-template-columns: 26px 1fr;
+    gap: 8px 10px;
+  }
+
+  /* children layout: span(id) | div(title+desc) / .tac-chip | strong(cta) */
+  .tac-workflow a > .tac-chip,
+  .tac-workflow a > strong {
+    grid-column: 2;
   }
 
   .tac-mover-board section {
