@@ -268,6 +268,13 @@ import {
 } from "./openai-brief-strategy-commentary.js";
 import { assessSignalConfidence, getSignalConfidenceAssessment } from "./openai-signal-confidence.js";
 import { getQuotaStatus } from "./openai-quota-guard.js";
+// Axis 4: strategy-level brief (2026-05-13)
+import {
+  generateStrategyBrief,
+  getStrategyBriefWithStaleness,
+  isStrategyBriefWindow,
+  getTstDate as getStrategyBriefTstDate
+} from "./openalice-strategy-brief.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -6419,6 +6426,72 @@ app.post("/api/v1/internal/strategy/brief-commentary/fire-now", async (c) => {
   }
 });
 
+// =============================================================================
+// Axis 4: OpenAlice Strategy-Level Brief (2026-05-13)
+//
+// POST /api/v1/openalice/strategy-brief/generate — Owner only
+//   Generates a strategy-level brief for the given trading_date.
+//   Input: { trading_date: "YYYY-MM-DD", strategies?: [...] }
+//   Sources: cont_liq daily yaml + strategy snapshots + FinMind DB + OHLCV DB
+//   Gate: hallucination check + red wording guard + trail completeness
+//
+// GET /api/v1/openalice/strategy-brief/latest — Owner only
+//   Returns the last generated strategy brief (with staleness).
+// =============================================================================
+
+app.post("/api/v1/openalice/strategy-brief/generate", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: { trading_date?: string; strategies?: string[] } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  const tradingDate = typeof body.trading_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.trading_date)
+    ? body.trading_date
+    : getStrategyBriefTstDate();
+
+  const allowedStrategies = ["cont_liq_v36", "strategy_002", "strategy_003"] as const;
+  type SID = typeof allowedStrategies[number];
+  const strategies = Array.isArray(body.strategies)
+    ? (body.strategies.filter((s): s is SID => (allowedStrategies as readonly string[]).includes(s)) as SID[])
+    : [...allowedStrategies];
+
+  try {
+    const result = await generateStrategyBrief({
+      tradingDate,
+      strategies,
+      workspaceSlug: session.workspace.slug
+    });
+    return c.json({ data: result }, 200);
+  } catch (err) {
+    console.error("[strategy-brief/generate] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "strategy_brief_generate_error", message: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
+app.get("/api/v1/openalice/strategy-brief/latest", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  try {
+    const result = getStrategyBriefWithStaleness();
+    if (!result) {
+      return c.json({ data: null, stale_reason: "never_generated" });
+    }
+    return c.json({ data: result });
+  } catch (err) {
+    console.error("[strategy-brief/latest] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "strategy_brief_latest_error" }, 500);
+  }
+});
+
 // POST /api/v1/signals/:id/assess-confidence
 // Owner-only. Runs GPT confidence assessment for a specific signal.
 // NOTE: This uses :id — registered here (before GET :id/confidence) to avoid Hono shadow issues.
@@ -11872,6 +11945,31 @@ function startSchedulers(workspaceSlug: string): void {
     runPipelineCloseBriefTick(workspaceSlug)
       .then(() => handlePipelineSuccess("close_brief"))
       .catch((e) => handlePipelineFail("close_brief", e));
+  }, FIFTEEN_MIN_MS);
+
+  // Axis 4: Strategy-level brief scheduler — 14:00–14:30 TST (post-close buffer)
+  // Runs every 15min and checks isStrategyBriefWindow() internally.
+  // Fires AFTER the daily brief pipeline's close-watch tick to avoid contention.
+  // idempotency: generateStrategyBrief stores result in-memory; repeated calls
+  // in same window are cheap (brief already in _lastResult).
+  setInterval(async () => {
+    try {
+      if (!isStrategyBriefWindow()) return;
+      const todayDate = getStrategyBriefTstDate();
+      // Idempotency: skip if already generated for today
+      const existing = getStrategyBriefWithStaleness();
+      if (existing && existing.tradingDate === todayDate && existing.status === "published") {
+        console.log(`[strategy-brief-scheduler] already published for ${todayDate}, skipping`);
+        return;
+      }
+      console.log(`[strategy-brief-scheduler] window open, generating for ${todayDate}`);
+      await generateStrategyBrief({
+        tradingDate: todayDate,
+        workspaceSlug
+      });
+    } catch (e) {
+      console.error("[strategy-brief-scheduler] tick failed:", e instanceof Error ? e.message : String(e));
+    }
   }, FIFTEEN_MIN_MS);
 
   // BLOCK #6: Event rule engine — poll every 5min, evaluate 10 rules, write iuf_events
