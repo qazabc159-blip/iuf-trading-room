@@ -40,6 +40,8 @@ const CACHE_TTL_SECONDS = 1800; // 30 min
 const OVERVIEW_CACHE_TTL_SECONDS = 60; // 60s for market overview (near-real-time)
 const STOCK_DAY_ALL_CACHE_TTL_SECONDS = 300; // 5 min — EOD data, stable once published
 const FETCH_TIMEOUT_MS = 3000; // 3s per upstream request — fail fast, caller does fallback
+// MI_5MINS_INDEX from Railway (Japan/Singapore region) may need up to 25s — much higher latency than Taiwan local
+const MI5MINS_TIMEOUT_MS = 25000; // 25s dedicated timeout for MI_5MINS_INDEX (Railway cross-region)
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -505,28 +507,61 @@ async function fetchTaiwanMarketIndexToday(
   doFetch: typeof fetch
 ): Promise<TwseIndexSnapshot | null> {
   const url = `${TWSE_MAIN_BASE_URL}/MI_5MINS_INDEX?date=${dateYYYYMMDD}`;
-  let resp: Response;
-  try {
-    resp = await doFetch(url, {
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      redirect: "follow"
-    });
-  } catch (err) {
-    console.warn("[twse-openapi-client] MI_5MINS_INDEX fetch error:", err instanceof Error ? err.message : String(err));
+
+  // Retry up to 3 attempts total (initial + 2 retries) with exponential backoff.
+  // TWSE main site from Railway (cross-region) can have 10-20s latency.
+  // User-Agent: TWSE may block default Node fetch UA.
+  const HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  };
+  const MAX_ATTEMPTS = 3;
+  const BACKOFF_MS = [0, 1000, 2000]; // attempt 1=immediate, 2=1s, 3=2s
+
+  let resp: Response | null = null;
+  let lastFetchErr: unknown = null;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (BACKOFF_MS[attempt] > 0) {
+      await new Promise(r => setTimeout(r, BACKOFF_MS[attempt]));
+    }
+    try {
+      resp = await doFetch(url, {
+        headers: HEADERS,
+        signal: AbortSignal.timeout(MI5MINS_TIMEOUT_MS),
+        redirect: "follow"
+      });
+      lastFetchErr = null;
+      break; // success — exit retry loop
+    } catch (err) {
+      lastFetchErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[twse-openapi-client] MI_5MINS_INDEX fetch attempt ${attempt + 1}/${MAX_ATTEMPTS} failed: ${msg}`);
+    }
+  }
+
+  if (!resp) {
+    console.warn("[twse-openapi-client] MI_5MINS_INDEX all attempts failed:", lastFetchErr instanceof Error ? lastFetchErr.message : String(lastFetchErr));
     return null;
   }
 
   if (!resp.ok) {
-    console.warn(`[twse-openapi-client] MI_5MINS_INDEX HTTP ${resp.status}`);
+    const ct = resp.headers.get("content-type") ?? "unknown";
+    console.warn(`[twse-openapi-client] MI_5MINS_INDEX HTTP ${resp.status} content-type=${ct}`);
     return null;
   }
 
   let body: Mi5MinsIndexResponse;
   try {
-    body = await resp.json() as Mi5MinsIndexResponse;
-  } catch {
-    console.warn("[twse-openapi-client] MI_5MINS_INDEX JSON parse failed");
+    const text = await resp.text();
+    // Log body prefix only for obviously wrong responses (HTML, empty, non-JSON)
+    const trimmed = text.trimStart();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      console.warn(`[twse-openapi-client] MI_5MINS_INDEX non-JSON body (first 200 chars): ${text.slice(0, 200)}`);
+    }
+    body = JSON.parse(text) as Mi5MinsIndexResponse;
+  } catch (parseErr) {
+    console.warn("[twse-openapi-client] MI_5MINS_INDEX JSON parse failed:", parseErr instanceof Error ? parseErr.message : String(parseErr));
     return null;
   }
 
@@ -1042,5 +1077,122 @@ export async function getTwseMarketBreadth(
   };
 
   setBreadthCache(CACHE_KEY, result);
+  return result;
+}
+
+// ── Market Leaders (top gainers / losers / most active) ──────────────────────
+
+export interface TwseLeaderStock {
+  symbol: string;
+  name: string;
+  last: number;
+  changePct: number;
+  volume: number; // trade value (成交金額 TWD)
+  source: "twse_openapi";
+}
+
+export interface TwseLeadersResult {
+  topGainers: TwseLeaderStock[];
+  topLosers: TwseLeaderStock[];
+  mostActive: TwseLeaderStock[];
+  source: "twse_openapi";
+  asOf: string | null;
+}
+
+// 60-second in-memory cache for leaders (same TTL as breadth)
+interface LeadersCacheEntry {
+  result: TwseLeadersResult;
+  expiresAt: number;
+}
+const _leadersCache = new Map<string, LeadersCacheEntry>();
+
+function getLeadersCached(key: string): TwseLeadersResult | null {
+  const entry = _leadersCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { _leadersCache.delete(key); return null; }
+  return entry.result;
+}
+
+function setLeadersCache(key: string, result: TwseLeadersResult): void {
+  _leadersCache.set(key, { result, expiresAt: Date.now() + OVERVIEW_CACHE_TTL_SECONDS * 1000 });
+}
+
+/** For test cleanup */
+export function _resetTwseLeadersCache(): void {
+  _leadersCache.clear();
+}
+
+/**
+ * Derive top gainers / losers / most active from TWSE STOCK_DAY_ALL.
+ * Reuses shared getStockDayAllRows() cache (dedup with heatmap + breadth).
+ * Returns top 5 for each category.
+ * Cache TTL: 60 seconds (same as breadth/overview).
+ */
+export async function getTwseLeaders(
+  opts: { fetchOverride?: typeof fetch; topN?: number } = {}
+): Promise<TwseLeadersResult> {
+  const topN = opts.topN ?? 5;
+  const CACHE_KEY = `twse:leaders:v1:${topN}`;
+  const cached = getLeadersCached(CACHE_KEY);
+  if (cached) return cached;
+
+  const EMPTY: TwseLeadersResult = {
+    topGainers: [], topLosers: [], mostActive: [],
+    source: "twse_openapi", asOf: null
+  };
+
+  const doFetch = opts.fetchOverride ?? globalThis.fetch;
+
+  // Reuse shared STOCK_DAY_ALL cache (same request as breadth/heatmap)
+  const stockRows = await getStockDayAllRows(doFetch);
+  if (stockRows.length === 0) return EMPTY;
+
+  let asOf: string | null = null;
+  const enriched: TwseLeaderStock[] = [];
+
+  for (const row of stockRows) {
+    const close = parseFloat(row.ClosingPrice);
+    if (!isFinite(close) || close <= 0) continue;
+    const changePct = computeChangePct(row.ClosingPrice, row.Change);
+    const tradeValue = parseFloat(row.TradeValue.replace(/,/g, "")) || 0;
+
+    enriched.push({
+      symbol: row.Code?.trim() ?? "",
+      name: row.Name?.trim() ?? "",
+      last: Math.round(close * 100) / 100,
+      changePct: Math.round(changePct * 100) / 100,
+      volume: tradeValue,
+      source: "twse_openapi"
+    });
+
+    if (!asOf && row.Date) {
+      const parts = row.Date.trim().split("/");
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10) + 1911;
+        asOf = `${year}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
+      }
+    }
+  }
+
+  const topGainers = [...enriched]
+    .filter(r => r.changePct > 0)
+    .sort((a, b) => b.changePct - a.changePct)
+    .slice(0, topN);
+
+  const topLosers = [...enriched]
+    .filter(r => r.changePct < 0)
+    .sort((a, b) => a.changePct - b.changePct)
+    .slice(0, topN);
+
+  const mostActive = [...enriched]
+    .sort((a, b) => b.volume - a.volume)
+    .slice(0, topN);
+
+  const result: TwseLeadersResult = {
+    topGainers, topLosers, mostActive,
+    source: "twse_openapi", asOf
+  };
+
+  setLeadersCache(CACHE_KEY, result);
   return result;
 }

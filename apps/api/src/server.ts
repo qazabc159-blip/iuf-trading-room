@@ -12293,6 +12293,57 @@ app.get("/api/v1/market/breadth/twse", async (c) => {
   return c.json(result);
 });
 
+// GET /api/v1/market/leaders/twse
+//   — Top 5 gainers / losers / most active from TWSE STOCK_DAY_ALL
+//   — Source chain: FinMind TaiwanStockPrice (primary) → TWSE STOCK_DAY_ALL (secondary)
+//   — FinMind primary gives same-day data; STOCK_DAY_ALL is EOD (published after market close)
+//   — Response shape: { topGainers, topLosers, mostActive, source, asOf }
+//   — Each stock: { symbol, name, last, changePct, volume }
+//   — Role: READ_DRAFT_ROLES
+//   — 60-second in-memory cache; fail-open (never 5xx)
+app.get("/api/v1/market/leaders/twse", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const { getFinMindLeaders, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
+  const { getTwseLeaders } = await import("./data-sources/twse-openapi-client.js");
+
+  // Primary: FinMind TaiwanStockPrice (sponsor tier, same-day data)
+  if (finMindAggregateHasToken()) {
+    try {
+      const finmindResult = await getFinMindLeaders();
+      if (finmindResult && (
+        finmindResult.topGainers.length > 0 ||
+        finmindResult.topLosers.length > 0 ||
+        finmindResult.mostActive.length > 0
+      )) {
+        // Normalize FinMind shape to match the unified leaders response shape
+        const mapStock = (s: { stockId: string; close: number; changePct: number; volume: number }) => ({
+          symbol: s.stockId,
+          name: s.stockId, // FinMind doesn't return company name in this dataset
+          last: s.close,
+          changePct: s.changePct,
+          volume: s.volume,
+          source: "finmind" as const
+        });
+        return c.json({
+          topGainers: finmindResult.topGainers.map(mapStock),
+          topLosers: finmindResult.topLosers.map(mapStock),
+          mostActive: finmindResult.mostActive.map(mapStock),
+          source: "finmind",
+          asOf: finmindResult.asOf
+        });
+      }
+    } catch (err) {
+      console.warn("[market/leaders/twse] FinMind primary failed, falling back to TWSE:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // Secondary: TWSE STOCK_DAY_ALL (EOD, shares cache with /breadth/twse and /heatmap/twse)
+  const result = await getTwseLeaders();
+  return c.json(result);
+});
+
 app.get("/api/v1/paper/portfolio/history", async (c) => {
   const session = c.get("session");
 
