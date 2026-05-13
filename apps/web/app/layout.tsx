@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./main-market-wire.css";
 import type { Metadata } from "next";
 import { JetBrains_Mono, Noto_Sans_TC, Noto_Serif_TC, Source_Serif_4 } from "next/font/google";
 

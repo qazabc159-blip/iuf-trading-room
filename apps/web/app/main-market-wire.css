@@ -1,0 +1,121 @@
+/* Homepage market-source and split heatmap polish. */
+.tac-index-title em {
+  color: #e2b85c;
+  border: 1px solid rgba(226, 184, 92, 0.34);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-style: normal;
+  font-size: 11px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.tac-heat-mode-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 0 0 12px;
+  overflow-x: auto;
+}
+
+.tac-heat-mode-tabs a {
+  color: #91a0b5;
+  text-decoration: none;
+  border: 1px solid rgba(145, 160, 181, 0.18);
+  background: rgba(17, 24, 34, 0.76);
+  border-radius: 999px;
+  padding: 9px 15px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.tac-heat-mode-tabs a.is-active {
+  color: #e7ecf3;
+  border-color: rgba(226, 184, 92, 0.7);
+  background: linear-gradient(135deg, rgba(200, 148, 63, 0.22), rgba(17, 24, 34, 0.92));
+  box-shadow: inset 0 0 0 1px rgba(226, 184, 92, 0.12);
+}
+
+.tac-market-wide-heatmap {
+  min-height: 420px;
+  border: 1px solid rgba(145, 160, 181, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 11, 16, 0.48);
+  padding: 14px;
+}
+
+.tac-market-wide-heatmap.empty {
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  text-align: center;
+  color: #91a0b5;
+}
+
+.tac-market-wide-heatmap.empty strong {
+  color: #e7ecf3;
+  font-size: 18px;
+}
+
+.tac-market-wide-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  color: #91a0b5;
+  font-size: 12px;
+  font-weight: 800;
+  padding-bottom: 12px;
+}
+
+.tac-market-wide-head span:first-child {
+  color: #e2b85c;
+}
+
+.tac-market-wide-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: stretch;
+  min-height: 330px;
+}
+
+.tac-market-wide-cell {
+  flex: var(--cell-grow) 1 180px;
+  min-height: 112px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #e7ecf3;
+  overflow: hidden;
+}
+
+.tac-market-wide-cell.up {
+  background: linear-gradient(135deg, rgba(230, 57, 70, calc(0.18 + var(--heat) * 0.42)), rgba(86, 17, 28, 0.9));
+}
+
+.tac-market-wide-cell.down {
+  background: linear-gradient(135deg, rgba(46, 204, 113, calc(0.15 + var(--heat) * 0.36)), rgba(7, 70, 42, 0.9));
+}
+
+.tac-market-wide-cell.flat {
+  background: linear-gradient(135deg, rgba(64, 78, 96, 0.82), rgba(17, 24, 34, 0.94));
+}
+
+.tac-market-wide-cell b {
+  font-size: clamp(14px, 1.15vw, 18px);
+  line-height: 1.2;
+}
+
+.tac-market-wide-cell strong {
+  font-size: clamp(24px, 2.1vw, 34px);
+  letter-spacing: 0;
+}
+
+.tac-market-wide-cell span {
+  color: rgba(231, 236, 243, 0.74);
+  font-size: 12px;
+  font-weight: 800;
+}
