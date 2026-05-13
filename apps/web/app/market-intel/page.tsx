@@ -1,7 +1,8 @@
 import { FinalOnlyFrame } from "@/components/FinalOnlyFrame";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default function MarketIntelPage() {
-  return <FinalOnlyFrame title="市場情報" src="/ui-final-v031/market_intel/index.html" />;
+  return <FinalOnlyFrame title="Market Intel" src="/api/ui-final-v031/market-intel?rev=1561feb" />;
 }
