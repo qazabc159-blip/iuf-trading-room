@@ -4742,6 +4742,7 @@ import {
   runDatasetBackfill,
   type BackfillDataset
 } from "./jobs/finmind-full-ingest.js";
+import { runTwseAnnouncementIngest } from "./jobs/twse-announcement-ingest.js";
 
 // Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
 function companyIdToTicker(ticker: string): string {
@@ -5876,11 +5877,14 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
         a.title AS title,
         '重大訊息' AS category,
         NULL::text AS body,
-        CASE
-          WHEN a.ticker_symbol IS NOT NULL AND a.ticker_symbol <> ''
-          THEN 'https://mops.twse.com.tw/mops/web/t05st02_sii?TYPEK=sii&code=' || a.ticker_symbol
-          ELSE NULL
-        END AS url,
+        COALESCE(
+          a.source_url,
+          CASE
+            WHEN a.ticker_symbol IS NOT NULL AND a.ticker_symbol <> ''
+            THEN 'https://mops.twse.com.tw/mops/web/t05st02_sii?TYPEK=sii&code=' || a.ticker_symbol
+            ELSE NULL
+          END
+        ) AS url,
         'twse_announcements' AS source
       FROM tw_announcements a
       LEFT JOIN companies c
@@ -6012,6 +6016,8 @@ app.get("/api/v1/announcements", async (c) => {
   const rawItems: AnnRow[] = [];
 
   // Primary: tw_announcements (today + 30 days)
+  // URL preference: source_url (from ingest job, may include actual MOPS deep-link)
+  // → MOPS company listing fallback (when source_url is NULL)
   try {
     const result = await db.execute(drizzleSql`
       SELECT
@@ -6021,7 +6027,14 @@ app.get("/api/v1/announcements", async (c) => {
         a.announced_at::text AS date,
         a.title AS title,
         '重大訊息' AS category,
-        NULL::text AS url,
+        COALESCE(
+          a.source_url,
+          CASE
+            WHEN a.ticker_symbol IS NOT NULL AND a.ticker_symbol <> ''
+            THEN 'https://mops.twse.com.tw/mops/web/t05st02_sii?TYPEK=sii&code=' || a.ticker_symbol
+            ELSE NULL
+          END
+        ) AS url,
         'twse_announcements' AS source
       FROM tw_announcements a
       LEFT JOIN companies c
@@ -12581,6 +12594,43 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, KGI_SIM_DAILY_SMOKE_POLL_MS);
 
+  // CYCLE 16: TWSE Material Announcement Ingest — hourly 09:00–15:00 TST weekdays
+  // Source: TWSE OpenAPI /opendata/t187ap46_L (no auth required).
+  // Upserts into tw_announcements (migration 0030). Idempotent (ON CONFLICT DO NOTHING).
+  // Kill switch: TWSE_ANNOUNCEMENT_INGEST_KILL_SWITCH=true.
+  {
+    const TWSE_ANN_INGEST_POLL_MS = 60 * 60 * 1000; // 1 hour
+
+    /** Returns true if current Taipei time is in the 09:00–15:00 window on a weekday. */
+    function isTwseAnnouncementIngestWindow(): boolean {
+      const hhmm = getTaipeiHHMM();
+      if (hhmm < 900 || hhmm >= 1500) return false;
+      // Weekday check: shift UTC to TST (UTC+8) and check day of week
+      const taipeiDate = new Date(Date.now() + 8 * 60 * 60 * 1000); // UTC+8 approximation
+      const dayOfWeek = taipeiDate.getUTCDay(); // 0=Sun, 6=Sat
+      return dayOfWeek >= 1 && dayOfWeek <= 5;
+    }
+
+    // 1-hour poll — fires once per hour within the 09:00–15:00 TST weekday window
+    // No per-day dedup needed: the ingest is idempotent (ON CONFLICT DO NOTHING).
+    setInterval(() => {
+      if (!isTwseAnnouncementIngestWindow()) return;
+      console.log("[twse-ann-ingest] hourly window open, firing ingest");
+      runTwseAnnouncementIngest().catch((e) =>
+        console.error("[twse-ann-ingest] hourly tick failed:", e instanceof Error ? e.message : String(e))
+      );
+    }, TWSE_ANN_INGEST_POLL_MS);
+
+    // Startup catch-up: fires 45s after boot when within trading hours
+    setTimeout(() => {
+      if (!isTwseAnnouncementIngestWindow()) return;
+      console.log("[twse-ann-ingest] boot catch-up: within trading hours, firing ingest");
+      runTwseAnnouncementIngest().catch((e) =>
+        console.error("[twse-ann-ingest] boot catch-up failed:", e instanceof Error ? e.message : String(e))
+      );
+    }, 45_000);
+  }
+
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
@@ -12593,7 +12643,8 @@ function startSchedulers(workspaceSlug: string): void {
     "P0-2 health-watchdog (30min) + " +
     "BLOCK#TOGGLE paper-obs-cron (15min poll, fires at 17:00–17:30 TST) + " +
     "BLOCK#SIGNAL strategy(15min,13:45-14:30TST) + news(15min,4-window) + quote.breakout(30min,09:00-13:30TST) + " +
-    "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) started"
+    "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) + " +
+    "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) started"
   );
 }
 

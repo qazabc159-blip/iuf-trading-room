@@ -255,7 +255,14 @@ async function fetchRawNewsRows(windowHours: number): Promise<RawNewsRow[]> {
         c.name AS company_name,
         a.announced_at::text AS date,
         a.title AS title,
-        NULL::text AS url,
+        COALESCE(
+          a.source_url,
+          CASE
+            WHEN a.ticker_symbol IS NOT NULL AND a.ticker_symbol <> ''
+            THEN 'https://mops.twse.com.tw/mops/web/t05st02_sii?TYPEK=sii&code=' || a.ticker_symbol
+            ELSE NULL
+          END
+        ) AS url,
         'twse_announcements' AS source
       FROM tw_announcements a
       LEFT JOIN companies c ON c.ticker = a.ticker_symbol
