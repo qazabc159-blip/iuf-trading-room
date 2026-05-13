@@ -73,6 +73,7 @@ from schemas import (
     LoginRequest,
     LoginResponse,
     LogoutResponse,
+    OrderCreateResponse,
     PositionResponse,
     SetAccountRequest,
     SetAccountResponse,
@@ -1118,42 +1119,112 @@ async def order_events_ws(websocket: WebSocket) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Order create — W1: always 409 NotEnabledInW1
+# Order create — 3-gate: NOT_LOGGED_IN / LIVE_ORDER_BLOCKED / SIM-only SDK call
 # ---------------------------------------------------------------------------
 
 @app.post("/order/create")
 async def create_order(body: Optional[Any] = Body(default=None)) -> JSONResponse:
     """
-    Order submission route — W1: ALWAYS returns 409 NOT_ENABLED_IN_W1.
+    Order submission route — 3-gate (P0-A 2026-05-13).
 
-    W5b A3 T12 fix: body parameter changed from CreateOrderRequest → Optional[Any].
-    This ensures Pydantic schema validation is bypassed BEFORE handler executes,
-    so ANY payload (empty {}, invalid fields, wrong content-type, missing fields)
-    returns 409 NOT_ENABLED_IN_W1 — not 422 Unprocessable Entity.
+    Gate 1 (no session)         → 409 NOT_LOGGED_IN
+    Gate 2 (LIVE session)       → 409 LIVE_ORDER_BLOCKED (permanent hard line)
+    Gate 3 (SIM session)        → validate body, call SDK, return 200 sim_only=true
 
-    T12 finding (2026-04-29): POST /order/create {} previously returned 422 because
-    Pydantic validation ran before the handler body. This was safe (no order placed)
-    but violated the documented stop-line literal "returns 409 NOT_ENABLED_IN_W1".
-
-    W2+ will wire this to api.Order.create_order() after paper dry-run evidence.
-    Hard line: body argument is intentionally NOT validated — handler returns 409 regardless.
+    Hard line: production broker write is permanently disabled at this endpoint.
+    LIVE-session order placement returns 409 LIVE_ORDER_BLOCKED regardless of payload.
+    Only SIM-session callers reach the SDK; response carries sim_only=true literal.
     """
-    # Top-of-handler 409 short-circuit.
-    # body is IGNORED — we never inspect it to prevent accidental order submission.
-    # Any payload shape (empty, valid CreateOrderRequest, garbage) returns the same 409.
-    logger.info("POST /order/create received (returning 409 NOT_ENABLED_IN_W1) — payload ignored per W1 hard-line")
-    return JSONResponse(
-        status_code=409,
-        content=ErrorEnvelope(
-            error=ErrorDetail(
-                code="NOT_ENABLED_IN_W1",
-                message=(
-                    "Order submission is not enabled in W1. "
-                    "createOrder will be wired in W2 after paper dry-run verification."
-                ),
-            )
-        ).model_dump(),
-    )
+    # Gate 1: NOT_LOGGED_IN
+    if not session.is_logged_in:
+        logger.info("POST /order/create rejected: NOT_LOGGED_IN")
+        return JSONResponse(
+            status_code=409,
+            content=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="NOT_LOGGED_IN",
+                    message="Session not logged in. POST /session/login first.",
+                )
+            ).model_dump(),
+        )
+
+    # Gate 2: LIVE_ORDER_BLOCKED — permanent
+    if session.is_simulation is False:
+        logger.info("POST /order/create rejected: LIVE_ORDER_BLOCKED (simulation=False)")
+        return JSONResponse(
+            status_code=409,
+            content=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="LIVE_ORDER_BLOCKED",
+                    message=(
+                        "Live order writes are permanently blocked at this endpoint. "
+                        "Re-login with simulation=true to exercise SIM order path."
+                    ),
+                )
+            ).model_dump(),
+        )
+
+    # Gate 3: SIM session — body validation + SDK call
+    try:
+        order_req = CreateOrderRequest.model_validate(body)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=422,
+            content=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="INVALID_ORDER_REQUEST",
+                    message=f"Order request validation failed: {exc}",
+                )
+            ).model_dump(),
+        )
+
+    if session.api is None:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="SESSION_API_MISSING",
+                    message="Session reports logged_in=true but api handle is missing.",
+                )
+            ).model_dump(),
+        )
+
+    try:
+        sdk_response = session.api.Order.create_order(
+            action=order_req.action,
+            symbol=order_req.symbol,
+            qty=order_req.qty,
+            price=order_req.price,
+            time_in_force=order_req.time_in_force,
+            order_cond=order_req.order_cond,
+            odd_lot=order_req.odd_lot,
+            name=order_req.name,
+        )
+        logger.info(
+            "POST /order/create SIM accepted symbol=%s qty=%d action=%s",
+            order_req.symbol, order_req.qty, order_req.action,
+        )
+        sdk_repr = str(sdk_response)[:500] if sdk_response is not None else None
+        return JSONResponse(
+            status_code=200,
+            content=OrderCreateResponse(
+                ok=True,
+                sim_only=True,
+                status="accepted",
+                kgi_response_repr=sdk_repr,
+            ).model_dump(),
+        )
+    except Exception as exc:
+        logger.warning("POST /order/create SIM SDK error: %s", type(exc).__name__)
+        return JSONResponse(
+            status_code=502,
+            content=ErrorEnvelope(
+                error=ErrorDetail(
+                    code="SIM_SDK_ERROR",
+                    message=f"KGI SDK order create failed: {type(exc).__name__}",
+                )
+            ).model_dump(),
+        )
 
 
 # ---------------------------------------------------------------------------

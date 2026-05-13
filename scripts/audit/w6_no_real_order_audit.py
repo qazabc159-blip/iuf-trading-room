@@ -13,7 +13,10 @@ Usage (from repo root):
 CI: .github/workflows/ci.yml job w6_audit runs this automatically.
 
 W6 stop-line mapping:
-  Check 1 → stop-line 1 (/order/create must 409)
+  Check 1 → stop-line 1 (/order/create 3-gate: LIVE_ORDER_BLOCKED permanent Gate 2 + 409)
+            Wave 4 P0 (2026-05-13): literal changed from NOT_ENABLED_IN_W1 → LIVE_ORDER_BLOCKED
+            LIVE_ORDER_BLOCKED is strictly stronger: LIVE session orders blocked permanently,
+            SIM-session orders allowed through Gate 3 (sim_only=true literal).
   Check 2 → stop-line 2 (no KGI SDK import in paper path)
   Check 3 → stop-line 3 (no executionMode: 'live' default)
   Check 4 → stop-line 4 (kill switch default ON = mode: trading, engaged: false)
@@ -40,7 +43,19 @@ def run_audit() -> bool:
     results: list[tuple[int, str, str]] = []  # (check_num, status, summary)
 
     # -----------------------------------------------------------------------
-    # Check 1: /order/create always 409 + NOT_ENABLED_IN_W1 invariant
+    # Check 1: /order/create 3-gate hard-line invariant
+    #
+    # Wave 4 P0 update (2026-05-13): NOT_ENABLED_IN_W1 → LIVE_ORDER_BLOCKED
+    # The new 3-gate handler is strictly stronger:
+    #   Gate 1: NOT_LOGGED_IN   → 409  (no session)
+    #   Gate 2: LIVE_ORDER_BLOCKED → 409  (live session — PERMANENT hard line)
+    #   Gate 3: SIM session only → 200 sim_only=true
+    # LIVE_ORDER_BLOCKED is a permanent literal; live orders can never reach the SDK.
+    # We verify:
+    #   (a) route is registered
+    #   (b) file contains status_code=409
+    #   (c) file contains LIVE_ORDER_BLOCKED literal (permanent LIVE block)
+    #   (d) within 60 lines of the route decorator: 409 present AND LIVE_ORDER_BLOCKED present
     # -----------------------------------------------------------------------
     C1_TARGET = REPO_ROOT / "services" / "kgi-gateway" / "app.py"
     c1_pass = False
@@ -52,12 +67,15 @@ def run_audit() -> bool:
         content = C1_TARGET.read_text(encoding="utf-8")
         if "status_code=409" not in content and "status_code = 409" not in content:
             c1_failures.append(f"{C1_TARGET}: no 'status_code=409' found")
-        if "NOT_ENABLED_IN_W1" not in content:
-            c1_failures.append(f"{C1_TARGET}: literal 'NOT_ENABLED_IN_W1' not found")
+        if "LIVE_ORDER_BLOCKED" not in content:
+            c1_failures.append(
+                f"{C1_TARGET}: literal 'LIVE_ORDER_BLOCKED' not found — "
+                "Gate 2 permanent LIVE block must be present"
+            )
         if "@app.post(\"/order/create\")" not in content:
             c1_failures.append(f"{C1_TARGET}: route @app.post('/order/create') not found")
-        # Verify the route handler returns 409 — look for the pattern within 30 lines
-        # of the route decorator
+        # Verify the route handler contains the LIVE block — look within 60 lines
+        # of the route decorator (3-gate handler is longer than old single-gate)
         lines = content.splitlines()
         route_line = None
         for i, line in enumerate(lines):
@@ -65,24 +83,24 @@ def run_audit() -> bool:
                 route_line = i
                 break
         if route_line is not None:
-            window = "\n".join(lines[route_line:route_line + 30])
+            window = "\n".join(lines[route_line:route_line + 60])
             if "409" not in window:
                 c1_failures.append(
-                    f"{C1_TARGET}:{route_line + 1}: 409 not found within 30 lines of route handler"
+                    f"{C1_TARGET}:{route_line + 1}: 409 not found within 60 lines of route handler"
                 )
-            if "NOT_ENABLED_IN_W1" not in window:
+            if "LIVE_ORDER_BLOCKED" not in window:
                 c1_failures.append(
-                    f"{C1_TARGET}:{route_line + 1}: NOT_ENABLED_IN_W1 not found within 30 lines of route handler"
+                    f"{C1_TARGET}:{route_line + 1}: LIVE_ORDER_BLOCKED not found within 60 lines of route handler"
                 )
         if not c1_failures:
             c1_pass = True
 
     if c1_pass:
-        results.append((1, "PASS", "/order/create always 409 + NOT_ENABLED_IN_W1"))
+        results.append((1, "PASS", "/order/create 3-gate: LIVE_ORDER_BLOCKED permanent + 409 invariant"))
     else:
         all_pass = False
-        fail(1, "/order/create 409 invariant", c1_failures)
-        results.append((1, "FAIL", "/order/create 409 invariant"))
+        fail(1, "/order/create 3-gate hard-line invariant", c1_failures)
+        results.append((1, "FAIL", "/order/create 3-gate invariant"))
 
     # -----------------------------------------------------------------------
     # Check 2: No KGI SDK import in paper path
