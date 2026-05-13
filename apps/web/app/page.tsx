@@ -154,7 +154,7 @@ type TapeQuote = {
 };
 
 const TAIPEI_TIME_ZONE = "Asia/Taipei";
-const PAPER_PREVIEW_CAPITAL_TWD = 20_000;
+const PAPER_PREVIEW_CAPITAL_TWD = 10_000_000;
 const ANNOUNCEMENT_DAYS = 30;
 const MAX_INTEL_ROWS = 12;
 const MAX_HEATMAP_TILES = 240;
