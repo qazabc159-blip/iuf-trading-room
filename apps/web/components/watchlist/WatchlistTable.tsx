@@ -53,7 +53,8 @@ function promoteReason(row: WatchlistRow) {
   return "轉入模擬委託仍暫停；需完成策略交接、風控預覽與操作者確認。";
 }
 
-export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
+export function WatchlistTable({ rows, cap = 10 }: { rows: WatchlistRow[]; cap?: number }) {
+  const displayRows = rows.slice(0, cap);
   return (
     <div style={tableStyle}>
       <div className="row table-head tg watchlist-row" style={rowStyle}>
@@ -66,7 +67,7 @@ export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
         <span>風控</span>
         <span>轉單</span>
       </div>
-      {rows.slice(0, 12).map((row) => {
+      {displayRows.map((row) => {
         const advisory = row.hypothetical1LotBuyRisk;
         return (
           <div className="row watchlist-row" key={row.symbol} style={rowStyle}>
@@ -93,9 +94,9 @@ export function WatchlistTable({ rows }: { rows: WatchlistRow[] }) {
           </div>
         );
       })}
-      {rows.length > 12 && (
+      {rows.length > cap && (
         <div className="tg soft" style={{ padding: "12px 0" }}>
-          目前先顯示 12 檔，共 {rows.length} 檔；完整清單待正式篩選器接上。
+          顯示前 {cap} 檔，共 {rows.length} 檔；移除後可新增更多。
         </div>
       )}
     </div>
