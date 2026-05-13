@@ -151,12 +151,21 @@ export async function GET(
     );
   }
 
-  const html = await injectLiveData(screen, stripVendorChrome(screen, await renderFinalHtml(screen)));
-  return new NextResponse(html, {
-    status: 200,
-    headers: {
-      ...NO_STORE_HEADERS,
-      "Content-Type": "text/html; charset=utf-8"
-    }
-  });
+  try {
+    const html = await injectLiveData(screen, stripVendorChrome(screen, await renderFinalHtml(screen)));
+    return new NextResponse(html, {
+      status: 200,
+      headers: {
+        ...NO_STORE_HEADERS,
+        "Content-Type": "text/html; charset=utf-8"
+      }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "RENDER_FAILED";
+    console.error(`[ui-final-v031] render error for screen=${screen}:`, error);
+    return NextResponse.json(
+      { ok: false, error: "RENDER_FAILED", detail: message, screen },
+      { status: 500, headers: NO_STORE_HEADERS }
+    );
+  }
 }
