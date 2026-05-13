@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>市場情報 · IUF</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="app.css" />
+</head>
+<body data-screen-label="Market Intel v2">
+<div class="app">
+
+<aside class="side">
+  <div class="brand"><i></i><span class="m">IUF</span></div>
+  <h1 class="name">情報—決策—倉位</h1>
+  <div class="sub">v0.3 · Product</div>
+
+  <div class="grp">情報入口</div>
+  <a href="./index.html" class="active"><span class="n">·</span><span>市場情報</span></a>
+
+  <div class="grp">策略決策</div>
+  <a target="_top" href="/ideas"><span class="n">·</span><span>策略想法</span></a>
+  <a href="#" class="muted"><span class="n">·</span><span>策略批次</span></a>
+
+  <div class="grp">執行</div>
+  <a target="_top" href="/portfolio"><span class="n">·</span><span>模擬交易室</span></a>
+
+  <div class="grp">本輪交付</div>
+  <a href="Interaction Notes.html"><span class="n">·</span><span>互動筆記</span></a>
+  <a href="Terminology Mapping.html"><span class="n">·</span><span>術語對照</span></a>
+  <a href="Presentation vs Spec.html"><span class="n">·</span><span>分層說明</span></a>
+  <a href="index.html"><span class="n">·</span><span>← 回索引</span></a>
+</aside>
+
+<main class="main">
+
+  <header class="taskhdr">
+    <div>
+      <h1>市場情報</h1>
+      <p class="sub">今日重點、來源狀態與 AI 精選訊息</p>
+    </div>
+    <div class="right">
+      <div class="stat"><span class="l">今日訊息</span><span class="v" data-countup="38">0</span></div>
+      <div class="stat"><span class="l">AI 精選</span><span class="v brand" data-countup="12">0</span></div>
+      <div class="stat"><span class="l">來源正常</span><span class="v ok">2 <small>/ 4</small></span></div>
+      <div class="stat"><span class="l">下次抓取</span><span class="v" id="age">—</span></div>
+      <span class="live"><i></i>研究模式</span>
+    </div>
+  </header>
+
+  <div class="safetybar">
+    <i></i>
+    <span>本頁僅做研究判讀，<b>不下單、不顯示目標價或勝率</b>。下一步請進策略想法。</span>
+    <span class="tag">RESEARCH</span>
+  </div>
+
+  <div class="fbk" id="fbk">
+    <i></i>
+    <span>1 個來源目前 <b>部分資料延遲</b>（KGI 主題 substack）·  系統已改用備援排序，<b>不影響使用</b>。</span>
+    <button class="btn ghost" style="margin-left:auto" onclick="this.parentElement.style.display='none'">知道了</button>
+  </div>
+
+  <div class="row2">
+
+    <!-- LEFT — AI 精選 feed -->
+    <section class="panel">
+      <div class="ph">
+        <h2>AI 精選 · 今日重點</h2>
+        <span class="pill ok"><i></i>每 60 秒更新</span>
+        <button class="more">看全部 ›</button>
+      </div>
+
+      <div class="filterbar" style="margin:0 0 8px;padding:8px 10px;background:transparent;border:none;border-bottom:1px solid var(--line);border-radius:0">
+        <div class="seg" id="topicseg">
+          <button class="on" data-f="all">全部 <span class="c">12</span></button>
+          <button data-f="ai">AI 硬體 <span class="c">5</span></button>
+          <button data-f="semi">半導體 <span class="c">4</span></button>
+          <button data-f="fin">金融 <span class="c">2</span></button>
+          <button data-f="auto">電動車 <span class="c">1</span></button>
+        </div>
+        <div class="search"><span class="ico">⌕</span><input placeholder="搜尋代碼 / 公司 / 主題" /></div>
+      </div>
+
+      <div class="feedlist stagger" id="feed">
+        <div class="feedrow" style="--i:0" data-cat="semi" data-age="240">
+          <span class="sym">2330</span>
+          <div class="body">
+            <div class="t">N3 / N2 排程恢復，3 月稼動率回升至 92%</div>
+            <div class="m"><span>MOPS 公告</span><span>·</span><span><b>先進製程節點</b></span><span>·</span><span>外資連買 5 日</span></div>
+          </div>
+          <div class="why"><b>為什麼重要</b>　稼動率連兩個月走升，與 AI 客戶 ramp 同向。</div>
+          <span class="age">4 分鐘前</span>
+          <span class="arr">›</span>
+        </div>
+        <div class="feedrow" style="--i:1" data-cat="ai" data-age="420">
+          <span class="sym">2382</span>
+          <div class="body">
+            <div class="t">GB200 量產上修，4 月出貨 mix 向 AI rack</div>
+            <div class="m"><span>MOPS</span><span>·</span><span><b>AI 伺服器</b></span><span>·</span><span>法人連買 3 日</span></div>
+          </div>
+          <div class="why"><b>為什麼重要</b>　北美 hyperscaler 訂單能見度延伸至 Q3。</div>
+          <span class="age">7 分鐘前</span>
+          <span class="arr">›</span>
+        </div>
+        <div class="feedrow" style="--i:2" data-cat="semi" data-age="660">
+          <span class="sym">2454</span>
+          <div class="body">
+            <div class="t">旗艦 SoC + 車用 ramp，外資連買 4 日</div>
+            <div class="m"><span>KGI 主題</span><span>·</span><span><b>IC 設計</b></span></div>
+          </div>
+          <div class="why"><b>為什麼重要</b>　車用比重提升，毛利結構改善。</div>
+          <span class="age">11 分鐘前</span>
+          <span class="arr">›</span>
+        </div>
+        <div class="feedrow" style="--i:3" data-cat="ai" data-age="1140">
+          <span class="sym">3231</span>
+          <div class="body">
+            <div class="t">液冷模組 ramp，第三家美系客戶導入</div>
+            <div class="m"><span>MOPS</span><span>·</span><span><b>AI 散熱</b></span></div>
+          </div>
+          <div class="why"><b>為什麼重要</b>　液冷供應鏈進入採購季前期。</div>
+          <span class="age">19 分鐘前</span>
+          <span class="arr">›</span>
+        </div>
+        <div class="feedrow" style="--i:4" data-cat="fin" data-age="1320">
+          <span class="sym">2881</span>
+          <div class="body">
+            <div class="t">壽險 RBC 改善，利率區間情境延續</div>
+            <div class="m"><span>MOPS</span><span>·</span><span><b>金融 / 利率敏感</b></span><span class="pill warn" style="margin-left:4px"><i></i>部分資料延遲</span></div>
+          </div>
+          <div class="why"><b>為什麼重要</b>　資本適足率回到區間上緣。</div>
+          <span class="age stale">22 分鐘前</span>
+          <span class="arr">›</span>
+        </div>
+        <div class="feedrow" style="--i:5" data-cat="semi" data-age="2280">
+          <span class="sym">3035</span>
+          <div class="body">
+            <div class="t">ASIC 客戶名單擴張</div>
+            <div class="m"><span>MOPS</span><span>·</span><span><b>ASIC 設計</b></span><span class="pill warn" style="margin-left:4px"><i></i>待確認</span></div>
+          </div>
+          <div class="why"><b>為什麼重要</b>　名單擴張但融資餘額資料延遲，需 reviewer 二次確認。</div>
+          <span class="age stale">38 分鐘前</span>
+          <span class="arr">›</span>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;font:12px/1.5 var(--sans);color:var(--fg-3);display:flex;gap:14px;align-items:center">
+        <span>顯示 6 / 38 則</span>
+        <span>·</span>
+        <span>已過濾「研究流程內」訊息</span>
+      </div>
+    </section>
+
+    <!-- RIGHT rail -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+
+      <section class="panel compact">
+        <div class="ph">
+          <h2>資料來源狀態</h2>
+          <span class="meta">即時</span>
+        </div>
+        <div class="srclist stagger">
+          <div class="srctile ok" style="--i:0" data-tick="12" data-last="120">
+            <span class="dot"></span>
+            <div>
+              <div class="nm">公開資訊觀測站 <span class="ev">FETCH ✓</span></div>
+              <div class="lab">官方公告 · MOPS · 每 12s 輪詢</div>
+            </div>
+            <div class="right"><b>正常</b><span class="fresh">—</span></div>
+          </div>
+          <div class="srctile ok" style="--i:1" data-tick="20" data-last="80">
+            <span class="dot"></span>
+            <div>
+              <div class="nm">FinMind 市場資料 <span class="ev">FETCH ✓</span></div>
+              <div class="lab">法人 · 稼動率 · 每 20s 輪詢</div>
+            </div>
+            <div class="right"><b>正常</b><span class="fresh">—</span></div>
+          </div>
+          <div class="srctile warn" style="--i:2" data-tick="45" data-last="540">
+            <span class="dot"></span>
+            <div>
+              <div class="nm">KGI 主題 substack <span class="ev">RETRY</span></div>
+              <div class="lab">部分資料延遲 · 已改備援 · 每 45s 重試</div>
+            </div>
+            <div class="right"><b>延遲</b><span class="fresh">—</span></div>
+          </div>
+          <div class="srctile warn" style="--i:3" data-tick="90" data-last="1800">
+            <span class="dot"></span>
+            <div>
+              <div class="nm">主管機關公告 <span class="ev">SCHEMA</span></div>
+              <div class="lab">資料欄位待確認 · 每 90s 探測</div>
+            </div>
+            <div class="right"><b>待確認</b><span class="fresh">—</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel compact">
+        <div class="ph">
+          <h2>資料準備度</h2>
+          <span class="meta">影響策略想法</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <div style="display:flex;justify-content:space-between;font:12px/1.4 var(--sans);color:var(--fg-2);margin-bottom:4px"><span>欄位完整度</span><span style="color:var(--brand)">87%</span></div>
+            <div style="height:5px;background:var(--bg-3);border-radius:3px;overflow:hidden"><div style="width:0%;height:100%;background:var(--brand);transition:width .6s var(--e-out)" data-bar="87"></div></div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;font:12px/1.4 var(--sans);color:var(--fg-2);margin-bottom:4px"><span>資料新鮮度</span><span style="color:var(--ok)">4 分鐘</span></div>
+            <div style="height:5px;background:var(--bg-3);border-radius:3px;overflow:hidden"><div style="width:0%;height:100%;background:var(--ok);transition:width .6s var(--e-out)" data-bar="92"></div></div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;font:12px/1.4 var(--sans);color:var(--fg-2);margin-bottom:4px"><span>待人工審查</span><span style="color:var(--brand)">2 則</span></div>
+            <div style="height:5px;background:var(--bg-3);border-radius:3px;overflow:hidden"><div style="width:0%;height:100%;background:var(--brand);transition:width .6s var(--e-out)" data-bar="14"></div></div>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font:12px/1.55 var(--sans);color:var(--fg-2)">
+          目前資料適合<b style="color:var(--fg-0);font-weight:500">研究模式</b>使用 · 接近<b style="color:var(--brand);font-weight:500">精準篩選</b>門檻。
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="next">
+    <span class="l">下一步</span>
+    <span class="t">看完今日重點？前往 <b>策略想法</b> 查看 AI 已挑出的候選清單。</span>
+    <a class="btn primary" target="_top" href="/ideas">策略想法 <span class="arr">→</span></a>
+    <a class="btn" href="#">主題板</a>
+  </div>
+
+</main>
+</div>
+
+<!-- detail drawer -->
+<div class="dscrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="dh">
+    <div>
+      <div class="crumb">訊息詳情</div>
+      <div class="sym" id="d-sym">2330</div>
+      <div class="nm" id="d-nm">台積電 · TSMC</div>
+      <div class="meta" id="d-meta">半導體 · IC 製造</div>
+    </div>
+    <button class="x" onclick="closeDrawer()">×</button>
+  </div>
+  <div class="dbody">
+    <div class="dgrid">
+      <div><div class="l">AI 評分</div><div class="v brand" id="d-score">0.84</div></div>
+      <div><div class="l">信心</div><div class="v" id="d-conf">高</div></div>
+      <div><div class="l">資料新鮮度</div><div class="v ok" id="d-age">4 分鐘</div></div>
+    </div>
+    <div class="dsec">
+      <div class="h">為什麼重要</div>
+      <p id="d-why">邊緣推論需求修正後，<b>N3 / N2 排程恢復</b>；3 月稼動率 92%，與 AI 客戶 ramp 同向。24h 內 3 則官方公告與 KGI 主題「先進製程節點」一致。</p>
+    </div>
+    <div class="dsec">
+      <div class="h">資料來源</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div class="srctile ok"><span class="dot"></span><div><div class="nm">MOPS · 公告 3 則</div><div class="lab">14:21 / 13:58 / 12:40</div></div></div>
+        <div class="srctile ok"><span class="dot"></span><div><div class="nm">FinMind · 稼動率 / 法人</div><div class="lab">14:19</div></div></div>
+        <div class="srctile warn"><span class="dot"></span><div><div class="nm">KGI 主題 substack</div><div class="lab">部分延遲，已備援</div></div></div>
+      </div>
+    </div>
+    <div class="dsec">
+      <div class="h">關聯主題</div>
+      <div class="chips" style="margin-top:0">
+        <span class="chip on">先進製程節點</span>
+        <span class="chip on">AI 伺服器</span>
+        <span class="chip">CoWoS 產能</span>
+      </div>
+    </div>
+  </div>
+  <div class="df">
+    <button class="btn primary" onclick="window.top.location.href='/ideas'">加入策略想法 →</button>
+    <button class="btn">看公司頁</button>
+    <button class="btn ghost">收藏</button>
+  </div>
+</aside>
+
+<script>
+// — count-up (with .done flash)
+document.querySelectorAll('[data-countup]').forEach(el=>{
+  const tgt=+el.dataset.countup;let i=0;const step=Math.max(1,Math.round(tgt/26));
+  const t=setInterval(()=>{i+=step;if(i>=tgt){el.textContent=tgt;el.classList.add('done');clearInterval(t)}else el.textContent=i},34);
+});
+
+// — freshness: 分鐘級更新（不跳秒）
+function fmtAge(s){
+  if(s<60) return '剛剛';
+  if(s<3600) return Math.floor(s/60)+' 分鐘前';
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h+'h '+m+'m 前';
+}
+const FRESH_NODES=[...document.querySelectorAll('[data-age]')].map(el=>({el,age:+el.dataset.age,box:el.querySelector('.age')}));
+function tickFresh(){
+  FRESH_NODES.forEach(n=>{
+    n.age+=60;
+    if(!n.box)return;
+    const prev=n.box.textContent;
+    n.box.textContent=fmtAge(n.age);
+    if(n.age>1200)n.box.classList.add('stale');
+    if(prev!==n.box.textContent){n.box.classList.remove('tick');void n.box.offsetWidth;n.box.classList.add('tick');}
+  });
+}
+FRESH_NODES.forEach(n=>{if(n.box)n.box.textContent=fmtAge(n.age)});
+setInterval(tickFresh,60000);
+
+(function(){const el=document.getElementById('age');if(el)el.textContent='~12s';})();
+
+// — source tile pulse: each tile fetches on its own interval; pulse dot + flash "FETCH ✓"
+const SRC_TILES=[...document.querySelectorAll('.srctile[data-tick]')].map(t=>({
+  el:t,tick:+t.dataset.tick,last:+t.dataset.last,
+  dot:t.querySelector('.dot'),fresh:t.querySelector('.fresh'),ev:t.querySelector('.ev')
+}));
+function fmtSince(s){if(s<60)return '剛剛';if(s<3600)return Math.floor(s/60)+' 分前';return Math.floor(s/3600)+'h+ 前';}
+function tickSrc(){
+  SRC_TILES.forEach(s=>{
+    s.last+=1;
+    if(s.fresh){s.fresh.textContent=fmtSince(s.last);s.fresh.classList.toggle('stale',s.last>s.tick*3);}
+    if(s.last>=s.tick){
+      s.last=0;
+      s.dot.classList.remove('ping');void s.dot.offsetWidth;s.dot.classList.add('ping');
+      if(s.ev){s.ev.classList.add('on');setTimeout(()=>s.ev.classList.remove('on'),600);}
+    }
+  });
+}
+SRC_TILES.forEach(s=>{if(s.fresh)s.fresh.textContent=fmtSince(s.last)});
+setInterval(tickSrc,1000);
+
+// — header: next-fetch countdown (shortest source = 12s)
+let nextFetch=12;
+function updAge(){
+  const el=document.getElementById('age');if(!el)return;
+  el.textContent=(nextFetch<10?'0':'')+nextFetch+'s';
+  nextFetch--;if(nextFetch<0)nextFetch=12;
+}
+updAge();setInterval(updAge,1000);
+
+// — bars
+setTimeout(()=>document.querySelectorAll('[data-bar]').forEach(b=>b.style.width=b.dataset.bar+'%'),120);
+
+// — filter
+const FEED_MAP={
+  '2330':{nm:'台積電 · TSMC',meta:'半導體 · IC 製造',score:'0.84',conf:'高',age:'4 分鐘',ageClass:'ok',why:'邊緣推論需求修正後，<b>N3 / N2 排程恢復</b>；3 月稼動率 92%，與 AI 客戶 ramp 同向。'},
+  '2382':{nm:'廣達 · Quanta',meta:'AI 硬體 · 伺服器代工',score:'0.79',conf:'中高',age:'7 分鐘',ageClass:'ok',why:'GB200 量產上修，4 月出貨 mix 向 AI rack；hyperscaler 訂單能見度延伸。'},
+  '2454':{nm:'聯發科 · MediaTek',meta:'半導體 · IC 設計',score:'0.76',conf:'中高',age:'11 分鐘',ageClass:'ok',why:'旗艦 SoC + 車用 ramp，車用比重提升，毛利結構改善。'},
+  '3231':{nm:'緯創 · Wistron',meta:'AI 硬體 · 液冷模組',score:'0.72',conf:'中',age:'19 分鐘',ageClass:'ok',why:'液冷模組 ramp，第三家美系客戶導入。'},
+  '2881':{nm:'富邦金 · Fubon',meta:'金融 · 金控',score:'0.59',conf:'中',age:'22 分鐘',ageClass:'warn',why:'壽險 RBC 改善 + 利率區間情境；MOPS 資料欄位待確認。'},
+  '3035':{nm:'智原 · Faraday',meta:'半導體 · ASIC 設計',score:'0.64',conf:'低',age:'38 分鐘',ageClass:'warn',why:'ASIC 客戶名單擴張，但融資餘額欄位延遲，需 reviewer 二次審查。'}
+};
+document.querySelectorAll('#topicseg button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#topicseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  const f=b.dataset.f;const rows=document.querySelectorAll('#feed .feedrow');
+  rows.forEach((r,i)=>{
+    const ok=(f==='all')||(r.dataset.cat===f);
+    r.style.transition='opacity .2s,transform .2s';
+    if(ok){r.style.display='grid';r.style.opacity='0';r.style.transform='translateY(4px)';setTimeout(()=>{r.style.opacity='1';r.style.transform='translateY(0)'},20+i*40)}
+    else{r.style.opacity='0';setTimeout(()=>r.style.display='none',150)}
+  });
+}));
+
+// — drawer
+function openDrawer(sym){
+  const d=FEED_MAP[sym];if(!d)return;
+  document.getElementById('d-sym').textContent=sym;
+  document.getElementById('d-nm').textContent=d.nm;
+  document.getElementById('d-meta').textContent=d.meta;
+  document.getElementById('d-score').textContent=d.score;
+  document.getElementById('d-conf').textContent=d.conf;
+  const age=document.getElementById('d-age');age.textContent=d.age;age.className='v '+d.ageClass;
+  document.getElementById('d-why').innerHTML='<b>為什麼重要</b>　'+d.why;
+  document.getElementById('scrim').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+}
+function closeDrawer(){
+  document.getElementById('scrim').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+}
+document.getElementById('scrim').addEventListener('click',closeDrawer);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
+document.querySelectorAll('#feed .feedrow').forEach(r=>r.addEventListener('click',()=>{
+  r.classList.add('flash');setTimeout(()=>r.classList.remove('flash'),350);
+  openDrawer(r.querySelector('.sym').textContent.trim());
+}));
+</script>
+</body>
+</html>

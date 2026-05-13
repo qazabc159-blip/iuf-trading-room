@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>策略想法 · IUF</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="app.css" />
+</head>
+<body data-screen-label="Strategy Ideas v2">
+<div class="app">
+
+<aside class="side">
+  <div class="brand"><i></i><span class="m">IUF</span></div>
+  <h1 class="name">情報—決策—倉位</h1>
+  <div class="sub">v0.3 · Product</div>
+
+  <div class="grp">情報入口</div>
+  <a target="_top" href="/market-intel"><span class="n">·</span><span>市場情報</span></a>
+
+  <div class="grp">策略決策</div>
+  <a href="./index.html" class="active"><span class="n">·</span><span>策略想法</span></a>
+  <a href="#" class="muted"><span class="n">·</span><span>策略批次</span></a>
+
+  <div class="grp">執行</div>
+  <a target="_top" href="/portfolio"><span class="n">·</span><span>模擬交易室</span></a>
+
+  <div class="grp">本輪交付</div>
+  <a href="Interaction Notes.html"><span class="n">·</span><span>互動筆記</span></a>
+  <a href="Terminology Mapping.html"><span class="n">·</span><span>術語對照</span></a>
+  <a href="Presentation vs Spec.html"><span class="n">·</span><span>分層說明</span></a>
+  <a href="index.html"><span class="n">·</span><span>← 回索引</span></a>
+</aside>
+
+<main class="main">
+
+  <header class="taskhdr">
+    <div>
+      <h1>策略想法</h1>
+      <p class="sub">候選清單、資料完整度與觀察狀態</p>
+    </div>
+    <div class="right">
+      <div class="stat"><span class="l">候選總數</span><span class="v" data-countup="48">0</span></div>
+      <div class="stat"><span class="l">可觀察</span><span class="v ok" data-countup="24">0</span></div>
+      <div class="stat"><span class="l">待確認</span><span class="v warn" data-countup="16">0</span></div>
+      <div class="stat"><span class="l">資料不足</span><span class="v bad" data-countup="8">0</span></div>
+      <span class="live"><i></i>研究模式</span>
+    </div>
+  </header>
+
+  <div class="safetybar">
+    <i></i>
+    <span>本頁僅做研究判讀，<b>不出現買進 / 賣出 / 目標價</b>。「加入策略批次」會落到模擬流程，不是真實下單。</span>
+    <span class="tag">RESEARCH</span>
+  </div>
+
+  <!-- summary cards as quick-filter -->
+  <div class="sumrow stagger">
+    <div class="sumcard on" data-st="all" style="--i:0"><span class="l">全部候選</span><span class="v">48</span><span class="s">通過初步篩選</span></div>
+    <div class="sumcard ok" data-st="allow" style="--i:1"><span class="l">可觀察</span><span class="v">24</span><span class="s">資料齊備、來源正常</span></div>
+    <div class="sumcard warn" data-st="review" style="--i:2"><span class="l">待確認</span><span class="v">16</span><span class="s">部分資料延遲，需審查</span></div>
+    <div class="sumcard bad" data-st="block" style="--i:3"><span class="l">資料不足 / 不進流程</span><span class="v">8</span><span class="s">暫不流入策略批次</span></div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filterbar">
+    <div class="seg">
+      <button class="on" data-tone="all">全部</button>
+      <button data-tone="long">偏多</button>
+      <button data-tone="short">偏空</button>
+      <button data-tone="neutral">中性</button>
+    </div>
+    <span class="divline"></span>
+    <div class="chips" id="sectorchips">
+      <span class="chip on">半導體</span>
+      <span class="chip">AI 硬體</span>
+      <span class="chip">金融</span>
+      <span class="chip">電動車</span>
+      <span class="chip">航運</span>
+      <span class="chip">傳產</span>
+    </div>
+    <div class="search"><span class="ico">⌕</span><input placeholder="搜尋代碼 / 公司 / 主題" /></div>
+  </div>
+
+  <div class="row2">
+
+    <!-- LEFT — candidate cards -->
+    <section>
+      <div class="candgrid stagger" id="cands">
+
+        <article class="candcard sel" data-st="allow" style="--i:0" data-sym="2330">
+          <div class="ax"><button>看公司</button><button>看來源</button></div>
+          <div class="hd">
+            <div>
+              <div class="sym">2330</div>
+              <div class="nm">台積電</div>
+              <div class="meta">半導體 / IC 製造 · <span class="tag">AI 主題</span></div>
+            </div>
+            <span class="pill ok"><i></i>可觀察</span>
+          </div>
+          <p class="why"><b>為什麼被選出</b>　邊緣推論修正後 N3 / N2 排程恢復，3 月稼動率 92%；24h 內 3 則官方公告，與 KGI 主題「先進製程節點」同向。</p>
+          <div class="scores">
+            <div><span class="l">AI 評分</span><span class="v brand">0.84</span></div>
+            <div><span class="l">信心</span><span class="v">高</span></div>
+            <div><span class="l">資料完整度</span><span class="v ok">87%</span></div>
+          </div>
+          <div class="ft">
+            <span>3 個訊號 · 最近 <span class="num" data-rel="240">4 分鐘前</span></span>
+            <span style="color:var(--fg-3)">點選看完整資料 ›</span>
+          </div>
+          <div class="trend">
+            <span class="l">1H 評分</span>
+            <svg viewBox="0 0 60 18" preserveAspectRatio="none"><polyline fill="none" stroke="#c8943f" stroke-width="1.2" points="0,11 8,10 16,9 24,7 32,6 40,5 48,4 60,3" /></svg>
+            <span class="delta up">▲ 0.06</span>
+          </div>
+        </article>
+
+        <article class="candcard" data-st="allow" style="--i:1" data-sym="2382">
+          <div class="ax"><button>看公司</button><button>看來源</button></div>
+          <div class="hd">
+            <div>
+              <div class="sym">2382</div>
+              <div class="nm">廣達</div>
+              <div class="meta">AI 硬體 / 伺服器代工</div>
+            </div>
+            <span class="pill ok"><i></i>可觀察</span>
+          </div>
+          <p class="why"><b>為什麼被選出</b>　GB200 量產上修，4 月出貨 mix 向 AI rack；KGI 主題標<b>「AI 伺服器主軸」</b>。</p>
+          <div class="scores">
+            <div><span class="l">AI 評分</span><span class="v brand">0.79</span></div>
+            <div><span class="l">信心</span><span class="v">中高</span></div>
+            <div><span class="l">資料完整度</span><span class="v ok">82%</span></div>
+          </div>
+          <div class="ft">
+            <span>2 個訊號 · 最近 <span class="num" data-rel="420">7 分鐘前</span></span>
+            <span style="color:var(--fg-3)">點選看完整資料 ›</span>
+          </div>
+          <div class="trend">
+            <span class="l">1H 評分</span>
+            <svg viewBox="0 0 60 18" preserveAspectRatio="none"><polyline fill="none" stroke="#c8943f" stroke-width="1.2" points="0,8 8,9 16,7 24,8 32,6 40,5 48,6 60,4" /></svg>
+            <span class="delta up">▲ 0.03</span>
+          </div>
+        </article>
+
+        <article class="candcard" data-st="allow" style="--i:2" data-sym="2454">
+          <div class="ax"><button>看公司</button><button>看來源</button></div>
+          <div class="hd">
+            <div>
+              <div class="sym">2454</div>
+              <div class="nm">聯發科</div>
+              <div class="meta">半導體 / IC 設計</div>
+            </div>
+            <span class="pill ok"><i></i>可觀察</span>
+          </div>
+          <p class="why"><b>為什麼被選出</b>　旗艦 SoC + 車用 ramp，車用比重提升、毛利結構改善；外資連買 4 日。</p>
+          <div class="scores">
+            <div><span class="l">AI 評分</span><span class="v brand">0.76</span></div>
+            <div><span class="l">信心</span><span class="v">中高</span></div>
+            <div><span class="l">資料完整度</span><span class="v ok">81%</span></div>
+          </div>
+          <div class="ft">
+            <span>2 個訊號 · 最近 <span class="num" data-rel="660">11 分鐘前</span></span>
+            <span style="color:var(--fg-3)">點選看完整資料 ›</span>
+          </div>
+          <div class="trend">
+            <span class="l">1H 評分</span>
+            <svg viewBox="0 0 60 18" preserveAspectRatio="none"><polyline fill="none" stroke="#6b8aa6" stroke-width="1.2" points="0,7 8,8 16,7 24,7 32,8 40,7 48,8 60,7" /></svg>
+            <span class="delta flat">— 0.00</span>
+          </div>
+        </article>
+
+        <article class="candcard" data-st="review" style="--i:3" data-sym="3035">
+          <div class="ax"><button>看公司</button><button>看來源</button></div>
+          <div class="hd">
+            <div>
+              <div class="sym">3035</div>
+              <div class="nm">智原</div>
+              <div class="meta">半導體 / ASIC 設計</div>
+            </div>
+            <span class="pill warn"><i></i>待確認</span>
+          </div>
+          <p class="why"><b>為什麼被選出</b>　ASIC 主軸與客戶名單擴張訊號齊，<b>但融資餘額資料延遲</b>，建議 reviewer 二次審查。</p>
+          <div class="scores">
+            <div><span class="l">AI 評分</span><span class="v warn">0.64</span></div>
+            <div><span class="l">信心</span><span class="v warn">中低</span></div>
+            <div><span class="l">資料完整度</span><span class="v warn">58%</span></div>
+          </div>
+          <div class="ft">
+            <span style="color:var(--brand)">缺：籌碼資料</span>
+            <span style="color:var(--fg-3)">點選看完整資料 ›</span>
+          </div>
+          <div class="trend">
+            <span class="l">1H 評分</span>
+            <svg viewBox="0 0 60 18" preserveAspectRatio="none"><polyline fill="none" stroke="#d65959" stroke-width="1.2" points="0,5 8,6 16,7 24,8 32,9 40,10 48,11 60,12" /></svg>
+            <span class="delta dn">▼ 0.07</span>
+          </div>
+        </article>
+
+        <article class="candcard" data-st="review" style="--i:4" data-sym="2881">
+          <div class="ax"><button>看公司</button><button>看來源</button></div>
+          <div class="hd">
+            <div>
+              <div class="sym">2881</div>
+              <div class="nm">富邦金</div>
+              <div class="meta">金融 / 金控</div>
+            </div>
+            <span class="pill warn"><i></i>待確認</span>
+          </div>
+          <p class="why"><b>為什麼被選出</b>　壽險 RBC 改善 + 利率區間情境；MOPS 資料來源覆蓋度待確認。</p>
+          <div class="scores">
+            <div><span class="l">AI 評分</span><span class="v warn">0.59</span></div>
+            <div><span class="l">信心</span><span class="v warn">中</span></div>
+            <div><span class="l">資料完整度</span><span class="v warn">62%</span></div>
+          </div>
+          <div class="ft">
+            <span style="color:var(--brand)">缺：公司筆記、籌碼資料</span>
+            <span style="color:var(--fg-3)">點選看完整資料 ›</span>
+          </div>
+          <div class="trend">
+            <span class="l">1H 評分</span>
+            <svg viewBox="0 0 60 18" preserveAspectRatio="none"><polyline fill="none" stroke="#c8943f" stroke-width="1.2" points="0,9 8,8 16,9 24,7 32,8 40,7 48,6 60,7" /></svg>
+            <span class="delta up">▲ 0.02</span>
+          </div>
+        </article>
+
+        <article class="candcard" data-st="block" style="--i:5" data-sym="2618">
+          <div class="ax"><button>看公司</button><button>看來源</button></div>
+          <div class="hd">
+            <div>
+              <div class="sym">2618</div>
+              <div class="nm">長榮航</div>
+              <div class="meta">運輸 / 航空</div>
+            </div>
+            <span class="pill bad"><i></i>不進流程</span>
+          </div>
+          <p class="why"><b>為什麼不進流程</b>　主要資料來源 24h 內 <b>暫時無法讀取</b> 2 次；該產業風險上限已達標。</p>
+          <div class="scores">
+            <div><span class="l">AI 評分</span><span class="v bad">0.42</span></div>
+            <div><span class="l">信心</span><span class="v bad">低</span></div>
+            <div><span class="l">資料完整度</span><span class="v bad">28%</span></div>
+          </div>
+          <div class="ft">
+            <span style="color:var(--bad)">原因：來源暫時無法讀取、產業上限</span>
+            <span style="color:var(--fg-3)">點選看完整資料 ›</span>
+          </div>
+          <div class="trend">
+            <span class="l">1H 評分</span>
+            <svg viewBox="0 0 60 18" preserveAspectRatio="none"><polyline fill="none" stroke="#d65959" stroke-width="1.2" points="0,7 8,9 16,8 24,11 32,10 40,13 48,12 60,14" /></svg>
+            <span class="delta dn">▼ 0.04</span>
+          </div>
+        </article>
+
+      </div>
+
+      <div style="margin-top:14px;font:12px/1.5 var(--sans);color:var(--fg-3);display:flex;gap:14px">
+        <span>顯示 6 / 48 張候選</span>
+        <span>·</span>
+        <span>排序：AI 評分 ↓</span>
+      </div>
+
+    </section>
+
+    <!-- RIGHT — selected drawer / always-on -->
+    <aside class="panel" id="inline" style="position:sticky;top:18px;align-self:start;animation:fadeUp .3s .14s var(--e-out) both">
+      <div class="ph">
+        <h2 id="x-name">台積電 · TSMC</h2>
+        <span class="pill ok"><i></i>可觀察</span>
+      </div>
+      <div style="font:12.5px/1.5 var(--sans);color:var(--fg-2);margin-bottom:12px"><span id="x-sym">2330</span> · <span id="x-meta">半導體 · IC 製造</span></div>
+
+      <div class="dgrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+        <div style="padding:8px 10px;background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-sm)"><div style="font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--fg-3);text-transform:uppercase">AI 評分</div><div style="font:500 18px/1.1 var(--sans);color:var(--brand);margin-top:3px" id="x-score">0.84</div></div>
+        <div style="padding:8px 10px;background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-sm)"><div style="font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--fg-3);text-transform:uppercase">信心</div><div style="font:500 18px/1.1 var(--sans);color:var(--fg-0);margin-top:3px" id="x-conf">高</div></div>
+        <div style="padding:8px 10px;background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-sm)"><div style="font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--fg-3);text-transform:uppercase">完整度</div><div style="font:500 18px/1.1 var(--sans);color:var(--ok);margin-top:3px" id="x-rd">87%</div></div>
+      </div>
+
+      <div style="font:500 11px/1 var(--mono);letter-spacing:.14em;color:var(--fg-2);text-transform:uppercase;margin-bottom:8px">候選理由</div>
+      <p id="x-why" style="font:13px/1.6 var(--sans);color:var(--fg-1);margin:0 0 14px;text-wrap:pretty">邊緣推論修正後 <b style="color:var(--fg-0)">N3 / N2 排程恢復</b>；3 月稼動率 92%，外資連續 5 日淨買；24h 內 3 則官方公告與 KGI 主題「先進製程節點」同向。</p>
+
+      <div style="font:500 11px/1 var(--mono);letter-spacing:.14em;color:var(--fg-2);text-transform:uppercase;margin-bottom:8px">資料完整度</div>
+      <ul class="check" id="x-check" style="list-style:none;padding:0;margin:0 0 14px">
+        <li class="ok"><span class="dt"></span><span class="l">價格資料</span><span class="v">正常</span></li>
+        <li class="ok"><span class="dt"></span><span class="l">K 線資料</span><span class="v">正常</span></li>
+        <li class="ok"><span class="dt"></span><span class="l">主題連結</span><span class="v">正常</span></li>
+        <li class="ok"><span class="dt"></span><span class="l">公司筆記</span><span class="v">正常</span></li>
+        <li class="warn"><span class="dt"></span><span class="l">籌碼資料</span><span class="v">部分延遲</span></li>
+        <li class="ok"><span class="dt"></span><span class="l">近期訊號</span><span class="v">3 則</span></li>
+      </ul>
+
+      <div style="font:500 11px/1 var(--mono);letter-spacing:.14em;color:var(--fg-2);text-transform:uppercase;margin-bottom:8px">關聯主題</div>
+      <div class="chips" style="margin-bottom:14px">
+        <span class="chip on">先進製程節點</span>
+        <span class="chip on">AI 伺服器</span>
+        <span class="chip">CoWoS 產能</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn primary" style="justify-content:center">加入策略批次</button>
+        <button class="btn" style="justify-content:center">看公司頁</button>
+      </div>
+      <div style="margin-top:10px;font:11.5px/1.5 var(--sans);color:var(--fg-3);text-align:center">「加入策略批次」進入模擬流程，<b style="color:var(--fg-2);font-weight:500">不是真實下單</b></div>
+    </aside>
+
+  </div>
+
+</main>
+</div>
+
+<script>
+// — count-up
+document.querySelectorAll('[data-countup]').forEach(el=>{
+  const tgt=+el.dataset.countup;let i=0;const step=Math.max(1,Math.round(tgt/26));
+  const t=setInterval(()=>{i+=step;if(i>=tgt){el.textContent=tgt;el.classList.add('done');clearInterval(t)}else el.textContent=i},34);
+});
+
+// — live "X 分鐘前" tickers on candidate cards
+function fmtAge(s){
+  if(s<60) return '剛剛';
+  if(s<3600) return Math.floor(s/60)+' 分鐘前';
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h+'h '+m+'m 前';
+}
+const REL=[...document.querySelectorAll('[data-rel]')].map(el=>({el,t:+el.dataset.rel}));
+REL.forEach(r=>r.el.textContent=fmtAge(r.t));
+setInterval(()=>{REL.forEach(r=>{r.t+=60;r.el.textContent=fmtAge(r.t)})},60000);
+
+// — summary card click filters cards
+const CARDS=document.querySelectorAll('#cands .candcard');
+document.querySelectorAll('.sumcard').forEach(c=>c.addEventListener('click',()=>{
+  document.querySelectorAll('.sumcard').forEach(x=>x.classList.remove('on'));c.classList.add('on');
+  const st=c.dataset.st;
+  CARDS.forEach((card,i)=>{
+    const ok=(st==='all')||(card.dataset.st===st);
+    card.style.transition='opacity .25s,transform .25s';
+    if(ok){card.style.display='flex';card.style.opacity='0';card.style.transform='translateY(4px)';setTimeout(()=>{card.style.opacity='1';card.style.transform='translateY(0)'},20+i*40)}
+    else{card.style.opacity='0';setTimeout(()=>card.style.display='none',180)}
+  });
+}));
+
+// — sector chips toggle
+document.querySelectorAll('#sectorchips .chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('on')));
+
+// — tone seg
+document.querySelectorAll('.filterbar .seg button').forEach(b=>b.addEventListener('click',()=>{
+  b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+}));
+
+// — candidate select → update inline panel
+const DET={
+  '2330':{nm:'台積電 · TSMC',sym:'2330',meta:'半導體 · IC 製造',score:'0.84',conf:'高',rd:'87%',rdc:'ok',why:'邊緣推論修正後 <b style="color:var(--fg-0)">N3 / N2 排程恢復</b>；3 月稼動率 92%，外資連續 5 日淨買；24h 內 3 則官方公告與 KGI 主題「先進製程節點」同向。',check:[['ok','價格資料','正常'],['ok','K 線資料','正常'],['ok','主題連結','正常'],['ok','公司筆記','正常'],['warn','籌碼資料','部分延遲'],['ok','近期訊號','3 則']]},
+  '2382':{nm:'廣達 · Quanta',sym:'2382',meta:'AI 硬體 · 伺服器代工',score:'0.79',conf:'中高',rd:'82%',rdc:'ok',why:'GB200 量產上修，4 月出貨 mix 向 AI rack；hyperscaler 訂單能見度延伸至 Q3。',check:[['ok','價格資料','正常'],['ok','K 線資料','正常'],['ok','主題連結','正常'],['warn','公司筆記','待補'],['ok','籌碼資料','正常'],['ok','近期訊號','2 則']]},
+  '2454':{nm:'聯發科 · MediaTek',sym:'2454',meta:'半導體 · IC 設計',score:'0.76',conf:'中高',rd:'81%',rdc:'ok',why:'旗艦 SoC + 車用 ramp，車用比重提升、毛利結構改善；外資連買 4 日。',check:[['ok','價格資料','正常'],['ok','K 線資料','正常'],['ok','主題連結','正常'],['ok','公司筆記','正常'],['warn','籌碼資料','部分延遲'],['ok','近期訊號','2 則']]},
+  '3035':{nm:'智原 · Faraday',sym:'3035',meta:'半導體 · ASIC 設計',score:'0.64',conf:'中低',rd:'58%',rdc:'warn',why:'ASIC 主軸與客戶名單擴張訊號齊，<b style="color:var(--fg-0)">融資餘額資料延遲</b>，需 reviewer 二次審查。',check:[['ok','價格資料','正常'],['ok','K 線資料','正常'],['warn','主題連結','部分'],['warn','公司筆記','待補'],['bad','籌碼資料','延遲 38 分'],['warn','近期訊號','不足']]},
+  '2881':{nm:'富邦金 · Fubon',sym:'2881',meta:'金融 / 金控',score:'0.59',conf:'中',rd:'62%',rdc:'warn',why:'壽險 RBC 改善 + 利率區間情境；MOPS 資料來源覆蓋度待確認。',check:[['ok','價格資料','正常'],['ok','K 線資料','正常'],['warn','主題連結','部分'],['warn','公司筆記','待補'],['warn','籌碼資料','待確認'],['ok','近期訊號','2 則']]},
+  '2618':{nm:'長榮航 · EVA Air',sym:'2618',meta:'運輸 / 航空',score:'0.42',conf:'低',rd:'28%',rdc:'bad',why:'主要資料來源 24h 內 <b style="color:var(--fg-0)">暫時無法讀取</b> 2 次；產業風險上限已達標，<b style="color:var(--fg-0)">暫不流入策略批次</b>。',check:[['warn','價格資料','延遲'],['bad','K 線資料','無法讀取'],['warn','主題連結','部分'],['bad','公司筆記','缺'],['bad','籌碼資料','無法讀取'],['warn','近期訊號','不足']]}
+};
+function selectCard(card){
+  CARDS.forEach(c=>c.classList.remove('sel'));card.classList.add('sel');
+  const d=DET[card.dataset.sym];if(!d)return;
+  document.getElementById('x-name').textContent=d.nm;
+  document.getElementById('x-sym').textContent=d.sym;
+  document.getElementById('x-meta').textContent=d.meta;
+  document.getElementById('x-score').textContent=d.score;
+  document.getElementById('x-conf').textContent=d.conf;
+  const rd=document.getElementById('x-rd');rd.textContent=d.rd;rd.style.color=`var(--${d.rdc==='ok'?'ok':d.rdc==='warn'?'brand':'bad'})`;
+  document.getElementById('x-why').innerHTML=d.why;
+  document.getElementById('x-check').innerHTML=d.check.map(([cls,l,v])=>`<li class="${cls}"><span class="dt"></span><span class="l">${l}</span><span class="v">${v}</span></li>`).join('');
+  // header pill
+  const pill=document.querySelector('#inline .ph .pill');
+  const st=card.dataset.st;
+  pill.className='pill '+(st==='allow'?'ok':st==='review'?'warn':'bad');
+  pill.innerHTML='<i></i>'+(st==='allow'?'可觀察':st==='review'?'待確認':'不進流程');
+}
+CARDS.forEach(c=>c.addEventListener('click',e=>{if(e.target.tagName==='BUTTON')return;selectCard(c);c.style.transition='transform .12s var(--e-out)';c.style.transform='translateY(-1px)';setTimeout(()=>{c.style.transform=''},140);}));
+</script>
+</body>
+</html>
