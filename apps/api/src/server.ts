@@ -9036,7 +9036,7 @@ app.get("/api/v1/portfolio/preview", async (c) => {
   const baseCapitalRaw = Number(process.env.PAPER_BROKER_INITIAL_CASH);
   const baseCapitalTWD = Number.isFinite(baseCapitalRaw) && baseCapitalRaw > 0
     ? baseCapitalRaw
-    : 20_000;
+    : 10_000_000;
 
   const dbMode = isDatabaseMode();
   const db = dbMode ? getDb() : null;
@@ -9698,11 +9698,11 @@ app.get("/api/v1/paper/portfolio", async (c) => {
   }));
 
   // Base capital per BLOCK #5 §5: paper E2E must show simulated capital, not null.
-  // PAPER_BROKER_INITIAL_CASH env var overrides; default 20,000 TWD per product spec.
+  // PAPER_BROKER_INITIAL_CASH env var overrides; default NT$10,000,000 (楊董ack 2026-05-13).
   const baseCapitalRaw = Number(process.env.PAPER_BROKER_INITIAL_CASH);
   const baseCapitalTWD = Number.isFinite(baseCapitalRaw) && baseCapitalRaw > 0
     ? baseCapitalRaw
-    : 20_000;
+    : 10_000_000;
 
   // Compute invested capital from current open positions (buy cost basis only)
   const investedCost = Array.from(positions.values())
