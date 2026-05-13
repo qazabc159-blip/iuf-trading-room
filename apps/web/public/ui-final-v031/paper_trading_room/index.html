@@ -83,7 +83,7 @@
 
     <!-- 今日有訊號 (隱藏，由 tab 控制) -->
     <div class="wlist" id="wl-sig" style="display:none">
-      <div class="group">沿用策略想法 · 6 檔</div>
+      <div class="group" id="wl-sig-group">沿用策略想法 · 載入中</div>
       <div class="wrow on" data-sym="2330">
         <span class="sym">2330</span>
         <div class="body"><div class="nm">台積電</div><div class="meta">3 訊號 · 完整度 87%</div></div>
@@ -118,7 +118,7 @@
 
     <!-- Paper 候選 -->
     <div class="wlist" id="wl-paper" style="display:none">
-      <div class="group">可觀察 · 來自策略想法</div>
+      <div class="group" id="wl-paper-group">可觀察 · 載入中</div>
       <div class="wrow on" data-sym="2330">
         <span class="sym">2330</span>
         <div class="body"><div class="nm">台積電</div><div class="meta">AI 評分 0.84 · 高信心</div></div>
@@ -171,12 +171,12 @@
     </div>
 
     <!-- existing position banner -->
-    <div class="posbanner">
+    <div class="posbanner" id="posbanner" style="display:none">
       <i class="dot ok" style="width:6px;height:6px;border-radius:50%;background:var(--ok)"></i>
-      <span>現有模擬部位　<b>2,000 股</b>　平均成本　<b>945.50</b></span>
+      <span>現有模擬部位　<b id="banner-qty">—</b>　平均成本　<b id="banner-avg">—</b></span>
       <span style="color:var(--fg-3)">·</span>
-      <span>持倉中　<b style="color:var(--fg-1)">已 8 個交易日</b></span>
-      <span class="pnl up">未實現 +33,000 NTD（+1.74%）</span>
+      <span>持倉中　<b id="banner-days" style="color:var(--fg-1)">—</b></span>
+      <span class="pnl" id="banner-pnl">—</span>
     </div>
 
     <!-- chart panel -->
@@ -292,9 +292,9 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;font:500 11.5px/1.4 var(--sans);color:var(--fg-2)">
           <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">模擬本金</div><div id="summary-capital" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">10,000,000</div></div>
           <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">可用資金</div><div id="summary-avail" style="font:500 14px/1 var(--mono);color:var(--brand);font-variant-numeric:tabular-nums">10,000,000</div></div>
-          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">持倉市值</div><div style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">1,891,000</div></div>
-          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">總損益</div><div style="font:500 14px/1 var(--mono);color:var(--bad);font-variant-numeric:tabular-nums">+33,000 <small style="font-size:11px;color:var(--fg-3)">(+1.74%)</small></div></div>
-          <div style="grid-column:1 / -1;padding-top:8px;border-top:1px solid var(--line);font:500 11px/1.5 var(--sans);color:var(--fg-3)">持有 <b style="color:var(--fg-1);font-weight:500">1 檔</b> 模擬部位　·　今日 <b style="color:var(--fg-1);font-weight:500">2 筆</b> 成交</div>
+          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">持倉市值</div><div id="summary-mktval" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
+          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">總損益</div><div id="summary-pnl" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
+          <div style="grid-column:1 / -1;padding-top:8px;border-top:1px solid var(--line);font:500 11px/1.5 var(--sans);color:var(--fg-3)">持有 <b id="summary-poscount" style="color:var(--fg-1);font-weight:500">—</b> 檔模擬部位　·　今日 <b id="summary-fillcount" style="color:var(--fg-1);font-weight:500">—</b> 筆成交</div>
         </div>
       </div>
     </div>
@@ -370,20 +370,9 @@
       <!-- 執行事件 -->
       <div class="ltab" data-lt="events">
         <table>
-          <thead><tr><th>時間</th><th>類型</th><th>內容</th><th>對應</th><th class="r">操作員</th></tr></thead>
-          <tbody>
-            <tr><td class="ts">13:24:08</td><td><span class="ev-buy">買進成交</span></td><td>2330 台積電 × 1 張 @ 962.00 · 模擬通道</td><td class="ts">PO-3318</td><td class="r ts">@hung</td></tr>
-            <tr><td class="ts">13:24:07</td><td><span class="ev-gate">風控通過</span></td><td>單筆 962,000 / 可用 4,071,000 · 部位 0.4% / 上限 5%</td><td class="ts">PO-3318</td><td class="r ts">system</td></tr>
-            <tr><td class="ts">13:24:06</td><td><span class="ev-info">委託預覽</span></td><td>2330 × 1 張 @ 962.00 限價 · 預估金額 962,000</td><td class="ts">PO-3318</td><td class="r ts">@hung</td></tr>
-            <tr><td class="ts">13:18:42</td><td><span class="ev-buy">買進成交</span></td><td>2330 × 1 張 @ 958.00 · 模擬通道</td><td class="ts">PO-3317</td><td class="r ts">@hung</td></tr>
-            <tr><td class="ts">13:18:41</td><td><span class="ev-gate">風控通過</span></td><td>策略想法引用 · 來源完整度 87%</td><td class="ts">PO-3317</td><td class="r ts">system</td></tr>
-            <tr><td class="ts">11:08:24</td><td><span class="ev-gate">風控擋下</span></td><td>2618 長榮航 · 來源異常超過 24h，已暫停下單</td><td class="ts">PO-3315</td><td class="r ts">system</td></tr>
-            <tr><td class="ts">10:42:11</td><td><span class="ev-info">委託送出</span></td><td>2382 × 2 張 @ 285.00 限價 · 等待成交</td><td class="ts">PO-3311</td><td class="r ts">@hung</td></tr>
-            <tr><td class="ts">09:30:01</td><td><span class="ev-info">開盤同步</span></td><td>KGI 實盤庫存讀取完成 · 5 檔</td><td class="ts">—</td><td class="r ts">system</td></tr>
-            <tr><td class="ts">04-22 10:18</td><td><span class="ev-sell">賣出成交</span></td><td>2330 × 1 張 @ 948.50</td><td class="ts">PO-3265</td><td class="r ts">@hung</td></tr>
-            <tr><td class="ts">04-22 10:17</td><td><span class="ev-gate">風控通過</span></td><td>賣出對沖前次部位 · 部位內</td><td class="ts">PO-3265</td><td class="r ts">system</td></tr>
-            <tr><td class="ts">04-18 13:30</td><td><span class="ev-buy">買進成交</span></td><td>2454 × 1 張 @ 1,402.0</td><td class="ts">PO-3221</td><td class="r ts">@hung</td></tr>
-            <tr><td class="ts">04-15 09:42</td><td><span class="ev-buy">買進成交</span></td><td>2382 × 3 張 @ 274.50 · 策略想法引用</td><td class="ts">PO-3198</td><td class="r ts">@hung</td></tr>
+          <thead><tr><th>時間</th><th>類型</th><th>內容</th><th>對應</th><th class="r">來源</th></tr></thead>
+          <tbody id="events-body">
+            <tr><td colspan="5" style="color:var(--fg-3)">執行事件載入中…</td></tr>
           </tbody>
         </table>
       </div>
@@ -538,33 +527,46 @@ document.querySelectorAll('#wtabs button').forEach(b=>b.addEventListener('click'
 }));
 
 /* ---------- symbol switch ---------- */
-const SYM_DATA={
-  '2330':{nm:'台積電 · TSMC',sec:'半導體 · IC 製造',price:962,open:956,high:965,low:954,prev:954,vol:14820},
-  '2382':{nm:'廣達 · Quanta',sec:'AI 硬體 · 伺服器代工',price:288.5,open:285,high:290,low:284,prev:285,vol:9214},
-  '2317':{nm:'鴻海 · Foxconn',sec:'電子組裝',price:196.5,open:198,high:199,low:196,prev:197.5,vol:18324},
-  '2454':{nm:'聯發科 · MediaTek',sec:'半導體 · IC 設計',price:1420,open:1405,high:1425,low:1402,prev:1405,vol:4218},
-  '2881':{nm:'富邦金',sec:'金融 · 金控',price:86.3,open:86,high:86.5,low:85.8,prev:86,vol:21344},
-  '3035':{nm:'智原 · Faraday',sec:'半導體 · ASIC',price:425,open:428,high:430,low:423,prev:427.5,vol:3814},
-  '3661':{nm:'世芯-KY',sec:'ASIC 設計',price:3365,open:3410,high:3420,low:3340,prev:3410,vol:1024},
-  '2618':{nm:'長榮航',sec:'運輸 · 航空',price:39.85,open:39.9,high:40,low:39.7,prev:39.85,vol:8124}
+// SYM_DATA — hydration will override window.__IUF_SYM_DATA__ after load;
+// fallback values kept only for first render before hydration fires.
+const SYM_DATA_FALLBACK={
+  '2330':{nm:'台積電',sec:'半導體',price:null,open:null,high:null,low:null,prev:null,vol:null},
+  '2382':{nm:'廣達',sec:'AI 硬體',price:null,open:null,high:null,low:null,prev:null,vol:null},
+  '2317':{nm:'鴻海',sec:'電子組裝',price:null,open:null,high:null,low:null,prev:null,vol:null},
+  '2454':{nm:'聯發科',sec:'半導體',price:null,open:null,high:null,low:null,prev:null,vol:null},
+  '2881':{nm:'富邦金',sec:'金融',price:null,open:null,high:null,low:null,prev:null,vol:null},
+  '3035':{nm:'智原',sec:'半導體',price:null,open:null,high:null,low:null,prev:null,vol:null},
+  '3661':{nm:'世芯-KY',sec:'ASIC',price:null,open:null,high:null,low:null,prev:null,vol:null},
+  '2618':{nm:'長榮航',sec:'運輸',price:null,open:null,high:null,low:null,prev:null,vol:null}
 };
+const SYM_DATA=window.__IUF_SYM_DATA__||SYM_DATA_FALLBACK;
 function pickRow(sym){
   document.querySelectorAll('.wrow').forEach(r=>r.classList.toggle('on',r.dataset.sym===sym));
-  const d=SYM_DATA[sym];if(!d)return;
+  // prefer live data injected by hydration; fall back to SYM_DATA (may be null)
+  const live=window.__IUF_SYM_DATA_LIVE__||{};
+  const liveSym=live[sym]||{};
+  const d=Object.assign({},SYM_DATA[sym]||{},liveSym);
+  if(!d.nm)return;
+  const fmt=v=>(v==null?'—':(+v).toLocaleString('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2}));
+  const price=d.price,prev=d.prev;
+  const chg=(price!=null&&prev!=null)?price-prev:null;
+  const pct=(chg!=null&&prev)?chg/prev*100:null;
   document.querySelector('.symhead .sym').textContent=sym;
-  document.querySelector('.symhead .nm').textContent=d.nm;
-  document.querySelector('.symhead .meta').firstChild.textContent=d.sec+' ';
-  const fmt=v=>(+v).toLocaleString('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const chg=d.price-d.prev,pct=(chg/d.prev)*100;
-  const pv=document.querySelector('.symhead .price .v');pv.textContent=fmt(d.price);pv.className='v '+(chg>=0?'up':'dn');
-  const pd=document.querySelector('.symhead .price .d');pd.textContent=(chg>=0?'▲ +':'▼ −')+Math.abs(chg).toFixed(2)+' 　'+(chg>=0?'+':'−')+Math.abs(pct).toFixed(2)+'%';pd.className='d '+(chg>=0?'up':'dn');
-  document.querySelectorAll('.symhead .stats .v')[0].textContent=fmt(d.open);
-  document.querySelectorAll('.symhead .stats .v')[1].textContent=fmt(d.high);
-  document.querySelectorAll('.symhead .stats .v')[2].textContent=fmt(d.low);
-  document.querySelectorAll('.symhead .stats .v')[3].textContent=fmt(d.prev);
-  document.querySelectorAll('.symhead .stats .v')[4].textContent=d.vol.toLocaleString()+' 張';
-  document.getElementById('t-sym').value=sym+'　'+d.nm.split(' · ')[0];
-  document.getElementById('t-price').value=fmt(d.price);
+  document.querySelector('.symhead .nm').textContent=d.nm||sym;
+  const metaNode=document.querySelector('.symhead .meta');
+  if(metaNode&&metaNode.firstChild)metaNode.firstChild.textContent=(d.sec||'台股')+' ';
+  const pv=document.querySelector('.symhead .price .v');
+  if(pv){pv.textContent=fmt(price);pv.className='v '+(chg==null?'flat':chg>=0?'up':'dn');}
+  const pd=document.querySelector('.symhead .price .d');
+  if(pd){pd.textContent=chg==null?'資料更新中':(chg>=0?'▲ +':'▼ −')+Math.abs(chg).toFixed(2)+' 　'+(chg>=0?'+':'−')+Math.abs(pct).toFixed(2)+'%';pd.className='d '+(chg==null?'flat':chg>=0?'up':'dn');}
+  const sv=document.querySelectorAll('.symhead .stats .v');
+  if(sv[0])sv[0].textContent=fmt(d.open);
+  if(sv[1])sv[1].textContent=fmt(d.high);
+  if(sv[2])sv[2].textContent=fmt(d.low);
+  if(sv[3])sv[3].textContent=fmt(d.prev);
+  if(sv[4])sv[4].textContent=d.vol!=null?d.vol.toLocaleString()+' 張':'—';
+  const tsym=document.getElementById('t-sym');if(tsym)tsym.value=sym+'　'+(d.nm||sym).split(' · ')[0];
+  const tprice=document.getElementById('t-price');if(tprice&&price!=null)tprice.value=price.toFixed(2);
   drawChart(sym);
   updPreview();
 }
@@ -619,8 +621,11 @@ function updPreview(){
   const afterEl=document.getElementById('p-after-avail');
   afterEl.textContent=after.toLocaleString('zh-TW');
   afterEl.className='v '+(after<0?'bad':(after<500000?'warn':''));
-  // position after
-  const curPos=sym==='2330'?2000:0, curAvg=sym==='2330'?945.5:0;
+  // position after — use real portfolio injected by hydration
+  const portfolio=window.__IUF_PORTFOLIO__||[];
+  const curPosDef=portfolio.find(p=>p.symbol===sym);
+  const curPos=curPosDef?Number(curPosDef.netQtyShares||0):0;
+  const curAvg=curPosDef?Number(curPosDef.avgCostPerShare||0):0;
   let newPos,newAvg;
   if(side==='buy'){newPos=curPos+shares;newAvg=curPos>0?((curPos*curAvg+shares*px)/newPos):px;}
   else{newPos=curPos-shares;newAvg=curAvg;}
@@ -634,11 +639,12 @@ function updPreview(){
 }
 
 /* ---------- chart ---------- */
+// CHART_DATA — real OHLCV injected by window.__IUF_OHLCV_DATA__ after hydration;
+// genSeries() kept only as last-resort fallback if real data not yet available.
 const CHART_DATA={};
 function genSeries(seed,n){
-  // deterministic-ish random walk
-  let x=seed%97/97, r=()=>(x=(x*9301+49297)%233280/233280);
-  let p=seed; const out=[];
+  let x=(seed||100)%97/97, r=()=>(x=(x*9301+49297)%233280/233280);
+  let p=seed||100; const out=[];
   for(let i=0;i<n;i++){
     const o=p, h=p*(1+r()*0.012+0.002), l=p*(1-r()*0.012-0.002), c=l+(h-l)*r();
     const v=Math.round(80+r()*200);
@@ -646,17 +652,22 @@ function genSeries(seed,n){
   }
   return out;
 }
-for(const s of Object.keys(SYM_DATA)){
-  CHART_DATA[s]=genSeries(SYM_DATA[s].price*100,60);
-  // set last close to current price
-  CHART_DATA[s][CHART_DATA[s].length-1].c=SYM_DATA[s].price;
-  CHART_DATA[s][CHART_DATA[s].length-1].h=Math.max(CHART_DATA[s][CHART_DATA[s].length-1].h,SYM_DATA[s].price);
+function getChartData(sym){
+  // Prefer real OHLCV injected by hydration (keyed by selected symbol)
+  const real=window.__IUF_OHLCV_DATA__;
+  if(real&&real.sym===sym&&real.bars&&real.bars.length){return real.bars;}
+  // Fall back to locally cached (may be from a prior hydration)
+  if(CHART_DATA[sym]&&CHART_DATA[sym].length){return CHART_DATA[sym];}
+  // Last resort: placeholder series with null-filled bars to show empty chart cleanly
+  return [{o:100,h:100,l:100,c:100,v:0,placeholder:true}];
 }
+// Seed static fallback only for symbols without real data yet (nulls safe)
+for(const s of Object.keys(SYM_DATA)){CHART_DATA[s]=[];}
 
 function drawChart(sym){
   const svg=document.getElementById('ksvg');
   const W=1000,H=380, padR=20, padL=30;
-  const data=CHART_DATA[sym]||CHART_DATA['2330'];
+  const data=getChartData(sym);
   const N=data.length;
   const hi=Math.max(...data.map(d=>d.h)), lo=Math.min(...data.map(d=>d.l));
   const vMax=Math.max(...data.map(d=>d.v));
@@ -738,8 +749,10 @@ wrap.addEventListener('mousemove',e=>{
 });
 wrap.addEventListener('mouseleave',()=>{cross.style.display='none';tip.style.display='none'});
 
-// initial chart
-drawChart('2330');
+// initial chart — deferred to after hydration paints real OHLCV;
+// drawChart will be called by hydratePaper() once real data arrives.
+// Call here only if no hydration script is present (standalone HTML preview).
+if(!window.__IUF_FINAL_V031_LIVE__){drawChart('2330');}
 updPreview();
 
 /* ---------- timeframe ---------- */

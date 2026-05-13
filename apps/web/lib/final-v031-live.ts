@@ -738,6 +738,44 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     const chg = selected.change;
     const pct = selected.changePct;
     const tone = chg == null ? "flat" : Number(chg) >= 0 ? "up" : "dn";
+
+    // ── Expose real data to vendor JS globals ──────────────────────────────────
+    // 1. Portfolio for updPreview() curPos calculation
+    (window as unknown as Record<string, unknown>).__IUF_PORTFOLIO__ = live.portfolio || [];
+
+    // 2. Real OHLCV bars for drawChart()
+    const ohlcv = live.ohlcv || [];
+    const chartBars = ohlcv.map((bar: Record<string, number>) => ({
+      o: bar.open, h: bar.high, l: bar.low, c: bar.close ?? bar.open, v: bar.volume ?? 0,
+      date: bar.date ?? bar.ts ?? ""
+    }));
+    (window as unknown as Record<string, unknown>).__IUF_OHLCV_DATA__ = {
+      sym: selected.symbol,
+      bars: chartBars
+    };
+
+    // 3. Live symbol data for pickRow() price/change display
+    const symLive: Record<string, unknown> = {};
+    if (selected.symbol) {
+      symLive[selected.symbol] = {
+        nm: selected.name || selected.symbol,
+        sec: selected.sector || "台股",
+        price: selected.price,
+        open: selected.open,
+        high: selected.high,
+        low: selected.low,
+        prev: selected.previous,
+        vol: selected.volume
+      };
+    }
+    (window as unknown as Record<string, unknown>).__IUF_SYM_DATA_LIVE__ = symLive;
+
+    // 4. Redraw chart with real OHLCV now that globals are set
+    if (typeof (window as unknown as Record<string, unknown>).drawChart === "function" && chartBars.length > 0) {
+      (window as unknown as Record<string, { (sym: string): void }>).drawChart(selected.symbol || "2330");
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     setText(".symhead .sym", selected.symbol || "—");
     setText(".symhead .nm", (selected.name || selected.symbol || "—"));
     setText(".symhead .meta", selected.sector || "台股");
@@ -839,6 +877,156 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
         setTimeout(() => { submit.disabled = false; }, 1200);
       }
     }, true);
+
+    // ── Position banner (real portfolio for selected symbol) ──────────────────
+    const selPos = (live.portfolio || []).find((p: Record<string, unknown>) => String(p.symbol) === String(selected.symbol));
+    const banner = $("#posbanner");
+    if (banner) {
+      if (selPos && Number(selPos.netQtyShares || 0) > 0) {
+        banner.style.display = "";
+        const bannerQty = $("#banner-qty"); if (bannerQty) bannerQty.textContent = n(selPos.netQtyShares) + " 股";
+        const bannerAvg = $("#banner-avg"); if (bannerAvg) bannerAvg.textContent = price(selPos.avgCostPerShare);
+        // days held: calculate from oldest fill for this symbol
+        const symFills = (live.fills || []).filter((f: Record<string, unknown>) => String(f.symbol) === String(selected.symbol));
+        const oldestFill = symFills.length ? symFills[symFills.length - 1] : null;
+        const daysEl = $("#banner-days");
+        if (daysEl) {
+          if (oldestFill && (oldestFill.fillTime || oldestFill.createdAt)) {
+            const fillTs = Date.parse(String(oldestFill.fillTime || oldestFill.createdAt));
+            const tradeDays = Number.isFinite(fillTs) ? Math.max(1, Math.round((Date.now() - fillTs) / 86400000)) : null;
+            daysEl.textContent = tradeDays ? "已 " + tradeDays + " 天" : "持倉中";
+          } else {
+            daysEl.textContent = "持倉中";
+          }
+        }
+        // PnL estimate using current price
+        const curPrice = selected.price ?? selPos.avgCostPerShare;
+        const pnlEl = $("#banner-pnl");
+        if (pnlEl && curPrice != null && selPos.avgCostPerShare != null) {
+          const pnlAmt = (Number(curPrice) - Number(selPos.avgCostPerShare)) * Number(selPos.netQtyShares || 0);
+          const pnlPct = selPos.avgCostPerShare ? (Number(curPrice) - Number(selPos.avgCostPerShare)) / Number(selPos.avgCostPerShare) * 100 : 0;
+          const pnlTone = pnlAmt >= 0 ? "up" : "dn";
+          pnlEl.className = "pnl " + pnlTone;
+          pnlEl.textContent = "未實現 " + (pnlAmt >= 0 ? "+" : "−") + Math.abs(Math.round(pnlAmt)).toLocaleString("zh-TW") + " NTD（" + (pnlPct >= 0 ? "+" : "−") + Math.abs(pnlPct).toFixed(2) + "%）";
+        } else if (pnlEl) {
+          pnlEl.textContent = "未實現損益資料更新中";
+        }
+      } else {
+        banner.style.display = "none";
+      }
+    }
+
+    // ── Portfolio summary (invested mktval + pnl) ─────────────────────────────
+    const portfolio = live.portfolio || [];
+    const fills = live.fills || [];
+    let totalMktVal = 0;
+    let totalCost = 0;
+    portfolio.forEach((pos: Record<string, unknown>) => {
+      const posPrice = String(pos.symbol) === String(selected.symbol) ? (selected.price ?? pos.avgCostPerShare) : pos.avgCostPerShare;
+      const mv = Number(posPrice || 0) * Number(pos.netQtyShares || 0);
+      totalMktVal += mv;
+      totalCost += Number(pos.avgCostPerShare || 0) * Number(pos.netQtyShares || 0);
+    });
+    const totalPnl = totalMktVal - totalCost;
+    const mktValEl = $("#summary-mktval"); if (mktValEl) mktValEl.textContent = portfolio.length ? n(Math.round(totalMktVal)) : "—";
+    const pnlEl = $("#summary-pnl");
+    if (pnlEl) {
+      if (portfolio.length) {
+        const pnlPct = totalCost > 0 ? totalPnl / totalCost * 100 : 0;
+        pnlEl.className = ""; // reset
+        pnlEl.style.color = totalPnl >= 0 ? "var(--ok)" : "var(--bad)";
+        pnlEl.innerHTML = (totalPnl >= 0 ? "+" : "−") + Math.abs(Math.round(totalPnl)).toLocaleString("zh-TW") + ' <small style="font-size:11px;color:var(--fg-3)">(' + (pnlPct >= 0 ? "+" : "−") + Math.abs(pnlPct).toFixed(2) + "%)</small>";
+      } else {
+        pnlEl.textContent = "—";
+      }
+    }
+    const posCountEl = $("#summary-poscount"); if (posCountEl) posCountEl.textContent = String(portfolio.length);
+    // today fills count
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayFillCount = fills.filter((f: Record<string, unknown>) => String(f.fillTime || "").startsWith(todayStr)).length;
+    const fillCountEl = $("#summary-fillcount"); if (fillCountEl) fillCountEl.textContent = String(todayFillCount);
+
+    // ── Events table (synthesised from fills + orders) ────────────────────────
+    const eventsBody = $("#events-body");
+    if (eventsBody) {
+      const events: Array<{ ts: string; cls: string; label: string; detail: string; ref: string; source: string }> = [];
+      // fills → buy/sell events
+      (live.fills || []).slice(0, 8).forEach((f: Record<string, unknown>) => {
+        const side = String(f.side || "buy");
+        events.push({
+          ts: String(f.fillTime || "").slice(5, 16) || "—",
+          cls: side === "sell" ? "ev-sell" : "ev-buy",
+          label: side === "sell" ? "賣出成交" : "買進成交",
+          detail: esc(String(f.symbol || "—")) + " × " + esc(String(f.fillQty || "—")) + " 股 @ " + price(f.fillPrice) + " · 模擬通道",
+          ref: esc(String(f.orderId || "—")),
+          source: "system"
+        });
+      });
+      // pending orders → info events
+      (live.orders || []).filter((o: Record<string, unknown>) => {
+        const intent = (o.intent || o) as Record<string, unknown>;
+        return String(intent.status || "") !== "FILLED";
+      }).slice(0, 4).forEach((o: Record<string, unknown>) => {
+        const intent = (o.intent || o) as Record<string, unknown>;
+        events.push({
+          ts: String(intent.createdAt || "").slice(11, 19) || "—",
+          cls: "ev-info",
+          label: "委託等待中",
+          detail: esc(String(intent.symbol || "—")) + " × " + esc(String(intent.qty || "—")) + " @ " + price(intent.price) + " " + esc(String(intent.orderType || "限價")),
+          ref: esc(String(intent.id || "—")),
+          source: "system"
+        });
+      });
+      if (events.length) {
+        eventsBody.innerHTML = events.map((ev) => '<tr><td class="ts">' + ev.ts + '</td><td><span class="' + ev.cls + '">' + ev.label + '</span></td><td>' + ev.detail + '</td><td class="ts">' + ev.ref + '</td><td class="r ts">' + ev.source + '</td></tr>').join("");
+      } else {
+        eventsBody.innerHTML = '<tr><td colspan="5" style="color:var(--fg-3)">目前沒有執行事件紀錄。</td></tr>';
+      }
+    }
+
+    // ── Watchlist wl-sig (ideas with signals) ─────────────────────────────────
+    const wlSig = $("#wl-sig");
+    const wlSigGroup = $("#wl-sig-group");
+    const ideas = live.ideas || [];
+    if (wlSig && ideas.length) {
+      if (wlSigGroup) wlSigGroup.textContent = "策略候選 · " + ideas.length + " 檔";
+      // Remove old static rows (keep only group div)
+      Array.from(wlSig.querySelectorAll(".wrow")).forEach((el) => el.remove());
+      ideas.slice(0, 8).forEach((idea: Record<string, unknown>, i: number) => {
+        const div = document.createElement("div");
+        div.className = "wrow" + (i === 0 ? " on" : "");
+        div.dataset.sym = String(idea.symbol || "");
+        const tone = String(idea.statusClass || "") === "allow" ? "ok" : String(idea.statusClass || "") === "block" ? "bad" : "warn";
+        div.innerHTML = '<span class="sym">' + esc(String(idea.symbol || "—")) + '</span><div class="body"><div class="nm">' + esc(String(idea.companyName || idea.symbol || "—")) + '</div><div class="meta">' + esc(String(idea.signalCount || 0)) + ' 訊號 · ' + esc(String(idea.completeness || 0)) + '%</div></div><div class="price"><span class="v">—</span><span class="d ' + tone + '">' + esc(String(idea.status || "—")) + '</span></div>';
+        div.addEventListener("click", () => {
+          if (typeof (window as unknown as Record<string, unknown>).pickRow === "function") {
+            (window as unknown as Record<string, { (sym: string): void }>).pickRow(String(idea.symbol || ""));
+          }
+        });
+        wlSig.appendChild(div);
+      });
+    }
+
+    // ── Watchlist wl-paper (allow-only ideas) ─────────────────────────────────
+    const wlPaper = $("#wl-paper");
+    const wlPaperGroup = $("#wl-paper-group");
+    const allowIdeas = ideas.filter((idea: Record<string, unknown>) => String(idea.decision || "") === "allow" || String(idea.decision || "") === "review");
+    if (wlPaper && allowIdeas.length) {
+      if (wlPaperGroup) wlPaperGroup.textContent = "可觀察 · 來自策略想法 · " + allowIdeas.length + " 檔";
+      Array.from(wlPaper.querySelectorAll(".wrow")).forEach((el) => el.remove());
+      allowIdeas.slice(0, 6).forEach((idea: Record<string, unknown>, i: number) => {
+        const div = document.createElement("div");
+        div.className = "wrow" + (i === 0 ? " on" : "");
+        div.dataset.sym = String(idea.symbol || "");
+        div.innerHTML = '<span class="sym">' + esc(String(idea.symbol || "—")) + '</span><div class="body"><div class="nm">' + esc(String(idea.companyName || idea.symbol || "—")) + '</div><div class="meta">AI 評分 ' + esc(String(idea.score || "—")) + ' · ' + esc(String(idea.confidence || "—")) + '</div></div><div class="price"><span class="v">—</span><span class="d ok">' + esc(String(idea.status || "—")) + '</span></div>';
+        div.addEventListener("click", () => {
+          if (typeof (window as unknown as Record<string, unknown>).pickRow === "function") {
+            (window as unknown as Record<string, { (sym: string): void }>).pickRow(String(idea.symbol || ""));
+          }
+        });
+        wlPaper.appendChild(div);
+      });
+    }
   }
 
   if (live.screen === "market-intel") hydrateMarket();
