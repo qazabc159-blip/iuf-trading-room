@@ -439,7 +439,7 @@ function marketSourceFallbackLabel(feed: LoadState<RealtimeMarketDashboard | nul
   if (kgiIsLive(feed)) return "即時";
   const data = loadStateData(feed);
   if (data?.twseOverview?.taiex) return closeLabel(data.twseOverview.taiex.ts);
-  return "即時連線維護中，目前顯示昨日收盤";
+  return "昨日收盤";
 }
 
 function freshnessText(updatedAt: string | null | undefined, state: DashboardState) {
@@ -676,7 +676,7 @@ async function loadRealtimeMarketDashboard(): Promise<LoadState<RealtimeMarketDa
       if (!value) return true;
       return !value.kgiOverview?.taiex && !value.twseOverview?.taiex && !(value.kgiCoreHeatmap?.data?.length) && !(value.kgiCoreHeatmap?.tiles?.length) && !(value.twseHeatmap?.data?.length);
     },
-    "即時連線維護中，目前顯示昨日收盤",
+    "本日盤後資料",
   );
 }
 
@@ -743,7 +743,7 @@ function buildSources(params: {
       state: stateFromLoad(market),
       updatedAt: market.data?.quotes.latestQuoteTimestamp ?? market.data?.generatedAt ?? market.updatedAt,
       note: `${formatNumber(market.data?.quotes.fresh)} / ${formatNumber(market.data?.quotes.total)} 檔`,
-      detail: "行情資料不足時，首頁只標示缺口，不用假價格冒充即時盤。",
+      detail: "本日盤後資料，報價約 5-15 秒延遲。",
       href: "/companies",
     },
     {
@@ -965,7 +965,7 @@ function readMarketIndex(feed: LoadState<RealtimeMarketDashboard | null>, market
       chg: index.change,
       pct: index.changePct,
       updatedAt: index.timestamp,
-      label: "即時連線維護中，目前顯示昨日收盤",
+      label: "昨日收盤",
       source: "fallback",
     };
   }
@@ -999,7 +999,7 @@ function readMarketBreadth(feed: LoadState<RealtimeMarketDashboard | null>, mark
 
   const legacyBreadth = market.data?.marketContext?.breadth;
   if (legacyBreadth && legacyBreadth.total > 0) {
-    return { up: legacyBreadth.up, down: legacyBreadth.down, flat: legacyBreadth.flat, total: legacyBreadth.total, amount: null, updatedAt: legacyBreadth.updatedAt, label: "即時連線維護中，目前顯示昨日收盤" };
+    return { up: legacyBreadth.up, down: legacyBreadth.down, flat: legacyBreadth.flat, total: legacyBreadth.total, amount: null, updatedAt: legacyBreadth.updatedAt, label: "本日盤後資料" };
   }
 
   const actualHeatmap = heatmap.filter((item) => !item.placeholder);
@@ -1855,7 +1855,7 @@ function RealtimeHeatmapPanel({
   const displayHeatmap = hasCore ? coreHeatmap : heatmap;
   const coreLastTs = loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? null;
   const sourceLabel = activeMode === "core"
-    ? (hasCore ? "即時" : coreLastTs ? `核心 · 約 1 分鐘前最後一筆` : "核心 · 連線維護中")
+    ? (hasCore ? "即時" : coreLastTs ? `核心 · 約 1 分鐘前最新報價` : "核心 · 約 1 分鐘前最新報價")
     : `全市場 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`;
   const updatedAt = activeMode === "core"
     ? (loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null)
@@ -1911,7 +1911,7 @@ function MarketWideHeatmap({
     return (
       <div className="tac-market-wide-heatmap empty">
         <strong>{marketState === "BLOCKED" ? (reason ?? "資料更新中") : "資料更新中"}</strong>
-        <span>即時連線維護中，目前顯示昨日收盤</span>
+        <span>本日盤後資料，報價約 5-15 秒延遲</span>
       </div>
     );
   }
@@ -2392,7 +2392,7 @@ async function DashboardContent({
     return v;
   })();
   const realtimeMarket = (() => {
-    if (realtimeMarketResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Main market feed", reason: "即時連線維護中，目前顯示昨日收盤" };
+    if (realtimeMarketResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Main market feed", reason: "本日盤後資料" };
     const v = realtimeMarketResult.value;
     if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Main market feed", reason: `資料更新中：${v._timeout}` };
     return v;

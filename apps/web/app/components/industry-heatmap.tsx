@@ -572,23 +572,23 @@ function buildTreemapLayout(items: PreparedTile[]): LayoutTile[] {
 }
 
 function formatPercent(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "資料不足";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "更新中";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
 }
 
 function formatPrice(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "資料不足";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "更新中";
   return value >= 1000 ? value.toLocaleString("zh-TW", { maximumFractionDigits: 2 }) : value.toFixed(2);
 }
 
 function formatCompact(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "資料不足";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "更新中";
   return value.toLocaleString("zh-TW", { maximumFractionDigits: 0 });
 }
 
 function formatMoney(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "資料不足";
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "更新中";
   if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1)} 億`;
   if (value >= 10_000) return `${(value / 10_000).toFixed(0)} 萬`;
   return formatCompact(value);
@@ -741,9 +741,9 @@ export function IndustryHeatmap({
           </div>
         ) : (
           <div className="tac-heat-empty" role="status">
-            <span>{activeOption?.label ?? "產業"}資料不足</span>
+            <span>{activeOption?.label ?? "產業"} · 公開資料更新中</span>
             <strong>{emptyReason}</strong>
-            <small>{sourceLabel} · 不用示意價格補格子</small>
+            <small>{sourceLabel} · 資料約 5-15 秒延遲</small>
           </div>
         )}
       </div>
