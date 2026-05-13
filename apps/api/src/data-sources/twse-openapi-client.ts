@@ -741,3 +741,154 @@ export function getTwseOpenApiClient(): TwseOpenApiClient {
   }
   return _defaultTwseClient;
 }
+
+// ── Market Breadth ─────────────────────────────────────────────────────────────
+
+/** Output shape for TWSE market breadth (漲跌家數) */
+export interface TwseMarketBreadthResult {
+  /** Number of advancing stocks */
+  up: number;
+  /** Number of declining stocks */
+  down: number;
+  /** Number of flat stocks (change == 0) */
+  flat: number;
+  /** Total stocks with valid close price */
+  total: number;
+  /** Top-20 gainers by changePct */
+  topGainers: TwseBreadthStockRow[];
+  /** Top-20 losers by changePct */
+  topLosers: TwseBreadthStockRow[];
+  /** Top-20 by trade value (成交金額) */
+  topVolume: TwseBreadthStockRow[];
+  /** ISO 8601 trading date (Taipei) */
+  asOf: string | null;
+  source: "twse_openapi";
+  staleAfterSec: 60;
+}
+
+export interface TwseBreadthStockRow {
+  code: string;
+  name: string;
+  close: number;
+  change: number;
+  changePct: number;
+  tradeValue: number;
+}
+
+// 60-second in-memory cache for breadth (same TTL as overview)
+interface BreadthCacheEntry {
+  result: TwseMarketBreadthResult;
+  expiresAt: number;
+}
+const _breadthCache = new Map<string, BreadthCacheEntry>();
+
+function getBreadthCached(key: string): TwseMarketBreadthResult | null {
+  const entry = _breadthCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { _breadthCache.delete(key); return null; }
+  return entry.result;
+}
+
+function setBreadthCache(key: string, result: TwseMarketBreadthResult): void {
+  _breadthCache.set(key, { result, expiresAt: Date.now() + OVERVIEW_CACHE_TTL_SECONDS * 1000 });
+}
+
+/** For test cleanup */
+export function _resetTwseBreadthCache(): void {
+  _breadthCache.clear();
+}
+
+/**
+ * Fetch TWSE market breadth (漲跌家數) from STOCK_DAY_ALL.
+ * Returns advance/decline counts + top-20 gainers/losers/volume.
+ * Falls back to empty result (never throws).
+ * Cache TTL: 60 seconds.
+ */
+export async function getTwseMarketBreadth(
+  opts: { fetchOverride?: typeof fetch } = {}
+): Promise<TwseMarketBreadthResult> {
+  const EMPTY: TwseMarketBreadthResult = {
+    up: 0, down: 0, flat: 0, total: 0,
+    topGainers: [], topLosers: [], topVolume: [],
+    asOf: null, source: "twse_openapi", staleAfterSec: 60
+  };
+
+  const CACHE_KEY = "twse:breadth:v1";
+  const cached = getBreadthCached(CACHE_KEY);
+  if (cached) return cached;
+
+  const doFetch = opts.fetchOverride ?? globalThis.fetch;
+
+  let stockRows: StockDayAllRow[] = [];
+  try {
+    const resp = await doFetch(`${TWSE_BASE_URL}/exchangeReport/STOCK_DAY_ALL`, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(5_000)
+    });
+    if (resp.ok) {
+      const ct = resp.headers.get("content-type") ?? "";
+      if (ct.includes("application/json")) {
+        const raw = await resp.json();
+        stockRows = Array.isArray(raw) ? (raw as StockDayAllRow[]) : [];
+      }
+    }
+  } catch (err) {
+    // 1 retry
+    try {
+      const resp2 = await doFetch(`${TWSE_BASE_URL}/exchangeReport/STOCK_DAY_ALL`, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(5_000)
+      });
+      if (resp2.ok) {
+        const raw2 = await resp2.json();
+        stockRows = Array.isArray(raw2) ? (raw2 as StockDayAllRow[]) : [];
+      }
+    } catch {
+      console.warn("[twse-openapi-client] getTwseMarketBreadth: STOCK_DAY_ALL failed:", err instanceof Error ? err.message : String(err));
+      return EMPTY;
+    }
+  }
+
+  if (stockRows.length === 0) return EMPTY;
+
+  let up = 0, down = 0, flat = 0;
+  let asOf: string | null = null;
+  const enriched: TwseBreadthStockRow[] = [];
+
+  for (const row of stockRows) {
+    const close = parseFloat(row.ClosingPrice);
+    if (!isFinite(close) || close <= 0) continue;
+    const changePct = computeChangePct(row.ClosingPrice, row.Change);
+    const change = parseFloat(row.Change.trim().replace(/^\+/, ""));
+    const tradeValue = parseFloat(row.TradeValue.replace(/,/g, "")) || 0;
+
+    if (changePct > 0) up++;
+    else if (changePct < 0) down++;
+    else flat++;
+
+    enriched.push({ code: row.Code, name: row.Name, close, change, changePct, tradeValue });
+
+    if (!asOf && row.Date) {
+      // TWSE STOCK_DAY_ALL date is "114/05/12" (ROC slash format)
+      const parts = row.Date.trim().split("/");
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10) + 1911;
+        asOf = `${year}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}T13:30:00+08:00`;
+      }
+    }
+  }
+
+  const sortByPct = (a: TwseBreadthStockRow, b: TwseBreadthStockRow) => b.changePct - a.changePct;
+  const topGainers = [...enriched].sort(sortByPct).filter(r => r.changePct > 0).slice(0, 20);
+  const topLosers = [...enriched].sort((a, b) => a.changePct - b.changePct).filter(r => r.changePct < 0).slice(0, 20);
+  const topVolume = [...enriched].sort((a, b) => b.tradeValue - a.tradeValue).slice(0, 20);
+
+  const result: TwseMarketBreadthResult = {
+    up, down, flat, total: enriched.length,
+    topGainers, topLosers, topVolume,
+    asOf, source: "twse_openapi", staleAfterSec: 60
+  };
+
+  setBreadthCache(CACHE_KEY, result);
+  return result;
+}

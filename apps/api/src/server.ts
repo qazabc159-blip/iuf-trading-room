@@ -12249,6 +12249,86 @@ async function resolveDatabaseWorkspaceSlug(fallbackSlug: string): Promise<strin
   return fallbackSlug;
 }
 
+// =============================================================================
+// v0.3.1 Backend Gap Fill — Market Intel / Portfolio / Ideas supplemental
+// =============================================================================
+//
+// GET /api/v1/market/breadth/twse
+//   — 漲跌家數 (advance/decline) from TWSE STOCK_DAY_ALL
+//   — top-20 gainers, losers, volume (成交金額) — all live from TWSE
+//   — 60-second in-memory cache; fail-open (never 5xx)
+//   — Role: READ_DRAFT_ROLES
+//
+// GET /api/v1/paper/portfolio/history
+//   — Paper trade history list (all statuses) for current user
+//   — Shape: { data: PaperHistoryRow[], summary: { totalFills, totalOrders } }
+//   — Thin adapter over existing listOrders — no new storage
+//   — Role: session required (any authenticated user)
+//
+// Hard lines:
+//   - No broker.* change
+//   - No contracts change
+//   - No DB migration
+//   - No apps/web/* change
+// =============================================================================
+
+app.get("/api/v1/market/breadth/twse", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const { getTwseMarketBreadth } = await import("./data-sources/twse-openapi-client.js");
+  const result = await getTwseMarketBreadth();
+
+  return c.json(result);
+});
+
+app.get("/api/v1/paper/portfolio/history", async (c) => {
+  const session = c.get("session");
+
+  let orders;
+  try {
+    orders = await listOrders(session.user.id);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[paper/portfolio/history] listOrders failed:", detail);
+    return c.json({ error: "list_orders_failed", detail }, 500);
+  }
+
+  const rows = orders.map((o) => {
+    const fillTime = o.fill?.fillTime;
+    return {
+      orderId: o.intent.id,
+      symbol: o.intent.symbol,
+      side: o.intent.side,
+      orderType: o.intent.orderType,
+      qty: o.intent.qty,
+      quantity_unit: o.intent.quantity_unit,
+      status: o.intent.status,
+      fillQty: o.fill?.fillQty ?? null,
+      fillPrice: o.fill?.fillPrice ?? null,
+      fillTime: !fillTime
+        ? null
+        : fillTime instanceof Date
+          ? fillTime.toISOString()
+          : String(fillTime),
+      createdAt: o.intent.createdAt ?? null,
+      idempotencyKey: o.intent.idempotencyKey
+    };
+  });
+
+  const totalFills = rows.filter((r) => r.status === "FILLED").length;
+
+  return c.json({
+    data: rows,
+    summary: {
+      totalOrders: rows.length,
+      totalFills,
+      currency: "TWD",
+      simulated: true
+    }
+  });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
