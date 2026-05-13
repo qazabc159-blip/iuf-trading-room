@@ -633,6 +633,8 @@ function buildGeneratorPrompt(sourcePack: StrategyBriefSourcePack): string {
 
 === 硬規則（任何違反 → 拒絕） ===
 - 只輸出 JSON。
+- 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
+- heading 範例：「今日市場總覽」/「技術觀察」/「風控警示」/「策略觀察」/「今日訊號狀態」/「綜合觀察」。
 - 禁止買賣建議、禁止進場/賣出/買進/出脫/做多/做空。
 - 禁止目標價/target price/guarantee/必賺/保證/勝率。
 - 禁止 "approved" / "alpha confirmed" / "live-ready" 等促進用語。
@@ -701,6 +703,41 @@ ${trim(draftText, 2000)}
 3. 只回傳 JSON：{ "pass": true | false, "issues": ["...描述..."] }
    - pass=true 代表無幻覺問題
    - issues 為空陣列時 pass 必為 true`;
+}
+
+// ── Heading sanitizer ─────────────────────────────────────────────────────────
+
+const STRATEGY_ENGLISH_HEADING_MAP: Record<string, string> = {
+  "market overview": "今日市場總覽",
+  "market summary": "今日市場總覽",
+  "technical analysis": "技術觀察",
+  "risk alert": "風控警示",
+  "risk alerts": "風控警示",
+  "strategy observation": "策略觀察",
+  "strategy observations": "策略觀察",
+  "signal today": "今日訊號狀態",
+  "signals today": "今日訊號狀態",
+  "today's signals": "今日訊號狀態",
+  "summary": "綜合觀察",
+  "commentary": "綜合觀察",
+  "overview": "市場總覽",
+  "sector analysis": "類股分析",
+};
+
+function sanitizeStrategyHeading(raw: string): string {
+  const trimmed = raw.trim();
+  const lower = trimmed.toLowerCase();
+  if (STRATEGY_ENGLISH_HEADING_MAP[lower]) {
+    console.warn(`[strategy-brief] heading English fallback: "${trimmed}" → "${STRATEGY_ENGLISH_HEADING_MAP[lower]}"`);
+    return STRATEGY_ENGLISH_HEADING_MAP[lower];
+  }
+  const latin = (trimmed.match(/[A-Za-z]/g) ?? []).length;
+  const cjk = (trimmed.match(/[一-鿿]/g) ?? []).length;
+  if (latin >= 8 && latin > cjk) {
+    console.warn(`[strategy-brief] heading English-heavy: "${trimmed}" → "市場觀察"`);
+    return "市場觀察";
+  }
+  return trimmed;
 }
 
 // ── Wording guardrails ─────────────────────────────────────────────────────────
@@ -841,7 +878,7 @@ export async function generateStrategyBrief(
           .filter((s) => typeof s.heading === "string" && typeof s.body === "string" && (s.body as string).length >= 40)
           .map((s) => ({
             sectionId: typeof s.sectionId === "string" ? s.sectionId : "unknown",
-            heading: String(s.heading).slice(0, 100),
+            heading: sanitizeStrategyHeading(String(s.heading).slice(0, 100)),
             body: String(s.body).slice(0, 1400)
           }));
 
