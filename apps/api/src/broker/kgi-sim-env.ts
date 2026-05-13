@@ -98,6 +98,8 @@ export interface KgiSimState {
   lastQuoteSmokeAt: string | null;
   /** ISO timestamp of last trade smoke run. */
   lastTradeSmokeAt: string | null;
+  /** ISO timestamp when the last SIM order report (trades-poll) was received. */
+  lastSimOrderReportAt: string | null;
 }
 
 let _state: KgiSimState = {
@@ -111,6 +113,7 @@ let _state: KgiSimState = {
   lastSimOrderDetail: null,
   lastQuoteSmokeAt: null,
   lastTradeSmokeAt: null,
+  lastSimOrderReportAt: null,
 };
 
 /** Returns a shallow snapshot of KGI SIM state (never includes credentials). */
@@ -132,6 +135,7 @@ export function _resetKgiSimState(): void {
     lastSimOrderDetail: null,
     lastQuoteSmokeAt: null,
     lastTradeSmokeAt: null,
+    lastSimOrderReportAt: null,
   };
 }
 
@@ -141,7 +145,7 @@ export function _resetKgiSimState(): void {
 
 async function writeKgiAuditLog(params: {
   workspaceId: string | null;
-  action: "kgi.sim.quote_smoke" | "kgi.sim.trade_smoke" | "kgi.sim.daily_smoke";
+  action: "kgi.sim.quote_smoke" | "kgi.sim.trade_smoke" | "kgi.sim.daily_smoke" | "kgi.sim.order_submitted" | "kgi.sim.order_report_received";
   entityId: string;
   payload: Record<string, unknown>;
 }): Promise<void> {
@@ -218,6 +222,10 @@ export interface TradeSmokeResult {
   /** "accepted" | "rejected" | "callback_received" | "not_enabled" | "error" */
   orderOutcome: string;
   orderDetail: string | null;
+  /** Whether an order report (trades-poll) was received. */
+  orderReportReceived: boolean;
+  /** ISO timestamp when the order report was received (null if not received). */
+  orderReportAt: string | null;
   error: string | null;
 }
 
@@ -411,6 +419,8 @@ export async function runSimTradeSmoke(params: {
     orderSubmitted: false,
     orderOutcome: "pending",
     orderDetail: null,
+    orderReportReceived: false,
+    orderReportAt: null,
     error: null,
   };
 
@@ -458,8 +468,8 @@ export async function runSimTradeSmoke(params: {
       return finalise(result, t0);
     }
 
-    // Step 2: submit minimal SIM test order (odd-lot 1 share, market price)
-    // SIM_ONLY: this calls itradetest.kgi.com.tw via the gateway.
+    // Step 2: submit minimal SIM test order (odd-lot 1 share, limit price far from market)
+    // SIM_ONLY: calls itradetest.kgi.com.tw via gateway. IOC + 1 TWD = no fill risk.
     const order = await gwFetch(
       `${baseUrl}/order/create`,
       {
@@ -469,27 +479,46 @@ export async function runSimTradeSmoke(params: {
           action: "Buy",
           symbol,
           qty: 1,
-          price: null,             // market price
-          time_in_force: "ROD",
+          price: 1,               // 1 TWD far-from-market limit, IOC auto-cancels
+          time_in_force: "IOC",  // Immediately cancel if not filled
           order_cond: "Cash",
-          odd_lot: true,           // 1 share odd-lot — minimum SIM test
-          name: "SIM_SMOKE_TEST",  // clearly labelled
+          odd_lot: true,          // 1 share odd-lot -- minimum SIM test
+          name: "SIM_SMOKE_TEST", // clearly labelled
         }),
       }
     );
 
     result.orderSubmitted = true;
 
+    // Write kgi.sim.order_submitted audit immediately after submit attempt
+    const submitWorkspaceId = params.workspaceId ?? await resolveDefaultWorkspaceId();
+    await writeKgiAuditLog({
+      workspaceId: submitWorkspaceId,
+      action: "kgi.sim.order_submitted",
+      entityId: runId,
+      payload: {
+        sim_only: true,
+        run_id: runId,
+        symbol,
+        order_http_status: order.status,
+        order_ok: order.ok,
+        account_masked: maskAccount(process.env["KGI_ACCOUNT"] ?? "9228-001282-6"),
+      },
+    });
+
+    let tradeId: string | null = null;
+
     if (order.status === 409) {
       result.orderOutcome = "not_enabled";
-      result.orderDetail = "Gateway returned 409 — /order/create not enabled in current gateway phase";
+      result.orderDetail = "Gateway returned 409 -- /order/create not enabled in current gateway phase";
       _state.tradeConnected = true;
       _state.lastSimOrderStatus = "pass"; // 409 is expected/graceful in current phase
       _state.lastSimOrderDetail = result.orderDetail;
     } else if (order.ok) {
       const orderBody = order.body as { ok?: boolean; trade_id?: string; status?: string } | null;
+      tradeId = orderBody?.trade_id ?? null;
       result.orderOutcome = "accepted";
-      result.orderDetail = `order accepted: trade_id=${orderBody?.trade_id ?? "unknown"} status=${orderBody?.status ?? "unknown"}`;
+      result.orderDetail = `order accepted: trade_id=${tradeId ?? "unknown"} status=${orderBody?.status ?? "unknown"}`;
       _state.lastSimOrderStatus = "pass";
       _state.lastSimOrderDetail = result.orderDetail;
     } else {
@@ -497,6 +526,34 @@ export async function runSimTradeSmoke(params: {
       result.orderDetail = `order rejected: HTTP ${order.status}`;
       _state.lastSimOrderStatus = "fail";
       _state.lastSimOrderDetail = result.orderDetail;
+    }
+
+    // Step 3: Poll for order report via GET /trades (up to 3 attempts, 1.5s gap)
+    // Confirms order lifecycle visible in broker. Skip only if gateway unreachable.
+    if (result.gatewayReachable) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise<void>((r) => setTimeout(r, 1_500));
+        const tradesRes = await gwFetch(`${baseUrl}/trades?full=false`);
+        if (tradesRes.ok) {
+          result.orderReportReceived = true;
+          result.orderReportAt = new Date().toISOString();
+          _state.lastSimOrderReportAt = result.orderReportAt;
+          await writeKgiAuditLog({
+            workspaceId: submitWorkspaceId,
+            action: "kgi.sim.order_report_received",
+            entityId: runId,
+            payload: {
+              sim_only: true,
+              run_id: runId,
+              symbol,
+              trade_id_tail: tradeId ? tradeId.slice(-4) : null,
+              order_outcome: result.orderOutcome,
+              report_at: result.orderReportAt,
+            },
+          });
+          break;
+        }
+      }
     }
 
   } catch (err) {
@@ -509,9 +566,9 @@ export async function runSimTradeSmoke(params: {
   const finalResult = finalise(result, t0);
   _state.lastTradeSmokeAt = finalResult.finishedAt;
 
-  const workspaceId = params.workspaceId ?? await resolveDefaultWorkspaceId();
+  const finalWorkspaceId = params.workspaceId ?? await resolveDefaultWorkspaceId();
   await writeKgiAuditLog({
-    workspaceId,
+    workspaceId: finalWorkspaceId,
     action: "kgi.sim.trade_smoke",
     entityId: runId,
     payload: {
@@ -524,6 +581,8 @@ export async function runSimTradeSmoke(params: {
       order_submitted: finalResult.orderSubmitted,
       order_outcome: finalResult.orderOutcome,
       order_detail: finalResult.orderDetail,
+      order_report_received: finalResult.orderReportReceived,
+      order_report_at: finalResult.orderReportAt,
       error: finalResult.error,
       duration_ms: finalResult.durationMs,
       confirmed_by_bruce: params.confirmedByBruce ?? false,

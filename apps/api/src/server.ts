@@ -3573,6 +3573,7 @@ app.get("/api/v1/kgi/status", async (c) => {
     last_sim_order_detail: state.lastSimOrderDetail,
     last_quote_smoke_at: state.lastQuoteSmokeAt,
     last_trade_smoke_at: state.lastTradeSmokeAt,
+    last_sim_order_report_at: state.lastSimOrderReportAt,
     prod_write_blocked: true, // permanent hard guard — never false
     sim_quote_host: process.env["KGI_SIM_QUOTE_HOST"] ?? "iquotetest.kgi.com.tw",
     sim_trade_host: process.env["KGI_SIM_TRADE_HOST"] ?? "itradetest.kgi.com.tw",
