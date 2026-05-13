@@ -5,36 +5,22 @@ type FinalOnlyFrameProps = {
 
 export function FinalOnlyFrame({ src, title }: FinalOnlyFrameProps) {
   return (
-    <main className="iuf-final-only-frame" aria-label={title}>
+    <main className="iuf-final-content-frame" aria-label={title}>
       <style>{`
-        html,
-        body {
-          overflow: hidden !important;
-          background: #080b10 !important;
-        }
-
-        .app-sidebar {
-          display: none !important;
-        }
-
         .app-main-shell {
-          width: 100vw !important;
-          min-height: 100dvh !important;
-          margin-left: 0 !important;
-          padding: 0 !important;
           background: #080b10 !important;
+          padding: 0 !important;
         }
 
-        .iuf-final-only-frame {
-          position: fixed;
-          inset: 0;
-          z-index: 1000;
-          width: 100vw;
+        .iuf-final-content-frame {
+          width: 100%;
           height: 100dvh;
+          min-height: 100dvh;
           background: #080b10;
+          overflow: hidden;
         }
 
-        .iuf-final-only-frame iframe {
+        .iuf-final-content-frame iframe {
           display: block;
           width: 100%;
           height: 100%;
