@@ -1,10 +1,11 @@
 /**
  * twse-market-overview.test.ts — TWSE OpenAPI market overview + heatmap unit tests
  *
- * T1: getTwseMarketOverview shape — valid TWSE response → correct taiex snapshot shape
- * T2: getTwseIndustryHeatmap aggregation — 3 tickers, 2 industries → correct avgChangePct
- * T3: getTwseMarketOverview timeout → returns null (fail-open, no throw)
- * T4: getTwseIndustryHeatmap cache — second call within TTL returns same object without new fetch
+ * T1:  getTwseMarketOverview — MI_5MINS_INDEX primary succeeds → today ts, correct values
+ * T1b: getTwseMarketOverview — MI_5MINS_INDEX fails → MI_INDEX fallback
+ * T2:  getTwseIndustryHeatmap aggregation — 3 tickers, 2 industries → correct avgChangePct
+ * T3:  getTwseMarketOverview timeout → returns null (fail-open, no throw)
+ * T4:  getTwseIndustryHeatmap cache — second call within TTL returns same object without new fetch
  *
  * Run: node --import tsx/esm --test apps/api/src/__tests__/twse-market-overview.test.ts
  */
@@ -56,6 +57,20 @@ function makeMiIndexResponse() {
   ];
 }
 
+/** Build a mock MI_5MINS_INDEX response (TWSE main site) */
+function makeMi5MinsIndexResponse(dateYYYYMMDD: string, openVal: string, closeVal: string) {
+  return {
+    stat: "OK",
+    date: dateYYYYMMDD,
+    title: `115年05月13日 每5秒指數統計`,
+    fields: ["時間", "發行量加權股價指數"],
+    data: [
+      ["09:00:00", openVal],   // first row = opening reference (= yesterday's close)
+      ["13:30:00", closeVal],  // last row = today's closing value
+    ]
+  };
+}
+
 /** Build a mock STOCK_DAY_ALL response */
 function makeStockDayAllResponse() {
   return [
@@ -68,17 +83,6 @@ function makeStockDayAllResponse() {
   ];
 }
 
-function makeFetchOk(body: unknown, contentType = "application/json"): typeof fetch {
-  return (async (_input: URL | RequestInfo): Promise<Response> => {
-    return {
-      ok: true,
-      status: 200,
-      headers: { get: (h: string) => h === "content-type" ? contentType : null } as unknown as Headers,
-      json: async () => body
-    } as unknown as Response;
-  }) as typeof fetch;
-}
-
 function makeFetchTimeout(): typeof fetch {
   return (async (): Promise<Response> => {
     const err = new Error("The operation was aborted.");
@@ -87,36 +91,112 @@ function makeFetchTimeout(): typeof fetch {
   }) as typeof fetch;
 }
 
-// ── T1: getTwseMarketOverview shape ──────────────────────────────────────────
+// ── T1: getTwseMarketOverview — MI_5MINS_INDEX primary path ──────────────────
 
-test("T1: getTwseMarketOverview returns correct taiex snapshot shape", async () => {
+test("T1: getTwseMarketOverview uses MI_5MINS_INDEX primary — today ts and correct values", async () => {
   _resetTwseOverviewCache();
 
-  const mockFetch = makeFetchOk(makeMiIndexResponse());
+  // Today's date in "YYYYMMDD" format (matches what todayTaipeiYYYYMMDD() returns)
+  const now = new Date();
+  const taipeiMs = now.getTime() + 8 * 60 * 60 * 1000;
+  const d = new Date(taipeiMs);
+  const todayStr = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+
+  let mi5Called = false;
+  let miIndexCalled = false;
+
+  const mockFetch = (async (input: URL | RequestInfo): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("MI_5MINS_INDEX")) {
+      mi5Called = true;
+      // Return today's data with correct dateStr so it passes the date check
+      const body = makeMi5MinsIndexResponse(todayStr, "41,898.32", "41,374.50");
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        json: async () => body
+      } as unknown as Response;
+    }
+    if (url.includes("MI_INDEX")) {
+      miIndexCalled = true;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        json: async () => makeMiIndexResponse()
+      } as unknown as Response;
+    }
+    return { ok: false, status: 404, headers: { get: () => null } as unknown as Headers, json: async () => ({}) } as unknown as Response;
+  }) as typeof fetch;
+
   const result = await getTwseMarketOverview({ fetchOverride: mockFetch });
 
-  assert.ok(result !== null, "result must not be null when TWSE responds ok");
+  assert.ok(result !== null, "result must not be null when MI_5MINS_INDEX succeeds");
+  assert.ok(mi5Called, "MI_5MINS_INDEX must be called as primary source");
+  assert.equal(miIndexCalled, false, "MI_INDEX must NOT be called when MI_5MINS_INDEX succeeds");
 
   const r = result as TwseMarketOverviewResult;
-
-  // Source label
   assert.equal(r.source, "twse_openapi");
   assert.equal(r.staleAfterSec, 60);
 
-  // TAIEX snapshot
   assert.ok(r.taiex !== null, "taiex must be present");
-  assert.equal(typeof r.taiex.value, "number", "taiex.value must be number");
-  assert.equal(typeof r.taiex.change, "number", "taiex.change must be number");
-  assert.equal(typeof r.taiex.changePct, "number", "taiex.changePct must be number");
-  assert.equal(typeof r.taiex.ts, "string", "taiex.ts must be string");
+  assert.equal(typeof r.taiex.value, "number");
+  assert.equal(typeof r.taiex.change, "number");
+  assert.equal(typeof r.taiex.changePct, "number");
+  assert.equal(typeof r.taiex.ts, "string");
 
-  // Verify parsed values
-  assert.equal(r.taiex.value, 41898.32, "taiex.value must match 收盤指數");
-  assert.equal(r.taiex.change, 108.26, "taiex.change must be positive (漲跌=+)");
-  assert.equal(r.taiex.changePct, 0.26, "taiex.changePct must match 漲跌百分比");
+  // Today's close value from MI_5MINS_INDEX mock
+  assert.equal(r.taiex.value, 41374.50, "taiex.value must be today's close from MI_5MINS_INDEX");
+  // change = 41374.50 - 41898.32 = -523.82
+  assert.equal(r.taiex.change, -523.82, "change computed from open vs close rows");
+  // changePct = -523.82 / 41898.32 * 100 ≈ -1.25
+  assert.equal(r.taiex.changePct, -1.25, "changePct computed from open row as prevClose");
+  // ts must end with market close marker
+  assert.ok(r.taiex.ts.endsWith("T13:30:00+08:00"), `ts must end with market close: got ${r.taiex.ts}`);
+});
 
-  // Timestamp format: must contain the date portion
-  assert.ok(r.taiex.ts.startsWith("2026-05-12"), `taiex.ts must start with 2026-05-12, got ${r.taiex.ts}`);
+// ── T1b: getTwseMarketOverview — MI_5MINS_INDEX fails → MI_INDEX fallback ────
+
+test("T1b: getTwseMarketOverview falls back to MI_INDEX when MI_5MINS_INDEX fails", async () => {
+  _resetTwseOverviewCache();
+
+  let miIndexCalled = false;
+
+  const mockFetch = (async (input: URL | RequestInfo): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("MI_5MINS_INDEX")) {
+      // Simulate non-trading day (stat not "OK")
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        json: async () => ({ stat: "N/A", date: "20260513" })
+      } as unknown as Response;
+    }
+    if (url.includes("MI_INDEX")) {
+      miIndexCalled = true;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        json: async () => makeMiIndexResponse()
+      } as unknown as Response;
+    }
+    return { ok: false, status: 404, headers: { get: () => null } as unknown as Headers, json: async () => ({}) } as unknown as Response;
+  }) as typeof fetch;
+
+  const result = await getTwseMarketOverview({ fetchOverride: mockFetch });
+
+  assert.ok(result !== null, "result must not be null when MI_INDEX fallback succeeds");
+  assert.ok(miIndexCalled, "MI_INDEX must be called as fallback");
+
+  const r = result as TwseMarketOverviewResult;
+  // MI_INDEX returns 5/12 values
+  assert.equal(r.taiex.value, 41898.32, "fallback taiex.value from MI_INDEX");
+  assert.equal(r.taiex.change, 108.26, "fallback taiex.change from MI_INDEX");
+  assert.equal(r.taiex.changePct, 0.26, "fallback taiex.changePct from MI_INDEX");
+  assert.ok(r.taiex.ts.startsWith("2026-05-12"), `fallback ts must use MI_INDEX date: ${r.taiex.ts}`);
 });
 
 // ── T2: getTwseIndustryHeatmap aggregation ────────────────────────────────────

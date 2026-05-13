@@ -12340,6 +12340,262 @@ app.get("/api/v1/paper/portfolio/history", async (c) => {
   });
 });
 
+// =============================================================================
+// BG #2: FinMind Primary Chain — heatmap / breadth / leaders / institutional
+// =============================================================================
+//
+// Source chain (per panel):
+//   Primary:   FinMind sponsor (getFinMindWholeMarketPrice → all stocks, today)
+//   Secondary: TWSE OpenAPI EOD (getTwseIndustryHeatmap / getTwseMarketBreadth)
+//
+// GET /api/v1/market/heatmap/finmind
+//   — Industry heatmap: FinMind TaiwanStockPrice → industry aggregate
+//   — Falls back to TWSE STOCK_DAY_ALL when FinMind token absent or returns empty
+//
+// GET /api/v1/market/breadth/finmind
+//   — Advance/decline counts: FinMind TaiwanStockPrice
+//   — Falls back to getTwseMarketBreadth()
+//
+// GET /api/v1/market/leaders/finmind
+//   — Top 5 gainers / losers / most active: FinMind TaiwanStockPrice
+//   — Returns empty when FinMind absent (no reliable TWSE fallback for leaders)
+//
+// GET /api/v1/market/institutional-summary/finmind
+//   — 三大法人 buy/sell/net + top stocks: TaiwanStockInstitutionalInvestorsBuySell
+//   — Returns unavailable state when token absent (no TWSE fallback for institutional)
+//
+// GET /api/v1/market/margin-summary/finmind
+//   — 融資融券 balance: TaiwanStockMarginPurchaseShortSale
+//   — Returns unavailable state when token absent
+//
+// GET /api/v1/market/news/finmind
+//   — Latest market news: TaiwanStockNews (whole-market, today top 10, title-deduped)
+//   — Returns empty items when token absent or news tier unavailable
+//
+// Hard lines:
+//   - No KGI SDK import
+//   - No contracts change
+//   - No DB migration
+//   - No apps/web/* change
+//   - NOT touching index path (BG #1 lane)
+// =============================================================================
+
+app.get("/api/v1/market/heatmap/finmind", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const session = c.get("session");
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+
+  const { getFinMindIndustryHeatmap, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
+  const { getTwseIndustryHeatmap, getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+
+  // Build ticker → industry mapping from companies DB (chainPosition as industry proxy)
+  const tickerToIndustry = new Map<string, string>();
+  if (db) {
+    try {
+      const companyRes = await db.execute(drizzleSql`
+        SELECT ticker, chain_position AS industry
+        FROM companies
+        WHERE workspace_id = ${session.workspace.id}
+          AND ticker IS NOT NULL AND ticker != ''
+          AND chain_position IS NOT NULL AND chain_position != ''
+      `);
+      const companyRows = ((companyRes as { rows?: Record<string, unknown>[] }).rows
+        ?? (Array.isArray(companyRes) ? companyRes : [])) as Record<string, unknown>[];
+      for (const row of companyRows) {
+        const ticker = String(row.ticker ?? "").trim();
+        const industry = String(row.industry ?? "").trim();
+        if (ticker && industry) tickerToIndustry.set(ticker, industry);
+      }
+    } catch (err) {
+      console.warn("[market/heatmap/finmind] company query failed:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // Primary: FinMind whole-market price → industry aggregate
+  const finmindTiles = finMindAggregateHasToken()
+    ? await getFinMindIndustryHeatmap(tickerToIndustry)
+    : null;
+  let primarySource: string;
+  let primaryFailed = false;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let tiles: any[];
+
+  if (finmindTiles && finmindTiles.length > 0) {
+    tiles = finmindTiles;
+    primarySource = "finmind";
+  } else {
+    // Secondary fallback: TWSE OpenAPI STOCK_DAY_ALL
+    primaryFailed = true;
+    try {
+      await getStockDayAllRows(); // pre-warm shared cache
+      tiles = await getTwseIndustryHeatmap(tickerToIndustry);
+    } catch {
+      tiles = [];
+    }
+    primarySource = "twse_openapi_fallback";
+  }
+
+  return c.json({
+    data: tiles,
+    source: primarySource,
+    primaryFailed,
+    staleAfterSec: 60,
+    industryCount: tiles.length,
+    mappedTickers: tickerToIndustry.size
+  });
+});
+
+app.get("/api/v1/market/breadth/finmind", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const { getFinMindMarketBreadth, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
+  const { getTwseMarketBreadth } = await import("./data-sources/twse-openapi-client.js");
+
+  if (finMindAggregateHasToken()) {
+    const result = await getFinMindMarketBreadth();
+    if (result) return c.json(result);
+  }
+
+  // Fallback: TWSE OpenAPI
+  const twseResult = await getTwseMarketBreadth();
+  return c.json(twseResult);
+});
+
+app.get("/api/v1/market/leaders/finmind", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const { getFinMindLeaders, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
+
+  if (finMindAggregateHasToken()) {
+    const result = await getFinMindLeaders();
+    if (result) return c.json(result);
+  }
+
+  // No TWSE fallback for full leaders (TWSE breadth has top-20 already in /breadth/twse)
+  return c.json({
+    topGainers: [],
+    topLosers: [],
+    mostActive: [],
+    asOf: null,
+    source: "finmind",
+    staleAfterSec: 60,
+    state: "unavailable",
+    reason: finMindAggregateHasToken() ? "finmind_returned_empty" : "no_token"
+  });
+});
+
+app.get("/api/v1/market/institutional-summary/finmind", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const { getFinMindInstitutionalSummary, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
+
+  if (!finMindAggregateHasToken()) {
+    return c.json({
+      asOf: null,
+      totalNet: null,
+      institutions: [],
+      topNetBuy: [],
+      topNetSell: [],
+      source: "finmind",
+      staleAfterSec: 60,
+      state: "unavailable",
+      reason: "no_token"
+    });
+  }
+
+  const result = await getFinMindInstitutionalSummary();
+  if (!result) {
+    return c.json({
+      asOf: null,
+      totalNet: null,
+      institutions: [],
+      topNetBuy: [],
+      topNetSell: [],
+      source: "finmind",
+      staleAfterSec: 60,
+      state: "unavailable",
+      reason: "finmind_returned_empty"
+    });
+  }
+
+  return c.json({ ...result, state: "live" });
+});
+
+app.get("/api/v1/market/margin-summary/finmind", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const { getFinMindMarginSummary, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
+
+  if (!finMindAggregateHasToken()) {
+    return c.json({
+      asOf: null,
+      marginBalance: null,
+      shortBalance: null,
+      marginNet: null,
+      source: "finmind",
+      staleAfterSec: 60,
+      state: "unavailable",
+      reason: "no_token"
+    });
+  }
+
+  const result = await getFinMindMarginSummary();
+  if (!result) {
+    return c.json({
+      asOf: null,
+      marginBalance: null,
+      shortBalance: null,
+      marginNet: null,
+      source: "finmind",
+      staleAfterSec: 60,
+      state: "unavailable",
+      reason: "finmind_returned_empty"
+    });
+  }
+
+  return c.json({ ...result, state: "live" });
+});
+
+app.get("/api/v1/market/news/finmind", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const { getFinMindMarketNews, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
+
+  if (!finMindAggregateHasToken()) {
+    return c.json({
+      items: [],
+      asOf: null,
+      source: "finmind",
+      staleAfterSec: 60,
+      state: "unavailable",
+      reason: "no_token"
+    });
+  }
+
+  const result = await getFinMindMarketNews();
+  if (!result) {
+    return c.json({
+      items: [],
+      asOf: null,
+      source: "finmind",
+      staleAfterSec: 60,
+      state: "unavailable",
+      reason: "finmind_returned_empty"
+    });
+  }
+
+  return c.json({ ...result, state: "live" });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
