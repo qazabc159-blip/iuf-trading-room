@@ -191,6 +191,7 @@ class KgiSession:
         self._api: Optional[kgisuperpy.KGI] = None
         self._accounts: list[Account] = []
         self._active_account: Optional[str] = None
+        self._simulation: Optional[bool] = None
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -212,6 +213,10 @@ class KgiSession:
     @property
     def active_account(self) -> Optional[str]:
         return self._active_account
+
+    @property
+    def is_simulation(self) -> Optional[bool]:
+        return self._simulation
 
     # ------------------------------------------------------------------
     # Login
@@ -311,6 +316,7 @@ class KgiSession:
 
             # Login fully succeeded — cache the api handle
             self._api = login_result
+            self._simulation = simulation
             self._accounts = [
                 Account(
                     account=a["account"],
@@ -389,6 +395,7 @@ class KgiSession:
             self._api = None
             self._accounts = []
             self._active_account = None
+            self._simulation = None
 
 
 # Module-level singleton — shared across all FastAPI route handlers
