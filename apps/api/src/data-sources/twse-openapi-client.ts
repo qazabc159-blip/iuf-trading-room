@@ -4,6 +4,7 @@
  * TWSE OpenAPI provides official Taiwan Stock Exchange data with no auth required.
  * Base URL: https://openapi.twse.com.tw/v1/
  * TPEX (OTC) Base URL: https://www.tpex.org.tw/openapi/v1/
+ * TWSE main site (for MI_5MINS_INDEX): https://www.twse.com.tw/rwd/zh/TAIEX/
  *
  * Hard lines:
  *   - No auth required, no secrets
@@ -18,9 +19,14 @@
  *   - 重大訊息 (Material Announcements) — /opendata/t187ap46_L (by stock_id)
  *   - 公司治理 (Corporate Governance) — /opendata/t187ap46_L_2
  *   - ESG 揭露 — /opendata/t187ap46_L_1
- *   - 大盤指數 (Market Overview) — /exchangeReport/MI_INDEX
+ *   - 大盤指數 (Market Overview) — MI_5MINS_INDEX (main site today) → MI_INDEX (OpenAPI fallback)
  *   - 個股日成交 (Stock Day All) — /exchangeReport/STOCK_DAY_ALL
  *   - OTC 個股收盤 (TPEX Daily) — tpex_mainboard_daily_close_quotes
+ *
+ * Index source chain (getTwseMarketOverview):
+ *   1. TWSE MI_5MINS_INDEX (main site, today YYYYMMDD) — available immediately after 13:30
+ *   2. TWSE MI_INDEX (OpenAPI) — official daily, may lag by hours or until next calendar day
+ * This ensures ts=today even in the evening when TWSE OpenAPI still shows yesterday.
  */
 
 import { createClient } from "redis";
@@ -28,6 +34,7 @@ import { createClient } from "redis";
 // ── Base URLs ─────────────────────────────────────────────────────────────────
 
 const TWSE_BASE_URL = "https://openapi.twse.com.tw/v1";
+const TWSE_MAIN_BASE_URL = "https://www.twse.com.tw/rwd/zh/TAIEX"; // main site — MI_5MINS_INDEX
 const TPEX_BASE_URL = "https://www.tpex.org.tw/openapi/v1";
 const CACHE_TTL_SECONDS = 1800; // 30 min
 const OVERVIEW_CACHE_TTL_SECONDS = 60; // 60s for market overview (near-real-time)
@@ -464,14 +471,147 @@ export function _resetTwseHeatmapCache(): void {
   _heatmapCache.clear();
 }
 
+// ── MI_5MINS_INDEX today fetcher (TWSE main site) ────────────────────────────
+
+/**
+ * Shape of TWSE MI_5MINS_INDEX JSON response.
+ * data[][0] = time "HH:MM:SS", data[][1] = 發行量加權股價指數 (comma-formatted number string)
+ * URL: https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_INDEX?date=YYYYMMDD
+ */
+interface Mi5MinsIndexResponse {
+  stat: string;       // "OK" on success, "N/A" or missing on non-trading day
+  date: string;       // "YYYYMMDD"
+  title?: string;
+  fields?: string[];
+  data?: string[][];  // each row: [time, 加權指數, ...]
+}
+
+/**
+ * Fetch today's TAIEX closing price from TWSE MI_5MINS_INDEX (main site).
+ *
+ * Returns a TwseIndexSnapshot using the last row of data (13:30 close).
+ * Change is computed as: last_row_close - first_row_open (first row = yesterday's close, which is opening reference).
+ *
+ * Returns null if:
+ *   - stat !== "OK" (non-trading day / maintenance / endpoint unavailable)
+ *   - data is empty or malformed
+ *   - response date != requested date (TWSE returns prev trading day on non-trading days)
+ *
+ * This endpoint updates immediately after 13:30 market close.
+ * TWSE OpenAPI MI_INDEX may not publish until the following day or later.
+ */
+async function fetchTaiwanMarketIndexToday(
+  dateYYYYMMDD: string,
+  doFetch: typeof fetch
+): Promise<TwseIndexSnapshot | null> {
+  const url = `${TWSE_MAIN_BASE_URL}/MI_5MINS_INDEX?date=${dateYYYYMMDD}`;
+  let resp: Response;
+  try {
+    resp = await doFetch(url, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      redirect: "follow"
+    });
+  } catch (err) {
+    console.warn("[twse-openapi-client] MI_5MINS_INDEX fetch error:", err instanceof Error ? err.message : String(err));
+    return null;
+  }
+
+  if (!resp.ok) {
+    console.warn(`[twse-openapi-client] MI_5MINS_INDEX HTTP ${resp.status}`);
+    return null;
+  }
+
+  let body: Mi5MinsIndexResponse;
+  try {
+    body = await resp.json() as Mi5MinsIndexResponse;
+  } catch {
+    console.warn("[twse-openapi-client] MI_5MINS_INDEX JSON parse failed");
+    return null;
+  }
+
+  if (body.stat !== "OK") {
+    // Non-trading day or maintenance — expected, not an error
+    console.info(`[twse-openapi-client] MI_5MINS_INDEX stat=${body.stat ?? "undefined"} for ${dateYYYYMMDD} (non-trading day or unavailable)`);
+    return null;
+  }
+
+  // Verify response date matches request date (TWSE may return prev trading day on weekends)
+  if (body.date && body.date !== dateYYYYMMDD) {
+    console.info(`[twse-openapi-client] MI_5MINS_INDEX returned date=${body.date} != requested ${dateYYYYMMDD} — skipping`);
+    return null;
+  }
+
+  const rows = body.data;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    console.info(`[twse-openapi-client] MI_5MINS_INDEX empty data for ${dateYYYYMMDD}`);
+    return null;
+  }
+
+  // Last row = closing value (13:30:00 entry on a normal trading day)
+  const lastRow = rows[rows.length - 1];
+  if (!Array.isArray(lastRow) || lastRow.length < 2) return null;
+
+  const closeStr = lastRow[1]; // 發行量加權股價指數 column
+  const close = parseFloat(closeStr.replace(/,/g, ""));
+  if (!isFinite(close) || close <= 0) {
+    console.warn("[twse-openapi-client] MI_5MINS_INDEX: unparseable close value:", closeStr);
+    return null;
+  }
+
+  // Compute change from first row (opening = yesterday's close reference)
+  let change = 0;
+  let changePct = 0;
+  const firstRow = rows[0];
+  if (Array.isArray(firstRow) && firstRow.length >= 2) {
+    const prevClose = parseFloat(firstRow[1].replace(/,/g, ""));
+    if (isFinite(prevClose) && prevClose > 0) {
+      change = Math.round((close - prevClose) * 100) / 100;
+      changePct = Math.round((change / prevClose) * 10000) / 100;
+    }
+  }
+
+  // Build ISO timestamp — market closes at 13:30 Taipei time (+08:00)
+  const year = dateYYYYMMDD.slice(0, 4);
+  const month = dateYYYYMMDD.slice(4, 6);
+  const day = dateYYYYMMDD.slice(6, 8);
+  const ts = `${year}-${month}-${day}T13:30:00+08:00`;
+
+  console.info(`[twse-openapi-client] MI_5MINS_INDEX today: TAIEX=${close} change=${change} (${changePct}%) ts=${ts}`);
+
+  return {
+    value: Math.round(close * 100) / 100,
+    change,
+    changePct,
+    ts
+  };
+}
+
+// ── Taipei today date helper ──────────────────────────────────────────────────
+
+/** Returns today's date in Taipei time as "YYYYMMDD" */
+function todayTaipeiYYYYMMDD(): string {
+  const now = new Date();
+  // Taipei is UTC+8
+  const taipeiMs = now.getTime() + 8 * 60 * 60 * 1000;
+  const d = new Date(taipeiMs);
+  const year = d.getUTCFullYear().toString();
+  const month = (d.getUTCMonth() + 1).toString().padStart(2, "0");
+  const day = d.getUTCDate().toString().padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
 // ── Market Overview fetcher ───────────────────────────────────────────────────
 
 /**
- * Fetch TAIEX + OTC market overview from TWSE OpenAPI.
- * TAIEX: MI_INDEX → 發行量加權股價指數
- * OTC: TPEX daily quotes breadth (synthetic — TPEX has no composite index API)
+ * Fetch TAIEX + OTC market overview.
  *
- * Returns null on total failure (both TAIEX and OTC unavailable).
+ * Index source chain (primary → fallback):
+ *   1. TWSE MI_5MINS_INDEX (main site, today's Taipei date) — available from 13:30 onward
+ *   2. TWSE MI_INDEX (OpenAPI official daily) — may lag until next calendar day
+ *
+ * This ensures ts=today even in the evening when TWSE OpenAPI still shows yesterday.
+ * Returns null on total failure (both sources unavailable).
  * source label: "twse_openapi"
  * staleAfterSec: 60
  */
@@ -485,68 +625,73 @@ export async function getTwseMarketOverview(
   // Use fetch override for tests, or global fetch
   const doFetch = opts.fetchOverride ?? globalThis.fetch;
 
-  // ── TAIEX from MI_INDEX ────────────────────────────────────────────────────
-  let taiex: TwseIndexSnapshot | null = null;
-  try {
-    const miUrl = `${TWSE_BASE_URL}/exchangeReport/MI_INDEX`;
-    const resp = await doFetch(miUrl, {
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-    });
-    if (resp.ok) {
-      const contentType = resp.headers.get("content-type") ?? "";
-      if (contentType.includes("application/json")) {
-        const rows = await resp.json() as MiIndexRow[];
-        if (Array.isArray(rows)) {
-          const taiexRow = rows.find(r => r["指數"] === "發行量加權股價指數");
-          if (taiexRow) {
-            const value = parseFloat(taiexRow["收盤指數"]);
-            const chgSign = taiexRow["漲跌"] === "-" ? -1 : 1;
-            const change = chgSign * parseFloat(taiexRow["漲跌點數"]);
-            const changePct = chgSign * parseFloat(taiexRow["漲跌百分比"]);
-            taiex = {
-              value: Math.round(value * 100) / 100,
-              change: Math.round(change * 100) / 100,
-              changePct: Math.round(changePct * 100) / 100,
-              ts: rocDateToTaipeiTs(taiexRow["日期"])
-            };
-          }
-        }
-      }
-    }
-  } catch (err) {
-    // 1 retry
+  // ── Primary: MI_5MINS_INDEX (today's close — available immediately after 13:30) ──
+  const todayStr = todayTaipeiYYYYMMDD();
+  let taiex: TwseIndexSnapshot | null = await fetchTaiwanMarketIndexToday(todayStr, doFetch);
+
+  // ── Fallback: MI_INDEX (OpenAPI official, may be stale until next publish) ──────
+  if (!taiex) {
     try {
       const miUrl = `${TWSE_BASE_URL}/exchangeReport/MI_INDEX`;
-      const resp2 = await doFetch(miUrl, {
+      const resp = await doFetch(miUrl, {
         headers: { "Accept": "application/json" },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
-      if (resp2.ok) {
-        const rows2 = await resp2.json() as MiIndexRow[];
-        if (Array.isArray(rows2)) {
-          const taiexRow2 = rows2.find(r => r["指數"] === "發行量加權股價指數");
-          if (taiexRow2) {
-            const value2 = parseFloat(taiexRow2["收盤指數"]);
-            const chgSign2 = taiexRow2["漲跌"] === "-" ? -1 : 1;
-            const change2 = chgSign2 * parseFloat(taiexRow2["漲跌點數"]);
-            const changePct2 = chgSign2 * parseFloat(taiexRow2["漲跌百分比"]);
-            taiex = {
-              value: Math.round(value2 * 100) / 100,
-              change: Math.round(change2 * 100) / 100,
-              changePct: Math.round(changePct2 * 100) / 100,
-              ts: rocDateToTaipeiTs(taiexRow2["日期"])
-            };
+      if (resp.ok) {
+        const contentType = resp.headers.get("content-type") ?? "";
+        if (contentType.includes("application/json")) {
+          const rows = await resp.json() as MiIndexRow[];
+          if (Array.isArray(rows)) {
+            const taiexRow = rows.find(r => r["指數"] === "発行量加権股価指数" || r["指數"] === "發行量加權股價指數");
+            if (taiexRow) {
+              const value = parseFloat(taiexRow["收盤指數"]);
+              const chgSign = taiexRow["漲跌"] === "-" ? -1 : 1;
+              const change = chgSign * parseFloat(taiexRow["漲跌點數"]);
+              const changePct = chgSign * parseFloat(taiexRow["漲跌百分比"]);
+              taiex = {
+                value: Math.round(value * 100) / 100,
+                change: Math.round(change * 100) / 100,
+                changePct: Math.round(changePct * 100) / 100,
+                ts: rocDateToTaipeiTs(taiexRow["日期"])
+              };
+            }
           }
         }
       }
-    } catch {
-      console.warn("[twse-openapi-client] getTwseMarketOverview: MI_INDEX fetch failed after retry:", err instanceof Error ? err.message : String(err));
+    } catch (err) {
+      // 1 retry
+      try {
+        const miUrl = `${TWSE_BASE_URL}/exchangeReport/MI_INDEX`;
+        const resp2 = await doFetch(miUrl, {
+          headers: { "Accept": "application/json" },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+        });
+        if (resp2.ok) {
+          const rows2 = await resp2.json() as MiIndexRow[];
+          if (Array.isArray(rows2)) {
+            const taiexRow2 = rows2.find(r => r["指數"] === "發行量加權股價指數");
+            if (taiexRow2) {
+              const value2 = parseFloat(taiexRow2["收盤指數"]);
+              const chgSign2 = taiexRow2["漲跌"] === "-" ? -1 : 1;
+              const change2 = chgSign2 * parseFloat(taiexRow2["漲跌點數"]);
+              const changePct2 = chgSign2 * parseFloat(taiexRow2["漲跌百分比"]);
+              taiex = {
+                value: Math.round(value2 * 100) / 100,
+                change: Math.round(change2 * 100) / 100,
+                changePct: Math.round(changePct2 * 100) / 100,
+                ts: rocDateToTaipeiTs(taiexRow2["日期"])
+              };
+            }
+          }
+        }
+      } catch {
+        console.warn("[twse-openapi-client] getTwseMarketOverview: MI_INDEX fetch failed after retry:", err instanceof Error ? err.message : String(err));
+      }
     }
   }
 
   if (!taiex) {
-    console.warn("[twse-openapi-client] getTwseMarketOverview: could not resolve TAIEX");
+    console.warn("[twse-openapi-client] getTwseMarketOverview: could not resolve TAIEX from any source");
     return null;
   }
 
