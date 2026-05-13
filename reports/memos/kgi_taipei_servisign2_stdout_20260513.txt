@@ -1,0 +1,29 @@
+﻿installer_size=2739032
+=== try: /S ===
+exit=0
+install_ok=True
+=== targeted registry probe ===
+MISS Registry::HKEY_CLASSES_ROOT\KGICGCAPIATLSVIAdapter
+MISS Registry::HKEY_CLASSES_ROOT\KGICGCAPIATL2ADPT
+MISS Registry::HKEY_CLASSES_ROOT\CGEnvDetectATL.CGEnvDetect
+FOUND Registry::HKEY_CLASSES_ROOT\WOW6432Node\CLSID
+
+PSChildName                   
+-----------                   
+KGICGCAPIATLSVI.KGICGCAPISVI  
+KGICGCAPIATLSVI.KGICGCAPISVI.1
+
+
+=== targeted file probe ===
+
+FullName                                                                    Length 
+--------                                                                    ------ 
+C:\Program Files (x86)\KGI\KGIServiSign                                            
+C:\Program Files (x86)\KGI\KGIServiSign\KGI\KGICGCAPIATLSVIAdapter.dll      408216 
+C:\Program Files (x86)\KGI\KGIServiSign\KGI\KGICGCAPIATLSVI_1.3.25.0418.dll 2509464
+C:\Program Files (x86)\KGI\KGIServiSign\KGIServiSign.exe                    660624 
+C:\Program Files (x86)\KGI\KGIServiSign\KGIServiSignMonitor.exe             507536 
+C:\Program Files (x86)\KGI\KGIServiSign\KGIServiSignWorker.exe              267928 
+
+
+

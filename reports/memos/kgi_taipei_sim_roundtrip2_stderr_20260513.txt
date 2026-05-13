@@ -1,0 +1,10 @@
+﻿Invoke-WebRequest : {"detail":{"error":{"code":"KGI_LOGIN_OBJECT_MISSING_ATTR","message":"KGI SDK ??????????,??? SDK 
+?????????","upstream":"attr=unknown"}}}
+At C:\ProgramData\Amazon\SSM\InstanceData\i-03762861d4ce08932\document\orchestration\c14b2ca6-1151-43be-8a34-29d8c8cab9
+7e\awsrunPowerShellScript\0.awsrunPowerShellScript\_script.ps1:12 char:7
++ $r1 = Invoke-WebRequest -Uri "$base/session/login" -Method POST -Cont ...
++       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-WebRequest], WebExc 
+   eption
+    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeWebRequestCommand
+failed to run commands: exit status 1

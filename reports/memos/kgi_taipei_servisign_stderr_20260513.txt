@@ -1,0 +1,55 @@
+﻿Start-Process : Cannot validate argument on parameter 'ArgumentList'. The argument is null, empty, or an element of 
+the argument collection contains a null value. Supply a collection that does not contain any null values and then try 
+the command again.
+At C:\ProgramData\Amazon\SSM\InstanceData\i-03762861d4ce08932\document\orchestration\07bf82ba-2d9f-47fd-ab50-4526e8e2be
+ef\awsrunPowerShellScript\0.awsrunPowerShellScript\_script.ps1:12 char:55
++   $p=Start-Process -FilePath $installer -ArgumentList $args -PassThru ...
++                                                       ~~~~~
+    + CategoryInfo          : InvalidData: (:) [Start-Process], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.PowerShell.Commands.StartProcessCommand
+ 
+You cannot call a method on a null-valued expression.
+At C:\ProgramData\Amazon\SSM\InstanceData\i-03762861d4ce08932\document\orchestration\07bf82ba-2d9f-47fd-ab50-4526e8e2be
+ef\awsrunPowerShellScript\0.awsrunPowerShellScript\_script.ps1:13 char:3
++   $ok=$p.WaitForExit($timeoutSec*1000)
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+Start-Process : Cannot validate argument on parameter 'ArgumentList'. The argument is null, empty, or an element of 
+the argument collection contains a null value. Supply a collection that does not contain any null values and then try 
+the command again.
+At C:\ProgramData\Amazon\SSM\InstanceData\i-03762861d4ce08932\document\orchestration\07bf82ba-2d9f-47fd-ab50-4526e8e2be
+ef\awsrunPowerShellScript\0.awsrunPowerShellScript\_script.ps1:12 char:55
++   $p=Start-Process -FilePath $installer -ArgumentList $args -PassThru ...
++                                                       ~~~~~
+    + CategoryInfo          : InvalidData: (:) [Start-Process], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.PowerShell.Commands.StartProcessCommand
+ 
+You cannot call a method on a null-valued expression.
+At C:\ProgramData\Amazon\SSM\InstanceData\i-03762861d4ce08932\document\orchestration\07bf82ba-2d9f-47fd-ab50-4526e8e2be
+ef\awsrunPowerShellScript\0.awsrunPowerShellScript\_script.ps1:13 char:3
++   $ok=$p.WaitForExit($timeoutSec*1000)
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+Start-Process : Cannot validate argument on parameter 'ArgumentList'. The argument is null, empty, or an element of 
+the argument collection contains a null value. Supply a collection that does not contain any null values and then try 
+the command again.
+At C:\ProgramData\Amazon\SSM\InstanceData\i-03762861d4ce08932\document\orchestration\07bf82ba-2d9f-47fd-ab50-4526e8e2be
+ef\awsrunPowerShellScript\0.awsrunPowerShellScript\_script.ps1:12 char:55
++   $p=Start-Process -FilePath $installer -ArgumentList $args -PassThru ...
++                                                       ~~~~~
+    + CategoryInfo          : InvalidData: (:) [Start-Process], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.PowerShell.Commands.StartProcessCommand
+ 
+You cannot call a method on a null-valued expression.
+At C:\ProgramData\Amazon\SSM\InstanceData\i-03762861d4ce08932\document\orchestration\07bf82ba-2d9f-47fd-ab50-4526e8e2be
+ef\awsrunPowerShellScript\0.awsrunPowerShellScript\_script.ps1:13 char:3
++   $ok=$p.WaitForExit($timeoutSec*1000)
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+

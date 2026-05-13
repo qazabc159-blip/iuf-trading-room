@@ -1,0 +1,10 @@
+﻿ProbeJson=C:\iuf-kgi-runtime-probe\kgi_taipei_runtime_probe.json
+ProbeText=C:\iuf-kgi-runtime-probe\kgi_taipei_runtime_probe.txt
+host_context=PASS
+service_context=PASS
+python_kgisuperpy=FAIL
+servisign_com=PASS
+kgi_sim_tcp=PASS
+gateway_health=FAIL
+machine_env_presence=PASS
+

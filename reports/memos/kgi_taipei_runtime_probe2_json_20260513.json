@@ -1,0 +1,213 @@
+﻿{
+    "schemaVersion":  "kgi_taipei_runtime_probe_v1",
+    "generatedAt":  "2026-05-13T05:49:04.4876234+00:00",
+    "hardLines":  {
+                      "submitsOrder":  false,
+                      "callsOrderCreate":  false,
+                      "printsSecrets":  false
+                  },
+    "results":  [
+                    {
+                        "name":  "host_context",
+                        "status":  "PASS",
+                        "detail":  {
+                                       "computerName":  "EC2AMAZ-OI3DFSG",
+                                       "user":  "NT AUTHORITY\\SYSTEM",
+                                       "isAdmin":  true,
+                                       "sessionName":  null,
+                                       "cwd":  "C:\\Windows\\system32",
+                                       "os":  "Microsoft Windows Server 2022 Datacenter",
+                                       "startedAt":  "2026-05-13T05:49:01.2592205+00:00"
+                                   }
+                    },
+                    {
+                        "name":  "service_context",
+                        "status":  "PASS",
+                        "detail":  {
+                                       "name":  "KGIGateway",
+                                       "state":  "Stopped",
+                                       "startMode":  "Auto",
+                                       "startName":  "LocalSystem",
+                                       "processId":  0,
+                                       "pathName":  "C:\\nssm\\nssm.exe",
+                                       "nssm":  {
+                                                    "Application":  "C:\\Python311\\python.exe",
+                                                    "AppDirectory":  "C:\\kgi-gateway",
+                                                    "AppParameters":  "-m uvicorn app:app --host 0.0.0.0 --port 8787",
+                                                    "AppStdout":  "C:\\kgi-gateway-logs\\gateway.stdout.log",
+                                                    "AppStderr":  "C:\\kgi-gateway-logs\\gateway.stderr.log",
+                                                    "ObjectName":  "LocalSystem"
+                                                }
+                                   }
+                    },
+                    {
+                        "name":  "python_kgisuperpy",
+                        "status":  "FAIL",
+                        "detail":  "The term \u0027python\u0027 is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again."
+                    },
+                    {
+                        "name":  "servisign_com",
+                        "status":  "PASS",
+                        "detail":  {
+                                       "installRootExists":  true,
+                                       "files":  [
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGIServiSign.exe",
+                                                         "length":  660624
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGIServiSignMonitor.exe",
+                                                         "length":  507536
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGIServiSignWorker.exe",
+                                                         "length":  267928
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libffi-6.dll",
+                                                         "length":  41864
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libgcc_s_sjlj-1.dll",
+                                                         "length":  921152
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libgmp-10.dll",
+                                                         "length":  425952
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libgnutls-30.dll",
+                                                         "length":  1782248
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libhogweed-4.dll",
+                                                         "length":  193360
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libidn2-0.dll",
+                                                         "length":  342456
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libnettle-6.dll",
+                                                         "length":  253912
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libp11-kit-0.dll",
+                                                         "length":  968896
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\libwinpthread-1.dll",
+                                                         "length":  63632
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGI\\KGICGCAPIATL2ADPTSetupUninstall.exe",
+                                                         "length":  136480
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGI\\KGICGCAPIATLSVIAdapter.dll",
+                                                         "length":  408216
+                                                     },
+                                                     {
+                                                         "path":  "C:\\Program Files (x86)\\KGI\\KGIServiSign\\KGI\\KGICGCAPIATLSVI_1.3.25.0418.dll",
+                                                         "length":  2509464
+                                                     }
+                                                 ],
+                                       "processes":  [
+                                                         {
+                                                             "processName":  "MpDefenderCoreService",
+                                                             "id":  2928,
+                                                             "path":  null
+                                                         },
+                                                         {
+                                                             "processName":  "services",
+                                                             "id":  644,
+                                                             "path":  null
+                                                         }
+                                                     ],
+                                       "com":  [
+                                                   {
+                                                       "progId":  "KGICGCAPIATLSVI.KGICGCAPISVI",
+                                                       "typeFound":  true,
+                                                       "createInstanceOk":  false,
+                                                       "createError":  "MethodInvocationException: Exception calling \"CreateInstance\" with \"1\" argument(s): \"Retrieving the COM class factory for component with CLSID {A46FFE88-D01F-415E-8720-AFF8740F4C24} failed due to the following error: 80040154 Class not registered (Exception from HRESULT: 0x80040154 (REGDB_E_CLASSNOTREG)).\""
+                                                   },
+                                                   {
+                                                       "progId":  "KGICGCAPIATLSVI.KGICGCAPISVI.1",
+                                                       "typeFound":  true,
+                                                       "createInstanceOk":  false,
+                                                       "createError":  "MethodInvocationException: Exception calling \"CreateInstance\" with \"1\" argument(s): \"Retrieving the COM class factory for component with CLSID {A46FFE88-D01F-415E-8720-AFF8740F4C24} failed due to the following error: 80040154 Class not registered (Exception from HRESULT: 0x80040154 (REGDB_E_CLASSNOTREG)).\""
+                                                   },
+                                                   {
+                                                       "progId":  "CGEnvDetectATL.CGEnvDetect",
+                                                       "typeFound":  false,
+                                                       "createInstanceOk":  false,
+                                                       "createError":  null
+                                                   }
+                                               ]
+                                   }
+                    },
+                    {
+                        "name":  "kgi_sim_tcp",
+                        "status":  "PASS",
+                        "detail":  [
+                                       {
+                                           "host":  "itradetest.kgi.com.tw",
+                                           "port":  443,
+                                           "tcpOk":  true
+                                       },
+                                       {
+                                           "host":  "itradetest.kgi.com.tw",
+                                           "port":  8000,
+                                           "tcpOk":  true
+                                       },
+                                       {
+                                           "host":  "iquotetest.kgi.com.tw",
+                                           "port":  443,
+                                           "tcpOk":  true
+                                       },
+                                       {
+                                           "host":  "iquotetest.kgi.com.tw",
+                                           "port":  8000,
+                                           "tcpOk":  true
+                                       }
+                                   ]
+                    },
+                    {
+                        "name":  "gateway_health",
+                        "status":  "FAIL",
+                        "detail":  "Unable to connect to the remote server"
+                    },
+                    {
+                        "name":  "machine_env_presence",
+                        "status":  "PASS",
+                        "detail":  {
+                                       "KGI_PERSON_ID":  {
+                                                             "present":  true,
+                                                             "value":  "F1***10"
+                                                         },
+                                       "KGI_PERSON_PWD":  {
+                                                              "present":  true,
+                                                              "value":  "[REDACTED]"
+                                                          },
+                                       "KGI_SIMULATION":  {
+                                                              "present":  true,
+                                                              "value":  "false"
+                                                          },
+                                       "KGI_READ_ONLY_MODE":  {
+                                                                  "present":  true,
+                                                                  "value":  "true"
+                                                              },
+                                       "GATEWAY_HOST":  {
+                                                            "present":  true,
+                                                            "value":  "0.0.0.0"
+                                                        },
+                                       "GATEWAY_PORT":  {
+                                                            "present":  true,
+                                                            "value":  "8787"
+                                                        }
+                                   }
+                    }
+                ]
+}
+
+

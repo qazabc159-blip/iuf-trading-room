@@ -1,0 +1,59 @@
+﻿Completed 256.0 KiB/740.9 KiB (703.2 KiB/s) with 1 file(s) remainingCompleted 512.0 KiB/740.9 KiB (1.4 MiB/s) with 1 file(s) remaining  Completed 740.9 KiB/740.9 KiB (1.9 MiB/s) with 1 file(s) remaining  download: s3://iuf-kgi-taipei-deploy-027903151493-20260513-130910/deploy/KGICGCAPIATL2x64.cab to ..\..\KGIComponents\KGICGCAPIATL2x64.cab
+Completed 256.0 KiB/339.2 KiB (706.8 KiB/s) with 1 file(s) remainingCompleted 339.2 KiB/339.2 KiB (893.8 KiB/s) with 1 file(s) remainingdownload: s3://iuf-kgi-taipei-deploy-027903151493-20260513-130910/deploy/KGIFSCAPIATL2.cab to ..\..\KGIComponents\KGIFSCAPIATL2.cab
+Microsoft (R) File Expansion Utility
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+Adding C:\KGIComponents\KGICGCAPIATL2x64.inf to Extraction Queue
+Adding C:\KGIComponents\KGICGCAPIATL2x64.dll to Extraction Queue
+
+Expanding Files ....
+
+Expanding Files Complete ...
+2 files total.
+Microsoft (R) File Expansion Utility
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+Adding C:\KGIComponents\KGIFSCAPIATL2.inf to Extraction Queue
+Adding C:\KGIComponents\KGIFSCAPIATL2.dll to Extraction Queue
+
+Expanding Files ....
+
+Expanding Files Complete ...
+2 files total.
+=== files ===
+
+Name                  Length
+----                  ------
+KGICGCAPIATL2x64.cab  758668
+KGICGCAPIATL2x64.dll 2225704
+KGICGCAPIATL2x64.inf     190
+KGIFSCAPIATL2.cab     347313
+KGIFSCAPIATL2.dll     968040
+KGIFSCAPIATL2.inf        194
+
+
+=== regsvr32 x64 ===
+x64_reg_exit=0
+=== regsvr32 x86 ===
+x86_reg_exit=0
+=== classid probe ===
+MISS Registry::HKEY_CLASSES_ROOT\CLSID\{337595D9-9BAE-46c0-925F-6C08ACF54B47}
+FOUND Registry::HKEY_CLASSES_ROOT\WOW6432Node\CLSID\{1037217B-138E-48DA-ADEE-47D2220A8432}
+
+
+Property      : {(default)}
+PSPath        : Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\WOW6432Node\CLSID\{1037217B-138E-48DA-ADEE-47D222
+                0A8432}
+PSParentPath  : Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\WOW6432Node\CLSID
+PSChildName   : {1037217B-138E-48DA-ADEE-47D2220A8432}
+PSProvider    : Microsoft.PowerShell.Core\Registry
+PSIsContainer : True
+SubKeyCount   : 11
+View          : Default
+Handle        : Microsoft.Win32.SafeHandles.SafeRegistryHandle
+ValueCount    : 1
+Name          : HKEY_CLASSES_ROOT\WOW6432Node\CLSID\{1037217B-138E-48DA-ADEE-47D2220A8432}
+
+
+
+
