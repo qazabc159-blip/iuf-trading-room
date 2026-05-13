@@ -79,14 +79,14 @@ const CO_HERO_CSS = `
   letter-spacing: 0.04em;
 }
 
-/* KPI strip — 7 cells matching homepage metric style */
+/* KPI strip — 10 cells matching homepage metric style */
 ._co-kpi-strip {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(10, minmax(0, 1fr));
   border-top: 1px solid rgba(220,228,240,0.07);
 }
-@media (max-width: 1080px) {
-  ._co-kpi-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1200px) {
+  ._co-kpi-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   ._co-kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -214,6 +214,14 @@ function fmtVol(value: number | null | undefined) {
   return value.toLocaleString("zh-TW");
 }
 
+function fmtRevenue(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  if (Math.abs(value) >= 1e12) return `${(value / 1e12).toFixed(1)}兆`;
+  if (Math.abs(value) >= 1e8) return `${(value / 1e8).toFixed(1)}億`;
+  if (Math.abs(value) >= 1e4) return `${(value / 1e4).toFixed(0)}萬`;
+  return value.toLocaleString("zh-TW");
+}
+
 function formatAsOf(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
@@ -244,11 +252,17 @@ export function CompanyHeroBar({
   quote,
   realtimeQuote,
   lastBar,
+  pe,
+  dividendYield,
+  latestRevenue,
 }: {
   company: CompanyDetailView;
   quote: CompanyDetailQuote | null;
   realtimeQuote?: CompanyRealtimeQuote | null;
   lastBar?: OhlcvSnapshot | null;
+  pe?: number | null;
+  dividendYield?: number | null;
+  latestRevenue?: number | null;
 }) {
   // Best price: prefer realtime KGI gateway price, fallback to last OHLCV close
   const bestPrice = realtimeQuote?.lastPrice ?? quote?.last ?? null;
@@ -365,6 +379,33 @@ export function CompanyHeroBar({
               {realtimeQuote?.bid !== null && realtimeQuote?.bid !== undefined ? `B ${fmtPrice(realtimeQuote.bid)}` : ""}
               {realtimeQuote?.ask !== null && realtimeQuote?.ask !== undefined ? ` A ${fmtPrice(realtimeQuote.ask)}` : ""}
             </span>
+          </div>
+
+          {/* 8. PE — from /full-profile valuation */}
+          <div className="_co-kpi-cell">
+            <span className="_co-kpi-label">本益比</span>
+            <span className="_co-kpi-value --md">
+              {pe !== null && pe !== undefined && Number.isFinite(pe) ? pe.toFixed(1) : "--"}
+            </span>
+            <span className="_co-kpi-sub">倍</span>
+          </div>
+
+          {/* 9. 殖利率 — from /full-profile valuation */}
+          <div className="_co-kpi-cell">
+            <span className="_co-kpi-label">殖利率</span>
+            <span className="_co-kpi-value --md">
+              {dividendYield !== null && dividendYield !== undefined && Number.isFinite(dividendYield) ? dividendYield.toFixed(2) : "--"}
+            </span>
+            <span className="_co-kpi-sub">%</span>
+          </div>
+
+          {/* 10. 月營收 — from /full-profile fundamentals.monthlyRevenue */}
+          <div className="_co-kpi-cell">
+            <span className="_co-kpi-label">月營收</span>
+            <span className="_co-kpi-value --sm">
+              {fmtRevenue(latestRevenue)}
+            </span>
+            <span className="_co-kpi-sub">最新月</span>
           </div>
         </div>
       </div>
