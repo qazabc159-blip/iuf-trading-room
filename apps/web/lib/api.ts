@@ -2271,8 +2271,6 @@ export type LabStrategySnapshotHeadlineMetrics = {
   hitRate: number;
   averageHoldingDays: number;
   robustness: LabStrategySnapshotRobustness;
-  /** @deprecated Use strategyNetAbsoluteReturnPct (v46). */
-  compoundReturn?: number;
 };
 
 export type LabStrategySnapshot = {

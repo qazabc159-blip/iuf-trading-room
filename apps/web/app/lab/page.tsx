@@ -224,7 +224,7 @@ const ATHENA_TRUTH_BOARD: AthenaTruth[] = [
   {
     strategyId: "cont_liq_v36",
     label: "流動順勢三強",
-    status: "PAPER_LIVE_PROPOSED",
+    status: "RESEARCH_FORWARD_OBSERVATION",
     statusColor: "#ffb800",
     note: "9/9 PASS · 四重魯棒 · K≥50 capacity 必要條件 · forward obs 進行中",
   },
