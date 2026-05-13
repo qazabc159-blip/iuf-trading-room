@@ -2637,13 +2637,22 @@ app.post("/api/v1/reviews", async (c) => {
   );
 });
 
-app.get("/api/v1/briefs", async (c) =>
-  c.json({
-    data: await c.get("repo").listBriefs({
-      workspaceSlug: c.get("session").workspace.slug
-    })
-  })
-);
+// ISSUE_004 fix (2026-05-14): derive top-level `heading` from sections[0].heading.
+// Frontend reads `.heading` directly; old code returned raw DailyBrief which has no
+// top-level heading field → always blank. Project it here so the list surface is complete.
+app.get("/api/v1/briefs", async (c) => {
+  const briefs = await c.get("repo").listBriefs({
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  const data = briefs.map((b) => {
+    const firstSection = (b.sections as Array<{ heading: string; body: string }>)[0];
+    return {
+      ...b,
+      heading: firstSection?.heading ?? `Brief ${b.date}`
+    };
+  });
+  return c.json({ data });
+});
 
 // =============================================================================
 // GET /api/v1/briefs/search — keyword search across published daily briefs
@@ -6762,6 +6771,170 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       state,
       ...(blockedReason ? { reason: blockedReason } : {}),
       source: "kgi-gateway" as const,
+      updatedAt
+    }
+  });
+});
+
+// =============================================================================
+// ISSUE_001 fix (2026-05-14) — GET /api/v1/companies/:id/orderbook
+// =============================================================================
+//
+// Five-level order book (五檔委託簿) for the company page.
+//
+// Source chain:
+//   1. Primary  — KGI gateway /bidask (40-cap quota; only when gateway alive + subscribed)
+//   2. Fallback — last_known in-memory cache (most recent successful pull)
+//   3. Off-hours — state=off_hours (盤後) if market is POST-CLOSE and no live data
+//
+// Auth: Owner-gated (real quote data — same gate as other KGI endpoints)
+//
+// Response shape:
+//   {
+//     data: {
+//       symbol: string,
+//       state: "LIVE" | "STALE" | "LAST_KNOWN" | "off_hours" | "BLOCKED" | "NO_DATA",
+//       bids: Array<{ price: number; volume: number }>,   // up to 5 levels
+//       asks: Array<{ price: number; volume: number }>,   // up to 5 levels
+//       source: "kgi-gateway" | "last_known" | "off_hours",
+//       last_close: number | null,   // populated for off_hours from companies_ohlcv
+//       note: string | null,
+//       updatedAt: string
+//     }
+//   }
+//
+// Hard lines:
+//   - NO order surface
+//   - NO token / session / account number
+//   - read-only
+// =============================================================================
+
+// Per-process last_known orderbook cache: { symbol → { bids, asks, cachedAt } }
+const _orderbookLastKnownCache = new Map<
+  string,
+  { bids: { price: number; volume: number }[]; asks: { price: number; volume: number }[]; cachedAt: string }
+>();
+
+/** Reset orderbook cache — for tests only. */
+export function _resetOrderbookLastKnownCache(): void {
+  _orderbookLastKnownCache.clear();
+}
+
+app.get("/api/v1/companies/:id/orderbook", async (c) => {
+  // 1. Owner-only gate
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  // 2. Resolve company
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: session.workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const symbol = companyIdToTicker(company.ticker);
+  const updatedAt = new Date().toISOString();
+  const db = getDb();
+
+  // 3. Off-hours detection: if market is POST-CLOSE and we have no live data, return off_hours
+  const mktState = composeTaiwanMarketState();
+  const isOffHours = mktState.state === "POST-CLOSE";
+
+  // 4. Try KGI gateway bidask (primary source)
+  const client = getKgiQuoteClient();
+  let bids: { price: number; volume: number }[] = [];
+  let asks: { price: number; volume: number }[] = [];
+  let liveSuccess = false;
+
+  if (client.isSymbolAllowed(symbol)) {
+    try {
+      // Ensure subscribed (idempotent on gateway)
+      await client.subscribeSymbolBidAsk(symbol).catch(() => {/* non-fatal */});
+      const raw = await client.getLatestBidAsk(symbol);
+      const ba = raw.bidask;
+      if (ba) {
+        const bPrices = ba.bid_prices ?? [];
+        const bVols = ba.bid_volumes ?? [];
+        const aPrices = ba.ask_prices ?? [];
+        const aVols = ba.ask_volumes ?? [];
+        bids = bPrices.slice(0, 5).map((p, i) => ({ price: p, volume: bVols[i] ?? 0 }));
+        asks = aPrices.slice(0, 5).map((p, i) => ({ price: p, volume: aVols[i] ?? 0 }));
+        liveSuccess = bids.length > 0 || asks.length > 0;
+        if (liveSuccess) {
+          _orderbookLastKnownCache.set(symbol, { bids, asks, cachedAt: updatedAt });
+        }
+        const freshness = raw.freshness ?? "not-available";
+        const state = freshness === "fresh" ? "LIVE" : freshness === "stale" ? "STALE" : "NO_DATA";
+        if (liveSuccess) {
+          return c.json({ data: { symbol, state, bids, asks, source: "kgi-gateway" as const, last_close: null, note: null, updatedAt } });
+        }
+      }
+    } catch (_err) {
+      // Fall through to cache / off_hours
+    }
+  }
+
+  // 5. Fallback: last_known cache
+  const cached = _orderbookLastKnownCache.get(symbol);
+  if (cached) {
+    return c.json({
+      data: {
+        symbol,
+        state: "LAST_KNOWN" as const,
+        bids: cached.bids,
+        asks: cached.asks,
+        source: "last_known" as const,
+        last_close: null,
+        note: `盤後快照 · 取自 ${cached.cachedAt}`,
+        updatedAt
+      }
+    });
+  }
+
+  // 6. Off-hours with no cache: pull last close from companies_ohlcv for context
+  if (isOffHours) {
+    let lastClose: number | null = null;
+    if (isDatabaseMode() && db) {
+      try {
+        const rows = await db.execute(drizzleSql`
+          SELECT close FROM companies_ohlcv
+          WHERE company_id = ${company.id} AND interval = '1d'
+          ORDER BY dt DESC LIMIT 1
+        `);
+        const rawRows = (rows as { rows?: Record<string, unknown>[] })?.rows
+          ?? (Array.isArray(rows) ? rows : []);
+        if (rawRows.length > 0) {
+          lastClose = Number(rawRows[0]!["close"] ?? null) || null;
+        }
+      } catch (_e) {
+        // best-effort only
+      }
+    }
+    return c.json({
+      data: {
+        symbol,
+        state: "off_hours" as const,
+        bids: [],
+        asks: [],
+        source: "off_hours" as const,
+        last_close: lastClose,
+        note: "盤後 · 等明日開盤",
+        updatedAt
+      }
+    });
+  }
+
+  // 7. Gateway not reachable / symbol not whitelisted
+  return c.json({
+    data: {
+      symbol,
+      state: "BLOCKED" as const,
+      bids: [],
+      asks: [],
+      source: "kgi-gateway" as const,
+      last_close: null,
+      note: client.isSymbolAllowed(symbol) ? "gateway_unreachable" : "symbol_not_whitelisted",
       updatedAt
     }
   });
