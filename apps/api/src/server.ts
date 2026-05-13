@@ -7242,6 +7242,17 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
   type InstRow = { date: string; stock_id: string; name: string; buy: number; sell: number };
   let institutional: FullProfileSection<{ date: string; foreign: number; investmentTrust: number; dealer: number; totalNetBuy: number }>;
 
+  // Cycle 10 FIX (2026-05-14): widen name regex to cover all FinMind name variants.
+  // FinMind per-stock API returns: '外陸資' | '投信' | '自營商' | '自營商(自行買賣)' | '自營商(避險)'
+  // FinMind whole-market API returns similar values. DB stores raw FinMind name verbatim.
+  // Guard against any variant by matching broader substrings + English fallbacks.
+  function classifyInstName(nm: string): "foreign" | "investmentTrust" | "dealer" | null {
+    if (/外|陸資|Foreign|foreign/i.test(nm)) return "foreign";
+    if (/投信|Trust/i.test(nm)) return "investmentTrust";
+    if (/自營|Dealer|dealer/i.test(nm)) return "dealer";
+    return null;
+  }
+
   function aggregateInstRows(rows: InstRow[]): FullProfileSection<{ date: string; foreign: number; investmentTrust: number; dealer: number; totalNetBuy: number }> {
     const dateMap = new Map<string, { foreign: number; investmentTrust: number; dealer: number }>();
     for (const r of rows) {
@@ -7249,9 +7260,8 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
       const entry = dateMap.get(r.date)!;
       const net = (Number(r.buy) || 0) - (Number(r.sell) || 0);
       const nm = r.name ?? "";
-      if (nm.includes("外") || nm.includes("陸")) entry.foreign += net;
-      else if (nm.includes("投信")) entry.investmentTrust += net;
-      else if (nm.includes("自營")) entry.dealer += net;
+      const bucket = classifyInstName(nm);
+      if (bucket) entry[bucket] += net;
     }
     const aggregated = Array.from(dateMap.entries())
       .sort(([a], [b]) => b.localeCompare(a))
@@ -7296,41 +7306,42 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
           ?? (Array.isArray(result) ? (result as unknown[]) : []);
         dbInstRows = rawRows as InstRow[];
         if (dbInstRows.length > 0) {
-          console.info(`[full-profile/institutional] db returned ${dbInstRows.length} rows for ${stockId}; sample buy=${dbInstRows[0]?.buy} sell=${dbInstRows[0]?.sell} name="${dbInstRows[0]?.name}"`);
+          // Cycle 10: log ALL distinct name values so Railway log shows actual DB name format
+          const distinctNames = [...new Set(dbInstRows.map(r => r.name))].slice(0, 10);
+          console.info(`[full-profile/institutional] db returned ${dbInstRows.length} rows for ${stockId}; distinctNames=${JSON.stringify(distinctNames)}; sample buy=${dbInstRows[0]?.buy} sell=${dbInstRows[0]?.sell}`);
+        } else {
+          console.info(`[full-profile/institutional] db returned 0 rows for ${stockId} (date>=${d30start}); will use FinMind`);
         }
       } catch (dbErr) {
         console.warn("[full-profile/institutional] db query failed:", dbErr instanceof Error ? dbErr.message : String(dbErr));
       }
     }
 
-    // Aggregate DB rows. If DB has data with non-zero net, use it.
-    // If DB rows exist but all net = 0 (e.g. holiday data only), fall through to FinMind.
+    // Cycle 10 FIX (2026-05-14): DB-first with hard preference when rows exist.
+    // If DB has ANY rows for this ticker in the 30-day window, prefer DB.
+    // FinMind live has the same name-matching problem, so falling through gives no benefit.
+    // Only use FinMind when DB has 0 rows for this ticker (never ingested).
     const dbAgg = dbInstRows.length > 0 ? aggregateInstRows(dbInstRows) : null;
+    const dbHasRows = dbInstRows.length > 0;
     const dbHasSignal = dbAgg !== null && dbAgg.history.some(
       h => h.foreign !== 0 || h.investmentTrust !== 0 || h.dealer !== 0
     );
 
-    if (dbHasSignal) {
-      // DB has meaningful non-zero data — use it directly
-      institutional = dbAgg!;
+    if (dbHasRows) {
+      // DB has rows for this ticker — use DB regardless of signal level.
+      // All-zero on a holiday date is correct; don't override with FinMind zeros.
+      const src = dbHasSignal ? "db_tw_institutional_buysell" : "db_tw_institutional_buysell_zero";
+      institutional = { ...dbAgg!, sourceTrail: { ...dbAgg!.sourceTrail, source: src } };
     } else if (instResult.status === "rejected") {
-      if (dbAgg && dbAgg.history.length > 0) {
-        // DB returned rows (even if all-zero); prefer DB over error
-        institutional = dbAgg;
-      } else {
-        institutional = errorSection("TaiwanStockInstitutionalInvestorsBuySell", String(instResult.reason));
-      }
+      institutional = errorSection("TaiwanStockInstitutionalInvestorsBuySell", String(instResult.reason));
     } else {
-      // DB empty or all-zero → use FinMind live result
+      // DB has 0 rows for this ticker → use FinMind live result
       const rows = instResult.value as InstRow[];
-      const fmAgg = aggregateInstRows(rows);
-      if (dbAgg && dbAgg.history.length > 0 && fmAgg.history.length === 0) {
-        // DB has rows (even if all-zero), FinMind has nothing → prefer DB
-        institutional = dbAgg;
-      } else {
-        institutional = fmAgg;
-        institutional = { ...institutional, sourceTrail: { ...institutional.sourceTrail, source: "finmind_fallback" } };
-      }
+      const fmRows = rows;
+      const distinctFmNames = [...new Set(fmRows.map((r: InstRow) => r.name))].slice(0, 10);
+      console.info(`[full-profile/institutional] FinMind fallback for ${stockId}: ${fmRows.length} rows, distinctNames=${JSON.stringify(distinctFmNames)}`);
+      const fmAgg = aggregateInstRows(fmRows);
+      institutional = { ...fmAgg, sourceTrail: { ...fmAgg.sourceTrail, source: "finmind_fallback" } };
     }
   }
 
@@ -9883,6 +9894,38 @@ app.get("/api/v1/paper/db-probe", async (c) => {
       iufEventsTableExists = false;
     }
 
+    // Cycle 10: institutional name probe — shows actual name values stored in DB
+    // Used to verify whether FinMind writes Chinese or English name tokens.
+    let instNameProbe: { distinctNames: string[]; sampleRow: Record<string, unknown> | null; rowCount2330: number } | null = null;
+    try {
+      const instNamesResult = await db.execute(drizzleSql`
+        SELECT DISTINCT name FROM tw_institutional_buysell ORDER BY name LIMIT 20
+      `);
+      const instNameRows = (instNamesResult as { rows?: Record<string, unknown>[] })?.rows
+        ?? (Array.isArray(instNamesResult) ? instNamesResult : []);
+      const sample2330Result = await db.execute(drizzleSql`
+        SELECT name, buy::float8 AS buy, sell::float8 AS sell, date
+        FROM tw_institutional_buysell
+        WHERE stock_id = '2330'
+        ORDER BY date DESC
+        LIMIT 5
+      `);
+      const sample2330Rows = (sample2330Result as { rows?: Record<string, unknown>[] })?.rows
+        ?? (Array.isArray(sample2330Result) ? sample2330Result : []);
+      const countResult = await db.execute(drizzleSql`
+        SELECT COUNT(*)::int AS cnt FROM tw_institutional_buysell WHERE stock_id = '2330'
+      `);
+      const countRows = (countResult as { rows?: Record<string, unknown>[] })?.rows
+        ?? (Array.isArray(countResult) ? countResult : []);
+      instNameProbe = {
+        distinctNames: instNameRows.map((r: Record<string, unknown>) => String(r.name ?? "")),
+        sampleRow: (sample2330Rows[0] as Record<string, unknown>) ?? null,
+        rowCount2330: Number((countRows[0] as Record<string, unknown>)?.cnt ?? 0)
+      };
+    } catch {
+      instNameProbe = null;
+    }
+
     return c.json({
       persistenceMode,
       dbAvailable: true,
@@ -9895,6 +9938,7 @@ app.get("/api/v1/paper/db-probe", async (c) => {
       },
       appliedMigrations,
       appliedMigrationsCount: appliedMigrations.length,
+      instNameProbe,
       raw: tableRow
     });
   } catch (err) {
