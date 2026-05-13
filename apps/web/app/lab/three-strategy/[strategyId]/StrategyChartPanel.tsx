@@ -341,7 +341,7 @@ function HeadlineKpiGrid({ metrics }: { metrics: LabStrategySnapshot["headlineMe
     { label: "Sortino (年化)", value: fmtFixed(metrics.sortinoAnnualized, 2), color: metrics.sortinoAnnualized >= 2 ? "#a78bfa" : "#c8c8c8" },
     { label: "最大回撤 (net)", value: fmtPct(maxDD, 1), color: "#e63946" },
     { label: "Hit Rate", value: fmtPct(hitRatePct, 1), color: hitRatePct >= 0.8 ? "#2ecc71" : "#c8c8c8" },
-    { label: "勝率", value: fmtPct(metrics.winRate, 1), color: metrics.winRate >= 0.7 ? "#2ecc71" : "#c8c8c8" },
+    { label: "回測勝率（研究用）", value: fmtPct(metrics.winRate, 1), color: metrics.winRate >= 0.7 ? "#2ecc71" : "#c8c8c8" },
     { label: "平均持有天數", value: `${metrics.averageHoldingDays}d`, color: "#c8c8c8" },
   ];
   if (metrics.estimatedEntryTicketCount != null) cells.push({ label: "預估入場筆數", value: String(metrics.estimatedEntryTicketCount), color: "#c8c8c8" });
