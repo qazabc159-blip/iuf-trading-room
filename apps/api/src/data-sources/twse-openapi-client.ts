@@ -31,6 +31,8 @@ const TWSE_BASE_URL = "https://openapi.twse.com.tw/v1";
 const TPEX_BASE_URL = "https://www.tpex.org.tw/openapi/v1";
 const CACHE_TTL_SECONDS = 1800; // 30 min
 const OVERVIEW_CACHE_TTL_SECONDS = 60; // 60s for market overview (near-real-time)
+const STOCK_DAY_ALL_CACHE_TTL_SECONDS = 300; // 5 min — EOD data, stable once published
+const FETCH_TIMEOUT_MS = 3000; // 3s per upstream request — fail fast, caller does fallback
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -136,6 +138,65 @@ async function cacheSet(key: string, value: string, ttl: number, clientOverride?
   }
 }
 
+// ── Shared STOCK_DAY_ALL dedup cache ─────────────────────────────────────────
+// STOCK_DAY_ALL is large (~1400 rows). Both heatmap and breadth endpoints need it.
+// Promise coalescing ensures only 1 upstream fetch fires even under concurrent load.
+
+interface StockDayAllCacheEntry {
+  rows: StockDayAllRow[];
+  expiresAt: number;
+}
+let _stockDayAllCache: StockDayAllCacheEntry | null = null;
+let _stockDayAllInflight: Promise<StockDayAllRow[]> | null = null;
+
+/** For test cleanup */
+export function _resetStockDayAllCache(): void {
+  _stockDayAllCache = null;
+  _stockDayAllInflight = null;
+}
+
+/** Exported so server routes can pre-warm the shared cache in parallel with DB queries */
+export async function getStockDayAllRows(
+  fetchOverride?: typeof fetch
+): Promise<StockDayAllRow[]> {
+  // Cache hit
+  if (_stockDayAllCache && Date.now() < _stockDayAllCache.expiresAt) {
+    return _stockDayAllCache.rows;
+  }
+  // Dedup: reuse inflight promise
+  if (_stockDayAllInflight) return _stockDayAllInflight;
+
+  const doFetch = fetchOverride ?? globalThis.fetch;
+  _stockDayAllInflight = (async (): Promise<StockDayAllRow[]> => {
+    try {
+      const resp = await doFetch(`${TWSE_BASE_URL}/exchangeReport/STOCK_DAY_ALL`, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+      });
+      if (!resp.ok) {
+        console.warn(`[twse-openapi-client] STOCK_DAY_ALL HTTP ${resp.status}`);
+        return [];
+      }
+      const ct = resp.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        console.warn("[twse-openapi-client] STOCK_DAY_ALL non-JSON response");
+        return [];
+      }
+      const raw = await resp.json();
+      const rows: StockDayAllRow[] = Array.isArray(raw) ? (raw as StockDayAllRow[]) : [];
+      _stockDayAllCache = { rows, expiresAt: Date.now() + STOCK_DAY_ALL_CACHE_TTL_SECONDS * 1000 };
+      return rows;
+    } catch (err) {
+      console.warn("[twse-openapi-client] STOCK_DAY_ALL fetch failed:", err instanceof Error ? err.message : String(err));
+      return [];
+    } finally {
+      _stockDayAllInflight = null;
+    }
+  })();
+
+  return _stockDayAllInflight;
+}
+
 // ── Fetch helper (simple, no auth) ────────────────────────────────────────────
 
 async function fetchTwse<T>(path: string): Promise<T[]> {
@@ -145,7 +206,7 @@ async function fetchTwse<T>(path: string): Promise<T[]> {
   try {
     response = await fetch(url, {
       headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(10_000)
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
     });
   } catch (err) {
     console.warn(`[twse-openapi-client] fetch error for ${path}:`, err instanceof Error ? err.message : String(err));
@@ -189,7 +250,7 @@ async function fetchTpex<T>(path: string): Promise<T[]> {
   try {
     response = await fetch(url, {
       headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       redirect: "follow"
     });
   } catch (err) {
@@ -197,7 +258,7 @@ async function fetchTpex<T>(path: string): Promise<T[]> {
     try {
       response = await fetch(url, {
         headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         redirect: "follow"
       });
     } catch (err2) {
@@ -430,7 +491,7 @@ export async function getTwseMarketOverview(
     const miUrl = `${TWSE_BASE_URL}/exchangeReport/MI_INDEX`;
     const resp = await doFetch(miUrl, {
       headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(5_000)
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
     });
     if (resp.ok) {
       const contentType = resp.headers.get("content-type") ?? "";
@@ -459,7 +520,7 @@ export async function getTwseMarketOverview(
       const miUrl = `${TWSE_BASE_URL}/exchangeReport/MI_INDEX`;
       const resp2 = await doFetch(miUrl, {
         headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(5_000)
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
       if (resp2.ok) {
         const rows2 = await resp2.json() as MiIndexRow[];
@@ -524,52 +585,25 @@ export async function getTwseIndustryHeatmap(
 
   const doFetch = opts.fetchOverride ?? globalThis.fetch;
 
-  // ── TWSE STOCK_DAY_ALL ───────────────────────────────────────────────────
-  let stockRows: StockDayAllRow[] = [];
-  try {
-    const resp = await doFetch(`${TWSE_BASE_URL}/exchangeReport/STOCK_DAY_ALL`, {
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(5_000)
-    });
-    if (resp.ok) {
-      const contentType = resp.headers.get("content-type") ?? "";
-      if (contentType.includes("application/json")) {
+  // ── STOCK_DAY_ALL + TPEX in parallel (shared dedup cache for STOCK_DAY_ALL) ─
+  const [stockRows, tpexRows] = await Promise.all([
+    getStockDayAllRows(doFetch),
+    (async (): Promise<TpexDailyRow[]> => {
+      try {
+        const resp = await doFetch(`${TPEX_BASE_URL}/tpex_mainboard_daily_close_quotes`, {
+          headers: { "Accept": "application/json" },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          redirect: "follow"
+        });
+        if (!resp.ok) return [];
         const raw = await resp.json();
-        stockRows = Array.isArray(raw) ? (raw as StockDayAllRow[]) : [];
+        return Array.isArray(raw) ? (raw as TpexDailyRow[]) : [];
+      } catch {
+        console.warn("[twse-openapi-client] getTwseIndustryHeatmap: TPEX fetch failed, continuing without OTC");
+        return [];
       }
-    }
-  } catch (err) {
-    // 1 retry
-    try {
-      const resp2 = await doFetch(`${TWSE_BASE_URL}/exchangeReport/STOCK_DAY_ALL`, {
-        headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(5_000)
-      });
-      if (resp2.ok) {
-        const raw2 = await resp2.json();
-        stockRows = Array.isArray(raw2) ? (raw2 as StockDayAllRow[]) : [];
-      }
-    } catch {
-      console.warn("[twse-openapi-client] getTwseIndustryHeatmap: STOCK_DAY_ALL failed:", err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  // ── TPEX close quotes (for OTC-listed tickers in mapping) ────────────────
-  let tpexRows: TpexDailyRow[] = [];
-  try {
-    const resp = await doFetch(`${TPEX_BASE_URL}/tpex_mainboard_daily_close_quotes`, {
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(5_000),
-      redirect: "follow"
-    });
-    if (resp.ok) {
-      const raw = await resp.json();
-      tpexRows = Array.isArray(raw) ? (raw as TpexDailyRow[]) : [];
-    }
-  } catch {
-    // TPEX failure is non-fatal — we still return TWSE data
-    console.warn("[twse-openapi-client] getTwseIndustryHeatmap: TPEX fetch failed, continuing without OTC");
-  }
+    })(),
+  ]);
 
   // ── Aggregate by industry ────────────────────────────────────────────────
 
@@ -819,35 +853,8 @@ export async function getTwseMarketBreadth(
 
   const doFetch = opts.fetchOverride ?? globalThis.fetch;
 
-  let stockRows: StockDayAllRow[] = [];
-  try {
-    const resp = await doFetch(`${TWSE_BASE_URL}/exchangeReport/STOCK_DAY_ALL`, {
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(5_000)
-    });
-    if (resp.ok) {
-      const ct = resp.headers.get("content-type") ?? "";
-      if (ct.includes("application/json")) {
-        const raw = await resp.json();
-        stockRows = Array.isArray(raw) ? (raw as StockDayAllRow[]) : [];
-      }
-    }
-  } catch (err) {
-    // 1 retry
-    try {
-      const resp2 = await doFetch(`${TWSE_BASE_URL}/exchangeReport/STOCK_DAY_ALL`, {
-        headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(5_000)
-      });
-      if (resp2.ok) {
-        const raw2 = await resp2.json();
-        stockRows = Array.isArray(raw2) ? (raw2 as StockDayAllRow[]) : [];
-      }
-    } catch {
-      console.warn("[twse-openapi-client] getTwseMarketBreadth: STOCK_DAY_ALL failed:", err instanceof Error ? err.message : String(err));
-      return EMPTY;
-    }
-  }
+  // Use shared STOCK_DAY_ALL cache (dedup: heatmap + breadth share one upstream fetch)
+  const stockRows = await getStockDayAllRows(doFetch);
 
   if (stockRows.length === 0) return EMPTY;
 

@@ -8604,32 +8604,43 @@ app.get("/api/v1/market/heatmap/twse", async (c) => {
   const dbMode = isDatabaseMode();
   const db = dbMode ? getDb() : null;
 
-  // Build ticker → industry mapping from companies DB (chainPosition as industry proxy)
-  const tickerToIndustry = new Map<string, string>();
-  if (db) {
-    try {
-      const companyRes = await db.execute(drizzleSql`
-        SELECT ticker, chain_position AS industry
-        FROM companies
-        WHERE workspace_id = ${session.workspace.id}
-          AND ticker IS NOT NULL
-          AND ticker != ''
-          AND chain_position IS NOT NULL
-          AND chain_position != ''
-      `);
-      const companyRows = ((companyRes as { rows?: Record<string, unknown>[] }).rows
-        ?? (Array.isArray(companyRes) ? companyRes : [])) as Record<string, unknown>[];
-      for (const row of companyRows) {
-        const ticker = String(row.ticker ?? "").trim();
-        const industry = String(row.industry ?? "").trim();
-        if (ticker && industry) tickerToIndustry.set(ticker, industry);
-      }
-    } catch (err) {
-      console.warn("[market/heatmap/twse] company query failed:", err instanceof Error ? err.message : String(err));
-    }
-  }
+  const { getTwseIndustryHeatmap, getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
 
-  const { getTwseIndustryHeatmap } = await import("./data-sources/twse-openapi-client.js");
+  // Build ticker → industry mapping from companies DB (chainPosition as industry proxy).
+  // Run DB query and STOCK_DAY_ALL fetch in parallel — STOCK_DAY_ALL is large (~1400 rows)
+  // and slow; pre-warming populates the shared dedup cache so getTwseIndustryHeatmap() hits
+  // cache immediately after DB returns.
+  const tickerToIndustry = new Map<string, string>();
+  await Promise.all([
+    // Lane 1: DB query for ticker → industry mapping
+    (async () => {
+      if (!db) return;
+      try {
+        const companyRes = await db.execute(drizzleSql`
+          SELECT ticker, chain_position AS industry
+          FROM companies
+          WHERE workspace_id = ${session.workspace.id}
+            AND ticker IS NOT NULL
+            AND ticker != ''
+            AND chain_position IS NOT NULL
+            AND chain_position != ''
+        `);
+        const companyRows = ((companyRes as { rows?: Record<string, unknown>[] }).rows
+          ?? (Array.isArray(companyRes) ? companyRes : [])) as Record<string, unknown>[];
+        for (const row of companyRows) {
+          const ticker = String(row.ticker ?? "").trim();
+          const industry = String(row.industry ?? "").trim();
+          if (ticker && industry) tickerToIndustry.set(ticker, industry);
+        }
+      } catch (err) {
+        console.warn("[market/heatmap/twse] company query failed:", err instanceof Error ? err.message : String(err));
+      }
+    })(),
+    // Lane 2: pre-warm STOCK_DAY_ALL shared cache (no-op if already cached)
+    getStockDayAllRows().catch(() => {}),
+  ]);
+
+  // getTwseIndustryHeatmap() will hit the shared STOCK_DAY_ALL cache (populated above)
   const tiles = await getTwseIndustryHeatmap(tickerToIndustry);
 
   return c.json({
