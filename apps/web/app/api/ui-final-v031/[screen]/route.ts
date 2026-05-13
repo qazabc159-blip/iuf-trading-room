@@ -33,6 +33,84 @@ function isScreenKey(value: string): value is ScreenKey {
   return Object.prototype.hasOwnProperty.call(SCREENS, value);
 }
 
+function contentShellOverrides(screen: ScreenKey) {
+  const common = `
+<style data-iuf-final-v031="content-shell-overrides">
+  html,
+  body {
+    min-height: 100%;
+    overflow: auto;
+    background: #080b10;
+  }
+
+  body.iuf-v031-embedded {
+    margin: 0;
+    background: #080b10;
+  }
+`;
+
+  if (screen === "paper-trading-room") {
+    return `${common}
+  .tbar {
+    display: none !important;
+  }
+
+  .psafe {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+
+  .troom {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 14px 16px 36px !important;
+  }
+</style>`;
+  }
+
+  return `${common}
+  .app {
+    display: block !important;
+    grid-template-columns: 1fr !important;
+    max-width: none !important;
+    min-height: auto !important;
+    margin: 0 !important;
+  }
+
+  .side {
+    display: none !important;
+  }
+
+  .main {
+    padding: 22px 30px 60px !important;
+  }
+
+  @media (max-width: 900px) {
+    .main {
+      padding: 18px 16px 44px !important;
+    }
+  }
+</style>`;
+}
+
+function stripVendorChrome(screen: ScreenKey, html: string) {
+  let next = html;
+
+  if (screen === "market-intel" || screen === "strategy-ideas") {
+    next = next.replace(/\s*<aside class="side">[\s\S]*?<\/aside>\s*/i, "");
+  }
+
+  if (screen === "paper-trading-room") {
+    next = next.replace(
+      /\s*<!-- ============ TOP BAR ============ -->[\s\S]*?(?=<!-- ============ SAFETY BAR ============ -->)/i,
+      ""
+    );
+  }
+
+  return next.replace(/<body(?![^>]*\bclass=)/i, '<body class="iuf-v031-embedded"');
+}
+
 async function renderFinalHtml(screen: ScreenKey) {
   const config = SCREENS[screen];
   const baseDir = path.join(process.cwd(), "public", "ui-final-v031", config.dir);
@@ -47,7 +125,7 @@ async function renderFinalHtml(screen: ScreenKey) {
 
   return html
     .replace(/<link\s+rel="stylesheet"\s+href="(?:tokens|app|trading)\.css"\s*\/?>/g, "")
-    .replace("</head>", `${styleTags}\n</head>`);
+    .replace("</head>", `${styleTags}\n${contentShellOverrides(screen)}\n</head>`);
 }
 
 export async function GET(
@@ -62,7 +140,7 @@ export async function GET(
     );
   }
 
-  const html = await renderFinalHtml(screen);
+  const html = stripVendorChrome(screen, await renderFinalHtml(screen));
   return new NextResponse(html, {
     status: 200,
     headers: {
