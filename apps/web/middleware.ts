@@ -15,6 +15,11 @@ const PUBLIC_PATHS = new Set(["/login", "/register"]);
 const PRESENCE_COOKIE = "iuf_auth";
 const SESSION_COOKIE = "iuf_session";
 const CANONICAL_APP_ORIGIN = "https://app.eycvector.com";
+const FINAL_V031_ROUTE_REWRITES = new Map([
+  ["/market-intel", "/final-v031/market-intel"],
+  ["/ideas", "/final-v031/ideas"],
+  ["/portfolio", "/final-v031/portfolio"]
+]);
 
 function isRailwayPublicHost(host: string): boolean {
   return host.endsWith(".up.railway.app");
@@ -42,6 +47,13 @@ function clearPresenceCookie(response: ReturnType<typeof NextResponse.next> | Re
     maxAge: 0,
     sameSite: "lax"
   });
+  return response;
+}
+
+function addNoStore(response: ReturnType<typeof NextResponse.next> | ReturnType<typeof NextResponse.rewrite>) {
+  response.headers.set("Cache-Control", "no-store, no-cache, max-age=0, must-revalidate");
+  response.headers.set("CDN-Cache-Control", "no-store");
+  response.headers.set("Vercel-CDN-Cache-Control", "no-store");
   return response;
 }
 
@@ -73,6 +85,13 @@ export function middleware(request: NextRequest) {
       clearPresenceCookie(response);
     }
     return addNoindex(response);
+  }
+
+  const finalV031Rewrite = FINAL_V031_ROUTE_REWRITES.get(pathname);
+  if (finalV031Rewrite) {
+    const rewriteUrl = request.nextUrl.clone();
+    rewriteUrl.pathname = finalV031Rewrite;
+    return addNoStore(addNoindex(NextResponse.rewrite(rewriteUrl)));
   }
 
   return addNoindex(NextResponse.next());
