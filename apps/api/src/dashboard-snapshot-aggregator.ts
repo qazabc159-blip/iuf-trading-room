@@ -115,12 +115,61 @@ function execRows<T>(result: unknown): T[] {
 
 /**
  * industry_heatmap — top 30 tickers by volume with pct change.
- * Same query as GET /api/v1/heatmap in server.ts.
+ *
+ * Priority order (KGI-independent):
+ *   1. TWSE OpenAPI STOCK_DAY_ALL → real-time T+0 changePct per ticker
+ *      joined with companies DB for name mapping
+ *   2. Fallback: companies_ohlcv T+0/T+1 OHLCV (FinMind-synced)
+ *
+ * Neither path requires KGI gateway.
  */
 async function fetchHeatmapPanel(workspaceId: string): Promise<unknown> {
   const db = isDatabaseMode() ? getDb() : null;
   if (!db) return { sourceState: "empty", tiles: [] };
 
+  // ── Path 1: TWSE OpenAPI real-time ───────────────────────────────────────
+  try {
+    const { getTwseIndustryHeatmap } = await import("./data-sources/twse-openapi-client.js");
+
+    // Build ticker → company name mapping from DB
+    const nameRes = await db.execute(drizzleSql`
+      SELECT ticker, name, chain_position AS industry
+      FROM companies
+      WHERE workspace_id = ${workspaceId}
+        AND ticker IS NOT NULL AND ticker != ''
+    `);
+    const nameRows = execRows<{ ticker: string; name: string; industry: string }>(nameRes);
+    const tickerToName = new Map<string, string>();
+    const tickerToIndustry = new Map<string, string>();
+    for (const r of nameRows) {
+      if (r.ticker) tickerToName.set(r.ticker, r.name ?? r.ticker);
+      if (r.ticker && r.industry) tickerToIndustry.set(r.ticker, r.industry);
+    }
+
+    if (tickerToIndustry.size > 0) {
+      const industryTiles = await getTwseIndustryHeatmap(tickerToIndustry);
+      if (industryTiles.length > 0) {
+        // Convert industry tiles to top-ticker tiles for backward compat with vendor shape
+        // Return as industry-grouped tiles (new shape), frontend should prefer /market/heatmap/twse
+        // But for dashboard snapshot backward compat, keep tile shape: { sym, name, pct, mcap }
+        // We synthesize tiles from the highest-change industries with their avg pct
+        const tiles = industryTiles.slice(0, 30).map(t => ({
+          sym: t.industry,
+          name: t.industry,
+          pct: t.avgChangePct,
+          mcap: null,
+          gainerCount: t.gainerCount,
+          loserCount: t.loserCount,
+          stockCount: t.stockCount
+        }));
+        return { sourceState: "live", source: "twse_openapi", tiles };
+      }
+    }
+  } catch {
+    // TWSE path failed — fall through to OHLCV
+  }
+
+  // ── Path 2: OHLCV fallback (FinMind T+0/T+1) ─────────────────────────────
   const res = await db.execute(drizzleSql`
     WITH latest AS (
       SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval = 'day'
@@ -162,7 +211,7 @@ async function fetchHeatmapPanel(workspaceId: string): Promise<unknown> {
     pct: typeof r.pct === "number" ? r.pct : parseFloat(String(r.pct ?? "0")),
     mcap: typeof r.mcap === "number" ? r.mcap : null,
   }));
-  return { sourceState: "live", tiles };
+  return { sourceState: "live", source: "ohlcv_finmind", tiles };
 }
 
 /**
