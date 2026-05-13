@@ -97,7 +97,7 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       sizing:
         "等權重持有 5 檔個股。每檔最高 20%。調整頻率為每 20 個交易日一次（h20）。不使用槓桿。capital_cap_twd_max: 10,000 TWD（pilot canary sizing）。",
       exitRule:
-        "持有 20 個交易日後全部換倉，依最新排序重新選股。若觸發市場整體 kill switch 條件，全部清倉。Cost 40-250bps 魯棒性已驗證（script done）。",
+        "持有 20 個交易日後全部換倉，依最新排序重新選股。若觸發市場整體 kill switch 條件，全部清倉。Cost 40-250bps 魯棒性測試完成（script done）。",
     },
     caveatVerdicts: [
       {
@@ -338,7 +338,7 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       "walk-forward + bootstrap CI 進行中（Task #400，2026-05-09 Athena morning update）/ 不具 matured forward observation / 回測數字僅供研究用，未通過完整 L9 gate / 不是已驗證策略 / 不顯示任何配置建議或勝率數字",
     spec: {
       intro:
-        "strategy_002 以月度/季度營收年增率的「超預期幅度」作為主要選股訊號。當實際營收公告超出市場預期中位數 15% 以上，觸發追蹤觀察視窗，並搭配股價動能確認進場。",
+        "strategy_002 以月度/季度營收年增率的「超預期幅度」作為主要選股訊號。當實際營收公告超出市場預期中位數 15% 以上，觸發追蹤觀察視窗，並搭配股價動能確認訊號。",
       signalLogic:
         "計算個股最新一期營收年增率（Yoy%）相對市場分析師預期中位數的偏差（surprise ratio）。篩選 surprise > 15% 且同期股價表現優於大盤的個股。再用 3 個月動能過濾避開過度超買。",
       sizing:
@@ -381,7 +381,7 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       {
         icon: "warn",
         label: "資料依賴",
-        detail: "依賴月報公告時間點精準性，延遲公告可能影響進場時機",
+        detail: "依賴月報公告時間點精準性，延遲公告可能影響訊號時機",
       },
       {
         icon: "fail",
