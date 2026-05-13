@@ -8,7 +8,7 @@
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
-import { getCompanies, getCompanyAnnouncements, getCompanyKBar, getCompanyOhlcv, getCompanyQuoteRealtime, getThemes, type CompanyRealtimeQuote, type FinMindKBarView, type OhlcvBar } from "@/lib/api";
+import { getCompanies, getCompanyAnnouncements, getCompanyFullProfile, getCompanyKBar, getCompanyOhlcv, getCompanyQuoteRealtime, getThemes, type CompanyRealtimeQuote, type FinMindKBarView, type FullProfileEnvelope, type OhlcvBar } from "@/lib/api";
 import type { Company, Theme } from "@iuf-trading-room/contracts";
 import {
   quoteFromOhlcvBars,
@@ -268,14 +268,15 @@ export default async function CompanyDetailPage({
     : "此股票目前沒有可用的正式 K 線資料。";
   const kbarDate = bars.at(-1)?.dt ?? new Date().toISOString().slice(0, 10);
 
-  // ── Phase 2: kbar + themes + announcements + realtime quote in parallel ──────
-  // Previously sequential (kbar → themes → announcements). Now 4 concurrent fetches.
+  // ── Phase 2: kbar + themes + announcements + realtime quote + full-profile in parallel ──
+  // Previously 4 concurrent fetches. Now 5 — full-profile for PE / yield / monthly revenue.
   const fetchedAt = new Date().toISOString();
-  const [kbarResult, themesResult, announcementsResult, realtimeResult] = await Promise.allSettled([
+  const [kbarResult, themesResult, announcementsResult, realtimeResult, fullProfileResult] = await Promise.allSettled([
     getCompanyKBar(company.id, kbarDate, { days: 20 }),
     getThemes(),
     getCompanyAnnouncements(company.id, { days: 30 }),
     getCompanyQuoteRealtime(company.id),
+    getCompanyFullProfile(company.id),
   ]);
 
   // kbar
@@ -325,6 +326,19 @@ export default async function CompanyDetailPage({
     realtimeResult.status === "fulfilled" ? realtimeResult.value : null;
   const realtimeLive = realtimeQuote?.state === "LIVE" || realtimeQuote?.state === "STALE";
 
+  // full-profile fundamentals for hero KPI strip (fail-soft: null = endpoint unavailable)
+  let fullProfile: FullProfileEnvelope | null = null;
+  if (fullProfileResult.status === "fulfilled") {
+    fullProfile = fullProfileResult.value.data;
+  } else {
+    console.warn("[company-detail] getCompanyFullProfile failed (hero KPI degraded)", { id: company.id, err: friendlyError(fullProfileResult.reason) });
+  }
+  const heroValuation = fullProfile?.marketIntel?.valuation;
+  const heroPE: number | null = heroValuation?.latest?.pe ?? null;
+  const heroDividendYield: number | null = heroValuation?.latest?.dividendYield ?? null;
+  const heroRevenue: FullProfileEnvelope["fundamentals"]["monthlyRevenue"]["latest"] | null =
+    fullProfile?.fundamentals?.monthlyRevenue?.latest ?? null;
+
   const detail = toCompanyDetailView(company, symbol, themeLabelById);
   const quote = quoteFromOhlcvBars(bars);
   const sources = buildSourceStatus(company, bars, ohlcvReason, {
@@ -356,6 +370,9 @@ export default async function CompanyDetailPage({
         quote={quote}
         realtimeQuote={realtimeQuote}
         lastBar={bars.length > 0 ? bars[bars.length - 1] : null}
+        pe={heroPE}
+        dividendYield={heroDividendYield}
+        latestRevenue={heroRevenue?.revenue ?? null}
       />
 
       <div className="company-kpi-strip">
