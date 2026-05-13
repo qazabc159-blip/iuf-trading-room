@@ -27,7 +27,7 @@ UI labels:
 - TWSE/EOD path displays `今日收盤` or `昨日收盤` based on the Taipei date of the returned timestamp.
 - Failure fallback displays `即時連線維護中，目前顯示昨日收盤`.
 
-No UI string exposes `kgi_tick`, `twse_openapi`, endpoint names, or enum values.
+No UI string exposes backend enum names or endpoint names.
 
 ### 熱力圖
 
@@ -60,3 +60,8 @@ Current TWSE backend payload is industry-aggregated, so the all-market tab rende
 ## Test Results
 
 - `pnpm --filter web typecheck` — PASS
+- `pnpm --filter web lint` — PASS
+- `pnpm --filter web test` — PASS
+- `pnpm --filter web build` — PASS
+
+Note: the first lint run was started in parallel with `next build` and hit a transient `.next/types` missing-file race. A clean rerun after build completed passed.

@@ -112,6 +112,41 @@ async function request<T>(path: string, init?: RequestInit) {
   return (await response.json()) as Envelope<T>;
 }
 
+async function requestRaw<T>(path: string, init?: RequestInit) {
+  if (!API_BASE) {
+    throw new Error("資料服務尚未設定");
+  }
+
+  let ssrCookie: string | null = null;
+  if (typeof window === "undefined") {
+    try {
+      const { headers } = await import("next/headers");
+      const h = await headers();
+      ssrCookie = h.get("cookie");
+    } catch {
+      // Outside a request context, leave cookie unset.
+    }
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      "x-workspace-slug": WORKSPACE_SLUG,
+      ...(ssrCookie ? { Cookie: ssrCookie } : {}),
+      ...(init?.headers ?? {})
+    }
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 export async function getThemes() {
   return request<Theme[]>("/api/v1/themes");
 }
@@ -1296,6 +1331,100 @@ export async function getMarketDataOverview(params: {
   if (params.topLimit !== undefined) query.set("topLimit", String(params.topLimit));
   const qs = query.toString();
   return request<MarketDataOverview>(`/api/v1/market-data/overview${qs ? `?${qs}` : ""}`);
+}
+
+export type TwseMarketIndexSnapshot = {
+  value: number;
+  change: number;
+  changePct: number;
+  ts: string;
+};
+
+export type TwseMarketOverview = {
+  taiex: TwseMarketIndexSnapshot | null;
+  otc: TwseMarketIndexSnapshot | null;
+  source?: string;
+  staleAfterSec?: number;
+  sourceState?: string;
+};
+
+export type TwseIndustryHeatmapTile = {
+  industry: string;
+  avgChangePct: number;
+  gainerCount: number;
+  loserCount: number;
+  flatCount: number;
+  stockCount: number;
+  source?: string;
+};
+
+export type TwseIndustryHeatmap = {
+  data: TwseIndustryHeatmapTile[];
+  source?: string;
+  staleAfterSec?: number;
+  industryCount?: number;
+  mappedTickers?: number;
+};
+
+export type KgiMarketOverview = {
+  taiex?: TwseMarketIndexSnapshot | null;
+  otc?: TwseMarketIndexSnapshot | null;
+  breadth?: {
+    up?: number | null;
+    down?: number | null;
+    flat?: number | null;
+    total?: number | null;
+    amount?: number | null;
+    updatedAt?: string | null;
+  } | null;
+  subscription?: { used?: number | null; limit?: number | null } | null;
+  sourceState?: string;
+  sessionLabel?: string;
+  staleAfterSec?: number;
+  updatedAt?: string | null;
+};
+
+export type KgiCoreHeatmapTile = {
+  symbol: string;
+  name?: string | null;
+  sector?: string | null;
+  last?: number | null;
+  price?: number | null;
+  close?: number | null;
+  prevClose?: number | null;
+  change?: number | null;
+  changePct?: number | null;
+  pct?: number | null;
+  volume?: number | null;
+  tradingValue?: number | null;
+  weight?: number | null;
+  date?: string | null;
+  updatedAt?: string | null;
+};
+
+export type KgiCoreHeatmap = {
+  data?: KgiCoreHeatmapTile[];
+  tiles?: KgiCoreHeatmapTile[];
+  sourceState?: string;
+  staleAfterSec?: number;
+  updatedAt?: string | null;
+  subscription?: { used?: number | null; limit?: number | null } | null;
+};
+
+export async function getTwseMarketOverview() {
+  return requestRaw<TwseMarketOverview>("/api/v1/market/overview/twse");
+}
+
+export async function getTwseMarketHeatmap() {
+  return requestRaw<TwseIndustryHeatmap>("/api/v1/market/heatmap/twse");
+}
+
+export async function getKgiMarketOverview() {
+  return requestRaw<KgiMarketOverview | { data: KgiMarketOverview }>("/api/v1/market/overview/kgi");
+}
+
+export async function getKgiCoreHeatmap() {
+  return requestRaw<KgiCoreHeatmap | { data: KgiCoreHeatmap }>("/api/v1/market/heatmap/kgi-core");
 }
 
 export async function getMarketDataProviders() {

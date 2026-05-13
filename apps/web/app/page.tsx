@@ -9,21 +9,31 @@ import {
   getDashboardSnapshot,
   getFinMindDiagnostics,
   getFinMindStatus,
+  getKgiCoreHeatmap,
+  getKgiMarketOverview,
   getMarketDataOverview,
   getMarketIntelAnnouncements,
   getOpsSnapshot,
   getKgiQuoteStatus,
   getStrategyIdeas,
+  getTwseMarketHeatmap,
+  getTwseMarketOverview,
   listStrategyRuns,
   type CompanyAnnouncement,
   type DashboardSnapshot,
   type FinMindDatasetStatus,
   type FinMindDiagnosticsStatus,
   type FinMindSourceStatus,
+  type KgiCoreHeatmap,
+  type KgiCoreHeatmapTile,
+  type KgiMarketOverview,
   type KgiQuoteStatus,
   type MarketDataOverview,
   type MarketDataOverviewLeader,
   type OpsSnapshotData,
+  type TwseIndustryHeatmap,
+  type TwseIndustryHeatmapTile,
+  type TwseMarketOverview,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
@@ -77,6 +87,34 @@ type BrokerAccessDashboard = {
   tickSubscriptions: number;
   bidAskSubscriptions: number;
   note: string;
+};
+
+type RealtimeMarketDashboard = {
+  kgiOverview: KgiMarketOverview | null;
+  kgiCoreHeatmap: KgiCoreHeatmap | null;
+  twseOverview: TwseMarketOverview | null;
+  twseHeatmap: TwseIndustryHeatmap | null;
+};
+
+type MarketIndexDisplay = {
+  sym: string;
+  name: string;
+  price: number | null;
+  chg: number | null;
+  pct: number | null;
+  updatedAt: string | null;
+  label: string;
+  source: "realtime" | "close" | "fallback" | "none";
+};
+
+type BreadthDisplay = {
+  up: number;
+  down: number;
+  flat: number;
+  total: number;
+  amount: number | null;
+  updatedAt: string | null;
+  label: string;
 };
 
 type SourceTile = {
@@ -350,6 +388,57 @@ function stateFromLoad(input: LoadState<unknown> | LoadState<unknown>["state"]):
   return "BLOCKED";
 }
 
+function unwrapMaybeData<T>(value: T | { data: T }): T {
+  return typeof value === "object" && value !== null && "data" in value
+    ? (value as { data: T }).data
+    : value as T;
+}
+
+function unwrapKgiCoreHeatmap(value: KgiCoreHeatmap | { data: KgiCoreHeatmap }): KgiCoreHeatmap {
+  if (typeof value === "object" && value !== null && Array.isArray((value as KgiCoreHeatmap).data)) {
+    return value as KgiCoreHeatmap;
+  }
+  return unwrapMaybeData<KgiCoreHeatmap>(value);
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function taipeiDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-CA", { timeZone: TAIPEI_TIME_ZONE });
+}
+
+function closeLabel(updatedAt: string | null | undefined) {
+  return taipeiDate(updatedAt) === todayTaipeiDate() ? "今日收盤" : "昨日收盤";
+}
+
+function isStaleTimestamp(value: string | null | undefined, staleAfterSec = 60) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return Date.now() - date.getTime() > staleAfterSec * 1000;
+}
+
+function loadStateData<T>(state: LoadState<T | null>) {
+  return state.state === "LIVE" || state.state === "EMPTY" ? state.data : null;
+}
+
+function kgiIsLive(feed: LoadState<RealtimeMarketDashboard | null>) {
+  const data = loadStateData(feed);
+  return Boolean(data?.kgiOverview?.taiex && data.kgiOverview.sourceState !== "unavailable");
+}
+
+function marketSourceFallbackLabel(feed: LoadState<RealtimeMarketDashboard | null>) {
+  if (kgiIsLive(feed)) return "即時";
+  const data = loadStateData(feed);
+  if (data?.twseOverview?.taiex) return closeLabel(data.twseOverview.taiex.ts);
+  return "即時連線維護中，目前顯示昨日收盤";
+}
+
 function freshnessText(updatedAt: string | null | undefined, state: DashboardState) {
   if (!updatedAt) return state === "EMPTY" ? "尚未回報" : "--";
   const time = Date.parse(updatedAt);
@@ -545,9 +634,39 @@ async function loadBrokerAccessState(): Promise<LoadState<BrokerAccessDashboard 
   }
 }
 
+async function loadRealtimeMarketDashboard(): Promise<LoadState<RealtimeMarketDashboard | null>> {
+  return load<RealtimeMarketDashboard | null>(
+    "Main market public/realtime feed",
+    null,
+    async () => {
+      const [kgiOverview, kgiCoreHeatmap, twseOverview, twseHeatmap] = await Promise.allSettled([
+        getKgiMarketOverview(),
+        getKgiCoreHeatmap(),
+        getTwseMarketOverview(),
+        getTwseMarketHeatmap(),
+      ]);
+
+      const kgiCoreHeatmapValue = kgiCoreHeatmap.status === "fulfilled"
+        ? unwrapKgiCoreHeatmap(kgiCoreHeatmap.value)
+        : null;
+      return {
+        kgiOverview: kgiOverview.status === "fulfilled" ? unwrapMaybeData(kgiOverview.value) : null,
+        kgiCoreHeatmap: kgiCoreHeatmapValue,
+        twseOverview: twseOverview.status === "fulfilled" ? twseOverview.value : null,
+        twseHeatmap: twseHeatmap.status === "fulfilled" ? twseHeatmap.value : null,
+      };
+    },
+    (value) => {
+      if (!value) return true;
+      return !value.kgiOverview?.taiex && !value.twseOverview?.taiex && !(value.kgiCoreHeatmap?.data?.length) && !(value.kgiCoreHeatmap?.tiles?.length) && !(value.twseHeatmap?.data?.length);
+    },
+    "即時連線維護中，目前顯示昨日收盤",
+  );
+}
+
 async function loadMarketIntelDashboard(): Promise<LoadState<MarketIntelDashboard>> {
   return load<MarketIntelDashboard>(
-    "TWSE OpenAPI 重大訊息",
+    "公開資訊重大訊息",
     { items: [], selected: [], failures: 0 },
     async () => {
       const aggregate = await getMarketIntelAnnouncements({
@@ -753,6 +872,127 @@ type HeatmapSectorOption = {
   weight: number;
 };
 
+function buildKgiCoreHeatmap(feed: LoadState<RealtimeMarketDashboard | null>): HeatTile[] {
+  const rows = loadStateData(feed)?.kgiCoreHeatmap;
+  const tiles = rows?.data ?? rows?.tiles ?? [];
+  return tiles
+    .filter((item) => item.symbol && item.symbol.trim().length > 0)
+    .slice(0, 32)
+    .map((item: KgiCoreHeatmapTile, index) => {
+      const price = finite(item.last ?? item.price ?? item.close);
+      const pct = finite(item.changePct ?? item.pct);
+      const tradingValue = finite(item.tradingValue);
+      const volume = finite(item.volume);
+      const weight = finite(item.weight) ?? (tradingValue ? Math.pow(tradingValue, 0.34) : volume ? Math.log10(volume + 10) : Math.max(1, 24 - index));
+      return {
+        symbol: item.symbol,
+        name: item.name ?? item.symbol,
+        sector: item.sector ?? null,
+        pct,
+        weight,
+        source: "realtime",
+        price,
+        date: item.date ?? item.updatedAt ?? null,
+        close: finite(item.close ?? item.last ?? item.price),
+        prevClose: finite(item.prevClose),
+        change: finite(item.change),
+        volume,
+        readiness: "ready",
+        freshnessStatus: "fresh",
+      };
+    });
+}
+
+function buildTwseIndustryRows(feed: LoadState<RealtimeMarketDashboard | null>): TwseIndustryHeatmapTile[] {
+  return (loadStateData(feed)?.twseHeatmap?.data ?? [])
+    .filter((item) => item.industry && Number.isFinite(item.avgChangePct))
+    .sort((left, right) => right.stockCount - left.stockCount);
+}
+
+function readMarketIndex(feed: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>): MarketIndexDisplay {
+  const data = loadStateData(feed);
+  const kgi = data?.kgiOverview?.taiex ?? null;
+  if (kgi && finite(kgi.value) !== null) {
+    const stale = isStaleTimestamp(kgi.ts, data?.kgiOverview?.staleAfterSec ?? 60);
+    return {
+      sym: "TAIEX",
+      name: "加權指數",
+      price: finite(kgi.value),
+      chg: finite(kgi.change),
+      pct: finite(kgi.changePct),
+      updatedAt: kgi.ts,
+      label: stale ? "資料更新中" : "即時",
+      source: stale ? "fallback" : "realtime",
+    };
+  }
+
+  const twse = data?.twseOverview?.taiex ?? null;
+  if (twse && finite(twse.value) !== null) {
+    return {
+      sym: "TAIEX",
+      name: "加權指數",
+      price: finite(twse.value),
+      chg: finite(twse.change),
+      pct: finite(twse.changePct),
+      updatedAt: twse.ts,
+      label: closeLabel(twse.ts),
+      source: "close",
+    };
+  }
+
+  const index = market.data?.marketContext?.index;
+  if (index && index.last !== null && index.state !== "EMPTY") {
+    return {
+      sym: index.symbol ?? "TAIEX",
+      name: index.name,
+      price: index.last,
+      chg: index.change,
+      pct: index.changePct,
+      updatedAt: index.timestamp,
+      label: "即時連線維護中，目前顯示昨日收盤",
+      source: "fallback",
+    };
+  }
+
+  return { sym: "TAIEX", name: "加權指數", price: null, chg: null, pct: null, updatedAt: null, label: "資料更新中", source: "none" };
+}
+
+function readMarketBreadth(feed: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>, heatmap: HeatTile[]): BreadthDisplay {
+  const data = loadStateData(feed);
+  const kgiBreadth = data?.kgiOverview?.breadth ?? null;
+  const kgiTotal = finite(kgiBreadth?.total);
+  if (kgiBreadth && kgiTotal !== null && kgiTotal > 0) {
+    return {
+      up: finite(kgiBreadth.up) ?? 0,
+      down: finite(kgiBreadth.down) ?? 0,
+      flat: finite(kgiBreadth.flat) ?? 0,
+      total: kgiTotal,
+      amount: finite(kgiBreadth.amount),
+      updatedAt: kgiBreadth.updatedAt ?? data?.kgiOverview?.updatedAt ?? null,
+      label: "即時",
+    };
+  }
+
+  const twseRows = buildTwseIndustryRows(feed);
+  if (twseRows.length > 0) {
+    const up = twseRows.reduce((sum, row) => sum + row.gainerCount, 0);
+    const down = twseRows.reduce((sum, row) => sum + row.loserCount, 0);
+    const flat = twseRows.reduce((sum, row) => sum + row.flatCount, 0);
+    return { up, down, flat, total: up + down + flat, amount: null, updatedAt: data?.twseOverview?.taiex?.ts ?? null, label: closeLabel(data?.twseOverview?.taiex?.ts) };
+  }
+
+  const legacyBreadth = market.data?.marketContext?.breadth;
+  if (legacyBreadth && legacyBreadth.total > 0) {
+    return { up: legacyBreadth.up, down: legacyBreadth.down, flat: legacyBreadth.flat, total: legacyBreadth.total, amount: null, updatedAt: legacyBreadth.updatedAt, label: "即時連線維護中，目前顯示昨日收盤" };
+  }
+
+  const actualHeatmap = heatmap.filter((item) => !item.placeholder);
+  const up = actualHeatmap.filter((item) => (item.pct ?? 0) > 0).length;
+  const down = actualHeatmap.filter((item) => (item.pct ?? 0) < 0).length;
+  const flat = Math.max(0, actualHeatmap.length - up - down);
+  return { up, down, flat, total: actualHeatmap.length, amount: null, updatedAt: null, label: "資料更新中" };
+}
+
 function heatmapSectorName(tile: HeatTile) {
   const sector = tile.sector?.trim();
   return sector && sector.length > 0 ? sector : "其他";
@@ -930,7 +1170,8 @@ function marketCoverageText(market: LoadState<MarketDataOverview | null>) {
 
 function buildTapeQuotes(heatmap: HeatTile[], market: LoadState<MarketDataOverview | null>): TapeQuote[] {
   const index = market.data?.marketContext?.index;
-  const breadth = market.data?.marketContext?.breadth;
+  const legacyBreadth = market.data?.marketContext?.breadth;
+  const breadth = legacyBreadth;
   const realQuotes: TapeQuote[] = [];
 
   if (index && index.last !== null && index.state !== "EMPTY") {
@@ -1235,6 +1476,7 @@ function AgendaStrip({
 function HeroPanel({
   heatmap,
   market,
+  realtimeMarket,
   paper,
   broker,
   brief,
@@ -1243,6 +1485,7 @@ function HeroPanel({
 }: {
   heatmap: HeatTile[];
   market: LoadState<MarketDataOverview | null>;
+  realtimeMarket: LoadState<RealtimeMarketDashboard | null>;
   paper: LoadState<PaperHealthState | null>;
   broker: LoadState<BrokerAccessDashboard | null>;
   brief: LoadState<DailyBriefDashboard>;
@@ -1250,10 +1493,10 @@ function HeroPanel({
   now: string;
 }) {
   const index = market.data?.marketContext?.index;
-  const breadth = market.data?.marketContext?.breadth;
+  const legacyBreadth = market.data?.marketContext?.breadth;
   const actualHeatmap = heatmap.filter((item) => !item.placeholder);
-  const indexReady = Boolean(index && index.last !== null && index.state !== "EMPTY");
-  const twii = indexReady && index ? {
+  const legacyIndexReady = Boolean(index && index.last !== null && index.state !== "EMPTY");
+  const legacyTwii = legacyIndexReady && index ? {
     sym: index.symbol ?? "TWII",
     name: index.name,
     price: index.last ?? null,
@@ -1266,7 +1509,10 @@ function HeroPanel({
     chg: null,
     pct: null,
   };
-  const marketReady = market.state === "LIVE" && indexReady && actualHeatmap.length > 0;
+  const twii = readMarketIndex(realtimeMarket, market);
+  const breadth = readMarketBreadth(realtimeMarket, market, actualHeatmap);
+  const indexReady = twii.price !== null || legacyTwii.price !== null;
+  const marketReady = indexReady && (actualHeatmap.length > 0 || breadth.total > 0);
   const fallbackUp = actualHeatmap.filter((item) => (item.pct ?? 0) > 0).length;
   const fallbackDown = actualHeatmap.filter((item) => (item.pct ?? 0) < 0).length;
   const fallbackFlat = Math.max(0, actualHeatmap.length - fallbackUp - fallbackDown);
@@ -1295,9 +1541,9 @@ function HeroPanel({
       </div>
 
       <div className="tac-index-card">
-        {!indexReady && <span className="tac-demo-badge floating">大盤指數尚未接入</span>}
+        {!indexReady && <span className="tac-demo-badge floating">資料更新中</span>}
         <div>
-          <div className="tac-index-title"><b>{twii.sym}</b><span>{twii.name}</span></div>
+          <div className="tac-index-title"><b>{twii.sym}</b><span>{twii.name}</span><em>{twii.label}</em></div>
           <div className="tac-index-main">
             <strong>{formatPrice(twii.price)}</strong>
             <span className={(twii.chg ?? 0) > 0 ? "price-up" : (twii.chg ?? 0) < 0 ? "price-down" : ""}>
@@ -1570,6 +1816,124 @@ function HeatmapPanel({
         reason={market.state === "BLOCKED" ? market.reason : undefined}
       />
     </Panel>
+  );
+}
+
+function RealtimeHeatmapPanel({
+  heatmap,
+  market,
+  realtimeMarket,
+  selectedSectorParam,
+  heatmapMode,
+}: {
+  heatmap: HeatTile[];
+  market: LoadState<MarketDataOverview | null>;
+  realtimeMarket: LoadState<RealtimeMarketDashboard | null>;
+  selectedSectorParam?: string | null;
+  heatmapMode: "core" | "all";
+}) {
+  const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
+  const fullMarketRows = buildTwseIndustryRows(realtimeMarket);
+  const hasCore = coreHeatmap.length > 0;
+  const activeMode = heatmapMode === "all" ? "all" : "core";
+  const displayHeatmap = hasCore ? coreHeatmap : heatmap;
+  const sourceLabel = activeMode === "core"
+    ? (hasCore ? "即時" : marketSourceFallbackLabel(realtimeMarket))
+    : `全市場 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`;
+  const updatedAt = activeMode === "core"
+    ? (loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null)
+    : (loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts ?? null);
+
+  return (
+    <Panel
+      eyebrow="HEATMAP"
+      title="台股市場熱力圖"
+      sub="核心觀察與全市場收盤視角分開呈現"
+      right={<div className="tac-heat-legend"><span>{sourceLabel}</span></div>}
+    >
+      <div className="tac-heat-mode-tabs" aria-label="熱力圖切換">
+        <Link className={activeMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
+        <Link className={activeMode === "all" ? "is-active" : ""} href="/?heatmap=all">全市場熱力圖</Link>
+      </div>
+      {activeMode === "all" ? (
+        <MarketWideHeatmap
+          rows={fullMarketRows}
+          updatedAt={updatedAt}
+          sourceLabel={sourceLabel}
+          marketState={fullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}
+          reason={realtimeMarket.state === "BLOCKED" ? realtimeMarket.reason : undefined}
+        />
+      ) : (
+        <IndustryHeatmap
+          heatmap={displayHeatmap}
+          initialSector={selectedSectorParam}
+          updatedAt={updatedAt}
+          sourceLabel={sourceLabel}
+          marketState={hasCore ? "LIVE" : stateFromLoad(market)}
+          reason={!hasCore && market.state === "BLOCKED" ? market.reason : undefined}
+        />
+      )}
+    </Panel>
+  );
+}
+
+function MarketWideHeatmap({
+  rows,
+  updatedAt,
+  sourceLabel,
+  marketState,
+  reason,
+}: {
+  rows: TwseIndustryHeatmapTile[];
+  updatedAt: string | null;
+  sourceLabel: string;
+  marketState: DashboardState;
+  reason?: string;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="tac-market-wide-heatmap empty">
+        <strong>{marketState === "BLOCKED" ? (reason ?? "資料更新中") : "資料更新中"}</strong>
+        <span>即時連線維護中，目前顯示昨日收盤</span>
+      </div>
+    );
+  }
+
+  const total = rows.reduce((sum, row) => sum + Math.max(1, row.stockCount), 0);
+  return (
+    <div className="tac-market-wide-heatmap">
+      <div className="tac-market-wide-head">
+        <span>{sourceLabel}</span>
+        <span>{rows.length} 個產業 · {formatNumber(total)} 檔 · 更新 {formatDateTime(updatedAt)}</span>
+      </div>
+      <div className="tac-market-wide-grid">
+        {rows.slice(0, 18).map((row) => {
+          const pct = finite(row.avgChangePct) ?? 0;
+          const tone = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
+          const size = Math.max(1.1, Math.min(2.4, Math.sqrt(Math.max(1, row.stockCount)) / 9));
+          return (
+            <div
+              className={`tac-market-wide-cell ${tone}`}
+              key={row.industry}
+              style={{ "--cell-grow": String(size), "--heat": String(Math.min(1, Math.abs(pct) / 3)) } as CSSProperties}
+              title={`${row.industry}\n漲 ${row.gainerCount} / 平 ${row.flatCount} / 跌 ${row.loserCount}\n均幅 ${formatPercent(pct)}`}
+            >
+              <b>{row.industry}</b>
+              <strong>{formatPercent(pct)}</strong>
+              <span>{formatNumber(row.stockCount)} 檔</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="tac-heat-footer">
+        <span>全市場 · 昨日收盤；面積代表檔數，顏色代表產業平均漲跌。</span>
+        <span className="tac-heat-scale" aria-label="漲跌幅色階">
+          <em>≤ -3%</em>
+          <i />
+          <em>≥ +3%</em>
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -1919,8 +2283,10 @@ function DashboardSkeleton() {
 // ── All data fetching lives here — streamed behind Suspense ──────────────────
 async function DashboardContent({
   selectedSectorParam,
+  heatmapMode,
 }: {
   selectedSectorParam: string | null;
+  heatmapMode: "core" | "all";
 }) {
   const now = nowIso();
 
@@ -1937,6 +2303,7 @@ async function DashboardContent({
 
   const [
     finmindResult,
+    realtimeMarketResult,
     marketResult,
     opsResult,
     briefResult,
@@ -1948,6 +2315,7 @@ async function DashboardContent({
     snapshotResult,
   ] = await Promise.allSettled([
     timedFetch("finmind", FETCH_HARD_MS, loadFinMindDashboard()),
+    timedFetch("main_market_feed", FETCH_SOFT_MS, loadRealtimeMarketDashboard()),
     timedFetch("market", FETCH_SOFT_MS, load(
       "Market data overview",
       null,
@@ -2006,6 +2374,12 @@ async function DashboardContent({
     if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "FinMind", reason: `資料延遲（${v._timeout}）` };
     return v;
   })();
+  const realtimeMarket = (() => {
+    if (realtimeMarketResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Main market feed", reason: "即時連線維護中，目前顯示昨日收盤" };
+    const v = realtimeMarketResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Main market feed", reason: `資料更新中：${v._timeout}` };
+    return v;
+  })();
   const market = (() => {
     if (marketResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Market data overview", reason: "載入失敗" };
     const v = marketResult.value;
@@ -2049,9 +2423,9 @@ async function DashboardContent({
     return v;
   })();
   const intel = (() => {
-    if (intelResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "TWSE OpenAPI 重大訊息", reason: "載入失敗" };
+    if (intelResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "公開資訊重大訊息", reason: "載入失敗" };
     const v = intelResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "TWSE OpenAPI 重大訊息", reason: `資料延遲（${v._timeout}）` };
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "公開資訊重大訊息", reason: `資料延遲（${v._timeout}）` };
     return v;
   })();
   const snapshot: DashboardSnapshot | null = (() => {
@@ -2071,7 +2445,8 @@ async function DashboardContent({
   }
 
   const sources = buildSources({ finmind, market, ops, brief, paper, ideas, runs, intel });
-  const realHeatmap = buildHeatmap(market);
+  const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
+  const realHeatmap = coreHeatmap.length > 0 ? coreHeatmap : buildHeatmap(market);
   const heatmap = realHeatmap;
   const quotes = buildTapeQuotes(realHeatmap, market);
   const liveCount = sources.filter((source) => source.state === "LIVE").length;
@@ -2087,11 +2462,11 @@ async function DashboardContent({
           <TopCommandBar now={now} market={market} />
           <AgendaStrip market={market} intel={intel} brief={brief} now={now} />
           <section className="tac-hero-grid">
-            <HeroPanel heatmap={heatmap} market={market} paper={paper} broker={broker} brief={brief} intel={intel} now={now} />
+            <HeroPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} paper={paper} broker={broker} brief={brief} intel={intel} now={now} />
             <MarketMoversPanel market={market} />
           </section>
           <section className="tac-two-grid tac-fresh-heat">
-            <HeatmapPanel heatmap={realHeatmap} market={market} selectedSectorParam={selectedSectorParam} />
+            <RealtimeHeatmapPanel heatmap={realHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
             <FreshnessPanel sources={sources} />
           </section>
           <section className="tac-two-grid">
@@ -2116,14 +2491,15 @@ async function DashboardContent({
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ sector?: string }>;
+  searchParams?: Promise<{ sector?: string; heatmap?: string }>;
 }) {
   const params = await searchParams;
   const selectedSectorParam = params?.sector ?? null;
+  const heatmapMode = params?.heatmap === "all" ? "all" : "core";
 
   return (
     <Suspense fallback={<DashboardSkeleton />}>
-      <DashboardContent selectedSectorParam={selectedSectorParam} />
+      <DashboardContent selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
     </Suspense>
   );
 }
