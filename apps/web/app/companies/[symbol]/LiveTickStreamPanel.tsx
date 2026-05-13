@@ -96,17 +96,17 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
     try {
       const result = await getKgiTicks(symbol, MAX_TICKS);
       if (!result || result.ticks.length === 0) {
-        setState({ status: "blocked", reason: "目前沒有即時逐筆資料（此代號尚未訂閱或無成交）" });
+        setState({ status: "blocked", reason: "目前尚無逐筆成交記錄（此代號尚未在訂閱範圍或無成交）" });
         return;
       }
       setState({ status: "live", ticks: result.ticks, updatedAt: new Date().toLocaleTimeString("zh-TW", { hour12: false }) });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const reason =
-        /SYMBOL_NOT_ALLOWED/i.test(msg) ? "此代號不在 KGI 白名單（KGI_QUOTE_SYMBOL_WHITELIST）" :
-        /GATEWAY_UNREACHABLE|unreachable/i.test(msg) ? "KGI gateway 暫時無法連線（EC2 54.249.139.28:8787）" :
-        /QUOTE_DISABLED/i.test(msg) ? "KGI 報價服務暫時停用（containment mode）" :
-        /GATEWAY_AUTH/i.test(msg) ? "KGI gateway session 尚未建立" :
+        /SYMBOL_NOT_ALLOWED/i.test(msg) ? "此代號目前不在即時訂閱範圍內" :
+        /GATEWAY_UNREACHABLE|unreachable/i.test(msg) ? "連線暫時中斷，請稍後再試" :
+        /QUOTE_DISABLED/i.test(msg) ? "即時報價服務暫時停用" :
+        /GATEWAY_AUTH/i.test(msg) ? "連線工作階段尚未建立" :
         `逐筆資料暫時無法讀取：${msg.slice(0, 80)}`;
       setState({ status: "blocked", reason });
     }
@@ -137,8 +137,8 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
 
       {state.status === "blocked" && (
         <div className="state-panel">
-          <span className="badge badge-red">BLOCKED</span>
-          <span className="tg soft">來源：KGI gateway /api/v1/kgi/quote/ticks</span>
+          <span className="badge badge-red">暫停</span>
+          <span className="tg soft">即時成交明細暫時無法讀取</span>
           <span className="state-reason">{state.reason}</span>
         </div>
       )}
@@ -146,7 +146,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
       {state.status === "loading" && (
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
-          <span className="tg soft">正在向 KGI gateway 取得逐筆資料…</span>
+          <span className="tg soft">正在取得即時成交明細…</span>
         </div>
       )}
 

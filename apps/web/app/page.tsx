@@ -1837,8 +1837,9 @@ function RealtimeHeatmapPanel({
   const hasCore = coreHeatmap.length > 0;
   const activeMode = heatmapMode === "all" ? "all" : "core";
   const displayHeatmap = hasCore ? coreHeatmap : heatmap;
+  const coreLastTs = loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? null;
   const sourceLabel = activeMode === "core"
-    ? (hasCore ? "即時" : marketSourceFallbackLabel(realtimeMarket))
+    ? (hasCore ? "即時" : coreLastTs ? `核心 · 約 1 分鐘前最後一筆` : "核心 · 連線維護中")
     : `全市場 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`;
   const updatedAt = activeMode === "core"
     ? (loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null)

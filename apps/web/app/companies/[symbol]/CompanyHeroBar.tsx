@@ -260,7 +260,7 @@ export function CompanyHeroBar({
   const rtState = realtimeQuote?.state;
   const isLive = rtState === "LIVE";
   const isStale = rtState === "STALE";
-  const rtSource = realtimeQuote ? "KGI 即時" : quote?.source === "kgi" ? "KGI" : quote?.source === "finmind" ? "FinMind" : null;
+  const rtSource = realtimeQuote ? "即時報價" : quote?.source === "kgi" ? "今日收盤" : quote?.source === "finmind" ? "今日收盤" : null;
 
   // Volume: prefer realtime
   const vol = realtimeQuote?.volume ?? quote?.volume ?? null;
@@ -302,7 +302,9 @@ export function CompanyHeroBar({
 
         {/* Meta line */}
         <div className="_co-hero-meta">
-          {industryLabel(company.chainPosition)} / {themes || "尚無主題"} / 更新 {formatAsOf(asOf)} / 來源 {rtSource ?? "待接"}
+          {industryLabel(company.chainPosition)} / {themes || "尚無主題"} / 更新 {formatAsOf(asOf)}
+          {" / "}{isLive ? "即時" : rtSource ?? "今日收盤"}
+          {!isLive && !isStale && <span style={{ marginLeft: 8, color: "rgba(200,148,63,0.7)", fontSize: 9.5 }}>加入觀察清單可看即時報價</span>}
         </div>
 
         {/* 7-cell KPI strip */}

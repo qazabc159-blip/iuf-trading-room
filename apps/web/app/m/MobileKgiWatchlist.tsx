@@ -241,7 +241,7 @@ export function MobileKgiWatchlist({ watchlist = DEFAULT_WATCHLIST }: { watchlis
         <div className="_mob-kgi-head">
           <span className="_mob-kgi-code">
             {anyLive && <span className="_mob-kgi-live-dot" />}
-            KGI / 即時報價
+            {anyLive ? "即時報價" : "報價"}
           </span>
           <span className="_mob-kgi-right">
             {anyLive ? `${liveCount}/${watchlist.length} 活躍` : "離線"}{lastUpdated ? ` · ${lastUpdated}` : ""}
@@ -253,7 +253,7 @@ export function MobileKgiWatchlist({ watchlist = DEFAULT_WATCHLIST }: { watchlis
           ))}
         </div>
         <div style={{ padding: "0 16px 10px", fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "var(--mono, monospace)" }}>
-          KGI gateway 54.249.139.28 · 15s poll · 不存 cookie
+          公開資料 · 約 5–15 秒延遲 · 不存 cookie
         </div>
       </section>
     </>

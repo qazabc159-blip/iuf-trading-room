@@ -3,6 +3,8 @@ import type { CSSProperties } from "react";
 import type { WatchlistOverview } from "@/lib/api";
 import { WatchlistTable } from "./WatchlistTable";
 
+const WATCHLIST_CAP = 10;
+
 export type WatchlistSurfaceState =
   | { state: "LIVE"; data: WatchlistOverview; updatedAt: string; source: string }
   | { state: "BLOCKED"; updatedAt: string; source: string; reason: string };
@@ -46,6 +48,7 @@ export function WatchlistSurface({ result }: { result: WatchlistSurfaceState }) 
   }
 
   const { data } = result;
+  const isFull = data.rows.length >= WATCHLIST_CAP;
   return (
     <div>
       <div className="tg soft" style={sourceStyle}>
@@ -54,7 +57,19 @@ export function WatchlistSurface({ result }: { result: WatchlistSurfaceState }) 
         <span>更新 {formatTime(data.generatedAt)}</span>
         <span>風控 {gateLabel(data.killSwitchState)}</span>
         <span>模擬交易 {gateLabel(data.paperGateState)}</span>
+        <span
+          style={hintStyle}
+          title="即時觀察清單上限 10 檔，可隨時調整成員"
+        >
+          ⓘ 上限 {WATCHLIST_CAP} 檔
+        </span>
       </div>
+      {isFull && (
+        <div className="terminal-note" style={capWarningStyle}>
+          <span className="tg gold">觀察清單已滿 ({data.rows.length}/{WATCHLIST_CAP})</span>
+          {" "}移除一檔後再加，或聯絡管理員提升額度。
+        </div>
+      )}
       {data.warnings.map((warning) => (
         <div className="terminal-note" key={warning}>
           <span className="tg gold">注意</span> {warning}
@@ -65,7 +80,7 @@ export function WatchlistSurface({ result }: { result: WatchlistSurfaceState }) 
           <span className="tg gold">無資料</span> 尚未建立觀察清單。
         </div>
       ) : (
-        <WatchlistTable rows={data.rows} />
+        <WatchlistTable rows={data.rows} cap={WATCHLIST_CAP} />
       )}
     </div>
   );
@@ -76,4 +91,17 @@ const sourceStyle: CSSProperties = {
   flexWrap: "wrap",
   gap: "8px 14px",
   margin: "12px 0 14px",
+};
+
+const hintStyle: CSSProperties = {
+  cursor: "help",
+  color: "var(--exec-soft, #7a8a9a)",
+  fontSize: 11,
+  letterSpacing: "0.03em",
+};
+
+const capWarningStyle: CSSProperties = {
+  borderLeft: "3px solid var(--gold, #c8943f)",
+  paddingLeft: 10,
+  marginBottom: 8,
 };
