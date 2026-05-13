@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import sys
 import types
+from enum import Enum
 from unittest.mock import patch
 
 import pytest
@@ -37,6 +38,41 @@ def _make_kgisuperpy_stub():
     class _QuoteData:
         class QuoteVersion:
             v1 = "v1"
+
+    class Action(Enum):
+        Buy = "B"
+        Sell = "S"
+
+    class TimeInForce(Enum):
+        ROD = 0
+        IOC = 1
+        FOK = 2
+
+    class OrderCond(Enum):
+        CASH = 0
+        MARGIN = 3
+        SHORT_SELLING = 4
+        Lend_SELLING = 6
+        MARGIN_DayTrade = 7
+        CASH_SELLING = 9
+
+    class PriceType(Enum):
+        MKT = "1"
+        Reference = 5
+        LimitUp = 9
+        LimitDown = 1
+
+    class OddLot(Enum):
+        Common = 0
+        Fixing = 2
+        Odd_AfterMarket = 1
+        Odd = 4
+
+    pkg.Action = Action
+    pkg.TimeInForce = TimeInForce
+    pkg.OrderCond = OrderCond
+    pkg.PriceType = PriceType
+    pkg.OddLot = OddLot
 
     qd_mod.QuoteData = _QuoteData
     sys.modules.setdefault("kgisuperpy", pkg)
@@ -229,7 +265,7 @@ def test_c1_sim_session_valid_0050_oddlot_returns_200_sim_only(order_client):
     assert body["status"] == "accepted"
     assert len(mock_api.Order.calls) == 1
     call = mock_api.Order.calls[0]
-    assert call["action"] == "Buy"
+    assert getattr(call["action"], "name", None) == "Buy"
     assert call["symbol"] == "0050"
     assert call["qty"] == 1
     assert call["odd_lot"] is True
@@ -262,6 +298,11 @@ def test_c3_sim_session_full_normal_lot_payload_returns_200(order_client):
     assert body["sim_only"] is True
     assert body["status"] == "accepted"
     assert len(mock_api.Order.calls) == 1
+    call = mock_api.Order.calls[0]
+    assert getattr(call["action"], "name", None) == "Sell"
+    assert getattr(call["time_in_force"], "name", None) == "ROD"
+    assert getattr(call["order_cond"], "name", None) == "CASH"
+    assert call["price"] == 800.0
 
 
 def test_c4_sim_session_sdk_exception_returns_502(order_client):

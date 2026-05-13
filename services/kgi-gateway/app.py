@@ -1190,14 +1190,38 @@ async def create_order(body: Optional[Any] = Body(default=None)) -> JSONResponse
         )
 
     try:
+        from kgisuperpy import Action, OddLot, OrderCond, PriceType, TimeInForce
+
+        action = getattr(Action, order_req.action)
+        time_in_force = getattr(TimeInForce, order_req.time_in_force)
+        order_cond = {
+            "Cash": OrderCond.CASH,
+            "CashSelling": OrderCond.CASH_SELLING,
+            "Margin": OrderCond.MARGIN,
+            "MarginDayTrade": OrderCond.MARGIN_DayTrade,
+            "ShortSelling": OrderCond.SHORT_SELLING,
+            "LendSelling": OrderCond.Lend_SELLING,
+        }[order_req.order_cond]
+        price = order_req.price
+        if isinstance(price, str):
+            price = getattr(PriceType, price)
+        odd_lot = order_req.odd_lot
+        if isinstance(odd_lot, str):
+            odd_lot = {
+                "Common": OddLot.Common,
+                "Fixing": OddLot.Fixing,
+                "Odd": OddLot.Odd,
+                "OddAfterMarket": OddLot.Odd_AfterMarket,
+            }[odd_lot]
+
         sdk_response = session.api.Order.create_order(
-            action=order_req.action,
+            action=action,
             symbol=order_req.symbol,
             qty=order_req.qty,
-            price=order_req.price,
-            time_in_force=order_req.time_in_force,
-            order_cond=order_req.order_cond,
-            odd_lot=order_req.odd_lot,
+            price=price,
+            time_in_force=time_in_force,
+            order_cond=order_cond,
+            odd_lot=odd_lot,
             name=order_req.name,
         )
         logger.info(
