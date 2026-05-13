@@ -518,7 +518,7 @@ export default async function SignalsPage() {
             <div>
               <div style={{ fontSize: 15, fontWeight: 600, color: "#c6d0de", marginBottom: 6 }}>無可判讀訊號</div>
               <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
-                驗證資料已收納，不放進交易戰情；等待下一批訊號進場。
+                驗證資料已收納，不放進交易戰情；等待下一批訊號更新。
               </div>
             </div>
           </div>

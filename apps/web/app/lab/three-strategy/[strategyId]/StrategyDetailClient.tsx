@@ -793,7 +793,7 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
         <SpecRow label="概述" value={data.spec.intro} />
         <SpecRow label="訊號邏輯" value={data.spec.signalLogic} />
         <SpecRow label="部位規模" value={data.spec.sizing} />
-        <SpecRow label="出場規則" value={data.spec.exitRule} />
+        <SpecRow label="退出條件（研究規格）" value={data.spec.exitRule} />
       </div>
 
       {/* ── Full caveat ──────────────────────────────────────────────────── */}
