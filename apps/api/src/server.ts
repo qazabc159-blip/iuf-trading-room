@@ -3078,10 +3078,38 @@ app.get("/api/v1/openalice/observability", async (c) => {
   const base = await getOpenAliceObservabilitySnapshot(c.get("session").workspace.slug);
   // P0-C: extend observability with pipeline-specific fields
   const pipelineAddendum = getPipelineObservabilityAddendum();
+
+  // cycle17: brief dispatcher cron observability
+  // Compute nextRunAt: next 09:00 TST. If today's 09:00 has passed, use tomorrow.
+  function computeNextBriefDispatchAt(): string {
+    const nowMs = Date.now();
+    const taipeiNow = new Date(nowMs + 8 * 60 * 60 * 1000); // UTC+8
+    const yyyy = taipeiNow.getUTCFullYear();
+    const mm = String(taipeiNow.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(taipeiNow.getUTCDate()).padStart(2, "0");
+    const todayAt9 = new Date(`${yyyy}-${mm}-${dd}T09:00:00+08:00`);
+    if (todayAt9.getTime() > nowMs) {
+      return todayAt9.toISOString();
+    }
+    // 09:00 already passed today — return tomorrow 09:00
+    const tomorrowAt9 = new Date(todayAt9.getTime() + 24 * 60 * 60 * 1000);
+    return tomorrowAt9.toISOString();
+  }
+
+  const dispatcherCron = {
+    cronEnabled: true,
+    cronWindow: "09:00–09:05 TST (Asia/Taipei)",
+    lastFiredAt: _briefDispatcherLastFiredDate
+      ? `${_briefDispatcherLastFiredDate}T09:00:00+08:00`
+      : null,
+    nextRunAt: computeNextBriefDispatchAt()
+  };
+
   return c.json({
     data: {
       ...base,
-      pipeline: pipelineAddendum
+      pipeline: pipelineAddendum,
+      dispatcherCron
     }
   });
 });
@@ -12097,6 +12125,10 @@ async function runMarketIntelNewsTick(workspaceSlug: string): Promise<void> {
   }
 }
 
+// Module-level: tracks the last TST calendar date on which the brief dispatcher fired.
+// Promoted from startSchedulers() local scope (cycle17) so the observability route can read it.
+let _briefDispatcherLastFiredDate = "";
+
 /**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: fixed 09:00 TST daily (cycle13 fix).
@@ -12130,7 +12162,7 @@ function startSchedulers(workspaceSlug: string): void {
   //   SAFE ON BOOT: dispatcher only enqueues openAliceJobs row — no LLM call at boot.
   //
   // idempotency: runDailyBriefDispatcherTick() itself skips if job/brief already exists.
-  let _briefDispatcherLastFiredDate = "";
+  // NOTE: _briefDispatcherLastFiredDate is now module-level (cycle17 — for observability).
 
   /** Returns today's date in TST (Taipei) as YYYY-MM-DD. */
   function getTstDateString(): string {

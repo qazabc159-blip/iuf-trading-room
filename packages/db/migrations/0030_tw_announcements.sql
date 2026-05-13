@@ -1,6 +1,6 @@
 -- 0030 — tw_announcements: TWSE/MOPS official announcement cache table
 --
--- Status: DRAFT — requires Mike audit before promoting to prod.
+-- Status: APPLIED — Mike audit completed; promoted to prod (cycle17 2026-05-14).
 --
 -- Purpose: Cache official TWSE/MOPS material disclosures (重大訊息).
 --   Primary source: TWSE OpenAPI or MOPS scrape (future ingest job)
