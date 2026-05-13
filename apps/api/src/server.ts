@@ -8439,6 +8439,95 @@ app.get("/api/v1/heatmap", async (c) => {
   }
 });
 
+// =============================================================================
+// TWSE OpenAPI — main page real-time market data (no KGI dependency)
+// =============================================================================
+//
+// GET /api/v1/market/overview/twse
+//   — TAIEX index value + change + changePct from TWSE official OpenAPI.
+//   — 1-minute in-memory cache to avoid TWSE rate limits.
+//   — No auth required for read; session check preserved for consistency.
+//   — staleAfterSec: 60 (data is T+0 end-of-day when market closed, ~15s delay when open)
+//   — source: "twse_openapi" — no KGI dependency
+//
+// GET /api/v1/market/heatmap/twse
+//   — Industry heatmap derived from TWSE STOCK_DAY_ALL + companies.chainPosition mapping.
+//   — Returns array of { industry, avgChangePct, gainerCount, loserCount, flatCount, stockCount }
+//   — 1-minute in-memory cache.
+//   — Empty array when TWSE unavailable (fail-open, never 5xx).
+//
+// Hard lines:
+//   - No KGI SDK import
+//   - No scraping (TradingView etc.)
+//   - No schema / contracts change
+//   - No DB migration
+// =============================================================================
+
+app.get("/api/v1/market/overview/twse", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const { getTwseMarketOverview } = await import("./data-sources/twse-openapi-client.js");
+  const result = await getTwseMarketOverview();
+
+  if (!result) {
+    return c.json({
+      taiex: null,
+      otc: null,
+      source: "twse_openapi",
+      staleAfterSec: 60,
+      sourceState: "unavailable"
+    });
+  }
+
+  return c.json({ ...result, sourceState: "live" });
+});
+
+app.get("/api/v1/market/heatmap/twse", async (c) => {
+  const role = c.get("session").user.role;
+  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
+
+  const session = c.get("session");
+  const dbMode = isDatabaseMode();
+  const db = dbMode ? getDb() : null;
+
+  // Build ticker → industry mapping from companies DB (chainPosition as industry proxy)
+  const tickerToIndustry = new Map<string, string>();
+  if (db) {
+    try {
+      const companyRes = await db.execute(drizzleSql`
+        SELECT ticker, chain_position AS industry
+        FROM companies
+        WHERE workspace_id = ${session.workspace.id}
+          AND ticker IS NOT NULL
+          AND ticker != ''
+          AND chain_position IS NOT NULL
+          AND chain_position != ''
+      `);
+      const companyRows = ((companyRes as { rows?: Record<string, unknown>[] }).rows
+        ?? (Array.isArray(companyRes) ? companyRes : [])) as Record<string, unknown>[];
+      for (const row of companyRows) {
+        const ticker = String(row.ticker ?? "").trim();
+        const industry = String(row.industry ?? "").trim();
+        if (ticker && industry) tickerToIndustry.set(ticker, industry);
+      }
+    } catch (err) {
+      console.warn("[market/heatmap/twse] company query failed:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  const { getTwseIndustryHeatmap } = await import("./data-sources/twse-openapi-client.js");
+  const tiles = await getTwseIndustryHeatmap(tickerToIndustry);
+
+  return c.json({
+    data: tiles,
+    source: "twse_openapi",
+    staleAfterSec: 60,
+    industryCount: tiles.length,
+    mappedTickers: tickerToIndustry.size
+  });
+});
+
 // ── P0 #6: GET /api/v1/openalice/status ──────────────────────────────────────
 // Vendor shape: runner/dispatcher/queue/publishedToday/sourceTrail/aiReview/pipeline[5]/notice
 // Built from existing pipeline state + observability snapshot.
