@@ -12086,13 +12086,12 @@ async function runMarketIntelNewsTick(workspaceSlug: string): Promise<void> {
 
 /**
  * Start all schedulers. Called once after server is ready.
- * OHLCV: every 6 hours. Daily brief: every 23 hours (drift-safe).
+ * OHLCV: every 6 hours. Daily brief: fixed 09:00 TST daily (cycle13 fix).
  * PR A: Monthly revenue: every 24h. Financials: every 24h (cadence guard inside tick).
  * All run an immediate first tick on startup to backfill any missed runs.
  */
 function startSchedulers(workspaceSlug: string): void {
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
-  const TWENTY_THREE_HOURS_MS = 23 * 60 * 60 * 1000;
   const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
   const INITIAL_STAGGER_MS = schedulerPositiveInt("FINMIND_SCHEDULER_INITIAL_STAGGER_MS", 15_000);
 
@@ -12104,14 +12103,64 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, SIX_HOURS_MS);
 
-  // F3: daily_brief dispatcher — immediate first run then every 23h
-  // (workspaceSlug no longer passed — function resolves workspace from DB)
-  scheduleInitialSchedulerTick("daily-brief-dispatcher", 5_000, () => runDailyBriefDispatcherTick());
+  // F3 (cycle13 fix 2026-05-14): daily_brief dispatcher — fixed 09:00 TST daily.
+  //
+  // ROOT CAUSE: boot+23h interval meant a boot at 20:57 TST → next fire at 19:57 TST next day.
+  // 楊董 06:00 起床時 /briefs?date=today 永遠是空 (dispatcher 尚未觸發過).
+  //
+  // FIX: poll every 60s, check if TST is in the 09:00–09:05 window, fire at most once per
+  // calendar day (per-day guard string _briefDispatcherLastFiredDate).
+  //
+  // STARTUP CATCH-UP GATE (30s after boot):
+  //   If TST >= 09:05 AND today's brief has not been dispatched yet → fire once immediately.
+  //   This covers deploys/restarts that happen after 09:00 TST.
+  //   SAFE ON BOOT: dispatcher only enqueues openAliceJobs row — no LLM call at boot.
+  //
+  // idempotency: runDailyBriefDispatcherTick() itself skips if job/brief already exists.
+  let _briefDispatcherLastFiredDate = "";
+
+  /** Returns today's date in TST (Taipei) as YYYY-MM-DD. */
+  function getTstDateString(): string {
+    return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+  }
+
+  /** Returns true if current Taipei time is in the 09:00–09:05 window. */
+  function isBriefDispatchWindow(): boolean {
+    const hhmm = getTaipeiHHMM();
+    return hhmm >= 900 && hhmm < 905;
+  }
+
+  /** Returns true if current Taipei time is >= 09:05 (catch-up eligible). */
+  function isPastBriefDispatchWindow(): boolean {
+    return getTaipeiHHMM() >= 905;
+  }
+
+  // 60-second poll: fire when in 09:00–09:05 window and not yet fired today
   setInterval(() => {
+    const todayTst = getTstDateString();
+    if (_briefDispatcherLastFiredDate === todayTst) return; // already fired today
+    if (!isBriefDispatchWindow()) return; // outside 09:00–09:05 window
+    _briefDispatcherLastFiredDate = todayTst;
+    console.log(`[daily-brief-dispatcher] 09:00 TST window — dispatching for ${todayTst}`);
     runDailyBriefDispatcherTick().catch((e) =>
-      console.error("[daily-brief-dispatcher] Interval tick failed:", e)
+      console.error("[daily-brief-dispatcher] 09:00 tick failed:", e)
     );
-  }, TWENTY_THREE_HOURS_MS);
+  }, 60_000);
+
+  // Startup catch-up: if boot happens after 09:05 TST and today not yet dispatched, fire once
+  setTimeout(() => {
+    const todayTst = getTstDateString();
+    if (_briefDispatcherLastFiredDate === todayTst) return; // already fired (race-safe)
+    if (!isPastBriefDispatchWindow()) {
+      console.log(`[daily-brief-dispatcher] startup: TST < 09:05, skipping catch-up (cron will fire at 09:00)`);
+      return;
+    }
+    _briefDispatcherLastFiredDate = todayTst;
+    console.log(`[daily-brief-dispatcher] startup catch-up: TST >= 09:05, dispatching for ${todayTst}`);
+    runDailyBriefDispatcherTick().catch((e) =>
+      console.error("[daily-brief-dispatcher] startup catch-up failed:", e)
+    );
+  }, 30_000);
 
   // PR A: Monthly revenue sync — every 24h (burst on 10th, sweep otherwise)
   scheduleInitialSchedulerTick("fundamentals-scheduler/monthly-revenue", INITIAL_STAGGER_MS, () =>
