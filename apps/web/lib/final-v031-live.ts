@@ -380,23 +380,262 @@ function jsonScriptValue(value: unknown) {
 }
 
 export function finalV031HydrationScript(payload: unknown) {
+  const clientApiBase = process.env.NEXT_PUBLIC_API_BASE_URL
+    ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
+  const workspaceSlug = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
+
   return `<script data-iuf-final-v031-live>
 window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
 (() => {
-  const live = window.__IUF_FINAL_V031_LIVE__;
+  let live = window.__IUF_FINAL_V031_LIVE__;
   if (!live || !live.screen) return;
+  const apiBase = ${JSON.stringify(clientApiBase)};
+  const workspaceSlug = ${JSON.stringify(workspaceSlug)};
   const $ = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   const n = (value, fallback="—") => value === null || value === undefined || Number.isNaN(Number(value)) ? fallback : Number(value).toLocaleString("zh-TW");
   const price = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? "—" : (Number(value) >= 1000 ? Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 1 }) : Number(value).toFixed(2));
   const cls = (status) => status === "ok" || status === "allow" ? "ok" : status === "block" || status === "bad" ? "bad" : "warn";
+  const unwrap = (json) => json && typeof json === "object" && Object.prototype.hasOwnProperty.call(json, "data") ? json.data : json;
+  const apiGet = async (path) => {
+    if (!apiBase) throw new Error("api_base_unconfigured");
+    const res = await fetch(apiBase + path, {
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", "x-workspace-slug": workspaceSlug }
+    });
+    if (!res.ok) throw new Error("api_" + res.status);
+    return unwrap(await res.json());
+  };
+  const apiPost = async (path, body) => {
+    if (!apiBase) throw new Error("api_base_unconfigured");
+    const res = await fetch(apiBase + path, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify(body)
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((json && (json.error || json.message)) || ("api_" + res.status));
+    return unwrap(json);
+  };
+  const soft = (promise) => promise.then((data) => ({ ok:true, data })).catch((error) => ({ ok:false, error }));
+  const ago = (dateLike) => {
+    if (!dateLike) return "剛剛";
+    const ts = Date.parse(dateLike);
+    if (!Number.isFinite(ts)) return "剛剛";
+    const minutes = Math.max(0, Math.round((Date.now() - ts) / 60000));
+    if (minutes < 1) return "剛剛";
+    if (minutes < 60) return String(minutes) + " 分鐘前";
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return String(hours) + " 小時前";
+    return String(Math.round(hours / 24)) + " 天前";
+  };
+  const sourceName = (source) => {
+    const text = String(source || "");
+    if (text.includes("finmind")) return "FinMind";
+    if (text.includes("twse")) return "公開資訊";
+    if (text.includes("mops")) return "公開資訊觀測站";
+    return text || "正式資料";
+  };
+  const topicOf = (text) => {
+    if (/AI|GB200|伺服器|散熱|ASIC|GPU|CoWoS/i.test(text)) return "ai";
+    if (/半導體|晶圓|製程|IC|封測|矽|SoC/i.test(text)) return "semi";
+    if (/金控|銀行|壽險|金融|利率/i.test(text)) return "fin";
+    if (/電動車|車用|EV/i.test(text)) return "auto";
+    return "all";
+  };
   const setText = (sel, value) => { const node = $(sel); if (node) node.textContent = value; };
   const setCount = (label, value) => {
     const stat = $$(".taskhdr .stat").find((node) => node.textContent.includes(label));
     const val = stat && $(".v", stat);
     if (val) val.textContent = String(value ?? "0");
   };
+
+  function clientNewsItem(item, index) {
+    const title = item.headline || item.title || "正式市場訊息";
+    const tag = (item.tags && item.tags[0]) || item.impact_tier || item.category || "市場";
+    return {
+      symbol: item.ticker || item.symbol || "市場",
+      name: item.companyName || item.name || "",
+      title,
+      source: sourceName(item.source),
+      tag,
+      why: item.why_matters || item.why || "已列入今日研究清單，需搭配來源狀態與策略想法交叉判讀。",
+      age: ago(item.date || item.as_of || item.updatedAt),
+      category: topicOf(String(title) + " " + String(tag)),
+      rank: item.rank || index + 1
+    };
+  }
+
+  function clientAnnouncementItem(item, index) {
+    const title = item.title || item.body || "官方重大訊息";
+    const tag = item.category || "公告";
+    return {
+      symbol: item.ticker || item.symbol || "公告",
+      name: item.companyName || item.name || "",
+      title,
+      source: sourceName(item.source || "mops"),
+      tag,
+      why: item.body ? String(item.body).slice(0, 72) : "官方來源已進入今日市場情報，請搭配策略想法做研究判讀。",
+      age: ago(item.date || item.updatedAt),
+      category: topicOf(String(title) + " " + String(tag)),
+      rank: index + 1
+    };
+  }
+
+  function clientMapIdea(item, index) {
+    const themes = (item.topThemes || []).map((theme) => theme && theme.name).filter(Boolean);
+    const decision = item.marketData?.decision || item.decision || "review";
+    const statusClass = decision === "allow" ? "allow" : decision === "block" ? "block" : "review";
+    const pct = item.quality?.grade === "strategy_ready"
+      ? Math.max(80, Math.round(Number(item.confidence || 0) * 100))
+      : item.quality?.grade === "reference_only"
+        ? Math.max(45, Math.round(Number(item.confidence || 0) * 85))
+        : Math.max(20, Math.round(Number(item.confidence || 0) * 70));
+    return {
+      symbol: item.symbol || "—",
+      companyName: item.companyName || item.symbol || "—",
+      sector: themes[0] || item.market || "台股",
+      meta: String(item.market || "台股") + " / " + String(themes[0] || "主題待確認"),
+      decision,
+      status: decision === "allow" ? "可觀察" : decision === "block" ? "不進流程" : "待確認",
+      statusClass,
+      direction: item.direction === "bullish" ? "偏多" : item.direction === "bearish" ? "偏空" : "中性",
+      score: (Number(item.score || 0) / 100).toFixed(2),
+      confidence: Number(item.confidence || 0) >= 0.75 ? "高" : Number(item.confidence || 0) >= 0.55 ? "中高" : Number(item.confidence || 0) >= 0.35 ? "中" : "低",
+      completeness: pct,
+      signalCount: item.signalCount || 0,
+      latest: ago(item.latestSignalAt),
+      reason: item.rationale?.primaryReason || item.marketData?.primaryReason || "候選理由待資料補齊。",
+      missing: item.quality?.primaryReason || "",
+      themes,
+      delta: index % 3 === 0 ? "0.06" : index % 3 === 1 ? "0.03" : "0.00"
+    };
+  }
+
+  async function clientMarketPayload() {
+    const [newsResult, announcementResult, finMindResult] = await Promise.all([
+      soft(apiGet("/api/v1/market-intel/news-top10")),
+      soft(apiGet("/api/v1/market-intel/announcements?days=30&limit=20&scope=market")),
+      soft(apiGet("/api/v1/data-sources/finmind/status"))
+    ]);
+    const news = newsResult.ok ? newsResult.data : null;
+    const announcements = announcementResult.ok ? announcementResult.data : null;
+    const finMind = finMindResult.ok ? finMindResult.data : null;
+    const aiItems = (news?.items || []).map(clientNewsItem);
+    const annItems = (announcements?.items || []).map(clientAnnouncementItem);
+    const items = (aiItems.length ? aiItems : annItems).slice(0, 12);
+    const counts = items.reduce((acc, item) => {
+      acc[item.category] = (acc[item.category] || 0) + 1;
+      return acc;
+    }, {});
+    const finMindLive = !!finMind && (finMind.state === "LIVE_READY" || (finMind.datasets || []).some((dataset) => dataset.state === "LIVE"));
+    const mopsLive = (announcements?.items?.length || 0) > 0 && (announcements?.failures || 0) === 0;
+    const aiLive = !!news?.items?.length && news.ai_call_success !== false;
+    return {
+      screen: "market-intel",
+      generatedAt: new Date().toISOString(),
+      stats: {
+        total: Math.max(news?.input_row_count || 0, items.length),
+        aiSelected: news?.items?.length || 0,
+        sourceOk: [mopsLive, finMindLive, aiLive].filter(Boolean).length,
+        sourceTotal: 4,
+        nextRefresh: news?.next_refresh_at ? ago(news.next_refresh_at).replace("前", "後") : "排程中"
+      },
+      topicCounts: { all: items.length, ai: counts.ai || 0, semi: counts.semi || 0, fin: counts.fin || 0, auto: counts.auto || 0 },
+      items,
+      sources: [
+        { name:"公開資訊觀測站", label:mopsLive ? "官方公告進入市場情報" : "等待今日公告", state:mopsLive ? "ok" : "warn", status:mopsLive ? "正常" : "待確認", fresh: announcements?.items?.[0]?.date ? ago(announcements.items[0].date) : "尚未同步" },
+        { name:"FinMind 市場資料", label:finMindLive ? "法人與市場資料可用" : "資料準備中", state:finMindLive ? "ok" : "warn", status:finMindLive ? "正常" : "待確認", fresh: finMind?.updatedAt ? ago(finMind.updatedAt) : "尚未同步" },
+        { name:"AI 精選訊息", label:aiLive ? "已完成市場篩選" : "等待今日精選", state:aiLive ? "ok" : "warn", status:aiLive ? "正常" : "待確認", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" },
+        { name:"主管機關公告", label:"資料欄位待確認", state:"warn", status:"待確認", fresh:"排程探測" }
+      ],
+      readiness: { coverage: Math.min(100, Math.round(items.length / 12 * 100)), freshness: finMindLive || aiLive ? 90 : 45, reviewQueue: Math.max(0, announcements?.failures || 0) }
+    };
+  }
+
+  async function clientIdeasPayload() {
+    const view = await apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=12&sort=score");
+    const items = (view?.items || []).map(clientMapIdea);
+    const summary = view?.summary || {
+      total: items.length,
+      allow: items.filter((item) => item.decision === "allow").length,
+      review: items.filter((item) => item.decision === "review").length,
+      block: items.filter((item) => item.decision === "block").length
+    };
+    return { screen:"strategy-ideas", generatedAt:view?.generatedAt || new Date().toISOString(), summary, items, selected:items[0] || null };
+  }
+
+  async function clientPaperPayload() {
+    const [healthResult, portfolioResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.all([
+      soft(apiGet("/api/v1/paper/health")),
+      soft(apiGet("/api/v1/paper/portfolio")),
+      soft(apiGet("/api/v1/paper/fills")),
+      soft(apiGet("/api/v1/paper/orders")),
+      soft(apiGet("/api/v1/portfolio/kgi/positions")),
+      soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score"))
+    ]);
+    const portfolio = portfolioResult.ok ? portfolioResult.data || [] : [];
+    const fills = fillsResult.ok ? fillsResult.data || [] : [];
+    const orders = ordersResult.ok ? ordersResult.data || [] : [];
+    const ideas = ideasResult.ok ? (ideasResult.data?.items || []).map(clientMapIdea) : [];
+    const selectedSymbol = portfolio[0]?.symbol || ideas[0]?.symbol || "2330";
+    const companiesResult = await soft(apiGet("/api/v1/companies"));
+    const company = companiesResult.ok ? (companiesResult.data || []).find((item) => String(item.ticker || "").toUpperCase() === String(selectedSymbol).toUpperCase()) : null;
+    const [quoteResult, ohlcvResult, bidAskResult, ticksResult] = await Promise.all([
+      company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/quote/realtime")) : soft(Promise.resolve(null)),
+      company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/ohlcv?interval=1d")) : soft(Promise.resolve([])),
+      soft(apiGet("/api/v1/kgi/quote/bidask?symbol=" + encodeURIComponent(selectedSymbol))),
+      soft(apiGet("/api/v1/kgi/quote/ticks?symbol=" + encodeURIComponent(selectedSymbol) + "&limit=16"))
+    ]);
+    const ohlcv = ohlcvResult.ok ? ohlcvResult.data || [] : [];
+    const lastBar = ohlcv.length ? ohlcv[ohlcv.length - 1] : null;
+    const prevBar = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2] : null;
+    const quote = quoteResult.ok ? quoteResult.data : null;
+    const lastPrice = quote?.lastPrice ?? lastBar?.close ?? portfolio[0]?.avgCostPerShare ?? null;
+    const previous = prevBar?.close ?? null;
+    const change = lastPrice != null && previous != null ? Number(lastPrice) - Number(previous) : null;
+    const changePct = change != null && previous ? change / Number(previous) * 100 : null;
+    const watchlist = portfolio.map((pos) => ({ symbol:pos.symbol, name:pos.symbol, meta:String(pos.netQtyShares || 0) + " 股 · " + String(pos.fillCount || 0) + " 筆成交", price:pos.symbol === selectedSymbol ? lastPrice : pos.avgCostPerShare, changePct:pos.symbol === selectedSymbol ? changePct : null }))
+      .concat(ideas.map((idea) => ({ symbol:idea.symbol, name:idea.companyName, meta:idea.status + " · " + idea.signalCount + " 訊號", price:null, changePct:null })))
+      .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index)
+      .slice(0, 10);
+    return {
+      screen:"paper-trading-room",
+      generatedAt:new Date().toISOString(),
+      health: healthResult.ok ? healthResult.data : null,
+      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:company?.chainPosition || ideas[0]?.sector || "台股", price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
+      watchlist,
+      ideas,
+      portfolio,
+      orders,
+      fills,
+      kgi:kgiResult.ok ? kgiResult.data : null,
+      ohlcv,
+      bidAsk:bidAskResult.ok ? bidAskResult.data : null,
+      ticks:ticksResult.ok ? (ticksResult.data?.ticks || []) : []
+    };
+  }
+
+  async function refreshClientLive() {
+    try {
+      const next = live.screen === "market-intel"
+        ? await clientMarketPayload()
+        : live.screen === "strategy-ideas"
+          ? await clientIdeasPayload()
+          : await clientPaperPayload();
+      live = Object.assign({}, live, next);
+      window.__IUF_FINAL_V031_LIVE__ = live;
+      if (live.screen === "market-intel") hydrateMarket();
+      if (live.screen === "strategy-ideas") hydrateIdeas();
+      if (live.screen === "paper-trading-room") hydratePaper();
+    } catch (error) {
+      window.__IUF_FINAL_V031_CLIENT_ERROR__ = error instanceof Error ? error.message : "client_refresh_failed";
+    }
+  }
 
   function hydrateMarket() {
     setCount("今日訊息", live.stats?.total ?? live.items?.length ?? 0);
@@ -540,9 +779,21 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       submit.querySelector("b").textContent = "預覽中...";
       const payload = { symbol: selected.symbol, side, orderType, qty, quantity_unit: unit, price: orderType === "market" ? null : px };
       try {
-        const preview = await fetch("/api/ui-final-v031-paper/preview", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+        const directPayload = Object.assign({}, payload, { idempotencyKey: "v031_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2) });
+        let preview;
+        try {
+          preview = { ok:true, data: await apiPost("/api/v1/paper/preview", directPayload) };
+        } catch {
+          preview = await fetch("/api/ui-final-v031-paper/preview", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+        }
         if (!preview.ok) throw new Error(preview.error || "preview_failed");
-        const confirmed = await fetch("/api/ui-final-v031-paper/submit", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+        const submitPayload = Object.assign({}, payload, { idempotencyKey: "v031_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2) });
+        let confirmed;
+        try {
+          confirmed = { ok:true, data: await apiPost("/api/v1/paper/submit", submitPayload) };
+        } catch {
+          confirmed = await fetch("/api/ui-final-v031-paper/submit", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+        }
         if (!confirmed.ok) throw new Error(confirmed.error || "submit_failed");
         submit.querySelector("b").textContent = "紙上委託已送出";
         setTimeout(() => location.reload(), 900);
@@ -558,6 +809,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
   if (live.screen === "market-intel") hydrateMarket();
   if (live.screen === "strategy-ideas") hydrateIdeas();
   if (live.screen === "paper-trading-room") hydratePaper();
+  refreshClientLive();
 })();
 </script>`;
 }
