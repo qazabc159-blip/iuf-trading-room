@@ -6,7 +6,14 @@
   "status": "RESEARCH_FORWARD_OBSERVATION",
   "labGateLevel": 9,
   "labGatePassed": 9,
-  "asOfDateTaipei": "2026-05-09T14:05:26+08:00",
+  "asOfDateTaipei": "2026-05-13T16:30:00+08:00",
+  "returnConventionVersion": "v47",
+  "displayReturnMode": "common_window_excess",
+  "sourceWindowType": "common_window_11mo",
+  "commonWindowStart": "2025-04-10",
+  "commonWindowEnd": "2026-03-06",
+  "commonWindowTradingDays": 223,
+  "caveatTextZh": "歷史研究數字 — 不可外推為未來表現預期。共同窗 2025-04-10 → 2026-03-06（約 11 個月）為三策略共用比較基準窗口；策略全期 22 月 NET 為另一組獨立數字。",
   "panelWindow": {
     "start": "2024-05-30",
     "end": "2026-03-26",
@@ -24,7 +31,12 @@
   },
   "headlineMetrics": {
     "returnConventionVersion": "explicit_absolute_vs_excess_v1",
-    "returnConventionNote": "v47 fix 2026-05-12: legacy reversed-name return fields removed. UI must read explicit absolute, benchmark, and excess fields only.",
+    "returnConventionNote": "v47 fix 2026-05-13: explicit common-window strategy / 0050 benchmark / excess fields added per Quant Lab truth pack (lab_real_strategy_state_2026_05_10). Legacy reversed-name return aliases are stripped by the API mapper. Common-window strategy net = +400.89%, 0050 same window +95.25%, excess +305.64pp (11mo 2025-04-10 -> 2026-03-06). 22mo full-window NET (after 120bps cost) = +759.87% preserved as netAbsoluteReturnAfterCost (different window — do NOT compare to 0050 common-window benchmark).",
+    "strategyNetAbsoluteReturnPct": 400.89,
+    "benchmark0050ReturnPct": 95.25,
+    "excessVs0050Pp": 305.64,
+    "hitRatePct": 0.9231,
+    "maxDrawdownNetPct": -0.1051,
     "netAbsoluteReturnAfterCost": 7.5987,
     "netAbsoluteReturnAfterCostAnnualized": 2.1064,
     "excessReturnOverBenchmark": 2.2202,
@@ -400,7 +412,6 @@
   "hardLines": {
     "no_real_orders": true,
     "no_broker_write": true,
-    "no_finmind_fetch": true,
     "no_inflate": true,
     "no_frozen_spec_change": true
   }

@@ -6,7 +6,14 @@
   "status": "BACKTESTED_RAW",
   "labGateLevel": null,
   "labGatePassed": null,
-  "asOfDateTaipei": "2026-05-09T15:30:14+08:00",
+  "asOfDateTaipei": "2026-05-13T16:30:00+08:00",
+  "returnConventionVersion": "v47",
+  "displayReturnMode": "net_absolute",
+  "sourceWindowType": "12mo_full",
+  "commonWindowStart": null,
+  "commonWindowEnd": null,
+  "commonWindowTradingDays": null,
+  "caveatTextZh": "歷史研究數字 — 不可外推為未來表現預期。本策略 BT 視窗 (2025-05 → 2026-04) 不在三策略共同窗 (2025-04-10 → 2026-03-06)；無法直接與 0050 同窗基準比較，僅顯示策略本身 12 月絕對淨報酬。",
   "panelWindow": {
     "start": "2025-05-01",
     "end": "2026-04-30",
@@ -28,7 +35,13 @@
   },
   "headlineMetrics": {
     "returnConventionVersion": "explicit_absolute_vs_excess_v1",
-    "returnConventionNote": "v41 fix 2026-05-12: strategy_002 uses TWD/PnL convention (totalPnlTwd / capitalBaseAssumedTwd), not compoundReturn. No reversed-name field exists here — labelling for cross-strategy consistency only. UI MUST display netAbsoluteReturnAfterCost on strategy detail pages; for strategy_002 derive netAbsoluteReturnAfterCost = totalPnlTwd / capitalBaseAssumedTwd = 0.378907 (i.e. +37.89% absolute on the 200k capital base, 12mo BT).",
+    "returnConventionNote": "v47 fix 2026-05-13: strategy_002 uses TWD/PnL convention (totalPnlTwd / capitalBaseAssumedTwd). Strategy 12mo NET (after cost, as pct of capital base) = +37.89%. BT window 2025-05-01 -> 2026-04-30 does NOT overlap the three-strategy common-window 2025-04-10 -> 2026-03-06; therefore benchmark0050ReturnPct + excessVs0050Pp are null with explicit null_reason. strategyNetAbsoluteReturnPct is reported on the same absolute-pct scale as cont_liq for cross-card parity (37.8907 ~= +37.89%).",
+    "strategyNetAbsoluteReturnPct": 37.8907,
+    "benchmark0050ReturnPct": null,
+    "excessVs0050Pp": null,
+    "null_reason": "no_common_window_with_0050_BT_window_disjoint_from_common_window",
+    "hitRatePct": 0.5514,
+    "maxDrawdownNetPct": -0.1085,
     "netAbsoluteReturnAfterCost": 0.378907,
     "totalTrades": 107,
     "winCount": 59,
@@ -676,7 +689,6 @@
   "hardLines": {
     "no_real_orders": true,
     "no_broker_write": true,
-    "no_finmind_fetch": true,
     "no_inflate": true,
     "no_frozen_spec_change": true,
     "no_status_upgrade_from_BACKTESTED_RAW": true
