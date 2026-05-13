@@ -931,14 +931,18 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     if (wl) wl.innerHTML = '<div class="group">'+esc((live.watchlist || []).length)+' 檔自選 / 候選</div>' + (live.watchlist || []).map((item, i) => '<div class="wrow '+(i===0?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
     const symInput = $("#t-sym"); if (symInput) symInput.value = (selected.symbol || "") + "　" + (selected.name || "");
     const priceInput = $("#t-price"); if (priceInput && selected.price != null) priceInput.value = Number(selected.price).toFixed(2);
-    const ordersBody = $('.ltab[data-lt="orders"] tbody');
-    if (ordersBody) ordersBody.innerHTML = (live.orders || []).slice(0, 12).map((row) => {
+    const ordersArr = (live.orders || []).slice(0, 12);
+    const ordersBody = $('#orders-body') || $('.ltab[data-lt="orders"] tbody');
+    if (ordersBody) ordersBody.innerHTML = ordersArr.map((row) => {
       const intent = row.intent || {};
       const fill = row.fill || {};
       return '<tr><td class="ts">'+esc((intent.createdAt || "").slice(11,19) || "—")+'</td><td class="sym">'+esc(intent.symbol)+'</td><td><span class="side '+(intent.side === "sell" ? "sell" : "buy")+'">'+(intent.side === "sell" ? "賣出" : "買進")+'</span></td><td>'+esc(intent.orderType || "—")+'</td><td class="r px">'+price(intent.price)+'</td><td class="r">'+esc(intent.qty ?? "—")+' '+esc(intent.quantity_unit === "LOT" ? "張" : "股")+'</td><td class="r">'+esc(fill.fillQty ?? 0)+'</td><td><span class="st '+(intent.status === "FILLED" ? "filled" : "pending")+'"><i></i>'+esc(intent.status || "—")+'</span></td><td class="ts">'+esc(intent.id || "—")+'</td></tr>';
-    }).join("") || '<tr><td colspan="9">目前沒有紙上委託。</td></tr>';
-    const fillsBody = $('.ltab[data-lt="fills"] tbody');
-    if (fillsBody) fillsBody.innerHTML = (live.fills || []).slice(0, 12).map((fill) => '<tr><td class="ts">'+esc((fill.fillTime || "").slice(5,16) || "—")+'</td><td class="sym">'+esc(fill.symbol)+'</td><td><span class="side '+(fill.side === "sell" ? "sell" : "buy")+'">'+(fill.side === "sell" ? "賣出" : "買進")+'</span></td><td class="r px">'+price(fill.fillPrice)+'</td><td class="r">'+esc(fill.fillQty)+'</td><td class="r">'+n(Number(fill.fillQty || 0) * Number(fill.fillPrice || 0))+'</td><td class="ts">'+esc(fill.orderId)+'</td></tr>').join("") || '<tr><td colspan="7">目前沒有成交紀錄。</td></tr>';
+    }).join("") || '<tr><td colspan="9" style="color:var(--fg-3)">尚無委託</td></tr>';
+    const badgeOrders = $("#badge-orders"); if (badgeOrders) badgeOrders.textContent = String(ordersArr.length);
+    const fillsArr = (live.fills || []).slice(0, 12);
+    const fillsBody = $('#fills-body') || $('.ltab[data-lt="fills"] tbody');
+    if (fillsBody) fillsBody.innerHTML = fillsArr.map((fill) => '<tr><td class="ts">'+esc((fill.fillTime || "").slice(5,16) || "—")+'</td><td class="sym">'+esc(fill.symbol)+'</td><td><span class="side '+(fill.side === "sell" ? "sell" : "buy")+'">'+(fill.side === "sell" ? "賣出" : "買進")+'</span></td><td class="r px">'+price(fill.fillPrice)+'</td><td class="r">'+esc(fill.fillQty)+'</td><td class="r">'+n(Number(fill.fillQty || 0) * Number(fill.fillPrice || 0))+'</td><td class="ts">'+esc(fill.orderId)+'</td></tr>').join("") || '<tr><td colspan="7" style="color:var(--fg-3)">尚無成交紀錄</td></tr>';
+    const badgeFills = $("#badge-fills"); if (badgeFills) badgeFills.textContent = String(fillsArr.length);
     const posBody = $('.ltab[data-lt="positions"] tbody');
     if (posBody) posBody.innerHTML = (live.portfolio || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">'+price(pos.avgCostPerShare)+'</td><td class="r px">'+price(pos.symbol === selected.symbol ? selected.price : pos.avgCostPerShare)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.symbol === selected.symbol ? selected.price || 0 : pos.avgCostPerShare || 0))+'</td><td class="r">需即時價換算</td><td class="r">—</td><td class="ts">'+esc(pos.fillCount)+' 筆</td></tr>').join("") || '<tr><td colspan="9">目前沒有模擬庫存。</td></tr>';
     const kgiBody = $('.ltab[data-lt="kgi"] tbody');
@@ -1173,6 +1177,9 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
   if (live.screen === "strategy-ideas") hydrateIdeas();
   if (live.screen === "paper-trading-room") hydratePaper();
   refreshClientLive();
+  if (live.screen === "paper-trading-room") {
+    setInterval(refreshClientLive, 15000);
+  }
 })();
 </script>`;
 }

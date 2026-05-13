@@ -302,8 +302,8 @@
     <!-- ledger -->
     <div class="ledger">
       <div class="lhead">
-        <button class="tb on" data-lt="orders">委託 <span class="c">3</span></button>
-        <button class="tb" data-lt="fills">成交紀錄 <span class="c">8</span></button>
+        <button class="tb on" data-lt="orders">委託 <span class="c" id="badge-orders">0</span></button>
+        <button class="tb" data-lt="fills">成交紀錄 <span class="c" id="badge-fills">0</span></button>
         <button class="tb" data-lt="positions">模擬庫存 <span class="c">1</span></button>
         <button class="tb" data-lt="kgi">KGI 讀取 <span class="c">2</span></button>
         <button class="tb" data-lt="events">執行事件 / 風控 <span class="c">12</span></button>
@@ -316,10 +316,8 @@
       <div class="ltab on" data-lt="orders">
         <table>
           <thead><tr><th>時間</th><th>代碼</th><th>方向</th><th>類型</th><th class="r">委託價</th><th class="r">數量</th><th class="r">已成交</th><th>狀態</th><th>單號</th></tr></thead>
-          <tbody>
-            <tr><td class="ts">13:24:08</td><td class="sym">2330</td><td><span class="side buy">買進</span></td><td>限價</td><td class="r px">962.00</td><td class="r">1 張</td><td class="r">1 張</td><td><span class="st filled"><i></i>已成交</span></td><td class="ts">PO-3318</td></tr>
-            <tr><td class="ts">13:18:42</td><td class="sym">2330</td><td><span class="side buy">買進</span></td><td>限價</td><td class="r px">958.00</td><td class="r">1 張</td><td class="r">1 張</td><td><span class="st filled"><i></i>已成交</span></td><td class="ts">PO-3317</td></tr>
-            <tr><td class="ts">10:42:11</td><td class="sym">2382</td><td><span class="side buy">買進</span></td><td>限價</td><td class="r px">285.00</td><td class="r">2 張</td><td class="r">0</td><td><span class="st pending"><i></i>等待成交</span></td><td class="ts">PO-3311</td></tr>
+          <tbody id="orders-body">
+            <tr><td colspan="9" style="color:var(--fg-3)">尚無委託</td></tr>
           </tbody>
         </table>
       </div>
@@ -328,15 +326,8 @@
       <div class="ltab" data-lt="fills">
         <table>
           <thead><tr><th>時間</th><th>代碼</th><th>方向</th><th class="r">成交價</th><th class="r">數量</th><th class="r">金額</th><th>對應委託</th></tr></thead>
-          <tbody>
-            <tr><td class="ts">13:24:08</td><td class="sym">2330</td><td><span class="side buy">買進</span></td><td class="r px">962.00</td><td class="r">1 張</td><td class="r">962,000</td><td class="ts">PO-3318</td></tr>
-            <tr><td class="ts">13:18:42</td><td class="sym">2330</td><td><span class="side buy">買進</span></td><td class="r px">958.00</td><td class="r">1 張</td><td class="r">958,000</td><td class="ts">PO-3317</td></tr>
-            <tr><td class="ts">04-22 10:18</td><td class="sym">2330</td><td><span class="side sell">賣出</span></td><td class="r px">948.50</td><td class="r">1 張</td><td class="r">948,500</td><td class="ts">PO-3265</td></tr>
-            <tr><td class="ts">04-18 13:30</td><td class="sym">2454</td><td><span class="side buy">買進</span></td><td class="r px">1,402.0</td><td class="r">1 張</td><td class="r">1,402,000</td><td class="ts">PO-3221</td></tr>
-            <tr><td class="ts">04-15 09:42</td><td class="sym">2382</td><td><span class="side buy">買進</span></td><td class="r px">274.50</td><td class="r">3 張</td><td class="r">823,500</td><td class="ts">PO-3198</td></tr>
-            <tr><td class="ts">04-12 11:08</td><td class="sym">3661</td><td><span class="side sell">賣出</span></td><td class="r px">3,420.0</td><td class="r">1 張</td><td class="r">3,420,000</td><td class="ts">PO-3174</td></tr>
-            <tr><td class="ts">04-10 13:25</td><td class="sym">2454</td><td><span class="side sell">賣出</span></td><td class="r px">1,398.0</td><td class="r">1 張</td><td class="r">1,398,000</td><td class="ts">PO-3142</td></tr>
-            <tr><td class="ts">04-08 10:55</td><td class="sym">2330</td><td><span class="side buy">買進</span></td><td class="r px">935.00</td><td class="r">2 張</td><td class="r">1,870,000</td><td class="ts">PO-3098</td></tr>
+          <tbody id="fills-body">
+            <tr><td colspan="7" style="color:var(--fg-3)">尚無成交紀錄</td></tr>
           </tbody>
         </table>
       </div>
