@@ -331,7 +331,7 @@ function DrawdownChart({ points, maxDrawdown, maxDrawdownDate }: { points: { dat
 // ── D. KPI Grid (v46 common-window fields) ────────────────────────────────────────
 
 function HeadlineKpiGrid({ metrics }: { metrics: LabStrategySnapshot["headlineMetrics"] }) {
-  // v47: only use strategyNetAbsoluteReturnPct (compoundReturn removed from render path)
+  // v47: only use explicit strategy / benchmark / excess fields.
   const netReturn: number | null = metrics.strategyNetAbsoluteReturnPct ?? null;
   const hitRatePct = metrics.hitRatePct != null ? metrics.hitRatePct : metrics.hitRate;
   const maxDD = metrics.maxDrawdownNetPct != null ? metrics.maxDrawdownNetPct : metrics.maxDrawdown;
@@ -507,7 +507,7 @@ export function StrategyChartPanel({ snapshot }: { snapshot: LabStrategySnapshot
       </div>
       {/* A. Equity Curve */}
       <div className="_chart-section">
-        <div className="_chart-section-title">累積報酬折線圖（Equity Curve）</div>
+        <div className="_chart-section-title">策略淨值走勢（同窗口）</div>
         <EquityCurveChart points={snapshot.equityCurve.points} />
       </div>
       {/* B. Monthly Returns */}
