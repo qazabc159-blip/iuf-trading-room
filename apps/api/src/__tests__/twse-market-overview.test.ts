@@ -16,8 +16,11 @@ import test from "node:test";
 import {
   getTwseMarketOverview,
   getTwseIndustryHeatmap,
+  getTwseLeaders,
   _resetTwseOverviewCache,
   _resetTwseHeatmapCache,
+  _resetStockDayAllCache,
+  _resetTwseLeadersCache,
   type TwseMarketOverviewResult,
   type TwseHeatmapTile
 } from "../data-sources/twse-openapi-client.js";
@@ -111,23 +114,27 @@ test("T1: getTwseMarketOverview uses MI_5MINS_INDEX primary — today ts and cor
       mi5Called = true;
       // Return today's data with correct dateStr so it passes the date check
       const body = makeMi5MinsIndexResponse(todayStr, "41,898.32", "41,374.50");
+      const bodyText = JSON.stringify(body);
       return {
         ok: true,
         status: 200,
         headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        text: async () => bodyText,
         json: async () => body
       } as unknown as Response;
     }
     if (url.includes("MI_INDEX")) {
       miIndexCalled = true;
+      const body = makeMiIndexResponse();
       return {
         ok: true,
         status: 200,
         headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
-        json: async () => makeMiIndexResponse()
+        text: async () => JSON.stringify(body),
+        json: async () => body
       } as unknown as Response;
     }
-    return { ok: false, status: 404, headers: { get: () => null } as unknown as Headers, json: async () => ({}) } as unknown as Response;
+    return { ok: false, status: 404, headers: { get: () => null } as unknown as Headers, text: async () => "{}", json: async () => ({}) } as unknown as Response;
   }) as typeof fetch;
 
   const result = await getTwseMarketOverview({ fetchOverride: mockFetch });
@@ -167,23 +174,27 @@ test("T1b: getTwseMarketOverview falls back to MI_INDEX when MI_5MINS_INDEX fail
     const url = String(input);
     if (url.includes("MI_5MINS_INDEX")) {
       // Simulate non-trading day (stat not "OK")
+      const body = { stat: "N/A", date: "20260513" };
       return {
         ok: true,
         status: 200,
         headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
-        json: async () => ({ stat: "N/A", date: "20260513" })
+        text: async () => JSON.stringify(body),
+        json: async () => body
       } as unknown as Response;
     }
     if (url.includes("MI_INDEX")) {
       miIndexCalled = true;
+      const body = makeMiIndexResponse();
       return {
         ok: true,
         status: 200,
         headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
-        json: async () => makeMiIndexResponse()
+        text: async () => JSON.stringify(body),
+        json: async () => body
       } as unknown as Response;
     }
-    return { ok: false, status: 404, headers: { get: () => null } as unknown as Headers, json: async () => ({}) } as unknown as Response;
+    return { ok: false, status: 404, headers: { get: () => null } as unknown as Headers, text: async () => "{}", json: async () => ({}) } as unknown as Response;
   }) as typeof fetch;
 
   const result = await getTwseMarketOverview({ fetchOverride: mockFetch });
@@ -270,6 +281,56 @@ test("T3: getTwseMarketOverview timeout → returns null (fail-open)", async () 
 
   // Must return null — not throw
   assert.equal(result, null, "must return null when both attempts fail");
+});
+
+// ── T3b: getTwseLeaders — top 5 gainers / losers / mostActive from STOCK_DAY_ALL ──
+
+test("T3b: getTwseLeaders — returns top gainers / losers / mostActive from STOCK_DAY_ALL", async () => {
+  _resetTwseLeadersCache();
+  _resetStockDayAllCache();
+
+  const mockFetch = (async (_input: URL | RequestInfo): Promise<Response> => {
+    const body = makeStockDayAllResponse();
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+      text: async () => JSON.stringify(body),
+      json: async () => body
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  const result = await getTwseLeaders({ fetchOverride: mockFetch, topN: 5 });
+
+  assert.equal(result.source, "twse_openapi");
+  assert.ok(Array.isArray(result.topGainers), "topGainers must be array");
+  assert.ok(Array.isArray(result.topLosers), "topLosers must be array");
+  assert.ok(Array.isArray(result.mostActive), "mostActive must be array");
+
+  // From mock: 2330 (+0.89%) and 2454 (+0.92%) are gainers; 2317 (-0.90%) is loser
+  assert.ok(result.topGainers.length >= 1, "must have at least 1 gainer");
+  assert.ok(result.topLosers.length >= 1, "must have at least 1 loser");
+  assert.ok(result.mostActive.length >= 1, "must have at least 1 mostActive");
+
+  // Top gainer should be 2454 (0.92%) or 2330 (0.89%)
+  const gainerSymbols = result.topGainers.map(s => s.symbol);
+  assert.ok(gainerSymbols.includes("2454") || gainerSymbols.includes("2330"), "top gainer must be from semiconductor stocks");
+
+  // Top loser should be 2317
+  assert.equal(result.topLosers[0].symbol, "2317", "top loser must be Foxconn (2317)");
+  assert.ok(result.topLosers[0].changePct < 0, "loser changePct must be negative");
+
+  // Most active by volume: 2330 has TradeValue=121,891,443,938 (highest)
+  assert.equal(result.mostActive[0].symbol, "2330", "most active by volume must be TSMC (2330)");
+
+  // Stock shape validation
+  const s = result.topGainers[0];
+  assert.equal(typeof s.symbol, "string");
+  assert.equal(typeof s.name, "string");
+  assert.equal(typeof s.last, "number");
+  assert.equal(typeof s.changePct, "number");
+  assert.equal(typeof s.volume, "number");
+  assert.equal(s.source, "twse_openapi");
 });
 
 // ── T4: getTwseIndustryHeatmap cache hit ──────────────────────────────────────
