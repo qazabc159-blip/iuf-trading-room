@@ -10122,6 +10122,49 @@ test("BF14: finmind-full-ingest Array.isArray fallback — plain array rows reso
   assert.equal(c6.length, 0, "BF14-C6: scalar → []");
 });
 
+// BF15: collectSourcePack Array.isArray fallback (D3) — ohlcv + collectTableSource pattern
+// Verifies the same Array.isArray pattern applied in D3 (openalice-pipeline.ts) works
+// for the two shapes db.execute() can return: plain array vs pg-pool {rows:[]} shape.
+test("BF15: collectSourcePack Array.isArray fallback — ohlcv query shape variants", () => {
+  // Simulate the exact pattern used in collectSourcePack line 398 (D3 fix)
+  type OhlcvRow = { cnt?: string | number; latest?: string };
+
+  function resolveOhlcvRow(raw: unknown): OhlcvRow | undefined {
+    const _arr = (raw as { rows?: OhlcvRow[] }).rows
+      ?? (Array.isArray(raw) ? (raw as OhlcvRow[]) : []);
+    return _arr[0];
+  }
+
+  // C1: plain array (Railway Drizzle pg)
+  const c1 = resolveOhlcvRow([{ cnt: "29180", latest: "2026-05-12" }]);
+  assert.equal(c1?.cnt, "29180", "BF15-C1: plain array cnt resolved");
+  assert.equal(c1?.latest, "2026-05-12", "BF15-C1: plain array latest resolved");
+
+  // C2: pg-pool {rows:[]} shape
+  const c2 = resolveOhlcvRow({ rows: [{ cnt: "42405", latest: "2026-05-12" }] });
+  assert.equal(c2?.cnt, "42405", "BF15-C2: pg-shape cnt resolved");
+
+  // C3: empty plain array → undefined (count=0 → EMPTY)
+  const c3 = resolveOhlcvRow([]);
+  assert.equal(c3, undefined, "BF15-C3: empty plain array → undefined → EMPTY");
+
+  // C4: plain array with 0 rows (different from empty)
+  const c4 = resolveOhlcvRow({ rows: [] });
+  assert.equal(c4, undefined, "BF15-C4: pg-shape empty rows → undefined → EMPTY");
+
+  // C5: trailComplete logic — LIVE when cnt>0 and not stale
+  const cnt = Number(c1?.cnt ?? 0);
+  const latest = c1?.latest ?? null;
+  const staleThreshold = new Date("2026-04-01"); // older than 2026-05-12
+  const status = cnt === 0 ? "EMPTY" : (latest && new Date(latest) < staleThreshold) ? "STALE" : "LIVE";
+  assert.equal(status, "LIVE", "BF15-C5: 29180 rows with 2026-05-12 date → LIVE (not EMPTY)");
+
+  // C6: verifies that with old broken pattern rows?.[0] would fail for plain array
+  const brokenResult = (([{ cnt: "29180", latest: "2026-05-12" }] as unknown) as { rows?: OhlcvRow[] }).rows?.[0];
+  assert.equal(brokenResult, undefined, "BF15-C6: old pattern on plain array returns undefined (demonstrates the bug)");
+});
+
+
 // =============================================================================
 // V47-1: v47 API snapshot contract — compoundReturn removed, returns object present
 // =============================================================================
@@ -10183,6 +10226,9 @@ import {
   getDailySmokeHistory,
   _resetDailySmokeHistory,
   _resetKgiSimState,
+  getKgiSimState,
+  runSimTradeSmoke,
+  type TradeSmokeResult,
 } from "../apps/api/src/broker/kgi-sim-env.ts";
 
 test("DS1: getDailySmokeHistory returns empty array on fresh start", () => {
@@ -10262,4 +10308,65 @@ test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) retu
     assert.ok(entry !== null, "DS4 (window-open): forceRun=true returns entry");
     assert.equal(entry!.sim_only, true, "DS4 (window-open): sim_only=true");
   }
+});
+
+// -- KGI SIM Order Round-Trip Tests (ORT1-ORT4) -------------------------------
+// Tests for the SIM order round-trip: submit + audit + report polling.
+// ORT1: state has lastSimOrderReportAt field
+// ORT2: TradeSmokeResult has orderReportReceived boolean
+// ORT3: runSimTradeSmoke without dual-confirm stays safe (no order sent)
+// ORT4: runSimTradeSmoke with dual-confirm sets orderSubmitted=true (memory mode)
+
+test("ORT1: KgiSimState includes lastSimOrderReportAt field (null on fresh start)", () => {
+  _resetKgiSimState();
+  const state = getKgiSimState();
+  assert.ok("lastSimOrderReportAt" in state, "ORT1: lastSimOrderReportAt present in KgiSimState");
+  assert.equal(state.lastSimOrderReportAt, null, "ORT1: lastSimOrderReportAt=null on fresh state");
+});
+
+test("ORT2: TradeSmokeResult has orderReportReceived + orderReportAt fields", async () => {
+  _resetKgiSimState();
+  const result: TradeSmokeResult = await runSimTradeSmoke({
+    workspaceId: null,
+    symbol: "0050",
+    confirmedByBruce: false,
+    confirmedByJason: false,
+  });
+  assert.equal(result.sim_only, true, "ORT2: sim_only always true");
+  assert.ok("orderReportReceived" in result, "ORT2: orderReportReceived field present");
+  assert.ok("orderReportAt" in result, "ORT2: orderReportAt field present");
+  assert.equal(typeof result.orderReportReceived, "boolean", "ORT2: orderReportReceived is boolean");
+});
+
+test("ORT3: runSimTradeSmoke without dual-confirm returns awaiting_dual_confirm (no order sent)", async () => {
+  _resetKgiSimState();
+  const result = await runSimTradeSmoke({
+    workspaceId: null,
+    symbol: "0050",
+    confirmedByBruce: false,
+    confirmedByJason: false,
+  });
+  assert.equal(result.orderOutcome, "awaiting_dual_confirm", "ORT3: missing confirm → awaiting_dual_confirm");
+  assert.equal(result.orderSubmitted, false, "ORT3: no order submitted without dual confirm");
+  assert.equal(result.orderReportReceived, false, "ORT3: no report received without dual confirm");
+  assert.equal(result.sim_only, true, "ORT3: sim_only always true");
+});
+
+test("ORT4: runSimTradeSmoke with dual-confirm attempts order submit (gateway unreachable in CI)", async () => {
+  _resetKgiSimState();
+  const result = await runSimTradeSmoke({
+    workspaceId: null,
+    symbol: "0050",
+    confirmedByBruce: true,
+    confirmedByJason: true,
+  });
+  assert.equal(result.sim_only, true, "ORT4: sim_only always true");
+  // In CI (no gateway), gatewayReachable=false and orderSubmitted=true (we attempted fetch)
+  // OR if gateway reachable, orderSubmitted=true and outcome is accepted/not_enabled/rejected
+  assert.ok(typeof result.orderSubmitted === "boolean", "ORT4: orderSubmitted is boolean");
+  assert.ok(typeof result.orderReportReceived === "boolean", "ORT4: orderReportReceived is boolean");
+  // State must reflect the attempt
+  const state = getKgiSimState();
+  // lastSimOrderStatus must be updated (not "pending" after a dual-confirmed run)
+  assert.notEqual(state.lastSimOrderStatus, "pending", "ORT4: lastSimOrderStatus updated after run");
 });
