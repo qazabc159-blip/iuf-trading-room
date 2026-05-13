@@ -1427,6 +1427,29 @@ export async function getKgiCoreHeatmap() {
   return requestRaw<KgiCoreHeatmap | { data: KgiCoreHeatmap }>("/api/v1/market/heatmap/kgi-core");
 }
 
+export type MarketInstitutionalLine = {
+  name: string;
+  buy: number;
+  sell: number;
+  net: number;
+};
+
+export type MarketInstitutionalSummary = {
+  asOf: string | null;
+  totalNet: number | null;
+  institutions: MarketInstitutionalLine[];
+  topNetBuy: Array<{ stockId: string; net: number }>;
+  topNetSell: Array<{ stockId: string; net: number }>;
+  source: string;
+  state: string;
+  staleAfterSec?: number;
+  reason?: string;
+};
+
+export async function getMarketInstitutionalSummary() {
+  return requestRaw<MarketInstitutionalSummary>("/api/v1/market/institutional-summary/finmind");
+}
+
 export async function getMarketDataProviders() {
   return request<QuoteProviderStatus[]>("/api/v1/market-data/providers");
 }

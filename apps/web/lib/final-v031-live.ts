@@ -6,11 +6,16 @@ import {
   getKgiBidAsk,
   getKgiTicks,
   getMarketIntelAnnouncements,
+  getMarketInstitutionalSummary,
   getNewsTop10,
   getStrategyIdeas,
+  getTwseMarketHeatmap,
   type CompanyAnnouncement,
+  type MarketInstitutionalLine,
+  type MarketInstitutionalSummary,
   type NewsAiItem,
   type OhlcvBar,
+  type TwseIndustryHeatmapTile,
 } from "@/lib/api";
 import type { StrategyIdeasView } from "@iuf-trading-room/contracts";
 import {
@@ -94,16 +99,56 @@ function mapAnnouncement(item: CompanyAnnouncement, index: number) {
   };
 }
 
+function mapHeatmapTile(tile: TwseIndustryHeatmapTile) {
+  const pct = tile.avgChangePct ?? 0;
+  const intensity = Math.min(1, Math.abs(pct) / 4);
+  const tone = pct > 0.3 ? "up" : pct < -0.3 ? "dn" : "flat";
+  return {
+    industry: tile.industry,
+    avgChangePct: pct,
+    gainerCount: tile.gainerCount ?? 0,
+    loserCount: tile.loserCount ?? 0,
+    stockCount: tile.stockCount ?? 0,
+    tone,
+    intensity: Math.round(intensity * 100),
+    label: (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%",
+  };
+}
+
+function mapInstitutional(raw: MarketInstitutionalSummary) {
+  const institutions = (raw.institutions ?? []) as MarketInstitutionalLine[];
+  const foreign = institutions.find((inst) => inst.name?.includes("外")) ?? null;
+  const invest = institutions.find((inst) => inst.name?.includes("投信")) ?? null;
+  const dealer = institutions.find((inst) => inst.name?.includes("自營")) ?? null;
+  return {
+    asOf: raw.asOf ?? null,
+    state: raw.state ?? "unavailable",
+    totalNet: raw.totalNet ?? null,
+    foreign: foreign ? { buy: foreign.buy, sell: foreign.sell, net: foreign.net } : null,
+    invest: invest ? { buy: invest.buy, sell: invest.sell, net: invest.net } : null,
+    dealer: dealer ? { buy: dealer.buy, sell: dealer.sell, net: dealer.net } : null,
+    topNetBuy: (raw.topNetBuy ?? []).slice(0, 5),
+    topNetSell: (raw.topNetSell ?? []).slice(0, 5),
+  };
+}
+
 async function buildMarketIntelPayload() {
-  const [newsResult, announcementsResult, finMindResult] = await Promise.allSettled([
+  const [newsResult, announcementsResult, finMindResult, heatmapResult, institutionalResult] = await Promise.allSettled([
     getNewsTop10(),
     getMarketIntelAnnouncements({ days: 30, limit: 20, scope: "market" }),
     getFinMindStatus(),
+    getTwseMarketHeatmap(),
+    getMarketInstitutionalSummary(),
   ]);
 
   const news = newsResult.status === "fulfilled" ? newsResult.value.data : null;
   const announcements = announcementsResult.status === "fulfilled" ? announcementsResult.value.data : null;
   const finMind = finMindResult.status === "fulfilled" ? finMindResult.value.data : null;
+  const heatmapRaw = heatmapResult.status === "fulfilled" ? heatmapResult.value : null;
+  const institutionalRaw = institutionalResult.status === "fulfilled" ? institutionalResult.value : null;
+
+  const heatmapTiles = (heatmapRaw?.data ?? []).map(mapHeatmapTile);
+  const institutional = institutionalRaw ? mapInstitutional(institutionalRaw as MarketInstitutionalSummary) : null;
 
   const aiItems = news?.items?.map(mapNewsItem) ?? [];
   const announcementItems = announcements?.items?.map(mapAnnouncement) ?? [];
@@ -174,6 +219,8 @@ async function buildMarketIntelPayload() {
       freshness: finMindLive || aiLive ? 90 : 45,
       reviewQueue: Math.max(0, announcements?.failures ?? 0),
     },
+    heatmap: heatmapTiles,
+    institutional,
   };
 }
 
@@ -519,15 +566,53 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     };
   }
 
+  function clientMapHeatmapTile(tile) {
+    const pct = tile.avgChangePct ?? 0;
+    const intensity = Math.min(1, Math.abs(pct) / 4);
+    const tone = pct > 0.3 ? "up" : pct < -0.3 ? "dn" : "flat";
+    return {
+      industry: tile.industry,
+      avgChangePct: pct,
+      gainerCount: tile.gainerCount || 0,
+      loserCount: tile.loserCount || 0,
+      stockCount: tile.stockCount || 0,
+      tone,
+      intensity: Math.round(intensity * 100),
+      label: (pct >= 0 ? "+" : "") + Number(pct).toFixed(2) + "%"
+    };
+  }
+
+  function clientMapInstitutional(raw) {
+    if (!raw) return null;
+    const institutions = raw.institutions || [];
+    const foreign = institutions.find((inst) => String(inst.name || "").includes("外")) || null;
+    const invest = institutions.find((inst) => String(inst.name || "").includes("投信")) || null;
+    const dealer = institutions.find((inst) => String(inst.name || "").includes("自營")) || null;
+    return {
+      asOf: raw.asOf || null,
+      state: raw.state || "unavailable",
+      totalNet: raw.totalNet ?? null,
+      foreign: foreign ? { buy: foreign.buy, sell: foreign.sell, net: foreign.net } : null,
+      invest: invest ? { buy: invest.buy, sell: invest.sell, net: invest.net } : null,
+      dealer: dealer ? { buy: dealer.buy, sell: dealer.sell, net: dealer.net } : null,
+      topNetBuy: (raw.topNetBuy || []).slice(0, 5),
+      topNetSell: (raw.topNetSell || []).slice(0, 5)
+    };
+  }
+
   async function clientMarketPayload() {
-    const [newsResult, announcementResult, finMindResult] = await Promise.all([
+    const [newsResult, announcementResult, finMindResult, heatmapResult, institutionalResult] = await Promise.all([
       soft(apiGet("/api/v1/market-intel/news-top10")),
       soft(apiGet("/api/v1/market-intel/announcements?days=30&limit=20&scope=market")),
-      soft(apiGet("/api/v1/data-sources/finmind/status"))
+      soft(apiGet("/api/v1/data-sources/finmind/status")),
+      soft(apiGet("/api/v1/market/heatmap/twse")),
+      soft(apiGet("/api/v1/market/institutional-summary/finmind"))
     ]);
     const news = newsResult.ok ? newsResult.data : null;
     const announcements = announcementResult.ok ? announcementResult.data : null;
     const finMind = finMindResult.ok ? finMindResult.data : null;
+    const heatmapRaw = heatmapResult.ok ? heatmapResult.data : null;
+    const institutionalRaw = institutionalResult.ok ? institutionalResult.data : null;
     const aiItems = (news?.items || []).map(clientNewsItem);
     const annItems = (announcements?.items || []).map(clientAnnouncementItem);
     const items = (aiItems.length ? aiItems : annItems).slice(0, 12);
@@ -538,6 +623,8 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     const finMindLive = !!finMind && (finMind.state === "LIVE_READY" || (finMind.datasets || []).some((dataset) => dataset.state === "LIVE"));
     const mopsLive = (announcements?.items?.length || 0) > 0 && (announcements?.failures || 0) === 0;
     const aiLive = !!news?.items?.length && news.ai_call_success !== false;
+    const heatmapTiles = (heatmapRaw?.data || []).map(clientMapHeatmapTile);
+    const institutional = clientMapInstitutional(institutionalRaw);
     return {
       screen: "market-intel",
       generatedAt: new Date().toISOString(),
@@ -556,7 +643,9 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
         { name:"AI 精選訊息", label:aiLive ? "已完成市場篩選" : "等待今日精選", state:aiLive ? "ok" : "warn", status:aiLive ? "正常" : "待確認", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" },
         { name:"主管機關公告", label:"資料欄位待確認", state:"warn", status:"待確認", fresh:"排程探測" }
       ],
-      readiness: { coverage: Math.min(100, Math.round(items.length / 12 * 100)), freshness: finMindLive || aiLive ? 90 : 45, reviewQueue: Math.max(0, announcements?.failures || 0) }
+      readiness: { coverage: Math.min(100, Math.round(items.length / 12 * 100)), freshness: finMindLive || aiLive ? 90 : 45, reviewQueue: Math.max(0, announcements?.failures || 0) },
+      heatmap: heatmapTiles,
+      institutional
     };
   }
 
@@ -668,6 +757,57 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     if (bars[0]) { bars[0].dataset.bar = String(live.readiness?.coverage ?? 0); bars[0].style.width = bars[0].dataset.bar + "%"; }
     if (bars[1]) { bars[1].dataset.bar = String(live.readiness?.freshness ?? 0); bars[1].style.width = bars[1].dataset.bar + "%"; }
     if (bars[2]) { bars[2].dataset.bar = String(Math.min(100, (live.readiness?.reviewQueue ?? 0) * 20)); bars[2].style.width = bars[2].dataset.bar + "%"; }
+
+    // ── Heatmap tiles ──────────────────────────────────────────────────────────
+    const heatGrid = $("#iuf-heatmap-grid");
+    if (heatGrid) {
+      const tiles = live.heatmap || [];
+      if (tiles.length) {
+        heatGrid.innerHTML = tiles.slice(0, 30).map((tile) => {
+          const alpha = Math.max(0.08, tile.intensity / 100);
+          const bg = tile.tone === "up"
+            ? "rgba(0,210,110," + alpha + ")"
+            : tile.tone === "dn"
+              ? "rgba(240,60,60," + alpha + ")"
+              : "rgba(120,120,140,0.08)";
+          const cls = tile.tone === "up" ? "up" : tile.tone === "dn" ? "dn" : "flat";
+          return '<div class="htile" style="background:' + bg + '" title="' + esc(tile.industry) + ' 共 ' + esc(tile.stockCount) + ' 檔"><div class="nm">' + esc(tile.industry) + '</div><div class="pct ' + cls + '">' + esc(tile.label) + '</div><div class="cnt">' + esc(tile.gainerCount) + '↑ ' + esc(tile.loserCount) + '↓</div></div>';
+        }).join("");
+      } else {
+        heatGrid.innerHTML = '<div style="color:var(--fg-3);font:12px/2 var(--sans);text-align:center;padding:16px">產業熱力圖資料同步中</div>';
+      }
+    }
+
+    // ── Institutional buy/sell totals ──────────────────────────────────────────
+    const inst = live.institutional;
+    const instPanel = $("#iuf-institutional-panel");
+    if (instPanel && inst) {
+      const fmtNet = (v) => {
+        if (v == null) return "—";
+        const abs = Math.abs(Number(v));
+        const sign = Number(v) >= 0 ? "+" : "−";
+        if (abs >= 1e8) return sign + (abs / 1e8).toFixed(1) + " 億";
+        if (abs >= 1e4) return sign + (abs / 1e4).toFixed(0) + " 萬";
+        return sign + String(abs);
+      };
+      const rows = [
+        { label: "外資", data: inst.foreign },
+        { label: "投信", data: inst.invest },
+        { label: "自營商", data: inst.dealer },
+      ];
+      const totalNetCls = inst.totalNet == null ? "flat" : Number(inst.totalNet) >= 0 ? "up" : "dn";
+      instPanel.innerHTML = '<div class="inst-total"><span class="l">三大法人合計淨買</span><span class="v ' + totalNetCls + '">' + fmtNet(inst.totalNet) + '</span></div>' +
+        rows.map((r) => r.data
+          ? '<div class="inst-row"><span class="nm">' + esc(r.label) + '</span><span class="buy">買 ' + fmtNet(r.data.buy) + '</span><span class="sell">賣 ' + fmtNet(r.data.sell) + '</span><span class="net ' + (Number(r.data.net) >= 0 ? "up" : "dn") + '">' + fmtNet(r.data.net) + '</span></div>'
+          : ''
+        ).join("") +
+        (inst.state !== "live"
+          ? '<div style="font:11px/1.5 var(--sans);color:var(--fg-3);margin-top:6px">法人資料同步中</div>'
+          : ''
+        );
+    } else if (instPanel && !inst) {
+      instPanel.innerHTML = '<div style="color:var(--fg-3);font:12px/2 var(--sans);text-align:center;padding:8px">法人買賣超資料同步中</div>';
+    }
   }
 
   function ideaCard(item, i) {

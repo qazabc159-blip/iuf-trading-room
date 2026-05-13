@@ -222,6 +222,51 @@
     </div>
   </div>
 
+  <!-- ======= INDUSTRY HEATMAP ======= -->
+  <section class="panel" style="margin-top:18px">
+    <div class="ph">
+      <h2>產業熱力圖</h2>
+      <span class="meta" style="font:11px/1.4 var(--sans);color:var(--fg-3)">TWSE 公開資料 · 今日收盤</span>
+    </div>
+    <div id="iuf-heatmap-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;padding:4px 0">
+      <div style="color:var(--fg-3);font:12px/2 var(--sans);text-align:center;padding:16px;grid-column:1/-1">產業熱力圖資料同步中</div>
+    </div>
+  </section>
+
+  <!-- ======= INSTITUTIONAL BUY/SELL ======= -->
+  <section class="panel compact" style="margin-top:12px">
+    <div class="ph">
+      <h2>三大法人</h2>
+      <span class="meta" style="font:11px/1.4 var(--sans);color:var(--fg-3)">今日買賣超</span>
+    </div>
+    <div id="iuf-institutional-panel" style="display:flex;flex-direction:column;gap:6px">
+      <div style="color:var(--fg-3);font:12px/2 var(--sans);text-align:center;padding:8px">法人買賣超資料同步中</div>
+    </div>
+  </section>
+
+  <style data-iuf-market-extra>
+    .htile { border-radius: 4px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; cursor: default; min-height: 58px; }
+    .htile .nm { font: 600 11px/1.3 var(--sans); color: var(--fg-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .htile .pct { font: 700 13px/1.4 var(--mono); }
+    .htile .pct.up { color: var(--ok); }
+    .htile .pct.dn { color: var(--bad); }
+    .htile .pct.flat { color: var(--fg-3); }
+    .htile .cnt { font: 11px/1.3 var(--sans); color: var(--fg-3); }
+    .inst-total { display: flex; justify-content: space-between; align-items: center; padding: 6px 0 8px; border-bottom: 1px solid var(--line); font: 13px/1.4 var(--sans); }
+    .inst-total .l { color: var(--fg-2); }
+    .inst-total .v { font: 700 15px/1.4 var(--mono); }
+    .inst-total .v.up { color: var(--ok); }
+    .inst-total .v.dn { color: var(--bad); }
+    .inst-total .v.flat { color: var(--fg-3); }
+    .inst-row { display: grid; grid-template-columns: 52px 1fr 1fr 80px; gap: 4px; align-items: center; padding: 4px 0; font: 12px/1.4 var(--sans); border-bottom: 1px solid var(--line-subtle, rgba(255,255,255,0.04)); }
+    .inst-row .nm { color: var(--fg-2); font-weight: 600; }
+    .inst-row .buy { color: var(--ok); text-align: right; }
+    .inst-row .sell { color: var(--bad); text-align: right; }
+    .inst-row .net { font-weight: 700; text-align: right; font-family: var(--mono); }
+    .inst-row .net.up { color: var(--ok); }
+    .inst-row .net.dn { color: var(--bad); }
+  </style>
+
   <div class="next">
     <span class="l">下一步</span>
     <span class="t">看完今日重點？前往 <b>策略想法</b> 查看 AI 已挑出的候選清單。</span>
