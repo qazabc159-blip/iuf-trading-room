@@ -135,7 +135,8 @@ async function renderFinalHtml(screen: ScreenKey) {
 
 async function injectLiveData(screen: ScreenKey, html: string) {
   const payload = await buildFinalV031LivePayload(screen as FinalV031Screen);
-  return html.replace("</body>", `${finalV031HydrationScript(payload)}\n</body>`);
+  const script = finalV031HydrationScript(payload);
+  return html.replace("</body>", () => `${script}\n</body>`);
 }
 
 export async function GET(
