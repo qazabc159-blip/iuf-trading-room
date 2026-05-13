@@ -4938,18 +4938,16 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
   let stockNewsStats: MarketIntelStats   = { rowCount: 0, latestDate: null, state: "EMPTY", missingReason: "not_queried" };
 
   if (tokenPresent && db) {
+    // ISSUE_B fix (2026-05-14): companies_ohlcv source enum is ['mock','kgi','tej'].
+    // The ingest (ohlcv-finmind-sync.ts) writes source='tej'.  Previous queries used
+    // source='finmind' / 'finmind_adj' which do not exist in the enum → always 0 rows
+    // → TaiwanStockPrice + TaiwanStockPriceAdj reported EMPTY despite 38864+ real rows.
+    // Fix: query source='tej' for both adj and raw; KBar (1m) has no persisted rows yet.
     [ohlcvAdjStats, ohlcvRawStats, kbarStats] = await Promise.all([
-      queryOhlcvStats("1d", "finmind_adj"),
-      queryOhlcvStats("1d", "finmind"),
+      queryOhlcvStats("1d", "tej"),
+      queryOhlcvStats("1d", "tej"),
       queryOhlcvStats("1m")
     ]);
-    // PriceAdj fallback: if finmind_adj has no rows, fall back to any 1d real rows
-    if (ohlcvAdjStats.rowCount === 0) {
-      const anyDayStats = await queryOhlcvStats("1d");
-      if (anyDayStats.rowCount > 0) {
-        ohlcvAdjStats = { ...anyDayStats, degradedReason: "source_not_tagged_adj" };
-      }
-    }
     // PR A: query fundamental dataset stats in parallel
     [monthlyRevenueStats, financialStmtStats, balanceSheetStats, cashflowStats] = await Promise.all([
       queryFundamentalDatasetStats("tw_monthly_revenue"),
@@ -4965,8 +4963,10 @@ app.get("/api/v1/data-sources/finmind/status", async (c) => {
     ]);
     // PR C: query market-intel dataset stats in parallel
     // dividend: weekly (staleDays=10); market_value/valuation: daily (staleDays=5); news: 30min (staleDays=1)
+    // ISSUE_A fix (2026-05-14): tw_dividend has no 'date' col — use 'announcement_date'.
+    // Without dateCol='announcement_date', MAX(date) throws → state=ERROR every request.
     [dividendStats, marketValueStats, valuationStats, stockNewsStats] = await Promise.all([
-      queryMarketIntelDatasetStats("tw_dividend", 10),
+      queryMarketIntelDatasetStats("tw_dividend", 10, "announcement_date"),
       queryMarketIntelDatasetStats("tw_market_value", 5),  // S2: align to daily=5 (was 10)
       queryMarketIntelDatasetStats("tw_valuation", 5),
       queryMarketIntelDatasetStats("tw_stock_news", 1, "fetched_at")
