@@ -395,7 +395,9 @@ async function collectSourcePack(
     const ohlcvRows = await db.execute(
       drizzleSql`SELECT COUNT(*) AS cnt, MAX(dt) AS latest FROM companies_ohlcv WHERE workspace_id = ${workspaceId}`
     );
-    const ohlcvRow = (ohlcvRows as { rows?: Array<{ cnt?: string | number; latest?: string }> }).rows?.[0];
+    const _ohlcvRowArr = (ohlcvRows as { rows?: Array<{ cnt?: string | number; latest?: string }> }).rows
+      ?? (Array.isArray(ohlcvRows) ? (ohlcvRows as Array<{ cnt?: string | number; latest?: string }>) : []);
+    const ohlcvRow = _ohlcvRowArr[0];
     const ohlcvCount = ohlcvRow ? Number(ohlcvRow.cnt ?? 0) : 0;
     const ohlcvLatest = ohlcvRow?.latest ?? null;
     const ohlcvStatus: SourceStatus =
@@ -411,7 +413,8 @@ async function collectSourcePack(
         const sampleRes = await db.execute(
           drizzleSql`SELECT ticker, dt, open, high, low, close, volume FROM companies_ohlcv WHERE workspace_id = ${workspaceId} ORDER BY dt DESC LIMIT 3`
         );
-        ohlcvSampleRows = ((sampleRes as { rows?: Record<string, unknown>[] }).rows ?? []);
+        ohlcvSampleRows = ((sampleRes as { rows?: Record<string, unknown>[] }).rows
+          ?? (Array.isArray(sampleRes) ? (sampleRes as Record<string, unknown>[]) : []));
       } catch {
         // sample fetch failure is non-fatal — leave null
       }
@@ -537,7 +540,9 @@ async function collectTableSource(
     const rows = await db.execute(
       drizzleSql.raw(`SELECT COUNT(*) AS cnt, MAX(date) AS latest FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') LIMIT 1`)
     );
-    const row = (rows as { rows?: Array<{ cnt?: string | number; latest?: string }> }).rows?.[0];
+    const _rowArr = (rows as { rows?: Array<{ cnt?: string | number; latest?: string }> }).rows
+      ?? (Array.isArray(rows) ? (rows as Array<{ cnt?: string | number; latest?: string }>) : []);
+    const row = _rowArr[0];
     const count = row ? Number(row.cnt ?? 0) : 0;
     const latest = row?.latest ?? null;
     const adjustedThreshold = new Date();
@@ -555,7 +560,8 @@ async function collectTableSource(
         const sampleRes = await db.execute(
           drizzleSql.raw(`SELECT * FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') ORDER BY date DESC LIMIT 3`)
         );
-        sampleRows = ((sampleRes as { rows?: Record<string, unknown>[] }).rows ?? []);
+        sampleRows = ((sampleRes as { rows?: Record<string, unknown>[] }).rows
+          ?? (Array.isArray(sampleRes) ? (sampleRes as Record<string, unknown>[]) : []));
       } catch {
         // sample fetch failure is non-fatal
       }
