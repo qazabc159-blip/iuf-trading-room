@@ -13,6 +13,10 @@
 // MIG05 — survivor selection is deterministic (MIN(id) = lexicographically smallest UUID)
 // MIG06 — FK child rows pointing to survivors are NOT deleted in Step 0a/0b
 // MIG07 — company_relations target_company_id rewire does not require pre-dedup
+// MIG08 — Step 0c correctly identifies company_theme_links PK collision rows to delete
+// MIG08b — Step 0c does NOT delete rows pointing to unique companies
+// MIG09 — Step 0d correctly identifies companies_ohlcv UNIQUE collision rows to delete
+// MIG09b — Step 0d does NOT delete rows pointing to unique companies
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -34,6 +38,16 @@ type CompanyKeyword = {
   workspace_id: string;
   company_id: string;
   label: string;
+};
+type CompanyThemeLink = {
+  company_id: string;
+  theme_id: string;
+};
+type CompanyOhlcv = {
+  id: string;
+  company_id: string;
+  dt: string;
+  interval: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -256,4 +270,181 @@ test("MIG07 — distinct target_labels prevent false collision in Step 0a", () =
   ];
   const toDelete = simulateStep0a(companies, relations);
   assert.equal(toDelete.size, 0, "distinct target_label+relation_type rows should both survive");
+});
+
+// ---------------------------------------------------------------------------
+// Step 0c simulation: company_theme_links PK (company_id, theme_id) collision
+// Uses ROW_NUMBER() OVER (PARTITION BY survivor_id, theme_id ORDER BY company_id ASC) > 1
+// ---------------------------------------------------------------------------
+function simulateStep0c(
+  companies: Company[],
+  links: CompanyThemeLink[]
+): Set<string> {
+  // Build survivor map
+  const survivorMap = computeSurvivorMap(companies);
+  const survivorById = new Map<string, string>();
+  for (const c of companies) {
+    const key = `${c.workspace_id}:${c.ticker}`;
+    survivorById.set(c.id, survivorMap.get(key)!);
+  }
+
+  // Group by (survivor_id, theme_id), keep the row with lowest company_id (ORDER BY company_id ASC)
+  const grouped = new Map<string, string[]>(); // groupKey → [company_id, ...]
+  for (const link of links) {
+    const sid = survivorById.get(link.company_id) ?? link.company_id;
+    const key = `${sid}|${link.theme_id}`;
+    const arr = grouped.get(key) ?? [];
+    arr.push(link.company_id);
+    grouped.set(key, arr);
+  }
+
+  // The composite key for deletion is "company_id|theme_id"
+  const toDelete = new Set<string>();
+  for (const [groupKey, companyIds] of grouped.entries()) {
+    if (companyIds.length <= 1) continue;
+    // rn=1 = lowest company_id; rn>1 = delete
+    const sorted = [...companyIds].sort();
+    const [, themeId] = groupKey.split("|", 2);
+    for (let i = 1; i < sorted.length; i++) {
+      toDelete.add(`${sorted[i]}|${themeId}`);
+    }
+  }
+  return toDelete;
+}
+
+// ---------------------------------------------------------------------------
+// Step 0d simulation: companies_ohlcv UNIQUE (company_id, dt, interval) collision
+// Keeps MIN(id) per (survivor_id, dt, interval); deletes the rest
+// ---------------------------------------------------------------------------
+function simulateStep0d(
+  companies: Company[],
+  ohlcv: CompanyOhlcv[]
+): Set<string> {
+  const survivorMap = computeSurvivorMap(companies);
+  const survivorById = new Map<string, string>();
+  for (const c of companies) {
+    const key = `${c.workspace_id}:${c.ticker}`;
+    survivorById.set(c.id, survivorMap.get(key)!);
+  }
+
+  // Group by (survivor_id, dt, interval); keep MIN(id)
+  const grouped = new Map<string, string[]>(); // groupKey → [row.id, ...]
+  for (const row of ohlcv) {
+    const sid = survivorById.get(row.company_id) ?? row.company_id;
+    const key = `${sid}|${row.dt}|${row.interval}`;
+    const arr = grouped.get(key) ?? [];
+    arr.push(row.id);
+    grouped.set(key, arr);
+  }
+
+  const keepIds = new Set<string>();
+  for (const ids of grouped.values()) {
+    const minId = ids.reduce((a, b) => (a < b ? a : b));
+    keepIds.add(minId);
+  }
+
+  const toDelete = new Set<string>();
+  for (const row of ohlcv) {
+    if (!keepIds.has(row.id)) toDelete.add(row.id);
+  }
+  return toDelete;
+}
+
+// ---------------------------------------------------------------------------
+// MIG08 + MIG08b: Step 0c — company_theme_links PK collision
+// ---------------------------------------------------------------------------
+
+test("MIG08 — Step 0c deletes colliding company_theme_links PK rows before rewire", () => {
+  const ws = "ws-1";
+  // Two duplicates of 2330: aaaa < bbbb → aaaa is survivor
+  const companies: Company[] = [
+    { id: "aaaa", workspace_id: ws, ticker: "2330" },
+    { id: "bbbb", workspace_id: ws, ticker: "2330" },
+  ];
+  // Both link to the same theme — after rewire both would have company_id=aaaa → PK collision
+  const links: CompanyThemeLink[] = [
+    { company_id: "aaaa", theme_id: "theme-semiconductor" },
+    { company_id: "bbbb", theme_id: "theme-semiconductor" },
+  ];
+  const toDelete = simulateStep0c(companies, links);
+  // bbbb > aaaa → rn=2 → bbbb|theme-semiconductor deleted
+  assert.ok(
+    toDelete.has("bbbb|theme-semiconductor"),
+    "bbbb link (higher company_id) should be deleted to prevent PK collision"
+  );
+  assert.ok(
+    !toDelete.has("aaaa|theme-semiconductor"),
+    "aaaa link (lower company_id = rn=1) should be kept"
+  );
+});
+
+test("MIG08b — Step 0c does NOT delete rows for unique companies or distinct themes", () => {
+  const ws = "ws-1";
+  const companies: Company[] = [
+    { id: "aaaa", workspace_id: ws, ticker: "2330" },
+    { id: "bbbb", workspace_id: ws, ticker: "2330" }, // dup → aaaa survivor
+    { id: "cccc", workspace_id: ws, ticker: "2317" }, // unique ticker
+  ];
+  const links: CompanyThemeLink[] = [
+    // unique company — must NOT be deleted
+    { company_id: "cccc", theme_id: "theme-semiconductor" },
+    // dup pair, same theme — bbbb must be deleted
+    { company_id: "aaaa", theme_id: "theme-ai" },
+    { company_id: "bbbb", theme_id: "theme-ai" },
+    // dup pair, different themes — no collision, both survive
+    { company_id: "aaaa", theme_id: "theme-export" },
+    { company_id: "bbbb", theme_id: "theme-domestic" },
+  ];
+  const toDelete = simulateStep0c(companies, links);
+  assert.ok(!toDelete.has("cccc|theme-semiconductor"), "unique company row must not be deleted");
+  assert.ok(toDelete.has("bbbb|theme-ai"), "colliding bbbb|theme-ai must be deleted");
+  assert.ok(!toDelete.has("aaaa|theme-ai"), "aaaa|theme-ai (rn=1) must be kept");
+  assert.ok(!toDelete.has("aaaa|theme-export"), "distinct theme row aaaa|theme-export must survive");
+  assert.ok(!toDelete.has("bbbb|theme-domestic"), "distinct theme row bbbb|theme-domestic must survive");
+});
+
+// ---------------------------------------------------------------------------
+// MIG09 + MIG09b: Step 0d — companies_ohlcv UNIQUE collision
+// ---------------------------------------------------------------------------
+
+test("MIG09 — Step 0d deletes colliding companies_ohlcv rows before rewire", () => {
+  const ws = "ws-1";
+  const companies: Company[] = [
+    { id: "aaaa", workspace_id: ws, ticker: "2330" },
+    { id: "bbbb", workspace_id: ws, ticker: "2330" }, // dup → aaaa survivor
+  ];
+  // Both rows have same dt + interval — after rewire both would have company_id=aaaa → UNIQUE collision
+  const ohlcv: CompanyOhlcv[] = [
+    { id: "o1", company_id: "aaaa", dt: "2026-05-14", interval: "1d" },
+    { id: "o2", company_id: "bbbb", dt: "2026-05-14", interval: "1d" },
+  ];
+  const toDelete = simulateStep0d(companies, ohlcv);
+  // o1 < o2 → o1 is MIN(id) → keep o1, delete o2
+  assert.ok(toDelete.has("o2"), "o2 (higher id after projection) must be deleted");
+  assert.ok(!toDelete.has("o1"), "o1 (MIN id) must be kept");
+});
+
+test("MIG09b — Step 0d does NOT delete rows pointing to unique companies or distinct dt/interval", () => {
+  const ws = "ws-1";
+  const companies: Company[] = [
+    { id: "aaaa", workspace_id: ws, ticker: "2330" },
+    { id: "bbbb", workspace_id: ws, ticker: "2330" }, // dup → aaaa survivor
+    { id: "cccc", workspace_id: ws, ticker: "2317" }, // unique ticker
+  ];
+  const ohlcv: CompanyOhlcv[] = [
+    // unique company — must NOT be deleted
+    { id: "o3", company_id: "cccc", dt: "2026-05-14", interval: "1d" },
+    // dup pair, same dt+interval — o5 (higher) must be deleted
+    { id: "o4", company_id: "aaaa", dt: "2026-05-13", interval: "1d" },
+    { id: "o5", company_id: "bbbb", dt: "2026-05-13", interval: "1d" },
+    // dup pair, different dt — no collision, both survive
+    { id: "o6", company_id: "aaaa", dt: "2026-05-12", interval: "1d" },
+    { id: "o7", company_id: "bbbb", dt: "2026-05-11", interval: "1d" },
+  ];
+  const toDelete = simulateStep0d(companies, ohlcv);
+  assert.ok(!toDelete.has("o3"), "unique company row o3 must not be deleted");
+  assert.ok(toDelete.has("o5"), "colliding o5 (higher id, same dt+interval after projection) must be deleted");
+  assert.ok(!toDelete.has("o4"), "o4 (MIN id for 2026-05-13|1d) must be kept");
+  assert.ok(!toDelete.has("o6"), "o6 distinct dt must survive");
+  assert.ok(!toDelete.has("o7"), "o7 distinct dt must survive");
 });
