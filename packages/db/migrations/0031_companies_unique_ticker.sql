@@ -18,6 +18,10 @@
 -- Step 2 now uses EXISTS instead of NOT IN to avoid NULL-in-subquery correctness trap.
 -- Renumbered 0030 → 0031: 0030 reserved by KGI orders migration stream.
 -- Pre-deploy: operator must take Railway DB snapshot before running.
+-- v4 (2026-05-14 uuid-min fix): companies.id, company_relations.id, company_keywords.id,
+--   companies_ohlcv.id are all UUID. PostgreSQL has no built-in MIN() aggregate for UUID.
+--   Replaced MIN(uuid_col) with ROW_NUMBER() OVER (... ORDER BY uuid_col::text ASC) = 1
+--   pattern throughout (same deterministic ordering, works on all Postgres versions).
 -- down migration: 0031_companies_unique_ticker.down.sql
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -28,33 +32,55 @@
 -- (currently dup1 vs dup2) will collide when both become survivor_id.
 -- Solution: project each row's company_id to its survivor, then DELETE all rows where
 -- a lower-id sibling already occupies the same (workspace_id, survivor_id, target_label, relation_type).
+-- UUID has no MIN() aggregate → use ROW_NUMBER() ORDER BY id::text ASC instead.
 -- ─────────────────────────────────────────────────────────────────────────────
-DELETE FROM company_relations cr
-WHERE cr.id NOT IN (
-  SELECT MIN(cr2.id)
-  FROM company_relations cr2
-  JOIN (
-    SELECT id, MIN(id) OVER (PARTITION BY workspace_id, ticker) AS survivor_id
-    FROM companies
-  ) s ON s.id = cr2.company_id
-  GROUP BY cr2.workspace_id, s.survivor_id, cr2.target_label, cr2.relation_type
+DELETE FROM company_relations
+WHERE id IN (
+  SELECT cr2.id
+  FROM (
+    SELECT
+      cr.id,
+      ROW_NUMBER() OVER (
+        PARTITION BY cr.workspace_id, s.survivor_id, cr.target_label, cr.relation_type
+        ORDER BY cr.id::text ASC
+      ) AS rn
+    FROM company_relations cr
+    JOIN (
+      SELECT
+        id,
+        MIN(id::text) OVER (PARTITION BY workspace_id, ticker) AS survivor_text
+      FROM companies
+    ) s ON s.id = cr.company_id
+  ) cr2
+  WHERE cr2.rn > 1
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Step 0b: Pre-deduplicate company_keywords before rewire.
 --
 -- company_keywords_unique_keyword_idx: UNIQUE (workspace_id, company_id, label)
--- Same pattern: project company_id → survivor_id, keep MIN(id) per group.
+-- Same pattern: project company_id → survivor_id, keep lowest id::text per group.
+-- UUID has no MIN() aggregate → use ROW_NUMBER() ORDER BY id::text ASC instead.
 -- ─────────────────────────────────────────────────────────────────────────────
-DELETE FROM company_keywords ck
-WHERE ck.id NOT IN (
-  SELECT MIN(ck2.id)
-  FROM company_keywords ck2
-  JOIN (
-    SELECT id, MIN(id) OVER (PARTITION BY workspace_id, ticker) AS survivor_id
-    FROM companies
-  ) s ON s.id = ck2.company_id
-  GROUP BY ck2.workspace_id, s.survivor_id, ck2.label
+DELETE FROM company_keywords
+WHERE id IN (
+  SELECT ck2.id
+  FROM (
+    SELECT
+      ck.id,
+      ROW_NUMBER() OVER (
+        PARTITION BY ck.workspace_id, s.survivor_text, ck.label
+        ORDER BY ck.id::text ASC
+      ) AS rn
+    FROM company_keywords ck
+    JOIN (
+      SELECT
+        id,
+        MIN(id::text) OVER (PARTITION BY workspace_id, ticker) AS survivor_text
+      FROM companies
+    ) s ON s.id = ck.company_id
+  ) ck2
+  WHERE ck2.rn > 1
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -74,12 +100,12 @@ WHERE (company_id, theme_id) IN (
       ctl.company_id,
       ctl.theme_id,
       ROW_NUMBER() OVER (
-        PARTITION BY s.survivor_id, ctl.theme_id
-        ORDER BY ctl.company_id ASC
+        PARTITION BY s.survivor_text, ctl.theme_id
+        ORDER BY ctl.company_id::text ASC
       ) AS rn
     FROM company_theme_links ctl
     JOIN (
-      SELECT id, MIN(id) OVER (PARTITION BY workspace_id, ticker) AS survivor_id
+      SELECT id, MIN(id::text) OVER (PARTITION BY workspace_id, ticker) AS survivor_text
       FROM companies
     ) s ON s.id = ctl.company_id
   ) ranked
@@ -90,18 +116,29 @@ WHERE (company_id, theme_id) IN (
 -- Step 0d: Pre-deduplicate companies_ohlcv before rewire.
 --
 -- companies_ohlcv UNIQUE INDEX (company_id, dt, interval)
--- Same pattern: project company_id → survivor_id, keep MIN(id) per triple,
+-- Same pattern: project company_id → survivor_id, keep lowest id::text per triple,
 -- delete all other rows that would collide after rewire.
+-- UUID has no MIN() aggregate → use ROW_NUMBER() ORDER BY id::text ASC instead.
 -- ─────────────────────────────────────────────────────────────────────────────
 DELETE FROM companies_ohlcv
-WHERE id NOT IN (
-  SELECT MIN(o.id)
-  FROM companies_ohlcv o
-  JOIN (
-    SELECT id, MIN(id) OVER (PARTITION BY workspace_id, ticker) AS survivor_id
-    FROM companies
-  ) s ON s.id = o.company_id
-  GROUP BY s.survivor_id, o.dt, o.interval
+WHERE id IN (
+  SELECT o2.id
+  FROM (
+    SELECT
+      o.id,
+      ROW_NUMBER() OVER (
+        PARTITION BY s.survivor_text, o.dt, o.interval
+        ORDER BY o.id::text ASC
+      ) AS rn
+    FROM companies_ohlcv o
+    JOIN (
+      SELECT
+        id,
+        MIN(id::text) OVER (PARTITION BY workspace_id, ticker) AS survivor_text
+      FROM companies
+    ) s ON s.id = o.company_id
+  ) o2
+  WHERE o2.rn > 1
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -111,9 +148,9 @@ WHERE id NOT IN (
 UPDATE company_theme_links ctl
 SET company_id = survivor.id
 FROM (
-  SELECT MIN(id) AS id, workspace_id, ticker
+  SELECT DISTINCT ON (workspace_id, ticker) id, workspace_id, ticker
   FROM companies
-  GROUP BY workspace_id, ticker
+  ORDER BY workspace_id, ticker, id::text ASC
 ) survivor
 JOIN companies dup
   ON dup.workspace_id = survivor.workspace_id
@@ -128,9 +165,9 @@ WHERE ctl.company_id = dup.id;
 UPDATE company_relations cr
 SET company_id = survivor.id
 FROM (
-  SELECT MIN(id) AS id, workspace_id, ticker
+  SELECT DISTINCT ON (workspace_id, ticker) id, workspace_id, ticker
   FROM companies
-  GROUP BY workspace_id, ticker
+  ORDER BY workspace_id, ticker, id::text ASC
 ) survivor
 JOIN companies dup
   ON dup.workspace_id = survivor.workspace_id
@@ -146,9 +183,9 @@ WHERE cr.company_id = dup.id;
 UPDATE company_relations cr
 SET target_company_id = survivor.id
 FROM (
-  SELECT MIN(id) AS id, workspace_id, ticker
+  SELECT DISTINCT ON (workspace_id, ticker) id, workspace_id, ticker
   FROM companies
-  GROUP BY workspace_id, ticker
+  ORDER BY workspace_id, ticker, id::text ASC
 ) survivor
 JOIN companies dup
   ON dup.workspace_id = survivor.workspace_id
@@ -163,9 +200,9 @@ WHERE cr.target_company_id = dup.id;
 UPDATE company_keywords ck
 SET company_id = survivor.id
 FROM (
-  SELECT MIN(id) AS id, workspace_id, ticker
+  SELECT DISTINCT ON (workspace_id, ticker) id, workspace_id, ticker
   FROM companies
-  GROUP BY workspace_id, ticker
+  ORDER BY workspace_id, ticker, id::text ASC
 ) survivor
 JOIN companies dup
   ON dup.workspace_id = survivor.workspace_id
@@ -179,9 +216,9 @@ WHERE ck.company_id = dup.id;
 UPDATE trade_plans tp
 SET company_id = survivor.id
 FROM (
-  SELECT MIN(id) AS id, workspace_id, ticker
+  SELECT DISTINCT ON (workspace_id, ticker) id, workspace_id, ticker
   FROM companies
-  GROUP BY workspace_id, ticker
+  ORDER BY workspace_id, ticker, id::text ASC
 ) survivor
 JOIN companies dup
   ON dup.workspace_id = survivor.workspace_id
@@ -195,9 +232,9 @@ WHERE tp.company_id = dup.id;
 UPDATE company_notes cn
 SET company_id = survivor.id
 FROM (
-  SELECT MIN(id) AS id, workspace_id, ticker
+  SELECT DISTINCT ON (workspace_id, ticker) id, workspace_id, ticker
   FROM companies
-  GROUP BY workspace_id, ticker
+  ORDER BY workspace_id, ticker, id::text ASC
 ) survivor
 JOIN companies dup
   ON dup.workspace_id = survivor.workspace_id
@@ -212,9 +249,9 @@ WHERE cn.company_id = dup.id;
 UPDATE companies_ohlcv o
 SET company_id = survivor.id
 FROM (
-  SELECT MIN(id) AS id, workspace_id, ticker
+  SELECT DISTINCT ON (workspace_id, ticker) id, workspace_id, ticker
   FROM companies
-  GROUP BY workspace_id, ticker
+  ORDER BY workspace_id, ticker, id::text ASC
 ) survivor
 JOIN companies dup
   ON dup.workspace_id = survivor.workspace_id
@@ -227,7 +264,7 @@ WHERE o.company_id = dup.id;
 -- Uses EXISTS (not NOT IN) to avoid NULL-in-subquery correctness trap:
 --   NOT IN returns no rows when subquery contains any NULL — EXISTS is always safe.
 -- Deletes every row c where a lexicographically-smaller id exists for the same
--- (workspace_id, ticker) — i.e., only the MIN(id) survivor survives.
+-- (workspace_id, ticker) — i.e., only the MIN(id::text) survivor survives.
 -- ─────────────────────────────────────────────────────────────────────────────
 DELETE FROM companies c
 WHERE EXISTS (
@@ -235,7 +272,7 @@ WHERE EXISTS (
   FROM companies c2
   WHERE c2.workspace_id = c.workspace_id
     AND c2.ticker = c.ticker
-    AND c2.id < c.id
+    AND c2.id::text < c.id::text
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
