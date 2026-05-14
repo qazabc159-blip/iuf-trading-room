@@ -17,7 +17,6 @@ const SESSION_COOKIE = "iuf_session";
 const CANONICAL_APP_ORIGIN = "https://app.eycvector.com";
 const FINAL_V031_ROUTE_REWRITES = new Map([
   ["/market-intel", "/final-v031/market-intel"],
-  ["/ideas", "/final-v031/ideas"],
   ["/portfolio", "/final-v031/portfolio"]
 ]);
 

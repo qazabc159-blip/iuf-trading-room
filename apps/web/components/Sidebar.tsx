@@ -2,23 +2,63 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  BarChart3,
+  Building2,
+  LineChart,
+  Newspaper,
+  Sparkles,
+  Target,
+  type LucideIcon,
+} from "lucide-react";
 
 import { apiLogout } from "@/lib/auth-client";
 
-const NAV = [
-  { path: "/", title: "戰情台總覽", sub: "盤勢與任務", code: "01" },
-  { path: "/market-intel", title: "市場情報", sub: "重大訊息", code: "02" },
-  { path: "/companies", title: "公司板", sub: "台股公司池", code: "03" },
-  { path: "/ideas", title: "策略想法", sub: "候選清單", code: "04" },
-  { path: "/runs", title: "策略批次", sub: "量化紀錄", code: "05" },
-  { path: "/portfolio", title: "模擬交易室", sub: "委託與部位", code: "06" },
-  { path: "/alerts", title: "警示", sub: "風控提醒", code: "07" },
-  { path: "/signals", title: "訊號證據", sub: "訊號與依據", code: "08" },
-  { path: "/plans", title: "交易計畫", sub: "計畫註記", code: "09" },
-  { path: "/themes", title: "主題板", sub: "產業主題", code: "10" },
-  { path: "/lab", title: "量化研究", sub: "策略包", code: "11" },
-  { path: "/briefs", title: "AI 每日簡報", sub: "OpenAlice", code: "12" },
+type NavItem = {
+  path: string;
+  title: string;
+  sub: string;
+  Icon: LucideIcon;
+  activePaths: string[];
+};
+
+const NAV: NavItem[] = [
+  { path: "/", title: "戰情台", sub: "盤勢與任務", Icon: Target, activePaths: ["/"] },
+  { path: "/market-intel", title: "市場情報", sub: "重大訊息", Icon: Newspaper, activePaths: ["/market-intel"] },
+  {
+    path: "/ai-recommendations",
+    title: "AI 推薦",
+    sub: "推薦引擎",
+    Icon: Sparkles,
+    activePaths: ["/ai-recommendations", "/ideas", "/runs", "/signals"],
+  },
+  {
+    path: "/portfolio",
+    title: "交易室",
+    sub: "委託與部位",
+    Icon: LineChart,
+    activePaths: ["/portfolio", "/plans"],
+  },
+  {
+    path: "/companies",
+    title: "公司 / 主題",
+    sub: "公司圖譜",
+    Icon: Building2,
+    activePaths: ["/companies", "/themes"],
+  },
+  {
+    path: "/quant-strategies",
+    title: "量化策略",
+    sub: "SIM-only",
+    Icon: BarChart3,
+    activePaths: ["/quant-strategies", "/lab"],
+  },
 ];
+
+function pathMatches(pathname: string, path: string) {
+  if (path === "/") return pathname === "/";
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -46,10 +86,13 @@ export function Sidebar() {
 
       <nav className="tac-nav" aria-label="主要導覽">
         {NAV.map((item) => {
-          const active = item.path === "/" ? pathname === "/" : pathname.startsWith(item.path);
+          const active = item.activePaths.some((path) => pathMatches(pathname, path));
+          const Icon = item.Icon;
           return (
             <Link key={item.path} href={item.path} className={active ? "active" : ""}>
-              <span>{item.code}</span>
+              <span className="tac-nav-icon" aria-hidden="true">
+                <Icon size={17} strokeWidth={1.9} />
+              </span>
               <div>
                 <b>{item.title}</b>
                 <small>{item.sub}</small>

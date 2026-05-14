@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Noto_Sans_TC, Noto_Serif_TC, Source_Serif_4 } from "next/font/google";
 
 import { CommandPalette } from "@/components/CommandPalette";
+import { HeaderDock } from "@/components/header-dock";
 import { Sidebar } from "@/components/Sidebar";
 
 /* next/font is self-hosted, zero CLS. */
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-Hant" className={`${serif.variable} ${mono.variable} ${sansTc.variable} ${serifTc.variable}`}>
       <body className="app-root">
         <Sidebar />
+        <HeaderDock />
         <div className="app-main-shell">{children}</div>
         <CommandPalette />
       </body>
