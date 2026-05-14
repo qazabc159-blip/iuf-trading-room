@@ -62,8 +62,11 @@ function buildPrefillHref(rec: StockRecommendation) {
     ticker: rec.ticker,
     prefill: "true",
     from_rec: rec.recommendationId,
-    entry: rec.entryZone.primary,
   });
+
+  if (rec.entryZone.primary) {
+    params.set("entry", rec.entryZone.primary);
+  }
 
   if (rec.invalidation.price !== null) {
     params.set("stop", String(rec.invalidation.price));

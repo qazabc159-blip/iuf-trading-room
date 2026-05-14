@@ -33,6 +33,20 @@ import {
 
 export type FinalV031Screen = "market-intel" | "strategy-ideas" | "paper-trading-room";
 
+export type PaperPrefillHandoff = {
+  enabled: true;
+  symbol: string | null;
+  recommendationId: string | null;
+  entry: string | null;
+  stop: string | null;
+  target: string | null;
+  source: "ai_recommendations" | "url";
+};
+
+type FinalV031PayloadOptions = {
+  paperPrefill?: PaperPrefillHandoff | null;
+};
+
 type Settled<T> = PromiseSettledResult<T>;
 
 function okValue<T>(result: Settled<T>, fallback: T): T {
@@ -320,7 +334,11 @@ function latestOhlcv(ohlcv: OhlcvBar[]) {
   return ohlcv.length ? ohlcv[ohlcv.length - 1] : null;
 }
 
-async function buildPaperPayload() {
+function sameSymbol(left: string | null | undefined, right: string | null | undefined) {
+  return String(left ?? "").toUpperCase() === String(right ?? "").toUpperCase();
+}
+
+async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.allSettled([
     getPaperHealth(),
     getPaperPortfolioRaw(),
@@ -339,7 +357,10 @@ async function buildPaperPayload() {
   const kgi = okValue<KgiPositionsResponse | null>(kgiResult, null);
   const ideas = ideasResult.status === "fulfilled" ? ideasResult.value.data : null;
   const mappedIdeas = ideas?.items?.map(mapIdea) ?? [];
-  const selectedSymbol = portfolio[0]?.symbol ?? mappedIdeas[0]?.symbol ?? "2330";
+  const prefill = options.paperPrefill ?? null;
+  const selectedSymbol = prefill?.symbol ?? portfolio[0]?.symbol ?? mappedIdeas[0]?.symbol ?? "2330";
+  const selectedPosition = portfolio.find((pos) => sameSymbol(pos.symbol, selectedSymbol)) ?? null;
+  const selectedIdea = mappedIdeas.find((idea) => sameSymbol(idea.symbol, selectedSymbol)) ?? mappedIdeas[0] ?? null;
 
   const [companyResult, quoteResult, bidAskResult, ticksResult] = await Promise.allSettled([
     getCompanyByTicker(selectedSymbol),
@@ -355,12 +376,19 @@ async function buildPaperPayload() {
     ? await getCompanyOhlcv(company.id, { interval: "1d" }).catch(() => [] as OhlcvBar[])
     : [];
   const lastBar = latestOhlcv(ohlcv);
-  const lastPrice = quote?.lastPrice ?? lastBar?.close ?? portfolio[0]?.avgCostPerShare ?? null;
+  const lastPrice = quote?.lastPrice ?? lastBar?.close ?? selectedPosition?.avgCostPerShare ?? null;
   const previous = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2]?.close : null;
   const change = lastPrice != null && previous != null ? lastPrice - previous : null;
   const changePct = change != null && previous ? (change / previous) * 100 : null;
 
   const watchlist = [
+    ...(prefill?.enabled && selectedSymbol ? [{
+      symbol: selectedSymbol,
+      name: company?.name ?? selectedSymbol,
+      meta: prefill.recommendationId ? `AI 推薦帶入 · ${prefill.recommendationId}` : "URL 帶入",
+      price: lastPrice,
+      changePct,
+    }] : []),
     ...portfolio.map((pos) => ({
       symbol: pos.symbol,
       name: pos.symbol,
@@ -387,7 +415,7 @@ async function buildPaperPayload() {
     selected: {
       symbol: selectedSymbol,
       name: company?.name ?? selectedSymbol,
-      sector: company?.chainPosition ?? mappedIdeas[0]?.sector ?? "台股",
+      sector: company?.chainPosition ?? selectedIdea?.sector ?? "台股",
       price: lastPrice,
       open: quote?.lastPrice ?? lastBar?.open ?? null,
       high: lastBar?.high ?? null,
@@ -408,14 +436,15 @@ async function buildPaperPayload() {
     ohlcv,
     bidAsk,
     ticks: ticks?.ticks ?? [],
+    prefill,
   };
 }
 
-export async function buildFinalV031LivePayload(screen: FinalV031Screen) {
+export async function buildFinalV031LivePayload(screen: FinalV031Screen, options: FinalV031PayloadOptions = {}) {
   try {
     if (screen === "market-intel") return await buildMarketIntelPayload();
     if (screen === "strategy-ideas") return await buildIdeasPayload();
-    return await buildPaperPayload();
+    return await buildPaperPayload(options);
   } catch (error) {
     return {
       screen,
@@ -472,6 +501,28 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     return unwrap(json);
   };
   const soft = (promise) => promise.then((data) => ({ ok:true, data })).catch((error) => ({ ok:false, error }));
+  const queryText = (value, max=80) => {
+    const text = String(value || "").trim().replace(/[<>]/g, "");
+    return text ? text.slice(0, max) : null;
+  };
+  const readPaperPrefillFromUrl = () => {
+    if (live.screen !== "paper-trading-room") return null;
+    const params = new URLSearchParams(window.location.search);
+    const rawSymbol = String(params.get("ticker") || params.get("symbol") || "").trim().toUpperCase();
+    const symbol = /^[A-Z0-9._-]{1,16}$/.test(rawSymbol) ? rawSymbol : null;
+    const recommendationId = queryText(params.get("from_rec"), 96);
+    const entry = queryText(params.get("entry"), 40);
+    const stop = queryText(params.get("stop"), 40);
+    const target = queryText(params.get("tp"), 40);
+    const enabled = params.get("prefill") === "true" || !!(symbol || recommendationId || entry || stop || target);
+    return enabled ? { enabled:true, symbol, recommendationId, entry, stop, target, source: recommendationId ? "ai_recommendations" : "url" } : null;
+  };
+  const paperPrefill = () => live.prefill || readPaperPrefillFromUrl();
+  const sameSym = (left, right) => String(left || "").toUpperCase() === String(right || "").toUpperCase();
+  const firstNumber = (value) => {
+    const match = String(value || "").replace(/,/g, "").match(/\\d+(?:\\.\\d+)?/);
+    return match ? Number(match[0]) : null;
+  };
   const ago = (dateLike) => {
     if (!dateLike) return "剛剛";
     const ts = Date.parse(dateLike);
@@ -676,7 +727,10 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     const fills = fillsResult.ok ? fillsResult.data || [] : [];
     const orders = ordersResult.ok ? ordersResult.data || [] : [];
     const ideas = ideasResult.ok ? (ideasResult.data?.items || []).map(clientMapIdea) : [];
-    const selectedSymbol = portfolio[0]?.symbol || ideas[0]?.symbol || "2330";
+    const prefill = paperPrefill();
+    const selectedSymbol = prefill?.symbol || portfolio[0]?.symbol || ideas[0]?.symbol || "2330";
+    const selectedPosition = portfolio.find((pos) => sameSym(pos.symbol, selectedSymbol)) || null;
+    const selectedIdea = ideas.find((idea) => sameSym(idea.symbol, selectedSymbol)) || ideas[0] || null;
     const companiesResult = await soft(apiGet("/api/v1/companies"));
     const company = companiesResult.ok ? (companiesResult.data || []).find((item) => String(item.ticker || "").toUpperCase() === String(selectedSymbol).toUpperCase()) : null;
     const [quoteResult, ohlcvResult, bidAskResult, ticksResult] = await Promise.all([
@@ -689,11 +743,12 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     const lastBar = ohlcv.length ? ohlcv[ohlcv.length - 1] : null;
     const prevBar = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2] : null;
     const quote = quoteResult.ok ? quoteResult.data : null;
-    const lastPrice = quote?.lastPrice ?? lastBar?.close ?? portfolio[0]?.avgCostPerShare ?? null;
+    const lastPrice = quote?.lastPrice ?? lastBar?.close ?? selectedPosition?.avgCostPerShare ?? null;
     const previous = prevBar?.close ?? null;
     const change = lastPrice != null && previous != null ? Number(lastPrice) - Number(previous) : null;
     const changePct = change != null && previous ? change / Number(previous) * 100 : null;
-    const watchlist = portfolio.map((pos) => ({ symbol:pos.symbol, name:pos.symbol, meta:String(pos.netQtyShares || 0) + " 股 · " + String(pos.fillCount || 0) + " 筆成交", price:pos.symbol === selectedSymbol ? lastPrice : pos.avgCostPerShare, changePct:pos.symbol === selectedSymbol ? changePct : null }))
+    const prefillWatch = prefill?.enabled && selectedSymbol ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? "AI 推薦帶入 · " + prefill.recommendationId : "URL 帶入", price:lastPrice, changePct }] : [];
+    const watchlist = prefillWatch.concat(portfolio.map((pos) => ({ symbol:pos.symbol, name:pos.symbol, meta:String(pos.netQtyShares || 0) + " 股 · " + String(pos.fillCount || 0) + " 筆成交", price:pos.symbol === selectedSymbol ? lastPrice : pos.avgCostPerShare, changePct:pos.symbol === selectedSymbol ? changePct : null })))
       .concat(ideas.map((idea) => ({ symbol:idea.symbol, name:idea.companyName, meta:idea.status + " · " + idea.signalCount + " 訊號", price:null, changePct:null })))
       .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index)
       .slice(0, 10);
@@ -702,7 +757,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       generatedAt:new Date().toISOString(),
       health: healthResult.ok ? healthResult.data : null,
       baseCapitalTWD,
-      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:company?.chainPosition || ideas[0]?.sector || "台股", price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
+      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:company?.chainPosition || selectedIdea?.sector || "台股", price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
       watchlist,
       ideas,
       portfolio,
@@ -711,7 +766,8 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       kgi:kgiResult.ok ? kgiResult.data : null,
       ohlcv,
       bidAsk:bidAskResult.ok ? bidAskResult.data : null,
-      ticks:ticksResult.ok ? (ticksResult.data?.ticks || []) : []
+      ticks:ticksResult.ok ? (ticksResult.data?.ticks || []) : [],
+      prefill
     };
   }
 
@@ -873,6 +929,57 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     return '<div class="price"><span class="v">'+price(item.price)+'</span><span class="d '+tone+'">'+txt+'</span></div>';
   }
 
+  function applyPaperPrefill(selected) {
+    const prefill = paperPrefill();
+    const existing = $("#rec-prefill-box");
+    if (!prefill?.enabled) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    const ticket = $("#ticket");
+    let box = existing;
+    if (!box && ticket) {
+      box = document.createElement("div");
+      box.id = "rec-prefill-box";
+      box.className = "rec-prefill-box";
+      ticket.insertBefore(box, ticket.firstElementChild);
+    }
+
+    if (box) {
+      const meta = [
+        prefill.entry ? "進場 " + prefill.entry : null,
+        prefill.stop ? "停損 " + prefill.stop : null,
+        prefill.target ? "目標 " + prefill.target : null,
+        prefill.recommendationId ? "rec " + prefill.recommendationId : null
+      ].filter(Boolean);
+      box.innerHTML = '<div class="k">AI RECOMMENDATION HANDOFF</div><div class="v">'+esc(selected.symbol || prefill.symbol || "—")+' 已帶入交易室，請重新核對風控與委託價。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
+    }
+
+    const entryPrice = firstNumber(prefill.entry);
+    const priceInput = $("#t-price");
+    if (priceInput && entryPrice != null && Number.isFinite(entryPrice)) {
+      priceInput.value = entryPrice >= 1000 ? entryPrice.toFixed(1) : entryPrice.toFixed(2);
+      priceInput.setAttribute("value", priceInput.value);
+    }
+
+    const orderType = $("#t-otype");
+    if (orderType && entryPrice != null) orderType.value = "limit";
+
+    const submitLabel = $("#submit-btn-label");
+    if (submitLabel) submitLabel.textContent = "AI 推薦已帶入，請預覽";
+
+    const entryLabel = $(".lv-label.entry"); if (entryLabel && prefill.entry) entryLabel.textContent = "建倉 " + prefill.entry;
+    const stopLabel = $(".lv-label.stop"); if (stopLabel && prefill.stop) stopLabel.textContent = "停損 " + prefill.stop;
+    const targetLabel = $(".lv-label.target"); if (targetLabel && prefill.target) targetLabel.textContent = "目標 " + prefill.target;
+
+    try {
+      if (typeof window.updPreview === "function") window.updPreview();
+    } catch {
+      // Vendor preview is best-effort; backend preview still runs on submit.
+    }
+  }
+
   function hydratePaper() {
     const selected = live.selected || {};
     const chg = selected.change;
@@ -881,21 +988,21 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
 
     // ── Expose real data to vendor JS globals ──────────────────────────────────
     // 1. Portfolio for updPreview() curPos calculation
-    (window as unknown as Record<string, unknown>).__IUF_PORTFOLIO__ = live.portfolio || [];
+    window.__IUF_PORTFOLIO__ = live.portfolio || [];
 
     // 2. Real OHLCV bars for drawChart()
     const ohlcv = live.ohlcv || [];
-    const chartBars = ohlcv.map((bar: Record<string, number>) => ({
+    const chartBars = ohlcv.map((bar) => ({
       o: bar.open, h: bar.high, l: bar.low, c: bar.close ?? bar.open, v: bar.volume ?? 0,
       date: bar.date ?? bar.ts ?? ""
     }));
-    (window as unknown as Record<string, unknown>).__IUF_OHLCV_DATA__ = {
+    window.__IUF_OHLCV_DATA__ = {
       sym: selected.symbol,
       bars: chartBars
     };
 
     // 3. Live symbol data for pickRow() price/change display
-    const symLive: Record<string, unknown> = {};
+    const symLive = {};
     if (selected.symbol) {
       symLive[selected.symbol] = {
         nm: selected.name || selected.symbol,
@@ -908,11 +1015,11 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
         vol: selected.volume
       };
     }
-    (window as unknown as Record<string, unknown>).__IUF_SYM_DATA_LIVE__ = symLive;
+    window.__IUF_SYM_DATA_LIVE__ = symLive;
 
     // 4. Redraw chart with real OHLCV now that globals are set
-    if (typeof (window as unknown as Record<string, unknown>).drawChart === "function" && chartBars.length > 0) {
-      (window as unknown as Record<string, { (sym: string): void }>).drawChart(selected.symbol || "2330");
+    if (typeof window.drawChart === "function" && chartBars.length > 0) {
+      window.drawChart(selected.symbol || "2330");
     }
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -929,8 +1036,9 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     if (stats[4]) stats[4].textContent = selected.volume == null ? "—" : n(selected.volume) + " 股";
     const wl = $("#wl-my");
     if (wl) wl.innerHTML = '<div class="group">'+esc((live.watchlist || []).length)+' 檔自選 / 候選</div>' + (live.watchlist || []).map((item, i) => '<div class="wrow '+(i===0?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
-    const symInput = $("#t-sym"); if (symInput) symInput.value = (selected.symbol || "") + "　" + (selected.name || "");
-    const priceInput = $("#t-price"); if (priceInput && selected.price != null) priceInput.value = Number(selected.price).toFixed(2);
+    const symInput = $("#t-sym"); if (symInput) { symInput.value = (selected.symbol || "") + "　" + (selected.name || ""); symInput.setAttribute("value", symInput.value); }
+    const priceInput = $("#t-price"); if (priceInput && selected.price != null) { priceInput.value = Number(selected.price).toFixed(2); priceInput.setAttribute("value", priceInput.value); }
+    applyPaperPrefill(selected);
     const ordersArr = (live.orders || []).slice(0, 12);
     const ordersBody = $('#orders-body') || $('.ltab[data-lt="orders"] tbody');
     if (ordersBody) ordersBody.innerHTML = ordersArr.map((row) => {
@@ -983,7 +1091,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = n(capitalTWD);
     const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = n(capitalTWD);
     // expose to updPreview() in vendor HTML
-    (window as unknown as Record<string, unknown>).__IUF_AVAIL_CASH__ = capitalTWD;
+    window.__IUF_AVAIL_CASH__ = capitalTWD;
     const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = n(capitalTWD);
     const submit = $("#submit-btn");
     if (submit) submit.addEventListener("click", async (event) => {
@@ -994,7 +1102,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       const orderType = $("#t-otype")?.value || "limit";
       const side = $("#side .on")?.dataset.side || "buy";
       const px = Number($("#t-price")?.value || selected.price || 0);
-      const getSubmitLabel = () => ($("#submit-btn-label") as HTMLElement | null) || (submit.querySelector("b") as HTMLElement | null);
+      const getSubmitLabel = () => $("#submit-btn-label") || submit.querySelector("b");
       submit.disabled = true;
       const submitLabel0 = getSubmitLabel(); if (submitLabel0) submitLabel0.textContent = "預覽中...";
       const payload = { symbol: selected.symbol, side, orderType, qty, quantity_unit: unit, price: orderType === "market" ? null : px };
@@ -1022,8 +1130,8 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
           }
         }
         if (!confirmed.ok) throw new Error(confirmed.error || "submit_failed");
-        const simData = confirmed.data && typeof confirmed.data === "object" ? confirmed.data as Record<string, unknown> : null;
-        const tradeId = simData && "data" in simData && simData.data && typeof simData.data === "object" ? String((simData.data as Record<string, unknown>).tradeId || "") : "";
+        const simData = confirmed.data && typeof confirmed.data === "object" ? confirmed.data : null;
+        const tradeId = simData && simData.data && typeof simData.data === "object" ? String(simData.data.tradeId || "") : "";
         const lbl1 = getSubmitLabel(); if (lbl1) lbl1.textContent = tradeId ? "KGI SIM #" + tradeId : "KGI SIM 已接收";
         // Refresh orders/fills/positions without full reload
         setTimeout(async () => {
@@ -1039,7 +1147,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     }, true);
 
     // ── Position banner (real portfolio for selected symbol) ──────────────────
-    const selPos = (live.portfolio || []).find((p: Record<string, unknown>) => String(p.symbol) === String(selected.symbol));
+    const selPos = (live.portfolio || []).find((p) => String(p.symbol) === String(selected.symbol));
     const banner = $("#posbanner");
     if (banner) {
       if (selPos && Number(selPos.netQtyShares || 0) > 0) {
@@ -1047,7 +1155,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
         const bannerQty = $("#banner-qty"); if (bannerQty) bannerQty.textContent = n(selPos.netQtyShares) + " 股";
         const bannerAvg = $("#banner-avg"); if (bannerAvg) bannerAvg.textContent = price(selPos.avgCostPerShare);
         // days held: calculate from oldest fill for this symbol
-        const symFills = (live.fills || []).filter((f: Record<string, unknown>) => String(f.symbol) === String(selected.symbol));
+        const symFills = (live.fills || []).filter((f) => String(f.symbol) === String(selected.symbol));
         const oldestFill = symFills.length ? symFills[symFills.length - 1] : null;
         const daysEl = $("#banner-days");
         if (daysEl) {
@@ -1081,7 +1189,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     const fills = live.fills || [];
     let totalMktVal = 0;
     let totalCost = 0;
-    portfolio.forEach((pos: Record<string, unknown>) => {
+    portfolio.forEach((pos) => {
       const posPrice = String(pos.symbol) === String(selected.symbol) ? (selected.price ?? pos.avgCostPerShare) : pos.avgCostPerShare;
       const mv = Number(posPrice || 0) * Number(pos.netQtyShares || 0);
       totalMktVal += mv;
@@ -1103,15 +1211,15 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     const posCountEl = $("#summary-poscount"); if (posCountEl) posCountEl.textContent = String(portfolio.length);
     // today fills count
     const todayStr = new Date().toISOString().slice(0, 10);
-    const todayFillCount = fills.filter((f: Record<string, unknown>) => String(f.fillTime || "").startsWith(todayStr)).length;
+    const todayFillCount = fills.filter((f) => String(f.fillTime || "").startsWith(todayStr)).length;
     const fillCountEl = $("#summary-fillcount"); if (fillCountEl) fillCountEl.textContent = String(todayFillCount);
 
     // ── Events table (synthesised from fills + orders) ────────────────────────
     const eventsBody = $("#events-body");
     if (eventsBody) {
-      const events: Array<{ ts: string; cls: string; label: string; detail: string; ref: string; source: string }> = [];
+      const events = [];
       // fills → buy/sell events
-      (live.fills || []).slice(0, 8).forEach((f: Record<string, unknown>) => {
+      (live.fills || []).slice(0, 8).forEach((f) => {
         const side = String(f.side || "buy");
         events.push({
           ts: String(f.fillTime || "").slice(5, 16) || "—",
@@ -1123,11 +1231,11 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
         });
       });
       // pending orders → info events
-      (live.orders || []).filter((o: Record<string, unknown>) => {
-        const intent = (o.intent || o) as Record<string, unknown>;
+      (live.orders || []).filter((o) => {
+        const intent = o.intent || o;
         return String(intent.status || "") !== "FILLED";
-      }).slice(0, 4).forEach((o: Record<string, unknown>) => {
-        const intent = (o.intent || o) as Record<string, unknown>;
+      }).slice(0, 4).forEach((o) => {
+        const intent = o.intent || o;
         events.push({
           ts: String(intent.createdAt || "").slice(11, 19) || "—",
           cls: "ev-info",
@@ -1152,15 +1260,15 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       if (wlSigGroup) wlSigGroup.textContent = "策略候選 · " + ideas.length + " 檔";
       // Remove old static rows (keep only group div)
       Array.from(wlSig.querySelectorAll(".wrow")).forEach((el) => el.remove());
-      ideas.slice(0, 8).forEach((idea: Record<string, unknown>, i: number) => {
+      ideas.slice(0, 8).forEach((idea, i) => {
         const div = document.createElement("div");
         div.className = "wrow" + (i === 0 ? " on" : "");
         div.dataset.sym = String(idea.symbol || "");
         const tone = String(idea.statusClass || "") === "allow" ? "ok" : String(idea.statusClass || "") === "block" ? "bad" : "warn";
         div.innerHTML = '<span class="sym">' + esc(String(idea.symbol || "—")) + '</span><div class="body"><div class="nm">' + esc(String(idea.companyName || idea.symbol || "—")) + '</div><div class="meta">' + esc(String(idea.signalCount || 0)) + ' 訊號 · ' + esc(String(idea.completeness || 0)) + '%</div></div><div class="price"><span class="v">—</span><span class="d ' + tone + '">' + esc(String(idea.status || "—")) + '</span></div>';
         div.addEventListener("click", () => {
-          if (typeof (window as unknown as Record<string, unknown>).pickRow === "function") {
-            (window as unknown as Record<string, { (sym: string): void }>).pickRow(String(idea.symbol || ""));
+          if (typeof window.pickRow === "function") {
+            window.pickRow(String(idea.symbol || ""));
           }
         });
         wlSig.appendChild(div);
@@ -1170,18 +1278,18 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     // ── Watchlist wl-paper (allow-only ideas) ─────────────────────────────────
     const wlPaper = $("#wl-paper");
     const wlPaperGroup = $("#wl-paper-group");
-    const allowIdeas = ideas.filter((idea: Record<string, unknown>) => String(idea.decision || "") === "allow" || String(idea.decision || "") === "review");
+    const allowIdeas = ideas.filter((idea) => String(idea.decision || "") === "allow" || String(idea.decision || "") === "review");
     if (wlPaper && allowIdeas.length) {
       if (wlPaperGroup) wlPaperGroup.textContent = "可觀察 · 來自策略想法 · " + allowIdeas.length + " 檔";
       Array.from(wlPaper.querySelectorAll(".wrow")).forEach((el) => el.remove());
-      allowIdeas.slice(0, 6).forEach((idea: Record<string, unknown>, i: number) => {
+      allowIdeas.slice(0, 6).forEach((idea, i) => {
         const div = document.createElement("div");
         div.className = "wrow" + (i === 0 ? " on" : "");
         div.dataset.sym = String(idea.symbol || "");
         div.innerHTML = '<span class="sym">' + esc(String(idea.symbol || "—")) + '</span><div class="body"><div class="nm">' + esc(String(idea.companyName || idea.symbol || "—")) + '</div><div class="meta">AI 評分 ' + esc(String(idea.score || "—")) + ' · ' + esc(String(idea.confidence || "—")) + '</div></div><div class="price"><span class="v">—</span><span class="d ok">' + esc(String(idea.status || "—")) + '</span></div>';
         div.addEventListener("click", () => {
-          if (typeof (window as unknown as Record<string, unknown>).pickRow === "function") {
-            (window as unknown as Record<string, { (sym: string): void }>).pickRow(String(idea.symbol || ""));
+          if (typeof window.pickRow === "function") {
+            window.pickRow(String(idea.symbol || ""));
           }
         });
         wlPaper.appendChild(div);
