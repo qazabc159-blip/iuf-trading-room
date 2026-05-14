@@ -34,6 +34,7 @@ import type {
   Quote,
   QuoteProviderStatus,
   QuoteSource,
+  RecommendationFeedback,
   EffectiveRiskLimit,
   RiskCheckResult,
   RiskLimit,
@@ -56,6 +57,7 @@ import type {
   StrategyRunListSort,
   StrategyRunListView,
   StrategyRunRecord,
+  StockRecommendation,
   SubmitOrderResult,
   Theme,
   ThemeCreateInput,
@@ -153,6 +155,27 @@ export async function getThemes() {
 
 export async function getSession() {
   return request<AppSession>("/api/v1/session");
+}
+
+export type RecommendationListResponse = {
+  date: string;
+  generatedAt: string;
+  count: number;
+  items: StockRecommendation[];
+  _mock?: boolean;
+};
+
+export async function getRecommendationsToday() {
+  return requestRaw<RecommendationListResponse>("/api/v1/recommendations/today", {
+    cache: "no-store",
+  });
+}
+
+export async function sendRecommendationFeedback(id: string, input: RecommendationFeedback) {
+  return requestRaw<{ ok: true }>(`/api/v1/recommendations/${encodeURIComponent(id)}/feedback`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function createTheme(input: ThemeCreateInput) {
