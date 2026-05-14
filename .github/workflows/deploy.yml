@@ -82,10 +82,12 @@ jobs:
       # - Requires SEED_OWNER_EMAIL and SEED_OWNER_PASSWORD GitHub Secrets.
       # - Does not print credentials to logs.
       #
-      # Failure here is intentionally non-blocking, but visible in Actions.
+      # Failure here is BLOCKING: migration failures must fail the deploy job.
+      # If SEED_OWNER_EMAIL/SEED_OWNER_PASSWORD secrets are not set, add them in:
+      #   GitHub repo → Settings → Secrets and variables → Actions
       - name: Verify migrations applied (api only)
         if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
-        continue-on-error: true
+        continue-on-error: false
         env:
           SEED_OWNER_EMAIL: ${{ secrets.SEED_OWNER_EMAIL }}
           SEED_OWNER_PASSWORD: ${{ secrets.SEED_OWNER_PASSWORD }}
@@ -181,6 +183,16 @@ jobs:
           echo "::notice::Applied migrations: $COUNT | strategy_runs table: $STRATEGY_RUNS | sha: ${{ github.sha }}"
 
           if [ "$STRATEGY_RUNS" = "False" ] || [ "$STRATEGY_RUNS" = "false" ]; then
-            echo "::warning::strategy_runs table NOT present after deploy — migration may have failed. Check Railway logs."
+            echo "::error::strategy_runs table NOT present after deploy — migration may have failed. Check Railway logs."
             exit 1
           fi
+
+          # Hard check: migration count must match expected total.
+          # Update EXPECTED_MIGRATION_COUNT when adding new migrations.
+          EXPECTED_MIGRATION_COUNT=31
+          if [ "$COUNT" != "$EXPECTED_MIGRATION_COUNT" ]; then
+            echo "::error::Migration count mismatch: expected $EXPECTED_MIGRATION_COUNT but got $COUNT. Check Railway boot logs for migration errors."
+            exit 1
+          fi
+
+          echo "::notice::Migration count verified: $COUNT/$EXPECTED_MIGRATION_COUNT OK"
