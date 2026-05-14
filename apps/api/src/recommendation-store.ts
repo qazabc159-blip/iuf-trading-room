@@ -75,7 +75,7 @@ const MOCK_RECS: Omit<StockRecommendation, "date" | "generatedAt">[] = [
     },
     invalidation: {
       price: 920,
-      rule: "日收破 920 出場，停損 ~4%",
+      rule: "跌破 845 月線支撐則結構失效，建議減倉觀望",
     },
     targets: [
       { label: "TP1", price: 990, reason: "前波段高點壓力" },
@@ -136,7 +136,7 @@ const MOCK_RECS: Omit<StockRecommendation, "date" | "generatedAt">[] = [
     },
     invalidation: {
       price: 178,
-      rule: "日收破 178 出場，停損 ~5%",
+      rule: "跌破 50 日均線結構轉弱，建議調整曝險",
     },
     targets: [
       { label: "TP1", price: 200, reason: "整數關卡 + 前高壓力" },
@@ -194,7 +194,7 @@ const MOCK_RECS: Omit<StockRecommendation, "date" | "generatedAt">[] = [
     },
     invalidation: {
       price: 1010,
-      rule: "日收破 1010 不介入",
+      rule: "跌破 880 主升結構失效，建議離場觀察",
     },
     targets: [
       { label: "TP1", price: 1120, reason: "前波整理高點" },
