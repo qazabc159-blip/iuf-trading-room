@@ -4,6 +4,8 @@ import {
   desc,
   eq,
   inArray,
+  like,
+  not,
   or
 } from "drizzle-orm";
 
@@ -210,7 +212,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
     const rows = await db
       .select()
       .from(themes)
-      .where(eq(themes.workspaceId, workspace.id))
+      .where(and(eq(themes.workspaceId, workspace.id), not(like(themes.name, "[ORPHAN]%"))))
       .orderBy(desc(themes.updatedAt));
 
     const results = [];
@@ -743,12 +745,16 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       .where(and(...conditions))
       .orderBy(desc(signals.createdAt));
 
+    // scrubMojibake: remove U+FFFD replacement chars (same logic as scrubReplacementChars in openalice-pipeline)
+    const scrub = (s: string | null | undefined): string =>
+      (s ?? "").replace(/�+/g, "").replace(/\s{2,}/g, " ").trim();
+
     return rows.map((row) => ({
       id: row.id,
       category: row.category,
       direction: row.direction,
-      title: row.title,
-      summary: row.summary,
+      title: scrub(row.title),
+      summary: scrub(row.summary),
       confidence: row.confidence,
       themeIds: [],
       companyIds: Array.isArray(row.companyIds) ? (row.companyIds as string[]) : [],
