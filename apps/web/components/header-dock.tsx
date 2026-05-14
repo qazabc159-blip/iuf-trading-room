@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, FileText, GripHorizontal, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
+import { Bell, FileText, GripHorizontal, KeyRound, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
 
 import { apiLogout } from "@/lib/auth-client";
 
@@ -260,6 +260,15 @@ export function HeaderDock() {
               <span>個資</span>
               <b>Owner Workspace</b>
             </div>
+            <Link
+              className="header-account-menu-link"
+              role="menuitem"
+              href="/settings/account"
+              onClick={() => setAccountOpen(false)}
+            >
+              <KeyRound size={15} strokeWidth={1.9} />
+              <span>帳號設定</span>
+            </Link>
             {position !== null && (
               <button type="button" role="menuitem" onClick={handleResetPosition}>
                 <RotateCcw size={15} strokeWidth={1.9} />

@@ -163,6 +163,35 @@ export async function apiGetMe(): Promise<AuthSuccess | AuthFailure> {
   }
 }
 
+// ── Change password ───────────────────────────────────────────────────────────
+
+export type ChangePasswordResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function apiChangePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<ChangePasswordResult> {
+  if (!API_BASE) return missingApi();
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/change-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+
+    if (res.ok) return { ok: true };
+
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    return { ok: false, error: body.error ?? `server_error_${res.status}` };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
 export function authErrorMessage(error: string): string {
   switch (error) {
     case "invalid_credentials":
