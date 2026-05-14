@@ -339,10 +339,70 @@
   line-height: 1.6;
 }
 
+.notice svg {
+  margin-right: 6px;
+  vertical-align: -3px;
+}
+
 .error {
   border-color: rgba(230, 57, 70, 0.34);
   background: rgba(230, 57, 70, 0.07);
   color: #ffb3bb;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.confirmModal {
+  width: min(440px, 100%);
+  border: 1px solid rgba(200, 148, 63, 0.38);
+  border-radius: 8px;
+  background: rgba(8, 11, 16, 0.98);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+  padding: 18px;
+}
+
+.confirmModal h3 {
+  margin: 0;
+  color: var(--night-ink);
+  font-size: 18px;
+}
+
+.confirmModal p {
+  margin: 10px 0 0;
+  color: var(--night-mid);
+  font-size: 13px;
+  line-height: 1.68;
+}
+
+.confirmActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.buttonGhost {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid rgba(220, 228, 240, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--night-ink);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.buttonGhost:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 @media (max-width: 1180px) {

@@ -20,6 +20,9 @@ function money(value: number) {
   return Math.round(value).toLocaleString("zh-TW");
 }
 
+const MIN_SIM_CAPITAL = 50_000;
+const MAX_SIM_CAPITAL = 1_000_000;
+
 function LineChart({ points, color }: { points: StrategyCurvePoint[]; color: string }) {
   const width = 760;
   const height = 230;
@@ -84,12 +87,22 @@ function BarChart({ points, color }: { points: StrategyCurvePoint[]; color: stri
 function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: string }) {
   const [capital, setCapital] = useState("100000");
   const [confirmed, setConfirmed] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const budget = useMemo(() => Number(capital.replace(/,/g, "")), [capital]);
+  const capitalValid = Number.isFinite(budget) && budget >= MIN_SIM_CAPITAL && budget <= MAX_SIM_CAPITAL;
+  const capitalMessage = !Number.isFinite(budget) || budget <= 0
+    ? "請輸入投入金額。"
+    : budget < MIN_SIM_CAPITAL
+      ? `投入金額需至少 ${money(MIN_SIM_CAPITAL)} TWD。`
+      : budget > MAX_SIM_CAPITAL
+        ? `投入金額不可超過 ${money(MAX_SIM_CAPITAL)} TWD。`
+        : null;
+
   const preview = useMemo(() => {
-    const budget = Number(capital.replace(/,/g, ""));
     if (!Number.isFinite(budget) || budget <= 0) return [];
     return strategy.holdings.map((holding) => {
       const target = budget * holding.weight;
@@ -101,13 +114,13 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
         notional: qty * holding.price,
       };
     });
-  }, [capital, strategy.holdings]);
+  }, [budget, strategy.holdings]);
 
   const executable = preview.filter((row) => row.qty > 0);
   const totalNotional = executable.reduce((sum, row) => sum + row.notional, 0);
 
   async function submitBasket() {
-    if (!confirmed || busy || executable.length === 0) return;
+    if (!confirmed || busy || executable.length === 0 || !capitalValid) return;
     setBusy(true);
     setResult(null);
     setError(null);
@@ -125,6 +138,7 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
         accepted.push(`${row.symbol}:${res.data.status}`);
       }
       setResult(`KGI SIM 已送出 ${accepted.length} 檔；估計名目金額 ${money(totalNotional)} TWD。`);
+      setConfirmOpen(false);
     } catch (err) {
       setError(formatKgiSimOrderError(err));
     } finally {
@@ -138,7 +152,7 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
       <p className={styles.sub} style={{ margin: "0 0 12px", fontSize: 13 }}>
         送往 KGI SIM，正式帳戶寫入封鎖。下方會依目前籃子價格換算股數。
       </p>
-      <label htmlFor="capital" className={styles.eyebrow}>CAPITAL TWD</label>
+      <label htmlFor="capital" className={styles.eyebrow}>CAPITAL TWD / 50,000 - 1,000,000</label>
       <input
         id="capital"
         className={styles.input}
@@ -146,6 +160,7 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
         value={capital}
         onChange={(event) => setCapital(event.target.value.replace(/[^\d]/g, ""))}
       />
+      {capitalMessage && <div className={`${styles.notice} ${styles.error}`} style={{ marginTop: 10 }}>{capitalMessage}</div>}
 
       <div className={styles.previewList}>
         {preview.map((row) => (
@@ -166,12 +181,37 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
         我確認這次只送 KGI SIM，不寫入正式券商帳戶。
       </label>
 
-      <button className={styles.button} type="button" disabled={!confirmed || busy || executable.length === 0} onClick={submitBasket}>
-        {busy ? "送出中" : "送出 SIM 籃子"}
+      <button
+        className={styles.button}
+        type="button"
+        disabled={!confirmed || busy || executable.length === 0 || !capitalValid}
+        onClick={() => setConfirmOpen(true)}
+      >
+        {busy ? "送出中" : "確認 SIM 訂閱"}
       </button>
 
       {result && <div className={styles.notice} style={{ marginTop: 12 }}>{result}</div>}
       {error && <div className={`${styles.notice} ${styles.error}`} style={{ marginTop: 12 }}>{error}</div>}
+
+      {confirmOpen && (
+        <div className={styles.modalBackdrop} role="presentation">
+          <div className={styles.confirmModal} role="dialog" aria-modal="true" aria-labelledby="sim-confirm-title">
+            <h3 id="sim-confirm-title">確認 SIM 籃子</h3>
+            <p>
+              將送往 KGI SIM：{executable.length} 檔，預估名目金額 {money(totalNotional)} TWD。
+              正式券商帳戶仍維持封鎖。
+            </p>
+            <div className={styles.confirmActions}>
+              <button type="button" className={styles.buttonGhost} onClick={() => setConfirmOpen(false)} disabled={busy}>
+                取消
+              </button>
+              <button type="button" className={styles.button} onClick={submitBasket} disabled={busy}>
+                {busy ? "送出中" : "送出 KGI SIM"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
@@ -181,6 +221,10 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
   return (
     <div className={styles.detailLayout} style={{ "--accent": color } as React.CSSProperties}>
       <div>
+        <div className={styles.notice} style={{ marginBottom: 16 }}>
+          <strong>SIM 帳戶執行中</strong> / 此頁沒有正式交易按鈕，送出前需再次確認 KGI SIM。
+        </div>
+
         <section className={styles.band}>
           <h2>策略邏輯</h2>
           <p className={styles.signal}>{strategy.signal}</p>

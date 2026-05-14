@@ -1,17 +1,98 @@
 import Link from "next/link";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
+import styles from "./QuantStrategies.module.css";
+import { QUANT_STRATEGIES, type QuantStrategy, type StrategyCurvePoint } from "./strategy-data";
 
 export const dynamic = "force-dynamic";
 
-const STRATEGY_FIELDS = [
-  ["量化分數", "SCORE"],
-  ["市場狀態", "REGIME"],
-  ["回測勝率", "WIN"],
-  ["最大回撤", "MAX DD"],
-  ["閘門狀態", "GATE"],
-  ["最後快照", "SNAPSHOT"],
-];
+function accentColor(accent: QuantStrategy["accent"]) {
+  if (accent === "cyan") return "#5cc8ff";
+  if (accent === "green") return "#58d68d";
+  return "#e2b85c";
+}
+
+function pct(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function MiniSpark({ points, color }: { points: StrategyCurvePoint[]; color: string }) {
+  const width = 260;
+  const height = 74;
+  const pad = 8;
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 1);
+  const range = max - min || 1;
+  const line = points
+    .map((point, index) => {
+      const x = pad + (index / Math.max(points.length - 1, 1)) * (width - pad * 2);
+      const y = height - pad - ((point.value - min) / range) * (height - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="74" role="img" aria-label="策略淨值縮圖">
+      <polyline points={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="rgba(220,228,240,.14)" />
+    </svg>
+  );
+}
+
+function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
+  const color = accentColor(strategy.accent);
+  const gateLabel = strategy.metrics.sharpe === null ? "WATCH" : "SIM OBS";
+
+  return (
+    <article className={styles.card} style={{ "--accent": color } as React.CSSProperties}>
+      <div className={styles.cardBody}>
+        <div className={styles.cardHead}>
+          <div className={styles.iconMark}>{strategy.shortName.slice(0, 2).toUpperCase()}</div>
+          <span className={styles.tag}>{gateLabel}</span>
+        </div>
+
+        <h2>{strategy.name}</h2>
+        <p className={styles.role}>
+          {strategy.role} / {strategy.cadence} / {strategy.basketSize}
+        </p>
+        <p className={styles.signal}>{strategy.signal}</p>
+
+        <div className={styles.metricGrid}>
+          <div className={styles.metric}>
+            <span>量化分數</span>
+            <strong>同步中</strong>
+          </div>
+          <div className={styles.metric}>
+            <span>Regime</span>
+            <strong>{strategy.role}</strong>
+          </div>
+          <div className={styles.metric}>
+            <span>回測勝率</span>
+            <strong>{pct(strategy.metrics.hitRatePct)}</strong>
+          </div>
+          <div className={styles.metric}>
+            <span>最大回撤</span>
+            <strong>{pct(strategy.metrics.maxDrawdownPct)}</strong>
+          </div>
+        </div>
+
+        <div className={styles.spark}>
+          <MiniSpark points={strategy.curve} color={color} />
+        </div>
+
+        <div className={styles.notice} style={{ marginBottom: 12 }}>
+          <ShieldCheck size={15} strokeWidth={1.9} /> SIM-only v1 / {strategy.current.status}
+        </div>
+
+        <Link className={styles.cta} href={`/quant-strategies/${strategy.id}`}>
+          檢視策略與 SIM 配置 <ArrowRight size={16} strokeWidth={1.9} />
+        </Link>
+      </div>
+    </article>
+  );
+}
 
 export default function QuantStrategiesPage() {
   return (
@@ -19,7 +100,7 @@ export default function QuantStrategiesPage() {
       code="QNT"
       title="量化策略"
       sub="Athena 訊號 / SIM-only"
-      note="v1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。"
+      note="v1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等 Jason endpoint 回傳後才顯示數字。"
     >
       <style>{`
         ._qnt-tabs {
@@ -28,8 +109,7 @@ export default function QuantStrategiesPage() {
           gap: 8px;
           margin-bottom: 16px;
         }
-        ._qnt-tabs a,
-        ._qnt-subscribe {
+        ._qnt-tabs a {
           min-height: 36px;
           display: inline-flex;
           align-items: center;
@@ -42,8 +122,7 @@ export default function QuantStrategiesPage() {
           font: 800 11px/1 var(--mono);
           text-decoration: none;
         }
-        ._qnt-tabs a:hover,
-        ._qnt-subscribe:hover {
+        ._qnt-tabs a:hover {
           color: var(--tac-fg-0);
           border-color: rgba(200, 148, 63, 0.42);
           background: rgba(200, 148, 63, 0.08);
@@ -59,51 +138,8 @@ export default function QuantStrategiesPage() {
           font-size: 12px;
           line-height: 1.55;
         }
-        ._qnt-field-grid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 10px;
-          padding: 16px;
-        }
-        ._qnt-field {
-          min-height: 104px;
-          border: 1px solid rgba(200, 148, 63, 0.16);
-          border-radius: 8px;
-          background: rgba(9, 14, 20, 0.82);
-          padding: 13px;
-        }
-        ._qnt-field span {
-          display: block;
-          color: var(--tac-brand);
-          font: 900 10px/1 var(--mono);
-        }
-        ._qnt-field b {
-          display: block;
-          margin-top: 9px;
-          color: var(--tac-fg-0);
-          font: 850 14px/1.3 var(--sans-tc);
-        }
-        ._qnt-field small {
-          display: block;
-          margin-top: 7px;
-          color: var(--tac-fg-3);
-          font: 700 11px/1.5 var(--sans-tc);
-        }
-        ._qnt-subscribe-box {
-          border-top: 1px solid var(--tac-line);
-          margin: 0 16px 16px;
-          padding-top: 14px;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          gap: 12px;
-          align-items: center;
-          color: var(--tac-fg-2);
-          font-size: 12px;
-          line-height: 1.7;
-        }
-        @media (max-width: 920px) {
-          ._qnt-field-grid,
-          ._qnt-subscribe-box { grid-template-columns: 1fr; }
+        ._qnt-grid-wrap {
+          padding: 0 16px 16px;
         }
       `}</style>
 
@@ -112,27 +148,16 @@ export default function QuantStrategiesPage() {
         <Link href="/lab/strategies">Lab 策略清單</Link>
       </div>
 
-      <Panel code="QNT-01" title="策略列表" sub="策略分數、回測風險與訂閱狀態接入後即時呈現。">
+      <Panel code="QNT-01" title="策略列表" sub="策略分數、回測風險與 SIM-only 配置。">
         <div className="_qnt-banner">
           <b className="tg gold">SIM 帳戶執行中</b> / v1 只開放模擬帳戶，不提供正式交易切換。
         </div>
-        <div className="_qnt-field-grid">
-          {STRATEGY_FIELDS.map(([label, field]) => (
-            <article key={field} className="_qnt-field">
-              <span>{field}</span>
-              <b>{label}</b>
-              <small>資料同步中</small>
-            </article>
-          ))}
-        </div>
-        <div className="_qnt-subscribe-box">
-          <div>
-            <b className="tg gold">訂閱面板</b>
-            <p>投入金額 50,000 - 1,000,000 NTD；確認後只送 SIM 帳戶。</p>
+        <div className="_qnt-grid-wrap">
+          <div className={styles.grid}>
+            {QUANT_STRATEGIES.map((strategy) => (
+              <StrategyCard key={strategy.id} strategy={strategy} />
+            ))}
           </div>
-          <Link className="_qnt-subscribe" href="/portfolio">
-            前往交易室
-          </Link>
         </div>
       </Panel>
     </PageFrame>
