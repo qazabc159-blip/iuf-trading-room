@@ -1505,8 +1505,10 @@ app.post("/api/v1/companies/merge", async (c) => {
 // =============================================================================
 function fixCP950Mojibake(s: string | null | undefined): string | null {
   if (s == null) return s ?? null;
-  // Fast path: no Latin-1 multibyte markers (ä å æ ç etc.) → no transcode needed
-  if (!/[\xc0-\xff]/.test(s)) return s;
+  // Fast path: no high bytes at all (pure ASCII) → no transcode needed.
+  // CP950 lead bytes span \xa1-\xfe (not just \xc0-\xff), so we must check
+  // the full \x80-\xff range to avoid skipping mojibake sequences.
+  if (!/[\x80-\xff]/.test(s)) return s;
   try {
     const buf = Buffer.from(s, "latin1");
     const decoded = iconvDecode(buf, "cp950");
@@ -1646,7 +1648,7 @@ app.get("/api/v1/themes/:id", async (c) => {
     return c.json({ error: "theme_not_found" }, 404);
   }
 
-  return c.json({ data: theme });
+  return c.json({ data: applyThemeTranscode(theme) });
 });
 
 app.patch("/api/v1/themes/:id", async (c) => {
