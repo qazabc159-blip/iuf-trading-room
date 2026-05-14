@@ -309,6 +309,34 @@ export async function createInviteCode(opts: {
   return { code, expiresAt };
 }
 
+// ── password policy ───────────────────────────────────────────────────────────
+/**
+ * Validates a new password against minimum policy.
+ * Returns null if valid, or an error code string if invalid.
+ * Policy: min 12 chars, at least 1 uppercase, 1 lowercase, 1 digit.
+ */
+export function validateNewPassword(password: string): string | null {
+  if (!password || password.length < 12) return "password_too_short";
+  if (!/[A-Z]/.test(password)) return "password_missing_uppercase";
+  if (!/[a-z]/.test(password)) return "password_missing_lowercase";
+  if (!/[0-9]/.test(password)) return "password_missing_digit";
+  return null;
+}
+
+// ── update password ───────────────────────────────────────────────────────────
+/**
+ * Updates a user's passwordHash in the DB.
+ * Caller is responsible for auth/authz checks before calling.
+ * Never logs the password value.
+ */
+export async function updateUserPassword(userId: string, newPasswordHash: string): Promise<void> {
+  const db = requireDb();
+  await db
+    .update(users)
+    .set({ passwordHash: newPasswordHash })
+    .where(eq(users.id, userId));
+}
+
 // ── seed owner on startup ─────────────────────────────────────────────────────
 export async function seedOwnerIfEmpty(): Promise<void> {
   const db = requireDb();

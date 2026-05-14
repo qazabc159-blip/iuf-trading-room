@@ -10603,6 +10603,50 @@ test("REC5: recordRecommendationFeedback stores and retrieves entries", () => {
   _resetRecommendationFeedbackStore();
 });
 
+// =============================================================================
+// Password management — contract tests (PWD1–PWD5)
+// =============================================================================
+import {
+  validateNewPassword,
+  hashPassword as hashPwd,
+  verifyPassword as verifyPwd,
+  updateUserPassword,
+} from "../apps/api/src/auth-store.ts";
+
+test("PWD1: validateNewPassword rejects passwords shorter than 12 chars", () => {
+  assert.equal(validateNewPassword("Short1!"), "password_too_short", "PWD1: < 12 chars rejected");
+  assert.equal(validateNewPassword(""), "password_too_short", "PWD1: empty rejected");
+  assert.equal(validateNewPassword("11charsPWD1"), "password_too_short", "PWD1: exactly 11 chars rejected");
+});
+
+test("PWD2: validateNewPassword rejects passwords missing required complexity", () => {
+  assert.equal(validateNewPassword("alllowercase123"), "password_missing_uppercase", "PWD2: no uppercase rejected");
+  assert.equal(validateNewPassword("ALLUPPERCASE123"), "password_missing_lowercase", "PWD2: no lowercase rejected");
+  assert.equal(validateNewPassword("NoDigitsHereAtAll"), "password_missing_digit", "PWD2: no digit rejected");
+});
+
+test("PWD3: validateNewPassword accepts a valid complex password", () => {
+  assert.equal(validateNewPassword("SecurePass123!"), null, "PWD3: valid password returns null");
+  assert.equal(validateNewPassword("AnotherValid99"), null, "PWD3: another valid password returns null");
+  assert.equal(validateNewPassword("Exactly12XY!1"), null, "PWD3: 13-char valid password returns null");
+});
+
+test("PWD4: hashPassword and verifyPassword round-trip correctly", async () => {
+  const password = "TestPassword123";
+  const hash = await hashPwd(password);
+  assert.ok(typeof hash === "string" && hash.includes(":"), "PWD4: hash has salt:key format");
+  const valid = await verifyPwd(password, hash);
+  assert.equal(valid, true, "PWD4: correct password verifies");
+  const invalid = await verifyPwd("WrongPassword1!", hash);
+  assert.equal(invalid, false, "PWD4: wrong password does not verify");
+});
+
+test("PWD5: updateUserPassword is exported from auth-store (DB integration skipped without live DB)", () => {
+  // Verify the function is exported and has expected signature.
+  // Actual DB mutation is tested in smoke / integration tests.
+  assert.equal(typeof updateUserPassword, "function", "PWD5: updateUserPassword is a function");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
