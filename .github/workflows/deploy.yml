@@ -78,14 +78,13 @@ jobs:
       # checks whether expected migrations applied through /api/v1/paper/db-probe.
       #
       # Security:
-      # - No fallback email/password.
-      # - Requires SEED_OWNER_EMAIL and SEED_OWNER_PASSWORD GitHub Secrets.
       # - Does not print credentials to logs.
-      #
-      # Failure here is intentionally non-blocking, but visible in Actions.
+      # - Route B: if SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets are missing,
+      #   emits ::warning:: and skips (exit 0) — does NOT hard-fail.
+      # - If secrets ARE set and verify fails, BLOCKING (exit 1).
       - name: Verify migrations applied (api only)
         if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
-        continue-on-error: true
+        continue-on-error: false
         env:
           SEED_OWNER_EMAIL: ${{ secrets.SEED_OWNER_EMAIL }}
           SEED_OWNER_PASSWORD: ${{ secrets.SEED_OWNER_PASSWORD }}
@@ -99,8 +98,8 @@ jobs:
           echo "Health: $HEALTH"
 
           if [ -z "${SEED_OWNER_EMAIL:-}" ] || [ -z "${SEED_OWNER_PASSWORD:-}" ]; then
-            echo "::error::SEED_OWNER_EMAIL or SEED_OWNER_PASSWORD GitHub secret is not set. Refusing to use fallback credentials."
-            exit 1
+            echo "::warning::SEED_OWNER_EMAIL or SEED_OWNER_PASSWORD secret not set — skipping migration verify (Route B)"
+            exit 0
           fi
 
           COOKIE_JAR="/tmp/iuf_cookies.txt"
@@ -181,6 +180,16 @@ jobs:
           echo "::notice::Applied migrations: $COUNT | strategy_runs table: $STRATEGY_RUNS | sha: ${{ github.sha }}"
 
           if [ "$STRATEGY_RUNS" = "False" ] || [ "$STRATEGY_RUNS" = "false" ]; then
-            echo "::warning::strategy_runs table NOT present after deploy — migration may have failed. Check Railway logs."
+            echo "::error::strategy_runs table NOT present after deploy — migration may have failed. Check Railway logs."
             exit 1
           fi
+
+          # Hard check: migration count must match expected total.
+          # Update EXPECTED_MIGRATION_COUNT when adding new migrations.
+          EXPECTED_MIGRATION_COUNT=31
+          if [ "$COUNT" != "$EXPECTED_MIGRATION_COUNT" ]; then
+            echo "::error::Migration count mismatch: expected $EXPECTED_MIGRATION_COUNT but got $COUNT. Check Railway boot logs for migration errors."
+            exit 1
+          fi
+
+          echo "::notice::Migration count verified: $COUNT/$EXPECTED_MIGRATION_COUNT OK"

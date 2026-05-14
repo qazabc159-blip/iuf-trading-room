@@ -12355,13 +12355,20 @@ let _briefDispatcherLastFiredDate = "";
  * All run an immediate first tick on startup to backfill any missed runs.
  */
 function startSchedulers(workspaceSlug: string): void {
+  // CI-timeout fix (2026-05-14): scheduler intervals must not keep the Node process alive
+  // in test mode. .unref() lets the event loop exit once all tests complete while leaving
+  // prod behaviour unchanged (the HTTP server's own handle keeps the process alive in prod).
+  function ui(fn: () => unknown, ms: number): NodeJS.Timeout {
+    return setInterval(fn, ms).unref();
+  }
+
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
   const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
   const INITIAL_STAGGER_MS = schedulerPositiveInt("FINMIND_SCHEDULER_INITIAL_STAGGER_MS", 15_000);
 
   // F2: OHLCV sync — immediate first run then every 6h
   scheduleInitialSchedulerTick("ohlcv-scheduler", 0, () => runOhlcvSchedulerTick(workspaceSlug));
-  setInterval(() => {
+  ui(() => {
     runOhlcvSchedulerTick(workspaceSlug).catch((e) =>
       console.error("[ohlcv-scheduler] Interval tick failed:", e)
     );
@@ -12400,7 +12407,7 @@ function startSchedulers(workspaceSlug: string): void {
   }
 
   // 60-second poll: fire when in 09:00–09:05 window and not yet fired today
-  setInterval(() => {
+  ui(() => {
     const todayTst = getTstDateString();
     if (_briefDispatcherLastFiredDate === todayTst) return; // already fired today
     if (!isBriefDispatchWindow()) return; // outside 09:00–09:05 window
@@ -12430,7 +12437,7 @@ function startSchedulers(workspaceSlug: string): void {
   scheduleInitialSchedulerTick("fundamentals-scheduler/monthly-revenue", INITIAL_STAGGER_MS, () =>
     runMonthlyRevenueSchedulerTick(workspaceSlug)
   );
-  setInterval(() => {
+  ui(() => {
     runMonthlyRevenueSchedulerTick(workspaceSlug).catch((e) =>
       console.error("[fundamentals-scheduler] monthly-revenue interval tick failed:", e)
     );
@@ -12440,7 +12447,7 @@ function startSchedulers(workspaceSlug: string): void {
   scheduleInitialSchedulerTick("fundamentals-scheduler/financials", INITIAL_STAGGER_MS * 2, () =>
     runFinancialsSchedulerTick(workspaceSlug)
   );
-  setInterval(() => {
+  ui(() => {
     runFinancialsSchedulerTick(workspaceSlug).catch((e) =>
       console.error("[fundamentals-scheduler] financials interval tick failed:", e)
     );
@@ -12451,7 +12458,7 @@ function startSchedulers(workspaceSlug: string): void {
   scheduleInitialSchedulerTick("trading-flow-scheduler/institutional", INITIAL_STAGGER_MS * 3, () =>
     runTradingFlowInstitutionalTick(workspaceSlug)
   );
-  setInterval(() => {
+  ui(() => {
     runTradingFlowInstitutionalTick(workspaceSlug).catch((e) =>
       console.error("[trading-flow-scheduler] institutional interval tick failed:", e)
     );
@@ -12461,7 +12468,7 @@ function startSchedulers(workspaceSlug: string): void {
   scheduleInitialSchedulerTick("trading-flow-scheduler/margin-short", INITIAL_STAGGER_MS * 4, () =>
     runTradingFlowMarginShortTick(workspaceSlug)
   );
-  setInterval(() => {
+  ui(() => {
     runTradingFlowMarginShortTick(workspaceSlug).catch((e) =>
       console.error("[trading-flow-scheduler] margin-short interval tick failed:", e)
     );
@@ -12471,7 +12478,7 @@ function startSchedulers(workspaceSlug: string): void {
   scheduleInitialSchedulerTick("trading-flow-scheduler/shareholding", INITIAL_STAGGER_MS * 5, () =>
     runTradingFlowShareholdingTick(workspaceSlug)
   );
-  setInterval(() => {
+  ui(() => {
     runTradingFlowShareholdingTick(workspaceSlug).catch((e) =>
       console.error("[trading-flow-scheduler] shareholding interval tick failed:", e)
     );
@@ -12481,7 +12488,7 @@ function startSchedulers(workspaceSlug: string): void {
   scheduleInitialSchedulerTick("market-intel-scheduler/dividend", INITIAL_STAGGER_MS * 6, () =>
     runMarketIntelDividendTick(workspaceSlug)
   );
-  setInterval(() => {
+  ui(() => {
     runMarketIntelDividendTick(workspaceSlug).catch((e) =>
       console.error("[market-intel-scheduler] dividend interval tick failed:", e)
     );
@@ -12491,7 +12498,7 @@ function startSchedulers(workspaceSlug: string): void {
   scheduleInitialSchedulerTick("market-intel-scheduler/market-value", INITIAL_STAGGER_MS * 7, () =>
     runMarketIntelMarketValueTick(workspaceSlug)
   );
-  setInterval(() => {
+  ui(() => {
     runMarketIntelMarketValueTick(workspaceSlug).catch((e) =>
       console.error("[market-intel-scheduler] market-value interval tick failed:", e)
     );
@@ -12501,7 +12508,7 @@ function startSchedulers(workspaceSlug: string): void {
   scheduleInitialSchedulerTick("market-intel-scheduler/valuation", INITIAL_STAGGER_MS * 8, () =>
     runMarketIntelValuationTick(workspaceSlug)
   );
-  setInterval(() => {
+  ui(() => {
     runMarketIntelValuationTick(workspaceSlug).catch((e) =>
       console.error("[market-intel-scheduler] valuation interval tick failed:", e)
     );
@@ -12512,7 +12519,7 @@ function startSchedulers(workspaceSlug: string): void {
   scheduleInitialSchedulerTick("market-intel-scheduler/stock-news", INITIAL_STAGGER_MS * 9, () =>
     runMarketIntelNewsTick(workspaceSlug)
   );
-  setInterval(() => {
+  ui(() => {
     runMarketIntelNewsTick(workspaceSlug).catch((e) =>
       console.error("[market-intel-scheduler] stock-news interval tick failed:", e)
     );
@@ -12566,7 +12573,7 @@ function startSchedulers(workspaceSlug: string): void {
       .then(() => handlePipelineSuccess("pre_market"))
       .catch((e: unknown) => handlePipelineFail("pre_market", e));
   }, 10_000);
-  setInterval(() => {
+  ui(() => {
     runPipelinePreMarketTick(workspaceSlug)
       .then(() => handlePipelineSuccess("pre_market"))
       .catch((e) => handlePipelineFail("pre_market", e));
@@ -12576,7 +12583,7 @@ function startSchedulers(workspaceSlug: string): void {
   runPipelineCloseWatchTick(workspaceSlug)
     .then(() => handlePipelineSuccess("close_watch"))
     .catch((e) => handlePipelineFail("close_watch", e));
-  setInterval(() => {
+  ui(() => {
     runPipelineCloseWatchTick(workspaceSlug)
       .then(() => handlePipelineSuccess("close_watch"))
       .catch((e) => handlePipelineFail("close_watch", e));
@@ -12586,7 +12593,7 @@ function startSchedulers(workspaceSlug: string): void {
   runPipelineCloseBriefTick(workspaceSlug)
     .then(() => handlePipelineSuccess("close_brief"))
     .catch((e) => handlePipelineFail("close_brief", e));
-  setInterval(() => {
+  ui(() => {
     runPipelineCloseBriefTick(workspaceSlug)
       .then(() => handlePipelineSuccess("close_brief"))
       .catch((e) => handlePipelineFail("close_brief", e));
@@ -12597,7 +12604,7 @@ function startSchedulers(workspaceSlug: string): void {
   // Fires AFTER the daily brief pipeline's close-watch tick to avoid contention.
   // idempotency: generateStrategyBrief stores result in-memory; repeated calls
   // in same window are cheap (brief already in _lastResult).
-  setInterval(async () => {
+  ui(async () => {
     try {
       if (!isStrategyBriefWindow()) return;
       const todayDate = getStrategyBriefTstDate();
@@ -12627,7 +12634,7 @@ function startSchedulers(workspaceSlug: string): void {
       console.error("[event-engine] Initial tick failed:", e)
     );
   }, 30_000);
-  setInterval(() => {
+  ui(() => {
     runEventEngineTick().catch((e) =>
       console.error("[event-engine] Interval tick failed:", e)
     );
@@ -12637,7 +12644,7 @@ function startSchedulers(workspaceSlug: string): void {
   // Graceful: iuf_events table absent → empty digest → dry-run log (no email)
   // Graceful: RESEND_API_KEY absent → dry-run log (no email sent)
   // P0-2: Sentry capture on Resend HTTP 4xx/5xx failure
-  setInterval(() => {
+  ui(() => {
     runEmailDigestTick().then((result) => {
       // Capture Sentry alert when Resend returns 4xx/5xx
       if (!result.sent && result.reason && result.reason.startsWith("resend_http_")) {
@@ -12664,7 +12671,7 @@ function startSchedulers(workspaceSlug: string): void {
   // 08:00 / 12:00 / 18:00 / 24:00 TST. isWithinNewsWindowTrigger() enforces the gate
   // and prevents double-fire within 45min. workspaceId resolved from DB at tick time.
   const NEWS_AI_POLL_MS = 15 * 60 * 1000;
-  setInterval(async () => {
+  ui(async () => {
     try {
       const db = getDb();
       if (!db) return;
@@ -12695,7 +12702,7 @@ function startSchedulers(workspaceSlug: string): void {
   const WATCHDOG_INTERVAL_MS = 30 * 60 * 1000;
   let _watchdogConsecutiveFails = 0;
   const WATCHDOG_FAIL_THRESHOLD = schedulerPositiveInt("WATCHDOG_FAIL_THRESHOLD", 2);
-  setInterval(() => {
+  ui(() => {
     const memUsage = process.memoryUsage();
     const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
     const rssMB = Math.round(memUsage.rss / 1024 / 1024);
@@ -12730,7 +12737,7 @@ function startSchedulers(workspaceSlug: string): void {
   // Flips paper_observing → paper_complete for strategies that started before 13:30 TST.
   // Cadence: every 15min with a 17:00–17:30 TST window guard.
   const _paperObsCronMs = 15 * 60 * 1000;
-  setInterval(async () => {
+  ui(async () => {
     try {
       const now = new Date();
       // TST = UTC+8. 17:00–17:30 TST = 09:00–09:30 UTC.
@@ -12761,7 +12768,7 @@ function startSchedulers(workspaceSlug: string): void {
 
   // BLOCK #SIGNAL-STRATEGY
   const STRATEGY_SIGNAL_POLL_MS = 15 * 60 * 1000;
-  setInterval(() => {
+  ui(() => {
     if (!isStrategyEmitWindow()) return;
     runStrategySignalEmitterTick().catch((e) =>
       console.error("[signal-emitter/strategy] tick failed:", e instanceof Error ? e.message : e)
@@ -12777,7 +12784,7 @@ function startSchedulers(workspaceSlug: string): void {
     { label: "24:00", utcHour: 16 }
   ];
   const NEWS_SIGNAL_POLL_MS = 15 * 60 * 1000;
-  setInterval(() => {
+  ui(() => {
     const nowDate = new Date();
     const nowTotalMin = nowDate.getUTCHours() * 60 + nowDate.getUTCMinutes();
     for (const { label, utcHour } of NEWS_WINDOWS) {
@@ -12794,7 +12801,7 @@ function startSchedulers(workspaceSlug: string): void {
 
   // BLOCK #SIGNAL-QUOTE
   const QUOTE_BREAKOUT_POLL_MS = 30 * 60 * 1000;
-  setInterval(() => {
+  ui(() => {
     runQuoteBreakoutEmitterTick().catch((e) =>
       console.error("[signal-emitter/quote] tick failed:", e instanceof Error ? e.message : e)
     );
@@ -12818,7 +12825,7 @@ function startSchedulers(workspaceSlug: string): void {
 
   // Recurring 6h full ingest — all 11 datasets, bypasses cadence guards
   const SIX_HOURS_FULL_INGEST_MS = 6 * 60 * 60 * 1000;
-  setInterval(() => {
+  ui(() => {
     if (!process.env.FINMIND_API_TOKEN) return;
     if (isFullIngestRunning()) {
       console.log("[finmind-6h-ingest] already running, skipping interval tick");
@@ -12839,7 +12846,7 @@ function startSchedulers(workspaceSlug: string): void {
   // Steps: quote smoke + prod-broker audit (broker.* in 24h == 0) + trade smoke (dual-confirm gated).
   // Result: audit_logs action=kgi.sim.daily_smoke + ring buffer (GET .../daily-smoke-status).
   const KGI_SIM_DAILY_SMOKE_POLL_MS = 15 * 60 * 1000;
-  setInterval(() => {
+  ui(() => {
     runKgiSimDailySmokeSchedulerTick({ forceRun: false }).catch((e) =>
       console.error("[kgi-sim-daily-smoke] scheduler tick failed:", e instanceof Error ? e.message : e)
     );
@@ -12864,7 +12871,7 @@ function startSchedulers(workspaceSlug: string): void {
 
     // 1-hour poll — fires once per hour within the 09:00–15:00 TST weekday window
     // No per-day dedup needed: the ingest is idempotent (ON CONFLICT DO NOTHING).
-    setInterval(() => {
+    ui(() => {
       if (!isTwseAnnouncementIngestWindow()) return;
       console.log("[twse-ann-ingest] hourly window open, firing ingest");
       runTwseAnnouncementIngest().catch((e) =>

@@ -375,6 +375,104 @@ export async function getKgiPositions(): Promise<KgiPositionsResponse> {
   return envelope.data;
 }
 
+// ---------------------------------------------------------------------------
+// KGI SIM Order — direct gateway submit (not paper-only DB)
+// POST /api/v1/kgi/sim/order
+// ---------------------------------------------------------------------------
+
+export type KgiSimOrderPayload = {
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number;
+  price?: number | null;
+  orderType: "market" | "limit";
+  quantityUnit: "SHARE" | "LOT";
+};
+
+export type KgiSimOrderResponse = {
+  sim_only: true;
+  prod_write_blocked: true;
+  data: {
+    tradeId: string | null;
+    status: string;
+    symbol: string;
+    side: "buy" | "sell";
+    qty: number;
+    quantityUnit: "SHARE" | "LOT";
+    effectiveQtyShares: number;
+    price: number | null;
+    orderType: "market" | "limit";
+    isOddLot: boolean;
+    submittedAt: string;
+  };
+};
+
+export class KgiSimOrderApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.name = "KgiSimOrderApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+export async function submitKgiSimOrder(payload: KgiSimOrderPayload): Promise<KgiSimOrderResponse> {
+  if (!API_BASE) {
+    throw new KgiSimOrderApiError(503, "API_BASE_UNCONFIGURED", "尚未設定資料服務位置。");
+  }
+
+  const cookie = await ssrCookieHeader();
+  const response = await fetch(`${API_BASE}/api/v1/kgi/sim/order`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    body: JSON.stringify({
+      symbol: payload.symbol.trim().toUpperCase(),
+      side: payload.side,
+      qty: payload.qty,
+      price: payload.price ?? null,
+      orderType: payload.orderType,
+      quantityUnit: payload.quantityUnit,
+    }),
+  });
+
+  const body = await readJson(response);
+
+  if (!response.ok) {
+    const record = body && typeof body === "object" ? body as Record<string, unknown> : {};
+    const code = typeof record.error === "string" ? record.error : "KGI_SIM_SUBMIT_FAILED";
+    const msg = typeof record.message === "string" ? record.message : `HTTP ${response.status}`;
+    throw new KgiSimOrderApiError(response.status, code, msg);
+  }
+
+  return body as unknown as KgiSimOrderResponse;
+}
+
+export function formatKgiSimOrderError(error: unknown): string {
+  if (error instanceof KgiSimOrderApiError) {
+    if (error.code === "GATEWAY_AUTH_ERROR") return "KGI gateway 尚未登入，請聯絡楊董確認 gateway 連線狀態。";
+    if (error.code === "GATEWAY_UNREACHABLE") return "KGI EC2 gateway 無法連線，請確認 gateway 是否已啟動。";
+    if (error.code === "NOT_SIM_ENV") return "目前 KGI 環境非 SIM，無法下單；需要 KGI_ENV=sim。";
+    if (error.code === "ORDER_NOT_ENABLED") return "KGI gateway /order/create 尚未啟用（409），請聯絡 Jason 確認 gateway 版本。";
+    if (error.code === "VALIDATION_ERROR" || error.code === "ORDER_VALIDATION_REJECTED") return `委託欄位驗證失敗：${error.message}`;
+    if (error.code === "OWNER_ONLY") return "此功能僅限帳號擁有者使用。";
+    if (error.status === 409) return "目前 KGI gateway 連線中，請稍候再試。";
+    if (error.status >= 500) return `KGI SIM 服務暫時異常（${error.status}）：${error.message}`;
+    return `KGI SIM 委託失敗（${error.code}）：${error.message}`;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "KGI gateway 連線失敗，請確認服務狀態。";
+  return message.trim() ? `KGI SIM 委託發生錯誤：${message}` : "KGI SIM 委託發生未知錯誤。";
+}
+
 export function formatPaperOrderError(error: unknown) {
   if (error instanceof PaperOrderApiError) {
     const layer = error.layer ? ` layer=${error.layer}` : "";

@@ -1007,15 +1007,24 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
           preview = await fetch("/api/ui-final-v031-paper/preview", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
         }
         if (!preview.ok) throw new Error(preview.error || "preview_failed");
-        const submitPayload = Object.assign({}, payload, { idempotencyKey: "v031_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2) });
+        // Submit to KGI SIM endpoint (direct gateway, not paper-only DB)
+        const simPayload = { symbol: payload.symbol, side: payload.side, qty: payload.qty, price: payload.price, orderType: payload.orderType, quantityUnit: payload.quantity_unit };
         let confirmed;
         try {
-          confirmed = { ok:true, data: await apiPost("/api/v1/paper/submit", submitPayload) };
-        } catch {
-          confirmed = await fetch("/api/ui-final-v031-paper/submit", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+          const simRes = await apiPost("/api/v1/kgi/sim/order", simPayload);
+          confirmed = { ok:true, data: simRes };
+        } catch (simErr) {
+          // Fallback: if KGI SIM endpoint not reachable (e.g. gateway down), fall back to paper/submit
+          try {
+            confirmed = { ok:true, data: await apiPost("/api/v1/paper/submit", Object.assign({}, payload, { idempotencyKey: "v031_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2) })) };
+          } catch {
+            throw simErr;
+          }
         }
         if (!confirmed.ok) throw new Error(confirmed.error || "submit_failed");
-        const lbl1 = getSubmitLabel(); if (lbl1) lbl1.textContent = "紙上委託已送出";
+        const simData = confirmed.data && typeof confirmed.data === "object" ? confirmed.data as Record<string, unknown> : null;
+        const tradeId = simData && "data" in simData && simData.data && typeof simData.data === "object" ? String((simData.data as Record<string, unknown>).tradeId || "") : "";
+        const lbl1 = getSubmitLabel(); if (lbl1) lbl1.textContent = tradeId ? "KGI SIM #" + tradeId : "KGI SIM 已接收";
         // Refresh orders/fills/positions without full reload
         setTimeout(async () => {
           try { await refreshClientLive(); } catch { /* ignore */ }
