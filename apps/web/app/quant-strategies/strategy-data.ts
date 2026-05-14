@@ -13,6 +13,8 @@ export type StrategyCurvePoint = {
   periodReturn?: number;
 };
 
+export type DisplayStatus = "PASS" | "WATCH" | "FAIL" | null;
+
 export type QuantStrategy = {
   id: string;
   name: string;
@@ -23,6 +25,7 @@ export type QuantStrategy = {
   accent: "gold" | "cyan" | "green";
   maturity: string;
   signal: string;
+  displayStatus: DisplayStatus;
   logic: string[];
   sizing: string[];
   riskControls: string[];
@@ -86,6 +89,7 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
     cadence: "20 個交易日",
     basketSize: "4 檔等權",
     accent: "gold",
+    displayStatus: "WATCH",
     maturity: "前瞻觀察第 6 / 20 交易日",
     signal: "成交量 5/20 放大 + 20 日相對強度，選前 4 檔並套用流動性門檻。",
     logic: [
@@ -162,6 +166,7 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
     cadence: "每月營收發布後",
     basketSize: "20 檔等權",
     accent: "cyan",
+    displayStatus: "PASS",
     maturity: "Research Candidate / PIT repair",
     signal: "用月營收年增率加速度排序，抓營收動能突然抬升的股票。",
     logic: [
@@ -235,6 +240,7 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
     cadence: "每週資料",
     basketSize: "目前 6 / 20 收盤錨點",
     accent: "green",
+    displayStatus: null,
     maturity: "覆蓋層候選",
     signal: "挑低 Tier HHI 的持股結構，再用 SBL 風險分數壓掉借券壓力較高的標的。",
     logic: [

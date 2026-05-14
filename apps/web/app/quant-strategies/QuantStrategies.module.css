@@ -96,6 +96,16 @@
   background: var(--accent);
 }
 
+.cardHoverable {
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.14s ease;
+}
+
+.cardHoverable:hover {
+  border-color: color-mix(in srgb, var(--accent), transparent 30%);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.32), 0 0 0 1px color-mix(in srgb, var(--accent), transparent 58%);
+  transform: translateY(-2px);
+}
+
 .cardBody {
   display: flex;
   flex: 1;
