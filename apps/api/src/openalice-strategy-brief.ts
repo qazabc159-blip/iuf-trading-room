@@ -42,6 +42,7 @@ import { companiesOhlcv, getDb, isDatabaseMode, workspaces } from "@iuf-trading-
 
 import { callOpenAi, MODEL_ROUTINE, stripCodeFences } from "./openai-quota-guard.js";
 import { fetchStrategySnapshot, ALLOWED_STRATEGY_IDS } from "./lab-strategy-snapshot-fetcher.js";
+import { sanitizeBriefBody } from "./openalice-pipeline.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -879,7 +880,7 @@ export async function generateStrategyBrief(
           .map((s) => ({
             sectionId: typeof s.sectionId === "string" ? s.sectionId : "unknown",
             heading: sanitizeStrategyHeading(String(s.heading).slice(0, 100)),
-            body: String(s.body).slice(0, 1400)
+            body: sanitizeBriefBody(String(s.body).slice(0, 1400))
           }));
 
         if (parsedSections.length > 0) {
