@@ -87,7 +87,7 @@ const QUANTITY_UNITS: ReadonlyArray<{ value: QuantityUnit; label: string }> = [
 
 const SHARE_QUANTITY_PRESETS = [1, 10, 100, 499, 999] as const;
 const LOT_QUANTITY_PRESETS = [1, 2, 5] as const;
-const COMPANY_PAGE_PAPER_SUBMIT_ENABLED = false;
+const COMPANY_PAGE_PAPER_SUBMIT_ENABLED = true;
 
 function uiStateLabel(state: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING") {
   if (state === "LIVE") return "正常";
