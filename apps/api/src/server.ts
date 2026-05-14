@@ -13727,6 +13727,50 @@ app.get("/api/v1/discover", async (c) => {
   }
 });
 
+// =============================================================================
+// THEMES WIKI ALIAS (2026-05-15 Bruce P1-1)
+// Frontend /themes/wiki/[name] page fetches /api/v1/themes/wiki/:token/companies
+// Backend originally only had /api/v1/themes/:token/companies — add alias route
+// sharing the same handler. No logic change.
+// =============================================================================
+
+// GET /api/v1/themes/wiki/:token/companies
+// Alias for /api/v1/themes/:token/companies — supports frontend /themes/wiki/[name] page
+app.get("/api/v1/themes/wiki/:token/companies", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const token = c.req.param("token");
+  const result = await findCompaniesByWikilink(token);
+
+  return c.json({
+    token: result.token,
+    count: result.matches.length,
+    matches: result.matches,
+  });
+});
+
+// =============================================================================
+// NOTIFICATIONS STUB (2026-05-15 Bruce P1-2)
+// PR #494 wired frontend bell drawer — backend endpoint was missing.
+// v1 stub returns empty list; real notification table + EventLog integration
+// deferred to backlog.
+// =============================================================================
+
+// GET /api/v1/notifications?limit=50&unread_only=false
+app.get("/api/v1/notifications", (c) => {
+  // v1 stub — always returns empty list so frontend drawer renders without 404
+  return c.json({ notifications: [], unread_count: 0 });
+});
+
+// POST /api/v1/notifications/:id/mark-read
+app.post("/api/v1/notifications/:id/mark-read", (c) => {
+  // v1 stub — no-op; respond 204 so frontend marks-as-read call doesn't error
+  return new Response(null, { status: 204 });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
