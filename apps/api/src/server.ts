@@ -11598,9 +11598,12 @@ app.post("/api/v1/internal/alerts/force-dispatch", async (c) => {
 /**
  * POST /api/v1/admin/brief/backfill
  * 5/12 FIX: Backfill missing briefs for a date range (Owner only).
- * Body: { from: "2026-05-08", to: "2026-05-11" }
+ * Body: { from: "2026-05-08", to: "2026-05-11", force?: boolean }
  * Fires pipeline for each trading day in range that doesn't have a brief.
  * All 5-layer review gates still run — never skips content checks.
+ *
+ * force=true: DELETE existing brief(s) for each date then re-generate with sanitizer.
+ * Safe: single-row admin replace scoped to a date, not a schema/migration op.
  */
 app.post("/api/v1/admin/brief/backfill", async (c) => {
   const session = c.var.session;
@@ -11608,7 +11611,7 @@ app.post("/api/v1/admin/brief/backfill", async (c) => {
     return c.json({ error: "OWNER_ONLY" }, 403);
   }
 
-  let body: { from?: string; to?: string } = {};
+  let body: { from?: string; to?: string; force?: boolean } = {};
   try {
     body = await c.req.json();
   } catch {
@@ -11618,6 +11621,7 @@ app.post("/api/v1/admin/brief/backfill", async (c) => {
   // Also support query params for convenience
   const fromParam = body.from ?? c.req.query("from") ?? "";
   const toParam = body.to ?? c.req.query("to") ?? "";
+  const forceParam = body.force === true || c.req.query("force") === "true";
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fromParam) || !/^\d{4}-\d{2}-\d{2}$/.test(toParam)) {
     return c.json(
@@ -11630,20 +11634,32 @@ app.post("/api/v1/admin/brief/backfill", async (c) => {
     return c.json({ error: "INVALID_RANGE", message: "from must be <= to" }, 400);
   }
 
+  if (forceParam) {
+    console.log(
+      `[admin/brief/backfill] force=true triggered by Owner uid=${session.user.id} ` +
+      `for range=${fromParam}..${toParam}`
+    );
+  }
+
   const workspaceSlug = session.workspace.slug;
-  const backfillResult = await runPipelineBackfillRange(workspaceSlug, fromParam, toParam).catch((e: unknown) => ({
-    fired: [] as string[],
-    skipped: [] as string[],
-    errors: [e instanceof Error ? e.message : String(e)]
-  }));
+  const backfillResult = await runPipelineBackfillRange(workspaceSlug, fromParam, toParam, { force: forceParam }).catch(
+    (e: unknown) => ({
+      fired: [] as string[],
+      skipped: [] as string[],
+      errors: [e instanceof Error ? e.message : String(e)],
+      deleted: [] as string[]
+    })
+  );
 
   return c.json({
     data: {
       from: fromParam,
       to: toParam,
+      force: forceParam,
       fired: backfillResult.fired,
       skipped: backfillResult.skipped,
-      errors: backfillResult.errors
+      errors: backfillResult.errors,
+      deleted: backfillResult.deleted ?? []
     }
   });
 });

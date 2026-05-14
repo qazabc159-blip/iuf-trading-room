@@ -2373,26 +2373,32 @@ export async function runPipelineMissedDayCatchUpForAllWorkspaces(fallbackSlug: 
  * Admin backfill: fire the pipeline for each trading day in [fromDate, toDate] (inclusive).
  * Skips dates that already have a brief. Fires sequentially oldest-first.
  * Used by POST /api/v1/admin/brief/backfill.
+ *
+ * force=true: DELETE existing brief(s) for each date before re-running the pipeline.
+ * This is a single-row admin replace, not a destructive schema/migration op.
+ * Requires Owner session at the HTTP layer; audit log written per deletion.
  */
 export async function runPipelineBackfillRange(
   workspaceSlug: string,
   fromDate: string,
-  toDate: string
-): Promise<{ fired: string[]; skipped: string[]; errors: string[] }> {
+  toDate: string,
+  options?: { force?: boolean }
+): Promise<{ fired: string[]; skipped: string[]; errors: string[]; deleted: string[] }> {
   const fired: string[] = [];
   const skipped: string[] = [];
   const errors: string[] = [];
+  const deleted: string[] = [];
 
   if (!isDatabaseMode()) {
-    return { fired, skipped: [], errors: ["memory_mode_not_supported"] };
+    return { fired, skipped: [], errors: ["memory_mode_not_supported"], deleted };
   }
   const db = getDb();
-  if (!db) return { fired, skipped, errors: ["db_unavailable"] };
+  if (!db) return { fired, skipped, errors: ["db_unavailable"], deleted };
 
   // Enumerate all calendar dates in range [fromDate, toDate] oldest-first
   const from = new Date(fromDate + "T00:00:00+08:00");
   const to = new Date(toDate + "T00:00:00+08:00");
-  if (from > to) return { fired, skipped, errors: ["from_after_to"] };
+  if (from > to) return { fired, skipped, errors: ["from_after_to"], deleted };
 
   const candidates: string[] = [];
   for (const d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
@@ -2404,6 +2410,50 @@ export async function runPipelineBackfillRange(
     if (!isTrading) {
       skipped.push(`${date}:not_trading_day`);
       continue;
+    }
+
+    // force=true: resolve workspace, find existing briefs, DELETE them, then fall through to generation
+    if (options?.force) {
+      try {
+        const [ws] = await db
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.slug, workspaceSlug))
+          .limit(1)
+          .catch(() => [undefined]);
+
+        if (ws) {
+          const existingRows = await db
+            .select({ id: dailyBriefs.id })
+            .from(dailyBriefs)
+            .where(
+              and(
+                eq(dailyBriefs.workspaceId, ws.id),
+                eq(dailyBriefs.date, date)
+              )
+            );
+
+          if (existingRows.length > 0) {
+            const ids = existingRows.map((r) => r.id);
+            await db.delete(dailyBriefs).where(
+              and(
+                eq(dailyBriefs.workspaceId, ws.id),
+                eq(dailyBriefs.date, date)
+              )
+            );
+            const idList = ids.join(",");
+            console.log(`[admin/brief/backfill] force=true, deleted brief_id=${idList} for date=${date}`);
+            deleted.push(`${date}:${idList}`);
+          } else {
+            console.log(`[admin/brief/backfill] force=true, no existing brief to delete for date=${date}`);
+          }
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[admin/brief/backfill] force=true delete failed for date=${date}: ${msg}`);
+        errors.push(`${date}:force_delete_failed:${msg}`);
+        continue;
+      }
     }
 
     const result = await runPipelineForDate(workspaceSlug, date).catch((e: unknown) => {
@@ -2423,7 +2473,7 @@ export async function runPipelineBackfillRange(
     }
   }
 
-  return { fired, skipped, errors };
+  return { fired, skipped, errors, deleted };
 }
 
 // ── Observability additions (exported for server.ts extension) ────────────────
