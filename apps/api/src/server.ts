@@ -13363,6 +13363,144 @@ app.get("/api/v1/market/news/finmind", async (c) => {
 });
 
 // =============================================================================
+// Password management endpoints (2026-05-14 — post PR #426 emergency)
+// =============================================================================
+// POST /api/v1/admin/owner-reset-password  — Owner-only, resets own password
+// POST /api/v1/auth/change-password         — Any authenticated user
+//
+// Hard lines:
+//   - NEVER log password value
+//   - NEVER echo password in response
+//   - NEVER store plaintext (always hash via hashPassword)
+//   - No schema migration required (uses existing password_hash column)
+//   - Session cookie is HMAC-signed (no sessions table) — response clears
+//     the caller's own cookie to force re-login after password rotation
+// =============================================================================
+
+const ownerResetPasswordSchema = z.object({
+  newPassword: z.string().min(12)
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(12)
+});
+
+// POST /api/v1/admin/owner-reset-password
+// Owner-only. Resets the Owner's own password and clears their session cookie.
+// Use case: emergency rotation after a credential leak (e.g. PR #426).
+// Note: Because sessions are stateless HMAC cookies (no sessions table),
+// we cannot invalidate other active sessions server-side. The caller's cookie
+// is cleared in this response. Other devices must re-login after using an
+// invalid password (or wait for cookie expiry). A sessions table migration
+// can enable full invalidation in a future hardening sprint.
+app.post("/api/v1/admin/owner-reset-password", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  let body: z.infer<typeof ownerResetPasswordSchema>;
+  try {
+    body = ownerResetPasswordSchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "invalid_body", hint: "newPassword must be at least 12 characters" }, 400);
+  }
+
+  const { validateNewPassword, hashPassword: hashPw, updateUserPassword } = await import("./auth-store.js");
+
+  const policyError = validateNewPassword(body.newPassword);
+  if (policyError) {
+    return c.json({ error: policyError }, 400);
+  }
+
+  const newHash = await hashPw(body.newPassword);
+  await updateUserPassword(session.user.id, newHash);
+
+  // Clear the caller's session cookie — they must re-login with the new password
+  const { buildClearCookieHeader } = await import("./auth-store.js");
+  c.header("Set-Cookie", buildClearCookieHeader());
+
+  const ip = c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown";
+  console.log(`[admin/owner-reset-password] user_id=${session.user.id}, action=password_rotated, ip=${ip}`);
+
+  return c.json({
+    ok: true,
+    message: "Password rotated. Please log in again."
+  });
+});
+
+// POST /api/v1/auth/change-password
+// Any authenticated user. Verifies currentPassword before updating.
+// Keeps the caller's own session active (only clears on P0 owner-reset path).
+app.post("/api/v1/auth/change-password", async (c) => {
+  const session = c.get("session");
+  if (!session) {
+    return c.json({ error: "auth_required" }, 401);
+  }
+
+  let body: z.infer<typeof changePasswordSchema>;
+  try {
+    body = changePasswordSchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "invalid_body", hint: "currentPassword and newPassword (min 12 chars) required" }, 400);
+  }
+
+  const {
+    validateNewPassword,
+    hashPassword: hashPw,
+    verifyPassword,
+    updateUserPassword,
+    getUserById
+  } = await import("./auth-store.js");
+
+  // Re-fetch user to get current passwordHash
+  const userRow = await getUserById(session.user.id);
+  if (!userRow) {
+    return c.json({ error: "user_not_found" }, 404);
+  }
+
+  // Verify current password
+  // Note: if passwordHash is null (seed user without set password), fall back to env seed password
+  const { getDb } = await import("@iuf-trading-room/db");
+  const { users: usersTable } = await import("@iuf-trading-room/db");
+  const { eq: drizzleEq } = await import("drizzle-orm");
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+  const [dbUser] = await db.select().from(usersTable).where(drizzleEq(usersTable.id, session.user.id)).limit(1);
+  if (!dbUser) return c.json({ error: "user_not_found" }, 404);
+
+  let currentValid = false;
+  if (dbUser.passwordHash) {
+    currentValid = await verifyPassword(body.currentPassword, dbUser.passwordHash);
+  } else {
+    // seed user path
+    const seedPwd = process.env.SEED_OWNER_PASSWORD;
+    currentValid = !!(seedPwd && body.currentPassword === seedPwd);
+  }
+
+  if (!currentValid) {
+    return c.json({ error: "invalid_current_password" }, 401);
+  }
+
+  const policyError = validateNewPassword(body.newPassword);
+  if (policyError) {
+    return c.json({ error: policyError }, 400);
+  }
+
+  const newHash = await hashPw(body.newPassword);
+  await updateUserPassword(session.user.id, newHash);
+
+  const ip = c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown";
+  console.log(`[auth/change-password] user_id=${session.user.id}, action=password_changed, ip=${ip}`);
+
+  return c.json({
+    ok: true,
+    message: "Password updated."
+  });
+});
+
+// =============================================================================
 // Recommendation Orchestrator — Day 1 skeleton (2026-05-14)
 // =============================================================================
 // GET  /api/v1/recommendations/today   → StockRecommendation[]
