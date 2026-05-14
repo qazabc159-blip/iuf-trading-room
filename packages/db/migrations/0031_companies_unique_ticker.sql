@@ -41,7 +41,7 @@ WHERE id IN (
     SELECT
       cr.id,
       ROW_NUMBER() OVER (
-        PARTITION BY cr.workspace_id, s.survivor_id, cr.target_label, cr.relation_type
+        PARTITION BY cr.workspace_id, s.survivor_text, cr.target_label, cr.relation_type
         ORDER BY cr.id::text ASC
       ) AS rn
     FROM company_relations cr
