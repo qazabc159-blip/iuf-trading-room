@@ -8058,6 +8058,11 @@ function mapSnapshotToV47(raw: Record<string, unknown>): Record<string, unknown>
   const mWithoutLegacyReturns = Object.fromEntries(
     Object.entries(m).filter(([key]) => !legacyReturnKeys.has(key))
   );
+  // netAbsoluteReturn: explicit alias for netAbsoluteReturnAfterCost (U-06 fix 2026-05-14).
+  // Both fields are emitted so consumers using either path get the same value.
+  const netAbsoluteReturnAfterCost = typeof m["netAbsoluteReturnAfterCost"] === "number"
+    ? m["netAbsoluteReturnAfterCost"] : null;
+
   const mappedMetrics: Record<string, unknown> = {
     ...mWithoutLegacyReturns,
     ...(strategyNetAbsoluteReturnPct !== null && { strategyNetAbsoluteReturnPct }),
@@ -8067,6 +8072,11 @@ function mapSnapshotToV47(raw: Record<string, unknown>): Record<string, unknown>
     ...(maxDrawdownNetPct !== null && { maxDrawdownNetPct }),
     ...(maxDrawdownInternalExcessPct !== null && { maxDrawdownInternalExcessPct }),
     ...(estimatedEntryTicketCount !== null && { estimatedEntryTicketCount }),
+    // netAbsoluteReturn alias: same value as netAbsoluteReturnAfterCost (both kept for compatibility).
+    ...(netAbsoluteReturnAfterCost !== null && {
+      netAbsoluteReturnAfterCost,
+      netAbsoluteReturn: netAbsoluteReturnAfterCost,
+    }),
     // Legacy return aliases intentionally not emitted.
   };
 
