@@ -5,10 +5,12 @@ import Link from "next/link";
 
 import {
   formatPaperOrderError,
+  formatKgiSimOrderError,
   getPaperHealth,
   listPaperOrders,
   previewPaperOrder,
-  submitPaperOrder,
+  submitKgiSimOrder,
+  type KgiSimOrderResponse,
   type PaperHealthState,
   type PaperOrderInput,
   type PaperOrderState,
@@ -58,6 +60,7 @@ type SubmitState =
   | { status: "loading" }
   | { status: "live"; state: PaperOrderState }
   | { status: "blocked"; state: PaperOrderState }
+  | { status: "kgi_sim_accepted"; result: KgiSimOrderResponse["data"] }
   | { status: "error"; message: string };
 
 type OrdersState =
@@ -324,15 +327,22 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
     submitInFlight.current = true;
     setSubmit({ status: "loading" });
     try {
-      // F2: pass the same draft key used for preview so the server can deduplicate.
-      const state = await submitPaperOrder(input, draftKey ?? undefined);
-      setSubmit(state.intent.status === "REJECTED" ? { status: "blocked", state } : { status: "live", state });
+      // Wire to KGI SIM endpoint — direct gateway submit (not paper-only DB).
+      const res = await submitKgiSimOrder({
+        symbol: input.symbol,
+        side: input.side,
+        qty: input.qty,
+        price: input.price ?? null,
+        orderType: input.orderType as "market" | "limit",
+        quantityUnit: input.quantity_unit,
+      });
+      setSubmit({ status: "kgi_sim_accepted", result: res.data });
       setReviewOpen(false);
-      // F2: successful submit — clear draft key so a fresh draft gets a fresh key next time.
+      // Clear draft key so next preview gets a fresh one.
       setDraftKey(null);
       await refreshOrders();
     } catch (error) {
-      setSubmit({ status: "error", message: formatPaperOrderError(error) });
+      setSubmit({ status: "error", message: formatKgiSimOrderError(error) });
       await refreshOrders();
     } finally {
       // F1: always release the in-flight guard so the button can be used again after an error.
@@ -359,7 +369,7 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
       </div>
 
       <div className="paper-order-lock-note">
-        目前 paper 模式（虛擬下單）：所有委託只在模擬帳戶執行，不送凱基正式下單。
+        KGI SIM 模式：委託直接送往凱基 SIM 環境（itradetest.kgi.com.tw）。正式帳戶寫入永久封鎖（prod_write_blocked=true）。
         {paperHealth.status === "live" && !paperHealth.health.gate.killSwitchOk && (
           <span style={{ color: "var(--tw-up-bright, #ff4d5f)", fontWeight: 700, marginLeft: 8 }}>
             killSwitch 守住
@@ -508,14 +518,16 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
               disabled={!canSubmit || submit.status === "loading"}
               title={
                 !COMPANY_PAGE_PAPER_SUBMIT_ENABLED
-                  ? "目前 paper 模式（虛擬下單）：送出等待楊董明示後開啟。"
+                  ? "KGI SIM 送出尚未開啟。"
                   : paperHealth.status === "live" && !paperHealth.health.gate.killSwitchOk
                     ? "killSwitch 守住 — 全部送單暫停，等待楊董明示解除。"
-                    : !paperHealthReady
-                      ? "Paper E2E 送出閘門尚未開啟；不會送出模擬單。"
-                      : !canSubmit
-                        ? "請先完成通過的風控預覽。"
-                        : "送出前會開啟零股/整張確認視窗。"
+                    : paperHealth.status === "loading"
+                      ? "KGI gateway 連線中，請稍候..."
+                      : !paperHealthReady
+                        ? "Paper 閘門尚未開啟，暫時無法送出。"
+                        : !canSubmit
+                          ? "請先完成通過的風控預覽。"
+                          : "送出至 KGI SIM（itradetest.kgi.com.tw）。"
               }
               type="button"
               style={canSubmit ? {
@@ -527,8 +539,10 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
               {submit.status === "loading"
                 ? "送出中"
                 : !COMPANY_PAGE_PAPER_SUBMIT_ENABLED
-                  ? (paperHealth.status === "live" && !paperHealth.health.gate.killSwitchOk ? "killSwitch 守住" : "目前 Paper 模式")
-                  : "檢查並送出"}
+                  ? (paperHealth.status === "live" && !paperHealth.health.gate.killSwitchOk ? "killSwitch 守住" : "KGI SIM 待開啟")
+                  : paperHealth.status === "loading"
+                    ? "KGI gateway 連線中"
+                    : "送出 KGI SIM"}
             </button>
           </div>
 
@@ -561,6 +575,12 @@ export function PaperOrderPanel({ symbol, lastPrice = null }: { symbol: string; 
 
           {submit.status === "error" && (
             <TruthNote state="BLOCKED" text={submit.message} />
+          )}
+          {submit.status === "kgi_sim_accepted" && (
+            <TruthNote
+              state="LIVE"
+              text={`KGI SIM 已接收委託${submit.result.tradeId ? ` #${submit.result.tradeId}` : ""}：${submit.result.status} / ${submit.result.isOddLot ? "零股" : "整張"} ${submit.result.qty.toLocaleString("zh-TW")} ${submit.result.isOddLot ? "股" : "張"} ${submit.result.symbol}`}
+            />
           )}
           {(submit.status === "live" || submit.status === "blocked") && (
             <TruthNote
@@ -847,8 +867,8 @@ function CompanyOrderReviewModal({
       <div style={modalShellStyle} role="dialog" aria-modal="true" aria-label="模擬委託送出確認">
         <div style={modalHeaderStyle}>
           <div>
-            <div className="tg" style={{ color: "var(--gold-bright)", fontWeight: 800 }}>模擬委託送出確認</div>
-            <div style={modalSourceStyle}>台股單位防呆：零股=股，整張=1,000 股。本視窗確認後才送出模擬委託。</div>
+            <div className="tg" style={{ color: "var(--gold-bright)", fontWeight: 800 }}>KGI SIM 委託送出確認</div>
+            <div style={modalSourceStyle}>台股單位防呆：零股=股，整張=1,000 股。確認後送往 KGI SIM 環境（itradetest.kgi.com.tw），正式帳戶不受影響。</div>
           </div>
           <button type="button" onClick={onCancel} style={modalCloseStyle} disabled={isSubmitting}>取消</button>
         </div>
@@ -876,7 +896,7 @@ function CompanyOrderReviewModal({
           <KV k="模擬可用資金" v={formatTwd(demoCapital)} />
           <KV k="預估佔用" v={notional === null ? "市價單待後端計算" : formatTwd(notional)} />
           <KV k="預估手續費" v="NT$0（模擬單；正式券商另依費率）" />
-          <KV k="送出型態" v="模擬委託，不送券商" />
+          <KV k="送出型態" v="KGI SIM（itradetest.kgi.com.tw）/ prod_write_blocked=true" />
         </div>
 
         <TruthNote
