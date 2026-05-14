@@ -40,6 +40,11 @@ import { enqueueOpenAliceJob } from "./openalice-bridge.js";
 import { fireAiReviewerForDraft } from "./openalice-ai-reviewer.js";
 import { approveContentDraft, createContentDraft, dailyBriefPayloadSchema } from "./content-draft-store.js";
 import { callOpenAi, MODEL_ROUTINE, stripCodeFences } from "./openai-quota-guard.js";
+import {
+  getTwseMarketOverview,
+  getTwseIndustryHeatmap,
+  getTwseLeaders,
+} from "./data-sources/twse-openapi-client.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -325,6 +330,238 @@ async function isTwTradingDay(tradingDate: string): Promise<boolean> {
     // Table doesn't exist yet (migration not promoted) → fall back to weekend check only
     return true;
   }
+}
+
+// ── Live market snapshot (F1: real numbers injected into prompt) ──────────────
+
+/**
+ * Aggregated real market numbers fetched from TWSE OpenAPI + DB at brief
+ * generation time. All fields are nullable — missing data never blocks the brief.
+ */
+export type LiveMarketSnapshot = {
+  taiex: {
+    value: number | null;
+    change: number | null;
+    changePct: number | null;
+    sourceState: string | null;
+    asOf: string | null;
+  };
+  heatmapTop3: Array<{ industry: string; avgChangePct: number; direction: "up" | "down" | "flat" }>;
+  topGainers: Array<{ symbol: string; name: string; changePct: number }>;
+  topLosers: Array<{ symbol: string; name: string; changePct: number }>;
+  institutional: {
+    foreign: number | null;
+    trust: number | null;
+    dealer: number | null;
+    date: string | null;
+  };
+  margin: {
+    balanceChange: number | null;
+    shortChange: number | null;
+    date: string | null;
+  };
+};
+
+/**
+ * Collect live market numbers from TWSE OpenAPI + DB aggregate queries.
+ * Never throws — all errors return null fields. DB queries require a workspace.
+ */
+async function collectLiveMarketSnapshot(
+  workspaceId: string
+): Promise<LiveMarketSnapshot> {
+  const snapshot: LiveMarketSnapshot = {
+    taiex: { value: null, change: null, changePct: null, sourceState: null, asOf: null },
+    heatmapTop3: [],
+    topGainers: [],
+    topLosers: [],
+    institutional: { foreign: null, trust: null, dealer: null, date: null },
+    margin: { balanceChange: null, shortChange: null, date: null },
+  };
+
+  // 1. TAIEX overview from TWSE OpenAPI
+  try {
+    const overview = await getTwseMarketOverview();
+    if (overview) {
+      snapshot.taiex = {
+        value: overview.taiex?.value ?? null,
+        change: overview.taiex?.change ?? null,
+        changePct: overview.taiex?.changePct ?? null,
+        sourceState: overview._isLkg ? "lkg" : "live",
+        asOf: overview.taiex?.ts ? overview.taiex.ts.slice(0, 10) : null,
+      };
+    }
+  } catch {
+    // non-fatal
+  }
+
+  // 2. Heatmap top 3 sectors (gain + loss)
+  try {
+    const db = getDb();
+    if (db) {
+      // Build ticker→industry map from companies table
+      const compRows = await db.execute(
+        drizzleSql`SELECT ticker, chain_position FROM companies WHERE workspace_id = ${workspaceId} AND chain_position IS NOT NULL LIMIT 2000`
+      );
+      const rawArr = ((compRows as { rows?: Record<string, unknown>[] }).rows
+        ?? (Array.isArray(compRows) ? (compRows as Record<string, unknown>[]) : []));
+      const tickerToIndustry = new Map<string, string>();
+      for (const row of rawArr) {
+        if (typeof row["ticker"] === "string" && typeof row["chain_position"] === "string") {
+          tickerToIndustry.set(row["ticker"] as string, row["chain_position"] as string);
+        }
+      }
+      if (tickerToIndustry.size > 0) {
+        const tiles = await getTwseIndustryHeatmap(tickerToIndustry);
+        // Sort by |avgChangePct| desc, pick top 3
+        const sorted = [...tiles].sort((a, b) => Math.abs(b.avgChangePct) - Math.abs(a.avgChangePct));
+        snapshot.heatmapTop3 = sorted.slice(0, 3).map(t => ({
+          industry: t.industry,
+          avgChangePct: t.avgChangePct,
+          direction: t.avgChangePct > 0 ? "up" : t.avgChangePct < 0 ? "down" : "flat",
+        }));
+      }
+    }
+  } catch {
+    // non-fatal
+  }
+
+  // 3. Leaders top 5 gainers + losers
+  try {
+    const leaders = await getTwseLeaders({ topN: 5 });
+    snapshot.topGainers = leaders.topGainers.map(s => ({
+      symbol: s.symbol,
+      name: s.name,
+      changePct: s.changePct,
+    }));
+    snapshot.topLosers = leaders.topLosers.map(s => ({
+      symbol: s.symbol,
+      name: s.name,
+      changePct: s.changePct,
+    }));
+  } catch {
+    // non-fatal
+  }
+
+  // 4. Institutional net buy/sell aggregate from DB (latest date)
+  try {
+    const db = getDb();
+    if (db) {
+      const instRows = await db.execute(
+        drizzleSql.raw(
+          `SELECT date,
+            SUM(CASE WHEN investor_type='Foreign_Investor' THEN net_buy_sell ELSE 0 END) AS foreign_net,
+            SUM(CASE WHEN investor_type='Investment_Trust' THEN net_buy_sell ELSE 0 END) AS trust_net,
+            SUM(CASE WHEN investor_type='Dealer' THEN net_buy_sell ELSE 0 END) AS dealer_net
+           FROM tw_institutional_buysell
+           WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}')
+           GROUP BY date ORDER BY date DESC LIMIT 1`
+        )
+      );
+      const ir = ((instRows as { rows?: Record<string, unknown>[] }).rows
+        ?? (Array.isArray(instRows) ? (instRows as Record<string, unknown>[]) : []))[0];
+      if (ir) {
+        snapshot.institutional = {
+          foreign: ir["foreign_net"] != null ? Number(ir["foreign_net"]) : null,
+          trust: ir["trust_net"] != null ? Number(ir["trust_net"]) : null,
+          dealer: ir["dealer_net"] != null ? Number(ir["dealer_net"]) : null,
+          date: typeof ir["date"] === "string" ? ir["date"] : null,
+        };
+      }
+    }
+  } catch {
+    // non-fatal — table may not exist
+  }
+
+  // 5. Margin/short balance change from DB (latest 2 dates, compute delta)
+  try {
+    const db = getDb();
+    if (db) {
+      const marginRows = await db.execute(
+        drizzleSql.raw(
+          `SELECT date,
+            SUM(margin_purchase_today_balance) AS margin_balance,
+            SUM(short_sale_today_balance) AS short_balance
+           FROM tw_margin_short
+           WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}')
+           GROUP BY date ORDER BY date DESC LIMIT 2`
+        )
+      );
+      const mr = ((marginRows as { rows?: Record<string, unknown>[] }).rows
+        ?? (Array.isArray(marginRows) ? (marginRows as Record<string, unknown>[]) : []));
+      if (mr.length >= 2) {
+        const today = mr[0];
+        const prev = mr[1];
+        snapshot.margin = {
+          balanceChange: today["margin_balance"] != null && prev["margin_balance"] != null
+            ? Number(today["margin_balance"]) - Number(prev["margin_balance"])
+            : null,
+          shortChange: today["short_balance"] != null && prev["short_balance"] != null
+            ? Number(today["short_balance"]) - Number(prev["short_balance"])
+            : null,
+          date: typeof today["date"] === "string" ? today["date"] : null,
+        };
+      } else if (mr.length === 1 && mr[0]) {
+        snapshot.margin = {
+          balanceChange: null,
+          shortChange: null,
+          date: typeof mr[0]["date"] === "string" ? mr[0]["date"] : null,
+        };
+      }
+    }
+  } catch {
+    // non-fatal
+  }
+
+  return snapshot;
+}
+
+/**
+ * Render a LiveMarketSnapshot as a structured JSON block for LLM prompt injection.
+ * Only emits fields that have real values — never outputs nulls as "data".
+ */
+function formatLiveMarketSnapshotForPrompt(snap: LiveMarketSnapshot): string {
+  const lines: string[] = [];
+
+  if (snap.taiex.value !== null) {
+    lines.push(`TAIEX: ${snap.taiex.value} (${snap.taiex.change != null ? (snap.taiex.change >= 0 ? "+" : "") + snap.taiex.change : "n/a"}, ${snap.taiex.changePct != null ? (snap.taiex.changePct >= 0 ? "+" : "") + snap.taiex.changePct + "%" : "n/a"})`);
+    if (snap.taiex.asOf) lines.push(`  資料日期: ${snap.taiex.asOf} (${snap.taiex.sourceState ?? "unknown"})`);
+  }
+
+  if (snap.heatmapTop3.length > 0) {
+    lines.push("熱力圖前三大板塊:");
+    for (const tile of snap.heatmapTop3) {
+      lines.push(`  - ${tile.industry}: ${tile.avgChangePct >= 0 ? "+" : ""}${tile.avgChangePct}%`);
+    }
+  }
+
+  if (snap.topGainers.length > 0) {
+    lines.push("漲幅前五 (個股):");
+    for (const s of snap.topGainers) {
+      lines.push(`  - ${s.symbol} ${s.name}: +${s.changePct}%`);
+    }
+  }
+
+  if (snap.topLosers.length > 0) {
+    lines.push("跌幅前五 (個股):");
+    for (const s of snap.topLosers) {
+      lines.push(`  - ${s.symbol} ${s.name}: ${s.changePct}%`);
+    }
+  }
+
+  if (snap.institutional.date && (snap.institutional.foreign !== null || snap.institutional.trust !== null || snap.institutional.dealer !== null)) {
+    lines.push(`法人籌碼 (${snap.institutional.date}):`);
+    if (snap.institutional.foreign !== null) lines.push(`  - 外資: ${snap.institutional.foreign >= 0 ? "+" : ""}${snap.institutional.foreign} 張`);
+    if (snap.institutional.trust !== null) lines.push(`  - 投信: ${snap.institutional.trust >= 0 ? "+" : ""}${snap.institutional.trust} 張`);
+    if (snap.institutional.dealer !== null) lines.push(`  - 自營: ${snap.institutional.dealer >= 0 ? "+" : ""}${snap.institutional.dealer} 張`);
+  }
+
+  if (snap.margin.date && (snap.margin.balanceChange !== null || snap.margin.shortChange !== null)) {
+    lines.push(`信用交易 (${snap.margin.date} vs 前一日):`);
+    if (snap.margin.balanceChange !== null) lines.push(`  - 融資餘額變化: ${snap.margin.balanceChange >= 0 ? "+" : ""}${snap.margin.balanceChange} 張`);
+    if (snap.margin.shortChange !== null) lines.push(`  - 融券餘額變化: ${snap.margin.shortChange >= 0 ? "+" : ""}${snap.margin.shortChange} 張`);
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "(未能取得即時市場數據，以下僅供資料狀態參考)";
 }
 
 // ── Source pack collector ─────────────────────────────────────────────────────
@@ -941,7 +1178,26 @@ async function generateDirectDailyBriefDraft(input: {
   reason: "historical_backfill" | "no_active_openalice_device" | "enqueue_failed";
 }): Promise<{ draftId: string } | null> {
   const sourceContext = buildSourcePackContext(input.sourcePack);
-  const prompt = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列真實資料狀態產生繁體中文 JSON。
+
+  // F1: Collect live market numbers from TWSE OpenAPI + DB (non-blocking, best-effort)
+  // Historical backfill skips LLM entirely; live snapshot still collected for source context accuracy.
+  let liveSnapshotBlock = "";
+  if (input.reason !== "historical_backfill") {
+    try {
+      const snap = await collectLiveMarketSnapshot(input.workspaceId);
+      const formatted = formatLiveMarketSnapshotForPrompt(snap);
+      liveSnapshotBlock = `\n\n即時市場數據（從 TWSE OpenAPI 及 DB 取得，生成時間 ${new Date().toISOString()}）：\n${formatted}`;
+    } catch {
+      // non-fatal — proceed without live numbers
+    }
+  }
+
+  // F4: Hard rule against directional language without concrete numbers
+  const f4Rule = `- 若「即時市場數據」區塊中某欄位沒有出現具體數字（點位、百分比、張數），則禁止在對應段落使用以下方向性描述詞：「增加」「減少」「上漲」「下跌」「平靜」「活躍」「相對謹慎」「未突破」「有所減少」「有所增加」「偏向」「傾向」「不大」「小幅」。
+- 每個 section body 若要描述法人、融資、成交量的方向，必須直接引用「即時市場數據」區塊中的具體數字（例如「外資淨賣超 X 張」「融資餘額變化 +X 張」）。若無具體數字，該段省略方向性描述，改以「資料品質提醒」說明數據不足。
+- 每個 section body 至少包含 1 個具體數字（指數點位、百分比、張數、或明確的 ticker 代號），否則該 section 改寫為資料品質說明段。`;
+
+  const prompt = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列真實資料狀態與即時市場數據產生繁體中文 JSON。
 
 硬規則（任何違反 → 退件）：
 - 只能輸出 JSON，不要 markdown。
@@ -951,6 +1207,7 @@ async function generateDirectDailyBriefDraft(input: {
 - 不臆測資料來源沒有提供的新聞或事件。
 - 若資料不足，直接寫成資料品質提醒（中文）。
 - date 必須等於 ${input.sourcePack.tradingDate}。
+${f4Rule}
 
 輸出 schema：
 {
@@ -963,16 +1220,16 @@ async function generateDirectDailyBriefDraft(input: {
 }
 
 資料狀態：
-${sourceContext}`;
+${sourceContext}${liveSnapshotBlock}`;
 
   const raw = input.reason === "historical_backfill"
     ? null
     : await callOpenAi({
         model: MODEL_ROUTINE,
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 1_200,
+        max_tokens: 1_400,
         temperature: 0.2,
-        label: "daily_brief_direct_generator",
+        label: "daily_brief_direct_generator_v3",
         timeoutMs: 25_000
       });
 
@@ -984,7 +1241,7 @@ ${sourceContext}`;
     targetTable: "daily_briefs",
     targetEntityId: input.sourcePack.tradingDate,
     payload,
-    producerVersion: `pipeline-direct-${input.reason}-v2`
+    producerVersion: `pipeline-direct-${input.reason}-v3`
   });
 
   if (!draft) return null;
@@ -1033,11 +1290,26 @@ async function generateDailyBrief(
     .map((s) => `  - ${s.source}: ${s.status} (rows=${s.rowCount ?? "n/a"}, latestDate=${s.latestDate ?? "n/a"})`)
     .join("\n");
 
-  const instructions = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列資料狀態，產生台灣股市 ${sourcePack.tradingDate} 的每日簡報（繁體中文 JSON）。
+  // F1: Collect live market snapshot for enqueued path as well
+  let liveSnapshotBlock = "";
+  try {
+    const snap = await collectLiveMarketSnapshot(workspaceId);
+    const formatted = formatLiveMarketSnapshotForPrompt(snap);
+    liveSnapshotBlock = `\n\n即時市場數據（從 TWSE OpenAPI 及 DB 取得）：\n${formatted}`;
+  } catch {
+    // non-fatal
+  }
+
+  // F4: Directional-language guard for enqueued path
+  const f4Rule = `- 若「即時市場數據」區塊中某欄位沒有出現具體數字，禁止在對應段落使用以下方向性描述詞：「增加」「減少」「上漲」「下跌」「平靜」「活躍」「相對謹慎」「未突破」「有所減少」「有所增加」「偏向」「不大」「小幅」。
+- 每個 section body 若描述法人、融資、成交量的方向，必須直接引用即時市場數據中的具體數字。若無具體數字，該段改以資料品質說明替代。
+- 每個 section body 至少包含 1 個具體數字（指數點位、百分比、張數）或明確 ticker 代號。`;
+
+  const instructions = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列資料狀態與即時市場數據，產生台灣股市 ${sourcePack.tradingDate} 的每日簡報（繁體中文 JSON）。
 交易日：${sourcePack.tradingDate}。Tick context: ${sourcePack.tick}。Source pack ID: ${sourcePack.packId}。Trail complete: ${sourcePack.trailComplete}.
 
 可用資料來源：
-${sourcesSummary}
+${sourcesSummary}${liveSnapshotBlock}
 
 硬規則（任何違反 → 退件）：
 - 只輸出 JSON，不要 markdown。
@@ -1049,8 +1321,9 @@ ${sourcesSummary}
 - 若資料不足，直接寫成資料品質提醒（中文）。
 - date 欄位必須等於 "${sourcePack.tradingDate}"。
 - 每個 section body 至少 50 字。
-- 只引用上方資料包中存在的資料。
+- 只引用上方資料包或即時市場數據中存在的資料。
 - 禁止在任何輸出欄位中出現 [BROKEN-N]、[DEPRECATED]、[ORPHAN]、[placeholder] 等內部 DB 維護標記。
+${f4Rule}
 
 Output schema: daily_brief_v1`;
 
