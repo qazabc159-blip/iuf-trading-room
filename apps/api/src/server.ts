@@ -13587,6 +13587,83 @@ app.post("/api/v1/recommendations/:id/feedback", async (c) => {
   return c.json({ ok: true }, 201);
 });
 
+// =============================================================================
+// TW-COVERAGE ENDPOINTS (PR #478 follow-up — 2026-05-15)
+// Lane: strategy backend (Jason). Files: tw-coverage-loader.ts (read-only)
+// Auth: Owner-only v1. Multi-tenant expansion deferred to P1.
+// =============================================================================
+
+import {
+  getCompanyCoverageBrief,
+  findCompaniesByWikilink,
+  listSectorCompanies,
+} from "./data-sources/tw-coverage-loader.js";
+
+// GET /api/v1/companies/:ticker/coverage
+app.get("/api/v1/companies/:ticker/coverage", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const ticker = c.req.param("ticker");
+  const brief = await getCompanyCoverageBrief(ticker);
+  if (!brief) {
+    return c.json({ error: "not_found", ticker }, 404);
+  }
+
+  return c.json({
+    ticker: brief.ticker,
+    companyName: brief.companyName,
+    sector: brief.sector,
+    industry: brief.industry,
+    metadata: {
+      marketCap: brief.marketCap,
+      enterpriseValue: brief.enterpriseValue,
+    },
+    businessOverview: brief.businessOverview,
+    supplyChain: brief.supplyChain,
+    majorCustomers: brief.majorCustomers,
+    majorSuppliers: brief.majorSuppliers,
+  });
+});
+
+// GET /api/v1/themes/:token/companies
+// :token is URL-encoded, e.g. %E5%85%89%E9%98%BB%E6%B6%B2 for 光阻液
+app.get("/api/v1/themes/:token/companies", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  // Hono automatically URL-decodes path params
+  const token = c.req.param("token");
+  const result = await findCompaniesByWikilink(token);
+
+  return c.json({
+    token: result.token,
+    count: result.matches.length,
+    matches: result.matches,
+  });
+});
+
+// GET /api/v1/sectors/:sector/companies
+app.get("/api/v1/sectors/:sector/companies", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const sector = c.req.param("sector");
+  const companies = await listSectorCompanies(sector);
+
+  return c.json({
+    sector,
+    count: companies.length,
+    companies,
+  });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
