@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
@@ -10511,4 +10511,11 @@ test("SIM4: kgiSimOrderBodySchema — LOT quantityUnit accepted; market order pr
   assert.equal(result.quantityUnit, "LOT", "SIM4: LOT quantityUnit accepted");
   assert.equal(result.orderType, "market", "SIM4: market orderType accepted");
   assert.equal(result.price, undefined, "SIM4: price not required for market order");
+});
+
+// Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
+// Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
+after(async () => {
+  await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  process.exit(process.exitCode ?? 0);
 });
