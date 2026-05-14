@@ -137,21 +137,30 @@ export const themes = pgTable("themes", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });
 
-export const companies = pgTable("companies", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
-  name: text("name").notNull(),
-  ticker: text("ticker").notNull(),
-  market: text("market").notNull(),
-  country: text("country").notNull(),
-  chainPosition: text("chain_position").notNull(),
-  beneficiaryTier: beneficiaryTierEnum("beneficiary_tier").default("Observation").notNull(),
-  exposure: jsonb("exposure").default({}).notNull(),
-  validation: jsonb("validation").default({}).notNull(),
-  notes: text("notes").default("").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
-});
+export const companies = pgTable(
+  "companies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+    name: text("name").notNull(),
+    ticker: text("ticker").notNull(),
+    market: text("market").notNull(),
+    country: text("country").notNull(),
+    chainPosition: text("chain_position").notNull(),
+    beneficiaryTier: beneficiaryTierEnum("beneficiary_tier").default("Observation").notNull(),
+    exposure: jsonb("exposure").default({}).notNull(),
+    validation: jsonb("validation").default({}).notNull(),
+    notes: text("notes").default("").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    workspaceTickerUidx: uniqueIndex("companies_workspace_ticker_uidx").on(
+      table.workspaceId,
+      table.ticker
+    )
+  })
+);
 
 export const companyThemeLinks = pgTable(
   "company_theme_links",
