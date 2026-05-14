@@ -8281,9 +8281,12 @@ function mapSnapshotToV47(raw: Record<string, unknown>): Record<string, unknown>
     ...(maxDrawdownInternalExcessPct !== null && { maxDrawdownInternalExcessPct }),
     ...(estimatedEntryTicketCount !== null && { estimatedEntryTicketCount }),
     // netAbsoluteReturn alias: same value as netAbsoluteReturnAfterCost (both kept for compatibility).
+    // netAbsoluteReturnPct: percentage representation (×100) for frontend display (P1-B fix 2026-05-14).
+    // netAbsoluteReturnAfterCost = 7.5987 (decimal ratio) → netAbsoluteReturnPct = 759.87 (%).
     ...(netAbsoluteReturnAfterCost !== null && {
       netAbsoluteReturnAfterCost,
       netAbsoluteReturn: netAbsoluteReturnAfterCost,
+      netAbsoluteReturnPct: Math.round(netAbsoluteReturnAfterCost * 10000) / 100,
     }),
     // Legacy return aliases intentionally not emitted.
   };
@@ -9141,7 +9144,12 @@ app.get("/api/v1/market/overview/twse", async (c) => {
   }
 
   const { _isLkg, ...resultPayload } = result;
-  return c.json({ ...resultPayload, sourceState: _isLkg ? "lkg" : "live" });
+  const sourceState = _isLkg ? "lkg" : "live";
+  // taiexDisplayLabel: human-readable label for frontend — distinguishes live vs prior-close.
+  // "lkg" means TWSE fetch failed and we're serving the last-known-good value (prior close).
+  // Cycle 11 wording: 上日收盤 vs 今日收盤. Unavailable case handled by the null branch above.
+  const taiexDisplayLabel = sourceState === "lkg" ? "上日收盤" : "今日收盤";
+  return c.json({ ...resultPayload, sourceState, taiexDisplayLabel });
 });
 
 app.get("/api/v1/market/heatmap/twse", async (c) => {
