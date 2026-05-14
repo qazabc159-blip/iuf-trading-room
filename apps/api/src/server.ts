@@ -12355,6 +12355,18 @@ let _briefDispatcherLastFiredDate = "";
  * All run an immediate first tick on startup to backfill any missed runs.
  */
 function startSchedulers(workspaceSlug: string): void {
+  // CI/test mode gate (2026-05-14): hard-bypass ALL schedulers.
+  // .unref() alone is defense-in-depth; this gate is the root fix.
+  // Prod behaviour is completely unchanged (none of these vars are set in Railway prod).
+  if (
+    process.env.NODE_ENV === "test" ||
+    process.env.CI === "true" ||
+    process.env.SKIP_SCHEDULERS === "1"
+  ) {
+    console.log("[schedulers] CI/test mode detected — skipping all scheduler boot");
+    return;
+  }
+
   // CI-timeout fix (2026-05-14): scheduler intervals must not keep the Node process alive
   // in test mode. .unref() lets the event loop exit once all tests complete while leaving
   // prod behaviour unchanged (the HTTP server's own handle keeps the process alive in prod).
