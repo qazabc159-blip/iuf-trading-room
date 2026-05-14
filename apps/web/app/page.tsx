@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import {
+  BarChart3,
+  Building2,
+  LineChart,
+  Newspaper,
+  Sparkles,
+  Target,
+  type LucideIcon,
+} from "lucide-react";
 
 import { IndustryHeatmap, type IndustryHeatmapTile } from "./components/industry-heatmap";
 import {
@@ -1375,19 +1384,19 @@ function QuoteTapeItem({ quote }: { quote: TapeQuote }) {
 }
 
 function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCount: number }) {
-  const nav = [
-    { href: "/", title: "戰情台總覽", sub: "盤勢與任務", code: "01", active: true },
-    { href: "/market-intel", title: "市場情報", sub: "重大訊息", code: "02" },
-    { href: "/companies", title: "公司板", sub: "台股公司池", code: "03" },
-    { href: "/ideas", title: "策略想法", sub: "候選清單", code: "04" },
-    { href: "/runs", title: "策略批次", sub: "量化紀錄", code: "05" },
-    { href: "/portfolio", title: "紙上交易室", sub: "委託與部位", code: "06" },
-    { href: "/alerts", title: "警示", sub: "風控提醒", code: "07" },
-    { href: "/signals", title: "訊號證據", sub: "訊號與依據", code: "08" },
-    { href: "/plans", title: "交易計畫", sub: "計畫註記", code: "09" },
-    { href: "/themes", title: "主題板", sub: "產業主題", code: "10" },
-    { href: "/lab", title: "量化研究", sub: "策略包", code: "11" },
-    { href: "/briefs", title: "AI 每日簡報", sub: "OpenAlice", code: "12" },
+  const nav: Array<{
+    href: string;
+    title: string;
+    sub: string;
+    Icon: LucideIcon;
+    active?: boolean;
+  }> = [
+    { href: "/", title: "戰情台", sub: "盤勢與任務", Icon: Target, active: true },
+    { href: "/market-intel", title: "市場情報", sub: "重大訊息", Icon: Newspaper },
+    { href: "/ai-recommendations", title: "AI 推薦", sub: "推薦引擎", Icon: Sparkles },
+    { href: "/portfolio", title: "交易室", sub: "委託與部位", Icon: LineChart },
+    { href: "/companies", title: "公司 / 主題", sub: "公司圖譜", Icon: Building2 },
+    { href: "/quant-strategies", title: "量化策略", sub: "SIM-only", Icon: BarChart3 },
   ];
   return (
     <aside className="tac-sidebar">
@@ -1404,16 +1413,21 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
         <div className="tac-mode"><span />觀察模式 / 風控守門</div>
       </div>
       <nav className="tac-nav">
-        {nav.map((item) => (
-          <Link className={item.active ? "active" : ""} href={item.href} key={item.code}>
-            <span>{item.code}</span>
-            <div>
-              <b>{item.title}</b>
-              <small>{item.sub}</small>
-            </div>
-            {item.active && <i />}
-          </Link>
-        ))}
+        {nav.map((item) => {
+          const Icon = item.Icon;
+          return (
+            <Link className={item.active ? "active" : ""} href={item.href} key={item.href}>
+              <span className="tac-nav-icon" aria-hidden="true">
+                <Icon size={17} strokeWidth={1.9} />
+              </span>
+              <div>
+                <b>{item.title}</b>
+                <small>{item.sub}</small>
+              </div>
+              {item.active && <i />}
+            </Link>
+          );
+        })}
       </nav>
       <div className="tac-sidebar-radar">
         <span className="tac-mini-radar" />
