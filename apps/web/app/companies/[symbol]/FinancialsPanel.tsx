@@ -98,7 +98,7 @@ function rowCount(state: TabState | undefined) {
 function statusLabel(status: TabState["status"]) {
   if (status === "live") return "正常";
   if (status === "empty") return "無資料";
-  if (status === "loading") return "載入中";
+  if (status === "loading") return "讀取中";
   return "暫停";
 }
 
@@ -110,7 +110,8 @@ function statusBadgeClass(status: TabState["status"]) {
 }
 
 function tabStateSummary(state: TabState | undefined) {
-  if (!state || state.status === "loading") return "載入中";
+  if (!state) return "—";
+  if (state.status === "loading") return "讀取中";
   if (state.status === "blocked") return "暫停";
   if (state.status === "empty") return "無資料";
   return `${rowCount(state)} 筆`;
@@ -481,7 +482,7 @@ function Rows({
   if (state.status === "loading") {
     return (
       <div className="state-panel company-finance-state">
-        <span className="badge badge-blue">載入中</span>
+        <span className="badge badge-blue">讀取中</span>
         <span className="tg soft">正在載入 {tabCopy(tab).label} 資料</span>
       </div>
     );
