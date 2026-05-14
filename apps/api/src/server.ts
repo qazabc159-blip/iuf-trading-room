@@ -3595,6 +3595,7 @@ import {
   runKgiSimDailySmokeSchedulerTick,
   getDailySmokeHistory,
   resolveKgiEnv,
+  maskAccount,
 } from "./broker/kgi-sim-env.js";
 
 // GET /api/v1/kgi/status — Owner only. Returns KGI env, connection state, SIM smoke results.
@@ -3681,6 +3682,213 @@ app.post("/api/v1/kgi/sim/trade-smoke", async (c) => {
   });
 
   return c.json({ sim_only: true, data: result });
+});
+
+// POST /api/v1/kgi/sim/order — Owner only. User-facing KGI SIM order submit.
+//
+// Sends a real order to KGI SIM infrastructure (itradetest.kgi.com.tw) via the
+// EC2 gateway. No dual-confirm gate — Owner identity is sufficient for SIM.
+//
+// Hard lines:
+//   - sim_only: true permanently locked; KGI_ENV must be "sim" (else 409)
+//   - prod_write_blocked: true always in response
+//   - No credentials in response or audit log
+//   - Account masked as 9228-***-6 in audit
+//   - KGI_READ_ONLY_MODE does NOT block SIM submit (only real broker writes)
+//
+// Body: { symbol, side, qty, price?, orderType, quantityUnit }
+// Response: { sim_only: true, data: { tradeId, status, submittedAt, ... } }
+export const kgiSimOrderBodySchema = z.object({
+  symbol: z.string().min(1).max(8).toUpperCase(),
+  side: z.enum(["buy", "sell"]),
+  qty: z.number().int().positive(),
+  price: z.number().positive().nullable().optional(),
+  orderType: z.enum(["market", "limit"]).default("limit"),
+  quantityUnit: z.enum(["SHARE", "LOT"]).default("SHARE"),
+});
+
+app.post("/api/v1/kgi/sim/order", async (c) => {
+  // 1. Owner-only gate
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  // 2. KGI_ENV must be "sim"
+  const env = resolveKgiEnv();
+  if (env !== "sim") {
+    return c.json({
+      error: "NOT_SIM_ENV",
+      message: `KGI_ENV=${env}. User SIM orders only run when KGI_ENV=sim.`,
+      prod_write_blocked: true,
+      sim_only: true,
+    }, 409);
+  }
+
+  // 3. Parse + validate body
+  let body: z.infer<typeof kgiSimOrderBodySchema>;
+  try {
+    body = kgiSimOrderBodySchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    }
+    return c.json({ error: "BAD_REQUEST" }, 400);
+  }
+
+  // 4. Price check: limit orders require a price
+  if (body.orderType === "limit" && (body.price == null || body.price <= 0)) {
+    return c.json({
+      error: "VALIDATION_ERROR",
+      message: "限價單需要填入有效的委託價格。",
+      sim_only: true,
+    }, 400);
+  }
+
+  // 5. Submit to KGI SIM via gateway client (lazy import — same pattern as /portfolio/kgi/positions)
+  const gatewayBaseUrl =
+    process.env["KGI_GATEWAY_URL"] ??
+    process.env["KGI_GATEWAY_BASE_URL"] ??
+    "http://127.0.0.1:8787";
+
+  const {
+    KgiGatewayClient,
+    KgiGatewayUnreachableError,
+    KgiGatewayAuthError,
+    KgiGatewayNotEnabledError,
+    KgiGatewayValidationError,
+    KgiGatewayUpstreamError,
+  } = await import("./broker/kgi-gateway-client.js");
+
+  const client = new KgiGatewayClient({
+    gatewayBaseUrl,
+    connectTimeoutMs: 10_000,
+  });
+
+  const submittedAt = new Date().toISOString();
+  const isOddLot = body.quantityUnit === "SHARE";
+  const effectiveQty = body.quantityUnit === "LOT" ? body.qty * 1000 : body.qty;
+
+  // Audit log fired regardless of outcome (fire-and-forget)
+  const auditPayload = {
+    sim_only: true,
+    symbol: body.symbol,
+    side: body.side,
+    qty: body.qty,
+    quantity_unit: body.quantityUnit,
+    effective_qty_shares: effectiveQty,
+    order_type: body.orderType,
+    price: body.price ?? null,
+    odd_lot: isOddLot,
+    account_masked: maskAccount(process.env["KGI_ACCOUNT"] ?? "9228-001282-6"),
+    prod_write_blocked: true,
+  };
+
+  try {
+    const tradeRaw = await client.createOrder({
+      action: body.side === "buy" ? "Buy" : "Sell",
+      symbol: body.symbol,
+      qty: body.qty,
+      price: body.price ?? undefined,
+      timeInForce: "ROD",
+      orderCond: "Cash",
+      oddLot: isOddLot,
+      name: "IUF_SIM_USER_ORDER",
+    });
+
+    // Write success audit
+    writeAuditLog({
+      session,
+      method: "POST",
+      path: "/api/v1/kgi/sim/order",
+      status: 201,
+      payload: {
+        ...auditPayload,
+        outcome: "accepted",
+        trade_id: tradeRaw.trade_id ?? null,
+      },
+    }).catch((err: unknown) => {
+      console.error("[kgi/sim/order] audit log failed:", err instanceof Error ? err.message : String(err));
+    });
+
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      data: {
+        tradeId: tradeRaw.trade_id ?? null,
+        status: tradeRaw.status ?? "accepted",
+        symbol: body.symbol,
+        side: body.side,
+        qty: body.qty,
+        quantityUnit: body.quantityUnit,
+        effectiveQtyShares: effectiveQty,
+        price: body.price ?? null,
+        orderType: body.orderType,
+        isOddLot,
+        submittedAt,
+      },
+    }, 201);
+  } catch (err) {
+    // Write failure audit
+    writeAuditLog({
+      session,
+      method: "POST",
+      path: "/api/v1/kgi/sim/order",
+      status: 503,
+      payload: { ...auditPayload, outcome: "error", error: err instanceof Error ? err.message : String(err) },
+    }).catch((e: unknown) => {
+      console.error("[kgi/sim/order] audit log failed:", e instanceof Error ? e.message : String(e));
+    });
+
+    if (err instanceof KgiGatewayAuthError) {
+      return c.json({
+        error: "GATEWAY_AUTH_ERROR",
+        message: "KGI gateway session 尚未建立，請先登入 gateway。",
+        sim_only: true,
+        prod_write_blocked: true,
+      }, 503);
+    }
+    if (err instanceof KgiGatewayUnreachableError) {
+      return c.json({
+        error: "GATEWAY_UNREACHABLE",
+        message: "KGI EC2 gateway 無法連線，請確認 gateway 狀態。",
+        sim_only: true,
+        prod_write_blocked: true,
+      }, 503);
+    }
+    if (err instanceof KgiGatewayNotEnabledError) {
+      return c.json({
+        error: "ORDER_NOT_ENABLED",
+        message: "Gateway /order/create 尚未啟用（409）。",
+        sim_only: true,
+        prod_write_blocked: true,
+      }, 409);
+    }
+    if (err instanceof KgiGatewayValidationError) {
+      return c.json({
+        error: "ORDER_VALIDATION_REJECTED",
+        message: err.message,
+        sim_only: true,
+        prod_write_blocked: true,
+      }, 422);
+    }
+    if (err instanceof KgiGatewayUpstreamError) {
+      return c.json({
+        error: "ORDER_UPSTREAM_ERROR",
+        message: err.message,
+        sim_only: true,
+        prod_write_blocked: true,
+      }, 502);
+    }
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[kgi/sim/order] unexpected error:", detail);
+    return c.json({
+      error: "GATEWAY_ERROR",
+      message: detail,
+      sim_only: true,
+      prod_write_blocked: true,
+    }, 503);
+  }
 });
 
 // GET /api/v1/internal/kgi/sim/daily-smoke-status
