@@ -14606,15 +14606,19 @@ body:has(.tactical-dashboard) .app-sidebar {
   background: rgba(200, 148, 63, 0.1);
 }
 
-.header-dock-dot {
+.header-dock-count {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  top: 5px;
+  right: 5px;
+  min-width: 15px;
+  height: 15px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
   background: #e85858;
   box-shadow: 0 0 10px rgba(232, 88, 88, 0.52);
+  color: #fff;
+  font: 900 9px/1 var(--mono);
 }
 
 .header-account-menu {
@@ -14766,6 +14770,72 @@ body:has(.tactical-dashboard) .app-sidebar {
   color: var(--tac-fg-2);
   font-size: 12px;
   line-height: 1.65;
+}
+
+.header-dock-empty {
+  margin: 12px 0 0;
+  border: 1px dashed rgba(200, 148, 63, 0.24);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--tac-fg-3);
+  background: rgba(8, 11, 16, 0.42);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.header-alert-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.header-alert-item {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(220, 228, 240, 0.11);
+  border-left: 3px solid rgba(145, 160, 181, 0.44);
+  border-radius: 8px;
+  padding: 10px 11px;
+  background: rgba(8, 11, 16, 0.48);
+  text-decoration: none;
+}
+
+.header-alert-item[data-severity="warning"] {
+  border-left-color: rgba(200, 148, 63, 0.82);
+}
+
+.header-alert-item[data-severity="critical"] {
+  border-left-color: rgba(230, 57, 70, 0.82);
+}
+
+.header-alert-item span {
+  justify-self: start;
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(200, 148, 63, 0.28);
+  border-radius: 5px;
+  padding: 0 7px;
+  color: var(--tac-brand);
+  font: 900 10px/1 var(--sans-tc);
+}
+
+.header-alert-item b {
+  color: var(--tac-fg-0);
+  font: 850 13px/1.35 var(--sans-tc);
+}
+
+.header-alert-item small,
+.header-alert-item p {
+  margin: 0;
+  color: var(--tac-fg-3);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.header-alert-item p {
+  color: var(--tac-fg-2);
+  font-size: 12px;
 }
 
 .header-dock-drawer-body a {

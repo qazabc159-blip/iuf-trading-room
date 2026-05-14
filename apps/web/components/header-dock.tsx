@@ -6,8 +6,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, FileText, GripHorizontal, KeyRound, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
 
 import { apiLogout } from "@/lib/auth-client";
+import { getAlerts, type AlertEntry } from "@/lib/api";
 
 type Drawer = "alerts" | "system" | null;
+type AlertDrawerState =
+  | { status: "idle" | "loading"; alerts: AlertEntry[]; error: null }
+  | { status: "ready"; alerts: AlertEntry[]; error: null }
+  | { status: "error"; alerts: AlertEntry[]; error: string };
 
 interface DockPosition {
   top: number;
@@ -59,10 +64,46 @@ function clampToViewport(top: number, left: number, el: HTMLElement): DockPositi
   };
 }
 
+function formatAlertTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function alertSummary(alert: AlertEntry) {
+  const payload = alert.payload ?? {};
+  const parts: string[] = [];
+  for (const key of ["message", "title", "symbol", "ticker", "threshold"]) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) parts.push(value.trim());
+    if (typeof value === "number" && Number.isFinite(value)) parts.push(value.toLocaleString("zh-TW"));
+    if (parts.length >= 2) break;
+  }
+  return parts.length > 0 ? parts.join(" / ") : "條件已觸發，請至警示頁確認。";
+}
+
+function recentAlerts(alerts: AlertEntry[]) {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  return alerts
+    .filter((alert) => {
+      const time = new Date(alert.triggeredAt).getTime();
+      return Number.isFinite(time) && time >= cutoff;
+    })
+    .sort((a, b) => new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime());
+}
+
 export function HeaderDock() {
   const router = useRouter();
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [alertDrawer, setAlertDrawer] = useState<AlertDrawerState>({ status: "idle", alerts: [], error: null });
 
   // Position state: null = use CSS default (right:16px)
   const [position, setPosition] = useState<DockPosition | null>(null);
@@ -77,6 +118,22 @@ export function HeaderDock() {
     startDockLeft: number;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const visibleAlerts = recentAlerts(alertDrawer.alerts);
+  const unreadCount = visibleAlerts.filter((alert) => !alert.acknowledged).length;
+
+  const loadAlertDrawer = useCallback(async () => {
+    setAlertDrawer((current) => ({
+      status: "loading",
+      alerts: current.alerts,
+      error: null,
+    }));
+    try {
+      const response = await getAlerts({ limit: 50 });
+      setAlertDrawer({ status: "ready", alerts: response.data, error: null });
+    } catch {
+      setAlertDrawer({ status: "error", alerts: [], error: "警示資料同步中。" });
+    }
+  }, []);
 
   // Detect mobile and load saved position on mount
   useEffect(() => {
@@ -100,6 +157,14 @@ export function HeaderDock() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useEffect(() => {
+    void loadAlertDrawer();
+  }, [loadAlertDrawer]);
+
+  useEffect(() => {
+    if (drawer === "alerts") void loadAlertDrawer();
+  }, [drawer, loadAlertDrawer]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLElement>) => {
     if (isMobile) return;
@@ -218,7 +283,11 @@ export function HeaderDock() {
           }}
         >
           <Bell size={18} strokeWidth={1.8} />
-          <span className="header-dock-dot" aria-hidden="true" />
+          {unreadCount > 0 && (
+            <span className="header-dock-count" aria-label={`${unreadCount} 則未確認警示`}>
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
         </button>
 
         <Link className="header-dock-button" aria-label="今日簡報" title="今日簡報" href="/briefs">
@@ -302,8 +371,31 @@ export function HeaderDock() {
               <div className="header-dock-state">
                 <span>今日警示</span>
                 <b>警示中心</b>
-                <p>最近 7 天事件準備接入：風控、委託、推薦變更與系統事件。</p>
+                <p>最近 7 天風控、委託、推薦與系統事件；來源為現有 alerts engine。</p>
               </div>
+              {alertDrawer.status === "loading" && <p className="header-dock-empty">資料同步中</p>}
+              {alertDrawer.status === "error" && <p className="header-dock-empty">{alertDrawer.error}</p>}
+              {alertDrawer.status === "ready" && visibleAlerts.length === 0 && (
+                <p className="header-dock-empty">最近 7 天沒有未處理警示。</p>
+              )}
+              {visibleAlerts.length > 0 && (
+                <div className="header-alert-list">
+                  {visibleAlerts.slice(0, 8).map((alert) => (
+                    <Link
+                      key={alert.id}
+                      className="header-alert-item"
+                      data-severity={alert.severity}
+                      href="/alerts"
+                      onClick={() => setDrawer(null)}
+                    >
+                      <span>{alert.acknowledged ? "已確認" : "待處理"}</span>
+                      <b>{alert.ruleName}</b>
+                      <small>{alert.ticker ?? "SYSTEM"} / {formatAlertTime(alert.triggeredAt)}</small>
+                      <p>{alertSummary(alert)}</p>
+                    </Link>
+                  ))}
+                </div>
+              )}
               <Link href="/alerts" onClick={() => setDrawer(null)}>
                 開啟警示頁
               </Link>
