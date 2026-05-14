@@ -236,12 +236,12 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
         <section className={styles.band}>
           <h2>核心數據</h2>
           <div className={styles.metricGrid}>
-            <div className={styles.metric}><span>Net Return</span><strong>{pct(strategy.metrics.netReturnPct)}</strong></div>
-            <div className={styles.metric}><span>Benchmark / Excess</span><strong>{strategy.metrics.excessPct === undefined ? "NA" : pct(strategy.metrics.excessPct)}</strong></div>
+            <div className={styles.metric}><span>淨報酬</span><strong>{pct(strategy.metrics.netReturnPct)}</strong></div>
+            <div className={styles.metric}><span>基準 / 超額</span><strong>{strategy.metrics.excessPct === undefined ? "NA" : pct(strategy.metrics.excessPct)}</strong></div>
             <div className={styles.metric}><span>Sharpe / IR</span><strong>{strategy.metrics.sharpe === null ? strategy.metrics.sharpeLabel ?? "NA" : strategy.metrics.sharpe.toFixed(2)}</strong></div>
-            <div className={styles.metric}><span>Max Drawdown</span><strong>{pct(strategy.metrics.maxDrawdownPct)}</strong></div>
-            <div className={styles.metric}><span>Hit Rate</span><strong>{pct(strategy.metrics.hitRatePct)}</strong></div>
-            <div className={styles.metric}><span>Sample</span><strong>{strategy.metrics.sampleCount}</strong></div>
+            <div className={styles.metric}><span>最大回撤</span><strong>{pct(strategy.metrics.maxDrawdownPct)}</strong></div>
+            <div className={styles.metric}><span>命中率</span><strong>{pct(strategy.metrics.hitRatePct)}</strong></div>
+            <div className={styles.metric}><span>樣本數</span><strong>{strategy.metrics.sampleCount}</strong></div>
           </div>
         </section>
 
