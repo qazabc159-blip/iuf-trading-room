@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import {
   buildFinalV031LivePayload,
   finalV031HydrationScript,
+  type PaperPrefillHandoff,
   type FinalV031Screen,
 } from "@/lib/final-v031-live";
 
@@ -71,6 +72,44 @@ function contentShellOverrides(screen: ScreenKey) {
     margin: 0 !important;
     padding: 14px 16px 36px !important;
   }
+
+  .rec-prefill-box {
+    margin: 0 0 12px;
+    border: 1px solid rgba(200, 148, 63, 0.34);
+    border-radius: 6px;
+    background: linear-gradient(180deg, rgba(200, 148, 63, 0.11), rgba(8, 11, 16, 0.72));
+    padding: 10px 11px;
+    color: var(--fg-1);
+    box-shadow: 0 0 0 1px rgba(3, 5, 8, 0.48) inset;
+  }
+
+  .rec-prefill-box .k {
+    color: var(--brand);
+    font: 800 10px/1 var(--mono);
+    letter-spacing: 0;
+  }
+
+  .rec-prefill-box .v {
+    margin-top: 6px;
+    color: var(--fg-0);
+    font: 800 13px/1.35 var(--sans-tc);
+  }
+
+  .rec-prefill-box .m {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 8px;
+    color: var(--fg-3);
+    font: 700 11px/1.35 var(--sans-tc);
+  }
+
+  .rec-prefill-box .m span {
+    border: 1px solid rgba(220, 228, 240, 0.09);
+    border-radius: 4px;
+    padding: 4px 6px;
+    background: rgba(8, 11, 16, 0.46);
+  }
 </style>`;
   }
 
@@ -133,14 +172,50 @@ async function renderFinalHtml(screen: ScreenKey) {
     .replace("</head>", `${styleTags}\n${contentShellOverrides(screen)}\n</head>`);
 }
 
-async function injectLiveData(screen: ScreenKey, html: string) {
-  const payload = await buildFinalV031LivePayload(screen as FinalV031Screen);
+function safeQueryText(value: string | null, maxLength = 80) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/[<>]/g, "").slice(0, maxLength);
+}
+
+function safeTicker(value: string | null) {
+  const ticker = value?.trim().toUpperCase();
+  if (!ticker || !/^[A-Z0-9._-]{1,16}$/.test(ticker)) return null;
+  return ticker;
+}
+
+function parsePaperPrefill(request: Request): PaperPrefillHandoff | null {
+  const params = new URL(request.url).searchParams;
+  const symbol = safeTicker(params.get("ticker") ?? params.get("symbol"));
+  const recommendationId = safeQueryText(params.get("from_rec"), 96);
+  const entry = safeQueryText(params.get("entry"), 40);
+  const stop = safeQueryText(params.get("stop"), 40);
+  const target = safeQueryText(params.get("tp"), 40);
+  const enabled = params.get("prefill") === "true" || Boolean(symbol || recommendationId || entry || stop || target);
+
+  if (!enabled) return null;
+
+  return {
+    enabled: true,
+    symbol,
+    recommendationId,
+    entry,
+    stop,
+    target,
+    source: recommendationId ? "ai_recommendations" : "url",
+  };
+}
+
+async function injectLiveData(screen: ScreenKey, html: string, request: Request) {
+  const payload = await buildFinalV031LivePayload(screen as FinalV031Screen, {
+    paperPrefill: screen === "paper-trading-room" ? parsePaperPrefill(request) : null,
+  });
   const script = finalV031HydrationScript(payload);
   return html.replace("</body>", () => `${script}\n</body>`);
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ screen: string }> }
 ) {
   const { screen } = await context.params;
@@ -152,7 +227,7 @@ export async function GET(
   }
 
   try {
-    const html = await injectLiveData(screen, stripVendorChrome(screen, await renderFinalHtml(screen)));
+    const html = await injectLiveData(screen, stripVendorChrome(screen, await renderFinalHtml(screen)), request);
     return new NextResponse(html, {
       status: 200,
       headers: {
