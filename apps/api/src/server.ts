@@ -13761,12 +13761,20 @@ app.get("/api/v1/themes/wiki/:token/companies", async (c) => {
 
 // GET /api/v1/notifications?limit=50&unread_only=false
 app.get("/api/v1/notifications", (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
   // v1 stub — always returns empty list so frontend drawer renders without 404
   return c.json({ notifications: [], unread_count: 0 });
 });
 
 // POST /api/v1/notifications/:id/mark-read
 app.post("/api/v1/notifications/:id/mark-read", (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
   // v1 stub — no-op; respond 204 so frontend marks-as-read call doesn't error
   return new Response(null, { status: 204 });
 });
