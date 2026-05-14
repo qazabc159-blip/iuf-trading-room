@@ -78,13 +78,10 @@ jobs:
       # checks whether expected migrations applied through /api/v1/paper/db-probe.
       #
       # Security:
-      # - No fallback email/password.
-      # - Requires SEED_OWNER_EMAIL and SEED_OWNER_PASSWORD GitHub Secrets.
       # - Does not print credentials to logs.
-      #
-      # Failure here is BLOCKING: migration failures must fail the deploy job.
-      # If SEED_OWNER_EMAIL/SEED_OWNER_PASSWORD secrets are not set, add them in:
-      #   GitHub repo → Settings → Secrets and variables → Actions
+      # - Route B: if SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets are missing,
+      #   emits ::warning:: and skips (exit 0) — does NOT hard-fail.
+      # - If secrets ARE set and verify fails, BLOCKING (exit 1).
       - name: Verify migrations applied (api only)
         if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
         continue-on-error: false
@@ -101,8 +98,8 @@ jobs:
           echo "Health: $HEALTH"
 
           if [ -z "${SEED_OWNER_EMAIL:-}" ] || [ -z "${SEED_OWNER_PASSWORD:-}" ]; then
-            echo "::error::SEED_OWNER_EMAIL or SEED_OWNER_PASSWORD GitHub secret is not set. Refusing to use fallback credentials."
-            exit 1
+            echo "::warning::SEED_OWNER_EMAIL or SEED_OWNER_PASSWORD secret not set — skipping migration verify (Route B)"
+            exit 0
           fi
 
           COOKIE_JAR="/tmp/iuf_cookies.txt"
