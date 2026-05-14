@@ -64,6 +64,7 @@ import {
 
 import type {
   CompanyKeywordListFilters,
+  CompanyLite,
   CompanyRelationListFilters,
   SessionOptions,
   TradingRoomRepository
@@ -399,6 +400,35 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
         updatedAt: row.updatedAt.toISOString()
       })
     );
+  }
+
+  async listCompaniesLite(options?: SessionOptions): Promise<CompanyLite[]> {
+    const { workspace } = await this.ensureSessionBase(options);
+    const db = this.database;
+
+    const rows = await db
+      .select({
+        id: companies.id,
+        ticker: companies.ticker,
+        name: companies.name,
+        market: companies.market,
+        chainPosition: companies.chainPosition,
+        beneficiaryTier: companies.beneficiaryTier,
+        updatedAt: companies.updatedAt
+      })
+      .from(companies)
+      .where(eq(companies.workspaceId, workspace.id))
+      .orderBy(desc(companies.updatedAt));
+
+    return rows.map((row) => ({
+      id: row.id,
+      ticker: row.ticker,
+      name: row.name,
+      market: row.market,
+      chainPosition: row.chainPosition,
+      beneficiaryTier: row.beneficiaryTier,
+      updatedAt: row.updatedAt.toISOString()
+    }));
   }
 
   async getCompany(companyId: string, options?: SessionOptions) {

@@ -41,6 +41,17 @@ export type CompanyKeywordListFilters = {
   companyId?: string;
 };
 
+/** Lightweight company projection — only columns needed by market-data and ops-snapshot callers. */
+export type CompanyLite = {
+  id: string;
+  ticker: string;
+  name: string;
+  market: string;
+  chainPosition: string;
+  beneficiaryTier: string;
+  updatedAt: string;
+};
+
 export interface TradingRoomRepository {
   getSession(options?: SessionOptions): Promise<AppSession>;
 
@@ -52,6 +63,7 @@ export interface TradingRoomRepository {
 
   // Companies
   listCompanies(themeId?: string, options?: SessionOptions): Promise<Company[]>;
+  listCompaniesLite(options?: SessionOptions): Promise<CompanyLite[]>;
   getCompany(companyId: string, options?: SessionOptions): Promise<Company | null>;
   createCompany(input: CompanyCreateInput, options?: SessionOptions): Promise<Company>;
   updateCompany(companyId: string, input: CompanyUpdateInput, options?: SessionOptions): Promise<Company | null>;

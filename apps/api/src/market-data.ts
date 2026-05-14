@@ -24,7 +24,7 @@ import {
   type SymbolMaster
 } from "@iuf-trading-room/contracts";
 import { companiesOhlcv, getDb } from "@iuf-trading-room/db";
-import type { TradingRoomRepository } from "@iuf-trading-room/domain";
+import type { CompanyLite, TradingRoomRepository } from "@iuf-trading-room/domain";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 
@@ -161,6 +161,24 @@ type DailyBarContextRow = {
   source: string;
   weight: number;
 };
+
+// 5-min in-process cache for listCompaniesLite — avoids 3470-row full SELECT on every page load.
+const _companiesLiteCache = new Map<string, { data: CompanyLite[]; expiresAt: number }>();
+const COMPANIES_LITE_TTL_MS = 5 * 60 * 1000;
+
+export async function getCompaniesLiteCached(
+  repo: TradingRoomRepository,
+  workspaceSlug: string
+): Promise<CompanyLite[]> {
+  const now = Date.now();
+  const cached = _companiesLiteCache.get(workspaceSlug);
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+  const data = await repo.listCompaniesLite({ workspaceSlug });
+  _companiesLiteCache.set(workspaceSlug, { data, expiresAt: now + COMPANIES_LITE_TTL_MS });
+  return data;
+}
 
 const MARKET_HEATMAP_LIMIT = 180;
 const DAILY_CONTEXT_SELF_HEAL_DEFAULT_LIMIT = 12;
@@ -1034,7 +1052,7 @@ function lotSizeForMarket(market: Market) {
     : 1;
 }
 
-function dedupeSymbolMasters(companies: Company[]) {
+function dedupeSymbolMasters(companies: CompanyLite[]) {
   const bestByKey = new Map<string, SymbolMaster>();
 
   for (const company of companies) {
@@ -1068,7 +1086,7 @@ function dedupeSymbolMasters(companies: Company[]) {
   return [...bestByKey.values()];
 }
 
-function buildSymbolNameLookup(companies: Company[]) {
+function buildSymbolNameLookup(companies: CompanyLite[]) {
   const bySymbol = new Map<string, string>();
   const byMarketSymbol = new Map<string, string>();
 
@@ -1150,7 +1168,7 @@ function toOverviewLeader(row: EffectiveQuoteRow, resolveName: (symbol: string, 
 
 function buildMarketContext(input: {
   effectiveItems: EffectiveMarketQuote[];
-  companies: Company[];
+  companies: CompanyLite[];
 }) {
   const resolveName = buildSymbolNameLookup(input.companies);
   const rows = effectiveRows(input.effectiveItems);
@@ -1436,7 +1454,7 @@ async function loadFinMindTaiexIndexContext(): Promise<{ row: DailyBarContextRow
 
 async function loadDailyBarRowsFromDb(input: {
   session: AppSession;
-  companies: Company[];
+  companies: CompanyLite[];
 }): Promise<DailyBarContextRow[]> {
   const db = getDb();
   if (!db || input.companies.length === 0) return [];
@@ -1546,7 +1564,7 @@ function getLatestDailyContextDate(
 
 function selectDailyContextOhlcvSelfHealTargets(input: {
   session: AppSession;
-  companies: Company[];
+  companies: CompanyLite[];
   rows: DailyBarContextRow[];
   indexRow: DailyBarContextRow | null;
 }): Array<{ companyId: string; ticker: string; workspaceId: string }> {
@@ -1566,7 +1584,7 @@ function selectDailyContextOhlcvSelfHealTargets(input: {
   });
   if (symbols.length === 0) return [];
 
-  const companyBySymbol = new Map<string, Company>();
+  const companyBySymbol = new Map<string, CompanyLite>();
   for (const company of input.companies) {
     const symbol = normalizeTwTicker(company.ticker);
     if (symbol && !companyBySymbol.has(symbol)) {
@@ -1601,7 +1619,7 @@ function selectDailyContextOhlcvSelfHealTargets(input: {
 
 async function maybeSelfHealDailyBarRows(input: {
   session: AppSession;
-  companies: Company[];
+  companies: CompanyLite[];
   stockRows: DailyBarContextRow[];
   indexRow: DailyBarContextRow | null;
 }): Promise<DailyBarContextRow[]> {
@@ -1669,7 +1687,7 @@ function selectDailyHeatmapRows(rows: DailyBarContextRow[]): DailyBarContextRow[
 
 async function buildDailyBarMarketContext(input: {
   session: AppSession;
-  companies: Company[];
+  companies: CompanyLite[];
 }) {
   const [indexContext, initialStockRows] = await Promise.all([
     loadFinMindTaiexIndexContext(),
@@ -3029,9 +3047,7 @@ export async function getMarketDataOverview(input: {
       session: input.session,
       sources: input.sources
     }),
-    input.repo.listCompanies(undefined, {
-      workspaceSlug: input.session.workspace.slug
-    }),
+    getCompaniesLiteCached(input.repo, input.session.workspace.slug),
     listMarketQuotes({
       session: input.session,
       includeStale: input.includeStale,

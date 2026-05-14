@@ -1,16 +1,16 @@
 import type {
   AppSession,
-  Company,
   DailyBrief,
   ReviewEntry,
   Signal,
   Theme,
   TradePlan
 } from "@iuf-trading-room/contracts";
-import type { TradingRoomRepository } from "@iuf-trading-room/domain";
+import type { CompanyLite, TradingRoomRepository } from "@iuf-trading-room/domain";
 
 import { getAuditLogSummary } from "./audit-log-store.js";
 import { getEventHistory, getEventHistorySummary } from "./event-history.js";
+import { getCompaniesLiteCached } from "./market-data.js";
 import { listOpenAliceJobs } from "./openalice-bridge.js";
 import { getOpenAliceObservabilitySnapshot } from "./openalice-observability.js";
 import { getThemeGraphRankings } from "./theme-graph.js";
@@ -91,7 +91,7 @@ function takeLatest<T>(
 export function buildOpsSnapshotView(input: {
   session: AppSession;
   themes: Theme[];
-  companies: Company[];
+  companies: CompanyLite[];
   signals: Signal[];
   plans: TradePlan[];
   reviews: ReviewEntry[];
@@ -246,7 +246,7 @@ export async function getOpsSnapshot(input: {
     eventHistoryRecent
   ] = await Promise.all([
     repo.listThemes({ workspaceSlug }),
-    repo.listCompanies(undefined, { workspaceSlug }),
+    getCompaniesLiteCached(repo, workspaceSlug),
     repo.listSignals({}, { workspaceSlug }),
     repo.listTradePlans({}, { workspaceSlug }),
     repo.listReviews({}, { workspaceSlug }),
