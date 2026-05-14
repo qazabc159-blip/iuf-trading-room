@@ -12017,7 +12017,7 @@ function takeFinMindSchedulerBatch<T extends SchedulerTicker>(
 function scheduleInitialSchedulerTick(name: string, delayMs: number, fn: () => Promise<void>): void {
   setTimeout(() => {
     fn().catch((e) => console.error(`[${name}] Initial tick failed:`, e));
-  }, delayMs);
+  }, delayMs).unref();
 }
 
 /**
@@ -12431,7 +12431,7 @@ function startSchedulers(workspaceSlug: string): void {
     runDailyBriefDispatcherTick().catch((e) =>
       console.error("[daily-brief-dispatcher] startup catch-up failed:", e)
     );
-  }, 30_000);
+  }, 30_000).unref();
 
   // PR A: Monthly revenue sync — every 24h (burst on 10th, sweep otherwise)
   scheduleInitialSchedulerTick("fundamentals-scheduler/monthly-revenue", INITIAL_STAGGER_MS, () =>
@@ -12562,7 +12562,7 @@ function startSchedulers(workspaceSlug: string): void {
     runPipelineMissedDayCatchUpForAllWorkspaces(workspaceSlug).catch((e: unknown) =>
       console.error("[pipeline-catchup] boot catch-up error:", e instanceof Error ? e.message : String(e))
     );
-  }, 15_000);
+  }, 15_000).unref();
 
   // Pre-market tick (07:30–08:00 TST window, check every 15min)
   // Boot-recovery fires once at startup (10s delay): handles restarts between
@@ -12572,7 +12572,7 @@ function startSchedulers(workspaceSlug: string): void {
     runPipelinePreMarketBootRecovery(workspaceSlug)
       .then(() => handlePipelineSuccess("pre_market"))
       .catch((e: unknown) => handlePipelineFail("pre_market", e));
-  }, 10_000);
+  }, 10_000).unref();
   ui(() => {
     runPipelinePreMarketTick(workspaceSlug)
       .then(() => handlePipelineSuccess("pre_market"))
@@ -12633,7 +12633,7 @@ function startSchedulers(workspaceSlug: string): void {
     runEventEngineTick().catch((e) =>
       console.error("[event-engine] Initial tick failed:", e)
     );
-  }, 30_000);
+  }, 30_000).unref();
   ui(() => {
     runEventEngineTick().catch((e) =>
       console.error("[event-engine] Interval tick failed:", e)
@@ -12695,7 +12695,7 @@ function startSchedulers(workspaceSlug: string): void {
     } catch (e) {
       console.error("[news-ai-selector] boot recovery failed:", e instanceof Error ? e.message : e);
     }
-  }, 30_000);
+  }, 30_000).unref();
 
   // P0-2: Health watchdog — POST internal heartbeat every 30min, Sentry on consecutive fail
   // Tracks that the server event-loop is alive and not starved (relates to the 5/7 502 incidents).
@@ -12821,7 +12821,7 @@ function startSchedulers(workspaceSlug: string): void {
     }).catch((e) =>
       console.error("[finmind-boot-ingest] Boot full ingest error:", e instanceof Error ? e.message : String(e))
     );
-  }, 60_000);
+  }, 60_000).unref();
 
   // Recurring 6h full ingest — all 11 datasets, bypasses cadence guards
   const SIX_HOURS_FULL_INGEST_MS = 6 * 60 * 60 * 1000;
@@ -12886,7 +12886,7 @@ function startSchedulers(workspaceSlug: string): void {
       runTwseAnnouncementIngest().catch((e) =>
         console.error("[twse-ann-ingest] boot catch-up failed:", e instanceof Error ? e.message : String(e))
       );
-    }, 45_000);
+    }, 45_000).unref();
   }
 
   console.log(

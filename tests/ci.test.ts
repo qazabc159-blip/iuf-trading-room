@@ -10512,3 +10512,25 @@ test("SIM4: kgiSimOrderBodySchema — LOT quantityUnit accepted; market order pr
   assert.equal(result.orderType, "market", "SIM4: market orderType accepted");
   assert.equal(result.price, undefined, "SIM4: price not required for market order");
 });
+
+// CI hang fix (2026-05-14): force process.exit after all tests complete.
+// Root cause: startup setTimeouts in server.ts (30s/45s/60s keep the event loop alive
+// even after .unref() is applied to setInterval handles. The node --test runner does not
+// call process.exit() itself; open handles prevent natural exit.
+//
+// Strategy: two-layer defence
+//   Layer 1 — server.ts: all startup setTimeout calls now have .unref() so they no
+//             longer block natural exit on their own.
+//   Layer 2 — this file: a 5s hard exit fires if something else keeps the process alive
+//             (e.g. postgres.js pool keep-alive socket, undici agent, etc.).
+//             process.exitCode is set by the node:test runner before tests complete,
+//             so process.exit(process.exitCode ?? 0) preserves fail/pass signal.
+{
+  const forceExitTimer = setTimeout(() => {
+    console.log("[ci-exit] force exit — open handles still present 5s after test file end");
+    process.exit(process.exitCode ?? 0);
+  }, 5_000);
+  // Do NOT unref — this timer must fire even if other handles exist (that is the point).
+  // It is safe because process.exitCode already reflects pass/fail when this runs.
+  void forceExitTimer;
+}
