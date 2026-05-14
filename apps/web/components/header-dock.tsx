@@ -300,8 +300,8 @@ export function HeaderDock() {
           {drawer === "alerts" ? (
             <div className="header-dock-drawer-body">
               <div className="header-dock-state">
-                <span>DAY 6</span>
-                <b>Notification Center</b>
+                <span>今日警示</span>
+                <b>警示中心</b>
                 <p>最近 7 天事件準備接入：風控、委託、推薦變更與系統事件。</p>
               </div>
               <Link href="/alerts" onClick={() => setDrawer(null)}>
