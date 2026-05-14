@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { decode as iconvDecode } from "iconv-lite";
 // ── Sentry init must be imported before any other app module ──────────────────
 import { captureException as sentryCaptureException, captureMessage as sentryCaptureMessage } from "./sentry-init.js";
 import { serve } from "@hono/node-server";
@@ -1496,13 +1497,42 @@ app.post("/api/v1/companies/merge", async (c) => {
   return c.json({ data: result });
 });
 
-app.get("/api/v1/themes", async (c) =>
-  c.json({
-    data: await c.get("repo").listThemes({
-      workspaceSlug: c.get("session").workspace.slug
-    })
-  })
-);
+// =============================================================================
+// CP950 mojibake transcode helper (Bug #1 — 2026-05-15 Bruce cycle 4)
+// Some DB rows (e.g. 5G, 低軌衛星) had thesis/whyNow/bottleneck stored as
+// CP950/Big5 bytes misread as Latin-1. Re-decode at response time to recover.
+// Safe: if transcode fails or introduces U+FFFD, original string is returned.
+// =============================================================================
+function fixCP950Mojibake(s: string | null | undefined): string | null {
+  if (s == null) return s ?? null;
+  // Fast path: no Latin-1 multibyte markers (ä å æ ç etc.) → no transcode needed
+  if (!/[\xc0-\xff]/.test(s)) return s;
+  try {
+    const buf = Buffer.from(s, "latin1");
+    const decoded = iconvDecode(buf, "cp950");
+    // If decode introduced replacement chars, the encoding was wrong — keep original
+    if (decoded.includes("�")) return s;
+    return decoded;
+  } catch {
+    return s;
+  }
+}
+
+function applyThemeTranscode<T extends { thesis?: string | null; whyNow?: string | null; bottleneck?: string | null }>(theme: T): T {
+  return {
+    ...theme,
+    thesis: fixCP950Mojibake(theme.thesis),
+    whyNow: fixCP950Mojibake(theme.whyNow),
+    bottleneck: fixCP950Mojibake(theme.bottleneck)
+  };
+}
+
+app.get("/api/v1/themes", async (c) => {
+  const themes = await c.get("repo").listThemes({
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  return c.json({ data: themes.map(applyThemeTranscode) });
+});
 
 app.post("/api/v1/themes", async (c) => {
   const payload = themeCreateInputSchema.parse(await c.req.json());
@@ -7947,8 +7977,19 @@ app.get("/api/v1/lab/strategy-snapshot", async (c) => {
     });
   }
 
+  // Map internal status enum → product-facing displayStatus for frontend badge
+  const snapshotCandidatesWithDisplay = snapshot.candidates.map((cand) => ({
+    ...cand,
+    displayStatus:
+      cand.status === "STRONG_CANDIDATE" ? "PASS"
+      : cand.status === "WATCH_LIST" ? "WATCH"
+      : cand.status === "FAILED" ? "FAIL"
+      : cand.status.includes("CONFIRMED") ? "PASS"
+      : null
+  }));
+
   return c.json({
-    data: snapshot,
+    data: { ...snapshot, candidates: snapshotCandidatesWithDisplay },
     meta: {
       source: "lab_sanctioned" as const,
       sprintId: snapshot.sprintId,
@@ -7993,8 +8034,20 @@ app.get("/api/v1/lab/strategies", async (c) => {
     });
   }
 
+  // Map internal status enum → product-facing displayStatus for frontend badge
+  // Lab/TR alignment lock: status verbatim is preserved; displayStatus is TR-layer UI mapping only
+  const candidatesWithDisplay = snapshot.candidates.map((cand) => ({
+    ...cand,
+    displayStatus:
+      cand.status === "STRONG_CANDIDATE" ? "PASS"
+      : cand.status === "WATCH_LIST" ? "WATCH"
+      : cand.status === "FAILED" ? "FAIL"
+      : cand.status.includes("CONFIRMED") ? "PASS"
+      : null  // null → frontend renders as 「研究中」grey
+  }));
+
   return c.json({
-    data: snapshot,
+    data: { ...snapshot, candidates: candidatesWithDisplay },
     meta: {
       source: "lab_sanctioned" as const,
       sprintId: snapshot.sprintId,
