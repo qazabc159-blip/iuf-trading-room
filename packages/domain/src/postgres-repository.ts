@@ -212,7 +212,13 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
     const rows = await db
       .select()
       .from(themes)
-      .where(and(eq(themes.workspaceId, workspace.id), not(like(themes.name, "[ORPHAN]%"))))
+      .where(
+        and(
+          eq(themes.workspaceId, workspace.id),
+          // Exclude all internal maintenance labels: [ORPHAN], [BROKEN-*], [DEPRECATED], [TODO], etc.
+          not(like(themes.name, "[%"))
+        )
+      )
       .orderBy(desc(themes.updatedAt));
 
     const results = [];
