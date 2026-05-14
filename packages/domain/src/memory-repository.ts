@@ -221,6 +221,18 @@ export class MemoryTradingRoomRepository implements TradingRoomRepository {
     return items.map((company) => ({ ...company, themeIds: [...company.themeIds] }));
   }
 
+  async listCompaniesLite() {
+    return this.companies.map((company) => ({
+      id: company.id,
+      ticker: company.ticker,
+      name: company.name,
+      market: company.market,
+      chainPosition: company.chainPosition,
+      beneficiaryTier: company.beneficiaryTier,
+      updatedAt: company.updatedAt
+    }));
+  }
+
   async getCompany(companyId: string) {
     return this.companies.find((company) => company.id === companyId) ?? null;
   }
