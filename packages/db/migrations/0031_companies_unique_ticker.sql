@@ -58,7 +58,55 @@ WHERE ck.id NOT IN (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Step 0c: Pre-deduplicate company_theme_links before rewire.
+--
+-- company_theme_links PRIMARY KEY (company_id, theme_id)
+-- When we rewire dup company_ids → survivor, rows that differ only in company_id
+-- (dup1 vs dup2) collide when both become survivor_id — PK violation → rollback.
+-- Solution: project each row's company_id → survivor_id via ROW_NUMBER(),
+-- DELETE all rows where rn > 1 (keeping the lowest original company_id per pair).
+-- ─────────────────────────────────────────────────────────────────────────────
+DELETE FROM company_theme_links
+WHERE (company_id, theme_id) IN (
+  SELECT company_id, theme_id
+  FROM (
+    SELECT
+      ctl.company_id,
+      ctl.theme_id,
+      ROW_NUMBER() OVER (
+        PARTITION BY s.survivor_id, ctl.theme_id
+        ORDER BY ctl.company_id ASC
+      ) AS rn
+    FROM company_theme_links ctl
+    JOIN (
+      SELECT id, MIN(id) OVER (PARTITION BY workspace_id, ticker) AS survivor_id
+      FROM companies
+    ) s ON s.id = ctl.company_id
+  ) ranked
+  WHERE rn > 1
+);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Step 0d: Pre-deduplicate companies_ohlcv before rewire.
+--
+-- companies_ohlcv UNIQUE INDEX (company_id, dt, interval)
+-- Same pattern: project company_id → survivor_id, keep MIN(id) per triple,
+-- delete all other rows that would collide after rewire.
+-- ─────────────────────────────────────────────────────────────────────────────
+DELETE FROM companies_ohlcv
+WHERE id NOT IN (
+  SELECT MIN(o.id)
+  FROM companies_ohlcv o
+  JOIN (
+    SELECT id, MIN(id) OVER (PARTITION BY workspace_id, ticker) AS survivor_id
+    FROM companies
+  ) s ON s.id = o.company_id
+  GROUP BY s.survivor_id, o.dt, o.interval
+);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Step 1a: Rewire company_theme_links.company_id → survivor
+-- (pre-deduped in Step 0c — safe to UPDATE now)
 -- ─────────────────────────────────────────────────────────────────────────────
 UPDATE company_theme_links ctl
 SET company_id = survivor.id
@@ -156,6 +204,23 @@ JOIN companies dup
   AND dup.ticker = survivor.ticker
   AND dup.id != survivor.id
 WHERE cn.company_id = dup.id;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Step 1g: Rewire companies_ohlcv.company_id → survivor
+-- (pre-deduped in Step 0d — safe to UPDATE now)
+-- ─────────────────────────────────────────────────────────────────────────────
+UPDATE companies_ohlcv o
+SET company_id = survivor.id
+FROM (
+  SELECT MIN(id) AS id, workspace_id, ticker
+  FROM companies
+  GROUP BY workspace_id, ticker
+) survivor
+JOIN companies dup
+  ON dup.workspace_id = survivor.workspace_id
+  AND dup.ticker = survivor.ticker
+  AND dup.id != survivor.id
+WHERE o.company_id = dup.id;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Step 2: Safe DELETE of duplicate companies rows.
