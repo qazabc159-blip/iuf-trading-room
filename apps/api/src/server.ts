@@ -13668,6 +13668,65 @@ app.get("/api/v1/sectors/:sector/companies", async (c) => {
   });
 });
 
+// =============================================================================
+// DISCOVER ENDPOINT (2026-05-15)
+// Lane: strategy backend (Jason). File: data-sources/discover.ts (read-only)
+// Auth: Owner-only. Rate limit: 30/user/min enforced by in-process guard.
+// =============================================================================
+
+import { discoverCompaniesByBuzzword } from "./data-sources/discover.js";
+
+// Per-IP/session rate limit: 30 requests per minute (in-process)
+const _discoverCallLog = new Map<string, number[]>();
+const DISCOVER_MAX_PER_MIN = 30;
+
+function discoverRateLimitOk(userId: string): boolean {
+  const now = Date.now();
+  const log = _discoverCallLog.get(userId) ?? [];
+  const fresh = log.filter((t) => now - t < 60_000);
+  if (fresh.length >= DISCOVER_MAX_PER_MIN) return false;
+  fresh.push(now);
+  _discoverCallLog.set(userId, fresh);
+  return true;
+}
+
+// GET /api/v1/discover?q=<buzzword>[&fuzzyThreshold=0.7][&llmFallback=true]
+app.get("/api/v1/discover", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const userId = session.user.id;
+  if (!discoverRateLimitOk(userId)) {
+    return c.json({ error: "rate_limit_exceeded", retryAfterMs: 60_000 }, 429);
+  }
+
+  const q = c.req.query("q");
+  if (!q || q.trim().length === 0) {
+    return c.json({ error: "missing_param", param: "q" }, 400);
+  }
+
+  const fuzzyThresholdRaw = c.req.query("fuzzyThreshold");
+  const fuzzyThreshold = fuzzyThresholdRaw
+    ? Math.min(1, Math.max(0, parseFloat(fuzzyThresholdRaw)))
+    : undefined;
+
+  const llmFallbackRaw = c.req.query("llmFallback");
+  const llmFallback = llmFallbackRaw === "false" ? false : undefined; // default true
+
+  try {
+    const result = await discoverCompaniesByBuzzword(q.trim(), {
+      fuzzyThreshold,
+      llmFallback,
+    });
+    return c.json(result);
+  } catch (err) {
+    console.error("[discover] unexpected error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "internal_error" }, 500);
+  }
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 

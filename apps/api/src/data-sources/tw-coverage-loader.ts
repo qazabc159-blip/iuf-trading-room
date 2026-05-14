@@ -545,3 +545,78 @@ export async function listSectorCompanies(sector: string): Promise<SectorCompany
 
   return [];
 }
+
+// ---------------------------------------------------------------------------
+// Wikilink index (for discover.ts fuzzy search)
+// ---------------------------------------------------------------------------
+
+let _wikilinkCache: string[] | null = null;
+let _wikilinkCacheAt = 0;
+const WIKILINK_CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
+
+/** For test isolation only */
+export function _resetWikilinkCache(): void {
+  _wikilinkCache = null;
+  _wikilinkCacheAt = 0;
+}
+
+/**
+ * Collect all unique [[wikilink]] tokens from every coverage file.
+ * Result is cached for 10 minutes (revalidated on TTL expiry).
+ * Returns [] gracefully when no coverage data is available.
+ */
+export async function getAllWikilinks(): Promise<string[]> {
+  if (_wikilinkCache && Date.now() - _wikilinkCacheAt < WIKILINK_CACHE_TTL_MS) {
+    return _wikilinkCache;
+  }
+
+  const primaryRoot = resolveCoveragePath();
+  const fallbackRoot = localDevFallback();
+
+  let rootPath = primaryRoot;
+  let sectors: string[] | null = null;
+
+  for (const root of [primaryRoot, fallbackRoot]) {
+    try {
+      sectors = await readdir(root);
+      rootPath = root;
+      break;
+    } catch {
+      continue;
+    }
+  }
+
+  if (!sectors) {
+    _wikilinkCache = [];
+    _wikilinkCacheAt = Date.now();
+    return [];
+  }
+
+  const allTokens = new Set<string>();
+
+  for (const sector of sectors) {
+    const sectorPath = path.join(rootPath, sector);
+    let files: string[];
+    try {
+      files = await readdir(sectorPath);
+    } catch {
+      continue;
+    }
+
+    for (const file of files.filter((f) => f.endsWith(".md"))) {
+      try {
+        const md = await readFile(path.join(sectorPath, file), "utf-8");
+        for (const token of extractWikilinks(md)) {
+          allTokens.add(token);
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  const result = [...allTokens];
+  _wikilinkCache = result;
+  _wikilinkCacheAt = Date.now();
+  return result;
+}
