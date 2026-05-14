@@ -13338,6 +13338,93 @@ app.get("/api/v1/market/news/finmind", async (c) => {
   return c.json({ ...result, state: "live" });
 });
 
+// =============================================================================
+// Recommendation Orchestrator — Day 1 skeleton (2026-05-14)
+// =============================================================================
+// GET  /api/v1/recommendations/today   → StockRecommendation[]
+// GET  /api/v1/recommendations/:id     → StockRecommendation | 404
+// POST /api/v1/recommendations/:id/feedback → 204
+//
+// Auth: Owner-only v1. Paid-tier expansion comes later.
+// Data: mock layer v1 — real cont_liq_v36 + MAIN wiring comes Day 3+.
+// Lane: strategy backend (Jason). Only touches recommendation-store.ts.
+// =============================================================================
+
+import {
+  getMockRecommendations,
+  getMockRecommendationById,
+  recordRecommendationFeedback,
+} from "./recommendation-store.js";
+import {
+  stockRecommendationSchema,
+  recommendationFeedbackBodySchema,
+} from "@iuf-trading-room/contracts";
+
+export { recommendationFeedbackBodySchema };
+
+// GET /api/v1/recommendations/today
+app.get("/api/v1/recommendations/today", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const items = getMockRecommendations();
+
+  return c.json({
+    date: items[0]?.date ?? new Date().toISOString().slice(0, 10),
+    generatedAt: new Date().toISOString(),
+    count: items.length,
+    items,
+    _mock: true,
+  });
+});
+
+// GET /api/v1/recommendations/:id
+app.get("/api/v1/recommendations/:id", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { id } = c.req.param();
+  const rec = getMockRecommendationById(id);
+
+  if (!rec) {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  return c.json({ data: rec, _mock: true });
+});
+
+// POST /api/v1/recommendations/:id/feedback
+app.post("/api/v1/recommendations/:id/feedback", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { id } = c.req.param();
+
+  // Verify the recommendation exists
+  const rec = getMockRecommendationById(id);
+  if (!rec) {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  const body = recommendationFeedbackBodySchema.parse(await c.req.json());
+
+  recordRecommendationFeedback({
+    recommendationId: id,
+    userId: session.user.id,
+    reaction: body.reaction,
+    note: body.note,
+    recordedAt: new Date().toISOString(),
+  });
+
+  return c.json({ ok: true }, 201);
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 

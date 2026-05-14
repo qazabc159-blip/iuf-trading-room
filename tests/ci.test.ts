@@ -10513,6 +10513,96 @@ test("SIM4: kgiSimOrderBodySchema — LOT quantityUnit accepted; market order pr
   assert.equal(result.price, undefined, "SIM4: price not required for market order");
 });
 
+// =============================================================================
+// Recommendation Orchestrator — schema contract tests (REC1–REC5)
+// =============================================================================
+import {
+  getMockRecommendations,
+  getMockRecommendationById,
+  recordRecommendationFeedback,
+  getRecommendationFeedback,
+  _resetRecommendationFeedbackStore,
+} from "../apps/api/src/recommendation-store.ts";
+import {
+  stockRecommendationSchema,
+  recommendationFeedbackBodySchema,
+} from "../packages/contracts/src/index.ts";
+
+test("REC1: getMockRecommendations returns valid StockRecommendation array", () => {
+  const items = getMockRecommendations();
+  assert.ok(Array.isArray(items), "REC1: should return array");
+  assert.ok(items.length >= 1, "REC1: at least 1 recommendation");
+
+  for (const item of items) {
+    const parsed = stockRecommendationSchema.safeParse(item);
+    assert.ok(parsed.success, `REC1: schema parse failed for ${item.recommendationId}: ${parsed.success ? "" : JSON.stringify(parsed.error?.issues)}`);
+  }
+});
+
+test("REC2: recommendations have required scalar fields", () => {
+  const items = getMockRecommendations();
+  for (const item of items) {
+    assert.ok(typeof item.recommendationId === "string" && item.recommendationId.length > 0, "REC2: recommendationId must be non-empty string");
+    assert.ok(typeof item.ticker === "string" && item.ticker.length > 0, "REC2: ticker must be non-empty string");
+    assert.ok(typeof item.rank === "number" && item.rank >= 1, "REC2: rank must be positive number");
+    assert.ok(item.confidence >= 0 && item.confidence <= 1, "REC2: confidence must be 0-1");
+    assert.ok(item.totalScore >= 0 && item.totalScore <= 100, "REC2: totalScore must be 0-100");
+    assert.equal(item.generatedBy, "iuf_recommendation_orchestrator_v1", "REC2: generatedBy literal must match");
+  }
+});
+
+test("REC3: getMockRecommendationById returns correct record or null", () => {
+  const items = getMockRecommendations();
+  const first = items[0];
+  assert.ok(first, "REC3: need at least 1 item");
+
+  const found = getMockRecommendationById(first.recommendationId);
+  assert.ok(found !== null, "REC3: should find by recommendationId");
+  assert.equal(found?.recommendationId, first.recommendationId, "REC3: id must match");
+
+  const missing = getMockRecommendationById("rec_does_not_exist_xyz");
+  assert.equal(missing, null, "REC3: unknown id returns null");
+});
+
+test("REC4: recommendationFeedbackBodySchema validates correctly", () => {
+  const valid = recommendationFeedbackBodySchema.parse({ reaction: "like" });
+  assert.equal(valid.reaction, "like", "REC4: like reaction valid");
+
+  const withNote = recommendationFeedbackBodySchema.parse({ reaction: "acted", note: "entered 2330 at 955" });
+  assert.equal(withNote.reaction, "acted", "REC4: acted reaction valid");
+  assert.equal(withNote.note, "entered 2330 at 955", "REC4: note preserved");
+
+  assert.throws(
+    () => recommendationFeedbackBodySchema.parse({ reaction: "invalid_reaction" }),
+    { name: "ZodError" },
+    "REC4: invalid reaction throws ZodError"
+  );
+});
+
+test("REC5: recordRecommendationFeedback stores and retrieves entries", () => {
+  _resetRecommendationFeedbackStore();
+
+  const entry = {
+    recommendationId: "rec_2330_20260514",
+    userId: "user-001",
+    reaction: "like" as const,
+    note: "強勢股",
+    recordedAt: new Date().toISOString(),
+  };
+
+  recordRecommendationFeedback(entry);
+  const stored = getRecommendationFeedback("rec_2330_20260514");
+
+  assert.equal(stored.length, 1, "REC5: exactly 1 feedback entry stored");
+  assert.equal(stored[0]?.reaction, "like", "REC5: reaction preserved");
+  assert.equal(stored[0]?.userId, "user-001", "REC5: userId preserved");
+
+  const empty = getRecommendationFeedback("rec_nonexistent");
+  assert.deepEqual(empty, [], "REC5: unknown id returns empty array");
+
+  _resetRecommendationFeedbackStore();
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
