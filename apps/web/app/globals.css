@@ -14553,6 +14553,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   top: 16px;
   right: 16px;
   z-index: 120;
+  touch-action: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -14564,6 +14565,21 @@ body:has(.tactical-dashboard) .app-sidebar {
     rgba(8, 11, 16, 0.88);
   box-shadow: 0 16px 46px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.035);
   backdrop-filter: blur(10px);
+}
+
+.header-dock-grip {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 36px;
+  color: var(--tac-fg-3);
+  flex-shrink: 0;
+  border-radius: 4px;
+  transition: color 120ms ease;
+}
+
+.header-dock-grip:hover {
+  color: var(--tac-fg-1);
 }
 
 .header-dock-button {
