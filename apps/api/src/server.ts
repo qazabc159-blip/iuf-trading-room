@@ -13432,7 +13432,9 @@ app.post("/api/v1/admin/owner-reset-password", async (c) => {
 
 // POST /api/v1/auth/change-password
 // Any authenticated user. Verifies currentPassword before updating.
-// Keeps the caller's own session active (only clears on P0 owner-reset path).
+// Clears the caller's session cookie on success — forces re-login with new password.
+// Note: Stateless HMAC cookies mean other active devices retain access until cookie expiry.
+// A sessions table migration is the P2 path to full multi-device invalidation.
 app.post("/api/v1/auth/change-password", async (c) => {
   const session = c.get("session");
   if (!session) {
@@ -13451,17 +13453,10 @@ app.post("/api/v1/auth/change-password", async (c) => {
     hashPassword: hashPw,
     verifyPassword,
     updateUserPassword,
-    getUserById
+    buildClearCookieHeader
   } = await import("./auth-store.js");
 
-  // Re-fetch user to get current passwordHash
-  const userRow = await getUserById(session.user.id);
-  if (!userRow) {
-    return c.json({ error: "user_not_found" }, 404);
-  }
-
-  // Verify current password
-  // Note: if passwordHash is null (seed user without set password), fall back to env seed password
+  // Verify current password via direct DB fetch
   const { getDb } = await import("@iuf-trading-room/db");
   const { users: usersTable } = await import("@iuf-trading-room/db");
   const { eq: drizzleEq } = await import("drizzle-orm");
@@ -13474,9 +13469,12 @@ app.post("/api/v1/auth/change-password", async (c) => {
   if (dbUser.passwordHash) {
     currentValid = await verifyPassword(body.currentPassword, dbUser.passwordHash);
   } else {
-    // seed user path
-    const seedPwd = process.env.SEED_OWNER_PASSWORD;
-    currentValid = !!(seedPwd && body.currentPassword === seedPwd);
+    // Seed user path: passwordHash is null until first password set.
+    // Use timingSafeEqual to avoid timing-leak even though this path is deprecated post-first-set.
+    const seedPwd = process.env.SEED_OWNER_PASSWORD ?? "";
+    if (seedPwd.length > 0 && body.currentPassword.length === seedPwd.length) {
+      currentValid = timingSafeEqual(Buffer.from(body.currentPassword), Buffer.from(seedPwd));
+    }
   }
 
   if (!currentValid) {
@@ -13491,12 +13489,18 @@ app.post("/api/v1/auth/change-password", async (c) => {
   const newHash = await hashPw(body.newPassword);
   await updateUserPassword(session.user.id, newHash);
 
+  // Clear caller's session cookie — they must re-login with the new password.
+  // This mirrors the owner-reset-password path. Other-device sessions survive until
+  // cookie expiry (no sessions table yet); full invalidation is a post-sprint P2 item.
+  c.header("Set-Cookie", buildClearCookieHeader());
+
   const ip = c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown";
   console.log(`[auth/change-password] user_id=${session.user.id}, action=password_changed, ip=${ip}`);
 
   return c.json({
     ok: true,
-    message: "Password updated."
+    mustReauth: true,
+    message: "Password updated. Please log in again."
   });
 });
 
