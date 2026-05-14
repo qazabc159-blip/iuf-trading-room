@@ -19,6 +19,9 @@ import {
   runBatchAiReviewer,
   runPipelinePreMarketBootRecovery,
   runPipelineTick,
+  sanitizeBriefBody,
+  scrubForbiddenPhrases,
+  scrubReplacementChars,
   _lastPipelineState,
   type SourcePack,
   type SourcePackEntry,
@@ -457,4 +460,64 @@ test("BR3: runPipelinePreMarketBootRecovery does not throw in memory mode (no DB
   } catch (err) {
     assert.fail("runPipelinePreMarketBootRecovery threw unexpectedly: " + String(err));
   }
+});
+
+// ── Test P0-1: scrubReplacementChars ──────────────────────────────────────────
+
+test("P0-1: scrubReplacementChars removes U+FFFD replacement characters", () => {
+  const input = "低軌衛星主要應用於���通訊，涵蓋�高速傳輸。";
+  const result = scrubReplacementChars(input);
+  assert.ok(!result.includes("�"), "U+FFFD chars must be removed");
+  assert.ok(result.includes("低軌衛星"), "Chinese text before mojibake must be preserved");
+  assert.ok(result.includes("通訊"), "Chinese text after mojibake must be preserved");
+});
+
+test("P0-1: scrubReplacementChars collapses leftover double-spaces", () => {
+  const input = "before ��� after";
+  const result = scrubReplacementChars(input);
+  assert.equal(result, "before after");
+});
+
+test("P0-1: scrubReplacementChars is no-op on clean UTF-8 text", () => {
+  const clean = "台股市場今日維持穩定，外資法人動向觀察中。";
+  assert.equal(scrubReplacementChars(clean), clean);
+});
+
+test("P0-1: sanitizeBriefBody passes through after scrub — no U+FFFD in output", () => {
+  const garbled = "低軌衛星 — Priority 3: �C�y�D���通訊衛星主要應用";
+  const result = sanitizeBriefBody(garbled);
+  assert.ok(!result.includes("�"), "sanitizeBriefBody must remove all U+FFFD");
+});
+
+// ── Test P0-2: scrubForbiddenPhrases ─────────────────────────────────────────
+
+test("P0-2: scrubForbiddenPhrases removes internal draft wording (full sentence)", () => {
+  const input = "後續追蹤重點如下。此版本僅作內部研究草稿，供人員審閱後再決定後續分析方向。請關注市場動態。";
+  const result = scrubForbiddenPhrases(input);
+  assert.ok(!result.includes("內部研究草稿"), "forbidden phrase must be removed");
+  assert.ok(!result.includes("供人員審閱"), "forbidden phrase must be removed");
+  assert.ok(!result.includes("後續分析方向"), "forbidden phrase must be removed");
+  assert.ok(result.includes("後續追蹤重點如下"), "surrounding content must be preserved");
+  assert.ok(result.includes("請關注市場動態"), "following content must be preserved");
+});
+
+test("P0-2: scrubForbiddenPhrases removes rule-template fallback label", () => {
+  const input = "主題觀察。Generated: 2026-05-13 (rule-template fallback)。電動車供應鏈資料正常。";
+  const result = scrubForbiddenPhrases(input);
+  assert.ok(!result.includes("rule-template fallback"), "rule-template fallback label must be removed");
+  assert.ok(result.includes("電動車供應鏈資料正常"), "substantive content must be preserved");
+});
+
+test("P0-2: scrubForbiddenPhrases is no-op on clean content", () => {
+  const clean = "今日台股市場維持觀察，法人籌碼資料顯示外資動向。整體市場偏中性格局。";
+  assert.equal(scrubForbiddenPhrases(clean), clean);
+});
+
+test("P0-2: sanitizeBriefBody applies both scrubs in sequence", () => {
+  const mixed = "低軌衛星��通訊。此版本僅作內部研究草稿，供人員審閱後再決定後續分析方向。";
+  const result = sanitizeBriefBody(mixed);
+  assert.ok(!result.includes("�"), "U+FFFD must be removed");
+  assert.ok(!result.includes("內部研究草稿"), "internal draft phrase must be removed");
+  assert.ok(result.includes("低軌衛星"), "clean Chinese text must survive");
+  assert.ok(result.includes("通訊"), "clean Chinese text after mojibake must survive");
 });
