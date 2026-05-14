@@ -948,11 +948,15 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     const kgiBody = $('.ltab[data-lt="kgi"] tbody');
     if (kgiBody) kgiBody.innerHTML = (live.kgi?.positions || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">—</td><td class="r px">'+price(pos.lastPrice)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.lastPrice || 0))+'</td><td class="r pnl '+(Number(pos.unrealizedPnl || 0) >= 0 ? "up" : "dn")+'">'+n(pos.unrealizedPnl)+'</td><td><span class="src kgi">讀取</span></td></tr>').join("") || '<tr><td colspan="8">目前沒有可顯示的券商庫存讀取資料。</td></tr>';
     const depth = $("#depth");
-    if (depth && live.bidAsk) {
-      const asks = (live.bidAsk.ask_prices || []).map((p, i) => [p, live.bidAsk.ask_volumes?.[i] ?? 0]).slice(0, 5).reverse();
-      const bids = (live.bidAsk.bid_prices || []).map((p, i) => [p, live.bidAsk.bid_volumes?.[i] ?? 0]).slice(0, 5);
-      const max = Math.max(1, ...asks.map((x) => x[1]), ...bids.map((x) => x[1]));
-      depth.innerHTML = asks.map(([p,q]) => '<div class="row"><span class="px up">'+price(p)+'</span><div class="bar"><i class="ask" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("") + '<div class="row last"><span class="px">'+price(selected.price)+'</span><span class="qty" style="text-align:center;color:var(--fg-3)">成交</span><span class="qty">—</span></div>' + bids.map(([p,q]) => '<div class="row"><span class="px dn">'+price(p)+'</span><div class="bar"><i class="bid" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("");
+    if (depth) {
+      if (live.bidAsk) {
+        const asks = (live.bidAsk.ask_prices || []).map((p, i) => [p, live.bidAsk.ask_volumes?.[i] ?? 0]).slice(0, 5).reverse();
+        const bids = (live.bidAsk.bid_prices || []).map((p, i) => [p, live.bidAsk.bid_volumes?.[i] ?? 0]).slice(0, 5);
+        const max = Math.max(1, ...asks.map((x) => x[1]), ...bids.map((x) => x[1]));
+        depth.innerHTML = asks.map(([p,q]) => '<div class="row"><span class="px up">'+price(p)+'</span><div class="bar"><i class="ask" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("") + '<div class="row last"><span class="px">'+price(selected.price)+'</span><span class="qty" style="text-align:center;color:var(--fg-3)">成交</span><span class="qty">—</span></div>' + bids.map(([p,q]) => '<div class="row"><span class="px dn">'+price(p)+'</span><div class="bar"><i class="bid" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("");
+      } else {
+        depth.innerHTML = '<div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">五檔：等待 KGI 連線</div>';
+      }
     }
     // BUG_006 — tape: 最近成交 ticks
     const tape = $("#tape");
@@ -970,12 +974,10 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     }
     // BUG_006 — OHLCV legend in chart bar
     const ohlcvLast = (live.ohlcv || []).length ? live.ohlcv[live.ohlcv.length - 1] : null;
-    if (ohlcvLast) {
-      const ohlcO = $("#ohlc-o"); if (ohlcO) ohlcO.textContent = price(ohlcvLast.open);
-      const ohlcH = $("#ohlc-h"); if (ohlcH) ohlcH.textContent = price(ohlcvLast.high);
-      const ohlcL = $("#ohlc-l"); if (ohlcL) ohlcL.textContent = price(ohlcvLast.low);
-      const ohlcC = $("#ohlc-c"); if (ohlcC) ohlcC.textContent = price(ohlcvLast.close ?? selected.price);
-    }
+    const ohlcO = $("#ohlc-o"); if (ohlcO) ohlcO.textContent = ohlcvLast ? price(ohlcvLast.open) : (selected.open ? price(selected.open) : "—");
+    const ohlcH = $("#ohlc-h"); if (ohlcH) ohlcH.textContent = ohlcvLast ? price(ohlcvLast.high) : (selected.high ? price(selected.high) : "—");
+    const ohlcL = $("#ohlc-l"); if (ohlcL) ohlcL.textContent = ohlcvLast ? price(ohlcvLast.low) : (selected.low ? price(selected.low) : "—");
+    const ohlcC = $("#ohlc-c"); if (ohlcC) ohlcC.textContent = ohlcvLast ? price(ohlcvLast.close ?? selected.price) : (selected.price ? price(selected.price) : "—");
     // BUG_005 — capital: 模擬本金 / 可用資金 DOM update
     const capitalTWD = live.baseCapitalTWD ?? 10_000_000;
     const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = n(capitalTWD);
@@ -992,8 +994,9 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       const orderType = $("#t-otype")?.value || "limit";
       const side = $("#side .on")?.dataset.side || "buy";
       const px = Number($("#t-price")?.value || selected.price || 0);
+      const getSubmitLabel = () => ($("#submit-btn-label") as HTMLElement | null) || (submit.querySelector("b") as HTMLElement | null);
       submit.disabled = true;
-      submit.querySelector("b").textContent = "預覽中...";
+      const submitLabel0 = getSubmitLabel(); if (submitLabel0) submitLabel0.textContent = "預覽中...";
       const payload = { symbol: selected.symbol, side, orderType, qty, quantity_unit: unit, price: orderType === "market" ? null : px };
       try {
         const directPayload = Object.assign({}, payload, { idempotencyKey: "v031_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2) });
@@ -1012,10 +1015,14 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
           confirmed = await fetch("/api/ui-final-v031-paper/submit", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
         }
         if (!confirmed.ok) throw new Error(confirmed.error || "submit_failed");
-        submit.querySelector("b").textContent = "紙上委託已送出";
-        setTimeout(() => location.reload(), 900);
+        const lbl1 = getSubmitLabel(); if (lbl1) lbl1.textContent = "紙上委託已送出";
+        // Refresh orders/fills/positions without full reload
+        setTimeout(async () => {
+          try { await refreshClientLive(); } catch { /* ignore */ }
+          submit.disabled = false;
+        }, 900);
       } catch (err) {
-        submit.querySelector("b").textContent = "紙上委託未通過";
+        const lbl2 = getSubmitLabel(); if (lbl2) lbl2.textContent = "紙上委託未通過";
         const gate = $(".gate .h .v"); if (gate) gate.textContent = "需檢查";
       } finally {
         setTimeout(() => { submit.disabled = false; }, 1200);

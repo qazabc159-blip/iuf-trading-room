@@ -10458,3 +10458,57 @@ test("INST4: classifyInstName handles English name variants (Foreign_Investor, T
   assert.equal(classifyInstNameMirror(""), null, "INST4: empty string → null (unclassified)");
   assert.equal(classifyInstNameMirror("unknown"), null, "INST4: unknown → null (unclassified)");
 });
+
+// ── KGI SIM user-facing order endpoint — schema + guard tests (SIM1-SIM4) ────────────────────
+
+import { kgiSimOrderBodySchema } from "../apps/api/src/server.ts";
+
+test("SIM1: kgiSimOrderBodySchema — valid limit buy order parses correctly", () => {
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "2330",
+    side: "buy",
+    qty: 1,
+    price: 780.5,
+    orderType: "limit",
+    quantityUnit: "SHARE",
+  });
+  assert.equal(result.symbol, "2330", "SIM1: symbol passthrough");
+  assert.equal(result.side, "buy", "SIM1: side passthrough");
+  assert.equal(result.qty, 1, "SIM1: qty passthrough");
+  assert.equal(result.price, 780.5, "SIM1: price passthrough");
+  assert.equal(result.orderType, "limit", "SIM1: orderType default");
+  assert.equal(result.quantityUnit, "SHARE", "SIM1: quantityUnit default");
+});
+
+test("SIM2: kgiSimOrderBodySchema — defaults orderType=limit and quantityUnit=SHARE", () => {
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "0050",
+    side: "sell",
+    qty: 5,
+  });
+  assert.equal(result.orderType, "limit", "SIM2: orderType defaults to limit");
+  assert.equal(result.quantityUnit, "SHARE", "SIM2: quantityUnit defaults to SHARE");
+  assert.equal(result.price, undefined, "SIM2: price is undefined when not provided");
+});
+
+test("SIM3: kgiSimOrderBodySchema — rejects non-positive qty", () => {
+  assert.throws(() => {
+    kgiSimOrderBodySchema.parse({ symbol: "2330", side: "buy", qty: 0, price: 100 });
+  }, { name: "ZodError" }, "SIM3: qty=0 should throw ZodError");
+  assert.throws(() => {
+    kgiSimOrderBodySchema.parse({ symbol: "2330", side: "buy", qty: -1, price: 100 });
+  }, { name: "ZodError" }, "SIM3: qty=-1 should throw ZodError");
+});
+
+test("SIM4: kgiSimOrderBodySchema — LOT quantityUnit accepted; market order price optional", () => {
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "0050",
+    side: "buy",
+    qty: 2,
+    orderType: "market",
+    quantityUnit: "LOT",
+  });
+  assert.equal(result.quantityUnit, "LOT", "SIM4: LOT quantityUnit accepted");
+  assert.equal(result.orderType, "market", "SIM4: market orderType accepted");
+  assert.equal(result.price, undefined, "SIM4: price not required for market order");
+});
