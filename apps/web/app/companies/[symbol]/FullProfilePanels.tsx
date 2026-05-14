@@ -756,10 +756,10 @@ export function FullProfilePanels({ companyId }: { companyId: string }) {
         <section className="panel hud-frame company-intel-panel">
           <h3 className="ascii-head">
             <span className="ascii-head-bracket">[06]-[11]</span> 完整資料區
-            <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 11 資料集 — 載入中</span>
+            <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 11 資料集 — 讀取中</span>
           </h3>
           <div className="state-panel">
-            <span className="badge badge-blue">載入中</span>
+            <span className="badge badge-blue">讀取中</span>
             <span className="tg soft">正在讀取財報、月營收、法人、融資券、股利、重大訊息資料。</span>
           </div>
         </section>
