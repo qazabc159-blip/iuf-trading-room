@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, FileText, GripHorizontal, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
+import { Bell, FileText, GripHorizontal, KeyRound, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
 
 import { apiLogout } from "@/lib/auth-client";
 
@@ -260,6 +260,15 @@ export function HeaderDock() {
               <span>個資</span>
               <b>Owner Workspace</b>
             </div>
+            <Link
+              className="header-account-menu-link"
+              role="menuitem"
+              href="/settings/account"
+              onClick={() => setAccountOpen(false)}
+            >
+              <KeyRound size={15} strokeWidth={1.9} />
+              <span>帳號設定</span>
+            </Link>
             {position !== null && (
               <button type="button" role="menuitem" onClick={handleResetPosition}>
                 <RotateCcw size={15} strokeWidth={1.9} />
@@ -291,8 +300,8 @@ export function HeaderDock() {
           {drawer === "alerts" ? (
             <div className="header-dock-drawer-body">
               <div className="header-dock-state">
-                <span>DAY 6</span>
-                <b>Notification Center</b>
+                <span>今日警示</span>
+                <b>警示中心</b>
                 <p>最近 7 天事件準備接入：風控、委託、推薦變更與系統事件。</p>
               </div>
               <Link href="/alerts" onClick={() => setDrawer(null)}>

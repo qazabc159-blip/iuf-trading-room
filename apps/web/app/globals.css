@@ -14669,6 +14669,28 @@ body:has(.tactical-dashboard) .app-sidebar {
   background: rgba(200, 148, 63, 0.08);
 }
 
+/* Link item in account menu — same styling as button items */
+.header-account-menu-link {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 0;
+  color: var(--tac-fg-1, #aaa);
+  background: transparent;
+  padding: 0 14px;
+  cursor: pointer;
+  font: 800 12px/1 var(--sans-tc);
+  text-decoration: none;
+}
+
+.header-account-menu-link:hover {
+  color: var(--tac-fg-0);
+  background: rgba(200, 148, 63, 0.08);
+}
+
 .header-dock-scrim {
   position: fixed;
   inset: 0;
