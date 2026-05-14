@@ -3,7 +3,7 @@ import { ArrowRight, ShieldCheck } from "lucide-react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
 import styles from "./QuantStrategies.module.css";
-import { QUANT_STRATEGIES, type QuantStrategy, type StrategyCurvePoint } from "./strategy-data";
+import { QUANT_STRATEGIES, type QuantStrategy, type StrategyCurvePoint, type DisplayStatus } from "./strategy-data";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,58 @@ function accentColor(accent: QuantStrategy["accent"]) {
 
 function pct(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+const DISPLAY_STATUS_MAP: Record<
+  NonNullable<DisplayStatus>,
+  { label: string; color: string; border: string; bg: string }
+> = {
+  PASS: {
+    label: "驗證通過",
+    color: "#58d68d",
+    border: "rgba(88,214,141,0.45)",
+    bg: "rgba(88,214,141,0.10)",
+  },
+  WATCH: {
+    label: "觀察中",
+    color: "#e2b85c",
+    border: "rgba(226,184,92,0.45)",
+    bg: "rgba(226,184,92,0.10)",
+  },
+  FAIL: {
+    label: "未通過驗證",
+    color: "#e63946",
+    border: "rgba(230,57,70,0.45)",
+    bg: "rgba(230,57,70,0.10)",
+  },
+};
+
+const NULL_STATUS = {
+  label: "研究中",
+  color: "#8899aa",
+  border: "rgba(136,153,170,0.35)",
+  bg: "rgba(136,153,170,0.08)",
+};
+
+function DisplayStatusBadge({ status }: { status: DisplayStatus }) {
+  const s = status !== null ? DISPLAY_STATUS_MAP[status] : NULL_STATUS;
+  return (
+    <span
+      style={{
+        border: `1px solid ${s.border}`,
+        borderRadius: 999,
+        color: s.color,
+        background: s.bg,
+        fontFamily: "var(--mono)",
+        fontSize: 11,
+        padding: "4px 8px",
+        whiteSpace: "nowrap",
+        fontWeight: 700,
+      }}
+    >
+      {s.label}
+    </span>
+  );
 }
 
 function MiniSpark({ points, color }: { points: StrategyCurvePoint[]; color: string }) {
@@ -43,14 +95,13 @@ function MiniSpark({ points, color }: { points: StrategyCurvePoint[]; color: str
 
 function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
   const color = accentColor(strategy.accent);
-  const gateLabel = strategy.metrics.sharpe === null ? "WATCH" : "SIM OBS";
 
   return (
-    <article className={styles.card} style={{ "--accent": color } as React.CSSProperties}>
+    <article className={`${styles.card} ${styles.cardHoverable}`} style={{ "--accent": color } as React.CSSProperties}>
       <div className={styles.cardBody}>
         <div className={styles.cardHead}>
           <div className={styles.iconMark}>{strategy.shortName.slice(0, 2).toUpperCase()}</div>
-          <span className={styles.tag}>{gateLabel}</span>
+          <DisplayStatusBadge status={strategy.displayStatus} />
         </div>
 
         <h2>{strategy.name}</h2>
@@ -62,7 +113,7 @@ function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
         <div className={styles.metricGrid}>
           <div className={styles.metric}>
             <span>量化分數</span>
-            <strong>同步中</strong>
+            <strong>讀取中</strong>
           </div>
           <div className={styles.metric}>
             <span>Regime</span>
