@@ -369,6 +369,8 @@ export interface TwseMarketOverviewResult {
   otc: TwseIndexSnapshot | null;
   source: "twse_openapi";
   staleAfterSec: 60;
+  /** Internal flag — true when result is served from last-known-good cache (TWSE fetch failed) */
+  _isLkg?: boolean;
 }
 
 /** Output shape for industry heatmap tile */
@@ -446,6 +448,40 @@ function setOverviewCache(key: string, result: TwseMarketOverviewResult): void {
 /** For test cleanup */
 export function _resetTwseOverviewCache(): void {
   _overviewCache.clear();
+}
+
+// ── Last-known-good (LKG) cache for market overview ──────────────────────────
+// Survives across the 60s _overviewCache window. No TTL — if TWSE is down for
+// hours or across a redeploy, we return the last successful value tagged
+// sourceState="lkg" so the frontend can show "昨日收盤" or "今日收盤" correctly.
+// A value is only served as LKG if it is at most LKG_MAX_AGE_MS old (48h).
+// This bridges weekends (Fri close → Mon morning), holidays, and TWSE downtime.
+
+const LKG_MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+interface LkgEntry {
+  result: TwseMarketOverviewResult;
+  savedAt: number; // Date.now() when saved
+}
+
+let _lkgOverview: LkgEntry | null = null;
+
+function getLkgOverview(): TwseMarketOverviewResult | null {
+  if (!_lkgOverview) return null;
+  if (Date.now() - _lkgOverview.savedAt > LKG_MAX_AGE_MS) {
+    _lkgOverview = null;
+    return null;
+  }
+  return _lkgOverview.result;
+}
+
+function setLkgOverview(result: TwseMarketOverviewResult): void {
+  _lkgOverview = { result, savedAt: Date.now() };
+}
+
+/** For test cleanup */
+export function _resetLkgOverviewCache(): void {
+  _lkgOverview = null;
 }
 
 // ── In-memory 1-min cache for heatmap ────────────────────────────────────────
@@ -727,6 +763,15 @@ export async function getTwseMarketOverview(
 
   if (!taiex) {
     console.warn("[twse-openapi-client] getTwseMarketOverview: could not resolve TAIEX from any source");
+    // ── LKG fallback — return last successful value tagged sourceState="lkg" ──
+    const lkgBase = getLkgOverview();
+    if (lkgBase) {
+      const lkgTagged: TwseMarketOverviewResult = { ...lkgBase, _isLkg: true };
+      console.info(`[twse-openapi-client] getTwseMarketOverview: returning LKG value ts=${lkgBase.taiex.ts}`);
+      // Cache for 60s so we don't hammer TWSE on every request during downtime
+      setOverviewCache(CACHE_KEY, lkgTagged);
+      return lkgTagged;
+    }
     return null;
   }
 
@@ -743,6 +788,8 @@ export async function getTwseMarketOverview(
   };
 
   setOverviewCache(CACHE_KEY, result);
+  // ── Save to LKG — persists across cache expiry and redeployments ──────────
+  setLkgOverview(result);
   return result;
 }
 

@@ -8932,7 +8932,8 @@ app.get("/api/v1/market/overview/twse", async (c) => {
     });
   }
 
-  return c.json({ ...result, sourceState: "live" });
+  const { _isLkg, ...resultPayload } = result;
+  return c.json({ ...resultPayload, sourceState: _isLkg ? "lkg" : "live" });
 });
 
 app.get("/api/v1/market/heatmap/twse", async (c) => {

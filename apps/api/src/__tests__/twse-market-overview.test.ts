@@ -21,6 +21,7 @@ import {
   _resetTwseHeatmapCache,
   _resetStockDayAllCache,
   _resetTwseLeadersCache,
+  _resetLkgOverviewCache,
   type TwseMarketOverviewResult,
   type TwseHeatmapTile
 } from "../data-sources/twse-openapi-client.js";
@@ -273,14 +274,15 @@ test("T2: getTwseIndustryHeatmap aggregates changePct by industry correctly", as
 
 // ── T3: getTwseMarketOverview timeout → null ──────────────────────────────────
 
-test("T3: getTwseMarketOverview timeout → returns null (fail-open)", async () => {
+test("T3: getTwseMarketOverview timeout → returns null when LKG is empty (fail-open)", async () => {
   _resetTwseOverviewCache();
+  _resetLkgOverviewCache();
 
   const timeoutFetch = makeFetchTimeout();
   const result = await getTwseMarketOverview({ fetchOverride: timeoutFetch });
 
-  // Must return null — not throw
-  assert.equal(result, null, "must return null when both attempts fail");
+  // Must return null — not throw (no LKG to fall back to)
+  assert.equal(result, null, "must return null when both attempts fail and LKG is empty");
 });
 
 // ── T3b: getTwseLeaders — top 5 gainers / losers / mostActive from STOCK_DAY_ALL ──
@@ -331,6 +333,86 @@ test("T3b: getTwseLeaders — returns top gainers / losers / mostActive from STO
   assert.equal(typeof s.changePct, "number");
   assert.equal(typeof s.volume, "number");
   assert.equal(s.source, "twse_openapi");
+});
+
+// ── T4: getTwseIndustryHeatmap cache hit ──────────────────────────────────────
+
+// ── T3c: LKG fallback — after a good fetch, timeout returns LKG ──────────────
+
+test("T3c: getTwseMarketOverview LKG fallback — timeout after prior good fetch returns LKG result", async () => {
+  _resetTwseOverviewCache();
+  _resetLkgOverviewCache();
+
+  const now = new Date();
+  const taipeiMs = now.getTime() + 8 * 60 * 60 * 1000;
+  const d = new Date(taipeiMs);
+  const todayStr = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+
+  // Step 1: successful fetch — primes the LKG
+  const goodFetch = (async (input: URL | RequestInfo): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("MI_5MINS_INDEX")) {
+      const body = makeMi5MinsIndexResponse(todayStr, "41,500.00", "41,898.32");
+      return {
+        ok: true, status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        text: async () => JSON.stringify(body), json: async () => body
+      } as unknown as Response;
+    }
+    return { ok: false, status: 404, headers: { get: () => null } as unknown as Headers, text: async () => "{}", json: async () => ({}) } as unknown as Response;
+  }) as typeof fetch;
+
+  const firstResult = await getTwseMarketOverview({ fetchOverride: goodFetch });
+  assert.ok(firstResult !== null, "first call must succeed");
+  assert.equal(firstResult!.taiex.value, 41898.32, "first call: correct value");
+
+  // Step 2: clear short-lived cache so next call re-fetches
+  _resetTwseOverviewCache();
+
+  // Step 3: failing fetch — must return LKG
+  const timeoutFetch = makeFetchTimeout();
+  const lkgResult = await getTwseMarketOverview({ fetchOverride: timeoutFetch });
+
+  assert.ok(lkgResult !== null, "must return LKG result, not null");
+  assert.equal(lkgResult!.taiex.value, 41898.32, "LKG must have same value as prior good fetch");
+  assert.equal((lkgResult as TwseMarketOverviewResult & { _isLkg?: boolean })._isLkg, true, "result must be tagged _isLkg=true");
+});
+
+// ── T3d: LKG sourceState propagation — server route emits sourceState="lkg" ──
+// (Integration check: _isLkg flag is set; server.ts strips it and sets sourceState)
+
+test("T3d: getTwseMarketOverview LKG — _isLkg flag present on LKG result, absent on live result", async () => {
+  _resetTwseOverviewCache();
+  _resetLkgOverviewCache();
+
+  const now = new Date();
+  const taipeiMs = now.getTime() + 8 * 60 * 60 * 1000;
+  const d = new Date(taipeiMs);
+  const todayStr = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+
+  const goodFetch = (async (input: URL | RequestInfo): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("MI_5MINS_INDEX")) {
+      const body = makeMi5MinsIndexResponse(todayStr, "41,000.00", "41,500.00");
+      return {
+        ok: true, status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        text: async () => JSON.stringify(body), json: async () => body
+      } as unknown as Response;
+    }
+    return { ok: false, status: 404, headers: { get: () => null } as unknown as Headers, text: async () => "{}", json: async () => ({}) } as unknown as Response;
+  }) as typeof fetch;
+
+  // Live fetch: _isLkg must be absent/undefined
+  const liveResult = await getTwseMarketOverview({ fetchOverride: goodFetch }) as TwseMarketOverviewResult & { _isLkg?: boolean };
+  assert.ok(liveResult !== null, "live result must not be null");
+  assert.equal(liveResult._isLkg, undefined, "live result must NOT have _isLkg flag");
+
+  // Clear short cache, then fail — LKG result must have _isLkg=true
+  _resetTwseOverviewCache();
+  const failResult = await getTwseMarketOverview({ fetchOverride: makeFetchTimeout() }) as (TwseMarketOverviewResult & { _isLkg?: boolean }) | null;
+  assert.ok(failResult !== null, "LKG result must not be null");
+  assert.equal(failResult!._isLkg, true, "LKG result must have _isLkg=true");
 });
 
 // ── T4: getTwseIndustryHeatmap cache hit ──────────────────────────────────────
