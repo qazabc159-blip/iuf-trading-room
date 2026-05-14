@@ -620,6 +620,78 @@ function trimForBrief(value: string, max = 1_200): string {
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
 }
 
+// ── P0-1: Encoding scrubber ────────────────────────────────────────────────────
+
+/**
+ * Strip U+FFFD replacement characters (and consecutive runs) from brief body text.
+ * These arise when CP950/Big5-encoded source text is piped into a UTF-8 prompt without
+ * proper translit — LLM echoes the replacement chars verbatim into the output.
+ * After stripping, collapse double-spaces left behind and trim.
+ *
+ * Exported for unit testing.
+ */
+export function scrubReplacementChars(text: string): string {
+  // Remove runs of replacement chars, optionally surrounded by spaces
+  return text.replace(/[�]+/g, "").replace(/\s{2,}/g, " ").trim();
+}
+
+// ── P0-2: Template residue scrubber ───────────────────────────────────────────
+
+/**
+ * Forbidden phrases that must never appear in user-visible brief output.
+ * These are LLM prompt template instructions that occasionally leak into the final text.
+ * Ordered from most-specific (full sentence) to least-specific (substring) to maximise
+ * surgical removal without over-stripping adjacent content.
+ *
+ * Exported for unit testing.
+ */
+export const FORBIDDEN_BRIEF_PHRASES: ReadonlyArray<string | RegExp> = [
+  // Exact strings (full sentences or clauses)
+  "此版本僅作內部研究草稿，供人員審閱後再決定後續分析方向。",
+  "此版本僅作內部研究草稿，供人員審閱後再決定後續分析方向",
+  "供人員審閱後再決定後續分析方向",
+  // Substrings that must never appear in user output
+  "內部研究草稿",
+  "供人員審閱",
+  "後續分析方向",
+  // LLM meta-comments
+  /Generated:\s*\d{4}-\d{2}-\d{2}\s*\(rule-template fallback\)/,
+  /\(rule-template fallback\)/,
+  // English internal wording (just in case)
+  "internal research draft",
+  "for internal review",
+  "TODO:",
+  "FIXME:",
+  "placeholder",
+];
+
+/**
+ * Scrub forbidden internal-template phrases from a brief body string.
+ * For each forbidden phrase: remove the phrase and trim surrounding whitespace.
+ * Exported for unit testing.
+ */
+export function scrubForbiddenPhrases(text: string): string {
+  let result = text;
+  for (const phrase of FORBIDDEN_BRIEF_PHRASES) {
+    if (typeof phrase === "string") {
+      // Replace all occurrences, collapse surrounding whitespace
+      result = result.split(phrase).join("").replace(/\s{2,}/g, " ").trim();
+    } else {
+      // Regex: global replace
+      result = result.replace(new RegExp(phrase.source, phrase.flags.includes("g") ? phrase.flags : phrase.flags + "g"), "").replace(/\s{2,}/g, " ").trim();
+    }
+  }
+  return result;
+}
+
+/**
+ * Apply both encoding scrub and template-residue scrub to a brief body.
+ * Use this on every LLM-generated section body before it reaches the publish gate.
+ */
+export function sanitizeBriefBody(text: string): string {
+  return scrubForbiddenPhrases(scrubReplacementChars(text));
+}
+
 const SOURCE_PRODUCT_LABELS: Record<string, string> = {
   companies_ohlcv: "台股日線資料",
   tw_monthly_revenue: "月營收資料",
@@ -843,7 +915,8 @@ function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Re
             const value = section as { heading?: unknown; body?: unknown };
             const rawHeading = typeof value.heading === "string" ? trimForBrief(value.heading, 80) : "";
             const heading = rawHeading ? sanitizeBriefHeading(rawHeading) : "";
-            const body = typeof value.body === "string" ? trimForBrief(value.body, 1_400) : "";
+            const rawBody = typeof value.body === "string" ? trimForBrief(value.body, 1_400) : "";
+            const body = sanitizeBriefBody(rawBody);
             return { heading, body };
           })
           .filter((section) => section.heading.length > 0 && section.body.length >= 50)
