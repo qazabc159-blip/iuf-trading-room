@@ -67,8 +67,8 @@ import {
   listEvents,
   acknowledgeEvent
 } from "./openalice-event-rule-engine.js";
-import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs } from "@iuf-trading-room/db";
-import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like } from "drizzle-orm";
+import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
+import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like, not, count as drizzleCount } from "drizzle-orm";
 import {
   getTradingRoomRepository,
   type TradingRoomRepository
@@ -1597,6 +1597,94 @@ app.get("/api/v1/themes", async (c) => {
     workspaceSlug: c.get("session").workspace.slug
   });
   return c.json({ data: themes.map(applyThemeTranscode) });
+});
+
+// =============================================================================
+// GET /api/v1/themes/index — themes with companyCount + sample tickers (2026-05-15)
+// Used by Jim PR #528 主題雷達 tab. Returns top N themes sorted by companyCount DESC.
+// Auth: Owner only.
+// =============================================================================
+app.get("/api/v1/themes/index", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const limitParam = c.req.query("limit");
+  const limit = Math.min(Math.max(1, parseInt(limitParam ?? "50", 10) || 50), 200);
+
+  // Fast path: memory mode (CI / no DB)
+  if (!isDatabaseMode()) {
+    return c.json({ data: [] });
+  }
+  const db = getDb();
+  if (!db) {
+    return c.json({ data: [] });
+  }
+
+  try {
+    const workspaceSlug = session.workspace.slug;
+
+    // Step 1: get themes list (reuse existing repo which applies the bracket-filter)
+    const themesList = await c.get("repo").listThemes({ workspaceSlug });
+
+    if (themesList.length === 0) {
+      return c.json({ data: [] });
+    }
+
+    const themeIds = themesList.map((t) => t.id);
+
+    // Step 2: count companies per theme in one query using GROUP BY
+    const countRows = await db
+      .select({
+        themeId: companyThemeLinks.themeId,
+        companyCount: drizzleCount(companyThemeLinks.companyId)
+      })
+      .from(companyThemeLinks)
+      .where(inArray(companyThemeLinks.themeId, themeIds))
+      .groupBy(companyThemeLinks.themeId);
+
+    const countMap = new Map<string, number>();
+    for (const row of countRows) {
+      countMap.set(row.themeId, row.companyCount);
+    }
+
+    // Step 3: get up to 3 sample tickers per theme — one query for all themes, limit per group
+    // We do this with a single SELECT DISTINCT ON (theme_id) trick × 3 using LATERAL or
+    // simply fetch all links then slice in JS (theme count is small, usually < 50).
+    const sampleRows = await db
+      .select({
+        themeId: companyThemeLinks.themeId,
+        ticker: companies.ticker
+      })
+      .from(companyThemeLinks)
+      .innerJoin(companies, eq(companies.id, companyThemeLinks.companyId))
+      .where(inArray(companyThemeLinks.themeId, themeIds));
+
+    const sampleMap = new Map<string, string[]>();
+    for (const row of sampleRows) {
+      const existing = sampleMap.get(row.themeId) ?? [];
+      if (existing.length < 3) {
+        existing.push(row.ticker);
+        sampleMap.set(row.themeId, existing);
+      }
+    }
+
+    // Step 4: build result, sort by companyCount DESC, apply limit
+    const result = themesList
+      .map((t) => ({
+        token: t.name,
+        companyCount: countMap.get(t.id) ?? 0,
+        sample_tickers: sampleMap.get(t.id) ?? []
+      }))
+      .sort((a, b) => b.companyCount - a.companyCount)
+      .slice(0, limit);
+
+    return c.json({ data: result });
+  } catch (err) {
+    console.error("[themes/index] error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "internal_error" }, 500);
+  }
 });
 
 app.post("/api/v1/themes", async (c) => {
