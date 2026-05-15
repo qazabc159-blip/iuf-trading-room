@@ -14134,6 +14134,86 @@ app.post("/api/v1/notifications/:id/mark-read", async (c) => {
   return new Response(null, { status: 204 });
 });
 
+// =============================================================================
+// QUANT STRATEGY SUBSCRIBE (2026-05-15)
+// POST /api/v1/quant-strategies/:id/subscribe
+//   Owner-only. sim_only forced true server-side.
+//   capital_twd: 50_000–1_000_000 NTD.
+//   Persists to audit_logs action="quant_strategy.subscribe" (no new DB table).
+//
+// GET /api/v1/quant-strategies/:id/subscriptions/my
+//   Owner-only. Returns caller's subscription history for the given strategy.
+// =============================================================================
+
+// POST /api/v1/quant-strategies/:id/subscribe
+app.post("/api/v1/quant-strategies/:id/subscribe", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const strategyId = c.req.param("id");
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "INVALID_JSON" }, 400);
+  }
+
+  if (typeof body !== "object" || body === null) {
+    return c.json({ error: "INVALID_BODY" }, 400);
+  }
+  const raw = body as Record<string, unknown>;
+  const capitalTwd = typeof raw["capital_twd"] === "number" ? raw["capital_twd"] : NaN;
+
+  if (!Number.isFinite(capitalTwd)) {
+    return c.json({ error: "CAPITAL_BELOW_MIN", message: "capital_twd must be a finite number" }, 400);
+  }
+
+  const { subscribeQuantStrategy } = await import("./quant-strategy-subscribe.js");
+  const flags = getExecutionFlagSnapshot();
+
+  const result = await subscribeQuantStrategy({
+    session,
+    strategyId,
+    capitalTwd,
+    executionMode: flags.executionMode,
+  });
+
+  if (!result.ok) {
+    return c.json({ error: result.error }, result.http_status);
+  }
+
+  return c.json(
+    { subscription_id: result.subscription_id, status: result.status },
+    201
+  );
+});
+
+// GET /api/v1/quant-strategies/:id/subscriptions/my
+// Must be declared before generic /:id segment — literal "subscriptions" won't conflict
+// because Hono matches the full path pattern (no ambiguity between :id and "subscriptions/my").
+app.get("/api/v1/quant-strategies/:id/subscriptions/my", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const strategyId = c.req.param("id");
+  const { VALID_QUANT_STRATEGY_IDS, listMyQuantSubscriptions } = await import("./quant-strategy-subscribe.js");
+
+  if (!VALID_QUANT_STRATEGY_IDS.has(strategyId)) {
+    return c.json({ error: "STRATEGY_NOT_FOUND" }, 404);
+  }
+
+  const items = await listMyQuantSubscriptions({ session });
+
+  // Filter by strategyId on the result (the query fetches all for the user, filter here for correctness)
+  const filtered = items.filter((s) => s.strategy_id === strategyId);
+
+  return c.json({ subscriptions: filtered });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
