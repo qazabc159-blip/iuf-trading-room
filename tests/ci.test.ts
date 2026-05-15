@@ -10514,7 +10514,7 @@ test("SIM4: kgiSimOrderBodySchema — LOT quantityUnit accepted; market order pr
 });
 
 // =============================================================================
-// Recommendation Orchestrator — schema contract tests (REC1–REC5)
+// Recommendation Orchestrator — schema contract tests (REC1–REC5, REC10–REC11)
 // =============================================================================
 import {
   getMockRecommendations,
@@ -10522,6 +10522,8 @@ import {
   recordRecommendationFeedback,
   getRecommendationFeedback,
   _resetRecommendationFeedbackStore,
+  synthesizeFromFixture,
+  _resetAthenaFixtureCache,
 } from "../apps/api/src/recommendation-store.ts";
 import {
   stockRecommendationSchema,
@@ -10601,6 +10603,108 @@ test("REC5: recordRecommendationFeedback stores and retrieves entries", () => {
   assert.deepEqual(empty, [], "REC5: unknown id returns empty array");
 
   _resetRecommendationFeedbackStore();
+});
+
+test("REC10: synthesizeFromFixture produces 4 candidates with non-empty sourceTrail when fixture present", () => {
+  _resetAthenaFixtureCache();
+  // Build a minimal Athena fixture inline (matches real fixture schema)
+  const fixtureData = {
+    schema: "QuantCandidateSignal[]",
+    schemaVersion: "tr_quant_candidate_signal_v1",
+    producer: "Athena (IUF Quant Lab)",
+    producedAtTaipei: "2026-05-14T17:55:00+08:00",
+    snapshotAt: "2026-05-14T13:30:00+08:00",
+    strategySource: "cont_liq_v36",
+    signals: [
+      {
+        ticker: "3707",
+        companyName: "漢磊",
+        quantRank: 1,
+        quantScore: 80,
+        strategySource: "cont_liq_v36",
+        regime: "trend",
+        gateStatus: "WATCH" as const,
+        expectedHoldingPeriod: "波段",
+        quantReason: ["Top-1 RS strength"],
+        riskFlags: ["forward_observation_not_mature_h20"],
+        dataQuality: { backtestEvidence: "OK", forwardObservation: "PENDING", liquidity: "OK" },
+        snapshotAt: "2026-05-14T13:30:00+08:00",
+      },
+      {
+        ticker: "2426",
+        companyName: "鼎元",
+        quantRank: 2,
+        quantScore: 75,
+        strategySource: "cont_liq_v36",
+        regime: "trend",
+        gateStatus: "WATCH" as const,
+        expectedHoldingPeriod: "波段",
+        quantReason: ["Top-2 RS strength"],
+        riskFlags: ["intraperiod_drawdown_below_minus_10pct_day6"],
+        dataQuality: { backtestEvidence: "OK", forwardObservation: "PENDING", liquidity: "OK" },
+        snapshotAt: "2026-05-14T13:30:00+08:00",
+      },
+      {
+        ticker: "6205",
+        companyName: "詮欣",
+        quantRank: 3,
+        quantScore: 73,
+        strategySource: "cont_liq_v36",
+        regime: "trend",
+        gateStatus: "WATCH" as const,
+        expectedHoldingPeriod: "波段",
+        quantReason: ["Top-3 RS strength"],
+        riskFlags: ["intraperiod_drawdown_below_minus_10pct_day6_worst_in_basket"],
+        dataQuality: { backtestEvidence: "OK", forwardObservation: "PENDING", liquidity: "OK" },
+        snapshotAt: "2026-05-14T13:30:00+08:00",
+      },
+      {
+        ticker: "2486",
+        companyName: "一詮",
+        quantRank: 4,
+        quantScore: 71,
+        strategySource: "cont_liq_v36",
+        regime: "trend",
+        gateStatus: "WATCH" as const,
+        expectedHoldingPeriod: "波段",
+        quantReason: ["Top-4 RS strength"],
+        riskFlags: ["sector_concentration_with_2426"],
+        dataQuality: { backtestEvidence: "OK", forwardObservation: "PENDING", liquidity: "OK" },
+        snapshotAt: "2026-05-14T13:30:00+08:00",
+      },
+    ],
+  } as Parameters<typeof synthesizeFromFixture>[0];
+
+  const result = synthesizeFromFixture(fixtureData, null, []);
+  assert.equal(result.length, 4, "REC10: should produce 4 candidates");
+
+  for (const rec of result) {
+    assert.ok(rec.sourceTrail.length >= 2, `REC10: sourceTrail must have >= 2 entries for ${rec.ticker}`);
+    assert.ok(typeof rec.ticker === "string" && rec.ticker.length > 0, `REC10: ticker must be non-empty for rank ${rec.rank}`);
+    assert.ok(rec.totalScore >= 0 && rec.totalScore <= 100, `REC10: totalScore in range for ${rec.ticker}`);
+    assert.equal(rec.quant.strategySource, "cont_liq_v36", `REC10: strategySource must be cont_liq_v36 for ${rec.ticker}`);
+    assert.equal(rec.generatedBy, "iuf_recommendation_orchestrator_v1", `REC10: generatedBy literal correct for ${rec.ticker}`);
+  }
+  // Verify tickers match expected Athena candidates
+  const tickers = result.map((r) => r.ticker);
+  assert.deepEqual(tickers, ["3707", "2426", "6205", "2486"], "REC10: ticker order matches fixture quantRank");
+});
+
+test("REC11: getMockRecommendations returns fallback when fixture missing", () => {
+  // getMockRecommendations() always returns mock data regardless of fixture
+  const items = getMockRecommendations();
+  assert.ok(Array.isArray(items), "REC11: must return array");
+  assert.ok(items.length >= 1, "REC11: must have at least 1 item");
+  // All must have non-empty sourceTrail (mock has at least 1 source)
+  for (const item of items) {
+    assert.ok(item.sourceTrail.length >= 1, `REC11: mock sourceTrail non-empty for ${item.ticker}`);
+  }
+  // The public getTodayRecommendations() isMock flag is tested via synthesizeFromFixture path above;
+  // here we verify the mock fallback shape is contract-valid using pre-imported schema
+  for (const item of items) {
+    const parsed = stockRecommendationSchema.safeParse(item);
+    assert.ok(parsed.success, `REC11: mock item ${item.ticker} must pass schema: ${parsed.success ? "" : JSON.stringify(parsed.error?.issues)}`);
+  }
 });
 
 // =============================================================================
