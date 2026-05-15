@@ -14351,6 +14351,28 @@ app.get("/api/v1/quant-strategies/:id/subscriptions/my", async (c) => {
   return c.json({ subscriptions: filtered });
 });
 
+// =============================================================================
+// ADMIN: themes/links-rebuild — backfill company_theme_links from wiki-text (2026-05-15)
+// Bruce P1: company_theme_links was never seeded → themes/index companyCount=0
+// Auth: Owner-only
+// Idempotent: UPSERT ON CONFLICT DO NOTHING
+// =============================================================================
+app.post("/api/v1/admin/themes/links-rebuild", async (c) => {
+  const { handleAdminThemesLinksRebuild } = await import("./admin-themes-links-rebuild.js");
+  return handleAdminThemesLinksRebuild(c);
+});
+
+// =============================================================================
+// ADMIN: content-drafts/retry-review — re-run AI reviewer for stuck drafts (2026-05-15)
+// Bruce P1: 5 drafts from 2026-05-12 stuck in awaiting_review before reviewer relax (PR #530)
+// Auth: Owner-only
+// Body: { status?: "awaiting_review", from?: "YYYY-MM-DD", to?: "YYYY-MM-DD", dryRun?: boolean, limit?: number }
+// =============================================================================
+app.post("/api/v1/admin/content-drafts/retry-review", async (c) => {
+  const { handleAdminContentDraftsRetryReview } = await import("./admin-content-drafts-retry-review.js");
+  return handleAdminContentDraftsRetryReview(c);
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
