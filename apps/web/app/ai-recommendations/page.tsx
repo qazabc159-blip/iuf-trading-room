@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { StockRecommendation } from "@iuf-trading-room/contracts";
-import { ArrowRight, Database, Gauge, ShieldAlert, Target } from "lucide-react";
+import { ArrowRight, Database, FileSearch, Gauge, ShieldAlert, Target } from "lucide-react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getRecommendationsToday, type RecommendationListResponse } from "@/lib/api";
@@ -271,6 +271,11 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
           )}
         </div>
       </details>
+
+      <Link className="_rec-detail-link" href={`/ai-recommendations/${encodeURIComponent(rec.recommendationId)}`}>
+        <FileSearch size={16} strokeWidth={1.9} />
+        查看詳情
+      </Link>
 
       <RecommendationHandoffLink href={prefillHref} recommendationId={rec.recommendationId}>
         <ArrowRight size={16} strokeWidth={1.9} />
@@ -697,6 +702,26 @@ export default async function AiRecommendationsPage() {
         ._rec-prefill {
           justify-self: start;
           color: var(--tac-brand);
+        }
+        ._rec-detail-link {
+          justify-self: start;
+          min-height: 34px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          border: 1px solid var(--tac-line);
+          border-radius: 6px;
+          padding: 0 11px;
+          color: var(--tac-fg-2);
+          background: rgba(8, 11, 16, 0.46);
+          font: 850 12px/1 var(--sans-tc);
+          text-decoration: none;
+        }
+        ._rec-detail-link:hover {
+          color: var(--tac-fg-0);
+          border-color: rgba(200, 148, 63, 0.5);
+          background: rgba(200, 148, 63, 0.1);
         }
         ._rec-feedback {
           display: grid;
