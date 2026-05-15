@@ -2,11 +2,28 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=1440" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>模擬交易室 · IUF</title>
 <link rel="stylesheet" href="tokens.css" />
 <link rel="stylesheet" href="app.css" />
 <link rel="stylesheet" href="trading.css" />
+<style>
+@media (max-width:767px){
+  .troom{display:flex;flex-direction:column;height:auto;overflow:visible;}
+  .lpane,.rpane{width:100%;max-width:100%;height:auto;overflow:visible;}
+  .cpane{min-width:0;width:100%;}
+  .chart-wrap{height:220px;}
+  .tape{grid-template-columns:1fr;gap:12px;}
+  .ledger{overflow-x:auto;}
+  .tbar{flex-wrap:wrap;gap:6px;padding:6px 10px;}
+  .tbar .right{margin-left:auto;}
+  .psafe{flex-wrap:wrap;gap:4px;font-size:10px;padding:4px 10px;}
+  .psafe .badge{font-size:9px;padding:2px 6px;}
+  .tform .seg2 button{font-size:13px;}
+  .field input,.field select{font-size:14px;}
+  .submit{font-size:13px;padding:12px 14px;}
+}
+</style>
 </head>
 <body data-screen-label="Trading Room v1">
 
@@ -723,8 +740,38 @@ if(!window.__IUF_FINAL_V031_LIVE__){drawChart('2330');}
 updPreview();
 
 /* ---------- timeframe ---------- */
-document.querySelectorAll('#tfseg button').forEach(b=>b.addEventListener('click',()=>{
+const TF_PERIOD_MAP={'1m':'1d','5m':'1d','15m':'5d','1d':'60d','1w':'180d'};
+const TF_INTERVAL_MAP={'1m':'1m','5m':'5m','15m':'15m','1d':'1d','1w':'1w'};
+document.querySelectorAll('#tfseg button').forEach(b=>b.addEventListener('click',async()=>{
   document.querySelectorAll('#tfseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  const tf=b.dataset.tf||'1d';
+  const sym=document.querySelector('.symhead .sym')?.textContent||'2330';
+  // Re-fetch OHLCV for selected timeframe via live API
+  try {
+    const live=window.__IUF_FINAL_V031_LIVE__;
+    const companies=live&&live._companies;
+    let companyId=live&&live._companyId;
+    if(!companyId&&companies&&companies.length){
+      const found=companies.find(c=>String(c.ticker||'').toUpperCase()===String(sym).toUpperCase());
+      if(found)companyId=found.id;
+    }
+    if(!companyId){
+      // fallback: re-fetch from companies if needed
+      const cs=await fetch('/api/v1/companies',{credentials:'include',cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+      if(cs){const arr=Array.isArray(cs)?cs:(cs.data||[]);const f=arr.find(c=>String(c.ticker||'').toUpperCase()===String(sym).toUpperCase());if(f)companyId=f.id;}
+    }
+    if(companyId){
+      const interval=TF_INTERVAL_MAP[tf]||'1d';
+      const url='/api/v1/companies/'+encodeURIComponent(companyId)+'/ohlcv?interval='+interval;
+      const raw=await fetch(url,{credentials:'include',cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+      const bars=Array.isArray(raw)?raw:(raw&&raw.data?raw.data:[]);
+      if(bars.length){
+        const chartBars=bars.map(bar=>({o:bar.open,h:bar.high,l:bar.low,c:bar.close??bar.open,v:bar.volume??0,date:bar.date??bar.ts??''}));
+        window.__IUF_OHLCV_DATA__={sym,bars:chartBars};
+        drawChart(sym);
+      }
+    }
+  } catch(e){ /* silently keep existing chart */ }
 }));
 
 /* ---------- submit click → flash + add to orders ---------- */
