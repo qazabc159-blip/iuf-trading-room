@@ -87,10 +87,18 @@ function buildReviewPrompt(draft: {
   return `You are a compliance reviewer for a Taiwan-stock financial research platform.
 Review the following content draft and return ONLY valid JSON.
 
+## Explicit Allow List (NEVER reject for these — they are product-approved research wording)
+- 進場參考區 (entry reference zone) — describes a price zone, not a command to trade
+- 停損 (stop-loss reference) — describes a risk management concept, not a guarantee
+- 失效 (invalidation point) — describes a research invalidation condition
+- 倉位建議 (position sizing guidance) — describes risk management sizing, not a buy/sell command
+- Any wording that frames market analysis as "參考" (reference) or "觀察" (observation)
+
 ## Hard Reject Rules (any match => verdict: "reject")
-1. Contains actionable trading advice: "you should buy/sell", "recommend buy/sell",
-   "buy now", "sell immediately", 建議買進, 建議賣出, 進場, 出脫, 加碼, 減碼,
-   or similar wording that tells the reader what trade to do.
+1. Contains DIRECTIVE trading advice that COMMANDS the reader to trade: "you should buy/sell",
+   "recommend buy/sell", "buy now", "sell immediately", 建議買進, 建議賣出, 出脫, 加碼, 減碼
+   — NOTE: 進場參考區 and 停損/失效/倉位建議 are explicitly ALLOWED (see Allow List above).
+   Only reject if the wording directly instructs the reader to execute a trade.
 2. Contains target price / 目標價 / 預測股價 with a specific number.
 3. Contains guarantee / 保證獲利 / 必漲 / 穩賺.
 4. Contains hallucinated news (specific event, number, or company name cited WITHOUT a source URL).
@@ -104,6 +112,8 @@ Review the following content draft and return ONLY valid JSON.
   "TaiwanStockInstitutionalInvestorsBuySell", "成交量", "買賣超", or "三大法人".
 - Do NOT reject factual historical descriptions like "外資買超 2,000 張" when it is
   clearly describing source data and does not tell the reader to trade.
+- Do NOT reject research content that describes entry/exit zones, stop-loss levels, or
+  position sizing as educational reference — these are explicitly allowed per the Allow List.
 - If a draft is descriptive but weak, prefer "manual_review" over "reject".
 
 ## Draft Metadata
@@ -407,31 +417,25 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
     );
 
     if (adversarialResult) {
-      // Always write audit log, even for low scores — paper trail for Elva/楊董
+      // Always write audit log — paper trail for Elva/楊董.
+      // 2026-05-15 relax: adversarial reviewer now surfaces as DRAFT WARNING only.
+      // It no longer auto-blocks (intercepts) at any score — hallucination guard
+      // is handled upstream by the 7-rule primary reviewer and the publish gate.
+      // Adversarial flags are logged for human reference but do not hold the draft.
       await writeAdversarialAuditLog({
         workspaceId,
         draftId,
         adversarialResult,
-        intercepted: adversarialResult.severityScore >= 7
+        intercepted: false // no longer auto-intercepts
       });
 
       if (adversarialResult.severityScore >= 7) {
-        // Intercept: route to manual_review instead of auto-approve
-        await writeAiReviewAuditLog({
-          workspaceId,
-          draftId,
-          action: "content_draft.ai_yellow_held",
-          result: {
-            verdict: "manual_review",
-            reason: `[adversarial-reviewer] severityScore=${adversarialResult.severityScore} >= 7. ${adversarialResult.reasoning}`,
-            flagged_issues: adversarialResult.adversarialFlags,
-            confidence: result.confidence
-          }
-        });
+        // Surface as warning in audit log — do NOT hold the draft.
+        // Human editors can inspect via audit_logs action=content_draft.adversarial_audit.
         console.info(
-          `[adversarial-reviewer] Draft ${draftId} HELD for human review (adversarial score=${adversarialResult.severityScore})`
+          `[adversarial-reviewer] Draft ${draftId} adversarial score=${adversarialResult.severityScore} >= 7 — surfaced as draft warning (not auto-blocked per 2026-05-15 relax)`
         );
-        return; // do NOT call approveContentDraft — leave status as awaiting_review
+        // Fall through to pipeline publish gate — do NOT return early.
       }
     }
 
