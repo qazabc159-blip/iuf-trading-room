@@ -876,6 +876,12 @@ cinput?.addEventListener('input',()=>{
     it.style.display=q===''||it.textContent.toLowerCase().includes(q)?'flex':'none';
   });
 });
+
+/* ---------- off-hours wording call site ---------- */
+if(window.__iufApplyOffHoursWording){
+  window.__iufApplyOffHoursWording();
+  setInterval(window.__iufApplyOffHoursWording,60000);
+}
 </script>
 
 </body>
