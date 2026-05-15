@@ -53,8 +53,10 @@ export const VALID_QUANT_STRATEGY_IDS = new Set([
  *   - rs_20_60_low_drawdown__h20__top5 → strategy_003
  *       Lab candidate_id for the rs_20_60 family. Maps to strategy_003 slot.
  *       NOTE: rs_20_60 family RETIRED as of 2026-05-09 per Athena morning update.
- *       Alias kept so old POST calls return STRATEGY_NOT_FOUND via whitelist
- *       rather than a confusing alias-not-found error.
+ *       Alias kept for graceful handling of old POST calls. Resolves to strategy_003
+ *       which IS in VALID_QUANT_STRATEGY_IDS — subscribe will SUCCEED (not 404).
+ *       strategy_003 (Family C × SBL overlay) is a forward observation candidate
+ *       and remains open for paper subscription per spec (2026-05-15).
  *   - strategy_003_ma200_trend_follow → strategy_003
  *       Long-form detail page key from /lab/three-strategy/[strategyId]/page.tsx.
  *   - family_c_sbl_overlay → strategy_003
@@ -89,12 +91,32 @@ export function resolveStrategyId(id: string): string {
 export const CAPITAL_MIN_TWD = 50_000;
 export const CAPITAL_MAX_TWD = 1_000_000;
 
+/**
+ * Paper-readiness status for each canonical strategy.
+ * "paper_ready"    — live paper execution gate OPEN (requires Yang ACK, not set here)
+ * "forward_obs"    — forward observation candidate, paper subscription accepted but
+ *                    execution is deferred until paper-ready gate is opened
+ * "backtested_raw" — still in backtest validation, paper exec deferred, warning surfaced
+ *
+ * This map must be manually updated when 楊董 ACKs a strategy paper-ready.
+ * NEVER auto-flip to paper_ready — it is an explicit Yang ACK gate.
+ */
+export const STRATEGY_READINESS: Readonly<Record<string, "paper_ready" | "forward_obs" | "backtested_raw">> = {
+  "cont_liq_v36":  "paper_ready",   // 13-axis quality lock PASS, paper exec open
+  "strategy_002":  "forward_obs",   // Class 5 — forward observation candidate
+  "strategy_003":  "backtested_raw", // Family C × SBL — backtest validation, paper exec deferred
+} as const;
+
+export const BACKTESTED_RAW_WARNING =
+  "Strategy is still in backtest validation phase — paper execution is deferred. " +
+  "Subscription recorded for forward observation tracking.";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export type SubscribeResult =
-  | { ok: true; subscription_id: string; status: "active" }
+  | { ok: true; subscription_id: string; status: "active"; warning?: string }
   | { ok: false; error: string; http_status: 400 | 403 | 404 };
 
 export type SubscriptionRecord = {
@@ -156,7 +178,13 @@ export async function subscribeQuantStrategy(input: {
     subscriptionId,
   });
 
-  return { ok: true, subscription_id: subscriptionId, status: "active" };
+  // Readiness check: surface warning for strategies not yet paper-ready.
+  // We accept the subscription (forward observation candidate) but tell the caller
+  // that execution is deferred — never auto-promote to paper_ready here.
+  const readiness = STRATEGY_READINESS[strategyId];
+  const warning = readiness === "backtested_raw" ? BACKTESTED_RAW_WARNING : undefined;
+
+  return { ok: true, subscription_id: subscriptionId, status: "active", ...(warning ? { warning } : {}) };
 }
 
 // ---------------------------------------------------------------------------

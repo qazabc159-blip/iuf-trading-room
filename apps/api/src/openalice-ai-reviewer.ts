@@ -430,10 +430,15 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
       });
 
       if (adversarialResult.severityScore >= 7) {
-        // Surface as warning in audit log — do NOT hold the draft.
-        // Human editors can inspect via audit_logs action=content_draft.adversarial_audit.
-        console.info(
-          `[adversarial-reviewer] Draft ${draftId} adversarial score=${adversarialResult.severityScore} >= 7 — surfaced as draft warning (not auto-blocked per 2026-05-15 relax)`
+        // Surface as warning in Railway logs — visible via log filter
+        // `[adversarial-warn]`. Audit DB entry already written above.
+        // Human editors can inspect via audit_logs action=content_draft.adversarial_audit
+        // or GET /api/v1/admin/openalice/adversarial-warns.
+        // Do NOT hold the draft — auto-block removed per 2026-05-15 relax.
+        console.warn(
+          `[adversarial-warn] draftId=${draftId} severityScore=${adversarialResult.severityScore} ` +
+          `flags=${JSON.stringify(adversarialResult.adversarialFlags)} ` +
+          `reason=${adversarialResult.reasoning?.slice(0, 200) ?? "(none)"}`
         );
         // Fall through to pipeline publish gate — do NOT return early.
       }
