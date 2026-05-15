@@ -159,7 +159,8 @@ import {
   marketDataEffectiveQuotesQuerySchema,
   resolveMarketQuotes,
   upsertPaperQuotes,
-  upsertManualQuotes
+  upsertManualQuotes,
+  getCompaniesLiteCached
 } from "./market-data.js";
 import {
   deleteStrategyRiskLimit,
@@ -1494,6 +1495,68 @@ app.post("/api/v1/companies/merge", async (c) => {
     return c.json({ error: "company_not_found" }, 404);
   }
 
+  return c.json({ data: result });
+});
+
+// =============================================================================
+// GET /api/v1/companies/lookup?q=<ticker_or_name>
+//
+// Lightweight single-company lookup for PTR symbol switch.
+// Returns {ticker, name, sector} only — avoids 1.84MB full companies payload.
+// Uses getCompaniesLiteCached (5-min in-process cache) + LRU-50 per-query cache.
+// Must be declared BEFORE /api/v1/companies/:id to avoid segment collision.
+// P0-1 fix — 2026-05-15
+// =============================================================================
+const _lookupCache = new Map<string, { data: { ticker: string; name: string; sector: string } | null; expiresAt: number }>();
+const LOOKUP_TTL_MS = 5 * 60 * 1000;
+const LOOKUP_MAX_ENTRIES = 50;
+
+app.get("/api/v1/companies/lookup", async (c) => {
+  const q = (c.req.query("q") ?? "").trim().toUpperCase();
+  if (!q) {
+    return c.json({ error: "query_required", message: "Pass ?q=ticker_or_name" }, 400);
+  }
+
+  // LRU-50 in-process cache (workspace-scoped key)
+  const workspaceSlug = c.get("session").workspace.slug;
+  const cacheKey = `${workspaceSlug}:${q}`;
+  const now = Date.now();
+  const cached = _lookupCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.data
+      ? c.json({ data: cached.data })
+      : c.json({ error: "not_found" }, 404);
+  }
+
+  // Evict oldest entry if at capacity
+  if (_lookupCache.size >= LOOKUP_MAX_ENTRIES) {
+    const firstKey = _lookupCache.keys().next().value;
+    if (firstKey !== undefined) _lookupCache.delete(firstKey);
+  }
+
+  // Fetch from lite cache (5-min, shared with ops-snapshot)
+  const companies = await getCompaniesLiteCached(c.get("repo"), workspaceSlug);
+
+  // Match by ticker exact, then name prefix, then name contains
+  let match = companies.find((co) => co.ticker.toUpperCase() === q);
+  if (!match) {
+    match = companies.find((co) => co.name.toUpperCase().startsWith(q));
+  }
+  if (!match) {
+    match = companies.find((co) => co.name.toUpperCase().includes(q));
+  }
+
+  if (!match) {
+    _lookupCache.set(cacheKey, { data: null, expiresAt: now + LOOKUP_TTL_MS });
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  const result = {
+    ticker: match.ticker,
+    name: match.name,
+    sector: match.market ?? "",
+  };
+  _lookupCache.set(cacheKey, { data: result, expiresAt: now + LOOKUP_TTL_MS });
   return c.json({ data: result });
 });
 
@@ -11968,9 +12031,12 @@ app.get("/api/v1/portfolio/kgi/positions", async (c) => {
     KgiGatewayAuthError,
   } = await import("./broker/kgi-gateway-client.js");
 
+  // P0-2 fix (2026-05-15): short 500ms timeout so a cold/offline gateway
+  // does not block the Promise.all on PTR hydration for 3+ seconds.
+  // On timeout the catch block returns degraded=true + positions=[] (200).
   const client = new KgiGatewayClient({
     gatewayBaseUrl,
-    connectTimeoutMs: 8_000,
+    connectTimeoutMs: 500,
   });
 
   try {
@@ -12021,12 +12087,14 @@ app.get("/api/v1/portfolio/kgi/positions", async (c) => {
         source: "kgi_live",
         status: statusCode,
         positions: [],
+        degraded: true,
+        reason: statusCode,
         fetchedAt: new Date().toISOString(),
         note: isAuth
           ? "KGI gateway session not established. Please login via gateway first."
           : isUnreachable
             ? "KGI gateway is unreachable. Check gateway process on EC2."
-            : "KGI gateway returned an unexpected error.",
+            : "KGI gateway returned an unexpected error or timed out.",
       },
     });
   }
