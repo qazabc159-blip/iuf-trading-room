@@ -431,6 +431,18 @@ export async function getHeaderDockNotifications(params?: { limit?: number; unre
   return (await response.json()) as NotificationListResponse;
 }
 
+export async function markHeaderDockNotificationRead(id: string): Promise<void> {
+  const response = await fetch(`/api/header-dock/notifications/${encodeURIComponent(id)}/mark-read`, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "include",
+    keepalive: true,
+  });
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`Notification mark-read failed: ${response.status}`);
+  }
+}
+
 // OpenAlice Jobs (Draft Review Queue)
 
 export type OpenAliceJobEntry = {
