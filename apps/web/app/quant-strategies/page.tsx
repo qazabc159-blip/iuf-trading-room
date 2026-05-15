@@ -11,6 +11,7 @@ import {
 } from "@/lib/radar-lab";
 import styles from "./QuantStrategies.module.css";
 import { QUANT_STRATEGIES, type QuantStrategy, type StrategyCurvePoint, type DisplayStatus } from "./strategy-data";
+import { QuantSubsPanel } from "./QuantSubsPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -267,7 +268,15 @@ function StrategyCard({ strategy }: { strategy: StrategyCardView }) {
   );
 }
 
-export default async function QuantStrategiesPage() {
+export default async function QuantStrategiesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const tab = typeof params.tab === "string" ? params.tab : "strategies";
+  const isSubsTab = tab === "subscriptions";
+
   let payload: LabStrategiesResponse | null = null;
   let fetchError: string | null = null;
 
@@ -314,6 +323,11 @@ export default async function QuantStrategiesPage() {
           border-color: rgba(200, 148, 63, 0.42);
           background: rgba(200, 148, 63, 0.08);
         }
+        ._qnt-tabs a[data-active="true"] {
+          color: #e2b85c;
+          border-color: rgba(200, 148, 63, 0.55);
+          background: rgba(200, 148, 63, 0.13);
+        }
         ._qnt-banner {
           margin: 0 16px 14px;
           border: 1px solid rgba(220, 143, 55, 0.34);
@@ -331,23 +345,41 @@ export default async function QuantStrategiesPage() {
       `}</style>
 
       <div className="_qnt-tabs" aria-label="量化策略子頁">
+        <Link
+          href="/quant-strategies"
+          data-active={!isSubsTab ? "true" : "false"}
+        >
+          策略列表
+        </Link>
+        <Link
+          href="/quant-strategies?tab=subscriptions"
+          data-active={isSubsTab ? "true" : "false"}
+        >
+          我的訂閱
+        </Link>
         <Link href="/lab/three-strategy">Athena 三策略</Link>
         <Link href="/lab/strategies">Lab 策略清單</Link>
       </div>
 
-      <Panel code="QNT-01" title="策略列表" sub="策略分數、回測風險與 SIM-only 配置。">
-        <div className="_qnt-banner">
-          <b className="tg gold">SIM 帳戶執行中</b> / v1 只開放模擬帳戶，不提供正式交易切換。
-        </div>
-        <LabCandidateStrip candidates={labCandidates} payload={payload} fetchError={fetchError} />
-        <div className="_qnt-grid-wrap">
-          <div className={styles.grid}>
-            {strategies.map((strategy) => (
-              <StrategyCard key={strategy.id} strategy={strategy} />
-            ))}
+      {isSubsTab ? (
+        <Panel code="QNT-SUBS" title="我的訂閱" sub="SIM-only 策略訂閱紀錄">
+          <QuantSubsPanel />
+        </Panel>
+      ) : (
+        <Panel code="QNT-01" title="策略列表" sub="策略分數、回測風險與 SIM-only 配置。">
+          <div className="_qnt-banner">
+            <b className="tg gold">SIM 帳戶執行中</b> / v1 只開放模擬帳戶，不提供正式交易切換。
           </div>
-        </div>
-      </Panel>
+          <LabCandidateStrip candidates={labCandidates} payload={payload} fetchError={fetchError} />
+          <div className="_qnt-grid-wrap">
+            <div className={styles.grid}>
+              {strategies.map((strategy) => (
+                <StrategyCard key={strategy.id} strategy={strategy} />
+              ))}
+            </div>
+          </div>
+        </Panel>
+      )}
     </PageFrame>
   );
 }
