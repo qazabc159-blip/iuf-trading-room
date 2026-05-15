@@ -6,13 +6,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, FileText, GripHorizontal, KeyRound, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
 
 import { apiLogout } from "@/lib/auth-client";
-import { getAlerts, type AlertEntry } from "@/lib/api";
+import { getHeaderDockNotifications, type NotificationEntry } from "@/lib/api";
 
-type Drawer = "alerts" | "system" | null;
-type AlertDrawerState =
-  | { status: "idle" | "loading"; alerts: AlertEntry[]; error: null }
-  | { status: "ready"; alerts: AlertEntry[]; error: null }
-  | { status: "error"; alerts: AlertEntry[]; error: string };
+type Drawer = "notifications" | "system" | null;
+type NotificationDrawerState =
+  | { status: "idle" | "loading"; notifications: NotificationEntry[]; unreadCount: number; error: null }
+  | { status: "ready"; notifications: NotificationEntry[]; unreadCount: number; error: null }
+  | { status: "error"; notifications: NotificationEntry[]; unreadCount: number; error: string };
 
 interface DockPosition {
   top: number;
@@ -64,7 +64,12 @@ function clampToViewport(top: number, left: number, el: HTMLElement): DockPositi
   };
 }
 
-function formatAlertTime(value: string) {
+function notificationTime(notification: NotificationEntry) {
+  return notification.createdAt ?? notification.occurredAt ?? "";
+}
+
+function formatNotificationTime(value: string) {
+  if (!value) return "時間待同步";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-TW", {
@@ -77,8 +82,21 @@ function formatAlertTime(value: string) {
   });
 }
 
-function alertSummary(alert: AlertEntry) {
-  const payload = alert.payload ?? {};
+function notificationTitle(notification: NotificationEntry) {
+  return notification.title ?? notification.message ?? notification.category ?? notification.type ?? "系統通知";
+}
+
+function notificationSeverity(notification: NotificationEntry) {
+  return notification.severity === "critical" || notification.severity === "warning" ? notification.severity : "info";
+}
+
+function notificationHref(notification: NotificationEntry) {
+  return notification.href?.startsWith("/") ? notification.href : "/alerts";
+}
+
+function notificationSummary(notification: NotificationEntry) {
+  if (notification.message && notification.message !== notification.title) return notification.message;
+  const payload = notification.metadata ?? {};
   const parts: string[] = [];
   for (const key of ["message", "title", "symbol", "ticker", "threshold"]) {
     const value = payload[key];
@@ -86,24 +104,31 @@ function alertSummary(alert: AlertEntry) {
     if (typeof value === "number" && Number.isFinite(value)) parts.push(value.toLocaleString("zh-TW"));
     if (parts.length >= 2) break;
   }
-  return parts.length > 0 ? parts.join(" / ") : "條件已觸發，請至警示頁確認。";
+  return parts.length > 0 ? parts.join(" / ") : "通知資料已同步，請至警示頁確認細節。";
 }
 
-function recentAlerts(alerts: AlertEntry[]) {
+function recentNotifications(notifications: NotificationEntry[]) {
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  return alerts
-    .filter((alert) => {
-      const time = new Date(alert.triggeredAt).getTime();
-      return Number.isFinite(time) && time >= cutoff;
+  return notifications
+    .filter((notification) => {
+      const value = notificationTime(notification);
+      if (!value) return true;
+      const time = new Date(value).getTime();
+      return Number.isFinite(time) ? time >= cutoff : true;
     })
-    .sort((a, b) => new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime());
+    .sort((a, b) => new Date(notificationTime(b)).getTime() - new Date(notificationTime(a)).getTime());
 }
 
 export function HeaderDock() {
   const router = useRouter();
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [alertDrawer, setAlertDrawer] = useState<AlertDrawerState>({ status: "idle", alerts: [], error: null });
+  const [notificationDrawer, setNotificationDrawer] = useState<NotificationDrawerState>({
+    status: "idle",
+    notifications: [],
+    unreadCount: 0,
+    error: null,
+  });
 
   // Position state: null = use CSS default (right:16px)
   const [position, setPosition] = useState<DockPosition | null>(null);
@@ -118,20 +143,26 @@ export function HeaderDock() {
     startDockLeft: number;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const visibleAlerts = recentAlerts(alertDrawer.alerts);
-  const unreadCount = visibleAlerts.filter((alert) => !alert.acknowledged).length;
+  const visibleNotifications = recentNotifications(notificationDrawer.notifications);
+  const unreadCount = notificationDrawer.unreadCount;
 
-  const loadAlertDrawer = useCallback(async () => {
-    setAlertDrawer((current) => ({
+  const loadNotificationDrawer = useCallback(async () => {
+    setNotificationDrawer((current) => ({
       status: "loading",
-      alerts: current.alerts,
+      notifications: current.notifications,
+      unreadCount: current.unreadCount,
       error: null,
     }));
     try {
-      const response = await getAlerts({ limit: 50 });
-      setAlertDrawer({ status: "ready", alerts: response.data, error: null });
+      const response = await getHeaderDockNotifications({ limit: 50 });
+      setNotificationDrawer({
+        status: "ready",
+        notifications: response.notifications,
+        unreadCount: response.unread_count,
+        error: null,
+      });
     } catch {
-      setAlertDrawer({ status: "error", alerts: [], error: "警示資料同步中。" });
+      setNotificationDrawer({ status: "error", notifications: [], unreadCount: 0, error: "通知資料同步中。" });
     }
   }, []);
 
@@ -159,12 +190,8 @@ export function HeaderDock() {
   }, []);
 
   useEffect(() => {
-    void loadAlertDrawer();
-  }, [loadAlertDrawer]);
-
-  useEffect(() => {
-    if (drawer === "alerts") void loadAlertDrawer();
-  }, [drawer, loadAlertDrawer]);
+    if (drawer === "notifications") void loadNotificationDrawer();
+  }, [drawer, loadNotificationDrawer]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLElement>) => {
     if (isMobile) return;
@@ -232,7 +259,7 @@ export function HeaderDock() {
     router.push("/login");
   }
 
-  const drawerTitle = drawer === "alerts" ? "警示" : "系統狀態";
+  const drawerTitle = drawer === "notifications" ? "警示" : "系統狀態";
 
   // Build inline style for position
   const dockStyle: React.CSSProperties = {};
@@ -274,12 +301,12 @@ export function HeaderDock() {
           type="button"
           className="header-dock-button"
           aria-label="警示"
-          aria-expanded={drawer === "alerts"}
-          aria-controls={drawer === "alerts" ? "header-dock-drawer" : undefined}
+          aria-expanded={drawer === "notifications"}
+          aria-controls={drawer === "notifications" ? "header-dock-drawer" : undefined}
           title="警示"
           onClick={() => {
             setAccountOpen(false);
-            setDrawer((current) => (current === "alerts" ? null : "alerts"));
+            setDrawer((current) => (current === "notifications" ? null : "notifications"));
           }}
         >
           <Bell size={18} strokeWidth={1.8} />
@@ -366,32 +393,32 @@ export function HeaderDock() {
             </button>
           </div>
 
-          {drawer === "alerts" ? (
+          {drawer === "notifications" ? (
             <div className="header-dock-drawer-body">
               <div className="header-dock-state">
                 <span>今日警示</span>
                 <b>警示中心</b>
-                <p>最近 7 天風控、委託、推薦與系統事件；來源為現有 alerts engine。</p>
+                <p>最近 7 天風控、委託、推薦與系統事件；來源為 notifications lane。</p>
               </div>
-              {alertDrawer.status === "loading" && <p className="header-dock-empty">資料同步中</p>}
-              {alertDrawer.status === "error" && <p className="header-dock-empty">{alertDrawer.error}</p>}
-              {alertDrawer.status === "ready" && visibleAlerts.length === 0 && (
+              {notificationDrawer.status === "loading" && <p className="header-dock-empty">資料同步中</p>}
+              {notificationDrawer.status === "error" && <p className="header-dock-empty">{notificationDrawer.error}</p>}
+              {notificationDrawer.status === "ready" && visibleNotifications.length === 0 && (
                 <p className="header-dock-empty">最近 7 天沒有未處理警示。</p>
               )}
-              {visibleAlerts.length > 0 && (
+              {visibleNotifications.length > 0 && (
                 <div className="header-alert-list">
-                  {visibleAlerts.slice(0, 8).map((alert) => (
+                  {visibleNotifications.slice(0, 8).map((notification) => (
                     <Link
-                      key={alert.id}
+                      key={notification.id}
                       className="header-alert-item"
-                      data-severity={alert.severity}
-                      href="/alerts"
+                      data-severity={notificationSeverity(notification)}
+                      href={notificationHref(notification)}
                       onClick={() => setDrawer(null)}
                     >
-                      <span>{alert.acknowledged ? "已確認" : "待處理"}</span>
-                      <b>{alert.ruleName}</b>
-                      <small>{alert.ticker ?? "SYSTEM"} / {formatAlertTime(alert.triggeredAt)}</small>
-                      <p>{alertSummary(alert)}</p>
+                      <span>{notification.readAt ? "已讀" : "待處理"}</span>
+                      <b>{notificationTitle(notification)}</b>
+                      <small>{notification.category ?? notification.type ?? "SYSTEM"} / {formatNotificationTime(notificationTime(notification))}</small>
+                      <p>{notificationSummary(notification)}</p>
                     </Link>
                   ))}
                 </div>
