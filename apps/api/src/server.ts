@@ -14303,7 +14303,14 @@ app.post("/api/v1/quant-strategies/:id/subscribe", async (c) => {
     return c.json({ error: "CAPITAL_BELOW_MIN", message: "capital_twd must be a finite number" }, 400);
   }
 
-  const { subscribeQuantStrategy } = await import("./quant-strategy-subscribe.js");
+  const { subscribeQuantStrategy, STRATEGY_RETIRED_IDS } = await import("./quant-strategy-subscribe.js");
+
+  // Fast-path: retired strategy check before flag snapshot or heavy logic.
+  // Returns 410 Gone so callers know the strategy no longer accepts subscriptions.
+  if (STRATEGY_RETIRED_IDS.has(strategyId)) {
+    return c.json({ error: "STRATEGY_RETIRED", reason: "This strategy has been retired and no longer accepts subscriptions." }, 410);
+  }
+
   const flags = getExecutionFlagSnapshot();
 
   const result = await subscribeQuantStrategy({

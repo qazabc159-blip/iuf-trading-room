@@ -177,8 +177,11 @@ import {
   VALID_QUANT_STRATEGY_IDS,
   STRATEGY_ID_ALIASES,
   STRATEGY_READINESS,
+  STRATEGY_RETIRED_IDS,
   BACKTESTED_RAW_WARNING,
+  FORWARD_OBS_WARNING,
   resolveStrategyId,
+  resolveStrategyIdWithMeta,
   CAPITAL_MIN_TWD,
   CAPITAL_MAX_TWD,
 } from "../apps/api/src/quant-strategy-subscribe.ts";
@@ -10956,11 +10959,20 @@ test("QS-ALIAS-3: resolveStrategyId maps long cont_liq name → cont_liq_v36", (
   );
 });
 
-test("QS-ALIAS-4: resolveStrategyId maps rs_20_60 long name → strategy_003", () => {
+test("QS-ALIAS-4: resolveStrategyId passes rs_20_60 through unchanged (retired — not in alias map)", () => {
+  // rs_20_60 was removed from STRATEGY_ID_ALIASES on 2026-05-15 (retired strategy).
+  // It now lives in STRATEGY_RETIRED_IDS. resolveStrategyId returns the id unchanged
+  // (which then fails whitelist), and the caller checks STRATEGY_RETIRED_IDS first
+  // to return 410 Gone instead of 404.
+  const resolved = resolveStrategyId("rs_20_60_low_drawdown__h20__top5");
   assert.equal(
-    resolveStrategyId("rs_20_60_low_drawdown__h20__top5"),
-    "strategy_003",
-    "QS-ALIAS-4: rs_20_60 lab name must resolve to strategy_003"
+    resolved,
+    "rs_20_60_low_drawdown__h20__top5",
+    "QS-ALIAS-4: retired id must pass through unchanged (not re-mapped to strategy_003)"
+  );
+  assert.ok(
+    STRATEGY_RETIRED_IDS.has("rs_20_60_low_drawdown__h20__top5"),
+    "QS-ALIAS-4: rs_20_60 must be in STRATEGY_RETIRED_IDS"
   );
 });
 
@@ -11023,36 +11035,48 @@ test("QS-ALIAS-9: STRATEGY_ID_ALIASES all targets are valid canonical ids", () =
 // QS-READINESS: strategy_003 readiness warning tests (Pete round 5 item 3)
 // =============================================================================
 
-test("QS-READINESS-1: strategy_003 subscribe returns warning field (backtested_raw)", async () => {
+test("QS-READINESS-1: strategy_003 subscribe returns forward_obs warning (Truth Board v14)", async () => {
+  // strategy_003 (Family C × SBL v3A R6d) upgraded to forward_obs per Truth Board v14.
+  // All three strategies are now forward_obs; Yang ACK Phase 1 pre-reg required for paper exec.
   const result = await subscribeQuantStrategy({
     session: _mockQsSession,
     strategyId: "strategy_003",
     capitalTwd: 100_000,
     executionMode: "paper",
   });
-  assert.ok(result.ok, "QS-READINESS-1: strategy_003 subscribe must succeed (not rejected)");
+  assert.ok(result.ok, "QS-READINESS-1: strategy_003 subscribe must succeed (forward obs accepted)");
   if (!result.ok) return;
   assert.equal(result.status, "active", "QS-READINESS-1: status must be active");
   assert.ok(
     typeof result.warning === "string" && result.warning.length > 0,
-    "QS-READINESS-1: strategy_003 must return a warning field because it is backtested_raw"
+    "QS-READINESS-1: strategy_003 must return a warning field (forward_obs)"
   );
   assert.ok(
-    result.warning === BACKTESTED_RAW_WARNING,
-    "QS-READINESS-1: warning text must match BACKTESTED_RAW_WARNING constant"
+    result.warning === FORWARD_OBS_WARNING,
+    "QS-READINESS-1: warning text must match FORWARD_OBS_WARNING constant"
   );
 });
 
-test("QS-READINESS-2: cont_liq_v36 subscribe has no warning field (paper_ready)", async () => {
+test("QS-READINESS-2: cont_liq_v36 subscribe returns forward_obs warning (v14 §3 Phase 1 pre-reg pending)", async () => {
+  // cont_liq_v36 demoted from paper_ready to forward_obs per Truth Board v14 §3.
+  // Phase 1 pre-reg requires explicit Yang ACK (楊董 3 天不在 / 不 lock / 不真單).
   const result = await subscribeQuantStrategy({
     session: _mockQsSession,
     strategyId: "cont_liq_v36",
     capitalTwd: 100_000,
     executionMode: "paper",
   });
-  assert.ok(result.ok, "QS-READINESS-2: cont_liq_v36 subscribe must succeed");
+  assert.ok(result.ok, "QS-READINESS-2: cont_liq_v36 subscribe must succeed (forward obs accepted)");
   if (!result.ok) return;
-  assert.equal(result.warning, undefined, "QS-READINESS-2: cont_liq_v36 must have no warning (paper_ready)");
+  assert.ok(
+    typeof result.warning === "string" && result.warning.length > 0,
+    "QS-READINESS-2: cont_liq_v36 must return forward_obs warning (not paper_ready)"
+  );
+  assert.equal(
+    result.warning,
+    FORWARD_OBS_WARNING,
+    "QS-READINESS-2: warning must match FORWARD_OBS_WARNING constant"
+  );
 });
 
 test("QS-READINESS-3: STRATEGY_READINESS map has entries for all VALID_QUANT_STRATEGY_IDS", () => {
@@ -11064,19 +11088,66 @@ test("QS-READINESS-3: STRATEGY_READINESS map has entries for all VALID_QUANT_STR
   }
 });
 
-test("QS-READINESS-4: rs_20_60 alias (→ strategy_003) also returns warning field", async () => {
+test("QS-READINESS-4: rs_20_60 is retired — subscribeQuantStrategy returns STRATEGY_RETIRED (410)", async () => {
+  // rs_20_60 was RETIRED 2026-05-09. It is no longer aliased to strategy_003.
+  // Previously QS-READINESS-4 expected success; this test now verifies the 410 path.
   const result = await subscribeQuantStrategy({
     session: _mockQsSession,
     strategyId: "rs_20_60_low_drawdown__h20__top5",
     capitalTwd: 100_000,
     executionMode: "paper",
   });
-  assert.ok(result.ok, "QS-READINESS-4: rs_20_60 alias must resolve and succeed");
-  if (!result.ok) return;
-  assert.ok(
-    typeof result.warning === "string" && result.warning.length > 0,
-    "QS-READINESS-4: rs_20_60 alias → strategy_003 (backtested_raw) must carry warning"
-  );
+  assert.ok(!result.ok, "QS-READINESS-4: rs_20_60 (retired) must return error");
+  if (result.ok) return;
+  assert.equal(result.error, "STRATEGY_RETIRED", "QS-READINESS-4: error must be STRATEGY_RETIRED");
+  assert.equal(result.http_status, 410, "QS-READINESS-4: http_status must be 410 Gone");
+});
+
+test("QS-READINESS-5: cont_liq_v36 is forward_obs — FORWARD_OBS_WARNING constant exists and is non-empty", () => {
+  assert.ok(typeof FORWARD_OBS_WARNING === "string" && FORWARD_OBS_WARNING.length > 0,
+    "QS-READINESS-5: FORWARD_OBS_WARNING must be a non-empty string");
+  assert.ok(STRATEGY_READINESS["cont_liq_v36"] === "forward_obs",
+    "QS-READINESS-5: cont_liq_v36 must be forward_obs in STRATEGY_READINESS (v14 §3 alignment)");
+  assert.ok(STRATEGY_READINESS["strategy_003"] === "forward_obs",
+    "QS-READINESS-5: strategy_003 must be forward_obs in STRATEGY_READINESS (Truth Board v14)");
+});
+
+test("QS-RETIRED-1: STRATEGY_RETIRED_IDS contains rs_20_60 and its subscribe returns 410", async () => {
+  assert.ok(STRATEGY_RETIRED_IDS.has("rs_20_60_low_drawdown__h20__top5"),
+    "QS-RETIRED-1: rs_20_60 must be in STRATEGY_RETIRED_IDS");
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "rs_20_60_low_drawdown__h20__top5",
+    capitalTwd: 100_000,
+    executionMode: "paper",
+  });
+  assert.ok(!result.ok, "QS-RETIRED-1: must return error for retired strategy");
+  if (result.ok) return;
+  assert.equal(result.http_status, 410, "QS-RETIRED-1: must be 410 Gone");
+});
+
+test("QS-ALIASMETA-1: resolveStrategyIdWithMeta captures aliasFrom for non-canonical ids", () => {
+  // Canonical ids pass through with no aliasFrom
+  const direct = resolveStrategyIdWithMeta("cont_liq_v36");
+  assert.equal(direct.canonicalId, "cont_liq_v36", "QS-ALIASMETA-1: canonical id unchanged");
+  assert.equal(direct.aliasFrom, undefined, "QS-ALIASMETA-1: canonical id has no aliasFrom");
+
+  // MAIN display name → strategy_002, aliasFrom captures the original
+  const main = resolveStrategyIdWithMeta("MAIN_execution_rank_buffer_top20");
+  assert.equal(main.canonicalId, "strategy_002", "QS-ALIASMETA-1: MAIN resolves to strategy_002");
+  assert.equal(main.aliasFrom, "MAIN_execution_rank_buffer_top20",
+    "QS-ALIASMETA-1: aliasFrom must capture the original MAIN display name");
+
+  // class5_revenue_momentum → strategy_002, different aliasFrom than MAIN
+  const class5 = resolveStrategyIdWithMeta("class5_revenue_momentum");
+  assert.equal(class5.canonicalId, "strategy_002", "QS-ALIASMETA-1: class5 resolves to strategy_002");
+  assert.equal(class5.aliasFrom, "class5_revenue_momentum",
+    "QS-ALIASMETA-1: aliasFrom distinguishes class5 from MAIN (both → strategy_002)");
+
+  // Unknown id: pass through with no aliasFrom
+  const unknown = resolveStrategyIdWithMeta("completely_unknown_id");
+  assert.equal(unknown.canonicalId, "completely_unknown_id", "QS-ALIASMETA-1: unknown passes through");
+  assert.equal(unknown.aliasFrom, undefined, "QS-ALIASMETA-1: unknown has no aliasFrom");
 });
 
 // =============================================================================
