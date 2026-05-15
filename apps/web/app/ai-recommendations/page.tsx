@@ -177,20 +177,21 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
         <small>{rec.quant.strategySource}</small>
       </div>
 
+      <p className="_rec-research-note">以下為研究輸出，非投資建議。</p>
       <div className="_rec-trade-grid">
         <div>
-          <span>進場區</span>
+          <span>進場參考區（研究）</span>
           <b>{rec.entryZone.primary || "資料同步中"}</b>
           {rec.entryZone.secondary && <small>{rec.entryZone.secondary}</small>}
           <p>{rec.entryZone.reason || "資料同步中"}</p>
         </div>
         <div>
-          <span>停損 / 失效</span>
+          <span>訊號失效點（研究參考）</span>
           <b>{formatPrice(rec.invalidation.price)}</b>
           <p>{rec.invalidation.rule || "資料同步中"}</p>
         </div>
         <div>
-          <span>倉位建議</span>
+          <span>倉位參考（研究用）</span>
           <b data-risk={rec.positionSizing.suggestion === "禁止追高" ? "hot" : undefined}>
             {rec.positionSizing.suggestion}
           </b>
