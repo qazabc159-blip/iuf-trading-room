@@ -174,19 +174,19 @@ function PromotionBlockedCell() {
   return (
     <span
       className="tg down"
-      title="策略想法尚未開放轉入模擬委託；目前只能進公司頁做紙上預覽與風控檢查。"
+      title="策略想法尚未開放直接轉入模擬委託；請到交易室重新核對風控與委託條件。"
       style={{ display: "grid", gap: 3, minWidth: 0, lineHeight: 1.45 }}
     >
       <span>轉單暫停</span>
       <span className="tc soft">
-        等待紙上預覽交接
+        等待交易室交接
       </span>
     </span>
   );
 }
 
-function companyPaperPreviewHref(symbol: string) {
-  return `/companies/${encodeURIComponent(symbol)}#paper-order`;
+function portfolioPrefillHref(symbol: string) {
+  return `/portfolio?ticker=${encodeURIComponent(symbol)}&prefill=true&from_run=true`;
 }
 
 function barWidth(value: number, total: number) {
@@ -260,7 +260,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
       code="05-D"
       title="批次明細"
       sub={run ? `${shortRunId(run.id)} / ${modeLabel(run.query.decisionMode)}` : `${shortRunId(id)} / 暫停`}
-      note="此頁讀取正式策略批次資料；候選不是買賣建議，只能先進公司頁看 K 線、來源狀態與紙上預覽。"
+      note="此頁讀取正式策略批次資料；候選不是買賣建議。公司頁只看研究資料，模擬預覽與風控核對請到交易室。"
     >
       {/* parity-kpi-bar hero */}
       <div className="parity-kpi-bar">
@@ -352,7 +352,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                 </div>
                 <p>{ideaReasonText(idea)}</p>
                 <Link href={`/companies/${idea.symbol}`} className="mini-button">公司頁</Link>
-                <Link href={companyPaperPreviewHref(idea.symbol)} className="mini-button">紙上預覽</Link>
+                <Link href={portfolioPrefillHref(idea.symbol)} className="mini-button">帶到交易室</Link>
                 <PromotionBlockedCell />
               </div>
             ))}
@@ -388,7 +388,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                 <div className="tg soft" style={{ display: "grid", gap: 6, padding: "12px 0" }}>
                   <span>產生：{formatDateTime(run.generatedAt)}</span>
                   <span>平均信心：{outputs.length ? percent(outputs.reduce((sum, item) => sum + item.confidence, 0) / outputs.length) : "--"}</span>
-                  <span>交易邊界：候選不是買賣建議；下單與執行在紙上預覽與風控檢查通過前保持隱藏。</span>
+                  <span>交易邊界：候選不是買賣建議；模擬預覽、風控核對與委託執行只在交易室處理。</span>
                 </div>
               </>
             )}
