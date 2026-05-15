@@ -165,8 +165,19 @@ export type RecommendationListResponse = {
   _mock?: boolean;
 };
 
+export type RecommendationDetailResponse = {
+  data: StockRecommendation;
+  _mock?: boolean;
+};
+
 export async function getRecommendationsToday() {
   return requestRaw<RecommendationListResponse>("/api/v1/recommendations/today", {
+    cache: "no-store",
+  });
+}
+
+export async function getRecommendationDetail(id: string) {
+  return requestRaw<RecommendationDetailResponse>(`/api/v1/recommendations/${encodeURIComponent(id)}`, {
     cache: "no-store",
   });
 }
