@@ -13738,10 +13738,13 @@ app.post("/api/v1/recommendations/:id/feedback", async (c) => {
 
   const { id } = c.req.param();
 
-  // Verify the recommendation exists
-  const rec = getMockRecommendationById(id);
+  // Verify the recommendation exists — use real resolver (same cache as /today and /:id)
+  const internalBase = deriveInternalBaseUrl(c.req.url);
+  const cookie = c.req.header("cookie") ?? "";
+  const { items } = await getOrFetchRecommendations(internalBase, cookie);
+  const rec = getRecommendationById(items, id);
   if (!rec) {
-    return c.json({ error: "not_found" }, 404);
+    return c.json({ error: "not_found", message: "推薦項目已過期或不存在" }, 404);
   }
 
   const body = recommendationFeedbackBodySchema.parse(await c.req.json());
