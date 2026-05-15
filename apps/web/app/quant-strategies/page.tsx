@@ -1,7 +1,14 @@
 import Link from "next/link";
-import { ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowRight, Database, ShieldCheck } from "lucide-react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
+import { friendlyDataError } from "@/lib/friendly-error";
+import {
+  labStatusDisplayWording,
+  radarLabApi,
+  type LabStrategiesResponse,
+  type LabStrategyCandidate,
+} from "@/lib/radar-lab";
 import styles from "./QuantStrategies.module.css";
 import { QUANT_STRATEGIES, type QuantStrategy, type StrategyCurvePoint, type DisplayStatus } from "./strategy-data";
 
@@ -15,6 +22,60 @@ function accentColor(accent: QuantStrategy["accent"]) {
 
 function pct(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+type StrategyCardView = QuantStrategy & {
+  labCandidate?: LabStrategyCandidate;
+  labStatusWording?: string;
+};
+
+const STRATEGY_LAB_MATCHERS: Record<string, (candidate: LabStrategyCandidate) => boolean> = {
+  cont_liq_v36: (candidate) => /cont[_-]?liquidity|cont[_-]?liq/i.test(candidate.strategyId),
+  class5_revenue_momentum: (candidate) => /class5|revenue|monthly/i.test(candidate.strategyId),
+  family_c_sbl_overlay: (candidate) => /family[_\s-]?c|tdcc|sbl/i.test(candidate.strategyId),
+};
+
+function normalizedDisplayStatus(candidate: LabStrategyCandidate, fallback: DisplayStatus): DisplayStatus {
+  if (!("displayStatus" in candidate)) return fallback;
+  return candidate.displayStatus === "PASS" || candidate.displayStatus === "WATCH" || candidate.displayStatus === "FAIL"
+    ? candidate.displayStatus
+    : null;
+}
+
+function attachLabCandidates(strategies: QuantStrategy[], candidates: LabStrategyCandidate[]): StrategyCardView[] {
+  return strategies.map((strategy) => {
+    const matcher = STRATEGY_LAB_MATCHERS[strategy.id];
+    const labCandidate = matcher ? candidates.find(matcher) : undefined;
+    if (!labCandidate) return strategy;
+
+    return {
+      ...strategy,
+      displayStatus: normalizedDisplayStatus(labCandidate, strategy.displayStatus),
+      labCandidate,
+      labStatusWording: labStatusDisplayWording(labCandidate.status),
+    };
+  });
+}
+
+function candidateName(candidate: LabStrategyCandidate) {
+  if (candidate.strategyId === "MAIN_execution_rank_buffer_top20") return "MAIN execution rank buffer";
+  if (candidate.strategyId === "rs_20_60_low_drawdown__h20__top5") return "RS 20/60 low drawdown";
+  if (candidate.strategyId.includes("cont_liquidity_relative_strength")) return "Continuous liquidity RS";
+  return candidate.displayName || candidate.strategyId;
+}
+
+function formatTimestamp(value?: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 const DISPLAY_STATUS_MAP: Record<
@@ -93,7 +154,58 @@ function MiniSpark({ points, color }: { points: StrategyCurvePoint[]; color: str
   );
 }
 
-function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
+function LabCandidateStrip({
+  candidates,
+  payload,
+  fetchError,
+}: {
+  candidates: LabStrategyCandidate[];
+  payload: LabStrategiesResponse | null;
+  fetchError: string | null;
+}) {
+  const meta = payload?.meta;
+  const isSanctioned = meta?.source === "lab_sanctioned" && candidates.length > 0;
+
+  return (
+    <div className={isSanctioned ? styles.labSync : `${styles.labSync} ${styles.labSyncMuted}`}>
+      <div className={styles.labSyncHead}>
+        <div>
+          <span className={styles.labSyncKicker}>LAB SANCTIONED SNAPSHOT</span>
+          <strong>{isSanctioned ? "Athena 候選策略已同步" : "Lab 候選策略暫未同步"}</strong>
+        </div>
+        <div className={styles.labSyncStats} aria-label="Lab snapshot metadata">
+          <span>{meta?.sprintId ?? payload?.data?.sprintId ?? "-"}</span>
+          <span>{isSanctioned ? `${candidates.length} candidates` : "fallback deck"}</span>
+          <span>{formatTimestamp(meta?.collectedAt ?? payload?.data?.collectedAt)}</span>
+        </div>
+      </div>
+
+      {fetchError ? (
+        <p className={styles.labSyncCopy}>{fetchError}</p>
+      ) : isSanctioned ? (
+        <>
+          <p className={styles.labSyncCopy}>
+            這裡只讀取 Lab governance 釋出的 research-only snapshot；狀態照 Lab 原文保存，不在前端改名成可交易訊號。
+          </p>
+          <div className={styles.labCandidateList}>
+            {candidates.map((candidate) => (
+              <div key={candidate.strategyId} className={styles.labCandidate}>
+                <span>{candidateName(candidate)}</span>
+                <strong>{labStatusDisplayWording(candidate.status)}</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className={styles.labSyncCopy}>
+          {meta?.reason ?? "目前沒有可讀取的 Lab sanctioned snapshot；頁面保留本機 SIM-only 策略卡，避免用假資料補量化欄位。"}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function StrategyCard({ strategy }: { strategy: StrategyCardView }) {
   const color = accentColor(strategy.accent);
 
   return (
@@ -109,6 +221,16 @@ function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
           {strategy.role} / {strategy.cadence} / {strategy.basketSize}
         </p>
         <p className={styles.signal}>{strategy.signal}</p>
+
+        {strategy.labCandidate ? (
+          <div className={styles.labCardMeta}>
+            <Database size={14} strokeWidth={1.9} />
+            <div>
+              <span>{strategy.labStatusWording}</span>
+              <small>{strategy.labCandidate.strategyId}</small>
+            </div>
+          </div>
+        ) : null}
 
         <div className={styles.metricGrid}>
           <div className={styles.metric}>
@@ -145,13 +267,27 @@ function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
   );
 }
 
-export default function QuantStrategiesPage() {
+export default async function QuantStrategiesPage() {
+  let payload: LabStrategiesResponse | null = null;
+  let fetchError: string | null = null;
+
+  try {
+    payload = await radarLabApi.strategies();
+  } catch (error) {
+    fetchError = friendlyDataError(error, "Lab 候選策略暫時無法讀取。");
+  }
+
+  const labCandidates = payload?.meta.source === "lab_sanctioned" && payload.data?.candidates
+    ? payload.data.candidates
+    : [];
+  const strategies = attachLabCandidates(QUANT_STRATEGIES, labCandidates);
+
   return (
     <PageFrame
       code="QNT"
       title="量化策略"
       sub="Athena 訊號 / SIM-only"
-      note="v1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等 Jason endpoint 回傳後才顯示數字。"
+      note="v1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等正式 quant-strategies endpoint 回傳後才顯示數字。"
     >
       <style>{`
         ._qnt-tabs {
@@ -203,9 +339,10 @@ export default function QuantStrategiesPage() {
         <div className="_qnt-banner">
           <b className="tg gold">SIM 帳戶執行中</b> / v1 只開放模擬帳戶，不提供正式交易切換。
         </div>
+        <LabCandidateStrip candidates={labCandidates} payload={payload} fetchError={fetchError} />
         <div className="_qnt-grid-wrap">
           <div className={styles.grid}>
-            {QUANT_STRATEGIES.map((strategy) => (
+            {strategies.map((strategy) => (
               <StrategyCard key={strategy.id} strategy={strategy} />
             ))}
           </div>

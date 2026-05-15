@@ -57,6 +57,7 @@ export type LabStrategyCandidate = {
   strategyId: string;
   displayName: string;
   status: string;
+  displayStatus?: "PASS" | "WATCH" | "FAIL" | null;
   researchOnlyFlag: "RESEARCH_ONLY";
   disclaimer: string;
   caveats: string[];
