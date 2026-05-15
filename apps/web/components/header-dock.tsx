@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, FileText, GripHorizontal, KeyRound, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
 
 import { apiLogout } from "@/lib/auth-client";
-import { getHeaderDockNotifications, type NotificationEntry } from "@/lib/api";
+import { getHeaderDockNotifications, markHeaderDockNotificationRead, type NotificationEntry } from "@/lib/api";
 
 type Drawer = "notifications" | "system" | null;
 type NotificationDrawerState =
@@ -165,6 +165,23 @@ export function HeaderDock() {
       setNotificationDrawer({ status: "error", notifications: [], unreadCount: 0, error: "通知資料同步中。" });
     }
   }, []);
+
+  const markNotificationRead = useCallback((notification: NotificationEntry) => {
+    const markedAt = new Date().toISOString();
+    const wasUnread = !notification.readAt;
+
+    setNotificationDrawer((current) => ({
+      ...current,
+      notifications: current.notifications.map((item) => (
+        item.id === notification.id ? { ...item, readAt: item.readAt ?? markedAt } : item
+      )),
+      unreadCount: wasUnread ? Math.max(0, current.unreadCount - 1) : current.unreadCount,
+    }));
+
+    void markHeaderDockNotificationRead(notification.id).catch(() => {
+      void loadNotificationDrawer();
+    });
+  }, [loadNotificationDrawer]);
 
   // Detect mobile and load saved position on mount
   useEffect(() => {
@@ -413,7 +430,10 @@ export function HeaderDock() {
                       className="header-alert-item"
                       data-severity={notificationSeverity(notification)}
                       href={notificationHref(notification)}
-                      onClick={() => setDrawer(null)}
+                      onClick={() => {
+                        markNotificationRead(notification);
+                        setDrawer(null);
+                      }}
                     >
                       <span>{notification.readAt ? "已讀" : "待處理"}</span>
                       <b>{notificationTitle(notification)}</b>
