@@ -83,7 +83,7 @@ const DISPLAY_STATUS_MAP: Record<
   { label: string; color: string; border: string; bg: string }
 > = {
   PASS: {
-    label: "驗證通過",
+    label: "研究閘通過（SIM-only）",
     color: "#58d68d",
     border: "rgba(88,214,141,0.45)",
     bg: "rgba(88,214,141,0.10)",
@@ -242,7 +242,7 @@ function StrategyCard({ strategy }: { strategy: StrategyCardView }) {
             <strong>{strategy.role}</strong>
           </div>
           <div className={styles.metric}>
-            <span>回測勝率</span>
+            <span>回測勝率（研究參考）</span>
             <strong>{pct(strategy.metrics.hitRatePct)}</strong>
           </div>
           <div className={styles.metric}>
