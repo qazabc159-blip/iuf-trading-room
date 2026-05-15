@@ -389,6 +389,48 @@ export async function getAlerts(params?: { limit?: number; unreadOnly?: boolean 
   return { data, meta };
 }
 
+// Header Dock Notifications (Day 6 v1)
+
+export type NotificationSeverity = "info" | "warning" | "critical";
+
+export type NotificationEntry = {
+  id: string;
+  type?: string;
+  category?: string;
+  title?: string;
+  message?: string;
+  severity?: NotificationSeverity;
+  createdAt?: string;
+  occurredAt?: string;
+  href?: string;
+  readAt?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type NotificationListResponse = {
+  notifications: NotificationEntry[];
+  unread_count: number;
+  meta?: {
+    source?: string;
+    reason?: string;
+    status?: number;
+  };
+};
+
+export async function getHeaderDockNotifications(params?: { limit?: number; unreadOnly?: boolean }) {
+  const query = new URLSearchParams();
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  if (params?.unreadOnly) query.set("unread_only", "true");
+  const response = await fetch(`/api/header-dock/notifications${query.toString() ? `?${query.toString()}` : ""}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Notification proxy failed: ${response.status}`);
+  }
+  return (await response.json()) as NotificationListResponse;
+}
+
 // OpenAlice Jobs (Draft Review Queue)
 
 export type OpenAliceJobEntry = {
