@@ -4,6 +4,7 @@ import { ArrowRight, Database, Gauge, ShieldAlert, Target } from "lucide-react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getRecommendationsToday, type RecommendationListResponse } from "@/lib/api";
+import { RecommendationFeedbackActions } from "./RecommendationFeedbackActions";
 
 export const dynamic = "force-dynamic";
 
@@ -274,6 +275,7 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
         <ArrowRight size={16} strokeWidth={1.9} />
         一鍵帶到交易室
       </Link>
+      <RecommendationFeedbackActions recommendationId={rec.recommendationId} />
     </article>
   );
 }
@@ -694,6 +696,51 @@ export default async function AiRecommendationsPage() {
         ._rec-prefill {
           justify-self: start;
           color: var(--tac-brand);
+        }
+        ._rec-feedback {
+          display: grid;
+          gap: 7px;
+          border-top: 1px solid var(--tac-line);
+          padding-top: 10px;
+        }
+        ._rec-feedback div {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+        ._rec-feedback button {
+          min-height: 32px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          border: 1px solid var(--tac-line);
+          border-radius: 6px;
+          padding: 0 10px;
+          color: var(--tac-fg-2);
+          background: rgba(8, 11, 16, 0.5);
+          font: 850 11px/1 var(--sans-tc);
+          cursor: pointer;
+        }
+        ._rec-feedback button:hover:not(:disabled),
+        ._rec-feedback button[data-active="true"] {
+          color: var(--tac-fg-0);
+          border-color: rgba(200, 148, 63, 0.44);
+          background: rgba(200, 148, 63, 0.1);
+        }
+        ._rec-feedback button:disabled {
+          cursor: wait;
+          opacity: 0.64;
+        }
+        ._rec-feedback > span {
+          color: var(--tac-fg-3);
+          font: 800 11px/1 var(--mono);
+        }
+        ._rec-feedback[data-status="saved"] > span {
+          color: var(--tac-ok);
+        }
+        ._rec-feedback[data-status="failed"] > span {
+          color: var(--tac-warn);
         }
         ._rec-empty {
           min-height: 170px;
