@@ -767,7 +767,8 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       ohlcv,
       bidAsk:bidAskResult.ok ? bidAskResult.data : null,
       ticks:ticksResult.ok ? (ticksResult.data?.ticks || []) : [],
-      prefill
+      prefill,
+      _companyId: company?.id ?? null,
     };
   }
 
@@ -1035,7 +1036,30 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     if (stats[3]) stats[3].textContent = price(selected.previous);
     if (stats[4]) stats[4].textContent = selected.volume == null ? "—" : n(selected.volume) + " 股";
     const wl = $("#wl-my");
-    if (wl) wl.innerHTML = '<div class="group">'+esc((live.watchlist || []).length)+' 檔自選 / 候選</div>' + (live.watchlist || []).map((item, i) => '<div class="wrow '+(i===0?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
+    if (wl) {
+      const wlItems = live.watchlist || [];
+      if (wlItems.length === 0) {
+        // P1-1 fallback: keep SSR static rows, update group label only
+        const groupEl = wl.querySelector(".group");
+        if (groupEl) groupEl.textContent = "ideas pool 整備中，預設展示熱門 5 檔";
+        // Re-attach click listeners for existing SSR rows
+        wl.querySelectorAll(".wrow").forEach((r: Element) => (r as HTMLElement).addEventListener("click", () => {
+          const sym = (r as HTMLElement).dataset.sym;
+          if (sym && typeof (window as unknown as Record<string, unknown>).pickRow === "function") {
+            ((window as unknown as Record<string, unknown>).pickRow as (s: string) => void)(sym);
+          }
+        }));
+      } else {
+        wl.innerHTML = '<div class="group">'+esc(wlItems.length)+' 檔自選 / 候選</div>' + wlItems.map((item, i) => '<div class="wrow '+(i===0?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
+        // Re-attach click listeners for freshly rendered rows
+        wl.querySelectorAll(".wrow").forEach((r: Element) => (r as HTMLElement).addEventListener("click", () => {
+          const sym = (r as HTMLElement).dataset.sym;
+          if (sym && typeof (window as unknown as Record<string, unknown>).pickRow === "function") {
+            ((window as unknown as Record<string, unknown>).pickRow as (s: string) => void)(sym);
+          }
+        }));
+      }
+    }
     const symInput = $("#t-sym"); if (symInput) { symInput.value = (selected.symbol || "") + "　" + (selected.name || ""); symInput.setAttribute("value", symInput.value); }
     const priceInput = $("#t-price"); if (priceInput && selected.price != null) { priceInput.value = Number(selected.price).toFixed(2); priceInput.setAttribute("value", priceInput.value); }
     applyPaperPrefill(selected);
@@ -1063,7 +1087,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
         const max = Math.max(1, ...asks.map((x) => x[1]), ...bids.map((x) => x[1]));
         depth.innerHTML = asks.map(([p,q]) => '<div class="row"><span class="px up">'+price(p)+'</span><div class="bar"><i class="ask" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("") + '<div class="row last"><span class="px">'+price(selected.price)+'</span><span class="qty" style="text-align:center;color:var(--fg-3)">成交</span><span class="qty">—</span></div>' + bids.map(([p,q]) => '<div class="row"><span class="px dn">'+price(p)+'</span><div class="bar"><i class="bid" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("");
       } else {
-        depth.innerHTML = '<div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">五檔：等待 KGI 連線</div>';
+        depth.innerHTML = '<div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">目前為非交易時段，盤口暫不更新（次日 09:00 重新連線）</div>';
       }
     }
     // BUG_006 — tape: 最近成交 ticks
