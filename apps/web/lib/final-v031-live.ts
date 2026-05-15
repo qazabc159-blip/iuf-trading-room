@@ -465,11 +465,14 @@ export function finalV031HydrationScript(payload: unknown) {
 
   return `<script data-iuf-final-v031-live>
 window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
+window.__IUF_FINAL_V031_API_BASE__=${JSON.stringify(clientApiBase)};
+window.__IUF_FINAL_V031_API_PROXY__="/api/ui-final-v031/backend?path=";
+window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
 (() => {
   let live = window.__IUF_FINAL_V031_LIVE__;
   if (!live || !live.screen) return;
-  const apiBase = ${JSON.stringify(clientApiBase)};
-  const workspaceSlug = ${JSON.stringify(workspaceSlug)};
+  const apiProxy = window.__IUF_FINAL_V031_API_PROXY__;
+  const workspaceSlug = window.__IUF_FINAL_V031_WORKSPACE_SLUG__;
   const $ = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
@@ -477,23 +480,28 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
   const price = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? "—" : (Number(value) >= 1000 ? Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 1 }) : Number(value).toFixed(2));
   const cls = (status) => status === "ok" || status === "allow" ? "ok" : status === "block" || status === "bad" ? "bad" : "warn";
   const unwrap = (json) => json && typeof json === "object" && Object.prototype.hasOwnProperty.call(json, "data") ? json.data : json;
-  const apiGet = async (path) => {
-    if (!apiBase) throw new Error("api_base_unconfigured");
-    const res = await fetch(apiBase + path, {
+  const apiUrl = (path) => apiProxy + encodeURIComponent(path);
+  const apiFetch = async (path, init={}) => fetch(apiUrl(path), {
+    credentials: "include",
+    cache: "no-store",
+    ...init,
+    headers: { "Content-Type": "application/json", "x-workspace-slug": workspaceSlug, ...(init.headers || {}) }
+  });
+  const apiGetRaw = async (path) => {
+    const res = await apiFetch(path, {
       credentials: "include",
       cache: "no-store",
       headers: { "Content-Type": "application/json", "x-workspace-slug": workspaceSlug }
     });
     if (!res.ok) throw new Error("api_" + res.status);
-    return unwrap(await res.json());
+    return await res.json();
+  };
+  const apiGet = async (path) => {
+    return unwrap(await apiGetRaw(path));
   };
   const apiPost = async (path, body) => {
-    if (!apiBase) throw new Error("api_base_unconfigured");
-    const res = await fetch(apiBase + path, {
+    const res = await apiFetch(path, {
       method: "POST",
-      credentials: "include",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json", "x-workspace-slug": workspaceSlug },
       body: JSON.stringify(body)
     });
     const json = await res.json().catch(() => null);
@@ -715,7 +723,7 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
   async function clientPaperPayload() {
     const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
-      soft(fetch(apiBase + "/api/v1/paper/portfolio", { credentials:"include", cache:"no-store", headers:{ "Content-Type":"application/json", "x-workspace-slug":workspaceSlug } }).then((r) => r.json().then((j) => j))),
+      soft(apiGetRaw("/api/v1/paper/portfolio")),
       soft(apiGet("/api/v1/paper/fills")),
       soft(apiGet("/api/v1/paper/orders")),
       soft(apiGet("/api/v1/portfolio/kgi/positions")),
@@ -1043,19 +1051,19 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
         const groupEl = wl.querySelector(".group");
         if (groupEl) groupEl.textContent = "ideas pool 整備中，預設展示熱門 5 檔";
         // Re-attach click listeners for existing SSR rows
-        wl.querySelectorAll(".wrow").forEach((r: Element) => (r as HTMLElement).addEventListener("click", () => {
-          const sym = (r as HTMLElement).dataset.sym;
-          if (sym && typeof (window as unknown as Record<string, unknown>).pickRow === "function") {
-            ((window as unknown as Record<string, unknown>).pickRow as (s: string) => void)(sym);
+        wl.querySelectorAll(".wrow").forEach((r) => r.addEventListener("click", () => {
+          const sym = r.dataset.sym;
+          if (sym && typeof window.pickRow === "function") {
+            window.pickRow(sym);
           }
         }));
       } else {
         wl.innerHTML = '<div class="group">'+esc(wlItems.length)+' 檔自選 / 候選</div>' + wlItems.map((item, i) => '<div class="wrow '+(i===0?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
         // Re-attach click listeners for freshly rendered rows
-        wl.querySelectorAll(".wrow").forEach((r: Element) => (r as HTMLElement).addEventListener("click", () => {
-          const sym = (r as HTMLElement).dataset.sym;
-          if (sym && typeof (window as unknown as Record<string, unknown>).pickRow === "function") {
-            ((window as unknown as Record<string, unknown>).pickRow as (s: string) => void)(sym);
+        wl.querySelectorAll(".wrow").forEach((r) => r.addEventListener("click", () => {
+          const sym = r.dataset.sym;
+          if (sym && typeof window.pickRow === "function") {
+            window.pickRow(sym);
           }
         }));
       }

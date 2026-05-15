@@ -736,12 +736,38 @@ wrap.addEventListener('mouseleave',()=>{cross.style.display='none';tip.style.dis
 // initial chart — deferred to after hydration paints real OHLCV;
 // drawChart will be called by hydratePaper() once real data arrives.
 // Call here only if no hydration script is present (standalone HTML preview).
-if(!window.__IUF_FINAL_V031_LIVE__){drawChart('2330');}
+if(!window.__IUF_FINAL_V031_LIVE__&&!window.__IUF_FINAL_V031_EMBEDDED__){drawChart('2330');}
 updPreview();
 
 /* ---------- timeframe ---------- */
-const TF_PERIOD_MAP={'1m':'1d','5m':'1d','15m':'5d','1d':'60d','1w':'180d'};
-const TF_INTERVAL_MAP={'1m':'1m','5m':'5m','15m':'15m','1d':'1d','1w':'1w'};
+const TF_API_INTERVAL_MAP={'1m':'1m','5m':'1m','15m':'1m','1d':'1d','1w':'1w'};
+const TF_AGG_MINUTES={'5m':5,'15m':15};
+function ohlcvNum(v){const n=Number(v);return Number.isFinite(n)?n:null}
+function normalizeOhlcvBars(rawBars){
+  return rawBars.map(bar=>{
+    const o=ohlcvNum(bar.open),h=ohlcvNum(bar.high),l=ohlcvNum(bar.low),c=ohlcvNum(bar.close??bar.open),v=ohlcvNum(bar.volume??0)??0;
+    if(o==null||h==null||l==null||c==null)return null;
+    return {o,h,l,c,v,date:bar.date??bar.ts??bar.timestamp??bar.time??''};
+  }).filter(Boolean);
+}
+function aggregateMinuteBars(bars,minutes){
+  if(!minutes||minutes<=1)return bars;
+  const out=[];let cur=null,curKey=null;
+  bars.forEach((bar,i)=>{
+    const parsed=Date.parse(bar.date);
+    const key=Number.isFinite(parsed)?Math.floor(parsed/(minutes*60000)):Math.floor(i/minutes);
+    if(curKey!==key){
+      if(cur)out.push(cur);
+      cur={o:bar.o,h:bar.h,l:bar.l,c:bar.c,v:bar.v,date:bar.date};
+      curKey=key;
+      return;
+    }
+    cur.h=Math.max(cur.h,bar.h);cur.l=Math.min(cur.l,bar.l);cur.c=bar.c;cur.v+=bar.v;
+    if(bar.date)cur.date=bar.date;
+  });
+  if(cur)out.push(cur);
+  return out;
+}
 document.querySelectorAll('#tfseg button').forEach(b=>b.addEventListener('click',async()=>{
   document.querySelectorAll('#tfseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
   const tf=b.dataset.tf||'1d';
@@ -749,26 +775,21 @@ document.querySelectorAll('#tfseg button').forEach(b=>b.addEventListener('click'
   // Re-fetch OHLCV for selected timeframe via live API
   try {
     const live=window.__IUF_FINAL_V031_LIVE__;
-    const companies=live&&live._companies;
-    let companyId=live&&live._companyId;
-    if(!companyId&&companies&&companies.length){
-      const found=companies.find(c=>String(c.ticker||'').toUpperCase()===String(sym).toUpperCase());
-      if(found)companyId=found.id;
-    }
-    if(!companyId){
-      // fallback: re-fetch from companies if needed
-      const cs=await fetch('/api/v1/companies',{credentials:'include',cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
-      if(cs){const arr=Array.isArray(cs)?cs:(cs.data||[]);const f=arr.find(c=>String(c.ticker||'').toUpperCase()===String(sym).toUpperCase());if(f)companyId=f.id;}
-    }
-    if(companyId){
-      const interval=TF_INTERVAL_MAP[tf]||'1d';
-      const url='/api/v1/companies/'+encodeURIComponent(companyId)+'/ohlcv?interval='+interval;
-      const raw=await fetch(url,{credentials:'include',cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    const companyKey=(live&&live._companyId)||sym;
+    if(companyKey){
+      const apiProxy=window.__IUF_FINAL_V031_API_PROXY__||'/api/ui-final-v031/backend?path=';
+      const workspaceSlug=window.__IUF_FINAL_V031_WORKSPACE_SLUG__||'primary-desk';
+      const interval=TF_API_INTERVAL_MAP[tf]||'1d';
+      const path='/api/v1/companies/'+encodeURIComponent(companyKey)+'/ohlcv?interval='+interval;
+      const url=apiProxy+encodeURIComponent(path);
+      const raw=await fetch(url,{credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json','x-workspace-slug':workspaceSlug}}).then(r=>r.ok?r.json():null).catch(()=>null);
       const bars=Array.isArray(raw)?raw:(raw&&raw.data?raw.data:[]);
       if(bars.length){
-        const chartBars=bars.map(bar=>({o:bar.open,h:bar.high,l:bar.low,c:bar.close??bar.open,v:bar.volume??0,date:bar.date??bar.ts??''}));
-        window.__IUF_OHLCV_DATA__={sym,bars:chartBars};
-        drawChart(sym);
+        const chartBars=aggregateMinuteBars(normalizeOhlcvBars(bars),TF_AGG_MINUTES[tf]||0);
+        if(chartBars.length){
+          window.__IUF_OHLCV_DATA__={sym,bars:chartBars};
+          drawChart(sym);
+        }
       }
     }
   } catch(e){ /* silently keep existing chart */ }
@@ -786,10 +807,10 @@ document.getElementById('submit-btn').addEventListener('click',()=>{
 
 /* ---------- command palette ---------- */
 const cmd=document.getElementById('cmd'),cscrim=document.getElementById('cmd-scrim'),cinput=document.getElementById('cmd-input');
-function openCmd(){cmd.classList.add('on');cscrim.classList.add('on');setTimeout(()=>cinput.focus(),50)}
-function closeCmd(){cmd.classList.remove('on');cscrim.classList.remove('on');cinput.value=''}
-document.getElementById('cmdopen').addEventListener('click',openCmd);
-cscrim.addEventListener('click',closeCmd);
+function openCmd(){if(!cmd||!cscrim||!cinput)return;cmd.classList.add('on');cscrim.classList.add('on');setTimeout(()=>cinput.focus(),50)}
+function closeCmd(){if(!cmd||!cscrim||!cinput)return;cmd.classList.remove('on');cscrim.classList.remove('on');cinput.value=''}
+document.getElementById('cmdopen')?.addEventListener('click',openCmd);
+cscrim?.addEventListener('click',closeCmd);
 document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openCmd();}
   if(e.key==='Escape'){closeCmd();}
@@ -803,7 +824,7 @@ document.querySelectorAll('.cmd .item').forEach(it=>it.addEventListener('click',
   else if(a==='do:tf1d')document.querySelector('#tfseg [data-tf="1d"]').click();
   else if(a==='do:ledger-events')document.querySelector('.lhead .tb[data-lt="events"]').click();
 }));
-cinput.addEventListener('input',()=>{
+cinput?.addEventListener('input',()=>{
   const q=cinput.value.trim().toLowerCase();
   document.querySelectorAll('.cmd .item').forEach(it=>{
     it.style.display=q===''||it.textContent.toLowerCase().includes(q)?'flex':'none';
