@@ -5,6 +5,7 @@ import { ArrowRight, Database, Gauge, ShieldAlert, Target } from "lucide-react";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getRecommendationsToday, type RecommendationListResponse } from "@/lib/api";
 import { RecommendationFeedbackActions } from "./RecommendationFeedbackActions";
+import { RecommendationHandoffLink } from "./RecommendationHandoffLink";
 
 export const dynamic = "force-dynamic";
 
@@ -271,10 +272,10 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
         </div>
       </details>
 
-      <Link className="_rec-prefill" href={prefillHref}>
+      <RecommendationHandoffLink href={prefillHref} recommendationId={rec.recommendationId}>
         <ArrowRight size={16} strokeWidth={1.9} />
         一鍵帶到交易室
-      </Link>
+      </RecommendationHandoffLink>
       <RecommendationFeedbackActions recommendationId={rec.recommendationId} />
     </article>
   );
