@@ -14223,6 +14223,51 @@ app.post("/api/v1/notifications/:id/mark-read", async (c) => {
 });
 
 // =============================================================================
+// ADMIN: OPENALICE ADVERSARIAL WARNS (2026-05-15)
+// GET /api/v1/admin/openalice/adversarial-warns
+//   Owner-only. Returns recent adversarial reviewer warn events (severityScore >= 7)
+//   from audit_logs. Enables operators to monitor suppressed-but-logged high-severity
+//   adversarial flags without grepping Railway logs.
+//
+//   Query params:
+//     from  — ISO date string, lower bound (default: 7 days ago)
+//     to    — ISO date string, upper bound (default: now)
+//     limit — max rows (default 50, max 200)
+// =============================================================================
+
+app.get("/api/v1/admin/openalice/adversarial-warns", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const nowMs = Date.now();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+  const fromRaw = c.req.query("from");
+  const toRaw = c.req.query("to");
+  const limitRaw = c.req.query("limit");
+
+  const fromDate = fromRaw ? new Date(fromRaw) : new Date(nowMs - sevenDaysMs);
+  const toDate = toRaw ? new Date(toRaw) : new Date(nowMs);
+  const limitNum = Math.min(200, Math.max(1, Number.isFinite(Number(limitRaw)) ? Number(limitRaw) : 50));
+
+  if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+    return c.json({ error: "INVALID_DATE_PARAM" }, 400);
+  }
+
+  const { listAdversarialWarnEvents } = await import("./admin-openalice-adversarial-warns.js");
+  const warns = await listAdversarialWarnEvents({
+    workspaceId: session.workspace.id,
+    from: fromDate,
+    to: toDate,
+    limit: limitNum,
+  });
+
+  return c.json({ warns, total: warns.length });
+});
+
+// =============================================================================
 // QUANT STRATEGY SUBSCRIBE (2026-05-15)
 // POST /api/v1/quant-strategies/:id/subscribe
 //   Owner-only. sim_only forced true server-side.
@@ -14273,7 +14318,11 @@ app.post("/api/v1/quant-strategies/:id/subscribe", async (c) => {
   }
 
   return c.json(
-    { subscription_id: result.subscription_id, status: result.status },
+    {
+      subscription_id: result.subscription_id,
+      status: result.status,
+      ...(result.warning ? { warning: result.warning } : {}),
+    },
     201
   );
 });

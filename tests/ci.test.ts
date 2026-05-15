@@ -176,10 +176,15 @@ import {
   listMyQuantSubscriptions,
   VALID_QUANT_STRATEGY_IDS,
   STRATEGY_ID_ALIASES,
+  STRATEGY_READINESS,
+  BACKTESTED_RAW_WARNING,
   resolveStrategyId,
   CAPITAL_MIN_TWD,
   CAPITAL_MAX_TWD,
 } from "../apps/api/src/quant-strategy-subscribe.ts";
+import {
+  listAdversarialWarnEvents,
+} from "../apps/api/src/admin-openalice-adversarial-warns.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -11004,6 +11009,81 @@ test("QS-ALIAS-9: STRATEGY_ID_ALIASES all targets are valid canonical ids", () =
       `QS-ALIAS-9: alias "${alias}" → "${canonical}" must resolve to a valid canonical id`
     );
   }
+});
+
+// =============================================================================
+// QS-READINESS: strategy_003 readiness warning tests (Pete round 5 item 3)
+// =============================================================================
+
+test("QS-READINESS-1: strategy_003 subscribe returns warning field (backtested_raw)", async () => {
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "strategy_003",
+    capitalTwd: 100_000,
+    executionMode: "paper",
+  });
+  assert.ok(result.ok, "QS-READINESS-1: strategy_003 subscribe must succeed (not rejected)");
+  if (!result.ok) return;
+  assert.equal(result.status, "active", "QS-READINESS-1: status must be active");
+  assert.ok(
+    typeof result.warning === "string" && result.warning.length > 0,
+    "QS-READINESS-1: strategy_003 must return a warning field because it is backtested_raw"
+  );
+  assert.ok(
+    result.warning === BACKTESTED_RAW_WARNING,
+    "QS-READINESS-1: warning text must match BACKTESTED_RAW_WARNING constant"
+  );
+});
+
+test("QS-READINESS-2: cont_liq_v36 subscribe has no warning field (paper_ready)", async () => {
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "cont_liq_v36",
+    capitalTwd: 100_000,
+    executionMode: "paper",
+  });
+  assert.ok(result.ok, "QS-READINESS-2: cont_liq_v36 subscribe must succeed");
+  if (!result.ok) return;
+  assert.equal(result.warning, undefined, "QS-READINESS-2: cont_liq_v36 must have no warning (paper_ready)");
+});
+
+test("QS-READINESS-3: STRATEGY_READINESS map has entries for all VALID_QUANT_STRATEGY_IDS", () => {
+  for (const id of VALID_QUANT_STRATEGY_IDS) {
+    assert.ok(
+      id in STRATEGY_READINESS,
+      `QS-READINESS-3: ${id} must have a readiness entry`
+    );
+  }
+});
+
+test("QS-READINESS-4: rs_20_60 alias (→ strategy_003) also returns warning field", async () => {
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "rs_20_60_low_drawdown__h20__top5",
+    capitalTwd: 100_000,
+    executionMode: "paper",
+  });
+  assert.ok(result.ok, "QS-READINESS-4: rs_20_60 alias must resolve and succeed");
+  if (!result.ok) return;
+  assert.ok(
+    typeof result.warning === "string" && result.warning.length > 0,
+    "QS-READINESS-4: rs_20_60 alias → strategy_003 (backtested_raw) must carry warning"
+  );
+});
+
+// =============================================================================
+// ADVERSARIAL-WARNS: admin endpoint unit tests (Pete round 5 item 2)
+// =============================================================================
+
+test("ADVERSARIAL-WARNS-1: listAdversarialWarnEvents returns empty array in non-DB mode", async () => {
+  const result = await listAdversarialWarnEvents({
+    workspaceId: "ws-test",
+    from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    to: new Date(),
+    limit: 50,
+  });
+  assert.ok(Array.isArray(result), "ADVERSARIAL-WARNS-1: must return an array");
+  assert.equal(result.length, 0, "ADVERSARIAL-WARNS-1: non-DB mode must return empty array");
 });
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
