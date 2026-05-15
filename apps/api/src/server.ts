@@ -13752,6 +13752,7 @@ app.get("/api/v1/companies/:ticker/coverage", async (c) => {
     supplyChain: brief.supplyChain,
     majorCustomers: brief.majorCustomers,
     majorSuppliers: brief.majorSuppliers,
+    wikilinks: brief.wikilinks ?? [],
   });
 });
 

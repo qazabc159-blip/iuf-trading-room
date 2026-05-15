@@ -48,6 +48,7 @@ export interface CompanyCoverageBrief {
   };
   majorCustomers: string[];
   majorSuppliers: string[];
+  wikilinks: string[];
   rawMarkdown: string;
 }
 
@@ -355,6 +356,18 @@ function parseSupplyChain(sectionBody: string): {
   };
 }
 
+/**
+ * Pure-tech tokens that appear as wikilinks in supply-chain context but are
+ * NOT company names.  These are false-positives from extractNamesFromLine when
+ * the source md uses [[TechToken]] inline rather than [[CompanyName]].
+ */
+const TECH_TOKEN_BLACKLIST = new Set([
+  "AI", "EUV", "CoWoS", "HBM", "GPU", "CPU", "DRAM", "NAND", "3D NAND",
+  "SoC", "TSMC", "5G", "Wi-Fi", "Bluetooth", "PCIe", "DDR5", "LPDDR5",
+  "OLED", "AMOLED", "LCD", "LED", "UV", "DUV", "ArF", "KrF",
+  "FinFET", "GAA", "N3", "N2", "N5", "N7", "N4",
+]);
+
 /** Full parse of a single md file */
 function parseCoverageMarkdown(
   ticker: string,
@@ -376,6 +389,15 @@ function parseCoverageMarkdown(
   const supplyChain = parseSupplyChain(supplyChainSection);
   const { customers, suppliers } = parseCustomersAndSuppliers(csSection);
 
+  // Filter out tech tokens that are not company names
+  const filterTech = (names: string[]) =>
+    names.filter((n) => !TECH_TOKEN_BLACKLIST.has(n));
+
+  // Collect all [[wikilink]] tokens from the entire document
+  const wikilinks = extractWikilinks(md).filter(
+    (t) => t !== companyName && t !== ticker
+  );
+
   return {
     ticker,
     companyName: companyName || ticker,
@@ -386,8 +408,9 @@ function parseCoverageMarkdown(
     enterpriseValue: rawEV || "N/A",
     businessOverview,
     supplyChain,
-    majorCustomers: customers,
-    majorSuppliers: suppliers,
+    majorCustomers: filterTech(customers),
+    majorSuppliers: filterTech(suppliers),
+    wikilinks,
     rawMarkdown: md,
   };
 }
