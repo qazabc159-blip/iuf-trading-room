@@ -28,6 +28,22 @@ const ACCOUNT_CAPABILITIES = [
   },
 ];
 
+function safeNextPath(value: string | null): string {
+  if (!value) return "/";
+
+  try {
+    const url = new URL(value, window.location.origin);
+    const isSameOrigin = url.origin === window.location.origin;
+    const isInternalPath = url.pathname.startsWith("/") && !url.pathname.startsWith("//");
+    const isAuthRoute = url.pathname === "/login" || url.pathname === "/register";
+
+    if (!isSameOrigin || !isInternalPath || isAuthRoute) return "/";
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return "/";
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -53,7 +69,7 @@ export default function LoginPage() {
         return;
       }
       if (remember) setAuthPresence();
-      router.push("/");
+      router.push(safeNextPath(new URLSearchParams(window.location.search).get("next")));
     } finally {
       setLoading(false);
     }

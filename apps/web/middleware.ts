@@ -77,7 +77,7 @@ export function middleware(request: NextRequest) {
 
   if (!hasSessionCookie) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("next", pathname);
+    loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
 
     const response = NextResponse.redirect(loginUrl);
     if (request.cookies.get(PRESENCE_COOKIE)?.value === "1") {
