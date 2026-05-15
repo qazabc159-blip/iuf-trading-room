@@ -1,15 +1,22 @@
 /**
- * Recommendation Orchestrator Store — v1 mock layer
+ * Recommendation Orchestrator Store — v2 real-data layer
  *
- * Day 1-2: Returns deterministic mock recommendations so frontend Codex can
- * integrate without waiting for real quant signal wiring (Day 3+).
+ * v1 (PR #469): mock skeleton.
+ * v2 (PR #???): Athena QuantCandidateSignal fixture + leaders + news synthesis.
  *
- * Day 3+ upgrade path: swap getMockRecommendations() body with real pipeline
- * that reads cont_liq_v36 + MAIN snapshots + news sentiment scores.
+ * Data sources:
+ *   1. Athena fixture  — IUF_QUANT_LAB/research/fixtures/quant_candidate_signal_cont_liq_v36_2026_05_14.json
+ *      Sibling-repo path with ATHENA_FIXTURE_PATH env var override.
+ *   2. Leaders         — GET /api/v1/market/leaders/twse (internal fetch)
+ *   3. News            — GET /api/v1/market-intel/announcements?limit=30 (internal fetch)
+ *
+ * Fallback: if fixture cannot be read → returns mock data with _mock=true flag.
  *
  * Lane: strategy backend (Jason). Do NOT import from broker/*, risk-engine, market-data.
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import type { StockRecommendation } from "@iuf-trading-room/contracts";
 
 // ---------------------------------------------------------------------------
@@ -43,13 +50,364 @@ export function _resetRecommendationFeedbackStore(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Mock recommendation generator
+// Athena fixture types
+// ---------------------------------------------------------------------------
+type AthenaCandidateSignal = {
+  ticker: string;
+  companyName: string;
+  quantRank: number;
+  quantScore: number;
+  strategySource: string;
+  regime: string;
+  gateStatus: "PASS" | "WATCH" | "FAIL";
+  expectedHoldingPeriod: string;
+  quantReason: string[];
+  riskFlags: string[];
+  dataQuality: {
+    backtestEvidence: string;
+    forwardObservation: string;
+    liquidity: string;
+  };
+  snapshotAt: string;
+};
+
+type AthenaFixture = {
+  schema: string;
+  schemaVersion: string;
+  producer: string;
+  producedAtTaipei: string;
+  snapshotAt: string;
+  strategySource: string;
+  signals: AthenaCandidateSignal[];
+};
+
+// ---------------------------------------------------------------------------
+// Fixture path resolution
+// ---------------------------------------------------------------------------
+const FIXTURE_FILENAME = "quant_candidate_signal_cont_liq_v36_2026_05_14.json";
+
+function resolveFixturePath(): string | null {
+  // 1. Env var override
+  const envPath = process.env["ATHENA_FIXTURE_PATH"];
+  if (envPath && fs.existsSync(envPath)) return envPath;
+
+  // 2. Sibling repo path (Windows dev machine)
+  const candidates = [
+    // Repo root is IUF_TRADING_ROOM_APP — sibling is IUF_QUANT_LAB
+    path.resolve(
+      import.meta.dirname ?? __dirname,
+      "../../../../..",              // → desktop/小楊機密/交易
+      "IUF_QUANT_LAB",
+      "research",
+      "fixtures",
+      FIXTURE_FILENAME
+    ),
+    // Alternative: env var for lab root
+    process.env["IUF_QUANT_LAB_PATH"]
+      ? path.join(process.env["IUF_QUANT_LAB_PATH"], "research", "fixtures", FIXTURE_FILENAME)
+      : null,
+  ].filter(Boolean) as string[];
+
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) return c;
+    } catch {
+      // ignore — path may be on unavailable drive in Railway
+    }
+  }
+  return null;
+}
+
+let _fixtureCache: AthenaFixture | null | "NOT_FOUND" = undefined as unknown as "NOT_FOUND";
+
+export function _resetAthenaFixtureCache(): void {
+  _fixtureCache = undefined as unknown as "NOT_FOUND";
+}
+
+function loadAthenaFixture(): AthenaFixture | null {
+  // Simple memo — fixture is static per deploy
+  if (_fixtureCache !== undefined) {
+    return _fixtureCache === "NOT_FOUND" ? null : _fixtureCache;
+  }
+  const fixturePath = resolveFixturePath();
+  if (!fixturePath) {
+    _fixtureCache = "NOT_FOUND";
+    return null;
+  }
+  try {
+    const raw = fs.readFileSync(fixturePath, "utf-8");
+    const parsed = JSON.parse(raw) as AthenaFixture;
+    _fixtureCache = parsed;
+    return parsed;
+  } catch {
+    _fixtureCache = "NOT_FOUND";
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Synthesis helpers
 // ---------------------------------------------------------------------------
 function todayTstDate(): string {
-  // Returns YYYY-MM-DD in TST (UTC+8)
   const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
   return now.toISOString().slice(0, 10);
 }
+
+type LeaderStock = {
+  symbol: string;
+  name: string;
+  last: number;
+  changePct: number;
+  volume: number;
+};
+
+type LeadersPayload = {
+  topGainers: LeaderStock[];
+  topLosers: LeaderStock[];
+  mostActive: LeaderStock[];
+  source?: string;
+  asOf?: string;
+};
+
+type IntelItem = {
+  id: string;
+  date: string;
+  title: string;
+  ticker?: string;
+  companyName?: string;
+  source?: string;
+};
+
+/**
+ * Internal HTTP fetch to a sibling endpoint.
+ * Only used during real synthesis; times out gracefully.
+ */
+async function fetchInternal<T>(url: string, cookie: string): Promise<T | null> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const res = await fetch(url, {
+      headers: { cookie },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+type ActionBucket = StockRecommendation["action"];
+
+function computeAction(
+  totalScore: number,
+  gateStatus: string,
+  hasMissingData: boolean
+): ActionBucket {
+  if (hasMissingData) return "資料不足暫不推薦";
+  if (gateStatus === "FAIL") return "高風險排除";
+  if (totalScore >= 80) return "今日首選";
+  if (totalScore >= 70) return "可布局";
+  if (totalScore >= 60) return "等回檔";
+  return "高風險排除";
+}
+
+function computeDataQualityPenalty(dq: AthenaCandidateSignal["dataQuality"]): number {
+  const vals = Object.values(dq);
+  const missingCount = vals.filter((v) => v === "MISSING").length;
+  const pendingCount = vals.filter((v) => v === "PENDING").length;
+  return missingCount * 0.15 + pendingCount * 0.05;
+}
+
+/**
+ * Core synthesis function — exported for testability.
+ */
+export function synthesizeFromFixture(
+  fixture: AthenaFixture,
+  leaders: LeadersPayload | null,
+  newsItems: IntelItem[]
+): StockRecommendation[] {
+  const date = todayTstDate();
+  const generatedAt = new Date().toISOString();
+
+  const allLeaderSymbols = new Set([
+    ...( leaders?.topGainers ?? []).map((s) => s.symbol),
+    ...(leaders?.topLosers ?? []).map((s) => s.symbol),
+    ...(leaders?.mostActive ?? []).map((s) => s.symbol),
+  ]);
+
+  const newsByTicker = new Map<string, string[]>();
+  for (const item of newsItems) {
+    if (!item.ticker) continue;
+    const existing = newsByTicker.get(item.ticker) ?? [];
+    existing.push(item.title);
+    newsByTicker.set(item.ticker, existing);
+  }
+
+  return fixture.signals.map((sig, idx) => {
+    const dqPenalty = computeDataQualityPenalty(sig.dataQuality);
+    const totalScore = Math.round(sig.quantScore * (1 - dqPenalty));
+    const hasMissingData = Object.values(sig.dataQuality).includes("MISSING");
+    const action = computeAction(totalScore, sig.gateStatus, hasMissingData);
+
+    const newsReasons = (newsByTicker.get(sig.ticker) ?? []).slice(0, 3);
+    const isLeader = allLeaderSymbols.has(sig.ticker);
+    const leaderNote = isLeader ? [`${sig.ticker} 出現於今日市場領漲/領跌名單`] : [];
+
+    // Source trail: always include fixture + conditional leaders/news
+    const sourceTrail: StockRecommendation["sourceTrail"] = [
+      {
+        type: "quant",
+        source: sig.strategySource,
+        timestamp: sig.snapshotAt,
+      },
+      {
+        type: "fixture",
+        source: "athena_cont_liq_v36_fixture_2026-05-14",
+        timestamp: fixture.producedAtTaipei,
+      },
+    ];
+    if (leaders?.asOf) {
+      sourceTrail.push({
+        type: "leaders",
+        source: `market_leaders_twse_${leaders.source ?? "twse"}`,
+        timestamp: leaders.asOf,
+      });
+    }
+    if (newsReasons.length > 0) {
+      sourceTrail.push({
+        type: "news",
+        source: "market_intel_announcements",
+        timestamp: generatedAt,
+      });
+    }
+
+    // Confidence: quant gate drives it, penalised by data quality
+    const rawConfidence = sig.gateStatus === "PASS" ? 0.78
+      : sig.gateStatus === "WATCH" ? 0.6
+      : 0.35;
+    const confidence = parseFloat((rawConfidence * (1 - dqPenalty)).toFixed(2));
+
+    // Direction: default neutral for WATCH; all are "研究候選" not live signals
+    const direction: StockRecommendation["direction"] = "中性";
+
+    // timeHorizon from fixture expectedHoldingPeriod
+    const horizonMap: Record<string, StockRecommendation["timeHorizon"]> = {
+      "波段": "波段",
+      "1-2週": "1-2週",
+      "當沖/隔日": "當沖/隔日",
+    };
+    const timeHorizon: StockRecommendation["timeHorizon"] =
+      horizonMap[sig.expectedHoldingPeriod] ?? "波段";
+
+    const rec: StockRecommendation = {
+      recommendationId: `rec_${sig.ticker}_${date.replace(/-/g, "")}`,
+      date,
+      generatedAt,
+      ticker: sig.ticker,
+      companyName: sig.companyName,
+      rank: idx + 1,
+      action,
+      direction,
+      timeHorizon,
+      confidence,
+      totalScore,
+      quant: {
+        score: sig.quantScore,
+        strategySource: sig.strategySource,
+        gateStatus: sig.gateStatus,
+        reason: sig.quantReason,
+      },
+      entryZone: {
+        primary: "參考技術面支撐帶",
+        reason: "cont_liq_v36 研究候選，未達進場建議，請參考個股技術面",
+      },
+      invalidation: {
+        price: null,
+        rule: "forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新",
+      },
+      targets: [
+        {
+          label: "TP1",
+          price: null,
+          reason: "待 forward observation 成熟後補充",
+        },
+      ],
+      positionSizing: {
+        suggestion: "小倉",
+        maxRiskPct: 1.0,
+      },
+      reasons: {
+        technical: [],
+        chip: [],
+        news: [...newsReasons, ...leaderNote],
+        theme: [],
+        quant: sig.quantReason,
+        macro: [],
+      },
+      risks: sig.riskFlags.map((f) => f.replace(/_/g, " ")),
+      dataQuality: {
+        quote: "OK",
+        kbar: "OK",
+        chip: "OK",
+        news: newsReasons.length > 0 ? "OK" : "STALE",
+        quant: sig.dataQuality.forwardObservation === "PENDING" ? "WEAK" : "OK",
+        confidencePenalty: parseFloat(dqPenalty.toFixed(2)),
+      },
+      sourceTrail,
+      generatedBy: "iuf_recommendation_orchestrator_v1",
+    };
+
+    return rec;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Public API — real data path
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns recommendations synthesised from Athena fixture + live market context.
+ * `internalBaseUrl` and `sessionCookie` are forwarded to internal API calls.
+ *
+ * If fixture cannot be loaded, falls back to mock data + sets `_isMock = true`.
+ */
+export async function getTodayRecommendations(opts: {
+  internalBaseUrl: string;
+  sessionCookie: string;
+}): Promise<{ items: StockRecommendation[]; isMock: boolean }> {
+  const fixture = loadAthenaFixture();
+  if (!fixture) {
+    return { items: getMockRecommendations(), isMock: true };
+  }
+
+  // Best-effort parallel fetch — both are allowed to degrade
+  const [leadersRaw, newsRaw] = await Promise.allSettled([
+    fetchInternal<LeadersPayload>(
+      `${opts.internalBaseUrl}/api/v1/market/leaders/twse`,
+      opts.sessionCookie
+    ),
+    fetchInternal<{ data: { items: IntelItem[] } }>(
+      `${opts.internalBaseUrl}/api/v1/market-intel/announcements?limit=30`,
+      opts.sessionCookie
+    ),
+  ]);
+
+  const leaders =
+    leadersRaw.status === "fulfilled" ? (leadersRaw.value ?? null) : null;
+  const newsItems: IntelItem[] =
+    newsRaw.status === "fulfilled"
+      ? (newsRaw.value?.data?.items ?? [])
+      : [];
+
+  const items = synthesizeFromFixture(fixture, leaders, newsItems);
+  return { items, isMock: false };
+}
+
+// ---------------------------------------------------------------------------
+// Mock fallback (v1 data preserved)
+// ---------------------------------------------------------------------------
 
 const MOCK_RECS: Omit<StockRecommendation, "date" | "generatedAt">[] = [
   {
@@ -230,10 +588,6 @@ const MOCK_RECS: Omit<StockRecommendation, "date" | "generatedAt">[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
 export function getMockRecommendations(): StockRecommendation[] {
   const date = todayTstDate();
   const generatedAt = new Date().toISOString();
@@ -245,4 +599,12 @@ export function getMockRecommendationById(
 ): StockRecommendation | null {
   const all = getMockRecommendations();
   return all.find((r) => r.recommendationId === id) ?? null;
+}
+
+/** Lookup by id across real or mock data (for GET /:id endpoint) */
+export function getRecommendationById(
+  items: StockRecommendation[],
+  id: string
+): StockRecommendation | null {
+  return items.find((r) => r.recommendationId === id) ?? null;
 }

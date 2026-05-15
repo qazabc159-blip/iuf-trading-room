@@ -13640,8 +13640,10 @@ app.post("/api/v1/auth/change-password", async (c) => {
 // =============================================================================
 
 import {
+  getTodayRecommendations,
   getMockRecommendations,
   getMockRecommendationById,
+  getRecommendationById,
   recordRecommendationFeedback,
 } from "./recommendation-store.js";
 import {
@@ -13651,6 +13653,34 @@ import {
 
 export { recommendationFeedbackBodySchema };
 
+// Per-request cache for recommendations (reused by /today and /:id in same request cycle)
+// Simple module-level TTL cache — 60s expiry so /:id can reuse today's list.
+let _recCache: { items: import("@iuf-trading-room/contracts").StockRecommendation[]; isMock: boolean; expiresAt: number } | null = null;
+
+async function getOrFetchRecommendations(
+  internalBaseUrl: string,
+  sessionCookie: string
+): Promise<{ items: import("@iuf-trading-room/contracts").StockRecommendation[]; isMock: boolean }> {
+  const now = Date.now();
+  if (_recCache && now < _recCache.expiresAt) {
+    return { items: _recCache.items, isMock: _recCache.isMock };
+  }
+  const result = await getTodayRecommendations({ internalBaseUrl, sessionCookie });
+  _recCache = { ...result, expiresAt: now + 60_000 };
+  return result;
+}
+
+/** Derive the internal base URL from the incoming request */
+function deriveInternalBaseUrl(reqUrl: string): string {
+  // In Railway/prod the API calls itself on the same host; use request URL origin.
+  try {
+    const url = new URL(reqUrl);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return "http://localhost:3000";
+  }
+}
+
 // GET /api/v1/recommendations/today
 app.get("/api/v1/recommendations/today", async (c) => {
   const session = c.get("session");
@@ -13658,15 +13688,20 @@ app.get("/api/v1/recommendations/today", async (c) => {
     return c.json({ error: "forbidden_role" }, 403);
   }
 
-  const items = getMockRecommendations();
+  const internalBase = deriveInternalBaseUrl(c.req.url);
+  const cookie = c.req.header("cookie") ?? "";
 
-  return c.json({
+  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie);
+
+  const response: Record<string, unknown> = {
     date: items[0]?.date ?? new Date().toISOString().slice(0, 10),
     generatedAt: new Date().toISOString(),
     count: items.length,
     items,
-    _mock: true,
-  });
+  };
+  if (isMock) response["_mock"] = true;
+
+  return c.json(response);
 });
 
 // GET /api/v1/recommendations/:id
@@ -13677,13 +13712,21 @@ app.get("/api/v1/recommendations/:id", async (c) => {
   }
 
   const { id } = c.req.param();
-  const rec = getMockRecommendationById(id);
+
+  // Try real list first, then mock fallback
+  const internalBase = deriveInternalBaseUrl(c.req.url);
+  const cookie = c.req.header("cookie") ?? "";
+  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie);
+
+  const rec = getRecommendationById(items, id) ?? getMockRecommendationById(id);
 
   if (!rec) {
     return c.json({ error: "not_found" }, 404);
   }
 
-  return c.json({ data: rec, _mock: true });
+  const response: Record<string, unknown> = { data: rec };
+  if (isMock) response["_mock"] = true;
+  return c.json(response);
 });
 
 // POST /api/v1/recommendations/:id/feedback
