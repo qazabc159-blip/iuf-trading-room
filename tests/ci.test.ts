@@ -10514,11 +10514,12 @@ test("SIM4: kgiSimOrderBodySchema — LOT quantityUnit accepted; market order pr
 });
 
 // =============================================================================
-// Recommendation Orchestrator — schema contract tests (REC1–REC5, REC10–REC11)
+// Recommendation Orchestrator — schema contract tests (REC1–REC5, REC10–REC12)
 // =============================================================================
 import {
   getMockRecommendations,
   getMockRecommendationById,
+  getRecommendationById,
   recordRecommendationFeedback,
   getRecommendationFeedback,
   _resetRecommendationFeedbackStore,
@@ -10705,6 +10706,81 @@ test("REC11: getMockRecommendations returns fallback when fixture missing", () =
     const parsed = stockRecommendationSchema.safeParse(item);
     assert.ok(parsed.success, `REC11: mock item ${item.ticker} must pass schema: ${parsed.success ? "" : JSON.stringify(parsed.error?.issues)}`);
   }
+});
+
+test("REC12: feedback resolver finds synthesized ID (iuf_rec_<ticker>_<date> format)", () => {
+  _resetRecommendationFeedbackStore();
+  _resetAthenaFixtureCache();
+
+  // Build minimal fixture matching real Athena fixture schema (4 candidates)
+  const fixtureData = {
+    schema: "QuantCandidateSignal",
+    schemaVersion: "1.0",
+    producer: "athena_cont_liq_v36",
+    producedAtTaipei: "2026-05-14T09:00:00+08:00",
+    snapshotAt: "2026-05-14T01:00:00.000Z",
+    strategySource: "cont_liq_v36",
+    signals: [
+      {
+        ticker: "3707",
+        companyName: "漢磊",
+        quantRank: 1,
+        quantScore: 82,
+        strategySource: "cont_liq_v36",
+        regime: "BULL",
+        gateStatus: "PASS" as const,
+        expectedHoldingPeriod: "波段",
+        quantReason: ["流動性篩選通過"],
+        riskFlags: [],
+        dataQuality: { backtestEvidence: "OK", forwardObservation: "OK", liquidity: "OK" },
+        snapshotAt: "2026-05-14T01:00:00.000Z",
+      },
+      {
+        ticker: "2426",
+        companyName: "鼎元",
+        quantRank: 2,
+        quantScore: 75,
+        strategySource: "cont_liq_v36",
+        regime: "BULL",
+        gateStatus: "PASS" as const,
+        expectedHoldingPeriod: "波段",
+        quantReason: ["RS 強"],
+        riskFlags: [],
+        dataQuality: { backtestEvidence: "OK", forwardObservation: "PENDING", liquidity: "OK" },
+        snapshotAt: "2026-05-14T01:00:00.000Z",
+      },
+    ],
+  } as Parameters<typeof synthesizeFromFixture>[0];
+
+  const synthesized = synthesizeFromFixture(fixtureData, null, []);
+  assert.ok(synthesized.length >= 1, "REC12: synthesized must have items");
+
+  // Verify ID format is rec_<ticker>_<date>, NOT iuf_rec_ prefix
+  const first = synthesized[0];
+  assert.ok(
+    /^rec_\d{4}_\d{8}$/.test(first.recommendationId),
+    `REC12: synthesized ID must match rec_<ticker>_<date> format, got: ${first.recommendationId}`
+  );
+
+  // Simulate feedback lookup: getRecommendationById must find by synthesized ID
+  const found = getRecommendationById(synthesized, first.recommendationId);
+  assert.ok(found !== null, `REC12: getRecommendationById must find synthesized ID ${first.recommendationId}`);
+  assert.equal(found!.ticker, first.ticker, "REC12: found rec ticker must match");
+
+  // Simulate feedback recording on the found rec
+  recordRecommendationFeedback({
+    recommendationId: found!.recommendationId,
+    userId: "test-owner",
+    reaction: "like",
+    recordedAt: new Date().toISOString(),
+  });
+  const fb = getRecommendationFeedback(found!.recommendationId);
+  assert.equal(fb.length, 1, "REC12: feedback must be stored");
+  assert.equal(fb[0].reaction, "like", "REC12: feedback reaction must match");
+
+  // Verify getRecommendationById on empty list returns null (simulates 404 after cache miss)
+  const notFound = getRecommendationById([], first.recommendationId);
+  assert.equal(notFound, null, "REC12: getRecommendationById on empty list returns null");
 });
 
 // =============================================================================
