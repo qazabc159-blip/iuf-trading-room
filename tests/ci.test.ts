@@ -175,6 +175,8 @@ import {
   subscribeQuantStrategy,
   listMyQuantSubscriptions,
   VALID_QUANT_STRATEGY_IDS,
+  STRATEGY_ID_ALIASES,
+  resolveStrategyId,
   CAPITAL_MIN_TWD,
   CAPITAL_MAX_TWD,
 } from "../apps/api/src/quant-strategy-subscribe.ts";
@@ -10913,6 +10915,95 @@ test("QS-SUB-bonus: VALID_QUANT_STRATEGY_IDS contains expected strategies", () =
   assert.ok(VALID_QUANT_STRATEGY_IDS.has("cont_liq_v36"), "QS-SUB-bonus: cont_liq_v36 must be valid");
   assert.ok(VALID_QUANT_STRATEGY_IDS.has("strategy_002"), "QS-SUB-bonus: strategy_002 must be valid");
   assert.ok(!VALID_QUANT_STRATEGY_IDS.has("MAIN"), "QS-SUB-bonus: MAIN is not a direct strategy ID");
+});
+
+// =============================================================================
+// QS-ALIAS: resolveStrategyId alias map tests
+// =============================================================================
+
+test("QS-ALIAS-1: resolveStrategyId returns canonical id unchanged", () => {
+  assert.equal(resolveStrategyId("cont_liq_v36"), "cont_liq_v36", "QS-ALIAS-1: canonical id must pass through");
+  assert.equal(resolveStrategyId("strategy_002"), "strategy_002", "QS-ALIAS-1: canonical id must pass through");
+  assert.equal(resolveStrategyId("strategy_003"), "strategy_003", "QS-ALIAS-1: canonical id must pass through");
+});
+
+test("QS-ALIAS-2: resolveStrategyId maps MAIN_execution_rank_buffer_top20 → strategy_002", () => {
+  assert.equal(
+    resolveStrategyId("MAIN_execution_rank_buffer_top20"),
+    "strategy_002",
+    "QS-ALIAS-2: MAIN display name must resolve to strategy_002"
+  );
+});
+
+test("QS-ALIAS-3: resolveStrategyId maps long cont_liq name → cont_liq_v36", () => {
+  assert.equal(
+    resolveStrategyId("cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25"),
+    "cont_liq_v36",
+    "QS-ALIAS-3: long Lab name must resolve to cont_liq_v36"
+  );
+});
+
+test("QS-ALIAS-4: resolveStrategyId maps rs_20_60 long name → strategy_003", () => {
+  assert.equal(
+    resolveStrategyId("rs_20_60_low_drawdown__h20__top5"),
+    "strategy_003",
+    "QS-ALIAS-4: rs_20_60 lab name must resolve to strategy_003"
+  );
+});
+
+test("QS-ALIAS-5: resolveStrategyId maps frontend card ids correctly", () => {
+  assert.equal(
+    resolveStrategyId("class5_revenue_momentum"),
+    "strategy_002",
+    "QS-ALIAS-5: class5_revenue_momentum must resolve to strategy_002"
+  );
+  assert.equal(
+    resolveStrategyId("family_c_sbl_overlay"),
+    "strategy_003",
+    "QS-ALIAS-5: family_c_sbl_overlay must resolve to strategy_003"
+  );
+});
+
+test("QS-ALIAS-6: resolveStrategyId returns unknown id unchanged (will fail whitelist)", () => {
+  const unknown = "some_totally_unknown_strategy";
+  assert.equal(
+    resolveStrategyId(unknown),
+    unknown,
+    "QS-ALIAS-6: unknown id must pass through unchanged to fail whitelist"
+  );
+});
+
+test("QS-ALIAS-7: subscribeQuantStrategy accepts MAIN_execution_rank_buffer_top20 via alias", async () => {
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "MAIN_execution_rank_buffer_top20",
+    capitalTwd: 100_000,
+    executionMode: "paper",
+  });
+  assert.ok(result.ok, "QS-ALIAS-7: alias strategyId must resolve and succeed");
+  if (!result.ok) return;
+  assert.equal(result.status, "active", "QS-ALIAS-7: status must be active");
+});
+
+test("QS-ALIAS-8: subscribeQuantStrategy accepts cont_liquidity long form via alias", async () => {
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+    capitalTwd: 100_000,
+    executionMode: "paper",
+  });
+  assert.ok(result.ok, "QS-ALIAS-8: long cont_liq name must resolve via alias");
+  if (!result.ok) return;
+  assert.equal(result.status, "active", "QS-ALIAS-8: status must be active");
+});
+
+test("QS-ALIAS-9: STRATEGY_ID_ALIASES all targets are valid canonical ids", () => {
+  for (const [alias, canonical] of Object.entries(STRATEGY_ID_ALIASES)) {
+    assert.ok(
+      VALID_QUANT_STRATEGY_IDS.has(canonical),
+      `QS-ALIAS-9: alias "${alias}" → "${canonical}" must resolve to a valid canonical id`
+    );
+  }
 });
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
