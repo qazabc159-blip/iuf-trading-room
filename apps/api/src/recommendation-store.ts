@@ -2,11 +2,13 @@
  * Recommendation Orchestrator Store — v2 real-data layer
  *
  * v1 (PR #469): mock skeleton.
- * v2 (PR #???): Athena QuantCandidateSignal fixture + leaders + news synthesis.
+ * v2 (PR #517): Athena QuantCandidateSignal fixture + leaders + news synthesis.
+ * v3 (PR #531): fixture resolved by latest-mtime glob — no hardcoded date in filename.
  *
  * Data sources:
- *   1. Athena fixture  — IUF_QUANT_LAB/research/fixtures/quant_candidate_signal_cont_liq_v36_2026_05_14.json
- *      Sibling-repo path with ATHENA_FIXTURE_PATH env var override.
+ *   1. Athena fixture  — quant_candidate_signal_cont_liq_v36_<date>.json (latest by mtime)
+ *      Searched in: ATHENA_FIXTURE_PATH (exact, env override) → bundled data dir →
+ *      sibling IUF_QUANT_LAB repo → IUF_QUANT_LAB_PATH env.
  *   2. Leaders         — GET /api/v1/market/leaders/twse (internal fetch)
  *   3. News            — GET /api/v1/market-intel/announcements?limit=30 (internal fetch)
  *
@@ -82,41 +84,81 @@ type AthenaFixture = {
 };
 
 // ---------------------------------------------------------------------------
-// Fixture path resolution
+// Fixture path resolution — latest-by-mtime glob (no hardcoded date)
 // ---------------------------------------------------------------------------
-const FIXTURE_FILENAME = "quant_candidate_signal_cont_liq_v36_2026_05_14.json";
+
+/**
+ * Glob prefix used to match Athena fixture files.
+ * Matches: quant_candidate_signal_cont_liq_v36_2026_05_14.json
+ *          quant_candidate_signal_cont_liq_v36_2026_05_15.json
+ *          ... etc.
+ */
+const FIXTURE_GLOB_PREFIX = "quant_candidate_signal_cont_liq_v36_";
+const FIXTURE_GLOB_SUFFIX = ".json";
+
+/**
+ * Scans `dir` for files matching the fixture glob pattern and returns the
+ * absolute path of the file with the greatest mtime (newest). Returns null
+ * if the directory is inaccessible or no matching file exists.
+ */
+function findLatestFixtureInDir(dir: string): string | null {
+  try {
+    const entries = fs.readdirSync(dir);
+    const matches = (entries as string[]).filter(
+      (name: string) => name.startsWith(FIXTURE_GLOB_PREFIX) && name.endsWith(FIXTURE_GLOB_SUFFIX)
+    );
+    if (matches.length === 0) return null;
+
+    // Sort by mtime descending — pick the newest file
+    let bestPath: string | null = null;
+    let bestMtime = -Infinity;
+    for (const name of matches) {
+      const fullPath = path.join(dir, name);
+      try {
+        const mtime = fs.statSync(fullPath).mtimeMs;
+        if (mtime > bestMtime) {
+          bestMtime = mtime;
+          bestPath = fullPath;
+        }
+      } catch {
+        // stat failed for this entry — skip
+      }
+    }
+    return bestPath;
+  } catch {
+    // readdirSync failed — dir not accessible (Railway, unavailable drive, etc.)
+    return null;
+  }
+}
 
 function resolveFixturePath(): string | null {
-  // 1. Env var override
+  // 1. Env var override — exact path, takes priority (no glob)
   const envPath = process.env["ATHENA_FIXTURE_PATH"];
   if (envPath && fs.existsSync(envPath)) return envPath;
 
-  // 2. Bundled into IUF repo (Railway deploy reads this)
+  // 2. Search candidate directories by latest-mtime glob
   const baseDir = import.meta.dirname ?? __dirname;
-  const candidates = [
-    // a) apps/api/data/athena-fixtures/ — bundled with IUF deploy
-    path.resolve(baseDir, "../data/athena-fixtures", FIXTURE_FILENAME),
-    // b) Sibling repo path (Windows dev machine — fallback)
+  const candidateDirs: (string | null)[] = [
+    // a) apps/api/data/athena-fixtures/ — bundled with IUF deploy (Railway)
+    path.resolve(baseDir, "../data/athena-fixtures"),
+    // b) Sibling repo path (Windows dev machine)
     path.resolve(
       baseDir,
       "../../../../..",              // → desktop/小楊機密/交易
       "IUF_QUANT_LAB",
       "research",
-      "fixtures",
-      FIXTURE_FILENAME
+      "fixtures"
     ),
-    // c) Alternative: env var for lab root
+    // c) IUF_QUANT_LAB_PATH env var (CI / custom lab root)
     process.env["IUF_QUANT_LAB_PATH"]
-      ? path.join(process.env["IUF_QUANT_LAB_PATH"], "research", "fixtures", FIXTURE_FILENAME)
+      ? path.join(process.env["IUF_QUANT_LAB_PATH"], "research", "fixtures")
       : null,
-  ].filter(Boolean) as string[];
+  ];
 
-  for (const c of candidates) {
-    try {
-      if (fs.existsSync(c)) return c;
-    } catch {
-      // ignore — path may be on unavailable drive in Railway
-    }
+  for (const dir of candidateDirs) {
+    if (!dir) continue;
+    const found = findLatestFixtureInDir(dir);
+    if (found) return found;
   }
   return null;
 }
@@ -267,7 +309,7 @@ export function synthesizeFromFixture(
       },
       {
         type: "fixture",
-        source: "athena_cont_liq_v36_fixture_2026-05-14",
+        source: `athena_cont_liq_v36_fixture_${fixture.snapshotAt.slice(0, 10)}`,
         timestamp: fixture.producedAtTaipei,
       },
     ];
