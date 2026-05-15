@@ -171,6 +171,13 @@ import {
   marketClose1330TodayTST,
   _resetToggleModeStore
 } from "../apps/api/src/strategy-toggle-mode.ts";
+import {
+  subscribeQuantStrategy,
+  listMyQuantSubscriptions,
+  VALID_QUANT_STRATEGY_IDS,
+  CAPITAL_MIN_TWD,
+  CAPITAL_MAX_TWD,
+} from "../apps/api/src/quant-strategy-subscribe.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -10825,6 +10832,87 @@ test("PWD5: updateUserPassword is exported from auth-store (DB integration skipp
   // Verify the function is exported and has expected signature.
   // Actual DB mutation is tested in smoke / integration tests.
   assert.equal(typeof updateUserPassword, "function", "PWD5: updateUserPassword is a function");
+});
+
+// =============================================================================
+// QS-SUB: quant-strategy-subscribe unit tests
+// =============================================================================
+
+// Minimal mock session for unit tests (no DB used)
+const _mockQsSession = {
+  user: { id: "user-qs-test-01", role: "Owner" as const, email: "qs@test.com" },
+  workspace: { id: "ws-qs-test-01", slug: "test" },
+} as unknown as Parameters<typeof subscribeQuantStrategy>[0]["session"];
+
+test("QS-SUB-1: valid subscribe returns 201 with subscription_id and status=active", async () => {
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "cont_liq_v36",
+    capitalTwd: 200_000,
+    executionMode: "paper",
+  });
+  assert.ok(result.ok, "QS-SUB-1: result.ok must be true");
+  if (!result.ok) return;
+  assert.equal(result.status, "active", "QS-SUB-1: status must be 'active'");
+  assert.ok(
+    typeof result.subscription_id === "string" && result.subscription_id.length > 0,
+    "QS-SUB-1: subscription_id must be a non-empty string (UUID)"
+  );
+  // UUID format check
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  assert.ok(uuidRe.test(result.subscription_id), "QS-SUB-1: subscription_id must be a valid UUID");
+});
+
+test("QS-SUB-2: capital below 50k returns CAPITAL_BELOW_MIN 400", async () => {
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "cont_liq_v36",
+    capitalTwd: CAPITAL_MIN_TWD - 1,
+    executionMode: "paper",
+  });
+  assert.ok(!result.ok, "QS-SUB-2: result.ok must be false");
+  if (result.ok) return;
+  assert.equal(result.error, "CAPITAL_BELOW_MIN", "QS-SUB-2: error code must be CAPITAL_BELOW_MIN");
+  assert.equal(result.http_status, 400, "QS-SUB-2: http_status must be 400");
+});
+
+test("QS-SUB-3: capital above 1M returns CAPITAL_EXCEEDED_CAP 400", async () => {
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "cont_liq_v36",
+    capitalTwd: CAPITAL_MAX_TWD + 1,
+    executionMode: "paper",
+  });
+  assert.ok(!result.ok, "QS-SUB-3: result.ok must be false");
+  if (result.ok) return;
+  assert.equal(result.error, "CAPITAL_EXCEEDED_CAP", "QS-SUB-3: error code must be CAPITAL_EXCEEDED_CAP");
+  assert.equal(result.http_status, 400, "QS-SUB-3: http_status must be 400");
+});
+
+test("QS-SUB-4: non-existent strategy returns STRATEGY_NOT_FOUND 404", async () => {
+  const result = await subscribeQuantStrategy({
+    session: _mockQsSession,
+    strategyId: "strategy_does_not_exist",
+    capitalTwd: 100_000,
+    executionMode: "paper",
+  });
+  assert.ok(!result.ok, "QS-SUB-4: result.ok must be false");
+  if (result.ok) return;
+  assert.equal(result.error, "STRATEGY_NOT_FOUND", "QS-SUB-4: error code must be STRATEGY_NOT_FOUND");
+  assert.equal(result.http_status, 404, "QS-SUB-4: http_status must be 404");
+});
+
+test("QS-SUB-5: listMyQuantSubscriptions returns empty array in non-DB mode", async () => {
+  // isDatabaseMode() returns false in CI (no DB), so result should always be []
+  const items = await listMyQuantSubscriptions({ session: _mockQsSession });
+  assert.ok(Array.isArray(items), "QS-SUB-5: must return an array");
+  assert.equal(items.length, 0, "QS-SUB-5: in non-DB mode result must be empty");
+});
+
+test("QS-SUB-bonus: VALID_QUANT_STRATEGY_IDS contains expected strategies", () => {
+  assert.ok(VALID_QUANT_STRATEGY_IDS.has("cont_liq_v36"), "QS-SUB-bonus: cont_liq_v36 must be valid");
+  assert.ok(VALID_QUANT_STRATEGY_IDS.has("strategy_002"), "QS-SUB-bonus: strategy_002 must be valid");
+  assert.ok(!VALID_QUANT_STRATEGY_IDS.has("MAIN"), "QS-SUB-bonus: MAIN is not a direct strategy ID");
 });
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
