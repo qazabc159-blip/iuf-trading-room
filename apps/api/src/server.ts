@@ -13920,29 +13920,214 @@ app.get("/api/v1/themes/wiki/:token/companies", async (c) => {
 });
 
 // =============================================================================
-// NOTIFICATIONS STUB (2026-05-15 Bruce P1-2)
-// PR #494 wired frontend bell drawer — backend endpoint was missing.
-// v1 stub returns empty list; real notification table + EventLog integration
-// deferred to backlog.
+// NOTIFICATIONS — real events from audit_logs + daily_briefs (2026-05-15)
+// Sources:
+//   audit_logs:  paper_submit (filled/rejected), update/kill_switch (risk_alert),
+//                kgi.sim.order_submitted (kgi_status)
+//   daily_briefs: status=published → brief_published
+// read state: v1 always false (no user_notification_read table yet)
+// mark-read: logs to audit_logs action=notifications.mark_read, returns 204
 // =============================================================================
 
-// GET /api/v1/notifications?limit=50&unread_only=false
-app.get("/api/v1/notifications", (c) => {
+type NotificationItem = {
+  id: string;
+  type: "paper_order_filled" | "paper_order_rejected" | "kgi_status" | "brief_published" | "risk_alert" | "system";
+  title: string;
+  body: string;
+  timestamp: string;
+  read: boolean;
+  severity: "info" | "warn" | "critical";
+  actionUrl?: string;
+};
+
+async function fetchNotifications(_session: AppSession, workspaceId: string): Promise<NotificationItem[]> {
+  if (!isDatabaseMode()) return [];
+  const db = getDb();
+  if (!db) return [];
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  // ── 1. audit_logs query ──────────────────────────────────────────────────
+  // Pull only the 4 action strings we care about (excludes kgi.gateway.health heartbeat noise)
+  const NOTIF_ACTIONS = ["paper_submit", "update", "kgi.sim.order_submitted", "kgi.sim.order_report_received"] as const;
+  const auditRows = await db
+    .select()
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.workspaceId, workspaceId),
+        gte(auditLogs.createdAt, sevenDaysAgo),
+        inArray(auditLogs.action, [...NOTIF_ACTIONS])
+      )
+    )
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(200);
+
+  const notifications: NotificationItem[] = [];
+
+  for (const row of auditRows) {
+    const payload =
+      row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+        ? (row.payload as Record<string, unknown>)
+        : {};
+
+    const ts = row.createdAt.toISOString();
+
+    // paper_submit → filled or rejected
+    if (row.action === "paper_submit") {
+      const statusNum =
+        typeof payload["status"] === "number"
+          ? payload["status"]
+          : typeof payload["status"] === "string"
+            ? parseInt(payload["status"], 10)
+            : 201;
+      const symbol = typeof payload["symbol"] === "string" ? payload["symbol"] : "未知";
+      const side = typeof payload["side"] === "string" ? payload["side"] : "";
+      const qty = payload["qty"] !== undefined ? String(payload["qty"]) : "";
+      const sideLabel = side === "buy" ? "買入" : side === "sell" ? "賣出" : side;
+      const isRejected = statusNum >= 422;
+
+      if (isRejected) {
+        notifications.push({
+          id: row.id,
+          type: "paper_order_rejected",
+          title: "委託拒絕",
+          body: `${symbol} ${sideLabel}${qty ? " " + qty + " 股" : ""} 紙本委託遭拒`,
+          timestamp: ts,
+          read: false,
+          severity: "warn",
+          actionUrl: "/paper"
+        });
+      } else {
+        notifications.push({
+          id: row.id,
+          type: "paper_order_filled",
+          title: "成交回報",
+          body: `${symbol} ${sideLabel}${qty ? " " + qty + " 股" : ""} 紙本委託成交`,
+          timestamp: ts,
+          read: false,
+          severity: "info",
+          actionUrl: "/paper"
+        });
+      }
+      continue;
+    }
+
+    // kill_switch engaged
+    if (row.action === "update" && row.entityType === "kill_switch") {
+      notifications.push({
+        id: row.id,
+        type: "risk_alert",
+        title: "風控警示",
+        body: "Kill Switch 已觸發，所有新委託暫停",
+        timestamp: ts,
+        read: false,
+        severity: "critical",
+        actionUrl: "/risk"
+      });
+      continue;
+    }
+
+    // KGI SIM order submitted
+    if (row.action === "kgi.sim.order_submitted") {
+      const symbol = typeof payload["symbol"] === "string" ? payload["symbol"] : "未知";
+      const outcome = typeof payload["outcome"] === "string" ? payload["outcome"] : "";
+      const outcomeLabel = outcome === "accepted" ? "已接受" : outcome === "not_enabled" ? "未啟用" : outcome || "處理中";
+      notifications.push({
+        id: row.id,
+        type: "kgi_status",
+        title: "KGI SIM 訂單",
+        body: `${symbol} SIM 委託 ${outcomeLabel}`,
+        timestamp: ts,
+        read: false,
+        severity: "info"
+      });
+      continue;
+    }
+  }
+
+  // ── 2. daily_briefs published (last 7 days) ──────────────────────────────
+  try {
+    const briefRows = await db
+      .select({
+        id: dailyBriefs.id,
+        date: dailyBriefs.date,
+        status: dailyBriefs.status,
+        sections: dailyBriefs.sections,
+        createdAt: dailyBriefs.createdAt
+      })
+      .from(dailyBriefs)
+      .where(
+        and(
+          eq(dailyBriefs.workspaceId, workspaceId),
+          eq(dailyBriefs.status, "published"),
+          gte(dailyBriefs.createdAt, sevenDaysAgo)
+        )
+      )
+      .orderBy(desc(dailyBriefs.createdAt))
+      .limit(10);
+
+    for (const brief of briefRows) {
+      const sections = Array.isArray(brief.sections) ? brief.sections as Array<{ heading: string; body: string }> : [];
+      const firstHeading = sections[0]?.heading ?? `${brief.date} 簡報`;
+      notifications.push({
+        id: `brief-${brief.id}`,
+        type: "brief_published",
+        title: "今日簡報已發布",
+        body: firstHeading,
+        timestamp: brief.createdAt.toISOString(),
+        read: false,
+        severity: "info",
+        actionUrl: `/briefs/${brief.id}`
+      });
+    }
+  } catch {
+    // brief query failure is non-critical — audit rows still returned
+  }
+
+  // ── 3. merge, sort newest-first, limit 50 ───────────────────────────────
+  notifications.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  return notifications.slice(0, 50);
+}
+
+// GET /api/v1/notifications?limit=50
+app.get("/api/v1/notifications", async (c) => {
   const session = c.get("session");
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "OWNER_ONLY" }, 403);
   }
-  // v1 stub — always returns empty list so frontend drawer renders without 404
-  return c.json({ notifications: [], unread_count: 0 });
+
+  try {
+    const items = await fetchNotifications(session, session.workspace.id);
+    return c.json({
+      notifications: items,
+      unread_count: items.filter((n) => !n.read).length
+    });
+  } catch (err) {
+    console.error("[notifications] fetch failed:", err instanceof Error ? err.message : String(err));
+    // Degrade to empty list — drawer must not 500
+    return c.json({ notifications: [], unread_count: 0 });
+  }
 });
 
 // POST /api/v1/notifications/:id/mark-read
-app.post("/api/v1/notifications/:id/mark-read", (c) => {
+// v1: log to audit_logs (notifications.mark_read) — no read-state DB persistence yet
+app.post("/api/v1/notifications/:id/mark-read", async (c) => {
   const session = c.get("session");
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "OWNER_ONLY" }, 403);
   }
-  // v1 stub — no-op; respond 204 so frontend marks-as-read call doesn't error
+  const notificationId = c.req.param("id");
+  // fire-and-forget audit log
+  writeAuditLog({
+    session,
+    method: "POST",
+    path: `/api/v1/notifications/${notificationId}/mark-read`,
+    status: 204,
+    payload: { notificationId }
+  }).catch((e: unknown) => {
+    console.error("[notifications/mark-read] audit log failed:", e instanceof Error ? e.message : String(e));
+  });
   return new Response(null, { status: 204 });
 });
 
