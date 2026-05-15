@@ -166,10 +166,11 @@ async function renderFinalHtml(screen: ScreenKey) {
   const styleTags = cssBlocks
     .map((css, index) => `<style data-iuf-final-v031="${config.css[index]}">\n${css}\n</style>`)
     .join("\n");
+  const embeddedMarker = '<script data-iuf-final-v031="embedded-marker">window.__IUF_FINAL_V031_EMBEDDED__=true;</script>';
 
   return html
     .replace(/<link\s+rel="stylesheet"\s+href="(?:tokens|app|trading)\.css"\s*\/?>/g, "")
-    .replace("</head>", `${styleTags}\n${contentShellOverrides(screen)}\n</head>`);
+    .replace("</head>", `${embeddedMarker}\n${styleTags}\n${contentShellOverrides(screen)}\n</head>`);
 }
 
 function safeQueryText(value: string | null, maxLength = 80) {
