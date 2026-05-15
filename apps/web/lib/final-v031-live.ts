@@ -767,11 +767,8 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
       ohlcv,
       bidAsk:bidAskResult.ok ? bidAskResult.data : null,
       ticks:ticksResult.ok ? (ticksResult.data?.ticks || []) : [],
-<<<<<<< ours
-      prefill
-=======
+      prefill,
       _companyId: company?.id ?? null,
->>>>>>> theirs
     };
   }
 
@@ -1039,12 +1036,6 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
     if (stats[3]) stats[3].textContent = price(selected.previous);
     if (stats[4]) stats[4].textContent = selected.volume == null ? "—" : n(selected.volume) + " 股";
     const wl = $("#wl-my");
-<<<<<<< ours
-    if (wl) wl.innerHTML = '<div class="group">'+esc((live.watchlist || []).length)+' 檔自選 / 候選</div>' + (live.watchlist || []).map((item, i) => '<div class="wrow '+(i===0?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
-    const symInput = $("#t-sym"); if (symInput) { symInput.value = (selected.symbol || "") + "　" + (selected.name || ""); symInput.setAttribute("value", symInput.value); }
-    const priceInput = $("#t-price"); if (priceInput && selected.price != null) { priceInput.value = Number(selected.price).toFixed(2); priceInput.setAttribute("value", priceInput.value); }
-    applyPaperPrefill(selected);
-=======
     if (wl) {
       const wlItems = live.watchlist || [];
       if (wlItems.length === 0) {
@@ -1069,9 +1060,9 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
         }));
       }
     }
-    const symInput = $("#t-sym"); if (symInput) symInput.value = (selected.symbol || "") + "　" + (selected.name || "");
-    const priceInput = $("#t-price"); if (priceInput && selected.price != null) priceInput.value = Number(selected.price).toFixed(2);
->>>>>>> theirs
+    const symInput = $("#t-sym"); if (symInput) { symInput.value = (selected.symbol || "") + "　" + (selected.name || ""); symInput.setAttribute("value", symInput.value); }
+    const priceInput = $("#t-price"); if (priceInput && selected.price != null) { priceInput.value = Number(selected.price).toFixed(2); priceInput.setAttribute("value", priceInput.value); }
+    applyPaperPrefill(selected);
     const ordersArr = (live.orders || []).slice(0, 12);
     const ordersBody = $('#orders-body') || $('.ltab[data-lt="orders"] tbody');
     if (ordersBody) ordersBody.innerHTML = ordersArr.map((row) => {
