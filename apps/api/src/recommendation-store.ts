@@ -91,18 +91,21 @@ function resolveFixturePath(): string | null {
   const envPath = process.env["ATHENA_FIXTURE_PATH"];
   if (envPath && fs.existsSync(envPath)) return envPath;
 
-  // 2. Sibling repo path (Windows dev machine)
+  // 2. Bundled into IUF repo (Railway deploy reads this)
+  const baseDir = import.meta.dirname ?? __dirname;
   const candidates = [
-    // Repo root is IUF_TRADING_ROOM_APP — sibling is IUF_QUANT_LAB
+    // a) apps/api/data/athena-fixtures/ — bundled with IUF deploy
+    path.resolve(baseDir, "../data/athena-fixtures", FIXTURE_FILENAME),
+    // b) Sibling repo path (Windows dev machine — fallback)
     path.resolve(
-      import.meta.dirname ?? __dirname,
+      baseDir,
       "../../../../..",              // → desktop/小楊機密/交易
       "IUF_QUANT_LAB",
       "research",
       "fixtures",
       FIXTURE_FILENAME
     ),
-    // Alternative: env var for lab root
+    // c) Alternative: env var for lab root
     process.env["IUF_QUANT_LAB_PATH"]
       ? path.join(process.env["IUF_QUANT_LAB_PATH"], "research", "fixtures", FIXTURE_FILENAME)
       : null,
