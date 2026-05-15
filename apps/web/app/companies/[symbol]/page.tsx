@@ -23,7 +23,6 @@ import { OhlcvCandlestickChart } from "./OhlcvCandlestickChart";
 import { FinancialsPanel }     from "./FinancialsPanel";
 import { ChipsPanel }          from "./ChipsPanel";
 import { AnnouncementsPanel }  from "./AnnouncementsPanel";
-import { PaperOrderPanel }     from "./PaperOrderPanel";
 import { SourceStatusCard }    from "./SourceStatusCard";
 import { DerivativesPanel }    from "./DerivativesPanel";
 import { TickStreamPanel }     from "./TickStreamPanel";
@@ -425,7 +424,6 @@ export default async function CompanyDetailPage({
               sourceState={ohlcvState}
               sourceReason={ohlcvReason}
             />
-            <PaperOrderPanel symbol={company.ticker} lastPrice={quote?.last ?? null} />
           </div>
         </div>
 
