@@ -274,14 +274,14 @@
       <div>
         <div class="h">委買 / 委賣 五檔</div>
         <div class="stk" id="depth">
-          <div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">五檔資料同步中…</div>
+          <div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">等待 KGI 連線中…</div>
         </div>
       </div>
 
       <div>
         <div class="h">最近成交</div>
         <div class="stk" id="tape" style="gap:1px">
-          <div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">逐筆資料同步中…</div>
+          <div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">等待 KGI 連線中…</div>
         </div>
       </div>
 
@@ -804,6 +804,52 @@ document.getElementById('submit-btn').addEventListener('click',()=>{
   // briefly highlight first row
   setTimeout(()=>{const row=document.querySelector('.ltab.on tbody tr');if(row){row.style.background='var(--brand-bg)';setTimeout(()=>row.style.background='',900);}},100);
 });
+
+/* ---------- off-hours wording (orderbook + tape) ---------- */
+// Compute Taiwan Standard Time (UTC+8) using Intl to be timezone-safe regardless of browser locale.
+(function(){
+  function getTSTHourMin(){
+    try{
+      const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Taipei',hour:'numeric',minute:'numeric',hour12:false}).formatToParts(new Date());
+      const hh=parseInt(parts.find(p=>p.type==='hour').value,10);
+      const mm=parseInt(parts.find(p=>p.type==='minute').value,10);
+      return{hh,mm};
+    }catch(e){
+      // Fallback: UTC+8 manual offset
+      const d=new Date();const utcMs=d.getTime()+d.getTimezoneOffset()*60000;
+      const tst=new Date(utcMs+8*3600000);
+      return{hh:tst.getHours(),mm:tst.getMinutes()};
+    }
+  }
+  function isTSTMarketHours(){
+    const{hh,mm}=getTSTHourMin();
+    const afterOpen=(hh>8)||(hh===8&&mm>=30);
+    const beforeClose=(hh<13)||(hh===13&&mm<=30);
+    return afterOpen&&beforeClose;
+  }
+  const OFF_HOURS_MSG='非交易時段 — 盤口數據僅 08:30-13:30 TST 顯示';
+  const CONNECTING_MSG='等待 KGI 連線中…';
+  // Expose helper for external hydration layer to call when bidask/ticks return empty.
+  window.__iufSetDepthMsg=function(msg){
+    const el=document.querySelector('#depth .row');
+    if(el)el.textContent=msg||OFF_HOURS_MSG;
+  };
+  window.__iufSetTapeMsg=function(msg){
+    const el=document.querySelector('#tape .row');
+    if(el)el.textContent=msg||OFF_HOURS_MSG;
+  };
+  // On page load: if off-hours, update placeholder immediately.
+  if(!isTSTMarketHours()){
+    window.__iufSetDepthMsg(OFF_HOURS_MSG);
+    window.__iufSetTapeMsg(OFF_HOURS_MSG);
+  }
+  // Expose for hydration: call this when bidask/ticks fetch yields empty off-hours.
+  window.__iufApplyOffHoursWording=function(){
+    const inMkt=isTSTMarketHours();
+    window.__iufSetDepthMsg(inMkt?CONNECTING_MSG:OFF_HOURS_MSG);
+    window.__iufSetTapeMsg(inMkt?CONNECTING_MSG:OFF_HOURS_MSG);
+  };
+})();
 
 /* ---------- command palette ---------- */
 const cmd=document.getElementById('cmd'),cscrim=document.getElementById('cmd-scrim'),cinput=document.getElementById('cmd-input');
