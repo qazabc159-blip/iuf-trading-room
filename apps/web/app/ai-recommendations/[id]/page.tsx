@@ -149,7 +149,7 @@ function ReasonSection({ title, items }: { title: string; items: string[] }) {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <PageFrame code="12-D" title="AI 推薦詳情" sub="Recommendation Orchestrator">
+    <PageFrame code="AI-D" title="AI 推薦詳情" sub="Recommendation Orchestrator">
       <Panel code="AI-D" title="讀取失敗" right={<Link href="/ai-recommendations">回推薦列表</Link>}>
         <div className="_rec-detail-empty">
           <b>{message}</b>
@@ -196,7 +196,7 @@ export default async function AiRecommendationDetailPage({
   const sourceMode = data?._mock ? "mock fallback" : "live";
 
   return (
-    <PageFrame code="12-D" title={`${rec.ticker} ${rec.companyName}`} sub="AI 推薦詳情 / Recommendation Orchestrator">
+    <PageFrame code="AI-D" title={`${rec.ticker} ${rec.companyName}`} sub="AI 推薦詳情 / Recommendation Orchestrator">
       <style>{`
         ._rec-detail-nav {
           display: flex;
