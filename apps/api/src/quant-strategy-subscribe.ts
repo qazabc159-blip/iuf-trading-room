@@ -32,6 +32,25 @@ export const VALID_QUANT_STRATEGY_IDS = new Set([
 ]);
 
 /**
+ * Retired strategy IDs.
+ *
+ * These IDs are no longer valid subscribe targets. If a caller POSTs with any
+ * of these IDs (directly or via an alias that resolves to a retired token),
+ * the handler returns 410 Gone with a STRATEGY_RETIRED error body.
+ *
+ * Retired strategies:
+ *   - rs_20_60_low_drawdown__h20__top5
+ *       rs_20_60 family RETIRED 2026-05-09 per Athena morning update.
+ *       Previously aliased to strategy_003 (Family C × SBL overlay) but that
+ *       mapping conflated two distinct strategies in the audit log with no
+ *       differentiation (Athena minor caveat A). Retired IDs now return 410 so
+ *       callers are informed the strategy is gone, not silently rerouted.
+ */
+export const STRATEGY_RETIRED_IDS = new Set([
+  "rs_20_60_low_drawdown__h20__top5",
+]);
+
+/**
  * Alias map: display-name / lab candidate_id → canonical subscribe ID.
  *
  * UI surfaces (/lab/strategies, /lab/three-strategy) surface Lab candidate_id
@@ -50,19 +69,17 @@ export const VALID_QUANT_STRATEGY_IDS = new Set([
  *       Lab full strategy name used in /lab/three-strategy snapshot responses.
  *   - cont_liq_h20_top3_market_trail20_gt_5pct → cont_liq_v36
  *       Old legacy ID — redirects to cont_liq_v36 per TR page note.
- *   - rs_20_60_low_drawdown__h20__top5 → strategy_003
- *       Lab candidate_id for the rs_20_60 family. Maps to strategy_003 slot.
- *       NOTE: rs_20_60 family RETIRED as of 2026-05-09 per Athena morning update.
- *       Alias kept for graceful handling of old POST calls. Resolves to strategy_003
- *       which IS in VALID_QUANT_STRATEGY_IDS — subscribe will SUCCEED (not 404).
- *       strategy_003 (Family C × SBL overlay) is a forward observation candidate
- *       and remains open for paper subscription per spec (2026-05-15).
  *   - strategy_003_ma200_trend_follow → strategy_003
  *       Long-form detail page key from /lab/three-strategy/[strategyId]/page.tsx.
  *   - family_c_sbl_overlay → strategy_003
  *       Frontend strategy-data.ts id for Family C / SBL overlay card.
  *   - class5_revenue_momentum → strategy_002
  *       Frontend strategy-data.ts id for Class 5 revenue momentum card.
+ *
+ * NOTE: rs_20_60_low_drawdown__h20__top5 was previously aliased to strategy_003.
+ * That mapping has been removed (2026-05-15): rs_20_60 is RETIRED and now lives
+ * in STRATEGY_RETIRED_IDS — callers get 410 Gone, not a silent reroute that
+ * pollutes strategy_003 audit logs with a different strategy's subscriptions.
  */
 export const STRATEGY_ID_ALIASES: Readonly<Record<string, string>> = {
   // Lab candidate_id long-form → canonical
@@ -70,7 +87,6 @@ export const STRATEGY_ID_ALIASES: Readonly<Record<string, string>> = {
   "strategy_002_revenue_yoy_surprise": "strategy_002",
   "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": "cont_liq_v36",
   "cont_liq_h20_top3_market_trail20_gt_5pct": "cont_liq_v36",
-  "rs_20_60_low_drawdown__h20__top5": "strategy_003",
   "strategy_003_ma200_trend_follow": "strategy_003",
   // Frontend strategy-data.ts ids → canonical
   "class5_revenue_momentum": "strategy_002",
@@ -82,10 +98,30 @@ export const STRATEGY_ID_ALIASES: Readonly<Record<string, string>> = {
  * If the id is already canonical (in VALID_QUANT_STRATEGY_IDS), return as-is.
  * If it matches an alias, return the canonical target.
  * Otherwise return the original (will fail validation in subscribeQuantStrategy).
+ *
+ * NOTE: retired IDs (STRATEGY_RETIRED_IDS) are NOT in this map. They pass
+ * through unchanged here, and the caller checks STRATEGY_RETIRED_IDS before
+ * whitelist validation to return 410.
  */
 export function resolveStrategyId(id: string): string {
   if (VALID_QUANT_STRATEGY_IDS.has(id)) return id;
   return STRATEGY_ID_ALIASES[id] ?? id;
+}
+
+/**
+ * Resolve an incoming strategyId and capture the original alias display name.
+ * Returns { canonicalId, aliasFrom } where aliasFrom is set when the caller
+ * passed a non-canonical alias — recorded in the audit log for traceability.
+ *
+ * This solves Athena caveat A: MAIN_execution_rank_buffer_top20 and
+ * class5_revenue_momentum both map to strategy_002; without aliasFrom the
+ * audit_log payload cannot distinguish which Lab UI surface triggered the call.
+ */
+export function resolveStrategyIdWithMeta(id: string): { canonicalId: string; aliasFrom?: string } {
+  if (VALID_QUANT_STRATEGY_IDS.has(id)) return { canonicalId: id };
+  const canonical = STRATEGY_ID_ALIASES[id];
+  if (canonical !== undefined) return { canonicalId: canonical, aliasFrom: id };
+  return { canonicalId: id }; // unknown — will fail whitelist
 }
 
 export const CAPITAL_MIN_TWD = 50_000;
@@ -93,23 +129,37 @@ export const CAPITAL_MAX_TWD = 1_000_000;
 
 /**
  * Paper-readiness status for each canonical strategy.
- * "paper_ready"    — live paper execution gate OPEN (requires Yang ACK, not set here)
- * "forward_obs"    — forward observation candidate, paper subscription accepted but
- *                    execution is deferred until paper-ready gate is opened
- * "backtested_raw" — still in backtest validation, paper exec deferred, warning surfaced
+ * "paper_ready"    — live paper execution gate OPEN (requires explicit Yang ACK Phase 1
+ *                    pre-reg; NEVER auto-flip here — Owner ACK gate is mandatory)
+ * "forward_obs"    — forward observation candidate: subscription accepted, paper exec
+ *                    deferred until explicit Yang ACK Phase 1 pre-reg
+ * "backtested_raw" — still in backtest validation; paper exec deferred, warning surfaced
  *
- * This map must be manually updated when 楊董 ACKs a strategy paper-ready.
- * NEVER auto-flip to paper_ready — it is an explicit Yang ACK gate.
+ * This map must be manually updated when 楊董 explicitly ACKs a strategy paper-ready
+ * (Phase 1 pre-reg). NEVER auto-promote — it is a hard Yang ACK gate.
+ *
+ * 2026-05-15 Truth Board v14 §3 alignment:
+ *   - cont_liq_v36: 13-axis quality lock PASS + Truth Board v14 CLEAN.
+ *     Remaining gate: Yang ACK Phase 1 pre-reg (楊董 3 天不在 / 不 lock / 不真單).
+ *     Status = forward_obs until explicit ACK. DO NOT set paper_ready here.
+ *   - strategy_002: Class 5 — forward observation candidate (compound +169.56%,
+ *     Truth Board v10 quality lock PASS, Bruce attestation CLEAN_WITH_CAVEAT).
+ *   - strategy_003: Family C × SBL v3A R6d — full 4-gate PASS (Truth Board v14).
+ *     Forward obs; Yang ACK Phase 1 pre-reg also required before paper exec.
  */
 export const STRATEGY_READINESS: Readonly<Record<string, "paper_ready" | "forward_obs" | "backtested_raw">> = {
-  "cont_liq_v36":  "paper_ready",   // 13-axis quality lock PASS, paper exec open
+  "cont_liq_v36":  "forward_obs",   // v14 §3: Phase 1 pre-reg pending Yang ACK (not paper_ready)
   "strategy_002":  "forward_obs",   // Class 5 — forward observation candidate
-  "strategy_003":  "backtested_raw", // Family C × SBL — backtest validation, paper exec deferred
+  "strategy_003":  "forward_obs",   // Family C × SBL v3A R6d — v14 4-gate PASS, forward obs
 } as const;
 
 export const BACKTESTED_RAW_WARNING =
   "Strategy is still in backtest validation phase — paper execution is deferred. " +
   "Subscription recorded for forward observation tracking.";
+
+export const FORWARD_OBS_WARNING =
+  "Strategy is in forward observation — paper execution requires explicit Owner Phase 1 " +
+  "pre-reg ACK. Subscription recorded for forward observation tracking.";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,7 +167,7 @@ export const BACKTESTED_RAW_WARNING =
 
 export type SubscribeResult =
   | { ok: true; subscription_id: string; status: "active"; warning?: string }
-  | { ok: false; error: string; http_status: 400 | 403 | 404 };
+  | { ok: false; error: string; http_status: 400 | 403 | 404 | 410 };
 
 export type SubscriptionRecord = {
   subscription_id: string;
@@ -146,8 +196,22 @@ export async function subscribeQuantStrategy(input: {
 }): Promise<SubscribeResult> {
   const { session, capitalTwd, executionMode } = input;
 
-  // Resolve alias → canonical id before any validation
-  const strategyId = resolveStrategyId(input.strategyId);
+  // Gate 0: check retired IDs before alias resolution.
+  // Retired strategies return 410 Gone — not silently rerouted to another strategy.
+  // This prevents audit log pollution (Athena caveat B).
+  if (STRATEGY_RETIRED_IDS.has(input.strategyId)) {
+    return {
+      ok: false,
+      error: "STRATEGY_RETIRED",
+      http_status: 410,
+    };
+  }
+
+  // Resolve alias → canonical id + capture aliasFrom for audit traceability.
+  // aliasFrom is stored in the audit log payload when the caller used a non-canonical
+  // display name (e.g. MAIN_execution_rank_buffer_top20 vs class5_revenue_momentum
+  // both → strategy_002, but now distinguishable by aliasFrom — Athena caveat A fix).
+  const { canonicalId: strategyId, aliasFrom } = resolveStrategyIdWithMeta(input.strategyId);
 
   // Gate 1: paper mode required
   if (executionMode !== "paper") {
@@ -169,20 +233,29 @@ export async function subscribeQuantStrategy(input: {
 
   const subscriptionId = randomUUID();
 
-  // Persist to audit_logs — fire-and-forget pattern; caller handles non-DB gracefully
+  // Persist to audit_logs — fire-and-forget; caller handles non-DB gracefully.
+  // aliasFrom is included when the caller used a non-canonical display name so the
+  // audit record is traceable back to the originating Lab UI surface.
   await appendSubscribeAuditLog({
     workspaceId: session.workspace.id,
     actorId: session.user.id,
     strategyId,
     capitalTwd,
     subscriptionId,
+    aliasFrom,
   });
 
   // Readiness check: surface warning for strategies not yet paper-ready.
-  // We accept the subscription (forward observation candidate) but tell the caller
-  // that execution is deferred — never auto-promote to paper_ready here.
+  // All current strategies are forward_obs (pending Yang ACK Phase 1 pre-reg).
+  // NEVER auto-promote to paper_ready — it is a hard explicit Yang ACK gate.
+  // See Truth Board v14 §3 for cont_liq_v36 status.
   const readiness = STRATEGY_READINESS[strategyId];
-  const warning = readiness === "backtested_raw" ? BACKTESTED_RAW_WARNING : undefined;
+  let warning: string | undefined;
+  if (readiness === "backtested_raw") {
+    warning = BACKTESTED_RAW_WARNING;
+  } else if (readiness === "forward_obs") {
+    warning = FORWARD_OBS_WARNING;
+  }
 
   return { ok: true, subscription_id: subscriptionId, status: "active", ...(warning ? { warning } : {}) };
 }
@@ -197,6 +270,7 @@ async function appendSubscribeAuditLog(params: {
   strategyId: string;
   capitalTwd: number;
   subscriptionId: string;
+  aliasFrom?: string;
 }): Promise<void> {
   if (!isDatabaseMode()) return;
   const db = getDb();
@@ -214,6 +288,11 @@ async function appendSubscribeAuditLog(params: {
         capital_twd: params.capitalTwd,
         sim_only: true,
         subscription_id: params.subscriptionId,
+        // aliasFrom: the original display name the caller passed (if non-canonical).
+        // Lets us distinguish e.g. MAIN_execution_rank_buffer_top20 vs
+        // class5_revenue_momentum — both → strategy_002 but different Lab surfaces.
+        // Undefined when caller already used the canonical id directly.
+        ...(params.aliasFrom !== undefined ? { alias_from: params.aliasFrom } : {}),
       },
     });
   } catch (err) {
