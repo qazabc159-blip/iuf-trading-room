@@ -54,17 +54,11 @@ function formatDate(iso: string) {
 // ---------------------------------------------------------------------------
 
 async function fetchAllSubscriptions(): Promise<SubscriptionRecord[]> {
-  const API_BASE =
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    (typeof window !== "undefined" ? "" : "http://localhost:3001");
-  const WORKSPACE_SLUG =
-    process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
-
   const results = await Promise.allSettled(
     VALID_STRATEGY_IDS.map((id) =>
-      fetch(`${API_BASE}/api/v1/quant-strategies/${id}/subscriptions/my`, {
+      fetch(`/api/quant-strategies/${id}/subscriptions/my`, {
+        cache: "no-store",
         credentials: "include",
-        headers: { "x-workspace-slug": WORKSPACE_SLUG },
       }).then(async (res) => {
         if (!res.ok) return [] as SubscriptionRecord[];
         const json = (await res.json()) as { subscriptions?: SubscriptionRecord[] };

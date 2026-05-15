@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 
-import { formatKgiSimOrderError, submitKgiSimOrder } from "@/lib/paper-orders-api";
 import type { QuantStrategy, StrategyCurvePoint } from "../strategy-data";
 import styles from "../QuantStrategies.module.css";
 
@@ -22,6 +21,30 @@ function money(value: number) {
 
 const MIN_SIM_CAPITAL = 50_000;
 const MAX_SIM_CAPITAL = 1_000_000;
+
+const BACKEND_STRATEGY_IDS: Record<string, string> = {
+  cont_liq_v36: "cont_liq_v36",
+  class5_revenue_momentum: "strategy_002",
+  family_c_sbl_overlay: "strategy_003",
+};
+
+type SubscribeResponse = {
+  subscription_id?: string;
+  status?: string;
+  error?: string;
+  message?: string;
+};
+
+function backendStrategyIdFor(strategy: QuantStrategy) {
+  return BACKEND_STRATEGY_IDS[strategy.id] ?? strategy.id;
+}
+
+function formatSubscribeFailure(status: number, body: SubscribeResponse) {
+  const code = body.error ?? body.message ?? "SUBSCRIBE_FAILED";
+  if (status === 401 || status === 403) return `訂閱失敗：權限或 SIM-only 風控未通過（${code}）。`;
+  if (status === 400) return `訂閱失敗：投入金額或策略參數不正確（${code}）。`;
+  return `訂閱失敗：後端暫時無法建立策略訂閱（${status} / ${code}）。`;
+}
 
 function LineChart({ points, color }: { points: StrategyCurvePoint[]; color: string }) {
   const width = 760;
@@ -119,28 +142,42 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
   const executable = preview.filter((row) => row.qty > 0);
   const totalNotional = executable.reduce((sum, row) => sum + row.notional, 0);
 
-  async function submitBasket() {
+  async function subscribeStrategy() {
     if (!confirmed || busy || executable.length === 0 || !capitalValid) return;
     setBusy(true);
     setResult(null);
     setError(null);
-    const accepted: string[] = [];
     try {
-      for (const row of executable) {
-        const res = await submitKgiSimOrder({
-          symbol: row.symbol,
-          side: "buy",
-          qty: row.qty,
-          price: row.price,
-          orderType: "limit",
-          quantityUnit: "SHARE",
-        });
-        accepted.push(`${row.symbol}:${res.data.status}`);
+      const backendStrategyId = backendStrategyIdFor(strategy);
+      const response = await fetch(`/api/quant-strategies/${encodeURIComponent(backendStrategyId)}/subscribe`, {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          capital_twd: budget,
+          executionMode: "paper",
+        }),
+      });
+
+      let body: SubscribeResponse = {};
+      try {
+        body = await response.json() as SubscribeResponse;
+      } catch {
+        body = {};
       }
-      setResult(`KGI SIM 已送出 ${accepted.length} 檔；估計名目金額 ${money(totalNotional)} TWD。`);
+
+      if (!response.ok) {
+        throw new Error(formatSubscribeFailure(response.status, body));
+      }
+
+      const subscriptionLabel = typeof body.subscription_id === "string"
+        ? ` (${body.subscription_id.slice(0, 8)})`
+        : "";
+      setResult(`SIM-only 策略訂閱已建立${subscriptionLabel}，配置資金 ${money(budget)} TWD；不直接送出個股委託。`);
       setConfirmOpen(false);
     } catch (err) {
-      setError(formatKgiSimOrderError(err));
+      setError(err instanceof Error ? err.message : "策略訂閱建立失敗。");
     } finally {
       setBusy(false);
     }
@@ -148,9 +185,9 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
 
   return (
     <aside className={styles.launcher} style={{ "--accent": color } as React.CSSProperties}>
-      <h2>SIM 資金配置</h2>
+      <h2>SIM 策略訂閱</h2>
       <p className={styles.sub} style={{ margin: "0 0 12px", fontSize: 13 }}>
-        送往 KGI SIM，正式帳戶寫入封鎖。下方會依目前籃子價格換算股數。
+        建立 SIM-only 策略訂閱紀錄；此動作不直接送出個股委託，也不開啟正式券商交易。
       </p>
       <label htmlFor="capital" className={styles.eyebrow}>CAPITAL TWD / 50,000 - 1,000,000</label>
       <input
@@ -173,12 +210,12 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
       </div>
 
       <div className={styles.notice}>
-        預估送出 {executable.length} / {strategy.holdings.length} 檔，名目金額 {money(totalNotional)} TWD。
+        預估配置 {executable.length} / {strategy.holdings.length} 檔，名目金額 {money(totalNotional)} TWD。
       </div>
 
       <label style={{ display: "flex", gap: 10, alignItems: "flex-start", margin: "14px 0", color: "#cdd5df", fontSize: 13 }}>
         <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
-        我確認這次只送 KGI SIM，不寫入正式券商帳戶。
+        我確認這是 SIM-only 策略訂閱，不會送出正式券商委託。
       </label>
 
       <button
@@ -187,7 +224,7 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
         disabled={!confirmed || busy || executable.length === 0 || !capitalValid}
         onClick={() => setConfirmOpen(true)}
       >
-        {busy ? "送出中" : "確認 SIM 訂閱"}
+        {busy ? "建立中" : "建立 SIM 訂閱"}
       </button>
 
       {result && <div className={styles.notice} style={{ marginTop: 12 }}>{result}</div>}
@@ -196,17 +233,17 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
       {confirmOpen && (
         <div className={styles.modalBackdrop} role="presentation">
           <div className={styles.confirmModal} role="dialog" aria-modal="true" aria-labelledby="sim-confirm-title">
-            <h3 id="sim-confirm-title">確認 SIM 籃子</h3>
+            <h3 id="sim-confirm-title">確認 SIM 策略訂閱</h3>
             <p>
-              將送往 KGI SIM：{executable.length} 檔，預估名目金額 {money(totalNotional)} TWD。
-              正式券商帳戶仍維持封鎖。
+              將建立 {strategy.shortName} 的 SIM-only 策略訂閱，配置資金 {money(budget)} TWD，
+              目前預估 {executable.length} 檔、名目金額 {money(totalNotional)} TWD。這不會直接送出個股委託。
             </p>
             <div className={styles.confirmActions}>
               <button type="button" className={styles.buttonGhost} onClick={() => setConfirmOpen(false)} disabled={busy}>
                 取消
               </button>
-              <button type="button" className={styles.button} onClick={submitBasket} disabled={busy}>
-                {busy ? "送出中" : "送出 KGI SIM"}
+              <button type="button" className={styles.button} onClick={subscribeStrategy} disabled={busy}>
+                {busy ? "建立中" : "確認建立"}
               </button>
             </div>
           </div>
@@ -222,7 +259,7 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
     <div className={styles.detailLayout} style={{ "--accent": color } as React.CSSProperties}>
       <div>
         <div className={styles.notice} style={{ marginBottom: 16 }}>
-          <strong>SIM 帳戶執行中</strong> / 此頁沒有正式交易按鈕，送出前需再次確認 KGI SIM。
+          <strong>SIM-only 策略訂閱</strong> / 此頁不直接送出個股委託，也沒有正式交易按鈕。
         </div>
 
         <section className={styles.band}>
