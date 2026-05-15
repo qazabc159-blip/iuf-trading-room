@@ -1,0 +1,155 @@
+{
+  "schema": "QuantCandidateSignal[]",
+  "schemaVersion": "tr_quant_candidate_signal_v1",
+  "producer": "Athena (IUF Quant Lab)",
+  "producedAtTaipei": "2026-05-14T17:55:00+08:00",
+  "snapshotAt": "2026-05-14T13:30:00+08:00",
+  "strategySource": "cont_liq_v36",
+  "frozenRuleHash": "be90a2babe661717e8c5e02b3ba8e022ca6627272bf82d1664a4a06aab3cf8e8",
+  "anchorSignalDate": "2026-05-06",
+  "forwardObservationDay": "6 of 20",
+  "forwardEndProvisional": "2026-06-03",
+  "scoreMapping": {
+    "baseScoreCeiling": 85,
+    "baseScoreCeilingRationale": "cont_liq_v36 已通 9 層 lab gate；但 H20 forward observation 未成熟 (Day 6/20)，未達 promotion，因此 cap 85 而非 100。",
+    "rankPenaltyPerStep": 2,
+    "forwardDriftAdjustment": "Day 6/20 unrealized return ≤ -10% 扣 5 分；basket 整體 unrealized < 0 額外 -3 分整批同步。",
+    "transparentNote": "score 僅反映 backtest 強度 + 當下 forward observation 的鬆動。不代表進場建議。"
+  },
+  "signals": [
+    {
+      "ticker": "3707",
+      "companyName": "漢磊",
+      "quantRank": 1,
+      "quantScore": 80,
+      "strategySource": "cont_liq_v36",
+      "regime": "trend",
+      "gateStatus": "WATCH",
+      "expectedHoldingPeriod": "波段",
+      "quantReason": [
+        "持續流動性 × 相對強勢綜合排序 Top-1，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+        "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+        "Period 1 forward observation Day 6/20，目前 unrealized return -0.41% 為籃中表現最好"
+      ],
+      "riskFlags": [
+        "forward_observation_not_mature_h20",
+        "research_tracking_only_not_promoted",
+        "otc_listed_consider_liquidity"
+      ],
+      "dataQuality": {
+        "backtestEvidence": "OK",
+        "forwardObservation": "PENDING",
+        "liquidity": "OK"
+      },
+      "snapshotAt": "2026-05-14T13:30:00+08:00"
+    },
+    {
+      "ticker": "2426",
+      "companyName": "鼎元",
+      "quantRank": 2,
+      "quantScore": 75,
+      "strategySource": "cont_liq_v36",
+      "regime": "trend",
+      "gateStatus": "WATCH",
+      "expectedHoldingPeriod": "波段",
+      "quantReason": [
+        "持續流動性 × 相對強勢綜合排序 Top-2，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+        "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+        "光電 LED 類股，與 2486 同 sector 同籃內出現產業集中度"
+      ],
+      "riskFlags": [
+        "forward_observation_not_mature_h20",
+        "research_tracking_only_not_promoted",
+        "intraperiod_drawdown_below_minus_10pct_day6",
+        "sector_concentration_with_2486"
+      ],
+      "dataQuality": {
+        "backtestEvidence": "OK",
+        "forwardObservation": "PENDING",
+        "liquidity": "OK"
+      },
+      "snapshotAt": "2026-05-14T13:30:00+08:00"
+    },
+    {
+      "ticker": "6205",
+      "companyName": "詮欣",
+      "quantRank": 3,
+      "quantScore": 73,
+      "strategySource": "cont_liq_v36",
+      "regime": "trend",
+      "gateStatus": "WATCH",
+      "expectedHoldingPeriod": "波段",
+      "quantReason": [
+        "持續流動性 × 相對強勢綜合排序 Top-3，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+        "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+        "電子零組件 / 連接器類股，與其他三檔屬不同 sector"
+      ],
+      "riskFlags": [
+        "forward_observation_not_mature_h20",
+        "research_tracking_only_not_promoted",
+        "intraperiod_drawdown_below_minus_10pct_day6_worst_in_basket"
+      ],
+      "dataQuality": {
+        "backtestEvidence": "OK",
+        "forwardObservation": "PENDING",
+        "liquidity": "OK"
+      },
+      "snapshotAt": "2026-05-14T13:30:00+08:00"
+    },
+    {
+      "ticker": "2486",
+      "companyName": "一詮",
+      "quantRank": 4,
+      "quantScore": 71,
+      "strategySource": "cont_liq_v36",
+      "regime": "trend",
+      "gateStatus": "WATCH",
+      "expectedHoldingPeriod": "波段",
+      "quantReason": [
+        "持續流動性 × 相對強勢綜合排序 Top-4，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+        "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+        "光電 LED 類股，與 2426 同 sector"
+      ],
+      "riskFlags": [
+        "forward_observation_not_mature_h20",
+        "research_tracking_only_not_promoted",
+        "intraperiod_drawdown_below_minus_10pct_day6",
+        "sector_concentration_with_2426",
+        "high_unit_price_consider_lot_size"
+      ],
+      "dataQuality": {
+        "backtestEvidence": "OK",
+        "forwardObservation": "PENDING",
+        "liquidity": "OK"
+      },
+      "snapshotAt": "2026-05-14T13:30:00+08:00"
+    }
+  ],
+  "basketMetadata": {
+    "basketEqualWeightUnrealizedPct": -7.1736,
+    "benchmark0050SamePeriodPct": 0.3133,
+    "excessPct": -7.4869,
+    "killSwitchEvaluable": true,
+    "killSwitchTriggered": false,
+    "killSwitchThresholds": {
+      "alertMinus10Pct": false,
+      "pauseMinus15Pct": false
+    },
+    "noRetuneAttestation": true,
+    "noSymbolSwap": true,
+    "specSha256MatchDay0Ledger": true
+  },
+  "hardLines": {
+    "noRealOrders": true,
+    "noBrokerWrite": true,
+    "noPromotionImplied": true,
+    "noLiveReadyWording": true,
+    "researchDisplayOnly": true
+  },
+  "sourceRefs": {
+    "productSnapshot": "reports/trading_room/product_snapshots_v46/cont_liq_v36_contains_product_snapshot_v46.json",
+    "dailyTracker": "reports/trading_room/cont_liq_v36_forward_observation_daily_tracker.json",
+    "todayCapture": "reports/trading_room/cont_liq_period1_daily/2026-05-14.yaml",
+    "labSnapshotV0": "reports/trading_room/strategy_snapshots/cont_liq_v36_snapshot_v0.json"
+  }
+}
