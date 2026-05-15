@@ -185,6 +185,14 @@ import {
 import {
   listAdversarialWarnEvents,
 } from "../apps/api/src/admin-openalice-adversarial-warns.ts";
+import {
+  seedCompanyThemeLinks,
+  type SeedThemeLinksResult,
+} from "../apps/api/src/seed/seed-company-theme-links.ts";
+import {
+  retryContentDraftReview,
+  type RetryReviewResult,
+} from "../apps/api/src/admin-content-drafts-retry-review.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -11084,6 +11092,52 @@ test("ADVERSARIAL-WARNS-1: listAdversarialWarnEvents returns empty array in non-
   });
   assert.ok(Array.isArray(result), "ADVERSARIAL-WARNS-1: must return an array");
   assert.equal(result.length, 0, "ADVERSARIAL-WARNS-1: non-DB mode must return empty array");
+});
+
+// =============================================================================
+// ADMIN-SEED-1: seedCompanyThemeLinks non-DB mode (Bruce P1 — company_theme_links backfill)
+// =============================================================================
+
+test("ADMIN-SEED-1: seedCompanyThemeLinks returns early with not_database_mode error in non-DB mode", async () => {
+  const result: SeedThemeLinksResult = await seedCompanyThemeLinks("ws-test-00000000-0000-0000-0000-000000000000");
+  assert.equal(result.themesProcessed, 0, "ADMIN-SEED-1: themesProcessed must be 0 in non-DB mode");
+  assert.equal(result.linksInserted, 0, "ADMIN-SEED-1: linksInserted must be 0 in non-DB mode");
+  assert.ok(
+    result.errors.includes("not_database_mode"),
+    `ADMIN-SEED-1: errors must contain not_database_mode, got: ${JSON.stringify(result.errors)}`
+  );
+});
+
+test("ADMIN-SEED-2: seedCompanyThemeLinks result has required fields", async () => {
+  const result: SeedThemeLinksResult = await seedCompanyThemeLinks("ws-test-00000000-0000-0000-0000-000000000000");
+  assert.ok(typeof result.themesProcessed === "number", "ADMIN-SEED-2: themesProcessed must be a number");
+  assert.ok(typeof result.themesWithMatches === "number", "ADMIN-SEED-2: themesWithMatches must be a number");
+  assert.ok(typeof result.linksInserted === "number", "ADMIN-SEED-2: linksInserted must be a number");
+  assert.ok(typeof result.linksSkipped === "number", "ADMIN-SEED-2: linksSkipped must be a number");
+  assert.ok(Array.isArray(result.errors), "ADMIN-SEED-2: errors must be an array");
+});
+
+// =============================================================================
+// ADMIN-RETRY-1: retryContentDraftReview non-DB mode (Bruce P1 — retry review)
+// =============================================================================
+
+test("ADMIN-RETRY-1: retryContentDraftReview returns zero counts in non-DB mode", async () => {
+  const result: RetryReviewResult = await retryContentDraftReview("ws-test-00000000-0000-0000-0000-000000000000", {
+    from: "2026-05-12",
+    to: "2026-05-12",
+    dryRun: false
+  });
+  assert.equal(result.processed, 0, "ADMIN-RETRY-1: processed must be 0 in non-DB mode");
+  assert.equal(result.approved, 0, "ADMIN-RETRY-1: approved must be 0 in non-DB mode");
+  assert.equal(result.errors, 0, "ADMIN-RETRY-1: errors must be 0 in non-DB mode");
+});
+
+test("ADMIN-RETRY-2: retryContentDraftReview dry-run flag preserved in result", async () => {
+  const result: RetryReviewResult = await retryContentDraftReview("ws-test-00000000-0000-0000-0000-000000000000", {
+    dryRun: true
+  });
+  assert.equal(result.dryRun, true, "ADMIN-RETRY-2: dryRun must be reflected in result");
+  assert.equal(result.processed, 0, "ADMIN-RETRY-2: processed must be 0 in non-DB mode");
 });
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
