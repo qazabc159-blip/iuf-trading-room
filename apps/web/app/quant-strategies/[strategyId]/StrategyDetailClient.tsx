@@ -31,8 +31,10 @@ const BACKEND_STRATEGY_IDS: Record<string, string> = {
 type SubscribeResponse = {
   subscription_id?: string;
   status?: string;
+  warning?: string;
   error?: string;
   message?: string;
+  reason?: string;
 };
 
 function backendStrategyIdFor(strategy: QuantStrategy) {
@@ -41,6 +43,10 @@ function backendStrategyIdFor(strategy: QuantStrategy) {
 
 function formatSubscribeFailure(status: number, body: SubscribeResponse) {
   const code = body.error ?? body.message ?? "SUBSCRIBE_FAILED";
+  if (status === 410 || code === "STRATEGY_RETIRED") {
+    const reason = typeof body.reason === "string" && body.reason.trim() ? ` ${body.reason.trim()}` : "";
+    return `策略已退役，不再接受 SIM 訂閱。${reason}`;
+  }
   if (status === 401 || status === 403) return `訂閱失敗：權限或 SIM-only 風控未通過（${code}）。`;
   if (status === 400) return `訂閱失敗：投入金額或策略參數不正確（${code}）。`;
   return `訂閱失敗：後端暫時無法建立策略訂閱（${status} / ${code}）。`;
@@ -114,6 +120,7 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   const budget = useMemo(() => Number(capital.replace(/,/g, "")), [capital]);
   const capitalValid = Number.isFinite(budget) && budget >= MIN_SIM_CAPITAL && budget <= MAX_SIM_CAPITAL;
@@ -147,6 +154,7 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
     setBusy(true);
     setResult(null);
     setError(null);
+    setWarning(null);
     try {
       const backendStrategyId = backendStrategyIdFor(strategy);
       const response = await fetch(`/api/quant-strategies/${encodeURIComponent(backendStrategyId)}/subscribe`, {
@@ -174,7 +182,11 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
       const subscriptionLabel = typeof body.subscription_id === "string"
         ? ` (${body.subscription_id.slice(0, 8)})`
         : "";
+      const readinessWarning = typeof body.warning === "string" && body.warning.trim()
+        ? body.warning.trim()
+        : null;
       setResult(`SIM-only 策略訂閱已建立${subscriptionLabel}，配置資金 ${money(budget)} TWD；不直接送出個股委託。`);
+      setWarning(readinessWarning);
       setConfirmOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "策略訂閱建立失敗。");
@@ -228,6 +240,11 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
       </button>
 
       {result && <div className={styles.notice} style={{ marginTop: 12 }}>{result}</div>}
+      {warning && (
+        <div className={styles.notice} style={{ marginTop: 12 }}>
+          <strong>READINESS WARNING</strong> / {warning}
+        </div>
+      )}
       {error && <div className={`${styles.notice} ${styles.error}`} style={{ marginTop: 12 }}>{error}</div>}
 
       {confirmOpen && (
