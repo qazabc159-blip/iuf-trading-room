@@ -157,7 +157,7 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
           <span>檢查 {formatTime(result.updatedAt)}</span>
         </div>
         <div className="terminal-note">
-            風控總覽資料尚未接上。模擬委託仍會在送出前執行風控預檢；此區待總覽資料啟用後會顯示帳戶、策略、個股與盤中四層曝險。
+            風控總覽資料尚未接上。SIM 委託紀錄建立前仍會執行風控預檢；此區待總覽資料啟用後會顯示帳戶、策略、個股與盤中四層曝險。
         </div>
       </div>
     );
@@ -176,7 +176,7 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
       </div>
       {isEmpty && (
         <div className="terminal-note">
-          目前沒有部位曝險，仍保留四層限制供送單前檢查。
+          目前沒有部位曝險，仍保留四層限制供 SIM 建立前檢查。
         </div>
       )}
       <div style={gridStyle}>
