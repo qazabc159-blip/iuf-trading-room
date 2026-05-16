@@ -6,10 +6,10 @@ export const dynamic = "force-dynamic";
 const ACCOUNT_ID = "paper-default";
 const ACCOUNT_LABEL = "模擬帳戶";
 const MODES = [
-  { mode: "trading", label: "可交易", sub: "通過後端風控後，可建立模擬委託", accent: "#4caf50", active: true },
+  { mode: "trading", label: "SIM 檢查通過", sub: "通過後端風控後，只允許建立模擬委託", accent: "#4caf50", active: true },
   { mode: "paper_only", label: "模擬模式", sub: "策略與委託都只留在模擬交易層", accent: "#ffb800", active: false },
-  { mode: "liquidate_only", label: "只減倉", sub: "只允許降低曝險的委託", accent: "#ff9800", active: false },
-  { mode: "halted", label: "全鎖定", sub: "停止新增委託，等待風控處理", accent: "#ef5350", active: false },
+  { mode: "liquidate_only", label: "只減倉", sub: "只允許降低模擬曝險的委託", accent: "#ff9800", active: false },
+  { mode: "halted", label: "全鎖定", sub: "停止新增模擬委託，等待風控處理", accent: "#ef5350", active: false },
 ] as const;
 
 type KillState = Awaited<ReturnType<typeof getKillSwitch>>["data"];
@@ -272,7 +272,7 @@ export default async function MobileKillPage() {
                 key={item.mode}
                 className={`_bty-kill-mode-item${isActive ? " active" : ""}`}
                 role="status"
-                title="前端目前只顯示狀態；切換交易模式需要後端治理、稽核紀錄與風控回歸測試通過。"
+                title="前端目前只顯示狀態；切換執行模式需要後端治理、稽核紀錄與風控回歸測試通過。"
                 style={isActive ? {
                   "--_item-color": item.accent,
                   "--_item-border": `${item.accent}55`,
@@ -312,7 +312,7 @@ export default async function MobileKillPage() {
           <span className="_bty-kill-section-right">後端治理</span>
         </div>
         <div className="_bty-kill-readonly-note">
-          這一頁只讀取真實交易模式，不直接更改後端狀態。
+          這一頁只讀取目前執行模式，不直接更改後端狀態；v1 僅允許模擬委託，不開啟正式券商寫入。
           切換路徑需要後端治理路由、稽核紀錄、四層風控回歸與操作員核准。
           {result.state === "BLOCKED" && ` 目前狀態暫停：${result.reason}`}
         </div>
