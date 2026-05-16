@@ -14808,6 +14808,15 @@ body:has(.tactical-dashboard) .app-sidebar {
   border-left-color: rgba(230, 57, 70, 0.82);
 }
 
+.header-alert-item[data-read-state="read"] {
+  opacity: 0.78;
+}
+
+.header-alert-item[data-mark-read-state="pending"] {
+  outline: 1px solid rgba(200, 148, 63, 0.34);
+  outline-offset: 2px;
+}
+
 .header-alert-item span {
   justify-self: start;
   min-height: 20px;
@@ -14818,6 +14827,16 @@ body:has(.tactical-dashboard) .app-sidebar {
   padding: 0 7px;
   color: var(--tac-brand);
   font: 900 10px/1 var(--sans-tc);
+}
+
+.header-alert-item[data-read-state="read"] span {
+  border-color: rgba(220, 228, 240, 0.16);
+  color: var(--tac-fg-3);
+}
+
+.header-alert-item[data-mark-read-state="pending"] span {
+  border-color: rgba(200, 148, 63, 0.5);
+  color: var(--tac-brand);
 }
 
 .header-alert-item b {

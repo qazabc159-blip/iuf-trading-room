@@ -164,6 +164,8 @@ export function HeaderDock() {
     unreadCount: 0,
     error: null,
   });
+  const [markingNotificationIds, setMarkingNotificationIds] = useState<Set<string>>(() => new Set());
+  const [notificationLiveStatus, setNotificationLiveStatus] = useState("");
 
   // Position state: null = use CSS default (right:16px)
   const [position, setPosition] = useState<DockPosition | null>(null);
@@ -209,6 +211,14 @@ export function HeaderDock() {
   const markNotificationRead = useCallback((notification: NotificationEntry) => {
     const markedAt = new Date().toISOString();
     const wasUnread = !notification.readAt;
+    const title = notificationTitle(notification);
+
+    setMarkingNotificationIds((current) => {
+      const next = new Set(current);
+      next.add(notification.id);
+      return next;
+    });
+    setNotificationLiveStatus(`${title} 標記已讀中`);
 
     setNotificationDrawer((current) => ({
       ...current,
@@ -218,9 +228,22 @@ export function HeaderDock() {
       unreadCount: wasUnread ? Math.max(0, current.unreadCount - 1) : current.unreadCount,
     }));
 
-    void markHeaderDockNotificationRead(notification.id).catch(() => {
-      void loadNotificationDrawer();
-    });
+    void markHeaderDockNotificationRead(notification.id)
+      .then(() => {
+        setNotificationLiveStatus(`${title} 已標記為已讀`);
+      })
+      .catch(() => {
+        setNotificationLiveStatus("通知已讀狀態同步失敗，正在重新整理");
+        void loadNotificationDrawer();
+      })
+      .finally(() => {
+        setMarkingNotificationIds((current) => {
+          if (!current.has(notification.id)) return current;
+          const next = new Set(current);
+          next.delete(notification.id);
+          return next;
+        });
+      });
   }, [loadNotificationDrawer]);
 
   const focusDrawerTrigger = useCallback((target: Exclude<Drawer, null>) => {
@@ -402,6 +425,9 @@ export function HeaderDock() {
           <span id="header-dock-bell-status" style={SCREEN_READER_ONLY_STYLE}>
             {notificationButtonLabel}
           </span>
+          <span role="status" aria-live="polite" style={SCREEN_READER_ONLY_STYLE}>
+            {notificationLiveStatus}
+          </span>
           {unreadCount > 0 && (
             <span className="header-dock-count" aria-hidden="true">
               {unreadCount > 99 ? "99+" : unreadCount}
@@ -504,24 +530,32 @@ export function HeaderDock() {
               )}
               {visibleNotifications.length > 0 && (
                 <div className="header-alert-list">
-                  {visibleNotifications.slice(0, 8).map((notification) => (
-                    <Link
-                      key={notification.id}
-                      className="header-alert-item"
-                      data-severity={notificationSeverity(notification)}
-                      aria-label={notificationLinkLabel(notification)}
-                      href={notificationHref(notification)}
-                      onClick={() => {
-                        markNotificationRead(notification);
-                        setDrawer(null);
-                      }}
-                    >
-                      <span>{notification.readAt ? "已讀" : "待處理"}</span>
-                      <b>{notificationTitle(notification)}</b>
-                      <small>{notification.category ?? notification.type ?? "SYSTEM"} / {formatNotificationTime(notificationTime(notification))}</small>
-                      <p>{notificationSummary(notification)}</p>
-                    </Link>
-                  ))}
+                  {visibleNotifications.slice(0, 8).map((notification) => {
+                    const isMarkingRead = markingNotificationIds.has(notification.id);
+                    const readState = notification.readAt ? "read" : "unread";
+
+                    return (
+                      <Link
+                        key={notification.id}
+                        className="header-alert-item"
+                        data-severity={notificationSeverity(notification)}
+                        data-read-state={readState}
+                        data-mark-read-state={isMarkingRead ? "pending" : "idle"}
+                        aria-label={`${notificationLinkLabel(notification)}${isMarkingRead ? " 標記已讀中" : ""}`}
+                        aria-busy={isMarkingRead ? "true" : undefined}
+                        href={notificationHref(notification)}
+                        onClick={() => {
+                          markNotificationRead(notification);
+                          setDrawer(null);
+                        }}
+                      >
+                        <span>{isMarkingRead ? "同步中" : notificationReadState(notification)}</span>
+                        <b>{notificationTitle(notification)}</b>
+                        <small>{notification.category ?? notification.type ?? "SYSTEM"} / {formatNotificationTime(notificationTime(notification))}</small>
+                        <p>{notificationSummary(notification)}</p>
+                      </Link>
+                    );
+                  })}
                 </div>
               )}
               <Link href="/alerts" onClick={() => setDrawer(null)}>
