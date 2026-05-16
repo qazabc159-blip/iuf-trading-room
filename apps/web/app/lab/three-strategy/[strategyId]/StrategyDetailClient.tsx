@@ -6,18 +6,17 @@
  * Sections:
  *   1. Strategy spec (intro / signal logic / sizing / exit)
  *   2. 8 caveat verdict table (source: athena_lane_e_8_caveat_sweep)
- *   3. 真金 toggle 區（Owner role only）
- *      - 3-segment: OFF / PAPER / LIVE
- *      - LIVE disabled until 1 paper trading day observed
+ *   3. Governance stage panel (Owner role only)
+ *      - 3-segment: OFF / SIM / candidate
+ *      - Candidate stays frontend-disabled while broker-write contract is closed
  *      - Amount input (TWD, integer)
- *      - Confirm modal (2 checkboxes)
- *   4. Paper observation audit panel (visible after PAPER selected)
+ *   4. SIM observation audit panel (visible after SIM selected)
  *
  * HARD LINES enforced here:
  *   - Not displaying "已驗證" / "approved" / "可上線" / "strategy approved"
  *   - Not truncating caveat
- *   - Confirm modal must show KGI real-money warning explicitly
  *   - Owner role only for toggle (checked via apiGetMe)
+ *   - No KGI live broker write controls exposed
  *   - No mock quote / no fake metrics
  */
 
@@ -145,6 +144,12 @@ type ToggleApiState =
   | { status: "loading" }
   | { status: "success"; mode: ToggleMode }
   | { status: "error"; message: string };
+
+function modeDisplayLabel(mode: ToggleMode) {
+  if (mode === "PAPER") return "SIM 觀察";
+  if (mode === "LIVE") return "上線候選（券商寫入關閉）";
+  return "研究關閉";
+}
 
 // ── Strategy mode call ─────────────────────────────────────────────────────────
 
@@ -285,7 +290,7 @@ function ConfirmModal({
         }}
         role="dialog"
         aria-modal="true"
-        aria-label="切換 LIVE 確認"
+        aria-label="上線候選檢查確認"
       >
         {/* Warning header */}
         <div style={{ marginBottom: 18 }}>
@@ -300,7 +305,7 @@ function ConfirmModal({
               marginBottom: 6,
             }}
           >
-            KGI 真實交易確認
+            正式券商寫入未開放
           </div>
           <h2
             style={{
@@ -311,7 +316,7 @@ function ConfirmModal({
               lineHeight: 1.3,
             }}
           >
-            切換至 LIVE 將使用真實資金下單
+            此動作僅標記上線候選檢查，不會送出券商委託
           </h2>
         </div>
 
@@ -328,12 +333,12 @@ function ConfirmModal({
           <div style={{ fontSize: 12, color: "#ffaaaa", lineHeight: 1.7 }}>
             <strong style={{ color: "#e63946" }}>策略：</strong>{strategyName}
             <br />
-            <strong style={{ color: "#e63946" }}>金額：</strong>
+            <strong style={{ color: "#e63946" }}>SIM 分配參考：</strong>
             {amountTwd.toLocaleString("zh-TW")} 元 TWD
             <br />
-            <strong style={{ color: "#e63946" }}>委託類型：</strong>KGI 電子交易 / 真實資金
+            <strong style={{ color: "#e63946" }}>交接狀態：</strong>SIM 觀察 / 正式券商寫入關閉
             <br />
-            <strong style={{ color: "#e63946" }}>風控：</strong>4 層風控（L1-L4）自動守衛，但<strong>不保證不虧損</strong>
+            <strong style={{ color: "#e63946" }}>風控：</strong>4 層風控僅供候選檢查，不代表策略可正式交易。
           </div>
         </div>
 
@@ -375,7 +380,7 @@ function ConfirmModal({
               onChange={(e) => setCheckedLoss(e.target.checked)}
               style={{ marginTop: 2, accentColor: "#e63946", flexShrink: 0, width: 16, height: 16 }}
             />
-            我了解使用真實資金交易存在損失風險，且本人承擔所有交易損益。
+            我了解此頁不會啟用正式券商寫入，也不代表策略可上線交易。
           </label>
         </div>
 
@@ -412,7 +417,7 @@ function ConfirmModal({
               transition: "background 0.14s",
             }}
           >
-            確認切換 LIVE
+            確認候選檢查
           </button>
         </div>
       </div>
@@ -434,9 +439,9 @@ function SegmentedControl({
   onChange: (v: ToggleMode) => void;
 }) {
   const segments: { key: ToggleMode; label: string; color: string }[] = [
-    { key: "OFF", label: "OFF", color: "#888" },
-    { key: "PAPER", label: "PAPER", color: "#60a5fa" },
-    { key: "LIVE", label: "LIVE", color: "#e63946" },
+    { key: "OFF", label: "研究", color: "#888" },
+    { key: "PAPER", label: "SIM", color: "#60a5fa" },
+    { key: "LIVE", label: "候選", color: "#ffb800" },
   ];
 
   return (
@@ -450,7 +455,7 @@ function SegmentedControl({
         gap: 2,
       }}
       role="group"
-      aria-label="交易模式切換"
+      aria-label="策略治理階段切換（SIM-only）"
     >
       {segments.map(({ key, label, color }) => {
         const isActive = value === key;
@@ -472,7 +477,7 @@ function SegmentedControl({
                   ? "rgba(255,255,255,0.1)"
                   : key === "PAPER"
                     ? "rgba(59,130,246,0.2)"
-                    : "rgba(230,57,70,0.22)"
+                    : "rgba(255,184,0,0.18)"
                 : "transparent",
               color: isDisabled ? "rgba(255,255,255,0.2)" : isActive ? color : "#666",
               fontSize: 11,
@@ -492,7 +497,7 @@ function SegmentedControl({
   );
 }
 
-// ── Paper observation panel ───────────────────────────────────────────────────
+// ── SIM observation panel ─────────────────────────────────────────────────────
 
 function PaperObservationPanel({
   data,
@@ -528,12 +533,12 @@ function PaperObservationPanel({
           marginBottom: 8,
         }}
       >
-        Paper 觀察期狀態
+        SIM 觀察期狀態
       </div>
 
       {status === "not_started" && (
         <div style={{ fontSize: 13, color: "#9aa0ab", lineHeight: 1.6 }}>
-          切換至 PAPER 後，系統將開始記錄模擬成交。至少 1 個交易日後可檢視 audit summary，之後可手動解鎖 LIVE。
+          切換至 SIM 後，系統將開始記錄模擬成交。至少 1 個交易日後可檢視 audit summary；正式券商寫入仍維持關閉。
         </div>
       )}
 
@@ -544,20 +549,20 @@ function PaperObservationPanel({
             <strong>{startDate}</strong>
           </div>
           <div>
-            <span style={{ color: "#888" }}>預計解鎖 LIVE：</span>
+            <span style={{ color: "#888" }}>預計完成 SIM 觀察：</span>
             <strong style={{ color: "#60a5fa" }}>
               {expectedUnlockDate} 收盤後
             </strong>
           </div>
           <div style={{ marginTop: 8, fontSize: 12, color: "#777" }}>
-            觀察期間系統持續紀錄：模擬成交筆數 / 模擬 P&L / kill switch 觸發紀錄 / 4 層風控觸發紀錄。audit summary 產生後可在此查看，確認後才能解鎖 LIVE。
+            觀察期間系統持續紀錄：模擬成交筆數 / 模擬 P&L / kill switch 觸發紀錄 / 4 層風控觸發紀錄。audit summary 產生後可在此查看；正式券商寫入需另行後端契約與風控驗收。
           </div>
         </div>
       )}
 
       {status === "completed" && (
         <div style={{ fontSize: 13, color: "#2ecc71", lineHeight: 1.6 }}>
-          Paper 觀察完成。Audit summary 已產生，可切換 LIVE。
+          SIM 觀察完成。Audit summary 已產生；仍不可啟用正式券商寫入。
         </div>
       )}
 
@@ -610,11 +615,10 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const amountInputRef = useRef<HTMLInputElement>(null);
 
-  // Determine if LIVE should be disabled
-  const paperObsDone = data.paperObservation.status === "completed";
-  const liveDisabled = !paperObsDone;
+  // Candidate/live broker-write is intentionally closed in this frontend lane.
+  const liveDisabled = true;
   const liveDisabledReason =
-    "需先完成至少 1 個交易日的 Paper 觀察期後，才能解鎖 LIVE";
+    "正式券商寫入關閉；目前只允許研究與 SIM 觀察，候選交接需 Jason/風控另行開啟後端契約。";
 
   // Load user role
   useEffect(() => {
@@ -632,13 +636,14 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
       if (mode === currentMode) return;
 
       if (mode === "LIVE") {
-        // Must confirm
-        setPendingMode(mode);
-        setShowConfirmModal(true);
+        setToggleState({
+          status: "error",
+          message: "正式券商寫入關閉；此頁目前不能切換正式券商模式。",
+        });
         return;
       }
 
-      // OFF / PAPER — confirm-free
+      // OFF / SIM — confirm-free
       applyMode(mode);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -933,7 +938,7 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
             OWNER ONLY
           </div>
           <div style={{ fontSize: 13, color: "#666" }}>
-            真金交易切換功能僅限 Owner 角色使用。
+            策略治理階段控制僅限 Owner 角色使用；目前不提供正式券商寫入。
           </div>
         </div>
       )}
@@ -949,7 +954,7 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-            <SectionHead title="交易模式切換（Owner）" />
+            <SectionHead title="策略治理階段（Owner / SIM-only）" />
           </div>
 
           {/* Mode indicator */}
@@ -959,7 +964,7 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
               fontFamily: "var(--mono, monospace)",
               color:
                 currentMode === "LIVE"
-                  ? "#e63946"
+                  ? "#ffb800"
                   : currentMode === "PAPER"
                     ? "#60a5fa"
                     : "#666",
@@ -967,12 +972,12 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
               letterSpacing: 0.4,
             }}
           >
-            目前模式：<strong>{currentMode}</strong>
+            目前階段：<strong>{modeDisplayLabel(currentMode)}</strong>
             {currentMode === "LIVE" && (
-              <span style={{ marginLeft: 8, color: "#e63946" }}>▲ 真實資金</span>
+              <span style={{ marginLeft: 8, color: "#ffb800" }}>候選交接 · 券商寫入關閉</span>
             )}
             {currentMode === "PAPER" && (
-              <span style={{ marginLeft: 8, color: "#60a5fa" }}>● Paper 模擬中</span>
+              <span style={{ marginLeft: 8, color: "#60a5fa" }}>SIM 模擬觀察</span>
             )}
           </div>
 
@@ -998,7 +1003,7 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
             )}
           </div>
 
-          {/* Amount input — only visible when PAPER or LIVE selected */}
+          {/* Amount input — visible for SIM or candidate review only. */}
           {(currentMode === "PAPER" || currentMode === "LIVE") && (
             <div style={{ marginBottom: 16 }}>
               <label
@@ -1014,7 +1019,7 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
                   marginBottom: 6,
                 }}
               >
-                分配金額（TWD 整數）
+                SIM 分配金額（TWD 整數，非正式送單）
               </label>
               <input
                 id="strategy-amount"
@@ -1060,7 +1065,7 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
                 fontFamily: "var(--mono, monospace)",
               }}
             >
-              已切換至 {toggleState.mode}
+              已切換至 {modeDisplayLabel(toggleState.mode)}
             </div>
           )}
           {toggleState.status === "error" && (
@@ -1075,7 +1080,7 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
             </div>
           )}
 
-          {/* Paper observation panel */}
+          {/* SIM observation panel */}
           <PaperObservationPanel data={data} currentMode={currentMode} />
         </div>
       )}
