@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { QuantStrategy, StrategyCurvePoint } from "../strategy-data";
 import styles from "../QuantStrategies.module.css";
@@ -121,6 +122,9 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const openButtonRef = useRef<HTMLButtonElement | null>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const busyRef = useRef(false);
 
   const budget = useMemo(() => Number(capital.replace(/,/g, "")), [capital]);
   const capitalValid = Number.isFinite(budget) && budget >= MIN_SIM_CAPITAL && budget <= MAX_SIM_CAPITAL;
@@ -148,6 +152,41 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
 
   const executable = preview.filter((row) => row.qty > 0);
   const totalNotional = executable.reduce((sum, row) => sum + row.notional, 0);
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  useEffect(() => {
+    if (!confirmOpen) return;
+
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusTimer = window.setTimeout(() => cancelButtonRef.current?.focus(), 0);
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || busyRef.current) return;
+      event.preventDefault();
+      setConfirmOpen(false);
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.setTimeout(() => {
+        if (previousFocus && document.contains(previousFocus)) {
+          previousFocus.focus();
+          return;
+        }
+        openButtonRef.current?.focus();
+      }, 0);
+    };
+  }, [confirmOpen]);
+
+  function closeConfirmDialog() {
+    if (busyRef.current) return;
+    setConfirmOpen(false);
+  }
 
   async function subscribeStrategy() {
     if (!confirmed || busy || executable.length === 0 || !capitalValid) return;
@@ -231,6 +270,7 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
       </label>
 
       <button
+        ref={openButtonRef}
         className={styles.button}
         type="button"
         disabled={!confirmed || busy || executable.length === 0 || !capitalValid}
@@ -247,25 +287,45 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
       )}
       {error && <div className={`${styles.notice} ${styles.error}`} style={{ marginTop: 12 }}>{error}</div>}
 
-      {confirmOpen && (
-        <div className={styles.modalBackdrop} role="presentation">
-          <div className={styles.confirmModal} role="dialog" aria-modal="true" aria-labelledby="sim-confirm-title">
-            <h3 id="sim-confirm-title">確認 SIM 策略訂閱</h3>
-            <p>
-              將建立 {strategy.shortName} 的 SIM-only 策略訂閱，配置資金 {money(budget)} TWD，
-              目前預估 {executable.length} 檔、名目金額 {money(totalNotional)} TWD。這不會直接送出個股委託。
-            </p>
-            <div className={styles.confirmActions}>
-              <button type="button" className={styles.buttonGhost} onClick={() => setConfirmOpen(false)} disabled={busy}>
-                取消
-              </button>
-              <button type="button" className={styles.button} onClick={subscribeStrategy} disabled={busy}>
-                {busy ? "建立中" : "確認建立"}
-              </button>
+      {confirmOpen &&
+        createPortal(
+          <div
+            className={styles.modalBackdrop}
+            role="presentation"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) closeConfirmDialog();
+            }}
+          >
+            <div
+              className={styles.confirmModal}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="sim-confirm-title"
+              aria-describedby="sim-confirm-description"
+              tabIndex={-1}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                closeConfirmDialog();
+              }}
+            >
+              <h3 id="sim-confirm-title">確認 SIM 策略訂閱</h3>
+              <p id="sim-confirm-description">
+                將建立 {strategy.shortName} 的 SIM-only 策略訂閱，配置資金 {money(budget)} TWD，
+                目前預估 {executable.length} 檔、名目金額 {money(totalNotional)} TWD。這不會直接送出個股委託。
+              </p>
+              <div className={styles.confirmActions}>
+                <button ref={cancelButtonRef} type="button" className={styles.buttonGhost} onClick={closeConfirmDialog} disabled={busy}>
+                  取消
+                </button>
+                <button type="button" className={styles.button} onClick={subscribeStrategy} disabled={busy}>
+                  {busy ? "建立中" : "確認建立"}
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </aside>
   );
 }
