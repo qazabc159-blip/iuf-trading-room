@@ -23,9 +23,9 @@ function displayCode(code: string) {
     "01": "戰情台總覽",
     "02": "市場情報",
     "03": "公司板",
-    "04": "策略想法",
+    "04": "交易室",
     "05": "策略批次",
-    "06": "模擬交易室",
+    "06": "交易室",
     "07": "警示",
     "08": "訊號證據",
     "09": "交易計畫",
@@ -35,11 +35,13 @@ function displayCode(code: string) {
     "03-ERR": "公司板 / 資料狀態",
     "03-NF": "公司板 / 查無公司",
     "05-D": "量化研究 / 批次明細",
-    "06-PORT": "模擬交易室 / 部位",
+    "06-PORT": "交易室 / 部位",
     "LAB-D": "量化研究 / 策略包",
   };
 
   if (exact[code]) return exact[code];
+  if (code.startsWith("AI-")) return "AI 推薦 / 明細";
+  if (code.startsWith("QNT-")) return "量化策略 / 明細";
   if (code.startsWith("10-")) return "主題板 / 明細";
   if (code.startsWith("12-")) return "AI 每日簡報 / 明細";
 
@@ -58,6 +60,7 @@ function displayCode(code: string) {
     EXC: "交易",
     IDA: "策略想法",
     IDEA: "策略想法",
+    AI: "AI 推薦",
     INT: "市場情報",
     JOB: "工作",
     KIL: "風控開關",
@@ -72,6 +75,7 @@ function displayCode(code: string) {
     POS: "部位",
     PROMO: "發布",
     QTE: "報價",
+    QNT: "量化策略",
     REV: "審核",
     RISK: "風控",
     RSK: "風控",
