@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   Building2,
@@ -63,6 +64,11 @@ function pathMatches(pathname: string, path: string) {
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   async function handleLogout() {
     await apiLogout();
@@ -86,7 +92,7 @@ export function Sidebar() {
 
       <nav className="tac-nav" aria-label="主要導覽">
         {NAV.map((item) => {
-          const active = item.activePaths.some((path) => pathMatches(pathname, path));
+          const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
           const Icon = item.Icon;
           return (
             <Link key={item.path} href={item.path} className={active ? "active" : ""}>

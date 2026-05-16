@@ -12,13 +12,18 @@ function firstParam(value: string | string[] | undefined) {
 }
 
 function buildPaperRoomSrc(params: PortfolioSearchParams | undefined) {
-  const query = new URLSearchParams({ rev: Date.now().toString(36) });
+  const query = new URLSearchParams();
+  const revParts: string[] = [];
 
   for (const key of HANDOFF_PARAMS) {
     const value = firstParam(params?.[key])?.trim();
-    if (value) query.set(key, value);
+    if (value) {
+      query.set(key, value);
+      revParts.push(`${key}:${value}`);
+    }
   }
 
+  query.set("rev", revParts.length ? `handoff-${revParts.join("|")}` : "portfolio");
   return `/api/ui-final-v031/paper-trading-room?${query.toString()}`;
 }
 

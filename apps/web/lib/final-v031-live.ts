@@ -962,7 +962,7 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
         prefill.target ? "目標 " + prefill.target : null,
         prefill.recommendationId ? "rec " + prefill.recommendationId : null
       ].filter(Boolean);
-      box.innerHTML = '<div class="k">AI RECOMMENDATION HANDOFF</div><div class="v">'+esc(selected.symbol || prefill.symbol || "—")+' 已帶入交易室，請重新核對風控與委託價。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
+      box.innerHTML = '<div class="k">AI RECOMMENDATION SIM PREVIEW</div><div class="v">'+esc(selected.symbol || prefill.symbol || "—")+' 已帶入交易室 SIM 預覽，請重新核對風控與委託價。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
     }
 
     const entryPrice = firstNumber(prefill.entry);
@@ -975,8 +975,15 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     const orderType = $("#t-otype");
     if (orderType && entryPrice != null) orderType.value = "limit";
 
-    const submitLabel = $("#submit-btn-label");
-    if (submitLabel) submitLabel.textContent = "AI 推薦已帶入，請預覽";
+    const setSubmitPreviewLabel = () => {
+      const submit = $("#submit-btn");
+      const label = $("#submit-btn-label") || submit?.querySelector("b");
+      if (label) {
+        if (!label.id) label.id = "submit-btn-label";
+        label.textContent = "AI 推薦已帶入 SIM 預覽";
+      }
+    };
+    setSubmitPreviewLabel();
 
     const entryLabel = $(".lv-label.entry"); if (entryLabel && prefill.entry) entryLabel.textContent = "建倉 " + prefill.entry;
     const stopLabel = $(".lv-label.stop"); if (stopLabel && prefill.stop) stopLabel.textContent = "停損 " + prefill.stop;
@@ -987,6 +994,7 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     } catch {
       // Vendor preview is best-effort; backend preview still runs on submit.
     }
+    setSubmitPreviewLabel();
   }
 
   function hydratePaper() {
