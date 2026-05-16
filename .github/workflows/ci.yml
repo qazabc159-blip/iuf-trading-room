@@ -35,7 +35,7 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: 'pnpm'
+          package-manager-cache: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -74,7 +74,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip'
 
       - name: Run W6 no-real-order audit
         run: python3 scripts/audit/w6_no_real_order_audit.py
@@ -95,7 +94,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip'
 
       - name: Run secret regression check
         run: python3 scripts/audit/secret_regression_check.py
