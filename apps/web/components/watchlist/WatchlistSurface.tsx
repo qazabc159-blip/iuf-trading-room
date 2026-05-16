@@ -17,7 +17,7 @@ function formatTime(value: string | null | undefined) {
 }
 
 function gateLabel(value: string | null | undefined) {
-  if (value === "trading") return "可交易";
+  if (value === "trading") return "SIM 檢查通過";
   if (value === "paper_only") return "僅模擬";
   if (value === "liquidate_only") return "只減倉";
   if (value === "halted") return "暫停";
