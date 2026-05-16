@@ -2160,7 +2160,7 @@ function PaperPanel({
   const brokerReady = Boolean(broker.data?.formalReadOnlyConnected);
   const steps = [
     { id: "1", name: "正式環境", desc: "券商只讀登入", state: brokerReady ? "LIVE" : stateFromLoad(broker), count: brokerReady ? 1 : 0, note: brokerReady ? "已登入" : "等待回報" },
-    { id: "2", name: "公司頁預覽", desc: "委託前檢查", state: data?.previewReady ? "LIVE" : stateFromLoad(paper), count: data?.previewReady ? 1 : 0, note: data?.previewReady ? "可做風控預覽" : "等待預覽" },
+    { id: "2", name: "交易室預覽", desc: "委託前檢查", state: data?.previewReady ? "LIVE" : stateFromLoad(paper), count: data?.previewReady ? 1 : 0, note: data?.previewReady ? "交易室可預覽" : "等待預覽" },
     { id: "3", name: "風控檢查", desc: "限制與守門", state: data?.gate.gateOpen ? "LIVE" : "BLOCKED", count: data?.gate.gateOpen ? 1 : 0, note: data?.gate.gateOpen ? "可檢查" : "目前關閉" },
     { id: "4", name: "委託草稿", desc: "只做紙上流程", state: data?.previewReady ? "LIVE" : "EMPTY", count: data?.queueDepth ?? 0, note: `${formatNumber(data?.queueDepth)} 筆等待` },
     { id: "5", name: "紙上送出", desc: "紙上流程", state: data?.submitReady ? "DEGRADED" : "EMPTY", count: data?.submitReady ? 1 : 0, note: "需操作員確認" },
@@ -2199,7 +2199,7 @@ function StrategyPanel({ ideas }: { ideas: LoadState<StrategyIdeasData | null> }
         <div className="tac-strategy-table">
           <div><span>代號</span><span>名稱</span><span>立場</span><span>信心</span><span>閘門</span></div>
           {rows.map((idea: StrategyIdeaItem) => (
-            <Link href={`/companies/${encodeURIComponent(idea.symbol)}#paper-order`} key={`${idea.companyId}-${idea.symbol}`}>
+            <Link href={`/portfolio?ticker=${encodeURIComponent(idea.symbol)}&prefill=true&from_strategy=home`} key={`${idea.companyId}-${idea.symbol}`}>
               <b>{idea.symbol}</b>
               <span>{idea.companyName}</span>
               <small>{directionLabel(idea.direction)}</small>
@@ -2230,7 +2230,7 @@ function WorkflowPanel({
     { id: "1", title: "看盤勢總覽", desc: market.state === "LIVE" ? "報價、排行與熱力圖已回傳。" : "行情不足時只標示缺口，不顯示假價格。", href: "/companies", state: stateFromLoad(market), cta: "查看公司池" },
     { id: "2", title: "讀重大訊息", desc: intel.data.items.length > 0 ? `今日工作流有 ${intel.data.items.length} 筆官方訊息。` : "目前沒有可顯示的官方重大訊息。", href: "/market-intel", state: stateFromLoad(intel), cta: "打開情報" },
     { id: "3", title: "確認 AI 簡報", desc: brief.data.state === "PUBLISHED" ? "今日正式簡報已發布。" : "等待整理、確認或發布。", href: "/briefs", state: brief.data.state === "PUBLISHED" ? "LIVE" as DashboardState : brief.data.state === "AWAITING_REVIEW" ? "REVIEW" as DashboardState : "EMPTY" as DashboardState, cta: "查看簡報" },
-    { id: "4", title: "紙上交易預覽", desc: paper.data?.previewReady ? "可進公司頁做風控預覽。" : "等待紙上預覽開啟。", href: "/companies/2330#paper-order", state: paper.data?.previewReady ? "LIVE" as DashboardState : stateFromLoad(paper), cta: "開啟預覽" },
+    { id: "4", title: "紙上交易預覽", desc: paper.data?.previewReady ? "可進交易室做風控預覽。" : "等待紙上預覽開啟。", href: "/portfolio?prefill=true&from_home=paper_preview", state: paper.data?.previewReady ? "LIVE" as DashboardState : stateFromLoad(paper), cta: "開啟交易室" },
     { id: "5", title: "部位與成交回顧", desc: "只看紙上部位與成交紀錄，不連真實券商委託。", href: "/portfolio", state: paper.data?.portfolioReady || paper.data?.fillsReady ? "LIVE" as DashboardState : "EMPTY" as DashboardState, cta: "查看部位" },
   ];
   return (
