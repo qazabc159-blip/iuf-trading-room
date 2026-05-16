@@ -347,7 +347,7 @@ export default async function ReviewsPage() {
       <div className="_rev-note" style={{ marginTop: reviews.length > 0 ? 24 : 16 }}>
         <div className="_rev-note-title">READ-ONLY 邊界</div>
         <div className="_rev-note-body">
-          本頁是只讀覆盤面板。模擬委託預覽與送出已放在個股頁；核准或退回動作尚未有正式後端契約，舊的本地按鈕已移除。
+          本頁是只讀覆盤面板。模擬預覽、風控核對與委託送出集中在交易室；核准或退回動作尚未有正式後端契約，舊的本地按鈕已移除。
         </div>
       </div>
     </PageFrame>
