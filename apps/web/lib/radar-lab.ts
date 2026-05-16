@@ -184,7 +184,7 @@ export const labDisplay = {
     NEW: "待審",
     APPROVED: "已核准",
     REJECTED: "已退回",
-    PUSHED: "已送出",
+    PUSHED: "已交接",
   } satisfies Record<LabBundleStatus, string>,
 };
 

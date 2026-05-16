@@ -83,7 +83,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
         { label: "待審", value: "--", tone: "muted" as const },
         { label: "已核准", value: "--", tone: "muted" as const },
         { label: "已退回", value: "--", tone: "muted" as const },
-        { label: "已送出", value: "--", tone: "muted" as const },
+        { label: "已交接", value: "--", tone: "muted" as const },
         { label: "績效", value: "隱藏", tone: "gold" as const },
       ];
     }
@@ -97,7 +97,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
       { label: "待審", value: pending, tone: "muted" as const },
       { label: "已核准", value: approved, tone: "status-ok" as const },
       { label: "已退回", value: rejected, tone: rejected > 0 ? "status-bad" as const : "muted" as const },
-      { label: "已送出", value: pushed, tone: "gold" as const },
+      { label: "已交接", value: pushed, tone: "gold" as const },
       { label: "績效", value: "待核准", tone: "gold" as const },
     ];
   }, [bundles, statsAvailable]);
@@ -130,7 +130,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
           <span className="tg gold">量化研究 / 策略包收件台</span>
           <h2>先收正式策略包，再談績效曲線。</h2>
           <p>
-            這頁是量化研究與紙上驗證的交接台。沒有正式策略包時只顯示資料狀態；
+            這頁是量化研究與 SIM 驗證的交接台。沒有正式策略包時只顯示資料狀態；
             有策略包也只先顯示來源、狀態與分歧回饋；未經完整驗證前，不顯示勝率、報酬或權益曲線。
           </p>
         </div>
@@ -190,8 +190,8 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
                     <button className="outline-button danger-soft" type="button" disabled={!!busy || actionsBlocked} onClick={() => applyAction(bundle.bundleId, "REJECTED", "REJECT")}>
                       退回
                     </button>
-                    <span className="idea-promotion-block" role="status" title="策略包轉入紙上驗證仍需完成交接流程。">
-                      紙上驗證待開啟
+                    <span className="idea-promotion-block" role="status" title="策略包轉入 SIM 驗證仍需完成交接流程。">
+                      SIM 驗證待開啟
                     </span>
                   </div>
                 </article>
@@ -202,7 +202,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
             <div className="terminal-note" style={{ marginTop: 12 }}>
               {actionError
                 ? `暫停：量化研究動作失敗。${actionError}`
-                : "轉入紙上驗證需等待量化研究交接流程完成；核准/退回會更新量化研究正式資料。"}
+                : "轉入 SIM 驗證需等待量化研究交接流程完成；核准/退回會更新量化研究正式資料。"}
             </div>
           )}
         </Panel>
