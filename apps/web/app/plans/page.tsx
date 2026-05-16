@@ -910,7 +910,7 @@ export default async function PlansPage() {
           <div className="_pln-lock-note">
             <div className="_pln-lock-note-title">READ-ONLY 邊界</div>
             <div className="_pln-lock-note-body">
-              本頁是只讀計畫面板。模擬委託預覽與送出已放在個股頁；實盤送單仍需完整風控與操作員明示。
+              本頁是只讀計畫面板。模擬預覽、風控核對與委託送出集中在交易室；實盤送單仍需完整風控與操作員明示。
             </div>
           </div>
         </div>
