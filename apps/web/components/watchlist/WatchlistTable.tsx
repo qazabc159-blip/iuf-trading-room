@@ -48,9 +48,9 @@ function quoteBlocked(row: WatchlistRow) {
 
 function promoteReason(row: WatchlistRow) {
   if (row.promoteBlockedReason) return row.promoteBlockedReason;
-  if (quoteBlocked(row)) return "報價資料尚未完整，不能轉入模擬委託。";
+  if (quoteBlocked(row)) return "報價資料尚未完整，不能建立模擬交接。";
   if (!row.hypothetical1LotBuyRisk) return "風控預覽尚未可用。";
-  return "轉入模擬委託仍暫停；需完成策略交接、風控預覽與操作者確認。";
+  return "模擬交接仍暫停；需完成策略交接、風控預覽與操作者確認。";
 }
 
 export function WatchlistTable({ rows, cap = 10 }: { rows: WatchlistRow[]; cap?: number }) {
@@ -65,7 +65,7 @@ export function WatchlistTable({ rows, cap = 10 }: { rows: WatchlistRow[]; cap?:
         <span>賣價</span>
         <span>漲跌%</span>
         <span>風控</span>
-        <span>轉單</span>
+        <span>模擬交接</span>
       </div>
       {displayRows.map((row) => {
         const advisory = row.hypothetical1LotBuyRisk;
