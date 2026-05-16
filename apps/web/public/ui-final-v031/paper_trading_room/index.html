@@ -656,15 +656,19 @@ function drawChart(sym){
   const hi=Math.max(...data.map(d=>d.h)), lo=Math.min(...data.map(d=>d.l));
   const vMax=Math.max(...data.map(d=>d.v));
   const priceTop=10, priceBot=290, volTop=320, volBot=370;
-  const yp=p=>priceTop+(priceBot-priceTop)*(1-(p-lo)/(hi-lo));
-  const yv=v=>volBot-(volBot-volTop)*(v/vMax);
+  const span=hi===lo?Math.max(1,Math.abs(hi)*0.01):hi-lo;
+  const adjHi=hi===lo?hi+span/2:hi;
+  const adjLo=hi===lo?lo-span/2:lo;
+  const volMax=vMax>0?vMax:1;
+  const yp=p=>priceTop+(priceBot-priceTop)*(1-(p-adjLo)/(adjHi-adjLo));
+  const yv=v=>volBot-(volBot-volTop)*(v/volMax);
   const xw=(W-padL-padR)/N, xb=i=>padL+i*xw, bw=Math.max(2,xw*0.6);
 
   // grid
   const grid=[];
   for(let i=0;i<=4;i++){
     const y=priceTop+(priceBot-priceTop)*i/4;
-    const v=hi-(hi-lo)*i/4;
+    const v=adjHi-(adjHi-adjLo)*i/4;
     grid.push(`<line class="gridline" x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}"/>`);
     grid.push(`<text class="axislabel" x="${W-padR+4}" y="${y+3}">${v.toFixed(1)}</text>`);
   }
@@ -689,17 +693,17 @@ function drawChart(sym){
     let s=0;for(let k=i-19;k<=i;k++)s+=data[k].c;
     ma.push([xb(i)+bw/2,yp(s/20)]);
   }
-  document.getElementById('ma').setAttribute('d','M '+ma.map(p=>p.join(',')).join(' L '));
+  document.getElementById('ma').setAttribute('d',ma.length?'M '+ma.map(p=>p.join(',')).join(' L '):'');
 
   // VWAP
   let pv=0,vv=0;const vw=[];
-  data.forEach((d,i)=>{const typ=(d.h+d.l+d.c)/3;pv+=typ*d.v;vv+=d.v;vw.push([xb(i)+bw/2,yp(pv/vv)]);});
-  document.getElementById('vwap').setAttribute('d','M '+vw.map(p=>p.join(',')).join(' L '));
+  data.forEach((d,i)=>{const typ=(d.h+d.l+d.c)/3;pv+=typ*d.v;vv+=d.v;if(vv>0)vw.push([xb(i)+bw/2,yp(pv/vv)]);});
+  document.getElementById('vwap').setAttribute('d',vw.length?'M '+vw.map(p=>p.join(',')).join(' L '):'');
 
   // crosshair binding
   svg.dataset.W=W;svg.dataset.padL=padL;svg.dataset.padR=padR;svg.dataset.xw=xw;svg.dataset.N=N;
   // store dataset stats on svg for crosshair
-  window.__chart={data,N,padL,padR,xw,bw,yp,yv,priceTop,priceBot,hi,lo};
+  window.__chart={data,N,padL,padR,xw,bw,yp,yv,priceTop,priceBot,hi:adjHi,lo:adjLo};
 }
 
 // crosshair handlers
