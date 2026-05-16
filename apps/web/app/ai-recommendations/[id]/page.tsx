@@ -193,7 +193,7 @@ export default async function AiRecommendationDetailPage({
   if (!rec) return <ErrorState message={error ?? "推薦詳情不存在。"} />;
 
   const prefillHref = buildPrefillHref(rec);
-  const sourceMode = data?._mock ? "mock fallback" : "live";
+  const sourceMode = data?._mock ? "FALLBACK FEED" : "ORCHESTRATOR";
 
   return (
     <PageFrame code="AI-D" title={`${rec.ticker} ${rec.companyName}`} sub="AI 推薦詳情 / Recommendation Orchestrator">
