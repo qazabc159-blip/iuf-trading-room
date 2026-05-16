@@ -956,13 +956,15 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     }
 
     if (box) {
+      box.setAttribute("role", "status");
+      box.setAttribute("aria-live", "polite");
       const meta = [
         prefill.entry ? "進場 " + prefill.entry : null,
         prefill.stop ? "停損 " + prefill.stop : null,
         prefill.target ? "目標 " + prefill.target : null,
         prefill.recommendationId ? "rec " + prefill.recommendationId : null
       ].filter(Boolean);
-      box.innerHTML = '<div class="k">AI RECOMMENDATION SIM PREVIEW</div><div class="v">'+esc(selected.symbol || prefill.symbol || "—")+' 已帶入交易室 SIM 預覽，請重新核對風控與委託價。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
+      box.innerHTML = '<div class="k">AI RECOMMENDATION SIM PREVIEW</div><div class="v">'+esc(selected.symbol || prefill.symbol || "推薦標的")+' 已帶入交易室 SIM 預覽；此區只建立模擬紀錄，不會建立券商委託。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
     }
 
     const entryPrice = firstNumber(prefill.entry);
@@ -980,7 +982,7 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
       const label = $("#submit-btn-label") || submit?.querySelector("b");
       if (label) {
         if (!label.id) label.id = "submit-btn-label";
-        label.textContent = "AI 推薦已帶入 SIM 預覽";
+        label.textContent = "AI 推薦帶入的 SIM 預覽";
       }
     };
     setSubmitPreviewLabel();
@@ -995,6 +997,9 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
       // Vendor preview is best-effort; backend preview still runs on submit.
     }
     setSubmitPreviewLabel();
+    const cleanEntryLabel = $(".lv-label.entry"); if (cleanEntryLabel && prefill.entry) cleanEntryLabel.textContent = "進場 " + prefill.entry;
+    const cleanStopLabel = $(".lv-label.stop"); if (cleanStopLabel && prefill.stop) cleanStopLabel.textContent = "停損 " + prefill.stop;
+    const cleanTargetLabel = $(".lv-label.target"); if (cleanTargetLabel && prefill.target) cleanTargetLabel.textContent = "目標 " + prefill.target;
   }
 
   function hydratePaper() {

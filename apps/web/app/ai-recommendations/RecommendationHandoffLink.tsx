@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
 
-const HANDOFF_TITLE = "帶入交易室 SIM 預覽（不送正式券商委託）";
+const HANDOFF_TITLE = "帶入交易室 SIM 預覽；不會建立券商委託";
 
 function handoffParam(href: string, key: string) {
   try {
@@ -26,7 +26,7 @@ function buildHandoffLabel(href: string, recommendationId: string) {
     `推薦 ${recommendationId}`,
   ].filter(Boolean);
 
-  return `${HANDOFF_TITLE}${details.length ? `：${details.join("，")}` : ""}`;
+  return `${HANDOFF_TITLE}${details.length ? `，${details.join("，")}` : ""}`;
 }
 
 function recordActed(recommendationId: string) {
