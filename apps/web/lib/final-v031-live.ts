@@ -40,7 +40,7 @@ export type PaperPrefillHandoff = {
   entry: string | null;
   stop: string | null;
   target: string | null;
-  source: "ai_recommendations" | "url";
+  source: "ai_recommendations" | "strategy_home" | "home_paper_preview" | "strategy_run" | "url";
 };
 
 type FinalV031PayloadOptions = {
@@ -334,6 +334,19 @@ function latestOhlcv(ohlcv: OhlcvBar[]) {
   return ohlcv.length ? ohlcv[ohlcv.length - 1] : null;
 }
 
+function paperPrefillSourceLabel(source: PaperPrefillHandoff["source"]) {
+  if (source === "ai_recommendations") return "來源 AI 推薦";
+  if (source === "strategy_home") return "來源 首頁策略";
+  if (source === "home_paper_preview") return "來源 首頁紙上交易";
+  if (source === "strategy_run") return "來源 策略 Run";
+  return "來源 URL";
+}
+
+function paperPrefillWatchMeta(prefill: PaperPrefillHandoff) {
+  const source = paperPrefillSourceLabel(prefill.source);
+  return prefill.recommendationId ? `${source} · ${prefill.recommendationId}` : source;
+}
+
 function sameSymbol(left: string | null | undefined, right: string | null | undefined) {
   return String(left ?? "").toUpperCase() === String(right ?? "").toUpperCase();
 }
@@ -385,7 +398,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     ...(prefill?.enabled && selectedSymbol ? [{
       symbol: selectedSymbol,
       name: company?.name ?? selectedSymbol,
-      meta: prefill.recommendationId ? `AI 推薦帶入 · ${prefill.recommendationId}` : "URL 帶入",
+      meta: paperPrefillWatchMeta(prefill),
       price: lastPrice,
       changePct,
     }] : []),
@@ -513,6 +526,20 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     const text = String(value || "").trim().replace(/[<>]/g, "");
     return text ? text.slice(0, max) : null;
   };
+  const paperPrefillSource = (params, recommendationId) => {
+    if (recommendationId) return "ai_recommendations";
+    if (queryText(params.get("from_strategy"), 40)) return "strategy_home";
+    if (queryText(params.get("from_home"), 40)) return "home_paper_preview";
+    if (queryText(params.get("from_run"), 40)) return "strategy_run";
+    return "url";
+  };
+  const paperPrefillSourceLabel = (source) => {
+    if (source === "ai_recommendations") return "來源 AI 推薦";
+    if (source === "strategy_home") return "來源 首頁策略";
+    if (source === "home_paper_preview") return "來源 首頁紙上交易";
+    if (source === "strategy_run") return "來源 策略 Run";
+    return "來源 URL";
+  };
   const readPaperPrefillFromUrl = () => {
     if (live.screen !== "paper-trading-room") return null;
     const params = new URLSearchParams(window.location.search);
@@ -522,8 +549,9 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     const entry = queryText(params.get("entry"), 40);
     const stop = queryText(params.get("stop"), 40);
     const target = queryText(params.get("tp"), 40);
-    const enabled = params.get("prefill") === "true" || !!(symbol || recommendationId || entry || stop || target);
-    return enabled ? { enabled:true, symbol, recommendationId, entry, stop, target, source: recommendationId ? "ai_recommendations" : "url" } : null;
+    const source = paperPrefillSource(params, recommendationId);
+    const enabled = params.get("prefill") === "true" || !!(symbol || recommendationId || entry || stop || target) || source !== "url";
+    return enabled ? { enabled:true, symbol, recommendationId, entry, stop, target, source } : null;
   };
   const paperPrefill = () => live.prefill || readPaperPrefillFromUrl();
   const sameSym = (left, right) => String(left || "").toUpperCase() === String(right || "").toUpperCase();
@@ -755,7 +783,7 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     const previous = prevBar?.close ?? null;
     const change = lastPrice != null && previous != null ? Number(lastPrice) - Number(previous) : null;
     const changePct = change != null && previous ? change / Number(previous) * 100 : null;
-    const prefillWatch = prefill?.enabled && selectedSymbol ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? "AI 推薦帶入 · " + prefill.recommendationId : "URL 帶入", price:lastPrice, changePct }] : [];
+    const prefillWatch = prefill?.enabled && selectedSymbol ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? paperPrefillSourceLabel(prefill.source) + " · " + prefill.recommendationId : paperPrefillSourceLabel(prefill.source), price:lastPrice, changePct }] : [];
     const watchlist = prefillWatch.concat(portfolio.map((pos) => ({ symbol:pos.symbol, name:pos.symbol, meta:String(pos.netQtyShares || 0) + " 股 · " + String(pos.fillCount || 0) + " 筆成交", price:pos.symbol === selectedSymbol ? lastPrice : pos.avgCostPerShare, changePct:pos.symbol === selectedSymbol ? changePct : null })))
       .concat(ideas.map((idea) => ({ symbol:idea.symbol, name:idea.companyName, meta:idea.status + " · " + idea.signalCount + " 訊號", price:null, changePct:null })))
       .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index)
@@ -959,6 +987,7 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
       box.setAttribute("role", "status");
       box.setAttribute("aria-live", "polite");
       const meta = [
+        paperPrefillSourceLabel(prefill.source),
         prefill.entry ? "進場 " + prefill.entry : null,
         prefill.stop ? "停損 " + prefill.stop : null,
         prefill.target ? "目標 " + prefill.target : null,

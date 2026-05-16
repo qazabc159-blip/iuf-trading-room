@@ -185,6 +185,14 @@ function safeTicker(value: string | null) {
   return ticker;
 }
 
+function paperPrefillSource(params: URLSearchParams, recommendationId: string | null): PaperPrefillHandoff["source"] {
+  if (recommendationId) return "ai_recommendations";
+  if (safeQueryText(params.get("from_strategy"), 40)) return "strategy_home";
+  if (safeQueryText(params.get("from_home"), 40)) return "home_paper_preview";
+  if (safeQueryText(params.get("from_run"), 40)) return "strategy_run";
+  return "url";
+}
+
 function parsePaperPrefill(request: Request): PaperPrefillHandoff | null {
   const params = new URL(request.url).searchParams;
   const symbol = safeTicker(params.get("ticker") ?? params.get("symbol"));
@@ -192,7 +200,8 @@ function parsePaperPrefill(request: Request): PaperPrefillHandoff | null {
   const entry = safeQueryText(params.get("entry"), 40);
   const stop = safeQueryText(params.get("stop"), 40);
   const target = safeQueryText(params.get("tp"), 40);
-  const enabled = params.get("prefill") === "true" || Boolean(symbol || recommendationId || entry || stop || target);
+  const source = paperPrefillSource(params, recommendationId);
+  const enabled = params.get("prefill") === "true" || Boolean(symbol || recommendationId || entry || stop || target) || source !== "url";
 
   if (!enabled) return null;
 
@@ -203,7 +212,7 @@ function parsePaperPrefill(request: Request): PaperPrefillHandoff | null {
     entry,
     stop,
     target,
-    source: recommendationId ? "ai_recommendations" : "url",
+    source,
   };
 }
 
