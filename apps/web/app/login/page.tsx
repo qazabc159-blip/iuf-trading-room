@@ -14,12 +14,12 @@ const ACCOUNT_CAPABILITIES = [
   {
     label: "模擬交易",
     state: "可用",
-    body: "正式券商送單前，先做報價、風控、委託與成交流程演練。",
+    body: "券商寫入關閉中，先以 SIM 流程演練報價、風控、委託紀錄與成交回放。",
   },
   {
     label: "券商綁定",
     state: "預留",
-    body: "之後一個網站帳號可綁定自己的證券帳號；凱基 SDK 補齊後再開正式送單。",
+    body: "之後一個網站帳號可綁定自己的證券帳號；正式券商寫入需產品、風控與後端契約驗收後另行開啟。",
   },
   {
     label: "訂閱權限",
@@ -89,10 +89,10 @@ export default function LoginPage() {
         <div className="login-grid">
           <div className="login-copy">
             <div className="tg gold">IUF 帳號 · 台股交易工作台</div>
-            <h2>登入、建立帳號、之後綁券商都在這裡</h2>
+            <h2>登入、建立帳號、SIM 工作台入口都在這裡</h2>
             <p className="login-intro">
               這裡是 IUF 網站帳號入口，不是券商下單登入。現階段用邀請碼開通測試帳號；
-              未來同一個帳號會承接證券帳號綁定、資料權限、月費方案與 AI 每日簡報。
+              未來同一個帳號會承接證券帳號綁定、資料權限、月費方案與 AI 每日簡報，正式券商寫入維持關閉。
             </p>
             <div className="login-copy-actions">
               <Link href="/register" className="login-secondary-cta">申請測試帳號</Link>
@@ -174,7 +174,7 @@ export default function LoginPage() {
             </div>
 
             <div className="tg soft login-foot">
-              IUF 帳號 / 真實登入工作階段 / 不含券商送單
+              IUF 帳號 / 真實登入工作階段 / 券商寫入關閉
             </div>
           </form>
         </div>
