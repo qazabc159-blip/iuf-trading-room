@@ -39,6 +39,13 @@ function qualityTone(value: QualityStatus) {
   return "warn";
 }
 
+function qualityStatusLabel(value: QualityStatus) {
+  if (value === "OK") return "正常";
+  if (value === "STALE") return "逾時";
+  if (value === "MISSING") return "缺資料";
+  return "偏弱";
+}
+
 function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
   if (value === "PASS") return "ok";
   if (value === "FAIL") return "bad";
@@ -107,26 +114,39 @@ function ScoreBlock({
 
 function QualityBadges({ rec }: { rec: StockRecommendation }) {
   const items: Array<[string, QualityStatus]> = [
-    ["QUOTE", rec.dataQuality.quote],
-    ["KBAR", rec.dataQuality.kbar],
-    ["CHIP", rec.dataQuality.chip],
-    ["NEWS", rec.dataQuality.news],
-    ["QUANT", rec.dataQuality.quant],
+    ["報價", rec.dataQuality.quote],
+    ["K線", rec.dataQuality.kbar],
+    ["籌碼", rec.dataQuality.chip],
+    ["新聞", rec.dataQuality.news],
+    ["量化", rec.dataQuality.quant],
   ];
+  const penaltyPct = Math.round(rec.dataQuality.confidencePenalty * 100);
+  const weakItems = items
+    .filter(([, value]) => value !== "OK")
+    .map(([label, value]) => `${label}${qualityStatusLabel(value)}`);
+  const summary = weakItems.length > 0
+    ? `${weakItems.join("、")}；信心折減 ${penaltyPct}%。`
+    : `資料品質正常；信心折減 ${penaltyPct}%。`;
 
   return (
-    <div className="_rec-detail-quality" aria-label="data quality">
-      {items.map(([label, value]) => (
-        <span key={label} data-tone={qualityTone(value)}>
-          <b>{label}</b>
-          {value}
+    <section className="_rec-detail-quality-wrap" aria-labelledby="rec-detail-quality-title">
+      <div className="_rec-detail-quality-head">
+        <b id="rec-detail-quality-title">資料品質</b>
+        <span>{summary}</span>
+      </div>
+      <div className="_rec-detail-quality" aria-label="資料品質欄位狀態">
+        {items.map(([label, value]) => (
+          <span key={label} data-tone={qualityTone(value)}>
+            <b>{label}</b>
+            {qualityStatusLabel(value)}
+          </span>
+        ))}
+        <span data-tone={rec.dataQuality.confidencePenalty > 0 ? "warn" : "ok"}>
+          <b>信心折減</b>
+          {penaltyPct}%
         </span>
-      ))}
-      <span data-tone={rec.dataQuality.confidencePenalty > 0 ? "warn" : "ok"}>
-        <b>PENALTY</b>
-        {Math.round(rec.dataQuality.confidencePenalty * 100)}%
-      </span>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -261,6 +281,27 @@ export default async function AiRecommendationDetailPage({
           flex-wrap: wrap;
           gap: 7px;
         }
+        ._rec-detail-quality-wrap {
+          display: grid;
+          gap: 8px;
+          border: 1px solid var(--tac-line);
+          border-radius: 6px;
+          padding: 10px;
+          background: rgba(8, 11, 16, 0.38);
+        }
+        ._rec-detail-quality-head {
+          display: grid;
+          gap: 3px;
+        }
+        ._rec-detail-quality-head b {
+          color: var(--tac-brand);
+          font: 900 10px/1 var(--mono);
+          letter-spacing: 0;
+        }
+        ._rec-detail-quality-head span {
+          color: var(--tac-fg-2);
+          font: 800 12px/1.55 var(--sans-tc);
+        }
         ._rec-detail-badges span,
         ._rec-detail-quality span,
         ._rec-detail-gate {
@@ -284,7 +325,7 @@ export default async function AiRecommendationDetailPage({
         }
         ._rec-detail-quality b {
           color: var(--tac-fg-3);
-          font: 900 9px/1 var(--mono);
+          font: 900 9px/1 var(--sans-tc);
         }
         ._rec-detail-quality span[data-tone="ok"],
         ._rec-detail-gate[data-tone="ok"] {
