@@ -197,8 +197,8 @@ export const radarLabApi = {
   strategies: () => getApiEnvelope<LabStrategiesResponse>("/api/v1/lab/strategies"),
 };
 
-// Lab status enum → display wording (verbatim from board/lab_tr_alignment_lock_2026-05-07.md)
-// TR must use lab wording, not softened translations.
+// Lab status enum → Trading Room display wording.
+// TR v1 is SIM-only; upstream live-like lab states must not render as broker readiness.
 export function labStatusDisplayWording(status: string): string {
   const map: Record<string, string> = {
     STRONG_CANDIDATE: "研究候選 / 未進交易流程",
@@ -209,9 +209,9 @@ export function labStatusDisplayWording(status: string): string {
     KILL_NO_EDGE: "研究退場 / 無優勢",
     KILL_INFORMATIVE: "研究退場 / 僅供參考",
     PAPER_PROPOSED: "紙上候選 / 待驗證",
-    PAPER_LIVE: "紙上驗證中",
-    LIVE_CANDIDATE: "實盤候選 / 待明示",
-    IN_LIVE: "實盤流程中",
+    PAPER_LIVE: "SIM 驗證中 / 非正式交易",
+    LIVE_CANDIDATE: "正式券商寫入關閉 / 待風控驗收",
+    IN_LIVE: "正式券商寫入關閉 / TR 不執行",
     RETIRED: "退役",
     NO_APPROVED_STRATEGY: "目前沒有可推進策略",
     PROBATION: "試察期",
