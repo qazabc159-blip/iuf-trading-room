@@ -116,13 +116,13 @@ function sideLabel(side: PaperSide | string) {
 }
 
 function orderStatusLabel(status: string) {
-  if (status === "REJECTED") return "已拒絕";
-  if (status === "FILLED") return "已成交";
-  if (status === "CANCELLED") return "已撤單";
-  if (status === "WORKING") return "委託中";
-  if (status === "ACCEPTED") return "已接受";
-  if (status === "PENDING") return "待處理";
-  if (status === "SUBMITTED") return "已送出";
+  if (status === "REJECTED") return "SIM 已拒絕";
+  if (status === "FILLED") return "SIM 已成交";
+  if (status === "CANCELLED") return "SIM 已撤銷";
+  if (status === "WORKING") return "SIM 工作中";
+  if (status === "ACCEPTED") return "SIM 已接受";
+  if (status === "PENDING") return "SIM 待處理";
+  if (status === "SUBMITTED") return "SIM 已建立";
   return status;
 }
 
@@ -308,7 +308,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
 
   const submitDisabledReason =
     killMode !== "ARMED"
-      ? "目前交易模式未開放送出。"
+      ? "目前 SIM 委託紀錄建立未開放。"
       : validationReason
         ? validationReason
         : preview.status === "idle"
@@ -413,8 +413,8 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
       <div style={sourceBarStyle}>
         <StatePill state={ledgerState} />
         <span>模擬交易</span>
-        <span>送出前風控預檢</span>
-        <span>委託紀錄</span>
+        <span>SIM 建立前風控預檢</span>
+        <span>SIM 委託紀錄</span>
       </div>
 
       <MarketPreviewPanel preview={marketPreview} />
@@ -491,7 +491,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
         <div style={previewCardStyle}>
           <div className="tg" style={panelHeadingStyle}>風控與報價預覽</div>
           {preview.status === "idle" && (
-            <TruthNote state="EMPTY" text="尚未預覽目前委託草稿。送出前請先跑模擬風控預檢。" />
+            <TruthNote state="EMPTY" text="尚未預覽目前 SIM 草稿。建立紀錄前請先跑模擬風控預檢。" />
           )}
           {preview.status === "loading" && <TruthNote state="LIVE" text="正在檢查風控與報價..." />}
           {preview.status === "error" && <TruthNote state="BLOCKED" text={preview.message} />}
@@ -517,20 +517,20 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
         <button
           onClick={() => setReviewOpen(true)}
           disabled={!canSubmit}
-          title={submitDisabledReason ?? "送出前會先開啟確認視窗。"}
+          title={submitDisabledReason ?? "建立 SIM 紀錄前會先開啟確認視窗。"}
           style={{
             ...actionButtonStyle,
             color: canSubmit ? "var(--tw-dn-bright)" : "var(--exec-soft)",
           }}
           type="button"
         >
-          {submit.status === "loading" ? "送出中" : "檢查並送出"}
+          {submit.status === "loading" ? "建立中" : "檢查並建立 SIM 紀錄"}
         </button>
       </div>
 
       {submitDisabledReason && <TruthNote state="BLOCKED" text={submitDisabledReason} />}
       {preview.status === "live" && !submitDisabledReason && (
-        <TruthNote state="LIVE" text="預檢通過。此送單只建立模擬委託，不會送往正式券商；正式券商寫入維持關閉，需產品與風控驗收後另行啟用。" />
+        <TruthNote state="LIVE" text="預檢通過。下一步只會建立 SIM 委託紀錄，不會送往正式券商；正式券商寫入維持關閉，需產品與風控驗收後另行啟用。" />
       )}
 
       {(submit.status === "live" || submit.status === "blocked") && (
@@ -584,14 +584,14 @@ function OrderReviewModal({
 
   return (
     <div style={modalBackdropStyle} role="presentation">
-      <div style={modalShellStyle} role="dialog" aria-modal="true" aria-label="委託送出確認">
+      <div style={modalShellStyle} role="dialog" aria-modal="true" aria-label="SIM 委託紀錄建立確認">
         <div style={modalHeaderStyle}>
           <div>
             <div className="tg" style={{ color: "var(--gold-bright)", fontWeight: 800 }}>
-              委託送出確認
+              SIM 委託紀錄建立確認
             </div>
             <div style={marketSourceLineStyle}>
-              台股單位防呆：零股=股，整張=1,000股。本視窗確認後才送出模擬委託。
+              台股單位防呆：零股=股，整張=1,000股。確認後只建立 SIM 委託紀錄，不送正式券商。
             </div>
           </div>
           <button type="button" onClick={onCancel} style={modalCloseStyle} disabled={isSubmitting}>
@@ -614,7 +614,7 @@ function OrderReviewModal({
           />
           <KV k={unit === "LOT" ? "張數" : "股數"} v={qty.toLocaleString("zh-TW")} />
           <KV k="實際股數" v={`${shares.toLocaleString("zh-TW")} 股`} />
-          <KV k="委託價格" v={price === null ? "市價，送出時依系統報價門檻處理" : formatTwd(price)} />
+          <KV k="SIM 參考價格" v={price === null ? "市價，建立紀錄時依系統報價門檻處理" : formatTwd(price)} />
           <KV
             k="金額算式"
             v={
@@ -623,8 +623,8 @@ function OrderReviewModal({
                 : `${unitFormula} = ${formatTwd(notional)}`
             }
           />
-          <KV k="手續費" v="NT$0（模擬單；正式下單另依券商費率）" />
-          <KV k="送出型態" v="模擬委託，不送券商" />
+          <KV k="手續費" v="NT$0（SIM 紀錄；正式券商委託另依券商費率）" />
+          <KV k="建立型態" v="SIM 委託紀錄，不送正式券商" />
         </div>
 
         <TruthNote
@@ -632,7 +632,7 @@ function OrderReviewModal({
           text={
             unit === "LOT"
               ? "你目前選的是整張（LOT）：1 張一定會用 1,000 股計算。高價股測試請優先改用零股（SHARE）；若確定要測整張，請先勾選下方確認。"
-              : "你目前選的是零股（SHARE）：1 股就是 1 股，送出資料也會明確標記為零股（quantity_unit=SHARE）。"
+              : "你目前選的是零股（SHARE）：1 股就是 1 股，SIM 紀錄也會明確標記為零股（quantity_unit=SHARE）。"
           }
         />
 
@@ -644,7 +644,7 @@ function OrderReviewModal({
               onChange={(event) => setLotAcknowledged(event.target.checked)}
               type="checkbox"
             />
-            <span>我知道這是整張委託，1 張會送出 1,000 股；不是零股測試。</span>
+            <span>我知道這是整張 SIM 紀錄，1 張會用 1,000 股計算；不是零股測試。</span>
           </label>
         )}
 
@@ -658,7 +658,7 @@ function OrderReviewModal({
             disabled={!canConfirm || isSubmitting}
             style={primaryActionStyle}
           >
-            {isSubmitting ? "送出中..." : "確認送出"}
+            {isSubmitting ? "建立中..." : "確認建立 SIM 紀錄"}
           </button>
         </div>
       </div>
@@ -899,7 +899,7 @@ function OrderOutcome({ state }: { state: PaperOrderState }) {
     <div style={{ marginTop: 12 }}>
       <TruthNote
         state={tone}
-        text={`委託 ${state.intent.id}：${orderStatusLabel(state.intent.status)}${state.intent.reason ? `：${state.intent.reason}` : ""}`}
+        text={`SIM 紀錄 ${state.intent.id}：${orderStatusLabel(state.intent.status)}${state.intent.reason ? `：${state.intent.reason}` : ""}`}
       />
       <div style={kvListStyle}>
         <KV k="股票" v={state.intent.symbol} />
@@ -949,7 +949,7 @@ function OrderHistory({
         <TruthNote state="LIVE" text="正在讀取模擬委託紀錄..." />
       )}
       {orders.status === "blocked" && (
-        <TruthNote state="BLOCKED" text={`暫時無法讀取委託紀錄：${orders.message}`} />
+        <TruthNote state="BLOCKED" text={`暫時無法讀取 SIM 委託紀錄：${orders.message}`} />
       )}
       {orders.status === "live" && orders.items.length === 0 && (
         <TruthNote state="EMPTY" text="目前沒有模擬委託紀錄。" />
@@ -969,11 +969,11 @@ function OrderHistory({
           <button
             type="button"
             disabled={!isCancellablePaperOrder(state.intent.status) || cancellingId === state.intent.id}
-            title={isCancellablePaperOrder(state.intent.status) ? "撤銷此模擬委託" : "終態委託無法撤銷"}
+            title={isCancellablePaperOrder(state.intent.status) ? "撤銷此 SIM 委託紀錄" : "終態 SIM 紀錄無法撤銷"}
             onClick={() => onCancel(state.intent.id)}
             style={miniButtonStyle}
           >
-            {cancellingId === state.intent.id ? "..." : "撤單"}
+            {cancellingId === state.intent.id ? "..." : "撤銷"}
           </button>
         </div>
       ))}
