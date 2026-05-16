@@ -141,6 +141,7 @@ export function HeaderDock() {
     startPointerY: number;
     startDockTop: number;
     startDockLeft: number;
+    lastPosition: DockPosition;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const visibleNotifications = recentNotifications(notificationDrawer.notifications);
@@ -230,6 +231,7 @@ export function HeaderDock() {
       startPointerY: e.clientY,
       startDockTop: rect.top,
       startDockLeft: rect.left,
+      lastPosition: clampToViewport(rect.top, rect.left, el),
     };
     setIsDragging(true);
   }, [isMobile]);
@@ -248,22 +250,24 @@ export function HeaderDock() {
     const newLeft = dragState.current.startDockLeft + dx;
 
     const clamped = clampToViewport(newTop, newLeft, el);
+    dragState.current.lastPosition = clamped;
     setPosition(clamped);
   }, []);
 
   const onPointerUp = useCallback((e: React.PointerEvent<HTMLElement>) => {
     if (!dragState.current?.dragging) return;
     e.currentTarget.releasePointerCapture(e.pointerId);
+    const finalPosition = dragState.current.lastPosition;
     dragState.current.dragging = false;
     setIsDragging(false);
 
     const el = dockRef.current;
-    if (!el || !position) return;
+    if (!el) return;
     // re-clamp and save
-    const clamped = clampToViewport(position.top, position.left, el);
+    const clamped = clampToViewport(finalPosition.top, finalPosition.left, el);
     setPosition(clamped);
     savePosition(clamped);
-  }, [position]);
+  }, []);
 
   function handleResetPosition() {
     clearPosition();
