@@ -407,16 +407,17 @@ function OperationalStateBanner({ snapshot }: { snapshot: LabStrategySnapshot })
   const realOrder = snapshot.realOrderAllowed ?? false;
   const modeConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
     research_only: { label: "研究階段（非交易）", color: "#888", bg: "rgba(128,128,128,0.05)", border: "rgba(128,128,128,0.2)" },
-    paper: { label: "Paper Trading 模擬", color: "#ffb800", bg: "rgba(255,184,0,0.05)", border: "rgba(255,184,0,0.2)" },
-    shadow: { label: "Shadow Mode", color: "#a78bfa", bg: "rgba(167,139,250,0.05)", border: "rgba(167,139,250,0.2)" },
-    live: { label: "實盤上線", color: "#2ecc71", bg: "rgba(46,204,113,0.05)", border: "rgba(46,204,113,0.2)" },
+    paper: { label: "SIM 模擬觀察", color: "#ffb800", bg: "rgba(255,184,0,0.05)", border: "rgba(255,184,0,0.2)" },
+    shadow: { label: "Shadow Mode（不送單）", color: "#a78bfa", bg: "rgba(167,139,250,0.05)", border: "rgba(167,139,250,0.2)" },
+    live: { label: "上線候選（券商寫入關閉）", color: "#ffb800", bg: "rgba(255,184,0,0.05)", border: "rgba(255,184,0,0.2)" },
   };
   const cfg = modeConfig[mode] ?? modeConfig["research_only"]!;
-  const orderLabel = orderState === "live_allowed" ? "真實下單開放" : orderState === "paper_allowed" ? "Paper 下單開放" : "下單封鎖";
+  const orderLabel = orderState === "live_allowed" ? "正式券商寫入未開放" : orderState === "paper_allowed" ? "SIM 交接可檢查" : "交接封鎖";
+  const orderColor = orderState === "paper_allowed" ? "#ffb800" : "#e63946";
   return (
     <div style={{ padding: "10px 14px", marginBottom: 12, background: cfg.bg, border: `1px solid ${cfg.border}`, borderLeft: `3px solid ${cfg.color}`, borderRadius: 5, display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: cfg.color, letterSpacing: "0.8px", textTransform: "uppercase", fontFamily: "var(--mono,monospace)" }}>{cfg.label}</div>
-      <div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>下單狀態: <span style={{ color: orderState === "blocked" ? "#e63946" : "#2ecc71", fontWeight: 700 }}>{orderLabel}</span></div>
+      <div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>交接狀態: <span style={{ color: orderColor, fontWeight: 700 }}>{orderLabel}</span></div>
       {brokerWrite && <div style={{ fontSize: 10, color: "#e63946", fontFamily: "var(--mono,monospace)", fontWeight: 700 }}>BROKER_WRITE=ON</div>}
       {realOrder && <div style={{ fontSize: 10, color: "#e63946", fontFamily: "var(--mono,monospace)", fontWeight: 700 }}>REAL_ORDER=ON</div>}
     </div>
