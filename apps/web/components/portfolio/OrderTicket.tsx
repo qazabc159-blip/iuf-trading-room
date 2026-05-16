@@ -530,7 +530,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
 
       {submitDisabledReason && <TruthNote state="BLOCKED" text={submitDisabledReason} />}
       {preview.status === "live" && !submitDisabledReason && (
-        <TruthNote state="LIVE" text="預檢通過。此送單只建立模擬委託，不會送往券商；凱基正式下單待 libCGCrypt.so 補齊後接上。" />
+        <TruthNote state="LIVE" text="預檢通過。此送單只建立模擬委託，不會送往正式券商；正式券商寫入維持關閉，需產品與風控驗收後另行啟用。" />
       )}
 
       {(submit.status === "live" || submit.status === "blocked") && (
