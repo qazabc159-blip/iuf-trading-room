@@ -102,7 +102,7 @@ function stateLabel(state: LoadState["state"]) {
 }
 
 function modeLabel(mode: string | null | undefined) {
-  if (mode === "trading") return "可交易";
+  if (mode === "trading") return "SIM 檢查通過";
   if (mode === "paper_only") return "模擬模式";
   if (mode === "liquidate_only") return "只減倉";
   if (mode === "halted") return "全鎖定";
@@ -412,7 +412,7 @@ export default async function MobileBrief() {
           <div className="_bty-mob-metric-grid">
             <div className="_bty-mob-metric-cell">
               <span className="_bty-mob-metric-val" style={{ color: modeTone, fontSize: 14 }}>{modeLabel(result.data.kill?.mode)}</span>
-              <span className="_bty-mob-metric-lbl">交易模式</span>
+              <span className="_bty-mob-metric-lbl">執行模式</span>
             </div>
             <div className="_bty-mob-metric-cell">
               <span className="_bty-mob-metric-val" style={{ color: overview.quotes.fresh > 0 ? "#4caf50" : "#888" }}>{overview.quotes.total}</span>
