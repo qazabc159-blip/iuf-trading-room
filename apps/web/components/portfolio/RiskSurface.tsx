@@ -110,7 +110,7 @@ function layerName(layer: RiskLayerName) {
 }
 
 function rowStatusLabel(status: string) {
-  if (status === "trading") return "可交易";
+  if (status === "trading") return "SIM 檢查通過";
   if (status === "paper_only") return "模擬模式";
   if (status === "liquidate_only") return "只減倉";
   if (status === "halted") return "全鎖定";
@@ -171,7 +171,7 @@ export function RiskSurface({ result }: { result: RiskSurfaceState }) {
         <span style={{ color: "var(--tw-dn-bright)", fontWeight: 700 }}>即時</span>
         <span>四層風控總覽</span>
         <span>更新 {formatTime(data.generatedAt)}</span>
-        <span>交易模式 {rowStatusLabel(data.killSwitchState)}</span>
+        <span>執行模式 {rowStatusLabel(data.killSwitchState)}</span>
         <span>模擬閘門 {rowStatusLabel(data.paperGateState)}</span>
       </div>
       {isEmpty && (
