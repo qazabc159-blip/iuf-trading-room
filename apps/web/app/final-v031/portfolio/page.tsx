@@ -11,6 +11,14 @@ function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function hasHandoffParams(params: PortfolioSearchParams | undefined) {
+  return HANDOFF_PARAMS.some((key) => Boolean(firstParam(params?.[key])?.trim()));
+}
+
+function buildFrameTitle(params: PortfolioSearchParams | undefined) {
+  return hasHandoffParams(params) ? "交易室 SIM 預覽（AI 推薦帶入）" : "交易室 SIM 預覽";
+}
+
 function buildPaperRoomSrc(params: PortfolioSearchParams | undefined) {
   const query = new URLSearchParams();
   const revParts: string[] = [];
@@ -33,5 +41,5 @@ export default async function FinalV031PortfolioPage({
   searchParams?: Promise<PortfolioSearchParams>;
 }) {
   const params = searchParams ? await searchParams : undefined;
-  return <FinalOnlyFrame title="Paper Trading Room" src={buildPaperRoomSrc(params)} />;
+  return <FinalOnlyFrame title={buildFrameTitle(params)} src={buildPaperRoomSrc(params)} />;
 }
