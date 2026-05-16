@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import { CheckCircle2, MinusCircle, ThumbsDown, ThumbsUp } from "lucide-react";
 
 type Reaction = "like" | "dislike" | "skip" | "acted";
@@ -48,10 +48,17 @@ async function feedbackFailureText(response: Response) {
 }
 
 export function RecommendationFeedbackActions({ recommendationId }: { recommendationId: string }) {
+  const statusId = useId();
   const [selected, setSelected] = useState<Reaction | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const selectedAction = selected ? ACTIONS.find((action) => action.reaction === selected) : null;
+  const liveStatus = isPending
+    ? selectedAction
+      ? `正在寫入：${selectedAction.label}`
+      : "寫入中"
+    : statusText(status, selected, failureMessage);
 
   function send(reaction: Reaction) {
     setSelected(reaction);
@@ -80,13 +87,15 @@ export function RecommendationFeedbackActions({ recommendationId }: { recommenda
   }
 
   return (
-    <div className="_rec-feedback" data-status={status}>
-      <div role="group" aria-label="推薦回饋">
+    <div className="_rec-feedback" data-status={status} data-reaction={selected ?? undefined} aria-busy={isPending}>
+      <div role="group" aria-label="推薦回饋" aria-describedby={statusId}>
         {ACTIONS.map(({ reaction, label, Icon }) => (
           <button
             key={reaction}
             type="button"
             data-active={selected === reaction ? "true" : undefined}
+            aria-pressed={selected === reaction}
+            aria-label={`送出推薦回饋：${label}`}
             disabled={isPending}
             onClick={() => send(reaction)}
           >
@@ -95,7 +104,9 @@ export function RecommendationFeedbackActions({ recommendationId }: { recommenda
           </button>
         ))}
       </div>
-      <span aria-live="polite">{isPending ? "寫入中" : statusText(status, selected, failureMessage)}</span>
+      <span id={statusId} role="status" aria-live="polite" aria-atomic="true">
+        {liveStatus}
+      </span>
     </div>
   );
 }
