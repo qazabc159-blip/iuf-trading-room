@@ -3,6 +3,32 @@
 import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
 
+const HANDOFF_TITLE = "帶入交易室 SIM 預覽（不送正式券商委託）";
+
+function handoffParam(href: string, key: string) {
+  try {
+    return new URL(href, "https://app.eycvector.local").searchParams.get(key)?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildHandoffLabel(href: string, recommendationId: string) {
+  const ticker = handoffParam(href, "ticker") ?? handoffParam(href, "symbol");
+  const entry = handoffParam(href, "entry");
+  const stop = handoffParam(href, "stop");
+  const target = handoffParam(href, "tp");
+  const details = [
+    ticker ? `標的 ${ticker}` : null,
+    entry ? `進場 ${entry}` : null,
+    stop ? `停損 ${stop}` : null,
+    target ? `目標 ${target}` : null,
+    `推薦 ${recommendationId}`,
+  ].filter(Boolean);
+
+  return `${HANDOFF_TITLE}${details.length ? `：${details.join("，")}` : ""}`;
+}
+
 function recordActed(recommendationId: string) {
   const url = `/api/recommendations/${encodeURIComponent(recommendationId)}/feedback`;
   const body = JSON.stringify({ reaction: "acted" });
@@ -37,6 +63,8 @@ export function RecommendationHandoffLink({
   recommendationId: string;
   children: ReactNode;
 }) {
+  const handoffLabel = buildHandoffLabel(href, recommendationId);
+
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (event.defaultPrevented) return;
     if (event.button !== 0) return;
@@ -45,7 +73,7 @@ export function RecommendationHandoffLink({
   }
 
   return (
-    <Link className="_rec-prefill" href={href} onClick={handleClick}>
+    <Link className="_rec-prefill" href={href} aria-label={handoffLabel} title={handoffLabel} onClick={handleClick}>
       {children}
     </Link>
   );
