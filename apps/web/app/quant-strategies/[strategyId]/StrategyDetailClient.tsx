@@ -429,26 +429,28 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
 
         <section className={styles.band}>
           <h2>目前籃子</h2>
-          <table className={styles.holdings}>
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Weight</th>
-                <th>Price</th>
-                <th>Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {strategy.holdings.map((holding) => (
-                <tr key={holding.symbol}>
-                  <td className={styles.num}>{holding.symbol}</td>
-                  <td className={styles.num}>{pct(holding.weight * 100)}</td>
-                  <td className={styles.num}>{holding.price.toLocaleString("zh-TW")}</td>
-                  <td>{holding.note}</td>
+          <div className={styles.holdingsScroll} tabIndex={0} aria-label="目前籃子持股表，可左右捲動">
+            <table className={styles.holdings}>
+              <thead>
+                <tr>
+                  <th scope="col">Symbol</th>
+                  <th scope="col">Weight</th>
+                  <th scope="col">Price</th>
+                  <th scope="col">Note</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {strategy.holdings.map((holding) => (
+                  <tr key={holding.symbol}>
+                    <td className={styles.num}>{holding.symbol}</td>
+                    <td className={styles.num}>{pct(holding.weight * 100)}</td>
+                    <td className={styles.num}>{holding.price.toLocaleString("zh-TW")}</td>
+                    <td>{holding.note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section className={styles.band}>
