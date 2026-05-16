@@ -3,7 +3,7 @@
 export type KillMode = "ARMED" | "SAFE" | "PEEK" | "FROZEN";
 
 const MODES: { mode: KillMode; label: string; sub: string; tone: "ok" | "warn" | "block" | "danger" }[] = [
-  { mode: "ARMED", label: "可交易", sub: "系統風控與模擬交易規則共同判斷委託資格", tone: "ok" },
+  { mode: "ARMED", label: "SIM 檢查通過", sub: "系統風控與模擬交易規則共同判斷模擬委託資格", tone: "ok" },
   { mode: "SAFE", label: "只減倉", sub: "僅保留降低曝險的操作，避免新增風險", tone: "warn" },
   { mode: "PEEK", label: "唯讀", sub: "只檢視部位、委託與風控狀態", tone: "block" },
   { mode: "FROZEN", label: "凍結", sub: "缺少可信風控狀態時，系統一律保守鎖住", tone: "danger" },
@@ -27,7 +27,7 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
     <>
       <div
         role="radiogroup"
-        aria-label="交易模式唯讀狀態"
+        aria-label="執行模式唯讀狀態"
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
@@ -41,7 +41,7 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
               key={m.mode}
               role="radio"
               aria-checked={on}
-      title="目前僅顯示狀態；切換交易模式需要治理、稽核紀錄與風控回歸測試通過。"
+      title="目前僅顯示狀態；切換執行模式需要治理、稽核紀錄與風控回歸測試通過。"
               style={{
                 minWidth: 0,
                 padding: "clamp(14px, 4vw, 18px)",
@@ -69,7 +69,7 @@ export function KillSwitch({ mode }: { mode: KillMode; onChange?: (m: KillMode) 
         })}
       </div>
       <div className="terminal-note" style={{ marginTop: 12 }}>
-        交易模式目前由系統控管，畫面只顯示狀態；正式切換需完成治理、稽核紀錄與四層風控驗證。
+        執行模式目前由系統控管，畫面只顯示狀態；切換需完成治理、稽核紀錄與四層風控驗證。
       </div>
     </>
   );
