@@ -424,7 +424,11 @@ export function HeaderDock() {
               {notificationDrawer.status === "loading" && <p className="header-dock-empty">資料同步中</p>}
               {notificationDrawer.status === "error" && <p className="header-dock-empty">{notificationDrawer.error}</p>}
               {notificationDrawer.status === "ready" && visibleNotifications.length === 0 && (
-                <p className="header-dock-empty">最近 7 天沒有未處理警示。</p>
+                <p className="header-dock-empty">
+                  {unreadCount > 0
+                    ? `尚有 ${unreadCount.toLocaleString("zh-TW")} 則未讀警示，請開啟警示頁確認完整紀錄。`
+                    : "最近 7 天沒有未處理警示。"}
+                </p>
               )}
               {visibleNotifications.length > 0 && (
                 <div className="header-alert-list">
