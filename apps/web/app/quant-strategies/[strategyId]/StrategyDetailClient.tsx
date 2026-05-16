@@ -124,6 +124,7 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
   const [warning, setWarning] = useState<string | null>(null);
   const openButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const confirmDialogRef = useRef<HTMLDivElement | null>(null);
   const busyRef = useRef(false);
 
   const budget = useMemo(() => Number(capital.replace(/,/g, "")), [capital]);
@@ -186,6 +187,64 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
   function closeConfirmDialog() {
     if (busyRef.current) return;
     setConfirmOpen(false);
+  }
+
+  function getFocusableDialogControls() {
+    const dialog = confirmDialogRef.current;
+    if (!dialog) return [];
+
+    const controls = dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+
+    return Array.from(controls).filter((control) => control.tabIndex >= 0 && control.offsetParent !== null);
+  }
+
+  function focusDialogEdge(edge: "first" | "last") {
+    const controls = getFocusableDialogControls();
+    if (controls.length === 0) {
+      confirmDialogRef.current?.focus();
+      return;
+    }
+
+    controls[edge === "first" ? 0 : controls.length - 1]?.focus();
+  }
+
+  function handleConfirmDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeConfirmDialog();
+      return;
+    }
+
+    if (event.key !== "Tab") return;
+
+    const dialog = confirmDialogRef.current;
+    if (!dialog) return;
+
+    const controls = getFocusableDialogControls();
+    if (controls.length === 0) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    const active = document.activeElement;
+
+    if (event.shiftKey) {
+      if (active === first || !dialog.contains(active)) {
+        event.preventDefault();
+        focusDialogEdge("last");
+      }
+      return;
+    }
+
+    if (active === last) {
+      event.preventDefault();
+      focusDialogEdge("first");
+    }
   }
 
   async function subscribeStrategy() {
@@ -297,17 +356,14 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
             }}
           >
             <div
+              ref={confirmDialogRef}
               className={styles.confirmModal}
               role="dialog"
               aria-modal="true"
               aria-labelledby="sim-confirm-title"
               aria-describedby="sim-confirm-description"
               tabIndex={-1}
-              onKeyDown={(event) => {
-                if (event.key !== "Escape") return;
-                event.preventDefault();
-                closeConfirmDialog();
-              }}
+              onKeyDown={handleConfirmDialogKeyDown}
             >
               <h3 id="sim-confirm-title">確認 SIM 策略訂閱</h3>
               <p id="sim-confirm-description">
