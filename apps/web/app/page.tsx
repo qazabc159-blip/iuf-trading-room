@@ -2160,16 +2160,16 @@ function PaperPanel({
   const brokerReady = Boolean(broker.data?.formalReadOnlyConnected);
   const steps = [
     { id: "1", name: "正式環境", desc: "券商只讀登入", state: brokerReady ? "LIVE" : stateFromLoad(broker), count: brokerReady ? 1 : 0, note: brokerReady ? "已登入" : "等待回報" },
-    { id: "2", name: "交易室預覽", desc: "委託前檢查", state: data?.previewReady ? "LIVE" : stateFromLoad(paper), count: data?.previewReady ? 1 : 0, note: data?.previewReady ? "交易室可預覽" : "等待預覽" },
+    { id: "2", name: "交易室預覽", desc: "SIM 建立前檢查", state: data?.previewReady ? "LIVE" : stateFromLoad(paper), count: data?.previewReady ? 1 : 0, note: data?.previewReady ? "交易室可預覽" : "等待預覽" },
     { id: "3", name: "風控檢查", desc: "限制與守門", state: data?.gate.gateOpen ? "LIVE" : "BLOCKED", count: data?.gate.gateOpen ? 1 : 0, note: data?.gate.gateOpen ? "可檢查" : "目前關閉" },
-    { id: "4", name: "委託草稿", desc: "只做紙上流程", state: data?.previewReady ? "LIVE" : "EMPTY", count: data?.queueDepth ?? 0, note: `${formatNumber(data?.queueDepth)} 筆等待` },
-    { id: "5", name: "紙上送出", desc: "紙上流程", state: data?.submitReady ? "DEGRADED" : "EMPTY", count: data?.submitReady ? 1 : 0, note: "需操作員確認" },
+    { id: "4", name: "SIM 草稿", desc: "只建立 SIM 紀錄", state: data?.previewReady ? "LIVE" : "EMPTY", count: data?.queueDepth ?? 0, note: `${formatNumber(data?.queueDepth)} 筆等待` },
+    { id: "5", name: "SIM 紀錄建立", desc: "不送正式券商", state: data?.submitReady ? "DEGRADED" : "EMPTY", count: data?.submitReady ? 1 : 0, note: "需操作員確認" },
     { id: "6", name: "部位回寫", desc: "部位 / 成交", state: data?.fillsReady || data?.portfolioReady ? "LIVE" : "EMPTY", count: data?.lastFillTs ? 1 : 0, note: data?.lastFillTs ? formatDateTime(data.lastFillTs) : "--" },
   ] satisfies Array<{ id: string; name: string; desc: string; state: DashboardState; count: number; note: string }>;
   const panelState: DashboardState = brokerReady ? "LIVE" : data?.previewReady ? "LIVE" : stateFromLoad(paper);
   const brokerNote = broker.data?.note ?? (broker.state === "LIVE" ? "等待只讀狀態回報" : broker.reason);
   return (
-    <Panel eyebrow="TRADE FLOW" title="交易環境與紙上流程" sub="正式環境只讀確認；首頁仍只做紙上預覽與風控驗證" right={<StatusChip state={panelState} label={brokerReady ? "正式只讀" : "紙上"} />}>
+    <Panel eyebrow="TRADE FLOW" title="交易環境與 SIM 流程" sub="正式環境只讀確認；首頁仍只做 SIM 預覽與風控驗證" right={<StatusChip state={panelState} label={brokerReady ? "正式只讀" : "SIM"} />}>
       <div className="tac-paper-steps">
         {steps.map((step) => (
           <div className={tacticalStatus(step.state)} key={step.id}>
@@ -2183,9 +2183,9 @@ function PaperPanel({
       </div>
       <div className="tac-paper-bottom">
         <div><span>正式券商</span><b>{brokerReady ? "可登入" : "未連線"}</b><small>{brokerNote}</small></div>
-        <div><span>測試資金</span><b>NT$ {formatNumber(PAPER_PREVIEW_CAPITAL_TWD)}</b><small>紙上預覽使用明確股數 / 張數。</small></div>
+        <div><span>測試資金</span><b>NT$ {formatNumber(PAPER_PREVIEW_CAPITAL_TWD)}</b><small>SIM 預覽使用明確股數 / 張數。</small></div>
         <div><span>單位提示</span><b>1 張 = 1,000 股</b><small>零股以實際股數計算。</small></div>
-        <div className="blocked"><span>安全狀態</span><b>下單入口關閉</b><small>首頁不送出真實委託。</small></div>
+        <div className="blocked"><span>安全狀態</span><b>下單入口關閉</b><small>首頁只顯示 SIM / 只讀狀態，不送出真實委託。</small></div>
       </div>
     </Panel>
   );
