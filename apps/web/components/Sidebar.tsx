@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   Building2,
@@ -64,11 +64,18 @@ function pathMatches(pathname: string, path: string) {
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const navRef = useRef<HTMLElement>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const activeLink = navRef.current?.querySelector<HTMLElement>('a[aria-current="page"]');
+    activeLink?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [mounted, pathname]);
 
   async function handleLogout() {
     await apiLogout();
@@ -90,12 +97,17 @@ export function Sidebar() {
         <div className="tac-mode"><span />模擬模式 / 風控守門</div>
       </div>
 
-      <nav className="tac-nav" aria-label="主要導覽">
+      <nav ref={navRef} className="tac-nav" aria-label="主要導覽">
         {NAV.map((item) => {
           const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
           const Icon = item.Icon;
           return (
-            <Link key={item.path} href={item.path} className={active ? "active" : ""}>
+            <Link
+              key={item.path}
+              href={item.path}
+              className={active ? "active" : ""}
+              aria-current={active ? "page" : undefined}
+            >
               <span className="tac-nav-icon" aria-hidden="true">
                 <Icon size={17} strokeWidth={1.9} />
               </span>
