@@ -22,6 +22,17 @@ interface DockPosition {
 const STORAGE_KEY = "iuf-header-dock-position";
 const DEFAULT_POSITION: DockPosition = { top: 16, left: -1 }; // -1 = use right:16 CSS default
 const MOBILE_BREAKPOINT = 768;
+const SCREEN_READER_ONLY_STYLE = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clip: "rect(0, 0, 0, 0)",
+  whiteSpace: "nowrap",
+  border: 0,
+} as const;
 
 function loadPosition(): DockPosition | null {
   if (typeof window === "undefined") return null;
@@ -107,6 +118,30 @@ function notificationSummary(notification: NotificationEntry) {
   return parts.length > 0 ? parts.join(" / ") : "通知資料已同步，請至警示頁確認細節。";
 }
 
+function notificationReadState(notification: NotificationEntry) {
+  return notification.readAt ? "已讀" : "未讀";
+}
+
+function notificationLinkLabel(notification: NotificationEntry) {
+  const category = notification.category ?? notification.type ?? "SYSTEM";
+  const time = formatNotificationTime(notificationTime(notification));
+  return [
+    notificationReadState(notification),
+    notificationSeverity(notification),
+    notificationTitle(notification),
+    category,
+    time,
+    notificationSummary(notification),
+  ].join(" ");
+}
+
+function notificationBellLabel(unreadCount: number, status: NotificationDrawerState["status"]) {
+  if (status === "loading") return "警示通知，資料同步中";
+  if (status === "error") return "警示通知，資料同步失敗";
+  if (unreadCount > 0) return `警示通知，${unreadCount.toLocaleString("zh-TW")} 則未讀`;
+  return "警示通知，無未讀";
+}
+
 function recentNotifications(notifications: NotificationEntry[]) {
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   return notifications
@@ -146,6 +181,7 @@ export function HeaderDock() {
   const [isDragging, setIsDragging] = useState(false);
   const visibleNotifications = recentNotifications(notificationDrawer.notifications);
   const unreadCount = notificationDrawer.unreadCount;
+  const notificationButtonLabel = notificationBellLabel(unreadCount, notificationDrawer.status);
 
   const loadNotificationDrawer = useCallback(async () => {
     setNotificationDrawer((current) => ({
@@ -324,6 +360,8 @@ export function HeaderDock() {
           aria-label="警示"
           aria-expanded={drawer === "notifications"}
           aria-controls={drawer === "notifications" ? "header-dock-drawer" : undefined}
+          aria-describedby="header-dock-bell-status"
+          aria-busy={notificationDrawer.status === "loading" ? "true" : undefined}
           title="警示"
           onClick={() => {
             setAccountOpen(false);
@@ -331,8 +369,11 @@ export function HeaderDock() {
           }}
         >
           <Bell size={18} strokeWidth={1.8} />
+          <span id="header-dock-bell-status" style={SCREEN_READER_ONLY_STYLE}>
+            {notificationButtonLabel}
+          </span>
           {unreadCount > 0 && (
-            <span className="header-dock-count" aria-label={`${unreadCount} 則未確認警示`}>
+            <span className="header-dock-count" aria-hidden="true">
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
@@ -437,6 +478,7 @@ export function HeaderDock() {
                       key={notification.id}
                       className="header-alert-item"
                       data-severity={notificationSeverity(notification)}
+                      aria-label={notificationLinkLabel(notification)}
                       href={notificationHref(notification)}
                       onClick={() => {
                         markNotificationRead(notification);
