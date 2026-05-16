@@ -14711,6 +14711,12 @@ body:has(.tactical-dashboard) .app-sidebar {
   z-index: 130;
   width: min(390px, calc(100vw - 24px));
   height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-left: 1px solid rgba(200, 148, 63, 0.28);
   background:
     linear-gradient(var(--tac-grid) 1px, transparent 1px),
@@ -14722,6 +14728,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .header-dock-drawer-head {
+  flex: 0 0 auto;
   min-height: 72px;
   display: flex;
   align-items: center;
@@ -14755,7 +14762,12 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .header-dock-drawer-body {
-  padding: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 16px 16px max(16px, env(safe-area-inset-bottom));
 }
 
 .header-dock-state {
