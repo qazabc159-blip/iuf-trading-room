@@ -170,6 +170,9 @@ export function HeaderDock() {
   const [isMobile, setIsMobile] = useState(false);
 
   const dockRef = useRef<HTMLDivElement>(null);
+  const notificationButtonRef = useRef<HTMLButtonElement>(null);
+  const systemButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerCloseButtonRef = useRef<HTMLButtonElement>(null);
   const dragState = useRef<{
     dragging: boolean;
     startPointerX: number;
@@ -220,6 +223,19 @@ export function HeaderDock() {
     });
   }, [loadNotificationDrawer]);
 
+  const focusDrawerTrigger = useCallback((target: Exclude<Drawer, null>) => {
+    window.requestAnimationFrame(() => {
+      const trigger = target === "notifications" ? notificationButtonRef.current : systemButtonRef.current;
+      trigger?.focus();
+    });
+  }, []);
+
+  const closeDrawer = useCallback(() => {
+    const target = drawer;
+    setDrawer(null);
+    if (target) focusDrawerTrigger(target);
+  }, [drawer, focusDrawerTrigger]);
+
   // Detect mobile and load saved position on mount
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
@@ -234,18 +250,31 @@ export function HeaderDock() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setDrawer(null);
+      if (event.key !== "Escape") return;
+      if (drawer) {
+        event.preventDefault();
+        closeDrawer();
+        return;
+      }
+      if (accountOpen) {
         setAccountOpen(false);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [accountOpen, closeDrawer, drawer]);
 
   useEffect(() => {
     if (drawer === "notifications") void loadNotificationDrawer();
   }, [drawer, loadNotificationDrawer]);
+
+  useEffect(() => {
+    if (!drawer) return;
+    const frame = window.requestAnimationFrame(() => {
+      drawerCloseButtonRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [drawer]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLElement>) => {
     if (isMobile) return;
@@ -355,6 +384,7 @@ export function HeaderDock() {
         )}
 
         <button
+          ref={notificationButtonRef}
           type="button"
           className="header-dock-button"
           aria-label="警示"
@@ -384,6 +414,7 @@ export function HeaderDock() {
         </Link>
 
         <button
+          ref={systemButtonRef}
           type="button"
           className="header-dock-button"
           aria-label="系統狀態"
@@ -441,7 +472,7 @@ export function HeaderDock() {
         )}
       </div>
 
-      {drawer && <button type="button" className="header-dock-scrim" aria-label="關閉面板" onClick={() => setDrawer(null)} />}
+      {drawer && <button type="button" className="header-dock-scrim" aria-label="關閉面板" onClick={closeDrawer} />}
 
       {drawer && (
         <aside id="header-dock-drawer" className="header-dock-drawer" role="dialog" aria-modal="false" aria-label={drawerTitle}>
@@ -450,7 +481,7 @@ export function HeaderDock() {
               <span className="tg gold">DOCK</span>
               <h2>{drawerTitle}</h2>
             </div>
-            <button type="button" aria-label="關閉" onClick={() => setDrawer(null)}>
+            <button ref={drawerCloseButtonRef} type="button" aria-label="關閉" onClick={closeDrawer}>
               <X size={18} strokeWidth={1.9} />
             </button>
           </div>
