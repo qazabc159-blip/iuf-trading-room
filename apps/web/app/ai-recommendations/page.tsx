@@ -47,6 +47,13 @@ function qualityTone(value: QualityStatus) {
   return "warn";
 }
 
+function qualityStatusLabel(value: QualityStatus) {
+  if (value === "OK") return "正常";
+  if (value === "STALE") return "過期";
+  if (value === "MISSING") return "缺資料";
+  return "偏弱";
+}
+
 function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
   if (value === "PASS") return "ok";
   if (value === "FAIL") return "bad";
@@ -134,18 +141,25 @@ function QualityBadges({ rec }: { rec: StockRecommendation }) {
     ["新聞", rec.dataQuality.news],
     ["量化", rec.dataQuality.quant],
   ];
+  const penaltyPct = Math.round(rec.dataQuality.confidencePenalty * 100);
+  const weakItems = items
+    .filter(([, value]) => value !== "OK")
+    .map(([label, value]) => `${label}${qualityStatusLabel(value)}`);
+  const summary = weakItems.length > 0
+    ? `資料品質提醒：${weakItems.join("、")}；信心折減 ${penaltyPct}%`
+    : `資料品質完整；信心折減 ${penaltyPct}%`;
 
   return (
-    <div className="_rec-quality" aria-label="資料品質">
+    <div className="_rec-quality" aria-label={summary} title={summary}>
       {items.map(([label, value]) => (
         <span key={label} data-tone={qualityTone(value)}>
           <b>{label}</b>
-          {value}
+          {qualityStatusLabel(value)}
         </span>
       ))}
       <span data-tone={rec.dataQuality.confidencePenalty > 0 ? "warn" : "ok"}>
         <b>Penalty</b>
-        {Math.round(rec.dataQuality.confidencePenalty * 100)}%
+        {penaltyPct}%
       </span>
     </div>
   );
