@@ -585,3 +585,83 @@ export const strategyRuns = pgTable(
     workspaceStatusIdx:  index("idx_strategy_runs_workspace_status").on(table.workspaceId, table.status)
   })
 );
+
+// ── UTA Phase A — migration 0032_uta_phase_a.sql ──────────────────────────────
+// BrokerAdapter abstraction layer: registry + workspace account bindings + unified orders.
+// AGPL compliance: design-only inspiration from OpenAlice README/docs. All code is IUF-original.
+
+export const brokerAdapters = pgTable("broker_adapters", {
+  adapterKey:           text("adapter_key").primaryKey(),
+  displayName:          text("display_name").notNull(),
+  capOddLot:            boolean("cap_odd_lot").notNull().default(false),
+  capMarginTrading:     boolean("cap_margin_trading").notNull().default(false),
+  capShortSelling:      boolean("cap_short_selling").notNull().default(false),
+  capAfterHoursFix:     boolean("cap_after_hours_fix").notNull().default(false),
+  capSimMode:           boolean("cap_sim_mode").notNull().default(false),
+  capMaxSubscriptions:  integer("cap_max_subscriptions").notNull().default(0),
+  isActive:             boolean("is_active").notNull().default(true),
+  createdAt:            timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:            timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export const brokerAccounts = pgTable(
+  "broker_accounts",
+  {
+    id:            uuid("id").defaultRandom().primaryKey(),
+    workspaceId:   uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    adapterKey:    text("adapter_key").notNull().references(() => brokerAdapters.adapterKey, { onDelete: "restrict" }),
+    accountRef:    text("account_ref").notNull(),
+    accountLabel:  text("account_label").notNull().default(""),
+    // allocation_ratio: fraction 0.0–1.0 (not a percentage). CHECK enforced in DB.
+    allocationRatio: numeric("allocation_ratio", { precision: 5, scale: 4 }).notNull().default("1.0"),
+    isPrimary:     boolean("is_primary").notNull().default(false),
+    isActive:      boolean("is_active").notNull().default(true),
+    createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:     timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    workspaceAdapterRefUidx: uniqueIndex("broker_accounts_workspace_adapter_ref_uidx").on(
+      table.workspaceId, table.adapterKey, table.accountRef
+    ),
+    workspaceIdx: index("broker_accounts_workspace_idx").on(table.workspaceId),
+    adapterIdx:   index("broker_accounts_adapter_idx").on(table.adapterKey)
+  })
+);
+
+export const unifiedOrders = pgTable(
+  "unified_orders",
+  {
+    id:               uuid("id").defaultRandom().primaryKey(),
+    workspaceId:      uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    brokerAccountId:  uuid("broker_account_id").references(() => brokerAccounts.id, { onDelete: "set null" }),
+    adapterKey:       text("adapter_key").notNull(),
+    symbol:           text("symbol").notNull(),
+    action:           text("action", { enum: ["Buy", "Sell"] }).notNull(),
+    qty:              integer("qty").notNull(),
+    // quantity_unit: 'LOT' = board lot (1000 shares TW); 'SHARE' = odd-lot (1–999). Matches paper_orders/kgi_orders.
+    quantityUnit:     text("quantity_unit", { enum: ["SHARE", "LOT"] }).notNull().default("LOT"),
+    priceType:        text("price_type", { enum: ["Market", "Limit", "LimitUp", "LimitDown"] }).notNull(),
+    limitPrice:       numeric("limit_price", { precision: 14, scale: 4 }),
+    orderCond:        text("order_cond", { enum: ["Cash", "Margin", "ShortSelling", "LendSelling"] }),
+    oddLot:           boolean("odd_lot").notNull().default(false),
+    status:           text("status", { enum: ["pending", "submitted", "partial_fill", "filled", "cancelled", "rejected"] })
+                        .notNull()
+                        .default("pending"),
+    idempotencyKey:   text("idempotency_key").unique(),
+    externalOrderId:  text("external_order_id"),
+    filledQty:        integer("filled_qty").notNull().default(0),
+    filledPrice:      numeric("filled_price", { precision: 14, scale: 4 }),
+    submittedAt:      timestamp("submitted_at", { withTimezone: true }),
+    filledAt:         timestamp("filled_at", { withTimezone: true }),
+    cancelledAt:      timestamp("cancelled_at", { withTimezone: true }),
+    actorId:          uuid("actor_id"),
+    adapterResponse:  jsonb("adapter_response"),
+    createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    workspaceCreatedIdx:  index("unified_orders_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    workspaceStatusIdx:   index("unified_orders_workspace_status_idx").on(table.workspaceId, table.status),
+    brokerAccountIdx:     index("unified_orders_broker_account_idx").on(table.brokerAccountId)
+  })
+);
