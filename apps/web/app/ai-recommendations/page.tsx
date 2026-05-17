@@ -14,7 +14,7 @@ type QualityStatus = "OK" | "STALE" | "MISSING" | "WEAK";
 
 const BUCKETS: Array<{ label: BucketName; range: string; primary: boolean }> = [
   { label: "今日首選", range: "80+", primary: true },
-  { label: "可布局", range: "70-79", primary: true },
+  { label: "可觀察布局（研究參考）", range: "70-79", primary: true },
   { label: "等回檔", range: "60-69", primary: true },
   { label: "高風險排除", range: "<60", primary: false },
   { label: "資料不足暫不推薦", range: "MISSING", primary: false },
@@ -55,7 +55,7 @@ function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
 
 function actionTone(value: BucketName) {
   if (value === "今日首選") return "ok";
-  if (value === "可布局" || value === "等回檔") return "warn";
+  if (value === "可觀察布局（研究參考）" || value === "等回檔") return "warn";
   return "bad";
 }
 
