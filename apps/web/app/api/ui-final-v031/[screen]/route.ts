@@ -4,9 +4,9 @@ import { NextResponse } from "next/server";
 import {
   buildFinalV031LivePayload,
   finalV031HydrationScript,
-  type PaperPrefillHandoff,
   type FinalV031Screen,
 } from "@/lib/final-v031-live";
+import { parsePaperPrefillSearchParams } from "@/lib/portfolio-handoff";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -173,60 +173,9 @@ async function renderFinalHtml(screen: ScreenKey) {
     .replace("</head>", `${embeddedMarker}\n${styleTags}\n${contentShellOverrides(screen)}\n</head>`);
 }
 
-function safeQueryText(value: string | null, maxLength = 80) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  return trimmed.replace(/[<>]/g, "").slice(0, maxLength);
-}
-
-function safeTicker(value: string | null) {
-  const ticker = value?.trim().toUpperCase();
-  if (!ticker || !/^[A-Z0-9._-]{1,16}$/.test(ticker)) return null;
-  return ticker;
-}
-
-function safeSide(value: string | null): PaperPrefillHandoff["side"] {
-  const side = value?.trim();
-  if (side === "buy" || side === "sell") return side;
-  return null;
-}
-
-function paperPrefillSource(params: URLSearchParams, recommendationId: string | null): PaperPrefillHandoff["source"] {
-  if (recommendationId) return "ai_recommendations";
-  if (safeQueryText(params.get("from_strategy"), 40)) return "strategy_home";
-  if (safeQueryText(params.get("from_home"), 40)) return "home_paper_preview";
-  if (safeQueryText(params.get("from_run"), 40)) return "strategy_run";
-  return "url";
-}
-
-function parsePaperPrefill(request: Request): PaperPrefillHandoff | null {
-  const params = new URL(request.url).searchParams;
-  const symbol = safeTicker(params.get("ticker") ?? params.get("symbol"));
-  const recommendationId = safeQueryText(params.get("from_rec"), 96);
-  const entry = safeQueryText(params.get("entry"), 40);
-  const stop = safeQueryText(params.get("stop"), 40);
-  const target = safeQueryText(params.get("tp"), 40);
-  const side = safeSide(params.get("side"));
-  const source = paperPrefillSource(params, recommendationId);
-  const enabled = params.get("prefill") === "true" || Boolean(symbol || recommendationId || side || entry || stop || target) || source !== "url";
-
-  if (!enabled) return null;
-
-  return {
-    enabled: true,
-    symbol,
-    recommendationId,
-    side,
-    entry,
-    stop,
-    target,
-    source,
-  };
-}
-
 async function injectLiveData(screen: ScreenKey, html: string, request: Request) {
   const payload = await buildFinalV031LivePayload(screen as FinalV031Screen, {
-    paperPrefill: screen === "paper-trading-room" ? parsePaperPrefill(request) : null,
+    paperPrefill: screen === "paper-trading-room" ? parsePaperPrefillSearchParams(new URL(request.url).searchParams) : null,
   });
   const script = finalV031HydrationScript(payload);
   return html.replace("</body>", () => `${script}\n</body>`);
