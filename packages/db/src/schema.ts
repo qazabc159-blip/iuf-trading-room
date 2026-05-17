@@ -612,7 +612,8 @@ export const brokerAccounts = pgTable(
     adapterKey:    text("adapter_key").notNull().references(() => brokerAdapters.adapterKey, { onDelete: "restrict" }),
     accountRef:    text("account_ref").notNull(),
     accountLabel:  text("account_label").notNull().default(""),
-    allocationPct: numeric("allocation_pct", { precision: 5, scale: 4 }).notNull().default("1.0"),
+    // allocation_ratio: fraction 0.0–1.0 (not a percentage). CHECK enforced in DB.
+    allocationRatio: numeric("allocation_ratio", { precision: 5, scale: 4 }).notNull().default("1.0"),
     isPrimary:     boolean("is_primary").notNull().default(false),
     isActive:      boolean("is_active").notNull().default(true),
     createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -637,13 +638,16 @@ export const unifiedOrders = pgTable(
     symbol:           text("symbol").notNull(),
     action:           text("action", { enum: ["Buy", "Sell"] }).notNull(),
     qty:              integer("qty").notNull(),
+    // quantity_unit: 'LOT' = board lot (1000 shares TW); 'SHARE' = odd-lot (1–999). Matches paper_orders/kgi_orders.
+    quantityUnit:     text("quantity_unit", { enum: ["SHARE", "LOT"] }).notNull().default("LOT"),
     priceType:        text("price_type", { enum: ["Market", "Limit", "LimitUp", "LimitDown"] }).notNull(),
     limitPrice:       numeric("limit_price", { precision: 14, scale: 4 }),
     orderCond:        text("order_cond", { enum: ["Cash", "Margin", "ShortSelling", "LendSelling"] }),
     oddLot:           boolean("odd_lot").notNull().default(false),
-    status:           text("status", { enum: ["pending", "submitted", "filled", "cancelled", "rejected"] })
+    status:           text("status", { enum: ["pending", "submitted", "partial_fill", "filled", "cancelled", "rejected"] })
                         .notNull()
                         .default("pending"),
+    idempotencyKey:   text("idempotency_key").unique(),
     externalOrderId:  text("external_order_id"),
     filledQty:        integer("filled_qty").notNull().default(0),
     filledPrice:      numeric("filled_price", { precision: 14, scale: 4 }),

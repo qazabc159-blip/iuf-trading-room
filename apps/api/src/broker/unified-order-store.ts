@@ -14,6 +14,7 @@ import type { UnifiedOrderInput } from "./broker-adapter.js";
 export type UnifiedOrderStatus =
   | "pending"
   | "submitted"
+  | "partial_fill"
   | "filled"
   | "cancelled"
   | "rejected";
@@ -26,11 +27,13 @@ export interface UnifiedOrderRecord {
   symbol: string;
   action: "Buy" | "Sell";
   qty: number;
+  quantityUnit: "SHARE" | "LOT";
   priceType: "Market" | "Limit" | "LimitUp" | "LimitDown";
   limitPrice: number | null;
   orderCond: "Cash" | "Margin" | "ShortSelling" | "LendSelling" | null;
   oddLot: boolean;
   status: UnifiedOrderStatus;
+  idempotencyKey: string | null;
   externalOrderId: string | null;
   filledQty: number;
   filledPrice: number | null;
@@ -65,11 +68,13 @@ function memCreate(
     symbol: input.symbol,
     action: input.action,
     qty: input.qty,
+    quantityUnit: input.quantityUnit ?? "LOT",
     priceType: input.priceType,
     limitPrice: input.limitPrice ?? null,
     orderCond: input.orderCond ?? null,
     oddLot: input.oddLot ?? false,
     status: "pending",
+    idempotencyKey: null,
     externalOrderId: null,
     filledQty: 0,
     filledPrice: null,
@@ -104,11 +109,13 @@ export async function createUnifiedOrder(
       symbol: input.symbol,
       action: input.action,
       qty: input.qty,
+      quantityUnit: input.quantityUnit ?? "LOT",
       priceType: input.priceType,
       limitPrice: input.limitPrice != null ? String(input.limitPrice) : null,
       orderCond: input.orderCond ?? null,
       oddLot: input.oddLot ?? false,
       status: "pending",
+      idempotencyKey: input.idempotencyKey ?? null,
       actorId: actorId ?? null,
     })
     .returning();
@@ -234,11 +241,13 @@ function dbRowToRecord(row: typeof unifiedOrders.$inferSelect): UnifiedOrderReco
     symbol: row.symbol,
     action: row.action as "Buy" | "Sell",
     qty: row.qty,
+    quantityUnit: (row.quantityUnit as "SHARE" | "LOT") ?? "LOT",
     priceType: row.priceType as "Market" | "Limit" | "LimitUp" | "LimitDown",
     limitPrice: row.limitPrice != null ? parseFloat(row.limitPrice) : null,
     orderCond: (row.orderCond as UnifiedOrderRecord["orderCond"]) ?? null,
     oddLot: row.oddLot,
     status: row.status as UnifiedOrderStatus,
+    idempotencyKey: row.idempotencyKey ?? null,
     externalOrderId: row.externalOrderId ?? null,
     filledQty: row.filledQty,
     filledPrice: row.filledPrice != null ? parseFloat(row.filledPrice) : null,

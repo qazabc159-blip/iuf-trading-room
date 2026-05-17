@@ -21,10 +21,14 @@ export interface UnifiedOrderInput {
   symbol: string;
   action: "Buy" | "Sell";
   qty: number;
+  /** quantity_unit: 'LOT' = board lot (1000 shares); 'SHARE' = odd-lot. Default 'LOT'. */
+  quantityUnit?: "SHARE" | "LOT";
   priceType: "Market" | "Limit" | "LimitUp" | "LimitDown";
   limitPrice?: number;
   orderCond?: "Cash" | "Margin" | "ShortSelling" | "LendSelling";
   oddLot?: boolean;
+  /** idempotency_key: caller-supplied dedup key for network-retry safety. */
+  idempotencyKey?: string;
 }
 
 export interface UnifiedPosition {

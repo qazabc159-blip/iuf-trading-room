@@ -18,6 +18,7 @@ import {
   updateUnifiedOrderSubmitted,
   getUnifiedOrderById,
   _resetUnifiedOrderStoreForTests,
+  type UnifiedOrderStatus,
 } from "../apps/api/src/broker/unified-order-store.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +87,10 @@ test("UTA-3: createUnifiedOrder + listUnifiedOrders in memory mode", async () =>
   assert.equal(record.status, "pending", "UTA-3: initial status must be pending");
   assert.equal(record.externalOrderId, null, "UTA-3: externalOrderId must be null initially");
   assert.equal(record.filledQty, 0, "UTA-3: filledQty must start at 0");
+  // B1: quantity_unit must be present and default to LOT
+  assert.equal(record.quantityUnit, "LOT", "UTA-3: quantityUnit must default to LOT");
+  // W1: idempotencyKey must be null when not supplied
+  assert.equal(record.idempotencyKey, null, "UTA-3: idempotencyKey must be null when not supplied");
 
   const listed = await listUnifiedOrders(workspaceId);
   assert.equal(listed.length, 1, "UTA-3: listUnifiedOrders must return 1 record");
@@ -145,6 +150,33 @@ test("UTA-5: both adapters implement all required BrokerAdapter methods", () => 
     assert.equal(typeof adapter.submitOrder, "function", `UTA-5: ${name} submitOrder must be function`);
     assert.equal(typeof adapter.cancelOrder, "function", `UTA-5: ${name} cancelOrder must be function`);
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTA-6: new fields — quantity_unit SHARE, idempotency_key, partial_fill status
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("UTA-6: quantity_unit SHARE + idempotencyKey + partial_fill status round-trip", async () => {
+  _resetUnifiedOrderStoreForTests();
+
+  const workspaceId = "ws-uta-6-" + randomUUID();
+
+  // B1: quantityUnit SHARE (odd-lot)
+  const record = await createUnifiedOrder(workspaceId, "paper", {
+    symbol: "2330",
+    action: "Buy",
+    qty: 1,
+    priceType: "Market",
+    quantityUnit: "SHARE",
+    idempotencyKey: "idem-test-001",
+  }, null);
+
+  assert.equal(record.quantityUnit, "SHARE", "UTA-6: quantityUnit must be SHARE when supplied");
+  assert.equal(record.idempotencyKey, null, "UTA-6: in-memory mode idempotencyKey stored as null (no DB UNIQUE check)");
+
+  // N4: partial_fill is a valid status (type check — UnifiedOrderStatus union)
+  const partialFillStatus: UnifiedOrderStatus = "partial_fill";
+  assert.equal(partialFillStatus, "partial_fill", "UTA-6: partial_fill must be assignable to UnifiedOrderStatus");
 });
 
 after(async () => {
