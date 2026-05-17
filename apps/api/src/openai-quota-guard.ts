@@ -10,6 +10,10 @@
  *
  * Budget estimate (gpt-4o-mini at $0.15/1M tokens):
  *   200 calls × ~800 tokens avg = 160k tokens/day ≈ $0.024/day
+ *
+ * Brain Phase A note (2026-05-17):
+ *   Modules migrated to callLlm() (llm/llm-gateway.ts) bypass this guard and use
+ *   DB-backed budget enforcement instead. This file remains for modules not yet migrated.
  */
 
 // ── State ─────────────────────────────────────────────────────────────────────

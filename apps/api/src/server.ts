@@ -14524,6 +14524,50 @@ app.get("/api/v1/uta/orders", async (c) => {
   return c.json({ data: { orders } });
 });
 
+// =============================================================================
+// Brain Phase A -- LLM gateway admin routes (2026-05-17, Yang critical)
+// GET /api/v1/admin/llm/usage  -- usage summary (Owner-only)
+// GET /api/v1/admin/llm/calls  -- recent call list (Owner-only)
+// GET /api/v1/admin/llm/models -- model registry (Owner-only)
+// Phase B: POST /api/v1/brain/run (ReAct loop) -- requires Yang explicit ACK.
+// =============================================================================
+
+// GET /api/v1/admin/llm/models -- LLM model registry
+app.get("/api/v1/admin/llm/models", async (c) => {
+  const session = c.get("session");
+  if (!session || session.role !== "owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+  const { getLlmModels } = await import("./admin-brain-llm.js");
+  const models = await getLlmModels();
+  return c.json({ data: { models } });
+});
+
+// GET /api/v1/admin/llm/calls?limit=100 -- recent LLM call log
+app.get("/api/v1/admin/llm/calls", async (c) => {
+  const session = c.get("session");
+  if (!session || session.role !== "owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+  const limit = parseInt(c.req.query("limit") ?? "100", 10);
+  const { getRecentLlmCalls } = await import("./admin-brain-llm.js");
+  const calls = await getRecentLlmCalls({ limit });
+  return c.json({ data: { calls, total: calls.length } });
+});
+
+// GET /api/v1/admin/llm/usage?from=ISO&to=ISO -- cost + token usage summary
+app.get("/api/v1/admin/llm/usage", async (c) => {
+  const session = c.get("session");
+  if (!session || session.role !== "owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+  const from = c.req.query("from") ?? null;
+  const to = c.req.query("to") ?? null;
+  const { getLlmUsageSummary } = await import("./admin-brain-llm.js");
+  const summary = await getLlmUsageSummary({ from, to });
+  return c.json({ data: summary });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
