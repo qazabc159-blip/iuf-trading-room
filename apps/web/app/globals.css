@@ -1090,8 +1090,7 @@ button { font: inherit; }
 .company-data-tabs.finmind-tabs,
 .company-data-tabs.finmind-tabs.company-finance-tabs,
 .company-finance-table-wrap,
-.company-workbench-shell .kline-control-group,
-.company-workbench-shell .paper-order-panel {
+.company-workbench-shell .kline-control-group {
   scrollbar-color: rgba(226, 184, 92, 0.42) rgba(2, 6, 11, 0.56);
   scrollbar-width: thin;
 }
@@ -1100,8 +1099,7 @@ button { font: inherit; }
 .company-data-tabs.finmind-tabs::-webkit-scrollbar,
 .company-data-tabs.finmind-tabs.company-finance-tabs::-webkit-scrollbar,
 .company-finance-table-wrap::-webkit-scrollbar,
-.company-workbench-shell .kline-control-group::-webkit-scrollbar,
-.company-workbench-shell .paper-order-panel::-webkit-scrollbar {
+.company-workbench-shell .kline-control-group::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
@@ -1110,8 +1108,7 @@ button { font: inherit; }
 .company-data-tabs.finmind-tabs::-webkit-scrollbar-track,
 .company-data-tabs.finmind-tabs.company-finance-tabs::-webkit-scrollbar-track,
 .company-finance-table-wrap::-webkit-scrollbar-track,
-.company-workbench-shell .kline-control-group::-webkit-scrollbar-track,
-.company-workbench-shell .paper-order-panel::-webkit-scrollbar-track {
+.company-workbench-shell .kline-control-group::-webkit-scrollbar-track {
   background: rgba(2, 6, 11, 0.56);
   border-radius: 999px;
 }
@@ -1120,8 +1117,7 @@ button { font: inherit; }
 .company-data-tabs.finmind-tabs::-webkit-scrollbar-thumb,
 .company-data-tabs.finmind-tabs.company-finance-tabs::-webkit-scrollbar-thumb,
 .company-finance-table-wrap::-webkit-scrollbar-thumb,
-.company-workbench-shell .kline-control-group::-webkit-scrollbar-thumb,
-.company-workbench-shell .paper-order-panel::-webkit-scrollbar-thumb {
+.company-workbench-shell .kline-control-group::-webkit-scrollbar-thumb {
   border: 2px solid rgba(2, 6, 11, 0.72);
   border-radius: 999px;
   background: rgba(226, 184, 92, 0.42);
@@ -7971,10 +7967,10 @@ body:has(.login-route) > div {
   }
 }
 
-/* Pass 106 - company detail becomes a trading workbench, not stacked slabs. */
+/* Pass 106 - company detail workbench; PaperOrderPanel removed 5/15, 1-col layout 5/17. */
 .company-workbench-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(330px, 23vw, 410px);
+  grid-template-columns: minmax(0, 1fr);
   gap: clamp(18px, 1.8vw, 28px);
   align-items: start;
   min-width: 0;
@@ -8078,180 +8074,11 @@ body:has(.login-route) > div {
   min-height: clamp(420px, 44vh, 560px);
 }
 
-.company-workbench-shell .paper-order-panel {
-  position: sticky;
-  top: 14px;
-  max-height: calc(100dvh - 28px);
-  overflow: auto;
-  padding: 14px 15px 16px;
-  border-left: 1px solid rgba(226, 184, 92, 0.2);
-  border-top-color: rgba(226, 184, 92, 0.28);
-  background:
-    linear-gradient(180deg, rgba(226, 184, 92, 0.07), transparent 28%),
-    rgba(3, 7, 12, 0.48);
-}
-
-.company-workbench-shell .paper-order-panel .ascii-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
-  padding: 0 0 9px;
-  margin-bottom: 8px;
-}
-
-.company-workbench-shell .paper-order-panel .ascii-head-bracket {
-  font-size: 18px;
-  line-height: 1.35;
-}
-
-.company-workbench-shell .paper-order-source-row {
-  gap: 5px 8px;
-  padding: 6px 0 8px;
-  margin-bottom: 8px;
-  line-height: 1.55;
-}
-
-.company-workbench-shell .paper-order-lock-note {
-  margin: 8px 0 10px;
-  padding: 9px 10px;
-  font-size: 11.5px;
-  line-height: 1.75;
-}
-
-.company-workbench-shell .paper-order-price-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 10px;
-  padding: 7px 0 8px;
-  margin-bottom: 9px;
-}
-
-.company-workbench-shell .paper-order-price-row span {
-  min-width: 0;
-}
-
-.company-workbench-shell .paper-order-price-row b {
-  justify-self: end;
-}
-
-.company-workbench-shell .paper-order-price-row small {
-  grid-column: 1 / -1;
-  flex: initial;
-  font-size: 10.8px;
-  line-height: 1.55;
-}
-
-.company-workbench-shell .paper-order-workbench {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-}
-
-.company-workbench-shell .paper-order-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px 10px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.company-workbench-shell .paper-order-grid > div {
-  min-width: 0;
-}
-
-.company-workbench-shell .paper-order-summary-strip {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  margin: 10px 0;
-}
-
-.company-workbench-shell .paper-order-summary-strip > div {
-  padding: 7px 9px 8px;
-}
-
-.company-workbench-shell .paper-order-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.company-workbench-shell .paper-order-actions .btn-sm {
-  width: 100%;
-  min-height: 36px;
-  padding-inline: 10px;
-}
-
-.company-workbench-shell .paper-order-sidecar {
-  gap: 8px;
-  padding: 11px 0 0;
-  border-left: 0;
-  border-top: 1px solid rgba(220, 228, 240, 0.075);
-}
-
-.company-workbench-shell .paper-order-sidecar [style*="padding"] {
-  max-width: 100%;
-}
-
-@media (max-width: 1500px) {
-  .company-workbench-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .company-workbench-shell .paper-order-panel {
-    position: relative;
-    top: auto;
-    max-height: none;
-    overflow: visible;
-  }
-
-  .company-workbench-shell .paper-order-workbench {
-    grid-template-columns: minmax(0, 0.9fr) minmax(300px, 1.1fr);
-  }
-
-  .company-workbench-shell .paper-order-sidecar {
-    padding-top: 0;
-    padding-left: 12px;
-    border-top: 0;
-    border-left: 1px solid rgba(220, 228, 240, 0.075);
-  }
-}
-
-@media (max-width: 1180px) {
-  .company-workbench-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .company-workbench-shell .paper-order-workbench {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .company-workbench-shell .paper-order-sidecar {
-    padding-left: 0;
-    padding-top: 10px;
-    border-left: 0;
-    border-top: 1px solid rgba(220, 228, 240, 0.075);
-  }
-}
+/* paper-order-* selectors removed 2026-05-17: PaperOrderPanel deleted in PR #515, ~115 lines dead CSS purged */
 
 @media (max-width: 820px) {
   .company-workbench-shell .kline-snapshot-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .company-workbench-shell .paper-order-workbench,
-  .company-workbench-shell .paper-order-grid,
-  .company-workbench-shell .paper-order-summary-strip,
-  .company-workbench-shell .paper-order-actions {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .company-workbench-shell .paper-order-sidecar {
-    padding-left: 0;
-    padding-top: 10px;
-    border-left: 0;
-    border-top: 1px solid rgba(220, 228, 240, 0.075);
   }
 }
 
@@ -8344,31 +8171,7 @@ body:has(.login-route) > div {
   background: rgba(46, 204, 113, 0.05);
 }
 
-/* Pass 110 - keep the company page as a live trading desk at desktop widths. */
-@media (min-width: 1201px) and (max-width: 1500px) {
-  .company-workbench-shell {
-    grid-template-columns: minmax(620px, 1fr) minmax(318px, 360px);
-    gap: clamp(16px, 1.5vw, 22px);
-  }
-
-  .company-workbench-shell .paper-order-panel {
-    position: sticky;
-    top: 14px;
-    max-height: calc(100dvh - 28px);
-    overflow: auto;
-  }
-
-  .company-workbench-shell .paper-order-workbench {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-  }
-
-  .company-workbench-shell .paper-order-sidecar {
-    padding: 10px 0 0;
-    border-left: 0;
-    border-top: 1px solid rgba(220, 228, 240, 0.075);
-  }
-}
+/* Pass 110 - 2-col override removed 2026-05-17; PaperOrderPanel gone, workbench is 1-col at all widths. */
 
 /* Pass 118 - keep K-line controls compact and price-readable. */
 .company-workbench-shell .kline-toolbar {
@@ -8890,11 +8693,6 @@ body:has(.login-route) > div {
 }
 
 @media (min-width: 1201px) and (max-width: 1500px) {
-  .company-workbench-shell {
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 328px);
-    gap: clamp(12px, 1.15vw, 16px);
-  }
-
   .company-workbench-shell .kline-panel {
     padding-inline: clamp(14px, 1.25vw, 18px);
   }
@@ -8946,13 +8744,7 @@ body:has(.login-route) > div {
   color: var(--gold-bright);
 }
 
-/* Pass 113 - make the company order ticket feel like a trading tool, not a slab. */
-@media (min-width: 1201px) and (max-width: 1500px) {
-  .company-workbench-shell {
-    grid-template-columns: minmax(0, 1fr) minmax(348px, 368px);
-    gap: clamp(14px, 1.25vw, 18px);
-  }
-}
+/* Pass 113 - 2-col override removed 2026-05-17; workbench is 1-col at all widths. */
 
 .company-workbench-shell .paper-order-panel {
   border-left: 1px solid rgba(226, 184, 92, 0.28);
@@ -9067,11 +8859,7 @@ body:has(.login-route) > div {
   line-height: 1.66;
 }
 
-/* Pass 118 - company workbench polish: keep K-line dominant, give order desk breathing room. */
-.company-workbench-shell {
-  grid-template-columns: minmax(0, 1fr) clamp(420px, 28vw, 520px);
-  gap: clamp(22px, 2.4vw, 40px);
-}
+/* Pass 118 - 2-col override removed 2026-05-17; workbench is 1-col at all widths. */
 
 .company-workbench-shell .paper-order-panel {
   padding: clamp(18px, 1.7vw, 24px);
