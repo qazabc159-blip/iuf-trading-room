@@ -119,3 +119,20 @@ export function RecommendationHandoffLink({
     </Link>
   );
 }
+
+export function RecommendationHandoffUnavailable({
+  reason,
+  children,
+}: {
+  reason: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="_rec-prefill _rec-prefill-disabled" role="status" aria-label={reason} title={reason}>
+      {children}
+      <span className="_rec-prefill-side" aria-hidden="true">
+        停用
+      </span>
+    </span>
+  );
+}
