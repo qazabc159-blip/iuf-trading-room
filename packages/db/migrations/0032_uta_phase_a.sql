@@ -4,6 +4,15 @@
 -- Mike audit v2: B1 quantity_unit / W1 idempotency_key / W3 comment / W4 allocation_ratio / N4 partial_fill
 -- AGPL compliance: design-only inspiration from OpenAlice public README/docs; all SQL is IUF-original.
 -- down migration: 0032_uta_phase_a.down.sql
+--
+-- Pre-emptive safety: ensure pgcrypto extension is enabled before using gen_random_uuid().
+-- Idempotent (no-op if already enabled). Required by broker_accounts.id and unified_orders.id defaults.
+-- Railway PostgreSQL may not enable pgcrypto by default on first-connect in some versions.
+-- See fix/db-pgcrypto-extension-before-uta-migration-jason-20260518 for rationale.
+-- FALLBACK NOTE: If Railway PG user lacks CREATE EXTENSION permission (superuser required),
+--   this line will error. In that case, remove this line and switch to application-side
+--   crypto.randomUUID() for id generation in the broker store / unified-order store.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Table 1: broker_adapters
 CREATE TABLE IF NOT EXISTS broker_adapters (

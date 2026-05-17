@@ -37,7 +37,7 @@ const STRATEGY_LAB_MATCHERS: Record<string, (candidate: LabStrategyCandidate) =>
 };
 
 function normalizedDisplayStatus(candidate: LabStrategyCandidate, fallback: DisplayStatus): DisplayStatus {
-  if (!("displayStatus" in candidate)) return fallback;
+  if (!("displayStatus" in candidate) || candidate.displayStatus == null) return fallback;
   return candidate.displayStatus === "PASS" || candidate.displayStatus === "WATCH" || candidate.displayStatus === "FAIL"
     ? candidate.displayStatus
     : null;
