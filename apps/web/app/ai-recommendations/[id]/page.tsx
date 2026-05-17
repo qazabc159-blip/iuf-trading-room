@@ -52,12 +52,23 @@ function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
   return "warn";
 }
 
+function handoffSideForDirection(direction: StockRecommendation["direction"]) {
+  if (direction === "偏空") return "sell";
+  if (direction === "偏多") return "buy";
+  return null;
+}
+
 function buildPrefillHref(rec: StockRecommendation) {
   const params = new URLSearchParams({
     ticker: rec.ticker,
     prefill: "true",
     from_rec: rec.recommendationId,
   });
+  const side = handoffSideForDirection(rec.direction);
+
+  if (side) {
+    params.set("side", side);
+  }
 
   if (rec.entryZone.primary) params.set("entry", rec.entryZone.primary);
   if (rec.invalidation.price !== null) params.set("stop", String(rec.invalidation.price));

@@ -185,6 +185,12 @@ function safeTicker(value: string | null) {
   return ticker;
 }
 
+function safeSide(value: string | null): PaperPrefillHandoff["side"] {
+  const side = value?.trim();
+  if (side === "buy" || side === "sell") return side;
+  return null;
+}
+
 function paperPrefillSource(params: URLSearchParams, recommendationId: string | null): PaperPrefillHandoff["source"] {
   if (recommendationId) return "ai_recommendations";
   if (safeQueryText(params.get("from_strategy"), 40)) return "strategy_home";
@@ -200,8 +206,9 @@ function parsePaperPrefill(request: Request): PaperPrefillHandoff | null {
   const entry = safeQueryText(params.get("entry"), 40);
   const stop = safeQueryText(params.get("stop"), 40);
   const target = safeQueryText(params.get("tp"), 40);
+  const side = safeSide(params.get("side"));
   const source = paperPrefillSource(params, recommendationId);
-  const enabled = params.get("prefill") === "true" || Boolean(symbol || recommendationId || entry || stop || target) || source !== "url";
+  const enabled = params.get("prefill") === "true" || Boolean(symbol || recommendationId || side || entry || stop || target) || source !== "url";
 
   if (!enabled) return null;
 
@@ -209,6 +216,7 @@ function parsePaperPrefill(request: Request): PaperPrefillHandoff | null {
     enabled: true,
     symbol,
     recommendationId,
+    side,
     entry,
     stop,
     target,
