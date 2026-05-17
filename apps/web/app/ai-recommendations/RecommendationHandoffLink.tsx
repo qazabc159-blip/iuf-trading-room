@@ -13,13 +13,14 @@ function handoffParam(href: string, key: string) {
   }
 }
 
-function buildHandoffLabel(href: string, recommendationId: string) {
+function buildHandoffLabel(href: string, recommendationId: string, directionLabel?: string) {
   const ticker = handoffParam(href, "ticker") ?? handoffParam(href, "symbol");
   const entry = handoffParam(href, "entry");
   const stop = handoffParam(href, "stop");
   const target = handoffParam(href, "tp");
   const details = [
     ticker ? `標的 ${ticker}` : null,
+    directionLabel ? `方向 ${directionLabel}` : null,
     entry ? `進場 ${entry}` : null,
     stop ? `停損 ${stop}` : null,
     target ? `目標 ${target}` : null,
@@ -57,13 +58,15 @@ function recordActed(recommendationId: string) {
 export function RecommendationHandoffLink({
   href,
   recommendationId,
+  directionLabel,
   children,
 }: {
   href: string;
   recommendationId: string;
+  directionLabel?: string;
   children: ReactNode;
 }) {
-  const handoffLabel = buildHandoffLabel(href, recommendationId);
+  const handoffLabel = buildHandoffLabel(href, recommendationId, directionLabel);
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (event.defaultPrevented) return;
@@ -75,6 +78,11 @@ export function RecommendationHandoffLink({
   return (
     <Link className="_rec-prefill" href={href} aria-label={handoffLabel} title={handoffLabel} onClick={handleClick}>
       {children}
+      {directionLabel ? (
+        <span className="_rec-prefill-side" aria-hidden="true">
+          {directionLabel}
+        </span>
+      ) : null}
     </Link>
   );
 }
