@@ -4,8 +4,13 @@ import { ArrowRight, Database, FileSearch, Gauge, ShieldAlert, Target } from "lu
 
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getRecommendationsToday, type RecommendationListResponse } from "@/lib/api";
+import {
+  buildRecommendationPrefillHref,
+  handoffLabelForDirection,
+  INVALID_AI_HANDOFF_TICKER_MESSAGE,
+} from "@/lib/ai-recommendation-handoff";
 import { RecommendationFeedbackActions } from "./RecommendationFeedbackActions";
-import { RecommendationHandoffLink } from "./RecommendationHandoffLink";
+import { RecommendationHandoffLink, RecommendationHandoffUnavailable } from "./RecommendationHandoffLink";
 
 export const dynamic = "force-dynamic";
 
@@ -64,46 +69,6 @@ function actionTone(value: BucketName) {
   if (value === "今日首選") return "ok";
   if (value === "可布局" || value === "等回檔") return "warn";
   return "bad";
-}
-
-function handoffSideForDirection(direction: StockRecommendation["direction"]) {
-  if (direction === "偏空") return "sell";
-  if (direction === "偏多") return "buy";
-  return null;
-}
-
-function handoffLabelForDirection(direction: StockRecommendation["direction"]) {
-  if (direction === "偏空") return "賣出";
-  if (direction === "偏多") return "買進";
-  return "中性";
-}
-
-function buildPrefillHref(rec: StockRecommendation) {
-  const params = new URLSearchParams({
-    ticker: rec.ticker,
-    prefill: "true",
-    from_rec: rec.recommendationId,
-  });
-  const side = handoffSideForDirection(rec.direction);
-
-  if (side) {
-    params.set("side", side);
-  }
-
-  if (rec.entryZone.primary) {
-    params.set("entry", rec.entryZone.primary);
-  }
-
-  if (rec.invalidation.price !== null) {
-    params.set("stop", String(rec.invalidation.price));
-  }
-
-  const firstTarget = rec.targets.find((target) => target.price !== null);
-  if (firstTarget?.price !== undefined && firstTarget.price !== null) {
-    params.set("tp", String(firstTarget.price));
-  }
-
-  return `/portfolio?${params.toString()}`;
 }
 
 function groupByBucket(items: StockRecommendation[]) {
@@ -166,7 +131,7 @@ function QualityBadges({ rec }: { rec: StockRecommendation }) {
 }
 
 function RecommendationCard({ rec }: { rec: StockRecommendation }) {
-  const prefillHref = buildPrefillHref(rec);
+  const prefillHref = buildRecommendationPrefillHref(rec);
 
   return (
     <article className="_rec-card" data-action={rec.action}>
@@ -308,14 +273,21 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
         查看詳情
       </Link>
 
-      <RecommendationHandoffLink
-        href={prefillHref}
-        recommendationId={rec.recommendationId}
-        directionLabel={handoffLabelForDirection(rec.direction)}
-      >
-        <ArrowRight size={16} strokeWidth={1.9} />
-        一鍵帶到交易室
-      </RecommendationHandoffLink>
+      {prefillHref ? (
+        <RecommendationHandoffLink
+          href={prefillHref}
+          recommendationId={rec.recommendationId}
+          directionLabel={handoffLabelForDirection(rec.direction)}
+        >
+          <ArrowRight size={16} strokeWidth={1.9} />
+          一鍵帶到交易室
+        </RecommendationHandoffLink>
+      ) : (
+        <RecommendationHandoffUnavailable reason={INVALID_AI_HANDOFF_TICKER_MESSAGE}>
+          <ShieldAlert size={16} strokeWidth={1.9} />
+          未帶入交易室
+        </RecommendationHandoffUnavailable>
+      )}
       <RecommendationFeedbackActions recommendationId={rec.recommendationId} />
     </article>
   );
@@ -410,10 +382,17 @@ export default async function AiRecommendationsPage() {
           text-decoration: none;
         }
         ._rec-tabs a:hover,
-        ._rec-prefill:hover {
+        ._rec-prefill:hover:not(._rec-prefill-disabled) {
           color: var(--tac-fg-0);
           border-color: rgba(200, 148, 63, 0.42);
           background: rgba(200, 148, 63, 0.08);
+        }
+        ._rec-prefill-disabled {
+          color: var(--tac-fg-3);
+          border-style: dashed;
+          border-color: rgba(230, 57, 70, 0.28);
+          background: rgba(230, 57, 70, 0.05);
+          cursor: not-allowed;
         }
         ._rec-prefill-side {
           border-left: 1px solid rgba(200, 148, 63, 0.28);

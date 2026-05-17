@@ -5,8 +5,13 @@ import { ArrowLeft, ArrowRight, Database, Gauge, ShieldAlert, Target } from "luc
 
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getRecommendationDetail, type RecommendationDetailResponse } from "@/lib/api";
+import {
+  buildRecommendationPrefillHref,
+  handoffLabelForDirection,
+  INVALID_AI_HANDOFF_TICKER_MESSAGE,
+} from "@/lib/ai-recommendation-handoff";
 import { RecommendationFeedbackActions } from "../RecommendationFeedbackActions";
-import { RecommendationHandoffLink } from "../RecommendationHandoffLink";
+import { RecommendationHandoffLink, RecommendationHandoffUnavailable } from "../RecommendationHandoffLink";
 
 export const dynamic = "force-dynamic";
 
@@ -50,41 +55,6 @@ function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
   if (value === "PASS") return "ok";
   if (value === "FAIL") return "bad";
   return "warn";
-}
-
-function handoffSideForDirection(direction: StockRecommendation["direction"]) {
-  if (direction === "偏空") return "sell";
-  if (direction === "偏多") return "buy";
-  return null;
-}
-
-function handoffLabelForDirection(direction: StockRecommendation["direction"]) {
-  if (direction === "偏空") return "賣出";
-  if (direction === "偏多") return "買進";
-  return "中性";
-}
-
-function buildPrefillHref(rec: StockRecommendation) {
-  const params = new URLSearchParams({
-    ticker: rec.ticker,
-    prefill: "true",
-    from_rec: rec.recommendationId,
-  });
-  const side = handoffSideForDirection(rec.direction);
-
-  if (side) {
-    params.set("side", side);
-  }
-
-  if (rec.entryZone.primary) params.set("entry", rec.entryZone.primary);
-  if (rec.invalidation.price !== null) params.set("stop", String(rec.invalidation.price));
-
-  const firstTarget = rec.targets.find((target) => target.price !== null);
-  if (firstTarget?.price !== undefined && firstTarget.price !== null) {
-    params.set("tp", String(firstTarget.price));
-  }
-
-  return `/portfolio?${params.toString()}`;
 }
 
 function safeMessage(error: unknown) {
@@ -229,7 +199,7 @@ export default async function AiRecommendationDetailPage({
 
   if (!rec) return <ErrorState message={error ?? "推薦詳情不存在。"} />;
 
-  const prefillHref = buildPrefillHref(rec);
+  const prefillHref = buildRecommendationPrefillHref(rec);
   const sourceMode = data?._mock ? "FALLBACK FEED" : "ORCHESTRATOR";
 
   return (
@@ -242,7 +212,8 @@ export default async function AiRecommendationDetailPage({
           margin-bottom: 12px;
         }
         ._rec-detail-nav a,
-        ._rec-detail-actions a {
+        ._rec-detail-actions a,
+        ._rec-detail-actions span._rec-prefill {
           min-height: 34px;
           display: inline-flex;
           align-items: center;
@@ -259,6 +230,13 @@ export default async function AiRecommendationDetailPage({
         ._rec-detail-actions ._rec-prefill {
           color: var(--tac-brand);
           border-color: rgba(200, 148, 63, 0.35);
+        }
+        ._rec-detail-actions ._rec-prefill-disabled {
+          color: var(--tac-fg-3);
+          border-style: dashed;
+          border-color: rgba(230, 57, 70, 0.28);
+          background: rgba(230, 57, 70, 0.05);
+          cursor: not-allowed;
         }
         ._rec-detail-nav a:hover,
         ._rec-detail-actions a:hover {
@@ -653,14 +631,21 @@ export default async function AiRecommendationDetailPage({
           </div>
 
           <div className="_rec-detail-actions">
-            <RecommendationHandoffLink
-              href={prefillHref}
-              recommendationId={rec.recommendationId}
-              directionLabel={handoffLabelForDirection(rec.direction)}
-            >
-              <ArrowRight size={16} strokeWidth={1.9} />
-              一鍵帶到交易室
-            </RecommendationHandoffLink>
+            {prefillHref ? (
+              <RecommendationHandoffLink
+                href={prefillHref}
+                recommendationId={rec.recommendationId}
+                directionLabel={handoffLabelForDirection(rec.direction)}
+              >
+                <ArrowRight size={16} strokeWidth={1.9} />
+                一鍵帶到交易室
+              </RecommendationHandoffLink>
+            ) : (
+              <RecommendationHandoffUnavailable reason={INVALID_AI_HANDOFF_TICKER_MESSAGE}>
+                <ShieldAlert size={16} strokeWidth={1.9} />
+                未帶入交易室
+              </RecommendationHandoffUnavailable>
+            )}
           </div>
           <RecommendationFeedbackActions recommendationId={rec.recommendationId} />
         </article>
