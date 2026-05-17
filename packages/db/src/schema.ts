@@ -738,7 +738,6 @@ export const newsAiSelections = pgTable(
   "news_ai_selections",
   {
     id:             text("id").primaryKey(),
-    runId:          text("run_id").notNull(),
     asOf:           timestamp("as_of", { withTimezone: true }).notNull(),
     windowLabel:    text("window_label").notNull(),
     selectionMode:  text("selection_mode").notNull(),
@@ -748,6 +747,6 @@ export const newsAiSelections = pgTable(
     createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
   },
   (table) => ({
-    asOfIdx: index("news_ai_selections_as_of_idx").on(table.asOf)
+    asOfIdx: index("news_ai_selections_as_of_idx").on(table.asOf.desc())
   })
 );
