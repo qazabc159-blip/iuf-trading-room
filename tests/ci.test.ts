@@ -196,6 +196,11 @@ import {
   retryContentDraftReview,
   type RetryReviewResult,
 } from "../apps/api/src/admin-content-drafts-retry-review.ts";
+import {
+  _resetStockDayAllCache,
+  getStockDayAllRows,
+  type StockDayAllRow,
+} from "../apps/api/src/data-sources/twse-openapi-client.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -11244,6 +11249,98 @@ test("ADMIN-RETRY-2: retryContentDraftReview dry-run flag preserved in result", 
   });
   assert.equal(result.dryRun, true, "ADMIN-RETRY-2: dryRun must be reflected in result");
   assert.equal(result.processed, 0, "ADMIN-RETRY-2: processed must be 0 in non-DB mode");
+});
+
+// =============================================================================
+// HEATMAP-EOD-1 / HEATMAP-EOD-2: kgi-core fallback TWSE tile enrichment logic
+// Verifies that changePct is correctly computed from STOCK_DAY_ALL ClosingPrice + Change,
+// so the IndustryHeatmap component receives non-null pct and renders correctly off-hours.
+// =============================================================================
+
+test("HEATMAP-EOD-1: TWSE STOCK_DAY_ALL changePct computed correctly from ClosingPrice + Change", () => {
+  // Replicate the inline computation from the /api/v1/market/heatmap/kgi-core fallback path
+  function computeChangePct(closingPriceStr: string, changeStr: string): number | null {
+    const price = parseFloat(closingPriceStr);
+    const chg = parseFloat((changeStr ?? "0").trim().replace(/^\+/, ""));
+    if (!isFinite(price) || price <= 0) return null;
+    const prevClose = price - chg;
+    if (!isFinite(chg) || prevClose === 0) return 0;
+    return Math.round((chg / prevClose) * 10000) / 100;
+  }
+
+  // 台積電: close=910, change=+10 → prevClose=900 → pct=10/900*100=1.11%
+  const tsmcPct = computeChangePct("910", "+10");
+  assert.ok(tsmcPct !== null, "HEATMAP-EOD-1: changePct must not be null for valid data");
+  assert.ok(Math.abs((tsmcPct ?? 0) - 1.11) < 0.01, `HEATMAP-EOD-1: expected ~1.11, got ${tsmcPct}`);
+
+  // down scenario: close=100, change=-5 → prevClose=105 → pct=-5/105*100=-4.76%
+  const downPct = computeChangePct("100", "-5");
+  assert.ok(downPct !== null, "HEATMAP-EOD-1: changePct must not be null for decline");
+  assert.ok((downPct ?? 0) < 0, "HEATMAP-EOD-1: negative change must yield negative pct");
+
+  // flat: change=0 → pct=0
+  const flatPct = computeChangePct("500", "0");
+  assert.equal(flatPct, 0, "HEATMAP-EOD-1: zero change must yield 0 pct");
+
+  // invalid price: non-finite closing → null
+  const noPct = computeChangePct("--", "0");
+  assert.equal(noPct, null, "HEATMAP-EOD-1: non-finite price must yield null");
+});
+
+test("HEATMAP-EOD-2: kgi-core fallback tile enrichment sets non-null changePct and name", () => {
+  // Simulate the tile-enrichment logic from /api/v1/market/heatmap/kgi-core fallback.
+  // Uses mock STOCK_DAY_ALL rows — no HTTP, no KGI, memory-mode safe.
+
+  type MockKgiTile = { symbol: string; price: number | null; change: number | null; changePct: number | null; tier: string; ts: string | null; source: "kgi_tick" };
+  type MockTwseRow = Pick<StockDayAllRow, "Code" | "Name" | "ClosingPrice" | "Change">;
+
+  const kgiTiles: MockKgiTile[] = [
+    { symbol: "2330", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
+    { symbol: "2317", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
+    { symbol: "9999", price: null, change: null, changePct: null, tier: "strategy", ts: null, source: "kgi_tick" }, // not in TWSE
+  ];
+
+  const stockDayRows: MockTwseRow[] = [
+    { Code: "2330", Name: "台積電", ClosingPrice: "910", Change: "10" },
+    { Code: "2317", Name: "鴻海", ClosingPrice: "200", Change: "-2" },
+  ];
+
+  // Replicate twseByTicker build logic
+  const twseByTicker = new Map<string, { price: number; change: number; changePct: number; name: string }>();
+  for (const row of stockDayRows) {
+    const code = row.Code?.trim();
+    if (!code) continue;
+    const price = parseFloat(row.ClosingPrice);
+    const chg = parseFloat((row.Change ?? "0").trim().replace(/^\+/, ""));
+    if (!isFinite(price) || price <= 0) continue;
+    const prevClose = price - chg;
+    const changePct = isFinite(chg) && prevClose !== 0
+      ? Math.round((chg / prevClose) * 10000) / 100
+      : 0;
+    twseByTicker.set(code, { price, change: chg, changePct, name: row.Name?.trim() ?? code });
+  }
+
+  // Replicate enrichedTiles build logic
+  const enrichedTiles = kgiTiles.map((t) => {
+    const twse = twseByTicker.get(t.symbol);
+    if (!twse) return t;
+    return { ...t, name: twse.name, price: twse.price, last: twse.price, change: twse.change, changePct: twse.changePct, source: "twse_eod" as const };
+  });
+
+  const tsmc = enrichedTiles.find((t) => t.symbol === "2330");
+  assert.ok(tsmc !== undefined, "HEATMAP-EOD-2: 2330 tile must exist");
+  assert.ok(tsmc.changePct !== null, "HEATMAP-EOD-2: 2330 changePct must be non-null after enrichment");
+  assert.ok((tsmc.changePct ?? 0) > 0, "HEATMAP-EOD-2: 2330 changePct must be positive (close=910, chg=+10)");
+  assert.equal((tsmc as unknown as Record<string, unknown>).name, "台積電", "HEATMAP-EOD-2: 2330 name must be populated");
+  assert.equal(tsmc.price, 910, "HEATMAP-EOD-2: 2330 price must be set from TWSE ClosingPrice");
+
+  const hon = enrichedTiles.find((t) => t.symbol === "2317");
+  assert.ok(hon !== undefined, "HEATMAP-EOD-2: 2317 tile must exist");
+  assert.ok((hon.changePct ?? 0) < 0, "HEATMAP-EOD-2: 2317 changePct must be negative (decline day)");
+
+  const unknown = enrichedTiles.find((t) => t.symbol === "9999");
+  assert.equal(unknown?.changePct ?? null, null, "HEATMAP-EOD-2: symbols without TWSE data stay null (no crash)");
+  assert.equal(unknown?.source, "kgi_tick", "HEATMAP-EOD-2: unenriched tile keeps kgi_tick source");
 });
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
