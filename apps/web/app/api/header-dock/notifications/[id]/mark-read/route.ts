@@ -54,7 +54,7 @@ export async function POST(
   );
 
   if (upstream.status === 204) {
-    return new NextResponse(null, { status: 204, headers: NO_STORE_HEADERS });
+    return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE_HEADERS });
   }
 
   const contentType = upstream.headers.get("content-type") ?? "application/json; charset=utf-8";
