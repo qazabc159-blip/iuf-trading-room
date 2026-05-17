@@ -10,7 +10,7 @@ import {
   INVALID_AI_HANDOFF_TICKER_MESSAGE,
 } from "@/lib/ai-recommendation-handoff";
 import { RecommendationFeedbackActions } from "./RecommendationFeedbackActions";
-import { RecommendationHandoffLink, RecommendationHandoffUnavailable } from "./RecommendationHandoffLink";
+import { RecommendationHandoffLink, RecommendationHandoffPreview, RecommendationHandoffUnavailable } from "./RecommendationHandoffLink";
 import { formatRecommendationSourceMode } from "./source-mode-label";
 import { formatRecommendationTimestamp, formatSourceTimestamp } from "./source-trail-time";
 
@@ -278,14 +278,17 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
       </Link>
 
       {prefillHref ? (
-        <RecommendationHandoffLink
-          href={prefillHref}
-          recommendationId={rec.recommendationId}
-          directionLabel={handoffLabelForDirection(rec.direction)}
-        >
-          <ArrowRight size={16} strokeWidth={1.9} />
-          一鍵帶到交易室
-        </RecommendationHandoffLink>
+        <>
+          <RecommendationHandoffPreview href={prefillHref} recommendationId={rec.recommendationId} />
+          <RecommendationHandoffLink
+            href={prefillHref}
+            recommendationId={rec.recommendationId}
+            directionLabel={handoffLabelForDirection(rec.direction)}
+          >
+            <ArrowRight size={16} strokeWidth={1.9} />
+            一鍵帶到交易室
+          </RecommendationHandoffLink>
+        </>
       ) : (
         <RecommendationHandoffUnavailable reason={INVALID_AI_HANDOFF_TICKER_MESSAGE}>
           <ShieldAlert size={16} strokeWidth={1.9} />
@@ -751,6 +754,61 @@ export default async function AiRecommendationsPage() {
           color: var(--tac-fg-0);
           border-color: rgba(200, 148, 63, 0.5);
           background: rgba(200, 148, 63, 0.1);
+        }
+        ._rec-handoff-preview {
+          display: grid;
+          gap: 8px;
+          border: 1px solid rgba(46, 204, 113, 0.24);
+          border-radius: 6px;
+          padding: 10px;
+          background:
+            linear-gradient(135deg, rgba(46, 204, 113, 0.07), transparent 64%),
+            rgba(8, 11, 16, 0.42);
+        }
+        ._rec-handoff-preview-head,
+        ._rec-handoff-preview-items {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 7px;
+        }
+        ._rec-handoff-preview-head b {
+          color: var(--tac-fg-0);
+          font: 900 12px/1 var(--sans-tc);
+        }
+        ._rec-handoff-preview-head span {
+          min-height: 22px;
+          display: inline-flex;
+          align-items: center;
+          border: 1px solid rgba(46, 204, 113, 0.28);
+          border-radius: 5px;
+          padding: 0 7px;
+          color: var(--tac-ok);
+          background: rgba(46, 204, 113, 0.06);
+          font: 900 10px/1 var(--sans-tc);
+        }
+        ._rec-handoff-preview-items span {
+          min-height: 24px;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          border: 1px solid var(--tac-line);
+          border-radius: 5px;
+          padding: 0 8px;
+          color: var(--tac-fg-2);
+          background: rgba(8, 11, 16, 0.5);
+          font: 800 10px/1 var(--sans-tc);
+          white-space: nowrap;
+        }
+        ._rec-handoff-preview-items b {
+          color: var(--tac-brand);
+          font: 900 9px/1 var(--sans-tc);
+        }
+        ._rec-handoff-preview p {
+          margin: 0;
+          color: var(--tac-fg-3);
+          font-size: 12px;
+          line-height: 1.55;
         }
         ._rec-feedback {
           display: grid;
