@@ -11,6 +11,8 @@ import {
 } from "@/lib/ai-recommendation-handoff";
 import { RecommendationFeedbackActions } from "./RecommendationFeedbackActions";
 import { RecommendationHandoffLink, RecommendationHandoffUnavailable } from "./RecommendationHandoffLink";
+import { formatRecommendationSourceMode } from "./source-mode-label";
+import { formatRecommendationTimestamp, formatSourceTimestamp } from "./source-trail-time";
 
 export const dynamic = "force-dynamic";
 
@@ -259,7 +261,9 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
               <span key={`${source.type}-${source.source}-${source.timestamp}`}>
                 <b>{source.type}</b>
                 {source.source}
-                <small>{source.timestamp}</small>
+                <small title={source.timestamp} aria-label={`source timestamp ${source.timestamp}`}>
+                  {formatSourceTimestamp(source.timestamp)}
+                </small>
               </span>
             ))
           ) : (
@@ -350,7 +354,11 @@ export default async function AiRecommendationsPage() {
   const { data, error } = await loadRecommendations();
   const items = data?.items ?? [];
   const grouped = groupByBucket(items);
-  const sourceMode = data?._mock ? "MOCK FEED" : data ? "ORCHESTRATOR" : "SYNCING";
+  const sourceMode = formatRecommendationSourceMode({
+    hasData: Boolean(data),
+    isMock: Boolean(data?._mock),
+  });
+  const generatedAtLabel = formatRecommendationTimestamp(data?.generatedAt);
 
   return (
     <PageFrame
@@ -837,7 +845,7 @@ export default async function AiRecommendationsPage() {
       <Panel
         code="AI-01"
         title="推薦分層"
-        sub={`日期 ${data?.date ?? "-"} / 產生 ${data?.generatedAt ?? "-"} / ${sourceMode}`}
+        sub={`日期 ${data?.date ?? "-"} / 產生 ${generatedAtLabel} / ${sourceMode}`}
         right={`${items.length} recommendations`}
       >
         <div className="_rec-bucket-grid">

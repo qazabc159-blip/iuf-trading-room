@@ -40,7 +40,7 @@ import { fileURLToPath } from "node:url";
 import { and, desc, eq, gte, sql as drizzleSql } from "drizzle-orm";
 import { companiesOhlcv, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
 
-import { callOpenAi, MODEL_ROUTINE, stripCodeFences } from "./openai-quota-guard.js";
+import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
 import { fetchStrategySnapshot, ALLOWED_STRATEGY_IDS } from "./lab-strategy-snapshot-fetcher.js";
 import { sanitizeBriefBody } from "./openalice-pipeline.js";
 
@@ -860,13 +860,10 @@ export async function generateStrategyBrief(
   let blockedReason: string | null = null;
 
   const prompt = buildGeneratorPrompt(sourcePack);
-  const rawAiOutput = await callOpenAi({
-    model: MODEL_ROUTINE,
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: MAX_TOKENS_GENERATOR,
-    temperature: 0.15,
-    label: "strategy_brief_generator"
-  });
+  const rawAiOutput = (await callLlm(
+    [{ role: "user", content: prompt }],
+    { callerModule: "strategy_brief", taskType: "generation", maxTokens: MAX_TOKENS_GENERATOR, temperature: 0.15 }
+  ))?.content ?? null;
 
   if (rawAiOutput) {
     try {
@@ -895,13 +892,10 @@ export async function generateStrategyBrief(
           } else {
             // Hallucination check
             const hcPrompt = buildHallucinationCheckPrompt(parsedSections, sourcePack);
-            const hcRaw = await callOpenAi({
-              model: MODEL_ROUTINE,
-              messages: [{ role: "user", content: hcPrompt }],
-              max_tokens: MAX_TOKENS_HALLUCINATION_CHECK,
-              temperature: 0.0,
-              label: "strategy_brief_hallucination_check"
-            });
+            const hcRaw = (await callLlm(
+              [{ role: "user", content: hcPrompt }],
+              { callerModule: "strategy_brief", taskType: "hallucination_check", maxTokens: MAX_TOKENS_HALLUCINATION_CHECK, temperature: 0.0 }
+            ))?.content ?? null;
 
             let hcPassed = false;
             let hcIssues: string[] = [];

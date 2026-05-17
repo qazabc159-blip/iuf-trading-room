@@ -20,9 +20,10 @@
  * Audit: ALL calls logged with action="content_draft.adversarial_audit" (even score < 7).
  */
 
+import { callLlm } from "./llm/llm-gateway.js";
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 // Default gpt-4.1 — accuracy-priority per 楊董 ACK (BLOCK #6 2026-05-07)
 const ADVERSARIAL_MODEL =
   process.env["OPENAI_ADVERSARIAL_REVIEWER_MODEL"] ?? "gpt-4.1";
@@ -120,62 +121,20 @@ Where:
 async function callAdversarialOpenAi(
   prompt: string
 ): Promise<AdversarialReviewResult | null> {
-  const apiKey = process.env["OPENAI_API_KEY"];
-  if (!apiKey) {
-    // No API key — safe-default: null (do not block pipeline)
-    console.warn("[adversarial-reviewer] OPENAI_API_KEY not set — skipping adversarial review");
-    return null;
-  }
+  const result = await callLlm(
+    [{ role: "user", content: prompt }],
+    {
+      modelKey: ADVERSARIAL_MODEL,
+      callerModule: "adversarial_reviewer",
+      taskType: "review",
+      maxTokens: MAX_TOKENS,
+      temperature: TEMPERATURE,
+      timeoutMs: CALL_TIMEOUT_MS
+    }
+  );
 
-  let res: Response;
-  try {
-    res = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: ADVERSARIAL_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: MAX_TOKENS,
-        temperature: TEMPERATURE
-      }),
-      signal: AbortSignal.timeout(CALL_TIMEOUT_MS)
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn(`[adversarial-reviewer] OpenAI call failed: ${msg}`);
-    return null;
-  }
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(no body)");
-    console.warn(`[adversarial-reviewer] OpenAI HTTP ${res.status}: ${body.slice(0, 120)}`);
-    return null;
-  }
-
-  let data: unknown;
-  try {
-    data = await res.json();
-  } catch {
-    console.warn("[adversarial-reviewer] OpenAI response not JSON");
-    return null;
-  }
-
-  const rawContent: string | null | undefined =
-    data &&
-    typeof data === "object" &&
-    "choices" in data &&
-    Array.isArray((data as { choices: unknown[] }).choices)
-      ? (
-          (data as { choices: Array<{ message?: { content?: string } }> })
-            .choices[0]?.message?.content ?? null
-        )
-      : null;
-
+  const rawContent = result?.content ?? null;
   if (!rawContent) {
-    console.warn("[adversarial-reviewer] OpenAI returned empty content");
     return null;
   }
 

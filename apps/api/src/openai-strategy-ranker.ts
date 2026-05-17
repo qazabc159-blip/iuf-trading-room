@@ -20,7 +20,7 @@
  */
 
 import type { StrategyIdea } from "@iuf-trading-room/contracts";
-import { callOpenAi, stripCodeFences, MODEL_ROUTINE } from "./openai-quota-guard.js";
+import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -117,13 +117,10 @@ export async function rerankStrategyIdeasWithAi(ideas: StrategyIdea[]): Promise<
   }
 
   const prompt = buildRerankPrompt(ideas);
-  const rawContent = await callOpenAi({
-    model: MODEL_ROUTINE,
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: MAX_TOKENS,
-    temperature: 0.3,
-    label: "strategy-rerank"
-  });
+  const rawContent = (await callLlm(
+    [{ role: "user", content: prompt }],
+    { callerModule: "strategy_ranker", taskType: "rerank", maxTokens: MAX_TOKENS, temperature: 0.3 }
+  ))?.content ?? null;
 
   if (!rawContent) {
     return fallback();
