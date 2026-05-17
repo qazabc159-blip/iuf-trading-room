@@ -21,6 +21,9 @@ import {
   workspaces
 } from "@iuf-trading-room/db";
 import { z } from "zod";
+// Write-time sanitizer gate (PR #628): apply to ALL daily_briefs section bodies before DB write.
+// Extracted to openalice-brief-sanitizer.ts to avoid circular dependency with openalice-pipeline.ts.
+import { sanitizeBriefBody } from "./openalice-brief-sanitizer.js";
 
 export const CONTENT_DRAFT_TARGET_TABLES = ["theme_summaries", "company_notes", "daily_briefs"] as const;
 export type ContentDraftTargetTable = (typeof CONTENT_DRAFT_TARGET_TABLES)[number];
@@ -381,6 +384,12 @@ export async function approveContentDraft(input: {
       }
 
       const payload = dailyBriefPayloadSchema.parse(rawBriefPayload);
+      // ── Write-time sanitizer gate (PR #628, Bruce P1 2026-05-17) ────────────
+      // Apply sanitizeBriefBody to every section.body before writing to daily_briefs.
+      // Covers ALL approve paths: direct-cron, OpenAlice device, manual approve.
+      // PR #471 only sanitized the direct path (parseDirectBriefPayload); device-
+      // submitted briefs bypassed this entirely → FFFD=70 in 5/15-5/17 briefs.
+      const sanitizedSections = payload.sections.map((s) => ({ ...s, body: sanitizeBriefBody(s.body) }));
       // Use insert with onConflictDoUpdate keyed on (workspaceId, date).
       // The schema has a composite index but not a unique constraint; we fall
       // back to a delete+insert pattern to stay compatible without a migration.
@@ -399,7 +408,7 @@ export async function approveContentDraft(input: {
           .update(dailyBriefs)
           .set({
             marketState: payload.marketState,
-            sections: payload.sections,
+            sections: sanitizedSections,
             generatedBy: "openalice",
             status: "published"
           })
@@ -416,7 +425,7 @@ export async function approveContentDraft(input: {
             workspaceId: draft.workspaceId,
             date: payload.date,
             marketState: payload.marketState,
-            sections: payload.sections,
+            sections: sanitizedSections,
             generatedBy: "openalice",
             status: "published"
           })
