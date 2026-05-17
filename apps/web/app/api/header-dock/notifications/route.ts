@@ -37,6 +37,57 @@ function stringField(source: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function firstArray(...values: unknown[]) {
+  return values.find((value): value is unknown[] => Array.isArray(value)) ?? [];
+}
+
+function nestedRecord(source: Record<string, unknown> | null, key: string) {
+  return source ? objectRecord(source[key]) : null;
+}
+
+function extractNotificationArray(body: unknown) {
+  if (Array.isArray(body)) return body;
+  const root = objectRecord(body);
+  const dataRecord = nestedRecord(root, "data");
+  const metaRecord = nestedRecord(root, "meta");
+
+  return firstArray(
+    root?.["notifications"],
+    root?.["items"],
+    root?.["alerts"],
+    dataRecord?.["notifications"],
+    dataRecord?.["items"],
+    dataRecord?.["alerts"],
+    metaRecord?.["notifications"],
+  );
+}
+
+function extractUnreadCount(body: unknown, fallback: number) {
+  const root = objectRecord(body);
+  const dataRecord = nestedRecord(root, "data");
+  const metaRecord = nestedRecord(root, "meta");
+  const dataMetaRecord = nestedRecord(dataRecord, "meta");
+  const candidates = [
+    root?.["unread_count"],
+    root?.["unreadCount"],
+    dataRecord?.["unread_count"],
+    dataRecord?.["unreadCount"],
+    metaRecord?.["unread_count"],
+    metaRecord?.["unreadCount"],
+    dataMetaRecord?.["unread_count"],
+    dataMetaRecord?.["unreadCount"],
+  ];
+  for (const candidate of candidates) {
+    const value = finiteNumber(candidate);
+    if (value !== null) return Math.max(0, value);
+  }
+  return fallback;
+}
+
 function normalizeSeverity(value: unknown): NormalizedNotification["severity"] {
   if (value === "critical") return "critical";
   if (value === "warning" || value === "warn") return "warning";
@@ -106,23 +157,15 @@ export async function GET(request: NextRequest) {
       return emptyPayload({ source: "error", status: response.status });
     }
 
-    const body = (await response.json()) as {
-      notifications?: unknown;
-      unread_count?: unknown;
-      unreadCount?: unknown;
-    };
-    const notifications = Array.isArray(body.notifications)
-      ? body.notifications.map(normalizeNotification).filter((item): item is NormalizedNotification => Boolean(item))
-      : [];
+    const body = await response.json();
+    const notifications = extractNotificationArray(body)
+      .map(normalizeNotification)
+      .filter((item): item is NormalizedNotification => Boolean(item));
     const computedUnreadCount = notifications.filter((notification) => !notification.readAt).length;
 
     return NextResponse.json({
       notifications,
-      unread_count: typeof body.unread_count === "number"
-        ? body.unread_count
-        : typeof body.unreadCount === "number"
-          ? body.unreadCount
-          : computedUnreadCount,
+      unread_count: extractUnreadCount(body, computedUnreadCount),
       meta: { source: "api" },
     });
   } catch {
