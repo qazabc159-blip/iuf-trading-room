@@ -18,11 +18,7 @@ import {
   findCompaniesByWikilink,
   getAllWikilinks,
 } from "./tw-coverage-loader.js";
-import {
-  callOpenAi,
-  MODEL_ROUTINE,
-  stripCodeFences,
-} from "../openai-quota-guard.js";
+import { callLlm, stripCodeFences } from "../llm/llm-gateway.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -182,13 +178,11 @@ ${sample}
 請只輸出一個 JSON 陣列，包含你推論最相關的標籤，格式如：["散熱模組", "均熱片", "3D VC"]。
 不要輸出任何解釋，只輸出 JSON 陣列。`;
 
-  const content = await callOpenAi({
-    model: MODEL_ROUTINE,
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 150,
-    temperature: 0.2,
-    label: "discover/llm-inference",
-  });
+  const result = await callLlm(
+    [{ role: "user", content: prompt }],
+    { callerModule: "discover", taskType: "llm_inference", maxTokens: 150, temperature: 0.2 }
+  );
+  const content = result?.content ?? null;
 
   if (!content) return null;
 

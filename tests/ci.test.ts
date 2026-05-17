@@ -11443,6 +11443,30 @@ test("F3-DISPATCH-2: force-refresh endpoint body schema — lookbackDays capped 
   assert.equal(capLookback(30), 30, "F3-DISPATCH-2: exactly 30 days passes through");
 });
 
+// ── BRAIN-PHB: Phase B gateway migration verification ─────────────────────────
+
+test("BRAIN-PHB-1: strategy-ranker returns algo_only for empty ideas list (callLlm gateway path)", async () => {
+  const { rerankStrategyIdeasWithAi } = await import("../apps/api/src/openai-strategy-ranker.js");
+  const { _resetLlmGatewayForTests } = await import("../apps/api/src/llm/llm-gateway.js");
+  _resetLlmGatewayForTests();
+  const result = await rerankStrategyIdeasWithAi([]);
+  assert.equal(result.ai_rerank_mode, "algo_only", "empty ideas must produce algo_only fallback");
+  assert.equal(result.disclaimer, "research_only");
+  assert.deepEqual(result.items, []);
+  _resetLlmGatewayForTests();
+});
+
+test("BRAIN-PHB-2: brief-strategy-commentary getLastBriefStrategyCommentary returns null before first run (callLlm gateway path)", async () => {
+  const { getLastBriefStrategyCommentary, _resetBriefStrategyCommentary } = await import("../apps/api/src/openai-brief-strategy-commentary.js");
+  const { _resetLlmGatewayForTests } = await import("../apps/api/src/llm/llm-gateway.js");
+  _resetLlmGatewayForTests();
+  _resetBriefStrategyCommentary();
+  const result = getLastBriefStrategyCommentary();
+  assert.equal(result, null, "should return null when never run");
+  _resetBriefStrategyCommentary();
+  _resetLlmGatewayForTests();
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
