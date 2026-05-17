@@ -31,9 +31,10 @@
  * 楊董 ACK: "2x cost OK" + "全都 ack 不要偏離我得主軸能夠優化做更好我都接受"
  */
 
+import { callLlm } from "./llm/llm-gateway.js";
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const FACTUAL_MODEL =
   process.env["OPENAI_FACTUAL_REVIEWER_MODEL"] ?? "gpt-4.1";
 const CALL_TIMEOUT_MS = 20_000;
@@ -130,61 +131,20 @@ Where:
 async function callFactualOpenAi(
   prompt: string
 ): Promise<FactualReviewResult | null> {
-  const apiKey = process.env["OPENAI_API_KEY"];
-  if (!apiKey) {
-    console.warn("[factual-reviewer] OPENAI_API_KEY not set — skipping factual review");
-    return null;
-  }
+  const result = await callLlm(
+    [{ role: "user", content: prompt }],
+    {
+      modelKey: FACTUAL_MODEL,
+      callerModule: "factual_reviewer",
+      taskType: "review",
+      maxTokens: MAX_TOKENS,
+      temperature: TEMPERATURE,
+      timeoutMs: CALL_TIMEOUT_MS
+    }
+  );
 
-  let res: Response;
-  try {
-    res = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: FACTUAL_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: MAX_TOKENS,
-        temperature: TEMPERATURE
-      }),
-      signal: AbortSignal.timeout(CALL_TIMEOUT_MS)
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn(`[factual-reviewer] OpenAI call failed: ${msg}`);
-    return null;
-  }
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(no body)");
-    console.warn(`[factual-reviewer] OpenAI HTTP ${res.status}: ${body.slice(0, 120)}`);
-    return null;
-  }
-
-  let data: unknown;
-  try {
-    data = await res.json();
-  } catch {
-    console.warn("[factual-reviewer] OpenAI response not JSON");
-    return null;
-  }
-
-  const rawContent: string | null | undefined =
-    data &&
-    typeof data === "object" &&
-    "choices" in data &&
-    Array.isArray((data as { choices: unknown[] }).choices)
-      ? (
-          (data as { choices: Array<{ message?: { content?: string } }> })
-            .choices[0]?.message?.content ?? null
-        )
-      : null;
-
+  const rawContent = result?.content ?? null;
   if (!rawContent) {
-    console.warn("[factual-reviewer] OpenAI returned empty content");
     return null;
   }
 

@@ -21,10 +21,10 @@ import {
   evaluatePipelinePublishGate
 } from "./openalice-pipeline.js";
 import { runAdversarialReview, type AdversarialReviewResult } from "./openalice-adversarial-reviewer.js";
+import { callLlm } from "./llm/llm-gateway.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 // E2E fail diagnosis 2026-05-06 (Elva): "gpt-5.4-mini" was a Codex CLI internal
 // namespace name, not a real OpenAI public-API model. OpenAI returned 4xx
 // model_not_found, AI reviewer fell back to human (audit_log.ai_approved=0).
@@ -139,66 +139,23 @@ Return ONLY this JSON (no markdown fence, no extra text):
 {"verdict":"approve|reject|manual_review","reason":"<1 sentence>","flagged_issues":[],"confidence":0.9}`;
 }
 
-// ── OpenAI call ───────────────────────────────────────────────────────────────
+// ── OpenAI call (via llm-gateway) ────────────────────────────────────────────
 
 async function callOpenAiReviewer(prompt: string): Promise<AiReviewResult | null> {
-  const apiKey = process.env["OPENAI_API_KEY"];
-  if (!apiKey) {
-    // No key → can't review → leave awaiting_review (safe default)
-    return null;
-  }
+  const result = await callLlm(
+    [{ role: "user", content: prompt }],
+    {
+      modelKey: OPENAI_MODEL,
+      callerModule: "ai_reviewer",
+      taskType: "review",
+      maxTokens: MAX_TOKENS,
+      temperature: 0.1,
+      timeoutMs: CALL_TIMEOUT_MS
+    }
+  );
 
-  let res: Response;
-  try {
-    res = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        // Key is in header only, not in any log output
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: MAX_TOKENS,
-        temperature: 0.1
-      }),
-      signal: AbortSignal.timeout(CALL_TIMEOUT_MS)
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    // Do NOT log the apiKey — only log non-sensitive error message
-    console.warn(`[ai-reviewer] OpenAI call failed: ${msg}`);
-    return null;
-  }
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(no body)");
-    console.warn(`[ai-reviewer] OpenAI HTTP ${res.status}: ${body.slice(0, 120)}`);
-    return null;
-  }
-
-  let data: unknown;
-  try {
-    data = await res.json();
-  } catch {
-    console.warn("[ai-reviewer] OpenAI response not JSON");
-    return null;
-  }
-
-  const rawContent: string | null | undefined =
-    data &&
-    typeof data === "object" &&
-    "choices" in data &&
-    Array.isArray((data as { choices: unknown[] }).choices)
-      ? (
-          (data as { choices: Array<{ message?: { content?: string } }> }).choices[0]?.message
-            ?.content ?? null
-        )
-      : null;
-
+  const rawContent = result?.content ?? null;
   if (!rawContent) {
-    console.warn("[ai-reviewer] OpenAI returned empty content");
     return null;
   }
 

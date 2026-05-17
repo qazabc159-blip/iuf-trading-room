@@ -40,7 +40,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { callOpenAi, stripCodeFences, MODEL_ROUTINE } from "./openai-quota-guard.js";
+import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
 import { fetchStrategySnapshot, ALLOWED_STRATEGY_IDS } from "./lab-strategy-snapshot-fetcher.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -212,13 +212,10 @@ export async function runBriefStrategyCommentary(params: {
 
   // 2. Call AI
   const prompt = buildCommentaryPrompt(tradingDate, marketSummary, snapshots);
-  const rawContent = await callOpenAi({
-    model: MODEL_ROUTINE,
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: MAX_TOKENS,
-    temperature: 0.3,
-    label: "brief-strategy-commentary"
-  });
+  const rawContent = (await callLlm(
+    [{ role: "user", content: prompt }],
+    { callerModule: "brief_strategy_commentary", taskType: "commentary", maxTokens: MAX_TOKENS, temperature: 0.3 }
+  ))?.content ?? null;
 
   let strategies: StrategyCommentaryItem[];
   let generation_mode: CommentaryGenerationMode;
