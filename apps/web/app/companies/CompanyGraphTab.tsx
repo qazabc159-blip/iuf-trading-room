@@ -148,7 +148,7 @@ export function CompanyGraphTab() {
       searchCompanyGraph({ query: trimmedQuery, limit: 8 })
         .then((response) => {
           if (!active) return;
-          setResults(response.data);
+          setResults(Array.isArray(response.data) ? response.data : []);
           setSearchError(null);
         })
         .catch((caught) => {
@@ -419,7 +419,7 @@ export function CompanyGraphTab() {
 
       <div className="_co-graph-hero">
         <section className="_co-graph-brief" aria-label="公司圖譜總覽">
-          <div className="_co-graph-eyebrow">COMPANY GRAPH</div>
+          <div className="_co-graph-eyebrow">公司圖譜</div>
           <h2 className="_co-graph-title">My-TW-Coverage 公司關係圖譜</h2>
           <p className="_co-graph-copy">
             這裡直接讀取現有公司圖譜 API，展示已建立關係資料的台股公司、供應鏈/技術/應用關係與關鍵字覆蓋。
@@ -429,13 +429,13 @@ export function CompanyGraphTab() {
             <GraphMetric label="覆蓋公司" value={stats ? formatNumber(stats.companiesWithGraph) : "--"} sub="有圖譜資料" />
             <GraphMetric label="關係數" value={stats ? formatNumber(stats.totalRelations) : "--"} sub="供應鏈/技術" />
             <GraphMetric label="關鍵字" value={stats ? formatNumber(stats.totalKeywords) : "--"} sub="My-TW-Coverage" />
-            <GraphMetric label="關係類型" value={stats ? formatNumber(stats.relationTypes.length) : "--"} sub="已分類" />
+            <GraphMetric label="關係類型" value={stats ? formatNumber(relationTypes.length) : "--"} sub="已分類" />
           </div>
         </section>
 
         <section className="_co-graph-search" aria-label="公司圖譜搜尋">
           <div>
-            <div className="_co-graph-section-title">SEARCH</div>
+            <div className="_co-graph-section-title">搜尋</div>
             <input
               type="search"
               value={query}
@@ -461,7 +461,7 @@ export function CompanyGraphTab() {
                 <div className="_co-graph-result-top">
                   <span className="_co-graph-ticker">{result.ticker}</span>
                   <span className="_co-graph-name">{result.name}</span>
-                  <span className="_co-graph-count">score {result.score.toFixed(1)}</span>
+                  <span className="_co-graph-count">分數 {result.score.toFixed(1)}</span>
                 </div>
                 <div className="_co-graph-result-meta">
                   <span>{industryLabel(result.chainPosition)}</span>
@@ -482,7 +482,7 @@ export function CompanyGraphTab() {
       </div>
 
       <section className="_co-graph-panel" aria-label="關係類型">
-        <div className="_co-graph-section-title">RELATION TYPES</div>
+        <div className="_co-graph-section-title">關係類型</div>
         {relationTypes.length === 0 && !statsLoading ? (
           <div className="_co-graph-empty">目前沒有可顯示的關係分類。</div>
         ) : (
@@ -498,7 +498,7 @@ export function CompanyGraphTab() {
       </section>
 
       <section className="_co-graph-panel" aria-label="熱門關鍵字">
-        <div className="_co-graph-section-title">TOP KEYWORDS</div>
+        <div className="_co-graph-section-title">熱門關鍵字</div>
         {topKeywords.length === 0 && !statsLoading ? (
           <div className="_co-graph-empty">目前沒有熱門關鍵字。</div>
         ) : (
@@ -519,7 +519,7 @@ export function CompanyGraphTab() {
       </section>
 
       <section className="_co-graph-panel" aria-label="高連結公司">
-        <div className="_co-graph-section-title">TOP CONNECTED COMPANIES</div>
+        <div className="_co-graph-section-title">高連結公司</div>
         {topCompanies.length === 0 && !statsLoading ? (
           <div className="_co-graph-empty">目前沒有高連結公司。</div>
         ) : (
