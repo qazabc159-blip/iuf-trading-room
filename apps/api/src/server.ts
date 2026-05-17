@@ -9586,27 +9586,60 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
       return c.json({ ...kgiResult, sourceState: "live", liveTileCount: liveTiles.length });
     }
 
-    // Fallback: TWSE OpenAPI EOD — return TWSE heatmap instead
-    // (build a simplified per-symbol view for the core symbols)
+    // Fallback: TWSE OpenAPI EOD — enrich tiles with per-stock close/changePct
+    // so the frontend IndustryHeatmap can render actual moves (not null pct).
     const { CORE_SYMBOLS, STRATEGY_SYMBOLS } = await import("./kgi-subscription-manager.js");
     const allCoreSymbols = [...CORE_SYMBOLS, ...STRATEGY_SYMBOLS];
 
-    // Build minimal ticker→industry map (symbol=ticker, industry=core_equity)
-    const tickerToIndustry = new Map<string, string>();
-    for (const sym of allCoreSymbols) {
-      tickerToIndustry.set(sym, "core_equity");
+    const { getTwseIndustryHeatmap, getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+
+    // Fetch per-stock TWSE data + industry heatmap in parallel (STOCK_DAY_ALL shared cache)
+    const [stockDayRows, twseTiles] = await Promise.all([
+      getStockDayAllRows().catch(() => [] as Awaited<ReturnType<typeof getStockDayAllRows>>),
+      (async () => {
+        const tickerToIndustry = new Map<string, string>();
+        for (const sym of allCoreSymbols) tickerToIndustry.set(sym, "core_equity");
+        return getTwseIndustryHeatmap(tickerToIndustry);
+      })()
+    ]);
+
+    // Build ticker → TWSE row lookup for O(1) access
+    const twseByTicker = new Map<string, { price: number; change: number; changePct: number; name: string }>();
+    for (const row of stockDayRows) {
+      const code = row.Code?.trim();
+      if (!code) continue;
+      const price = parseFloat(row.ClosingPrice);
+      const chg = parseFloat((row.Change ?? "0").trim().replace(/^\+/, ""));
+      if (!isFinite(price) || price <= 0) continue;
+      const prevClose = price - chg;
+      const changePct = isFinite(chg) && prevClose !== 0
+        ? Math.round((chg / prevClose) * 10000) / 100
+        : 0;
+      twseByTicker.set(code, { price, change: chg, changePct, name: row.Name?.trim() ?? code });
     }
 
-    const { getTwseIndustryHeatmap } = await import("./data-sources/twse-openapi-client.js");
-    const twseTiles = await getTwseIndustryHeatmap(tickerToIndustry);
+    // Build enriched tiles: TWSE EOD data for each core symbol
+    const enrichedTiles = kgiResult.tiles.map((t) => {
+      const twse = twseByTicker.get(t.symbol);
+      if (!twse) return t; // no TWSE data — keep null price tile
+      return {
+        ...t,
+        name: twse.name,
+        price: twse.price,
+        last: twse.price,
+        change: twse.change,
+        changePct: twse.changePct,
+        source: "twse_eod" as const,
+      };
+    });
 
     return c.json({
-      tiles: kgiResult.tiles, // shapes preserved, prices null
+      tiles: enrichedTiles,
       twseFallback: twseTiles,
       source: "kgi_tick",
-      staleAfterSec: 5,
+      staleAfterSec: 60,
       sourceState: "fallback_eod",
-      tileCount: kgiResult.tiles.length,
+      tileCount: enrichedTiles.length,
       liveTileCount: 0,
     });
   } catch (err) {
