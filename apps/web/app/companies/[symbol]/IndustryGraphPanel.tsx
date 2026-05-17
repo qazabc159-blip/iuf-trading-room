@@ -17,11 +17,7 @@ import type { CoverageBrief } from "./coverageData";
 // ── Fetch helper (client-side) ────────────────────────────────────────────────
 
 async function fetchCoverageForGraph(ticker: string): Promise<CoverageBrief | null> {
-  try {
-    return await fetchCoverage(ticker);
-  } catch {
-    return null;
-  }
+  return fetchCoverage(ticker);
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -308,6 +304,7 @@ function Legend() {
 
 type GraphState =
   | { status: "loading" }
+  | { status: "error"; message: string }
   | { status: "ready"; nodes: GraphNode[]; brief: CoverageBrief | null };
 
 interface Props {
@@ -329,17 +326,24 @@ export function IndustryGraphPanel({ ticker, companyName, brief: briefProp }: Pr
     }
     // Otherwise self-fetch
     let cancelled = false;
-    fetchCoverageForGraph(ticker).then((data) => {
-      if (cancelled) return;
-      const nodes = data ? buildNodes(data, ticker) : [];
-      setGraphState({ status: "ready", nodes, brief: data });
-    });
+    fetchCoverageForGraph(ticker)
+      .then((data) => {
+        if (cancelled) return;
+        const nodes = data ? buildNodes(data, ticker) : [];
+        setGraphState({ status: "ready", nodes, brief: data });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : String(err ?? "");
+        console.warn("[IndustryGraphPanel] fetch error", { ticker, msg });
+        setGraphState({ status: "error", message: msg });
+      });
     return () => {
       cancelled = true;
     };
   }, [ticker, briefProp]);
 
-  const mounted = graphState.status === "ready";
+  const mounted = graphState.status !== "loading";
   const nodes = graphState.status === "ready" ? graphState.nodes : [];
   const brief = graphState.status === "ready" ? graphState.brief : undefined;
   const hasData = nodes.length > 0;
@@ -360,12 +364,22 @@ export function IndustryGraphPanel({ ticker, companyName, brief: briefProp }: Pr
         </div>
       )}
 
-      {mounted && !hasData && (
+      {graphState.status === "error" && (
+        <div className="state-panel">
+          <span className="badge badge-red">暫停</span>
+          <span className="tg soft">圖譜資料暫時無法讀取</span>
+          <span className="state-reason" style={{ fontSize: 11 }}>
+            My-TW-Coverage coverage endpoint 暫時沒有回應；這不是 coverage 待補，不會用空資料誤判。
+          </span>
+        </div>
+      )}
+
+      {graphState.status === "ready" && !hasData && (
         <div className="state-panel">
           <span className="badge badge-yellow">整理中</span>
           <span className="tg soft">圖譜資料整理中</span>
           <span className="state-reason" style={{ fontSize: 11 }}>
-            {brief === null || brief === undefined
+            {brief === null
               ? `本檔 (${ticker}) coverage 待補，圖譜依 My-TW-Coverage 資料生成`
               : "此公司暫無上下游關係資料可繪製"}
           </span>
@@ -395,11 +409,30 @@ export function IndustryGraphPanel({ ticker, companyName, brief: briefProp }: Pr
           marginTop: 14,
           paddingTop: 10,
           borderTop: "1px solid var(--border,#222)",
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
           fontSize: 10,
           color: "var(--fg-3,#666)",
         }}
       >
-        資料來源: My-TW-Coverage (MIT)
+        <span>資料來源: My-TW-Coverage (MIT)</span>
+        <Link
+          href={`/companies?tab=graph&q=${encodeURIComponent(ticker)}`}
+          style={{
+            border: "1px solid var(--accent,#c8943f)",
+            borderRadius: 4,
+            color: "var(--accent,#c8943f)",
+            padding: "4px 8px",
+            textDecoration: "none",
+            fontFamily: "var(--mono,monospace)",
+            fontWeight: 700,
+          }}
+        >
+          在公司圖譜搜尋 {ticker}
+        </Link>
       </div>
     </section>
   );
