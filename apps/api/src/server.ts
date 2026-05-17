@@ -11834,6 +11834,110 @@ app.post("/api/v1/internal/alerts/force-dispatch", async (c) => {
   });
 });
 
+// =============================================================================
+// ADMIN: TWSE Announcements Backfill
+// =============================================================================
+//
+// POST /api/v1/admin/announcements/backfill
+//   Owner-only. Triggers TWSE OpenAPI ingest for a historical date range.
+//   Body: { from: "YYYY-MM-DD", to: "YYYY-MM-DD" }
+//     OR: { lookbackDays: number } (default 7)
+//   No window guard — fires unconditionally regardless of trading hours.
+//   Idempotent: ON CONFLICT DO NOTHING.
+//
+// Root cause (2026-05-17): ingest only fires 09:00–15:00 TST weekdays.
+//   Deploys outside that window skip boot catch-up → multi-day data gap.
+//   This endpoint lets Owner manually backfill any gap up to 30 days.
+// =============================================================================
+
+app.post("/api/v1/admin/announcements/backfill", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: { from?: string; to?: string; lookbackDays?: number } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  let lookbackDays = 7; // default: cover a full week
+  if (typeof body.lookbackDays === "number" && body.lookbackDays > 0 && body.lookbackDays <= 30) {
+    lookbackDays = body.lookbackDays;
+  } else if (body.from && body.to) {
+    // Compute lookbackDays from date range
+    const fromMs = new Date(body.from + "T00:00:00Z").getTime();
+    const toMs = new Date(body.to + "T23:59:59Z").getTime();
+    if (isNaN(fromMs) || isNaN(toMs) || fromMs > toMs) {
+      return c.json({ error: "INVALID_DATE_RANGE", message: "from must be <= to, both YYYY-MM-DD" }, 400);
+    }
+    // lookbackDays = days from 'from' until now
+    const nowMs = Date.now();
+    lookbackDays = Math.min(30, Math.ceil((nowMs - fromMs) / (24 * 60 * 60 * 1000)) + 1);
+  }
+
+  console.log(`[admin/announcements/backfill] triggered by Owner uid=${session.user.id} lookbackDays=${lookbackDays}`);
+
+  const result = await runTwseAnnouncementIngest({ lookbackDays }).catch((e: unknown) => ({
+    rowsFetched: 0,
+    rowsInserted: 0,
+    rowsSkipped: 0,
+    skipped: true,
+    skipReason: e instanceof Error ? e.message : String(e),
+    durationMs: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString()
+  }));
+
+  return c.json({
+    data: {
+      lookbackDays,
+      from: body.from ?? null,
+      to: body.to ?? null,
+      ...result
+    }
+  });
+});
+
+// =============================================================================
+// ADMIN: News Top-10 Force Refresh
+// =============================================================================
+//
+// POST /api/v1/admin/news-top10/force-refresh
+//   Owner-only. Triggers AI news selector immediately, bypassing all window gates.
+//   Use after deploy when stale_reason=never_run and you can't wait for the next
+//   08:00/12:00/18:00/24:00 TST window.
+// =============================================================================
+
+app.post("/api/v1/admin/news-top10/force-refresh", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const workspaceId = session.workspace.id;
+  console.log(`[admin/news-top10/force-refresh] triggered by Owner uid=${session.user.id}`);
+
+  const result = await runNewsAiSelection({
+    workspaceId,
+    forcedWindowLabel: "08:00"  // label is informational; actual content is from current window
+  }).catch((e: unknown) => ({
+    run_id: "error",
+    as_of: new Date().toISOString(),
+    next_refresh_at: new Date().toISOString(),
+    window_label: "08:00" as const,
+    selection_mode: "fallback" as const,
+    items: [],
+    input_row_count: 0,
+    ai_call_success: false,
+    stale_reason: `force_refresh_error:${e instanceof Error ? e.message : String(e)}`
+  }));
+
+  return c.json({ data: result });
+});
+
 /**
  * POST /api/v1/admin/brief/backfill
  * 5/12 FIX: Backfill missing briefs for a date range (Owner only).
@@ -13159,11 +13263,12 @@ function startSchedulers(workspaceSlug: string): void {
       );
     }, TWSE_ANN_INGEST_POLL_MS);
 
-    // Startup catch-up: fires 45s after boot when within trading hours
+    // Startup catch-up: fires 45s after boot UNCONDITIONALLY (no window gate).
+    // lookbackDays=7 ensures any multi-day gap from off-hours deploys is recovered.
+    // The hourly window-gated tick handles same-day freshness; this handles historical gaps.
     setTimeout(() => {
-      if (!isTwseAnnouncementIngestWindow()) return;
-      console.log("[twse-ann-ingest] boot catch-up: within trading hours, firing ingest");
-      runTwseAnnouncementIngest().catch((e) =>
+      console.log("[twse-ann-ingest] boot catch-up: unconditional (lookbackDays=7)");
+      runTwseAnnouncementIngest({ lookbackDays: 7 }).catch((e) =>
         console.error("[twse-ann-ingest] boot catch-up failed:", e instanceof Error ? e.message : String(e))
       );
     }, 45_000);
