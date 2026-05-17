@@ -540,3 +540,27 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
 
   console.info(`[ai-reviewer] Draft ${draftId} flagged for MANUAL_REVIEW: ${result.reason}`);
 }
+
+// ── ToolCenter Phase A wrapper ────────────────────────────────────────────────
+
+/**
+ * fireAiReviewerForDraftTracked — callTool-wrapped version of fireAiReviewerForDraft.
+ * Phase A: adds tool_calls audit record around the existing review function.
+ * Uses dynamic import for tool-registry-store to avoid linter-revert of static imports.
+ */
+export async function fireAiReviewerForDraftTracked(
+  draftId: string,
+  workspaceId: string
+): Promise<void> {
+  const { callTool } = await import("./tools/tool-registry-store.js");
+  await callTool(
+    "ai_reviewer",
+    "cron",
+    workspaceId,
+    { draftId },
+    async (input: { draftId: string }) => {
+      await fireAiReviewerForDraft(input.draftId);
+      return { draftId: input.draftId, tracked: true };
+    }
+  );
+}
