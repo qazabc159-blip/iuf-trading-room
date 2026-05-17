@@ -665,3 +665,68 @@ export const unifiedOrders = pgTable(
     brokerAccountIdx:     index("unified_orders_broker_account_idx").on(table.brokerAccountId)
   })
 );
+
+
+// -- Brain Phase A -- migration 0034_brain_phase_a.sql
+// LLM model registry + call ledger + daily cost rollup.
+// Yang 5/17 critical mandate: unified LLM gateway + cost tracking + model registry.
+
+export const llmModelsRegistry = pgTable("llm_models_registry", {
+  id:                        uuid("id").defaultRandom().primaryKey(),
+  modelKey:                  text("model_key").notNull().unique(),
+  provider:                  text("provider").notNull(),
+  displayName:               text("display_name").notNull(),
+  inputPricePer1mTokens:     numeric("input_price_per_1m_tokens", { precision: 10, scale: 6 }).notNull().default("0"),
+  outputPricePer1mTokens:    numeric("output_price_per_1m_tokens", { precision: 10, scale: 6 }).notNull().default("0"),
+  maxContextTokens:          integer("max_context_tokens").notNull().default(128000),
+  capabilities:              jsonb("capabilities").notNull().default({}),
+  isActive:                  boolean("is_active").notNull().default(true),
+  createdAt:                 timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export const llmCalls = pgTable(
+  "llm_calls",
+  {
+    id:               uuid("id").defaultRandom().primaryKey(),
+    workspaceId:      uuid("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
+    modelKey:         text("model_key").notNull(),
+    callerModule:     text("caller_module").notNull(),
+    taskType:         text("task_type").notNull(),
+    promptTokens:     integer("prompt_tokens").notNull().default(0),
+    completionTokens: integer("completion_tokens").notNull().default(0),
+    totalTokens:      integer("total_tokens").notNull().default(0),
+    costUsd:          numeric("cost_usd", { precision: 10, scale: 8 }).notNull().default("0"),
+    latencyMs:        integer("latency_ms"),
+    status:           text("status").notNull().default("success"),
+    errorCode:        text("error_code"),
+    inputSummary:     text("input_summary"),
+    outputSummary:    text("output_summary"),
+    createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    workspaceCreatedIdx: index("llm_calls_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    modelCreatedIdx:     index("llm_calls_model_created_idx").on(table.modelKey, table.createdAt),
+    callerCreatedIdx:    index("llm_calls_caller_created_idx").on(table.callerModule, table.createdAt),
+    createdAtIdx:        index("llm_calls_created_at_idx").on(table.createdAt)
+  })
+);
+
+export const llmCostDaily = pgTable(
+  "llm_cost_daily",
+  {
+    id:           uuid("id").defaultRandom().primaryKey(),
+    workspaceId:  uuid("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
+    date:         date("date").notNull(),
+    totalCalls:   integer("total_calls").notNull().default(0),
+    totalTokens:  integer("total_tokens").notNull().default(0),
+    totalCostUsd: numeric("total_cost_usd", { precision: 10, scale: 6 }).notNull().default("0"),
+    byModel:      jsonb("by_model").notNull().default({}),
+    byModule:     jsonb("by_module").notNull().default({}),
+    createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:    timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    workspaceDateUidx: uniqueIndex("llm_cost_daily_workspace_date_uidx").on(table.workspaceId, table.date),
+    dateIdx:           index("llm_cost_daily_date_idx").on(table.date)
+  })
+);

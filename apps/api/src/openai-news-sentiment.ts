@@ -17,7 +17,9 @@
  *   - Quota guard shared with other scenarios.
  */
 
-import { callOpenAi, stripCodeFences, MODEL_ROUTINE } from "./openai-quota-guard.js";
+// Brain Phase A migration (2026-05-17): transport swapped to callLlm() for cost tracking.
+import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
+const MODEL_ROUTINE = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
 import type { NewsAiItem } from "./news-ai-selector.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -95,13 +97,11 @@ export async function enrichNewsWithSentiment(
     items.map((item) => ({ ...item, sentiment: null, impact_magnitude: null }));
 
   const prompt = buildSentimentPrompt(items);
-  const rawContent = await callOpenAi({
-    model: MODEL_ROUTINE,
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: MAX_TOKENS,
-    temperature: 0.1,
-    label: "news-sentiment"
-  });
+  const llmResult = await callLlm(
+    [{ role: "user", content: prompt }],
+    { modelKey: MODEL_ROUTINE, callerModule: "news_sentiment", taskType: "sentiment", maxTokens: MAX_TOKENS, temperature: 0.1 }
+  );
+  const rawContent = llmResult?.content ?? null;
 
   if (!rawContent) {
     return nullEnriched();

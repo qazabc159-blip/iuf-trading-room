@@ -20,7 +20,9 @@
  *   - Stores assessment result in-memory only (no DB write required — supplemental only).
  */
 
-import { callOpenAi, stripCodeFences, MODEL_ROUTINE } from "./openai-quota-guard.js";
+// Brain Phase A migration (2026-05-17): transport swapped to callLlm() for cost tracking.
+import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
+const MODEL_ROUTINE = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
 import type { Signal } from "@iuf-trading-room/contracts";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -137,13 +139,11 @@ export async function assessSignalConfidence(signal: Signal): Promise<SignalConf
   };
 
   const prompt = buildConfidencePrompt(signal);
-  const rawContent = await callOpenAi({
-    model: MODEL_ROUTINE,
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: MAX_TOKENS,
-    temperature: 0.2,
-    label: "signal-confidence"
-  });
+  const llmResult = await callLlm(
+    [{ role: "user", content: prompt }],
+    { modelKey: MODEL_ROUTINE, callerModule: "signal_confidence", taskType: "confidence_scoring", maxTokens: MAX_TOKENS, temperature: 0.2 }
+  );
+  const rawContent = llmResult?.content ?? null;
 
   if (!rawContent) {
     return algoFallback();
