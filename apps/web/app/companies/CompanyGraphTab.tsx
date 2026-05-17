@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type {
   CompanyGraphSearchResult,
   CompanyGraphStats,
@@ -79,10 +80,14 @@ function GraphMetric({ label, value, sub }: { label: string; value: string; sub:
 }
 
 export function CompanyGraphTab() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlQuery = searchParams.get("q") ?? "";
   const [stats, setStats] = useState<CompanyGraphStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(urlQuery);
   const [results, setResults] = useState<CompanyGraphSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -108,6 +113,24 @@ export function CompanyGraphTab() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    setQuery(urlQuery);
+  }, [urlQuery]);
+
+  const setGraphQuery = (value: string) => {
+    setQuery(value);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("tab", "graph");
+    const normalized = value.trim();
+    if (normalized) {
+      nextParams.set("q", normalized);
+    } else {
+      nextParams.delete("q");
+    }
+    const nextSearch = nextParams.toString();
+    router.replace(`${pathname}${nextSearch ? `?${nextSearch}` : ""}`, { scroll: false });
+  };
 
   const trimmedQuery = query.trim();
 
@@ -418,7 +441,7 @@ export function CompanyGraphTab() {
               value={query}
               placeholder="搜尋公司、代號、關鍵字或關係..."
               aria-label="搜尋公司圖譜"
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => setGraphQuery(event.target.value)}
             />
           </div>
 
@@ -485,7 +508,7 @@ export function CompanyGraphTab() {
                 key={item.label}
                 type="button"
                 className="_co-graph-chip"
-                onClick={() => setQuery(item.label)}
+                onClick={() => setGraphQuery(item.label)}
               >
                 {item.label}
                 <small>{formatNumber(item.count)}</small>
