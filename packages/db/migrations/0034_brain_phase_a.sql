@@ -6,11 +6,11 @@
 -- down migration: 0034_brain_phase_a.down.sql
 -- Mike audit checklist:
 --   B1: all NOT NULL columns have DEFAULT or are required — checked
---   W1: no idempotency_key needed (UUID PK = natural dedup)
---   W3: inline comments on non-obvious columns — checked
+--   W1: FK ON DELETE RESTRICT (audit-trail tables prevent workspace deletion while calls exist)
+--   W2: constraint name aligned with Drizzle: llm_cost_daily_workspace_date_uidx
+--   W3: inline comments on non-obvious columns + llm_calls_created_at_idx index added
 --   W4: cost_usd NUMERIC(10,8) with CHECK >= 0 — checked
 --   N4: no partial-fill concept — N/A
---   FK: cascade explicit on workspace references — checked
 
 -- ============================================================
 -- Table 1: llm_models_registry
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS llm_models_registry (
 CREATE TABLE IF NOT EXISTS llm_calls (
   id                UUID         NOT NULL DEFAULT gen_random_uuid(),
   -- workspace_id: NULL = system-level call (not associated with a specific workspace)
-  workspace_id      UUID         NULL REFERENCES workspaces(id) ON DELETE SET NULL,
+  workspace_id      UUID         NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
   -- model_key: denormalized from registry for query convenience (no JOIN needed for admin queries)
   model_key         TEXT         NOT NULL,
   -- caller_module: e.g. "ai_reviewer", "news_sentiment", "brain", "strategy_ranker"
@@ -84,6 +84,10 @@ CREATE INDEX IF NOT EXISTS llm_calls_model_created_idx
 CREATE INDEX IF NOT EXISTS llm_calls_caller_created_idx
   ON llm_calls (caller_module, created_at DESC);
 
+-- Index for unfiltered admin "recent calls" query (ORDER BY created_at without workspace filter)
+CREATE INDEX IF NOT EXISTS llm_calls_created_at_idx
+  ON llm_calls (created_at DESC);
+
 -- ============================================================
 -- Table 3: llm_cost_daily
 -- Daily rollup of LLM cost per workspace.
@@ -94,7 +98,7 @@ CREATE INDEX IF NOT EXISTS llm_calls_caller_created_idx
 CREATE TABLE IF NOT EXISTS llm_cost_daily (
   id             UUID         NOT NULL DEFAULT gen_random_uuid(),
   -- workspace_id: NULL = system-level aggregate
-  workspace_id   UUID         NULL REFERENCES workspaces(id) ON DELETE SET NULL,
+  workspace_id   UUID         NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
   date           DATE         NOT NULL,
   total_calls    INTEGER      NOT NULL DEFAULT 0,
   total_tokens   INTEGER      NOT NULL DEFAULT 0,
@@ -107,7 +111,8 @@ CREATE TABLE IF NOT EXISTS llm_cost_daily (
   updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   CONSTRAINT llm_cost_daily_pkey PRIMARY KEY (id),
   -- enforce one row per (workspace, date) — enables UPSERT
-  CONSTRAINT llm_cost_daily_workspace_date_unique UNIQUE (workspace_id, date),
+  -- name aligned with Drizzle uniqueIndex("llm_cost_daily_workspace_date_uidx")
+  CONSTRAINT llm_cost_daily_workspace_date_uidx UNIQUE (workspace_id, date),
   CONSTRAINT llm_cost_daily_cost_check CHECK (total_cost_usd >= 0)
 );
 

@@ -214,7 +214,49 @@ async function upsertDailyCost(opts: {
     if (!db) return;
     const today = getTodayUtc();
     const costStr = opts.costUsd.toFixed(6);
+    const costNum = parseFloat(costStr);
     const tokens = opts.tokens;
+
+    // Initial INSERT values (first call of the day for this workspace)
+    const initByModel = { [opts.modelKey]: { calls: 1, tokens, cost: costNum } };
+    const initByModule = { [opts.callerModule]: { calls: 1, tokens, cost: costNum } };
+
+    // JSONB merge helpers using PostgreSQL jsonb_set + arithmetic:
+    //   existing_entry = existing_json -> key (or default {"calls":0,"tokens":0,"cost":0})
+    //   merged = existing_entry with calls+1, tokens+N, cost+C
+    // We use the || (concat) operator to deep-merge at the model/module key level.
+    //
+    // Pattern:
+    //   by_model || jsonb_build_object(
+    //     <modelKey>,
+    //     COALESCE(by_model -> <modelKey>, '{"calls":0,"tokens":0,"cost":0}'::jsonb) ||
+    //     jsonb_build_object(
+    //       'calls', COALESCE((by_model -> <modelKey> -> 'calls')::int, 0) + 1,
+    //       'tokens', COALESCE((by_model -> <modelKey> -> 'tokens')::int, 0) + <tokens>,
+    //       'cost', COALESCE((by_model -> <modelKey> -> 'cost')::float, 0) + <cost>
+    //     )
+    //   )
+    const mergedByModel = sql`
+      ${llmCostDaily.byModel} || jsonb_build_object(
+        ${opts.modelKey}::text,
+        COALESCE(${llmCostDaily.byModel} -> ${opts.modelKey}, '{"calls":0,"tokens":0,"cost":0}'::jsonb) || jsonb_build_object(
+          'calls',  COALESCE((${llmCostDaily.byModel} -> ${opts.modelKey} -> 'calls')::int, 0) + 1,
+          'tokens', COALESCE((${llmCostDaily.byModel} -> ${opts.modelKey} -> 'tokens')::int, 0) + ${tokens},
+          'cost',   COALESCE((${llmCostDaily.byModel} -> ${opts.modelKey} -> 'cost')::float, 0.0) + ${costNum}
+        )
+      )
+    `;
+
+    const mergedByModule = sql`
+      ${llmCostDaily.byModule} || jsonb_build_object(
+        ${opts.callerModule}::text,
+        COALESCE(${llmCostDaily.byModule} -> ${opts.callerModule}, '{"calls":0,"tokens":0,"cost":0}'::jsonb) || jsonb_build_object(
+          'calls',  COALESCE((${llmCostDaily.byModule} -> ${opts.callerModule} -> 'calls')::int, 0) + 1,
+          'tokens', COALESCE((${llmCostDaily.byModule} -> ${opts.callerModule} -> 'tokens')::int, 0) + ${tokens},
+          'cost',   COALESCE((${llmCostDaily.byModule} -> ${opts.callerModule} -> 'cost')::float, 0.0) + ${costNum}
+        )
+      )
+    `;
 
     await db
       .insert(llmCostDaily)
@@ -224,16 +266,18 @@ async function upsertDailyCost(opts: {
         totalCalls: 1,
         totalTokens: tokens,
         totalCostUsd: costStr,
-        byModel: { [opts.modelKey]: { calls: 1, tokens, cost: parseFloat(costStr) } },
-        byModule: { [opts.callerModule]: { calls: 1, tokens, cost: parseFloat(costStr) } }
+        byModel: initByModel,
+        byModule: initByModule
       })
       .onConflictDoUpdate({
         target: [llmCostDaily.workspaceId, llmCostDaily.date],
         set: {
-          totalCalls: sql`${llmCostDaily.totalCalls} + 1`,
-          totalTokens: sql`${llmCostDaily.totalTokens} + ${tokens}`,
+          totalCalls:   sql`${llmCostDaily.totalCalls} + 1`,
+          totalTokens:  sql`${llmCostDaily.totalTokens} + ${tokens}`,
           totalCostUsd: sql`${llmCostDaily.totalCostUsd} + ${costStr}`,
-          updatedAt: sql`NOW()`
+          byModel:      mergedByModel,
+          byModule:     mergedByModule,
+          updatedAt:    sql`NOW()`
         }
       });
   } catch (err) {

@@ -14535,7 +14535,7 @@ app.get("/api/v1/uta/orders", async (c) => {
 // GET /api/v1/admin/llm/models -- LLM model registry
 app.get("/api/v1/admin/llm/models", async (c) => {
   const session = c.get("session");
-  if (!session || session.role !== "owner") {
+  if (!session || session.user.role !== "Owner") {
     return c.json({ error: "FORBIDDEN" }, 403);
   }
   const { getLlmModels } = await import("./admin-brain-llm.js");
@@ -14546,7 +14546,7 @@ app.get("/api/v1/admin/llm/models", async (c) => {
 // GET /api/v1/admin/llm/calls?limit=100 -- recent LLM call log
 app.get("/api/v1/admin/llm/calls", async (c) => {
   const session = c.get("session");
-  if (!session || session.role !== "owner") {
+  if (!session || session.user.role !== "Owner") {
     return c.json({ error: "FORBIDDEN" }, 403);
   }
   const limit = parseInt(c.req.query("limit") ?? "100", 10);
@@ -14558,7 +14558,7 @@ app.get("/api/v1/admin/llm/calls", async (c) => {
 // GET /api/v1/admin/llm/usage?from=ISO&to=ISO -- cost + token usage summary
 app.get("/api/v1/admin/llm/usage", async (c) => {
   const session = c.get("session");
-  if (!session || session.role !== "owner") {
+  if (!session || session.user.role !== "Owner") {
     return c.json({ error: "FORBIDDEN" }, 403);
   }
   const from = c.req.query("from") ?? null;

@@ -688,7 +688,7 @@ export const llmCalls = pgTable(
   "llm_calls",
   {
     id:               uuid("id").defaultRandom().primaryKey(),
-    workspaceId:      uuid("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+    workspaceId:      uuid("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     modelKey:         text("model_key").notNull(),
     callerModule:     text("caller_module").notNull(),
     taskType:         text("task_type").notNull(),
@@ -706,7 +706,8 @@ export const llmCalls = pgTable(
   (table) => ({
     workspaceCreatedIdx: index("llm_calls_workspace_created_idx").on(table.workspaceId, table.createdAt),
     modelCreatedIdx:     index("llm_calls_model_created_idx").on(table.modelKey, table.createdAt),
-    callerCreatedIdx:    index("llm_calls_caller_created_idx").on(table.callerModule, table.createdAt)
+    callerCreatedIdx:    index("llm_calls_caller_created_idx").on(table.callerModule, table.createdAt),
+    createdAtIdx:        index("llm_calls_created_at_idx").on(table.createdAt)
   })
 );
 
@@ -714,7 +715,7 @@ export const llmCostDaily = pgTable(
   "llm_cost_daily",
   {
     id:           uuid("id").defaultRandom().primaryKey(),
-    workspaceId:  uuid("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+    workspaceId:  uuid("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     date:         date("date").notNull(),
     totalCalls:   integer("total_calls").notNull().default(0),
     totalTokens:  integer("total_tokens").notNull().default(0),
