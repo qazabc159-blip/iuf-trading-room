@@ -24,7 +24,8 @@ jobs:
   validate:
     # EC2 self-hosted runner (Windows Server 2022, i-03762861d4ce08932, ap-east-2)
     # Saves GHA hosted-runner quota — runner labels: self-hosted, Windows, X64, iuf-prod
-    runs-on: [self-hosted, iuf-prod]
+    # Toggle: set repo var USE_SELF_HOSTED=false to fall back to ubuntu-latest (e.g. if EC2 is down)
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
     timeout-minutes: 30
     permissions:
       contents: read
