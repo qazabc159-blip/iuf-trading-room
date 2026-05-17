@@ -65,6 +65,15 @@ function candidateName(candidate: LabStrategyCandidate) {
   return candidate.displayName || candidate.strategyId;
 }
 
+const LAB_CANDIDATE_NAME_MAX = 72;
+const LAB_CANDIDATE_STATUS_MAX = 56;
+
+function compactLabCandidateText(value: string, maxLength: number) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxLength) return compact;
+  return `${compact.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
 function formatTimestamp(value?: string) {
   if (!value) return "-";
   const date = new Date(value);
@@ -189,12 +198,24 @@ function LabCandidateStrip({
             這裡只讀取 Lab governance 釋出的 research-only snapshot；狀態照 Lab 原文保存，不在前端改名成可交易訊號。
           </p>
           <div className={styles.labCandidateList}>
-            {candidates.map((candidate) => (
-              <div key={candidate.strategyId} className={styles.labCandidate}>
-                <span>{candidateName(candidate)}</span>
-                <strong>{labStatusDisplayWording(candidate.status)}</strong>
-              </div>
-            ))}
+            {candidates.map((candidate) => {
+              const fullName = candidateName(candidate);
+              const fullStatus = labStatusDisplayWording(candidate.status);
+              const displayName = compactLabCandidateText(fullName, LAB_CANDIDATE_NAME_MAX);
+              const displayStatus = compactLabCandidateText(fullStatus, LAB_CANDIDATE_STATUS_MAX);
+
+              return (
+                <div
+                  key={candidate.strategyId}
+                  className={styles.labCandidate}
+                  title={`${fullName} / ${fullStatus}`}
+                  aria-label={`${fullName}，${fullStatus}`}
+                >
+                  <span>{displayName}</span>
+                  <strong>{displayStatus}</strong>
+                </div>
+              );
+            })}
           </div>
         </>
       ) : (
