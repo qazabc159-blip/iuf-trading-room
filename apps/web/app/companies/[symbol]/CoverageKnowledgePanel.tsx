@@ -11,31 +11,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-
-// ── Types (aligned with tw-coverage-loader.ts) ────────────────────────────────
-
-interface SupplyChainGroup {
-  category: string;
-  companies: string[];
-}
-
-export interface CoverageBrief {
-  ticker: string;
-  companyName: string;
-  sector: string;
-  industry: string;
-  marketCap: string;
-  enterpriseValue: string;
-  businessOverview: string;
-  supplyChain: {
-    upstream: SupplyChainGroup[];
-    midstream: SupplyChainGroup[];
-    downstream: SupplyChainGroup[];
-  };
-  majorCustomers: string[];
-  majorSuppliers: string[];
-  wikilinks?: string[];
-}
+import { normalizeCoverageBrief, type CoverageBrief, type SupplyChainGroup } from "./coverageData";
 
 type LoadState =
   | { status: "loading" }
@@ -61,11 +37,11 @@ export async function fetchCoverage(ticker: string): Promise<CoverageBrief | nul
   });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = (await res.json()) as { data?: CoverageBrief } | CoverageBrief;
+  const json = (await res.json()) as { data?: unknown } | unknown;
   if (json && typeof json === "object" && "data" in json && json.data) {
-    return json.data;
+    return normalizeCoverageBrief(json.data, ticker);
   }
-  return json as CoverageBrief;
+  return normalizeCoverageBrief(json, ticker);
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────

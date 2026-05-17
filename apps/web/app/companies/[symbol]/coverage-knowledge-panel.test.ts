@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { CoverageBrief } from "./CoverageKnowledgePanel";
+import { normalizeCoverageBrief, type CoverageBrief } from "./coverageData";
 
 // ── CoverageBrief shape helpers (mirrors what API returns) ─────────────────────
 
@@ -83,6 +83,45 @@ describe("CoverageKnowledgePanel — data shape", () => {
     const attribution = "資料來源: My-TW-Coverage (MIT)";
     expect(attribution).toContain("My-TW-Coverage");
     expect(attribution).toContain("MIT");
+  });
+
+  it("normalizes partial API payloads into safe render shape", () => {
+    const normalized = normalizeCoverageBrief({
+      ticker: "2330",
+      name: "台積電",
+      summary: "晶圓代工核心供應商",
+      industries: ["半導體", "晶圓代工"],
+      themes: ["AI 伺服器"],
+    }, "2330");
+
+    expect(normalized.companyName).toBe("台積電");
+    expect(normalized.businessOverview).toBe("晶圓代工核心供應商");
+    expect(normalized.sector).toBe("半導體");
+    expect(normalized.industry).toBe("晶圓代工");
+    expect(normalized.supplyChain.upstream).toEqual([]);
+    expect(normalized.supplyChain.midstream).toEqual([]);
+    expect(normalized.supplyChain.downstream).toEqual([]);
+    expect(normalized.majorCustomers).toEqual([]);
+    expect(normalized.majorSuppliers).toEqual([]);
+    expect(normalized.wikilinks).toEqual(["AI 伺服器"]);
+  });
+
+  it("drops malformed supply-chain groups instead of crashing render", () => {
+    const normalized = normalizeCoverageBrief({
+      ticker: "2330",
+      supplyChain: {
+        upstream: [
+          { category: "設備", companies: ["ASML", 123, "應材"] },
+          { category: "空資料", companies: [] },
+          "bad-row",
+        ],
+      },
+    }, "2330");
+
+    expect(normalized.supplyChain.upstream).toEqual([
+      { category: "設備", companies: ["ASML", "應材"] },
+    ]);
+    expect(normalized.supplyChain.downstream).toEqual([]);
   });
 });
 

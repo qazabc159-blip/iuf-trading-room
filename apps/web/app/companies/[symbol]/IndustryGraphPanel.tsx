@@ -11,7 +11,8 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { fetchCoverage, type CoverageBrief } from "./CoverageKnowledgePanel";
+import { fetchCoverage } from "./CoverageKnowledgePanel";
+import type { CoverageBrief } from "./coverageData";
 
 // ── Fetch helper (client-side) ────────────────────────────────────────────────
 
