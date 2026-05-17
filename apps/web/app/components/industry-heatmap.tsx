@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { heatmapEmptyReason, heatmapSourceLabel } from "@/lib/weekend-state";
 
 export type IndustryHeatmapTile = {
   symbol: string;
@@ -693,9 +694,8 @@ export function IndustryHeatmap({
   const layout = useMemo(() => buildTreemapLayout(selectedRows), [selectedRows]);
   const selectedAvg = activeOption?.avgPct ?? null;
   const hasEnoughForProduct = selectedRows.length >= MIN_PRODUCT_COUNT;
-  const emptyReason = marketState === "BLOCKED"
-    ? (reason ?? "市場資料目前無法更新。")
-    : "此產業目前沒有足夠正式行情，先不顯示熱力圖。";
+  const emptyReason = heatmapEmptyReason(marketState, reason, layout.length);
+  const displaySourceLabel = heatmapSourceLabel(sourceLabel, layout.length);
 
   function handleSectorChange(nextKey: SectorKey) {
     if (nextKey === activeKey) return;
@@ -743,14 +743,14 @@ export function IndustryHeatmap({
           <div className="tac-heat-empty" role="status">
             <span>{activeOption?.label ?? "產業"} · 公開資料更新中</span>
             <strong>{emptyReason}</strong>
-            <small>{sourceLabel} · 資料約 5-15 秒延遲</small>
+            <small>{displaySourceLabel}</small>
           </div>
         )}
       </div>
 
       <div className="tac-heat-footer">
         <span>
-          {hasEnoughForProduct ? "代表股篩選完成" : "檔數不足時只顯示可驗證資料"} · 依成交值優先排序 · {sourceLabel}
+          {hasEnoughForProduct ? "代表股篩選完成" : "檔數不足時只顯示可驗證資料"} · 依成交值優先排序 · {displaySourceLabel}
         </span>
         <span className="tac-heat-scale" aria-label="漲跌幅色階">
           <em>≤ -3%</em>

@@ -47,6 +47,7 @@ import {
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
+import { announcementsAreStale, intelStaleFooterNote } from "@/lib/weekend-state";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
 
 export const dynamic = "force-dynamic";
@@ -2043,6 +2044,15 @@ function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> })
   const featured = intel.data.items[0] ?? null;
   const rows = intel.data.items.slice(featured ? 1 : 0, featured ? 7 : 6);
   const itemHref = (item: IntelItem) => item.url ?? (item.ticker === "MARKET" ? "/market-intel" : `/companies/${encodeURIComponent(item.ticker)}`);
+
+  // Detect when all visible announcements are stale (≥ 2 days old) — typically
+  // occurs over weekends when TWSE issues no new disclosures.
+  const allItemDates = intel.data.items.map((item) => item.date ?? "");
+  const isStale = announcementsAreStale(allItemDates.filter(Boolean));
+  const footerRight = intel.data.failures > 0
+    ? `${intel.data.failures} 路徑查詢失敗`
+    : intelStaleFooterNote(intel.data.items.length);
+
   return (
     <Panel
       eyebrow="MARKET INTEL"
@@ -2058,7 +2068,11 @@ function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> })
           <small>{featured.ticker} · {featured.companyName} · {formatDate(featured.date)}</small>
         </Link>
       ) : (
-        <div className="tac-empty-line">近 {ANNOUNCEMENT_DAYS} 天沒有可顯示的官方重大訊息。</div>
+        <div className="tac-empty-line">
+          {isStale
+            ? `台股休市無新公告・資料截至 ${allItemDates.filter(Boolean).sort().at(-1) ? formatDate(allItemDates.filter(Boolean).sort().at(-1)) : "--"}`
+            : `近 ${ANNOUNCEMENT_DAYS} 天沒有可顯示的官方重大訊息。`}
+        </div>
       )}
       <div className="tac-intel-list">
         {rows.map((item) => (
@@ -2072,7 +2086,7 @@ function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> })
       </div>
       <div className="tac-intel-foot">
         <span>篩選大盤 / 市場級內容</span>
-        <span>{intel.data.failures > 0 ? `${intel.data.failures} 路徑查詢失敗` : "來源路徑可讀"}</span>
+        <span>{footerRight}</span>
       </div>
     </Panel>
   );
