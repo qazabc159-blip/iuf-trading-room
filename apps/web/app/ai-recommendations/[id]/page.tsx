@@ -58,6 +58,12 @@ function handoffSideForDirection(direction: StockRecommendation["direction"]) {
   return null;
 }
 
+function handoffLabelForDirection(direction: StockRecommendation["direction"]) {
+  if (direction === "偏空") return "賣出";
+  if (direction === "偏多") return "買進";
+  return "中性";
+}
+
 function buildPrefillHref(rec: StockRecommendation) {
   const params = new URLSearchParams({
     ticker: rec.ticker,
@@ -259,6 +265,13 @@ export default async function AiRecommendationDetailPage({
           color: var(--tac-fg-0);
           border-color: rgba(200, 148, 63, 0.5);
           background: rgba(200, 148, 63, 0.1);
+        }
+        ._rec-prefill-side {
+          border-left: 1px solid rgba(200, 148, 63, 0.28);
+          padding-left: 7px;
+          color: var(--tac-brand);
+          font-weight: 900;
+          white-space: nowrap;
         }
         ._rec-detail-shell {
           display: grid;
@@ -640,7 +653,11 @@ export default async function AiRecommendationDetailPage({
           </div>
 
           <div className="_rec-detail-actions">
-            <RecommendationHandoffLink href={prefillHref} recommendationId={rec.recommendationId}>
+            <RecommendationHandoffLink
+              href={prefillHref}
+              recommendationId={rec.recommendationId}
+              directionLabel={handoffLabelForDirection(rec.direction)}
+            >
               <ArrowRight size={16} strokeWidth={1.9} />
               一鍵帶到交易室
             </RecommendationHandoffLink>
