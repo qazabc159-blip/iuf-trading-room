@@ -110,6 +110,55 @@ function contentShellOverrides(screen: ScreenKey) {
     padding: 4px 6px;
     background: rgba(8, 11, 16, 0.46);
   }
+
+  @media (max-width: 767px) {
+    .troom {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 12px !important;
+      min-height: auto !important;
+      padding: 12px !important;
+    }
+
+    .lpane,
+    .rpane {
+      position: relative !important;
+      top: auto !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+      overflow: visible !important;
+    }
+
+    .cpane {
+      width: 100% !important;
+      min-width: 0 !important;
+    }
+
+    .symhead .price {
+      margin-left: 0 !important;
+      align-items: flex-start !important;
+    }
+
+    .symhead .stats {
+      width: 100% !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 10px !important;
+      margin-left: 0 !important;
+      padding-left: 0 !important;
+      border-left: 0 !important;
+    }
+
+    .chart-wrap {
+      height: 220px !important;
+    }
+
+    .tape,
+    .tform .field.row2,
+    .preview {
+      grid-template-columns: 1fr !important;
+    }
+  }
 </style>`;
   }
 
