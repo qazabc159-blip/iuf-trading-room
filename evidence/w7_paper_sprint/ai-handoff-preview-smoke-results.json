@@ -1,0 +1,43 @@
+[
+  {
+    "name": "list-desktop",
+    "url": "/ai-recommendations",
+    "viewport": {
+      "width": 1366,
+      "height": 900
+    },
+    "screenshotName": "ai-handoff-preview-list-1366x900.png",
+    "errors": [],
+    "scrollOk": true
+  },
+  {
+    "name": "handoff-href",
+    "href": "/portfolio?ticker=2330&prefill=true&from_rec=SMOKE-2330-AI-HANDOFF&side=buy&entry=1050&stop=1010&tp=1095"
+  },
+  {
+    "name": "detail-mobile",
+    "url": "/ai-recommendations/SMOKE-2330-AI-HANDOFF",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "screenshotName": "ai-handoff-preview-detail-mobile-390x844.png",
+    "errors": [],
+    "scrollOk": true
+  },
+  {
+    "name": "portfolio-desktop",
+    "url": "/portfolio?ticker=2330&prefill=true&from_rec=SMOKE-2330-AI-HANDOFF&side=buy&entry=1050&stop=1010&tp=1095",
+    "screenshotName": "ai-handoff-preview-portfolio-1366x900.png",
+    "errors": [
+      "failed:http://127.0.0.1:3025/api/ui-final-v031/paper-trading-room?ticker=2330&prefill=true&from_rec=SMOKE-2330-AI-HANDOFF&entry=1050&stop=1010&tp=1095&side=buy&rev=handoff-ticker%3A2330%7Cprefill%3Atrue%7Cfrom_rec%3ASMOKE-2330-AI-HANDOFF%7Centry%3A1050%7Cstop%3A1010%7Ctp%3A1095%7Cside%3Abuy net::ERR_ABORTED",
+      "failed:http://127.0.0.1:3025/api/ui-final-v031/paper-trading-room?ticker=2330&prefill=true&from_rec=SMOKE-2330-AI-HANDOFF&entry=1050&stop=1010&tp=1095&side=buy&rev=handoff-ticker%3A2330%7Cprefill%3Atrue%7Cfrom_rec%3ASMOKE-2330-AI-HANDOFF%7Centry%3A1050%7Cstop%3A1010%7Ctp%3A1095%7Cside%3Abuy net::ERR_ABORTED"
+    ]
+  },
+  {
+    "name": "paper-room-direct",
+    "url": "/api/ui-final-v031/paper-trading-room?ticker=2330&prefill=true&from_rec=SMOKE-2330-AI-HANDOFF&side=buy&entry=1050&stop=1010&tp=1095",
+    "screenshotName": "ai-handoff-preview-paper-room-direct-1366x900.png",
+    "errors": []
+  }
+]

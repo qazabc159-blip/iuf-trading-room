@@ -51,6 +51,32 @@ function buildHandoffLabel(href: string, recommendationId: string, directionLabe
   return `${HANDOFF_TITLE}${details.length ? `，${details.join("，")}` : ""}`;
 }
 
+function sideLabel(value: string | null) {
+  if (value === "buy") return "買進";
+  if (value === "sell") return "賣出";
+  return null;
+}
+
+function buildPreviewItems(href: string, recommendationId: string) {
+  const ticker = safeTicker(firstParam(href, "ticker")) ?? safeTicker(firstParam(href, "symbol"));
+  const side = sideLabel(firstParam(href, "side"));
+  const entry = safeQueryText(firstParam(href, "entry"), LABEL_MAX_LENGTH.price);
+  const stop = safeQueryText(firstParam(href, "stop"), LABEL_MAX_LENGTH.price);
+  const target = safeQueryText(firstParam(href, "tp"), LABEL_MAX_LENGTH.price);
+  const safeRecommendationId =
+    safeQueryText(firstParam(href, "from_rec"), LABEL_MAX_LENGTH.recommendationId) ??
+    safeQueryText(recommendationId, LABEL_MAX_LENGTH.recommendationId);
+
+  return [
+    ticker ? ["標的", ticker] : null,
+    side ? ["方向", side] : null,
+    entry ? ["進場", entry] : null,
+    stop ? ["停損", stop] : null,
+    target ? ["目標", target] : null,
+    safeRecommendationId ? ["推薦", safeRecommendationId] : null,
+  ].filter((item): item is [string, string] => Boolean(item));
+}
+
 function recordActed(recommendationId: string) {
   const url = `/api/recommendations/${encodeURIComponent(recommendationId)}/feedback`;
   const body = JSON.stringify({ reaction: "acted" });
@@ -74,6 +100,34 @@ function recordActed(recommendationId: string) {
   }).catch(() => {
     // Handoff navigation should never be blocked by feedback telemetry.
   });
+}
+
+export function RecommendationHandoffPreview({
+  href,
+  recommendationId,
+}: {
+  href: string;
+  recommendationId: string;
+}) {
+  const items = buildPreviewItems(href, recommendationId);
+
+  return (
+    <div className="_rec-handoff-preview" role="note" aria-label="交易室 SIM 帶入預覽">
+      <div className="_rec-handoff-preview-head">
+        <b>SIM 帶入預覽</b>
+        <span>不建立券商委託</span>
+      </div>
+      <div className="_rec-handoff-preview-items">
+        {items.map(([label, value]) => (
+          <span key={`${label}-${value}`}>
+            <b>{label}</b>
+            {value}
+          </span>
+        ))}
+      </div>
+      <p>點擊後只把這些欄位帶到交易室 SIM 預覽；真正下單路徑不會被啟用。</p>
+    </div>
+  );
 }
 
 export function RecommendationHandoffLink({
