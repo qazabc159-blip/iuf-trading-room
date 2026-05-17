@@ -473,7 +473,6 @@ async function persistSelectionToDb(result: NewsTop10Result): Promise<void> {
       .insert(newsAiSelections)
       .values({
         id: result.run_id,
-        runId: result.run_id,
         asOf: new Date(result.as_of),
         windowLabel: result.window_label,
         selectionMode: result.selection_mode,
@@ -509,7 +508,7 @@ export async function loadLatestSelectionFromDb(): Promise<NewsTop10Result | nul
     const row = rows[0]!;
 
     return {
-      run_id: row.runId,
+      run_id: row.id,
       as_of: row.asOf.toISOString(),
       next_refresh_at: computeNextRefreshAt(),
       window_label: row.windowLabel as WindowLabel,
