@@ -115,13 +115,41 @@ export function CompanyPageStyleBlock() {
   padding-top: 20px;
 }
 
+/* ── 知識圖譜 grid — desktop 2-col ── */
+.company-knowledge-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
+  gap: clamp(16px, 1.8vw, 24px);
+  align-items: start;
+}
+
+/* Knowledge panel base */
+._ck-panel,
+._ig-panel {
+  min-height: 160px;
+}
+
+/* state-panel spacing inside knowledge panels */
+._ck-panel .state-panel,
+._ig-panel .state-panel {
+  padding: 24px 0 8px;
+}
+
 /* Mobile: single col */
+@media (max-width: 1280px) {
+  .company-knowledge-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 768px) {
   .company-detail-layout {
     grid-template-columns: minmax(0, 1fr) !important;
   }
   .company-side-column { order: -1; }
   ._co-theme-grid { grid-template-columns: 1fr 1fr; }
+  .company-knowledge-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 @media (max-width: 480px) {
   ._co-theme-grid { grid-template-columns: 1fr; }
