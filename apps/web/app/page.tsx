@@ -45,6 +45,7 @@ import {
   type TwseMarketOverview,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
@@ -1885,16 +1886,33 @@ function RealtimeHeatmapPanel({
 }) {
   const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
   const fullMarketRows = buildTwseIndustryRows(realtimeMarket);
-  const hasCore = coreHeatmap.length > 0;
+  const coreLastTs = loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? null;
+
+  // F1: Off-hours KGI graceful fallback.
+  // KGI API returns tiles with price=null/pct=null during off-hours (weekday 14:10+, weekends).
+  // Detect this state and auto-fallback: show TWSE EOD + banner instead of blank tiles.
+  const now = new Date();
+  const kgiOffHours = !isKgiTradingHours(now);
+  const kgiTilesAllNull = kgiCoreTilesAreNull(coreHeatmap);
+  // showKgiFallback: KGI returned tiles but all null AND we're outside trading hours
+  const showKgiFallback = kgiTilesAllNull && kgiOffHours;
+  const nextOpenLabel = showKgiFallback ? kgiNextOpenLabel(now) : null;
+
+  // If KGI is off-hours and tiles are null, treat as no-core and show TWSE heatmap
+  const hasCore = coreHeatmap.length > 0 && !showKgiFallback;
   const activeMode = heatmapMode === "all" ? "all" : "core";
   const displayHeatmap = hasCore ? coreHeatmap : heatmap;
-  const coreLastTs = loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? null;
-  const sourceLabel = activeMode === "core"
-    ? (hasCore ? "即時" : coreLastTs ? `核心 · 約 1 分鐘前最新報價` : "核心 · 約 1 分鐘前最新報價")
-    : `全市場 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`;
+  const sourceLabel = showKgiFallback
+    ? `TWSE 收盤 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`
+    : activeMode === "core"
+      ? (hasCore ? "即時" : coreLastTs ? `核心 · 約 1 分鐘前最新報價` : "核心 · 約 1 分鐘前最新報價")
+      : `全市場 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`;
   const updatedAt = activeMode === "core"
     ? (loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null)
     : (loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts ?? null);
+
+  // When KGI is off-hours, force-show the full market (TWSE) view
+  const effectiveMode: "core" | "all" = showKgiFallback ? "all" : activeMode;
 
   return (
     <Panel
@@ -1903,11 +1921,17 @@ function RealtimeHeatmapPanel({
       sub="核心觀察與全市場收盤視角分開呈現"
       right={<div className="tac-heat-legend"><span>{sourceLabel}</span></div>}
     >
+      {showKgiFallback && (
+        <div className="tac-kgi-offhours-banner">
+          <span>KGI 即時資料時段 09:00-14:10・現非交易時段，暫顯 TWSE 收盤資料</span>
+          {nextOpenLabel && <small>下次開盤 {nextOpenLabel}</small>}
+        </div>
+      )}
       <div className="tac-heat-mode-tabs" aria-label="熱力圖切換">
-        <Link className={activeMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
-        <Link className={activeMode === "all" ? "is-active" : ""} href="/?heatmap=all">全市場熱力圖</Link>
+        <Link className={!showKgiFallback && activeMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
+        <Link className={showKgiFallback || activeMode === "all" ? "is-active" : ""} href="/?heatmap=all">全市場熱力圖</Link>
       </div>
-      {activeMode === "all" ? (
+      {effectiveMode === "all" ? (
         <MarketWideHeatmap
           rows={fullMarketRows}
           updatedAt={updatedAt}
