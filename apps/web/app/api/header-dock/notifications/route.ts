@@ -160,7 +160,16 @@ export async function GET(request: NextRequest) {
       return emptyPayload({ source: "error", status: response.status });
     }
 
-    const body = await response.json();
+    if (response.status === 204) {
+      return emptyPayload({ source: "api", status: response.status });
+    }
+
+    const responseText = await response.text();
+    if (!responseText.trim()) {
+      return emptyPayload({ source: "api", reason: "EMPTY_BODY" });
+    }
+
+    const body = JSON.parse(responseText) as unknown;
     const notifications = extractNotificationArray(body)
       .map(normalizeNotification)
       .filter((item): item is NormalizedNotification => Boolean(item));
