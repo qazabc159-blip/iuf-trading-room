@@ -12,6 +12,7 @@ import {
 } from "@/lib/ai-recommendation-handoff";
 import { RecommendationFeedbackActions } from "../RecommendationFeedbackActions";
 import { RecommendationHandoffLink, RecommendationHandoffUnavailable } from "../RecommendationHandoffLink";
+import { formatRecommendationTimestamp, formatSourceTimestamp } from "../source-trail-time";
 
 export const dynamic = "force-dynamic";
 
@@ -201,6 +202,7 @@ export default async function AiRecommendationDetailPage({
 
   const prefillHref = buildRecommendationPrefillHref(rec);
   const sourceMode = data?._mock ? "FALLBACK FEED" : "ORCHESTRATOR";
+  const generatedAtLabel = formatRecommendationTimestamp(rec.generatedAt);
 
   return (
     <PageFrame code="AI-D" title={`${rec.ticker} ${rec.companyName}`} sub="AI 推薦詳情 / Recommendation Orchestrator">
@@ -512,7 +514,7 @@ export default async function AiRecommendationDetailPage({
       <Panel
         code="AI-D"
         title="推薦詳情"
-        sub={`${rec.date} / ${rec.generatedAt} / ${sourceMode}`}
+        sub={`${rec.date} / ${generatedAtLabel} / ${sourceMode}`}
         right={`#${rec.rank}`}
       >
         <article className="_rec-detail-shell">
@@ -621,7 +623,9 @@ export default async function AiRecommendationDetailPage({
                   <span key={`${source.type}-${source.source}-${source.timestamp}`}>
                     <b>{source.type}</b>
                     {source.source}
-                    <small>{source.timestamp}</small>
+                    <small title={source.timestamp} aria-label={`source timestamp ${source.timestamp}`}>
+                      {formatSourceTimestamp(source.timestamp)}
+                    </small>
                   </span>
                 ))
               ) : (
