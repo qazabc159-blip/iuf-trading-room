@@ -89,8 +89,10 @@ function extractUnreadCount(body: unknown, fallback: number) {
 }
 
 function normalizeSeverity(value: unknown): NormalizedNotification["severity"] {
-  if (value === "critical") return "critical";
-  if (value === "warning" || value === "warn") return "warning";
+  if (typeof value !== "string") return "info";
+  const normalized = value.trim().toLowerCase();
+  if (["critical", "danger", "error", "fatal", "high"].includes(normalized)) return "critical";
+  if (["warning", "warn", "medium"].includes(normalized)) return "warning";
   return "info";
 }
 
