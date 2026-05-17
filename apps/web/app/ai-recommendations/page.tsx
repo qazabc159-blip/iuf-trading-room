@@ -125,7 +125,7 @@ function QualityBadges({ rec }: { rec: StockRecommendation }) {
         </span>
       ))}
       <span data-tone={rec.dataQuality.confidencePenalty > 0 ? "warn" : "ok"}>
-        <b>Penalty</b>
+        <b>信心折減</b>
         {penaltyPct}%
       </span>
     </div>
@@ -253,7 +253,7 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
       <details className="_rec-source">
         <summary>
           <Database size={14} strokeWidth={1.9} />
-          sourceTrail
+          資料來源
         </summary>
         <div>
           {rec.sourceTrail.length > 0 ? (
@@ -261,7 +261,7 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
               <span key={`${source.type}-${source.source}-${source.timestamp}`}>
                 <b>{source.type}</b>
                 {source.source}
-                <small title={source.timestamp} aria-label={`source timestamp ${source.timestamp}`}>
+                <small title={source.timestamp} aria-label={`資料來源時間 ${source.timestamp}`}>
                   {formatSourceTimestamp(source.timestamp)}
                 </small>
               </span>
