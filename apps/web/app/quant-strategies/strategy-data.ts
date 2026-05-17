@@ -240,7 +240,7 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
     cadence: "每週資料",
     basketSize: "目前 6 / 20 收盤錨點",
     accent: "green",
-    displayStatus: null,
+    displayStatus: "WATCH",
     maturity: "覆蓋層候選",
     signal: "挑低 Tier HHI 的持股結構，再用 SBL 風險分數壓掉借券壓力較高的標的。",
     logic: [

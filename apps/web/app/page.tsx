@@ -1905,7 +1905,7 @@ function RealtimeHeatmapPanel({
   const sourceLabel = showKgiFallback
     ? `TWSE 收盤 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`
     : activeMode === "core"
-      ? (hasCore ? "即時" : coreLastTs ? `核心 · 約 1 分鐘前最新報價` : "核心 · 約 1 分鐘前最新報價")
+      ? (hasCore ? "即時" : coreLastTs ? `核心 · ${freshnessText(coreLastTs, "STALE")}前` : "核心 · 資料更新中")
       : `全市場 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`;
   const updatedAt = activeMode === "core"
     ? (loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null)
