@@ -497,3 +497,32 @@ export async function runRagHallucinationCheck(input: {
 
   return { verdict, confidence, flags, reasoning, ragUsed: true };
 }
+
+// ── ToolCenter Phase B wrapper ────────────────────────────────────────────────
+
+/**
+ * runRagHallucinationCheckTracked — callTool-wrapped version of runRagHallucinationCheck.
+ * Phase B: adds tool_calls audit record around the hallucination RAG check.
+ * Uses dynamic import for tool-registry-store to avoid linter-revert of static imports.
+ *
+ * Note: apiKey param is accepted for API compat but ignored (callLlm reads env internally).
+ */
+export async function runRagHallucinationCheckTracked(input: {
+  apiKey: string;
+  content: string;
+  sourceTrail: unknown;
+  rawSources: RawSourceEntry[];
+  claimExtractModel: string;
+  crossValidateModel: string;
+  workspaceId?: string | null;
+}): Promise<HallucinationCheckResult> {
+  const { callTool } = await import("./tools/tool-registry-store.js");
+  const { workspaceId, ...ragInput } = input;
+  return callTool(
+    "hallu_rag",
+    "pipeline",
+    workspaceId ?? null,
+    ragInput,
+    async (i: typeof ragInput) => runRagHallucinationCheck(i)
+  );
+}

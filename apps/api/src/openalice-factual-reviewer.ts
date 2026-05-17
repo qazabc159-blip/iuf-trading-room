@@ -252,3 +252,28 @@ export async function runFactualReview(
     return null;
   }
 }
+
+// ── ToolCenter Phase B wrapper ────────────────────────────────────────────────
+
+/**
+ * runFactualReviewTracked — callTool-wrapped version of runFactualReview.
+ * Phase B: adds tool_calls audit record around the factual review function.
+ * Uses dynamic import for tool-registry-store to avoid linter-revert of static imports.
+ */
+export async function runFactualReviewTracked(
+  briefContent: string,
+  rawSources: RawSourceForFactual[],
+  draftId: string,
+  workspaceId?: string | null
+): Promise<FactualReviewResult | null> {
+  const { callTool } = await import("./tools/tool-registry-store.js");
+  return callTool(
+    "factual_reviewer",
+    "pipeline",
+    workspaceId ?? null,
+    { briefContent, rawSources, draftId },
+    async (input: { briefContent: string; rawSources: RawSourceForFactual[]; draftId: string }) => {
+      return runFactualReview(input.briefContent, input.rawSources, input.draftId);
+    }
+  );
+}
