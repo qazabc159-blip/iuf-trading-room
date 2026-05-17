@@ -18,6 +18,7 @@ import {
   type TwseIndustryHeatmapTile,
 } from "@/lib/api";
 import type { StrategyIdeasView } from "@iuf-trading-room/contracts";
+import { industryLabel, INDUSTRY_LABEL_MAP } from "@/lib/industry-i18n";
 import {
   getKgiPositions,
   getPaperHealth,
@@ -119,7 +120,8 @@ function mapHeatmapTile(tile: TwseIndustryHeatmapTile) {
   const intensity = Math.min(1, Math.abs(pct) / 4);
   const tone = pct > 0.3 ? "up" : pct < -0.3 ? "dn" : "flat";
   return {
-    industry: tile.industry,
+    industry: industryLabel(tile.industry),
+    rawIndustry: tile.industry,
     avgChangePct: pct,
     gainerCount: tile.gainerCount ?? 0,
     loserCount: tile.loserCount ?? 0,
@@ -482,11 +484,13 @@ window.__IUF_FINAL_V031_LIVE__=${jsonScriptValue(payload)};
 window.__IUF_FINAL_V031_API_BASE__=${JSON.stringify(clientApiBase)};
 window.__IUF_FINAL_V031_API_PROXY__="/api/ui-final-v031/backend?path=";
 window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
+window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)};
 (() => {
   let live = window.__IUF_FINAL_V031_LIVE__;
   if (!live || !live.screen) return;
   const apiProxy = window.__IUF_FINAL_V031_API_PROXY__;
   const workspaceSlug = window.__IUF_FINAL_V031_WORKSPACE_SLUG__;
+  const industryLabels = window.__IUF_FINAL_V031_INDUSTRY_LABELS__ || {};
   const $ = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
@@ -560,6 +564,11 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     return enabled ? { enabled:true, symbol, recommendationId, side, entry, stop, target, source } : null;
   };
   const paperPrefill = () => live.prefill || readPaperPrefillFromUrl();
+  const industryLabel = (raw) => {
+    const key = String(raw || "").trim();
+    if (!key) return "未知產業";
+    return industryLabels[key] || key;
+  };
   const sameSym = (left, right) => String(left || "").toUpperCase() === String(right || "").toUpperCase();
   const firstNumber = (value) => {
     const match = String(value || "").replace(/,/g, "").match(/\\d+(?:\\.\\d+)?/);
@@ -664,7 +673,8 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     const intensity = Math.min(1, Math.abs(pct) / 4);
     const tone = pct > 0.3 ? "up" : pct < -0.3 ? "dn" : "flat";
     return {
-      industry: tile.industry,
+      industry: industryLabel(tile.industry),
+      rawIndustry: tile.industry,
       avgChangePct: pct,
       gainerCount: tile.gainerCount || 0,
       loserCount: tile.loserCount || 0,
@@ -673,6 +683,13 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
       intensity: Math.round(intensity * 100),
       label: (pct >= 0 ? "+" : "") + Number(pct).toFixed(2) + "%"
     };
+  }
+
+  function clientHeatmapRows(raw) {
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw?.data)) return raw.data;
+    if (Array.isArray(raw?.data?.data)) return raw.data.data;
+    return [];
   }
 
   function clientMapInstitutional(raw) {
@@ -698,7 +715,7 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
       soft(apiGet("/api/v1/market-intel/news-top10")),
       soft(apiGet("/api/v1/market-intel/announcements?days=30&limit=20&scope=market")),
       soft(apiGet("/api/v1/data-sources/finmind/status")),
-      soft(apiGet("/api/v1/market/heatmap/twse")),
+      soft(apiGetRaw("/api/v1/market/heatmap/twse")),
       soft(apiGet("/api/v1/market/institutional-summary/finmind"))
     ]);
     const news = newsResult.ok ? newsResult.data : null;
@@ -716,7 +733,7 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     const finMindLive = !!finMind && (finMind.state === "LIVE_READY" || (finMind.datasets || []).some((dataset) => dataset.state === "LIVE"));
     const mopsLive = (announcements?.items?.length || 0) > 0 && (announcements?.failures || 0) === 0;
     const aiLive = !!news?.items?.length && news.ai_call_success !== false;
-    const heatmapTiles = (heatmapRaw?.data || []).map(clientMapHeatmapTile);
+    const heatmapTiles = clientHeatmapRows(heatmapRaw).map(clientMapHeatmapTile);
     const institutional = clientMapInstitutional(institutionalRaw);
     return {
       screen: "market-intel",
