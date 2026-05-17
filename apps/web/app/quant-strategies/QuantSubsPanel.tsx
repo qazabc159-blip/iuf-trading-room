@@ -210,7 +210,8 @@ export function QuantSubsPanel() {
           <span>{failures.map((failure) => `${failure.label}: ${failure.reason}`).join(" / ")}</span>
         </div>
       )}
-      <table style={tableStyle}>
+      <div style={tableScrollStyle} tabIndex={0} aria-label="SIM-only subscription records">
+        <table style={tableStyle}>
         <thead>
           <tr>
             <th style={thStyle}>策略</th>
@@ -295,7 +296,8 @@ export function QuantSubsPanel() {
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   );
 }
@@ -354,12 +356,23 @@ const warningBoxStyle: React.CSSProperties = {
   color: "var(--night-ink, #dde6f2)",
   fontSize: 12,
   lineHeight: 1.55,
+  overflowWrap: "anywhere",
   padding: "12px 14px",
   textAlign: "left",
 };
 
+const tableScrollStyle: React.CSSProperties = {
+  width: "100%",
+  maxWidth: "100%",
+  overflowX: "auto",
+  border: "1px solid rgba(220,228,240,0.07)",
+  borderRadius: 8,
+  background: "rgba(255,255,255,0.014)",
+};
+
 const tableStyle: React.CSSProperties = {
   width: "100%",
+  minWidth: 720,
   borderCollapse: "collapse",
   fontSize: 13,
 };
@@ -378,6 +391,7 @@ const tdStyle: React.CSSProperties = {
   borderBottom: "1px solid rgba(220,228,240,0.06)",
   padding: "10px 8px",
   verticalAlign: "top",
+  overflowWrap: "anywhere",
 };
 
 const trStyle: React.CSSProperties = {};
