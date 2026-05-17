@@ -118,9 +118,13 @@ export function CompanyPageStyleBlock() {
 /* ── 知識圖譜 grid — desktop 2-col ── */
 .company-knowledge-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: clamp(16px, 1.8vw, 24px);
   align-items: start;
+  margin-top: 12px;
+}
+.company-knowledge-grid > .panel {
+  margin: 0 !important;
 }
 
 /* Knowledge panel base */
@@ -135,10 +139,10 @@ export function CompanyPageStyleBlock() {
   padding: 24px 0 8px;
 }
 
-/* Mobile: single col */
-@media (max-width: 1280px) {
+/* Ultra-wide: show knowledge + mini-graph side by side when the main column is roomy. */
+@media (min-width: 1500px) {
   .company-knowledge-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   }
 }
 @media (max-width: 768px) {
@@ -147,9 +151,6 @@ export function CompanyPageStyleBlock() {
   }
   .company-side-column { order: -1; }
   ._co-theme-grid { grid-template-columns: 1fr 1fr; }
-  .company-knowledge-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 @media (max-width: 480px) {
   ._co-theme-grid { grid-template-columns: 1fr; }

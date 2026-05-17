@@ -426,8 +426,14 @@ export default async function CompanyDetailPage({
               sourceReason={ohlcvReason}
             />
           </div>
-          {/* ── 深度研究知識面板 — 填補 K 線下方 1712px 空白 (BUG-002 fix) ── */}
-          <CoverageKnowledgePanel ticker={company.ticker} />
+          {/* ── My-TW-Coverage：知識面板 + 上下游圖譜，同區塊露出避免 K 線下方像空白 ── */}
+          <div className="company-knowledge-grid">
+            <CoverageKnowledgePanel ticker={company.ticker} />
+            <IndustryGraphPanel
+              ticker={company.ticker}
+              companyName={company.name}
+            />
+          </div>
         </div>
 
         <aside className="company-side-column">
@@ -504,23 +510,6 @@ export default async function CompanyDetailPage({
 
       <FullProfilePanels companyId={company.id} />
 
-      {/* ── 產業關係圖 section — IndustryGraphPanel 全寬 ── */}
-      <div className="company-tabs-band company-data-dock-title">
-        <div>
-          <span className="tg gold">產業關係圖</span>
-          <strong>供應鏈關係圖譜</strong>
-          <small>同產業上下游公司節點；點擊節點跳至對應公司頁；資料來源 My-TW-Coverage (MIT)。</small>
-        </div>
-        <div className="company-data-dock-tags">
-          <span>圖譜</span>
-          <span>供應鏈</span>
-          <span>主題</span>
-        </div>
-      </div>
-      <IndustryGraphPanel
-        ticker={company.ticker}
-        companyName={company.name}
-      />
     </PageFrame>
   );
 }
