@@ -209,6 +209,54 @@ function StateOnly({
   );
 }
 
+function hasUsableSectionData(section: FullProfileSection<unknown>) {
+  return section.state === "LIVE" || section.state === "STALE";
+}
+
+function fullProfileSummaryItems(envelope: FullProfileEnvelope) {
+  return [
+    { index: "[06]", title: "財報", section: envelope.fundamentals.financialStatement },
+    { index: "[07]", title: "月營收", section: envelope.fundamentals.monthlyRevenue },
+    { index: "[08]", title: "法人籌碼", section: envelope.tradingFlow.institutional },
+    { index: "[09]", title: "融資融券", section: envelope.tradingFlow.marginShort },
+    { index: "[10]", title: "股利政策", section: envelope.marketIntel.dividend },
+  ] satisfies Array<{
+    index: string;
+    title: string;
+    section: FullProfileSection<unknown>;
+  }>;
+}
+
+function FullProfileEmptySummary({ envelope }: { envelope: FullProfileEnvelope }) {
+  const items = fullProfileSummaryItems(envelope);
+
+  return (
+    <section className="panel hud-frame company-intel-panel full-profile-empty-summary">
+      <h3 className="ascii-head">
+        <span className="ascii-head-bracket">[06]-[10]</span> 完整資料區狀態總覽
+        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>FinMind 資料源 / 全空摘要</span>
+      </h3>
+      <div className="state-panel" style={{ marginBottom: 12 }}>
+        <span className="badge badge-yellow">無可用列</span>
+        <span className="tg soft">財報、月營收、法人、融資券、股利目前都沒有可顯示資料。</span>
+        <span className="state-reason">
+          本區收合為摘要，避免用五張空卡拉長公司頁；不補假資料，待來源回補後自動恢復詳細卡片。
+        </span>
+      </div>
+      <div className="metric-grid compact-metric-grid">
+        {items.map(({ index, title, section }) => (
+          <div className="metric-tile" key={index}>
+            <span className="tg soft">{index} {title}</span>
+            <strong>{stateLabel(section.state)}</strong>
+            <span className="tg soft">來源：{section.sourceTrail.source || "FinMind"}</span>
+            <span className="tg soft">更新：{formatTaipei(section.updatedAt)}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function MetricTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="metric-tile">
@@ -788,6 +836,17 @@ export function FullProfilePanels({ companyId }: { companyId: string }) {
   }
 
   const env = state.envelope;
+  const compactEmptyFullProfile = fullProfileSummaryItems(env).every((item) => !hasUsableSectionData(item.section));
+
+  if (compactEmptyFullProfile) {
+    return (
+      <div className="full-profile-grid">
+        <FullProfileEmptySummary envelope={env} />
+        <AnnouncementsSection companyId={companyId} />
+      </div>
+    );
+  }
+
   return (
     <div className="full-profile-grid">
       <FinancialsSection section={env.fundamentals.financialStatement} />
