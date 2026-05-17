@@ -11,10 +11,22 @@
  *   If OpenAI is unavailable, unanswered, or returns a bad response, fall back to
  *   deterministic score-ranked top-10 (newest + most specific title wins).
  *
- * State:
- *   Stored in-memory only — last selection result + when it runs next.
- *   No new DB table required — compatible with existing tw_announcements /
- *   tw_stock_news tables (both in DRAFT migration 0024, safely skipped if missing).
+ * State (F2 — DB-persistent):
+ *   Primary: news_ai_selections DB table (migration 0035).
+ *   Shadow: in-memory _lastResult (fast-path for reads).
+ *   Boot recovery reads DB first — deploy no longer causes never_run.
+ *
+ * LLM Cost Tracking (F4):
+ *   Uses callLlm() from llm-gateway.ts instead of raw fetch.
+ *   Every AI call writes to llm_calls + llm_cost_daily automatically.
+ *
+ * Env validation (F1):
+ *   Startup logs: "news-ai-selector: OPENAI_API_KEY present=YES/NO, model=gpt-4o-mini"
+ *   /api/v1/admin/news-top10/diag returns env_key_present, last_run_id, last_error, in_memory_state
+ *
+ * Boot recovery (F3):
+ *   On startup: read DB for latest row. If latest > 4h old (or absent) — fire immediately.
+ *   No longer gated on 45-min guard for first-fire. Subsequent fires keep 45-min guard.
  *
  * Audit:
  *   On every fire, writes one row to audit_logs with action='news.ai_selection'.
@@ -34,22 +46,31 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { getDb, isDatabaseMode, auditLogs } from "@iuf-trading-room/db";
-import { sql as drizzleSql } from "drizzle-orm";
+import { getDb, isDatabaseMode, auditLogs, newsAiSelections } from "@iuf-trading-room/db";
+import { sql as drizzleSql, desc } from "drizzle-orm";
+import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_MODEL_NEWS = "gpt-4o-mini";
 const MAX_INPUT_ROWS = 200;
 const MAX_TOKENS_RESPONSE = 2000;
-const CALL_TIMEOUT_MS = 20_000;
 // A "window" is 6h wide (covers the gap between any two consecutive 4-window fires).
 const WINDOW_HOURS = 6;
 // How many top-10 items to return
 const TOP_N = 10;
 // Consider selection stale if last run was > 7h ago (1h grace on 6h window)
 const STALE_AFTER_MS = 7 * 60 * 60 * 1000;
+// Boot recovery: if DB latest row is older than 4h, fire immediately
+const BOOT_RECOVERY_MAX_AGE_MS = 4 * 60 * 60 * 1000;
+
+// ── F1: Startup env validation ────────────────────────────────────────────────
+
+/** Log env state at module load time (once per process). */
+const _envKeyPresent = Boolean(process.env["OPENAI_API_KEY"]);
+console.log(
+  `[news-ai-selector] OPENAI_API_KEY present=${_envKeyPresent ? "YES" : "NO"}, model=${OPENAI_MODEL_NEWS}`
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -102,15 +123,28 @@ export interface NewsTop10Result {
   stale_reason: string | null;
 }
 
+// ── F1: Diagnostic state ──────────────────────────────────────────────────────
+
+/** Last error message from AI or DB, surfaced by /diag endpoint. */
+let _lastError: string | null = null;
+
+export function getNewsAiLastError(): string | null {
+  return _lastError;
+}
+
 // ── In-memory state ───────────────────────────────────────────────────────────
 
 let _lastResult: NewsTop10Result | null = null;
 let _lastRunAt: Date | null = null;
+/** True once boot recovery has been attempted this process lifetime. */
+let _bootRecoveryAttempted = false;
 
 /** Export for tests — reset in-memory state */
 export function _resetNewsAiSelectorState(): void {
   _lastResult = null;
   _lastRunAt = null;
+  _bootRecoveryAttempted = false;
+  _lastError = null;
 }
 
 /** Returns the in-memory last result, or null if never run */
@@ -126,13 +160,6 @@ export function getLastNewsRunAt(): Date | null {
 // ── TST window logic ──────────────────────────────────────────────────────────
 
 type WindowLabel = "08:00" | "12:00" | "18:00" | "24:00";
-
-const WINDOW_HOURS_TST: Record<WindowLabel, number> = {
-  "08:00": 8,
-  "12:00": 12,
-  "18:00": 18,
-  "24:00": 0  // midnight = hour 0 of the next day
-};
 
 function getTaipeiHour(): number {
   const now = new Date();
@@ -165,14 +192,6 @@ function getCurrentWindowLabel(): WindowLabel {
  */
 export function isWithinNewsWindowTrigger(): boolean {
   const h = getTaipeiHour();
-  const now = new Date();
-  const mins = now.getUTCMinutes(); // approx; using hour boundaries is fine
-
-  // Allow ±30min around each trigger hour.
-  // 08:00 window: h=7 (last 30min) or h=8 (first 30min)
-  // 12:00 window: h=11 or h=12
-  // 18:00 window: h=17 or h=18
-  // 24:00 window: h=23 or h=0
   const triggerHours = new Set([7, 8, 11, 12, 17, 18, 23, 0]);
   if (!triggerHours.has(h)) return false;
 
@@ -181,7 +200,6 @@ export function isWithinNewsWindowTrigger(): boolean {
     const elapsedMs = Date.now() - _lastRunAt.getTime();
     if (elapsedMs < 45 * 60 * 1000) return false;
   }
-  void mins; // suppress unused-var lint
   return true;
 }
 
@@ -191,7 +209,6 @@ export function isWithinNewsWindowTrigger(): boolean {
  */
 export function computeNextRefreshAt(): string {
   const now = new Date();
-  // Get current TST hour
   const tst = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
     hour: "2-digit",
@@ -204,10 +221,7 @@ export function computeNextRefreshAt(): string {
   const triggerHours = [8, 12, 18, 24]; // 24 = midnight next day
   const nextH = triggerHours.find((t) => t > h) ?? 8; // wrap to next-day 08:00
 
-  // Build a Date for next trigger in TST
   const next = new Date(now);
-  // Calculate TST offset: UTC+8 means TST = UTC+8
-  // Compute UTC time for next TST trigger
   const nowTstHour = h;
   let hoursToAdd = nextH - nowTstHour;
   if (hoursToAdd <= 0) hoursToAdd += 24;
@@ -344,7 +358,7 @@ function deterministicTop10(rows: RawNewsRow[]): NewsAiItem[] {
   }));
 }
 
-// ── OpenAI AI selector ────────────────────────────────────────────────────────
+// ── F4: AI selector via llm-gateway ──────────────────────────────────────────
 
 interface AiNewsSelectionItem {
   id: string;
@@ -394,62 +408,36 @@ ${numbered.join("\n")}
 - 不要解釋、不要前言，只輸出 JSON`;
 }
 
-async function callOpenAiNewsSelector(prompt: string): Promise<AiNewsSelectionResponse | null> {
-  const apiKey = process.env["OPENAI_API_KEY"];
-  if (!apiKey) return null;
-
-  let res: Response;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS);
-    res = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL_NEWS,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: MAX_TOKENS_RESPONSE,
-        temperature: 0.2
-      })
-    });
-    clearTimeout(timeout);
-  } catch (e) {
-    console.warn("[news-ai-selector] OpenAI call failed:", e instanceof Error ? e.message : String(e));
-    return null;
-  }
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(no body)");
-    console.warn(`[news-ai-selector] OpenAI HTTP ${res.status}: ${body.slice(0, 120)}`);
-    return null;
-  }
-
-  let data: { choices?: Array<{ message?: { content?: string } }> };
-  try {
-    data = await res.json();
-  } catch {
-    console.warn("[news-ai-selector] OpenAI response not JSON");
-    return null;
-  }
-
-  const rawContent = data.choices?.[0]?.message?.content ?? null;
-  if (!rawContent) {
-    console.warn("[news-ai-selector] OpenAI returned empty content");
-    return null;
-  }
-
-  // Strip possible markdown code fences
-  const cleaned = rawContent
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
+/**
+ * F4: Call AI via unified llm-gateway (writes llm_calls + llm_cost_daily automatically).
+ * Falls back gracefully on any error.
+ */
+async function callAiNewsSelector(
+  prompt: string,
+  workspaceId: string
+): Promise<AiNewsSelectionResponse | null> {
+  if (!process.env["OPENAI_API_KEY"]) return null;
 
   try {
+    const result = await callLlm(
+      [{ role: "user", content: prompt }],
+      {
+        modelKey: OPENAI_MODEL_NEWS,
+        callerModule: "news_ai_selector",
+        taskType: "news_ranking",
+        workspaceId,
+        maxTokens: MAX_TOKENS_RESPONSE,
+        temperature: 0.2,
+        timeoutMs: 20_000
+      }
+    );
+
+    if (!result?.content) {
+      _lastError = "llm-gateway returned null/empty content";
+      return null;
+    }
+
+    const cleaned = stripCodeFences(result.content);
     const parsed = JSON.parse(cleaned) as unknown;
     if (
       typeof parsed === "object" &&
@@ -457,12 +445,85 @@ async function callOpenAiNewsSelector(prompt: string): Promise<AiNewsSelectionRe
       "selected" in parsed &&
       Array.isArray((parsed as AiNewsSelectionResponse).selected)
     ) {
+      _lastError = null;
       return parsed as AiNewsSelectionResponse;
     }
-    console.warn("[news-ai-selector] Unexpected AI response shape");
+    _lastError = "Unexpected AI response shape";
     return null;
-  } catch {
-    console.warn("[news-ai-selector] Could not parse AI response JSON");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("[news-ai-selector] callLlm failed:", msg);
+    _lastError = msg;
+    return null;
+  }
+}
+
+// ── F2: DB persistence ────────────────────────────────────────────────────────
+
+/**
+ * Persist a selection result to news_ai_selections table.
+ * Fire-and-forget — DB failure never blocks caller.
+ */
+async function persistSelectionToDb(result: NewsTop10Result): Promise<void> {
+  if (!isDatabaseMode()) return;
+  const db = getDb();
+  if (!db) return;
+  try {
+    await db
+      .insert(newsAiSelections)
+      .values({
+        id: result.run_id,
+        runId: result.run_id,
+        asOf: new Date(result.as_of),
+        windowLabel: result.window_label,
+        selectionMode: result.selection_mode,
+        items: result.items,
+        inputRowCount: result.input_row_count,
+        aiCallSuccess: result.ai_call_success
+      })
+      .onConflictDoNothing();
+  } catch (err) {
+    console.warn(
+      "[news-ai-selector] DB persist failed:",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
+
+/**
+ * Load the latest selection from DB.
+ * Returns null if DB unavailable or no rows.
+ */
+export async function loadLatestSelectionFromDb(): Promise<NewsTop10Result | null> {
+  if (!isDatabaseMode()) return null;
+  const db = getDb();
+  if (!db) return null;
+  try {
+    const rows = await db
+      .select()
+      .from(newsAiSelections)
+      .orderBy(desc(newsAiSelections.asOf))
+      .limit(1);
+
+    if (!rows.length) return null;
+    const row = rows[0]!;
+
+    return {
+      run_id: row.runId,
+      as_of: row.asOf.toISOString(),
+      next_refresh_at: computeNextRefreshAt(),
+      window_label: row.windowLabel as WindowLabel,
+      selection_mode: row.selectionMode as SelectionMode,
+      items: (row.items ?? []) as NewsAiItem[],
+      input_row_count: row.inputRowCount,
+      ai_call_success: row.aiCallSuccess,
+      stale_reason: null
+    };
+  } catch (err) {
+    console.warn(
+      "[news-ai-selector] DB load failed:",
+      err instanceof Error ? err.message : String(err)
+    );
     return null;
   }
 }
@@ -509,7 +570,7 @@ async function writeNewsAuditLog(params: {
  * Called by the cron scheduler at 08:00 / 12:00 / 18:00 / 24:00 TST.
  * Also available as a direct call (e.g. manual trigger endpoint).
  *
- * @param workspaceId - Required for audit log attribution
+ * @param workspaceId - Required for audit log attribution and LLM cost tracking
  * @param forcedWindowLabel - Override window label (for manual triggers / tests)
  */
 export async function runNewsAiSelection(params: {
@@ -533,19 +594,13 @@ export async function runNewsAiSelection(params: {
     // No source rows available — return empty result
     items = [];
   } else {
-    // 2. Try AI selection
+    // 2. Try AI selection via llm-gateway (F4)
     const prompt = buildNewsPrompt(rawRows);
-    const aiResponse = await callOpenAiNewsSelector(prompt);
+    const aiResponse = await callAiNewsSelector(prompt, params.workspaceId);
 
     if (aiResponse && aiResponse.selected.length > 0) {
       // Map AI selection back to full row data
       const rowById = new Map(rawRows.map((r, idx) => [r.id ?? `row-${idx}`, r]));
-
-      // Map AI-selected ids back to the original row data.
-      // If the AI hallucinated an id that doesn't exist in rawRows, skip that item
-      // rather than storing a "(id not found: …)" placeholder in the persistent state.
-      // After filtering out bad ids, fill any remaining slots with deterministic-ranked
-      // rows that were NOT already selected, so we always try to surface TOP_N items.
       const aiMappedItems: NewsAiItem[] = [];
       const aiSelectedIds = new Set<string>();
 
@@ -553,8 +608,6 @@ export async function runNewsAiSelection(params: {
         const sel = aiResponse.selected[idx]!;
         const row = rowById.get(sel.id);
         if (!row) {
-          // AI returned an id that doesn't match any fetched row — skip silently.
-          // Log for debugging but do NOT surface "(id not found: …)" to the client.
           console.warn(`[news-ai-selector] AI returned unknown id="${sel.id}" — skipping`);
           continue;
         }
@@ -575,7 +628,6 @@ export async function runNewsAiSelection(params: {
       }
 
       // If AI hallucination left us short of TOP_N, pad with deterministic fallback items
-      // that were not already selected by AI.
       if (aiMappedItems.length < TOP_N) {
         const deterministic = deterministicTop10(rawRows);
         for (const fallbackItem of deterministic) {
@@ -584,7 +636,6 @@ export async function runNewsAiSelection(params: {
           aiMappedItems.push({
             ...fallbackItem,
             rank: aiMappedItems.length + 1,
-            // Clear AI-enriched fields since this is a fallback item
             why_matters: null,
             impact_tier: null,
             tags: []
@@ -593,7 +644,6 @@ export async function runNewsAiSelection(params: {
       }
 
       items = aiMappedItems;
-
       aiCallSuccess = true;
       selectionMode = "ai";
     } else {
@@ -619,7 +669,10 @@ export async function runNewsAiSelection(params: {
   _lastResult = result;
   _lastRunAt = new Date();
 
-  // 5. Write audit log (non-fatal)
+  // 5. F2: Persist to DB (fire-and-forget — never blocks)
+  void persistSelectionToDb(result);
+
+  // 6. Write audit log (non-fatal)
   const selectionSummary = items.slice(0, 3).map((i) => i.headline.slice(0, 40)).join(" | ");
   await writeNewsAuditLog({
     workspaceId: params.workspaceId,
@@ -670,18 +723,58 @@ export async function runNewsAiSelectionTick(workspaceId: string): Promise<void>
 }
 
 /**
- * Boot-recovery runner — fires unconditionally on server start (no window gate).
- * Called once with a short delay after startup so the endpoint is never stale_reason=never_run
- * for long stretches outside the 4 trigger windows.
+ * F3: Boot recovery — fires immediately if DB latest is > 4h old (or absent).
+ * Called 30s after server startup. Does NOT wait for window trigger.
  *
- * Unlike runNewsAiSelectionTick, this bypasses isWithinNewsWindowTrigger().
- * It still respects the 45-min double-fire guard (_lastRunAt).
+ * Logic:
+ * 1. If in-memory _lastResult exists and < 4h old → skip (already fresh, e.g. hot reload).
+ * 2. Load DB latest. If < 4h old → seed in-memory, skip AI call (warm restart).
+ * 3. Otherwise → run full selection immediately (cold deploy, stale DB).
+ *
+ * The _bootRecoveryAttempted guard ensures this runs at most once per process lifetime.
+ * Subsequent refreshes are handled by the 15-min cron tick (isWithinNewsWindowTrigger).
  */
 export async function runNewsAiSelectionBootRecovery(workspaceId: string): Promise<void> {
-  // Skip if already ran in the last 45 minutes (e.g. server restarted near a window)
-  if (_lastRunAt) {
-    const elapsedMs = Date.now() - _lastRunAt.getTime();
-    if (elapsedMs < 45 * 60 * 1000) return;
+  // Only run once per process lifetime
+  if (_bootRecoveryAttempted) return;
+  _bootRecoveryAttempted = true;
+
+  // Fast path: already have fresh in-memory result (e.g. hot reload, test)
+  if (_lastResult && _lastRunAt) {
+    const ageMs = Date.now() - _lastRunAt.getTime();
+    if (ageMs < BOOT_RECOVERY_MAX_AGE_MS) {
+      console.log("[news-ai-selector] boot recovery: in-memory result fresh, skipping");
+      return;
+    }
   }
-  await runNewsAiSelection({ workspaceId });
+
+  // F3: Try to load from DB first (avoids unnecessary AI call on warm restart)
+  const dbResult = await loadLatestSelectionFromDb();
+  if (dbResult) {
+    const ageMs = Date.now() - new Date(dbResult.as_of).getTime();
+    if (ageMs < BOOT_RECOVERY_MAX_AGE_MS) {
+      // DB has fresh data — seed in-memory, skip AI call
+      console.log(
+        `[news-ai-selector] boot recovery: loaded from DB (${Math.round(ageMs / 60000)}min old), seeding memory`
+      );
+      _lastResult = dbResult;
+      _lastRunAt = new Date(dbResult.as_of);
+      return;
+    }
+    // DB data is stale (>4h) — fall through to full fire
+    console.log(
+      `[news-ai-selector] boot recovery: DB result is ${Math.round(ageMs / (60 * 60 * 1000))}h old, firing fresh selection`
+    );
+  } else {
+    console.log("[news-ai-selector] boot recovery: no DB result found, firing fresh selection");
+  }
+
+  // Full fire — no 45-min guard on first boot (deploys should always get fresh data)
+  try {
+    await runNewsAiSelection({ workspaceId });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[news-ai-selector] boot recovery run failed:", msg);
+    _lastError = `boot_recovery_failed: ${msg}`;
+  }
 }

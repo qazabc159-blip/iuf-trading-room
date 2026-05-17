@@ -247,6 +247,9 @@ import {
 import {
   getNewsTop10WithStaleness,
   getLastNewsTop10,
+  getLastNewsRunAt,
+  getNewsAiLastError,
+  loadLatestSelectionFromDb,
   runNewsAiSelection,
   runNewsAiSelectionTick,
   runNewsAiSelectionBootRecovery
@@ -11903,6 +11906,60 @@ app.post("/api/v1/admin/news-top10/force-refresh", async (c) => {
   }));
 
   return c.json({ data: result });
+});
+
+// =============================================================================
+// ADMIN: News Top-10 Diagnostics (F1)
+// =============================================================================
+//
+// GET /api/v1/admin/news-top10/diag
+//   Owner-only. Returns env validation + in-memory state + DB latest summary.
+//   Does NOT expose the API key itself — only present=true/false.
+// =============================================================================
+
+app.get("/api/v1/admin/news-top10/diag", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const lastResult = getLastNewsTop10();
+  const lastRunAt = getLastNewsRunAt();
+  const lastError = getNewsAiLastError();
+
+  // Load DB latest without triggering a new run
+  const dbLatest = await loadLatestSelectionFromDb().catch(() => null);
+
+  return c.json({
+    data: {
+      env_key_present: Boolean(process.env["OPENAI_API_KEY"]),
+      model: "gpt-4o-mini",
+      in_memory_state: lastResult
+        ? {
+            run_id: lastResult.run_id,
+            as_of: lastResult.as_of,
+            window_label: lastResult.window_label,
+            selection_mode: lastResult.selection_mode,
+            item_count: lastResult.items.length,
+            ai_call_success: lastResult.ai_call_success,
+            stale_reason: lastResult.stale_reason
+          }
+        : null,
+      last_run_at: lastRunAt?.toISOString() ?? null,
+      last_run_id: lastResult?.run_id ?? null,
+      last_error: lastError,
+      db_latest: dbLatest
+        ? {
+            run_id: dbLatest.run_id,
+            as_of: dbLatest.as_of,
+            window_label: dbLatest.window_label,
+            selection_mode: dbLatest.selection_mode,
+            item_count: dbLatest.items.length,
+            ai_call_success: dbLatest.ai_call_success
+          }
+        : null
+    }
+  });
 });
 
 /**
