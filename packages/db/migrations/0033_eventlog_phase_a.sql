@@ -12,13 +12,20 @@
 --   W4: no monetary columns — N/A
 --   N4: no partial-fill concept — N/A
 
+-- LISTEN/NOTIFY channel naming convention (Phase B push):
+--   Channel format: el_stream_<stream_id_hex>  (UUID with hyphens removed, 32 hex chars)
+--   Example: LISTEN el_stream_550e8400e29b41d4a716446655440000
+--   Rationale: PostgreSQL channel names are case-sensitive and limited to 63 bytes.
+--              Using the stream UUID hex (32 chars) keeps channels unique and within limits.
+--   Consumers: LISTEN before query; producer NOTIFY after INSERT commit (outside TX).
+
 -- Table 1: el_event_streams
 -- Registry of known event streams. Each stream is identified by (workspace_id, stream_type, stream_id).
 -- stream_type: category of stream (e.g. "strategy", "order", "workspace")
 -- stream_id:   entity-specific key (e.g. "cont_liq_v36", "order-uuid")
 CREATE TABLE IF NOT EXISTS el_event_streams (
   id            UUID        NOT NULL DEFAULT gen_random_uuid(),
-  workspace_id  UUID        NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  workspace_id  UUID        NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
   -- stream_type: logical category for grouping events (strategy / order / workspace / session / kgi)
   stream_type   TEXT        NOT NULL,
   -- stream_id: entity-level key within the stream_type namespace (e.g. strategy canonical id)
@@ -60,12 +67,12 @@ CREATE TABLE IF NOT EXISTS el_events (
   -- recorded_at: server write time (always server-assigned)
   recorded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT el_events_pkey PRIMARY KEY (id),
+  -- seq must be a positive integer (1-based); seq=0 would indicate a generation bug
+  CONSTRAINT el_events_seq_positive CHECK (seq > 0),
   -- full per-stream ordering guarantee
   CONSTRAINT el_events_stream_seq_uidx UNIQUE (stream_id, seq)
 );
 
--- fast stream replay: scan events for a stream in seq order
-CREATE INDEX IF NOT EXISTS el_events_stream_seq_idx ON el_events (stream_id, seq ASC);
 -- fast event-type queries across streams
 CREATE INDEX IF NOT EXISTS el_events_event_type_recorded_idx ON el_events (event_type, recorded_at DESC);
 -- fast time-travel query: events for a stream up to a given occurred_at
