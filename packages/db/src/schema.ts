@@ -731,6 +731,56 @@ export const llmCostDaily = pgTable(
   })
 );
 
+// -- Portfolio Snapshots -- migration 0037_portfolio_snapshots.sql
+// Trading-as-Git Phase A: portfolio state version control.
+// Each snapshot is a "git commit" of the full positions object.
+// parent_id forms a linked list (null = root).
+export const portfolioSnapshots = pgTable(
+  "portfolio_snapshots",
+  {
+    id:            uuid("id").defaultRandom().primaryKey(),
+    workspaceId:   uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    // parent_id: self-referential FK declared in SQL migration. Drizzle doesn't support
+    // recursive table self-reference at declaration time, so FK is SQL-only (migration 0037).
+    parentId:      uuid("parent_id"),
+    // positions: object keyed by ticker — { [ticker]: { shares, avgCost, sector?, lastPrice? } }
+    positions:     jsonb("positions").notNull().default({}),
+    // trigger: what caused this snapshot to be taken
+    trigger:       text("trigger").notNull(),
+    // trigger_ref_id: optional reference to triggering entity (strategy run id, order id, etc.)
+    triggerRefId:  text("trigger_ref_id"),
+    metadata:      jsonb("metadata").notNull().default({}),
+    createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    workspaceCreatedIdx: index("portfolio_snapshots_workspace_created_idx").on(table.workspaceId, table.createdAt.desc()),
+    parentIdx:           index("portfolio_snapshots_parent_idx").on(table.parentId)
+  })
+);
+
+export const portfolioDiffs = pgTable(
+  "portfolio_diffs",
+  {
+    id:               uuid("id").defaultRandom().primaryKey(),
+    // from_snapshot_id: older snapshot (null = diff from empty portfolio)
+    fromSnapshotId:   uuid("from_snapshot_id").references(() => portfolioSnapshots.id, { onDelete: "restrict" }),
+    // to_snapshot_id: newer snapshot that was just created
+    toSnapshotId:     uuid("to_snapshot_id").notNull().references(() => portfolioSnapshots.id, { onDelete: "restrict" }),
+    // added_positions: tickers present in to but not from
+    addedPositions:   jsonb("added_positions").notNull().default({}),
+    // removed_positions: tickers present in from but not to
+    removedPositions: jsonb("removed_positions").notNull().default({}),
+    // changed_positions: tickers in both but with different field values
+    changedPositions: jsonb("changed_positions").notNull().default({}),
+    summary:          text("summary").notNull().default(""),
+    createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    fromSnapshotIdx: index("portfolio_diffs_from_snapshot_idx").on(table.fromSnapshotId),
+    toSnapshotIdx:   index("portfolio_diffs_to_snapshot_idx").on(table.toSnapshotId)
+  })
+);
+
 // -- News AI Selections -- migration 0035_news_ai_selections.sql
 // Persists each AI news selection run result.
 // Boot recovery reads latest row instead of starting with never_run state.
@@ -748,5 +798,51 @@ export const newsAiSelections = pgTable(
   },
   (table) => ({
     asOfIdx: index("news_ai_selections_as_of_idx").on(table.asOf.desc())
+  })
+);
+
+// -- ToolCenter Phase A -- migration 0038_toolcenter_phase_a.sql
+// Central manifest registry for OpenAlice tools.
+// Phase A: registry + audit records only (no logic changes to underlying tools).
+
+export const tools = pgTable(
+  "tools",
+  {
+    id:           uuid("id").defaultRandom().primaryKey(),
+    toolKey:      text("tool_key").notNull().unique(),
+    toolType:     text("tool_type").notNull(),
+    displayName:  text("display_name"),
+    description:  text("description"),
+    inputSchema:  jsonb("input_schema").notNull().default({}),
+    outputSchema: jsonb("output_schema").notNull().default({}),
+    isActive:     boolean("is_active").notNull().default(true),
+    capabilities: jsonb("capabilities").notNull().default({}),
+    createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    typeIdx:   index("tools_type_idx").on(table.toolType),
+    activeIdx: index("tools_active_idx").on(table.isActive)
+  })
+);
+
+export const toolCalls = pgTable(
+  "tool_calls",
+  {
+    id:            uuid("id").defaultRandom().primaryKey(),
+    toolKey:       text("tool_key").notNull(),
+    callerType:    text("caller_type").notNull(),
+    workspaceId:   uuid("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
+    inputSummary:  text("input_summary"),
+    outputSummary: text("output_summary"),
+    status:        text("status").notNull(),
+    latencyMs:     integer("latency_ms"),
+    errorMessage:  text("error_message"),
+    createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    keyCreatedIdx:  index("tool_calls_key_created_idx").on(table.toolKey, table.createdAt.desc()),
+    workspaceIdx:   index("tool_calls_workspace_idx").on(table.workspaceId),
+    statusIdx:      index("tool_calls_status_idx").on(table.status),
+    createdAtIdx:   index("tool_calls_created_at_idx").on(table.createdAt.desc())
   })
 );
