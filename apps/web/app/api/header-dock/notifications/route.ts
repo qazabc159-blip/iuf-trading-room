@@ -109,8 +109,14 @@ function normalizeNotification(value: unknown, index: number): NormalizedNotific
   if (!source) return null;
 
   const type = stringField(source, "type");
-  const createdAt = stringField(source, "createdAt") ?? stringField(source, "occurredAt") ?? stringField(source, "timestamp");
-  const readAt = stringField(source, "readAt") ?? (source["read"] === true ? createdAt ?? new Date(0).toISOString() : null);
+  const createdAt = stringField(source, "createdAt")
+    ?? stringField(source, "created_at")
+    ?? stringField(source, "occurredAt")
+    ?? stringField(source, "occurred_at")
+    ?? stringField(source, "timestamp");
+  const readAt = stringField(source, "readAt")
+    ?? stringField(source, "read_at")
+    ?? (source["read"] === true || source["is_read"] === true ? createdAt ?? new Date(0).toISOString() : null);
   const metadata = objectRecord(source["metadata"]) ?? undefined;
 
   return {
@@ -122,7 +128,7 @@ function normalizeNotification(value: unknown, index: number): NormalizedNotific
     severity: normalizeSeverity(source["severity"]),
     createdAt,
     occurredAt: createdAt,
-    href: normalizeHref(source["href"] ?? source["actionUrl"], type),
+    href: normalizeHref(source["href"] ?? source["actionUrl"] ?? source["action_url"], type),
     readAt,
     ...(metadata ? { metadata } : {}),
   };
