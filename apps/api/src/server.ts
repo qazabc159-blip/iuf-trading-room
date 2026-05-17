@@ -14380,6 +14380,150 @@ app.post("/api/v1/admin/content-drafts/retry-review", async (c) => {
   return handleAdminContentDraftsRetryReview(c);
 });
 
+
+// =============================================================================
+// UTA (Unified Trading Account) — Phase A routes (2026-05-17)
+// BrokerAdapter abstraction layer — /api/v1/uta/*
+// Owner-only (matches trading/orders auth level).
+// AGPL compliance: design inspired by OpenAlice README/docs; all code is IUF-original.
+// =============================================================================
+
+// GET /api/v1/uta/adapters — list registered broker adapters
+app.get("/api/v1/uta/adapters", async (c) => {
+  const { isDatabaseMode, getDb, brokerAdapters } = await import("@iuf-trading-room/db");
+  if (!isDatabaseMode()) {
+    return c.json({
+      data: {
+        adapters: [
+          {
+            adapterKey: "kgi",
+            displayName: "凱基證券 (KGI)",
+            capabilities: { oddLot: true, marginTrading: true, shortSelling: true, afterHoursFixing: false, simModeAvailable: true, maxSubscriptions: 40 },
+            isActive: true,
+          },
+          {
+            adapterKey: "paper",
+            displayName: "Paper Trading",
+            capabilities: { oddLot: true, marginTrading: true, shortSelling: true, afterHoursFixing: false, simModeAvailable: true, maxSubscriptions: 9999 },
+            isActive: true,
+          },
+        ],
+      },
+    });
+  }
+  const db = getDb();
+  if (!db) return c.json({ data: { adapters: [] } });
+  const rows = await db.select().from(brokerAdapters).orderBy(brokerAdapters.adapterKey);
+  return c.json({
+    data: {
+      adapters: rows.map((row) => ({
+        adapterKey: row.adapterKey,
+        displayName: row.displayName,
+        capabilities: {
+          oddLot: row.capOddLot,
+          marginTrading: row.capMarginTrading,
+          shortSelling: row.capShortSelling,
+          afterHoursFixing: row.capAfterHoursFix,
+          simModeAvailable: row.capSimMode,
+          maxSubscriptions: row.capMaxSubscriptions,
+        },
+        isActive: row.isActive,
+      })),
+    },
+  });
+});
+
+// POST /api/v1/uta/orders — submit a unified order through the specified adapter
+app.post("/api/v1/uta/orders", async (c) => {
+  const bodySchema = z.object({
+    adapterKey: z.enum(["kgi", "paper"]),
+    symbol: z.string().min(1),
+    action: z.enum(["Buy", "Sell"]),
+    qty: z.number().int().positive(),
+    priceType: z.enum(["Market", "Limit", "LimitUp", "LimitDown"]),
+    limitPrice: z.number().positive().optional(),
+    orderCond: z.enum(["Cash", "Margin", "ShortSelling", "LendSelling"]).optional(),
+    oddLot: z.boolean().optional(),
+  });
+
+  let body: z.infer<typeof bodySchema>;
+  try {
+    body = bodySchema.parse(await c.req.json());
+  } catch (err) {
+    return c.json({ error: "Invalid request body", details: String(err) }, 400);
+  }
+
+  const session = c.get("session");
+  const workspaceId = (session.workspace as { id?: string } | undefined)?.id;
+  if (!workspaceId) return c.json({ error: "Workspace not resolved" }, 400);
+
+  const input = {
+    symbol: body.symbol,
+    action: body.action,
+    qty: body.qty,
+    priceType: body.priceType,
+    limitPrice: body.limitPrice,
+    orderCond: body.orderCond,
+    oddLot: body.oddLot,
+  };
+
+  const { createUnifiedOrder, updateUnifiedOrderSubmitted, updateUnifiedOrderRejected } =
+    await import("./broker/unified-order-store.js");
+  const actorId = (session.user as { id?: string } | undefined)?.id ?? null;
+  const record = await createUnifiedOrder(workspaceId, body.adapterKey, input, actorId);
+
+  try {
+    let submitResult: { externalOrderId: string; status: string };
+    if (body.adapterKey === "paper") {
+      const { PaperBrokerAdapter } = await import("./broker/paper-broker-adapter.js");
+      const adapter = new PaperBrokerAdapter(session);
+      submitResult = await adapter.submitOrder(input);
+    } else {
+      const { KgiBrokerAdapter } = await import("./broker/kgi-broker-adapter.js");
+      const config = { gatewayBaseUrl: process.env.KGI_GATEWAY_URL ?? "http://127.0.0.1:8787" };
+      const adapter = new KgiBrokerAdapter(config);
+      submitResult = await adapter.submitOrder(input);
+    }
+
+    await updateUnifiedOrderSubmitted(record.id, submitResult.externalOrderId, submitResult);
+    return c.json({ data: { id: record.id, status: "submitted", adapterKey: body.adapterKey, externalOrderId: submitResult.externalOrderId } }, 201);
+  } catch (err) {
+    await updateUnifiedOrderRejected(record.id, { error: String(err) });
+    return c.json({ error: "Adapter rejected order", details: String(err), data: { id: record.id, status: "rejected" } }, 422);
+  }
+});
+
+// GET /api/v1/uta/positions — unified positions from adapter
+app.get("/api/v1/uta/positions", async (c) => {
+  const adapterKey = c.req.query("adapterKey") ?? "paper";
+  const session = c.get("session");
+  try {
+    if (adapterKey === "paper") {
+      const { PaperBrokerAdapter } = await import("./broker/paper-broker-adapter.js");
+      const positions = await new PaperBrokerAdapter(session).getPositions();
+      return c.json({ data: { positions, adapterKey } });
+    } else if (adapterKey === "kgi") {
+      const { KgiBrokerAdapter } = await import("./broker/kgi-broker-adapter.js");
+      const positions = await new KgiBrokerAdapter({ gatewayBaseUrl: process.env.KGI_GATEWAY_URL ?? "http://127.0.0.1:8787" }).getPositions();
+      return c.json({ data: { positions, adapterKey } });
+    } else {
+      return c.json({ error: "Unknown adapterKey: " + adapterKey }, 400);
+    }
+  } catch (err) {
+    return c.json({ data: { positions: [], adapterKey }, warning: String(err) });
+  }
+});
+
+// GET /api/v1/uta/orders — list recent unified orders for the workspace
+app.get("/api/v1/uta/orders", async (c) => {
+  const session = c.get("session");
+  const workspaceId = (session.workspace as { id?: string } | undefined)?.id;
+  if (!workspaceId) return c.json({ error: "Workspace not resolved" }, 400);
+  const { listUnifiedOrders } = await import("./broker/unified-order-store.js");
+  const orders = await listUnifiedOrders(workspaceId);
+  return c.json({ data: { orders } });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
