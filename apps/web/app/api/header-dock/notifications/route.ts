@@ -131,9 +131,12 @@ function normalizeNotification(value: unknown, index: number): NormalizedNotific
 export async function GET(request: NextRequest) {
   const query = new URLSearchParams();
   const limit = request.nextUrl.searchParams.get("limit");
-  const unreadOnly = request.nextUrl.searchParams.get("unread_only");
+  const unreadOnly = request.nextUrl.searchParams.get("unread_only") ?? request.nextUrl.searchParams.get("unread");
   if (limit) query.set("limit", limit);
-  if (unreadOnly) query.set("unread_only", unreadOnly);
+  if (unreadOnly) {
+    query.set("unread_only", unreadOnly);
+    query.set("unread", unreadOnly);
+  }
 
   if (!API_BASE) {
     return emptyPayload({ source: "unavailable", reason: "API_BASE_UNCONFIGURED" });
