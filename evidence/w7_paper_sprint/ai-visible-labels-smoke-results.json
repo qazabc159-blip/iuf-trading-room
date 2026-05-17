@@ -1,0 +1,26 @@
+[
+  {
+    "name": "list-desktop",
+    "url": "/ai-recommendations",
+    "viewport": {
+      "width": 1366,
+      "height": 900
+    },
+    "screenshotName": "ai-visible-labels-list-1366x900.png",
+    "errors": [],
+    "scrollOk": true,
+    "forbiddenFound": []
+  },
+  {
+    "name": "detail-mobile",
+    "url": "/ai-recommendations/SMOKE-2330-AI-LABELS",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "screenshotName": "ai-visible-labels-detail-mobile-390x844.png",
+    "errors": [],
+    "scrollOk": true,
+    "forbiddenFound": []
+  }
+]
