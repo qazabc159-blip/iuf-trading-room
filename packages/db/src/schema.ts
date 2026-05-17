@@ -666,6 +666,74 @@ export const unifiedOrders = pgTable(
   })
 );
 
+// ── EventLog Phase A — migration 0033_eventlog_phase_a.sql ───────────────────
+// Append-only event store with per-stream sequence numbers and time-travel API.
+// NOTE: "el_" prefix used to avoid collision with iuf_events (migration 0025, event-rule-engine).
+// AGPL compliance: design-only inspiration from OpenAlice README/docs. All code is IUF-original.
+
+export const elEventStreams = pgTable(
+  "el_event_streams",
+  {
+    id:          uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    // stream_type: logical category (strategy / order / workspace / session / kgi)
+    streamType:  text("stream_type").notNull(),
+    // stream_id: entity key within stream_type namespace (e.g. "cont_liq_v36")
+    streamId:    text("stream_id").notNull(),
+    metadata:    jsonb("metadata").notNull().default({}),
+    createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    workspaceTypeIdUidx: uniqueIndex("el_event_streams_workspace_type_id_uidx").on(
+      table.workspaceId, table.streamType, table.streamId
+    ),
+    workspaceIdx: index("el_event_streams_workspace_idx").on(table.workspaceId),
+    typeIdx:      index("el_event_streams_type_idx").on(table.streamType)
+  })
+);
+
+export const elEvents = pgTable(
+  "el_events",
+  {
+    id:            uuid("id").defaultRandom().primaryKey(),
+    streamId:      uuid("stream_id").notNull().references(() => elEventStreams.id, { onDelete: "restrict" }),
+    // seq: per-stream monotonic sequence number. Generated inside TX: SELECT MAX(seq)+1 FOR UPDATE.
+    seq:           bigint("seq", { mode: "number" }).notNull(),
+    // event_type: dotted namespaced string e.g. "strategy.subscribed", "order.filled"
+    eventType:     text("event_type").notNull(),
+    // schema_version: payload format version (1 = Phase A). Increment on breaking payload changes.
+    schemaVersion: integer("schema_version").notNull().default(1),
+    // actor_id: null for system-generated events (cron, scheduler)
+    actorId:       uuid("actor_id"),
+    payload:       jsonb("payload").notNull().default({}),
+    // occurred_at: business clock — when the event happened (caller-supplied or defaults to now)
+    occurredAt:    timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+    // recorded_at: server write clock — always server-assigned
+    recordedAt:    timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    streamSeqUidx:       uniqueIndex("el_events_stream_seq_uidx").on(table.streamId, table.seq),
+    // NOTE: el_events_stream_seq_idx removed — UNIQUE (stream_id, seq) already builds a B-tree index.
+    // Adding a separate CREATE INDEX on the same columns would double write cost with zero read benefit.
+    eventTypeRecordedIdx: index("el_events_event_type_recorded_idx").on(table.eventType, table.recordedAt),
+    streamOccurredIdx:   index("el_events_stream_occurred_idx").on(table.streamId, table.occurredAt)
+  })
+);
+
+export const elEventSnapshots = pgTable(
+  "el_event_snapshots",
+  {
+    id:        uuid("id").defaultRandom().primaryKey(),
+    streamId:  uuid("stream_id").notNull().references(() => elEventStreams.id, { onDelete: "restrict" }),
+    // up_to_seq: snapshot covers stream state through (inclusive) this seq.
+    upToSeq:   bigint("up_to_seq", { mode: "number" }).notNull(),
+    state:     jsonb("state").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    streamSeqIdx: index("el_event_snapshots_stream_seq_idx").on(table.streamId, table.upToSeq)
+  })
+);
 
 // -- Brain Phase A -- migration 0034_brain_phase_a.sql
 // LLM model registry + call ledger + daily cost rollup.

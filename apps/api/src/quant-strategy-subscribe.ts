@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { auditLogs, getDb, isDatabaseMode } from "@iuf-trading-room/db";
 import type { AppSession } from "@iuf-trading-room/contracts";
+import { appendEvent } from "./events/event-log-store.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -298,6 +299,31 @@ async function appendSubscribeAuditLog(params: {
   } catch (err) {
     console.warn(
       "[quant-strategy-subscribe] audit log write failed:",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+
+  // EventLog Phase A: double-write to el_events (additive, fire-and-forget).
+  // Failure here MUST NOT propagate -- audit_logs is the primary write path.
+  // Stream: strategy/<strategyId> in the workspace.
+  try {
+    await appendEvent({
+      workspaceId: params.workspaceId,
+      streamType: "strategy",
+      streamId: params.strategyId,
+      eventType: "strategy.subscribed",
+      payload: {
+        strategy_id: params.strategyId,
+        capital_twd: params.capitalTwd,
+        sim_only: true,
+        subscription_id: params.subscriptionId,
+        ...(params.aliasFrom !== undefined ? { alias_from: params.aliasFrom } : {}),
+      },
+      actorId: params.actorId,
+    });
+  } catch (err) {
+    console.warn(
+      "[quant-strategy-subscribe] EventLog double-write failed (non-fatal):",
       err instanceof Error ? err.message : String(err)
     );
   }
