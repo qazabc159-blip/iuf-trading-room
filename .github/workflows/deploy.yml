@@ -79,9 +79,12 @@ jobs:
       #
       # Security:
       # - Does not print credentials to logs.
-      # - Route B: if SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets are missing,
-      #   emits ::warning:: and skips (exit 0) — does NOT hard-fail.
-      # - If secrets ARE set and verify fails, BLOCKING (exit 1).
+      # - SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets are REQUIRED (hard-fail if missing).
+      #   Root cause 2026-05-18: Route B (skip-on-missing-secrets) allowed 6 silent failures.
+      #   Route B is permanently removed. Both secrets must be set in GHA secrets.
+      # - If verify fails for any reason, deploy is BLOCKED (exit 1).
+      # - EXPECTED_MIGRATION_COUNT must be updated in Railway env vars when new migrations are added.
+      #   Current value: 37 (migrations 0001-0038, excluding 0027 DRAFT).
       - name: Verify migrations applied (api only)
         if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
         continue-on-error: false
@@ -98,8 +101,9 @@ jobs:
           echo "Health: $HEALTH"
 
           if [ -z "${SEED_OWNER_EMAIL:-}" ] || [ -z "${SEED_OWNER_PASSWORD:-}" ]; then
-            echo "::warning::SEED_OWNER_EMAIL or SEED_OWNER_PASSWORD secret not set — skipping migration verify (Route B)"
-            exit 0
+            echo "::error::SEED_OWNER_EMAIL or SEED_OWNER_PASSWORD secret not set — cannot verify migrations. Add secrets to GHA or deploy will be treated as unverified."
+            echo "::error::Root cause: 2026-05-18 silent migration failure caused prod schema drift. Route B (skip) permanently removed."
+            exit 1
           fi
 
           COOKIE_JAR="/tmp/iuf_cookies.txt"
@@ -185,10 +189,11 @@ jobs:
           fi
 
           # Hard check: migration count must match expected total.
-          # Update EXPECTED_MIGRATION_COUNT when adding new migrations.
-          EXPECTED_MIGRATION_COUNT=31
+          # UPDATE THIS VALUE whenever a new migration is added (0001..0038 = 37 files; 0027 is DRAFT only).
+          # Root cause 2026-05-18: this was 31 (stale), allowing 6 undetected migration failures.
+          EXPECTED_MIGRATION_COUNT=37
           if [ "$COUNT" != "$EXPECTED_MIGRATION_COUNT" ]; then
-            echo "::error::Migration count mismatch: expected $EXPECTED_MIGRATION_COUNT but got $COUNT. Check Railway boot logs for migration errors."
+            echo "::error::Migration count mismatch: expected $EXPECTED_MIGRATION_COUNT but got $COUNT. Check Railway boot logs for advisory lock contention or migration errors."
             exit 1
           fi
 
