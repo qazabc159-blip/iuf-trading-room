@@ -71,12 +71,24 @@ export function RecommendationHandoffLink({
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (event.defaultPrevented) return;
     if (event.button !== 0) return;
-    if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+    recordActed(recommendationId);
+  }
+
+  function handleAuxClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.defaultPrevented) return;
+    if (event.button !== 1) return;
     recordActed(recommendationId);
   }
 
   return (
-    <Link className="_rec-prefill" href={href} aria-label={handoffLabel} title={handoffLabel} onClick={handleClick}>
+    <Link
+      className="_rec-prefill"
+      href={href}
+      aria-label={handoffLabel}
+      title={handoffLabel}
+      onClick={handleClick}
+      onAuxClick={handleAuxClick}
+    >
       {children}
       {directionLabel ? (
         <span className="_rec-prefill-side" aria-hidden="true">
