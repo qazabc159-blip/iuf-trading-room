@@ -2822,6 +2822,41 @@ test("market data overview summarizes providers, coverage, and leaders", async (
   assert.equal(overview.leaders.mostActive[0]?.symbol, "2330");
 });
 
+// PERF-OVERVIEW-1: getMarketDataOverview must NOT call listCompanies (full SELECT *).
+// It must use listCompaniesLite — avoids 3470-row JSONB full SELECT + Zod parse overhead.
+// Regression introduced between Bruce cycle 3 and cycle 4 (TTFB 1.22s → 16.2s) was traced
+// to this hot path. Verify the lite path is used by wrapping listCompanies with a spy.
+test("getMarketDataOverview does not call listCompanies full-column query (uses lite path)", async () => {
+  const baseRepo = new MemoryTradingRoomRepository();
+  const session = { workspace: { slug: `perf-overview-${randomUUID()}` } };
+  const wsSession = await baseRepo.getSession({ workspaceSlug: session.workspace.slug });
+
+  let fullSelectCallCount = 0;
+  const spyRepo = new Proxy(baseRepo, {
+    get(target, prop) {
+      if (prop === "listCompanies") {
+        return (...args: unknown[]) => {
+          fullSelectCallCount++;
+          return (target.listCompanies as (...a: unknown[]) => unknown)(...args);
+        };
+      }
+      return (target as Record<string | symbol, unknown>)[prop];
+    }
+  });
+
+  await getMarketDataOverview({
+    session: wsSession,
+    repo: spyRepo,
+    includeStale: true
+  });
+
+  assert.equal(
+    fullSelectCallCount,
+    0,
+    `getMarketDataOverview must not call listCompanies (full SELECT) — got ${fullSelectCallCount} call(s). Use listCompaniesLite instead.`
+  );
+});
+
 test("risk runtime stores per-account limits and kill switch state", async () => {
   const repo = new MemoryTradingRoomRepository();
   const session = await repo.getSession({

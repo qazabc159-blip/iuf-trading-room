@@ -25,7 +25,7 @@ import {
 } from "@iuf-trading-room/contracts";
 import { companiesOhlcv, getDb } from "@iuf-trading-room/db";
 import type { CompanyLite, TradingRoomRepository } from "@iuf-trading-room/domain";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { getFinMindClient, getFinMindStats } from "./data-sources/finmind-client.js";
@@ -165,6 +165,11 @@ type DailyBarContextRow = {
 // 5-min in-process cache for listCompaniesLite — avoids 3470-row full SELECT on every page load.
 const _companiesLiteCache = new Map<string, { data: CompanyLite[]; expiresAt: number }>();
 const COMPANIES_LITE_TTL_MS = 5 * 60 * 1000;
+
+// 10-min in-process cache for daily OHLCV rows — avoids repeated companiesOhlcv DB query on
+// every /api/v1/market-data/overview call. OHLCV data is daily-granularity; 10-min TTL is safe.
+const _dailyBarRowsCache = new Map<string, { data: DailyBarContextRow[]; expiresAt: number }>();
+const DAILY_BAR_ROWS_TTL_MS = 10 * 60 * 1000;
 
 export async function getCompaniesLiteCached(
   repo: TradingRoomRepository,
@@ -1459,9 +1464,19 @@ async function loadDailyBarRowsFromDb(input: {
   const db = getDb();
   if (!db || input.companies.length === 0) return [];
 
-  const companyIds = input.companies.map((company) => company.id);
+  // Cache key by workspace — OHLCV data is daily-granularity, 10-min TTL is safe.
+  const cacheKey = input.session.workspace.id;
+  const now = Date.now();
+  const cachedResult = _dailyBarRowsCache.get(cacheKey);
+  if (cachedResult && cachedResult.expiresAt > now) {
+    return cachedResult.data;
+  }
+
   const companyById = new Map(input.companies.map((company) => [company.id, company]));
 
+  // Query by workspaceId + interval + source only (no inArray on 3470 UUIDs).
+  // PostgreSQL uses companies_ohlcv_workspace_dt_idx (workspaceId, dt) — no IN-clause scan.
+  // Filter to known companyIds in memory after the query.
   const rows = await db
     .select({
       companyId: companiesOhlcv.companyId,
@@ -1476,11 +1491,10 @@ async function loadDailyBarRowsFromDb(input: {
     .where(and(
       eq(companiesOhlcv.workspaceId, input.session.workspace.id),
       eq(companiesOhlcv.interval, "1d"),
-      ne(companiesOhlcv.source, "mock"),
-      inArray(companiesOhlcv.companyId, companyIds)
+      ne(companiesOhlcv.source, "mock")
     ))
     .orderBy(desc(companiesOhlcv.dt))
-    .limit(Math.max(250, Math.min(5000, companyIds.length * 5)));
+    .limit(5000);
 
   const byCompany = new Map<string, Array<{
     dt: string;
@@ -1543,7 +1557,9 @@ async function loadDailyBarRowsFromDb(input: {
     }
   }
 
-  return [...bySymbol.values()];
+  const result = [...bySymbol.values()];
+  _dailyBarRowsCache.set(cacheKey, { data: result, expiresAt: now + DAILY_BAR_ROWS_TTL_MS });
+  return result;
 }
 
 function getLatestDailyContextDate(
@@ -3237,10 +3253,13 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
     providerQuoteCache.delete(workspaceSlug);
     providerQuoteHistoryCache.delete(workspaceSlug);
     persistedQuoteHistoryLoaded.delete(workspaceSlug);
+    // _dailyBarRowsCache is keyed by workspaceId (UUID), not slug — clear all on slug reset.
+    _dailyBarRowsCache.clear();
     return;
   }
 
   providerQuoteCache.clear();
   providerQuoteHistoryCache.clear();
   persistedQuoteHistoryLoaded.clear();
+  _dailyBarRowsCache.clear();
 }
