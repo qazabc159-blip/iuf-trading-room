@@ -447,7 +447,6 @@ export async function markHeaderDockNotificationRead(id: string): Promise<void> 
     method: "POST",
     cache: "no-store",
     credentials: "include",
-    keepalive: true,
   });
   if (!response.ok && response.status !== 204) {
     throw new Error(`Notification mark-read failed: ${response.status}`);
