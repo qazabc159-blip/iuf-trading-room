@@ -11374,6 +11374,70 @@ test("BRAIN-PHB-2: brief-strategy-commentary getLastBriefStrategyCommentary retu
   _resetLlmGatewayForTests();
 });
 
+// ── TOOLCENTER-PA: ToolCenter Phase A unit tests ─────────────────────────────
+
+test("TOOLCENTER-PA-1: listTools returns empty array in non-DB mode (graceful degradation)", async () => {
+  const { listTools } = await import("../apps/api/src/tools/tool-registry-store.js");
+  const result = await listTools();
+  assert.ok(Array.isArray(result), "TOOLCENTER-PA-1: listTools must return an array in non-DB mode");
+  assert.equal(result.length, 0, "TOOLCENTER-PA-1: non-DB mode must return empty array");
+});
+
+test("TOOLCENTER-PA-2: getToolByKey returns null in non-DB mode (graceful degradation)", async () => {
+  const { getToolByKey } = await import("../apps/api/src/tools/tool-registry-store.js");
+  const result = await getToolByKey("ai_reviewer");
+  assert.equal(result, null, "TOOLCENTER-PA-2: getToolByKey must return null in non-DB mode");
+});
+
+test("TOOLCENTER-PA-3: callTool executes fn and returns result (memory-mode safe)", async () => {
+  const { callTool } = await import("../apps/api/src/tools/tool-registry-store.js");
+
+  let fnCalled = false;
+  const result = await callTool(
+    "ai_reviewer",
+    "cron",
+    null,
+    { draftId: "test-draft-1" },
+    async (input: { draftId: string }) => {
+      fnCalled = true;
+      return { processed: true, draftId: input.draftId };
+    }
+  );
+
+  assert.ok(fnCalled, "TOOLCENTER-PA-3: fn must be called even in non-DB mode");
+  assert.deepEqual(result, { processed: true, draftId: "test-draft-1" }, "TOOLCENTER-PA-3: callTool must return fn result");
+});
+
+test("TOOLCENTER-PA-4: callTool re-throws fn errors (failure recording + rethrow)", async () => {
+  const { callTool } = await import("../apps/api/src/tools/tool-registry-store.js");
+
+  let threw = false;
+  try {
+    await callTool(
+      "content_drafts_retry",
+      "admin_action",
+      "ws-test-1",
+      {},
+      async (_input: unknown) => {
+        throw new Error("simulated tool failure");
+      }
+    );
+  } catch (e) {
+    threw = true;
+    assert.ok(e instanceof Error, "TOOLCENTER-PA-4: thrown error must be an Error instance");
+    assert.equal((e as Error).message, "simulated tool failure", "TOOLCENTER-PA-4: original error message must be preserved");
+  }
+
+  assert.ok(threw, "TOOLCENTER-PA-4: callTool must re-throw fn errors");
+});
+
+test("TOOLCENTER-PA-5: getToolStats returns empty array in non-DB mode", async () => {
+  const { getToolStats } = await import("../apps/api/src/tools/tool-registry-store.js");
+  const result = await getToolStats({ windowMs: 24 * 60 * 60 * 1000 });
+  assert.ok(Array.isArray(result), "TOOLCENTER-PA-5: getToolStats must return an array");
+  assert.equal(result.length, 0, "TOOLCENTER-PA-5: non-DB mode must return empty array");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {

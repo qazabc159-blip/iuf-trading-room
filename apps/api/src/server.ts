@@ -14898,6 +14898,82 @@ app.get("/api/v1/admin/llm/usage", async (c) => {
   return c.json({ data: summary });
 });
 
+// =============================================================================
+// ToolCenter Phase A -- central manifest registry (2026-05-18, Yang critical)
+// GET  /api/v1/tools/registry              -- list active tools (Owner-only)
+// GET  /api/v1/tools/registry/:toolKey     -- single tool detail (Owner-only)
+// GET  /api/v1/tools/calls?toolKey=&limit= -- recent call log (Owner-only)
+// GET  /api/v1/tools/stats?window=24h      -- per-tool stats (Owner-only)
+// =============================================================================
+
+// GET /api/v1/tools/registry -- list active tools
+app.get("/api/v1/tools/registry", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+  const toolTypeParam = c.req.query("toolType") as string | undefined;
+  const isActiveParam = c.req.query("isActive");
+  const isActive = isActiveParam === "false" ? false : true;
+
+  const { listTools } = await import("./tools/tool-registry-store.js");
+  const rows = await listTools({
+    toolType: toolTypeParam as ("llm" | "data_sync" | "review" | "admin_action" | "cron") | undefined,
+    isActive
+  });
+  return c.json({ data: { tools: rows, total: rows.length } });
+});
+
+// GET /api/v1/tools/registry/:toolKey -- single tool detail
+app.get("/api/v1/tools/registry/:toolKey", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+  const toolKey = c.req.param("toolKey");
+  const { getToolByKey } = await import("./tools/tool-registry-store.js");
+  const tool = await getToolByKey(toolKey);
+  if (!tool) {
+    return c.json({ error: "NOT_FOUND" }, 404);
+  }
+  return c.json({ data: { tool } });
+});
+
+// GET /api/v1/tools/calls?toolKey=&limit= -- recent tool call log
+app.get("/api/v1/tools/calls", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+  const toolKey = c.req.query("toolKey") ?? undefined;
+  const limit = Math.min(Number(c.req.query("limit") ?? "50"), 200);
+
+  const { listToolCalls } = await import("./tools/tool-registry-store.js");
+  const calls = await listToolCalls({ toolKey, limit });
+  return c.json({ data: { calls, total: calls.length } });
+});
+
+// GET /api/v1/tools/stats?window=24h -- per-tool aggregate stats
+app.get("/api/v1/tools/stats", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+  const windowParam = c.req.query("window") ?? "24h";
+  let windowMs: number;
+  if (windowParam.endsWith("d")) {
+    windowMs = parseInt(windowParam) * 24 * 60 * 60 * 1000;
+  } else if (windowParam.endsWith("h")) {
+    windowMs = parseInt(windowParam) * 60 * 60 * 1000;
+  } else {
+    windowMs = parseInt(windowParam) || 24 * 60 * 60 * 1000;
+  }
+
+  const { getToolStats } = await import("./tools/tool-registry-store.js");
+  const stats = await getToolStats({ windowMs });
+  return c.json({ data: { stats, windowMs, generatedAt: new Date().toISOString() } });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 

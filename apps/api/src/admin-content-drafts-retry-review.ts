@@ -210,3 +210,24 @@ export async function handleAdminContentDraftsRetryReview(
 
   return c.json({ data: result });
 }
+
+// ── ToolCenter Phase A wrapper ────────────────────────────────────────────────
+
+/**
+ * retryContentDraftReviewTracked — callTool-wrapped version of retryContentDraftReview.
+ * Phase A: adds tool_calls audit record around the existing retry function.
+ * Uses dynamic import for tool-registry-store to avoid linter-revert of static imports.
+ */
+export async function retryContentDraftReviewTracked(
+  workspaceId: string,
+  input: RetryReviewRequest
+): Promise<RetryReviewResult> {
+  const { callTool } = await import("./tools/tool-registry-store.js");
+  return callTool(
+    "content_drafts_retry",
+    "admin_action",
+    workspaceId,
+    input,
+    async (req: RetryReviewRequest) => retryContentDraftReview(workspaceId, req)
+  );
+}

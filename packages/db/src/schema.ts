@@ -818,3 +818,49 @@ export const newsAiSelections = pgTable(
     asOfIdx: index("news_ai_selections_as_of_idx").on(table.asOf.desc())
   })
 );
+
+// -- ToolCenter Phase A -- migration 0038_toolcenter_phase_a.sql
+// Central manifest registry for OpenAlice tools.
+// Phase A: registry + audit records only (no logic changes to underlying tools).
+
+export const tools = pgTable(
+  "tools",
+  {
+    id:           uuid("id").defaultRandom().primaryKey(),
+    toolKey:      text("tool_key").notNull().unique(),
+    toolType:     text("tool_type").notNull(),
+    displayName:  text("display_name"),
+    description:  text("description"),
+    inputSchema:  jsonb("input_schema").notNull().default({}),
+    outputSchema: jsonb("output_schema").notNull().default({}),
+    isActive:     boolean("is_active").notNull().default(true),
+    capabilities: jsonb("capabilities").notNull().default({}),
+    createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    typeIdx:   index("tools_type_idx").on(table.toolType),
+    activeIdx: index("tools_active_idx").on(table.isActive)
+  })
+);
+
+export const toolCalls = pgTable(
+  "tool_calls",
+  {
+    id:            uuid("id").defaultRandom().primaryKey(),
+    toolKey:       text("tool_key").notNull(),
+    callerType:    text("caller_type").notNull(),
+    workspaceId:   uuid("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
+    inputSummary:  text("input_summary"),
+    outputSummary: text("output_summary"),
+    status:        text("status").notNull(),
+    latencyMs:     integer("latency_ms"),
+    errorMessage:  text("error_message"),
+    createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    keyCreatedIdx:  index("tool_calls_key_created_idx").on(table.toolKey, table.createdAt.desc()),
+    workspaceIdx:   index("tool_calls_workspace_idx").on(table.workspaceId),
+    statusIdx:      index("tool_calls_status_idx").on(table.status),
+    createdAtIdx:   index("tool_calls_created_at_idx").on(table.createdAt.desc())
+  })
+);
