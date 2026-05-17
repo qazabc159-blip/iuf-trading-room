@@ -22,6 +22,13 @@ function safeRecommendationId(value: string) {
   return id;
 }
 
+function jsonError(error: string, status: number) {
+  return NextResponse.json(
+    { ok: false, error },
+    { status, headers: NO_STORE_HEADERS },
+  );
+}
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -29,55 +36,67 @@ export async function POST(
   const { id: rawId } = await context.params;
   const id = safeRecommendationId(rawId);
   if (!id) {
-    return NextResponse.json(
-      { ok: false, error: "BAD_RECOMMENDATION_ID" },
-      { status: 400, headers: NO_STORE_HEADERS },
-    );
+    return jsonError("BAD_RECOMMENDATION_ID", 400);
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "BAD_JSON" },
-      { status: 400, headers: NO_STORE_HEADERS },
-    );
+    return jsonError("BAD_JSON", 400);
   }
 
   const payload = body && typeof body === "object" ? body as { reaction?: unknown; note?: unknown } : {};
   if (typeof payload.reaction !== "string" || !REACTIONS.has(payload.reaction)) {
-    return NextResponse.json(
-      { ok: false, error: "BAD_REACTION" },
-      { status: 400, headers: NO_STORE_HEADERS },
-    );
+    return jsonError("BAD_REACTION", 400);
   }
 
   const note = typeof payload.note === "string" ? payload.note.slice(0, 500) : undefined;
 
   if (!API_BASE) {
+    return jsonError("API_BASE_UNCONFIGURED", 503);
+  }
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(
+      `${API_BASE}/api/v1/recommendations/${encodeURIComponent(id)}/feedback`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "x-workspace-slug": request.headers.get("x-workspace-slug") ?? WORKSPACE_SLUG,
+          ...(request.headers.get("cookie") ? { Cookie: request.headers.get("cookie") as string } : {}),
+        },
+        body: JSON.stringify({ reaction: payload.reaction, ...(note ? { note } : {}) }),
+      },
+    );
+  } catch {
+    return jsonError("UPSTREAM_UNAVAILABLE", 502);
+  }
+
+  let text: string;
+  try {
+    text = await upstream.text();
+  } catch {
+    return jsonError("UPSTREAM_READ_FAILED", 502);
+  }
+
+  const contentType = upstream.headers.get("content-type") ?? "application/json; charset=utf-8";
+  if (!text && upstream.status === 204) {
+    return new NextResponse(null, {
+      status: 204,
+      headers: NO_STORE_HEADERS,
+    });
+  }
+  if (!text) {
     return NextResponse.json(
-      { ok: false, error: "API_BASE_UNCONFIGURED" },
-      { status: 503, headers: NO_STORE_HEADERS },
+      { ok: upstream.ok },
+      { status: upstream.status, headers: NO_STORE_HEADERS },
     );
   }
 
-  const upstream = await fetch(
-    `${API_BASE}/api/v1/recommendations/${encodeURIComponent(id)}/feedback`,
-    {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        "x-workspace-slug": request.headers.get("x-workspace-slug") ?? WORKSPACE_SLUG,
-        ...(request.headers.get("cookie") ? { Cookie: request.headers.get("cookie") as string } : {}),
-      },
-      body: JSON.stringify({ reaction: payload.reaction, ...(note ? { note } : {}) }),
-    },
-  );
-
-  const contentType = upstream.headers.get("content-type") ?? "application/json; charset=utf-8";
-  const text = await upstream.text();
   return new NextResponse(text || JSON.stringify({ ok: upstream.ok }), {
     status: upstream.status,
     headers: {
