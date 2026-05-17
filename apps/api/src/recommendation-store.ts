@@ -253,7 +253,7 @@ function computeAction(
   if (hasMissingData) return "資料不足暫不推薦";
   if (gateStatus === "FAIL") return "高風險排除";
   if (totalScore >= 80) return "今日首選";
-  if (totalScore >= 70) return "可布局";
+  if (totalScore >= 70) return "可觀察布局（研究參考）";
   if (totalScore >= 60) return "等回檔";
   return "高風險排除";
 }
@@ -522,7 +522,7 @@ const MOCK_RECS: Omit<StockRecommendation, "date" | "generatedAt">[] = [
     ticker: "0050",
     companyName: "元大台灣50",
     rank: 2,
-    action: "可布局",
+    action: "可觀察布局（研究參考）",
     direction: "偏多",
     timeHorizon: "波段",
     confidence: 0.71,

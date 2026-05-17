@@ -22,8 +22,10 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # EC2 self-hosted runner (Windows Server 2022, i-03762861d4ce08932, ap-east-2)
+    # Saves GHA hosted-runner quota — runner labels: self-hosted, Windows, X64, iuf-prod
+    runs-on: [self-hosted, iuf-prod]
+    timeout-minutes: 30
     permissions:
       contents: read
 

@@ -5,7 +5,7 @@ import { z } from "zod";
 
 export const recommendationActionSchema = z.enum([
   "今日首選",
-  "可布局",
+  "可觀察布局（研究參考）",
   "等回檔",
   "高風險排除",
   "資料不足暫不推薦"
