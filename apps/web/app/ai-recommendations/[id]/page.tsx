@@ -12,6 +12,7 @@ import {
 } from "@/lib/ai-recommendation-handoff";
 import { RecommendationFeedbackActions } from "../RecommendationFeedbackActions";
 import { RecommendationHandoffLink, RecommendationHandoffUnavailable } from "../RecommendationHandoffLink";
+import { formatRecommendationSourceMode } from "../source-mode-label";
 import { formatRecommendationTimestamp, formatSourceTimestamp } from "../source-trail-time";
 
 export const dynamic = "force-dynamic";
@@ -201,7 +202,10 @@ export default async function AiRecommendationDetailPage({
   if (!rec) return <ErrorState message={error ?? "推薦詳情不存在。"} />;
 
   const prefillHref = buildRecommendationPrefillHref(rec);
-  const sourceMode = data?._mock ? "FALLBACK FEED" : "ORCHESTRATOR";
+  const sourceMode = formatRecommendationSourceMode({
+    hasData: Boolean(data),
+    isMock: Boolean(data?._mock),
+  });
   const generatedAtLabel = formatRecommendationTimestamp(rec.generatedAt);
 
   return (

@@ -45,14 +45,13 @@ import {
 import { fetchStrategySnapshot } from "./lab-strategy-snapshot-fetcher.js";
 import { getLastNewsTop10 } from "./news-ai-selector.js";
 import { listMarketQuotes } from "./market-data.js";
+import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_MODEL = "gpt-4o-mini";
-const OPENAI_TIMEOUT_MS = 15_000;
 // OpenAI daily budget: max 10 calls per news window fire
 const MAX_OPENAI_CALLS_PER_NEWS_FIRE = 10;
+const OPENAI_TIMEOUT_MS = 15_000;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -232,8 +231,7 @@ async function extractNewsSignalViaOpenAI(
   why_matters: string | null,
   tags: string[]
 ): Promise<NewsSignalExtraction | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!process.env.OPENAI_API_KEY) return null;
 
   // Extract ticker candidate from tags (e.g. "2330", "TSMC")
   const tickerCandidate = tags.find((t) => /^\d{4}$/.test(t) || /^[A-Z]{2,6}$/.test(t)) ?? null;
@@ -254,32 +252,16 @@ Reply ONLY with valid JSON matching this schema exactly:
 
 If you cannot determine a clear ticker or direction, reply: {"ticker":null,"direction":null,"confidence_score":0,"rationale":"unclear"}`;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+  const result = await callLlm(
+    [{ role: "user", content: prompt }],
+    { callerModule: "signal_emitter", taskType: "news_signal", maxTokens: 200, temperature: 0.1, timeoutMs: OPENAI_TIMEOUT_MS }
+  );
+  const text = result?.content ?? null;
+  if (!text) return null;
+
   try {
-    const res = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 200,
-        temperature: 0.1
-      }),
-      signal: controller.signal
-    });
-    if (!res.ok) {
-      console.warn(`[signal-emitter] OpenAI HTTP ${res.status} for news signal extraction`);
-      return null;
-    }
-    const json = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const text = json.choices?.[0]?.message?.content ?? "";
-    const parsed = JSON.parse(text.trim()) as NewsSignalExtraction & { ticker: string | null; direction: string | null };
+    const raw = stripCodeFences(text.trim());
+    const parsed = JSON.parse(raw) as NewsSignalExtraction & { ticker: string | null; direction: string | null };
     if (!parsed.ticker || !parsed.direction || parsed.confidence_score < 0.5) return null;
     if (parsed.direction !== "bullish" && parsed.direction !== "bearish") return null;
     return {
@@ -289,14 +271,8 @@ If you cannot determine a clear ticker or direction, reply: {"ticker":null,"dire
       rationale: parsed.rationale ?? ""
     };
   } catch (e) {
-    if (e instanceof Error && e.name === "AbortError") {
-      console.warn("[signal-emitter] OpenAI timeout for news signal extraction");
-    } else {
-      console.warn("[signal-emitter] OpenAI error:", e instanceof Error ? e.message : e);
-    }
+    console.warn("[signal-emitter] JSON parse error:", e instanceof Error ? e.message : e);
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 

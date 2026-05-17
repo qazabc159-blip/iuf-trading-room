@@ -17,6 +17,18 @@ const nextConfig: NextConfig = {
         destination: "/quant-strategies",
         statusCode: 301,
       },
+      // F2: /heatmap → /market-intel (楊董直接打 URL 找不到頁面 BUG #4 fix)
+      {
+        source: "/heatmap",
+        destination: "/market-intel",
+        statusCode: 301,
+      },
+      // F3: /news → /market-intel (同上)
+      {
+        source: "/news",
+        destination: "/market-intel",
+        statusCode: 301,
+      },
     ];
   },
 };

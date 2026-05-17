@@ -39,7 +39,7 @@ import {
 import { enqueueOpenAliceJob } from "./openalice-bridge.js";
 import { fireAiReviewerForDraft } from "./openalice-ai-reviewer.js";
 import { approveContentDraft, createContentDraft, dailyBriefPayloadSchema } from "./content-draft-store.js";
-import { callOpenAi, MODEL_ROUTINE, stripCodeFences } from "./openai-quota-guard.js";
+import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
 import {
   getTwseMarketOverview,
   getTwseIndustryHeatmap,
@@ -1224,14 +1224,10 @@ ${sourceContext}${liveSnapshotBlock}`;
 
   const raw = input.reason === "historical_backfill"
     ? null
-    : await callOpenAi({
-        model: MODEL_ROUTINE,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 1_400,
-        temperature: 0.2,
-        label: "daily_brief_direct_generator_v3",
-        timeoutMs: 25_000
-      });
+    : (await callLlm(
+        [{ role: "user", content: prompt }],
+        { callerModule: "brief_writer", taskType: "generation", maxTokens: 1_400, temperature: 0.2, timeoutMs: 25_000 }
+      ))?.content ?? null;
 
   const payload = parseDirectBriefPayload(raw, input.sourcePack) ?? buildSourceOnlyBriefPayload(input.sourcePack);
 

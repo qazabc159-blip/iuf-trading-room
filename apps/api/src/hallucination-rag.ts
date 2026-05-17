@@ -17,7 +17,8 @@
  *                     OPENAI_HALLUCINATION_VERIFY_MODEL (default gpt-4.1)
  */
 
-const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
+import { callLlm } from "./llm/llm-gateway.js";
+
 const CLAIM_EXTRACT_TIMEOUT_MS = 20_000;
 const CROSS_VALIDATE_TIMEOUT_MS = 30_000;
 const MAX_CLAIMS = 12;
@@ -60,20 +61,7 @@ export type HallucinationCheckResult = {
   ragUsed: boolean;
 };
 
-// ─── internal OpenAI helper ────────────────────────────────────────────────────
-
-function extractChoiceContent(respData: unknown): string | null {
-  if (
-    respData &&
-    typeof respData === "object" &&
-    "choices" in respData &&
-    Array.isArray((respData as { choices: unknown[] }).choices)
-  ) {
-    const first = (respData as { choices: { message?: { content?: unknown } }[] }).choices[0];
-    if (first?.message?.content) return String(first.message.content);
-  }
-  return null;
-}
+// ─── internal OpenAI helper (now delegates to llm-gateway) ───────────────────────
 
 async function callOpenAI(input: {
   apiKey: string;
@@ -82,41 +70,21 @@ async function callOpenAI(input: {
   maxTokens: number;
   timeoutMs: number;
 }): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
-  let res: Response;
-  try {
-    res = await fetch(OPENAI_CHAT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${input.apiKey}`
-      },
-      body: JSON.stringify({
-        model: input.model,
-        messages: [{ role: "user", content: input.prompt }],
-        max_tokens: input.maxTokens,
-        temperature: 0.1
-      }),
-      signal: AbortSignal.timeout(input.timeoutMs)
-    });
-  } catch (e) {
-    return { ok: false, error: `network_error: ${e instanceof Error ? e.message : String(e)}` };
-  }
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(no body)");
-    return { ok: false, error: `http_${res.status}: ${body.slice(0, 120)}` };
-  }
-
-  let data: unknown;
-  try {
-    data = await res.json();
-  } catch {
-    return { ok: false, error: "json_parse_error" };
-  }
-
-  const text = extractChoiceContent(data);
-  if (!text) return { ok: false, error: "empty_response" };
-  return { ok: true, text };
+  // apiKey is ignored — callLlm reads OPENAI_API_KEY internally
+  void input.apiKey;
+  const result = await callLlm(
+    [{ role: "user", content: input.prompt }],
+    {
+      modelKey: input.model,
+      callerModule: "hallucination_rag",
+      taskType: "verification",
+      maxTokens: input.maxTokens,
+      temperature: 0.1,
+      timeoutMs: input.timeoutMs
+    }
+  );
+  if (!result) return { ok: false, error: "llm_gateway_null" };
+  return { ok: true, text: result.content };
 }
 
 function stripFence(raw: string): string {

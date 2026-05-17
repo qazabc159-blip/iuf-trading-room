@@ -32,7 +32,8 @@ import { BidAskPanel }           from "./BidAskPanel";
 import { LiveTickStreamPanel }   from "./LiveTickStreamPanel";
 import { InstitutionalPanel }    from "./InstitutionalPanel";
 import { MarginShortPanel }      from "./MarginShortPanel";
-import { CoverageSection }       from "./CoverageSection";
+import { CoverageKnowledgePanel } from "./CoverageKnowledgePanel";
+import { IndustryGraphPanel }    from "./IndustryGraphPanel";
 
 function tone(value: number | null | undefined) {
   if (typeof value !== "number") return "muted";
@@ -425,6 +426,8 @@ export default async function CompanyDetailPage({
               sourceReason={ohlcvReason}
             />
           </div>
+          {/* ── 深度研究知識面板 — 填補 K 線下方 1712px 空白 (BUG-002 fix) ── */}
+          <CoverageKnowledgePanel ticker={company.ticker} />
         </div>
 
         <aside className="company-side-column">
@@ -501,21 +504,23 @@ export default async function CompanyDetailPage({
 
       <FullProfilePanels companyId={company.id} />
 
-      {/* ── 深度研究 section — My-TW-Coverage integration (PR feat/api-coverage-endpoints-2026-05-15) ── */}
+      {/* ── 產業關係圖 section — IndustryGraphPanel 全寬 ── */}
       <div className="company-tabs-band company-data-dock-title">
         <div>
-          <span className="tg gold">深度研究</span>
-          <strong>My-TW-Coverage 知識圖譜</strong>
-          <small>業務簡介、供應鏈位置、主要客戶與供應商、主題雷達；資料來源 MIT 授權，點擊展開。</small>
+          <span className="tg gold">產業關係圖</span>
+          <strong>供應鏈關係圖譜</strong>
+          <small>同產業上下游公司節點；點擊節點跳至對應公司頁；資料來源 My-TW-Coverage (MIT)。</small>
         </div>
         <div className="company-data-dock-tags">
-          <span>業務</span>
+          <span>圖譜</span>
           <span>供應鏈</span>
-          <span>客戶</span>
           <span>主題</span>
         </div>
       </div>
-      <CoverageSection ticker={company.ticker} />
+      <IndustryGraphPanel
+        ticker={company.ticker}
+        companyName={company.name}
+      />
     </PageFrame>
   );
 }
