@@ -14899,11 +14899,124 @@ app.get("/api/v1/admin/llm/usage", async (c) => {
 });
 
 // =============================================================================
+// OpenAlice Trading-as-Git Phase A — Portfolio Snapshot routes (2026-05-18)
+// POST   /api/v1/portfolio/snapshots          — create a new snapshot (Owner)
+// GET    /api/v1/portfolio/snapshots           — list snapshots, cursor-based (Owner)
+// GET    /api/v1/portfolio/snapshots/diff      — compute diff between two snapshots (Owner)
+// GET    /api/v1/portfolio/snapshots/:id       — get single snapshot (Owner)
+// =============================================================================
+
+const portfolioSnapshotCreateSchema = z.object({
+  positions:     z.record(z.string(), z.object({
+    shares:    z.number().nonnegative(),
+    avgCost:   z.number().nonnegative(),
+    sector:    z.string().optional(),
+    lastPrice: z.number().nonnegative().optional()
+  })),
+  trigger:       z.enum(["manual", "strategy_run", "eod_auto", "rollback"]),
+  triggerRefId:  z.string().optional(),
+  metadata:      z.record(z.string(), z.unknown()).optional()
+});
+
+// POST /api/v1/portfolio/snapshots — create a new portfolio snapshot
+app.post("/api/v1/portfolio/snapshots", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+
+  let body: unknown;
+  try { body = await c.req.json(); } catch {
+    return c.json({ error: "INVALID_JSON" }, 400);
+  }
+
+  let parsed: z.infer<typeof portfolioSnapshotCreateSchema>;
+  try {
+    parsed = portfolioSnapshotCreateSchema.parse(body);
+  } catch (err) {
+    return c.json({ error: "VALIDATION_ERROR", detail: err instanceof ZodError ? err.issues : String(err) }, 400);
+  }
+
+  const { createSnapshot } = await import("./portfolio-snapshot-store.js");
+  try {
+    const snapshot = await createSnapshot({
+      workspaceId:  session.workspace.id,
+      positions:    parsed.positions,
+      trigger:      parsed.trigger,
+      triggerRefId: parsed.triggerRefId ?? null,
+      metadata:     parsed.metadata ?? {}
+    });
+    return c.json({ data: snapshot }, 201);
+  } catch (err) {
+    console.error("[portfolio/snapshots] createSnapshot error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "CREATE_FAILED" }, 500);
+  }
+});
+
+// GET /api/v1/portfolio/snapshots/diff?from=ID&to=ID — compute diff between two snapshots
+// NOTE: must be declared BEFORE /:id route to avoid Hono matching "diff" as an id param
+app.get("/api/v1/portfolio/snapshots/diff", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+
+  const fromId = c.req.query("from");
+  const toId   = c.req.query("to");
+  if (!fromId || !toId) {
+    return c.json({ error: "MISSING_PARAMS", message: "from and to query params are required" }, 400);
+  }
+
+  const { computeSnapshotDiff } = await import("./portfolio-snapshot-store.js");
+  const diff = await computeSnapshotDiff(fromId, toId);
+  if (!diff) {
+    return c.json({ error: "NOT_FOUND", message: "One or both snapshots not found" }, 404);
+  }
+
+  return c.json({ data: diff });
+});
+
+// GET /api/v1/portfolio/snapshots?limit=20&before=ID — list snapshots (newest first)
+app.get("/api/v1/portfolio/snapshots", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+
+  const limit  = Math.min(Math.max(1, Number(c.req.query("limit") ?? "20")), 100);
+  const before = c.req.query("before") ?? null;
+
+  const { listSnapshots } = await import("./portfolio-snapshot-store.js");
+  const snapshots = await listSnapshots({ workspaceId: session.workspace.id, limit, before });
+
+  return c.json({ data: snapshots, count: snapshots.length });
+});
+
+// GET /api/v1/portfolio/snapshots/:id — get single snapshot + its diffs
+app.get("/api/v1/portfolio/snapshots/:id", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "FORBIDDEN" }, 403);
+  }
+
+  const id = c.req.param("id");
+  const { getSnapshotById, getSnapshotDiffs } = await import("./portfolio-snapshot-store.js");
+  const [snapshot, diffs] = await Promise.all([getSnapshotById(id), getSnapshotDiffs(id)]);
+
+  if (!snapshot) {
+    return c.json({ error: "NOT_FOUND" }, 404);
+  }
+
+  return c.json({ data: { ...snapshot, diffs } });
+});
+
+// =============================================================================
 // ToolCenter Phase A -- central manifest registry (2026-05-18, Yang critical)
 // GET  /api/v1/tools/registry              -- list active tools (Owner-only)
 // GET  /api/v1/tools/registry/:toolKey     -- single tool detail (Owner-only)
 // GET  /api/v1/tools/calls?toolKey=&limit= -- recent call log (Owner-only)
 // GET  /api/v1/tools/stats?window=24h      -- per-tool stats (Owner-only)
+// Phase B: callTool wrappers for all 7 tools -- requires Yang explicit ACK.
 // =============================================================================
 
 // GET /api/v1/tools/registry -- list active tools
@@ -14914,7 +15027,7 @@ app.get("/api/v1/tools/registry", async (c) => {
   }
   const toolTypeParam = c.req.query("toolType") as string | undefined;
   const isActiveParam = c.req.query("isActive");
-  const isActive = isActiveParam === "false" ? false : true;
+  const isActive = isActiveParam === "false" ? false : true; // default: active only
 
   const { listTools } = await import("./tools/tool-registry-store.js");
   const rows = await listTools({
@@ -14959,6 +15072,7 @@ app.get("/api/v1/tools/stats", async (c) => {
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "FORBIDDEN" }, 403);
   }
+  // Parse window param: "24h" | "48h" | "7d" | number(ms)
   const windowParam = c.req.query("window") ?? "24h";
   let windowMs: number;
   if (windowParam.endsWith("d")) {

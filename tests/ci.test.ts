@@ -11438,6 +11438,147 @@ test("TOOLCENTER-PA-5: getToolStats returns empty array in non-DB mode", async (
   assert.equal(result.length, 0, "TOOLCENTER-PA-5: non-DB mode must return empty array");
 });
 
+// ── Trading-as-Git Phase A: portfolio snapshot store unit tests ───────────────
+
+test("TAG-SNAPSHOT-1: computePositionDiff correctly identifies added, removed, and changed positions", async () => {
+  const { computePositionDiff } = await import("../apps/api/src/portfolio-snapshot-store.js");
+
+  const from = {
+    "2330": { shares: 500,  avgCost: 550.0 },
+    "2454": { shares: 3000, avgCost: 88.5  }
+  };
+  const to = {
+    "2330": { shares: 1000, avgCost: 555.0 }, // changed
+    "2317": { shares: 2000, avgCost: 30.0  }  // added (2454 removed)
+  };
+
+  const diff = computePositionDiff(from, to);
+
+  assert.ok("2317" in diff.added,   "2317 should be in added");
+  assert.ok("2454" in diff.removed, "2454 should be in removed");
+  assert.ok("2330" in diff.changed, "2330 should be in changed");
+  assert.equal(diff.changed["2330"]!.from.shares, 500,  "from.shares should be 500");
+  assert.equal(diff.changed["2330"]!.to.shares,   1000, "to.shares should be 1000");
+  assert.ok(diff.summary.includes("+1 added"),   "summary should mention added");
+  assert.ok(diff.summary.includes("-1 removed"), "summary should mention removed");
+  assert.ok(diff.summary.includes("~1 changed"), "summary should mention changed");
+});
+
+test("TAG-SNAPSHOT-2: computePositionDiff with identical positions returns no change", async () => {
+  const { computePositionDiff } = await import("../apps/api/src/portfolio-snapshot-store.js");
+
+  const positions = {
+    "2330": { shares: 500, avgCost: 550.0, sector: "semiconductors" }
+  };
+  const diff = computePositionDiff(positions, positions);
+
+  assert.deepEqual(diff.added,   {});
+  assert.deepEqual(diff.removed, {});
+  assert.deepEqual(diff.changed, {});
+  assert.equal(diff.summary, "no change");
+});
+
+test("TAG-SNAPSHOT-3: createSnapshot builds parent-child chain in memory mode", async () => {
+  const {
+    createSnapshot,
+    _resetPortfolioSnapshotStoreForTests,
+    listSnapshots
+  } = await import("../apps/api/src/portfolio-snapshot-store.js");
+
+  _resetPortfolioSnapshotStoreForTests();
+
+  const ws = "test-workspace-tag-3";
+
+  // C1 — root snapshot
+  const c1 = await createSnapshot({
+    workspaceId: ws,
+    positions:   { "2330": { shares: 500, avgCost: 550.0 } },
+    trigger:     "manual"
+  });
+  assert.equal(c1.parentId, null, "C1 should have null parentId (root)");
+  assert.equal(c1.trigger,  "manual");
+
+  // C2 — child of C1
+  const c2 = await createSnapshot({
+    workspaceId: ws,
+    positions:   { "2330": { shares: 1000, avgCost: 552.0 }, "2317": { shares: 2000, avgCost: 30.0 } },
+    trigger:     "strategy_run",
+    triggerRefId: "run-abc-123"
+  });
+  assert.equal(c2.parentId,    c1.id,         "C2 parentId should be C1.id");
+  assert.equal(c2.triggerRefId, "run-abc-123", "triggerRefId should be preserved");
+
+  // C3 — child of C2
+  const c3 = await createSnapshot({
+    workspaceId: ws,
+    positions:   { "2330": { shares: 1000, avgCost: 552.0 } }, // 2317 sold
+    trigger:     "manual"
+  });
+  assert.equal(c3.parentId, c2.id, "C3 parentId should be C2.id");
+
+  // listSnapshots should return 3, newest first
+  const listed = await listSnapshots({ workspaceId: ws, limit: 20 });
+  assert.equal(listed.length, 3);
+  assert.equal(listed[0]!.id, c3.id, "first in list should be C3 (newest)");
+  assert.equal(listed[2]!.id, c1.id, "last in list should be C1 (oldest)");
+
+  _resetPortfolioSnapshotStoreForTests();
+});
+
+test("TAG-SNAPSHOT-4: positions Zod validation rejects invalid input", async () => {
+  const { createSnapshot, _resetPortfolioSnapshotStoreForTests } = await import("../apps/api/src/portfolio-snapshot-store.js");
+  _resetPortfolioSnapshotStoreForTests();
+
+  // shares must be nonnegative — Zod should throw with name "ZodError"
+  await assert.rejects(
+    () => createSnapshot({
+      workspaceId: "test-ws-tag-4",
+      positions:   { "2330": { shares: -1, avgCost: 550.0 } },
+      trigger:     "manual"
+    }),
+    { name: "ZodError" },
+    "negative shares should be rejected by Zod"
+  );
+
+  _resetPortfolioSnapshotStoreForTests();
+});
+
+test("TAG-SNAPSHOT-5: listSnapshots cursor pagination works in memory mode", async () => {
+  const {
+    createSnapshot,
+    listSnapshots,
+    _resetPortfolioSnapshotStoreForTests
+  } = await import("../apps/api/src/portfolio-snapshot-store.js");
+
+  _resetPortfolioSnapshotStoreForTests();
+  const ws = "test-workspace-tag-5";
+
+  // Create 4 snapshots
+  const snaps = [];
+  for (let i = 0; i < 4; i++) {
+    const s = await createSnapshot({
+      workspaceId: ws,
+      positions:   { "2330": { shares: (i + 1) * 100, avgCost: 550.0 } },
+      trigger:     "manual"
+    });
+    snaps.push(s);
+  }
+
+  // List first 2 (newest = snap[3], snap[2])
+  const page1 = await listSnapshots({ workspaceId: ws, limit: 2 });
+  assert.equal(page1.length, 2);
+  assert.equal(page1[0]!.id, snaps[3]!.id, "page1[0] should be snap[3]");
+  assert.equal(page1[1]!.id, snaps[2]!.id, "page1[1] should be snap[2]");
+
+  // Cursor from last item of page1 → should return snap[1], snap[0]
+  const page2 = await listSnapshots({ workspaceId: ws, limit: 2, before: page1[1]!.id });
+  assert.equal(page2.length, 2);
+  assert.equal(page2[0]!.id, snaps[1]!.id, "page2[0] should be snap[1]");
+  assert.equal(page2[1]!.id, snaps[0]!.id, "page2[1] should be snap[0]");
+
+  _resetPortfolioSnapshotStoreForTests();
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
