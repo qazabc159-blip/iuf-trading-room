@@ -619,7 +619,7 @@ export default async function AiRecommendationDetailPage({
           <div className="_rec-detail-card">
             <span>
               <ShieldAlert size={14} strokeWidth={1.9} />
-              SOURCE TRAIL
+              資料來源
             </span>
             <div className="_rec-detail-source">
               {rec.sourceTrail.length > 0 ? (
@@ -627,7 +627,7 @@ export default async function AiRecommendationDetailPage({
                   <span key={`${source.type}-${source.source}-${source.timestamp}`}>
                     <b>{source.type}</b>
                     {source.source}
-                    <small title={source.timestamp} aria-label={`source timestamp ${source.timestamp}`}>
+                    <small title={source.timestamp} aria-label={`資料來源時間 ${source.timestamp}`}>
                       {formatSourceTimestamp(source.timestamp)}
                     </small>
                   </span>
