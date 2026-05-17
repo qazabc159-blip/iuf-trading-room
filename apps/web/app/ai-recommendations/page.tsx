@@ -36,7 +36,7 @@ const REASON_GROUPS: Array<{
   { key: "news", label: "新聞" },
   { key: "theme", label: "主題" },
   { key: "quant", label: "量化" },
-  { key: "macro", label: "Macro" },
+  { key: "macro", label: "總經" },
 ];
 
 function asPercent(value: number) {
@@ -904,7 +904,7 @@ export default async function AiRecommendationsPage() {
         code="AI-01"
         title="推薦分層"
         sub={`日期 ${data?.date ?? "-"} / 產生 ${generatedAtLabel} / ${sourceMode}`}
-        right={`${items.length} recommendations`}
+        right={`${items.length} 筆推薦`}
       >
         <div className="_rec-bucket-grid">
           {BUCKETS.map((bucket) => (

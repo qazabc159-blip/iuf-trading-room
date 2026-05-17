@@ -28,7 +28,7 @@ const REASON_GROUPS: Array<{
   { key: "news", label: "新聞" },
   { key: "theme", label: "主題" },
   { key: "quant", label: "量化" },
-  { key: "macro", label: "Macro" },
+  { key: "macro", label: "總經" },
 ];
 
 function asPercent(value: number) {
@@ -619,18 +619,18 @@ export default async function AiRecommendationDetailPage({
 
           <div className="_rec-detail-grid">
             <section className="_rec-detail-card">
-              <span>ENTRY</span>
+              <span>進場區</span>
               <b>{rec.entryZone.primary || "資料同步中"}</b>
               {rec.entryZone.secondary && <small>{rec.entryZone.secondary}</small>}
               <p>{rec.entryZone.reason || "-"}</p>
             </section>
             <section className="_rec-detail-card">
-              <span>INVALIDATION</span>
+              <span>失效條件</span>
               <b>{formatPrice(rec.invalidation.price)}</b>
               <p>{rec.invalidation.rule || "-"}</p>
             </section>
             <section className="_rec-detail-card">
-              <span>POSITION</span>
+              <span>倉位建議</span>
               <b>{rec.positionSizing.suggestion}</b>
               <p>單筆最大風險 {rec.positionSizing.maxRiskPct}%</p>
             </section>
@@ -647,7 +647,7 @@ export default async function AiRecommendationDetailPage({
           </div>
 
           <div className="_rec-detail-card">
-            <span>QUANT SOURCE</span>
+            <span>量化來源</span>
             <b>{rec.quant.strategySource}</b>
             <ul className="_rec-detail-risks">
               {rec.quant.reason.length > 0 ? rec.quant.reason.map((item) => <li key={item}>{item}</li>) : <li>-</li>}
@@ -661,7 +661,7 @@ export default async function AiRecommendationDetailPage({
           </div>
 
           <div className="_rec-detail-card">
-            <span>RISKS</span>
+            <span>風險</span>
             {rec.risks.length > 0 ? (
               <ul className="_rec-detail-risks">
                 {rec.risks.map((risk) => (
