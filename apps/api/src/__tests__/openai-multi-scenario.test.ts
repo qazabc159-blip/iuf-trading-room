@@ -303,3 +303,32 @@ test("OA11: assessSignalConfidence uses cache for same signal_id", async () => {
     _resetSignalConfidenceCache();
   }
 });
+
+// ── BRAIN-PH-B: Phase B migration verification ────────────────────────────────
+
+test("BRAIN-PHB-1: strategy-ranker falls back gracefully with empty ideas list (callLlm path — gateway migrated)", async () => {
+  const { rerankStrategyIdeasWithAi } = await import("../openai-strategy-ranker.js");
+  const { _resetLlmGatewayForTests } = await import("../llm/llm-gateway.js");
+  _resetLlmGatewayForTests();
+  // Empty ideas → immediate fallback (no LLM call needed)
+  const result = await rerankStrategyIdeasWithAi([]);
+  assert.equal(result.ai_rerank_mode, "algo_only", "empty ideas must produce algo_only fallback");
+  assert.equal(result.disclaimer, "research_only");
+  assert.deepEqual(result.items, []);
+  _resetLlmGatewayForTests();
+});
+
+test("BRAIN-PHB-2: brief-strategy-commentary getLastBriefStrategyCommentary returns null when never run (callLlm path — no API key path verified)", async () => {
+  const { getLastBriefStrategyCommentary, _resetBriefStrategyCommentary } = await import("../openai-brief-strategy-commentary.js");
+  const { _resetLlmGatewayForTests } = await import("../llm/llm-gateway.js");
+  _resetLlmGatewayForTests();
+  _resetBriefStrategyCommentary();
+  try {
+    // Without ever running, result should be null
+    const result = getLastBriefStrategyCommentary();
+    assert.equal(result, null, "should return null when never run");
+  } finally {
+    _resetBriefStrategyCommentary();
+    _resetLlmGatewayForTests();
+  }
+});

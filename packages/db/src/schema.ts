@@ -730,3 +730,24 @@ export const llmCostDaily = pgTable(
     dateIdx:           index("llm_cost_daily_date_idx").on(table.date)
   })
 );
+
+// -- News AI Selections -- migration 0035_news_ai_selections.sql
+// Persists each AI news selection run result.
+// Boot recovery reads latest row instead of starting with never_run state.
+export const newsAiSelections = pgTable(
+  "news_ai_selections",
+  {
+    id:             text("id").primaryKey(),
+    runId:          text("run_id").notNull(),
+    asOf:           timestamp("as_of", { withTimezone: true }).notNull(),
+    windowLabel:    text("window_label").notNull(),
+    selectionMode:  text("selection_mode").notNull(),
+    items:          jsonb("items").notNull().default([]),
+    inputRowCount:  integer("input_row_count").notNull().default(0),
+    aiCallSuccess:  boolean("ai_call_success").notNull().default(false),
+    createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    asOfIdx: index("news_ai_selections_as_of_idx").on(table.asOf)
+  })
+);
