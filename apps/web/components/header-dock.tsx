@@ -558,7 +558,7 @@ export function HeaderDock() {
                   })}
                 </div>
               )}
-              <Link href="/alerts" onClick={() => setDrawer(null)}>
+              <Link className="header-dock-drawer-link" href="/alerts" onClick={() => setDrawer(null)}>
                 開啟警示頁
               </Link>
             </div>
@@ -569,7 +569,7 @@ export function HeaderDock() {
                 <b>SIM-only v1</b>
                 <p>模擬交易與券商 SIM 會清楚分線；正式交易維持關閉。</p>
               </div>
-              <Link href="/ops" onClick={() => setDrawer(null)}>
+              <Link className="header-dock-drawer-link" href="/ops" onClick={() => setDrawer(null)}>
                 開啟營運監控
               </Link>
             </div>

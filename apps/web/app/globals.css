@@ -14869,7 +14869,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   font-size: 12px;
 }
 
-.header-dock-drawer-body a {
+.header-dock-drawer-link {
   min-height: 40px;
   display: inline-flex;
   align-items: center;
@@ -14884,7 +14884,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   text-decoration: none;
 }
 
-.header-dock-drawer-body a:hover {
+.header-dock-drawer-link:hover {
   color: var(--tac-fg-0);
   border-color: rgba(200, 148, 63, 0.38);
 }
