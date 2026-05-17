@@ -37,6 +37,14 @@ function stringField(source: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function firstStringField(source: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = stringField(source, key);
+    if (value) return value;
+  }
+  return undefined;
+}
+
 function finiteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -125,8 +133,8 @@ function normalizeNotification(value: unknown, index: number): NormalizedNotific
     id: stringField(source, "id") ?? `notification-${index}`,
     type,
     category: stringField(source, "category") ?? type,
-    title: stringField(source, "title"),
-    message: stringField(source, "message") ?? stringField(source, "body"),
+    title: firstStringField(source, "title", "headline", "summary", "event", "action"),
+    message: firstStringField(source, "message", "body", "description", "text", "content", "summary", "subtitle"),
     severity: normalizeSeverity(source["severity"]),
     createdAt,
     occurredAt: createdAt,
