@@ -11,6 +11,7 @@ import {
 } from "@/lib/ai-recommendation-handoff";
 import { RecommendationFeedbackActions } from "./RecommendationFeedbackActions";
 import { RecommendationHandoffLink, RecommendationHandoffUnavailable } from "./RecommendationHandoffLink";
+import { formatRecommendationSourceMode } from "./source-mode-label";
 import { formatRecommendationTimestamp, formatSourceTimestamp } from "./source-trail-time";
 
 export const dynamic = "force-dynamic";
@@ -353,7 +354,10 @@ export default async function AiRecommendationsPage() {
   const { data, error } = await loadRecommendations();
   const items = data?.items ?? [];
   const grouped = groupByBucket(items);
-  const sourceMode = data?._mock ? "MOCK FEED" : data ? "ORCHESTRATOR" : "SYNCING";
+  const sourceMode = formatRecommendationSourceMode({
+    hasData: Boolean(data),
+    isMock: Boolean(data?._mock),
+  });
   const generatedAtLabel = formatRecommendationTimestamp(data?.generatedAt);
 
   return (
