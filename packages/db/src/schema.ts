@@ -675,7 +675,7 @@ export const elEventStreams = pgTable(
   "el_event_streams",
   {
     id:          uuid("id").defaultRandom().primaryKey(),
-    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
     // stream_type: logical category (strategy / order / workspace / session / kgi)
     streamType:  text("stream_type").notNull(),
     // stream_id: entity key within stream_type namespace (e.g. "cont_liq_v36")
@@ -713,7 +713,8 @@ export const elEvents = pgTable(
   },
   (table) => ({
     streamSeqUidx:       uniqueIndex("el_events_stream_seq_uidx").on(table.streamId, table.seq),
-    streamSeqIdx:        index("el_events_stream_seq_idx").on(table.streamId, table.seq),
+    // NOTE: el_events_stream_seq_idx removed — UNIQUE (stream_id, seq) already builds a B-tree index.
+    // Adding a separate CREATE INDEX on the same columns would double write cost with zero read benefit.
     eventTypeRecordedIdx: index("el_events_event_type_recorded_idx").on(table.eventType, table.recordedAt),
     streamOccurredIdx:   index("el_events_stream_occurred_idx").on(table.streamId, table.occurredAt)
   })
