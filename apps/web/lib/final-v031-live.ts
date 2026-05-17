@@ -37,6 +37,7 @@ export type PaperPrefillHandoff = {
   enabled: true;
   symbol: string | null;
   recommendationId: string | null;
+  side: "buy" | "sell" | null;
   entry: string | null;
   stop: string | null;
   target: string | null;
@@ -549,9 +550,11 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
     const entry = queryText(params.get("entry"), 40);
     const stop = queryText(params.get("stop"), 40);
     const target = queryText(params.get("tp"), 40);
+    const rawSide = String(params.get("side") || "").trim();
+    const side = rawSide === "buy" || rawSide === "sell" ? rawSide : null;
     const source = paperPrefillSource(params, recommendationId);
-    const enabled = params.get("prefill") === "true" || !!(symbol || recommendationId || entry || stop || target) || source !== "url";
-    return enabled ? { enabled:true, symbol, recommendationId, entry, stop, target, source } : null;
+    const enabled = params.get("prefill") === "true" || !!(symbol || recommendationId || side || entry || stop || target) || source !== "url";
+    return enabled ? { enabled:true, symbol, recommendationId, side, entry, stop, target, source } : null;
   };
   const paperPrefill = () => live.prefill || readPaperPrefillFromUrl();
   const sameSym = (left, right) => String(left || "").toUpperCase() === String(right || "").toUpperCase();
@@ -988,6 +991,7 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
       box.setAttribute("aria-live", "polite");
       const meta = [
         paperPrefillSourceLabel(prefill.source),
+        prefill.side === "buy" ? "方向 買進" : prefill.side === "sell" ? "方向 賣出" : null,
         prefill.entry ? "進場 " + prefill.entry : null,
         prefill.stop ? "停損 " + prefill.stop : null,
         prefill.target ? "目標 " + prefill.target : null,
@@ -1005,6 +1009,17 @@ window.__IUF_FINAL_V031_WORKSPACE_SLUG__=${JSON.stringify(workspaceSlug)};
 
     const orderType = $("#t-otype");
     if (orderType && entryPrice != null) orderType.value = "limit";
+
+    if (prefill.side === "buy" || prefill.side === "sell") {
+      $$("#side button").forEach((button) => {
+        button.classList.toggle("on", button.dataset.side === prefill.side);
+      });
+      const submit = $("#submit-btn");
+      if (submit) {
+        submit.classList.toggle("buy", prefill.side === "buy");
+        submit.classList.toggle("sell", prefill.side === "sell");
+      }
+    }
 
     const setSubmitPreviewLabel = () => {
       const submit = $("#submit-btn");

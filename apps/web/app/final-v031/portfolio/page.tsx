@@ -5,7 +5,7 @@ export const revalidate = 0;
 
 type PortfolioSearchParams = Record<string, string | string[] | undefined>;
 
-const HANDOFF_PARAMS = ["ticker", "symbol", "prefill", "from_rec", "from_strategy", "from_home", "from_run", "entry", "stop", "tp"] as const;
+const HANDOFF_PARAMS = ["ticker", "symbol", "prefill", "from_rec", "from_strategy", "from_home", "from_run", "entry", "stop", "tp", "side"] as const;
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -28,6 +28,12 @@ function handoffSourceLabel(params: PortfolioSearchParams | undefined) {
   return null;
 }
 
+function handoffSideLabel(value: string | undefined) {
+  if (value === "buy") return "買進";
+  if (value === "sell") return "賣出";
+  return null;
+}
+
 function handoffModeLabel(params: PortfolioSearchParams | undefined) {
   if (firstParam(params?.from_rec)?.trim()) return "AI 推薦帶入";
   if (firstParam(params?.from_strategy)?.trim()) return "首頁策略帶入";
@@ -43,7 +49,9 @@ function buildHandoffSummary(params: PortfolioSearchParams | undefined) {
   const entry = firstParam(params?.entry)?.trim();
   const stop = firstParam(params?.stop)?.trim();
   const target = firstParam(params?.tp)?.trim();
+  const side = handoffSideLabel(firstParam(params?.side)?.trim());
   const parts = [
+    side ? `方向 ${side}` : null,
     source,
     symbol ? `標的 ${symbol}` : null,
     recommendationId ? `推薦 ${recommendationId}` : null,
