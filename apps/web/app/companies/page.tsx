@@ -11,6 +11,7 @@ import { friendlyDataError } from "@/lib/friendly-error";
 import { industryLabel } from "@/lib/industry-i18n";
 import { ThemesRadarTab } from "./ThemesRadarTab";
 import { SectorTab } from "./SectorTab";
+import { CompanyGraphTab } from "./CompanyGraphTab";
 
 const PAGE_SIZE = 50;
 type SortField = "ticker" | "name" | "chainPosition" | "beneficiaryTier";
@@ -427,17 +428,10 @@ export default function CompaniesPage() {
         </Panel>
       )}
 
-      {/* Tab 4: 公司圖譜 — v2 stub */}
+      {/* Tab 4: 公司圖譜 */}
       {activeTab === "graph" && (
-        <Panel code="CO-GRAPH" title="公司圖譜" sub="供應鏈關係圖 — D3.js visualization">
-          <div className="_co-v2-stub">
-            <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.4 }}>◈</div>
-            <p>公司圖譜 v2 — D3.js 供應鏈關係視覺化</p>
-            <p style={{ fontSize: 12, color: "var(--night-soft)", marginTop: 6 }}>
-              即將開放；v1 以清單模式瀏覽公司。
-            </p>
-            <span className="_co-v2-badge">v2 開放</span>
-          </div>
+        <Panel code="CO-GRAPH" title="公司圖譜" sub="My-TW-Coverage 關係資料 / 搜尋 / 熱點">
+          <CompanyGraphTab />
         </Panel>
       )}
     </PageFrame>
