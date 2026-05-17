@@ -41,39 +41,39 @@ jobs:
 
       - name: Run Production Smoke (12-item ETL freshness)
         id: prod_smoke
-        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+        shell: pwsh
         run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          if ($env:RUNNER_OS -eq 'Windows') {
             $ts = (Get-Date -Format "yyyyMMdd-HHmm")
             $out = "evidence/w7_paper_sprint/gha_prod_smoke_$ts.md"
             pwsh -NoProfile -ExecutionPolicy Bypass `
               -File scripts/verify/Invoke-ProductionSmoke.ps1 `
               -OutFile $out
-            echo "PROD_SMOKE_OUT=$out" >> $env:GITHUB_ENV
-          else
-            echo "Note: Linux runner selected (reduced cost). For full Windows smoke, manually dispatch workflow."
-            echo "PROD_SMOKE_OUT=skipped" >> $GITHUB_ENV
-          fi
+            "PROD_SMOKE_OUT=$out" >> $env:GITHUB_ENV
+          } else {
+            Write-Host "Note: Linux runner selected (reduced cost). For full Windows smoke, manually dispatch workflow."
+            "PROD_SMOKE_OUT=skipped" >> $env:GITHUB_ENV
+          }
         continue-on-error: true
 
       - name: Check overall result
         id: result_check
-        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+        shell: pwsh
         run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          if ($env:RUNNER_OS -eq 'Windows') {
             $failed = @()
             if ('${{ steps.prod_smoke.outcome }}'  -eq 'failure') { $failed += 'prod' }
             if ($failed.Count -gt 0) {
-              echo "SMOKE_FAILED=true"  >> $env:GITHUB_ENV
-              echo "SMOKE_FAIL_LIST=$($failed -join ',')" >> $env:GITHUB_ENV
+              "SMOKE_FAILED=true"  >> $env:GITHUB_ENV
+              "SMOKE_FAIL_LIST=$($failed -join ',')" >> $env:GITHUB_ENV
             } else {
-              echo "SMOKE_FAILED=false" >> $env:GITHUB_ENV
-              echo "SMOKE_FAIL_LIST=" >> $env:GITHUB_ENV
+              "SMOKE_FAILED=false" >> $env:GITHUB_ENV
+              "SMOKE_FAIL_LIST=" >> $env:GITHUB_ENV
             }
-          else
-            echo "SMOKE_FAILED=false" >> $GITHUB_ENV
-            echo "SMOKE_FAIL_LIST=" >> $GITHUB_ENV
-          fi
+          } else {
+            "SMOKE_FAILED=false" >> $env:GITHUB_ENV
+            "SMOKE_FAIL_LIST=" >> $env:GITHUB_ENV
+          }
 
       - name: Upload smoke artifacts
         uses: actions/upload-artifact@v4
