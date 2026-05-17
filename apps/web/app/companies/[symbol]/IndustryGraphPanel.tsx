@@ -11,23 +11,13 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import type { CoverageBrief } from "./CoverageKnowledgePanel";
+import { fetchCoverage, type CoverageBrief } from "./CoverageKnowledgePanel";
 
 // ── Fetch helper (client-side) ────────────────────────────────────────────────
 
 async function fetchCoverageForGraph(ticker: string): Promise<CoverageBrief | null> {
   try {
-    const res = await fetch(`/api/v1/companies/${ticker}/coverage`, {
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) return null;
-    const json = (await res.json()) as { data?: CoverageBrief } | CoverageBrief;
-    if (json && typeof json === "object" && "data" in json && json.data) {
-      return json.data;
-    }
-    return json as CoverageBrief;
+    return await fetchCoverage(ticker);
   } catch {
     return null;
   }

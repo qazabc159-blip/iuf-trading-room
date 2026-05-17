@@ -45,8 +45,17 @@ type LoadState =
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
-async function fetchCoverage(ticker: string): Promise<CoverageBrief | null> {
-  const res = await fetch(`/api/v1/companies/${ticker}/coverage`, {
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
+
+function coverageUrl(ticker: string) {
+  const path = `/api/v1/companies/${encodeURIComponent(ticker)}/coverage`;
+  return API_BASE ? `${API_BASE}${path}` : path;
+}
+
+export async function fetchCoverage(ticker: string): Promise<CoverageBrief | null> {
+  const res = await fetch(coverageUrl(ticker), {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
   });
@@ -367,11 +376,30 @@ export function CoverageKnowledgePanel({ ticker }: Props) {
           marginTop: 16,
           paddingTop: 10,
           borderTop: "1px solid var(--border,#222)",
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
           fontSize: 10,
           color: "var(--fg-3,#666)",
         }}
       >
-        資料來源: My-TW-Coverage (MIT)
+        <span>資料來源: My-TW-Coverage (MIT)</span>
+        <Link
+          href={`/companies?tab=graph&q=${encodeURIComponent(ticker)}`}
+          style={{
+            border: "1px solid var(--accent,#c8943f)",
+            borderRadius: 4,
+            color: "var(--accent,#c8943f)",
+            padding: "4px 8px",
+            textDecoration: "none",
+            fontFamily: "var(--mono,monospace)",
+            fontWeight: 700,
+          }}
+        >
+          在公司圖譜搜尋 {ticker}
+        </Link>
       </div>
     </section>
   );
