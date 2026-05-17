@@ -142,45 +142,48 @@ EventLog 的核心單位是「stream」，例如：
 在**不破壞現有 `audit_logs`** 的前提下，新增 EventLog 專用 table：
 
 ```sql
--- 新 table: iuf_event_streams（stream 定義 registry）
-CREATE TABLE iuf_event_streams (
+-- 新 table: el_event_streams（stream 定義 registry）
+-- NOTE: final naming uses "el_" prefix (not "iuf_event_") to avoid collision with
+--       iuf_events table (migration 0025, event-rule-engine). See migration 0033_eventlog_phase_a.sql.
+CREATE TABLE el_event_streams (
   id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
   stream_type TEXT    NOT NULL,            -- e.g. "strategy", "order", "workspace"
   stream_id   TEXT    NOT NULL,            -- e.g. "cont_liq_v36", "V000L"
-  workspace_id UUID   NOT NULL REFERENCES workspaces(id),
+  workspace_id UUID   NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (workspace_id, stream_type, stream_id)
 );
 
--- 新 table: iuf_events（append-only 主事件 log）
-CREATE TABLE iuf_events (
+-- 新 table: el_events（append-only 主事件 log）
+CREATE TABLE el_events (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  stream_id       UUID        NOT NULL REFERENCES iuf_event_streams(id),
-  seq             BIGINT      NOT NULL,    -- per-stream 嚴格遞增
+  stream_id       UUID        NOT NULL REFERENCES el_event_streams(id) ON DELETE RESTRICT,
+  seq             BIGINT      NOT NULL,    -- per-stream 嚴格遞增（>0）
   event_type      TEXT        NOT NULL,    -- e.g. "strategy.subscribed", "order.filled"
   schema_version  INTEGER     NOT NULL DEFAULT 1,
   actor_id        UUID        REFERENCES users(id),
   payload         JSONB       NOT NULL DEFAULT '{}'::jsonb,
   occurred_at     TIMESTAMPTZ NOT NULL,    -- 事件發生時間（business clock）
   recorded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),  -- 寫入時間（server clock）
-  UNIQUE (stream_id, seq)    -- 保證 per-stream 全序
+  CONSTRAINT el_events_seq_positive CHECK (seq > 0),
+  UNIQUE (stream_id, seq)    -- 保證 per-stream 全序（同時建立 B-tree index，不需另建）
 );
 
--- 新 table: iuf_event_snapshots（Snapshot 壓縮用）
-CREATE TABLE iuf_event_snapshots (
+-- 新 table: el_event_snapshots（Snapshot 壓縮用）
+CREATE TABLE el_event_snapshots (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  stream_id   UUID        NOT NULL REFERENCES iuf_event_streams(id),
+  stream_id   UUID        NOT NULL REFERENCES el_event_streams(id) ON DELETE RESTRICT,
   up_to_seq   BIGINT      NOT NULL,        -- 此 snapshot 包含到哪個 seq
   state       JSONB       NOT NULL,        -- 壓縮後的 read model 狀態
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- index for efficient stream reads
-CREATE INDEX iuf_events_stream_seq_idx ON iuf_events (stream_id, seq ASC);
-CREATE INDEX iuf_events_event_type_idx ON iuf_events (event_type, recorded_at DESC);
+-- NOTE: el_events 不建 (stream_id, seq) 獨立 index —— UNIQUE constraint 已建 B-tree，重複建立浪費寫入
+CREATE INDEX el_events_event_type_idx ON el_events (event_type, recorded_at DESC);
 ```
 
-**現有 audit_logs 保持不動**：`iuf_events` 是新的 write path，audit_logs 舊路徑繼續工作，雙軌並行直到 Phase B 可選擇性 deprecate。
+**現有 audit_logs 保持不動**：`el_events` 是新的 write path，audit_logs 舊路徑繼續工作，雙軌並行直到 Phase B 可選擇性 deprecate。
 
 ### 5.2 Endpoint Design（4 個核心 endpoint）
 
