@@ -86,6 +86,31 @@ function displayThemeName(theme: Theme) {
   return raw.replace(/^\[ORPHAN\]\s*/i, "待歸檔：").replace(/-\>/g, "→");
 }
 
+function CompanySideNavPanel() {
+  const items = [
+    { href: "#company-knowledge", label: "My-TW-Coverage", meta: "知識圖譜" },
+    { href: "#company-data-dock", label: "資料艙", meta: "價格 / 財報" },
+    { href: "#company-full-profile", label: "完整資料區", meta: "FinMind [06]-[11]" },
+    { href: "#company-source-status", label: "資料來源", meta: "狀態" },
+  ];
+
+  return (
+    <section className="panel hud-frame company-side-nav-panel" aria-label="公司頁索引">
+      <h3 className="ascii-head">
+        <span className="ascii-head-bracket">頁面索引</span>
+      </h3>
+      <nav className="company-side-nav-list">
+        {items.map((item) => (
+          <a key={item.href} className="company-side-nav-link" href={item.href}>
+            <span>{item.label}</span>
+            <small>{item.meta}</small>
+          </a>
+        ))}
+      </nav>
+    </section>
+  );
+}
+
 /** Y3 fix: map real announcements fetch result to SourceHealthState (no hardcoded "stale"). */
 type AnnouncementsSourceState =
   | { outcome: "live"; count: number; fetchedAt: string }
@@ -427,7 +452,7 @@ export default async function CompanyDetailPage({
             />
           </div>
           {/* ── My-TW-Coverage：知識面板 + 上下游圖譜，同區塊露出避免 K 線下方像空白 ── */}
-          <div className="company-knowledge-grid">
+          <div id="company-knowledge" className="company-knowledge-grid">
             <CoverageKnowledgePanel ticker={company.ticker} />
             <IndustryGraphPanel
               ticker={company.ticker}
@@ -438,12 +463,15 @@ export default async function CompanyDetailPage({
 
         <aside className="company-side-column">
           <CompanyInfoPanel company={company} />
+          <CompanySideNavPanel />
           {/* ── 4 KGI/FinMind streaming panels ── */}
           <BidAskPanel symbol={company.ticker} />
           <LiveTickStreamPanel symbol={company.ticker} />
           <InstitutionalPanel companyId={company.id} />
           <MarginShortPanel companyId={company.id} />
-          <SourceStatusCard sources={sources} />
+          <div id="company-source-status">
+            <SourceStatusCard sources={sources} />
+          </div>
         </aside>
       </div>
 
@@ -464,7 +492,7 @@ export default async function CompanyDetailPage({
         </div>
       )}
 
-      <div className="company-tabs-band company-data-dock-title">
+      <div id="company-data-dock" className="company-tabs-band company-data-dock-title">
         <div>
           <span className="tg gold">公司資料艙</span>
           <strong>FinMind 與正式資料流</strong>
@@ -492,7 +520,7 @@ export default async function CompanyDetailPage({
       </div>
 
       {/* BLOCK #8 Lane C — sections [06]-[11] off /full-profile (PR #259) + DEGRADED announcements */}
-      <div className="company-tabs-band company-data-dock-title">
+      <div id="company-full-profile" className="company-tabs-band company-data-dock-title">
         <div>
           <span className="tg gold">完整資料區</span>
           <strong>FinMind 11 資料集（[06]–[11]）</strong>

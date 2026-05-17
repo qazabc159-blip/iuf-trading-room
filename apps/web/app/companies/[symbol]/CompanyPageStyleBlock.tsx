@@ -39,6 +39,53 @@ export function CompanyPageStyleBlock() {
   gap: clamp(16px, 1.8vw, 26px) !important;
 }
 
+@media (min-width: 769px) {
+  .company-side-column {
+    position: sticky !important;
+    top: clamp(76px, 8vh, 96px);
+    align-self: start;
+  }
+}
+
+.company-side-nav-panel {
+  padding: 12px 14px 14px !important;
+}
+.company-side-nav-panel .ascii-head {
+  margin-bottom: 10px;
+}
+.company-side-nav-list {
+  display: grid;
+  gap: 7px;
+}
+.company-side-nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid rgba(220,228,240,0.08);
+  background: rgba(5,8,12,0.34);
+  color: var(--night-ink, #e7ecf3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-decoration: none;
+  transition: border-color 0.16s, color 0.16s, background 0.16s;
+}
+.company-side-nav-link:hover,
+.company-side-nav-link:focus-visible {
+  border-color: rgba(226,184,92,0.34);
+  background: rgba(226,184,92,0.08);
+  color: var(--gold-bright, #e2b85c);
+  outline: none;
+}
+.company-side-nav-link small {
+  color: var(--night-mid, #91a0b5);
+  font-size: 9.5px;
+  text-align: right;
+  white-space: nowrap;
+}
+
 /* Panel card depth + border glow on hover */
 .company-main-column .panel,
 .company-side-column .panel {
@@ -150,6 +197,7 @@ export function CompanyPageStyleBlock() {
     grid-template-columns: minmax(0, 1fr) !important;
   }
   .company-side-column { order: -1; }
+  .company-side-nav-panel { display: none; }
   ._co-theme-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 480px) {
