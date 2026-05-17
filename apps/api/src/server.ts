@@ -14524,6 +14524,174 @@ app.get("/api/v1/uta/orders", async (c) => {
   return c.json({ data: { orders } });
 });
 
+// =============================================================================
+// EVENTLOG Phase A — 2026-05-17
+// Append-only event store with per-stream seq + time-travel query.
+// Tables: el_event_streams, el_events, el_event_snapshots (migration 0033)
+// Auth: Owner-only for all endpoints.
+// AGPL compliance: IUF-original implementation; no OpenAlice source code.
+//
+// POST /api/v1/event-streams/:streamType/:streamId/events
+//   Append an event. Returns { id, seq, recordedAt }.
+// GET  /api/v1/event-streams
+//   List all streams for the workspace (optional ?stream_type= filter).
+// GET  /api/v1/event-streams/:streamType/:streamId/events
+//   Read events: ?from_seq=N&to_seq=M&limit=50&event_type=strategy.subscribed
+// GET  /api/v1/event-streams/:streamType/:streamId/events/at
+//   Time-travel: ?as_of=ISO8601
+// =============================================================================
+
+// POST /api/v1/event-streams/:streamType/:streamId/events
+app.post("/api/v1/event-streams/:streamType/:streamId/events", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const streamType = c.req.param("streamType");
+  const streamId = c.req.param("streamId");
+  if (!streamType || !streamId) {
+    return c.json({ error: "MISSING_STREAM_PARAMS" }, 400);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "INVALID_JSON" }, 400);
+  }
+
+  if (typeof body !== "object" || body === null) {
+    return c.json({ error: "INVALID_BODY" }, 400);
+  }
+
+  const raw = body as Record<string, unknown>;
+  const eventType = typeof raw["event_type"] === "string" ? raw["event_type"] : null;
+  if (!eventType) {
+    return c.json({ error: "MISSING_EVENT_TYPE", message: "event_type is required" }, 400);
+  }
+
+  const payload = typeof raw["payload"] === "object" && raw["payload"] !== null && !Array.isArray(raw["payload"])
+    ? (raw["payload"] as Record<string, unknown>)
+    : {};
+
+  const schemaVersion = typeof raw["schema_version"] === "number" ? raw["schema_version"] : 1;
+  const occurredAt = typeof raw["occurred_at"] === "string" ? new Date(raw["occurred_at"]) : undefined;
+  if (occurredAt && isNaN(occurredAt.getTime())) {
+    return c.json({ error: "INVALID_OCCURRED_AT", message: "occurred_at must be a valid ISO8601 timestamp" }, 400);
+  }
+
+  const { appendEvent } = await import("./events/event-log-store.js");
+
+  try {
+    const result = await appendEvent({
+      workspaceId: session.workspace.id,
+      streamType,
+      streamId,
+      eventType,
+      payload,
+      schemaVersion,
+      occurredAt,
+      actorId: session.user.id,
+    });
+    return c.json({ id: result.id, seq: result.seq, recorded_at: result.recordedAt }, 201);
+  } catch (err) {
+    console.error("[event-log] appendEvent error:", err instanceof Error ? err.message : String(err));
+    return c.json({ error: "APPEND_FAILED" }, 500);
+  }
+});
+
+// GET /api/v1/event-streams — list streams for workspace
+app.get("/api/v1/event-streams", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const streamType = c.req.query("stream_type");
+  const limit = Math.min(Number(c.req.query("limit") ?? "100"), 500);
+
+  const { listEventStreams } = await import("./events/event-log-store.js");
+
+  const streams = await listEventStreams({
+    workspaceId: session.workspace.id,
+    streamType: streamType || undefined,
+    limit,
+  });
+
+  return c.json({ streams });
+});
+
+// GET /api/v1/event-streams/:streamType/:streamId/events/at — time-travel
+// IMPORTANT: must be declared BEFORE the generic /events route to avoid Hono routing
+// interpreting "at" as an event record matching the :event_id segment.
+app.get("/api/v1/event-streams/:streamType/:streamId/events/at", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const streamType = c.req.param("streamType");
+  const streamId = c.req.param("streamId");
+  const asOfRaw = c.req.query("as_of");
+  if (!asOfRaw) {
+    return c.json({ error: "MISSING_AS_OF", message: "as_of query param required (ISO8601)" }, 400);
+  }
+
+  const asOf = new Date(asOfRaw);
+  if (isNaN(asOf.getTime())) {
+    return c.json({ error: "INVALID_AS_OF", message: "as_of must be a valid ISO8601 timestamp" }, 400);
+  }
+
+  const limit = Math.min(Number(c.req.query("limit") ?? "200"), 1000);
+
+  const { readEventsAt } = await import("./events/event-log-store.js");
+
+  const result = await readEventsAt({
+    workspaceId: session.workspace.id,
+    streamType,
+    streamId,
+    asOf,
+    limit,
+  });
+
+  return c.json({ events: result.events, as_of: asOf.toISOString() });
+});
+
+// GET /api/v1/event-streams/:streamType/:streamId/events — paginated stream read
+app.get("/api/v1/event-streams/:streamType/:streamId/events", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const streamType = c.req.param("streamType");
+  const streamId = c.req.param("streamId");
+
+  const fromSeq = c.req.query("from_seq") ? Number(c.req.query("from_seq")) : undefined;
+  const toSeq = c.req.query("to_seq") ? Number(c.req.query("to_seq")) : undefined;
+  const limit = Math.min(Number(c.req.query("limit") ?? "50"), 500);
+  const eventType = c.req.query("event_type") || undefined;
+
+  const { readStreamEvents } = await import("./events/event-log-store.js");
+
+  const result = await readStreamEvents({
+    workspaceId: session.workspace.id,
+    streamType,
+    streamId,
+    fromSeq,
+    toSeq,
+    limit,
+    eventType,
+  });
+
+  return c.json({
+    events: result.events,
+    next_seq: result.nextSeq,
+    has_more: result.hasMore,
+  });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
