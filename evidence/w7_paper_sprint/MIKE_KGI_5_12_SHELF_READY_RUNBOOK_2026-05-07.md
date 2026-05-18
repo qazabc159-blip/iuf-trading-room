@@ -24,12 +24,20 @@ Conclusion: 0024-0026 are fully promoted on disk. migrate.ts filter confirmed ac
 Outstanding nit on 0026: iuf_notif_prefs_user_idx is redundant with UNIQUE(user_id) — P6 pattern.
 Not a blocker. Can be dropped in a future cleanup migration.
 
-0027-0030 NOT YET WRITTEN. Slot numbers reserved. Design proposal in section D.
+0043-0046 NOT YET WRITTEN. Slot numbers reserved (renumbered 2nd time 2026-05-18). Design proposal in section D.
 
 > ⚠️ **2026-05-08 RENUMBER**: PR #325 took 0027 for `brief_search_index`. KGI write-side schemas
-> shift to **0028-0031** (kgi_orders → 0028, kgi_fills → 0029, kgi_positions → 0030, kgi_reconciliation → 0031).
-> Mike audit MIKE_MIGRATION_0027_AUDIT_2026-05-08 documented the collision. When promoting these,
-> Jason must rename schema files + update the section D headings below, but design content is unchanged.
+> shifted to **0028-0031** (kgi_orders → 0028, kgi_fills → 0029, kgi_positions → 0030, kgi_reconciliation → 0031).
+> Mike audit MIKE_MIGRATION_0027_AUDIT_2026-05-08 documented the collision.
+>
+> ⚠️ **2026-05-18 RENUMBER (2nd)**: 0028-0041 slots are now occupied by product migrations merged
+> through 2026-05-18 (0038 toolcenter / 0039 eventlog_outbox / 0040 brain_decisions /
+> 0041 ai_recommendations_v2 / 0042 ai_rec_v3_status_trigger).
+> KGI write-side schemas shift again to **0043-0046**:
+>   kgi_orders → 0043, kgi_fills → 0044, kgi_positions → 0045, kgi_reconciliation → 0046
+> Mike audit T10 W2 fix — 2026-05-18: updated slot numbers to avoid collision.
+> When promoting these, Jason must rename schema files + update the section D headings below,
+> but design content (columns, indexes, constraints) is unchanged.
 
 ---
 
@@ -56,9 +64,10 @@ Step 5 — migrate.ts apply 0025+0026 to production DB.
   Verify: SELECT table_name FROM information_schema.tables WHERE table_name IN ('iuf_events','iuf_notification_preferences');
   Expected: 2 rows returned. If 0 rows → migration did not apply, stop.
 
-Step 6 — 0027-0030 KGI write-side migrations: 楊董 ack required before Jason writes DRAFT files.
+Step 6 — 0043-0046 KGI write-side migrations: 楊董 ack required before Jason writes DRAFT files.
   These 4 migrations are NOT written yet (by design — stop-line: KGI write-side frozen).
-  On 5/12 楊董 must explicitly ack "write KGI order migrations" before Jason proceeds.
+  Slots renumbered 2nd time 2026-05-18: 0027→0028→0043 (kgi_orders), etc. Design unchanged.
+  On 楊董 explicit ack "write KGI order migrations", Jason renames files to 0043-0046 and proceeds.
 
 Step 7 — 4-layer risk config verify.
   Check: account / strategy / symbol limits are set for the 5/12 test trade.
@@ -79,7 +88,7 @@ Step 10 — First live trade: 0050 ETF 1 share (odd-lot).
   See section F for risk framing.
 
 Step 11 — Post-trade reconciliation.
-  After order ACK: verify kgi_fills + kgi_positions (once 0027-0030 are promoted and live).
+  After order ACK: verify kgi_fills + kgi_positions (once 0043-0046 are promoted and live).
   If position not reflected within 5 min: trigger reconciliation sweep (kgi_reconciliation table).
   If mismatch: stop all trading, escalate.
 
@@ -114,7 +123,7 @@ Stop-line: do NOT switch to live until sim E2E is clean (login + quote + paper o
 
 ---
 
-## D. 0027-0030 SCHEMA DESIGN PROPOSAL
+## D. 0043-0046 SCHEMA DESIGN PROPOSAL (renumbered 2026-05-18; was 0027-0030 → 0028-0031 → 0043-0046)
 
 ### Design constraints (from anti-pattern playbook P7/P8/P9)
 - quantity_unit: NOT NULL, NO DEFAULT. Caller must pass 'SHARE' or 'LOT'. (P7)
@@ -122,7 +131,7 @@ Stop-line: do NOT switch to live until sim E2E is clean (login + quote + paper o
 - No KGI credentials (person_id/person_pwd) in any column default or comment. (P9)
 - kgi_deal_id source: confirmed from KGI SDK — kgi_deal_id comes from fill ACK payload, not order submission. (design assumption: nullable at insert, populated on fill event)
 
-### 0027_kgi_orders
+### 0043_kgi_orders (was 0027 → 0028 → now 0043 after 2nd renumber 2026-05-18)
 Purpose: one row per KGI order submission attempt.
 Columns:
   id UUID PK DEFAULT gen_random_uuid()
@@ -150,7 +159,7 @@ Indexes:
   idx ON (kgi_order_id) WHERE kgi_order_id IS NOT NULL  -- fill lookup by KGI native id
 Down: DROP TABLE IF EXISTS kgi_orders;
 
-### 0028_kgi_fills
+### 0044_kgi_fills (was 0028 → now 0044 after 2nd renumber 2026-05-18)
 Purpose: one row per fill event received from KGI.
 Columns:
   id UUID PK DEFAULT gen_random_uuid()
@@ -166,7 +175,7 @@ Indexes:
   idx ON (order_id, fill_time DESC)            -- fills per order
 Down: DROP TABLE IF EXISTS kgi_fills;
 
-### 0029_kgi_positions
+### 0045_kgi_positions (was 0029 → now 0045 after 2nd renumber 2026-05-18)
 Purpose: current KGI account position state (swept/reconciled).
 Columns:
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT
@@ -182,7 +191,7 @@ Indexes:
   idx ON (workspace_id, account_id)             -- all positions for an account
 Down: DROP TABLE IF EXISTS kgi_positions;
 
-### 0030_kgi_reconciliation
+### 0046_kgi_reconciliation (was 0030 → now 0046 after 2nd renumber 2026-05-18)
 Purpose: audit log of reconciliation sweeps comparing IUF vs KGI position state.
 Columns:
   id UUID PK DEFAULT gen_random_uuid()
@@ -203,7 +212,7 @@ Indexes:
 Down: DROP TABLE IF EXISTS kgi_reconciliation;
 
 ### Pre-write checklist (before Jason writes DRAFT files)
-  [ ] 楊董 explicit ack "proceed with 0027-0030 DRAFT write"
+  [ ] 楊董 explicit ack "proceed with 0043-0046 DRAFT write"
   [ ] workspaces table exists in schema (verify 0001-0024 establishes workspaces PK)
   [ ] kgi_session.py FIsLogon bug fixed (separate PR) — not a migration blocker but prerequisite for e2e test
   [ ] quantity_unit enum: confirm 'SHARE' / 'LOT' matches paper_orders (0020) convention
