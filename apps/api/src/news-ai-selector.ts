@@ -59,10 +59,10 @@ const MAX_TOKENS_RESPONSE = 2000;
 const WINDOW_HOURS = 6;
 // How many top-10 items to return
 const TOP_N = 10;
-// Consider selection stale if last run was > 7h ago (1h grace on 6h window)
-const STALE_AFTER_MS = 7 * 60 * 60 * 1000;
-// Boot recovery: if DB latest row is older than 4h, fire immediately
-const BOOT_RECOVERY_MAX_AGE_MS = 4 * 60 * 60 * 1000;
+// Consider selection stale if last run was > 90min ago (30min grace on 60min hourly cron)
+const STALE_AFTER_MS = 90 * 60 * 1000;
+// Boot recovery: if DB latest row is older than 60min, fire immediately (was 4h — too wide)
+const BOOT_RECOVERY_MAX_AGE_MS = 60 * 60 * 1000;
 
 // ── F1: Startup env validation ────────────────────────────────────────────────
 
@@ -187,47 +187,37 @@ function getCurrentWindowLabel(): WindowLabel {
 }
 
 /**
- * Returns whether now is within ±30min of a window trigger point.
- * Trigger points: 08:00, 12:00, 18:00, 24:00 TST.
+ * Returns whether the hourly cron should fire now.
+ * Fires every hour (any TST hour). Guard: if already ran within last 50min, skip.
+ * This replaces the old 4-window (08/12/18/24) gate with an hourly cadence so
+ * users never see stale news when browsing outside those 4 specific windows.
  */
 export function isWithinNewsWindowTrigger(): boolean {
-  const h = getTaipeiHour();
-  const triggerHours = new Set([7, 8, 11, 12, 17, 18, 23, 0]);
-  if (!triggerHours.has(h)) return false;
-
-  // Avoid double-fire: if already ran in last 45min, skip
+  // Hourly cadence: allow fire at any hour, guard against double-fire within 50min
   if (_lastRunAt) {
     const elapsedMs = Date.now() - _lastRunAt.getTime();
-    if (elapsedMs < 45 * 60 * 1000) return false;
+    if (elapsedMs < 50 * 60 * 1000) return false;
   }
   return true;
 }
 
 /**
  * Compute the ISO timestamp of the next scheduled window refresh from now.
- * Advance TST to the next trigger hour (08, 12, 18, 00) after current.
+ * Hourly cadence: next refresh is in ~60min.
  */
 export function computeNextRefreshAt(): string {
-  const now = new Date();
-  const tst = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Taipei",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(now);
-  const [hStr] = tst.split(":");
-  const h = parseInt(hStr ?? "0", 10);
-
-  const triggerHours = [8, 12, 18, 24]; // 24 = midnight next day
-  const nextH = triggerHours.find((t) => t > h) ?? 8; // wrap to next-day 08:00
-
-  const next = new Date(now);
-  const nowTstHour = h;
-  let hoursToAdd = nextH - nowTstHour;
-  if (hoursToAdd <= 0) hoursToAdd += 24;
-  next.setTime(now.getTime() + hoursToAdd * 60 * 60 * 1000);
-  next.setUTCMinutes(0, 0, 0);
+  const next = new Date(Date.now() + 60 * 60 * 1000);
+  next.setUTCSeconds(0, 0);
   return next.toISOString();
+}
+
+/**
+ * Maps the current TST hour to a human-readable window label for grouping/stats.
+ * Kept for backwards compatibility with audit log window_label field.
+ * (The underlying cron is now hourly, but label buckets still exist for grouping.)
+ */
+export function getCurrentWindowLabelForStats(): "08:00" | "12:00" | "18:00" | "24:00" {
+  return getCurrentWindowLabel();
 }
 
 // ── Raw news row fetch ────────────────────────────────────────────────────────

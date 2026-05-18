@@ -12039,6 +12039,39 @@ app.get("/api/v1/admin/news-top10/diag", async (c) => {
   });
 });
 
+// =============================================================================
+// GET /api/v1/admin/market/refresh-status
+//   Owner-only. Returns market overview cron state: last fire time, next estimated
+//   fire time, and any last error. Used by Bruce/Mike to verify prod cron health.
+// =============================================================================
+
+app.get("/api/v1/admin/market/refresh-status", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const nextFire = _marketOverviewCronLastFiredAt
+    ? new Date(new Date(_marketOverviewCronLastFiredAt).getTime() + 5 * 60 * 1000).toISOString()
+    : null;
+
+  return c.json({
+    data: {
+      cron: "market-overview-cron",
+      interval_sec: 300,
+      window: "09:00–13:35 TST weekdays",
+      last_fired_at: _marketOverviewCronLastFiredAt,
+      next_fire_eta: nextFire,
+      last_error: _marketOverviewCronLastError,
+      news_ai_cron: {
+        interval_sec: 3600,
+        guard_min: 50,
+        description: "hourly, fires every 60min, 50min double-fire guard"
+      }
+    }
+  });
+});
+
 /**
  * POST /api/v1/admin/brief/backfill
  * 5/12 FIX: Backfill missing briefs for a date range (Owner only).
@@ -12821,6 +12854,10 @@ async function runMarketIntelNewsTick(workspaceSlug: string): Promise<void> {
 // Promoted from startSchedulers() local scope (cycle17) so the observability route can read it.
 let _briefDispatcherLastFiredDate = "";
 
+// Module-level: market overview cron state (readable by admin refresh-status endpoint).
+let _marketOverviewCronLastFiredAt: string | null = null;
+let _marketOverviewCronLastError: string | null = null;
+
 /**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: fixed 09:00 TST daily (cycle13 fix).
@@ -13152,10 +13189,10 @@ function startSchedulers(workspaceSlug: string): void {
     });
   }, 5 * 60 * 1000);
 
-  // BLOCK #NEWS: AI news selector — poll every 15min; fires only within ±30min of
-  // 08:00 / 12:00 / 18:00 / 24:00 TST. isWithinNewsWindowTrigger() enforces the gate
-  // and prevents double-fire within 45min. workspaceId resolved from DB at tick time.
-  const NEWS_AI_POLL_MS = 15 * 60 * 1000;
+  // BLOCK #NEWS: AI news selector — hourly cron (every 60min). isWithinNewsWindowTrigger()
+  // enforces 50min double-fire guard. Old 4-window (08/12/18/24) gate removed: users saw
+  // stale news when browsing between windows. Now fires every hour, always fresh.
+  const NEWS_AI_POLL_MS = 60 * 60 * 1000;
   ui(async () => {
     try {
       const db = getDb();
@@ -13375,6 +13412,49 @@ function startSchedulers(workspaceSlug: string): void {
     }, 45_000);
   }
 
+  // MARKET-OVERVIEW-CRON: Pre-warm TWSE market overview cache every 5 min during
+  // trading hours (09:00–13:35 TST weekdays). Without this, the overview route only
+  // fetches on user-request → cold cache latency on page load. With this, the
+  // in-process 60s cache is always hot during market hours.
+  // Off-hours cron ticks are a no-op (window guard). No DB migration required.
+  {
+    const MARKET_OVERVIEW_CRON_MS = 5 * 60 * 1000;
+
+    /** Returns true if current Taipei time is in the 09:00–13:35 window on a weekday. */
+    function isMarketOverviewCronWindow(): boolean {
+      const hhmm = getTaipeiHHMM();
+      if (hhmm < 900 || hhmm >= 1335) return false;
+      const taipeiDate = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const dayOfWeek = taipeiDate.getUTCDay();
+      return dayOfWeek >= 1 && dayOfWeek <= 5;
+    }
+
+    ui(async () => {
+      if (!isMarketOverviewCronWindow()) return;
+      try {
+        const { getTwseMarketOverview } = await import("./data-sources/twse-openapi-client.js");
+        await getTwseMarketOverview();
+        _marketOverviewCronLastFiredAt = new Date().toISOString();
+        _marketOverviewCronLastError = null;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        _marketOverviewCronLastError = msg;
+        console.warn("[market-overview-cron] tick failed:", msg);
+      }
+    }, MARKET_OVERVIEW_CRON_MS);
+
+    // Boot fire: pre-warm immediately 20s after start (covers first page load after deploy)
+    setTimeout(async () => {
+      try {
+        const { getTwseMarketOverview } = await import("./data-sources/twse-openapi-client.js");
+        await getTwseMarketOverview();
+        _marketOverviewCronLastFiredAt = new Date().toISOString();
+      } catch {
+        // non-fatal
+      }
+    }, 20_000);
+  }
+
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
@@ -13383,12 +13463,13 @@ function startSchedulers(workspaceSlug: string): void {
     "FINMIND-FULL-11-DATASET boot(60s)+recurring(6h) + " +
     "P0-C pipeline pre_market/close_watch/close_brief (15min) + " +
     "BLOCK#6 event-rule-engine (5min) + email-digest (5min, fires at 17:00–17:30 TST) + " +
-    "BLOCK#NEWS news-ai-selector (15min poll, fires at 08:00/12:00/18:00/24:00 TST) + " +
+    "BLOCK#NEWS news-ai-selector (60min hourly cron, 50min double-fire guard) + " +
     "P0-2 health-watchdog (30min) + " +
     "BLOCK#TOGGLE paper-obs-cron (15min poll, fires at 17:00–17:30 TST) + " +
     "BLOCK#SIGNAL strategy(15min,13:45-14:30TST) + news(15min,4-window) + quote.breakout(30min,09:00-13:30TST) + " +
     "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) + " +
-    "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) started"
+    "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
+    "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) started"
   );
 }
 
