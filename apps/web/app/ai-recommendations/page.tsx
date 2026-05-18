@@ -1,5 +1,11 @@
 import Link from "next/link";
-import type { StockRecommendation } from "@iuf-trading-room/contracts";
+import {
+  recommendationActionSchema,
+  recommendationDirectionSchema,
+  recommendationPositionSuggestionSchema,
+  recommendationTimeHorizonSchema,
+  type StockRecommendation,
+} from "@iuf-trading-room/contracts";
 import { ArrowRight, Database, FileSearch, Gauge, ShieldAlert, Target } from "lucide-react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
@@ -19,28 +25,92 @@ import { ReactTracePanel } from "./ReactTracePanel";
 
 export const dynamic = "force-dynamic";
 
-type BucketName = StockRecommendation["action"];
-type QualityStatus = "OK" | "STALE" | "MISSING" | "WEAK";
+type BucketValue = StockRecommendation["action"];
 
-const BUCKETS: Array<{ label: BucketName; range: string; primary: boolean }> = [
-  { label: "今日首選", range: "80+", primary: true },
-  { label: "可觀察布局（研究參考）", range: "70-79", primary: true },
-  { label: "等回檔", range: "60-69", primary: true },
-  { label: "高風險排除", range: "<60", primary: false },
-  { label: "資料不足暫不推薦", range: "MISSING", primary: false },
+const ACTION_VALUES = recommendationActionSchema.options as readonly BucketValue[];
+const DIRECTION_VALUES = recommendationDirectionSchema.options as readonly StockRecommendation["direction"][];
+const TIME_HORIZON_VALUES = recommendationTimeHorizonSchema.options as readonly StockRecommendation["timeHorizon"][];
+const POSITION_VALUES = recommendationPositionSuggestionSchema.options as readonly StockRecommendation["positionSizing"]["suggestion"][];
+
+const BUCKETS: Array<{
+  value: BucketValue;
+  label: string;
+  range: string;
+  primary: boolean;
+  tone: "ok" | "warn" | "bad";
+  emptyMessage: string;
+}> = [
+  {
+    value: ACTION_VALUES[0],
+    label: "積極觀察",
+    range: "80+",
+    primary: true,
+    tone: "ok",
+    emptyMessage: "目前沒有達到積極觀察門檻的標的。",
+  },
+  {
+    value: ACTION_VALUES[1],
+    label: "觀察名單",
+    range: "70-79",
+    primary: true,
+    tone: "warn",
+    emptyMessage: "目前沒有適合列入觀察名單的標的。",
+  },
+  {
+    value: ACTION_VALUES[2],
+    label: "小量追蹤",
+    range: "60-69",
+    primary: true,
+    tone: "warn",
+    emptyMessage: "目前沒有適合小量追蹤的標的。",
+  },
+  {
+    value: ACTION_VALUES[3],
+    label: "暫不進場",
+    range: "<60",
+    primary: false,
+    tone: "bad",
+    emptyMessage: "目前沒有被系統明確排除的標的。",
+  },
+  {
+    value: ACTION_VALUES[4],
+    label: "資料不足",
+    range: "MISSING",
+    primary: false,
+    tone: "bad",
+    emptyMessage: "目前沒有因資料不足而保留的標的。",
+  },
 ];
 
 const REASON_GROUPS: Array<{
   key: keyof StockRecommendation["reasons"];
   label: string;
 }> = [
-  { key: "technical", label: "技術" },
+  { key: "technical", label: "技術面" },
   { key: "chip", label: "籌碼" },
   { key: "news", label: "新聞" },
   { key: "theme", label: "主題" },
   { key: "quant", label: "量化" },
   { key: "macro", label: "總經" },
 ];
+
+const DIRECTION_LABELS = new Map<StockRecommendation["direction"], string>([
+  [DIRECTION_VALUES[0], "偏多"],
+  [DIRECTION_VALUES[1], "偏空"],
+  [DIRECTION_VALUES[2], "中性"],
+]);
+
+const TIME_HORIZON_LABELS = new Map<StockRecommendation["timeHorizon"], string>([
+  [TIME_HORIZON_VALUES[0], "短線 / 波段"],
+  [TIME_HORIZON_VALUES[1], "1-2 週"],
+  [TIME_HORIZON_VALUES[2], "中期觀察"],
+]);
+
+const POSITION_LABELS = new Map<StockRecommendation["positionSizing"]["suggestion"], string>([
+  [POSITION_VALUES[0], "標準部位"],
+  [POSITION_VALUES[1], "半碼觀察"],
+  [POSITION_VALUES[2], "高風險小量"],
+]);
 
 function asPercent(value: number) {
   return `${Math.round(value * 100)}%`;
@@ -51,17 +121,30 @@ function formatPrice(value: number | null) {
   return value.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
 }
 
-function qualityTone(value: QualityStatus) {
+function formatDirection(value: StockRecommendation["direction"]) {
+  return DIRECTION_LABELS.get(value) ?? "中性";
+}
+
+function formatTimeHorizon(value: StockRecommendation["timeHorizon"]) {
+  return TIME_HORIZON_LABELS.get(value) ?? String(value);
+}
+
+function formatPositionSuggestion(value: StockRecommendation["positionSizing"]["suggestion"]) {
+  return POSITION_LABELS.get(value) ?? "依風控調整";
+}
+
+function qualityTone(value: string) {
   if (value === "OK") return "ok";
   if (value === "MISSING") return "bad";
   return "warn";
 }
 
-function qualityStatusLabel(value: QualityStatus) {
-  if (value === "OK") return "正常";
+function qualityStatusLabel(value: string) {
+  if (value === "OK") return "完整";
   if (value === "STALE") return "過期";
   if (value === "MISSING") return "缺資料";
-  return "偏弱";
+  if (value === "WEAK") return "偏弱";
+  return value;
 }
 
 function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
@@ -70,26 +153,47 @@ function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
   return "warn";
 }
 
-function actionTone(value: BucketName) {
-  if (value === "今日首選") return "ok";
-  if (value === "可觀察布局（研究參考）" || value === "等回檔") return "warn";
-  return "bad";
+function targetLabel(value: StockRecommendation["targets"][number]["label"]) {
+  if (value === "TP1" || value === "TP2") return value;
+  return "移動停利";
+}
+
+function scoreBucket(item: StockRecommendation) {
+  if (item.dataQuality.quote === "MISSING" && item.dataQuality.kbar === "MISSING") return BUCKETS[4];
+  if (item.totalScore >= 80) return BUCKETS[0];
+  if (item.totalScore >= 70) return BUCKETS[1];
+  if (item.totalScore >= 60) return BUCKETS[2];
+  return BUCKETS[3];
+}
+
+function bucketForItem(item: StockRecommendation) {
+  return BUCKETS.find((bucket) => bucket.value === item.action) ?? scoreBucket(item);
 }
 
 function groupByBucket(items: StockRecommendation[]) {
-  return BUCKETS.reduce<Record<BucketName, StockRecommendation[]>>((acc, bucket) => {
-    acc[bucket.label] = items
-      .filter((item) => item.action === bucket.label)
-      .sort((a, b) => a.rank - b.rank);
-    return acc;
-  }, {} as Record<BucketName, StockRecommendation[]>);
+  const groups = new Map<BucketValue, StockRecommendation[]>();
+  for (const bucket of BUCKETS) groups.set(bucket.value, []);
+
+  for (const item of items) {
+    const bucket = bucketForItem(item);
+    groups.get(bucket.value)?.push(item);
+  }
+
+  for (const values of groups.values()) {
+    values.sort((a, b) => a.rank - b.rank);
+  }
+  return groups;
 }
 
 function safeMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("403") || message.includes("forbidden_role")) return "Owner 權限尚未通過，推薦資料暫不顯示。";
-  if (message.includes("401") || message.includes("unauthenticated")) return "登入狀態尚未通過，推薦資料暫不顯示。";
-  return "Recommendation Orchestrator 資料同步中。";
+  if (message.includes("403") || message.includes("forbidden_role")) {
+    return "需要 Owner 權限才能讀取正式推薦。";
+  }
+  if (message.includes("401") || message.includes("unauthenticated")) {
+    return "請先登入 IUF 帳號，再查看 AI 推薦。";
+  }
+  return "Recommendation Orchestrator 暫時無法讀取資料。";
 }
 
 async function loadRecommendations(): Promise<{
@@ -104,9 +208,9 @@ async function loadRecommendations(): Promise<{
 }
 
 function QualityBadges({ rec }: { rec: StockRecommendation }) {
-  const items: Array<[string, QualityStatus]> = [
+  const items: Array<[string, string]> = [
     ["報價", rec.dataQuality.quote],
-    ["K線", rec.dataQuality.kbar],
+    ["K 線", rec.dataQuality.kbar],
     ["籌碼", rec.dataQuality.chip],
     ["新聞", rec.dataQuality.news],
     ["量化", rec.dataQuality.quant],
@@ -116,7 +220,7 @@ function QualityBadges({ rec }: { rec: StockRecommendation }) {
     .filter(([, value]) => value !== "OK")
     .map(([label, value]) => `${label}${qualityStatusLabel(value)}`);
   const summary = weakItems.length > 0
-    ? `資料品質提醒：${weakItems.join("、")}；信心折減 ${penaltyPct}%`
+    ? `資料品質弱項：${weakItems.join("、")}；信心折減 ${penaltyPct}%`
     : `資料品質完整；信心折減 ${penaltyPct}%`;
 
   return (
@@ -137,9 +241,12 @@ function QualityBadges({ rec }: { rec: StockRecommendation }) {
 
 function RecommendationCard({ rec }: { rec: StockRecommendation }) {
   const prefillHref = buildRecommendationPrefillHref(rec);
+  const bucket = bucketForItem(rec);
+  const positionLabel = formatPositionSuggestion(rec.positionSizing.suggestion);
+  const directionLabel = formatDirection(rec.direction);
 
   return (
-    <article className="_rec-card" data-action={rec.action}>
+    <article className="_rec-card" data-tone={bucket.tone}>
       <div className="_rec-card-head">
         <div>
           <span className="_rec-rank">#{rec.rank}</span>
@@ -149,9 +256,9 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
           </h3>
         </div>
         <div className="_rec-badges">
-          <span data-tone={actionTone(rec.action)}>{rec.action}</span>
-          <span>{rec.direction}</span>
-          <span>{rec.timeHorizon}</span>
+          <span data-tone={bucket.tone}>{bucket.label}</span>
+          <span>{directionLabel}</span>
+          <span>{formatTimeHorizon(rec.timeHorizon)}</span>
         </div>
       </div>
 
@@ -180,32 +287,32 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
         <small>{rec.quant.strategySource}</small>
       </div>
 
-      <p className="_rec-research-note">以下為研究輸出，非投資建議。</p>
+      <p className="_rec-research-note">AI 推薦只做研究與 SIM 演練，不代表實單建議。</p>
       <div className="_rec-trade-grid">
         <div>
-          <span>進場參考區（研究）</span>
-          <b>{rec.entryZone.primary || "資料同步中"}</b>
+          <span>進場區間</span>
+          <b>{rec.entryZone.primary || "資料尚未提供"}</b>
           {rec.entryZone.secondary && <small>{rec.entryZone.secondary}</small>}
-          <p>{rec.entryZone.reason || "資料同步中"}</p>
+          <p>{rec.entryZone.reason || "尚無進場理由"}</p>
         </div>
         <div>
-          <span>訊號失效點（研究參考）</span>
+          <span>失效條件 / 停損</span>
           <b>{formatPrice(rec.invalidation.price)}</b>
-          <p>{rec.invalidation.rule || "資料同步中"}</p>
+          <p>{rec.invalidation.rule || "尚無失效條件"}</p>
         </div>
         <div>
-          <span>倉位參考（研究用）</span>
-          <b data-risk={rec.positionSizing.suggestion === "禁止追高" ? "hot" : undefined}>
-            {rec.positionSizing.suggestion}
+          <span>部位建議</span>
+          <b data-risk={positionLabel === "高風險小量" ? "hot" : undefined}>
+            {positionLabel}
           </b>
-          <p>風險上限 {rec.positionSizing.maxRiskPct}%</p>
+          <p>單筆最大風險 {rec.positionSizing.maxRiskPct}%</p>
         </div>
       </div>
 
       <div className="_rec-targets">
         {rec.targets.map((target) => (
           <span key={`${rec.recommendationId}-${target.label}`}>
-            <b>{target.label}</b>
+            <b>{targetLabel(target.label)}</b>
             {formatPrice(target.price)}
             <small>{target.reason}</small>
           </span>
@@ -213,7 +320,7 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
       </div>
 
       <details className="_rec-details" open>
-        <summary>理由</summary>
+        <summary>推薦理由</summary>
         <div className="_rec-reasons">
           {REASON_GROUPS.map((group) => {
             const reasons = rec.reasons[group.key];
@@ -247,7 +354,7 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
             ))}
           </ul>
         ) : (
-          <p className="_rec-empty-text">資料同步中</p>
+          <p className="_rec-empty-text">尚無額外風險說明。</p>
         )}
       </details>
 
@@ -270,7 +377,7 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
               </span>
             ))
           ) : (
-            <p className="_rec-empty-text">資料同步中</p>
+            <p className="_rec-empty-text">尚無來源紀錄。</p>
           )}
         </div>
       </details>
@@ -289,13 +396,13 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
             directionLabel={handoffLabelForDirection(rec.direction)}
           >
             <ArrowRight size={16} strokeWidth={1.9} />
-            一鍵帶到交易室
+            帶入模擬委託
           </RecommendationHandoffLink>
         </>
       ) : (
         <RecommendationHandoffUnavailable reason={INVALID_AI_HANDOFF_TICKER_MESSAGE}>
           <ShieldAlert size={16} strokeWidth={1.9} />
-          未帶入交易室
+          無法帶入模擬委託
         </RecommendationHandoffUnavailable>
       )}
       <RecommendationFeedbackActions recommendationId={rec.recommendationId} />
@@ -306,21 +413,19 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
 function EmptyBucket({ message }: { message: string }) {
   return (
     <div className="_rec-empty">
-      <b>資料同步中</b>
+      <b>尚無標的</b>
       <p>{message}</p>
     </div>
   );
 }
 
 function BucketSection({
-  label,
+  bucket,
   items,
-  primary,
   error,
 }: {
-  label: BucketName;
+  bucket: (typeof BUCKETS)[number];
   items: StockRecommendation[];
-  primary: boolean;
   error: string | null;
 }) {
   const body = (
@@ -328,16 +433,16 @@ function BucketSection({
       {items.length > 0 ? (
         items.map((rec) => <RecommendationCard key={rec.recommendationId} rec={rec} />)
       ) : (
-        <EmptyBucket message={error ?? "目前沒有符合此分層的推薦。"} />
+        <EmptyBucket message={error ?? bucket.emptyMessage} />
       )}
     </div>
   );
 
-  if (!primary) {
+  if (!bucket.primary) {
     return (
       <details className="_rec-section _rec-section-collapsed">
         <summary>
-          <span>{label}</span>
+          <span>{bucket.label}</span>
           <b>{items.length}</b>
         </summary>
         {body}
@@ -348,7 +453,7 @@ function BucketSection({
   return (
     <section className="_rec-section">
       <div className="_rec-section-head">
-        <h2>{label}</h2>
+        <h2>{bucket.label}</h2>
         <span>{items.length} 檔</span>
       </div>
       {body}
@@ -371,10 +476,9 @@ export default async function AiRecommendationsPage() {
       code="AI"
       title="AI 推薦"
       sub="Recommendation Orchestrator"
-      note="推薦只呈現後端回傳資料；缺漏欄位顯示資料同步中或 -，不以前端假數字補位。"
+      note="推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。"
     >
       <MarketStateBanner />
-      {/* v3 SOP — market state badge (placeholder until backend v3 merges) */}
       <MarketStateBadgePlaceholder />
       <style>{`
         ._rec-tabs {
@@ -507,9 +611,11 @@ export default async function AiRecommendationsPage() {
             linear-gradient(135deg, rgba(200, 148, 63, 0.055), transparent 42%),
             rgba(4, 8, 13, 0.42);
         }
-        ._rec-card[data-action="高風險排除"],
-        ._rec-card[data-action="資料不足暫不推薦"] {
+        ._rec-card[data-tone="bad"] {
           border-left-color: rgba(230, 57, 70, 0.78);
+        }
+        ._rec-card[data-tone="ok"] {
+          border-left-color: rgba(46, 204, 113, 0.68);
         }
         ._rec-card-head {
           display: flex;
@@ -616,6 +722,12 @@ export default async function AiRecommendationsPage() {
           color: var(--tac-fg-3);
           font: 800 11px/1 var(--mono);
           overflow-wrap: anywhere;
+        }
+        ._rec-research-note {
+          margin: 0;
+          color: var(--tac-fg-3);
+          font-size: 12px;
+          line-height: 1.58;
         }
         ._rec-trade-grid {
           display: grid;
@@ -884,6 +996,40 @@ export default async function AiRecommendationsPage() {
           font-size: 12px;
           line-height: 1.65;
         }
+        ._rec-v3-preview {
+          display: grid;
+          gap: 10px;
+          padding: 12px;
+          border: 1px dashed rgba(200,148,63,0.24);
+          border-radius: 8px;
+          background: rgba(8,11,16,0.28);
+          margin-bottom: 14px;
+          overflow-x: auto;
+        }
+        ._rec-v3-preview-title {
+          color: var(--tac-brand);
+          font: 900 10px/1 var(--mono);
+        }
+        ._rec-v3-preview table {
+          width: 100%;
+          min-width: 680px;
+          border-collapse: collapse;
+          font: 800 11px/1 var(--mono);
+        }
+        ._rec-v3-preview th {
+          padding: 5px 6px;
+          color: var(--tac-brand);
+          text-align: center;
+          border-bottom: 1px solid var(--tac-line);
+          font-size: 10px;
+          white-space: nowrap;
+        }
+        ._rec-v3-preview td {
+          padding: 6px;
+          text-align: center;
+          color: var(--tac-fg-3);
+          font-size: 12px;
+        }
         @media (max-width: 1180px) {
           ._rec-bucket-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
           ._rec-trade-grid { grid-template-columns: 1fr; }
@@ -901,47 +1047,47 @@ export default async function AiRecommendationsPage() {
         }
       `}</style>
 
-      <div className="_rec-tabs" aria-label="AI 推薦子頁">
-        <Link href="/runs">策略批次</Link>
-        <Link href="/signals">訊號證據</Link>
+      <div className="_rec-tabs" aria-label="AI 推薦導覽">
+        <Link href="/runs">策略執行紀錄</Link>
+        <Link href="/signals">訊號中心</Link>
       </div>
 
       <Panel
         code="AI-01"
-        title="推薦分層"
-        sub={`日期 ${data?.date ?? "-"} / 產生 ${generatedAtLabel} / ${sourceMode}`}
-        right={`${items.length} 筆推薦`}
+        title="推薦清單"
+        sub={`交易日 ${data?.date ?? "-"} / 產生時間 ${generatedAtLabel || "-"} / ${sourceMode}`}
+        right={`${items.length} 檔`}
       >
         <div className="_rec-bucket-grid">
-          {BUCKETS.map((bucket) => (
-            <article key={bucket.label} className="_rec-bucket">
-              <span>{bucket.range}</span>
-              <b>{bucket.label}</b>
-              <small>{grouped[bucket.label].length} 檔</small>
-            </article>
-          ))}
+          {BUCKETS.map((bucket) => {
+            const bucketItems = grouped.get(bucket.value) ?? [];
+            return (
+              <article key={bucket.value} className="_rec-bucket">
+                <span>{bucket.range}</span>
+                <b>{bucket.label}</b>
+                <small>{bucketItems.length} 檔</small>
+              </article>
+            );
+          })}
         </div>
 
         {BUCKETS.map((bucket) => (
           <BucketSection
-            key={bucket.label}
-            label={bucket.label}
-            items={grouped[bucket.label]}
-            primary={bucket.primary}
+            key={bucket.value}
+            bucket={bucket}
+            items={grouped.get(bucket.value) ?? []}
             error={error}
           />
         ))}
       </Panel>
 
-      {/* ── v3 SOP 結構 (待 Jason v3 backend 上線後接真實 payload) ── */}
       <Panel
         code="AI-02"
-        title="SOP 評分結構 (v3)"
-        sub="7 sub-score × 楊董手冊 / 市場狀態先決 / ReAct 5-module"
-        right="Beta — Jason BG 進行中"
+        title="SOP 推理結構 (v3)"
+        sub="7 sub-score / 市場狀態 / OTE 進場 / ReAct 5-module"
+        right="等待 Jason v3 payload"
       >
         <div style={{ padding: "16px" }}>
-          {/* Inline MarketStateBadge with placeholder scores */}
           <MarketStateBadge
             scores={{
               trend_score: null,
@@ -950,42 +1096,28 @@ export default async function AiRecommendationsPage() {
             }}
           />
 
-          {/* v3 sub-score table structure preview */}
-          <div style={{
-            display: "grid",
-            gap: "10px",
-            padding: "12px",
-            border: "1px dashed rgba(200,148,63,0.24)",
-            borderRadius: "8px",
-            background: "rgba(8,11,16,0.28)",
-            marginBottom: "14px",
-          }}>
-            <div style={{ color: "var(--tac-brand)", font: "900 10px/1 var(--mono)", marginBottom: "6px" }}>
-              7 SUB-SCORE TABLE — 待後端 v3 推薦資料
+          <div className="_rec-v3-preview">
+            <div className="_rec-v3-preview-title">
+              7 SUB-SCORE TABLE / 等待 v3 推薦資料
             </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", font: "800 11px/1 var(--mono)" }}>
+            <table>
               <thead>
                 <tr>
-                  {["主題位置", "營收", "法人ETF", "融資借券", "RS量能", "技術結構", "估值事件", "總分"].map((h) => (
-                    <th key={h} style={{ padding: "5px 6px", color: "var(--tac-brand)", textAlign: "center", borderBottom: "1px solid var(--tac-line)", fontSize: "10px", whiteSpace: "nowrap" }}>
-                      {h}
-                    </th>
+                  {["主題位置", "營收獲利", "法人/ETF", "融資融券", "RS/量能", "技術結構", "估值事件", "總分"].map((header) => (
+                    <th key={header}>{header}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  {["/20", "/15", "/15", "/15", "/10", "/20", "/5", "/100"].map((max, i) => (
-                    <td key={i} style={{ padding: "6px", textAlign: "center", color: "var(--tac-fg-3)", fontSize: "12px" }}>
-                      —{max}
-                    </td>
+                  {["/20", "/15", "/15", "/15", "/10", "/20", "/5", "/100"].map((max, index) => (
+                    <td key={index}>{max}</td>
                   ))}
                 </tr>
               </tbody>
             </table>
           </div>
 
-          {/* ReAct trace placeholder */}
           <ReactTracePanel
             steps={null}
             round_current={null}

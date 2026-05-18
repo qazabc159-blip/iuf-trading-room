@@ -5,6 +5,6 @@ export function formatRecommendationSourceMode({
   hasData: boolean;
   isMock?: boolean;
 }) {
-  if (!hasData) return "同步中";
-  return isMock ? "備援資料源" : "推薦引擎";
+  if (!hasData) return "尚無資料";
+  return isMock ? "示範資料" : "正式推薦";
 }

@@ -1,17 +1,5 @@
 "use client";
 
-/**
- * MarketStateBadge — F1
- *
- * Displays the current market regime as a full-width banner stripe.
- * 4 states: risk_off / event / trend / range
- *
- * Accepts optional live scores from the backend; falls back to
- * placeholder values when the v3 backend is not yet merged.
- *
- * Tooltip shows raw sub-scores on hover (title attribute).
- */
-
 export type MarketState = "risk_off" | "event" | "trend" | "range";
 
 export interface MarketStateScores {
@@ -19,7 +7,6 @@ export interface MarketStateScores {
   range_score?: number | null;
   risk_off_score?: number | null;
   event_label?: string | null;
-  /** Override the auto-derived state label */
   state?: MarketState | null;
 }
 
@@ -33,27 +20,27 @@ const STATE_CONFIG: Record<
   }
 > = {
   risk_off: {
-    label: "市場 risk-off",
-    detail: "VIX/DXY/10Y 多項警示 — 不開新 beta 倉",
-    multiplier: "倉位倍率 0",
+    label: "風險收縮",
+    detail: "VIX/DXY/美債壓力偏高，暫停放大 beta。",
+    multiplier: "部位係數 0",
     tone: "risk_off",
   },
   event: {
-    label: "事件市",
-    detail: "FOMC/CPI/法說 T-2~T+1 — 倉位倍率 0.5",
-    multiplier: "倉位倍率 0.5",
+    label: "事件窗口",
+    detail: "FOMC/CPI/重大事件前後，進場折半。",
+    multiplier: "部位係數 0.5",
     tone: "event",
   },
   trend: {
-    label: "趨勢市",
-    detail: "ADX>22, 均線多頭排列 — 倉位倍率 1.0",
-    multiplier: "倉位倍率 1.0",
+    label: "趨勢盤",
+    detail: "趨勢分數偏強，可照 SOP 執行。",
+    multiplier: "部位係數 1.0",
     tone: "trend",
   },
   range: {
-    label: "震盪市",
-    detail: "ADX<18, 指數貼近 EMA60 ±5%",
-    multiplier: "倉位倍率 0.7",
+    label: "區間盤",
+    detail: "市場仍在盤整，優先等 OTE 或突破回測。",
+    multiplier: "部位係數 0.7",
     tone: "range",
   },
 };
@@ -67,7 +54,6 @@ function deriveState(scores: MarketStateScores): MarketState {
   if (scores.event_label) return "event";
   if (trend >= 4) return "trend";
   if (range >= 2) return "range";
-  // default safe fallback
   return "range";
 }
 
@@ -77,7 +63,7 @@ function buildTooltip(scores: MarketStateScores): string {
   if (scores.range_score != null) parts.push(`range_score=${scores.range_score}`);
   if (scores.risk_off_score != null) parts.push(`risk_off_score=${scores.risk_off_score}`);
   if (scores.event_label) parts.push(`event=${scores.event_label}`);
-  return parts.length > 0 ? parts.join(" / ") : "sub-score 數據待後端 v3 上線";
+  return parts.length > 0 ? parts.join(" / ") : "等待 v3 後端市場分數";
 }
 
 export function MarketStateBadge({
@@ -149,27 +135,26 @@ export function MarketStateBadge({
           white-space: nowrap;
           opacity: 0.72;
         }
-        ._msb-placeholder {
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          border: 1px dashed rgba(200, 148, 63, 0.28);
-          border-radius: 7px;
-          padding: 9px 14px;
-          margin-bottom: 14px;
-          color: var(--tac-fg-3, #7a8aa0);
-          font: 800 11px/1 var(--mono, monospace);
+        @media (max-width: 760px) {
+          ._msb-wrap {
+            align-items: flex-start;
+            flex-wrap: wrap;
+          }
+          ._msb-mult {
+            width: 100%;
+            margin-left: 18px;
+          }
         }
       `}</style>
       <div
         className={`_msb-wrap _msb-${config.tone}${className ? ` ${className}` : ""}`}
         title={tooltip}
-        aria-label={`市場狀態: ${config.label} / ${config.detail}`}
+        aria-label={`市場狀態：${config.label}，${config.detail}`}
         data-market-state={state}
       >
         <span className="_msb-dot" aria-hidden="true" />
         <span className="_msb-label">{config.label}</span>
-        <span className="_msb-sep">—</span>
+        <span className="_msb-sep">/</span>
         <span className="_msb-detail">{config.detail}</span>
         <span className="_msb-mult">{config.multiplier}</span>
       </div>
@@ -177,11 +162,6 @@ export function MarketStateBadge({
   );
 }
 
-/**
- * Placeholder shown when backend v3 data is not yet available.
- * Renders a dashed "待後端 v3" banner so the structure is visible
- * even with v2 payload.
- */
 export function MarketStateBadgePlaceholder() {
   return (
     <>
@@ -195,10 +175,10 @@ export function MarketStateBadgePlaceholder() {
           padding: 9px 14px;
           margin-bottom: 14px;
           color: var(--tac-fg-3, #7a8aa0);
-          font: 800 11px/1 var(--mono, monospace);
+          font: 800 11px/1.45 var(--mono, monospace);
         }
       `}</style>
-      <div className="_msb-placeholder" aria-label="市場狀態待後端 v3 上線">
+      <div className="_msb-placeholder" aria-label="等待 v3 市場分數">
         <span
           style={{
             width: 7,
@@ -209,7 +189,7 @@ export function MarketStateBadgePlaceholder() {
           }}
           aria-hidden="true"
         />
-        市場狀態評估 — 待後端 v3 上線 (Jason BG 進行中)
+        市場狀態分數等待 v3 後端接入，現在只顯示推薦清單與資料品質。
       </div>
     </>
   );
