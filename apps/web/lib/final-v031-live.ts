@@ -1324,7 +1324,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         prefill.target ? "目標 " + prefill.target : null,
         prefill.recommendationId ? "rec " + prefill.recommendationId : null
       ].filter(Boolean);
-      box.innerHTML = '<div class="k">AI RECOMMENDATION SIM PREVIEW</div><div class="v">'+esc(selected.symbol || prefill.symbol || "推薦標的")+' 已帶入交易室 SIM 預覽；此區只建立模擬紀錄，不會建立券商委託。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
+      box.innerHTML = '<div class="k">AI RECOMMENDATION PAPER PREVIEW</div><div class="v">'+esc(selected.symbol || prefill.symbol || "推薦標的")+' 已帶入交易室紙上單預覽；此區只建立平台模擬紀錄，不會建立券商委託。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
     }
 
     const entryPrice = firstNumber(prefill.entry);
@@ -1353,7 +1353,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       const label = $("#submit-btn-label") || submit?.querySelector("b");
       if (label) {
         if (!label.id) label.id = "submit-btn-label";
-        label.textContent = "AI 推薦帶入的 SIM 預覽";
+        label.textContent = "AI 推薦帶入的紙上單預覽";
       }
     };
     setSubmitPreviewLabel();
@@ -1544,24 +1544,30 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           preview = await fetch("/api/ui-final-v031-paper/preview", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
         }
         if (!preview.ok) throw new Error(preview.error || "preview_failed");
-        // Submit to KGI SIM endpoint (direct gateway, not paper-only DB)
-        const simPayload = { symbol: payload.symbol, side: payload.side, qty: payload.qty, price: payload.price, orderType: payload.orderType, quantityUnit: payload.quantity_unit };
-        let confirmed;
-        try {
-          const simRes = await apiPost("/api/v1/kgi/sim/order", simPayload);
-          confirmed = { ok:true, data: simRes };
-        } catch (simErr) {
-          // Fallback: if KGI SIM endpoint not reachable (e.g. gateway down), fall back to paper/submit
-          try {
-            confirmed = { ok:true, data: await apiPost("/api/v1/paper/submit", Object.assign({}, payload, { idempotencyKey: "v031_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2) })) };
-          } catch {
-            throw simErr;
-          }
+        const confirmed = await fetch("/api/ui-final-v031-paper/submit", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+        if (!confirmed.ok) {
+          const details = confirmed.details && typeof confirmed.details === "object" ? confirmed.details : {};
+          const riskCheck = details.riskCheck && typeof details.riskCheck === "object" ? details.riskCheck : {};
+          const reasonCodes = Array.isArray(details.reasonCodes) ? details.reasonCodes.map(String).filter(Boolean) : [];
+          const summary = typeof riskCheck.summary === "string" ? riskCheck.summary : "";
+          const reasonLabel = (code) => {
+            const normalized = String(code || "").trim().toLowerCase();
+            if (normalized === "trading_hours") return "非交易時段";
+            if (normalized === "max_per_trade") return "單筆風控超限";
+            if (normalized === "stale_quote") return "報價過期";
+            if (normalized === "insufficient_cash") return "可用資金不足";
+            if (normalized === "quote_unavailable") return "報價資料不可用";
+            return String(code || "").trim() || "風控未通過";
+          };
+          const reasonText = (reasonCodes.length ? reasonCodes.map(reasonLabel).join("、") : summary || confirmed.error || "風控未通過").slice(0, 80);
+          const blockedLabel = getSubmitLabel(); if (blockedLabel) blockedLabel.textContent = "紙上單未通過";
+          const gate = $(".gate .h .v"); if (gate) gate.textContent = reasonText;
+          return;
         }
-        if (!confirmed.ok) throw new Error(confirmed.error || "submit_failed");
-        const simData = confirmed.data && typeof confirmed.data === "object" ? confirmed.data : null;
-        const tradeId = simData && simData.data && typeof simData.data === "object" ? String(simData.data.tradeId || "") : "";
-        const lbl1 = getSubmitLabel(); if (lbl1) lbl1.textContent = tradeId ? "KGI SIM #" + tradeId : "KGI SIM 已接收";
+        const paperData = confirmed.data && typeof confirmed.data === "object" ? confirmed.data : null;
+        const nestedPaperData = paperData && paperData.data && typeof paperData.data === "object" ? paperData.data : null;
+        const orderId = String((paperData && (paperData.id || paperData.orderId)) || (nestedPaperData && (nestedPaperData.id || nestedPaperData.orderId)) || "");
+        const lbl1 = getSubmitLabel(); if (lbl1) lbl1.textContent = orderId ? "紙上單 #" + orderId : "紙上單已送出";
         // Refresh orders/fills/positions without full reload
         setTimeout(async () => {
           try { await refreshClientLive(); } catch { /* ignore */ }
