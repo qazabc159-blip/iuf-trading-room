@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { getKgiTicks, type KgiTickEntry } from "@/lib/api";
 
-const POLL_MS = 30_000;
+// Live tick perception: 5s feels real-time, 30s feels stale. KGI gateway tick rate ~1/sec.
+const POLL_MS = 5_000;
 const MAX_TICKS = 20;
 
 type TickStreamState =
@@ -132,7 +133,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
         {state.status === "loading" && (
           <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>讀取中…</span>
         )}
-        <span className="dim" style={{ fontSize: 9.5, marginLeft: 8 }}>最近 {MAX_TICKS} 筆 / 30s 更新</span>
+        <span className="dim" style={{ fontSize: 9.5, marginLeft: 8 }}>最近 {MAX_TICKS} 筆 / 5s 更新</span>
       </h3>
 
       {state.status === "blocked" && (
