@@ -44,8 +44,9 @@ function run(command, args, options = {}) {
 // migrate.ts reads this and hard-exits (process.exit 1) if DB row count != expected.
 // This catches advisory lock contention failures that would leave prod schema stale.
 // Root cause 2026-05-18: 6 deploys in 30 min → lock_timeout → silent degraded mode.
-// Current expected value: 37 (migrations 0001-0038, excluding 0027 DRAFT).
-// Update when new migration files are merged.
+// Current prod expected value: 39. Repo has 37 current forward files through 0038,
+// but prod schema_migrations also contains 2 legacy applied rows from earlier
+// migration history. Update when new migration files are merged.
 const expectedMigrationCount = process.env.EXPECTED_MIGRATION_COUNT;
 
 console.log("[start-api-railway] Booting api service");

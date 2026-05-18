@@ -84,7 +84,8 @@ jobs:
       #   Route B is permanently removed. Both secrets must be set in GHA secrets.
       # - If verify fails for any reason, deploy is BLOCKED (exit 1).
       # - EXPECTED_MIGRATION_COUNT must be updated in Railway env vars when new migrations are added.
-      #   Current value: 37 (migrations 0001-0038, excluding 0027 DRAFT).
+      #   Current prod value: 39. Repo has 37 current forward files through 0038, but prod
+      #   schema_migrations also contains 2 legacy applied rows from earlier migration history.
       - name: Verify migrations applied (api only)
         if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
         continue-on-error: false
@@ -189,9 +190,11 @@ jobs:
           fi
 
           # Hard check: migration count must match expected total.
-          # UPDATE THIS VALUE whenever a new migration is added (0001..0038 = 37 files; 0027 is DRAFT only).
+          # UPDATE THIS VALUE whenever a new migration is added.
+          # Current prod value: 39. Repo has 37 current forward files through 0038, but prod
+          # schema_migrations also contains 2 legacy applied rows from earlier migration history.
           # Root cause 2026-05-18: this was 31 (stale), allowing 6 undetected migration failures.
-          EXPECTED_MIGRATION_COUNT=37
+          EXPECTED_MIGRATION_COUNT=39
           if [ "$COUNT" != "$EXPECTED_MIGRATION_COUNT" ]; then
             echo "::error::Migration count mismatch: expected $EXPECTED_MIGRATION_COUNT but got $COUNT. Check Railway boot logs for advisory lock contention or migration errors."
             exit 1
