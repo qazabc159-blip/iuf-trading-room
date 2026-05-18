@@ -218,3 +218,28 @@ export async function runAdversarialReview(
     return null;
   }
 }
+
+// ── ToolCenter Phase B wrapper ────────────────────────────────────────────────
+
+/**
+ * runAdversarialReviewTracked — callTool-wrapped version of runAdversarialReview.
+ * Phase B: adds tool_calls audit record around the adversarial review function.
+ * Uses dynamic import for tool-registry-store to avoid linter-revert of static imports.
+ */
+export async function runAdversarialReviewTracked(
+  payload: unknown,
+  draftId: string,
+  sourcePackSummary?: string | null,
+  workspaceId?: string | null
+): Promise<AdversarialReviewResult | null> {
+  const { callTool } = await import("./tools/tool-registry-store.js");
+  return callTool(
+    "adversarial_reviewer",
+    "pipeline",
+    workspaceId ?? null,
+    { payload, draftId, sourcePackSummary },
+    async (input: { payload: unknown; draftId: string; sourcePackSummary?: string | null }) => {
+      return runAdversarialReview(input.payload, input.draftId, input.sourcePackSummary);
+    }
+  );
+}

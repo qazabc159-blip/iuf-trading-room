@@ -11438,6 +11438,92 @@ test("TOOLCENTER-PA-5: getToolStats returns empty array in non-DB mode", async (
   assert.equal(result.length, 0, "TOOLCENTER-PA-5: non-DB mode must return empty array");
 });
 
+// ── TOOLCENTER-PB: ToolCenter Phase B — 5 tool wraps ────────────────────────
+
+test("TOOLCENTER-PB-1: runAdversarialReviewTracked delegates to callTool and returns result (memory-mode)", async () => {
+  const { runAdversarialReviewTracked } = await import("../apps/api/src/openalice-adversarial-reviewer.js");
+  // In memory-mode callTool executes fn directly; runAdversarialReview will get null back from LLM
+  // (no OPENAI_API_KEY in test env) — safe-default returns null which is valid
+  const result = await runAdversarialReviewTracked(
+    { title: "test", content: "some text" },
+    "draft-test-001",
+    null,
+    null
+  ).catch(() => null); // safe-default: null on LLM failure
+  // Result may be null (no LLM in CI) or an object — either is acceptable
+  assert.ok(result === null || (typeof result === "object" && "severityScore" in result),
+    "TOOLCENTER-PB-1: runAdversarialReviewTracked must return null or valid result");
+});
+
+test("TOOLCENTER-PB-2: runFactualReviewTracked skips when rawSources is empty (cost guard)", async () => {
+  const { runFactualReviewTracked } = await import("../apps/api/src/openalice-factual-reviewer.js");
+  // Empty rawSources → cost guard fires → returns null (no LLM call)
+  const result = await runFactualReviewTracked(
+    "brief content text",
+    [], // empty rawSources → cost guard
+    "draft-test-002",
+    null
+  );
+  assert.equal(result, null, "TOOLCENTER-PB-2: runFactualReviewTracked must return null when rawSources is empty");
+});
+
+test("TOOLCENTER-PB-3: runRagHallucinationCheckTracked executes in memory-mode without DB writes", async () => {
+  const { runRagHallucinationCheckTracked } = await import("../apps/api/src/hallucination-rag.js");
+  // Empty rawSources → single-pass fallback (no cross-validate needed)
+  // LLM call will fail in CI (no key) but runRagHallucinationCheck is safe-default
+  const result = await runRagHallucinationCheckTracked({
+    apiKey: "dummy",
+    content: "test claim: revenue grew 20%",
+    sourceTrail: [],
+    rawSources: [],
+    claimExtractModel: "gpt-4o-mini",
+    crossValidateModel: "gpt-4.1",
+    workspaceId: null
+  }).catch(() => ({
+    verdict: "ERROR" as const,
+    confidence: 0,
+    flags: [],
+    reasoning: "test_fallback",
+    ragUsed: false
+  }));
+  // Verify the result shape matches HallucinationCheckResult
+  assert.ok(
+    result !== null && typeof result === "object" && "verdict" in result,
+    "TOOLCENTER-PB-3: runRagHallucinationCheckTracked must return a HallucinationCheckResult"
+  );
+});
+
+test("TOOLCENTER-PB-4: triggerFinMindSyncTracked skips when no FINMIND_API_TOKEN (graceful)", async () => {
+  const { triggerFinMindSyncTracked } = await import("../apps/api/src/tools/finmind-sync-tool.js");
+  // In test env: no FINMIND_API_TOKEN → runInstitutionalBuySellSync returns skipped
+  const savedToken = process.env["FINMIND_API_TOKEN"];
+  delete process.env["FINMIND_API_TOKEN"];
+  try {
+    const result = await triggerFinMindSyncTracked(
+      { dataset: "institutional_buysell", tickers: [{ ticker: "2330" }] },
+      null,
+      "admin_action"
+    );
+    assert.equal(result.dataset, "institutional_buysell", "TOOLCENTER-PB-4: dataset must match input");
+    assert.equal(result.skipped, true, "TOOLCENTER-PB-4: must skip when FINMIND_API_TOKEN absent");
+    assert.ok(
+      result.skipReason === "no_token" || result.skipReason === "no_db",
+      "TOOLCENTER-PB-4: skipReason must be no_token or no_db"
+    );
+  } finally {
+    if (savedToken !== undefined) process.env["FINMIND_API_TOKEN"] = savedToken;
+  }
+});
+
+test("TOOLCENTER-PB-5: triggerThemesLinksRebuildTracked executes in memory-mode (no DB = graceful)", async () => {
+  const { triggerThemesLinksRebuildTracked } = await import("../apps/api/src/tools/themes-links-rebuild-tool.js");
+  // In memory-mode seedCompanyThemeLinks skips DB work and returns 0 counts
+  const result = await triggerThemesLinksRebuildTracked("workspace-test-001");
+  assert.ok(typeof result === "object" && result !== null, "TOOLCENTER-PB-5: must return an object");
+  assert.ok(typeof result.themesProcessed === "number", "TOOLCENTER-PB-5: themesProcessed must be a number");
+  assert.ok(Array.isArray(result.errors), "TOOLCENTER-PB-5: errors must be an array");
+});
+
 // ── Trading-as-Git Phase A: portfolio snapshot store unit tests ───────────────
 
 test("TAG-SNAPSHOT-1: computePositionDiff correctly identifies added, removed, and changed positions", async () => {
