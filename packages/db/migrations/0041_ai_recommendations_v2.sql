@@ -67,7 +67,10 @@ CREATE TABLE IF NOT EXISTS ai_recommendations_runs (
   CONSTRAINT ai_rec_runs_cost_check CHECK (cost_usd >= 0),
   CONSTRAINT ai_rec_runs_tokens_check CHECK (total_tokens >= 0),
   CONSTRAINT ai_rec_runs_status_check CHECK (status IN ('running', 'complete', 'failed', 'budget_exceeded')),
-  CONSTRAINT ai_rec_runs_trigger_check CHECK (trigger IN ('cron_0930', 'cron_1300', 'manual_refresh', 'test'))
+  CONSTRAINT ai_rec_runs_trigger_check CHECK (trigger IN ('cron_0930', 'cron_1300', 'manual_refresh', 'test')),
+  -- Mike B2+B3 fix 2026-05-18: P25 standing rule — JSONB array columns must carry typeof CHECK
+  CONSTRAINT ai_rec_runs_items_array_check CHECK (jsonb_typeof(items) = 'array'),
+  CONSTRAINT ai_rec_runs_react_trace_array_check CHECK (jsonb_typeof(react_trace) = 'array')
 );
 
 -- Index for time-range queries (latest run lookup)
@@ -83,71 +86,63 @@ CREATE INDEX IF NOT EXISTS ai_rec_runs_workspace_status_idx
 -- These tools are called by Brain ReAct AI recommendation loop.
 -- ON CONFLICT DO NOTHING — safe to re-run.
 -- ============================================================
-INSERT INTO tools (id, tool_key, display_name, description, tool_type, is_active, version, schema_input, schema_output, created_at, updated_at)
+-- Mike B1 fix 2026-05-18: tools 表實際 9 column (per 0038): id/tool_key/tool_type/display_name/description/input_schema/output_schema/is_active/created_at
+-- 原 INSERT 用 11 column (version/updated_at 不存在 + schema_input/schema_output 改名) → migration abort
+INSERT INTO tools (id, tool_key, tool_type, display_name, description, input_schema, output_schema, is_active, created_at)
 VALUES
   (
     gen_random_uuid(),
     'get_market_overview',
+    'data_sync',
     '大盤總覽',
     'Fetches TWSE market overview: TAIEX index, OTC index, volume, advance/decline ratio.',
-    'data_sync',
-    true,
-    '1.0.0',
     '{"type":"object","properties":{},"additionalProperties":false}',
     '{"type":"object","properties":{"taiex":{"type":"object"},"source":{"type":"string"}}}',
-    NOW(),
+    true,
     NOW()
   ),
   (
     gen_random_uuid(),
     'get_sector_rotation',
+    'data_sync',
     '類股輪動強度',
     'Calculates 24h sector relative strength from institutional flow + OHLCV data.',
-    'data_sync',
-    true,
-    '1.0.0',
     '{"type":"object","properties":{"limit":{"type":"integer","default":20}},"additionalProperties":false}',
     '{"type":"object","properties":{"sectors":{"type":"array"}}}',
-    NOW(),
+    true,
     NOW()
   ),
   (
     gen_random_uuid(),
     'get_company_technical',
+    'data_sync',
     '個股技術面',
     'Returns K-line, RSI, MA200/60/20, volume characteristics for a given ticker.',
-    'data_sync',
-    true,
-    '1.0.0',
     '{"type":"object","properties":{"ticker":{"type":"string"}},"required":["ticker"],"additionalProperties":false}',
     '{"type":"object","properties":{"ticker":{"type":"string"},"rsi":{"type":"number"},"ma20":{"type":"number"}}}',
-    NOW(),
+    true,
     NOW()
   ),
   (
     gen_random_uuid(),
     'get_institutional_flow',
+    'data_sync',
     '三大法人籌碼',
     'Returns institutional buy/sell net flow for a given ticker (last 30 days).',
-    'data_sync',
-    true,
-    '1.0.0',
     '{"type":"object","properties":{"ticker":{"type":"string"}},"required":["ticker"],"additionalProperties":false}',
     '{"type":"object","properties":{"ticker":{"type":"string"},"netBuy30d":{"type":"number"}}}',
-    NOW(),
+    true,
     NOW()
   ),
   (
     gen_random_uuid(),
     'get_news_top10',
+    'data_sync',
     '今日熱點新聞',
     'Returns today top-10 AI-curated news items with sentiment from news-ai-selector.',
-    'data_sync',
-    true,
-    '1.0.0',
     '{"type":"object","properties":{},"additionalProperties":false}',
     '{"type":"object","properties":{"items":{"type":"array"},"asOf":{"type":"string"}}}',
-    NOW(),
+    true,
     NOW()
   )
 ON CONFLICT (tool_key) DO NOTHING;
