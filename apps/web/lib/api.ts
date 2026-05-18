@@ -2643,3 +2643,281 @@ export async function getKgiTicks(symbol: string, limit = 20): Promise<KgiTicksR
   const res = await request<KgiTicksResult>(`/api/v1/kgi/quote/ticks?${qs}`);
   return res.data ?? null;
 }
+
+// ── OpenAlice Admin Dashboards ────────────────────────────────────────────────
+
+// D1 — Brain Cost Dashboard
+
+export type LlmUsageSummary = {
+  from: string;
+  to: string;
+  totalCalls: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  byModel: Array<{ modelKey: string; calls: number; tokens: number; costUsd: number }>;
+  byModule: Array<{ callerModule: string; calls: number; tokens: number; costUsd: number }>;
+  daily: Array<{ date: string; calls: number; tokens: number; costUsd: number }>;
+  disclaimer: string;
+};
+
+export type LlmCallEntry = {
+  id: string;
+  modelKey: string;
+  callerModule: string;
+  taskType: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: string;
+  latencyMs: number | null;
+  status: string;
+  errorCode: string | null;
+  createdAt: string;
+};
+
+export type LlmModelEntry = {
+  modelKey: string;
+  provider: string;
+  displayName: string;
+  inputPricePer1mTokens: string;
+  outputPricePer1mTokens: string;
+  maxContextTokens: number;
+  capabilities: unknown;
+  isActive: boolean;
+};
+
+export async function getAdminLlmUsage(params?: { from?: string; to?: string }) {
+  const query = new URLSearchParams();
+  if (params?.from) query.set("from", params.from);
+  if (params?.to) query.set("to", params.to);
+  const qs = query.toString();
+  return request<LlmUsageSummary>(`/api/v1/admin/llm/usage${qs ? `?${qs}` : ""}`);
+}
+
+export async function getAdminLlmCalls(params?: { limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<LlmCallEntry[]>(`/api/v1/admin/llm/calls${qs ? `?${qs}` : ""}`);
+}
+
+export async function getAdminLlmModels() {
+  return request<LlmModelEntry[]>("/api/v1/admin/llm/models");
+}
+
+// D2 — EventLog Time-Travel Viewer
+
+export type EventStreamEntry = {
+  streamType: string;
+  streamId: string;
+  workspaceId: string;
+  createdAt: string;
+  updatedAt: string;
+  eventCount?: number;
+};
+
+export type EventLogEntry = {
+  id: string;
+  streamId: string;
+  seq: number;
+  eventType: string;
+  schemaVersion: number;
+  actorId: string | null;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+  recordedAt: string;
+};
+
+export type OutboxDiag = {
+  pendingCount: number;
+  fatalCount: number;
+  oldestPendingAt: string | null;
+};
+
+export async function getEventStreams(params?: { streamType?: string; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.streamType) query.set("streamType", params.streamType);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<{ streams: EventStreamEntry[]; total: number }>(`/api/v1/event-streams${qs ? `?${qs}` : ""}`);
+}
+
+export async function getStreamEvents(
+  streamType: string,
+  streamId: string,
+  params?: { limit?: number; cursor?: number }
+) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.cursor) query.set("cursor", String(params.cursor));
+  const qs = query.toString();
+  return request<{ events: EventLogEntry[]; nextCursor: number | null }>(
+    `/api/v1/event-streams/${encodeURIComponent(streamType)}/${encodeURIComponent(streamId)}/events${qs ? `?${qs}` : ""}`
+  );
+}
+
+export async function getStreamEventsAt(
+  streamType: string,
+  streamId: string,
+  asOf: string
+) {
+  const qs = new URLSearchParams({ as_of: asOf }).toString();
+  return request<{ events: EventLogEntry[]; asOf: string }>(
+    `/api/v1/event-streams/${encodeURIComponent(streamType)}/${encodeURIComponent(streamId)}/events/at?${qs}`
+  );
+}
+
+export async function getOutboxDiag() {
+  return request<OutboxDiag>("/api/v1/admin/event-log/outbox/diag");
+}
+
+// D3 — Trading-as-Git Portfolio Snapshots
+
+export type PortfolioSnapshotEntry = {
+  id: string;
+  workspaceId: string;
+  trigger: "manual" | "strategy_run" | "eod_auto" | "rollback" | string;
+  note: string | null;
+  positions: Array<{
+    ticker: string;
+    shares: number;
+    avgCost: number;
+    sector?: string;
+    lastPrice?: number;
+  }>;
+  parentId: string | null;
+  createdAt: string;
+};
+
+export type PortfolioDiffEntry = {
+  fromSnapshotId: string;
+  toSnapshotId: string;
+  added: Array<{ ticker: string; shares: number; avgCost: number }>;
+  removed: Array<{ ticker: string; shares: number; avgCost: number }>;
+  changed: Array<{ ticker: string; fromShares: number; toShares: number; fromAvgCost: number; toAvgCost: number }>;
+};
+
+export async function getPortfolioSnapshots(params?: { limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<{ snapshots: PortfolioSnapshotEntry[]; nextCursor: string | null }>(
+    `/api/v1/portfolio/snapshots${qs ? `?${qs}` : ""}`
+  );
+}
+
+export async function getPortfolioSnapshotById(id: string) {
+  return request<PortfolioSnapshotEntry>(`/api/v1/portfolio/snapshots/${encodeURIComponent(id)}`);
+}
+
+export async function getPortfolioSnapshotDiff(from: string, to: string) {
+  const qs = new URLSearchParams({ from, to }).toString();
+  return request<PortfolioDiffEntry>(`/api/v1/portfolio/snapshots/diff?${qs}`);
+}
+
+// D4 — ToolCenter Registry Browser
+
+export type ToolRegistryEntry = {
+  toolKey: string;
+  toolType: string;
+  displayName: string;
+  description: string | null;
+  inputSchema: unknown;
+  outputSchema: unknown;
+  isActive: boolean;
+  version: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ToolCallEntry = {
+  id: string;
+  toolKey: string;
+  callerType: string;
+  workspaceId: string | null;
+  status: string;
+  inputSummary: string | null;
+  outputSummary: string | null;
+  errorMessage: string | null;
+  latencyMs: number | null;
+  createdAt: string;
+  completedAt: string | null;
+};
+
+export type ToolStatEntry = {
+  toolKey: string;
+  totalCalls: number;
+  successCalls: number;
+  failureCalls: number;
+  timeoutCalls: number;
+  errorRate: number;
+  avgLatencyMs: number | null;
+};
+
+export async function getToolRegistry(params?: { toolType?: string; isActive?: boolean }) {
+  const query = new URLSearchParams();
+  if (params?.toolType) query.set("toolType", params.toolType);
+  if (typeof params?.isActive === "boolean") query.set("isActive", String(params.isActive));
+  const qs = query.toString();
+  return request<{ tools: ToolRegistryEntry[]; total: number }>(`/api/v1/tools/registry${qs ? `?${qs}` : ""}`);
+}
+
+export async function getToolCalls(params?: { toolKey?: string; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.toolKey) query.set("toolKey", params.toolKey);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<{ calls: ToolCallEntry[]; total: number }>(`/api/v1/tools/calls${qs ? `?${qs}` : ""}`);
+}
+
+export async function getToolStats(params?: { window?: string }) {
+  const query = new URLSearchParams();
+  if (params?.window) query.set("window", params.window);
+  const qs = query.toString();
+  return request<{ stats: ToolStatEntry[]; windowMs: number }>(`/api/v1/tools/stats${qs ? `?${qs}` : ""}`);
+}
+
+// D5 — UTA Account Manager
+
+export type BrokerAdapterEntry = {
+  adapterKey: string;
+  displayName: string;
+  capabilities: {
+    oddLot?: boolean;
+    marginTrading?: boolean;
+    shortSelling?: boolean;
+    afterHoursFixing?: boolean;
+    simModeAvailable?: boolean;
+    maxSubscriptions?: number;
+  };
+  isActive: boolean;
+};
+
+export type UnifiedOrderEntry = {
+  id: string;
+  workspaceId: string;
+  adapterKey: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  quantityUnit: string;
+  orderType: string;
+  limitPrice: number | null;
+  status: string;
+  simOnly: boolean;
+  externalOrderId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getUtaAdapters() {
+  return request<{ adapters: BrokerAdapterEntry[] }>("/api/v1/uta/adapters");
+}
+
+export async function getUtaOrders(params?: { accountId?: string; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.accountId) query.set("accountId", params.accountId);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<{ orders: UnifiedOrderEntry[]; total: number }>(`/api/v1/uta/orders${qs ? `?${qs}` : ""}`);
+}
