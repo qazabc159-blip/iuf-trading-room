@@ -1,0 +1,186 @@
+{
+  "checks": {
+    "pageStatus": 200,
+    "has2603": true,
+    "hasNonTradingCopy": false,
+    "quoteResponseCount": 2,
+    "allQuoteResponsesOk": true,
+    "quoteErrorResponseCount": 0,
+    "pageErrors": 0,
+    "consoleErrorCount": 0
+  },
+  "sample": "PAPER MODE ACTIVE\nREAL ORDER DISABLED\nKGI READ-ONLY\nSAFE · PAPER ISOLATED\n·\n本頁所有委託皆走模擬通道，不會送出實單；KGI 連線僅供讀取庫存對照。\n觀察清單\n3 個分組\n⌕\n⌘K\n自選\n9\n今日有訊號\n8\nPaper 候選\n8\n9 檔自選 / 候選\n2603\n長榮\n來源 URL\n197.50\n−1.50%\n2330\n台積電\n不進流程 · 0 訊號\n—\n—\n1514\n亞力\n不進流程 · 0 訊號\n—\n—\n1560\n中砂\n不進流程 · 0 訊號\n—\n—\n1590\n亞德客-KY\n不進流程 · 0 訊號\n—\n—\n1721\n三晃\n不進流程 · 0 訊號\n—\n—\n1723\n中碳\n不進流程 · 0 訊號\n—\n—\n1809\n中釉\n不進流程 · 0 訊號\n—\n—\n2066\n世德\n不進流程 · 0 訊號\n—\n—\n2603\n長榮\nMarine Shipping\n197.50\n▼ −3.00 　−1.50%\n開盤\n200.00\n高\n200.50\n低\n197.00\n昨收\n200.50\n量\n18,153,627 股\n1m\n5m\n15m\n1d\n1w\nMA20\nVWAP\n支撐 / 阻力\n計畫點位\nO 200.00\nH 200.50\nL 197.00\nC 197.50\n230.1\n189.5\n148.8\n108.2\n67.6\n阻力　975.00\n支撐　935.00\n目標 985\n建倉 950\n停損 920\n委買 / 委賣 五檔\n目前為非交易時段，盤口暫不更新（次日 09:00 重新連線）\n最近成交\n非交易時段 — 盤口數據僅 08:30-13:30 TST 顯示\n部位 / 資金摘要\n模擬本金\n10,000,000\n可用資金\n10,000,000\n持倉市值\n—\n總損益\n—\n持有 0 檔模擬部位　·　今日 0 筆成交\n委託\n0\n成交紀錄\n0\n模擬庫存\n0\nKGI 讀取\n0\n執行事件 / 風控\n0\n所有事件已寫入稽核\n時間\t代碼\t方向\t類型\t委託價\t數量\t已成交\t狀態\t單號\n尚無委託\n下一步\n核對今日委託與 KGI 庫存，或回到 策略想法 重新挑選候選。\n回策略想法\n回市場情報\n委託預覽　\n紙上單\nAI RECOMMENDATION PAPER PREVIEW\n2603 已帶入交易室紙上單預覽；此區只建立平台模擬紀錄，不會建立券商委託。\n來源 URL\n買進\nLONG\n賣出\nSHORT\n標的\n沿用左側選擇\n委託類型\n限價\n市價\n停損\n單位\n張\n股\n數量\n1 張 = 1,000 股\n−\n+\n委託價\n最小升降 0.50\n−\n+\n預估金額\n197,500 NTD\n手續費 (估)\n281 NTD\n可用資金\n10,000,000\n執行後可用\n9,802,219\n執行後部位\n1,000 股 (1 張)\n執行後均價\n197.50\n風控閘門　\n全數通過\n送出後由後端風控閘門即時判斷\n—\n送出紙上單　AI 推薦帶入的紙上單預覽\nPAPER\n實盤通道\n　目前停用 · 解鎖須另行授權\n🔒 LOCKED\n提交後系統會通過 風控閘門 → 寫入 模擬委託表 → 比照五檔形成 模擬成交。\n所有操作會留下稽核紀錄，可在下方「執行事件」分頁查看。\n⌕\nesc\n標的\n▢\n切換到　台積電\n2330\nEnter\n▢\n切換到　廣達\n2382\n▢\n切換到　聯發科\n2454\n跳轉\n→\n策略想法\n回上一頁\n→\n市場情報\n動作\n⌨\n把焦點移到「數量」\n📈\n切換到日 K\n📋\n下方切到「執行事件」",
+  "api": [
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/paper-trading-room?symbol=2603&rev=handoff-symbol%3A2603"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/paper-trading-room?symbol=2603&rev=handoff-symbol%3A2603"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/header-dock/notifications?limit=50"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/paper-trading-room?symbol=2603&rev=handoff-symbol%3A2603"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/header-dock/notifications?limit=50"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/paper-trading-room?symbol=2603&rev=handoff-symbol%3A2603"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fhealth"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fportfolio%2Fkgi%2Fpositions"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fstrategy%2Fideas%3FdecisionMode%3Dpaper%26includeBlocked%3Dtrue%26limit%3D8%26sort%3Dscore"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fhealth"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fstrategy%2Fideas%3FdecisionMode%3Dpaper%26includeBlocked%3Dtrue%26limit%3D8%26sort%3Dscore"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fportfolio%2Fkgi%2Fpositions"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%3Fticker%3D2603"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%3Fticker%3D2603"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F66151280-5143-47d4-a7e1-738406452175%2Fquote%2Frealtime"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F66151280-5143-47d4-a7e1-738406452175%2Fohlcv%3Finterval%3D1d"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2603"
+    },
+    {
+      "kind": "request",
+      "method": "GET",
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2603%26limit%3D16"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F66151280-5143-47d4-a7e1-738406452175%2Fquote%2Frealtime"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2603"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F66151280-5143-47d4-a7e1-738406452175%2Fohlcv%3Finterval%3D1d"
+    },
+    {
+      "kind": "response",
+      "status": 200,
+      "url": "http://127.0.0.1:3126/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2603%26limit%3D16"
+    }
+  ],
+  "consoleMessages": [
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 322ms"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 381ms"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 539ms"
+    }
+  ],
+  "pageErrors": []
+}
