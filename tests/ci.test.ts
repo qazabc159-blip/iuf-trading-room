@@ -12675,6 +12675,7 @@ test("AI-REC-V3-6: deterministic fallback builds 3 items from verified technical
     toolInput: { ticker },
     observation: {
       ticker,
+      companyName: ticker === "2454" ? "聯發科" : null,
       lastPrice,
       changePct,
       rsi14,
@@ -12700,6 +12701,7 @@ test("AI-REC-V3-6: deterministic fallback builds 3 items from verified technical
 
   assert.equal(items.length, 3, `AI-REC-V3-6: fallback must produce 3 items, got ${items.length}`);
   assert.equal(items[0]?.ticker, "2454", "AI-REC-V3-6: strongest positive technical candidate should rank first");
+  assert.equal(items[0]?.companyName, "聯發科", "AI-REC-V3-6: fallback must preserve tool-provided companyName");
   assert.ok(items.every((item: any) => item.aiGenerated === true), "AI-REC-V3-6: fallback items must be AI v2/v3 shaped");
   assert.ok(items.every((item: any) => item.source === "brain_react_v2"), "AI-REC-V3-6: fallback source must stay brain_react_v2");
   assert.ok(items.every((item: any) => item.bucket === "B" || item.bucket === "A"), "AI-REC-V3-6: fallback must only emit investable buckets");
