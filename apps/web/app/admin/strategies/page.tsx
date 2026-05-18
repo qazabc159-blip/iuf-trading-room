@@ -29,6 +29,11 @@ interface LaneCard {
   id: string;
   displayName: string;
   state: LaneState;
+  statusCategory: "owner_review" | "risk_blocked" | "research_paused";
+  statusReason: string;
+  nextAction: string;
+  owner: string;
+  recommendationImpact: string;
   qualityChecks: { passed: number; total: number };
   lastUpdate: string;
   permissions: {
@@ -51,6 +56,11 @@ const LANES: LaneCard[] = [
     id: "iuf_ls_omni_v1_router",
     displayName: "S1 iuf_ls_omni_v1_router",
     state: "active-owner-review",
+    statusCategory: "owner_review",
+    statusReason: "Owner-review packet and Bruce 10/10 attest exist; this is still a SIM research packet, not capital approval.",
+    nextAction: "Yang reviews the owner packet and decides whether to keep SIM observation active; no broker/order path is opened by this page.",
+    owner: "Elva / Bruce / Yang",
+    recommendationImpact: "Can inform research context only; must not auto-promote live or paper recommendations.",
     qualityChecks: { passed: 10, total: 10 },
     lastUpdate: "2026-05-18T11:29:00+08:00",
     permissions: {
@@ -82,6 +92,11 @@ const LANES: LaneCard[] = [
     id: "cont_liq_v36_h20_top4_regime_pos006",
     displayName: "cont_liq v36 top4 (baseline)",
     state: "baseline-c04-fail",
+    statusCategory: "risk_blocked",
+    statusReason: "Standalone baseline is blocked by the C04 broad-family evidence gate; it can stay as research context only.",
+    nextAction: "Athena/Bruce must rerun or replace broad-family evidence before this baseline can be described as cleared.",
+    owner: "Athena / Bruce",
+    recommendationImpact: "Not eligible as a standalone recommendation source while the C04 gate is blocked.",
     qualityChecks: { passed: 10, total: 11 },
     lastUpdate: "2026-05-18T11:29:00+08:00",
     permissions: {
@@ -96,7 +111,7 @@ const LANES: LaneCard[] = [
       "reports/data_lane/codex_cont_liq_v36_capital_test_preflight_v1.json",
     ],
     notes: [
-      "C04 STRICT_BROAD_FAMILY_EVIDENCE_GATE FAIL: broad-family max-T p=0.09979 > threshold 0.05",
+      "C04 strict broad-family evidence gate not passed: broad-family max-T p=0.09979 > threshold 0.05",
       "Strict statistical clearance route: NOT OPEN",
       "C11 owner risk budget: NOW SOLVED (10M TWD / max loss 300K TWD)",
       "v36 top4 is not dead, but cannot be described as fully cleared",
@@ -108,6 +123,11 @@ const LANES: LaneCard[] = [
     id: "class5_v3_v4",
     displayName: "Class5 v3/v4",
     state: "research-paused",
+    statusCategory: "research_paused",
+    statusReason: "Previous memory claims were retracted because no disk-backed source artifacts were found.",
+    nextAction: "Write a fresh hypothesis spec and new artifacts before showing this lane as a candidate again.",
+    owner: "Athena",
+    recommendationImpact: "No impact on AI recommendation or strategy routing until new verified artifacts exist.",
     qualityChecks: { passed: 0, total: 13 },
     lastUpdate: "2026-05-18T11:29:00+08:00",
     permissions: {
@@ -123,7 +143,7 @@ const LANES: LaneCard[] = [
       "reports/data_lane/athena_path_a_retract_draft_2026_05_18.md",
     ],
     notes: [
-      "Disk status: phantom / no source artifacts",
+      "Disk status: retracted / no source artifacts",
       "Current state: research-paused pending fresh hypothesis spec",
     ],
     phantomItems: [
@@ -172,7 +192,7 @@ function LaneStateBadge({ state }: { state: LaneState }) {
         textTransform: "uppercase",
         letterSpacing: "0.06em",
       }}>
-        BASELINE — C04 FAIL
+        BASELINE — C04 BLOCKED
       </span>
     );
   }
@@ -198,7 +218,7 @@ function LaneStateBadge({ state }: { state: LaneState }) {
 
 function QualityBar({ passed, total }: { passed: number; total: number }) {
   const pct = total > 0 ? (passed / total) * 100 : 0;
-  const color = passed === total ? "#4caf50" : passed >= total * 0.8 ? "#ffa726" : "#ef5350";
+  const color = passed === total ? "#4caf50" : passed === 0 ? "#9e9e9e" : passed >= total * 0.8 ? "#ffa726" : "#ef5350";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div style={{
@@ -242,17 +262,17 @@ function PermissionsBlock() {
     <div style={{
       marginTop: 8,
       padding: "8px 10px",
-      background: "rgba(239,83,80,0.07)",
-      border: "1px solid rgba(239,83,80,0.2)",
+      background: "rgba(255,184,0,0.06)",
+      border: "1px solid rgba(255,184,0,0.18)",
       borderRadius: 4,
     }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "#ef5350", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
-        全部 Permissions = false
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#ffb800", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+        交易與資金權限未開啟
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
         {items.map(item => (
-          <span key={item} style={{ fontSize: 11, color: "rgba(239,83,80,0.8)", fontFamily: "var(--mono, monospace)" }}>
-            ✗ {item}
+          <span key={item} style={{ fontSize: 11, color: "rgba(255,184,0,0.78)", fontFamily: "var(--mono, monospace)" }}>
+            disabled · {item}
           </span>
         ))}
       </div>
@@ -267,13 +287,74 @@ function PhantomBadge({ label }: { label: string }) {
       alignItems: "flex-start",
       gap: 6,
       padding: "4px 8px",
-      background: "rgba(239,83,80,0.09)",
-      border: "1px solid rgba(239,83,80,0.22)",
+      background: "rgba(255,167,38,0.08)",
+      border: "1px solid rgba(255,167,38,0.22)",
       borderRadius: 3,
       marginBottom: 4,
     }}>
-      <span style={{ fontSize: 11, color: "#ef5350", fontWeight: 700, flexShrink: 0 }}>PHANTOM</span>
-      <span style={{ fontSize: 11, color: "rgba(239,83,80,0.8)", fontFamily: "var(--mono, monospace)" }}>{label}</span>
+      <span style={{ fontSize: 11, color: "#ffa726", fontWeight: 700, flexShrink: 0 }}>RETRACTED</span>
+      <span style={{ fontSize: 11, color: "rgba(255,167,38,0.85)", fontFamily: "var(--mono, monospace)" }}>{label}</span>
+    </div>
+  );
+}
+
+function statusSummaryStyle(category: LaneCard["statusCategory"]) {
+  if (category === "owner_review") {
+    return {
+      background: "rgba(76,175,80,0.07)",
+      border: "1px solid rgba(76,175,80,0.2)",
+      color: "rgba(76,175,80,0.9)",
+      label: "OWNER REVIEW",
+    };
+  }
+  if (category === "risk_blocked") {
+    return {
+      background: "rgba(255,167,38,0.07)",
+      border: "1px solid rgba(255,167,38,0.22)",
+      color: "rgba(255,167,38,0.92)",
+      label: "RISK BLOCKED",
+    };
+  }
+  return {
+    background: "rgba(158,158,158,0.08)",
+    border: "1px solid rgba(158,158,158,0.24)",
+    color: "rgba(210,210,210,0.86)",
+    label: "RESEARCH PAUSED",
+  };
+}
+
+function StatusSummary({ lane }: { lane: LaneCard }) {
+  const style = statusSummaryStyle(lane.statusCategory);
+  return (
+    <div style={{
+      padding: "10px 12px",
+      background: style.background,
+      border: style.border,
+      borderRadius: 5,
+      display: "grid",
+      gap: 8,
+    }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <span style={{
+          fontSize: 10,
+          fontWeight: 800,
+          color: style.color,
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+        }}>
+          {style.label}
+        </span>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
+          Owner: {lane.owner}
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.72)", lineHeight: 1.55 }}>
+        {lane.statusReason}
+      </div>
+      <div style={{ display: "grid", gap: 4, fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.55 }}>
+        <div><strong style={{ color: "rgba(255,255,255,0.72)" }}>Next action:</strong> {lane.nextAction}</div>
+        <div><strong style={{ color: "rgba(255,255,255,0.72)" }}>Recommendation impact:</strong> {lane.recommendationImpact}</div>
+      </div>
     </div>
   );
 }
@@ -302,6 +383,8 @@ function LaneCardView({ lane }: { lane: LaneCard }) {
         </div>
         <LaneStateBadge state={lane.state} />
       </div>
+
+      <StatusSummary lane={lane} />
 
       {/* Quality checks */}
       <div>
@@ -350,8 +433,8 @@ function LaneCardView({ lane }: { lane: LaneCard }) {
       {/* Phantom items (Class5 only) */}
       {lane.phantomItems && lane.phantomItems.length > 0 && (
         <div>
-          <div style={{ fontSize: 10, color: "#ef5350", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-            Phantom / Retracted Claims — 不可引用
+          <div style={{ fontSize: 10, color: "#ffa726", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+            Retracted claims — 不可引用
           </div>
           {lane.phantomItems.map((item, i) => (
             <PhantomBadge key={i} label={item} />
@@ -469,9 +552,9 @@ export default function AdminStrategiesPage() {
         </div>
 
         <div className="_strat-truth-banner">
-          Quant Lab 目前僅推進 S1。S1 owner-review packet 已建置完畢，Bruce 10/10 attest PASS，
-          但所有 broker / order / capital permissions 仍為 false，尚未取得楊董 review。
-          Old cont_liq v36 top4 仍獨立追蹤並 C04 FAIL。Class5 v3/v4 為 phantom / research-paused，
+          Quant Lab 目前只允許研究與 SIM owner-review 語境。S1 owner-review packet 已建置完畢，
+          Bruce 10/10 attest PASS；但 broker / order / capital 權限都未開啟，尚未取得楊董 review。
+          cont_liq v36 top4 是 C04 risk-blocked baseline；Class5 v3/v4 是 retracted / research-paused。
           任何來自 5/15 MEMORY 的描述均不可引用為已驗證 shipped evidence。
         </div>
 
@@ -487,7 +570,7 @@ export default function AdminStrategiesPage() {
           <strong>可說</strong>: "owner-review packet exists" / "Bruce 10/10 attest PASS" / "10M SIM research packet" /
           "S1 is packaged for Yang owner review" &nbsp;
           <br />
-          <s>不可說</s>: "capital-approved" / "alpha confirmed" / "live-ready" / "paper-ready" /
+          <span style={{ color: "rgba(255,184,0,0.85)", fontWeight: 700 }}>不可說</span>: "capital-approved" / "alpha confirmed" / "live-ready" / "paper-ready" /
           "可實單" / "產品化完成" / "follow-trade"
         </div>
       </main>
