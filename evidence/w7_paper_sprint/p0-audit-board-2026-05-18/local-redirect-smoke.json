@@ -1,0 +1,32 @@
+﻿[
+    {
+        "route":  "/event-log",
+        "status":  "HTTP/1.1 301 Moved Permanently",
+        "location":  "location: /admin/events"
+    },
+    {
+        "route":  "/portfolio-snapshot",
+        "status":  "HTTP/1.1 301 Moved Permanently",
+        "location":  "location: /admin/portfolio/snapshots"
+    },
+    {
+        "route":  "/tool-center",
+        "status":  "HTTP/1.1 301 Moved Permanently",
+        "location":  "location: /admin/tools"
+    },
+    {
+        "route":  "/uta",
+        "status":  "HTTP/1.1 301 Moved Permanently",
+        "location":  "location: /admin/uta/accounts"
+    },
+    {
+        "route":  "/heatmap",
+        "status":  "HTTP/1.1 301 Moved Permanently",
+        "location":  "location: /market-intel"
+    },
+    {
+        "route":  "/news",
+        "status":  "HTTP/1.1 301 Moved Permanently",
+        "location":  "location: /market-intel"
+    }
+]

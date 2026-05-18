@@ -1,0 +1,90 @@
+[
+  {
+    "key": "health",
+    "status": "ok",
+    "ok": true
+  },
+  {
+    "key": "ai_recommendations_today",
+    "status": 200,
+    "ok": true,
+    "items": 4,
+    "count": 4,
+    "generatedAt": "2026-05-18T12:20:26.094Z"
+  },
+  {
+    "key": "ai_recommendations_v3",
+    "status": 404,
+    "ok": false,
+    "okField": false,
+    "error": "no_v3_run_yet",
+    "hint": "POST /api/v1/admin/ai-recommendations/v3/refresh to trigger"
+  },
+  {
+    "key": "news_top10",
+    "status": 200,
+    "ok": true,
+    "items": 10
+  },
+  {
+    "key": "announcements",
+    "status": 200,
+    "ok": true,
+    "items": 0,
+    "source": "empty"
+  },
+  {
+    "key": "portfolio_snapshots",
+    "status": 404,
+    "ok": false,
+    "shape": "string",
+    "bytes": 13
+  },
+  {
+    "key": "event_streams",
+    "status": 200,
+    "ok": true,
+    "streams": 0
+  },
+  {
+    "key": "tools_registry",
+    "status": 200,
+    "ok": true,
+    "tools": 12,
+    "total": 12
+  },
+  {
+    "key": "tools_calls",
+    "status": 200,
+    "ok": true,
+    "calls": 50,
+    "total": 50
+  },
+  {
+    "key": "tools_stats",
+    "status": 200,
+    "ok": true,
+    "stats": 8,
+    "generatedAt": "2026-05-18T12:20:28.528Z"
+  },
+  {
+    "key": "uta_adapters",
+    "status": 200,
+    "ok": true,
+    "adapters": 2
+  },
+  {
+    "key": "uta_orders",
+    "status": 200,
+    "ok": true,
+    "orders": 0
+  },
+  {
+    "key": "lab_three_strategy_snapshot",
+    "status": 200,
+    "ok": true,
+    "okField": true,
+    "strategies": 3,
+    "mode": "READ_ONLY_FIXTURE_API"
+  }
+]
