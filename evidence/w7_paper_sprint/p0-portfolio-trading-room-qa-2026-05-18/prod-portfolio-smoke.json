@@ -1,0 +1,252 @@
+{
+  "desktop": {
+    "status": 200,
+    "url": "https://app.eycvector.com/portfolio",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textHead": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀",
+    "hasSearchText": false,
+    "hasPaper": false,
+    "hasKgi": false,
+    "hasOrder": false,
+    "hasFill": false,
+    "hasFunds": false,
+    "inputs": [],
+    "buttons": [
+      {
+        "text": "登出",
+        "aria": null,
+        "disabled": false
+      },
+      {
+        "text": "警示通知，無未讀",
+        "aria": "警示",
+        "disabled": false
+      },
+      {
+        "text": "",
+        "aria": "系統狀態",
+        "disabled": false
+      },
+      {
+        "text": "",
+        "aria": "帳戶",
+        "disabled": false
+      }
+    ],
+    "links": [
+      {
+        "text": "戰情台\n盤勢與任務",
+        "href": "https://app.eycvector.com/"
+      },
+      {
+        "text": "市場情報\n重大訊息",
+        "href": "https://app.eycvector.com/market-intel"
+      },
+      {
+        "text": "AI 推薦\n推薦引擎",
+        "href": "https://app.eycvector.com/ai-recommendations"
+      },
+      {
+        "text": "交易室\n委託與部位",
+        "href": "https://app.eycvector.com/portfolio"
+      },
+      {
+        "text": "公司 / 主題\n公司圖譜",
+        "href": "https://app.eycvector.com/companies"
+      },
+      {
+        "text": "量化策略\nSIM-only",
+        "href": "https://app.eycvector.com/quant-strategies"
+      },
+      {
+        "text": "Brain\nLLM 費用",
+        "href": "https://app.eycvector.com/admin/brain/llm"
+      },
+      {
+        "text": "EventLog\n事件流",
+        "href": "https://app.eycvector.com/admin/events"
+      },
+      {
+        "text": "Portfolio\n快照版本",
+        "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+      },
+      {
+        "text": "Tools\n工具登錄",
+        "href": "https://app.eycvector.com/admin/tools"
+      },
+      {
+        "text": "UTA\n帳號管理",
+        "href": "https://app.eycvector.com/admin/uta/accounts"
+      },
+      {
+        "text": "Strategies\nLab 策略狀態",
+        "href": "https://app.eycvector.com/admin/strategies"
+      },
+      {
+        "text": "",
+        "href": "https://app.eycvector.com/briefs"
+      }
+    ],
+    "pageErrors": [],
+    "consoleErrors": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      }
+    ],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_portfolio_qa_20260518\\evidence\\w7_paper_sprint\\p0-portfolio-trading-room-qa-2026-05-18\\screens\\prod-portfolio-desktop.png"
+  },
+  "mobile": {
+    "status": 200,
+    "url": "https://app.eycvector.com/portfolio",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textHead": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，無未讀",
+    "hasSearchText": false,
+    "hasPaper": false,
+    "hasKgi": false,
+    "hasOrder": false,
+    "hasFill": false,
+    "hasFunds": false,
+    "inputs": [],
+    "buttons": [
+      {
+        "text": "登出",
+        "aria": null,
+        "disabled": false
+      },
+      {
+        "text": "警示通知，無未讀",
+        "aria": "警示",
+        "disabled": false
+      },
+      {
+        "text": "",
+        "aria": "系統狀態",
+        "disabled": false
+      },
+      {
+        "text": "",
+        "aria": "帳戶",
+        "disabled": false
+      }
+    ],
+    "links": [
+      {
+        "text": "戰情台\n盤勢與任務",
+        "href": "https://app.eycvector.com/"
+      },
+      {
+        "text": "市場情報\n重大訊息",
+        "href": "https://app.eycvector.com/market-intel"
+      },
+      {
+        "text": "AI 推薦\n推薦引擎",
+        "href": "https://app.eycvector.com/ai-recommendations"
+      },
+      {
+        "text": "交易室\n委託與部位",
+        "href": "https://app.eycvector.com/portfolio"
+      },
+      {
+        "text": "公司 / 主題\n公司圖譜",
+        "href": "https://app.eycvector.com/companies"
+      },
+      {
+        "text": "量化策略\nSIM-only",
+        "href": "https://app.eycvector.com/quant-strategies"
+      },
+      {
+        "text": "Brain\nLLM 費用",
+        "href": "https://app.eycvector.com/admin/brain/llm"
+      },
+      {
+        "text": "EventLog\n事件流",
+        "href": "https://app.eycvector.com/admin/events"
+      },
+      {
+        "text": "Portfolio\n快照版本",
+        "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+      },
+      {
+        "text": "Tools\n工具登錄",
+        "href": "https://app.eycvector.com/admin/tools"
+      },
+      {
+        "text": "UTA\n帳號管理",
+        "href": "https://app.eycvector.com/admin/uta/accounts"
+      },
+      {
+        "text": "Strategies\nLab 策略狀態",
+        "href": "https://app.eycvector.com/admin/strategies"
+      },
+      {
+        "text": "",
+        "href": "https://app.eycvector.com/briefs"
+      }
+    ],
+    "pageErrors": [],
+    "consoleErrors": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 ()"
+      }
+    ],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_portfolio_qa_20260518\\evidence\\w7_paper_sprint\\p0-portfolio-trading-room-qa-2026-05-18\\screens\\prod-portfolio-mobile.png"
+  }
+}
