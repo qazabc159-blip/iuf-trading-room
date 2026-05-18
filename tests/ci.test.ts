@@ -11918,6 +11918,184 @@ test("BRAIN-REACT-5: runReactLoop returns decisionId=null in non-DB mode (memory
   );
 });
 
+
+// ── THEMES-MOJIBAKE: CP950 mojibake detection + re-encode + write-time prevention ─
+//
+// These tests verify:
+// 1. tryReencode correctly re-encodes CP950-as-Latin1 garbled strings back to CJK.
+// 2. hasMojibakeCandidate correctly identifies mojibake candidates.
+// 3. tryReencode returns ok=false for random invalid-CP950 byte sequences.
+// 4. The admin handler works in memory-mode (graceful degradation).
+
+test("THEMES-MOJIBAKE-1: tryReencode decodes known CP950 mojibake sequence for 低軌衛星", async () => {
+  // "低軌衛星" in CP950 = bytes 0xa7,0x43,0xad,0x79,0xbd,0xc3,0xac,0x50
+  // (verified via iconv-lite encode on 2026-05-18).
+  // When those bytes are stored as Latin-1 chars in a JS string, fixCP950Mojibake
+  // must re-decode them back to correct CJK.
+  const cp950Bytes = Buffer.from([0xa7, 0x43, 0xad, 0x79, 0xbd, 0xc3, 0xac, 0x50]);
+  const mojibake = cp950Bytes.toString("latin1"); // garbled Latin-1 view of CP950 bytes
+
+  const { tryReencode } = await import("../apps/api/src/admin-themes-re-encode-mojibake.js") as
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any;
+
+  const result = tryReencode(mojibake);
+  assert.ok(result.ok, "THEMES-MOJIBAKE-1: tryReencode should succeed for known CP950 sequence");
+  assert.equal(result.fixed, "低軌衛星", "THEMES-MOJIBAKE-1: decoded value should be 低軌衛星");
+});
+
+test("THEMES-MOJIBAKE-2: hasMojibakeCandidate returns false for pure ASCII and correct UTF-8", async () => {
+  const { hasMojibakeCandidate } = await import("../apps/api/src/admin-themes-re-encode-mojibake.js") as
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any;
+
+  assert.equal(hasMojibakeCandidate("5G connectivity"), false,
+    "THEMES-MOJIBAKE-2: pure ASCII must not be flagged");
+  assert.equal(hasMojibakeCandidate("低軌衛星"), false,
+    "THEMES-MOJIBAKE-2: proper UTF-8 CJK must not be flagged (no high bytes in JS string)");
+  assert.equal(hasMojibakeCandidate(null), false,
+    "THEMES-MOJIBAKE-2: null must not be flagged");
+  assert.equal(hasMojibakeCandidate(""), false,
+    "THEMES-MOJIBAKE-2: empty string must not be flagged");
+
+  // Build a string with high bytes (Latin-1 view of CP950 bytes) — should be flagged
+  const highByteStr = Buffer.from([0xa7, 0x43]).toString("latin1");
+  assert.equal(hasMojibakeCandidate(highByteStr), true,
+    "THEMES-MOJIBAKE-2: string with \\x80-\\xff bytes must be flagged as mojibake candidate");
+});
+
+test("THEMES-MOJIBAKE-3: tryReencode returns ok=false for byte sequences that decode to replacement chars", async () => {
+  const { tryReencode } = await import("../apps/api/src/admin-themes-re-encode-mojibake.js") as
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any;
+
+  // 0x81 0x80 is an invalid CP950 sequence (lead byte 0x81 followed by invalid trailer 0x80)
+  // iconv-lite will emit a replacement char or silently fail.
+  // The safety guard must not return ok=true with garbled output.
+  const invalidBytes = Buffer.from([0x81, 0x80, 0x81]).toString("latin1");
+  const result = tryReencode(invalidBytes);
+  // Either ok=false OR ok=true with no replacement char (iconv-lite may still map something)
+  // The critical assertion: no U+FFFD in result.fixed when ok=true
+  if (result.ok) {
+    assert.ok(!result.fixed.includes("�"),
+      "THEMES-MOJIBAKE-3: if ok=true, fixed must not contain U+FFFD replacement char");
+  } else {
+    assert.equal(result.ok, false,
+      "THEMES-MOJIBAKE-3: invalid CP950 byte sequence should return ok=false");
+  }
+});
+
+test("THEMES-MOJIBAKE-4: handleAdminThemesReEncodeMojibake returns graceful error in memory-mode", async () => {
+  // Memory mode: isDatabaseMode() = false, so the handler returns not_database_mode error.
+  const { handleAdminThemesReEncodeMojibake } = await import("../apps/api/src/admin-themes-re-encode-mojibake.js") as
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any;
+
+  // Build a minimal Hono Context mock
+  const mockSession = {
+    user: { id: "user-1", name: "Test", email: "test@test.com", role: "Owner" },
+    workspace: { id: "ws-1", slug: "test-ws" }
+  };
+  let capturedData: unknown = null;
+  let capturedStatus: number = 200;
+  const mockContext = {
+    get: (key: string) => key === "session" ? mockSession : undefined,
+    req: { json: async () => ({ dryRun: true }) },
+    json: (data: unknown, status?: number) => {
+      capturedData = data;
+      capturedStatus = status ?? 200;
+      return { _data: data, _status: capturedStatus };
+    }
+  };
+
+  await handleAdminThemesReEncodeMojibake(mockContext);
+
+  const responseData = capturedData as { data: { errors: string[]; dryRun: boolean; scannedRows: number } };
+  assert.ok(Array.isArray(responseData.data.errors),
+    "THEMES-MOJIBAKE-4: errors must be an array");
+  assert.ok(
+    responseData.data.errors.includes("not_database_mode"),
+    "THEMES-MOJIBAKE-4: memory-mode must return not_database_mode error"
+  );
+  assert.equal(responseData.data.dryRun, true,
+    "THEMES-MOJIBAKE-4: dryRun must be true (default)");
+  assert.equal(responseData.data.scannedRows, 0,
+    "THEMES-MOJIBAKE-4: scannedRows must be 0 in memory-mode");
+});
+
+// ── HEATMAP-FALLBACK tests ────────────────────────────────────────────────────
+// Tests for kgi-heatmap-enricher 3-tier fallback logic.
+// All run in memory-mode (no KGI gateway, no TWSE network call).
+
+test("HEATMAP-FALLBACK-1: enrichHeatmapTiles uses live KGI tick when price is non-null", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const kgiTiles = [
+    { symbol: "2330", price: 980.0, change: 10.0, changePct: 1.03, tier: "core", ts: "2026-05-18T10:00:00+08:00", source: "kgi_tick" as const },
+    { symbol: "2317", price: 205.5, change: -2.5, changePct: -1.20, tier: "core", ts: "2026-05-18T10:00:00+08:00", source: "kgi_tick" as const },
+  ];
+
+  const result = enrichHeatmapTiles(kgiTiles as any, []);
+
+  assert.equal(result.tiles.length, 2, "HEATMAP-FALLBACK-1: must return 2 tiles");
+  assert.equal(result.tiles[0]!.sourceState, "live", "HEATMAP-FALLBACK-1: tile[0] sourceState must be live");
+  assert.equal(result.tiles[1]!.sourceState, "live", "HEATMAP-FALLBACK-1: tile[1] sourceState must be live");
+  assert.equal(result.liveTileCount, 2, "HEATMAP-FALLBACK-1: liveTileCount must be 2");
+  assert.equal(result.dataFreshness, "live", "HEATMAP-FALLBACK-1: dataFreshness must be live");
+  assert.equal(result.tiles[0]!.price, 980.0, "HEATMAP-FALLBACK-1: price must be from KGI tick");
+});
+
+test("HEATMAP-FALLBACK-2: enrichHeatmapTiles uses TWSE EOD when KGI tick is null", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const kgiTiles = [
+    { symbol: "2330", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" as const },
+    // 3707 not in TWSE (OTC/special) — should fall through to no_data
+    { symbol: "3707", price: null, change: null, changePct: null, tier: "strategy", ts: null, source: "kgi_tick" as const },
+  ];
+
+  const twseRows = [
+    { Code: "2330", Name: "台積電", Date: "115/05/18", ClosingPrice: "975.0", Change: "5.0", TradeVolume: "1000", TradeValue: "1000", OpeningPrice: "970", HighestPrice: "980", LowestPrice: "968", Transaction: "500" },
+  ];
+
+  const result = enrichHeatmapTiles(kgiTiles as any, twseRows as any);
+
+  assert.equal(result.tiles.length, 2, "HEATMAP-FALLBACK-2: must return 2 tiles (never drops tiles)");
+  assert.equal(result.tiles[0]!.sourceState, "twse_eod", "HEATMAP-FALLBACK-2: 2330 must use twse_eod");
+  assert.equal(result.tiles[0]!.price, 975.0, "HEATMAP-FALLBACK-2: 2330 price must be TWSE close");
+  assert.equal(result.tiles[1]!.sourceState, "no_data", "HEATMAP-FALLBACK-2: 3707 not in TWSE → no_data (tile preserved)");
+  assert.equal(result.tiles[1]!.symbol, "3707", "HEATMAP-FALLBACK-2: 3707 tile shape preserved (symbol kept)");
+  assert.equal(result.twseEodTileCount, 1, "HEATMAP-FALLBACK-2: twseEodTileCount must be 1");
+  assert.equal(result.dataFreshness, "eod", "HEATMAP-FALLBACK-2: dataFreshness must be eod");
+});
+
+test("HEATMAP-FALLBACK-3: enrichHeatmapTiles uses cache when KGI null + TWSE missing", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache, updateLastCloseFromTick } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  // Pre-seed cache with a recent close for 2454
+  const recentTs = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago
+  updateLastCloseFromTick("2454", 780.0, -5.0, -0.64, recentTs);
+
+  const kgiTiles = [
+    { symbol: "2454", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" as const },
+    // 2882 has no cache and no TWSE → no_data (tile still preserved)
+    { symbol: "2882", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" as const },
+  ];
+
+  const result = enrichHeatmapTiles(kgiTiles as any, []); // empty twseRows
+
+  assert.equal(result.tiles.length, 2, "HEATMAP-FALLBACK-3: must return 2 tiles");
+  assert.equal(result.tiles[0]!.sourceState, "cache", "HEATMAP-FALLBACK-3: 2454 must use cache");
+  assert.equal(result.tiles[0]!.price, 780.0, "HEATMAP-FALLBACK-3: 2454 price must be from cache");
+  assert.equal(result.tiles[1]!.sourceState, "no_data", "HEATMAP-FALLBACK-3: 2882 → no_data (tile preserved)");
+  assert.equal(result.tiles[1]!.symbol, "2882", "HEATMAP-FALLBACK-3: 2882 tile shape preserved");
+  assert.equal(result.cacheTileCount, 1, "HEATMAP-FALLBACK-3: cacheTileCount must be 1");
+  assert.equal(result.dataFreshness, "cache", "HEATMAP-FALLBACK-3: dataFreshness must be cache");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
