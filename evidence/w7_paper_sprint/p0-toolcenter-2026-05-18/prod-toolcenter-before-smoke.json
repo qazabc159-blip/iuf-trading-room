@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-05-18T17:30:05.691Z",
+  "url": "https://app.eycvector.com/admin/tools",
+  "responseStatus": 200,
+  "failedResponses": [],
+  "pageErrors": [],
+  "checks": {
+    "opens": true,
+    "hasToolCenter": true,
+    "hasExecutableCopy": false,
+    "hasDemoOrDisabledCopy": true,
+    "hasEndpointCopy": false,
+    "hasOwnerCopy": true
+  },
+  "bodyExcerpt": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n管理\nToolCenter 登錄瀏覽器\nOpenAlice Phase A\n台北 / 2026/5/19 01:30:00\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n工具登錄表 / 24h 統計 / 近期 50 筆呼叫記錄 — Owner only。\n同步中\n端點狀態\n0\n已登錄工具\n—\n24H 呼叫\n0\n近期記錄\n管理 / 工具登錄表\n同步中\n資料同步中\n工具登錄暫時無法讀取 — Phase A DB 待 apply 或後端異常。\n管理 / 24h 工具統計\n同步中\n資料同步中\n工具統計暫時無法讀取。\n管理 / 近期 50 筆呼叫\n同步中\n資料同步中\n呼叫記錄暫時無法讀取。",
+  "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_toolcenter_truth_20260518\\evidence\\w7_paper_sprint\\p0-toolcenter-2026-05-18\\prod-toolcenter-before.png"
+}
