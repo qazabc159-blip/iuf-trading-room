@@ -13469,8 +13469,47 @@ function startSchedulers(workspaceSlug: string): void {
     "BLOCK#SIGNAL strategy(15min,13:45-14:30TST) + news(15min,4-window) + quote.breakout(30min,09:00-13:30TST) + " +
     "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) + " +
     "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
-    "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) started"
+    "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) + " +
+    "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) started"
   );
+
+  // AI-REC-V2-CRON: Fire Brain ReAct AI recommendation at 09:30 and 13:00 TST weekdays.
+  // Pattern: 5min poll, window-guarded. State stored in module-level _aiRecV2Cron* vars.
+  // Boot fire at 60s (allows server to fully warm before first LLM call).
+  {
+    const AI_REC_V2_CRON_INTERVAL_MS = 5 * 60 * 1000;
+    let _aiRecV2LastCronFireHhmm: number | null = null;
+
+    ui(async () => {
+      if (!isAiRecV2CronWindow()) return;
+      if (_aiRecV2CronRunning) return; // already running from manual trigger or prev tick
+
+      const hhmm = getTaipeiHHMM();
+      // Fire at 09:30 (930) and 13:00 (1300) — only once per window (guard by fired hhmm bucket)
+      const firedWindow = hhmm < 1000 ? 930 : 1300;
+      if (_aiRecV2LastCronFireHhmm === firedWindow) return;
+
+      // Check if we're in a fire window: 930-935 or 1300-1305
+      const inFireWindow = (hhmm >= 930 && hhmm <= 935) || (hhmm >= 1300 && hhmm <= 1305);
+      if (!inFireWindow) return;
+
+      _aiRecV2LastCronFireHhmm = firedWindow;
+      _aiRecV2CronRunning = true;
+      const trigger = hhmm < 1000 ? "cron_0930" : "cron_1300";
+      try {
+        const { runAiRecommendationV2 } = await import("./ai-recommendation-v2/orchestrator.js");
+        await runAiRecommendationV2({ trigger: trigger as import("./ai-recommendation-v2/orchestrator.js").AiRecTrigger, maxRounds: 8, costCapUsd: 1.5 });
+        _aiRecV2CronLastFiredAt = new Date().toISOString();
+        _aiRecV2CronLastError = null;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        _aiRecV2CronLastError = msg;
+        console.warn("[ai-rec-v2-cron] tick failed:", msg);
+      } finally {
+        _aiRecV2CronRunning = false;
+      }
+    }, AI_REC_V2_CRON_INTERVAL_MS);
+  }
 }
 
 async function resolveDatabaseWorkspaceSlug(fallbackSlug: string): Promise<string> {
@@ -14166,6 +14205,125 @@ app.post("/api/v1/recommendations/:id/feedback", async (c) => {
   });
 
   return c.json({ ok: true }, 201);
+});
+
+// =============================================================================
+// AI-RECOMMENDATIONS-V2 — Pure-AI independent market judgment (2026-05-18)
+// No Athena fixture dependency. Brain ReAct loop sees full market data.
+// GET  /api/v1/ai-recommendations        → latest AiRecommendationV2Run
+// POST /api/v1/admin/ai-recommendations/refresh → manual trigger
+// Cron: 09:30 + 13:00 TST weekdays (startSchedulers integration)
+// Auth: Owner-only Phase A.
+// Lane: strategy backend (Jason). Files: ai-recommendation-v2/orchestrator.ts
+// =============================================================================
+
+// Module-level cron state — identical pattern to MARKET-OVERVIEW-CRON
+let _aiRecV2CronLastFiredAt: string | null = null;
+let _aiRecV2CronLastError: string | null = null;
+let _aiRecV2CronRunning = false;
+
+function isAiRecV2CronWindow(): boolean {
+  // 09:20-13:40 TST weekdays (give 10min buffer before/after 09:30 and 13:00)
+  const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const day = now.getUTCDay(); // 0=Sun 6=Sat
+  if (day === 0 || day === 6) return false;
+  const hhmm = now.getUTCHours() * 100 + now.getUTCMinutes();
+  return hhmm >= 920 && hhmm <= 1340;
+}
+
+// GET /api/v1/ai-recommendations
+app.get("/api/v1/ai-recommendations", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { getLatestAiRecommendationRun } = await import("./ai-recommendation-v2/orchestrator.js");
+  const latest = getLatestAiRecommendationRun();
+
+  if (!latest) {
+    return c.json({
+      status: "no_data",
+      message: "AI 推薦尚未生成，請在盤中觸發 refresh 或等待 09:30 cron",
+      generatedAt: null,
+      items: [],
+      reactTrace: [],
+      finalReportMarkdown: null,
+      totalCostUsd: 0,
+    });
+  }
+
+  return c.json({
+    runId: latest.runId,
+    status: latest.status,
+    generatedAt: latest.generatedAt,
+    items: latest.items,
+    reactTrace: latest.reactTrace,
+    finalReportMarkdown: latest.finalReportMarkdown,
+    totalCostUsd: latest.totalCostUsd,
+    totalTokens: latest.totalTokens,
+  });
+});
+
+// POST /api/v1/admin/ai-recommendations/refresh  — manual trigger
+app.post("/api/v1/admin/ai-recommendations/refresh", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  if (_aiRecV2CronRunning) {
+    return c.json({ ok: false, message: "run_in_progress" }, 409);
+  }
+
+  const runId = crypto.randomUUID();
+  const workspaceId = session.workspace?.id ?? null;
+
+  // Fire-and-forget in background
+  void (async () => {
+    _aiRecV2CronRunning = true;
+    try {
+      const { runAiRecommendationV2 } = await import("./ai-recommendation-v2/orchestrator.js");
+      await runAiRecommendationV2({
+        workspaceId,
+        trigger: "manual_refresh",
+        runId,
+        maxRounds: 8,
+        costCapUsd: 1.5,
+      });
+      _aiRecV2CronLastFiredAt = new Date().toISOString();
+      _aiRecV2CronLastError = null;
+    } catch (err) {
+      _aiRecV2CronLastError = err instanceof Error ? err.message : String(err);
+      console.error("[ai-rec-v2/refresh] error:", _aiRecV2CronLastError);
+    } finally {
+      _aiRecV2CronRunning = false;
+    }
+  })();
+
+  return c.json({ ok: true, runId, trigger: "manual_refresh", queuedAt: new Date().toISOString() });
+});
+
+// GET /api/v1/admin/ai-recommendations/status  — cron status for Bruce
+app.get("/api/v1/admin/ai-recommendations/status", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { getLatestAiRecommendationRun } = await import("./ai-recommendation-v2/orchestrator.js");
+  const latest = getLatestAiRecommendationRun();
+
+  return c.json({
+    cron_last_fired_at: _aiRecV2CronLastFiredAt,
+    cron_last_error: _aiRecV2CronLastError,
+    cron_running: _aiRecV2CronRunning,
+    cron_window_open: isAiRecV2CronWindow(),
+    latest_run_id: latest?.runId ?? null,
+    latest_status: latest?.status ?? null,
+    latest_item_count: latest?.items.length ?? 0,
+    latest_cost_usd: latest?.totalCostUsd ?? 0,
+  });
 });
 
 // =============================================================================

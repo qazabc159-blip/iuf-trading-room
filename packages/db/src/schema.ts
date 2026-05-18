@@ -976,3 +976,39 @@ export const brainDecisions = pgTable(
     statusIdx:           index("brain_decisions_status_idx").on(table.status, table.createdAt.desc())
   })
 );
+
+// -- AI Recommendations v2 -- migration 0041_ai_recommendations_v2.sql
+// ai_recommendations_runs: one row per Brain ReAct AI recommendation generation run.
+// Pure-AI judgment — no Athena fixture dependency.
+// items: JSONB array of StockRecommendation objects.
+// react_trace: JSONB array of ReAct steps (same shape as brain_decisions.react_trace).
+export const aiRecommendationsRuns = pgTable(
+  "ai_recommendations_runs",
+  {
+    id:                   uuid("id").defaultRandom().primaryKey(),
+    // workspace_id: NULL = system-level Owner-triggered run
+    workspaceId:          uuid("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
+    // run_id: unique per invocation, server-generated UUID as text
+    runId:                text("run_id").notNull().unique(),
+    generatedAt:          timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+    model:                text("model").notNull().default("gpt-4o-mini"),
+    // status: running | complete | failed | budget_exceeded
+    status:               text("status").notNull().default("running"),
+    // items: [{id, ticker, companyName, action, confidence, entryPriceRange, tp1, tp2, stopLoss, rationale, bucket}]
+    items:                jsonb("items").notNull().default([]),
+    // react_trace: [{round, thought, toolName, toolInput, observation, tokensUsed}]
+    reactTrace:           jsonb("react_trace").notNull().default([]),
+    // final_report_markdown: raw markdown from Brain synthesis step
+    finalReportMarkdown:  text("final_report_markdown"),
+    costUsd:              numeric("cost_usd", { precision: 10, scale: 8 }).notNull().default("0"),
+    totalTokens:          integer("total_tokens").notNull().default(0),
+    // trigger: how this run was initiated
+    trigger:              text("trigger").notNull().default("manual_refresh"),
+    createdAt:            timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt:          timestamp("completed_at", { withTimezone: true })
+  },
+  (table) => ({
+    generatedAtIdx:       index("ai_rec_runs_generated_at_idx").on(table.generatedAt.desc()),
+    workspaceStatusIdx:   index("ai_rec_runs_workspace_status_idx").on(table.workspaceId, table.status, table.generatedAt.desc())
+  })
+);
