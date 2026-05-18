@@ -11675,6 +11675,20 @@ test("TAG-SNAPSHOT-5: listSnapshots cursor pagination works in memory mode", asy
 
 // ── EL-OUTBOX: EventLog Phase B — Outbox pattern unit tests ─────────────────
 
+test("TAG-SNAPSHOT-6: server exposes portfolio snapshot read routes", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile(path.resolve(process.cwd(), "apps/api/src/server.ts"), "utf8");
+
+  assert.match(source, /app\.get\("\/api\/v1\/portfolio\/snapshots"/);
+  assert.match(source, /app\.get\("\/api\/v1\/portfolio\/snapshots\/diff"/);
+  assert.match(source, /app\.get\("\/api\/v1\/portfolio\/snapshots\/:id"/);
+  assert.ok(
+    source.indexOf('app.get("/api/v1/portfolio/snapshots/diff"') <
+      source.indexOf('app.get("/api/v1/portfolio/snapshots/:id"'),
+    "diff route must be registered before :id route"
+  );
+});
+
 test("EL-OUTBOX-1: appendEventWithOutbox falls through to appendEvent in memory-mode", async () => {
   const { appendEventWithOutbox } = await import("../apps/api/src/events/event-log-outbox.js");
   const { _resetEventLogStoreForTests } = await import("../apps/api/src/events/event-log-store.js");

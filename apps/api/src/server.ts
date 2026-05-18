@@ -15007,6 +15007,162 @@ app.post("/api/v1/admin/themes/manual-update", async (c) => {
 // AGPL compliance: design inspired by OpenAlice README/docs; all code is IUF-original.
 // =============================================================================
 
+// Portfolio Snapshots (Trading-as-Git Phase A)
+// Frontend contract:
+//   GET /api/v1/portfolio/snapshots
+//   GET /api/v1/portfolio/snapshots/diff
+//   GET /api/v1/portfolio/snapshots/:id
+// These routes are read-only and return an honest empty state when no snapshots
+// exist. They intentionally do not create paper orders or broker writes.
+// =============================================================================
+
+const portfolioSnapshotListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  before: z.string().uuid().optional()
+});
+
+const portfolioSnapshotDiffQuerySchema = z.object({
+  from: z.string().uuid(),
+  to: z.string().uuid()
+});
+
+type PortfolioSnapshotPosition = {
+  shares: number;
+  avgCost: number;
+  sector?: string;
+  lastPrice?: number;
+};
+
+type PortfolioSnapshotPositionsMap = Record<string, PortfolioSnapshotPosition>;
+
+type PortfolioSnapshotRecordLike = {
+  id: string;
+  workspaceId: string;
+  parentId: string | null;
+  positions: PortfolioSnapshotPositionsMap;
+  trigger: string;
+  triggerRefId: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+};
+
+function portfolioPositionsToArray(positions: PortfolioSnapshotPositionsMap) {
+  return Object.entries(positions ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([ticker, position]) => ({
+      ticker,
+      shares: position.shares,
+      avgCost: position.avgCost,
+      sector: position.sector,
+      lastPrice: position.lastPrice
+    }));
+}
+
+function serializePortfolioSnapshot(snapshot: PortfolioSnapshotRecordLike) {
+  return {
+    id: snapshot.id,
+    workspaceId: snapshot.workspaceId,
+    trigger: snapshot.trigger,
+    note: typeof snapshot.metadata?.["note"] === "string" ? snapshot.metadata["note"] : null,
+    positions: portfolioPositionsToArray(snapshot.positions),
+    parentId: snapshot.parentId,
+    createdAt: snapshot.createdAt.toISOString()
+  };
+}
+
+function serializePortfolioDiffMap(positions: PortfolioSnapshotPositionsMap) {
+  return portfolioPositionsToArray(positions).map((position) => ({
+    ticker: position.ticker,
+    shares: position.shares,
+    avgCost: position.avgCost
+  }));
+}
+
+app.get("/api/v1/portfolio/snapshots", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const workspaceId = session.workspace?.id;
+  if (!workspaceId) return c.json({ error: "workspace_not_resolved" }, 400);
+
+  const query = portfolioSnapshotListQuerySchema.parse(c.req.query());
+  const { listSnapshots } = await import("./portfolio-snapshot-store.js");
+  const snapshots = await listSnapshots({
+    workspaceId,
+    limit: query.limit,
+    before: query.before ?? null
+  });
+
+  return c.json({
+    data: {
+      snapshots: snapshots.map(serializePortfolioSnapshot),
+      nextCursor: snapshots.length === query.limit ? snapshots.at(-1)?.id ?? null : null
+    }
+  });
+});
+
+app.get("/api/v1/portfolio/snapshots/diff", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const workspaceId = session.workspace?.id;
+  if (!workspaceId) return c.json({ error: "workspace_not_resolved" }, 400);
+
+  const query = portfolioSnapshotDiffQuerySchema.parse(c.req.query());
+  const { getSnapshotById, computePositionDiff } = await import("./portfolio-snapshot-store.js");
+  const [fromSnapshot, toSnapshot] = await Promise.all([
+    getSnapshotById(query.from),
+    getSnapshotById(query.to)
+  ]);
+
+  if (
+    !fromSnapshot ||
+    !toSnapshot ||
+    fromSnapshot.workspaceId !== workspaceId ||
+    toSnapshot.workspaceId !== workspaceId
+  ) {
+    return c.json({ error: "snapshot_not_found" }, 404);
+  }
+
+  const diff = computePositionDiff(fromSnapshot.positions, toSnapshot.positions);
+  return c.json({
+    data: {
+      fromSnapshotId: query.from,
+      toSnapshotId: query.to,
+      added: serializePortfolioDiffMap(diff.added),
+      removed: serializePortfolioDiffMap(diff.removed),
+      changed: Object.entries(diff.changed)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([ticker, change]) => ({
+          ticker,
+          fromShares: change.from.shares,
+          toShares: change.to.shares,
+          fromAvgCost: change.from.avgCost,
+          toAvgCost: change.to.avgCost
+        }))
+    }
+  });
+});
+
+app.get("/api/v1/portfolio/snapshots/:id", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const workspaceId = session.workspace?.id;
+  if (!workspaceId) return c.json({ error: "workspace_not_resolved" }, 400);
+
+  const id = z.string().uuid().parse(c.req.param("id"));
+  const { getSnapshotById } = await import("./portfolio-snapshot-store.js");
+  const snapshot = await getSnapshotById(id);
+  if (!snapshot || snapshot.workspaceId !== workspaceId) {
+    return c.json({ error: "snapshot_not_found" }, 404);
+  }
+  return c.json({ data: serializePortfolioSnapshot(snapshot) });
+});
+
 // GET /api/v1/uta/adapters — list registered broker adapters
 app.get("/api/v1/uta/adapters", async (c) => {
   const { isDatabaseMode, getDb, brokerAdapters } = await import("@iuf-trading-room/db");
