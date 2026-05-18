@@ -1,0 +1,812 @@
+/**
+ * orchestrator-v3.ts — AI Recommendation v3: Yang SOP 5-Module / 7 Sub-Score
+ *
+ * Architecture (v3 upgrade from v2):
+ *   [STEP 1 市場狀態] → [STEP 2 主題穿透] → [STEP 3 個股 7 sub-score] →
+ *   [STEP 4 Bucket A+/A/B/C] → [STEP 5 進場/TP/SL 結構]
+ *
+ * Key changes vs v2:
+ *   - systemPrompt: strict 5-module SOP (not generic "recommend 5-10 stocks")
+ *   - risk_off_score >= 3 → return market-skip immediately (no items)
+ *   - event day multiplier 0.5 applied to position sizing
+ *   - synthesizeReport: mandates 7 sub-score table + bucket + entry/TP/SL in markdown
+ *   - parseAiReportToRecommendationsV3: extracts all v3 fields from structured markdown
+ *
+ * v2 endpoint (/api/v1/ai-recommendations) is NOT modified — fully parallel.
+ * v3 endpoint: GET/POST /api/v1/ai-recommendations/v3
+ *
+ * Lane boundary: no risk/broker/frontend changes. Read-only ReAct.
+ */
+
+import { randomUUID } from "crypto";
+import type {
+  AiStockRecommendationV2,
+  AiRecMarketState,
+  AiRecBucket,
+} from "@iuf-trading-room/contracts";
+import { callTool } from "../tools/tool-registry-store.js";
+import {
+  getMarketOverview,
+  getSectorRotation,
+  getCompanyTechnical,
+  getInstitutionalFlow,
+  getNewsTop10,
+} from "../tools/market-data-tools.js";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export type AiRecTrigger = "cron_0930" | "cron_1300" | "manual_refresh" | "test";
+
+export interface AiRecommendationV3RunOptions {
+  workspaceId?: string | null;
+  trigger?: AiRecTrigger;
+  maxRounds?: number;
+  costCapUsd?: number;
+  runId?: string;
+  dateStr?: string;
+}
+
+export interface AiRecommendationV3RunResult {
+  runId: string;
+  status: "complete" | "failed" | "budget_exceeded" | "market_risk_off";
+  generatedAt: string;
+  items: AiStockRecommendationV2[];
+  reactTrace: unknown[];
+  finalReportMarkdown: string;
+  totalCostUsd: number;
+  totalTokens: number;
+  marketState: AiRecMarketState | null;
+  marketRiskOffScore: number | null;
+  dbRowId: string | null;
+}
+
+// ── In-memory cache (latest v3 run) ──────────────────────────────────────────
+
+let _latestV3Cache: AiRecommendationV3RunResult | null = null;
+let _latestV3CacheExpiresAt = 0;
+const V3_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | null {
+  if (_latestV3Cache && Date.now() < _latestV3CacheExpiresAt) {
+    return _latestV3Cache;
+  }
+  return null;
+}
+
+export function _resetAiRecommendationV3Cache(): void {
+  _latestV3Cache = null;
+  _latestV3CacheExpiresAt = 0;
+}
+
+// ── Date helper ───────────────────────────────────────────────────────────────
+
+function todayTst(): string {
+  const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return now.toISOString().slice(0, 10);
+}
+
+// ── Tool whitelist ────────────────────────────────────────────────────────────
+
+const TOOL_WHITELIST_V3 = [
+  "get_market_overview",
+  "get_sector_rotation",
+  "get_company_technical",
+  "get_institutional_flow",
+  "get_news_top10",
+] as const;
+
+// ── dispatchTool ──────────────────────────────────────────────────────────────
+
+async function dispatchMarketToolV3(
+  toolName: string,
+  toolInput: unknown,
+  workspaceId?: string | null
+): Promise<unknown> {
+  return callTool(toolName, "brain_react", workspaceId, toolInput, async (input) => {
+    switch (toolName) {
+      case "get_market_overview":
+        return getMarketOverview();
+      case "get_sector_rotation": {
+        const inp = input as { limit?: number } | null;
+        return getSectorRotation(inp?.limit ?? 20);
+      }
+      case "get_company_technical": {
+        const inp = input as { ticker?: string } | null;
+        if (!inp?.ticker) return { error: "ticker_required" };
+        return getCompanyTechnical(inp.ticker);
+      }
+      case "get_institutional_flow": {
+        const inp = input as { ticker?: string } | null;
+        if (!inp?.ticker) return { error: "ticker_required" };
+        return getInstitutionalFlow(inp.ticker);
+      }
+      case "get_news_top10":
+        return getNewsTop10();
+      default:
+        throw new Error(`TOOL_NOT_FOUND: ${toolName} not in v3 whitelist`);
+    }
+  });
+}
+
+// ── Yang SOP system prompt (5-module strict) ──────────────────────────────────
+
+function buildV3SystemPrompt(dateStr: string): string {
+  return `你是 IUF 台股操盤師 AI，嚴格按楊董 SOP 5-module 框架執行推薦分析。
+今天是 ${dateStr}（台北時間）。
+
+你有以下工具可用：${TOOL_WHITELIST_V3.join(", ")}
+
+---
+[STEP 1] 市場狀態（前置條件 — 必須最先執行）
+  先 callTool(get_market_overview)，從回傳資料計算：
+  trend_score = 1[C>EMA20] + 1[EMA20>EMA60] + 1[EMA60>EMA120] + 1[ADX14>22] + 1[RS20>0]（滿分5）
+  range_score = 1[|C-EMA60|/EMA60<5%] + 1[ADX14<18] + 1[BBWidth<40pct]（滿分3）
+  risk_off_score = 1[VIX>25] + 1[VIX5d漲>30%] + 1[DXY60dZ>1] + 1[10Y20d漲>25bp] + 1[WTI10d漲>10%] + 1[TAIEX<EMA60]（滿分6）
+
+  判斷優先序：risk-off > event > trend > range
+  若 risk_off_score >= 3 → 設 toolName=null，回傳 RISK_OFF_SKIP，不開新 beta 倉
+  若 event日（FOMC/CPI/法說 T-2~T+1 或振幅>2*ATR20）→ 市場狀態設 event，倉位倍率 0.5
+
+[STEP 2] 主題穿透
+  callTool(get_news_top10) 識別當前強勢主題
+  callTool(get_sector_rotation) 找資金流入板塊
+  根據楊董 4 層產業鏈框架定位標的：
+    第一層龍頭（8分）| 第二層系統/模組（14分）| 第三層關鍵零件（16分）| 材料/設備（20分）
+  排除「已 price in」：法人連5日大量買超且股價20日漲>30% 的公司直接跳過
+
+[STEP 3] 個股 7 sub-score（每候選股 0-100 合計）
+  - 主題位置 /20（依 STEP 2 產業鏈層位判定）
+  - 營收/財報 /15（近3月YoY正且至少2月加速 → 滿分；只1月加速 → 8分；負成長 → 0）
+  - 法人/ETF /15（5日外資+投信同向淨買超/20均量 > 0.5 → 滿；單向 → 8；流出 → 0）
+  - 融資/借券/擁擠 /15（融資5日降溫 → 滿；持平 → 8；5日增>12%且股價漲>15% → 扣分至0）
+  - 相對強弱量能 /10（RS20>0且突破量>1.3均量 → 滿；RS正但量不足 → 5；RS負 → 0）
+  - 技術結構 /20（BOS+OB/FVG+OTE重疊3項以上 → 滿；2項 → 12；1項 → 6；無 → 0）
+  - 估值/事件 /5（法說/除息/注意股等加減分）
+  totalScore = 7個分數相加，最大100
+
+[STEP 4] Bucket assign（依 totalScore）
+  totalScore >= 85 → A+ 今日首選（0.8% NAV）
+  75–84 → A 可觀察布局（0.6% NAV）
+  65–74 → B 等回檔（0.4% NAV）
+  < 65 → C 高風險排除（不開新倉）
+
+[STEP 5] 每檔輸出（STEP 4 bucket != C 才輸出）
+  格式嚴格如下（解析器依賴此格式）：
+  進場區：OTE 0.618-0.705 回踩（具體價格區間）或突破後回測不破
+  TP1：前波高 or 整數關（具體價格）
+  TP2：月線上緣 or 年線頂部（具體價格）
+  SL：結構失效點外 0.5 ATR（具體價格），上限 8%
+  R值：(TP1-進場中點)/(進場中點-SL)
+  信心：0.0-1.0
+
+---
+回應格式（每輪 JSON，無 markdown 包裝）：
+{"thought": "<1-3句分析>", "toolName": "<工具名稱 or null>", "toolInput": <{...} or null>}
+
+規則：
+- 先完成 STEP 1（market overview），再 STEP 2（news+sector），再 STEP 3（技術/法人個股）
+- 至少執行5輪工具呼叫再給最終答案
+- 最終答案時 toolName=null，thought 包含完整分析摘要
+- 若 risk_off_score >= 3，thought 開頭必須含「RISK_OFF_SKIP」`;
+}
+
+// ── Yang SOP synthesis prompt ──────────────────────────────────────────────────
+
+function buildV3SynthesisPrompt(traceText: string, dateStr: string): string {
+  return `你是 IUF 台股操盤師 AI，請根據以下 ReAct 分析過程，輸出符合楊董 SOP 的個股推薦報告（${dateStr}）。
+
+## 分析過程
+${traceText}
+
+---
+請為每支推薦股票（bucket != C）輸出以下嚴格格式：
+
+## [ticker] [公司名稱]
+- 分類: [A+今日首選 | A可觀察布局 | B等回檔 | C高風險排除]
+- 總分: [0-100整數]
+- 市場狀態: [risk_off | event | trend | range]
+- 主題位置分: [0-20]
+- 營收財報分: [0-15]
+- 法人ETF分: [0-15]
+- 融資借券分: [0-15]
+- 相對強弱量能分: [0-10]
+- 技術結構分: [0-20]
+- 估值事件分: [0-5]
+- 進場區: [低-高，例如 870-890]
+- 進場理由: [OTE 0.618-0.705 / 突破後回測不破 / 其他]
+- TP1: [具體價格]
+- TP1理由: [前波高/整數關等]
+- TP2: [具體價格]
+- TP2理由: [月線上緣/年線等]
+- 停損: [具體價格]
+- ATR倍數: [0.5]
+- R值: [計算值]
+- 信心: [0.0-1.0]
+- 為什麼買: [具體bull thesis，至少2點]
+- 為什麼不買: [具體bear case/風險，至少2點]
+- NAV比重: [0.8% | 0.6% | 0.4% | 0%]
+- 市場倍率: [1.0 | 0.9 | 0.7 | 0.6 | 0.5 | 0.4 | 0.3 | 0]
+
+推薦 A+/A/B 的股票，不要輸出 C 分類。
+若 risk_off_score >= 3，只輸出一個 ## 市場 risk-off 段落說明原因，不推薦任何股票。
+使用真實市場資料（來自 ReAct trace），不要捏造數字。`;
+}
+
+// ── Markdown parser v3 ────────────────────────────────────────────────────────
+
+function parseFloat2v3(s: string | undefined): number | null {
+  if (!s) return null;
+  const n = parseFloat(s.replace(/[^\d.]/g, ""));
+  return isNaN(n) ? null : n;
+}
+
+function extractPriceRangeV3(line: string): { low: number | null; high: number | null } {
+  const m = line.match(/(\d+(?:\.\d+)?)\s*[-~～至到]\s*(\d+(?:\.\d+)?)/);
+  if (m) return { low: parseFloat2v3(m[1]), high: parseFloat2v3(m[2]) };
+  const single = line.match(/(\d{2,5}(?:\.\d+)?)/);
+  if (single) {
+    const v = parseFloat2v3(single[1]);
+    return { low: v, high: v };
+  }
+  return { low: null, high: null };
+}
+
+function parseBucket(text: string): { bucket: AiRecBucket; action: AiStockRecommendationV2["action"] } {
+  if (/A\+|A\+今日首選/.test(text) || /今日首選/.test(text)) {
+    return { bucket: "A+", action: "今日首選" };
+  }
+  if (/^A可觀察|A 可觀察|A(?:\s|$)/.test(text) && !/A\+/.test(text)) {
+    return { bucket: "A", action: "可觀察布局（研究參考）" };
+  }
+  if (/B等回檔|B 等回檔|等回檔/.test(text)) {
+    return { bucket: "B", action: "等回檔" };
+  }
+  if (/C高風險|C 高風險|高風險排除/.test(text)) {
+    return { bucket: "C", action: "高風險排除" };
+  }
+  // Fallback inference from 分類 line
+  if (/今日首選/.test(text)) return { bucket: "A+", action: "今日首選" };
+  if (/可觀察/.test(text)) return { bucket: "A", action: "可觀察布局（研究參考）" };
+  if (/等回檔/.test(text)) return { bucket: "B", action: "等回檔" };
+  return { bucket: "C", action: "高風險排除" };
+}
+
+function parseMarketStateV3(text: string): AiRecMarketState {
+  if (/risk_off/.test(text)) return "risk_off";
+  if (/event/.test(text)) return "event";
+  if (/trend/.test(text)) return "trend";
+  return "range";
+}
+
+/**
+ * parseAiReportToRecommendationsV3
+ *
+ * Parses structured markdown report from synthesizeReportV3 into AiStockRecommendationV2[]
+ * with v3 fields (subScores, bucket, entryZone, tp1Structured, tp2Structured, etc.)
+ *
+ * Expected block format:
+ *   ## XXXX 公司名
+ *   - 分類: A+今日首選
+ *   - 總分: 88
+ *   - 主題位置分: 18
+ *   - 進場區: 870-890
+ *   - TP1: 920
+ *   - ...
+ */
+export function parseAiReportToRecommendationsV3(
+  markdown: string,
+  dateStr: string
+): AiStockRecommendationV2[] {
+  const results: AiStockRecommendationV2[] = [];
+  if (!markdown || markdown.trim().length === 0) return results;
+
+  // Check if market is risk-off (AI returned skip)
+  if (/RISK_OFF_SKIP|市場 risk-off|risk.off 暫不推薦/i.test(markdown)) {
+    return results; // Empty — no recommendations in risk-off
+  }
+
+  const stockBlocks = markdown.split(/(?=^##+ \d{4}|^\d+\.\s+\d{4})/m);
+
+  for (const block of stockBlocks) {
+    if (!block.trim()) continue;
+
+    const tickerMatch = block.match(/\b(\d{4,6}[A-Z]?)\b/);
+    if (!tickerMatch) continue;
+    const ticker = tickerMatch[1]!;
+
+    const nameMatch = block.match(new RegExp(ticker + "\\s+([\\u4e00-\\u9fff\\w\\s]{2,20})"));
+    const companyName = nameMatch ? nameMatch[1]!.trim() : ticker;
+
+    const lines = block.split("\n");
+
+    // v3 fields
+    let bucketResult: { bucket: AiRecBucket; action: AiStockRecommendationV2["action"] } = {
+      bucket: "B",
+      action: "等回檔",
+    };
+    let totalScore: number | null = null;
+    let marketState: AiRecMarketState = "trend";
+    let themeScore: number | null = null;
+    let revenueScore: number | null = null;
+    let institutionalScore: number | null = null;
+    let marginScore: number | null = null;
+    let rsScore: number | null = null;
+    let technicalScore: number | null = null;
+    let valuationScore: number | null = null;
+    let entryLow: number | null = null;
+    let entryHigh: number | null = null;
+    let entryReason = "";
+    let tp1Price: number | null = null;
+    let tp1Reason = "";
+    let tp2Price: number | null = null;
+    let tp2Reason = "";
+    let slPrice: number | null = null;
+    let slAtrMultiple: number | null = null;
+    let rRatio: number | null = null;
+    let confidence: number | null = null;
+    let navPct: number | null = null;
+    let marketMultiplier: number | null = null;
+    const whyBuy: string[] = [];
+    const whyNotBuy: string[] = [];
+    const rationaleLines: string[] = [];
+
+    for (const line of lines) {
+      const lower = line.toLowerCase();
+      const value = line.replace(/^[-*•\s]*[^:：]+[:：]\s*/, "").trim();
+
+      if (/分類[:：]/.test(line)) {
+        bucketResult = parseBucket(value);
+      } else if (/總分[:：]/.test(line)) {
+        totalScore = parseFloat2v3(value.match(/\d+/)?.[0]);
+      } else if (/市場狀態[:：]/.test(line)) {
+        marketState = parseMarketStateV3(value);
+      } else if (/主題位置分[:：]/.test(line)) {
+        themeScore = parseFloat2v3(value.match(/[\d.]+/)?.[0]);
+      } else if (/營收財報分[:：]/.test(line)) {
+        revenueScore = parseFloat2v3(value.match(/[\d.]+/)?.[0]);
+      } else if (/法人ETF分[:：]/.test(line)) {
+        institutionalScore = parseFloat2v3(value.match(/[\d.]+/)?.[0]);
+      } else if (/融資借券分[:：]/.test(line)) {
+        marginScore = parseFloat2v3(value.match(/[\d.]+/)?.[0]);
+      } else if (/相對強弱量能分[:：]/.test(line)) {
+        rsScore = parseFloat2v3(value.match(/[\d.]+/)?.[0]);
+      } else if (/技術結構分[:：]/.test(line)) {
+        technicalScore = parseFloat2v3(value.match(/[\d.]+/)?.[0]);
+      } else if (/估值事件分[:：]/.test(line)) {
+        valuationScore = parseFloat2v3(value.match(/[\d.]+/)?.[0]);
+      } else if (/進場區[:：]/.test(line)) {
+        const pr = extractPriceRangeV3(line);
+        entryLow = pr.low;
+        entryHigh = pr.high;
+      } else if (/進場理由[:：]/.test(line)) {
+        entryReason = value;
+      } else if (/^- TP1[:：]/.test(line) || /^- tp1[:：]/i.test(line)) {
+        // Extract price AFTER the colon, not first digit in whole line
+        tp1Price = parseFloat2v3(value.match(/(\d+(?:\.\d+)?)/)?.[0]);
+      } else if (/TP1理由[:：]/.test(line)) {
+        tp1Reason = value;
+      } else if (/^- TP2[:：]/.test(line) || /^- tp2[:：]/i.test(line)) {
+        tp2Price = parseFloat2v3(value.match(/(\d+(?:\.\d+)?)/)?.[0]);
+      } else if (/TP2理由[:：]/.test(line)) {
+        tp2Reason = value;
+      } else if (/停損[:：]/.test(line)) {
+        slPrice = parseFloat2v3(value.match(/(\d+(?:\.\d+)?)/)?.[0]);
+      } else if (/ATR倍數[:：]/.test(line)) {
+        slAtrMultiple = parseFloat2v3(value.match(/[\d.]+/)?.[0]);
+      } else if (/R值[:：]/i.test(line)) {
+        rRatio = parseFloat2v3(value.match(/[\d.]+/)?.[0]);
+      } else if (/信心[:：]/.test(line)) {
+        const cv = value.match(/([01](?:\.\d+)?)/);
+        confidence = cv ? parseFloat2v3(cv[1]) : null;
+      } else if (/為什麼買[:：]/.test(line)) {
+        const bullets = value.split(/[;；,，]/).map(s => s.trim()).filter(s => s.length > 2);
+        whyBuy.push(...bullets);
+      } else if (/為什麼不買[:：]/.test(line)) {
+        const bullets = value.split(/[;；,，]/).map(s => s.trim()).filter(s => s.length > 2);
+        whyNotBuy.push(...bullets);
+      } else if (/NAV比重[:：]/.test(line)) {
+        navPct = parseFloat2v3(value.match(/([\d.]+)/)?.[0]);
+        if (navPct !== null && navPct > 1) navPct = navPct / 100; // convert % to decimal if needed
+      } else if (/市場倍率[:：]/.test(line)) {
+        marketMultiplier = parseFloat2v3(value.match(/([\d.]+)/)?.[0]);
+      } else if (/推薦理由|rationale|理由[:：]/i.test(line)) {
+        rationaleLines.push(value);
+      }
+    }
+
+    // Skip C bucket items
+    if (bucketResult.bucket === "C") continue;
+
+    // Confidence defaults by bucket
+    const defaultConfidence = bucketResult.bucket === "A+" ? 0.85
+      : bucketResult.bucket === "A" ? 0.70
+      : 0.55;
+
+    // nav_pct defaults by bucket
+    const defaultNavPct = bucketResult.bucket === "A+" ? 0.008
+      : bucketResult.bucket === "A" ? 0.006
+      : 0.004;
+
+    // Build subScores (use null-safe values)
+    const subScores = (themeScore !== null || revenueScore !== null) ? {
+      theme: themeScore ?? 10,
+      revenue: revenueScore ?? 8,
+      institutional: institutionalScore ?? 8,
+      margin: marginScore ?? 8,
+      rs: rsScore ?? 5,
+      technical: technicalScore ?? 10,
+      valuation: valuationScore ?? 3,
+    } : undefined;
+
+    // Compute totalScore from subScores if not explicitly parsed
+    const computedTotal = subScores
+      ? subScores.theme + subScores.revenue + subScores.institutional +
+        subScores.margin + subScores.rs + subScores.technical + subScores.valuation
+      : null;
+
+    const rationale = rationaleLines.join("; ") ||
+      whyBuy.join("; ") ||
+      block.slice(0, 200).replace(/\n/g, " ").trim();
+
+    const rec: AiStockRecommendationV2 = {
+      id: randomUUID(),
+      ticker,
+      companyName,
+      action: bucketResult.action,
+      date: dateStr,
+      confidence: confidence ?? defaultConfidence,
+      rationale,
+      entryPriceRange: (entryLow !== null || entryHigh !== null)
+        ? { low: entryLow, high: entryHigh }
+        : null,
+      tp1: tp1Price,
+      tp2: tp2Price,
+      stopLoss: slPrice,
+      aiGenerated: true,
+      source: "brain_react_v2",
+      // v3 fields
+      marketState,
+      marketScores: undefined, // Set at run level, not per-stock
+      subScores,
+      totalScore: totalScore ?? computedTotal ?? undefined,
+      bucket: bucketResult.bucket,
+      entryZone: (entryLow !== null || entryHigh !== null) ? {
+        low: entryLow,
+        high: entryHigh,
+        reason: entryReason || undefined,
+      } : undefined,
+      tp1Structured: tp1Price !== null ? {
+        price: tp1Price,
+        reason: tp1Reason || undefined,
+      } : undefined,
+      tp2Structured: tp2Price !== null ? {
+        price: tp2Price,
+        reason: tp2Reason || undefined,
+      } : undefined,
+      stopLossStructured: slPrice !== null ? {
+        price: slPrice,
+        atr_multiple: slAtrMultiple ?? 0.5,
+      } : undefined,
+      r_ratio: rRatio ?? undefined,
+      position_sizing: (navPct !== null || marketMultiplier !== null) ? {
+        nav_pct: navPct ?? defaultNavPct,
+        market_multiplier: marketMultiplier ?? 1.0,
+      } : {
+        nav_pct: defaultNavPct,
+        market_multiplier: 1.0,
+      },
+      why_buy: whyBuy.length > 0 ? whyBuy : undefined,
+      why_not_buy: whyNotBuy.length > 0 ? whyNotBuy : undefined,
+    };
+
+    if (!results.some(r => r.ticker === ticker)) {
+      results.push(rec);
+    }
+  }
+
+  return results;
+}
+
+// ── ReAct step parser ─────────────────────────────────────────────────────────
+
+function parseMarketStepV3(raw: string): {
+  thought: string;
+  toolName: string | null;
+  toolInput: unknown | null;
+  isRiskOff: boolean;
+} {
+  const cleaned = raw.trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+  try {
+    const parsed = JSON.parse(cleaned) as { thought?: string; toolName?: string | null; toolInput?: unknown };
+    const thought = String(parsed.thought ?? "(no thought)");
+    const isRiskOff = /RISK_OFF_SKIP/.test(thought);
+    return {
+      thought,
+      toolName: parsed.toolName ?? null,
+      toolInput: parsed.toolInput ?? null,
+      isRiskOff,
+    };
+  } catch {
+    return {
+      thought: cleaned.slice(0, 300),
+      toolName: null,
+      toolInput: null,
+      isRiskOff: /RISK_OFF_SKIP/.test(cleaned),
+    };
+  }
+}
+
+// ── synthesize v3 report ──────────────────────────────────────────────────────
+
+async function synthesizeReportV3(
+  trace: Array<{ round: number; thought: string; toolName: string | null; observation: unknown; tokensUsed: number }>,
+  dateStr: string,
+  model: string
+): Promise<string> {
+  const { callLlm } = await import("../llm/llm-gateway.js");
+  const traceText = trace
+    .map(s => `Round ${s.round}:\n思考: ${s.thought}\n工具: ${s.toolName ?? "(Final Answer)"}\n結果: ${JSON.stringify(s.observation).slice(0, 600)}`)
+    .join("\n\n");
+
+  const llmResult = await callLlm(
+    [
+      { role: "system", content: "你是 IUF 台股操盤師 AI，輸出嚴格格式的推薦報告。" },
+      { role: "user", content: buildV3SynthesisPrompt(traceText, dateStr) },
+    ],
+    {
+      modelKey: model,
+      callerModule: "ai_rec_v2",
+      taskType: "synthesis",
+      maxTokens: 3500,
+      temperature: 0.2,
+    }
+  );
+
+  return llmResult?.content ?? "(synthesis unavailable — LLM returned null)";
+}
+
+// ── Core runAiRecommendationV3 ────────────────────────────────────────────────
+
+interface V3ReActStep {
+  round: number;
+  thought: string;
+  toolName: string | null;
+  toolInput: unknown | null;
+  observation: unknown | null;
+  tokensUsed: number;
+}
+
+export async function runAiRecommendationV3(
+  opts: AiRecommendationV3RunOptions = {}
+): Promise<AiRecommendationV3RunResult> {
+  const runId = opts.runId ?? randomUUID();
+  const dbRowId = randomUUID();
+  const trigger = opts.trigger ?? "manual_refresh";
+  const dateStr = opts.dateStr ?? todayTst();
+  const generatedAt = new Date().toISOString();
+  const model = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
+  const maxRounds = Math.min(opts.maxRounds ?? 10, 12);
+  const costCap = Math.min(opts.costCapUsd ?? 2.0, 5.0);
+
+  const { callLlm } = await import("../llm/llm-gateway.js");
+  type LlmMessage = { role: "system" | "user" | "assistant"; content: string };
+
+  const trace: V3ReActStep[] = [];
+  let totalTokens = 0;
+  let totalCostUsd = 0;
+  let detectedMarketState: AiRecMarketState | null = null;
+  let detectedRiskOffScore: number | null = null;
+
+  const messages: LlmMessage[] = [
+    { role: "system", content: buildV3SystemPrompt(dateStr) },
+    { role: "user", content: `請開始楊董 SOP 5-module 分析，日期 ${dateStr}。先執行 STEP 1: get_market_overview。` },
+  ];
+
+  for (let round = 1; round <= maxRounds; round++) {
+    if (totalCostUsd >= costCap) {
+      const report = trace.length > 0
+        ? await synthesizeReportV3(trace, dateStr, model)
+        : `Budget cap $${costCap} reached.`;
+      const result: AiRecommendationV3RunResult = {
+        runId,
+        status: "budget_exceeded",
+        generatedAt,
+        items: parseAiReportToRecommendationsV3(report, dateStr),
+        reactTrace: trace,
+        finalReportMarkdown: report,
+        totalCostUsd,
+        totalTokens,
+        marketState: detectedMarketState,
+        marketRiskOffScore: detectedRiskOffScore,
+        dbRowId,
+      };
+      _latestV3Cache = result;
+      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+      return result;
+    }
+
+    const llmResult = await callLlm(messages, {
+      modelKey: model,
+      callerModule: "ai_rec_v2",
+      taskType: "react_reason",
+      workspaceId: opts.workspaceId,
+      maxTokens: 1024,
+      temperature: 0.1,
+    });
+
+    if (!llmResult) {
+      // LLM unavailable (test mode without API key) — return gracefully
+      const result: AiRecommendationV3RunResult = {
+        runId,
+        status: "failed",
+        generatedAt,
+        items: [],
+        reactTrace: trace,
+        finalReportMarkdown: "(LLM unavailable)",
+        totalCostUsd,
+        totalTokens,
+        marketState: null,
+        marketRiskOffScore: null,
+        dbRowId,
+      };
+      _latestV3Cache = result;
+      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+      return result;
+    }
+
+    totalTokens += llmResult.usage.totalTokens;
+    totalCostUsd += llmResult.costUsd;
+    const raw = llmResult.content;
+    const step = parseMarketStepV3(raw);
+
+    // Detect risk-off skip early
+    if (step.isRiskOff) {
+      detectedMarketState = "risk_off";
+      trace.push({
+        round,
+        thought: step.thought,
+        toolName: null,
+        toolInput: null,
+        observation: "RISK_OFF_SKIP",
+        tokensUsed: llmResult.usage.totalTokens,
+      });
+      const riskOffReport = `## 市場 risk-off — 暫不推薦新倉\n\n${step.thought}\n\nrisk_off_score >= 3，依楊董 SOP 不開新 beta 倉，待事件過後重新評估。`;
+      const result: AiRecommendationV3RunResult = {
+        runId,
+        status: "market_risk_off",
+        generatedAt,
+        items: [],
+        reactTrace: trace,
+        finalReportMarkdown: riskOffReport,
+        totalCostUsd,
+        totalTokens,
+        marketState: "risk_off",
+        marketRiskOffScore: detectedRiskOffScore,
+        dbRowId,
+      };
+      _latestV3Cache = result;
+      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+      return result;
+    }
+
+    // Tool whitelist check
+    if (step.toolName && !(TOOL_WHITELIST_V3 as readonly string[]).includes(step.toolName)) {
+      trace.push({
+        round,
+        thought: step.thought,
+        toolName: step.toolName,
+        toolInput: step.toolInput,
+        observation: `BLOCKED: tool ${step.toolName} not in v3 whitelist`,
+        tokensUsed: llmResult.usage.totalTokens,
+      });
+      const result: AiRecommendationV3RunResult = {
+        runId,
+        status: "failed",
+        generatedAt,
+        items: [],
+        reactTrace: trace,
+        finalReportMarkdown: `Tool not in whitelist: ${step.toolName}`,
+        totalCostUsd,
+        totalTokens,
+        marketState: detectedMarketState,
+        marketRiskOffScore: detectedRiskOffScore,
+        dbRowId,
+      };
+      _latestV3Cache = result;
+      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+      return result;
+    }
+
+    // Final answer
+    if (!step.toolName) {
+      trace.push({
+        round,
+        thought: step.thought,
+        toolName: null,
+        toolInput: null,
+        observation: null,
+        tokensUsed: llmResult.usage.totalTokens,
+      });
+      const report = await synthesizeReportV3(trace, dateStr, model);
+      const items = parseAiReportToRecommendationsV3(report, dateStr);
+      const result: AiRecommendationV3RunResult = {
+        runId,
+        status: "complete",
+        generatedAt,
+        items,
+        reactTrace: trace,
+        finalReportMarkdown: report,
+        totalCostUsd,
+        totalTokens,
+        marketState: detectedMarketState ?? "trend",
+        marketRiskOffScore: detectedRiskOffScore,
+        dbRowId,
+      };
+      _latestV3Cache = result;
+      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+      return result;
+    }
+
+    // Execute tool
+    let observation: unknown;
+    try {
+      observation = await dispatchMarketToolV3(step.toolName, step.toolInput, opts.workspaceId);
+      // Try to extract risk_off_score from market overview result
+      if (step.toolName === "get_market_overview" && typeof observation === "object" && observation !== null) {
+        const obs = observation as Record<string, unknown>;
+        if (typeof obs["risk_off_score"] === "number") {
+          detectedRiskOffScore = obs["risk_off_score"] as number;
+          // Determine market state from scores
+          if ((obs["risk_off_score"] as number) >= 3) {
+            detectedMarketState = "risk_off";
+          } else if ((obs["trend_score"] as number | undefined) !== undefined && (obs["trend_score"] as number) >= 4) {
+            detectedMarketState = "trend";
+          } else {
+            detectedMarketState = "range";
+          }
+        }
+      }
+    } catch (err) {
+      observation = { error: err instanceof Error ? err.message : String(err) };
+    }
+
+    trace.push({
+      round,
+      thought: step.thought,
+      toolName: step.toolName,
+      toolInput: step.toolInput,
+      observation,
+      tokensUsed: llmResult.usage.totalTokens,
+    });
+
+    messages.push({ role: "assistant", content: raw });
+    messages.push({
+      role: "user",
+      content: `Tool ${step.toolName} 結果: ${JSON.stringify(observation).slice(0, 2000)}`,
+    });
+  }
+
+  // Max rounds — synthesize with what we have
+  const report = await synthesizeReportV3(trace, dateStr, model);
+  const items = parseAiReportToRecommendationsV3(report, dateStr);
+  const result: AiRecommendationV3RunResult = {
+    runId,
+    status: "complete",
+    generatedAt,
+    items,
+    reactTrace: trace,
+    finalReportMarkdown: report,
+    totalCostUsd,
+    totalTokens,
+    marketState: detectedMarketState ?? "trend",
+    marketRiskOffScore: detectedRiskOffScore,
+    dbRowId,
+  };
+  _latestV3Cache = result;
+  _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+  return result;
+}
