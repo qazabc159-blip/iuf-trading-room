@@ -135,6 +135,7 @@ export function Sidebar() {
           { path: "/admin/portfolio/snapshots", title: "Portfolio", sub: "快照版本", Icon: LineChart, activePaths: ["/admin/portfolio/snapshots"] },
           { path: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench, activePaths: ["/admin/tools"] },
           { path: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles, activePaths: ["/admin/uta"] },
+          { path: "/admin/strategies", title: "Strategies", sub: "Lab 策略狀態", Icon: BarChart3, activePaths: ["/admin/strategies"] },
         ] as NavItem[]).map((item) => {
           const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
           const Icon = item.Icon;
