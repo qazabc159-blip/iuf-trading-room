@@ -10,7 +10,7 @@ import { ArrowRight, Database, FileSearch, Gauge, ShieldAlert, Target } from "lu
 
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
-import { getRecommendationsToday, type RecommendationListResponse } from "@/lib/api";
+import { getAiRecommendationsV3, getRecommendationsToday, type AiRecommendationV3Response, type RecommendationListResponse } from "@/lib/api";
 import {
   buildRecommendationPrefillHref,
   handoffLabelForDirection,
@@ -22,6 +22,8 @@ import { formatRecommendationSourceMode } from "./source-mode-label";
 import { formatRecommendationTimestamp, formatSourceTimestamp } from "./source-trail-time";
 import { MarketStateBadge, MarketStateBadgePlaceholder } from "./MarketStateBadge";
 import { ReactTracePanel } from "./ReactTracePanel";
+import { StockRecCard, type StockRecCardData } from "./StockRecCard";
+import { buildV3PanelState, getV3MarketScores, mapV3ItemToStockRecCard, mapV3TraceSteps } from "./v3-view";
 
 export const dynamic = "force-dynamic";
 
@@ -202,6 +204,17 @@ async function loadRecommendations(): Promise<{
 }> {
   try {
     return { data: await getRecommendationsToday(), error: null };
+  } catch (error) {
+    return { data: null, error: safeMessage(error) };
+  }
+}
+
+async function loadRecommendationsV3(): Promise<{
+  data: AiRecommendationV3Response | null;
+  error: string | null;
+}> {
+  try {
+    return { data: await getAiRecommendationsV3(), error: null };
   } catch (error) {
     return { data: null, error: safeMessage(error) };
   }
@@ -462,9 +475,24 @@ function BucketSection({
 }
 
 export default async function AiRecommendationsPage() {
-  const { data, error } = await loadRecommendations();
+  const [todayResult, v3Result] = await Promise.all([
+    loadRecommendations(),
+    loadRecommendationsV3(),
+  ]);
+  const { data, error } = todayResult;
   const items = data?.items ?? [];
   const grouped = groupByBucket(items);
+  const v3Items = v3Result.data?.items ?? [];
+  const v3Cards = v3Items
+    .map(mapV3ItemToStockRecCard)
+    .filter((card): card is StockRecCardData => Boolean(card));
+  const v3PanelState = buildV3PanelState({
+    data: v3Result.data,
+    error: v3Result.error,
+    visibleCount: v3Cards.length,
+  });
+  const v3MarketScores = getV3MarketScores(v3Items);
+  const v3TraceSteps = mapV3TraceSteps(v3Result.data?.reactTrace);
   const sourceMode = formatRecommendationSourceMode({
     hasData: Boolean(data),
     isMock: Boolean(data?._mock),
@@ -479,7 +507,7 @@ export default async function AiRecommendationsPage() {
       note="推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。"
     >
       <MarketStateBanner />
-      <MarketStateBadgePlaceholder />
+      {v3MarketScores ? <MarketStateBadge scores={v3MarketScores} /> : <MarketStateBadgePlaceholder />}
       <style>{`
         ._rec-tabs {
           display: flex;
@@ -1030,6 +1058,57 @@ export default async function AiRecommendationsPage() {
           color: var(--tac-fg-3);
           font-size: 12px;
         }
+        ._rec-v3-state {
+          display: grid;
+          gap: 10px;
+          border: 1px solid var(--tac-line);
+          border-left: 3px solid rgba(200, 148, 63, 0.72);
+          border-radius: 8px;
+          padding: 14px;
+          margin-bottom: 14px;
+          background: rgba(8, 11, 16, 0.42);
+        }
+        ._rec-v3-state[data-tone="live"] {
+          border-left-color: rgba(46, 204, 113, 0.7);
+        }
+        ._rec-v3-state[data-tone="blocked"],
+        ._rec-v3-state[data-tone="degraded"] {
+          border-left-color: rgba(230, 57, 70, 0.72);
+        }
+        ._rec-v3-state b {
+          color: var(--tac-fg-0);
+          font: 850 14px/1.35 var(--sans-tc);
+        }
+        ._rec-v3-state p {
+          margin: 0;
+          color: var(--tac-fg-2);
+          font-size: 12px;
+          line-height: 1.65;
+        }
+        ._rec-v3-state dl {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+          margin: 0;
+        }
+        ._rec-v3-state div {
+          min-width: 0;
+        }
+        ._rec-v3-state dt {
+          color: var(--tac-brand);
+          font: 900 10px/1 var(--mono);
+        }
+        ._rec-v3-state dd {
+          margin: 6px 0 0;
+          color: var(--tac-fg-2);
+          font: 800 11px/1.5 var(--sans-tc);
+          overflow-wrap: anywhere;
+        }
+        ._rec-v3-card-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+          gap: 12px;
+        }
         @media (max-width: 1180px) {
           ._rec-bucket-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
           ._rec-trade-grid { grid-template-columns: 1fr; }
@@ -1037,8 +1116,10 @@ export default async function AiRecommendationsPage() {
         @media (max-width: 760px) {
           ._rec-bucket-grid,
           ._rec-card-grid,
+          ._rec-v3-card-grid,
           ._rec-score-grid,
-          ._rec-reasons {
+          ._rec-reasons,
+          ._rec-v3-state dl {
             grid-template-columns: 1fr;
           }
           ._rec-card-head {
@@ -1085,44 +1166,64 @@ export default async function AiRecommendationsPage() {
         code="AI-02"
         title="SOP 推理結構 (v3)"
         sub="7 sub-score / 市場狀態 / OTE 進場 / ReAct 5-module"
-        right="等待 Jason v3 payload"
+        right={v3PanelState.label}
       >
         <div style={{ padding: "16px" }}>
-          <MarketStateBadge
-            scores={{
-              trend_score: null,
-              range_score: null,
-              risk_off_score: null,
-            }}
-          />
-
-          <div className="_rec-v3-preview">
-            <div className="_rec-v3-preview-title">
-              7 SUB-SCORE TABLE / 等待 v3 推薦資料
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  {["主題位置", "營收獲利", "法人/ETF", "融資融券", "RS/量能", "技術結構", "估值事件", "總分"].map((header) => (
-                    <th key={header}>{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  {["/20", "/15", "/15", "/15", "/10", "/20", "/5", "/100"].map((max, index) => (
-                    <td key={index}>{max}</td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
+          <div className="_rec-v3-state" data-tone={v3PanelState.tone}>
+            <b>{v3PanelState.title}</b>
+            <p>{v3PanelState.detail}</p>
+            <dl>
+              <div>
+                <dt>Endpoint</dt>
+                <dd>{v3PanelState.endpoint}</dd>
+              </div>
+              <div>
+                <dt>Owner</dt>
+                <dd>{v3PanelState.owner}</dd>
+              </div>
+              <div>
+                <dt>Next</dt>
+                <dd>{v3PanelState.nextAction}</dd>
+              </div>
+            </dl>
           </div>
 
+          {v3Cards.length > 0 ? (
+            <div className="_rec-v3-card-grid">
+              {v3Cards.map((card) => (
+                <StockRecCard key={`${card.ticker}-${card.bucket}`} rec={card} />
+              ))}
+            </div>
+          ) : (
+            <div className="_rec-v3-preview">
+              <div className="_rec-v3-preview-title">
+                7 SUB-SCORE TABLE / 尚未收到可顯示 v3 推薦
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    {["主題位置", "營收獲利", "法人/ETF", "融資融券", "RS/量能", "技術結構", "估值事件", "總分"].map((header) => (
+                      <th key={header}>{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {["/20", "/15", "/15", "/15", "/10", "/20", "/5", "/100"].map((max, index) => (
+                      <td key={index}>{max}</td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <ReactTracePanel
-            steps={null}
+            steps={v3TraceSteps}
             round_current={null}
             round_max={8}
-            is_running={false}
+            is_running={v3PanelState.tone === "pending"}
+            over_budget={v3Result.data?.status === "budget_exceeded"}
           />
         </div>
       </Panel>

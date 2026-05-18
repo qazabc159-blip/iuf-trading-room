@@ -1,0 +1,22 @@
+[
+  {
+    "viewport": "desktop",
+    "status": 200,
+    "hasV3Title": true,
+    "hasEndpoint": true,
+    "hasOwner": true,
+    "oldWaitingRemoved": true,
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "viewport": "mobile",
+    "status": 200,
+    "hasV3Title": true,
+    "hasEndpoint": true,
+    "hasOwner": true,
+    "oldWaitingRemoved": true,
+    "consoleErrors": [],
+    "pageErrors": []
+  }
+]
