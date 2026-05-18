@@ -9605,7 +9605,7 @@ app.get("/api/v1/market/overview/kgi", async (c) => {
 // Tier 1: KGI live tick (market hours, EC2 running)
 // Tier 2: TWSE STOCK_DAY_ALL per-symbol EOD close+changePct
 // Tier 3: In-process last-known-close cache (survives off-hours)
-// Guarantee: ALWAYS returns 40 tiles with sourceState. Never drops a tile.
+// Guarantee: ALWAYS returns all 40 KGI core tiles with sourceState. Never drops a tile.
 app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
@@ -9619,7 +9619,7 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
     const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
     const twseRows = await getStockDayAllRows().catch(() => []);
 
-    // 3-tier enrichment
+    // 3-tier enrichment: live → twse_eod → cache → no_data (never drops tiles)
     const { enrichHeatmapTiles } = await import("./kgi-heatmap-enricher.js");
     const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows);
 
