@@ -7,6 +7,7 @@ import {
   type LlmCallEntry,
   type LlmModelEntry,
 } from "@/lib/api";
+import { normalizeLlmCalls, normalizeLlmModels, normalizeLlmUsage } from "./normalize";
 
 const CSS = `
   ._brain-kpi {
@@ -278,21 +279,22 @@ export default async function BrainLlmAdminPage() {
 
   try {
     const res = await getAdminLlmUsage({ from: sevenDaysAgo, to: today });
-    usage = res.data;
+    usage = normalizeLlmUsage(res.data);
+    if (!usage) usageError = true;
   } catch {
     usageError = true;
   }
 
   try {
     const res = await getAdminLlmCalls({ limit: 50 });
-    calls = res.data ?? [];
+    calls = normalizeLlmCalls(res.data);
   } catch {
     callsError = true;
   }
 
   try {
     const res = await getAdminLlmModels();
-    models = res.data ?? [];
+    models = normalizeLlmModels(res.data);
   } catch {
     modelsError = true;
   }
