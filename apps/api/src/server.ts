@@ -15054,6 +15054,97 @@ app.get("/api/v1/admin/event-log/outbox/diag", async (c) => {
   return c.json({ data: diag });
 });
 
+// =============================================================================
+// Brain ReAct Phase A — read-only AI reasoning loop (2026-05-18)
+// POST /api/v1/admin/brain/react/run       (Owner) fire ReAct loop
+// GET  /api/v1/admin/brain/react/decisions (Owner) list recent decisions
+// GET  /api/v1/admin/brain/react/decisions/:run_id (Owner) single decision trace
+// Phase A safety: read-only tools only. No submit_order, no write broker ops.
+// =============================================================================
+
+// POST /api/v1/admin/brain/react/run — fire Brain ReAct loop (sync, returns full result)
+app.post("/api/v1/admin/brain/react/run", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "INVALID_JSON" }, 400);
+  }
+
+  // Validate body
+  const b = body as Record<string, unknown>;
+  const prompt = typeof b["prompt"] === "string" ? b["prompt"].trim() : "";
+  if (!prompt) {
+    return c.json({ error: "MISSING_FIELD", field: "prompt" }, 400);
+  }
+
+  // Hard caps enforced inside runReactLoop, but validate here for early rejection
+  const rawMaxRounds = typeof b["maxRounds"] === "number" ? b["maxRounds"] : 5;
+  const rawCostCap = typeof b["costCapUsd"] === "number" ? b["costCapUsd"] : 1.0;
+  const maxRounds = Math.min(Math.max(1, Math.floor(rawMaxRounds)), 10);
+  const costCapUsd = Math.min(Math.max(0.01, rawCostCap), 5.0);
+
+  // Phase A safe tool whitelist (read-only)
+  const PHASE_A_WHITELIST = ["finmind_sync", "themes_links_rebuild", "ai_reviewer", "factual_reviewer", "hallu_rag"];
+
+  const { runReactLoop } = await import("./brain/react-loop.js");
+  try {
+    const result = await runReactLoop({
+      workspaceId: session.workspace?.id ?? null,
+      initialPrompt: prompt,
+      contextData: typeof b["contextData"] === "string" ? b["contextData"] : undefined,
+      maxRounds,
+      costCapUsd,
+      toolWhitelist: PHASE_A_WHITELIST
+    });
+    return c.json({ data: result });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[brain-react] runReactLoop error:", msg);
+    return c.json({ error: "REACT_LOOP_ERROR", message: msg }, 500);
+  }
+});
+
+// GET /api/v1/admin/brain/react/decisions — list recent decisions
+app.get("/api/v1/admin/brain/react/decisions", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const limitParam = c.req.query("limit");
+  const limit = Math.min(parseInt(limitParam ?? "20", 10) || 20, 100);
+
+  const { listRecentDecisions } = await import("./brain/react-loop.js");
+  const decisions = await listRecentDecisions(limit);
+  return c.json({ data: decisions, count: decisions.length });
+});
+
+// GET /api/v1/admin/brain/react/decisions/:run_id — single decision trace
+app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const runId = c.req.param("run_id");
+  if (!runId) {
+    return c.json({ error: "MISSING_RUN_ID" }, 400);
+  }
+
+  const { getDecisionByRunId } = await import("./brain/react-loop.js");
+  const decision = await getDecisionByRunId(runId);
+  if (!decision) {
+    return c.json({ error: "NOT_FOUND" }, 404);
+  }
+  return c.json({ data: decision });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
