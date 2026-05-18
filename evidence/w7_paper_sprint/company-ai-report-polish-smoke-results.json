@@ -1,0 +1,139 @@
+{
+  "url": "http://127.0.0.1:3320/companies/2330",
+  "startedAt": "2026-05-18T02:15:12.196Z",
+  "checks": [
+    {
+      "name": "idle read-only copy visible",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "idle does not expose Brain ReAct Agent",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "idle does not expose Owner only",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "idle does not expose run_id:",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "idle does not expose REASON",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "idle does not expose ACT",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "idle does not expose OBSERVE",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "idle does not expose Tokens",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "polling hides raw run_id",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "trace label 推理 visible",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "trace label 工具 visible",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "trace label 觀察 visible",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "tool badge localized",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "token label localized",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "report read-only boundary visible",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "complete does not expose Brain ReAct Agent",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "complete does not expose Owner only",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "complete does not expose run_id:",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "complete does not expose REASON",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "complete does not expose ACT",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "complete does not expose OBSERVE",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "complete does not expose Tokens",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "mobile panel has no obvious horizontal overflow",
+      "status": "pass",
+      "detail": "{\"ok\":true,\"offenders\":[]}"
+    },
+    {
+      "name": "no browser console errors",
+      "status": "pass",
+      "detail": "[]"
+    },
+    {
+      "name": "no browser page errors",
+      "status": "pass",
+      "detail": "[]"
+    }
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "screenshots": [
+    "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_company_ai_report_mobile_worktree\\evidence\\w7_paper_sprint\\company-ai-report-polish-idle-desktop-1366x900.png",
+    "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_company_ai_report_mobile_worktree\\evidence\\w7_paper_sprint\\company-ai-report-polish-complete-desktop-1366x900.png",
+    "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_company_ai_report_mobile_worktree\\evidence\\w7_paper_sprint\\company-ai-report-polish-complete-mobile-390x844.png"
+  ],
+  "finishedAt": "2026-05-18T02:15:20.394Z"
+}
