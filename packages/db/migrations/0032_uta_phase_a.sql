@@ -35,8 +35,8 @@ INSERT INTO broker_adapters (
   cap_odd_lot, cap_margin_trading, cap_short_selling, cap_after_hours_fix, cap_sim_mode, cap_max_subscriptions,
   is_active
 ) VALUES
-  ('kgi',   '凱基證券 (KGI)',   TRUE,  TRUE,  TRUE,  FALSE, TRUE,  40),
-  ('paper', 'Paper Trading',    TRUE,  TRUE,  TRUE,  FALSE, TRUE,  9999)
+  ('kgi',   '凱基證券 (KGI)',   TRUE,  TRUE,  TRUE,  FALSE, TRUE,  40,   TRUE),
+  ('paper', 'Paper Trading',    TRUE,  TRUE,  TRUE,  FALSE, TRUE,  9999, TRUE)
 ON CONFLICT (adapter_key) DO NOTHING;
 
 -- Table 2: broker_accounts
