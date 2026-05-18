@@ -280,6 +280,7 @@ import {
   isStrategyBriefWindow,
   getTstDate as getStrategyBriefTstDate
 } from "./openalice-strategy-brief.js";
+import { normalizeTwseIndustryZhTw } from "./utils/twse-industry-normalize.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -1121,14 +1122,31 @@ app.post("/api/v1/market-data/paper-quotes", async (c) => {
 
 app.get("/api/v1/market-data/overview", async (c) => {
   const query = marketDataOverviewQuerySchema.parse(c.req.query());
+  const overviewData = await getMarketDataOverview({
+    session: c.get("session"),
+    repo: c.get("repo"),
+    sources: query.sources,
+    includeStale: query.includeStale,
+    topLimit: query.topLimit
+  });
+  // Normalize heatmap sector labels to zh-TW before sending response.
+  // companies.chain_position (Yahoo Finance English) leaks as fallback in officialHeatmapSectorForSymbol
+  // for symbols not in MARKET_HEATMAP_SYMBOL_SECTOR_LABELS. Normalize here so Bruce verify
+  // sees zh-TW in raw API JSON regardless of source path.
+  const normalizedHeatmap = overviewData?.marketContext?.heatmap
+    ? overviewData.marketContext.heatmap.map((row) => ({
+        ...row,
+        sector: row.sector ? normalizeTwseIndustryZhTw(row.sector) : row.sector
+      }))
+    : overviewData?.marketContext?.heatmap;
   return c.json({
-    data: await getMarketDataOverview({
-      session: c.get("session"),
-      repo: c.get("repo"),
-      sources: query.sources,
-      includeStale: query.includeStale,
-      topLimit: query.topLimit
-    })
+    data: overviewData && normalizedHeatmap !== undefined ? {
+      ...overviewData,
+      marketContext: {
+        ...overviewData.marketContext,
+        heatmap: normalizedHeatmap
+      }
+    } : overviewData
   });
 });
 
@@ -9459,11 +9477,20 @@ app.get("/api/v1/market/heatmap/twse", async (c) => {
   // getTwseIndustryHeatmap() will hit the shared STOCK_DAY_ALL cache (populated above)
   const tiles = await getTwseIndustryHeatmap(tickerToIndustry);
 
+  // Normalize industry labels to zh-TW before API response.
+  // companies.chain_position is stored as English (Yahoo Finance style).
+  // Frontend heatmap-industry-label.ts (#700) also normalizes, but Bruce verify
+  // checks raw API JSON — backend must be the source of truth.
+  const normalizedTiles = tiles.map((tile) => ({
+    ...tile,
+    industry: normalizeTwseIndustryZhTw(tile.industry),
+  }));
+
   return c.json({
-    data: tiles,
+    data: normalizedTiles,
     source: "twse_openapi",
     staleAfterSec: 60,
-    industryCount: tiles.length,
+    industryCount: normalizedTiles.length,
     mappedTickers: tickerToIndustry.size
   });
 });
