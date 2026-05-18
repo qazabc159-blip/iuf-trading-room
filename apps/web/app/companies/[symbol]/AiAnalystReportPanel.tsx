@@ -135,9 +135,15 @@ function renderMarkdownSimple(md: string): React.ReactNode[] {
 // ── Trace step icon ───────────────────────────────────────────────────────────
 
 function traceIcon(type: ReactTraceStep["type"]) {
-  if (type === "reason") return "🧠";
-  if (type === "act") return "⚡";
-  return "👁";
+  if (type === "reason") return "R";
+  if (type === "act") return "T";
+  return "O";
+}
+
+function traceTypeLabel(type: ReactTraceStep["type"]) {
+  if (type === "reason") return "推理";
+  if (type === "act") return "工具";
+  return "觀察";
 }
 
 // ── Tool badge ────────────────────────────────────────────────────────────────
@@ -146,7 +152,7 @@ function ToolBadge({ tool }: { tool?: string }) {
   if (!tool) return null;
   return (
     <span className="_ai-trace-tool">
-      [{tool}]
+      工具：{tool}
     </span>
   );
 }
@@ -306,7 +312,7 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
         <div className="_ai-empty-state">
           <div className="_ai-empty-icon">🤖</div>
           <div className="_ai-empty-msg">尚未生成 AI 分析報告</div>
-          <div className="_ai-empty-sub dim">Brain ReAct Agent 會自動呼叫工具蒐集市場數據並生成深度分析</div>
+          <div className="_ai-empty-sub dim">AI 會用唯讀資料源整理市場、財務、主題與風險，不會建立交易委託。</div>
           <button className="_ai-generate-btn btn-sm" onClick={() => void handleGenerate()}>
             點此生成 {ticker} AI 分析
           </button>
@@ -322,7 +328,7 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
         <div className="_ai-running-state">
           <div className="_ai-spinner" aria-hidden="true" />
           <div className="_ai-running-msg">AI 正在分析中… 預計 30-90 秒</div>
-          <div className="_ai-running-sub dim">Brain ReAct Agent 正在呼叫工具蒐集 {ticker} 市場資料</div>
+          <div className="_ai-running-sub dim">正在用唯讀工具整理 {ticker} 的市場資料與風險線索。</div>
         </div>
       </section>
     );
@@ -335,7 +341,7 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
         <div className="_ai-running-state">
           <div className="_ai-spinner" aria-hidden="true" />
           <div className="_ai-running-msg">AI 正在分析中… 預計 30-90 秒</div>
-          <div className="_ai-running-sub dim">run_id: {phase.run_id}</div>
+          <div className="_ai-running-sub dim">任務已建立，等待報告完成；畫面會自動更新。</div>
         </div>
       </section>
     );
@@ -377,7 +383,7 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
           <span className="_ai-meta-val">{result.model ?? "--"}</span>
         </div>
         <div className="_ai-meta-cell">
-          <span className="_ai-meta-lbl">Tokens</span>
+          <span className="_ai-meta-lbl">用量</span>
           <span className="_ai-meta-val">{totalTokens.toLocaleString("zh-TW")}</span>
         </div>
         <div className="_ai-meta-cell">
@@ -430,7 +436,7 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
                 <div key={idx} className={`_ai-trace-step _ai-trace-${step.type}`} role="listitem">
                   <div className="_ai-trace-step-head">
                     <span className="_ai-trace-icon" aria-hidden="true">{traceIcon(step.type)}</span>
-                    <span className="_ai-trace-type">{step.type.toUpperCase()}</span>
+                    <span className="_ai-trace-type">{traceTypeLabel(step.type)}</span>
                     <ToolBadge tool={step.tool} />
                     {step.elapsed_ms != null && (
                       <span className="_ai-trace-elapsed">{step.elapsed_ms}ms</span>
@@ -452,7 +458,7 @@ function AiPanelHeader() {
     <h3 className="ascii-head" style={{ marginBottom: 12 }}>
       <span className="ascii-head-bracket">AI 分析師報告</span>
       <span className="tg soft" style={{ marginLeft: 8, fontSize: 10 }}>
-        Brain ReAct Agent / Owner only
+        Brain 推理 / Owner 唯讀
       </span>
     </h3>
   );

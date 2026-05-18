@@ -14,6 +14,8 @@ import { RecommendationFeedbackActions } from "./RecommendationFeedbackActions";
 import { RecommendationHandoffLink, RecommendationHandoffPreview, RecommendationHandoffUnavailable } from "./RecommendationHandoffLink";
 import { formatRecommendationSourceMode } from "./source-mode-label";
 import { formatRecommendationTimestamp, formatSourceTimestamp } from "./source-trail-time";
+import { MarketStateBadge, MarketStateBadgePlaceholder } from "./MarketStateBadge";
+import { ReactTracePanel } from "./ReactTracePanel";
 
 export const dynamic = "force-dynamic";
 
@@ -372,6 +374,8 @@ export default async function AiRecommendationsPage() {
       note="推薦只呈現後端回傳資料；缺漏欄位顯示資料同步中或 -，不以前端假數字補位。"
     >
       <MarketStateBanner />
+      {/* v3 SOP — market state badge (placeholder until backend v3 merges) */}
+      <MarketStateBadgePlaceholder />
       <style>{`
         ._rec-tabs {
           display: flex;
@@ -927,6 +931,68 @@ export default async function AiRecommendationsPage() {
             error={error}
           />
         ))}
+      </Panel>
+
+      {/* ── v3 SOP 結構 (待 Jason v3 backend 上線後接真實 payload) ── */}
+      <Panel
+        code="AI-02"
+        title="SOP 評分結構 (v3)"
+        sub="7 sub-score × 楊董手冊 / 市場狀態先決 / ReAct 5-module"
+        right="Beta — Jason BG 進行中"
+      >
+        <div style={{ padding: "16px" }}>
+          {/* Inline MarketStateBadge with placeholder scores */}
+          <MarketStateBadge
+            scores={{
+              trend_score: null,
+              range_score: null,
+              risk_off_score: null,
+            }}
+          />
+
+          {/* v3 sub-score table structure preview */}
+          <div style={{
+            display: "grid",
+            gap: "10px",
+            padding: "12px",
+            border: "1px dashed rgba(200,148,63,0.24)",
+            borderRadius: "8px",
+            background: "rgba(8,11,16,0.28)",
+            marginBottom: "14px",
+          }}>
+            <div style={{ color: "var(--tac-brand)", font: "900 10px/1 var(--mono)", marginBottom: "6px" }}>
+              7 SUB-SCORE TABLE — 待後端 v3 推薦資料
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", font: "800 11px/1 var(--mono)" }}>
+              <thead>
+                <tr>
+                  {["主題位置", "營收", "法人ETF", "融資借券", "RS量能", "技術結構", "估值事件", "總分"].map((h) => (
+                    <th key={h} style={{ padding: "5px 6px", color: "var(--tac-brand)", textAlign: "center", borderBottom: "1px solid var(--tac-line)", fontSize: "10px", whiteSpace: "nowrap" }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  {["/20", "/15", "/15", "/15", "/10", "/20", "/5", "/100"].map((max, i) => (
+                    <td key={i} style={{ padding: "6px", textAlign: "center", color: "var(--tac-fg-3)", fontSize: "12px" }}>
+                      —{max}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* ReAct trace placeholder */}
+          <ReactTracePanel
+            steps={null}
+            round_current={null}
+            round_max={8}
+            is_running={false}
+          />
+        </div>
       </Panel>
     </PageFrame>
   );
