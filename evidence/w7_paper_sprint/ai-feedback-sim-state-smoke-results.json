@@ -1,0 +1,50 @@
+{
+  "results": [
+    {
+      "name": "list-feedback-saved-desktop",
+      "url": "/ai-recommendations",
+      "viewport": {
+        "width": 1366,
+        "height": 900
+      },
+      "screenshotName": "ai-feedback-sim-state-list-saved-1366x900.png",
+      "found": [
+        "台積電",
+        "已帶入 SIM",
+        "已記錄：已帶入 SIM"
+      ],
+      "forbiddenFound": [],
+      "scrollOk": true
+    },
+    {
+      "name": "detail-handoff-feedback-state-mobile",
+      "url": "/ai-recommendations/SMOKE-2330-AI-FEEDBACK",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshotName": "ai-feedback-sim-state-detail-handoff-mobile-390x844.png",
+      "found": [
+        "台積電",
+        "已帶入 SIM",
+        "已記錄：已帶入 SIM"
+      ],
+      "stored": "{\"recommendationId\":\"SMOKE-2330-AI-FEEDBACK\",\"reaction\":\"acted\",\"status\":\"saved\",\"updatedAt\":1779064371610}",
+      "forbiddenFound": [],
+      "scrollOk": true
+    }
+  ],
+  "errors": [],
+  "feedbackRequests": [
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:3028/api/recommendations/SMOKE-2330-AI-FEEDBACK/feedback",
+      "postData": "{\"reaction\":\"acted\"}"
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:3028/api/recommendations/SMOKE-2330-AI-FEEDBACK/feedback",
+      "postData": "{\"reaction\":\"acted\"}"
+    }
+  ]
+}

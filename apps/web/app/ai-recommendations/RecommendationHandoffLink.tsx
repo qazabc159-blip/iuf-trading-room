@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
+import { emitRecommendationFeedbackSnapshot } from "./recommendation-feedback-state";
 
 const HANDOFF_TITLE = "帶入交易室 SIM 預覽；不會建立券商委託";
 
@@ -80,15 +81,7 @@ function buildPreviewItems(href: string, recommendationId: string) {
 function recordActed(recommendationId: string) {
   const url = `/api/recommendations/${encodeURIComponent(recommendationId)}/feedback`;
   const body = JSON.stringify({ reaction: "acted" });
-
-  try {
-    if (typeof navigator !== "undefined" && "sendBeacon" in navigator) {
-      const blob = new Blob([body], { type: "application/json" });
-      if (navigator.sendBeacon(url, blob)) return;
-    }
-  } catch {
-    // Fall through to keepalive fetch.
-  }
+  emitRecommendationFeedbackSnapshot(recommendationId, "acted", "queued");
 
   void fetch(url, {
     method: "POST",
@@ -97,6 +90,8 @@ function recordActed(recommendationId: string) {
     keepalive: true,
     headers: { "Content-Type": "application/json" },
     body,
+  }).then((response) => {
+    if (response.ok) emitRecommendationFeedbackSnapshot(recommendationId, "acted", "saved");
   }).catch(() => {
     // Handoff navigation should never be blocked by feedback telemetry.
   });
