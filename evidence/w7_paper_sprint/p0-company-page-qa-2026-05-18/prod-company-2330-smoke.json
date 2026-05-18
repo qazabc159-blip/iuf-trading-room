@@ -1,0 +1,46 @@
+{
+  "desktop": {
+    "status": 200,
+    "url": "https://app.eycvector.com/companies/2330",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textHead": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n公司 / 錯誤\n2330\n公司資料暫時無法讀取\n台北 / 2026/5/18 23:31:13\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 2330 / 暫停\n2330 公司資料暫時無法讀取\n目前登入工作區或後端公司資料服務沒有回應；請稍後重試，或檢查後端與登入狀態。\n登入狀態已失效，請重新登入。\n返回公司列表",
+    "hasAiAnalyst": false,
+    "hasBlankSignals": false,
+    "hasWarrantOptions": false,
+    "hasQuote": false,
+    "hasInternalLabels": true,
+    "emptyishCards": [],
+    "cardsSample": [],
+    "pageErrors": [],
+    "consoleErrors": [],
+    "networkSample": [
+      {
+        "url": "https://app.eycvector.com/api/header-dock/notifications?limit=50",
+        "status": 200
+      }
+    ],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_company_page_qa_20260518\\evidence\\w7_paper_sprint\\p0-company-page-qa-2026-05-18\\screens\\prod-company-2330-desktop.png"
+  },
+  "mobile": {
+    "status": 200,
+    "url": "https://app.eycvector.com/companies/2330",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textHead": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，無未讀\n公司 / 錯誤\n2330\n公司資料暫時無法讀取\n台北 / 2026/5/18 23:31:23\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 2330 / 暫停\n2330 公司資料暫時無法讀取\n目前登入工作區或後端公司資料服務沒有回應；請稍後重試，或檢查後端與登入狀態。\n登入狀態已失效，請重新登入。\n返回公司列表",
+    "hasAiAnalyst": false,
+    "hasBlankSignals": false,
+    "hasWarrantOptions": false,
+    "hasQuote": false,
+    "hasInternalLabels": false,
+    "emptyishCards": [],
+    "cardsSample": [],
+    "pageErrors": [],
+    "consoleErrors": [],
+    "networkSample": [
+      {
+        "url": "https://app.eycvector.com/api/header-dock/notifications?limit=50",
+        "status": 200
+      }
+    ],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_company_page_qa_20260518\\evidence\\w7_paper_sprint\\p0-company-page-qa-2026-05-18\\screens\\prod-company-2330-mobile.png"
+  }
+}

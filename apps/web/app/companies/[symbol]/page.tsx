@@ -222,7 +222,7 @@ export default async function CompanyDetailPage({
     companies = res.data ?? [];
   } catch (err) {
     fetchErrorMsg = friendlyError(err);
-    console.error("[company-detail] getCompanies failed", { symbol, err: fetchErrorMsg });
+    console.warn("[company-detail] getCompanies degraded", { symbol, err: fetchErrorMsg });
   }
 
   if (fetchErrorMsg !== null) {
@@ -233,14 +233,33 @@ export default async function CompanyDetailPage({
         sub="公司資料暫時無法讀取"
         note={`公司板 / ${symbol} / 暫停`}
       >
-        <div style={{ padding: "32px 24px", fontSize: 14, lineHeight: 1.8 }}>
-          <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 16, fontSize: 16, fontWeight: 700 }}>
+        <div style={{ padding: "32px 24px", fontSize: 14, lineHeight: 1.8, maxWidth: 980 }}>
+          <div style={{ color: "var(--tw-up-bright, #e63946)", marginBottom: 10, fontSize: 16, fontWeight: 700 }}>
             {symbol.toUpperCase()} 公司資料暫時無法讀取
           </div>
-          <div className="dim" style={{ marginBottom: 16 }}>
-            目前登入工作區或後端公司資料服務沒有回應；請稍後重試，或檢查後端與登入狀態。
+          <div className="dim" style={{ marginBottom: 18 }}>
+            這不是正式公司資料內容，也不會補假 K 線、假報價或假 AI 報告。系統已進入公司頁降級狀態，下面列出缺哪個資料源、owner 與下一步。
           </div>
-          <div className="terminal-note compact">{fetchErrorMsg}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12, marginBottom: 18 }}>
+            <div className="panel hud-frame" style={{ padding: 14 }}>
+              <b className="tg">缺少資料源</b>
+              <div className="tg soft">GET /api/v1/companies</div>
+              <small className="dim">公司主檔清單沒有成功回傳，因此公司頁不能安全渲染 quote / K 線 / AI report。</small>
+            </div>
+            <div className="panel hud-frame" style={{ padding: 14 }}>
+              <b className="tg">目前狀態</b>
+              <div className="tg soft">{fetchErrorMsg}</div>
+              <small className="dim">若為 401，代表 owner session 失效；若為 network，代表 API 或 proxy 需檢查。</small>
+            </div>
+            <div className="panel hud-frame" style={{ padding: 14 }}>
+              <b className="tg">Owner / 下一步</b>
+              <div className="tg soft">Owner: Jason / Bruce</div>
+              <small className="dim">確認 production API health、owner cookie，以及公司資料 endpoint；修好後此頁會重新顯示正式資料面板。</small>
+            </div>
+          </div>
+          <div className="terminal-note compact" style={{ marginBottom: 16 }}>
+            前端保護：公司主檔缺失時只顯示 BLOCKED，不渲染空白 panel，也不使用 mock。
+          </div>
           <Link href="/companies" className="btn-sm">返回公司列表</Link>
         </div>
       </PageFrame>
@@ -275,6 +294,9 @@ export default async function CompanyDetailPage({
               可用範例：{companies.slice(0, 8).map((c) => c.ticker).join(" / ")}
             </div>
           )}
+          <div className="terminal-note compact" style={{ marginBottom: 16 }}>
+            資料源：GET /api/v1/companies。Owner: Jason。下一步：確認該股票是否存在於公司主檔，或由資料匯入流程補入；前端不會用假公司資料填補。
+          </div>
           <Link href="/companies" className="btn-sm">返回公司列表</Link>
         </div>
       </PageFrame>

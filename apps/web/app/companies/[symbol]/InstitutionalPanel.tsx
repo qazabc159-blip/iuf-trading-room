@@ -36,9 +36,9 @@ const INST_CSS = `
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
-._inst-value.buy  { color: var(--tw-up-bright, #e63946); }
-._inst-value.sell { color: var(--tac-ok, #4ade80); }
-._inst-value.flat { color: var(--night-mid, #91a0b5); }
+._inst-value.buy, ._inst-total-val.buy { color: var(--tw-up-bright, #e63946); }
+._inst-value.sell, ._inst-total-val.sell { color: var(--tac-ok, #4ade80); }
+._inst-value.flat, ._inst-total-val.flat { color: var(--night-mid, #91a0b5); }
 ._inst-sub {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -51,20 +51,17 @@ const INST_CSS = `
 }
 ._inst-total-label { color: var(--night-mid, #91a0b5); }
 ._inst-total-val { font-weight: 700; font-variant-numeric: tabular-nums; }
-._inst-total-val.buy  { color: var(--tw-up-bright, #e63946); }
-._inst-total-val.sell { color: var(--tac-ok, #4ade80); }
-._inst-total-val.flat { color: var(--night-mid, #91a0b5); }
 `;
 
-function fmtLots(v: number): string {
-  const abs = Math.abs(v);
-  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+function fmtLots(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
   if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)}萬`;
   return `${sign}${abs.toLocaleString("zh-TW")}`;
 }
 
-function tone(v: number): string {
-  return v > 0 ? "buy" : v < 0 ? "sell" : "flat";
+function tone(value: number): string {
+  return value > 0 ? "buy" : value < 0 ? "sell" : "flat";
 }
 
 export function InstitutionalPanel({ companyId }: { companyId: string }) {
@@ -77,11 +74,11 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
         if (!active) return;
         const section = res?.data?.tradingFlow?.institutional;
         if (!section) {
-          setState({ status: "blocked", reason: "full-profile 回應缺少 tradingFlow.institutional" });
+          setState({ status: "blocked", reason: "full-profile 尚未回傳 tradingFlow.institutional。" });
           return;
         }
         if (section.state === "BLOCKED" || section.state === "ERROR") {
-          setState({ status: "blocked", reason: section.sourceTrail?.degradedReason ?? "法人資料暫時無法讀取（FinMind 離線）" });
+          setState({ status: "blocked", reason: section.sourceTrail?.degradedReason ?? "法人資料暫時無法讀取；請確認 FinMind / full-profile 狀態。" });
           return;
         }
         if (!section.latest) {
@@ -90,8 +87,7 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
           return;
         }
         const row = section.latest as FullProfileInstitutionalRow;
-        const stale = section.state === "STALE";
-        setState({ status: "live", row, date: row.date, stale });
+        setState({ status: "live", row, date: row.date, stale: section.state === "STALE" });
       })
       .catch((err) => {
         if (!active) return;
@@ -105,7 +101,7 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
     <section className="panel hud-frame" style={{ marginBottom: 12 }}>
       <style>{INST_CSS}</style>
       <h3 className="ascii-head" style={{ marginBottom: 6 }}>
-        <span className="ascii-head-bracket">法人</span> 今日三大法人
+        <span className="ascii-head-bracket">法人</span> 三大法人買賣超
         {state.status === "live" && (
           <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>
             {state.date}{state.stale ? " (略舊)" : ""}
@@ -116,32 +112,32 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
       {state.status === "loading" && (
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
-          <span className="tg soft">正在讀取 FinMind 三大法人資料…</span>
+          <span className="tg soft">正在讀取 FinMind 三大法人買賣超資料。</span>
         </div>
       )}
 
       {state.status === "blocked" && (
         <div className="state-panel">
           <span className="badge badge-red">BLOCKED</span>
-          <span className="tg soft">來源：FinMind TaiwanStockInstitutionalInvestorsBuySell</span>
+          <span className="tg soft">資料源：FinMind TaiwanStockInstitutionalInvestorsBuySell</span>
           <span className="state-reason">{state.reason}</span>
         </div>
       )}
 
       {state.status === "empty" && (
         <div className="state-panel">
-          <span className="badge badge-yellow">無資料</span>
-          <span className="tg soft">今日尚無法人買賣資料（{state.date}）</span>
-          <span className="state-reason">盤前或非交易日可能無資料；收盤後 FinMind 約 30 分鐘更新。</span>
+          <span className="badge badge-yellow">EMPTY</span>
+          <span className="tg soft">近 30 日暫無法人買賣超資料（{state.date}）。</span>
+          <span className="state-reason">不補假法人數字；待 FinMind 回傳後自動顯示。</span>
         </div>
       )}
 
       {state.status === "live" && (() => {
         const { row } = state;
         const cells = [
-          { label: "外資", value: row.foreign,         unit: "張" },
-          { label: "投信", value: row.investmentTrust,  unit: "張" },
-          { label: "自營", value: row.dealer,           unit: "張" },
+          { label: "外資", value: row.foreign, unit: "張" },
+          { label: "投信", value: row.investmentTrust, unit: "張" },
+          { label: "自營商", value: row.dealer, unit: "張" },
         ];
         return (
           <>

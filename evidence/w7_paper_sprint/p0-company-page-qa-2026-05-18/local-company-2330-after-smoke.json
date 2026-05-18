@@ -1,0 +1,42 @@
+[
+  {
+    "viewport": {
+      "name": "desktop",
+      "width": 1366,
+      "height": 900
+    },
+    "status": 200,
+    "url": "http://localhost:3115/companies/2330?codexCompanySmoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "hasCompanyBlocked": true,
+    "hasEndpoint": true,
+    "hasOwner": true,
+    "hasNoMock": true,
+    "hasLoginPage": false,
+    "hasMojibakeSignals": false,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "failedResponses": []
+  },
+  {
+    "viewport": {
+      "name": "mobile",
+      "width": 390,
+      "height": 844
+    },
+    "status": 200,
+    "url": "http://localhost:3115/companies/2330?codexCompanySmoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "hasCompanyBlocked": true,
+    "hasEndpoint": true,
+    "hasOwner": true,
+    "hasNoMock": true,
+    "hasLoginPage": false,
+    "hasMojibakeSignals": false,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": []
+  }
+]
