@@ -1,10 +1,18 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { CheckCircle2, MinusCircle, ThumbsDown, ThumbsUp } from "lucide-react";
+import {
+  emitRecommendationFeedbackSnapshot,
+  readRecommendationFeedbackSnapshot,
+  RECOMMENDATION_FEEDBACK_EVENT,
+  type RecommendationFeedbackReaction,
+  type RecommendationFeedbackSnapshot,
+  type RecommendationFeedbackSnapshotStatus,
+} from "./recommendation-feedback-state";
 
-type Reaction = "like" | "dislike" | "skip" | "acted";
-type Status = "idle" | "saved" | "failed";
+type Reaction = RecommendationFeedbackReaction;
+type Status = "idle" | RecommendationFeedbackSnapshotStatus | "failed";
 
 const ACTIONS: Array<{
   reaction: Reaction;
@@ -14,10 +22,14 @@ const ACTIONS: Array<{
   { reaction: "like", label: "有幫助", Icon: ThumbsUp },
   { reaction: "dislike", label: "不採用", Icon: ThumbsDown },
   { reaction: "skip", label: "略過", Icon: MinusCircle },
-  { reaction: "acted", label: "已帶單", Icon: CheckCircle2 },
+  { reaction: "acted", label: "已帶入 SIM", Icon: CheckCircle2 },
 ];
 
 function statusText(status: Status, reaction: Reaction | null, failureMessage: string | null) {
+  if (status === "queued" && reaction) {
+    const item = ACTIONS.find((action) => action.reaction === reaction);
+    return item ? `已送出：${item.label}` : "已送出";
+  }
   if (status === "saved" && reaction) {
     const item = ACTIONS.find((action) => action.reaction === reaction);
     return item ? `已記錄：${item.label}` : "已記錄";
@@ -60,6 +72,26 @@ export function RecommendationFeedbackActions({ recommendationId }: { recommenda
       : "寫入中"
     : statusText(status, selected, failureMessage);
 
+  useEffect(() => {
+    const snapshot = readRecommendationFeedbackSnapshot(recommendationId);
+    if (snapshot) {
+      setSelected(snapshot.reaction);
+      setStatus(snapshot.status);
+      setFailureMessage(null);
+    }
+
+    function handleFeedbackEvent(event: Event) {
+      const detail = (event as CustomEvent<RecommendationFeedbackSnapshot>).detail;
+      if (!detail || detail.recommendationId !== recommendationId) return;
+      setSelected(detail.reaction);
+      setStatus(detail.status);
+      setFailureMessage(null);
+    }
+
+    window.addEventListener(RECOMMENDATION_FEEDBACK_EVENT, handleFeedbackEvent);
+    return () => window.removeEventListener(RECOMMENDATION_FEEDBACK_EVENT, handleFeedbackEvent);
+  }, [recommendationId]);
+
   function send(reaction: Reaction) {
     setSelected(reaction);
     setStatus("idle");
@@ -75,6 +107,7 @@ export function RecommendationFeedbackActions({ recommendationId }: { recommenda
         });
         if (response.ok) {
           setStatus("saved");
+          emitRecommendationFeedbackSnapshot(recommendationId, reaction, "saved");
           return;
         }
         setFailureMessage(await feedbackFailureText(response));
