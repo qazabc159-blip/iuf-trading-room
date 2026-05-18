@@ -57,6 +57,10 @@ function okValue<T>(result: Settled<T>, fallback: T): T {
   return result.status === "fulfilled" ? result.value : fallback;
 }
 
+function settledState(result: Settled<unknown>) {
+  return result.status === "fulfilled" ? "live" : "blocked";
+}
+
 function sourceLabel(source?: string | null) {
   if (!source) return "正式資料";
   if (source.includes("twse")) return "公開資訊";
@@ -448,9 +452,10 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   ]);
 
   const health = okValue<PaperHealthState | null>(healthResult, null);
-  const portfolioRaw = okValue(portfolioRawResult, { positions: [] as PaperPortfolioPosition[], summary: { baseCapitalTWD: 10_000_000, currency: "TWD", simulated: true, paperMode: true, positionCount: 0, investedCostTWD: 0, note: "" } });
+  const portfolioRawOk = portfolioRawResult.status === "fulfilled";
+  const portfolioRaw = okValue(portfolioRawResult, { positions: [] as PaperPortfolioPosition[], summary: { baseCapitalTWD: 0, currency: "TWD", simulated: true, paperMode: true, positionCount: 0, investedCostTWD: 0, note: "" } });
   const portfolio = portfolioRaw.positions;
-  const baseCapitalTWD = portfolioRaw.summary.baseCapitalTWD;
+  const baseCapitalTWD = portfolioRawOk ? portfolioRaw.summary.baseCapitalTWD : null;
   const fills = okValue<PaperFillLedgerRow[]>(fillsResult, []);
   const orders = okValue<PaperOrderState[]>(ordersResult, []);
   const kgi = okValue<KgiPositionsResponse | null>(kgiResult, null);
@@ -532,6 +537,14 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     orders,
     fills,
     kgi,
+    dataStates: {
+      health: settledState(healthResult),
+      portfolio: settledState(portfolioRawResult),
+      fills: settledState(fillsResult),
+      orders: settledState(ordersResult),
+      kgi: settledState(kgiResult),
+      ideas: settledState(ideasResult),
+    },
     ohlcv,
     bidAsk,
     ticks: ticks?.ticks ?? [],
@@ -611,6 +624,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return unwrap(json);
   };
   const soft = (promise) => promise.then((data) => ({ ok:true, data })).catch((error) => ({ ok:false, error }));
+  const softState = (result) => result && result.ok ? "live" : "blocked";
   const queryText = (value, max=80) => {
     const text = String(value || "").trim().replace(/[<>]/g, "");
     return text ? text.slice(0, max) : null;
@@ -916,7 +930,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     ]);
     const portfolioEnvelope = portfolioRawResult.ok ? portfolioRawResult.data : null;
     const portfolio = (portfolioEnvelope && Array.isArray(portfolioEnvelope.data) ? portfolioEnvelope.data : (portfolioRawResult.ok && Array.isArray(portfolioRawResult.data) ? portfolioRawResult.data : []));
-    const baseCapitalTWD = (portfolioEnvelope?.summary?.baseCapitalTWD) ?? 10_000_000;
+    const baseCapitalTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.baseCapitalTWD) ?? null) : null;
     const fills = fillsResult.ok ? fillsResult.data || [] : [];
     const orders = ordersResult.ok ? ordersResult.data || [] : [];
     const ideas = ideasResult.ok ? (ideasResult.data?.items || []).map(clientMapIdea) : [];
@@ -957,6 +971,14 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       orders,
       fills,
       kgi:kgiResult.ok ? kgiResult.data : null,
+      dataStates:{
+        health:softState(healthResult),
+        portfolio:softState(portfolioRawResult),
+        fills:softState(fillsResult),
+        orders:softState(ordersResult),
+        kgi:softState(kgiResult),
+        ideas:softState(ideasResult)
+      },
       ohlcv,
       bidAsk:bidAskResult.ok ? bidAskResult.data : null,
       ticks:ticksResult.ok ? (ticksResult.data?.ticks || []) : [],
@@ -1009,6 +1031,23 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       group.className = 'group';
       wl.prepend(group);
     }
+    if (match && match.error === "blocked") {
+      group.textContent = "\u641c\u5c0b\u8cc7\u6599\u672a\u6388\u6b0a";
+      wl.querySelectorAll('.wrow').forEach((row) => {
+        row.style.display = 'none';
+      });
+      let row = wl.querySelector('[data-search-result="1"]');
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'wrow';
+        row.dataset.searchResult = '1';
+        wl.insertBefore(row, group.nextSibling);
+      }
+      row.removeAttribute('data-sym');
+      row.style.display = '';
+      row.innerHTML = '<span class="sym">AUTH</span><div class="body"><div class="nm">\u9700\u8981 owner session \u624d\u80fd\u641c\u5c0b\u53f0\u80a1</div><div class="meta">GET /api/v1/companies/lookup \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u986f\u793a\u9810\u8a2d\u5047\u7d50\u679c</div></div>';
+      return;
+    }
     if (!match) {
       group.textContent = query ? '找不到符合的股票' : String((live.watchlist || []).length || 0) + ' 檔自選 / 候選';
       wl.querySelectorAll('.wrow').forEach((row) => {
@@ -1051,7 +1090,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         renderPaperSearchResult({ ticker: local.symbol, name: local.name, sector: local.meta }, query);
         return;
       }
-      const match = await apiGet('/api/v1/companies/lookup?q=' + encodeURIComponent(query)).catch(() => null);
+      const match = await apiGet('/api/v1/companies/lookup?q=' + encodeURIComponent(query)).catch(() => ({ error: "blocked" }));
       renderPaperSearchResult(match, query);
     };
     input.addEventListener('input', () => {
@@ -1391,7 +1430,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const wl = $("#wl-my");
     if (wl) {
       const wlItems = live.watchlist || [];
-      if (wlItems.length === 0) {
+      if (wlItems.length === 0) { wl.innerHTML = '<div class="group">\u8cc7\u6599\u672a\u8f09\u5165</div><div class="wrow" data-search-result="1"><span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85 paper portfolio / strategy ideas / companies lookup</div><div class="meta">GET /api/v1/paper/portfolio \u00b7 GET /api/v1/strategy/ideas \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u4fdd\u7559\u9810\u8a2d 5 \u6a94</div></div></div>'; } else if (false) {
         // P1-1 fallback: keep SSR static rows, update group label only
         const groupEl = wl.querySelector(".group");
         if (groupEl) groupEl.textContent = "ideas pool 整備中，預設展示熱門 5 檔";
@@ -1415,6 +1454,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
     attachPaperRowHandlers();
     attachPaperSearch();
+    const wtMy = $('#wtabs button[data-tab="my"] .c'); if (wtMy) wtMy.textContent = String((live.watchlist || []).length);
+    const wtSig = $('#wtabs button[data-tab="sig"] .c'); if (wtSig) wtSig.textContent = String((live.ideas || []).length);
+    const wtPaper = $('#wtabs button[data-tab="paper"] .c'); if (wtPaper) wtPaper.textContent = String((live.ideas || []).filter((idea) => String(idea.status || "").toLowerCase() !== "block").length);
     const symInput = $("#t-sym"); if (symInput) { symInput.value = (selected.symbol || "") + "　" + (selected.name || ""); symInput.setAttribute("value", symInput.value); }
     const priceInput = $("#t-price"); if (priceInput && selected.price != null) { priceInput.value = Number(selected.price).toFixed(2); priceInput.setAttribute("value", priceInput.value); }
     applyPaperPrefill(selected);
@@ -1466,16 +1508,24 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const ohlcL = $("#ohlc-l"); if (ohlcL) ohlcL.textContent = ohlcvLast ? price(ohlcvLast.low) : (selected.low ? price(selected.low) : "—");
     const ohlcC = $("#ohlc-c"); if (ohlcC) ohlcC.textContent = ohlcvLast ? price(ohlcvLast.close ?? selected.price) : (selected.price ? price(selected.price) : "—");
     // BUG_005 — capital: 模擬本金 / 可用資金 DOM update
-    const capitalTWD = live.baseCapitalTWD ?? 10_000_000;
-    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = n(capitalTWD);
-    const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = n(capitalTWD);
+    const capitalTWD = live.baseCapitalTWD;
+    const capitalReady = capitalTWD !== null && capitalTWD !== undefined && !Number.isNaN(Number(capitalTWD));
+    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : "AUTH REQUIRED";
+    const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = capitalReady ? n(capitalTWD) : "--";
     // expose to updPreview() in vendor HTML
-    window.__IUF_AVAIL_CASH__ = capitalTWD;
-    const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = n(capitalTWD);
+    window.__IUF_AVAIL_CASH__ = capitalReady ? Number(capitalTWD) : 0;
+    const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = capitalReady ? n(capitalTWD) : "--";
     const submit = $("#submit-btn");
+    if (submit && !capitalReady) {
+      submit.disabled = true;
+      const blockedLabel = $("#submit-btn-label") || submit.querySelector("b");
+      if (blockedLabel) blockedLabel.textContent = "\u9700\u8981 owner session \u624d\u80fd\u9810\u89bd / \u9001\u51fa\u7d19\u4e0a\u55ae";
+      const gate = $(".gate .h .v"); if (gate) gate.textContent = "\u8cc7\u6599\u672a\u6388\u6b0a";
+    }
     if (submit) submit.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (!capitalReady) return;
       const qty = Number($("#t-qty")?.value || 0);
       const unit = $("#t-unit .on")?.dataset.unit === "share" ? "SHARE" : "LOT";
       const orderType = $("#t-otype")?.value || "limit";
@@ -1592,6 +1642,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const todayStr = new Date().toISOString().slice(0, 10);
     const todayFillCount = fills.filter((f) => String(f.fillTime || "").startsWith(todayStr)).length;
     const fillCountEl = $("#summary-fillcount"); if (fillCountEl) fillCountEl.textContent = String(todayFillCount);
+    const badgePositions = $('.lhead .tb[data-lt="positions"] .c'); if (badgePositions) badgePositions.textContent = String(portfolio.length);
+    const badgeKgi = $('.lhead .tb[data-lt="kgi"] .c'); if (badgeKgi) badgeKgi.textContent = String(live.kgi?.positions?.length || 0);
 
     // ── Events table (synthesised from fills + orders) ────────────────────────
     const eventsBody = $("#events-body");
@@ -1632,6 +1684,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
 
     // ── Watchlist wl-sig (ideas with signals) ─────────────────────────────────
+    const badgeEvents = $('.lhead .tb[data-lt="events"] .c'); if (badgeEvents) badgeEvents.textContent = String((live.fills || []).length + (live.orders || []).length);
     const wlSig = $("#wl-sig");
     const wlSigGroup = $("#wl-sig-group");
     const ideas = live.ideas || [];
@@ -1652,6 +1705,13 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         });
         wlSig.appendChild(div);
       });
+    } else if (wlSig) {
+      if (wlSigGroup) wlSigGroup.textContent = "\u7b56\u7565\u8a0a\u865f\u672a\u8f09\u5165";
+      Array.from(wlSig.querySelectorAll(".wrow")).forEach((el) => el.remove());
+      const div = document.createElement("div");
+      div.className = "wrow";
+      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85 strategy ideas endpoint</div><div class="meta">GET /api/v1/strategy/ideas \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
+      wlSig.appendChild(div);
     }
 
     // ── Watchlist wl-paper (allow-only ideas) ─────────────────────────────────
@@ -1673,6 +1733,13 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         });
         wlPaper.appendChild(div);
       });
+    } else if (wlPaper) {
+      if (wlPaperGroup) wlPaperGroup.textContent = "Paper \u5019\u9078\u672a\u8f09\u5165";
+      Array.from(wlPaper.querySelectorAll(".wrow")).forEach((el) => el.remove());
+      const div = document.createElement("div");
+      div.className = "wrow";
+      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85 paper strategy candidates</div><div class="meta">GET /api/v1/strategy/ideas?decisionMode=paper \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
+      wlPaper.appendChild(div);
     }
   }
 

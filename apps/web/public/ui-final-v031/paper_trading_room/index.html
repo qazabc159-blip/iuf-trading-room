@@ -63,9 +63,9 @@
     </div>
 
     <div class="tabs" id="wtabs">
-      <button class="on" data-tab="my">自選 <span class="c">5</span></button>
-      <button data-tab="sig">今日有訊號 <span class="c">6</span></button>
-      <button data-tab="paper">Paper 候選 <span class="c">3</span></button>
+      <button class="on" data-tab="my">自選 <span class="c">0</span></button>
+      <button data-tab="sig">今日有訊號 <span class="c">0</span></button>
+      <button data-tab="paper">Paper 候選 <span class="c">0</span></button>
     </div>
 
     <!-- 自選 -->
@@ -288,8 +288,8 @@
       <div>
         <div class="h">部位 / 資金摘要</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;font:500 11.5px/1.4 var(--sans);color:var(--fg-2)">
-          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">模擬本金</div><div id="summary-capital" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">10,000,000</div></div>
-          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">可用資金</div><div id="summary-avail" style="font:500 14px/1 var(--mono);color:var(--brand);font-variant-numeric:tabular-nums">10,000,000</div></div>
+          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">模擬本金</div><div id="summary-capital" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">AUTH REQUIRED</div></div>
+          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">可用資金</div><div id="summary-avail" style="font:500 14px/1 var(--mono);color:var(--brand);font-variant-numeric:tabular-nums">—</div></div>
           <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">持倉市值</div><div id="summary-mktval" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
           <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">總損益</div><div id="summary-pnl" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
           <div style="grid-column:1 / -1;padding-top:8px;border-top:1px solid var(--line);font:500 11px/1.5 var(--sans);color:var(--fg-3)">持有 <b id="summary-poscount" style="color:var(--fg-1);font-weight:500">—</b> 檔模擬部位　·　今日 <b id="summary-fillcount" style="color:var(--fg-1);font-weight:500">—</b> 筆成交</div>
@@ -302,9 +302,9 @@
       <div class="lhead">
         <button class="tb on" data-lt="orders">委託 <span class="c" id="badge-orders">0</span></button>
         <button class="tb" data-lt="fills">成交紀錄 <span class="c" id="badge-fills">0</span></button>
-        <button class="tb" data-lt="positions">模擬庫存 <span class="c">1</span></button>
-        <button class="tb" data-lt="kgi">KGI 讀取 <span class="c">2</span></button>
-        <button class="tb" data-lt="events">執行事件 / 風控 <span class="c">12</span></button>
+        <button class="tb" data-lt="positions">模擬庫存 <span class="c">0</span></button>
+        <button class="tb" data-lt="kgi">KGI 讀取 <span class="c">0</span></button>
+        <button class="tb" data-lt="events">執行事件 / 風控 <span class="c">0</span></button>
         <div class="right">
           <span class="pill ok"><i></i>所有事件已寫入稽核</span>
         </div>
@@ -599,7 +599,7 @@ function updPreview(){
   const fee=Math.round(notion*0.001425);
   document.getElementById('p-notional').innerHTML=notion.toLocaleString('zh-TW')+' <small>NTD</small>';
   document.getElementById('p-fee').innerHTML=fee.toLocaleString('zh-TW')+' <small>NTD</small>';
-  const avail=window.__IUF_AVAIL_CASH__||10000000;
+  const avail=Number(window.__IUF_AVAIL_CASH__||0);
   document.getElementById('p-avail').textContent=avail.toLocaleString('zh-TW');
   const after=side==='buy'?avail-notion-fee:avail+notion-fee;
   const afterEl=document.getElementById('p-after-avail');

@@ -1,0 +1,57 @@
+{
+  "queries": {
+    "1101": {
+      "error": "TimeoutError('Locator.fill: Timeout 5000ms exceeded.\\nCall log:\\n  - waiting for locator(\"input[placeholder*=\\\\\"??\\\\\"], input[placeholder*=\\\\\"??\\\\\"], input\").first\\n')"
+    },
+    "??": {
+      "error": "TimeoutError('Locator.fill: Timeout 5000ms exceeded.\\nCall log:\\n  - waiting for locator(\"input[placeholder*=\\\\\"??\\\\\"], input[placeholder*=\\\\\"??\\\\\"], input\").first\\n')"
+    },
+    "6505": {
+      "error": "TimeoutError('Locator.fill: Timeout 5000ms exceeded.\\nCall log:\\n  - waiting for locator(\"input[placeholder*=\\\\\"??\\\\\"], input[placeholder*=\\\\\"??\\\\\"], input\").first\\n')"
+    },
+    "9999": {
+      "error": "TimeoutError('Locator.fill: Timeout 5000ms exceeded.\\nCall log:\\n  - waiting for locator(\"input[placeholder*=\\\\\"??\\\\\"], input[placeholder*=\\\\\"??\\\\\"], input\").first\\n')"
+    }
+  },
+  "actions": {
+    "5m": {
+      "clicked": false,
+      "error": "TimeoutError('Locator.click: Timeout 3000ms exceeded.\\nCall log:\\n  - waiting for get_by_text(\"5m\").first\\n')"
+    },
+    "15m": {
+      "clicked": false,
+      "error": "TimeoutError('Locator.click: Timeout 3000ms exceeded.\\nCall log:\\n  - waiting for get_by_text(\"15m\").first\\n')"
+    },
+    "1d": {
+      "clicked": false,
+      "error": "TimeoutError('Locator.click: Timeout 3000ms exceeded.\\nCall log:\\n  - waiting for get_by_text(\"1d\").first\\n')"
+    },
+    "1w": {
+      "clicked": false,
+      "error": "TimeoutError('Locator.click: Timeout 3000ms exceeded.\\nCall log:\\n  - waiting for get_by_text(\"1w\").first\\n')"
+    },
+    "MA20": {
+      "clicked": false,
+      "error": "TimeoutError('Locator.click: Timeout 3000ms exceeded.\\nCall log:\\n  - waiting for get_by_text(\"MA20\").first\\n')"
+    },
+    "VWAP": {
+      "clicked": false,
+      "error": "TimeoutError('Locator.click: Timeout 3000ms exceeded.\\nCall log:\\n  - waiting for get_by_text(\"VWAP\").first\\n')"
+    },
+    "??": {
+      "clicked": false,
+      "error": "TimeoutError('Locator.click: Timeout 3000ms exceeded.\\nCall log:\\n  - waiting for get_by_text(\"??\").first\\n')"
+    },
+    "????": {
+      "clicked": false,
+      "error": "TimeoutError('Locator.click: Timeout 3000ms exceeded.\\nCall log:\\n  - waiting for get_by_text(\"????\").first\\n')"
+    },
+    "paperSubmit": {
+      "error": "TimeoutError('Locator.evaluate: Timeout 30000ms exceeded.\\nCall log:\\n  - waiting for get_by_text(\"?????\").first\\n')"
+    }
+  },
+  "network": [],
+  "initialText": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀",
+  "inputCount": 0,
+  "inputs": []
+}
