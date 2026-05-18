@@ -9572,7 +9572,11 @@ app.get("/api/v1/market/overview/kgi", async (c) => {
   }
 });
 
-// GET /api/v1/market/heatmap/kgi-core — core heatmap (KGI tick → TWSE fallback)
+// GET /api/v1/market/heatmap/kgi-core — core heatmap with 3-tier fallback
+// Tier 1: KGI live tick (market hours, EC2 running)
+// Tier 2: TWSE STOCK_DAY_ALL per-symbol EOD close+changePct
+// Tier 3: In-process last-known-close cache (survives off-hours)
+// Guarantee: ALWAYS returns all tiles with sourceState. Never drops a tile.
 app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
@@ -9582,36 +9586,15 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
     initSubscriptionManager();
     const kgiResult = await getKgiCoreHeatmap();
 
-    // If KGI returned any live data (at least some tiles have real prices)
-    const liveTiles = kgiResult.tiles.filter((t) => t.price !== null);
+    // Fetch TWSE STOCK_DAY_ALL in parallel (fail-open: empty array if unreachable)
+    const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+    const twseRows = await getStockDayAllRows().catch(() => []);
 
-    if (liveTiles.length > 0) {
-      return c.json({ ...kgiResult, sourceState: "live", liveTileCount: liveTiles.length });
-    }
+    // 3-tier enrichment: live → twse_eod → cache → no_data (never drops tiles)
+    const { enrichHeatmapTiles } = await import("./kgi-heatmap-enricher.js");
+    const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows);
 
-    // Fallback: TWSE OpenAPI EOD — return TWSE heatmap instead
-    // (build a simplified per-symbol view for the core symbols)
-    const { CORE_SYMBOLS, STRATEGY_SYMBOLS } = await import("./kgi-subscription-manager.js");
-    const allCoreSymbols = [...CORE_SYMBOLS, ...STRATEGY_SYMBOLS];
-
-    // Build minimal ticker→industry map (symbol=ticker, industry=core_equity)
-    const tickerToIndustry = new Map<string, string>();
-    for (const sym of allCoreSymbols) {
-      tickerToIndustry.set(sym, "core_equity");
-    }
-
-    const { getTwseIndustryHeatmap } = await import("./data-sources/twse-openapi-client.js");
-    const twseTiles = await getTwseIndustryHeatmap(tickerToIndustry);
-
-    return c.json({
-      tiles: kgiResult.tiles, // shapes preserved, prices null
-      twseFallback: twseTiles,
-      source: "kgi_tick",
-      staleAfterSec: 5,
-      sourceState: "fallback_eod",
-      tileCount: kgiResult.tiles.length,
-      liveTileCount: 0,
-    });
+    return c.json(enriched);
   } catch (err) {
     console.warn("[market/heatmap/kgi-core] error:", err instanceof Error ? err.message : String(err));
     return c.json({ error: "HEATMAP_ERROR", message: String(err) }, 503);

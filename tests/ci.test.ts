@@ -11918,6 +11918,79 @@ test("BRAIN-REACT-5: runReactLoop returns decisionId=null in non-DB mode (memory
   );
 });
 
+// ── HEATMAP-FALLBACK tests ────────────────────────────────────────────────────
+// Tests for kgi-heatmap-enricher 3-tier fallback logic.
+// All run in memory-mode (no KGI gateway, no TWSE network call).
+
+test("HEATMAP-FALLBACK-1: enrichHeatmapTiles uses live KGI tick when price is non-null", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const kgiTiles = [
+    { symbol: "2330", price: 980.0, change: 10.0, changePct: 1.03, tier: "core", ts: "2026-05-18T10:00:00+08:00", source: "kgi_tick" as const },
+    { symbol: "2317", price: 205.5, change: -2.5, changePct: -1.20, tier: "core", ts: "2026-05-18T10:00:00+08:00", source: "kgi_tick" as const },
+  ];
+
+  const result = enrichHeatmapTiles(kgiTiles as any, []);
+
+  assert.equal(result.tiles.length, 2, "HEATMAP-FALLBACK-1: must return 2 tiles");
+  assert.equal(result.tiles[0]!.sourceState, "live", "HEATMAP-FALLBACK-1: tile[0] sourceState must be live");
+  assert.equal(result.tiles[1]!.sourceState, "live", "HEATMAP-FALLBACK-1: tile[1] sourceState must be live");
+  assert.equal(result.liveTileCount, 2, "HEATMAP-FALLBACK-1: liveTileCount must be 2");
+  assert.equal(result.dataFreshness, "live", "HEATMAP-FALLBACK-1: dataFreshness must be live");
+  assert.equal(result.tiles[0]!.price, 980.0, "HEATMAP-FALLBACK-1: price must be from KGI tick");
+});
+
+test("HEATMAP-FALLBACK-2: enrichHeatmapTiles uses TWSE EOD when KGI tick is null", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const kgiTiles = [
+    { symbol: "2330", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" as const },
+    // 3707 not in TWSE (OTC/special) — should fall through to no_data
+    { symbol: "3707", price: null, change: null, changePct: null, tier: "strategy", ts: null, source: "kgi_tick" as const },
+  ];
+
+  const twseRows = [
+    { Code: "2330", Name: "台積電", Date: "115/05/18", ClosingPrice: "975.0", Change: "5.0", TradeVolume: "1000", TradeValue: "1000", OpeningPrice: "970", HighestPrice: "980", LowestPrice: "968", Transaction: "500" },
+  ];
+
+  const result = enrichHeatmapTiles(kgiTiles as any, twseRows as any);
+
+  assert.equal(result.tiles.length, 2, "HEATMAP-FALLBACK-2: must return 2 tiles (never drops tiles)");
+  assert.equal(result.tiles[0]!.sourceState, "twse_eod", "HEATMAP-FALLBACK-2: 2330 must use twse_eod");
+  assert.equal(result.tiles[0]!.price, 975.0, "HEATMAP-FALLBACK-2: 2330 price must be TWSE close");
+  assert.equal(result.tiles[1]!.sourceState, "no_data", "HEATMAP-FALLBACK-2: 3707 not in TWSE → no_data (tile preserved)");
+  assert.equal(result.tiles[1]!.symbol, "3707", "HEATMAP-FALLBACK-2: 3707 tile shape preserved (symbol kept)");
+  assert.equal(result.twseEodTileCount, 1, "HEATMAP-FALLBACK-2: twseEodTileCount must be 1");
+  assert.equal(result.dataFreshness, "eod", "HEATMAP-FALLBACK-2: dataFreshness must be eod");
+});
+
+test("HEATMAP-FALLBACK-3: enrichHeatmapTiles uses cache when KGI null + TWSE missing", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache, updateLastCloseFromTick } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  // Pre-seed cache with a recent close for 2454
+  const recentTs = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago
+  updateLastCloseFromTick("2454", 780.0, -5.0, -0.64, recentTs);
+
+  const kgiTiles = [
+    { symbol: "2454", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" as const },
+    // 2882 has no cache and no TWSE → no_data (tile still preserved)
+    { symbol: "2882", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" as const },
+  ];
+
+  const result = enrichHeatmapTiles(kgiTiles as any, []); // empty twseRows
+
+  assert.equal(result.tiles.length, 2, "HEATMAP-FALLBACK-3: must return 2 tiles");
+  assert.equal(result.tiles[0]!.sourceState, "cache", "HEATMAP-FALLBACK-3: 2454 must use cache");
+  assert.equal(result.tiles[0]!.price, 780.0, "HEATMAP-FALLBACK-3: 2454 price must be from cache");
+  assert.equal(result.tiles[1]!.sourceState, "no_data", "HEATMAP-FALLBACK-3: 2882 → no_data (tile preserved)");
+  assert.equal(result.tiles[1]!.symbol, "2882", "HEATMAP-FALLBACK-3: 2882 tile shape preserved");
+  assert.equal(result.cacheTileCount, 1, "HEATMAP-FALLBACK-3: cacheTileCount must be 1");
+  assert.equal(result.dataFreshness, "cache", "HEATMAP-FALLBACK-3: dataFreshness must be cache");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
