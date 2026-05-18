@@ -3,6 +3,7 @@ import type { StockRecommendation } from "@iuf-trading-room/contracts";
 import { ArrowRight, Database, FileSearch, Gauge, ShieldAlert, Target } from "lucide-react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
+import { MarketStateBanner } from "@/components/MarketStateBanner";
 import { getRecommendationsToday, type RecommendationListResponse } from "@/lib/api";
 import {
   buildRecommendationPrefillHref,
@@ -370,6 +371,7 @@ export default async function AiRecommendationsPage() {
       sub="Recommendation Orchestrator"
       note="推薦只呈現後端回傳資料；缺漏欄位顯示資料同步中或 -，不以前端假數字補位。"
     >
+      <MarketStateBanner />
       <style>{`
         ._rec-tabs {
           display: flex;
