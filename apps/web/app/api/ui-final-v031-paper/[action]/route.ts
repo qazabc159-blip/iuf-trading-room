@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  PaperOrderApiError,
   previewPaperOrder,
   submitPaperOrder,
   type PaperOrderInput,
@@ -61,6 +62,18 @@ export async function POST(
       : await submitPaperOrder(input);
     return NextResponse.json({ ok: true, data }, { headers: NO_STORE_HEADERS });
   } catch (error) {
+    if (action === "submit" && error instanceof PaperOrderApiError && error.status === 422) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: error.code,
+          status: error.status,
+          details: error.body ?? error.details ?? null,
+        },
+        { headers: NO_STORE_HEADERS },
+      );
+    }
+
     return NextResponse.json(
       {
         ok: false,

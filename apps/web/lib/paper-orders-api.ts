@@ -106,6 +106,7 @@ export class PaperOrderApiError extends Error {
   readonly code: string;
   readonly layer?: string;
   readonly details?: unknown;
+  readonly body?: unknown;
 
   constructor(status: number, body: ApiErrorBody, fallback: string) {
     const record = body && typeof body === "object" ? body as Record<string, unknown> : {};
@@ -117,6 +118,7 @@ export class PaperOrderApiError extends Error {
     this.code = code;
     this.layer = typeof record.layer === "string" ? record.layer : undefined;
     this.details = record.details;
+    this.body = body;
   }
 }
 
