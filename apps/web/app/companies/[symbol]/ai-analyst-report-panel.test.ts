@@ -36,9 +36,9 @@ function formatCost(cost_usd: number | null | undefined): string {
 }
 
 function traceStepLabel(type: ReactTraceStep["type"]): string {
-  if (type === "reason") return "REASON";
-  if (type === "act") return "ACT";
-  return "OBSERVE";
+  if (type === "reason") return "推理";
+  if (type === "act") return "工具";
+  return "觀察";
 }
 
 function shouldShowTrace(trace: ReactTraceStep[]): boolean {
@@ -128,9 +128,9 @@ describe("Complete state", () => {
   });
 
   it("trace types map to correct labels", () => {
-    expect(traceStepLabel("reason")).toBe("REASON");
-    expect(traceStepLabel("act")).toBe("ACT");
-    expect(traceStepLabel("observe")).toBe("OBSERVE");
+    expect(traceStepLabel("reason")).toBe("推理");
+    expect(traceStepLabel("act")).toBe("工具");
+    expect(traceStepLabel("observe")).toBe("觀察");
   });
 
   it("trace has tool name on act step", () => {
