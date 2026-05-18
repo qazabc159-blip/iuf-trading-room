@@ -35,6 +35,10 @@ function isAllowed(method: string, path: string) {
   return list.some((pattern) => pattern.test(path));
 }
 
+function isKgiQuoteReadOnlyPath(method: string, path: string) {
+  return method === "GET" && /^\/api\/v1\/kgi\/quote\/(?:bidask|ticks)(?:\?|$)/.test(path);
+}
+
 function readPath(request: NextRequest) {
   const path = request.nextUrl.searchParams.get("path") ?? "";
   if (!path.startsWith("/api/v1/")) return null;
@@ -72,6 +76,18 @@ async function proxy(request: NextRequest) {
     body: request.method === "GET" ? undefined : await request.text(),
     cache: "no-store",
   });
+
+  if (!response.ok && isKgiQuoteReadOnlyPath(request.method, path)) {
+    return NextResponse.json(
+      {
+        data: null,
+        degraded: true,
+        source: "kgi_quote_read_only",
+        upstreamStatus: response.status,
+      },
+      { headers: NO_STORE_HEADERS },
+    );
+  }
 
   return new NextResponse(response.body, {
     status: response.status,
