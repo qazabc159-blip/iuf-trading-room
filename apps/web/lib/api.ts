@@ -165,6 +165,109 @@ export type RecommendationListResponse = {
   _mock?: boolean;
 };
 
+export type AiRecommendationV3Status =
+  | "complete"
+  | "empty"
+  | "failed"
+  | "budget_exceeded"
+  | "synthesis_format_error"
+  | "running"
+  | "pending";
+
+export type AiRecommendationV3Item = {
+  id?: string;
+  ticker: string;
+  companyName?: string | null;
+  company_name?: string | null;
+  confidence?: number | null;
+  marketState?: "risk_off" | "event" | "trend" | "range" | null;
+  marketScores?: {
+    trend?: number | null;
+    range?: number | null;
+    risk_off?: number | null;
+    riskOff?: number | null;
+    event_label?: string | null;
+    eventLabel?: string | null;
+  } | null;
+  subScores?: {
+    theme?: number | null;
+    revenue?: number | null;
+    institutional?: number | null;
+    margin?: number | null;
+    rs?: number | null;
+    technical?: number | null;
+    valuation?: number | null;
+  } | null;
+  sub_scores?: {
+    theme_position?: number | null;
+    revenue_earnings?: number | null;
+    institutional_etf?: number | null;
+    margin_short?: number | null;
+    rs_volume?: number | null;
+    technical_structure?: number | null;
+    valuation_event?: number | null;
+    total?: number | null;
+  } | null;
+  totalScore?: number | null;
+  bucket?: "A+" | "A" | "B" | "C" | null;
+  entryZone?: {
+    low?: number | null;
+    high?: number | null;
+    reason?: string | null;
+  } | null;
+  entryPriceRange?: {
+    low?: number | null;
+    high?: number | null;
+  } | null;
+  tp1?: number | null;
+  tp2?: number | null;
+  stopLoss?: number | null;
+  tp1Structured?: {
+    price?: number | null;
+    reason?: string | null;
+  } | null;
+  tp2Structured?: {
+    price?: number | null;
+    reason?: string | null;
+  } | null;
+  stopLossStructured?: {
+    price?: number | null;
+    atr_multiple?: number | null;
+  } | null;
+  r_ratio?: number | null;
+  position_sizing?: {
+    nav_pct?: number | null;
+    market_multiplier?: number | null;
+  } | null;
+  why_buy?: string[] | string | null;
+  why_not_buy?: string[] | string | null;
+  rationale?: string | null;
+};
+
+export type AiRecommendationV3SourceState = {
+  state?: "live" | "empty" | "degraded" | "pending" | string;
+  lastUpdated?: string | null;
+  owner?: string | null;
+  nextAction?: string | null;
+  reason?: string | null;
+};
+
+export type AiRecommendationV3Response = {
+  runId?: string | null;
+  status?: AiRecommendationV3Status | string | null;
+  generatedAt?: string | null;
+  items?: AiRecommendationV3Item[];
+  reactTrace?: unknown[];
+  finalReportMarkdown?: string | null;
+  totalCostUsd?: number | null;
+  totalTokens?: number | null;
+  sourceState?: AiRecommendationV3SourceState | null;
+  fullAiReportParsed?: boolean | null;
+  synthesisRetryUsed?: boolean | null;
+  synthesisFallbackUsed?: boolean | null;
+  usedFallback?: boolean | null;
+};
+
 export type RecommendationDetailResponse = {
   data: StockRecommendation;
   _mock?: boolean;
@@ -172,6 +275,12 @@ export type RecommendationDetailResponse = {
 
 export async function getRecommendationsToday() {
   return requestRaw<RecommendationListResponse>("/api/v1/recommendations/today", {
+    cache: "no-store",
+  });
+}
+
+export async function getAiRecommendationsV3() {
+  return requestRaw<AiRecommendationV3Response>("/api/v1/ai-recommendations/v3", {
     cache: "no-store",
   });
 }
