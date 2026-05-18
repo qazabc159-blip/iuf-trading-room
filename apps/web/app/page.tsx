@@ -46,6 +46,7 @@ import {
   type TwseMarketOverview,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { heatmapIndustryLabel } from "@/lib/heatmap-industry-label";
 import { isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
@@ -1992,14 +1993,15 @@ function MarketWideHeatmap({
           const pct = finite(row.avgChangePct) ?? 0;
           const tone = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
           const size = Math.max(1.1, Math.min(2.4, Math.sqrt(Math.max(1, row.stockCount)) / 9));
+          const displayIndustry = heatmapIndustryLabel(row.industry);
           return (
             <div
               className={`tac-market-wide-cell ${tone}`}
-              key={row.industry}
+              key={`${row.industry}-${displayIndustry}`}
               style={{ "--cell-grow": String(size), "--heat": String(Math.min(1, Math.abs(pct) / 3)) } as CSSProperties}
-              title={`${row.industry}\n漲 ${row.gainerCount} / 平 ${row.flatCount} / 跌 ${row.loserCount}\n均幅 ${formatPercent(pct)}`}
+              title={`${displayIndustry}\n漲 ${row.gainerCount} / 平 ${row.flatCount} / 跌 ${row.loserCount}\n均幅 ${formatPercent(pct)}`}
             >
-              <b>{row.industry}</b>
+              <b>{displayIndustry}</b>
               <strong>{formatPercent(pct)}</strong>
               <span>{formatNumber(row.stockCount)} 檔</span>
             </div>
