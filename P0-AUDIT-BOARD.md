@@ -11,6 +11,11 @@ Update 2026-05-19 06:20 TST:
 - Latest base is `7b17ebc` (`#722 fix(web): stabilize heatmap representative pool`); production deploy `26063184603` is green and API `/health` is 200.
 - `/` homepage market-intel panel was re-audited after Yang screenshot. Root cause: the panel only consumed official announcements; owner-session `news-top10` has 10 AI-selected items, while official market announcements are empty. Planned/current PR: wire homepage panel to AI-selected `GET /api/v1/market-intel/news-top10` first, retain formal empty state for `GET /api/v1/market-intel/announcements`, and expose stale/source/owner state without mock news.
 
+Update 2026-05-19 06:55 TST:
+- Latest base is `196f4b5` (`#723 fix(web): surface AI selected news on homepage`); production deploy `26064649146` is green and API `/health` is 200.
+- `/companies/2330` re-audit still found no blank panel and no fake quote/tick data, but browser verification saw KGI quote `503` resources from `/api/v1/kgi/quote/bidask` and `/api/v1/kgi/quote/ticks` while the gateway is outside the documented TST trading window.
+- Chosen/current PR: gate the company page KGI five-level and tick panels by the existing `kgi-trading-hours` helper. Outside the window, panels render `BLOCKED` with source, owner, and next open time without calling KGI endpoints; inside the window, they still call the real endpoints and never synthesize quote/tick data.
+
 ## Audit Rule
 
 這份 board 是今晚 P0 收斂的作戰地圖。沒有這份 board，不做大改；任何 UI 區塊只能是正式資料、明確 degraded/empty/pending state，或直接不顯示。不得用 mock/fake 冒充 live。
