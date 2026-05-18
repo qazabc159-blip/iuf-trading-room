@@ -252,9 +252,12 @@ function computeAction(
 ): ActionBucket {
   if (hasMissingData) return "資料不足暫不推薦";
   if (gateStatus === "FAIL") return "高風險排除";
-  if (totalScore >= 80) return "今日首選";
-  if (totalScore >= 70) return "可觀察布局（研究參考）";
-  if (totalScore >= 60) return "等回檔";
+  // Thresholds lowered 5pt to ensure cont_liq_v36 WATCH candidates (DQ-penalised) reach
+  // meaningful buckets. Old: 80/70/60. New: 75/65/55.
+  // cont_liq_v36 quantScore ~71-80 → after PENDING penalty (5%) → totalScore ~67-76.
+  if (totalScore >= 75) return "今日首選";
+  if (totalScore >= 65) return "可觀察布局（研究參考）";
+  if (totalScore >= 55) return "等回檔";
   return "高風險排除";
 }
 
