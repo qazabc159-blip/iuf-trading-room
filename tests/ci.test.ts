@@ -13217,6 +13217,95 @@ test("MARKET-INTEL-P0-GATE-1: announcements API exposes sourceState", async () =
   assert.ok(source.includes("officialOnly"), "MARKET-INTEL-P0-GATE-1: market-scope official-only behavior must be visible to frontend");
 });
 
+// =============================================================================
+// TWSE-ANN-INGEST-1..4: t187ap11_L endpoint switch + 302/404 detection + fallback
+// (fix: twse-announcement-ingest.ts switched primary from t187ap46_L to t187ap11_L)
+// =============================================================================
+
+test("TWSE-ANN-INGEST-1: fetchAllTwseMaterialAnnouncements returns rows from primary t187ap11_L", async () => {
+  const { fetchAllTwseMaterialAnnouncements } = await import("../apps/api/src/jobs/twse-announcement-ingest.js") as any;
+  const rows = [
+    { Date: "2026/05/18", Code: "2330", Name: "台積電", Title: "重要公告測試", Content: "", Link: "" }
+  ];
+  let calledUrl = "";
+  const mockFetch = async (url: string | URL | Request, _init?: RequestInit) => {
+    calledUrl = typeof url === "string" ? url : url.toString();
+    return new Response(JSON.stringify(rows), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  const result = await fetchAllTwseMaterialAnnouncements(mockFetch as typeof fetch);
+  assert.ok(calledUrl.includes("t187ap11_L"),
+    `TWSE-ANN-INGEST-1: primary URL must be t187ap11_L, got ${calledUrl}`);
+  assert.equal(result.length, 1, "TWSE-ANN-INGEST-1: should return 1 row from primary");
+  assert.equal(result[0].Code, "2330", "TWSE-ANN-INGEST-1: row Code must be 2330");
+});
+
+test("TWSE-ANN-INGEST-2: 302 redirect on primary triggers fallback to t187ap46_L", async () => {
+  const { fetchAllTwseMaterialAnnouncements } = await import("../apps/api/src/jobs/twse-announcement-ingest.js") as any;
+  const fallbackRows = [
+    { Date: "2026/05/18", Code: "2412", Name: "中華電", Title: "備份公告", Content: "", Link: "" }
+  ];
+  const calledUrls: string[] = [];
+  const mockFetch = async (url: string | URL | Request, _init?: RequestInit) => {
+    const urlStr = typeof url === "string" ? url : url.toString();
+    calledUrls.push(urlStr);
+    if (urlStr.includes("t187ap11_L")) {
+      // Primary returns 302 (deprecated/redirected)
+      return new Response(null, { status: 302, headers: { "location": "https://openapi.twse.com.tw/error" } });
+    }
+    // Fallback t187ap46_L succeeds
+    return new Response(JSON.stringify(fallbackRows), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  const result = await fetchAllTwseMaterialAnnouncements(mockFetch as typeof fetch);
+  assert.ok(calledUrls.some(u => u.includes("t187ap11_L")),
+    "TWSE-ANN-INGEST-2: must try primary t187ap11_L first");
+  assert.ok(calledUrls.some(u => u.includes("t187ap46_L")),
+    "TWSE-ANN-INGEST-2: must fallback to t187ap46_L after 302");
+  assert.equal(result.length, 1, "TWSE-ANN-INGEST-2: fallback should return 1 row");
+  assert.equal(result[0].Code, "2412", "TWSE-ANN-INGEST-2: fallback row Code must be 2412");
+});
+
+test("TWSE-ANN-INGEST-3: 404 on primary triggers fallback, both fail → empty array (no throw)", async () => {
+  const { fetchAllTwseMaterialAnnouncements } = await import("../apps/api/src/jobs/twse-announcement-ingest.js") as any;
+  const mockFetch = async (_url: string | URL | Request, _init?: RequestInit) => {
+    return new Response(null, { status: 404, statusText: "Not Found" });
+  };
+  const result = await fetchAllTwseMaterialAnnouncements(mockFetch as typeof fetch);
+  assert.deepEqual(result, [], "TWSE-ANN-INGEST-3: both endpoints fail → must return [] without throwing");
+});
+
+test("TWSE-ANN-INGEST-4: non-JSON content-type on primary triggers fallback", async () => {
+  const { fetchAllTwseMaterialAnnouncements } = await import("../apps/api/src/jobs/twse-announcement-ingest.js") as any;
+  const calledUrls: string[] = [];
+  const fallbackRows = [
+    { Date: "2026/05/18", Code: "2881", Name: "富邦金", Title: "金融公告", Content: "", Link: "" }
+  ];
+  const mockFetch = async (url: string | URL | Request, _init?: RequestInit) => {
+    const urlStr = typeof url === "string" ? url : url.toString();
+    calledUrls.push(urlStr);
+    if (urlStr.includes("t187ap11_L")) {
+      // Primary returns HTML (wrong content-type)
+      return new Response("<html>error</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" }
+      });
+    }
+    return new Response(JSON.stringify(fallbackRows), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  const result = await fetchAllTwseMaterialAnnouncements(mockFetch as typeof fetch);
+  assert.ok(calledUrls.some(u => u.includes("t187ap46_L")),
+    "TWSE-ANN-INGEST-4: non-JSON primary must trigger fallback");
+  assert.equal(result.length, 1, "TWSE-ANN-INGEST-4: fallback must return 1 row");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
