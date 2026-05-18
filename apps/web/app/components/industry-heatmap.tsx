@@ -58,6 +58,7 @@ type PreparedTile = IndustryHeatmapTile & {
 
 type SectorOption = SectorDefinition & {
   count: number;
+  availableCount: number;
   avgPct: number | null;
   hasData: boolean;
 };
@@ -80,7 +81,7 @@ type IndustryHeatmapProps = {
 };
 
 const MAX_TILES_PER_SECTOR = 13;
-const MAX_TILES_ALL = 28;
+const MAX_TILES_ALL = 40;
 const TARGET_TILES_PER_SECTOR = 12;
 const MIN_PRODUCT_COUNT = 10;
 
@@ -145,6 +146,8 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "3443": "semiconductor",
   "3661": "semiconductor",
   "6488": "semiconductor",
+  "6415": "semiconductor",
+  "5274": "semiconductor",
   "2408": "semiconductor",
   "2344": "semiconductor",
   "2449": "semiconductor",
@@ -168,6 +171,9 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "2356": "computer",
   "3231": "computer",
   "6669": "computer",
+  "4938": "computer",
+  "6230": "computer",
+  "8210": "computer",
   "2357": "computer",
   "2376": "computer",
   "2377": "computer",
@@ -195,6 +201,7 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "2892": "finance",
   "5880": "finance",
   "5876": "finance",
+  "2801": "finance",
   "2002": "steel",
   "2014": "steel",
   "2015": "steel",
@@ -203,6 +210,7 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "2031": "steel",
   "9958": "steel",
   "2603": "shipping",
+  "2605": "shipping",
   "2609": "shipping",
   "2615": "shipping",
   "2618": "shipping",
@@ -288,14 +296,163 @@ const SYMBOL_SECTOR: Record<string, SectorKey> = {
   "2636": "shipping",
   "2637": "shipping",
   "2646": "shipping",
+  "6757": "shipping",
   "5607": "shipping",
   "5608": "shipping",
 };
 
-const REPRESENTATIVE_ORDER = Object.keys(SYMBOL_SECTOR).reduce<Record<string, number>>((acc, symbol, index) => {
+type RepresentativeSectorKey = Exclude<SectorKey, "all">;
+
+const SECTOR_REPRESENTATIVES: Record<RepresentativeSectorKey, string[]> = {
+  semiconductor: ["2330", "2454", "2303", "3711", "3034", "2379", "3443", "3661", "6488", "6770", "6415", "5274"],
+  components: ["2308", "2317", "2327", "3037", "3044", "4958", "8046", "2492", "3013", "2368", "6176", "6269", "2354"],
+  computer: ["2382", "3231", "6669", "2356", "2376", "2377", "2395", "3017", "3324", "3706", "4938", "2357", "3005"],
+  communication: ["2412", "3045", "4904", "2345", "3596", "5388", "6285", "6416", "2314", "2332", "2419", "3025"],
+  finance: ["2881", "2882", "2884", "2885", "2886", "2891", "2892", "5880", "5876", "2801", "2887", "2890"],
+  steel: ["2002", "2006", "2014", "2015", "2023", "2027", "2031", "9958", "2007", "2008", "2010", "2022"],
+  shipping: ["2603", "2609", "2615", "2636", "2605", "2606", "2610", "2618", "2646", "6757", "2607", "5608"],
+};
+
+const CORE_REPRESENTATIVES = [
+  "2330", "2317", "2454", "2881", "2308", "2412", "2382", "2603",
+  "2882", "2891", "3711", "2002", "3231", "2886", "2379", "2609",
+  "3034", "3045", "6669", "2892", "2303", "2885", "2356", "5880",
+  "2327", "2395", "2884", "3017", "2377", "5876", "4938", "2801",
+  "3443", "4958", "2357", "2605", "6488", "8046", "3005", "2354",
+];
+
+const REPRESENTATIVE_COMPANY_NAMES: Record<string, string> = {
+  "1560": "中砂",
+  "2002": "中鋼",
+  "2006": "東和鋼鐵",
+  "2007": "燁興",
+  "2008": "高興昌",
+  "2010": "春源",
+  "2014": "中鴻",
+  "2015": "豐興",
+  "2022": "聚亨",
+  "2023": "燁輝",
+  "2027": "大成鋼",
+  "2031": "新光鋼",
+  "2303": "聯電",
+  "2308": "台達電",
+  "2314": "台揚",
+  "2317": "鴻海",
+  "2327": "國巨",
+  "2330": "台積電",
+  "2332": "友訊",
+  "2345": "智邦",
+  "2354": "鴻準",
+  "2356": "英業達",
+  "2357": "華碩",
+  "2368": "金像電",
+  "2376": "技嘉",
+  "2377": "微星",
+  "2379": "瑞昱",
+  "2382": "廣達",
+  "2395": "研華",
+  "2412": "中華電",
+  "2419": "仲琦",
+  "2454": "聯發科",
+  "2492": "華新科",
+  "2603": "長榮",
+  "2605": "新興",
+  "2606": "裕民",
+  "2607": "榮運",
+  "2609": "陽明",
+  "2610": "華航",
+  "2615": "萬海",
+  "2618": "長榮航",
+  "2636": "台驊投控",
+  "2646": "星宇航空",
+  "2801": "彰銀",
+  "2881": "富邦金",
+  "2882": "國泰金",
+  "2884": "玉山金",
+  "2885": "元大金",
+  "2886": "兆豐金",
+  "2887": "台新金",
+  "2890": "永豐金",
+  "2891": "中信金",
+  "2892": "第一金",
+  "3005": "神基",
+  "3013": "晟銘電",
+  "3017": "奇鋐",
+  "3025": "星通",
+  "3034": "聯詠",
+  "3037": "欣興",
+  "3044": "健鼎",
+  "3045": "台灣大",
+  "3231": "緯創",
+  "3324": "雙鴻",
+  "3443": "創意",
+  "3596": "智易",
+  "3661": "世芯-KY",
+  "3706": "神達",
+  "3711": "日月光投控",
+  "4904": "遠傳",
+  "4938": "和碩",
+  "4958": "臻鼎-KY",
+  "5274": "信驊",
+  "5388": "中磊",
+  "5608": "四維航",
+  "5876": "上海商銀",
+  "5880": "合庫金",
+  "6176": "瑞儀",
+  "6230": "超眾",
+  "6269": "台郡",
+  "6285": "啟碁",
+  "6415": "矽力*-KY",
+  "6416": "瑞祺電通",
+  "6488": "環球晶",
+  "6669": "緯穎",
+  "6757": "台灣虎航",
+  "6770": "力積電",
+  "8046": "南電",
+  "8210": "勤誠",
+  "9958": "世紀鋼",
+};
+
+const REPRESENTATIVE_ORDER = [
+  ...CORE_REPRESENTATIVES,
+  ...Object.values(SECTOR_REPRESENTATIVES).flat(),
+  ...Object.keys(SYMBOL_SECTOR),
+].reduce<Record<string, number>>((acc, symbol, index) => {
+  if (acc[symbol] !== undefined) return acc;
   acc[symbol] = index + 1;
   return acc;
 }, {});
+
+function representativeSymbolsForSector(sectorKey: SectorKey) {
+  if (sectorKey === "all") return CORE_REPRESENTATIVES;
+  return SECTOR_REPRESENTATIVES[sectorKey] ?? [];
+}
+
+function representativeCompanyName(symbol: string, rawName?: string | null) {
+  const normalized = rawName?.trim();
+  if (normalized && normalized !== symbol) return normalized;
+  return REPRESENTATIVE_COMPANY_NAMES[symbol] ?? normalized ?? symbol;
+}
+
+function representativeRank(symbol: string, fallbackRank: number) {
+  return REPRESENTATIVE_ORDER[symbol] ?? 1000 + fallbackRank;
+}
+
+function representativeNoDataTile(symbol: string, sectorKey: RepresentativeSectorKey, index: number): IndustryHeatmapTile {
+  return {
+    symbol,
+    name: representativeCompanyName(symbol),
+    sector: sectorDefinition(sectorKey).label,
+    pct: null,
+    weight: Math.max(1, TARGET_TILES_PER_SECTOR - index),
+    source: "representative_config",
+    price: null,
+    readiness: "degraded",
+    freshnessStatus: "missing",
+    sourceState: "no_data",
+    sourceLabel: "固定代表股池；此檔暫無可驗證行情",
+  };
+}
 
 function sectorDefinition(key: SectorKey) {
   return SECTORS.find((sector) => sector.key === key) ?? SECTORS[0];
@@ -408,6 +565,14 @@ function estimatedTradingValue(tile: IndustryHeatmapTile) {
 }
 
 function preparedWeight(tile: IndustryHeatmapTile, fallbackRank: number) {
+  if (tile.sourceState === "no_data") {
+    return {
+      tradingValue: null,
+      areaWeight: 1.15,
+      weightLabel: "暫無行情",
+    };
+  }
+
   const tradingValue = estimatedTradingValue(tile);
   if (tradingValue && tradingValue > 0) {
     return {
@@ -431,42 +596,73 @@ function preparedWeight(tile: IndustryHeatmapTile, fallbackRank: number) {
 }
 
 function prepareTiles(heatmap: IndustryHeatmapTile[]) {
-  const seen = new Set<string>();
-  const rows: PreparedTile[] = [];
+  const rowsBySymbol = new Map<string, PreparedTile>();
 
-  heatmap.forEach((tile, index) => {
-    if (seen.has(tile.symbol)) return;
-    seen.add(tile.symbol);
-    if (!isUsableTile(tile)) return;
-    const sectorKey = normalizeSector(tile);
+  function addTile(tile: IndustryHeatmapTile, index: number, sectorOverride?: RepresentativeSectorKey, supplemental = false) {
+    const symbol = tile.symbol.trim();
+    if (!symbol) return;
+    const normalizedTile = {
+      ...tile,
+      symbol,
+      name: representativeCompanyName(symbol, tile.name),
+    };
+    if (!isUsableTile(normalizedTile)) return;
+    const sectorKey = sectorOverride ?? normalizeSector(normalizedTile);
     if (!sectorKey) return;
 
-    const move = deriveMove(tile);
+    const move = deriveMove(normalizedTile);
     // no_data tiles have no price movement — use 0 so they still render (gray, flat)
-    const displayPct = tile.sourceState === "no_data" ? 0 : (move.pct ?? 0);
-    const displayChange = tile.sourceState === "no_data" ? null : move.change;
+    const displayPct = normalizedTile.sourceState === "no_data" ? 0 : (move.pct ?? 0);
+    const displayChange = normalizedTile.sourceState === "no_data" ? null : move.change;
 
     // For no_data tiles, if we still don't have a pct (not no_data but missing move), skip
-    if (tile.sourceState !== "no_data" && move.pct === null) return;
+    if (normalizedTile.sourceState !== "no_data" && move.pct === null) return;
 
-    const rank = REPRESENTATIVE_ORDER[tile.symbol] ?? 1000 + index;
-    const weight = preparedWeight(tile, rank);
+    const rank = representativeRank(symbol, index);
+    const weight = preparedWeight(normalizedTile, rank);
     const definition = sectorDefinition(sectorKey);
-    rows.push({
-      ...tile,
+    const prepared: PreparedTile = {
+      ...normalizedTile,
       sectorKey,
       sectorLabel: definition.label,
       rank,
       displayPct,
       displayChange,
+      isSupplemental: supplemental,
       ...weight,
+    };
+    const existing = rowsBySymbol.get(symbol);
+    if (!existing || existing.sourceState === "no_data" || (existing.isSupplemental && !supplemental)) {
+      rowsBySymbol.set(symbol, prepared);
+    }
+  }
+
+  heatmap.forEach((tile, index) => {
+    addTile(tile, index);
+  });
+
+  Object.entries(SECTOR_REPRESENTATIVES).forEach(([sectorKey, symbols]) => {
+    symbols.forEach((symbol, index) => {
+      if (!rowsBySymbol.has(symbol)) {
+        addTile(representativeNoDataTile(symbol, sectorKey as RepresentativeSectorKey, index), 10_000 + index, sectorKey as RepresentativeSectorKey, true);
+      }
     });
   });
 
-  return rows;
+  CORE_REPRESENTATIVES.forEach((symbol, index) => {
+    const sectorKey = SYMBOL_SECTOR[symbol];
+    if (!rowsBySymbol.has(symbol) && sectorKey && sectorKey !== "all") {
+      addTile(representativeNoDataTile(symbol, sectorKey as RepresentativeSectorKey, index), 20_000 + index, sectorKey as RepresentativeSectorKey, true);
+    }
+  });
+
+  return [...rowsBySymbol.values()];
 }
 
 function sortByHeatmapPriority(left: PreparedTile, right: PreparedTile) {
+  const leftHasData = left.sourceState !== "no_data";
+  const rightHasData = right.sourceState !== "no_data";
+  if (leftHasData !== rightHasData) return leftHasData ? -1 : 1;
   const tradingDelta = (right.tradingValue ?? 0) - (left.tradingValue ?? 0);
   if (Math.abs(tradingDelta) > 0.001) return tradingDelta;
   const weightDelta = right.areaWeight - left.areaWeight;
@@ -477,14 +673,19 @@ function sortByHeatmapPriority(left: PreparedTile, right: PreparedTile) {
 }
 
 function primaryRowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
+  const bySymbol = new Map(prepared.map((tile) => [tile.symbol, tile] as const));
+  const fixedSymbols = representativeSymbolsForSector(sectorKey);
+  const fixedRows = fixedSymbols
+    .map((symbol) => bySymbol.get(symbol))
+    .filter((tile): tile is PreparedTile => Boolean(tile));
+
   if (sectorKey === "all") {
-    return [...prepared]
+    return fixedRows
       .sort(sortByHeatmapPriority)
       .slice(0, MAX_TILES_ALL);
   }
 
-  return prepared
-    .filter((tile) => tile.sectorKey === sectorKey)
+  return fixedRows
     .sort(sortByHeatmapPriority)
     .slice(0, MAX_TILES_PER_SECTOR);
 }
@@ -496,12 +697,14 @@ function rowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
 function buildOptions(prepared: PreparedTile[]): SectorOption[] {
   return SECTORS.map((sector) => {
     const primaryRows = primaryRowsForSector(prepared, sector.key);
-    const avgPct = primaryRows.length > 0
-      ? primaryRows.reduce((sum, tile) => sum + tile.displayPct, 0) / primaryRows.length
+    const rowsWithData = primaryRows.filter((tile) => tile.sourceState !== "no_data");
+    const avgPct = rowsWithData.length > 0
+      ? rowsWithData.reduce((sum, tile) => sum + tile.displayPct, 0) / rowsWithData.length
       : null;
     return {
       ...sector,
       count: primaryRows.length,
+      availableCount: rowsWithData.length,
       avgPct,
       hasData: primaryRows.length > 0,
     };
@@ -761,7 +964,8 @@ export function IndustryHeatmap({
   const layout = useMemo(() => buildTreemapLayout(selectedRows), [selectedRows]);
   const selectedAvg = activeOption?.avgPct ?? null;
   const hasEnoughForProduct = selectedRows.length >= MIN_PRODUCT_COUNT;
-  const sourceBreakdown = useMemo(() => buildSourceBreakdown(heatmap), [heatmap]);
+  const availableRows = selectedRows.filter((tile) => tile.sourceState !== "no_data").length;
+  const sourceBreakdown = useMemo(() => buildSourceBreakdown(selectedRows), [selectedRows]);
 
   // F3: Only show true empty state when backend sends 0 tiles AND state is bad
   // If backend gives us tiles (even no_data), show the treemap (gray tiles) + note
@@ -789,7 +993,8 @@ export function IndustryHeatmap({
         </div>
         <div className="tac-heat-stats" aria-label="熱力圖摘要">
           <span>更新 {formatDateTime(updatedAt)}</span>
-          <span>{selectedRows.length} 檔</span>
+          <span>{selectedRows.length} 檔代表</span>
+          <span>{availableRows} 檔有行情</span>
           <span className={toneForMove(selectedAvg)}>均幅 {formatPercent(selectedAvg)}</span>
         </div>
       </div>
@@ -825,7 +1030,7 @@ export function IndustryHeatmap({
 
       <div className="tac-heat-footer">
         <span>
-          {hasEnoughForProduct ? "代表股篩選完成" : "檔數不足時只顯示可驗證資料"} · 依成交值優先排序 · {sourceLabel}
+          {hasEnoughForProduct ? "固定代表股池完成" : "代表池不足，僅顯示可驗證資料"} · 依成交值優先排序 · {sourceLabel}
           {sourceBreakdown && <> · <span className="tac-heat-source-note">{sourceBreakdown}</span></>}
         </span>
         <span className="tac-heat-scale" aria-label="漲跌幅色階">

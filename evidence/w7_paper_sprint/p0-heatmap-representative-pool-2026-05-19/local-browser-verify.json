@@ -1,0 +1,341 @@
+{
+  "url": "http://127.0.0.1:3133/?codexHeatmap=p0-representative-pool-20260519",
+  "screenshots": {
+    "corePath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_heatmap_p0_20260519\\evidence\\w7_paper_sprint\\p0-heatmap-representative-pool-2026-05-19\\local-core-representative-pool.png",
+    "commPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_heatmap_p0_20260519\\evidence\\w7_paper_sprint\\p0-heatmap-representative-pool-2026-05-19\\local-communication-representative-pool.png",
+    "semiPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_heatmap_p0_20260519\\evidence\\w7_paper_sprint\\p0-heatmap-representative-pool-2026-05-19\\local-semiconductor-representative-pool.png"
+  },
+  "tabs": [
+    "核心觀察池40 檔",
+    "半導體業12 檔",
+    "電子零組件13 檔",
+    "電腦及週邊設備13 檔",
+    "通信網路12 檔",
+    "金融保險12 檔",
+    "鋼鐵工業12 檔",
+    "航運業12 檔"
+  ],
+  "stats": [
+    "更新 05/18 00:00",
+    "40 檔代表",
+    "23 檔有行情",
+    "均幅 -0.45%"
+  ],
+  "coreCount": 40,
+  "coreFirstTen": [
+    {
+      "text": "2330台積電-1.10%權重 242330 台積電漲跌幅 -1.10%漲跌 -25.00收盤 2,240權重 24來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2330",
+      "name": "台積電",
+      "pct": "-1.10%",
+      "className": "tac-heat-tile down hero   is-stale"
+    },
+    {
+      "text": "2317鴻海0.00%權重 232317 鴻海漲跌幅 0.00%漲跌 0.00收盤 248.50權重 23來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2317",
+      "name": "鴻海",
+      "pct": "0.00%",
+      "className": "tac-heat-tile flat hero   is-stale"
+    },
+    {
+      "text": "2454聯發科+4.29%權重 222454 聯發科漲跌幅 +4.29%漲跌 140.00收盤 3,400權重 22來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2454",
+      "name": "聯發科",
+      "pct": "+4.29%",
+      "className": "tac-heat-tile up hero   is-stale"
+    },
+    {
+      "text": "2882國泰金-1.41%權重 212882 國泰金漲跌幅 -1.41%漲跌 -1.10收盤 76.80權重 21來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2882",
+      "name": "國泰金",
+      "pct": "-1.41%",
+      "className": "tac-heat-tile down hero   is-stale"
+    },
+    {
+      "text": "2881富邦金-0.94%權重 202881 富邦金漲跌幅 -0.94%漲跌 -0.90收盤 95.20權重 20來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2881",
+      "name": "富邦金",
+      "pct": "-0.94%",
+      "className": "tac-heat-tile down hero   is-stale"
+    },
+    {
+      "text": "2308台達電-2.65%權重 192308 台達電漲跌幅 -2.65%漲跌 -55.00收盤 2,020權重 19來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2308",
+      "name": "台達電",
+      "pct": "-2.65%",
+      "className": "tac-heat-tile down hero   is-stale"
+    },
+    {
+      "text": "2412中華電-0.72%2412 中華電漲跌幅 -0.72%漲跌 -1.00收盤 137.00權重 18來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2412",
+      "name": "中華電",
+      "pct": "-0.72%",
+      "className": "tac-heat-tile down large   is-stale"
+    },
+    {
+      "text": "2891中信金0.00%2891 中信金漲跌幅 0.00%漲跌 0.00收盤 54.80權重 17來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2891",
+      "name": "中信金",
+      "pct": "0.00%",
+      "className": "tac-heat-tile flat large   is-stale"
+    },
+    {
+      "text": "2886兆豐金+0.38%2886 兆豐金漲跌幅 +0.38%漲跌 0.15收盤 39.55權重 16來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2886",
+      "name": "兆豐金",
+      "pct": "+0.38%",
+      "className": "tac-heat-tile up large   is-stale"
+    },
+    {
+      "text": "3711日月光投控-6.76%3711 日月光投控漲跌幅 -6.76%漲跌 -37.00收盤 510.00權重 14來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "3711",
+      "name": "日月光投控",
+      "pct": "-6.76%",
+      "className": "tac-heat-tile down large   is-stale"
+    }
+  ],
+  "communicationStats": [
+    "更新 05/18 00:00",
+    "12 檔代表",
+    "2 檔有行情",
+    "均幅 -0.58%"
+  ],
+  "communicationCount": 12,
+  "communicationTiles": [
+    {
+      "text": "2412中華電-0.72%權重 182412 中華電漲跌幅 -0.72%漲跌 -1.00收盤 137.00權重 18來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2412",
+      "name": "中華電",
+      "pct": "-0.72%",
+      "className": "tac-heat-tile down hero   is-stale"
+    },
+    {
+      "text": "4904遠傳--4904 遠傳暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "4904",
+      "name": "遠傳",
+      "pct": "--",
+      "className": "tac-heat-tile flat large is-supplemental is-no-data "
+    },
+    {
+      "text": "2345智邦--2345 智邦暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "2345",
+      "name": "智邦",
+      "pct": "--",
+      "className": "tac-heat-tile flat hero is-supplemental is-no-data "
+    },
+    {
+      "text": "3596智易--3596 智易暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "3596",
+      "name": "智易",
+      "pct": "--",
+      "className": "tac-heat-tile flat hero is-supplemental is-no-data "
+    },
+    {
+      "text": "5388中磊--5388 中磊暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "5388",
+      "name": "中磊",
+      "pct": "--",
+      "className": "tac-heat-tile flat hero is-supplemental is-no-data "
+    },
+    {
+      "text": "6285啟碁--6285 啟碁暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "6285",
+      "name": "啟碁",
+      "pct": "--",
+      "className": "tac-heat-tile flat hero is-supplemental is-no-data "
+    },
+    {
+      "text": "6416瑞祺電通--6416 瑞祺電通暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "6416",
+      "name": "瑞祺電通",
+      "pct": "--",
+      "className": "tac-heat-tile flat hero is-supplemental is-no-data "
+    },
+    {
+      "text": "2314台揚--2314 台揚暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "2314",
+      "name": "台揚",
+      "pct": "--",
+      "className": "tac-heat-tile flat hero is-supplemental is-no-data "
+    },
+    {
+      "text": "2332友訊--2332 友訊暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "2332",
+      "name": "友訊",
+      "pct": "--",
+      "className": "tac-heat-tile flat hero is-supplemental is-no-data "
+    },
+    {
+      "text": "2419仲琦--2419 仲琦暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "2419",
+      "name": "仲琦",
+      "pct": "--",
+      "className": "tac-heat-tile flat hero is-supplemental is-no-data "
+    },
+    {
+      "text": "3025星通--3025 星通暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "3025",
+      "name": "星通",
+      "pct": "--",
+      "className": "tac-heat-tile flat hero is-supplemental is-no-data "
+    },
+    {
+      "text": "3045台灣大-0.44%3045 台灣大漲跌幅 -0.44%漲跌 -0.50收盤 114.00權重 1來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "3045",
+      "name": "台灣大",
+      "pct": "-0.44%",
+      "className": "tac-heat-tile down large   is-stale"
+    }
+  ],
+  "semiconductorStats": [
+    "更新 05/18 00:00",
+    "12 檔代表",
+    "5 檔有行情",
+    "均幅 +0.57%"
+  ],
+  "semiconductorCount": 12,
+  "semiconductorTiles": [
+    {
+      "text": "2330台積電-1.10%權重 242330 台積電漲跌幅 -1.10%漲跌 -25.00收盤 2,240權重 24來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2330",
+      "name": "台積電",
+      "pct": "-1.10%",
+      "className": "tac-heat-tile down hero   is-stale"
+    },
+    {
+      "text": "2454聯發科+4.29%權重 222454 聯發科漲跌幅 +4.29%漲跌 140.00收盤 3,400權重 22來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2454",
+      "name": "聯發科",
+      "pct": "+4.29%",
+      "className": "tac-heat-tile up hero   is-stale"
+    },
+    {
+      "text": "3711日月光投控-6.76%權重 143711 日月光投控漲跌幅 -6.76%漲跌 -37.00收盤 510.00權重 14來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "3711",
+      "name": "日月光投控",
+      "pct": "-6.76%",
+      "className": "tac-heat-tile down hero   is-stale"
+    },
+    {
+      "text": "2303聯電--2303 聯電暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "2303",
+      "name": "聯電",
+      "pct": "--",
+      "className": "tac-heat-tile flat large is-supplemental is-no-data "
+    },
+    {
+      "text": "3443創意--3443 創意暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "3443",
+      "name": "創意",
+      "pct": "--",
+      "className": "tac-heat-tile flat large is-supplemental is-no-data "
+    },
+    {
+      "text": "6488環球晶--6488 環球晶暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "6488",
+      "name": "環球晶",
+      "pct": "--",
+      "className": "tac-heat-tile flat large is-supplemental is-no-data "
+    },
+    {
+      "text": "3661世芯-KY--3661 世芯-KY暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "3661",
+      "name": "世芯-KY",
+      "pct": "--",
+      "className": "tac-heat-tile flat large is-supplemental is-no-data "
+    },
+    {
+      "text": "6770力積電--6770 力積電暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "6770",
+      "name": "力積電",
+      "pct": "--",
+      "className": "tac-heat-tile flat large is-supplemental is-no-data "
+    },
+    {
+      "text": "6415矽力*-KY--6415 矽力*-KY暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "6415",
+      "name": "矽力*-KY",
+      "pct": "--",
+      "className": "tac-heat-tile flat large is-supplemental is-no-data "
+    },
+    {
+      "text": "5274信驊--5274 信驊暫無行情資料暫無行情來源 固定代表股池；此檔暫無可驗證行情",
+      "symbol": "5274",
+      "name": "信驊",
+      "pct": "--",
+      "className": "tac-heat-tile flat large is-supplemental is-no-data "
+    },
+    {
+      "text": "2379瑞昱+4.48%2379 瑞昱漲跌幅 +4.48%漲跌 24.00收盤 560.00權重 1來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "2379",
+      "name": "瑞昱",
+      "pct": "+4.48%",
+      "className": "tac-heat-tile up large   is-stale"
+    },
+    {
+      "text": "3034聯詠+1.93%3034 聯詠漲跌幅 +1.93%漲跌 9.00收盤 475.50權重 1來源 05/18 (一) 收盤 (TWSE)",
+      "symbol": "3034",
+      "name": "聯詠",
+      "pct": "+1.93%",
+      "className": "tac-heat-tile up large   is-stale"
+    }
+  ],
+  "duplicateTickerNames": [],
+  "noDataTiles": 34,
+  "consoleMessages": [
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] intel took 1209ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] broker took 1829ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] runs took 1863ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] paper took 1870ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] finmind took 2247ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ops took 2273ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] brief took 2490ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ideas took 2919ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] snapshot took 4170ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] main_market_feed took 5778ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] market took 10691ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ALL_PANELS total=10696ms background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    }
+  ],
+  "badResponses": [],
+  "requestFailures": []
+}
