@@ -16,6 +16,11 @@ Update 2026-05-19 06:55 TST:
 - `/companies/2330` re-audit still found no blank panel and no fake quote/tick data, but browser verification saw KGI quote `503` resources from `/api/v1/kgi/quote/bidask` and `/api/v1/kgi/quote/ticks` while the gateway is outside the documented TST trading window.
 - Chosen/current PR: gate the company page KGI five-level and tick panels by the existing `kgi-trading-hours` helper. Outside the window, panels render `BLOCKED` with source, owner, and next open time without calling KGI endpoints; inside the window, they still call the real endpoints and never synthesize quote/tick data.
 
+Update 2026-05-19 07:20 TST:
+- Latest base is `945a742` (`#724 fix(web): gate company kgi quote polling offhours`); production deploy `26065864449` is green, latest validate is green, and API `/health` is 200.
+- Route alias re-audit found `/portfolio-snapshots` still 404 while `/portfolio-snapshot`, `/event-log`, `/tool-center`, and `/uta` already redirect to canonical admin surfaces.
+- Chosen/current PR: add the missing `/portfolio-snapshots` redirect to `/admin/portfolio/snapshots` and cover it in redirect tests. This is a PR-E routing bug fix; no backend, no data fabrication, no homepage redesign.
+
 ## Audit Rule
 
 這份 board 是今晚 P0 收斂的作戰地圖。沒有這份 board，不做大改；任何 UI 區塊只能是正式資料、明確 degraded/empty/pending state，或直接不顯示。不得用 mock/fake 冒充 live。

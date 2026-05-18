@@ -28,6 +28,11 @@ const nextConfig: NextConfig = {
         statusCode: 301,
       },
       {
+        source: "/portfolio-snapshots",
+        destination: "/admin/portfolio/snapshots",
+        statusCode: 301,
+      },
+      {
         source: "/tool-center",
         destination: "/admin/tools",
         statusCode: 301,
