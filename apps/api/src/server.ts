@@ -14957,6 +14957,33 @@ app.post("/api/v1/admin/content-drafts/retry-review", async (c) => {
   return handleAdminContentDraftsRetryReview(c);
 });
 
+// =============================================================================
+// ADMIN: content-drafts/cleanup-orphan — delete approved drafts whose brief is gone (2026-05-18)
+// Bruce P0: draft e6d33da2 status=approved, approvedRefId → deleted brief → dedupeKey blocks new draft
+// Auth: Owner-only
+// Body: { dryRun: boolean, draftId?: string }
+//   dryRun=true  → list orphans only (no delete)
+//   dryRun=false → DELETE matching rows + audit log
+//   draftId      → target a specific draft; else scan all orphans in workspace
+// =============================================================================
+app.post("/api/v1/admin/content-drafts/cleanup-orphan", async (c) => {
+  const { handleAdminContentDraftsCleanupOrphan } = await import("./admin-content-drafts-cleanup-orphan.js");
+  return handleAdminContentDraftsCleanupOrphan(c);
+});
+
+// =============================================================================
+// ADMIN: themes/manual-update — write correct UTF-8 content for broken theme rows (2026-05-18)
+// Bruce P0: 5G + 低軌衛星 themes have bytes too broken for auto re-encode (tryReencode ok=false)
+// Auth: Owner-only
+// Body: { themeKey: string, name?: string, thesis?: string, whyNow?: string, bottleneck?: string }
+//   themeKey matches the slug column in themes table (e.g. "5g", "low_orbit_satellite")
+//   At least one of name/thesis/whyNow/bottleneck must be provided
+// =============================================================================
+app.post("/api/v1/admin/themes/manual-update", async (c) => {
+  const { handleAdminThemesManualUpdate } = await import("./admin-themes-manual-update.js");
+  return handleAdminThemesManualUpdate(c);
+});
+
 
 // =============================================================================
 // UTA (Unified Trading Account) — Phase A routes (2026-05-17)
