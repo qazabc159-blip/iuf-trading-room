@@ -33,17 +33,21 @@ export function CompanyPageStyleBlock() {
 /* Old hero bar hide — replaced */
 .company-hero-bar { display: none !important; }
 
-/* 2-col desktop layout: left=chart+themes+ann / right=KPI+order */
+/* 2-col desktop layout: left=chart+themes+ann / right=readable status rail */
 .company-detail-layout {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 360px) !important;
   gap: clamp(16px, 1.8vw, 26px) !important;
+  overflow-x: visible !important;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1181px) {
   .company-side-column {
     position: sticky !important;
     top: clamp(76px, 8vh, 96px);
     align-self: start;
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-width: 320px;
+    overflow: visible;
   }
 }
 
@@ -192,11 +196,24 @@ export function CompanyPageStyleBlock() {
     grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   }
 }
+@media (max-width: 1180px) {
+  .company-detail-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .company-side-column {
+    position: static !important;
+    grid-template-columns: repeat(2, minmax(280px, 1fr)) !important;
+    order: 0;
+  }
+}
 @media (max-width: 768px) {
   .company-detail-layout {
     grid-template-columns: minmax(0, 1fr) !important;
   }
-  .company-side-column { order: -1; }
+  .company-side-column {
+    grid-template-columns: minmax(0, 1fr) !important;
+    order: 0;
+  }
   .company-side-nav-panel { display: none; }
   ._co-theme-grid { grid-template-columns: 1fr 1fr; }
 }
