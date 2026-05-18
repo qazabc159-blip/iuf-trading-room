@@ -1586,13 +1586,38 @@ function fixCP950Mojibake(s: string | null | undefined): string | null {
   }
 }
 
-function applyThemeTranscode<T extends { thesis?: string | null; whyNow?: string | null; bottleneck?: string | null }>(theme: T): T {
+function applyThemeTranscode<T extends { name?: string | null; thesis?: string | null; whyNow?: string | null; bottleneck?: string | null }>(theme: T): T {
   return {
     ...theme,
+    name: fixCP950Mojibake(theme.name),
     thesis: fixCP950Mojibake(theme.thesis),
     whyNow: fixCP950Mojibake(theme.whyNow),
     bottleneck: fixCP950Mojibake(theme.bottleneck)
   };
+}
+
+/**
+ * Sanitize CP950 mojibake in theme write-time input fields.
+ * Applies fixCP950Mojibake to name, thesis, whyNow, bottleneck before DB write.
+ * This prevents garbled text from entering the DB when requests originate from
+ * Windows/PowerShell environments with CP950 system codepage.
+ * F3 prevention fix (2026-05-18 Bruce P1 audit).
+ */
+function sanitizeThemeInput<T extends Partial<{ name: string; thesis: string; whyNow: string; bottleneck: string }>>(input: T): T {
+  const result: T = { ...input };
+  if (typeof result.name === "string") {
+    result.name = fixCP950Mojibake(result.name) ?? result.name;
+  }
+  if (typeof result.thesis === "string") {
+    result.thesis = fixCP950Mojibake(result.thesis) ?? result.thesis;
+  }
+  if (typeof result.whyNow === "string") {
+    result.whyNow = fixCP950Mojibake(result.whyNow) ?? result.whyNow;
+  }
+  if (typeof result.bottleneck === "string") {
+    result.bottleneck = fixCP950Mojibake(result.bottleneck) ?? result.bottleneck;
+  }
+  return result;
 }
 
 app.get("/api/v1/themes", async (c) => {
@@ -1691,7 +1716,9 @@ app.get("/api/v1/themes/index", async (c) => {
 });
 
 app.post("/api/v1/themes", async (c) => {
-  const payload = themeCreateInputSchema.parse(await c.req.json());
+  // F3 prevention: sanitize CP950 mojibake at write-time before persisting to DB.
+  const rawPayload = themeCreateInputSchema.parse(await c.req.json());
+  const payload = sanitizeThemeInput(rawPayload);
   return c.json(
     {
       data: await c.get("repo").createTheme(payload, {
@@ -1806,7 +1833,9 @@ app.get("/api/v1/themes/:id", async (c) => {
 });
 
 app.patch("/api/v1/themes/:id", async (c) => {
-  const payload = themeUpdateInputSchema.parse(await c.req.json());
+  // F3 prevention: sanitize CP950 mojibake at write-time before persisting to DB.
+  const rawPayload = themeUpdateInputSchema.parse(await c.req.json());
+  const payload = sanitizeThemeInput(rawPayload);
   const theme = await c.get("repo").updateTheme(c.req.param("id"), payload, {
     workspaceSlug: c.get("session").workspace.slug
   });
@@ -1814,7 +1843,7 @@ app.patch("/api/v1/themes/:id", async (c) => {
     return c.json({ error: "theme_not_found" }, 404);
   }
 
-  return c.json({ data: theme });
+  return c.json({ data: applyThemeTranscode(theme) });
 });
 
 app.get("/api/v1/companies", async (c) => {
@@ -9576,7 +9605,7 @@ app.get("/api/v1/market/overview/kgi", async (c) => {
 // Tier 1: KGI live tick (market hours, EC2 running)
 // Tier 2: TWSE STOCK_DAY_ALL per-symbol EOD close+changePct
 // Tier 3: In-process last-known-close cache (survives off-hours)
-// Guarantee: ALWAYS returns all tiles with sourceState. Never drops a tile.
+// Guarantee: ALWAYS returns all 40 KGI core tiles with sourceState. Never drops a tile.
 app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
@@ -14577,6 +14606,20 @@ app.get("/api/v1/quant-strategies/:id/subscriptions/my", async (c) => {
 app.post("/api/v1/admin/themes/links-rebuild", async (c) => {
   const { handleAdminThemesLinksRebuild } = await import("./admin-themes-links-rebuild.js");
   return handleAdminThemesLinksRebuild(c);
+});
+
+// =============================================================================
+// ADMIN: themes/re-encode-mojibake — fix CP950 mojibake in themes table (2026-05-18)
+// Bruce P1 / Jason F2: some theme rows (e.g. 低軌衛星) had name/thesis/whyNow/bottleneck
+// stored as CP950/Big5 bytes misread as Latin-1, causing garbled display in 5/18 brief.
+// Auth: Owner-only
+// Body: { dryRun?: boolean } — default dryRun=true (preview without writes)
+// Set dryRun=false to apply the re-encoding fix in place.
+// Idempotent: pure-ASCII rows are skipped; already-correct UTF-8 rows are unaffected.
+// =============================================================================
+app.post("/api/v1/admin/themes/re-encode-mojibake", async (c) => {
+  const { handleAdminThemesReEncodeMojibake } = await import("./admin-themes-re-encode-mojibake.js");
+  return handleAdminThemesReEncodeMojibake(c);
 });
 
 // =============================================================================
