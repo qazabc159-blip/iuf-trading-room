@@ -1,0 +1,55 @@
+{
+  "checkedAt": "2026-05-18T17:06:47.967Z",
+  "results": [
+    {
+      "viewport": "desktop",
+      "status": 200,
+      "finalUrl": "http://localhost:3118/admin/events?codexEventLog=local",
+      "hasEventStreamsEndpoint": true,
+      "hasOutboxEndpoint": true,
+      "hasOwner": true,
+      "hasNext": true,
+      "hasNoFake": true,
+      "hasOnlyOldSyncing": false,
+      "bodySnippet": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n管理\nEventLog 時間軸瀏覽器\nOpenAlice Phase A\nOwner only\nEventLog 事件流 / 時間回溯查詢 — 選左側 stream → 查看事件序列。\nEventLog 目前無法讀取正式資料\n目前 session 尚未通過 owner-only EventLog endpoint；前端不補假事件，也不把同步中當成正常資料。\nENDPOINT\n/api/v1/event-streams\n/api/v1/admin/event-log/outbox/diag\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\n用 owner session 驗證 EventLog；若仍 401/500，檢查 Phase A auth、migration 與 outbox worker。\n事件流\n0 個\nEventLog endpoint 未通過 owner session\n時間回溯\n查詢\n管理 / 請選擇事件流\n0 筆\nEventLog 事件流尚未可讀\n目前無法載入事件流，因此時間回溯與事件序列先停用；這不是正常同步中，也不會用假事件填畫面。\nENDPOINT\n/api/v1/event-streams\n/api/v1/admin/event-log/outbox/diag\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\n用 owner session 驗證 EventLog；若仍 401/500，檢查 Phase A auth、migration 與 outbox worker。",
+      "consoleMessages": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        }
+      ],
+      "pageErrors": []
+    },
+    {
+      "viewport": "mobile",
+      "status": 200,
+      "finalUrl": "http://localhost:3118/admin/events?codexEventLog=local",
+      "hasEventStreamsEndpoint": true,
+      "hasOutboxEndpoint": true,
+      "hasOwner": true,
+      "hasNext": true,
+      "hasNoFake": true,
+      "hasOnlyOldSyncing": false,
+      "bodySnippet": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，無未讀\n管理\nEventLog 時間軸瀏覽器\nOpenAlice Phase A\nOwner only\nEventLog 事件流 / 時間回溯查詢 — 選左側 stream → 查看事件序列。\nEventLog 目前無法讀取正式資料\n目前 session 尚未通過 owner-only EventLog endpoint；前端不補假事件，也不把同步中當成正常資料。\nENDPOINT\n/api/v1/event-streams\n/api/v1/admin/event-log/outbox/diag\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\n用 owner session 驗證 EventLog；若仍 401/500，檢查 Phase A auth、migration 與 outbox worker。\n事件流\n0 個\nEventLog endpoint 未通過 owner session\n時間回溯\n查詢\n管理 / 請選擇事件流\n0 筆\nEventLog 事件流尚未可讀\n目前無法載入事件流，因此時間回溯與事件序列先停用；這不是正常同步中，也不會用假事件填畫面。\nENDPOINT\n/api/v1/event-streams\n/api/v1/admin/event-log/outbox/diag\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\n用 owner session 驗證 EventLog；若仍 401/500，檢查 Phase A auth、migration 與 outbox worker。",
+      "consoleMessages": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        }
+      ],
+      "pageErrors": []
+    }
+  ]
+}

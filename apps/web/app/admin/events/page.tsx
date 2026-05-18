@@ -141,6 +141,40 @@ const CSS = `
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  ._ev-state-card {
+    padding: 16px;
+    border: 1px dashed rgba(255,184,0,0.34);
+    border-left: 3px solid #ffb800;
+    border-radius: 6px;
+    background: rgba(255,184,0,0.055);
+    color: rgba(255,255,255,0.76);
+    font-size: 12px;
+    line-height: 1.65;
+  }
+  ._ev-state-title {
+    color: rgba(255,255,255,0.92);
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+  ._ev-state-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  ._ev-state-grid > div {
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 5px;
+    padding: 8px 10px;
+    background: rgba(0,0,0,0.22);
+  }
+  ._ev-state-label {
+    display: block;
+    margin-bottom: 3px;
+    color: #ffb800;
+    font: 800 10px/1 var(--mono, monospace);
+    text-transform: uppercase;
+  }
   ._ev-empty {
     padding: 24px;
     text-align: center;
@@ -208,6 +242,9 @@ type OutboxDiag = {
   oldestPendingAt: string | null;
 };
 
+const EVENT_STREAMS_ENDPOINT = "/api/v1/event-streams";
+const OUTBOX_DIAG_ENDPOINT = "/api/v1/admin/event-log/outbox/diag";
+
 function fmtDT(iso: string) {
   try {
     return new Date(iso).toLocaleString("zh-TW", { hour12: false });
@@ -222,6 +259,36 @@ async function apiFetch<T>(path: string): Promise<T> {
   if (!res.ok) throw new Error(`${res.status}`);
   const json = await res.json() as { data: T };
   return json.data;
+}
+
+function EventLogTruthState({
+  title,
+  detail,
+}: {
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="_ev-state-card">
+      <div className="_ev-state-title">{title}</div>
+      <div>{detail}</div>
+      <div className="_ev-state-grid">
+        <div>
+          <span className="_ev-state-label">Endpoint</span>
+          <div>{EVENT_STREAMS_ENDPOINT}</div>
+          <div>{OUTBOX_DIAG_ENDPOINT}</div>
+        </div>
+        <div>
+          <span className="_ev-state-label">Owner</span>
+          <div>Elva/Jason + Bruce owner-session verify</div>
+        </div>
+        <div>
+          <span className="_ev-state-label">Next</span>
+          <div>用 owner session 驗證 EventLog；若仍 401/500，檢查 Phase A auth、migration 與 outbox worker。</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function EventsAdminPage() {
@@ -239,6 +306,7 @@ export default function EventsAdminPage() {
   const [timeTravelMode, setTimeTravelMode] = useState(false);
 
   const [outbox, setOutbox] = useState<OutboxDiag | null>(null);
+  const [outboxError, setOutboxError] = useState(false);
 
   // Load streams
   useEffect(() => {
@@ -264,9 +332,10 @@ export default function EventsAdminPage() {
   // Load outbox diag
   useEffect(() => {
     let cancelled = false;
+    setOutboxError(false);
     apiFetch<OutboxDiag>("/api/v1/admin/event-log/outbox/diag")
       .then((d) => { if (!cancelled) setOutbox(d); })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setOutboxError(true); });
     return () => { cancelled = true; };
   }, []);
 
@@ -320,6 +389,8 @@ export default function EventsAdminPage() {
 
   const streamTypes = [...new Set(streams.map((s) => s.streamType))].sort();
   const filteredStreams = filterType ? streams.filter((s) => s.streamType === filterType) : streams;
+  const eventLogBlocked = streamsError || outboxError;
+  const eventLogEmpty = !streamsLoading && !streamsError && streams.length === 0;
 
   return (
     <>
@@ -355,6 +426,22 @@ export default function EventsAdminPage() {
           </div>
         </header>
         <div className="terminal-note">EventLog 事件流 / 時間回溯查詢 — 選左側 stream → 查看事件序列。</div>
+        {eventLogBlocked && (
+          <div style={{ marginBottom: 12 }}>
+            <EventLogTruthState
+              title="EventLog 目前無法讀取正式資料"
+              detail="目前 session 尚未通過 owner-only EventLog endpoint；前端不補假事件，也不把同步中當成正常資料。"
+            />
+          </div>
+        )}
+        {!eventLogBlocked && eventLogEmpty && (
+          <div style={{ marginBottom: 12 }}>
+            <EventLogTruthState
+              title="目前尚無 EventLog 事件流"
+              detail="後端 endpoint 可讀，但目前沒有 audit、OpenAlice job、paper order/fill 或 alert 事件；這是正式 empty state。"
+            />
+          </div>
+        )}
 
         {/* Stream type filter */}
         {streamTypes.length > 0 && (
@@ -375,9 +462,13 @@ export default function EventsAdminPage() {
               <span>{filteredStreams.length} 個</span>
             </div>
             {streamsLoading && <div className="_ev-empty">載入中…</div>}
-            {streamsError && <div className="_ev-empty" style={{ color: "#ef5350" }}>資料同步中</div>}
+            {streamsError && (
+              <div className="_ev-empty" style={{ color: "#ef5350" }}>
+                EventLog endpoint 未通過 owner session
+              </div>
+            )}
             {!streamsLoading && !streamsError && filteredStreams.length === 0 && (
-              <div className="_ev-empty">無事件流資料</div>
+              <div className="_ev-empty">目前尚無事件流，不顯示假 stream。</div>
             )}
             {filteredStreams.map((s) => {
               const isSelected = selectedStream?.streamType === s.streamType && selectedStream?.streamId === s.streamId;
@@ -442,14 +533,29 @@ export default function EventsAdminPage() {
                 </div>
               </div>
 
-              {!selectedStream && (
+              {!selectedStream && eventLogBlocked && (
+                <EventLogTruthState
+                  title="EventLog 事件流尚未可讀"
+                  detail="目前無法載入事件流，因此時間回溯與事件序列先停用；這不是正常同步中，也不會用假事件填畫面。"
+                />
+              )}
+              {!selectedStream && !eventLogBlocked && eventLogEmpty && (
+                <EventLogTruthState
+                  title="目前尚無 EventLog 事件"
+                  detail="EventLog endpoint 可讀但沒有事件；待 audit log、OpenAlice job、paper order/fill 或 alert 寫入後會出現在這裡。"
+                />
+              )}
+              {!selectedStream && !eventLogBlocked && !eventLogEmpty && (
                 <div className="_ev-empty">← 請從左側選擇一個事件流</div>
               )}
               {selectedStream && eventsLoading && (
                 <div className="_ev-empty">載入事件中…</div>
               )}
               {selectedStream && eventsError && (
-                <div className="_ev-empty" style={{ color: "#ef5350" }}>資料同步中 — 後端異常或 Phase A DB 待 apply</div>
+                <EventLogTruthState
+                  title="此事件流目前無法讀取"
+                  detail="事件序列 endpoint 回傳錯誤；請用 owner session 重新驗證，若仍失敗由 Jason 檢查 EventLog events/at route。"
+                />
               )}
               {selectedStream && !eventsLoading && !eventsError && events.length === 0 && (
                 <div className="_ev-empty">此事件流尚無事件記錄</div>
