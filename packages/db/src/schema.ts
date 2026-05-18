@@ -944,3 +944,35 @@ export const elOutbox = pgTable(
     pendingIdx: index("el_outbox_pending_idx").on(table.createdAt)
   })
 );
+
+// -- Brain ReAct Phase A -- migration 0040_brain_decisions.sql
+// brain_decisions: one row per Brain ReAct invocation.
+// react_trace: JSONB array of {round, thought, toolName, toolInput, observation, tokensUsed}
+// Phase A scope: read-only tools only. No write-ops, no broker side-effects.
+export const brainDecisions = pgTable(
+  "brain_decisions",
+  {
+    id:            uuid("id").defaultRandom().primaryKey(),
+    // workspace_id: NULL = system-level (Owner-triggered) invocation
+    workspaceId:   uuid("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
+    // run_id: unique per invocation, UUID as text
+    runId:         text("run_id").notNull().unique(),
+    // prompt: {intent, contextData?, toolWhitelist?}
+    prompt:        jsonb("prompt").notNull().default({}),
+    // react_trace: [{round, thought, toolName, toolInput, observation, tokensUsed}]
+    // Final step has toolName = null (Final Answer round, no tool call)
+    reactTrace:    jsonb("react_trace").notNull().default([]),
+    // final_report: markdown analysis report produced after loop ends
+    finalReport:   text("final_report"),
+    totalTokens:   integer("total_tokens").notNull().default(0),
+    totalCostUsd:  numeric("total_cost_usd", { precision: 10, scale: 8 }).notNull().default("0"),
+    // status: running | complete | failed | budget_exceeded
+    status:        text("status").notNull().default("running"),
+    createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt:   timestamp("completed_at", { withTimezone: true })
+  },
+  (table) => ({
+    workspaceCreatedIdx: index("brain_decisions_workspace_created_idx").on(table.workspaceId, table.createdAt.desc()),
+    statusIdx:           index("brain_decisions_status_idx").on(table.status, table.createdAt.desc())
+  })
+);
