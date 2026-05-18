@@ -12668,7 +12668,54 @@ test("AI-REC-V3-5: entry/TP/SL fields parsed from structured markdown with R-rat
   assert.ok(item.totalScore !== undefined && item.totalScore! >= 85, `AI-REC-V3-5: totalScore must be >= 85 for A+, got ${item.totalScore}`);
 });
 
-test("AI-REC-V3-6: deterministic fallback builds 3 items from verified technical observations", async () => {
+test("AI-REC-V3-5b: parser accepts alternate stock headings and rejects year preface", async () => {
+  const { parseAiReportToRecommendationsV3 } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+
+  const markdown = `# Stock Recommendation Report for 2026-05-18
+
+2026-05-18 market summary should not become a ticker.
+
+### **2330** 台積電
+- 分類: A 可觀察布局
+- 總分: 80
+- 進場區: 900-910
+- TP1: 940
+- TP2: 980
+- 停損: 880
+- 信心: 0.7
+- 推薦理由: AI demand remains resilient.
+
+**2454** 聯發科
+- 分類: B 等回檔
+- 總分: 70
+- 進場區: 1300-1320
+- TP1: 1380
+- TP2: 1450
+- 停損: 1260
+- 信心: 0.6
+- 推薦理由: Edge AI handset cycle candidate.
+
+1. 2317 鴻海
+- 分類: A 可觀察布局
+- 總分: 76
+- 進場區: 210-215
+- TP1: 225
+- TP2: 240
+- 停損: 204
+- 信心: 0.65
+- 推薦理由: Server assembly momentum candidate.
+`;
+
+  const items = parseAiReportToRecommendationsV3(markdown, "2026-05-18");
+  const tickers = items.map((item: any) => item.ticker);
+
+  assert.deepEqual(tickers, ["2330", "2454", "2317"]);
+  assert.ok(!tickers.includes("2026"), `AI-REC-V3-5b: year preface must not parse as ticker, got ${JSON.stringify(tickers)}`);
+});
+
+test("AI-REC-V3-6: deterministic fallback builds 5 real-backed items from verified technical observations", async () => {
   const { buildDeterministicFallbackItemsFromTrace } = await import(
     "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
   );
@@ -12713,13 +12760,14 @@ test("AI-REC-V3-6: deterministic fallback builds 3 items from verified technical
 
   const items = buildDeterministicFallbackItemsFromTrace(trace, "2026-05-18", "trend");
 
-  assert.equal(items.length, 3, `AI-REC-V3-6: fallback must produce 3 items, got ${items.length}`);
+  assert.equal(items.length, 5, `AI-REC-V3-6: fallback must produce 5 items, got ${items.length}`);
   assert.equal(items[0]?.ticker, "2454", "AI-REC-V3-6: strongest positive technical candidate should rank first");
   assert.equal(items[0]?.companyName, "聯發科", "AI-REC-V3-6: fallback must preserve tool-provided companyName");
   assert.ok(items.every((item: any) => item.aiGenerated === true), "AI-REC-V3-6: fallback items must be AI v2/v3 shaped");
   assert.ok(items.every((item: any) => item.source === "brain_react_v2"), "AI-REC-V3-6: fallback source must stay brain_react_v2");
-  assert.ok(items.every((item: any) => item.bucket === "B" || item.bucket === "A"), "AI-REC-V3-6: fallback must only emit investable buckets");
+  assert.ok(items.every((item: any) => ["A+", "A", "B", "C"].includes(item.bucket)), "AI-REC-V3-6: fallback must emit explicit product buckets");
   assert.ok(items.every((item: any) => item.entryPriceRange?.low && item.tp1 && item.stopLoss), "AI-REC-V3-6: fallback items must include price plan fields");
+  assert.ok(items.every((item: any) => item.tp2 && item.why_buy?.length && item.why_not_buy?.length), "AI-REC-V3-6: fallback items must include TP2/reason/risk fields");
   assert.ok(items.every((item: any) => item.rationale.includes("Deterministic fallback")), "AI-REC-V3-6: rationale must disclose fallback path");
 });
 
@@ -12762,8 +12810,8 @@ test("AI-REC-V3-RISK-OFF-2: buildV3SystemPrompt contains programmatic risk_off_s
   assert.ok(src.includes("SYSTEM-PROVIDED risk_off_score"), "AI-REC-V3-RISK-OFF-2: prompt must have SYSTEM-PROVIDED context block");
   assert.ok(src.includes("DO NOT OVERRIDE"), "AI-REC-V3-RISK-OFF-2: prompt must say DO NOT OVERRIDE");
   // F3: minimum tool call rules
-  assert.ok(src.includes("get_company_technical 5"), "AI-REC-V3-RISK-OFF-2: prompt must require 5 get_company_technical calls");
-  assert.ok(src.includes("≥3 檔推薦"), "AI-REC-V3-RISK-OFF-2: prompt must require >=3 recommendations");
+  assert.ok(src.includes("MIN_V3_TECHNICAL_CALLS = 5"), "AI-REC-V3-RISK-OFF-2: prompt must require 5 get_company_technical calls through the shared minimum constant");
+  assert.ok(src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦"), "AI-REC-V3-RISK-OFF-2: prompt must require >=5 recommendations through the shared minimum constant");
   // Orchestrator must intercept LLM RISK_OFF_SKIP when progScore < 3
   assert.ok(src.includes("LLM_RISK_OFF_REJECTED"), "AI-REC-V3-RISK-OFF-2: orchestrator must intercept LLM risk-off when progScore < 3");
   assert.ok(src.includes("companyTechnicalCallCount"), "AI-REC-V3-RISK-OFF-2: orchestrator must track get_company_technical call count");
@@ -12795,7 +12843,7 @@ test("AI-REC-V3-RISK-OFF-3: runAiRecommendationV3 with LLM unavailable returns p
     `AI-REC-V3-RISK-OFF-3: score must be 0-6, got ${result.programmaticRiskOff.score}`);
   // In test mode, LLM is unavailable → status should be "failed" or the run should complete without items
   assert.ok(
-    ["failed", "complete", "budget_exceeded", "insufficient_tools", "market_risk_off"].includes(result.status),
+    ["failed", "complete", "budget_exceeded", "insufficient_tools", "market_risk_off", "synthesis_format_error"].includes(result.status),
     `AI-REC-V3-RISK-OFF-3: status must be a valid enum, got ${result.status}`
   );
   assert.ok(Array.isArray(result.items), "AI-REC-V3-RISK-OFF-3: items must be an array");
@@ -12980,6 +13028,28 @@ test("AI-REC-ANTI-HALLUCINATION-5: GET /api/v1/ai-recommendations/v3 shape inclu
 
   // Cleanup
   _resetAiRecommendationV3Cache();
+});
+
+test("AI-REC-V3-P0-GATE-1: v3 GET has non-404 empty state and backend gate flags", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile("apps/api/src/server.ts", "utf8");
+
+  assert.ok(source.includes('status: "empty"'), "AI-REC-V3-P0-GATE-1: no-run v3 GET must return a formal empty state, not 404-only");
+  assert.ok(source.includes("sourceState"), "AI-REC-V3-P0-GATE-1: v3 GET must expose sourceState for frontend degraded/pending rendering");
+  assert.ok(source.includes("fullAiReportParsed"), "AI-REC-V3-P0-GATE-1: v3 GET must expose fullAiReportParsed");
+  assert.ok(source.includes("synthesisRetryUsed"), "AI-REC-V3-P0-GATE-1: v3 GET must expose synthesisRetryUsed");
+  assert.ok(source.includes("synthesisFallbackUsed"), "AI-REC-V3-P0-GATE-1: v3 GET must expose synthesisFallbackUsed");
+  assert.ok(source.includes("usedFallback"), "AI-REC-V3-P0-GATE-1: v3 GET must expose usedFallback");
+});
+
+test("MARKET-INTEL-P0-GATE-1: announcements API exposes sourceState", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile("apps/api/src/server.ts", "utf8");
+
+  assert.ok(source.includes('app.get("/api/v1/market-intel/announcements"'), "MARKET-INTEL-P0-GATE-1: announcements endpoint must exist");
+  assert.ok(source.includes("sourceState"), "MARKET-INTEL-P0-GATE-1: announcements response must expose sourceState");
+  assert.ok(source.includes("no_official_market_announcements"), "MARKET-INTEL-P0-GATE-1: official empty state reason must be explicit");
+  assert.ok(source.includes("officialOnly"), "MARKET-INTEL-P0-GATE-1: market-scope official-only behavior must be visible to frontend");
 });
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.

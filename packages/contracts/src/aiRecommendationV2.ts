@@ -119,7 +119,14 @@ export type AiStockRecommendationV2 = z.infer<typeof aiStockRecommendationV2Sche
 
 export const aiRecommendationV2RunSchema = z.object({
   runId: z.string(),
-  status: z.enum(["complete", "failed", "budget_exceeded"]),
+  status: z.enum([
+    "complete",
+    "failed",
+    "budget_exceeded",
+    "market_risk_off",
+    "insufficient_tools",
+    "synthesis_format_error",
+  ]),
   generatedAt: z.string(),
   items: z.array(aiStockRecommendationV2Schema),
   reactTrace: z.array(z.unknown()),
