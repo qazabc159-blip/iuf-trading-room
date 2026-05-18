@@ -1,0 +1,541 @@
+[
+  {
+    "route": "/",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 63900,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 ()"
+    ],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01觀察模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyMARKET · INTEL1 項可用 / 7 件提醒本機時鐘 · 台北00:04:04正式資料登入後讀取正式行情TAIEX加權指數---- (--)待資料TPEX櫃買指數---- (--)待資料上漲上漲家數-- 家待資料下跌下跌家數-- 家待資料排行盤中排行---- (--)待資料熱力圖台股公司池---- (--)待資料重大訊息官方資訊流---- (--)待資料紙上紙上交易---- (--)待資料TAIEX加權指數---- (--)待資料TPEX櫃買指數---- (--)待資料上漲上漲家數-- 家待資料下跌下跌家數-- 家待資料排行盤中排行---- (--)待資料熱力圖台股公司池---- (--)待資料重大訊息官方資訊流---- (--)待資料紙上紙上交易---- (--)待資料台股目前盤後或週末休市，"
+  },
+  {
+    "route": "/market-intel",
+    "status": null,
+    "finalUrl": "https://app.eycvector.com/market-intel?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 9290,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": true,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()"
+    ],
+    "pageErrors": [],
+    "failedResponses": [
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fmarket-intel%2Fnews-top10"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fmarket-intel%2Fannouncements%3Fdays%3D30%26limit%3D20%26scope%3Dmarket"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fdata-sources%2Ffinmind%2Fstatus"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fmarket%2Finstitutional-summary%2Ffinmind"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fmarket%2Fheatmap%2Ftwse"
+      }
+    ],
+    "gotoError": "page.goto: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"https://app.eycvector.com/market-intel?codexP0Smoke=1\", waiting until \"networkidle\"\u001b[22m\n",
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀\n        .app-main-shell {\n          background: #080b10 !important;\n          padding: 0 !important;\n        }\n\n        .iuf-final-content-frame {\n          width: 100%;\n          height: 100dvh;\n          min-height: 100dvh;\n          background: #080b10;\n          overflow: hidden;\n        }\n\n        .iuf-final-content-frame iframe {\n          display: block;\n          width: 100%;\n          height: 100%;\n          border: 0;\n          background: #080b10;\n        "
+  },
+  {
+    "route": "/ai-recommendations",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/ai-recommendations?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 60321,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": true,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀AI 推薦AI 推薦Recommendation Orchestrator台北 / 2026/5/19 00:04:54資料 / 正式資料模式 / 觀察與研究研究 / 前端資料推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。台股目前盤後或週末休市，顯示 05/19 (二) 收盤 收盤資料即時行情將於下一交易日 09:00 恢復\n        ._msb-placeholder {\n          display: flex;\n          align-items: center;\n          gap: 9px;\n          border: 1px dashed rgba(200, 148, 63, 0.28);\n          border-radius: 7px;\n          padding: 9px 14px;\n          margin-bottom: 14px;\n          color: var(--ta"
+  },
+  {
+    "route": "/ideas",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/ai-recommendations?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 60321,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": true,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀AI 推薦AI 推薦Recommendation Orchestrator台北 / 2026/5/19 00:04:58資料 / 正式資料模式 / 觀察與研究研究 / 前端資料推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。台股目前盤後或週末休市，顯示 05/19 (二) 收盤 收盤資料即時行情將於下一交易日 09:00 恢復\n        ._msb-placeholder {\n          display: flex;\n          align-items: center;\n          gap: 9px;\n          border: 1px dashed rgba(200, 148, 63, 0.28);\n          border-radius: 7px;\n          padding: 9px 14px;\n          margin-bottom: 14px;\n          color: var(--ta"
+  },
+  {
+    "route": "/portfolio",
+    "status": null,
+    "finalUrl": "https://app.eycvector.com/portfolio?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 9298,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": true,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()"
+    ],
+    "pageErrors": [],
+    "failedResponses": [
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fportfolio%2Fkgi%2Fpositions"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fstrategy%2Fideas%3FdecisionMode%3Dpaper%26includeBlocked%3Dtrue%26limit%3D8%26sort%3Dscore"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%3Fticker%3D2330"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2330"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2330%26limit%3D16"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fportfolio%2Fkgi%2Fpositions"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fstrategy%2Fideas%3FdecisionMode%3Dpaper%26includeBlocked%3Dtrue%26limit%3D8%26sort%3Dscore"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%3Fticker%3D2330"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2330%26limit%3D16"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2330"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fportfolio%2Fkgi%2Fpositions"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fstrategy%2Fideas%3FdecisionMode%3Dpaper%26includeBlocked%3Dtrue%26limit%3D8%26sort%3Dscore"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%3Fticker%3D2330"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2330"
+      },
+      {
+        "status": 401,
+        "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2330%26limit%3D16"
+      }
+    ],
+    "gotoError": "page.goto: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"https://app.eycvector.com/portfolio?codexP0Smoke=1\", waiting until \"networkidle\"\u001b[22m\n",
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀\n        .app-main-shell {\n          background: #080b10 !important;\n          padding: 0 !important;\n        }\n\n        .iuf-final-content-frame {\n          width: 100%;\n          height: 100dvh;\n          min-height: 100dvh;\n          background: #080b10;\n          overflow: hidden;\n        }\n\n        .iuf-final-content-frame iframe {\n          display: block;\n          width: 100%;\n          height: 100%;\n          border: 0;\n          background: #080b10;\n        "
+  },
+  {
+    "route": "/companies",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/companies?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 9582,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 401 ()"
+    ],
+    "pageErrors": [],
+    "failedResponses": [
+      {
+        "status": 401,
+        "url": "https://api.eycvector.com/api/v1/companies"
+      }
+    ],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀公司公司板台股公司池 / 主題 / 產業鏈台北 / 2026/5/19 00:05:49資料 / 正式資料模式 / 觀察與研究研究 / 前端資料公司板 / 正式公司主檔；前端先以代號去重，正式資料庫去重仍維持審核閘門\n        ._co-tabs {\n          display: flex;\n          flex-wrap: wrap;\n          gap: 8px;\n          margin: 0 16px 16px;\n        }\n        ._co-tab-btn {\n          min-height: 34px;\n          border-radius: 6px;\n          padding: 0 13px;\n          font: 800 11px/1 var(--mono);\n          cursor: pointer;\n          transition: border-color 0.12s ease, backgrou"
+  },
+  {
+    "route": "/companies/2330",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/companies/2330?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 15932,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [
+      "/mock/i"
+    ],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": true,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀公司 / 錯誤2330公司資料暫時無法讀取台北 / 2026/5/19 00:05:50資料 / 正式資料模式 / 觀察與研究研究 / 前端資料公司板 / 2330 / 暫停2330 公司資料暫時無法讀取這不是正式公司資料內容，也不會補假 K 線、假報價或假 AI 報告。系統已進入公司頁降級狀態，下面列出缺哪個資料源、owner 與下一步。缺少資料源GET /api/v1/companies公司主檔清單沒有成功回傳，因此公司頁不能安全渲染 quote / K 線 / AI report。目前狀態登入狀態已失效，請重新登入。若為 401，代表 owner session 失效；若為 network，代表 API 或 proxy 需檢查。Owner / 下一步Owner: Jason / Bruce確認 production API health、owner cookie，以及公司資料 endpoint；修好後此頁會重新顯示正式資料面板。前端保護：公司主檔缺失時只顯示 BLOCKED，不渲染空白 panel，也不使用 mock。返回公"
+  },
+  {
+    "route": "/themes",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/themes?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 21778,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀主題主題板台股主題階梯台北 / 2026/5/19 00:05:54資料 / 正式資料模式 / 觀察與研究研究 / 前端資料主題板 / 正式主題資料；只顯示已連結公司池與可追蹤狀態。\n  ._bty-theme-grid {\n    display: grid;\n    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));\n    gap: 16px;\n    margin-top: 16px;\n  }\n  ._bty-theme-card {\n    display: flex;\n    flex-direction: column;\n    gap: 10px;\n    padding: 16px;\n    background: rgba(255,255,255,0.03);\n    border: 1px solid rgba(255,255,255,0.08);\n    border-radius: 8px;\n    text-decoration: "
+  },
+  {
+    "route": "/quant-strategies",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/quant-strategies?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 26103,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": true,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀量化策略量化策略Athena 訊號 / SIM-only台北 / 2026/5/19 00:05:58資料 / 正式資料模式 / 觀察與研究研究 / 前端資料v1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等正式 quant-strategies endpoint 回傳後才顯示數字。\n        ._qnt-tabs {\n          display: flex;\n          flex-wrap: wrap;\n          gap: 8px;\n          margin-bottom: 16px;\n        }\n        ._qnt-tabs a {\n          min-height: 36px;\n          display: inline-flex;\n          align-items: center;\n          justify-content: center;\n          border: 1px solid var"
+  },
+  {
+    "route": "/lab",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/quant-strategies?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 26103,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": true,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀量化策略量化策略Athena 訊號 / SIM-only台北 / 2026/5/19 00:06:01資料 / 正式資料模式 / 觀察與研究研究 / 前端資料v1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等正式 quant-strategies endpoint 回傳後才顯示數字。\n        ._qnt-tabs {\n          display: flex;\n          flex-wrap: wrap;\n          gap: 8px;\n          margin-bottom: 16px;\n        }\n        ._qnt-tabs a {\n          min-height: 36px;\n          display: inline-flex;\n          align-items: center;\n          justify-content: center;\n          border: 1px solid var"
+  },
+  {
+    "route": "/alerts",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/login?next=/alerts",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 9210,
+    "looksBlank": false,
+    "hasLoginPage": true,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀IUF交易戰情室 · 操作員登入台股 AI 交易戰情室IUF 帳號 · 台股交易工作台登入、建立帳號、SIM 工作台入口都在這裡這裡是 IUF 網站帳號入口，不是券商下單登入。現階段用邀請碼開通測試帳號； 未來同一個帳號會承接證券帳號綁定、資料權限、月費方案與 AI 每日簡報，正式券商寫入維持關閉。申請測試帳號已有邀請碼即可開通；未拿到邀請碼時，登入不會偷偷建立假帳號。網站帳號保存戰情台設定、觀察清單、策略偏好與模擬交易紀錄。可用模擬交易券商寫入關閉中，先以 SIM 流程演練報價、風控、委託紀錄與成交回放。可用券商綁定之後一個網站帳號可綁定自己的證券帳號；正式券商寫入需產品、風控與後端契約驗收後另行開啟。預留訂閱權限公開測試後逐步開放月費方案、進階資料與 AI 摘要功能。規劃登入 · IUF 帳號驗證電子信箱 / 密碼 / 裝置記憶可登入電子信箱密碼記住這台裝置下次在此工作台保留登入狀態錯誤訊息會顯示在這裡登入戰情室還沒有帳號？用邀請碼建立帳號IUF 帳號 / 真實登入工作階段 / 券商寫入關閉requestAnimationFr"
+  },
+  {
+    "route": "/signals",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/signals?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 21937,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀訊號訊號證據訊號流台北 / 2026/5/19 00:06:09資料 / 正式資料模式 / 觀察與研究研究 / 前端資料訊號證據 / 正式訊號資料；連結主題與公司，不顯示假訊號。\n._sig-hero {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));\n  gap: 1px;\n  background: rgba(220,228,240,0.09);\n  border: 1px solid rgba(220,228,240,0.13);\n  border-radius: 4px;\n  overflow: hidden;\n  margin-bottom: 28px;\n}\n._sig-hero-cell {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 18px 22px;\n  background: rgba(8,11,16,0.82);"
+  },
+  {
+    "route": "/plans",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/plans?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 33436,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀計畫交易計畫計畫書與審核佇列台北 / 2026/5/19 00:06:12資料 / 正式資料模式 / 觀察與研究研究 / 前端資料交易計畫 / 正式交易計畫、簡報、覆盤、訊號與策略想法；本頁不提供模擬或實盤下單。\n._pln-hero-row {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));\n  gap: 1px;\n  background: rgba(220,228,240,0.09);\n  border: 1px solid rgba(220,228,240,0.13);\n  border-radius: 4px;\n  overflow: hidden;\n  margin-bottom: 28px;\n}\n._pln-hero-cell {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 18px 20px;\n  background"
+  },
+  {
+    "route": "/briefs",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/briefs?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 23523,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀AI 摘要每日簡報OpenAlice 每日整理、AI 審核與發布台北 / 2026/5/19 00:06:16資料 / 正式資料模式 / 觀察與研究研究 / 前端資料每日簡報只顯示已發布或待審來源；沒有來源紀錄的內容不當作投資依據，也不提供買賣建議。正式簡報0已發布待審草稿0等待審核OpenAlice需處理AI 流程排程需處理每日排程任務佇列--工作紀錄最後正式版--尚無正式版今日段落--內容段落來源狀態未閉環閉環確認打開草稿審核查看營運監控檢查重大訊息簡報搜尋關鍵字全文搜尋（已發布）搜尋從到輸入關鍵字後自動搜尋，或按搜尋鍵。日期篩選為選填。摘要 / 每日簡報狀態今日發布與待審狀態需處理需處理今日：2026-05-19最後正式版：尚無正式簡報登入狀態已失效，請重新登入。摘要 / AI 每日簡報流程整理、審核與發布需處理需處理來源：AI 每日簡報流程更新：2026/05/19 00:06確認今日簡報是否正在自動整理與審核整理器--排程--待處理--狀態需處理摘要 / 今日簡報排程今天是否已排入工作流需處理需處理來源：每日簡報排程更新"
+  },
+  {
+    "route": "/event-log",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/admin/events?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 13746,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 401 ()",
+      "Failed to load resource: the server responded with a status of 401 ()"
+    ],
+    "pageErrors": [],
+    "failedResponses": [
+      {
+        "status": 401,
+        "url": "https://api.eycvector.com/api/v1/event-streams"
+      },
+      {
+        "status": 401,
+        "url": "https://api.eycvector.com/api/v1/admin/event-log/outbox/diag"
+      }
+    ],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀\n  ._ev-shell {\n    display: grid;\n    grid-template-columns: 240px 1fr;\n    gap: 12px;\n    align-items: start;\n  }\n  @media (max-width: 900px) {\n    ._ev-shell { grid-template-columns: 1fr; }\n  }\n  ._ev-sidebar {\n    border: 1px solid rgba(255,255,255,0.08);\n    border-radius: 6px;\n    overflow: hidden;\n    background: rgba(0,0,0,0.2);\n  }\n  ._ev-sidebar-head {\n    padding: 8px 12px;\n    font-size: 10px;\n    text-transform: uppercase;\n    letter-spacing: 0.05em;\n    "
+  },
+  {
+    "route": "/portfolio-snapshot",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/admin/portfolio/snapshots?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 14688,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": true,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 401 ()"
+    ],
+    "pageErrors": [],
+    "failedResponses": [
+      {
+        "status": 401,
+        "url": "https://api.eycvector.com/api/v1/portfolio/snapshots?limit=20"
+      }
+    ],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀\n  ._snap-shell {\n    display: grid;\n    grid-template-columns: 260px 1fr;\n    gap: 12px;\n    align-items: start;\n  }\n  @media (max-width: 960px) {\n    ._snap-shell { grid-template-columns: 1fr; }\n  }\n  ._snap-sidebar {\n    border: 1px solid rgba(255,255,255,0.08);\n    border-radius: 6px;\n    overflow: hidden;\n    background: rgba(0,0,0,0.2);\n  }\n  ._snap-sidebar-head {\n    padding: 8px 12px;\n    font-size: 10px;\n    text-transform: uppercase;\n    letter-spacing: 0.05"
+  },
+  {
+    "route": "/tool-center",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/admin/tools?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 18761,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀管理ToolCenter 登錄瀏覽器OpenAlice Phase A台北 / 2026/5/19 00:06:28資料 / 正式資料模式 / 觀察與研究研究 / 前端資料工具登錄表 / 24h 統計 / 近期 50 筆呼叫記錄 — Owner only。\n  ._tool-kpi {\n    display: grid;\n    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));\n    gap: 1px;\n    background: rgba(255,255,255,0.06);\n    border: 1px solid rgba(255,255,255,0.09);\n    border-radius: 6px;\n    margin-bottom: 16px;\n    overflow: hidden;\n  }\n  ._tool-kpi-cell {\n    display: flex;\n    flex-direction: column;\n   "
+  },
+  {
+    "route": "/uta",
+    "status": 200,
+    "finalUrl": "https://app.eycvector.com/admin/uta/accounts?codexP0Smoke=1",
+    "title": "IUF 台股 AI 交易戰情室",
+    "textLength": 19516,
+    "looksBlank": false,
+    "hasLoginPage": false,
+    "hasMobileRoute": false,
+    "hasLegacyRoute": true,
+    "hasMojibakeSignals": false,
+    "fakeSignals": [],
+    "hasAiRecommendationText": true,
+    "hasDataSourceText": false,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedResponses": [],
+    "gotoError": null,
+    "textSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，無未讀管理UTA 帳號管理OpenAlice Phase A / 唯讀台北 / 2026/5/19 00:06:31資料 / 正式資料模式 / 觀察與研究研究 / 前端資料Broker Adapter 登錄 / 跨 broker 委託總覽 — Owner only。Phase A 僅讀，不提供正式委託操作入口。\n  ._uta-kpi {\n    display: grid;\n    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));\n    gap: 1px;\n    background: rgba(255,255,255,0.06);\n    border: 1px solid rgba(255,255,255,0.09);\n    border-radius: 6px;\n    margin-bottom: 16px;\n    overflow: hidden;\n  }\n  ._uta-kpi-cell {\n    display: flex;\n    flex"
+  }
+]

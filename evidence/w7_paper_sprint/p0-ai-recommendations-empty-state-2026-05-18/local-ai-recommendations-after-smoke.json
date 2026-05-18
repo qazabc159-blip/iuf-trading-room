@@ -1,0 +1,40 @@
+[
+  {
+    "viewport": {
+      "name": "desktop",
+      "width": 1366,
+      "height": 900
+    },
+    "status": 200,
+    "url": "http://localhost:3116/ai-recommendations?codexAiRecSmoke=2",
+    "hasSingleEmptyState": true,
+    "emptyStateCount": 2,
+    "hasLegacyEmptyPhrase": false,
+    "hasTodayEndpoint": true,
+    "hasV3Endpoint": true,
+    "hasNoFake": true,
+    "has703": false,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "name": "mobile",
+      "width": 390,
+      "height": 844
+    },
+    "status": 200,
+    "url": "http://localhost:3116/ai-recommendations?codexAiRecSmoke=2",
+    "hasSingleEmptyState": true,
+    "emptyStateCount": 2,
+    "hasLegacyEmptyPhrase": false,
+    "hasTodayEndpoint": true,
+    "hasV3Endpoint": true,
+    "hasNoFake": true,
+    "has703": false,
+    "consoleErrors": [],
+    "pageErrors": []
+  }
+]
