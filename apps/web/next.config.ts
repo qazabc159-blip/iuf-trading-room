@@ -17,6 +17,26 @@ const nextConfig: NextConfig = {
         destination: "/quant-strategies",
         statusCode: 301,
       },
+      {
+        source: "/event-log",
+        destination: "/admin/events",
+        statusCode: 301,
+      },
+      {
+        source: "/portfolio-snapshot",
+        destination: "/admin/portfolio/snapshots",
+        statusCode: 301,
+      },
+      {
+        source: "/tool-center",
+        destination: "/admin/tools",
+        statusCode: 301,
+      },
+      {
+        source: "/uta",
+        destination: "/admin/uta/accounts",
+        statusCode: 301,
+      },
       // F2: /heatmap → /market-intel (楊董直接打 URL 找不到頁面 BUG #4 fix)
       {
         source: "/heatmap",

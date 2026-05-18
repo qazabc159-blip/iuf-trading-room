@@ -1,0 +1,3020 @@
+{
+  "scannedAt": "2026-05-18T12:17:37.120Z",
+  "base": "https://app.eycvector.com",
+  "cookieLoaded": true,
+  "routes": [
+    {
+      "route": "/",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/",
+      "path": "/",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "",
+      "h2": [],
+      "textLen": 10,
+      "mainLen": 0,
+      "sample": "警示通知，資料同步中",
+      "notFound": false,
+      "blankLike": true,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": false,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略SIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "BrainLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "StrategiesLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，資料同步中",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/market-intel",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/market-intel",
+      "path": "/market-intel",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "",
+      "h2": [],
+      "textLen": 173,
+      "mainLen": 0,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": true,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/ai-recommendations",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/ai-recommendations",
+      "path": "/ai-recommendations",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "AI 推薦",
+      "h2": [
+        "積極觀察",
+        "觀察名單",
+        "小量追蹤"
+      ],
+      "textLen": 3266,
+      "mainLen": 3092,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 AI 推薦 AI 推薦 Recommendation Orchestrator 台北 / 2026/5/18 20:15:05 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。 台股目前盤後或週末休市，顯示 05/18 (一) 收盤 收盤資料 即時行情將於下一交易日 09:00 恢復 市場狀態分數等待 v3 後端接入，現在只顯示推薦清單與資料品質。 策略執行紀錄 訊號中心 AI 推薦 / 推薦清單 交易日 2026-05-18 / 產生時間 05/18 20:15 / 正式推薦 4 檔 80+ 積極觀察 1 檔 70-79 觀察名單 3 檔 60-69 小量追蹤 0 檔 <60 暫不進場 0 檔 MISSING 資料不足 0 檔 積極觀察 1 檔 #1 3707漢磊 積極觀察 中性 中期觀察 總分 76 信心 57% WATCH Quant 80 cont_liq_v36 AI 推薦只做研究與 SIM 演練，不代表實單建議。 進場區間 參考技術面支撐帶 cont_liq_v36 研究候選，未達進場建議，請參考個股技術面 失效條件 / 停損 - forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新 部位建議 標準部位 單筆最大風險 1% TP1 - 待 forward observation 成熟後補充 推薦理由 技術面 - 籌碼 - 新聞 - 主題 - 量化 持續流動性 × 相對強勢綜合排序 Top-1，符合 z(vol5/20)+z(ret20d) 策略邏輯 60 日報酬 ≥ +6% regime 條件通過 (regime=trend) Period 1 forward observation Day 6/20，目前 unrealized return -0.41% 為籃中表現最好 總經 - 風險 報價 完整 K 線 完整 籌碼 完整 新聞 過期 量化 偏弱 信心折減 5% 資料來源 查看詳情 SIM 委託預覽 不送出真實委託 股票 3707 進場 參考技術面支撐帶 推薦 rec_3707_20260518 點擊後只會把推薦條件帶到模擬委託單，仍需在交易室再次確認。 帶入模擬委託 中性 有幫助 不準確 略過 已帶入 SIM 尚未回饋 觀察名單 3 檔 #2 2426鼎元 觀察名單 中性 中期觀察 總分 71 信心 57% WATCH Quant 75 cont_liq_v36 AI 推薦只做研究與 SIM 演練，不代表實單建議。 進場區間 參考技術面支撐帶 cont_liq_v36 研究候選，未達進場建議，請參考個股技術面 失效條件 / 停損 - forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新 部位建議 標準部位 單筆最大風險 1% TP1 - 待 forward observation 成熟後補充 推薦理由 技術面 - 籌碼 - 新聞 - 主題 - 量化 持續流動性 × 相對強勢綜合排序 Top-2，符合 z(vol5/20)+z(ret20d) 策略邏輯 60 日報酬 ≥ +6% regime 條件通過 (regime=trend) 光電 LED 類股，與 2486 同 sector 同籃",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": true,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "策略執行紀錄",
+          "href": "https://app.eycvector.com/runs"
+        },
+        {
+          "text": "訊號中心",
+          "href": "https://app.eycvector.com/signals"
+        },
+        {
+          "text": "查看詳情",
+          "href": "https://app.eycvector.com/ai-recommendations/rec_3707_20260518"
+        },
+        {
+          "text": "帶入模擬委託\n中性",
+          "href": "https://app.eycvector.com/portfolio?ticker=3707&prefill=true&from_rec=rec_3707_20260518&entry=%E5%8F%83%E8%80%83%E6%8A%80%E8%A1%93%E9%9D%A2%E6%94%AF%E6%92%90%E5%B8%B6"
+        },
+        {
+          "text": "查看詳情",
+          "href": "https://app.eycvector.com/ai-recommendations/rec_2426_20260518"
+        },
+        {
+          "text": "帶入模擬委託\n中性",
+          "href": "https://app.eycvector.com/portfolio?ticker=2426&prefill=true&from_rec=rec_2426_20260518&entry=%E5%8F%83%E8%80%83%E6%8A%80%E8%A1%93%E9%9D%A2%E6%94%AF%E6%92%90%E5%B8%B6"
+        },
+        {
+          "text": "查看詳情",
+          "href": "https://app.eycvector.com/ai-recommendations/rec_6205_20260518"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶",
+        "有幫助",
+        "不準確",
+        "略過",
+        "已帶入 SIM",
+        "有幫助",
+        "不準確",
+        "略過",
+        "已帶入 SIM",
+        "有幫助",
+        "不準確",
+        "略過",
+        "已帶入 SIM",
+        "有幫助",
+        "不準確",
+        "略過",
+        "已帶入 SIM"
+      ]
+    },
+    {
+      "route": "/ideas",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/ai-recommendations",
+      "path": "/ai-recommendations",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "AI 推薦",
+      "h2": [
+        "積極觀察",
+        "觀察名單",
+        "小量追蹤"
+      ],
+      "textLen": 3266,
+      "mainLen": 3092,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 AI 推薦 AI 推薦 Recommendation Orchestrator 台北 / 2026/5/18 20:15:11 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。 台股目前盤後或週末休市，顯示 05/18 (一) 收盤 收盤資料 即時行情將於下一交易日 09:00 恢復 市場狀態分數等待 v3 後端接入，現在只顯示推薦清單與資料品質。 策略執行紀錄 訊號中心 AI 推薦 / 推薦清單 交易日 2026-05-18 / 產生時間 05/18 20:15 / 正式推薦 4 檔 80+ 積極觀察 1 檔 70-79 觀察名單 3 檔 60-69 小量追蹤 0 檔 <60 暫不進場 0 檔 MISSING 資料不足 0 檔 積極觀察 1 檔 #1 3707漢磊 積極觀察 中性 中期觀察 總分 76 信心 57% WATCH Quant 80 cont_liq_v36 AI 推薦只做研究與 SIM 演練，不代表實單建議。 進場區間 參考技術面支撐帶 cont_liq_v36 研究候選，未達進場建議，請參考個股技術面 失效條件 / 停損 - forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新 部位建議 標準部位 單筆最大風險 1% TP1 - 待 forward observation 成熟後補充 推薦理由 技術面 - 籌碼 - 新聞 - 主題 - 量化 持續流動性 × 相對強勢綜合排序 Top-1，符合 z(vol5/20)+z(ret20d) 策略邏輯 60 日報酬 ≥ +6% regime 條件通過 (regime=trend) Period 1 forward observation Day 6/20，目前 unrealized return -0.41% 為籃中表現最好 總經 - 風險 報價 完整 K 線 完整 籌碼 完整 新聞 過期 量化 偏弱 信心折減 5% 資料來源 查看詳情 SIM 委託預覽 不送出真實委託 股票 3707 進場 參考技術面支撐帶 推薦 rec_3707_20260518 點擊後只會把推薦條件帶到模擬委託單，仍需在交易室再次確認。 帶入模擬委託 中性 有幫助 不準確 略過 已帶入 SIM 尚未回饋 觀察名單 3 檔 #2 2426鼎元 觀察名單 中性 中期觀察 總分 71 信心 57% WATCH Quant 75 cont_liq_v36 AI 推薦只做研究與 SIM 演練，不代表實單建議。 進場區間 參考技術面支撐帶 cont_liq_v36 研究候選，未達進場建議，請參考個股技術面 失效條件 / 停損 - forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新 部位建議 標準部位 單筆最大風險 1% TP1 - 待 forward observation 成熟後補充 推薦理由 技術面 - 籌碼 - 新聞 - 主題 - 量化 持續流動性 × 相對強勢綜合排序 Top-2，符合 z(vol5/20)+z(ret20d) 策略邏輯 60 日報酬 ≥ +6% regime 條件通過 (regime=trend) 光電 LED 類股，與 2486 同 sector 同籃",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": true,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "策略執行紀錄",
+          "href": "https://app.eycvector.com/runs"
+        },
+        {
+          "text": "訊號中心",
+          "href": "https://app.eycvector.com/signals"
+        },
+        {
+          "text": "查看詳情",
+          "href": "https://app.eycvector.com/ai-recommendations/rec_3707_20260518"
+        },
+        {
+          "text": "帶入模擬委託\n中性",
+          "href": "https://app.eycvector.com/portfolio?ticker=3707&prefill=true&from_rec=rec_3707_20260518&entry=%E5%8F%83%E8%80%83%E6%8A%80%E8%A1%93%E9%9D%A2%E6%94%AF%E6%92%90%E5%B8%B6"
+        },
+        {
+          "text": "查看詳情",
+          "href": "https://app.eycvector.com/ai-recommendations/rec_2426_20260518"
+        },
+        {
+          "text": "帶入模擬委託\n中性",
+          "href": "https://app.eycvector.com/portfolio?ticker=2426&prefill=true&from_rec=rec_2426_20260518&entry=%E5%8F%83%E8%80%83%E6%8A%80%E8%A1%93%E9%9D%A2%E6%94%AF%E6%92%90%E5%B8%B6"
+        },
+        {
+          "text": "查看詳情",
+          "href": "https://app.eycvector.com/ai-recommendations/rec_6205_20260518"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶",
+        "有幫助",
+        "不準確",
+        "略過",
+        "已帶入 SIM",
+        "有幫助",
+        "不準確",
+        "略過",
+        "已帶入 SIM",
+        "有幫助",
+        "不準確",
+        "略過",
+        "已帶入 SIM",
+        "有幫助",
+        "不準確",
+        "略過",
+        "已帶入 SIM"
+      ]
+    },
+    {
+      "route": "/portfolio",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/portfolio",
+      "path": "/portfolio",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "",
+      "h2": [],
+      "textLen": 173,
+      "mainLen": 0,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/companies",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/companies",
+      "path": "/companies",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "公司板",
+      "h2": [],
+      "textLen": 2000,
+      "mainLen": 1826,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 公司 公司板 台股公司池 / 主題 / 產業鏈 台北 / 2026/5/18 20:15:25 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 公司板 / 正式公司主檔；前端先以代號去重，正式資料庫去重仍維持審核閘門 公司搜尋 主題雷達 產業鏈 公司圖譜 狀態 正常 公司資料庫 總公司數 1734 台股公司池 篩選結果 1734 符合條件 頁次 35 共 35 頁 更新 20:15:25 資料時間 公司 / 公司主檔 代號 / 公司名 / 產業鏈位置 / 受惠層級 1,734 檔 正常 來源：公司主檔 更新 20:15:25 全部產業鏈 廣告代理 航太國防 農用原料 航空 鋁 成衣 服飾零售 資產管理 汽車經銷 汽車整車 汽車零件 銀行 區域銀行 飲料（非酒精） 生技治療 生技 廣播電視 建材 建築產品/設備 商用設備 資本市場 化學 通訊設備 電腦硬體 綜合企業 顧問服務 消費電子 銅 信貸服務 百貨零售 藥廠（特用/學名） EML 雷射晶片 教育訓練 電機設備/零件 電子零組件 電子零組件 → 公用事業 遊戲/多媒體 電子通路 電子通路 工程/營建 娛樂 農產品 金融控股/綜合金融 食品通路 鞋類/配件 家具/裝修/家電 博弈 陸路運輸 醫療資訊服務 居家修繕零售 家用/個人用品 工業電腦 工業通路 資訊服務 綜合保險 壽險 產險 再保險 保險經紀 物流 網路內容 電商 休閒用品 住宿/旅館 木材/木製品 航運 醫療器材 油氣設備/服務 煉油/油品行銷 光學元件 其他電子 其他工業金屬 食品加工 包材/容器 個人服務 汙染/廢處理 出版 鐵路 不動產開發 綜合不動產 不動產服務 休旅車/露營車 科學/測量儀器 安全防護 半導體設備 半導體設備/材料 半導體材料 半導體 應用軟體 基礎軟體 太陽能 特殊商業服務 特用化學 特用機械 特殊零售 人力派遣 鋼鐵 電信服務 紡織 動力煤 工具/配件 貨運 電力公用 天然氣公用 水務公用 再生能源 廢棄物處理 金屬加工 全部層級 核心 直接 間接 觀察 1101 台泥 建材 觀察 上市 1102 亞泥 建材 觀察 上市 1103 嘉泥 建材 觀察 上市 1104 環泥 建材 觀察 上市 1108 幸福 建材 觀察 上市 1109 信大 建材 觀察 上市 1110 東泥 建材 觀察 上市 1240 茂生農經 農產品 觀察 上市 1301 台塑 特用化學 觀察 上市 1303 南亞 特用化學 觀察 上市 1304 台聚 特用化學 觀察 上市 1305 華夏 特用化學 觀察 上市 1307 三芳 紡織 觀察 上市 1308 亞聚 特用化學 觀察 上市 1309 台達化 特用化學 觀察 上市 1310 台苯 化學 觀察 上市 1312 國喬 化學 觀察 上市 1313 聯成 化學 觀察 上市 1314 中石化 特用化學 觀察 上市 1315 達新 成衣 觀察 上市 1316 上曜 不動產服務 觀察 上市 1319 東陽 汽車零件 觀察 上市 1321 大洋 特用化學 觀察 上市 1323 永裕 包材/容器 觀察 上市 1324 地球 商用設備 觀察 上市 1325 恆大 紡織 觀察 上市 1326 台化 化學 觀察 上市 1336 台翰 汽車零件 觀察 上市 1337 再生-KY 特用化學 觀察 上市 1338 廣華-KY 汽車零件 觀察 上市 133",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "1101\n台泥\n建材\n觀察\n上市",
+          "href": "https://app.eycvector.com/companies/1101"
+        },
+        {
+          "text": "1102\n亞泥\n建材\n觀察\n上市",
+          "href": "https://app.eycvector.com/companies/1102"
+        },
+        {
+          "text": "1103\n嘉泥\n建材\n觀察\n上市",
+          "href": "https://app.eycvector.com/companies/1103"
+        },
+        {
+          "text": "1104\n環泥\n建材\n觀察\n上市",
+          "href": "https://app.eycvector.com/companies/1104"
+        },
+        {
+          "text": "1108\n幸福\n建材\n觀察\n上市",
+          "href": "https://app.eycvector.com/companies/1108"
+        },
+        {
+          "text": "1109\n信大\n建材\n觀察\n上市",
+          "href": "https://app.eycvector.com/companies/1109"
+        },
+        {
+          "text": "1110\n東泥\n建材\n觀察\n上市",
+          "href": "https://app.eycvector.com/companies/1110"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶",
+        "公司搜尋",
+        "主題雷達",
+        "產業鏈",
+        "公司圖譜",
+        "代號 ↑",
+        "公司",
+        "產業鏈",
+        "層級",
+        "上一頁",
+        "下一頁"
+      ]
+    },
+    {
+      "route": "/companies/2330",
+      "navError": null,
+      "badResponses": [
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/bidask?symbol=2330",
+          "type": "Fetch"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20",
+          "type": "Fetch"
+        }
+      ],
+      "console": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "href": "https://app.eycvector.com/companies/2330",
+      "path": "/companies/2330",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "2330",
+      "h2": [],
+      "textLen": 3595,
+      "mainLen": 3421,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 03-2330 2330 台積電 / 上市 台北 / 2026/5/18 20:15:30 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 公司板 / 2330 / 半導體 / 核心受惠 台股目前盤後或週末休市，顯示 05/18 (一) 收盤 收盤資料 即時行情將於下一交易日 09:00 恢復 ← 返回公司列表 2330 台積電 上市 核心受惠 等待報價 半導體 / Apple / EUV / NVIDIA / 矽晶圓 / 更新 05/18 20:15 / 即時報價加入觀察清單可看即時報價 最新價 2,240.0 TWD 漲跌幅 -1.10% -25.00 成交量 2818萬 股 / 張 開盤 2,225.0 今日 最高 2,260.0 今日 最低 2,215.0 今日 動能 略弱 本益比 30.1 倍 殖利率 0.98 % 月營收 4107.3億 最新月 K線 / K 線圖 日線、週線、月線與 FinMind 分 K；右側價格軸可直接讀價。 FinMind / TEJ 2330 指標 均線 MA5 MA10 MA20 MA60 RSI MACD 最新收盤 2,240 2026-05-18 漲跌 -25.00 / -1.10% 前值 2,265 區間高低 2,345 / 495.04 日K 顯示範圍 成交量 28,182,937 727 根K 線 日線 日K 週K 月K 分K 1分 5分 15分 60分 範圍 3月 6月 1年 2年 全部 正常 FinMind Sponsor 2026-05-18 已回傳 5,320 根 1 分 K / 20 個交易日，分 K 只畫真實成交分鐘；低流動空窗不補假線。 正式 OHLCV 727 根 2023-05-18 - 2026-05-18 收 2,240 量 28,182,937 最新收盤 2,240 2026-05-18 開 2,225 / 高 2,260 / 低 2,215 / 量 28,182,937 知識圖譜 業務 / 供應鏈 / 客戶 板塊：Technology 產業：Semiconductors 業務簡介 [[台積電]] 成立於 1987 年，總部位於台灣[[新竹]]。公司是**全球最大**且最先進的專用積體電路製造服務公司 (Pure-play Foundry)，市佔率超過 60%。[[台積電]]引領全球[[半導體]]製程技術，目前已量產 3 奈米 (N3) 製程，並積極研發 2 奈米 (N2) 及 A16 技術。公司客戶涵蓋全球主要無晶圓廠 IC 設計公司及 IDM 大廠。[[台積電]]是驅動 [[AI]]、高效能運算 (HPC)、智慧型手機及車用電子發展的核心引擎。 供應鏈位置 上游 設備 ([[微影]]/[[蝕刻]]/沈積) ASML EUV Applied Materials Lam Research Tokyo Electron 材料 ([[矽晶圓]]/光阻/氣體) 環球晶 Shin-Etsu SUMCO IP/EDA Arm Synopsys Cadence 下游 主要平台 物聯網 消費性電子 終端產品 NVIDIA AI AMD Qualcomm 主要客戶 Apple NVIDIA AMD Qualcomm 聯發科 Broadcom Intel Sony 主要供應商 ASML 主題雷達 新竹 半導體 AI 微影 蝕刻 AS",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": true,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "← 返回公司列表",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "",
+          "href": "https://www.tradingview.com/?utm_medium=lwc-link&utm_campaign=lwc-chart&utm_source=app.eycvector.com/companies/2330"
+        },
+        {
+          "text": "在公司圖譜搜尋 2330",
+          "href": "https://app.eycvector.com/companies?tab=graph&q=2330"
+        },
+        {
+          "text": "在公司圖譜搜尋 2330",
+          "href": "https://app.eycvector.com/companies?tab=graph&q=2330"
+        },
+        {
+          "text": "My-TW-Coverage知識圖譜",
+          "href": "https://app.eycvector.com/companies/2330#company-knowledge"
+        },
+        {
+          "text": "AI 分析師Brain ReAct",
+          "href": "https://app.eycvector.com/companies/2330#company-ai-report"
+        },
+        {
+          "text": "資料艙價格 / 財報",
+          "href": "https://app.eycvector.com/companies/2330#company-data-dock"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶",
+        "均線",
+        "MA5",
+        "MA10",
+        "MA20",
+        "MA60",
+        "RSI",
+        "MACD",
+        "日K",
+        "週K",
+        "月K",
+        "1分",
+        "5分",
+        "15分",
+        "60分",
+        "3月",
+        "6月",
+        "1年",
+        "2年",
+        "全部",
+        "點此生成 2330 AI 分析"
+      ]
+    },
+    {
+      "route": "/themes",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/themes",
+      "path": "/themes",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "主題板",
+      "h2": [],
+      "textLen": 2170,
+      "mainLen": 1996,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 主題 主題板 台股主題階梯 台北 / 2026/5/18 20:15:33 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 主題板 / 正式主題資料；只顯示已連結公司池與可追蹤狀態。 正常 狀態 20 主題總數 0 進攻主題 0 防守主題 0 核心公司 0 觀察公司 0 P1 主題 主題狀態 可用 主題板 主題數 20 台股主題 活躍主題 0 成長/驗證期 研究中 20 探索期 主題 / 主題雷達 正式主題資料 / 公司池連結 正常 正常 來源：正式主題資料 更新 05/18 12:40 今日資料 P3 平衡 探索 05/18 5G 通訊 5g 5G 相關供應鏈以通訊設備、射頻與基礎建設為主，後續需補齊公司池與資料來源。 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 ABF 載板 abf ABF 載板受高階封裝與伺服器需求影響，需觀察庫存循環與報價回升。 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 AI 伺服器 ai AI 伺服器與加速運算供應鏈仍是台股主軸，需分辨基本面與短線情緒。 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 Apple 供應鏈 apple 蘋果供應鏈需觀察新品週期、庫存與匯率影響。 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 CoWoS 先進封裝 cowos CoWoS 先進封裝產能仍是 AI 供應鏈重點，需追蹤擴產與交期變化。 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 CPO 光通訊 cpo CPO 與矽光子是高速傳輸瓶頸題材，需等待公司資料與訂單驗證。 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 EUV euv EUV 與先進製程設備供應鏈需觀察台積電資本支出節奏。 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 HBM hbm HBM 高頻寬記憶體受 AI 伺服器需求帶動，需追蹤價格、產能與客戶集中度。 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 NVIDIA nvidia NVIDIA GPU 及 AI 平台台灣供應鏈 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 Tesla tesla 特斯拉電動車台灣供應鏈成員 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 VCSEL vcsel 3D 感測、光通訊及 LiDAR 核心光源元件 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 05/18 低軌衛星 leo-satellite LEO 星系（Starlink、OneWeb、Telesat）快速擴軌帶動地面終端、衛星酬載與關鍵零組件需求。台灣廠商在相位陣列天線、功率放大器及衛星零組件具比較優勢，受益於全球直連手機（D2D）商轉時程提前。 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 光阻液 photoresist 半導體微影製程關鍵化學材料 平衡 / 探索 / 例行觀察 0 核心 0 觀察 P3 平衡 探索 04/22 氮化鎵 gan 第三代半導體材料，高頻高效，",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "P3\n平衡\n探索\n05/18\n5G 通訊\n5g\n\n5G 相關供應鏈以通訊設備、射頻與基礎建設為主，後續需補齊公司池與資料來源。\n\n平衡 / ",
+          "href": "https://app.eycvector.com/themes/5g"
+        },
+        {
+          "text": "P3\n平衡\n探索\n04/22\nABF 載板\nabf\n\nABF 載板受高階封裝與伺服器需求影響，需觀察庫存循環與報價回升。\n\n平衡 / 探索 ",
+          "href": "https://app.eycvector.com/themes/abf"
+        },
+        {
+          "text": "P3\n平衡\n探索\n04/22\nAI 伺服器\nai\n\nAI 伺服器與加速運算供應鏈仍是台股主軸，需分辨基本面與短線情緒。\n\n平衡 / 探索 /",
+          "href": "https://app.eycvector.com/themes/ai"
+        },
+        {
+          "text": "P3\n平衡\n探索\n04/22\nApple 供應鏈\napple\n\n蘋果供應鏈需觀察新品週期、庫存與匯率影響。\n\n平衡 / 探索 / 例行觀察\n",
+          "href": "https://app.eycvector.com/themes/apple"
+        },
+        {
+          "text": "P3\n平衡\n探索\n04/22\nCoWoS 先進封裝\ncowos\n\nCoWoS 先進封裝產能仍是 AI 供應鏈重點，需追蹤擴產與交期變化。\n\n",
+          "href": "https://app.eycvector.com/themes/cowos"
+        },
+        {
+          "text": "P3\n平衡\n探索\n04/22\nCPO 光通訊\ncpo\n\nCPO 與矽光子是高速傳輸瓶頸題材，需等待公司資料與訂單驗證。\n\n平衡 / 探索 /",
+          "href": "https://app.eycvector.com/themes/cpo"
+        },
+        {
+          "text": "P3\n平衡\n探索\n04/22\nEUV\neuv\n\nEUV 與先進製程設備供應鏈需觀察台積電資本支出節奏。\n\n平衡 / 探索 / 例行觀察\n0\n",
+          "href": "https://app.eycvector.com/themes/euv"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/quant-strategies",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/quant-strategies",
+      "path": "/quant-strategies",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "量化策略",
+      "h2": [
+        "流動強勢延續 v36",
+        "月營收加速度",
+        "TDCC 籌碼分散 × SBL Overlay"
+      ],
+      "textLen": 1357,
+      "mainLen": 1183,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 量化策略 量化策略 Athena 訊號 / SIM-only 台北 / 2026/5/18 20:15:39 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 v1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等正式 quant-strategies endpoint 回傳後才顯示數字。 策略列表 我的訂閱 Athena 三策略 Lab 策略清單 量化策略 / 詳情 / 策略列表 策略分數、回測風險與 SIM-only 配置。 SIM 帳戶執行中 / v1 只開放模擬帳戶，不提供正式交易切換。 LAB SANCTIONED SNAPSHOT Athena 候選策略已同步 v15 3 candidates 05/07 00:43 這裡只讀取 Lab governance 釋出的 research-only snapshot；狀態照 Lab 原文保存，不在前端改名成可交易訊號。 MAIN execution rank buffer 研究候選 / 未進交易流程 RS 20/60 low drawdown 研究候選 / 未進交易流程 Continuous liquidity RS 研究候選 / 未進交易流程 CO 觀察中 流動強勢延續 v36 短週期量價延續 / 20 個交易日 / 4 檔等權 成交量 5/20 放大 + 20 日相對強度，選前 4 檔並套用流動性門檻。 研究候選 / 未進交易流程 cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25 量化分數 讀取中 Regime 短週期量價延續 回測勝率（研究參考） +92.31% 最大回撤 -10.51% SIM-only v1 / 觀察第 6 / 20 日 檢視策略與 SIM 配置 CL 研究閘通過（SIM-only） 月營收加速度 基本面月頻動能 / 每月營收發布後 / 20 檔等權 用月營收年增率加速度排序，抓營收動能突然抬升的股票。 量化分數 讀取中 Regime 基本面月頻動能 回測勝率（研究參考） +86.67% 最大回撤 -18.49% SIM-only v1 / 20 / 20 收盤錨點已完成 檢視策略與 SIM 配置 FA 觀察中 TDCC 籌碼分散 × SBL Overlay 籌碼結構 + 借券風險 / 每週資料 / 目前 6 / 20 收盤錨點 挑低 Tier HHI 的持股結構，再用 SBL 風險分數壓掉借券壓力較高的標的。 量化分數 讀取中 Regime 籌碼結構 + 借券風險 回測勝率（研究參考） +60.00% 最大回撤 -0.02% SIM-only v1 / 6 / 20 收盤錨點 檢視策略與 SIM 配置",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "策略列表",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "我的訂閱",
+          "href": "https://app.eycvector.com/quant-strategies?tab=subscriptions"
+        },
+        {
+          "text": "Athena 三策略",
+          "href": "https://app.eycvector.com/lab/three-strategy"
+        },
+        {
+          "text": "Lab 策略清單",
+          "href": "https://app.eycvector.com/lab/strategies"
+        },
+        {
+          "text": "檢視策略與 SIM 配置",
+          "href": "https://app.eycvector.com/quant-strategies/cont_liq_v36"
+        },
+        {
+          "text": "檢視策略與 SIM 配置",
+          "href": "https://app.eycvector.com/quant-strategies/class5_revenue_momentum"
+        },
+        {
+          "text": "檢視策略與 SIM 配置",
+          "href": "https://app.eycvector.com/quant-strategies/family_c_sbl_overlay"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/lab",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/quant-strategies",
+      "path": "/quant-strategies",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "量化策略",
+      "h2": [
+        "流動強勢延續 v36",
+        "月營收加速度",
+        "TDCC 籌碼分散 × SBL Overlay"
+      ],
+      "textLen": 1357,
+      "mainLen": 1183,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 量化策略 量化策略 Athena 訊號 / SIM-only 台北 / 2026/5/18 20:15:44 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 v1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等正式 quant-strategies endpoint 回傳後才顯示數字。 策略列表 我的訂閱 Athena 三策略 Lab 策略清單 量化策略 / 詳情 / 策略列表 策略分數、回測風險與 SIM-only 配置。 SIM 帳戶執行中 / v1 只開放模擬帳戶，不提供正式交易切換。 LAB SANCTIONED SNAPSHOT Athena 候選策略已同步 v15 3 candidates 05/07 00:43 這裡只讀取 Lab governance 釋出的 research-only snapshot；狀態照 Lab 原文保存，不在前端改名成可交易訊號。 MAIN execution rank buffer 研究候選 / 未進交易流程 RS 20/60 low drawdown 研究候選 / 未進交易流程 Continuous liquidity RS 研究候選 / 未進交易流程 CO 觀察中 流動強勢延續 v36 短週期量價延續 / 20 個交易日 / 4 檔等權 成交量 5/20 放大 + 20 日相對強度，選前 4 檔並套用流動性門檻。 研究候選 / 未進交易流程 cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25 量化分數 讀取中 Regime 短週期量價延續 回測勝率（研究參考） +92.31% 最大回撤 -10.51% SIM-only v1 / 觀察第 6 / 20 日 檢視策略與 SIM 配置 CL 研究閘通過（SIM-only） 月營收加速度 基本面月頻動能 / 每月營收發布後 / 20 檔等權 用月營收年增率加速度排序，抓營收動能突然抬升的股票。 量化分數 讀取中 Regime 基本面月頻動能 回測勝率（研究參考） +86.67% 最大回撤 -18.49% SIM-only v1 / 20 / 20 收盤錨點已完成 檢視策略與 SIM 配置 FA 觀察中 TDCC 籌碼分散 × SBL Overlay 籌碼結構 + 借券風險 / 每週資料 / 目前 6 / 20 收盤錨點 挑低 Tier HHI 的持股結構，再用 SBL 風險分數壓掉借券壓力較高的標的。 量化分數 讀取中 Regime 籌碼結構 + 借券風險 回測勝率（研究參考） +60.00% 最大回撤 -0.02% SIM-only v1 / 6 / 20 收盤錨點 檢視策略與 SIM 配置",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "策略列表",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "我的訂閱",
+          "href": "https://app.eycvector.com/quant-strategies?tab=subscriptions"
+        },
+        {
+          "text": "Athena 三策略",
+          "href": "https://app.eycvector.com/lab/three-strategy"
+        },
+        {
+          "text": "Lab 策略清單",
+          "href": "https://app.eycvector.com/lab/strategies"
+        },
+        {
+          "text": "檢視策略與 SIM 配置",
+          "href": "https://app.eycvector.com/quant-strategies/cont_liq_v36"
+        },
+        {
+          "text": "檢視策略與 SIM 配置",
+          "href": "https://app.eycvector.com/quant-strategies/class5_revenue_momentum"
+        },
+        {
+          "text": "檢視策略與 SIM 配置",
+          "href": "https://app.eycvector.com/quant-strategies/family_c_sbl_overlay"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/lab/three-strategy",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/lab/three-strategy",
+      "path": "/lab/three-strategy",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "量化研究 / 三條策略狀態",
+      "h2": [
+        "流動強勢延續策略 v36",
+        "主控排序緩衝策略",
+        "穩健強勢低回撤策略"
+      ],
+      "textLen": 2366,
+      "mainLen": 2192,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 策略 量化研究 / 三條策略狀態 Athena truth board v1 / 邊跑邊修 台北 / 2026/5/18 20:15:50 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 本頁顯示 IUF Quant Lab 三條策略的真實治理狀態。所有 caveat 全文顯示，不截斷。不顯示已驗證、approved、可上線或任何背書字樣。 Stage 1 live wiring 完成（2026-05-09）— 等 Athena Stage 1 contract ship 後將自動同步 caveat_verdicts 欄位。 Stage 2（equity curve / monthly bar / Sharpe / win rate / sample trades）pending Athena schema ship。 資料層：lab snapshot endpoint 未回應或回傳 ok=false。顯示 Athena 5/9 morning fallback 資料。 重要聲明 — 此頁為邊跑邊修狀態 以下策略均為 研究狀態，尚未進入任何交易流程。無策略通過完整驗證。不顯示任何勝率、報酬率或配置建議。 狀態來源 / athena_morning_5_9_chat_update · 2026-05-09 · 下次更新 / Athena 發布新 truth board 時 9/9 PASS cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25 流動強勢延續策略 v36 流動性相對強度選股，h20 持有期框架，前五名等權。v36 通過 9/9 驗證項目 + 四重魯棒性確認。 research_only / 9/9 pass / forward obs pending 注意事項（全文） 9/9 驗證項目通過（截至 2026-05-09 Athena morning update）/ 四重魯棒：Horizon ±5d NEAR_PASS / Regime ±2% FULL_PASS / Cost 40-250bps script done / Universe K=68→20 PARTIAL（K≥50 liquid universe required）/ 仍需完整 forward observation 才算 process pass / 不是已驗證可上線策略 / capacity note: K≥50 流動性股票宇宙必要條件 點開看完整圖表 → 進入 detail panel → 研究候選 MAIN_execution_rank_buffer_top20 主控排序緩衝策略 MAIN core research candidate — 執行強度排序緩衝，20 股候選池，sector/regime dependent。 research_only / methodology caveat — sector/regime dependent, not validated 注意事項（全文） MAIN 策略保持 RESEARCH_CANDIDATE 狀態 / strategy_002 + strategy_003 walk-forward + bootstrap CI 進行中（Task #400）/ 尚未進入 forward obs",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": true,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": true,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "進入 detail panel\n→",
+          "href": "https://app.eycvector.com/lab/three-strategy/cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25"
+        },
+        {
+          "text": "進入 detail panel\n→",
+          "href": "https://app.eycvector.com/lab/three-strategy/MAIN_execution_rank_buffer_top20"
+        },
+        {
+          "text": "← 量化研究候選策略列表",
+          "href": "https://app.eycvector.com/lab/strategies"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/lab/three-strategy/cont_liq_v36",
+      "navError": null,
+      "badResponses": [
+        {
+          "status": 422,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1",
+          "type": "Fetch"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2426&limit=1",
+          "type": "Fetch"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2486&limit=1",
+          "type": "Fetch"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=3707&limit=1",
+          "type": "Fetch"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=6205&limit=1",
+          "type": "Fetch"
+        }
+      ],
+      "console": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 422 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "href": "https://app.eycvector.com/lab/three-strategy/cont_liq_v36",
+      "path": "/lab/three-strategy/cont_liq_v36",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "持續流動性強勢策略 — Forward Observation Period 1",
+      "h2": [],
+      "textLen": 2760,
+      "mainLen": 2586,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 策略 持續流動性強勢策略 — Forward Observation Period 1 Day-0: 2026-05-06 · Holdings: 3707 / 2426 / 6205 / 2486 · 預期退出: 2026-06-03 · 入場價全部已從 FinMind OHLCV (2026-05-06) 取得 台北 / 2026/5/18 20:15:57 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 研究前向觀察記錄。不顯示已驗證、approved、可上線或任何背書字樣。非交易建議。 研究前向觀察期間（Research Forward Observation） 本 panel 僅供研究追蹤用途。無真實下單，無生產環境執行。結果在 H20 觀察期結束前不算成熟（pending H20 maturation）。 非交易建議。非已驗證策略。不適合跟單。 This is simulated / observation only — not a trading recommendation. DAY-0 ANCHOR DATE — ATHENA 5/6 鎖倉 2026-05-06 策略：持續流動性強勢策略 v36（cont_liq_v36） · 入場日：2026-05-06 · 預期退出：2026-06-03 · 等權 4 檔 FORWARD OBSERVATION 進度 約 8 交易日 / H20 目標 開始：2026-05-06（Day-0） 今日：2026-05-18（+12 日曆日） 預期退出：2026-06-03 BASKET 未實現報酬 -- 4 檔等權平均 等權損益（試算） -- 每檔假設 10,000 TWD（研究試算） 0050 同期報酬 -- 5/6 → 今日（基準） 超額報酬 VS 0050 -- Basket − Benchmark（前向觀察中） 3707 漢磊 73.10 5/6 收盤 -- -- -- 需重新登入 2426 鼎元 76.20 5/6 收盤 -- -- -- 需重新登入 6205 詮欣 94.10 5/6 收盤 -- -- -- 需重新登入 2486 一詮 288.00 5/6 收盤 -- -- -- 需重新登入 最後更新：20:15:58（每 30 秒自動刷新） · 盤後期間 KGI 報價為盤中最後快取，標記「盤後」 本 panel 為 Period 1 研究紀錄。數據來源：入場價 = FinMind OHLCV 2026-05-06 收盤； 即時報價 = KGI EC2 gateway；0050 基準 = 同期 OHLCV 比較。 等權損益為研究試算（每檔 10,000 TWD），不代表實際倉位大小。 策略尚在前向觀察期，H20 到期前不得作為任何投資決策依據。 B 區 — 歷史研究證據 / HISTORICAL RESEARCH EVIDENCE B.1 策略原始證據窗NOT SAME-WINDOW COMPARISONNOT FORWARD-OBSERVATION RESULTNOT A TRADE RECOMMENDATION 觀察窗完整跨度（2024-05 → 2026-03，22 months）。 此為策略在完整可用歷史資料段的絕對報酬，與 B.2 共同窗 非同一窗口，不可直接比較。 EVIDENCE WINDOW — 22-MON",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": true,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": true,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "← 返回 cont_liq v36 策略詳情",
+          "href": "https://app.eycvector.com/lab/three-strategy/cont_liq_v36"
+        },
+        {
+          "text": "← 返回三條策略狀態",
+          "href": "https://app.eycvector.com/lab/three-strategy"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/alerts",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/alerts",
+      "path": "/alerts",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "警示",
+      "h2": [],
+      "textLen": 1307,
+      "mainLen": 1133,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 警示 警示 風控提醒、待處理事項與市場監看 台北 / 2026/5/18 20:16:01 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 警示頁只顯示可行動資訊；敏感內容與系統細節不出現在畫面上。 0 今日警示 0 待處理 0 緊急 0 注意 警示狀態 無警示 警示引擎 今日警示 -- 待處理 引擎狀態 等待巡檢 風控引擎 等待巡檢 本輪觸發 0 筆 監控規則 — 10 類事件 引擎每 5 分鐘巡檢一次；FinMind 資料同步完成後規則自動啟用 R01月營收大幅成長 月營收 YoY > 50%（近 35 天） 24h 內無觸發記錄 依賴: FinMind tw_monthly_revenue R02三大法人連5日同向買進 外資 + 投信 + 自營商 5 日均淨買（近 7 日） 24h 內無觸發記錄 依賴: FinMind tw_institutional_buysell R03三大法人連5日同向賣出 外資 + 投信 + 自營商 5 日均淨賣（近 7 日） 24h 內無觸發記錄 依賴: FinMind tw_institutional_buysell R04籌碼集中度突破 N 日高 大股東持股 HHI 突破近期高點（集中度異常） 24h 內無觸發記錄 依賴: FinMind tw_shareholding R05月營收大幅衰退 月營收 YoY < -30%（近 35 天） 24h 內無觸發記錄 依賴: FinMind tw_monthly_revenue R06大股東持股異動 主要股東持股比例觸及門檻（異常集中或分散） 24h 內無觸發記錄 依賴: FinMind tw_shareholding R07公開資訊觀測站重大公告 重大公告事件（每輪巡檢後新增） 24h 內無觸發記錄 依賴: FinMind tw_company_announcement R08AI 每日簡報發布 Pipeline 自動發布 AI 簡報 24h 內無觸發記錄 依賴: audit_log (brief publish) R09AI hallucination reject 簡報因幻覺比率超標被退件（Layer 5 factual reviewer） 24h 內無觸發記錄 依賴: audit_log (hallucination reject) R10KGI gateway 連線狀態 KGI 下單閘道連線狀態變更（斷線 / 恢復） 24h 內無觸發記錄 依賴: EC2 gateway /health ✓ 目前 24h 無事件觸發 引擎正常運行，無資料波動達到觸發門檻。 如預期看到事件未顯示，請告知（可能 FinMind sync 異常）。",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/signals",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/signals",
+      "path": "/signals",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "訊號證據",
+      "h2": [],
+      "textLen": 1171,
+      "mainLen": 997,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 訊號 訊號證據 訊號流 台北 / 2026/5/18 20:16:08 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 訊號證據 / 正式訊號資料；連結主題與公司，不顯示假訊號。 9 今日訊號 9 偏多 0 偏空 7 高信心 3 分類數 訊號狀態 可用 訊號引擎 訊號總數 10 本輪訊號 主題連結 20 關聯主題 公司池 1734 可觀察公司 訊號 / 訊號流 時間序訊號流 / 正式資料 正常 正常 來源：正式訊號資料 更新 05/14 11:38 偏舊 4 天 驗證訊號 1 筆已收納，不放入正式訊號清單；正式清單只顯示可連結主題或公司的資料列。 偏多 price 2026/05/14 03:38 外文訊號待整理；保留來源紀錄，不納入正式判讀。 信心 4 未連結公司或主題 來源：正式訊號資料 偏多 price 2026/05/13 23:31 外文訊號待整理；保留來源紀錄，不納入正式判讀。 信心 5 未連結公司或主題 來源：正式訊號資料 偏多 price 2026/05/10 23:36 外文訊號待整理；保留來源紀錄，不納入正式判讀。 信心 5 未連結公司或主題 來源：正式訊號資料 偏多 price 2026/05/10 09:36 外文訊號待整理；保留來源紀錄，不納入正式判讀。 信心 4 未連結公司或主題 來源：正式訊號資料 偏多 產業 2026/04/21 04:03 矽晶圓供給轉緊，SiC 與 AI 基板需求回溫，環球晶庫存去化速度優於預期。 信心 3 未連結公司或主題 來源：正式訊號資料 偏多 公司 2026/04/21 04:03 台積電熊本二期與亞利桑那 N2 進度延續，先進製程擴產支撐長期營收能見度。 信心 3 2330 台積電 來源：正式訊號資料 偏多 產業 2026/04/21 04:03 AI 與 CoWoS 需求推升台積電 N3 利用率，先進封裝與晶圓代工仍是主軸。 信心 4 2330 台積電 來源：正式訊號資料 偏多 產業 2026/04/21 03:54 AI 伺服器需求支撐台積電先進節點稼動率，需同步觀察估值與資金面。 信心 4 未連結公司或主題 來源：正式訊號資料 偏多 公司 2026/04/14 02:42 聯亞 EML 雷射良率改善，後續需觀察量產穩定度與客戶拉貨。 信心 4 未連結公司或主題 來源：正式訊號資料",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "2330 台積電",
+          "href": "https://app.eycvector.com/companies/2330"
+        },
+        {
+          "text": "2330 台積電",
+          "href": "https://app.eycvector.com/companies/2330"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/plans",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/plans",
+      "path": "/plans",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "交易計畫",
+      "h2": [],
+      "textLen": 1871,
+      "mainLen": 1697,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 計畫 交易計畫 計畫書與審核佇列 台北 / 2026/5/18 20:16:15 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 交易計畫 / 正式交易計畫、簡報、覆盤、訊號與策略想法；本頁不提供模擬或實盤下單。 1 交易計畫 1 就緒 / 進行 12 策略想法 1 覆盤 16 每日簡報 10 訊號脈絡 計畫狀態 可用 交易計畫 計畫數 1 本輪計畫 想法 12 策略想法 審核 1 審核紀錄 交易計畫 決策工作台 正常 正常 來源：正式交易計畫資料 更新 12:16:13 3081.TW 就緒 聯亞 買進 3081.TW；參考區間 380-390；回測至 10 日均線附近時分批 50/30/20 建立部位。 風報 風險 8% / 報酬 35% / 風報比 4.4:1 覆盤 有 更新 04/14 策略想法 候選清單 12 筆 2330 28.8 中性 不進流程 缺少 K 線資料 查看 1449 20.7 中性 不進流程 缺少 K 線資料 查看 1514 20.7 中性 不進流程 缺少 K 線資料 查看 1560 20.7 中性 不進流程 缺少 K 線資料 查看 1590 20.7 中性 不進流程 缺少 K 線資料 查看 1721 20.7 中性 不進流程 缺少 K 線資料 查看 1723 20.7 中性 不進流程 缺少 K 線資料 查看 1809 20.7 中性 不進流程 缺少 K 線資料 查看 每日簡報 2026-05-15 資料過期 資料過期 平衡 資料日 2026-05-15 落後 3 天 資料過期等待 OpenAlice 重新產出今日來源。 今日資料狀態 本簡報依 2026-05-15 可取得的台股資料整理。可用來源：市場總覽資料（1 筆，最新 2026-05-18）。資料不足或過期來源不會被當成投資依據。 資料品質提醒 需要留意的資料狀態：台股日線資料（最新 2026-05-15）、月營收資料（最新 未標示）、法人籌碼資料（最新 2026-05-13）、信用交易資料（最新 2026-05-13）。缺口狀態：沒有主要資料缺口。因此本日解讀以資料完整性與風控檢查為優先。 下一步工作 今日先確認市場資料、重大訊息、紙上交易紀錄與研究批次是否同步完成；本系統不提供買賣建議，也不以未驗證績效作為決策依據。 覆盤紀錄 交易後檢討 1 筆 Q3 04/14 已觸及第一目標 452；賣出 1/3 部位；其餘部位以損益兩平作為停損參考。 訊號脈絡 最新真實訊號 10 筆 05/14 03:38 price [News] 1402 — 寬魚第1季 EPS 0.91元 遠東新0.61元 - 經濟日報 05/13 23:31 price [News] 1303 — 《塑膠股》南亞第1季每股盈餘1.8元 - 富聯網 05/10 23:36 price [News] 6488 — 環球晶上看700⁺？分析「方形晶圓」如何成為AI封裝新寵兒 - CMoney 05/10 09:36 price [News] 1303 — AI基建需求大增！「IC通路大廠」股價衝漲停自營商卻單周出清3519張南亞、台玻也被甩賣近5000張 - FTNN 新聞網 04/21 04:03 產業 矽晶圓供給轉緊，SiC 與 AI 基板需求回溫，環球晶庫存去化速度優於預期。 04/21 04:03 公司 台積電熊本二期與亞利桑那 N2",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "3081.TW",
+          "href": "https://app.eycvector.com/companies/3081.TW"
+        },
+        {
+          "text": "2330",
+          "href": "https://app.eycvector.com/companies/2330"
+        },
+        {
+          "text": "查看",
+          "href": "https://app.eycvector.com/companies/2330"
+        },
+        {
+          "text": "1449",
+          "href": "https://app.eycvector.com/companies/1449"
+        },
+        {
+          "text": "查看",
+          "href": "https://app.eycvector.com/companies/1449"
+        },
+        {
+          "text": "1514",
+          "href": "https://app.eycvector.com/companies/1514"
+        },
+        {
+          "text": "查看",
+          "href": "https://app.eycvector.com/companies/1514"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/briefs",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/briefs",
+      "path": "/briefs",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "每日簡報",
+      "h2": [],
+      "textLen": 2131,
+      "mainLen": 1957,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 AI 摘要 每日簡報 OpenAlice 每日整理、AI 審核與發布 台北 / 2026/5/18 20:16:19 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 每日簡報只顯示已發布或待審來源；沒有來源紀錄的內容不當作投資依據，也不提供買賣建議。 正式簡報 16 已發布 待審草稿 2 等待審核 OPENALICE 正常 AI 流程 排程 等待檢查 每日排程 任務佇列 8 工作紀錄 最後正式版 2026-05-15 落後 3 天 今日段落 3 內容段落 來源狀態 正式資料 閉環確認 打開草稿審核查看營運監控檢查重大訊息 簡報搜尋 關鍵字全文搜尋（已發布） 搜尋 從 到 輸入關鍵字後自動搜尋，或按搜尋鍵。日期篩選為選填。 摘要 / 每日簡報狀態 今日發布與待審狀態 已發布 已發布 今日：2026-05-18 最後正式版：2026-05-15 / 落後 3 天 今日簡報已發布，含 3 段內容；頁面只顯示有來源紀錄的內容，並遮蔽投資建議字詞。 摘要 / AI 每日簡報流程 整理、審核與發布 正常 正常 來源：AI 每日簡報流程 更新：2026/05/18 20:16 確認今日簡報是否正在自動整理與審核 整理器 正常 排程 正常 待處理 0 狀態 正常 心跳 10 秒掃描 10 秒最後產生 --最後審核 --最後發布 --下次執行 --來源包 0審核結果 -- 摘要 / 今日簡報排程 今天是否已排入工作流 等待檢查 正常 來源：每日簡報排程 更新：2026/05/18 20:16 用來確認今日簡報是否已進入整理與審核流程 最近檢查 -- 結果 等待檢查 需處理 否 下一步尚未看到今日檢查結果，等待下一輪排程。 下一步 檢查正式來源紀錄 目標是每日自動產生、AI 審核、來源紀錄可查、正式發布後進入首頁與簡報頁；未閉環時要說清楚卡在哪一層。 摘要 / AI 簡報工作流 近期整理、審核與發布紀錄 8 筆 正常 來源：AI 簡報工作流 更新：2026/05/18 20:16 最近每日簡報工作紀錄 草稿待審 主題摘要 2026/05/13 03:32 嘗試 1/3 草稿待審 主題摘要 2026/05/13 02:47 嘗試 1/3 草稿待審 公司筆記 2026/05/13 02:17 嘗試 1/3 草稿待審 主題摘要 2026/05/13 01:47 嘗試 1/3 草稿待審 公司筆記 2026/05/13 01:42 嘗試 1/3 草稿待審 公司筆記 2026/05/13 01:32 嘗試 1/3 草稿待審 公司筆記 2026/05/13 01:02 嘗試 1/3 草稿待審 公司筆記 2026/05/13 00:59 嘗試 1/3 摘要 / 待審草稿 每日簡報草稿與來源檢查 2 筆待審 正常 來源：每日簡報草稿 更新：2026/05/18 20:16 每日簡報草稿 待審 2026-05-12 目標日期：2026-05-12 更新：2026/05/12 08:45 打開審核 Owner 核准 Owner 退回 待審 2026-05-11 目標日期：2026-05-11 更新：2026/05/11 08:50 打開審核 Owner 核准 Owner 退回 摘要 / 正式簡報內容 2026-05-18 / 正式發布 已發布 盤勢狀態Risk-Off #01 市場總覽 台股在2026年5月15日的收盤指數為41",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "打開草稿審核",
+          "href": "https://app.eycvector.com/admin/content-drafts"
+        },
+        {
+          "text": "查看營運監控",
+          "href": "https://app.eycvector.com/ops"
+        },
+        {
+          "text": "檢查重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "打開審核",
+          "href": "https://app.eycvector.com/admin/content-drafts/43cf2b9f-3910-4cdf-9e2a-132e7c2fd3b7"
+        },
+        {
+          "text": "打開審核",
+          "href": "https://app.eycvector.com/admin/content-drafts/257745b7-2afd-4a29-b164-f4d66004a50a"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶",
+        "搜尋",
+        "Owner 核准",
+        "Owner 退回",
+        "Owner 核准",
+        "Owner 退回"
+      ]
+    },
+    {
+      "route": "/admin/events",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/admin/events",
+      "path": "/admin/events",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "EventLog 時間軸瀏覽器",
+      "h2": [],
+      "textLen": 331,
+      "mainLen": 157,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 管理 EventLog 時間軸瀏覽器 OpenAlice Phase A Owner only Outbox 待發 -1 EventLog 事件流 / 時間回溯查詢 — 選左側 stream → 查看事件序列。 事件流 0 個 資料同步中 時間回溯 查詢 管理 / 請選擇事件流 0 筆 ← 請從左側選擇一個事件流",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶",
+        "查詢"
+      ]
+    },
+    {
+      "route": "/admin/portfolio/snapshots",
+      "navError": null,
+      "badResponses": [
+        {
+          "status": 404,
+          "url": "https://api.eycvector.com/api/v1/portfolio/snapshots?limit=20",
+          "type": "Fetch"
+        }
+      ],
+      "console": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 404 ()"
+        }
+      ],
+      "href": "https://app.eycvector.com/admin/portfolio/snapshots",
+      "path": "/admin/portfolio/snapshots",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "Portfolio 快照瀏覽器",
+      "h2": [],
+      "textLen": 499,
+      "mainLen": 325,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 管理 Portfolio 快照瀏覽器 Trading-as-Git / Phase A Owner only 快照即版本控管 Trading-as-Git — 每次部位變動建立快照；可查看任意兩版本間的 diff；read-only 瀏覽。 Phase A DB migration (0037) 尚待 apply — 等楊董 14:00 執行 migration 後端點自動可用。PR #645 merged 後 Bruce deploy。 快照列表 0 個 等 DB migration apply 管理 / 選擇快照 ← 請從左側選擇一個快照 管理 / 版本差異 Diff FROM ID → TO ID 比較 輸入兩個快照 ID 進行版本比較",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶",
+        "比較"
+      ]
+    },
+    {
+      "route": "/admin/tools",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/admin/tools",
+      "path": "/admin/tools",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "ToolCenter 登錄瀏覽器",
+      "h2": [],
+      "textLen": 15664,
+      "mainLen": 15490,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 管理 ToolCenter 登錄瀏覽器 OpenAlice Phase A 台北 / 2026/5/18 20:16:35 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 工具登錄表 / 24h 統計 / 近期 50 筆呼叫記錄 — Owner only。 正常 端點狀態 12 已登錄工具 120 24H 呼叫 50 近期記錄 管理 / 工具登錄表 12 工具 TOOL_KEY 類型 名稱 說明 版本 INPUT_SCHEMA 啟用 content_drafts_retry admin_action Content Drafts Retry Review Re-runs AI reviewer pipeline for content drafts stuck in awaiting_review status. Batch-processes up to 50 drafts. {\"type\":\"object\",\"properties\":{\"to\":{\"type\":\"string\",\"format\":\"date\"},\"from\":{\"type\":\"string\",\"format\":\"date\"},\"limit\":{\"type\":\"integer\",\"maximum\":50},\"dryRun\":{\"type\":\"boolean\"},\"workspaceId\":{\"type\":\"string\",\"format\":\"uuid\"}}} 啟用 themes_links_rebuild admin_action Themes-Links Rebuild Rebuilds company-theme link graph from scratch. Clears stale links and re-seeds from current company universe. {\"type\":\"object\",\"required\":[\"workspaceId\"],\"properties\":{\"workspaceId\":{\"type\":\"string\",\"format\":\"uuid\"}}} 啟用 finmind_sync data_sync FinMind Data Sync Syncs Taiwan stock market data from FinMind API into local DB. Covers OHLCV, institutional investors, short-sell balances. {\"type\":\"object\",\"properties\":{\"toDate\":{\"type\":\"string\",\"format\":\"date\"},\"dataType\":{\"type\":\"string\"},\"fromDate\":{\"type\":\"string\",\"format\":\"date\"}}} 啟用 get_company_technical data_sync 個股技術面 Returns K-line, RSI, MA200/60/20, volume characteristics for a given ticker. {\"type\":\"object\",\"required\":[\"ticker\"],\"properties\":{\"ticker\":{\"type\":\"string\"}},\"a",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": true,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/admin/uta/accounts",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/admin/uta/accounts",
+      "path": "/admin/uta/accounts",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "UTA 帳號管理",
+      "h2": [],
+      "textLen": 810,
+      "mainLen": 636,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 管理 UTA 帳號管理 OpenAlice Phase A / 唯讀 台北 / 2026/5/18 20:16:41 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 Broker Adapter 登錄 / 跨 broker 委託總覽 — Owner only。Phase A 僅讀，不提供正式委託操作入口。 正常 端點狀態 2 BROKER ADAPTER 0 近期委託 0 SIM 委託 管理 / Broker Adapter 登錄 2 個 ADAPTER_KEY 名稱 能力 狀態 kgi 凱基證券 (KGI) 零股 融資 融券 SIM 訂閱 ≤40 啟用 paper Paper Trading 零股 融資 融券 SIM 訂閱 ≤9999 啟用 管理 / Broker 帳號 Phase A — 未開放建立 Phase A Phase A 無帳號建立 UI — broker credentials 需 Yang 在後台設定。 Phase B 計畫：Credential Vault (KMS 加密) + 多帳號聚合 + cross-broker routing。 Phase A 僅 read-only adapter 瀏覽。楊董設好 broker creds 後，帳號會自動出現在委託記錄。 管理 / 跨 Broker 委託記錄（近 50 筆） 0 筆 時間 BROKER TICKER 方向 數量 單位 限價 狀態 安全模式 尚無委託記錄",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/admin/strategies",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/admin/strategies",
+      "path": "/admin/strategies",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "",
+      "h2": [],
+      "textLen": 3201,
+      "mainLen": 3027,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 Quant Lab — Strategy Lanes Ground truth: Codex S1 state 2026-05-18 11:29 TST · Owner-only Quant Lab 目前僅推進 S1。S1 owner-review packet 已建置完畢，Bruce 10/10 attest PASS， 但所有 broker / order / capital permissions 仍為 false，尚未取得楊董 review。 Old cont_liq v36 top4 仍獨立追蹤並 C04 FAIL。Class5 v3/v4 為 phantom / research-paused， 任何來自 5/15 MEMORY 的描述均不可引用為已驗證 shipped evidence。 ACTIVE LANES (3) STRATEGY ID iuf_ls_omni_v1_router S1 iuf_ls_omni_v1_router OWNER-REVIEW PACKET 品質鎖 CHECKLIST 10/10 Last update: 2026/5/18 11:29:00 全部 PERMISSIONS = FALSE ✗ broker / order ✗ registry state ✗ capital use ✗ live-ready ✗ paper-ready 10M SIM owner-review packet — 待楊董 review 狀態說明 Long engine: cont_liq v36R top8 Hedge: 00632R (crisis-only, 0.60 target weight, adjusted-price verified) Bruce attest: PACKET_ATTEST_PASS 10/10 Route proxy: 421 days, compound +215.91%, max drawdown -13.18% Soft-throttle row: 2485 on 2025-08-25 (needs split/size reduction in SIM policy) EVIDENCE FILES (READ-ONLY, IUF_QUANT_LAB) reports/data_lane/s1_iuf_ls_omni_owner_review_packet_2026_05_18_v1.json reports/data_lane/s1_iuf_ls_omni_owner_review_packet_attest_v1.json reports/data_lane/s1_iuf_ls_omni_risk_budget_10m_sim_v1.json reports/data_lane/s1_iuf_ls_omni_capacity_proxy_10m_sim_v1.json reports/data_lane/s1_intraday_partial_fill_proxy_v1.json reports/data_lane/s1_inverse_hedge_bakeoff_v1.json STRATEGY ID cont_liq_v36_h20_top4_regime_pos006 cont_liq v36 top4 (baseline",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": true,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/admin/brain/llm",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/admin/brain/llm",
+      "path": "/admin/brain/llm",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "Brain LLM 費用總覽",
+      "h2": [],
+      "textLen": 4966,
+      "mainLen": 4792,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 管理 Brain LLM 費用總覽 OpenAlice Phase A 台北 / 2026/5/18 20:16:52 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 LLM 費用統計 / 模型登錄 / 近期呼叫記錄 — Owner only。費用為估計值，實際帳單以 OpenAI dashboard 為準。 正常 端點狀態 166 總呼叫 269.3K TOKEN 數 $0.0554 估計費用 2 模型數 管理 / 7 日費用摘要 2026-05-11 → 2026-05-18 模型 呼叫 TOKEN 費用 gpt-4o-mini 164 266.7K $0.0486 gpt-4.1 2 2.6K $0.0069 按模組分類 模組 呼叫 TOKEN 費用 brief_writer 2 4.0K $0.0011 news_ai_selector 2 6.5K $0.0013 brain_react 8 4.5K $0.0010 adversarial_reviewer 2 2.6K $0.0069 brain_react_synthesis 2 1.7K $0.0006 ai_rec_v2 148 247.2K $0.0442 ai_reviewer 2 2.8K $0.0004 cost_usd is estimated; actual billing: OpenAI dashboard 管理 / 模型登錄 5 個模型 MODELKEY 供應商 名稱 輸入 / 1M TOKEN 輸出 / 1M TOKEN 最大 CONTEXT 啟用 claude-3-haiku-20240307 anthropic Claude 3 Haiku (budget fallback) 0.250000 1.250000 200,000 啟用 gpt-4.1 openai GPT-4.1 (factual heavy tasks) 2.000000 8.000000 1,047,576 啟用 gpt-4o openai GPT-4o (high quality decisions) 2.500000 10.000000 128,000 啟用 gpt-4o-mini openai GPT-4o Mini (routine tasks) 0.150000 0.600000 128,000 啟用 gpt-5.4-mini openai GPT-5.4 Mini (locked IUF default) 0.150000 0.600000 128,000 啟用 管理 / 近期 50 筆呼叫 50 筆 時間 模組 模型 PROMPT COMPLETION 費用 延遲 狀態 2026/5/18 11:55:57 ai_rec_v2 gpt-4o-mini 2312 88 $0.0004 2140ms success 2026/5/18 11:55:54 ai_rec_v2 gpt-4o-mini 4090 84 $0.0007 4283ms success 2026/5/18 11:55:49 ai_rec_v2 gpt-4o-mini 3883 90 $0.0006 3390ms success 2026/5/18 11:55:46 ai_rec_v2 gpt-4o-mini 3674 89 $0.0006 3228",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/event-log",
+      "navError": null,
+      "badResponses": [
+        {
+          "status": 404,
+          "url": "https://app.eycvector.com/event-log",
+          "type": "Document"
+        }
+      ],
+      "console": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 404 ()"
+        }
+      ],
+      "href": "https://app.eycvector.com/event-log",
+      "path": "/event-log",
+      "title": "404: This page could not be found.",
+      "h1": "404",
+      "h2": [
+        "This page could not be found."
+      ],
+      "textLen": 207,
+      "mainLen": 0,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 404 This page could not be found.",
+      "notFound": true,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/portfolio-snapshot",
+      "navError": null,
+      "badResponses": [
+        {
+          "status": 404,
+          "url": "https://app.eycvector.com/portfolio-snapshot",
+          "type": "Document"
+        }
+      ],
+      "console": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 404 ()"
+        }
+      ],
+      "href": "https://app.eycvector.com/portfolio-snapshot",
+      "path": "/portfolio-snapshot",
+      "title": "404: This page could not be found.",
+      "h1": "404",
+      "h2": [
+        "This page could not be found."
+      ],
+      "textLen": 207,
+      "mainLen": 0,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 404 This page could not be found.",
+      "notFound": true,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/tool-center",
+      "navError": null,
+      "badResponses": [
+        {
+          "status": 404,
+          "url": "https://app.eycvector.com/tool-center",
+          "type": "Document"
+        }
+      ],
+      "console": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 404 ()"
+        }
+      ],
+      "href": "https://app.eycvector.com/tool-center",
+      "path": "/tool-center",
+      "title": "404: This page could not be found.",
+      "h1": "404",
+      "h2": [
+        "This page could not be found."
+      ],
+      "textLen": 207,
+      "mainLen": 0,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 404 This page could not be found.",
+      "notFound": true,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/uta",
+      "navError": null,
+      "badResponses": [
+        {
+          "status": 404,
+          "url": "https://app.eycvector.com/uta",
+          "type": "Document"
+        }
+      ],
+      "console": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 404 ()"
+        }
+      ],
+      "href": "https://app.eycvector.com/uta",
+      "path": "/uta",
+      "title": "404: This page could not be found.",
+      "h1": "404",
+      "h2": [
+        "This page could not be found."
+      ],
+      "textLen": 207,
+      "mainLen": 0,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15 404 This page could not be found.",
+      "notFound": true,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": false,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/heatmap",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/market-intel",
+      "path": "/market-intel",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "",
+      "h2": [],
+      "textLen": 173,
+      "mainLen": 0,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": true,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/news",
+      "navError": null,
+      "badResponses": [],
+      "console": [],
+      "href": "https://app.eycvector.com/market-intel",
+      "path": "/market-intel",
+      "title": "IUF 台股 AI 交易戰情室",
+      "h1": "",
+      "h2": [],
+      "textLen": 173,
+      "mainLen": 0,
+      "sample": "戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 警示通知，15 則未讀 15",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": true,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台\n盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報\n重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦\n推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室\n委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題\n公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略\nSIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "Brain\nLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog\n事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio\n快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools\n工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA\n帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "Strategies\nLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀\n15",
+        "系統狀態",
+        "帳戶"
+      ]
+    },
+    {
+      "route": "/m",
+      "navError": null,
+      "badResponses": [
+        {
+          "status": 422,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1",
+          "type": "Fetch"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=1",
+          "type": "Fetch"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2454&limit=1",
+          "type": "Fetch"
+        }
+      ],
+      "console": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 422 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "href": "https://app.eycvector.com/m",
+      "path": "/m",
+      "title": "IUF TR Mobile",
+      "h1": "",
+      "h2": [],
+      "textLen": 771,
+      "mainLen": 752,
+      "sample": "IUF 交易戰情室 盤前快覽 日報 / 主題 / 策略 / 風控 正常 12:17:31 MKT / 盤面資料 MANUAL SIM 檢查通過 執行模式 0 報價總數 0 模擬可用 BRF / 最新日報 資料過期 2026-05-15 / 落後 3 天 / 平衡 這不是今天的日報；等待 OpenAlice 重新產出今日來源追蹤列。 今日資料狀態 本簡報依 2026-05-15 可取得的台股資料整理。可用來源：市場總覽資料（1 筆，最新 2026-05-18）。資料不足或過期來源不會被當成投資依據。 THM / 主題掃描 5 筆 P3 / 5G 平衡 5G 探索 / 核心 0 / 觀察 0 P3 / ABF 載板 平衡 ABF 載板 探索 / 核心 0 / 觀察 0 P3 / AI 伺服器 平衡 AI 伺服器 探索 / 核心 0 / 觀察 0 P3 / Apple 供應鏈 平衡 Apple 供應鏈 探索 / 核心 0 / 觀察 0 P3 / CoWoS 先進封裝 平衡 CoWoS 先進封裝 探索 / 核心 0 / 觀察 0 IDA / 模擬策略想法 4 筆 2330 中性 缺少 K 線資料 判斷 阻擋 / 分數 28.8 / 信心 +29% 1514 中性 缺少 K 線資料 判斷 阻擋 / 分數 20.7 / 信心 +21% 1560 中性 缺少 K 線資料 判斷 阻擋 / 分數 20.7 / 信心 +21% 1590 中性 缺少 K 線資料 判斷 阻擋 / 分數 20.7 / 信心 +21% 報價 離線 · 20:17:35 0050 -- 離線 未開放 2330 -- 離線 需重新登入 2454 -- 離線 需重新登入 公開資料 · 約 5–15 秒延遲 · 不存 cookie 快覽 行動 風控 模式 戰情台 完整",
+      "notFound": false,
+      "blankLike": false,
+      "loadingLike": false,
+      "rawError": false,
+      "fakeSignals": false,
+      "oldOrMobile": true,
+      "hasAiNews": false,
+      "hasAiRecs": false,
+      "hasTrading": true,
+      "hasSourceState": false,
+      "overflowX": false,
+      "links": [
+        {
+          "text": "戰情台盤勢與任務",
+          "href": "https://app.eycvector.com/"
+        },
+        {
+          "text": "市場情報重大訊息",
+          "href": "https://app.eycvector.com/market-intel"
+        },
+        {
+          "text": "AI 推薦推薦引擎",
+          "href": "https://app.eycvector.com/ai-recommendations"
+        },
+        {
+          "text": "交易室委託與部位",
+          "href": "https://app.eycvector.com/portfolio"
+        },
+        {
+          "text": "公司 / 主題公司圖譜",
+          "href": "https://app.eycvector.com/companies"
+        },
+        {
+          "text": "量化策略SIM-only",
+          "href": "https://app.eycvector.com/quant-strategies"
+        },
+        {
+          "text": "BrainLLM 費用",
+          "href": "https://app.eycvector.com/admin/brain/llm"
+        },
+        {
+          "text": "EventLog事件流",
+          "href": "https://app.eycvector.com/admin/events"
+        },
+        {
+          "text": "Portfolio快照版本",
+          "href": "https://app.eycvector.com/admin/portfolio/snapshots"
+        },
+        {
+          "text": "Tools工具登錄",
+          "href": "https://app.eycvector.com/admin/tools"
+        },
+        {
+          "text": "UTA帳號管理",
+          "href": "https://app.eycvector.com/admin/uta/accounts"
+        },
+        {
+          "text": "StrategiesLab 策略狀態",
+          "href": "https://app.eycvector.com/admin/strategies"
+        },
+        {
+          "text": "",
+          "href": "https://app.eycvector.com/briefs"
+        },
+        {
+          "text": "P3 / 5G\n平衡\n5G\n探索 / 核心 0 / 觀察 0",
+          "href": "https://app.eycvector.com/themes/5g"
+        },
+        {
+          "text": "P3 / ABF 載板\n平衡\nABF 載板\n探索 / 核心 0 / 觀察 0",
+          "href": "https://app.eycvector.com/themes/abf"
+        },
+        {
+          "text": "P3 / AI 伺服器\n平衡\nAI 伺服器\n探索 / 核心 0 / 觀察 0",
+          "href": "https://app.eycvector.com/themes/ai"
+        },
+        {
+          "text": "P3 / Apple 供應鏈\n平衡\nApple 供應鏈\n探索 / 核心 0 / 觀察 0",
+          "href": "https://app.eycvector.com/themes/apple"
+        },
+        {
+          "text": "P3 / CoWoS 先進封裝\n平衡\nCoWoS 先進封裝\n探索 / 核心 0 / 觀察 0",
+          "href": "https://app.eycvector.com/themes/cowos"
+        },
+        {
+          "text": "2330\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 28.8 / 信心 +29%",
+          "href": "https://app.eycvector.com/companies/2330"
+        },
+        {
+          "text": "1514\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%",
+          "href": "https://app.eycvector.com/companies/1514"
+        }
+      ],
+      "buttons": [
+        "登出",
+        "警示通知，15 則未讀15",
+        "系統狀態",
+        "帳戶"
+      ]
+    }
+  ]
+}
