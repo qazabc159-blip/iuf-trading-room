@@ -3,10 +3,17 @@
  *
  * Cycle 16 (2026-05-14): P1-B backlog — populate tw_announcements from TWSE OpenAPI.
  *
- * Source: TWSE OpenAPI /opendata/t187ap46_L
+ * Source: TWSE OpenAPI /opendata/t187ap11_L  (重要事項公告 — primary)
+ *   Fallback: /opendata/t187ap46_L           (deprecated endpoint, kept as fallback)
+ *
  *   - Returns all recent material announcements across all listed stocks.
  *   - No auth required. No per-ticker loop needed — one fetch covers all codes.
  *   - Field shape: { Date, Code, Name, Title, Content, Link? }
+ *
+ * Endpoint switch (2026-05-18):
+ *   t187ap46_L was deprecated / returning 302 or empty JSON silently.
+ *   t187ap11_L (重要事項公告) is the actively maintained TWSE endpoint.
+ *   Fallback chain: t187ap11_L → t187ap46_L (both fail → ingest returns 0 rows).
  *
  * Schedule (wired in server.ts):
  *   - Hourly during 09:00–15:00 TST on weekdays.
@@ -46,6 +53,11 @@ export function sha256Hex(input: string): string {
 const TWSE_BASE_URL = "https://openapi.twse.com.tw/v1";
 const FETCH_TIMEOUT_MS = 8000;
 
+// Primary endpoint: t187ap11_L (重要事項公告, actively maintained)
+// Fallback endpoint: t187ap46_L (deprecated, kept as safety net)
+const TWSE_ANN_PRIMARY_PATH = "/opendata/t187ap11_L";
+const TWSE_ANN_FALLBACK_PATH = "/opendata/t187ap46_L";
+
 export interface TwseMaterialRow {
   /** Trading date YYYY/MM/DD */
   Date: string;
@@ -61,37 +73,95 @@ export interface TwseMaterialRow {
   Link?: string;
 }
 
-/** Fetch all material announcements from TWSE OpenAPI in one request. */
+/**
+ * Fetch from a single TWSE endpoint path.
+ * Returns rows on success, null on HTTP error / non-JSON / wrong shape.
+ * Logs warn with details so silently-empty results are surfaced.
+ */
+async function fetchFromTwsePath(
+  path: string,
+  doFetch: typeof fetch
+): Promise<TwseMaterialRow[] | null> {
+  const url = `${TWSE_BASE_URL}${path}`;
+  let resp: Response;
+  try {
+    resp = await doFetch(url, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    console.warn(`[twse-ann-ingest] fetch ${path} network error:`, err instanceof Error ? err.message : String(err));
+    return null;
+  }
+
+  // Detect 302 (redirect to login/error page) or non-2xx
+  if (resp.status === 302 || resp.status === 301) {
+    const location = resp.headers.get("location") ?? "(no location)";
+    console.warn(`[twse-ann-ingest] ${path} returned ${resp.status} redirect → ${location} (endpoint deprecated/unavailable)`);
+    return null;
+  }
+  if (resp.status === 404) {
+    console.warn(`[twse-ann-ingest] ${path} returned 404 (endpoint not found)`);
+    return null;
+  }
+  if (!resp.ok) {
+    console.warn(`[twse-ann-ingest] ${path} HTTP ${resp.status} (ingest fail)`);
+    return null;
+  }
+
+  const ct = resp.headers.get("content-type") ?? "";
+  if (!ct.includes("application/json") && !ct.includes("text/json")) {
+    console.warn(`[twse-ann-ingest] ${path} non-JSON content-type: ${ct} (endpoint may have changed format)`);
+    return null;
+  }
+
+  let raw: unknown;
+  try {
+    raw = await resp.json();
+  } catch (err) {
+    console.warn(`[twse-ann-ingest] ${path} JSON parse error:`, err instanceof Error ? err.message : String(err));
+    return null;
+  }
+
+  if (!Array.isArray(raw)) {
+    console.warn(`[twse-ann-ingest] ${path} unexpected shape (not array), got:`, typeof raw);
+    return null;
+  }
+
+  return raw as TwseMaterialRow[];
+}
+
+/**
+ * Fetch all material announcements from TWSE OpenAPI.
+ * Uses t187ap11_L (primary) with fallback to t187ap46_L.
+ * Returns empty array only if both endpoints fail.
+ */
 export async function fetchAllTwseMaterialAnnouncements(
   fetchOverride?: typeof fetch
 ): Promise<TwseMaterialRow[]> {
   const doFetch = fetchOverride ?? globalThis.fetch;
-  const url = `${TWSE_BASE_URL}/opendata/t187ap46_L`;
 
-  try {
-    const resp = await doFetch(url, {
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-    });
-    if (!resp.ok) {
-      console.warn(`[twse-ann-ingest] TWSE OpenAPI HTTP ${resp.status}`);
-      return [];
+  // Try primary endpoint first
+  const primary = await fetchFromTwsePath(TWSE_ANN_PRIMARY_PATH, doFetch);
+  if (primary !== null) {
+    if (primary.length > 0) {
+      console.log(`[twse-ann-ingest] primary ${TWSE_ANN_PRIMARY_PATH} returned ${primary.length} rows`);
+    } else {
+      console.log(`[twse-ann-ingest] primary ${TWSE_ANN_PRIMARY_PATH} returned 0 rows (market closed or no announcements)`);
     }
-    const ct = resp.headers.get("content-type") ?? "";
-    if (!ct.includes("application/json") && !ct.includes("text/json")) {
-      console.warn("[twse-ann-ingest] TWSE OpenAPI non-JSON response:", ct);
-      return [];
-    }
-    const raw = await resp.json();
-    if (!Array.isArray(raw)) {
-      console.warn("[twse-ann-ingest] TWSE OpenAPI unexpected shape (not array)");
-      return [];
-    }
-    return raw as TwseMaterialRow[];
-  } catch (err) {
-    console.warn("[twse-ann-ingest] TWSE OpenAPI fetch failed:", err instanceof Error ? err.message : String(err));
-    return [];
+    return primary;
   }
+
+  // Primary failed — try fallback
+  console.warn(`[twse-ann-ingest] primary ${TWSE_ANN_PRIMARY_PATH} failed, trying fallback ${TWSE_ANN_FALLBACK_PATH}`);
+  const fallback = await fetchFromTwsePath(TWSE_ANN_FALLBACK_PATH, doFetch);
+  if (fallback !== null) {
+    console.log(`[twse-ann-ingest] fallback ${TWSE_ANN_FALLBACK_PATH} returned ${fallback.length} rows`);
+    return fallback;
+  }
+
+  console.warn(`[twse-ann-ingest] both primary and fallback endpoints failed — ingest returning 0 rows`);
+  return [];
 }
 
 // ── Parse TWSE date to ISO timestamp ──────────────────────────────────────────
