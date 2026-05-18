@@ -144,6 +144,53 @@ async function persistRunComplete(opts: {
   }
 }
 
+// ── Ticker validation ─────────────────────────────────────────────────────────
+
+/**
+ * Year pattern list: LLM tends to hallucinate current/recent years as tickers.
+ * Reject any ticker that is ONLY digits and matches a year from 2010–2035.
+ */
+const YEAR_PATTERN = /^(201\d|202[0-9]|2030|2031|2032|2033|2034|2035)$/;
+
+/**
+ * Valid TW stock ticker: 4 digits (e.g. 2330) or 4 digits + 1 uppercase letter (e.g. 0050T).
+ * Rejects: years, 3-digit codes, 5+ digit codes without a valid letter suffix, etc.
+ */
+export function validateTicker(ticker: string): { valid: boolean; reason?: string } {
+  if (!ticker) return { valid: false, reason: "empty" };
+  // Must be 4-digit or 4-digit+letter format
+  if (!/^\d{4}[A-Z]?$/.test(ticker)) {
+    return { valid: false, reason: `format_invalid: "${ticker}" is not 4-digit or 4-digit+letter` };
+  }
+  // Reject year patterns (2020, 2021, 2022 ... 2030 etc.)
+  const digitPart = ticker.replace(/[A-Z]$/, "");
+  if (YEAR_PATTERN.test(digitPart)) {
+    return { valid: false, reason: `year_pattern: "${ticker}" looks like a calendar year, not a ticker` };
+  }
+  return { valid: true };
+}
+
+/**
+ * Builds a Set of valid TW ticker codes from TWSE STOCK_DAY_ALL.
+ * Used to reject hallucinated tickers that don't appear in live market data.
+ * Returns empty set if TWSE data unavailable (fail-open: caller treats empty as "no whitelist").
+ */
+export async function buildTickerWhitelist(): Promise<Set<string>> {
+  try {
+    const { getStockDayAllRows } = await import("../data-sources/twse-openapi-client.js");
+    const rows = await getStockDayAllRows().catch(() => []);
+    const whitelist = new Set<string>();
+    for (const row of rows as Array<{ Code?: string }>) {
+      if (row.Code && /^\d{4,6}[A-Z]?$/.test(row.Code)) {
+        whitelist.add(row.Code);
+      }
+    }
+    return whitelist;
+  } catch {
+    return new Set<string>(); // fail-open: no whitelist enforcement if data unavailable
+  }
+}
+
 // ── Markdown parser ───────────────────────────────────────────────────────────
 
 /**
@@ -213,6 +260,13 @@ export function parseAiReportToRecommendations(
     const tickerMatch = block.match(/\b(\d{4,6}[A-Z]?)\b/);
     if (!tickerMatch) continue;
     const ticker = tickerMatch[1]!;
+
+    // F1: Validate ticker format — reject year patterns and malformed codes
+    const tickerValidation = validateTicker(ticker);
+    if (!tickerValidation.valid) {
+      console.warn(`[ai-rec-v2] REJECT hallucinated ticker "${ticker}": ${tickerValidation.reason}`);
+      continue;
+    }
 
     // Extract company name (Chinese chars after ticker on same heading line)
     const nameMatch = block.match(new RegExp(ticker + "\\s+([\\u4e00-\\u9fff\\w\\s]{2,20})"));
@@ -290,6 +344,76 @@ export function parseAiReportToRecommendations(
   }
 
   return results;
+}
+
+// ── Post-synthesis item validation (F2 + F3) ─────────────────────────────────
+
+/**
+ * validateAndEnrichItems:
+ *   F2: Forces a real get_company_technical call for each candidate ticker.
+ *       Items whose ticker returns lastPrice=null (no DB data) are rejected unless
+ *       DB mode is unavailable (test mode: all items pass through).
+ *   F3: Builds TWSE ticker whitelist from live STOCK_DAY_ALL.
+ *       Items whose ticker is not in whitelist are rejected (fail-open: if whitelist is
+ *       empty because TWSE data unavailable, no items are rejected on this criterion).
+ *
+ * This is applied post-synthesis so that LLM-hallucinated tickers are caught before persist.
+ */
+export async function validateAndEnrichItems(
+  items: AiStockRecommendationV2[],
+  workspaceId?: string | null
+): Promise<AiStockRecommendationV2[]> {
+  if (items.length === 0) return items;
+
+  // F3: Build ticker whitelist from TWSE (fail-open if unavailable)
+  const whitelist = await buildTickerWhitelist();
+  const hasWhitelist = whitelist.size > 0;
+
+  const validated: AiStockRecommendationV2[] = [];
+
+  for (const item of items) {
+    // F3: Whitelist check — only enforce when whitelist is populated
+    if (hasWhitelist && !whitelist.has(item.ticker)) {
+      console.warn(`[ai-rec-v2] REJECT "${item.ticker}": not in TWSE ticker whitelist (${whitelist.size} known tickers)`);
+      continue;
+    }
+
+    // F2: Force real get_company_technical call
+    let techData: Awaited<ReturnType<typeof getCompanyTechnical>> | null = null;
+    try {
+      techData = await getCompanyTechnical(item.ticker);
+    } catch {
+      techData = null;
+    }
+
+    // If DB is available but no OHLCV rows exist → reject (hallucinated ticker)
+    // If DB is unavailable (test mode, techData returns base with all nulls and source="companies_ohlcv") → pass through
+    if (techData !== null && techData.lastPrice === null && techData.asOf === null) {
+      // Check if DB mode is active — only reject in DB mode with missing data
+      let dbMode = false;
+      try {
+        const { isDatabaseMode } = await import("@iuf-trading-room/db");
+        dbMode = isDatabaseMode();
+      } catch {
+        dbMode = false;
+      }
+      if (dbMode) {
+        console.warn(`[ai-rec-v2] REJECT "${item.ticker}": get_company_technical returned no OHLCV data (DB mode active)`);
+        continue;
+      }
+    }
+
+    // Enrich: if we got real price data, add it to the item metadata
+    if (techData && techData.lastPrice !== null) {
+      // Attach real price as a rationale supplement (does not override core fields)
+      const priceNote = `実証確認: 終値${techData.lastPrice} RSI${techData.rsi14 ?? "N/A"} MA20${techData.ma20 ?? "N/A"}`;
+      item.rationale = item.rationale ? `${item.rationale} | ${priceNote}` : priceNote;
+    }
+
+    validated.push(item);
+  }
+
+  return validated;
 }
 
 // ── dispatchTool for ReAct (market data tools) ─────────────────────────────────
@@ -404,7 +528,10 @@ export async function runAiRecommendationV2(
   }
 
   // Parse markdown → structured items
-  const items = parseAiReportToRecommendations(reactResult.finalReport, dateStr);
+  const rawItems = parseAiReportToRecommendations(reactResult.finalReport, dateStr);
+
+  // F2 + F3: Validate items — force get_company_technical call + ticker whitelist check
+  const items = await validateAndEnrichItems(rawItems, opts.workspaceId);
 
   const result: AiRecommendationRunResult = {
     runId,
@@ -479,7 +606,13 @@ async function runCustomMarketReActLoop(opts: {
 Today is ${opts.dateStr} (Taipei time).
 Your task: Analyze the current overall market (大盤, sector rotation, news, institutional flow) and recommend 5-10 Taiwan stocks worth watching TODAY.
 
-IMPORTANT: You must NOT rely on any pre-defined strategy candidate lists. Make your own independent judgment based entirely on market data you gather using the tools.
+CRITICAL RULES — ANTI-HALLUCINATION:
+1. Every stock ticker you recommend MUST be a real 4-digit Taiwan stock code (e.g., 2330, 2454, 2317).
+2. NEVER use calendar years (2020, 2021, 2022, 2023, 2024, 2025, 2026, etc.) as tickers.
+3. NEVER invent tickers. Only use tickers you have explicitly seen in tool results.
+4. You MUST call get_company_technical for EACH ticker before recommending it.
+5. If get_company_technical returns no price data for a ticker, DO NOT recommend it.
+6. Only recommend tickers that appeared in actual tool results (sector rotation, news, or technical data).
 
 You have access to these tools: ${TOOL_WHITELIST.join(", ")}
 
@@ -489,7 +622,7 @@ Format:
 
 Rules:
 - Start by getting market overview, then sector rotation, then news.
-- For promising sectors, look at specific stock technicals and institutional flow.
+- For each promising ticker, MUST call get_company_technical to verify it has real data.
 - When you have enough info (after at least 4 rounds), set toolName to null for Final Answer.
 - Keep thoughts concise.`;
 
@@ -588,17 +721,24 @@ async function synthesizeReport(
 ## Analysis Trace
 ${traceText}
 
+CRITICAL ANTI-HALLUCINATION RULES:
+1. ONLY recommend tickers explicitly mentioned in the Analysis Trace above.
+2. NEVER use calendar years (2024, 2025, 2026, etc.) as ticker codes.
+3. NEVER invent company names or tickers not present in tool results.
+4. If a ticker had get_company_technical called and showed real price data → include it.
+5. If no real price data was retrieved for a ticker → use 分類: 資料不足暫不推薦 or omit.
+
 Write recommendations in this format for EACH recommended stock:
 
 ## [ticker] [company name]
-- 進場: [price range, e.g. 870-890]
+- 進場: [price range, e.g. 870-890 — ONLY if seen in tool results; else write "N/A"]
 - TP1: [target 1]  TP2: [target 2]
 - 停損: [stop loss]
 - 信心: [0.0-1.0]
-- 推薦理由: [reasoning with market data evidence]
+- 推薦理由: [reasoning with market data evidence — cite specific numbers from trace]
 - 分類: [今日首選 | 可觀察布局 | 等回檔 | 高風險排除 | 資料不足暫不推薦]
 
-Recommend 5-10 stocks. Be specific with prices. Use actual market data from the trace.`;
+Recommend 5-10 stocks. Only use tickers and data from the trace above.`;
 
   const llmResult = await callLlmFn(
     [
