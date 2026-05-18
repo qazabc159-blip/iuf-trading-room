@@ -1,19 +1,5 @@
 "use client";
 
-/**
- * ReactTracePanel — F3
- *
- * Collapsible "AI 思考過程" section.
- * Renders the 5-module SOP reasoning trace from the ReAct loop.
- *
- * Each step shows:
- *   - Step number + label
- *   - Observation / conclusion text
- *   - Tool invocations (callTool name + args)
- *
- * Backward-compatible: works with empty/null steps (shows "—").
- */
-
 export interface ToolCall {
   tool: string;
   args?: Record<string, unknown> | null;
@@ -30,40 +16,33 @@ export interface ReActStep {
 
 export interface ReactTracePanelProps {
   steps?: ReActStep[] | null;
-  /** Total number of ReAct rounds (for "round N/8" display) */
   round_current?: number | null;
   round_max?: number | null;
-  /** Whether the loop is still running */
   is_running?: boolean;
-  /** Override to show a cost-cap message */
   over_budget?: boolean;
 }
 
 const STEP_LABELS: Record<number, string> = {
   1: "市場狀態",
-  2: "主題穿透",
-  3: "個股篩選",
-  4: "技術觸發",
-  5: "風控分倉",
+  2: "主題與基本面",
+  3: "籌碼與資金流",
+  4: "技術結構",
+  5: "進場與風控",
 };
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function stepSummary(step: ReActStep): string {
   if (step.conclusion) return step.conclusion;
   if (step.observation) return step.observation;
-  return "—";
+  return "-";
 }
 
 function argsDisplay(args: Record<string, unknown> | null | undefined): string {
   if (!args) return "";
   const parts = Object.entries(args)
     .slice(0, 4)
-    .map(([k, v]) => `${k}=${JSON.stringify(v)}`);
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`);
   return parts.join(", ");
 }
-
-// ── Component ────────────────────────────────────────────────────────────────
 
 export function ReactTracePanel({
   steps,
@@ -72,8 +51,7 @@ export function ReactTracePanel({
   is_running,
   over_budget,
 }: ReactTracePanelProps) {
-  const hasSteps = steps && steps.length > 0;
-
+  const hasSteps = Boolean(steps?.length);
   const roundLabel =
     round_current != null && round_max != null
       ? `round ${round_current}/${round_max}`
@@ -181,7 +159,7 @@ export function ReactTracePanel({
         }
         ._rtp-empty-step {
           color: var(--tac-fg-3, #7a8aa0);
-          font: 800 11px/1 var(--mono, monospace);
+          font: 800 11px/1.45 var(--mono, monospace);
         }
         ._rtp-placeholder-row {
           display: flex;
@@ -210,25 +188,23 @@ export function ReactTracePanel({
 
       <details className="_rtp-wrap">
         <summary className="_rtp-summary">
-          AI 思考過程
-          {roundLabel && (
-            <span className="_rtp-badge">{roundLabel}</span>
-          )}
+          AI 推理軌跡
+          {roundLabel && <span className="_rtp-badge">{roundLabel}</span>}
           {is_running && (
             <span className="_rtp-badge" style={{ borderColor: "rgba(200,148,63,0.28)" }}>
-              思考中…
+              推理中
             </span>
           )}
           {over_budget && (
             <span className="_rtp-badge" style={{ borderColor: "rgba(230,57,70,0.34)", color: "#e63946", background: "rgba(230,57,70,0.06)" }}>
-              預算超限
+              成本上限
             </span>
           )}
         </summary>
 
         <div className="_rtp-steps">
           {hasSteps ? (
-            steps.map((step) => (
+            steps!.map((step) => (
               <div key={step.step} className="_rtp-step">
                 <div className="_rtp-step-head">
                   <span className="_rtp-step-num">{step.step}</span>
@@ -241,16 +217,16 @@ export function ReactTracePanel({
 
                 {step.tool_calls && step.tool_calls.length > 0 && (
                   <div className="_rtp-tools">
-                    {step.tool_calls.map((tc, idx) => (
-                      <div key={idx} className="_rtp-tool-row">
-                        <span className="_rtp-tool-name">callTool({tc.tool})</span>
-                        {tc.args && (
+                    {step.tool_calls.map((toolCall, index) => (
+                      <div key={index} className="_rtp-tool-row">
+                        <span className="_rtp-tool-name">callTool({toolCall.tool})</span>
+                        {toolCall.args && (
                           <span className="_rtp-tool-args">
-                            {argsDisplay(tc.args)}
+                            {argsDisplay(toolCall.args)}
                           </span>
                         )}
-                        {tc.result && (
-                          <span className="_rtp-tool-result">→ {tc.result}</span>
+                        {toolCall.result && (
+                          <span className="_rtp-tool-result">結果：{toolCall.result}</span>
                         )}
                       </div>
                     ))}
@@ -259,17 +235,16 @@ export function ReactTracePanel({
               </div>
             ))
           ) : (
-            /* Placeholder: render all 5 steps as skeleton */
-            Array.from({ length: 5 }, (_, i) => i + 1).map((n) => (
-              <div key={n} className="_rtp-step">
+            Array.from({ length: 5 }, (_, index) => index + 1).map((stepNumber) => (
+              <div key={stepNumber} className="_rtp-step">
                 <div className="_rtp-step-head">
-                  <span className="_rtp-step-num">{n}</span>
+                  <span className="_rtp-step-num">{stepNumber}</span>
                   <span className="_rtp-step-label">
-                    STEP {n} {STEP_LABELS[n]}
+                    STEP {stepNumber} {STEP_LABELS[stepNumber]}
                   </span>
                 </div>
                 <p className="_rtp-empty-step">
-                  {is_running ? "分析中…" : "— 待後端 v3 回傳 —"}
+                  {is_running ? "等待本輪推理輸出" : "等待 v3 推理 trace 接入"}
                 </p>
               </div>
             ))
@@ -278,7 +253,7 @@ export function ReactTracePanel({
           {is_running && (
             <div className="_rtp-placeholder-row">
               <span className="_rtp-spinner" aria-hidden="true" />
-              AI 分析師思考中{roundLabel ? ` (${roundLabel})` : ""}…
+              AI 正在推理{roundLabel ? ` (${roundLabel})` : ""}
             </div>
           )}
 
@@ -287,7 +262,7 @@ export function ReactTracePanel({
               className="_rtp-placeholder-row"
               style={{ color: "#e63946" }}
             >
-              本次分析超出預算，顯示部分結果
+              已達本次推理成本上限，系統會停止追加 tool call。
             </div>
           )}
         </div>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
 import { emitRecommendationFeedbackSnapshot } from "./recommendation-feedback-state";
 
-const HANDOFF_TITLE = "帶入交易室 SIM 預覽；不會建立券商委託";
+const HANDOFF_TITLE = "帶入模擬委託單，不會送出真實委託";
 
 const LABEL_MAX_LENGTH = {
   ticker: 16,
@@ -41,7 +41,7 @@ function buildHandoffLabel(href: string, recommendationId: string, directionLabe
   const safeDirection = safeQueryText(directionLabel, LABEL_MAX_LENGTH.direction);
   const safeRecommendationId = safeQueryText(recommendationId, LABEL_MAX_LENGTH.recommendationId) ?? "unknown";
   const details = [
-    ticker ? `標的 ${ticker}` : null,
+    ticker ? `股票 ${ticker}` : null,
     safeDirection ? `方向 ${safeDirection}` : null,
     entry ? `進場 ${entry}` : null,
     stop ? `停損 ${stop}` : null,
@@ -49,7 +49,7 @@ function buildHandoffLabel(href: string, recommendationId: string, directionLabe
     `推薦 ${safeRecommendationId}`,
   ].filter(Boolean);
 
-  return `${HANDOFF_TITLE}${details.length ? `，${details.join("，")}` : ""}`;
+  return `${HANDOFF_TITLE}${details.length ? `：${details.join(" / ")}` : ""}`;
 }
 
 function sideLabel(value: string | null) {
@@ -69,7 +69,7 @@ function buildPreviewItems(href: string, recommendationId: string) {
     safeQueryText(recommendationId, LABEL_MAX_LENGTH.recommendationId);
 
   return [
-    ticker ? ["標的", ticker] : null,
+    ticker ? ["股票", ticker] : null,
     side ? ["方向", side] : null,
     entry ? ["進場", entry] : null,
     stop ? ["停損", stop] : null,
@@ -107,10 +107,10 @@ export function RecommendationHandoffPreview({
   const items = buildPreviewItems(href, recommendationId);
 
   return (
-    <div className="_rec-handoff-preview" role="note" aria-label="交易室 SIM 帶入預覽">
+    <div className="_rec-handoff-preview" role="note" aria-label="模擬委託帶入預覽">
       <div className="_rec-handoff-preview-head">
-        <b>SIM 帶入預覽</b>
-        <span>不建立券商委託</span>
+        <b>SIM 委託預覽</b>
+        <span>不送出真實委託</span>
       </div>
       <div className="_rec-handoff-preview-items">
         {items.map(([label, value]) => (
@@ -120,7 +120,7 @@ export function RecommendationHandoffPreview({
           </span>
         ))}
       </div>
-      <p>點擊後只把這些欄位帶到交易室 SIM 預覽；真正下單路徑不會被啟用。</p>
+      <p>點擊後只會把推薦條件帶到模擬委託單，仍需在交易室再次確認。</p>
     </div>
   );
 }
@@ -180,7 +180,7 @@ export function RecommendationHandoffUnavailable({
     <span className="_rec-prefill _rec-prefill-disabled" role="status" aria-label={reason} title={reason}>
       {children}
       <span className="_rec-prefill-side" aria-hidden="true">
-        停用
+        不可用
       </span>
     </span>
   );

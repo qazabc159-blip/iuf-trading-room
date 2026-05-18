@@ -20,7 +20,7 @@ const ACTIONS: Array<{
   Icon: typeof ThumbsUp;
 }> = [
   { reaction: "like", label: "有幫助", Icon: ThumbsUp },
-  { reaction: "dislike", label: "不採用", Icon: ThumbsDown },
+  { reaction: "dislike", label: "不準確", Icon: ThumbsDown },
   { reaction: "skip", label: "略過", Icon: MinusCircle },
   { reaction: "acted", label: "已帶入 SIM", Icon: CheckCircle2 },
 ];
@@ -28,14 +28,14 @@ const ACTIONS: Array<{
 function statusText(status: Status, reaction: Reaction | null, failureMessage: string | null) {
   if (status === "queued" && reaction) {
     const item = ACTIONS.find((action) => action.reaction === reaction);
-    return item ? `已送出：${item.label}` : "已送出";
+    return item ? `已排入回饋：${item.label}` : "已排入回饋";
   }
   if (status === "saved" && reaction) {
     const item = ACTIONS.find((action) => action.reaction === reaction);
-    return item ? `已記錄：${item.label}` : "已記錄";
+    return item ? `已儲存：${item.label}` : "已儲存";
   }
-  if (status === "failed") return failureMessage ?? "回饋尚未寫入";
-  return "等待回饋";
+  if (status === "failed") return failureMessage ?? "回饋暫時無法送出";
+  return "尚未回饋";
 }
 
 async function feedbackFailureText(response: Response) {
@@ -52,11 +52,11 @@ async function feedbackFailureText(response: Response) {
   }
 
   const normalizedCode = upstreamCode.toLowerCase();
-  if (response.status === 401 || response.status === 403) return "Owner session 未通過，回饋暫未寫入。";
-  if (response.status === 404 || normalizedCode.includes("not_found")) return "推薦版本已更新，這筆回饋暫未寫入。";
-  if (normalizedCode.includes("api_base")) return "資料服務尚未設定，回饋暫未寫入。";
-  if (response.status === 400) return "回饋格式未通過，暫未寫入。";
-  return "回饋服務同步中，暫未寫入。";
+  if (response.status === 401 || response.status === 403) return "Owner session 已過期，重新登入後再送出。";
+  if (response.status === 404 || normalizedCode.includes("not_found")) return "這筆推薦已不存在，無法回饋。";
+  if (normalizedCode.includes("api_base")) return "資料服務尚未設定，無法回饋。";
+  if (response.status === 400) return "回饋格式不完整，請稍後再試。";
+  return "回饋服務暫時無法連線。";
 }
 
 export function RecommendationFeedbackActions({ recommendationId }: { recommendationId: string }) {
@@ -68,8 +68,8 @@ export function RecommendationFeedbackActions({ recommendationId }: { recommenda
   const selectedAction = selected ? ACTIONS.find((action) => action.reaction === selected) : null;
   const liveStatus = isPending
     ? selectedAction
-      ? `正在寫入：${selectedAction.label}`
-      : "寫入中"
+      ? `正在送出：${selectedAction.label}`
+      : "正在送出"
     : statusText(status, selected, failureMessage);
 
   useEffect(() => {
@@ -113,7 +113,7 @@ export function RecommendationFeedbackActions({ recommendationId }: { recommenda
         setFailureMessage(await feedbackFailureText(response));
         setStatus("failed");
       } catch {
-        setFailureMessage("回饋服務連線失敗，請稍後再試。");
+        setFailureMessage("回饋暫時送不出去，請稍後再試。");
         setStatus("failed");
       }
     });

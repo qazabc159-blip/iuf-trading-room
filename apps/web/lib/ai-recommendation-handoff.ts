@@ -1,11 +1,18 @@
-import type { StockRecommendation } from "@iuf-trading-room/contracts";
+import {
+  recommendationDirectionSchema,
+  type StockRecommendation,
+} from "@iuf-trading-room/contracts";
 
-export const INVALID_AI_HANDOFF_TICKER_MESSAGE = "標的代碼異常，未帶入交易室 SIM 預覽。";
+export const INVALID_AI_HANDOFF_TICKER_MESSAGE = "股票代號格式不完整，暫時不能帶入模擬委託。";
 
 const HANDOFF_PARAM_MAX_LENGTH = {
   recommendationId: 96,
   price: 40,
 } as const;
+
+const DIRECTION_VALUES = recommendationDirectionSchema.options as readonly StockRecommendation["direction"][];
+const BUY_DIRECTION = DIRECTION_VALUES[0];
+const SELL_DIRECTION = DIRECTION_VALUES[1];
 
 function safeHandoffText(value: string | null | undefined, maxLength: number) {
   const trimmed = value?.trim();
@@ -20,14 +27,14 @@ export function safeRecommendationTicker(value: string | null | undefined) {
 }
 
 export function handoffSideForDirection(direction: StockRecommendation["direction"]) {
-  if (direction === "偏空") return "sell";
-  if (direction === "偏多") return "buy";
+  if (direction === SELL_DIRECTION) return "sell";
+  if (direction === BUY_DIRECTION) return "buy";
   return null;
 }
 
 export function handoffLabelForDirection(direction: StockRecommendation["direction"]) {
-  if (direction === "偏空") return "賣出";
-  if (direction === "偏多") return "買進";
+  if (direction === SELL_DIRECTION) return "賣出";
+  if (direction === BUY_DIRECTION) return "買進";
   return "中性";
 }
 
@@ -43,16 +50,9 @@ export function buildRecommendationPrefillHref(rec: StockRecommendation) {
   const side = handoffSideForDirection(rec.direction);
   const entry = safeHandoffText(rec.entryZone.primary, HANDOFF_PARAM_MAX_LENGTH.price);
 
-  if (recommendationId) {
-    params.set("from_rec", recommendationId);
-  }
-  if (side) {
-    params.set("side", side);
-  }
-
-  if (entry) {
-    params.set("entry", entry);
-  }
+  if (recommendationId) params.set("from_rec", recommendationId);
+  if (side) params.set("side", side);
+  if (entry) params.set("entry", entry);
 
   if (rec.invalidation.price !== null) {
     const stop = safeHandoffText(String(rec.invalidation.price), HANDOFF_PARAM_MAX_LENGTH.price);
