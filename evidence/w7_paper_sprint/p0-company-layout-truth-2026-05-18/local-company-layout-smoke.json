@@ -1,0 +1,1000 @@
+{
+  "allPass": true,
+  "results": [
+    {
+      "target": "desktop",
+      "checks": {
+        "status": 200,
+        "finalUrl": "http://127.0.0.1:3123/companies/2330?codexLocalCompanyLayout=1779133684238",
+        "hasCompany": true,
+        "hasAiReport": true,
+        "noTinyCompanyCards": true,
+        "noHorizontalOverflow": true,
+        "noPageErrors": true,
+        "consoleErrorCount": 44,
+        "serverErrorApiCount": 0
+      },
+      "metrics": {
+        "layout": {
+          "x": 302.828125,
+          "y": 561.765625,
+          "width": 951.171875,
+          "height": 2829.1875
+        },
+        "main": {
+          "x": 302.828125,
+          "y": 561.765625,
+          "width": 566.59375,
+          "height": 1982.90625
+        },
+        "sideColumn": {
+          "x": 894,
+          "y": 561.765625,
+          "width": 360,
+          "height": 2829.1875
+        },
+        "side": [
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame company-info-panel company-info-card",
+            "width": 360,
+            "height": 698.234375,
+            "x": 894,
+            "y": 561.765625
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame company-side-nav-panel",
+            "width": 360,
+            "height": 292.046875,
+            "x": 894,
+            "y": 1302
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame _ba-panel",
+            "width": 360,
+            "height": 283.84375,
+            "x": 894,
+            "y": 1636.046875
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame _ts-panel",
+            "width": 360,
+            "height": 283.84375,
+            "x": 894,
+            "y": 1973.890625
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame",
+            "width": 360,
+            "height": 283.84375,
+            "x": 894,
+            "y": 2311.734375
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame",
+            "width": 360,
+            "height": 283.84375,
+            "x": 894,
+            "y": 2649.578125
+          },
+          {
+            "tag": "DIV",
+            "cls": "",
+            "width": 360,
+            "height": 427.53125,
+            "x": 894,
+            "y": 2963.421875
+          }
+        ],
+        "dock": [
+          {
+            "cls": "panel hud-frame company-finmind-panel company-finance-console",
+            "width": 609.328125,
+            "height": 411.609375,
+            "x": 302.828125,
+            "y": 3746.09375
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-chips-console",
+            "width": 320,
+            "height": 193.671875,
+            "x": 934,
+            "y": 3746.09375
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-announcements-console",
+            "width": 320,
+            "height": 147.984375,
+            "x": 934,
+            "y": 3955.765625
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-secondary-status-panel company-derivatives-console",
+            "width": 467.578125,
+            "height": 196.953125,
+            "x": 302.828125,
+            "y": 4179.546875
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-secondary-status-panel company-tick-console",
+            "width": 467.59375,
+            "height": 196.953125,
+            "x": 786.40625,
+            "y": 4179.546875
+          }
+        ],
+        "tooNarrow": [],
+        "horizontalOverflow": 0
+      },
+      "api": [
+        {
+          "status": 200,
+          "url": "http://127.0.0.1:3123/api/header-dock/notifications?limit=50"
+        }
+      ],
+      "consoleMessages": [
+        {
+          "type": "info",
+          "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+        },
+        {
+          "type": "log",
+          "text": "[Fast Refresh] rebuilding"
+        },
+        {
+          "type": "log",
+          "text": "[Fast Refresh] done in 416ms"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/chips?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/2330/coverage' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "warning",
+          "text": "[IndustryGraphPanel] fetch error {ticker: 2330, msg: Failed to fetch}"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/revenue?limit=36' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is prese"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/bidask?symbol=2330' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resourc"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/full-profile' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present o"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/balance-sheet?years=5' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/dividend?years=10' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pres"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/2330/coverage' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "warning",
+          "text": "[CoverageKnowledgePanel] fetch error {ticker: 2330, msg: Failed to fetch}"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/market-value?days=365' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/cash-flow?years=5' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pres"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/financials?limit=24' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pr"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/full-profile' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present o"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/full-profile' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present o"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/shareholding?months=6' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/announcements?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/valuation?days=365' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pre"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/auth/me' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/announcements?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/announcements?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resourc"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resourc"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        }
+      ],
+      "pageErrors": [],
+      "textSample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n03-2330\n2330\n台積電 / 上市\n台北 / 2026/5/19 03:48:18\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 2330 / 半導體 / 核心受惠\n台股目前盤後或週末休市，顯示 05/19 (二) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n← 返回公司列表\n2330\n台積電\n上市\n核心受惠\n等待報價\n半導體 / Apple / EUV / NVIDIA / 矽晶圓 / 更新 05/19 03:48 / 即時報價加入觀察清單可看即時報價\n最新價\n2,240.0\nTWD\n漲跌幅\n-1.10%\n-25.00\n成交量\n3297萬\n股 / 張\n開盤\n2,225.0\n今日\n最高\n2,260.0\n今日\n最低\n2,215.0\n今日\n動能\n略弱\n本益比\n30.1\n倍\n殖利率\n0.98\n%\n月營收\n4107.3億\n最新月\nK線 / K 線圖\n日線、週線、月線與 FinMind 分 K；右側價格軸可直接讀價。\nFinMind / TEJ\n2330\n指標\n均線\nMA5\nMA10\nMA20\nMA60\nRSI\nMACD\n最新收盤\n2,240\n2026-05-18\n漲跌\n-25.00 / -1.10%\n前值 2,265\n區間高低\n2,345 / 495.04\n日K 顯示範圍\n成交量\n32,966,937\n727 根K 線\n日線\n日K\n週K\n月K\n分K\n1分\n5分\n15分\n60分\n範圍\n3月\n6月\n1年\n2年\n全部\n正常\nFinMind Sponsor 2026-05-18 已回傳 5,320 根 1 分 K / 20 個交易日，分 K 只畫真實成交分鐘；低流動空窗不補假線。\n正式 OHLCV\n727 根\n2023-05-18 - 2026-05-18\n收 2,240\n量 32,966,937\n最新收盤\n2,240\n2026-05-18\n開 2,225 / 高 2,260 / 低 2,215 / 量 32,966,937\n\t\n\t\n\n\t\n\t\n知識圖譜\n業務 / 供應鏈 / 客戶\n暫停\n研究資料暫時無法讀取\n資料來源: My-TW-Coverage (MIT)\n在公司圖譜搜尋 2330\n上下游圖譜\n同業 / 上游 / 下游 / 主題\n暫停\n圖譜資料暫時無法讀取\nMy-TW-Coverage coverage endpoint 暫時沒有回應；這不是 coverage 待補，不會用空資料誤判。\n資料來源: My-TW-Coverage (MIT)\n在公司圖譜搜尋 2330\nAI 分析師報告\nBrain 推理 / Owner 唯讀\n🔒\nOwner 限定\nAI 深度分析功能僅限 Owner 角色存取\n[01]\n公司主檔\n\n公司資料庫 / 產業分類 / 驗證狀態\n\n代號\n2330\n台積電\n半導體\n上市\n核心受惠\n市場\n上市\n國別\n台灣\n產業鏈位置\n半導體\n受惠層級\n核心受惠\n產業受惠拆解\n來源：公司主檔分類\n量能\n3\n均價\n3\n毛利\n3\n產能\n3\n敘事\n3\n驗證欄位\n缺資料會明確標示\n尚未接到資金流、市場共識與相對強弱；等 FinMind 籌碼與策略驗證補齊後再顯示結論。\n備註\n來源：公司主檔\n台積電 成立於 1987 年，總部位於台灣新竹。公司是全球最大且最先進的專用積體電路製造服務公司 (Pure-play Foundry)，市佔率超過 60%。台積電引領全球半導體製程技術，目前已量產 3 奈米 (N3) 製程，並積極研發 2 奈米 (N2) 及 A16 技術。公司客戶涵蓋全球主要無晶圓廠 IC 設計公司及 IDM 大廠。台積電是驅動 AI、高效能運算 (HPC)、智慧型手機及車用電子發展的核心引擎。\n產業：半導體\n產業分類：半導體\n市值：47,845,508 百萬台幣\n企業價值：45,886,629 百萬台幣\n頁面索引\nMy-TW-Coverage\n知識圖譜\nAI 分析師\nBrain ReAct\n資料艙\n價格 / 財報\n完整資料區\nFinMind [06]-[11]\n資料來源\n狀態\n五檔\n委買委賣\nBLOCKED\n資料源：KGI gateway /api/v1/kgi"
+    },
+    {
+      "target": "tablet",
+      "checks": {
+        "status": 200,
+        "finalUrl": "http://127.0.0.1:3123/companies/2330?codexLocalCompanyLayout=1779133711961",
+        "hasCompany": true,
+        "hasAiReport": true,
+        "noTinyCompanyCards": true,
+        "noHorizontalOverflow": true,
+        "noPageErrors": true,
+        "consoleErrorCount": 44,
+        "serverErrorApiCount": 0
+      },
+      "metrics": {
+        "layout": {
+          "x": 268,
+          "y": 644.265625,
+          "width": 728,
+          "height": 3608.96875
+        },
+        "main": {
+          "x": 268,
+          "y": 644.265625,
+          "width": 728,
+          "height": 1806.65625
+        },
+        "sideColumn": {
+          "x": 268,
+          "y": 2469.34375,
+          "width": 728,
+          "height": 1783.890625
+        },
+        "side": [
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame company-info-panel company-info-card",
+            "width": 355,
+            "height": 698.234375,
+            "x": 268,
+            "y": 2469.34375
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame company-side-nav-panel",
+            "width": 355,
+            "height": 292.046875,
+            "x": 641,
+            "y": 2493.34375
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame _ba-panel",
+            "width": 355,
+            "height": 266.0625,
+            "x": 268,
+            "y": 3209.578125
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame _ts-panel",
+            "width": 355,
+            "height": 266.0625,
+            "x": 641,
+            "y": 3209.578125
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame",
+            "width": 355,
+            "height": 266.0625,
+            "x": 268,
+            "y": 3529.640625
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame",
+            "width": 355,
+            "height": 266.0625,
+            "x": 641,
+            "y": 3529.640625
+          },
+          {
+            "tag": "DIV",
+            "cls": "",
+            "width": 355,
+            "height": 427.53125,
+            "x": 268,
+            "y": 3825.703125
+          }
+        ],
+        "dock": [
+          {
+            "cls": "panel hud-frame company-finmind-panel company-finance-console",
+            "width": 728,
+            "height": 400.453125,
+            "x": 268,
+            "y": 4703.46875
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-chips-console",
+            "width": 357.59375,
+            "height": 185.671875,
+            "x": 268,
+            "y": 5120.296875
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-announcements-console",
+            "width": 357.609375,
+            "height": 185.671875,
+            "x": 638.390625,
+            "y": 5120.296875
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-secondary-status-panel company-derivatives-console",
+            "width": 357.59375,
+            "height": 222,
+            "x": 268,
+            "y": 5322.34375
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-secondary-status-panel company-tick-console",
+            "width": 357.609375,
+            "height": 222,
+            "x": 638.390625,
+            "y": 5322.34375
+          }
+        ],
+        "tooNarrow": [],
+        "horizontalOverflow": 0
+      },
+      "api": [
+        {
+          "status": 200,
+          "url": "http://127.0.0.1:3123/api/header-dock/notifications?limit=50"
+        }
+      ],
+      "consoleMessages": [
+        {
+          "type": "info",
+          "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/auth/me' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/2330/coverage' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "warning",
+          "text": "[CoverageKnowledgePanel] fetch error {ticker: 2330, msg: Failed to fetch}"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/full-profile' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present o"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/market-value?days=365' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/cash-flow?years=5' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pres"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/valuation?days=365' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pre"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/dividend?years=10' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pres"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/bidask?symbol=2330' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/2330/coverage' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "warning",
+          "text": "[IndustryGraphPanel] fetch error {ticker: 2330, msg: Failed to fetch}"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/full-profile' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present o"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/chips?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/shareholding?months=6' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/revenue?limit=36' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is prese"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/financials?limit=24' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pr"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resourc"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/full-profile' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present o"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/announcements?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/balance-sheet?years=5' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/announcements?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/announcements?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resourc"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resourc"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        }
+      ],
+      "pageErrors": [],
+      "textSample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n03-2330\n2330\n台積電 / 上市\n台北 / 2026/5/19 03:48:37\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 2330 / 半導體 / 核心受惠\n台股目前盤後或週末休市，顯示 05/19 (二) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n← 返回公司列表\n2330\n台積電\n上市\n核心受惠\n等待報價\n半導體 / Apple / EUV / NVIDIA / 矽晶圓 / 更新 05/19 03:48 / 即時報價加入觀察清單可看即時報價\n最新價\n2,240.0\nTWD\n漲跌幅\n-1.10%\n-25.00\n成交量\n3297萬\n股 / 張\n開盤\n2,225.0\n今日\n最高\n2,260.0\n今日\n最低\n2,215.0\n今日\n動能\n略弱\n本益比\n30.1\n倍\n殖利率\n0.98\n%\n月營收\n4107.3億\n最新月\nK線 / K 線圖\n日線、週線、月線與 FinMind 分 K；右側價格軸可直接讀價。\nFinMind / TEJ\n2330\n指標\n均線\nMA5\nMA10\nMA20\nMA60\nRSI\nMACD\n最新收盤\n2,240\n2026-05-18\n漲跌\n-25.00 / -1.10%\n前值 2,265\n區間高低\n2,345 / 495.04\n日K 顯示範圍\n成交量\n32,966,937\n727 根K 線\n日線\n日K\n週K\n月K\n分K\n1分\n5分\n15分\n60分\n範圍\n3月\n6月\n1年\n2年\n全部\n正常\nFinMind Sponsor 2026-05-18 已回傳 5,320 根 1 分 K / 20 個交易日，分 K 只畫真實成交分鐘；低流動空窗不補假線。\n正式 OHLCV\n727 根\n2023-05-18 - 2026-05-18\n收 2,240\n量 32,966,937\n最新收盤\n2,240\n2026-05-18\n開 2,225 / 高 2,260 / 低 2,215 / 量 32,966,937\n\t\n\t\n\n\t\n\t\n知識圖譜\n業務 / 供應鏈 / 客戶\n暫停\n研究資料暫時無法讀取\n資料來源: My-TW-Coverage (MIT)\n在公司圖譜搜尋 2330\n上下游圖譜\n同業 / 上游 / 下游 / 主題\n暫停\n圖譜資料暫時無法讀取\nMy-TW-Coverage coverage endpoint 暫時沒有回應；這不是 coverage 待補，不會用空資料誤判。\n資料來源: My-TW-Coverage (MIT)\n在公司圖譜搜尋 2330\nAI 分析師報告\nBrain 推理 / Owner 唯讀\n🔒\nOwner 限定\nAI 深度分析功能僅限 Owner 角色存取\n[01]\n公司主檔\n\n公司資料庫 / 產業分類 / 驗證狀態\n\n代號\n2330\n台積電\n半導體\n上市\n核心受惠\n市場\n上市\n國別\n台灣\n產業鏈位置\n半導體\n受惠層級\n核心受惠\n產業受惠拆解\n來源：公司主檔分類\n量能\n3\n均價\n3\n毛利\n3\n產能\n3\n敘事\n3\n驗證欄位\n缺資料會明確標示\n尚未接到資金流、市場共識與相對強弱；等 FinMind 籌碼與策略驗證補齊後再顯示結論。\n備註\n來源：公司主檔\n台積電 成立於 1987 年，總部位於台灣新竹。公司是全球最大且最先進的專用積體電路製造服務公司 (Pure-play Foundry)，市佔率超過 60%。台積電引領全球半導體製程技術，目前已量產 3 奈米 (N3) 製程，並積極研發 2 奈米 (N2) 及 A16 技術。公司客戶涵蓋全球主要無晶圓廠 IC 設計公司及 IDM 大廠。台積電是驅動 AI、高效能運算 (HPC)、智慧型手機及車用電子發展的核心引擎。\n產業：半導體\n產業分類：半導體\n市值：47,845,508 百萬台幣\n企業價值：45,886,629 百萬台幣\n頁面索引\nMy-TW-Coverage\n知識圖譜\nAI 分析師\nBrain ReAct\n資料艙\n價格 / 財報\n完整資料區\nFinMind [06]-[11]\n資料來源\n狀態\n五檔\n委買委賣\nBLOCKED\n資料源：KGI gateway /api/v1/kgi"
+    },
+    {
+      "target": "mobile",
+      "checks": {
+        "status": 200,
+        "finalUrl": "http://127.0.0.1:3123/companies/2330?codexLocalCompanyLayout=1779133730750",
+        "hasCompany": true,
+        "hasAiReport": true,
+        "noTinyCompanyCards": true,
+        "noHorizontalOverflow": true,
+        "noPageErrors": true,
+        "consoleErrorCount": 44,
+        "serverErrorApiCount": 0
+      },
+      "metrics": {
+        "layout": {
+          "x": 18,
+          "y": 1204.484375,
+          "width": 354,
+          "height": 4857.171875
+        },
+        "main": {
+          "x": 18,
+          "y": 1204.484375,
+          "width": 354,
+          "height": 2145.671875
+        },
+        "sideColumn": {
+          "x": 18,
+          "y": 3366.15625,
+          "width": 354,
+          "height": 2695.5
+        },
+        "side": [
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame company-info-panel company-info-card",
+            "width": 354,
+            "height": 946.65625,
+            "x": 18,
+            "y": 3366.15625
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame company-side-nav-panel",
+            "width": 0,
+            "height": 0,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame _ba-panel",
+            "width": 354,
+            "height": 276.828125,
+            "x": 18,
+            "y": 4350.8125
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame _ts-panel",
+            "width": 354,
+            "height": 276.828125,
+            "x": 18,
+            "y": 4677.640625
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame",
+            "width": 354,
+            "height": 276.828125,
+            "x": 18,
+            "y": 5004.46875
+          },
+          {
+            "tag": "SECTION",
+            "cls": "panel hud-frame",
+            "width": 354,
+            "height": 276.828125,
+            "x": 18,
+            "y": 5331.296875
+          },
+          {
+            "tag": "DIV",
+            "cls": "",
+            "width": 354,
+            "height": 427.53125,
+            "x": 18,
+            "y": 5634.125
+          }
+        ],
+        "dock": [
+          {
+            "cls": "panel hud-frame company-finmind-panel company-finance-console",
+            "width": 354,
+            "height": 466.25,
+            "x": 18,
+            "y": 6685.609375
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-chips-console",
+            "width": 354,
+            "height": 185.671875,
+            "x": 18,
+            "y": 7165.859375
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-announcements-console",
+            "width": 354,
+            "height": 139.984375,
+            "x": 18,
+            "y": 7363.53125
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-secondary-status-panel company-derivatives-console",
+            "width": 354,
+            "height": 222,
+            "x": 18,
+            "y": 7517.515625
+          },
+          {
+            "cls": "panel hud-frame company-intel-panel company-secondary-status-panel company-tick-console",
+            "width": 354,
+            "height": 188.953125,
+            "x": 18,
+            "y": 7751.515625
+          }
+        ],
+        "tooNarrow": [],
+        "horizontalOverflow": 0
+      },
+      "api": [
+        {
+          "status": 200,
+          "url": "http://127.0.0.1:3123/api/header-dock/notifications?limit=50"
+        }
+      ],
+      "consoleMessages": [
+        {
+          "type": "info",
+          "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/2330/coverage' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "warning",
+          "text": "[CoverageKnowledgePanel] fetch error {ticker: 2330, msg: Failed to fetch}"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/bidask?symbol=2330' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resourc"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/dividend?years=10' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pres"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/shareholding?months=6' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/valuation?days=365' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pre"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/chips?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/balance-sheet?years=5' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/revenue?limit=36' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is prese"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/full-profile' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present o"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/auth/me' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/market-value?days=365' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/2330/coverage' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "warning",
+          "text": "[IndustryGraphPanel] fetch error {ticker: 2330, msg: Failed to fetch}"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/full-profile' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present o"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/financials?limit=24' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pr"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/full-profile' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present o"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/announcements?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/cash-flow?years=5' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is pres"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/announcements?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/companies/3ecb94c3-f801-47a8-8c18-097a92e834c6/announcements?days=30' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is "
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resourc"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        },
+        {
+          "type": "error",
+          "text": "Access to fetch at 'https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20' from origin 'http://127.0.0.1:3123' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resourc"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: net::ERR_FAILED"
+        }
+      ],
+      "pageErrors": [],
+      "textSample": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，15 則未讀\n15\n03-2330\n2330\n台積電 / 上市\n台北 / 2026/5/19 03:48:56\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 2330 / 半導體 / 核心受惠\n台股目前盤後或週末休市，顯示 05/19 (二) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n← 返回公司列表\n2330\n台積電\n上市\n核心受惠\n等待報價\n半導體 / Apple / EUV / NVIDIA / 矽晶圓 / 更新 05/19 03:48 / 即時報價加入觀察清單可看即時報價\n最新價\n2,240.0\nTWD\n漲跌幅\n-1.10%\n-25.00\n成交量\n3297萬\n股 / 張\n開盤\n2,225.0\n今日\n最高\n2,260.0\n今日\n最低\n2,215.0\n今日\n動能\n略弱\n本益比\n30.1\n倍\n殖利率\n0.98\n%\n月營收\n4107.3億\n最新月\nK線 / K 線圖\n日線、週線、月線與 FinMind 分 K；右側價格軸可直接讀價。\nFinMind / TEJ\n2330\n指標\n均線\nMA5\nMA10\nMA20\nMA60\nRSI\nMACD\n最新收盤\n2,240\n2026-05-18\n漲跌\n-25.00 / -1.10%\n前值 2,265\n區間高低\n2,345 / 495.04\n日K 顯示範圍\n成交量\n32,966,937\n727 根K 線\n日線\n日K\n週K\n月K\n分K\n1分\n5分\n15分\n60分\n範圍\n3月\n6月\n1年\n2年\n全部\n正常\nFinMind Sponsor 2026-05-18 已回傳 5,320 根 1 分 K / 20 個交易日，分 K 只畫真實成交分鐘；低流動空窗不補假線。\n正式 OHLCV\n727 根\n2023-05-18 - 2026-05-18\n收 2,240\n量 32,966,937\n最新收盤\n2,240\n2026-05-18\n開 2,225 / 高 2,260 / 低 2,215 / 量 32,966,937\n\t\n\t\n\n\t\n\t\n知識圖譜\n業務 / 供應鏈 / 客戶\n暫停\n研究資料暫時無法讀取\n資料來源: My-TW-Coverage (MIT)\n在公司圖譜搜尋 2330\n上下游圖譜\n同業 / 上游 / 下游 / 主題\n暫停\n圖譜資料暫時無法讀取\nMy-TW-Coverage coverage endpoint 暫時沒有回應；這不是 coverage 待補，不會用空資料誤判。\n資料來源: My-TW-Coverage (MIT)\n在公司圖譜搜尋 2330\nAI 分析師報告\nBrain 推理 / Owner 唯讀\n🔒\nOwner 限定\nAI 深度分析功能僅限 Owner 角色存取\n[01]\n公司主檔\n\n公司資料庫 / 產業分類 / 驗證狀態\n\n代號\n2330\n台積電\n半導體\n上市\n核心受惠\n市場\n上市\n國別\n台灣\n產業鏈位置\n半導體\n受惠層級\n核心受惠\n產業受惠拆解\n來源：公司主檔分類\n量能\n3\n均價\n3\n毛利\n3\n產能\n3\n敘事\n3\n驗證欄位\n缺資料會明確標示\n尚未接到資金流、市場共識與相對強弱；等 FinMind 籌碼與策略驗證補齊後再顯示結論。\n備註\n來源：公司主檔\n台積電 成立於 1987 年，總部位於台灣新竹。公司是全球最大且最先進的專用積體電路製造服務公司 (Pure-play Foundry)，市佔率超過 60%。台積電引領全球半導體製程技術，目前已量產 3 奈米 (N3) 製程，並積極研發 2 奈米 (N2) 及 A16 技術。公司客戶涵蓋全球主要無晶圓廠 IC 設計公司及 IDM 大廠。台積電是驅動 AI、高效能運算 (HPC)、智慧型手機及車用電子發展的核心引擎。\n產業：半導體\n產業分類：半導體\n市值：47,845,508 百萬台幣\n企業價值：45,886,629 百萬台幣\n五檔\n委買委賣\nBLOCKED\n資料源：KGI gateway /api/v1/kgi/quote/bidask\n五檔報價暫時無法讀取：Failed to fetch\n逐筆\n成交明細\n最近 20 筆 / 5s 更新\nBLOCKED\n資料源：KGI gateway /api/v1/kgi/quote/ticks\n逐筆成交暫時無法讀取：Failed to fetch\n法人\n三大法人買賣超\nBLOCKED\n資料源：FinMind TaiwanStockI"
+    }
+  ]
+}
