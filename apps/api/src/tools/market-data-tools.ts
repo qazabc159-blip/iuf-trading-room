@@ -231,12 +231,27 @@ export async function getCompanyTechnical(ticker: string): Promise<CompanyTechni
       FROM companies_ohlcv o
       INNER JOIN companies c ON c.id = o.company_id
       WHERE c.ticker = ${ticker}
-        AND o.interval = '1d'
+        AND o.interval IN ('1d', 'day')
       ORDER BY o.dt DESC
       LIMIT 200
     `)) as unknown as { rows: Array<{ date: string; close: string; volume: string }> };
 
-    const data = (rows.rows ?? []) as Array<{ date: string; close: string; volume: string }>;
+    let data = (rows.rows ?? []) as Array<{ date: string; close: string; volume: string }>;
+    let source = "companies_ohlcv";
+    if (data.length === 0 && /^\d{4}[A-Z]?$/.test(ticker) && process.env["FINMIND_API_TOKEN"]) {
+      const { getFinMindClient } = await import("../data-sources/finmind-client.js");
+      const startDate = new Date(Date.now() - 280 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const bars = await getFinMindClient().getStockPriceAdj(ticker, startDate, null);
+      data = bars
+        .slice(-200)
+        .reverse()
+        .map((bar) => ({
+          date: bar.dt,
+          close: String(bar.close),
+          volume: String(bar.volume),
+        }));
+      source = "finmind_ohlcv";
+    }
     if (data.length === 0) return base;
 
     const closes = data.map(r => parseFloat(r.close)).filter(v => !isNaN(v));
@@ -296,7 +311,7 @@ export async function getCompanyTechnical(ticker: string): Promise<CompanyTechni
       aboveMa60: ma60v !== null ? last > ma60v : null,
       aboveMa200: ma200v !== null ? last > ma200v : null,
       volumeRatio20d,
-      source: "companies_ohlcv",
+      source,
       asOf: data[0]?.date ?? null,
     };
   } catch (err) {
