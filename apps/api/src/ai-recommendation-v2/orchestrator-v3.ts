@@ -33,6 +33,135 @@ import {
   getNewsTop10,
 } from "../tools/market-data-tools.js";
 
+// ── F1: Programmatic risk_off_score (deterministic — LLM cannot override) ─────
+
+/**
+ * Compute a programmatic risk_off_score BEFORE firing the LLM.
+ *
+ * 6 signals (楊董 SOP):
+ *   S1: VIX > 25
+ *   S2: VIX 5d change > 30%
+ *   S3: DXY 60d Z-score > 1
+ *   S4: US 10Y 20d rise > 25bp
+ *   S5: WTI 10d rise > 10%
+ *   S6: TAIEX < EMA60
+ *
+ * S1-S5 require external data sources not available in TWSE — fail-open (score=0).
+ * S6 is computed from TWSE StockDay index level + EMA proxy.
+ *
+ * Fail-open contract: if any signal data is unavailable → signal = 0 (not 1).
+ * This means programmatic score can only BLOCK when we have positive evidence.
+ * A score of 0 means "data unavailable, do not block" — LLM still runs.
+ *
+ * Returns { score, signals, taiexIndex, taiexChangePct }
+ */
+export interface ProgrammaticRiskOffResult {
+  score: number;
+  signals: {
+    vixAbove25: boolean;
+    vix5dSpike: boolean;
+    dxy60dZHigh: boolean;
+    tenY20dUp: boolean;
+    wti10dUp: boolean;
+    taiexBelowEma60: boolean;
+  };
+  taiexIndex: number | null;
+  taiexChangePct: number | null;
+  dataSource: string;
+  computedAt: string;
+}
+
+export async function computeProgrammaticRiskOffScore(): Promise<ProgrammaticRiskOffResult> {
+  const result: ProgrammaticRiskOffResult = {
+    score: 0,
+    signals: {
+      vixAbove25: false,
+      vix5dSpike: false,
+      dxy60dZHigh: false,
+      tenY20dUp: false,
+      wti10dUp: false,
+      taiexBelowEma60: false,
+    },
+    taiexIndex: null,
+    taiexChangePct: null,
+    dataSource: "twse_openapi",
+    computedAt: new Date().toISOString(),
+  };
+
+  try {
+    // S1-S5: External data (VIX/DXY/10Y/WTI) — not available from TWSE.
+    // These remain false (score=0) — fail-open.
+    // TODO: wire Yahoo Finance or FRED API for these signals when available.
+
+    // S6: TAIEX < EMA60
+    // Use TWSE StockDay closing index to compute EMA60 proxy from index history.
+    // Currently we only have today's close from MI_5MINS_INDEX — not enough for EMA60.
+    // Fail-open: S6 = false when historical index data unavailable.
+    const overview = await getMarketOverview();
+    if (overview.taiex) {
+      result.taiexIndex = overview.taiex.index;
+      result.taiexChangePct = overview.taiex.changePct;
+
+      // Try to compute EMA60 from DB if OHLCV index data exists
+      // Fail-open: if no historical data, S6 = false
+      const ema60 = await computeTaiexEma60FromDb();
+      if (ema60 !== null && result.taiexIndex !== null && result.taiexIndex < ema60) {
+        result.signals.taiexBelowEma60 = true;
+        result.score += 1;
+        console.info(`[v3-risk-off] S6 TAIEX(${result.taiexIndex}) < EMA60(${ema60}) → +1`);
+      }
+    }
+  } catch (err) {
+    console.warn("[v3-risk-off] computeProgrammaticRiskOffScore error:", err instanceof Error ? err.message : String(err));
+  }
+
+  console.info(`[v3-risk-off] programmatic risk_off_score = ${result.score}/6 (S1-S5 unavailable, S6 computed)`);
+  return result;
+}
+
+/**
+ * Compute TAIEX EMA60 from DB companies_ohlcv index data if available.
+ * Uses index-level data if present, otherwise returns null (fail-open).
+ */
+async function computeTaiexEma60FromDb(): Promise<number | null> {
+  try {
+    const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return null;
+    const db = getDb();
+    if (!db) return null;
+
+    const { sql } = await import("drizzle-orm");
+    // Query TAIEX index history from DB if available (ticker = "^TWII" or "TAIEX")
+    const rows = (await db.execute(sql`
+      SELECT o.close AS close
+      FROM companies_ohlcv o
+      INNER JOIN companies c ON c.id = o.company_id
+      WHERE (c.ticker = 'TAIEX' OR c.ticker = '^TWII' OR c.ticker = '0000')
+        AND o.interval = '1d'
+      ORDER BY o.dt DESC
+      LIMIT 60
+    `)) as unknown as { rows: Array<{ close: string }> };
+
+    const closes = (rows.rows ?? [])
+      .map(r => parseFloat(r.close))
+      .filter(v => !isNaN(v) && v > 0);
+
+    if (closes.length < 20) return null; // not enough data
+
+    // Simple EMA60 (or EMA<N> with what we have)
+    const n = Math.min(60, closes.length);
+    const reversed = closes.slice(0, n).reverse(); // ascending
+    const k = 2 / (n + 1);
+    let ema = reversed[0]!;
+    for (let i = 1; i < reversed.length; i++) {
+      ema = reversed[i]! * k + ema * (1 - k);
+    }
+    return Math.round(ema * 100) / 100;
+  } catch {
+    return null;
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type AiRecTrigger = "cron_0930" | "cron_1300" | "manual_refresh" | "test";
@@ -48,7 +177,7 @@ export interface AiRecommendationV3RunOptions {
 
 export interface AiRecommendationV3RunResult {
   runId: string;
-  status: "complete" | "failed" | "budget_exceeded" | "market_risk_off";
+  status: "complete" | "failed" | "budget_exceeded" | "market_risk_off" | "insufficient_tools";
   generatedAt: string;
   items: AiStockRecommendationV2[];
   reactTrace: unknown[];
@@ -57,6 +186,8 @@ export interface AiRecommendationV3RunResult {
   totalTokens: number;
   marketState: AiRecMarketState | null;
   marketRiskOffScore: number | null;
+  /** programmatic risk_off computation result (F1) */
+  programmaticRiskOff: ProgrammaticRiskOffResult | null;
   dbRowId: string | null;
 }
 
@@ -130,24 +261,37 @@ async function dispatchMarketToolV3(
 
 // ── Yang SOP system prompt (5-module strict) ──────────────────────────────────
 
-function buildV3SystemPrompt(dateStr: string): string {
+function buildV3SystemPrompt(dateStr: string, programmaticRiskOffScore: number): string {
+  const riskOffContext = `
+=== SYSTEM-PROVIDED risk_off_score (DETERMINISTIC — DO NOT OVERRIDE) ===
+系統已計算 programmatic risk_off_score = ${programmaticRiskOffScore}/6（基於可用市場資料）。
+${programmaticRiskOffScore >= 3
+  ? `risk_off_score >= 3 → 你必須回傳 RISK_OFF_SKIP，不推薦任何新倉。`
+  : `risk_off_score < 3 → 你必須完整執行 STEP 2-5，輸出 ≥3 檔推薦（A+/A/B bucket）。
+你不可自行判斷 risk-off 並 skip STEP 2-5。即使大盤單日跌 0.5%-1%，也必須繼續分析。
+若輸出推薦數 < 3，系統會自動 reject 並標記 insufficient_tools error。`}
+=== END SYSTEM CONTEXT ===
+`;
+
   return `你是 IUF 台股操盤師 AI，嚴格按楊董 SOP 5-module 框架執行推薦分析。
 今天是 ${dateStr}（台北時間）。
-
+${riskOffContext}
 你有以下工具可用：${TOOL_WHITELIST_V3.join(", ")}
 
 ---
 [STEP 1] 市場狀態（前置條件 — 必須最先執行）
-  先 callTool(get_market_overview)，從回傳資料計算：
+  先 callTool(get_market_overview)，從回傳資料補充確認市場狀態。
   trend_score = 1[C>EMA20] + 1[EMA20>EMA60] + 1[EMA60>EMA120] + 1[ADX14>22] + 1[RS20>0]（滿分5）
   range_score = 1[|C-EMA60|/EMA60<5%] + 1[ADX14<18] + 1[BBWidth<40pct]（滿分3）
-  risk_off_score = 1[VIX>25] + 1[VIX5d漲>30%] + 1[DXY60dZ>1] + 1[10Y20d漲>25bp] + 1[WTI10d漲>10%] + 1[TAIEX<EMA60]（滿分6）
 
   判斷優先序：risk-off > event > trend > range
-  若 risk_off_score >= 3 → 設 toolName=null，回傳 RISK_OFF_SKIP，不開新 beta 倉
-  若 event日（FOMC/CPI/法說 T-2~T+1 或振幅>2*ATR20）→ 市場狀態設 event，倉位倍率 0.5
+  ★★ CRITICAL: 系統 programmatic risk_off_score = ${programmaticRiskOffScore}。
+  ${programmaticRiskOffScore >= 3
+    ? "risk_off_score >= 3 → 你必須在第一輪 toolName=null，thought 包含「RISK_OFF_SKIP」。"
+    : `risk_off_score < 3 → 你絕對不可 RISK_OFF_SKIP。必須執行完整 STEP 2-5。
+  若 event日（FOMC/CPI/法說 T-2~T+1 或振幅>2*ATR20）→ 市場狀態設 event，倉位倍率 0.5，但仍推薦。`}
 
-[STEP 2] 主題穿透
+[STEP 2] 主題穿透（risk_off_score < 3 時強制執行）
   callTool(get_news_top10) 識別當前強勢主題
   callTool(get_sector_rotation) 找資金流入板塊
   根據楊董 4 層產業鏈框架定位標的：
@@ -155,6 +299,8 @@ function buildV3SystemPrompt(dateStr: string): string {
   排除「已 price in」：法人連5日大量買超且股價20日漲>30% 的公司直接跳過
 
 [STEP 3] 個股 7 sub-score（每候選股 0-100 合計）
+  ★★ 必須至少呼叫 get_company_technical 5 次（不同 ticker）。
+  每個推薦標的都需要 get_company_technical 工具支撐，否則視為未驗證無效。
   - 主題位置 /20（依 STEP 2 產業鏈層位判定）
   - 營收/財報 /15（近3月YoY正且至少2月加速 → 滿分；只1月加速 → 8分；負成長 → 0）
   - 法人/ETF /15（5日外資+投信同向淨買超/20均量 > 0.5 → 滿；單向 → 8；流出 → 0）
@@ -171,6 +317,7 @@ function buildV3SystemPrompt(dateStr: string): string {
   < 65 → C 高風險排除（不開新倉）
 
 [STEP 5] 每檔輸出（STEP 4 bucket != C 才輸出）
+  ★★ 最終輸出必須包含 ≥3 檔 A+/A/B 推薦（否則系統拒絕此次分析）。
   格式嚴格如下（解析器依賴此格式）：
   進場區：OTE 0.618-0.705 回踩（具體價格區間）或突破後回測不破
   TP1：前波高 or 整數關（具體價格）
@@ -184,10 +331,10 @@ function buildV3SystemPrompt(dateStr: string): string {
 {"thought": "<1-3句分析>", "toolName": "<工具名稱 or null>", "toolInput": <{...} or null>}
 
 規則：
-- 先完成 STEP 1（market overview），再 STEP 2（news+sector），再 STEP 3（技術/法人個股）
-- 至少執行5輪工具呼叫再給最終答案
+- 先完成 STEP 1（market overview），再 STEP 2（news+sector），再 STEP 3（技術/法人個股，≥5次）
+- 至少執行7輪工具呼叫再給最終答案（1次overview + 1次news + 1次sector + 5次company_technical）
 - 最終答案時 toolName=null，thought 包含完整分析摘要
-- 若 risk_off_score >= 3，thought 開頭必須含「RISK_OFF_SKIP」`;
+- ★★ 禁止在 risk_off_score < 3 時使用 RISK_OFF_SKIP（系統已驗證，LLM 不可 override）`;
 }
 
 // ── Yang SOP synthesis prompt ──────────────────────────────────────────────────
@@ -589,8 +736,48 @@ export async function runAiRecommendationV3(
   const dateStr = opts.dateStr ?? todayTst();
   const generatedAt = new Date().toISOString();
   const model = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
-  const maxRounds = Math.min(opts.maxRounds ?? 10, 12);
+  const maxRounds = Math.min(opts.maxRounds ?? 12, 15);
   const costCap = Math.min(opts.costCapUsd ?? 2.0, 5.0);
+
+  // ── F1: Programmatic risk_off_score (before firing LLM) ──────────────────
+  const programmaticRiskOff = await computeProgrammaticRiskOffScore();
+  const progScore = programmaticRiskOff.score;
+
+  console.info(`[v3-orchestrator] run ${runId} programmatic risk_off_score=${progScore}/6 (trigger=${trigger})`);
+
+  // If programmatic score >= 3 → short-circuit, do NOT fire LLM
+  if (progScore >= 3) {
+    const riskOffReport = `## 市場 risk-off — 暫不推薦新倉（系統程式判斷）
+
+系統計算 programmatic risk_off_score = ${progScore}/6，達到 ≥3 閘門。
+依楊董 SOP，risk_off_score >= 3 時不開新 beta 倉，待事件過後重新評估。
+
+觸發訊號（${progScore}/6）:
+${programmaticRiskOff.signals.vixAbove25 ? "- S1: VIX > 25 ✓" : ""}
+${programmaticRiskOff.signals.vix5dSpike ? "- S2: VIX 5d 漲 > 30% ✓" : ""}
+${programmaticRiskOff.signals.dxy60dZHigh ? "- S3: DXY 60d Z-score > 1 ✓" : ""}
+${programmaticRiskOff.signals.tenY20dUp ? "- S4: 10Y 20d 漲 > 25bp ✓" : ""}
+${programmaticRiskOff.signals.wti10dUp ? "- S5: WTI 10d 漲 > 10% ✓" : ""}
+${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskOff.taiexIndex}) < EMA60 ✓` : ""}`.trim();
+
+    const result: AiRecommendationV3RunResult = {
+      runId,
+      status: "market_risk_off",
+      generatedAt,
+      items: [],
+      reactTrace: [],
+      finalReportMarkdown: riskOffReport,
+      totalCostUsd: 0,
+      totalTokens: 0,
+      marketState: "risk_off",
+      marketRiskOffScore: progScore,
+      programmaticRiskOff,
+      dbRowId,
+    };
+    _latestV3Cache = result;
+    _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+    return result;
+  }
 
   const { callLlm } = await import("../llm/llm-gateway.js");
   type LlmMessage = { role: "system" | "user" | "assistant"; content: string };
@@ -599,12 +786,21 @@ export async function runAiRecommendationV3(
   let totalTokens = 0;
   let totalCostUsd = 0;
   let detectedMarketState: AiRecMarketState | null = null;
-  let detectedRiskOffScore: number | null = null;
+  let detectedRiskOffScore: number | null = progScore;
 
+  // Inject programmatic score into system prompt — LLM cannot override
   const messages: LlmMessage[] = [
-    { role: "system", content: buildV3SystemPrompt(dateStr) },
-    { role: "user", content: `請開始楊董 SOP 5-module 分析，日期 ${dateStr}。先執行 STEP 1: get_market_overview。` },
+    { role: "system", content: buildV3SystemPrompt(dateStr, progScore) },
+    {
+      role: "user",
+      content: `請開始楊董 SOP 5-module 分析，日期 ${dateStr}。
+系統已確認 programmatic risk_off_score = ${progScore}/6 < 3，你必須完整執行 STEP 1→5，輸出 ≥3 檔推薦。
+先執行 STEP 1: callTool(get_market_overview)。`,
+    },
   ];
+
+  // Track get_company_technical call count for F3 validation
+  let companyTechnicalCallCount = 0;
 
   for (let round = 1; round <= maxRounds; round++) {
     if (totalCostUsd >= costCap) {
@@ -622,6 +818,7 @@ export async function runAiRecommendationV3(
         totalTokens,
         marketState: detectedMarketState,
         marketRiskOffScore: detectedRiskOffScore,
+        programmaticRiskOff,
         dbRowId,
       };
       _latestV3Cache = result;
@@ -651,6 +848,7 @@ export async function runAiRecommendationV3(
         totalTokens,
         marketState: null,
         marketRiskOffScore: null,
+        programmaticRiskOff,
         dbRowId,
       };
       _latestV3Cache = result;
@@ -663,8 +861,32 @@ export async function runAiRecommendationV3(
     const raw = llmResult.content;
     const step = parseMarketStepV3(raw);
 
-    // Detect risk-off skip early
-    if (step.isRiskOff) {
+    // ── F1: Intercept LLM RISK_OFF_SKIP when programmatic score < 3 ───────────
+    // LLM tried to self-skip despite programmatic score being below threshold.
+    // Reject the skip and force continuation by injecting correction message.
+    if (step.isRiskOff && progScore < 3) {
+      console.warn(`[v3-orchestrator] round ${round}: LLM attempted RISK_OFF_SKIP but programmatic score=${progScore} < 3 — REJECTED, forcing continuation`);
+      trace.push({
+        round,
+        thought: `[ORCHESTRATOR OVERRIDE] LLM tried RISK_OFF_SKIP but programmatic risk_off_score=${progScore} < 3. Override rejected. Forcing STEP 2-5.`,
+        toolName: null,
+        toolInput: null,
+        observation: `LLM_RISK_OFF_REJECTED: progScore=${progScore}`,
+        tokensUsed: llmResult.usage.totalTokens,
+      });
+      // Inject correction into conversation to force LLM back on track
+      messages.push({ role: "assistant", content: raw });
+      messages.push({
+        role: "user",
+        content: `[SYSTEM REJECTION] 你的 RISK_OFF_SKIP 被系統拒絕。programmatic risk_off_score = ${progScore}/6 < 3，系統判定市場未達 risk-off 條件。
+你必須繼續執行 STEP 2-5：先 callTool(get_news_top10)，再 callTool(get_sector_rotation)，再 callTool(get_company_technical) 至少 5 次。
+不得再次使用 RISK_OFF_SKIP。`,
+      });
+      continue; // next round
+    }
+
+    // If programmatic score >= 3 and LLM also says risk-off — accept (should not happen since we short-circuit above, but defensive)
+    if (step.isRiskOff && progScore >= 3) {
       detectedMarketState = "risk_off";
       trace.push({
         round,
@@ -686,6 +908,7 @@ export async function runAiRecommendationV3(
         totalTokens,
         marketState: "risk_off",
         marketRiskOffScore: detectedRiskOffScore,
+        programmaticRiskOff,
         dbRowId,
       };
       _latestV3Cache = result;
@@ -714,6 +937,7 @@ export async function runAiRecommendationV3(
         totalTokens,
         marketState: detectedMarketState,
         marketRiskOffScore: detectedRiskOffScore,
+        programmaticRiskOff,
         dbRowId,
       };
       _latestV3Cache = result;
@@ -721,7 +945,7 @@ export async function runAiRecommendationV3(
       return result;
     }
 
-    // Final answer
+    // ── F3: Final answer validation ────────────────────────────────────────────
     if (!step.toolName) {
       trace.push({
         round,
@@ -733,9 +957,32 @@ export async function runAiRecommendationV3(
       });
       const report = await synthesizeReportV3(trace, dateStr, model);
       const items = parseAiReportToRecommendationsV3(report, dateStr);
+
+      // F3: Validate minimum items and tool call count
+      const insufficientItems = items.length < 3;
+      const insufficientTools = companyTechnicalCallCount < 5;
+
+      if ((insufficientItems || insufficientTools) && round < maxRounds - 1) {
+        // Still have rounds left — force continuation with correction
+        console.warn(`[v3-orchestrator] round ${round}: insufficient output (items=${items.length}, get_company_technical calls=${companyTechnicalCallCount}) — forcing continuation`);
+        messages.push({ role: "assistant", content: raw });
+        messages.push({
+          role: "user",
+          content: `[SYSTEM REJECTION] 分析不足：推薦股數=${items.length}（需 ≥3），get_company_technical 呼叫次數=${companyTechnicalCallCount}（需 ≥5）。
+請繼續分析更多候選標的，callTool(get_company_technical) 取得更多個股技術資料，並補充更多 A/A+/B bucket 推薦。`,
+        });
+        continue; // continue loop
+      }
+
+      // Accept result (either sufficient or no rounds left)
+      const status = (insufficientItems || insufficientTools) ? "insufficient_tools" : "complete";
+      if (status === "insufficient_tools") {
+        console.warn(`[v3-orchestrator] run ${runId} finished with insufficient_tools: items=${items.length}, get_company_technical calls=${companyTechnicalCallCount}`);
+      }
+
       const result: AiRecommendationV3RunResult = {
         runId,
-        status: "complete",
+        status,
         generatedAt,
         items,
         reactTrace: trace,
@@ -744,6 +991,7 @@ export async function runAiRecommendationV3(
         totalTokens,
         marketState: detectedMarketState ?? "trend",
         marketRiskOffScore: detectedRiskOffScore,
+        programmaticRiskOff,
         dbRowId,
       };
       _latestV3Cache = result;
@@ -755,15 +1003,20 @@ export async function runAiRecommendationV3(
     let observation: unknown;
     try {
       observation = await dispatchMarketToolV3(step.toolName, step.toolInput, opts.workspaceId);
+
+      // Track get_company_technical calls (F3)
+      if (step.toolName === "get_company_technical") {
+        companyTechnicalCallCount++;
+        console.info(`[v3-orchestrator] round ${round}: get_company_technical call #${companyTechnicalCallCount}`);
+      }
+
       // Try to extract risk_off_score from market overview result
       if (step.toolName === "get_market_overview" && typeof observation === "object" && observation !== null) {
         const obs = observation as Record<string, unknown>;
         if (typeof obs["risk_off_score"] === "number") {
           detectedRiskOffScore = obs["risk_off_score"] as number;
-          // Determine market state from scores
-          if ((obs["risk_off_score"] as number) >= 3) {
-            detectedMarketState = "risk_off";
-          } else if ((obs["trend_score"] as number | undefined) !== undefined && (obs["trend_score"] as number) >= 4) {
+          // Determine market state from scores (but do NOT override progScore gate)
+          if ((obs["trend_score"] as number | undefined) !== undefined && (obs["trend_score"] as number) >= 4) {
             detectedMarketState = "trend";
           } else {
             detectedMarketState = "range";
@@ -790,12 +1043,13 @@ export async function runAiRecommendationV3(
     });
   }
 
-  // Max rounds — synthesize with what we have
+  // Max rounds reached — synthesize with what we have
   const report = await synthesizeReportV3(trace, dateStr, model);
   const items = parseAiReportToRecommendationsV3(report, dateStr);
+  const insufficientFinal = items.length < 3 || companyTechnicalCallCount < 5;
   const result: AiRecommendationV3RunResult = {
     runId,
-    status: "complete",
+    status: insufficientFinal ? "insufficient_tools" : "complete",
     generatedAt,
     items,
     reactTrace: trace,
@@ -804,6 +1058,7 @@ export async function runAiRecommendationV3(
     totalTokens,
     marketState: detectedMarketState ?? "trend",
     marketRiskOffScore: detectedRiskOffScore,
+    programmaticRiskOff,
     dbRowId,
   };
   _latestV3Cache = result;

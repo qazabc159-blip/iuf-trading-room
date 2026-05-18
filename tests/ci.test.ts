@@ -12655,6 +12655,85 @@ test("AI-REC-V3-5: entry/TP/SL fields parsed from structured markdown with R-rat
 });
 
 // =============================================================================
+// AI-REC-V3-RISK-OFF: Deterministic risk_off_score + F3 enforcement (2026-05-18)
+// Lane: strategy backend (Jason). Files: ai-recommendation-v2/orchestrator-v3.ts
+// =============================================================================
+
+test("AI-REC-V3-RISK-OFF-1: computeProgrammaticRiskOffScore returns valid structure (fail-open in test mode)", async () => {
+  // In test mode (no DB, no TWSE), all signals fail-open to false.
+  // Score must be 0 (no positive evidence) and structure must be correct.
+  const { computeProgrammaticRiskOffScore, _resetAiRecommendationV3Cache } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  ) as any;
+  _resetAiRecommendationV3Cache();
+
+  const result = await computeProgrammaticRiskOffScore();
+
+  assert.ok(typeof result.score === "number", "AI-REC-V3-RISK-OFF-1: score must be a number");
+  assert.ok(result.score >= 0 && result.score <= 6, `AI-REC-V3-RISK-OFF-1: score must be 0-6, got ${result.score}`);
+  assert.ok(typeof result.signals === "object", "AI-REC-V3-RISK-OFF-1: signals must be an object");
+  assert.ok("vixAbove25" in result.signals, "AI-REC-V3-RISK-OFF-1: must have vixAbove25 signal");
+  assert.ok("taiexBelowEma60" in result.signals, "AI-REC-V3-RISK-OFF-1: must have taiexBelowEma60 signal");
+  assert.ok(typeof result.computedAt === "string", "AI-REC-V3-RISK-OFF-1: computedAt must be a string");
+  assert.ok(result.dataSource === "twse_openapi", "AI-REC-V3-RISK-OFF-1: dataSource must be twse_openapi");
+  // In test mode (no TWSE, no DB), score should be 0 (all signals fail-open to false)
+  assert.equal(result.score, 0, `AI-REC-V3-RISK-OFF-1: test mode score must be 0 (all fail-open), got ${result.score}`);
+  // All signal booleans must be false in test mode
+  assert.equal(result.signals.vixAbove25, false, "AI-REC-V3-RISK-OFF-1: vixAbove25 must be false in test mode");
+  assert.equal(result.signals.taiexBelowEma60, false, "AI-REC-V3-RISK-OFF-1: taiexBelowEma60 must be false in test mode (no DB)");
+});
+
+test("AI-REC-V3-RISK-OFF-2: buildV3SystemPrompt contains programmatic risk_off_score injection + hard rules for score < 3", async () => {
+  // Verify system prompt structure enforces no-override rule when score < 3
+  const fs = await import("fs/promises");
+  const src = await fs.readFile("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf-8");
+
+  // F1: programmatic score must be injected into the prompt
+  assert.ok(src.includes("programmaticRiskOffScore"), "AI-REC-V3-RISK-OFF-2: buildV3SystemPrompt must accept programmaticRiskOffScore param");
+  assert.ok(src.includes("SYSTEM-PROVIDED risk_off_score"), "AI-REC-V3-RISK-OFF-2: prompt must have SYSTEM-PROVIDED context block");
+  assert.ok(src.includes("DO NOT OVERRIDE"), "AI-REC-V3-RISK-OFF-2: prompt must say DO NOT OVERRIDE");
+  // F3: minimum tool call rules
+  assert.ok(src.includes("get_company_technical 5"), "AI-REC-V3-RISK-OFF-2: prompt must require 5 get_company_technical calls");
+  assert.ok(src.includes("≥3 檔推薦"), "AI-REC-V3-RISK-OFF-2: prompt must require >=3 recommendations");
+  // Orchestrator must intercept LLM RISK_OFF_SKIP when progScore < 3
+  assert.ok(src.includes("LLM_RISK_OFF_REJECTED"), "AI-REC-V3-RISK-OFF-2: orchestrator must intercept LLM risk-off when progScore < 3");
+  assert.ok(src.includes("companyTechnicalCallCount"), "AI-REC-V3-RISK-OFF-2: orchestrator must track get_company_technical call count");
+  // F3 validation gate
+  assert.ok(src.includes("insufficient_tools"), "AI-REC-V3-RISK-OFF-2: orchestrator must emit insufficient_tools status when validation fails");
+  assert.ok(src.includes("programmaticRiskOff"), "AI-REC-V3-RISK-OFF-2: run result must include programmaticRiskOff field");
+});
+
+test("AI-REC-V3-RISK-OFF-3: runAiRecommendationV3 with LLM unavailable returns programmaticRiskOff in result", async () => {
+  // In test mode (no OPENAI_API_KEY), LLM returns null → status="failed"
+  // But programmaticRiskOff must still be present in the result.
+  const { runAiRecommendationV3, _resetAiRecommendationV3Cache } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  ) as any;
+  _resetAiRecommendationV3Cache();
+
+  const result = await runAiRecommendationV3({
+    trigger: "test",
+    maxRounds: 1,
+    costCapUsd: 0.01,
+    runId: "test-risk-off-3-" + Date.now(),
+    dateStr: "2026-05-18",
+  });
+
+  // Result must always include programmaticRiskOff
+  assert.ok(result.programmaticRiskOff !== undefined, "AI-REC-V3-RISK-OFF-3: result must always include programmaticRiskOff");
+  assert.ok(typeof result.programmaticRiskOff.score === "number", "AI-REC-V3-RISK-OFF-3: programmaticRiskOff.score must be a number");
+  assert.ok(result.programmaticRiskOff.score >= 0 && result.programmaticRiskOff.score <= 6,
+    `AI-REC-V3-RISK-OFF-3: score must be 0-6, got ${result.programmaticRiskOff.score}`);
+  // In test mode, LLM is unavailable → status should be "failed" or the run should complete without items
+  assert.ok(
+    ["failed", "complete", "budget_exceeded", "insufficient_tools", "market_risk_off"].includes(result.status),
+    `AI-REC-V3-RISK-OFF-3: status must be a valid enum, got ${result.status}`
+  );
+  assert.ok(Array.isArray(result.items), "AI-REC-V3-RISK-OFF-3: items must be an array");
+  assert.ok(typeof result.runId === "string" && result.runId.length > 0, "AI-REC-V3-RISK-OFF-3: runId must be a non-empty string");
+});
+
+// =============================================================================
 // ORPHAN-CLEANUP: admin content-drafts/cleanup-orphan (Bruce P0 — 2026-05-18)
 // =============================================================================
 
