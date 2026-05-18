@@ -1,0 +1,19 @@
+﻿{
+    "url":  "http://127.0.0.1:3024/companies/2330?codexLocal=offhours2",
+    "status":  200,
+    "hasCompany2330":  true,
+    "hasBlockedPanels":  true,
+    "hasOffhoursCopy":  true,
+    "kgiQuoteRequests":  [
+
+                         ],
+    "kgiQuoteRequestCount":  0,
+    "badKgiResponses":  [
+
+                        ],
+    "consoleKgiErrors":  [
+
+                         ],
+    "note":  "Local page points to production API, so unrelated CORS errors can appear for other client panels. The KGI off-hours gate assertion is request-level: tick/bidask endpoints were not called.",
+    "screenshot":  "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_company_p0_20260519\\evidence\\w7_paper_sprint\\p0-company-kgi-offhours-2026-05-19\\local-company-kgi-offhours.png"
+}

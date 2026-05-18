@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getKgiTicks, type KgiTickEntry } from "@/lib/api";
+import { isKgiTradingHours, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
 
 const POLL_MS = 5_000;
 const MAX_TICKS = 20;
@@ -98,10 +99,18 @@ function blockedReason(error: unknown) {
   return `逐筆成交暫時無法讀取：${msg.slice(0, 80)}`;
 }
 
+function offHoursReason() {
+  return `KGI 唯讀逐筆目前在排程外，不打即時 gateway、也不補假成交明細。下一次讀取窗口：${kgiNextOpenLabel()}。Owner: Jason/Bruce 確認 gateway/session。`;
+}
+
 export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
   const [state, setState] = useState<TickStreamState>({ status: "loading" });
 
   const fetchData = useCallback(async () => {
+    if (!isKgiTradingHours()) {
+      setState({ status: "blocked", reason: offHoursReason() });
+      return;
+    }
     try {
       const result = await getKgiTicks(symbol, MAX_TICKS);
       if (!result || result.ticks.length === 0) {
@@ -116,7 +125,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, POLL_MS);
+    const id = setInterval(fetchData, isKgiTradingHours() ? POLL_MS : 60_000);
     return () => clearInterval(id);
   }, [fetchData]);
 

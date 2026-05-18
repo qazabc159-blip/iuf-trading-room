@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isKgiTradingHours, kgiCoreTilesAreNull } from "./kgi-trading-hours";
+import { isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "./kgi-trading-hours";
 
 /**
  * Helper: construct a Date in Asia/Taipei (UTC+8) from explicit local time parts.
@@ -99,5 +99,19 @@ describe("kgiCoreTilesAreNull", () => {
       { pct: 2.3, price: 600 },
       { pct: -1.2, price: 450 },
     ])).toBe(false);
+  });
+});
+
+describe("kgiNextOpenLabel", () => {
+  it("weekday before open points to today 09:00", () => {
+    expect(kgiNextOpenLabel(tst(2026, 5, 18, 8, 0))).toBe("今日 09:00");
+  });
+
+  it("weekday after close points to next day", () => {
+    expect(kgiNextOpenLabel(tst(2026, 5, 18, 15, 0))).toBe("次日 09:00");
+  });
+
+  it("weekend points to Monday", () => {
+    expect(kgiNextOpenLabel(tst(2026, 5, 17, 10, 0))).toBe("明日 (一) 09:00");
   });
 });

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getKgiBidAsk, type KgiBidAskData } from "@/lib/api";
+import { isKgiTradingHours, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
 
 const POLL_MS = 30_000;
 
@@ -76,10 +77,18 @@ function blockedReason(error: unknown) {
   return `五檔報價暫時無法讀取：${msg.slice(0, 80)}`;
 }
 
+function offHoursReason() {
+  return `KGI 唯讀五檔目前在排程外，不打即時 gateway、也不補假委買委賣。下一次讀取窗口：${kgiNextOpenLabel()}。Owner: Jason/Bruce 確認 gateway/session。`;
+}
+
 export function BidAskPanel({ symbol }: { symbol: string }) {
   const [state, setState] = useState<BidAskState>({ status: "loading" });
 
   const fetchData = useCallback(async () => {
+    if (!isKgiTradingHours()) {
+      setState({ status: "blocked", reason: offHoursReason() });
+      return;
+    }
     try {
       const data = await getKgiBidAsk(symbol);
       if (!data) {
@@ -94,7 +103,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, POLL_MS);
+    const id = setInterval(fetchData, isKgiTradingHours() ? POLL_MS : 60_000);
     return () => clearInterval(id);
   }, [fetchData]);
 
