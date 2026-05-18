@@ -61,6 +61,26 @@ export const CORE_SYMBOLS = [
   "3711", "2207", "3008", "2002", "1303",
 ] as const;
 
+/**
+ * Display universe for the dashboard core heatmap.
+ *
+ * CORE_SYMBOLS is intentionally only the permanently subscribed KGI quota set
+ * (15 symbols). The dashboard needs a broader, stable 40-symbol universe and
+ * can enrich non-subscribed symbols from TWSE EOD/cache. Keeping this separate
+ * prevents the UI from shrinking to 0-4 names per sector whenever KGI slots are
+ * sparse or off-hours.
+ */
+export const HEATMAP_CORE_SYMBOLS = [
+  "2330", "2317", "2454", "2882", "2881",
+  "2308", "2412", "2891", "2886", "6505",
+  "3711", "2207", "3008", "2002", "1303",
+  "3707", "2426", "6205", "2486", "1301",
+  "1326", "1216", "5871", "5876", "3045",
+  "2395", "2382", "3034", "2379", "6669",
+  "2603", "2609", "2615", "2618", "2884",
+  "2885", "2892", "1101", "1102", "2912",
+] as const;
+
 /** Total permanent slots (index 2 + strategy 4 + core 15 = 21) */
 export const PERMANENT_SLOT_COUNT =
   INDEX_SYMBOLS.length + STRATEGY_SYMBOLS.length + CORE_SYMBOLS.length;
@@ -666,15 +686,16 @@ export async function getKgiCoreHeatmap(): Promise<{
 }> {
   if (!_initialized) initSubscriptionManager();
 
-  // Collect unique symbols for heatmap: CORE + STRATEGY + current HOLDINGS
+  // Use the 40-symbol dashboard universe, then add any current holdings.
+  // The subscribed KGI quota set is only 19 symbols (15 core + 4 strategy);
+  // using it here made the visible heatmap collapse to a few tiles per sector.
   const holdingSymbols = _slots
     .filter((s) => s.tier === TIER.HOLDINGS)
     .map((s) => s.symbol);
 
   const allSymbols = Array.from(
     new Set([
-      ...CORE_SYMBOLS,
-      ...STRATEGY_SYMBOLS,
+      ...HEATMAP_CORE_SYMBOLS,
       ...holdingSymbols,
     ])
   );
@@ -688,7 +709,9 @@ export async function getKgiCoreHeatmap(): Promise<{
           ? "core"
           : STRATEGY_SYMBOLS.includes(symbol as typeof STRATEGY_SYMBOLS[number])
           ? "strategy"
-          : "holdings";
+          : holdingSymbols.includes(symbol)
+          ? "holdings"
+          : "core_display";
 
       return {
         symbol,

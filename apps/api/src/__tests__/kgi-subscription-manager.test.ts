@@ -67,6 +67,7 @@ import {
   INDEX_SYMBOLS,
   STRATEGY_SYMBOLS,
   CORE_SYMBOLS,
+  HEATMAP_CORE_SYMBOLS,
   HOLDINGS_BUDGET,
   WATCHLIST_BUDGET,
   initSubscriptionManager,
@@ -106,6 +107,7 @@ describe("KGI Subscription Manager", () => {
     assert.strictEqual(INDEX_SYMBOLS.length, 2);
     assert.strictEqual(STRATEGY_SYMBOLS.length, 4);
     assert.strictEqual(CORE_SYMBOLS.length, 15);
+    assert.strictEqual(HEATMAP_CORE_SYMBOLS.length, 40);
     assert.strictEqual(PERMANENT_SLOT_COUNT, 21); // 2+4+15
     assert.strictEqual(DYNAMIC_SLOT_COUNT, 19);   // 40-21
   });
@@ -330,8 +332,8 @@ describe("KGI Subscription Manager", () => {
     assert.strictEqual(result.source, "kgi_tick");
     assert.strictEqual(typeof result.tileCount, "number");
     assert.ok(Array.isArray(result.tiles));
-    // Should have at least CORE_SYMBOLS + STRATEGY_SYMBOLS tiles
-    assert.ok(result.tiles.length >= CORE_SYMBOLS.length + STRATEGY_SYMBOLS.length);
+    // Dashboard heatmap must not collapse to the 19 subscribed quota symbols.
+    assert.ok(result.tiles.length >= HEATMAP_CORE_SYMBOLS.length);
     // Each tile has required fields
     for (const tile of result.tiles) {
       assert.ok("symbol" in tile);

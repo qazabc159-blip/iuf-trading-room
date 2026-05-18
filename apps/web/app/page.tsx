@@ -904,7 +904,7 @@ function buildKgiCoreHeatmap(feed: LoadState<RealtimeMarketDashboard | null>): H
   const tiles = rows?.data ?? rows?.tiles ?? [];
   return tiles
     .filter((item) => item.symbol && item.symbol.trim().length > 0)
-    .slice(0, 32)
+    .slice(0, 40)
     .map((item: KgiCoreHeatmapTile, index) => {
       const price = finite(item.last ?? item.price ?? item.close);
       const pct = finite(item.changePct ?? item.pct);
@@ -926,6 +926,10 @@ function buildKgiCoreHeatmap(feed: LoadState<RealtimeMarketDashboard | null>): H
         volume,
         readiness: "ready",
         freshnessStatus: "fresh",
+        sourceState: item.sourceState === "live" || item.sourceState === "twse_eod" || item.sourceState === "cache" || item.sourceState === "no_data"
+          ? item.sourceState
+          : undefined,
+        sourceLabel: item.sourceLabel ?? null,
       };
     });
 }
