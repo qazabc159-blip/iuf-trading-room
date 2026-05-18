@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { IndustryHeatmap, type IndustryHeatmapTile } from "./components/industry-heatmap";
+import { MarketStateBanner } from "@/components/MarketStateBanner";
 import {
   getBriefs,
   getContentDrafts,
@@ -2534,6 +2535,7 @@ async function DashboardContent({
       <TacticalSidebar liveCount={liveCount} alertCount={alertCount} />
       <main className="tac-main">
         <Ticker quotes={quotes} market={market} />
+        <MarketStateBanner />
         <div className="tac-content">
           <TopCommandBar now={now} market={market} />
           <AgendaStrip market={market} intel={intel} brief={brief} now={now} />

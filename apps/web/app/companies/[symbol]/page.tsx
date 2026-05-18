@@ -8,6 +8,7 @@
 import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
+import { MarketStateBanner } from "@/components/MarketStateBanner";
 import { getCompanies, getCompanyAnnouncements, getCompanyFullProfile, getCompanyKBar, getCompanyOhlcv, getCompanyQuoteRealtime, getThemes, type CompanyRealtimeQuote, type FinMindKBarView, type FullProfileEnvelope, type OhlcvBar } from "@/lib/api";
 import type { Company, Theme } from "@iuf-trading-room/contracts";
 import {
@@ -387,6 +388,7 @@ export default async function CompanyDetailPage({
       note={`公司板 / ${company.ticker} / ${industryLabel(company.chainPosition)} / ${tierLabel[company.beneficiaryTier] ?? company.beneficiaryTier}`}
     >
       <CompanyPageStyleBlock />
+      <MarketStateBanner />
       <div style={{ marginBottom: 10 }}>
         <a href="/companies" className="_co-back-btn">
           ← 返回公司列表

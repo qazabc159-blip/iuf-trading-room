@@ -21,6 +21,10 @@ export type IndustryHeatmapTile = {
   volume?: number | null;
   readiness?: "ready" | "degraded" | "blocked";
   freshnessStatus?: "fresh" | "stale" | "missing";
+  /** Jason 3-tier backend sourceState: live = KGI tick, twse_eod = TWSE EOD, cache = DB cache, no_data = no data at all */
+  sourceState?: "live" | "twse_eod" | "cache" | "no_data";
+  /** Human-readable source label from backend (e.g. "5/15 (五) 收盤 (週末休市)") */
+  sourceLabel?: string | null;
 };
 
 type SectorKey =
@@ -378,13 +382,14 @@ function validMove(tile: IndustryHeatmapTile) {
 }
 
 function isUsableTile(tile: IndustryHeatmapTile) {
-  return (
-    tile.symbol.trim().length > 0 &&
-    tile.name.trim().length > 0 &&
-    validMove(tile) &&
-    tile.readiness !== "blocked" &&
-    tile.freshnessStatus !== "missing"
-  );
+  if (tile.symbol.trim().length === 0 || tile.name.trim().length === 0) return false;
+  if (tile.readiness === "blocked") return false;
+  // no_data tiles: allow through even without pct — they render as gray placeholder with name/symbol
+  if (tile.sourceState === "no_data") return true;
+  // Standard path: must have a valid price move
+  if (!validMove(tile)) return false;
+  if (tile.freshnessStatus === "missing") return false;
+  return true;
 }
 
 function estimatedTradingValue(tile: IndustryHeatmapTile) {
@@ -427,8 +432,15 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
     if (!isUsableTile(tile)) return;
     const sectorKey = normalizeSector(tile);
     if (!sectorKey) return;
+
     const move = deriveMove(tile);
-    if (move.pct === null) return;
+    // no_data tiles have no price movement — use 0 so they still render (gray, flat)
+    const displayPct = tile.sourceState === "no_data" ? 0 : (move.pct ?? 0);
+    const displayChange = tile.sourceState === "no_data" ? null : move.change;
+
+    // For no_data tiles, if we still don't have a pct (not no_data but missing move), skip
+    if (tile.sourceState !== "no_data" && move.pct === null) return;
+
     const rank = REPRESENTATIVE_ORDER[tile.symbol] ?? 1000 + index;
     const weight = preparedWeight(tile, rank);
     const definition = sectorDefinition(sectorKey);
@@ -437,8 +449,8 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
       sectorKey,
       sectorLabel: definition.label,
       rank,
-      displayPct: move.pct,
-      displayChange: move.change,
+      displayPct,
+      displayChange,
       ...weight,
     });
   });
@@ -626,48 +638,89 @@ function updateSectorQuery(nextKey: SectorKey) {
   window.history.replaceState(null, "", url);
 }
 
+function staleDotLabel(sourceState: LayoutTile["sourceState"]) {
+  if (sourceState === "twse_eod") return "收盤資料";
+  if (sourceState === "cache") return "緩存資料";
+  if (sourceState === "no_data") return "暫無資料";
+  return null;
+}
+
 function TileTooltip({ tile }: { tile: LayoutTile }) {
+  const staleLabel = staleDotLabel(tile.sourceState);
   return (
     <span className="tac-heat-tooltip" role="tooltip">
       <strong>{tile.symbol} {tile.name}</strong>
-      <span>漲跌幅 {formatPercent(tile.displayPct)}</span>
-      {tile.displayChange !== null && <span>漲跌 {formatPrice(tile.displayChange)}</span>}
+      {tile.sourceState === "no_data" ? (
+        <span>暫無行情資料</span>
+      ) : (
+        <>
+          <span>漲跌幅 {formatPercent(tile.displayPct)}</span>
+          {tile.displayChange !== null && <span>漲跌 {formatPrice(tile.displayChange)}</span>}
+          <span>收盤 {formatPrice(tile.close ?? tile.price)}</span>
+        </>
+      )}
       <span>{tile.weightLabel}</span>
-      <span>收盤 {formatPrice(tile.close ?? tile.price)}</span>
       {tile.date && <span>日期 {tile.date}</span>}
+      {staleLabel && <span>來源 {tile.sourceLabel ?? staleLabel}</span>}
     </span>
   );
 }
 
 function HeatmapTile({ tile }: { tile: LayoutTile }) {
-  const pct = tile.displayPct;
+  const isNoData = tile.sourceState === "no_data";
+  const isStale = tile.sourceState === "twse_eod" || tile.sourceState === "cache";
+  const pct = isNoData ? 0 : tile.displayPct;
   const abs = Math.min(1, Math.abs(pct) / 3);
-  const tone = toneForMove(pct);
+  const tone = isNoData ? "flat" : toneForMove(pct);
   const style = {
-    "--heat": String(0.28 + abs * 0.58),
+    "--heat": isNoData ? "0.08" : String(0.28 + abs * 0.58),
     left: `${tile.x}%`,
     top: `${tile.y}%`,
     width: `${tile.w}%`,
     height: `${tile.h}%`,
   } as CSSProperties;
-  const title = `${tile.symbol} ${tile.name}，漲跌幅 ${formatPercent(tile.displayPct)}，${tile.weightLabel}`;
+  const sourceDesc = isNoData ? "暫無資料" : isStale ? (staleDotLabel(tile.sourceState) ?? "") : "";
+  const title = isNoData
+    ? `${tile.symbol} ${tile.name}，暫無行情資料`
+    : `${tile.symbol} ${tile.name}，漲跌幅 ${formatPercent(tile.displayPct)}，${tile.weightLabel}${sourceDesc ? "，" + sourceDesc : ""}`;
 
   return (
     <Link
       href={`/companies/${encodeURIComponent(tile.symbol)}`}
-      className={`tac-heat-tile ${tone} ${tile.labelMode} ${tile.isSupplemental ? "is-supplemental" : ""}`}
+      className={`tac-heat-tile ${tone} ${tile.labelMode} ${tile.isSupplemental ? "is-supplemental" : ""} ${isNoData ? "is-no-data" : ""} ${isStale ? "is-stale" : ""}`}
       style={style}
       aria-label={title}
     >
+      {isStale && <span className="tile-stale-dot" aria-hidden="true" />}
       <span className="tile-symbol">{tile.symbol}</span>
       {(tile.labelMode === "hero" || tile.labelMode === "large" || tile.labelMode === "medium") && (
         <small className="tile-name">{tile.name}</small>
       )}
-      <b className="tile-pct">{formatPercent(tile.displayPct)}</b>
-      {tile.labelMode === "hero" && <em className="tile-meta">{tile.weightLabel}</em>}
+      {isNoData ? (
+        <b className="tile-pct tile-pct-nodata">--</b>
+      ) : (
+        <b className="tile-pct">{formatPercent(tile.displayPct)}</b>
+      )}
+      {tile.labelMode === "hero" && !isNoData && <em className="tile-meta">{tile.weightLabel}</em>}
       <TileTooltip tile={tile} />
     </Link>
   );
+}
+
+/** F3: Compute source breakdown note for footer */
+function buildSourceBreakdown(tiles: IndustryHeatmapTile[]) {
+  const total = tiles.length;
+  if (total === 0) return null;
+  const liveCount = tiles.filter((t) => t.sourceState === "live" || (!t.sourceState && t.pct !== null)).length;
+  const eodCount = tiles.filter((t) => t.sourceState === "twse_eod").length;
+  const cacheCount = tiles.filter((t) => t.sourceState === "cache").length;
+  const noDataCount = tiles.filter((t) => t.sourceState === "no_data").length;
+  const parts: string[] = [];
+  if (liveCount > 0) parts.push(`${Math.round((liveCount / total) * 100)}% 即時`);
+  if (eodCount > 0) parts.push(`${Math.round((eodCount / total) * 100)}% 收盤`);
+  if (cacheCount > 0) parts.push(`${Math.round((cacheCount / total) * 100)}% 緩存`);
+  if (noDataCount > 0) parts.push(`${noDataCount} 檔暫無資料`);
+  return parts.length > 1 ? parts.join(" · ") : null;
 }
 
 export function IndustryHeatmap({
@@ -693,9 +746,16 @@ export function IndustryHeatmap({
   const layout = useMemo(() => buildTreemapLayout(selectedRows), [selectedRows]);
   const selectedAvg = activeOption?.avgPct ?? null;
   const hasEnoughForProduct = selectedRows.length >= MIN_PRODUCT_COUNT;
+  const sourceBreakdown = useMemo(() => buildSourceBreakdown(heatmap), [heatmap]);
+
+  // F3: Only show true empty state when backend sends 0 tiles AND state is bad
+  // If backend gives us tiles (even no_data), show the treemap (gray tiles) + note
+  const hasTilesFromBackend = heatmap.length > 0;
   const emptyReason = marketState === "BLOCKED"
     ? (reason ?? "市場資料目前無法更新。")
-    : "此產業目前沒有足夠正式行情，先不顯示熱力圖。";
+    : hasTilesFromBackend
+      ? "此產業資料整理中，已顯示現有資料。"
+      : "此產業目前沒有足夠正式行情，先不顯示熱力圖。";
 
   function handleSectorChange(nextKey: SectorKey) {
     if (nextKey === activeKey) return;
@@ -751,6 +811,7 @@ export function IndustryHeatmap({
       <div className="tac-heat-footer">
         <span>
           {hasEnoughForProduct ? "代表股篩選完成" : "檔數不足時只顯示可驗證資料"} · 依成交值優先排序 · {sourceLabel}
+          {sourceBreakdown && <> · <span className="tac-heat-source-note">{sourceBreakdown}</span></>}
         </span>
         <span className="tac-heat-scale" aria-label="漲跌幅色階">
           <em>≤ -3%</em>
