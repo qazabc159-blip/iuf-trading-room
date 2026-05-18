@@ -60,9 +60,21 @@ const CSS = `
   }
   ._uta-table tr:last-child td { border-bottom: none; }
   ._uta-table tr:hover td { background: rgba(255,255,255,0.02); }
+  ._uta-table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  ._uta-table-scroll ._uta-table {
+    min-width: 640px;
+  }
+  ._uta-table-scroll--orders ._uta-table {
+    min-width: 860px;
+  }
   ._uta-badge {
     display: inline-flex;
     align-items: center;
+    white-space: nowrap;
     padding: 1px 6px;
     border-radius: 3px;
     font-size: 10px;
@@ -112,6 +124,16 @@ function statusBadgeStyle(status: string) {
   return { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.1)" };
 }
 
+function safetyModeBadgeStyle(simOnly: boolean) {
+  return simOnly
+    ? { background: "rgba(33,150,243,0.15)", color: "#42a5f5", border: "1px solid rgba(33,150,243,0.3)" }
+    : { background: "rgba(255,184,0,0.12)", color: "#ffb800", border: "1px solid rgba(255,184,0,0.3)" };
+}
+
+function safetyModeLabel(simOnly: boolean) {
+  return simOnly ? "SIM" : "正式封鎖";
+}
+
 function fmtDT(iso: string) {
   return new Date(iso).toLocaleString("zh-TW", { hour12: false });
 }
@@ -138,82 +160,83 @@ function capList(caps: BrokerAdapterEntry["capabilities"]) {
 
 function AdapterTable({ adapters }: { adapters: BrokerAdapterEntry[] }) {
   return (
-    <table className="_uta-table">
-      <thead>
-        <tr>
-          <th>adapter_key</th>
-          <th>名稱</th>
-          <th>能力</th>
-          <th>狀態</th>
-        </tr>
-      </thead>
-      <tbody>
-        {adapters.length === 0
-          ? <tr><td colSpan={4} style={{ color: "rgba(255,255,255,0.3)", textAlign: "center" }}>尚無 adapter 登錄</td></tr>
-          : adapters.map((a) => (
-            <tr key={a.adapterKey}>
-              <td style={{ color: "#ffb800" }}>{a.adapterKey}</td>
-              <td>{a.displayName}</td>
-              <td>
-                <div className="_uta-cap-grid">
-                  {capList(a.capabilities).map((cap) => (
-                    <span key={cap} className="_uta-cap-tag">{cap}</span>
-                  ))}
-                </div>
-              </td>
-              <td>
-                <span className="_uta-badge" style={adaptorBadgeStyle(a.isActive)}>
-                  {a.isActive ? "啟用" : "停用"}
-                </span>
-              </td>
-            </tr>
-          ))
-        }
-      </tbody>
-    </table>
+    <div className="_uta-table-scroll">
+      <table className="_uta-table">
+        <thead>
+          <tr>
+            <th>adapter_key</th>
+            <th>名稱</th>
+            <th>能力</th>
+            <th>狀態</th>
+          </tr>
+        </thead>
+        <tbody>
+          {adapters.length === 0
+            ? <tr><td colSpan={4} style={{ color: "rgba(255,255,255,0.3)", textAlign: "center" }}>尚無 adapter 登錄</td></tr>
+            : adapters.map((a) => (
+              <tr key={a.adapterKey}>
+                <td style={{ color: "#ffb800" }}>{a.adapterKey}</td>
+                <td>{a.displayName}</td>
+                <td>
+                  <div className="_uta-cap-grid">
+                    {capList(a.capabilities).map((cap) => (
+                      <span key={cap} className="_uta-cap-tag">{cap}</span>
+                    ))}
+                  </div>
+                </td>
+                <td>
+                  <span className="_uta-badge" style={adaptorBadgeStyle(a.isActive)}>
+                    {a.isActive ? "啟用" : "停用"}
+                  </span>
+                </td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 function OrdersTable({ orders }: { orders: UnifiedOrderEntry[] }) {
   return (
-    <table className="_uta-table">
-      <thead>
-        <tr>
-          <th>時間</th>
-          <th>broker</th>
-          <th>ticker</th>
-          <th>方向</th>
-          <th>數量</th>
-          <th>單位</th>
-          <th>限價</th>
-          <th>狀態</th>
-          <th>SIM</th>
-        </tr>
-      </thead>
-      <tbody>
-        {orders.length === 0
-          ? <tr><td colSpan={9} style={{ color: "rgba(255,255,255,0.3)", textAlign: "center" }}>尚無委託記錄</td></tr>
-          : orders.map((o) => (
-            <tr key={o.id}>
-              <td style={{ whiteSpace: "nowrap" }}>{fmtDT(o.createdAt)}</td>
-              <td>{o.adapterKey}</td>
-              <td style={{ color: "#ffb800" }}>{o.symbol}</td>
-              <td><span className="_uta-badge" style={sideBadgeStyle(o.side)}>{o.side}</span></td>
-              <td>{o.quantity}</td>
-              <td>{o.quantityUnit}</td>
-              <td>{o.limitPrice ?? "市價"}</td>
-              <td><span className="_uta-badge" style={statusBadgeStyle(o.status)}>{o.status}</span></td>
-              <td>
-                <span className="_uta-badge" style={o.simOnly
-                  ? { background: "rgba(33,150,243,0.15)", color: "#42a5f5", border: "1px solid rgba(33,150,243,0.3)" }
-                  : { background: "rgba(239,83,80,0.12)", color: "#ef5350", border: "1px solid rgba(239,83,80,0.3)" }
-                }>{o.simOnly ? "SIM" : "LIVE"}</span>
-              </td>
-            </tr>
-          ))
-        }
-      </tbody>
-    </table>
+    <div className="_uta-table-scroll _uta-table-scroll--orders">
+      <table className="_uta-table">
+        <thead>
+          <tr>
+            <th>時間</th>
+            <th>broker</th>
+            <th>ticker</th>
+            <th>方向</th>
+            <th>數量</th>
+            <th>單位</th>
+            <th>限價</th>
+            <th>狀態</th>
+            <th>安全模式</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.length === 0
+            ? <tr><td colSpan={9} style={{ color: "rgba(255,255,255,0.3)", textAlign: "center" }}>尚無委託記錄</td></tr>
+            : orders.map((o) => (
+              <tr key={o.id}>
+                <td style={{ whiteSpace: "nowrap" }}>{fmtDT(o.createdAt)}</td>
+                <td>{o.adapterKey}</td>
+                <td style={{ color: "#ffb800" }}>{o.symbol}</td>
+                <td><span className="_uta-badge" style={sideBadgeStyle(o.side)}>{o.side}</span></td>
+                <td>{o.quantity}</td>
+                <td>{o.quantityUnit}</td>
+                <td>{o.limitPrice ?? "市價"}</td>
+                <td><span className="_uta-badge" style={statusBadgeStyle(o.status)}>{o.status}</span></td>
+                <td>
+                  <span className="_uta-badge" style={safetyModeBadgeStyle(o.simOnly)}>{safetyModeLabel(o.simOnly)}</span>
+                </td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -242,7 +265,7 @@ export default async function UtaAccountsPage() {
       code="ADM-UTA"
       title="UTA 帳號管理"
       sub="OpenAlice Phase A / 唯讀"
-      note="Broker Adapter 登錄 / 跨 broker 委託總覽 — Owner only。Phase A 僅讀，無建立表單。"
+      note="Broker Adapter 登錄 / 跨 broker 委託總覽 — Owner only。Phase A 僅讀，不提供正式委託操作入口。"
     >
       <style>{CSS}</style>
 
