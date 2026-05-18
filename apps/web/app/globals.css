@@ -15209,3 +15209,18 @@ body:has(.mobile-route) .header-dock-drawer {
 }
 
 /* ═══ end parity layer ══════════════════════════════════════════════ */
+
+/* ── OpenAlice admin sidebar section (Pass 120) ──────────────────── */
+.tac-sidebar-section-head {
+  padding: 6px 16px 4px;
+  font: 700 9px/1.2 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--tac-fg-3);
+  border-top: 1px solid var(--tac-line);
+  margin-top: 4px;
+}
+.tac-nav-admin {
+  flex: 0 0 auto;
+}
+/* ── end OpenAlice admin sidebar section ─────────────────────────── */

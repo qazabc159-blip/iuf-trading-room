@@ -11665,9 +11665,90 @@ test("TAG-SNAPSHOT-5: listSnapshots cursor pagination works in memory mode", asy
   _resetPortfolioSnapshotStoreForTests();
 });
 
+// ── EL-OUTBOX: EventLog Phase B — Outbox pattern unit tests ─────────────────
+
+test("EL-OUTBOX-1: appendEventWithOutbox falls through to appendEvent in memory-mode", async () => {
+  const { appendEventWithOutbox } = await import("../apps/api/src/events/event-log-outbox.js");
+  const { _resetEventLogStoreForTests } = await import("../apps/api/src/events/event-log-store.js");
+  _resetEventLogStoreForTests();
+
+  const result = await appendEventWithOutbox({
+    workspaceId: "ws-outbox-test",
+    streamType: "strategy",
+    streamId: "test-stream-1",
+    eventType: "strategy.subscribed",
+    payload: { strategyId: "strat-abc" }
+  });
+
+  assert.ok(typeof result.id === "string" && result.id.length > 0,
+    "EL-OUTBOX-1: result.id must be a non-empty string");
+  assert.equal(result.seq, 1, "EL-OUTBOX-1: first event in stream must have seq=1");
+  assert.ok(typeof result.recordedAt === "string",
+    "EL-OUTBOX-1: recordedAt must be an ISO string");
+
+  _resetEventLogStoreForTests();
+});
+
+test("EL-OUTBOX-2: registerOutboxBroadcaster and stopOutboxPoller do not throw", async () => {
+  const { registerOutboxBroadcaster, stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
+
+  let broadcasted = false;
+  registerOutboxBroadcaster(async (_evt) => {
+    broadcasted = true;
+  });
+
+  // Stop any running poller (idempotent)
+  stopOutboxPoller();
+
+  // In non-DB mode, _pollAndDeliver returns 0
+  const { _pollAndDeliver } = await import("../apps/api/src/events/event-log-outbox.js");
+  const delivered = await _pollAndDeliver();
+  assert.equal(delivered, 0, "EL-OUTBOX-2: non-DB mode poll must deliver 0 rows");
+
+  // broadcaster was NOT called (no DB rows)
+  assert.equal(broadcasted, false, "EL-OUTBOX-2: broadcaster must not fire with no outbox rows");
+});
+
+test("EL-OUTBOX-3: startOutboxPoller in non-DB mode logs and skips (no interval created)", async () => {
+  const { startOutboxPoller, stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
+  // In non-DB mode this should return immediately without starting setInterval
+  stopOutboxPoller(); // ensure clean state
+  startOutboxPoller(); // should log "Non-DB mode — poller skipped" and return
+  stopOutboxPoller(); // idempotent, should not throw
+  assert.ok(true, "EL-OUTBOX-3: startOutboxPoller in non-DB mode must not throw");
+});
+
+test("EL-OUTBOX-4: getOutboxDiag returns zero counts in non-DB mode", async () => {
+  const { getOutboxDiag } = await import("../apps/api/src/events/event-log-outbox.js");
+  const diag = await getOutboxDiag();
+  assert.equal(diag.pendingCount, 0, "EL-OUTBOX-4: pendingCount must be 0 in non-DB mode");
+  assert.equal(diag.fatalCount, 0, "EL-OUTBOX-4: fatalCount must be 0 in non-DB mode");
+  assert.equal(diag.isPollerRunning, false, "EL-OUTBOX-4: poller must not be running after stop");
+});
+
+test("EL-OUTBOX-5: sequential appendEventWithOutbox produces strictly increasing seq numbers", async () => {
+  const { appendEventWithOutbox } = await import("../apps/api/src/events/event-log-outbox.js");
+  const { _resetEventLogStoreForTests } = await import("../apps/api/src/events/event-log-store.js");
+  _resetEventLogStoreForTests();
+
+  const ws = "ws-outbox-seq-test";
+  const results = await Promise.all([
+    appendEventWithOutbox({ workspaceId: ws, streamType: "order", streamId: "ord-1", eventType: "order.submitted", payload: { qty: 100 } }),
+    appendEventWithOutbox({ workspaceId: ws, streamType: "order", streamId: "ord-1", eventType: "order.filled", payload: { qty: 100 } }),
+    appendEventWithOutbox({ workspaceId: ws, streamType: "order", streamId: "ord-1", eventType: "order.cancelled", payload: {} })
+  ]);
+
+  const seqs = results.map((r) => r.seq).sort((a, b) => a - b);
+  assert.deepEqual(seqs, [1, 2, 3], "EL-OUTBOX-5: memory-mode seq must be 1, 2, 3");
+
+  _resetEventLogStoreForTests();
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
+  const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
+  stopOutboxPoller();
   await new Promise<void>((resolve) => setTimeout(resolve, 500));
   process.exit(process.exitCode ?? 0);
 });

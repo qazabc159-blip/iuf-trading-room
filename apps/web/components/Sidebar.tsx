@@ -5,11 +5,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   BarChart3,
+  Brain,
   Building2,
+  GitFork,
   LineChart,
   Newspaper,
   Sparkles,
   Target,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -99,6 +102,40 @@ export function Sidebar() {
 
       <nav ref={navRef} className="tac-nav" aria-label="主要導覽">
         {NAV.map((item) => {
+          const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
+          const Icon = item.Icon;
+          return (
+            <Link
+              key={item.path}
+              href={item.path}
+              className={active ? "active" : ""}
+              aria-current={active ? "page" : undefined}
+            >
+              <span className="tac-nav-icon" aria-hidden="true">
+                <Icon size={17} strokeWidth={1.9} />
+              </span>
+              <div>
+                <b>{item.title}</b>
+                <small>{item.sub}</small>
+              </div>
+              {active && <i />}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* OpenAlice admin section */}
+      <div className="tac-sidebar-section-head" aria-label="OpenAlice 管理">
+        <span>OpenAlice</span>
+      </div>
+      <nav className="tac-nav tac-nav-admin" aria-label="OpenAlice 管理導覽">
+        {([
+          { path: "/admin/brain/llm", title: "Brain", sub: "LLM 費用", Icon: Brain, activePaths: ["/admin/brain"] },
+          { path: "/admin/events", title: "EventLog", sub: "事件流", Icon: GitFork, activePaths: ["/admin/events"] },
+          { path: "/admin/portfolio/snapshots", title: "Portfolio", sub: "快照版本", Icon: LineChart, activePaths: ["/admin/portfolio/snapshots"] },
+          { path: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench, activePaths: ["/admin/tools"] },
+          { path: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles, activePaths: ["/admin/uta"] },
+        ] as NavItem[]).map((item) => {
           const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
           const Icon = item.Icon;
           return (

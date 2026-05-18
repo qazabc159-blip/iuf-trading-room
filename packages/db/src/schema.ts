@@ -914,3 +914,33 @@ export const toolCalls = pgTable(
     createdAtIdx:   index("tool_calls_created_at_idx").on(table.createdAt.desc())
   })
 );
+
+// -- EventLog Phase B Outbox -- migration 0039_eventlog_outbox.sql
+// Transactional outbox table: written atomically with el_events INSERT.
+// Background poller drains el_outbox rows → SSE broadcast → marks delivered.
+// Prevents event loss if worker crashes between DB write and in-process broadcast.
+export const elOutbox = pgTable(
+  "el_outbox",
+  {
+    id:          uuid("id").defaultRandom().primaryKey(),
+    // event_id: FK to el_events (written in same TX as the event row)
+    eventId:     uuid("event_id").notNull().references(() => elEvents.id, { onDelete: "cascade" }),
+    // stream_id: denormalized for fast poller query
+    streamId:    uuid("stream_id").notNull().references(() => elEventStreams.id, { onDelete: "cascade" }),
+    // event_type: denormalized for SSE routing
+    eventType:   text("event_type").notNull(),
+    // payload: denormalized snapshot avoids JOIN on broadcast
+    payload:     jsonb("payload").notNull().default({}),
+    // seq: denormalized for ordered delivery
+    seq:         bigint("seq", { mode: "number" }).notNull(),
+    createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    // delivered_at: NULL = pending; set to NOW() on success; 1970-01-01 = fatally failed
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    // error_count: >= 5 => mark as fatally failed (deliveredAt = epoch)
+    errorCount:  integer("error_count").notNull().default(0)
+  },
+  (table) => ({
+    // partial index on pending rows only (poller uses this exclusively)
+    pendingIdx: index("el_outbox_pending_idx").on(table.createdAt)
+  })
+);

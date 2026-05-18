@@ -15039,6 +15039,21 @@ app.get("/api/v1/tools/stats", async (c) => {
   return c.json({ data: { stats, windowMs, generatedAt: new Date().toISOString() } });
 });
 
+// =============================================================================
+// EventLog Phase B — Outbox diagnostic endpoint (2026-05-18)
+// GET /api/v1/admin/event-log/outbox/diag — pending + fatal count (Owner-only)
+// =============================================================================
+
+app.get("/api/v1/admin/event-log/outbox/diag", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  const { getOutboxDiag } = await import("./events/event-log-outbox.js");
+  const diag = await getOutboxDiag();
+  return c.json({ data: diag });
+});
+
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
@@ -15058,5 +15073,8 @@ serve(
     // F2 + F3: Start ETL schedulers after server is ready
     console.log(`[schedulers] Using workspace "${schedulerWorkspace}" for FinMind/OpenAlice schedulers.`);
     startSchedulers(schedulerWorkspace);
+    // B-EL-4: Start outbox poller (transactional event delivery, 500ms interval)
+    const { startOutboxPoller } = await import("./events/event-log-outbox.js");
+    startOutboxPoller();
   }
 );
