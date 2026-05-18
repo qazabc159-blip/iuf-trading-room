@@ -7,9 +7,11 @@
 // =============================================================================
 
 export const TWSE_INDUSTRY_ZH_TW: Record<string, string> = {
+  // zh-TW short-name aliases (already-Chinese inputs that need canonical long-form)
+  "半導體": "半導體業",
   // Semiconductors / Electronics
-  "semiconductors": "半導體",
-  "semiconductor": "半導體",
+  "semiconductors": "半導體業",
+  "semiconductor": "半導體業",
   "semiconductor equipment & materials": "半導體設備與材料",
   "semiconductor equipment": "半導體設備",
   "foundry": "晶圓代工",
@@ -125,7 +127,7 @@ export function normalizeTwseIndustryZhTw(raw: string): string {
   const direct = TWSE_INDUSTRY_ZH_TW[key];
   if (direct) return direct;
   // substring fallbacks for long/variant spellings
-  if (key.includes("semiconductor")) return "半導體";
+  if (key.includes("semiconductor")) return "半導體業";
   if (key.includes("computer") || key.includes("hardware")) return "電腦及週邊設備";
   if (key.includes("bank") || key.includes("insurance") || key.includes("financial")) return "金融保險";
   if (key.includes("electronic")) return "電子類股";

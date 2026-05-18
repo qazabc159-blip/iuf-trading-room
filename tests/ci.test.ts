@@ -12164,7 +12164,7 @@ test("HEATMAP-INDUSTRY-ZH-1: direct map entries cover all 9 Bruce-reported secto
 test("HEATMAP-INDUSTRY-ZH-2: normalizeTwseIndustryZhTw handles case-insensitive input", async () => {
   // Simulated normalize function matching server.ts implementation
   const map: Record<string, string> = {
-    "semiconductors": "半導體", "steel": "鋼鐵工業", "banks": "金融保險",
+    "semiconductors": "半導體業", "steel": "鋼鐵工業", "banks": "金融保險",
     "banks - regional": "金融保險", "specialty industrial machinery": "特用機械",
     "textile manufacturing": "紡織纖維",
   };
@@ -12173,7 +12173,7 @@ test("HEATMAP-INDUSTRY-ZH-2: normalizeTwseIndustryZhTw handles case-insensitive 
     const key = raw.trim().toLowerCase().replace(/\s+/g, " ");
     const direct = map[key];
     if (direct) return direct;
-    if (key.includes("semiconductor")) return "半導體";
+    if (key.includes("semiconductor")) return "半導體業";
     if (key.includes("steel")) return "鋼鐵工業";
     if (key.includes("bank")) return "金融保險";
     if (key.includes("textile")) return "紡織纖維";
@@ -12181,7 +12181,7 @@ test("HEATMAP-INDUSTRY-ZH-2: normalizeTwseIndustryZhTw handles case-insensitive 
     if (/[^\x00-\x7F]/.test(raw)) return raw;
     return "其他產業";
   }
-  assert.equal(normalize("SEMICONDUCTORS"), "半導體", "HEATMAP-INDUSTRY-ZH-2: uppercase must normalize");
+  assert.equal(normalize("SEMICONDUCTORS"), "半導體業", "HEATMAP-INDUSTRY-ZH-2: uppercase must normalize");
   assert.equal(normalize("Specialty Industrial Machinery"), "特用機械", "HEATMAP-INDUSTRY-ZH-2: title case must normalize");
   assert.equal(normalize("steel"), "鋼鐵工業", "HEATMAP-INDUSTRY-ZH-2: lowercase must normalize");
 });
@@ -12215,14 +12215,14 @@ test("HEATMAP-INDUSTRY-ZH-5: substring fallbacks cover variant spellings", async
   function normalize(raw: string): string {
     if (!raw) return "其他產業";
     const key = raw.trim().toLowerCase().replace(/\s+/g, " ");
-    if (key.includes("semiconductor")) return "半導體";
+    if (key.includes("semiconductor")) return "半導體業";
     if (key.includes("bank")) return "金融保險";
     if (key.includes("machinery")) return "機械設備";
     if (key.includes("textile")) return "紡織纖維";
     if (/[^\x00-\x7F]/.test(raw)) return raw;
     return "其他產業";
   }
-  assert.equal(normalize("Semiconductor Foundry"), "半導體", "HEATMAP-INDUSTRY-ZH-5: 'Semiconductor Foundry' must hit semiconductor substring");
+  assert.equal(normalize("Semiconductor Foundry"), "半導體業", "HEATMAP-INDUSTRY-ZH-5: 'Semiconductor Foundry' must hit semiconductor substring");
   assert.equal(normalize("Regional Banks"), "金融保險", "HEATMAP-INDUSTRY-ZH-5: 'Regional Banks' must hit bank substring");
   assert.equal(normalize("Industrial Machinery"), "機械設備", "HEATMAP-INDUSTRY-ZH-5: 'Industrial Machinery' must hit machinery substring");
 });
@@ -12236,7 +12236,7 @@ test("HEATMAP-INDUSTRY-ZH-5: substring fallbacks cover variant spellings", async
 test("HEATMAP-OVERVIEW-SECTOR-1: utility export normalizeTwseIndustryZhTw produces zh-TW for English chainPosition", async () => {
   const { normalizeTwseIndustryZhTw } = await import("../apps/api/src/utils/twse-industry-normalize.js") as any;
   // These are typical English values from companies.chain_position (Yahoo Finance)
-  assert.equal(normalizeTwseIndustryZhTw("Semiconductors"), "半導體", "HEATMAP-OVERVIEW-SECTOR-1: Semiconductors must → 半導體");
+  assert.equal(normalizeTwseIndustryZhTw("Semiconductors"), "半導體業", "HEATMAP-OVERVIEW-SECTOR-1: Semiconductors must → 半導體業");
   assert.equal(normalizeTwseIndustryZhTw("Steel"), "鋼鐵工業", "HEATMAP-OVERVIEW-SECTOR-1: Steel must → 鋼鐵工業");
   assert.equal(normalizeTwseIndustryZhTw("Banks"), "金融保險", "HEATMAP-OVERVIEW-SECTOR-1: Banks must → 金融保險");
   assert.equal(normalizeTwseIndustryZhTw("Shipping & Ports"), "航運業", "HEATMAP-OVERVIEW-SECTOR-1: Shipping & Ports must → 航運業");
@@ -12277,11 +12277,40 @@ test("HEATMAP-OVERVIEW-SECTOR-4: server.ts /market-data/overview handler applies
     ...row,
     sector: row.sector ? normalizeTwseIndustryZhTw(row.sector) : row.sector
   }));
-  assert.equal(normalized[0].sector, "半導體", "HEATMAP-OVERVIEW-SECTOR-4: Semiconductors → 半導體");
+  assert.equal(normalized[0].sector, "半導體業", "HEATMAP-OVERVIEW-SECTOR-4: Semiconductors → 半導體業");
   assert.equal(normalized[1].sector, "鋼鐵工業", "HEATMAP-OVERVIEW-SECTOR-4: Steel → 鋼鐵工業");
   assert.equal(normalized[2].sector, "航運業", "HEATMAP-OVERVIEW-SECTOR-4: Shipping & Ports → 航運業");
   assert.equal(normalized[3].sector, "金融保險", "HEATMAP-OVERVIEW-SECTOR-4: already-Chinese passes through");
   assert.equal(normalized[4].sector, null, "HEATMAP-OVERVIEW-SECTOR-4: null sector stays null");
+});
+
+// =============================================================================
+// HEATMAP-SEMICONDUCTOR-UNIFY-1..2: 半導體 short-name and English both → 半導體業
+// (#705 follow-up: Elva root-cause — "半導體" short-name vs "半導體業" canonical)
+// =============================================================================
+
+test("HEATMAP-SEMICONDUCTOR-UNIFY-1: English inputs 'semiconductors'/'semiconductor' both map to 半導體業", async () => {
+  const { normalizeTwseIndustryZhTw } = await import("../apps/api/src/utils/twse-industry-normalize.js") as any;
+  assert.equal(normalizeTwseIndustryZhTw("semiconductors"), "半導體業",
+    "HEATMAP-SEMICONDUCTOR-UNIFY-1: 'semiconductors' must → 半導體業");
+  assert.equal(normalizeTwseIndustryZhTw("Semiconductors"), "半導體業",
+    "HEATMAP-SEMICONDUCTOR-UNIFY-1: 'Semiconductors' (title case) must → 半導體業");
+  assert.equal(normalizeTwseIndustryZhTw("SEMICONDUCTOR"), "半導體業",
+    "HEATMAP-SEMICONDUCTOR-UNIFY-1: 'SEMICONDUCTOR' (singular upper) must → 半導體業");
+  assert.equal(normalizeTwseIndustryZhTw("Semiconductor Foundry"), "半導體業",
+    "HEATMAP-SEMICONDUCTOR-UNIFY-1: substring variant must → 半導體業");
+});
+
+test("HEATMAP-SEMICONDUCTOR-UNIFY-2: zh-TW short-name '半導體' normalizes to canonical '半導體業'", async () => {
+  const { normalizeTwseIndustryZhTw, TWSE_INDUSTRY_ZH_TW } = await import("../apps/api/src/utils/twse-industry-normalize.js") as any;
+  // Chinese short-name alias in map: "半導體" → "半導體業"
+  assert.equal(TWSE_INDUSTRY_ZH_TW["半導體"], "半導體業",
+    "HEATMAP-SEMICONDUCTOR-UNIFY-2: map must have 半導體 → 半導體業 entry");
+  assert.equal(normalizeTwseIndustryZhTw("半導體"), "半導體業",
+    "HEATMAP-SEMICONDUCTOR-UNIFY-2: normalizeTwseIndustryZhTw('半導體') must → 半導體業");
+  // Already-canonical 半導體業 must pass through unchanged
+  assert.equal(normalizeTwseIndustryZhTw("半導體業"), "半導體業",
+    "HEATMAP-SEMICONDUCTOR-UNIFY-2: '半導體業' already-canonical must pass through");
 });
 
 // =============================================================================
