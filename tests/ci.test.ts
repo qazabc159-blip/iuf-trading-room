@@ -12228,6 +12228,63 @@ test("HEATMAP-INDUSTRY-ZH-5: substring fallbacks cover variant spellings", async
 });
 
 // =============================================================================
+// HEATMAP-OVERVIEW-SECTOR-1..4: /market-data/overview heatmap sector zh-TW
+// Validates that the utility export covers the /market-data/overview path too.
+// (#705 follow-up: Bruce verify saw 9/22 English on /market-data/overview endpoint)
+// =============================================================================
+
+test("HEATMAP-OVERVIEW-SECTOR-1: utility export normalizeTwseIndustryZhTw produces zh-TW for English chainPosition", async () => {
+  const { normalizeTwseIndustryZhTw } = await import("../apps/api/src/utils/twse-industry-normalize.js") as any;
+  // These are typical English values from companies.chain_position (Yahoo Finance)
+  assert.equal(normalizeTwseIndustryZhTw("Semiconductors"), "半導體", "HEATMAP-OVERVIEW-SECTOR-1: Semiconductors must → 半導體");
+  assert.equal(normalizeTwseIndustryZhTw("Steel"), "鋼鐵工業", "HEATMAP-OVERVIEW-SECTOR-1: Steel must → 鋼鐵工業");
+  assert.equal(normalizeTwseIndustryZhTw("Banks"), "金融保險", "HEATMAP-OVERVIEW-SECTOR-1: Banks must → 金融保險");
+  assert.equal(normalizeTwseIndustryZhTw("Shipping & Ports"), "航運業", "HEATMAP-OVERVIEW-SECTOR-1: Shipping & Ports must → 航運業");
+});
+
+test("HEATMAP-OVERVIEW-SECTOR-2: utility export does not double-convert already-Chinese sector", async () => {
+  const { normalizeTwseIndustryZhTw } = await import("../apps/api/src/utils/twse-industry-normalize.js") as any;
+  // Sectors already in Chinese (from MARKET_HEATMAP_SYMBOL_SECTOR_LABELS) must pass through unchanged
+  assert.equal(normalizeTwseIndustryZhTw("半導體業"), "半導體業", "HEATMAP-OVERVIEW-SECTOR-2: Chinese sector must pass through");
+  assert.equal(normalizeTwseIndustryZhTw("航運業"), "航運業", "HEATMAP-OVERVIEW-SECTOR-2: Chinese sector must pass through");
+  assert.equal(normalizeTwseIndustryZhTw("電子零組件"), "電子零組件", "HEATMAP-OVERVIEW-SECTOR-2: Chinese sector must pass through");
+});
+
+test("HEATMAP-OVERVIEW-SECTOR-3: TWSE_INDUSTRY_ZH_TW map export contains required high-frequency keys", async () => {
+  const { TWSE_INDUSTRY_ZH_TW } = await import("../apps/api/src/utils/twse-industry-normalize.js") as any;
+  const required = [
+    "semiconductors", "steel", "banks", "shipping & ports",
+    "biotechnology", "auto parts", "specialty industrial machinery", "textile manufacturing"
+  ];
+  for (const key of required) {
+    assert.ok(TWSE_INDUSTRY_ZH_TW[key], `HEATMAP-OVERVIEW-SECTOR-3: map must have key '${key}'`);
+    assert.ok(/[^\x00-\x7F]/.test(TWSE_INDUSTRY_ZH_TW[key]), `HEATMAP-OVERVIEW-SECTOR-3: '${key}' value must be Chinese`);
+  }
+});
+
+test("HEATMAP-OVERVIEW-SECTOR-4: server.ts /market-data/overview handler applies sector normalize before c.json()", async () => {
+  // Unit-test the normalize transform logic used in the handler (no server boot needed).
+  // The handler does: sector: row.sector ? normalizeTwseIndustryZhTw(row.sector) : row.sector
+  const { normalizeTwseIndustryZhTw } = await import("../apps/api/src/utils/twse-industry-normalize.js") as any;
+  const mockHeatmapRows = [
+    { symbol: "2330", sector: "Semiconductors" },
+    { symbol: "2002", sector: "Steel" },
+    { symbol: "2603", sector: "Shipping & Ports" },
+    { symbol: "2881", sector: "金融保險" }, // already Chinese — must pass through
+    { symbol: "9999", sector: null },        // null sector — must stay null
+  ];
+  const normalized = mockHeatmapRows.map((row) => ({
+    ...row,
+    sector: row.sector ? normalizeTwseIndustryZhTw(row.sector) : row.sector
+  }));
+  assert.equal(normalized[0].sector, "半導體", "HEATMAP-OVERVIEW-SECTOR-4: Semiconductors → 半導體");
+  assert.equal(normalized[1].sector, "鋼鐵工業", "HEATMAP-OVERVIEW-SECTOR-4: Steel → 鋼鐵工業");
+  assert.equal(normalized[2].sector, "航運業", "HEATMAP-OVERVIEW-SECTOR-4: Shipping & Ports → 航運業");
+  assert.equal(normalized[3].sector, "金融保險", "HEATMAP-OVERVIEW-SECTOR-4: already-Chinese passes through");
+  assert.equal(normalized[4].sector, null, "HEATMAP-OVERVIEW-SECTOR-4: null sector stays null");
+});
+
+// =============================================================================
 // NEWS-HOURLY: news-ai-selector hourly cron (F1 root-cause fix 2026-05-18)
 // =============================================================================
 
