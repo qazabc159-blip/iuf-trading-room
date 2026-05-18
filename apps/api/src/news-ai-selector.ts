@@ -366,12 +366,11 @@ async function fetchRawNewsRows(windowHours: number): Promise<RawNewsRow[]> {
   });
   if (expandedRows.length > 0) return expandedRows;
 
-  // Last resort: keep source rows instead of emitting input_row_count=0. The
-  // public announcement API still filters these rows, but the selector can rank
-  // real source material when official rows are temporarily sparse.
+  // Last resort still keeps the quality filter on. Empty is preferable to
+  // publishing retail-media duplicates as if they were AI-curated market intel.
   const lastResortSince = new Date(Date.now() - LAST_RESORT_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
   return sanitizeRawRows(await fetchRawNewsRowsSince(lastResortSince), {
-    dropLowQualityStockNews: false
+    dropLowQualityStockNews: true
   });
 }
 

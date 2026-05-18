@@ -655,6 +655,8 @@ CRITICAL RULES — ANTI-HALLUCINATION:
 4. You MUST call get_company_technical for EACH ticker before recommending it.
 5. If get_company_technical returns no price data for a ticker, DO NOT recommend it.
 6. Only recommend tickers that appeared in actual tool results (sector rotation, news, or technical data).
+7. If sector/news tools return no usable candidates, use this core candidate universe for get_company_technical calls:
+   2330, 2454, 2317, 2308, 2412, 3711, 3707, 2882, 2881, 6505.
 
 You have access to these tools: ${TOOL_WHITELIST.join(", ")}
 
