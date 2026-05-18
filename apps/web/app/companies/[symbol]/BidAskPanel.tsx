@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getKgiBidAsk, type KgiBidAskData } from "@/lib/api";
 
 const POLL_MS = 30_000;
@@ -59,6 +59,23 @@ const LIVE_CSS = `
 }
 `;
 
+function blockedReason(error: unknown) {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (/SYMBOL_NOT_ALLOWED/i.test(msg)) {
+    return "此股票尚未列入 KGI_QUOTE_SYMBOL_WHITELIST，等待 Jason/Bruce 確認唯讀行情覆蓋。";
+  }
+  if (/GATEWAY_UNREACHABLE|unreachable/i.test(msg)) {
+    return "KGI gateway 暫時無法連線；請確認 EC2 / Railway read-only bridge 狀態。";
+  }
+  if (/QUOTE_DISABLED/i.test(msg)) {
+    return "KGI 唯讀行情目前停用；正式委託路徑仍保持封鎖。";
+  }
+  if (/GATEWAY_AUTH/i.test(msg)) {
+    return "KGI gateway session 失效，需 Bruce/Jason 重新確認唯讀憑證。";
+  }
+  return `五檔報價暫時無法讀取：${msg.slice(0, 80)}`;
+}
+
 export function BidAskPanel({ symbol }: { symbol: string }) {
   const [state, setState] = useState<BidAskState>({ status: "loading" });
 
@@ -66,19 +83,12 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
     try {
       const data = await getKgiBidAsk(symbol);
       if (!data) {
-        setState({ status: "blocked", reason: "KGI 五檔資料尚未可用（未訂閱或 gateway 離線）" });
+        setState({ status: "blocked", reason: "KGI 唯讀五檔資料暫時無回傳；不顯示假委買委賣。" });
         return;
       }
       setState({ status: "live", data, updatedAt: new Date().toLocaleTimeString("zh-TW", { hour12: false }) });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const reason =
-        /SYMBOL_NOT_ALLOWED/i.test(msg) ? "此代號不在 KGI 白名單（KGI_QUOTE_SYMBOL_WHITELIST）" :
-        /GATEWAY_UNREACHABLE|unreachable/i.test(msg) ? "KGI gateway 暫時無法連線（EC2 54.249.139.28:8787）" :
-        /QUOTE_DISABLED/i.test(msg) ? "KGI 報價服務暫時停用（containment mode）" :
-        /GATEWAY_AUTH/i.test(msg) ? "KGI gateway session 尚未建立" :
-        `五檔資料暫時無法讀取：${msg.slice(0, 80)}`;
-      setState({ status: "blocked", reason });
+      setState({ status: "blocked", reason: blockedReason(err) });
     }
   }, [symbol]);
 
@@ -88,39 +98,42 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
     return () => clearInterval(id);
   }, [fetchData]);
 
-  const bidPrices   = state.status === "live" ? (state.data.bid_prices  ?? []) : [];
-  const bidVolumes  = state.status === "live" ? (state.data.bid_volumes ?? []) : [];
-  const askPrices   = state.status === "live" ? (state.data.ask_prices  ?? []) : [];
-  const askVolumes  = state.status === "live" ? (state.data.ask_volumes ?? []) : [];
-
-  // Best bid / best ask for mid price
+  const bidPrices = state.status === "live" ? (state.data.bid_prices ?? []) : [];
+  const bidVolumes = state.status === "live" ? (state.data.bid_volumes ?? []) : [];
+  const askPrices = state.status === "live" ? (state.data.ask_prices ?? []) : [];
+  const askVolumes = state.status === "live" ? (state.data.ask_volumes ?? []) : [];
   const bestAsk = askPrices[0] ?? null;
   const bestBid = bidPrices[0] ?? null;
-  const midPrice = bestAsk != null && bestBid != null
-    ? ((bestAsk + bestBid) / 2).toFixed(2)
-    : null;
+  const midPrice = bestAsk != null && bestBid != null ? ((bestAsk + bestBid) / 2).toFixed(2) : null;
 
   return (
     <section className="panel hud-frame _ba-panel" style={{ marginBottom: 12 }}>
       <style>{LIVE_CSS}</style>
       <h3 className="ascii-head" style={{ marginBottom: 6 }}>
-        <span className="ascii-head-bracket">五檔</span> 即時行情
+        <span className="ascii-head-bracket">五檔</span> 委買委賣
         {state.status === "live" && (
           <span className="_ba-live-badge" style={{ marginLeft: 10 }}>
             <span className="_ba-live-ring" />
-            LIVE · {state.updatedAt}
+            LIVE 於 {state.updatedAt}
           </span>
         )}
         {state.status === "loading" && (
-          <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>讀取中…</span>
+          <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>讀取中</span>
         )}
       </h3>
 
       {state.status === "blocked" && (
         <div className="state-panel">
           <span className="badge badge-red">BLOCKED</span>
-          <span className="tg soft">來源：KGI gateway /api/v1/kgi/quote/bidask</span>
+          <span className="tg soft">資料源：KGI gateway /api/v1/kgi/quote/bidask</span>
           <span className="state-reason">{state.reason}</span>
+        </div>
+      )}
+
+      {state.status === "loading" && (
+        <div className="state-panel">
+          <span className="badge badge-blue">讀取中</span>
+          <span className="tg soft">正在向 KGI gateway 讀取唯讀五檔資料。</span>
         </div>
       )}
 
@@ -128,11 +141,11 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
         <table className="_ba-table">
           <thead>
             <tr>
-              <th>檔</th>
-              <th>委賣量</th>
+              <th>檔位</th>
+              <th>賣量</th>
               <th>賣價</th>
               <th>買價</th>
-              <th>委買量</th>
+              <th>買量</th>
             </tr>
           </thead>
           <tbody>
@@ -147,19 +160,12 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
             ))}
             {midPrice != null && (
               <tr className="_ba-mid-row">
-                <td className="_ba-mid-label">中間</td>
+                <td className="_ba-mid-label">中間價</td>
                 <td colSpan={4} className="_ba-mid-price" style={{ textAlign: "center" }}>{midPrice}</td>
               </tr>
             )}
           </tbody>
         </table>
-      )}
-
-      {state.status === "loading" && (
-        <div className="state-panel">
-          <span className="badge badge-blue">讀取中</span>
-          <span className="tg soft">正在向 KGI gateway 取得五檔資料…</span>
-        </div>
       )}
     </section>
   );

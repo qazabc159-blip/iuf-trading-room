@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getKgiTicks, type KgiTickEntry } from "@/lib/api";
 
-// Live tick perception: 5s feels real-time, 30s feels stale. KGI gateway tick rate ~1/sec.
 const POLL_MS = 5_000;
 const MAX_TICKS = 20;
 
@@ -25,7 +24,7 @@ const TICK_CSS = `
 }
 @keyframes _ts-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.5; transform: scale(1.35); }
+  50% { opacity: 0.5; transform: scale(1.35); }
 }
 ._ts-tape {
   display: flex; flex-direction: column; gap: 1px;
@@ -50,9 +49,9 @@ const TICK_CSS = `
 ._ts-price-dn { color: var(--tac-ok, #4ade80); font-weight: 700; font-variant-numeric: tabular-nums; }
 ._ts-price-flat { color: var(--night-ink, #e7ecf3); font-weight: 600; font-variant-numeric: tabular-nums; }
 ._ts-vol { color: var(--night-mid, #91a0b5); text-align: right; font-variant-numeric: tabular-nums; }
-._ts-side-buy  { color: var(--tw-up-bright, #e63946); font-size: 9.5px; text-align: right; }
-._ts-side-sell { color: var(--tac-ok, #4ade80);       font-size: 9.5px; text-align: right; }
-._ts-side-flat { color: var(--night-mid, #91a0b5);    font-size: 9.5px; text-align: right; }
+._ts-side-buy { color: var(--tw-up-bright, #e63946); font-size: 9.5px; text-align: right; }
+._ts-side-sell { color: var(--tac-ok, #4ade80); font-size: 9.5px; text-align: right; }
+._ts-side-flat { color: var(--night-mid, #91a0b5); font-size: 9.5px; text-align: right; }
 ._ts-header {
   display: grid;
   grid-template-columns: 48px 1fr 1fr 60px;
@@ -72,15 +71,15 @@ const TICK_CSS = `
 function tickTime(dt: string | null | undefined): string {
   if (!dt) return "--:--:--";
   try {
-    const d = new Date(dt);
-    return d.toLocaleTimeString("zh-TW", { hour12: false });
-  } catch { return "--:--:--"; }
+    return new Date(dt).toLocaleTimeString("zh-TW", { hour12: false });
+  } catch {
+    return "--:--:--";
+  }
 }
 
 function chgTypeLabel(chgType: number | null | undefined): { cls: string; label: string } {
-  // KGI chg_type: 1=up 2=flat 3=down (from KGI SDK docs)
-  if (chgType === 1) return { cls: "_ts-side-buy",  label: "買" };
-  if (chgType === 3) return { cls: "_ts-side-sell", label: "賣" };
+  if (chgType === 1) return { cls: "_ts-side-buy", label: "買盤" };
+  if (chgType === 3) return { cls: "_ts-side-sell", label: "賣盤" };
   return { cls: "_ts-side-flat", label: "-" };
 }
 
@@ -90,6 +89,15 @@ function priceClass(chgType: number | null | undefined): string {
   return "_ts-price-flat";
 }
 
+function blockedReason(error: unknown) {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (/SYMBOL_NOT_ALLOWED/i.test(msg)) return "此股票尚未列入 KGI_QUOTE_SYMBOL_WHITELIST，等待唯讀行情覆蓋。";
+  if (/GATEWAY_UNREACHABLE|unreachable/i.test(msg)) return "KGI gateway 暫時無法連線；請確認唯讀行情 bridge。";
+  if (/QUOTE_DISABLED/i.test(msg)) return "KGI 唯讀行情目前停用；正式委託路徑仍保持封鎖。";
+  if (/GATEWAY_AUTH/i.test(msg)) return "KGI gateway session 失效，需重新確認唯讀憑證。";
+  return `逐筆成交暫時無法讀取：${msg.slice(0, 80)}`;
+}
+
 export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
   const [state, setState] = useState<TickStreamState>({ status: "loading" });
 
@@ -97,19 +105,12 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
     try {
       const result = await getKgiTicks(symbol, MAX_TICKS);
       if (!result || result.ticks.length === 0) {
-        setState({ status: "blocked", reason: "目前尚無逐筆成交記錄（此代號尚未在訂閱範圍或無成交）" });
+        setState({ status: "blocked", reason: "KGI 唯讀逐筆暫時無回傳；不顯示假成交明細。" });
         return;
       }
       setState({ status: "live", ticks: result.ticks, updatedAt: new Date().toLocaleTimeString("zh-TW", { hour12: false }) });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const reason =
-        /SYMBOL_NOT_ALLOWED/i.test(msg) ? "此代號目前不在即時訂閱範圍內" :
-        /GATEWAY_UNREACHABLE|unreachable/i.test(msg) ? "連線暫時中斷，請稍後再試" :
-        /QUOTE_DISABLED/i.test(msg) ? "即時報價服務暫時停用" :
-        /GATEWAY_AUTH/i.test(msg) ? "連線工作階段尚未建立" :
-        `逐筆資料暫時無法讀取：${msg.slice(0, 80)}`;
-      setState({ status: "blocked", reason });
+      setState({ status: "blocked", reason: blockedReason(err) });
     }
   }, [symbol]);
 
@@ -127,19 +128,19 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
         {state.status === "live" && (
           <span className="_ts-live-badge" style={{ marginLeft: 10 }}>
             <span className="_ts-live-ring" />
-            LIVE · {state.updatedAt}
+            LIVE 於 {state.updatedAt}
           </span>
         )}
         {state.status === "loading" && (
-          <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>讀取中…</span>
+          <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>讀取中</span>
         )}
         <span className="dim" style={{ fontSize: 9.5, marginLeft: 8 }}>最近 {MAX_TICKS} 筆 / 5s 更新</span>
       </h3>
 
       {state.status === "blocked" && (
         <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">即時成交明細暫時無法讀取</span>
+          <span className="badge badge-red">BLOCKED</span>
+          <span className="tg soft">資料源：KGI gateway /api/v1/kgi/quote/ticks</span>
           <span className="state-reason">{state.reason}</span>
         </div>
       )}
@@ -147,7 +148,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
       {state.status === "loading" && (
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
-          <span className="tg soft">正在取得即時成交明細…</span>
+          <span className="tg soft">正在取得 KGI 唯讀逐筆成交明細。</span>
         </div>
       )}
 
@@ -156,7 +157,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
           <div className="_ts-header">
             <span>時間</span>
             <span>成交價</span>
-            <span>量(張)</span>
+            <span>成交量</span>
             <span style={{ textAlign: "right" }}>方向</span>
           </div>
           <div className="_ts-tape">

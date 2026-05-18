@@ -43,7 +43,7 @@ const MS_CSS = `
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
-._ms-change.up   { color: var(--tw-up-bright, #e63946); }
+._ms-change.up { color: var(--tw-up-bright, #e63946); }
 ._ms-change.down { color: var(--tac-ok, #4ade80); }
 ._ms-change.flat { color: var(--night-mid, #91a0b5); }
 ._ms-sub {
@@ -60,23 +60,22 @@ const MS_CSS = `
 ._ms-util-label { color: var(--night-mid, #91a0b5); }
 `;
 
-function fmtBalance(v: number | null): string {
-  if (v == null) return "--";
-  if (Math.abs(v) >= 10000) return `${(v / 10000).toFixed(1)}萬`;
-  return v.toLocaleString("zh-TW");
+function fmtBalance(value: number | null): string {
+  if (value == null) return "--";
+  if (Math.abs(value) >= 10000) return `${(value / 10000).toFixed(1)}萬`;
+  return value.toLocaleString("zh-TW");
 }
 
-function fmtChange(v: number | null): { text: string; cls: string } {
-  if (v == null) return { text: "--", cls: "flat" };
-  const sign = v > 0 ? "+" : "";
-  const cls = v > 0 ? "up" : v < 0 ? "down" : "flat";
-  return { text: `${sign}${v.toLocaleString("zh-TW")}`, cls };
+function fmtChange(value: number | null): { text: string; cls: string } {
+  if (value == null) return { text: "--", cls: "flat" };
+  const sign = value > 0 ? "+" : "";
+  const cls = value > 0 ? "up" : value < 0 ? "down" : "flat";
+  return { text: `${sign}${value.toLocaleString("zh-TW")}`, cls };
 }
 
 function marginUtilRate(margin: number | null, short: number | null): string | null {
   if (margin == null || short == null || margin === 0) return null;
-  const rate = (short / margin * 100).toFixed(1);
-  return `融券/融資比 ${rate}%`;
+  return `券資比 ${((short / margin) * 100).toFixed(1)}%`;
 }
 
 export function MarginShortPanel({ companyId }: { companyId: string }) {
@@ -89,11 +88,11 @@ export function MarginShortPanel({ companyId }: { companyId: string }) {
         if (!active) return;
         const section = res?.data?.tradingFlow?.marginShort;
         if (!section) {
-          setState({ status: "blocked", reason: "full-profile 回應缺少 tradingFlow.marginShort" });
+          setState({ status: "blocked", reason: "full-profile 尚未回傳 tradingFlow.marginShort。" });
           return;
         }
         if (section.state === "BLOCKED" || section.state === "ERROR") {
-          setState({ status: "blocked", reason: section.sourceTrail?.degradedReason ?? "融資券資料暫時無法讀取（FinMind 離線）" });
+          setState({ status: "blocked", reason: section.sourceTrail?.degradedReason ?? "融資融券資料暫時無法讀取；請確認 FinMind / full-profile 狀態。" });
           return;
         }
         if (!section.latest) {
@@ -102,13 +101,12 @@ export function MarginShortPanel({ companyId }: { companyId: string }) {
           return;
         }
         const row = section.latest as FullProfileMarginShortRow;
-        const stale = section.state === "STALE";
-        setState({ status: "live", row, date: row.date, stale });
+        setState({ status: "live", row, date: row.date, stale: section.state === "STALE" });
       })
       .catch((err) => {
         if (!active) return;
         const msg = err instanceof Error ? err.message : String(err);
-        setState({ status: "blocked", reason: `融資券資料讀取失敗：${msg.slice(0, 80)}` });
+        setState({ status: "blocked", reason: `融資融券資料讀取失敗：${msg.slice(0, 80)}` });
       });
     return () => { active = false; };
   }, [companyId]);
@@ -117,7 +115,7 @@ export function MarginShortPanel({ companyId }: { companyId: string }) {
     <section className="panel hud-frame" style={{ marginBottom: 12 }}>
       <style>{MS_CSS}</style>
       <h3 className="ascii-head" style={{ marginBottom: 6 }}>
-        <span className="ascii-head-bracket">融資券</span> 餘額變化
+        <span className="ascii-head-bracket">融資券</span> 餘額
         {state.status === "live" && (
           <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>
             {state.date}{state.stale ? " (略舊)" : ""}
@@ -128,31 +126,31 @@ export function MarginShortPanel({ companyId }: { companyId: string }) {
       {state.status === "loading" && (
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
-          <span className="tg soft">正在讀取 FinMind 融資券餘額資料…</span>
+          <span className="tg soft">正在讀取 FinMind 融資融券餘額。</span>
         </div>
       )}
 
       {state.status === "blocked" && (
         <div className="state-panel">
           <span className="badge badge-red">BLOCKED</span>
-          <span className="tg soft">來源：FinMind TaiwanStockMarginPurchaseShortSale</span>
+          <span className="tg soft">資料源：FinMind TaiwanStockMarginPurchaseShortSale</span>
           <span className="state-reason">{state.reason}</span>
         </div>
       )}
 
       {state.status === "empty" && (
         <div className="state-panel">
-          <span className="badge badge-yellow">無資料</span>
-          <span className="tg soft">今日尚無融資券資料（{state.date}）</span>
-          <span className="state-reason">非交易日或盤前可能無資料。</span>
+          <span className="badge badge-yellow">EMPTY</span>
+          <span className="tg soft">近 30 日暫無融資融券資料（{state.date}）。</span>
+          <span className="state-reason">不補假融資券數字；待 FinMind 回傳後自動顯示。</span>
         </div>
       )}
 
       {state.status === "live" && (() => {
         const { row } = state;
         const marginChange = fmtChange(row.marginChange);
-        const shortChange  = fmtChange(row.shortChange);
-        const utilRate     = marginUtilRate(row.marginBalance, row.shortBalance);
+        const shortChange = fmtChange(row.shortChange);
+        const utilRate = marginUtilRate(row.marginBalance, row.shortBalance);
         return (
           <>
             <div className="_ms-bar">
@@ -160,13 +158,13 @@ export function MarginShortPanel({ companyId }: { companyId: string }) {
                 <span className="_ms-label">融資餘額</span>
                 <span className="_ms-value">{fmtBalance(row.marginBalance)}</span>
                 <span className={`_ms-change ${marginChange.cls}`}>{marginChange.text} 張</span>
-                <span className="_ms-sub">vs 昨日</span>
+                <span className="_ms-sub">vs 前日</span>
               </div>
               <div className="_ms-cell">
                 <span className="_ms-label">融券餘額</span>
                 <span className="_ms-value">{fmtBalance(row.shortBalance)}</span>
                 <span className={`_ms-change ${shortChange.cls}`}>{shortChange.text} 張</span>
-                <span className="_ms-sub">vs 昨日</span>
+                <span className="_ms-sub">vs 前日</span>
               </div>
             </div>
             {utilRate && (
