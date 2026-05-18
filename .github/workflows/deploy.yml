@@ -191,10 +191,11 @@ jobs:
 
           # Hard check: migration count must match expected total.
           # UPDATE THIS VALUE whenever a new migration is added.
-          # Current prod value: 40. Repo has 38 current forward files through 0039, but prod
-          # schema_migrations also contains 2 legacy applied rows from earlier migration history.
+          # Current prod value: 41 (5/18 09:30 TST after PR #670 Brain ReAct 0040 applied).
+          # Repo has 39 current forward files through 0040, prod schema_migrations contains
+          # 2 legacy applied rows from earlier migration history = 39 + 2 = 41 total.
           # Root cause 2026-05-18: this was 31 (stale), allowing 6 undetected migration failures.
-          EXPECTED_MIGRATION_COUNT=40
+          EXPECTED_MIGRATION_COUNT=41
           if [ "$COUNT" != "$EXPECTED_MIGRATION_COUNT" ]; then
             echo "::error::Migration count mismatch: expected $EXPECTED_MIGRATION_COUNT but got $COUNT. Check Railway boot logs for advisory lock contention or migration errors."
             exit 1
