@@ -12654,6 +12654,59 @@ test("AI-REC-V3-5: entry/TP/SL fields parsed from structured markdown with R-rat
   assert.ok(item.totalScore !== undefined && item.totalScore! >= 85, `AI-REC-V3-5: totalScore must be >= 85 for A+, got ${item.totalScore}`);
 });
 
+test("AI-REC-V3-6: deterministic fallback builds 3 items from verified technical observations", async () => {
+  const { buildDeterministicFallbackItemsFromTrace } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+
+  const technicalStep = (
+    round: number,
+    ticker: string,
+    lastPrice: number,
+    changePct: number,
+    rsi14: number,
+    volumeRatio20d: number,
+    aboveMa20 = true,
+    aboveMa60 = true
+  ) => ({
+    round,
+    thought: `check ${ticker}`,
+    toolName: "get_company_technical",
+    toolInput: { ticker },
+    observation: {
+      ticker,
+      lastPrice,
+      changePct,
+      rsi14,
+      ma20: lastPrice * 0.98,
+      ma60: lastPrice * 0.9,
+      volumeRatio20d,
+      aboveMa20,
+      aboveMa60,
+      source: "finmind_ohlcv",
+    },
+    tokensUsed: 10,
+  });
+
+  const trace = [
+    technicalStep(1, "2330", 2240, -1.1, 47.79, 0.65),
+    technicalStep(2, "2454", 3400, 4.29, 70.93, 0.45),
+    technicalStep(3, "2317", 248.5, 0, 66.67, 0.62),
+    technicalStep(4, "2308", 2020, -2.65, 50, 0.82, false, true),
+    technicalStep(5, "2412", 137, -0.72, 50, 0.7),
+  ];
+
+  const items = buildDeterministicFallbackItemsFromTrace(trace, "2026-05-18", "trend");
+
+  assert.equal(items.length, 3, `AI-REC-V3-6: fallback must produce 3 items, got ${items.length}`);
+  assert.equal(items[0]?.ticker, "2454", "AI-REC-V3-6: strongest positive technical candidate should rank first");
+  assert.ok(items.every((item: any) => item.aiGenerated === true), "AI-REC-V3-6: fallback items must be AI v2/v3 shaped");
+  assert.ok(items.every((item: any) => item.source === "brain_react_v2"), "AI-REC-V3-6: fallback source must stay brain_react_v2");
+  assert.ok(items.every((item: any) => item.bucket === "B" || item.bucket === "A"), "AI-REC-V3-6: fallback must only emit investable buckets");
+  assert.ok(items.every((item: any) => item.entryPriceRange?.low && item.tp1 && item.stopLoss), "AI-REC-V3-6: fallback items must include price plan fields");
+  assert.ok(items.every((item: any) => item.rationale.includes("Deterministic fallback")), "AI-REC-V3-6: rationale must disclose fallback path");
+});
+
 // =============================================================================
 // AI-REC-V3-RISK-OFF: Deterministic risk_off_score + F3 enforcement (2026-05-18)
 // Lane: strategy backend (Jason). Files: ai-recommendation-v2/orchestrator-v3.ts
