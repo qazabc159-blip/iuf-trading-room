@@ -38,11 +38,13 @@ CREATE TABLE IF NOT EXISTS brain_decisions (
   -- run_id: unique string for idempotency (UUID as text, client-provided or server-generated)
   run_id           TEXT          NOT NULL,
   -- prompt: initial context passed to the loop {intent, contextData, toolWhitelist}
-  prompt           JSONB         NOT NULL DEFAULT '{}',
+  prompt           JSONB         NOT NULL DEFAULT '{}'
+                   CONSTRAINT brain_decisions_prompt_obj_check CHECK (jsonb_typeof(prompt) = 'object'),
   -- react_trace: ordered array of ReAct steps
   --   [{round: 1, thought: "...", toolName: "...", toolInput: {...}, observation: {...}, tokensUsed: N}]
   --   Final step has toolName = null (Final Answer round)
-  react_trace      JSONB         NOT NULL DEFAULT '[]',
+  react_trace      JSONB         NOT NULL DEFAULT '[]'
+                   CONSTRAINT brain_decisions_react_trace_array_check CHECK (jsonb_typeof(react_trace) = 'array'),
   -- final_report: markdown report generated after the loop ends
   final_report     TEXT          NULL,
   -- total_tokens: sum of all LLM tokens consumed across all rounds
