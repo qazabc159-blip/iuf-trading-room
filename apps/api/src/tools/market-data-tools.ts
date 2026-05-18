@@ -224,12 +224,15 @@ export async function getCompanyTechnical(ticker: string): Promise<CompanyTechni
     if (!db) return base;
 
     // Fetch last 200 OHLCV rows for this ticker (enough for MA200)
+    // companies_ohlcv columns: company_id (uuid) + dt (date) — lookup via companies.ticker first
     const { sql } = await import("drizzle-orm");
     const rows = (await db.execute(sql`
-      SELECT date, close, volume
-      FROM companies_ohlcv
-      WHERE stock_id = ${ticker}
-      ORDER BY date DESC
+      SELECT o.dt AS date, o.close AS close, o.volume AS volume
+      FROM companies_ohlcv o
+      INNER JOIN companies c ON c.id = o.company_id
+      WHERE c.ticker = ${ticker}
+        AND o.interval = '1d'
+      ORDER BY o.dt DESC
       LIMIT 200
     `)) as unknown as { rows: Array<{ date: string; close: string; volume: string }> };
 
