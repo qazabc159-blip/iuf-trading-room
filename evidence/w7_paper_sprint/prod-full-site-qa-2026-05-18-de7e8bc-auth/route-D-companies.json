@@ -1,0 +1,37 @@
+{
+  "viewport": "D",
+  "name": "companies",
+  "route": "/companies",
+  "href": "https://app.eycvector.com/companies",
+  "path": "/companies",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 2113,
+  "mainLen": 1844,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n公司\n公司板\n台股公司池 / 主題 / 產業鏈\n台北 / 2026/5/18 18:46:34\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 正式公司主檔；前端先以代號去重，正式資料庫去重仍維持審核閘門\n公司搜尋\n主題雷達\n產業鏈\n公司圖譜\n狀態\n正常\n公司資料庫\n總公司數\n1734\n台股公司池\n篩選結果\n1734\n符合條件\n頁次\n35\n共 35 頁\n更新\n18:46:34\n資料時間\n公司 / 公司主檔\n代號 / 公司名 / 產業鏈位置 / 受惠層級\n1,734 檔\n正常\n來源：公司主檔\n更新 18:46:34\n全部產業鏈\n廣告代理\n航太國防\n農用原料\n航空\n鋁\n成衣\n服飾零售\n資產管理\n汽車經銷\n汽車整車\n汽車零件\n銀行\n區域銀行\n飲料（非酒精）\n生技治療\n生技\n廣播電視\n建材\n建築產品/設備\n商用設備\n資本市場\n化學\n通訊設備\n電腦硬體\n綜合企業\n顧問服務\n消費電子\n銅\n信貸服務\n百貨零售\n藥廠（特用/學名）\nEML 雷射晶片\n教育訓練\n電機設備/零件\n電子零組件\n電子零組件 → 公用事業\n遊戲/多媒體\n電子通路\n電子通路\n工程/營建\n娛樂\n農產品\n金融控股/綜合金融\n食品通路\n鞋類/配件\n家具/裝修/家電\n博弈\n陸路運輸\n醫療資訊服務\n居家修繕零售\n家用/個人用品\n工業電腦\n工業通路\n資訊服務\n綜合保險\n壽險\n產險\n再保險\n保險經紀\n物流\n網路內容\n電商\n休閒用品\n住宿/旅館\n木材/木製品\n航運\n醫療器材\n油",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": false,
+  "bad": [
+    {
+      "status": 503,
+      "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2330%26limit%3D16"
+    },
+    {
+      "status": 503,
+      "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2330"
+    }
+  ],
+  "errors": [
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    },
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    }
+  ],
+  "severity": 4
+}

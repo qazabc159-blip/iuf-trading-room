@@ -7,6 +7,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { formatMobileKgiBlockedReason } from "./mobile-kgi-copy";
+
 type QuoteState =
   | { status: "loading" }
   | { status: "live"; lastPrice: number; priceChg: number; pctChg: number; volume: number; time: string }
@@ -152,11 +154,7 @@ async function fetchQuoteForSymbol(symbol: string): Promise<QuoteState> {
     const res = await fetch(apiUrl(`/api/v1/kgi/quote/ticks?${qs}`), { cache: "no-store", credentials: "include" });
     if (!res.ok) {
       const txt = await res.text().catch(() => res.statusText);
-      // Distinguish gateway errors
-      if (txt.includes("SYMBOL_NOT_ALLOWED") || txt.includes("GATEWAY_UNREACHABLE") || txt.includes("GATEWAY_AUTH")) {
-        return { status: "blocked", reason: txt.slice(0, 80) };
-      }
-      return { status: "blocked", reason: `HTTP ${res.status}` };
+      return { status: "blocked", reason: formatMobileKgiBlockedReason(res.status, txt) };
     }
     const data = await res.json() as { symbol: string; ticks: Array<{ close?: number; price_chg?: number; pct_chg?: number; volume?: number; datetime?: string }>; count: number };
     if (!data.ticks || data.ticks.length === 0) {
@@ -174,8 +172,8 @@ async function fetchQuoteForSymbol(symbol: string): Promise<QuoteState> {
       volume: tick.volume ?? 0,
       time: tick.datetime ?? "",
     };
-  } catch (err) {
-    return { status: "blocked", reason: err instanceof Error ? err.message.slice(0, 60) : "網路錯誤" };
+  } catch {
+    return { status: "blocked", reason: "連線暫停" };
   }
 }
 

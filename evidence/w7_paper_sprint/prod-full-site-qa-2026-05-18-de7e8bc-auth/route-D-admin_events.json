@@ -1,0 +1,19 @@
+{
+  "viewport": "D",
+  "name": "admin_events",
+  "route": "/admin/events",
+  "href": "https://app.eycvector.com/admin/events",
+  "path": "/admin/events",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 426,
+  "mainLen": 157,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n管理\nEventLog 時間軸瀏覽器\nOpenAlice Phase A\nOwner only\nOutbox 待發 -1\nEventLog 事件流 / 時間回溯查詢 — 選左側 stream → 查看事件序列。\n事件流\n0 個\n資料同步中\n時間回溯\n查詢\n管理 / 請選擇事件流\n0 筆\n← 請從左側選擇一個事件流",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": false,
+  "bad": [],
+  "errors": [],
+  "severity": 0
+}

@@ -1,0 +1,612 @@
+{
+  "commit": "de7e8bc",
+  "base": "https://app.eycvector.com",
+  "setCookieCount": 2,
+  "routeCount": 23,
+  "generatedAt": "2026-05-18T10:48:16.183Z",
+  "results": [
+    {
+      "viewport": "D",
+      "name": "home",
+      "route": "/",
+      "href": "https://app.eycvector.com/",
+      "path": "/",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 10468,
+      "mainLen": 10272,
+      "sample": "警示通知，15 則未讀\n15\nI\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n觀察模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nMARKET · INTEL\n5 項可用 / 3 件提醒\n本機時鐘 · 台北\n18:46:13\n正式資料\nTAIEX\n加權指數\n40,892\n-280.54 (-0.68%)\n上漲\n上漲家數\n+257 家\n下跌\n下跌家數\n-581 家\n2330\n2330\n2,265\n-4.98 (-0.22%)\n2317\n2317\n248.5\n+4.08 (+1.64%)\n2454\n2454\n3,260\n-138.88 (-4.26%)\n2882\n2882\n77.90\n+1.22 (+1.56%)\n2881\n2881\n96.10\n+1.53 (+1.59%)\n2308\n2308\n2,075\n-76.98 (-3.71%)\n2412\n2412\n138.0\n+0.50 (+0.36%)\n2891\n2891\n54.80\n0.00 (0.00%)\n2886\n2886\n39.40\n+0.10 (+0.25%)\n6505\n6505\n51.30\n-1.08 (-2.10%)\n3711\n3711\n547.0\n-0.98 (-0.18%)\n2207\n2207\n468.0\n-0.51 (-0.11%)\nTAIEX\n加權指數\n40,892\n-280.54 (-0.68%)\n上漲\n上漲家數\n+257 家\n下跌\n下跌家數\n-581 家\n2330\n2330\n2,265\n-4.98 (-0.22%)\n2317\n2317\n248.5\n+4.08 (+1.64%)\n2454\n2454\n3,260\n-138.88 (-4.26%)\n2882\n2882\n77.90\n+1.22 (+1.56%)\n2881\n2881\n96.10\n+1.53 (+1.59%)\n2308\n2308\n2,075\n-76.98 (-3.71%)\n2412\n24",
+      "overflow": false,
+      "notFound": true,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 10
+    },
+    {
+      "viewport": "D",
+      "name": "market_intel",
+      "route": "/market-intel",
+      "href": "https://app.eycvector.com/market-intel",
+      "path": "/market-intel",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 268,
+      "mainLen": 0,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "ai_recommendations",
+      "route": "/ai-recommendations",
+      "href": "https://app.eycvector.com/ai-recommendations",
+      "path": "/ai-recommendations",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 3361,
+      "mainLen": 3092,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\nAI 推薦\nAI 推薦\nRecommendation Orchestrator\n台北 / 2026/5/18 18:46:20\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。\n台股目前盤後或週末休市，顯示 05/18 (一) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n市場狀態分數等待 v3 後端接入，現在只顯示推薦清單與資料品質。\n策略執行紀錄\n訊號中心\nAI 推薦 / 推薦清單\n交易日 2026-05-18 / 產生時間 05/18 18:46 / 正式推薦\n4 檔\n80+\n積極觀察\n1 檔\n70-79\n觀察名單\n3 檔\n60-69\n小量追蹤\n0 檔\n<60\n暫不進場\n0 檔\nMISSING\n資料不足\n0 檔\n積極觀察\n1 檔\n#1\n3707漢磊\n積極觀察\n中性\n中期觀察\n總分\n76\n信心\n57%\nWATCH\nQuant 80\ncont_liq_v36\n\nAI 推薦只做研究與 SIM 演練，不代表實單建議。\n\n進場區間\n參考技術面支撐帶\n\ncont_liq_v36 研究候選，未達進場建議，請參考個股技術面\n\n失效條件 / 停損\n-\n\nforward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新\n\n部位建議\n標準部位\n\n單筆最大風險 1%\n\nTP1\n-\n待 forwar",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "portfolio",
+      "route": "/portfolio",
+      "href": "https://app.eycvector.com/portfolio",
+      "path": "/portfolio",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 268,
+      "mainLen": 0,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "companies",
+      "route": "/companies",
+      "href": "https://app.eycvector.com/companies",
+      "path": "/companies",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 2113,
+      "mainLen": 1844,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n公司\n公司板\n台股公司池 / 主題 / 產業鏈\n台北 / 2026/5/18 18:46:34\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 正式公司主檔；前端先以代號去重，正式資料庫去重仍維持審核閘門\n公司搜尋\n主題雷達\n產業鏈\n公司圖譜\n狀態\n正常\n公司資料庫\n總公司數\n1734\n台股公司池\n篩選結果\n1734\n符合條件\n頁次\n35\n共 35 頁\n更新\n18:46:34\n資料時間\n公司 / 公司主檔\n代號 / 公司名 / 產業鏈位置 / 受惠層級\n1,734 檔\n正常\n來源：公司主檔\n更新 18:46:34\n全部產業鏈\n廣告代理\n航太國防\n農用原料\n航空\n鋁\n成衣\n服飾零售\n資產管理\n汽車經銷\n汽車整車\n汽車零件\n銀行\n區域銀行\n飲料（非酒精）\n生技治療\n生技\n廣播電視\n建材\n建築產品/設備\n商用設備\n資本市場\n化學\n通訊設備\n電腦硬體\n綜合企業\n顧問服務\n消費電子\n銅\n信貸服務\n百貨零售\n藥廠（特用/學名）\nEML 雷射晶片\n教育訓練\n電機設備/零件\n電子零組件\n電子零組件 → 公用事業\n遊戲/多媒體\n電子通路\n電子通路\n工程/營建\n娛樂\n農產品\n金融控股/綜合金融\n食品通路\n鞋類/配件\n家具/裝修/家電\n博弈\n陸路運輸\n醫療資訊服務\n居家修繕零售\n家用/個人用品\n工業電腦\n工業通路\n資訊服務\n綜合保險\n壽險\n產險\n再保險\n保險經紀\n物流\n網路內容\n電商\n休閒用品\n住宿/旅館\n木材/木製品\n航運\n醫療器材\n油",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [
+        {
+          "status": 503,
+          "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2330%26limit%3D16"
+        },
+        {
+          "status": 503,
+          "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2330"
+        }
+      ],
+      "errors": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "severity": 4
+    },
+    {
+      "viewport": "D",
+      "name": "companies_2330",
+      "route": "/companies/2330",
+      "href": "https://app.eycvector.com/companies/2330",
+      "path": "/companies/2330",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 4768,
+      "mainLen": 4499,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n03-2330\n2330\n台積電 / 上市\n台北 / 2026/5/18 18:46:39\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 2330 / 半導體 / 核心受惠\n台股目前盤後或週末休市，顯示 05/18 (一) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n← 返回公司列表\n2330\n台積電\n上市\n核心受惠\n等待報價\n半導體 / Apple / EUV / NVIDIA / 矽晶圓 / 更新 05/18 18:46 / 即時報價加入觀察清單可看即時報價\n最新價\n2,240.0\nTWD\n漲跌幅\n-1.10%\n-25.00\n成交量\n2818萬\n股 / 張\n開盤\n2,225.0\n今日\n最高\n2,260.0\n今日\n最低\n2,215.0\n今日\n動能\n略弱\n本益比\n30.1\n倍\n殖利率\n0.98\n%\n月營收\n4107.3億\n最新月\nK線 / K 線圖\n日線、週線、月線與 FinMind 分 K；右側價格軸可直接讀價。\nFinMind / TEJ\n2330\n指標\n均線\nMA5\nMA10\nMA20\nMA60\nRSI\nMACD\n最新收盤\n2,240\n2026-05-18\n漲跌\n-25.00 / -1.10%\n前值 2,265\n區間高低\n2,345 / 495.04\n日K 顯示範圍\n成交量\n28,182,937\n727 根K 線\n日線\n日K\n週K\n月K\n分K\n1分\n5分\n15分\n60分\n範圍\n3月\n6月\n1年\n",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/bidask?symbol=2330"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20"
+        }
+      ],
+      "errors": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "severity": 4
+    },
+    {
+      "viewport": "D",
+      "name": "quant_strategies",
+      "route": "/quant-strategies",
+      "href": "https://app.eycvector.com/quant-strategies",
+      "path": "/quant-strategies",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 1452,
+      "mainLen": 1183,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n量化策略\n量化策略\nAthena 訊號 / SIM-only\n台北 / 2026/5/18 18:46:41\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\nv1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等正式 quant-strategies endpoint 回傳後才顯示數字。\n策略列表\n我的訂閱\nAthena 三策略\nLab 策略清單\n量化策略 / 詳情 / 策略列表\n策略分數、回測風險與 SIM-only 配置。\nSIM 帳戶執行中 / v1 只開放模擬帳戶，不提供正式交易切換。\nLAB SANCTIONED SNAPSHOT\nAthena 候選策略已同步\nv15\n3 candidates\n05/07 00:43\n\n這裡只讀取 Lab governance 釋出的 research-only snapshot；狀態照 Lab 原文保存，不在前端改名成可交易訊號。\n\nMAIN execution rank buffer\n研究候選 / 未進交易流程\nRS 20/60 low drawdown\n研究候選 / 未進交易流程\nContinuous liquidity RS\n研究候選 / 未進交易流程\nCO\n觀察中\n流動強勢延續 v36\n\n短週期量價延續 / 20 個交易日 / 4 檔等權\n\n成交量 5/20 放大 + 20 日相對強度，選前 4 檔並套用流動性門檻。\n\n研究候選 / 未進交易流程\nc",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "lab_three_strategy",
+      "route": "/lab/three-strategy",
+      "href": "https://app.eycvector.com/lab/three-strategy",
+      "path": "/lab/three-strategy",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 2461,
+      "mainLen": 2192,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n策略\n量化研究 / 三條策略狀態\nAthena truth board v1 / 邊跑邊修\n台北 / 2026/5/18 18:46:47\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n本頁顯示 IUF Quant Lab 三條策略的真實治理狀態。所有 caveat 全文顯示，不截斷。不顯示已驗證、approved、可上線或任何背書字樣。\nStage 1 live wiring 完成（2026-05-09）— 等 Athena Stage 1 contract ship 後將自動同步 caveat_verdicts 欄位。 Stage 2（equity curve / monthly bar / Sharpe / win rate / sample trades）pending Athena schema ship。\n資料層：lab snapshot endpoint 未回應或回傳 ok=false。顯示 Athena 5/9 morning fallback 資料。\n重要聲明 — 此頁為邊跑邊修狀態\n以下策略均為 研究狀態，尚未進入任何交易流程。無策略通過完整驗證。不顯示任何勝率、報酬率或配置建議。\n狀態來源 / athena_morning_5_9_chat_update · 2026-05-09 · 下次更新 / Athena 發布新 truth board 時\n9/9 PASS\ncont_liquidity_relat",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "lab_three_cont_liq",
+      "route": "/lab/three-strategy/cont_liq_v36",
+      "href": "https://app.eycvector.com/lab/three-strategy/cont_liq_v36",
+      "path": "/lab/three-strategy/cont_liq_v36",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 2904,
+      "mainLen": 2635,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n策略\n持續流動性強勢策略 — Forward Observation Period 1\nDay-0: 2026-05-06 · Holdings: 3707 / 2426 / 6205 / 2486 · 預期退出: 2026-06-03 · 入場價全部已從 FinMind OHLCV (2026-05-06) 取得\n台北 / 2026/5/18 18:46:53\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n研究前向觀察記錄。不顯示已驗證、approved、可上線或任何背書字樣。非交易建議。\n研究前向觀察期間（Research Forward Observation）\n本 panel 僅供研究追蹤用途。無真實下單，無生產環境執行。結果在 H20 觀察期結束前不算成熟（pending H20 maturation）。\n非交易建議。非已驗證策略。不適合跟單。\nThis is simulated / observation only — not a trading recommendation.\nDAY-0 ANCHOR DATE — ATHENA 5/6 鎖倉\n2026-05-06\n策略：持續流動性強勢策略 v36（cont_liq_v36） ·  入場日：2026-05-06 ·  預期退出：2026-06-03 ·  等權 4 檔\nFORWARD OBSERVATION 進度\n約 8 交易日 / H20 目標\n開始：2026-",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": true,
+      "bad": [
+        {
+          "status": 422,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=3707&limit=1"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=6205&limit=1"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2426&limit=1"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2486&limit=1"
+        }
+      ],
+      "errors": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 422 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "severity": 14
+    },
+    {
+      "viewport": "D",
+      "name": "m",
+      "route": "/m",
+      "href": "https://app.eycvector.com/m",
+      "path": "/m",
+      "title": "IUF TR Mobile",
+      "len": 794,
+      "mainLen": 775,
+      "sample": "IUF 交易戰情室\n盤前快覽\n日報 / 主題 / 策略 / 風控\n正常\n10:46:57\nMKT / 盤面資料\nMANUAL\nSIM 檢查通過\n執行模式\n0\n報價總數\n0\n模擬可用\nBRF / 最新日報\n資料過期\n2026-05-15 / 落後 3 天 / 平衡\n這不是今天的日報；等待 OpenAlice 重新產出今日來源追蹤列。\n今日資料狀態\n本簡報依 2026-05-15 可取得的台股資料整理。可用來源：市場總覽資料（1 筆，最新 2026-05-18）。資料不足或過期來源不會被當成投資依據。\nTHM / 主題掃描\n5 筆\nP3 / 5G\n平衡\n5G\n探索 / 核心 0 / 觀察 0\nP3 / ABF 載板\n平衡\nABF 載板\n探索 / 核心 0 / 觀察 0\nP3 / AI 伺服器\n平衡\nAI 伺服器\n探索 / 核心 0 / 觀察 0\nP3 / Apple 供應鏈\n平衡\nApple 供應鏈\n探索 / 核心 0 / 觀察 0\nP3 / CoWoS 先進封裝\n平衡\nCoWoS 先進封裝\n探索 / 核心 0 / 觀察 0\nIDA / 模擬策略想法\n4 筆\n2330\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 28.8 / 信心 +29%\n1514\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%\n1560\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%\n1590\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%\n報價\n離線 · 18:47:00\n0050\n--\n離線\n{\"error\":\"SY\n2330\n--\n離線\n{\"error\":\"GA\n2454\n--\n離線\n{\"error\":\"GA\n公開資料 · 約 5–15 秒延遲 · 不存 cookie\n快覽\n行動\n風控\n模式\n戰情台\n完整",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": true,
+      "bad": [
+        {
+          "status": 422,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2454&limit=1"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=1"
+        }
+      ],
+      "errors": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 422 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "severity": 10
+    },
+    {
+      "viewport": "D",
+      "name": "heatmap",
+      "route": "/heatmap",
+      "href": "https://app.eycvector.com/market-intel",
+      "path": "/market-intel",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 268,
+      "mainLen": 0,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "news",
+      "route": "/news",
+      "href": "https://app.eycvector.com/market-intel",
+      "path": "/market-intel",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 268,
+      "mainLen": 0,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "admin_brain_llm",
+      "route": "/admin/brain/llm",
+      "href": "https://app.eycvector.com/admin/brain/llm",
+      "path": "/admin/brain/llm",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 4943,
+      "mainLen": 4674,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n管理\nBrain LLM 費用總覽\nOpenAlice Phase A\n台北 / 2026/5/18 18:47:14\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\nLLM 費用統計 / 模型登錄 / 近期呼叫記錄 — Owner only。費用為估計值，實際帳單以 OpenAI dashboard 為準。\n正常\n端點狀態\n112\n總呼叫\n142.0K\nTOKEN 數\n$0.0335\n估計費用\n2\n模型數\n管理 / 7 日費用摘要\n2026-05-11 → 2026-05-18\n模型\t呼叫\tTOKEN\t費用\ngpt-4o-mini\t110\t139.4K\t$0.0267\ngpt-4.1\t2\t2.6K\t$0.0069\n按模組分類\n模組\t呼叫\tTOKEN\t費用\nai_rec_v2\t105\t132.6K\t$0.0251\nai_reviewer\t2\t2.8K\t$0.0004\nbrief_writer\t2\t4.0K\t$0.0011\nnews_ai_selector\t1\t0.0K\t$0.0000\nadversarial_reviewer\t2\t2.6K\t$0.0069\ncost_usd is estimated; actual billing: OpenAI dashboard\n管理 / 模型登錄\n5 個模型\nMODELKEY\t供應商\t名稱\t輸入 / 1M TOKEN\t輸出 / 1M TOKEN\t最大 CONTEXT\t啟用\nclaude-3-",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "admin_events",
+      "route": "/admin/events",
+      "href": "https://app.eycvector.com/admin/events",
+      "path": "/admin/events",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 426,
+      "mainLen": 157,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n管理\nEventLog 時間軸瀏覽器\nOpenAlice Phase A\nOwner only\nOutbox 待發 -1\nEventLog 事件流 / 時間回溯查詢 — 選左側 stream → 查看事件序列。\n事件流\n0 個\n資料同步中\n時間回溯\n查詢\n管理 / 請選擇事件流\n0 筆\n← 請從左側選擇一個事件流",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "admin_tools",
+      "route": "/admin/tools",
+      "href": "https://app.eycvector.com/admin/tools",
+      "path": "/admin/tools",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 15441,
+      "mainLen": 15172,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n管理\nToolCenter 登錄瀏覽器\nOpenAlice Phase A\n台北 / 2026/5/18 18:47:25\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n工具登錄表 / 24h 統計 / 近期 50 筆呼叫記錄 — Owner only。\n正常\n端點狀態\n12\n已登錄工具\n76\n24H 呼叫\n50\n近期記錄\n管理 / 工具登錄表\n12 工具\nTOOL_KEY\t類型\t名稱\t說明\t版本\tINPUT_SCHEMA\t啟用\ncontent_drafts_retry\tadmin_action\tContent Drafts Retry Review\tRe-runs AI reviewer pipeline for content drafts stuck in awaiting_review status. Batch-processes up to 50 drafts.\t\t\n{\"type\":\"object\",\"properties\":{\"to\":{\"type\":\"string\",\"format\":\"date\"},\"from\":{\"type\":\"string\",\"format\":\"date\"},\"limit\":{\"type\":\"integer\",\"maximum\":50},\"dryRun\":{\"type\":\"boolean\"},\"workspaceId\":{\"type\":\"string\",\"format\":\"uuid\"}}}",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": true,
+      "bad": [],
+      "errors": [],
+      "severity": 4
+    },
+    {
+      "viewport": "D",
+      "name": "admin_uta_accounts",
+      "route": "/admin/uta/accounts",
+      "href": "https://app.eycvector.com/admin/uta/accounts",
+      "path": "/admin/uta/accounts",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 905,
+      "mainLen": 636,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n管理\nUTA 帳號管理\nOpenAlice Phase A / 唯讀\n台北 / 2026/5/18 18:47:30\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\nBroker Adapter 登錄 / 跨 broker 委託總覽 — Owner only。Phase A 僅讀，不提供正式委託操作入口。\n正常\n端點狀態\n2\nBROKER ADAPTER\n0\n近期委託\n0\nSIM 委託\n管理 / Broker Adapter 登錄\n2 個\nADAPTER_KEY\t名稱\t能力\t狀態\nkgi\t凱基證券 (KGI)\t\n零股\n融資\n融券\nSIM\n訂閱 ≤40\n\t啟用\npaper\tPaper Trading\t\n零股\n融資\n融券\nSIM\n訂閱 ≤9999\n\t啟用\n管理 / Broker 帳號\nPhase A — 未開放建立\nPhase A\nPhase A 無帳號建立 UI — broker credentials 需 Yang 在後台設定。\nPhase B 計畫：Credential Vault (KMS 加密) + 多帳號聚合 + cross-broker routing。 Phase A 僅 read-only adapter 瀏覽。楊董設好 broker creds 後，帳號會自動出現在委託記錄。\n管理 / 跨 Broker 委託記錄（近 50 筆）\n0 筆\n時間\tBROKER\tTICKER\t方向\t數量\t單位\t限價\t狀態\t安全模式\n尚",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "D",
+      "name": "admin_strategies",
+      "route": "/admin/strategies",
+      "href": "https://app.eycvector.com/admin/strategies",
+      "path": "/admin/strategies",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 3296,
+      "mainLen": 3027,
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\nQuant Lab — Strategy Lanes\nGround truth: Codex S1 state 2026-05-18 11:29 TST  ·  Owner-only\nQuant Lab 目前僅推進 S1。S1 owner-review packet 已建置完畢，Bruce 10/10 attest PASS， 但所有 broker / order / capital permissions 仍為 false，尚未取得楊董 review。 Old cont_liq v36 top4 仍獨立追蹤並 C04 FAIL。Class5 v3/v4 為 phantom / research-paused， 任何來自 5/15 MEMORY 的描述均不可引用為已驗證 shipped evidence。\nACTIVE LANES (3)\nSTRATEGY ID\niuf_ls_omni_v1_router\nS1 iuf_ls_omni_v1_router\nOWNER-REVIEW PACKET\n品質鎖 CHECKLIST\n10/10\nLast update: 2026/5/18 11:29:00\n全部 PERMISSIONS = FALSE\n✗ broker / order\n✗ registry state\n✗ capital use\n✗ live-ready\n✗ paper-ready\n10M SIM owner-review packet",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "M",
+      "name": "home",
+      "route": "/",
+      "href": "https://app.eycvector.com/",
+      "path": "/",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 8561,
+      "mainLen": 8478,
+      "sample": "警示通知，15 則未讀\n15\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\n正式資料\nTAIEX\n加權指數\n41,172\n-579.39 (+1.39%)\n上漲\n上漲家數\n+257 家\n下跌\n下跌家數\n-581 家\n2330\n2330\n2,265\n-4.98 (-0.22%)\n2317\n2317\n248.5\n+4.08 (+1.64%)\n2454\n2454\n3,260\n-138.88 (-4.26%)\n2882\n2882\n77.90\n+1.22 (+1.56%)\n2881\n2881\n96.10\n+1.53 (+1.59%)\n2308\n2308\n2,075\n-76.98 (-3.71%)\n2412\n2412\n138.0\n+0.50 (+0.36%)\n2891\n2891\n54.80\n0.00 (0.00%)\n2886\n2886\n39.40\n+0.10 (+0.25%)\n6505\n6505\n51.30\n-1.08 (-2.10%)\n3711\n3711\n547.0\n-0.98 (-0.18%)\n2207\n2207\n468.0\n-0.51 (-0.11%)\nTAIEX\n加權指數\n41,172\n-579.39 (+1.39%)\n上漲\n上漲家數\n+257 家\n下跌\n下跌家數\n-581 家\n2330\n2330\n2,265\n-4.98 (-0.22%)\n2317\n2317\n248.5\n+4.08 (+1.64%)\n2454\n2454\n3,260\n-138.88 (-4.26%)\n2882\n2882\n77.90\n+1.22 (+1.56%)\n2881\n2881\n96.10\n+1.53 (+1.59%)\n2308\n2308\n2,075\n-76.98 (-3.71%)\n2412\n2412\n138.0\n+0.50 (+0.36%)\n2891\n2891\n54.80\n0.00 (0.00%)\n2886\n2886\n39.40\n+0.10 (+0.25%)\n6505\n6505\n51.30\n-1.08 (-2.10%",
+      "overflow": false,
+      "notFound": true,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 10
+    },
+    {
+      "viewport": "M",
+      "name": "m",
+      "route": "/m",
+      "href": "https://app.eycvector.com/m",
+      "path": "/m",
+      "title": "IUF TR Mobile",
+      "len": 794,
+      "mainLen": 775,
+      "sample": "IUF 交易戰情室\n盤前快覽\n日報 / 主題 / 策略 / 風控\n正常\n10:47:46\nMKT / 盤面資料\nMANUAL\nSIM 檢查通過\n執行模式\n0\n報價總數\n0\n模擬可用\nBRF / 最新日報\n資料過期\n2026-05-15 / 落後 3 天 / 平衡\n這不是今天的日報；等待 OpenAlice 重新產出今日來源追蹤列。\n今日資料狀態\n本簡報依 2026-05-15 可取得的台股資料整理。可用來源：市場總覽資料（1 筆，最新 2026-05-18）。資料不足或過期來源不會被當成投資依據。\nTHM / 主題掃描\n5 筆\nP3 / 5G\n平衡\n5G\n探索 / 核心 0 / 觀察 0\nP3 / ABF 載板\n平衡\nABF 載板\n探索 / 核心 0 / 觀察 0\nP3 / AI 伺服器\n平衡\nAI 伺服器\n探索 / 核心 0 / 觀察 0\nP3 / Apple 供應鏈\n平衡\nApple 供應鏈\n探索 / 核心 0 / 觀察 0\nP3 / CoWoS 先進封裝\n平衡\nCoWoS 先進封裝\n探索 / 核心 0 / 觀察 0\nIDA / 模擬策略想法\n4 筆\n2330\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 28.8 / 信心 +29%\n1514\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%\n1560\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%\n1590\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%\n報價\n離線 · 18:47:49\n0050\n--\n離線\n{\"error\":\"SY\n2330\n--\n離線\n{\"error\":\"GA\n2454\n--\n離線\n{\"error\":\"GA\n公開資料 · 約 5–15 秒延遲 · 不存 cookie\n快覽\n行動\n風控\n模式\n戰情台\n完整",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": true,
+      "bad": [
+        {
+          "status": 422,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=1"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2454&limit=1"
+        }
+      ],
+      "errors": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 422 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "severity": 10
+    },
+    {
+      "viewport": "M",
+      "name": "ai_recommendations",
+      "route": "/ai-recommendations",
+      "href": "https://app.eycvector.com/ai-recommendations",
+      "path": "/ai-recommendations",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 3266,
+      "mainLen": 3092,
+      "sample": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，15 則未讀\n15\nAI 推薦\nAI 推薦\nRecommendation Orchestrator\n台北 / 2026/5/18 18:47:52\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。\n台股目前盤後或週末休市，顯示 05/18 (一) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n市場狀態分數等待 v3 後端接入，現在只顯示推薦清單與資料品質。\n策略執行紀錄\n訊號中心\nAI 推薦 / 推薦清單\n交易日 2026-05-18 / 產生時間 05/18 18:47 / 正式推薦\n4 檔\n80+\n積極觀察\n1 檔\n70-79\n觀察名單\n3 檔\n60-69\n小量追蹤\n0 檔\n<60\n暫不進場\n0 檔\nMISSING\n資料不足\n0 檔\n積極觀察\n1 檔\n#1\n3707漢磊\n積極觀察\n中性\n中期觀察\n總分\n76\n信心\n57%\nWATCH\nQuant 80\ncont_liq_v36\n\nAI 推薦只做研究與 SIM 演練，不代表實單建議。\n\n進場區間\n參考技術面支撐帶\n\ncont_liq_v36 研究候選，未達進場建議，請參考個股技術面\n\n失效條件 / 停損\n-\n\nforward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新\n\n部位建議\n標準部位\n\n單筆最大風險 1%\n\nTP1\n-\n待 forward observation 成熟後補充\n推薦理由\n技術面\n-\n籌碼\n-\n新聞\n-\n主題\n-\n量化\n持續流動性 × 相對強勢綜合排序 Top-1，符合 z(vol5/20)+z(ret20d)",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    },
+    {
+      "viewport": "M",
+      "name": "companies_2330",
+      "route": "/companies/2330",
+      "href": "https://app.eycvector.com/companies/2330",
+      "path": "/companies/2330",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 6884,
+      "mainLen": 6710,
+      "sample": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，15 則未讀\n15\n03-2330\n2330\n台積電 / 上市\n台北 / 2026/5/18 18:48:00\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 2330 / 半導體 / 核心受惠\n台股目前盤後或週末休市，顯示 05/18 (一) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n← 返回公司列表\n2330\n台積電\n上市\n核心受惠\n等待報價\n半導體 / Apple / EUV / NVIDIA / 矽晶圓 / 更新 05/18 18:47 / 即時報價加入觀察清單可看即時報價\n最新價\n2,240.0\nTWD\n漲跌幅\n-1.10%\n-25.00\n成交量\n2818萬\n股 / 張\n開盤\n2,225.0\n今日\n最高\n2,260.0\n今日\n最低\n2,215.0\n今日\n動能\n略弱\n本益比\n30.1\n倍\n殖利率\n0.98\n%\n月營收\n4107.3億\n最新月\nK線 / K 線圖\n日線、週線、月線與 FinMind 分 K；右側價格軸可直接讀價。\nFinMind / TEJ\n2330\n指標\n均線\nMA5\nMA10\nMA20\nMA60\nRSI\nMACD\n最新收盤\n2,240\n2026-05-18\n漲跌\n-25.00 / -1.10%\n前值 2,265\n區間高低\n2,345 / 495.04\n日K 顯示範圍\n成交量\n28,182,937\n727 根K 線\n日線\n日K\n週K\n月K\n分K\n1分\n5分\n15分\n60分\n範圍\n3月\n6月\n1年\n2年\n全部\n正常\nFinMind Sponsor 2026-05-18 已回傳 5,320 根 1 分 K / 20 個交易日，分 K 只畫真實成交分鐘；低流動空窗不補假線。\n正式 OHLC",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/bidask?symbol=2330"
+        },
+        {
+          "status": 503,
+          "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20"
+        }
+      ],
+      "errors": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "severity": 4
+    },
+    {
+      "viewport": "M",
+      "name": "portfolio",
+      "route": "/portfolio",
+      "href": "https://app.eycvector.com/portfolio",
+      "path": "/portfolio",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 173,
+      "mainLen": 0,
+      "sample": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，15 則未讀\n15",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [
+        {
+          "status": 503,
+          "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2330%26limit%3D16"
+        },
+        {
+          "status": 503,
+          "url": "https://app.eycvector.com/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2330"
+        }
+      ],
+      "errors": [
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        },
+        {
+          "type": "log",
+          "text": "Failed to load resource: the server responded with a status of 503 ()"
+        }
+      ],
+      "severity": 4
+    },
+    {
+      "viewport": "M",
+      "name": "admin_uta_accounts",
+      "route": "/admin/uta/accounts",
+      "href": "https://app.eycvector.com/admin/uta/accounts",
+      "path": "/admin/uta/accounts",
+      "title": "IUF 台股 AI 交易戰情室",
+      "len": 810,
+      "mainLen": 636,
+      "sample": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，15 則未讀\n15\n管理\nUTA 帳號管理\nOpenAlice Phase A / 唯讀\n台北 / 2026/5/18 18:48:10\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\nBroker Adapter 登錄 / 跨 broker 委託總覽 — Owner only。Phase A 僅讀，不提供正式委託操作入口。\n正常\n端點狀態\n2\nBROKER ADAPTER\n0\n近期委託\n0\nSIM 委託\n管理 / Broker Adapter 登錄\n2 個\nADAPTER_KEY\t名稱\t能力\t狀態\nkgi\t凱基證券 (KGI)\t\n零股\n融資\n融券\nSIM\n訂閱 ≤40\n\t啟用\npaper\tPaper Trading\t\n零股\n融資\n融券\nSIM\n訂閱 ≤9999\n\t啟用\n管理 / Broker 帳號\nPhase A — 未開放建立\nPhase A\nPhase A 無帳號建立 UI — broker credentials 需 Yang 在後台設定。\nPhase B 計畫：Credential Vault (KMS 加密) + 多帳號聚合 + cross-broker routing。 Phase A 僅 read-only adapter 瀏覽。楊董設好 broker creds 後，帳號會自動出現在委託記錄。\n管理 / 跨 Broker 委託記錄（近 50 筆）\n0 筆\n時間\tBROKER\tTICKER\t方向\t數量\t單位\t限價\t狀態\t安全模式\n尚無委託記錄",
+      "overflow": false,
+      "notFound": false,
+      "loadingOnly": false,
+      "replacement": false,
+      "rawError": false,
+      "bad": [],
+      "errors": [],
+      "severity": 0
+    }
+  ]
+}

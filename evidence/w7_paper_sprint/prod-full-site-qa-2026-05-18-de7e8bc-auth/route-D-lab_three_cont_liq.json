@@ -1,0 +1,61 @@
+{
+  "viewport": "D",
+  "name": "lab_three_cont_liq",
+  "route": "/lab/three-strategy/cont_liq_v36",
+  "href": "https://app.eycvector.com/lab/three-strategy/cont_liq_v36",
+  "path": "/lab/three-strategy/cont_liq_v36",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 2904,
+  "mainLen": 2635,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n策略\n持續流動性強勢策略 — Forward Observation Period 1\nDay-0: 2026-05-06 · Holdings: 3707 / 2426 / 6205 / 2486 · 預期退出: 2026-06-03 · 入場價全部已從 FinMind OHLCV (2026-05-06) 取得\n台北 / 2026/5/18 18:46:53\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n研究前向觀察記錄。不顯示已驗證、approved、可上線或任何背書字樣。非交易建議。\n研究前向觀察期間（Research Forward Observation）\n本 panel 僅供研究追蹤用途。無真實下單，無生產環境執行。結果在 H20 觀察期結束前不算成熟（pending H20 maturation）。\n非交易建議。非已驗證策略。不適合跟單。\nThis is simulated / observation only — not a trading recommendation.\nDAY-0 ANCHOR DATE — ATHENA 5/6 鎖倉\n2026-05-06\n策略：持續流動性強勢策略 v36（cont_liq_v36） ·  入場日：2026-05-06 ·  預期退出：2026-06-03 ·  等權 4 檔\nFORWARD OBSERVATION 進度\n約 8 交易日 / H20 目標\n開始：2026-",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": true,
+  "bad": [
+    {
+      "status": 422,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1"
+    },
+    {
+      "status": 503,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=3707&limit=1"
+    },
+    {
+      "status": 503,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=6205&limit=1"
+    },
+    {
+      "status": 503,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2426&limit=1"
+    },
+    {
+      "status": 503,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2486&limit=1"
+    }
+  ],
+  "errors": [
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 422 ()"
+    },
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    },
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    },
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    },
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    }
+  ],
+  "severity": 14
+}

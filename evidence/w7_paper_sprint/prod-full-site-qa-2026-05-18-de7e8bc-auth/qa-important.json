@@ -1,0 +1,185 @@
+[
+  {
+    "key": "D-home",
+    "severity": 10,
+    "bad": [],
+    "rawError": false,
+    "overflow": false,
+    "len": 10468,
+    "href": "https://app.eycvector.com/",
+    "sample": "警示通知，15 則未讀\n15\nI\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n觀察模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nMARKET · INTEL\n5 項可用 / 3 件提醒\n本機時"
+  },
+  {
+    "key": "D-companies",
+    "severity": 4,
+    "bad": [
+      {
+        "status": 503,
+        "url": "/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2330%26limit%3D16"
+      },
+      {
+        "status": 503,
+        "url": "/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2330"
+      }
+    ],
+    "rawError": false,
+    "overflow": false,
+    "len": 2113,
+    "href": "https://app.eycvector.com/companies",
+    "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快"
+  },
+  {
+    "key": "D-companies_2330",
+    "severity": 4,
+    "bad": [
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/bidask?symbol=2330"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20"
+      }
+    ],
+    "rawError": false,
+    "overflow": false,
+    "len": 4768,
+    "href": "https://app.eycvector.com/companies/2330",
+    "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快"
+  },
+  {
+    "key": "D-lab_three_cont_liq",
+    "severity": 14,
+    "bad": [
+      {
+        "status": 422,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=3707&limit=1"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=6205&limit=1"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2426&limit=1"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2486&limit=1"
+      }
+    ],
+    "rawError": true,
+    "overflow": false,
+    "len": 2904,
+    "href": "https://app.eycvector.com/lab/three-strategy/cont_liq_v36",
+    "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快"
+  },
+  {
+    "key": "D-m",
+    "severity": 10,
+    "bad": [
+      {
+        "status": 422,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2454&limit=1"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=1"
+      }
+    ],
+    "rawError": true,
+    "overflow": false,
+    "len": 794,
+    "href": "https://app.eycvector.com/m",
+    "sample": "IUF 交易戰情室\n盤前快覽\n日報 / 主題 / 策略 / 風控\n正常\n10:46:57\nMKT / 盤面資料\nMANUAL\nSIM 檢查通過\n執行模式\n0\n報價總數\n0\n模擬可用\nBRF / 最新日報\n資料過期\n2026-05-15 / 落後 3 天 / 平衡\n這不是今天的日報；等待 OpenAlice 重新產出今日來源追蹤列。\n今日資料狀態\n本簡報依 2"
+  },
+  {
+    "key": "D-admin_tools",
+    "severity": 4,
+    "bad": [],
+    "rawError": true,
+    "overflow": false,
+    "len": 15441,
+    "href": "https://app.eycvector.com/admin/tools",
+    "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快"
+  },
+  {
+    "key": "M-home",
+    "severity": 10,
+    "bad": [],
+    "rawError": false,
+    "overflow": false,
+    "len": 8561,
+    "href": "https://app.eycvector.com/",
+    "sample": "警示通知，15 則未讀\n15\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\n正式資料\nTAIEX\n加權指數\n41,172\n-579.39 (+1.39%)\n上漲\n上漲家數\n+257 家\n下跌\n下跌家數\n-581 家\n2330\n2330\n2,265\n-4.98 (-0.2"
+  },
+  {
+    "key": "M-m",
+    "severity": 10,
+    "bad": [
+      {
+        "status": 422,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=1"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2454&limit=1"
+      }
+    ],
+    "rawError": true,
+    "overflow": false,
+    "len": 794,
+    "href": "https://app.eycvector.com/m",
+    "sample": "IUF 交易戰情室\n盤前快覽\n日報 / 主題 / 策略 / 風控\n正常\n10:47:46\nMKT / 盤面資料\nMANUAL\nSIM 檢查通過\n執行模式\n0\n報價總數\n0\n模擬可用\nBRF / 最新日報\n資料過期\n2026-05-15 / 落後 3 天 / 平衡\n這不是今天的日報；等待 OpenAlice 重新產出今日來源追蹤列。\n今日資料狀態\n本簡報依 2"
+  },
+  {
+    "key": "M-companies_2330",
+    "severity": 4,
+    "bad": [
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/bidask?symbol=2330"
+      },
+      {
+        "status": 503,
+        "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20"
+      }
+    ],
+    "rawError": false,
+    "overflow": false,
+    "len": 6884,
+    "href": "https://app.eycvector.com/companies/2330",
+    "sample": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，15 則未讀\n15\n03-233"
+  },
+  {
+    "key": "M-portfolio",
+    "severity": 4,
+    "bad": [
+      {
+        "status": 503,
+        "url": "/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D2330%26limit%3D16"
+      },
+      {
+        "status": 503,
+        "url": "/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D2330"
+      }
+    ],
+    "rawError": false,
+    "overflow": false,
+    "len": 173,
+    "href": "https://app.eycvector.com/portfolio",
+    "sample": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，15 則未讀\n15"
+  }
+]

@@ -1,0 +1,32 @@
+{
+  "url": "http://localhost:3016/m",
+  "pathname": "/m",
+  "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_mobile_kgi_friendly_errors_20260518\\evidence\\w7_paper_sprint\\mobile-kgi-friendly-errors-2026-05-18\\mobile-m-kgi-friendly-errors.png",
+  "setCookieCount": 2,
+  "intercepted": [
+    {
+      "url": "http://localhost:3016/api/v1/kgi/quote/ticks?symbol=0050&limit=1",
+      "code": 422,
+      "payload": {
+        "error": "SYMBOL_NOT_ALLOWED"
+      }
+    },
+    {
+      "url": "http://localhost:3016/api/v1/kgi/quote/ticks?symbol=2330&limit=1",
+      "code": 503,
+      "payload": {
+        "error": "GATEWAY_UNREACHABLE"
+      }
+    },
+    {
+      "url": "http://localhost:3016/api/v1/kgi/quote/ticks?symbol=2454&limit=1",
+      "code": 422,
+      "payload": {
+        "error": "SYMBOL_NOT_ALLOWED"
+      }
+    }
+  ],
+  "hasRawJson": false,
+  "hasFriendlyCopy": true,
+  "textSample": "IUF 交易戰情室\n盤前快覽\n日報 / 主題 / 策略 / 風控\n暫停\n18:41:11\nSRC\n暫停\n暫停\n行動簡報暫時無法讀取。\nMKT / 盤面資料\n無來源\n暫停\n行動簡報資料尚未正常，盤面指標先隱藏。\nBRF / 最新日報\n暫停\n暫停\n日報資料先隱藏，等待行動簡報資料恢復正常。\nTHM / 主題掃描\n暫停\n暫停\n主題掃描先隱藏，等待行動簡報資料恢復正常。\nIDA / 模擬策略想法\n暫停\n暫停\n模擬策略想法先隱藏，等待行動簡報資料恢復正常。\n報價\n離線 · 18:41:12\n0050\n--\n離線\n未開放\n2330\n--\n離線\n讀取暫停\n2454\n--\n離線\n未開放\n公開資料 · 約 5–15 秒延遲 · 不存 cookie\n快覽\n行動\n風控\n模式\n戰情台\n完整"
+}
