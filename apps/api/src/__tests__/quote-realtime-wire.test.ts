@@ -6,6 +6,7 @@
  *   T2: mock gateway unreachable (5xx on subscribe) → state=BLOCKED reason=gateway_unreachable
  *   T3: tick subscribe fails (4xx non-auth) → state=BLOCKED reason=subscribe_failed
  *   T4: read-only assertion — KgiQuoteClient never calls /order/* during quote/realtime flow
+ *   T5: default managed whitelist includes permanent KGI quota symbols
  *
  * Run: node --test --import tsx/esm apps/api/src/__tests__/quote-realtime-wire.test.ts
  *
@@ -322,4 +323,21 @@ test("T4: read-only assertion — KgiQuoteClient has no order methods and calls 
 
   // Verify whitelist method present (read-only guard)
   assert.ok(allKeys.has("issymbolallowed"), "KgiQuoteClient must expose isSymbolAllowed");
+});
+
+test("T5: default KgiQuoteClient whitelist includes managed permanent symbols", () => {
+  const savedWhitelist = process.env["KGI_QUOTE_SYMBOL_WHITELIST"];
+  delete process.env["KGI_QUOTE_SYMBOL_WHITELIST"];
+
+  try {
+    const client = new KgiQuoteClient({ gatewayBaseUrl: "http://test-gateway" });
+    assert.equal(client.isSymbolAllowed("2330"), true, "2330 remains allowed");
+    assert.equal(client.isSymbolAllowed("2454"), true, "core quote symbol 2454 must not be blocked by stale env");
+    assert.equal(client.isSymbolAllowed("3711"), true, "core quote symbol 3711 must not be blocked by stale env");
+    assert.equal(client.isSymbolAllowed("3707"), true, "strategy quote symbol 3707 must be allowed");
+  } finally {
+    if (savedWhitelist !== undefined) {
+      process.env["KGI_QUOTE_SYMBOL_WHITELIST"] = savedWhitelist;
+    }
+  }
 });

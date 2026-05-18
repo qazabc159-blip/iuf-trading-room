@@ -30,6 +30,7 @@
 
 import { logger, withLatency } from "../lib/logger.js";
 import { checkBufferStatus } from "../lib/ring-buffer.js";
+import { CORE_SYMBOLS, INDEX_SYMBOLS, STRATEGY_SYMBOLS } from "../kgi-subscription-manager.js";
 
 // ---------------------------------------------------------------------------
 // Error classes (re-declared here — no import from kgi-gateway-client.ts)
@@ -248,6 +249,15 @@ export function parseSymbolWhitelist(raw: string | undefined): string[] {
     .filter((s) => s.length > 0);
 }
 
+function buildManagedSymbolWhitelist(raw: string | undefined): string[] {
+  return Array.from(new Set([
+    ...parseSymbolWhitelist(raw),
+    ...INDEX_SYMBOLS,
+    ...STRATEGY_SYMBOLS,
+    ...CORE_SYMBOLS,
+  ]));
+}
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -347,7 +357,7 @@ export class KgiQuoteClient {
     this.timeoutMs = config.connectTimeoutMs ?? 5_000;
     this.whitelist =
       config.symbolWhitelist ??
-      parseSymbolWhitelist(process.env["KGI_QUOTE_SYMBOL_WHITELIST"]);
+      buildManagedSymbolWhitelist(process.env["KGI_QUOTE_SYMBOL_WHITELIST"]);
     this.staleThresholdMs = config.staleThresholdMs ?? STALE_THRESHOLD_MS;
   }
 

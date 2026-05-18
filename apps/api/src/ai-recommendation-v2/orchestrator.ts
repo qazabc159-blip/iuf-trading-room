@@ -71,6 +71,48 @@ export function getLatestAiRecommendationRun(): AiRecommendationRunResult | null
   return null;
 }
 
+export async function loadLatestAiRecommendationRunFromDb(): Promise<AiRecommendationRunResult | null> {
+  try {
+    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return null;
+    const db = getDb();
+    if (!db) return null;
+    const { desc, sql } = await import("drizzle-orm");
+    const rows = await db
+      .select()
+      .from(aiRecommendationsRuns)
+      .where(sql`${aiRecommendationsRuns.trigger} not like ${"%:v3"}`)
+      .orderBy(desc(aiRecommendationsRuns.generatedAt))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      runId: row.runId,
+      status: row.status as AiRecommendationRunResult["status"],
+      generatedAt: row.generatedAt.toISOString(),
+      items: (row.items ?? []) as AiStockRecommendationV2[],
+      reactTrace: (row.reactTrace ?? []) as unknown[],
+      finalReportMarkdown: row.finalReportMarkdown ?? "",
+      totalCostUsd: Number(row.costUsd ?? 0),
+      totalTokens: row.totalTokens ?? 0,
+      dbRowId: row.id,
+    };
+  } catch (e) {
+    console.warn("[ai-rec-v2] loadLatestAiRecommendationRunFromDb failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+export async function getLatestAiRecommendationRunForRead(): Promise<AiRecommendationRunResult | null> {
+  const cached = getLatestAiRecommendationRun();
+  if (cached) return cached;
+  const dbRun = await loadLatestAiRecommendationRunFromDb();
+  if (!dbRun) return null;
+  _latestRunCache = dbRun;
+  _latestRunCacheExpiresAt = Date.now() + CACHE_TTL_MS;
+  return dbRun;
+}
+
 export function _resetAiRecommendationCache(): void {
   _latestRunCache = null;
   _latestRunCacheExpiresAt = 0;
@@ -475,8 +517,8 @@ export async function runAiRecommendationV2(
   const generatedAt = new Date().toISOString();
   const model = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
 
-  // Persist start row (fire-and-forget)
-  void persistRunStart({ id: dbRowId, runId, workspaceId: opts.workspaceId, trigger });
+  // Persist start row before work starts so readers can recover process state.
+  await persistRunStart({ id: dbRowId, runId, workspaceId: opts.workspaceId, trigger });
 
   let reactResult: Awaited<ReturnType<typeof import("../brain/react-loop.js")["runReactLoop"]>>;
   try {
@@ -512,7 +554,7 @@ export async function runAiRecommendationV2(
       totalTokens: 0,
       dbRowId,
     };
-    void persistRunComplete({
+    await persistRunComplete({
       id: dbRowId,
       status: "failed",
       items: [],
@@ -545,8 +587,8 @@ export async function runAiRecommendationV2(
     dbRowId,
   };
 
-  // Persist completion (fire-and-forget)
-  void persistRunComplete({
+  // Persist completion before returning so deploy/restart keeps the latest run.
+  await persistRunComplete({
     id: dbRowId,
     status: reactResult.status,
     items,

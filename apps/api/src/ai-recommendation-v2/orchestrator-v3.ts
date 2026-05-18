@@ -204,6 +204,117 @@ export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | 
   return null;
 }
 
+const V3_TRIGGER_SUFFIX = ":v3";
+
+function v3DbTrigger(trigger: AiRecTrigger): string {
+  return `${trigger}${V3_TRIGGER_SUFFIX}`;
+}
+
+async function persistV3RunStart(opts: {
+  id: string;
+  runId: string;
+  workspaceId?: string | null;
+  trigger: AiRecTrigger;
+  model: string;
+}): Promise<void> {
+  try {
+    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return;
+    const db = getDb();
+    if (!db) return;
+    await db.insert(aiRecommendationsRuns).values({
+      id: opts.id,
+      runId: opts.runId,
+      workspaceId: opts.workspaceId ?? null,
+      status: "running",
+      trigger: v3DbTrigger(opts.trigger),
+      model: opts.model,
+      items: [],
+      reactTrace: [],
+    });
+  } catch (e) {
+    console.warn("[ai-rec-v3] persistV3RunStart failed:", e instanceof Error ? e.message : e);
+  }
+}
+
+async function persistV3RunComplete(result: AiRecommendationV3RunResult, model: string): Promise<void> {
+  if (!result.dbRowId) return;
+  try {
+    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return;
+    const db = getDb();
+    if (!db) return;
+    const { eq } = await import("drizzle-orm");
+    await db
+      .update(aiRecommendationsRuns)
+      .set({
+        status: result.status,
+        items: result.items as unknown[],
+        reactTrace: result.reactTrace,
+        finalReportMarkdown: result.finalReportMarkdown,
+        costUsd: result.totalCostUsd.toFixed(8),
+        totalTokens: result.totalTokens,
+        model,
+        completedAt: new Date(),
+      })
+      .where(eq(aiRecommendationsRuns.id, result.dbRowId));
+  } catch (e) {
+    console.warn("[ai-rec-v3] persistV3RunComplete failed:", e instanceof Error ? e.message : e);
+  }
+}
+
+async function finalizeV3Run(result: AiRecommendationV3RunResult, model: string): Promise<AiRecommendationV3RunResult> {
+  await persistV3RunComplete(result, model);
+  _latestV3Cache = result;
+  _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+  return result;
+}
+
+export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecommendationV3RunResult | null> {
+  try {
+    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return null;
+    const db = getDb();
+    if (!db) return null;
+    const { desc, sql } = await import("drizzle-orm");
+    const rows = await db
+      .select()
+      .from(aiRecommendationsRuns)
+      .where(sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`)
+      .orderBy(desc(aiRecommendationsRuns.generatedAt))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      runId: row.runId,
+      status: row.status as AiRecommendationV3RunResult["status"],
+      generatedAt: row.generatedAt.toISOString(),
+      items: (row.items ?? []) as AiStockRecommendationV2[],
+      reactTrace: (row.reactTrace ?? []) as unknown[],
+      finalReportMarkdown: row.finalReportMarkdown ?? "",
+      totalCostUsd: Number(row.costUsd ?? 0),
+      totalTokens: row.totalTokens ?? 0,
+      marketState: null,
+      marketRiskOffScore: null,
+      programmaticRiskOff: null,
+      dbRowId: row.id,
+    };
+  } catch (e) {
+    console.warn("[ai-rec-v3] loadLatestAiRecommendationV3RunFromDb failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+export async function getLatestAiRecommendationV3RunForRead(): Promise<AiRecommendationV3RunResult | null> {
+  const cached = getLatestAiRecommendationV3Run();
+  if (cached) return cached;
+  const dbRun = await loadLatestAiRecommendationV3RunFromDb();
+  if (!dbRun) return null;
+  _latestV3Cache = dbRun;
+  _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+  return dbRun;
+}
+
 export function _resetAiRecommendationV3Cache(): void {
   _latestV3Cache = null;
   _latestV3CacheExpiresAt = 0;
@@ -739,6 +850,8 @@ export async function runAiRecommendationV3(
   const maxRounds = Math.min(opts.maxRounds ?? 12, 15);
   const costCap = Math.min(opts.costCapUsd ?? 2.0, 5.0);
 
+  await persistV3RunStart({ id: dbRowId, runId, workspaceId: opts.workspaceId, trigger, model });
+
   // ── F1: Programmatic risk_off_score (before firing LLM) ──────────────────
   const programmaticRiskOff = await computeProgrammaticRiskOffScore();
   const progScore = programmaticRiskOff.score;
@@ -774,9 +887,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       programmaticRiskOff,
       dbRowId,
     };
-    _latestV3Cache = result;
-    _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
-    return result;
+    return finalizeV3Run(result, model);
   }
 
   const { callLlm } = await import("../llm/llm-gateway.js");
@@ -821,9 +932,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         programmaticRiskOff,
         dbRowId,
       };
-      _latestV3Cache = result;
-      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
-      return result;
+      return finalizeV3Run(result, model);
     }
 
     const llmResult = await callLlm(messages, {
@@ -851,9 +960,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         programmaticRiskOff,
         dbRowId,
       };
-      _latestV3Cache = result;
-      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
-      return result;
+      return finalizeV3Run(result, model);
     }
 
     totalTokens += llmResult.usage.totalTokens;
@@ -911,9 +1018,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         programmaticRiskOff,
         dbRowId,
       };
-      _latestV3Cache = result;
-      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
-      return result;
+      return finalizeV3Run(result, model);
     }
 
     // Tool whitelist check
@@ -940,9 +1045,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         programmaticRiskOff,
         dbRowId,
       };
-      _latestV3Cache = result;
-      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
-      return result;
+      return finalizeV3Run(result, model);
     }
 
     // ── F3: Final answer validation ────────────────────────────────────────────
@@ -994,9 +1097,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         programmaticRiskOff,
         dbRowId,
       };
-      _latestV3Cache = result;
-      _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
-      return result;
+      return finalizeV3Run(result, model);
     }
 
     // Execute tool
@@ -1061,7 +1162,5 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
     programmaticRiskOff,
     dbRowId,
   };
-  _latestV3Cache = result;
-  _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
-  return result;
+  return finalizeV3Run(result, model);
 }

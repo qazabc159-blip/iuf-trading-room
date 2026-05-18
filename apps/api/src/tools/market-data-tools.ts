@@ -379,14 +379,15 @@ export async function getInstitutionalFlow(ticker: string): Promise<Institutiona
  */
 export async function getNewsTop10(): Promise<NewsTop10Result> {
   try {
-    const { getNewsTop10WithStaleness } = await import("../news-ai-selector.js");
-    const cached = getNewsTop10WithStaleness();
+    const { getNewsTop10ForRead } = await import("../news-ai-selector.js");
+    const cached = await getNewsTop10ForRead();
     if (!cached) {
       return { items: [], asOf: null, runId: null, itemCount: 0 };
     }
     const items = (cached.items ?? []) as Array<{
       id?: string;
       title?: string;
+      headline?: string;
       ticker?: string | null;
       companyName?: string | null;
       sentiment?: string | null;
@@ -396,7 +397,7 @@ export async function getNewsTop10(): Promise<NewsTop10Result> {
     return {
       items: items.map(item => ({
         id: item.id ?? "",
-        title: item.title ?? "",
+        title: item.title ?? item.headline ?? "",
         ticker: item.ticker ?? null,
         companyName: item.companyName ?? null,
         sentiment: item.sentiment ?? null,
