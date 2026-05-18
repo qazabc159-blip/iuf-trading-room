@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-05-18T17:44:52.954Z",
+  "target": "http://127.0.0.1:3119/tool-center",
+  "allPass": true,
+  "results": [
+    {
+      "name": "desktop",
+      "url": "http://127.0.0.1:3119/admin/tools",
+      "responseStatus": 200,
+      "checks": {
+        "opens": true,
+        "canonicalAdminTools": true,
+        "endpointRegistryVisible": true,
+        "endpointCallsVisible": true,
+        "endpointStatsVisible": true,
+        "ownerOnlyVisible": true,
+        "noManualExecuteClaim": true,
+        "readinessVisible": true,
+        "noPageErrors": true
+      },
+      "failedResponses": [],
+      "pageErrors": [],
+      "consoleMessages": [
+        {
+          "type": "info",
+          "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+        }
+      ],
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_toolcenter_truth_20260518\\evidence\\w7_paper_sprint\\p0-toolcenter-2026-05-18\\local-toolcenter-desktop-after-v2.png",
+      "bodyExcerpt": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n管理\nToolCenter 登錄瀏覽器\nOpenAlice Phase A\n台北 / 2026/5/19 01:44:48\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n只讀工具登錄、24h 統計與近期呼叫記錄；此頁沒有手動執行按鈕，不把未驗證工具顯示成已成功。\nBLOCKED\n資料狀態\n0\n可用登錄\n?\n停用/展示\n0\n24H 呼叫\n0\n成功證據\nToolCenter 目前不是完整可讀狀態\n至少一個 ToolCenter endpoint 未能讀取；前端已停止用空表格假裝正常，並明確列出資料來源與 owner。\nENDPOINT\n/api/v1/tools/registry\n/api/v1/tools/calls?limit=50\n/api/v1/tools/stats?window=24h\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\nBruce 用 owner session 重測三個 endpoint；若仍 401/500，由 Jason 檢查 ToolCenter auth、0038/0039 migration 與 tool_calls 寫入。\n管理 / 工具登錄表\nBLOCKED\n工具登錄無法讀取\n`registry` endpoint 未通過 owner session 或後端不可用；此頁不顯示備用工具清單。\nENDPOINT\n/api/v1/tools/registry\n/api/v1/tools/calls?limit=50\n/api/v1/tools/stats?window=24h\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\n確認 Owner cookie / session，再檢查 ToolCenter registry route。\n管理 / 24h 工具統計\nBLOCKED\n工具統計無法讀取\n`stats` endpoint 未回正式資料；錯誤率與延遲不可被估算。\nENDPOINT\n/api/v1/tools/registry\n/api/v1/tools/calls?limit=50\n/api/v1/tools/stats?window=24h\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\nBruce 重測 Owner session；Jason 檢查 /api/v1/tools/stats 與 tool_calls 聚合。\n管理 / 近期 50 筆呼叫\nBLOCKED\n工具呼叫記錄無法讀取\n`calls` endpoint 未回正式資料；不能顯示任何推測的 last run。\nENDPOINT\n/api/v1/tools/registry\n/api/v1/tools/calls?limit=50\n/api/v1/tools/stats?window=24h\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\n確認 callTool wrapper 是否有寫入 tool_calls；若 DB 有資料但 endpoint 失敗，由 Jason 查 route/auth。"
+    },
+    {
+      "name": "mobile",
+      "url": "http://127.0.0.1:3119/admin/tools",
+      "responseStatus": 200,
+      "checks": {
+        "opens": true,
+        "canonicalAdminTools": true,
+        "endpointRegistryVisible": true,
+        "endpointCallsVisible": true,
+        "endpointStatsVisible": true,
+        "ownerOnlyVisible": true,
+        "noManualExecuteClaim": true,
+        "readinessVisible": true,
+        "noPageErrors": true
+      },
+      "failedResponses": [],
+      "pageErrors": [],
+      "consoleMessages": [
+        {
+          "type": "info",
+          "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+        }
+      ],
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_toolcenter_truth_20260518\\evidence\\w7_paper_sprint\\p0-toolcenter-2026-05-18\\local-toolcenter-mobile-after-v2.png",
+      "bodyExcerpt": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，無未讀\n管理\nToolCenter 登錄瀏覽器\nOpenAlice Phase A\n台北 / 2026/5/19 01:44:50\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n只讀工具登錄、24h 統計與近期呼叫記錄；此頁沒有手動執行按鈕，不把未驗證工具顯示成已成功。\nBLOCKED\n資料狀態\n0\n可用登錄\n?\n停用/展示\n0\n24H 呼叫\n0\n成功證據\nToolCenter 目前不是完整可讀狀態\n至少一個 ToolCenter endpoint 未能讀取；前端已停止用空表格假裝正常，並明確列出資料來源與 owner。\nENDPOINT\n/api/v1/tools/registry\n/api/v1/tools/calls?limit=50\n/api/v1/tools/stats?window=24h\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\nBruce 用 owner session 重測三個 endpoint；若仍 401/500，由 Jason 檢查 ToolCenter auth、0038/0039 migration 與 tool_calls 寫入。\n管理 / 工具登錄表\nBLOCKED\n工具登錄無法讀取\n`registry` endpoint 未通過 owner session 或後端不可用；此頁不顯示備用工具清單。\nENDPOINT\n/api/v1/tools/registry\n/api/v1/tools/calls?limit=50\n/api/v1/tools/stats?window=24h\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\n確認 Owner cookie / session，再檢查 ToolCenter registry route。\n管理 / 24h 工具統計\nBLOCKED\n工具統計無法讀取\n`stats` endpoint 未回正式資料；錯誤率與延遲不可被估算。\nENDPOINT\n/api/v1/tools/registry\n/api/v1/tools/calls?limit=50\n/api/v1/tools/stats?window=24h\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\nBruce 重測 Owner session；Jason 檢查 /api/v1/tools/stats 與 tool_calls 聚合。\n管理 / 近期 50 筆呼叫\nBLOCKED\n工具呼叫記錄無法讀取\n`calls` endpoint 未回正式資料；不能顯示任何推測的 last run。\nENDPOINT\n/api/v1/tools/registry\n/api/v1/tools/calls?limit=50\n/api/v1/tools/stats?window=24h\nOWNER\nElva/Jason + Bruce owner-session verify\nNEXT\n確認 callTool wrapper 是否有寫入 tool_calls；若 DB 有資料但 endpoint 失敗，由 Jason 查 route/auth。"
+    }
+  ]
+}

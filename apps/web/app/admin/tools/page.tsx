@@ -1,17 +1,21 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import {
-  getToolRegistry,
   getToolCalls,
+  getToolRegistry,
   getToolStats,
-  type ToolRegistryEntry,
   type ToolCallEntry,
+  type ToolRegistryEntry,
   type ToolStatEntry,
 } from "@/lib/api";
+
+const TOOL_REGISTRY_ENDPOINT = "/api/v1/tools/registry";
+const TOOL_CALLS_ENDPOINT = "/api/v1/tools/calls?limit=50";
+const TOOL_STATS_ENDPOINT = "/api/v1/tools/stats?window=24h";
 
 const CSS = `
   ._tool-kpi {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
     gap: 1px;
     background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.09);
@@ -26,53 +30,134 @@ const CSS = `
     padding: 10px 8px;
     background: rgba(0,0,0,0.25);
     gap: 4px;
+    min-width: 0;
   }
   ._tool-kpi-val {
     font-size: 18px;
     font-weight: 700;
     font-family: var(--mono, monospace);
     color: #e0e0e0;
-    line-height: 1;
+    line-height: 1.1;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: center;
   }
   ._tool-kpi-lbl {
     font-size: 10px;
-    color: rgba(255,255,255,0.4);
+    color: rgba(255,255,255,0.44);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    text-align: center;
+  }
+  ._tool-truth {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(255,184,0,0.22);
+    border-radius: 6px;
+    background: rgba(255,184,0,0.06);
+  }
+  ._tool-truth-title {
+    color: #ffb800;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  ._tool-truth-body {
+    color: rgba(255,255,255,0.72);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  ._tool-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 8px;
+  }
+  ._tool-meta-cell {
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 8px;
+    background: rgba(0,0,0,0.2);
+    min-width: 0;
+  }
+  ._tool-meta-label {
+    display: block;
+    color: rgba(255,255,255,0.42);
+    font-size: 10px;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  ._tool-meta-value {
+    display: block;
+    color: rgba(255,255,255,0.78);
+    font-size: 11px;
+    font-family: var(--mono, monospace);
+    overflow-wrap: anywhere;
+  }
+  ._tool-table-wrap {
+    overflow-x: auto;
+    width: 100%;
   }
   ._tool-table {
     width: 100%;
+    min-width: 980px;
     border-collapse: collapse;
     font-size: 11px;
   }
   ._tool-table th {
     text-align: left;
-    padding: 6px 10px;
+    padding: 7px 10px;
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: rgba(255,255,255,0.4);
+    color: rgba(255,255,255,0.42);
     border-bottom: 1px solid rgba(255,255,255,0.08);
+    white-space: nowrap;
   }
   ._tool-table td {
-    padding: 7px 10px;
-    color: rgba(255,255,255,0.75);
+    padding: 8px 10px;
+    color: rgba(255,255,255,0.76);
     border-bottom: 1px solid rgba(255,255,255,0.04);
-    font-family: var(--mono, monospace);
+    vertical-align: top;
   }
   ._tool-table tr:last-child td { border-bottom: none; }
   ._tool-table tr:hover td { background: rgba(255,255,255,0.02); }
+  ._tool-key {
+    color: #ffb800;
+    font-family: var(--mono, monospace);
+    font-weight: 700;
+  }
+  ._tool-sub {
+    display: block;
+    margin-top: 4px;
+    color: rgba(255,255,255,0.46);
+    font-size: 10px;
+    line-height: 1.4;
+  }
   ._tool-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 2px 7px;
     border-radius: 3px;
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  ._tool-badge + ._tool-badge {
+    margin-left: 4px;
+  }
+  ._tool-schema-preview {
+    font-size: 10px;
+    color: rgba(255,255,255,0.48);
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono, monospace);
   }
   ._tool-stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 8px;
     padding: 4px 0;
   }
@@ -84,111 +169,265 @@ const CSS = `
   }
   ._tool-stat-key {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     color: #ffb800;
     font-family: var(--mono, monospace);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
   ._tool-stat-row {
     display: flex;
     justify-content: space-between;
+    gap: 10px;
     font-size: 10px;
-    color: rgba(255,255,255,0.5);
-    margin-bottom: 2px;
+    color: rgba(255,255,255,0.52);
+    margin-bottom: 3px;
   }
   ._tool-stat-val {
     font-family: var(--mono, monospace);
-    color: rgba(255,255,255,0.8);
+    color: rgba(255,255,255,0.82);
+    text-align: right;
   }
-  ._tool-schema-preview {
-    font-size: 10px;
-    color: rgba(255,255,255,0.4);
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  @media (max-width: 720px) {
+    ._tool-kpi {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    ._tool-table {
+      min-width: 920px;
+    }
   }
 `;
 
+function badgeStyle(kind: "ok" | "warn" | "bad" | "muted" | "info") {
+  if (kind === "ok") return { background: "rgba(76,175,80,0.15)", color: "#4caf50", border: "1px solid rgba(76,175,80,0.3)" };
+  if (kind === "bad") return { background: "rgba(239,83,80,0.15)", color: "#ef5350", border: "1px solid rgba(239,83,80,0.3)" };
+  if (kind === "info") return { background: "rgba(33,150,243,0.15)", color: "#42a5f5", border: "1px solid rgba(33,150,243,0.3)" };
+  if (kind === "muted") return { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.55)", border: "1px solid rgba(255,255,255,0.1)" };
+  return { background: "rgba(255,184,0,0.15)", color: "#ffb800", border: "1px solid rgba(255,184,0,0.3)" };
+}
+
 function toolTypeBadgeStyle(toolType: string) {
-  if (toolType === "llm") return { background: "rgba(33,150,243,0.15)", color: "#42a5f5", border: "1px solid rgba(33,150,243,0.3)" };
+  if (toolType === "llm") return badgeStyle("info");
   if (toolType === "review") return { background: "rgba(156,39,176,0.15)", color: "#ce93d8", border: "1px solid rgba(156,39,176,0.3)" };
   if (toolType === "data_sync") return { background: "rgba(0,150,136,0.15)", color: "#4db6ac", border: "1px solid rgba(0,150,136,0.3)" };
   if (toolType === "cron") return { background: "rgba(255,152,0,0.15)", color: "#ffa726", border: "1px solid rgba(255,152,0,0.3)" };
-  return { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.1)" };
+  if (toolType === "admin_action") return badgeStyle("warn");
+  return badgeStyle("muted");
 }
 
 function callerTypeBadgeStyle(callerType: string) {
-  if (callerType === "llm") return { background: "rgba(33,150,243,0.15)", color: "#42a5f5", border: "1px solid rgba(33,150,243,0.3)" };
+  if (callerType === "llm") return badgeStyle("info");
   if (callerType === "cron") return { background: "rgba(255,152,0,0.15)", color: "#ffa726", border: "1px solid rgba(255,152,0,0.3)" };
-  return { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.1)" };
+  if (callerType === "admin_action") return badgeStyle("warn");
+  return badgeStyle("muted");
 }
 
 function statusBadgeStyle(status: string) {
-  if (status === "success") return { background: "rgba(76,175,80,0.15)", color: "#4caf50", border: "1px solid rgba(76,175,80,0.3)" };
-  if (status === "failure" || status === "error") return { background: "rgba(239,83,80,0.15)", color: "#ef5350", border: "1px solid rgba(239,83,80,0.3)" };
-  if (status === "timeout") return { background: "rgba(255,152,0,0.15)", color: "#ffa726", border: "1px solid rgba(255,152,0,0.3)" };
-  return { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.1)" };
+  if (status === "success") return badgeStyle("ok");
+  if (status === "failure" || status === "error") return badgeStyle("bad");
+  if (status === "timeout") return badgeStyle("warn");
+  if (status === "pending") return badgeStyle("info");
+  return badgeStyle("muted");
 }
 
-function fmtDT(iso: string) {
-  return new Date(iso).toLocaleString("zh-TW", { hour12: false });
+function fmtDT(iso: string | null | undefined) {
+  if (!iso) return "無紀錄";
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return "時間格式錯誤";
+  return dt.toLocaleString("zh-TW", { hour12: false });
 }
 
-function SyncNote({ reason }: { reason: string }) {
+function fmtLatency(ms: number | null) {
+  if (ms == null) return "未回報";
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${ms}ms`;
+}
+
+function errorRatePct(rate: number) {
+  return rate > 1 ? rate : rate * 100;
+}
+
+function shortJson(value: unknown) {
+  if (value == null) return "無 schema";
+  const text = JSON.stringify(value);
+  return text && text !== "{}" ? text : "空物件";
+}
+
+function latestCallByTool(calls: ToolCallEntry[]) {
+  const map = new Map<string, ToolCallEntry>();
+  for (const call of calls) {
+    if (!map.has(call.toolKey)) map.set(call.toolKey, call);
+  }
+  return map;
+}
+
+function statByTool(stats: ToolStatEntry[]) {
+  const map = new Map<string, ToolStatEntry>();
+  for (const stat of stats) map.set(stat.toolKey, stat);
+  return map;
+}
+
+function readiness(tool: ToolRegistryEntry, stat: ToolStatEntry | undefined, latest: ToolCallEntry | undefined) {
+  if (!tool.isActive) {
+    return {
+      label: "未啟用",
+      kind: "muted" as const,
+      detail: "registry active=false；不應被當成可用工具。",
+    };
+  }
+  if (latest?.status === "success") {
+    return {
+      label: "可執行，有成功紀錄",
+      kind: "ok" as const,
+      detail: "近期 tool_calls 有 success，仍需 Owner 權限。",
+    };
+  }
+  if (latest?.status === "failure" || latest?.status === "timeout") {
+    return {
+      label: "可執行但需檢查",
+      kind: "bad" as const,
+      detail: `最近一次為 ${latest.status}；先看錯誤與 owner log。`,
+    };
+  }
+  if (stat && stat.totalCalls > 0) {
+    const pct = errorRatePct(stat.errorRate);
+    return {
+      label: pct > 25 ? "執行紀錄偏不穩" : "可執行，需觀察",
+      kind: pct > 25 ? "warn" as const : "ok" as const,
+      detail: `24h ${stat.totalCalls} 次；錯誤率 ${pct.toFixed(1)}%。`,
+    };
+  }
+  return {
+    label: "已登錄，待執行證據",
+    kind: "warn" as const,
+    detail: "registry 有工具，但 tool_calls 尚無近期成功紀錄；前端不宣稱已成功。",
+  };
+}
+
+function TruthPanel({
+  title,
+  detail,
+  next,
+}: {
+  title: string;
+  detail: string;
+  next: string;
+}) {
   return (
-    <div className="state-panel">
-      <span className="badge badge-yellow">資料同步中</span>
-      <span className="state-reason">{reason}</span>
+    <div className="_tool-truth">
+      <div className="_tool-truth-title">{title}</div>
+      <div className="_tool-truth-body">{detail}</div>
+      <div className="_tool-meta-grid">
+        <div className="_tool-meta-cell">
+          <span className="_tool-meta-label">ENDPOINT</span>
+          <span className="_tool-meta-value">{TOOL_REGISTRY_ENDPOINT}</span>
+          <span className="_tool-meta-value">{TOOL_CALLS_ENDPOINT}</span>
+          <span className="_tool-meta-value">{TOOL_STATS_ENDPOINT}</span>
+        </div>
+        <div className="_tool-meta-cell">
+          <span className="_tool-meta-label">OWNER</span>
+          <span className="_tool-meta-value">Elva/Jason + Bruce owner-session verify</span>
+        </div>
+        <div className="_tool-meta-cell">
+          <span className="_tool-meta-label">NEXT</span>
+          <span className="_tool-meta-value">{next}</span>
+        </div>
+      </div>
     </div>
   );
 }
 
-function RegistryTable({ tools }: { tools: ToolRegistryEntry[] }) {
+function RegistryTable({
+  tools,
+  calls,
+  stats,
+}: {
+  tools: ToolRegistryEntry[];
+  calls: ToolCallEntry[];
+  stats: ToolStatEntry[];
+}) {
+  const latest = latestCallByTool(calls);
+  const byStat = statByTool(stats);
+
+  if (tools.length === 0) {
+    return (
+      <TruthPanel
+        title="目前沒有 ToolCenter 工具登錄"
+        detail="registry endpoint 可讀但回傳 0 筆；此頁不補展示工具，也不把空資料當成可執行能力。"
+        next="Jason 檢查 0038 ToolCenter seed；Bruce 用 owner session 驗證 registry 是否真的 0 筆。"
+      />
+    );
+  }
+
   return (
-    <table className="_tool-table">
-      <thead>
-        <tr>
-          <th>tool_key</th>
-          <th>類型</th>
-          <th>名稱</th>
-          <th>說明</th>
-          <th>版本</th>
-          <th>input_schema</th>
-          <th>啟用</th>
-        </tr>
-      </thead>
-      <tbody>
-        {tools.length === 0
-          ? <tr><td colSpan={7} style={{ color: "rgba(255,255,255,0.3)", textAlign: "center" }}>尚無工具登錄</td></tr>
-          : tools.map((t) => (
-            <tr key={t.toolKey}>
-              <td style={{ color: "#ffb800" }}>{t.toolKey}</td>
-              <td><span className="_tool-badge" style={toolTypeBadgeStyle(t.toolType)}>{t.toolType}</span></td>
-              <td>{t.displayName}</td>
-              <td style={{ color: "rgba(255,255,255,0.5)" }}>{t.description ?? "—"}</td>
-              <td>{t.version}</td>
-              <td>
-                <div className="_tool-schema-preview">{JSON.stringify(t.inputSchema)}</div>
-              </td>
-              <td>
-                <span className="_tool-badge" style={t.isActive
-                  ? { background: "rgba(76,175,80,0.15)", color: "#4caf50", border: "1px solid rgba(76,175,80,0.3)" }
-                  : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.4)", border: "1px solid rgba(255,255,255,0.1)" }
-                }>{t.isActive ? "啟用" : "停用"}</span>
-              </td>
-            </tr>
-          ))
-        }
-      </tbody>
-    </table>
+    <div className="_tool-table-wrap">
+      <table className="_tool-table">
+        <thead>
+          <tr>
+            <th>工具</th>
+            <th>類型</th>
+            <th>執行狀態</th>
+            <th>權限 / 入口</th>
+            <th>最後執行證據</th>
+            <th>說明</th>
+            <th>輸入 schema</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tools.map((tool) => {
+            const toolStat = byStat.get(tool.toolKey);
+            const toolLatest = latest.get(tool.toolKey);
+            const state = readiness(tool, toolStat, toolLatest);
+            return (
+              <tr key={tool.toolKey}>
+                <td>
+                  <span className="_tool-key">{tool.toolKey}</span>
+                  <span className="_tool-sub">version {tool.version}</span>
+                </td>
+                <td>
+                  <span className="_tool-badge" style={toolTypeBadgeStyle(tool.toolType)}>{tool.toolType}</span>
+                  {!tool.isActive && <span className="_tool-badge" style={badgeStyle("muted")}>展示/停用</span>}
+                </td>
+                <td>
+                  <span className="_tool-badge" style={badgeStyle(state.kind)}>{state.label}</span>
+                  <span className="_tool-sub">{state.detail}</span>
+                </td>
+                <td>
+                  <span className="_tool-badge" style={badgeStyle("warn")}>Owner-only</span>
+                  <span className="_tool-sub">登錄：GET {TOOL_REGISTRY_ENDPOINT}/:toolKey</span>
+                  <span className="_tool-sub">執行：後端 callTool wrapper；此頁沒有手動執行按鈕。</span>
+                </td>
+                <td>
+                  <span className="_tool-badge" style={statusBadgeStyle(toolLatest?.status ?? "none")}>{toolLatest?.status ?? "no_call"}</span>
+                  <span className="_tool-sub">{fmtDT(toolLatest?.createdAt)}</span>
+                  <span className="_tool-sub">24h：{toolStat?.totalCalls ?? 0} 次 / 錯誤率 {toolStat ? `${errorRatePct(toolStat.errorRate).toFixed(1)}%` : "無統計"}</span>
+                </td>
+                <td>
+                  {tool.displayName}
+                  <span className="_tool-sub">{tool.description ?? "沒有描述；需 Jason 補 registry description。"}</span>
+                </td>
+                <td>
+                  <div className="_tool-schema-preview">{shortJson(tool.inputSchema)}</div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 function StatsGrid({ stats }: { stats: ToolStatEntry[] }) {
   if (stats.length === 0) {
-    return <div className="state-panel"><span className="badge badge-yellow">資料同步中</span><span className="state-reason">尚無工具統計資料。</span></div>;
+    return (
+      <TruthPanel
+        title="24h 統計目前為空"
+        detail="stats endpoint 可讀但沒有近期呼叫統計；這代表沒有可展示的執行量，不代表工具已成功。"
+        next="等 cron / Brain / admin action 真的透過 callTool 執行後，此區才會出現成功率與延遲。"
+      />
+    );
   }
+
   return (
     <div className="_tool-stats-grid">
       {stats.map((s) => (
@@ -196,9 +435,10 @@ function StatsGrid({ stats }: { stats: ToolStatEntry[] }) {
           <div className="_tool-stat-key">{s.toolKey}</div>
           <div className="_tool-stat-row"><span>總呼叫</span><span className="_tool-stat-val">{s.totalCalls}</span></div>
           <div className="_tool-stat-row"><span>成功</span><span className="_tool-stat-val" style={{ color: "#4caf50" }}>{s.successCalls}</span></div>
-          <div className="_tool-stat-row"><span>失敗</span><span className="_tool-stat-val" style={{ color: "#ef5350" }}>{s.failureCalls}</span></div>
-          <div className="_tool-stat-row"><span>錯誤率</span><span className="_tool-stat-val" style={{ color: s.errorRate > 0.1 ? "#ef5350" : "#4caf50" }}>{(s.errorRate * 100).toFixed(1)}%</span></div>
-          <div className="_tool-stat-row"><span>平均延遲</span><span className="_tool-stat-val">{s.avgLatencyMs != null ? `${s.avgLatencyMs.toFixed(0)}ms` : "—"}</span></div>
+          <div className="_tool-stat-row"><span>失敗</span><span className="_tool-stat-val" style={{ color: s.failureCalls > 0 ? "#ef5350" : "rgba(255,255,255,0.82)" }}>{s.failureCalls}</span></div>
+          <div className="_tool-stat-row"><span>Timeout</span><span className="_tool-stat-val" style={{ color: s.timeoutCalls > 0 ? "#ffb800" : "rgba(255,255,255,0.82)" }}>{s.timeoutCalls}</span></div>
+          <div className="_tool-stat-row"><span>錯誤率</span><span className="_tool-stat-val" style={{ color: errorRatePct(s.errorRate) > 25 ? "#ef5350" : "#4caf50" }}>{errorRatePct(s.errorRate).toFixed(1)}%</span></div>
+          <div className="_tool-stat-row"><span>平均延遲</span><span className="_tool-stat-val">{fmtLatency(s.avgLatencyMs)}</span></div>
         </div>
       ))}
     </div>
@@ -206,52 +446,72 @@ function StatsGrid({ stats }: { stats: ToolStatEntry[] }) {
 }
 
 function CallsTable({ calls }: { calls: ToolCallEntry[] }) {
+  if (calls.length === 0) {
+    return (
+      <TruthPanel
+        title="目前沒有近期工具呼叫"
+        detail="calls endpoint 可讀但沒有記錄；此頁不顯示示意成功紀錄。"
+        next="需要 Brain、cron 或 admin action 經由 callTool wrapper 產生真實 tool_calls。"
+      />
+    );
+  }
+
   return (
-    <table className="_tool-table">
-      <thead>
-        <tr>
-          <th>時間</th>
-          <th>tool_key</th>
-          <th>caller_type</th>
-          <th>狀態</th>
-          <th>延遲</th>
-          <th>輸出摘要</th>
-        </tr>
-      </thead>
-      <tbody>
-        {calls.length === 0
-          ? <tr><td colSpan={6} style={{ color: "rgba(255,255,255,0.3)", textAlign: "center" }}>尚無呼叫記錄</td></tr>
-          : calls.map((c) => (
-            <tr key={c.id}>
-              <td style={{ whiteSpace: "nowrap" }}>{fmtDT(c.createdAt)}</td>
-              <td style={{ color: "#ffb800" }}>{c.toolKey}</td>
-              <td><span className="_tool-badge" style={callerTypeBadgeStyle(c.callerType)}>{c.callerType}</span></td>
-              <td><span className="_tool-badge" style={statusBadgeStyle(c.status)}>{c.status}</span></td>
-              <td>{c.latencyMs != null ? `${c.latencyMs}ms` : "—"}</td>
-              <td style={{ color: "rgba(255,255,255,0.45)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {c.outputSummary ?? c.errorMessage ?? "—"}
+    <div className="_tool-table-wrap">
+      <table className="_tool-table">
+        <thead>
+          <tr>
+            <th>時間</th>
+            <th>工具</th>
+            <th>呼叫者</th>
+            <th>狀態</th>
+            <th>延遲</th>
+            <th>輸入摘要</th>
+            <th>輸出 / 錯誤摘要</th>
+          </tr>
+        </thead>
+        <tbody>
+          {calls.map((call) => (
+            <tr key={call.id}>
+              <td style={{ whiteSpace: "nowrap" }}>{fmtDT(call.createdAt)}</td>
+              <td><span className="_tool-key">{call.toolKey}</span></td>
+              <td><span className="_tool-badge" style={callerTypeBadgeStyle(call.callerType)}>{call.callerType}</span></td>
+              <td><span className="_tool-badge" style={statusBadgeStyle(call.status)}>{call.status}</span></td>
+              <td>{fmtLatency(call.latencyMs)}</td>
+              <td><span className="_tool-sub">{call.inputSummary ?? "未記錄輸入摘要"}</span></td>
+              <td>
+                <span className="_tool-sub">{call.outputSummary ?? call.errorMessage ?? "未記錄輸出摘要"}</span>
               </td>
             </tr>
-          ))
-        }
-      </tbody>
-    </table>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 export default async function ToolsAdminPage() {
-  let tools: ToolRegistryEntry[] = [];
+  let activeTools: ToolRegistryEntry[] = [];
+  let inactiveTools: ToolRegistryEntry[] = [];
   let calls: ToolCallEntry[] = [];
   let stats: ToolStatEntry[] = [];
   let toolsError = false;
+  let inactiveToolsError = false;
   let callsError = false;
   let statsError = false;
 
   try {
     const res = await getToolRegistry({ isActive: true });
-    tools = res.data?.tools ?? [];
+    activeTools = res.data?.tools ?? [];
   } catch {
     toolsError = true;
+  }
+
+  try {
+    const res = await getToolRegistry({ isActive: false });
+    inactiveTools = res.data?.tools ?? [];
+  } catch {
+    inactiveToolsError = true;
   }
 
   try {
@@ -268,51 +528,86 @@ export default async function ToolsAdminPage() {
     statsError = true;
   }
 
+  const tools = [...activeTools, ...inactiveTools];
+  const blocked = toolsError || callsError || statsError;
+  const usableCount = tools.filter((tool) => tool.isActive).length;
+  const observedSuccessCount = new Set(calls.filter((call) => call.status === "success").map((call) => call.toolKey)).size;
+
   return (
     <PageFrame
       code="ADM-TOOL"
       title="ToolCenter 登錄瀏覽器"
       sub="OpenAlice Phase A"
-      note="工具登錄表 / 24h 統計 / 近期 50 筆呼叫記錄 — Owner only。"
+      note="只讀工具登錄、24h 統計與近期呼叫記錄；此頁沒有手動執行按鈕，不把未驗證工具顯示成已成功。"
     >
       <style>{CSS}</style>
 
       <div className="_tool-kpi">
         <div className="_tool-kpi-cell">
-          <span className="_tool-kpi-val" style={{ color: toolsError ? "#ffb800" : "#4caf50" }}>{toolsError ? "同步中" : "正常"}</span>
-          <span className="_tool-kpi-lbl">端點狀態</span>
+          <span className="_tool-kpi-val" style={{ color: blocked ? "#ffb800" : "#4caf50" }}>{blocked ? "BLOCKED" : "READY"}</span>
+          <span className="_tool-kpi-lbl">資料狀態</span>
         </div>
         <div className="_tool-kpi-cell">
-          <span className="_tool-kpi-val">{tools.length}</span>
-          <span className="_tool-kpi-lbl">已登錄工具</span>
+          <span className="_tool-kpi-val">{usableCount}</span>
+          <span className="_tool-kpi-lbl">可用登錄</span>
         </div>
         <div className="_tool-kpi-cell">
-          <span className="_tool-kpi-val">{stats.length > 0 ? stats.reduce((s, r) => s + r.totalCalls, 0) : "—"}</span>
+          <span className="_tool-kpi-val">{inactiveToolsError ? "?" : inactiveTools.length}</span>
+          <span className="_tool-kpi-lbl">停用/展示</span>
+        </div>
+        <div className="_tool-kpi-cell">
+          <span className="_tool-kpi-val">{stats.length > 0 ? stats.reduce((s, r) => s + r.totalCalls, 0) : 0}</span>
           <span className="_tool-kpi-lbl">24h 呼叫</span>
         </div>
         <div className="_tool-kpi-cell">
-          <span className="_tool-kpi-val">{calls.length}</span>
-          <span className="_tool-kpi-lbl">近期記錄</span>
+          <span className="_tool-kpi-val">{observedSuccessCount}</span>
+          <span className="_tool-kpi-lbl">成功證據</span>
         </div>
       </div>
 
-      <Panel code="ADM-TOOL-REG" title="工具登錄表" right={toolsError ? "同步中" : `${tools.length} 工具`}>
+      {blocked && (
+        <TruthPanel
+          title="ToolCenter 目前不是完整可讀狀態"
+          detail="至少一個 ToolCenter endpoint 未能讀取；前端已停止用空表格假裝正常，並明確列出資料來源與 owner。"
+          next="Bruce 用 owner session 重測三個 endpoint；若仍 401/500，由 Jason 檢查 ToolCenter auth、0038/0039 migration 與 tool_calls 寫入。"
+        />
+      )}
+
+      <Panel code="ADM-TOOL-REG" title="工具登錄表" right={toolsError ? "BLOCKED" : `${tools.length} 工具`}>
         {toolsError
-          ? <SyncNote reason="工具登錄暫時無法讀取 — Phase A DB 待 apply 或後端異常。" />
-          : <RegistryTable tools={tools} />
+          ? (
+            <TruthPanel
+              title="工具登錄無法讀取"
+              detail="`registry` endpoint 未通過 owner session 或後端不可用；此頁不顯示備用工具清單。"
+              next="確認 Owner cookie / session，再檢查 ToolCenter registry route。"
+            />
+          )
+          : <RegistryTable tools={tools} calls={calls} stats={stats} />
         }
       </Panel>
 
-      <Panel code="ADM-TOOL-STATS" title="24h 工具統計" right={statsError ? "同步中" : `${stats.length} 工具`}>
+      <Panel code="ADM-TOOL-STATS" title="24h 工具統計" right={statsError ? "BLOCKED" : `${stats.length} 工具`}>
         {statsError
-          ? <SyncNote reason="工具統計暫時無法讀取。" />
+          ? (
+            <TruthPanel
+              title="工具統計無法讀取"
+              detail="`stats` endpoint 未回正式資料；錯誤率與延遲不可被估算。"
+              next="Bruce 重測 Owner session；Jason 檢查 /api/v1/tools/stats 與 tool_calls 聚合。"
+            />
+          )
           : <StatsGrid stats={stats} />
         }
       </Panel>
 
-      <Panel code="ADM-TOOL-CALLS" title="近期 50 筆呼叫" right={callsError ? "同步中" : `${calls.length} 筆`}>
+      <Panel code="ADM-TOOL-CALLS" title="近期 50 筆呼叫" right={callsError ? "BLOCKED" : `${calls.length} 筆`}>
         {callsError
-          ? <SyncNote reason="呼叫記錄暫時無法讀取。" />
+          ? (
+            <TruthPanel
+              title="工具呼叫記錄無法讀取"
+              detail="`calls` endpoint 未回正式資料；不能顯示任何推測的 last run。"
+              next="確認 callTool wrapper 是否有寫入 tool_calls；若 DB 有資料但 endpoint 失敗，由 Jason 查 route/auth。"
+            />
+          )
           : <CallsTable calls={calls} />
         }
       </Panel>
