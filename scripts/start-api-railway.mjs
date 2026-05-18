@@ -44,7 +44,7 @@ function run(command, args, options = {}) {
 // migrate.ts reads this and hard-exits (process.exit 1) if DB row count != expected.
 // This catches advisory lock contention failures that would leave prod schema stale.
 // Root cause 2026-05-18: 6 deploys in 30 min → lock_timeout → silent degraded mode.
-// Current prod expected value: 42. Repo has 40 current forward files through 0041,
+// Current prod expected value: 43. Repo has 41 current forward files through 0042,
 // plus 2 legacy applied rows from earlier migration history. Update when new
 // migration files are merged.
 const expectedMigrationCount = process.env.EXPECTED_MIGRATION_COUNT;

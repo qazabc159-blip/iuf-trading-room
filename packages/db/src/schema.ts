@@ -992,7 +992,7 @@ export const aiRecommendationsRuns = pgTable(
     runId:                text("run_id").notNull().unique(),
     generatedAt:          timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
     model:                text("model").notNull().default("gpt-4o-mini"),
-    // status: running | complete | failed | budget_exceeded
+    // status: running | complete | failed | budget_exceeded | market_risk_off | insufficient_tools | synthesis_format_error
     status:               text("status").notNull().default("running"),
     // items: [{id, ticker, companyName, action, confidence, entryPriceRange, tp1, tp2, stopLoss, rationale, bucket}]
     items:                jsonb("items").notNull().default([]),

@@ -177,7 +177,7 @@ export interface AiRecommendationV3RunOptions {
 
 export interface AiRecommendationV3RunResult {
   runId: string;
-  status: "complete" | "failed" | "budget_exceeded" | "market_risk_off" | "insufficient_tools";
+  status: "complete" | "failed" | "budget_exceeded" | "market_risk_off" | "insufficient_tools" | "synthesis_format_error";
   generatedAt: string;
   items: AiStockRecommendationV2[];
   reactTrace: unknown[];
@@ -188,6 +188,8 @@ export interface AiRecommendationV3RunResult {
   marketRiskOffScore: number | null;
   /** programmatic risk_off computation result (F1) */
   programmaticRiskOff: ProgrammaticRiskOffResult | null;
+  synthesisRetryUsed?: boolean;
+  synthesisFallbackUsed?: boolean;
   dbRowId: string | null;
 }
 
@@ -196,6 +198,8 @@ export interface AiRecommendationV3RunResult {
 let _latestV3Cache: AiRecommendationV3RunResult | null = null;
 let _latestV3CacheExpiresAt = 0;
 const V3_CACHE_TTL_MS = 5 * 60 * 1000;
+const MIN_V3_RECOMMENDATION_ITEMS = 5;
+const MIN_V3_TECHNICAL_CALLS = 5;
 
 export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | null {
   if (_latestV3Cache && Date.now() < _latestV3CacheExpiresAt) {
@@ -297,6 +301,10 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
       marketState: null,
       marketRiskOffScore: null,
       programmaticRiskOff: null,
+      synthesisRetryUsed: false,
+      synthesisFallbackUsed:
+        row.status === "synthesis_format_error" &&
+        ((row.items ?? []) as unknown[]).length >= MIN_V3_RECOMMENDATION_ITEMS,
       dbRowId: row.id,
     };
   } catch (e) {
@@ -378,9 +386,9 @@ function buildV3SystemPrompt(dateStr: string, programmaticRiskOffScore: number):
 系統已計算 programmatic risk_off_score = ${programmaticRiskOffScore}/6（基於可用市場資料）。
 ${programmaticRiskOffScore >= 3
   ? `risk_off_score >= 3 → 你必須回傳 RISK_OFF_SKIP，不推薦任何新倉。`
-  : `risk_off_score < 3 → 你必須完整執行 STEP 2-5，輸出 ≥3 檔推薦（A+/A/B bucket）。
+  : `risk_off_score < 3 → 你必須完整執行 STEP 2-5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦（A+/A/B/C bucket）。
 你不可自行判斷 risk-off 並 skip STEP 2-5。即使大盤單日跌 0.5%-1%，也必須繼續分析。
-若輸出推薦數 < 3，系統會自動 reject 並標記 insufficient_tools error。`}
+若輸出推薦數 < ${MIN_V3_RECOMMENDATION_ITEMS}，系統會自動 reject 並標記 insufficient_tools / synthesis_format_error。`}
 === END SYSTEM CONTEXT ===
 `;
 
@@ -410,7 +418,7 @@ ${riskOffContext}
   排除「已 price in」：法人連5日大量買超且股價20日漲>30% 的公司直接跳過
 
 [STEP 3] 個股 7 sub-score（每候選股 0-100 合計）
-  ★★ 必須至少呼叫 get_company_technical 5 次（不同 ticker）。
+  ★★ 必須至少呼叫 get_company_technical ${MIN_V3_TECHNICAL_CALLS} 次（不同 ticker）。
   每個推薦標的都需要 get_company_technical 工具支撐，否則視為未驗證無效。
   若 STEP 2 的新聞或板塊資料沒有可用候選，禁止亂猜冷門代碼；請依序檢查這組核心候選：
   2330、2454、2317、2308、2412、3711、3707、2882、2881、6505。
@@ -429,8 +437,8 @@ ${riskOffContext}
   65–74 → B 等回檔（0.4% NAV）
   < 65 → C 高風險排除（不開新倉）
 
-[STEP 5] 每檔輸出（STEP 4 bucket != C 才輸出）
-  ★★ 最終輸出必須包含 ≥3 檔 A+/A/B 推薦（否則系統拒絕此次分析）。
+[STEP 5] 每檔輸出（C bucket 也必須輸出，但標示高風險排除）
+  ★★ 最終輸出必須包含 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔真實資料支撐的 A+/A/B/C 卡片（否則系統拒絕此次分析）。
   格式嚴格如下（解析器依賴此格式）：
   進場區：OTE 0.618-0.705 回踩（具體價格區間）或突破後回測不破
   TP1：前波高 or 整數關（具體價格）
@@ -637,13 +645,12 @@ export function buildDeterministicFallbackItemsFromTrace(
 
   return Array.from(byTicker.values())
     .map((obs) => ({ obs, rank: technicalFallbackRank(obs) }))
-    .filter(({ rank }) => rank >= 60)
     .sort((a, b) =>
       b.rank - a.rank ||
       (b.obs.changePct ?? -999) - (a.obs.changePct ?? -999) ||
       a.obs.ticker.localeCompare(b.obs.ticker)
     )
-    .slice(0, 3)
+    .slice(0, MIN_V3_RECOMMENDATION_ITEMS)
     .map(({ obs, rank }) => {
       const technical = clampNumber(
         8 +
@@ -666,9 +673,12 @@ export function buildDeterministicFallbackItemsFromTrace(
       };
       const totalScore = subScores.theme + subScores.revenue + subScores.institutional +
         subScores.margin + subScores.rs + subScores.technical + subScores.valuation;
-      const bucket: AiRecBucket = totalScore >= 75 ? "A" : "B";
+      const bucket: AiRecBucket =
+        totalScore >= 82 ? "A+" : totalScore >= 75 ? "A" : totalScore >= 60 ? "B" : "C";
       const action: AiStockRecommendationV2["action"] =
-        bucket === "A" ? "可觀察布局（研究參考）" : "等回檔";
+        bucket === "A+" ? "今日首選" :
+        bucket === "A" ? "可觀察布局（研究參考）" :
+        bucket === "B" ? "等回檔" : "高風險排除";
 
       const entryLow = roundPrice(obs.lastPrice * 0.98);
       const entryHigh = roundPrice(obs.lastPrice * 1.01);
@@ -719,7 +729,7 @@ export function buildDeterministicFallbackItemsFromTrace(
         },
         r_ratio: roundPrice(upside / downside),
         position_sizing: {
-          nav_pct: bucket === "A" ? 0.006 : 0.004,
+          nav_pct: bucket === "A+" ? 0.008 : bucket === "A" ? 0.006 : bucket === "B" ? 0.004 : 0,
           market_multiplier: marketState === "event" ? 0.5 : marketState === "range" ? 0.7 : 1,
         },
         why_buy: [
@@ -728,7 +738,7 @@ export function buildDeterministicFallbackItemsFromTrace(
           obs.aboveMa60 ? "Price is above MA60." : "Price is not above MA60; keep sizing conservative.",
         ],
         why_not_buy: [
-          "This is a deterministic fallback because the LLM returned no structured picks.",
+          "This is a deterministic fallback because the LLM did not return enough structured picks.",
           "Treat as research candidates until the full AI narrative is healthy.",
         ],
       };
@@ -762,16 +772,22 @@ export function parseAiReportToRecommendationsV3(
     return results; // Empty — no recommendations in risk-off
   }
 
-  const stockBlocks = markdown.split(/(?=^##+ \d{4}|^\d+\.\s+\d{4})/m);
+  const stockBlockStartRe = /(?=^(?:#{2,6}\s*|\d+\.\s*|[-*]\s*)?(?:\*\*)?\d{4,6}[A-Z]?(?:\*\*)?\b)/m;
+  const stockBlockTickerRe = /^(?:#{2,6}\s*|\d+\.\s*|[-*]\s*)?(?:\*\*)?(\d{4,6}[A-Z]?)(?:\*\*)?\b/m;
+  const yearTickerRe = /^(201\d|202[0-9]|203[0-5])$/;
+  const stockBlocks = markdown.split(stockBlockStartRe);
 
   for (const block of stockBlocks) {
     if (!block.trim()) continue;
 
-    const tickerMatch = block.match(/\b(\d{4,6}[A-Z]?)\b/);
+    const headerLine = block.split("\n").find(line => stockBlockTickerRe.test(line)) ?? "";
+    const tickerMatch = headerLine.match(stockBlockTickerRe);
     if (!tickerMatch) continue;
     const ticker = tickerMatch[1]!;
+    if (yearTickerRe.test(ticker)) continue;
 
-    const nameMatch = block.match(new RegExp(ticker + "\\s+([\\u4e00-\\u9fff\\w\\s]{2,20})"));
+    const nameSource = headerLine.replace(/\*/g, "");
+    const nameMatch = nameSource.match(new RegExp(ticker + "\\s+([\\u4e00-\\u9fff\\w\\s]{2,20})"));
     const companyName = nameMatch ? nameMatch[1]!.trim() : ticker;
 
     const lines = block.split("\n");
@@ -999,31 +1015,110 @@ function parseMarketStepV3(raw: string): {
 
 // ── synthesize v3 report ──────────────────────────────────────────────────────
 
+interface V3SynthesisAttempt {
+  markdown: string;
+  totalTokens: number;
+  costUsd: number;
+}
+
+interface V3ParsedSynthesis {
+  report: string;
+  items: AiStockRecommendationV2[];
+  totalTokens: number;
+  costUsd: number;
+  retryUsed: boolean;
+  initialItemCount: number;
+}
+
 async function synthesizeReportV3(
   trace: Array<{ round: number; thought: string; toolName: string | null; observation: unknown; tokensUsed: number }>,
   dateStr: string,
-  model: string
-): Promise<string> {
+  model: string,
+  repairMarkdown?: string
+): Promise<V3SynthesisAttempt> {
   const { callLlm } = await import("../llm/llm-gateway.js");
   const traceText = trace
     .map(s => `Round ${s.round}:\n思考: ${s.thought}\n工具: ${s.toolName ?? "(Final Answer)"}\n結果: ${JSON.stringify(s.observation).slice(0, 600)}`)
     .join("\n\n");
+  const userPrompt = repairMarkdown
+    ? `${buildV3SynthesisPrompt(traceText, dateStr)}
+
+---
+FORMAT_REPAIR_REQUIRED:
+The previous synthesis output did not parse into at least ${MIN_V3_RECOMMENDATION_ITEMS} recommendation items.
+Rewrite the recommendation sections only, preserving the same factual basis from the trace.
+Use this exact block start for every stock: "## 2330 CompanyName".
+Do not use tables, bold-only headings, prose-only sections, or headings without a ticker.
+Include ${MIN_V3_RECOMMENDATION_ITEMS} to 8 stocks. C bucket is allowed when the verified data is weak; label it clearly instead of dropping the stock.
+
+Previous markdown:
+${repairMarkdown.slice(0, 9000)}`
+    : buildV3SynthesisPrompt(traceText, dateStr);
 
   const llmResult = await callLlm(
     [
       { role: "system", content: "你是 IUF 台股操盤師 AI，輸出嚴格格式的推薦報告。" },
-      { role: "user", content: buildV3SynthesisPrompt(traceText, dateStr) },
+      { role: "user", content: userPrompt },
     ],
     {
       modelKey: model,
       callerModule: "ai_rec_v2",
-      taskType: "synthesis",
-      maxTokens: 3500,
-      temperature: 0.2,
+      taskType: repairMarkdown ? "synthesis_format_retry" : "synthesis",
+      maxTokens: repairMarkdown ? 4500 : 3500,
+      temperature: repairMarkdown ? 0.1 : 0.2,
     }
   );
 
-  return llmResult?.content ?? "(synthesis unavailable — LLM returned null)";
+  return {
+    markdown: llmResult?.content ?? "(synthesis unavailable - LLM returned null)",
+    totalTokens: llmResult?.usage.totalTokens ?? 0,
+    costUsd: llmResult?.costUsd ?? 0,
+  };
+}
+
+async function synthesizeAndParseReportV3(
+  trace: V3ReActStep[],
+  dateStr: string,
+  model: string,
+  allowRetry: boolean
+): Promise<V3ParsedSynthesis> {
+  const first = await synthesizeReportV3(trace, dateStr, model);
+  let report = first.markdown;
+  let items = parseAiReportToRecommendationsV3(report, dateStr);
+  const initialItemCount = items.length;
+  let totalTokens = first.totalTokens;
+  let costUsd = first.costUsd;
+  let retryUsed = false;
+
+  if (items.length < MIN_V3_RECOMMENDATION_ITEMS) {
+    const headingCandidates = Array.from(
+      report.matchAll(/^(?:#{1,6}\s+.*|\d+\.\s+\d{4,6}.*|\*\*\d{4,6}.*)$/gm),
+      match => match[0]!.slice(0, 160)
+    ).slice(0, 8);
+    console.warn("[v3-synthesis] parser_under_min_items", JSON.stringify({
+      initialItemCount,
+      reportLength: report.length,
+      allowRetry,
+      headingCandidates,
+      reportPreview: report.slice(0, 800),
+      reportTail: report.slice(-800),
+    }));
+  }
+
+  if (allowRetry && items.length < MIN_V3_RECOMMENDATION_ITEMS && report.trim().length > 0) {
+    const retry = await synthesizeReportV3(trace, dateStr, model, report);
+    const retryItems = parseAiReportToRecommendationsV3(retry.markdown, dateStr);
+    totalTokens += retry.totalTokens;
+    costUsd += retry.costUsd;
+    retryUsed = true;
+
+    if (retryItems.length >= items.length) {
+      report = retry.markdown;
+      items = retryItems;
+    }
+  }
+
+  return { report, items, totalTokens, costUsd, retryUsed, initialItemCount };
 }
 
 // ── Core runAiRecommendationV3 ────────────────────────────────────────────────
@@ -1104,7 +1199,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
     {
       role: "user",
       content: `請開始楊董 SOP 5-module 分析，日期 ${dateStr}。
-系統已確認 programmatic risk_off_score = ${progScore}/6 < 3，你必須完整執行 STEP 1→5，輸出 ≥3 檔推薦。
+系統已確認 programmatic risk_off_score = ${progScore}/6 < 3，你必須完整執行 STEP 1→5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦。
 先執行 STEP 1: callTool(get_market_overview)。`,
     },
   ];
@@ -1114,14 +1209,22 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
 
   for (let round = 1; round <= maxRounds; round++) {
     if (totalCostUsd >= costCap) {
-      const report = trace.length > 0
-        ? await synthesizeReportV3(trace, dateStr, model)
-        : `Budget cap $${costCap} reached.`;
+      let report = `Budget cap $${costCap} reached.`;
+      let items: AiStockRecommendationV2[] = [];
+      let synthesisRetryUsed = false;
+      if (trace.length > 0) {
+        const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, false);
+        totalTokens += synthesis.totalTokens;
+        totalCostUsd += synthesis.costUsd;
+        report = synthesis.report;
+        items = synthesis.items;
+        synthesisRetryUsed = synthesis.retryUsed;
+      }
       const result: AiRecommendationV3RunResult = {
         runId,
         status: "budget_exceeded",
         generatedAt,
-        items: parseAiReportToRecommendationsV3(report, dateStr),
+        items,
         reactTrace: trace,
         finalReportMarkdown: report,
         totalCostUsd,
@@ -1129,6 +1232,8 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         marketState: detectedMarketState,
         marketRiskOffScore: detectedRiskOffScore,
         programmaticRiskOff,
+        synthesisRetryUsed,
+        synthesisFallbackUsed: false,
         dbRowId,
       };
       return finalizeV3Run(result, model);
@@ -1185,7 +1290,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       messages.push({
         role: "user",
         content: `[SYSTEM REJECTION] 你的 RISK_OFF_SKIP 被系統拒絕。programmatic risk_off_score = ${progScore}/6 < 3，系統判定市場未達 risk-off 條件。
-你必須繼續執行 STEP 2-5：先 callTool(get_news_top10)，再 callTool(get_sector_rotation)，再 callTool(get_company_technical) 至少 5 次。
+你必須繼續執行 STEP 2-5：先 callTool(get_news_top10)，再 callTool(get_sector_rotation)，再 callTool(get_company_technical) 至少 ${MIN_V3_TECHNICAL_CALLS} 次。
 不得再次使用 RISK_OFF_SKIP。`,
       });
       continue; // next round
@@ -1257,27 +1362,41 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         observation: null,
         tokensUsed: llmResult.usage.totalTokens,
       });
-      let report = await synthesizeReportV3(trace, dateStr, model);
-      let items = parseAiReportToRecommendationsV3(report, dateStr);
-      if (items.length < 3 && companyTechnicalCallCount >= 5 && progScore < 3) {
+      const allowSynthesisRetry = companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS || round >= maxRounds - 1;
+      const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, allowSynthesisRetry);
+      totalTokens += synthesis.totalTokens;
+      totalCostUsd += synthesis.costUsd;
+      let report = synthesis.report;
+      let items = synthesis.items;
+      let synthesisFallbackUsed = false;
+      if (
+        items.length < MIN_V3_RECOMMENDATION_ITEMS &&
+        companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
+        progScore < 3
+      ) {
         const fallbackItems = buildDeterministicFallbackItemsFromTrace(
           trace,
           dateStr,
           detectedMarketState ?? "trend"
         );
-        if (fallbackItems.length >= 3) {
+        if (fallbackItems.length >= MIN_V3_RECOMMENDATION_ITEMS) {
           console.warn(`[v3-orchestrator] run ${runId}: LLM returned ${items.length} items after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
           items = fallbackItems;
+          synthesisFallbackUsed = true;
           report = `${report}
 
 ---
-Deterministic fallback applied: the LLM returned fewer than 3 structured recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only.`;
+Deterministic fallback applied after synthesis format retry: the LLM returned fewer than ${MIN_V3_RECOMMENDATION_ITEMS} structured recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only. initialParsedItems=${synthesis.initialItemCount}; retryUsed=${synthesis.retryUsed}.`;
         }
       }
 
       // F3: Validate minimum items and tool call count
-      const insufficientItems = items.length < 3;
-      const insufficientTools = companyTechnicalCallCount < 5;
+      const insufficientItems = items.length < MIN_V3_RECOMMENDATION_ITEMS;
+      const insufficientTools = companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
+      const unresolvedSynthesisFormatError =
+        companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
+        synthesis.initialItemCount < MIN_V3_RECOMMENDATION_ITEMS &&
+        items.length < MIN_V3_RECOMMENDATION_ITEMS;
 
       if ((insufficientItems || insufficientTools) && round < maxRounds - 1) {
         // Still have rounds left — force continuation with correction
@@ -1285,16 +1404,20 @@ Deterministic fallback applied: the LLM returned fewer than 3 structured recomme
         messages.push({ role: "assistant", content: raw });
         messages.push({
           role: "user",
-          content: `[SYSTEM REJECTION] 分析不足：推薦股數=${items.length}（需 ≥3），get_company_technical 呼叫次數=${companyTechnicalCallCount}（需 ≥5）。
-請繼續分析更多候選標的，callTool(get_company_technical) 取得更多個股技術資料，並補充更多 A/A+/B bucket 推薦。`,
+          content: `[SYSTEM REJECTION] 分析不足：推薦股數=${items.length}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}），get_company_technical 呼叫次數=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
+請繼續分析更多候選標的，callTool(get_company_technical) 取得更多個股技術資料，並補充更多 A/A+/B/C bucket 卡片。`,
         });
         continue; // continue loop
       }
 
       // Accept result (either sufficient or no rounds left)
-      const status = (insufficientItems || insufficientTools) ? "insufficient_tools" : "complete";
+      const status: AiRecommendationV3RunResult["status"] = synthesisFallbackUsed || unresolvedSynthesisFormatError
+        ? "synthesis_format_error"
+        : (insufficientItems || insufficientTools) ? "insufficient_tools" : "complete";
       if (status === "insufficient_tools") {
         console.warn(`[v3-orchestrator] run ${runId} finished with insufficient_tools: items=${items.length}, get_company_technical calls=${companyTechnicalCallCount}`);
+      } else if (status === "synthesis_format_error") {
+        console.warn(`[v3-orchestrator] run ${runId} finished with synthesis_format_error: initialItems=${synthesis.initialItemCount}, finalItems=${items.length}, retryUsed=${synthesis.retryUsed}, fallbackUsed=${synthesisFallbackUsed}`);
       }
 
       const result: AiRecommendationV3RunResult = {
@@ -1309,6 +1432,8 @@ Deterministic fallback applied: the LLM returned fewer than 3 structured recomme
         marketState: detectedMarketState ?? "trend",
         marketRiskOffScore: detectedRiskOffScore,
         programmaticRiskOff,
+        synthesisRetryUsed: synthesis.retryUsed,
+        synthesisFallbackUsed,
         dbRowId,
       };
       return finalizeV3Run(result, model);
@@ -1359,27 +1484,44 @@ Deterministic fallback applied: the LLM returned fewer than 3 structured recomme
   }
 
   // Max rounds reached — synthesize with what we have
-  let report = await synthesizeReportV3(trace, dateStr, model);
-  let items = parseAiReportToRecommendationsV3(report, dateStr);
-  if (items.length < 3 && companyTechnicalCallCount >= 5 && progScore < 3) {
+  const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, true);
+  totalTokens += synthesis.totalTokens;
+  totalCostUsd += synthesis.costUsd;
+  let report = synthesis.report;
+  let items = synthesis.items;
+  let synthesisFallbackUsed = false;
+  if (
+    items.length < MIN_V3_RECOMMENDATION_ITEMS &&
+    companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
+    progScore < 3
+  ) {
     const fallbackItems = buildDeterministicFallbackItemsFromTrace(
       trace,
       dateStr,
       detectedMarketState ?? "trend"
     );
-    if (fallbackItems.length >= 3) {
+    if (fallbackItems.length >= MIN_V3_RECOMMENDATION_ITEMS) {
       console.warn(`[v3-orchestrator] run ${runId}: max rounds reached with ${items.length} items after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
       items = fallbackItems;
+      synthesisFallbackUsed = true;
       report = `${report}
 
 ---
-Deterministic fallback applied: max rounds ended with fewer than 3 structured recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only.`;
+Deterministic fallback applied after synthesis format retry: max rounds ended with fewer than ${MIN_V3_RECOMMENDATION_ITEMS} structured recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only. initialParsedItems=${synthesis.initialItemCount}; retryUsed=${synthesis.retryUsed}.`;
     }
   }
-  const insufficientFinal = items.length < 3 || companyTechnicalCallCount < 5;
+  const insufficientFinal =
+    items.length < MIN_V3_RECOMMENDATION_ITEMS ||
+    companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
+  const unresolvedSynthesisFormatError =
+    companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
+    synthesis.initialItemCount < MIN_V3_RECOMMENDATION_ITEMS &&
+    items.length < MIN_V3_RECOMMENDATION_ITEMS;
   const result: AiRecommendationV3RunResult = {
     runId,
-    status: insufficientFinal ? "insufficient_tools" : "complete",
+    status: synthesisFallbackUsed || unresolvedSynthesisFormatError
+      ? "synthesis_format_error"
+      : insufficientFinal ? "insufficient_tools" : "complete",
     generatedAt,
     items,
     reactTrace: trace,
@@ -1389,6 +1531,8 @@ Deterministic fallback applied: max rounds ended with fewer than 3 structured re
     marketState: detectedMarketState ?? "trend",
     marketRiskOffScore: detectedRiskOffScore,
     programmaticRiskOff,
+    synthesisRetryUsed: synthesis.retryUsed,
+    synthesisFallbackUsed,
     dbRowId,
   };
   return finalizeV3Run(result, model);

@@ -6264,7 +6264,16 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
         selected: [],
         failures: 0,
         source: "empty",
-        stale_reason: "database_not_connected"
+        stale_reason: "database_not_connected",
+        sourceState: {
+          state: "degraded",
+          source: "tw_announcements",
+          scope,
+          reason: "database_not_connected",
+          itemCount: 0,
+          lastFetchedAt: null,
+          nextAction: "Check database connectivity before rendering official announcements as live."
+        }
       }
     });
   }
@@ -6419,7 +6428,19 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       selected,
       failures: 0,
       source: items.length > 0 ? source : "empty",
-      stale_reason: items.length > 0 ? null : "no_official_market_announcements"
+      stale_reason: items.length > 0 ? null : "no_official_market_announcements",
+      sourceState: {
+        state: items.length > 0 ? "live" : "empty",
+        source: items.length > 0 ? source : "tw_announcements",
+        scope,
+        reason: items.length > 0 ? null : "no_official_market_announcements",
+        itemCount: items.length,
+        lastFetchedAt: items[0]?.date ?? null,
+        officialOnly: scope === "market",
+        nextAction: items.length > 0
+          ? "Render official announcements with source and timestamp."
+          : "Render formal empty state; do not backfill market-wide official announcements with media news."
+      }
     }
   });
 });
@@ -14344,10 +14365,25 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
   const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
   const latest = await getLatestAiRecommendationV3RunForRead();
   if (!latest) {
-    return c.json({ ok: false, error: "no_v3_run_yet", hint: "POST /api/v1/admin/ai-recommendations/v3/refresh to trigger" }, 404);
+    return c.json({
+      ok: false,
+      status: "empty",
+      error: "no_v3_run_yet",
+      hint: "POST /api/v1/admin/ai-recommendations/v3/refresh to trigger",
+      items: [],
+      itemCount: 0,
+      sourceState: {
+        state: "pending",
+        source: "ai_recommendations_runs",
+        owner: "Jason/API",
+        nextAction: "Trigger or wait for AI recommendation v3 refresh; DB migration 0042 must allow v3 trigger persistence."
+      }
+    });
   }
   // debug=true query param exposes full trace (default: included for Owner; trimmed for public)
   const includeTrace = c.req.query("debug") === "true" || true; // always include for now — Bruce needs it
+  const synthesisFallbackUsed =
+    latest.synthesisFallbackUsed ?? (latest.status === "synthesis_format_error" && latest.items.length >= 5);
   return c.json({
     ok: true,
     runId: latest.runId,
@@ -14359,13 +14395,20 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     totalCostUsd: latest.totalCostUsd,
     totalTokens: latest.totalTokens,
     itemCount: latest.items.length,
+    fullAiReportParsed: latest.status !== "synthesis_format_error",
+    synthesisRetryUsed: latest.synthesisRetryUsed ?? false,
+    synthesisFallbackUsed,
+    usedFallback: synthesisFallbackUsed,
     // F4 debug fields:
     reactTrace: includeTrace ? latest.reactTrace : undefined,
     finalReportMarkdown: latest.finalReportMarkdown,
-    // Diagnostic: when parser found 0 items, surface a hint
-    parserDiagnostic: latest.items.length === 0 && latest.finalReportMarkdown
+    // Diagnostic: when parser/fallback path fired, surface a hint
+    parserDiagnostic: (latest.status === "synthesis_format_error" || latest.items.length === 0) && latest.finalReportMarkdown
       ? {
-          hint: "Parser found 0 items. See finalReportMarkdown for raw LLM output to diagnose format mismatch.",
+          hint: latest.status === "synthesis_format_error"
+            ? "Synthesis output did not parse into a full item set after one retry; deterministic fallback may be present."
+            : "Parser found 0 items. See finalReportMarkdown for raw LLM output to diagnose format mismatch.",
+          usedFallback: synthesisFallbackUsed,
           reportLength: latest.finalReportMarkdown.length,
           reportPreview: latest.finalReportMarkdown.slice(0, 500),
         }
@@ -14423,6 +14466,9 @@ app.get("/api/v1/admin/ai-recommendations/v3/status", async (c) => {
     latest_cost_usd: latest?.totalCostUsd ?? 0,
     latest_market_state: latest?.marketState ?? null,
     latest_risk_off_score: latest?.marketRiskOffScore ?? null,
+    latest_synthesis_retry_used: latest?.synthesisRetryUsed ?? false,
+    latest_synthesis_fallback_used:
+      latest?.synthesisFallbackUsed ?? (latest?.status === "synthesis_format_error" && (latest?.items.length ?? 0) >= 5),
   });
 });
 
