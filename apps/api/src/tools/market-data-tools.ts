@@ -54,6 +54,7 @@ export interface SectorRotationResult {
 
 export interface CompanyTechnicalResult {
   ticker: string;
+  companyName: string | null;
   lastPrice: number | null;
   changePct: number | null;
   volume: number | null;
@@ -203,6 +204,7 @@ export async function getSectorRotation(limit = 20): Promise<SectorRotationResul
 export async function getCompanyTechnical(ticker: string): Promise<CompanyTechnicalResult> {
   const base: CompanyTechnicalResult = {
     ticker,
+    companyName: null,
     lastPrice: null,
     changePct: null,
     volume: null,
@@ -226,6 +228,14 @@ export async function getCompanyTechnical(ticker: string): Promise<CompanyTechni
     // Fetch last 200 OHLCV rows for this ticker (enough for MA200)
     // companies_ohlcv columns: company_id (uuid) + dt (date) — lookup via companies.ticker first
     const { sql } = await import("drizzle-orm");
+    const companyRows = (await db.execute(sql`
+      SELECT name
+      FROM companies
+      WHERE ticker = ${ticker}
+      LIMIT 1
+    `)) as unknown as { rows: Array<{ name: string | null }> };
+    const companyName = companyRows.rows?.[0]?.name ?? null;
+
     const rows = (await db.execute(sql`
       SELECT o.dt AS date, o.close AS close, o.volume AS volume
       FROM companies_ohlcv o
@@ -252,7 +262,7 @@ export async function getCompanyTechnical(ticker: string): Promise<CompanyTechni
         }));
       source = "finmind_ohlcv";
     }
-    if (data.length === 0) return base;
+    if (data.length === 0) return { ...base, companyName };
 
     const closes = data.map(r => parseFloat(r.close)).filter(v => !isNaN(v));
     const volumes = data.map(r => parseFloat(r.volume)).filter(v => !isNaN(v));
@@ -300,6 +310,7 @@ export async function getCompanyTechnical(ticker: string): Promise<CompanyTechni
 
     return {
       ticker,
+      companyName,
       lastPrice: last,
       changePct,
       volume: volumes[0] ?? null,

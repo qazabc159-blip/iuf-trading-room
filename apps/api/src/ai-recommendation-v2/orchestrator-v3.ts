@@ -574,6 +574,7 @@ const CORE_COMPANY_NAMES: Record<string, string> = {
 
 interface TechnicalObservationForFallback {
   ticker: string;
+  companyName: string | null;
   lastPrice: number;
   changePct: number | null;
   rsi14: number | null;
@@ -596,6 +597,9 @@ function extractTechnicalObservationForFallback(step: V3ReActStep): TechnicalObs
 
   return {
     ticker,
+    companyName: typeof obs["companyName"] === "string" && obs["companyName"].trim()
+      ? obs["companyName"].trim()
+      : null,
     lastPrice,
     changePct: toFiniteNumber(obs["changePct"]),
     rsi14: toFiniteNumber(obs["rsi14"]),
@@ -652,7 +656,7 @@ export function buildDeterministicFallbackItemsFromTrace(
       );
       const rs = (obs.changePct ?? 0) > 0 ? 8 : (obs.changePct ?? 0) >= 0 ? 6 : 5;
       const subScores = {
-        theme: 14,
+        theme: 15,
         revenue: 8,
         institutional: 8,
         margin: 8,
@@ -678,7 +682,7 @@ export function buildDeterministicFallbackItemsFromTrace(
       return {
         id: randomUUID(),
         ticker: obs.ticker,
-        companyName: CORE_COMPANY_NAMES[obs.ticker] ?? obs.ticker,
+        companyName: obs.companyName ?? CORE_COMPANY_NAMES[obs.ticker] ?? obs.ticker,
         action,
         date: dateStr,
         confidence: bucket === "A" ? 0.68 : 0.56,
