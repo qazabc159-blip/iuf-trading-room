@@ -28,6 +28,7 @@ export type IndustryHeatmapTile = {
 };
 
 type SectorKey =
+  | "all"
   | "semiconductor"
   | "components"
   | "computer"
@@ -79,10 +80,17 @@ type IndustryHeatmapProps = {
 };
 
 const MAX_TILES_PER_SECTOR = 13;
+const MAX_TILES_ALL = 28;
 const TARGET_TILES_PER_SECTOR = 12;
 const MIN_PRODUCT_COUNT = 10;
 
 const SECTORS: SectorDefinition[] = [
+  {
+    key: "all",
+    label: "核心觀察池",
+    shortLabel: "全部",
+    description: "40 檔核心權值與策略觀察股",
+  },
   {
     key: "semiconductor",
     label: "半導體業",
@@ -469,6 +477,12 @@ function sortByHeatmapPriority(left: PreparedTile, right: PreparedTile) {
 }
 
 function primaryRowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
+  if (sectorKey === "all") {
+    return [...prepared]
+      .sort(sortByHeatmapPriority)
+      .slice(0, MAX_TILES_ALL);
+  }
+
   return prepared
     .filter((tile) => tile.sectorKey === sectorKey)
     .sort(sortByHeatmapPriority)
@@ -503,9 +517,10 @@ function chooseInitialSector(options: SectorOption[], requested?: string | null)
   }
   const requestedMatch = options.find((option) => option.key === normalized || option.label === normalized);
   if (requestedMatch) return requestedMatch.key;
-  return options.find((option) => option.key === "semiconductor" && option.hasData)?.key
+  return options.find((option) => option.key === "all" && option.hasData)?.key
+    ?? options.find((option) => option.key === "semiconductor" && option.hasData)?.key
     ?? options.find((option) => option.hasData)?.key
-    ?? "semiconductor";
+    ?? "all";
 }
 
 function buildTreemapLayout(items: PreparedTile[]): LayoutTile[] {

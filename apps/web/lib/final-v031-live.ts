@@ -115,6 +115,14 @@ function mapAnnouncement(item: CompanyAnnouncement, index: number) {
   };
 }
 
+function isOfficialMarketAnnouncement(item: CompanyAnnouncement) {
+  const source = String(item.source ?? "").toLowerCase();
+  const title = `${item.title ?? ""} ${item.body ?? ""}`;
+  if (source.includes("finmind_stock_news")) return false;
+  if (/cmoney|money-link|yahoo|udn|pchome|小編|新聞網|news/i.test(title)) return false;
+  return source.includes("twse") || source.includes("mops") || source.includes("announcement");
+}
+
 function mapHeatmapTile(tile: TwseIndustryHeatmapTile) {
   const pct = tile.avgChangePct ?? 0;
   const intensity = Math.min(1, Math.abs(pct) / 4);
@@ -168,7 +176,7 @@ async function buildMarketIntelPayload() {
   const institutional = institutionalRaw ? mapInstitutional(institutionalRaw as MarketInstitutionalSummary) : null;
 
   const aiItems = news?.items?.map(mapNewsItem) ?? [];
-  const announcementItems = announcements?.items?.map(mapAnnouncement) ?? [];
+  const announcementItems = announcements?.items?.filter(isOfficialMarketAnnouncement).map(mapAnnouncement) ?? [];
   const items = (aiItems.length ? aiItems : announcementItems).slice(0, 12);
   const topicCounts = items.reduce<Record<string, number>>((acc, item) => {
     acc[item.category] = (acc[item.category] ?? 0) + 1;
@@ -488,6 +496,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
 (() => {
   let live = window.__IUF_FINAL_V031_LIVE__;
   if (!live || !live.screen) return;
+  let currentPaperSymbol = null;
   const apiProxy = window.__IUF_FINAL_V031_API_PROXY__;
   const workspaceSlug = window.__IUF_FINAL_V031_WORKSPACE_SLUG__;
   const industryLabels = window.__IUF_FINAL_V031_INDUSTRY_LABELS__ || {};
@@ -724,7 +733,13 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const heatmapRaw = heatmapResult.ok ? heatmapResult.data : null;
     const institutionalRaw = institutionalResult.ok ? institutionalResult.data : null;
     const aiItems = (news?.items || []).map(clientNewsItem);
-    const annItems = (announcements?.items || []).map(clientAnnouncementItem);
+    const annItems = (announcements?.items || []).filter((item) => {
+      const source = String(item.source || "").toLowerCase();
+      const title = String(item.title || "") + " " + String(item.body || "");
+      if (source.includes("finmind_stock_news")) return false;
+      if (/cmoney|money-link|yahoo|udn|pchome|小編|新聞網|news/i.test(title)) return false;
+      return source.includes("twse") || source.includes("mops") || source.includes("announcement");
+    }).map(clientAnnouncementItem);
     const items = (aiItems.length ? aiItems : annItems).slice(0, 12);
     const counts = items.reduce((acc, item) => {
       acc[item.category] = (acc[item.category] || 0) + 1;
@@ -787,11 +802,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const orders = ordersResult.ok ? ordersResult.data || [] : [];
     const ideas = ideasResult.ok ? (ideasResult.data?.items || []).map(clientMapIdea) : [];
     const prefill = paperPrefill();
-    const selectedSymbol = prefill?.symbol || portfolio[0]?.symbol || ideas[0]?.symbol || "2330";
+    const selectedSymbol = currentPaperSymbol || prefill?.symbol || portfolio[0]?.symbol || ideas[0]?.symbol || "2330";
     const selectedPosition = portfolio.find((pos) => sameSym(pos.symbol, selectedSymbol)) || null;
     const selectedIdea = ideas.find((idea) => sameSym(idea.symbol, selectedSymbol)) || ideas[0] || null;
-    const companiesResult = await soft(apiGet("/api/v1/companies"));
-    const company = companiesResult.ok ? (companiesResult.data || []).find((item) => String(item.ticker || "").toUpperCase() === String(selectedSymbol).toUpperCase()) : null;
+    const companiesResult = await soft(apiGet("/api/v1/companies?ticker=" + encodeURIComponent(selectedSymbol)));
+    const company = companiesResult.ok ? (companiesResult.data || [])[0] || null : null;
     const [quoteResult, ohlcvResult, bidAskResult, ticksResult] = await Promise.all([
       company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/quote/realtime")) : soft(Promise.resolve(null)),
       company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/ohlcv?interval=1d")) : soft(Promise.resolve([])),
@@ -829,6 +844,113 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       prefill,
       _companyId: company?.id ?? null,
     };
+  }
+
+  async function selectPaperSymbol(symbol) {
+    const normalized = String(symbol || '').trim().toUpperCase();
+    if (!/^[0-9A-Z._-]{2,16}$/.test(normalized)) return;
+    currentPaperSymbol = normalized;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('symbol', normalized);
+      window.history.replaceState(null, '', url);
+    } catch {
+      // ignore history failures in embedded contexts
+    }
+    const rows = $$('.wrow');
+    rows.forEach((row) => row.classList.toggle('on', String(row.dataset.sym || '').toUpperCase() === normalized));
+    setText('.symhead .sym', normalized);
+    setText('.symhead .nm', '載入中');
+    await refreshClientLive();
+  }
+
+  function attachPaperRowHandlers() {
+    $$('.wrow').forEach((row) => {
+      if (row.dataset.iufEnhanced === '1') return;
+      row.dataset.iufEnhanced = '1';
+      row.addEventListener('click', (event) => {
+        const sym = row.dataset.sym;
+        if (!sym) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        selectPaperSymbol(sym).catch((error) => {
+          window.__IUF_FINAL_V031_CLIENT_ERROR__ = error instanceof Error ? error.message : 'symbol_select_failed';
+        });
+      }, true);
+    });
+  }
+
+  let paperSearchTimer = null;
+  function renderPaperSearchResult(match, query) {
+    const wl = $('#wl-my');
+    if (!wl) return;
+    let group = wl.querySelector('.group');
+    if (!group) {
+      group = document.createElement('div');
+      group.className = 'group';
+      wl.prepend(group);
+    }
+    if (!match) {
+      group.textContent = query ? '找不到符合的股票' : String((live.watchlist || []).length || 0) + ' 檔自選 / 候選';
+      wl.querySelectorAll('.wrow').forEach((row) => {
+        row.style.display = query ? 'none' : '';
+      });
+      return;
+    }
+    const ticker = String(match.ticker || '').toUpperCase();
+    group.textContent = '搜尋結果';
+    wl.querySelectorAll('.wrow').forEach((row) => {
+      row.style.display = String(row.dataset.sym || '').toUpperCase() === ticker ? '' : 'none';
+    });
+    let row = wl.querySelector('[data-search-result="1"]');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'wrow';
+      row.dataset.searchResult = '1';
+      wl.insertBefore(row, group.nextSibling);
+    }
+    row.dataset.sym = ticker;
+    row.style.display = '';
+    row.innerHTML = '<span class="sym">' + esc(ticker) + '</span><div class="body"><div class="nm">' + esc(match.name || ticker) + '</div><div class="meta">' + esc(match.sector || '台股') + '</div></div><div class="price"><span class="v">--</span><span class="d flat">點選載入</span></div>';
+    attachPaperRowHandlers();
+  }
+
+  function attachPaperSearch() {
+    const input = $('.lpane .search input');
+    if (!input || input.dataset.iufSearchEnhanced === '1') return;
+    input.dataset.iufSearchEnhanced = '1';
+    const runSearch = async () => {
+      const query = String(input.value || '').trim();
+      if (!query) {
+        renderPaperSearchResult(null, '');
+        return;
+      }
+      const local = (live.watchlist || []).find((item) =>
+        String(item.symbol || '').includes(query) || String(item.name || '').toLowerCase().includes(query.toLowerCase())
+      );
+      if (local) {
+        renderPaperSearchResult({ ticker: local.symbol, name: local.name, sector: local.meta }, query);
+        return;
+      }
+      const match = await apiGet('/api/v1/companies/lookup?q=' + encodeURIComponent(query)).catch(() => null);
+      renderPaperSearchResult(match, query);
+    };
+    input.addEventListener('input', () => {
+      window.clearTimeout(paperSearchTimer);
+      paperSearchTimer = window.setTimeout(() => {
+        runSearch().catch((error) => {
+          window.__IUF_FINAL_V031_CLIENT_ERROR__ = error instanceof Error ? error.message : 'search_failed';
+        });
+      }, 180);
+    });
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const query = String(input.value || '').trim().toUpperCase();
+      const row = $('#wl-my .wrow:not([style*="display: none"])');
+      const sym = row?.dataset.sym || (/^[0-9A-Z._-]{2,16}$/.test(query) ? query : null);
+      if (sym) selectPaperSymbol(sym).catch(() => {});
+    });
   }
 
   async function refreshClientLive() {
@@ -1145,6 +1267,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         }));
       }
     }
+    attachPaperRowHandlers();
+    attachPaperSearch();
     const symInput = $("#t-sym"); if (symInput) { symInput.value = (selected.symbol || "") + "　" + (selected.name || ""); symInput.setAttribute("value", symInput.value); }
     const priceInput = $("#t-price"); if (priceInput && selected.price != null) { priceInput.value = Number(selected.price).toFixed(2); priceInput.setAttribute("value", priceInput.value); }
     applyPaperPrefill(selected);

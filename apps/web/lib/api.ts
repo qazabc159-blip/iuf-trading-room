@@ -1487,6 +1487,8 @@ export type KgiCoreHeatmapTile = {
   weight?: number | null;
   date?: string | null;
   updatedAt?: string | null;
+  sourceState?: "live" | "twse_eod" | "cache" | "no_data" | string | null;
+  sourceLabel?: string | null;
 };
 
 export type KgiCoreHeatmap = {
