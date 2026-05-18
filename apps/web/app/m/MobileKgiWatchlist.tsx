@@ -22,6 +22,11 @@ const DEFAULT_WATCHLIST: WatchItem[] = [
 ];
 
 const POLL_MS = 15_000;
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+
+function apiUrl(path: string) {
+  return API_BASE ? `${API_BASE}${path}` : path;
+}
 
 const WATCHLIST_CSS = `
   ._mob-kgi-section {
@@ -144,7 +149,7 @@ async function fetchQuoteForSymbol(symbol: string): Promise<QuoteState> {
   try {
     // Use the ticks endpoint — last tick has close/price_chg/pct_chg/volume
     const qs = new URLSearchParams({ symbol, limit: "1" }).toString();
-    const res = await fetch(`/api/v1/kgi/quote/ticks?${qs}`, { cache: "no-store" });
+    const res = await fetch(apiUrl(`/api/v1/kgi/quote/ticks?${qs}`), { cache: "no-store", credentials: "include" });
     if (!res.ok) {
       const txt = await res.text().catch(() => res.statusText);
       // Distinguish gateway errors
