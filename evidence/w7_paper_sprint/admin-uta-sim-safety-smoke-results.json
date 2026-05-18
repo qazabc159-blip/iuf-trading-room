@@ -1,0 +1,65 @@
+{
+  "url": "http://127.0.0.1:3318/admin/uta/accounts",
+  "results": [
+    {
+      "name": "desktop",
+      "width": 1366,
+      "height": 900,
+      "url": "http://127.0.0.1:3318/admin/uta/accounts",
+      "liveVisible": false,
+      "hasBlocked": true,
+      "hasSafetyHeader": true,
+      "hasSim": true,
+      "hasLoginRedirect": false,
+      "blockedBadgeVisible": true,
+      "scrollMetrics": {
+        "clientWidth": 867,
+        "scrollWidth": 867,
+        "scrollLeft": 0
+      },
+      "consoleMessages": [],
+      "pageErrors": [],
+      "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_admin_uta_sim_safety_worktree\\evidence\\w7_paper_sprint\\admin-uta-sim-safety-desktop-1366x900.png"
+    },
+    {
+      "name": "mobile",
+      "width": 390,
+      "height": 844,
+      "url": "http://127.0.0.1:3318/admin/uta/accounts",
+      "liveVisible": false,
+      "hasBlocked": true,
+      "hasSafetyHeader": true,
+      "hasSim": true,
+      "hasLoginRedirect": false,
+      "blockedBadgeVisible": true,
+      "scrollMetrics": {
+        "clientWidth": 308,
+        "scrollWidth": 860,
+        "scrollLeft": 0
+      },
+      "consoleMessages": [],
+      "pageErrors": [],
+      "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_admin_uta_sim_safety_worktree\\evidence\\w7_paper_sprint\\admin-uta-sim-safety-mobile-390x844.png"
+    },
+    {
+      "name": "mobile-orders-right",
+      "width": 390,
+      "height": 844,
+      "url": "http://127.0.0.1:3318/admin/uta/accounts",
+      "liveVisible": false,
+      "hasBlocked": true,
+      "hasSafetyHeader": true,
+      "hasSim": true,
+      "hasLoginRedirect": false,
+      "blockedBadgeVisible": true,
+      "scrollMetrics": {
+        "clientWidth": 308,
+        "scrollWidth": 860,
+        "scrollLeft": 0
+      },
+      "consoleMessages": [],
+      "pageErrors": [],
+      "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_admin_uta_sim_safety_worktree\\evidence\\w7_paper_sprint\\admin-uta-sim-safety-mobile-orders-right-390x844.png"
+    }
+  ]
+}
