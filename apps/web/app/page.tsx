@@ -23,6 +23,7 @@ import {
   getKgiMarketOverview,
   getMarketDataOverview,
   getMarketIntelAnnouncements,
+  getNewsTop10,
   getOpsSnapshot,
   getKgiQuoteStatus,
   getStrategyIdeas,
@@ -40,6 +41,8 @@ import {
   type KgiQuoteStatus,
   type MarketDataOverview,
   type MarketDataOverviewLeader,
+  type NewsAiItem,
+  type NewsTop10Data,
   type OpsSnapshotData,
   type TwseIndustryHeatmap,
   type TwseIndustryHeatmapTile,
@@ -85,12 +88,31 @@ type IntelItem = CompanyAnnouncement & {
   companyId?: string;
   ticker: string;
   companyName: string;
+  feedKind?: "ai_selected" | "official_announcement";
+  impactTier?: NewsAiItem["impact_tier"];
+  whyMatters?: string | null;
+  sourceLabel?: string;
 };
 
 type MarketIntelDashboard = {
   items: IntelItem[];
   selected: Array<{ id: string; ticker: string; name: string }>;
   failures: number;
+  aiSelectedCount: number;
+  officialCount: number;
+  sourceState: {
+    newsEndpoint: string;
+    announcementsEndpoint: string;
+    newsMode: NewsTop10Data["selection_mode"] | null;
+    newsAsOf: string | null;
+    newsNextRefreshAt: string | null;
+    newsStaleReason: string | null;
+    newsAiCallSuccess: boolean | null;
+    newsInputRows: number | null;
+    announcementsSource: "twse_announcements" | "finmind_stock_news" | "mixed" | "empty" | null;
+    owner: string;
+    nextAction: string;
+  };
 };
 
 type BrokerAccessDashboard = {
@@ -479,6 +501,10 @@ function safeBriefText(text: string) {
 function categoryLabel(category: string | null | undefined) {
   if (!category) return "重大訊息";
   const key = category.toLowerCase();
+  if (key === "ai_selected") return "AI 精選";
+  if (key === "high") return "高影響";
+  if (key === "mid" || key === "medium") return "中影響";
+  if (key === "low") return "低影響";
   if (key === "earnings" || key === "financial") return "財報";
   if (key === "revenue") return "營收";
   if (key === "news") return "新聞";
@@ -494,6 +520,34 @@ function categoryLabel(category: string | null | undefined) {
 function intelTitleText(item: IntelItem) {
   const title = cleanExternalHeadline(item.title?.trim() ?? "");
   return title || "重大訊息標題未回傳";
+}
+
+function aiNewsToIntelItem(item: NewsAiItem): IntelItem {
+  return {
+    id: item.id,
+    date: item.date,
+    title: item.headline,
+    category: item.impact_tier ?? "ai_selected",
+    body: item.why_matters ?? undefined,
+    ticker: item.ticker ?? "MARKET",
+    companyName: item.companyName ?? "大盤",
+    url: item.url ?? null,
+    source: item.source,
+    feedKind: "ai_selected",
+    impactTier: item.impact_tier,
+    whyMatters: item.why_matters,
+    sourceLabel: item.source === "twse_announcements" ? "官方公告" : item.source === "finmind_stock_news" ? "FinMind 新聞" : "混合來源",
+  };
+}
+
+function officialAnnouncementToIntelItem(item: CompanyAnnouncement): IntelItem {
+  return {
+    ...item,
+    ticker: item.ticker ?? "MARKET",
+    companyName: item.companyName ?? "大盤",
+    feedKind: "official_announcement",
+    sourceLabel: item.source?.includes("twse") ? "官方公告" : item.source?.includes("finmind") ? "FinMind" : "正式來源",
+  };
 }
 
 function asDraftRecord(value: unknown): Record<string, unknown> {
@@ -693,27 +747,72 @@ async function loadRealtimeMarketDashboard(): Promise<LoadState<RealtimeMarketDa
 }
 
 async function loadMarketIntelDashboard(): Promise<LoadState<MarketIntelDashboard>> {
+  const newsEndpoint = "GET /api/v1/market-intel/news-top10";
+  const announcementsEndpoint = `GET /api/v1/market-intel/announcements?days=${ANNOUNCEMENT_DAYS}&limit=${MAX_INTEL_ROWS}&scope=market`;
   return load<MarketIntelDashboard>(
-    "公開資訊重大訊息",
-    { items: [], selected: [], failures: 0 },
+    "AI 精選市場情報",
+    {
+      items: [],
+      selected: [],
+      failures: 0,
+      aiSelectedCount: 0,
+      officialCount: 0,
+      sourceState: {
+        newsEndpoint,
+        announcementsEndpoint,
+        newsMode: null,
+        newsAsOf: null,
+        newsNextRefreshAt: null,
+        newsStaleReason: null,
+        newsAiCallSuccess: null,
+        newsInputRows: null,
+        announcementsSource: null,
+        owner: "Jason / Elva",
+        nextAction: "確認 AI 精選排程與官方公告來源；前端不顯示示意新聞。",
+      },
+    },
     async () => {
-      const aggregate = await getMarketIntelAnnouncements({
-        days: ANNOUNCEMENT_DAYS,
-        limit: MAX_INTEL_ROWS,
-        scope: "market",
-      });
+      const [newsResult, announcementsResult] = await Promise.allSettled([
+        getNewsTop10(),
+        getMarketIntelAnnouncements({
+          days: ANNOUNCEMENT_DAYS,
+          limit: MAX_INTEL_ROWS,
+          scope: "market",
+        }),
+      ]);
+      if (newsResult.status === "rejected" && announcementsResult.status === "rejected") {
+        throw newsResult.reason;
+      }
+      const news = newsResult.status === "fulfilled" ? newsResult.value.data : null;
+      const aggregate = announcementsResult.status === "fulfilled" ? announcementsResult.value.data : null;
+      const aiItems = news?.items.map(aiNewsToIntelItem) ?? [];
+      const officialItems = aggregate?.items.map(officialAnnouncementToIntelItem) ?? [];
+      const items = [...aiItems, ...officialItems].slice(0, MAX_INTEL_ROWS);
       return {
-        items: aggregate.data.items.map((item) => ({
-          ...item,
-          ticker: item.ticker ?? "MARKET",
-          companyName: item.companyName ?? "大盤",
-        })),
-        selected: aggregate.data.selected,
-        failures: aggregate.data.failures,
+        items,
+        selected: aggregate?.selected ?? [],
+        failures: aggregate?.failures ?? 0,
+        aiSelectedCount: aiItems.length,
+        officialCount: officialItems.length,
+        sourceState: {
+          newsEndpoint,
+          announcementsEndpoint,
+          newsMode: news?.selection_mode ?? null,
+          newsAsOf: news?.as_of ?? null,
+          newsNextRefreshAt: news?.next_refresh_at ?? null,
+          newsStaleReason: news?.stale_reason ?? (newsResult.status === "rejected" ? friendlyDataError(newsResult.reason) : null),
+          newsAiCallSuccess: typeof news?.ai_call_success === "boolean" ? news.ai_call_success : null,
+          newsInputRows: typeof news?.input_row_count === "number" ? news.input_row_count : null,
+          announcementsSource: aggregate?.source ?? (announcementsResult.status === "rejected" ? null : "empty"),
+          owner: "Jason / Elva",
+          nextAction: aiItems.length > 0
+            ? "用 AI 精選項目串到推薦股票、公司頁與主題頁；官方公告若為空仍維持正式 empty state。"
+            : "確認 news-top10 排程、owner-session 權限與官方公告 sourceState；前端不顯示示意新聞。",
+        },
       };
     },
     (value) => value.items.length === 0,
-    `近 ${ANNOUNCEMENT_DAYS} 天沒有可顯示的大盤新聞或官方重大訊息。`,
+    `目前沒有可顯示的 AI 精選市場情報或官方重大訊息。`,
   );
 }
 
@@ -2070,26 +2169,98 @@ function HeatTileView({ tile }: { tile: HeatTileLayout }) {
   );
 }
 
+function marketIntelPanelState(intel: LoadState<MarketIntelDashboard>): DashboardState {
+  if (intel.state === "BLOCKED") return "BLOCKED";
+  if (intel.data.aiSelectedCount > 0 && intel.data.sourceState.newsStaleReason) return "STALE";
+  if (intel.data.items.length > 0) return "LIVE";
+  return "EMPTY";
+}
+
+function announcementSourceLabel(source: MarketIntelDashboard["sourceState"]["announcementsSource"]) {
+  if (source === "twse_announcements") return "官方公告已接";
+  if (source === "finmind_stock_news") return "FinMind 備援";
+  if (source === "mixed") return "官方/新聞混合";
+  if (source === "empty") return "官方公告暫無";
+  return "官方公告待回傳";
+}
+
+function marketIntelSourceSummary(intel: MarketIntelDashboard) {
+  const source = intel.sourceState;
+  const mode = source.newsMode === "ai" ? "AI 篩選" : source.newsMode === "fallback" ? "備援排序" : "待回傳";
+  const official = intel.officialCount > 0 ? `官方公告 ${intel.officialCount} 則` : announcementSourceLabel(source.announcementsSource);
+  const freshness = source.newsAsOf ? `AI 更新 ${formatDateTime(source.newsAsOf)}` : "AI 尚未回報更新時間";
+  return `${mode} · ${freshness} · ${official}`;
+}
+
+function marketIntelStaleLabel(reason: string | null) {
+  if (!reason) return null;
+  const lastRun = reason.match(/^last_run_over_(\d+)h_ago$/);
+  if (lastRun) return `上次 AI 精選已超過 ${lastRun[1]} 小時，等待排程更新`;
+  if (reason === "no_v3_run_yet" || reason === "no_run_yet") return "尚未產生今日 AI 精選批次";
+  if (reason === "no_source_rows") return "後端來源列數不足，等待新聞/公告回補";
+  return "AI 精選狀態待確認";
+}
+
+function MarketIntelEmptyState({ intel }: { intel: LoadState<MarketIntelDashboard> }) {
+  const source = intel.data.sourceState;
+  const staleLabel = marketIntelStaleLabel(source.newsStaleReason);
+  const rows = [
+    {
+      title: "AI 精選新聞",
+      state: staleLabel ? "待更新" : "待資料",
+      body: staleLabel
+        ? `已查 ${source.newsEndpoint}，${staleLabel}。`
+        : `已查 ${source.newsEndpoint}，目前沒有可呈現項目。`,
+    },
+    {
+      title: "官方重大訊息",
+      state: announcementSourceLabel(source.announcementsSource),
+      body: `${source.announcementsEndpoint} 目前沒有市場級官方公告；不以一般新聞補假公告。`,
+    },
+    {
+      title: "下一步",
+      state: "owner",
+      body: `${source.owner}：${source.nextAction}`,
+    },
+  ];
+  return (
+    <div className="tac-intel-empty-grid">
+      {rows.map((row) => (
+        <div key={row.title} className="tac-intel-empty-card">
+          <span>{row.state}</span>
+          <b>{row.title}</b>
+          <p>{row.body}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> }) {
   const featured = intel.data.items[0] ?? null;
   const rows = intel.data.items.slice(featured ? 1 : 0, featured ? 7 : 6);
   const itemHref = (item: IntelItem) => item.url ?? (item.ticker === "MARKET" ? "/market-intel" : `/companies/${encodeURIComponent(item.ticker)}`);
+  const panelState = marketIntelPanelState(intel);
+  const source = intel.data.sourceState;
+  const staleLabel = marketIntelStaleLabel(source.newsStaleReason);
+  const emptyReason = intel.state === "LIVE" ? "只顯示正式 endpoint 狀態；不顯示示意新聞。" : intel.reason;
   return (
     <Panel
       eyebrow="MARKET INTEL"
-      title="重要公告與大盤新聞"
-      sub={intel.state === "LIVE" ? "只顯示官方重大訊息、台股大盤或市場級新聞" : intel.reason}
-      right={<StatusChip state={stateFromLoad(intel)} label={`${formatNumber(intel.data.items.length)} 筆`} />}
+      title="AI 精選新聞與重大訊息"
+      sub={intel.data.items.length > 0 ? marketIntelSourceSummary(intel.data) : emptyReason}
+      right={<StatusChip state={panelState} label={`${formatNumber(intel.data.aiSelectedCount)} AI / ${formatNumber(intel.data.officialCount)} 公告`} />}
       className="tac-intel-panel"
     >
       {featured ? (
         <Link href={itemHref(featured)} className="tac-intel-feature">
-          <span>{categoryLabel(featured.category)}</span>
+          <span>{featured.feedKind === "ai_selected" ? "AI 精選" : categoryLabel(featured.category)}</span>
           <strong>{intelTitleText(featured)}</strong>
-          <small>{featured.ticker} · {featured.companyName} · {formatDate(featured.date)}</small>
+          <small>{featured.ticker} · {featured.companyName} · {formatDate(featured.date)} · {featured.sourceLabel ?? "正式來源"}</small>
+          {featured.whyMatters && <p>{cleanNarrativeText(featured.whyMatters)}</p>}
         </Link>
       ) : (
-        <div className="tac-empty-line">近 {ANNOUNCEMENT_DAYS} 天沒有可顯示的官方重大訊息。</div>
+        <MarketIntelEmptyState intel={intel} />
       )}
       <div className="tac-intel-list">
         {rows.map((item) => (
@@ -2097,13 +2268,13 @@ function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> })
             <b>{item.ticker}</b>
             <span>{intelTitleText(item)}</span>
             <small>{formatDate(item.date)}</small>
-            <em>{categoryLabel(item.category)}</em>
+            <em>{item.feedKind === "ai_selected" ? categoryLabel(item.impactTier ?? "ai_selected") : categoryLabel(item.category)}</em>
           </Link>
         ))}
       </div>
       <div className="tac-intel-foot">
-        <span>篩選大盤 / 市場級內容</span>
-        <span>{intel.data.failures > 0 ? `${intel.data.failures} 路徑查詢失敗` : "來源路徑可讀"}</span>
+        <span>{source.newsAiCallSuccess === false ? "AI call 未成功；顯示正式回傳狀態" : `${source.newsEndpoint} · input ${formatNumber(source.newsInputRows)} 筆`}</span>
+        <span>{staleLabel ? `待更新：${staleLabel}` : intel.data.failures > 0 ? `${intel.data.failures} 路徑查詢失敗` : "來源路徑可讀"}</span>
       </div>
     </Panel>
   );
@@ -2447,7 +2618,26 @@ async function DashboardContent({
     draftCount: 0,
     reason: "載入失敗",
   };
-  const emptyIntel: MarketIntelDashboard = { items: [], selected: [], failures: 0 };
+  const emptyIntel: MarketIntelDashboard = {
+    items: [],
+    selected: [],
+    failures: 0,
+    aiSelectedCount: 0,
+    officialCount: 0,
+    sourceState: {
+      newsEndpoint: "GET /api/v1/market-intel/news-top10",
+      announcementsEndpoint: `GET /api/v1/market-intel/announcements?days=${ANNOUNCEMENT_DAYS}&limit=${MAX_INTEL_ROWS}&scope=market`,
+      newsMode: null,
+      newsAsOf: null,
+      newsNextRefreshAt: null,
+      newsStaleReason: null,
+      newsAiCallSuccess: null,
+      newsInputRows: null,
+      announcementsSource: null,
+      owner: "Jason / Elva",
+      nextAction: "確認 AI 精選排程與官方公告來源；前端不顯示示意新聞。",
+    },
+  };
 
   // ── Result unwrap: detect timeout sentinel -> BLOCKED with real reason ───────
   // isTimeoutSentinel() guards against fake-green: timeout is never silently swallowed.

@@ -7,6 +7,10 @@ Deploy: `Deploy to Railway` run `26031744549`, success
 API health: `https://api.eycvector.com/health` = 200  
 Open PR: 0
 
+Update 2026-05-19 06:20 TST:
+- Latest base is `7b17ebc` (`#722 fix(web): stabilize heatmap representative pool`); production deploy `26063184603` is green and API `/health` is 200.
+- `/` homepage market-intel panel was re-audited after Yang screenshot. Root cause: the panel only consumed official announcements; owner-session `news-top10` has 10 AI-selected items, while official market announcements are empty. Planned/current PR: wire homepage panel to AI-selected `GET /api/v1/market-intel/news-top10` first, retain formal empty state for `GET /api/v1/market-intel/announcements`, and expose stale/source/owner state without mock news.
+
 ## Audit Rule
 
 這份 board 是今晚 P0 收斂的作戰地圖。沒有這份 board，不做大改；任何 UI 區塊只能是正式資料、明確 degraded/empty/pending state，或直接不顯示。不得用 mock/fake 冒充 live。

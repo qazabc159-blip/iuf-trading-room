@@ -1,0 +1,11 @@
+{
+  "url": "http://localhost:3022/?codexMarketIntel=p0-home-ai-news-20260519-mobile-r2",
+  "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_market_intel_p0_20260519\\evidence\\w7_paper_sprint\\p0-home-market-intel-ai-news-2026-05-19\\local-home-market-intel-panel-mobile.png",
+  "hasAiCountLabel": true,
+  "hasEndpoint": true,
+  "hasTranslatedStaleLabel": true,
+  "hasRawStaleReason": false,
+  "consoleErrors": [],
+  "badResponses": [],
+  "panelTextExcerpt": "MARKET INTEL\nAI 精選新聞與重大訊息\n\nAI 篩選 · AI 更新 05/18 19:15 · 官方公告暫無\n\n待更新\n10 AI / 0 公告\nAI 精選\n上銀科技躍居標普永續年鑑全球前1% ESG競爭力獲國際肯定 - 聯合新聞網\n2049 · 上銀 · 05/13 · FinMind 新聞\n\n上銀科技獲得國際ESG認證，提升市場信心。\n\n2101\n《橡膠股》南港第1季每股盈餘1.86元 - 富聯網\n05/13\nAI 精選\n1598\n董事會：岱宇(1598)決議授權董事長處分台中大甲二廠土地及建物 - 富聯網\n05/13\nAI 精選\n1560\n個股：中砂首季每股盈餘2.94元，高階產品組合比重提高推升營收毛利率 - 東森電視\n05/13\nAI 精選\n2059\n個股：川湖(2059)即日起10個營業日改採人工管制交易，每5分鐘撮合1次 - 富聯網\n05/13\nAI 精選\n2059\n處置股名單0513／今日新增7 檔，川湖、聯鈞、華星光新入列，近期出關個股一文掌握｜股市話題｜豐雲學堂2026 年 05 月 - sinotrade.com.tw\n05/13\nAI 精選\n2059\n《電零組》注意股：川湖 近5日漲19.32% - 富聯網\n05/13\nAI 精選\nGET /api/v1/market-intel/news-top10 · input 77 筆\n待更新：上次 AI 精選已超過 11 小時，等待排程更新"
+}

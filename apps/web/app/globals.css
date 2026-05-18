@@ -13761,6 +13761,56 @@ body:has(.tactical-dashboard) .app-sidebar {
   font: 760 11px/1.35 var(--sans-tc);
 }
 
+.tac-intel-feature p {
+  margin: 0;
+  color: var(--tac-fg-2);
+  font: 760 12px/1.65 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
+.tac-intel-empty-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px;
+}
+
+.tac-intel-empty-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 118px;
+  padding: 12px;
+  border: 1px solid var(--tac-empty-line);
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, rgba(145, 160, 181, 0.075), transparent 62%),
+    rgba(5, 9, 14, 0.48);
+}
+
+.tac-intel-empty-card span {
+  width: fit-content;
+  padding: 3px 6px;
+  border: 1px solid var(--tac-empty-line);
+  border-radius: 3px;
+  color: var(--tac-empty);
+  background: var(--tac-empty-bg);
+  font: 900 9px/1 var(--mono);
+  text-transform: uppercase;
+}
+
+.tac-intel-empty-card b {
+  color: var(--tac-fg-0);
+  font: 850 12px/1.35 var(--sans-tc);
+}
+
+.tac-intel-empty-card p {
+  margin: 0;
+  color: var(--tac-fg-3);
+  font: 720 11px/1.6 var(--sans-tc);
+  overflow-wrap: anywhere;
+}
+
 .tac-intel-list {
   display: grid;
   margin: 0 16px;
@@ -14175,6 +14225,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-paper-bottom,
   .tac-paper-steps,
   .tac-pipeline,
+  .tac-intel-empty-grid,
   .tac-mover-list a,
   .tac-intel-list a,
   .tac-strategy-table > div,
