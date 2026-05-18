@@ -1,0 +1,59 @@
+{
+  "allPass": false,
+  "results": [
+    {
+      "target": "desktop",
+      "checks": {
+        "status": 200,
+        "url": "http://127.0.0.1:3120/admin/brain/llm",
+        "hasTitle": false,
+        "hasEndpointCopy": true,
+        "hasSourceTables": true,
+        "hasEstimatedCopy": false,
+        "hasOwnerNext": false,
+        "noActualInvoiceClaim": true,
+        "consoleErrorCount": 0,
+        "pageErrors": 0
+      },
+      "textSample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n管理\nBrain LLM 費用總覽\nOpenAlice Phase A\n台北 / 2026/5/19 02:07:04\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\nOwner only。此頁是 LLM operational ledger，不是正式帳單；所有 cost_usd / token cost 皆為估算。\nSOURCE\n營運資料庫，不是真實帳單\n使用 /api/v1/admin/llm/usage、/api/v1/admin/llm/calls?limit=50、/api/v1/admin/llm/models。 來源表為 llm_calls、llm_cost_daily、llm_models_registry。\nCALCULATION\n費用以 token 與登錄單價推估\n視窗：2026-05-11 到 2026-05-18。cost_usd 是系統紀錄的估算值； 實際付款、折扣、稅費與調整仍以 OpenAI dashboard 或供應商帳單為準。\nOWNER / NEXT\nOwner-only 管理頁\nOwner：Elva / Jason 維護 LLM ledger 與模型單價。下一步：若要顯示真實帳單，需串正式 provider billing API； 未串前所有美元數字一律標為估算。\nBLOCKED\nOWNER ENDPOINT\n管理 / 7 日費用摘要（估算）\n2026-05-11 → 2026-05-18\n用量資料不可讀\nOwner session 未通過、API 回應異常，或 LLM ledger 尚未寫入資料。頁面不會把 0 或錯誤值當成真實帳單。\nEndpoint：/api/v1/admin/llm/usage?from=2026-05-11&to=2026-05-18\nOwner：Elva / Jason\n下一步：確認 Owner cookie、API health、llm_calls / llm_cost_daily 是否有紀錄。\n管理 / 模型登錄與估算單價\nBLOCKED\n模型登錄不可讀\n無法讀取 LLM 模型登錄表，因此不可推估成本。\nEndpoint：/api/v1/admin/llm/models\nOwner：Elva / Jason\n下一步：確認 llm_models_registry migration 與 Owner-only API 權限。\n管理 / 近期 50 筆呼叫紀錄\nBLOCKED\n呼叫紀錄不可讀\n無法讀取近期 LLM 呼叫紀錄；不顯示空白表格或假資料。\nEndpoint：/api/v1/admin/llm/calls?limit=50\nOwner：Elva / Jason\n下一步：確認 llm_calls 是否有寫入、API 是否通過 Owner session。",
+      "consoleMessages": [
+        {
+          "type": "info",
+          "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+        },
+        {
+          "type": "log",
+          "text": "[Fast Refresh] rebuilding"
+        },
+        {
+          "type": "log",
+          "text": "[Fast Refresh] done in 1268ms"
+        }
+      ],
+      "pageErrors": []
+    },
+    {
+      "target": "mobile",
+      "checks": {
+        "status": 200,
+        "url": "http://127.0.0.1:3120/admin/brain/llm",
+        "hasTitle": false,
+        "hasEndpointCopy": true,
+        "hasSourceTables": true,
+        "hasEstimatedCopy": false,
+        "hasOwnerNext": false,
+        "noActualInvoiceClaim": true,
+        "consoleErrorCount": 0,
+        "pageErrors": 0
+      },
+      "textSample": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，無未讀\n管理\nBrain LLM 費用總覽\nOpenAlice Phase A\n台北 / 2026/5/19 02:07:08\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\nOwner only。此頁是 LLM operational ledger，不是正式帳單；所有 cost_usd / token cost 皆為估算。\nSOURCE\n營運資料庫，不是真實帳單\n使用 /api/v1/admin/llm/usage、/api/v1/admin/llm/calls?limit=50、/api/v1/admin/llm/models。 來源表為 llm_calls、llm_cost_daily、llm_models_registry。\nCALCULATION\n費用以 token 與登錄單價推估\n視窗：2026-05-11 到 2026-05-18。cost_usd 是系統紀錄的估算值； 實際付款、折扣、稅費與調整仍以 OpenAI dashboard 或供應商帳單為準。\nOWNER / NEXT\nOwner-only 管理頁\nOwner：Elva / Jason 維護 LLM ledger 與模型單價。下一步：若要顯示真實帳單，需串正式 provider billing API； 未串前所有美元數字一律標為估算。\nBLOCKED\nOWNER ENDPOINT\n管理 / 7 日費用摘要（估算）\n2026-05-11 → 2026-05-18\n用量資料不可讀\nOwner session 未通過、API 回應異常，或 LLM ledger 尚未寫入資料。頁面不會把 0 或錯誤值當成真實帳單。\nEndpoint：/api/v1/admin/llm/usage?from=2026-05-11&to=2026-05-18\nOwner：Elva / Jason\n下一步：確認 Owner cookie、API health、llm_calls / llm_cost_daily 是否有紀錄。\n管理 / 模型登錄與估算單價\nBLOCKED\n模型登錄不可讀\n無法讀取 LLM 模型登錄表，因此不可推估成本。\nEndpoint：/api/v1/admin/llm/models\nOwner：Elva / Jason\n下一步：確認 llm_models_registry migration 與 Owner-only API 權限。\n管理 / 近期 50 筆呼叫紀錄\nBLOCKED\n呼叫紀錄不可讀\n無法讀取近期 LLM 呼叫紀錄；不顯示空白表格或假資料。\nEndpoint：/api/v1/admin/llm/calls?limit=50\nOwner：Elva / Jason\n下一步：確認 llm_calls 是否有寫入、API 是否通過 Owner session。",
+      "consoleMessages": [
+        {
+          "type": "info",
+          "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+        }
+      ],
+      "pageErrors": []
+    }
+  ]
+}
