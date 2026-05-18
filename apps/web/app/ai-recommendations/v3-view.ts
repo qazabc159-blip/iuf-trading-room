@@ -16,7 +16,7 @@ export type V3PanelState = {
 };
 
 const ENDPOINT = "GET /api/v1/ai-recommendations/v3";
-const OWNER = "Elva/Jason backend gate + Bruce production verify";
+const OWNER = "Elva/Jason backend gate + Bruce owner-session verify";
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -75,7 +75,7 @@ export function mapV3ItemToStockRecCard(item: AiRecommendationV3Item): StockRecC
   const entryLow = asNumber(item.entryZone?.low ?? item.entryPriceRange?.low);
   const entryHigh = asNumber(item.entryZone?.high ?? item.entryPriceRange?.high);
   const entryLabel = item.entryZone?.reason
-    ?? (entryLow != null && entryHigh != null ? null : "後端尚未提供 OTE 進場區");
+    ?? (entryLow != null && entryHigh != null ? null : "等待 OTE 進場區間");
 
   const tp1 = asNumber(item.tp1Structured?.price ?? item.tp1);
   const tp2 = asNumber(item.tp2Structured?.price ?? item.tp2);
@@ -161,7 +161,8 @@ export function buildV3PanelState(input: {
       detail: input.error,
       endpoint: ENDPOINT,
       owner: source?.owner ?? OWNER,
-      nextAction: nextFromSource ?? "等待 #703 合併部署，或請 Bruce 用 owner session 驗證 API 權限與回應。",
+      nextAction: nextFromSource
+        ?? "確認 owner-session 權限與 API 回應；若 production endpoint 回 401/403，請 Bruce/Elva 用 owner session 驗證，不把前端空狀態當成推薦失敗。",
     };
   }
 
@@ -171,12 +172,12 @@ export function buildV3PanelState(input: {
       tone: input.data?.usedFallback || input.data?.synthesisFallbackUsed ? "degraded" : "live",
       label: input.data?.usedFallback || input.data?.synthesisFallbackUsed ? "DEGRADED" : "LIVE",
       title: input.data?.usedFallback || input.data?.synthesisFallbackUsed
-        ? "v3 已顯示，部分使用後端備援"
-        : "v3 SOP 推薦已接入",
-      detail: `目前顯示 ${input.visibleCount} 檔真後端推薦；沒有前端補假資料。`,
+        ? "v3 推薦已回傳，但仍使用降級合成資料"
+        : "v3 SOP 推薦已回傳",
+      detail: `目前顯示 ${input.visibleCount} 檔正式 v3 推薦，未補前端假標的。`,
       endpoint: ENDPOINT,
       owner: source?.owner ?? OWNER,
-      nextAction: nextFromSource ?? "Bruce 驗證 entry、TP、SL、理由、風險與交易室 handoff。",
+      nextAction: nextFromSource ?? "Bruce 驗證 entry、TP、SL、風險與交易室 handoff；Elva/Jason 觀察 refresh 與資料品質。",
     };
   }
 
@@ -184,11 +185,11 @@ export function buildV3PanelState(input: {
     return {
       tone: "pending",
       label: "PENDING",
-      title: "v3 後端已定義，但目前沒有可顯示推薦",
-      detail: source?.reason ?? "前端沒有收到任何 v3 items，因此不渲染假股票卡。",
+      title: "v3 已接通但目前沒有可顯示推薦",
+      detail: source?.reason ?? "後端沒有回傳可顯示的 v3 items；前端只顯示空狀態，不補假推薦。",
       endpoint: ENDPOINT,
       owner: source?.owner ?? OWNER,
-      nextAction: nextFromSource ?? "等 #703 部署後觸發 v3 refresh，再確認至少 5 檔推薦。",
+      nextAction: nextFromSource ?? "觸發 v3 refresh，確認市場狀態、資料品質與門檻後，讓正式候選進入推薦清單。",
     };
   }
 
@@ -196,9 +197,9 @@ export function buildV3PanelState(input: {
     tone: "degraded",
     label: "DEGRADED",
     title: `v3 狀態：${status}`,
-    detail: source?.reason ?? "後端回應不是 complete，前端只顯示狀態與下一步，不假裝已完成。",
+    detail: source?.reason ?? "v3 payload 未達 complete；前端維持降級揭露，不顯示假推薦。",
     endpoint: ENDPOINT,
     owner: source?.owner ?? OWNER,
-    nextAction: nextFromSource ?? "Elva/Jason 檢查 v3 run 狀態，Bruce 驗證 production payload。",
+    nextAction: nextFromSource ?? "Elva/Jason 檢查 v3 run 狀態，Bruce 驗證 production payload 與 owner-session 權限。",
   };
 }

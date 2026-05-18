@@ -432,6 +432,33 @@ function EmptyBucket({ message }: { message: string }) {
   );
 }
 
+function RecommendationListEmptyState({ error }: { error: string | null }) {
+  return (
+    <div className="_rec-empty _rec-empty-single">
+      <b>推薦清單目前沒有可顯示標的</b>
+      <p>
+        {error
+          ? "今日推薦清單 endpoint 尚未通過目前 session 權限；前端不補假股票，也不把 strategy ideas 冒充 AI 推薦。"
+          : "今日推薦清單目前回傳 0 檔；等待 v3 refresh 或正式候選通過資料品質門檻。"}
+      </p>
+      <dl>
+        <div>
+          <dt>Endpoint</dt>
+          <dd>GET /api/v1/recommendations/today</dd>
+        </div>
+        <div>
+          <dt>Owner</dt>
+          <dd>Elva/Jason + Bruce owner-session verify</dd>
+        </div>
+        <div>
+          <dt>Next</dt>
+          <dd>用 owner session 驗證推薦清單；若仍為 0 檔，觸發 v3 refresh 並檢查資料品質門檻。</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 function BucketSection({
   bucket,
   items,
@@ -1024,6 +1051,38 @@ export default async function AiRecommendationsPage() {
           font-size: 12px;
           line-height: 1.65;
         }
+        ._rec-empty-single {
+          justify-items: stretch;
+          text-align: left;
+          min-height: 0;
+        }
+        ._rec-empty-single p {
+          max-width: 760px;
+        }
+        ._rec-empty-single dl {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+          margin: 10px 0 0;
+        }
+        ._rec-empty-single dl > div {
+          min-width: 0;
+          border: 1px solid rgba(220, 228, 240, 0.1);
+          border-radius: 6px;
+          padding: 10px;
+          background: rgba(3, 7, 12, 0.42);
+        }
+        ._rec-empty-single dt {
+          color: var(--tac-brand);
+          font: 900 10px/1 var(--mono);
+          margin-bottom: 6px;
+        }
+        ._rec-empty-single dd {
+          margin: 0;
+          color: var(--tac-fg-2);
+          font: 800 11px/1.45 var(--sans-tc);
+          overflow-wrap: anywhere;
+        }
         ._rec-v3-preview {
           display: grid;
           gap: 10px;
@@ -1119,6 +1178,7 @@ export default async function AiRecommendationsPage() {
           ._rec-v3-card-grid,
           ._rec-score-grid,
           ._rec-reasons,
+          ._rec-empty-single dl,
           ._rec-v3-state dl {
             grid-template-columns: 1fr;
           }
@@ -1152,14 +1212,20 @@ export default async function AiRecommendationsPage() {
           })}
         </div>
 
-        {BUCKETS.map((bucket) => (
-          <BucketSection
-            key={bucket.value}
-            bucket={bucket}
-            items={grouped.get(bucket.value) ?? []}
-            error={error}
-          />
-        ))}
+        {items.length > 0 ? (
+          BUCKETS.map((bucket) => (
+            <BucketSection
+              key={bucket.value}
+              bucket={bucket}
+              items={grouped.get(bucket.value) ?? []}
+              error={error}
+            />
+          ))
+        ) : (
+          <div style={{ padding: "0 16px 18px" }}>
+            <RecommendationListEmptyState error={error} />
+          </div>
+        )}
       </Panel>
 
       <Panel

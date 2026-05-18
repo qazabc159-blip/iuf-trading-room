@@ -32,8 +32,8 @@ describe("AI recommendations v3 view mapping", () => {
       stopLossStructured: { price: 790 },
       r_ratio: 2.1,
       position_sizing: { nav_pct: 0.004, market_multiplier: 1 },
-      why_buy: ["技術結構轉強", "題材仍在主線"],
-      why_not_buy: ["跌破結構停損"],
+      why_buy: ["技術結構轉強", "主題與法人同步"],
+      why_not_buy: ["跳空過熱須等回檔"],
     });
 
     expect(card).toMatchObject({
@@ -77,16 +77,17 @@ describe("AI recommendations v3 view mapping", () => {
     expect(steps?.[0]).toMatchObject({ step: 1, label: "市場狀態" });
   });
 
-  it("renders a blocked state when the endpoint is unavailable", () => {
+  it("renders a blocked state without stale PR next-action copy", () => {
     const state = buildV3PanelState({
       data: null,
-      error: "404 no_v3_run_yet",
+      error: "401 unauthenticated",
       visibleCount: 0,
     });
 
     expect(state.tone).toBe("blocked");
     expect(state.endpoint).toBe("GET /api/v1/ai-recommendations/v3");
-    expect(state.nextAction).toContain("#703");
+    expect(state.nextAction).toContain("owner-session");
+    expect(state.nextAction).not.toContain("#703");
   });
 
   it("renders a live state only when real backend items are visible", () => {
@@ -97,6 +98,6 @@ describe("AI recommendations v3 view mapping", () => {
     });
 
     expect(state.tone).toBe("live");
-    expect(state.detail).toContain("1 檔真後端推薦");
+    expect(state.detail).toContain("1 檔正式 v3 推薦");
   });
 });
