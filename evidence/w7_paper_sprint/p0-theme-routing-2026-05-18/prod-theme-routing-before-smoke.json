@@ -1,0 +1,134 @@
+{
+  "checkedAt": "2026-05-18T16:31:58.004Z",
+  "navs": [
+    "https://app.eycvector.com/companies?codexThemeSmoke=1",
+    "https://app.eycvector.com/companies?codexThemeSmoke=1",
+    "https://app.eycvector.com/themes?codexThemeSmoke=1",
+    "https://app.eycvector.com/themes?codexThemeSmoke=1",
+    "https://app.eycvector.com/themes/ai-server?codexThemeSmoke=1",
+    "https://app.eycvector.com/themes/ai-server?codexThemeSmoke=1",
+    "https://app.eycvector.com/themes/semiconductor?codexThemeSmoke=1",
+    "https://app.eycvector.com/themes/semiconductor?codexThemeSmoke=1",
+    "https://app.eycvector.com/mobile/themes/ai-server?codexThemeSmoke=1",
+    "https://app.eycvector.com/mobile/themes/ai-server?codexThemeSmoke=1",
+    "https://app.eycvector.com/companies/themes/ai-server?codexThemeSmoke=1",
+    "https://app.eycvector.com/companies/themes/ai-server?codexThemeSmoke=1",
+    "https://app.eycvector.com/company-themes/ai-server?codexThemeSmoke=1",
+    "https://app.eycvector.com/company-themes/ai-server?codexThemeSmoke=1"
+  ],
+  "links": [
+    {
+      "text": "公司 / 主題公司圖譜",
+      "href": "https://app.eycvector.com/companies"
+    }
+  ],
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 ()"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 ()"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 ()"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 ()"
+    }
+  ],
+  "pageErrors": [],
+  "results": [
+    {
+      "route": "/companies",
+      "status": 200,
+      "finalUrl": "https://app.eycvector.com/companies?codexThemeSmoke=1",
+      "title": "IUF 台股 AI 交易戰情室",
+      "textLength": 602,
+      "looksBlank": false,
+      "hasMobileRoute": false,
+      "hasLegacyText": false,
+      "bodySnippet": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n公司\n公司板\n台股公司池 / 主題 / 產業鏈\n台北 / 2026/5/19 00:31:43\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 正式公司主檔；前端先以代號去重，正式資料庫去重仍維持審核閘門\n公司搜尋\n主題雷達\n產業鏈\n公司圖譜\n狀態\n暫停\n公司資料庫\n總公司數\n0\n台股公司池\n篩選結果\n0\n符合條件\n頁次\n1\n共 1 頁\n更新\n00:31:43\n資料時間\n公司 / 公司主檔\n代號 / 公司名 / 產業鏈位置 / 受惠層級\n暫停\n暫停\n來源：公司主檔\n更新 00:31:43\n處理：公司資料管線。細節：登入狀態已失效，請重新登入。\n全部產業鏈\n全部層級\n核心\n直接\n間接\n觀察\n暫停：公司主檔暫時無法讀取。登入狀態已失效，請重新登入。",
+      "gotoError": null
+    },
+    {
+      "route": "/themes",
+      "status": 200,
+      "finalUrl": "https://app.eycvector.com/themes?codexThemeSmoke=1",
+      "title": "IUF 台股 AI 交易戰情室",
+      "textLength": 556,
+      "looksBlank": false,
+      "hasMobileRoute": false,
+      "hasLegacyText": false,
+      "bodySnippet": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n主題\n主題板\n台股主題階梯\n台北 / 2026/5/19 00:31:44\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n主題板 / 正式主題資料；只顯示已連結公司池與可追蹤狀態。\n暫停\n狀態\n--\n主題總數\n--\n進攻主題\n--\n防守主題\n--\n核心公司\n--\n觀察公司\n--\nP1 主題\n主題狀態\n需處理\n主題板\n主題數\n--\n台股主題\n活躍主題\n--\n成長/驗證期\n研究中\n--\n探索期\n主題 / 主題雷達\n正式主題資料 / 公司池連結\n暫停\n暫停\n來源：正式主題資料\n更新 05/19 00:31\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。",
+      "gotoError": null
+    },
+    {
+      "route": "/themes/ai-server",
+      "status": 200,
+      "finalUrl": "https://app.eycvector.com/themes/ai-server?codexThemeSmoke=1",
+      "title": "IUF 台股 AI 交易戰情室",
+      "textLength": 687,
+      "looksBlank": false,
+      "hasMobileRoute": false,
+      "hasLegacyText": false,
+      "bodySnippet": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n主題 / 詳情\nai-server\n主題明細暫停\n台北 / 2026/5/19 00:31:46\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n此頁讀取正式主題、公司、訊號與策略想法；只顯示已接上來源的研究資料，不提供下單動作。\n狀態\n暫停\n優先\n--\n核心\n--\n觀察\n--\n成員\n--\n想法\n--\n訊號\n--\n主題 / 主題工作頁\n投資命題 / 現在性\n暫停\n暫停\n主題資料 / 公司 / 訊號 / 策略想法\n更新 2026/05/18 16:31\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n記憶 / 成員公司\n正式公司主檔連結\n暫停\n暫停 主題明細資料暫停，相關公司、訊號與策略想法先隱藏。\n想法 / 連結策略想法\n依主題篩選正式策略資料\n暫停\n暫停 主題明細資料暫停，相關公司、訊號與策略想法先隱藏。\n訊號 / 主題訊號流\n正式訊號資料\n暫停\n暫停 主題明細資料暫停，相關公司、訊號與策略想法先隱藏。",
+      "gotoError": null
+    },
+    {
+      "route": "/themes/semiconductor",
+      "status": 200,
+      "finalUrl": "https://app.eycvector.com/themes/semiconductor?codexThemeSmoke=1",
+      "title": "IUF 台股 AI 交易戰情室",
+      "textLength": 691,
+      "looksBlank": false,
+      "hasMobileRoute": false,
+      "hasLegacyText": false,
+      "bodySnippet": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n主題 / 詳情\nsemiconductor\n主題明細暫停\n台北 / 2026/5/19 00:31:49\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n此頁讀取正式主題、公司、訊號與策略想法；只顯示已接上來源的研究資料，不提供下單動作。\n狀態\n暫停\n優先\n--\n核心\n--\n觀察\n--\n成員\n--\n想法\n--\n訊號\n--\n主題 / 主題工作頁\n投資命題 / 現在性\n暫停\n暫停\n主題資料 / 公司 / 訊號 / 策略想法\n更新 2026/05/18 16:31\n登入狀態已失效，請重新登入。\n暫停 登入狀態已失效，請重新登入。\n記憶 / 成員公司\n正式公司主檔連結\n暫停\n暫停 主題明細資料暫停，相關公司、訊號與策略想法先隱藏。\n想法 / 連結策略想法\n依主題篩選正式策略資料\n暫停\n暫停 主題明細資料暫停，相關公司、訊號與策略想法先隱藏。\n訊號 / 主題訊號流\n正式訊號資料\n暫停\n暫停 主題明細資料暫停，相關公司、訊號與策略想法先隱藏。",
+      "gotoError": null
+    },
+    {
+      "route": "/mobile/themes/ai-server",
+      "status": 404,
+      "finalUrl": "https://app.eycvector.com/mobile/themes/ai-server?codexThemeSmoke=1",
+      "title": "404: This page could not be found.",
+      "textLength": 296,
+      "looksBlank": true,
+      "hasMobileRoute": true,
+      "hasLegacyText": false,
+      "bodySnippet": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n404\nThis page could not be found.",
+      "gotoError": null
+    },
+    {
+      "route": "/companies/themes/ai-server",
+      "status": 404,
+      "finalUrl": "https://app.eycvector.com/companies/themes/ai-server?codexThemeSmoke=1",
+      "title": "404: This page could not be found.",
+      "textLength": 296,
+      "looksBlank": true,
+      "hasMobileRoute": false,
+      "hasLegacyText": false,
+      "bodySnippet": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n404\nThis page could not be found.",
+      "gotoError": null
+    },
+    {
+      "route": "/company-themes/ai-server",
+      "status": 404,
+      "finalUrl": "https://app.eycvector.com/company-themes/ai-server?codexThemeSmoke=1",
+      "title": "404: This page could not be found.",
+      "textLength": 296,
+      "looksBlank": true,
+      "hasMobileRoute": false,
+      "hasLegacyText": false,
+      "bodySnippet": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，無未讀\n404\nThis page could not be found.",
+      "gotoError": null
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "checkedAt": "2026-05-18T16:37:12.013Z",
+  "results": [
+    {
+      "viewport": "desktop",
+      "route": "/mobile/themes/ai-server",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes/ai-server?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 683,
+      "consoleMessages": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        }
+      ],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "desktop",
+      "route": "/m/themes/ai-server",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes/ai-server?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 681,
+      "consoleMessages": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        }
+      ],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "desktop",
+      "route": "/companies/themes/ai-server",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes/ai-server?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 681,
+      "consoleMessages": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        }
+      ],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "desktop",
+      "route": "/company-themes/ai-server",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes/ai-server?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 681,
+      "consoleMessages": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        }
+      ],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "desktop",
+      "route": "/mobile/themes",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 550,
+      "consoleMessages": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        }
+      ],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "desktop",
+      "route": "/companies/themes",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 550,
+      "consoleMessages": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        }
+      ],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "mobile",
+      "route": "/mobile/themes/ai-server",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes/ai-server?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 586,
+      "consoleMessages": [],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "mobile",
+      "route": "/m/themes/ai-server",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes/ai-server?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 586,
+      "consoleMessages": [],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "mobile",
+      "route": "/companies/themes/ai-server",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes/ai-server?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 586,
+      "consoleMessages": [],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "mobile",
+      "route": "/company-themes/ai-server",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes/ai-server?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 586,
+      "consoleMessages": [],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "mobile",
+      "route": "/mobile/themes",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 455,
+      "consoleMessages": [],
+      "pageErrors": [],
+      "gotoError": null
+    },
+    {
+      "viewport": "mobile",
+      "route": "/companies/themes",
+      "initialStatus": 200,
+      "finalUrl": "http://localhost:3117/themes?codexThemeRedirect=local",
+      "finalPathOk": true,
+      "noMobilePath": true,
+      "not404": true,
+      "textLength": 455,
+      "consoleMessages": [],
+      "pageErrors": [],
+      "gotoError": null
+    }
+  ]
+}

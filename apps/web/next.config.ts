@@ -39,6 +39,46 @@ const nextConfig: NextConfig = {
       },
       // F2: /heatmap → /market-intel (楊董直接打 URL 找不到頁面 BUG #4 fix)
       {
+        source: "/mobile/themes",
+        destination: "/themes",
+        statusCode: 301,
+      },
+      {
+        source: "/mobile/themes/:path*",
+        destination: "/themes/:path*",
+        statusCode: 301,
+      },
+      {
+        source: "/m/themes",
+        destination: "/themes",
+        statusCode: 301,
+      },
+      {
+        source: "/m/themes/:path*",
+        destination: "/themes/:path*",
+        statusCode: 301,
+      },
+      {
+        source: "/companies/themes",
+        destination: "/themes",
+        statusCode: 301,
+      },
+      {
+        source: "/companies/themes/:path*",
+        destination: "/themes/:path*",
+        statusCode: 301,
+      },
+      {
+        source: "/company-themes",
+        destination: "/themes",
+        statusCode: 301,
+      },
+      {
+        source: "/company-themes/:path*",
+        destination: "/themes/:path*",
+        statusCode: 301,
+      },
+      {
         source: "/heatmap",
         destination: "/market-intel",
         statusCode: 301,
