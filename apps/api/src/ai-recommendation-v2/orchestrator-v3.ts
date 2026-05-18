@@ -538,6 +538,199 @@ function parseMarketStateV3(text: string): AiRecMarketState {
   return "range";
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundPrice(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function toBool(value: unknown): boolean {
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
+const CORE_COMPANY_NAMES: Record<string, string> = {
+  "2330": "台積電",
+  "2454": "聯發科",
+  "2317": "鴻海",
+  "2308": "台達電",
+  "2412": "中華電",
+  "3711": "日月光投控",
+  "3707": "漢磊",
+  "2882": "國泰金",
+  "2881": "富邦金",
+  "6505": "台塑化",
+};
+
+interface TechnicalObservationForFallback {
+  ticker: string;
+  lastPrice: number;
+  changePct: number | null;
+  rsi14: number | null;
+  ma20: number | null;
+  ma60: number | null;
+  volumeRatio20d: number | null;
+  aboveMa20: boolean;
+  aboveMa60: boolean;
+  source: string | null;
+}
+
+function extractTechnicalObservationForFallback(step: V3ReActStep): TechnicalObservationForFallback | null {
+  if (step.toolName !== "get_company_technical") return null;
+  if (!step.observation || typeof step.observation !== "object") return null;
+
+  const obs = step.observation as Record<string, unknown>;
+  const ticker = typeof obs["ticker"] === "string" ? obs["ticker"] : null;
+  const lastPrice = toFiniteNumber(obs["lastPrice"]);
+  if (!ticker || lastPrice === null || lastPrice <= 0) return null;
+
+  return {
+    ticker,
+    lastPrice,
+    changePct: toFiniteNumber(obs["changePct"]),
+    rsi14: toFiniteNumber(obs["rsi14"]),
+    ma20: toFiniteNumber(obs["ma20"]),
+    ma60: toFiniteNumber(obs["ma60"]),
+    volumeRatio20d: toFiniteNumber(obs["volumeRatio20d"]),
+    aboveMa20: toBool(obs["aboveMa20"]),
+    aboveMa60: toBool(obs["aboveMa60"]),
+    source: typeof obs["source"] === "string" ? obs["source"] : null,
+  };
+}
+
+function technicalFallbackRank(obs: TechnicalObservationForFallback): number {
+  let score = 50;
+  if (obs.aboveMa20) score += 10;
+  if (obs.aboveMa60) score += 10;
+  if ((obs.changePct ?? 0) > 0) score += 5;
+  if (obs.rsi14 !== null && obs.rsi14 >= 45 && obs.rsi14 <= 75) score += 8;
+  if (obs.volumeRatio20d !== null && obs.volumeRatio20d >= 0.5) score += 5;
+  if (obs.volumeRatio20d !== null && obs.volumeRatio20d > 1.5) score -= 5;
+  return clampNumber(score, 0, 100);
+}
+
+export function buildDeterministicFallbackItemsFromTrace(
+  trace: V3ReActStep[],
+  dateStr: string,
+  marketState: AiRecMarketState
+): AiStockRecommendationV2[] {
+  const byTicker = new Map<string, TechnicalObservationForFallback>();
+  for (const step of trace) {
+    const obs = extractTechnicalObservationForFallback(step);
+    if (!obs) continue;
+    if (!byTicker.has(obs.ticker)) byTicker.set(obs.ticker, obs);
+  }
+
+  return Array.from(byTicker.values())
+    .map((obs) => ({ obs, rank: technicalFallbackRank(obs) }))
+    .filter(({ rank }) => rank >= 60)
+    .sort((a, b) =>
+      b.rank - a.rank ||
+      (b.obs.changePct ?? -999) - (a.obs.changePct ?? -999) ||
+      a.obs.ticker.localeCompare(b.obs.ticker)
+    )
+    .slice(0, 3)
+    .map(({ obs, rank }) => {
+      const technical = clampNumber(
+        8 +
+          (obs.aboveMa20 ? 4 : 0) +
+          (obs.aboveMa60 ? 4 : 0) +
+          (obs.rsi14 !== null && obs.rsi14 >= 45 && obs.rsi14 <= 75 ? 2 : 0) +
+          (obs.volumeRatio20d !== null && obs.volumeRatio20d >= 0.5 ? 2 : 0),
+        0,
+        20
+      );
+      const rs = (obs.changePct ?? 0) > 0 ? 8 : (obs.changePct ?? 0) >= 0 ? 6 : 5;
+      const subScores = {
+        theme: 14,
+        revenue: 8,
+        institutional: 8,
+        margin: 8,
+        rs,
+        technical,
+        valuation: 3,
+      };
+      const totalScore = subScores.theme + subScores.revenue + subScores.institutional +
+        subScores.margin + subScores.rs + subScores.technical + subScores.valuation;
+      const bucket: AiRecBucket = totalScore >= 75 ? "A" : "B";
+      const action: AiStockRecommendationV2["action"] =
+        bucket === "A" ? "可觀察布局（研究參考）" : "等回檔";
+
+      const entryLow = roundPrice(obs.lastPrice * 0.98);
+      const entryHigh = roundPrice(obs.lastPrice * 1.01);
+      const entryMid = (entryLow + entryHigh) / 2;
+      const tp1 = roundPrice(obs.lastPrice * 1.05);
+      const tp2 = roundPrice(obs.lastPrice * 1.1);
+      const stopLoss = roundPrice(obs.lastPrice * 0.94);
+      const downside = Math.max(0.01, entryMid - stopLoss);
+      const upside = Math.max(0.01, tp1 - entryMid);
+
+      return {
+        id: randomUUID(),
+        ticker: obs.ticker,
+        companyName: CORE_COMPANY_NAMES[obs.ticker] ?? obs.ticker,
+        action,
+        date: dateStr,
+        confidence: bucket === "A" ? 0.68 : 0.56,
+        rationale:
+          `Deterministic fallback from verified get_company_technical data. ` +
+          `rank=${rank}, lastPrice=${obs.lastPrice}, changePct=${obs.changePct ?? "n/a"}, ` +
+          `aboveMa20=${obs.aboveMa20}, aboveMa60=${obs.aboveMa60}, rsi14=${obs.rsi14 ?? "n/a"}.`,
+        entryPriceRange: { low: entryLow, high: entryHigh },
+        tp1,
+        tp2,
+        stopLoss,
+        aiGenerated: true,
+        source: "brain_react_v2",
+        marketState,
+        subScores,
+        totalScore,
+        bucket,
+        entryZone: {
+          low: entryLow,
+          high: entryHigh,
+          reason: "Programmatic fallback range: 0.98x-1.01x of verified lastPrice.",
+        },
+        tp1Structured: {
+          price: tp1,
+          reason: "Conservative +5% first target from verified lastPrice.",
+        },
+        tp2Structured: {
+          price: tp2,
+          reason: "Stretch +10% second target from verified lastPrice.",
+        },
+        stopLossStructured: {
+          price: stopLoss,
+          atr_multiple: 0.5,
+        },
+        r_ratio: roundPrice(upside / downside),
+        position_sizing: {
+          nav_pct: bucket === "A" ? 0.006 : 0.004,
+          market_multiplier: marketState === "event" ? 0.5 : marketState === "range" ? 0.7 : 1,
+        },
+        why_buy: [
+          "Verified technical data was available from get_company_technical.",
+          obs.aboveMa20 ? "Price is above MA20." : "Price is not above MA20; keep sizing conservative.",
+          obs.aboveMa60 ? "Price is above MA60." : "Price is not above MA60; keep sizing conservative.",
+        ],
+        why_not_buy: [
+          "This is a deterministic fallback because the LLM returned no structured picks.",
+          "Treat as research candidates until the full AI narrative is healthy.",
+        ],
+      };
+    });
+}
+
 /**
  * parseAiReportToRecommendationsV3
  *
@@ -1060,8 +1253,23 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         observation: null,
         tokensUsed: llmResult.usage.totalTokens,
       });
-      const report = await synthesizeReportV3(trace, dateStr, model);
-      const items = parseAiReportToRecommendationsV3(report, dateStr);
+      let report = await synthesizeReportV3(trace, dateStr, model);
+      let items = parseAiReportToRecommendationsV3(report, dateStr);
+      if (items.length < 3 && companyTechnicalCallCount >= 5 && progScore < 3) {
+        const fallbackItems = buildDeterministicFallbackItemsFromTrace(
+          trace,
+          dateStr,
+          detectedMarketState ?? "trend"
+        );
+        if (fallbackItems.length >= 3) {
+          console.warn(`[v3-orchestrator] run ${runId}: LLM returned ${items.length} items after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
+          items = fallbackItems;
+          report = `${report}
+
+---
+Deterministic fallback applied: the LLM returned fewer than 3 structured recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only.`;
+        }
+      }
 
       // F3: Validate minimum items and tool call count
       const insufficientItems = items.length < 3;
@@ -1147,8 +1355,23 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
   }
 
   // Max rounds reached — synthesize with what we have
-  const report = await synthesizeReportV3(trace, dateStr, model);
-  const items = parseAiReportToRecommendationsV3(report, dateStr);
+  let report = await synthesizeReportV3(trace, dateStr, model);
+  let items = parseAiReportToRecommendationsV3(report, dateStr);
+  if (items.length < 3 && companyTechnicalCallCount >= 5 && progScore < 3) {
+    const fallbackItems = buildDeterministicFallbackItemsFromTrace(
+      trace,
+      dateStr,
+      detectedMarketState ?? "trend"
+    );
+    if (fallbackItems.length >= 3) {
+      console.warn(`[v3-orchestrator] run ${runId}: max rounds reached with ${items.length} items after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
+      items = fallbackItems;
+      report = `${report}
+
+---
+Deterministic fallback applied: max rounds ended with fewer than 3 structured recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only.`;
+    }
+  }
   const insufficientFinal = items.length < 3 || companyTechnicalCallCount < 5;
   const result: AiRecommendationV3RunResult = {
     runId,
