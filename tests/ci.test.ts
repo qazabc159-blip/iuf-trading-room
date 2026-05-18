@@ -196,6 +196,14 @@ import {
   retryContentDraftReview,
   type RetryReviewResult,
 } from "../apps/api/src/admin-content-drafts-retry-review.ts";
+import {
+  cleanupOrphanContentDrafts,
+  type CleanupOrphanResult,
+} from "../apps/api/src/admin-content-drafts-cleanup-orphan.ts";
+import {
+  applyThemeManualUpdate,
+  type ThemeManualUpdateResult,
+} from "../apps/api/src/admin-themes-manual-update.ts";
 
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
@@ -12644,6 +12652,91 @@ test("AI-REC-V3-5: entry/TP/SL fields parsed from structured markdown with R-rat
   assert.equal(item.subScores!.theme, 19, "AI-REC-V3-5: theme score must be 19");
   assert.equal(item.subScores!.valuation, 5, "AI-REC-V3-5: valuation score must be 5");
   assert.ok(item.totalScore !== undefined && item.totalScore! >= 85, `AI-REC-V3-5: totalScore must be >= 85 for A+, got ${item.totalScore}`);
+});
+
+// =============================================================================
+// ORPHAN-CLEANUP: admin content-drafts/cleanup-orphan (Bruce P0 — 2026-05-18)
+// =============================================================================
+
+test("ORPHAN-CLEANUP-1: cleanupOrphanContentDrafts dryRun=true lists orphans (non-DB mode returns empty)", async () => {
+  const result: CleanupOrphanResult = await cleanupOrphanContentDrafts(
+    "ws-test-00000000-0000-0000-0000-000000000000",
+    { dryRun: true }
+  );
+  // In non-DB mode isDatabaseMode()=false → returns empty result, no errors
+  assert.equal(result.dryRun, true, "ORPHAN-CLEANUP-1: dryRun must be reflected");
+  assert.equal(result.scanned, 0, "ORPHAN-CLEANUP-1: scanned must be 0 in non-DB mode");
+  assert.ok(Array.isArray(result.orphans), "ORPHAN-CLEANUP-1: orphans must be an array");
+  assert.equal(result.orphans.length, 0, "ORPHAN-CLEANUP-1: orphans must be empty in non-DB mode");
+  assert.equal(result.deleted, 0, "ORPHAN-CLEANUP-1: deleted must be 0 in dryRun");
+});
+
+test("ORPHAN-CLEANUP-2: cleanupOrphanContentDrafts dryRun=false returns deleted=0 in non-DB mode", async () => {
+  const result: CleanupOrphanResult = await cleanupOrphanContentDrafts(
+    "ws-test-00000000-0000-0000-0000-000000000000",
+    { dryRun: false, draftId: "e6d33da2-e9c4-41fd-885f-fed4c37d7380" }
+  );
+  // Non-DB mode: no-op, dryRun=false in result is irrelevant but deleted stays 0
+  assert.equal(result.deleted, 0, "ORPHAN-CLEANUP-2: deleted must be 0 in non-DB mode");
+  assert.equal(result.scanned, 0, "ORPHAN-CLEANUP-2: scanned must be 0 in non-DB mode");
+  assert.ok(!result.errors.includes("db_unavailable") || result.errors.length === 0,
+    "ORPHAN-CLEANUP-2: non-DB mode should not report db_unavailable error (no DB expected)");
+});
+
+// =============================================================================
+// THEME-MANUAL-UPDATE: admin themes/manual-update (Bruce P0 — 2026-05-18)
+// =============================================================================
+
+test("THEME-MANUAL-UPDATE-1: applyThemeManualUpdate writes valid UTF-8 in non-DB mode (returns not_database_mode)", async () => {
+  const result: ThemeManualUpdateResult = await applyThemeManualUpdate(
+    "ws-test-00000000-0000-0000-0000-000000000000",
+    {
+      themeKey: "5g",
+      name: "5G 通訊",
+      thesis: "5G 基礎建設進入規模部署階段，台灣供應鏈掌握射頻元件、天線模組及網通設備核心產能。",
+      whyNow: "美系電信商 CapEx 上修，短期出貨急單效應明顯。",
+      bottleneck: "PA/RF 元件料況偏緊；Open RAN 軟體整合工期不確定。"
+    }
+  );
+  // Non-DB mode: returns error=not_database_mode, ok=false
+  assert.equal(result.ok, false, "THEME-MANUAL-UPDATE-1: ok must be false in non-DB mode");
+  assert.equal(result.error, "not_database_mode", "THEME-MANUAL-UPDATE-1: error must be not_database_mode");
+  assert.equal(result.themeKey, "5g", "THEME-MANUAL-UPDATE-1: themeKey must be echoed back");
+});
+
+test("THEME-MANUAL-UPDATE-2: handleAdminThemesManualUpdate rejects non-Owner session", async () => {
+  const { handleAdminThemesManualUpdate } = await import("../apps/api/src/admin-themes-manual-update.js") as
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any;
+
+  // Non-Owner session (role=Analyst)
+  const mockSession = {
+    user: { id: "user-1", name: "Test", email: "test@test.com", role: "Analyst" },
+    workspace: { id: "ws-1", slug: "test-ws" }
+  };
+  let capturedStatus = 200;
+  let capturedData: unknown = null;
+  const mockContext = {
+    get: (key: string) => key === "session" ? mockSession : undefined,
+    req: {
+      json: async () => ({
+        themeKey: "low_orbit_satellite",
+        name: "低軌衛星",
+        thesis: "LEO 星系快速擴軌帶動地面終端需求。"
+      })
+    },
+    json: (data: unknown, status?: number) => {
+      capturedData = data;
+      capturedStatus = status ?? 200;
+      return { _data: data, _status: capturedStatus };
+    }
+  };
+
+  await handleAdminThemesManualUpdate(mockContext);
+
+  assert.equal(capturedStatus, 403, "THEME-MANUAL-UPDATE-2: non-Owner must receive 403");
+  const body = capturedData as { error: string };
+  assert.equal(body.error, "OWNER_ONLY", "THEME-MANUAL-UPDATE-2: error must be OWNER_ONLY");
 });
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
