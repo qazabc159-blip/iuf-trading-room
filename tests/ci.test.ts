@@ -12255,18 +12255,12 @@ test("REC-LOWER-THRESHOLD-3: FAIL gate always → 高風險排除 regardless of 
 // =============================================================================
 
 test("MARKET-CRON-1: GET /api/v1/admin/market/refresh-status returns 403 for non-Owner", async () => {
-  const { buildTestApp } = await import("../apps/api/src/server.js" as any);
-  // The endpoint is Owner-only. Verify the guard fires for non-Owner roles.
-  // We test the route directly by constructing a minimal request.
-  // Since buildTestApp may not be exported, test the auth guard logic inline.
-
-  // Import session helper used in tests
-  const { createDefaultTestSession } = await import("./setup-test-env.mjs" as any).catch(() => ({ createDefaultTestSession: null }));
-
-  // Simple guard verification: confirm endpoint exists and is protected
-  // (full HTTP test requires running server — skip here, focus on unit coverage)
-  // The endpoint is registered at compile time — check it doesn't throw on import
-  assert.ok(true, "MARKET-CRON-1: endpoint registered without import error");
+  // Do not import apps/api/src/server.ts here: that module starts the HTTP listener
+  // at top level, which can collide with earlier CI tests already using port 3001.
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile(path.resolve(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(source, /app\.get\("\/api\/v1\/admin\/market\/refresh-status"/);
+  assert.match(source, /OWNER_ONLY/);
 });
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
