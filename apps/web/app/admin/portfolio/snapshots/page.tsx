@@ -2,6 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 
+import {
+  PORTFOLIO_SNAPSHOT_DIFF_ENDPOINT,
+  portfolioSnapshotStateCopy,
+  type PortfolioSnapshotPhase,
+} from "@/lib/portfolio-snapshot-state";
+
 const CSS = `
   ._snap-shell {
     display: grid;
@@ -139,6 +145,46 @@ const CSS = `
     color: rgba(255,184,0,0.8);
     margin-bottom: 10px;
   }
+  ._snap-state-note {
+    padding: 12px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.7;
+    margin-bottom: 10px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.035);
+  }
+  ._snap-state-note.live {
+    border-color: rgba(76,175,80,0.28);
+    background: rgba(76,175,80,0.08);
+  }
+  ._snap-state-note.empty,
+  ._snap-state-note.loading {
+    border-color: rgba(255,184,0,0.24);
+    background: rgba(255,184,0,0.06);
+  }
+  ._snap-state-note.blocked {
+    border-color: rgba(239,83,80,0.32);
+    background: rgba(239,83,80,0.08);
+  }
+  ._snap-state-note strong {
+    display: block;
+    color: #ffb800;
+    margin-bottom: 4px;
+  }
+  ._snap-state-note dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 2px 10px;
+    margin: 8px 0 0;
+  }
+  ._snap-state-note dt {
+    color: rgba(255,255,255,0.42);
+  }
+  ._snap-state-note dd {
+    margin: 0;
+    color: rgba(255,255,255,0.72);
+  }
 `;
 
 type SnapshotEntry = {
@@ -181,7 +227,8 @@ async function apiFetch<T>(path: string): Promise<T> {
 export default function PortfolioSnapshotsPage() {
   const [snapshots, setSnapshots] = useState<SnapshotEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [phase, setPhase] = useState<"ok" | "pending" | "error">("ok");
+  const [phase, setPhase] = useState<PortfolioSnapshotPhase>("loading");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<SnapshotEntry | null>(null);
   const [diffFrom, setDiffFrom] = useState("");
@@ -193,19 +240,22 @@ export default function PortfolioSnapshotsPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setPhase("loading");
+    setLoadError(null);
     apiFetch<{ snapshots: SnapshotEntry[]; nextCursor: string | null }>("/api/v1/portfolio/snapshots?limit=20")
       .then((d) => {
         if (!cancelled) {
-          setSnapshots(d.snapshots ?? []);
+          const nextSnapshots = d.snapshots ?? [];
+          setSnapshots(nextSnapshots);
           setLoading(false);
-          setPhase("ok");
+          setPhase(nextSnapshots.length > 0 ? "live" : "empty");
         }
       })
       .catch((err: Error) => {
         if (!cancelled) {
           setLoading(false);
-          // 404 or 500 → likely Phase A migration pending
-          setPhase(err.message === "404" ? "pending" : "error");
+          setLoadError(err.message);
+          setPhase("blocked");
         }
       });
     return () => { cancelled = true; };
@@ -223,6 +273,8 @@ export default function PortfolioSnapshotsPage() {
       .catch((err: Error) => { if (!cancelled) { setDiffError(err.message); setDiffLoading(false); } });
     return () => { cancelled = true; };
   }, [diffFrom, diffTo]);
+
+  const snapshotState = portfolioSnapshotStateCopy({ phase, count: snapshots.length, error: loadError });
 
   return (
     <>
@@ -243,11 +295,18 @@ export default function PortfolioSnapshotsPage() {
           Trading-as-Git — 每次部位變動建立快照；可查看任意兩版本間的 diff；read-only 瀏覽。
         </div>
 
-        {phase === "pending" && (
-          <div className="_snap-phase-note">
-            Phase A DB migration (0037) 尚待 apply — 等楊董 14:00 執行 migration 後端點自動可用。PR #645 merged 後 Bruce deploy。
-          </div>
-        )}
+        <div className={`_snap-state-note ${snapshotState.tone}`} role={snapshotState.tone === "blocked" ? "alert" : "status"}>
+          <strong>{snapshotState.title}</strong>
+          <span>{snapshotState.detail}</span>
+          <dl>
+            <dt>Endpoint</dt>
+            <dd>{snapshotState.endpoint}</dd>
+            <dt>Owner</dt>
+            <dd>{snapshotState.owner}</dd>
+            <dt>Next</dt>
+            <dd>{snapshotState.nextAction}</dd>
+          </dl>
+        </div>
 
         <div className="_snap-shell">
           {/* Sidebar: snapshot list */}
@@ -257,13 +316,15 @@ export default function PortfolioSnapshotsPage() {
               <span>{snapshots.length} 個</span>
             </div>
             {loading && <div className="_snap-empty">載入中…</div>}
-            {!loading && phase !== "ok" && (
+            {!loading && phase === "blocked" && (
               <div className="_snap-empty">
-                {phase === "pending" ? "等 DB migration apply" : "資料同步中"}
+                讀取失敗：{loadError ?? "unknown"}。請看上方資料源狀態。
               </div>
             )}
-            {!loading && phase === "ok" && snapshots.length === 0 && (
-              <div className="_snap-empty">尚無快照紀錄</div>
+            {!loading && phase === "empty" && (
+              <div className="_snap-empty">
+                尚無快照紀錄。正式 API 已接上；等待 paper portfolio / orders / fills 或 EOD job 寫入第一筆 snapshot。
+              </div>
             )}
             {snapshots.map((s) => (
               <div
@@ -358,7 +419,11 @@ export default function PortfolioSnapshotsPage() {
                   {diffLoading ? "比較中…" : "比較"}
                 </button>
               </div>
-              {diffError && <div style={{ padding: "8px 12px", fontSize: 11, color: "#ef5350" }}>Diff 失敗：{diffError}</div>}
+              {diffError && (
+                <div style={{ padding: "8px 12px", fontSize: 11, color: "#ef5350" }}>
+                  Diff 失敗：{diffError}。Endpoint：{PORTFOLIO_SNAPSHOT_DIFF_ENDPOINT}；請確認 from/to snapshot ID 存在。
+                </div>
+              )}
               {diff && (
                 <table className="_snap-table" style={{ marginTop: 8 }}>
                   <thead>
