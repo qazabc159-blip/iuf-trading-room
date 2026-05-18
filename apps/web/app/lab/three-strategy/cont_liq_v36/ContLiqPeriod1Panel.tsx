@@ -18,6 +18,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+import { formatMobileKgiBlockedReason } from "../../../m/mobile-kgi-copy";
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface HoldingEntryInput {
@@ -376,11 +378,12 @@ async function fetchLatestPrice(ticker: string): Promise<LiveQuote> {
       cache: "no-store",
     });
     if (!res.ok) {
+      const txt = await res.text().catch(() => res.statusText);
       return {
         price: null,
         quoteTime: null,
         state: "blocked",
-        reason: `HTTP ${res.status}`,
+        reason: formatMobileKgiBlockedReason(res.status, txt),
       };
     }
     const body = (await res.json()) as {

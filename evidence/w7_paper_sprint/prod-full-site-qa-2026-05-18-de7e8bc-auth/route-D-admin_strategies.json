@@ -1,0 +1,19 @@
+{
+  "viewport": "D",
+  "name": "admin_strategies",
+  "route": "/admin/strategies",
+  "href": "https://app.eycvector.com/admin/strategies",
+  "path": "/admin/strategies",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 3296,
+  "mainLen": 3027,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\nQuant Lab — Strategy Lanes\nGround truth: Codex S1 state 2026-05-18 11:29 TST  ·  Owner-only\nQuant Lab 目前僅推進 S1。S1 owner-review packet 已建置完畢，Bruce 10/10 attest PASS， 但所有 broker / order / capital permissions 仍為 false，尚未取得楊董 review。 Old cont_liq v36 top4 仍獨立追蹤並 C04 FAIL。Class5 v3/v4 為 phantom / research-paused， 任何來自 5/15 MEMORY 的描述均不可引用為已驗證 shipped evidence。\nACTIVE LANES (3)\nSTRATEGY ID\niuf_ls_omni_v1_router\nS1 iuf_ls_omni_v1_router\nOWNER-REVIEW PACKET\n品質鎖 CHECKLIST\n10/10\nLast update: 2026/5/18 11:29:00\n全部 PERMISSIONS = FALSE\n✗ broker / order\n✗ registry state\n✗ capital use\n✗ live-ready\n✗ paper-ready\n10M SIM owner-review packet",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": false,
+  "bad": [],
+  "errors": [],
+  "severity": 0
+}

@@ -1,0 +1,19 @@
+{
+  "viewport": "D",
+  "name": "lab_three_strategy",
+  "route": "/lab/three-strategy",
+  "href": "https://app.eycvector.com/lab/three-strategy",
+  "path": "/lab/three-strategy",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 2461,
+  "mainLen": 2192,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n策略\n量化研究 / 三條策略狀態\nAthena truth board v1 / 邊跑邊修\n台北 / 2026/5/18 18:46:47\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n本頁顯示 IUF Quant Lab 三條策略的真實治理狀態。所有 caveat 全文顯示，不截斷。不顯示已驗證、approved、可上線或任何背書字樣。\nStage 1 live wiring 完成（2026-05-09）— 等 Athena Stage 1 contract ship 後將自動同步 caveat_verdicts 欄位。 Stage 2（equity curve / monthly bar / Sharpe / win rate / sample trades）pending Athena schema ship。\n資料層：lab snapshot endpoint 未回應或回傳 ok=false。顯示 Athena 5/9 morning fallback 資料。\n重要聲明 — 此頁為邊跑邊修狀態\n以下策略均為 研究狀態，尚未進入任何交易流程。無策略通過完整驗證。不顯示任何勝率、報酬率或配置建議。\n狀態來源 / athena_morning_5_9_chat_update · 2026-05-09 · 下次更新 / Athena 發布新 truth board 時\n9/9 PASS\ncont_liquidity_relat",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": false,
+  "bad": [],
+  "errors": [],
+  "severity": 0
+}

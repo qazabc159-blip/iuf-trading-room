@@ -1,0 +1,37 @@
+{
+  "viewport": "D",
+  "name": "companies_2330",
+  "route": "/companies/2330",
+  "href": "https://app.eycvector.com/companies/2330",
+  "path": "/companies/2330",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 4768,
+  "mainLen": 4499,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n03-2330\n2330\n台積電 / 上市\n台北 / 2026/5/18 18:46:39\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n公司板 / 2330 / 半導體 / 核心受惠\n台股目前盤後或週末休市，顯示 05/18 (一) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n← 返回公司列表\n2330\n台積電\n上市\n核心受惠\n等待報價\n半導體 / Apple / EUV / NVIDIA / 矽晶圓 / 更新 05/18 18:46 / 即時報價加入觀察清單可看即時報價\n最新價\n2,240.0\nTWD\n漲跌幅\n-1.10%\n-25.00\n成交量\n2818萬\n股 / 張\n開盤\n2,225.0\n今日\n最高\n2,260.0\n今日\n最低\n2,215.0\n今日\n動能\n略弱\n本益比\n30.1\n倍\n殖利率\n0.98\n%\n月營收\n4107.3億\n最新月\nK線 / K 線圖\n日線、週線、月線與 FinMind 分 K；右側價格軸可直接讀價。\nFinMind / TEJ\n2330\n指標\n均線\nMA5\nMA10\nMA20\nMA60\nRSI\nMACD\n最新收盤\n2,240\n2026-05-18\n漲跌\n-25.00 / -1.10%\n前值 2,265\n區間高低\n2,345 / 495.04\n日K 顯示範圍\n成交量\n28,182,937\n727 根K 線\n日線\n日K\n週K\n月K\n分K\n1分\n5分\n15分\n60分\n範圍\n3月\n6月\n1年\n",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": false,
+  "bad": [
+    {
+      "status": 503,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/bidask?symbol=2330"
+    },
+    {
+      "status": 503,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=20"
+    }
+  ],
+  "errors": [
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    },
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    }
+  ],
+  "severity": 4
+}

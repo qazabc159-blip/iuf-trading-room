@@ -1,0 +1,19 @@
+{
+  "viewport": "D",
+  "name": "ai_recommendations",
+  "route": "/ai-recommendations",
+  "href": "https://app.eycvector.com/ai-recommendations",
+  "path": "/ai-recommendations",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 3361,
+  "mainLen": 3092,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\nAI 推薦\nAI 推薦\nRecommendation Orchestrator\n台北 / 2026/5/18 18:46:20\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。\n台股目前盤後或週末休市，顯示 05/18 (一) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n市場狀態分數等待 v3 後端接入，現在只顯示推薦清單與資料品質。\n策略執行紀錄\n訊號中心\nAI 推薦 / 推薦清單\n交易日 2026-05-18 / 產生時間 05/18 18:46 / 正式推薦\n4 檔\n80+\n積極觀察\n1 檔\n70-79\n觀察名單\n3 檔\n60-69\n小量追蹤\n0 檔\n<60\n暫不進場\n0 檔\nMISSING\n資料不足\n0 檔\n積極觀察\n1 檔\n#1\n3707漢磊\n積極觀察\n中性\n中期觀察\n總分\n76\n信心\n57%\nWATCH\nQuant 80\ncont_liq_v36\n\nAI 推薦只做研究與 SIM 演練，不代表實單建議。\n\n進場區間\n參考技術面支撐帶\n\ncont_liq_v36 研究候選，未達進場建議，請參考個股技術面\n\n失效條件 / 停損\n-\n\nforward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新\n\n部位建議\n標準部位\n\n單筆最大風險 1%\n\nTP1\n-\n待 forwar",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": false,
+  "bad": [],
+  "errors": [],
+  "severity": 0
+}

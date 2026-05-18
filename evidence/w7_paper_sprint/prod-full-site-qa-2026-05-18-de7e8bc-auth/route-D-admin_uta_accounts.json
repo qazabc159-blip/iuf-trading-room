@@ -1,0 +1,19 @@
+{
+  "viewport": "D",
+  "name": "admin_uta_accounts",
+  "route": "/admin/uta/accounts",
+  "href": "https://app.eycvector.com/admin/uta/accounts",
+  "path": "/admin/uta/accounts",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 905,
+  "mainLen": 636,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n管理\nUTA 帳號管理\nOpenAlice Phase A / 唯讀\n台北 / 2026/5/18 18:47:30\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\nBroker Adapter 登錄 / 跨 broker 委託總覽 — Owner only。Phase A 僅讀，不提供正式委託操作入口。\n正常\n端點狀態\n2\nBROKER ADAPTER\n0\n近期委託\n0\nSIM 委託\n管理 / Broker Adapter 登錄\n2 個\nADAPTER_KEY\t名稱\t能力\t狀態\nkgi\t凱基證券 (KGI)\t\n零股\n融資\n融券\nSIM\n訂閱 ≤40\n\t啟用\npaper\tPaper Trading\t\n零股\n融資\n融券\nSIM\n訂閱 ≤9999\n\t啟用\n管理 / Broker 帳號\nPhase A — 未開放建立\nPhase A\nPhase A 無帳號建立 UI — broker credentials 需 Yang 在後台設定。\nPhase B 計畫：Credential Vault (KMS 加密) + 多帳號聚合 + cross-broker routing。 Phase A 僅 read-only adapter 瀏覽。楊董設好 broker creds 後，帳號會自動出現在委託記錄。\n管理 / 跨 Broker 委託記錄（近 50 筆）\n0 筆\n時間\tBROKER\tTICKER\t方向\t數量\t單位\t限價\t狀態\t安全模式\n尚",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": false,
+  "bad": [],
+  "errors": [],
+  "severity": 0
+}

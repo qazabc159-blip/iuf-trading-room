@@ -1,0 +1,19 @@
+{
+  "viewport": "D",
+  "name": "admin_brain_llm",
+  "route": "/admin/brain/llm",
+  "href": "https://app.eycvector.com/admin/brain/llm",
+  "path": "/admin/brain/llm",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 4943,
+  "mainLen": 4674,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n管理\nBrain LLM 費用總覽\nOpenAlice Phase A\n台北 / 2026/5/18 18:47:14\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\nLLM 費用統計 / 模型登錄 / 近期呼叫記錄 — Owner only。費用為估計值，實際帳單以 OpenAI dashboard 為準。\n正常\n端點狀態\n112\n總呼叫\n142.0K\nTOKEN 數\n$0.0335\n估計費用\n2\n模型數\n管理 / 7 日費用摘要\n2026-05-11 → 2026-05-18\n模型\t呼叫\tTOKEN\t費用\ngpt-4o-mini\t110\t139.4K\t$0.0267\ngpt-4.1\t2\t2.6K\t$0.0069\n按模組分類\n模組\t呼叫\tTOKEN\t費用\nai_rec_v2\t105\t132.6K\t$0.0251\nai_reviewer\t2\t2.8K\t$0.0004\nbrief_writer\t2\t4.0K\t$0.0011\nnews_ai_selector\t1\t0.0K\t$0.0000\nadversarial_reviewer\t2\t2.6K\t$0.0069\ncost_usd is estimated; actual billing: OpenAI dashboard\n管理 / 模型登錄\n5 個模型\nMODELKEY\t供應商\t名稱\t輸入 / 1M TOKEN\t輸出 / 1M TOKEN\t最大 CONTEXT\t啟用\nclaude-3-",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": false,
+  "bad": [],
+  "errors": [],
+  "severity": 0
+}

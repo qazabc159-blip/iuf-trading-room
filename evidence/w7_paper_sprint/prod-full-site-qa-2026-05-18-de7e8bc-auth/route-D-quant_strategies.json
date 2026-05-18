@@ -1,0 +1,19 @@
+{
+  "viewport": "D",
+  "name": "quant_strategies",
+  "route": "/quant-strategies",
+  "href": "https://app.eycvector.com/quant-strategies",
+  "path": "/quant-strategies",
+  "title": "IUF 台股 AI 交易戰情室",
+  "len": 1452,
+  "mainLen": 1183,
+  "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\n量化策略\n量化策略\nAthena 訊號 / SIM-only\n台北 / 2026/5/18 18:46:41\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\nv1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等正式 quant-strategies endpoint 回傳後才顯示數字。\n策略列表\n我的訂閱\nAthena 三策略\nLab 策略清單\n量化策略 / 詳情 / 策略列表\n策略分數、回測風險與 SIM-only 配置。\nSIM 帳戶執行中 / v1 只開放模擬帳戶，不提供正式交易切換。\nLAB SANCTIONED SNAPSHOT\nAthena 候選策略已同步\nv15\n3 candidates\n05/07 00:43\n\n這裡只讀取 Lab governance 釋出的 research-only snapshot；狀態照 Lab 原文保存，不在前端改名成可交易訊號。\n\nMAIN execution rank buffer\n研究候選 / 未進交易流程\nRS 20/60 low drawdown\n研究候選 / 未進交易流程\nContinuous liquidity RS\n研究候選 / 未進交易流程\nCO\n觀察中\n流動強勢延續 v36\n\n短週期量價延續 / 20 個交易日 / 4 檔等權\n\n成交量 5/20 放大 + 20 日相對強度，選前 4 檔並套用流動性門檻。\n\n研究候選 / 未進交易流程\nc",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": false,
+  "bad": [],
+  "errors": [],
+  "severity": 0
+}

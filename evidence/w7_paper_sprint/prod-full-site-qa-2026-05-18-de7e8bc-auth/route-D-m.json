@@ -1,0 +1,45 @@
+{
+  "viewport": "D",
+  "name": "m",
+  "route": "/m",
+  "href": "https://app.eycvector.com/m",
+  "path": "/m",
+  "title": "IUF TR Mobile",
+  "len": 794,
+  "mainLen": 775,
+  "sample": "IUF 交易戰情室\n盤前快覽\n日報 / 主題 / 策略 / 風控\n正常\n10:46:57\nMKT / 盤面資料\nMANUAL\nSIM 檢查通過\n執行模式\n0\n報價總數\n0\n模擬可用\nBRF / 最新日報\n資料過期\n2026-05-15 / 落後 3 天 / 平衡\n這不是今天的日報；等待 OpenAlice 重新產出今日來源追蹤列。\n今日資料狀態\n本簡報依 2026-05-15 可取得的台股資料整理。可用來源：市場總覽資料（1 筆，最新 2026-05-18）。資料不足或過期來源不會被當成投資依據。\nTHM / 主題掃描\n5 筆\nP3 / 5G\n平衡\n5G\n探索 / 核心 0 / 觀察 0\nP3 / ABF 載板\n平衡\nABF 載板\n探索 / 核心 0 / 觀察 0\nP3 / AI 伺服器\n平衡\nAI 伺服器\n探索 / 核心 0 / 觀察 0\nP3 / Apple 供應鏈\n平衡\nApple 供應鏈\n探索 / 核心 0 / 觀察 0\nP3 / CoWoS 先進封裝\n平衡\nCoWoS 先進封裝\n探索 / 核心 0 / 觀察 0\nIDA / 模擬策略想法\n4 筆\n2330\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 28.8 / 信心 +29%\n1514\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%\n1560\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%\n1590\n中性\n缺少 K 線資料\n判斷 阻擋 / 分數 20.7 / 信心 +21%\n報價\n離線 · 18:47:00\n0050\n--\n離線\n{\"error\":\"SY\n2330\n--\n離線\n{\"error\":\"GA\n2454\n--\n離線\n{\"error\":\"GA\n公開資料 · 約 5–15 秒延遲 · 不存 cookie\n快覽\n行動\n風控\n模式\n戰情台\n完整",
+  "overflow": false,
+  "notFound": false,
+  "loadingOnly": false,
+  "replacement": false,
+  "rawError": true,
+  "bad": [
+    {
+      "status": 422,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=0050&limit=1"
+    },
+    {
+      "status": 503,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2454&limit=1"
+    },
+    {
+      "status": 503,
+      "url": "https://api.eycvector.com/api/v1/kgi/quote/ticks?symbol=2330&limit=1"
+    }
+  ],
+  "errors": [
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 422 ()"
+    },
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    },
+    {
+      "type": "log",
+      "text": "Failed to load resource: the server responded with a status of 503 ()"
+    }
+  ],
+  "severity": 10
+}
