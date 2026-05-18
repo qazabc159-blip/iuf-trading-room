@@ -11,9 +11,11 @@ import {
   getStrategyIdeas,
   getTwseMarketHeatmap,
   type CompanyAnnouncement,
+  type MarketIntelAnnouncementsData,
   type MarketInstitutionalLine,
   type MarketInstitutionalSummary,
   type NewsAiItem,
+  type NewsTop10Data,
   type OhlcvBar,
   type TwseIndustryHeatmapTile,
 } from "@/lib/api";
@@ -83,6 +85,69 @@ function inferTopic(text: string) {
   return "all";
 }
 
+function isTwTicker(value?: string | null) {
+  return /^[0-9]{4}[A-Z]?$/.test(String(value ?? "").trim());
+}
+
+function companyHref(symbol?: string | null) {
+  return isTwTicker(symbol) ? `/companies/${encodeURIComponent(String(symbol))}` : "/companies";
+}
+
+function recommendationHref(symbol?: string | null) {
+  return isTwTicker(symbol) ? `/ai-recommendations?symbol=${encodeURIComponent(String(symbol))}` : "/ai-recommendations";
+}
+
+function topicHref(tag?: string | null) {
+  return `/themes?query=${encodeURIComponent(String(tag || "市場情報"))}`;
+}
+
+function marketFeedState(
+  items: Array<{ source?: string; category?: string }>,
+  news: NewsTop10Data | null,
+  announcements: MarketIntelAnnouncementsData | null,
+  newsError: string | null,
+  announcementsError: string | null,
+) {
+  const endpoint = "GET /api/v1/market-intel/news-top10";
+  const annEndpoint = "GET /api/v1/market-intel/announcements?days=30&limit=20&scope=market";
+  const owner = "Jason / Elva";
+  if (items.length > 0) {
+    const source = news?.items?.length ? "AI 精選" : "官方公告 fallback";
+    return {
+      state: news?.items?.length ? "live" : "partial",
+      label: news?.items?.length ? "AI 精選已回傳" : "官方公告 fallback",
+      summary: `顯示 ${items.length} 則 ${source}`,
+      detail: news?.selection_mode === "ai" ? "AI selector 已完成今日篩選。" : "使用正式公告或備援排序；未顯示示意新聞。",
+      endpoint,
+      owner,
+      nextAction: "持續比對 AI 推薦股票、公司頁與主題頁連結。",
+    };
+  }
+
+  const details = [
+    newsError ? `news-top10 error: ${newsError}` : null,
+    announcementsError ? `announcements error: ${announcementsError}` : null,
+    news?.stale_reason ? `stale_reason: ${news.stale_reason}` : null,
+    announcements?.source ? `announcements source: ${announcements.source}` : null,
+  ].filter(Boolean).join("；");
+
+  return {
+    state: "empty",
+    label: "等待正式資料",
+    summary: "目前沒有可呈現的正式 AI 精選市場情報",
+    detail: details || "後端尚未回傳今日 AI 精選或官方公告項目。",
+    endpoint,
+    owner,
+    nextAction: `確認 ${endpoint} 排程、${annEndpoint} sourceState 與 owner-session 權限；前端不顯示示意新聞。`,
+  };
+}
+
+function settledErrorLabel<T>(result: Settled<T>) {
+  if (result.status === "fulfilled") return null;
+  const reason = result.reason;
+  return reason instanceof Error ? reason.message : String(reason ?? "unknown_error");
+}
+
 function mapNewsItem(item: NewsAiItem, index: number) {
   const title = item.headline || "市場訊息";
   const tag = item.tags?.[0] ?? item.impact_tier ?? "市場";
@@ -96,6 +161,9 @@ function mapNewsItem(item: NewsAiItem, index: number) {
     age: minutesAgoText(item.date),
     category: inferTopic(`${title} ${tag}`),
     rank: item.rank ?? index + 1,
+    companyHref: companyHref(item.ticker),
+    recommendationHref: recommendationHref(item.ticker),
+    topicHref: topicHref(tag),
   };
 }
 
@@ -112,6 +180,9 @@ function mapAnnouncement(item: CompanyAnnouncement, index: number) {
     age: minutesAgoText(item.date),
     category: inferTopic(`${title} ${tag}`),
     rank: index + 1,
+    companyHref: companyHref(item.ticker),
+    recommendationHref: recommendationHref(item.ticker),
+    topicHref: topicHref(tag),
   };
 }
 
@@ -171,6 +242,8 @@ async function buildMarketIntelPayload() {
   const finMind = finMindResult.status === "fulfilled" ? finMindResult.value.data : null;
   const heatmapRaw = heatmapResult.status === "fulfilled" ? heatmapResult.value : null;
   const institutionalRaw = institutionalResult.status === "fulfilled" ? institutionalResult.value : null;
+  const newsError = settledErrorLabel(newsResult);
+  const announcementsError = settledErrorLabel(announcementsResult);
 
   const heatmapTiles = (heatmapRaw?.data ?? []).map(mapHeatmapTile);
   const institutional = institutionalRaw ? mapInstitutional(institutionalRaw as MarketInstitutionalSummary) : null;
@@ -190,6 +263,7 @@ async function buildMarketIntelPayload() {
   const mopsLive = (announcements?.items?.length ?? 0) > 0 && (announcements?.failures ?? 0) === 0;
   const aiLive = !!news?.items?.length && news.ai_call_success !== false;
   const sourceOkCount = [mopsLive, finMindLive, aiLive].filter(Boolean).length;
+  const feedState = marketFeedState(items, news, announcements, newsError, announcementsError);
 
   return {
     screen: "market-intel" as const,
@@ -209,31 +283,32 @@ async function buildMarketIntelPayload() {
       auto: topicCounts.auto ?? 0,
     },
     items,
+    feedState,
     sources: [
       {
         name: "公開資訊觀測站",
-        label: mopsLive ? "官方公告已回傳" : "目前無可呈現公告",
+        label: mopsLive ? `官方公告已回傳 ${announcements?.items?.length ?? 0} 則` : `Endpoint: GET /api/v1/market-intel/announcements；${announcementsError ? "後端錯誤" : "目前無可呈現公告"}`,
         state: mopsLive ? "ok" : "warn",
         status: mopsLive ? "正常" : "待確認",
         fresh: announcements?.items?.[0]?.date ? minutesAgoText(announcements.items[0].date) : "同步中",
       },
       {
         name: "FinMind 市場資料",
-        label: finMindLive ? "市場資料可用" : "資料源同步中",
+        label: finMindLive ? "Endpoint: GET /api/v1/data-sources/finmind/status 可用" : "Endpoint: GET /api/v1/data-sources/finmind/status 同步中",
         state: finMindLive ? "ok" : "warn",
         status: finMindLive ? "正常" : "同步中",
         fresh: finMind?.updatedAt ? minutesAgoText(finMind.updatedAt) : "同步中",
       },
       {
         name: "AI 精選訊息",
-        label: news?.selection_mode === "ai" ? "已完成今日篩選" : "使用備援排序",
+        label: aiLive ? `Endpoint: ${feedState.endpoint} 已回傳 ${news?.items?.length ?? 0} 則` : `Endpoint: ${feedState.endpoint} 尚無可顯示項目`,
         state: aiLive ? "ok" : "warn",
-        status: aiLive ? "正常" : "備援",
+        status: aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳",
         fresh: news?.as_of ? minutesAgoText(news.as_of) : "同步中",
       },
       {
         name: "主管機關公告",
-        label: "資料欄位待人工確認",
+        label: `Owner: ${feedState.owner}；Next: sourceState / 欄位完整度確認`,
         state: "warn",
         status: "待確認",
         fresh: "排程探測",
@@ -608,6 +683,42 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (/電動車|車用|EV/i.test(text)) return "auto";
     return "all";
   };
+  const isTwTicker = (value) => /^[0-9]{4}[A-Z]?$/.test(String(value || "").trim());
+  const companyHref = (symbol) => isTwTicker(symbol) ? "/companies/" + encodeURIComponent(String(symbol)) : "/companies";
+  const recommendationHref = (symbol) => isTwTicker(symbol) ? "/ai-recommendations?symbol=" + encodeURIComponent(String(symbol)) : "/ai-recommendations";
+  const topicHref = (tag) => "/themes?query=" + encodeURIComponent(String(tag || "市場情報"));
+  const marketFeedState = (items, news, announcements, newsOk, announcementsOk) => {
+    const endpoint = "GET /api/v1/market-intel/news-top10";
+    const annEndpoint = "GET /api/v1/market-intel/announcements?days=30&limit=20&scope=market";
+    const owner = "Jason / Elva";
+    if (items.length > 0) {
+      const source = news?.items?.length ? "AI 精選" : "官方公告 fallback";
+      return {
+        state: news?.items?.length ? "live" : "partial",
+        label: news?.items?.length ? "AI 精選已回傳" : "官方公告 fallback",
+        summary: "顯示 " + items.length + " 則 " + source,
+        detail: news?.selection_mode === "ai" ? "AI selector 已完成今日篩選。" : "使用正式公告或備援排序；未顯示示意新聞。",
+        endpoint,
+        owner,
+        nextAction: "持續比對 AI 推薦股票、公司頁與主題頁連結。"
+      };
+    }
+    const details = [
+      newsOk ? null : "news-top10 未回傳",
+      announcementsOk ? null : "announcements 未回傳",
+      news?.stale_reason ? "stale_reason: " + news.stale_reason : null,
+      announcements?.source ? "announcements source: " + announcements.source : null
+    ].filter(Boolean).join("；");
+    return {
+      state: "empty",
+      label: "等待正式資料",
+      summary: "目前沒有可呈現的正式 AI 精選市場情報",
+      detail: details || "後端尚未回傳今日 AI 精選或官方公告項目。",
+      endpoint,
+      owner,
+      nextAction: "確認 " + endpoint + " 排程、" + annEndpoint + " sourceState 與 owner-session 權限；前端不顯示示意新聞。"
+    };
+  };
   const setText = (sel, value) => { const node = $(sel); if (node) node.textContent = value; };
   const setCount = (label, value) => {
     const stat = $$(".taskhdr .stat").find((node) => node.textContent.includes(label));
@@ -627,7 +738,10 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       why: item.why_matters || item.why || "已列入今日研究清單，需搭配來源狀態與策略想法交叉判讀。",
       age: ago(item.date || item.as_of || item.updatedAt),
       category: topicOf(String(title) + " " + String(tag)),
-      rank: item.rank || index + 1
+      rank: item.rank || index + 1,
+      companyHref: companyHref(item.ticker || item.symbol),
+      recommendationHref: recommendationHref(item.ticker || item.symbol),
+      topicHref: topicHref(tag)
     };
   }
 
@@ -643,7 +757,10 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       why: item.body ? String(item.body).slice(0, 72) : "官方來源已進入今日市場情報，請搭配策略想法做研究判讀。",
       age: ago(item.date || item.updatedAt),
       category: topicOf(String(title) + " " + String(tag)),
-      rank: index + 1
+      rank: index + 1,
+      companyHref: companyHref(item.ticker || item.symbol),
+      recommendationHref: recommendationHref(item.ticker || item.symbol),
+      topicHref: topicHref(tag)
     };
   }
 
@@ -750,6 +867,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const aiLive = !!news?.items?.length && news.ai_call_success !== false;
     const heatmapTiles = clientHeatmapRows(heatmapRaw).map(clientMapHeatmapTile);
     const institutional = clientMapInstitutional(institutionalRaw);
+    const feedState = marketFeedState(items, news, announcements, newsResult.ok, announcementResult.ok);
     return {
       screen: "market-intel",
       generatedAt: new Date().toISOString(),
@@ -762,11 +880,12 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       },
       topicCounts: { all: items.length, ai: counts.ai || 0, semi: counts.semi || 0, fin: counts.fin || 0, auto: counts.auto || 0 },
       items,
+      feedState,
       sources: [
-        { name:"公開資訊觀測站", label:mopsLive ? "官方公告進入市場情報" : "等待今日公告", state:mopsLive ? "ok" : "warn", status:mopsLive ? "正常" : "待確認", fresh: announcements?.items?.[0]?.date ? ago(announcements.items[0].date) : "尚未同步" },
-        { name:"FinMind 市場資料", label:finMindLive ? "法人與市場資料可用" : "資料準備中", state:finMindLive ? "ok" : "warn", status:finMindLive ? "正常" : "待確認", fresh: finMind?.updatedAt ? ago(finMind.updatedAt) : "尚未同步" },
-        { name:"AI 精選訊息", label:aiLive ? "已完成市場篩選" : "等待今日精選", state:aiLive ? "ok" : "warn", status:aiLive ? "正常" : "待確認", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" },
-        { name:"主管機關公告", label:"資料欄位待確認", state:"warn", status:"待確認", fresh:"排程探測" }
+        { name:"公開資訊觀測站", label:mopsLive ? "官方公告進入市場情報 " + (announcements?.items?.length || 0) + " 則" : "Endpoint: GET /api/v1/market-intel/announcements；目前無可呈現公告", state:mopsLive ? "ok" : "warn", status:mopsLive ? "正常" : "待確認", fresh: announcements?.items?.[0]?.date ? ago(announcements.items[0].date) : "尚未同步" },
+        { name:"FinMind 市場資料", label:finMindLive ? "Endpoint: GET /api/v1/data-sources/finmind/status 可用" : "Endpoint: GET /api/v1/data-sources/finmind/status 同步中", state:finMindLive ? "ok" : "warn", status:finMindLive ? "正常" : "待確認", fresh: finMind?.updatedAt ? ago(finMind.updatedAt) : "尚未同步" },
+        { name:"AI 精選訊息", label:aiLive ? "Endpoint: " + feedState.endpoint + " 已回傳 " + (news?.items?.length || 0) + " 則" : "Endpoint: " + feedState.endpoint + " 尚無可顯示項目", state:aiLive ? "ok" : "warn", status:aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" },
+        { name:"主管機關公告", label:"Owner: " + feedState.owner + "；Next: sourceState / 欄位完整度確認", state:"warn", status:"待確認", fresh:"排程探測" }
       ],
       readiness: { coverage: Math.min(100, Math.round(items.length / 12 * 100)), freshness: finMindLive || aiLive ? 90 : 45, reviewQueue: Math.max(0, announcements?.failures || 0) },
       heatmap: heatmapTiles,
@@ -976,6 +1095,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const src = $$(".taskhdr .stat").find((node) => node.textContent.includes("來源正常"));
     if (src) $(".v", src).innerHTML = esc(live.stats?.sourceOk ?? 0) + " <small>/ " + esc(live.stats?.sourceTotal ?? 4) + "</small>";
     const age = $("#age"); if (age) age.textContent = live.stats?.nextRefresh ?? "排程中";
+    window.__IUF_MARKET_AGE_LOCKED__ = true;
     const counts = live.topicCounts || {};
     [["all","全部"],["ai","AI 硬體"],["semi","半導體"],["fin","金融"],["auto","電動車"]].forEach(([key,label]) => {
       const btn = $$("#topicseg button").find((node) => node.textContent.includes(label));
@@ -985,7 +1105,33 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const feed = $("#feed");
     if (feed) {
       const items = live.items || [];
-      feed.innerHTML = items.length ? items.map((item, i) => '<div class="feedrow" style="--i:'+i+'" data-cat="'+esc(item.category || "all")+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="t">'+esc(item.title)+'</div><div class="m"><span>'+esc(item.source)+'</span><span>·</span><span><b>'+esc(item.tag)+'</b></span>'+ (item.name ? '<span>·</span><span>'+esc(item.name)+'</span>' : '') +'</div></div><div class="why"><b>為什麼重要</b>　'+esc(item.why)+'</div><span class="age">'+esc(item.age)+'</span><span class="arr">›</span></div>').join("") : '<div class="feedrow"><div class="body"><div class="t">目前沒有可呈現的正式市場訊息</div><div class="m"><span>資料同步中</span></div></div><div class="why"><b>狀態</b>　後端尚未回傳今日精選，先不顯示示意資料。</div></div>';
+      const feedState = live.feedState || {};
+      feed.removeAttribute("data-static-placeholder");
+      feed.innerHTML = items.length ? items.map((item, i) => {
+        const links = [
+          item.companyHref ? '<a target="_top" href="'+esc(item.companyHref)+'">查看公司</a>' : '',
+          item.topicHref ? '<a target="_top" href="'+esc(item.topicHref)+'">查看主題</a>' : '',
+          item.recommendationHref ? '<a target="_top" href="'+esc(item.recommendationHref)+'">查看推薦</a>' : ''
+        ].filter(Boolean).join('<span>·</span>');
+        return '<div class="feedrow" style="--i:'+i+'" data-cat="'+esc(item.category || "all")+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="t">'+esc(item.title)+'</div><div class="m"><span>'+esc(item.source)+'</span><span>·</span><span><b>'+esc(item.tag)+'</b></span>'+ (item.name ? '<span>·</span><span>'+esc(item.name)+'</span>' : '') + (links ? '<span>·</span>' + links : '') +'</div></div><div class="why"><b>為什麼重要</b>　'+esc(item.why)+'</div><span class="age">'+esc(item.age)+'</span><span class="arr">›</span></div>';
+      }).join("") : '<div class="feedrow" data-cat="all"><span class="sym">DATA</span><div class="body"><div class="t">'+esc(feedState.summary || "目前沒有可呈現的正式 AI 精選市場情報")+'</div><div class="m"><span>Endpoint: '+esc(feedState.endpoint || "GET /api/v1/market-intel/news-top10")+'</span><span>·</span><span>Owner: '+esc(feedState.owner || "Jason / Elva")+'</span></div></div><div class="why"><b>下一步</b>　'+esc(feedState.nextAction || "確認 news-top10 排程與 owner-session 權限；前端不顯示示意資料。")+'</div><span class="age">EMPTY</span><span class="arr">›</span></div>';
+    }
+    const feedState = live.feedState || {};
+    const feedPill = $("#market-feed-state-pill");
+    if (feedPill) {
+      const ok = (live.items || []).length > 0;
+      feedPill.className = "pill " + (ok ? "ok" : "warn");
+      feedPill.innerHTML = "<i></i>" + esc(feedState.label || (ok ? "正式資料已回傳" : "等待正式資料"));
+    }
+    const feedSummary = $("#market-feed-summary");
+    if (feedSummary) {
+      feedSummary.innerHTML = '<span>'+esc(feedState.summary || "等待正式資料源")+'</span><span>·</span><span>'+esc(feedState.detail || "不顯示示意新聞")+'</span>';
+    }
+    const feedback = $("#fbk span");
+    if (feedback) {
+      feedback.innerHTML = (live.items || []).length
+        ? esc(feedState.detail || "正式資料已回傳；每則情報提供來源、為什麼重要與下一步 CTA。")
+        : '目前 <b>沒有正式 AI 精選市場情報</b>。Endpoint: '+esc(feedState.endpoint || "GET /api/v1/market-intel/news-top10")+'；Owner: '+esc(feedState.owner || "Jason / Elva")+'；Next: '+esc(feedState.nextAction || "確認排程與 owner-session 權限")+'。';
     }
     const list = $(".srclist");
     if (list) {
