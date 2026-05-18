@@ -1,0 +1,31 @@
+{
+  "verifiedUrl": "http://127.0.0.1:3127/ai-recommendations?codexPrA=frontend-gate-20260519-r2",
+  "initialDocumentStatus": 200,
+  "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_pr_a_ai_rec_v3_frontend_gate_20260519\\evidence\\w7_paper_sprint\\p0-pr-a-ai-rec-v3-frontend-gate-2026-05-19\\local-ai-recommendations-v3-gate-playwright.png",
+  "missingText": [],
+  "consoleMessages": [
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    }
+  ],
+  "pageErrors": [],
+  "failedRequests": [],
+  "badResponses": [],
+  "responseSummary": {
+    "httpStatus": 200,
+    "status": "synthesis_format_error",
+    "itemCount": 5,
+    "usedFallback": true,
+    "fullAiReportParsed": false,
+    "synthesisRetryUsed": false,
+    "synthesisFallbackUsed": true
+  },
+  "consoleErrorCount": 1,
+  "networkFailureCount": 0,
+  "badResponseCount": 0
+}

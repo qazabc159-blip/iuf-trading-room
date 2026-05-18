@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildV3PanelState,
+  getOfficialAnnouncementSourceState,
   getV3MarketScores,
   mapV3ItemToStockRecCard,
   mapV3TraceSteps,
@@ -32,8 +33,17 @@ describe("AI recommendations v3 view mapping", () => {
       stopLossStructured: { price: 790 },
       r_ratio: 2.1,
       position_sizing: { nav_pct: 0.004, market_multiplier: 1 },
-      why_buy: ["技術結構轉強", "主題與法人同步"],
-      why_not_buy: ["跳空過熱須等回檔"],
+      why_buy: ["技術結構仍在多方", "題材與量能同步"],
+      why_not_buy: ["盤中跌破支撐要降風險"],
+      source: "brain_react_v2",
+    }, {
+      status: "complete",
+      itemCount: 1,
+      fullAiReportParsed: true,
+      synthesisRetryUsed: false,
+      synthesisFallbackUsed: false,
+      usedFallback: false,
+      officialAnnouncementSourceState: { state: "live", lastUpdated: "2026-05-19T01:00:00Z" },
     });
 
     expect(card).toMatchObject({
@@ -44,16 +54,25 @@ describe("AI recommendations v3 view mapping", () => {
       entry: { ote_low: 820, ote_high: 850, label: "OTE 0.618-0.705" },
       targets: { tp1: 900, tp2: 960, sl: 790, r_value: 2.1 },
       market_multiplier: 1,
+      source: "brain_react_v2",
     });
     expect(card?.sub_scores?.total).toBe(74);
-    expect(card?.why_buy).toContain("技術結構轉強");
+    expect(card?.why_buy).toContain("技術結構");
+    expect(card?.risk).toContain("盤中跌破支撐");
+    expect(card?.synthesisFlags).toMatchObject({
+      fullAiReportParsed: true,
+      synthesisRetryUsed: false,
+      synthesisFallbackUsed: false,
+      usedFallback: false,
+    });
+    expect(card?.officialAnnouncementSourceState?.state).toBe("live");
   });
 
   it("returns null instead of fabricating a card when ticker is absent", () => {
     expect(mapV3ItemToStockRecCard({ ticker: "" })).toBeNull();
   });
 
-  it("localizes deterministic fallback narratives instead of exposing English backend copy", () => {
+  it("localizes deterministic fallback narratives instead of exposing raw English backend copy", () => {
     const card = mapV3ItemToStockRecCard({
       ticker: "2059",
       companyName: "川湖",
@@ -68,12 +87,64 @@ describe("AI recommendations v3 view mapping", () => {
       ],
     });
 
-    expect(card?.entry?.label).toContain("程式化回檔區間");
-    expect(card?.why_buy).toContain("技術資料已由 get_company_technical 驗證可用");
-    expect(card?.why_buy).toContain("股價站上 MA20");
-    expect(card?.why_not_buy).toContain("僅視為研究候選");
-    expect(card?.why_not_buy).not.toContain("deterministic fallback");
-    expect(card?.why_not_buy).not.toContain("fallback");
+    expect(card?.entry?.label).toContain("fallback 進場區間");
+    expect(card?.why_buy).toContain("get_company_technical 已回傳可驗證技術資料");
+    expect(card?.why_buy).toContain("價格站上 MA20");
+    expect(card?.risk).toContain("完整 AI 敘事恢復健康前");
+  });
+
+  it("marks non-complete five-card fallback responses as degraded instead of live", () => {
+    const state = buildV3PanelState({
+      data: {
+        status: "synthesis_format_error",
+        itemCount: 5,
+        items: Array.from({ length: 5 }, (_, index) => ({ ticker: `23${index}` })),
+        usedFallback: true,
+        fullAiReportParsed: false,
+        synthesisRetryUsed: false,
+        synthesisFallbackUsed: true,
+      },
+      error: null,
+      visibleCount: 5,
+    });
+
+    expect(state.tone).toBe("degraded");
+    expect(state.label).toBe("DEGRADED");
+    expect(state.title).toContain("not complete");
+    expect(state.detail).toContain("status=synthesis_format_error");
+    expect(state.detail).toContain("itemCount=5");
+    expect(state.detail).toContain("usedFallback=true");
+    expect(state.detail).toContain("fullAiReportParsed=false");
+  });
+
+  it("shows an explicit pending state instead of padding when itemCount is under five", () => {
+    const state = buildV3PanelState({
+      data: {
+        status: "complete",
+        itemCount: 3,
+        items: [{ ticker: "2330" }, { ticker: "2317" }, { ticker: "2603" }],
+        usedFallback: false,
+        fullAiReportParsed: true,
+      },
+      error: null,
+      visibleCount: 3,
+    });
+
+    expect(state.tone).toBe("degraded");
+    expect(state.detail).toContain("itemCount=3");
+    expect(state.detail).toContain("not padding");
+  });
+
+  it("derives official announcement source state or exposes the missing backend field", () => {
+    expect(getOfficialAnnouncementSourceState({
+      officialAnnouncementSourceState: { state: "live", owner: "Jason" },
+    })).toMatchObject({ label: "官方公告 source state", state: "live", owner: "Jason" });
+
+    expect(getOfficialAnnouncementSourceState({ status: "complete", items: [] })).toMatchObject({
+      label: "官方公告 source state",
+      state: "pending",
+      owner: "Jason/Elva",
+    });
   });
 
   it("derives the market state badge scores from the first scored item", () => {
@@ -90,14 +161,16 @@ describe("AI recommendations v3 view mapping", () => {
     });
   });
 
-  it("maps ReAct trace safely and ignores malformed rows", () => {
+  it("maps ReAct trace safely and includes source state observations", () => {
     const steps = mapV3TraceSteps([
-      { step: 1, label: "市場狀態", observation: "trend_score=4" },
+      { step: 1, label: "市場狀態", observation: { source: "twse_openapi", sourceState: "live" } },
       { step: 9, label: "bad" },
     ]);
 
     expect(steps).toHaveLength(1);
     expect(steps?.[0]).toMatchObject({ step: 1, label: "市場狀態" });
+    expect(steps?.[0]?.observation).toContain("source=twse_openapi");
+    expect(steps?.[0]?.observation).toContain("sourceState=live");
   });
 
   it("renders a blocked state without stale PR next-action copy", () => {
@@ -109,18 +182,25 @@ describe("AI recommendations v3 view mapping", () => {
 
     expect(state.tone).toBe("blocked");
     expect(state.endpoint).toBe("GET /api/v1/ai-recommendations/v3");
-    expect(state.nextAction).toContain("owner-session");
+    expect(state.nextAction).toContain("owner session");
     expect(state.nextAction).not.toContain("#703");
   });
 
-  it("renders a live state only when real backend items are visible", () => {
+  it("renders live only when complete, enough, parsed, and non-fallback", () => {
     const state = buildV3PanelState({
-      data: { status: "complete", items: [{ ticker: "2330" }] },
+      data: {
+        status: "complete",
+        itemCount: 5,
+        items: Array.from({ length: 5 }, (_, index) => ({ ticker: `23${index}` })),
+        usedFallback: false,
+        fullAiReportParsed: true,
+        synthesisFallbackUsed: false,
+      },
       error: null,
-      visibleCount: 1,
+      visibleCount: 5,
     });
 
     expect(state.tone).toBe("live");
-    expect(state.detail).toContain("1 檔正式 v3 推薦");
+    expect(state.detail).toContain("itemCount=5");
   });
 });

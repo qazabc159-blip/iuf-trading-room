@@ -1,32 +1,16 @@
 "use client";
 
-/**
- * StockRecCard — F2
- *
- * Displays a single stock recommendation in the v3 SOP format:
- *   - Header: ticker + company name + bucket badge (A+/A/B/C) + confidence
- *   - 7 sub-score table (楊董 SOP weights)
- *   - Entry zone (OTE format)
- *   - TP1 / TP2 / SL + R value
- *   - Why buy / Why not buy (markdown paragraphs)
- *   - Sizing guidance per bucket
- *
- * Backward-compatible: if v3 sub-scores are absent, shows "-" cells.
- * Does NOT duplicate v2 RecommendationCard — this is additive on top of
- * the existing page.tsx card structure or used standalone.
- */
-
 export type BucketLabel = "A+" | "A" | "B" | "C";
 
 export interface SubScores {
-  theme_position?: number | null;     // /20
-  revenue_earnings?: number | null;   // /15
-  institutional_etf?: number | null;  // /15
-  margin_short?: number | null;       // /15
-  rs_volume?: number | null;          // /10
-  technical_structure?: number | null; // /20
-  valuation_event?: number | null;    // /5
-  total?: number | null;              // /100
+  theme_position?: number | null;
+  revenue_earnings?: number | null;
+  institutional_etf?: number | null;
+  margin_short?: number | null;
+  rs_volume?: number | null;
+  technical_structure?: number | null;
+  valuation_event?: number | null;
+  total?: number | null;
 }
 
 export interface EntryZone {
@@ -42,47 +26,62 @@ export interface PriceTarget {
   r_value?: number | null;
 }
 
+export interface SourceStateSummary {
+  label: string;
+  state: string;
+  detail?: string | null;
+  owner?: string | null;
+  nextAction?: string | null;
+  lastUpdated?: string | null;
+}
+
+export interface SynthesisFlags {
+  fullAiReportParsed?: boolean | null;
+  synthesisRetryUsed?: boolean | null;
+  synthesisFallbackUsed?: boolean | null;
+  usedFallback?: boolean | null;
+}
+
 export interface StockRecCardData {
   ticker: string;
   company_name?: string | null;
   bucket: BucketLabel;
-  confidence?: number | null;         // 0–1
+  confidence?: number | null;
   sub_scores?: SubScores | null;
   entry?: EntryZone | null;
   targets?: PriceTarget | null;
   why_buy?: string | null;
   why_not_buy?: string | null;
-  /** Optional market multiplier already applied */
+  risk?: string | null;
+  source?: string | null;
+  sourceTrail?: string | null;
+  sourceState?: SourceStateSummary | null;
+  officialAnnouncementSourceState?: SourceStateSummary | null;
+  synthesisFlags?: SynthesisFlags | null;
   market_multiplier?: number | null;
 }
-
-// ── Sub-score row definitions (楊董 SOP) ───────────────────────────────────
 
 const SUB_SCORE_ROWS: Array<{
   key: keyof SubScores;
   label: string;
   max: number;
 }> = [
-  { key: "theme_position",     label: "主題位置",   max: 20 },
-  { key: "revenue_earnings",   label: "營收",       max: 15 },
-  { key: "institutional_etf",  label: "法人ETF",    max: 15 },
-  { key: "margin_short",       label: "融資借券",   max: 15 },
-  { key: "rs_volume",          label: "RS量能",     max: 10 },
-  { key: "technical_structure",label: "技術結構",   max: 20 },
-  { key: "valuation_event",    label: "估值事件",   max:  5 },
-  { key: "total",              label: "總分",       max: 100 },
+  { key: "theme_position", label: "題材", max: 20 },
+  { key: "revenue_earnings", label: "營收", max: 15 },
+  { key: "institutional_etf", label: "法人/ETF", max: 15 },
+  { key: "margin_short", label: "籌碼", max: 15 },
+  { key: "rs_volume", label: "RS/量", max: 10 },
+  { key: "technical_structure", label: "技術", max: 20 },
+  { key: "valuation_event", label: "估值/事件", max: 5 },
+  { key: "total", label: "總分", max: 100 },
 ];
 
-// ── Bucket config ────────────────────────────────────────────────────────────
-
-const BUCKET_CONFIG: Record<BucketLabel, { tone: string; nav_pct: string; max_nav: string }> = {
-  "A+": { tone: "ok",    nav_pct: "0.8%",  max_nav: "12%" },
-  "A":  { tone: "ok",    nav_pct: "0.6%",  max_nav: "8%"  },
-  "B":  { tone: "warn",  nav_pct: "0.4%",  max_nav: "5%"  },
-  "C":  { tone: "bad",   nav_pct: "0",     max_nav: "0"   },
+const BUCKET_CONFIG: Record<BucketLabel, { tone: "ok" | "warn" | "bad"; nav_pct: string; max_nav: string }> = {
+  "A+": { tone: "ok", nav_pct: "0.8%", max_nav: "12%" },
+  A: { tone: "ok", nav_pct: "0.6%", max_nav: "8%" },
+  B: { tone: "warn", nav_pct: "0.4%", max_nav: "5%" },
+  C: { tone: "bad", nav_pct: "0", max_nav: "0" },
 };
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtScore(val: number | null | undefined, max: number): string {
   if (val == null) return "-";
@@ -104,33 +103,65 @@ function fmtRValue(val: number | null | undefined): string {
   return `${val.toFixed(2)}R`;
 }
 
-/** Split by \n and render simple paragraph blocks (no dependencies) */
+function fmtBool(val: boolean | null | undefined): string {
+  if (val === true) return "true";
+  if (val === false) return "false";
+  return "missing";
+}
+
+function toneForSourceState(state: string | null | undefined): "ok" | "warn" | "bad" {
+  const normalized = String(state ?? "").toLowerCase();
+  if (normalized === "live" || normalized === "ok" || normalized === "complete") return "ok";
+  if (normalized === "blocked" || normalized === "failed" || normalized === "error") return "bad";
+  return "warn";
+}
+
 function SimpleMarkdown({ text }: { text: string }) {
-  const lines = text.split("\n").filter((l) => l.trim().length > 0);
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
   return (
     <>
-      {lines.map((line, i) => (
-        <p key={i} className="_src-p">{line.replace(/^[-•]\s*/, "")}</p>
+      {lines.map((line, index) => (
+        <p key={`${index}-${line.slice(0, 24)}`} className="_src-p">
+          {line.replace(/^[-*]\s*/, "")}
+        </p>
       ))}
     </>
   );
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+function SourceStateBlock({ source }: { source: SourceStateSummary | null | undefined }) {
+  if (!source) return null;
+  const tone = toneForSourceState(source.state);
+  return (
+    <div className="_src-source-state" data-tone={tone}>
+      <span>
+        <b>{source.label}</b>
+        {source.state || "missing"}
+      </span>
+      {source.detail && <p>{source.detail}</p>}
+      {(source.lastUpdated || source.owner || source.nextAction) && (
+        <small>
+          {source.lastUpdated ? `lastUpdated=${source.lastUpdated}` : null}
+          {source.owner ? `${source.lastUpdated ? " / " : ""}owner=${source.owner}` : null}
+          {source.nextAction ? `${source.lastUpdated || source.owner ? " / " : ""}next=${source.nextAction}` : null}
+        </small>
+      )}
+    </div>
+  );
+}
 
 export function StockRecCard({ rec }: { rec: StockRecCardData }) {
   const bucket = BUCKET_CONFIG[rec.bucket];
   const scores = rec.sub_scores ?? {};
   const entry = rec.entry;
   const targets = rec.targets;
-
-  const entryLabel = (() => {
-    if (entry?.label) return entry.label;
-    if (entry?.ote_low != null && entry?.ote_high != null) {
-      return `OTE 0.618 = ${fmtPrice(entry.ote_low)} / 0.705 = ${fmtPrice(entry.ote_high)}`;
-    }
-    return "待後端 v3 計算";
-  })();
+  const flags = rec.synthesisFlags ?? {};
+  const entryLabel = entry?.label
+    ?? (entry?.ote_low != null && entry?.ote_high != null
+      ? `Entry ${fmtPrice(entry.ote_low)} - ${fmtPrice(entry.ote_high)}`
+      : "後端未回傳 entry range");
+  const sourceTrail = rec.sourceTrail || "後端未回傳 sourceTrail";
+  const riskText = rec.risk || rec.why_not_buy || "後端未回傳 risk/why_not_buy";
 
   return (
     <>
@@ -148,12 +179,8 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
             linear-gradient(135deg, rgba(200, 148, 63, 0.055), transparent 42%),
             rgba(4, 8, 13, 0.42);
         }
-        ._src-card[data-bucket="C"] {
-          border-left-color: rgba(230, 57, 70, 0.68);
-        }
-        ._src-card[data-bucket="A+"] {
-          border-left-color: rgba(46, 204, 113, 0.68);
-        }
+        ._src-card[data-bucket="C"] { border-left-color: rgba(230, 57, 70, 0.68); }
+        ._src-card[data-bucket="A+"] { border-left-color: rgba(46, 204, 113, 0.68); }
         ._src-head {
           display: flex;
           align-items: flex-start;
@@ -170,11 +197,10 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           color: var(--tac-fg-0, #e8edf5);
           font: 850 18px/1.25 var(--sans-tc, sans-serif);
         }
-        ._src-badges {
+        ._src-badges, ._src-flag-grid {
           display: flex;
           flex-wrap: wrap;
           gap: 6px;
-          flex-shrink: 0;
         }
         ._src-badge {
           min-height: 24px;
@@ -189,17 +215,20 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           font: 800 10px/1 var(--sans-tc, sans-serif);
           white-space: nowrap;
         }
-        ._src-badge[data-tone="ok"] {
+        ._src-badge[data-tone="ok"],
+        ._src-source-state[data-tone="ok"] span {
           color: var(--tac-ok, #2ecc71);
           border-color: rgba(46, 204, 113, 0.34);
           background: rgba(46, 204, 113, 0.06);
         }
-        ._src-badge[data-tone="warn"] {
+        ._src-badge[data-tone="warn"],
+        ._src-source-state[data-tone="warn"] span {
           color: var(--tac-warn, #c8943f);
           border-color: rgba(200, 148, 63, 0.34);
           background: rgba(200, 148, 63, 0.06);
         }
-        ._src-badge[data-tone="bad"] {
+        ._src-badge[data-tone="bad"],
+        ._src-source-state[data-tone="bad"] span {
           color: var(--tac-bad, #e63946);
           border-color: rgba(230, 57, 70, 0.34);
           background: rgba(230, 57, 70, 0.06);
@@ -221,7 +250,7 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           white-space: normal;
         }
         ._src-score-table td {
-          padding: 6px 6px;
+          padding: 6px;
           text-align: center;
           color: var(--tac-fg-0, #e8edf5);
           font-size: 12px;
@@ -233,13 +262,15 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           font-weight: 900;
           border-bottom: none;
         }
-        ._src-entry {
-          display: grid;
-          gap: 4px;
+        ._src-entry, ._src-reasoning, ._src-source, ._src-sizing {
           border-top: 1px solid var(--tac-line, rgba(220,228,240,0.14));
           padding-top: 10px;
         }
-        ._src-entry-label {
+        ._src-entry {
+          display: grid;
+          gap: 4px;
+        }
+        ._src-entry-label, ._src-reasoning-head, ._src-source-head {
           color: var(--tac-brand, #c8943f);
           font: 900 10px/1 var(--mono, monospace);
         }
@@ -270,48 +301,70 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           color: var(--tac-fg-0, #e8edf5);
           font: 900 13px/1 var(--mono, monospace);
         }
-        ._src-target-cell small {
-          color: var(--tac-fg-3, #7a8aa0);
-          font-size: 10px;
-        }
-        ._src-reasoning {
+        ._src-reasoning, ._src-source {
           display: grid;
           gap: 10px;
-          border-top: 1px solid var(--tac-line, rgba(220,228,240,0.14));
-          padding-top: 10px;
         }
-        ._src-reasoning-head {
-          color: var(--tac-brand, #c8943f);
-          font: 900 10px/1 var(--mono, monospace);
-          margin-bottom: 4px;
-        }
-        ._src-p {
+        ._src-p, ._src-source p {
           margin: 4px 0 0;
           color: var(--tac-fg-2, #aab5c5);
           font-size: 12px;
           line-height: 1.62;
+          overflow-wrap: anywhere;
+        }
+        ._src-source-code {
+          display: grid;
+          gap: 5px;
+          border: 1px solid rgba(220,228,240,0.12);
+          border-radius: 6px;
+          padding: 9px;
+          background: rgba(8,11,16,0.36);
+          color: var(--tac-fg-2, #aab5c5);
+          font: 800 11px/1.5 var(--mono, monospace);
+          overflow-wrap: anywhere;
+        }
+        ._src-source-code b {
+          color: var(--tac-brand, #c8943f);
+          font-size: 10px;
+        }
+        ._src-source-state {
+          display: grid;
+          gap: 6px;
+        }
+        ._src-source-state span {
+          min-height: 24px;
+          display: inline-flex;
+          width: fit-content;
+          align-items: center;
+          gap: 6px;
+          border: 1px solid var(--tac-line, rgba(220,228,240,0.14));
+          border-radius: 5px;
+          padding: 0 8px;
+          font: 900 10px/1 var(--mono, monospace);
+        }
+        ._src-source-state b {
+          color: var(--tac-fg-0, #e8edf5);
+        }
+        ._src-source-state small {
+          color: var(--tac-fg-3, #7a8aa0);
+          font: 800 10px/1.45 var(--sans-tc, sans-serif);
+          overflow-wrap: anywhere;
         }
         ._src-sizing {
           display: flex;
           align-items: center;
           gap: 8px;
-          border-top: 1px solid var(--tac-line, rgba(220,228,240,0.14));
-          padding-top: 10px;
           color: var(--tac-fg-2, #aab5c5);
           font: 800 11px/1 var(--sans-tc, sans-serif);
         }
-        ._src-sizing b {
-          color: var(--tac-fg-0, #e8edf5);
-        }
-        ._src-sizing-sep {
-          opacity: 0.3;
-        }
+        ._src-sizing b { color: var(--tac-fg-0, #e8edf5); }
+        ._src-sizing-sep { opacity: 0.3; }
         @media (max-width: 680px) {
+          ._src-head { display: grid; }
           ._src-targets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
       `}</style>
       <article className="_src-card" data-bucket={rec.bucket}>
-        {/* Header */}
         <div className="_src-head">
           <div>
             <h3 className="_src-name">
@@ -321,21 +374,16 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           </div>
           <div className="_src-badges">
             <span className="_src-badge" data-tone={bucket.tone}>
-              {rec.bucket} 分層
+              {rec.bucket} 推薦級
             </span>
-            <span className="_src-badge">
-              信心 {fmtConfidence(rec.confidence)}
-            </span>
+            <span className="_src-badge">confidence {fmtConfidence(rec.confidence)}</span>
             {rec.market_multiplier != null && (
-              <span className="_src-badge">
-                市場倍率 ×{rec.market_multiplier}
-              </span>
+              <span className="_src-badge">market x{rec.market_multiplier}</span>
             )}
           </div>
         </div>
 
-        {/* 7 sub-score table */}
-        <table className="_src-score-table">
+        <table className="_src-score-table" aria-label={`${rec.ticker} v3 sub score`}>
           <thead>
             <tr>
               {SUB_SCORE_ROWS.map((row) => (
@@ -346,21 +394,22 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           <tbody>
             <tr>
               {SUB_SCORE_ROWS.map((row) => (
-                <td key={row.key}>
-                  {fmtScore(scores[row.key], row.max)}
-                </td>
+                <td key={row.key}>{fmtScore(scores[row.key], row.max)}</td>
               ))}
             </tr>
           </tbody>
         </table>
 
-        {/* Entry zone */}
         <div className="_src-entry">
-          <div className="_src-entry-label">進場區</div>
-          <div className="_src-entry-val">{entryLabel}</div>
+          <div className="_src-entry-label">ENTRY PRICE RANGE</div>
+          <div className="_src-entry-val">
+            {entry?.ote_low != null && entry?.ote_high != null
+              ? `${fmtPrice(entry.ote_low)} - ${fmtPrice(entry.ote_high)}`
+              : "-"}
+          </div>
+          <p className="_src-p">{entryLabel}</p>
         </div>
 
-        {/* TP1 / TP2 / SL / R */}
         <div className="_src-targets">
           <div className="_src-target-cell">
             <b>TP1</b>
@@ -371,41 +420,64 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
             <span>{fmtPrice(targets?.tp2)}</span>
           </div>
           <div className="_src-target-cell">
-            <b>SL</b>
+            <b>STOP</b>
             <span>{fmtPrice(targets?.sl)}</span>
           </div>
           <div className="_src-target-cell">
-            <b>R 值</b>
+            <b>R</b>
             <span>{fmtRValue(targets?.r_value)}</span>
           </div>
         </div>
 
-        {/* Why buy / Why not buy */}
-        {(rec.why_buy || rec.why_not_buy) && (
-          <div className="_src-reasoning">
-            {rec.why_buy && (
-              <div>
-                <div className="_src-reasoning-head">為什麼買</div>
-                <SimpleMarkdown text={rec.why_buy} />
-              </div>
-            )}
-            {rec.why_not_buy && (
-              <div>
-                <div className="_src-reasoning-head">為什麼不買 (對立面)</div>
-                <SimpleMarkdown text={rec.why_not_buy} />
-              </div>
-            )}
+        <div className="_src-reasoning">
+          <div>
+            <div className="_src-reasoning-head">REASON / RATIONALE</div>
+            {rec.why_buy ? <SimpleMarkdown text={rec.why_buy} /> : <p className="_src-p">後端未回傳 reason/rationale</p>}
           </div>
-        )}
+          <div>
+            <div className="_src-reasoning-head">RISK</div>
+            <SimpleMarkdown text={riskText} />
+          </div>
+        </div>
 
-        {/* Sizing */}
+        <div className="_src-source">
+          <div className="_src-source-head">SOURCE / SOURCE TRAIL / SOURCE STATE</div>
+          <div className="_src-source-code">
+            <b>source</b>
+            <span>{rec.source || "後端未回傳 source"}</span>
+          </div>
+          <div className="_src-source-code">
+            <b>sourceTrail</b>
+            <span>{sourceTrail}</span>
+          </div>
+          <SourceStateBlock source={rec.sourceState} />
+          <SourceStateBlock source={rec.officialAnnouncementSourceState} />
+          <div>
+            <div className="_src-source-head">SYNTHESIS FLAGS</div>
+            <div className="_src-flag-grid">
+              <span className="_src-badge" data-tone={flags.fullAiReportParsed ? "ok" : "warn"}>
+                fullAiReportParsed={fmtBool(flags.fullAiReportParsed)}
+              </span>
+              <span className="_src-badge" data-tone={flags.synthesisRetryUsed ? "warn" : "ok"}>
+                synthesisRetryUsed={fmtBool(flags.synthesisRetryUsed)}
+              </span>
+              <span className="_src-badge" data-tone={flags.synthesisFallbackUsed ? "warn" : "ok"}>
+                synthesisFallbackUsed={fmtBool(flags.synthesisFallbackUsed)}
+              </span>
+              <span className="_src-badge" data-tone={flags.usedFallback ? "warn" : "ok"}>
+                usedFallback={fmtBool(flags.usedFallback)}
+              </span>
+            </div>
+          </div>
+        </div>
+
         <div className="_src-sizing">
-          <span className="_src-badge" data-tone={bucket.tone}>{rec.bucket} 分層</span>
-          <b>單筆風險</b>
-          {bucket.nav_pct === "0" ? "不開新倉" : `${bucket.nav_pct} NAV`}
+          <span className="_src-badge" data-tone={bucket.tone}>{rec.bucket} 推薦級</span>
+          <b>建議單筆</b>
+          {bucket.nav_pct === "0" ? "不下單" : `${bucket.nav_pct} NAV`}
           <span className="_src-sizing-sep">|</span>
-          <b>單檔上限</b>
-          {bucket.max_nav === "0" ? "—" : `${bucket.max_nav} NAV`}
+          <b>組合上限</b>
+          {bucket.max_nav === "0" ? "0" : `${bucket.max_nav} NAV`}
         </div>
       </article>
     </>

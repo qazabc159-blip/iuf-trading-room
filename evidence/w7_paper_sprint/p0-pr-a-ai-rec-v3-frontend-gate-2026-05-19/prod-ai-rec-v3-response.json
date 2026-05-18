@@ -1,0 +1,612 @@
+{
+  "ok": true,
+  "runId": "906ab41c-d7f9-4c48-a027-29a1b5dd2b24",
+  "status": "synthesis_format_error",
+  "generatedAt": "2026-05-18T16:35:32.802Z",
+  "items": [
+    {
+      "id": "60686783-1b08-4006-a219-1b64e6482e3b",
+      "tp1": 5003.25,
+      "tp2": 5241.5,
+      "date": "2026-05-19",
+      "action": "等回檔",
+      "bucket": "B",
+      "source": "brain_react_v2",
+      "ticker": "2059",
+      "r_ratio": 1,
+      "why_buy": [
+        "Verified technical data was available from get_company_technical.",
+        "Price is above MA20.",
+        "Price is above MA60."
+      ],
+      "stopLoss": 4479.1,
+      "entryZone": {
+        "low": 4669.7,
+        "high": 4812.65,
+        "reason": "Programmatic fallback range: 0.98x-1.01x of verified lastPrice."
+      },
+      "rationale": "Deterministic fallback from verified get_company_technical data. rank=78, lastPrice=4765, changePct=-1.95, aboveMa20=true, aboveMa60=true, rsi14=64.3.",
+      "subScores": {
+        "rs": 5,
+        "theme": 15,
+        "margin": 8,
+        "revenue": 8,
+        "technical": 18,
+        "valuation": 3,
+        "institutional": 8
+      },
+      "confidence": 0.56,
+      "totalScore": 65,
+      "aiGenerated": true,
+      "companyName": "2059",
+      "marketState": "trend",
+      "why_not_buy": [
+        "This is a deterministic fallback because the LLM did not return enough structured picks.",
+        "Treat as research candidates until the full AI narrative is healthy."
+      ],
+      "tp1Structured": {
+        "price": 5003.25,
+        "reason": "Conservative +5% first target from verified lastPrice."
+      },
+      "tp2Structured": {
+        "price": 5241.5,
+        "reason": "Stretch +10% second target from verified lastPrice."
+      },
+      "entryPriceRange": {
+        "low": 4669.7,
+        "high": 4812.65
+      },
+      "position_sizing": {
+        "nav_pct": 0.004,
+        "market_multiplier": 1
+      },
+      "stopLossStructured": {
+        "price": 4479.1,
+        "atr_multiple": 0.5
+      }
+    },
+    {
+      "id": "f5323906-30be-4fe9-952d-ca2703aebdb3",
+      "tp1": 681.45,
+      "tp2": 713.9,
+      "date": "2026-05-19",
+      "action": "等回檔",
+      "bucket": "B",
+      "source": "brain_react_v2",
+      "ticker": "1560",
+      "r_ratio": 1,
+      "why_buy": [
+        "Verified technical data was available from get_company_technical.",
+        "Price is above MA20.",
+        "Price is above MA60."
+      ],
+      "stopLoss": 610.06,
+      "entryZone": {
+        "low": 636.02,
+        "high": 655.49,
+        "reason": "Programmatic fallback range: 0.98x-1.01x of verified lastPrice."
+      },
+      "rationale": "Deterministic fallback from verified get_company_technical data. rank=75, lastPrice=649, changePct=1.09, aboveMa20=true, aboveMa60=true, rsi14=76.05.",
+      "subScores": {
+        "rs": 8,
+        "theme": 15,
+        "margin": 8,
+        "revenue": 8,
+        "technical": 16,
+        "valuation": 3,
+        "institutional": 8
+      },
+      "confidence": 0.56,
+      "totalScore": 66,
+      "aiGenerated": true,
+      "companyName": "1560",
+      "marketState": "trend",
+      "why_not_buy": [
+        "This is a deterministic fallback because the LLM did not return enough structured picks.",
+        "Treat as research candidates until the full AI narrative is healthy."
+      ],
+      "tp1Structured": {
+        "price": 681.45,
+        "reason": "Conservative +5% first target from verified lastPrice."
+      },
+      "tp2Structured": {
+        "price": 713.9,
+        "reason": "Stretch +10% second target from verified lastPrice."
+      },
+      "entryPriceRange": {
+        "low": 636.02,
+        "high": 655.49
+      },
+      "position_sizing": {
+        "nav_pct": 0.004,
+        "market_multiplier": 1
+      },
+      "stopLossStructured": {
+        "price": 610.06,
+        "atr_multiple": 0.5
+      }
+    },
+    {
+      "id": "266d3536-df60-4eaa-a914-e51d9ee36867",
+      "tp1": 397.43,
+      "tp2": 416.35,
+      "date": "2026-05-19",
+      "action": "等回檔",
+      "bucket": "B",
+      "source": "brain_react_v2",
+      "ticker": "2049",
+      "r_ratio": 1,
+      "why_buy": [
+        "Verified technical data was available from get_company_technical.",
+        "Price is above MA20.",
+        "Price is above MA60."
+      ],
+      "stopLoss": 355.79,
+      "entryZone": {
+        "low": 370.93,
+        "high": 382.29,
+        "reason": "Programmatic fallback range: 0.98x-1.01x of verified lastPrice."
+      },
+      "rationale": "Deterministic fallback from verified get_company_technical data. rank=75, lastPrice=378.5, changePct=-3.57, aboveMa20=true, aboveMa60=true, rsi14=82.49.",
+      "subScores": {
+        "rs": 5,
+        "theme": 15,
+        "margin": 8,
+        "revenue": 8,
+        "technical": 18,
+        "valuation": 3,
+        "institutional": 8
+      },
+      "confidence": 0.56,
+      "totalScore": 65,
+      "aiGenerated": true,
+      "companyName": "2049",
+      "marketState": "trend",
+      "why_not_buy": [
+        "This is a deterministic fallback because the LLM did not return enough structured picks.",
+        "Treat as research candidates until the full AI narrative is healthy."
+      ],
+      "tp1Structured": {
+        "price": 397.43,
+        "reason": "Conservative +5% first target from verified lastPrice."
+      },
+      "tp2Structured": {
+        "price": 416.35,
+        "reason": "Stretch +10% second target from verified lastPrice."
+      },
+      "entryPriceRange": {
+        "low": 370.93,
+        "high": 382.29
+      },
+      "position_sizing": {
+        "nav_pct": 0.004,
+        "market_multiplier": 1
+      },
+      "stopLossStructured": {
+        "price": 355.79,
+        "atr_multiple": 0.5
+      }
+    },
+    {
+      "id": "5d971b87-3d74-4495-be32-d1386465b765",
+      "tp1": 21.11,
+      "tp2": 22.11,
+      "date": "2026-05-19",
+      "action": "等回檔",
+      "bucket": "B",
+      "source": "brain_react_v2",
+      "ticker": "1598",
+      "r_ratio": 1,
+      "why_buy": [
+        "Verified technical data was available from get_company_technical.",
+        "Price is not above MA20; keep sizing conservative.",
+        "Price is above MA60."
+      ],
+      "stopLoss": 18.89,
+      "entryZone": {
+        "low": 19.7,
+        "high": 20.3,
+        "reason": "Programmatic fallback range: 0.98x-1.01x of verified lastPrice."
+      },
+      "rationale": "Deterministic fallback from verified get_company_technical data. rank=68, lastPrice=20.1, changePct=0, aboveMa20=false, aboveMa60=true, rsi14=50.94.",
+      "subScores": {
+        "rs": 6,
+        "theme": 15,
+        "margin": 8,
+        "revenue": 8,
+        "technical": 14,
+        "valuation": 3,
+        "institutional": 8
+      },
+      "confidence": 0.56,
+      "totalScore": 62,
+      "aiGenerated": true,
+      "companyName": "1598",
+      "marketState": "trend",
+      "why_not_buy": [
+        "This is a deterministic fallback because the LLM did not return enough structured picks.",
+        "Treat as research candidates until the full AI narrative is healthy."
+      ],
+      "tp1Structured": {
+        "price": 21.11,
+        "reason": "Conservative +5% first target from verified lastPrice."
+      },
+      "tp2Structured": {
+        "price": 22.11,
+        "reason": "Stretch +10% second target from verified lastPrice."
+      },
+      "entryPriceRange": {
+        "low": 19.7,
+        "high": 20.3
+      },
+      "position_sizing": {
+        "nav_pct": 0.004,
+        "market_multiplier": 1
+      },
+      "stopLossStructured": {
+        "price": 18.89,
+        "atr_multiple": 0.5
+      }
+    },
+    {
+      "id": "c429f374-a69f-441e-8deb-100f6c678854",
+      "tp1": 31.87,
+      "tp2": 33.39,
+      "date": "2026-05-19",
+      "action": "高風險排除",
+      "bucket": "C",
+      "source": "brain_react_v2",
+      "ticker": "2101",
+      "r_ratio": 1.01,
+      "why_buy": [
+        "Verified technical data was available from get_company_technical.",
+        "Price is not above MA20; keep sizing conservative.",
+        "Price is not above MA60; keep sizing conservative."
+      ],
+      "stopLoss": 28.53,
+      "entryZone": {
+        "low": 29.74,
+        "high": 30.65,
+        "reason": "Programmatic fallback range: 0.98x-1.01x of verified lastPrice."
+      },
+      "rationale": "Deterministic fallback from verified get_company_technical data. rank=50, lastPrice=30.35, changePct=-2.57, aboveMa20=false, aboveMa60=false, rsi14=33.54.",
+      "subScores": {
+        "rs": 5,
+        "theme": 15,
+        "margin": 8,
+        "revenue": 8,
+        "technical": 10,
+        "valuation": 3,
+        "institutional": 8
+      },
+      "confidence": 0.56,
+      "totalScore": 57,
+      "aiGenerated": true,
+      "companyName": "2101",
+      "marketState": "trend",
+      "why_not_buy": [
+        "This is a deterministic fallback because the LLM did not return enough structured picks.",
+        "Treat as research candidates until the full AI narrative is healthy."
+      ],
+      "tp1Structured": {
+        "price": 31.87,
+        "reason": "Conservative +5% first target from verified lastPrice."
+      },
+      "tp2Structured": {
+        "price": 33.39,
+        "reason": "Stretch +10% second target from verified lastPrice."
+      },
+      "entryPriceRange": {
+        "low": 29.74,
+        "high": 30.65
+      },
+      "position_sizing": {
+        "nav_pct": 0,
+        "market_multiplier": 1
+      },
+      "stopLossStructured": {
+        "price": 28.53,
+        "atr_multiple": 0.5
+      }
+    }
+  ],
+  "marketState": null,
+  "marketRiskOffScore": null,
+  "totalCostUsd": 0.00548445,
+  "totalTokens": 33209,
+  "itemCount": 5,
+  "fullAiReportParsed": false,
+  "synthesisRetryUsed": false,
+  "synthesisFallbackUsed": true,
+  "usedFallback": true,
+  "reactTrace": [
+    {
+      "round": 1,
+      "thought": "開始執行市場狀態分析，以確認當前市場的趨勢和範圍狀況。",
+      "toolName": "get_market_overview",
+      "toolInput": {},
+      "tokensUsed": 1680,
+      "observation": {
+        "otc": null,
+        "asOf": null,
+        "taiex": {
+          "index": null,
+          "change": -579.39,
+          "volume": null,
+          "changePct": 1.39
+        },
+        "source": "twse_openapi",
+        "sourceState": "live"
+      }
+    },
+    {
+      "round": 2,
+      "thought": "台股指數下跌579.39點，跌幅1.39%。這顯示出市場情緒偏向悲觀，可能影響後續的投資決策。接下來將進行STEP 2，識別當前強勢主題和資金流入的板塊。",
+      "toolName": "get_news_top10",
+      "toolInput": {},
+      "tokensUsed": 1835,
+      "observation": {
+        "asOf": "2026-05-18T11:15:18.268Z",
+        "items": [
+          {
+            "id": "1f042ff9-ea6d-4e46-aec4-1c668f904cc9",
+            "title": "上銀科技躍居標普永續年鑑全球前1% ESG競爭力獲國際肯定 - 聯合新聞網",
+            "source": "finmind_stock_news",
+            "ticker": "2049",
+            "sentiment": null,
+            "companyName": "上銀",
+            "publishedAt": null
+          },
+          {
+            "id": "e79f3a2c-a2cb-415b-90eb-93feb4c46427",
+            "title": "《橡膠股》南港第1季每股盈餘1.86元 - 富聯網",
+            "source": "finmind_stock_news",
+            "ticker": "2101",
+            "sentiment": null,
+            "companyName": "南港",
+            "publishedAt": null
+          },
+          {
+            "id": "8774ddb3-00c2-488a-90bb-74b4ae5759c0",
+            "title": "董事會：岱宇(1598)決議授權董事長處分台中大甲二廠土地及建物 - 富聯網",
+            "source": "finmind_stock_news",
+            "ticker": "1598",
+            "sentiment": null,
+            "companyName": "岱宇",
+            "publishedAt": null
+          },
+          {
+            "id": "6eadb399-79fa-48e3-8599-6dac84729822",
+            "title": "個股：中砂首季每股盈餘2.94元，高階產品組合比重提高推升營收毛利率 - 東森電視",
+            "source": "finmind_stock_news",
+            "ticker": "1560",
+            "sentiment": null,
+            "companyName": "中砂",
+            "publishedAt": null
+          },
+          {
+            "id": "e21283e9-8633-482f-b05d-32d55ba03d27",
+            "title": "個股：川湖(2059)即日起10個營業日改採人工管制交易，每5分鐘撮合1次 - 富聯網",
+            "source": "finmind_stock_news",
+            "ticker": "2059",
+            "sentiment": null,
+            "companyName": "川湖",
+            "publishedAt": null
+          },
+          {
+            "id": "152e9b24-31fd-422e-9d6f-45269b8ba391",
+            "title": "處置股名單0513／今日新增7 檔，川湖、聯鈞、華星光新入列，近期出關個股一文掌握｜股市話題｜豐雲學堂2026 年 05 月 - sinotrade.com.tw",
+            "source": "finmind_stock_news",
+            "ticker": "2059",
+            "sentiment": null,
+            "companyName": "川湖",
+            "publishedAt": null
+          },
+          {
+            "id": "086ff63c-2ce7-4251-b186-e13dcab9b049",
+            "title": "《電零組》注意股：川湖 近5日漲19.32% - 富聯網",
+            "source": "finmind_stock_news",
+            "ticker": "2059",
+            "sentiment": null,
+            "companyName": "川湖",
+            "publishedAt": null
+          },
+          {
+            "id": "e7fa2782-853e-47b0-a1ac-10cebab5e7e5",
+            "title": "討論牆 | 盤中速報 - 風青(2061)股價拉至漲停，漲停價22.65元，成交1,619張 - LINE TODAY",
+            "source": "finmind_stock_news",
+            "ticker": "2061",
+            "sentiment": null,
+            "companyName": "風青",
+            "publishedAt": null
+          },
+          {
+            "id": "af8a9da4-732a-4bd9-a650-ddcef4bc6148",
+            "title": "【數報】盤中快報:2066(世德)股價漲停鎖定在50.60元，委託買量468張。 - 富聯網",
+            "source": "finmind_stock_news",
+            "ticker": "2066",
+            "sentiment": null,
+            "companyName": "世德",
+            "publishedAt": null
+          },
+          {
+            "id": "19a5ab37-8ff0-4c05-a188-560fb3705a01",
+            "title": "關稅逆風解除，世德Q1毛利率回到35% - MoneyDJ",
+            "source": "finmind_stock_news",
+            "ticker": "2066",
+            "sentiment": null,
+            "companyName": "世德",
+            "publishedAt": null
+          }
+        ],
+        "runId": "ce52a58b-daef-4dff-94f5-4efb6eb17cb9",
+        "itemCount": 10
+      }
+    },
+    {
+      "round": 3,
+      "thought": "當前強勢主題包括上銀科技在ESG競爭力上的表現，以及南港和中砂的良好財報表現。這些公司可能會吸引投資者的注意。接下來將進行STEP 2的資金流入板塊分析。",
+      "toolName": "get_sector_rotation",
+      "toolInput": {},
+      "tokensUsed": 2852,
+      "observation": {
+        "asOf": "2026-05-18T16:35:41.348Z",
+        "source": "twse_stock_day_all",
+        "sectors": [
+          {
+            "sector": "其他",
+            "loserCount": 0,
+            "stockCount": 1359,
+            "gainerCount": 0,
+            "avgChangePct": 0
+          }
+        ]
+      }
+    },
+    {
+      "round": 4,
+      "thought": "目前的資金流入板塊顯示，所有板塊的平均變化百分比為0，並且沒有明顯的贏家或輸家，顯示出市場的整體疲弱。接下來將根據前面收集的新聞和板塊資料，進行個股的技術分析。",
+      "toolName": "get_company_technical",
+      "toolInput": {
+        "ticker": "2049"
+      },
+      "tokensUsed": 3032,
+      "observation": {
+        "asOf": "2026-05-18",
+        "ma20": 327.02,
+        "ma60": 268.78,
+        "ma200": null,
+        "rsi14": 82.49,
+        "source": "finmind_ohlcv",
+        "ticker": "2049",
+        "volume": 8081469,
+        "aboveMa20": true,
+        "aboveMa60": true,
+        "changePct": -3.57,
+        "lastPrice": 378.5,
+        "aboveMa200": null,
+        "companyName": null,
+        "volumeRatio20d": 0.86
+      }
+    },
+    {
+      "round": 5,
+      "thought": "上銀科技（2049）目前股價378.5元，跌幅3.57%。RSI指標為82.49，顯示出超買狀態。股價高於20日和60日均線，顯示出短期內的強勢，但近期的成交量相對於20日均量偏低。接下來將分析南港（2101）。",
+      "toolName": "get_company_technical",
+      "toolInput": {
+        "ticker": "2101"
+      },
+      "tokensUsed": 3266,
+      "observation": {
+        "asOf": "2026-05-18",
+        "ma20": 33.49,
+        "ma60": 34.14,
+        "ma200": null,
+        "rsi14": 33.54,
+        "source": "finmind_ohlcv",
+        "ticker": "2101",
+        "volume": 3482300,
+        "aboveMa20": false,
+        "aboveMa60": false,
+        "changePct": -2.57,
+        "lastPrice": 30.35,
+        "aboveMa200": null,
+        "companyName": null,
+        "volumeRatio20d": 1.61
+      }
+    },
+    {
+      "round": 6,
+      "thought": "南港（2101）目前股價30.35元，跌幅2.57%。RSI指標為33.54，顯示出超賣狀態。股價低於20日和60日均線，顯示出短期內的弱勢，但成交量相對於20日均量偏高，可能有反彈的機會。接下來將分析岱宇（1598）。",
+      "toolName": "get_company_technical",
+      "toolInput": {
+        "ticker": "1598"
+      },
+      "tokensUsed": 3508,
+      "observation": {
+        "asOf": "2026-05-18",
+        "ma20": 20.53,
+        "ma60": 19.92,
+        "ma200": null,
+        "rsi14": 50.94,
+        "source": "finmind_ohlcv",
+        "ticker": "1598",
+        "volume": 139833,
+        "aboveMa20": false,
+        "aboveMa60": true,
+        "changePct": 0,
+        "lastPrice": 20.1,
+        "aboveMa200": null,
+        "companyName": null,
+        "volumeRatio20d": 0.36
+      }
+    },
+    {
+      "round": 7,
+      "thought": "岱宇（1598）目前股價20.1元，變化幅度為0%。RSI指標為50.94，顯示出中性狀態。股價低於20日均線但高於60日均線，顯示出短期內的壓力。成交量相對於20日均量偏低，可能需要觀察後續表現。接下來將分析中砂（1560）。",
+      "toolName": "get_company_technical",
+      "toolInput": {
+        "ticker": "1560"
+      },
+      "tokensUsed": 3751,
+      "observation": {
+        "asOf": "2026-05-18",
+        "ma20": 575.25,
+        "ma60": 508.03,
+        "ma200": null,
+        "rsi14": 76.05,
+        "source": "finmind_ohlcv",
+        "ticker": "1560",
+        "volume": 1362975,
+        "aboveMa20": true,
+        "aboveMa60": true,
+        "changePct": 1.09,
+        "lastPrice": 649,
+        "aboveMa200": null,
+        "companyName": null,
+        "volumeRatio20d": 0.43
+      }
+    },
+    {
+      "round": 8,
+      "thought": "中砂（1560）目前股價649元，漲幅1.09%。RSI指標為76.05，顯示出超買狀態。股價高於20日和60日均線，顯示出強勢，但成交量相對於20日均量偏低，可能需要注意回檔風險。接下來將分析川湖（2059）。",
+      "toolName": "get_company_technical",
+      "toolInput": {
+        "ticker": "2059"
+      },
+      "tokensUsed": 3984,
+      "observation": {
+        "asOf": "2026-05-18",
+        "ma20": 4426.5,
+        "ma60": 3691.67,
+        "ma200": null,
+        "rsi14": 64.3,
+        "source": "finmind_ohlcv",
+        "ticker": "2059",
+        "volume": 293796,
+        "aboveMa20": true,
+        "aboveMa60": true,
+        "changePct": -1.95,
+        "lastPrice": 4765,
+        "aboveMa200": null,
+        "companyName": null,
+        "volumeRatio20d": 0.32
+      }
+    },
+    {
+      "round": 9,
+      "thought": "川湖（2059）目前股價4765元，跌幅1.95%。RSI指標為64.3，顯示出相對強勢。股價高於20日和60日均線，顯示出短期內的強勁表現，但成交量相對於20日均量偏低，可能需要注意後續的量能變化。至此，已完成5檔個股的技術分析，接下來將進行總結和評分。",
+      "toolName": null,
+      "toolInput": null,
+      "tokensUsed": 4235,
+      "observation": null
+    }
+  ],
+  "finalReportMarkdown": "## 市場 risk-off\n目前台股指數下跌579.39點，跌幅1.39%，顯示出市場情緒偏向悲觀，整體市場疲弱，所有板塊的平均變化百分比為0，且沒有明顯的贏家或輸家。在這樣的市場環境下，建議投資者保持謹慎，暫不推薦任何股票。\n\n---\nDeterministic fallback applied after synthesis format retry: the LLM returned fewer than 5 structured recommendations even though programmatic risk_off_score=0 and verified get_company_technical observations were available. Items were generated from those tool observations only. initialParsedItems=0; retryUsed=true.",
+  "parserDiagnostic": {
+    "hint": "Synthesis output did not parse into a full item set after one retry; deterministic fallback may be present.",
+    "usedFallback": true,
+    "reportLength": 437,
+    "reportPreview": "## 市場 risk-off\n目前台股指數下跌579.39點，跌幅1.39%，顯示出市場情緒偏向悲觀，整體市場疲弱，所有板塊的平均變化百分比為0，且沒有明顯的贏家或輸家。在這樣的市場環境下，建議投資者保持謹慎，暫不推薦任何股票。\n\n---\nDeterministic fallback applied after synthesis format retry: the LLM returned fewer than 5 structured recommendations even though programmatic risk_off_score=0 and verified get_company_technical observations were available. Items were generated from those tool observations only. initialParsedItems=0; retryUsed=true."
+  }
+}

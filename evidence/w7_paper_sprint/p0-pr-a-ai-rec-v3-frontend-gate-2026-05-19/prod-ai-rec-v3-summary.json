@@ -1,0 +1,188 @@
+{
+  "httpStatus": 200,
+  "status": "synthesis_format_error",
+  "itemCount": 5,
+  "usedFallback": true,
+  "fullAiReportParsed": false,
+  "synthesisRetryUsed": false,
+  "synthesisFallbackUsed": true,
+  "firstItem": {
+    "id": "60686783-1b08-4006-a219-1b64e6482e3b",
+    "tp1": 5003.25,
+    "tp2": 5241.5,
+    "date": "2026-05-19",
+    "action": "等回檔",
+    "bucket": "B",
+    "source": "brain_react_v2",
+    "ticker": "2059",
+    "r_ratio": 1,
+    "why_buy": [
+      "Verified technical data was available from get_company_technical.",
+      "Price is above MA20.",
+      "Price is above MA60."
+    ],
+    "stopLoss": 4479.1,
+    "entryZone": {
+      "low": 4669.7,
+      "high": 4812.65,
+      "reason": "Programmatic fallback range: 0.98x-1.01x of verified lastPrice."
+    },
+    "rationale": "Deterministic fallback from verified get_company_technical data. rank=78, lastPrice=4765, changePct=-1.95, aboveMa20=true, aboveMa60=true, rsi14=64.3.",
+    "subScores": {
+      "rs": 5,
+      "theme": 15,
+      "margin": 8,
+      "revenue": 8,
+      "technical": 18,
+      "valuation": 3,
+      "institutional": 8
+    },
+    "confidence": 0.56,
+    "totalScore": 65,
+    "aiGenerated": true,
+    "companyName": "2059",
+    "marketState": "trend",
+    "why_not_buy": [
+      "This is a deterministic fallback because the LLM did not return enough structured picks.",
+      "Treat as research candidates until the full AI narrative is healthy."
+    ],
+    "tp1Structured": {
+      "price": 5003.25,
+      "reason": "Conservative +5% first target from verified lastPrice."
+    },
+    "tp2Structured": {
+      "price": 5241.5,
+      "reason": "Stretch +10% second target from verified lastPrice."
+    },
+    "entryPriceRange": {
+      "low": 4669.7,
+      "high": 4812.65
+    },
+    "position_sizing": {
+      "nav_pct": 0.004,
+      "market_multiplier": 1
+    },
+    "stopLossStructured": {
+      "price": 4479.1,
+      "atr_multiple": 0.5
+    }
+  },
+  "sourceKeys": [
+    {
+      "path": "items.0.source",
+      "value": "brain_react_v2"
+    },
+    {
+      "path": "items.1.source",
+      "value": "brain_react_v2"
+    },
+    {
+      "path": "items.2.source",
+      "value": "brain_react_v2"
+    },
+    {
+      "path": "items.3.source",
+      "value": "brain_react_v2"
+    },
+    {
+      "path": "items.4.source",
+      "value": "brain_react_v2"
+    },
+    {
+      "path": "marketRiskOffScore",
+      "value": null
+    },
+    {
+      "path": "fullAiReportParsed",
+      "value": false
+    },
+    {
+      "path": "synthesisRetryUsed",
+      "value": false
+    },
+    {
+      "path": "synthesisFallbackUsed",
+      "value": true
+    },
+    {
+      "path": "usedFallback",
+      "value": true
+    },
+    {
+      "path": "reactTrace.0.observation.source",
+      "value": "twse_openapi"
+    },
+    {
+      "path": "reactTrace.0.observation.sourceState",
+      "value": "live"
+    },
+    {
+      "path": "reactTrace.1.observation.items.0.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.1.observation.items.1.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.1.observation.items.2.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.1.observation.items.3.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.1.observation.items.4.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.1.observation.items.5.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.1.observation.items.6.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.1.observation.items.7.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.1.observation.items.8.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.1.observation.items.9.source",
+      "value": "finmind_stock_news"
+    },
+    {
+      "path": "reactTrace.2.observation.source",
+      "value": "twse_stock_day_all"
+    },
+    {
+      "path": "reactTrace.3.observation.source",
+      "value": "finmind_ohlcv"
+    },
+    {
+      "path": "reactTrace.4.observation.source",
+      "value": "finmind_ohlcv"
+    },
+    {
+      "path": "reactTrace.5.observation.source",
+      "value": "finmind_ohlcv"
+    },
+    {
+      "path": "reactTrace.6.observation.source",
+      "value": "finmind_ohlcv"
+    },
+    {
+      "path": "reactTrace.7.observation.source",
+      "value": "finmind_ohlcv"
+    },
+    {
+      "path": "parserDiagnostic.usedFallback",
+      "value": true
+    }
+  ]
+}
