@@ -23,7 +23,7 @@ import { formatRecommendationTimestamp, formatSourceTimestamp } from "./source-t
 import { MarketStateBadge, MarketStateBadgePlaceholder } from "./MarketStateBadge";
 import { ReactTracePanel } from "./ReactTracePanel";
 import { StockRecCard, type StockRecCardData } from "./StockRecCard";
-import { buildV3PanelState, getV3MarketScores, mapV3ItemToStockRecCard, mapV3TraceSteps } from "./v3-view";
+import { buildV3PanelState, getOfficialAnnouncementSourceState, getV3MarketScores, mapV3ItemToStockRecCard, mapV3TraceSteps } from "./v3-view";
 
 export const dynamic = "force-dynamic";
 
@@ -459,6 +459,64 @@ function RecommendationListEmptyState({ error }: { error: string | null }) {
   );
 }
 
+function formatV3Bool(value: boolean | null | undefined) {
+  if (value === true) return "true";
+  if (value === false) return "false";
+  return "missing";
+}
+
+function V3BackendFacts({
+  data,
+  visibleCount,
+}: {
+  data: AiRecommendationV3Response | null;
+  visibleCount: number;
+}) {
+  const officialSourceState = getOfficialAnnouncementSourceState(data);
+  const itemCount = data?.itemCount ?? data?.items?.length ?? visibleCount;
+
+  return (
+    <dl className="_rec-v3-facts" aria-label="AI recommendations v3 backend facts">
+      <div>
+        <dt>status</dt>
+        <dd>{data?.status ?? "missing"}</dd>
+      </div>
+      <div>
+        <dt>itemCount</dt>
+        <dd>{itemCount}</dd>
+      </div>
+      <div>
+        <dt>visible cards</dt>
+        <dd>{visibleCount}</dd>
+      </div>
+      <div>
+        <dt>usedFallback</dt>
+        <dd>{formatV3Bool(data?.usedFallback)}</dd>
+      </div>
+      <div>
+        <dt>fullAiReportParsed</dt>
+        <dd>{formatV3Bool(data?.fullAiReportParsed)}</dd>
+      </div>
+      <div>
+        <dt>synthesisRetryUsed</dt>
+        <dd>{formatV3Bool(data?.synthesisRetryUsed)}</dd>
+      </div>
+      <div>
+        <dt>synthesisFallbackUsed</dt>
+        <dd>{formatV3Bool(data?.synthesisFallbackUsed)}</dd>
+      </div>
+      <div>
+        <dt>official announcements</dt>
+        <dd>{officialSourceState.state}</dd>
+      </div>
+      <div>
+        <dt>official source note</dt>
+        <dd>{officialSourceState.detail ?? officialSourceState.nextAction ?? "-"}</dd>
+      </div>
+    </dl>
+  );
+}
+
 function BucketSection({
   bucket,
   items,
@@ -511,14 +569,17 @@ export default async function AiRecommendationsPage() {
   const grouped = groupByBucket(items);
   const v3Items = v3Result.data?.items ?? [];
   const v3Cards = v3Items
-    .map(mapV3ItemToStockRecCard)
+    .map((item) => mapV3ItemToStockRecCard(item, v3Result.data))
     .filter((card): card is StockRecCardData => Boolean(card));
   const v3PanelState = buildV3PanelState({
     data: v3Result.data,
     error: v3Result.error,
     visibleCount: v3Cards.length,
   });
-  const hasPrimaryV3Cards = v3Cards.length >= 5;
+  const showV3Primary = Boolean(v3Result.data || v3Result.error);
+  const v3BackendItemCount = v3Result.data?.itemCount ?? v3Items.length;
+  const hasEnoughV3Cards = v3BackendItemCount >= 5 && v3Cards.length >= 5;
+  const isV3Complete = v3Result.data?.status === "complete";
   const v3MarketScores = getV3MarketScores(v3Items);
   const v3TraceSteps = mapV3TraceSteps(v3Result.data?.reactTrace);
   const sourceMode = formatRecommendationSourceMode({
@@ -1197,20 +1258,18 @@ export default async function AiRecommendationsPage() {
 
       <Panel
         code="AI-01"
-        title={hasPrimaryV3Cards ? "v3 正式推薦清單" : "推薦清單"}
-        sub={hasPrimaryV3Cards
+        title={showV3Primary ? (isV3Complete ? "AI 推薦 v3（backend complete）" : "AI 推薦 v3（backend 未 complete）") : "推薦清單"}
+        sub={showV3Primary
           ? `產生時間 ${v3GeneratedAtLabel || "-"} / v3 SOP / ${v3PanelState.label}`
           : `交易日 ${data?.date ?? "-"} / 產生時間 ${generatedAtLabel || "-"} / ${sourceMode}`}
-        right={`${hasPrimaryV3Cards ? v3Cards.length : items.length} 檔`}
+        right={showV3Primary ? `${v3Cards.length}/${v3BackendItemCount} cards` : `${items.length} 檔`}
       >
-        {hasPrimaryV3Cards ? (
+        {showV3Primary ? (
           <div style={{ padding: "16px" }}>
             <div className="_rec-v3-state" data-tone={v3PanelState.tone}>
-              <b>今日 AI 推薦已由 v3 SOP 回傳 {v3Cards.length} 檔</b>
-              <p>
-                這裡使用 `GET /api/v1/ai-recommendations/v3` 的真實回傳，不用 strategy ideas 補位。
-                若卡片標示降級補值，代表 LLM 敘事不足、由已驗證技術資料補齊結構化欄位，仍只作 SIM 研究候選。
-              </p>
+              <b>{v3PanelState.title}</b>
+              <p>{v3PanelState.detail}</p>
+              <V3BackendFacts data={v3Result.data} visibleCount={v3Cards.length} />
               <dl>
                 <div>
                   <dt>Endpoint</dt>
@@ -1222,15 +1281,22 @@ export default async function AiRecommendationsPage() {
                 </div>
                 <div>
                   <dt>Next</dt>
-                  <dd>Bruce 驗 entry / TP / SL 與交易室 handoff；Elva/Jason 繼續補完整 AI 敘事與新聞/題材來源。</dd>
+                  <dd>{v3PanelState.nextAction}</dd>
                 </div>
               </dl>
             </div>
-            <div className="_rec-v3-card-grid">
-              {v3Cards.map((card) => (
-                <StockRecCard key={`${card.ticker}-${card.bucket}`} rec={card} />
-              ))}
-            </div>
+            {v3Cards.length > 0 ? (
+              <div className="_rec-v3-card-grid">
+                {v3Cards.map((card) => (
+                  <StockRecCard key={`${card.ticker}-${card.bucket}`} rec={card} />
+                ))}
+              </div>
+            ) : (
+              <div className="_rec-empty _rec-empty-single">
+                <b>v3 沒有回傳可顯示卡片</b>
+                <p>前端沒有用 mock 或舊推薦補卡。請看上方 status / itemCount / owner / next action。</p>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -1275,6 +1341,7 @@ export default async function AiRecommendationsPage() {
           <div className="_rec-v3-state" data-tone={v3PanelState.tone}>
             <b>{v3PanelState.title}</b>
             <p>{v3PanelState.detail}</p>
+            <V3BackendFacts data={v3Result.data} visibleCount={v3Cards.length} />
             <dl>
               <div>
                 <dt>Endpoint</dt>
@@ -1292,13 +1359,15 @@ export default async function AiRecommendationsPage() {
           </div>
 
           {v3Cards.length > 0 ? (
-            hasPrimaryV3Cards ? (
+            showV3Primary ? (
               <div className="_rec-v3-preview">
                 <div className="_rec-v3-preview-title">
-                  v3 5 檔已提升到上方主清單；本區保留 SOP 狀態與 ReAct 追蹤。
+                  {hasEnoughV3Cards
+                    ? "v3 cards are rendered in the primary list above; this panel keeps SOP status and ReAct trace."
+                    : "v3 returned fewer than 5 visible cards; no mock cards were added."}
                 </div>
                 <p style={{ margin: 0, color: "var(--tac-fg-2)", font: "750 12px/1.7 var(--sans-tc)" }}>
-                  上方主清單直接使用 v3 endpoint。這裡不重複渲染股票卡，避免使用者誤以為有兩套不同推薦。
+                  Primary cards come directly from GET /api/v1/ai-recommendations/v3. The UI does not pad, clone, or upgrade backend results.
                 </p>
               </div>
             ) : (

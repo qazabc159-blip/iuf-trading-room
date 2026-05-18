@@ -1,0 +1,429 @@
+I
+IUF · 戰情台
+v3.0 · TACTICAL
+台股 AI 交易戰情室
+操作員 · IUF-01
+模擬模式 / 風控守門
+戰情台
+盤勢與任務
+市場情報
+重大訊息
+AI 推薦
+推薦引擎
+交易室
+委託與部位
+公司 / 主題
+公司圖譜
+量化策略
+SIM-only
+OPENALICE
+Brain
+LLM 費用
+EventLog
+事件流
+Portfolio
+快照版本
+Tools
+工具登錄
+UTA
+帳號管理
+Strategies
+Lab 策略狀態
+MARKET · INTEL
+正式資料 / 風控守門
+登出
+警示通知，22 則未讀
+22
+AI 推薦
+AI 推薦
+Recommendation Orchestrator
+台北 / 2026/5/19 05:21:20
+資料 / 正式資料
+模式 / 觀察與研究
+研究 / 前端資料
+推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。
+台股目前盤後或週末休市，顯示 05/19 (二) 收盤 收盤資料
+即時行情將於下一交易日 09:00 恢復
+趨勢盤
+/
+趨勢分數偏強，可照 SOP 執行。
+部位係數 1.0
+策略執行紀錄
+訊號中心
+AI 推薦 / AI 推薦 v3（backend 未 complete）
+產生時間 05/19 00:35 / v3 SOP / DEGRADED
+5/5 cards
+v3 returned real backend cards, but the gate is not complete
+
+status=synthesis_format_error / itemCount=5 / visibleCards=5 / usedFallback=true / fullAiReportParsed=false / synthesisRetryUsed=false / synthesisFallbackUsed=true. The UI is not padding or upgrading the result; it is showing exactly the backend state.
+
+status
+synthesis_format_error
+itemCount
+5
+visible cards
+5
+usedFallback
+true
+fullAiReportParsed
+false
+synthesisRetryUsed
+false
+synthesisFallbackUsed
+true
+official announcements
+pending
+official source note
+v3 response did not include official announcement sourceState.
+Endpoint
+GET /api/v1/ai-recommendations/v3
+Owner
+Elva/Jason backend gate + Bruce owner-session verify
+Next
+Backend must reach status=complete with non-fallback synthesis before this can be called fully accepted.
+2059公司名稱未回傳
+B 推薦級
+confidence 56%
+market x1
+題材	營收	法人/ETF	籌碼	RS/量	技術	估值/事件	總分
+15/20	8/15	8/15	8/15	5/10	18/20	3/5	65/100
+ENTRY PRICE RANGE
+4,669.7 - 4,812.65
+
+後端以 verified lastPrice 建立程式化 fallback 進場區間：0.98x-1.01x。
+
+TP1
+5,003.25
+TP2
+5,241.5
+STOP
+4,479.1
+R
+1.00R
+REASON / RATIONALE
+
+get_company_technical 已回傳可驗證技術資料。
+
+價格站上 MA20。
+
+價格站上 MA60。
+
+以 get_company_technical 驗證資料產生固定規則補值。 rank=78, lastPrice=4765, changePct=-1.95, aboveMa20=true, aboveMa60=true, rsi14=64.3.
+
+RISK
+
+這是固定規則補值，因為 LLM 未回傳足夠的結構化推薦。
+
+完整 AI 敘事恢復健康前，只能視為研究候選。
+
+SOURCE / SOURCE TRAIL / SOURCE STATE
+source
+brain_react_v2
+sourceTrail
+後端未回傳 sourceTrail
+item source state
+missing
+
+v3 item did not include sourceState; showing raw source/sourceTrail instead.
+
+官方公告 source state
+pending
+
+v3 response did not include official announcement sourceState.
+
+owner=Jason/Elva / next=Backend needs to expose official announcement source state in the v3 response.
+SYNTHESIS FLAGS
+fullAiReportParsed=false
+synthesisRetryUsed=false
+synthesisFallbackUsed=true
+usedFallback=true
+B 推薦級
+建議單筆
+0.4% NAV
+|
+組合上限
+5% NAV
+1560公司名稱未回傳
+B 推薦級
+confidence 56%
+market x1
+題材	營收	法人/ETF	籌碼	RS/量	技術	估值/事件	總分
+15/20	8/15	8/15	8/15	8/10	16/20	3/5	66/100
+ENTRY PRICE RANGE
+636.02 - 655.49
+
+後端以 verified lastPrice 建立程式化 fallback 進場區間：0.98x-1.01x。
+
+TP1
+681.45
+TP2
+713.9
+STOP
+610.06
+R
+1.00R
+REASON / RATIONALE
+
+get_company_technical 已回傳可驗證技術資料。
+
+價格站上 MA20。
+
+價格站上 MA60。
+
+以 get_company_technical 驗證資料產生固定規則補值。 rank=75, lastPrice=649, changePct=1.09, aboveMa20=true, aboveMa60=true, rsi14=76.05.
+
+RISK
+
+這是固定規則補值，因為 LLM 未回傳足夠的結構化推薦。
+
+完整 AI 敘事恢復健康前，只能視為研究候選。
+
+SOURCE / SOURCE TRAIL / SOURCE STATE
+source
+brain_react_v2
+sourceTrail
+後端未回傳 sourceTrail
+item source state
+missing
+
+v3 item did not include sourceState; showing raw source/sourceTrail instead.
+
+官方公告 source state
+pending
+
+v3 response did not include official announcement sourceState.
+
+owner=Jason/Elva / next=Backend needs to expose official announcement source state in the v3 response.
+SYNTHESIS FLAGS
+fullAiReportParsed=false
+synthesisRetryUsed=false
+synthesisFallbackUsed=true
+usedFallback=true
+B 推薦級
+建議單筆
+0.4% NAV
+|
+組合上限
+5% NAV
+2049公司名稱未回傳
+B 推薦級
+confidence 56%
+market x1
+題材	營收	法人/ETF	籌碼	RS/量	技術	估值/事件	總分
+15/20	8/15	8/15	8/15	5/10	18/20	3/5	65/100
+ENTRY PRICE RANGE
+370.93 - 382.29
+
+後端以 verified lastPrice 建立程式化 fallback 進場區間：0.98x-1.01x。
+
+TP1
+397.43
+TP2
+416.35
+STOP
+355.79
+R
+1.00R
+REASON / RATIONALE
+
+get_company_technical 已回傳可驗證技術資料。
+
+價格站上 MA20。
+
+價格站上 MA60。
+
+以 get_company_technical 驗證資料產生固定規則補值。 rank=75, lastPrice=378.5, changePct=-3.57, aboveMa20=true, aboveMa60=true, rsi14=82.49.
+
+RISK
+
+這是固定規則補值，因為 LLM 未回傳足夠的結構化推薦。
+
+完整 AI 敘事恢復健康前，只能視為研究候選。
+
+SOURCE / SOURCE TRAIL / SOURCE STATE
+source
+brain_react_v2
+sourceTrail
+後端未回傳 sourceTrail
+item source state
+missing
+
+v3 item did not include sourceState; showing raw source/sourceTrail instead.
+
+官方公告 source state
+pending
+
+v3 response did not include official announcement sourceState.
+
+owner=Jason/Elva / next=Backend needs to expose official announcement source state in the v3 response.
+SYNTHESIS FLAGS
+fullAiReportParsed=false
+synthesisRetryUsed=false
+synthesisFallbackUsed=true
+usedFallback=true
+B 推薦級
+建議單筆
+0.4% NAV
+|
+組合上限
+5% NAV
+1598公司名稱未回傳
+B 推薦級
+confidence 56%
+market x1
+題材	營收	法人/ETF	籌碼	RS/量	技術	估值/事件	總分
+15/20	8/15	8/15	8/15	6/10	14/20	3/5	62/100
+ENTRY PRICE RANGE
+19.7 - 20.3
+
+後端以 verified lastPrice 建立程式化 fallback 進場區間：0.98x-1.01x。
+
+TP1
+21.11
+TP2
+22.11
+STOP
+18.89
+R
+1.00R
+REASON / RATIONALE
+
+get_company_technical 已回傳可驗證技術資料。
+
+價格未站上 MA20，部位需保守。
+
+價格站上 MA60。
+
+以 get_company_technical 驗證資料產生固定規則補值。 rank=68, lastPrice=20.1, changePct=0, aboveMa20=false, aboveMa60=true, rsi14=50.94.
+
+RISK
+
+這是固定規則補值，因為 LLM 未回傳足夠的結構化推薦。
+
+完整 AI 敘事恢復健康前，只能視為研究候選。
+
+SOURCE / SOURCE TRAIL / SOURCE STATE
+source
+brain_react_v2
+sourceTrail
+後端未回傳 sourceTrail
+item source state
+missing
+
+v3 item did not include sourceState; showing raw source/sourceTrail instead.
+
+官方公告 source state
+pending
+
+v3 response did not include official announcement sourceState.
+
+owner=Jason/Elva / next=Backend needs to expose official announcement source state in the v3 response.
+SYNTHESIS FLAGS
+fullAiReportParsed=false
+synthesisRetryUsed=false
+synthesisFallbackUsed=true
+usedFallback=true
+B 推薦級
+建議單筆
+0.4% NAV
+|
+組合上限
+5% NAV
+2101公司名稱未回傳
+C 推薦級
+confidence 56%
+market x1
+題材	營收	法人/ETF	籌碼	RS/量	技術	估值/事件	總分
+15/20	8/15	8/15	8/15	5/10	10/20	3/5	57/100
+ENTRY PRICE RANGE
+29.74 - 30.65
+
+後端以 verified lastPrice 建立程式化 fallback 進場區間：0.98x-1.01x。
+
+TP1
+31.87
+TP2
+33.39
+STOP
+28.53
+R
+1.01R
+REASON / RATIONALE
+
+get_company_technical 已回傳可驗證技術資料。
+
+價格未站上 MA20，部位需保守。
+
+價格未站上 MA60，部位需保守。
+
+以 get_company_technical 驗證資料產生固定規則補值。 rank=50, lastPrice=30.35, changePct=-2.57, aboveMa20=false, aboveMa60=false, rsi14=33.54.
+
+RISK
+
+這是固定規則補值，因為 LLM 未回傳足夠的結構化推薦。
+
+完整 AI 敘事恢復健康前，只能視為研究候選。
+
+SOURCE / SOURCE TRAIL / SOURCE STATE
+source
+brain_react_v2
+sourceTrail
+後端未回傳 sourceTrail
+item source state
+missing
+
+v3 item did not include sourceState; showing raw source/sourceTrail instead.
+
+官方公告 source state
+pending
+
+v3 response did not include official announcement sourceState.
+
+owner=Jason/Elva / next=Backend needs to expose official announcement source state in the v3 response.
+SYNTHESIS FLAGS
+fullAiReportParsed=false
+synthesisRetryUsed=false
+synthesisFallbackUsed=true
+usedFallback=true
+C 推薦級
+建議單筆
+不下單
+|
+組合上限
+0
+AI 推薦 / SOP 推理結構 (v3)
+7 sub-score / 市場狀態 / OTE 進場 / ReAct 5-module
+DEGRADED
+v3 returned real backend cards, but the gate is not complete
+
+status=synthesis_format_error / itemCount=5 / visibleCards=5 / usedFallback=true / fullAiReportParsed=false / synthesisRetryUsed=false / synthesisFallbackUsed=true. The UI is not padding or upgrading the result; it is showing exactly the backend state.
+
+status
+synthesis_format_error
+itemCount
+5
+visible cards
+5
+usedFallback
+true
+fullAiReportParsed
+false
+synthesisRetryUsed
+false
+synthesisFallbackUsed
+true
+official announcements
+pending
+official source note
+v3 response did not include official announcement sourceState.
+Endpoint
+GET /api/v1/ai-recommendations/v3
+Owner
+Elva/Jason backend gate + Bruce owner-session verify
+Next
+Backend must reach status=complete with non-fallback synthesis before this can be called fully accepted.
+v3 cards are rendered in the primary list above; this panel keeps SOP status and ReAct trace.
+
+Primary cards come directly from GET /api/v1/ai-recommendations/v3. The UI does not pad, clone, or upgrade backend results.
+
+AI 推理軌跡

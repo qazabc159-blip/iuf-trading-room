@@ -241,7 +241,17 @@ export type AiRecommendationV3Item = {
   } | null;
   why_buy?: string[] | string | null;
   why_not_buy?: string[] | string | null;
+  risk?: string[] | string | null;
+  risks?: string[] | string | null;
+  riskFactors?: string[] | string | null;
   rationale?: string | null;
+  source?: string | null;
+  sourceTrail?: unknown;
+  sourceState?: AiRecommendationV3SourceState | null;
+  fullAiReportParsed?: boolean | null;
+  synthesisRetryUsed?: boolean | null;
+  synthesisFallbackUsed?: boolean | null;
+  usedFallback?: boolean | null;
 };
 
 export type AiRecommendationV3SourceState = {
@@ -256,16 +266,22 @@ export type AiRecommendationV3Response = {
   runId?: string | null;
   status?: AiRecommendationV3Status | string | null;
   generatedAt?: string | null;
+  itemCount?: number | null;
   items?: AiRecommendationV3Item[];
   reactTrace?: unknown[];
   finalReportMarkdown?: string | null;
   totalCostUsd?: number | null;
   totalTokens?: number | null;
   sourceState?: AiRecommendationV3SourceState | null;
+  sourceStates?: Record<string, AiRecommendationV3SourceState | null | undefined> | null;
+  officialAnnouncementSourceState?: AiRecommendationV3SourceState | null;
+  officialAnnouncementsSourceState?: AiRecommendationV3SourceState | null;
+  announcementSourceState?: AiRecommendationV3SourceState | null;
   fullAiReportParsed?: boolean | null;
   synthesisRetryUsed?: boolean | null;
   synthesisFallbackUsed?: boolean | null;
   usedFallback?: boolean | null;
+  parserDiagnostic?: unknown;
 };
 
 export type RecommendationDetailResponse = {
