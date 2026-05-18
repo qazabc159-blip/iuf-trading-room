@@ -57,6 +57,8 @@ const MAX_INPUT_ROWS = 200;
 const MAX_TOKENS_RESPONSE = 2000;
 // A "window" is 6h wide (covers the gap between any two consecutive 4-window fires).
 const WINDOW_HOURS = 6;
+const EXPANDED_WINDOW_HOURS = 72;
+const LAST_RESORT_WINDOW_HOURS = 24 * 30;
 // How many top-10 items to return
 const TOP_N = 10;
 // Consider selection stale if last run was > 90min ago (30min grace on 60min hourly cron)
@@ -152,6 +154,29 @@ export function getLastNewsTop10(): NewsTop10Result | null {
   return _lastResult;
 }
 
+function withNewsStaleness(result: NewsTop10Result, runAt: Date): NewsTop10Result {
+  const ageMs = Date.now() - runAt.getTime();
+  if (ageMs > STALE_AFTER_MS) {
+    return {
+      ...result,
+      stale_reason: `last_run_over_${Math.round(ageMs / (60 * 60 * 1000))}h_ago`
+    };
+  }
+  return { ...result, stale_reason: null };
+}
+
+export async function getNewsTop10ForRead(): Promise<NewsTop10Result | null> {
+  const cached = getNewsTop10WithStaleness();
+  if (cached) return cached;
+
+  const dbResult = await loadLatestSelectionFromDb();
+  if (!dbResult) return null;
+
+  _lastResult = dbResult;
+  _lastRunAt = new Date(dbResult.as_of);
+  return withNewsStaleness(dbResult, _lastRunAt);
+}
+
 /** Returns the Date of last run, or null */
 export function getLastNewsRunAt(): Date | null {
   return _lastRunAt;
@@ -242,13 +267,12 @@ function readRows<T>(result: unknown): T[] {
  * Pulls from tw_announcements + tw_stock_news (both may be absent if 0024 not promoted).
  * Non-fatal: missing tables → returns empty array.
  */
-async function fetchRawNewsRows(windowHours: number): Promise<RawNewsRow[]> {
+async function fetchRawNewsRowsSince(sinceTs: string): Promise<RawNewsRow[]> {
   if (!isDatabaseMode()) return [];
   const db = getDb();
   if (!db) return [];
 
   const rows: RawNewsRow[] = [];
-  const sinceTs = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
 
   // tw_announcements (TWSE public disclosures)
   try {
@@ -305,6 +329,50 @@ async function fetchRawNewsRows(windowHours: number): Promise<RawNewsRow[]> {
   }
 
   return rows;
+}
+
+function isLowQualityStockNews(row: RawNewsRow): boolean {
+  if (row.source !== "finmind_stock_news") return false;
+  const text = `${row.title ?? ""} ${row.url ?? ""} ${row.company_name ?? ""}`.toLowerCase();
+  return /cmoney|money-link|yahoo|udn|pchome|idn\.com\.tw|投資網誌|小編/.test(text);
+}
+
+function sanitizeRawRows(rows: RawNewsRow[], opts: { dropLowQualityStockNews: boolean }): RawNewsRow[] {
+  const seen = new Set<string>();
+  const result: RawNewsRow[] = [];
+  for (const row of rows) {
+    const title = (row.title ?? "").trim();
+    if (!title) continue;
+    if (opts.dropLowQualityStockNews && isLowQualityStockNews(row)) continue;
+    const key = `${row.source}:${row.ticker ?? ""}:${title}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ ...row, title });
+    if (result.length >= MAX_INPUT_ROWS) break;
+  }
+  return result;
+}
+
+async function fetchRawNewsRows(windowHours: number): Promise<RawNewsRow[]> {
+  const primarySince = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
+  const primaryRows = sanitizeRawRows(await fetchRawNewsRowsSince(primarySince), {
+    dropLowQualityStockNews: true
+  });
+  if (primaryRows.length > 0) return primaryRows;
+
+  const expandedSince = new Date(Date.now() - EXPANDED_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+  const expandedRows = sanitizeRawRows(await fetchRawNewsRowsSince(expandedSince), {
+    dropLowQualityStockNews: true
+  });
+  if (expandedRows.length > 0) return expandedRows;
+
+  // Last resort: keep source rows instead of emitting input_row_count=0. The
+  // public announcement API still filters these rows, but the selector can rank
+  // real source material when official rows are temporarily sparse.
+  const lastResortSince = new Date(Date.now() - LAST_RESORT_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+  return sanitizeRawRows(await fetchRawNewsRowsSince(lastResortSince), {
+    dropLowQualityStockNews: false
+  });
 }
 
 // ── Deterministic fallback ranker ─────────────────────────────────────────────
@@ -659,7 +727,7 @@ export async function runNewsAiSelection(params: {
   _lastRunAt = new Date();
 
   // 5. F2: Persist to DB (fire-and-forget — never blocks)
-  void persistSelectionToDb(result);
+  await persistSelectionToDb(result);
 
   // 6. Write audit log (non-fatal)
   const selectionSummary = items.slice(0, 3).map((i) => i.headline.slice(0, 40)).join(" | ");

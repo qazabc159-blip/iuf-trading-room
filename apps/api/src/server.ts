@@ -245,7 +245,7 @@ import {
   runPipelineTick
 } from "./openalice-pipeline.js";
 import {
-  getNewsTop10WithStaleness,
+  getNewsTop10ForRead,
   getLastNewsTop10,
   getLastNewsRunAt,
   getNewsAiLastError,
@@ -6352,10 +6352,10 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
     console.warn("[market-intel/announcements] tw_announcements unavailable:", err instanceof Error ? err.message : String(err));
   }
 
-  // FinMind fallback always fires when tw_announcements has fewer than limit items,
-  // because tw_announcements is sparse (30-day window often yields only 6-14 official posts).
-  // Threshold lowered to limit itself so we always attempt to fill to 30 items.
-  if (rows.length < limit) {
+  // Company-pool views may supplement with FinMind company news. The market-wide
+  // panel must stay official-only; otherwise media duplicates look like major
+  // announcements.
+  if (scope !== "market" && rows.length < limit) {
     try {
       const result = await activeDb.execute(drizzleSql`
         SELECT
@@ -6375,7 +6375,7 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
         WHERE n.fetched_at >= NOW() - (${days}::text || ' days')::interval
           AND COALESCE(n.title, '') <> ''
         ORDER BY n.fetched_at DESC
-        LIMIT ${scope === "market" ? Math.max(limit * 8, 80) : Math.max(limit * 2, 30)}
+        LIMIT ${Math.max(limit * 2, 30)}
       `);
       const seen = new Set(rows.map((row) => `${row.ticker ?? ""}:${row.title ?? ""}`));
       for (const row of readRows<IntelRow>(result)) {
@@ -6418,7 +6418,8 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
       items,
       selected,
       failures: 0,
-      source: items.length > 0 ? source : "empty"
+      source: items.length > 0 ? source : "empty",
+      stale_reason: items.length > 0 ? null : "no_official_market_announcements"
     }
   });
 });
@@ -6573,7 +6574,7 @@ app.get("/api/v1/market-intel/news-top10", async (c) => {
   const session = c.get("session");
   if (!session) return c.json({ error: "auth_required" }, 401);
 
-  const cached = getNewsTop10WithStaleness();
+  const cached = await getNewsTop10ForRead();
 
   if (!cached) {
     // Never run yet
@@ -14238,8 +14239,8 @@ app.get("/api/v1/ai-recommendations", async (c) => {
     return c.json({ error: "forbidden_role" }, 403);
   }
 
-  const { getLatestAiRecommendationRun } = await import("./ai-recommendation-v2/orchestrator.js");
-  const latest = getLatestAiRecommendationRun();
+  const { getLatestAiRecommendationRunForRead } = await import("./ai-recommendation-v2/orchestrator.js");
+  const latest = await getLatestAiRecommendationRunForRead();
 
   if (!latest) {
     return c.json({
@@ -14311,8 +14312,8 @@ app.get("/api/v1/admin/ai-recommendations/status", async (c) => {
     return c.json({ error: "forbidden_role" }, 403);
   }
 
-  const { getLatestAiRecommendationRun } = await import("./ai-recommendation-v2/orchestrator.js");
-  const latest = getLatestAiRecommendationRun();
+  const { getLatestAiRecommendationRunForRead } = await import("./ai-recommendation-v2/orchestrator.js");
+  const latest = await getLatestAiRecommendationRunForRead();
 
   return c.json({
     cron_last_fired_at: _aiRecV2CronLastFiredAt,
@@ -14340,8 +14341,8 @@ let _aiRecV3CronLastError: string | null = null;
 // GET /api/v1/ai-recommendations/v3
 // F4: Exposes reactTrace + finalReportMarkdown for debug; fallback shows raw markdown when items=0
 app.get("/api/v1/ai-recommendations/v3", async (c) => {
-  const { getLatestAiRecommendationV3Run } = await import("./ai-recommendation-v2/orchestrator-v3.js");
-  const latest = getLatestAiRecommendationV3Run();
+  const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+  const latest = await getLatestAiRecommendationV3RunForRead();
   if (!latest) {
     return c.json({ ok: false, error: "no_v3_run_yet", hint: "POST /api/v1/admin/ai-recommendations/v3/refresh to trigger" }, 404);
   }
@@ -14410,8 +14411,8 @@ app.get("/api/v1/admin/ai-recommendations/v3/status", async (c) => {
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "forbidden_role" }, 403);
   }
-  const { getLatestAiRecommendationV3Run } = await import("./ai-recommendation-v2/orchestrator-v3.js");
-  const latest = getLatestAiRecommendationV3Run();
+  const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+  const latest = await getLatestAiRecommendationV3RunForRead();
   return c.json({
     cron_running: _aiRecV3CronRunning,
     cron_last_fired_at: _aiRecV3CronLastFiredAt,
