@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 
+import { normalizeOutboxDiag, outboxPendingLabel } from "@/lib/eventlog-outbox";
+
 const API_BASE =
   typeof window !== "undefined"
     ? (process.env.NEXT_PUBLIC_API_BASE_URL ?? "")
@@ -240,6 +242,7 @@ type OutboxDiag = {
   pendingCount: number;
   fatalCount: number;
   oldestPendingAt: string | null;
+  isPollerRunning?: boolean;
 };
 
 const EVENT_STREAMS_ENDPOINT = "/api/v1/event-streams";
@@ -389,7 +392,8 @@ export default function EventsAdminPage() {
 
   const streamTypes = [...new Set(streams.map((s) => s.streamType))].sort();
   const filteredStreams = filterType ? streams.filter((s) => s.streamType === filterType) : streams;
-  const eventLogBlocked = streamsError || outboxError;
+  const normalizedOutbox = normalizeOutboxDiag(outbox);
+  const eventLogBlocked = streamsError || outboxError || Boolean(normalizedOutbox?.hasInvalidCounts);
   const eventLogEmpty = !streamsLoading && !streamsError && streams.length === 0;
 
   return (
@@ -404,21 +408,21 @@ export default function EventsAdminPage() {
           </div>
           <div className="tg meta-strip">
             <span>Owner only</span>
-            {outbox && (
+            {normalizedOutbox && (
               <span>
                 Outbox 待發{" "}
                 <span
                   className="_ev-outbox-badge"
-                  style={outbox.pendingCount > 0
+                  style={normalizedOutbox.hasInvalidCounts || (normalizedOutbox.pendingCount ?? 0) > 0
                     ? { background: "rgba(255,184,0,0.15)", color: "#ffb800", border: "1px solid rgba(255,184,0,0.3)" }
                     : { background: "rgba(76,175,80,0.15)", color: "#4caf50", border: "1px solid rgba(76,175,80,0.3)" }
                   }
                 >
-                  {outbox.pendingCount}
+                  {outboxPendingLabel(normalizedOutbox)}
                 </span>
-                {outbox.fatalCount > 0 && (
+                {!normalizedOutbox.hasInvalidCounts && (normalizedOutbox.fatalCount ?? 0) > 0 && (
                   <span className="_ev-outbox-badge" style={{ marginLeft: 4, background: "rgba(239,83,80,0.15)", color: "#ef5350", border: "1px solid rgba(239,83,80,0.3)" }}>
-                    fatal: {outbox.fatalCount}
+                    fatal: {normalizedOutbox.fatalCount}
                   </span>
                 )}
               </span>
@@ -426,7 +430,15 @@ export default function EventsAdminPage() {
           </div>
         </header>
         <div className="terminal-note">EventLog 事件流 / 時間回溯查詢 — 選左側 stream → 查看事件序列。</div>
-        {eventLogBlocked && (
+        {normalizedOutbox?.hasInvalidCounts && (
+          <div style={{ marginBottom: 12 }}>
+            <EventLogTruthState
+              title="EventLog Outbox 診斷數值異常"
+              detail="Outbox 診斷 endpoint 回傳負數或不可用數值；前端不把它顯示成待發 -1，也不假裝為 0。請 Jason/Elva 檢查 outbox diag SQL 與 worker 狀態。"
+            />
+          </div>
+        )}
+        {eventLogBlocked && !normalizedOutbox?.hasInvalidCounts && (
           <div style={{ marginBottom: 12 }}>
             <EventLogTruthState
               title="EventLog 目前無法讀取正式資料"

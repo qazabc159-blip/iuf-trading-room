@@ -21,6 +21,11 @@ Update 2026-05-19 07:20 TST:
 - Route alias re-audit found `/portfolio-snapshots` still 404 while `/portfolio-snapshot`, `/event-log`, `/tool-center`, and `/uta` already redirect to canonical admin surfaces.
 - Chosen/current PR: add the missing `/portfolio-snapshots` redirect to `/admin/portfolio/snapshots` and cover it in redirect tests. This is a PR-E routing bug fix; no backend, no data fabrication, no homepage redesign.
 
+Update 2026-05-19 07:50 TST:
+- Latest base is `85a965d` (`#725 fix(web): redirect portfolio snapshots alias`); production deploy `26066555328` is green and API `/health` is 200.
+- Owner-session production scan found `/admin/events` renders the EventLog shell, but outbox diagnostics show `Outbox 待發 -1` because `/api/v1/admin/event-log/outbox/diag` returns `pendingCount=-1` and `fatalCount=-1`.
+- Chosen/current PR: normalize invalid EventLog outbox counts into an explicit degraded diagnostic state. Frontend will not display negative counts and will not fake them as zero; backend owner remains Jason/Elva.
+
 ## Audit Rule
 
 這份 board 是今晚 P0 收斂的作戰地圖。沒有這份 board，不做大改；任何 UI 區塊只能是正式資料、明確 degraded/empty/pending state，或直接不顯示。不得用 mock/fake 冒充 live。
