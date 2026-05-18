@@ -53,6 +53,29 @@ describe("AI recommendations v3 view mapping", () => {
     expect(mapV3ItemToStockRecCard({ ticker: "" })).toBeNull();
   });
 
+  it("localizes deterministic fallback narratives instead of exposing English backend copy", () => {
+    const card = mapV3ItemToStockRecCard({
+      ticker: "2059",
+      companyName: "川湖",
+      entryZone: { reason: "Programmatic fallback range: 0.98x-1.01x of verified lastPrice." },
+      why_buy: [
+        "Verified technical data was available from get_company_technical.",
+        "Price is above MA20.",
+      ],
+      why_not_buy: [
+        "This is a deterministic fallback because the LLM did not return enough structured picks.",
+        "Treat as research candidates until the full AI narrative is healthy.",
+      ],
+    });
+
+    expect(card?.entry?.label).toContain("程式化回檔區間");
+    expect(card?.why_buy).toContain("技術資料已由 get_company_technical 驗證可用");
+    expect(card?.why_buy).toContain("股價站上 MA20");
+    expect(card?.why_not_buy).toContain("僅視為研究候選");
+    expect(card?.why_not_buy).not.toContain("deterministic fallback");
+    expect(card?.why_not_buy).not.toContain("fallback");
+  });
+
   it("derives the market state badge scores from the first scored item", () => {
     const scores = getV3MarketScores([
       { ticker: "2330", marketState: "range", marketScores: { trend: 2, range: 3, risk_off: 1 } },

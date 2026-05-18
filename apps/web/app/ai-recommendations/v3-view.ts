@@ -36,9 +36,22 @@ function normalizeBucket(value: unknown, totalScore: number | null): BucketLabel
 }
 
 function joinLines(value: string[] | string | null | undefined, fallback: string | null | undefined): string | null {
-  if (Array.isArray(value)) return value.filter(Boolean).join("\n") || (fallback ?? null);
-  if (typeof value === "string" && value.trim()) return value;
-  return fallback ?? null;
+  if (Array.isArray(value)) return value.map(localizeV3Narrative).filter(Boolean).join("\n") || (fallback ? localizeV3Narrative(fallback) : null);
+  if (typeof value === "string" && value.trim()) return localizeV3Narrative(value);
+  return fallback ? localizeV3Narrative(fallback) : null;
+}
+
+function localizeV3Narrative(value: string): string {
+  return value
+    .trim()
+    .replace(/Programmatic fallback range: ([0-9.]+x-[0-9.]+x) of verified lastPrice\./i, "程式化回檔區間：以已驗證最近價的 $1 估算。")
+    .replace(/Verified technical data was available from get_company_technical\./i, "技術資料已由 get_company_technical 驗證可用。")
+    .replace(/Price is above MA20\./i, "股價站上 MA20。")
+    .replace(/Price is above MA60\./i, "股價站上 MA60。")
+    .replace(/Price is not above MA20; keep sizing conservative\./i, "股價未站上 MA20，部位維持保守。")
+    .replace(/Price is not above MA60; keep sizing conservative\./i, "股價未站上 MA60，部位維持保守。")
+    .replace(/This is a deterministic fallback because the LLM did not return enough structured picks\./i, "因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。")
+    .replace(/Treat as research candidates until the full AI narrative is healthy\./i, "完整 AI 敘事恢復前，僅視為研究候選。");
 }
 
 function sumScores(scores: SubScores): number | null {
@@ -74,7 +87,7 @@ export function mapV3ItemToStockRecCard(item: AiRecommendationV3Item): StockRecC
 
   const entryLow = asNumber(item.entryZone?.low ?? item.entryPriceRange?.low);
   const entryHigh = asNumber(item.entryZone?.high ?? item.entryPriceRange?.high);
-  const entryLabel = item.entryZone?.reason
+  const entryLabel = (item.entryZone?.reason ? localizeV3Narrative(item.entryZone.reason) : null)
     ?? (entryLow != null && entryHigh != null ? null : "等待 OTE 進場區間");
 
   const tp1 = asNumber(item.tp1Structured?.price ?? item.tp1);

@@ -139,6 +139,7 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           display: grid;
           gap: 14px;
           min-width: 0;
+          overflow: hidden;
           border: 1px solid rgba(220, 228, 240, 0.1);
           border-left: 3px solid rgba(200, 148, 63, 0.78);
           border-radius: 8px;
@@ -205,6 +206,7 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
         }
         ._src-score-table {
           width: 100%;
+          table-layout: fixed;
           border-collapse: collapse;
           font: 800 11px/1 var(--mono, monospace);
         }
@@ -214,7 +216,9 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           text-align: center;
           font-size: 10px;
           border-bottom: 1px solid var(--tac-line, rgba(220,228,240,0.14));
-          white-space: nowrap;
+          line-height: 1.35;
+          overflow-wrap: anywhere;
+          white-space: normal;
         }
         ._src-score-table td {
           padding: 6px 6px;
@@ -222,6 +226,7 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           color: var(--tac-fg-0, #e8edf5);
           font-size: 12px;
           border-bottom: 1px solid rgba(220,228,240,0.06);
+          overflow-wrap: anywhere;
         }
         ._src-score-table tr:last-child td {
           color: var(--tac-brand, #c8943f);
@@ -316,7 +321,7 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           </div>
           <div className="_src-badges">
             <span className="_src-badge" data-tone={bucket.tone}>
-              {rec.bucket} bucket
+              {rec.bucket} 分層
             </span>
             <span className="_src-badge">
               信心 {fmtConfidence(rec.confidence)}
@@ -395,7 +400,7 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
 
         {/* Sizing */}
         <div className="_src-sizing">
-          <span className="_src-badge" data-tone={bucket.tone}>{rec.bucket} bucket</span>
+          <span className="_src-badge" data-tone={bucket.tone}>{rec.bucket} 分層</span>
           <b>單筆風險</b>
           {bucket.nav_pct === "0" ? "不開新倉" : `${bucket.nav_pct} NAV`}
           <span className="_src-sizing-sep">|</span>

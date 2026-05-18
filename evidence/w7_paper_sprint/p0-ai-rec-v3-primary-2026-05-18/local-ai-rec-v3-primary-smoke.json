@@ -1,0 +1,49 @@
+{
+  "allPass": true,
+  "results": [
+    {
+      "target": "desktop",
+      "checks": {
+        "status": 200,
+        "url": "http://127.0.0.1:3122/ai-recommendations?codexLocalV3=1779132032638",
+        "firstPanelCardCount": 5,
+        "secondPanelCardCount": 0,
+        "overlapCount": 0,
+        "hasV3Endpoint": true,
+        "noEnglishFallback": true,
+        "noPageErrors": true,
+        "consoleErrorCount": 0
+      },
+      "textSample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，15 則未讀\n15\nAI 推薦\nAI 推薦\nRecommendation Orchestrator\n台北 / 2026/5/19 03:20:34\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。\n台股目前盤後或週末休市，顯示 05/19 (二) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n趨勢盤\n/\n趨勢分數偏強，可照 SOP 執行。\n部位係數 1.0\n策略執行紀錄\n訊號中心\nAI 推薦 / v3 正式推薦清單\n產生時間 05/19 00:35 / v3 SOP / DEGRADED\n5 檔\n今日 AI 推薦已由 v3 SOP 回傳 5 檔\n\n這裡使用 `GET /api/v1/ai-recommendations/v3` 的真實回傳，不用 strategy ideas 補位。 若卡片標示降級補值，代表 LLM 敘事不足、由已驗證技術資料補齊結構化欄位，仍只作 SIM 研究候選。\n\nEndpoint\nGET /api/v1/ai-recommendations/v3\nOwner\nElva/Jason backend gate + Bruce owner-session verify\nNext\nBruce 驗 entry / TP / SL 與交易室 handoff；Elva/Jason 繼續補完整 AI 敘事與新聞/題材來源。\n20592059\nB 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t5/10\t18/20\t3/5\t65/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n5,003.25\nTP2\n5,241.5\nSL\n4,479.1\nR 值\n1.00R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價站上 MA20。\n\n股價站上 MA60。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nB 分層\n單筆風險\n0.4% NAV\n|\n單檔上限\n5% NAV\n15601560\nB 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t8/10\t16/20\t3/5\t66/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n681.45\nTP2\n713.9\nSL\n610.06\nR 值\n1.00R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價站上 MA20。\n\n股價站上 MA60。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nB 分層\n單筆風險\n0.4% NAV\n|\n單檔上限\n5% NAV\n20492049\nB 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t5/10\t18/20\t3/5\t65/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n397.43\nTP2\n416.35\nSL\n355.79\nR 值\n1.00R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價站上 MA20。\n\n股價站上 MA60。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nB 分層\n單筆風險\n0.4% NAV\n|\n單檔上限\n5% NAV\n15981598\nB 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t6/10\t14/20\t3/5\t62/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n21.11\nTP2\n22.11\nSL\n18.89\nR 值\n1.00R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價未站上 MA20，部位維持保守。\n\n股價站上 MA60。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nB 分層\n單筆風險\n0.4% NAV\n|\n單檔上限\n5% NAV\n21012101\nC 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t5/10\t10/20\t3/5\t57/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n31.87\nTP2\n33.39\nSL\n28.53\nR 值\n1.01R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價未站上 MA20，部位維持保守。\n\n股價未站上 MA60，部位維持保守。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nC 分層\n單筆風險\n不開新倉\n|\n單檔上限\n—\nAI 推薦 / SOP 推理結構 (v3)\n7 sub-score / 市場狀態 / OTE 進場 / ReAct 5-module\nDEGRADED\nv3 推薦已回傳，但仍使用降級合成資料\n\n目前顯示 5 檔正式 v3 推薦，未補前端假標的。\n\nEndpoint\nGET /api/v1/ai-recommendations/v3\nOwner\nElva/Jason backend gate + Bruce owner-session verify\nNext\nBruce 驗證 entry、TP、SL、風險與交易室 handoff；Elva/Jason 觀察 refresh 與資料品質。\nv3 5 檔已提升到上方主清單；本區保留 SO",
+      "consoleMessages": [
+        {
+          "type": "info",
+          "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+        }
+      ],
+      "pageErrors": []
+    },
+    {
+      "target": "mobile",
+      "checks": {
+        "status": 200,
+        "url": "http://127.0.0.1:3122/ai-recommendations?codexLocalV3=1779132035879",
+        "firstPanelCardCount": 5,
+        "secondPanelCardCount": 0,
+        "overlapCount": 0,
+        "hasV3Endpoint": true,
+        "noEnglishFallback": true,
+        "noPageErrors": true,
+        "consoleErrorCount": 0
+      },
+      "textSample": "戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\n警示通知，15 則未讀\n15\nAI 推薦\nAI 推薦\nRecommendation Orchestrator\n台北 / 2026/5/19 03:20:36\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。\n台股目前盤後或週末休市，顯示 05/19 (二) 收盤 收盤資料\n即時行情將於下一交易日 09:00 恢復\n趨勢盤\n/\n趨勢分數偏強，可照 SOP 執行。\n部位係數 1.0\n策略執行紀錄\n訊號中心\nAI 推薦 / v3 正式推薦清單\n產生時間 05/19 00:35 / v3 SOP / DEGRADED\n5 檔\n今日 AI 推薦已由 v3 SOP 回傳 5 檔\n\n這裡使用 `GET /api/v1/ai-recommendations/v3` 的真實回傳，不用 strategy ideas 補位。 若卡片標示降級補值，代表 LLM 敘事不足、由已驗證技術資料補齊結構化欄位，仍只作 SIM 研究候選。\n\nEndpoint\nGET /api/v1/ai-recommendations/v3\nOwner\nElva/Jason backend gate + Bruce owner-session verify\nNext\nBruce 驗 entry / TP / SL 與交易室 handoff；Elva/Jason 繼續補完整 AI 敘事與新聞/題材來源。\n20592059\nB 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t5/10\t18/20\t3/5\t65/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n5,003.25\nTP2\n5,241.5\nSL\n4,479.1\nR 值\n1.00R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價站上 MA20。\n\n股價站上 MA60。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nB 分層\n單筆風險\n0.4% NAV\n|\n單檔上限\n5% NAV\n15601560\nB 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t8/10\t16/20\t3/5\t66/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n681.45\nTP2\n713.9\nSL\n610.06\nR 值\n1.00R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價站上 MA20。\n\n股價站上 MA60。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nB 分層\n單筆風險\n0.4% NAV\n|\n單檔上限\n5% NAV\n20492049\nB 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t5/10\t18/20\t3/5\t65/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n397.43\nTP2\n416.35\nSL\n355.79\nR 值\n1.00R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價站上 MA20。\n\n股價站上 MA60。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nB 分層\n單筆風險\n0.4% NAV\n|\n單檔上限\n5% NAV\n15981598\nB 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t6/10\t14/20\t3/5\t62/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n21.11\nTP2\n22.11\nSL\n18.89\nR 值\n1.00R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價未站上 MA20，部位維持保守。\n\n股價站上 MA60。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nB 分層\n單筆風險\n0.4% NAV\n|\n單檔上限\n5% NAV\n21012101\nC 分層\n信心 56%\n市場倍率 ×1\n主題位置\t營收\t法人ETF\t融資借券\tRS量能\t技術結構\t估值事件\t總分\n15/20\t8/15\t8/15\t8/15\t5/10\t10/20\t3/5\t57/100\n進場區\n程式化回檔區間：以已驗證最近價的 0.98x-1.01x 估算。\nTP1\n31.87\nTP2\n33.39\nSL\n28.53\nR 值\n1.01R\n為什麼買\n\n技術資料已由 get_company_technical 驗證可用。\n\n股價未站上 MA20，部位維持保守。\n\n股價未站上 MA60，部位維持保守。\n\n為什麼不買 (對立面)\n\n因 LLM 未回傳足量結構化標的，本卡使用程式化降級補值。\n\n完整 AI 敘事恢復前，僅視為研究候選。\n\nC 分層\n單筆風險\n不開新倉\n|\n單檔上限\n—\nAI 推薦 / SOP 推理結構 (v3)\n7 sub-score / 市場狀態 / OTE 進場 / ReAct 5-module\nDEGRADED\nv3 推薦已回傳，但仍使用降級合成資料\n\n目前顯示 5 檔正式 v3 推薦，未補前端假標的。\n\nEndpoint\nGET /api/v1/ai-recommendations/v3\nOwner\nElva/Jason backend gate + Bruce owner-session verify\nNext\nBruce 驗證 entry、TP、SL、風險與交易室 handoff；Elva/Jason 觀察 refresh 與資料品質。\nv3 5 檔已提升到上方主清單；本區保留 SOP 狀態與 ReAct 追蹤。\n\n上方主清單直接使用 v3 endpoint。這裡不重複渲染股票卡，避免使用者誤以為有兩套不同推薦。\n\nAI 推理軌跡",
+      "consoleMessages": [
+        {
+          "type": "info",
+          "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+        }
+      ],
+      "pageErrors": []
+    }
+  ]
+}

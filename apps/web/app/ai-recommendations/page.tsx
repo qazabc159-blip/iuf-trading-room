@@ -518,6 +518,7 @@ export default async function AiRecommendationsPage() {
     error: v3Result.error,
     visibleCount: v3Cards.length,
   });
+  const hasPrimaryV3Cards = v3Cards.length >= 5;
   const v3MarketScores = getV3MarketScores(v3Items);
   const v3TraceSteps = mapV3TraceSteps(v3Result.data?.reactTrace);
   const sourceMode = formatRecommendationSourceMode({
@@ -525,6 +526,7 @@ export default async function AiRecommendationsPage() {
     isMock: Boolean(data?._mock),
   });
   const generatedAtLabel = formatRecommendationTimestamp(data?.generatedAt);
+  const v3GeneratedAtLabel = formatRecommendationTimestamp(v3Result.data?.generatedAt);
 
   return (
     <PageFrame
@@ -1195,36 +1197,71 @@ export default async function AiRecommendationsPage() {
 
       <Panel
         code="AI-01"
-        title="推薦清單"
-        sub={`交易日 ${data?.date ?? "-"} / 產生時間 ${generatedAtLabel || "-"} / ${sourceMode}`}
-        right={`${items.length} 檔`}
+        title={hasPrimaryV3Cards ? "v3 正式推薦清單" : "推薦清單"}
+        sub={hasPrimaryV3Cards
+          ? `產生時間 ${v3GeneratedAtLabel || "-"} / v3 SOP / ${v3PanelState.label}`
+          : `交易日 ${data?.date ?? "-"} / 產生時間 ${generatedAtLabel || "-"} / ${sourceMode}`}
+        right={`${hasPrimaryV3Cards ? v3Cards.length : items.length} 檔`}
       >
-        <div className="_rec-bucket-grid">
-          {BUCKETS.map((bucket) => {
-            const bucketItems = grouped.get(bucket.value) ?? [];
-            return (
-              <article key={bucket.value} className="_rec-bucket">
-                <span>{bucket.range}</span>
-                <b>{bucket.label}</b>
-                <small>{bucketItems.length} 檔</small>
-              </article>
-            );
-          })}
-        </div>
-
-        {items.length > 0 ? (
-          BUCKETS.map((bucket) => (
-            <BucketSection
-              key={bucket.value}
-              bucket={bucket}
-              items={grouped.get(bucket.value) ?? []}
-              error={error}
-            />
-          ))
-        ) : (
-          <div style={{ padding: "0 16px 18px" }}>
-            <RecommendationListEmptyState error={error} />
+        {hasPrimaryV3Cards ? (
+          <div style={{ padding: "16px" }}>
+            <div className="_rec-v3-state" data-tone={v3PanelState.tone}>
+              <b>今日 AI 推薦已由 v3 SOP 回傳 {v3Cards.length} 檔</b>
+              <p>
+                這裡使用 `GET /api/v1/ai-recommendations/v3` 的真實回傳，不用 strategy ideas 補位。
+                若卡片標示降級補值，代表 LLM 敘事不足、由已驗證技術資料補齊結構化欄位，仍只作 SIM 研究候選。
+              </p>
+              <dl>
+                <div>
+                  <dt>Endpoint</dt>
+                  <dd>{v3PanelState.endpoint}</dd>
+                </div>
+                <div>
+                  <dt>Owner</dt>
+                  <dd>{v3PanelState.owner}</dd>
+                </div>
+                <div>
+                  <dt>Next</dt>
+                  <dd>Bruce 驗 entry / TP / SL 與交易室 handoff；Elva/Jason 繼續補完整 AI 敘事與新聞/題材來源。</dd>
+                </div>
+              </dl>
+            </div>
+            <div className="_rec-v3-card-grid">
+              {v3Cards.map((card) => (
+                <StockRecCard key={`${card.ticker}-${card.bucket}`} rec={card} />
+              ))}
+            </div>
           </div>
+        ) : (
+          <>
+            <div className="_rec-bucket-grid">
+              {BUCKETS.map((bucket) => {
+                const bucketItems = grouped.get(bucket.value) ?? [];
+                return (
+                  <article key={bucket.value} className="_rec-bucket">
+                    <span>{bucket.range}</span>
+                    <b>{bucket.label}</b>
+                    <small>{bucketItems.length} 檔</small>
+                  </article>
+                );
+              })}
+            </div>
+
+            {items.length > 0 ? (
+              BUCKETS.map((bucket) => (
+                <BucketSection
+                  key={bucket.value}
+                  bucket={bucket}
+                  items={grouped.get(bucket.value) ?? []}
+                  error={error}
+                />
+              ))
+            ) : (
+              <div style={{ padding: "0 16px 18px" }}>
+                <RecommendationListEmptyState error={error} />
+              </div>
+            )}
+          </>
         )}
       </Panel>
 
@@ -1255,11 +1292,22 @@ export default async function AiRecommendationsPage() {
           </div>
 
           {v3Cards.length > 0 ? (
+            hasPrimaryV3Cards ? (
+              <div className="_rec-v3-preview">
+                <div className="_rec-v3-preview-title">
+                  v3 5 檔已提升到上方主清單；本區保留 SOP 狀態與 ReAct 追蹤。
+                </div>
+                <p style={{ margin: 0, color: "var(--tac-fg-2)", font: "750 12px/1.7 var(--sans-tc)" }}>
+                  上方主清單直接使用 v3 endpoint。這裡不重複渲染股票卡，避免使用者誤以為有兩套不同推薦。
+                </p>
+              </div>
+            ) : (
             <div className="_rec-v3-card-grid">
               {v3Cards.map((card) => (
                 <StockRecCard key={`${card.ticker}-${card.bucket}`} rec={card} />
               ))}
             </div>
+            )
           ) : (
             <div className="_rec-v3-preview">
               <div className="_rec-v3-preview-title">
