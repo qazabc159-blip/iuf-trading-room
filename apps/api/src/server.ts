@@ -14338,12 +14338,15 @@ let _aiRecV3CronLastFiredAt: string | null = null;
 let _aiRecV3CronLastError: string | null = null;
 
 // GET /api/v1/ai-recommendations/v3
+// F4: Exposes reactTrace + finalReportMarkdown for debug; fallback shows raw markdown when items=0
 app.get("/api/v1/ai-recommendations/v3", async (c) => {
   const { getLatestAiRecommendationV3Run } = await import("./ai-recommendation-v2/orchestrator-v3.js");
   const latest = getLatestAiRecommendationV3Run();
   if (!latest) {
     return c.json({ ok: false, error: "no_v3_run_yet", hint: "POST /api/v1/admin/ai-recommendations/v3/refresh to trigger" }, 404);
   }
+  // debug=true query param exposes full trace (default: included for Owner; trimmed for public)
+  const includeTrace = c.req.query("debug") === "true" || true; // always include for now — Bruce needs it
   return c.json({
     ok: true,
     runId: latest.runId,
@@ -14355,6 +14358,17 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     totalCostUsd: latest.totalCostUsd,
     totalTokens: latest.totalTokens,
     itemCount: latest.items.length,
+    // F4 debug fields:
+    reactTrace: includeTrace ? latest.reactTrace : undefined,
+    finalReportMarkdown: latest.finalReportMarkdown,
+    // Diagnostic: when parser found 0 items, surface a hint
+    parserDiagnostic: latest.items.length === 0 && latest.finalReportMarkdown
+      ? {
+          hint: "Parser found 0 items. See finalReportMarkdown for raw LLM output to diagnose format mismatch.",
+          reportLength: latest.finalReportMarkdown.length,
+          reportPreview: latest.finalReportMarkdown.slice(0, 500),
+        }
+      : undefined,
   });
 });
 

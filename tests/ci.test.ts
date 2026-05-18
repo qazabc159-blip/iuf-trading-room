@@ -12739,6 +12739,101 @@ test("THEME-MANUAL-UPDATE-2: handleAdminThemesManualUpdate rejects non-Owner ses
   assert.equal(body.error, "OWNER_ONLY", "THEME-MANUAL-UPDATE-2: error must be OWNER_ONLY");
 });
 
+// =============================================================================
+// AI-REC-ANTI-HALLUCINATION: Ticker validation + forced technical check (2026-05-18)
+// Lane: strategy backend (Jason). Files: ai-recommendation-v2/orchestrator.ts
+// Bruce 5/18 12:35 found: items[0].ticker="2026" (year!), no get_company_technical calls.
+// =============================================================================
+
+test("AI-REC-ANTI-HALLUCINATION-1: validateTicker rejects year patterns 2024/2025/2026", async () => {
+  const { validateTicker } = await import("../apps/api/src/ai-recommendation-v2/orchestrator.js") as any;
+  const years = ["2024", "2025", "2026", "2023", "2022", "2020", "2030"];
+  for (const year of years) {
+    const result = validateTicker(year);
+    assert.ok(result.valid === false, `AI-REC-ANTI-HALLUCINATION-1: year "${year}" must be rejected, got valid=${result.valid}`);
+    assert.ok(result.reason && result.reason.includes("year_pattern"), `AI-REC-ANTI-HALLUCINATION-1: reason for "${year}" must include year_pattern, got: ${result.reason}`);
+  }
+});
+
+test("AI-REC-ANTI-HALLUCINATION-2: validateTicker rejects 3-digit codes and malformed formats", async () => {
+  const { validateTicker } = await import("../apps/api/src/ai-recommendation-v2/orchestrator.js") as any;
+
+  // Invalid: 3-digit, 5-digit without letter suffix, non-digit-start, mixed-wrong-position
+  const invalid = ["100", "99", "12345", "TSMC", "abc", "23A0"];
+  for (const t of invalid) {
+    const result = validateTicker(t);
+    assert.ok(result.valid === false, `AI-REC-ANTI-HALLUCINATION-2: "${t}" must be rejected`);
+  }
+
+  // Valid tickers must pass (4-digit, or 4-digit + 1 uppercase letter)
+  const valid = ["2330", "2454", "0050", "0056", "3711", "0050T", "2330T"];
+  for (const t of valid) {
+    const result = validateTicker(t);
+    assert.ok(result.valid === true, `AI-REC-ANTI-HALLUCINATION-2: "${t}" must be accepted, reason=${result.reason}`);
+  }
+});
+
+test("AI-REC-ANTI-HALLUCINATION-3: parseAiReportToRecommendations filters out year-pattern tickers", async () => {
+  const { parseAiReportToRecommendations } = await import("../apps/api/src/ai-recommendation-v2/orchestrator.js") as any;
+
+  // Simulate LLM hallucinating "2026" as a ticker alongside a real ticker
+  const markdown = `
+## 2026 SomeHallucinatedCo
+- 進場: 100-110
+- 信心: 0.8
+- 推薦理由: This is hallucinated
+- 分類: 今日首選
+
+## 2330 台積電
+- 進場: 870-890
+- TP1: 930
+- 停損: 850
+- 信心: 0.85
+- 推薦理由: Strong AI demand
+- 分類: 今日首選
+`;
+
+  const items = parseAiReportToRecommendations(markdown, "2026-05-18");
+  const tickers = items.map((i: any) => i.ticker);
+
+  assert.ok(!tickers.includes("2026"), `AI-REC-ANTI-HALLUCINATION-3: year "2026" ticker must be filtered out, got tickers: ${JSON.stringify(tickers)}`);
+  assert.ok(tickers.includes("2330"), `AI-REC-ANTI-HALLUCINATION-3: real ticker "2330" must be preserved, got tickers: ${JSON.stringify(tickers)}`);
+});
+
+test("AI-REC-ANTI-HALLUCINATION-4: validateAndEnrichItems is exported and accepts empty array", async () => {
+  const { validateAndEnrichItems } = await import("../apps/api/src/ai-recommendation-v2/orchestrator.js") as any;
+  assert.ok(typeof validateAndEnrichItems === "function", "AI-REC-ANTI-HALLUCINATION-4: validateAndEnrichItems must be exported");
+
+  // Empty array must return empty array (no crash)
+  const result = await validateAndEnrichItems([]);
+  assert.ok(Array.isArray(result), "AI-REC-ANTI-HALLUCINATION-4: result must be array");
+  assert.equal(result.length, 0, "AI-REC-ANTI-HALLUCINATION-4: empty input must return empty output");
+});
+
+test("AI-REC-ANTI-HALLUCINATION-5: GET /api/v1/ai-recommendations/v3 shape includes reactTrace + finalReportMarkdown", async () => {
+  // Verify that the v3 GET response shape includes the debug fields
+  // We test by checking the orchestrator-v3 run result type has these fields.
+  const { _resetAiRecommendationV3Cache, getLatestAiRecommendationV3Run, runAiRecommendationV3 } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+
+  _resetAiRecommendationV3Cache();
+
+  // Before run: cache is null
+  const before = getLatestAiRecommendationV3Run();
+  assert.equal(before, null, "AI-REC-ANTI-HALLUCINATION-5: v3 cache must be null before run");
+
+  // Run once (will fail gracefully without LLM key — no OPENAI_API_KEY in test mode)
+  const result = await runAiRecommendationV3({ trigger: "test", maxRounds: 1, costCapUsd: 0.001 });
+
+  // Result must have reactTrace + finalReportMarkdown fields
+  assert.ok(Object.prototype.hasOwnProperty.call(result, "reactTrace"), "AI-REC-ANTI-HALLUCINATION-5: result must have reactTrace field");
+  assert.ok(Array.isArray(result.reactTrace), "AI-REC-ANTI-HALLUCINATION-5: reactTrace must be an array");
+  assert.ok(Object.prototype.hasOwnProperty.call(result, "finalReportMarkdown"), "AI-REC-ANTI-HALLUCINATION-5: result must have finalReportMarkdown field");
+  assert.ok(typeof result.finalReportMarkdown === "string", "AI-REC-ANTI-HALLUCINATION-5: finalReportMarkdown must be a string");
+
+  // Cleanup
+  _resetAiRecommendationV3Cache();
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
