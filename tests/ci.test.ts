@@ -13805,6 +13805,113 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-5: synthesis prompt uses RISK_OFF_FINAL_SKIP s
   assert.ok(src.includes("CRITICAL PARSER RULES"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: repair prompt must have CRITICAL PARSER RULES block");
 });
 
+// ── AI-REC-V3-NULL-REPORT Round 2 (PR #742) — Railway log-anchored ─────────
+// Evidence: run 8d18127c reportLength=43 "(synthesis unavailable - LLM returned null)"
+// Evidence: run b2f79f5a initialItemCount=2, headings=["## 1101 台泥","## 1102 亞泥"]
+
+test("AI-REC-V3-NULL-REPORT-1: synthesis returns empty string not sentinel when LLM returns null", async () => {
+  const src = await import("fs").then(fs =>
+    fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
+  );
+  // Verify the return statement uses empty string, not 43-char sentinel
+  // Check actual return value pattern (not comments which may still mention old sentinel for context)
+  // The actual code line must be: markdown: llmResult?.content ?? "",
+  const hasEmptyFallback = src.includes('llmResult?.content ?? ""') || src.includes("llmResult?.content ?? ''");
+  assert.ok(hasEmptyFallback, "AI-REC-V3-NULL-REPORT-1: synthesis must use empty string when LLM returns null (llmResult?.content ?? \"\")");
+  // Also verify the synthesis function does NOT have a return statement using the old sentinel
+  // (Comments mentioning it for context are ok; the actual ?? operator must not produce the sentinel)
+  const returnSentinel = /markdown:\s*llmResult\?\.content\s*\?\?\s*"[^"]{10,}"/.test(src);
+  assert.ok(!returnSentinel, "AI-REC-V3-NULL-REPORT-1: markdown return must use empty string not a long sentinel string");
+});
+
+test("AI-REC-V3-NULL-REPORT-2: retry guard skips when synthesis report is empty (LLM null)", async () => {
+  const src = await import("fs").then(fs =>
+    fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
+  );
+  assert.ok(src.includes("reportIsEmpty"), "AI-REC-V3-NULL-REPORT-2: must track reportIsEmpty flag");
+  assert.ok(src.includes("!reportIsEmpty"), "AI-REC-V3-NULL-REPORT-2: retry guard must use !reportIsEmpty to skip repair when LLM null");
+});
+
+test("AI-REC-V3-NULL-REPORT-3: retry winner condition is strict greater-than (not >=)", async () => {
+  const src = await import("fs").then(fs =>
+    fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
+  );
+  // Old: retryItems.length >= items.length  → 0 >= 0 = true → bad swap to empty result
+  // New: retryItems.length > items.length   → 0 > 0 = false → keep original
+  const hasStrictGt = /retryItems\.length\s*>\s*items\.length/.test(src);
+  assert.ok(hasStrictGt, "AI-REC-V3-NULL-REPORT-3: retry must use strict > not >= so 0-vs-0 tie does not swap");
+});
+
+test("AI-REC-V3-NULL-REPORT-4: MIN_V3_RECOMMENDATION_ITEMS is 2 not 5 (Railway log b2f79f5a evidence)", async () => {
+  const src = await import("fs").then(fs =>
+    fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
+  );
+  const match = src.match(/const MIN_V3_RECOMMENDATION_ITEMS\s*=\s*(\d+)/);
+  assert.ok(match, "AI-REC-V3-NULL-REPORT-4: MIN_V3_RECOMMENDATION_ITEMS must be defined");
+  const value = parseInt(match![1]!, 10);
+  assert.ok(value <= 2, `AI-REC-V3-NULL-REPORT-4: MIN_V3_RECOMMENDATION_ITEMS must be <= 2 (valid 2-item report from b2f79f5a was rejected), got ${value}`);
+});
+
+test("AI-REC-V3-NULL-REPORT-5: parseAiReportToRecommendationsV3 correctly parses Railway log real sample", async () => {
+  const { parseAiReportToRecommendationsV3 } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  // Exact headings from Railway log run b2f79f5a parser_under_min_items.headingCandidates
+  const realSample = `## 1101 台泥
+- 分類: A可觀察布局
+- 總分: 65
+- 市場狀態: range
+- 主題位置分: 15
+- 營收財報分: 10
+- 法人ETF分: 10
+- 融資借券分: 10
+- 相對強弱量能分: 5
+- 技術結構分: 10
+- 估值事件分: 5
+- 進場區: 23-25
+- 進場理由: 突破後回測不破
+- TP1: 26
+- TP1理由: 前波高
+- TP2: 28
+- TP2理由: 月線上緣
+- 停損: 22
+- ATR倍數: 0.5
+- R值: 1.5
+- 信心: 0.7
+- 為什麼買: 法人持股增加
+- 為什麼不買: 低於均線
+- NAV比重: 0.6%
+- 市場倍率: 0.9
+
+## 1102 亞泥
+- 分類: B等回檔
+- 總分: 55
+- 市場狀態: range
+- 主題位置分: 15
+- 營收財報分: 10
+- 法人ETF分: 10
+- 融資借券分: 5
+- 相對強弱量能分: 5
+- 技術結構分: 5
+- 估值事件分: 5
+- 進場區: 33-35
+- 進場理由: OTE 0.618-0.705
+- TP1: 36
+- TP1理由: 前波高
+- TP2: 38
+- TP2理由: 月線上緣
+- 停損: 32
+- ATR倍數: 0.5
+- R值: 1.2
+- 信心: 0.6
+- 為什麼買: 法人持股增加
+- 為什麼不買: RSI超賣
+- NAV比重: 0.4%
+- 市場倍率: 0.7`;
+  const items = parseAiReportToRecommendationsV3(realSample, "2026-05-19");
+  assert.ok(items.length >= 1, `AI-REC-V3-NULL-REPORT-5: Railway log real sample must parse >= 1 item, got ${items.length}`);
+  const tickers = items.map((i: any) => i.ticker);
+  assert.ok(tickers.includes("1101"), `AI-REC-V3-NULL-REPORT-5: ticker 1101 must be parsed from "## 1101 台泥", got ${JSON.stringify(tickers)}`);
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
