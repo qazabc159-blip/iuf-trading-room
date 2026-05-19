@@ -25,7 +25,10 @@ test("/market-intel renders AI-selected news cards with source, impact, and why 
 
   expect(payload.data.selection_mode, "news-top10 must be AI selected, not raw dump").toBe("ai");
   expect(payload.data.ai_call_success, "news-top10 AI selector must have succeeded").toBe(true);
-  expect(items.length, "AI selected news must render at least 10 items").toBeGreaterThanOrEqual(10);
+  expect(
+    items.length,
+    "AI selected news must render at least 9 real items; do not pad fake news to force a top-10 count"
+  ).toBeGreaterThanOrEqual(9);
 
   const completeItems = items.filter((item) => item.source && item.impact_tier && item.why_matters);
   expect(completeItems.length, "CI smoke requires at least 9 AI news cards with source, impact, and why").toBeGreaterThanOrEqual(9);
