@@ -13838,6 +13838,28 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-5: synthesis prompt uses RISK_OFF_FINAL_SKIP s
   assert.ok(src.includes("CRITICAL PARSER RULES"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: repair prompt must have CRITICAL PARSER RULES block");
 });
 
+test("AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis gate forbids risk-off skip when programmatic score is below 3", async () => {
+  const src = await import("fs").then(fs =>
+    fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
+  );
+  assert.ok(
+    src.includes("system_programmatic_risk_off_score"),
+    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis prompt must receive the deterministic risk-off score"
+  );
+  assert.ok(
+    src.includes("INVALID_RISK_OFF_FINAL_SKIP_REPAIR"),
+    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: repair pass must reject invalid risk-off skip text"
+  );
+  assert.ok(
+    src.includes("RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 完全禁止"),
+    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: prompt must forbid skip sentinels when score < 3"
+  );
+  assert.ok(
+    src.includes("推薦 A+/A/B/C 的股票"),
+    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis must allow C bucket high-risk exclusion cards to satisfy the five-card gate without fake buy signals"
+  );
+});
+
 // ── AI-REC-V3-NULL-REPORT Round 2 (PR #742) — Railway log-anchored ─────────
 // Evidence: run 8d18127c reportLength=43 "(synthesis unavailable - LLM returned null)"
 // Evidence: run b2f79f5a initialItemCount=2, headings=["## 1101 台泥","## 1102 亞泥"]
