@@ -32,6 +32,10 @@ apps/web/.codex-web-dev-*.log
 # Evidence files containing live runtime captures (gitignore future ones)
 evidence_*_runtime_*.md
 .gstack/
+reports/qa_playwright_*/
+packages/qa-playwright/storageState.json
+packages/qa-playwright/playwright-report/
+packages/qa-playwright/test-results/
 
 # Per-agent local memory (machine-specific, not source-controlled)
 .claude/agent-memory/

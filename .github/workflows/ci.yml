@@ -80,3 +80,50 @@ jobs:
 
       - name: Smoke
         run: pnpm smoke
+
+  qa-playwright-smoke:
+    name: Playwright P0 Smoke
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      IUF_QA_WEB_BASE_URL: https://app.eycvector.com
+      IUF_QA_API_BASE_URL: https://api.eycvector.com
+      IUF_QA_OWNER_EMAIL: ${{ secrets.SEED_OWNER_EMAIL }}
+      IUF_QA_OWNER_PASSWORD: ${{ secrets.SEED_OWNER_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Activate pnpm
+        run: corepack prepare pnpm@10.29.2 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter @iuf-trading-room/qa-playwright exec playwright install chromium
+
+      - name: Market Intel smoke
+        run: pnpm qa:playwright:smoke
+
+      - name: Upload Playwright screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-playwright-smoke
+          path: |
+            reports/qa_playwright_*/
+            packages/qa-playwright/playwright-report/
+            packages/qa-playwright/test-results/
