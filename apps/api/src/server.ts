@@ -4928,6 +4928,39 @@ app.get("/api/v1/reviews/log", async (c) => {
 // =============================================================================
 
 // =============================================================================
+// Intraday kbar helper — aggregate FinMind 1-min rows to N-min buckets
+// =============================================================================
+function _aggregateFinMindKBars(
+  rows: Array<{ date: string; minute: string; open: number; high: number; low: number; close: number; volume: number }>,
+  bucketMins: number
+): Array<{ dt: string; time: number; open: number; high: number; low: number; close: number; volume: number; source: "finmind" }> {
+  const buckets = new Map<string, { open: number; high: number; low: number; close: number; volume: number; timeMs: number; dt: string }>();
+  for (const row of rows) {
+    const [hStr, mStr] = row.minute.split(":").slice(0, 2);
+    const h = parseInt(hStr ?? "0", 10);
+    const m = parseInt(mStr ?? "0", 10);
+    const totalMins = h * 60 + m;
+    const bucketStart = Math.floor(totalMins / bucketMins) * bucketMins;
+    const bh = String(Math.floor(bucketStart / 60)).padStart(2, "0");
+    const bm = String(bucketStart % 60).padStart(2, "0");
+    const key = `${row.date}T${bh}:${bm}`;
+    const existing = buckets.get(key);
+    const timeMs = new Date(`${row.date}T${bh}:${bm}:00+08:00`).getTime();
+    if (!existing) {
+      buckets.set(key, { open: row.open, high: row.high, low: row.low, close: row.close, volume: row.volume, timeMs, dt: row.date });
+    } else {
+      existing.high = Math.max(existing.high, row.high);
+      existing.low = Math.min(existing.low, row.low);
+      existing.close = row.close;
+      existing.volume += row.volume;
+    }
+  }
+  return Array.from(buckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, v]) => ({ dt: v.dt, time: v.timeMs, open: v.open, high: v.high, low: v.low, close: v.close, volume: v.volume, source: "finmind" as const }));
+}
+
+// =============================================================================
 // W7 D3 — OHLCV endpoints
 // =============================================================================
 // GET /api/v1/companies/:id/ohlcv?from=...&to=...&interval=1d
@@ -4938,7 +4971,7 @@ app.get("/api/v1/reviews/log", async (c) => {
 const ohlcvQuerySchema = z.object({
   from:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to:       z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  interval: z.enum(["1d", "1w", "1m"]).optional().default("1d")
+  interval: z.enum(["1d", "1w", "1m", "5m", "15m", "60m"]).optional().default("1d")
 });
 
 app.get("/api/v1/companies/:id/ohlcv", async (c) => {
@@ -4958,14 +4991,156 @@ app.get("/api/v1/companies/:id/ohlcv", async (c) => {
   });
   if (!company) return c.json({ error: "company_not_found" }, 404);
 
+  // Intraday intervals: try KGI kbar → FinMind kbar → NO_INTRADAY_DATA
+  const intradayIntervals = new Set(["5m", "15m", "60m"]);
+  if (intradayIntervals.has(query.interval)) {
+    // Map our interval string to KGI limit (number of bars to request)
+    const intradayLimitMap: Record<string, number> = { "5m": 80, "15m": 30, "60m": 8 };
+    const kgiLimit = intradayLimitMap[query.interval] ?? 80;
+
+    // 1) Try KGI kbar (real-time, trading hours only)
+    try {
+      const kgiBars = await getKgiQuoteClient().getRecentKbars(company.ticker, kgiLimit);
+      if (kgiBars.bars.length > 0) {
+        const bars = kgiBars.bars.map((b) => ({
+          dt: new Date(b.time).toISOString().slice(0, 10),
+          time: b.time,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+          volume: b.volume,
+          source: "kgi" as const
+        }));
+        return c.json({ data: bars, interval: query.interval, source: "kgi_intraday" });
+      }
+    } catch {
+      // KGI unavailable (off-hours or unreachable) — fall through to FinMind
+    }
+
+    // 2) Try FinMind kbar for today (sponsor feature, single-day 1-min bars)
+    const todayIso = new Date().toISOString().slice(0, 10);
+    try {
+      const { getFinMindClient: getFMClient } = await import("./data-sources/finmind-client.js");
+      const fmBars = await getFMClient().getStockKBar(company.ticker, todayIso);
+      if (fmBars.length > 0) {
+        // Aggregate 1-min bars to requested interval
+        const intervalMins: Record<string, number> = { "5m": 5, "15m": 15, "60m": 60 };
+        const bucketMins = intervalMins[query.interval] ?? 5;
+        const bucketedBars = _aggregateFinMindKBars(fmBars, bucketMins);
+        if (bucketedBars.length > 0) {
+          return c.json({ data: bucketedBars, interval: query.interval, source: "finmind_intraday" });
+        }
+      }
+    } catch {
+      // FinMind unavailable — fall through to NO_INTRADAY_DATA
+    }
+
+    // 3) Neither source available — explicit NO_INTRADAY_DATA (not silent 400)
+    return c.json({
+      data: [],
+      interval: query.interval,
+      status: "NO_INTRADAY_DATA",
+      message: "盤中資料目前不可用 (KGI 收盤 / FinMind 未返回資料). 請使用 interval=1d 查看日線."
+    });
+  }
+
   const bars = await getCompanyOhlcv(company.id, c.get("session"), {
     from: query.from,
     to: query.to,
-    interval: query.interval,
+    interval: query.interval as "1d" | "1w" | "1m",
     ticker: company.ticker
   });
 
   return c.json({ data: bars });
+});
+
+// =============================================================================
+// GET /api/v1/companies/:id/technical?indicators=ma20,vwap,sr
+// Backend-computed technical indicators from last 22 daily bars.
+// indicators param is advisory; currently always returns ma20 + vwap + support + resistance.
+// Fail-open: missing bars → null fields (never 500).
+// =============================================================================
+
+const technicalQuerySchema = z.object({
+  indicators: z.string().optional()
+});
+
+app.get("/api/v1/companies/:id/technical", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  // Fetch last 22 daily bars for indicator computation
+  let bars: OhlcvBar[] = [];
+  try {
+    bars = await getCompanyOhlcv(company.id, c.get("session"), {
+      interval: "1d",
+      ticker: company.ticker
+    });
+    // Take last 22 bars (ascending already from getCompanyOhlcv)
+    if (bars.length > 22) bars = bars.slice(-22);
+  } catch {
+    // fail-open: proceed with empty bars → all nulls
+  }
+
+  const closes = bars.map((b) => b.close);
+  const volumes = bars.map((b) => b.volume);
+
+  // MA20: simple moving average of last 20 closes
+  let ma20: number | null = null;
+  if (closes.length >= 20) {
+    const last20 = closes.slice(-20);
+    ma20 = +(last20.reduce((a, b) => a + b, 0) / 20).toFixed(2);
+  }
+
+  // VWAP: price × volume / total_volume over available bars
+  let vwap: number | null = null;
+  const totalVolume = volumes.reduce((a, b) => a + b, 0);
+  if (bars.length > 0 && totalVolume > 0) {
+    const pv = bars.reduce((acc, b) => acc + b.close * b.volume, 0);
+    vwap = +(pv / totalVolume).toFixed(2);
+  }
+
+  // Support / Resistance: derive from recent lows/highs
+  // Support = recent 22-bar low cluster (min of last-5 lows, rounded)
+  // Resistance = recent 22-bar high cluster (max of last-5 highs, rounded)
+  const support: number[] = [];
+  const resistance: number[] = [];
+  if (bars.length >= 5) {
+    const lows = bars.map((b) => b.low);
+    const highs = bars.map((b) => b.high);
+    // Simple pivot: check each bar (excluding first/last) if it's a local min/max
+    for (let i = 1; i < bars.length - 1; i++) {
+      const lo = lows[i]!;
+      const hi = highs[i]!;
+      if (lo <= (lows[i - 1] ?? Infinity) && lo <= (lows[i + 1] ?? Infinity)) {
+        support.push(+lo.toFixed(2));
+      }
+      if (hi >= (highs[i - 1] ?? 0) && hi >= (highs[i + 1] ?? 0)) {
+        resistance.push(+hi.toFixed(2));
+      }
+    }
+  }
+
+  // Latest close for context
+  const lastClose = closes.length > 0 ? closes[closes.length - 1]! : null;
+  const lastBar = bars.length > 0 ? bars[bars.length - 1] : null;
+
+  return c.json({
+    data: {
+      ticker: company.ticker,
+      name: company.name,
+      asOf: lastBar?.dt ?? null,
+      lastPrice: lastClose,
+      ma20,
+      vwap,
+      support,
+      resistance,
+      barsUsed: bars.length
+    }
+  });
 });
 
 // GET /api/v1/companies/ohlcv/bulk?ids=a,b,c&from=...&to=...&interval=1d
@@ -4975,7 +5150,7 @@ const ohlcvBulkQuerySchema = z.object({
   ids:      z.string().min(1),
   from:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to:       z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  interval: z.enum(["1d", "1w", "1m"]).optional().default("1d")
+  interval: z.enum(["1d", "1w", "1m", "5m", "15m", "60m"]).optional().default("1d")
 });
 
 app.get("/api/v1/companies/ohlcv/bulk", async (c) => {
@@ -4998,7 +5173,7 @@ app.get("/api/v1/companies/ohlcv/bulk", async (c) => {
   const data = await getCompanyOhlcvBulk(ids, c.get("session"), {
     from: query.from,
     to: query.to,
-    interval: query.interval
+    interval: query.interval as "1d" | "1w" | "1m"
   });
 
   return c.json({ data });
@@ -10660,6 +10835,27 @@ app.get("/api/v1/paper/portfolio", async (c) => {
 });
 
 // =============================================================================
+// Fix 3 — GET /api/v1/paper/funds alias
+// Alias for GET /api/v1/trading/balance — same shape, different path.
+// Frontend PTR calls /paper/funds to get available cash for the paper account.
+// Auth: same as /trading/balance (session required, no special role).
+// =============================================================================
+
+app.get("/api/v1/paper/funds", async (c) => {
+  // accountId is optional; mirrors /trading/balance optional behaviour.
+  const accountId = c.req.query("accountId") ?? "";
+  if (!accountId) {
+    // Return overall workspace paper balance (first account or summary)
+    return c.json({
+      data: await getPaperBalance(c.get("session"), "")
+    });
+  }
+  return c.json({
+    data: await getPaperBalance(c.get("session"), accountId)
+  });
+});
+
+// =============================================================================
 // 5/5 REOPEN — Product Block #1: Paper E2E health + KBar diagnostics
 // =============================================================================
 
@@ -12118,6 +12314,112 @@ app.get("/api/v1/admin/market/refresh-status", async (c) => {
         description: "hourly, fires every 60min, 50min double-fire guard"
       }
     }
+  });
+});
+
+// =============================================================================
+// Fix 4 — POST /api/v1/admin/companies/seed
+// Idempotently seeds missing canonical companies (1216 統一企業 + 0050 元大台灣50).
+// Safe to call multiple times: checks ticker existence before insert.
+// Owner only.  No DB migration required — uses existing companies table.
+// =============================================================================
+
+const _SEED_EXPOSURE = { volume: 3, asp: 3, margin: 3, capacity: 3, narrative: 3 } as const;
+const _SEED_VALIDATION = { capitalFlow: "neutral", consensus: "neutral", relativeStrength: "neutral" } as const;
+
+const CANONICAL_COMPANIES_SEED: Array<{
+  ticker: string;
+  name: string;
+  market: string;
+  country: string;
+  chainPosition: string;
+  beneficiaryTier: "Core" | "Direct" | "Indirect" | "Observation";
+  exposure: typeof _SEED_EXPOSURE;
+  validation: typeof _SEED_VALIDATION;
+  notes: string;
+  themeIds: string[];
+}> = [
+  {
+    ticker: "1216",
+    name: "統一企業",
+    market: "食品工業",
+    country: "Taiwan",
+    chainPosition: "Consumer Staples",
+    beneficiaryTier: "Core",
+    exposure: _SEED_EXPOSURE,
+    validation: _SEED_VALIDATION,
+    notes: "統一企業 — 台灣最大食品飲料集團，旗下7-ELEVEN、統一超。",
+    themeIds: []
+  },
+  {
+    ticker: "0050",
+    name: "元大台灣50",
+    market: "ETF",
+    country: "Taiwan",
+    chainPosition: "Broad Market ETF",
+    beneficiaryTier: "Core",
+    exposure: _SEED_EXPOSURE,
+    validation: _SEED_VALIDATION,
+    notes: "元大台灣50 — 追蹤台灣50指數，前50大市值個股。",
+    themeIds: []
+  }
+];
+
+app.post("/api/v1/admin/companies/seed", async (c) => {
+  const session = c.get("session");
+  if (session.user.role !== "Owner" && session.user.role !== "Admin") {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  const repo = c.get("repo");
+  const workspaceSlug = session.workspace.slug;
+
+  const results: Array<{ ticker: string; action: "created" | "already_exists" | "error"; detail?: string }> = [];
+
+  for (const seed of CANONICAL_COMPANIES_SEED) {
+    try {
+      // Check if ticker already exists in this workspace
+      const existing = await getCompaniesLiteCached(repo, workspaceSlug);
+      const found = existing.find((co) => co.ticker === seed.ticker);
+      if (found) {
+        results.push({ ticker: seed.ticker, action: "already_exists" });
+        continue;
+      }
+
+      // Create the company
+      await repo.createCompany(
+        {
+          ticker: seed.ticker,
+          name: seed.name,
+          market: seed.market,
+          country: seed.country,
+          chainPosition: seed.chainPosition,
+          beneficiaryTier: seed.beneficiaryTier,
+          exposure: seed.exposure,
+          validation: seed.validation,
+          notes: seed.notes,
+          themeIds: []
+        },
+        { workspaceSlug }
+      );
+      results.push({ ticker: seed.ticker, action: "created" });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error(`[admin/companies/seed] failed for ticker=${seed.ticker}:`, detail);
+      results.push({ ticker: seed.ticker, action: "error", detail });
+    }
+  }
+
+  const created = results.filter((r) => r.action === "created").length;
+  const alreadyExist = results.filter((r) => r.action === "already_exists").length;
+  const errors = results.filter((r) => r.action === "error").length;
+
+  return c.json({
+    ok: errors === 0,
+    created,
+    already_exists: alreadyExist,
+    errors,
+    results
   });
 });
 
