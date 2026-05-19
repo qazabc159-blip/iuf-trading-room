@@ -439,6 +439,11 @@ ${riskOffContext}
 
 [STEP 5] 每檔輸出（C bucket 也必須輸出，但標示高風險排除）
   ★★ 最終輸出必須包含 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔真實資料支撐的 A+/A/B/C 卡片（否則系統拒絕此次分析）。
+  ★★ PARSER 格式規則（必須遵守，否則解析失敗）：
+     - 每檔 heading 必須是「## XXXX 公司名」（兩個#，空格，4位數ticker，空格，中文名）
+     - 不得用 ###、#### 或 **ticker** bold heading
+     - 不得在 ticker heading 前後穿插任何非 ticker heading（例如 ## 市場分析 會被誤解析）
+     - 所有欄位用「- 欄位名: 值」bullet 格式，不得用 markdown table
   格式嚴格如下（解析器依賴此格式）：
   進場區：OTE 0.618-0.705 回踩（具體價格區間）或突破後回測不破
   TP1：前波高 or 整數關（具體價格）
@@ -496,7 +501,7 @@ ${traceText}
 - 市場倍率: [1.0 | 0.9 | 0.7 | 0.6 | 0.5 | 0.4 | 0.3 | 0]
 
 推薦 A+/A/B 的股票，不要輸出 C 分類。
-若 risk_off_score >= 3，只輸出一個 ## 市場 risk-off 段落說明原因，不推薦任何股票。
+若 risk_off_score >= 3，只輸出純文字「RISK_OFF_FINAL_SKIP」後接一行說明原因，不推薦任何股票，不要輸出任何 ## 股票 heading。
 使用真實市場資料（來自 ReAct trace），不要捏造數字。`;
 }
 
@@ -767,9 +772,19 @@ export function parseAiReportToRecommendationsV3(
   const results: AiStockRecommendationV2[] = [];
   if (!markdown || markdown.trim().length === 0) return results;
 
-  // Check if market is risk-off (AI returned skip)
-  if (/RISK_OFF_SKIP|市場 risk-off|risk.off 暫不推薦/i.test(markdown)) {
-    return results; // Empty — no recommendations in risk-off
+  // Check if market is risk-off (AI returned explicit skip signal).
+  //
+  // IMPORTANT: Only treat as risk-off if the markdown contains an explicit
+  // RISK_OFF_FINAL_SKIP sentinel OR if it contains "RISK_OFF_SKIP" AND has
+  // no stock headings at all (## \d{4}).  The old check triggered on any
+  // "市場 risk-off" substring, which false-positives on the synthesis section
+  // header "## 市場 risk-off 分析" that LLM legitimately writes as a preamble
+  // before recommending stocks — root cause of usedFallback=true ~50% runs.
+  const hasStockHeadings = /^#{2,6}\s*(?:\*\*)?\d{4,6}[A-Z]?(?:\*\*)?\b/m.test(markdown);
+  const isExplicitSkip = /RISK_OFF_FINAL_SKIP/.test(markdown) ||
+    (/RISK_OFF_SKIP/.test(markdown) && !hasStockHeadings);
+  if (isExplicitSkip) {
+    return results; // Empty — genuine risk-off skip
   }
 
   const stockBlockStartRe = /(?=^(?:#{2,6}\s*|\d+\.\s*|[-*]\s*)?(?:\*\*)?\d{4,6}[A-Z]?(?:\*\*)?\b)/m;
@@ -1047,9 +1062,12 @@ async function synthesizeReportV3(
 FORMAT_REPAIR_REQUIRED:
 The previous synthesis output did not parse into at least ${MIN_V3_RECOMMENDATION_ITEMS} recommendation items.
 Rewrite the recommendation sections only, preserving the same factual basis from the trace.
-Use this exact block start for every stock: "## 2330 CompanyName".
-Do not use tables, bold-only headings, prose-only sections, or headings without a ticker.
-Include ${MIN_V3_RECOMMENDATION_ITEMS} to 8 stocks. C bucket is allowed when the verified data is weak; label it clearly instead of dropping the stock.
+CRITICAL PARSER RULES:
+1. Every stock section MUST start with exactly "## XXXX 公司名" (two hashes, space, 4-digit ticker, space, Chinese name).
+2. Do NOT use ### or #### headings for stocks. Do NOT use bold-only (**2330**) headings for stocks.
+3. Do NOT output any heading containing "risk-off" or "市場" — only stock ticker headings are parsed.
+4. Do NOT use markdown tables — use bullet list format (- 欄位: 值) exclusively.
+5. Include ${MIN_V3_RECOMMENDATION_ITEMS} to 8 stocks. C bucket is allowed when the verified data is weak; label it clearly instead of dropping the stock.
 
 Previous markdown:
 ${repairMarkdown.slice(0, 9000)}`
@@ -1064,7 +1082,7 @@ ${repairMarkdown.slice(0, 9000)}`
       modelKey: model,
       callerModule: "ai_rec_v2",
       taskType: repairMarkdown ? "synthesis_format_retry" : "synthesis",
-      maxTokens: repairMarkdown ? 4500 : 3500,
+      maxTokens: repairMarkdown ? 7000 : 5500,
       temperature: repairMarkdown ? 0.1 : 0.2,
     }
   );

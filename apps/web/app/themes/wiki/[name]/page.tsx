@@ -15,7 +15,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -219,6 +219,7 @@ function SectorGroup({ sector, members, query }: { sector: string; members: Wiki
 
 export default function ThemeWikiPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const rawName = typeof params?.name === "string" ? params.name : Array.isArray(params?.name) ? params.name[0] : "";
   // Decode URL-encoded token (Next.js may or may not pre-decode)
   const token = useMemo(() => {
@@ -281,6 +282,9 @@ export default function ThemeWikiPage() {
     for (const members of filteredSectors.values()) n += members.length;
     return n;
   }, [filteredSectors]);
+  const cameFromCompanies = searchParams?.get("from") === "companies";
+  const backHref = cameFromCompanies ? "/companies?tab=themes" : "/themes";
+  const backLabel = cameFromCompanies ? "返回公司主題雷達" : "返回主題板";
 
   return (
     <>
@@ -289,8 +293,8 @@ export default function ThemeWikiPage() {
       <div className="_wk-page">
         {/* Back breadcrumb */}
         <div style={{ marginBottom: 14 }}>
-          <Link href="/themes" className="_wk-back">
-            ← 主題板
+          <Link href={backHref} className="_wk-back" aria-label={backLabel}>
+            ← {backLabel}
           </Link>
         </div>
 
