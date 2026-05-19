@@ -13497,6 +13497,60 @@ test("EVENTSEED-2: seedEventLog returns result object with required keys in non-
 });
 
 // =============================================================================
+// EventLog seed write fix (PR #739) — EVENTSEED-WRITE-1..3
+// Root cause: boot-time seed ran immediately (no setTimeout) → DB pool not warm
+// → isDatabaseMode()=false → in-memory write → lost on restart → streams=[] in prod.
+// Fix: 30s setTimeout defers seed until after DB pool warm.
+// =============================================================================
+
+test("EVENTSEED-WRITE-1: seedEventLog non-DB mode pushes skip reason to errors (not silent fail)", async () => {
+  const mod = await import("../apps/api/src/events/event-seed.js") as any;
+  // isDatabaseMode()=false in tests → should return graceful skip, not throw
+  const result = await mod.seedEventLog("00000000-0000-0000-0000-000000000001");
+  assert.ok(Array.isArray(result.errors), "EVENTSEED-WRITE-1: errors must be array");
+  assert.ok(result.errors.length > 0, "EVENTSEED-WRITE-1: non-DB mode must report skip reason in errors");
+  assert.ok(
+    typeof result.errors[0] === "string" && result.errors[0].length > 0,
+    "EVENTSEED-WRITE-1: error message must be non-empty string"
+  );
+});
+
+test("EVENTSEED-WRITE-2: seedEventLog non-DB mode returns null startupEventId + 0 counts", async () => {
+  const mod = await import("../apps/api/src/events/event-seed.js") as any;
+  const result = await mod.seedEventLog("00000000-0000-0000-0000-000000000002");
+  assert.strictEqual(result.startupEventId, null,
+    "EVENTSEED-WRITE-2: non-DB mode must return null startupEventId (no real DB write happened)");
+  assert.strictEqual(result.auditEventsSeeded, 0,
+    "EVENTSEED-WRITE-2: non-DB mode must report 0 audit events seeded");
+  assert.strictEqual(result.orderEventsSeeded, 0,
+    "EVENTSEED-WRITE-2: non-DB mode must report 0 order events seeded");
+});
+
+test("EVENTSEED-WRITE-3: appendEvent in non-DB mode populates in-memory listEventStreams", async () => {
+  const { appendEvent, _resetEventLogStoreForTests, listEventStreams } = await import("../apps/api/src/events/event-log-store.js") as any;
+  _resetEventLogStoreForTests();
+  const wsId = "00000000-0000-0000-0000-000000000099";
+  const appendResult = await appendEvent({
+    workspaceId: wsId,
+    streamType: "system",
+    streamId: "server",
+    eventType: "system.startup",
+    payload: { test: true },
+    actorId: null,
+  });
+  assert.ok(typeof appendResult.id === "string" && appendResult.id.length > 0,
+    "EVENTSEED-WRITE-3: appendEvent must return an id");
+  assert.ok(appendResult.seq >= 1, "EVENTSEED-WRITE-3: seq must be >= 1");
+  const streams = await listEventStreams({ workspaceId: wsId });
+  assert.ok(Array.isArray(streams), "EVENTSEED-WRITE-3: listEventStreams must return array");
+  assert.ok(streams.length >= 1, "EVENTSEED-WRITE-3: in-memory store must have >= 1 stream after appendEvent");
+  assert.ok(
+    streams.some((s: { streamType: string; streamId: string }) => s.streamType === "system" && s.streamId === "server"),
+    "EVENTSEED-WRITE-3: stream system::server must be present in listEventStreams result"
+  );
+});
+
+// =============================================================================
 // Brain ReAct Analyst — snake_case shape + market tools + 9-section prompt (2026-05-19)
 // =============================================================================
 
