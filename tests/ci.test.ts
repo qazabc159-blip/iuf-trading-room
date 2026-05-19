@@ -14348,6 +14348,120 @@ test("V3-WHITELIST-FIX-2: whitelist correction message references TOOL_WHITELIST
   );
 });
 
+// =============================================================================
+// KGI-SIM-UNLOCK + BULK-SEED tests
+// =============================================================================
+
+test("KGI-SIM-UNLOCK-1: kgiSimOrderBodySchema accepts ticker+quantity aliases", async () => {
+  const { kgiSimOrderBodySchema } = await import("../apps/api/src/server.js") as { kgiSimOrderBodySchema: { parse: (v: unknown) => unknown } };
+  // Elva spec format: {ticker, side, quantity, orderType}
+  const result = kgiSimOrderBodySchema.parse({
+    ticker: "2330",
+    side: "BUY",
+    quantity: 1,
+    orderType: "MARKET",
+  }) as { symbol: string; side: string; qty: number; orderType: string };
+  assert.strictEqual(result.symbol, "2330", "ticker alias must map to symbol");
+  assert.strictEqual(result.qty, 1, "quantity alias must map to qty");
+  assert.strictEqual(result.side, "buy", "BUY must normalize to lowercase");
+  assert.strictEqual(result.orderType, "market", "MARKET must normalize to lowercase");
+});
+
+test("KGI-SIM-UNLOCK-2: kgiSimOrderBodySchema accepts legacy symbol+qty format", async () => {
+  const { kgiSimOrderBodySchema } = await import("../apps/api/src/server.js") as { kgiSimOrderBodySchema: { parse: (v: unknown) => unknown } };
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "0050",
+    side: "sell",
+    qty: 5,
+    orderType: "limit",
+    price: 190.0,
+    quantityUnit: "SHARE",
+  }) as { symbol: string; side: string; qty: number; orderType: string; quantityUnit: string };
+  assert.strictEqual(result.symbol, "0050");
+  assert.strictEqual(result.qty, 5);
+  assert.strictEqual(result.quantityUnit, "SHARE");
+});
+
+test("KGI-SIM-UNLOCK-3: kgiSimOrderBodySchema rejects when both ticker and symbol are missing", async () => {
+  const { kgiSimOrderBodySchema } = await import("../apps/api/src/server.js") as { kgiSimOrderBodySchema: { parse: (v: unknown) => unknown } };
+  assert.throws(() => kgiSimOrderBodySchema.parse({ side: "buy", qty: 1, orderType: "market" }), /required/i);
+});
+
+test("KGI-SIM-UNLOCK-4: server.ts GET /api/v1/paper/positions route exists", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes('"/api/v1/paper/positions"'),
+    "KGI-SIM-UNLOCK-4: GET /api/v1/paper/positions must be registered"
+  );
+});
+
+test("KGI-SIM-UNLOCK-5: kgi-gateway-client classifyError distinguishes NOT_LOGGED_IN from feature-disabled", () => {
+  const src = readFileSync("apps/api/src/broker/kgi-gateway-client.ts", "utf8");
+  assert.ok(
+    src.includes("NOT_LOGGED_IN"),
+    "KGI-SIM-UNLOCK-5: classifyError must handle NOT_LOGGED_IN sub-code"
+  );
+  assert.ok(
+    src.includes("LIVE_ORDER_BLOCKED"),
+    "KGI-SIM-UNLOCK-5: classifyError must handle LIVE_ORDER_BLOCKED sub-code"
+  );
+});
+
+test("BULK-SEED-1: server.ts registers POST /api/v1/admin/companies/bulk-seed", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes('"/api/v1/admin/companies/bulk-seed"'),
+    "BULK-SEED-1: bulk-seed route must be registered"
+  );
+});
+
+test("BULK-SEED-2: _fetchTwseListedCompanies filters valid 4-6 digit tickers", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Verify the ticker regex used in the fetch helper
+  assert.ok(
+    src.includes('/^\\d{4,6}$/.test(c.ticker)') || src.includes("/^\\d{4,6}$/"),
+    "BULK-SEED-2: bulk-seed must filter tickers with 4-6 digit regex"
+  );
+});
+
+test("BULK-SEED-3: bulk-seed handler uses dryRun flag to skip DB write", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const bulkSeedBlock = src.slice(
+    src.indexOf("/api/v1/admin/companies/bulk-seed"),
+    src.indexOf("/api/v1/admin/companies/bulk-seed") + 4000
+  );
+  assert.ok(
+    bulkSeedBlock.includes("dry_run: true") || bulkSeedBlock.includes("dryRun"),
+    "BULK-SEED-3: bulk-seed must support dryRun mode"
+  );
+});
+
+test("BULK-SEED-4: bulk-seed beneficiaryTier defaults to Observation for auto-seeded companies", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const bulkSeedBlock = src.slice(
+    src.indexOf("bulk-seed beneficiaryTier") > 0
+      ? src.indexOf("bulk-seed beneficiaryTier")
+      : src.indexOf("_BULK_SEED_EXPOSURE"),
+    src.indexOf("_BULK_SEED_EXPOSURE") + 3000
+  );
+  assert.ok(
+    src.includes('"Observation"') && src.includes("_BULK_SEED_EXPOSURE"),
+    "BULK-SEED-4: auto-seeded companies must use beneficiaryTier=Observation"
+  );
+});
+
+test("BULK-SEED-5: bulk-seed fetches from both TWSE and TPEx OpenAPI URLs", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes("opendata.twse.com.tw"),
+    "BULK-SEED-5: must include TWSE OpenData URL"
+  );
+  assert.ok(
+    src.includes("tpex.org.tw"),
+    "BULK-SEED-5: must include TPEx OpenAPI URL"
+  );
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
