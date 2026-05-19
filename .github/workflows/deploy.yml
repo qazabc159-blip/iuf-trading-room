@@ -2,7 +2,7 @@ name: Deploy to Railway
 
 on:
   workflow_run:
-    workflows: ["CI — Security Baseline (all PRs)"]
+    workflows: ["CI — Validate (code changes only)"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -23,11 +23,13 @@ concurrency:
 
 jobs:
   deploy:
-    # Only deploy if CI passed (auto), or manual dispatch
+    # Only deploy if CI passed (auto), or manual dispatch.
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
+    # Use the EC2 self-hosted runner by default. GitHub-hosted billing limits
+    # previously prevented deploy jobs from even starting.
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
     timeout-minutes: 20
 
     permissions:
@@ -41,16 +43,17 @@ jobs:
     steps:
       - name: Decide whether this matrix entry should run
         id: gate
+        shell: pwsh
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            target="${{ github.event.inputs.service }}"
-            if [ "$target" != "all" ] && [ "$target" != "${{ matrix.service }}" ]; then
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "Skipping ${{ matrix.service }} — manual dispatch targeted '$target'"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $target = "${{ github.event.inputs.service }}"
+            if ($target -ne "all" -and $target -ne "${{ matrix.service }}") {
+              "skip=true" >> $env:GITHUB_OUTPUT
+              Write-Host "Skipping ${{ matrix.service }} - manual dispatch targeted '$target'"
               exit 0
-            fi
-          fi
-          echo "skip=false" >> "$GITHUB_OUTPUT"
+            }
+          }
+          "skip=false" >> $env:GITHUB_OUTPUT
 
       - name: Checkout
         if: steps.gate.outputs.skip != 'true'
@@ -58,19 +61,25 @@ jobs:
 
       - name: Install Railway CLI
         if: steps.gate.outputs.skip != 'true'
+        shell: pwsh
         run: npm install -g @railway/cli@latest
 
       - name: Deploy ${{ matrix.service }}
         if: steps.gate.outputs.skip != 'true'
+        shell: pwsh
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          if [ -z "$RAILWAY_TOKEN" ]; then
-            echo "::error::RAILWAY_TOKEN secret is not set. Create a project token in Railway dashboard and add it as a GitHub Actions secret named RAILWAY_TOKEN."
+          if ([string]::IsNullOrWhiteSpace($env:RAILWAY_TOKEN)) {
+            Write-Error "::error::RAILWAY_TOKEN secret is not set. Create a project token in Railway dashboard and add it as a GitHub Actions secret named RAILWAY_TOKEN."
             exit 1
-          fi
+          }
 
-          railway up --service ${{ matrix.service }} --ci --message "GHA deploy ${{ github.sha }}"
+          $railway = if ($IsWindows) { "railway.cmd" } else { "railway" }
+          & $railway up --service "${{ matrix.service }}" --ci --message "GHA deploy $env:GITHUB_SHA"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
 
       # Post-deploy migration verify (api service only).
       # Railway runs pnpm migrate inside the container via start-api-railway.mjs
@@ -79,126 +88,92 @@ jobs:
       #
       # Security:
       # - Does not print credentials to logs.
-      # - SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets are REQUIRED (hard-fail if missing).
-      #   Root cause 2026-05-18: Route B (skip-on-missing-secrets) allowed 6 silent failures.
-      #   Route B is permanently removed. Both secrets must be set in GHA secrets.
-      # - If verify fails for any reason, deploy is BLOCKED (exit 1).
+      # - SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets are REQUIRED.
+      # - If verify fails for any reason, deploy is BLOCKED.
       # - EXPECTED_MIGRATION_COUNT must be updated in Railway env vars when new migrations are added.
-      #   Current prod value: 43. Repo has 41 current forward files through 0042, plus
-      #   2 legacy applied rows from earlier migration history.
       - name: Verify migrations applied (api only)
         if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
         continue-on-error: false
+        shell: pwsh
         env:
           SEED_OWNER_EMAIL: ${{ secrets.SEED_OWNER_EMAIL }}
           SEED_OWNER_PASSWORD: ${{ secrets.SEED_OWNER_PASSWORD }}
         run: |
-          set -euo pipefail
+          Write-Host "Waiting 30s for api to boot after deploy..."
+          Start-Sleep -Seconds 30
 
-          echo "Waiting 30s for api to boot after deploy..."
-          sleep 30
+          try {
+            $health = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri "https://api.eycvector.com/health").Content
+          } catch {
+            $health = "UNREACHABLE"
+          }
+          Write-Host "Health: $health"
 
-          HEALTH="$(curl -sf --max-time 10 https://api.eycvector.com/health || echo "UNREACHABLE")"
-          echo "Health: $HEALTH"
-
-          if [ -z "${SEED_OWNER_EMAIL:-}" ] || [ -z "${SEED_OWNER_PASSWORD:-}" ]; then
-            echo "::error::SEED_OWNER_EMAIL or SEED_OWNER_PASSWORD secret not set — cannot verify migrations. Add secrets to GHA or deploy will be treated as unverified."
-            echo "::error::Root cause: 2026-05-18 silent migration failure caused prod schema drift. Route B (skip) permanently removed."
+          if ([string]::IsNullOrWhiteSpace($env:SEED_OWNER_EMAIL) -or [string]::IsNullOrWhiteSpace($env:SEED_OWNER_PASSWORD)) {
+            Write-Error "::error::SEED_OWNER_EMAIL or SEED_OWNER_PASSWORD secret not set - cannot verify migrations. Add secrets to GHA or deploy will be treated as unverified."
             exit 1
-          fi
+          }
 
-          COOKIE_JAR="/tmp/iuf_cookies.txt"
-          LOGIN_PAYLOAD="/tmp/iuf_login_payload.json"
-          LOGIN_RESPONSE="/tmp/iuf_login_response.json"
-          PROBE_RESPONSE="/tmp/iuf_db_probe.json"
+          $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+          $loginPayload = @{
+            email = $env:SEED_OWNER_EMAIL
+            password = $env:SEED_OWNER_PASSWORD
+          } | ConvertTo-Json -Compress
 
-          python3 - <<'PY' > "$LOGIN_PAYLOAD"
-          import json
-          import os
-
-          print(json.dumps({
-              "email": os.environ["SEED_OWNER_EMAIL"],
-              "password": os.environ["SEED_OWNER_PASSWORD"],
-          }))
-          PY
-
-          LOGIN_STATUS="$(
-            curl -sS --max-time 10 \
-              -o "$LOGIN_RESPONSE" \
-              -w "%{http_code}" \
-              -c "$COOKIE_JAR" \
-              -b "$COOKIE_JAR" \
-              -X POST "https://api.eycvector.com/auth/login" \
-              -H "Content-Type: application/json" \
-              --data-binary "@$LOGIN_PAYLOAD"
-          )"
-
-          rm -f "$LOGIN_PAYLOAD"
-
-          if [ "$LOGIN_STATUS" != "200" ]; then
-            echo "::warning::Post-deploy login failed with HTTP $LOGIN_STATUS. Check SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets and API auth logs."
+          try {
+            $login = Invoke-WebRequest `
+              -UseBasicParsing `
+              -TimeoutSec 10 `
+              -WebSession $session `
+              -Uri "https://api.eycvector.com/auth/login" `
+              -Method Post `
+              -ContentType "application/json" `
+              -Body $loginPayload
+          } catch {
+            Write-Warning "Post-deploy login failed. Check SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets and API auth logs."
             exit 1
-          fi
+          }
 
-          PROBE_STATUS="$(
-            curl -sS --max-time 10 \
-              -o "$PROBE_RESPONSE" \
-              -w "%{http_code}" \
-              -b "$COOKIE_JAR" \
-              "https://api.eycvector.com/api/v1/paper/db-probe"
-          )"
-
-          if [ "$PROBE_STATUS" != "200" ]; then
-            echo "::warning::DB probe failed with HTTP $PROBE_STATUS. Check API logs and migration status."
+          if ($login.StatusCode -ne 200) {
+            Write-Warning "Post-deploy login failed with HTTP $($login.StatusCode). Check SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets and API auth logs."
             exit 1
-          fi
+          }
 
-          COUNT="$(
-            python3 - <<'PY'
-          import json
-
-          try:
-              with open("/tmp/iuf_db_probe.json", "r", encoding="utf-8") as f:
-                  raw = json.load(f)
-              data = raw.get("data", raw) if isinstance(raw, dict) else {}
-              print(data.get("appliedMigrationsCount", "?"))
-          except Exception:
-              print("?")
-          PY
-          )"
-
-          STRATEGY_RUNS="$(
-            python3 - <<'PY'
-          import json
-
-          try:
-              with open("/tmp/iuf_db_probe.json", "r", encoding="utf-8") as f:
-                  raw = json.load(f)
-              data = raw.get("data", raw) if isinstance(raw, dict) else {}
-              tables = data.get("tables", {}) if isinstance(data, dict) else {}
-              print(tables.get("strategy_runs", "?"))
-          except Exception:
-              print("?")
-          PY
-          )"
-
-          echo "::notice::Applied migrations: $COUNT | strategy_runs table: $STRATEGY_RUNS | sha: ${{ github.sha }}"
-
-          if [ "$STRATEGY_RUNS" = "False" ] || [ "$STRATEGY_RUNS" = "false" ]; then
-            echo "::error::strategy_runs table NOT present after deploy — migration may have failed. Check Railway logs."
+          try {
+            $probe = Invoke-WebRequest `
+              -UseBasicParsing `
+              -TimeoutSec 10 `
+              -WebSession $session `
+              -Uri "https://api.eycvector.com/api/v1/paper/db-probe"
+          } catch {
+            Write-Warning "DB probe failed. Check API logs and migration status."
             exit 1
-          fi
+          }
+
+          if ($probe.StatusCode -ne 200) {
+            Write-Warning "DB probe failed with HTTP $($probe.StatusCode). Check API logs and migration status."
+            exit 1
+          }
+
+          $raw = $probe.Content | ConvertFrom-Json
+          $data = if ($null -ne $raw.data) { $raw.data } else { $raw }
+          $count = $data.appliedMigrationsCount
+          $strategyRuns = $data.tables.strategy_runs
+
+          Write-Host "::notice::Applied migrations: $count | strategy_runs table: $strategyRuns | sha: $env:GITHUB_SHA"
+
+          if ($strategyRuns -eq $false) {
+            Write-Error "::error::strategy_runs table NOT present after deploy - migration may have failed. Check Railway logs."
+            exit 1
+          }
 
           # Hard check: migration count must match expected total.
-          # UPDATE THIS VALUE whenever a new migration is added.
-          # Current prod value: 43 (5/18 PR-A backend gate, migration 0042 v3 status/trigger).
-          # Repo has 41 current forward files through 0042, prod schema_migrations contains
-          # 2 legacy applied rows from earlier migration history = 41 + 2 = 43 total.
-          # Root cause 2026-05-18: this was 31 (stale), allowing 6 undetected migration failures.
-          EXPECTED_MIGRATION_COUNT=43
-          if [ "$COUNT" != "$EXPECTED_MIGRATION_COUNT" ]; then
-            echo "::error::Migration count mismatch: expected $EXPECTED_MIGRATION_COUNT but got $COUNT. Check Railway boot logs for advisory lock contention or migration errors."
+          # Current prod value: 43. Repo has 41 current forward files through 0042,
+          # plus 2 legacy applied rows from earlier migration history.
+          $expectedMigrationCount = 43
+          if ("$count" -ne "$expectedMigrationCount") {
+            Write-Error "::error::Migration count mismatch: expected $expectedMigrationCount but got $count. Check Railway boot logs for advisory lock contention or migration errors."
             exit 1
-          fi
+          }
 
-          echo "::notice::Migration count verified: $COUNT/$EXPECTED_MIGRATION_COUNT OK"
+          Write-Host "::notice::Migration count verified: $count/$expectedMigrationCount OK"
