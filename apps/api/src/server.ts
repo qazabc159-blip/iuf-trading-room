@@ -15461,13 +15461,28 @@ app.get("/api/v1/event-streams", async (c) => {
 
   const { listEventStreams } = await import("./events/event-log-store.js");
 
-  const streams = await listEventStreams({
-    workspaceId: session.workspace.id,
-    streamType: streamType || undefined,
-    limit,
-  });
+  let streams: Awaited<ReturnType<typeof listEventStreams>> = [];
+  let listError: string | null = null;
+  try {
+    streams = await listEventStreams({
+      workspaceId: session.workspace.id,
+      streamType: streamType || undefined,
+      limit,
+    });
+  } catch (e) {
+    listError = e instanceof Error ? e.message : String(e);
+    console.warn("[event-streams] listEventStreams threw:", listError);
+  }
 
-  return c.json({ streams });
+  return c.json({
+    streams,
+    meta: {
+      workspaceId: session.workspace.id,
+      dbMode: isDatabaseMode(),
+      count: streams.length,
+      ...(listError ? { error: listError } : {}),
+    },
+  });
 });
 
 // GET /api/v1/event-streams/:streamType/:streamId/events/at — time-travel
@@ -15842,5 +15857,36 @@ serve(
     } catch (e) {
       console.warn("[event-seed] workspace lookup failed:", e instanceof Error ? e.message : e);
     }
+
+    // Job #2b fix: Boot+10s dryRun seed for never-run tools (b — 8 tools lastRunAt=null).
+    // Runs after schedulers start so real calls may have already populated some keys.
+    setTimeout(() => {
+      import("./tools/tool-boot-seed.js")
+        .then(({ seedNeverRunTools }) => {
+          // Resolve workspace UUID for tool_calls.workspace_id (nullable — pass null if unavailable)
+          const db2 = getDb();
+          if (!db2) {
+            seedNeverRunTools(null).catch((e) =>
+              console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+            );
+            return;
+          }
+          db2
+            .select({ id: workspaces.id })
+            .from(workspaces)
+            .where(eq(workspaces.slug, schedulerWorkspace))
+            .limit(1)
+            .then((wsRows2) => {
+              const wsId2 = wsRows2[0]?.id ?? null;
+              return seedNeverRunTools(wsId2);
+            })
+            .catch((e) =>
+              console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+            );
+        })
+        .catch((e) =>
+          console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
+        );
+    }, 10_000);
   }
 );
