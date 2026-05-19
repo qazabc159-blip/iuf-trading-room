@@ -1,0 +1,36 @@
+{
+  "url": "http://localhost:3002/login?next=%2Fcompanies%2F2330",
+  "has_tsmc": false,
+  "has_degraded": false,
+  "has_login": false,
+  "sample": "IUF\n交易戰情室 · 操作員登入\n台股 AI 交易戰情室\nIUF 帳號 · 台股交易工作台\n登入、建立帳號、SIM 工作台入口都在這裡\n\n這裡是 IUF 網站帳號入口，不是券商下單登入。現階段用邀請碼開通測試帳號； 未來同一個帳號會承接證券帳號綁定、資料權限、月費方案與 AI 每日簡報，正式券商寫入維持關閉。\n\n申請測試帳號\n已有邀請碼即可開通；未拿到邀請碼時，登入不會偷偷建立假帳號。\n網站帳號\n\n保存戰情台設定、觀察清單、策略偏好與模擬交易紀錄。\n\n可用\n模擬交易\n\n券商寫入關閉中，先以 SIM 流程演練報價、風控、委託紀錄與成交回放。\n\n可用\n券商綁定\n\n之後一個網站帳號可綁定自己的證券帳號；正式券商寫入需產品、風控與後端契約驗收後另行開啟。\n\n預留\n訂閱權限\n\n公開測試後逐步開放月費方案、進階資料與 AI 摘要功能。\n\n規劃\n登入 · IUF 帳號驗證\n電子信箱 / 密碼 / 裝置記憶\n可登入\n電子信箱\n密碼\n記住這台裝置\n下次在此工作台保留登入狀態\n錯誤訊息會顯示在這裡\n登入戰情室\n還沒有帳號？\n用邀請碼建立帳號\nIUF 帳號 / 真實登入工作階段 / 券商寫入關閉",
+  "console": [
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] rebuilding"
+    },
+    {
+      "type": "log",
+      "text": "[Fast Refresh] done in 1310ms"
+    }
+  ],
+  "pageerrors": [],
+  "responses": [
+    {
+      "url": "http://localhost:3002/companies/2330",
+      "status": 307
+    },
+    {
+      "url": "http://localhost:3002/login?next=%2Fcompanies%2F2330",
+      "status": 200
+    },
+    {
+      "url": "http://localhost:3002/_next/static/chunks/app/login/page.js",
+      "status": 200
+    }
+  ]
+}

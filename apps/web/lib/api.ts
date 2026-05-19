@@ -2270,20 +2270,22 @@ export interface CompanyShareholdingData {
 }
 
 /**
- * Resolve a Company by UUID. Use this once Jason TASK1 ticker-resolution lands.
- * Until then, prefer getCompanyByTicker() which list-scans.
+ * Resolve a Company by UUID.
+ * For public ticker routes, prefer getCompanyByTicker() so detail pages do not
+ * need to fetch the broad company list first.
  */
 export async function getCompanyById(id: string) {
   return request<Company>(`/api/v1/companies/${id}`);
 }
 
 /**
- * Resolve a Company by ticker symbol (case-insensitive list-scan).
- * Workaround until Jason TASK1 adds server-side ticker lookup.
+ * Resolve a Company by ticker symbol through the backend ticker lookup.
+ * This avoids blocking detail pages on the broad company list endpoint.
  * Returns null when not found.
  */
 export async function getCompanyByTicker(ticker: string): Promise<Company | null> {
-  const res = await getCompanies();
+  const query = new URLSearchParams({ ticker });
+  const res = await request<Company[]>(`/api/v1/companies?${query.toString()}`);
   const needle = ticker.toLowerCase();
   return res.data.find((c) => c.ticker.toLowerCase() === needle) ?? null;
 }
