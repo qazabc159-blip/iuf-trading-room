@@ -198,7 +198,14 @@ export interface AiRecommendationV3RunResult {
 let _latestV3Cache: AiRecommendationV3RunResult | null = null;
 let _latestV3CacheExpiresAt = 0;
 const V3_CACHE_TTL_MS = 5 * 60 * 1000;
-const MIN_V3_RECOMMENDATION_ITEMS = 5;
+// ★ FIX #742: Lowered from 5 → 2.
+// Railway log evidence (run 8d18127c, b2f79f5a): LLM legitimately produces only 2 stocks
+// when market conditions or tool data only support A/B-bucket items (楊董 SOP allows this).
+// Setting to 5 caused valid 2-item reports to always trigger retry → synthesis_format_error.
+const MIN_V3_RECOMMENDATION_ITEMS = 2;
+// Max items the deterministic fallback will produce (independent of MIN threshold).
+// This keeps the fallback producing a useful set even when MIN is low.
+const MAX_V3_FALLBACK_ITEMS = 5;
 const MIN_V3_TECHNICAL_CALLS = 5;
 
 export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | null {
@@ -655,7 +662,7 @@ export function buildDeterministicFallbackItemsFromTrace(
       (b.obs.changePct ?? -999) - (a.obs.changePct ?? -999) ||
       a.obs.ticker.localeCompare(b.obs.ticker)
     )
-    .slice(0, MIN_V3_RECOMMENDATION_ITEMS)
+    .slice(0, MAX_V3_FALLBACK_ITEMS)
     .map(({ obs, rank }) => {
       const technical = clampNumber(
         8 +
@@ -1087,8 +1094,13 @@ ${repairMarkdown.slice(0, 9000)}`
     }
   );
 
+  // ★ FIX #742: Use empty string (not sentinel text) when LLM returns null.
+  // Old: llmResult?.content ?? "(synthesis unavailable - LLM returned null)"
+  // Problem: the 43-char sentinel passes `report.trim().length > 0` retry guard
+  // → repair prompt receives garbage as "previous markdown" → retry also fails.
+  // Fix: empty string so retry guard `!isLlmNullReport(report)` correctly skips.
   return {
-    markdown: llmResult?.content ?? "(synthesis unavailable - LLM returned null)",
+    markdown: llmResult?.content ?? "",
     totalTokens: llmResult?.usage.totalTokens ?? 0,
     costUsd: llmResult?.costUsd ?? 0,
   };
@@ -1108,6 +1120,9 @@ async function synthesizeAndParseReportV3(
   let costUsd = first.costUsd;
   let retryUsed = false;
 
+  // ★ FIX #742: detect LLM null response (empty string after fix above)
+  const reportIsEmpty = report.trim().length === 0;
+
   if (items.length < MIN_V3_RECOMMENDATION_ITEMS) {
     const headingCandidates = Array.from(
       report.matchAll(/^(?:#{1,6}\s+.*|\d+\.\s+\d{4,6}.*|\*\*\d{4,6}.*)$/gm),
@@ -1117,20 +1132,25 @@ async function synthesizeAndParseReportV3(
       initialItemCount,
       reportLength: report.length,
       allowRetry,
+      llmReturnedNull: reportIsEmpty,
       headingCandidates,
-      reportPreview: report.slice(0, 800),
-      reportTail: report.slice(-800),
+      reportPreview: reportIsEmpty ? "(synthesis unavailable - LLM returned null)" : report.slice(0, 800),
+      reportTail: reportIsEmpty ? "(synthesis unavailable - LLM returned null)" : report.slice(-800),
     }));
   }
 
-  if (allowRetry && items.length < MIN_V3_RECOMMENDATION_ITEMS && report.trim().length > 0) {
+  // ★ FIX #742: Only retry if report has real content (not empty/null).
+  // Old condition: `report.trim().length > 0` — passes for empty string after fix too; good.
+  // But also guard: don't retry if LLM null (no real markdown to repair from).
+  // ★ FIX #742: `retryItems.length > items.length` (strict >) so a tie (0 vs 0) keeps original.
+  if (allowRetry && items.length < MIN_V3_RECOMMENDATION_ITEMS && !reportIsEmpty) {
     const retry = await synthesizeReportV3(trace, dateStr, model, report);
     const retryItems = parseAiReportToRecommendationsV3(retry.markdown, dateStr);
     totalTokens += retry.totalTokens;
     costUsd += retry.costUsd;
     retryUsed = true;
 
-    if (retryItems.length >= items.length) {
+    if (retryItems.length > items.length) {
       report = retry.markdown;
       items = retryItems;
     }
