@@ -1009,6 +1009,26 @@ export function parseAiReportToRecommendationsV3(
 
 // ── ReAct step parser ─────────────────────────────────────────────────────────
 
+export function normalizeMarketToolNameV3(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+  if (
+    normalized === "null" ||
+    normalized === "none" ||
+    normalized === "no_tool" ||
+    normalized === "final" ||
+    normalized === "final_answer" ||
+    normalized === "(final_answer)" ||
+    normalized === "n/a" ||
+    normalized === "na"
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
 function parseMarketStepV3(raw: string): {
   thought: string;
   toolName: string | null;
@@ -1026,7 +1046,7 @@ function parseMarketStepV3(raw: string): {
     const isRiskOff = /RISK_OFF_SKIP/.test(thought);
     return {
       thought,
-      toolName: parsed.toolName ?? null,
+      toolName: normalizeMarketToolNameV3(parsed.toolName),
       toolInput: parsed.toolInput ?? null,
       isRiskOff,
     };

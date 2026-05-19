@@ -13449,6 +13449,24 @@ test("AI-REC-V3-P0-GATE-2: v3 completion gate requires at least 5 backed cards",
   );
 });
 
+test("AI-REC-V3-P0-GATE-3: string null tool names enter final synthesis path", async () => {
+  const { normalizeMarketToolNameV3 } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+
+  for (const value of ["null", "NULL", " none ", "no tool", "no_tool", "final", "final answer", "(Final Answer)", "N/A", "na", ""]) {
+    assert.equal(
+      normalizeMarketToolNameV3(value),
+      null,
+      `AI-REC-V3-P0-GATE-3: ${JSON.stringify(value)} must normalize to null, not fail the whitelist`
+    );
+  }
+
+  assert.equal(
+    normalizeMarketToolNameV3("get_company_technical"),
+    "get_company_technical",
+    "AI-REC-V3-P0-GATE-3: real whitelisted tool names must stay unchanged"
+  );
+});
+
 test("MARKET-INTEL-P0-GATE-1: announcements API exposes sourceState", async () => {
   const fs = await import("node:fs/promises");
   const source = await fs.readFile("apps/api/src/server.ts", "utf8");
