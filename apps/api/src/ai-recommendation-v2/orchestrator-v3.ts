@@ -23,6 +23,8 @@ import type {
   AiStockRecommendationV2,
   AiRecMarketState,
   AiRecBucket,
+  AiRecSourceTrailEntry,
+  AiRecRunScoreBreakdown,
 } from "@iuf-trading-room/contracts";
 import { callTool } from "../tools/tool-registry-store.js";
 import {
@@ -191,6 +193,8 @@ export interface AiRecommendationV3RunResult {
   synthesisRetryUsed?: boolean;
   synthesisFallbackUsed?: boolean;
   dbRowId: string | null;
+  /** Run-level score breakdown (computed after items parsed) */
+  scoreBreakdown?: AiRecRunScoreBreakdown;
 }
 
 // ── In-memory cache (latest v3 run) ──────────────────────────────────────────
@@ -206,6 +210,11 @@ const MIN_V3_RECOMMENDATION_ITEMS = 5;
 // This keeps the fallback producing a useful set even when MIN is low.
 const MAX_V3_FALLBACK_ITEMS = 5;
 const MIN_V3_TECHNICAL_CALLS = 5;
+
+/** Count only complete items (isIncomplete !== true) against the minimum threshold */
+function completeItemCount(items: AiStockRecommendationV2[]): number {
+  return items.filter(i => !i.isIncomplete).length;
+}
 const V3_SYNTHESIS_TIMEOUT_MS = 75_000;
 const V3_SYNTHESIS_RETRY_TIMEOUT_MS = 90_000;
 
@@ -268,6 +277,7 @@ async function persistV3RunComplete(result: AiRecommendationV3RunResult, model: 
         totalTokens: result.totalTokens,
         model,
         completedAt: new Date(),
+        scoreBreakdown: result.scoreBreakdown ? (result.scoreBreakdown as unknown as Record<string, unknown>) : null,
       })
       .where(eq(aiRecommendationsRuns.id, result.dbRowId));
   } catch (e) {
@@ -459,6 +469,7 @@ ${riskOffContext}
   SL：結構失效點外 0.5 ATR（具體價格），上限 8%
   R值：(TP1-進場中點)/(進場中點-SL)
   信心：0.0-1.0
+  ★★ 必加欄位「一句話理由」：≤80 字白話中文，說明為什麼現在可以買（給操盤師 5 秒快速判斷用）
 
 ---
 回應格式（每輪 JSON，無 markdown 包裝）：
@@ -511,7 +522,8 @@ ${traceText}
 - ATR倍數: [0.5]
 - R值: [計算值]
 - 信心: [0.0-1.0]
-- 為什麼買: [具體bull thesis，至少2點]
+- 為什麼買: [具體bull thesis，至少2點，以分號分隔]
+- 一句話理由: [≤80字白話中文，說明為什麼現在可以買這支，給操盤師快速判斷用]
 - 為什麼不買: [具體bear case/風險，至少2點]
 - NAV比重: [0.8% | 0.6% | 0.4% | 0%]
 - 市場倍率: [1.0 | 0.9 | 0.7 | 0.6 | 0.5 | 0.4 | 0.3 | 0]
@@ -651,6 +663,106 @@ function technicalFallbackRank(obs: TechnicalObservationForFallback): number {
   if (obs.volumeRatio20d !== null && obs.volumeRatio20d >= 0.5) score += 5;
   if (obs.volumeRatio20d !== null && obs.volumeRatio20d > 1.5) score -= 5;
   return clampNumber(score, 0, 100);
+}
+
+// ── V3 quality helpers ────────────────────────────────────────────────────────
+
+/**
+ * Mark each parsed item as incomplete when any of the 7 sub-score axes is missing.
+ * incomplete items are NOT counted toward the items-per-run threshold.
+ * They remain in the array with isIncomplete=true so callers can filter.
+ */
+export function applyIncompleteFlag(items: AiStockRecommendationV2[]): AiStockRecommendationV2[] {
+  return items.map(item => {
+    const ss = item.subScores;
+    const missingAny = !ss ||
+      ss.theme === undefined || ss.revenue === undefined ||
+      ss.institutional === undefined || ss.margin === undefined ||
+      ss.rs === undefined || ss.technical === undefined ||
+      ss.valuation === undefined;
+    if (missingAny) {
+      return { ...item, isIncomplete: true };
+    }
+    return item;
+  });
+}
+
+/**
+ * Build a source trail for a specific ticker from the ReAct trace.
+ * Returns which tools were called that involve that ticker (or market-level tools).
+ */
+export function buildSourceTrailForTicker(
+  trace: V3ReActStep[],
+  ticker: string
+): AiRecSourceTrailEntry[] {
+  const trail: AiRecSourceTrailEntry[] = [];
+  for (const step of trace) {
+    if (!step.toolName) continue;
+    const input = step.toolInput as Record<string, unknown> | null;
+    const inputTicker = typeof input?.["ticker"] === "string" ? input["ticker"] : null;
+    // Include: market-level tools (no ticker input) + ticker-specific tools matching this ticker
+    const isMarketLevel = ["get_market_overview", "get_sector_rotation", "get_news_top10"].includes(step.toolName);
+    const isTickerMatch = inputTicker === ticker;
+    if (!isMarketLevel && !isTickerMatch) continue;
+
+    const obs = step.observation as Record<string, unknown> | null;
+    const dataFields = obs
+      ? Object.keys(obs).filter(k => obs[k] !== null && obs[k] !== undefined && typeof obs[k] !== "object")
+      : [];
+
+    trail.push({
+      toolName: step.toolName,
+      ticker: isTickerMatch ? ticker : undefined,
+      round: step.round,
+      dataFields: dataFields.slice(0, 10),
+    });
+  }
+  return trail;
+}
+
+/**
+ * Compute run-level score breakdown summary.
+ * completeItems = items where isIncomplete !== true
+ */
+export function computeScoreBreakdown(items: AiStockRecommendationV2[]): AiRecRunScoreBreakdown {
+  const complete = items.filter(i => !i.isIncomplete);
+  const ratingDist: Record<string, number> = {};
+  let totalScoreSum = 0;
+  let scoreCount = 0;
+  let topRating: AiRecBucket | null = null;
+  const bucketOrder: AiRecBucket[] = ["A+", "A", "B", "C"];
+
+  for (const item of complete) {
+    const b = item.bucket ?? "C";
+    ratingDist[b] = (ratingDist[b] ?? 0) + 1;
+    if (item.totalScore !== undefined) {
+      totalScoreSum += item.totalScore;
+      scoreCount++;
+    }
+    // Top rating = highest-tier bucket seen
+    const currentIdx = topRating ? bucketOrder.indexOf(topRating) : 999;
+    const newIdx = bucketOrder.indexOf(b);
+    if (newIdx < currentIdx) topRating = b;
+  }
+
+  return {
+    itemCount: complete.length,
+    incompleteCount: items.length - complete.length,
+    ratingDistribution: ratingDist,
+    avgTotalScore: scoreCount > 0 ? Math.round((totalScoreSum / scoreCount) * 10) / 10 : null,
+    topRating,
+  };
+}
+
+/**
+ * Truncate a why_buy bullet list into a single ≤80 char plain-Chinese sentence.
+ */
+export function buildWhyBuyBrief(whyBuy: string[] | undefined): string | undefined {
+  if (!whyBuy || whyBuy.length === 0) return undefined;
+  // Join first 2 bullets, then truncate
+  const joined = whyBuy.slice(0, 2).join("；");
+  if (joined.length <= 80) return joined;
+  return joined.slice(0, 79) + "…";
 }
 
 export function buildDeterministicFallbackItemsFromTrace(
@@ -903,6 +1015,11 @@ export function parseAiReportToRecommendationsV3(
       } else if (/信心[:：]/.test(line)) {
         const cv = value.match(/([01](?:\.\d+)?)/);
         confidence = cv ? parseFloat2v3(cv[1]) : null;
+      } else if (/一句話理由[:：]/.test(line)) {
+        // whyBuyBrief is injected from this line (≤80 char), or falls back to buildWhyBuyBrief()
+        // We store it in a temp var and override after parsing
+        const brief = value.slice(0, 80);
+        if (brief.length > 0) rationaleLines.push(`__BRIEF__${brief}`);
       } else if (/為什麼買[:：]/.test(line)) {
         const bullets = value.split(/[;；,，]/).map(s => s.trim()).filter(s => s.length > 2);
         whyBuy.push(...bullets);
@@ -946,7 +1063,11 @@ export function parseAiReportToRecommendationsV3(
         subScores.margin + subScores.rs + subScores.technical + subScores.valuation
       : null;
 
-    const rationale = rationaleLines.join("; ") ||
+    // Extract explicit brief (from "一句話理由" line stored as __BRIEF__ prefix)
+    const briefLine = rationaleLines.find(l => l.startsWith("__BRIEF__"));
+    const parsedBrief = briefLine ? briefLine.slice("__BRIEF__".length).slice(0, 80) : undefined;
+    const cleanedRationaleLines = rationaleLines.filter(l => !l.startsWith("__BRIEF__"));
+    const rationale = cleanedRationaleLines.join("; ") ||
       whyBuy.join("; ") ||
       block.slice(0, 200).replace(/\n/g, " ").trim();
 
@@ -999,6 +1120,9 @@ export function parseAiReportToRecommendationsV3(
       },
       why_buy: whyBuy.length > 0 ? whyBuy : undefined,
       why_not_buy: whyNotBuy.length > 0 ? whyNotBuy : undefined,
+      // whyBuyBrief: prefer explicit "一句話理由" from parser; fallback to auto-truncation of why_buy
+      whyBuyBrief: parsedBrief ?? buildWhyBuyBrief(whyBuy.length > 0 ? whyBuy : undefined),
+      // isIncomplete / sourceTrail are injected by post-processing in enrichParsedItems()
     };
 
     if (!results.some(r => r.ticker === ticker)) {
@@ -1007,6 +1131,23 @@ export function parseAiReportToRecommendationsV3(
   }
 
   return results;
+}
+
+/**
+ * enrichV3Items — post-parse enrichment:
+ * 1. applyIncompleteFlag: marks items missing any sub-score axis as isIncomplete=true
+ * 2. Injects sourceTrail per item from the ReAct trace
+ * items with isIncomplete=true do NOT count toward MIN_V3_RECOMMENDATION_ITEMS
+ */
+export function enrichV3Items(
+  items: AiStockRecommendationV2[],
+  trace: V3ReActStep[]
+): AiStockRecommendationV2[] {
+  const withFlag = applyIncompleteFlag(items);
+  return withFlag.map(item => ({
+    ...item,
+    sourceTrail: buildSourceTrailForTicker(trace, item.ticker),
+  }));
 }
 
 // ── ReAct step parser ─────────────────────────────────────────────────────────
@@ -1151,8 +1292,8 @@ async function synthesizeAndParseReportV3(
 ): Promise<V3ParsedSynthesis> {
   const first = await synthesizeReportV3(trace, dateStr, model, programmaticRiskOffScore);
   let report = first.markdown;
-  let items = parseAiReportToRecommendationsV3(report, dateStr);
-  const initialItemCount = items.length;
+  let items = enrichV3Items(parseAiReportToRecommendationsV3(report, dateStr), trace);
+  const initialItemCount = completeItemCount(items);
   let totalTokens = first.totalTokens;
   let costUsd = first.costUsd;
   let retryUsed = false;
@@ -1160,13 +1301,15 @@ async function synthesizeAndParseReportV3(
   // ★ FIX #742: detect LLM null response (empty string after fix above)
   const reportIsEmpty = report.trim().length === 0;
 
-  if (items.length < MIN_V3_RECOMMENDATION_ITEMS) {
+  if (completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS) {
     const headingCandidates = Array.from(
       report.matchAll(/^(?:#{1,6}\s+.*|\d+\.\s+\d{4,6}.*|\*\*\d{4,6}.*)$/gm),
       match => match[0]!.slice(0, 160)
     ).slice(0, 8);
     console.warn("[v3-synthesis] parser_under_min_items", JSON.stringify({
       initialItemCount,
+      totalItems: items.length,
+      incompleteItems: items.length - initialItemCount,
       reportLength: report.length,
       allowRetry,
       llmReturnedNull: reportIsEmpty,
@@ -1177,20 +1320,19 @@ async function synthesizeAndParseReportV3(
   }
 
   // ★ FIX #742: Only retry if report has real content (not empty/null).
-  // Old condition: `report.trim().length > 0` — passes for empty string after fix too; good.
-  // But also guard: don't retry if LLM null (no real markdown to repair from).
-  // ★ FIX #742: `retryItems.length > items.length` (strict >) so a tie (0 vs 0) keeps original.
-  if (allowRetry && items.length < MIN_V3_RECOMMENDATION_ITEMS) {
+  // Use completeItemCount (items with all 7 sub-scores) against MIN threshold.
+  // ★ FIX #742: strict > so tie (0 vs 0) keeps original.
+  if (allowRetry && completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS) {
     const retrySeed = reportIsEmpty
       ? "LLM_NULL_OR_TIMEOUT_RETRY: first synthesis returned no markdown. Re-read the trace observations and produce fresh stock sections now."
       : report;
     const retry = await synthesizeReportV3(trace, dateStr, model, programmaticRiskOffScore, retrySeed);
-    const retryItems = parseAiReportToRecommendationsV3(retry.markdown, dateStr);
+    const retryItems = enrichV3Items(parseAiReportToRecommendationsV3(retry.markdown, dateStr), trace);
     totalTokens += retry.totalTokens;
     costUsd += retry.costUsd;
     retryUsed = true;
 
-    if (retryItems.length > items.length) {
+    if (completeItemCount(retryItems) > completeItemCount(items)) {
       report = retry.markdown;
       items = retryItems;
     }
@@ -1258,6 +1400,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       marketRiskOffScore: progScore,
       programmaticRiskOff,
       dbRowId,
+      scoreBreakdown: computeScoreBreakdown([]),
     };
     return finalizeV3Run(result, model);
   }
@@ -1313,6 +1456,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         synthesisRetryUsed,
         synthesisFallbackUsed: false,
         dbRowId,
+        scoreBreakdown: computeScoreBreakdown(items),
       };
       return finalizeV3Run(result, model);
     }
@@ -1341,6 +1485,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         marketRiskOffScore: null,
         programmaticRiskOff,
         dbRowId,
+        scoreBreakdown: computeScoreBreakdown([]),
       };
       return finalizeV3Run(result, model);
     }
@@ -1399,6 +1544,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         marketRiskOffScore: detectedRiskOffScore,
         programmaticRiskOff,
         dbRowId,
+        scoreBreakdown: computeScoreBreakdown([]),
       };
       return finalizeV3Run(result, model);
     }
@@ -1445,7 +1591,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       let items = synthesis.items;
       let synthesisFallbackUsed = false;
       if (
-        items.length < MIN_V3_RECOMMENDATION_ITEMS &&
+        completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS &&
         companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
         progScore < 3
       ) {
@@ -1465,22 +1611,23 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
         }
       }
 
-      // F3: Validate minimum items and tool call count
-      const insufficientItems = items.length < MIN_V3_RECOMMENDATION_ITEMS;
+      // F3: Validate minimum items and tool call count (only complete items count)
+      const completeCount = completeItemCount(items);
+      const insufficientItems = completeCount < MIN_V3_RECOMMENDATION_ITEMS;
       const insufficientTools = companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
       const unresolvedSynthesisFormatError =
         companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
         synthesis.initialItemCount < MIN_V3_RECOMMENDATION_ITEMS &&
-        items.length < MIN_V3_RECOMMENDATION_ITEMS;
+        completeCount < MIN_V3_RECOMMENDATION_ITEMS;
 
       if ((insufficientItems || insufficientTools) && round < maxRounds - 1) {
         // Still have rounds left — force continuation with correction
-        console.warn(`[v3-orchestrator] round ${round}: insufficient output (items=${items.length}, get_company_technical calls=${companyTechnicalCallCount}) — forcing continuation`);
+        console.warn(`[v3-orchestrator] round ${round}: insufficient output (completeItems=${completeCount}/${items.length}, get_company_technical calls=${companyTechnicalCallCount}) — forcing continuation`);
         messages.push({ role: "assistant", content: raw });
         messages.push({
           role: "user",
-          content: `[SYSTEM REJECTION] 分析不足：推薦股數=${items.length}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}），get_company_technical 呼叫次數=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
-請繼續分析更多候選標的，callTool(get_company_technical) 取得更多個股技術資料，並補充更多 A/A+/B/C bucket 卡片。`,
+          content: `[SYSTEM REJECTION] 分析不足：完整評分推薦股數=${completeCount}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}，不計缺 sub-score 的卡），get_company_technical 呼叫次數=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
+請繼續分析更多候選標的，callTool(get_company_technical) 取得更多個股技術資料，確保每張卡 7 個 sub-score 都填寫，並補充更多 A/A+/B/C bucket 卡片。`,
         });
         continue; // continue loop
       }
@@ -1510,6 +1657,7 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
         synthesisRetryUsed: synthesis.retryUsed,
         synthesisFallbackUsed,
         dbRowId,
+        scoreBreakdown: computeScoreBreakdown(items),
       };
       return finalizeV3Run(result, model);
     }
@@ -1566,7 +1714,7 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
   let items = synthesis.items;
   let synthesisFallbackUsed = false;
   if (
-    items.length < MIN_V3_RECOMMENDATION_ITEMS &&
+    completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS &&
     companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
     progScore < 3
   ) {
@@ -1576,22 +1724,23 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
       detectedMarketState ?? "trend"
     );
     if (fallbackItems.length >= MIN_V3_RECOMMENDATION_ITEMS) {
-      console.warn(`[v3-orchestrator] run ${runId}: max rounds reached with ${items.length} items after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
+      console.warn(`[v3-orchestrator] run ${runId}: max rounds reached with completeItems=${completeItemCount(items)}/${items.length} after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
       items = fallbackItems;
       synthesisFallbackUsed = true;
       report = `${report}
 
 ---
-Deterministic fallback applied after synthesis format retry: max rounds ended with fewer than ${MIN_V3_RECOMMENDATION_ITEMS} structured recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only. initialParsedItems=${synthesis.initialItemCount}; retryUsed=${synthesis.retryUsed}.`;
+Deterministic fallback applied after synthesis format retry: max rounds ended with fewer than ${MIN_V3_RECOMMENDATION_ITEMS} complete-scored recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only. initialParsedItems=${synthesis.initialItemCount}; retryUsed=${synthesis.retryUsed}.`;
     }
   }
   const insufficientFinal =
-    items.length < MIN_V3_RECOMMENDATION_ITEMS ||
+    completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS ||
     companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
   const unresolvedSynthesisFormatError =
     companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
     synthesis.initialItemCount < MIN_V3_RECOMMENDATION_ITEMS &&
-    items.length < MIN_V3_RECOMMENDATION_ITEMS;
+    completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS;
+  const scoreBreakdown = computeScoreBreakdown(items);
   const result: AiRecommendationV3RunResult = {
     runId,
     status: synthesisFallbackUsed || unresolvedSynthesisFormatError
@@ -1609,6 +1758,7 @@ Deterministic fallback applied after synthesis format retry: max rounds ended wi
     synthesisRetryUsed: synthesis.retryUsed,
     synthesisFallbackUsed,
     dbRowId,
+    scoreBreakdown,
   };
   return finalizeV3Run(result, model);
 }

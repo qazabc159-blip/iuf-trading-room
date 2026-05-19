@@ -13467,6 +13467,99 @@ test("AI-REC-V3-P0-GATE-3: string null tool names enter final synthesis path", a
   );
 });
 
+// =============================================================================
+// AI-REC-V3-7AXIS: INCOMPLETE flag / sourceTrail / whyBuyBrief / scoreBreakdown
+// Lane: strategy backend (Jason). Files: orchestrator-v3.ts, aiRecommendationV2.ts
+// =============================================================================
+
+test("AI-REC-V3-7AXIS-1: applyIncompleteFlag marks items missing any sub-score axis as isIncomplete", async () => {
+  const { applyIncompleteFlag } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+
+  const completeItem = {
+    id: "1", ticker: "2330", companyName: "台積電", action: "今日首選", date: "2026-05-19",
+    confidence: 0.9, rationale: "test", aiGenerated: true, source: "brain_react_v2",
+    subScores: { theme: 18, revenue: 12, institutional: 12, margin: 12, rs: 8, technical: 16, valuation: 4 },
+    totalScore: 82, bucket: "A+",
+  };
+  const incompleteItem = {
+    id: "2", ticker: "2454", companyName: "聯發科", action: "可觀察布局（研究參考）", date: "2026-05-19",
+    confidence: 0.7, rationale: "test", aiGenerated: true, source: "brain_react_v2",
+    // Missing subScores entirely
+  };
+  const partialItem = {
+    id: "3", ticker: "2317", companyName: "鴻海", action: "等回檔", date: "2026-05-19",
+    confidence: 0.6, rationale: "test", aiGenerated: true, source: "brain_react_v2",
+    subScores: { theme: 15, revenue: 10, institutional: 10, margin: 10, rs: 6 }, // missing technical + valuation
+    totalScore: 51, bucket: "B",
+  };
+
+  const result = applyIncompleteFlag([completeItem, incompleteItem, partialItem]);
+
+  assert.equal(result.length, 3, "AI-REC-V3-7AXIS-1: must return same count");
+  assert.ok(!result[0].isIncomplete, "AI-REC-V3-7AXIS-1: complete item must NOT be flagged isIncomplete");
+  assert.ok(result[1].isIncomplete === true, "AI-REC-V3-7AXIS-1: item without subScores must be isIncomplete");
+  assert.ok(result[2].isIncomplete === true, "AI-REC-V3-7AXIS-1: item with partial subScores must be isIncomplete");
+});
+
+test("AI-REC-V3-7AXIS-2: computeScoreBreakdown produces correct run-level summary", async () => {
+  const { computeScoreBreakdown } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+
+  const items = [
+    {
+      ticker: "2330", bucket: "A+", totalScore: 88, isIncomplete: false,
+      subScores: { theme: 18, revenue: 13, institutional: 13, margin: 13, rs: 9, technical: 17, valuation: 5 },
+    },
+    {
+      ticker: "2454", bucket: "A", totalScore: 75, isIncomplete: false,
+      subScores: { theme: 15, revenue: 12, institutional: 12, margin: 12, rs: 8, technical: 13, valuation: 3 },
+    },
+    {
+      ticker: "2317", bucket: "B", totalScore: 60, isIncomplete: false,
+      subScores: { theme: 12, revenue: 9, institutional: 9, margin: 9, rs: 6, technical: 12, valuation: 3 },
+    },
+    {
+      ticker: "2412", bucket: "C", totalScore: 45, isIncomplete: true, // incomplete — must not count
+      subScores: { theme: 8, revenue: 6 }, // missing axes
+    },
+  ];
+
+  const breakdown = computeScoreBreakdown(items);
+
+  assert.equal(breakdown.itemCount, 3, "AI-REC-V3-7AXIS-2: itemCount must count only complete items (3, not 4)");
+  assert.equal(breakdown.incompleteCount, 1, "AI-REC-V3-7AXIS-2: incompleteCount must be 1");
+  assert.equal(breakdown.topRating, "A+", "AI-REC-V3-7AXIS-2: topRating must be A+ (best complete item)");
+  assert.ok(breakdown.ratingDistribution["A+"] === 1, "AI-REC-V3-7AXIS-2: ratingDistribution A+ must be 1");
+  assert.ok(breakdown.ratingDistribution["A"] === 1, "AI-REC-V3-7AXIS-2: ratingDistribution A must be 1");
+  assert.ok(breakdown.ratingDistribution["B"] === 1, "AI-REC-V3-7AXIS-2: ratingDistribution B must be 1");
+  assert.ok(!breakdown.ratingDistribution["C"], "AI-REC-V3-7AXIS-2: ratingDistribution C must be absent (incomplete item excluded)");
+  assert.ok(breakdown.avgTotalScore !== null, "AI-REC-V3-7AXIS-2: avgTotalScore must be non-null");
+  assert.ok(
+    Math.abs(breakdown.avgTotalScore - ((88 + 75 + 60) / 3)) < 1,
+    `AI-REC-V3-7AXIS-2: avgTotalScore must be ~74.3, got ${breakdown.avgTotalScore}`
+  );
+});
+
+test("AI-REC-V3-7AXIS-3: buildWhyBuyBrief truncates long bullets to ≤80 chars and is exported", async () => {
+  const { buildWhyBuyBrief } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+
+  // Short input passes through unchanged
+  const short = buildWhyBuyBrief(["台積電進入 CoWoS 攀升期", "法人5日連買"]);
+  assert.ok(typeof short === "string", "AI-REC-V3-7AXIS-3: must return a string");
+  assert.ok(short!.length <= 80, `AI-REC-V3-7AXIS-3: short input must be ≤80 chars, got ${short?.length}`);
+
+  // Long input must be truncated to 80 chars (with ellipsis)
+  const long = buildWhyBuyBrief([
+    "台積電 CoWoS 供應鏈直接受惠，訂單能見度至 2027 年底，法人連買 15 日淨額達 120 億元",
+    "技術面突破年線壓力，RSI 轉強動能確認，外資持倉大幅回補中，基本面 AI 算力需求強勁"
+  ]);
+  assert.ok(typeof long === "string", "AI-REC-V3-7AXIS-3: long input must still return string");
+  assert.ok(long!.length <= 80, `AI-REC-V3-7AXIS-3: long input must be truncated to ≤80 chars, got ${long?.length}: ${long}`);
+
+  // Empty / undefined input returns undefined
+  assert.equal(buildWhyBuyBrief([]), undefined, "AI-REC-V3-7AXIS-3: empty array must return undefined");
+  assert.equal(buildWhyBuyBrief(undefined), undefined, "AI-REC-V3-7AXIS-3: undefined must return undefined");
+});
+
 test("MARKET-INTEL-P0-GATE-1: announcements API exposes sourceState", async () => {
   const fs = await import("node:fs/promises");
   const source = await fs.readFile("apps/api/src/server.ts", "utf8");
@@ -14013,8 +14106,11 @@ test("AI-REC-V3-NULL-REPORT-3: retry winner condition is strict greater-than (no
     fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
   );
   // Old: retryItems.length >= items.length  → 0 >= 0 = true → bad swap to empty result
-  // New: retryItems.length > items.length   → 0 > 0 = false → keep original
-  const hasStrictGt = /retryItems\.length\s*>\s*items\.length/.test(src);
+  // New: completeItemCount(retryItems) > completeItemCount(items) → strict, ignores INCOMPLETE items
+  // Accept either the old direct-length form or the completeItemCount form (both are strict >)
+  const hasStrictGt =
+    /retryItems\.length\s*>\s*items\.length/.test(src) ||
+    /completeItemCount\(retryItems\)\s*>\s*completeItemCount\(items\)/.test(src);
   assert.ok(hasStrictGt, "AI-REC-V3-NULL-REPORT-3: retry must use strict > not >= so 0-vs-0 tie does not swap");
 });
 

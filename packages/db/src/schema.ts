@@ -1004,6 +1004,9 @@ export const aiRecommendationsRuns = pgTable(
     totalTokens:          integer("total_tokens").notNull().default(0),
     // trigger: how this run was initiated
     trigger:              text("trigger").notNull().default("manual_refresh"),
+    // score_breakdown: run-level 7-axis SOP summary (migration 0043)
+    // Shape: {itemCount, incompleteCount, ratingDistribution, avgTotalScore, topRating}
+    scoreBreakdown:       jsonb("score_breakdown"),
     createdAt:            timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     completedAt:          timestamp("completed_at", { withTimezone: true })
   },
