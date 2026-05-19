@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   verify-live:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
     timeout-minutes: 15
     permissions:
       contents: read
