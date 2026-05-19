@@ -4043,6 +4043,16 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
       name: "IUF_SIM_USER_ORDER",
     });
 
+    // Fix 3: Parse nid from kgi_response_repr string.
+    // Gateway OrderCreateResponse carries: { ok, sim_only, status, kgi_response_repr }
+    // kgi_response_repr is a repr string like "OrderResponse(nid=1779199594627344001 ...)"
+    // trade_id is not a top-level field — extract nid via regex.
+    const kgiRepr = typeof tradeRaw["kgi_response_repr"] === "string"
+      ? (tradeRaw["kgi_response_repr"] as string)
+      : null;
+    const nidMatch = kgiRepr ? /\bnid=(\d+)/.exec(kgiRepr) : null;
+    const parsedTradeId: string | null = nidMatch ? nidMatch[1] : null;
+
     // Write success audit
     writeAuditLog({
       session,
@@ -4052,7 +4062,7 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
       payload: {
         ...auditPayload,
         outcome: "accepted",
-        trade_id: tradeRaw.trade_id ?? null,
+        trade_id: parsedTradeId,
       },
     }).catch((err: unknown) => {
       console.error("[kgi/sim/order] audit log failed:", err instanceof Error ? err.message : String(err));
@@ -4062,8 +4072,8 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
       sim_only: true,
       prod_write_blocked: true,
       data: {
-        tradeId: tradeRaw.trade_id ?? null,
-        status: tradeRaw.status ?? "accepted",
+        tradeId: parsedTradeId,
+        status: (tradeRaw["status"] as string | undefined) ?? "accepted",
         symbol: body.symbol,
         side: body.side,
         qty: body.qty,
@@ -4182,6 +4192,173 @@ app.get("/api/v1/internal/kgi/sim/daily-smoke-status", async (c) => {
     scheduledWindow: "08:00-08:30 TST (00:00-00:30 UTC) daily",
     auditAction: "kgi.sim.daily_smoke",
   });
+});
+
+// ── KGI SIM Account Data Proxy (/api/v1/kgi/sim/positions, /orders, /balance) ──
+//
+// Owner-only read-only proxy to KGI gateway account endpoints.
+// SIM_ONLY: targets KGI SIM infra. Production write path permanently blocked.
+// Source of truth for trading room UI when KGI_ENV=sim.
+//
+// Hard lines:
+//   - Owner-only (楊董 only)
+//   - Gateway unreachable → 200 with empty data + degraded=true (never 503)
+//   - Credentials NEVER in response
+//   - prod_write_blocked always true
+//   - account masked in logs (never in response body)
+
+// GET /api/v1/kgi/sim/positions — KGI SIM account positions
+app.get("/api/v1/kgi/sim/positions", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const gatewayUrl =
+    process.env["KGI_GATEWAY_URL"] ??
+    process.env["KGI_GATEWAY_BASE_URL"] ??
+    "http://127.0.0.1:8787";
+
+  const { KgiGatewayClient, KgiGatewayUnreachableError, KgiGatewayAuthError } =
+    await import("./broker/kgi-gateway-client.js");
+
+  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+
+  try {
+    const rawPositions = await client.getPosition();
+    const positions = rawPositions.map((p) => ({
+      symbol: p.symbol,
+      netQtyShares: p.netQuantity,
+      quantityCashYd: p.quantityCashYd,
+      quantityCashTd: p.quantityCashTd,
+      unrealizedPnl: p.unrealized,
+      realizedPnl: p.realized,
+      lastPrice: p.lastPrice,
+      boardLot: p.boardLot,
+      // Friendly alias for UI
+      quantity: p.netQuantity,
+      avgPrice: p.lastPrice, // KGI position doesn't carry avgPrice directly
+    }));
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      data: { positions, source: "kgi_sim", fetchedAt: new Date().toISOString() },
+    });
+  } catch (err) {
+    const degraded = err instanceof KgiGatewayUnreachableError || err instanceof KgiGatewayAuthError;
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      data: {
+        positions: [],
+        source: "kgi_sim",
+        degraded: true,
+        reason: degraded ? (err instanceof KgiGatewayAuthError ? "gateway_not_authenticated" : "gateway_unreachable") : "gateway_error",
+        fetchedAt: new Date().toISOString(),
+      },
+    });
+  }
+});
+
+// GET /api/v1/kgi/sim/orders — KGI SIM submitted orders (trades)
+app.get("/api/v1/kgi/sim/orders", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const gatewayUrl =
+    process.env["KGI_GATEWAY_URL"] ??
+    process.env["KGI_GATEWAY_BASE_URL"] ??
+    "http://127.0.0.1:8787";
+
+  const { KgiGatewayClient, KgiGatewayUnreachableError, KgiGatewayAuthError } =
+    await import("./broker/kgi-gateway-client.js");
+
+  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+
+  try {
+    const trades = await client.getTrades(false);
+    // trades is KgiTradeRaw (Record<string, unknown>) — pass through as-is
+    const ordersArr = Object.entries(trades as Record<string, unknown>).map(([orderId, order]) => ({
+      orderId,
+      ...(typeof order === "object" && order !== null ? order : { raw: String(order) }),
+    }));
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      data: { orders: ordersArr, source: "kgi_sim", fetchedAt: new Date().toISOString() },
+    });
+  } catch (err) {
+    const degraded = err instanceof KgiGatewayUnreachableError || err instanceof KgiGatewayAuthError;
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      data: {
+        orders: [],
+        source: "kgi_sim",
+        degraded: true,
+        reason: degraded ? (err instanceof KgiGatewayAuthError ? "gateway_not_authenticated" : "gateway_unreachable") : "gateway_error",
+        fetchedAt: new Date().toISOString(),
+      },
+    });
+  }
+});
+
+// GET /api/v1/kgi/sim/balance — KGI SIM account balance / funds
+// KGI gateway does not expose a dedicated balance endpoint.
+// We derive balance from positions (realized + unrealized P&L) and
+// report it with a note about the derivation.
+app.get("/api/v1/kgi/sim/balance", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const gatewayUrl =
+    process.env["KGI_GATEWAY_URL"] ??
+    process.env["KGI_GATEWAY_BASE_URL"] ??
+    "http://127.0.0.1:8787";
+
+  const { KgiGatewayClient, KgiGatewayUnreachableError, KgiGatewayAuthError } =
+    await import("./broker/kgi-gateway-client.js");
+
+  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+
+  try {
+    const rawPositions = await client.getPosition();
+    const totalUnrealized = rawPositions.reduce((acc, p) => acc + (p.unrealized ?? 0), 0);
+    const totalRealized = rawPositions.reduce((acc, p) => acc + (p.realized ?? 0), 0);
+    const positionCount = rawPositions.filter((p) => p.netQuantity !== 0).length;
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      data: {
+        source: "kgi_sim",
+        account: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "9228-***-6",
+        currency: "TWD",
+        totalUnrealizedPnl: totalUnrealized,
+        totalRealizedPnl: totalRealized,
+        positionCount,
+        // KGI SIM SDK does not expose available cash directly — omit to avoid fabrication
+        availableCash: null,
+        note: "availableCash is not available from KGI SIM SDK; unrealized/realized P&L from position snapshot",
+        fetchedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    const degraded = err instanceof KgiGatewayUnreachableError || err instanceof KgiGatewayAuthError;
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      data: {
+        source: "kgi_sim",
+        degraded: true,
+        reason: degraded ? (err instanceof KgiGatewayAuthError ? "gateway_not_authenticated" : "gateway_unreachable") : "gateway_error",
+        fetchedAt: new Date().toISOString(),
+      },
+    });
+  }
 });
 
 // ── KGI Quote proxy (/api/v1/kgi/quote/*) ────────────────────────────────────
@@ -4590,25 +4767,91 @@ app.get("/api/v1/paper/orders/:id", async (c) => {
   return c.json({ data: state });
 });
 
-// GET /api/v1/paper/orders — list orders for the current user (optional ?status=)
+// GET /api/v1/paper/orders — list orders for the current user (optional ?status=).
+// When KGI_ENV=sim (or ?source=sim), proxies to KGI SIM gateway trades.
+// When KGI_ENV=paper (or ?source=paper), returns paper-broker in-memory orders.
 app.get("/api/v1/paper/orders", async (c) => {
   const session = c.get("session");
+  const sourceOverride = c.req.query("source");
+  const kgiEnv = resolveKgiEnv();
+  const useSimSource = sourceOverride === "sim" || (sourceOverride !== "paper" && kgiEnv === "sim");
+
+  if (useSimSource) {
+    const gatewayUrl =
+      process.env["KGI_GATEWAY_URL"] ??
+      process.env["KGI_GATEWAY_BASE_URL"] ??
+      "http://127.0.0.1:8787";
+    const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
+    const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+    try {
+      const trades = await client.getTrades(false);
+      const ordersArr = Object.entries(trades as Record<string, unknown>).map(([orderId, order]) => ({
+        orderId,
+        source: "kgi_sim",
+        ...(typeof order === "object" && order !== null ? order : { raw: String(order) }),
+      }));
+      return c.json({ data: ordersArr, source: "kgi_sim" });
+    } catch (_err) {
+      return c.json({ data: [], source: "kgi_sim", degraded: true });
+    }
+  }
+
   const statusParam = c.req.query("status");
   const allowed = ["PENDING", "ACCEPTED", "FILLED", "REJECTED", "CANCELLED"] as const;
   const status = (allowed as readonly string[]).includes(statusParam ?? "")
     ? (statusParam as (typeof allowed)[number])
     : undefined;
   const orders = await listOrders(session.user.id, status ? { status } : undefined);
-  return c.json({ data: orders });
+  return c.json({ data: orders, source: "paper" });
 });
 
-// GET /api/v1/paper/positions — alias for /api/v1/trading/positions
-// Returns current paper trading positions for the authenticated user.
-// Supports optional ?accountId= query param (same as /trading/positions).
+// GET /api/v1/paper/positions — paper trading positions.
+// When KGI_ENV=sim (or ?source=sim), proxies to KGI SIM gateway positions.
+// When KGI_ENV=paper (or ?source=paper), returns in-memory paper-broker positions.
+// Default: follows KGI_ENV env var. Override with ?source=sim|paper.
 app.get("/api/v1/paper/positions", async (c) => {
   const session = c.get("session");
+  const sourceOverride = c.req.query("source"); // "sim" | "paper" | undefined
+  const kgiEnv = resolveKgiEnv();
+  const useSimSource = sourceOverride === "sim" || (sourceOverride !== "paper" && kgiEnv === "sim");
+
+  if (useSimSource) {
+    // KGI SIM mode — pull real positions from gateway
+    const gatewayUrl =
+      process.env["KGI_GATEWAY_URL"] ??
+      process.env["KGI_GATEWAY_BASE_URL"] ??
+      "http://127.0.0.1:8787";
+    const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
+    const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+    try {
+      const rawPositions = await client.getPosition();
+      // Map KgiPosition → Position-compatible shape for UI
+      const positions = rawPositions
+        .filter((p) => p.netQuantity !== 0 || p.unrealized !== 0)
+        .map((p) => ({
+          accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
+          symbol: p.symbol,
+          market: "TWSE",
+          quantity: p.netQuantity,
+          avgPrice: p.lastPrice, // best proxy; KGI position df does not expose avgPrice
+          marketPrice: p.lastPrice,
+          marketValue: p.lastPrice ? p.lastPrice * p.netQuantity : null,
+          unrealizedPnl: p.unrealized,
+          unrealizedPnlPct: null,
+          openedAt: null,
+          companyId: null,
+          source: "kgi_sim",
+        }));
+      return c.json({ data: positions, source: "kgi_sim" });
+    } catch (_err) {
+      // Graceful degradation — fall back to empty list, not error
+      return c.json({ data: [], source: "kgi_sim", degraded: true });
+    }
+  }
+
+  // Paper-broker in-memory mode
   const accountId = c.req.query("accountId") ?? "default";
-  return c.json({ data: await listPaperPositions(session, accountId) });
+  return c.json({ data: await listPaperPositions(session, accountId), source: "paper" });
 });
 
 // POST /api/v1/paper/orders/:id/cancel — cancel a PENDING/ACCEPTED order
@@ -10879,24 +11122,62 @@ app.get("/api/v1/paper/portfolio", async (c) => {
 });
 
 // =============================================================================
-// Fix 3 — GET /api/v1/paper/funds alias
-// Alias for GET /api/v1/trading/balance — same shape, different path.
-// Frontend PTR calls /paper/funds to get available cash for the paper account.
-// Auth: same as /trading/balance (session required, no special role).
+// GET /api/v1/paper/funds
+// When KGI_ENV=sim (or ?source=sim), proxies to KGI SIM account balance via gateway.
+// When KGI_ENV=paper (or ?source=paper), returns paper-broker in-memory balance.
+// Auth: session required, no special role.
 // =============================================================================
 
 app.get("/api/v1/paper/funds", async (c) => {
-  // accountId is optional; mirrors /trading/balance optional behaviour.
+  const session = c.get("session");
+  const sourceOverride = c.req.query("source");
+  const kgiEnv = resolveKgiEnv();
+  const useSimSource = sourceOverride === "sim" || (sourceOverride !== "paper" && kgiEnv === "sim");
+
+  if (useSimSource) {
+    const gatewayUrl =
+      process.env["KGI_GATEWAY_URL"] ??
+      process.env["KGI_GATEWAY_BASE_URL"] ??
+      "http://127.0.0.1:8787";
+    const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
+    const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+    try {
+      const rawPositions = await client.getPosition();
+      const totalUnrealized = rawPositions.reduce((acc, p) => acc + (p.unrealized ?? 0), 0);
+      const totalRealized = rawPositions.reduce((acc, p) => acc + (p.realized ?? 0), 0);
+      return c.json({
+        data: {
+          source: "kgi_sim",
+          accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
+          currency: "TWD",
+          // KGI SIM SDK does not expose available cash — derive P&L only
+          cash: null,
+          availableCash: null,
+          equity: null,
+          marketValue: null,
+          unrealizedPnl: totalUnrealized,
+          realizedPnlToday: totalRealized,
+          note: "cash/equity not available from KGI SIM SDK; showing P&L from position snapshot",
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    } catch (_err) {
+      return c.json({
+        data: {
+          source: "kgi_sim",
+          degraded: true,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    }
+  }
+
+  // Paper-broker in-memory mode
   const accountId = c.req.query("accountId") ?? "";
   if (!accountId) {
-    // Return overall workspace paper balance (first account or summary)
-    return c.json({
-      data: await getPaperBalance(c.get("session"), "")
-    });
+    return c.json({ data: await getPaperBalance(session, ""), source: "paper" });
   }
-  return c.json({
-    data: await getPaperBalance(c.get("session"), accountId)
-  });
+  return c.json({ data: await getPaperBalance(session, accountId), source: "paper" });
 });
 
 // =============================================================================
