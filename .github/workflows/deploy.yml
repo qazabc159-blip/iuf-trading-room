@@ -79,8 +79,22 @@ jobs:
             exit 1
           }
 
-          railway up --service ${{ matrix.service }} --ci --message "GHA deploy ${{ github.sha }}"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Write-Host "railway up attempt $attempt/$maxAttempts for service ${{ matrix.service }}"
+            railway up --service ${{ matrix.service }} --ci --message "GHA deploy ${{ github.sha }}"
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -eq 0) {
+              exit 0
+            }
+            if ($attempt -eq $maxAttempts) {
+              Write-Host "::error::railway up failed after $maxAttempts attempts with exit code $exitCode."
+              exit $exitCode
+            }
+            $sleepSeconds = 20 * $attempt
+            Write-Host "railway up failed with exit code $exitCode; retrying in $sleepSeconds seconds..."
+            Start-Sleep -Seconds $sleepSeconds
+          }
 
       # Post-deploy migration verify (api service only).
       # Railway runs pnpm migrate inside the container via start-api-railway.mjs
