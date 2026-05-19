@@ -214,10 +214,22 @@ function getCurrentWindowLabel(): WindowLabel {
 /**
  * Returns whether the hourly cron should fire now.
  * Fires every hour (any TST hour). Guard: if already ran within last 50min, skip.
- * This replaces the old 4-window (08/12/18/24) gate with an hourly cadence so
- * users never see stale news when browsing outside those 4 specific windows.
+ * Stale-override: if _lastResult.as_of is > STALE_AFTER_MS old, force fire regardless
+ * of _lastRunAt — handles the case where boot-recovery seeded a stale DB result and
+ * the 50min double-fire guard then blocks the real refresh.
  */
 export function isWithinNewsWindowTrigger(): boolean {
+  // Stale-override: _lastResult.as_of is old even if _lastRunAt is recent.
+  // Scenario: boot-recovery seeds DB row (as_of=01:16), sets _lastRunAt=01:16.
+  // 50min guard passes, cron fires, but if _lastResult still reflects stale content,
+  // we MUST allow re-fire. Check as_of independently from _lastRunAt.
+  if (_lastResult) {
+    const asOfAgeMs = Date.now() - new Date(_lastResult.as_of).getTime();
+    if (asOfAgeMs > STALE_AFTER_MS) {
+      // Content is stale regardless of when we last attempted — always fire
+      return true;
+    }
+  }
   // Hourly cadence: allow fire at any hour, guard against double-fire within 50min
   if (_lastRunAt) {
     const elapsedMs = Date.now() - _lastRunAt.getTime();
@@ -663,6 +675,11 @@ export async function runNewsAiSelection(params: {
 
       for (let idx = 0; idx < aiResponse.selected.length && aiMappedItems.length < TOP_N; idx++) {
         const sel = aiResponse.selected[idx]!;
+        // Guard duplicate ids — LLM sometimes returns same id twice (both dedup AND duplicate rank=10 issues)
+        if (aiSelectedIds.has(sel.id)) {
+          console.warn(`[news-ai-selector] AI returned duplicate id="${sel.id}" at idx=${idx} — skipping`);
+          continue;
+        }
         const row = rowById.get(sel.id);
         if (!row) {
           console.warn(`[news-ai-selector] AI returned unknown id="${sel.id}" — skipping`);
@@ -694,20 +711,16 @@ export async function runNewsAiSelection(params: {
         });
       }
 
-      // Re-assign sequential rank 1..N — never trust LLM to deduplicate ranks
-      for (let r = 0; r < aiMappedItems.length; r++) {
-        aiMappedItems[r]!.rank = r + 1;
-      }
-
       // If AI hallucination left us short of TOP_N, pad with deterministic fallback items
       if (aiMappedItems.length < TOP_N) {
         const deterministic = deterministicTop10(rawRows);
         for (const fallbackItem of deterministic) {
           if (aiMappedItems.length >= TOP_N) break;
           if (aiSelectedIds.has(fallbackItem.id)) continue;
+          aiSelectedIds.add(fallbackItem.id); // prevent same pad id twice
           aiMappedItems.push({
             ...fallbackItem,
-            rank: aiMappedItems.length + 1,
+            rank: 0, // placeholder — final re-assign below makes this definitive
             // Pad items come from deterministic fallback — assign default why/impact so
             // callers always see non-null values (acceptance: null why=0, null impact=0)
             why_matters: `重要台股消息：${(fallbackItem.headline ?? "").slice(0, 30)}`,
@@ -715,6 +728,13 @@ export async function runNewsAiSelection(params: {
             tags: []
           });
         }
+      }
+
+      // Final re-assign sequential rank 1..N across ALL items (AI-mapped + pad).
+      // Placed AFTER pad to guarantee no rank collisions between AI items and pad items.
+      // Also catches duplicate-rank LLM responses that slipped past the id-dedup guard.
+      for (let r = 0; r < aiMappedItems.length; r++) {
+        aiMappedItems[r]!.rank = r + 1;
       }
 
       items = aiMappedItems;
