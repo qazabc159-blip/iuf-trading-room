@@ -12344,7 +12344,8 @@ const CANONICAL_COMPANIES_SEED: Array<{
     name: "統一企業",
     market: "食品工業",
     country: "Taiwan",
-    chainPosition: "Consumer Staples",
+    // chain_position is TEXT (no enum constraint) — use zh-TW industry chain label
+    chainPosition: "消費必需品龍頭",
     beneficiaryTier: "Core",
     exposure: _SEED_EXPOSURE,
     validation: _SEED_VALIDATION,
@@ -12356,7 +12357,8 @@ const CANONICAL_COMPANIES_SEED: Array<{
     name: "元大台灣50",
     market: "ETF",
     country: "Taiwan",
-    chainPosition: "Broad Market ETF",
+    // chain_position is TEXT (no enum constraint) — use zh-TW fund type label
+    chainPosition: "大盤指數ETF",
     beneficiaryTier: "Core",
     exposure: _SEED_EXPOSURE,
     validation: _SEED_VALIDATION,
@@ -12378,8 +12380,10 @@ app.post("/api/v1/admin/companies/seed", async (c) => {
 
   for (const seed of CANONICAL_COMPANIES_SEED) {
     try {
-      // Check if ticker already exists in this workspace
-      const existing = await getCompaniesLiteCached(repo, workspaceSlug);
+      // Bypass the 5-min cache — use repo directly so idempotency check is always fresh.
+      // (getCompaniesLiteCached would return stale [] on first seed call and fail to detect
+      //  existing rows on a second call within the same 5-min window.)
+      const existing = await repo.listCompaniesLite({ workspaceSlug });
       const found = existing.find((co) => co.ticker === seed.ticker);
       if (found) {
         results.push({ ticker: seed.ticker, action: "already_exists" });
@@ -12387,6 +12391,7 @@ app.post("/api/v1/admin/companies/seed", async (c) => {
       }
 
       // Create the company
+      console.info(`[admin/companies/seed] inserting ticker=${seed.ticker} beneficiaryTier=${seed.beneficiaryTier} chainPosition=${seed.chainPosition}`);
       await repo.createCompany(
         {
           ticker: seed.ticker,
@@ -12405,7 +12410,8 @@ app.post("/api/v1/admin/companies/seed", async (c) => {
       results.push({ ticker: seed.ticker, action: "created" });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      console.error(`[admin/companies/seed] failed for ticker=${seed.ticker}:`, detail);
+      const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
+      console.error(`[admin/companies/seed] failed for ticker=${seed.ticker}:`, detail, stack);
       results.push({ ticker: seed.ticker, action: "error", detail });
     }
   }
