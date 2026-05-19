@@ -154,3 +154,14 @@
 - **Route row affected**: #6 `/portfolio`, PR-C.
 - **Decision**: `NEEDS_FIX` until the UI blocks invalid price/quantity, renders an honest pending-input state, and browser smoke proves the CTA no longer shows `@ 0.00`.
 - **Owner**: Frontend Codex for UI gate; backend remains unchanged.
+
+---
+
+## 2026-05-19 Codex P0 cycle update — PR-F `/quant-strategies` score pending copy
+
+- **Latest base**: `ad99ba8` / PR #728.
+- **Production scan evidence**: `evidence/w7_paper_sprint/p0-quant-prod-scan-2026-05-19-round1/quant-strategies.png`.
+- **Finding**: `/quant-strategies` renders `量化分數 / 讀取中` on strategy cards even though the page says formal quant score numbers will only appear after the official `quant-strategies` endpoint returns. This is not an active loading state; it is a pending backend data contract.
+- **Route row affected**: #11 `/quant-strategies`, PR-F.
+- **Decision**: `NEEDS_FIX` until the UI stops implying an endless loader and shows an honest pending source state.
+- **Owner**: Frontend Codex for copy/state; Jason/Elva for real numeric score endpoint.

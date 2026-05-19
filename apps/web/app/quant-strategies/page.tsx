@@ -25,6 +25,9 @@ function pct(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+const QUANT_SCORE_PENDING_LABEL = "待正式分數";
+const QUANT_SCORE_PENDING_HINT = "endpoint 未回傳";
+
 type StrategyCardView = QuantStrategy & {
   labCandidate?: LabStrategyCandidate;
   labStatusWording?: string;
@@ -257,7 +260,8 @@ function StrategyCard({ strategy }: { strategy: StrategyCardView }) {
         <div className={styles.metricGrid}>
           <div className={styles.metric}>
             <span>量化分數</span>
-            <strong>讀取中</strong>
+            <strong>{QUANT_SCORE_PENDING_LABEL}</strong>
+            <small className={styles.metricHint}>{QUANT_SCORE_PENDING_HINT}</small>
           </div>
           <div className={styles.metric}>
             <span>Regime</span>
