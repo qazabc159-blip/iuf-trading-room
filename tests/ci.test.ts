@@ -13335,6 +13335,72 @@ test("TWSE-ANN-INGEST-4: non-JSON content-type on primary triggers fallback", as
   assert.equal(result.length, 1, "TWSE-ANN-INGEST-4: fallback must return 1 row");
 });
 
+// =============================================================================
+// Job #2: ToolCenter lastRunAt + executionHistory (2026-05-19)
+// =============================================================================
+
+test("TOOLCENTER-EXEC-1: listToolsWithExecution is exported from tool-registry-store", async () => {
+  const mod = await import("../apps/api/src/tools/tool-registry-store.js") as any;
+  assert.equal(typeof mod.listToolsWithExecution, "function",
+    "TOOLCENTER-EXEC-1: listToolsWithExecution must be exported");
+});
+
+test("TOOLCENTER-EXEC-2: listToolsWithExecution returns empty array in non-DB mode", async () => {
+  const mod = await import("../apps/api/src/tools/tool-registry-store.js") as any;
+  const result = await mod.listToolsWithExecution({ isActive: true });
+  assert.ok(Array.isArray(result), "TOOLCENTER-EXEC-2: result must be an array");
+  // In non-DB (test) mode, returns [].
+  assert.equal(result.length, 0, "TOOLCENTER-EXEC-2: non-DB mode must return empty array");
+});
+
+// =============================================================================
+// Job #1: LLM usage metadata (2026-05-19)
+// =============================================================================
+
+test("LLM-USAGE-METADATA-1: getLlmUsageSummary returns metadata object with 4 required keys per field", async () => {
+  const mod = await import("../apps/api/src/admin-brain-llm.js") as any;
+  const summary = await mod.getLlmUsageSummary({ from: null, to: null });
+  assert.ok(summary.metadata, "LLM-USAGE-METADATA-1: summary must have metadata key");
+  const requiredFields = ["totalCalls", "totalTokens", "totalCostUsd", "byModel", "byModule", "daily"];
+  for (const field of requiredFields) {
+    const meta = summary.metadata[field];
+    assert.ok(meta, `LLM-USAGE-METADATA-1: metadata.${field} must exist`);
+    assert.ok(typeof meta.source === "string" && meta.source.length > 0,
+      `LLM-USAGE-METADATA-1: metadata.${field}.source must be a non-empty string`);
+    assert.ok(typeof meta.method === "string" && meta.method.length > 0,
+      `LLM-USAGE-METADATA-1: metadata.${field}.method must be a non-empty string`);
+    assert.ok(meta.valueType === "estimated" || meta.valueType === "actual",
+      `LLM-USAGE-METADATA-1: metadata.${field}.valueType must be "estimated" or "actual"`);
+    // lastUpdated is string | null — both are valid
+    assert.ok(meta.lastUpdated === null || typeof meta.lastUpdated === "string",
+      `LLM-USAGE-METADATA-1: metadata.${field}.lastUpdated must be string or null`);
+  }
+});
+
+// =============================================================================
+// Job #3: EventLog event-seed (2026-05-19)
+// =============================================================================
+
+test("EVENTSEED-1: seedEventLog is exported from events/event-seed", async () => {
+  const mod = await import("../apps/api/src/events/event-seed.js") as any;
+  assert.equal(typeof mod.seedEventLog, "function",
+    "EVENTSEED-1: seedEventLog must be exported");
+});
+
+test("EVENTSEED-2: seedEventLog returns result object with required keys in non-DB mode", async () => {
+  const mod = await import("../apps/api/src/events/event-seed.js") as any;
+  // In test mode isDatabaseMode()=false → graceful memory_fallback
+  const result = await mod.seedEventLog("00000000-0000-0000-0000-000000000000");
+  assert.ok(Object.prototype.hasOwnProperty.call(result, "startupEventId"),
+    "EVENTSEED-2: result must have startupEventId");
+  assert.ok(Object.prototype.hasOwnProperty.call(result, "auditEventsSeeded"),
+    "EVENTSEED-2: result must have auditEventsSeeded");
+  assert.ok(Object.prototype.hasOwnProperty.call(result, "orderEventsSeeded"),
+    "EVENTSEED-2: result must have orderEventsSeeded");
+  assert.ok(Array.isArray(result.errors),
+    "EVENTSEED-2: result.errors must be an array");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {

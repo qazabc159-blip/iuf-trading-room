@@ -59,6 +59,21 @@ export interface ToolStatsOptions {
   windowMs?: number; // default 24h
 }
 
+// Execution history entry for a single tool call.
+export interface ToolExecRecord {
+  id: string;
+  callerType: string;
+  status: string;
+  latencyMs: number | null;
+  createdAt: string; // ISO8601
+}
+
+// ToolRow augmented with execution metadata (used by registry list endpoint).
+export interface ToolRowWithExecution extends ToolRow {
+  lastRunAt: string | null;        // ISO8601 of most recent tool_calls row
+  executionHistory: ToolExecRecord[]; // up to 5 most recent calls
+}
+
 // ── listTools ────────────────────────────────────────────────────────────────
 
 /**
@@ -87,6 +102,83 @@ export async function listTools(options: ListToolsOptions = {}): Promise<ToolRow
     console.warn("[tool-registry-store] listTools failed:", e instanceof Error ? e.message : e);
     return [];
   }
+}
+
+// ── listToolsWithExecution ────────────────────────────────────────────────────
+
+/**
+ * Same as listTools() but augments each row with:
+ *   - lastRunAt: ISO8601 of most recent tool_calls.created_at for that key
+ *   - executionHistory: up to 5 most recent tool_calls rows (id, callerType, status, latencyMs, createdAt)
+ *
+ * Memory mode: returns empty array (no DB available).
+ * Failure: degrades gracefully — returns plain ToolRow with lastRunAt=null + executionHistory=[].
+ */
+export async function listToolsWithExecution(options: ListToolsOptions = {}): Promise<ToolRowWithExecution[]> {
+  if (!isDatabaseMode()) return [];
+  const db = getDb();
+  if (!db) return [];
+
+  const conditions = [];
+  if (options.toolType !== undefined) {
+    conditions.push(eq(tools.toolType, options.toolType));
+  }
+  if (options.isActive !== undefined) {
+    conditions.push(eq(tools.isActive, options.isActive));
+  }
+
+  let toolRows: ToolRow[];
+  try {
+    toolRows = conditions.length > 0
+      ? await db.select().from(tools).where(and(...conditions)).orderBy(tools.toolType, tools.toolKey)
+      : await db.select().from(tools).orderBy(tools.toolType, tools.toolKey);
+  } catch (e) {
+    console.warn("[tool-registry-store] listToolsWithExecution tools query failed:", e instanceof Error ? e.message : e);
+    return [];
+  }
+
+  if (toolRows.length === 0) return [];
+
+  // Fetch last 5 calls per tool key in one bulk query, then group in-memory.
+  const toolKeys = toolRows.map((r) => r.toolKey);
+
+  let callRows: ToolCallRow[] = [];
+  try {
+    // Bulk fetch recent calls for all relevant tool keys.
+    // We overfetch (limit 500) then slice per-key — avoids N+1 queries.
+    const { inArray } = await import("drizzle-orm");
+    callRows = await db
+      .select()
+      .from(toolCalls)
+      .where(inArray(toolCalls.toolKey, toolKeys))
+      .orderBy(desc(toolCalls.createdAt))
+      .limit(Math.min(toolKeys.length * 5, 500));
+  } catch (e) {
+    console.warn("[tool-registry-store] listToolsWithExecution calls query failed:", e instanceof Error ? e.message : e);
+    // Degrade: return tools without execution metadata
+    return toolRows.map((row) => ({ ...row, lastRunAt: null, executionHistory: [] }));
+  }
+
+  // Group by toolKey (already sorted desc by createdAt)
+  const callsByKey = new Map<string, ToolCallRow[]>();
+  for (const call of callRows) {
+    const bucket = callsByKey.get(call.toolKey) ?? [];
+    if (bucket.length < 5) bucket.push(call);
+    callsByKey.set(call.toolKey, bucket);
+  }
+
+  return toolRows.map((row): ToolRowWithExecution => {
+    const history = callsByKey.get(row.toolKey) ?? [];
+    const lastRunAt = history[0]?.createdAt.toISOString() ?? null;
+    const executionHistory: ToolExecRecord[] = history.map((c) => ({
+      id: c.id,
+      callerType: c.callerType,
+      status: c.status,
+      latencyMs: c.latencyMs ?? null,
+      createdAt: c.createdAt.toISOString(),
+    }));
+    return { ...row, lastRunAt, executionHistory };
+  });
 }
 
 // ── getToolByKey ──────────────────────────────────────────────────────────────

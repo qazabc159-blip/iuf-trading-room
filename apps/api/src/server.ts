@@ -15592,7 +15592,7 @@ app.get("/api/v1/admin/llm/usage", async (c) => {
 // GET  /api/v1/tools/stats?window=24h      -- per-tool stats (Owner-only)
 // =============================================================================
 
-// GET /api/v1/tools/registry -- list active tools
+// GET /api/v1/tools/registry -- list active tools (with lastRunAt + executionHistory)
 app.get("/api/v1/tools/registry", async (c) => {
   const session = c.get("session");
   if (!session || session.user.role !== "Owner") {
@@ -15602,8 +15602,8 @@ app.get("/api/v1/tools/registry", async (c) => {
   const isActiveParam = c.req.query("isActive");
   const isActive = isActiveParam === "false" ? false : true;
 
-  const { listTools } = await import("./tools/tool-registry-store.js");
-  const rows = await listTools({
+  const { listToolsWithExecution } = await import("./tools/tool-registry-store.js");
+  const rows = await listToolsWithExecution({
     toolType: toolTypeParam as ("llm" | "data_sync" | "review" | "admin_action" | "cron") | undefined,
     isActive
   });
@@ -15788,5 +15788,24 @@ serve(
     // B-EL-4: Start outbox poller (transactional event delivery, 500ms interval)
     const { startOutboxPoller } = await import("./events/event-log-outbox.js");
     startOutboxPoller();
+    // Job #3: Seed real operational events so GET /api/v1/event-streams always has data.
+    // Resolve workspace UUID from slug (schedulerWorkspace is already the slug).
+    try {
+      const db = getDb();
+      if (db) {
+        const wsRows = await db
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.slug, schedulerWorkspace))
+          .limit(1);
+        const wsId = wsRows[0]?.id ?? null;
+        if (wsId) {
+          const { seedEventLog } = await import("./events/event-seed.js");
+          seedEventLog(wsId).catch((e) => console.warn("[event-seed] seed failed:", e));
+        }
+      }
+    } catch (e) {
+      console.warn("[event-seed] workspace lookup failed:", e instanceof Error ? e.message : e);
+    }
   }
 );

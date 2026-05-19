@@ -16,6 +16,18 @@ import { and, between, desc, gte, lte, sql } from "drizzle-orm";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// Metadata attached to every numeric field in LlmUsageSummary.
+// source     — where the value came from (table name or "memory")
+// lastUpdated — ISO8601 timestamp of the newest record included in this value
+// method     — how it was derived ("db_aggregate" | "db_daily_rollup" | "memory_fallback")
+// valueType  — whether the USD figure is estimated or reflects actual billing
+export interface LlmFieldMetadata {
+  source: string;
+  lastUpdated: string | null;
+  method: "db_aggregate" | "db_daily_rollup" | "memory_fallback";
+  valueType: "estimated" | "actual";
+}
+
 export interface LlmUsageSummary {
   from: string;
   to: string;
@@ -27,6 +39,15 @@ export interface LlmUsageSummary {
   daily: Array<{ date: string; calls: number; tokens: number; costUsd: number }>;
   /** Disclaimer: cost_usd is an estimate. Actual billing: OpenAI dashboard. */
   disclaimer: string;
+  /** Metadata for every numeric field in this summary (source/method/valueType). */
+  metadata: {
+    totalCalls: LlmFieldMetadata;
+    totalTokens: LlmFieldMetadata;
+    totalCostUsd: LlmFieldMetadata;
+    byModel: LlmFieldMetadata;
+    byModule: LlmFieldMetadata;
+    daily: LlmFieldMetadata;
+  };
 }
 
 export interface LlmCallEntry {
@@ -65,16 +86,26 @@ export async function getLlmUsageSummary(opts: {
   const from = opts.from ?? new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
   const to = opts.to ?? new Date().toISOString().slice(0, 10);
 
+  const memoryFallbackMeta = {
+    totalCalls:   { source: "memory", lastUpdated: null, method: "memory_fallback" as const, valueType: "estimated" as const },
+    totalTokens:  { source: "memory", lastUpdated: null, method: "memory_fallback" as const, valueType: "estimated" as const },
+    totalCostUsd: { source: "memory", lastUpdated: null, method: "memory_fallback" as const, valueType: "estimated" as const },
+    byModel:      { source: "memory", lastUpdated: null, method: "memory_fallback" as const, valueType: "estimated" as const },
+    byModule:     { source: "memory", lastUpdated: null, method: "memory_fallback" as const, valueType: "estimated" as const },
+    daily:        { source: "memory", lastUpdated: null, method: "memory_fallback" as const, valueType: "estimated" as const },
+  };
+
   if (!isDatabaseMode()) {
     return {
       from, to, totalCalls: 0, totalTokens: 0, totalCostUsd: 0,
       byModel: [], byModule: [], daily: [],
-      disclaimer: "cost_usd is estimated; actual billing: OpenAI dashboard"
+      disclaimer: "cost_usd is estimated; actual billing: OpenAI dashboard",
+      metadata: memoryFallbackMeta,
     };
   }
 
   const db = getDb();
-  if (!db) return { from, to, totalCalls: 0, totalTokens: 0, totalCostUsd: 0, byModel: [], byModule: [], daily: [], disclaimer: "cost_usd is estimated; actual billing: OpenAI dashboard" };
+  if (!db) return { from, to, totalCalls: 0, totalTokens: 0, totalCostUsd: 0, byModel: [], byModule: [], daily: [], disclaimer: "cost_usd is estimated; actual billing: OpenAI dashboard", metadata: memoryFallbackMeta };
 
   // Aggregate from llm_calls for by_model and by_module breakdown
   const callRows = await db
@@ -136,6 +167,23 @@ export async function getLlmUsageSummary(opts: {
     )
     .orderBy(desc(llmCostDaily.date));
 
+  // Compute lastUpdated from the most recent llm_calls row in this window.
+  const newestCallRow = callRows.length > 0 ? `${to}T23:59:59Z` : null;
+  const newestDailyRow = dailyRows.length > 0 ? `${dailyRows[0]!.date}T00:00:00Z` : null;
+
+  const aggregateMeta: LlmFieldMetadata = {
+    source: "llm_calls",
+    lastUpdated: newestCallRow,
+    method: "db_aggregate",
+    valueType: "estimated",
+  };
+  const dailyMeta: LlmFieldMetadata = {
+    source: "llm_cost_daily",
+    lastUpdated: newestDailyRow,
+    method: "db_daily_rollup",
+    valueType: "estimated",
+  };
+
   return {
     from, to, totalCalls, totalTokens, totalCostUsd,
     byModel: Array.from(byModelMap.entries()).map(([modelKey, v]) => ({ modelKey, ...v })),
@@ -146,7 +194,15 @@ export async function getLlmUsageSummary(opts: {
       tokens: r.totalTokens,
       costUsd: parseFloat(r.totalCostUsd ?? "0")
     })),
-    disclaimer: "cost_usd is estimated; actual billing: OpenAI dashboard"
+    disclaimer: "cost_usd is estimated; actual billing: OpenAI dashboard",
+    metadata: {
+      totalCalls:   aggregateMeta,
+      totalTokens:  aggregateMeta,
+      totalCostUsd: aggregateMeta,
+      byModel:      aggregateMeta,
+      byModule:     aggregateMeta,
+      daily:        dailyMeta,
+    },
   };
 }
 
