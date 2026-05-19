@@ -13582,7 +13582,6 @@ test("EVENTSEED-WRITE-4: DB event append must not use aggregate FOR UPDATE", () 
     );
   }
 });
-
 // =============================================================================
 // Brain ReAct Analyst — snake_case shape + market tools + 9-section prompt (2026-05-19)
 // =============================================================================
