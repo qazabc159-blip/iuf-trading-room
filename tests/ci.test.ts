@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import test, { after } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
@@ -13548,6 +13549,23 @@ test("EVENTSEED-WRITE-3: appendEvent in non-DB mode populates in-memory listEven
     streams.some((s: { streamType: string; streamId: string }) => s.streamType === "system" && s.streamId === "server"),
     "EVENTSEED-WRITE-3: stream system::server must be present in listEventStreams result"
   );
+});
+
+test("EVENTSEED-WRITE-4: DB event append must not use aggregate FOR UPDATE", () => {
+  const storeSource = readFileSync("apps/api/src/events/event-log-store.ts", "utf8");
+  const outboxSource = readFileSync("apps/api/src/events/event-log-outbox.ts", "utf8");
+  for (const [name, source] of [["event-log-store", storeSource], ["event-log-outbox", outboxSource]] as const) {
+    assert.doesNotMatch(
+      source,
+      /COALESCE\(MAX\(seq\), 0\) \+ 1 AS next_seq FROM el_events WHERE stream_id = \$\{streamRowId\} FOR UPDATE/,
+      `EVENTSEED-WRITE-4: ${name} must not use PostgreSQL-invalid MAX(seq) FOR UPDATE`
+    );
+    assert.match(
+      source,
+      /pg_advisory_xact_lock\(hashtextextended\(\$\{streamRowId\}, 0\)\)/,
+      `EVENTSEED-WRITE-4: ${name} must lock by stream UUID before computing next seq`
+    );
+  }
 });
 
 // =============================================================================

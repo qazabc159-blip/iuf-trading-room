@@ -107,9 +107,11 @@ export async function appendEventWithOutbox(
     if (!streamRow) throw new Error("el_event_streams upsert returned no row");
     const streamRowId = streamRow.id;
 
-    // 2. Compute next seq atomically (FOR UPDATE holds row lock until commit)
+    // 2. Compute next seq atomically. PostgreSQL cannot apply FOR UPDATE to an
+    // aggregate query, so lock by stream UUID first, then read MAX(seq).
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${streamRowId}, 0))`);
     const seqResult = await tx.execute(
-      sql`SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM el_events WHERE stream_id = ${streamRowId} FOR UPDATE`
+      sql`SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM el_events WHERE stream_id = ${streamRowId}`
     );
     const seqRaw: unknown = seqResult;
     const seqRows: { next_seq: unknown }[] = Array.isArray(seqRaw)
