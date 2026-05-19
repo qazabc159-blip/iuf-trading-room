@@ -336,6 +336,15 @@
   font-size: 18px;
 }
 
+.metricHint {
+  display: block;
+  margin-top: 4px;
+  color: var(--night-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .spark {
   height: 74px;
   margin: auto 0 16px;
