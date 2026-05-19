@@ -13998,12 +13998,14 @@ test("AI-REC-V3-NULL-REPORT-1: synthesis returns empty string not sentinel when 
   assert.ok(!returnSentinel, "AI-REC-V3-NULL-REPORT-1: markdown return must use empty string not a long sentinel string");
 });
 
-test("AI-REC-V3-NULL-REPORT-2: retry guard skips when synthesis report is empty (LLM null)", async () => {
+test("AI-REC-V3-NULL-REPORT-2: retry guard retries from trace when synthesis report is empty (LLM null)", async () => {
   const src = await import("fs").then(fs =>
     fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
   );
   assert.ok(src.includes("reportIsEmpty"), "AI-REC-V3-NULL-REPORT-2: must track reportIsEmpty flag");
-  assert.ok(src.includes("!reportIsEmpty"), "AI-REC-V3-NULL-REPORT-2: retry guard must use !reportIsEmpty to skip repair when LLM null");
+  assert.ok(src.includes("LLM_NULL_OR_TIMEOUT_RETRY"), "AI-REC-V3-NULL-REPORT-2: empty/null synthesis must trigger a fresh trace-based retry");
+  assert.ok(src.includes("V3_SYNTHESIS_TIMEOUT_MS"), "AI-REC-V3-NULL-REPORT-2: v3 synthesis must use a longer timeout than the gateway default");
+  assert.ok(src.includes("V3_SYNTHESIS_RETRY_TIMEOUT_MS"), "AI-REC-V3-NULL-REPORT-2: v3 synthesis retry must use a longer timeout than the gateway default");
 });
 
 test("AI-REC-V3-NULL-REPORT-3: retry winner condition is strict greater-than (not >=)", async () => {

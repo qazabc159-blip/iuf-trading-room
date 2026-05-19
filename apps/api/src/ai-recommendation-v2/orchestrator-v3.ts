@@ -206,6 +206,8 @@ const MIN_V3_RECOMMENDATION_ITEMS = 5;
 // This keeps the fallback producing a useful set even when MIN is low.
 const MAX_V3_FALLBACK_ITEMS = 5;
 const MIN_V3_TECHNICAL_CALLS = 5;
+const V3_SYNTHESIS_TIMEOUT_MS = 75_000;
+const V3_SYNTHESIS_RETRY_TIMEOUT_MS = 90_000;
 
 export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | null {
   if (_latestV3Cache && Date.now() < _latestV3CacheExpiresAt) {
@@ -1124,6 +1126,7 @@ ${previousMarkdownForRepair}`
       taskType: repairMarkdown ? "synthesis_format_retry" : "synthesis",
       maxTokens: repairMarkdown ? 7000 : 5500,
       temperature: repairMarkdown ? 0.1 : 0.2,
+      timeoutMs: repairMarkdown ? V3_SYNTHESIS_RETRY_TIMEOUT_MS : V3_SYNTHESIS_TIMEOUT_MS,
     }
   );
 
@@ -1177,8 +1180,11 @@ async function synthesizeAndParseReportV3(
   // Old condition: `report.trim().length > 0` — passes for empty string after fix too; good.
   // But also guard: don't retry if LLM null (no real markdown to repair from).
   // ★ FIX #742: `retryItems.length > items.length` (strict >) so a tie (0 vs 0) keeps original.
-  if (allowRetry && items.length < MIN_V3_RECOMMENDATION_ITEMS && !reportIsEmpty) {
-    const retry = await synthesizeReportV3(trace, dateStr, model, programmaticRiskOffScore, report);
+  if (allowRetry && items.length < MIN_V3_RECOMMENDATION_ITEMS) {
+    const retrySeed = reportIsEmpty
+      ? "LLM_NULL_OR_TIMEOUT_RETRY: first synthesis returned no markdown. Re-read the trace observations and produce fresh stock sections now."
+      : report;
+    const retry = await synthesizeReportV3(trace, dateStr, model, programmaticRiskOffScore, retrySeed);
     const retryItems = parseAiReportToRecommendationsV3(retry.markdown, dateStr);
     totalTokens += retry.totalTokens;
     costUsd += retry.costUsd;
