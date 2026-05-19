@@ -12859,14 +12859,15 @@ test("AI-REC-V3-4: bucket assignment logic A+/A/B/C by totalScore thresholds", a
 
   const items = parseAiReportToRecommendationsV3(markdown, "2026-05-18");
 
-  // C bucket is excluded from results
-  assert.equal(items.length, 3, `AI-REC-V3-4: must have 3 items (C excluded), got ${items.length}`);
+  // C bucket / high-risk-exclusion is still a real backed card; it must be visible
+  // instead of disappearing and making the product look thin.
+  assert.equal(items.length, 4, `AI-REC-V3-4: must have 4 items including C bucket, got ${items.length}`);
 
   const tickers = items.map(i => i.ticker);
   assert.ok(tickers.includes("2330"), "AI-REC-V3-4: A+ 2330 must be included");
   assert.ok(tickers.includes("2454"), "AI-REC-V3-4: A 2454 must be included");
   assert.ok(tickers.includes("2317"), "AI-REC-V3-4: B 2317 must be included");
-  assert.ok(!tickers.includes("2412"), "AI-REC-V3-4: C 2412 must be EXCLUDED");
+  assert.ok(tickers.includes("2412"), "AI-REC-V3-4: C 2412 must be included as high-risk-exclusion");
 
   const aPlus = items.find(i => i.ticker === "2330");
   assert.equal(aPlus!.bucket, "A+", "AI-REC-V3-4: 2330 must be A+");
@@ -13329,6 +13330,20 @@ test("AI-REC-V3-P0-GATE-1: v3 GET has non-404 empty state and backend gate flags
   assert.ok(source.includes("synthesisRetryUsed"), "AI-REC-V3-P0-GATE-1: v3 GET must expose synthesisRetryUsed");
   assert.ok(source.includes("synthesisFallbackUsed"), "AI-REC-V3-P0-GATE-1: v3 GET must expose synthesisFallbackUsed");
   assert.ok(source.includes("usedFallback"), "AI-REC-V3-P0-GATE-1: v3 GET must expose usedFallback");
+});
+
+test("AI-REC-V3-P0-GATE-2: v3 completion gate requires at least 5 backed cards", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+
+  assert.ok(
+    source.includes("const MIN_V3_RECOMMENDATION_ITEMS = 5"),
+    "AI-REC-V3-P0-GATE-2: v3 must not mark a 2-item run complete"
+  );
+  assert.ok(
+    !source.includes('if (bucketResult.bucket === "C") continue'),
+    "AI-REC-V3-P0-GATE-2: C bucket high-risk-exclusion cards must stay visible"
+  );
 });
 
 test("MARKET-INTEL-P0-GATE-1: announcements API exposes sourceState", async () => {
@@ -13842,14 +13857,18 @@ test("AI-REC-V3-NULL-REPORT-3: retry winner condition is strict greater-than (no
   assert.ok(hasStrictGt, "AI-REC-V3-NULL-REPORT-3: retry must use strict > not >= so 0-vs-0 tie does not swap");
 });
 
-test("AI-REC-V3-NULL-REPORT-4: MIN_V3_RECOMMENDATION_ITEMS is 2 not 5 (Railway log b2f79f5a evidence)", async () => {
+test("AI-REC-V3-NULL-REPORT-4: MIN_V3_RECOMMENDATION_ITEMS preserves Yang PR-A five-card gate", async () => {
   const src = await import("fs").then(fs =>
     fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
   );
   const match = src.match(/const MIN_V3_RECOMMENDATION_ITEMS\s*=\s*(\d+)/);
   assert.ok(match, "AI-REC-V3-NULL-REPORT-4: MIN_V3_RECOMMENDATION_ITEMS must be defined");
   const value = parseInt(match![1]!, 10);
-  assert.ok(value <= 2, `AI-REC-V3-NULL-REPORT-4: MIN_V3_RECOMMENDATION_ITEMS must be <= 2 (valid 2-item report from b2f79f5a was rejected), got ${value}`);
+  assert.equal(
+    value,
+    5,
+    `AI-REC-V3-NULL-REPORT-4: a 2-item report may be parsed, but must not be marked complete; expected the product gate to stay 5, got ${value}`
+  );
 });
 
 test("AI-REC-V3-NULL-REPORT-5: parseAiReportToRecommendationsV3 correctly parses Railway log real sample", async () => {

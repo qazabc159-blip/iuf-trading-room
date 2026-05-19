@@ -198,11 +198,10 @@ export interface AiRecommendationV3RunResult {
 let _latestV3Cache: AiRecommendationV3RunResult | null = null;
 let _latestV3CacheExpiresAt = 0;
 const V3_CACHE_TTL_MS = 5 * 60 * 1000;
-// ★ FIX #742: Lowered from 5 → 2.
-// Railway log evidence (run 8d18127c, b2f79f5a): LLM legitimately produces only 2 stocks
-// when market conditions or tool data only support A/B-bucket items (楊董 SOP allows this).
-// Setting to 5 caused valid 2-item reports to always trigger retry → synthesis_format_error.
-const MIN_V3_RECOMMENDATION_ITEMS = 2;
+// Yang PR-A product gate: v3 must surface at least 5 backed cards or remain
+// non-complete. C bucket / high-risk-exclusion cards count as backed cards
+// when verified tool data is weak; do not silently pass a thin 2-item run.
+const MIN_V3_RECOMMENDATION_ITEMS = 5;
 // Max items the deterministic fallback will produce (independent of MIN threshold).
 // This keeps the fallback producing a useful set even when MIN is low.
 const MAX_V3_FALLBACK_ITEMS = 5;
@@ -908,9 +907,6 @@ export function parseAiReportToRecommendationsV3(
         rationaleLines.push(value);
       }
     }
-
-    // Skip C bucket items
-    if (bucketResult.bucket === "C") continue;
 
     // Confidence defaults by bucket
     const defaultConfidence = bucketResult.bucket === "A+" ? 0.85
