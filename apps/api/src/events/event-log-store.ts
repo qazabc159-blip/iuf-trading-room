@@ -428,17 +428,24 @@ export async function listEventStreams(input: {
   const filters = [eq(elEventStreams.workspaceId, input.workspaceId)];
   if (input.streamType) filters.push(eq(elEventStreams.streamType, input.streamType));
 
-  const rows = await db
-    .select()
-    .from(elEventStreams)
-    .where(and(...filters))
-    .orderBy(desc(elEventStreams.createdAt))
-    .limit(limit);
+  try {
+    const rows = await db
+      .select()
+      .from(elEventStreams)
+      .where(and(...filters))
+      .orderBy(desc(elEventStreams.createdAt))
+      .limit(limit);
 
-  return rows.map((r) => ({
-    id: r.id,
-    streamType: r.streamType,
-    streamId: r.streamId,
-    createdAt: r.createdAt.toISOString(),
-  }));
+    return rows.map((r) => ({
+      id: r.id,
+      streamType: r.streamType,
+      streamId: r.streamId,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  } catch (e) {
+    // Degrade gracefully — e.g. migration 0033 not yet applied in prod.
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("[event-log-store] listEventStreams query failed (migration pending?):", msg);
+    return [];
+  }
 }

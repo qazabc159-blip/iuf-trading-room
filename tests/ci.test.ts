@@ -13581,6 +13581,60 @@ test("BRAIN-REACT-ANALYST-5: getMarketOverview returns valid shape (fail-open, n
     "BRAIN-REACT-ANALYST-5: source must be string");
 });
 
+// =============================================================================
+// PR #731 follow-up: tool-boot-seed (b) + event-streams graceful (c) (2026-05-19)
+// =============================================================================
+
+test("TOOLBOOTSEED-1: seedNeverRunTools is exported from tools/tool-boot-seed", async () => {
+  const mod = await import("../apps/api/src/tools/tool-boot-seed.js") as any;
+  assert.equal(typeof mod.seedNeverRunTools, "function",
+    "TOOLBOOTSEED-1: seedNeverRunTools must be exported");
+});
+
+test("TOOLBOOTSEED-2: seedNeverRunTools returns result with seeded/skipped/errors in non-DB mode", async () => {
+  const mod = await import("../apps/api/src/tools/tool-boot-seed.js") as any;
+  // isDatabaseMode()=false in test env → skip path
+  const result = await mod.seedNeverRunTools(null);
+  assert.ok(Object.prototype.hasOwnProperty.call(result, "seeded"),
+    "TOOLBOOTSEED-2: result.seeded must exist");
+  assert.ok(Object.prototype.hasOwnProperty.call(result, "skipped"),
+    "TOOLBOOTSEED-2: result.skipped must exist");
+  assert.ok(Array.isArray(result.errors),
+    "TOOLBOOTSEED-2: result.errors must be an array");
+});
+
+test("TOOLBOOTSEED-3: seedNeverRunTools in non-DB mode has errors explaining skip", async () => {
+  const mod = await import("../apps/api/src/tools/tool-boot-seed.js") as any;
+  const result = await mod.seedNeverRunTools(null);
+  // non-DB → errors array has 1 entry explaining skip
+  assert.ok(result.errors.length >= 1,
+    "TOOLBOOTSEED-3: should have at least 1 error message explaining DB unavailable skip");
+});
+
+test("EVENTSEED-3: listEventStreams degrades gracefully (returns []) on query error", async () => {
+  // In non-DB mode, listEventStreams returns [] without throwing.
+  const mod = await import("../apps/api/src/events/event-log-store.js") as any;
+  // non-DB mode → returns [] from memory path
+  const result = await mod.listEventStreams({
+    workspaceId: "00000000-0000-0000-0000-000000000000",
+    limit: 10,
+  });
+  assert.ok(Array.isArray(result),
+    "EVENTSEED-3: listEventStreams must return an array");
+  // In non-DB mode with no seeded streams, must return empty array
+  assert.equal(result.length, 0,
+    "EVENTSEED-3: must return [] in non-DB mode with no seeded streams");
+});
+
+test("EVENTSEED-4: seedEventLog non-DB mode: result.errors[0] explains DB unavailable", async () => {
+  const mod = await import("../apps/api/src/events/event-seed.js") as any;
+  const result = await mod.seedEventLog("00000000-0000-0000-0000-000000000001");
+  assert.ok(result.errors.length >= 1,
+    "EVENTSEED-4: must have at least 1 error when DB unavailable");
+  assert.ok(typeof result.errors[0] === "string",
+    "EVENTSEED-4: errors[0] must be a string message");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
