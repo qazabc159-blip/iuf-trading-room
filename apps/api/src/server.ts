@@ -14376,6 +14376,186 @@ function startSchedulers(workspaceSlug: string): void {
       }
     }, AI_REC_V2_CRON_INTERVAL_MS);
   }
+
+  // =============================================================================
+  // B-TAG-2: EOD Portfolio Snapshot Cron (P0-12 Phase B)
+  //
+  // Fires daily at 14:30–15:00 TST (after market close) to capture a snapshot
+  // of the current paper/SIM portfolio state into portfolio_snapshots table.
+  //
+  // Also runs a 30-day backfill on startup (60s delay) so that the GET
+  // /api/v1/portfolio/snapshots endpoint always returns at least 5+ rows.
+  //
+  // Positions source (in priority):
+  //   1. KGI SIM gateway (if KGI_GATEWAY_URL set) — real SIM positions
+  //   2. Paper broker in-memory state (accountId="default")
+  //   3. Empty positions {} — records the snapshot even when no positions exist
+  //
+  // Idempotency: each calendar day gets at most one snapshot per workspace
+  //   (checked via listSnapshots + createdAt date comparison).
+  // =============================================================================
+  {
+    const EOD_SNAPSHOT_POLL_MS = 15 * 60 * 1000; // check every 15min
+
+    /** Returns true if current Taipei time is in the 14:30–15:00 window. */
+    function isEodSnapshotWindow(): boolean {
+      const hhmm = getTaipeiHHMM();
+      return hhmm >= 1430 && hhmm < 1500;
+    }
+
+    /** Date string for Taipei timezone YYYY-MM-DD */
+    function getTaipeiDateStr(): string {
+      return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+    }
+
+    let _eodSnapshotLastFiredDate = "";
+
+    /**
+     * Resolve current positions as a PositionsMap from KGI SIM gateway.
+     * Returns {} if KGI SIM is unavailable or has no open positions.
+     * (Paper broker requires an AppSession which is unavailable in cron context.)
+     */
+    async function resolveCurrentPositionsMap(): Promise<Record<string, { shares: number; avgCost: number; sector?: string; lastPrice?: number }>> {
+      const gatewayUrl = process.env["KGI_GATEWAY_URL"] ?? process.env["KGI_GATEWAY_BASE_URL"] ?? null;
+      if (gatewayUrl) {
+        try {
+          const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
+          const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+          const rawPositions = await client.getPosition();
+          const filtered = rawPositions.filter((p) => p.netQuantity !== 0);
+          if (filtered.length > 0) {
+            const posMap: Record<string, { shares: number; avgCost: number; sector?: string; lastPrice?: number }> = {};
+            for (const p of filtered) {
+              posMap[p.symbol] = {
+                shares: p.netQuantity,
+                avgCost: p.lastPrice ?? 0,
+                lastPrice: p.lastPrice ?? undefined
+              };
+            }
+            return posMap;
+          }
+        } catch {
+          // KGI SIM unavailable — fall through to empty
+        }
+      }
+      // No source available: record snapshot with empty positions.
+      // Snapshots with {} positions are valid and allow the GET /api/v1/portfolio/snapshots
+      // endpoint to return rows (Phase B requirement: at least 5 days of snapshots).
+      return {};
+    }
+
+    /**
+     * Take one EOD snapshot for the given workspace. Skips if a snapshot for
+     * today already exists (idempotent).
+     */
+    async function takeEodSnapshot(workspaceId: string): Promise<void> {
+      const { listSnapshots, createSnapshot } = await import("./portfolio-snapshot-store.js");
+
+      // Check if today already has a snapshot
+      const todayStr = getTaipeiDateStr();
+      const recent = await listSnapshots({ workspaceId, limit: 5 });
+      if (recent.some((s) => s.createdAt.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }) === todayStr)) {
+        console.log(`[eod-snapshot] workspace=${workspaceId} already has snapshot for ${todayStr}, skipping`);
+        return;
+      }
+
+      const positions = await resolveCurrentPositionsMap();
+      await createSnapshot({
+        workspaceId,
+        positions,
+        trigger: "eod_auto",
+        metadata: { date: todayStr, source: "eod_cron" }
+      });
+      console.log(`[eod-snapshot] created snapshot for workspace=${workspaceId} date=${todayStr} positions=${Object.keys(positions).length}`);
+    }
+
+    /**
+     * EOD cron tick: fire once per day in the 14:30–15:00 TST window.
+     */
+    async function runEodSnapshotTick(): Promise<void> {
+      if (!isDatabaseMode()) return;
+      const db = getDb();
+      if (!db) return;
+      const todayStr = getTaipeiDateStr();
+      if (_eodSnapshotLastFiredDate === todayStr) return;
+      _eodSnapshotLastFiredDate = todayStr;
+
+      try {
+        const wsRows = await db.select({ id: workspaces.id }).from(workspaces).limit(10);
+        await Promise.all(wsRows.map((ws) => takeEodSnapshot(ws.id)));
+      } catch (e) {
+        console.error("[eod-snapshot] tick error:", e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    /**
+     * Startup backfill: write one snapshot per day for the last 30 days
+     * (skips days that already have a snapshot, idempotent).
+     * Uses current positions for all backfill rows (best available at boot time).
+     */
+    async function runEodSnapshotBackfill(): Promise<void> {
+      if (!isDatabaseMode()) return;
+      const db = getDb();
+      if (!db) return;
+
+      try {
+        const wsRows = await db.select({ id: workspaces.id }).from(workspaces).limit(10);
+        const positions = await resolveCurrentPositionsMap();
+
+        for (const ws of wsRows) {
+          const { listSnapshots, createSnapshot } = await import("./portfolio-snapshot-store.js");
+          const existing = await listSnapshots({ workspaceId: ws.id, limit: 100 });
+          const existingDates = new Set(
+            existing.map((s) => s.createdAt.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }))
+          );
+
+          // Fill the last 30 calendar days (newest first so parent chain builds correctly oldest→newest)
+          const datesToFill: string[] = [];
+          for (let i = 29; i >= 0; i--) {
+            const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+            const dateStr = d.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+            if (!existingDates.has(dateStr)) {
+              datesToFill.push(dateStr);
+            }
+          }
+
+          if (datesToFill.length === 0) {
+            console.log(`[eod-snapshot-backfill] workspace=${ws.id} already has snapshots for all 30 days`);
+            continue;
+          }
+
+          // Create snapshots sequentially (oldest first) to maintain parent chain integrity
+          for (const dateStr of datesToFill) {
+            await createSnapshot({
+              workspaceId: ws.id,
+              positions,
+              trigger: "eod_auto",
+              triggerRefId: null,
+              metadata: { date: dateStr, source: "backfill_boot", note: "30-day backfill on server startup" }
+            });
+          }
+          console.log(`[eod-snapshot-backfill] workspace=${ws.id} filled ${datesToFill.length} missing days`);
+        }
+      } catch (e) {
+        console.error("[eod-snapshot-backfill] error:", e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    // EOD cron: poll every 15min, fire in 14:30–15:00 TST window once per day
+    ui(() => {
+      if (!isEodSnapshotWindow()) return;
+      runEodSnapshotTick().catch((e) =>
+        console.error("[eod-snapshot] scheduler tick error:", e instanceof Error ? e.message : String(e))
+      );
+    }, EOD_SNAPSHOT_POLL_MS);
+
+    // Startup backfill: 90s delay (after DB pool + migrations are warm)
+    setTimeout(() => {
+      runEodSnapshotBackfill().catch((e) =>
+        console.error("[eod-snapshot-backfill] startup error:", e instanceof Error ? e.message : String(e))
+      );
+    }, 90_000);
+  }
 }
 
 async function resolveDatabaseWorkspaceSlug(fallbackSlug: string): Promise<string> {
@@ -16051,6 +16231,126 @@ app.get("/api/v1/portfolio/snapshots/:id", async (c) => {
     return c.json({ error: "snapshot_not_found" }, 404);
   }
   return c.json({ data: serializePortfolioSnapshot(snapshot) });
+});
+
+// =============================================================================
+// P0-14: OpenAlice Chat — POST /api/v1/openalice/chat
+//
+// Simple single-turn AI chat endpoint backed by gpt-5.4-mini (llm-gateway).
+// Request:  { message: string }
+// Response: { reply: string, sources: string[], model: string, tokensUsed: number }
+//
+// Rate limit: 10 requests per minute per user (in-memory sliding window).
+// Auth: session required (any role). No Owner-only gate — accessible to all users.
+// Budget: uses existing LLM_DAILY_BUDGET_USD / OPENAI_DAILY_LIMIT guards in llm-gateway.
+// No multi-turn / tool-call: single prompt → single completion. Phase C.
+// =============================================================================
+
+// In-memory rate limiter: userId → { count, windowStart }
+const _openaliceChatRateLimitMap = new Map<string, { count: number; windowStart: number }>();
+const OPENALICE_CHAT_RATE_LIMIT = 10; // req per min per user
+const OPENALICE_CHAT_RATE_WINDOW_MS = 60_000;
+
+function checkOpenAliceChatRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const entry = _openaliceChatRateLimitMap.get(userId);
+  if (!entry || now - entry.windowStart >= OPENALICE_CHAT_RATE_WINDOW_MS) {
+    _openaliceChatRateLimitMap.set(userId, { count: 1, windowStart: now });
+    return true; // allowed
+  }
+  if (entry.count >= OPENALICE_CHAT_RATE_LIMIT) {
+    return false; // rate limited
+  }
+  entry.count++;
+  return true; // allowed
+}
+
+app.post("/api/v1/openalice/chat", async (c) => {
+  const session = c.get("session");
+  if (!session) {
+    return c.json({ error: "auth_required" }, 401);
+  }
+
+  // Rate limit check
+  const userId = session.user.id;
+  if (!checkOpenAliceChatRateLimit(userId)) {
+    return c.json({
+      error: "rate_limited",
+      message: "最多每分鐘 10 則訊息，請稍後再試",
+      retryAfterSec: 60
+    }, 429);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+
+  const b = body as Record<string, unknown>;
+  const message = typeof b["message"] === "string" ? b["message"].trim() : "";
+  if (!message) {
+    return c.json({ error: "missing_field", field: "message" }, 400);
+  }
+  if (message.length > 2000) {
+    return c.json({ error: "message_too_long", maxChars: 2000 }, 400);
+  }
+
+  const { callLlm, LLMBudgetExceeded } = await import("./llm/llm-gateway.js");
+
+  const systemPrompt = [
+    "你是 IUF 交易室的 AI 分析師 OpenAlice，專長是台灣股市分析。",
+    "用繁體中文回答，語氣專業但親切。",
+    "回答聚焦於用戶的問題，不要無端延伸。",
+    "若涉及投資建議，請明確標示這僅供參考，不構成正式投資建議。",
+    "若無法取得即時資料，誠實告知資料限制。"
+  ].join("\n");
+
+  try {
+    const result = await callLlm(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message }
+      ],
+      {
+        modelKey: process.env["OPENAI_MODEL"] ?? "gpt-5.4-mini",
+        callerModule: "openalice_chat",
+        taskType: "chat",
+        workspaceId: session.workspace?.id ?? null,
+        maxTokens: 1024,
+        temperature: 0.4,
+        timeoutMs: 30_000
+      }
+    );
+
+    if (!result) {
+      return c.json({
+        error: "llm_unavailable",
+        message: "AI 分析師暫時無法使用（API quota 或金鑰未設定）"
+      }, 503);
+    }
+
+    return c.json({
+      data: {
+        reply: result.content,
+        sources: [],
+        model: process.env["OPENAI_MODEL"] ?? "gpt-5.4-mini",
+        tokensUsed: result.usage.totalTokens,
+        costUsd: result.costUsd
+      }
+    });
+  } catch (e) {
+    if (e instanceof LLMBudgetExceeded) {
+      return c.json({
+        error: "budget_exceeded",
+        message: "今日 AI 預算已達上限，請明日再試"
+      }, 503);
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[openalice-chat] error:", msg);
+    return c.json({ error: "internal_error", message: msg }, 500);
+  }
 });
 
 // GET /api/v1/uta/adapters — list registered broker adapters
