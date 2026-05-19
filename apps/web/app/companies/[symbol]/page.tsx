@@ -9,7 +9,7 @@ import Link from "next/link";
 
 import { PageFrame } from "@/components/PageFrame";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
-import { getCompanies, getCompanyAnnouncements, getCompanyFullProfile, getCompanyKBar, getCompanyOhlcv, getCompanyQuoteRealtime, getThemes, type CompanyRealtimeQuote, type FinMindKBarView, type FullProfileEnvelope, type OhlcvBar } from "@/lib/api";
+import { getCompanyAnnouncements, getCompanyByTicker, getCompanyFullProfile, getCompanyKBar, getCompanyOhlcv, getCompanyQuoteRealtime, getThemes, type CompanyRealtimeQuote, type FinMindKBarView, type FullProfileEnvelope, type OhlcvBar } from "@/lib/api";
 import type { Company, Theme } from "@iuf-trading-room/contracts";
 import {
   quoteFromOhlcvBars,
@@ -215,14 +215,13 @@ export default async function CompanyDetailPage({
 }) {
   const { symbol } = await params;
 
-  let companies: Company[] = [];
+  let company: Company | null = null;
   let fetchErrorMsg: string | null = null;
   try {
-    const res = await getCompanies();
-    companies = res.data ?? [];
+    company = await getCompanyByTicker(symbol);
   } catch (err) {
     fetchErrorMsg = friendlyError(err);
-    console.warn("[company-detail] getCompanies degraded", { symbol, err: fetchErrorMsg });
+    console.warn("[company-detail] getCompanyByTicker degraded", { symbol, err: fetchErrorMsg });
   }
 
   if (fetchErrorMsg !== null) {
@@ -243,8 +242,8 @@ export default async function CompanyDetailPage({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12, marginBottom: 18 }}>
             <div className="panel hud-frame" style={{ padding: 14 }}>
               <b className="tg">缺少資料源</b>
-              <div className="tg soft">GET /api/v1/companies</div>
-              <small className="dim">公司主檔清單沒有成功回傳，因此公司頁不能安全渲染 quote / K 線 / AI report。</small>
+              <div className="tg soft">GET /api/v1/companies?ticker={symbol.toUpperCase()}</div>
+              <small className="dim">公司主檔查詢沒有成功回傳，因此公司頁不能安全渲染 quote / K 線 / AI report。</small>
             </div>
             <div className="panel hud-frame" style={{ padding: 14 }}>
               <b className="tg">目前狀態</b>
@@ -266,14 +265,9 @@ export default async function CompanyDetailPage({
     );
   }
 
-  const needle = symbol.toLowerCase();
-  const company = companies.find((c) => c.ticker.toLowerCase() === needle) ?? null;
-
   if (!company) {
     console.warn("[company-detail] ticker not found in workspace", {
       symbol,
-      workspaceSize: companies.length,
-      sample: companies.slice(0, 5).map((c) => c.ticker),
     });
     return (
       <PageFrame
@@ -287,15 +281,10 @@ export default async function CompanyDetailPage({
             查無 {symbol.toUpperCase()}
           </div>
           <div className="dim" style={{ marginBottom: 16 }}>
-            目前工作區有 {companies.length} 檔公司資料，但沒有符合代號 <b>{symbol}</b> 的股票。
+            目前公司查詢端點沒有回傳符合代號 <b>{symbol}</b> 的股票。
           </div>
-          {companies.length > 0 && (
-            <div className="dim" style={{ marginBottom: 16 }}>
-              可用範例：{companies.slice(0, 8).map((c) => c.ticker).join(" / ")}
-            </div>
-          )}
           <div className="terminal-note compact" style={{ marginBottom: 16 }}>
-            資料源：GET /api/v1/companies。Owner: Jason。下一步：確認該股票是否存在於公司主檔，或由資料匯入流程補入；前端不會用假公司資料填補。
+            資料源：GET /api/v1/companies?ticker={symbol.toUpperCase()}。Owner: Jason。下一步：確認該股票是否存在於公司主檔，或由資料匯入流程補入；前端不會用假公司資料填補。
           </div>
           <Link href="/companies" className="btn-sm">返回公司列表</Link>
         </div>

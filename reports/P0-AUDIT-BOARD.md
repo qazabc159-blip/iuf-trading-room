@@ -165,3 +165,16 @@
 - **Route row affected**: #11 `/quant-strategies`, PR-F.
 - **Decision**: `NEEDS_FIX` until the UI stops implying an endless loader and shows an honest pending source state.
 - **Owner**: Frontend Codex for copy/state; Jason/Elva for real numeric score endpoint.
+
+---
+
+## 2026-05-19 Codex P0 cycle update - `/market-intel` and `/companies/[symbol]`
+
+- **Latest base**: `9a99307` / PR #729.
+- **Production scan evidence**: `evidence/w7_paper_sprint/p0-market-intel-ai-news-debug-2026-05-19/market-intel.png`.
+- **Finding**: `/market-intel` production iframe now shows 10 AI-selected news cards from `GET /api/v1/market-intel/news-top10`; keep it `PARTIAL` until official announcements/source governance is clean, but do not count it as "frontend cannot see AI news" anymore.
+- **Company route finding**: `/companies/2330` was still at risk because the detail route fetched broad `GET /api/v1/companies` and scanned locally before rendering any panel.
+- **Current action**: PR in progress changes `/companies/[symbol]` to resolve the requested ticker through `GET /api/v1/companies?ticker=...`.
+- **Route rows affected**: #2 `/market-intel`, #8 `/companies/[symbol]`.
+- **Decision**: `/market-intel` = `PARTIAL`; `/companies/[symbol]` = `NEEDS_FIX` until deployed and production browser screenshot proves the company page renders formal panels.
+- **Owner**: Frontend Codex for the ticker lookup change; Jason only if ticker endpoint fails in production.
