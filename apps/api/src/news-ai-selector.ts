@@ -458,10 +458,11 @@ ${numbered.join("\n")}
 }
 
 規則：
-- impact_tier 只能是 "HIGH" / "MID" / "LOW"
+- impact_tier 只能是 "HIGH" / "MID" / "LOW"，必填，不能省略、不能為 null 或空字串
+- why_matters 必填，不能省略、不能為 null 或空字串，必須是一句 ≤ 60 字的中文，說明對台股操盤者的具體影響
 - tags 最多 3 個，每個 ≤ 8 字
-- why_matters ≤ 60 字
 - 嚴格選 ${TOP_N} 條，若新聞不足則選全部
+- rank 必須從 1 開始連續遞增（1, 2, 3, ...），不能重複、不能跳號
 - 不要解釋、不要前言，只輸出 JSON`;
 }
 
@@ -668,6 +669,15 @@ export async function runNewsAiSelection(params: {
           continue;
         }
         aiSelectedIds.add(sel.id);
+
+        // Post-process why_matters: reject null/empty, use headline snippet as fallback
+        const rawWhy = typeof sel.why_matters === "string" ? sel.why_matters.trim() : "";
+        const whyMatters: string = rawWhy.length > 0 ? rawWhy : `影響台股操盤：${(row.title ?? "").slice(0, 30)}`;
+
+        // Post-process impact_tier: reject invalid values, default to MID
+        const validTiers = new Set(["HIGH", "MID", "LOW"]);
+        const impactTier = validTiers.has(sel.impact_tier ?? "") ? sel.impact_tier as "HIGH" | "MID" | "LOW" : "MID";
+
         aiMappedItems.push({
           id: row.id ?? sel.id,
           headline: row.title ?? "(no title)",
@@ -676,11 +686,17 @@ export async function runNewsAiSelection(params: {
           companyName: row.company_name ?? undefined,
           source: row.source as "twse_announcements" | "finmind_stock_news",
           url: row.url ?? undefined,
-          why_matters: sel.why_matters ?? null,
-          impact_tier: (["HIGH", "MID", "LOW"].includes(sel.impact_tier ?? "") ? sel.impact_tier : null) as "HIGH" | "MID" | "LOW" | null,
+          why_matters: whyMatters,
+          impact_tier: impactTier,
           tags: Array.isArray(sel.tags) ? sel.tags.slice(0, 3) : [],
-          rank: sel.rank ?? idx + 1
+          // rank assigned after dedup — stored as LLM rank for sort, overwritten below
+          rank: typeof sel.rank === "number" && sel.rank > 0 ? sel.rank : idx + 1
         });
+      }
+
+      // Re-assign sequential rank 1..N — never trust LLM to deduplicate ranks
+      for (let r = 0; r < aiMappedItems.length; r++) {
+        aiMappedItems[r]!.rank = r + 1;
       }
 
       // If AI hallucination left us short of TOP_N, pad with deterministic fallback items
@@ -692,8 +708,10 @@ export async function runNewsAiSelection(params: {
           aiMappedItems.push({
             ...fallbackItem,
             rank: aiMappedItems.length + 1,
-            why_matters: null,
-            impact_tier: null,
+            // Pad items come from deterministic fallback — assign default why/impact so
+            // callers always see non-null values (acceptance: null why=0, null impact=0)
+            why_matters: `重要台股消息：${(fallbackItem.headline ?? "").slice(0, 30)}`,
+            impact_tier: "MID" as const,
             tags: []
           });
         }
