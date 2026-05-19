@@ -1458,6 +1458,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const wtSig = $('#wtabs button[data-tab="sig"] .c'); if (wtSig) wtSig.textContent = String((live.ideas || []).length);
     const wtPaper = $('#wtabs button[data-tab="paper"] .c'); if (wtPaper) wtPaper.textContent = String((live.ideas || []).filter((idea) => String(idea.status || "").toLowerCase() !== "block").length);
     const symInput = $("#t-sym"); if (symInput) { symInput.value = (selected.symbol || "") + "　" + (selected.name || ""); symInput.setAttribute("value", symInput.value); }
+    window.__IUF_SELECTED_PRICE__ = selected.price != null && Number.isFinite(Number(selected.price)) ? Number(selected.price) : null;
     const priceInput = $("#t-price"); if (priceInput && selected.price != null) { priceInput.value = Number(selected.price).toFixed(2); priceInput.setAttribute("value", priceInput.value); }
     applyPaperPrefill(selected);
     const ordersArr = (live.orders || []).slice(0, 12);
@@ -1514,7 +1515,17 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = capitalReady ? n(capitalTWD) : "--";
     // expose to updPreview() in vendor HTML
     window.__IUF_AVAIL_CASH__ = capitalReady ? Number(capitalTWD) : 0;
+    if (capitalReady) {
+      delete window.__IUF_TICKET_LOCK_REASON__;
+    } else {
+      window.__IUF_TICKET_LOCK_REASON__ = "\u9700\u8981 owner session \u624d\u80fd\u9810\u89bd / \u9001\u51fa\u7d19\u4e0a\u55ae";
+    }
     const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = capitalReady ? n(capitalTWD) : "--";
+    try {
+      if (typeof window.updPreview === "function") window.updPreview();
+    } catch {
+      // Vendor preview is best-effort; backend preview still validates again on click.
+    }
     const submit = $("#submit-btn");
     if (submit && !capitalReady) {
       submit.disabled = true;
@@ -1530,9 +1541,28 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       const unit = $("#t-unit .on")?.dataset.unit === "share" ? "SHARE" : "LOT";
       const orderType = $("#t-otype")?.value || "limit";
       const side = $("#side .on")?.dataset.side || "buy";
-      const px = Number($("#t-price")?.value || selected.price || 0);
+      const rawPx = Number($("#t-price")?.value || 0);
+      const selectedPx = Number(selected.price || 0);
+      const px = orderType === "market" ? selectedPx : rawPx;
       const getSubmitLabel = () => $("#submit-btn-label") || submit.querySelector("b");
+      const priceRequired = orderType !== "market";
+      const invalidQty = !Number.isFinite(qty) || qty <= 0;
+      const invalidPrice = priceRequired && (!Number.isFinite(rawPx) || rawPx <= 0);
+      const invalidMarketPrice = !priceRequired && (!Number.isFinite(selectedPx) || selectedPx <= 0);
+      if (invalidQty || invalidPrice || invalidMarketPrice) {
+        const reason = invalidQty ? "請輸入有效數量" : (priceRequired ? "請輸入有效委託價" : "等待有效市價");
+        const lbl = getSubmitLabel(); if (lbl) lbl.textContent = reason;
+        const gate = $(".gate .h .v"); if (gate) gate.textContent = reason;
+        submit.disabled = true;
+        submit.classList.add("is-blocked");
+        submit.setAttribute("aria-disabled", "true");
+        submit.dataset.blocked = "invalid_ticket";
+        return;
+      }
       submit.disabled = true;
+      submit.classList.remove("is-blocked");
+      submit.removeAttribute("aria-disabled");
+      delete submit.dataset.blocked;
       const submitLabel0 = getSubmitLabel(); if (submitLabel0) submitLabel0.textContent = "預覽中...";
       const payload = { symbol: selected.symbol, side, orderType, qty, quantity_unit: unit, price: orderType === "market" ? null : px };
       try {

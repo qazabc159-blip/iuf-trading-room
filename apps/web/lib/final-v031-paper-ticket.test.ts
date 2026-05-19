@@ -1,0 +1,24 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const ticketHtml = readFileSync(new URL("../public/ui-final-v031/paper_trading_room/index.html", import.meta.url), "utf8");
+const liveHydration = readFileSync(new URL("./final-v031-live.ts", import.meta.url), "utf8");
+
+describe("final-v031 paper ticket price gate", () => {
+  it("keeps an invalid paper ticket out of the ready-submit state", () => {
+    expect(ticketHtml).toContain("const validTicket=validQty&&validPrice");
+    expect(ticketHtml).toContain("submitBtn.disabled=true");
+    expect(ticketHtml).toContain("紙上單未就緒");
+    expect(ticketHtml).toContain("請輸入有效委託價");
+    expect(ticketHtml).toContain("待輸入 <small>NTD</small>");
+    expect(ticketHtml).toContain("window.__IUF_TICKET_LOCK_REASON__");
+  });
+
+  it("does not fall back to selected quote for an invalid limit-price submit", () => {
+    expect(liveHydration).toContain("const rawPx = Number");
+    expect(liveHydration).toContain('const px = orderType === "market" ? selectedPx : rawPx');
+    expect(liveHydration).toContain("const invalidPrice = priceRequired");
+    expect(liveHydration).toContain('submit.dataset.blocked = "invalid_ticket"');
+    expect(liveHydration).toContain("window.__IUF_TICKET_LOCK_REASON__");
+  });
+});
