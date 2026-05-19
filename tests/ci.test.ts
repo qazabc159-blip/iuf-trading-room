@@ -13496,6 +13496,91 @@ test("EVENTSEED-2: seedEventLog returns result object with required keys in non-
     "EVENTSEED-2: result.errors must be an array");
 });
 
+// =============================================================================
+// Brain ReAct Analyst — snake_case shape + market tools + 9-section prompt (2026-05-19)
+// =============================================================================
+
+test("BRAIN-REACT-ANALYST-1: react-loop exports runReactLoop and validateSynthesisSections", async () => {
+  const mod = await import("../apps/api/src/brain/react-loop.js") as any;
+  assert.equal(typeof mod.runReactLoop, "function",
+    "BRAIN-REACT-ANALYST-1: runReactLoop must be exported");
+  assert.equal(typeof mod.validateSynthesisSections, "function",
+    "BRAIN-REACT-ANALYST-1: validateSynthesisSections must be exported");
+});
+
+test("BRAIN-REACT-ANALYST-2: validateSynthesisSections detects missing sections", async () => {
+  const mod = await import("../apps/api/src/brain/react-loop.js") as any;
+  const reportMissingSections = `
+## 1. 公司概況
+test
+## 2. 近期事件
+test
+## 4. 籌碼
+test
+## 5. 主題
+test
+## 6. 風險
+test
+## 8. 資料來源
+test
+## 9. 生成時間
+test
+`;
+  const missing = mod.validateSynthesisSections(reportMissingSections);
+  assert.ok(Array.isArray(missing), "BRAIN-REACT-ANALYST-2: must return array");
+  assert.ok(missing.includes(3), "BRAIN-REACT-ANALYST-2: section 3 must be detected missing");
+  assert.ok(missing.includes(7), "BRAIN-REACT-ANALYST-2: section 7 must be detected missing");
+});
+
+test("BRAIN-REACT-ANALYST-3: validateSynthesisSections returns [] for complete 9-section report", async () => {
+  const mod = await import("../apps/api/src/brain/react-loop.js") as any;
+  const completeReport = `
+## 1. 公司概況
+test
+## 2. 近期事件
+test
+## 3. 技術結構
+test
+## 4. 籌碼
+test
+## 5. 主題
+test
+## 6. 風險
+test
+## 7. AI 推薦結論
+test
+## 8. 資料來源
+test
+## 9. 生成時間
+2026-05-19T00:00:00.000Z
+`;
+  const missing = mod.validateSynthesisSections(completeReport);
+  assert.deepStrictEqual(missing, [],
+    "BRAIN-REACT-ANALYST-3: complete 9-section report must have 0 missing sections");
+});
+
+test("BRAIN-REACT-ANALYST-4: market-data-tools exports 4 required tool functions", async () => {
+  const mod = await import("../apps/api/src/tools/market-data-tools.js") as any;
+  const required = ["getCompanyTechnical", "getNewsTop10", "getMarketOverview", "getInstitutionalFlow"];
+  for (const fn of required) {
+    assert.equal(typeof mod[fn], "function",
+      `BRAIN-REACT-ANALYST-4: ${fn} must be exported from market-data-tools`);
+  }
+});
+
+test("BRAIN-REACT-ANALYST-5: getMarketOverview returns valid shape (fail-open, no DB required)", async () => {
+  const mod = await import("../apps/api/src/tools/market-data-tools.js") as any;
+  const result = await mod.getMarketOverview();
+  assert.ok(typeof result === "object" && result !== null,
+    "BRAIN-REACT-ANALYST-5: getMarketOverview must return object");
+  assert.ok(Object.prototype.hasOwnProperty.call(result, "sourceState"),
+    "BRAIN-REACT-ANALYST-5: result must have sourceState field");
+  assert.ok(Object.prototype.hasOwnProperty.call(result, "source"),
+    "BRAIN-REACT-ANALYST-5: result must have source field");
+  assert.ok(typeof result.source === "string",
+    "BRAIN-REACT-ANALYST-5: source must be string");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {

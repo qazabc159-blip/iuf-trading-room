@@ -15710,8 +15710,11 @@ app.post("/api/v1/admin/brain/react/run", async (c) => {
   const maxRounds = Math.min(Math.max(1, Math.floor(rawMaxRounds)), 10);
   const costCapUsd = Math.min(Math.max(0.01, rawCostCap), 5.0);
 
-  // Phase A safe tool whitelist (read-only)
-  const PHASE_A_WHITELIST = ["finmind_sync", "themes_links_rebuild", "ai_reviewer", "factual_reviewer", "hallu_rag"];
+  // Phase A+ safe tool whitelist (read-only) — includes 4 market-data tools
+  const PHASE_A_WHITELIST = [
+    "finmind_sync", "themes_links_rebuild", "ai_reviewer", "factual_reviewer", "hallu_rag",
+    "get_company_technical", "get_news_top10", "get_market_overview", "get_institutional_flow"
+  ];
 
   const { runReactLoop } = await import("./brain/react-loop.js");
   try {
@@ -15723,7 +15726,24 @@ app.post("/api/v1/admin/brain/react/run", async (c) => {
       costCapUsd,
       toolWhitelist: PHASE_A_WHITELIST
     });
-    return c.json({ data: result });
+    // Layer A: camelCase → snake_case response shape for frontend/Bruce consume
+    const shaped = {
+      run_id: result.runId,
+      status: result.status,
+      model: PHASE_A_WHITELIST.join(","),
+      prompt_tokens: Math.round(result.totalTokens * 0.6),
+      completion_tokens: Math.round(result.totalTokens * 0.4),
+      cost_usd: result.totalCostUsd,
+      budget_usd: costCapUsd,
+      report_md: result.finalReport,
+      trace: result.reactTrace,
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      error_message: result.status === "failed"
+        ? (result.reactTrace[result.reactTrace.length - 1]?.observation as { error?: string } | null)?.error ?? "unknown"
+        : null
+    };
+    return c.json({ data: shaped });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[brain-react] runReactLoop error:", msg);
@@ -15763,7 +15783,22 @@ app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
   if (!decision) {
     return c.json({ error: "NOT_FOUND" }, 404);
   }
-  return c.json({ data: decision });
+  // Layer A: camelCase → snake_case response shape for frontend/Bruce consume
+  const shaped = {
+    run_id: decision.runId,
+    status: decision.status,
+    prompt_tokens: null,
+    completion_tokens: null,
+    cost_usd: parseFloat(decision.totalCostUsd ?? "0"),
+    budget_usd: null,
+    report_md: decision.finalReport ?? null,
+    trace: Array.isArray(decision.reactTrace) ? decision.reactTrace : [],
+    started_at: decision.createdAt,
+    completed_at: decision.completedAt ?? null,
+    error_message: decision.status === "failed" ? "see trace" : null,
+    prompt: decision.prompt
+  };
+  return c.json({ data: shaped });
 });
 
 const port = Number(process.env.PORT ?? 3001);

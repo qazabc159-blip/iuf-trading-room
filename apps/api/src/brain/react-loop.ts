@@ -112,15 +112,72 @@ function buildSynthesisPrompt(trace: ReactStep[], initialPrompt: string): string
     .map((s) => `Round ${s.round}:\nThought: ${s.thought}\nTool: ${s.toolName ?? "(none)"}\nObservation: ${JSON.stringify(s.observation)}`)
     .join("\n\n");
 
-  return `Based on this analysis trace, write a concise markdown report for the operator.
+  const now = new Date().toISOString();
 
-## Original Request
+  return `根據以下分析追蹤，撰寫一份完整的繁體中文分析師報告。
+
+## 原始請求
 ${initialPrompt}
 
-## Analysis Trace
+## 分析追蹤
 ${traceText}
 
-Write a clear markdown report (2-4 paragraphs). Include: key findings, any concerns, and recommended next action.`;
+## 必要輸出格式（9 個段落，每段都必須有標題）
+
+請嚴格依照以下 9 個段落輸出，標題與內容缺一不可：
+
+## 1. 公司概況
+（公司基本資料、產業定位、主要業務）
+
+## 2. 近期事件
+（最近重要公告、財報、新聞事件）
+
+## 3. 技術結構
+（K 線型態、移動均線位置、RSI、支撐壓力）
+
+## 4. 籌碼
+（外資、投信、自營商近期買賣超、融資融券）
+
+## 5. 主題
+（所屬投資主題、產業鏈位置、關聯政策）
+
+## 6. 風險
+（主要下行風險、注意事項）
+
+## 7. AI 推薦結論
+（明確的操作建議：觀察 / 可布局 / 今日首選 / 不建議；含建議進場區間或理由）
+
+## 8. 資料來源
+（列出使用的工具與資料來源）
+
+## 9. 生成時間
+${now}
+
+---
+重要規則：
+- 必須輸出全部 9 個段落，不能省略任何一個
+- 若缺乏某段落資料，請寫「資料不足，需補充」
+- 全文使用繁體中文
+- AI 推薦結論必須明確（不能曖昧帶過）`;
+}
+
+/**
+ * Validates that synthesis output contains all 9 required Chinese sections.
+ * Returns missing section numbers if any are absent.
+ */
+export function validateSynthesisSections(report: string): number[] {
+  const required = [
+    { n: 1, pattern: /##\s*1[.\s]*公司概況/u },
+    { n: 2, pattern: /##\s*2[.\s]*近期事件/u },
+    { n: 3, pattern: /##\s*3[.\s]*技術結構/u },
+    { n: 4, pattern: /##\s*4[.\s]*籌碼/u },
+    { n: 5, pattern: /##\s*5[.\s]*主題/u },
+    { n: 6, pattern: /##\s*6[.\s]*風險/u },
+    { n: 7, pattern: /##\s*7[.\s]*AI\s*推薦結論/u },
+    { n: 8, pattern: /##\s*8[.\s]*資料來源/u },
+    { n: 9, pattern: /##\s*9[.\s]*生成時間/u },
+  ];
+  return required.filter(r => !r.pattern.test(report)).map(r => r.n);
 }
 
 // ── DB helpers (fire-and-forget) ──────────────────────────────────────────────
@@ -268,6 +325,27 @@ async function dispatchTool(
           claimExtractModel: inp.claimExtractModel ?? model,
           crossValidateModel: inp.crossValidateModel ?? model
         });
+      }
+      // ── Market-data read-only tools (Phase A+) ────────────────────────────
+      case "get_company_technical": {
+        const { getCompanyTechnical } = await import("../tools/market-data-tools.js");
+        const inp = input as { ticker?: string };
+        if (!inp.ticker) throw new Error("get_company_technical requires ticker");
+        return getCompanyTechnical(inp.ticker);
+      }
+      case "get_news_top10": {
+        const { getNewsTop10 } = await import("../tools/market-data-tools.js");
+        return getNewsTop10();
+      }
+      case "get_market_overview": {
+        const { getMarketOverview } = await import("../tools/market-data-tools.js");
+        return getMarketOverview();
+      }
+      case "get_institutional_flow": {
+        const { getInstitutionalFlow } = await import("../tools/market-data-tools.js");
+        const inp = input as { ticker?: string };
+        if (!inp.ticker) throw new Error("get_institutional_flow requires ticker");
+        return getInstitutionalFlow(inp.ticker);
       }
       default:
         throw new Error(`TOOL_NOT_FOUND: ${toolName} is not registered in Phase A tool dispatcher`);
@@ -424,33 +502,52 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
     finalStatus = "complete"; // still complete — generate synthesis below
   }
 
-  // ── Final synthesis call → markdown report ──
+  // ── Final synthesis call → 9-section Chinese markdown report ──
   let finalReport = "";
   if (finalStatus !== "failed") {
     const synthesisPrompt = buildSynthesisPrompt(trace, opts.initialPrompt);
-    const synthesisResult = await callLlm(
-      [{ role: "user", content: synthesisPrompt }],
-      {
-        modelKey: LOOP_MODEL_KEY,
-        callerModule: "brain_react_synthesis",
-        taskType: "react_synthesis",
-        workspaceId: opts.workspaceId,
-        maxTokens: 1024,
-        temperature: 0.2
-      }
-    );
 
-    if (synthesisResult) {
-      totalTokens += synthesisResult.usage.totalTokens;
-      totalCostUsd += synthesisResult.costUsd;
-      finalReport = synthesisResult.content;
+    const runSynthesis = async (): Promise<string | null> => {
+      const res = await callLlm(
+        [{ role: "user", content: synthesisPrompt }],
+        {
+          modelKey: LOOP_MODEL_KEY,
+          callerModule: "brain_react_synthesis",
+          taskType: "react_synthesis",
+          workspaceId: opts.workspaceId,
+          maxTokens: 1500,
+          temperature: 0.2
+        }
+      );
+      if (!res) return null;
+      totalTokens += res.usage.totalTokens;
+      totalCostUsd += res.costUsd;
+      return res.content;
+    };
+
+    let synthesisContent = await runSynthesis();
+
+    // Validate 9 sections — retry once if any missing
+    if (synthesisContent) {
+      const missingSections = validateSynthesisSections(synthesisContent);
+      if (missingSections.length > 0) {
+        console.warn(`[react-loop] synthesis missing sections ${missingSections.join(",")} — retrying once`);
+        const retryContent = await runSynthesis();
+        if (retryContent) {
+          synthesisContent = retryContent;
+        }
+      }
+    }
+
+    if (synthesisContent) {
+      finalReport = synthesisContent;
     } else {
       finalReport = failReason
-        ? `Analysis incomplete: ${failReason}`
-        : `Analysis complete. ${trace.length} reasoning steps performed. Synthesis unavailable (LLM quota).`;
+        ? `分析未完成：${failReason}`
+        : `分析完成。共執行 ${trace.length} 步推理。報告生成失敗（LLM 配額不足）。`;
     }
   } else {
-    finalReport = `Analysis failed: ${failReason}`;
+    finalReport = `分析失敗：${failReason}`;
   }
 
   // ── Finalize DB row ──
