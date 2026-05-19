@@ -334,6 +334,17 @@
 .tactions .submit.buy:hover{background:rgba(214,89,89,.16)}
 .tactions .submit.sell{background:rgba(46,204,113,.10);color:var(--ok);border-color:var(--ok-line)}
 .tactions .submit.sell:hover{background:rgba(46,204,113,.16)}
+.tactions .submit:disabled,
+.tactions .submit.is-blocked{
+  cursor:not-allowed;
+  color:var(--fg-3);
+  background:rgba(108,118,133,.10);
+  border-color:var(--line);
+  opacity:.72;
+  box-shadow:none;
+}
+.tactions .submit:disabled:hover,
+.tactions .submit.is-blocked:hover{background:rgba(108,118,133,.10)}
 .tactions .submit .arr{font-size:13px;opacity:.7}
 .tactions .submit .sub{font:500 10px/1 var(--mono);letter-spacing:.18em;color:inherit;opacity:.7;text-transform:uppercase}
 .tactions .liveex{

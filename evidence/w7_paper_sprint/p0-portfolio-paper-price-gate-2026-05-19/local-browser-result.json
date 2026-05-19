@@ -1,0 +1,26 @@
+{
+  "url": "http://127.0.0.1:3021/portfolio",
+  "status": 200,
+  "frameUrl": "http://127.0.0.1:3021/api/ui-final-v031/paper-trading-room?rev=portfolio",
+  "initialText": "送出紙上單　2330 買進 1 張 @ 2240.00\nPAPER",
+  "initialDisabled": false,
+  "initialPrice": "2240.00",
+  "initialNotional": "2,240,000 NTD",
+  "invalidText": "紙上單未就緒　請輸入有效委託價\nPAPER",
+  "invalidDisabled": true,
+  "invalidNotional": "待輸入 NTD",
+  "containsAtZeroAfterInvalid": false,
+  "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_portfolio_price_p0_20260519\\evidence\\w7_paper_sprint\\p0-portfolio-paper-price-gate-2026-05-19\\local-portfolio-paper-price-gate.png",
+  "console": [],
+  "requestFailures": [
+    {
+      "url": "http://127.0.0.1:3021/api/ui-final-v031/paper-trading-room?rev=portfolio",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3021/api/ui-final-v031/paper-trading-room?rev=portfolio",
+      "failure": "net::ERR_ABORTED"
+    }
+  ],
+  "pageErrors": []
+}

@@ -587,20 +587,55 @@ document.querySelectorAll('[data-p]').forEach(b=>b.addEventListener('click',()=>
 }));
 document.getElementById('t-qty').addEventListener('input',updPreview);
 document.getElementById('t-price').addEventListener('input',updPreview);
+document.getElementById('t-otype').addEventListener('change',updPreview);
 
 function updPreview(){
   const sym=document.querySelector('.symhead .sym').textContent;
   const side=document.querySelector('#side button.on').dataset.side;
   const unit=document.querySelector('#t-unit button.on').dataset.unit;
+  const unitLabel=unit==='lot'?'張':'股';
+  const orderType=document.getElementById('t-otype').value||'limit';
   const qty=+document.getElementById('t-qty').value||0;
-  const px=+document.getElementById('t-price').value||0;
+  const inputPx=+document.getElementById('t-price').value||0;
+  const selectedPx=+window.__IUF_SELECTED_PRICE__||0;
+  const px=orderType==='market'?selectedPx:inputPx;
   const shares=unit==='lot'?qty*1000:qty;
+  const validQty=Number.isFinite(qty)&&qty>0&&shares>0;
+  const validPrice=Number.isFinite(px)&&px>0;
+  const lockReason=window.__IUF_TICKET_LOCK_REASON__||'';
+  const validTicket=validQty&&validPrice&&!lockReason;
+  const submitBtn=document.getElementById('submit-btn');
+  const sub=submitBtn.querySelector('span');
+  const avail=Number(window.__IUF_AVAIL_CASH__||0);
+  document.getElementById('p-avail').textContent=avail.toLocaleString('zh-TW');
+
+  if(!validTicket){
+    const reason=lockReason||(!validQty?'請輸入有效數量':(orderType==='market'?'等待有效市價':'請輸入有效委託價'));
+    document.getElementById('p-notional').innerHTML='待輸入 <small>NTD</small>';
+    document.getElementById('p-fee').innerHTML='待輸入 <small>NTD</small>';
+    const afterEl=document.getElementById('p-after-avail');
+    afterEl.textContent=avail.toLocaleString('zh-TW');
+    afterEl.className='v warn';
+    document.getElementById('p-after-pos').textContent='待輸入';
+    document.getElementById('p-after-avg').textContent='—';
+    submitBtn.disabled=true;
+    submitBtn.classList.add('is-blocked');
+    submitBtn.setAttribute('aria-disabled','true');
+    submitBtn.dataset.blocked='invalid_ticket';
+    sub.innerHTML='紙上單未就緒　<b style="font-weight:600">'+reason+'</b>';
+    const gate=document.querySelector('.gate .h .v');
+    if(gate)gate.textContent=reason;
+    const pv=document.getElementById('preview');pv.classList.add('calc');clearTimeout(window.__pvt);window.__pvt=setTimeout(()=>pv.classList.remove('calc'),250);
+    return;
+  }
+  submitBtn.disabled=false;
+  submitBtn.classList.remove('is-blocked');
+  submitBtn.removeAttribute('aria-disabled');
+  delete submitBtn.dataset.blocked;
   const notion=Math.round(shares*px);
   const fee=Math.round(notion*0.001425);
   document.getElementById('p-notional').innerHTML=notion.toLocaleString('zh-TW')+' <small>NTD</small>';
   document.getElementById('p-fee').innerHTML=fee.toLocaleString('zh-TW')+' <small>NTD</small>';
-  const avail=Number(window.__IUF_AVAIL_CASH__||0);
-  document.getElementById('p-avail').textContent=avail.toLocaleString('zh-TW');
   const after=side==='buy'?avail-notion-fee:avail+notion-fee;
   const afterEl=document.getElementById('p-after-avail');
   afterEl.textContent=after.toLocaleString('zh-TW');
@@ -616,8 +651,9 @@ function updPreview(){
   document.getElementById('p-after-pos').textContent=Math.max(0,newPos).toLocaleString()+' 股 ('+Math.round(Math.max(0,newPos)/1000)+' 張)';
   document.getElementById('p-after-avg').textContent=newAvg>0?newAvg.toFixed(2):'—';
   // submit button text
-  const sub=document.getElementById('submit-btn').querySelector('span');
-  sub.innerHTML='送出紙上單　<b style="font-weight:600">'+sym+' '+(side==='buy'?'買進':'賣出')+' '+qty+' '+unit+' @ '+px.toFixed(2)+'</b>';
+  sub.innerHTML='送出紙上單　<b style="font-weight:600">'+sym+' '+(side==='buy'?'買進':'賣出')+' '+qty+' '+unitLabel+' @ '+px.toFixed(2)+'</b>';
+  const gate=document.querySelector('.gate .h .v');
+  if(gate)gate.textContent='全數通過';
   // briefly flash "計算中…"
   const pv=document.getElementById('preview');pv.classList.add('calc');clearTimeout(window.__pvt);window.__pvt=setTimeout(()=>pv.classList.remove('calc'),250);
 }
