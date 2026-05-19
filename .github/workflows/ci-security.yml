@@ -1,12 +1,14 @@
 name: CI — Security Baseline (all PRs)
 
 # Security gate: runs on ALL pull requests, regardless of which files changed.
-# No paths filter — these jobs must catch broker write / secret leak on every PR.
+# No paths filter: these jobs must catch broker write / secret leak on every PR.
 #
-# W6 No-Real-Order Audit:  prevents live broker write code from sneaking in
-# Secret Regression Check: prevents hardcoded secrets / credentials from leaking
+# W6 No-Real-Order Audit: prevents live broker write code from sneaking in.
+# Secret Regression Check: prevents hardcoded secrets / credentials from leaking.
 #
-# Each job < 10 sec. Total cost per PR ≈ 20 sec combined — negligible quota.
+# Default to the same self-hosted runner pool as validate so GitHub-hosted
+# billing limits cannot block every PR. Set repo var USE_SELF_HOSTED=false to
+# fall back to ubuntu-latest.
 
 on:
   pull_request:
@@ -18,7 +20,7 @@ concurrency:
 jobs:
   w6_audit:
     name: W6 No-Real-Order Audit
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -33,11 +35,11 @@ jobs:
           python-version: "3.11"
 
       - name: Run W6 no-real-order audit
-        run: python3 scripts/audit/w6_no_real_order_audit.py
+        run: python scripts/audit/w6_no_real_order_audit.py
 
   secret_regression:
     name: Secret Regression Check (A2)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -52,4 +54,4 @@ jobs:
           python-version: "3.11"
 
       - name: Run secret regression check
-        run: python3 scripts/audit/secret_regression_check.py
+        run: python scripts/audit/secret_regression_check.py
