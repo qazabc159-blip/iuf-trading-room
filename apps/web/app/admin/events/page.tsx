@@ -434,7 +434,7 @@ export default function EventsAdminPage() {
           <div style={{ marginBottom: 12 }}>
             <EventLogTruthState
               title="EventLog Outbox 診斷數值異常"
-              detail="Outbox 診斷 endpoint 回傳負數或不可用數值；前端不把它顯示成待發 -1，也不假裝為 0。請 Jason/Elva 檢查 outbox diag SQL 與 worker 狀態。"
+              detail="Outbox 診斷 endpoint 回傳負數或不可用數值；前端不把它顯示成負數待發，也不假裝為 0。請 Jason/Elva 檢查 outbox diag SQL 與 worker 狀態。"
             />
           </div>
         )}
