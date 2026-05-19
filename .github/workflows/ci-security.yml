@@ -55,4 +55,3 @@ jobs:
 
       - name: Run secret regression check
         run: python scripts/audit/secret_regression_check.py
-
