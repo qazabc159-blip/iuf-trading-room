@@ -21,13 +21,8 @@ type LoadState =
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
-
 function coverageUrl(ticker: string) {
-  const path = `/api/v1/companies/${encodeURIComponent(ticker)}/coverage`;
-  return API_BASE ? `${API_BASE}${path}` : path;
+  return `/api/v1/companies/${encodeURIComponent(ticker)}/coverage`;
 }
 
 export async function fetchCoverage(ticker: string): Promise<CoverageBrief | null> {

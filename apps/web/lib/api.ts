@@ -73,12 +73,35 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
   ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
 
+function requestMethod(init?: RequestInit) {
+  return (init?.method ?? "GET").toUpperCase();
+}
+
+const SAME_ORIGIN_GET_PROXY_PATHS = [
+  /^\/api\/v1\/companies(?:\?|$|\/)/,
+  /^\/api\/v1\/kgi\/quote\/(?:bidask|ticks)(?:\?|$)/,
+];
+
+function shouldUseSameOriginBackendProxy(path: string, init?: RequestInit) {
+  return typeof window !== "undefined"
+    && requestMethod(init) === "GET"
+    && SAME_ORIGIN_GET_PROXY_PATHS.some((pattern) => pattern.test(path));
+}
+
+function apiRequestUrl(path: string, init?: RequestInit) {
+  if (shouldUseSameOriginBackendProxy(path, init)) {
+    return `/api/ui-final-v031/backend?path=${encodeURIComponent(path)}`;
+  }
+  return API_BASE ? `${API_BASE}${path}` : null;
+}
+
 type Envelope<T> = {
   data: T;
 };
 
 async function request<T>(path: string, init?: RequestInit) {
-  if (!API_BASE) {
+  const url = apiRequestUrl(path, init);
+  if (!url) {
     throw new Error("資料服務位置尚未設定");
   }
 
@@ -95,7 +118,7 @@ async function request<T>(path: string, init?: RequestInit) {
     }
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(url, {
     credentials: "include",
     ...init,
     headers: {
@@ -115,7 +138,8 @@ async function request<T>(path: string, init?: RequestInit) {
 }
 
 async function requestRaw<T>(path: string, init?: RequestInit) {
-  if (!API_BASE) {
+  const url = apiRequestUrl(path, init);
+  if (!url) {
     throw new Error("資料服務尚未設定");
   }
 
@@ -130,7 +154,7 @@ async function requestRaw<T>(path: string, init?: RequestInit) {
     }
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(url, {
     credentials: "include",
     ...init,
     headers: {
