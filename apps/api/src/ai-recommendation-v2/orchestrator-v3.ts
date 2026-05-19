@@ -470,15 +470,23 @@ ${riskOffContext}
 }
 
 // ── Yang SOP synthesis prompt ──────────────────────────────────────────────────
+// Product policy: reports/spec/ai_recommendation_theme_penetration_sop_v1.md
 
-function buildV3SynthesisPrompt(traceText: string, dateStr: string): string {
+function buildV3SynthesisPrompt(traceText: string, dateStr: string, programmaticRiskOffScore: number): string {
   return `你是 IUF 台股操盤師 AI，請根據以下 ReAct 分析過程，輸出符合楊董 SOP 的個股推薦報告（${dateStr}）。
+
+=== HARD GATE ===
+system_programmatic_risk_off_score = ${programmaticRiskOffScore}/6
+${programmaticRiskOffScore >= 3
+  ? "只有在這個分數 >= 3 時，才可以輸出 RISK_OFF_FINAL_SKIP 並不推薦新倉。"
+  : `這個分數 < 3，所以 RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 完全禁止。即使大盤偏弱，也要依據已查到的個股資料輸出至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B/C 卡片；資料弱的標 C「高風險排除」，不要整份報告跳過。`}
+=== END HARD GATE ===
 
 ## 分析過程
 ${traceText}
 
 ---
-請為每支推薦股票（bucket != C）輸出以下嚴格格式：
+請為每支股票卡（A+/A/B/C 都可以，C 代表高風險排除、不開新倉）輸出以下嚴格格式：
 
 ## [ticker] [公司名稱]
 - 分類: [A+今日首選 | A可觀察布局 | B等回檔 | C高風險排除]
@@ -506,8 +514,9 @@ ${traceText}
 - NAV比重: [0.8% | 0.6% | 0.4% | 0%]
 - 市場倍率: [1.0 | 0.9 | 0.7 | 0.6 | 0.5 | 0.4 | 0.3 | 0]
 
-推薦 A+/A/B 的股票，不要輸出 C 分類。
-若 risk_off_score >= 3，只輸出純文字「RISK_OFF_FINAL_SKIP」後接一行說明原因，不推薦任何股票，不要輸出任何 ## 股票 heading。
+推薦 A+/A/B/C 的股票，至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔。C 分類必須標示高風險排除 / 不開新倉，但仍算一張真實資料卡。
+只有 system_programmatic_risk_off_score >= 3 時，才可只輸出純文字「RISK_OFF_FINAL_SKIP」後接一行說明原因，不推薦任何股票，不要輸出任何 ## 股票 heading。
+當 system_programmatic_risk_off_score < 3 時，RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 禁用；請用 C bucket 表達風險，而不是整份跳過。
 使用真實市場資料（來自 ReAct trace），不要捏造數字。`;
 }
 
@@ -1052,19 +1061,27 @@ async function synthesizeReportV3(
   trace: Array<{ round: number; thought: string; toolName: string | null; observation: unknown; tokensUsed: number }>,
   dateStr: string,
   model: string,
+  programmaticRiskOffScore: number,
   repairMarkdown?: string
 ): Promise<V3SynthesisAttempt> {
   const { callLlm } = await import("../llm/llm-gateway.js");
   const traceText = trace
     .map(s => `Round ${s.round}:\n思考: ${s.thought}\n工具: ${s.toolName ?? "(Final Answer)"}\n結果: ${JSON.stringify(s.observation).slice(0, 600)}`)
     .join("\n\n");
+  const rejectedRiskOffRepair = repairMarkdown?.includes("RISK_OFF_FINAL_SKIP") === true;
+  const previousMarkdownForRepair = rejectedRiskOffRepair
+    ? `INVALID_RISK_OFF_FINAL_SKIP_REPAIR:
+The previous synthesis returned RISK_OFF_FINAL_SKIP, but this repair pass is only reached after the programmatic risk-off gate and after tool observations are available.
+Do not reuse that skip answer. Ignore the rejected skip text and write stock sections from the trace observations instead.`
+    : repairMarkdown?.slice(0, 9000) ?? "";
   const userPrompt = repairMarkdown
-    ? `${buildV3SynthesisPrompt(traceText, dateStr)}
+    ? `${buildV3SynthesisPrompt(traceText, dateStr, programmaticRiskOffScore)}
 
 ---
 FORMAT_REPAIR_REQUIRED:
 The previous synthesis output did not parse into at least ${MIN_V3_RECOMMENDATION_ITEMS} recommendation items.
 Rewrite the recommendation sections only, preserving the same factual basis from the trace.
+If the previous output was RISK_OFF_FINAL_SKIP, that answer is rejected for this repair pass unless system_programmatic_risk_off_score >= 3. RISK_OFF_FINAL_SKIP and RISK_OFF_SKIP are forbidden here when the score is < 3; use C bucket when the verified data is weak.
 CRITICAL PARSER RULES:
 1. Every stock section MUST start with exactly "## XXXX 公司名" (two hashes, space, 4-digit ticker, space, Chinese name).
 2. Do NOT use ### or #### headings for stocks. Do NOT use bold-only (**2330**) headings for stocks.
@@ -1073,8 +1090,8 @@ CRITICAL PARSER RULES:
 5. Include ${MIN_V3_RECOMMENDATION_ITEMS} to 8 stocks. C bucket is allowed when the verified data is weak; label it clearly instead of dropping the stock.
 
 Previous markdown:
-${repairMarkdown.slice(0, 9000)}`
-    : buildV3SynthesisPrompt(traceText, dateStr);
+${previousMarkdownForRepair}`
+    : buildV3SynthesisPrompt(traceText, dateStr, programmaticRiskOffScore);
 
   const llmResult = await callLlm(
     [
@@ -1106,9 +1123,10 @@ async function synthesizeAndParseReportV3(
   trace: V3ReActStep[],
   dateStr: string,
   model: string,
+  programmaticRiskOffScore: number,
   allowRetry: boolean
 ): Promise<V3ParsedSynthesis> {
-  const first = await synthesizeReportV3(trace, dateStr, model);
+  const first = await synthesizeReportV3(trace, dateStr, model, programmaticRiskOffScore);
   let report = first.markdown;
   let items = parseAiReportToRecommendationsV3(report, dateStr);
   const initialItemCount = items.length;
@@ -1140,7 +1158,7 @@ async function synthesizeAndParseReportV3(
   // But also guard: don't retry if LLM null (no real markdown to repair from).
   // ★ FIX #742: `retryItems.length > items.length` (strict >) so a tie (0 vs 0) keeps original.
   if (allowRetry && items.length < MIN_V3_RECOMMENDATION_ITEMS && !reportIsEmpty) {
-    const retry = await synthesizeReportV3(trace, dateStr, model, report);
+    const retry = await synthesizeReportV3(trace, dateStr, model, programmaticRiskOffScore, report);
     const retryItems = parseAiReportToRecommendationsV3(retry.markdown, dateStr);
     totalTokens += retry.totalTokens;
     costUsd += retry.costUsd;
@@ -1247,7 +1265,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       let items: AiStockRecommendationV2[] = [];
       let synthesisRetryUsed = false;
       if (trace.length > 0) {
-        const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, false);
+        const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, false);
         totalTokens += synthesis.totalTokens;
         totalCostUsd += synthesis.costUsd;
         report = synthesis.report;
@@ -1397,7 +1415,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         tokensUsed: llmResult.usage.totalTokens,
       });
       const allowSynthesisRetry = companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS || round >= maxRounds - 1;
-      const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, allowSynthesisRetry);
+      const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, allowSynthesisRetry);
       totalTokens += synthesis.totalTokens;
       totalCostUsd += synthesis.costUsd;
       let report = synthesis.report;
@@ -1518,7 +1536,7 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
   }
 
   // Max rounds reached — synthesize with what we have
-  const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, true);
+  const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, true);
   totalTokens += synthesis.totalTokens;
   totalCostUsd += synthesis.costUsd;
   let report = synthesis.report;
