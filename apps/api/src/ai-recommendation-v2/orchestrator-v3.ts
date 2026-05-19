@@ -1403,31 +1403,28 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       return finalizeV3Run(result, model);
     }
 
-    // Tool whitelist check
+    // Tool whitelist check — do NOT hard-fail; instead inject correction so LLM retries.
+    // Old behaviour: immediate status="failed" on first bad toolName → $0.0006 runs die here.
+    // New behaviour: warn + inject correction message, continue loop. If LLM persists past
+    //   maxRounds or keeps using bad tools, we still synthesize from whatever trace we have.
     if (step.toolName && !(TOOL_WHITELIST_V3 as readonly string[]).includes(step.toolName)) {
+      console.warn(`[v3-orchestrator] round ${round}: LLM requested non-whitelisted tool "${step.toolName}" — rejecting and forcing correction`);
       trace.push({
         round,
         thought: step.thought,
         toolName: step.toolName,
         toolInput: step.toolInput,
-        observation: `BLOCKED: tool ${step.toolName} not in v3 whitelist`,
+        observation: `BLOCKED: tool "${step.toolName}" not in v3 whitelist [${TOOL_WHITELIST_V3.join(", ")}]`,
         tokensUsed: llmResult.usage.totalTokens,
       });
-      const result: AiRecommendationV3RunResult = {
-        runId,
-        status: "failed",
-        generatedAt,
-        items: [],
-        reactTrace: trace,
-        finalReportMarkdown: `Tool not in whitelist: ${step.toolName}`,
-        totalCostUsd,
-        totalTokens,
-        marketState: detectedMarketState,
-        marketRiskOffScore: detectedRiskOffScore,
-        programmaticRiskOff,
-        dbRowId,
-      };
-      return finalizeV3Run(result, model);
+      messages.push({ role: "assistant", content: raw });
+      messages.push({
+        role: "user",
+        content: `[SYSTEM REJECTION] 工具「${step.toolName}」不在允許清單中。
+允許工具：${TOOL_WHITELIST_V3.join(", ")}。
+請改用上述工具之一，繼續 STEP 1 分析。先執行 callTool(get_market_overview)。`,
+      });
+      continue; // let LLM retry with correct tool
     }
 
     // ── F3: Final answer validation ────────────────────────────────────────────

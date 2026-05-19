@@ -14248,6 +14248,106 @@ test("TRADING-ROOM-4GAP-5: CANONICAL_COMPANIES_SEED includes 1216 and 0050 with 
   );
 });
 
+// =============================================================================
+// SEED-FIX-1: chainPosition must not use English industry labels (DB TEXT field)
+// =============================================================================
+test("SEED-FIX-1: CANONICAL_COMPANIES_SEED chainPosition values are zh-TW (no raw English enum labels)", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Old bad values that caused confusion (English labels mixed into zh-TW fields)
+  assert.ok(
+    !src.includes('"Consumer Staples"'),
+    'SEED-FIX-1: chainPosition must not use "Consumer Staples" (was confusing with beneficiary_tier enum)'
+  );
+  assert.ok(
+    !src.includes('"Broad Market ETF"'),
+    'SEED-FIX-1: chainPosition must not use "Broad Market ETF" (use zh-TW label instead)'
+  );
+  // New correct zh-TW values
+  assert.ok(
+    src.includes('"消費必需品龍頭"') || src.includes("消費必需品"),
+    'SEED-FIX-1: 1216 chainPosition must use zh-TW label'
+  );
+  assert.ok(
+    src.includes('"大盤指數ETF"') || src.includes("大盤指數"),
+    'SEED-FIX-1: 0050 chainPosition must use zh-TW label'
+  );
+});
+
+// =============================================================================
+// SEED-FIX-2: seed handler bypasses companies-lite cache for idempotency check
+// =============================================================================
+test("SEED-FIX-2: seed handler uses repo.listCompaniesLite directly (not getCompaniesLiteCached)", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Find the seed handler block
+  const seedHandlerStart = src.indexOf('"/api/v1/admin/companies/seed"');
+  assert.ok(seedHandlerStart !== -1, "SEED-FIX-2: seed route must exist");
+  const seedHandlerBlock = src.slice(seedHandlerStart, seedHandlerStart + 2000);
+  // Must use repo.listCompaniesLite (bypass cache) not getCompaniesLiteCached
+  assert.ok(
+    seedHandlerBlock.includes("repo.listCompaniesLite"),
+    "SEED-FIX-2: seed idempotency check must use repo.listCompaniesLite (not cached version)"
+  );
+});
+
+// =============================================================================
+// SEED-FIX-3: beneficiaryTier enum values in seed are valid DB enum entries
+// =============================================================================
+test("SEED-FIX-3: CANONICAL_COMPANIES_SEED beneficiaryTier values are valid enum entries", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Both seeds use "Core" which is in the DB enum ('Core', 'Direct', 'Indirect', 'Observation')
+  assert.ok(
+    src.includes('"Core"'),
+    "SEED-FIX-3: seed must use valid beneficiaryTier enum value 'Core'"
+  );
+  // Confirm invalid old values are NOT present in seed context
+  // (these would cause DB enum constraint violation)
+  const seedBlock = src.slice(src.indexOf("CANONICAL_COMPANIES_SEED"), src.indexOf("CANONICAL_COMPANIES_SEED") + 2000);
+  assert.ok(
+    !seedBlock.includes('"anchor"') && !seedBlock.includes('"beneficiary"') && !seedBlock.includes('"watch"'),
+    "SEED-FIX-3: seed must not use invalid beneficiaryTier values (anchor/beneficiary/watch)"
+  );
+});
+
+// =============================================================================
+// V3-WHITELIST-FIX-1: whitelist check must NOT immediately fail — must warn+continue
+// =============================================================================
+test("V3-WHITELIST-FIX-1: v3 orchestrator whitelist violation triggers correction (not immediate fail)", () => {
+  const src = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  // Old pattern: whitelist fail → immediate status:"failed" return
+  // New pattern: warn + inject correction message + continue
+  const whitelistBlock = src.slice(
+    src.indexOf("Tool whitelist check"),
+    src.indexOf("Tool whitelist check") + 1500
+  );
+  assert.ok(
+    whitelistBlock.includes("continue"),
+    "V3-WHITELIST-FIX-1: whitelist violation must use continue (not return status:failed)"
+  );
+  assert.ok(
+    !whitelistBlock.includes('status: "failed"'),
+    'V3-WHITELIST-FIX-1: whitelist violation must NOT immediately set status:"failed"'
+  );
+  assert.ok(
+    whitelistBlock.includes("SYSTEM REJECTION"),
+    "V3-WHITELIST-FIX-1: whitelist correction message must contain SYSTEM REJECTION"
+  );
+});
+
+// =============================================================================
+// V3-WHITELIST-FIX-2: whitelist correction message lists allowed tools
+// =============================================================================
+test("V3-WHITELIST-FIX-2: whitelist correction message references TOOL_WHITELIST_V3 join", () => {
+  const src = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  const whitelistBlock = src.slice(
+    src.indexOf("Tool whitelist check"),
+    src.indexOf("Tool whitelist check") + 1500
+  );
+  assert.ok(
+    whitelistBlock.includes("TOOL_WHITELIST_V3.join"),
+    "V3-WHITELIST-FIX-2: correction message must include TOOL_WHITELIST_V3.join to list allowed tools"
+  );
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
