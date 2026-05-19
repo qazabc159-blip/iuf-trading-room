@@ -185,6 +185,17 @@ async function classifyError(res: Response, context: string): Promise<never> {
     throw new KgiGatewayAuthError(`${context}: ${msg}`);
   }
   if (res.status === 409) {
+    // Distinguish gateway-level 409 sub-codes from Python app.py:
+    //   NOT_LOGGED_IN       → session never logged in; throw with explicit sub-code tag
+    //   LIVE_ORDER_BLOCKED  → permanent hard line (session is live, not sim)
+    //   other               → feature not enabled in current W-phase
+    const code = (envelope as { error?: { code?: string } } | null)?.error?.code ?? "";
+    if (code === "NOT_LOGGED_IN") {
+      throw new KgiGatewayNotEnabledError(`${context}: [NOT_LOGGED_IN] ${msg}`);
+    }
+    if (code === "LIVE_ORDER_BLOCKED") {
+      throw new KgiGatewayNotEnabledError(`${context}: [LIVE_ORDER_BLOCKED] ${msg}`);
+    }
     throw new KgiGatewayNotEnabledError(`${context}: ${msg}`);
   }
   if (res.status === 422) {

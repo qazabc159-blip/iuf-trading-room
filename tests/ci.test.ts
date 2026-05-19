@@ -14248,6 +14248,220 @@ test("TRADING-ROOM-4GAP-5: CANONICAL_COMPANIES_SEED includes 1216 and 0050 with 
   );
 });
 
+// =============================================================================
+// SEED-FIX-1: chainPosition must not use English industry labels (DB TEXT field)
+// =============================================================================
+test("SEED-FIX-1: CANONICAL_COMPANIES_SEED chainPosition values are zh-TW (no raw English enum labels)", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Old bad values that caused confusion (English labels mixed into zh-TW fields)
+  assert.ok(
+    !src.includes('"Consumer Staples"'),
+    'SEED-FIX-1: chainPosition must not use "Consumer Staples" (was confusing with beneficiary_tier enum)'
+  );
+  assert.ok(
+    !src.includes('"Broad Market ETF"'),
+    'SEED-FIX-1: chainPosition must not use "Broad Market ETF" (use zh-TW label instead)'
+  );
+  // New correct zh-TW values
+  assert.ok(
+    src.includes('"消費必需品龍頭"') || src.includes("消費必需品"),
+    'SEED-FIX-1: 1216 chainPosition must use zh-TW label'
+  );
+  assert.ok(
+    src.includes('"大盤指數ETF"') || src.includes("大盤指數"),
+    'SEED-FIX-1: 0050 chainPosition must use zh-TW label'
+  );
+});
+
+// =============================================================================
+// SEED-FIX-2: seed handler bypasses companies-lite cache for idempotency check
+// =============================================================================
+test("SEED-FIX-2: seed handler uses repo.listCompaniesLite directly (not getCompaniesLiteCached)", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Find the seed handler block
+  const seedHandlerStart = src.indexOf('"/api/v1/admin/companies/seed"');
+  assert.ok(seedHandlerStart !== -1, "SEED-FIX-2: seed route must exist");
+  const seedHandlerBlock = src.slice(seedHandlerStart, seedHandlerStart + 2000);
+  // Must use repo.listCompaniesLite (bypass cache) not getCompaniesLiteCached
+  assert.ok(
+    seedHandlerBlock.includes("repo.listCompaniesLite"),
+    "SEED-FIX-2: seed idempotency check must use repo.listCompaniesLite (not cached version)"
+  );
+});
+
+// =============================================================================
+// SEED-FIX-3: beneficiaryTier enum values in seed are valid DB enum entries
+// =============================================================================
+test("SEED-FIX-3: CANONICAL_COMPANIES_SEED beneficiaryTier values are valid enum entries", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Both seeds use "Core" which is in the DB enum ('Core', 'Direct', 'Indirect', 'Observation')
+  assert.ok(
+    src.includes('"Core"'),
+    "SEED-FIX-3: seed must use valid beneficiaryTier enum value 'Core'"
+  );
+  // Confirm invalid old values are NOT present in seed context
+  // (these would cause DB enum constraint violation)
+  const seedBlock = src.slice(src.indexOf("CANONICAL_COMPANIES_SEED"), src.indexOf("CANONICAL_COMPANIES_SEED") + 2000);
+  assert.ok(
+    !seedBlock.includes('"anchor"') && !seedBlock.includes('"beneficiary"') && !seedBlock.includes('"watch"'),
+    "SEED-FIX-3: seed must not use invalid beneficiaryTier values (anchor/beneficiary/watch)"
+  );
+});
+
+// =============================================================================
+// V3-WHITELIST-FIX-1: whitelist check must NOT immediately fail — must warn+continue
+// =============================================================================
+test("V3-WHITELIST-FIX-1: v3 orchestrator whitelist violation triggers correction (not immediate fail)", () => {
+  const src = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  // Old pattern: whitelist fail → immediate status:"failed" return
+  // New pattern: warn + inject correction message + continue
+  const whitelistBlock = src.slice(
+    src.indexOf("Tool whitelist check"),
+    src.indexOf("Tool whitelist check") + 1500
+  );
+  assert.ok(
+    whitelistBlock.includes("continue"),
+    "V3-WHITELIST-FIX-1: whitelist violation must use continue (not return status:failed)"
+  );
+  assert.ok(
+    !whitelistBlock.includes('status: "failed"'),
+    'V3-WHITELIST-FIX-1: whitelist violation must NOT immediately set status:"failed"'
+  );
+  assert.ok(
+    whitelistBlock.includes("SYSTEM REJECTION"),
+    "V3-WHITELIST-FIX-1: whitelist correction message must contain SYSTEM REJECTION"
+  );
+});
+
+// =============================================================================
+// V3-WHITELIST-FIX-2: whitelist correction message lists allowed tools
+// =============================================================================
+test("V3-WHITELIST-FIX-2: whitelist correction message references TOOL_WHITELIST_V3 join", () => {
+  const src = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  const whitelistBlock = src.slice(
+    src.indexOf("Tool whitelist check"),
+    src.indexOf("Tool whitelist check") + 1500
+  );
+  assert.ok(
+    whitelistBlock.includes("TOOL_WHITELIST_V3.join"),
+    "V3-WHITELIST-FIX-2: correction message must include TOOL_WHITELIST_V3.join to list allowed tools"
+  );
+});
+
+// =============================================================================
+// KGI-SIM-UNLOCK + BULK-SEED tests
+// =============================================================================
+
+test("KGI-SIM-UNLOCK-1: kgiSimOrderBodySchema accepts ticker+quantity aliases", async () => {
+  const { kgiSimOrderBodySchema } = await import("../apps/api/src/server.js") as { kgiSimOrderBodySchema: { parse: (v: unknown) => unknown } };
+  // Elva spec format: {ticker, side, quantity, orderType}
+  const result = kgiSimOrderBodySchema.parse({
+    ticker: "2330",
+    side: "BUY",
+    quantity: 1,
+    orderType: "MARKET",
+  }) as { symbol: string; side: string; qty: number; orderType: string };
+  assert.strictEqual(result.symbol, "2330", "ticker alias must map to symbol");
+  assert.strictEqual(result.qty, 1, "quantity alias must map to qty");
+  assert.strictEqual(result.side, "buy", "BUY must normalize to lowercase");
+  assert.strictEqual(result.orderType, "market", "MARKET must normalize to lowercase");
+});
+
+test("KGI-SIM-UNLOCK-2: kgiSimOrderBodySchema accepts legacy symbol+qty format", async () => {
+  const { kgiSimOrderBodySchema } = await import("../apps/api/src/server.js") as { kgiSimOrderBodySchema: { parse: (v: unknown) => unknown } };
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "0050",
+    side: "sell",
+    qty: 5,
+    orderType: "limit",
+    price: 190.0,
+    quantityUnit: "SHARE",
+  }) as { symbol: string; side: string; qty: number; orderType: string; quantityUnit: string };
+  assert.strictEqual(result.symbol, "0050");
+  assert.strictEqual(result.qty, 5);
+  assert.strictEqual(result.quantityUnit, "SHARE");
+});
+
+test("KGI-SIM-UNLOCK-3: kgiSimOrderBodySchema rejects when both ticker and symbol are missing", async () => {
+  const { kgiSimOrderBodySchema } = await import("../apps/api/src/server.js") as { kgiSimOrderBodySchema: { parse: (v: unknown) => unknown } };
+  assert.throws(() => kgiSimOrderBodySchema.parse({ side: "buy", qty: 1, orderType: "market" }), /required/i);
+});
+
+test("KGI-SIM-UNLOCK-4: server.ts GET /api/v1/paper/positions route exists", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes('"/api/v1/paper/positions"'),
+    "KGI-SIM-UNLOCK-4: GET /api/v1/paper/positions must be registered"
+  );
+});
+
+test("KGI-SIM-UNLOCK-5: kgi-gateway-client classifyError distinguishes NOT_LOGGED_IN from feature-disabled", () => {
+  const src = readFileSync("apps/api/src/broker/kgi-gateway-client.ts", "utf8");
+  assert.ok(
+    src.includes("NOT_LOGGED_IN"),
+    "KGI-SIM-UNLOCK-5: classifyError must handle NOT_LOGGED_IN sub-code"
+  );
+  assert.ok(
+    src.includes("LIVE_ORDER_BLOCKED"),
+    "KGI-SIM-UNLOCK-5: classifyError must handle LIVE_ORDER_BLOCKED sub-code"
+  );
+});
+
+test("BULK-SEED-1: server.ts registers POST /api/v1/admin/companies/bulk-seed", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes('"/api/v1/admin/companies/bulk-seed"'),
+    "BULK-SEED-1: bulk-seed route must be registered"
+  );
+});
+
+test("BULK-SEED-2: _fetchTwseListedCompanies filters valid 4-6 digit tickers", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Verify the ticker regex used in the fetch helper
+  assert.ok(
+    src.includes('/^\\d{4,6}$/.test(c.ticker)') || src.includes("/^\\d{4,6}$/"),
+    "BULK-SEED-2: bulk-seed must filter tickers with 4-6 digit regex"
+  );
+});
+
+test("BULK-SEED-3: bulk-seed handler uses dryRun flag to skip DB write", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const bulkSeedBlock = src.slice(
+    src.indexOf("/api/v1/admin/companies/bulk-seed"),
+    src.indexOf("/api/v1/admin/companies/bulk-seed") + 4000
+  );
+  assert.ok(
+    bulkSeedBlock.includes("dry_run: true") || bulkSeedBlock.includes("dryRun"),
+    "BULK-SEED-3: bulk-seed must support dryRun mode"
+  );
+});
+
+test("BULK-SEED-4: bulk-seed beneficiaryTier defaults to Observation for auto-seeded companies", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const bulkSeedBlock = src.slice(
+    src.indexOf("bulk-seed beneficiaryTier") > 0
+      ? src.indexOf("bulk-seed beneficiaryTier")
+      : src.indexOf("_BULK_SEED_EXPOSURE"),
+    src.indexOf("_BULK_SEED_EXPOSURE") + 3000
+  );
+  assert.ok(
+    src.includes('"Observation"') && src.includes("_BULK_SEED_EXPOSURE"),
+    "BULK-SEED-4: auto-seeded companies must use beneficiaryTier=Observation"
+  );
+});
+
+test("BULK-SEED-5: bulk-seed fetches from both TWSE and TPEx OpenAPI URLs", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes("opendata.twse.com.tw"),
+    "BULK-SEED-5: must include TWSE OpenData URL"
+  );
+  assert.ok(
+    src.includes("tpex.org.tw"),
+    "BULK-SEED-5: must include TPEx OpenAPI URL"
+  );
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {

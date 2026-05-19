@@ -3931,14 +3931,28 @@ app.post("/api/v1/kgi/sim/trade-smoke", async (c) => {
 //
 // Body: { symbol, side, qty, price?, orderType, quantityUnit }
 // Response: { sim_only: true, data: { tradeId, status, submittedAt, ... } }
+// Supports both old field names (symbol/qty) and new aliases (ticker/quantity)
+// so that callers can use either convention without breaking existing integrations.
 export const kgiSimOrderBodySchema = z.object({
-  symbol: z.string().min(1).max(8).toUpperCase(),
-  side: z.enum(["buy", "sell"]),
-  qty: z.number().int().positive(),
+  // ticker is alias for symbol (Elva spec uses {ticker, side, quantity, orderType})
+  ticker: z.string().min(1).max(8).toUpperCase().optional(),
+  symbol: z.string().min(1).max(8).toUpperCase().optional(),
+  side: z.enum(["buy", "sell", "BUY", "SELL"]).transform((v) => v.toLowerCase() as "buy" | "sell"),
+  // quantity is alias for qty
+  quantity: z.number().int().positive().optional(),
+  qty: z.number().int().positive().optional(),
   price: z.number().positive().nullable().optional(),
-  orderType: z.enum(["market", "limit"]).default("limit"),
+  orderType: z.enum(["market", "limit", "MARKET", "LIMIT"]).transform((v) => v.toLowerCase() as "market" | "limit").default("limit"),
   quantityUnit: z.enum(["SHARE", "LOT"]).default("SHARE"),
-});
+}).transform((raw) => ({
+  symbol: (raw.ticker ?? raw.symbol ?? "").toUpperCase(),
+  side: raw.side,
+  qty: raw.quantity ?? raw.qty ?? 1,
+  price: raw.price,  // keep undefined when not provided (SIM2/SIM4 contract)
+  orderType: raw.orderType,
+  quantityUnit: raw.quantityUnit,
+})).refine((d) => d.symbol.length >= 1, { message: "ticker/symbol is required" })
+  .refine((d) => d.qty > 0, { message: "quantity/qty must be positive" });
 
 app.post("/api/v1/kgi/sim/order", async (c) => {
   // 1. Owner-only gate
@@ -4090,6 +4104,27 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
       }, 503);
     }
     if (err instanceof KgiGatewayNotEnabledError) {
+      // Distinguish: NOT_LOGGED_IN means gateway session needs POST /session/login first.
+      // LIVE_ORDER_BLOCKED means gateway is in live mode — re-login with simulation=true.
+      const isNotLoggedIn = err.message.includes("[NOT_LOGGED_IN]");
+      const isLiveBlocked = err.message.includes("[LIVE_ORDER_BLOCKED]");
+      if (isNotLoggedIn) {
+        return c.json({
+          error: "GATEWAY_NOT_LOGGED_IN",
+          message: "KGI gateway session 未登入。請確認 EC2 gateway 服務已啟動且已成功登入。",
+          hint: "EC2 gateway 必須在 08:20-14:10 TST 視窗內登入並保持 session。",
+          sim_only: true,
+          prod_write_blocked: true,
+        }, 503);
+      }
+      if (isLiveBlocked) {
+        return c.json({
+          error: "LIVE_ORDER_BLOCKED",
+          message: "Gateway session 目前為 LIVE 模式，SIM 下單需以 simulation=true 重新登入。",
+          sim_only: true,
+          prod_write_blocked: true,
+        }, 409);
+      }
       return c.json({
         error: "ORDER_NOT_ENABLED",
         message: "Gateway /order/create 尚未啟用（409）。",
@@ -4565,6 +4600,15 @@ app.get("/api/v1/paper/orders", async (c) => {
     : undefined;
   const orders = await listOrders(session.user.id, status ? { status } : undefined);
   return c.json({ data: orders });
+});
+
+// GET /api/v1/paper/positions — alias for /api/v1/trading/positions
+// Returns current paper trading positions for the authenticated user.
+// Supports optional ?accountId= query param (same as /trading/positions).
+app.get("/api/v1/paper/positions", async (c) => {
+  const session = c.get("session");
+  const accountId = c.req.query("accountId") ?? "default";
+  return c.json({ data: await listPaperPositions(session, accountId) });
 });
 
 // POST /api/v1/paper/orders/:id/cancel — cancel a PENDING/ACCEPTED order
@@ -12344,7 +12388,8 @@ const CANONICAL_COMPANIES_SEED: Array<{
     name: "統一企業",
     market: "食品工業",
     country: "Taiwan",
-    chainPosition: "Consumer Staples",
+    // chain_position is TEXT (no enum constraint) — use zh-TW industry chain label
+    chainPosition: "消費必需品龍頭",
     beneficiaryTier: "Core",
     exposure: _SEED_EXPOSURE,
     validation: _SEED_VALIDATION,
@@ -12356,7 +12401,8 @@ const CANONICAL_COMPANIES_SEED: Array<{
     name: "元大台灣50",
     market: "ETF",
     country: "Taiwan",
-    chainPosition: "Broad Market ETF",
+    // chain_position is TEXT (no enum constraint) — use zh-TW fund type label
+    chainPosition: "大盤指數ETF",
     beneficiaryTier: "Core",
     exposure: _SEED_EXPOSURE,
     validation: _SEED_VALIDATION,
@@ -12378,8 +12424,10 @@ app.post("/api/v1/admin/companies/seed", async (c) => {
 
   for (const seed of CANONICAL_COMPANIES_SEED) {
     try {
-      // Check if ticker already exists in this workspace
-      const existing = await getCompaniesLiteCached(repo, workspaceSlug);
+      // Bypass the 5-min cache — use repo directly so idempotency check is always fresh.
+      // (getCompaniesLiteCached would return stale [] on first seed call and fail to detect
+      //  existing rows on a second call within the same 5-min window.)
+      const existing = await repo.listCompaniesLite({ workspaceSlug });
       const found = existing.find((co) => co.ticker === seed.ticker);
       if (found) {
         results.push({ ticker: seed.ticker, action: "already_exists" });
@@ -12387,6 +12435,7 @@ app.post("/api/v1/admin/companies/seed", async (c) => {
       }
 
       // Create the company
+      console.info(`[admin/companies/seed] inserting ticker=${seed.ticker} beneficiaryTier=${seed.beneficiaryTier} chainPosition=${seed.chainPosition}`);
       await repo.createCompany(
         {
           ticker: seed.ticker,
@@ -12405,7 +12454,8 @@ app.post("/api/v1/admin/companies/seed", async (c) => {
       results.push({ ticker: seed.ticker, action: "created" });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      console.error(`[admin/companies/seed] failed for ticker=${seed.ticker}:`, detail);
+      const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
+      console.error(`[admin/companies/seed] failed for ticker=${seed.ticker}:`, detail, stack);
       results.push({ ticker: seed.ticker, action: "error", detail });
     }
   }
@@ -12420,6 +12470,181 @@ app.post("/api/v1/admin/companies/seed", async (c) => {
     already_exists: alreadyExist,
     errors,
     results
+  });
+});
+
+// =============================================================================
+// POST /api/v1/admin/companies/bulk-seed
+// Bulk-seed 1700+ TWSE/TPEx listed companies from TWSE & TPEx OpenAPI.
+// Idempotent: existing tickers are skipped (ON CONFLICT DO NOTHING semantics).
+// Sources:
+//   TWSE: https://opendata.twse.com.tw/v1/opendata/t187ap03_L (上市公司基本資料)
+//   TPEx: https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O (上櫃公司基本資料)
+// Owner-only. No DB migration required — uses existing companies table.
+// Body (optional): { dryRun?: boolean, source?: "twse"|"tpex"|"all" }
+// Response: { ok, created, skipped, errors, total_fetched }
+// =============================================================================
+
+const _BULK_SEED_EXPOSURE = { volume: 2, asp: 2, margin: 2, capacity: 2, narrative: 2 } as const;
+const _BULK_SEED_VALIDATION = { capitalFlow: "neutral", consensus: "neutral", relativeStrength: "neutral" } as const;
+const TWSE_OPENDATA_URL = "https://opendata.twse.com.tw/v1/opendata/t187ap03_L";
+const TPEX_OPENDATA_URL = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O";
+
+async function _fetchTwseListedCompanies(): Promise<Array<{ ticker: string; name: string; industry: string }>> {
+  try {
+    const res = await fetch(TWSE_OPENDATA_URL, {
+      signal: AbortSignal.timeout(20_000),
+      headers: { "Accept": "application/json" },
+    });
+    if (!res.ok) {
+      console.warn(`[bulk-seed] TWSE fetch failed: ${res.status}`);
+      return [];
+    }
+    const ct = res.headers.get("content-type") ?? "";
+    if (!ct.includes("json")) {
+      console.warn(`[bulk-seed] TWSE unexpected content-type: ${ct}`);
+      return [];
+    }
+    const raw = (await res.json()) as Array<Record<string, string>>;
+    if (!Array.isArray(raw)) return [];
+    return raw.map((r) => ({
+      ticker: (r["公司代號"] ?? r["Code"] ?? r["code"] ?? "").trim(),
+      name: (r["公司簡稱"] ?? r["公司名稱"] ?? r["Name"] ?? "").trim(),
+      industry: (r["產業別"] ?? r["Industry"] ?? "").trim(),
+    })).filter((c) => /^\d{4,6}$/.test(c.ticker) && c.name.length > 0);
+  } catch (err) {
+    console.warn("[bulk-seed] TWSE fetch error:", err instanceof Error ? err.message : String(err));
+    return [];
+  }
+}
+
+async function _fetchTpexListedCompanies(): Promise<Array<{ ticker: string; name: string; industry: string }>> {
+  try {
+    const res = await fetch(TPEX_OPENDATA_URL, {
+      signal: AbortSignal.timeout(20_000),
+      headers: { "Accept": "application/json" },
+    });
+    if (!res.ok) {
+      console.warn(`[bulk-seed] TPEx fetch failed: ${res.status}`);
+      return [];
+    }
+    const ct = res.headers.get("content-type") ?? "";
+    if (!ct.includes("json")) {
+      console.warn(`[bulk-seed] TPEx unexpected content-type: ${ct}`);
+      return [];
+    }
+    const raw = (await res.json()) as Array<Record<string, string>>;
+    if (!Array.isArray(raw)) return [];
+    return raw.map((r) => ({
+      ticker: (r["SecuritiesCompanyCode"] ?? r["公司代號"] ?? r["Code"] ?? "").trim(),
+      name: (r["CompanyAbbreviation"] ?? r["公司簡稱"] ?? r["Name"] ?? "").trim(),
+      industry: (r["IndustryType"] ?? r["產業別"] ?? "").trim(),
+    })).filter((c) => /^\d{4,6}$/.test(c.ticker) && c.name.length > 0);
+  } catch (err) {
+    console.warn("[bulk-seed] TPEx fetch error:", err instanceof Error ? err.message : String(err));
+    return [];
+  }
+}
+
+app.post("/api/v1/admin/companies/bulk-seed", async (c) => {
+  const session = c.get("session");
+  if (session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: { dryRun?: boolean; source?: string } = {};
+  try {
+    const raw = await c.req.json();
+    if (raw && typeof raw === "object") {
+      body = raw as { dryRun?: boolean; source?: string };
+    }
+  } catch { /* empty body OK */ }
+
+  const dryRun = body.dryRun === true;
+  const sourceFilter = (body.source ?? "all") as "twse" | "tpex" | "all";
+
+  // Fetch from external sources
+  const [twseCompanies, tpexCompanies] = await Promise.all([
+    sourceFilter !== "tpex" ? _fetchTwseListedCompanies() : Promise.resolve([]),
+    sourceFilter !== "twse" ? _fetchTpexListedCompanies() : Promise.resolve([]),
+  ]);
+
+  // Deduplicate by ticker (TWSE wins on conflict)
+  const allMap = new Map<string, { ticker: string; name: string; industry: string; market: string }>();
+  for (const c of tpexCompanies) {
+    allMap.set(c.ticker, { ...c, market: c.industry || "上櫃" });
+  }
+  for (const c of twseCompanies) {
+    allMap.set(c.ticker, { ...c, market: c.industry || "上市" }); // TWSE overwrites TPEx on same ticker
+  }
+  const allCompanies = Array.from(allMap.values());
+
+  console.info(`[bulk-seed] fetched TWSE=${twseCompanies.length} TPEx=${tpexCompanies.length} deduped=${allCompanies.length} dryRun=${dryRun}`);
+
+  if (dryRun) {
+    return c.json({
+      ok: true,
+      dry_run: true,
+      total_fetched: allCompanies.length,
+      twse_count: twseCompanies.length,
+      tpex_count: tpexCompanies.length,
+      sample: allCompanies.slice(0, 5),
+    });
+  }
+
+  // Load existing tickers to skip (use direct repo call — bypass cache)
+  const repo = c.get("repo");
+  const workspaceSlug = session.workspace.slug;
+  const existing = await repo.listCompaniesLite({ workspaceSlug });
+  const existingTickers = new Set(existing.map((co: { ticker: string }) => co.ticker));
+
+  let created = 0;
+  let skipped = 0;
+  let errors = 0;
+  const errorDetails: Array<{ ticker: string; error: string }> = [];
+
+  for (const company of allCompanies) {
+    if (existingTickers.has(company.ticker)) {
+      skipped++;
+      continue;
+    }
+    try {
+      await repo.createCompany(
+        {
+          ticker: company.ticker,
+          name: company.name,
+          market: company.market,
+          country: "Taiwan",
+          chainPosition: company.industry || company.market,
+          beneficiaryTier: "Observation" as const,
+          exposure: _BULK_SEED_EXPOSURE,
+          validation: _BULK_SEED_VALIDATION,
+          notes: `Auto-seeded from ${company.market.includes("上市") || twseCompanies.some((t) => t.ticker === company.ticker) ? "TWSE" : "TPEx"} OpenAPI 2026-05-19`,
+          themeIds: [],
+        },
+        { workspaceSlug }
+      );
+      existingTickers.add(company.ticker); // prevent double-insert in same run
+      created++;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      errors++;
+      errorDetails.push({ ticker: company.ticker, error: detail.slice(0, 100) });
+      if (errors <= 3) {
+        console.error(`[bulk-seed] failed for ${company.ticker}:`, detail);
+      }
+    }
+  }
+
+  console.info(`[bulk-seed] done: created=${created} skipped=${skipped} errors=${errors}`);
+
+  return c.json({
+    ok: errors === 0,
+    created,
+    skipped,
+    errors,
+    total_fetched: allCompanies.length,
+    error_sample: errorDetails.slice(0, 10),
   });
 });
 
