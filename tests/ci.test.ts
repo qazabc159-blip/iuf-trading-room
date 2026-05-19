@@ -13635,6 +13635,122 @@ test("EVENTSEED-4: seedEventLog non-DB mode: result.errors[0] explains DB unavai
     "EVENTSEED-4: errors[0] must be a string message");
 });
 
+// -- AI-REC-V3-FORMAT-ROOT-CAUSE tests (cross-lane patch 2026-05-19) ----------
+// Root causes of usedFallback=true ~50%:
+//   1. riskOffRe false-positive on "## 市場 risk-off 分析" heading
+//   2. maxTokens=3500 truncating 5-stock report
+//   3. synthesis prompt letting LLM write "## 市場 risk-off" in report with stocks
+
+test("AI-REC-V3-FORMAT-ROOT-CAUSE-1: parser does NOT skip on risk-off preamble heading if stocks are present", async () => {
+  const { parseAiReportToRecommendationsV3 } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+  // LLM legitimately writes a market-analysis preamble section before stocks.
+  // Old regex /市場 risk-off/i would false-positive skip this entire report -> 0 items.
+  const markdown = `## 市場 risk-off 分析
+
+今日大盤情緒偏保守，risk_off_score = 1/6（低於閾值），仍繼續推薦。
+
+## 2330 台積電
+- 分類: A+今日首選
+- 總分: 88
+- 主題位置分: 18
+- 營收財報分: 16
+- 法人ETF分: 14
+- 融資借券分: 10
+- 相對強弱量能分: 8
+- 技術結構分: 15
+- 估值事件分: 7
+- 進場區: 920-940
+- TP1: 980
+- TP2: 1050
+- 停損: 895
+- R值: 2.5
+- 為什麼買: AI 伺服器需求強勁;台積電 CoWoS 滿產
+- 為什麼不買: 估值偏高;美中貿易風險
+- NAV比重: 0.8%
+- 市場倍率: 0.9
+
+## 2454 聯發科
+- 分類: A可觀察布局
+- 總分: 75
+- 主題位置分: 15
+- 營收財報分: 12
+- 法人ETF分: 12
+- 融資借券分: 9
+- 相對強弱量能分: 7
+- 技術結構分: 13
+- 估值事件分: 7
+- 進場區: 800-820
+- TP1: 870
+- TP2: 920
+- 停損: 770
+- R值: 2.2
+- 為什麼買: 手機拉貨周期;SoC AI 競爭力
+- 為什麼不買: 中國手機市場疲弱;競爭加劇
+- NAV比重: 0.6%
+- 市場倍率: 0.9`;
+
+  const items = await parseAiReportToRecommendationsV3(markdown, "2026-05-19");
+  assert.equal(items.length, 2, `AI-REC-V3-FORMAT-ROOT-CAUSE-1: preamble risk-off heading must NOT block parsing, got ${items.length} items`);
+  assert.equal(items[0].ticker, "2330", "AI-REC-V3-FORMAT-ROOT-CAUSE-1: first item must be 2330");
+});
+
+test("AI-REC-V3-FORMAT-ROOT-CAUSE-2: parser correctly skips on explicit RISK_OFF_FINAL_SKIP sentinel", async () => {
+  const { parseAiReportToRecommendationsV3 } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+  const skipMarkdown = `RISK_OFF_FINAL_SKIP
+risk_off_score = 4/6，達到 >=3 閾值，暫不推薦新倉。`;
+
+  const items = await parseAiReportToRecommendationsV3(skipMarkdown, "2026-05-19");
+  assert.equal(items.length, 0, `AI-REC-V3-FORMAT-ROOT-CAUSE-2: RISK_OFF_FINAL_SKIP must return 0 items`);
+});
+
+test("AI-REC-V3-FORMAT-ROOT-CAUSE-3: parser handles RISK_OFF_SKIP only when no stock headings present", async () => {
+  const { parseAiReportToRecommendationsV3 } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+  const withStocks = `RISK_OFF_SKIP - note: this appears in trace summary only
+
+## 2330 台積電
+- 分類: A可觀察布局
+- 總分: 70
+- 進場區: 900-920
+- TP1: 960
+- 停損: 875
+- R值: 2.0
+- 為什麼買: AI 週期上行;外資持續買超
+- 為什麼不買: 短線超漲;美債利率壓制
+- NAV比重: 0.6%
+- 市場倍率: 0.9`;
+
+  const items = await parseAiReportToRecommendationsV3(withStocks, "2026-05-19");
+  assert.equal(items.length, 1, `AI-REC-V3-FORMAT-ROOT-CAUSE-3: RISK_OFF_SKIP with stock headings present must parse stocks, got ${items.length}`);
+});
+
+test("AI-REC-V3-FORMAT-ROOT-CAUSE-4: orchestrator-v3.ts maxTokens is >= 5000 for synthesis", async () => {
+  const src = await import("fs").then(fs =>
+    fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
+  );
+  const match = src.match(/maxTokens:\s*repairMarkdown\s*\?\s*(\d+)\s*:\s*(\d+)/);
+  assert.ok(match, "AI-REC-V3-FORMAT-ROOT-CAUSE-4: synthesizeReportV3 must have maxTokens pattern");
+  const repairTokens = parseInt(match![1]!, 10);
+  const normalTokens = parseInt(match![2]!, 10);
+  assert.ok(normalTokens >= 5000, `AI-REC-V3-FORMAT-ROOT-CAUSE-4: normal maxTokens must be >= 5000 for 5-stock report, got ${normalTokens}`);
+  assert.ok(repairTokens >= 6000, `AI-REC-V3-FORMAT-ROOT-CAUSE-4: repair maxTokens must be >= 6000, got ${repairTokens}`);
+});
+
+test("AI-REC-V3-FORMAT-ROOT-CAUSE-5: synthesis prompt uses RISK_OFF_FINAL_SKIP sentinel not markdown heading", async () => {
+  const src = await import("fs").then(fs =>
+    fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
+  );
+  assert.ok(src.includes("RISK_OFF_FINAL_SKIP"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: prompt must define RISK_OFF_FINAL_SKIP sentinel");
+  assert.ok(src.includes("hasStockHeadings"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: parser must check hasStockHeadings before treating risk-off as skip");
+  assert.ok(src.includes("isExplicitSkip"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: parser must use isExplicitSkip guard instead of broad regex");
+  assert.ok(src.includes("CRITICAL PARSER RULES"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: repair prompt must have CRITICAL PARSER RULES block");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {
