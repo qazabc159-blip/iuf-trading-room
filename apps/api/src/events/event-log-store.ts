@@ -205,21 +205,14 @@ export async function appendEvent(input: AppendEventInput): Promise<AppendEventR
     if (!streamRow) throw new Error("el_event_streams upsert returned no row");
     const streamRowId = streamRow.id;
 
-    // 2. Compute next seq atomically -- FOR UPDATE prevents concurrent writers from racing.
-    //    Must stay inside same transaction to hold row-level lock until commit.
-    //    Cast through unknown to handle RowList<> vs plain array variance in drizzle-orm types.
-    //
+    // 2. Compute next seq atomically.
     //    IMPORTANT — empty stream edge case:
-    //    FOR UPDATE requires at least one matching row to acquire a row-level lock.
-    //    On the very first INSERT into a new stream there are zero rows, so FOR UPDATE
-    //    acquires no lock. The race backstop in that case is the UNIQUE constraint on
-    //    (stream_id, seq): if two concurrent first-writers both compute seq=1, the second
-    //    INSERT will fail with a unique violation, which the caller should retry (or bubble
-    //    up as a conflict error). FOR UPDATE is still correct for seq >= 2 where a prior
-    //    row exists to lock. Phase B may introduce an advisory lock on stream_id to close
-    //    this gap without changing the UNIQUE constraint semantics.
+    //    PostgreSQL rejects FOR UPDATE on aggregate queries, so we lock the stream
+    //    UUID for this transaction and then read MAX(seq). The UNIQUE(stream_id, seq)
+    //    constraint remains the backstop.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${streamRowId}, 0))`);
     const seqResult = await tx.execute(
-      sql`SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM el_events WHERE stream_id = ${streamRowId} FOR UPDATE`
+      sql`SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM el_events WHERE stream_id = ${streamRowId}`
     );
     const seqRaw: unknown = seqResult;
     const seqRows: { next_seq: unknown }[] = Array.isArray(seqRaw)
