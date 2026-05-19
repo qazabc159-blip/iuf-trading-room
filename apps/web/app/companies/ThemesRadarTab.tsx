@@ -136,7 +136,7 @@ function ThemeCard({ theme }: { theme: ThemeIndexItem }) {
 
   return (
     <Link
-      href={`/themes/wiki/${encodeURIComponent(theme.token)}`}
+      href={`/themes/wiki/${encodeURIComponent(theme.token)}?from=companies`}
       style={cardBaseStyle}
     >
       {/* Token + company count */}
