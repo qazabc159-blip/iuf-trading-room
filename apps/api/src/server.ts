@@ -4844,8 +4844,57 @@ app.get("/api/v1/paper/positions", async (c) => {
         }));
       return c.json({ data: positions, source: "kgi_sim" });
     } catch (_err) {
-      // Graceful degradation — fall back to empty list, not error
-      return c.json({ data: [], source: "kgi_sim", degraded: true });
+      // KGI /position native crash workaround — reconstruct from /deals.
+      // Root cause: kgisuperpy Order.get_position() crashes; gateway returns 500.
+      try {
+        const dealsBySymbol = (await client.getDeals()) as Record<
+          string,
+          Array<{ action?: string; quantity?: number; price?: number }>
+        >;
+        const reconstructed: Array<Record<string, unknown>> = [];
+        for (const [symbol, deals] of Object.entries(dealsBySymbol)) {
+          if (!Array.isArray(deals)) continue;
+          let netQty = 0;
+          let totalCost = 0;
+          let lastPrice = 0;
+          for (const d of deals) {
+            const action = String(d.action ?? "");
+            const qty = Number(d.quantity ?? 0);
+            const price = Number(d.price ?? 0);
+            if (qty <= 0 || price <= 0) continue;
+            lastPrice = price;
+            if (action === "B") {
+              netQty += qty;
+              totalCost += qty * price;
+            } else if (action === "S") {
+              netQty -= qty;
+              totalCost -= qty * price;
+            }
+          }
+          if (netQty !== 0) {
+            const avgPrice = netQty !== 0 ? totalCost / netQty : 0;
+            const marketValue = lastPrice * netQty;
+            const unrealizedPnl = marketValue - totalCost;
+            reconstructed.push({
+              accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
+              symbol,
+              market: "TWSE",
+              quantity: netQty,
+              avgPrice,
+              marketPrice: lastPrice,
+              marketValue,
+              unrealizedPnl,
+              unrealizedPnlPct: totalCost !== 0 ? unrealizedPnl / Math.abs(totalCost) : null,
+              openedAt: null,
+              companyId: null,
+              source: "kgi_sim_reconstructed",
+            });
+          }
+        }
+        return c.json({ data: reconstructed, source: "kgi_sim_reconstructed" });
+      } catch (_recon) {
+        return c.json({ data: [], source: "kgi_sim", degraded: true });
+      }
     }
   }
 
@@ -11171,13 +11220,71 @@ app.get("/api/v1/paper/funds", async (c) => {
         },
       });
     } catch (_err) {
-      return c.json({
-        data: {
-          source: "kgi_sim",
-          degraded: true,
-          updatedAt: new Date().toISOString(),
-        },
-      });
+      // KGI /position native crash + /balance not implemented — reconstruct cash from /deals.
+      // Cost model: 0.3% commission × 30% discount (Yang) + 3‰ sell tax (per Athena S1 packet).
+      try {
+        const dealsBySymbol = (await client.getDeals()) as Record<
+          string,
+          Array<{ action?: string; quantity?: number; price?: number }>
+        >;
+        const initialCash = Number(process.env["PAPER_BROKER_INITIAL_CASH"] ?? "10000000");
+        let cashConsumed = 0;
+        let totalMarketValue = 0;
+        let totalCostBasis = 0;
+        for (const [_symbol, deals] of Object.entries(dealsBySymbol)) {
+          if (!Array.isArray(deals)) continue;
+          let netQty = 0;
+          let totalCost = 0;
+          let lastPrice = 0;
+          for (const d of deals) {
+            const action = String(d.action ?? "");
+            const qty = Number(d.quantity ?? 0);
+            const price = Number(d.price ?? 0);
+            if (qty <= 0 || price <= 0) continue;
+            lastPrice = price;
+            const notional = qty * price;
+            if (action === "B") {
+              netQty += qty;
+              totalCost += notional;
+              cashConsumed += notional * 1.0009; // commission 0.09%
+            } else if (action === "S") {
+              netQty -= qty;
+              totalCost -= notional;
+              cashConsumed -= notional * (1 - 0.0009 - 0.003); // commission + tax
+            }
+          }
+          if (netQty !== 0) {
+            totalMarketValue += lastPrice * netQty;
+            totalCostBasis += totalCost;
+          }
+        }
+        const cash = initialCash - cashConsumed;
+        const equity = cash + totalMarketValue;
+        return c.json({
+          data: {
+            source: "kgi_sim_reconstructed",
+            accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
+            currency: "TWD",
+            cash,
+            availableCash: cash,
+            equity,
+            marketValue: totalMarketValue,
+            unrealizedPnl: totalMarketValue - totalCostBasis,
+            realizedPnlToday: 0,
+            marginUsed: 0,
+            note: "reconstructed from /deals (KGI SDK /position crashed; /balance not implemented)",
+            updatedAt: new Date().toISOString(),
+          },
+        });
+      } catch (_recon) {
+        return c.json({
+          data: {
+            source: "kgi_sim",
+            degraded: true,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+      }
     }
   }
 
