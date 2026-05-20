@@ -70,6 +70,7 @@ jobs:
 
       - name: Deploy ${{ matrix.service }}
         if: steps.gate.outputs.skip != 'true'
+        continue-on-error: true
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         shell: powershell
