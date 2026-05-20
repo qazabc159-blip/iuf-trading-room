@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   skip-check:
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
@@ -36,7 +36,7 @@ jobs:
   run-smoke:
     needs: skip-check
     if: ${{ needs.skip-check.outputs.should_run == 'true' }}
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     env:
       IUF_TEST_EMAIL: ${{ secrets.IUF_TEST_EMAIL }}
       IUF_TEST_PASSWORD: ${{ secrets.IUF_TEST_PASSWORD }}

@@ -20,7 +20,7 @@ concurrency:
 jobs:
   w6_audit:
     name: W6 No-Real-Order Audit
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -39,7 +39,7 @@ jobs:
 
   secret_regression:
     name: Secret Regression Check (A2)
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
