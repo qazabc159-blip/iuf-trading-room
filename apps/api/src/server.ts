@@ -14556,6 +14556,54 @@ function startSchedulers(workspaceSlug: string): void {
       );
     }, 90_000);
   }
+
+  // =============================================================================
+  // S1-SIM-PIPELINE: cont_liq signal + KGI SIM order submit + EOD report
+  //
+  // Yang ACK 22:34 TST 2026-05-19: "我選F-AUTO ... 明早直接開始正式跑"
+  // Strategy: iuf_ls_omni_v1_router / S1_IUF_LS_OMNI_SIM_OBSERVATION_PRODUCT_V0
+  //
+  // Signal:   Monday 08:30–08:55 TST (once per week, per-day dedup)
+  // Orders:   Monday 09:00–09:20 TST (once per week, fires after signal window)
+  // EOD:      Daily 14:00–14:30 TST weekdays
+  //
+  // SIM_ONLY: no real money. KGI_ENV must be "sim" (default).
+  // =============================================================================
+  {
+    const S1_SIM_POLL_MS = 15 * 60 * 1000; // 15min poll
+
+    ui(async () => {
+      try {
+        const { isS1SignalWindow, runS1SignalTick } = await import("./s1-sim-runner.js");
+        if (!isS1SignalWindow()) return;
+        await runS1SignalTick();
+      } catch (e) {
+        console.error("[s1-signal-cron] tick failed:", e instanceof Error ? e.message : String(e));
+      }
+    }, S1_SIM_POLL_MS);
+
+    ui(async () => {
+      try {
+        const { isS1OrderSubmitWindow, runS1OrderSubmitTick } = await import("./s1-sim-runner.js");
+        if (!isS1OrderSubmitWindow()) return;
+        await runS1OrderSubmitTick();
+      } catch (e) {
+        console.error("[s1-order-cron] tick failed:", e instanceof Error ? e.message : String(e));
+      }
+    }, S1_SIM_POLL_MS);
+
+    ui(async () => {
+      try {
+        const { isS1EodWindow, runS1EodReportTick } = await import("./s1-sim-runner.js");
+        if (!isS1EodWindow()) return;
+        await runS1EodReportTick();
+      } catch (e) {
+        console.error("[s1-eod-cron] tick failed:", e instanceof Error ? e.message : String(e));
+      }
+    }, S1_SIM_POLL_MS);
+
+    console.log("[schedulers] S1-SIM-PIPELINE wired: signal(Mon 08:30 TST) + orders(Mon 09:00 TST) + eod(daily 14:00 TST)");
+  }
 }
 
 async function resolveDatabaseWorkspaceSlug(fallbackSlug: string): Promise<string> {

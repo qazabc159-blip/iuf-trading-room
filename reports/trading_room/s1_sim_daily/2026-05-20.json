@@ -1,0 +1,46 @@
+{
+  "schema": "s1_eod_report_v1",
+  "trading_date": "2026-05-20",
+  "generated_at_tst": "2026-05-20T15:08:00+08:00",
+  "status": "DAY_0_NO_FILL",
+  "positions": [],
+  "total_unrealized_pnl_twd": null,
+  "total_market_value_twd": null,
+  "cash_residual_estimated_twd": 10000000,
+  "data_source": "incident_report_manual",
+  "notes": [
+    "api_down_0615_to_1245_tst: Trading Room API unavailable at market open",
+    "manual_batch_attempt_1450_tst: Elva submitted batch after market close — all rejected",
+    "market_closed_reject: TWSE closed at 13:30 TST, KGI SIM rejected all orders",
+    "no_confirmed_fill: Day-0 has zero SIM positions",
+    "pipeline_not_wired: S1 pipeline was not deployed before market open",
+    "l10_clock_anchor: 2026-05-20 (first F-AUTO deployment day per Yang ACK)",
+    "next_rebalance: 2026-05-26 Monday — pipeline will be live"
+  ],
+  "gate_boundaries": {
+    "fill_claimed": false,
+    "return_claimed": false,
+    "l5_completed_return_claimed": false,
+    "l10_elapsed_claimed": false,
+    "alpha_confirmed": false,
+    "paper_ready": false,
+    "live_ready": false
+  },
+  "intended_basket": {
+    "source": "reports/data_lane/s1_product_v0_day0_observation_ledger_2026_05_19_v1.json",
+    "regime": "sideways",
+    "exposure_weight": 0.5,
+    "capital_twd": 10000000,
+    "long_target_twd": 5000000,
+    "basket": [
+      {"symbol": "8291", "shares": 9000, "target_notional_twd": 617400, "status": "NOT_FILLED"},
+      {"symbol": "6861", "shares": 1000, "target_notional_twd": 440000, "status": "NOT_FILLED"},
+      {"symbol": "6819", "shares": 10000, "target_notional_twd": 600000, "status": "NOT_FILLED"},
+      {"symbol": "6924", "shares": 3000, "target_notional_twd": 475500, "status": "NOT_FILLED"},
+      {"symbol": "6634", "shares": 9000, "target_notional_twd": 596700, "status": "NOT_FILLED"},
+      {"symbol": "3430", "shares": 3000, "target_notional_twd": 492000, "status": "NOT_FILLED"},
+      {"symbol": "6449", "shares": 2000, "target_notional_twd": 499000, "status": "NOT_FILLED"},
+      {"symbol": "3577", "shares": 4000, "target_notional_twd": 510000, "status": "NOT_FILLED"}
+    ]
+  }
+}
