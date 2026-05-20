@@ -508,8 +508,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
       changePct: null,
     })),
   ]
-    .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index)
-    .slice(0, 10);
+    .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index);
 
   return {
     screen: "paper-trading-room" as const,
