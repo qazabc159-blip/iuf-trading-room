@@ -448,7 +448,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     listPaperFills(),
     listPaperOrders(),
     getKgiPositions(),
-    getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 8, sort: "score" }),
+    getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 200, sort: "score" }),
   ]);
 
   const health = okValue<PaperHealthState | null>(healthResult, null);
