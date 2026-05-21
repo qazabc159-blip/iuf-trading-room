@@ -1020,7 +1020,46 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   let paperSearchTimer = null;
-  function renderPaperSearchResult(match, query) {
+  function renderPaperSearchResults(results, query) {
+    const wl = $('#wl-my');
+    if (!wl) return;
+    let group = wl.querySelector('.group');
+    if (!group) {
+      group = document.createElement('div');
+      group.className = 'group';
+      wl.prepend(group);
+    }
+    wl.querySelectorAll('[data-search-result="1"]').forEach((el) => el.remove());
+    if (!query) {
+      group.textContent = String((live.watchlist || []).length || 0) + ' 檔自選 / 候選';
+      wl.querySelectorAll('.wrow').forEach((row) => { row.style.display = ''; });
+      return;
+    }
+    wl.querySelectorAll('.wrow').forEach((row) => {
+      if (row.dataset.searchResult !== '1') row.style.display = 'none';
+    });
+    if (!Array.isArray(results) || results.length === 0) {
+      group.textContent = '找不到符合的股票';
+      return;
+    }
+    group.textContent = '搜尋結果 · ' + results.length + ' 檔（全 1900+ 台股可搜）';
+    let anchor = group;
+    for (const match of results) {
+      const ticker = String(match.ticker || '').toUpperCase();
+      if (!ticker) continue;
+      const row = document.createElement('div');
+      row.className = 'wrow';
+      row.dataset.searchResult = '1';
+      row.dataset.sym = ticker;
+      row.style.cursor = 'pointer';
+      row.innerHTML = '<span class="sym">' + esc(ticker) + '</span><div class="body"><div class="nm">' + esc(match.name || ticker) + '</div><div class="meta">' + esc(match.sector || '台股') + '</div></div><div class="price"><span class="v">--</span><span class="d flat">點選載入</span></div>';
+      if (anchor.parentNode) anchor.parentNode.insertBefore(row, anchor.nextSibling);
+      anchor = row;
+    }
+    attachPaperRowHandlers();
+  }
+
+  function _unused_renderPaperSearchResult_legacy(match, query) {
     const wl = $('#wl-my');
     if (!wl) return;
     let group = wl.querySelector('.group');
@@ -1078,18 +1117,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const runSearch = async () => {
       const query = String(input.value || '').trim();
       if (!query) {
-        renderPaperSearchResult(null, '');
+        renderPaperSearchResults([], '');
         return;
       }
-      const local = (live.watchlist || []).find((item) =>
-        String(item.symbol || '').includes(query) || String(item.name || '').toLowerCase().includes(query.toLowerCase())
-      );
-      if (local) {
-        renderPaperSearchResult({ ticker: local.symbol, name: local.name, sector: local.meta }, query);
+      // Use new /search endpoint returning array (dropdown)
+      const results = await apiGet('/api/v1/companies/search?q=' + encodeURIComponent(query) + '&limit=30').catch(() => null);
+      if (!results || !Array.isArray(results)) {
+        renderPaperSearchResults([], query);
         return;
       }
-      const match = await apiGet('/api/v1/companies/lookup?q=' + encodeURIComponent(query)).catch(() => ({ error: "blocked" }));
-      renderPaperSearchResult(match, query);
+      renderPaperSearchResults(results, query);
     };
     input.addEventListener('input', () => {
       window.clearTimeout(paperSearchTimer);

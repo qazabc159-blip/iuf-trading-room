@@ -1582,6 +1582,40 @@ app.get("/api/v1/companies/lookup", async (c) => {
 });
 
 // =============================================================================
+// GET /api/v1/companies/search?q=X&limit=N — prefix-match dropdown source.
+// Returns array of matches (up to limit), unlike /lookup which returns single.
+// Used by trading room search bar to populate dropdown of candidate stocks.
+// Matching: ticker startsWith, then name contains (case-insensitive).
+// =============================================================================
+app.get("/api/v1/companies/search", async (c) => {
+  const q = (c.req.query("q") ?? "").trim().toUpperCase();
+  if (!q) return c.json({ data: [] });
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100);
+  const workspaceSlug = c.get("session").workspace.slug;
+  const companies = await getCompaniesLiteCached(c.get("repo"), workspaceSlug);
+
+  const tickerStarts: typeof companies = [];
+  const tickerContains: typeof companies = [];
+  const nameContains: typeof companies = [];
+  for (const co of companies) {
+    const t = co.ticker.toUpperCase();
+    const n = co.name.toUpperCase();
+    if (t.startsWith(q)) tickerStarts.push(co);
+    else if (t.includes(q)) tickerContains.push(co);
+    else if (n.includes(q)) nameContains.push(co);
+    if (tickerStarts.length + tickerContains.length + nameContains.length >= limit * 3) break;
+  }
+  const merged = [...tickerStarts, ...tickerContains, ...nameContains].slice(0, limit);
+  return c.json({
+    data: merged.map((co) => ({
+      ticker: co.ticker,
+      name: co.name,
+      sector: co.market ?? "",
+    })),
+  });
+});
+
+// =============================================================================
 // CP950 mojibake transcode helper (Bug #1 — 2026-05-15 Bruce cycle 4)
 // Some DB rows (e.g. 5G, 低軌衛星) had thesis/whyNow/bottleneck stored as
 // CP950/Big5 bytes misread as Latin-1. Re-decode at response time to recover.
