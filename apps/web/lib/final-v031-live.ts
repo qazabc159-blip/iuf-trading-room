@@ -1684,7 +1684,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (eventsBody) {
       const events = [];
       // fills → buy/sell events
-      (live.fills || []).slice(0, 8).forEach((f) => {
+      (live.fills || []).slice(0, 100).forEach((f) => {
         const side = String(f.side || "buy");
         events.push({
           ts: String(f.fillTime || "").slice(5, 16) || "—",
@@ -1726,7 +1726,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       if (wlSigGroup) wlSigGroup.textContent = "策略候選 · " + ideas.length + " 檔";
       // Remove old static rows (keep only group div)
       Array.from(wlSig.querySelectorAll(".wrow")).forEach((el) => el.remove());
-      ideas.slice(0, 8).forEach((idea, i) => {
+      ideas.forEach((idea, i) => {
         const div = document.createElement("div");
         div.className = "wrow" + (i === 0 ? " on" : "");
         div.dataset.sym = String(idea.symbol || "");
