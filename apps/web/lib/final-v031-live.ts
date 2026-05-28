@@ -112,9 +112,6 @@ function marketFeedState(
   newsError: string | null,
   announcementsError: string | null,
 ) {
-  const endpoint = "GET /api/v1/market-intel/news-top10";
-  const annEndpoint = "GET /api/v1/market-intel/announcements?days=30&limit=20&scope=market";
-  const owner = "Jason / Elva";
   if (items.length > 0) {
     const source = news?.items?.length ? "AI 精選" : "官方公告 fallback";
     return {
@@ -122,8 +119,6 @@ function marketFeedState(
       label: news?.items?.length ? "AI 精選已回傳" : "官方公告 fallback",
       summary: `顯示 ${items.length} 則 ${source}`,
       detail: news?.selection_mode === "ai" ? "AI selector 已完成今日篩選。" : "使用正式公告或備援排序；未顯示示意新聞。",
-      endpoint,
-      owner,
       nextAction: "持續比對 AI 推薦股票、公司頁與主題頁連結。",
     };
   }
@@ -140,9 +135,7 @@ function marketFeedState(
     label: "等待正式資料",
     summary: "目前沒有可呈現的正式 AI 精選市場情報",
     detail: details || "後端尚未回傳今日 AI 精選或官方公告項目。",
-    endpoint,
-    owner,
-    nextAction: `確認 ${endpoint} 排程、${annEndpoint} sourceState 與 owner-session 權限；前端不顯示示意新聞。`,
+    nextAction: "等待下一輪市場情報同步；前端不顯示示意新聞。",
   };
 }
 
@@ -291,28 +284,28 @@ async function buildMarketIntelPayload() {
     sources: [
       {
         name: "公開資訊觀測站",
-        label: mopsLive ? `官方公告已回傳 ${announcements?.items?.length ?? 0} 則` : `Endpoint: GET /api/v1/market-intel/announcements；${announcementsError ? "後端錯誤" : "目前無可呈現公告"}`,
+        label: mopsLive ? `官方公告已回傳 ${announcements?.items?.length ?? 0} 則` : (announcementsError ? "官方公告同步異常" : "目前無可呈現公告"),
         state: mopsLive ? "ok" : "warn",
         status: mopsLive ? "正常" : "待確認",
         fresh: announcements?.items?.[0]?.date ? minutesAgoText(announcements.items[0].date) : "同步中",
       },
       {
         name: "FinMind 市場資料",
-        label: finMindLive ? "Endpoint: GET /api/v1/data-sources/finmind/status 可用" : "Endpoint: GET /api/v1/data-sources/finmind/status 同步中",
+        label: finMindLive ? "市場資料源可用" : "市場資料源同步中",
         state: finMindLive ? "ok" : "warn",
         status: finMindLive ? "正常" : "同步中",
         fresh: finMind?.updatedAt ? minutesAgoText(finMind.updatedAt) : "同步中",
       },
       {
         name: "AI 精選訊息",
-        label: aiLive ? `Endpoint: ${feedState.endpoint} 已回傳 ${news?.items?.length ?? 0} 則` : `Endpoint: ${feedState.endpoint} 尚無可顯示項目`,
+        label: aiLive ? `AI 精選已回傳 ${news?.items?.length ?? 0} 則` : "AI 精選尚無可顯示項目",
         state: aiLive ? "ok" : "warn",
         status: aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳",
         fresh: news?.as_of ? minutesAgoText(news.as_of) : "同步中",
       },
       {
         name: "主管機關公告",
-        label: `Owner: ${feedState.owner}；Next: sourceState / 欄位完整度確認`,
+        label: "公告欄位完整度待確認；不顯示未驗證內容",
         state: "warn",
         status: "待確認",
         fresh: "排程探測",
@@ -425,11 +418,11 @@ function latestOhlcv(ohlcv: OhlcvBar[]) {
 }
 
 function paperPrefillSourceLabel(source: PaperPrefillHandoff["source"]) {
-  if (source === "ai_recommendations") return "來源 AI 推薦";
-  if (source === "strategy_home") return "來源 首頁策略";
-  if (source === "home_paper_preview") return "來源 首頁紙上交易";
-  if (source === "strategy_run") return "來源 策略 Run";
-  return "來源 URL";
+  if (source === "ai_recommendations") return "AI 推薦帶入";
+  if (source === "strategy_home") return "首頁策略帶入";
+  if (source === "home_paper_preview") return "首頁紙上交易帶入";
+  if (source === "strategy_run") return "策略執行紀錄帶入";
+  return "網址參數帶入";
 }
 
 function paperPrefillWatchMeta(prefill: PaperPrefillHandoff) {
@@ -636,11 +629,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return "url";
   };
   const paperPrefillSourceLabel = (source) => {
-    if (source === "ai_recommendations") return "來源 AI 推薦";
-    if (source === "strategy_home") return "來源 首頁策略";
-    if (source === "home_paper_preview") return "來源 首頁紙上交易";
-    if (source === "strategy_run") return "來源 策略 Run";
-    return "來源 URL";
+    if (source === "ai_recommendations") return "AI 推薦帶入";
+    if (source === "strategy_home") return "首頁策略帶入";
+    if (source === "home_paper_preview") return "首頁紙上交易帶入";
+    if (source === "strategy_run") return "策略執行紀錄帶入";
+    return "網址參數帶入";
   };
   const readPaperPrefillFromUrl = () => {
     if (live.screen !== "paper-trading-room") return null;
@@ -701,9 +694,6 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   const recommendationHref = (symbol) => isTwTicker(symbol) ? "/ai-recommendations?symbol=" + encodeURIComponent(String(symbol)) : "/ai-recommendations";
   const topicHref = (tag) => "/themes?query=" + encodeURIComponent(String(tag || "市場情報"));
   const marketFeedState = (items, news, announcements, newsOk, announcementsOk) => {
-    const endpoint = "GET /api/v1/market-intel/news-top10";
-    const annEndpoint = "GET /api/v1/market-intel/announcements?days=30&limit=20&scope=market";
-    const owner = "Jason / Elva";
     if (items.length > 0) {
       const source = news?.items?.length ? "AI 精選" : "官方公告 fallback";
       return {
@@ -711,8 +701,6 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         label: news?.items?.length ? "AI 精選已回傳" : "官方公告 fallback",
         summary: "顯示 " + items.length + " 則 " + source,
         detail: news?.selection_mode === "ai" ? "AI selector 已完成今日篩選。" : "使用正式公告或備援排序；未顯示示意新聞。",
-        endpoint,
-        owner,
         nextAction: "持續比對 AI 推薦股票、公司頁與主題頁連結。"
       };
     }
@@ -727,9 +715,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       label: "等待正式資料",
       summary: "目前沒有可呈現的正式 AI 精選市場情報",
       detail: details || "後端尚未回傳今日 AI 精選或官方公告項目。",
-      endpoint,
-      owner,
-      nextAction: "確認 " + endpoint + " 排程、" + annEndpoint + " sourceState 與 owner-session 權限；前端不顯示示意新聞。"
+      nextAction: "等待下一輪市場情報同步；前端不顯示示意新聞。"
     };
   };
   const setText = (sel, value) => { const node = $(sel); if (node) node.textContent = value; };
@@ -895,10 +881,10 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       items,
       feedState,
       sources: [
-        { name:"公開資訊觀測站", label:mopsLive ? "官方公告進入市場情報 " + (announcements?.items?.length || 0) + " 則" : "Endpoint: GET /api/v1/market-intel/announcements；目前無可呈現公告", state:mopsLive ? "ok" : "warn", status:mopsLive ? "正常" : "待確認", fresh: announcements?.items?.[0]?.date ? ago(announcements.items[0].date) : "尚未同步" },
-        { name:"FinMind 市場資料", label:finMindLive ? "Endpoint: GET /api/v1/data-sources/finmind/status 可用" : "Endpoint: GET /api/v1/data-sources/finmind/status 同步中", state:finMindLive ? "ok" : "warn", status:finMindLive ? "正常" : "待確認", fresh: finMind?.updatedAt ? ago(finMind.updatedAt) : "尚未同步" },
-        { name:"AI 精選訊息", label:aiLive ? "Endpoint: " + feedState.endpoint + " 已回傳 " + (news?.items?.length || 0) + " 則" : "Endpoint: " + feedState.endpoint + " 尚無可顯示項目", state:aiLive ? "ok" : "warn", status:aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" },
-        { name:"主管機關公告", label:"Owner: " + feedState.owner + "；Next: sourceState / 欄位完整度確認", state:"warn", status:"待確認", fresh:"排程探測" }
+        { name:"公開資訊觀測站", label:mopsLive ? "官方公告進入市場情報 " + (announcements?.items?.length || 0) + " 則" : "目前無可呈現公告", state:mopsLive ? "ok" : "warn", status:mopsLive ? "正常" : "待確認", fresh: announcements?.items?.[0]?.date ? ago(announcements.items[0].date) : "尚未同步" },
+        { name:"FinMind 市場資料", label:finMindLive ? "市場資料源可用" : "市場資料源同步中", state:finMindLive ? "ok" : "warn", status:finMindLive ? "正常" : "待確認", fresh: finMind?.updatedAt ? ago(finMind.updatedAt) : "尚未同步" },
+        { name:"AI 精選訊息", label:aiLive ? "AI 精選已回傳 " + (news?.items?.length || 0) + " 則" : "AI 精選尚無可顯示項目", state:aiLive ? "ok" : "warn", status:aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" },
+        { name:"主管機關公告", label:"公告欄位完整度待確認；不顯示未驗證內容", state:"warn", status:"待確認", fresh:"排程探測" }
       ],
       readiness: { coverage: Math.min(100, Math.round(items.length / 12 * 100)), freshness: finMindLive || aiLive ? 90 : 45, reviewQueue: Math.max(0, announcements?.failures || 0) },
       heatmap: heatmapTiles,
@@ -1052,7 +1038,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       row.dataset.searchResult = '1';
       row.dataset.sym = ticker;
       row.style.cursor = 'pointer';
-      row.innerHTML = '<span class="sym">' + esc(ticker) + '</span><div class="body"><div class="nm">' + esc(match.name || ticker) + '</div><div class="meta">' + esc(match.sector || '台股') + '</div></div><div class="price"><span class="v">--</span><span class="d flat">點選載入</span></div>';
+      row.innerHTML = '<span class="sym">' + esc(ticker) + '</span><div class="body"><div class="nm">' + esc(match.name || ticker) + '</div><div class="meta">' + esc(industryLabel(match.sector || '台股')) + '</div></div><div class="price"><span class="v">--</span><span class="d flat">點選載入</span></div>';
       if (anchor.parentNode) anchor.parentNode.insertBefore(row, anchor.nextSibling);
       anchor = row;
     }
@@ -1082,7 +1068,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       }
       row.removeAttribute('data-sym');
       row.style.display = '';
-      row.innerHTML = '<span class="sym">AUTH</span><div class="body"><div class="nm">\u9700\u8981 owner session \u624d\u80fd\u641c\u5c0b\u53f0\u80a1</div><div class="meta">GET /api/v1/companies/lookup \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u986f\u793a\u9810\u8a2d\u5047\u7d50\u679c</div></div>';
+      row.innerHTML = '<span class="sym">AUTH</span><div class="body"><div class="nm">\u9700\u8981\u767b\u5165\u5f8c\u624d\u80fd\u641c\u5c0b\u53f0\u80a1</div><div class="meta">\u672a\u6388\u6b0a\u6642\u4e0d\u986f\u793a\u9810\u8a2d\u5047\u7d50\u679c</div></div>';
       return;
     }
     if (!match) {
@@ -1106,7 +1092,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
     row.dataset.sym = ticker;
     row.style.display = '';
-    row.innerHTML = '<span class="sym">' + esc(ticker) + '</span><div class="body"><div class="nm">' + esc(match.name || ticker) + '</div><div class="meta">' + esc(match.sector || '台股') + '</div></div><div class="price"><span class="v">--</span><span class="d flat">點選載入</span></div>';
+    row.innerHTML = '<span class="sym">' + esc(ticker) + '</span><div class="body"><div class="nm">' + esc(match.name || ticker) + '</div><div class="meta">' + esc(industryLabel(match.sector || '台股')) + '</div></div><div class="price"><span class="v">--</span><span class="d flat">點選載入</span></div>';
     attachPaperRowHandlers();
   }
 
@@ -1188,7 +1174,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           item.recommendationHref ? '<a target="_top" href="'+esc(item.recommendationHref)+'">查看推薦</a>' : ''
         ].filter(Boolean).join('<span>·</span>');
         return '<div class="feedrow" style="--i:'+i+'" data-cat="'+esc(item.category || "all")+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="t">'+esc(item.title)+'</div><div class="m"><span>'+esc(item.source)+'</span><span>·</span><span><b>'+esc(item.tag)+'</b></span>'+ (item.name ? '<span>·</span><span>'+esc(item.name)+'</span>' : '') + (links ? '<span>·</span>' + links : '') +'</div></div><div class="why"><b>為什麼重要</b>　'+esc(item.why)+'</div><span class="age">'+esc(item.age)+'</span><span class="arr">›</span></div>';
-      }).join("") : '<div class="feedrow" data-cat="all"><span class="sym">DATA</span><div class="body"><div class="t">'+esc(feedState.summary || "目前沒有可呈現的正式 AI 精選市場情報")+'</div><div class="m"><span>Endpoint: '+esc(feedState.endpoint || "GET /api/v1/market-intel/news-top10")+'</span><span>·</span><span>Owner: '+esc(feedState.owner || "Jason / Elva")+'</span></div></div><div class="why"><b>下一步</b>　'+esc(feedState.nextAction || "確認 news-top10 排程與 owner-session 權限；前端不顯示示意資料。")+'</div><span class="age">EMPTY</span><span class="arr">›</span></div>';
+      }).join("") : '<div class="feedrow" data-cat="all"><span class="sym">DATA</span><div class="body"><div class="t">'+esc(feedState.summary || "目前沒有可呈現的正式 AI 精選市場情報")+'</div><div class="m"><span>AI 精選排程尚未回傳</span><span>·</span><span>不顯示示意新聞</span></div></div><div class="why"><b>狀態</b>　'+esc(feedState.nextAction || "等待下一輪市場情報同步；前端不顯示示意資料。")+'</div><span class="age">EMPTY</span><span class="arr">›</span></div>';
     }
     const feedState = live.feedState || {};
     const feedPill = $("#market-feed-state-pill");
@@ -1205,7 +1191,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (feedback) {
       feedback.innerHTML = (live.items || []).length
         ? esc(feedState.detail || "正式資料已回傳；每則情報提供來源、為什麼重要與下一步 CTA。")
-        : '目前 <b>沒有正式 AI 精選市場情報</b>。Endpoint: '+esc(feedState.endpoint || "GET /api/v1/market-intel/news-top10")+'；Owner: '+esc(feedState.owner || "Jason / Elva")+'；Next: '+esc(feedState.nextAction || "確認排程與 owner-session 權限")+'。';
+        : '目前 <b>沒有正式 AI 精選市場情報</b>。'+esc(feedState.nextAction || "等待下一輪市場情報同步；前端不顯示示意新聞。");
     }
     const list = $(".srclist");
     if (list) {
@@ -1359,7 +1345,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         prefill.target ? "目標 " + prefill.target : null,
         prefill.recommendationId ? "rec " + prefill.recommendationId : null
       ].filter(Boolean);
-      box.innerHTML = '<div class="k">AI RECOMMENDATION PAPER PREVIEW</div><div class="v">'+esc(selected.symbol || prefill.symbol || "推薦標的")+' 已帶入交易室紙上單預覽；此區只建立平台模擬紀錄，不會建立券商委託。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
+      box.innerHTML = '<div class="k">AI 推薦紙上單預覽</div><div class="v">'+esc(selected.symbol || prefill.symbol || "推薦標的")+' 已帶入交易室紙上單預覽；此區只建立平台模擬紀錄，不會建立券商委託。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
     }
 
     const entryPrice = firstNumber(prefill.entry);
@@ -1465,7 +1451,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const wl = $("#wl-my");
     if (wl) {
       const wlItems = live.watchlist || [];
-      if (wlItems.length === 0) { wl.innerHTML = '<div class="group">\u8cc7\u6599\u672a\u8f09\u5165</div><div class="wrow" data-search-result="1"><span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85 paper portfolio / strategy ideas / companies lookup</div><div class="meta">GET /api/v1/paper/portfolio \u00b7 GET /api/v1/strategy/ideas \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u4fdd\u7559\u9810\u8a2d 5 \u6a94</div></div></div>'; } else if (false) {
+      if (wlItems.length === 0) { wl.innerHTML = '<div class="group">\u8cc7\u6599\u672a\u8f09\u5165</div><div class="wrow" data-search-result="1"><span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85\u81ea\u9078\u3001\u6a21\u64ec\u5eab\u5b58\u6216\u7b56\u7565\u5019\u9078\u56de\u50b3</div><div class="meta">\u4e0d\u4fdd\u7559\u9810\u8a2d\u5047\u5019\u9078</div></div></div>'; } else if (false) {
         // P1-1 fallback: keep SSR static rows, update group label only
         const groupEl = wl.querySelector(".group");
         if (groupEl) groupEl.textContent = "ideas pool 整備中，預設展示熱門 5 檔";
@@ -1781,7 +1767,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       Array.from(wlSig.querySelectorAll(".wrow")).forEach((el) => el.remove());
       const div = document.createElement("div");
       div.className = "wrow";
-      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85 strategy ideas endpoint</div><div class="meta">GET /api/v1/strategy/ideas \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
+      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85\u7b56\u7565\u8a0a\u865f\u56de\u50b3</div><div class="meta">\u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
       wlSig.appendChild(div);
     }
 
@@ -1809,7 +1795,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       Array.from(wlPaper.querySelectorAll(".wrow")).forEach((el) => el.remove());
       const div = document.createElement("div");
       div.className = "wrow";
-      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85 paper strategy candidates</div><div class="meta">GET /api/v1/strategy/ideas?decisionMode=paper \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
+      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85\u7d19\u4e0a\u4ea4\u6613\u5019\u9078\u56de\u50b3</div><div class="meta">\u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
       wlPaper.appendChild(div);
     }
   }
