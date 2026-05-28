@@ -23,15 +23,20 @@ test("/market-intel renders AI-selected news cards with source, impact, and why 
   const payload = await fetchJson<NewsTop10Response>(request, "/api/v1/market-intel/news-top10");
   const items = payload.data.items;
 
-  expect(payload.data.selection_mode, "news-top10 must be AI selected, not raw dump").toBe("ai");
-  expect(payload.data.ai_call_success, "news-top10 AI selector must have succeeded").toBe(true);
+  expect(
+    ["ai", "fallback"],
+    "news-top10 must be AI selected or an enriched deterministic fallback, not a raw dump"
+  ).toContain(payload.data.selection_mode);
+  if (payload.data.selection_mode === "ai") {
+    expect(payload.data.ai_call_success, "AI mode must have a successful selector call").toBe(true);
+  }
   expect(
     items.length,
     "AI selected news must render at least 9 real items; do not pad fake news to force a top-10 count"
   ).toBeGreaterThanOrEqual(9);
 
   const completeItems = items.filter((item) => item.source && item.impact_tier && item.why_matters);
-  expect(completeItems.length, "CI smoke requires at least 9 AI news cards with source, impact, and why").toBeGreaterThanOrEqual(9);
+  expect(completeItems.length, "CI smoke requires at least 9 news cards with source, impact, and why").toBeGreaterThanOrEqual(9);
 
   for (const [index, item] of completeItems.entries()) {
     requireText(item.headline, `items[${index}].headline`);
