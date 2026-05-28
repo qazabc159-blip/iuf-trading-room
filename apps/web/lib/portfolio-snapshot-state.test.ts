@@ -9,7 +9,7 @@ describe("portfolioSnapshotStateCopy", () => {
     expect(copy.title).toBe("Portfolio Snapshot EMPTY");
     expect(copy.detail).toContain("read API 已可用");
     expect(copy.endpoint).toBe("/api/v1/portfolio/snapshots");
-    expect(copy.owner).toContain("Elva/Jason");
+    expect(copy.owner).toContain("系統快照寫入流程");
     expect(copy.nextAction).toContain("snapshot writer");
     expect(`${copy.title} ${copy.detail} ${copy.nextAction}`).not.toContain("0037");
     expect(`${copy.title} ${copy.detail} ${copy.nextAction}`).not.toContain("migration");

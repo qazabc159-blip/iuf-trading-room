@@ -198,10 +198,10 @@ function TruthSummary({ from, to }: { from: string; to: string }) {
         </div>
       </div>
       <div className="_brain-truth-card">
-        <div className="_brain-truth-kicker">OWNER / NEXT</div>
-        <div className="_brain-truth-title">Owner-only 管理頁</div>
+        <div className="_brain-truth-kicker">資料責任 / 下一步</div>
+        <div className="_brain-truth-title">估算資料維護狀態</div>
         <div className="_brain-truth-body">
-          Owner：Elva / Jason 維護 LLM ledger 與模型單價。下一步：若要顯示真實帳單，需串正式 provider billing API；
+          目前由系統內部紀錄 LLM 呼叫與模型單價。若要顯示真實帳單，需串正式供應商 billing API；
           未串前所有美元數字一律標為估算。
         </div>
       </div>
@@ -213,13 +213,11 @@ function SyncNote({
   title,
   reason,
   endpoint,
-  owner = "Elva / Jason",
   next,
 }: {
   title: string;
   reason: string;
   endpoint: string;
-  owner?: string;
   next: string;
 }) {
   return (
@@ -227,8 +225,8 @@ function SyncNote({
       <span className="badge badge-yellow">{title}</span>
       <span className="state-reason">{reason}</span>
       <ul className="_brain-state-list">
-        <li>Endpoint：<code>{endpoint}</code></li>
-        <li>Owner：{owner}</li>
+        <li>資料來源：<code>{endpoint}</code></li>
+        <li>資料責任：系統營運紀錄</li>
         <li>下一步：{next}</li>
       </ul>
     </div>
@@ -240,7 +238,7 @@ function UsageKpi({ usage }: { usage: LlmUsageSummary }) {
     <div className="_brain-kpi">
       <div className="_brain-kpi-cell">
         <span className="_brain-kpi-val" style={{ color: "#4caf50" }}>正常</span>
-        <span className="_brain-kpi-lbl">Owner endpoint</span>
+        <span className="_brain-kpi-lbl">資料服務</span>
       </div>
       <div className="_brain-kpi-cell">
         <span className="_brain-kpi-val">{usage.totalCalls}</span>
@@ -361,7 +359,7 @@ function ModelRegistry({ models }: { models: LlmModelEntry[] }) {
         </table>
       </div>
       <div className="_brain-disclaimer">
-        模型單價只用於本系統估算，並非即時 provider price sheet；若供應商價格更新，需由 Owner 更新登錄表。
+        模型單價只用於本系統估算，並非即時 provider price sheet；若供應商價格更新，需同步更新登錄表。
       </div>
     </>
   );
@@ -444,7 +442,7 @@ export default async function BrainLlmAdminPage() {
       code="ADM-BRAIN"
       title="Brain LLM 費用總覽"
       sub="OpenAlice Phase A"
-      note="Owner only。此頁是 LLM operational ledger，不是正式帳單；所有 cost_usd / token cost 皆為估算。"
+      note="管理頁。此頁是 LLM operational ledger，不是正式帳單；所有 cost_usd / token cost 皆為估算。"
     >
       <style>{CSS}</style>
 
@@ -454,7 +452,7 @@ export default async function BrainLlmAdminPage() {
         <div className="_brain-kpi">
           <div className="_brain-kpi-cell">
             <span className="_brain-kpi-val" style={{ color: "#ffb800" }}>BLOCKED</span>
-            <span className="_brain-kpi-lbl">Owner endpoint</span>
+            <span className="_brain-kpi-lbl">資料暫不可讀</span>
           </div>
         </div>
       )}
@@ -463,9 +461,9 @@ export default async function BrainLlmAdminPage() {
         {usageError || !usage
           ? <SyncNote
               title="用量資料不可讀"
-              reason="Owner session 未通過、API 回應異常，或 LLM ledger 尚未寫入資料。頁面不會把 0 或錯誤值當成真實帳單。"
+              reason="登入狀態未通過、資料服務回應異常，或 LLM ledger 尚未寫入資料。頁面不會把 0 或錯誤值當成真實帳單。"
               endpoint={`${LLM_USAGE_ENDPOINT}?from=${sevenDaysAgo}&to=${today}`}
-              next="確認 Owner cookie、API health、llm_calls / llm_cost_daily 是否有紀錄。"
+              next="確認登入狀態、資料服務健康度，以及 llm_calls / llm_cost_daily 是否有紀錄。"
             />
           : <UsageBreakdown usage={usage} />
         }
@@ -477,7 +475,7 @@ export default async function BrainLlmAdminPage() {
               title="模型登錄不可讀"
               reason="無法讀取 LLM 模型登錄表，因此不可推估成本。"
               endpoint={LLM_MODELS_ENDPOINT}
-              next="確認 llm_models_registry migration 與 Owner-only API 權限。"
+              next="確認模型登錄資料表與管理權限是否可用。"
             />
           : <ModelRegistry models={models} />
         }
@@ -489,7 +487,7 @@ export default async function BrainLlmAdminPage() {
               title="呼叫紀錄不可讀"
               reason="無法讀取近期 LLM 呼叫紀錄；不顯示空白表格或假資料。"
               endpoint={LLM_CALLS_ENDPOINT}
-              next="確認 llm_calls 是否有寫入、API 是否通過 Owner session。"
+              next="確認 llm_calls 是否有寫入，以及管理登入狀態是否有效。"
             />
           : <RecentCalls calls={calls} />
         }

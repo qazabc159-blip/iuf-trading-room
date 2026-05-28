@@ -278,17 +278,17 @@ function EventLogTruthState({
       <div>{detail}</div>
       <div className="_ev-state-grid">
         <div>
-          <span className="_ev-state-label">Endpoint</span>
-          <div>{EVENT_STREAMS_ENDPOINT}</div>
-          <div>{OUTBOX_DIAG_ENDPOINT}</div>
+          <span className="_ev-state-label">資料來源</span>
+          <div>事件流讀取 API</div>
+          <div>Outbox 診斷資料</div>
         </div>
         <div>
-          <span className="_ev-state-label">Owner</span>
-          <div>Elva/Jason + Bruce owner-session verify</div>
+          <span className="_ev-state-label">資料狀態</span>
+          <div>管理登入後讀取正式資料</div>
         </div>
         <div>
-          <span className="_ev-state-label">Next</span>
-          <div>用 owner session 驗證 EventLog；若仍 401/500，檢查 Phase A auth、migration 與 outbox worker。</div>
+          <span className="_ev-state-label">下一步</span>
+          <div>確認登入狀態、事件流資料表與 outbox worker 是否正常。</div>
         </div>
       </div>
     </div>
@@ -408,7 +408,7 @@ export default function EventsAdminPage() {
             <span className="tc">OpenAlice Phase A</span>
           </div>
           <div className="tg meta-strip">
-            <span>Owner only</span>
+            <span>管理頁</span>
             {normalizedOutbox && (
               <span>
                 Outbox 待發{" "}
@@ -435,7 +435,7 @@ export default function EventsAdminPage() {
           <div style={{ marginBottom: 12 }}>
             <EventLogTruthState
               title="EventLog Outbox 診斷數值異常"
-              detail="Outbox 診斷 endpoint 回傳負數或不可用數值；前端不把它顯示成負數待發，也不假裝為 0。請 Jason/Elva 檢查 outbox diag SQL 與 worker 狀態。"
+              detail="Outbox 診斷資料回傳負數或不可用數值；前端不把它顯示成負數待發，也不假裝為 0。請檢查 outbox 診斷 SQL 與 worker 狀態。"
             />
           </div>
         )}
@@ -443,7 +443,7 @@ export default function EventsAdminPage() {
           <div style={{ marginBottom: 12 }}>
             <EventLogTruthState
               title="EventLog 目前無法讀取正式資料"
-              detail="目前 session 尚未通過 owner-only EventLog endpoint；前端不補假事件，也不把同步中當成正常資料。"
+              detail="目前登入狀態尚未通過 EventLog 管理資料讀取；前端不補假事件，也不把同步中當成正常資料。"
             />
           </div>
         )}
@@ -451,7 +451,7 @@ export default function EventsAdminPage() {
           <div style={{ marginBottom: 12 }}>
             <EventLogTruthState
               title="目前尚無 EventLog 事件流"
-              detail="後端 endpoint 可讀，但目前沒有 audit、OpenAlice job、paper order/fill 或 alert 事件；這是正式 empty state。"
+              detail="後端資料可讀，但目前沒有 audit、OpenAlice job、paper order/fill 或 alert 事件；這是正式 empty state。"
             />
           </div>
         )}
@@ -477,7 +477,7 @@ export default function EventsAdminPage() {
             {streamsLoading && <div className="_ev-empty">載入中…</div>}
             {streamsError && (
               <div className="_ev-empty" style={{ color: "#ef5350" }}>
-                EventLog endpoint 未通過 owner session
+                EventLog 資料目前不可讀
               </div>
             )}
             {!streamsLoading && !streamsError && filteredStreams.length === 0 && (
@@ -555,7 +555,7 @@ export default function EventsAdminPage() {
               {!selectedStream && !eventLogBlocked && eventLogEmpty && (
                 <EventLogTruthState
                   title="目前尚無 EventLog 事件"
-                  detail="EventLog endpoint 可讀但沒有事件；待 audit log、OpenAlice job、paper order/fill 或 alert 寫入後會出現在這裡。"
+                  detail="EventLog 資料可讀但沒有事件；待 audit log、OpenAlice job、paper order/fill 或 alert 寫入後會出現在這裡。"
                 />
               )}
               {!selectedStream && !eventLogBlocked && !eventLogEmpty && (
@@ -567,7 +567,7 @@ export default function EventsAdminPage() {
               {selectedStream && eventsError && (
                 <EventLogTruthState
                   title="此事件流目前無法讀取"
-                  detail="事件序列 endpoint 回傳錯誤；請用 owner session 重新驗證，若仍失敗由 Jason 檢查 EventLog events/at route。"
+                  detail="事件序列資料回傳錯誤；請重新驗證管理登入狀態，若仍失敗再檢查 EventLog 讀取路徑。"
                 />
               )}
               {selectedStream && !eventsLoading && !eventsError && events.length === 0 && (

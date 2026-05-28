@@ -287,7 +287,7 @@ export default function PortfolioSnapshotsPage() {
             <span className="tc">Trading-as-Git / Phase A</span>
           </div>
           <div className="tg meta-strip">
-            <span>Owner only</span>
+            <span>管理頁</span>
             <span>快照即版本控管</span>
           </div>
         </header>
@@ -299,11 +299,11 @@ export default function PortfolioSnapshotsPage() {
           <strong>{snapshotState.title}</strong>
           <span>{snapshotState.detail}</span>
           <dl>
-            <dt>Endpoint</dt>
+            <dt>資料來源</dt>
             <dd>{snapshotState.endpoint}</dd>
-            <dt>Owner</dt>
+            <dt>資料責任</dt>
             <dd>{snapshotState.owner}</dd>
-            <dt>Next</dt>
+            <dt>下一步</dt>
             <dd>{snapshotState.nextAction}</dd>
           </dl>
         </div>
@@ -421,7 +421,7 @@ export default function PortfolioSnapshotsPage() {
               </div>
               {diffError && (
                 <div style={{ padding: "8px 12px", fontSize: 11, color: "#ef5350" }}>
-                  Diff 失敗：{diffError}。Endpoint：{PORTFOLIO_SNAPSHOT_DIFF_ENDPOINT}；請確認 from/to snapshot ID 存在。
+                  Diff 失敗：{diffError}。請確認 from/to snapshot ID 存在，或稍後重新讀取版本差異。
                 </div>
               )}
               {diff && (
