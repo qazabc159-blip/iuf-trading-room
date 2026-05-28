@@ -55,6 +55,7 @@ import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
 const OPENAI_MODEL_NEWS = "gpt-4o-mini";
 const MAX_INPUT_ROWS = 200;
 const MAX_TOKENS_RESPONSE = 2000;
+const AI_SELECTOR_MAX_ATTEMPTS = 2;
 // A "window" is 6h wide (covers the gap between any two consecutive 4-window fires).
 const WINDOW_HOURS = 6;
 const EXPANDED_WINDOW_HOURS = 72;
@@ -488,44 +489,55 @@ async function callAiNewsSelector(
 ): Promise<AiNewsSelectionResponse | null> {
   if (!process.env["OPENAI_API_KEY"]) return null;
 
-  try {
-    const result = await callLlm(
-      [{ role: "user", content: prompt }],
-      {
-        modelKey: OPENAI_MODEL_NEWS,
-        callerModule: "news_ai_selector",
-        taskType: "news_ranking",
-        workspaceId,
-        maxTokens: MAX_TOKENS_RESPONSE,
-        temperature: 0.2,
-        timeoutMs: 20_000
+  let lastError = "unknown";
+  for (let attempt = 1; attempt <= AI_SELECTOR_MAX_ATTEMPTS; attempt++) {
+    try {
+      const result = await callLlm(
+        [
+          {
+            role: "system",
+            content: "你是台股市場情報編輯。只輸出符合使用者要求的 JSON，不要加前言、Markdown 或解釋。"
+          },
+          { role: "user", content: prompt }
+        ],
+        {
+          modelKey: OPENAI_MODEL_NEWS,
+          callerModule: "news_ai_selector",
+          taskType: "news_ranking",
+          workspaceId,
+          maxTokens: MAX_TOKENS_RESPONSE,
+          temperature: 0.2,
+          timeoutMs: 20_000
+        }
+      );
+
+      if (!result?.content) {
+        lastError = `attempt_${attempt}:llm-gateway returned null/empty content`;
+        console.warn(`[news-ai-selector] ${lastError}`);
+        continue;
       }
-    );
 
-    if (!result?.content) {
-      _lastError = "llm-gateway returned null/empty content";
-      return null;
+      const cleaned = stripCodeFences(result.content);
+      const parsed = JSON.parse(cleaned) as unknown;
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "selected" in parsed &&
+        Array.isArray((parsed as AiNewsSelectionResponse).selected)
+      ) {
+        _lastError = null;
+        return parsed as AiNewsSelectionResponse;
+      }
+      lastError = `attempt_${attempt}:Unexpected AI response shape`;
+      console.warn(`[news-ai-selector] ${lastError}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      lastError = `attempt_${attempt}:${msg}`;
+      console.warn("[news-ai-selector] callLlm failed:", msg);
     }
-
-    const cleaned = stripCodeFences(result.content);
-    const parsed = JSON.parse(cleaned) as unknown;
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "selected" in parsed &&
-      Array.isArray((parsed as AiNewsSelectionResponse).selected)
-    ) {
-      _lastError = null;
-      return parsed as AiNewsSelectionResponse;
-    }
-    _lastError = "Unexpected AI response shape";
-    return null;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn("[news-ai-selector] callLlm failed:", msg);
-    _lastError = msg;
-    return null;
   }
+  _lastError = lastError;
+  return null;
 }
 
 // ── F2: DB persistence ────────────────────────────────────────────────────────
