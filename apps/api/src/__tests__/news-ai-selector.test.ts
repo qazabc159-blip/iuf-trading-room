@@ -21,12 +21,14 @@ import test from "node:test";
 import {
   _resetNewsAiSelectorState,
   computeNextRefreshAt,
+  deterministicTop10,
   getLastNewsTop10,
   getLastNewsRunAt,
   getNewsTop10WithStaleness,
   isWithinNewsWindowTrigger,
   runNewsAiSelection,
   runNewsAiSelectionBootRecovery,
+  type RawNewsRow,
 } from "../news-ai-selector.js";
 
 // ── NS1: null before any run ──────────────────────────────────────────────────
@@ -157,6 +159,36 @@ test("NS8: items.length is never more than 10", async () => {
 });
 
 // ── NS9: boot recovery fires unconditionally; respects 45min guard ────────────
+
+test("NS8b: deterministic fallback still provides why_matters, impact_tier, and tags", () => {
+  const rows: RawNewsRow[] = [
+    {
+      id: "risk-1589",
+      ticker: "1589",
+      company_name: "永冠-KY",
+      date: "2026-05-28T08:00:00.000Z",
+      title: "永冠-KY最快下市 股票恐淪廢紙",
+      url: "https://example.test/news",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "official-2330",
+      ticker: "2330",
+      company_name: "台積電",
+      date: "2026-05-28T09:00:00.000Z",
+      title: "台積電公告董事會重要決議",
+      url: "https://example.test/mops",
+      source: "twse_announcements",
+    },
+  ];
+
+  const items = deterministicTop10(rows);
+
+  assert.ok(items.length > 0, "fallback must return rows");
+  assert.ok(items.every((item) => item.why_matters), "fallback why_matters must be filled");
+  assert.ok(items.every((item) => item.impact_tier), "fallback impact_tier must be filled");
+  assert.ok(items.every((item) => item.tags.length > 0), "fallback tags must be filled");
+});
 
 test("NS9: runNewsAiSelectionBootRecovery() fires when never run before", async () => {
   _resetNewsAiSelectorState();
