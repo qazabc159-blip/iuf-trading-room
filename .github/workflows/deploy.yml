@@ -112,7 +112,7 @@ jobs:
                   }
                 }
               } catch {
-                Write-Host "::warning::Unable to inspect Railway deployments for service $Service: $($_.Exception.Message)"
+                Write-Host "::warning::Unable to inspect Railway deployments for service ${Service}: $($_.Exception.Message)"
               }
 
               Start-Sleep -Seconds 15
