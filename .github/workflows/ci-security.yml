@@ -6,9 +6,10 @@ name: CI — Security Baseline (all PRs)
 # W6 No-Real-Order Audit: prevents live broker write code from sneaking in.
 # Secret Regression Check: prevents hardcoded secrets / credentials from leaking.
 #
-# Default to the same self-hosted runner pool as validate so GitHub-hosted
-# billing limits cannot block every PR. Set repo var USE_SELF_HOSTED=false to
-# fall back to ubuntu-latest.
+# These checks run short Python-only static audits. Keep them on the Taipei
+# self-hosted runner so GitHub-hosted quota does not block required checks.
+# Windows jobs must not use actions/setup-python because that installer touches
+# registry keys the runner service cannot modify.
 
 on:
   pull_request:
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   w6_audit:
     name: W6 No-Real-Order Audit
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
+    runs-on: ${{ fromJSON('["self-hosted", "iuf-taipei"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -30,16 +31,37 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Setup Python
+        if: runner.os != 'Windows'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      - name: Run W6 no-real-order audit (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $python = Get-Command python -ErrorAction SilentlyContinue
+          if ($python) {
+            & $python.Source scripts/audit/w6_no_real_order_audit.py
+            exit $LASTEXITCODE
+          }
+
+          $py = Get-Command py -ErrorAction SilentlyContinue
+          if ($py) {
+            & $py.Source -3 scripts/audit/w6_no_real_order_audit.py
+            exit $LASTEXITCODE
+          }
+
+          Write-Error 'Python 3 is not available on the self-hosted Windows runner. Install Python or set USE_SELF_HOSTED=false.'
+          exit 1
+
       - name: Run W6 no-real-order audit
+        if: runner.os != 'Windows'
         run: python scripts/audit/w6_no_real_order_audit.py
 
   secret_regression:
     name: Secret Regression Check (A2)
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
+    runs-on: ${{ fromJSON('["self-hosted", "iuf-taipei"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -49,9 +71,30 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Setup Python
+        if: runner.os != 'Windows'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      - name: Run secret regression check (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $python = Get-Command python -ErrorAction SilentlyContinue
+          if ($python) {
+            & $python.Source scripts/audit/secret_regression_check.py
+            exit $LASTEXITCODE
+          }
+
+          $py = Get-Command py -ErrorAction SilentlyContinue
+          if ($py) {
+            & $py.Source -3 scripts/audit/secret_regression_check.py
+            exit $LASTEXITCODE
+          }
+
+          Write-Error 'Python 3 is not available on the self-hosted Windows runner. Install Python or set USE_SELF_HOSTED=false.'
+          exit 1
+
       - name: Run secret regression check
+        if: runner.os != 'Windows'
         run: python scripts/audit/secret_regression_check.py
