@@ -48,7 +48,8 @@ interface ThemePeerCompany {
 
 async function fetchCoverage(ticker: string): Promise<CoverageBrief | null> {
   try {
-    const res = await fetch(`/api/v1/companies/${ticker}/coverage`, {
+    const path = `/api/v1/companies/${encodeURIComponent(ticker)}/coverage`;
+    const res = await fetch(`/api/ui-final-v031/backend?path=${encodeURIComponent(path)}`, {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
     });
@@ -67,7 +68,8 @@ async function fetchCoverage(ticker: string): Promise<CoverageBrief | null> {
 
 async function fetchThemePeers(token: string): Promise<ThemePeerCompany[]> {
   try {
-    const res = await fetch(`/api/v1/themes/${encodeURIComponent(token)}/companies`, {
+    const path = `/api/v1/themes/${encodeURIComponent(token)}/companies`;
+    const res = await fetch(`/api/ui-final-v031/backend?path=${encodeURIComponent(path)}`, {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
     });
