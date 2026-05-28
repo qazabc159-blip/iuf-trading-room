@@ -298,8 +298,8 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
         <AiPanelHeader />
         <div className="_ai-owner-lock">
           <div className="_ai-lock-icon">🔒</div>
-          <div className="_ai-lock-msg">Owner 限定</div>
-          <div className="_ai-lock-sub dim">AI 深度分析功能僅限 Owner 角色存取</div>
+          <div className="_ai-lock-msg">需要分析權限</div>
+          <div className="_ai-lock-sub dim">目前帳號無法生成深度報告；頁面不顯示假分析內容。</div>
         </div>
       </section>
     );
@@ -458,7 +458,7 @@ function AiPanelHeader() {
     <h3 className="ascii-head" style={{ marginBottom: 12 }}>
       <span className="ascii-head-bracket">AI 分析師報告</span>
       <span className="tg soft" style={{ marginLeft: 8, fontSize: 10 }}>
-        Brain 推理 / Owner 唯讀
+        AI 分析 / 唯讀資料
       </span>
     </h3>
   );
