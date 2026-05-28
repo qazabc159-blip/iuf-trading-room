@@ -21,9 +21,8 @@ import { RecommendationHandoffLink, RecommendationHandoffPreview, Recommendation
 import { formatRecommendationSourceMode } from "./source-mode-label";
 import { formatRecommendationTimestamp, formatSourceTimestamp } from "./source-trail-time";
 import { MarketStateBadge, MarketStateBadgePlaceholder } from "./MarketStateBadge";
-import { ReactTracePanel } from "./ReactTracePanel";
 import { StockRecCard, type StockRecCardData } from "./StockRecCard";
-import { buildV3PanelState, getOfficialAnnouncementSourceState, getV3MarketScores, mapV3ItemToStockRecCard, mapV3TraceSteps } from "./v3-view";
+import { buildV3PanelState, getOfficialAnnouncementSourceState, getV3MarketScores, mapV3ItemToStockRecCard } from "./v3-view";
 
 export const dynamic = "force-dynamic";
 
@@ -438,31 +437,21 @@ function RecommendationListEmptyState({ error }: { error: string | null }) {
       <b>推薦清單目前沒有可顯示標的</b>
       <p>
         {error
-          ? "今日推薦清單 endpoint 尚未通過目前 session 權限；前端不補假股票，也不把 strategy ideas 冒充 AI 推薦。"
+          ? "目前 session 無法讀取今日推薦；前端不補假股票，也不把其他候選名單冒充 AI 推薦。"
           : "今日推薦清單目前回傳 0 檔；等待 v3 refresh 或正式候選通過資料品質門檻。"}
       </p>
       <dl>
         <div>
-          <dt>Endpoint</dt>
-          <dd>GET /api/v1/recommendations/today</dd>
+          <dt>資料狀態</dt>
+          <dd>{error ? "權限或資料讀取異常" : "等待推薦產生"}</dd>
         </div>
         <div>
-          <dt>Owner</dt>
-          <dd>Elva/Jason + Bruce owner-session verify</dd>
-        </div>
-        <div>
-          <dt>Next</dt>
-          <dd>用 owner session 驗證推薦清單；若仍為 0 檔，觸發 v3 refresh 並檢查資料品質門檻。</dd>
+          <dt>下一步</dt>
+          <dd>重新產生推薦後再驗收；頁面不顯示假資料。</dd>
         </div>
       </dl>
     </div>
   );
-}
-
-function formatV3Bool(value: boolean | null | undefined) {
-  if (value === true) return "true";
-  if (value === false) return "false";
-  return "missing";
 }
 
 function V3BackendFacts({
@@ -474,44 +463,25 @@ function V3BackendFacts({
 }) {
   const officialSourceState = getOfficialAnnouncementSourceState(data);
   const itemCount = data?.itemCount ?? data?.items?.length ?? visibleCount;
+  const usedFallback = data?.usedFallback === true || data?.synthesisFallbackUsed === true || data?.fullAiReportParsed === false;
 
   return (
-    <dl className="_rec-v3-facts" aria-label="AI recommendations v3 backend facts">
+    <dl className="_rec-v3-facts" aria-label="AI 推薦資料狀態">
       <div>
-        <dt>status</dt>
-        <dd>{data?.status ?? "missing"}</dd>
+        <dt>推薦數量</dt>
+        <dd>{visibleCount}/{itemCount}</dd>
       </div>
       <div>
-        <dt>itemCount</dt>
-        <dd>{itemCount}</dd>
+        <dt>生成狀態</dt>
+        <dd>{data?.status === "complete" ? "完成" : "需留意"}</dd>
       </div>
       <div>
-        <dt>visible cards</dt>
-        <dd>{visibleCount}</dd>
+        <dt>備援補牌</dt>
+        <dd>{usedFallback ? "有使用" : "未使用"}</dd>
       </div>
       <div>
-        <dt>usedFallback</dt>
-        <dd>{formatV3Bool(data?.usedFallback)}</dd>
-      </div>
-      <div>
-        <dt>fullAiReportParsed</dt>
-        <dd>{formatV3Bool(data?.fullAiReportParsed)}</dd>
-      </div>
-      <div>
-        <dt>synthesisRetryUsed</dt>
-        <dd>{formatV3Bool(data?.synthesisRetryUsed)}</dd>
-      </div>
-      <div>
-        <dt>synthesisFallbackUsed</dt>
-        <dd>{formatV3Bool(data?.synthesisFallbackUsed)}</dd>
-      </div>
-      <div>
-        <dt>official announcements</dt>
-        <dd>{officialSourceState.state}</dd>
-      </div>
-      <div>
-        <dt>official source note</dt>
-        <dd>{officialSourceState.detail ?? officialSourceState.nextAction ?? "-"}</dd>
+        <dt>官方公告</dt>
+        <dd>{officialSourceState.state === "live" ? "已納入" : "待接入"}</dd>
       </div>
     </dl>
   );
@@ -581,7 +551,6 @@ export default async function AiRecommendationsPage() {
   const hasEnoughV3Cards = v3BackendItemCount >= 5 && v3Cards.length >= 5;
   const isV3Complete = v3Result.data?.status === "complete";
   const v3MarketScores = getV3MarketScores(v3Items);
-  const v3TraceSteps = mapV3TraceSteps(v3Result.data?.reactTrace);
   const sourceMode = formatRecommendationSourceMode({
     hasData: Boolean(data),
     isMock: Boolean(data?._mock),
@@ -1258,11 +1227,11 @@ export default async function AiRecommendationsPage() {
 
       <Panel
         code="AI-01"
-        title={showV3Primary ? (isV3Complete ? "AI 推薦 v3（backend complete）" : "AI 推薦 v3（backend 未 complete）") : "推薦清單"}
+        title={showV3Primary ? "今日 AI 推薦" : "推薦清單"}
         sub={showV3Primary
-          ? `產生時間 ${v3GeneratedAtLabel || "-"} / v3 SOP / ${v3PanelState.label}`
+          ? `產生時間 ${v3GeneratedAtLabel || "-"} / ${v3PanelState.label}`
           : `交易日 ${data?.date ?? "-"} / 產生時間 ${generatedAtLabel || "-"} / ${sourceMode}`}
-        right={showV3Primary ? `${v3Cards.length}/${v3BackendItemCount} cards` : `${items.length} 檔`}
+        right={showV3Primary ? `${v3Cards.length} 檔` : `${items.length} 檔`}
       >
         {showV3Primary ? (
           <div style={{ padding: "16px" }}>
@@ -1270,20 +1239,6 @@ export default async function AiRecommendationsPage() {
               <b>{v3PanelState.title}</b>
               <p>{v3PanelState.detail}</p>
               <V3BackendFacts data={v3Result.data} visibleCount={v3Cards.length} />
-              <dl>
-                <div>
-                  <dt>Endpoint</dt>
-                  <dd>{v3PanelState.endpoint}</dd>
-                </div>
-                <div>
-                  <dt>Owner</dt>
-                  <dd>{v3PanelState.owner}</dd>
-                </div>
-                <div>
-                  <dt>Next</dt>
-                  <dd>{v3PanelState.nextAction}</dd>
-                </div>
-              </dl>
             </div>
             {v3Cards.length > 0 ? (
               <div className="_rec-v3-card-grid">
@@ -1294,7 +1249,7 @@ export default async function AiRecommendationsPage() {
             ) : (
               <div className="_rec-empty _rec-empty-single">
                 <b>v3 沒有回傳可顯示卡片</b>
-                <p>前端沒有用 mock 或舊推薦補卡。請看上方 status / itemCount / owner / next action。</p>
+                <p>前端沒有用 mock 或舊推薦補卡；等待推薦引擎回傳正式資料。</p>
               </div>
             )}
           </div>
@@ -1331,85 +1286,6 @@ export default async function AiRecommendationsPage() {
         )}
       </Panel>
 
-      <Panel
-        code="AI-02"
-        title="SOP 推理結構 (v3)"
-        sub="7 sub-score / 市場狀態 / OTE 進場 / ReAct 5-module"
-        right={v3PanelState.label}
-      >
-        <div style={{ padding: "16px" }}>
-          <div className="_rec-v3-state" data-tone={v3PanelState.tone}>
-            <b>{v3PanelState.title}</b>
-            <p>{v3PanelState.detail}</p>
-            <V3BackendFacts data={v3Result.data} visibleCount={v3Cards.length} />
-            <dl>
-              <div>
-                <dt>Endpoint</dt>
-                <dd>{v3PanelState.endpoint}</dd>
-              </div>
-              <div>
-                <dt>Owner</dt>
-                <dd>{v3PanelState.owner}</dd>
-              </div>
-              <div>
-                <dt>Next</dt>
-                <dd>{v3PanelState.nextAction}</dd>
-              </div>
-            </dl>
-          </div>
-
-          {v3Cards.length > 0 ? (
-            showV3Primary ? (
-              <div className="_rec-v3-preview">
-                <div className="_rec-v3-preview-title">
-                  {hasEnoughV3Cards
-                    ? "v3 cards are rendered in the primary list above; this panel keeps SOP status and ReAct trace."
-                    : "v3 returned fewer than 5 visible cards; no mock cards were added."}
-                </div>
-                <p style={{ margin: 0, color: "var(--tac-fg-2)", font: "750 12px/1.7 var(--sans-tc)" }}>
-                  Primary cards come directly from GET /api/v1/ai-recommendations/v3. The UI does not pad, clone, or upgrade backend results.
-                </p>
-              </div>
-            ) : (
-            <div className="_rec-v3-card-grid">
-              {v3Cards.map((card) => (
-                <StockRecCard key={`${card.ticker}-${card.bucket}`} rec={card} />
-              ))}
-            </div>
-            )
-          ) : (
-            <div className="_rec-v3-preview">
-              <div className="_rec-v3-preview-title">
-                7 SUB-SCORE TABLE / 尚未收到可顯示 v3 推薦
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    {["主題位置", "營收獲利", "法人/ETF", "融資融券", "RS/量能", "技術結構", "估值事件", "總分"].map((header) => (
-                      <th key={header}>{header}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {["/20", "/15", "/15", "/15", "/10", "/20", "/5", "/100"].map((max, index) => (
-                      <td key={index}>{max}</td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <ReactTracePanel
-            steps={v3TraceSteps}
-            round_current={null}
-            round_max={8}
-            is_running={v3PanelState.tone === "pending"}
-            over_budget={v3Result.data?.status === "budget_exceeded"}
-          />
-        </div>
-      </Panel>
     </PageFrame>
   );
 }
