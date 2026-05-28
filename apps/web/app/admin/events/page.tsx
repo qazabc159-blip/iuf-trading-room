@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 
+import { unwrapEventLogApiPayload } from "@/lib/eventlog-api-payload";
 import { normalizeOutboxDiag, outboxPendingLabel } from "@/lib/eventlog-outbox";
 
 const API_BASE =
@@ -260,8 +261,8 @@ async function apiFetch<T>(path: string): Promise<T> {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
   const res = await fetch(`${base}${path}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw new Error(`${res.status}`);
-  const json = await res.json() as { data: T };
-  return json.data;
+  const json = await res.json() as T | { data?: T };
+  return unwrapEventLogApiPayload<T>(json);
 }
 
 function EventLogTruthState({
