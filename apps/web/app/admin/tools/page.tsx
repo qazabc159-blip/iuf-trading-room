@@ -247,9 +247,14 @@ function errorRatePct(rate: number) {
 }
 
 function shortJson(value: unknown) {
-  if (value == null) return "無 schema";
+  if (value == null) return "未定義輸入欄位";
+  if (typeof value === "object" && value !== null) {
+    const maybeSchema = value as { properties?: Record<string, unknown>; required?: unknown[] };
+    const names = Object.keys(maybeSchema.properties ?? {});
+    if (names.length > 0) return `已定義 ${names.length} 個輸入欄位`;
+  }
   const text = JSON.stringify(value);
-  return text && text !== "{}" ? text : "空物件";
+  return text && text !== "{}" ? "已定義輸入格式" : "不需輸入";
 }
 
 function latestCallByTool(calls: ToolCallEntry[]) {
@@ -278,7 +283,7 @@ function readiness(tool: ToolRegistryEntry, stat: ToolStatEntry | undefined, lat
     return {
       label: "可執行，有成功紀錄",
       kind: "ok" as const,
-      detail: "近期 tool_calls 有 success，仍需 Owner 權限。",
+      detail: "近期 tool_calls 有 success，仍需管理權限。",
     };
   }
   if (latest?.status === "failure" || latest?.status === "timeout") {
@@ -318,17 +323,17 @@ function TruthPanel({
       <div className="_tool-truth-body">{detail}</div>
       <div className="_tool-meta-grid">
         <div className="_tool-meta-cell">
-          <span className="_tool-meta-label">ENDPOINT</span>
-          <span className="_tool-meta-value">{TOOL_REGISTRY_ENDPOINT}</span>
-          <span className="_tool-meta-value">{TOOL_CALLS_ENDPOINT}</span>
-          <span className="_tool-meta-value">{TOOL_STATS_ENDPOINT}</span>
+          <span className="_tool-meta-label">資料來源</span>
+          <span className="_tool-meta-value">工具登錄</span>
+          <span className="_tool-meta-value">近期呼叫紀錄</span>
+          <span className="_tool-meta-value">24h 統計</span>
         </div>
         <div className="_tool-meta-cell">
-          <span className="_tool-meta-label">OWNER</span>
-          <span className="_tool-meta-value">Elva/Jason + Bruce owner-session verify</span>
+          <span className="_tool-meta-label">資料狀態</span>
+          <span className="_tool-meta-value">管理登入後讀取正式資料</span>
         </div>
         <div className="_tool-meta-cell">
-          <span className="_tool-meta-label">NEXT</span>
+          <span className="_tool-meta-label">下一步</span>
           <span className="_tool-meta-value">{next}</span>
         </div>
       </div>
@@ -352,8 +357,8 @@ function RegistryTable({
     return (
       <TruthPanel
         title="目前沒有 ToolCenter 工具登錄"
-        detail="registry endpoint 可讀但回傳 0 筆；此頁不補展示工具，也不把空資料當成可執行能力。"
-        next="Jason 檢查 0038 ToolCenter seed；Bruce 用 owner session 驗證 registry 是否真的 0 筆。"
+        detail="工具登錄資料可讀但回傳 0 筆；此頁不補展示工具，也不把空資料當成可執行能力。"
+        next="確認 ToolCenter seed 與工具登錄資料是否已寫入。"
       />
     );
   }
@@ -392,8 +397,8 @@ function RegistryTable({
                   <span className="_tool-sub">{state.detail}</span>
                 </td>
                 <td>
-                  <span className="_tool-badge" style={badgeStyle("warn")}>Owner-only</span>
-                  <span className="_tool-sub">登錄：GET {TOOL_REGISTRY_ENDPOINT}/:toolKey</span>
+                  <span className="_tool-badge" style={badgeStyle("warn")}>管理權限</span>
+                  <span className="_tool-sub">登錄：管理權限可讀</span>
                   <span className="_tool-sub">執行：後端 callTool wrapper；此頁沒有手動執行按鈕。</span>
                 </td>
                 <td>
@@ -403,7 +408,7 @@ function RegistryTable({
                 </td>
                 <td>
                   {tool.displayName}
-                  <span className="_tool-sub">{tool.description ?? "沒有描述；需 Jason 補 registry description。"}</span>
+                  <span className="_tool-sub">{tool.description ?? "沒有描述；等待工具登錄補齊說明。"}</span>
                 </td>
                 <td>
                   <div className="_tool-schema-preview">{shortJson(tool.inputSchema)}</div>
@@ -568,8 +573,8 @@ export default async function ToolsAdminPage() {
       {blocked && (
         <TruthPanel
           title="ToolCenter 目前不是完整可讀狀態"
-          detail="至少一個 ToolCenter endpoint 未能讀取；前端已停止用空表格假裝正常，並明確列出資料來源與 owner。"
-          next="Bruce 用 owner session 重測三個 endpoint；若仍 401/500，由 Jason 檢查 ToolCenter auth、0038/0039 migration 與 tool_calls 寫入。"
+          detail="至少一個 ToolCenter 資料來源未能讀取；前端已停止用空表格假裝正常，並明確列出資料狀態。"
+          next="重新驗證管理登入狀態；若仍失敗，再檢查 ToolCenter auth、migration 與 tool_calls 寫入。"
         />
       )}
 
@@ -578,8 +583,8 @@ export default async function ToolsAdminPage() {
           ? (
             <TruthPanel
               title="工具登錄無法讀取"
-              detail="`registry` endpoint 未通過 owner session 或後端不可用；此頁不顯示備用工具清單。"
-              next="確認 Owner cookie / session，再檢查 ToolCenter registry route。"
+              detail="工具登錄資料未通過管理登入或後端不可用；此頁不顯示備用工具清單。"
+              next="確認管理登入狀態，再檢查 ToolCenter 登錄資料。"
             />
           )
           : <RegistryTable tools={tools} calls={calls} stats={stats} />
@@ -591,8 +596,8 @@ export default async function ToolsAdminPage() {
           ? (
             <TruthPanel
               title="工具統計無法讀取"
-              detail="`stats` endpoint 未回正式資料；錯誤率與延遲不可被估算。"
-              next="Bruce 重測 Owner session；Jason 檢查 /api/v1/tools/stats 與 tool_calls 聚合。"
+              detail="工具統計未回正式資料；錯誤率與延遲不可被估算。"
+              next="重新驗證管理登入狀態，再檢查工具統計與 tool_calls 聚合。"
             />
           )
           : <StatsGrid stats={stats} />
@@ -604,8 +609,8 @@ export default async function ToolsAdminPage() {
           ? (
             <TruthPanel
               title="工具呼叫記錄無法讀取"
-              detail="`calls` endpoint 未回正式資料；不能顯示任何推測的 last run。"
-              next="確認 callTool wrapper 是否有寫入 tool_calls；若 DB 有資料但 endpoint 失敗，由 Jason 查 route/auth。"
+              detail="工具呼叫紀錄未回正式資料；不能顯示任何推測的 last run。"
+              next="確認 callTool wrapper 是否有寫入 tool_calls；若資料存在但讀取失敗，再檢查 route/auth。"
             />
           )
           : <CallsTable calls={calls} />

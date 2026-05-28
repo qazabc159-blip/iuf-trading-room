@@ -2,7 +2,7 @@ export type PortfolioSnapshotPhase = "loading" | "live" | "empty" | "blocked";
 
 export const PORTFOLIO_SNAPSHOT_ENDPOINT = "/api/v1/portfolio/snapshots";
 export const PORTFOLIO_SNAPSHOT_DIFF_ENDPOINT = "/api/v1/portfolio/snapshots/diff";
-export const PORTFOLIO_SNAPSHOT_OWNER = "Elva/Jason backend data lane + Bruce live verify";
+export const PORTFOLIO_SNAPSHOT_OWNER = "系統快照寫入流程";
 
 export type PortfolioSnapshotStateCopy = {
   tone: "live" | "empty" | "blocked" | "loading";
@@ -25,7 +25,7 @@ export function portfolioSnapshotStateCopy(input: {
       detail: "正在向正式 snapshot read API 讀取資料。",
       endpoint: PORTFOLIO_SNAPSHOT_ENDPOINT,
       owner: PORTFOLIO_SNAPSHOT_OWNER,
-      nextAction: "等待 API 回應；若超時，由 Bruce 檢查 production route 與 owner session。",
+      nextAction: "等待正式資料回應；若超時，檢查 production route 與登入狀態。",
     };
   }
 
@@ -47,7 +47,7 @@ export function portfolioSnapshotStateCopy(input: {
       detail: "read API 已可用，但目前後端尚未寫入任何 portfolio snapshot；這不是假資料，也不是白屏。",
       endpoint: PORTFOLIO_SNAPSHOT_ENDPOINT,
       owner: PORTFOLIO_SNAPSHOT_OWNER,
-      nextAction: "請由 Elva/Jason 確認 snapshot writer 何時由 paper portfolio、orders、fills 或 EOD job 觸發。",
+      nextAction: "確認 snapshot writer 何時由 paper portfolio、orders、fills 或 EOD job 觸發。",
     };
   }
 
@@ -58,6 +58,6 @@ export function portfolioSnapshotStateCopy(input: {
     detail: `讀取正式 read API 失敗：${status}。畫面不會用假 snapshot 填空。`,
     endpoint: PORTFOLIO_SNAPSHOT_ENDPOINT,
     owner: PORTFOLIO_SNAPSHOT_OWNER,
-    nextAction: "Bruce 先驗 production route/session；Elva/Jason 檢查 API log 與 snapshot store。",
+    nextAction: "先驗 production route/session，再檢查 API log 與 snapshot store。",
   };
 }
