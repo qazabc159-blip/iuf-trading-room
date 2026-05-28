@@ -7,9 +7,9 @@ export function DerivativesPanel() {
       </h3>
       <div className="state-panel">
         <span className="badge badge-yellow">未啟用</span>
-        <span className="tg soft">資料源尚未接入：TWSE warrant / broker feed / external provider</span>
+        <span className="tg soft">資料源尚未接入：權證 / 選擇權正式資料源</span>
         <span className="state-reason">
-          此區不顯示假權證或假選擇權資料。Owner: Jason。下一步：接正式權證/選擇權資料源後再啟用，不影響公司基本資料與交易室。
+          此區尚未接入正式權證與選擇權資料；不顯示假權證或假選擇權。接入資料源後再啟用，不影響公司基本資料與交易室。
         </span>
       </div>
     </section>
