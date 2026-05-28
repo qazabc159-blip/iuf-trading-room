@@ -13220,9 +13220,9 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-heat-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
   padding: 14px 18px 12px;
   border-bottom: 1px solid rgba(220, 228, 240, 0.08);
 }
@@ -13248,10 +13248,10 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-heat-stats {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
   flex-wrap: wrap;
-  min-width: min(100%, 420px);
+  min-width: 0;
 }
 
 .tac-heat-stats span {
