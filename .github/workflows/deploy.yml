@@ -79,16 +79,64 @@ jobs:
             exit 1
           }
 
+          function Test-RailwayDeploymentSuccess {
+            param(
+              [Parameter(Mandatory = $true)][string]$Service,
+              [Parameter(Mandatory = $true)][string]$Message
+            )
+
+            $deadline = (Get-Date).AddMinutes(5)
+            while ((Get-Date) -lt $deadline) {
+              try {
+                $raw = railway deployment list --service $Service --limit 10 --json 2>&1
+                $listExitCode = $LASTEXITCODE
+                if ($listExitCode -ne 0) {
+                  Write-Host "::warning::railway deployment list failed with exit code $listExitCode for service $Service. Output: $raw"
+                } else {
+                  $deployments = $raw | ConvertFrom-Json
+                  $matched = @(
+                    $deployments |
+                      Where-Object { $_.meta.cliMessage -eq $Message } |
+                      Sort-Object createdAt -Descending |
+                      Select-Object -First 1
+                  )
+
+                  if ($matched.Count -gt 0) {
+                    $deployment = $matched[0]
+                    Write-Host "Matched Railway deployment service=$Service id=$($deployment.id) status=$($deployment.status) createdAt=$($deployment.createdAt)"
+                    if ($deployment.status -eq "SUCCESS") {
+                      return $true
+                    }
+                  } else {
+                    Write-Host "No Railway deployment with message '$Message' found yet for service $Service."
+                  }
+                }
+              } catch {
+                Write-Host "::warning::Unable to inspect Railway deployments for service $Service: $($_.Exception.Message)"
+              }
+
+              Start-Sleep -Seconds 15
+            }
+
+            return $false
+          }
+
           $maxAttempts = 3
+          $deployMessage = "GHA deploy ${{ github.sha }}"
           for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
             Write-Host "railway up attempt $attempt/$maxAttempts for service ${{ matrix.service }}"
-            railway up --service ${{ matrix.service }} --ci --message "GHA deploy ${{ github.sha }}"
+            railway up --service ${{ matrix.service }} --ci --message "$deployMessage"
             $exitCode = $LASTEXITCODE
             if ($exitCode -eq 0) {
               exit 0
             }
             if ($attempt -eq $maxAttempts) {
-              Write-Host "::error::railway up failed after $maxAttempts attempts with exit code $exitCode."
+              Write-Host "::warning::railway up failed after $maxAttempts attempts with exit code $exitCode. Checking Railway deployment list before failing."
+              if (Test-RailwayDeploymentSuccess -Service "${{ matrix.service }}" -Message "$deployMessage") {
+                Write-Host "::notice::Railway CLI returned non-zero, but service ${{ matrix.service }} has a SUCCESS deployment for $deployMessage."
+                exit 0
+              }
+              Write-Host "::error::railway up failed and no SUCCESS deployment was observed for service ${{ matrix.service }}."
               exit $exitCode
             }
             $sleepSeconds = 20 * $attempt
