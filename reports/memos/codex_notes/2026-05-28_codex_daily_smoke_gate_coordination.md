@@ -21,6 +21,7 @@
 - Owner: Codex for Daily Production Smoke workflow gate.
 - Blocker: workflow uses fragile Windows PowerShell output redirection and non-ASCII alert text in script blocks; it fails before real smoke evidence is produced.
 - Follow-up blocker found on PR #761: the self-hosted Windows runner cannot let `actions/setup-python` edit the Windows registry, so W6 and Secret Regression now stay on `iuf-taipei` and resolve the runner's existing `python`/`py` instead of installing Python during CI.
+- Follow-up blocker found after merge: `Invoke-ProductionSmoke.ps1` contained non-ASCII dash/box characters that Windows PowerShell 5.1 on the runner decoded incorrectly, causing parse errors before real endpoint checks. The smoke script is now normalized to ASCII.
 - Owner: Elva/Bruce for F-AUTO SIM production state verification.
 
 ## Chosen Safe Task
