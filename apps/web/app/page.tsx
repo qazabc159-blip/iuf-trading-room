@@ -1034,6 +1034,75 @@ function buildKgiCoreHeatmap(feed: LoadState<RealtimeMarketDashboard | null>): H
     });
 }
 
+function hasVerifiedMove(tile: HeatTile) {
+  return typeof tile.pct === "number" && Number.isFinite(tile.pct)
+    || typeof tile.change === "number" && Number.isFinite(tile.change)
+    || (
+      typeof tile.close === "number" && Number.isFinite(tile.close)
+      && typeof tile.prevClose === "number" && Number.isFinite(tile.prevClose)
+      && tile.prevClose > 0
+    );
+}
+
+function betterHeatmapName(symbol: string, preferred?: string | null, fallback?: string | null) {
+  const preferredName = preferred?.trim();
+  const fallbackName = fallback?.trim();
+  if (preferredName && preferredName !== symbol) return preferredName;
+  if (fallbackName && fallbackName !== symbol) return fallbackName;
+  return preferredName || fallbackName || symbol;
+}
+
+function mergeHeatmapQuote(base: HeatTile | undefined, overlay: HeatTile) {
+  if (!base) return overlay;
+  const overlayHasMove = hasVerifiedMove(overlay);
+  const baseHasMove = hasVerifiedMove(base);
+  const quote = overlayHasMove ? overlay : baseHasMove ? base : overlay;
+  const context = baseHasMove ? base : overlayHasMove ? overlay : base;
+
+  return {
+    ...context,
+    ...quote,
+    symbol: overlay.symbol || base.symbol,
+    name: betterHeatmapName(overlay.symbol || base.symbol, overlay.name, base.name),
+    sector: overlay.sector ?? base.sector ?? null,
+    source: quote.source || context.source,
+    weight: Number.isFinite(quote.weight) && quote.weight > 0 ? quote.weight : context.weight,
+    date: quote.date ?? context.date,
+    open: quote.open ?? context.open,
+    high: quote.high ?? context.high,
+    low: quote.low ?? context.low,
+    close: quote.close ?? context.close,
+    prevClose: quote.prevClose ?? context.prevClose,
+    change: quote.change ?? context.change,
+    volume: quote.volume ?? context.volume,
+    price: quote.price ?? context.price,
+    pct: quote.pct ?? context.pct,
+    readiness: quote.readiness ?? context.readiness,
+    freshnessStatus: quote.freshnessStatus ?? context.freshnessStatus,
+    sourceState: quote.sourceState ?? context.sourceState,
+    sourceLabel: quote.sourceLabel ?? context.sourceLabel,
+  };
+}
+
+function mergeCoreHeatmapWithRepresentativeFeed(coreTiles: HeatTile[], representativeFeed: HeatTile[]) {
+  const rowsBySymbol = new Map<string, HeatTile>();
+
+  for (const tile of representativeFeed) {
+    if (!tile.symbol || !hasVerifiedMove(tile)) continue;
+    rowsBySymbol.set(tile.symbol, tile);
+  }
+
+  for (const tile of coreTiles) {
+    if (!tile.symbol) continue;
+    const existing = rowsBySymbol.get(tile.symbol);
+    if (tile.sourceState === "live" || !existing || !hasVerifiedMove(existing)) {
+      rowsBySymbol.set(tile.symbol, mergeHeatmapQuote(existing, tile));
+    }
+  }
+
+  return [...rowsBySymbol.values()];
+}
+
 function buildTwseIndustryRows(feed: LoadState<RealtimeMarketDashboard | null>): TwseIndustryHeatmapTile[] {
   return (loadStateData(feed)?.twseHeatmap?.data ?? [])
     .filter((item) => item.industry && Number.isFinite(item.avgChangePct))
@@ -2006,7 +2075,7 @@ function RealtimeHeatmapPanel({
   // If KGI is off-hours and tiles are null, treat as no-core and show TWSE heatmap
   const hasCore = coreHeatmap.length > 0 && !showKgiFallback;
   const activeMode = heatmapMode === "all" ? "all" : "core";
-  const displayHeatmap = hasCore ? coreHeatmap : heatmap;
+  const displayHeatmap = hasCore ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, heatmap) : heatmap;
   const sourceLabel = showKgiFallback
     ? `TWSE 收盤 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`
     : activeMode === "core"
@@ -2719,7 +2788,10 @@ async function DashboardContent({
 
   const sources = buildSources({ finmind, market, ops, brief, paper, ideas, runs, intel });
   const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
-  const realHeatmap = coreHeatmap.length > 0 ? coreHeatmap : buildHeatmap(market);
+  const marketHeatmap = buildHeatmap(market);
+  const realHeatmap = coreHeatmap.length > 0
+    ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, marketHeatmap)
+    : marketHeatmap;
   const heatmap = realHeatmap;
   const quotes = buildTapeQuotes(realHeatmap, realtimeMarket, market);
   const liveCount = sources.filter((source) => source.state === "LIVE").length;
@@ -2740,7 +2812,7 @@ async function DashboardContent({
             <MarketMoversPanel market={market} />
           </section>
           <section className="tac-two-grid tac-fresh-heat">
-            <RealtimeHeatmapPanel heatmap={realHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+            <RealtimeHeatmapPanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
             <FreshnessPanel sources={sources} />
           </section>
           <section className="tac-two-grid">
