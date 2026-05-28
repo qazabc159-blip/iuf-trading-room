@@ -518,7 +518,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     selected: {
       symbol: selectedSymbol,
       name: company?.name ?? selectedSymbol,
-      sector: company?.chainPosition ?? selectedIdea?.sector ?? "台股",
+      sector: industryLabel(company?.chainPosition ?? selectedIdea?.sector ?? "台股"),
       price: lastPrice,
       open: quote?.lastPrice ?? lastBar?.open ?? null,
       high: lastBar?.high ?? null,
@@ -962,7 +962,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       generatedAt:new Date().toISOString(),
       health: healthResult.ok ? healthResult.data : null,
       baseCapitalTWD,
-      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:company?.chainPosition || selectedIdea?.sector || "台股", price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
+      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
       watchlist,
       ideas,
       portfolio,
@@ -1434,7 +1434,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (selected.symbol) {
       symLive[selected.symbol] = {
         nm: selected.name || selected.symbol,
-        sec: selected.sector || "台股",
+        sec: industryLabel(selected.sector || "台股"),
         price: selected.price,
         open: selected.open,
         high: selected.high,
@@ -1453,7 +1453,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
 
     setText(".symhead .sym", selected.symbol || "—");
     setText(".symhead .nm", (selected.name || selected.symbol || "—"));
-    setText(".symhead .meta", selected.sector || "台股");
+    setText(".symhead .meta", industryLabel(selected.sector || "台股"));
     const pv = $(".symhead .price .v"); if (pv) { pv.textContent = price(selected.price); pv.className = "v " + tone; }
     const pd = $(".symhead .price .d"); if (pd) { pd.textContent = chg == null ? "可用資料" : (Number(chg) >= 0 ? "▲ +" : "▼ −") + Math.abs(Number(chg)).toFixed(2) + " 　" + (Number(pct) >= 0 ? "+" : "−") + Math.abs(Number(pct || 0)).toFixed(2) + "%"; pd.className = "d " + tone; }
     const stats = $$(".symhead .stats .s .v");
