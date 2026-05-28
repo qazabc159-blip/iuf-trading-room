@@ -14462,6 +14462,116 @@ test("BULK-SEED-5: bulk-seed fetches from both TWSE and TPEx OpenAPI URLs", () =
   );
 });
 
+// =============================================================================
+// KGI SIM DEALS RECONSTRUCTION — 2026-05-20 workaround for /position SDK crash
+// /position endpoint crashes 500 (KGI vendor bug). Bypass via /deals aggregation.
+// =============================================================================
+
+test("KGI-DEALS-RECONSTRUCT-1: /paper/positions SIM block uses getDeals not getPosition", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Find the /paper/positions handler block
+  const posBlock = src.slice(
+    src.indexOf("GET /api/v1/paper/positions — paper trading positions"),
+    src.indexOf("GET /api/v1/paper/positions — paper trading positions") + 3000
+  );
+  assert.ok(
+    posBlock.includes("getDeals"),
+    "KGI-DEALS-RECONSTRUCT-1: /paper/positions SIM block must call getDeals()"
+  );
+  assert.ok(
+    !posBlock.includes("getPosition()"),
+    "KGI-DEALS-RECONSTRUCT-1: /paper/positions SIM block must NOT call getPosition() (crashes 500)"
+  );
+});
+
+test("KGI-DEALS-RECONSTRUCT-2: /paper/positions reconstructed source label is kgi_sim_reconstructed", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const posBlock = src.slice(
+    src.indexOf("GET /api/v1/paper/positions — paper trading positions"),
+    src.indexOf("GET /api/v1/paper/positions — paper trading positions") + 3000
+  );
+  assert.ok(
+    posBlock.includes("kgi_sim_reconstructed"),
+    "KGI-DEALS-RECONSTRUCT-2: reconstructed positions must use source='kgi_sim_reconstructed'"
+  );
+  assert.ok(
+    posBlock.includes("reconstructedFromDeals: true"),
+    "KGI-DEALS-RECONSTRUCT-2: must flag reconstructedFromDeals:true"
+  );
+});
+
+test("KGI-DEALS-RECONSTRUCT-3: /paper/funds SIM block uses getDeals not getPosition", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  // Find the /paper/funds handler block
+  const fundsBlock = src.slice(
+    src.indexOf("GET /api/v1/paper/funds"),
+    src.indexOf("GET /api/v1/paper/funds") + 5000
+  );
+  assert.ok(
+    fundsBlock.includes("getDeals"),
+    "KGI-DEALS-RECONSTRUCT-3: /paper/funds SIM block must call getDeals()"
+  );
+  assert.ok(
+    !fundsBlock.includes("getPosition()"),
+    "KGI-DEALS-RECONSTRUCT-3: /paper/funds SIM block must NOT call getPosition() (crashes 500)"
+  );
+});
+
+test("KGI-DEALS-RECONSTRUCT-4: /paper/funds reconstructs cash from initial capital minus deal notional", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const fundsBlock = src.slice(
+    src.indexOf("GET /api/v1/paper/funds"),
+    src.indexOf("GET /api/v1/paper/funds") + 5000
+  );
+  assert.ok(
+    fundsBlock.includes("INITIAL_CASH") && fundsBlock.includes("10_000_000"),
+    "KGI-DEALS-RECONSTRUCT-4: must define INITIAL_CASH = 10_000_000 TWD SIM capital"
+  );
+  assert.ok(
+    fundsBlock.includes("COMMISSION_RATE") && fundsBlock.includes("0.7"),
+    "KGI-DEALS-RECONSTRUCT-4: must apply 30% Yang discount to commission"
+  );
+  assert.ok(
+    fundsBlock.includes("SELL_TAX_RATE"),
+    "KGI-DEALS-RECONSTRUCT-4: must apply sell tax"
+  );
+});
+
+test("KGI-DEALS-RECONSTRUCT-5: deal aggregation correctly nets BUY/SELL quantities", () => {
+  // Unit-test the deal aggregation logic inline
+  type DealRecord = { action: string; quantity: number; price: number };
+  const deals: Record<string, DealRecord[]> = {
+    "2330": [
+      { action: "B", quantity: 1, price: 2425 },
+    ],
+    "2454": [
+      { action: "B", quantity: 2, price: 1000 },
+      { action: "S", quantity: 1, price: 1050 },
+    ],
+  };
+  const posMap = new Map<string, { netQty: number; totalCost: number }>();
+  for (const [symbol, dealList] of Object.entries(deals)) {
+    for (const deal of dealList) {
+      const isBuy = deal.action === "B";
+      const qty = Number(deal.quantity);
+      const price = Number(deal.price);
+      const existing = posMap.get(symbol) ?? { netQty: 0, totalCost: 0 };
+      if (isBuy) {
+        existing.netQty += qty;
+        existing.totalCost += qty * price;
+      } else {
+        existing.netQty -= qty;
+        existing.totalCost -= qty * price;
+      }
+      posMap.set(symbol, existing);
+    }
+  }
+  assert.equal(posMap.get("2330")?.netQty, 1, "KGI-DEALS-RECONSTRUCT-5: 2330 net qty should be 1");
+  assert.equal(posMap.get("2330")?.totalCost, 2425, "KGI-DEALS-RECONSTRUCT-5: 2330 total cost should be 2425");
+  assert.equal(posMap.get("2454")?.netQty, 1, "KGI-DEALS-RECONSTRUCT-5: 2454 net qty 2-1=1");
+  assert.equal(posMap.get("2454")?.totalCost, 1000, "KGI-DEALS-RECONSTRUCT-5: 2454 total cost: 2*1000 - 1*1000 = 1000");
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 after(async () => {

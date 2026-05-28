@@ -4806,7 +4806,9 @@ app.get("/api/v1/paper/orders", async (c) => {
 });
 
 // GET /api/v1/paper/positions — paper trading positions.
-// When KGI_ENV=sim (or ?source=sim), proxies to KGI SIM gateway positions.
+// When KGI_ENV=sim (or ?source=sim): reconstructs positions from KGI /deals.
+//   WORKAROUND 2026-05-20: /position SDK native crash (KGI vendor bug, Candidate F).
+//   Bypass: aggregate deals by symbol → net qty + weighted avg cost.
 // When KGI_ENV=paper (or ?source=paper), returns in-memory paper-broker positions.
 // Default: follows KGI_ENV env var. Override with ?source=sim|paper.
 app.get("/api/v1/paper/positions", async (c) => {
@@ -4816,7 +4818,8 @@ app.get("/api/v1/paper/positions", async (c) => {
   const useSimSource = sourceOverride === "sim" || (sourceOverride !== "paper" && kgiEnv === "sim");
 
   if (useSimSource) {
-    // KGI SIM mode — pull real positions from gateway
+    // KGI SIM mode — reconstruct positions from /deals (bypass broken /position SDK)
+    // /position endpoint crashes with 500 (KGI vendor SDK bug, see gateway line 460 comment).
     const gatewayUrl =
       process.env["KGI_GATEWAY_URL"] ??
       process.env["KGI_GATEWAY_BASE_URL"] ??
@@ -4824,28 +4827,53 @@ app.get("/api/v1/paper/positions", async (c) => {
     const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
     const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
     try {
-      const rawPositions = await client.getPosition();
-      // Map KgiPosition → Position-compatible shape for UI
-      const positions = rawPositions
-        .filter((p) => p.netQuantity !== 0 || p.unrealized !== 0)
-        .map((p) => ({
-          accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
-          symbol: p.symbol,
-          market: "TWSE",
-          quantity: p.netQuantity,
-          avgPrice: p.lastPrice, // best proxy; KGI position df does not expose avgPrice
-          marketPrice: p.lastPrice,
-          marketValue: p.lastPrice ? p.lastPrice * p.netQuantity : null,
-          unrealizedPnl: p.unrealized,
-          unrealizedPnlPct: null,
-          openedAt: null,
-          companyId: null,
-          source: "kgi_sim",
-        }));
-      return c.json({ data: positions, source: "kgi_sim" });
+      const deals = await client.getDeals();
+      // deals shape: Record<symbol, Array<{action:"B"|"S", quantity:number, price:number, ...}>>
+      type DealRecord = { action: string; quantity: number; price: number; [k: string]: unknown };
+      const posMap = new Map<string, { netQty: number; totalCost: number; dealCount: number }>();
+      for (const [symbol, dealList] of Object.entries(deals)) {
+        if (!Array.isArray(dealList)) continue;
+        for (const deal of dealList as DealRecord[]) {
+          const isBuy = deal.action === "B";
+          const qty = Number(deal.quantity) || 0;
+          const price = Number(deal.price) || 0;
+          const existing = posMap.get(symbol) ?? { netQty: 0, totalCost: 0, dealCount: 0 };
+          if (isBuy) {
+            existing.netQty += qty;
+            existing.totalCost += qty * price;
+          } else {
+            existing.netQty -= qty;
+            existing.totalCost -= qty * price;
+          }
+          existing.dealCount += 1;
+          posMap.set(symbol, existing);
+        }
+      }
+      const accountLabel = process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim";
+      const positions = Array.from(posMap.entries())
+        .filter(([, v]) => v.netQty !== 0)
+        .map(([symbol, v]) => {
+          const avgCost = v.netQty > 0 ? Math.round((v.totalCost / v.netQty) * 100) / 100 : null;
+          return {
+            accountId: accountLabel,
+            symbol,
+            market: "TWSE",
+            quantity: v.netQty,
+            avgPrice: avgCost,
+            marketPrice: avgCost, // no live quote here; avgCost is best available
+            marketValue: avgCost !== null ? Math.round(avgCost * v.netQty * 100) / 100 : null,
+            unrealizedPnl: null, // cannot compute without live quote
+            unrealizedPnlPct: null,
+            openedAt: null,
+            companyId: null,
+            source: "kgi_sim_reconstructed",
+            reconstructedFromDeals: true,
+          };
+        });
+      return c.json({ data: positions, source: "kgi_sim_reconstructed", degraded: false });
     } catch (_err) {
       // Graceful degradation — fall back to empty list, not error
-      return c.json({ data: [], source: "kgi_sim", degraded: true });
+      return c.json({ data: [], source: "kgi_sim_reconstructed", degraded: true });
     }
   }
 
@@ -11144,6 +11172,16 @@ app.get("/api/v1/paper/funds", async (c) => {
   const useSimSource = sourceOverride === "sim" || (sourceOverride !== "paper" && kgiEnv === "sim");
 
   if (useSimSource) {
+    // KGI SIM mode — reconstruct cash/equity from /deals (bypass broken /position + missing /balance)
+    // /position crashes (KGI SDK vendor bug); /balance not implemented in gateway.
+    // Workaround 2026-05-20: derive cash from filled deals using fee model.
+    //   Fee model (per Athena packet 2026-05-19 line 27):
+    //     Buy:  notional + commission(0.3% * 0.7 discount)
+    //     Sell: notional - commission(0.3% * 0.7) - sell_tax(0.3%)
+    //   initial_cash = 10_000_000 TWD (SIM capital)
+    const INITIAL_CASH = 10_000_000;
+    const COMMISSION_RATE = 0.003 * 0.7; // 0.3% with 30% Yang discount
+    const SELL_TAX_RATE = 0.003;         // 0.3‰ → actually 3‰ = 0.003 in TWD context
     const gatewayUrl =
       process.env["KGI_GATEWAY_URL"] ??
       process.env["KGI_GATEWAY_BASE_URL"] ??
@@ -11151,29 +11189,64 @@ app.get("/api/v1/paper/funds", async (c) => {
     const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
     const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
     try {
-      const rawPositions = await client.getPosition();
-      const totalUnrealized = rawPositions.reduce((acc, p) => acc + (p.unrealized ?? 0), 0);
-      const totalRealized = rawPositions.reduce((acc, p) => acc + (p.realized ?? 0), 0);
+      const deals = await client.getDeals();
+      type DealRecord = { action: string; quantity: number; price: number; [k: string]: unknown };
+      let cashSpent = 0;
+      let posMarketValue = 0;
+      const posMap = new Map<string, { netQty: number; totalCost: number }>();
+      for (const [symbol, dealList] of Object.entries(deals)) {
+        if (!Array.isArray(dealList)) continue;
+        for (const deal of dealList as DealRecord[]) {
+          const isBuy = deal.action === "B";
+          const qty = Number(deal.quantity) || 0;
+          const price = Number(deal.price) || 0;
+          const notional = qty * price;
+          const commission = Math.ceil(notional * COMMISSION_RATE);
+          if (isBuy) {
+            cashSpent += notional + commission;
+            const existing = posMap.get(symbol) ?? { netQty: 0, totalCost: 0 };
+            existing.netQty += qty;
+            existing.totalCost += notional;
+            posMap.set(symbol, existing);
+          } else {
+            const sellTax = Math.ceil(notional * SELL_TAX_RATE);
+            cashSpent -= notional - commission - sellTax; // selling recovers cash minus fees
+            const existing = posMap.get(symbol) ?? { netQty: 0, totalCost: 0 };
+            existing.netQty -= qty;
+            posMap.set(symbol, existing);
+          }
+        }
+      }
+      // Market value = cost basis (no live quote available in this path)
+      for (const [, v] of posMap.entries()) {
+        if (v.netQty > 0 && v.totalCost > 0) {
+          posMarketValue += v.totalCost;
+        }
+      }
+      const cash = INITIAL_CASH - cashSpent;
+      const equity = cash + posMarketValue;
+      const accountLabel = process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim";
       return c.json({
         data: {
-          source: "kgi_sim",
-          accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
+          source: "kgi_sim_reconstructed",
+          accountId: accountLabel,
           currency: "TWD",
-          // KGI SIM SDK does not expose available cash — derive P&L only
-          cash: null,
-          availableCash: null,
-          equity: null,
-          marketValue: null,
-          unrealizedPnl: totalUnrealized,
-          realizedPnlToday: totalRealized,
-          note: "cash/equity not available from KGI SIM SDK; showing P&L from position snapshot",
+          initialCash: INITIAL_CASH,
+          cash: Math.round(cash * 100) / 100,
+          availableCash: Math.round(cash * 100) / 100,
+          investedMarketValue: Math.round(posMarketValue * 100) / 100,
+          equity: Math.round(equity * 100) / 100,
+          unrealizedPnl: null, // no live quote
+          realizedPnlToday: null,
+          note: "reconstructed from /deals; fee model: 0.3%*0.7 commission + 0.3% sell tax; no live quote",
+          degraded: false,
           updatedAt: new Date().toISOString(),
         },
       });
     } catch (_err) {
       return c.json({
         data: {
-          source: "kgi_sim",
+          source: "kgi_sim_reconstructed",
           degraded: true,
           updatedAt: new Date().toISOString(),
         },
