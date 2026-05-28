@@ -221,12 +221,41 @@ function callerTypeBadgeStyle(callerType: string) {
   return badgeStyle("muted");
 }
 
+function toolTypeLabel(toolType: string) {
+  const labels: Record<string, string> = {
+    llm: "AI 工具",
+    review: "審核工具",
+    data_sync: "資料同步",
+    cron: "排程工具",
+    admin_action: "管理操作",
+  };
+  return labels[toolType] ?? "工具";
+}
+
+function callerTypeLabel(callerType: string) {
+  const labels: Record<string, string> = {
+    llm: "AI 流程",
+    brain_react: "AI 分析流程",
+    cron: "排程",
+    admin_action: "管理操作",
+  };
+  return labels[callerType] ?? "系統流程";
+}
+
 function statusBadgeStyle(status: string) {
   if (status === "success") return badgeStyle("ok");
   if (status === "failure" || status === "error") return badgeStyle("bad");
   if (status === "timeout") return badgeStyle("warn");
   if (status === "pending") return badgeStyle("info");
   return badgeStyle("muted");
+}
+
+function statusLabel(status: string | null | undefined) {
+  if (status === "success") return "成功";
+  if (status === "failure" || status === "error") return "失敗";
+  if (status === "timeout") return "逾時";
+  if (status === "pending") return "處理中";
+  return "無紀錄";
 }
 
 function fmtDT(iso: string | null | undefined) {
@@ -257,6 +286,26 @@ function shortJson(value: unknown) {
   return text && text !== "{}" ? "已定義輸入格式" : "不需輸入";
 }
 
+function productSummary(value: string | null | undefined, emptyLabel: string) {
+  if (!value) return emptyLabel;
+  const text = value.trim();
+  if (!text) return emptyLabel;
+  if (text.startsWith("{") || text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (Array.isArray(parsed)) return `已回傳 ${parsed.length} 筆正式結果`;
+      if (parsed && typeof parsed === "object") return `已回傳 ${Object.keys(parsed).length} 個結果欄位`;
+      return "已回傳正式結果";
+    } catch {
+      return "已回傳正式結果，原始內容已隱藏";
+    }
+  }
+  return text
+    .replaceAll("sourceState", "資料狀態")
+    .replaceAll("brain_react", "AI 分析流程")
+    .replaceAll("owner", "管理權限");
+}
+
 function latestCallByTool(calls: ToolCallEntry[]) {
   const map = new Map<string, ToolCallEntry>();
   for (const call of calls) {
@@ -276,21 +325,21 @@ function readiness(tool: ToolRegistryEntry, stat: ToolStatEntry | undefined, lat
     return {
       label: "未啟用",
       kind: "muted" as const,
-      detail: "registry active=false；不應被當成可用工具。",
+      detail: "工具目前停用，不應被當成可用功能。",
     };
   }
   if (latest?.status === "success") {
     return {
       label: "可執行，有成功紀錄",
       kind: "ok" as const,
-      detail: "近期 tool_calls 有 success，仍需管理權限。",
+      detail: "近期已有成功執行紀錄，仍需管理權限。",
     };
   }
   if (latest?.status === "failure" || latest?.status === "timeout") {
     return {
       label: "可執行但需檢查",
       kind: "bad" as const,
-      detail: `最近一次為 ${latest.status}；先看錯誤與 owner log。`,
+      detail: `最近一次為${statusLabel(latest.status)}；先看錯誤摘要與執行紀錄。`,
     };
   }
   if (stat && stat.totalCalls > 0) {
@@ -304,7 +353,7 @@ function readiness(tool: ToolRegistryEntry, stat: ToolStatEntry | undefined, lat
   return {
     label: "已登錄，待執行證據",
     kind: "warn" as const,
-    detail: "registry 有工具，但 tool_calls 尚無近期成功紀錄；前端不宣稱已成功。",
+    detail: "工具已登錄，但尚無近期成功紀錄；前端不宣稱已成功。",
   };
 }
 
@@ -374,7 +423,7 @@ function RegistryTable({
             <th>權限 / 入口</th>
             <th>最後執行證據</th>
             <th>說明</th>
-            <th>輸入 schema</th>
+            <th>輸入欄位</th>
           </tr>
         </thead>
         <tbody>
@@ -386,10 +435,10 @@ function RegistryTable({
               <tr key={tool.toolKey}>
                 <td>
                   <span className="_tool-key">{tool.toolKey}</span>
-                  <span className="_tool-sub">version {tool.version}</span>
+                  <span className="_tool-sub">版本 {tool.version}</span>
                 </td>
                 <td>
-                  <span className="_tool-badge" style={toolTypeBadgeStyle(tool.toolType)}>{tool.toolType}</span>
+                  <span className="_tool-badge" style={toolTypeBadgeStyle(tool.toolType)}>{toolTypeLabel(tool.toolType)}</span>
                   {!tool.isActive && <span className="_tool-badge" style={badgeStyle("muted")}>展示/停用</span>}
                 </td>
                 <td>
@@ -402,7 +451,7 @@ function RegistryTable({
                   <span className="_tool-sub">執行：後端 callTool wrapper；此頁沒有手動執行按鈕。</span>
                 </td>
                 <td>
-                  <span className="_tool-badge" style={statusBadgeStyle(toolLatest?.status ?? "none")}>{toolLatest?.status ?? "no_call"}</span>
+                  <span className="_tool-badge" style={statusBadgeStyle(toolLatest?.status ?? "none")}>{statusLabel(toolLatest?.status)}</span>
                   <span className="_tool-sub">{fmtDT(toolLatest?.createdAt)}</span>
                   <span className="_tool-sub">24h：{toolStat?.totalCalls ?? 0} 次 / 錯誤率 {toolStat ? `${errorRatePct(toolStat.errorRate).toFixed(1)}%` : "無統計"}</span>
                 </td>
@@ -480,12 +529,12 @@ function CallsTable({ calls }: { calls: ToolCallEntry[] }) {
             <tr key={call.id}>
               <td style={{ whiteSpace: "nowrap" }}>{fmtDT(call.createdAt)}</td>
               <td><span className="_tool-key">{call.toolKey}</span></td>
-              <td><span className="_tool-badge" style={callerTypeBadgeStyle(call.callerType)}>{call.callerType}</span></td>
-              <td><span className="_tool-badge" style={statusBadgeStyle(call.status)}>{call.status}</span></td>
+              <td><span className="_tool-badge" style={callerTypeBadgeStyle(call.callerType)}>{callerTypeLabel(call.callerType)}</span></td>
+              <td><span className="_tool-badge" style={statusBadgeStyle(call.status)}>{statusLabel(call.status)}</span></td>
               <td>{fmtLatency(call.latencyMs)}</td>
-              <td><span className="_tool-sub">{call.inputSummary ?? "未記錄輸入摘要"}</span></td>
+              <td><span className="_tool-sub">{productSummary(call.inputSummary, "未記錄輸入摘要")}</span></td>
               <td>
-                <span className="_tool-sub">{call.outputSummary ?? call.errorMessage ?? "未記錄輸出摘要"}</span>
+                <span className="_tool-sub">{productSummary(call.outputSummary ?? call.errorMessage, "未記錄輸出摘要")}</span>
               </td>
             </tr>
           ))}
