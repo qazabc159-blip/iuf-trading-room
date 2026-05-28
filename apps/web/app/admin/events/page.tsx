@@ -394,7 +394,7 @@ export default function EventsAdminPage() {
   const streamTypes = [...new Set(streams.map((s) => s.streamType))].sort();
   const filteredStreams = filterType ? streams.filter((s) => s.streamType === filterType) : streams;
   const normalizedOutbox = normalizeOutboxDiag(outbox);
-  const eventLogBlocked = streamsError || outboxError || Boolean(normalizedOutbox?.hasInvalidCounts);
+  const eventLogBlocked = streamsError;
   const eventLogEmpty = !streamsLoading && !streamsError && streams.length === 0;
 
   return (
