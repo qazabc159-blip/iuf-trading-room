@@ -119,7 +119,7 @@ function SimpleMarkdown({ text }: { text: string }) {
 function displaySource(source: string | null | undefined): string {
   const raw = source?.trim();
   if (!raw) return "AI 推薦引擎";
-  if (raw.toLowerCase().includes("brain_react")) return "Brain ReAct 推薦引擎";
+  if (raw.toLowerCase().includes("brain_react")) return "AI 推薦引擎";
   return raw;
 }
 
@@ -139,10 +139,10 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
   const flags = rec.synthesisFlags ?? {};
   const entryLabel = entry?.label
     ?? (entry?.ote_low != null && entry?.ote_high != null
-      ? `Entry ${fmtPrice(entry.ote_low)} - ${fmtPrice(entry.ote_high)}`
-      : "後端未回傳 entry range");
+      ? `建議進場區間 ${fmtPrice(entry.ote_low)} - ${fmtPrice(entry.ote_high)}`
+      : "後端未回傳建議進場區間");
   const sourceTrail = displaySourceTrail(rec.sourceTrail);
-  const riskText = rec.risk || rec.why_not_buy || "後端未回傳 risk/why_not_buy";
+  const riskText = rec.risk || rec.why_not_buy || "後端未回傳主要風險";
 
   return (
     <>
@@ -357,9 +357,9 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
             <span className="_src-badge" data-tone={bucket.tone}>
               {rec.bucket} 推薦級
             </span>
-            <span className="_src-badge">confidence {fmtConfidence(rec.confidence)}</span>
+            <span className="_src-badge">信心 {fmtConfidence(rec.confidence)}</span>
             {rec.market_multiplier != null && (
-              <span className="_src-badge">market x{rec.market_multiplier}</span>
+              <span className="_src-badge">盤勢係數 {rec.market_multiplier}</span>
             )}
           </div>
         </div>
@@ -382,7 +382,7 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
         </table>
 
         <div className="_src-entry">
-          <div className="_src-entry-label">ENTRY PRICE RANGE</div>
+          <div className="_src-entry-label">建議進場區間</div>
           <div className="_src-entry-val">
             {entry?.ote_low != null && entry?.ote_high != null
               ? `${fmtPrice(entry.ote_low)} - ${fmtPrice(entry.ote_high)}`
@@ -393,30 +393,30 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
 
         <div className="_src-targets">
           <div className="_src-target-cell">
-            <b>TP1</b>
+            <b>目標一</b>
             <span>{fmtPrice(targets?.tp1)}</span>
           </div>
           <div className="_src-target-cell">
-            <b>TP2</b>
+            <b>目標二</b>
             <span>{fmtPrice(targets?.tp2)}</span>
           </div>
           <div className="_src-target-cell">
-            <b>STOP</b>
+            <b>停損</b>
             <span>{fmtPrice(targets?.sl)}</span>
           </div>
           <div className="_src-target-cell">
-            <b>R</b>
+            <b>風報比</b>
             <span>{fmtRValue(targets?.r_value)}</span>
           </div>
         </div>
 
         <div className="_src-reasoning">
           <div>
-            <div className="_src-reasoning-head">REASON / RATIONALE</div>
-            {rec.why_buy ? <SimpleMarkdown text={rec.why_buy} /> : <p className="_src-p">後端未回傳 reason/rationale</p>}
+            <div className="_src-reasoning-head">推薦理由</div>
+            {rec.why_buy ? <SimpleMarkdown text={rec.why_buy} /> : <p className="_src-p">後端未回傳推薦理由</p>}
           </div>
           <div>
-            <div className="_src-reasoning-head">RISK</div>
+            <div className="_src-reasoning-head">主要風險</div>
             <SimpleMarkdown text={riskText} />
           </div>
         </div>

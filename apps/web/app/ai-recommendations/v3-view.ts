@@ -189,7 +189,7 @@ export function mapV3ItemToStockRecCard(
   const entryLow = asNumber(item.entryZone?.low ?? item.entryPriceRange?.low);
   const entryHigh = asNumber(item.entryZone?.high ?? item.entryPriceRange?.high);
   const entryLabel = (item.entryZone?.reason ? localizeV3Narrative(item.entryZone.reason) : null)
-    ?? (entryLow != null && entryHigh != null ? "Backend v3 entryPriceRange" : "後端未回傳 entry range");
+    ?? (entryLow != null && entryHigh != null ? "後端回傳建議進場區間" : "後端未回傳建議進場區間");
 
   const tp1 = asNumber(item.tp1Structured?.price ?? item.tp1);
   const tp2 = asNumber(item.tp2Structured?.price ?? item.tp2);
