@@ -91,7 +91,7 @@ function displayThemeName(theme: Theme) {
 function CompanySideNavPanel() {
   const items = [
     { href: "#company-knowledge", label: "My-TW-Coverage", meta: "知識圖譜" },
-    { href: "#company-ai-report", label: "AI 分析師", meta: "Brain ReAct" },
+    { href: "#company-ai-report", label: "AI 分析師", meta: "AI 分析" },
     { href: "#company-data-dock", label: "資料艙", meta: "價格 / 財報" },
     { href: "#company-full-profile", label: "完整資料區", meta: "FinMind [06]-[11]" },
     { href: "#company-source-status", label: "資料來源", meta: "狀態" },
@@ -475,7 +475,7 @@ export default async function CompanyDetailPage({
             />
           </div>
 
-          {/* ── AI 分析師深度報告 (Brain ReAct Phase A) ── */}
+          {/* ── AI 分析師深度報告 ── */}
           <div id="company-ai-report">
             <AiAnalystReportPanel ticker={company.ticker} />
           </div>
