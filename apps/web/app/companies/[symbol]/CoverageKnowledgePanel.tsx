@@ -22,7 +22,8 @@ type LoadState =
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
 function coverageUrl(ticker: string) {
-  return `/api/v1/companies/${encodeURIComponent(ticker)}/coverage`;
+  const path = `/api/v1/companies/${encodeURIComponent(ticker)}/coverage`;
+  return `/api/ui-final-v031/backend?path=${encodeURIComponent(path)}`;
 }
 
 export async function fetchCoverage(ticker: string): Promise<CoverageBrief | null> {

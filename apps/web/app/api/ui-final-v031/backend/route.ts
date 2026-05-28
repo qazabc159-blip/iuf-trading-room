@@ -22,6 +22,7 @@ const GET_ALLOWLIST = [
   /^\/api\/v1\/paper\/(?:health|fills|orders|portfolio)(?:\?|$|\/)/,
   /^\/api\/v1\/portfolio\/kgi\/positions(?:\?|$)/,
   /^\/api\/v1\/companies(?:\?|$|\/)/,
+  /^\/api\/v1\/themes\/[^/]+\/companies(?:\?|$)/,
   /^\/api\/v1\/kgi\/quote\/(?:bidask|ticks)(?:\?|$)/,
 ];
 
