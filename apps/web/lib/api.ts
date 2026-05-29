@@ -280,6 +280,8 @@ export type AiRecommendationV3Item = {
 
 export type AiRecommendationV3SourceState = {
   state?: "live" | "empty" | "degraded" | "pending" | string;
+  source?: string | null;
+  count?: number | null;
   lastUpdated?: string | null;
   owner?: string | null;
   nextAction?: string | null;
