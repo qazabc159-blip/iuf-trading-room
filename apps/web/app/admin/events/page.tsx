@@ -257,6 +257,53 @@ function fmtDT(iso: string) {
   }
 }
 
+function streamTypeLabel(streamType: string) {
+  if (streamType === "order") return "委託事件";
+  if (streamType === "system") return "系統事件";
+  return streamType;
+}
+
+function eventTypeLabel(eventType: string) {
+  const labels: Record<string, string> = {
+    "order.created": "委託建立",
+    "order.filled": "委託成交",
+    "paper.order.created": "紙上委託建立",
+    "paper.order.filled": "紙上委託成交",
+    "system.boot": "系統啟動",
+    "system.audit": "系統稽核",
+  };
+  const label = labels[eventType];
+  return label ? `${label} (${eventType})` : eventType;
+}
+
+function sideLabel(side: unknown) {
+  if (side === "buy") return "買進";
+  if (side === "sell") return "賣出";
+  return String(side ?? "方向未記錄");
+}
+
+function formatPayloadPreview(payload: Record<string, unknown>) {
+  const symbol = payload.symbol ?? payload.ticker;
+  const side = payload.side;
+  const qty = payload.qty ?? payload.quantity;
+  const status = payload.status;
+  const orderType = payload.orderType ?? payload.type;
+
+  if (symbol || side || qty || status || orderType) {
+    return [
+      symbol ? `標的 ${symbol}` : null,
+      side ? sideLabel(side) : null,
+      qty ? `數量 ${qty}` : null,
+      orderType ? `類型 ${orderType}` : null,
+      status ? `狀態 ${status}` : null,
+    ].filter(Boolean).join(" / ");
+  }
+
+  const keys = Object.keys(payload);
+  if (keys.length === 0) return "payload 為空";
+  return `已回傳 ${keys.length} 個欄位：${keys.slice(0, 5).join(", ")}`;
+}
+
 async function apiFetch<T>(path: string): Promise<T> {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
   const res = await fetch(`${base}${path}`, { credentials: "include", cache: "no-store" });
@@ -391,6 +438,22 @@ export default function EventsAdminPage() {
     if (selectedStream) loadEvents(selectedStream);
   }
 
+  useEffect(() => {
+    if (streamsLoading || streamsError || streams.length === 0) return;
+    const visibleStreams = filterType ? streams.filter((s) => s.streamType === filterType) : streams;
+    if (visibleStreams.length === 0) return;
+    const selectedStillVisible = selectedStream
+      ? visibleStreams.some((s) => s.streamType === selectedStream.streamType && s.streamId === selectedStream.streamId)
+      : false;
+    if (selectedStillVisible) return;
+
+    const nextStream = visibleStreams[0];
+    setSelectedStream(nextStream);
+    setTimeTravelMode(false);
+    setAsOf("");
+    loadEvents(nextStream);
+  }, [filterType, loadEvents, selectedStream, streams, streamsError, streamsLoading]);
+
   const streamTypes = [...new Set(streams.map((s) => s.streamType))].sort();
   const filteredStreams = filterType ? streams.filter((s) => s.streamType === filterType) : streams;
   const normalizedOutbox = normalizeOutboxDiag(outbox);
@@ -430,7 +493,7 @@ export default function EventsAdminPage() {
             )}
           </div>
         </header>
-        <div className="terminal-note">EventLog 事件流 / 時間回溯查詢 — 選左側 stream → 查看事件序列。</div>
+        <div className="terminal-note">EventLog 事件流 / 時間回溯查詢 — 預設載入第一個正式事件流，可切換左側清單查看其他事件序列。</div>
         {normalizedOutbox?.hasInvalidCounts && (
           <div style={{ marginBottom: 12 }}>
             <EventLogTruthState
@@ -462,7 +525,7 @@ export default function EventsAdminPage() {
             <span className="_ev-filter-lbl">類型</span>
             <button type="button" className={`_ev-filter-btn${filterType === "" ? " active" : ""}`} onClick={() => setFilterType("")}>全部</button>
             {streamTypes.map((t) => (
-              <button key={t} type="button" className={`_ev-filter-btn${filterType === t ? " active" : ""}`} onClick={() => setFilterType(t)}>{t}</button>
+              <button key={t} type="button" className={`_ev-filter-btn${filterType === t ? " active" : ""}`} onClick={() => setFilterType(t)}>{streamTypeLabel(t)}</button>
             ))}
           </div>
         )}
@@ -494,7 +557,7 @@ export default function EventsAdminPage() {
                   tabIndex={0}
                   onKeyDown={(e) => e.key === "Enter" && handleSelectStream(s)}
                 >
-                  <div className="_ev-stream-type">{s.streamType}</div>
+                  <div className="_ev-stream-type">{streamTypeLabel(s.streamType)}</div>
                   <div className="_ev-stream-id">{s.streamId}</div>
                 </div>
               );
@@ -577,22 +640,22 @@ export default function EventsAdminPage() {
                 <table className="_ev-table">
                   <thead>
                     <tr>
-                      <th>seq</th>
-                      <th>event_type</th>
-                      <th>occurred_at</th>
-                      <th>recorded_at</th>
-                      <th>payload 預覽</th>
+                      <th>序號</th>
+                      <th>事件類型</th>
+                      <th>發生時間</th>
+                      <th>紀錄時間</th>
+                      <th>資料預覽</th>
                     </tr>
                   </thead>
                   <tbody>
                     {events.map((ev) => (
                       <tr key={ev.id}>
                         <td style={{ color: "#ffb800" }}>{ev.seq}</td>
-                        <td>{ev.eventType}</td>
+                        <td>{eventTypeLabel(ev.eventType)}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{fmtDT(ev.occurredAt)}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{fmtDT(ev.recordedAt)}</td>
                         <td>
-                          <div className="_ev-payload">{JSON.stringify(ev.payload)}</div>
+                          <div className="_ev-payload">{formatPayloadPreview(ev.payload)}</div>
                         </td>
                       </tr>
                     ))}
