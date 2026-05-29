@@ -1006,6 +1006,9 @@ export const aiRecommendationsRuns = pgTable(
     trigger:              text("trigger").notNull().default("manual_refresh"),
     // score_breakdown: run-level 7-axis SOP summary (migration 0043)
     // Shape: {itemCount, incompleteCount, ratingDistribution, avgTotalScore, topRating}
+    // DB CHECK constraint: score_breakdown IS NULL OR jsonb_typeof(score_breakdown) = 'object'
+    // (constraint name: ai_recommendations_runs_score_breakdown_obj_chk — see migration 0043)
+    // Drizzle does not express jsonb_typeof() checks natively; constraint lives in DB only.
     scoreBreakdown:       jsonb("score_breakdown"),
     createdAt:            timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     completedAt:          timestamp("completed_at", { withTimezone: true })

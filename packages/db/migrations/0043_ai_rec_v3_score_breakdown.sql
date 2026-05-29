@@ -40,7 +40,26 @@ BEGIN
 END;
 $$;
 
--- score_breakdown shape (stored as JSONB object, NOT array — no typeof check):
+-- ============================================================
+-- Add CHECK constraint: score_breakdown must be NULL or a JSON object
+-- Prevents accidental writes of arrays or scalars into this column.
+-- Idempotent: only adds constraint if not already present in pg_constraint.
+-- Constraint name: ai_recommendations_runs_score_breakdown_obj_chk
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'ai_recommendations_runs_score_breakdown_obj_chk'
+  ) THEN
+    ALTER TABLE ai_recommendations_runs
+      ADD CONSTRAINT ai_recommendations_runs_score_breakdown_obj_chk
+      CHECK (score_breakdown IS NULL OR jsonb_typeof(score_breakdown) = 'object');
+  END IF;
+END;
+$$;
+
+-- score_breakdown shape (stored as JSONB object, NOT array — enforced by CHECK above):
 -- {
 --   "itemCount": <integer>,
 --   "incompleteCount": <integer>,
