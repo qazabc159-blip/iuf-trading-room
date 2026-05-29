@@ -27,4 +27,11 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("sector:industryLabel(company?.chainPosition");
     expect(liveHydration).toContain('setText(".symhead .meta", industryLabel(selected.sector');
   });
+
+  it("keeps K-line overlays as real toggle controls instead of decorative labels", () => {
+    expect(ticketHtml).toContain('type="button" class="tool on" data-layer="ma"');
+    expect(ticketHtml).toContain('type="button" class="tool on" data-layer="vwap"');
+    expect(ticketHtml).toContain("function syncToolLayers()");
+    expect(ticketHtml).toContain("chart.dataset[layer]=isOn?'on':'off'");
+  });
 });

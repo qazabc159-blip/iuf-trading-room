@@ -208,10 +208,10 @@
         </div>
 
         <div class="toolset">
-          <span class="tool on"><i class="ma"></i>MA20</span>
-          <span class="tool on"><i class="vw"></i>VWAP</span>
-          <span class="tool on"><i class="sr"></i>支撐 / 阻力</span>
-          <span class="tool on"><i class="lv"></i>計畫點位</span>
+          <button type="button" class="tool on" data-layer="ma" aria-pressed="true" aria-label="切換 MA20 圖層"><i class="ma" aria-hidden="true"></i><span>MA20</span></button>
+          <button type="button" class="tool on" data-layer="vwap" aria-pressed="true" aria-label="切換 VWAP 圖層"><i class="vw" aria-hidden="true"></i><span>VWAP</span></button>
+          <button type="button" class="tool on" data-layer="sr" aria-pressed="true" aria-label="切換支撐阻力圖層"><i class="sr" aria-hidden="true"></i><span>支撐 / 阻力</span></button>
+          <button type="button" class="tool on" data-layer="lv" aria-pressed="true" aria-label="切換計畫點位圖層"><i class="lv" aria-hidden="true"></i><span>計畫點位</span></button>
         </div>
 
         <div class="legend">
@@ -772,6 +772,23 @@ wrap.addEventListener('mousemove',e=>{
   cd.className='v '+(chg>=0?'up':'dn');
 });
 wrap.addEventListener('mouseleave',()=>{cross.style.display='none';tip.style.display='none'});
+
+function syncToolLayers(){
+  const chart=document.getElementById('chart');
+  document.querySelectorAll('.toolset .tool[data-layer]').forEach(btn=>{
+    const layer=btn.dataset.layer;
+    const isOn=btn.classList.contains('on');
+    if(layer&&chart)chart.dataset[layer]=isOn?'on':'off';
+    btn.setAttribute('aria-pressed',String(isOn));
+  });
+}
+document.querySelectorAll('.toolset .tool[data-layer]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    btn.classList.toggle('on');
+    syncToolLayers();
+  });
+});
+syncToolLayers();
 
 // initial chart — deferred to after hydration paints real OHLCV;
 // drawChart will be called by hydratePaper() once real data arrives.
