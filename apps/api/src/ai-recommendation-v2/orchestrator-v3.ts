@@ -366,6 +366,8 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
         row.status === "synthesis_format_error" &&
         ((row.items ?? []) as unknown[]).length >= MIN_V3_RECOMMENDATION_ITEMS,
       dbRowId: row.id,
+      // Restore score_breakdown from DB (migration 0043 column)
+      scoreBreakdown: row.scoreBreakdown ? (row.scoreBreakdown as unknown as AiRecRunScoreBreakdown) : undefined,
     };
     const officialAnnouncementSourceState = deriveOfficialAnnouncementSourceStateFromTrace(
       result.reactTrace,

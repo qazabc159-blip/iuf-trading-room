@@ -15589,7 +15589,7 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
         state: "pending",
         source: "ai_recommendations_runs",
         owner: "Jason/API",
-        nextAction: "Trigger or wait for AI recommendation v3 refresh; DB migration 0042 must allow v3 trigger persistence."
+        nextAction: "Trigger or wait for AI recommendation v3 refresh. (DB: migration 0041 creates table; migration 0043 adds score_breakdown column.)"
       },
       officialAnnouncementSourceState: {
         state: "pending",
@@ -15636,6 +15636,7 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     synthesisRetryUsed: latest.synthesisRetryUsed ?? false,
     synthesisFallbackUsed,
     usedFallback: synthesisFallbackUsed,
+    scoreBreakdown: latest.scoreBreakdown ?? null,
     // F4 debug fields:
     reactTrace: includeTrace ? latest.reactTrace : undefined,
     finalReportMarkdown: latest.finalReportMarkdown,

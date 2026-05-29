@@ -13560,6 +13560,65 @@ test("AI-REC-V3-7AXIS-3: buildWhyBuyBrief truncates long bullets to ≤80 chars 
   assert.equal(buildWhyBuyBrief(undefined), undefined, "AI-REC-V3-7AXIS-3: undefined must return undefined");
 });
 
+test("AI-REC-V3-7AXIS-4: buildSourceTrailForTicker includes market-level tools and matching ticker-specific tools only", async () => {
+  const { buildSourceTrailForTicker } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+
+  // Mock trace: 1 market-level tool (get_market_overview, no ticker),
+  //             1 ticker-specific for 2330 (should be included for ticker=2330),
+  //             1 ticker-specific for 2454 (should NOT be included for ticker=2330)
+  const mockTrace = [
+    {
+      round: 1,
+      thought: "市場概況分析",
+      toolName: "get_market_overview",
+      toolInput: null,
+      observation: { trend_score: 3, risk_off_score: 1, breadth: "positive" },
+      tokensUsed: 100,
+    },
+    {
+      round: 2,
+      thought: "查詢台積電技術面",
+      toolName: "get_company_technical",
+      toolInput: { ticker: "2330" },
+      observation: { lastPrice: 920, ma20: 900, rsi14: 62 },
+      tokensUsed: 80,
+    },
+    {
+      round: 3,
+      thought: "查詢聯發科技術面",
+      toolName: "get_company_technical",
+      toolInput: { ticker: "2454" },
+      observation: { lastPrice: 1200, ma20: 1180, rsi14: 55 },
+      tokensUsed: 80,
+    },
+  ];
+
+  const trail = buildSourceTrailForTicker(mockTrace, "2330");
+
+  // Must include 2 entries: get_market_overview (market-level) + get_company_technical for 2330
+  assert.equal(trail.length, 2, "AI-REC-V3-7AXIS-4: trail must contain exactly 2 entries (1 market-level + 1 ticker-specific match)");
+
+  // Market-level tool must be present with no ticker field
+  const marketEntry = trail.find((e: any) => e.toolName === "get_market_overview");
+  assert.ok(marketEntry, "AI-REC-V3-7AXIS-4: market-level tool get_market_overview must be in trail");
+  assert.equal(marketEntry.ticker, undefined, "AI-REC-V3-7AXIS-4: market-level entry must have no ticker field");
+  assert.equal(marketEntry.round, 1, "AI-REC-V3-7AXIS-4: market-level entry must carry correct round number");
+
+  // Ticker-specific entry for 2330 must be present
+  const tickerEntry = trail.find((e: any) => e.toolName === "get_company_technical");
+  assert.ok(tickerEntry, "AI-REC-V3-7AXIS-4: ticker-specific tool get_company_technical must be in trail");
+  assert.equal(tickerEntry.ticker, "2330", "AI-REC-V3-7AXIS-4: ticker-specific entry must carry ticker=2330");
+  assert.equal(tickerEntry.round, 2, "AI-REC-V3-7AXIS-4: ticker-specific entry must carry correct round number");
+
+  // 2454-specific entry must NOT appear in 2330 trail
+  const wrongTicker = trail.find((e: any) => e.ticker === "2454");
+  assert.equal(wrongTicker, undefined, "AI-REC-V3-7AXIS-4: entry for different ticker 2454 must NOT appear in 2330 trail");
+
+  // dataFields must be populated from flat scalar fields in observation
+  assert.ok(Array.isArray(marketEntry.dataFields), "AI-REC-V3-7AXIS-4: dataFields must be an array");
+  assert.ok(marketEntry.dataFields.includes("trend_score"), "AI-REC-V3-7AXIS-4: flat scalar field trend_score must be in market entry dataFields");
+});
+
 test("MARKET-INTEL-P0-GATE-1: announcements API exposes sourceState", async () => {
   const fs = await import("node:fs/promises");
   const source = await fs.readFile("apps/api/src/server.ts", "utf8");
