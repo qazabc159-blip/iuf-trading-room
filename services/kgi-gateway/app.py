@@ -26,6 +26,7 @@ Hardlines:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -505,7 +506,7 @@ async def get_position() -> PositionResponse:
         logger.info("position_diag step=after_reset_index rows=%d cols=%d", len(df_reset), len(df_reset.columns))
         df_reset.columns = [str(c) for c in df_reset.columns]
         logger.info("position_diag step=before_to_dict")
-        positions = df_reset.to_dict(orient="records")
+        positions = json.loads(df_reset.to_json(orient="records", force_ascii=False))
         logger.info("position_diag step=after_to_dict count=%d", len(positions))
         logger.info("position_diag step=return reason=ok elapsed_ms=%.1f", (time.perf_counter() - t0) * 1000)
         return PositionResponse(positions=positions)
