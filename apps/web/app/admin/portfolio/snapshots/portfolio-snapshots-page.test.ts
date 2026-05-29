@@ -9,6 +9,14 @@ describe("Portfolio Snapshot admin page product truth", () => {
     expect(source).toContain("/api/v1/portfolio/snapshots?limit=20");
   });
 
+  it("can request a manual paper-only snapshot capture without broker writes", () => {
+    expect(source).toContain("/api/v1/portfolio/snapshots/capture-paper");
+    expect(source).toContain("擷取 paper snapshot");
+    expect(source).toContain("不送 KGI、不送實單");
+    expect(source).toContain("brokerWrite={String(captureResult.brokerWrite)}");
+    expect(source).toContain("kgiWrite={String(captureResult.kgiWrite)}");
+  });
+
   it("labels empty positions honestly instead of looking like fake data", () => {
     expect(source).toContain("目前 20 筆快照都是空持倉");
     expect(source).toContain("正式 API 回傳的空 positions");
