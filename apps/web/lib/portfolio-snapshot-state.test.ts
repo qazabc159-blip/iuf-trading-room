@@ -7,11 +7,11 @@ describe("portfolioSnapshotStateCopy", () => {
     const copy = portfolioSnapshotStateCopy({ phase: "empty", count: 0 });
 
     expect(copy.title).toBe("Portfolio Snapshot EMPTY");
-    expect(copy.detail).toContain("read API 已可用");
+    expect(copy.detail).toContain("API 可連線");
+    expect(copy.detail).toContain("不可假裝有資料");
     expect(copy.endpoint).toBe("/api/v1/portfolio/snapshots");
-    expect(copy.owner).toContain("系統快照寫入流程");
+    expect(copy.owner).toContain("Elva/Jason");
     expect(copy.nextAction).toContain("snapshot writer");
-    expect(`${copy.title} ${copy.detail} ${copy.nextAction}`).not.toContain("0037");
     expect(`${copy.title} ${copy.detail} ${copy.nextAction}`).not.toContain("migration");
   });
 
@@ -28,7 +28,8 @@ describe("portfolioSnapshotStateCopy", () => {
     const copy = portfolioSnapshotStateCopy({ phase: "live", count: 3 });
 
     expect(copy.title).toContain("3 筆");
-    expect(copy.detail).toContain("後端回傳");
+    expect(copy.detail).toContain("正式 snapshot API");
+    expect(copy.detail).toContain("不是即時庫存");
     expect(copy.nextAction).toContain("diff");
   });
 });
