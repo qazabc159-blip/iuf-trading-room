@@ -1,0 +1,108 @@
+[
+  {
+    "route": "/ai-recommendations",
+    "status": 200,
+    "textLength": 2835,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\ai_recommendations.png"
+  },
+  {
+    "route": "/ideas",
+    "status": 200,
+    "textLength": 2835,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\ideas.png"
+  },
+  {
+    "route": "/market-intel",
+    "status": 200,
+    "textLength": 799,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\market_intel.png"
+  },
+  {
+    "route": "/portfolio",
+    "status": 200,
+    "textLength": 1485,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\portfolio.png"
+  },
+  {
+    "route": "/companies",
+    "status": 200,
+    "textLength": 2132,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\companies.png"
+  },
+  {
+    "route": "/companies/2330",
+    "status": 200,
+    "textLength": 7324,
+    "appError": false,
+    "forbiddenHits": [
+      "Brain ReAct",
+      "Technology"
+    ],
+    "errors": [
+      "console:Access to fetch at 'https://api.eycvector.com/auth/me' from origin 'https://app.eycvector.com' has been blocked by CORS policy: Request header field cache-control is not allowed by Access-Control-Allow-Headers in preflight response.",
+      "console:Failed to load resource: net::ERR_FAILED"
+    ],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\companies_2330.png"
+  },
+  {
+    "route": "/admin/brain/llm",
+    "status": 200,
+    "textLength": 6346,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\admin_brain_llm.png"
+  },
+  {
+    "route": "/admin/events",
+    "status": 200,
+    "textLength": 699,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [
+      "console:Access to fetch at 'https://api.eycvector.com/api/v1/admin/event-log/outbox/diag' from origin 'https://app.eycvector.com' has been blocked by CORS policy: Request header field cache-control is not allowed by Access-Control-Allow-Headers in preflight response.",
+      "console:Failed to load resource: net::ERR_FAILED",
+      "console:Access to fetch at 'https://api.eycvector.com/api/v1/event-streams' from origin 'https://app.eycvector.com' has been blocked by CORS policy: Request header field cache-control is not allowed by Access-Control-Allow-Headers in preflight response.",
+      "console:Failed to load resource: net::ERR_FAILED"
+    ],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\admin_events.png"
+  },
+  {
+    "route": "/admin/tools",
+    "status": 200,
+    "textLength": 17434,
+    "appError": false,
+    "forbiddenHits": [
+      "sourceState"
+    ],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\admin_tools.png"
+  },
+  {
+    "route": "/admin/portfolio/snapshots",
+    "status": 200,
+    "textLength": 689,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [
+      "console:Access to fetch at 'https://api.eycvector.com/api/v1/portfolio/snapshots?limit=20' from origin 'https://app.eycvector.com' has been blocked by CORS policy: Request header field cache-control is not allowed by Access-Control-Allow-Headers in preflight response.",
+      "console:Failed to load resource: net::ERR_FAILED"
+    ],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_778_779_20260528_202717Z\\admin_portfolio_snapshots.png"
+  }
+]

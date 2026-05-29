@@ -1,0 +1,42 @@
+[
+  {
+    "route": "/ai-recommendations",
+    "status": 200,
+    "mainLen": 2780,
+    "frameLen": 0,
+    "errors": [],
+    "forbidden": [],
+    "sample": "I IUF · 戰情台 v3.0 · TACTICAL 台股 AI 交易戰情室 操作員 · IUF-01 模擬模式 / 風控守門 戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 MARKET · INTEL 正式資料 / 風控守門 登出 警示通知，7 則未讀 7 AI 推薦 AI 推薦 Recommendation Orchestrator 台北 / 2026/5/29 04:04:55 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。 台股目前盤後或週末休市，顯示 05/29 (五) 收盤 收盤資料 即時行情將於下一交易日 09:00 恢復 趨勢盤 / 趨勢分數偏強，可照 SOP 執行。 部位係數 1.0 策略執行紀錄 訊號中心 AI 推薦 / 今日 AI 推薦 產生時間 05/20 18:41 / 正式資料 5 檔 已取得正式 AI 推薦 目前顯示 5 檔，未使用備援補牌。 推薦數量 5/5 生成狀態 完成 備援補牌 未使用 官方公告 待接入 2330台積電 C 推薦級 信心 50% 盤勢係數 0.6 題材 營收 法人/ETF 籌碼 RS/量 技術 估值/事件 總分 10/20 10/15 10/15 10/15 5/10 5/20 5/5 55/100 建議進場區間 2,100 - 2,200 短期壓力，RSI中性 目標一 2,250 目標二 2,300 停損 2,050 風報比 0.75R 推薦理由 1. 台積電在半導體產業中具領導地位 長期成長潛力大。2. 技術面顯示出穩定性 雖然短期壓力存在 但仍可觀察。 1. 台積電在半導體產業中具領導地位; 長期成長潛力大。2. ",
+    "shot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_777_2026-05-28\\ai-recommendations.png"
+  },
+  {
+    "route": "/ideas",
+    "status": 200,
+    "mainLen": 2780,
+    "frameLen": 0,
+    "errors": [],
+    "forbidden": [],
+    "sample": "I IUF · 戰情台 v3.0 · TACTICAL 台股 AI 交易戰情室 操作員 · IUF-01 模擬模式 / 風控守門 戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 MARKET · INTEL 正式資料 / 風控守門 登出 警示通知，7 則未讀 7 AI 推薦 AI 推薦 Recommendation Orchestrator 台北 / 2026/5/29 04:05:01 資料 / 正式資料 模式 / 觀察與研究 研究 / 前端資料 推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。 台股目前盤後或週末休市，顯示 05/29 (五) 收盤 收盤資料 即時行情將於下一交易日 09:00 恢復 趨勢盤 / 趨勢分數偏強，可照 SOP 執行。 部位係數 1.0 策略執行紀錄 訊號中心 AI 推薦 / 今日 AI 推薦 產生時間 05/20 18:41 / 正式資料 5 檔 已取得正式 AI 推薦 目前顯示 5 檔，未使用備援補牌。 推薦數量 5/5 生成狀態 完成 備援補牌 未使用 官方公告 待接入 2330台積電 C 推薦級 信心 50% 盤勢係數 0.6 題材 營收 法人/ETF 籌碼 RS/量 技術 估值/事件 總分 10/20 10/15 10/15 10/15 5/10 5/20 5/5 55/100 建議進場區間 2,100 - 2,200 短期壓力，RSI中性 目標一 2,250 目標二 2,300 停損 2,050 風報比 0.75R 推薦理由 1. 台積電在半導體產業中具領導地位 長期成長潛力大。2. 技術面顯示出穩定性 雖然短期壓力存在 但仍可觀察。 1. 台積電在半導體產業中具領導地位; 長期成長潛力大。2. ",
+    "shot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_777_2026-05-28\\ideas.png"
+  },
+  {
+    "route": "/market-intel",
+    "status": 200,
+    "mainLen": 266,
+    "frameLen": 2646,
+    "errors": [],
+    "forbidden": [],
+    "sample": "I IUF · 戰情台 v3.0 · TACTICAL 台股 AI 交易戰情室 操作員 · IUF-01 模擬模式 / 風控守門 戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 MARKET · INTEL 正式資料 / 風控守門 登出 警示通知，7 則未讀 7 市場情報 今日重點、來源狀態與 AI 精選訊息 今日訊息 104 AI 精選 10 來源正常 2 / 4 下次抓取 剛剛 研究模式 本頁僅做研究判讀，不下單、不顯示目標價或勝率。下一步請進策略想法。 RESEARCH AI selector 已完成今日篩選。 知道了 AI 精選 · 今日重點 AI 精選已回傳 看全部 › 全部 10 AI 硬體 0 半導體 2 金融 0 電動車 0 ⌕ 1589 4.3萬股東注意！永冠-KY最快11/18下市 股票恐淪廢紙 - 東森電視 FinMind · MID · 永冠-KY · 查看公司 · 查看主題 · 查看推薦 為什麼重要 重要台股消息：4.3萬股東注意！永冠-KY最快11/18下市 股票恐淪廢紙 2 天前 › 1589 4.3萬股東注意！永冠-KY最快11/18下市 股票恐淪廢紙 - 東森新聞 FinMind · MID · 永冠-KY · 查看公司 · 查看主題 · 查看推薦 為什麼重要 重要台股消息：4.3萬股東注意！永冠-KY最快11/18下市 股票恐淪廢紙 2 天前 › 1589 4.3萬股東注意！永冠-KY最快11/18下市 股票恐淪廢紙 | EBC 東森新聞 - LINE TODAY FinMind · MID · 永冠-KY · 查看公司 · 查看主題 · 查看推薦 為什麼重要 重要台股消息：4.3萬股東注意！永冠-KY最快11/18下市 股票恐淪廢紙 2 天前 › 1529 盈餘：樂事",
+    "shot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_777_2026-05-28\\market-intel.png"
+  },
+  {
+    "route": "/portfolio",
+    "status": 200,
+    "mainLen": 266,
+    "frameLen": 1374,
+    "errors": [],
+    "forbidden": [],
+    "sample": "I IUF · 戰情台 v3.0 · TACTICAL 台股 AI 交易戰情室 操作員 · IUF-01 模擬模式 / 風控守門 戰情台 盤勢與任務 市場情報 重大訊息 AI 推薦 推薦引擎 交易室 委託與部位 公司 / 主題 公司圖譜 量化策略 SIM-only OPENALICE Brain LLM 費用 EventLog 事件流 Portfolio 快照版本 Tools 工具登錄 UTA 帳號管理 Strategies Lab 策略狀態 MARKET · INTEL 正式資料 / 風控守門 登出 警示通知，7 則未讀 7 PAPER MODE ACTIVE REAL ORDER DISABLED KGI READ-ONLY SAFE · PAPER ISOLATED · 本頁所有委託皆走模擬通道，不會送出實單；KGI 連線僅供讀取庫存對照。 觀察清單 3 個分組 ⌕ ⌘K 自選 8 今日有訊號 8 Paper 候選 8 8 檔自選 / 候選 2330 2330 0 股 · 2 筆成交 2,295 −0.22% 1514 亞力 不進流程 · 0 訊號 — — 1560 中砂 不進流程 · 0 訊號 — — 1590 亞德客-KY 不進流程 · 0 訊號 — — 1721 三晃 不進流程 · 0 訊號 — — 1723 中碳 不進流程 · 0 訊號 — — 1809 中釉 不進流程 · 0 訊號 — — 2066 世德 不進流程 · 0 訊號 — — 2330 台積電 半導體 2,295 ▼ −5.00 −0.22% 開盤 2,350 高 2,360 低 2,270 昨收 2,300 量 42,313,277 股 1m 5m 15m 1d 1w MA20 VWAP 支撐 / 阻力 計畫點位 O 2,350 H 2,360 L 2,270 C 2,295 2360.0 1893.8 1427.5 961.3 495.0 阻力 975.00 支撐 935.00 目標 985 建倉 950 停損 920 委買 / 委賣 五檔 目前為非交易時段，盤口暫不更新（次日 09:00",
+    "shot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_777_2026-05-28\\portfolio.png"
+  }
+]
