@@ -268,10 +268,10 @@ jobs:
           }
 
           # Hard check: migration count must match expected total.
-          # Current prod value: 43 (5/18 PR-A backend gate, migration 0042 v3 status/trigger).
-          # Repo has 41 current forward files through 0042, prod schema_migrations contains
-          # 2 legacy applied rows from earlier migration history = 41 + 2 = 43 total.
-          $expectedMigrationCount = "43"
+          # Current prod value: 44 (5/29 PR #757, migration 0043 ai_rec_v3 score_breakdown).
+          # Repo has 42 current forward files through 0043, prod schema_migrations contains
+          # 2 legacy applied rows from earlier migration history = 42 + 2 = 44 total.
+          $expectedMigrationCount = "44"
           if ($count -ne $expectedMigrationCount) {
             Write-Host "::error::Migration count mismatch: expected $expectedMigrationCount but got $count. Check Railway boot logs for advisory lock contention or migration errors."
             exit 1
