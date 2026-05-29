@@ -11137,54 +11137,104 @@ app.get("/api/v1/paper/fills", async (c) => {
   return c.json({ data: fills });
 });
 
-// GET /api/v1/paper/portfolio
-// Aggregates FILLED orders into a per-symbol position snapshot.
-// Computation: net qty (buy positive, sell negative), weighted avg cost.
-// Returns 200 + { data: PortfolioPosition[] }.
-app.get("/api/v1/paper/portfolio", async (c) => {
-  const session = c.get("session");
+type ComputedPaperPortfolioPosition = {
+  symbol: string;
+  netQtyShares: number;
+  avgCostPerShare: number | null;
+  fillCount: number;
+  lastPrice: number | null;
+  note: string | null;
+  investedCostTWD: number;
+};
+
+async function computePaperPortfolioPositions(userId: string): Promise<ComputedPaperPortfolioPosition[]> {
   let orders;
   try {
-    orders = await listOrders(session.user.id, { status: "FILLED" });
+    orders = await listOrders(userId, { status: "FILLED" });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error("[paper/portfolio] listOrders failed:", detail);
-    return c.json({ error: "list_orders_failed", detail }, 500);
+    throw new Error(`list_orders_failed: ${detail}`);
   }
 
-  // Aggregate per symbol
   const positions = new Map<string, {
     symbol: string;
     netQty: number;
     totalCost: number;
     fillCount: number;
+    lastPrice: number | null;
   }>();
 
-  for (const o of orders) {
+  const sortedOrders = [...orders].sort((a, b) => {
+    const aTime = a.fill?.fillTime instanceof Date
+      ? a.fill.fillTime.getTime()
+      : Date.parse(String(a.fill?.fillTime ?? ""));
+    const bTime = b.fill?.fillTime instanceof Date
+      ? b.fill.fillTime.getTime()
+      : Date.parse(String(b.fill?.fillTime ?? ""));
+    return (Number.isFinite(aTime) ? aTime : 0) - (Number.isFinite(bTime) ? bTime : 0);
+  });
+
+  for (const o of sortedOrders) {
     if (!o.fill) continue;
     const symbol = o.intent.symbol;
-    const p = positions.get(symbol) ?? { symbol, netQty: 0, totalCost: 0, fillCount: 0 };
-    const shareQty = o.intent.quantity_unit === "LOT"
-      ? o.fill.fillQty * 1000
-      : o.fill.fillQty;
-    const sign = o.intent.side === "buy" ? 1 : -1;
-    p.netQty += sign * shareQty;
+    const p = positions.get(symbol) ?? { symbol, netQty: 0, totalCost: 0, fillCount: 0, lastPrice: null };
+    let shareQty = Math.max(0, Number(o.fill.fillQty) || 0);
+    if (shareQty <= 0) continue;
+
     if (o.intent.side === "buy") {
-      p.totalCost += shareQty * o.fill.fillPrice;
+      if (p.netQty < 0) {
+        const coverQty = Math.min(shareQty, Math.abs(p.netQty));
+        p.netQty += coverQty;
+        shareQty -= coverQty;
+      }
+      if (shareQty > 0) {
+        p.netQty += shareQty;
+        p.totalCost += shareQty * o.fill.fillPrice;
+      }
+    } else {
+      if (p.netQty > 0) {
+        const avgCost = p.totalCost / p.netQty;
+        const closingQty = Math.min(shareQty, p.netQty);
+        p.totalCost -= avgCost * closingQty;
+        p.netQty -= shareQty;
+        if (p.netQty <= 0) p.totalCost = 0;
+      } else {
+        p.netQty -= shareQty;
+        p.totalCost = 0;
+      }
     }
     p.fillCount++;
+    p.lastPrice = o.fill.fillPrice;
     positions.set(symbol, p);
   }
 
-  const positionList = Array.from(positions.values()).map((p) => ({
+  return Array.from(positions.values()).map((p) => ({
     symbol: p.symbol,
     netQtyShares: p.netQty,
     avgCostPerShare: p.netQty > 0
       ? Math.round((p.totalCost / p.netQty) * 100) / 100
       : null,
     fillCount: p.fillCount,
+    lastPrice: p.lastPrice,
+    investedCostTWD: Math.max(0, Math.round(p.totalCost * 100) / 100),
     note: p.netQty <= 0 ? "net_flat_or_short" : null
   }));
+}
+
+// GET /api/v1/paper/portfolio
+// Aggregates FILLED orders into a per-symbol position snapshot.
+// Computation: net qty (buy positive, sell negative), weighted avg cost.
+// Returns 200 + { data: PortfolioPosition[] }.
+app.get("/api/v1/paper/portfolio", async (c) => {
+  const session = c.get("session");
+  let positionList: ComputedPaperPortfolioPosition[];
+  try {
+    positionList = await computePaperPortfolioPositions(session.user.id);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "list_orders_failed", detail }, 500);
+  }
 
   // Base capital per BLOCK #5 §5: paper E2E must show simulated capital, not null.
   // PAPER_BROKER_INITIAL_CASH env var overrides; default NT$10,000,000 (楊董ack 2026-05-13).
@@ -11194,9 +11244,9 @@ app.get("/api/v1/paper/portfolio", async (c) => {
     : 10_000_000;
 
   // Compute invested capital from current open positions (buy cost basis only)
-  const investedCost = Array.from(positions.values())
-    .filter((p) => p.netQty > 0)
-    .reduce((acc, p) => acc + p.totalCost, 0);
+  const investedCost = positionList
+    .filter((p) => p.netQtyShares > 0)
+    .reduce((acc, p) => acc + p.investedCostTWD, 0);
 
   const summary = {
     baseCapitalTWD,
@@ -16330,6 +16380,22 @@ type PortfolioSnapshotRecordLike = {
   createdAt: Date;
 };
 
+async function buildPaperPortfolioSnapshotPositions(userId: string): Promise<PortfolioSnapshotPositionsMap> {
+  const paperPositions = await computePaperPortfolioPositions(userId);
+  const positions: PortfolioSnapshotPositionsMap = {};
+
+  for (const position of paperPositions) {
+    if (position.netQtyShares <= 0 || position.avgCostPerShare === null) continue;
+    positions[position.symbol] = {
+      shares: position.netQtyShares,
+      avgCost: position.avgCostPerShare,
+      lastPrice: position.lastPrice ?? undefined
+    };
+  }
+
+  return positions;
+}
+
 function portfolioPositionsToArray(positions: PortfolioSnapshotPositionsMap) {
   return Object.entries(positions ?? {})
     .sort(([a], [b]) => a.localeCompare(b))
@@ -16361,6 +16427,52 @@ function serializePortfolioDiffMap(positions: PortfolioSnapshotPositionsMap) {
     avgCost: position.avgCost
   }));
 }
+
+app.post("/api/v1/portfolio/snapshots/capture-paper", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const workspaceId = session.workspace?.id;
+  if (!workspaceId) return c.json({ error: "workspace_not_resolved" }, 400);
+
+  try {
+    const positions = await buildPaperPortfolioSnapshotPositions(session.user.id);
+    const positionCount = Object.keys(positions).length;
+    const { createSnapshot } = await import("./portfolio-snapshot-store.js");
+    const snapshot = await createSnapshot({
+      workspaceId,
+      positions,
+      trigger: "manual",
+      metadata: {
+        source: "paper_portfolio_manual_capture",
+        capturedAt: new Date().toISOString(),
+        userId: session.user.id,
+        simulated: true,
+        brokerWrite: false,
+        kgiWrite: false,
+        note: positionCount === 0
+          ? "Manual paper snapshot capture: no open paper positions"
+          : "Manual paper snapshot capture from filled paper orders"
+      }
+    });
+
+    return c.json({
+      data: {
+        snapshot: serializePortfolioSnapshot(snapshot),
+        positionCount,
+        source: "paper_portfolio",
+        simulated: true,
+        brokerWrite: false,
+        kgiWrite: false
+      }
+    }, 201);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[portfolio/snapshots/capture-paper] failed:", detail);
+    return c.json({ error: "paper_portfolio_capture_failed", detail }, 500);
+  }
+});
 
 app.get("/api/v1/portfolio/snapshots", async (c) => {
   const session = c.get("session");

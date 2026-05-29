@@ -228,6 +228,48 @@ const CSS = `
     line-height: 1.7;
   }
   ._snap-truth-box strong { color: #ffb800; }
+  ._snap-action-band {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    border: 1px solid rgba(76,175,80,0.2);
+    background: rgba(76,175,80,0.055);
+    border-radius: 6px;
+  }
+  ._snap-action-title {
+    color: rgba(255,255,255,0.9);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  ._snap-action-copy {
+    color: rgba(255,255,255,0.58);
+    font-size: 11px;
+    line-height: 1.65;
+    margin-top: 3px;
+  }
+  ._snap-action-result {
+    padding: 8px 10px;
+    margin: -2px 0 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.035);
+    color: rgba(255,255,255,0.72);
+    font-size: 11px;
+    line-height: 1.65;
+  }
+  ._snap-action-result strong { color: #ffb800; }
+  ._snap-action-result.error {
+    border-color: rgba(239,83,80,0.32);
+    background: rgba(239,83,80,0.08);
+    color: rgba(255,255,255,0.82);
+  }
+  @media (max-width: 720px) {
+    ._snap-action-band { align-items: stretch; flex-direction: column; }
+    ._snap-action-band ._snap-btn { width: 100%; }
+  }
 `;
 
 type SnapshotPosition = {
@@ -253,6 +295,15 @@ type DiffEntry = {
   added: Array<{ ticker: string; shares: number; avgCost: number }>;
   removed: Array<{ ticker: string; shares: number; avgCost: number }>;
   changed: Array<{ ticker: string; fromShares: number; toShares: number; fromAvgCost: number; toAvgCost: number }>;
+};
+
+type CapturePaperSnapshotResult = {
+  snapshot: SnapshotEntry;
+  positionCount: number;
+  source: "paper_portfolio";
+  simulated: boolean;
+  brokerWrite: boolean;
+  kgiWrite: boolean;
 };
 
 function fmtDT(iso: string) {
@@ -300,6 +351,18 @@ async function apiFetch<T>(path: string): Promise<T> {
   return json.data;
 }
 
+async function apiPost<T>(path: string): Promise<T> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+  const res = await fetch(`${base}${path}`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const json = await res.json() as { data: T };
+  return json.data;
+}
+
 export default function PortfolioSnapshotsPage() {
   const [snapshots, setSnapshots] = useState<SnapshotEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -312,6 +375,9 @@ export default function PortfolioSnapshotsPage() {
   const [diff, setDiff] = useState<DiffEntry | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState("");
+  const [captureLoading, setCaptureLoading] = useState(false);
+  const [captureError, setCaptureError] = useState("");
+  const [captureResult, setCaptureResult] = useState<CapturePaperSnapshotResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -365,6 +431,27 @@ export default function PortfolioSnapshotsPage() {
     };
   }, [diffFrom, diffTo]);
 
+  const capturePaperSnapshot = useCallback(() => {
+    setCaptureLoading(true);
+    setCaptureError("");
+    setCaptureResult(null);
+
+    apiPost<CapturePaperSnapshotResult>("/api/v1/portfolio/snapshots/capture-paper")
+      .then((result) => {
+        setCaptureResult(result);
+        setSnapshots((prev) => [result.snapshot, ...prev.filter((s) => s.id !== result.snapshot.id)]);
+        setSelected(result.snapshot);
+        setPhase("live");
+        setLoadError(null);
+      })
+      .catch((err: Error) => {
+        setCaptureError(err.message);
+      })
+      .finally(() => {
+        setCaptureLoading(false);
+      });
+  }, []);
+
   const snapshotState = portfolioSnapshotStateCopy({ phase, count: snapshots.length, error: loadError });
   const latest = snapshots[0] ?? null;
   const stats = useMemo(() => {
@@ -404,6 +491,31 @@ export default function PortfolioSnapshotsPage() {
             <dd>{snapshotState.nextAction}</dd>
           </dl>
         </div>
+
+        <div className="_snap-action-band">
+          <div>
+            <div className="_snap-action-title">擷取目前 paper snapshot</div>
+            <div className="_snap-action-copy">
+              從目前登入者的 paper orders / fills 計算持倉並寫入 manual snapshot。這是平台模擬帳本，不送 KGI、不送實單，也不會改券商 SIM 帳戶。
+            </div>
+          </div>
+          <button className="_snap-btn" type="button" disabled={captureLoading} onClick={capturePaperSnapshot}>
+            {captureLoading ? "擷取中..." : "擷取 paper snapshot"}
+          </button>
+        </div>
+        {captureResult && (
+          <div className="_snap-action-result" role="status">
+            <strong>擷取完成：</strong>
+            寫入 {shortId(captureResult.snapshot.id)}，持倉 {captureResult.positionCount} 檔，來源 {captureResult.source}。
+            安全旗標：brokerWrite={String(captureResult.brokerWrite)} / kgiWrite={String(captureResult.kgiWrite)} / simulated={String(captureResult.simulated)}。
+            {captureResult.positionCount === 0 ? " 目前 paper 帳本沒有開放持倉，所以這筆快照會誠實顯示空持倉。" : ""}
+          </div>
+        )}
+        {captureError && (
+          <div className="_snap-action-result error" role="alert">
+            paper snapshot 擷取失敗：{captureError}。請確認 owner session 與 paper ledger 狀態。
+          </div>
+        )}
 
         <div className="_snap-summary" aria-label="Portfolio snapshot summary">
           <div className="_snap-card">
