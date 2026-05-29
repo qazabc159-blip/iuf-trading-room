@@ -11,6 +11,7 @@ import {
 const TOOL_REGISTRY_ENDPOINT = "/api/v1/tools/registry";
 const TOOL_CALLS_ENDPOINT = "/api/v1/tools/calls?limit=50";
 const TOOL_STATS_ENDPOINT = "/api/v1/tools/stats?window=24h";
+const TOOL_EXECUTION_ENTRY = "backend callTool wrapper";
 
 const CSS = `
   ._tool-kpi {
@@ -100,7 +101,7 @@ const CSS = `
   }
   ._tool-table {
     width: 100%;
-    min-width: 980px;
+    min-width: 1120px;
     border-collapse: collapse;
     font-size: 11px;
   }
@@ -155,6 +156,19 @@ const CSS = `
     white-space: nowrap;
     font-family: var(--mono, monospace);
   }
+  ._tool-endpoint-stack {
+    display: grid;
+    gap: 4px;
+    min-width: 210px;
+  }
+  ._tool-endpoint-line {
+    display: block;
+    color: rgba(255,255,255,0.68);
+    font-size: 10px;
+    line-height: 1.35;
+    font-family: var(--mono, monospace);
+    overflow-wrap: anywhere;
+  }
   ._tool-stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -192,7 +206,7 @@ const CSS = `
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     ._tool-table {
-      min-width: 920px;
+      min-width: 1060px;
     }
   }
 `;
@@ -284,6 +298,10 @@ function shortJson(value: unknown) {
   }
   const text = JSON.stringify(value);
   return text && text !== "{}" ? "已定義輸入格式" : "不需輸入";
+}
+
+function toolDetailEndpoint(toolKey: string) {
+  return `${TOOL_REGISTRY_ENDPOINT}/${encodeURIComponent(toolKey)}`;
 }
 
 function productSummary(value: string | null | undefined, emptyLabel: string) {
@@ -421,6 +439,7 @@ function RegistryTable({
             <th>類型</th>
             <th>執行狀態</th>
             <th>權限 / 入口</th>
+            <th>真實 endpoint</th>
             <th>最後執行證據</th>
             <th>說明</th>
             <th>輸入欄位</th>
@@ -449,6 +468,13 @@ function RegistryTable({
                   <span className="_tool-badge" style={badgeStyle("warn")}>管理權限</span>
                   <span className="_tool-sub">登錄：管理權限可讀</span>
                   <span className="_tool-sub">執行：後端 callTool wrapper；此頁沒有手動執行按鈕。</span>
+                </td>
+                <td>
+                  <span className="_tool-endpoint-stack">
+                    <span className="_tool-endpoint-line">GET {toolDetailEndpoint(tool.toolKey)}</span>
+                    <span className="_tool-endpoint-line">audit {TOOL_CALLS_ENDPOINT}&amp;toolKey={encodeURIComponent(tool.toolKey)}</span>
+                    <span className="_tool-endpoint-line">execute {TOOL_EXECUTION_ENTRY}</span>
+                  </span>
                 </td>
                 <td>
                   <span className="_tool-badge" style={statusBadgeStyle(toolLatest?.status ?? "none")}>{statusLabel(toolLatest?.status)}</span>
