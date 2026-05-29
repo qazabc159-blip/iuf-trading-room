@@ -15590,7 +15590,27 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
         source: "ai_recommendations_runs",
         owner: "Jason/API",
         nextAction: "Trigger or wait for AI recommendation v3 refresh; DB migration 0042 must allow v3 trigger persistence."
-      }
+      },
+      officialAnnouncementSourceState: {
+        state: "pending",
+        source: "get_news_top10",
+        owner: "API",
+        reason: "尚未有 V3 run，無法判斷官方公告是否已納入。",
+        nextAction: "觸發或等待 V3 refresh 後由後端回傳官方公告來源狀態。",
+        lastUpdated: null,
+        count: 0,
+      },
+      sourceStates: {
+        officialAnnouncements: {
+          state: "pending",
+          source: "get_news_top10",
+          owner: "API",
+          reason: "尚未有 V3 run，無法判斷官方公告是否已納入。",
+          nextAction: "觸發或等待 V3 refresh 後由後端回傳官方公告來源狀態。",
+          lastUpdated: null,
+          count: 0,
+        },
+      },
     });
   }
   // debug=true query param exposes full trace (default: included for Owner; trimmed for public)
@@ -15608,6 +15628,10 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     totalCostUsd: latest.totalCostUsd,
     totalTokens: latest.totalTokens,
     itemCount: latest.items.length,
+    sourceState: latest.sourceState,
+    sourceStates: latest.sourceStates,
+    officialAnnouncementSourceState: latest.officialAnnouncementSourceState,
+    officialAnnouncementsSourceState: latest.officialAnnouncementSourceState,
     fullAiReportParsed: latest.status !== "synthesis_format_error",
     synthesisRetryUsed: latest.synthesisRetryUsed ?? false,
     synthesisFallbackUsed,
