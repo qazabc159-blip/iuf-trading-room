@@ -56,6 +56,7 @@ const OPENAI_MODEL_NEWS = "gpt-4o-mini";
 const MAX_INPUT_ROWS = 200;
 const MAX_TOKENS_RESPONSE = 2000;
 const AI_SELECTOR_MAX_ATTEMPTS = 2;
+const AI_SELECTOR_TIMEOUT_MS = 45_000;
 // A "window" is 6h wide (covers the gap between any two consecutive 4-window fires).
 const WINDOW_HOURS = 6;
 const EXPANDED_WINDOW_HOURS = 72;
@@ -555,12 +556,13 @@ async function callAiNewsSelector(
           workspaceId,
           maxTokens: MAX_TOKENS_RESPONSE,
           temperature: 0.2,
-          timeoutMs: 20_000
+          timeoutMs: AI_SELECTOR_TIMEOUT_MS,
+          responseFormat: "json_object"
         }
       );
 
       if (!result?.content) {
-        lastError = `attempt_${attempt}:llm-gateway returned null/empty content`;
+        lastError = `attempt_${attempt}:llm-gateway returned null (transport/timeout/quota/api failure; inspect llm_calls errorCode)`;
         console.warn(`[news-ai-selector] ${lastError}`);
         continue;
       }
