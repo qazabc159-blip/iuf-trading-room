@@ -93,6 +93,65 @@ function compactUnknown(value: unknown): string | null {
   return String(value);
 }
 
+function readTraceObservationForTicker(data: AiRecommendationV3Response | null | undefined, ticker: string): Record<string, unknown> | null {
+  const trace = Array.isArray(data?.reactTrace) ? data.reactTrace : [];
+  for (const step of trace) {
+    const record = asRecord(step);
+    const observation = asRecord(record?.observation);
+    if (!observation || String(observation.ticker ?? "") !== ticker) continue;
+    return observation;
+  }
+  return null;
+}
+
+function deriveSourceTrail(item: AiRecommendationV3Item, data: AiRecommendationV3Response | null | undefined): string | null {
+  const direct = compactUnknown(item.sourceTrail);
+  if (direct) return direct;
+
+  const parts: string[] = [];
+  if (item.source) parts.push(`recommendation_source=${item.source}`);
+
+  if (data?.sourceState) {
+    const run = [
+      data.sourceState.source ? `source=${data.sourceState.source}` : null,
+      data.sourceState.state ? `state=${data.sourceState.state}` : null,
+      data.sourceState.count != null ? `count=${data.sourceState.count}` : null,
+      data.sourceState.lastUpdated ? `lastUpdated=${data.sourceState.lastUpdated}` : null,
+    ].filter(Boolean).join(" ");
+    if (run) parts.push(`run(${run})`);
+  }
+
+  const official = readNamedSourceState(data, [
+    "officialAnnouncementSourceState",
+    "officialAnnouncementsSourceState",
+    "announcementSourceState",
+    "official_announcements",
+    "announcements",
+    "mops",
+  ]);
+  if (official) {
+    const line = [
+      official.source ? `source=${official.source}` : null,
+      official.state ? `state=${official.state}` : null,
+      official.count != null ? `count=${official.count}` : null,
+      official.lastUpdated ? `lastUpdated=${official.lastUpdated}` : null,
+    ].filter(Boolean).join(" ");
+    if (line) parts.push(`official_announcements(${line})`);
+  }
+
+  const technical = readTraceObservationForTicker(data, item.ticker);
+  if (technical) {
+    const line = [
+      technical.source ? `source=${String(technical.source)}` : null,
+      technical.asOf ? `asOf=${String(technical.asOf)}` : null,
+      technical.lastPrice != null ? `lastPrice=${String(technical.lastPrice)}` : null,
+    ].filter(Boolean).join(" ");
+    if (line) parts.push(`technical(${line})`);
+  }
+
+  return parts.length > 0 ? parts.join(" / ") : null;
+}
+
 function normalizeSourceState(
   label: string,
   source: AiRecommendationV3SourceState | string | null | undefined,
@@ -219,7 +278,7 @@ export function mapV3ItemToStockRecCard(
     why_not_buy: joinLines(item.why_not_buy),
     risk: joinLines(item.risk, item.risks, item.riskFactors, item.why_not_buy),
     source: item.source ?? null,
-    sourceTrail: compactUnknown(item.sourceTrail),
+    sourceTrail: deriveSourceTrail(item, data),
     sourceState: deriveItemSourceState(item, data),
     officialAnnouncementSourceState: getOfficialAnnouncementSourceState(data),
     synthesisFlags: {
