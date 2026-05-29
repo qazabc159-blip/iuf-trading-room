@@ -820,7 +820,10 @@ export function parseAiReportToRecommendationsV3(
 
     const nameSource = headerLine.replace(/\*/g, "");
     const nameMatch = nameSource.match(new RegExp(ticker + "\\s+([\\u4e00-\\u9fff\\w\\s]{2,20})"));
-    const companyName = nameMatch ? nameMatch[1]!.trim() : ticker;
+    const parsedCompanyName = nameMatch ? nameMatch[1]!.trim() : ticker;
+    // Never trust an LLM heading over a canonical ticker map for core TW names.
+    // A production run once emitted "2317 台積電"; the ticker is the contract.
+    const companyName = CORE_COMPANY_NAMES[ticker] ?? parsedCompanyName;
 
     const lines = block.split("\n");
 
