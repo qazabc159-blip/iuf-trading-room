@@ -1,20 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type SubscriptionRecord = {
-  subscription_id: string;
-  strategy_id: string;
-  capital_twd: number;
-  sim_only: true;
-  created_at: string;
-  audit_log_id: string;
-};
+import {
+  STRATEGY_DISPLAY_NAMES,
+  VALID_STRATEGY_IDS,
+  summarizeSubscriptions,
+  type SubscriptionRecord,
+  type SubscriptionSummary,
+} from "./quant-subs-summary";
 
 type LoadState = "idle" | "loading" | "loaded" | "error";
 
@@ -29,21 +25,8 @@ type SubscriptionsResult = {
   failures: SubscriptionFetchFailure[];
 };
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// Backend-valid strategy IDs — matches VALID_QUANT_STRATEGY_IDS in quant-strategy-subscribe.ts
-const VALID_STRATEGY_IDS = ["cont_liq_v36", "strategy_002", "strategy_003"] as const;
-
-const STRATEGY_DISPLAY_NAMES: Record<string, string> = {
-  cont_liq_v36: "Continuous Liquidity RS v36",
-  strategy_002: "Class 5 Revenue Momentum",
-  strategy_003: "Family C SBL Overlay",
-};
-
 function formatCapital(value: number) {
-  return value.toLocaleString("zh-TW") + " TWD";
+  return `${value.toLocaleString("zh-TW")} TWD`;
 }
 
 function formatDate(iso: string) {
@@ -62,15 +45,11 @@ function formatDate(iso: string) {
 
 function subscriptionFetchFailure(strategyId: string, status: number | "network"): SubscriptionFetchFailure {
   const label = STRATEGY_DISPLAY_NAMES[strategyId] ?? strategyId;
-  if (status === "network") return { strategyId, label, reason: "網路或資料代理暫時無法連線" };
-  if (status === 401 || status === 403) return { strategyId, label, reason: "登入狀態或權限未通過" };
-  if (status >= 500) return { strategyId, label, reason: `訂閱資料服務暫時無法讀取（${status}）` };
-  return { strategyId, label, reason: `訂閱資料回應狀態 ${status}` };
+  if (status === "network") return { strategyId, label, reason: "網路或代理路由無法讀取訂閱資料。" };
+  if (status === 401 || status === 403) return { strategyId, label, reason: "Owner session 未通過授權。" };
+  if (status >= 500) return { strategyId, label, reason: `後端訂閱資料讀取失敗，HTTP ${status}。` };
+  return { strategyId, label, reason: `訂閱資料讀取回傳 HTTP ${status}。` };
 }
-
-// ---------------------------------------------------------------------------
-// Fetch helper
-// ---------------------------------------------------------------------------
 
 async function fetchSubscriptionsForStrategy(id: string): Promise<{
   subscriptions: SubscriptionRecord[];
@@ -103,16 +82,44 @@ async function fetchAllSubscriptions(): Promise<SubscriptionsResult> {
     if (result.failure) failures.push(result.failure);
   }
 
-  // Sort newest first
   const subscriptions = all.sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
   return { subscriptions, failures };
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+function SummaryCard({ summary }: { summary: SubscriptionSummary }) {
+  const latest = summary.latest;
+  return (
+    <div style={summaryCardStyle}>
+      <div style={summaryHeadStyle}>
+        <span style={strategyNameStyle}>{summary.label}</span>
+        <span style={latest ? statusOkStyle : statusMutedStyle}>
+          {latest ? "SIM-only / 執行中" : "尚無訂閱"}
+        </span>
+      </div>
+      <div style={strategyIdStyle}>{summary.strategyId}</div>
+      {latest ? (
+        <div style={summaryGridStyle}>
+          <div>
+            <span style={smallLabelStyle}>最新配置資金</span>
+            <strong style={monoStrongStyle}>{formatCapital(latest.capital_twd)}</strong>
+          </div>
+          <div>
+            <span style={smallLabelStyle}>最新訂閱時間</span>
+            <strong style={monoStrongStyle}>{formatDate(latest.created_at)}</strong>
+          </div>
+          <div>
+            <span style={smallLabelStyle}>歷史建立紀錄</span>
+            <strong style={monoStrongStyle}>{summary.count} 筆</strong>
+          </div>
+        </div>
+      ) : (
+        <p style={mutedStyle}>尚未找到此策略的 SIM-only 訂閱紀錄。</p>
+      )}
+    </div>
+  );
+}
 
 export function QuantSubsPanel() {
   const [state, setState] = useState<LoadState>("idle");
@@ -131,11 +138,11 @@ export function QuantSubsPanel() {
         setFailures(result.failures);
         setState(result.failures.length === VALID_STRATEGY_IDS.length ? "error" : "loaded");
         if (result.failures.length === VALID_STRATEGY_IDS.length) {
-          setErrorMsg("所有策略訂閱資料都暫時無法讀取，已避免誤判為空清單。");
+          setErrorMsg("三個策略的訂閱資料都無法讀取。");
         }
       })
       .catch((err: unknown) => {
-        setErrorMsg(err instanceof Error ? err.message : "讀取失敗，請稍後再試。");
+        setErrorMsg(err instanceof Error ? err.message : "讀取訂閱資料時發生未知錯誤。");
         setState("error");
       });
   }, []);
@@ -147,7 +154,7 @@ export function QuantSubsPanel() {
   if (state === "idle" || state === "loading") {
     return (
       <div style={wrapStyle} role="status" aria-live="polite">
-        <p style={mutedStyle}>讀取中…</p>
+        <p style={mutedStyle}>正在讀取 SIM-only 訂閱紀錄...</p>
       </div>
     );
   }
@@ -156,7 +163,7 @@ export function QuantSubsPanel() {
     return (
       <div style={wrapStyle} role="alert" aria-live="assertive">
         <p style={{ ...mutedStyle, color: "#e05c72" }}>
-          讀取訂閱資料時發生錯誤：{errorMsg}
+          讀取策略訂閱資料失敗：{errorMsg}
         </p>
         {failures.length > 0 && (
           <div style={{ ...warningBoxStyle, margin: "0 0 12px" }}>
@@ -177,8 +184,8 @@ export function QuantSubsPanel() {
         {failures.length > 0 ? (
           <>
             <div style={warningBoxStyle} role="status" aria-live="polite">
-              <strong>訂閱資料暫時無法完整讀取</strong>
-              <span>已避免把讀取失敗誤判成空清單；可重新讀取或稍後再看。</span>
+              <strong>部分策略訂閱資料無法讀取</strong>
+              <span>目前不補假資料，也不把讀不到的策略顯示成已訂閱。</span>
               <span>{failures.map((failure) => `${failure.label}: ${failure.reason}`).join(" / ")}</span>
             </div>
             <button type="button" style={retryButtonStyle} onClick={loadSubscriptions}>
@@ -188,10 +195,10 @@ export function QuantSubsPanel() {
         ) : (
           <>
             <p style={{ color: "var(--night-mid, #8899aa)", fontSize: 15, marginBottom: 16 }}>
-              尚未訂閱任何策略
+              目前尚無 SIM-only 策略訂閱紀錄。
             </p>
             <Link href="/quant-strategies" style={storeLinkStyle}>
-              前往策略商店 →
+              返回策略列表
             </Link>
           </>
         )}
@@ -199,123 +206,90 @@ export function QuantSubsPanel() {
     );
   }
 
+  const summaries = summarizeSubscriptions(subscriptions);
+
   return (
     <div style={wrapStyle}>
-      <div style={{ marginBottom: 10, fontSize: 11, color: "var(--night-soft)", fontFamily: "var(--mono)" }} role="status" aria-live="polite">
-        共 {subscriptions.length} 筆訂閱紀錄（由 audit_logs 查詢，SIM-only）
+      <div style={truthNoteStyle} role="status" aria-live="polite">
+        已讀取 {subscriptions.length} 筆 audit_logs 歷史紀錄。上方顯示每個策略的最新 SIM-only 狀態；
+        下方保留完整歷史，重複紀錄代表多次建立訂閱，不代表已送出多筆正式券商委託。
       </div>
+
       {failures.length > 0 && (
         <div style={{ ...warningBoxStyle, marginBottom: 12 }} role="status" aria-live="polite">
-          <strong>部分策略訂閱資料未完成讀取</strong>
+          <strong>部分策略訂閱資料無法讀取</strong>
           <span>{failures.map((failure) => `${failure.label}: ${failure.reason}`).join(" / ")}</span>
         </div>
       )}
+
+      <div style={summaryGridWrapStyle} aria-label="SIM-only latest subscription summary">
+        {summaries.map((summary) => (
+          <SummaryCard key={summary.strategyId} summary={summary} />
+        ))}
+      </div>
+
+      <div style={historyHeadStyle}>
+        <div>
+          <strong>歷史建立紀錄</strong>
+          <span>audit_logs 原始紀錄，僅供追蹤，不是正式委託簿。</span>
+        </div>
+        <span>{subscriptions.length} 筆</span>
+      </div>
+
       <div style={tableScrollStyle} tabIndex={0} aria-label="SIM-only subscription records">
         <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>策略</th>
-            <th style={thStyle}>配置資金</th>
-            <th style={thStyle}>狀態</th>
-            <th style={thStyle}>訂閱時間</th>
-            <th style={thStyle}>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {subscriptions.map((sub) => (
-            <tr key={sub.subscription_id} style={trStyle}>
-              <td style={tdStyle}>
-                <span style={{ fontWeight: 800, color: "var(--night-ink)", fontSize: 13 }}>
-                  {STRATEGY_DISPLAY_NAMES[sub.strategy_id] ?? sub.strategy_id}
-                </span>
-                <span
-                  style={{
-                    display: "block",
-                    fontFamily: "var(--mono)",
-                    fontSize: 10,
-                    color: "var(--night-soft)",
-                    marginTop: 2,
-                  }}
-                >
-                  {sub.strategy_id}
-                </span>
-              </td>
-              <td style={{ ...tdStyle, fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums" }}>
-                {formatCapital(sub.capital_twd)}
-              </td>
-              <td style={tdStyle}>
-                <span
-                  style={{
-                    border: "1px solid rgba(88,214,141,0.4)",
-                    borderRadius: 999,
-                    background: "rgba(88,214,141,0.08)",
-                    color: "#58d68d",
-                    fontFamily: "var(--mono)",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    padding: "3px 8px",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  SIM-only / 執行中
-                </span>
-              </td>
-              <td style={{ ...tdStyle, fontFamily: "var(--mono)", fontSize: 12 }}>
-                {formatDate(sub.created_at)}
-              </td>
-              <td style={tdStyle}>
-                <button
-                  disabled
-                  title="v2 開放取消"
-                  style={{
-                    border: "1px solid rgba(220,228,240,0.14)",
-                    borderRadius: 6,
-                    background: "rgba(255,255,255,0.03)",
-                    color: "var(--night-soft)",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: "5px 10px",
-                    cursor: "not-allowed",
-                    opacity: 0.5,
-                  }}
-                >
-                  取消訂閱
-                </button>
-                <span
-                  style={{
-                    display: "block",
-                    fontSize: 10,
-                    color: "var(--night-soft)",
-                    fontFamily: "var(--mono)",
-                    marginTop: 3,
-                  }}
-                >
-                  v2 開放取消
-                </span>
-              </td>
+          <thead>
+            <tr>
+              <th style={thStyle}>策略</th>
+              <th style={thStyle}>配置資金</th>
+              <th style={thStyle}>狀態</th>
+              <th style={thStyle}>訂閱時間</th>
+              <th style={thStyle}>操作</th>
             </tr>
-          ))}
-        </tbody>
+          </thead>
+          <tbody>
+            {subscriptions.map((sub) => (
+              <tr key={sub.subscription_id} style={trStyle}>
+                <td style={tdStyle}>
+                  <span style={{ fontWeight: 800, color: "var(--night-ink)", fontSize: 13 }}>
+                    {STRATEGY_DISPLAY_NAMES[sub.strategy_id] ?? sub.strategy_id}
+                  </span>
+                  <span style={strategyIdStyle}>{sub.strategy_id}</span>
+                </td>
+                <td style={{ ...tdStyle, fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums" }}>
+                  {formatCapital(sub.capital_twd)}
+                </td>
+                <td style={tdStyle}>
+                  <span style={statusOkStyle}>SIM-only / 執行中</span>
+                </td>
+                <td style={{ ...tdStyle, fontFamily: "var(--mono)", fontSize: 12 }}>
+                  {formatDate(sub.created_at)}
+                </td>
+                <td style={tdStyle}>
+                  <button disabled title="取消訂閱 v2 才會開放" style={disabledButtonStyle}>
+                    尚未開放取消
+                  </button>
+                  <span style={actionHintStyle}>目前僅讀，不能在此頁改寫訂閱狀態。</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
         </table>
       </div>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const wrapStyle: React.CSSProperties = {
+const wrapStyle: CSSProperties = {
   padding: "16px",
 };
 
-const mutedStyle: React.CSSProperties = {
+const mutedStyle: CSSProperties = {
   color: "var(--night-mid, #8899aa)",
   fontSize: 13,
 };
 
-const storeLinkStyle: React.CSSProperties = {
+const storeLinkStyle: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 6,
@@ -329,7 +303,7 @@ const storeLinkStyle: React.CSSProperties = {
   textDecoration: "none",
 };
 
-const retryButtonStyle: React.CSSProperties = {
+const retryButtonStyle: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
@@ -344,7 +318,7 @@ const retryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const warningBoxStyle: React.CSSProperties = {
+const warningBoxStyle: CSSProperties = {
   display: "grid",
   gap: 6,
   maxWidth: 680,
@@ -361,7 +335,107 @@ const warningBoxStyle: React.CSSProperties = {
   textAlign: "left",
 };
 
-const tableScrollStyle: React.CSSProperties = {
+const truthNoteStyle: CSSProperties = {
+  marginBottom: 12,
+  border: "1px solid rgba(220,143,55,0.28)",
+  borderLeft: "3px solid var(--tac-warn, #dc8f37)",
+  borderRadius: 8,
+  background: "rgba(220,143,55,0.07)",
+  color: "var(--night-ink, #dde6f2)",
+  fontSize: 12,
+  lineHeight: 1.6,
+  padding: "11px 13px",
+};
+
+const summaryGridWrapStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 10,
+  marginBottom: 16,
+};
+
+const summaryCardStyle: CSSProperties = {
+  border: "1px solid rgba(220,228,240,0.09)",
+  borderRadius: 8,
+  background: "rgba(255,255,255,0.025)",
+  padding: "12px",
+  minWidth: 0,
+};
+
+const summaryHeadStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: 8,
+  marginBottom: 4,
+};
+
+const strategyNameStyle: CSSProperties = {
+  color: "var(--night-ink)",
+  fontSize: 13,
+  fontWeight: 850,
+  lineHeight: 1.35,
+};
+
+const strategyIdStyle: CSSProperties = {
+  display: "block",
+  fontFamily: "var(--mono)",
+  fontSize: 10,
+  color: "var(--night-soft)",
+  marginTop: 2,
+};
+
+const summaryGridStyle: CSSProperties = {
+  display: "grid",
+  gap: 8,
+  marginTop: 10,
+};
+
+const smallLabelStyle: CSSProperties = {
+  display: "block",
+  color: "var(--night-soft)",
+  fontSize: 10,
+  marginBottom: 3,
+};
+
+const monoStrongStyle: CSSProperties = {
+  display: "block",
+  color: "var(--night-ink)",
+  fontFamily: "var(--mono)",
+  fontSize: 12,
+};
+
+const statusOkStyle: CSSProperties = {
+  display: "inline-flex",
+  border: "1px solid rgba(88,214,141,0.4)",
+  borderRadius: 999,
+  background: "rgba(88,214,141,0.08)",
+  color: "#58d68d",
+  fontFamily: "var(--mono)",
+  fontSize: 10,
+  fontWeight: 700,
+  padding: "3px 8px",
+  whiteSpace: "nowrap",
+};
+
+const statusMutedStyle: CSSProperties = {
+  ...statusOkStyle,
+  border: "1px solid rgba(220,228,240,0.18)",
+  background: "rgba(255,255,255,0.04)",
+  color: "var(--night-soft)",
+};
+
+const historyHeadStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-end",
+  justifyContent: "space-between",
+  gap: 10,
+  margin: "6px 0 8px",
+  color: "var(--night-ink)",
+  fontSize: 13,
+};
+
+const tableScrollStyle: CSSProperties = {
   width: "100%",
   maxWidth: "100%",
   overflowX: "auto",
@@ -370,14 +444,14 @@ const tableScrollStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.014)",
 };
 
-const tableStyle: React.CSSProperties = {
+const tableStyle: CSSProperties = {
   width: "100%",
   minWidth: 720,
   borderCollapse: "collapse",
   fontSize: 13,
 };
 
-const thStyle: React.CSSProperties = {
+const thStyle: CSSProperties = {
   borderBottom: "1px solid rgba(220,228,240,0.09)",
   padding: "9px 8px",
   textAlign: "left",
@@ -387,11 +461,31 @@ const thStyle: React.CSSProperties = {
   fontWeight: 700,
 };
 
-const tdStyle: React.CSSProperties = {
+const tdStyle: CSSProperties = {
   borderBottom: "1px solid rgba(220,228,240,0.06)",
   padding: "10px 8px",
   verticalAlign: "top",
   overflowWrap: "anywhere",
 };
 
-const trStyle: React.CSSProperties = {};
+const disabledButtonStyle: CSSProperties = {
+  border: "1px solid rgba(220,228,240,0.14)",
+  borderRadius: 6,
+  background: "rgba(255,255,255,0.03)",
+  color: "var(--night-soft)",
+  fontSize: 11,
+  fontWeight: 700,
+  padding: "5px 10px",
+  cursor: "not-allowed",
+  opacity: 0.65,
+};
+
+const actionHintStyle: CSSProperties = {
+  display: "block",
+  fontSize: 10,
+  color: "var(--night-soft)",
+  fontFamily: "var(--mono)",
+  marginTop: 3,
+};
+
+const trStyle: CSSProperties = {};
