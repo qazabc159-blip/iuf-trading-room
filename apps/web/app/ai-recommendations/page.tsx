@@ -464,6 +464,16 @@ function V3BackendFacts({
   const officialSourceState = getOfficialAnnouncementSourceState(data);
   const itemCount = data?.itemCount ?? data?.items?.length ?? visibleCount;
   const usedFallback = data?.usedFallback === true || data?.synthesisFallbackUsed === true || data?.fullAiReportParsed === false;
+  const officialSourceLabel =
+    officialSourceState.state === "live"
+      ? "已納入"
+      : officialSourceState.state === "empty"
+        ? "已檢查無公告"
+        : officialSourceState.state === "degraded"
+          ? "降級"
+          : officialSourceState.state === "pending"
+            ? "待接入"
+            : "待確認";
 
   return (
     <dl className="_rec-v3-facts" aria-label="AI 推薦資料狀態">
@@ -481,7 +491,7 @@ function V3BackendFacts({
       </div>
       <div>
         <dt>官方公告</dt>
-        <dd>{officialSourceState.state === "live" ? "已納入" : "待接入"}</dd>
+        <dd>{officialSourceLabel}</dd>
       </div>
     </dl>
   );

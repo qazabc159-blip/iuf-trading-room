@@ -17,7 +17,7 @@ export type V3PanelState = {
 
 const ENDPOINT = "GET /api/v1/ai-recommendations/v3";
 const OWNER = "Elva/Jason backend gate + Bruce owner-session verify";
-const OFFICIAL_ANNOUNCEMENT_NEXT_ACTION = "Backend needs to expose official announcement source state in the v3 response.";
+const OFFICIAL_ANNOUNCEMENT_NEXT_ACTION = "後端需在 v3 回應提供官方公告來源狀態；前端不可自行猜測或用新聞冒充公告。";
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -153,8 +153,8 @@ export function getOfficialAnnouncementSourceState(data: AiRecommendationV3Respo
     label: "官方公告 source state",
     state: traceMentionsOfficialAnnouncements(data) ? "degraded" : "pending",
     detail: traceMentionsOfficialAnnouncements(data)
-      ? "v3 trace mentions announcement-like data, but no explicit official announcement sourceState was returned."
-      : "v3 response did not include official announcement sourceState.",
+      ? "v3 trace 有公告相關訊號，但後端沒有明確回傳官方公告 sourceState。"
+      : "v3 回應沒有官方公告 sourceState，前端只能標示待接入。",
     owner: "Jason/Elva",
     nextAction: OFFICIAL_ANNOUNCEMENT_NEXT_ACTION,
   };
