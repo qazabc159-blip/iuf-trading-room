@@ -3917,7 +3917,22 @@ app.post("/api/v1/kgi/sim/quote-smoke", async (c) => {
     symbol: typeof body.symbol === "string" ? body.symbol : "0050",
   });
 
-  return c.json({ sim_only: true, data: result });
+  const httpStatus = !result.gatewayReachable
+    ? 502
+    : !result.loggedIn
+      ? 503
+      : !result.subscribed
+        ? 502
+        : !result.tickReceived
+          ? 504
+          : 200;
+
+  return c.json({
+    ok: httpStatus === 200,
+    sim_only: true,
+    prod_write_blocked: true,
+    data: result,
+  }, httpStatus);
 });
 
 // POST /api/v1/kgi/sim/trade-smoke — Owner only. Run SIM trade smoke (submit 1 odd-lot order).
@@ -3948,7 +3963,24 @@ app.post("/api/v1/kgi/sim/trade-smoke", async (c) => {
     confirmedByJason: body.confirmedByJason === true,
   });
 
-  return c.json({ sim_only: true, data: result });
+  const httpStatus = result.orderOutcome === "awaiting_dual_confirm"
+    ? 428
+    : result.orderOutcome === "prod_write_blocked"
+      ? 409
+      : !result.gatewayReachable
+        ? 502
+        : !result.loggedIn
+          ? 503
+          : result.orderSubmitted || result.orderOutcome === "accepted" || result.orderOutcome === "callback_received"
+            ? 200
+            : 502;
+
+  return c.json({
+    ok: httpStatus === 200,
+    sim_only: true,
+    prod_write_blocked: true,
+    data: result,
+  }, httpStatus);
 });
 
 // POST /api/v1/kgi/sim/order — Owner only. User-facing KGI SIM order submit.
