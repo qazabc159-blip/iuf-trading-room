@@ -404,31 +404,6 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
         officialAnnouncements: officialAnnouncementSourceState,
       },
     };
-    const officialAnnouncementSourceState = deriveOfficialAnnouncementSourceStateFromTrace(
-      result.reactTrace,
-      result.generatedAt
-    );
-    return {
-      ...result,
-      items: await canonicalizeAiRecommendationV3Items(result.items, row.workspaceId ?? null),
-      sourceState: {
-        state: result.status === "complete" ? "live" : result.status === "synthesis_format_error" ? "degraded" : "pending",
-        source: "ai_recommendations_runs",
-        reason: result.status === "complete"
-          ? "V3 推薦已從資料庫載入，且股票卡片欄位已由後端統一正規化。"
-          : `V3 推薦目前狀態為 ${result.status}。`,
-        owner: "API",
-        nextAction: result.status === "complete"
-          ? "持續監控下游資料來源狀態。"
-          : "先檢查 status、parserDiagnostic 與 LLM/tool trace，不得把未完成結果當正式推薦。",
-        lastUpdated: result.generatedAt,
-        count: result.items.length,
-      },
-      officialAnnouncementSourceState,
-      sourceStates: {
-        officialAnnouncements: officialAnnouncementSourceState,
-      },
-    };
   } catch (e) {
     console.warn("[ai-rec-v3] loadLatestAiRecommendationV3RunFromDb failed:", e instanceof Error ? e.message : e);
     return null;
