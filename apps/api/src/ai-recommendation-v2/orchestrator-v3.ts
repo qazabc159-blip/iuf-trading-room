@@ -210,6 +210,16 @@ export interface AiRecommendationV3SourceState {
   count?: number;
 }
 
+export interface AiRecommendationV3SourceState {
+  state: "live" | "empty" | "degraded" | "pending";
+  source: string;
+  reason: string;
+  owner: string;
+  nextAction: string;
+  lastUpdated: string | null;
+  count?: number;
+}
+
 // ── In-memory cache (latest v3 run) ──────────────────────────────────────────
 
 let _latestV3Cache: AiRecommendationV3RunResult | null = null;
@@ -368,6 +378,31 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
       dbRowId: row.id,
       // Restore score_breakdown from DB (migration 0043 column)
       scoreBreakdown: row.scoreBreakdown ? (row.scoreBreakdown as unknown as AiRecRunScoreBreakdown) : undefined,
+    };
+    const officialAnnouncementSourceState = deriveOfficialAnnouncementSourceStateFromTrace(
+      result.reactTrace,
+      result.generatedAt
+    );
+    return {
+      ...result,
+      items: await canonicalizeAiRecommendationV3Items(result.items, row.workspaceId ?? null),
+      sourceState: {
+        state: result.status === "complete" ? "live" : result.status === "synthesis_format_error" ? "degraded" : "pending",
+        source: "ai_recommendations_runs",
+        reason: result.status === "complete"
+          ? "V3 推薦已從資料庫載入，且股票卡片欄位已由後端統一正規化。"
+          : `V3 推薦目前狀態為 ${result.status}。`,
+        owner: "API",
+        nextAction: result.status === "complete"
+          ? "持續監控下游資料來源狀態。"
+          : "先檢查 status、parserDiagnostic 與 LLM/tool trace，不得把未完成結果當正式推薦。",
+        lastUpdated: result.generatedAt,
+        count: result.items.length,
+      },
+      officialAnnouncementSourceState,
+      sourceStates: {
+        officialAnnouncements: officialAnnouncementSourceState,
+      },
     };
     const officialAnnouncementSourceState = deriveOfficialAnnouncementSourceStateFromTrace(
       result.reactTrace,
