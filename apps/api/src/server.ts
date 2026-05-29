@@ -13397,12 +13397,12 @@ app.get("/api/v1/portfolio/kgi/positions", async (c) => {
     KgiGatewayAuthError,
   } = await import("./broker/kgi-gateway-client.js");
 
-  // P0-2 fix (2026-05-15): short 500ms timeout so a cold/offline gateway
-  // does not block the Promise.all on PTR hydration for 3+ seconds.
-  // On timeout the catch block returns degraded=true + positions=[] (200).
+  // KGI get_position can take 2.5-4s after SIM login because the Windows SDK
+  // performs a broker query. Keep the timeout bounded, but do not classify a
+  // healthy gateway as unreachable before the SDK can answer.
   const client = new KgiGatewayClient({
     gatewayBaseUrl,
-    connectTimeoutMs: 500,
+    connectTimeoutMs: 6500,
   });
 
   try {
