@@ -192,9 +192,22 @@ export interface AiRecommendationV3RunResult {
   programmaticRiskOff: ProgrammaticRiskOffResult | null;
   synthesisRetryUsed?: boolean;
   synthesisFallbackUsed?: boolean;
+  sourceState?: AiRecommendationV3SourceState;
+  sourceStates?: Record<string, AiRecommendationV3SourceState>;
+  officialAnnouncementSourceState?: AiRecommendationV3SourceState;
   dbRowId: string | null;
   /** Run-level score breakdown (computed after items parsed) */
   scoreBreakdown?: AiRecRunScoreBreakdown;
+}
+
+export interface AiRecommendationV3SourceState {
+  state: "live" | "empty" | "degraded" | "pending";
+  source: string;
+  reason: string;
+  owner: string;
+  nextAction: string;
+  lastUpdated: string | null;
+  count?: number;
 }
 
 // ── In-memory cache (latest v3 run) ──────────────────────────────────────────
@@ -285,11 +298,40 @@ async function persistV3RunComplete(result: AiRecommendationV3RunResult, model: 
   }
 }
 
-async function finalizeV3Run(result: AiRecommendationV3RunResult, model: string): Promise<AiRecommendationV3RunResult> {
-  await persistV3RunComplete(result, model);
-  _latestV3Cache = result;
+async function finalizeV3Run(
+  result: AiRecommendationV3RunResult,
+  model: string,
+  workspaceId?: string | null
+): Promise<AiRecommendationV3RunResult> {
+  const officialAnnouncementSourceState = deriveOfficialAnnouncementSourceStateFromTrace(
+    result.reactTrace,
+    result.generatedAt
+  );
+  const finalized: AiRecommendationV3RunResult = {
+    ...result,
+    items: await canonicalizeAiRecommendationV3Items(result.items, workspaceId),
+    sourceState: {
+      state: result.status === "complete" ? "live" : result.status === "synthesis_format_error" ? "degraded" : "pending",
+      source: "ai_recommendations_runs",
+      reason: result.status === "complete"
+        ? "V3 推薦已完成，且股票卡片欄位已由後端統一正規化。"
+        : `V3 推薦目前狀態為 ${result.status}。`,
+      owner: "API",
+      nextAction: result.status === "complete"
+        ? "持續監控下游資料來源狀態。"
+        : "先檢查 status、parserDiagnostic 與 LLM/tool trace，不得把未完成結果當正式推薦。",
+      lastUpdated: result.generatedAt,
+      count: result.items.length,
+    },
+    officialAnnouncementSourceState,
+    sourceStates: {
+      officialAnnouncements: officialAnnouncementSourceState,
+    },
+  };
+  await persistV3RunComplete(finalized, model);
+  _latestV3Cache = finalized;
   _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
-  return result;
+  return finalized;
 }
 
 export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecommendationV3RunResult | null> {
@@ -307,7 +349,7 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
       .limit(1);
     const row = rows[0];
     if (!row) return null;
-    return {
+    const result: AiRecommendationV3RunResult = {
       runId: row.runId,
       status: row.status as AiRecommendationV3RunResult["status"],
       generatedAt: row.generatedAt.toISOString(),
@@ -324,6 +366,31 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
         row.status === "synthesis_format_error" &&
         ((row.items ?? []) as unknown[]).length >= MIN_V3_RECOMMENDATION_ITEMS,
       dbRowId: row.id,
+    };
+    const officialAnnouncementSourceState = deriveOfficialAnnouncementSourceStateFromTrace(
+      result.reactTrace,
+      result.generatedAt
+    );
+    return {
+      ...result,
+      items: await canonicalizeAiRecommendationV3Items(result.items, row.workspaceId ?? null),
+      sourceState: {
+        state: result.status === "complete" ? "live" : result.status === "synthesis_format_error" ? "degraded" : "pending",
+        source: "ai_recommendations_runs",
+        reason: result.status === "complete"
+          ? "V3 推薦已從資料庫載入，且股票卡片欄位已由後端統一正規化。"
+          : `V3 推薦目前狀態為 ${result.status}。`,
+        owner: "API",
+        nextAction: result.status === "complete"
+          ? "持續監控下游資料來源狀態。"
+          : "先檢查 status、parserDiagnostic 與 LLM/tool trace，不得把未完成結果當正式推薦。",
+        lastUpdated: result.generatedAt,
+        count: result.items.length,
+      },
+      officialAnnouncementSourceState,
+      sourceStates: {
+        officialAnnouncements: officialAnnouncementSourceState,
+      },
     };
   } catch (e) {
     console.warn("[ai-rec-v3] loadLatestAiRecommendationV3RunFromDb failed:", e instanceof Error ? e.message : e);
@@ -595,6 +662,125 @@ function toFiniteNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function withCanonicalCompanyName(
+  item: AiStockRecommendationV2,
+  namesByTicker: Map<string, string>
+): AiStockRecommendationV2 {
+  const canonical = namesByTicker.get(item.ticker) ?? CORE_COMPANY_NAMES[item.ticker] ?? null;
+  if (!canonical || canonical === item.companyName) return item;
+  return { ...item, companyName: canonical };
+}
+
+export function canonicalizeAiRecommendationV3ItemsWithMap(
+  items: AiStockRecommendationV2[],
+  namesByTicker: Map<string, string>
+): AiStockRecommendationV2[] {
+  return items.map((item) => withCanonicalCompanyName(item, namesByTicker));
+}
+
+export async function canonicalizeAiRecommendationV3Items(
+  items: AiStockRecommendationV2[],
+  workspaceId?: string | null
+): Promise<AiStockRecommendationV2[]> {
+  if (items.length === 0) return items;
+  const namesByTicker = new Map<string, string>();
+  try {
+    const { getDb, isDatabaseMode, companies } = await import("@iuf-trading-room/db");
+    if (isDatabaseMode()) {
+      const db = getDb();
+      if (db) {
+        const { and, eq, inArray } = await import("drizzle-orm");
+        const tickers = Array.from(new Set(items.map((item) => item.ticker).filter(Boolean)));
+        const where = workspaceId
+          ? and(eq(companies.workspaceId, workspaceId), inArray(companies.ticker, tickers))
+          : inArray(companies.ticker, tickers);
+        const rows = await db
+          .select({ ticker: companies.ticker, name: companies.name })
+          .from(companies)
+          .where(where);
+        for (const row of rows) {
+          if (row.ticker && row.name) namesByTicker.set(row.ticker, row.name);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[ai-rec-v3] company-name canonical DB lookup failed:", err instanceof Error ? err.message : err);
+  }
+
+  return canonicalizeAiRecommendationV3ItemsWithMap(items, namesByTicker);
+}
+
+function traceRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function isOfficialAnnouncementSource(source: unknown): boolean {
+  if (typeof source !== "string") return false;
+  const normalized = source.trim().toLowerCase();
+  return (
+    normalized === "twse_announcements" ||
+    normalized === "mops" ||
+    normalized === "official_announcements" ||
+    normalized.includes("t187ap11") ||
+    normalized.includes("announcement") ||
+    normalized.includes("mops")
+  );
+}
+
+export function deriveOfficialAnnouncementSourceStateFromTrace(
+  trace: unknown[],
+  fallbackUpdatedAt: string | null = null
+): AiRecommendationV3SourceState {
+  const steps = Array.isArray(trace) ? trace : [];
+  const newsStep = steps
+    .map(traceRecord)
+    .find((step) => step?.["toolName"] === "get_news_top10");
+
+  if (!newsStep) {
+    return {
+      state: "pending",
+      source: "get_news_top10",
+      reason: "本輪 V3 trace 尚未包含新聞工具結果，無法判斷官方公告是否已納入。",
+      owner: "API",
+      nextAction: "下一輪 V3 refresh 必須執行 get_news_top10，並回傳官方公告來源狀態。",
+      lastUpdated: fallbackUpdatedAt,
+      count: 0,
+    };
+  }
+
+  const observation = traceRecord(newsStep["observation"]);
+  const items = Array.isArray(observation?.["items"]) ? observation["items"] as unknown[] : [];
+  const officialCount = items.filter((item) => {
+    const record = traceRecord(item);
+    return isOfficialAnnouncementSource(record?.["source"]);
+  }).length;
+  const asOf = typeof observation?.["asOf"] === "string"
+    ? observation["asOf"] as string
+    : fallbackUpdatedAt;
+
+  if (officialCount > 0) {
+    return {
+      state: "live",
+      source: "get_news_top10",
+      reason: `本輪新聞工具已納入 ${officialCount} 則官方公告。`,
+      owner: "API",
+      nextAction: "持續由新聞工具與市場情報 cron 更新。",
+      lastUpdated: asOf,
+      count: officialCount,
+    };
+  }
+
+  return {
+    state: "empty",
+    source: "get_news_top10",
+    reason: `本輪新聞工具已檢查 ${items.length} 則市場情報，但沒有官方公告項目；推薦使用可用市場新聞與技術資料產生。`,
+    owner: "API",
+    nextAction: "等待官方公告來源出現新資料；不得用新聞假裝官方公告。",
+    lastUpdated: asOf,
+    count: 0,
+  };
 }
 
 function toBool(value: unknown): boolean {
@@ -932,7 +1118,10 @@ export function parseAiReportToRecommendationsV3(
 
     const nameSource = headerLine.replace(/\*/g, "");
     const nameMatch = nameSource.match(new RegExp(ticker + "\\s+([\\u4e00-\\u9fff\\w\\s]{2,20})"));
-    const companyName = nameMatch ? nameMatch[1]!.trim() : ticker;
+    const parsedCompanyName = nameMatch ? nameMatch[1]!.trim() : ticker;
+    // Never trust an LLM heading over a canonical ticker map for core TW names.
+    // A production run once emitted "2317 台積電"; the ticker is the contract.
+    const companyName = CORE_COMPANY_NAMES[ticker] ?? parsedCompanyName;
 
     const lines = block.split("\n");
 
@@ -1402,7 +1591,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       dbRowId,
       scoreBreakdown: computeScoreBreakdown([]),
     };
-    return finalizeV3Run(result, model);
+    return finalizeV3Run(result, model, opts.workspaceId);
   }
 
   const { callLlm } = await import("../llm/llm-gateway.js");
@@ -1458,7 +1647,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         dbRowId,
         scoreBreakdown: computeScoreBreakdown(items),
       };
-      return finalizeV3Run(result, model);
+      return finalizeV3Run(result, model, opts.workspaceId);
     }
 
     const llmResult = await callLlm(messages, {
@@ -1487,7 +1676,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         dbRowId,
         scoreBreakdown: computeScoreBreakdown([]),
       };
-      return finalizeV3Run(result, model);
+      return finalizeV3Run(result, model, opts.workspaceId);
     }
 
     totalTokens += llmResult.usage.totalTokens;
@@ -1546,7 +1735,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         dbRowId,
         scoreBreakdown: computeScoreBreakdown([]),
       };
-      return finalizeV3Run(result, model);
+      return finalizeV3Run(result, model, opts.workspaceId);
     }
 
     // Tool whitelist check — do NOT hard-fail; instead inject correction so LLM retries.
@@ -1659,7 +1848,7 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
         dbRowId,
         scoreBreakdown: computeScoreBreakdown(items),
       };
-      return finalizeV3Run(result, model);
+      return finalizeV3Run(result, model, opts.workspaceId);
     }
 
     // Execute tool
@@ -1760,5 +1949,5 @@ Deterministic fallback applied after synthesis format retry: max rounds ended wi
     dbRowId,
     scoreBreakdown,
   };
-  return finalizeV3Run(result, model);
+  return finalizeV3Run(result, model, opts.workspaceId);
 }

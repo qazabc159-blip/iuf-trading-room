@@ -1,0 +1,20 @@
+[
+  {
+    "route": "/ai-recommendations",
+    "http": 200,
+    "hasServerError": false,
+    "hasFallback": false,
+    "textSample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，7 則未讀\n7\nAI 推薦\nAI 推薦\nRecommendation Orchestrator\n台北 / 2026/5/29 10:21:47\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。\n趨勢盤\n/\n趨勢分數偏強，可照 SOP 執行。\n部位係數 1.0\n策略執行紀錄\n訊號中心\nAI 推薦 / 今日 AI 推薦\n產生時間 05/29 09:34 / 正式資料\n5 檔\n已取得正式 AI 推薦\n\n目前顯示 5 檔，未使用備援補牌。\n\n推薦數量\n5/5\n生成狀態\n完成\n備援補牌\n未使用\n官方公告\n待接入\n2472立隆電\nA+ 推薦級\n信心 90%\n盤勢係數 1\n題材\t營收\t法人/ETF\t籌碼\tRS/量\t技術\t估值/事件\t總分\n20/20\t10/15\t10/15\t10/15\t8/10\t15/20\t2/5\t85/100\n建議進場區間\n360 - 380\n\n突破後回測不破\n\n目標一\n400\n目標二\n420\n停損\n340\n風報比\n1.50R\n推薦理由\n\n1. 被動元件需求強勁\n\n市場情緒高漲。2. 技術指標顯示強勢\n\nRSI過熱但仍有上升潛力。\n\n1. 被動元件需求強勁; 市場情緒高漲。2. 技術指標顯示強勢; RSI過熱但仍有上升潛力。\n\n主要風險\n\n1. 股價已經過熱\n\n可能面臨回檔風險。2. 市場整體情況不穩定\n\n可能影響短期表現。\n\n資料來源\n推薦來源\nAI 推薦引擎\n資料路徑\n資料路徑尚未完整回傳\n正式資料\n本卡直接使用推薦引擎回傳資料，未用前端假資料補齊。\nA+ 推薦級\n建議單筆\n0.8% NAV\n|\n組合上限\n12% NAV\n2454聯發科\nA 推薦級\n信心 80%\n盤勢係數 0.9\n題材\t營收\t法人/ETF\t籌碼\tRS/量\t技術\t估值/事件\t總分\n15/20\t10/15\t10/15\t10/15\t8/10\t15/20\t2/5\t75/100\n建議進場區間\n4,300 - 4,500\n\nOTE 0.618-0.705\n\n目標一\n4,700\n目標二\n4,900\n停損\n4,100\n風報比\n1.30R\n推薦理由\n\n1. 仍在上升趨勢中\n\n短期內有回升潛力。2. 法人持股穩定\n\n顯示市場信心。\n\n1. 仍在上升趨勢中; 短期內有回升潛力。2. 法人持股穩定; 顯示市場信心。\n\n主要風險\n\n1. 當前股價已經出現下跌\n\n需謹慎觀察。2. 整體市場情況不佳\n\n可能影響表現。\n\n資料來源\n推薦來源\nAI 推薦引擎\n資料路徑\n資料路徑尚未完整回傳\n正式資料\n本卡直接使用推薦引擎回傳資料，未用前端假資料補齊。\nA 推薦級\n建議單筆\n0.6% NAV\n|\n組合上限\n8% NAV\n2317台積電\nB 推薦級\n信心 70%\n盤勢係數 0.8\n題材\t營收\t法人/ETF\t籌碼\tRS/量\t技術\t估值/事件\t總分\n10/20\t10/15\t10/15\t10/15\t8/10\t15/20\t2/5\t70/100\n建議進場區間\n250 - 270\n\n突破後回測不破\n\n目標一\n290\n目標二\n310\n停損\n240\n風報比\n1.20R\n推薦理由\n\n1. 基本面穩健\n\n長期成長潛力。2. 技術面顯示相對強勢\n\n仍在均線之上。\n\n1. 基本面穩健; 長期成長潛力。2. 技術面顯示相對強勢; 仍在均線之上。\n\n主要風險\n\n1. 當前市場情況不穩定\n\n可能影響短期表現。2. 股價已經出現回檔\n\n需謹慎觀察。\n\n資料來源\n推薦來源\nAI 推薦引擎\n資料路徑\n資料路徑尚未完整回傳\n正式資料\n本卡直接使用推薦引擎回傳資料，未用前端假資料補齊。\nB 推薦級\n建議",
+    "errors": [],
+    "screenshot": "ai-recommendations.png"
+  },
+  {
+    "route": "/market-intel",
+    "http": 200,
+    "hasServerError": false,
+    "hasFallback": false,
+    "textSample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，7 則未讀\n7",
+    "errors": [],
+    "screenshot": "market-intel.png"
+  }
+]

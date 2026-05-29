@@ -1,0 +1,74 @@
+{
+  "generatedAt": "2026-05-29T01:31:52.545Z",
+  "apiResults": {
+    "/api/v1/ai-recommendations/v3": {
+      "endpoint": "/api/v1/ai-recommendations/v3",
+      "status": 401,
+      "ok": false,
+      "json": {
+        "error": "unauthenticated"
+      }
+    },
+    "/api/v1/recommendations/today": {
+      "endpoint": "/api/v1/recommendations/today",
+      "status": 401,
+      "ok": false,
+      "json": {
+        "error": "unauthenticated"
+      }
+    },
+    "/api/v1/market-intel/news-top10": {
+      "endpoint": "/api/v1/market-intel/news-top10",
+      "status": 401,
+      "ok": false,
+      "json": {
+        "error": "unauthenticated"
+      }
+    },
+    "/api/v1/announcements?scope=market&limit=10": {
+      "endpoint": "/api/v1/announcements?scope=market&limit=10",
+      "status": 401,
+      "ok": false,
+      "json": {
+        "error": "unauthenticated"
+      }
+    }
+  },
+  "pageResults": [
+    {
+      "route": "/ai-recommendations",
+      "status": 200,
+      "textLength": 2781,
+      "appError": false,
+      "errors": [],
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_ai_market_contract_20260529_013130Z\\ai_recommendations.png",
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，7 則未讀\n7\nAI 推薦\nAI 推薦\nRecommendation Orchestrator\n台北 / 2026/5/29 09:31:36\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。\n趨勢盤\n/\n趨勢分數偏強，可照 SOP 執行。\n部位係數 1.0\n策略執行紀錄\n訊號中心\nAI 推薦 / 今日 AI 推薦\n產生時間 05/20 18:41 / 正式資料\n5 檔\n已取得正式 AI 推薦\n\n目前顯示 5 檔，未使用備援補牌。\n\n推薦數量\n5/5\n生成狀態\n完成\n備援補牌\n未使用\n官方公告\n待接入\n2330台積電\nC 推薦級\n信心 50%\n盤勢係數 0.6\n題材\t營收\t法人/ETF\t籌碼\tRS/量\t技術\t估值/事件\t總分\n10/20\t10/15\t10/15\t10/15\t5/10\t5/20\t5/5\t55/100\n建議進場區間\n2,100 - 2,200\n\n短期壓力，RSI中性\n\n目標一\n2,250\n目標二\n2,300\n停損\n2,050\n風報比\n0.75R\n推薦理由\n\n1. 台積電在半導體產業中具領導地位\n\n長期成長潛力大。2. 技術面顯示"
+    },
+    {
+      "route": "/market-intel",
+      "status": 200,
+      "textLength": 1183,
+      "appError": false,
+      "errors": [],
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_ai_market_contract_20260529_013130Z\\market_intel.png",
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，7 則未讀\n7\n---FRAME---\n市場情報\n\n今日重點、來源狀態與 AI 精選訊息\n\n今日訊息\n0\nAI 精選\n0\n來源正常\n0 / 4\n下次抓取\n12s\n研究模式\n本頁僅做研究判讀，不下單、不顯示目標價或勝率。下一步請進策略想法。\nRESEARCH\n等待正式資料源回傳；若後端尚未提供 AI 精選，本頁只顯示 empty/degraded 狀態，不顯示示意新聞。\n知道了\nAI 精選 · 今日重點\n等待正式資料\n看全部 ›\n全部\n0\nAI 硬體\n0\n半導體\n0\n金融\n0\n電動車\n0\n⌕\nDATA\n等待正式 AI 精選市場情報\nAI 精選排程尚未回傳\n·\n不顯示示意新聞\n狀態　等待正式資料源完成同步；前端不顯示示意資料。\nPENDING\n›\n等待正式資料源\n·\n不顯示示意新聞\n資料來源狀態\n即時\n公開資訊觀測站 FETCH ✓\n官方公告 · MOPS · 每 12s 輪詢\n正常\n2 分前\nFinMind 市場資料 FETCH ✓\n法人 · 稼動率 · 每 20s 輪詢\n正常\n1 分前\nKGI 主題 substack RETRY\n部分資料延遲 · 已改備援 · 每 45s 重試\n延遲\n9 分前\n主管機關公告 SCHEMA\n資料欄位待確認 · 每 90s 探測\n待確認"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "P0",
+      "area": "AI recommendations",
+      "issue": "v3 endpoint HTTP 401"
+    },
+    {
+      "severity": "P1",
+      "area": "Recommendations today",
+      "issue": "/today HTTP 401"
+    },
+    {
+      "severity": "P0",
+      "area": "Market Intel",
+      "issue": "news-top10 HTTP 401"
+    }
+  ]
+}

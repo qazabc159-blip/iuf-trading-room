@@ -21,4 +21,17 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain('submit.dataset.blocked = "invalid_ticket"');
     expect(liveHydration).toContain("window.__IUF_TICKET_LOCK_REASON__");
   });
+
+  it("localizes selected sector labels before rendering the trading room header", () => {
+    expect(liveHydration).toContain("sector: industryLabel(company?.chainPosition");
+    expect(liveHydration).toContain("sector:industryLabel(company?.chainPosition");
+    expect(liveHydration).toContain('setText(".symhead .meta", industryLabel(selected.sector');
+  });
+
+  it("keeps K-line overlays as real toggle controls instead of decorative labels", () => {
+    expect(ticketHtml).toContain('type="button" class="tool on" data-layer="ma"');
+    expect(ticketHtml).toContain('type="button" class="tool on" data-layer="vwap"');
+    expect(ticketHtml).toContain("function syncToolLayers()");
+    expect(ticketHtml).toContain("chart.dataset[layer]=isOn?'on':'off'");
+  });
 });

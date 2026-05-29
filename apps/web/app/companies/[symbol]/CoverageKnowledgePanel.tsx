@@ -11,6 +11,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { industryLabel } from "@/lib/industry-i18n";
 import { normalizeCoverageBrief, type CoverageBrief, type SupplyChainGroup } from "./coverageData";
 
 type LoadState =
@@ -22,7 +23,8 @@ type LoadState =
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
 function coverageUrl(ticker: string) {
-  return `/api/v1/companies/${encodeURIComponent(ticker)}/coverage`;
+  const path = `/api/v1/companies/${encodeURIComponent(ticker)}/coverage`;
+  return `/api/ui-final-v031/backend?path=${encodeURIComponent(path)}`;
 }
 
 export async function fetchCoverage(ticker: string): Promise<CoverageBrief | null> {
@@ -242,12 +244,12 @@ export function CoverageKnowledgePanel({ ticker }: Props) {
           >
             {state.data.sector && (
               <span>
-                板塊：<b style={{ color: "var(--fg-2,#bbb)" }}>{state.data.sector}</b>
+                板塊：<b style={{ color: "var(--fg-2,#bbb)" }}>{industryLabel(state.data.sector)}</b>
               </span>
             )}
             {state.data.industry && (
               <span>
-                產業：<b style={{ color: "var(--fg-2,#bbb)" }}>{state.data.industry}</b>
+                產業：<b style={{ color: "var(--fg-2,#bbb)" }}>{industryLabel(state.data.industry)}</b>
               </span>
             )}
             {state.data.marketCap && (

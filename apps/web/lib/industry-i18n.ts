@@ -15,6 +15,7 @@ const INDUSTRY_LABEL: Record<string, string> = {
   "biotech": "生技醫療",
   "materials": "原物料",
   "Materials": "原物料",
+  "Broad Market ETF": "大盤 ETF",
 
   // Semiconductors / Electronics
   "Semiconductors": "半導體",
@@ -33,6 +34,7 @@ const INDUSTRY_LABEL: Record<string, string> = {
   "Computer Hardware": "電腦硬體",
   "Communication Equipment": "通訊設備",
   "Information Technology Services": "資訊服務",
+  "Technology": "科技類股",
   "Software - Application": "應用軟體",
   "Software - Infrastructure": "基礎軟體",
   "Internet Content & Information": "網路內容",
@@ -113,6 +115,7 @@ const INDUSTRY_LABEL: Record<string, string> = {
   "Pharmaceutical Retailers": "藥品零售",
 
   // Consumer
+  "Consumer Staples": "民生消費",
   "Apparel Manufacturing": "成衣",
   "Apparel Retail": "服飾零售",
   "Footwear & Accessories": "鞋類/配件",

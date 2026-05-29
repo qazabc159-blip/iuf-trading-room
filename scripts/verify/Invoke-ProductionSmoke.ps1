@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    IUF Trading Room — Production Smoke Harness v1.0
+    IUF Trading Room - Production Smoke Harness v1.0
     Bruce (verifier-release-bruce) | 2026-05-05
 
 .DESCRIPTION
@@ -38,7 +38,7 @@
         SL-07 source==mock in prod = VIOLATION
         SL-08 /order/create is not probed by production smoke (write-side stop-line)
         SL-09 iuf_session cookie value never printed to stdout
-        SL-10 cookie length only — no full value
+        SL-10 cookie length only - no full value
         SL-11 kbar state!=LIVE is FAIL
         SL-12 kbar rows.length==0 is FAIL
         SL-13 kbar date stale >2 days is FAIL
@@ -58,11 +58,10 @@ if (-not $Email -or -not $Password) {
     Write-Error "Missing credentials. Set `$env:IUF_TEST_EMAIL and `$env:IUF_TEST_PASSWORD before running, or pass -Email and -Password explicitly. Hardcoding credentials in this script is forbidden by stop-line #14."
     exit 1
 }
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 $SCRIPT_VERSION   = "1.0.0"
 $TODAY            = (Get-Date).Date
 $STALE_THRESHOLD  = $TODAY.AddDays(-2)
@@ -79,7 +78,7 @@ $STOP_LINE_PATTERNS = @(
     "secret"
 )
 
-# ── State ────────────────────────────────────────────────────────────────────
+# -- State --------------------------------------------------------------------
 $script:passCount      = 0
 $script:failCount      = 0
 $script:warnCount      = 0
@@ -87,7 +86,7 @@ $script:stopLinesHit   = 0
 $script:lines          = [System.Collections.Generic.List[string]]::new()
 $script:runTs          = Get-Date -Format "yyyyMMdd-HHmm"
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 function Out {
     param([string]$msg)
     Write-Host $msg
@@ -188,7 +187,7 @@ function ParseDate {
     }
 }
 
-# ── Main smoke run ────────────────────────────────────────────────────────────
+# -- Main smoke run ------------------------------------------------------------
 function Invoke-SmokeRun {
     $runStart = Get-Date
     $script:passCount    = 0
@@ -206,14 +205,14 @@ function Invoke-SmokeRun {
     Out "================================================================"
     Out ""
 
-    # ── Item 1: POST /auth/login — get session cookie ─────────────────────────
+    # -- Item 1: POST /auth/login - get session cookie -------------------------
     Out "--- Item-1: POST /auth/login ---"
     $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
     $loginBody = "{`"email`":`"$Email`",`"password`":`"$Password`"}"
     $r1 = SafePost "$BaseUrl/auth/login" $loginBody $session
 
     if ($r1.StatusCode -eq 200) {
-        # Check cookie (never print value — SL-09/10)
+        # Check cookie (never print value - SL-09/10)
         $cookie = $session.Cookies.GetCookies($BaseUrl) | Where-Object { $_.Name -eq "iuf_session" }
         if ($cookie) {
             Pass "item-1" "POST /auth/login" "HTTP 200 | cookie=iuf_session | len=$($cookie.Value.Length) [REDACTED]"
@@ -230,14 +229,14 @@ function Invoke-SmokeRun {
     # Abort remaining authenticated checks if no session
     $authed = $session.Cookies.GetCookies($BaseUrl) | Where-Object { $_.Name -eq "iuf_session" }
     if (-not $authed) {
-        Out "[FATAL] No iuf_session — skipping all authenticated items"
+        Out "[FATAL] No iuf_session - skipping all authenticated items"
         Out ""
         $script:failCount += 11  # items 2-12 all fail
         Summarize $runStart
         return
     }
 
-    # ── Item 2: GET /health ───────────────────────────────────────────────────
+    # -- Item 2: GET /health ---------------------------------------------------
     Out "--- Item-2: GET /health ---"
     $r2 = SafeGet "$BaseUrl/health" $null
     if ($r2.StatusCode -eq 200 -and $r2.Content) {
@@ -255,7 +254,7 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── Item 3: GET /api/v1/companies/2330 ───────────────────────────────────
+    # -- Item 3: GET /api/v1/companies/2330 -----------------------------------
     Out "--- Item-3: GET /api/v1/companies/2330 ---"
     $r3 = SafeGet "$BaseUrl/api/v1/companies/2330" $session
     if ($r3.StatusCode -eq 200 -and $r3.Content) {
@@ -272,7 +271,7 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── Item 4: GET /api/v1/companies/2330/kbar?freq=1d ─────────────────────
+    # -- Item 4: GET /api/v1/companies/2330/kbar?freq=1d ---------------------
     # FAIL if: state!=LIVE OR rows.length==0 OR date < today-2
     Out "--- Item-4: GET /api/v1/companies/2330/kbar?freq=1d ---"
     $r4 = SafeGet "$BaseUrl/api/v1/companies/2330/kbar?freq=1d" $session
@@ -317,7 +316,7 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── Item 5: GET /api/v1/companies/2330/ohlcv ─────────────────────────────
+    # -- Item 5: GET /api/v1/companies/2330/ohlcv -----------------------------
     # FAIL if any entry has source==mock
     Out "--- Item-5: GET /api/v1/companies/2330/ohlcv ---"
     $r5 = SafeGet "$BaseUrl/api/v1/companies/2330/ohlcv" $session
@@ -334,7 +333,7 @@ function Invoke-SmokeRun {
                 $mockEntries = $data5 | Where-Object { $_.source -eq "mock" }
             }
             $mockCount = $mockEntries.Count
-            StopLine "item-5/SL-07" "GET /ohlcv: $mockCount entries have source=mock (stop-line violation — mock pretending live in prod)"
+            StopLine "item-5/SL-07" "GET /ohlcv: $mockCount entries have source=mock (stop-line violation - mock pretending live in prod)"
         } else {
             $j5 = $r5.Content | ConvertFrom-Json
             $data5 = Field $j5 "data"
@@ -348,7 +347,7 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── Item 6: GET /api/v1/diagnostics/finmind ──────────────────────────────
+    # -- Item 6: GET /api/v1/diagnostics/finmind ------------------------------
     # FAIL if inProcess.requestCount==0 for >1h after deploy, or ohlcvSource==mock
     Out "--- Item-6: GET /api/v1/diagnostics/finmind ---"
     $r6 = SafeGet "$BaseUrl/api/v1/diagnostics/finmind" $session
@@ -368,7 +367,7 @@ function Invoke-SmokeRun {
         $reasons6 = @()
 
         if ($null -eq $reqCount -or $reqCount -eq 0) {
-            $reasons6 += "inProcess.requestCount=0 (ETL never called FinMind API — smoking gun)"
+            $reasons6 += "inProcess.requestCount=0 (ETL never called FinMind API - smoking gun)"
             $i6Fail = $true
         }
         if ($ohlcvSrc -eq "mock") {
@@ -383,13 +382,13 @@ function Invoke-SmokeRun {
         }
         CheckBody "item-6" $r6.Content
     } elseif ($r6.StatusCode -eq 404) {
-        Warn "item-6" "GET /api/v1/diagnostics/finmind" "404 — endpoint not deployed yet (PR #182 pending?)"
+        Warn "item-6" "GET /api/v1/diagnostics/finmind" "404 - endpoint not deployed yet (PR #182 pending?)"
     } else {
         Fail "item-6" "GET /api/v1/diagnostics/finmind" "HTTP $($r6.StatusCode) | $($r6.Error)"
     }
     Out ""
 
-    # ── Item 7: GET /api/v1/data-sources/finmind/status ─────────────────────
+    # -- Item 7: GET /api/v1/data-sources/finmind/status ---------------------
     Out "--- Item-7: GET /api/v1/data-sources/finmind/status ---"
     $r7 = SafeGet "$BaseUrl/api/v1/data-sources/finmind/status" $session
     if ($r7.StatusCode -eq 200 -and $r7.Content) {
@@ -408,7 +407,7 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── Item 8: GET /api/v1/briefs ────────────────────────────────────────────
+    # -- Item 8: GET /api/v1/briefs --------------------------------------------
     # FAIL if data[0].date < today-2
     Out "--- Item-8: GET /api/v1/briefs ---"
     $r8 = SafeGet "$BaseUrl/api/v1/briefs" $session
@@ -426,7 +425,7 @@ function Invoke-SmokeRun {
                 Fail "item-8" "GET /api/v1/briefs" "data[0].date='$($briefs[0].date)' unparseable"
             }
         } else {
-            Fail "item-8" "GET /api/v1/briefs" "data is empty or not array — no briefs produced"
+            Fail "item-8" "GET /api/v1/briefs" "data is empty or not array - no briefs produced"
         }
         CheckBody "item-8" $r8.Content
     } else {
@@ -434,7 +433,7 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── Item 9: GET /api/v1/openalice/observability ───────────────────────────
+    # -- Item 9: GET /api/v1/openalice/observability ---------------------------
     # FAIL if workerStatus!=healthy OR (queuedJobs==0 AND terminalJobs>100)
     Out "--- Item-9: GET /api/v1/openalice/observability ---"
     $r9 = SafeGet "$BaseUrl/api/v1/openalice/observability" $session
@@ -457,7 +456,7 @@ function Invoke-SmokeRun {
         }
         # Dispatcher-dead heuristic: heartbeat=healthy but no new work, all jobs are historical
         if ($queuedJobs -eq 0 -and $terminalJobs -gt 100) {
-            $reasons9 += "queuedJobs=0 AND terminalJobs=$terminalJobs — dispatcher likely dead (false-healthy pattern from K-line incident)"
+            $reasons9 += "queuedJobs=0 AND terminalJobs=$terminalJobs - dispatcher likely dead (false-healthy pattern from K-line incident)"
             $i9Fail = $true
         }
 
@@ -468,13 +467,13 @@ function Invoke-SmokeRun {
         }
         CheckBody "item-9" $r9.Content
     } elseif ($r9.StatusCode -eq 403 -and $r9.Error -match "forbidden_role") {
-        Warn "item-9" "GET /api/v1/openalice/observability" "403 forbidden_role — owner-only diagnostic skipped for daily test user; briefs freshness covers user-facing OpenAlice output"
+        Warn "item-9" "GET /api/v1/openalice/observability" "403 forbidden_role - owner-only diagnostic skipped for daily test user; briefs freshness covers user-facing OpenAlice output"
     } else {
         Fail "item-9" "GET /api/v1/openalice/observability" "HTTP $($r9.StatusCode) | $($r9.Error)"
     }
     Out ""
 
-    # ── Item 10: GET /api/v1/paper/fills ──────────────────────────────────────
+    # -- Item 10: GET /api/v1/paper/fills --------------------------------------
     Out "--- Item-10: GET /api/v1/paper/fills ---"
     $r10 = SafeGet "$BaseUrl/api/v1/paper/fills" $session
     if ($r10.StatusCode -eq 200) {
@@ -485,7 +484,7 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── Item 11: GET /api/v1/paper/portfolio ──────────────────────────────────
+    # -- Item 11: GET /api/v1/paper/portfolio ----------------------------------
     Out "--- Item-11: GET /api/v1/paper/portfolio ---"
     $r11 = SafeGet "$BaseUrl/api/v1/paper/portfolio" $session
     if ($r11.StatusCode -eq 200) {
@@ -496,7 +495,7 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── Item 12: GET /api/v1/paper/orders ────────────────────────────────────
+    # -- Item 12: GET /api/v1/paper/orders ------------------------------------
     Out "--- Item-12: GET /api/v1/paper/orders ---"
     $r12 = SafeGet "$BaseUrl/api/v1/paper/orders" $session
     if ($r12.StatusCode -eq 200) {
@@ -507,7 +506,7 @@ function Invoke-SmokeRun {
     }
     Out ""
 
-    # ── SL-08: Do not probe /order/create in production smoke ────────────────
+    # -- SL-08: Do not probe /order/create in production smoke ----------------
     Out "--- SL-08: /order/create write-side stop-line ---"
     Pass "SL-08" "/order/create not probed" "production smoke remains read-only; W6 No-Real-Order Audit covers static regression"
     Out ""
@@ -543,12 +542,12 @@ function Summarize {
         Out "  - Stop-line violations -> Escalate to Elva immediately"
         Out "  - Paper route 404/403 -> Jason paper-sprint fixes"
     } else {
-        Out "ALL CHECKS PASS — safe to declare live / collect as baseline"
+        Out "ALL CHECKS PASS - safe to declare live / collect as baseline"
     }
     Out "================================================================"
 }
 
-# ── Evidence file writer ──────────────────────────────────────────────────────
+# -- Evidence file writer ------------------------------------------------------
 function Write-Evidence {
     param([string]$runLabel, [bool]$isAppend = $false)
 
@@ -573,7 +572,7 @@ $($script:lines -join "`n")
     if ($isAppend) {
         Add-Content -Path $runFile -Value $block -Encoding UTF8
     } else {
-        Set-Content -Path $runFile -Value "# Bruce Production Smoke — Run $runLabel`n$block" -Encoding UTF8
+        Set-Content -Path $runFile -Value "# Bruce Production Smoke - Run $runLabel`n$block" -Encoding UTF8
     }
     Write-Host ""
     Write-Host "Run evidence: $runFile"
@@ -584,12 +583,12 @@ function Write-HarnessDoc {
     param([string]$firstRunFile)
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $content = @"
-# Bruce PowerShell Smoke Harness — 2026-05-05
+# Bruce PowerShell Smoke Harness - 2026-05-05
 
 **Script:** ``scripts\verify\Invoke-ProductionSmoke.ps1``
 **Version:** $SCRIPT_VERSION
 **Authored:** Bruce (verifier-release-bruce), $ts TST
-**Motivation:** K-line incident root cause — ETL dead 6-10 days, Bash-dead Bruce had 0 detection capability.
+**Motivation:** K-line incident root cause - ETL dead 6-10 days, Bash-dead Bruce had 0 detection capability.
 **First baseline run evidence:** $firstRunFile
 
 ---
@@ -625,7 +624,7 @@ function Write-HarnessDoc {
 | SL-06 | secret in body | Security leak |
 | SL-07 | source==mock in prod | ETL dead / mock pretending live |
 | SL-08 | /order/create production probe | Forbidden; smoke harness stays read-only |
-| SL-09/10 | Cookie value printed | Internal — enforced by script design |
+| SL-09/10 | Cookie value printed | Internal - enforced by script design |
 | SL-11 | kbar state!=LIVE | ETL not live |
 | SL-12 | kbar rows.length==0 | ETL not writing |
 | SL-13 | kbar date stale >2d | ETL frozen |
@@ -637,7 +636,7 @@ function Write-HarnessDoc {
 # One-shot run (from repo root)
 .\scripts\verify\Invoke-ProductionSmoke.ps1
 
-# Watch mode — loop every 60s, append to evidence file
+# Watch mode - loop every 60s, append to evidence file
 .\scripts\verify\Invoke-ProductionSmoke.ps1 -Watch
 
 # Custom URL
@@ -646,7 +645,7 @@ function Write-HarnessDoc {
 
 ### Acceptance Criteria
 
-- **Baseline (pre-fix):** FAIL — at minimum items 4/5/6/8/9 must fail given K-line incident state
+- **Baseline (pre-fix):** FAIL - at minimum items 4/5/6/8/9 must fail given K-line incident state
 - **Post-fix (Jason F1-F4):** 12/12 PASS, 0 stop-lines
 
 ---
@@ -659,7 +658,7 @@ function Write-HarnessDoc {
     Write-Host "Harness doc: $HARNESS_DOC"
 }
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# -- Entry point ---------------------------------------------------------------
 if ($Watch) {
     Write-Host "=== WATCH MODE: running every 60s. Ctrl+C to stop ==="
     $watchRun = 1

@@ -52,6 +52,11 @@ export interface LlmCallOptions {
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  /**
+   * Ask Chat Completions to return a JSON object. Intended for strict
+   * selector/parser callsites; other callers keep the default text behavior.
+   */
+  responseFormat?: "json_object";
 }
 
 export interface LlmCallResult {
@@ -390,6 +395,16 @@ export async function callLlm(
     opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   );
 
+  const requestBody: Record<string, unknown> = {
+    model: modelKey,
+    messages,
+    max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
+    temperature: opts.temperature ?? DEFAULT_TEMPERATURE
+  };
+  if (opts.responseFormat === "json_object") {
+    requestBody["response_format"] = { type: "json_object" };
+  }
+
   let res: Response;
   try {
     res = await fetch(OPENAI_CHAT_URL, {
@@ -399,12 +414,7 @@ export async function callLlm(
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`
       },
-      body: JSON.stringify({
-        model: modelKey,
-        messages,
-        max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
-        temperature: opts.temperature ?? DEFAULT_TEMPERATURE
-      })
+      body: JSON.stringify(requestBody)
     });
     clearTimeout(timeout);
   } catch (e) {
@@ -451,19 +461,28 @@ export async function callLlm(
   }
 
   type OpenAiResp = {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ finish_reason?: string | null; message?: { content?: string | null; refusal?: string | null } }>;
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
   };
 
   const resp = data as OpenAiResp;
-  const content = resp?.choices?.[0]?.message?.content ?? null;
+  const firstChoice = resp?.choices?.[0];
+  const content = firstChoice?.message?.content ?? null;
   if (!content) {
     const latencyMs = Date.now() - startMs;
-    console.warn(`[llm-gateway][${opts.callerModule}] empty content`);
+    const finishReason = firstChoice?.finish_reason ?? "unknown";
+    const refusal = firstChoice?.message?.refusal ?? null;
+    const errorCode = refusal
+      ? `EMPTY_CONTENT_REFUSAL_${finishReason}`.slice(0, 120)
+      : `EMPTY_CONTENT_${finishReason}`.slice(0, 120);
+    console.warn(`[llm-gateway][${opts.callerModule}] empty content finish_reason=${finishReason}`);
     void writeLlmCallRow({
       modelKey, callerModule: opts.callerModule, taskType: opts.taskType,
-      workspaceId: opts.workspaceId, promptTokens: 0, completionTokens: 0,
-      totalTokens: 0, costUsd: 0, latencyMs, status: "failed", errorCode: "EMPTY_CONTENT"
+      workspaceId: opts.workspaceId, promptTokens: resp.usage?.prompt_tokens ?? 0,
+      completionTokens: resp.usage?.completion_tokens ?? 0,
+      totalTokens: resp.usage?.total_tokens ?? 0, costUsd: 0, latencyMs, status: "failed",
+      errorCode,
+      outputSummary: refusal ? `refusal:${refusal.slice(0, 90)}` : null
     });
     return null;
   }

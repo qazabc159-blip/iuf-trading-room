@@ -11,6 +11,7 @@ import {
 const TOOL_REGISTRY_ENDPOINT = "/api/v1/tools/registry";
 const TOOL_CALLS_ENDPOINT = "/api/v1/tools/calls?limit=50";
 const TOOL_STATS_ENDPOINT = "/api/v1/tools/stats?window=24h";
+const TOOL_EXECUTION_ENTRY = "backend callTool wrapper";
 
 const CSS = `
   ._tool-kpi {
@@ -100,7 +101,7 @@ const CSS = `
   }
   ._tool-table {
     width: 100%;
-    min-width: 980px;
+    min-width: 1120px;
     border-collapse: collapse;
     font-size: 11px;
   }
@@ -155,6 +156,19 @@ const CSS = `
     white-space: nowrap;
     font-family: var(--mono, monospace);
   }
+  ._tool-endpoint-stack {
+    display: grid;
+    gap: 4px;
+    min-width: 210px;
+  }
+  ._tool-endpoint-line {
+    display: block;
+    color: rgba(255,255,255,0.68);
+    font-size: 10px;
+    line-height: 1.35;
+    font-family: var(--mono, monospace);
+    overflow-wrap: anywhere;
+  }
   ._tool-stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -192,7 +206,7 @@ const CSS = `
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     ._tool-table {
-      min-width: 920px;
+      min-width: 1060px;
     }
   }
 `;
@@ -221,12 +235,41 @@ function callerTypeBadgeStyle(callerType: string) {
   return badgeStyle("muted");
 }
 
+function toolTypeLabel(toolType: string) {
+  const labels: Record<string, string> = {
+    llm: "AI 工具",
+    review: "審核工具",
+    data_sync: "資料同步",
+    cron: "排程工具",
+    admin_action: "管理操作",
+  };
+  return labels[toolType] ?? "工具";
+}
+
+function callerTypeLabel(callerType: string) {
+  const labels: Record<string, string> = {
+    llm: "AI 流程",
+    brain_react: "AI 分析流程",
+    cron: "排程",
+    admin_action: "管理操作",
+  };
+  return labels[callerType] ?? "系統流程";
+}
+
 function statusBadgeStyle(status: string) {
   if (status === "success") return badgeStyle("ok");
   if (status === "failure" || status === "error") return badgeStyle("bad");
   if (status === "timeout") return badgeStyle("warn");
   if (status === "pending") return badgeStyle("info");
   return badgeStyle("muted");
+}
+
+function statusLabel(status: string | null | undefined) {
+  if (status === "success") return "成功";
+  if (status === "failure" || status === "error") return "失敗";
+  if (status === "timeout") return "逾時";
+  if (status === "pending") return "處理中";
+  return "無紀錄";
 }
 
 function fmtDT(iso: string | null | undefined) {
@@ -247,9 +290,38 @@ function errorRatePct(rate: number) {
 }
 
 function shortJson(value: unknown) {
-  if (value == null) return "無 schema";
+  if (value == null) return "未定義輸入欄位";
+  if (typeof value === "object" && value !== null) {
+    const maybeSchema = value as { properties?: Record<string, unknown>; required?: unknown[] };
+    const names = Object.keys(maybeSchema.properties ?? {});
+    if (names.length > 0) return `已定義 ${names.length} 個輸入欄位`;
+  }
   const text = JSON.stringify(value);
-  return text && text !== "{}" ? text : "空物件";
+  return text && text !== "{}" ? "已定義輸入格式" : "不需輸入";
+}
+
+function toolDetailEndpoint(toolKey: string) {
+  return `${TOOL_REGISTRY_ENDPOINT}/${encodeURIComponent(toolKey)}`;
+}
+
+function productSummary(value: string | null | undefined, emptyLabel: string) {
+  if (!value) return emptyLabel;
+  const text = value.trim();
+  if (!text) return emptyLabel;
+  if (text.startsWith("{") || text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (Array.isArray(parsed)) return `已回傳 ${parsed.length} 筆正式結果`;
+      if (parsed && typeof parsed === "object") return `已回傳 ${Object.keys(parsed).length} 個結果欄位`;
+      return "已回傳正式結果";
+    } catch {
+      return "已回傳正式結果，原始內容已隱藏";
+    }
+  }
+  return text
+    .replaceAll("sourceState", "資料狀態")
+    .replaceAll("brain_react", "AI 分析流程")
+    .replaceAll("owner", "管理權限");
 }
 
 function latestCallByTool(calls: ToolCallEntry[]) {
@@ -271,21 +343,21 @@ function readiness(tool: ToolRegistryEntry, stat: ToolStatEntry | undefined, lat
     return {
       label: "未啟用",
       kind: "muted" as const,
-      detail: "registry active=false；不應被當成可用工具。",
+      detail: "工具目前停用，不應被當成可用功能。",
     };
   }
   if (latest?.status === "success") {
     return {
       label: "可執行，有成功紀錄",
       kind: "ok" as const,
-      detail: "近期 tool_calls 有 success，仍需 Owner 權限。",
+      detail: "近期已有成功執行紀錄，仍需管理權限。",
     };
   }
   if (latest?.status === "failure" || latest?.status === "timeout") {
     return {
       label: "可執行但需檢查",
       kind: "bad" as const,
-      detail: `最近一次為 ${latest.status}；先看錯誤與 owner log。`,
+      detail: `最近一次為${statusLabel(latest.status)}；先看錯誤摘要與執行紀錄。`,
     };
   }
   if (stat && stat.totalCalls > 0) {
@@ -299,7 +371,7 @@ function readiness(tool: ToolRegistryEntry, stat: ToolStatEntry | undefined, lat
   return {
     label: "已登錄，待執行證據",
     kind: "warn" as const,
-    detail: "registry 有工具，但 tool_calls 尚無近期成功紀錄；前端不宣稱已成功。",
+    detail: "工具已登錄，但尚無近期成功紀錄；前端不宣稱已成功。",
   };
 }
 
@@ -318,17 +390,17 @@ function TruthPanel({
       <div className="_tool-truth-body">{detail}</div>
       <div className="_tool-meta-grid">
         <div className="_tool-meta-cell">
-          <span className="_tool-meta-label">ENDPOINT</span>
-          <span className="_tool-meta-value">{TOOL_REGISTRY_ENDPOINT}</span>
-          <span className="_tool-meta-value">{TOOL_CALLS_ENDPOINT}</span>
-          <span className="_tool-meta-value">{TOOL_STATS_ENDPOINT}</span>
+          <span className="_tool-meta-label">資料來源</span>
+          <span className="_tool-meta-value">工具登錄</span>
+          <span className="_tool-meta-value">近期呼叫紀錄</span>
+          <span className="_tool-meta-value">24h 統計</span>
         </div>
         <div className="_tool-meta-cell">
-          <span className="_tool-meta-label">OWNER</span>
-          <span className="_tool-meta-value">Elva/Jason + Bruce owner-session verify</span>
+          <span className="_tool-meta-label">資料狀態</span>
+          <span className="_tool-meta-value">管理登入後讀取正式資料</span>
         </div>
         <div className="_tool-meta-cell">
-          <span className="_tool-meta-label">NEXT</span>
+          <span className="_tool-meta-label">下一步</span>
           <span className="_tool-meta-value">{next}</span>
         </div>
       </div>
@@ -352,8 +424,8 @@ function RegistryTable({
     return (
       <TruthPanel
         title="目前沒有 ToolCenter 工具登錄"
-        detail="registry endpoint 可讀但回傳 0 筆；此頁不補展示工具，也不把空資料當成可執行能力。"
-        next="Jason 檢查 0038 ToolCenter seed；Bruce 用 owner session 驗證 registry 是否真的 0 筆。"
+        detail="工具登錄資料可讀但回傳 0 筆；此頁不補展示工具，也不把空資料當成可執行能力。"
+        next="確認 ToolCenter seed 與工具登錄資料是否已寫入。"
       />
     );
   }
@@ -367,9 +439,10 @@ function RegistryTable({
             <th>類型</th>
             <th>執行狀態</th>
             <th>權限 / 入口</th>
+            <th>真實 endpoint</th>
             <th>最後執行證據</th>
             <th>說明</th>
-            <th>輸入 schema</th>
+            <th>輸入欄位</th>
           </tr>
         </thead>
         <tbody>
@@ -381,10 +454,10 @@ function RegistryTable({
               <tr key={tool.toolKey}>
                 <td>
                   <span className="_tool-key">{tool.toolKey}</span>
-                  <span className="_tool-sub">version {tool.version}</span>
+                  <span className="_tool-sub">版本 {tool.version}</span>
                 </td>
                 <td>
-                  <span className="_tool-badge" style={toolTypeBadgeStyle(tool.toolType)}>{tool.toolType}</span>
+                  <span className="_tool-badge" style={toolTypeBadgeStyle(tool.toolType)}>{toolTypeLabel(tool.toolType)}</span>
                   {!tool.isActive && <span className="_tool-badge" style={badgeStyle("muted")}>展示/停用</span>}
                 </td>
                 <td>
@@ -392,18 +465,25 @@ function RegistryTable({
                   <span className="_tool-sub">{state.detail}</span>
                 </td>
                 <td>
-                  <span className="_tool-badge" style={badgeStyle("warn")}>Owner-only</span>
-                  <span className="_tool-sub">登錄：GET {TOOL_REGISTRY_ENDPOINT}/:toolKey</span>
+                  <span className="_tool-badge" style={badgeStyle("warn")}>管理權限</span>
+                  <span className="_tool-sub">登錄：管理權限可讀</span>
                   <span className="_tool-sub">執行：後端 callTool wrapper；此頁沒有手動執行按鈕。</span>
                 </td>
                 <td>
-                  <span className="_tool-badge" style={statusBadgeStyle(toolLatest?.status ?? "none")}>{toolLatest?.status ?? "no_call"}</span>
+                  <span className="_tool-endpoint-stack">
+                    <span className="_tool-endpoint-line">GET {toolDetailEndpoint(tool.toolKey)}</span>
+                    <span className="_tool-endpoint-line">audit {TOOL_CALLS_ENDPOINT}&amp;toolKey={encodeURIComponent(tool.toolKey)}</span>
+                    <span className="_tool-endpoint-line">execute {TOOL_EXECUTION_ENTRY}</span>
+                  </span>
+                </td>
+                <td>
+                  <span className="_tool-badge" style={statusBadgeStyle(toolLatest?.status ?? "none")}>{statusLabel(toolLatest?.status)}</span>
                   <span className="_tool-sub">{fmtDT(toolLatest?.createdAt)}</span>
                   <span className="_tool-sub">24h：{toolStat?.totalCalls ?? 0} 次 / 錯誤率 {toolStat ? `${errorRatePct(toolStat.errorRate).toFixed(1)}%` : "無統計"}</span>
                 </td>
                 <td>
                   {tool.displayName}
-                  <span className="_tool-sub">{tool.description ?? "沒有描述；需 Jason 補 registry description。"}</span>
+                  <span className="_tool-sub">{tool.description ?? "沒有描述；等待工具登錄補齊說明。"}</span>
                 </td>
                 <td>
                   <div className="_tool-schema-preview">{shortJson(tool.inputSchema)}</div>
@@ -475,12 +555,12 @@ function CallsTable({ calls }: { calls: ToolCallEntry[] }) {
             <tr key={call.id}>
               <td style={{ whiteSpace: "nowrap" }}>{fmtDT(call.createdAt)}</td>
               <td><span className="_tool-key">{call.toolKey}</span></td>
-              <td><span className="_tool-badge" style={callerTypeBadgeStyle(call.callerType)}>{call.callerType}</span></td>
-              <td><span className="_tool-badge" style={statusBadgeStyle(call.status)}>{call.status}</span></td>
+              <td><span className="_tool-badge" style={callerTypeBadgeStyle(call.callerType)}>{callerTypeLabel(call.callerType)}</span></td>
+              <td><span className="_tool-badge" style={statusBadgeStyle(call.status)}>{statusLabel(call.status)}</span></td>
               <td>{fmtLatency(call.latencyMs)}</td>
-              <td><span className="_tool-sub">{call.inputSummary ?? "未記錄輸入摘要"}</span></td>
+              <td><span className="_tool-sub">{productSummary(call.inputSummary, "未記錄輸入摘要")}</span></td>
               <td>
-                <span className="_tool-sub">{call.outputSummary ?? call.errorMessage ?? "未記錄輸出摘要"}</span>
+                <span className="_tool-sub">{productSummary(call.outputSummary ?? call.errorMessage, "未記錄輸出摘要")}</span>
               </td>
             </tr>
           ))}
@@ -568,8 +648,8 @@ export default async function ToolsAdminPage() {
       {blocked && (
         <TruthPanel
           title="ToolCenter 目前不是完整可讀狀態"
-          detail="至少一個 ToolCenter endpoint 未能讀取；前端已停止用空表格假裝正常，並明確列出資料來源與 owner。"
-          next="Bruce 用 owner session 重測三個 endpoint；若仍 401/500，由 Jason 檢查 ToolCenter auth、0038/0039 migration 與 tool_calls 寫入。"
+          detail="至少一個 ToolCenter 資料來源未能讀取；前端已停止用空表格假裝正常，並明確列出資料狀態。"
+          next="重新驗證管理登入狀態；若仍失敗，再檢查 ToolCenter auth、migration 與 tool_calls 寫入。"
         />
       )}
 
@@ -578,8 +658,8 @@ export default async function ToolsAdminPage() {
           ? (
             <TruthPanel
               title="工具登錄無法讀取"
-              detail="`registry` endpoint 未通過 owner session 或後端不可用；此頁不顯示備用工具清單。"
-              next="確認 Owner cookie / session，再檢查 ToolCenter registry route。"
+              detail="工具登錄資料未通過管理登入或後端不可用；此頁不顯示備用工具清單。"
+              next="確認管理登入狀態，再檢查 ToolCenter 登錄資料。"
             />
           )
           : <RegistryTable tools={tools} calls={calls} stats={stats} />
@@ -591,8 +671,8 @@ export default async function ToolsAdminPage() {
           ? (
             <TruthPanel
               title="工具統計無法讀取"
-              detail="`stats` endpoint 未回正式資料；錯誤率與延遲不可被估算。"
-              next="Bruce 重測 Owner session；Jason 檢查 /api/v1/tools/stats 與 tool_calls 聚合。"
+              detail="工具統計未回正式資料；錯誤率與延遲不可被估算。"
+              next="重新驗證管理登入狀態，再檢查工具統計與 tool_calls 聚合。"
             />
           )
           : <StatsGrid stats={stats} />
@@ -604,8 +684,8 @@ export default async function ToolsAdminPage() {
           ? (
             <TruthPanel
               title="工具呼叫記錄無法讀取"
-              detail="`calls` endpoint 未回正式資料；不能顯示任何推測的 last run。"
-              next="確認 callTool wrapper 是否有寫入 tool_calls；若 DB 有資料但 endpoint 失敗，由 Jason 查 route/auth。"
+              detail="工具呼叫紀錄未回正式資料；不能顯示任何推測的 last run。"
+              next="確認 callTool wrapper 是否有寫入 tool_calls；若資料存在但讀取失敗，再檢查 route/auth。"
             />
           )
           : <CallsTable calls={calls} />

@@ -1,0 +1,85 @@
+[
+  {
+    "route": "/companies",
+    "status": 200,
+    "textLength": 2176,
+    "appError": false,
+    "forbiddenHits": [
+      "Broad Market ETF",
+      "Consumer Staples"
+    ],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_current_text_audit_20260528_201148Z\\companies.png"
+  },
+  {
+    "route": "/companies/2330",
+    "status": 200,
+    "textLength": 7571,
+    "appError": false,
+    "forbiddenHits": [
+      "Owner:",
+      "Jason",
+      "Bruce",
+      "Brain ReAct",
+      "KGI gateway",
+      "gateway/session",
+      "Semiconductors",
+      "Technology"
+    ],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_current_text_audit_20260528_201148Z\\companies_2330.png"
+  },
+  {
+    "route": "/admin/brain/llm",
+    "status": 200,
+    "textLength": 6404,
+    "appError": false,
+    "forbiddenHits": [
+      "Jason",
+      "Owner only",
+      "Owner-only",
+      "ENDPOINT"
+    ],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_current_text_audit_20260528_201148Z\\admin_brain_llm.png"
+  },
+  {
+    "route": "/admin/events",
+    "status": 200,
+    "textLength": 796,
+    "appError": false,
+    "forbiddenHits": [
+      "Jason",
+      "Bruce",
+      "Owner only",
+      "ENDPOINT"
+    ],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_current_text_audit_20260528_201148Z\\admin_events.png"
+  },
+  {
+    "route": "/admin/tools",
+    "status": 200,
+    "textLength": 19108,
+    "appError": false,
+    "forbiddenHits": [
+      "Owner-only",
+      "sourceState"
+    ],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_current_text_audit_20260528_201148Z\\admin_tools.png"
+  },
+  {
+    "route": "/admin/portfolio/snapshots",
+    "status": 200,
+    "textLength": 2211,
+    "appError": false,
+    "forbiddenHits": [
+      "Jason",
+      "Bruce",
+      "Owner only"
+    ],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_current_text_audit_20260528_201148Z\\admin_portfolio_snapshots.png"
+  }
+]

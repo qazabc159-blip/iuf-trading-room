@@ -27,7 +27,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     timeout-minutes: 20
 
     permissions:
@@ -79,16 +79,68 @@ jobs:
             exit 1
           }
 
+          function Test-RailwayDeploymentSuccess {
+            param(
+              [Parameter(Mandatory = $true)][string]$Service,
+              [Parameter(Mandatory = $true)][string]$Message
+            )
+
+            # Railway can accept the upload after the CLI times out, then spend
+            # several more minutes in INITIALIZING/BUILDING. Treat that as a
+            # pending deployment instead of failing early and sending a false
+            # red deploy email while production is still converging.
+            $deadline = (Get-Date).AddMinutes(12)
+            while ((Get-Date) -lt $deadline) {
+              try {
+                $raw = railway deployment list --service $Service --limit 10 --json 2>&1
+                $listExitCode = $LASTEXITCODE
+                if ($listExitCode -ne 0) {
+                  Write-Host "::warning::railway deployment list failed with exit code $listExitCode for service $Service. Output: $raw"
+                } else {
+                  $deployments = $raw | ConvertFrom-Json
+                  $matched = @(
+                    $deployments |
+                      Where-Object { $_.meta.cliMessage -eq $Message } |
+                      Sort-Object createdAt -Descending |
+                      Select-Object -First 1
+                  )
+
+                  if ($matched.Count -gt 0) {
+                    $deployment = $matched[0]
+                    Write-Host "Matched Railway deployment service=$Service id=$($deployment.id) status=$($deployment.status) createdAt=$($deployment.createdAt)"
+                    if ($deployment.status -eq "SUCCESS") {
+                      return $true
+                    }
+                  } else {
+                    Write-Host "No Railway deployment with message '$Message' found yet for service $Service."
+                  }
+                }
+              } catch {
+                Write-Host "::warning::Unable to inspect Railway deployments for service ${Service}: $($_.Exception.Message)"
+              }
+
+              Start-Sleep -Seconds 15
+            }
+
+            return $false
+          }
+
           $maxAttempts = 3
+          $deployMessage = "GHA deploy ${{ github.sha }}"
           for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
             Write-Host "railway up attempt $attempt/$maxAttempts for service ${{ matrix.service }}"
-            railway up --service ${{ matrix.service }} --ci --message "GHA deploy ${{ github.sha }}"
+            railway up --service ${{ matrix.service }} --ci --message "$deployMessage"
             $exitCode = $LASTEXITCODE
             if ($exitCode -eq 0) {
               exit 0
             }
             if ($attempt -eq $maxAttempts) {
-              Write-Host "::error::railway up failed after $maxAttempts attempts with exit code $exitCode."
+              Write-Host "::warning::railway up failed after $maxAttempts attempts with exit code $exitCode. Checking Railway deployment list before failing."
+              if (Test-RailwayDeploymentSuccess -Service "${{ matrix.service }}" -Message "$deployMessage") {
+                Write-Host "::notice::Railway CLI returned non-zero, but service ${{ matrix.service }} has a SUCCESS deployment for $deployMessage."
+                exit 0
+              }
+              Write-Host "::error::railway up failed and no SUCCESS deployment was observed for service ${{ matrix.service }}."
               exit $exitCode
             }
             $sleepSeconds = 20 * $attempt
@@ -102,7 +154,6 @@ jobs:
       # checks whether expected migrations applied through /api/v1/paper/db-probe.
       - name: Verify migrations applied (api only)
         if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
-        continue-on-error: false
         env:
           SEED_OWNER_EMAIL: ${{ secrets.SEED_OWNER_EMAIL }}
           SEED_OWNER_PASSWORD: ${{ secrets.SEED_OWNER_PASSWORD }}
@@ -110,8 +161,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Waiting 30s for api to boot after deploy..."
-          Start-Sleep -Seconds 30
+          Write-Host "Waiting 45s for api to boot after deploy..."
+          Start-Sleep -Seconds 45
 
           try {
             $health = Invoke-RestMethod -Uri "https://api.eycvector.com/health" -TimeoutSec 10
@@ -131,43 +182,80 @@ jobs:
             email = $env:SEED_OWNER_EMAIL
             password = $env:SEED_OWNER_PASSWORD
           } | ConvertTo-Json -Compress
+          $payloadPath = Join-Path $env:RUNNER_TEMP "owner-login-payload.json"
+          $cookiePath = Join-Path $env:RUNNER_TEMP "owner-login-cookies.txt"
+          $loginBodyPath = Join-Path $env:RUNNER_TEMP "owner-login-response.json"
+          $probeBodyPath = Join-Path $env:RUNNER_TEMP "db-probe-response.json"
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::WriteAllText($payloadPath, $loginPayload, $utf8NoBom)
 
-          try {
-            $loginResp = Invoke-WebRequest `
-              -Uri "https://api.eycvector.com/auth/login" `
-              -Method Post `
-              -Body $loginPayload `
-              -ContentType "application/json" `
-              -WebSession $session `
-              -TimeoutSec 10
-          } catch {
-            $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { "unknown" }
-            Write-Host "::warning::Post-deploy login failed with HTTP $status. Check SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets and API auth logs."
+          $loginResp = $null
+          $lastLoginStatus = "unknown"
+          for ($attempt = 1; $attempt -le 6; $attempt++) {
+            $lastLoginStatus = (& curl.exe --silent --show-error --location `
+              --request POST "https://api.eycvector.com/auth/login" `
+              --header "Content-Type: application/json" `
+              --data-binary "@$payloadPath" `
+              --cookie-jar "$cookiePath" `
+              --output "$loginBodyPath" `
+              --write-out "%{http_code}" `
+              --max-time 20)
+            $curlExit = $LASTEXITCODE
+
+            if ($curlExit -eq 0 -and "$lastLoginStatus" -eq "200") {
+              $loginResp = Get-Content $loginBodyPath -Raw
+              break
+            }
+
+            if ("$lastLoginStatus" -eq "401" -or "$lastLoginStatus" -eq "403") {
+              Write-Host "::error::Post-deploy login failed with HTTP $lastLoginStatus. Check SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets and API auth logs."
+              exit 1
+            }
+
+            if ($attempt -lt 6) {
+              Write-Host "::warning::Post-deploy login attempt $attempt/6 failed with HTTP $lastLoginStatus and curl exit $curlExit; retrying in 15s."
+              Start-Sleep -Seconds 15
+            }
+          }
+
+          if ($null -eq $loginResp) {
+            Write-Host "::error::Post-deploy login failed after retries with HTTP $lastLoginStatus. Check API boot/auth logs."
             exit 1
           }
 
-          if ([int]$loginResp.StatusCode -ne 200) {
-            Write-Host "::warning::Post-deploy login failed with HTTP $($loginResp.StatusCode). Check SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD secrets and API auth logs."
+          $probeResp = $null
+          $lastProbeStatus = "unknown"
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            $lastProbeStatus = (& curl.exe --silent --show-error --location `
+              "https://api.eycvector.com/api/v1/paper/db-probe" `
+              --cookie "$cookiePath" `
+              --output "$probeBodyPath" `
+              --write-out "%{http_code}" `
+              --max-time 20)
+            $curlExit = $LASTEXITCODE
+
+            if ($curlExit -eq 0 -and "$lastProbeStatus" -eq "200") {
+              $probeResp = Get-Content $probeBodyPath -Raw
+              break
+            }
+
+            if ("$lastProbeStatus" -eq "401" -or "$lastProbeStatus" -eq "403") {
+              Write-Host "::error::DB probe failed with HTTP $lastProbeStatus after login. Check API auth/session handling."
+              exit 1
+            }
+
+            if ($attempt -lt 4) {
+              Write-Host "::warning::DB probe attempt $attempt/4 failed with HTTP $lastProbeStatus and curl exit $curlExit; retrying in 15s."
+              Start-Sleep -Seconds 15
+            }
+          }
+
+          if ($null -eq $probeResp) {
+            Write-Host "::error::DB probe failed after retries with HTTP $lastProbeStatus. Check API logs and migration status."
             exit 1
           }
 
-          try {
-            $probeResp = Invoke-WebRequest `
-              -Uri "https://api.eycvector.com/api/v1/paper/db-probe" `
-              -WebSession $session `
-              -TimeoutSec 10
-          } catch {
-            $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { "unknown" }
-            Write-Host "::warning::DB probe failed with HTTP $status. Check API logs and migration status."
-            exit 1
-          }
-
-          if ([int]$probeResp.StatusCode -ne 200) {
-            Write-Host "::warning::DB probe failed with HTTP $($probeResp.StatusCode). Check API logs and migration status."
-            exit 1
-          }
-
-          $raw = $probeResp.Content | ConvertFrom-Json
+          $raw = $probeResp | ConvertFrom-Json
           $data = if ($null -ne $raw.data) { $raw.data } else { $raw }
           $count = if ($null -ne $data.appliedMigrationsCount) { "$($data.appliedMigrationsCount)" } else { "?" }
           $strategyRuns = if ($null -ne $data.tables -and $null -ne $data.tables.strategy_runs) { "$($data.tables.strategy_runs)" } else { "?" }

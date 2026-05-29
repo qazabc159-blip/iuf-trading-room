@@ -103,19 +103,6 @@ function fmtRValue(val: number | null | undefined): string {
   return `${val.toFixed(2)}R`;
 }
 
-function fmtBool(val: boolean | null | undefined): string {
-  if (val === true) return "true";
-  if (val === false) return "false";
-  return "missing";
-}
-
-function toneForSourceState(state: string | null | undefined): "ok" | "warn" | "bad" {
-  const normalized = String(state ?? "").toLowerCase();
-  if (normalized === "live" || normalized === "ok" || normalized === "complete") return "ok";
-  if (normalized === "blocked" || normalized === "failed" || normalized === "error") return "bad";
-  return "warn";
-}
-
 function SimpleMarkdown({ text }: { text: string }) {
   const lines = text.split("\n").filter((line) => line.trim().length > 0);
   return (
@@ -129,25 +116,19 @@ function SimpleMarkdown({ text }: { text: string }) {
   );
 }
 
-function SourceStateBlock({ source }: { source: SourceStateSummary | null | undefined }) {
-  if (!source) return null;
-  const tone = toneForSourceState(source.state);
-  return (
-    <div className="_src-source-state" data-tone={tone}>
-      <span>
-        <b>{source.label}</b>
-        {source.state || "missing"}
-      </span>
-      {source.detail && <p>{source.detail}</p>}
-      {(source.lastUpdated || source.owner || source.nextAction) && (
-        <small>
-          {source.lastUpdated ? `lastUpdated=${source.lastUpdated}` : null}
-          {source.owner ? `${source.lastUpdated ? " / " : ""}owner=${source.owner}` : null}
-          {source.nextAction ? `${source.lastUpdated || source.owner ? " / " : ""}next=${source.nextAction}` : null}
-        </small>
-      )}
-    </div>
-  );
+function displaySource(source: string | null | undefined): string {
+  const raw = source?.trim();
+  if (!raw) return "AI 推薦引擎";
+  if (raw.toLowerCase().includes("brain_react")) return "AI 推薦引擎";
+  return raw;
+}
+
+function displaySourceTrail(sourceTrail: string | null | undefined): string {
+  const raw = sourceTrail?.trim();
+  if (!raw || raw.toLowerCase().includes("sourcetrail")) {
+    return "資料路徑尚未完整回傳";
+  }
+  return raw;
 }
 
 export function StockRecCard({ rec }: { rec: StockRecCardData }) {
@@ -158,10 +139,10 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
   const flags = rec.synthesisFlags ?? {};
   const entryLabel = entry?.label
     ?? (entry?.ote_low != null && entry?.ote_high != null
-      ? `Entry ${fmtPrice(entry.ote_low)} - ${fmtPrice(entry.ote_high)}`
-      : "後端未回傳 entry range");
-  const sourceTrail = rec.sourceTrail || "後端未回傳 sourceTrail";
-  const riskText = rec.risk || rec.why_not_buy || "後端未回傳 risk/why_not_buy";
+      ? `建議進場區間 ${fmtPrice(entry.ote_low)} - ${fmtPrice(entry.ote_high)}`
+      : "後端未回傳建議進場區間");
+  const sourceTrail = displaySourceTrail(rec.sourceTrail);
+  const riskText = rec.risk || rec.why_not_buy || "後端未回傳主要風險";
 
   return (
     <>
@@ -376,9 +357,9 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
             <span className="_src-badge" data-tone={bucket.tone}>
               {rec.bucket} 推薦級
             </span>
-            <span className="_src-badge">confidence {fmtConfidence(rec.confidence)}</span>
+            <span className="_src-badge">信心 {fmtConfidence(rec.confidence)}</span>
             {rec.market_multiplier != null && (
-              <span className="_src-badge">market x{rec.market_multiplier}</span>
+              <span className="_src-badge">盤勢係數 {rec.market_multiplier}</span>
             )}
           </div>
         </div>
@@ -401,7 +382,7 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
         </table>
 
         <div className="_src-entry">
-          <div className="_src-entry-label">ENTRY PRICE RANGE</div>
+          <div className="_src-entry-label">建議進場區間</div>
           <div className="_src-entry-val">
             {entry?.ote_low != null && entry?.ote_high != null
               ? `${fmtPrice(entry.ote_low)} - ${fmtPrice(entry.ote_high)}`
@@ -412,63 +393,55 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
 
         <div className="_src-targets">
           <div className="_src-target-cell">
-            <b>TP1</b>
+            <b>目標一</b>
             <span>{fmtPrice(targets?.tp1)}</span>
           </div>
           <div className="_src-target-cell">
-            <b>TP2</b>
+            <b>目標二</b>
             <span>{fmtPrice(targets?.tp2)}</span>
           </div>
           <div className="_src-target-cell">
-            <b>STOP</b>
+            <b>停損</b>
             <span>{fmtPrice(targets?.sl)}</span>
           </div>
           <div className="_src-target-cell">
-            <b>R</b>
+            <b>風報比</b>
             <span>{fmtRValue(targets?.r_value)}</span>
           </div>
         </div>
 
         <div className="_src-reasoning">
           <div>
-            <div className="_src-reasoning-head">REASON / RATIONALE</div>
-            {rec.why_buy ? <SimpleMarkdown text={rec.why_buy} /> : <p className="_src-p">後端未回傳 reason/rationale</p>}
+            <div className="_src-reasoning-head">推薦理由</div>
+            {rec.why_buy ? <SimpleMarkdown text={rec.why_buy} /> : <p className="_src-p">後端未回傳推薦理由</p>}
           </div>
           <div>
-            <div className="_src-reasoning-head">RISK</div>
+            <div className="_src-reasoning-head">主要風險</div>
             <SimpleMarkdown text={riskText} />
           </div>
         </div>
 
         <div className="_src-source">
-          <div className="_src-source-head">SOURCE / SOURCE TRAIL / SOURCE STATE</div>
+          <div className="_src-source-head">資料來源</div>
           <div className="_src-source-code">
-            <b>source</b>
-            <span>{rec.source || "後端未回傳 source"}</span>
+            <b>推薦來源</b>
+            <span>{displaySource(rec.source)}</span>
           </div>
           <div className="_src-source-code">
-            <b>sourceTrail</b>
+            <b>資料路徑</b>
             <span>{sourceTrail}</span>
           </div>
-          <SourceStateBlock source={rec.sourceState} />
-          <SourceStateBlock source={rec.officialAnnouncementSourceState} />
-          <div>
-            <div className="_src-source-head">SYNTHESIS FLAGS</div>
-            <div className="_src-flag-grid">
-              <span className="_src-badge" data-tone={flags.fullAiReportParsed ? "ok" : "warn"}>
-                fullAiReportParsed={fmtBool(flags.fullAiReportParsed)}
-              </span>
-              <span className="_src-badge" data-tone={flags.synthesisRetryUsed ? "warn" : "ok"}>
-                synthesisRetryUsed={fmtBool(flags.synthesisRetryUsed)}
-              </span>
-              <span className="_src-badge" data-tone={flags.synthesisFallbackUsed ? "warn" : "ok"}>
-                synthesisFallbackUsed={fmtBool(flags.synthesisFallbackUsed)}
-              </span>
-              <span className="_src-badge" data-tone={flags.usedFallback ? "warn" : "ok"}>
-                usedFallback={fmtBool(flags.usedFallback)}
-              </span>
+          {flags.usedFallback || flags.synthesisFallbackUsed || flags.fullAiReportParsed === false ? (
+            <div className="_src-source-state">
+              <span data-tone="warn">資料完整度需留意</span>
+              <small>本卡仍顯示後端回傳內容，未用前端假資料補齊。</small>
             </div>
-          </div>
+          ) : (
+            <div className="_src-source-state">
+              <span data-tone="ok">正式資料</span>
+              <small>本卡直接使用推薦引擎回傳資料，未用前端假資料補齊。</small>
+            </div>
+          )}
         </div>
 
         <div className="_src-sizing">

@@ -55,6 +55,8 @@ import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
 const OPENAI_MODEL_NEWS = "gpt-4o-mini";
 const MAX_INPUT_ROWS = 200;
 const MAX_TOKENS_RESPONSE = 2000;
+const AI_SELECTOR_MAX_ATTEMPTS = 2;
+const AI_SELECTOR_TIMEOUT_MS = 45_000;
 // A "window" is 6h wide (covers the gap between any two consecutive 4-window fires).
 const WINDOW_HOURS = 6;
 const EXPANDED_WINDOW_HOURS = 72;
@@ -259,7 +261,7 @@ export function getCurrentWindowLabelForStats(): "08:00" | "12:00" | "18:00" | "
 
 // ── Raw news row fetch ────────────────────────────────────────────────────────
 
-interface RawNewsRow {
+export interface RawNewsRow {
   id: string | null;
   ticker: string | null;
   company_name: string | null;
@@ -395,7 +397,52 @@ async function fetchRawNewsRows(windowHours: number): Promise<RawNewsRow[]> {
  *   +2 if title contains 重大 / 公告 / 召開 / 董事會 / 盈餘 / 停牌
  *   +1 for recency (most recent row in window gets +1, decrements by index)
  */
-function deterministicTop10(rows: RawNewsRow[]): NewsAiItem[] {
+function inferDeterministicImpact(row: RawNewsRow): "HIGH" | "MID" | "LOW" {
+  const title = row.title ?? "";
+  if (row.source === "twse_announcements") return "HIGH";
+  if (/下市|停止交易|重大|重訊|處分|警示|虧損|財報公告|營收大幅|減資|增資/.test(title)) return "HIGH";
+  if (/財報|營收|EPS|法說|股東會|注意股|外資|投信|訂單|漲停|跌停/.test(title)) return "MID";
+  return "LOW";
+}
+
+function buildDeterministicWhy(row: RawNewsRow, impact: "HIGH" | "MID" | "LOW"): string {
+  const title = row.title ?? "";
+  const name = row.company_name || row.ticker || "相關公司";
+  if (row.source === "twse_announcements") {
+    return `${name} 有官方公告，需確認是否影響營收、財務或交易風險。`;
+  }
+  if (/下市|停止交易|處分|警示/.test(title)) {
+    return `${name} 出現交易或下市風險訊號，需優先檢查持股與風控。`;
+  }
+  if (/財報|EPS|虧損|獲利|營收/.test(title)) {
+    return `${name} 財務或營收資訊更新，可能影響估值與短線波動。`;
+  }
+  if (/外資|投信|法人/.test(title)) {
+    return `${name} 法人籌碼訊號變化，需觀察後續量價是否確認。`;
+  }
+  if (/法說|股東會|訂單|合作|供應/.test(title)) {
+    return `${name} 公司事件可能牽動題材與預期，需追蹤後續公告。`;
+  }
+  return impact === "LOW"
+    ? `${name} 有新的市場消息，先列入觀察並等待量價確認。`
+    : `${name} 有新消息可能影響市場預期，需追蹤相關族群反應。`;
+}
+
+function buildDeterministicTags(row: RawNewsRow): string[] {
+  const title = row.title ?? "";
+  const tags = new Set<string>();
+  if (row.source === "twse_announcements") tags.add("官方公告");
+  if (/下市|停止交易|處分|警示/.test(title)) tags.add("風險");
+  if (/財報|EPS|獲利|虧損/.test(title)) tags.add("財報");
+  if (/營收/.test(title)) tags.add("營收");
+  if (/外資|投信|法人/.test(title)) tags.add("籌碼");
+  if (/法說|股東會/.test(title)) tags.add("公司事件");
+  if (/AI|伺服器|半導體|電動車|機器人|航運|金融/.test(title)) tags.add("題材");
+  if (tags.size === 0) tags.add("市場新聞");
+  return [...tags].slice(0, 3);
+}
+
+export function deterministicTop10(rows: RawNewsRow[]): NewsAiItem[] {
   const keywords = ["重大", "公告", "召開", "董事會", "盈餘", "停牌", "減資", "增資", "合併", "下市"];
 
   const scored = rows.map((row, idx) => {
@@ -412,19 +459,22 @@ function deterministicTop10(rows: RawNewsRow[]): NewsAiItem[] {
 
   scored.sort((a, b) => b.score - a.score);
 
-  return scored.slice(0, TOP_N).map((s, rank) => ({
-    id: s.row.id ?? `fallback-${s.idx}`,
-    headline: s.row.title ?? "(no title)",
-    date: s.row.date ?? new Date().toISOString().slice(0, 10),
-    ticker: s.row.ticker ?? undefined,
-    companyName: s.row.company_name ?? undefined,
-    source: s.row.source as "twse_announcements" | "finmind_stock_news",
-    url: s.row.url ?? undefined,
-    why_matters: null,
-    impact_tier: null,
-    tags: [],
-    rank: rank + 1
-  }));
+  return scored.slice(0, TOP_N).map((s, rank) => {
+    const impact = inferDeterministicImpact(s.row);
+    return {
+      id: s.row.id ?? `fallback-${s.idx}`,
+      headline: s.row.title ?? "(no title)",
+      date: s.row.date ?? new Date().toISOString().slice(0, 10),
+      ticker: s.row.ticker ?? undefined,
+      companyName: s.row.company_name ?? undefined,
+      source: s.row.source as "twse_announcements" | "finmind_stock_news",
+      url: s.row.url ?? undefined,
+      why_matters: buildDeterministicWhy(s.row, impact),
+      impact_tier: impact,
+      tags: buildDeterministicTags(s.row),
+      rank: rank + 1
+    };
+  });
 }
 
 // ── F4: AI selector via llm-gateway ──────────────────────────────────────────
@@ -488,44 +538,56 @@ async function callAiNewsSelector(
 ): Promise<AiNewsSelectionResponse | null> {
   if (!process.env["OPENAI_API_KEY"]) return null;
 
-  try {
-    const result = await callLlm(
-      [{ role: "user", content: prompt }],
-      {
-        modelKey: OPENAI_MODEL_NEWS,
-        callerModule: "news_ai_selector",
-        taskType: "news_ranking",
-        workspaceId,
-        maxTokens: MAX_TOKENS_RESPONSE,
-        temperature: 0.2,
-        timeoutMs: 20_000
+  let lastError = "unknown";
+  for (let attempt = 1; attempt <= AI_SELECTOR_MAX_ATTEMPTS; attempt++) {
+    try {
+      const result = await callLlm(
+        [
+          {
+            role: "system",
+            content: "你是台股市場情報編輯。只輸出符合使用者要求的 JSON，不要加前言、Markdown 或解釋。"
+          },
+          { role: "user", content: prompt }
+        ],
+        {
+          modelKey: OPENAI_MODEL_NEWS,
+          callerModule: "news_ai_selector",
+          taskType: "news_ranking",
+          workspaceId,
+          maxTokens: MAX_TOKENS_RESPONSE,
+          temperature: 0.2,
+          timeoutMs: AI_SELECTOR_TIMEOUT_MS,
+          responseFormat: "json_object"
+        }
+      );
+
+      if (!result?.content) {
+        lastError = `attempt_${attempt}:llm-gateway returned null (transport/timeout/quota/api failure; inspect llm_calls errorCode)`;
+        console.warn(`[news-ai-selector] ${lastError}`);
+        continue;
       }
-    );
 
-    if (!result?.content) {
-      _lastError = "llm-gateway returned null/empty content";
-      return null;
+      const cleaned = stripCodeFences(result.content);
+      const parsed = JSON.parse(cleaned) as unknown;
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "selected" in parsed &&
+        Array.isArray((parsed as AiNewsSelectionResponse).selected)
+      ) {
+        _lastError = null;
+        return parsed as AiNewsSelectionResponse;
+      }
+      lastError = `attempt_${attempt}:Unexpected AI response shape`;
+      console.warn(`[news-ai-selector] ${lastError}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      lastError = `attempt_${attempt}:${msg}`;
+      console.warn("[news-ai-selector] callLlm failed:", msg);
     }
-
-    const cleaned = stripCodeFences(result.content);
-    const parsed = JSON.parse(cleaned) as unknown;
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "selected" in parsed &&
-      Array.isArray((parsed as AiNewsSelectionResponse).selected)
-    ) {
-      _lastError = null;
-      return parsed as AiNewsSelectionResponse;
-    }
-    _lastError = "Unexpected AI response shape";
-    return null;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn("[news-ai-selector] callLlm failed:", msg);
-    _lastError = msg;
-    return null;
   }
+  _lastError = lastError;
+  return null;
 }
 
 // ── F2: DB persistence ────────────────────────────────────────────────────────

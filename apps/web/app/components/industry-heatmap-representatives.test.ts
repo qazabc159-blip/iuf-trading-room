@@ -36,9 +36,10 @@ describe("industry heatmap representative pool source gate", () => {
     }
   });
 
-  it("does not silently drop missing representative quotes", () => {
-    expect(source).toContain('sourceState: "no_data"');
-    expect(source).toContain("固定代表股池；此檔暫無可驗證行情");
-    expect(source).toContain("暫無行情");
+  it("does not render missing representative quotes as gray tiles", () => {
+    expect(source).toContain('if (tile.sourceState === "no_data") return false;');
+    expect(source).not.toContain("representativeNoDataTile");
+    expect(source).not.toContain("固定代表股池；此檔暫無可驗證行情");
+    expect(source).toContain("未渲染為灰塊");
   });
 });

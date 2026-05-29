@@ -438,22 +438,6 @@ function representativeRank(symbol: string, fallbackRank: number) {
   return REPRESENTATIVE_ORDER[symbol] ?? 1000 + fallbackRank;
 }
 
-function representativeNoDataTile(symbol: string, sectorKey: RepresentativeSectorKey, index: number): IndustryHeatmapTile {
-  return {
-    symbol,
-    name: representativeCompanyName(symbol),
-    sector: sectorDefinition(sectorKey).label,
-    pct: null,
-    weight: Math.max(1, TARGET_TILES_PER_SECTOR - index),
-    source: "representative_config",
-    price: null,
-    readiness: "degraded",
-    freshnessStatus: "missing",
-    sourceState: "no_data",
-    sourceLabel: "固定代表股池；此檔暫無可驗證行情",
-  };
-}
-
 function sectorDefinition(key: SectorKey) {
   return SECTORS.find((sector) => sector.key === key) ?? SECTORS[0];
 }
@@ -549,8 +533,8 @@ function validMove(tile: IndustryHeatmapTile) {
 function isUsableTile(tile: IndustryHeatmapTile) {
   if (tile.symbol.trim().length === 0 || tile.name.trim().length === 0) return false;
   if (tile.readiness === "blocked") return false;
-  // no_data tiles: allow through even without pct — they render as gray placeholder with name/symbol
-  if (tile.sourceState === "no_data") return true;
+  // Missing representative quotes are reported in the footer, not rendered as gray empty tiles.
+  if (tile.sourceState === "no_data") return false;
   // Standard path: must have a valid price move
   if (!validMove(tile)) return false;
   if (tile.freshnessStatus === "missing") return false;
@@ -565,14 +549,6 @@ function estimatedTradingValue(tile: IndustryHeatmapTile) {
 }
 
 function preparedWeight(tile: IndustryHeatmapTile, fallbackRank: number) {
-  if (tile.sourceState === "no_data") {
-    return {
-      tradingValue: null,
-      areaWeight: 1.15,
-      weightLabel: "暫無行情",
-    };
-  }
-
   const tradingValue = estimatedTradingValue(tile);
   if (tradingValue && tradingValue > 0) {
     return {
@@ -611,12 +587,9 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
     if (!sectorKey) return;
 
     const move = deriveMove(normalizedTile);
-    // no_data tiles have no price movement — use 0 so they still render (gray, flat)
-    const displayPct = normalizedTile.sourceState === "no_data" ? 0 : (move.pct ?? 0);
-    const displayChange = normalizedTile.sourceState === "no_data" ? null : move.change;
-
-    // For no_data tiles, if we still don't have a pct (not no_data but missing move), skip
-    if (normalizedTile.sourceState !== "no_data" && move.pct === null) return;
+    if (move.pct === null) return;
+    const displayPct = move.pct;
+    const displayChange = move.change;
 
     const rank = representativeRank(symbol, index);
     const weight = preparedWeight(normalizedTile, rank);
@@ -632,28 +605,13 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
       ...weight,
     };
     const existing = rowsBySymbol.get(symbol);
-    if (!existing || existing.sourceState === "no_data" || (existing.isSupplemental && !supplemental)) {
+    if (!existing || (existing.isSupplemental && !supplemental)) {
       rowsBySymbol.set(symbol, prepared);
     }
   }
 
   heatmap.forEach((tile, index) => {
     addTile(tile, index);
-  });
-
-  Object.entries(SECTOR_REPRESENTATIVES).forEach(([sectorKey, symbols]) => {
-    symbols.forEach((symbol, index) => {
-      if (!rowsBySymbol.has(symbol)) {
-        addTile(representativeNoDataTile(symbol, sectorKey as RepresentativeSectorKey, index), 10_000 + index, sectorKey as RepresentativeSectorKey, true);
-      }
-    });
-  });
-
-  CORE_REPRESENTATIVES.forEach((symbol, index) => {
-    const sectorKey = SYMBOL_SECTOR[symbol];
-    if (!rowsBySymbol.has(symbol) && sectorKey && sectorKey !== "all") {
-      addTile(representativeNoDataTile(symbol, sectorKey as RepresentativeSectorKey, index), 20_000 + index, sectorKey as RepresentativeSectorKey, true);
-    }
   });
 
   return [...rowsBySymbol.values()];
@@ -752,7 +710,7 @@ function buildTreemapLayout(items: PreparedTile[]): LayoutTile[] {
     const area = w * h;
     if (area >= 600 && w >= 18 && h >= 18) return "hero";
     if (area >= 260 && w >= 11 && h >= 12) return "large";
-    if (area >= 92 && w >= 6.5 && h >= 8) return "medium";
+    if (area >= 190 && w >= 13 && h >= 11) return "medium";
     return "small";
   }
 
@@ -911,10 +869,10 @@ function HeatmapTile({ tile }: { tile: LayoutTile }) {
     >
       {isStale && <span className="tile-stale-dot" aria-hidden="true" />}
       <span className="tile-symbol">{tile.symbol}</span>
-      {(tile.labelMode === "hero" || tile.labelMode === "large" || tile.labelMode === "medium") && (
+      {(tile.labelMode === "hero" || tile.labelMode === "large") && (
         <small className="tile-name">{tile.name}</small>
       )}
-      {isNoData ? (
+      {tile.labelMode === "small" ? null : isNoData ? (
         <b className="tile-pct tile-pct-nodata">--</b>
       ) : (
         <b className="tile-pct">{formatPercent(tile.displayPct)}</b>
@@ -965,15 +923,19 @@ export function IndustryHeatmap({
   const selectedAvg = activeOption?.avgPct ?? null;
   const hasEnoughForProduct = selectedRows.length >= MIN_PRODUCT_COUNT;
   const availableRows = selectedRows.filter((tile) => tile.sourceState !== "no_data").length;
+  const representativeTarget = representativeSymbolsForSector(activeKey).length;
+  const missingRepresentativeCount = Math.max(0, representativeTarget - availableRows);
+  const missingRepresentativeNote = missingRepresentativeCount > 0
+    ? `${missingRepresentativeCount} 檔代表股缺可驗證行情，未渲染為灰塊`
+    : null;
   const sourceBreakdown = useMemo(() => buildSourceBreakdown(selectedRows), [selectedRows]);
 
   // F3: Only show true empty state when backend sends 0 tiles AND state is bad
-  // If backend gives us tiles (even no_data), show the treemap (gray tiles) + note
   const hasTilesFromBackend = heatmap.length > 0;
   const emptyReason = marketState === "BLOCKED"
     ? (reason ?? "市場資料目前無法更新。")
     : hasTilesFromBackend
-      ? "此產業資料整理中，已顯示現有資料。"
+      ? "此產業代表股目前沒有可驗證行情，未渲染空白灰塊。"
       : "此產業目前沒有足夠正式行情，先不顯示熱力圖。";
 
   function handleSectorChange(nextKey: SectorKey) {
@@ -993,7 +955,7 @@ export function IndustryHeatmap({
         </div>
         <div className="tac-heat-stats" aria-label="熱力圖摘要">
           <span>更新 {formatDateTime(updatedAt)}</span>
-          <span>{selectedRows.length} 檔代表</span>
+          <span>{representativeTarget} 檔代表池</span>
           <span>{availableRows} 檔有行情</span>
           <span className={toneForMove(selectedAvg)}>均幅 {formatPercent(selectedAvg)}</span>
         </div>
@@ -1031,6 +993,7 @@ export function IndustryHeatmap({
       <div className="tac-heat-footer">
         <span>
           {hasEnoughForProduct ? "固定代表股池完成" : "代表池不足，僅顯示可驗證資料"} · 依成交值優先排序 · {sourceLabel}
+          {missingRepresentativeNote && <> · <span className="tac-heat-source-note">{missingRepresentativeNote}</span></>}
           {sourceBreakdown && <> · <span className="tac-heat-source-note">{sourceBreakdown}</span></>}
         </span>
         <span className="tac-heat-scale" aria-label="漲跌幅色階">

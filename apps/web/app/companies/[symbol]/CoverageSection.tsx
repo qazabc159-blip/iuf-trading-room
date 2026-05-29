@@ -13,6 +13,7 @@
 
 import React, { useState, useCallback } from "react";
 import Link from "next/link";
+import { industryLabel } from "@/lib/industry-i18n";
 
 // ── Types aligned with tw-coverage-loader.ts exports ─────────────────────────
 
@@ -48,7 +49,8 @@ interface ThemePeerCompany {
 
 async function fetchCoverage(ticker: string): Promise<CoverageBrief | null> {
   try {
-    const res = await fetch(`/api/v1/companies/${ticker}/coverage`, {
+    const path = `/api/v1/companies/${encodeURIComponent(ticker)}/coverage`;
+    const res = await fetch(`/api/ui-final-v031/backend?path=${encodeURIComponent(path)}`, {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
     });
@@ -67,7 +69,8 @@ async function fetchCoverage(ticker: string): Promise<CoverageBrief | null> {
 
 async function fetchThemePeers(token: string): Promise<ThemePeerCompany[]> {
   try {
-    const res = await fetch(`/api/v1/themes/${encodeURIComponent(token)}/companies`, {
+    const path = `/api/v1/themes/${encodeURIComponent(token)}/companies`;
+    const res = await fetch(`/api/ui-final-v031/backend?path=${encodeURIComponent(path)}`, {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
     });
@@ -401,10 +404,10 @@ export function CoverageSection({ ticker }: CoverageSectionProps) {
                   color: "var(--fg-3, #888)",
                 }}>
                   {loadState.data.sector && (
-                    <span>板塊：<b style={{ color: "var(--fg-2, #bbb)" }}>{loadState.data.sector}</b></span>
+                    <span>板塊：<b style={{ color: "var(--fg-2, #bbb)" }}>{industryLabel(loadState.data.sector)}</b></span>
                   )}
                   {loadState.data.industry && (
-                    <span>產業：<b style={{ color: "var(--fg-2, #bbb)" }}>{loadState.data.industry}</b></span>
+                    <span>產業：<b style={{ color: "var(--fg-2, #bbb)" }}>{industryLabel(loadState.data.industry)}</b></span>
                   )}
                   {loadState.data.marketCap && (
                     <span>市值：<b style={{ color: "var(--fg-2, #bbb)" }}>{loadState.data.marketCap}</b></span>

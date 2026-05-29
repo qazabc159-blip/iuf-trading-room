@@ -91,7 +91,7 @@ function displayThemeName(theme: Theme) {
 function CompanySideNavPanel() {
   const items = [
     { href: "#company-knowledge", label: "My-TW-Coverage", meta: "知識圖譜" },
-    { href: "#company-ai-report", label: "AI 分析師", meta: "Brain ReAct" },
+    { href: "#company-ai-report", label: "AI 分析師", meta: "AI 分析" },
     { href: "#company-data-dock", label: "資料艙", meta: "價格 / 財報" },
     { href: "#company-full-profile", label: "完整資料區", meta: "FinMind [06]-[11]" },
     { href: "#company-source-status", label: "資料來源", meta: "狀態" },
@@ -237,23 +237,23 @@ export default async function CompanyDetailPage({
             {symbol.toUpperCase()} 公司資料暫時無法讀取
           </div>
           <div className="dim" style={{ marginBottom: 18 }}>
-            這不是正式公司資料內容，也不會補假 K 線、假報價或假 AI 報告。系統已進入公司頁降級狀態，下面列出缺哪個資料源、owner 與下一步。
+            這不是正式公司資料內容，也不會補假 K 線、假報價或假 AI 報告。系統已進入公司頁降級狀態，下面列出缺哪個資料源與下一步。
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12, marginBottom: 18 }}>
             <div className="panel hud-frame" style={{ padding: 14 }}>
               <b className="tg">缺少資料源</b>
-              <div className="tg soft">GET /api/v1/companies?ticker={symbol.toUpperCase()}</div>
+              <div className="tg soft">公司主檔查詢</div>
               <small className="dim">公司主檔查詢沒有成功回傳，因此公司頁不能安全渲染 quote / K 線 / AI report。</small>
             </div>
             <div className="panel hud-frame" style={{ padding: 14 }}>
               <b className="tg">目前狀態</b>
               <div className="tg soft">{fetchErrorMsg}</div>
-              <small className="dim">若為 401，代表 owner session 失效；若為 network，代表 API 或 proxy 需檢查。</small>
+              <small className="dim">若為登入狀態或網路問題，頁面會保持降級，不使用假資料填補。</small>
             </div>
             <div className="panel hud-frame" style={{ padding: 14 }}>
-              <b className="tg">Owner / 下一步</b>
-              <div className="tg soft">Owner: Jason / Bruce</div>
-              <small className="dim">確認 production API health、owner cookie，以及公司資料 endpoint；修好後此頁會重新顯示正式資料面板。</small>
+              <b className="tg">下一步</b>
+              <div className="tg soft">等待正式公司資料恢復</div>
+              <small className="dim">資料恢復後，此頁會重新顯示正式資料面板。</small>
             </div>
           </div>
           <div className="terminal-note compact" style={{ marginBottom: 16 }}>
@@ -284,7 +284,7 @@ export default async function CompanyDetailPage({
             目前公司查詢端點沒有回傳符合代號 <b>{symbol}</b> 的股票。
           </div>
           <div className="terminal-note compact" style={{ marginBottom: 16 }}>
-            資料源：GET /api/v1/companies?ticker={symbol.toUpperCase()}。Owner: Jason。下一步：確認該股票是否存在於公司主檔，或由資料匯入流程補入；前端不會用假公司資料填補。
+            資料源：公司主檔查詢。下一步：確認該股票是否存在於公司主檔，或由資料匯入流程補入；前端不會用假公司資料填補。
           </div>
           <Link href="/companies" className="btn-sm">返回公司列表</Link>
         </div>
@@ -475,7 +475,7 @@ export default async function CompanyDetailPage({
             />
           </div>
 
-          {/* ── AI 分析師深度報告 (Brain ReAct Phase A) ── */}
+          {/* ── AI 分析師深度報告 ── */}
           <div id="company-ai-report">
             <AiAnalystReportPanel ticker={company.ticker} />
           </div>
