@@ -30,6 +30,14 @@ describe("industry heatmap representative pool source gate", () => {
     }
   });
 
+  it("pins every sector pool to 15 tickers so no-data filtering still leaves a full heatmap", () => {
+    for (const group of ["semiconductor", "components", "computer", "communication", "finance", "steel", "shipping"]) {
+      expect(groupLength(group), group).toBe(15);
+    }
+    expect(source).toContain("const MAX_TILES_PER_SECTOR = 15;");
+    expect(source).toContain('shipping: ["2603", "2609", "2615", "2636", "2605", "2606", "2610", "2618", "2646", "6757", "2607", "5608", "2608", "2617", "2637"]');
+  });
+
   it("ships Chinese company labels for the tickers shown in the user screenshots", () => {
     for (const pair of ['"2330": "台積電"', '"2454": "聯發科"', '"2317": "鴻海"', '"2412": "中華電"', '"2881": "富邦金"']) {
       expect(source).toContain(pair);
