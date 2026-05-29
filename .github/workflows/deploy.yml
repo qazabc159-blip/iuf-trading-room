@@ -85,7 +85,11 @@ jobs:
               [Parameter(Mandatory = $true)][string]$Message
             )
 
-            $deadline = (Get-Date).AddMinutes(5)
+            # Railway can accept the upload after the CLI times out, then spend
+            # several more minutes in INITIALIZING/BUILDING. Treat that as a
+            # pending deployment instead of failing early and sending a false
+            # red deploy email while production is still converging.
+            $deadline = (Get-Date).AddMinutes(12)
             while ((Get-Date) -lt $deadline) {
               try {
                 $raw = railway deployment list --service $Service --limit 10 --json 2>&1
