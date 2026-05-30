@@ -54,6 +54,21 @@
 .chart-panel[data-chart-state="blocked"] .sr-label,
 .chart-panel[data-chart-state="blocked"] .lv-line,
 .chart-panel[data-chart-state="blocked"] .lv-label{display:none!important}
+.chart-panel.is-real-chart .chart-bar,
+.chart-panel.is-real-chart .chart-state,
+.chart-panel.is-real-chart .chart-wrap{display:none!important}
+.real-kline-frame-shell{
+  height:610px;
+  border-top:1px solid rgba(148,163,184,.14);
+  background:#080b10;
+}
+.real-kline-frame-shell iframe{
+  display:block;
+  width:100%;
+  height:100%;
+  border:0;
+  background:#080b10;
+}
 </style>
 </head>
 <body data-screen-label="Trading Room v1">
@@ -228,7 +243,7 @@
     </div>
 
     <!-- chart panel -->
-    <div class="chart-panel">
+    <div class="chart-panel is-real-chart">
       <div class="chart-bar">
         <div class="tfseg" id="tfseg">
           <button data-tf="1m" data-disabled="true" title="NO_INTRADAY_DATA：交易室尚未接入可驗證 1m 分K端點">1m</button>
@@ -255,6 +270,16 @@
 
       <div class="chart-state loading" id="chart-state" role="status">
         日K資料載入中；分K只顯示已驗證資料，不沿用舊圖假裝可用。
+      </div>
+
+      <div class="real-kline-frame-shell">
+        <iframe
+          id="real-kline-frame"
+          title="交易室真實 K 線"
+          src="/final-v031/portfolio/kline-frame?symbol=2330"
+          loading="eager"
+          referrerpolicy="same-origin"
+        ></iframe>
       </div>
 
       <div class="chart-wrap" id="chart">
@@ -586,10 +611,19 @@ function pickRow(sym){
   if(sv[4])sv[4].textContent=d.vol!=null?d.vol.toLocaleString()+' 張':'—';
   const tsym=document.getElementById('t-sym');if(tsym)tsym.value=sym+'　'+(d.nm||sym).split(' · ')[0];
   const tprice=document.getElementById('t-price');if(tprice&&price!=null)tprice.value=price.toFixed(2);
+  updateRealChartFrame(sym);
   drawChart(sym);
   updPreview();
 }
 document.querySelectorAll('.wrow').forEach(r=>r.addEventListener('click',()=>pickRow(r.dataset.sym)));
+
+function updateRealChartFrame(sym){
+  const frame=document.getElementById('real-kline-frame');
+  if(!frame||!sym)return;
+  const next='/final-v031/portfolio/kline-frame?symbol='+encodeURIComponent(sym)+'&rev='+Date.now().toString(36);
+  frame.setAttribute('src',next);
+}
+window.updateRealChartFrame=updateRealChartFrame;
 
 /* ---------- ledger tabs ---------- */
 document.querySelectorAll('.lhead .tb').forEach(b=>b.addEventListener('click',()=>{
