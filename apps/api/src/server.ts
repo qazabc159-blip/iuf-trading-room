@@ -281,6 +281,7 @@ import {
   getTstDate as getStrategyBriefTstDate
 } from "./openalice-strategy-brief.js";
 import { normalizeTwseIndustryZhTw } from "./utils/twse-industry-normalize.js";
+import { normalizeAndMergeTwseHeatmapTiles } from "./utils/heatmap-normalized-merge.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -10112,10 +10113,7 @@ app.get("/api/v1/market/heatmap/twse", async (c) => {
   // companies.chain_position is stored as English (Yahoo Finance style).
   // Frontend heatmap-industry-label.ts (#700) also normalizes, but Bruce verify
   // checks raw API JSON — backend must be the source of truth.
-  const normalizedTiles = tiles.map((tile) => ({
-    ...tile,
-    industry: normalizeTwseIndustryZhTw(tile.industry),
-  }));
+  const normalizedTiles = normalizeAndMergeTwseHeatmapTiles(tiles);
 
   return c.json({
     data: normalizedTiles,
@@ -15137,12 +15135,14 @@ app.get("/api/v1/market/heatmap/finmind", async (c) => {
     primarySource = "twse_openapi_fallback";
   }
 
+  const normalizedTiles = normalizeAndMergeTwseHeatmapTiles(tiles);
+
   return c.json({
-    data: tiles,
+    data: normalizedTiles,
     source: primarySource,
     primaryFailed,
     staleAfterSec: 60,
-    industryCount: tiles.length,
+    industryCount: normalizedTiles.length,
     mappedTickers: tickerToIndustry.size
   });
 });
