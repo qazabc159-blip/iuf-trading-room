@@ -873,10 +873,10 @@ function HeatmapTile({ tile }: { tile: LayoutTile }) {
     >
       {isStale && <span className="tile-stale-dot" aria-hidden="true" />}
       <span className="tile-symbol">{tile.symbol}</span>
-      {(tile.labelMode === "hero" || tile.labelMode === "large") && (
+      {(tile.labelMode === "hero" || tile.labelMode === "large" || tile.labelMode === "medium" || tile.labelMode === "small") && (
         <small className="tile-name">{tile.name}</small>
       )}
-      {tile.labelMode === "small" ? null : isNoData ? (
+      {isNoData ? (
         <b className="tile-pct tile-pct-nodata">--</b>
       ) : (
         <b className="tile-pct">{formatPercent(tile.displayPct)}</b>

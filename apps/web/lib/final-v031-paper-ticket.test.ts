@@ -47,4 +47,17 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain('soft(apiGet("/api/v1/kgi/status"))');
     expect(backendProxy).toContain("^\\/api\\/v1\\/kgi\\/status");
   });
+  it("uses Taiwan heatmap polarity in the market-intel industry heatmap", () => {
+    const marketIntelHtml = readFileSync(new URL("../public/ui-final-v031/market_intel/index.html", import.meta.url), "utf8");
+    expect(liveHydration).toContain('? "rgba(230,57,70," + alpha + ")"');
+    expect(liveHydration).toContain('? "rgba(46,204,113," + alpha + ")"');
+    expect(marketIntelHtml).toContain(".htile .pct.up { color: var(--bad); }");
+    expect(marketIntelHtml).toContain(".htile .pct.dn { color: var(--ok); }");
+  });
+
+  it("shows a formal institutional-data degraded state instead of a blank syncing line", () => {
+    expect(liveHydration).toContain("三大法人資料尚未回傳");
+    expect(liveHydration).toContain("本頁不顯示假法人買賣超");
+    expect(liveHydration).not.toContain("法人買賣超資料同步中</div>");
+  });
 });

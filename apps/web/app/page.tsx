@@ -3,11 +3,14 @@ import { Suspense } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   BarChart3,
+  Brain,
   Building2,
+  GitFork,
   LineChart,
   Newspaper,
   Sparkles,
   Target,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -497,6 +500,38 @@ function maskUnsafeAdviceText(text: string) {
 
 function safeBriefText(text: string) {
   return maskUnsafeAdviceText(cleanNarrativeText(text));
+}
+
+function briefHeadingText(heading: string | null | undefined, index: number) {
+  const raw = heading?.trim() ?? "";
+  const key = raw.toLowerCase().replace(/[_-]/g, " ").replace(/\s+/g, " ");
+  const known: Record<string, string> = {
+    "market overview": "盤勢總覽",
+    "theme summaries": "題材摘要",
+    "company notes": "公司觀察",
+    "risk notes": "風險提示",
+    risks: "風險提示",
+    confirmation: "確認狀態",
+  };
+  if (known[key]) return known[key];
+  const fallback = ["盤勢總覽", "題材摘要", "公司觀察"][index] ?? "簡報段落";
+  return cleanExternalHeadline(raw, fallback);
+}
+
+function polishedBriefText(text: string) {
+  const cleaned = safeBriefText(text);
+  return cleaned
+    .replace(/\bMarket State\s*:\s*/gi, "市場狀態：")
+    .replace(/\bActive Themes\s*:\s*/gi, "活躍題材：")
+    .replace(/\bPriority\s*(\d+)\s*:\s*/gi, "優先級 $1：")
+    .replace(/\bMarket Overview\b/gi, "盤勢總覽")
+    .replace(/\bTheme Summaries\b/gi, "題材摘要")
+    .replace(/\bCompany Notes\b/gi, "公司觀察")
+    .replace(/\[Discovery\/([^\]]+)\]/gi, "（探索／$1）")
+    .replace(/\s+—\s+/g, "；")
+    .replace(/\s*•\s*/g, "、")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function categoryLabel(category: string | null | undefined) {
@@ -1574,6 +1609,19 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
     { href: "/companies", title: "公司 / 主題", sub: "公司圖譜", Icon: Building2 },
     { href: "/quant-strategies", title: "量化策略", sub: "SIM-only", Icon: BarChart3 },
   ];
+  const adminNav: Array<{
+    href: string;
+    title: string;
+    sub: string;
+    Icon: LucideIcon;
+  }> = [
+    { href: "/admin/brain/llm", title: "Brain", sub: "LLM 費用", Icon: Brain },
+    { href: "/admin/events", title: "EventLog", sub: "事件流", Icon: GitFork },
+    { href: "/admin/portfolio/snapshots", title: "Portfolio", sub: "快照版本", Icon: LineChart },
+    { href: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench },
+    { href: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles },
+    { href: "/admin/strategies", title: "Strategies", sub: "Lab 策略狀態", Icon: BarChart3 },
+  ];
   return (
     <aside className="tac-sidebar">
       <div className="tac-brand">
@@ -1601,6 +1649,25 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
                 <small>{item.sub}</small>
               </div>
               {item.active && <i />}
+            </Link>
+          );
+        })}
+      </nav>
+      <div className="tac-sidebar-section-head" aria-label="OpenAlice 管理">
+        <span>OpenAlice</span>
+      </div>
+      <nav className="tac-nav tac-nav-admin" aria-label="OpenAlice 管理導覽">
+        {adminNav.map((item) => {
+          const Icon = item.Icon;
+          return (
+            <Link href={item.href} key={item.href}>
+              <span className="tac-nav-icon" aria-hidden="true">
+                <Icon size={17} strokeWidth={1.9} />
+              </span>
+              <div>
+                <b>{item.title}</b>
+                <small>{item.sub}</small>
+              </div>
             </Link>
           );
         })}
@@ -2401,10 +2468,13 @@ function DailyBriefPanel({
           {previewSections.map((section: DailyBrief["sections"][number], index: number) => (
             <article key={`${section.heading}:${index}`}>
               <span>{String(index + 1).padStart(2, "0")}</span>
-              <h3>{cleanExternalHeadline(section.heading)}</h3>
-              <p>{safeBriefText(section.body)}</p>
+              <h3>{briefHeadingText(section.heading, index)}</h3>
+              <p>{polishedBriefText(section.body)}</p>
             </article>
           ))}
+          <div className="tac-brief-quality">
+            AI 簡報只整理盤勢、題材與公司觀察，不直接輸出買賣建議；英文來源名稱只保留在必要的專有名詞。
+          </div>
         </div>
       ) : (
         <div className="tac-warning">{brief.data.reason ?? "今日 AI 簡報尚未發布。"}</div>

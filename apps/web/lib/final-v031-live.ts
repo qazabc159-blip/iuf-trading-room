@@ -1219,9 +1219,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         heatGrid.innerHTML = tiles.slice(0, 30).map((tile) => {
           const alpha = Math.max(0.08, tile.intensity / 100);
           const bg = tile.tone === "up"
-            ? "rgba(0,210,110," + alpha + ")"
+            ? "rgba(230,57,70," + alpha + ")"
             : tile.tone === "dn"
-              ? "rgba(240,60,60," + alpha + ")"
+              ? "rgba(46,204,113," + alpha + ")"
               : "rgba(120,120,140,0.08)";
           const cls = tile.tone === "up" ? "up" : tile.tone === "dn" ? "dn" : "flat";
           return '<div class="htile" style="background:' + bg + '" title="' + esc(tile.industry) + ' 共 ' + esc(tile.stockCount) + ' 檔"><div class="nm">' + esc(tile.industry) + '</div><div class="pct ' + cls + '">' + esc(tile.label) + '</div><div class="cnt">' + esc(tile.gainerCount) + '↑ ' + esc(tile.loserCount) + '↓</div></div>';
@@ -1255,11 +1255,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           : ''
         ).join("") +
         (inst.state !== "live"
-          ? '<div style="font:11px/1.5 var(--sans);color:var(--fg-3);margin-top:6px">法人資料同步中</div>'
+          ? '<div style="font:11px/1.5 var(--sans);color:var(--fg-3);margin-top:6px">三大法人資料尚未完成今日回補；來源：FinMind / TWSE institutional summary。此區不補假數字。</div>'
           : ''
         );
     } else if (instPanel && !inst) {
-      instPanel.innerHTML = '<div style="color:var(--fg-3);font:12px/2 var(--sans);text-align:center;padding:8px">法人買賣超資料同步中</div>';
+      instPanel.innerHTML = '<div style="color:var(--fg-3);font:12px/1.8 var(--sans);text-align:left;padding:10px 12px;border:1px solid rgba(145,160,181,.16);border-radius:6px;background:rgba(17,24,34,.48)"><b style="color:var(--fg-1)">三大法人資料尚未回傳</b><br>需要資料源：FinMind TaiwanStockInstitutionalInvestorsBuySell / TWSE institutional summary。Owner：Jason data lane。下一步：盤後回補或修復 ingest；本頁不顯示假法人買賣超。</div>';
     }
   }
 
