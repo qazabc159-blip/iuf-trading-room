@@ -26,7 +26,7 @@ function pct(value: number) {
 }
 
 const QUANT_SCORE_PENDING_LABEL = "待正式分數";
-const QUANT_SCORE_PENDING_HINT = "endpoint 未回傳";
+const QUANT_SCORE_PENDING_HINT = "等待正式資料源";
 
 type StrategyCardView = QuantStrategy & {
   labCandidate?: LabStrategyCandidate;
@@ -62,9 +62,9 @@ function attachLabCandidates(strategies: QuantStrategy[], candidates: LabStrateg
 }
 
 function candidateName(candidate: LabStrategyCandidate) {
-  if (candidate.strategyId === "MAIN_execution_rank_buffer_top20") return "MAIN execution rank buffer";
-  if (candidate.strategyId === "rs_20_60_low_drawdown__h20__top5") return "RS 20/60 low drawdown";
-  if (candidate.strategyId.includes("cont_liquidity_relative_strength")) return "Continuous liquidity RS";
+  if (candidate.strategyId === "MAIN_execution_rank_buffer_top20") return "主排序候選池";
+  if (candidate.strategyId === "rs_20_60_low_drawdown__h20__top5") return "20/60 強弱低回撤";
+  if (candidate.strategyId.includes("cont_liquidity_relative_strength")) return "連續流動性強弱";
   return candidate.displayName || candidate.strategyId;
 }
 
@@ -183,12 +183,12 @@ function LabCandidateStrip({
     <div className={isSanctioned ? styles.labSync : `${styles.labSync} ${styles.labSyncMuted}`}>
       <div className={styles.labSyncHead}>
         <div>
-          <span className={styles.labSyncKicker}>LAB SANCTIONED SNAPSHOT</span>
+          <span className={styles.labSyncKicker}>LAB 核准快照</span>
           <strong>{isSanctioned ? "Athena 候選策略已同步" : "Lab 候選策略暫未同步"}</strong>
         </div>
-        <div className={styles.labSyncStats} aria-label="Lab snapshot metadata">
+        <div className={styles.labSyncStats} aria-label="Lab 快照資訊">
           <span>{meta?.sprintId ?? payload?.data?.sprintId ?? "-"}</span>
-          <span>{isSanctioned ? `${candidates.length} candidates` : "fallback deck"}</span>
+          <span>{isSanctioned ? `${candidates.length} 組候選` : "本機備援"}</span>
           <span>{formatTimestamp(meta?.collectedAt ?? payload?.data?.collectedAt)}</span>
         </div>
       </div>
@@ -252,7 +252,7 @@ function StrategyCard({ strategy }: { strategy: StrategyCardView }) {
             <Database size={14} strokeWidth={1.9} />
             <div>
               <span>{strategy.labStatusWording}</span>
-              <small>{strategy.labCandidate.strategyId}</small>
+              <small>候選來源：{candidateName(strategy.labCandidate)}</small>
             </div>
           </div>
         ) : null}
@@ -264,7 +264,7 @@ function StrategyCard({ strategy }: { strategy: StrategyCardView }) {
             <small className={styles.metricHint}>{QUANT_SCORE_PENDING_HINT}</small>
           </div>
           <div className={styles.metric}>
-            <span>Regime</span>
+            <span>策略定位</span>
             <strong>{strategy.role}</strong>
           </div>
           <div className={styles.metric}>
@@ -282,7 +282,7 @@ function StrategyCard({ strategy }: { strategy: StrategyCardView }) {
         </div>
 
         <div className={styles.notice} style={{ marginBottom: 12 }}>
-          <ShieldCheck size={15} strokeWidth={1.9} /> SIM-only v1 / {strategy.current.status}
+          <ShieldCheck size={15} strokeWidth={1.9} /> 模擬模式 v1 / {strategy.current.status}
         </div>
 
         <Link className={styles.cta} href={`/quant-strategies/${strategy.id}`}>
@@ -320,8 +320,8 @@ export default async function QuantStrategiesPage({
     <PageFrame
       code="QNT"
       title="量化策略"
-      sub="Athena 訊號 / SIM-only"
-      note="v1 僅顯示 SIM 執行路徑；正式交易 lane 不出現在此頁。量化分數欄位等正式 quant-strategies endpoint 回傳後才顯示數字。"
+      sub="Athena 訊號 / 模擬模式"
+      note="v1 僅顯示模擬執行路徑；正式交易不出現在此頁。量化分數欄位等正式資料服務回傳後才顯示數字。"
     >
       <style>{`
         ._qnt-tabs {
@@ -387,13 +387,13 @@ export default async function QuantStrategiesPage({
       </div>
 
       {isSubsTab ? (
-        <Panel code="QNT-SUBS" title="我的訂閱" sub="SIM-only 策略訂閱紀錄">
+        <Panel code="QNT-SUBS" title="我的訂閱" sub="模擬策略訂閱紀錄">
           <QuantSubsPanel />
         </Panel>
       ) : (
-        <Panel code="QNT-01" title="策略列表" sub="策略分數、回測風險與 SIM-only 配置。">
+        <Panel code="QNT-01" title="策略列表" sub="策略分數、回測風險與模擬配置。">
           <div className="_qnt-banner">
-            <b className="tg gold">SIM 帳戶執行中</b> / v1 只開放模擬帳戶，不提供正式交易切換。
+            <b className="tg gold">模擬帳戶執行中</b> / v1 只開放模擬帳戶，不提供正式交易切換。
           </div>
           <LabCandidateStrip candidates={labCandidates} payload={payload} fetchError={fetchError} />
           <div className="_qnt-grid-wrap">
