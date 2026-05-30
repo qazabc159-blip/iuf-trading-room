@@ -13,6 +13,8 @@ type PreviewResponse = { data?: { blocked?: boolean; riskCheck?: { decision?: st
 const SYMBOLS = ["2330", "2454", "2317", "1809", "1723"];
 
 test("/portfolio supports 5-symbol handoff, visible ticket update, indicator toggles, and paper preview", async ({ page, request }, testInfo) => {
+  test.setTimeout(120_000);
+
   for (const symbol of SYMBOLS) {
     const lookup = await fetchJson<LookupResponse>(request, `/api/v1/companies/lookup?q=${symbol}`);
     expect(JSON.stringify(lookup), `lookup must resolve ${symbol}`).toContain(symbol);
@@ -22,7 +24,12 @@ test("/portfolio supports 5-symbol handoff, visible ticket update, indicator tog
     await expect(page.locator("iframe")).toHaveCount(1);
 
     const frame = extractFrame(page);
-    await expect(frame.locator("body"), `portfolio iframe must show selected symbol ${symbol}`).toContainText(symbol);
+    await expect(frame.locator(".symhead .sym"), `portfolio header must switch to selected symbol ${symbol}`).toContainText(symbol, {
+      timeout: 30_000,
+    });
+    await expect(frame.locator("#t-sym"), `paper ticket must switch to selected symbol ${symbol}`).toHaveValue(new RegExp(symbol), {
+      timeout: 30_000,
+    });
     await expect(frame.locator("body")).toContainText(/委託|Paper|紙上|買進|LONG/i);
 
     for (const label of ["MA20", "VWAP"]) {
