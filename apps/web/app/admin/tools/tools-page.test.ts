@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 
 describe("ToolCenter admin page product truth", () => {
+  it("forces dynamic rendering so admin truth state is not served from stale prerender cache", () => {
+    expect(source).toContain('export const dynamic = "force-dynamic"');
+    expect(source).toContain("export const revalidate = 0");
+  });
+
   it("keeps real read and audit endpoints behind collapsed technical details", () => {
     expect(source).not.toContain("<th>真實資料端點</th>");
     expect(source).toContain("<th>輸入欄位</th>");
