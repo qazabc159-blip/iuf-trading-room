@@ -1,0 +1,82 @@
+{
+  "url": "http://localhost:3002/?qa=heatmap-coldstart-1780152595025",
+  "status": 200,
+  "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_heatmap_coldstart_20260530\\reports\\heatmap_coldstart_local_20260530\\local-home-heatmap-coldstart-gated.png",
+  "summary": {
+    "heatmapTitleFound": false,
+    "activeTab": "全市場熱力圖",
+    "legend": [
+      "TWSE 全市場 · 代表股資料暖機中"
+    ],
+    "banners": [
+      "核心代表股資料仍在暖機，暫以全市場產業熱力圖顯示，避免呈現不完整代表池。"
+    ],
+    "coreTiles": 0,
+    "noDataTiles": 0,
+    "staleTiles": 0,
+    "marketWideCells": 18,
+    "sectorTabs": [],
+    "marketWideLabels": [
+      "電子零組件+2.61%128 檔",
+      "其他產業+1.44%80 檔",
+      "半導體業+1.82%72 檔",
+      "電腦及週邊設備+4.35%67 檔",
+      "化學工業+1.17%46 檔",
+      "電機設備+1.82%45 檔",
+      "紡織纖維+1.45%43 檔",
+      "車用零組件+2.07%35 檔"
+    ],
+    "pageTextSample": "IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01模擬模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyOpenAliceBrainLLM 費用EventLog事件流Portfolio快照版本Tools工具登錄UTA帳號管理StrategiesLab 策略狀態MARKET · INTEL正式資料 / 風控守門登出警示通知，8 則未讀8IIUF · 戰情台v3.0 · TACTICAL台股 AI 交易戰情室操作員 · IUF-01觀察模式 / 風控守門戰情台盤勢與任務市場情報重大訊息AI 推薦推薦引擎交易室委託與部位公司 / 主題公司圖譜量化策略SIM-onlyMARKET · INTEL3 項可用 / 5 件提醒本機時鐘 · 台北22:50:11正式資料TAIEX加權指數44,733+1.00 (+2.51%)TAIEX加權指數44,733+1.00 (+2.51%)台股目前盤後或週末休市，顯示 05/29 (五) 收盤 (週末休市) 收盤資料即時行情將於下一交"
+  },
+  "consoleEvents": [
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] intel took 1290ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] paper took 1304ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] runs took 1443ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] broker took 1794ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ops TIMEOUT after 3000ms (budget: 3000ms) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] brief TIMEOUT after 3003ms (budget: 3000ms) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ideas TIMEOUT after 3000ms (budget: 3000ms) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] finmind took 4073ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] snapshot took 4369ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] main_market_feed took 5632ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] market TIMEOUT after 15000ms (budget: 15000ms) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ALL_PANELS total=15009ms background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    }
+  ],
+  "requestFailures": []
+}
