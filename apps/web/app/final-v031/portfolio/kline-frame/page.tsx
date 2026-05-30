@@ -123,7 +123,7 @@ const frameCss = `
   }
 
   body:has(.trading-room-real-kline-frame) {
-    overflow: hidden;
+    overflow: auto;
   }
 
   .trading-room-real-kline-frame {
@@ -194,7 +194,7 @@ const frameCss = `
   }
 
   .trading-room-kline-host .kline-chart-canvas {
-    min-height: 360px;
+    min-height: 500px;
   }
 
   .kline-frame-empty {
