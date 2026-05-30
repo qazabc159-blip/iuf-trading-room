@@ -38,6 +38,10 @@ describe("normalizeOutboxDiag", () => {
     });
   });
 
+  it("shows a readable loading label before diagnostics arrive", () => {
+    expect(outboxPendingLabel(null)).toBe("讀取中");
+  });
+
   it("does not display negative backend diagnostics as product counts", () => {
     const outbox = normalizeOutboxDiag({ pendingCount: -1, fatalCount: -1, isPollerRunning: true });
 
