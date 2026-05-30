@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 describe("ToolCenter admin page product truth", () => {
   it("keeps real read and audit endpoints behind collapsed technical details", () => {
     expect(source).not.toContain("<th>真實資料端點</th>");
-    expect(source).toContain("<th>輸入 / 技術細節</th>");
+    expect(source).toContain("<th>輸入欄位</th>");
     expect(source).toContain("<summary>查看技術細節</summary>");
     expect(source).toContain("資料端點 GET {toolDetailEndpoint(tool.toolKey)}");
     expect(source).toContain("稽核 {TOOL_CALLS_ENDPOINT}");

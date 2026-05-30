@@ -522,7 +522,7 @@ function RegistryTable({
             <th>權限 / 入口</th>
             <th>最後執行證據</th>
             <th>說明</th>
-            <th>輸入 / 技術細節</th>
+            <th>輸入欄位</th>
           </tr>
         </thead>
         <tbody>
@@ -549,6 +549,14 @@ function RegistryTable({
                   <span className="_tool-badge" style={badgeStyle("warn")}>管理權限</span>
                   <span className="_tool-sub">登錄：管理權限可讀</span>
                   <span className="_tool-sub">執行：只能由後端受控流程觸發；此頁沒有手動執行按鈕。</span>
+                  <details className="_tool-tech-details">
+                    <summary>查看技術細節</summary>
+                    <span className="_tool-tech-body">
+                      <span className="_tool-endpoint-line">資料端點 GET {toolDetailEndpoint(tool.toolKey)}</span>
+                      <span className="_tool-endpoint-line">稽核 {TOOL_CALLS_ENDPOINT}&amp;toolKey={encodeURIComponent(tool.toolKey)}</span>
+                      <span className="_tool-endpoint-line">執行入口 {TOOL_EXECUTION_ENTRY}</span>
+                    </span>
+                  </details>
                 </td>
                 <td>
                   <span className="_tool-badge" style={statusBadgeStyle(toolLatest?.status ?? "none")}>{statusLabel(toolLatest?.status)}</span>
@@ -561,14 +569,6 @@ function RegistryTable({
                 </td>
                 <td>
                   <div className="_tool-schema-preview">{shortJson(tool.inputSchema)}</div>
-                  <details className="_tool-tech-details">
-                    <summary>查看技術細節</summary>
-                    <span className="_tool-tech-body">
-                      <span className="_tool-endpoint-line">資料端點 GET {toolDetailEndpoint(tool.toolKey)}</span>
-                      <span className="_tool-endpoint-line">稽核 {TOOL_CALLS_ENDPOINT}&amp;toolKey={encodeURIComponent(tool.toolKey)}</span>
-                      <span className="_tool-endpoint-line">執行入口 {TOOL_EXECUTION_ENTRY}</span>
-                    </span>
-                  </details>
                 </td>
               </tr>
             );
