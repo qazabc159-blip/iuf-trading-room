@@ -36,6 +36,14 @@ class KgiQuoteUnavailableError(RuntimeError):
     """Raised when the logged-in SDK object cannot expose a stock quote client."""
 
 
+def _quote_error_code(exc: BaseException) -> str:
+    message = str(exc)
+    code = message.split(":", 1)[0].strip()
+    if code.startswith("KGI_QUOTE_"):
+        return code
+    return "KGI_QUOTE_UNAVAILABLE"
+
+
 def _resolve_stock_quote(api):
     """
     Return a usable kgisuperpy stock quote manager.
@@ -74,6 +82,47 @@ def _resolve_stock_quote(api):
     setattr(api, "Quote", quote)
     logger.info("Hydrated missing kgisuperpy stock Quote wrapper from login auth token")
     return quote
+
+
+def get_quote_auth_status(api, *, logged_in: bool, quote_disabled: bool) -> dict:
+    """
+    Return a credential-free quote-auth diagnostic for /quote/status.
+
+    This deliberately exposes only state/code, never token, account, person id,
+    password, or upstream raw payloads.
+    """
+    if quote_disabled:
+        return {
+            "quote_auth_available": False,
+            "quote_auth_state": "disabled",
+            "quote_auth_error_code": "QUOTE_DISABLED",
+        }
+    if not logged_in or api is None:
+        return {
+            "quote_auth_available": False,
+            "quote_auth_state": "not_logged_in",
+            "quote_auth_error_code": "KGI_NOT_LOGGED_IN",
+        }
+    try:
+        _resolve_stock_quote(api)
+        return {
+            "quote_auth_available": True,
+            "quote_auth_state": "available",
+            "quote_auth_error_code": None,
+        }
+    except KgiQuoteUnavailableError as exc:
+        return {
+            "quote_auth_available": False,
+            "quote_auth_state": "unavailable",
+            "quote_auth_error_code": _quote_error_code(exc),
+        }
+    except Exception:
+        logger.exception("Unexpected quote auth diagnostic failure")
+        return {
+            "quote_auth_available": False,
+            "quote_auth_state": "error",
+            "quote_auth_error_code": "KGI_QUOTE_STATUS_ERROR",
+        }
 
 # ---------------------------------------------------------------------------
 # W2b: In-memory ring buffers (module-level, shared across requests)

@@ -42,6 +42,7 @@ from read_only_guard import require_read_only
 from kgi_quote import (
     KgiQuoteUnavailableError,
     get_latest_bidask,
+    get_quote_auth_status,
     get_quote_status,
     get_recent_ticks,
     is_tick_subscribed,
@@ -709,8 +710,14 @@ async def quote_status():
     Always 200 when gateway is alive.
     """
     status = get_quote_status()
+    quote_auth = get_quote_auth_status(
+        session.api,
+        logged_in=session.is_logged_in,
+        quote_disabled=settings.QUOTE_DISABLED,
+    )
     return {
         **status,
+        **quote_auth,
         "kgi_logged_in": session.is_logged_in,
         "quote_disabled_flag": settings.QUOTE_DISABLED,
     }
