@@ -4,15 +4,18 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 
 describe("ToolCenter admin page product truth", () => {
-  it("shows the real read and audit endpoints for each tool", () => {
-    expect(source).toContain("真實資料端點");
-    expect(source).toContain("GET {toolDetailEndpoint(tool.toolKey)}");
+  it("keeps real read and audit endpoints behind collapsed technical details", () => {
+    expect(source).not.toContain("<th>真實資料端點</th>");
+    expect(source).toContain("<th>技術細節</th>");
+    expect(source).toContain("<summary>查看技術細節</summary>");
+    expect(source).toContain("資料端點 GET {toolDetailEndpoint(tool.toolKey)}");
     expect(source).toContain("稽核 {TOOL_CALLS_ENDPOINT}");
     expect(source).toContain("toolKey={encodeURIComponent(tool.toolKey)}");
   });
 
   it("keeps execution scoped to the backend callTool wrapper", () => {
     expect(source).toContain("後端 callTool 包裝層");
+    expect(source).toContain("只能由後端受控流程觸發");
     expect(source).toContain("此頁沒有手動執行按鈕");
   });
 

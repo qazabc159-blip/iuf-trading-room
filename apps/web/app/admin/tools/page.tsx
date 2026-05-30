@@ -212,6 +212,26 @@ const CSS = `
     gap: 4px;
     min-width: 210px;
   }
+  ._tool-tech-details {
+    min-width: 180px;
+  }
+  ._tool-tech-details summary {
+    cursor: pointer;
+    color: #ffb800;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  ._tool-tech-details summary::marker {
+    color: rgba(255,184,0,0.65);
+  }
+  ._tool-tech-body {
+    display: grid;
+    gap: 4px;
+    margin-top: 7px;
+    padding-top: 7px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
   ._tool-endpoint-line {
     display: block;
     color: rgba(255,255,255,0.68);
@@ -497,10 +517,10 @@ function RegistryTable({
             <th>類型</th>
             <th>執行狀態</th>
             <th>權限 / 入口</th>
-            <th>真實資料端點</th>
             <th>最後執行證據</th>
             <th>說明</th>
             <th>輸入欄位</th>
+            <th>技術細節</th>
           </tr>
         </thead>
         <tbody>
@@ -526,14 +546,7 @@ function RegistryTable({
                 <td>
                   <span className="_tool-badge" style={badgeStyle("warn")}>管理權限</span>
                   <span className="_tool-sub">登錄：管理權限可讀</span>
-                  <span className="_tool-sub">執行：後端 callTool 包裝層；此頁沒有手動執行按鈕。</span>
-                </td>
-                <td>
-                  <span className="_tool-endpoint-stack">
-                    <span className="_tool-endpoint-line">GET {toolDetailEndpoint(tool.toolKey)}</span>
-                    <span className="_tool-endpoint-line">稽核 {TOOL_CALLS_ENDPOINT}&amp;toolKey={encodeURIComponent(tool.toolKey)}</span>
-                    <span className="_tool-endpoint-line">執行入口 {TOOL_EXECUTION_ENTRY}</span>
-                  </span>
+                  <span className="_tool-sub">執行：只能由後端受控流程觸發；此頁沒有手動執行按鈕。</span>
                 </td>
                 <td>
                   <span className="_tool-badge" style={statusBadgeStyle(toolLatest?.status ?? "none")}>{statusLabel(toolLatest?.status)}</span>
@@ -546,6 +559,16 @@ function RegistryTable({
                 </td>
                 <td>
                   <div className="_tool-schema-preview">{shortJson(tool.inputSchema)}</div>
+                </td>
+                <td>
+                  <details className="_tool-tech-details">
+                    <summary>查看技術細節</summary>
+                    <span className="_tool-tech-body">
+                      <span className="_tool-endpoint-line">資料端點 GET {toolDetailEndpoint(tool.toolKey)}</span>
+                      <span className="_tool-endpoint-line">稽核 {TOOL_CALLS_ENDPOINT}&amp;toolKey={encodeURIComponent(tool.toolKey)}</span>
+                      <span className="_tool-endpoint-line">執行入口 {TOOL_EXECUTION_ENTRY}</span>
+                    </span>
+                  </details>
                 </td>
               </tr>
             );
