@@ -22,12 +22,14 @@ import {
 import type { StrategyIdeasView } from "@iuf-trading-room/contracts";
 import { industryLabel, INDUSTRY_LABEL_MAP } from "@/lib/industry-i18n";
 import {
+  getKgiStatus,
   getKgiPositions,
   getPaperHealth,
   getPaperPortfolioRaw,
   listPaperFills,
   listPaperOrders,
   type KgiPositionsResponse,
+  type KgiStatusResponse,
   type PaperFillLedgerRow,
   type PaperHealthState,
   type PaperOrderState,
@@ -435,12 +437,13 @@ function sameSymbol(left: string | null | undefined, right: string | null | unde
 }
 
 async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
-  const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.allSettled([
+  const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult] = await Promise.allSettled([
     getPaperHealth(),
     getPaperPortfolioRaw(),
     listPaperFills(),
     listPaperOrders(),
     getKgiPositions(),
+    getKgiStatus(),
     getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 200, sort: "score" }),
   ]);
 
@@ -452,6 +455,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const fills = okValue<PaperFillLedgerRow[]>(fillsResult, []);
   const orders = okValue<PaperOrderState[]>(ordersResult, []);
   const kgi = okValue<KgiPositionsResponse | null>(kgiResult, null);
+  const kgiStatus = okValue<KgiStatusResponse | null>(kgiStatusResult, null);
   const ideas = ideasResult.status === "fulfilled" ? ideasResult.value.data : null;
   const mappedIdeas = ideas?.items?.map(mapIdea) ?? [];
   const prefill = options.paperPrefill ?? null;
@@ -529,12 +533,14 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     orders,
     fills,
     kgi,
+    kgiStatus,
     dataStates: {
       health: settledState(healthResult),
       portfolio: settledState(portfolioRawResult),
       fills: settledState(fillsResult),
       orders: settledState(ordersResult),
       kgi: settledState(kgiResult),
+      kgiStatus: settledState(kgiStatusResult),
       ideas: settledState(ideasResult),
     },
     ohlcv,
@@ -905,12 +911,13 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   async function clientPaperPayload() {
-    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.all([
+    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
       soft(apiGetRaw("/api/v1/paper/portfolio")),
       soft(apiGet("/api/v1/paper/fills")),
       soft(apiGet("/api/v1/paper/orders")),
       soft(apiGet("/api/v1/portfolio/kgi/positions")),
+      soft(apiGet("/api/v1/kgi/status")),
       soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score"))
     ]);
     const portfolioEnvelope = portfolioRawResult.ok ? portfolioRawResult.data : null;
@@ -955,12 +962,14 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       orders,
       fills,
       kgi:kgiResult.ok ? kgiResult.data : null,
+      kgiStatus:kgiStatusResult.ok ? kgiStatusResult.data : null,
       dataStates:{
         health:softState(healthResult),
         portfolio:softState(portfolioRawResult),
         fills:softState(fillsResult),
         orders:softState(ordersResult),
         kgi:softState(kgiResult),
+        kgiStatus:softState(kgiStatusResult),
         ideas:softState(ideasResult)
       },
       ohlcv,
@@ -1317,6 +1326,43 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return '<div class="price"><span class="v">'+price(item.price)+'</span><span class="d '+tone+'">'+txt+'</span></div>';
   }
 
+  const kgiQuoteAuth = () => live.kgiStatus?.gateway_quote_auth || null;
+  const kgiQuoteBlockedReason = (label) => {
+    const auth = kgiQuoteAuth();
+    const code = String(auth?.errorCode || "");
+    if (code === "KGI_QUOTE_AUTH_UNAVAILABLE") return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；" + label + "暫停，不補假資料。";
+    if (code === "QUOTE_DISABLED") return "KGI 唯讀行情目前停用；" + label + "暫停，不補假資料。";
+    if (code === "KGI_NOT_LOGGED_IN") return "KGI gateway 尚未登入；" + label + "暫停，不補假資料。";
+    if (auth && auth.available === false) return "KGI 唯讀行情目前不可用（" + esc(code || auth.state || "blocked") + "）；" + label + "暫停，不補假資料。";
+    return "KGI 唯讀行情暫無回傳；" + label + "暫停，不補假資料。";
+  };
+
+  function hydrateKgiReadinessNote() {
+    const note = $('.ltab[data-lt="kgi"] .kginote');
+    if (!note) return;
+    const auth = kgiQuoteAuth();
+    const status = live.kgiStatus || {};
+    const positions = live.kgi?.positions || [];
+    const isAuthUnavailable = String(auth?.errorCode || "") === "KGI_QUOTE_AUTH_UNAVAILABLE";
+    const title = isAuthUnavailable
+      ? "KGI SIM 已登入，行情權限未開"
+      : auth?.available
+        ? "KGI 唯讀行情可用"
+        : "KGI 唯讀狀態已同步";
+    const detail = isAuthUnavailable
+      ? "目前可讀 gateway / 帳號狀態；即時五檔與逐筆因凱基未提供 SIM 行情 token 暫停，不會補假資料。"
+      : auth?.available
+        ? "gateway 已登入且行情授權可用；若表格為空，代表目前沒有券商庫存或尚未收到該股票逐筆。"
+        : kgiQuoteBlockedReason("行情讀取");
+    const rows = [
+      status.kgi_env ? "環境：" + esc(status.kgi_env).toUpperCase() : null,
+      status.prod_write_blocked ? "正式下單：封鎖" : null,
+      auth ? "行情：" + (auth.available ? "可訂閱" : esc(auth.errorCode || auth.state || "不可用")) : null,
+      "庫存：" + positions.length + " 筆",
+    ].filter(Boolean);
+    note.innerHTML = '<span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI READ-ONLY</span> <b>'+esc(title)+'</b><br><span>'+esc(detail)+'</span><br><span style="color:var(--fg-3)">'+rows.join(" · ")+'</span>';
+  }
+
   function applyPaperPrefill(selected) {
     const prefill = paperPrefill();
     const existing = $("#rec-prefill-box");
@@ -1498,6 +1544,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (posBody) posBody.innerHTML = (live.portfolio || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">'+price(pos.avgCostPerShare)+'</td><td class="r px">'+price(pos.symbol === selected.symbol ? selected.price : pos.avgCostPerShare)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.symbol === selected.symbol ? selected.price || 0 : pos.avgCostPerShare || 0))+'</td><td class="r">需即時價換算</td><td class="r">—</td><td class="ts">'+esc(pos.fillCount)+' 筆</td></tr>').join("") || '<tr><td colspan="9">目前沒有模擬庫存。</td></tr>';
     const kgiBody = $('.ltab[data-lt="kgi"] tbody');
     if (kgiBody) kgiBody.innerHTML = (live.kgi?.positions || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">—</td><td class="r px">'+price(pos.lastPrice)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.lastPrice || 0))+'</td><td class="r pnl '+(Number(pos.unrealizedPnl || 0) >= 0 ? "up" : "dn")+'">'+n(pos.unrealizedPnl)+'</td><td><span class="src kgi">讀取</span></td></tr>').join("") || '<tr><td colspan="8">目前沒有可顯示的券商庫存讀取資料。</td></tr>';
+    hydrateKgiReadinessNote();
     const depth = $("#depth");
     if (depth) {
       if (live.bidAsk) {
@@ -1510,6 +1557,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       }
     }
     // BUG_006 — tape: 最近成交 ticks
+    if (depth && !live.bidAsk) {
+      depth.innerHTML = '<div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">'+esc(kgiQuoteBlockedReason("五檔"))+'</div>';
+    }
     const tape = $("#tape");
     if (tape) {
       const ticks = live.ticks || [];
@@ -1524,6 +1574,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       }
     }
     // BUG_006 — OHLCV legend in chart bar
+    if (tape && !(live.ticks || []).length) {
+      tape.innerHTML = '<div class="row" style="grid-template-columns:1fr;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">'+esc(kgiQuoteBlockedReason("逐筆成交"))+'</div>';
+    }
     const ohlcvLast = (live.ohlcv || []).length ? live.ohlcv[live.ohlcv.length - 1] : null;
     const ohlcO = $("#ohlc-o"); if (ohlcO) ohlcO.textContent = ohlcvLast ? price(ohlcvLast.open) : (selected.open ? price(selected.open) : "—");
     const ohlcH = $("#ohlc-h"); if (ohlcH) ohlcH.textContent = ohlcvLast ? price(ohlcvLast.high) : (selected.high ? price(selected.high) : "—");

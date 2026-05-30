@@ -62,6 +62,9 @@ const LIVE_CSS = `
 
 function blockedReason(error: unknown) {
   const msg = error instanceof Error ? error.message : String(error);
+  if (/KGI_QUOTE_AUTH_UNAVAILABLE|QUOTE_AUTH_UNAVAILABLE/i.test(msg)) {
+    return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；五檔面板降級，不補假委買委賣。";
+  }
   if (/SYMBOL_NOT_ALLOWED/i.test(msg)) {
     return "此股票尚未列入唯讀五檔行情覆蓋清單；不顯示假委買委賣。";
   }

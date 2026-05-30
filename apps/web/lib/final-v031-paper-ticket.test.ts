@@ -34,4 +34,11 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("function syncToolLayers()");
     expect(ticketHtml).toContain("chart.dataset[layer]=isOn?'on':'off'");
   });
+
+  it("surfaces KGI SIM quote auth unavailable instead of vague empty tables", () => {
+    expect(liveHydration).toContain("gateway_quote_auth");
+    expect(liveHydration).toContain("KGI_QUOTE_AUTH_UNAVAILABLE");
+    expect(liveHydration).toContain("KGI SIM 已登入，行情權限未開");
+    expect(liveHydration).toContain("hydrateKgiReadinessNote()");
+  });
 });
