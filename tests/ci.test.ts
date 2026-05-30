@@ -10329,6 +10329,7 @@ test("DS2: runKgiSimDailySmokeSchedulerTick with forceRun=true returns valid ent
   assert.ok(entry!.quoteCheck && typeof entry!.quoteCheck === "object", "DS2: quoteCheck object present");
   assert.ok(typeof entry!.quoteCheck.gatewayReachable === "boolean", "DS2: quoteCheck.gatewayReachable is boolean");
   assert.ok(typeof entry!.quoteCheck.loggedIn === "boolean", "DS2: quoteCheck.loggedIn is boolean");
+  assert.ok(typeof entry!.quoteCheck.subscribed === "boolean", "DS2: quoteCheck.subscribed is boolean");
   assert.ok(typeof entry!.quoteCheck.tickReceived === "boolean", "DS2: quoteCheck.tickReceived is boolean");
   // Entry must be stored in ring buffer
   const hist = getDailySmokeHistory();
@@ -10376,6 +10377,61 @@ test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) retu
     const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
     assert.ok(entry !== null, "DS4 (window-open): forceRun=true returns entry");
     assert.equal(entry!.sim_only, true, "DS4 (window-open): sim_only=true");
+  }
+});
+
+test("DS5: daily smoke fails when login is healthy but quote subscribe fails", async () => {
+  _resetDailySmokeHistory();
+  _resetKgiSimState();
+
+  const originalFetch = globalThis.fetch;
+  const originalGatewayUrl = process.env["KGI_GATEWAY_URL"];
+  const fakePersonId = "F" + "123456789";
+  process.env["KGI_GATEWAY_URL"] = "http://kgi-gateway.test";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "http://kgi-gateway.test/health") {
+      return new Response(JSON.stringify({ status: "ok", kgi_logged_in: true, account_set: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url === "http://kgi-gateway.test/quote/subscribe/tick") {
+      return new Response(JSON.stringify({
+        detail: {
+          error: {
+            code: "KGI_SUBSCRIBE_FAILED",
+            message: "person_pwd=secret " + fakePersonId + " denied",
+            upstream: "token=abc " + fakePersonId + " upstream reject",
+          },
+        },
+      }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ error: "unexpected test URL " + url }), { status: 500 });
+  }) as typeof fetch;
+
+  try {
+    const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+    assert.ok(entry !== null, "DS5: entry returned with forceRun=true");
+    assert.equal(entry!.overallStatus, "fail", "DS5: subscribe failure must not pass daily smoke");
+    assert.equal(entry!.quoteCheck.gatewayReachable, true, "DS5: gateway was reachable");
+    assert.equal(entry!.quoteCheck.loggedIn, true, "DS5: gateway was logged in");
+    assert.equal(entry!.quoteCheck.subscribed, false, "DS5: quote was not subscribed");
+    assert.equal(entry!.quoteCheck.tickReceived, false, "DS5: tick was not received");
+    assert.match(entry!.quoteCheck.error ?? "", /subscribe_failed: HTTP 502/);
+    assert.match(entry!.quoteCheck.error ?? "", /KGI_SUBSCRIBE_FAILED/);
+    assert.doesNotMatch(entry!.quoteCheck.error ?? "", new RegExp(`${fakePersonId}|secret|abc`), "DS5: gateway details are redacted");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalGatewayUrl === undefined) {
+      delete process.env["KGI_GATEWAY_URL"];
+    } else {
+      process.env["KGI_GATEWAY_URL"] = originalGatewayUrl;
+    }
   }
 });
 

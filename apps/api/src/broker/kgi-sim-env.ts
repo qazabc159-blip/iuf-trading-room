@@ -257,6 +257,31 @@ async function gwFetch(
   }
 }
 
+function redactGatewayText(value: string): string {
+  return value
+    .replace(/[A-Z][0-9]{9}/g, "[REDACTED_ID]")
+    .replace(/(person[_-]?pwd|password|token|secret|api[_-]?key)=?[^,\s}]+/gi, "$1=[REDACTED]")
+    .slice(0, 240);
+}
+
+function gatewayErrorSuffix(body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  const record = body as Record<string, unknown>;
+  const detail = record["detail"];
+  const error = record["error"];
+  const errorRecord = error && typeof error === "object" ? error as Record<string, unknown> : null;
+  const detailRecord = detail && typeof detail === "object" ? detail as Record<string, unknown> : null;
+  const detailError = detailRecord?.["error"];
+  const detailErrorRecord = detailError && typeof detailError === "object" ? detailError as Record<string, unknown> : null;
+  const code = detailErrorRecord?.["code"] ?? errorRecord?.["code"];
+  const message = detailErrorRecord?.["message"] ?? errorRecord?.["message"] ?? record["message"];
+  const upstream = detailErrorRecord?.["upstream"] ?? errorRecord?.["upstream"];
+  const parts = [code, message, upstream]
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .map((part) => redactGatewayText(part.trim()));
+  return parts.length ? ` (${parts.join(" | ")})` : "";
+}
+
 // ---------------------------------------------------------------------------
 // SIM Quote Smoke
 // ---------------------------------------------------------------------------
@@ -321,7 +346,7 @@ export async function runSimQuoteSmoke(params: {
       }
     );
     if (!sub.ok) {
-      result.error = `subscribe_failed: HTTP ${sub.status}`;
+      result.error = `subscribe_failed: HTTP ${sub.status}${gatewayErrorSuffix(sub.body)}`;
       return finalise(result, t0);
     }
     result.subscribed = true;
@@ -344,6 +369,9 @@ export async function runSimQuoteSmoke(params: {
           break;
         }
       }
+    }
+    if (!result.tickReceived) {
+      result.error = "tick_not_received_after_subscribe";
     }
 
   } catch (err) {
@@ -616,6 +644,7 @@ export interface DailySmokeHistoryEntry {
   quoteCheck: {
     gatewayReachable: boolean;
     loggedIn: boolean;
+    subscribed: boolean;
     tickReceived: boolean;
     error: string | null;
   };
@@ -706,7 +735,8 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
   const quoteResult = await runSimQuoteSmoke({ workspaceId, symbol: "0050" });
   console.log(
     `[kgi-sim-daily-smoke] quote: reachable=${quoteResult.gatewayReachable} ` +
-    `loggedIn=${quoteResult.loggedIn} tickReceived=${quoteResult.tickReceived} ` +
+    `loggedIn=${quoteResult.loggedIn} subscribed=${quoteResult.subscribed} ` +
+    `tickReceived=${quoteResult.tickReceived} ` +
     `error=${quoteResult.error ?? "none"}`
   );
 
@@ -767,7 +797,7 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
   }
 
   // Compute overall status
-  const quotePass = quoteResult.gatewayReachable && quoteResult.loggedIn;
+  const quotePass = quoteResult.gatewayReachable && quoteResult.loggedIn && quoteResult.subscribed && quoteResult.tickReceived;
   const tradePass = tradeCheck === null || ["accepted", "not_enabled"].includes(tradeCheck.orderOutcome);
   const auditClean = prodBrokerAuditCount === 0;
   let overallStatus: DailySmokeHistoryEntry["overallStatus"];
@@ -789,6 +819,7 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
     quoteCheck: {
       gatewayReachable: quoteResult.gatewayReachable,
       loggedIn: quoteResult.loggedIn,
+      subscribed: quoteResult.subscribed,
       tickReceived: quoteResult.tickReceived,
       error: quoteResult.error,
     },
@@ -815,6 +846,7 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
       overall_status: overallStatus,
       quote_gateway_reachable: quoteResult.gatewayReachable,
       quote_logged_in: quoteResult.loggedIn,
+      quote_subscribed: quoteResult.subscribed,
       quote_tick_received: quoteResult.tickReceived,
       quote_error: quoteResult.error,
       trade_check: tradeCheck,
