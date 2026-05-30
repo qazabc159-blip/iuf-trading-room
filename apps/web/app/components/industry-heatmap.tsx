@@ -433,8 +433,9 @@ function representativeSymbolsForSector(sectorKey: SectorKey) {
 
 function representativeCompanyName(symbol: string, rawName?: string | null) {
   const normalized = rawName?.trim();
-  if (normalized && normalized !== symbol) return normalized;
-  return REPRESENTATIVE_COMPANY_NAMES[symbol] ?? normalized ?? symbol;
+  const fixedName = REPRESENTATIVE_COMPANY_NAMES[symbol];
+  if (normalized && normalized !== symbol && !normalized.includes("�")) return normalized;
+  return fixedName ?? normalized ?? symbol;
 }
 
 function representativeRank(symbol: string, fallbackRank: number) {
