@@ -36,6 +36,25 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("chart.dataset[layer]=isOn?'on':'off'");
   });
 
+  it("does not keep stale trading-room candles when a timeframe has no verified OHLCV", () => {
+    expect(ticketHtml).toContain("function renderChartUnavailable(tf,reason)");
+    expect(ticketHtml).toContain("NO_INTRADAY_DATA");
+    expect(ticketHtml).toContain("技術指標暫停");
+    expect(ticketHtml).toContain('.chart-panel[data-chart-state="blocked"] .sr-line');
+    expect(ticketHtml).toContain('.chart-panel[data-chart-state="blocked"] .lv-line');
+    expect(ticketHtml).toContain("renderChartUnavailable(tf,'K 線端點讀取失敗，已停止沿用舊圖')");
+    expect(liveHydration).toContain("drawChart owns the empty/degraded state");
+    expect(liveHydration).toContain('if (typeof window.drawChart === "function")');
+    expect(liveHydration).not.toContain('if (typeof window.drawChart === "function" && chartBars.length > 0)');
+  });
+
+  it("requests verified 5m and 15m OHLCV directly instead of fetching 1m and relabeling it", () => {
+    expect(ticketHtml).toContain("const TF_API_INTERVAL_MAP={'5m':'5m','15m':'15m','1d':'1d','1w':'1w'}");
+    expect(ticketHtml).toContain("const TF_AGG_MINUTES={}");
+    expect(ticketHtml).toContain("TF_DISABLED_REASONS={'1m'");
+    expect(ticketHtml).not.toContain("const TF_API_INTERVAL_MAP={'1m':'1m','5m':'1m','15m':'1m','1d':'1d','1w':'1w'}");
+  });
+
   it("surfaces KGI SIM quote auth unavailable instead of vague empty tables", () => {
     expect(liveHydration).toContain("gateway_quote_auth");
     expect(liveHydration).toContain("KGI_QUOTE_AUTH_UNAVAILABLE");

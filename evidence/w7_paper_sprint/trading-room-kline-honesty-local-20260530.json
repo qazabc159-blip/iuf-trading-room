@@ -1,0 +1,127 @@
+{
+  "url": "http://127.0.0.1:3310/api/ui-final-v031/paper-trading-room?symbol=6202",
+  "frameUrl": "http://127.0.0.1:3310/api/ui-final-v031/paper-trading-room?symbol=6202",
+  "initialState": "NO_INTRADAY_DATA：目前沒有可驗證的 1d K 線資料；技術指標暫停，避免把舊圖當成 1d 顯示。",
+  "initialCandles": 0,
+  "oneMinuteState": "NO_INTRADAY_DATA：交易室尚未接入可驗證 1m 分K端點；此按鈕不再沿用日K或舊圖假裝可用。；技術指標暫停，避免把舊圖當成 1m 顯示。",
+  "oneMinuteCandles": 0,
+  "fiveMinuteState": "NO_INTRADAY_DATA：端點未回傳可繪製的 OHLCV bar；技術指標暫停，避免把舊圖當成 5m 顯示。",
+  "fiveMinuteCandles": 0,
+  "fifteenMinuteState": "NO_INTRADAY_DATA：端點未回傳可繪製的 OHLCV bar；技術指標暫停，避免把舊圖當成 15m 顯示。",
+  "fifteenMinuteCandles": 0,
+  "dailyState": "NO_INTRADAY_DATA：端點未回傳可繪製的 OHLCV bar；技術指標暫停，避免把舊圖當成 1d 顯示。",
+  "dailyCandles": 0,
+  "ohlcvRequests": [
+    "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F6202%2Fohlcv%3Finterval%3D5m",
+    "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F6202%2Fohlcv%3Finterval%3D15m",
+    "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F6202%2Fohlcv%3Finterval%3D1d"
+  ],
+  "consoleEvents": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    }
+  ],
+  "requestFailures": [
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fhealth",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fstatus",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fportfolio%2Fkgi%2Fpositions",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fstrategy%2Fideas%3FdecisionMode%3Dpaper%26includeBlocked%3Dtrue%26limit%3D8%26sort%3Dscore",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%3Fticker%3D6202",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D6202",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D6202%26limit%3D16",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F6202%2Fohlcv%3Finterval%3D5m",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F6202%2Fohlcv%3Finterval%3D15m",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3310/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%2F6202%2Fohlcv%3Finterval%3D1d",
+      "failure": "net::ERR_ABORTED"
+    }
+  ]
+}

@@ -23,6 +23,37 @@
   .field input,.field select{font-size:14px;}
   .submit{font-size:13px;padding:12px 14px;}
 }
+.chart-state{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 14px;
+  border-top:1px solid rgba(148,163,184,.14);
+  border-bottom:1px solid rgba(148,163,184,.12);
+  color:var(--fg-2);
+  font-size:12px;
+  font-weight:700;
+}
+.chart-state::before{
+  content:"";
+  width:7px;
+  height:7px;
+  border-radius:999px;
+  background:var(--fg-3);
+  box-shadow:0 0 10px rgba(148,163,184,.45);
+}
+.chart-state.live{color:var(--ok)}
+.chart-state.live::before{background:var(--ok);box-shadow:0 0 12px rgba(46,204,113,.5)}
+.chart-state.loading{color:var(--brand)}
+.chart-state.loading::before{background:var(--brand);box-shadow:0 0 12px rgba(216,166,74,.5)}
+.chart-state.blocked{color:#f6c65b;background:rgba(216,166,74,.05)}
+.chart-state.blocked::before{background:#f6c65b;box-shadow:0 0 12px rgba(246,198,91,.5)}
+.tfseg button[disabled],.tfseg button[data-disabled="true"]{opacity:.45;cursor:not-allowed;text-decoration:line-through}
+.chart-panel[data-chart-state="blocked"] .toolset .tool{opacity:.52}
+.chart-panel[data-chart-state="blocked"] .sr-line,
+.chart-panel[data-chart-state="blocked"] .sr-label,
+.chart-panel[data-chart-state="blocked"] .lv-line,
+.chart-panel[data-chart-state="blocked"] .lv-label{display:none!important}
 </style>
 </head>
 <body data-screen-label="Trading Room v1">
@@ -200,7 +231,7 @@
     <div class="chart-panel">
       <div class="chart-bar">
         <div class="tfseg" id="tfseg">
-          <button data-tf="1m">1m</button>
+          <button data-tf="1m" data-disabled="true" title="NO_INTRADAY_DATA：交易室尚未接入可驗證 1m 分K端點">1m</button>
           <button data-tf="5m">5m</button>
           <button data-tf="15m">15m</button>
           <button class="on" data-tf="1d">1d</button>
@@ -220,6 +251,10 @@
           <span>L <b id="ohlc-l">—</b></span>
           <span>C <b id="ohlc-c">—</b></span>
         </div>
+      </div>
+
+      <div class="chart-state loading" id="chart-state" role="status">
+        日K資料載入中；分K只顯示已驗證資料，不沿用舊圖假裝可用。
       </div>
 
       <div class="chart-wrap" id="chart">
@@ -678,16 +713,64 @@ function getChartData(sym){
   if(real&&real.sym===sym&&real.bars&&real.bars.length){return real.bars;}
   // Fall back to locally cached (may be from a prior hydration)
   if(CHART_DATA[sym]&&CHART_DATA[sym].length){return CHART_DATA[sym];}
-  // Last resort: placeholder series with null-filled bars to show empty chart cleanly
-  return [{o:100,h:100,l:100,c:100,v:0,placeholder:true}];
+  return [];
 }
 // Seed static fallback only for symbols without real data yet (nulls safe)
 for(const s of Object.keys(SYM_DATA)){CHART_DATA[s]=[];}
 
+function activeTf(){
+  return document.querySelector('#tfseg button.on')?.dataset.tf||'1d';
+}
+function setChartState(kind,message){
+  const state=document.getElementById('chart-state');
+  const panel=document.querySelector('.chart-panel');
+  if(state){
+    state.className='chart-state '+kind;
+    state.textContent=message;
+  }
+  if(panel)panel.dataset.chartState=kind;
+}
+function resetOhlcLegend(){
+  ['o','h','l','c'].forEach(k=>{
+    const el=document.getElementById('ohlc-'+k);
+    if(el)el.textContent='—';
+  });
+}
+function clearChartSvg(message){
+  const grid=document.getElementById('grid');
+  const candles=document.getElementById('candles');
+  const volume=document.getElementById('volume');
+  const ma=document.getElementById('ma');
+  const vwap=document.getElementById('vwap');
+  if(grid){
+    grid.innerHTML=[
+      '<line class="gridline" x1="30" y1="80" x2="980" y2="80"/>',
+      '<line class="gridline" x1="30" y1="160" x2="980" y2="160"/>',
+      '<line class="gridline" x1="30" y1="240" x2="980" y2="240"/>',
+      '<text class="axislabel" x="300" y="176">'+message+'</text>'
+    ].join('');
+  }
+  if(candles)candles.innerHTML='';
+  if(volume)volume.innerHTML='';
+  if(ma)ma.setAttribute('d','');
+  if(vwap)vwap.setAttribute('d','');
+  window.__chart=null;
+  resetOhlcLegend();
+}
+function renderChartUnavailable(tf,reason){
+  const message='NO_INTRADAY_DATA：'+reason;
+  clearChartSvg(message);
+  setChartState('blocked',message+'；技術指標暫停，避免把舊圖當成 '+tf+' 顯示。');
+}
+
 function drawChart(sym){
   const svg=document.getElementById('ksvg');
   const W=1000,H=380, padR=20, padL=30;
-  const data=getChartData(sym);
+  const data=getChartData(sym).filter(d=>d&&!d.placeholder&&Number.isFinite(Number(d.o))&&Number.isFinite(Number(d.h))&&Number.isFinite(Number(d.l))&&Number.isFinite(Number(d.c)));
+  if(!data.length){
+    renderChartUnavailable(activeTf(),'目前沒有可驗證的 '+activeTf()+' K 線資料');
+    return;
+  }
   const N=data.length;
   const hi=Math.max(...data.map(d=>d.h)), lo=Math.min(...data.map(d=>d.l));
   const vMax=Math.max(...data.map(d=>d.v));
@@ -740,6 +823,7 @@ function drawChart(sym){
   svg.dataset.W=W;svg.dataset.padL=padL;svg.dataset.padR=padR;svg.dataset.xw=xw;svg.dataset.N=N;
   // store dataset stats on svg for crosshair
   window.__chart={data,N,padL,padR,xw,bw,yp,yv,priceTop,priceBot,hi:adjHi,lo:adjLo};
+  setChartState('live','顯示 '+activeTf()+' 真實 OHLCV，共 '+N+' 根；可用滑鼠查看 O/H/L/C，無資料時不保留舊圖。');
 }
 
 // crosshair handlers
@@ -753,6 +837,7 @@ wrap.addEventListener('mousemove',e=>{
   const xv=(e.clientX-r.left)/r.width*1000;
   const yv=(e.clientY-r.top)/r.height*380;
   const {data,N,padL,padR,xw,bw}=window.__chart;
+  if(!data||!data.length){cross.style.display='none';tip.style.display='none';return;}
   let i=Math.floor((xv-padL)/xw);
   if(i<0||i>=N){cross.style.display='none';tip.style.display='none';return;}
   cross.style.display='block';tip.style.display='flex';
@@ -797,8 +882,9 @@ if(!window.__IUF_FINAL_V031_LIVE__&&!window.__IUF_FINAL_V031_EMBEDDED__){drawCha
 updPreview();
 
 /* ---------- timeframe ---------- */
-const TF_API_INTERVAL_MAP={'1m':'1m','5m':'1m','15m':'1m','1d':'1d','1w':'1w'};
-const TF_AGG_MINUTES={'5m':5,'15m':15};
+const TF_API_INTERVAL_MAP={'5m':'5m','15m':'15m','1d':'1d','1w':'1w'};
+const TF_AGG_MINUTES={};
+const TF_DISABLED_REASONS={'1m':'交易室尚未接入可驗證 1m 分K端點；此按鈕不再沿用日K或舊圖假裝可用。'};
 function ohlcvNum(v){const n=Number(v);return Number.isFinite(n)?n:null}
 function normalizeOhlcvBars(rawBars){
   return rawBars.map(bar=>{
@@ -829,11 +915,17 @@ document.querySelectorAll('#tfseg button').forEach(b=>b.addEventListener('click'
   document.querySelectorAll('#tfseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
   const tf=b.dataset.tf||'1d';
   const sym=document.querySelector('.symhead .sym')?.textContent||'2330';
+  if(TF_DISABLED_REASONS[tf]){
+    window.__IUF_OHLCV_DATA__={sym,bars:[]};
+    renderChartUnavailable(tf,TF_DISABLED_REASONS[tf]);
+    return;
+  }
   // Re-fetch OHLCV for selected timeframe via live API
   try {
     const live=window.__IUF_FINAL_V031_LIVE__;
     const companyKey=(live&&live._companyId)||sym;
     if(companyKey){
+      setChartState('loading','正在讀取 '+tf+' 真實 K 線資料；若端點無資料會清空圖表並顯示原因。');
       const apiProxy=window.__IUF_FINAL_V031_API_PROXY__||'/api/ui-final-v031/backend?path=';
       const workspaceSlug=window.__IUF_FINAL_V031_WORKSPACE_SLUG__||'primary-desk';
       const interval=TF_API_INTERVAL_MAP[tf]||'1d';
@@ -841,15 +933,20 @@ document.querySelectorAll('#tfseg button').forEach(b=>b.addEventListener('click'
       const url=apiProxy+encodeURIComponent(path);
       const raw=await fetch(url,{credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json','x-workspace-slug':workspaceSlug}}).then(r=>r.ok?r.json():null).catch(()=>null);
       const bars=Array.isArray(raw)?raw:(raw&&raw.data?raw.data:[]);
-      if(bars.length){
-        const chartBars=aggregateMinuteBars(normalizeOhlcvBars(bars),TF_AGG_MINUTES[tf]||0);
-        if(chartBars.length){
-          window.__IUF_OHLCV_DATA__={sym,bars:chartBars};
-          drawChart(sym);
-        }
+      const chartBars=aggregateMinuteBars(normalizeOhlcvBars(bars),TF_AGG_MINUTES[tf]||0);
+      if(chartBars.length){
+        window.__IUF_OHLCV_DATA__={sym,bars:chartBars};
+        drawChart(sym);
+      }else{
+        window.__IUF_OHLCV_DATA__={sym,bars:[]};
+        const status=raw&&raw.status?String(raw.status):'EMPTY';
+        renderChartUnavailable(tf,status==='NO_INTRADAY_DATA'?'後端回報此時段沒有盤中分K資料':'端點未回傳可繪製的 OHLCV bar');
       }
     }
-  } catch(e){ /* silently keep existing chart */ }
+  } catch(e){
+    window.__IUF_OHLCV_DATA__={sym,bars:[]};
+    renderChartUnavailable(tf,'K 線端點讀取失敗，已停止沿用舊圖');
+  }
 }));
 
 /* ---------- submit click → flash + add to orders ---------- */
