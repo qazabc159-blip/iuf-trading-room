@@ -579,12 +579,16 @@ function RegistryTable({
   );
 }
 
-function StatsGrid({ stats }: { stats: ToolStatEntry[] }) {
+function StatsGrid({ stats, calls }: { stats: ToolStatEntry[]; calls: ToolCallEntry[] }) {
   if (stats.length === 0) {
+    const latestCallAt = calls[0]?.createdAt;
+    const detail = latestCallAt
+      ? `過去 24 小時沒有工具呼叫統計；最近一筆工具呼叫是 ${fmtDT(latestCallAt)}，所以只會出現在下方「近期 50 筆呼叫」，不會計入 24h 統計。`
+      : "統計資料端點可讀，但沒有近期呼叫統計；這代表沒有可展示的執行量，不代表工具已成功。";
     return (
       <TruthPanel
         title="24h 統計目前為空"
-        detail="統計資料端點可讀，但沒有近期呼叫統計；這代表沒有可展示的執行量，不代表工具已成功。"
+        detail={detail}
         next="等 cron / Brain / admin action 真的透過 callTool 執行後，此區才會出現成功率與延遲。"
       />
     );
@@ -757,7 +761,7 @@ export default async function ToolsAdminPage() {
               next="重新驗證管理登入狀態，再檢查工具統計與工具呼叫紀錄聚合。"
             />
           )
-          : <StatsGrid stats={stats} />
+          : <StatsGrid stats={stats} calls={calls} />
         }
       </Panel>
 

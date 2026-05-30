@@ -19,6 +19,12 @@ describe("ToolCenter admin page product truth", () => {
     expect(source).toContain("此頁沒有手動執行按鈕");
   });
 
+  it("explains when recent calls are outside the 24h stats window", () => {
+    expect(source).toContain("最近一筆工具呼叫是");
+    expect(source).toContain("只會出現在下方「近期 50 筆呼叫」");
+    expect(source).toContain("不會計入 24h 統計");
+  });
+
   it("renders known tool descriptions in product Chinese instead of raw registry English", () => {
     expect(source).toContain("AI 精選新聞");
     expect(source).toContain("讀取今日 AI 篩選後的重要新聞與情緒判斷");
