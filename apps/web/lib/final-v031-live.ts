@@ -1477,8 +1477,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
     window.__IUF_SYM_DATA_LIVE__ = symLive;
 
-    // 4. Redraw chart with real OHLCV now that globals are set
-    if (typeof window.drawChart === "function" && chartBars.length > 0) {
+    // 4. Redraw chart after globals are set. drawChart owns the empty/degraded state,
+    // so a symbol with no bars must clear stale candles instead of leaving the previous chart visible.
+    if (typeof window.drawChart === "function") {
       window.drawChart(selected.symbol || "2330");
     }
     // ──────────────────────────────────────────────────────────────────────────
