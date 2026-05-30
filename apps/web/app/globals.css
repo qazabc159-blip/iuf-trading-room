@@ -13472,25 +13472,33 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tac-industry-heatmap .tac-heat-tile.small {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  padding: 7px;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  gap: 2px;
+  padding: 6px;
 }
 
 .tac-industry-heatmap .tac-heat-tile.small .tile-symbol {
   font-size: 11px;
+  line-height: 1;
 }
 
-.tac-industry-heatmap .tac-heat-tile.small .tile-name,
+.tac-industry-heatmap .tac-heat-tile.small .tile-name {
+  display: block;
+  font-size: 10px;
+  line-height: 1.08;
+}
+
 .tac-industry-heatmap .tac-heat-tile.small .tile-meta {
   display: none;
 }
 
 .tac-industry-heatmap .tac-heat-tile.small .tile-pct {
-  flex: 0 0 auto;
+  align-self: end;
+  justify-self: end;
   font-size: 11px;
+  line-height: 1;
 }
 
 .tac-heat-tooltip {
@@ -13705,6 +13713,15 @@ body:has(.tactical-dashboard) .app-sidebar {
   grid-column: 2;
   color: var(--tac-fg-2);
   font: 720 12px/1.7 var(--sans-tc);
+}
+
+.tac-brief-quality {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(46, 204, 113, 0.16);
+  color: var(--tac-fg-3);
+  font: 760 11px/1.6 var(--sans-tc);
 }
 
 .tac-warning,

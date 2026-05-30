@@ -57,4 +57,9 @@ describe("industry heatmap representative pool source gate", () => {
     expect(source).not.toContain("固定代表股池；此檔暫無可驗證行情");
     expect(source).toContain("未渲染為灰塊");
   });
+  it("keeps compact tiles readable with both ticker and company name", () => {
+    expect(source).toContain('|| tile.labelMode === "small"');
+    expect(source).not.toContain('tile.labelMode === "small" ? null');
+    expect(source).toContain('<small className="tile-name">{tile.name}</small>');
+  });
 });
