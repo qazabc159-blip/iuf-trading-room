@@ -67,6 +67,7 @@ const TOP_N = 10;
 const STALE_AFTER_MS = 90 * 60 * 1000;
 // Boot recovery: if DB latest row is older than 60min, fire immediately (was 4h — too wide)
 const BOOT_RECOVERY_MAX_AGE_MS = 60 * 60 * 1000;
+const MAX_STOCK_NEWS_PER_TICKER = 2;
 
 // ── F1: Startup env validation ────────────────────────────────────────────────
 
@@ -351,14 +352,63 @@ function isLowQualityStockNews(row: RawNewsRow): boolean {
   return /cmoney|money-link|yahoo|udn|pchome|idn\.com\.tw|投資網誌|小編/.test(text);
 }
 
-function sanitizeRawRows(rows: RawNewsRow[], opts: { dropLowQualityStockNews: boolean }): RawNewsRow[] {
+export function normalizeNewsTitleForDedupe(title: string | null | undefined): string {
+  let normalized = String(title ?? "").toLowerCase();
+  for (const token of [
+    "moneydj",
+    "line today",
+    "linetoday",
+    "yahoo",
+    "udn",
+    "cmoney",
+    "pchome",
+    "cnyes",
+    "anue",
+    "wantgoo",
+    "money-link",
+    "旺得富理財網",
+    "理財網",
+    "新聞",
+    "台股",
+    "上市櫃",
+  ]) {
+    normalized = normalized.replaceAll(token, "");
+  }
+  return normalized
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[【】\[\]（）()「」『』｜|:：,，.。!！?？\-–—_/\s]/g, "")
+    .slice(0, 96);
+}
+
+function isSelectionLowQualityStockNews(row: RawNewsRow): boolean {
+  if (isLowQualityStockNews(row)) return true;
+  if (row.source !== "finmind_stock_news") return false;
+  const text = `${row.title ?? ""} ${row.url ?? ""} ${row.company_name ?? ""}`.toLowerCase();
+  return /moneydj|line\s*today|linetoday|wantgoo|cnyes|anue/.test(text);
+}
+
+function newsDedupeKey(row: Pick<RawNewsRow, "ticker" | "title">): string {
+  return `${row.ticker ?? ""}:${normalizeNewsTitleForDedupe(row.title)}`;
+}
+
+function newsItemDedupeKey(item: Pick<NewsAiItem, "ticker" | "headline">): string {
+  return `${item.ticker ?? ""}:${normalizeNewsTitleForDedupe(item.headline)}`;
+}
+
+export function sanitizeRawRows(rows: RawNewsRow[], opts: { dropLowQualityStockNews: boolean }): RawNewsRow[] {
   const seen = new Set<string>();
+  const stockNewsPerTicker = new Map<string, number>();
   const result: RawNewsRow[] = [];
   for (const row of rows) {
     const title = (row.title ?? "").trim();
     if (!title) continue;
-    if (opts.dropLowQualityStockNews && isLowQualityStockNews(row)) continue;
-    const key = `${row.source}:${row.ticker ?? ""}:${title}`;
+    if (opts.dropLowQualityStockNews && isSelectionLowQualityStockNews(row)) continue;
+    if (row.source === "finmind_stock_news" && row.ticker) {
+      const count = stockNewsPerTicker.get(row.ticker) ?? 0;
+      if (count >= MAX_STOCK_NEWS_PER_TICKER) continue;
+      stockNewsPerTicker.set(row.ticker, count + 1);
+    }
+    const key = `${row.source}:${newsDedupeKey(row) || title}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push({ ...row, title });
@@ -734,6 +784,8 @@ export async function runNewsAiSelection(params: {
       const rowById = new Map(rawRows.map((r, idx) => [r.id ?? `row-${idx}`, r]));
       const aiMappedItems: NewsAiItem[] = [];
       const aiSelectedIds = new Set<string>();
+      const aiSelectedSemanticKeys = new Set<string>();
+      const aiSelectedStockNewsPerTicker = new Map<string, number>();
 
       for (let idx = 0; idx < aiResponse.selected.length && aiMappedItems.length < TOP_N; idx++) {
         const sel = aiResponse.selected[idx]!;
@@ -747,7 +799,21 @@ export async function runNewsAiSelection(params: {
           console.warn(`[news-ai-selector] AI returned unknown id="${sel.id}" — skipping`);
           continue;
         }
+        const semanticKey = newsDedupeKey(row);
+        if (semanticKey && aiSelectedSemanticKeys.has(semanticKey)) {
+          console.warn(`[news-ai-selector] AI returned duplicate headline group="${semanticKey}" at idx=${idx} ??skipping`);
+          continue;
+        }
+        if (row.source === "finmind_stock_news" && row.ticker) {
+          const count = aiSelectedStockNewsPerTicker.get(row.ticker) ?? 0;
+          if (count >= MAX_STOCK_NEWS_PER_TICKER) {
+            console.warn(`[news-ai-selector] AI over-selected ticker="${row.ticker}" at idx=${idx} ??skipping`);
+            continue;
+          }
+          aiSelectedStockNewsPerTicker.set(row.ticker, count + 1);
+        }
         aiSelectedIds.add(sel.id);
+        if (semanticKey) aiSelectedSemanticKeys.add(semanticKey);
 
         // Post-process why_matters: reject null/empty, use headline snippet as fallback
         const rawWhy = typeof sel.why_matters === "string" ? sel.why_matters.trim() : "";
@@ -779,7 +845,15 @@ export async function runNewsAiSelection(params: {
         for (const fallbackItem of deterministic) {
           if (aiMappedItems.length >= TOP_N) break;
           if (aiSelectedIds.has(fallbackItem.id)) continue;
+          const semanticKey = newsItemDedupeKey(fallbackItem);
+          if (semanticKey && aiSelectedSemanticKeys.has(semanticKey)) continue;
+          if (fallbackItem.source === "finmind_stock_news" && fallbackItem.ticker) {
+            const count = aiSelectedStockNewsPerTicker.get(fallbackItem.ticker) ?? 0;
+            if (count >= MAX_STOCK_NEWS_PER_TICKER) continue;
+            aiSelectedStockNewsPerTicker.set(fallbackItem.ticker, count + 1);
+          }
           aiSelectedIds.add(fallbackItem.id); // prevent same pad id twice
+          if (semanticKey) aiSelectedSemanticKeys.add(semanticKey);
           aiMappedItems.push({
             ...fallbackItem,
             rank: 0, // placeholder — final re-assign below makes this definitive

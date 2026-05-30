@@ -26,8 +26,10 @@ import {
   getLastNewsRunAt,
   getNewsTop10WithStaleness,
   isWithinNewsWindowTrigger,
+  normalizeNewsTitleForDedupe,
   runNewsAiSelection,
   runNewsAiSelectionBootRecovery,
+  sanitizeRawRows,
   type RawNewsRow,
 } from "../news-ai-selector.js";
 
@@ -188,6 +190,67 @@ test("NS8b: deterministic fallback still provides why_matters, impact_tier, and 
   assert.ok(items.every((item) => item.why_matters), "fallback why_matters must be filled");
   assert.ok(items.every((item) => item.impact_tier), "fallback impact_tier must be filled");
   assert.ok(items.every((item) => item.tags.length > 0), "fallback tags must be filled");
+});
+
+test("NS8c: news sanitizer removes repost noise and caps one stock-news ticker", () => {
+  const rows: RawNewsRow[] = [
+    {
+      id: "m1",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:24:34.000Z",
+      title: "徐旭東獨子徐國安代父出征，遠東新股東會首度致詞- 新聞 - MoneyDJ",
+      url: "https://example.test/moneydj-1",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "m2",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:24:34.000Z",
+      title: "徐旭東獨子徐國安代父出征，遠東新股東會首度致詞| MoneyDJ理財網 - LINE TODAY",
+      url: "https://example.test/line-today",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "q1",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:44:00.000Z",
+      title: "遠東新看Q2營運更好/Q3持穩，全年優於去年",
+      url: "https://example.test/q1",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "q2",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:45:00.000Z",
+      title: "遠東新股東會通過配息案",
+      url: "https://example.test/q2",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "q3",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:46:00.000Z",
+      title: "遠東新法人說明會更新",
+      url: "https://example.test/q3",
+      source: "finmind_stock_news",
+    },
+  ];
+
+  assert.equal(
+    normalizeNewsTitleForDedupe(rows[0]!.title),
+    normalizeNewsTitleForDedupe(rows[1]!.title),
+    "reposted MoneyDJ/LINE TODAY titles should share one semantic key"
+  );
+
+  const clean = sanitizeRawRows(rows, { dropLowQualityStockNews: true });
+
+  assert.ok(clean.every((row) => !/moneydj|line\s*today/i.test(`${row.title} ${row.url}`)), "known repost sources must be removed");
+  assert.ok(clean.filter((row) => row.ticker === "1402" && row.source === "finmind_stock_news").length <= 2, "one stock-news ticker must not flood the top-10 input");
 });
 
 test("NS9: runNewsAiSelectionBootRecovery() fires when never run before", async () => {
