@@ -12,6 +12,8 @@ describe("admin strategies page copy", () => {
     expect(pageSource).toContain("關閉：{item}");
     expect(pageSource).toContain("下一步：");
     expect(pageSource).toContain("對推薦系統影響：");
+    expect(pageSource).toContain("查看 {lane.evidenceFiles.length} 份證據檔案");
+    expect(pageSource).toContain("<details");
   });
 
   it("does not expose the old English governance labels in rendered copy", () => {
@@ -23,5 +25,6 @@ describe("admin strategies page copy", () => {
     expect(pageSource).not.toContain("disabled · {item}");
     expect(pageSource).not.toContain("Next action:");
     expect(pageSource).not.toContain("Recommendation impact:");
+    expect(pageSource).not.toContain("證據檔案（只讀，IUF_QUANT_LAB）");
   });
 });

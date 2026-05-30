@@ -444,18 +444,31 @@ function LaneCardView({ lane }: { lane: LaneCard }) {
 
       {/* Evidence files */}
       {lane.evidenceFiles.length > 0 && (
-        <div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-            證據檔案（只讀，IUF_QUANT_LAB）
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <details style={{
+          border: "1px solid rgba(255,255,255,0.07)",
+          borderRadius: 5,
+          background: "rgba(255,255,255,0.018)",
+          padding: "8px 10px",
+        }}>
+          <summary style={{
+            cursor: "pointer",
+            color: "rgba(255,255,255,0.52)",
+            fontSize: 11,
+            fontWeight: 700,
+          }}>
+            查看 {lane.evidenceFiles.length} 份證據檔案
+          </summary>
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+              來源：IUF_QUANT_LAB，只讀保存。
+            </span>
             {lane.evidenceFiles.map((f, i) => (
               <code key={i} style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", display: "block", wordBreak: "break-all" }}>
                 {f}
               </code>
             ))}
           </div>
-        </div>
+        </details>
       )}
     </div>
   );
