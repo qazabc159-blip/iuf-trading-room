@@ -67,7 +67,7 @@ const TOP_N = 10;
 const STALE_AFTER_MS = 90 * 60 * 1000;
 // Boot recovery: if DB latest row is older than 60min, fire immediately (was 4h — too wide)
 const BOOT_RECOVERY_MAX_AGE_MS = 60 * 60 * 1000;
-const MAX_STOCK_NEWS_PER_TICKER = 2;
+const MAX_STOCK_NEWS_PER_TICKER = 1;
 
 // ── F1: Startup env validation ────────────────────────────────────────────────
 
@@ -384,7 +384,8 @@ function isSelectionLowQualityStockNews(row: RawNewsRow): boolean {
   if (isLowQualityStockNews(row)) return true;
   if (row.source !== "finmind_stock_news") return false;
   const text = `${row.title ?? ""} ${row.url ?? ""} ${row.company_name ?? ""}`.toLowerCase();
-  return /moneydj|line\s*today|linetoday|wantgoo|cnyes|anue/.test(text);
+  if (/moneydj|line\s*today|linetoday|wantgoo|cnyes|anue|tvbs|ettoday/.test(text)) return true;
+  return /討論牆|盤中速報|躺平|專家問|高點到了嗎|小編/.test(text);
 }
 
 function newsDedupeKey(row: Pick<RawNewsRow, "ticker" | "title">): string {
@@ -856,12 +857,7 @@ export async function runNewsAiSelection(params: {
           if (semanticKey) aiSelectedSemanticKeys.add(semanticKey);
           aiMappedItems.push({
             ...fallbackItem,
-            rank: 0, // placeholder — final re-assign below makes this definitive
-            // Pad items come from deterministic fallback — assign default why/impact so
-            // callers always see non-null values (acceptance: null why=0, null impact=0)
-            why_matters: `重要台股消息：${(fallbackItem.headline ?? "").slice(0, 30)}`,
-            impact_tier: "MID" as const,
-            tags: []
+            rank: 0 // placeholder — final re-assign below makes this definitive
           });
         }
       }
