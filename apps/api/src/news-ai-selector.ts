@@ -452,6 +452,11 @@ function inferDeterministicImpact(row: RawNewsRow): "HIGH" | "MID" | "LOW" {
   const title = row.title ?? "";
   if (row.source === "twse_announcements") return "HIGH";
   if (/下市|停止交易|重大|重訊|處分|警示|虧損|財報公告|營收大幅|減資|增資/.test(title)) return "HIGH";
+  if (/成分股|換新血|納入|剔除|指數|ETF|0050|0056/.test(title)) return "MID";
+  if (/目標價|評等|升評|降評|看好|靠山/.test(title)) return "MID";
+  if (/漲停|跌停|站上|均線|創高|創低|強勢|熱門股/.test(title)) return "MID";
+  if (/轉型|新材料|COMPUTEX|半導體|AI|伺服器|切入/.test(title)) return "MID";
+  if (/股利|配息|殖利率|除息/.test(title)) return "MID";
   if (/財報|營收|EPS|法說|股東會|注意股|外資|投信|訂單|漲停|跌停/.test(title)) return "MID";
   return "LOW";
 }
@@ -461,6 +466,12 @@ function buildDeterministicWhy(row: RawNewsRow, impact: "HIGH" | "MID" | "LOW"):
   const name = row.company_name || row.ticker || "相關公司";
   if (row.source === "twse_announcements") {
     return `${name} 有官方公告，需確認是否影響營收、財務或交易風險。`;
+  }
+  if (/成分股|換新血|納入|剔除|指數|ETF|0050|0056/.test(title)) {
+    return `${name} 涉及指數或 ETF 成分調整，可能帶動被動資金換股與短線成交量。`;
+  }
+  if (/目標價|評等|升評|降評|看好|靠山/.test(title)) {
+    return `${name} 市場評價或目標價出現變化，需檢查股價是否已反映預期。`;
   }
   if (/下市|停止交易|處分|警示/.test(title)) {
     return `${name} 出現交易或下市風險訊號，需優先檢查持股與風控。`;
@@ -474,21 +485,37 @@ function buildDeterministicWhy(row: RawNewsRow, impact: "HIGH" | "MID" | "LOW"):
   if (/法說|股東會|訂單|合作|供應/.test(title)) {
     return `${name} 公司事件可能牽動題材與預期，需追蹤後續公告。`;
   }
+  if (/轉型|新材料|COMPUTEX|半導體|AI|伺服器|切入/.test(title)) {
+    return `${name} 題材或產品線出現新訊號，需追蹤是否擴散到相關供應鏈。`;
+  }
+  if (/漲停|跌停|站上|均線|創高|創低|強勢|熱門股/.test(title)) {
+    return `${name} 價量動能明顯變化，需確認是否有基本面或題材支撐。`;
+  }
+  if (/股利|配息|殖利率|除息/.test(title)) {
+    return `${name} 股利或殖利率訊息更新，可能影響收益型資金配置。`;
+  }
+  if (/全年|今年|展望|優於去年|成長|改善/.test(title)) {
+    return `${name} 經營層釋出營運展望，需觀察後續營收是否跟上。`;
+  }
   return impact === "LOW"
-    ? `${name} 有新的市場消息，先列入觀察並等待量價確認。`
-    : `${name} 有新消息可能影響市場預期，需追蹤相關族群反應。`;
+    ? `${name} 有公司面訊息更新，先列入觀察並等待量價確認。`
+    : `${name} 有市場預期變化訊號，需追蹤相關族群與成交量反應。`;
 }
 
 function buildDeterministicTags(row: RawNewsRow): string[] {
   const title = row.title ?? "";
   const tags = new Set<string>();
   if (row.source === "twse_announcements") tags.add("官方公告");
+  if (/成分股|換新血|納入|剔除|指數|ETF|0050|0056/.test(title)) tags.add("ETF/指數");
+  if (/目標價|評等|升評|降評|看好|靠山/.test(title)) tags.add("市場評價");
   if (/下市|停止交易|處分|警示/.test(title)) tags.add("風險");
   if (/財報|EPS|獲利|虧損/.test(title)) tags.add("財報");
   if (/營收/.test(title)) tags.add("營收");
   if (/外資|投信|法人/.test(title)) tags.add("籌碼");
   if (/法說|股東會/.test(title)) tags.add("公司事件");
-  if (/AI|伺服器|半導體|電動車|機器人|航運|金融/.test(title)) tags.add("題材");
+  if (/漲停|跌停|站上|均線|創高|創低|強勢|熱門股/.test(title)) tags.add("價量動能");
+  if (/轉型|新材料|COMPUTEX|半導體|AI|伺服器|切入|電動車|機器人|航運|金融/.test(title)) tags.add("題材");
+  if (/股利|配息|殖利率|除息/.test(title)) tags.add("股利");
   if (tags.size === 0) tags.add("市場新聞");
   return [...tags].slice(0, 3);
 }

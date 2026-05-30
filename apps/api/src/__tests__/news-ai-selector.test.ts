@@ -272,6 +272,78 @@ test("NS8c: news sanitizer removes repost noise and caps one stock-news ticker",
   assert.ok(clean.filter((row) => row.ticker === "1402" && row.source === "finmind_stock_news").length <= 1, "one stock-news ticker must not flood the top-10 input");
 });
 
+test("NS8d: deterministic fallback emits specific why_matters for common market-intel categories", () => {
+  const rows: RawNewsRow[] = [
+    {
+      id: "etf-0050",
+      ticker: "0050",
+      company_name: "元大台灣50",
+      date: "2026-05-29T03:00:00.000Z",
+      title: "0050換新血4檔入列呼聲高 - 工商時報",
+      url: "https://example.test/etf",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "target-1303",
+      ticker: "1303",
+      company_name: "南亞",
+      date: "2026-05-29T03:01:00.000Z",
+      title: "個股／南亞科最強靠山 他新目標價曝",
+      url: "https://example.test/target",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "theme-1312",
+      ticker: "1312",
+      company_name: "國喬",
+      date: "2026-05-29T03:02:00.000Z",
+      title: "國喬三策略轉型搶攻新材料",
+      url: "https://example.test/theme",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "momentum-1319",
+      ticker: "1319",
+      company_name: "東陽",
+      date: "2026-05-29T03:03:00.000Z",
+      title: "東陽站上所有均線",
+      url: "https://example.test/momentum",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "dividend-1432",
+      ticker: "1432",
+      company_name: "大魯閣",
+      date: "2026-05-29T03:04:00.000Z",
+      title: "54家股利公布大魯閣殖利率逾12.35％",
+      url: "https://example.test/dividend",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "outlook-1402",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:05:00.000Z",
+      title: "遠東新席家宜：今年一定會比去年好",
+      url: "https://example.test/outlook",
+      source: "finmind_stock_news",
+    },
+  ];
+
+  const byId = new Map(deterministicTop10(rows).map((item) => [item.id, item]));
+
+  assert.match(byId.get("etf-0050")!.why_matters ?? "", /被動資金|ETF/);
+  assert.match(byId.get("target-1303")!.why_matters ?? "", /目標價|市場評價/);
+  assert.match(byId.get("theme-1312")!.why_matters ?? "", /供應鏈|題材/);
+  assert.match(byId.get("momentum-1319")!.why_matters ?? "", /價量|均線/);
+  assert.match(byId.get("dividend-1432")!.why_matters ?? "", /股利|殖利率/);
+  assert.match(byId.get("outlook-1402")!.why_matters ?? "", /營運展望|營收/);
+  assert.ok(
+    [...byId.values()].every((item) => !/有新的市場消息|有新消息可能影響市場預期/.test(item.why_matters ?? "")),
+    "common categories must not fall back to generic why_matters copy"
+  );
+});
+
 test("NS9: runNewsAiSelectionBootRecovery() fires when never run before", async () => {
   _resetNewsAiSelectorState();
 
