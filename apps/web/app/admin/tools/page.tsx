@@ -580,34 +580,45 @@ function RegistryTable({
 }
 
 function StatsGrid({ stats, calls }: { stats: ToolStatEntry[]; calls: ToolCallEntry[] }) {
+  const totalCalls = stats.reduce((sum, stat) => sum + stat.totalCalls, 0);
+  const latestCallAt = calls[0]?.createdAt;
+  const zeroWindowDetail = latestCallAt
+    ? `過去 24 小時沒有工具呼叫統計；最近一筆工具呼叫是 ${fmtDT(latestCallAt)}，所以只會出現在下方「近期 50 筆呼叫」，不會計入 24h 統計。`
+    : "統計資料端點可讀，但沒有近期呼叫統計；這代表沒有可展示的執行量，不代表工具已成功。";
+
   if (stats.length === 0) {
-    const latestCallAt = calls[0]?.createdAt;
-    const detail = latestCallAt
-      ? `過去 24 小時沒有工具呼叫統計；最近一筆工具呼叫是 ${fmtDT(latestCallAt)}，所以只會出現在下方「近期 50 筆呼叫」，不會計入 24h 統計。`
-      : "統計資料端點可讀，但沒有近期呼叫統計；這代表沒有可展示的執行量，不代表工具已成功。";
     return (
       <TruthPanel
         title="24h 統計目前為空"
-        detail={detail}
+        detail={zeroWindowDetail}
         next="等 cron / Brain / admin action 真的透過 callTool 執行後，此區才會出現成功率與延遲。"
       />
     );
   }
 
   return (
-    <div className="_tool-stats-grid">
-      {stats.map((s) => (
-        <div key={s.toolKey} className="_tool-stat-card">
-          <div className="_tool-stat-key">{s.toolKey}</div>
-          <div className="_tool-stat-row"><span>總呼叫</span><span className="_tool-stat-val">{s.totalCalls}</span></div>
-          <div className="_tool-stat-row"><span>成功</span><span className="_tool-stat-val" style={{ color: "#4caf50" }}>{s.successCalls}</span></div>
-          <div className="_tool-stat-row"><span>失敗</span><span className="_tool-stat-val" style={{ color: s.failureCalls > 0 ? "#ef5350" : "rgba(255,255,255,0.82)" }}>{s.failureCalls}</span></div>
-          <div className="_tool-stat-row"><span>逾時</span><span className="_tool-stat-val" style={{ color: s.timeoutCalls > 0 ? "#ffb800" : "rgba(255,255,255,0.82)" }}>{s.timeoutCalls}</span></div>
-          <div className="_tool-stat-row"><span>錯誤率</span><span className="_tool-stat-val" style={{ color: errorRatePct(s.errorRate) > 25 ? "#ef5350" : "#4caf50" }}>{errorRatePct(s.errorRate).toFixed(1)}%</span></div>
-          <div className="_tool-stat-row"><span>平均延遲</span><span className="_tool-stat-val">{fmtLatency(s.avgLatencyMs)}</span></div>
-        </div>
-      ))}
-    </div>
+    <>
+      {totalCalls === 0 && (
+        <TruthPanel
+          title="24h 統計目前為 0"
+          detail={zeroWindowDetail}
+          next="下方仍列出每個工具的 24h 統計列；全部為 0 時代表視窗內沒有真呼叫，不是前端漏資料。"
+        />
+      )}
+      <div className="_tool-stats-grid">
+        {stats.map((s) => (
+          <div key={s.toolKey} className="_tool-stat-card">
+            <div className="_tool-stat-key">{s.toolKey}</div>
+            <div className="_tool-stat-row"><span>總呼叫</span><span className="_tool-stat-val">{s.totalCalls}</span></div>
+            <div className="_tool-stat-row"><span>成功</span><span className="_tool-stat-val" style={{ color: "#4caf50" }}>{s.successCalls}</span></div>
+            <div className="_tool-stat-row"><span>失敗</span><span className="_tool-stat-val" style={{ color: s.failureCalls > 0 ? "#ef5350" : "rgba(255,255,255,0.82)" }}>{s.failureCalls}</span></div>
+            <div className="_tool-stat-row"><span>逾時</span><span className="_tool-stat-val" style={{ color: s.timeoutCalls > 0 ? "#ffb800" : "rgba(255,255,255,0.82)" }}>{s.timeoutCalls}</span></div>
+            <div className="_tool-stat-row"><span>錯誤率</span><span className="_tool-stat-val" style={{ color: errorRatePct(s.errorRate) > 25 ? "#ef5350" : "#4caf50" }}>{errorRatePct(s.errorRate).toFixed(1)}%</span></div>
+            <div className="_tool-stat-row"><span>平均延遲</span><span className="_tool-stat-val">{fmtLatency(s.avgLatencyMs)}</span></div>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
