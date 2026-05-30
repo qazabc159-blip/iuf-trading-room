@@ -154,10 +154,47 @@ const frameCss = `
     margin: 0;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .trading-room-kline-host .panel-head {
+    order: 1;
+    padding: 10px 12px;
+  }
+
+  .trading-room-kline-host .kline-chart-shell,
+  .trading-room-kline-host .terminal-note,
+  .trading-room-kline-host .kline-insufficient {
+    order: 2;
+  }
+
+  .trading-room-kline-host ._ind-toggle-bar {
+    order: 3;
+  }
+
+  .trading-room-kline-host .kline-toolbar {
+    order: 4;
+  }
+
+  .trading-room-kline-host .kline-pending-line {
+    order: 5;
+  }
+
+  .trading-room-kline-host .kline-meta-line {
+    order: 6;
+  }
+
+  .trading-room-kline-host .kline-snapshot-strip {
+    order: 7;
+  }
+
+  .trading-room-kline-host .kline-density-strip {
+    order: 8;
   }
 
   .trading-room-kline-host .kline-chart-canvas {
-    min-height: 390px;
+    min-height: 360px;
   }
 
   .kline-frame-empty {
