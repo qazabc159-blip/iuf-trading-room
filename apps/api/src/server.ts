@@ -3865,6 +3865,49 @@ import {
   maskAccount,
 } from "./broker/kgi-sim-env.js";
 
+type KgiGatewayQuoteAuthSummary = {
+  available: boolean | null;
+  state: string;
+  errorCode: string | null;
+  subscribedTickCount: number | null;
+};
+
+async function readKgiGatewayQuoteAuthSummary(): Promise<KgiGatewayQuoteAuthSummary> {
+  const gatewayUrl =
+    process.env["KGI_GATEWAY_URL"] ??
+    process.env["KGI_GATEWAY_BASE_URL"] ??
+    "http://127.0.0.1:8787";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1_500);
+  try {
+    const res = await fetch(`${gatewayUrl}/quote/status`, { method: "GET", signal: controller.signal });
+    if (!res.ok) {
+      return { available: null, state: "gateway_error", errorCode: `HTTP_${res.status}`, subscribedTickCount: null };
+    }
+    const body = await res.json() as {
+      quote_auth_available?: boolean;
+      quote_auth_state?: string;
+      quote_auth_error_code?: string | null;
+      subscribed_symbols?: { tick?: string[] };
+    };
+    return {
+      available: typeof body.quote_auth_available === "boolean" ? body.quote_auth_available : null,
+      state: body.quote_auth_state ?? "unknown",
+      errorCode: body.quote_auth_error_code ?? null,
+      subscribedTickCount: Array.isArray(body.subscribed_symbols?.tick) ? body.subscribed_symbols.tick.length : null,
+    };
+  } catch {
+    return {
+      available: null,
+      state: "gateway_unreachable",
+      errorCode: "KGI_GATEWAY_UNREACHABLE",
+      subscribedTickCount: null,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // GET /api/v1/kgi/status — Owner only. Returns KGI env, connection state, SIM smoke results.
 // LITERAL route registered BEFORE any parametric /api/v1/kgi/:* to avoid Hono shadow.
 app.get("/api/v1/kgi/status", async (c) => {
@@ -3874,6 +3917,7 @@ app.get("/api/v1/kgi/status", async (c) => {
   }
 
   const state = getKgiSimState();
+  const gatewayQuoteAuth = await readKgiGatewayQuoteAuthSummary();
 
   return c.json({
     sim_only: true,
@@ -3887,6 +3931,7 @@ app.get("/api/v1/kgi/status", async (c) => {
     last_trade_smoke_at: state.lastTradeSmokeAt,
     last_sim_order_report_at: state.lastSimOrderReportAt,
     prod_write_blocked: true, // permanent hard guard — never false
+    gateway_quote_auth: gatewayQuoteAuth,
     sim_quote_host: process.env["KGI_SIM_QUOTE_HOST"] ?? "iquotetest.kgi.com.tw",
     sim_trade_host: process.env["KGI_SIM_TRADE_HOST"] ?? "itradetest.kgi.com.tw",
   });
