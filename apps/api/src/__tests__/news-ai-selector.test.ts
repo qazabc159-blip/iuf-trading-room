@@ -239,6 +239,24 @@ test("NS8c: news sanitizer removes repost noise and caps one stock-news ticker",
       url: "https://example.test/q3",
       source: "finmind_stock_news",
     },
+    {
+      id: "noise-etf-1",
+      ticker: "0050",
+      company_name: "元大台灣50",
+      date: "2026-05-29T03:47:00.000Z",
+      title: "賣一張0050想「躺平2個月」 專家問1事搖頭：只能1個月 - TVBS新聞網",
+      url: "https://example.test/tvbs-noise",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "noise-etf-2",
+      ticker: "0050",
+      company_name: "元大台灣50",
+      date: "2026-05-29T03:48:00.000Z",
+      title: "台股、0050高點到了嗎？專家：美股數據給出不同答案 - ETtoday財經雲",
+      url: "https://example.test/ettoday-noise",
+      source: "finmind_stock_news",
+    },
   ];
 
   assert.equal(
@@ -250,7 +268,8 @@ test("NS8c: news sanitizer removes repost noise and caps one stock-news ticker",
   const clean = sanitizeRawRows(rows, { dropLowQualityStockNews: true });
 
   assert.ok(clean.every((row) => !/moneydj|line\s*today/i.test(`${row.title} ${row.url}`)), "known repost sources must be removed");
-  assert.ok(clean.filter((row) => row.ticker === "1402" && row.source === "finmind_stock_news").length <= 2, "one stock-news ticker must not flood the top-10 input");
+  assert.ok(clean.every((row) => !/tvbs|ettoday|躺平|高點到了嗎/i.test(`${row.title} ${row.url}`)), "retail ETF commentary must be removed");
+  assert.ok(clean.filter((row) => row.ticker === "1402" && row.source === "finmind_stock_news").length <= 1, "one stock-news ticker must not flood the top-10 input");
 });
 
 test("NS9: runNewsAiSelectionBootRecovery() fires when never run before", async () => {
