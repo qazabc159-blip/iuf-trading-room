@@ -24,9 +24,24 @@ Path B architecture: `IUF API (Linux) → HTTP+WS → KGI Gateway (Windows)`
 | `GATEWAY_HOST` | No | `127.0.0.1` | Bind host |
 | `GATEWAY_PORT` | No | `8787` | Bind port |
 | `AUTO_LOGIN` | No | `false` | Auto-login on startup (not recommended for W1) |
+| `KGI_SIMULATION` | No | `true` | Use KGI SIM/SUPERPY mode when true |
+| `KGI_READ_ONLY_MODE` | No | `true` | Blocks mutation endpoints unless explicitly disabled |
 
 **Important:** `KGI_PERSON_ID` is case-sensitive — must be uppercase (e.g. `YOUR_PERSON_ID`).  
 Source: `feedback_kgi_env_var_uppercase_rule.md`
+
+### Production SIM Credential Source
+
+Production gateway deploys should use SIM credentials from AWS SSM SecureString:
+
+- `/iuf/kgi/sim_person_id`
+- `/iuf/kgi/sim_person_pwd`
+
+`deploy/install.ps1` defaults to those SIM paths, sets `KGI_SIMULATION=true`,
+keeps `KGI_READ_ONLY_MODE=true`, and sets `AUTO_LOGIN=true` so a gateway
+restart can recover the authenticated SIM session without copying passwords
+through chat or files. For live mode, run the install script with
+`-KgiSimulation:$false` to use `/iuf/kgi/person_id` and `/iuf/kgi/person_pwd`.
 
 ### `KGI_GATEWAY_POSITION_DISABLED` (W2a Candidate F)
 

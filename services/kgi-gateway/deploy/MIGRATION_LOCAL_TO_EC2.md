@@ -12,7 +12,7 @@
 |---|---|---|
 | 1 | KGI business approval | TradeCom 元件權限 enabled (RtnCode ≠ 78) |
 | 2 | Security group updated | Port 8787 open from Railway egress IP(s) only — see `security_group.sh` |
-| 3 | SSM parameters written | `/iuf/kgi/person_id` + `/iuf/kgi/person_pwd` stored in AWS SSM |
+| 3 | SSM parameters written | SIM: `/iuf/kgi/sim_person_id` + `/iuf/kgi/sim_person_pwd` stored in AWS SSM. Live mode uses `/iuf/kgi/person_id` + `/iuf/kgi/person_pwd`. |
 | 4 | AWS CLI on EC2 | `aws --version` works; instance profile has `ssm:GetParameter` permission |
 | 5 | Gateway source available | Either repo clone or ZIP copied to EC2 |
 
@@ -54,14 +54,14 @@ git clone https://github.com/<your-org>/IUF_TRADING_ROOM_APP.git
 ```bash
 # Run from a machine with AWS CLI + credentials for account 027903151493
 aws ssm put-parameter \
-  --name "/iuf/kgi/person_id" \
+  --name "/iuf/kgi/sim_person_id" \
   --value "YOUR_PERSON_ID_UPPERCASE" \
   --type "SecureString" \
   --overwrite \
   --region ap-northeast-1
 
 aws ssm put-parameter \
-  --name "/iuf/kgi/person_pwd" \
+  --name "/iuf/kgi/sim_person_pwd" \
   --value "YOUR_ELECTRONIC_TRADING_PASSWORD" \
   --type "SecureString" \
   --overwrite \
@@ -83,8 +83,11 @@ cd C:\IUF_TRADING_ROOM_APP\services\kgi-gateway\deploy   # or wherever you copie
 # Dry-run first (no changes):
 .\install.ps1 -DryRun
 
-# Real install (reads SSM, installs Python, copies files, smoke tests):
+# Real SIM install (reads /iuf/kgi/sim_person_* from SSM, installs Python, copies files, smoke tests):
 .\install.ps1 -UseSSM
+
+# Live-mode override, only when explicitly approved:
+# .\install.ps1 -UseSSM -KgiSimulation:$false
 
 # Check evidence:
 Get-Content C:\kgi-gateway-logs\install_evidence.json
@@ -98,8 +101,11 @@ Get-Content C:\kgi-gateway-logs\install_evidence.json
 # Dry-run first:
 .\nssm_install.ps1 -DryRun
 
-# Real install:
+# Real SIM service install:
 .\nssm_install.ps1
+
+# Live-mode override, only when explicitly approved:
+# .\nssm_install.ps1 -KgiSimulation:$false
 
 # Verify service state:
 Get-Service KGIGateway
