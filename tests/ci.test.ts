@@ -10296,6 +10296,7 @@ import {
   _resetDailySmokeHistory,
   _resetKgiSimState,
   getKgiSimState,
+  runSimQuoteSmoke,
   runSimTradeSmoke,
   type TradeSmokeResult,
 } from "../apps/api/src/broker/kgi-sim-env.ts";
@@ -10431,6 +10432,86 @@ test("DS5: daily smoke fails when login is healthy but quote subscribe fails", a
       delete process.env["KGI_GATEWAY_URL"];
     } else {
       process.env["KGI_GATEWAY_URL"] = originalGatewayUrl;
+    }
+  }
+});
+
+test("DS6: runSimQuoteSmoke logs in and sets account before subscribing after gateway restart", async () => {
+  _resetKgiSimState();
+  const originalFetch = globalThis.fetch;
+  const originalEnv = {
+    KGI_ENV: process.env["KGI_ENV"],
+    KGI_PERSON_ID: process.env["KGI_PERSON_ID"],
+    KGI_PERSON_PWD: process.env["KGI_PERSON_PWD"],
+    KGI_ACCOUNT: process.env["KGI_ACCOUNT"],
+    KGI_GATEWAY_URL: process.env["KGI_GATEWAY_URL"],
+  };
+  const calls: string[] = [];
+
+  process.env["KGI_ENV"] = "sim";
+  process.env["KGI_PERSON_ID"] = "UNIT_TEST_PERSON";
+  process.env["KGI_PERSON_PWD"] = "unit-test-password";
+  process.env["KGI_GATEWAY_URL"] = "http://unit-gateway";
+  delete process.env["KGI_ACCOUNT"];
+
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    calls.push(url.replace("http://unit-gateway", ""));
+
+    if (url.endsWith("/health")) {
+      return json(200, { status: "ok", kgi_logged_in: false, account_set: false });
+    }
+    if (url.endsWith("/session/login")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      assert.equal(body["simulation"], true, "DS6: quote smoke must login with simulation=true");
+      assert.equal(body["person_id"], "UNIT_TEST_PERSON", "DS6: person_id passed only to gateway login");
+      assert.equal(body["person_pwd"], "unit-test-password", "DS6: password passed only to gateway login");
+      return json(200, {
+        ok: true,
+        accounts: [{ account: "SIM-ACCOUNT-1", account_flag: "證券", broker_id: "9228" }],
+      });
+    }
+    if (url.endsWith("/session/set-account")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      assert.equal(body["account"], "SIM-ACCOUNT-1", "DS6: first SIM account is selected");
+      return json(200, { ok: true, account_flag: "證券", broker_id: "9228" });
+    }
+    if (url.endsWith("/quote/subscribe/tick")) {
+      return json(200, { ok: true, label: "tick:0050" });
+    }
+    if (url.includes("/quote/ticks")) {
+      return json(200, { ticks: [{ close: 128.5, volume: 1, datetime: "2026-05-30T01:00:00Z" }] });
+    }
+    return json(404, { error: { code: "UNEXPECTED_TEST_URL", message: url } });
+  }) as typeof fetch;
+
+  try {
+    const result = await runSimQuoteSmoke({ workspaceId: null, symbol: "0050" });
+    assert.equal(result.gatewayReachable, true, "DS6: gateway reachable");
+    assert.equal(result.loggedIn, true, "DS6: auto login succeeded");
+    assert.equal(result.gatewaySummary?.account_set, true, "DS6: auto set-account succeeded");
+    assert.equal(result.subscribed, true, "DS6: subscribe attempted after login");
+    assert.equal(result.tickReceived, true, "DS6: tick received");
+    assert.equal(result.error, null, "DS6: no smoke error");
+    assert.deepEqual(
+      calls.slice(0, 5),
+      ["/health", "/session/login", "/session/set-account", "/quote/subscribe/tick", "/quote/ticks?symbol=0050&limit=1"],
+      "DS6: health → login → set-account → subscribe → ticks"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
   }
 });

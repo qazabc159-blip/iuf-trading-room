@@ -260,6 +260,7 @@ async function gwFetch(
 function redactGatewayText(value: string): string {
   return value
     .replace(/[A-Z][0-9]{9}/g, "[REDACTED_ID]")
+    .replace(/\b\d{4}-\d{6}-\d+\b/g, "[REDACTED_ACCOUNT]")
     .replace(/(person[_-]?pwd|password|token|secret|api[_-]?key)=?[^,\s}]+/gi, "$1=[REDACTED]")
     .slice(0, 240);
 }
@@ -280,6 +281,98 @@ function gatewayErrorSuffix(body: unknown): string {
     .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
     .map((part) => redactGatewayText(part.trim()));
   return parts.length ? ` (${parts.join(" | ")})` : "";
+}
+
+type GatewayAccount = { account?: unknown };
+
+function gatewayAccountsFromBody(body: unknown): string[] {
+  if (!body || typeof body !== "object") return [];
+  const record = body as Record<string, unknown>;
+  const accounts = Array.isArray(record["accounts"]) ? record["accounts"] : [];
+  return accounts
+    .map((account) => (account && typeof account === "object" ? (account as GatewayAccount).account : null))
+    .filter((account): account is string => typeof account === "string" && account.trim().length > 0);
+}
+
+async function setGatewayAccount(baseUrl: string, account: string): Promise<{ ok: boolean; status: number; body: unknown }> {
+  return gwFetch(
+    `${baseUrl}/session/set-account`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account }),
+    },
+    30_000
+  );
+}
+
+async function ensureGatewaySimSession(
+  baseUrl: string,
+  result: QuoteSmokeResult
+): Promise<boolean> {
+  const accountSet = result.gatewaySummary?.account_set ?? false;
+  if (result.loggedIn && accountSet) return true;
+
+  let accounts: string[] = [];
+  if (!result.loggedIn) {
+    const personId = process.env["KGI_PERSON_ID"]?.trim() ?? "";
+    const personPwd = process.env["KGI_PERSON_PWD"]?.trim() ?? "";
+    if (!personId || !personPwd) {
+      result.error = "gateway_login_failed: KGI_PERSON_ID/KGI_PERSON_PWD missing";
+      _state.quoteConnected = false;
+      return false;
+    }
+
+    const login = await gwFetch(
+      `${baseUrl}/session/login`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ person_id: personId, person_pwd: personPwd, simulation: true }),
+      },
+      45_000
+    );
+    if (!login.ok) {
+      result.error = `gateway_login_failed: HTTP ${login.status}${gatewayErrorSuffix(login.body)}`;
+      _state.quoteConnected = false;
+      return false;
+    }
+
+    result.loggedIn = true;
+    _state.quoteConnected = true;
+    accounts = gatewayAccountsFromBody(login.body);
+  } else {
+    const shown = await gwFetch(`${baseUrl}/session/show-account`, {}, 30_000);
+    if (shown.ok) {
+      accounts = gatewayAccountsFromBody(shown.body);
+    }
+  }
+
+  const configuredAccount = process.env["KGI_ACCOUNT"]?.trim();
+  const account =
+    (configuredAccount && accounts.includes(configuredAccount) ? configuredAccount : null)
+    ?? accounts[0]
+    ?? configuredAccount
+    ?? null;
+  if (!account) {
+    result.error = "gateway_set_account_failed: no account returned after login";
+    _state.quoteConnected = false;
+    return false;
+  }
+
+  const setAccount = await setGatewayAccount(baseUrl, account);
+  if (!setAccount.ok) {
+    result.error = `gateway_set_account_failed: HTTP ${setAccount.status}${gatewayErrorSuffix(setAccount.body)}`;
+    _state.quoteConnected = false;
+    return false;
+  }
+
+  result.gatewaySummary = {
+    ...(result.gatewaySummary ?? {}),
+    kgi_logged_in: true,
+    account_set: true,
+  };
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +428,10 @@ export async function runSimQuoteSmoke(params: {
       : null;
     result.loggedIn = healthBody?.kgi_logged_in ?? false;
     _state.quoteConnected = result.loggedIn;
+
+    if (!(await ensureGatewaySimSession(baseUrl, result))) {
+      return finalise(result, t0);
+    }
 
     // Step 2: subscribe tick for symbol
     const sub = await gwFetch(
