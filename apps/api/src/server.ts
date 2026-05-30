@@ -3878,7 +3878,7 @@ async function readKgiGatewayQuoteAuthSummary(): Promise<KgiGatewayQuoteAuthSumm
     process.env["KGI_GATEWAY_BASE_URL"] ??
     "http://127.0.0.1:8787";
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 1_500);
+  const timer = setTimeout(() => controller.abort(), 4_000);
   try {
     const res = await fetch(`${gatewayUrl}/quote/status`, { method: "GET", signal: controller.signal });
     if (!res.ok) {
