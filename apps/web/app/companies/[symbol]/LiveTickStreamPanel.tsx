@@ -92,6 +92,9 @@ function priceClass(chgType: number | null | undefined): string {
 
 function blockedReason(error: unknown) {
   const msg = error instanceof Error ? error.message : String(error);
+  if (/KGI_QUOTE_AUTH_UNAVAILABLE|QUOTE_AUTH_UNAVAILABLE/i.test(msg)) {
+    return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；逐筆成交面板降級，不補假成交明細。";
+  }
   if (/SYMBOL_NOT_ALLOWED/i.test(msg)) return "此股票尚未列入唯讀逐筆行情覆蓋清單；不顯示假成交明細。";
   if (/GATEWAY_UNREACHABLE|unreachable/i.test(msg)) return "KGI 唯讀逐筆暫時無法連線；請稍後再讀取。";
   if (/QUOTE_DISABLED/i.test(msg)) return "KGI 唯讀行情目前停用；正式委託路徑仍保持封鎖。";
