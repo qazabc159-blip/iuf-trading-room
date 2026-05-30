@@ -8,6 +8,9 @@ import {
   type ToolStatEntry,
 } from "@/lib/api";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const TOOL_REGISTRY_ENDPOINT = "/api/v1/tools/registry";
 const TOOL_CALLS_ENDPOINT = "/api/v1/tools/calls?limit=50";
 const TOOL_STATS_ENDPOINT = "/api/v1/tools/stats?window=24h";
