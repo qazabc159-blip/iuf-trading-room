@@ -617,13 +617,30 @@ function pickRow(sym){
 }
 document.querySelectorAll('.wrow').forEach(r=>r.addEventListener('click',()=>pickRow(r.dataset.sym)));
 
+let __realChartSymbol='';
 function updateRealChartFrame(sym){
   const frame=document.getElementById('real-kline-frame');
   if(!frame||!sym)return;
+  __realChartSymbol=String(sym);
   const next='/final-v031/portfolio/kline-frame?symbol='+encodeURIComponent(sym)+'&rev='+Date.now().toString(36);
   frame.setAttribute('src',next);
 }
 window.updateRealChartFrame=updateRealChartFrame;
+
+function syncRealChartFrameFromLocation(){
+  const sym=new URLSearchParams(window.location.search).get('symbol');
+  if(sym&&sym!==__realChartSymbol)updateRealChartFrame(sym);
+}
+document.addEventListener('click',(event)=>{
+  const row=event.target&&event.target.closest?event.target.closest('.wrow[data-sym]'):null;
+  if(row&&row.dataset&&row.dataset.sym)updateRealChartFrame(row.dataset.sym);
+},true);
+const __pushState=history.pushState;
+history.pushState=function(){const result=__pushState.apply(this,arguments);setTimeout(syncRealChartFrameFromLocation,0);return result;};
+const __replaceState=history.replaceState;
+history.replaceState=function(){const result=__replaceState.apply(this,arguments);setTimeout(syncRealChartFrameFromLocation,0);return result;};
+window.addEventListener('popstate',syncRealChartFrameFromLocation);
+syncRealChartFrameFromLocation();
 
 /* ---------- ledger tabs ---------- */
 document.querySelectorAll('.lhead .tb').forEach(b=>b.addEventListener('click',()=>{

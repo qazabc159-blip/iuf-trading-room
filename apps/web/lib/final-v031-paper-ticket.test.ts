@@ -61,6 +61,8 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain('id="real-kline-frame"');
     expect(ticketHtml).toContain('/final-v031/portfolio/kline-frame?symbol=2330');
     expect(ticketHtml).toContain("function updateRealChartFrame(sym)");
+    expect(ticketHtml).toContain("syncRealChartFrameFromLocation");
+    expect(ticketHtml).toContain("closest('.wrow[data-sym]')");
     expect(ticketHtml).toContain(".chart-panel.is-real-chart .chart-wrap{display:none!important}");
     expect(liveHydration).toContain("window.updateRealChartFrame(selected.symbol || \"2330\")");
     expect(middleware).toContain('"/final-v031/portfolio/kline-frame"');
