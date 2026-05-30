@@ -108,6 +108,61 @@ def _raise_quote_unavailable(exc: KgiQuoteUnavailableError) -> None:
     ) from exc
 
 
+def _account_value(account: object) -> Optional[str]:
+    if isinstance(account, dict):
+        value = account.get("account")
+    else:
+        value = getattr(account, "account", None)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _select_startup_account(accounts: list[object]) -> Optional[str]:
+    account_values = [value for value in (_account_value(account) for account in accounts) if value]
+    configured = settings.KGI_ACCOUNT.strip()
+    if configured and configured in account_values:
+        return configured
+    if account_values:
+        return account_values[0]
+    return configured or None
+
+
+def _auto_login_from_env() -> None:
+    if not settings.AUTO_LOGIN:
+        logger.info("KGI Gateway startup auto-login disabled (AUTO_LOGIN=false)")
+        return
+    if not settings.KGI_PERSON_ID or not settings.KGI_PERSON_PWD:
+        logger.warning("KGI Gateway startup auto-login skipped: KGI_PERSON_ID/KGI_PERSON_PWD missing")
+        return
+
+    try:
+        accounts = session.login(
+            person_id=settings.KGI_PERSON_ID,
+            person_pwd=settings.KGI_PERSON_PWD,
+            simulation=settings.SIMULATION,
+        )
+        account = _select_startup_account(list(accounts))
+        if not account:
+            logger.warning(
+                "KGI Gateway startup auto-login completed but no account was returned; account_set=false"
+            )
+            return
+
+        session.set_account(account)
+        if session.api is not None:
+            order_event_manager.attach(session.api)
+        logger.info(
+            "KGI Gateway startup auto-login OK: simulation=%s accounts=%d account_set=true",
+            settings.SIMULATION,
+            len(accounts),
+        )
+    except Exception as exc:
+        logger.error(
+            "KGI Gateway startup auto-login failed: simulation=%s exc_class=%s",
+            settings.SIMULATION,
+            type(exc).__name__,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Lifespan: register event loop with managers + start background pumps
 # ---------------------------------------------------------------------------
@@ -127,9 +182,10 @@ async def lifespan(app: FastAPI):
     kbar_pump_task = asyncio.create_task(kbar_manager.kbar_broadcast_pump())
 
     logger.info(
-        "KGI Gateway starting on %s:%d — waiting for POST /session/login",
+        "KGI Gateway starting on %s:%d — auto-login if configured",
         settings.HOST, settings.PORT,
     )
+    _auto_login_from_env()
 
     yield  # server runs here
 
