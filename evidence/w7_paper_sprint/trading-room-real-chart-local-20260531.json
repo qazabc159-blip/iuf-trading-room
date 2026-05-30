@@ -1,7 +1,7 @@
 {
   "url": "http://127.0.0.1:3311/api/ui-final-v031/paper-trading-room?symbol=6202",
-  "frameSrc": "/final-v031/portfolio/kline-frame?symbol=6202&rev=mpso2xwv",
-  "updatedFrameSrc": "/final-v031/portfolio/kline-frame?symbol=2330&rev=mpso3mdo",
+  "frameSrc": "/final-v031/portfolio/kline-frame?symbol=6202&rev=mpsppzqu",
+  "updatedFrameSrc": "/final-v031/portfolio/kline-frame?symbol=2330&rev=mpspqnzv",
   "tabTexts": [],
   "canvasCount": 0,
   "lightweightCanvas": 0,
@@ -136,15 +136,15 @@
       "failure": "net::ERR_ABORTED"
     },
     {
+      "url": "http://127.0.0.1:3311/final-v031/portfolio/kline-frame?symbol=6202&rev=mpsppyyy",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
       "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio",
       "failure": "net::ERR_ABORTED"
     },
     {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders",
+      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fhealth",
       "failure": "net::ERR_ABORTED"
     },
     {
@@ -152,7 +152,11 @@
       "failure": "net::ERR_ABORTED"
     },
     {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fhealth",
+      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills",
       "failure": "net::ERR_ABORTED"
     },
     {
@@ -176,11 +180,7 @@
       "failure": "net::ERR_ABORTED"
     },
     {
-      "url": "http://127.0.0.1:3311/_next/static/chunks/main-app.js?v=1780164668627",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/_next/static/media/34e7dd1d3b710e23-s.woff2",
+      "url": "http://127.0.0.1:3311/_next/static/chunks/main-app.js?v=1780167424085",
       "failure": "net::ERR_ABORTED"
     },
     {
@@ -232,11 +232,11 @@
       "failure": "net::ERR_ABORTED"
     },
     {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills",
+      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders",
       "failure": "net::ERR_ABORTED"
     },
     {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders",
+      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills",
       "failure": "net::ERR_ABORTED"
     },
     {
