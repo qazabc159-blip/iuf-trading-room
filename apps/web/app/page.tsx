@@ -49,6 +49,7 @@ import {
   type TwseMarketOverview,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { hasProductHeatmapCoverage } from "@/lib/heatmap-product-coverage";
 import { heatmapIndustryLabel } from "@/lib/heatmap-industry-label";
 import { isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
@@ -2072,9 +2073,12 @@ function RealtimeHeatmapPanel({
   const showKgiFallback = kgiTilesAllNull && kgiOffHours;
   const nextOpenLabel = showKgiFallback ? kgiNextOpenLabel(now) : null;
 
-  // If KGI is off-hours and tiles are null, treat as no-core and show TWSE heatmap
-  const hasCore = coreHeatmap.length > 0 && !showKgiFallback;
   const activeMode = heatmapMode === "all" ? "all" : "core";
+  const hasRepresentativeFeed = hasProductHeatmapCoverage(heatmap);
+  const showCoverageFallback = activeMode === "core" && !showKgiFallback && !hasRepresentativeFeed;
+
+  // If KGI is off-hours or the representative feed is still cold, never render a partial core heatmap.
+  const hasCore = coreHeatmap.length > 0 && !showKgiFallback && hasRepresentativeFeed;
   const displayHeatmap = hasCore ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, heatmap) : heatmap;
   const sourceLabel = showKgiFallback
     ? `TWSE 收盤 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`
@@ -2085,15 +2089,17 @@ function RealtimeHeatmapPanel({
     ? (loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null)
     : (loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts ?? null);
 
-  // When KGI is off-hours, force-show the full market (TWSE) view
-  const effectiveMode: "core" | "all" = showKgiFallback ? "all" : activeMode;
+  const displaySourceLabel = showCoverageFallback ? "TWSE 全市場 · 代表股資料暖機中" : sourceLabel;
+
+  // When KGI is off-hours or the representative feed is cold, force-show the full market view.
+  const effectiveMode: "core" | "all" = showKgiFallback || showCoverageFallback ? "all" : activeMode;
 
   return (
     <Panel
       eyebrow="HEATMAP"
       title="台股市場熱力圖"
       sub="核心觀察與全市場收盤視角分開呈現"
-      right={<div className="tac-heat-legend"><span>{sourceLabel}</span></div>}
+      right={<div className="tac-heat-legend"><span>{displaySourceLabel}</span></div>}
     >
       {showKgiFallback && (
         <div className="tac-kgi-offhours-banner">
@@ -2101,15 +2107,20 @@ function RealtimeHeatmapPanel({
           {nextOpenLabel && <small>下次開盤 {nextOpenLabel}</small>}
         </div>
       )}
+      {showCoverageFallback && (
+        <div className="tac-kgi-offhours-banner">
+          <span>核心代表股資料仍在暖機，暫以全市場產業熱力圖顯示，避免呈現不完整代表池。</span>
+        </div>
+      )}
       <div className="tac-heat-mode-tabs" aria-label="熱力圖切換">
-        <Link className={!showKgiFallback && activeMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
-        <Link className={showKgiFallback || activeMode === "all" ? "is-active" : ""} href="/?heatmap=all">全市場熱力圖</Link>
+        <Link className={effectiveMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
+        <Link className={effectiveMode === "all" ? "is-active" : ""} href="/?heatmap=all">全市場熱力圖</Link>
       </div>
       {effectiveMode === "all" ? (
         <MarketWideHeatmap
           rows={fullMarketRows}
           updatedAt={updatedAt}
-          sourceLabel={sourceLabel}
+          sourceLabel={displaySourceLabel}
           marketState={fullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}
           reason={realtimeMarket.state === "BLOCKED" ? realtimeMarket.reason : undefined}
         />
@@ -2118,7 +2129,7 @@ function RealtimeHeatmapPanel({
           heatmap={displayHeatmap}
           initialSector={selectedSectorParam}
           updatedAt={updatedAt}
-          sourceLabel={sourceLabel}
+          sourceLabel={displaySourceLabel}
           marketState={hasCore ? "LIVE" : stateFromLoad(market)}
           reason={!hasCore && market.state === "BLOCKED" ? market.reason : undefined}
         />
@@ -2789,7 +2800,8 @@ async function DashboardContent({
   const sources = buildSources({ finmind, market, ops, brief, paper, ideas, runs, intel });
   const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
   const marketHeatmap = buildHeatmap(market);
-  const realHeatmap = coreHeatmap.length > 0
+  const hasRepresentativeFeed = hasProductHeatmapCoverage(marketHeatmap);
+  const realHeatmap = coreHeatmap.length > 0 && hasRepresentativeFeed
     ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, marketHeatmap)
     : marketHeatmap;
   const heatmap = realHeatmap;

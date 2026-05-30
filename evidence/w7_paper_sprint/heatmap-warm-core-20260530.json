@@ -1,0 +1,91 @@
+{
+  "url": "http://localhost:3002/?qa=heatmap-warm-1780152643473",
+  "status": 200,
+  "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_heatmap_coldstart_20260530\\reports\\heatmap_coldstart_local_20260530\\local-home-heatmap-warm-core.png",
+  "summary": {
+    "activeTab": "核心熱力圖",
+    "legend": [
+      "即時"
+    ],
+    "banners": [],
+    "coreTiles": 39,
+    "noDataTiles": 0,
+    "staleTiles": 0,
+    "marketWideCells": 0,
+    "sectorTabs": [
+      "核心觀察池39 檔",
+      "半導體業13 檔",
+      "電子零組件15 檔",
+      "電腦及週邊設備14 檔",
+      "通信網路15 檔",
+      "金融保險14 檔",
+      "鋼鐵工業15 檔",
+      "航運業13 檔"
+    ],
+    "topTileLabels": [
+      "2330台積電+2.61%成交值 2109.2 億2330 台積電漲跌幅 +2.61%漲跌 60.00收盤 2,355成交值 2109.2 億日期 2026-05-29",
+      "2454聯發科-2.27%2454 聯發科漲跌幅 -2.27%漲跌 -100.00收盤 4,310成交值 962.0 億日期 2026-05-29",
+      "2317鴻海+9.89%2317 鴻海漲跌幅 +9.89%漲跌 26.00收盤 289.00成交值 835.4 億日期 2026-05-29",
+      "2303聯電+1.76%2303 聯電漲跌幅 +1.76%漲跌 2.50收盤 144.50成交值 523.6 億日期 2026-05-29",
+      "2308台達電+2.30%2308 台達電漲跌幅 +2.30%漲跌 55.00收盤 2,445成交值 420.0 億日期 2026-05-29",
+      "3443創意+1.74%3443 創意漲跌幅 +1.74%漲跌 80.00收盤 4,670成交值 334.1 億日期 2026-05-29",
+      "2382廣達+9.89%2382 廣達漲跌幅 +9.89%漲跌 30.50收盤 339.00成交值 295.8 億日期 2026-05-29",
+      "3711日月光投控-2.55%3711 日月光投控漲跌幅 -2.55%漲跌 -16.00收盤 611.00成交值 268.6 億日期 2026-05-29",
+      "3017奇鋐+3.29%3017 奇鋐漲跌幅 +3.29%漲跌 85.00收盤 2,665成交值 249.2 億日期 2026-05-29",
+      "2327國巨-0.54%2327 國巨漲跌幅 -0.54%漲跌 -4.00收盤 738.00成交值 213.3 億日期 2026-05-29",
+      "3231緯創+9.69%3231 緯創漲跌幅 +9.69%漲跌 14.00收盤 158.50成交值 180.9 億日期 2026-05-29",
+      "6669緯穎+10.00%6669 緯穎漲跌幅 +10.00%漲跌 495.00收盤 5,445成交值 178.7 億日期 2026-05-29"
+    ]
+  },
+  "consoleEvents": [
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] paper took 801ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] intel took 829ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] runs took 906ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] market took 1446ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] main_market_feed took 1619ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] broker took 1808ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] snapshot took 2495ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ops TIMEOUT after 3004ms (budget: 3000ms) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] brief TIMEOUT after 3004ms (budget: 3000ms) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ideas TIMEOUT after 3013ms (budget: 3000ms) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] finmind took 3670ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ALL_PANELS total=3673ms background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    }
+  ],
+  "requestFailures": []
+}
