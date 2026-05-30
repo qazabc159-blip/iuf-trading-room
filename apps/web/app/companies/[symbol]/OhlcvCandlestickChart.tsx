@@ -21,7 +21,8 @@ type ChartBar = {
 
 // ── Indicator toggle state (persisted in localStorage) ─────────────────────
 type MaKey = "ma5" | "ma10" | "ma20" | "ma60";
-type IndicatorKey = "ma" | "rsi" | "macd";
+type IndicatorKey = "ma" | "vwap" | "rsi" | "macd";
+type IndicatorPrefs = Record<IndicatorKey, boolean>;
 
 const MA_CONFIG: ReadonlyArray<{ key: MaKey; period: number; color: string; label: string }> = [
   { key: "ma5",  period: 5,  color: "#FFD600", label: "MA5"  },
@@ -33,22 +34,23 @@ const MA_CONFIG: ReadonlyArray<{ key: MaKey; period: number; color: string; labe
 const LS_KEY_INDICATOR = "iuf_kline_indicators_v1";
 const LS_KEY_MA        = "iuf_kline_ma_v1";
 
-function loadIndicatorPrefs(): { ma: boolean; rsi: boolean; macd: boolean } {
+function loadIndicatorPrefs(): IndicatorPrefs {
   try {
     const raw = typeof window !== "undefined" ? localStorage.getItem(LS_KEY_INDICATOR) : null;
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<{ ma: boolean; rsi: boolean; macd: boolean }>;
+      const parsed = JSON.parse(raw) as Partial<IndicatorPrefs>;
       return {
-        ma:   parsed.ma   ?? true,
-        rsi:  parsed.rsi  ?? false,
+        ma: parsed.ma ?? true,
+        vwap: parsed.vwap ?? true,
+        rsi: parsed.rsi ?? false,
         macd: parsed.macd ?? false,
       };
     }
   } catch { /* ignore */ }
-  return { ma: true, rsi: false, macd: false };
+  return { ma: true, vwap: true, rsi: false, macd: false };
 }
 
-function saveIndicatorPrefs(prefs: { ma: boolean; rsi: boolean; macd: boolean }) {
+function saveIndicatorPrefs(prefs: IndicatorPrefs) {
   try { if (typeof window !== "undefined") localStorage.setItem(LS_KEY_INDICATOR, JSON.stringify(prefs)); } catch { /* ignore */ }
 }
 
@@ -82,6 +84,25 @@ function calcSMA(closes: number[], period: number): (number | null)[] {
     for (let j = i - period + 1; j <= i; j++) sum += closes[j];
     result[i] = Number((sum / period).toFixed(3));
   }
+  return result;
+}
+
+function calcVWAP(bars: ChartBar[]): (number | null)[] {
+  const result: (number | null)[] = new Array(bars.length).fill(null);
+  let cumulativeValue = 0;
+  let cumulativeVolume = 0;
+
+  for (let i = 0; i < bars.length; i++) {
+    const bar = bars[i];
+    if (!Number.isFinite(bar.volume) || bar.volume <= 0) continue;
+    const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+    cumulativeValue += typicalPrice * bar.volume;
+    cumulativeVolume += bar.volume;
+    if (cumulativeVolume > 0) {
+      result[i] = Number((cumulativeValue / cumulativeVolume).toFixed(3));
+    }
+  }
+
   return result;
 }
 
@@ -673,6 +694,7 @@ const INDICATOR_CSS = `
 ._ind-toggle-btn._ma10.is-on { border-color: rgba(255,140,0,0.52); color: #FF8C00; background: rgba(255,140,0,0.06); }
 ._ind-toggle-btn._ma20.is-on { border-color: rgba(0,229,255,0.52); color: #00E5FF; background: rgba(0,229,255,0.06); }
 ._ind-toggle-btn._ma60.is-on { border-color: rgba(179,136,255,0.52); color: #B388FF; background: rgba(179,136,255,0.06); }
+._ind-toggle-btn._vwap.is-on { border-color: rgba(143,191,232,0.58); color: #8fbfe8; background: rgba(143,191,232,0.08); }
 ._ind-ma-expand { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 ._ind-divider { width: 1px; height: 14px; background: rgba(220,228,240,0.12); margin: 0 2px; }
 ._ind-sub-section { border-top: 1px solid rgba(220,228,240,0.06); }
@@ -711,8 +733,8 @@ export function OhlcvCandlestickChart({
   const [hoverBar, setHoverBar] = useState<ChartBar | null>(null);
 
   // Indicator toggles — initialized from localStorage on first render
-  const [indicators, setIndicators] = useState<{ ma: boolean; rsi: boolean; macd: boolean }>(() => {
-    if (typeof window === "undefined") return { ma: true, rsi: false, macd: false };
+  const [indicators, setIndicators] = useState<IndicatorPrefs>(() => {
+    if (typeof window === "undefined") return { ma: true, vwap: true, rsi: false, macd: false };
     return loadIndicatorPrefs();
   });
   const [maEnabled, setMaEnabled] = useState<Record<MaKey, boolean>>(() => {
@@ -784,6 +806,8 @@ export function OhlcvCandlestickChart({
     ma20: calcSMA(closes, 20),
     ma60: calcSMA(closes, 60),
   }), [closes]);
+
+  const vwapValues = useMemo(() => calcVWAP(chartBars), [chartBars]);
 
   const rsiValues = useMemo(() => calcRSI(closes, 14), [closes]);
 
@@ -916,6 +940,22 @@ export function OhlcvCandlestickChart({
           }
         }
 
+        if (indicators.vwap) {
+          const data = chartBars
+            .map((bar, i) => ({ time: bar.time, value: vwapValues[i] }))
+            .filter((d): d is { time: ChartTime; value: number } => d.value !== null);
+          if (data.length > 0) {
+            const vwapSeries = chart.addSeries(lc.LineSeries, {
+              color: "#8fbfe8",
+              lineWidth: 1,
+              priceLineVisible: false,
+              lastValueVisible: true,
+              crosshairMarkerVisible: false,
+            });
+            vwapSeries.setData(data);
+          }
+        }
+
         const barsByTime = new Map(chartBars.map((bar) => [String(bar.time), bar]));
         chart.subscribeCrosshairMove((param) => {
           if (disposed) return;
@@ -960,7 +1000,7 @@ export function OhlcvCandlestickChart({
       chart?.remove();
       chartRef.current = null;
     };
-  }, [activeIntradayMinutes, chartBars, chartHeight, insufficientTrend, interval, isIntraday, range, indicators.ma, maEnabled, maValues]);
+  }, [activeIntradayMinutes, chartBars, chartHeight, insufficientTrend, interval, isIntraday, range, indicators.ma, indicators.vwap, maEnabled, maValues, vwapValues]);
 
   const badgeClass = isIntraday
     ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
@@ -1049,6 +1089,16 @@ export function OhlcvCandlestickChart({
             ))}
           </div>
         )}
+
+        <button
+          type="button"
+          className={`_ind-toggle-btn _vwap${indicators.vwap ? " is-on" : ""}`}
+          onClick={() => toggleIndicator("vwap")}
+          aria-pressed={indicators.vwap}
+          title="VWAP"
+        >
+          VWAP
+        </button>
 
         <div className="_ind-divider" />
 
