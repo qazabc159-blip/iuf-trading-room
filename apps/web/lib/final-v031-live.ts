@@ -1330,6 +1330,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   const kgiQuoteBlockedReason = (label) => {
     const auth = kgiQuoteAuth();
     const code = String(auth?.errorCode || "");
+    const state = String(auth?.state || "");
+    if (code === "KGI_GATEWAY_UNREACHABLE" || state === "gateway_unreachable") return "KGI gateway 目前連不到；" + label + "暫停，不補假資料。";
     if (code === "KGI_QUOTE_AUTH_UNAVAILABLE") return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；" + label + "暫停，不補假資料。";
     if (code === "QUOTE_DISABLED") return "KGI 唯讀行情目前停用；" + label + "暫停，不補假資料。";
     if (code === "KGI_NOT_LOGGED_IN") return "KGI gateway 尚未登入；" + label + "暫停，不補假資料。";
@@ -1343,13 +1345,18 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const auth = kgiQuoteAuth();
     const status = live.kgiStatus || {};
     const positions = live.kgi?.positions || [];
+    const isGatewayUnreachable = String(auth?.errorCode || "") === "KGI_GATEWAY_UNREACHABLE" || String(auth?.state || "") === "gateway_unreachable";
     const isAuthUnavailable = String(auth?.errorCode || "") === "KGI_QUOTE_AUTH_UNAVAILABLE";
-    const title = isAuthUnavailable
+    const title = isGatewayUnreachable
+      ? "KGI gateway 連線中斷"
+      : isAuthUnavailable
       ? "KGI SIM 已登入，行情權限未開"
       : auth?.available
         ? "KGI 唯讀行情可用"
         : "KGI 唯讀狀態已同步";
-    const detail = isAuthUnavailable
+    const detail = isGatewayUnreachable
+      ? "API 已確認目前連不到 KGI gateway 主機或 tunnel；Paper 交易仍可用，KGI 五檔、逐筆與券商庫存讀取暫停。"
+      : isAuthUnavailable
       ? "目前可讀 gateway / 帳號狀態；即時五檔與逐筆因凱基未提供 SIM 行情 token 暫停，不會補假資料。"
       : auth?.available
         ? "gateway 已登入且行情授權可用；若表格為空，代表目前沒有券商庫存或尚未收到該股票逐筆。"
