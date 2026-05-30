@@ -213,14 +213,17 @@ const CSS = `
     min-width: 210px;
   }
   ._tool-tech-details {
-    min-width: 180px;
+    margin-top: 7px;
+    min-width: 160px;
   }
   ._tool-tech-details summary {
     cursor: pointer;
     color: #ffb800;
+    display: inline-block;
     font-size: 10px;
     font-weight: 700;
     line-height: 1.35;
+    white-space: nowrap;
   }
   ._tool-tech-details summary::marker {
     color: rgba(255,184,0,0.65);
@@ -519,8 +522,7 @@ function RegistryTable({
             <th>權限 / 入口</th>
             <th>最後執行證據</th>
             <th>說明</th>
-            <th>輸入欄位</th>
-            <th>技術細節</th>
+            <th>輸入 / 技術細節</th>
           </tr>
         </thead>
         <tbody>
@@ -559,8 +561,6 @@ function RegistryTable({
                 </td>
                 <td>
                   <div className="_tool-schema-preview">{shortJson(tool.inputSchema)}</div>
-                </td>
-                <td>
                   <details className="_tool-tech-details">
                     <summary>查看技術細節</summary>
                     <span className="_tool-tech-body">
