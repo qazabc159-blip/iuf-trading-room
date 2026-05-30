@@ -40,6 +40,7 @@ from config import settings
 from kgi_events import order_event_manager
 from read_only_guard import require_read_only
 from kgi_quote import (
+    KgiQuoteUnavailableError,
     get_latest_bidask,
     get_quote_status,
     get_recent_ticks,
@@ -90,6 +91,21 @@ from schemas import (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("kgi_gateway")
+
+
+def _raise_quote_unavailable(exc: KgiQuoteUnavailableError) -> None:
+    message = str(exc)
+    code = "KGI_QUOTE_AUTH_UNAVAILABLE" if "KGI_QUOTE_AUTH_UNAVAILABLE" in message else "KGI_QUOTE_UNAVAILABLE"
+    raise HTTPException(
+        status_code=503,
+        detail=ErrorEnvelope(
+            error=ErrorDetail(
+                code=code,
+                message=message,
+                upstream=message,
+            )
+        ).model_dump(),
+    ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -678,6 +694,9 @@ async def subscribe_tick(body: SubscribeTickRequest) -> SubscribeTickResponse:
         label = quote_manager.subscribe_tick(session.api, body.symbol, odd_lot=body.odd_lot)
         logger.info("subscribe_tick OK: symbol=%s label=%s", body.symbol, label)
         return SubscribeTickResponse(ok=True, label=label)
+    except KgiQuoteUnavailableError as exc:
+        logger.warning("subscribe_tick quote unavailable: %s", exc)
+        _raise_quote_unavailable(exc)
     except Exception as exc:
         logger.error("subscribe_tick failed: %s", exc)
         raise HTTPException(
@@ -776,6 +795,9 @@ async def subscribe_bidask(body: SubscribeBidAskRequest) -> SubscribeBidAskRespo
         label = quote_manager.subscribe_bidask(session.api, body.symbol, odd_lot=body.odd_lot)
         logger.info("subscribe_bidask OK: symbol=%s label=%s", body.symbol, label)
         return SubscribeBidAskResponse(ok=True, label=label, note=None)
+    except KgiQuoteUnavailableError as exc:
+        logger.warning("subscribe_bidask quote unavailable: %s", exc)
+        _raise_quote_unavailable(exc)
     except NotImplementedError as exc:
         logger.info("subscribe_bidask NOT_IMPLEMENTED: %s", exc)
         from fastapi.responses import JSONResponse as _JSONResponse
