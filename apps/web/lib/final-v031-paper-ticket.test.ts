@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const ticketHtml = readFileSync(new URL("../public/ui-final-v031/paper_trading_room/index.html", import.meta.url), "utf8");
 const liveHydration = readFileSync(new URL("./final-v031-live.ts", import.meta.url), "utf8");
 const backendProxy = readFileSync(new URL("../app/api/ui-final-v031/backend/route.ts", import.meta.url), "utf8");
+const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
@@ -53,6 +54,16 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("const TF_AGG_MINUTES={}");
     expect(ticketHtml).toContain("TF_DISABLED_REASONS={'1m'");
     expect(ticketHtml).not.toContain("const TF_API_INTERVAL_MAP={'1m':'1m','5m':'1m','15m':'1m','1d':'1d','1w':'1w'}");
+  });
+
+  it("uses the real company-page chart frame in the trading room instead of exposing the legacy SVG chart", () => {
+    expect(ticketHtml).toContain("chart-panel is-real-chart");
+    expect(ticketHtml).toContain('id="real-kline-frame"');
+    expect(ticketHtml).toContain('/final-v031/portfolio/kline-frame?symbol=2330');
+    expect(ticketHtml).toContain("function updateRealChartFrame(sym)");
+    expect(ticketHtml).toContain(".chart-panel.is-real-chart .chart-wrap{display:none!important}");
+    expect(liveHydration).toContain("window.updateRealChartFrame(selected.symbol || \"2330\")");
+    expect(middleware).toContain('"/final-v031/portfolio/kline-frame"');
   });
 
   it("surfaces KGI SIM quote auth unavailable instead of vague empty tables", () => {

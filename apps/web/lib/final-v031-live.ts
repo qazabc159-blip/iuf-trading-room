@@ -1489,6 +1489,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (typeof window.drawChart === "function") {
       window.drawChart(selected.symbol || "2330");
     }
+    if (typeof window.updateRealChartFrame === "function") {
+      window.updateRealChartFrame(selected.symbol || "2330");
+    }
     // ──────────────────────────────────────────────────────────────────────────
 
     setText(".symhead .sym", selected.symbol || "—");
