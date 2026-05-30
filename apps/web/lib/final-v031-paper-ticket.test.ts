@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const ticketHtml = readFileSync(new URL("../public/ui-final-v031/paper_trading_room/index.html", import.meta.url), "utf8");
 const liveHydration = readFileSync(new URL("./final-v031-live.ts", import.meta.url), "utf8");
+const backendProxy = readFileSync(new URL("../app/api/ui-final-v031/backend/route.ts", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
@@ -40,5 +41,10 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("KGI_QUOTE_AUTH_UNAVAILABLE");
     expect(liveHydration).toContain("KGI SIM 已登入，行情權限未開");
     expect(liveHydration).toContain("hydrateKgiReadinessNote()");
+  });
+
+  it("allows the final-v031 backend proxy to read KGI SIM status", () => {
+    expect(liveHydration).toContain('soft(apiGet("/api/v1/kgi/status"))');
+    expect(backendProxy).toContain("^\\/api\\/v1\\/kgi\\/status");
   });
 });
