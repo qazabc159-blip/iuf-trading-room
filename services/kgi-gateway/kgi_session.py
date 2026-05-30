@@ -109,7 +109,7 @@ def _safe_attr_name(value: object) -> str:
     if marker in text:
         text = text.rsplit(marker, 1)[1].strip().strip("'\"")
     candidate = text.strip().strip("'\"")
-    if candidate.replace("_", "").isalnum() and candidate[:1].isalpha():
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,63}", candidate):
         return candidate[:64]
     return "unknown"
 
@@ -286,15 +286,27 @@ class KgiSession:
                 raise KgiLoginFailedError(error_code=error_code, reply_string=reply_string)
 
             # --- Layer 2: Positive confirmation guard ---
-            if login_state is not True:
-                _log.error(
-                    "[kgi-session] login not positively confirmed simulation=%s "
-                    "person_id=%s attr=%s value_type=%s",
-                    simulation, masked_pid, state_attr, type(login_state).__name__,
-                )
-                raise KgiLoginObjectMissingAttr(attr_name=state_attr)
-
             show_account = getattr(login_result, "show_account", None)
+            if login_state is not True:
+                if callable(show_account):
+                    # Some kgisuperpy builds attach account methods after a
+                    # successful login but do not expose _ObjOrder.FIsLogon /
+                    # IsSucceed on the outer object. The official diagnostic
+                    # script treats show_account presence as success-only, so
+                    # allow this shape instead of blocking SIM login.
+                    _log.warning(
+                        "[kgi-session] accepting login without state flag because show_account is callable "
+                        "simulation=%s person_id=%s missing_attr=%s",
+                        simulation, masked_pid, state_attr,
+                    )
+                else:
+                    _log.error(
+                        "[kgi-session] login not positively confirmed simulation=%s "
+                        "person_id=%s attr=%s value_type=%s",
+                        simulation, masked_pid, state_attr, type(login_state).__name__,
+                    )
+                    raise KgiLoginObjectMissingAttr(attr_name=state_attr)
+
             if not callable(show_account):
                 _log.error(
                     "[kgi-session] login result missing callable simulation=%s "
