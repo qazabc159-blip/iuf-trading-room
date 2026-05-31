@@ -9604,21 +9604,27 @@ app.get("/api/v1/briefs/:id", async (c) => {
   const firstSection = (brief.sections as Array<{ heading: string; body: string }>)[0];
   const title = firstSection?.heading ?? `Brief ${brief.date}`;
 
-  // ── Resolve linked content_draft by dedupeKey pattern ─────────────────────
-  // daily_briefs are produced by approving a content_draft with targetTable=daily_briefs
-  // dedupeKey format matches computeContentDraftDedupeKey() in content-draft-store.ts
-  const dedupeKey = `${workspaceId}:daily_briefs:${brief.date}:v1`;
+  // ── Resolve linked content_draft ──────────────────────────────────────────
+  // Historical backfills and direct pipelines do not always share the legacy
+  // v1 dedupe key, so resolve by approval ref/date first and keep the old key
+  // pattern as a compatibility fallback.
+  const dedupeKeyPrefix = `${workspaceId}:daily_briefs:${brief.date}:`;
   const draftRows = await db
     .select({ id: contentDrafts.id })
     .from(contentDrafts)
     .where(
       and(
         eq(contentDrafts.workspaceId, workspaceId),
-        eq(contentDrafts.dedupeKey, dedupeKey)
+        eq(contentDrafts.targetTable, "daily_briefs"),
+        or(
+          eq(contentDrafts.approvedRefId, brief.id),
+          eq(contentDrafts.targetEntityId, brief.date),
+          like(contentDrafts.dedupeKey, `${dedupeKeyPrefix}%`)
+        )
       )
     )
     .orderBy(desc(contentDrafts.createdAt))
-    .limit(5);
+    .limit(10);
 
   const draftIds = draftRows.map((r) => r.id);
 
@@ -9638,6 +9644,8 @@ app.get("/api/v1/briefs/:id", async (c) => {
       "content_draft.ai_approved",
       "content_draft.ai_rejected",
       "content_draft.ai_manual_review",
+      "content_draft.source_only_backfill_approved",
+      "content_draft.factual_reject",
       "hallucination_reject"
     ];
     auditRows = await db
@@ -9720,6 +9728,33 @@ app.get("/api/v1/briefs/:id", async (c) => {
     }
   }
 
+  // ── Parse source-only historical backfill gate ────────────────────────────
+  // Backfilled briefs can be safely published by deterministic source checks
+  // without running the full LLM adversarial/RAG chain. Surface that gate
+  // explicitly so the UI does not show a false "not reviewed" state.
+  type SourceOnlyGateResult = {
+    ran: boolean;
+    verdict: "OK" | "HELD";
+    confidence: number | null;
+    reason: string | null;
+    sourcePackId: string | null;
+    auditedAt: string | null;
+  };
+
+  let sourceOnlyGate: SourceOnlyGateResult | null = null;
+  const sourceOnlyRow = auditRows.find((r) => r.action === "content_draft.source_only_backfill_approved");
+  if (sourceOnlyRow) {
+    const p = sourceOnlyRow.payload as Record<string, unknown> | null;
+    sourceOnlyGate = {
+      ran: true,
+      verdict: p?.["verdict"] === "approve" ? "OK" : "HELD",
+      confidence: typeof p?.["confidence"] === "number" ? (p["confidence"] as number) : null,
+      reason: typeof p?.["reason"] === "string" ? (p["reason"] as string) : null,
+      sourcePackId: typeof p?.["sourcePackId"] === "string" ? (p["sourcePackId"] as string) : null,
+      auditedAt: sourceOnlyRow.createdAt.toISOString()
+    };
+  }
+
   // ── Build hard-reject summary ──────────────────────────────────────────────
   // Hard-reject rules are policy constants — report them verbatim so frontend
   // can show what safety gates were in effect for this brief.
@@ -9741,7 +9776,8 @@ app.get("/api/v1/briefs/:id", async (c) => {
       rejected: wasRejected
     },
     adversarialReview,
-    hallucinationCheck
+    hallucinationCheck,
+    sourceOnlyGate
   };
 
   // ── Build sections with sourceTrail when the publisher stored it ──────────

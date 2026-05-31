@@ -438,6 +438,14 @@ export type BriefDetailAuditChain = {
     modelChain: string;
     auditedAt: string | null;
   } | null;
+  sourceOnlyGate?: {
+    ran: boolean;
+    verdict: "OK" | "HELD";
+    confidence: number | null;
+    reason: string | null;
+    sourcePackId: string | null;
+    auditedAt: string | null;
+  } | null;
 };
 
 export type BriefDetail = {
