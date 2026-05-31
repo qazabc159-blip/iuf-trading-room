@@ -124,6 +124,13 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).not.toContain("pickRow(row.dataset.sym);\n    updateRealChartFrame(row.dataset.sym);");
   });
 
+  it("drops stale trading-room refresh payloads after the user switches symbols", () => {
+    expect(liveHydration).toContain("window.__IUF_FINAL_V031_STALE_REFRESH_DROPPED__");
+    expect(liveHydration).toContain('live.screen === "paper-trading-room"');
+    expect(liveHydration).toContain("!sameSym(next.selected.symbol, currentPaperSymbol)");
+    expect(liveHydration).toContain("received: next.selected.symbol");
+  });
+
   it("preserves the user zoom/pan window while toggling trading-room indicators", () => {
     expect(klineChartSource).toContain("viewportRef");
     expect(klineChartSource).toContain("chartViewportKey");

@@ -1220,6 +1220,19 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         : live.screen === "strategy-ideas"
           ? await clientIdeasPayload()
           : await clientPaperPayload();
+      if (
+        live.screen === "paper-trading-room"
+        && currentPaperSymbol
+        && next?.selected?.symbol
+        && !sameSym(next.selected.symbol, currentPaperSymbol)
+      ) {
+        window.__IUF_FINAL_V031_STALE_REFRESH_DROPPED__ = {
+          expected: currentPaperSymbol,
+          received: next.selected.symbol,
+          at: new Date().toISOString(),
+        };
+        return;
+      }
       live = Object.assign({}, live, next);
       window.__IUF_FINAL_V031_LIVE__ = live;
       if (live.screen === "market-intel") hydrateMarket();
