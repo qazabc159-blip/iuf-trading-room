@@ -20,6 +20,7 @@ import { friendlyDataError } from "@/lib/friendly-error";
 import { briefAgeCopy, briefAgeDays, type BriefFreshness } from "@/lib/freshness";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
+import { evaluateBriefQuality } from "./briefQuality";
 
 export const dynamic = "force-dynamic";
 
@@ -316,6 +317,7 @@ async function loadDispatcherDebug(): Promise<LoadState<OpenAliceDispatcherDebug
 function SourceLine<T>({ state, label }: { state: LoadState<T>; label: string }) {
   const badge = state.state === "LIVE" ? "badge-green" : state.state === "EMPTY" ? "badge-yellow" : "badge-red";
   const text = state.state === "LIVE" ? "正常" : state.state === "EMPTY" ? "無資料" : "需處理";
+
   return (
     <div className="source-line">
       <span className={`badge ${badge}`}>{text}</span>
@@ -487,6 +489,33 @@ function PublishedBriefPanel({ brief }: { brief: DailyBrief | null }) {
     );
   }
 
+  const quality = evaluateBriefQuality(brief);
+
+  if (!quality.displayable) {
+    return (
+      <Panel code="BRF-PUB" title="正式簡報內容" sub={`${brief.date} / 已暫停展示`} right="模板未通過">
+        <div className="brief-published">
+          <div className="brief-market-state">
+            <span className="tg gold">資料保護</span>
+            <strong>這份已發布簡報不符合 AI 每日簡報 v2 模板，已停止在正式內容區展示。</strong>
+          </div>
+          <p className="state-reason">
+            系統偵測到舊版英文標題、原始主題 dump，或缺少固定段落。為避免把未整理內容當成投資依據，
+            這裡只保留狀態與來源流程，不顯示舊簡報正文。
+          </p>
+          <div className="brief-source-trail">
+            <span>缺少段落：{quality.missingHeadings.length ? quality.missingHeadings.join("、") : "無"}</span>
+            <span>舊版英文標題：{quality.hasLegacyHeading ? "有" : "無"}</span>
+            <span>原始 dump：{quality.hasRawDump ? "有" : "無"}</span>
+          </div>
+          <p className="state-reason">
+            下一輪每日簡報會套用 v2 固定模板：市場總覽、AI 精選重點、產業與主題、風險觀察、資料來源狀態。
+          </p>
+        </div>
+      </Panel>
+    );
+  }
+
   return (
     <Panel code="BRF-PUB" title="正式簡報內容" sub={`${brief.date} / 正式發布`} right={surfaceLabel("PUBLISHED")}>
       <div className="brief-published">
@@ -653,3 +682,4 @@ export default async function BriefsPage() {
     </PageFrame>
   );
 }
+

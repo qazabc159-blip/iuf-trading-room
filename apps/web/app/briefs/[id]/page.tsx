@@ -8,6 +8,7 @@ import {
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
+import { evaluateBriefQuality } from "../briefQuality";
 
 export const dynamic = "force-dynamic";
 
@@ -276,6 +277,38 @@ function HallucinationPanel({ chain }: { chain: BriefDetailAuditChain }) {
 }
 
 function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
+  const quality = evaluateBriefQuality(brief);
+
+  if (!quality.displayable) {
+    return (
+      <Panel
+        code="BRF-PUB"
+        title="簡報內容"
+        sub={`${brief.date} / 已暫停展示`}
+        right="模板未通過"
+      >
+        <div className="brief-published">
+          <div className="brief-market-state">
+            <span className="tg gold">資料保護</span>
+            <strong>這份簡報不符合 AI 每日簡報 v2 模板，已停止展示正文。</strong>
+          </div>
+          <p className="state-reason">
+            系統偵測到舊版英文標題、原始主題 dump，或缺少固定段落。為避免把未整理內容當成投資依據，
+            這裡只保留審核與來源資訊，不顯示舊簡報正文。
+          </p>
+          <div className="brief-source-trail">
+            <span>缺少段落：{quality.missingHeadings.length ? quality.missingHeadings.join("、") : "無"}</span>
+            <span>舊版英文標題：{quality.hasLegacyHeading ? "有" : "無"}</span>
+            <span>原始 dump：{quality.hasRawDump ? "有" : "無"}</span>
+          </div>
+          <p className="state-reason">
+            下一輪每日簡報會套用 v2 固定模板：市場總覽、AI 精選重點、產業與主題、風險觀察、資料來源狀態。
+          </p>
+        </div>
+      </Panel>
+    );
+  }
+
   return (
     <Panel
       code="BRF-PUB"
