@@ -17,6 +17,7 @@ import {
   DAILY_BRIEF_REQUIRED_SECTION_IDS,
   evaluatePublishGate,
   filterSourcePackEntries,
+  isDailyBriefV2ContractCompliant,
   isBriefBootRecoveryWindow,
   loadStrategySnapshot,
   runBatchAiReviewer,
@@ -72,6 +73,28 @@ test("daily brief contract rejects missing required section ids", () => {
     }));
 
   assert.deepEqual(validateDailyBriefSectionsContract(sections), { ok: false, missing: ["risk_watch"] });
+});
+
+test("daily brief v2 compliance helper accepts only complete v2 sections", () => {
+  const compliant = {
+    sections: DAILY_BRIEF_REQUIRED_SECTION_IDS.map((sectionId) => ({
+      sectionId,
+      heading: sectionId,
+      body: "This section has enough source-backed content for contract validation."
+    }))
+  };
+  const legacy = {
+    sections: [
+      { heading: "market overview", body: "Legacy brief section." },
+      { heading: "technical analysis", body: "Legacy brief section." },
+      { heading: "risk alert", body: "Legacy brief section." }
+    ]
+  };
+
+  assert.equal(isDailyBriefV2ContractCompliant(compliant), true);
+  assert.equal(isDailyBriefV2ContractCompliant(legacy), false);
+  assert.equal(isDailyBriefV2ContractCompliant({ sections: [] }), false);
+  assert.equal(isDailyBriefV2ContractCompliant({ sections: null }), false);
 });
 
 test("daily brief instructions advertise only the v2 five-section contract", () => {

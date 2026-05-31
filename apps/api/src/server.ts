@@ -233,6 +233,7 @@ import {
 import {
   _lastPipelineState,
   getPipelineObservabilityAddendum,
+  isDailyBriefV2ContractCompliant,
   loadStrategySnapshot,
   runBatchAiReviewer,
   runPipelineCloseBriefTick,
@@ -12433,7 +12434,7 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
 
   // Idempotency: skip if today's brief formal row already exists
   const [existingBrief] = await db
-    .select({ id: dailyBriefs.id })
+    .select({ id: dailyBriefs.id, sections: dailyBriefs.sections })
     .from(dailyBriefs)
     .where(
       and(
@@ -12447,10 +12448,15 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
       )
     )
     .limit(1);
-  if (existingBrief) {
+  if (existingBrief && isDailyBriefV2ContractCompliant(existingBrief)) {
     console.log(`[daily-brief-dispatcher] Brief already exists for ${todayStr}, skipping`);
     _lastTickState.lastTickResult = "skipped_existing_brief";
     return;
+  }
+  if (existingBrief) {
+    console.warn(
+      `[daily-brief-dispatcher] Existing brief for ${todayStr} is not v2 contract compliant; routing to v2 pipeline`
+    );
   }
 
   try {
