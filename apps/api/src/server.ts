@@ -17605,13 +17605,14 @@ app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
-serve(
-  {
-    fetch: app.fetch,
-    port,
-    hostname: host
-  },
-  async (info) => {
+if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT === "1") {
+  serve(
+    {
+      fetch: app.fetch,
+      port,
+      hostname: host
+    },
+    async (info) => {
     console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
     const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
     await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
@@ -17691,5 +17692,6 @@ serve(
           console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
         );
     }, 10_000);
-  }
-);
+    }
+  );
+}

@@ -10301,6 +10301,46 @@ import {
   type TradeSmokeResult,
 } from "../apps/api/src/broker/kgi-sim-env.ts";
 
+async function withFastKgiGatewayMock<T>(fn: () => Promise<T>): Promise<T> {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = {
+    KGI_GATEWAY_URL: process.env["KGI_GATEWAY_URL"],
+    KGI_PERSON_ID: process.env["KGI_PERSON_ID"],
+    KGI_PERSON_PWD: process.env["KGI_PERSON_PWD"],
+  };
+
+  process.env["KGI_GATEWAY_URL"] = "http://kgi-unit-gateway.test";
+  delete process.env["KGI_PERSON_ID"];
+  delete process.env["KGI_PERSON_PWD"];
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "http://kgi-unit-gateway.test/health") {
+      return new Response(JSON.stringify({ status: "ok", kgi_logged_in: false, account_set: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ error: "unexpected test URL " + url }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 test("DS1: getDailySmokeHistory returns empty array on fresh start", () => {
   _resetDailySmokeHistory();
   const hist = getDailySmokeHistory();
@@ -10309,55 +10349,51 @@ test("DS1: getDailySmokeHistory returns empty array on fresh start", () => {
 });
 
 test("DS2: runKgiSimDailySmokeSchedulerTick with forceRun=true returns valid entry", async () => {
-  _resetDailySmokeHistory();
-  _resetKgiSimState();
-  const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
-  // Must return an entry (not null) when forceRun=true
-  assert.ok(entry !== null, "DS2: entry returned with forceRun=true");
-  assert.equal(entry!.sim_only, true, "DS2: sim_only must always be true");
-  assert.ok(typeof entry!.runId === "string" && entry!.runId.length > 0, "DS2: runId is a non-empty string");
-  assert.ok(typeof entry!.firedAt === "string" && entry!.firedAt.length > 0, "DS2: firedAt is a non-empty string");
-  assert.ok(typeof entry!.durationMs === "number" && entry!.durationMs >= 0, "DS2: durationMs is a non-negative number");
-  assert.ok(
-    ["pass", "fail", "partial"].includes(entry!.overallStatus),
-    `DS2: overallStatus must be pass/fail/partial, got: ${entry!.overallStatus}`
-  );
-  // In memory mode (no DB): prodBrokerAuditCount must be 0 (DB unavailable = defaults to 0)
-  assert.equal(entry!.prodBrokerAuditCount, 0, "DS2: prodBrokerAuditCount=0 when DB unavailable");
-  // tradeCheck must be null: confirmedByBruce/confirmedByJason not provided
-  assert.equal(entry!.tradeCheck, null, "DS2: tradeCheck=null when dual-confirm not provided");
-  // quoteCheck structure must always be present
-  assert.ok(entry!.quoteCheck && typeof entry!.quoteCheck === "object", "DS2: quoteCheck object present");
-  assert.ok(typeof entry!.quoteCheck.gatewayReachable === "boolean", "DS2: quoteCheck.gatewayReachable is boolean");
-  assert.ok(typeof entry!.quoteCheck.loggedIn === "boolean", "DS2: quoteCheck.loggedIn is boolean");
-  assert.ok(typeof entry!.quoteCheck.subscribed === "boolean", "DS2: quoteCheck.subscribed is boolean");
-  assert.ok(typeof entry!.quoteCheck.tickReceived === "boolean", "DS2: quoteCheck.tickReceived is boolean");
-  // Entry must be stored in ring buffer
-  const hist = getDailySmokeHistory();
-  assert.equal(hist.length, 1, "DS2: entry stored in history buffer");
-  assert.equal(hist[0]!.runId, entry!.runId, "DS2: stored entry matches returned entry");
+  await withFastKgiGatewayMock(async () => {
+    _resetDailySmokeHistory();
+    _resetKgiSimState();
+    const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+    assert.ok(entry !== null, "DS2: entry returned with forceRun=true");
+    assert.equal(entry!.sim_only, true, "DS2: sim_only must always be true");
+    assert.ok(typeof entry!.runId === "string" && entry!.runId.length > 0, "DS2: runId is a non-empty string");
+    assert.ok(typeof entry!.firedAt === "string" && entry!.firedAt.length > 0, "DS2: firedAt is a non-empty string");
+    assert.ok(typeof entry!.durationMs === "number" && entry!.durationMs >= 0, "DS2: durationMs is a non-negative number");
+    assert.ok(
+      ["pass", "fail", "partial"].includes(entry!.overallStatus),
+      `DS2: overallStatus must be pass/fail/partial, got: ${entry!.overallStatus}`
+    );
+    assert.equal(entry!.prodBrokerAuditCount, 0, "DS2: prodBrokerAuditCount=0 when DB unavailable");
+    assert.equal(entry!.tradeCheck, null, "DS2: tradeCheck=null when dual-confirm not provided");
+    assert.ok(entry!.quoteCheck && typeof entry!.quoteCheck === "object", "DS2: quoteCheck object present");
+    assert.ok(typeof entry!.quoteCheck.gatewayReachable === "boolean", "DS2: quoteCheck.gatewayReachable is boolean");
+    assert.ok(typeof entry!.quoteCheck.loggedIn === "boolean", "DS2: quoteCheck.loggedIn is boolean");
+    assert.ok(typeof entry!.quoteCheck.subscribed === "boolean", "DS2: quoteCheck.subscribed is boolean");
+    assert.ok(typeof entry!.quoteCheck.tickReceived === "boolean", "DS2: quoteCheck.tickReceived is boolean");
+    const hist = getDailySmokeHistory();
+    assert.equal(hist.length, 1, "DS2: entry stored in history buffer");
+    assert.equal(hist[0]!.runId, entry!.runId, "DS2: stored entry matches returned entry");
+  });
 });
 
 test("DS3: ring buffer capped at 7 entries; getDailySmokeHistory returns newest-first", async () => {
-  _resetDailySmokeHistory();
-  _resetKgiSimState();
-  // Fire 8 times (forceRun bypasses window + idempotency)
-  for (let i = 0; i < 8; i++) {
-    await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
-  }
-  const hist = getDailySmokeHistory();
-  assert.equal(hist.length, 7, "DS3: ring buffer capped at 7 entries");
-  // Verify newest-first ordering
-  if (hist.length >= 2) {
-    const firstTime = new Date(hist[0]!.firedAt).getTime();
-    const secondTime = new Date(hist[1]!.firedAt).getTime();
-    assert.ok(firstTime >= secondTime, "DS3: history is newest-first");
-  }
-  // All entries have sim_only=true and valid overallStatus
-  for (const e of hist) {
-    assert.equal(e.sim_only, true, "DS3: sim_only=true on all entries");
-    assert.ok(["pass", "fail", "partial"].includes(e.overallStatus), "DS3: overallStatus valid");
-  }
+  await withFastKgiGatewayMock(async () => {
+    _resetDailySmokeHistory();
+    _resetKgiSimState();
+    for (let i = 0; i < 8; i++) {
+      await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+    }
+    const hist = getDailySmokeHistory();
+    assert.equal(hist.length, 7, "DS3: ring buffer capped at 7 entries");
+    if (hist.length >= 2) {
+      const firstTime = new Date(hist[0]!.firedAt).getTime();
+      const secondTime = new Date(hist[1]!.firedAt).getTime();
+      assert.ok(firstTime >= secondTime, "DS3: history is newest-first");
+    }
+    for (const e of hist) {
+      assert.equal(e.sim_only, true, "DS3: sim_only=true on all entries");
+      assert.ok(["pass", "fail", "partial"].includes(e.overallStatus), "DS3: overallStatus valid");
+    }
+  });
 });
 
 test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) returns null", async () => {
@@ -10375,9 +10411,11 @@ test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) retu
     assert.equal(hist.length, 0, "DS4: ring buffer empty when skipped outside window");
   } else {
     // Window is currently open: use forceRun to verify normal execution path
-    const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
-    assert.ok(entry !== null, "DS4 (window-open): forceRun=true returns entry");
-    assert.equal(entry!.sim_only, true, "DS4 (window-open): sim_only=true");
+    await withFastKgiGatewayMock(async () => {
+      const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+      assert.ok(entry !== null, "DS4 (window-open): forceRun=true returns entry");
+      assert.equal(entry!.sim_only, true, "DS4 (window-open): sim_only=true");
+    });
   }
 });
 
@@ -10559,22 +10597,20 @@ test("ORT3: runSimTradeSmoke without dual-confirm returns awaiting_dual_confirm 
 });
 
 test("ORT4: runSimTradeSmoke with dual-confirm attempts order submit (gateway unreachable in CI)", async () => {
-  _resetKgiSimState();
-  const result = await runSimTradeSmoke({
-    workspaceId: null,
-    symbol: "0050",
-    confirmedByBruce: true,
-    confirmedByJason: true,
+  await withFastKgiGatewayMock(async () => {
+    _resetKgiSimState();
+    const result = await runSimTradeSmoke({
+      workspaceId: null,
+      symbol: "0050",
+      confirmedByBruce: true,
+      confirmedByJason: true,
+    });
+    assert.equal(result.sim_only, true, "ORT4: sim_only always true");
+    assert.ok(typeof result.orderSubmitted === "boolean", "ORT4: orderSubmitted is boolean");
+    assert.ok(typeof result.orderReportReceived === "boolean", "ORT4: orderReportReceived is boolean");
+    const state = getKgiSimState();
+    assert.notEqual(state.lastSimOrderStatus, "pending", "ORT4: lastSimOrderStatus updated after run");
   });
-  assert.equal(result.sim_only, true, "ORT4: sim_only always true");
-  // In CI (no gateway), gatewayReachable=false and orderSubmitted=true (we attempted fetch)
-  // OR if gateway reachable, orderSubmitted=true and outcome is accepted/not_enabled/rejected
-  assert.ok(typeof result.orderSubmitted === "boolean", "ORT4: orderSubmitted is boolean");
-  assert.ok(typeof result.orderReportReceived === "boolean", "ORT4: orderReportReceived is boolean");
-  // State must reflect the attempt
-  const state = getKgiSimState();
-  // lastSimOrderStatus must be updated (not "pending" after a dual-confirmed run)
-  assert.notEqual(state.lastSimOrderStatus, "pending", "ORT4: lastSimOrderStatus updated after run");
 });
 
 // ── P1-A Regression: institutional aggregateInstRows name-matching ─────────────
@@ -14949,11 +14985,9 @@ test("C6-TWSE-FB-5: source field is 'twse_openapi_eod' in fallback response shap
   assert.ok(mockFallbackResponse.note.includes("twse_eod"), "C6-TWSE-FB-5: note must reference twse_eod");
 });
 
-// Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
-// Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
+// Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
   stopOutboxPoller();
   await new Promise<void>((resolve) => setTimeout(resolve, 500));
-  process.exit(process.exitCode ?? 0);
 });
