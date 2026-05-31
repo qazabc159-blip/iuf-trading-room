@@ -109,6 +109,89 @@ export function cleanNarrativeText(
   return raw;
 }
 
+const SOURCE_STATUS_COPY: Record<string, string> = {
+  LIVE: "已接入",
+  STALE: "資料日期較舊",
+  DEGRADED: "資料源降級",
+  EMPTY: "目前無資料",
+  BROKEN: "讀取失敗",
+  UNKNOWN: "狀態未標示",
+};
+
+const SOURCE_NOTE_COPY: Record<string, string> = {
+  table_not_found_or_draft_not_promoted: "資料表尚未發布或尚未建置",
+};
+
+function formatSourceRows(value: string | undefined) {
+  if (!value || value === "n/a") return "";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "";
+  return `${numeric.toLocaleString("zh-TW")} 筆`;
+}
+
+function sourceMetaValue(meta: Record<string, string>, key: string) {
+  const value = meta[key]?.trim();
+  if (!value || value === "n/a") return "";
+  return value;
+}
+
+function parseSourceMeta(parts: string[]) {
+  return parts.reduce<Record<string, string>>((next, part) => {
+    const [rawKey, ...rest] = part.split("=");
+    const key = rawKey?.trim();
+    const value = rest.join("=").trim();
+    if (key) next[key] = value;
+    return next;
+  }, {});
+}
+
+function formatSourceEntry(entry: string) {
+  const splitAt = entry.indexOf("=");
+  if (splitAt <= 0) return "";
+  const sourceName = entry.slice(0, splitAt).trim();
+  const rawStatusAndMeta = entry.slice(splitAt + 1).trim();
+  if (!sourceName || !rawStatusAndMeta) return "";
+
+  const [rawStatus, ...metaParts] = rawStatusAndMeta.split(",");
+  const status = rawStatus.trim().toUpperCase();
+  const meta = parseSourceMeta(metaParts);
+  const rows = formatSourceRows(sourceMetaValue(meta, "rows"));
+  const latest = sourceMetaValue(meta, "latest");
+  const note = sourceMetaValue(meta, "note");
+  const details = [
+    rows,
+    latest ? `最新 ${latest}` : "",
+    note ? SOURCE_NOTE_COPY[note] ?? note : "",
+  ].filter(Boolean);
+
+  return `${sourceName}：${SOURCE_STATUS_COPY[status] ?? status}${details.length ? `（${details.join("，")}）` : ""}`;
+}
+
+export function formatBriefSourceTrail(value: string | null | undefined) {
+  const raw = value?.trim();
+  if (!raw) return "來源紀錄尚未完整，這段不作投資依據。";
+
+  const prefixParts = raw.split(";").map((part) => part.trim());
+  const sourcePack = prefixParts.find((part) => part.startsWith("source_pack="))?.split("=")[1]?.trim();
+  const tradingDate = prefixParts.find((part) => part.startsWith("trading_date="))?.split("=")[1]?.trim();
+  const sourcesText = prefixParts.slice(2).join(";").trim();
+  const sourceEntries = sourcesText
+    .split("|")
+    .map((entry) => formatSourceEntry(entry.trim()))
+    .filter(Boolean);
+
+  if (!sourcePack && !tradingDate && sourceEntries.length === 0) {
+    return cleanNarrativeText(raw, "來源紀錄已保留，但格式尚未完成整理。");
+  }
+
+  const header = [
+    sourcePack ? `資料包 ${sourcePack.slice(0, 8)}` : "",
+    tradingDate ? `交易日 ${tradingDate}` : "",
+  ].filter(Boolean);
+  const trail = [...header, ...sourceEntries];
+  return trail.join("；");
+}
+
 export function cleanTradePlanText(
   value: string | null | undefined,
   fallback = "交易計畫文字尚未完成中文整理；保留來源紀錄，不自動轉為委託。"

@@ -7,7 +7,7 @@ import {
   type BriefDetailAuditChain,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
-import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
+import { cleanExternalHeadline, cleanNarrativeText, formatBriefSourceTrail } from "@/lib/operator-copy";
 import { evaluateBriefQuality } from "../briefQuality";
 
 export const dynamic = "force-dynamic";
@@ -336,7 +336,7 @@ function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
             {section.sourceTrail && (
               <div className="brief-source-trail">
                 <span className="tg gold">來源</span>
-                <span>{safeBriefText(section.sourceTrail)}</span>
+                <span>{formatBriefSourceTrail(section.sourceTrail)}</span>
               </div>
             )}
             {!section.sourceTrail && (
