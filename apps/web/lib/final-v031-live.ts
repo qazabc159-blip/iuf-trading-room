@@ -946,7 +946,10 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const previous = prevBar?.close ?? null;
     const change = lastPrice != null && previous != null ? Number(lastPrice) - Number(previous) : null;
     const changePct = change != null && previous ? change / Number(previous) * 100 : null;
-    const prefillWatch = prefill?.enabled && selectedSymbol ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? paperPrefillSourceLabel(prefill.source) + " · " + prefill.recommendationId : paperPrefillSourceLabel(prefill.source), price:lastPrice, changePct }] : [];
+    const prefillSymbol = String(prefill?.symbol || "").trim().toUpperCase();
+    const selectedSymbolUpper = String(selectedSymbol || "").trim().toUpperCase();
+    const prefillMatchesSelected = !!prefill?.enabled && selectedSymbolUpper && (!prefillSymbol || prefillSymbol === selectedSymbolUpper);
+    const prefillWatch = prefillMatchesSelected ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? paperPrefillSourceLabel(prefill.source) + " · " + prefill.recommendationId : paperPrefillSourceLabel(prefill.source), price:lastPrice, changePct }] : [];
     const watchlist = prefillWatch.concat(portfolio.map((pos) => ({ symbol:pos.symbol, name:pos.symbol, meta:String(pos.netQtyShares || 0) + " 股 · " + String(pos.fillCount || 0) + " 筆成交", price:pos.symbol === selectedSymbol ? lastPrice : pos.avgCostPerShare, changePct:pos.symbol === selectedSymbol ? changePct : null })))
       .concat(ideas.map((idea) => ({ symbol:idea.symbol, name:idea.companyName, meta:idea.status + " · " + idea.signalCount + " 訊號", price:null, changePct:null })))
       .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index);
@@ -983,10 +986,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   async function selectPaperSymbol(symbol) {
     const normalized = String(symbol || '').trim().toUpperCase();
     if (!/^[0-9A-Z._-]{2,16}$/.test(normalized)) return;
+    const activePrefill = paperPrefill();
+    const activePrefillSymbol = String(activePrefill?.symbol || "").trim().toUpperCase();
+    const shouldClearPrefill = !!activePrefill?.enabled && activePrefillSymbol && activePrefillSymbol !== normalized;
     currentPaperSymbol = normalized;
     try {
       const url = new URL(window.location.href);
       url.searchParams.set('symbol', normalized);
+      if (shouldClearPrefill) {
+        ["entry", "stop", "tp", "from_rec", "recommendationId", "side"].forEach((key) => url.searchParams.delete(key));
+      }
       window.history.replaceState(null, '', url);
     } catch {
       // ignore history failures in embedded contexts
@@ -1000,9 +1009,31 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       immediateSymInput.value = normalized;
       immediateSymInput.setAttribute("value", normalized);
     }
+    removeMismatchedPaperPrefill(normalized, activePrefill);
     await refreshClientLive();
   }
   window.__IUF_SELECT_PAPER_SYMBOL__ = selectPaperSymbol;
+
+  function removeMismatchedPaperPrefill(symbol, snapshotPrefill = null) {
+    const selectedSymbol = String(symbol || "").trim().toUpperCase();
+    const activePrefill = snapshotPrefill || paperPrefill();
+    const prefillSymbol = String(activePrefill?.symbol || "").trim().toUpperCase();
+    if (!selectedSymbol || !prefillSymbol || prefillSymbol === selectedSymbol) return false;
+    const existing = $("#rec-prefill-box");
+    if (existing) existing.remove();
+    [".lv-label.entry", ".lv-label.stop", ".lv-label.target"].forEach((selector) => {
+      const node = $(selector);
+      if (node) node.textContent = "";
+    });
+    const staleEntryPrice = firstNumber(activePrefill?.entry);
+    const priceInput = $("#t-price");
+    const currentPrice = firstNumber(priceInput?.value);
+    if (priceInput && staleEntryPrice != null && currentPrice === staleEntryPrice) {
+      priceInput.value = "";
+      priceInput.setAttribute("value", "");
+    }
+    return true;
+  }
 
   function attachPaperRowHandlers() {
     $$('.wrow').forEach((row) => {
@@ -1381,6 +1412,19 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const existing = $("#rec-prefill-box");
     if (!prefill?.enabled) {
       if (existing) existing.remove();
+      return;
+    }
+
+    const selectedSymbol = String(selected?.symbol || "").trim().toUpperCase();
+    const prefillSymbol = String(prefill.symbol || "").trim().toUpperCase();
+    if (prefillSymbol && selectedSymbol && prefillSymbol !== selectedSymbol) {
+      removeMismatchedPaperPrefill(selectedSymbol);
+      const submit = $("#submit-btn");
+      const label = $("#submit-btn-label") || submit?.querySelector("b");
+      if (label) {
+        if (!label.id) label.id = "submit-btn-label";
+        label.textContent = "紙上單預覽";
+      }
       return;
     }
 

@@ -74,6 +74,11 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("['entry','stop','tp','from_rec','recommendationId','side']");
     expect(ticketHtml).toContain("window.__IUF_SELECT_PAPER_SYMBOL__");
     expect(liveHydration).toContain("window.__IUF_SELECT_PAPER_SYMBOL__ = selectPaperSymbol");
+    expect(liveHydration).toContain("prefillMatchesSelected");
+    expect(liveHydration).toContain("removeMismatchedPaperPrefill");
+    expect(liveHydration).toContain("prefillSymbol && selectedSymbol && prefillSymbol !== selectedSymbol");
+    expect(liveHydration).toContain('["entry", "stop", "tp", "from_rec", "recommendationId", "side"]');
+    expect(liveHydration).toContain("紙上單預覽");
   });
 
   it("draws real volume-price indicators instead of decorative technical labels", () => {
