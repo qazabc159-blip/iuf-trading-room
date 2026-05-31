@@ -21,8 +21,20 @@ type ChartBar = {
 
 // ── Indicator toggle state (persisted in localStorage) ─────────────────────
 type MaKey = "ma5" | "ma10" | "ma20" | "ma60";
-type IndicatorKey = "ma" | "vwap" | "rsi" | "macd";
+type IndicatorKey = "ma" | "vwap" | "sr" | "plan" | "rsi" | "macd";
 type IndicatorPrefs = Record<IndicatorKey, boolean>;
+type PlanLevels = {
+  entry?: number | null;
+  stop?: number | null;
+  target?: number | null;
+};
+type VolumePriceLevels = {
+  support: number | null;
+  resistance: number | null;
+  supportVolume: number | null;
+  resistanceVolume: number | null;
+  sampleSize: number;
+};
 
 const MA_CONFIG: ReadonlyArray<{ key: MaKey; period: number; color: string; label: string }> = [
   { key: "ma5",  period: 5,  color: "#FFD600", label: "MA5"  },
@@ -42,12 +54,14 @@ function loadIndicatorPrefs(): IndicatorPrefs {
       return {
         ma: parsed.ma ?? true,
         vwap: parsed.vwap ?? true,
+        sr: parsed.sr ?? true,
+        plan: parsed.plan ?? true,
         rsi: parsed.rsi ?? false,
         macd: parsed.macd ?? false,
       };
     }
   } catch { /* ignore */ }
-  return { ma: true, vwap: true, rsi: false, macd: false };
+  return { ma: true, vwap: true, sr: true, plan: true, rsi: false, macd: false };
 }
 
 function saveIndicatorPrefs(prefs: IndicatorPrefs) {
@@ -170,6 +184,56 @@ function calcMACD(closes: number[]): {
     return d !== null && de !== null ? Number((d - de).toFixed(4)) : null;
   });
   return { dif, dea, hist };
+}
+
+function median(values: number[]) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function calcVolumePriceLevels(bars: ChartBar[]): VolumePriceLevels {
+  const recent = bars.slice(-Math.min(80, bars.length));
+  if (recent.length < 8) {
+    return { support: null, resistance: null, supportVolume: null, resistanceVolume: null, sampleSize: recent.length };
+  }
+
+  const medianVolume = median(recent.map((bar) => bar.volume));
+  const minVolume = Math.max(1, medianVolume * 0.65);
+  const pivotLows: Array<{ price: number; volume: number }> = [];
+  const pivotHighs: Array<{ price: number; volume: number }> = [];
+
+  for (let i = 1; i < recent.length - 1; i++) {
+    const prev = recent[i - 1];
+    const bar = recent[i];
+    const next = recent[i + 1];
+    const volumeOk = Number.isFinite(bar.volume) && bar.volume >= minVolume;
+    if (!volumeOk) continue;
+    if (bar.low <= prev.low && bar.low <= next.low) pivotLows.push({ price: bar.low, volume: bar.volume });
+    if (bar.high >= prev.high && bar.high >= next.high) pivotHighs.push({ price: bar.high, volume: bar.volume });
+  }
+
+  const lows = pivotLows.length ? pivotLows : recent.map((bar) => ({ price: bar.low, volume: bar.volume }));
+  const highs = pivotHighs.length ? pivotHighs : recent.map((bar) => ({ price: bar.high, volume: bar.volume }));
+  const support = lows.reduce((best, item) => {
+    if (!best) return item;
+    if (item.volume > best.volume * 1.35) return item;
+    return item.price < best.price ? item : best;
+  }, null as { price: number; volume: number } | null);
+  const resistance = highs.reduce((best, item) => {
+    if (!best) return item;
+    if (item.volume > best.volume * 1.35) return item;
+    return item.price > best.price ? item : best;
+  }, null as { price: number; volume: number } | null);
+
+  return {
+    support: support?.price ?? null,
+    resistance: resistance?.price ?? null,
+    supportVolume: support?.volume ?? null,
+    resistanceVolume: resistance?.volume ?? null,
+    sampleSize: recent.length,
+  };
 }
 
 // ── SVG sub-chart helpers ───────────────────────────────────────────────────
@@ -695,9 +759,23 @@ const INDICATOR_CSS = `
 ._ind-toggle-btn._ma20.is-on { border-color: rgba(0,229,255,0.52); color: #00E5FF; background: rgba(0,229,255,0.06); }
 ._ind-toggle-btn._ma60.is-on { border-color: rgba(179,136,255,0.52); color: #B388FF; background: rgba(179,136,255,0.06); }
 ._ind-toggle-btn._vwap.is-on { border-color: rgba(143,191,232,0.58); color: #8fbfe8; background: rgba(143,191,232,0.08); }
+._ind-toggle-btn._sr.is-on { border-color: rgba(236,201,75,0.58); color: #ecc94b; background: rgba(236,201,75,0.08); }
+._ind-toggle-btn._plan.is-on { border-color: rgba(72,187,120,0.58); color: #48bb78; background: rgba(72,187,120,0.08); }
 ._ind-ma-expand { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 ._ind-divider { width: 1px; height: 14px; background: rgba(220,228,240,0.12); margin: 0 2px; }
 ._ind-sub-section { border-top: 1px solid rgba(220,228,240,0.06); }
+._ind-level-readout {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(220,228,240,0.06);
+  background: rgba(5,8,12,0.32);
+  color: rgba(203,213,225,0.56);
+  font: 800 10px/1.45 var(--mono, monospace);
+}
+._ind-level-readout b { color: rgba(236,201,75,0.94); }
+._ind-level-readout ._plan { color: rgba(72,187,120,0.94); }
 @media (prefers-reduced-motion: reduce) {
   ._ind-toggle-btn { transition: none; }
 }
@@ -714,6 +792,7 @@ export function OhlcvCandlestickChart({
   symbol,
   sourceState,
   sourceReason,
+  planLevels,
 }: {
   bars: OhlcvBar[];
   kbarRows?: FinMindKBarRow[];
@@ -723,6 +802,7 @@ export function OhlcvCandlestickChart({
   symbol: string;
   sourceState: "LIVE" | "EMPTY" | "BLOCKED";
   sourceReason: string;
+  planLevels?: PlanLevels;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
@@ -734,7 +814,7 @@ export function OhlcvCandlestickChart({
 
   // Indicator toggles — initialized from localStorage on first render
   const [indicators, setIndicators] = useState<IndicatorPrefs>(() => {
-    if (typeof window === "undefined") return { ma: true, vwap: true, rsi: false, macd: false };
+    if (typeof window === "undefined") return { ma: true, vwap: true, sr: true, plan: true, rsi: false, macd: false };
     return loadIndicatorPrefs();
   });
   const [maEnabled, setMaEnabled] = useState<Record<MaKey, boolean>>(() => {
@@ -808,6 +888,8 @@ export function OhlcvCandlestickChart({
   }), [closes]);
 
   const vwapValues = useMemo(() => calcVWAP(chartBars), [chartBars]);
+
+  const volumePriceLevels = useMemo(() => calcVolumePriceLevels(chartBars), [chartBars]);
 
   const rsiValues = useMemo(() => calcRSI(closes, 14), [closes]);
 
@@ -956,6 +1038,48 @@ export function OhlcvCandlestickChart({
           }
         }
 
+        if (indicators.sr) {
+          if (volumePriceLevels.support !== null) {
+            candleSeries.createPriceLine({
+              price: volumePriceLevels.support,
+              color: "#ecc94b",
+              lineWidth: 1,
+              lineStyle: lc.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: "量價支撐",
+            });
+          }
+          if (volumePriceLevels.resistance !== null) {
+            candleSeries.createPriceLine({
+              price: volumePriceLevels.resistance,
+              color: "#f56565",
+              lineWidth: 1,
+              lineStyle: lc.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: "量價壓力",
+            });
+          }
+        }
+
+        if (indicators.plan && planLevels) {
+          const planLines = [
+            { price: planLevels.entry, color: "#48bb78", title: "計畫進場", style: lc.LineStyle.Dotted },
+            { price: planLevels.stop, color: "#f56565", title: "計畫停損", style: lc.LineStyle.Dotted },
+            { price: planLevels.target, color: "#63b3ed", title: "計畫目標", style: lc.LineStyle.Dotted },
+          ];
+          for (const line of planLines) {
+            if (typeof line.price !== "number" || !Number.isFinite(line.price) || line.price <= 0) continue;
+            candleSeries.createPriceLine({
+              price: line.price,
+              color: line.color,
+              lineWidth: 1,
+              lineStyle: line.style,
+              axisLabelVisible: true,
+              title: line.title,
+            });
+          }
+        }
+
         const barsByTime = new Map(chartBars.map((bar) => [String(bar.time), bar]));
         chart.subscribeCrosshairMove((param) => {
           if (disposed) return;
@@ -1000,7 +1124,7 @@ export function OhlcvCandlestickChart({
       chart?.remove();
       chartRef.current = null;
     };
-  }, [activeIntradayMinutes, chartBars, chartHeight, insufficientTrend, interval, isIntraday, range, indicators.ma, indicators.vwap, maEnabled, maValues, vwapValues]);
+  }, [activeIntradayMinutes, chartBars, chartHeight, insufficientTrend, interval, isIntraday, range, indicators.ma, indicators.plan, indicators.sr, indicators.vwap, maEnabled, maValues, planLevels, volumePriceLevels, vwapValues]);
 
   const badgeClass = isIntraday
     ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
@@ -1100,6 +1224,26 @@ export function OhlcvCandlestickChart({
           VWAP
         </button>
 
+        <button
+          type="button"
+          className={`_ind-toggle-btn _sr${indicators.sr ? " is-on" : ""}`}
+          onClick={() => toggleIndicator("sr")}
+          aria-pressed={indicators.sr}
+          title="用最近量價 pivot 計算支撐與壓力"
+        >
+          量價支撐/壓力
+        </button>
+
+        <button
+          type="button"
+          className={`_ind-toggle-btn _plan${indicators.plan ? " is-on" : ""}`}
+          onClick={() => toggleIndicator("plan")}
+          aria-pressed={indicators.plan}
+          title="顯示 AI/交易計畫帶入的進場、停損與目標價"
+        >
+          計畫點位
+        </button>
+
         <div className="_ind-divider" />
 
         {/* RSI toggle */}
@@ -1124,6 +1268,16 @@ export function OhlcvCandlestickChart({
           MACD
         </button>
       </div>
+
+      {(volumePriceLevels.support !== null || volumePriceLevels.resistance !== null || planLevels) && (
+        <div className="_ind-level-readout" data-indicator-readout="volume-price">
+          {volumePriceLevels.support !== null && <span>量價支撐 <b>{formatNumber(volumePriceLevels.support)}</b></span>}
+          {volumePriceLevels.resistance !== null && <span>量價壓力 <b>{formatNumber(volumePriceLevels.resistance)}</b></span>}
+          {planLevels?.entry ? <span className="_plan">進場 <b>{formatNumber(planLevels.entry)}</b></span> : null}
+          {planLevels?.stop ? <span className="_plan">停損 <b>{formatNumber(planLevels.stop)}</b></span> : null}
+          {planLevels?.target ? <span className="_plan">目標 <b>{formatNumber(planLevels.target)}</b></span> : null}
+        </div>
+      )}
 
       {lastBar && (
         <div className="kline-snapshot-strip">

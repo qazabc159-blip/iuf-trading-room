@@ -33,3 +33,12 @@
 - No real-order promotion.
 - No API/server/KGI SIM/F-AUTO files touched.
 - No fake K-line fallback added.
+
+## 2026-05-31 Follow-up: Indicators and Symbol Sync
+- Added real volume/price support and resistance lines to the shared company/trading-room chart core.
+- Added real plan-level price lines for AI/plan handoff entry, stop, and target values.
+- Propagated `entry`, `stop`, and `tp` from `/api/ui-final-v031/paper-trading-room` into `/final-v031/portfolio/kline-frame`.
+- Exposed symbol selection to the final-v031 hydration layer so the chart frame, outer header, and paper-ticket symbol field stay aligned.
+- Local browser smoke screenshot: `C:\Users\User\Desktop\小楊機密\交易\IUF_TRADING_ROOM_APP_trading_room_indicators_20260531\evidence\w7_paper_sprint\trading-room-real-chart-local-20260531.png`
+- Local browser smoke report: `C:\Users\User\Desktop\小楊機密\交易\IUF_TRADING_ROOM_APP_trading_room_indicators_20260531\evidence\w7_paper_sprint\trading-room-real-chart-local-20260531.json`
+- Local limitation: owner session is not available on `127.0.0.1`, so local smoke verifies formal blocked state, symbol/header/ticket sync, and no fake chart. Production browser verification after deploy must confirm live canvas plus indicator readout.

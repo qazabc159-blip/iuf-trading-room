@@ -10,6 +10,9 @@ const screenshotPath = path.join(outDir, "trading-room-real-chart-local-20260531
 const reportPath = path.join(outDir, "trading-room-real-chart-local-20260531.json");
 const baseUrl = process.env.IUF_QA_BASE_URL ?? "http://127.0.0.1:3311";
 const initialSymbol = process.env.IUF_QA_SYMBOL ?? "2330";
+const planEntry = process.env.IUF_QA_ENTRY ?? "590";
+const planStop = process.env.IUF_QA_STOP ?? "560";
+const planTarget = process.env.IUF_QA_TP ?? "640";
 const requireCanvas = process.env.IUF_QA_REQUIRE_CANVAS === "1";
 const cookieFile = process.env.IUF_PLAYWRIGHT_COOKIE_FILE;
 const storageStateCandidates = [
@@ -56,7 +59,8 @@ page.on("console", (msg) => {
 });
 page.on("requestfailed", (req) => requestFailures.push({ url: req.url(), failure: req.failure()?.errorText ?? "" }));
 
-await page.goto(`${baseUrl}/api/ui-final-v031/paper-trading-room?symbol=${initialSymbol}`, {
+const pageParams = new URLSearchParams({ symbol: initialSymbol, entry: planEntry, stop: planStop, tp: planTarget });
+await page.goto(`${baseUrl}/api/ui-final-v031/paper-trading-room?${pageParams.toString()}`, {
   waitUntil: "domcontentloaded",
   timeout: 60000,
 });
@@ -82,15 +86,24 @@ const canvasRects = await klineFrame.locator("canvas").evaluateAll((nodes) =>
 const emptyState = await klineFrame.locator(".kline-insufficient,.kline-frame-empty,.terminal-note").count();
 const note = await klineFrame.locator(".kline-frame-note").innerText().catch(() => "");
 const emptyText = await klineFrame.locator(".kline-frame-empty,.terminal-note").first().innerText().catch(() => "");
+const indicatorReadout = await klineFrame.locator('[data-indicator-readout="volume-price"]').innerText().catch(() => "");
 
 const tsmcRow = hostFrame.locator(".wrow[data-sym='2330']");
 if (await tsmcRow.count()) {
   await tsmcRow.first().click();
 } else {
-  await page.evaluate(() => window.updateRealChartFrame?.("2330"));
+  await page.evaluate(() => {
+    if (typeof window.__IUF_SELECT_PAPER_SYMBOL__ === "function") {
+      window.__IUF_SELECT_PAPER_SYMBOL__("2330").catch(() => {});
+    } else {
+      window.updateRealChartFrame?.("2330");
+    }
+  });
 }
 await page.waitForTimeout(900);
 const updatedFrameSrc = await iframe.getAttribute("src");
+const outerHeaderSymbol = await hostFrame.locator(".symhead .sym").innerText().catch(() => "");
+const ticketSymbol = await hostFrame.locator("#t-sym").inputValue().catch(() => "");
 
 await page.screenshot({ path: screenshotPath, fullPage: true });
 
@@ -105,6 +118,9 @@ const report = {
   emptyState,
   note,
   emptyText,
+  indicatorReadout,
+  outerHeaderSymbol,
+  ticketSymbol,
   consoleEvents,
   requestFailures,
   storageState,
@@ -136,4 +152,16 @@ if (firstReadableCanvas && firstReadableCanvas.top > 260) {
 }
 if (emptyState === 0 && !tabTexts.some((text) => text.includes("MA") || text.includes("1"))) {
   throw new Error(`real chart controls not found: ${tabTexts.join(" | ")}`);
+}
+if (emptyState === 0 && (!indicatorReadout.includes("量價支撐") || !indicatorReadout.includes("量價壓力"))) {
+  throw new Error(`volume-price indicator readout not found: ${indicatorReadout}`);
+}
+if (emptyState === 0 && (!indicatorReadout.includes("進場") || !indicatorReadout.includes("停損") || !indicatorReadout.includes("目標"))) {
+  throw new Error(`plan level readout not found: ${indicatorReadout}`);
+}
+if (!outerHeaderSymbol.includes("2330")) {
+  throw new Error(`outer trading-room header did not sync after symbol click: ${outerHeaderSymbol}`);
+}
+if (!ticketSymbol.includes("2330")) {
+  throw new Error(`ticket symbol did not sync after symbol click: ${ticketSymbol}`);
 }

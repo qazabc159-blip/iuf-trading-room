@@ -15,6 +15,15 @@ function friendlyError(error: unknown) {
   return typeof error === "string" ? error : "unknown_error";
 }
 
+function firstPositiveNumber(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== "string") return null;
+  const match = raw.replace(/,/g, "").match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const number = Number(match[0]);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
 export default async function TradingRoomKlineFramePage({
   searchParams,
 }: {
@@ -22,6 +31,11 @@ export default async function TradingRoomKlineFramePage({
 }) {
   const params = searchParams ? await searchParams : undefined;
   const symbol = safeTicker(params?.symbol);
+  const planLevels = {
+    entry: firstPositiveNumber(params?.entry),
+    stop: firstPositiveNumber(params?.stop),
+    target: firstPositiveNumber(params?.tp),
+  };
   let companyError: string | null = null;
   const company = await getCompanyByTicker(symbol).catch((error) => {
     companyError = friendlyError(error);
@@ -92,6 +106,7 @@ export default async function TradingRoomKlineFramePage({
           symbol={company.ticker}
           sourceState={sourceState}
           sourceReason={sourceReason}
+          planLevels={planLevels}
         />
       </div>
     </main>
@@ -173,24 +188,28 @@ const frameCss = `
     order: 3;
   }
 
-  .trading-room-kline-host .kline-toolbar {
+  .trading-room-kline-host ._ind-level-readout {
     order: 4;
   }
 
-  .trading-room-kline-host .kline-pending-line {
+  .trading-room-kline-host .kline-toolbar {
     order: 5;
   }
 
-  .trading-room-kline-host .kline-meta-line {
+  .trading-room-kline-host .kline-pending-line {
     order: 6;
   }
 
-  .trading-room-kline-host .kline-snapshot-strip {
+  .trading-room-kline-host .kline-meta-line {
     order: 7;
   }
 
-  .trading-room-kline-host .kline-density-strip {
+  .trading-room-kline-host .kline-snapshot-strip {
     order: 8;
+  }
+
+  .trading-room-kline-host .kline-density-strip {
+    order: 9;
   }
 
   .trading-room-kline-host .kline-chart-canvas {

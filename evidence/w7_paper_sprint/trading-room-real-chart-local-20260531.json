@@ -1,268 +1,253 @@
 {
-  "url": "http://127.0.0.1:3311/api/ui-final-v031/paper-trading-room?symbol=6202",
-  "frameSrc": "/final-v031/portfolio/kline-frame?symbol=6202&rev=mpsppzqu",
-  "updatedFrameSrc": "/final-v031/portfolio/kline-frame?symbol=2330&rev=mpspqnzv",
+  "url": "http://127.0.0.1:3312/api/ui-final-v031/paper-trading-room?symbol=2330&entry=590&stop=560&tp=640",
+  "frameSrc": "/final-v031/portfolio/kline-frame?symbol=6202&entry=590&stop=560&tp=640&rev=mptd2ei6",
+  "updatedFrameSrc": "/final-v031/portfolio/kline-frame?symbol=2330&entry=590&stop=560&tp=640&rev=mptd3zc0",
   "tabTexts": [],
   "canvasCount": 0,
   "lightweightCanvas": 0,
+  "canvasRects": [],
   "emptyState": 1,
   "note": "",
-  "emptyText": "6202 公司資料暫不可用\n公司主檔讀取失敗：fetch failed。交易室不會用假 K 線補圖，請確認登入狀態與資料服務。",
+  "emptyText": "6202 公司資料暫不可用\n公司主檔讀取失敗：{\"error\":\"unauthenticated\"}。交易室不會用假 K 線補圖，請確認登入狀態與資料服務。",
+  "indicatorReadout": "",
+  "outerHeaderSymbol": "2330",
+  "ticketSymbol": "2330",
   "consoleEvents": [
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     },
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     }
   ],
   "requestFailures": [
     {
-      "url": "http://127.0.0.1:3311/final-v031/portfolio/kline-frame?symbol=2330",
+      "url": "http://127.0.0.1:3312/final-v031/portfolio/kline-frame?symbol=2330",
       "failure": "net::ERR_ABORTED"
     },
     {
-      "url": "http://127.0.0.1:3311/final-v031/portfolio/kline-frame?symbol=6202&rev=mpsppyyy",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fhealth",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fportfolio%2Fkgi%2Fpositions",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fstatus",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fstrategy%2Fideas%3FdecisionMode%3Dpaper%26includeBlocked%3Dtrue%26limit%3D8%26sort%3Dscore",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%3Fticker%3D6202",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D6202",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D6202%26limit%3D16",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/_next/static/chunks/main-app.js?v=1780167424085",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fhealth",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fportfolio%2Fkgi%2Fpositions",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fstatus",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fstrategy%2Fideas%3FdecisionMode%3Dpaper%26includeBlocked%3Dtrue%26limit%3D8%26sort%3Dscore",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%3Fticker%3D6202",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D6202",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D6202%26limit%3D16",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fhealth",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Fportfolio",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Forders",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fpaper%2Ffills",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fportfolio%2Fkgi%2Fpositions",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fstatus",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fstrategy%2Fideas%3FdecisionMode%3Dpaper%26includeBlocked%3Dtrue%26limit%3D8%26sort%3Dscore",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fcompanies%3Fticker%3D6202",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fbidask%3Fsymbol%3D6202",
-      "failure": "net::ERR_ABORTED"
-    },
-    {
-      "url": "http://127.0.0.1:3311/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fquote%2Fticks%3Fsymbol%3D6202%26limit%3D16",
+      "url": "http://127.0.0.1:3312/final-v031/portfolio/kline-frame?symbol=6202&entry=590&stop=560&tp=640&rev=mptd21md",
       "failure": "net::ERR_ABORTED"
     }
   ],
-  "storageState": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\storageState.json"
+  "storageState": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\storageState.json",
+  "cookieFile": null,
+  "cookieCount": 0,
+  "baseUrl": "http://127.0.0.1:3312",
+  "initialSymbol": "6202",
+  "requireCanvas": false
 }
