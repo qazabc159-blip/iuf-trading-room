@@ -145,6 +145,9 @@ const frameCss = `
   }
 
   .trading-room-real-kline-frame {
+    box-sizing: border-box;
+    width: 100vw;
+    max-width: 100vw;
     height: 100vh;
     min-height: 0;
     background: #080b10;
@@ -155,6 +158,8 @@ const frameCss = `
   }
 
   .kline-frame-note {
+    box-sizing: border-box;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -173,6 +178,9 @@ const frameCss = `
   }
 
   .trading-room-kline-host .kline-panel {
+    box-sizing: border-box;
+    width: 100% !important;
+    max-width: none !important;
     margin: 0;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
@@ -184,6 +192,10 @@ const frameCss = `
   }
 
   .trading-room-kline-host {
+    box-sizing: border-box;
+    width: 100% !important;
+    max-width: none !important;
+    align-self: stretch;
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
@@ -202,6 +214,9 @@ const frameCss = `
   }
 
   .trading-room-kline-host .kline-chart-shell {
+    box-sizing: border-box;
+    width: calc(100% - 20px) !important;
+    max-width: none !important;
     flex: 1 1 auto;
     min-height: 0;
     margin: 0 10px 10px;
@@ -226,6 +241,9 @@ const frameCss = `
   }
 
   .trading-room-kline-host .kline-chart-canvas {
+    box-sizing: border-box;
+    width: 100% !important;
+    max-width: none !important;
     order: 1;
     flex: 1 1 auto;
     min-height: 0 !important;
