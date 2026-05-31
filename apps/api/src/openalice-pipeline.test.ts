@@ -300,6 +300,41 @@ test("classifyDraftTier keeps institutional buy/sell source labels green", () =>
   assert.equal(tier, "green");
 });
 
+test("classifyDraftTier keeps no-advice daily brief disclaimers green", () => {
+  const tier = classifyDraftTier({
+    date: "2026-05-29",
+    sections: [
+      {
+        heading: "資料來源狀態",
+        body: "本日解讀以資料完整性與風控檢查為優先，不提供買賣建議、目標價或報酬承諾。"
+      }
+    ]
+  });
+  assert.equal(tier, "green");
+});
+
+test("publish gate Green tier: safe no-advice disclaimer still auto-publishes", () => {
+  const pack = makePack({ trailComplete: true });
+  const gate = evaluatePublishGate({
+    sourcePack: pack,
+    reviewerVerdict: "approve",
+    confidence: 0.95,
+    flaggedIssueCount: 0,
+    draftPayload: {
+      date: "2026-05-29",
+      sections: [
+        {
+          heading: "資料來源狀態",
+          body: "資料來源包含三大法人買賣超欄位；本文不構成投資建議，不提供目標價，不保證報酬，也不提供勝率。"
+        }
+      ]
+    }
+  });
+  assert.equal(gate.tier, "green");
+  assert.equal(gate.shouldAutoPublish, true);
+  assert.equal(gate.rejectReason, null);
+});
+
 test("classifyDraftTier returns red for guarantee keyword", () => {
   const tier = classifyDraftTier({ text: "This investment is guaranteed to return 20%." });
   assert.equal(tier, "red");
