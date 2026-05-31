@@ -432,6 +432,9 @@ export type KgiSimOrderPayload = {
   price?: number | null;
   orderType: "market" | "limit";
   quantityUnit: "SHARE" | "LOT";
+  timeInForce?: "ROD" | "IOC" | "FOK";
+  orderCond?: "Cash" | "CashSelling" | "Margin" | "MarginDayTrade" | "ShortSelling" | "LendSelling";
+  priceType?: "MKT" | "Reference" | "LimitUp" | "LimitDown";
 };
 
 export type KgiSimOrderResponse = {
@@ -447,6 +450,9 @@ export type KgiSimOrderResponse = {
     effectiveQtyShares: number;
     price: number | null;
     orderType: "market" | "limit";
+    timeInForce?: "ROD" | "IOC" | "FOK";
+    orderCond?: "Cash" | "CashSelling" | "Margin" | "MarginDayTrade" | "ShortSelling" | "LendSelling";
+    priceType?: "MKT" | "Reference" | "LimitUp" | "LimitDown" | null;
     isOddLot: boolean;
     submittedAt: string;
   };
@@ -486,6 +492,9 @@ export async function submitKgiSimOrder(payload: KgiSimOrderPayload): Promise<Kg
       price: payload.price ?? null,
       orderType: payload.orderType,
       quantityUnit: payload.quantityUnit,
+      timeInForce: payload.timeInForce ?? "ROD",
+      orderCond: payload.orderCond ?? "Cash",
+      priceType: payload.priceType,
     }),
   });
 

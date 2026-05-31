@@ -1706,11 +1706,21 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       // Vendor preview is best-effort; backend preview still validates again on click.
     }
     const submit = $("#submit-btn");
+    const kgiSubmit = $("#submit-kgi-sim-btn");
+    const getKgiSubmitLabel = () => $("#submit-kgi-sim-label") || kgiSubmit?.querySelector("b");
     if (submit && !capitalReady) {
       submit.disabled = true;
       const blockedLabel = $("#submit-btn-label") || submit.querySelector("b");
       if (blockedLabel) blockedLabel.textContent = "\u9700\u8981 owner session \u624d\u80fd\u9810\u89bd / \u9001\u51fa\u7d19\u4e0a\u55ae";
       const gate = $(".gate .h .v"); if (gate) gate.textContent = "\u8cc7\u6599\u672a\u6388\u6b0a";
+    }
+    if (kgiSubmit && !capitalReady) {
+      kgiSubmit.disabled = true;
+      kgiSubmit.classList.add("is-blocked");
+      kgiSubmit.setAttribute("aria-disabled", "true");
+      kgiSubmit.dataset.blocked = "owner_session_required";
+      const kgiBlockedLabel = getKgiSubmitLabel();
+      if (kgiBlockedLabel) kgiBlockedLabel.textContent = "\u9700\u8981 owner session";
     }
     if (submit) submit.addEventListener("click", async (event) => {
       event.preventDefault();
@@ -1787,6 +1797,97 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         const gate = $(".gate .h .v"); if (gate) gate.textContent = "需檢查";
       } finally {
         setTimeout(() => { submit.disabled = false; }, 1200);
+      }
+    }, true);
+
+    if (kgiSubmit) kgiSubmit.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!capitalReady) return;
+      const qty = Number($("#t-qty")?.value || 0);
+      const unit = $("#t-unit .on")?.dataset.unit === "share" ? "SHARE" : "LOT";
+      const orderType = String($("#t-otype")?.value || "limit");
+      const side = $("#side .on")?.dataset.side || "buy";
+      const rawPx = Number($("#t-price")?.value || 0);
+      const selectedPx = Number(selected.price || 0);
+      const priceRequired = orderType !== "market";
+      const invalidQty = !Number.isFinite(qty) || qty <= 0;
+      const invalidPrice = priceRequired && (!Number.isFinite(rawPx) || rawPx <= 0);
+      const invalidMarketPrice = !priceRequired && (!Number.isFinite(selectedPx) || selectedPx <= 0);
+      const kgiLabel = getKgiSubmitLabel();
+      const setGate = (message: string) => { const gate = $(".gate .h .v"); if (gate) gate.textContent = message; };
+      if (orderType !== "market" && orderType !== "limit") {
+        if (kgiLabel) kgiLabel.textContent = "KGI SIM 不支援停損單";
+        setGate("KGI SIM 只支援市價 / 限價");
+        return;
+      }
+      if (invalidQty || invalidPrice || invalidMarketPrice) {
+        const reason = invalidQty ? "請輸入有效數量" : (priceRequired ? "請輸入有效委託價" : "等待有效市價");
+        if (kgiLabel) kgiLabel.textContent = reason;
+        setGate(reason);
+        return;
+      }
+
+      kgiSubmit.disabled = true;
+      kgiSubmit.classList.remove("is-blocked");
+      kgiSubmit.removeAttribute("aria-disabled");
+      delete kgiSubmit.dataset.blocked;
+      if (kgiLabel) kgiLabel.textContent = "KGI SIM 風控預檢中...";
+      const px = orderType === "market" ? selectedPx : rawPx;
+      const payload = {
+        symbol: selected.symbol,
+        side,
+        orderType,
+        qty,
+        quantity_unit: unit,
+        price: orderType === "market" ? null : px,
+      };
+      try {
+        const directPayload = Object.assign({}, payload, { idempotencyKey: "v031_kgi_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2) });
+        let preview;
+        try {
+          preview = { ok: true, data: await apiPost("/api/v1/paper/preview", directPayload) };
+        } catch {
+          preview = await fetch("/api/ui-final-v031-paper/preview", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+        }
+        if (!preview.ok) throw new Error(preview.error || "preview_failed");
+
+        if (kgiLabel) kgiLabel.textContent = "KGI SIM 送單中...";
+        const simPayload = {
+          ticker: selected.symbol,
+          side,
+          orderType,
+          quantity: qty,
+          quantityUnit: unit,
+          price: orderType === "market" ? null : px,
+          timeInForce: "ROD",
+          orderCond: "Cash",
+          priceType: orderType === "market" ? "MKT" : undefined,
+        };
+        const response = await fetch("/api/ui-final-v031/backend?path=/api/v1/kgi/sim/order", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(simPayload),
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          const message = body && typeof body === "object"
+            ? String(body.message || body.reason || body.error || "KGI SIM 送單失敗")
+            : "KGI SIM 送單失敗";
+          throw new Error(message);
+        }
+        const data = body && typeof body === "object" ? body.data : null;
+        const tradeId = data && typeof data === "object" && data.tradeId ? String(data.tradeId) : "";
+        if (kgiLabel) kgiLabel.textContent = tradeId ? "KGI SIM #" + tradeId : "KGI SIM 已送出";
+        setGate("KGI SIM 已送出（正式實單仍鎖定）");
+        try { await refreshClientLive(); } catch { /* ignore */ }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (kgiLabel) kgiLabel.textContent = "KGI SIM 未送出";
+        setGate(message.slice(0, 80) || "KGI SIM 未送出");
+      } finally {
+        setTimeout(() => { kgiSubmit.disabled = false; }, 1200);
       }
     }, true);
 
