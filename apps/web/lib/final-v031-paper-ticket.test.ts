@@ -90,6 +90,10 @@ describe("final-v031 paper ticket price gate", () => {
     expect(tradingRoomKlineFrameSource).toContain("align-self: stretch;");
   });
 
+  it("keeps compact trading-room K-line height inside the frame instead of clipping the readout", () => {
+    expect(klineChartSource).toContain("const chartHeight = compactTradingRoom ? 430");
+  });
+
   it("keeps trading-room real chart symbol and plan levels synchronized", () => {
     expect(ticketHtml).toContain("function buildRealChartFrameSrc(sym)");
     expect(ticketHtml).toContain("['entry','stop','tp','from_rec','recommendationId','side']");
