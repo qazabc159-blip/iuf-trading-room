@@ -69,6 +69,19 @@ describe("final-v031 paper ticket price gate", () => {
     expect(middleware).toContain('"/final-v031/portfolio/kline-frame"');
   });
 
+  it("keeps the trading-room K-line iframe stable during live refreshes", () => {
+    expect(ticketHtml).not.toContain("nextParams.set('rev',Date.now()");
+    expect(ticketHtml).toContain("const nextSrc=buildRealChartFrameSrc(sym)");
+    expect(ticketHtml).toContain("if(current!==nextSrc)frame.setAttribute('src',nextSrc)");
+  });
+
+  it("keeps the trading room in a single viewport without hiding tape or ledger", () => {
+    expect(ticketHtml).toContain("grid-template-rows:auto minmax(0,1fr) 92px 150px");
+    expect(ticketHtml).toContain("body[data-screen-label=\"Trading Room v1\"] .tape");
+    expect(ticketHtml).toContain("body[data-screen-label=\"Trading Room v1\"] .ledger");
+    expect(ticketHtml).not.toContain("body[data-screen-label=\"Trading Room v1\"] .ledger,\nbody[data-screen-label=\"Trading Room v1\"] .tape");
+  });
+
   it("keeps trading-room real chart symbol and plan levels synchronized", () => {
     expect(ticketHtml).toContain("function buildRealChartFrameSrc(sym)");
     expect(ticketHtml).toContain("['entry','stop','tp','from_rec','recommendationId','side']");

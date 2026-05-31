@@ -8,6 +8,127 @@
 <link rel="stylesheet" href="app.css" />
 <link rel="stylesheet" href="trading.css" />
 <style>
+html,
+body{
+  height:100%;
+  overflow:hidden;
+  scrollbar-color:rgba(148,163,184,.34) transparent;
+  scrollbar-width:thin;
+}
+*{box-sizing:border-box}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:rgba(148,163,184,.28);border-radius:999px;border:2px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:rgba(216,166,74,.42);border:2px solid transparent;background-clip:content-box}
+body[data-screen-label="Trading Room v1"]{
+  height:100dvh;
+  min-width:1180px;
+  background:var(--bg-0);
+}
+body[data-screen-label="Trading Room v1"] .tbar{
+  position:relative;
+  top:auto;
+  min-height:34px;
+}
+body[data-screen-label="Trading Room v1"] .psafe{
+  min-height:34px;
+}
+body[data-screen-label="Trading Room v1"] .troom{
+  height:calc(100dvh - 68px);
+  min-height:0;
+  overflow:hidden;
+  align-items:stretch;
+  grid-template-columns:minmax(236px,260px) minmax(0,1fr) minmax(318px,352px);
+}
+body[data-screen-label="Trading Room v1"] .lpane,
+body[data-screen-label="Trading Room v1"] .rpane{
+  position:relative;
+  top:auto;
+  height:auto;
+  min-height:0;
+  align-self:stretch;
+  overflow:hidden;
+}
+body[data-screen-label="Trading Room v1"] .wlist{
+  overflow-y:auto;
+  overflow-x:hidden;
+}
+body[data-screen-label="Trading Room v1"] .rpane{
+  overflow-x:hidden;
+}
+body[data-screen-label="Trading Room v1"] .tform{
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:14px;
+}
+body[data-screen-label="Trading Room v1"] .tform,
+body[data-screen-label="Trading Room v1"] .tform *{
+  min-width:0;
+}
+body[data-screen-label="Trading Room v1"] .tform .field.row2{
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+}
+body[data-screen-label="Trading Room v1"] .tform .field .step{
+  display:grid;
+  grid-template-columns:36px minmax(0,1fr) 36px;
+}
+body[data-screen-label="Trading Room v1"] .tform .field .step .stepbtn{
+  width:36px;
+}
+body[data-screen-label="Trading Room v1"] .preview{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+body[data-screen-label="Trading Room v1"] .tactions,
+body[data-screen-label="Trading Room v1"] .tfoot{
+  padding-right:14px;
+}
+body[data-screen-label="Trading Room v1"] .tactions .submit{
+  white-space:normal;
+  line-height:1.35;
+}
+body[data-screen-label="Trading Room v1"] .cpane{
+  min-height:0;
+  overflow:hidden;
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) 92px 150px;
+  gap:10px;
+}
+body[data-screen-label="Trading Room v1"] .symhead{
+  flex:0 0 auto;
+}
+body[data-screen-label="Trading Room v1"] .chart-panel.is-real-chart{
+  min-height:0;
+}
+body[data-screen-label="Trading Room v1"] .tape{
+  min-height:0;
+  height:92px;
+  overflow:hidden;
+  padding:0;
+  margin:0;
+}
+body[data-screen-label="Trading Room v1"] .tape > div{
+  min-height:0;
+  overflow:hidden;
+  padding:8px 10px;
+}
+body[data-screen-label="Trading Room v1"] .tape .h{
+  margin-bottom:5px;
+}
+body[data-screen-label="Trading Room v1"] .ledger{
+  min-height:0;
+  height:150px;
+  margin:0;
+  overflow:hidden;
+}
+body[data-screen-label="Trading Room v1"] .ledger .ltab.on{
+  height:106px;
+  overflow:auto;
+}
+body[data-screen-label="Trading Room v1"] .tnote{
+  display:none;
+}
 @media (max-width:767px){
   .troom{display:flex;flex-direction:column;height:auto;overflow:visible;}
   .lpane,.rpane{width:100%;max-width:100%;height:auto;overflow:visible;}
@@ -58,7 +179,10 @@
 .chart-panel.is-real-chart .chart-state,
 .chart-panel.is-real-chart .chart-wrap{display:none!important}
 .real-kline-frame-shell{
-  height:820px;
+  flex:1 1 auto;
+  min-height:0;
+  height:auto;
+  overflow:hidden;
   border-top:1px solid rgba(148,163,184,.14);
   background:#080b10;
 }
@@ -68,6 +192,7 @@
   height:100%;
   border:0;
   background:#080b10;
+  overflow:hidden;
 }
 </style>
 </head>
@@ -640,14 +765,19 @@ function buildRealChartFrameSrc(sym){
       });
     }
   }catch{}
-  nextParams.set('rev',Date.now().toString(36));
   return '/final-v031/portfolio/kline-frame?'+nextParams.toString();
 }
 function updateRealChartFrame(sym){
   const frame=document.getElementById('real-kline-frame');
   if(!frame||!sym)return;
   __realChartSymbol=String(sym);
-  frame.setAttribute('src',buildRealChartFrameSrc(sym));
+  const nextSrc=buildRealChartFrameSrc(sym);
+  let current='';
+  try{
+    const url=new URL(frame.getAttribute('src')||'',window.location.origin);
+    current=url.pathname+url.search;
+  }catch{}
+  if(current!==nextSrc)frame.setAttribute('src',nextSrc);
 }
 window.updateRealChartFrame=updateRealChartFrame;
 
