@@ -57,6 +57,14 @@ function contentShellOverrides(screen: ScreenKey) {
 
   if (screen === "paper-trading-room") {
     return `${common}
+  html,
+  body,
+  body.iuf-v031-embedded {
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
   .tbar {
     display: none !important;
   }
@@ -68,9 +76,12 @@ function contentShellOverrides(screen: ScreenKey) {
   }
 
   .troom {
+    height: calc(100dvh - 34px) !important;
+    min-height: 0 !important;
     max-width: none !important;
     margin: 0 !important;
-    padding: 14px 16px 36px !important;
+    padding: 12px 16px !important;
+    overflow: hidden !important;
   }
 
   .rec-prefill-box {

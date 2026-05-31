@@ -95,6 +95,17 @@ function isTwTicker(value?: string | null) {
   return /^[0-9]{4}[A-Z]?$/.test(String(value ?? "").trim());
 }
 
+const DEFAULT_TRADING_ROOM_WATCHLIST = [
+  { symbol: "2330", name: "台積電", meta: "核心觀察" },
+  { symbol: "1514", name: "亞力", meta: "電機設備" },
+  { symbol: "1560", name: "中砂", meta: "半導體設備" },
+  { symbol: "1590", name: "亞德客-KY", meta: "自動化設備" },
+  { symbol: "1721", name: "三晃", meta: "化學材料" },
+  { symbol: "1723", name: "中碳", meta: "材料 / 能源" },
+  { symbol: "1809", name: "中釉", meta: "材料" },
+  { symbol: "2066", name: "世德", meta: "車用零組件" },
+] as const;
+
 function companyHref(symbol?: string | null) {
   return isTwTicker(symbol) ? `/companies/${encodeURIComponent(String(symbol))}` : "/companies";
 }
@@ -482,6 +493,13 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const change = lastPrice != null && previous != null ? lastPrice - previous : null;
   const changePct = change != null && previous ? (change / previous) * 100 : null;
 
+  const defaultWatchlist = DEFAULT_TRADING_ROOM_WATCHLIST.map((item) => ({
+    symbol: item.symbol,
+    name: item.name,
+    meta: item.meta,
+    price: item.symbol === selectedSymbol ? lastPrice : null,
+    changePct: item.symbol === selectedSymbol ? changePct : null,
+  }));
   const watchlist = [
     ...(prefill?.enabled && selectedSymbol ? [{
       symbol: selectedSymbol,
@@ -504,8 +522,9 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
       price: null,
       changePct: null,
     })),
+    ...defaultWatchlist,
   ]
-    .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index);
+    .filter((item, index, arr) => arr.findIndex((other) => sameSymbol(other.symbol, item.symbol)) === index);
 
   return {
     screen: "paper-trading-room" as const,
@@ -949,10 +968,21 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const prefillSymbol = String(prefill?.symbol || "").trim().toUpperCase();
     const selectedSymbolUpper = String(selectedSymbol || "").trim().toUpperCase();
     const prefillMatchesSelected = !!prefill?.enabled && selectedSymbolUpper && (!prefillSymbol || prefillSymbol === selectedSymbolUpper);
+    const defaultWatchlist = [
+      { symbol:"2330", name:"台積電", meta:"核心觀察" },
+      { symbol:"1514", name:"亞力", meta:"電機設備" },
+      { symbol:"1560", name:"中砂", meta:"半導體設備" },
+      { symbol:"1590", name:"亞德客-KY", meta:"自動化設備" },
+      { symbol:"1721", name:"三晃", meta:"化學材料" },
+      { symbol:"1723", name:"中碳", meta:"材料 / 能源" },
+      { symbol:"1809", name:"中釉", meta:"材料" },
+      { symbol:"2066", name:"世德", meta:"車用零組件" }
+    ].map((item) => ({ symbol:item.symbol, name:item.name, meta:item.meta, price:sameSym(item.symbol, selectedSymbol) ? lastPrice : null, changePct:sameSym(item.symbol, selectedSymbol) ? changePct : null }));
     const prefillWatch = prefillMatchesSelected ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? paperPrefillSourceLabel(prefill.source) + " · " + prefill.recommendationId : paperPrefillSourceLabel(prefill.source), price:lastPrice, changePct }] : [];
     const watchlist = prefillWatch.concat(portfolio.map((pos) => ({ symbol:pos.symbol, name:pos.symbol, meta:String(pos.netQtyShares || 0) + " 股 · " + String(pos.fillCount || 0) + " 筆成交", price:pos.symbol === selectedSymbol ? lastPrice : pos.avgCostPerShare, changePct:pos.symbol === selectedSymbol ? changePct : null })))
       .concat(ideas.map((idea) => ({ symbol:idea.symbol, name:idea.companyName, meta:idea.status + " · " + idea.signalCount + " 訊號", price:null, changePct:null })))
-      .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index);
+      .concat(defaultWatchlist)
+      .filter((item, index, arr) => arr.findIndex((other) => sameSym(other.symbol, item.symbol)) === index);
     return {
       screen:"paper-trading-room",
       generatedAt:new Date().toISOString(),
@@ -1044,6 +1074,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         if (!sym) return;
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (typeof window.pickRow === "function") {
+          window.pickRow(sym);
+        } else if (typeof window.updateRealChartFrame === "function") {
+          window.updateRealChartFrame(sym);
+        }
         selectPaperSymbol(sym).catch((error) => {
           window.__IUF_FINAL_V031_CLIENT_ERROR__ = error instanceof Error ? error.message : 'symbol_select_failed';
         });
@@ -1534,9 +1569,12 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
     window.__IUF_SYM_DATA_LIVE__ = symLive;
 
-    // 4. Redraw chart after globals are set. drawChart owns the empty/degraded state,
-    // so a symbol with no bars must clear stale candles instead of leaving the previous chart visible.
-    if (typeof window.drawChart === "function") {
+    // 4. Redraw the legacy SVG chart only when the real company-page K-line frame
+    // is not mounted. The trading room uses the real iframe; repainting the hidden
+    // SVG on every 15s hydration makes symbol switches feel jumpy without adding
+    // user-visible value.
+    const realFrameMounted = !!document.getElementById("real-kline-frame");
+    if (!realFrameMounted && typeof window.drawChart === "function") {
       window.drawChart(selected.symbol || "2330");
     }
     if (typeof window.updateRealChartFrame === "function") {
