@@ -9448,11 +9448,11 @@ app.get("/api/v1/briefs/:id", async (c) => {
     hallucinationCheck
   };
 
-  // ── Build sections with sourceTrail (sourceTrail not in DB; omit gracefully) ─
-  const sections = (brief.sections as Array<{ heading: string; body: string }>).map((s) => ({
+  // ── Build sections with sourceTrail when the publisher stored it ──────────
+  const sections = (brief.sections as Array<{ heading: string; body: string; sourceTrail?: unknown }>).map((s) => ({
     heading: s.heading,
     body: s.body,
-    sourceTrail: null as string | null  // not persisted in daily_briefs; available on content_drafts.payload
+    sourceTrail: typeof s.sourceTrail === "string" && s.sourceTrail.trim() ? s.sourceTrail : null
   }));
 
   return c.json({

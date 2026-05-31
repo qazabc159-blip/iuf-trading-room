@@ -961,6 +961,21 @@ function buildSourcePackContext(sourcePack: SourcePack): string {
     .join("\n");
 }
 
+function buildSourceTrailSummary(sourcePack: SourcePack): string {
+  const sources = sourcePack.sources
+    .map((source) => {
+      const parts = [
+        `${formatSourceLabel(source.source)}=${source.status}`,
+        `rows=${source.rowCount ?? "n/a"}`,
+        `latest=${source.latestDate ?? "n/a"}`,
+        source.note ? `note=${source.note}` : null
+      ].filter(Boolean);
+      return parts.join(",");
+    })
+    .join(" | ");
+  return `source_pack=${sourcePack.packId}; trading_date=${sourcePack.tradingDate}; ${sources}`;
+}
+
 export function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<string, unknown> {
   const liveSources = sourcePack.sources.filter((source) => source.status === "LIVE");
   const staleSources = sourcePack.sources.filter((source) => source.status === "STALE" || source.status === "DEGRADED");
@@ -980,6 +995,7 @@ export function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<stri
   const blockedLine = blockedSources.length
     ? blockedSources.map((source) => `${formatSourceLabel(source.source)}（${source.note ?? source.status}）`).join("、")
     : "沒有主要資料缺口";
+  const sourceTrail = buildSourceTrailSummary(sourcePack);
 
   return dailyBriefPayloadSchema.parse({
     date: sourcePack.tradingDate,
@@ -987,23 +1003,28 @@ export function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<stri
     sections: [
       {
         heading: "市場總覽",
-        body: `本簡報依 ${sourcePack.tradingDate} 可取得的台股資料整理。可用來源：${liveLine}。資料不足或過期來源不會被當成投資依據，市場狀態先以平衡觀察處理。`
+        body: `本簡報依 ${sourcePack.tradingDate} 可取得的台股資料整理。可用來源：${liveLine}。資料不足或過期來源不會被當成投資依據，市場狀態先以平衡觀察處理。`,
+        sourceTrail
       },
       {
         heading: "AI 精選重點",
-        body: `目前沒有足夠通過模板檢查的 AI 精選新聞可直接發布；若來源不足，系統會保留來源狀態而不補故事。可用來源仍以 ${liveLine} 作為今日簡報基礎。`
+        body: `目前沒有足夠通過模板檢查的 AI 精選新聞可直接發布；若來源不足，系統會保留來源狀態而不補故事。可用來源仍以 ${liveLine} 作為今日簡報基礎。`,
+        sourceTrail
       },
       {
         heading: "產業與主題",
-        body: `產業與主題段落只引用已收進資料包的市場資料；若主題、公司關聯或新聞來源不足，會維持資料不足狀態，不把未驗證題材寫成確定趨勢。`
+        body: `產業與主題段落只引用已收進資料包的市場資料；若主題、公司關聯或新聞來源不足，會維持資料不足狀態，不把未驗證題材寫成確定趨勢。`,
+        sourceTrail
       },
       {
         heading: "風險觀察",
-        body: `需要留意的資料狀態：${staleLine}。缺口狀態：${blockedLine}。因此本日解讀以資料完整性與風控檢查為優先，不提供買賣建議、目標價或報酬承諾。`
+        body: `需要留意的資料狀態：${staleLine}。缺口狀態：${blockedLine}。因此本日解讀以資料完整性與風控檢查為優先，不提供買賣建議、目標價或報酬承諾。`,
+        sourceTrail
       },
       {
         heading: "資料來源狀態",
-        body: `來源狀態總結：可用來源為 ${liveLine}；過期或降級來源為 ${staleLine}；阻塞或缺口來源為 ${blockedLine}。下一步是補齊資料同步與審核鏈。`
+        body: `來源狀態總結：可用來源為 ${liveLine}；過期或降級來源為 ${staleLine}；阻塞或缺口來源為 ${blockedLine}。下一步是補齊資料同步與審核鏈。`,
+        sourceTrail
       }
     ]
   });
