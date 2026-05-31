@@ -46,8 +46,8 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain('.chart-panel[data-chart-state="blocked"] .sr-line');
     expect(ticketHtml).toContain('.chart-panel[data-chart-state="blocked"] .lv-line');
     expect(ticketHtml).toContain("renderChartUnavailable(tf,'K 線端點讀取失敗，已停止沿用舊圖')");
-    expect(liveHydration).toContain("drawChart owns the empty/degraded state");
-    expect(liveHydration).toContain('if (typeof window.drawChart === "function")');
+    expect(liveHydration).toContain("Redraw the legacy SVG chart only when the real company-page K-line frame");
+    expect(liveHydration).toContain('if (!realFrameMounted && typeof window.drawChart === "function")');
     expect(liveHydration).not.toContain('if (typeof window.drawChart === "function" && chartBars.length > 0)');
   });
 
@@ -117,6 +117,10 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).not.toContain("document.querySelectorAll('.wrow').forEach(r=>r.addEventListener('click',()=>pickRow(r.dataset.sym)))");
     expect(ticketHtml).toContain("frame.closest('.real-kline-frame-shell')?.classList.remove('is-loaded')");
     expect(ticketHtml).toContain("if(current!==nextSrc){");
+    expect(ticketHtml).toContain("if(row.dataset.iufEnhanced==='1')return;");
+    expect(ticketHtml).toContain("if(!document.getElementById('real-kline-frame')&&typeof drawChart==='function')drawChart(sym);");
+    expect(liveHydration).toContain('const realFrameMounted = !!document.getElementById("real-kline-frame")');
+    expect(liveHydration).toContain('if (!realFrameMounted && typeof window.drawChart === "function")');
     expect(ticketHtml).not.toContain("pickRow(row.dataset.sym);\n    updateRealChartFrame(row.dataset.sym);");
   });
 
@@ -151,6 +155,13 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("sameSym(other.symbol, item.symbol)");
     expect(liveHydration).toContain('if (typeof window.pickRow === "function")');
     expect(liveHydration).toContain("window.pickRow(sym)");
+  });
+
+  it("keeps the embedded trading room locked to one viewport", () => {
+    const routeSource = readFileSync(new URL("../app/api/ui-final-v031/[screen]/route.ts", import.meta.url), "utf8");
+    expect(routeSource).toContain("height: 100dvh !important;");
+    expect(routeSource).toContain("overflow: hidden !important;");
+    expect(routeSource).toContain("height: calc(100dvh - 34px) !important;");
   });
 
   it("draws real volume-price indicators instead of decorative technical labels", () => {

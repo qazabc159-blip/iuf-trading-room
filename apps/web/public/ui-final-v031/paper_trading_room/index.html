@@ -788,7 +788,7 @@ function pickRow(sym){
   const tsym=document.getElementById('t-sym');if(tsym)tsym.value=sym+'　'+(d.nm||sym).split(' · ')[0];
   const tprice=document.getElementById('t-price');if(tprice&&price!=null)tprice.value=price.toFixed(2);
   updateRealChartFrame(sym);
-  drawChart(sym);
+  if(!document.getElementById('real-kline-frame')&&typeof drawChart==='function')drawChart(sym);
   updPreview();
 }
 
@@ -834,6 +834,7 @@ function syncRealChartFrameFromLocation(){
 document.addEventListener('click',(event)=>{
   const row=event.target&&event.target.closest?event.target.closest('.wrow[data-sym]'):null;
   if(row&&row.dataset&&row.dataset.sym){
+    if(row.dataset.iufEnhanced==='1')return;
     pickRow(row.dataset.sym);
     if(row.dataset.iufEnhanced!=='1'&&typeof window.__IUF_SELECT_PAPER_SYMBOL__==='function'){
       window.__IUF_SELECT_PAPER_SYMBOL__(row.dataset.sym).catch(()=>{});

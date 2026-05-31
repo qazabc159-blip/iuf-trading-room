@@ -1569,9 +1569,12 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
     window.__IUF_SYM_DATA_LIVE__ = symLive;
 
-    // 4. Redraw chart after globals are set. drawChart owns the empty/degraded state,
-    // so a symbol with no bars must clear stale candles instead of leaving the previous chart visible.
-    if (typeof window.drawChart === "function") {
+    // 4. Redraw the legacy SVG chart only when the real company-page K-line frame
+    // is not mounted. The trading room uses the real iframe; repainting the hidden
+    // SVG on every 15s hydration makes symbol switches feel jumpy without adding
+    // user-visible value.
+    const realFrameMounted = !!document.getElementById("real-kline-frame");
+    if (!realFrameMounted && typeof window.drawChart === "function") {
       window.drawChart(selected.symbol || "2330");
     }
     if (typeof window.updateRealChartFrame === "function") {
