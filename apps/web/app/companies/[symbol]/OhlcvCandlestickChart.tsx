@@ -842,7 +842,7 @@ export function OhlcvCandlestickChart({
 
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
-  const chartHeight = compactTradingRoom ? 520 : isIntraday ? 460 : 440;
+  const chartHeight = compactTradingRoom ? 430 : isIntraday ? 460 : 440;
   const activeIntradayMinutes = activeMeta?.kind === "intraday" ? activeMeta.minutes ?? 1 : 1;
   const chartBars = useMemo(() => {
     const meta = ENABLED_INTERVALS.find((item) => item.value === interval);
