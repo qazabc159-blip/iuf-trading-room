@@ -986,16 +986,24 @@ export function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<stri
     marketState: "Balanced",
     sections: [
       {
-        heading: "今日資料狀態",
-        body: `本簡報依 ${sourcePack.tradingDate} 可取得的台股資料整理。可用來源：${liveLine}。資料不足或過期來源不會被當成投資依據。`
+        heading: "市場總覽",
+        body: `本簡報依 ${sourcePack.tradingDate} 可取得的台股資料整理。可用來源：${liveLine}。資料不足或過期來源不會被當成投資依據，市場狀態先以平衡觀察處理。`
       },
       {
-        heading: "資料品質提醒",
-        body: `需要留意的資料狀態：${staleLine}。缺口狀態：${blockedLine}。因此本日解讀以資料完整性與風控檢查為優先。`
+        heading: "AI 精選重點",
+        body: `目前沒有足夠通過模板檢查的 AI 精選新聞可直接發布；若來源不足，系統會保留來源狀態而不補故事。可用來源仍以 ${liveLine} 作為今日簡報基礎。`
       },
       {
-        heading: "下一步工作",
-        body: "今日先確認市場資料、重大訊息、紙上交易紀錄與研究批次是否同步完成；本系統不提供買賣建議，也不以未驗證績效作為決策依據。"
+        heading: "產業與主題",
+        body: `產業與主題段落只引用已收進資料包的市場資料；若主題、公司關聯或新聞來源不足，會維持資料不足狀態，不把未驗證題材寫成確定趨勢。`
+      },
+      {
+        heading: "風險觀察",
+        body: `需要留意的資料狀態：${staleLine}。缺口狀態：${blockedLine}。因此本日解讀以資料完整性與風控檢查為優先，不提供買賣建議、目標價或報酬承諾。`
+      },
+      {
+        heading: "資料來源狀態",
+        body: `來源狀態總結：可用來源為 ${liveLine}；過期或降級來源為 ${staleLine}；阻塞或缺口來源為 ${blockedLine}。下一步是補齊資料同步與審核鏈。`
       }
     ]
   });
@@ -1109,6 +1117,28 @@ const DAILY_BRIEF_SECTION_LABELS: Record<(typeof DAILY_BRIEF_REQUIRED_SECTION_ID
   risk_watch: "風險觀察",
   data_source_status: "資料來源狀態",
 };
+
+export function buildDailyBriefContractInstructions(): string {
+  return `Daily brief contract:
+- templateVersion must be "${DAILY_BRIEF_TEMPLATE_VERSION}".
+- sections must include exactly these sectionId values: ${DAILY_BRIEF_REQUIRED_SECTION_IDS.join(", ")}.
+- Required headings: 市場總覽, AI 精選重點, 產業與主題, 風險觀察, 資料來源狀態.
+- AI 精選重點不可 raw dump 新聞；每則重點要說 why matters、相關公司/主題、來源與時間。
+- 資料不足時要寫「資料不足：原因」與來源狀態，不可補故事。
+
+輸出 schema：
+{
+  "templateVersion": "${DAILY_BRIEF_TEMPLATE_VERSION}",
+  "marketState": "Risk-On" | "Balanced" | "Risk-Off",
+  "sections": [
+    { "sectionId": "market_overview", "heading": "市場總覽", "body": "至少 50 字，最多 1200 字" },
+    { "sectionId": "ai_selected_news", "heading": "AI 精選重點", "body": "至少 50 字，最多 1200 字" },
+    { "sectionId": "sector_themes", "heading": "產業與主題", "body": "至少 50 字，最多 1200 字" },
+    { "sectionId": "risk_watch", "heading": "風險觀察", "body": "至少 50 字，最多 1200 字" },
+    { "sectionId": "data_source_status", "heading": "資料來源狀態", "body": "至少 50 字，最多 1200 字" }
+  ]
+}`;
+}
 
 const DAILY_BRIEF_SECTION_ID_SET = new Set<string>(DAILY_BRIEF_REQUIRED_SECTION_IDS);
 
@@ -1252,29 +1282,14 @@ async function generateDirectDailyBriefDraft(input: {
 硬規則（任何違反 → 退件）：
 - 只能輸出 JSON，不要 markdown。
 - 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
-- heading 範例：「市場總覽」/「技術觀察」/「風控警示」/「策略觀察」/「今日資料狀態」/「資料品質提醒」/「下一步工作」。
+- heading 只能使用五個固定中文標題：「市場總覽」/「AI 精選重點」/「產業與主題」/「風險觀察」/「資料來源狀態」。
 - 不提供買賣建議、不寫目標價、不保證報酬、不提勝率或績效承諾。
 - 不臆測資料來源沒有提供的新聞或事件。
 - 若資料不足，直接寫成資料品質提醒（中文）。
 - date 必須等於 ${input.sourcePack.tradingDate}。
 ${f4Rule}
 
-Daily brief contract:
-- templateVersion must be "${DAILY_BRIEF_TEMPLATE_VERSION}".
-- sections must include exactly these sectionId values: ${DAILY_BRIEF_REQUIRED_SECTION_IDS.join(", ")}.
-- Required headings: 市場總覽, AI 精選重點, 產業與主題, 風險觀察, 資料來源狀態.
-- AI 精選重點不可 raw dump 新聞；每則重點要說 why matters、相關公司/主題、來源與時間。
-- 資料不足時要寫「資料不足：原因」與來源狀態，不可補故事。
-
-輸出 schema：
-{
-  "marketState": "Risk-On" | "Balanced" | "Risk-Off",
-  "sections": [
-    { "heading": "市場總覽", "body": "至少 50 字，最多 1200 字" },
-    { "heading": "技術觀察", "body": "至少 50 字，最多 1200 字" },
-    { "heading": "風控警示", "body": "至少 50 字，最多 1200 字" }
-  ]
-}
+${buildDailyBriefContractInstructions()}
 
 資料狀態：
 ${sourceContext}${liveSnapshotBlock}`;
@@ -1367,7 +1382,7 @@ ${sourcesSummary}${liveSnapshotBlock}
 硬規則（任何違反 → 退件）：
 - 只輸出 JSON，不要 markdown。
 - 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
-- heading 範例：「市場總覽」/「技術觀察」/「風控警示」/「策略觀察」/「今日資料狀態」/「資料品質提醒」。
+- heading 只能使用五個固定中文標題：「市場總覽」/「AI 精選重點」/「產業與主題」/「風險觀察」/「資料來源狀態」。
 - 禁止買賣建議、禁止進場/賣出/買進/出脫。
 - 禁止目標價（目標價）或報酬承諾（必賺/保證）。
 - 禁止臆測資料來源未提供的新聞或事件，禁止無來源 URL 的新聞。
@@ -1378,14 +1393,7 @@ ${sourcesSummary}${liveSnapshotBlock}
 - 禁止在任何輸出欄位中出現 [BROKEN-N]、[DEPRECATED]、[ORPHAN]、[placeholder] 等內部 DB 維護標記。
 ${f4Rule}
 
-Daily brief contract:
-- templateVersion must be "${DAILY_BRIEF_TEMPLATE_VERSION}".
-- sections must include exactly these sectionId values: ${DAILY_BRIEF_REQUIRED_SECTION_IDS.join(", ")}.
-- Required headings: 市場總覽, AI 精選重點, 產業與主題, 風險觀察, 資料來源狀態.
-- AI 精選重點不可 raw dump 新聞；每則重點要說 why matters、相關公司/主題、來源與時間。
-- 資料不足時要寫「資料不足：原因」與來源狀態，不可補故事。
-
-Output schema: daily_brief_v1`;
+${buildDailyBriefContractInstructions()}`;
 
   const activeDevice = await hasActiveOpenAliceDevice(workspaceId);
   const todayDate = getTaipeiDate();
