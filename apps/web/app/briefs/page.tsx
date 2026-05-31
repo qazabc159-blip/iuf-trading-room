@@ -31,6 +31,7 @@ type LoadState<T> =
 
 type DailyBriefSurface =
   | { state: "PUBLISHED"; today: string; brief: DailyBrief; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
+  | { state: "TEMPLATE_BLOCKED"; today: string; brief: DailyBrief; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
   | { state: "AWAITING_REVIEW"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
   | { state: "MISSING"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
   | { state: "BLOCKED"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[]; reason: string };
@@ -109,13 +110,18 @@ function buildSurface(params: {
   const todayDrafts = params.drafts.filter((draft) => isTodayDailyBriefDraft(draft, params.today));
 
   if (params.error) return { state: "BLOCKED", today: params.today, latest, drafts: todayDrafts, reason: params.error };
-  if (todayBrief) return { state: "PUBLISHED", today: params.today, brief: todayBrief, latest, drafts: todayDrafts };
+  if (todayBrief) {
+    const quality = evaluateBriefQuality(todayBrief);
+    if (!quality.displayable) return { state: "TEMPLATE_BLOCKED", today: params.today, brief: todayBrief, latest, drafts: todayDrafts };
+    return { state: "PUBLISHED", today: params.today, brief: todayBrief, latest, drafts: todayDrafts };
+  }
   if (todayDrafts.length > 0) return { state: "AWAITING_REVIEW", today: params.today, latest, drafts: todayDrafts };
   return { state: "MISSING", today: params.today, latest, drafts: todayDrafts };
 }
 
 function surfaceLabel(state: DailyBriefSurface["state"]) {
   if (state === "PUBLISHED") return "已發布";
+  if (state === "TEMPLATE_BLOCKED") return "模板未通過";
   if (state === "AWAITING_REVIEW") return "待審核";
   if (state === "MISSING") return "未產生";
   return "需處理";
@@ -123,12 +129,14 @@ function surfaceLabel(state: DailyBriefSurface["state"]) {
 
 function surfaceTone(state: DailyBriefSurface["state"]) {
   if (state === "PUBLISHED") return "status-ok";
+  if (state === "TEMPLATE_BLOCKED") return "gold";
   if (state === "BLOCKED") return "status-bad";
   return "gold";
 }
 
 function surfaceBadge(state: DailyBriefSurface["state"]) {
   if (state === "PUBLISHED") return "badge-green";
+  if (state === "TEMPLATE_BLOCKED") return "badge-yellow";
   if (state === "BLOCKED") return "badge-red";
   return "badge-yellow";
 }
@@ -410,6 +418,11 @@ function BriefStatePanel({ surface }: { surface: DailyBriefSurface }) {
         {surface.state === "PUBLISHED" && (
           <p className="state-reason">今日簡報已發布，含 {surface.brief.sections.length} 段內容；頁面只顯示有來源紀錄的內容，並遮蔽投資建議字詞。</p>
         )}
+        {surface.state === "TEMPLATE_BLOCKED" && (
+          <p className="state-reason">
+            今日雖有已發布紀錄，但它不符合 v2 五段模板，已停止當成正式簡報展示。下一輪會用新版後端模板重產。
+          </p>
+        )}
         {surface.state === "AWAITING_REVIEW" && (
           <>
             <p className="state-reason">今日草稿已產生，等待審核與發布確認。</p>
@@ -590,6 +603,7 @@ export default async function BriefsPage() {
   const latestAgeDays = latest ? briefAgeDays(latest.date) : null;
   const freshness: BriefFreshness = briefData.error ? "BLOCKED" : latest ? (latestAgeDays === 0 ? "LIVE" : "STALE") : "EMPTY";
   const displayedBrief = surface.state === "PUBLISHED" ? surface.brief : null;
+  const templateBlockedBrief = surface.state === "TEMPLATE_BLOCKED" ? surface.brief : null;
 
   return (
     <PageFrame
@@ -640,12 +654,12 @@ export default async function BriefsPage() {
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">今日段落</span>
           <span className={`parity-kpi-value ${displayedBrief ? "ok" : "dim"}`}>{displayedBrief ? displayedBrief.sections.length : "--"}</span>
-          <span className="parity-kpi-sub">內容段落</span>
+          <span className="parity-kpi-sub">{templateBlockedBrief ? "模板未通過" : "內容段落"}</span>
         </div>
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">來源狀態</span>
           <span className={`parity-kpi-value ${displayedBrief ? "ok" : "warn"}`}>
-            {displayedBrief ? "正式資料" : drafts.data.length ? "待審來源" : "未閉環"}
+            {displayedBrief ? "正式資料" : templateBlockedBrief ? "需重產" : drafts.data.length ? "待審來源" : "未閉環"}
           </span>
           <span className="parity-kpi-sub">閉環確認</span>
         </div>
@@ -674,7 +688,7 @@ export default async function BriefsPage() {
       <section className="brief-workflow-note">
         <div className="brief-source-card">
           <span>下一步</span>
-          <strong>{surface.state === "PUBLISHED" ? "檢查正式來源紀錄" : surface.state === "AWAITING_REVIEW" ? "審核今日草稿" : "追每日簡報流程"}</strong>
+          <strong>{surface.state === "PUBLISHED" ? "檢查正式來源紀錄" : surface.state === "TEMPLATE_BLOCKED" ? "重產新版簡報" : surface.state === "AWAITING_REVIEW" ? "審核今日草稿" : "追每日簡報流程"}</strong>
           <p>目標是每日自動產生、AI 審核、來源紀錄可查、正式發布後進入首頁與簡報頁；未閉環時要說清楚卡在哪一層。</p>
         </div>
       </section>
