@@ -21,6 +21,13 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    # Self-hosted Windows runners can keep a restrictive machine policy.
+    # Use an explicit bypass for GitHub's generated temporary scripts so
+    # skip gates and deploy commands do not fail before product code runs.
+    shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+
 jobs:
   deploy:
     # Only deploy if CI passed (auto), or manual dispatch.
@@ -41,7 +48,6 @@ jobs:
     steps:
       - name: Decide whether this matrix entry should run
         id: gate
-        shell: powershell
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $target = "${{ github.event.inputs.service }}"
@@ -70,7 +76,6 @@ jobs:
 
       - name: Remove non-runtime evidence before Railway upload
         if: steps.gate.outputs.skip != 'true'
-        shell: powershell
         run: |
           $paths = @(
             "evidence",
@@ -92,7 +97,6 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        shell: powershell
         run: |
           if ([string]::IsNullOrWhiteSpace($env:RAILWAY_TOKEN)) {
             Write-Host "::error::RAILWAY_TOKEN secret is not set. Create a project token in Railway dashboard and add it as a GitHub Actions secret named RAILWAY_TOKEN."
@@ -177,7 +181,6 @@ jobs:
         env:
           SEED_OWNER_EMAIL: ${{ secrets.SEED_OWNER_EMAIL }}
           SEED_OWNER_PASSWORD: ${{ secrets.SEED_OWNER_PASSWORD }}
-        shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
 
