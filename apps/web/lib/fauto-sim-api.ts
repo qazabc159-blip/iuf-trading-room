@@ -10,9 +10,9 @@
  *   GET /api/v1/kgi/sim/orders                    — KGI SIM order history (Owner)
  *   GET /api/v1/kgi/sim/balance                   — KGI SIM derived balance (Owner)
  *   GET /api/v1/internal/kgi/sim/daily-smoke-status  — 7-day smoke history (Owner)
- *   GET /api/v1/internal/s1-sim/status            — S1 pipeline summary (Owner, Jason pending)
- *   GET /api/v1/internal/s1-sim/eod-report?date=  — S1 EOD report (Owner, Jason pending)
- *   GET /api/v1/internal/s1-sim/basket?date=      — S1 basket (Owner, Jason pending)
+ *   GET /api/v1/internal/s1-sim/status            — S1 pipeline summary (Owner)
+ *   GET /api/v1/internal/s1-sim/eod-report?date=  — S1 EOD report (Owner)
+ *   GET /api/v1/internal/s1-sim/basket?date=      — S1 basket (Owner)
  */
 
 const API_BASE =
@@ -154,17 +154,30 @@ export type DailySmokeHistory = {
   history: DailySmokeEntry[];
 };
 
-// S1 pipeline — Jason pending endpoints
+// S1 pipeline — read-only observation endpoints
 
 export type S1SimStatus = {
+  asOf: string | null;
+  todayTst: string | null;
   lastSignalDate: string | null;
   lastOrderDate: string | null;
   lastEodDate: string | null;
   regime: string | null;
   exposureWeight: number | null;
   basketSymbols: string[];
+  latestBasketSize: number | null;
+  latestBasketGeneratedAt: string | null;
   ordersAttempted: number | null;
   ordersAccepted: number | null;
+  ordersRejected: number | null;
+  signalWindowOpen: boolean;
+  orderSubmitWindowOpen: boolean;
+  eodWindowOpen: boolean;
+  gatewayUrlConfigured: boolean;
+  eodPositionCount: number | null;
+  eodDataSource: string | null;
+  eodMarketValueTwd: number | null;
+  eodUnrealizedPnlTwd: number | null;
   failsafeNotes: string | null;
 };
 
@@ -177,10 +190,14 @@ export type S1BasketItem = {
 };
 
 export type S1Basket = {
+  found: boolean;
   date: string;
   regime: string | null;
   exposureWeight: number | null;
   items: S1BasketItem[];
+  generatedAtTst: string | null;
+  universeCount: number | null;
+  failsafeNotes: string | null;
 };
 
 export type S1EodPositionRow = {
@@ -192,14 +209,97 @@ export type S1EodPositionRow = {
 };
 
 export type S1EodReport = {
+  found: boolean;
   date: string;
   regime: string | null;
+  generatedAtTst: string | null;
   totalUnrealizedPnlTwd: number | null;
   totalMarketValueTwd: number | null;
   cashResidual: number | null;
   dataSource: string | null;
   failsafeNotes: string | null;
   positions: S1EodPositionRow[];
+};
+
+type S1StatusRaw = {
+  sim_only?: boolean;
+  prod_write_blocked?: boolean;
+  as_of?: string;
+  today_tst?: string;
+  windows?: {
+    signal_open?: boolean;
+    order_submit_open?: boolean;
+    eod_open?: boolean;
+  };
+  gateway_url_configured?: boolean;
+  latest_basket?: {
+    date?: string | null;
+    regime?: string | null;
+    exposure_weight?: number | null;
+    basket_size?: number | null;
+    generated_at_tst?: string | null;
+  } | null;
+  today_orders?: {
+    submitted_at_tst?: string | null;
+    orders_attempted?: number | null;
+    orders_accepted?: number | null;
+    orders_rejected?: number | null;
+  } | null;
+  today_eod?: {
+    generated_at_tst?: string | null;
+    total_unrealized_pnl_twd?: number | null;
+    total_market_value_twd?: number | null;
+    position_count?: number | null;
+    data_source?: string | null;
+  } | null;
+};
+
+type S1BasketRaw = {
+  schema?: string;
+  generated_at_tst?: string;
+  signal_date?: string;
+  regime?: string;
+  exposure_weight?: number;
+  basket?: Array<{
+    symbol?: string;
+    score_cont_liq?: number | null;
+    target_shares?: number | null;
+    target_notional_twd?: number | null;
+    sizing_note?: string | null;
+  }>;
+  universe_count?: number;
+  failsafe_notes?: string[];
+};
+
+type S1BasketResponseRaw = {
+  sim_only?: boolean;
+  prod_write_blocked?: boolean;
+  date: string;
+  found: boolean;
+  basket: S1BasketRaw | null;
+};
+
+type S1EodResponseRaw = {
+  sim_only?: boolean;
+  prod_write_blocked?: boolean;
+  date: string;
+  found: boolean;
+  report: {
+    trading_date?: string;
+    generated_at_tst?: string;
+    positions?: Array<{
+      symbol?: string;
+      shares?: number;
+      avg_cost?: number | null;
+      last_price?: number | null;
+      unrealized_pnl_twd?: number | null;
+    }>;
+    total_unrealized_pnl_twd?: number | null;
+    total_market_value_twd?: number | null;
+    cash_residual_estimated_twd?: number | null;
+    data_source?: string | null;
+    notes?: string[];
+  } | null;
 };
 
 // ─── API functions ─────────────────────────────────────────────────────────────
@@ -239,23 +339,101 @@ export async function getDailySmokeHistory() {
   return apiFetch<DailySmokeHistory>("/api/v1/internal/kgi/sim/daily-smoke-status");
 }
 
-/** GET /api/v1/internal/s1-sim/status — S1 pipeline summary (Owner-only, Jason pending) */
+/** GET /api/v1/internal/s1-sim/status — S1 pipeline summary (Owner-only) */
 export async function getS1SimStatus() {
-  return apiFetch<S1SimStatus>("/api/v1/internal/s1-sim/status");
+  const result = await apiFetch<S1StatusRaw>("/api/v1/internal/s1-sim/status");
+  if (!result.ok) return result;
+  const raw = result.data;
+  const latestBasket = raw.latest_basket ?? null;
+  const todayOrders = raw.today_orders ?? null;
+  const todayEod = raw.today_eod ?? null;
+  return {
+    ok: true as const,
+    data: {
+      asOf: raw.as_of ?? null,
+      todayTst: raw.today_tst ?? null,
+      lastSignalDate: latestBasket?.date ?? null,
+      lastOrderDate: todayOrders?.submitted_at_tst ?? null,
+      lastEodDate: todayEod?.generated_at_tst ?? null,
+      regime: latestBasket?.regime ?? null,
+      exposureWeight: latestBasket?.exposure_weight ?? null,
+      basketSymbols: [],
+      latestBasketSize: latestBasket?.basket_size ?? null,
+      latestBasketGeneratedAt: latestBasket?.generated_at_tst ?? null,
+      ordersAttempted: todayOrders?.orders_attempted ?? null,
+      ordersAccepted: todayOrders?.orders_accepted ?? null,
+      ordersRejected: todayOrders?.orders_rejected ?? null,
+      signalWindowOpen: raw.windows?.signal_open === true,
+      orderSubmitWindowOpen: raw.windows?.order_submit_open === true,
+      eodWindowOpen: raw.windows?.eod_open === true,
+      gatewayUrlConfigured: raw.gateway_url_configured === true,
+      eodPositionCount: todayEod?.position_count ?? null,
+      eodDataSource: todayEod?.data_source ?? null,
+      eodMarketValueTwd: todayEod?.total_market_value_twd ?? null,
+      eodUnrealizedPnlTwd: todayEod?.total_unrealized_pnl_twd ?? null,
+      failsafeNotes: null,
+    } satisfies S1SimStatus,
+  };
 }
 
-/** GET /api/v1/internal/s1-sim/eod-report?date= — S1 EOD report (Owner-only, Jason pending) */
+/** GET /api/v1/internal/s1-sim/eod-report?date= — S1 EOD report (Owner-only) */
 export async function getS1SimEodReport(date: string) {
-  return apiFetch<S1EodReport>(
+  const result = await apiFetch<S1EodResponseRaw>(
     `/api/v1/internal/s1-sim/eod-report?date=${encodeURIComponent(date)}`,
   );
+  if (!result.ok) return result;
+  const raw = result.data;
+  const report = raw.report;
+  return {
+    ok: true as const,
+    data: {
+      found: raw.found === true && report !== null,
+      date: report?.trading_date ?? raw.date,
+      regime: null,
+      generatedAtTst: report?.generated_at_tst ?? null,
+      totalUnrealizedPnlTwd: report?.total_unrealized_pnl_twd ?? null,
+      totalMarketValueTwd: report?.total_market_value_twd ?? null,
+      cashResidual: report?.cash_residual_estimated_twd ?? null,
+      dataSource: report?.data_source ?? null,
+      failsafeNotes: report?.notes?.join(" / ") ?? null,
+      positions: (report?.positions ?? []).map((pos) => ({
+        symbol: pos.symbol ?? "--",
+        shares: pos.shares ?? 0,
+        avgCost: pos.avg_cost ?? null,
+        lastPrice: pos.last_price ?? null,
+        unrealizedPnlTwd: pos.unrealized_pnl_twd ?? null,
+      })),
+    } satisfies S1EodReport,
+  };
 }
 
-/** GET /api/v1/internal/s1-sim/basket?date= — S1 basket (Owner-only, Jason pending) */
+/** GET /api/v1/internal/s1-sim/basket?date= — S1 basket (Owner-only) */
 export async function getS1SimBasket(date: string) {
-  return apiFetch<S1Basket>(
+  const result = await apiFetch<S1BasketResponseRaw>(
     `/api/v1/internal/s1-sim/basket?date=${encodeURIComponent(date)}`,
   );
+  if (!result.ok) return result;
+  const raw = result.data;
+  const basket = raw.basket;
+  return {
+    ok: true as const,
+    data: {
+      found: raw.found === true && basket !== null,
+      date: basket?.signal_date ?? raw.date,
+      regime: basket?.regime ?? null,
+      exposureWeight: basket?.exposure_weight ?? null,
+      generatedAtTst: basket?.generated_at_tst ?? null,
+      universeCount: basket?.universe_count ?? null,
+      failsafeNotes: basket?.failsafe_notes?.join(" / ") ?? null,
+      items: (basket?.basket ?? []).map((item) => ({
+        symbol: item.symbol ?? "--",
+        score: item.score_cont_liq ?? null,
+        shares: item.target_shares ?? null,
+        targetNotionalTwd: item.target_notional_twd ?? null,
+        sizingNote: item.sizing_note ?? null,
+      })),
+    } satisfies S1Basket,
+  };
 }
 
 // ─── display helpers ───────────────────────────────────────────────────────────

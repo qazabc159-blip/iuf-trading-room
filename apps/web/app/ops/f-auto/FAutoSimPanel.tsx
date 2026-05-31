@@ -6,10 +6,11 @@
  * Sections:
  *   1. SIM 帳戶部位   — GET /api/v1/paper/positions?source=sim
  *   2. SIM 帳戶資金   — GET /api/v1/paper/funds?source=sim
- *   3. S1 訊號/狀態   — GET /api/v1/internal/s1-sim/status  (Jason pending → graceful)
+ *   3. S1 訊號/狀態   — GET /api/v1/internal/s1-sim/status
  *   4. S1 當日委託/成交 — GET /api/v1/kgi/sim/orders
- *   5. S1 EOD 報告    — GET /api/v1/internal/s1-sim/eod-report?date= (Jason pending)
- *   6. Daily smoke    — GET /api/v1/internal/kgi/sim/daily-smoke-status
+ *   5. S1 訊號籃      — GET /api/v1/internal/s1-sim/basket?date=
+ *   6. S1 EOD 報告    — GET /api/v1/internal/s1-sim/eod-report?date=
+ *   7. Daily smoke    — GET /api/v1/internal/kgi/sim/daily-smoke-status
  */
 
 import { useEffect, useState } from "react";
@@ -20,6 +21,7 @@ import {
   getDailySmokeHistory,
   getS1SimStatus,
   getS1SimEodReport,
+  getS1SimBasket,
   fmtTwd,
   fmtDatetime,
   type SimPosition,
@@ -28,6 +30,7 @@ import {
   type DailySmokeHistory,
   type S1SimStatus,
   type S1EodReport,
+  type S1Basket,
 } from "@/lib/fauto-sim-api";
 import { KgiConnectionLight } from "./KgiConnectionLight";
 
@@ -36,18 +39,18 @@ type AsyncState<T> =
   | { phase: "empty" }
   | { phase: "error"; message: string }
   | { phase: "live"; data: T }
-  | { phase: "pending_backend" };   // for Jason-pending endpoints
+  | { phase: "pending_backend" };   // endpoint unavailable or still deploying
 
 function useFetch<T>(
   fetcher: () => Promise<{ ok: true; data: T } | { ok: false; status: number; error: string }>,
-  isJasonPending = false,
+  startsUnavailable = false,
 ): AsyncState<T> {
   const [state, setState] = useState<AsyncState<T>>(
-    isJasonPending ? { phase: "pending_backend" } : { phase: "loading" },
+    startsUnavailable ? { phase: "pending_backend" } : { phase: "loading" },
   );
 
   useEffect(() => {
-    if (isJasonPending) {
+    if (startsUnavailable) {
       setState({ phase: "pending_backend" });
       return;
     }
@@ -73,7 +76,7 @@ function useFetch<T>(
     });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isJasonPending]);
+  }, [startsUnavailable]);
 
   return state;
 }
@@ -183,18 +186,28 @@ function S1StatusPanel({ state }: { state: AsyncState<S1SimStatus> }) {
         {state.phase === "loading" && <PanelLoading />}
         {state.phase === "error" && <PanelError message={state.message} />}
         {state.phase === "empty" && <PanelEmpty label="S1 尚未執行" />}
-        {state.phase === "pending_backend" && <PanelPending label="S1 狀態（Jason 補 endpoint 後啟用）" />}
+        {state.phase === "pending_backend" && <PanelPending label="S1 狀態讀取端點" />}
         {state.phase === "live" && (
           <div className="_fauto-kv-list">
             {([
+              ["今日", state.data.todayTst ?? "--"],
               ["市場態勢", state.data.regime ?? "--"],
               ["曝險比重", state.data.exposureWeight != null ? `${(state.data.exposureWeight * 100).toFixed(0)}%` : "--"],
+              ["訊號視窗", state.data.signalWindowOpen ? "開啟" : "關閉"],
+              ["下單視窗", state.data.orderSubmitWindowOpen ? "開啟" : "關閉"],
+              ["EOD 視窗", state.data.eodWindowOpen ? "開啟" : "關閉"],
+              ["KGI Gateway", state.data.gatewayUrlConfigured ? "已設定" : "未設定"],
               ["最後訊號", state.data.lastSignalDate ?? "--"],
-              ["最後委託", state.data.lastOrderDate ?? "--"],
-              ["最後 EOD", state.data.lastEodDate ?? "--"],
+              ["訊號籃", state.data.latestBasketSize != null ? `${state.data.latestBasketSize} 檔` : "--"],
+              ["籃子產生", state.data.latestBasketGeneratedAt ? fmtDatetime(state.data.latestBasketGeneratedAt) : "--"],
+              ["最後委託", state.data.lastOrderDate ? fmtDatetime(state.data.lastOrderDate) : "--"],
+              ["最後 EOD", state.data.lastEodDate ? fmtDatetime(state.data.lastEodDate) : "--"],
+              ["EOD 部位", state.data.eodPositionCount != null ? `${state.data.eodPositionCount} 檔` : "--"],
+              ["EOD 市值", fmtTwd(state.data.eodMarketValueTwd)],
+              ["EOD 未實現", fmtTwd(state.data.eodUnrealizedPnlTwd)],
               ["成功委託", state.data.ordersAccepted != null ? String(state.data.ordersAccepted) : "--"],
-              ["失敗委託", state.data.ordersAttempted != null && state.data.ordersAccepted != null
-                ? String(state.data.ordersAttempted - state.data.ordersAccepted) : "--"],
+              ["失敗委託", state.data.ordersRejected != null ? String(state.data.ordersRejected) : "--"],
+              ["資料來源", state.data.eodDataSource ?? "--"],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} className="_fauto-kv-row">
                 <span className="_fauto-kv-label">{label}</span>
@@ -213,6 +226,78 @@ function S1StatusPanel({ state }: { state: AsyncState<S1SimStatus> }) {
               </div>
             )}
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BasketPanel({
+  state,
+  date,
+}: {
+  state: AsyncState<S1Basket>;
+  date: string;
+}) {
+  return (
+    <div className="_fauto-panel">
+      <div className="_fauto-panel-head">
+        <span className="_fauto-panel-code">S1-BASKET</span>
+        <span className="_fauto-panel-title">S1 訊號籃</span>
+        <span className="_fauto-panel-sub">{date}</span>
+      </div>
+      <div className="_fauto-panel-body">
+        {state.phase === "loading" && <PanelLoading />}
+        {state.phase === "error" && <PanelError message={state.message} />}
+        {state.phase === "pending_backend" && <PanelPending label="訊號籃讀取端點" />}
+        {state.phase === "empty" && <PanelEmpty label="當日無訊號籃" />}
+        {state.phase === "live" && !state.data.found && <PanelEmpty label="當日無訊號籃" />}
+        {state.phase === "live" && state.data.found && (
+          <>
+            <div className="_fauto-kv-list" style={{ marginBottom: 12 }}>
+              {([
+                ["態勢", state.data.regime ?? "--"],
+                ["曝險比重", state.data.exposureWeight != null ? `${(state.data.exposureWeight * 100).toFixed(0)}%` : "--"],
+                ["產生時間", state.data.generatedAtTst ? fmtDatetime(state.data.generatedAtTst) : "--"],
+                ["母體數", state.data.universeCount != null ? String(state.data.universeCount) : "--"],
+                ["候選數", String(state.data.items.length)],
+              ] as [string, string][]).map(([label, value]) => (
+                <div key={label} className="_fauto-kv-row">
+                  <span className="_fauto-kv-label">{label}</span>
+                  <span className="_fauto-kv-value">{value}</span>
+                </div>
+              ))}
+            </div>
+            {state.data.items.length > 0 ? (
+              <table className="_fauto-tbl">
+                <thead>
+                  <tr>
+                    <th>代碼</th>
+                    <th className="_fauto-tbl-r">分數</th>
+                    <th className="_fauto-tbl-r">股數</th>
+                    <th className="_fauto-tbl-r">目標金額</th>
+                    <th> sizing </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.data.items.slice(0, 12).map((item) => (
+                    <tr key={item.symbol}>
+                      <td className="_fauto-symbol">{item.symbol}</td>
+                      <td className="_fauto-tbl-r">{item.score != null ? item.score.toFixed(3) : "--"}</td>
+                      <td className="_fauto-tbl-r">{item.shares != null ? item.shares.toLocaleString("zh-TW") : "--"}</td>
+                      <td className="_fauto-tbl-r">{fmtTwd(item.targetNotionalTwd)}</td>
+                      <td className="_fauto-ts">{item.sizingNote ?? "--"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <PanelEmpty label="訊號籃沒有候選股票" />
+            )}
+            {state.data.failsafeNotes && (
+              <div className="_fauto-note" style={{ marginTop: 8 }}>{state.data.failsafeNotes}</div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -292,12 +377,14 @@ function EodReportPanel({
         {state.phase === "loading" && <PanelLoading />}
         {state.phase === "error" && <PanelError message={state.message} />}
         {state.phase === "empty" && <PanelEmpty label="當日無 EOD 報告" />}
-        {state.phase === "pending_backend" && <PanelPending label="EOD 報告（Jason 補 endpoint 後啟用）" />}
-        {state.phase === "live" && (
+        {state.phase === "pending_backend" && <PanelPending label="EOD 報告讀取端點" />}
+        {state.phase === "live" && !state.data.found && <PanelEmpty label="當日無 EOD 報告" />}
+        {state.phase === "live" && state.data.found && (
           <>
             <div className="_fauto-kv-list" style={{ marginBottom: 12 }}>
               {([
                 ["態勢", state.data.regime ?? "--"],
+                ["產生時間", state.data.generatedAtTst ? fmtDatetime(state.data.generatedAtTst) : "--"],
                 ["總未實現損益", fmtTwd(state.data.totalUnrealizedPnlTwd)],
                 ["總市值", fmtTwd(state.data.totalMarketValueTwd)],
                 ["現金剩餘", fmtTwd(state.data.cashResidual)],
@@ -435,7 +522,7 @@ function PanelPending({ label }: { label: string }) {
   return (
     <div className="_fauto-panel-pending">
       <span className="_fauto-pending-dot" />
-      {label} — 等待後端 endpoint 上線
+      {label} — 尚未部署、權限未開或暫無回應
     </div>
   );
 }
@@ -492,14 +579,16 @@ export function FAutoSimPanel() {
   const ordersState = useFetch(getKgiSimOrders);
   const smokeState = useFetch(getDailySmokeHistory);
 
-  // Jason-pending endpoints — will 404 until Jason adds them
+  // S1 read-only endpoints. If prod is between deploys, 404/501 becomes a visible pending state.
   const s1StatusState = useFetch(getS1SimStatus, false);
   const [eodState, setEodState] = useState<AsyncState<S1EodReport>>({ phase: "pending_backend" });
+  const [basketState, setBasketState] = useState<AsyncState<S1Basket>>({ phase: "pending_backend" });
 
-  // Reload EOD when date changes
+  // Reload S1 basket and EOD when date changes.
   useEffect(() => {
     let cancelled = false;
     setEodState({ phase: "loading" });
+    setBasketState({ phase: "loading" });
     getS1SimEodReport(selectedDate).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
@@ -513,6 +602,20 @@ export function FAutoSimPanel() {
         return;
       }
       setEodState({ phase: "live", data: result.data });
+    });
+    getS1SimBasket(selectedDate).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        if (result.status === 404 || result.status === 501) {
+          setBasketState({ phase: "pending_backend" });
+        } else if (result.status === 400) {
+          setBasketState({ phase: "empty" });
+        } else {
+          setBasketState({ phase: "error", message: `HTTP ${result.status}` });
+        }
+        return;
+      }
+      setBasketState({ phase: "live", data: result.data });
     });
     return () => { cancelled = true; };
   }, [selectedDate]);
@@ -534,6 +637,7 @@ export function FAutoSimPanel() {
         <SimFundsPanel state={fundsState} />
         <S1StatusPanel state={s1StatusState} />
         <SimOrdersPanel state={ordersState} />
+        <BasketPanel state={basketState} date={selectedDate} />
         <EodReportPanel state={eodState} date={selectedDate} />
         <SmokeHistoryPanel state={smokeState} />
       </div>
