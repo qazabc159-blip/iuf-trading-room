@@ -42,6 +42,7 @@ type IndicatorSignal = {
   tone: "up" | "down" | "muted";
   detail: string;
 };
+type ChartLogicalRange = { from: number; to: number };
 
 const MA_CONFIG: ReadonlyArray<{ key: MaKey; period: number; color: string; label: string }> = [
   { key: "ma5",  period: 5,  color: "#FFD600", label: "MA5"  },
@@ -112,9 +113,16 @@ function calcVWAP(bars: ChartBar[]): (number | null)[] {
   const result: (number | null)[] = new Array(bars.length).fill(null);
   let cumulativeValue = 0;
   let cumulativeVolume = 0;
+  let currentSession = "";
 
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
+    const session = bar.source === "finmind-kbar" ? bar.dt.slice(0, 10) : "range";
+    if (session !== currentSession) {
+      currentSession = session;
+      cumulativeValue = 0;
+      cumulativeVolume = 0;
+    }
     if (!Number.isFinite(bar.volume) || bar.volume <= 0) continue;
     const typicalPrice = (bar.high + bar.low + bar.close) / 3;
     cumulativeValue += typicalPrice * bar.volume;
@@ -170,6 +178,28 @@ function calcEMA(closes: number[], period: number): (number | null)[] {
   return result;
 }
 
+function calcNullableEMA(values: Array<number | null>, period: number): (number | null)[] {
+  const k = 2 / (period + 1);
+  const result: (number | null)[] = new Array(values.length).fill(null);
+  let seed: number[] = [];
+  let ema: number | null = null;
+
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (value === null || !Number.isFinite(value)) continue;
+    if (ema === null) {
+      seed.push(value);
+      if (seed.length < period) continue;
+      ema = seed.reduce((sum, item) => sum + item, 0) / period;
+    } else {
+      ema = value * k + ema * (1 - k);
+    }
+    result[i] = Number(ema.toFixed(4));
+  }
+
+  return result;
+}
+
 /** MACD = DIF (12 - 26 EMA), DEA = 9 EMA of DIF, Hist = DIF - DEA */
 function calcMACD(closes: number[]): {
   dif: (number | null)[];
@@ -182,9 +212,9 @@ function calcMACD(closes: number[]): {
     const e12 = ema12[i]; const e26 = ema26[i];
     return e12 !== null && e26 !== null ? Number((e12 - e26).toFixed(4)) : null;
   });
-  // DEA = 9-period EMA of DIF values (skip nulls by treating them as 0 for seeding)
-  const difValues = dif.map((v) => v ?? 0);
-  const deaRaw = calcEMA(difValues, 9);
+  // DEA is the 9-period EMA of valid DIF values.  Null warm-up periods must not
+  // be treated as zero, otherwise MACD shows a fake early signal.
+  const deaRaw = calcNullableEMA(dif, 9);
   const dea: (number | null)[] = dif.map((d, i) => (d !== null && deaRaw[i] !== null ? deaRaw[i] : null));
   const hist: (number | null)[] = dif.map((d, i) => {
     const de = dea[i];
@@ -198,6 +228,42 @@ function median(values: number[]) {
   if (sorted.length === 0) return 0;
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function chooseVolumePriceLevel(
+  points: Array<{ price: number; volume: number }>,
+  lastClose: number,
+  direction: "support" | "resistance",
+) {
+  const usable = points.filter((item) => (
+    Number.isFinite(item.price)
+    && item.price > 0
+    && Number.isFinite(item.volume)
+    && item.volume > 0
+    && (direction === "support" ? item.price <= lastClose : item.price >= lastClose)
+  ));
+  if (usable.length === 0) return null;
+
+  const binSize = Math.max(lastClose * 0.004, 0.05);
+  const clusters = new Map<number, { priceSum: number; volume: number; touches: number }>();
+  for (const item of usable) {
+    const key = Math.round(item.price / binSize);
+    const existing = clusters.get(key) ?? { priceSum: 0, volume: 0, touches: 0 };
+    existing.priceSum += item.price * item.volume;
+    existing.volume += item.volume;
+    existing.touches += 1;
+    clusters.set(key, existing);
+  }
+
+  let best: { price: number; volume: number; score: number } | null = null;
+  for (const cluster of clusters.values()) {
+    const price = cluster.priceSum / cluster.volume;
+    const distancePct = Math.abs(price - lastClose) / lastClose;
+    const score = cluster.volume * (1 + Math.log1p(cluster.touches)) / (1 + distancePct * 7);
+    if (!best || score > best.score) best = { price, volume: cluster.volume, score };
+  }
+
+  return best ? { price: Number(best.price.toFixed(3)), volume: best.volume } : null;
 }
 
 function calcVolumePriceLevels(bars: ChartBar[]): VolumePriceLevels {
@@ -221,18 +287,15 @@ function calcVolumePriceLevels(bars: ChartBar[]): VolumePriceLevels {
     if (bar.high >= prev.high && bar.high >= next.high) pivotHighs.push({ price: bar.high, volume: bar.volume });
   }
 
+  const lastClose = recent.at(-1)?.close;
+  if (typeof lastClose !== "number" || !Number.isFinite(lastClose) || lastClose <= 0) {
+    return { support: null, resistance: null, supportVolume: null, resistanceVolume: null, sampleSize: recent.length };
+  }
+
   const lows = pivotLows.length ? pivotLows : recent.map((bar) => ({ price: bar.low, volume: bar.volume }));
   const highs = pivotHighs.length ? pivotHighs : recent.map((bar) => ({ price: bar.high, volume: bar.volume }));
-  const support = lows.reduce((best, item) => {
-    if (!best) return item;
-    if (item.volume > best.volume * 1.35) return item;
-    return item.price < best.price ? item : best;
-  }, null as { price: number; volume: number } | null);
-  const resistance = highs.reduce((best, item) => {
-    if (!best) return item;
-    if (item.volume > best.volume * 1.35) return item;
-    return item.price > best.price ? item : best;
-  }, null as { price: number; volume: number } | null);
+  const support = chooseVolumePriceLevel(lows, lastClose, "support");
+  const resistance = chooseVolumePriceLevel(highs, lastClose, "resistance");
 
   return {
     support: support?.price ?? null,
@@ -929,6 +992,7 @@ export function OhlcvCandlestickChart({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
+  const viewportRef = useRef<{ key: string; range: ChartLogicalRange | null }>({ key: "", range: null });
   const [error, setError] = useState<string | null>(null);
   const [interval, setInterval] = useState<EnabledInterval>("1d");
   const [range, setRange] = useState<RangeKey>("all");
@@ -963,7 +1027,7 @@ export function OhlcvCandlestickChart({
 
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
-  const chartHeight = compactTradingRoom ? 300 : isIntraday ? 460 : 440;
+  const chartHeight = compactTradingRoom ? 340 : isIntraday ? 460 : 440;
   const activeIntradayMinutes = activeMeta?.kind === "intraday" ? activeMeta.minutes ?? 1 : 1;
   const chartBars = useMemo(() => {
     const meta = ENABLED_INTERVALS.find((item) => item.value === interval);
@@ -975,6 +1039,18 @@ export function OhlcvCandlestickChart({
     }
     return filterRange(aggregateDailyBars(bars, interval), range);
   }, [bars, interval, intradayRange, kbarRows, range]);
+  const chartViewportKey = useMemo(() => {
+    const first = chartBars[0];
+    const last = chartBars.at(-1);
+    return [
+      symbol,
+      interval,
+      isIntraday ? intradayRange : range,
+      chartBars.length,
+      first?.dt ?? "",
+      last?.dt ?? "",
+    ].join("|");
+  }, [chartBars, interval, intradayRange, isIntraday, range, symbol]);
   const insufficientTrend = !isIntraday && chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
   const selectedIntradayDates = useMemo(() => intradayDatesForRange(kbarRows, intradayRange), [intradayRange, kbarRows]);
   const intradayCoverage = useMemo(() => {
@@ -1050,6 +1126,7 @@ export function OhlcvCandlestickChart({
 
     let chart: import("lightweight-charts").IChartApi | null = null;
     let ro: ResizeObserver | null = null;
+    let rememberRange: ((nextRange: import("lightweight-charts").LogicalRange | null) => void) | null = null;
     let disposed = false;
     const intradayAxisLabels = new Map<number, string>(
       isIntraday
@@ -1246,14 +1323,37 @@ export function OhlcvCandlestickChart({
           });
         }
 
-        chart.timeScale().fitContent();
-        if (chartBars.length > 12) {
+        const setLogicalRange = (nextRange: ChartLogicalRange) => {
+          chart?.timeScale().setVisibleLogicalRange(nextRange);
+          viewportRef.current = { key: chartViewportKey, range: nextRange };
+        };
+        const savedViewport = viewportRef.current.key === chartViewportKey ? viewportRef.current.range : null;
+        if (
+          savedViewport
+          && Number.isFinite(savedViewport.from)
+          && Number.isFinite(savedViewport.to)
+          && savedViewport.to > savedViewport.from
+        ) {
+          setLogicalRange(savedViewport);
+        } else if (chartBars.length > 12) {
           const count = visibleBarsFor(interval, range);
-          chart.timeScale().setVisibleLogicalRange({
+          setLogicalRange({
             from: Math.max(0, chartBars.length - count),
             to: chartBars.length + 4,
           });
+        } else {
+          chart.timeScale().fitContent();
+          viewportRef.current = { key: chartViewportKey, range: null };
         }
+
+        rememberRange = (nextRange: import("lightweight-charts").LogicalRange | null) => {
+          if (!nextRange || !Number.isFinite(nextRange.from) || !Number.isFinite(nextRange.to)) return;
+          viewportRef.current = {
+            key: chartViewportKey,
+            range: { from: nextRange.from, to: nextRange.to },
+          };
+        };
+        chart.timeScale().subscribeVisibleLogicalRangeChange(rememberRange);
 
         ro = new ResizeObserver((entries) => {
           const nextWidth = entries[0]?.contentRect.width;
@@ -1268,10 +1368,11 @@ export function OhlcvCandlestickChart({
     return () => {
       disposed = true;
       ro?.disconnect();
+      if (chart && rememberRange) chart.timeScale().unsubscribeVisibleLogicalRangeChange(rememberRange);
       chart?.remove();
       chartRef.current = null;
     };
-  }, [activeIntradayMinutes, chartBars, chartHeight, insufficientTrend, interval, isIntraday, range, indicators.ma, indicators.plan, indicators.sr, indicators.vwap, maEnabled, maValues, planLevels, volumePriceLevels, vwapValues]);
+  }, [activeIntradayMinutes, chartBars, chartHeight, chartViewportKey, insufficientTrend, interval, isIntraday, range, indicators.ma, indicators.plan, indicators.sr, indicators.vwap, maEnabled, maValues, planLevels, volumePriceLevels, vwapValues]);
 
   const badgeClass = isIntraday
     ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"

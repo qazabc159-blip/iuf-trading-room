@@ -73,7 +73,8 @@ describe("final-v031 paper ticket price gate", () => {
   it("keeps the trading-room K-line iframe stable during live refreshes", () => {
     expect(ticketHtml).not.toContain("nextParams.set('rev',Date.now()");
     expect(ticketHtml).toContain("const nextSrc=buildRealChartFrameSrc(sym)");
-    expect(ticketHtml).toContain("if(current!==nextSrc)frame.setAttribute('src',nextSrc)");
+    expect(ticketHtml).toContain("if(current!==nextSrc){");
+    expect(ticketHtml).toContain("frame.setAttribute('src',nextSrc)");
   });
 
   it("keeps the trading room in a single viewport without hiding tape or ledger", () => {
@@ -91,7 +92,7 @@ describe("final-v031 paper ticket price gate", () => {
   });
 
   it("keeps compact trading-room K-line height inside the frame instead of clipping the readout", () => {
-    expect(klineChartSource).toContain("const chartHeight = compactTradingRoom ? 300");
+    expect(klineChartSource).toContain("const chartHeight = compactTradingRoom ? 340");
   });
 
   it("shows a real loading state for the embedded K-line instead of a blank iframe", () => {
@@ -106,8 +107,25 @@ describe("final-v031 paper ticket price gate", () => {
     expect(klineChartSource).toContain("handleScale");
     expect(klineChartSource).toContain("buildIndicatorSignals");
     expect(klineChartSource).toContain("trading-room-kline-signal-strip");
+    expect(klineChartSource).toContain("calcNullableEMA");
+    expect(klineChartSource).toContain("chooseVolumePriceLevel");
     expect(tradingRoomKlineFrameSource).toContain(".trading-room-kline-host .kline-toolbar");
     expect(tradingRoomKlineFrameSource).toContain("order: 2;");
+  });
+
+  it("does not reload the real K-line frame twice when selecting a watchlist row", () => {
+    expect(ticketHtml).not.toContain("document.querySelectorAll('.wrow').forEach(r=>r.addEventListener('click',()=>pickRow(r.dataset.sym)))");
+    expect(ticketHtml).toContain("frame.closest('.real-kline-frame-shell')?.classList.remove('is-loaded')");
+    expect(ticketHtml).toContain("if(current!==nextSrc){");
+    expect(ticketHtml).not.toContain("pickRow(row.dataset.sym);\n    updateRealChartFrame(row.dataset.sym);");
+  });
+
+  it("preserves the user zoom/pan window while toggling trading-room indicators", () => {
+    expect(klineChartSource).toContain("viewportRef");
+    expect(klineChartSource).toContain("chartViewportKey");
+    expect(klineChartSource).toContain("subscribeVisibleLogicalRangeChange");
+    expect(klineChartSource).toContain("savedViewport");
+    expect(klineChartSource).not.toContain("chart.timeScale().fitContent();\n        if (chartBars.length > 12)");
   });
 
   it("keeps trading-room real chart symbol and plan levels synchronized", () => {
@@ -115,6 +133,9 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("['entry','stop','tp','from_rec','recommendationId','side']");
     expect(ticketHtml).toContain("window.__IUF_SELECT_PAPER_SYMBOL__");
     expect(liveHydration).toContain("window.__IUF_SELECT_PAPER_SYMBOL__ = selectPaperSymbol");
+    expect(liveHydration).toContain("sameSym(item.symbol, selected.symbol)?'on':'");
+    expect(liveHydration).toContain('sameSym(idea.symbol, selected.symbol) ? " on" : ""');
+    expect(liveHydration).not.toContain("wlItems.map((item, i)");
     expect(liveHydration).toContain("prefillMatchesSelected");
     expect(liveHydration).toContain("removeMismatchedPaperPrefill");
     expect(liveHydration).toContain("prefillSymbol && selectedSymbol && prefillSymbol !== selectedSymbol");
