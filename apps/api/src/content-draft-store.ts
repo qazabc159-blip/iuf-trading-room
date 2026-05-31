@@ -104,6 +104,29 @@ export function computeContentDraftDedupeKey(input: {
   return `${input.workspaceId}:${input.targetTable}:${entity}:${input.producerVersion}`;
 }
 
+function dailyBriefHasCompleteSectionSourceTrail(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const sections = (payload as { sections?: unknown }).sections;
+  if (!Array.isArray(sections) || sections.length === 0) return false;
+  return sections.every((section) => {
+    if (!section || typeof section !== "object") return false;
+    const sourceTrail = (section as { sourceTrail?: unknown }).sourceTrail;
+    return typeof sourceTrail === "string" && sourceTrail.trim().length > 0;
+  });
+}
+
+export function shouldReuseExistingContentDraftForDedupe(input: {
+  targetTable: ContentDraftTargetTable;
+  nextPayload: unknown;
+  existingPayload: unknown;
+}): boolean {
+  if (input.targetTable !== "daily_briefs") return true;
+  const nextHasSourceTrail = dailyBriefHasCompleteSectionSourceTrail(input.nextPayload);
+  const existingHasSourceTrail = dailyBriefHasCompleteSectionSourceTrail(input.existingPayload);
+  if (nextHasSourceTrail && !existingHasSourceTrail) return false;
+  return true;
+}
+
 export function isOpenAliceDeviceActivePayload(
   lastSeenAt: string | Date | null | undefined,
   now: Date = new Date(),
@@ -203,7 +226,13 @@ export async function createContentDraft(input: {
 
   const existing = await findRecentContentDraftByDedupeKey({ dedupeKey });
   if (existing) {
-    return toDraftRecord(existing);
+    if (shouldReuseExistingContentDraftForDedupe({
+      targetTable: input.targetTable,
+      nextPayload: input.payload,
+      existingPayload: existing.payload
+    })) {
+      return toDraftRecord(existing);
+    }
   }
 
   const [row] = await db
