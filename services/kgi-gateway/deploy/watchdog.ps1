@@ -126,6 +126,37 @@ function Send-SentryEvent {
 }
 
 # ---------------------------------------------------------------------------
+# KGI SIM re-login (when process is up but session dropped)
+# Reads SIM credentials from SSM Parameter Store (region ap-east-2), POSTs
+# /session/login (simulation=true), then /session/set-account if needed.
+# The gateway login path has its own FIsLogon poll-wait, so this is retriable.
+# ---------------------------------------------------------------------------
+function Invoke-KgiRelogin {
+    try {
+        $pid_ = (& aws ssm get-parameter --region ap-east-2 --name /iuf/kgi/sim_person_id --with-decryption --query Parameter.Value --output text)
+        $pwd_ = (& aws ssm get-parameter --region ap-east-2 --name /iuf/kgi/sim_person_pwd --with-decryption --query Parameter.Value --output text)
+        if (-not $pid_ -or -not $pwd_) { Write-Warn "Re-login skipped: SIM creds unavailable from SSM"; return }
+        $loginUrl = ($HealthUrl -replace "/health$", "/session/login")
+        $acctUrl  = ($HealthUrl -replace "/health$", "/session/set-account")
+        $body = @{ person_id = $pid_; person_pwd = $pwd_; simulation = $true } | ConvertTo-Json -Compress
+        Invoke-WebRequest -Uri $loginUrl -Method Post -Body $body -ContentType "application/json" -TimeoutSec 40 -UseBasicParsing | Out-Null
+        Start-Sleep -Seconds 2
+        $h2 = (Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 8).Content | ConvertFrom-Json
+        if ($h2.kgi_logged_in) {
+            if (-not $h2.account_set) {
+                $ab = @{ account = "0012826" } | ConvertTo-Json -Compress
+                Invoke-WebRequest -Uri $acctUrl -Method Post -Body $ab -ContentType "application/json" -TimeoutSec 15 -UseBasicParsing | Out-Null
+            }
+            Write-Info "Re-login OK kgi_logged_in=true account_set=$($h2.account_set)"
+        } else {
+            Write-Warn "Re-login POST returned but kgi_logged_in still false (will retry next tick)"
+        }
+    } catch {
+        Write-Warn "Re-login error: $($_.Exception.Message)"
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Main watchdog logic
 # ---------------------------------------------------------------------------
 $state = Get-WatchdogState
@@ -134,11 +165,13 @@ Write-Info "Watchdog tick — probing $HealthUrl  (consecutive_fails=$($state.co
 
 # Probe /health
 $healthy = $false
+$loggedIn = $false
 try {
     $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 10
     if ($resp.StatusCode -eq 200) {
         $healthy = $true
-        Write-Info "/health OK 200"
+        try { $loggedIn = [bool](($resp.Content | ConvertFrom-Json).kgi_logged_in) } catch { $loggedIn = $false }
+        Write-Info "/health OK 200 kgi_logged_in=$loggedIn"
     } else {
         Write-Warn "/health returned $($resp.StatusCode)"
     }
@@ -147,6 +180,13 @@ try {
 }
 
 if ($healthy) {
+    # Process is up. If the KGI SIM session has dropped, re-login in place before
+    # treating this tick as healthy (watchdog must not silently leave us logged out —
+    # that is the failure mode that caused the 5/20-5/28 dark window).
+    if (-not $loggedIn) {
+        Write-Warn "Process up but kgi_logged_in=false — attempting in-place re-login"
+        if (-not $DryRun) { Invoke-KgiRelogin }
+    }
     # Reset failure counter on success
     if ($state.consecutive_fails -gt 0) {
         Write-Info "Service recovered — resetting failure counter (was $($state.consecutive_fails))"

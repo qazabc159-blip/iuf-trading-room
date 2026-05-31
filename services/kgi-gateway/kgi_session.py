@@ -83,6 +83,30 @@ class KgiLoginObjectMissingAttr(Exception):
         super().__init__(f"KGI login result object missing attribute: {self.attr_name}")
 
 
+class KgiLoginTimedOut(Exception):
+    """
+    Raised when kgisuperpy.login() completes but _ObjOrder.FIsLogon remains None
+    after the outer poll timeout (default 25 s).
+
+    Root cause: kgisuperpy 2.0.3 TradeCom.__init__ has its own 10-second poll for
+    the DLL OnStatusChanged callback.  If the callback is delayed beyond 10 s, TradeCom
+    exits with FIsLogon=None.  Our outer poll adds an additional 25 s window on top
+    of TradeCom's own 10 s, giving the DLL callback up to ~35 s total.
+
+    If this error still fires, the DLL is not sending the callback at all — likely a
+    network / CA certificate issue rather than a timing problem.
+
+    Maps to HTTP 504 (gateway timeout, retry is safe).
+    """
+
+    def __init__(self, elapsed_s: float) -> None:
+        self.elapsed_s = elapsed_s
+        super().__init__(
+            f"KGI login DLL callback did not arrive within {elapsed_s:.1f}s "
+            "(KGI_LOGIN_TIMEOUT): check CA certificate and network connectivity"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -109,7 +133,7 @@ def _safe_attr_name(value: object) -> str:
     if marker in text:
         text = text.rsplit(marker, 1)[1].strip().strip("'\"")
     candidate = text.strip().strip("'\"")
-    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,63}", candidate):
+    if candidate.replace("_", "").isalnum() and candidate[:1].isalpha():
         return candidate[:64]
     return "unknown"
 
@@ -257,11 +281,56 @@ class KgiSession:
                 simulation=simulation,
             )
 
+            # --- Layer 0: outer poll for DLL callback race condition ---
+            #
+            # kgisuperpy 2.0.3 root cause (confirmed from SDK source):
+            #   TradeCom.__init__ polls _ObjOrder.FIsLogon for up to 10 s (timeout=20
+            #   iterations × 0.5 s).  If the DLL OnStatusChanged(status=4) callback
+            #   fires AFTER TradeCom exits its own poll, _ObjOrder.FIsLogon is still
+            #   None when kgisuperpy.login() returns.  main.py then skips binding
+            #   show_account, set_Account, etc., and our Layer 2 guard raises
+            #   KgiLoginObjectMissingAttr with value_type=NoneType.
+            #
+            # Fix: after kgisuperpy.login() returns, spin here at 0.3 s intervals
+            # for up to POLL_TIMEOUT_S more seconds, giving the DLL callback extra
+            # time to fire and set FIsLogon to True/False.
+            #
+            # This is safe because:
+            #   - If FIsLogon is already True/False (normal path), the loop exits
+            #     immediately on the first check (elapsed ≈ 0).
+            #   - If FIsLogon is still None (race path), we wait up to 25 s more.
+            #   - We never call any account method before FIsLogon is positively True.
+            #   - Timeout is not a permanent error — KgiLoginTimedOut is retriable.
+            import time as _time
+            _POLL_INTERVAL_S = 0.3
+            _POLL_TIMEOUT_S = 25.0
+            _poll_start = _time.monotonic()
+
+            while True:
+                login_state, state_attr = _sdk_login_state(login_result)
+                if login_state is not None:
+                    break
+                elapsed = _time.monotonic() - _poll_start
+                if elapsed >= _POLL_TIMEOUT_S:
+                    _log.error(
+                        "[kgi-session] login DLL callback timeout simulation=%s "
+                        "person_id=%s elapsed=%.1fs attr=%s",
+                        simulation, masked_pid, elapsed, state_attr,
+                    )
+                    raise KgiLoginTimedOut(elapsed_s=elapsed)
+                _time.sleep(_POLL_INTERVAL_S)
+
+            _log.debug(
+                "[kgi-session] login poll resolved simulation=%s person_id=%s "
+                "state=%s elapsed=%.2fs",
+                simulation, masked_pid, login_state,
+                _time.monotonic() - _poll_start,
+            )
+
             # --- Layer 1: login-state guard ---
             # Actual kgisuperpy exposes _ObjOrder.FIsLogon, not IsSucceed.
             # Mock/older shapes may expose IsSucceed. Account methods are only
             # allowed after a positive True from one of those known state flags.
-            login_state, state_attr = _sdk_login_state(login_result)
             if login_state is False:
                 error_code = _safe_int(getattr(login_result, "RtnCode", -1))
                 if error_code == -1 and state_attr == "_ObjOrder.FIsLogon":
@@ -286,45 +355,70 @@ class KgiSession:
                 raise KgiLoginFailedError(error_code=error_code, reply_string=reply_string)
 
             # --- Layer 2: Positive confirmation guard ---
-            show_account = getattr(login_result, "show_account", None)
             if login_state is not True:
-                if callable(show_account):
-                    # Some kgisuperpy builds attach account methods after a
-                    # successful login but do not expose _ObjOrder.FIsLogon /
-                    # IsSucceed on the outer object. The official diagnostic
-                    # script treats show_account presence as success-only, so
-                    # allow this shape instead of blocking SIM login.
+                _log.error(
+                    "[kgi-session] login not positively confirmed simulation=%s "
+                    "person_id=%s attr=%s value_type=%s",
+                    simulation, masked_pid, state_attr, type(login_state).__name__,
+                )
+                raise KgiLoginObjectMissingAttr(attr_name=state_attr)
+
+            # --- Layer 3: get account list ---
+            #
+            # When the DLL callback races with main.py's FIsLogon check (the bug we
+            # just fixed), main.py's `if self._ObjOrder.FIsLogon == True:` block was
+            # skipped, so `login_result.show_account` (the public alias) was never
+            # bound.  Even if our poll has now confirmed FIsLogon=True, the alias
+            # assignment in main.py already ran (with None) and was skipped.
+            #
+            # Strategy: try the public alias first (normal post-race-fix path or
+            # non-race path).  If it is absent or not callable, fall back to the
+            # private method directly on _ObjOrder, which is always present once
+            # FIsLogon is True (CA.py OnStatusChanged status=4 calls _show_account()
+            # before setting FIsLogon=True, populating _list_account).
+            raw_accounts = None
+            show_account = getattr(login_result, "show_account", None)
+            if callable(show_account):
+                try:
+                    raw_accounts = show_account()
+                except AttributeError as e:
+                    attr_name = _safe_attr_name(e)
                     _log.warning(
-                        "[kgi-session] accepting login without state flag because show_account is callable "
-                        "simulation=%s person_id=%s missing_attr=%s",
-                        simulation, masked_pid, state_attr,
+                        "[kgi-session] show_account() raised AttributeError, "
+                        "falling back to _ObjOrder._show_account simulation=%s "
+                        "person_id=%s attr=%s",
+                        simulation, masked_pid, attr_name,
                     )
-                else:
+
+            if raw_accounts is None:
+                # Fallback: call _show_account() directly on TradeCom object.
+                # CA.py OnStatusChanged(4) already called this and populated
+                # _list_account before setting FIsLogon=True — so _list_account
+                # is not empty when we reach here.
+                obj_order = getattr(login_result, "_ObjOrder", None)
+                inner_show = getattr(obj_order, "_show_account", None) if obj_order is not None else None
+                if not callable(inner_show):
                     _log.error(
-                        "[kgi-session] login not positively confirmed simulation=%s "
-                        "person_id=%s attr=%s value_type=%s",
-                        simulation, masked_pid, state_attr, type(login_state).__name__,
+                        "[kgi-session] both show_account and _ObjOrder._show_account "
+                        "unavailable simulation=%s person_id=%s",
+                        simulation, masked_pid,
                     )
-                    raise KgiLoginObjectMissingAttr(attr_name=state_attr)
-
-            if not callable(show_account):
-                _log.error(
-                    "[kgi-session] login result missing callable simulation=%s "
-                    "person_id=%s attr=%s",
-                    simulation, masked_pid, "show_account",
+                    raise KgiLoginObjectMissingAttr(attr_name="show_account")
+                _log.info(
+                    "[kgi-session] using _ObjOrder._show_account() fallback "
+                    "simulation=%s person_id=%s",
+                    simulation, masked_pid,
                 )
-                raise KgiLoginObjectMissingAttr(attr_name="show_account")
-
-            try:
-                raw_accounts = show_account()
-            except AttributeError as e:
-                attr_name = _safe_attr_name(e)
-                _log.error(
-                    "[kgi-session] login result missing attribute simulation=%s "
-                    "person_id=%s attr=%s",
-                    simulation, masked_pid, attr_name,
-                )
-                raise KgiLoginObjectMissingAttr(attr_name=attr_name) from e
+                try:
+                    raw_accounts = inner_show()
+                except AttributeError as e:
+                    attr_name = _safe_attr_name(e)
+                    _log.error(
+                        "[kgi-session] _ObjOrder._show_account() raised AttributeError "
+                        "simulation=%s person_id=%s attr=%s",
+                        simulation, masked_pid, attr_name,
+                    )
+                    raise KgiLoginObjectMissingAttr(attr_name=attr_name) from e
 
             # Login fully succeeded — cache the api handle
             self._api = login_result
