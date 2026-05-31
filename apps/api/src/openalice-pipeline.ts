@@ -1165,6 +1165,24 @@ export function validateDailyBriefSectionsContract(
   return { ok: missing.length === 0, missing };
 }
 
+export function isDailyBriefV2ContractCompliant(
+  brief: { sections?: unknown } | null | undefined
+): boolean {
+  if (!brief || !Array.isArray(brief.sections)) return false;
+
+  const sections = brief.sections.map((section) => {
+    if (!section || typeof section !== "object") return {};
+    const value = section as { sectionId?: unknown; heading?: unknown; body?: unknown };
+    return {
+      sectionId: value.sectionId,
+      heading: value.heading,
+      body: value.body
+    };
+  });
+
+  return validateDailyBriefSectionsContract(sections).ok;
+}
+
 const ENGLISH_HEADING_MAP: Record<string, string> = {
   "market overview": "市場總覽",
   "technical analysis": "技術觀察",
@@ -1776,7 +1794,7 @@ export async function runPipelineTick(
     // Normal run: skip if brief already published today
     try {
       const existingBriefs = await db
-        .select({ id: dailyBriefs.id })
+        .select({ id: dailyBriefs.id, sections: dailyBriefs.sections })
         .from(dailyBriefs)
         .where(
           and(
@@ -1785,8 +1803,9 @@ export async function runPipelineTick(
             visibleDailyBriefCondition()
           )
         )
-        .limit(1);
-      if (existingBriefs.length > 0) {
+        .limit(5);
+      const existingContractBrief = existingBriefs.find((brief) => isDailyBriefV2ContractCompliant(brief));
+      if (existingContractBrief) {
         const result: PipelineRunResult = {
           ...baseResult(),
           skippedReason: `brief_already_exists_for_date:${tradingDate}`,
@@ -1795,6 +1814,11 @@ export async function runPipelineTick(
         updatePipelineState({ lastResult: result });
         console.log(`[pipeline] tick=${tick} date=${tradingDate} SKIPPED: brief_already_exists`);
         return result;
+      }
+      if (existingBriefs.length > 0) {
+        console.warn(
+          `[pipeline] tick=${tick} date=${tradingDate} existing brief is not v2 contract compliant; regenerating`
+        );
       }
     } catch {
       // DB check failed — proceed anyway (non-fatal dedup, better than blocking)
