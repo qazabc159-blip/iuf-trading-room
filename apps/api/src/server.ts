@@ -4042,10 +4042,17 @@ app.post("/api/v1/kgi/sim/trade-smoke", async (c) => {
 //   - Account masked as 9228-***-6 in audit
 //   - KGI_READ_ONLY_MODE does NOT block SIM submit (only real broker writes)
 //
-// Body: { symbol, side, qty, price?, orderType, quantityUnit }
+// Body: { symbol, side, qty, price?, orderType, quantityUnit, timeInForce?, orderCond?, priceType? }
 // Response: { sim_only: true, data: { tradeId, status, submittedAt, ... } }
 // Supports both old field names (symbol/qty) and new aliases (ticker/quantity)
 // so that callers can use either convention without breaking existing integrations.
+//
+// B2 additions (2026-05-31):
+//   timeInForce — "ROD"|"IOC"|"FOK" (default: "ROD")
+//   orderCond   — "Cash"|"CashSelling"|"Margin"|"MarginSelling"|"Short"|"DayBuy"|"DaySell"
+//                 (default: "Cash")
+//   priceType   — "MKT"|"Reference"|"LimitUp"|"LimitDown" — KGI special-price codes
+//                 when set, overrides numeric price field for the gateway call
 export const kgiSimOrderBodySchema = z.object({
   // ticker is alias for symbol (Elva spec uses {ticker, side, quantity, orderType})
   ticker: z.string().min(1).max(8).toUpperCase().optional(),
@@ -4057,6 +4064,11 @@ export const kgiSimOrderBodySchema = z.object({
   price: z.number().positive().nullable().optional(),
   orderType: z.enum(["market", "limit", "MARKET", "LIMIT"]).transform((v) => v.toLowerCase() as "market" | "limit").default("limit"),
   quantityUnit: z.enum(["SHARE", "LOT"]).default("SHARE"),
+  // B2: optional fields — gateway passes these through to KGI SDK
+  timeInForce: z.enum(["ROD", "IOC", "FOK"]).default("ROD"),
+  orderCond: z.enum(["Cash", "CashSelling", "Margin", "MarginSelling", "Short", "DayBuy", "DaySell"]).default("Cash"),
+  // priceType: KGI special-price codes; when present, overrides numeric price for gateway
+  priceType: z.enum(["MKT", "Reference", "LimitUp", "LimitDown"]).optional(),
 }).transform((raw) => ({
   symbol: (raw.ticker ?? raw.symbol ?? "").toUpperCase(),
   side: raw.side,
@@ -4064,6 +4076,9 @@ export const kgiSimOrderBodySchema = z.object({
   price: raw.price,  // keep undefined when not provided (SIM2/SIM4 contract)
   orderType: raw.orderType,
   quantityUnit: raw.quantityUnit,
+  timeInForce: raw.timeInForce,
+  orderCond: raw.orderCond,
+  priceType: raw.priceType,
 })).refine((d) => d.symbol.length >= 1, { message: "ticker/symbol is required" })
   .refine((d) => d.qty > 0, { message: "quantity/qty must be positive" });
 
@@ -4096,11 +4111,11 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
     return c.json({ error: "BAD_REQUEST" }, 400);
   }
 
-  // 4. Price check: limit orders require a price
-  if (body.orderType === "limit" && (body.price == null || body.price <= 0)) {
+  // 4. Price check: limit orders require either a numeric price or a priceType
+  if (body.orderType === "limit" && !body.priceType && (body.price == null || body.price <= 0)) {
     return c.json({
       error: "VALIDATION_ERROR",
-      message: "限價單需要填入有效的委託價格。",
+      message: "限價單需要填入有效的委託價格，或指定 priceType（如 LimitUp / LimitDown）。",
       sim_only: true,
     }, 400);
   }
@@ -4139,19 +4154,31 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
     effective_qty_shares: effectiveQty,
     order_type: body.orderType,
     price: body.price ?? null,
+    price_type: body.priceType ?? null,
+    time_in_force: body.timeInForce,
+    order_cond: body.orderCond,
     odd_lot: isOddLot,
     account_masked: maskAccount(process.env["KGI_ACCOUNT"] ?? "9228-001282-6"),
     prod_write_blocked: true,
   };
+
+  // Resolve effective price for gateway:
+  //   priceType present → pass the string ("MKT", "LimitUp", etc.) as price
+  //   numeric price present → pass the number
+  //   neither → undefined (market fallback on gateway side)
+  type KgiPriceArg = number | "MKT" | "Reference" | "LimitUp" | "LimitDown" | undefined;
+  const gatewayPrice: KgiPriceArg = body.priceType
+    ? (body.priceType as "MKT" | "Reference" | "LimitUp" | "LimitDown")
+    : (body.price ?? undefined);
 
   try {
     const tradeRaw = await client.createOrder({
       action: body.side === "buy" ? "Buy" : "Sell",
       symbol: body.symbol,
       qty: body.qty,
-      price: body.price ?? undefined,
-      timeInForce: "ROD",
-      orderCond: "Cash",
+      price: gatewayPrice,
+      timeInForce: body.timeInForce,
+      orderCond: body.orderCond,
       oddLot: isOddLot,
       name: "IUF_SIM_USER_ORDER",
     });
@@ -4193,7 +4220,10 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
         quantityUnit: body.quantityUnit,
         effectiveQtyShares: effectiveQty,
         price: body.price ?? null,
+        priceType: body.priceType ?? null,
         orderType: body.orderType,
+        timeInForce: body.timeInForce,
+        orderCond: body.orderCond,
         isOddLot,
         submittedAt,
       },
