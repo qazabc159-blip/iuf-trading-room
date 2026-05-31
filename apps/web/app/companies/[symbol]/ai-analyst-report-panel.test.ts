@@ -15,6 +15,11 @@
 
 import { describe, expect, it } from "vitest";
 import type { ReactRunResult, ReactTraceStep } from "./AiAnalystReportPanel";
+import {
+  buildCompanyAiAnalystPrompt,
+  COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
+  COMPANY_AI_ANALYST_REQUIRED_SECTIONS,
+} from "./aiAnalystReportContract";
 
 // ── Helpers re-implemented for testing (pure, no React deps) ─────────────────
 
@@ -44,6 +49,32 @@ function traceStepLabel(type: ReactTraceStep["type"]): string {
 function shouldShowTrace(trace: ReactTraceStep[]): boolean {
   return trace.length > 0;
 }
+
+describe("Company AI analyst prompt contract", () => {
+  it("pins the template version and ticker", () => {
+    const prompt = buildCompanyAiAnalystPrompt("2330");
+    expect(prompt).toContain(COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION);
+    expect(prompt).toContain("分析標的: 2330");
+  });
+
+  it("contains all required sections in stable order", () => {
+    const prompt = buildCompanyAiAnalystPrompt("2454");
+    const positions = COMPANY_AI_ANALYST_REQUIRED_SECTIONS.map((section) => prompt.indexOf(section));
+
+    for (const position of positions) {
+      expect(position).toBeGreaterThan(-1);
+    }
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it("forces honest degraded wording instead of invented facts", () => {
+    const prompt = buildCompanyAiAnalystPrompt("2317");
+    expect(prompt).toContain("資料不足：原因");
+    expect(prompt).toContain("不可猜測");
+    expect(prompt).toContain("不可給保證獲利");
+    expect(prompt).toContain("不是下單建議");
+  });
+});
 
 // ── State: empty / never generated ───────────────────────────────────────────
 

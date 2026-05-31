@@ -12,6 +12,7 @@ import test from "node:test";
 
 import {
   classifyDraftTier,
+  DAILY_BRIEF_REQUIRED_SECTION_IDS,
   evaluatePublishGate,
   filterSourcePackEntries,
   isBriefBootRecoveryWindow,
@@ -22,6 +23,7 @@ import {
   sanitizeBriefBody,
   scrubForbiddenPhrases,
   scrubReplacementChars,
+  validateDailyBriefSectionsContract,
   _lastPipelineState,
   type SourcePack,
   type SourcePackEntry,
@@ -47,6 +49,28 @@ function makePack(overrides: Partial<SourcePack> = {}): SourcePack {
     ...overrides
   };
 }
+
+test("daily brief contract accepts all required section ids", () => {
+  const sections = DAILY_BRIEF_REQUIRED_SECTION_IDS.map((sectionId) => ({
+    sectionId,
+    heading: sectionId,
+    body: "This section has enough source-backed content for contract validation."
+  }));
+
+  assert.deepEqual(validateDailyBriefSectionsContract(sections), { ok: true, missing: [] });
+});
+
+test("daily brief contract rejects missing required section ids", () => {
+  const sections = DAILY_BRIEF_REQUIRED_SECTION_IDS
+    .filter((sectionId) => sectionId !== "risk_watch")
+    .map((sectionId) => ({
+      sectionId,
+      heading: sectionId,
+      body: "This section has enough source-backed content for contract validation."
+    }));
+
+  assert.deepEqual(validateDailyBriefSectionsContract(sections), { ok: false, missing: ["risk_watch"] });
+});
 
 // ── Test 1: scheduler tick skips non-trading days (memory mode) ───────────────
 

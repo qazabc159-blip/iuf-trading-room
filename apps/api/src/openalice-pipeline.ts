@@ -1093,6 +1093,48 @@ async function tryPublishSourceOnlyBackfillDraft(input: {
  * Known English headings are mapped to canonical Chinese equivalents.
  * Any unrecognised English-heavy heading falls back to "今日市場簡報".
  */
+export const DAILY_BRIEF_TEMPLATE_VERSION = "daily_brief_contract_v2";
+export const DAILY_BRIEF_REQUIRED_SECTION_IDS = [
+  "market_overview",
+  "ai_selected_news",
+  "sector_themes",
+  "risk_watch",
+  "data_source_status",
+] as const;
+
+const DAILY_BRIEF_SECTION_LABELS: Record<(typeof DAILY_BRIEF_REQUIRED_SECTION_IDS)[number], string> = {
+  market_overview: "市場總覽",
+  ai_selected_news: "AI 精選重點",
+  sector_themes: "產業與主題",
+  risk_watch: "風險觀察",
+  data_source_status: "資料來源狀態",
+};
+
+const DAILY_BRIEF_SECTION_ID_SET = new Set<string>(DAILY_BRIEF_REQUIRED_SECTION_IDS);
+
+export function validateDailyBriefSectionsContract(
+  sections: Array<{ sectionId?: unknown; heading?: unknown; body?: unknown }>
+): { ok: boolean; missing: string[] } {
+  const present = new Set<string>();
+
+  for (const section of sections) {
+    if (typeof section.sectionId === "string" && DAILY_BRIEF_SECTION_ID_SET.has(section.sectionId)) {
+      present.add(section.sectionId);
+      continue;
+    }
+
+    const heading = typeof section.heading === "string" ? section.heading : "";
+    for (const id of DAILY_BRIEF_REQUIRED_SECTION_IDS) {
+      if (heading.includes(DAILY_BRIEF_SECTION_LABELS[id])) {
+        present.add(id);
+      }
+    }
+  }
+
+  const missing = DAILY_BRIEF_REQUIRED_SECTION_IDS.filter((id) => !present.has(id));
+  return { ok: missing.length === 0, missing };
+}
+
 const ENGLISH_HEADING_MAP: Record<string, string> = {
   "market overview": "市場總覽",
   "technical analysis": "技術觀察",
@@ -1137,6 +1179,7 @@ function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Re
   if (!raw) return null;
   try {
     const parsed = JSON.parse(stripCodeFences(raw)) as {
+      templateVersion?: unknown;
       marketState?: unknown;
       sections?: unknown;
     };
@@ -1149,18 +1192,25 @@ function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Re
     const sections = Array.isArray(parsed.sections)
       ? parsed.sections
           .map((section) => {
-            const value = section as { heading?: unknown; body?: unknown };
+            const value = section as { sectionId?: unknown; heading?: unknown; body?: unknown };
+            const sectionId = typeof value.sectionId === "string" ? trimForBrief(value.sectionId, 80) : undefined;
             const rawHeading = typeof value.heading === "string" ? trimForBrief(value.heading, 80) : "";
             const heading = rawHeading ? sanitizeBriefHeading(rawHeading) : "";
             const rawBody = typeof value.body === "string" ? trimForBrief(value.body, 1_400) : "";
             const body = sanitizeBriefBody(rawBody);
-            return { heading, body };
+            return { sectionId, heading, body };
           })
           .filter((section) => section.heading.length > 0 && section.body.length >= 50)
           .slice(0, 6)
       : [];
 
     if (sections.length === 0) return null;
+
+    const contract = validateDailyBriefSectionsContract(sections);
+    if (!contract.ok) {
+      console.warn(`[pipeline] daily brief contract missing sections: ${contract.missing.join(",")}`);
+      return null;
+    }
 
     return dailyBriefPayloadSchema.parse({
       date: sourcePack.tradingDate,
@@ -1208,6 +1258,13 @@ async function generateDirectDailyBriefDraft(input: {
 - 若資料不足，直接寫成資料品質提醒（中文）。
 - date 必須等於 ${input.sourcePack.tradingDate}。
 ${f4Rule}
+
+Daily brief contract:
+- templateVersion must be "${DAILY_BRIEF_TEMPLATE_VERSION}".
+- sections must include exactly these sectionId values: ${DAILY_BRIEF_REQUIRED_SECTION_IDS.join(", ")}.
+- Required headings: 市場總覽, AI 精選重點, 產業與主題, 風險觀察, 資料來源狀態.
+- AI 精選重點不可 raw dump 新聞；每則重點要說 why matters、相關公司/主題、來源與時間。
+- 資料不足時要寫「資料不足：原因」與來源狀態，不可補故事。
 
 輸出 schema：
 {
@@ -1320,6 +1377,13 @@ ${sourcesSummary}${liveSnapshotBlock}
 - 只引用上方資料包或即時市場數據中存在的資料。
 - 禁止在任何輸出欄位中出現 [BROKEN-N]、[DEPRECATED]、[ORPHAN]、[placeholder] 等內部 DB 維護標記。
 ${f4Rule}
+
+Daily brief contract:
+- templateVersion must be "${DAILY_BRIEF_TEMPLATE_VERSION}".
+- sections must include exactly these sectionId values: ${DAILY_BRIEF_REQUIRED_SECTION_IDS.join(", ")}.
+- Required headings: 市場總覽, AI 精選重點, 產業與主題, 風險觀察, 資料來源狀態.
+- AI 精選重點不可 raw dump 新聞；每則重點要說 why matters、相關公司/主題、來源與時間。
+- 資料不足時要寫「資料不足：原因」與來源狀態，不可補故事。
 
 Output schema: daily_brief_v1`;
 
