@@ -1490,6 +1490,22 @@ export type PublishGateResult =
   | { tier: "red"; action: "rejected"; reason: string }
   | { tier: "green"; action: "skipped_no_draft" };
 
+function neutralizeSafeResearchDisclaimers(text: string): string {
+  return text
+    .replace(
+      /(?:不|未|無)(?:提供|構成|作為|寫出|寫|含有|包含|產生|輸出|給出|做出|給予)?[^。；;.!?！？\n]{0,48}(?:買賣建議|交易建議|投資建議|目標價|預測股價|報酬承諾|績效承諾|保證報酬|保證獲利|勝率)[^。；;.!?！？\n]{0,48}/g,
+      "safe_research_disclaimer"
+    )
+    .replace(
+      /(?:禁止|避免|不得)[^。；;.!?！？\n]{0,48}(?:買賣建議|交易建議|投資建議|目標價|預測股價|報酬承諾|績效承諾|保證報酬|保證獲利|勝率)[^。；;.!?！？\n]{0,48}/g,
+      "safe_research_disclaimer"
+    )
+    .replace(
+      /\b(?:no|not|without|does not|do not|never)\b.{0,48}\b(?:buy\/sell recommendation|buy recommendation|sell recommendation|trading advice|investment advice|target price|price target|guarantee|guaranteed profit|win rate)\b/g,
+      "safe_research_disclaimer"
+    );
+}
+
 /**
  * Classify draft payload into Green/Yellow/Red tier.
  * Red: buy/sell/target/guarantee/Sharpe keywords.
@@ -1556,6 +1572,7 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
 
   // Red tier keywords
   // Pete PR #230 F3 fix: 勝率 (win rate) added — was missing from red-tier classifier
+  const redKeywordText = neutralizeSafeResearchDisclaimers(policyText);
   const redPatterns = [
     /buy\b/, /sell\b/, /進場/, /賣出/, /買進/, /出脫/,
     /目標價/, /target price/, /price target/,
@@ -1564,7 +1581,7 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
     /勝率/, /win rate\s*[=:>]\s*[\d.]+/
   ];
   for (const p of redPatterns) {
-    if (p.test(policyText)) {
+    if (p.test(redKeywordText)) {
       return "red";
     }
   }
