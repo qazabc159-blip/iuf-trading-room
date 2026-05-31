@@ -4049,7 +4049,7 @@ app.post("/api/v1/kgi/sim/trade-smoke", async (c) => {
 //
 // B2 additions (2026-05-31):
 //   timeInForce — "ROD"|"IOC"|"FOK" (default: "ROD")
-//   orderCond   — "Cash"|"CashSelling"|"Margin"|"MarginSelling"|"Short"|"DayBuy"|"DaySell"
+//   orderCond   — "Cash"|"CashSelling"|"Margin"|"MarginDayTrade"|"ShortSelling"|"LendSelling"
 //                 (default: "Cash")
 //   priceType   — "MKT"|"Reference"|"LimitUp"|"LimitDown" — KGI special-price codes
 //                 when set, overrides numeric price field for the gateway call
@@ -4066,7 +4066,7 @@ export const kgiSimOrderBodySchema = z.object({
   quantityUnit: z.enum(["SHARE", "LOT"]).default("SHARE"),
   // B2: optional fields — gateway passes these through to KGI SDK
   timeInForce: z.enum(["ROD", "IOC", "FOK"]).default("ROD"),
-  orderCond: z.enum(["Cash", "CashSelling", "Margin", "MarginSelling", "Short", "DayBuy", "DaySell"]).default("Cash"),
+  orderCond: z.enum(["Cash", "CashSelling", "Margin", "MarginDayTrade", "ShortSelling", "LendSelling"]).default("Cash"),
   // priceType: KGI special-price codes; when present, overrides numeric price for gateway
   priceType: z.enum(["MKT", "Reference", "LimitUp", "LimitDown"]).optional(),
 }).transform((raw) => ({
