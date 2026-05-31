@@ -1,0 +1,38 @@
+{
+  "url": "http://127.0.0.1:3317/api/ui-final-v031/paper-trading-room?symbol=2330",
+  "loadedAtMs": 411,
+  "firstSrc": "/final-v031/portfolio/kline-frame?symbol=2330",
+  "secondSrc": "/final-v031/portfolio/kline-frame?symbol=2330",
+  "iframeSrcStable": true,
+  "metrics": {
+    "overflowY": "auto",
+    "overflowX": "auto",
+    "scrollHeight": 1080,
+    "clientHeight": 1080,
+    "scrollWidth": 1920,
+    "clientWidth": 1920,
+    "realFrameSrc": "/final-v031/portfolio/kline-frame?symbol=2330",
+    "realFrameHeight": 610,
+    "realFrameWidth": 1246,
+    "rpaneOverflowX": "hidden",
+    "rpaneScrollWidth": 350,
+    "rpaneClientWidth": 350,
+    "troomHeight": 1012,
+    "tapeHeight": 92,
+    "ledgerHeight": 150
+  },
+  "klineMetrics": {
+    "overflowY": "hidden",
+    "overflowX": "hidden",
+    "scrollHeight": 610,
+    "clientHeight": 610,
+    "scrollWidth": 1246,
+    "clientWidth": 1246,
+    "ribbonRect": null,
+    "canvasRect": null,
+    "canvasCount": 0
+  },
+  "consoleEventCount": 50,
+  "pageErrors": [],
+  "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_trading_room_ux_stability_20260531\\evidence\\w7_paper_sprint\\trading-room-ux-stability-local-direct-20260531.png"
+}

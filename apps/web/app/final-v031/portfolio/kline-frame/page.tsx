@@ -79,7 +79,7 @@ export default async function TradingRoomKlineFramePage({
 
   const kbarDate = officialBars.at(-1)?.dt ?? new Date().toISOString().slice(0, 10);
   let kbarError: string | null = null;
-  const kbarEnvelope = await getCompanyKBar(company.id, kbarDate, { days: 20 }).catch((error) => {
+  const kbarEnvelope = await getCompanyKBar(company.id, kbarDate, { days: 5 }).catch((error) => {
     kbarError = friendlyError(error);
     return null;
   });
@@ -107,6 +107,7 @@ export default async function TradingRoomKlineFramePage({
           sourceState={sourceState}
           sourceReason={sourceReason}
           planLevels={planLevels}
+          compactTradingRoom
         />
       </div>
     </main>
@@ -117,9 +118,11 @@ const frameCss = `
   html,
   body {
     margin: 0;
+    height: 100%;
     min-height: 100%;
     background: #080b10;
     color: #d7dde8;
+    overflow: hidden;
   }
 
   body:has(.trading-room-real-kline-frame) .app-sidebar,
@@ -138,13 +141,17 @@ const frameCss = `
   }
 
   body:has(.trading-room-real-kline-frame) {
-    overflow: auto;
+    overflow: hidden;
   }
 
   .trading-room-real-kline-frame {
-    min-height: 100%;
+    height: 100vh;
+    min-height: 0;
     background: #080b10;
     padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .kline-frame-note {
@@ -171,6 +178,16 @@ const frameCss = `
     border-top-right-radius: 0;
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .trading-room-kline-host {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
   }
 
   .trading-room-kline-host .panel-head {
@@ -184,36 +201,74 @@ const frameCss = `
     order: 2;
   }
 
+  .trading-room-kline-host .kline-chart-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 10px 10px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .trading-room-kline-host .kline-readout-ribbon {
+    position: relative;
+    inset: auto;
+    order: 2;
+    z-index: 1;
+    min-width: 0;
+    max-width: none;
+    width: auto;
+    margin: 0;
+    border-right: 0;
+    border-left: 0;
+    border-bottom: 0;
+    background: rgba(4, 8, 13, 0.82);
+  }
+
+  .trading-room-kline-host .kline-chart-canvas {
+    order: 1;
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    height: auto !important;
+  }
+
   .trading-room-kline-host ._ind-toggle-bar {
     order: 3;
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    gap: 6px;
   }
 
   .trading-room-kline-host ._ind-level-readout {
     order: 4;
+    flex: 0 0 auto;
+    margin: 0 10px 8px;
   }
 
   .trading-room-kline-host .kline-toolbar {
     order: 5;
+    flex: 0 0 auto;
+    padding: 8px 10px;
   }
 
   .trading-room-kline-host .kline-pending-line {
     order: 6;
+    display: none;
   }
 
   .trading-room-kline-host .kline-meta-line {
     order: 7;
+    display: none;
   }
 
   .trading-room-kline-host .kline-snapshot-strip {
     order: 8;
+    display: none;
   }
 
   .trading-room-kline-host .kline-density-strip {
     order: 9;
-  }
-
-  .trading-room-kline-host .kline-chart-canvas {
-    min-height: 500px;
+    display: none;
   }
 
   .kline-frame-empty {

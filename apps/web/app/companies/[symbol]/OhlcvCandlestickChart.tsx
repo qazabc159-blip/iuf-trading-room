@@ -793,6 +793,7 @@ export function OhlcvCandlestickChart({
   sourceState,
   sourceReason,
   planLevels,
+  compactTradingRoom = false,
 }: {
   bars: OhlcvBar[];
   kbarRows?: FinMindKBarRow[];
@@ -803,6 +804,7 @@ export function OhlcvCandlestickChart({
   sourceState: "LIVE" | "EMPTY" | "BLOCKED";
   sourceReason: string;
   planLevels?: PlanLevels;
+  compactTradingRoom?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
@@ -840,7 +842,7 @@ export function OhlcvCandlestickChart({
 
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
-  const chartHeight = isIntraday ? 460 : 440;
+  const chartHeight = compactTradingRoom ? 520 : isIntraday ? 460 : 440;
   const activeIntradayMinutes = activeMeta?.kind === "intraday" ? activeMeta.minutes ?? 1 : 1;
   const chartBars = useMemo(() => {
     const meta = ENABLED_INTERVALS.find((item) => item.value === interval);
@@ -1163,7 +1165,7 @@ export function OhlcvCandlestickChart({
   const dailyIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "daily");
   const intradayIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "intraday");
 
-  const showSubCharts = chartBars.length >= MIN_TREND_BARS && !insufficientTrend;
+  const showSubCharts = !compactTradingRoom && chartBars.length >= MIN_TREND_BARS && !insufficientTrend;
 
   return (
     <section className="panel hud-frame kline-panel">
@@ -1244,7 +1246,9 @@ export function OhlcvCandlestickChart({
           計畫點位
         </button>
 
-        <div className="_ind-divider" />
+        {!compactTradingRoom && (
+          <>
+            <div className="_ind-divider" />
 
         {/* RSI toggle */}
         <button
@@ -1267,6 +1271,8 @@ export function OhlcvCandlestickChart({
         >
           MACD
         </button>
+          </>
+        )}
       </div>
 
       {(volumePriceLevels.support !== null || volumePriceLevels.resistance !== null || planLevels) && (
