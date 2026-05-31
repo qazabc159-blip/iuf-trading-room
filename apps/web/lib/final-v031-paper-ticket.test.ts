@@ -6,6 +6,7 @@ const liveHydration = readFileSync(new URL("./final-v031-live.ts", import.meta.u
 const backendProxy = readFileSync(new URL("../app/api/ui-final-v031/backend/route.ts", import.meta.url), "utf8");
 const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "utf8");
 const klineChartSource = readFileSync(new URL("../app/companies/[symbol]/OhlcvCandlestickChart.tsx", import.meta.url), "utf8");
+const tradingRoomKlineFrameSource = readFileSync(new URL("../app/final-v031/portfolio/kline-frame/page.tsx", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
@@ -80,6 +81,13 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("body[data-screen-label=\"Trading Room v1\"] .tape");
     expect(ticketHtml).toContain("body[data-screen-label=\"Trading Room v1\"] .ledger");
     expect(ticketHtml).not.toContain("body[data-screen-label=\"Trading Room v1\"] .ledger,\nbody[data-screen-label=\"Trading Room v1\"] .tape");
+  });
+
+  it("forces the embedded trading-room K-line frame to fill its viewport", () => {
+    expect(tradingRoomKlineFrameSource).toContain("width: 100vw;");
+    expect(tradingRoomKlineFrameSource).toContain("width: 100% !important;");
+    expect(tradingRoomKlineFrameSource).toContain("width: calc(100% - 20px) !important;");
+    expect(tradingRoomKlineFrameSource).toContain("align-self: stretch;");
   });
 
   it("keeps trading-room real chart symbol and plan levels synchronized", () => {
