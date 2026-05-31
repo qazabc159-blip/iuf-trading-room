@@ -12347,6 +12347,8 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
 // endpoint GET /api/v1/internal/openalice/dispatcher-debug (Owner-only).
 type DispatcherTickResult =
   | "enqueued"
+  | "pipeline_triggered"
+  | "pipeline_skipped"
   | "skipped_existing_job"
   | "skipped_existing_brief"
   | "no_workspace"
@@ -12369,6 +12371,10 @@ const _lastTickState: DispatcherTickState = {
 
 /**
  * F3 (patched 2026-05-05): daily_brief dispatcher scheduler.
+ * 2026-05-31: route the 09:00 dispatcher into the same OpenAlice v2
+ * pipeline/template path used by pre-market/close ticks. Do not enqueue the
+ * old short-instruction daily_brief job here; that path can bypass the fixed
+ * daily_brief_contract_v2 shape.
  *
  * Bug fixed: original version passed workspaceSlug from env ("default" fallback)
  * but DB workspace slug is "primary-desk" (set by seedOwnerIfEmpty). This caused
@@ -12400,7 +12406,7 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
     return;
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
 
   // Idempotency: skip if TODAY's brief already has a queued job.
   // Pete review 2026-05-05 BLOCKER: must filter by parameters->>'targetDate'.
@@ -12447,38 +12453,24 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
     return;
   }
 
-  // Axis 4: load Lab strategy snapshot (graceful — null if snapshot absent)
-  const strategyRegistry = loadStrategySnapshot();
-  const strategyInstructions = strategyRegistry
-    ? `
-
-Strategy Registry (IUF Quant Lab — ${strategyRegistry.length} strategies, all BACKTESTED_RAW):
-${strategyRegistry.map((s) => `- ${s.strategyId} (${s.name}, type=${s.type}): totalTrades=${s.latestSummary.totalTrades}, rawPnl=${s.latestSummary.rawPnl} TWD, maxDd=${s.latestSummary.maxDd} TWD, avgHold=${s.latestSummary.avgHoldingDays}d. Caveats: ${s.caveats.join(", ")}.`).join("\n")}
-
-Include a "strategy_context" section in the brief: describe what each strategy's entry signals look like in today's market conditions. STRICT constraints for this section:
-- Do NOT state any buy / sell / 進場 / 賣出 / 買進 / 出脫 action.
-- Do NOT mention target price / 目標價 or specific price forecasts.
-- Do NOT claim guaranteed profit / 必賺 / 保證.
-- Do NOT cite win rate (勝率) as a performance claim.
-- Do NOT promote any strategy beyond BACKTESTED_RAW status.
-- Always prefix each strategy mention with its caveats (e.g. "NOT_PAPER_READY").`
-    : "";
-
   try {
-    const job = await enqueueOpenAliceJob({
-      workspaceSlug: workspace.slug,
-      taskType: "daily_brief",
-      schemaName: "daily_brief_v1",
-      instructions: `Generate the daily market intelligence brief for ${todayStr}. Summarize key themes, notable signals, and actionable insights from today's market data.${strategyInstructions}`,
-      contextRefs: [{ type: "date", id: todayStr }],
-      parameters: {
-        targetDate: todayStr,
-        autoDispatched: true,
-        ...(strategyRegistry ? { strategyRegistry } : {})
-      }
-    });
-    console.log(`[daily-brief-dispatcher] Enqueued daily_brief for ${todayStr}: jobId=${job.jobId}`);
-    _lastTickState.lastTickResult = "enqueued";
+    const result = await runPipelineTick("pre_market", workspace.slug);
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    if (result.skippedReason) {
+      console.log(`[daily-brief-dispatcher] Pipeline skipped for ${todayStr}: ${result.skippedReason}`);
+      _lastTickState.lastTickResult = "pipeline_skipped";
+      _lastTickState.lastEnqueueError = result.skippedReason;
+      _lastTickState.lastEnqueueErrorStack = null;
+      return;
+    }
+
+    console.log(
+      `[daily-brief-dispatcher] Routed to v2 pipeline for ${todayStr}: ` +
+      `jobId=${result.jobId ?? "n/a"} draftId=${result.draftId ?? "n/a"} briefId=${result.publishedBriefId ?? "n/a"}`
+    );
+    _lastTickState.lastTickResult = "pipeline_triggered";
     _lastTickState.lastEnqueueError = null;
     _lastTickState.lastEnqueueErrorStack = null;
   } catch (err) {
@@ -14039,7 +14031,9 @@ function startSchedulers(workspaceSlug: string): void {
   // STARTUP CATCH-UP GATE (30s after boot):
   //   If TST >= 09:05 AND today's brief has not been dispatched yet → fire once immediately.
   //   This covers deploys/restarts that happen after 09:00 TST.
-  //   SAFE ON BOOT: dispatcher only enqueues openAliceJobs row — no LLM call at boot.
+  //   The dispatcher now routes into the v2 OpenAlice pipeline. It may create
+  //   a direct draft if no OpenAlice device is active, but dedup still prevents
+  //   duplicate briefs for the same date.
   //
   // idempotency: runDailyBriefDispatcherTick() itself skips if job/brief already exists.
   // NOTE: _briefDispatcherLastFiredDate is now module-level (cycle17 — for observability).

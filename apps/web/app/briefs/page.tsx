@@ -204,6 +204,8 @@ function reviewerVerdictLabel(value: NonNullable<OpenAliceObservability["pipelin
 
 function dispatcherResultLabel(value: OpenAliceDispatcherDebug["lastTickResult"]) {
   if (value === "enqueued") return "已排入流程";
+  if (value === "pipeline_triggered") return "已走新版模板";
+  if (value === "pipeline_skipped") return "新版流程已略過";
   if (value === "skipped_existing_job") return "已有今日任務";
   if (value === "skipped_existing_brief") return "已有正式簡報";
   if (value === "no_workspace") return "需處理";
@@ -213,8 +215,8 @@ function dispatcherResultLabel(value: OpenAliceDispatcherDebug["lastTickResult"]
 }
 
 function dispatcherResultTone(value: OpenAliceDispatcherDebug["lastTickResult"]) {
-  if (value === "enqueued" || value === "skipped_existing_brief") return "status-ok";
-  if (value === "skipped_existing_job") return "gold";
+  if (value === "enqueued" || value === "pipeline_triggered" || value === "skipped_existing_brief") return "status-ok";
+  if (value === "skipped_existing_job" || value === "pipeline_skipped") return "gold";
   if (value === "enqueue_failed" || value === "no_workspace" || value === "no_db") return "status-bad";
   return "muted";
 }
@@ -222,6 +224,8 @@ function dispatcherResultTone(value: OpenAliceDispatcherDebug["lastTickResult"])
 function dispatcherNextStep(debug: OpenAliceDispatcherDebug | null) {
   if (!debug) return "今日簡報排程尚未回報，等待下一輪檢查。";
   if (debug.lastTickResult === "enqueued") return "今日簡報已排入工作流，等待整理、審核與發布。";
+  if (debug.lastTickResult === "pipeline_triggered") return "09:00 排程已改走新版 v2 模板流程，等待整理、審核與發布。";
+  if (debug.lastTickResult === "pipeline_skipped") return `新版流程已略過：${debug.lastEnqueueError ?? "請看已發布簡報或資料狀態"}`;
   if (debug.lastTickResult === "skipped_existing_job") return "今日已有簡報工作正在處理，請看草稿或發布狀態。";
   if (debug.lastTickResult === "skipped_existing_brief") return "今日正式簡報已發布，請檢查內容與來源紀錄。";
   if (debug.lastTickResult === "no_workspace" || debug.lastTickResult === "no_db") return "今日簡報流程需要處理，請檢查資料通道狀態。";
