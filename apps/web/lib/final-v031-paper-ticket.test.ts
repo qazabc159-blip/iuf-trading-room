@@ -5,6 +5,7 @@ const ticketHtml = readFileSync(new URL("../public/ui-final-v031/paper_trading_r
 const liveHydration = readFileSync(new URL("./final-v031-live.ts", import.meta.url), "utf8");
 const backendProxy = readFileSync(new URL("../app/api/ui-final-v031/backend/route.ts", import.meta.url), "utf8");
 const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "utf8");
+const klineChartSource = readFileSync(new URL("../app/companies/[symbol]/OhlcvCandlestickChart.tsx", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
@@ -66,6 +67,23 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain(".chart-panel.is-real-chart .chart-wrap{display:none!important}");
     expect(liveHydration).toContain("window.updateRealChartFrame(selected.symbol || \"2330\")");
     expect(middleware).toContain('"/final-v031/portfolio/kline-frame"');
+  });
+
+  it("keeps trading-room real chart symbol and plan levels synchronized", () => {
+    expect(ticketHtml).toContain("function buildRealChartFrameSrc(sym)");
+    expect(ticketHtml).toContain("['entry','stop','tp','from_rec','recommendationId','side']");
+    expect(ticketHtml).toContain("window.__IUF_SELECT_PAPER_SYMBOL__");
+    expect(liveHydration).toContain("window.__IUF_SELECT_PAPER_SYMBOL__ = selectPaperSymbol");
+  });
+
+  it("draws real volume-price indicators instead of decorative technical labels", () => {
+    expect(klineChartSource).toContain("function calcVolumePriceLevels");
+    expect(klineChartSource).toContain("量價支撐");
+    expect(klineChartSource).toContain("量價壓力");
+    expect(klineChartSource).toContain("計畫進場");
+    expect(klineChartSource).toContain("計畫停損");
+    expect(klineChartSource).toContain("計畫目標");
+    expect(klineChartSource).toContain("price: planLevels.entry");
   });
 
   it("surfaces KGI SIM quote auth unavailable instead of vague empty tables", () => {

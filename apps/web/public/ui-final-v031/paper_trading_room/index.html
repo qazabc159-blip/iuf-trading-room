@@ -590,7 +590,14 @@ function pickRow(sym){
   const live=window.__IUF_SYM_DATA_LIVE__||{};
   const liveSym=live[sym]||{};
   const d=Object.assign({},SYM_DATA[sym]||{},liveSym);
-  if(!d.nm)return;
+  if(!d.nm){
+    const row=Array.from(document.querySelectorAll('.wrow[data-sym]')).find(r=>r.dataset.sym===sym);
+    d.nm=row?.querySelector('.nm')?.textContent?.trim()||sym;
+    d.sec=row?.querySelector('.meta')?.textContent?.trim()||'台股';
+    const rowPrice=row?.querySelector('.price .v')?.textContent?.replace(/,/g,'').trim();
+    const parsedPrice=rowPrice&&Number.isFinite(Number(rowPrice))?Number(rowPrice):null;
+    d.price=parsedPrice;
+  }
   const fmt=v=>(v==null?'—':(+v).toLocaleString('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2}));
   const price=d.price,prev=d.prev;
   const chg=(price!=null&&prev!=null)?price-prev:null;
@@ -618,12 +625,29 @@ function pickRow(sym){
 document.querySelectorAll('.wrow').forEach(r=>r.addEventListener('click',()=>pickRow(r.dataset.sym)));
 
 let __realChartSymbol='';
+function buildRealChartFrameSrc(sym){
+  const nextParams=new URLSearchParams();
+  const selected=String(sym||'').toUpperCase();
+  nextParams.set('symbol',selected);
+  try{
+    const sourceParams=new URLSearchParams(window.location.search);
+    const handoffSymbol=String(sourceParams.get('symbol')||sourceParams.get('ticker')||'').toUpperCase();
+    const sameHandoff=!handoffSymbol||handoffSymbol===selected;
+    if(sameHandoff){
+      ['entry','stop','tp','from_rec','recommendationId','side'].forEach((key)=>{
+        const value=sourceParams.get(key);
+        if(value)nextParams.set(key,value);
+      });
+    }
+  }catch{}
+  nextParams.set('rev',Date.now().toString(36));
+  return '/final-v031/portfolio/kline-frame?'+nextParams.toString();
+}
 function updateRealChartFrame(sym){
   const frame=document.getElementById('real-kline-frame');
   if(!frame||!sym)return;
   __realChartSymbol=String(sym);
-  const next='/final-v031/portfolio/kline-frame?symbol='+encodeURIComponent(sym)+'&rev='+Date.now().toString(36);
-  frame.setAttribute('src',next);
+  frame.setAttribute('src',buildRealChartFrameSrc(sym));
 }
 window.updateRealChartFrame=updateRealChartFrame;
 
@@ -633,7 +657,13 @@ function syncRealChartFrameFromLocation(){
 }
 document.addEventListener('click',(event)=>{
   const row=event.target&&event.target.closest?event.target.closest('.wrow[data-sym]'):null;
-  if(row&&row.dataset&&row.dataset.sym)updateRealChartFrame(row.dataset.sym);
+  if(row&&row.dataset&&row.dataset.sym){
+    pickRow(row.dataset.sym);
+    updateRealChartFrame(row.dataset.sym);
+    if(row.dataset.iufEnhanced!=='1'&&typeof window.__IUF_SELECT_PAPER_SYMBOL__==='function'){
+      window.__IUF_SELECT_PAPER_SYMBOL__(row.dataset.sym).catch(()=>{});
+    }
+  }
 },true);
 const __pushState=history.pushState;
 history.pushState=function(){const result=__pushState.apply(this,arguments);setTimeout(syncRealChartFrameFromLocation,0);return result;};

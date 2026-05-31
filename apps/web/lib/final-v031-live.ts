@@ -995,8 +995,14 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     rows.forEach((row) => row.classList.toggle('on', String(row.dataset.sym || '').toUpperCase() === normalized));
     setText('.symhead .sym', normalized);
     setText('.symhead .nm', '載入中');
+    const immediateSymInput = $("#t-sym");
+    if (immediateSymInput) {
+      immediateSymInput.value = normalized;
+      immediateSymInput.setAttribute("value", normalized);
+    }
     await refreshClientLive();
   }
+  window.__IUF_SELECT_PAPER_SYMBOL__ = selectPaperSymbol;
 
   function attachPaperRowHandlers() {
     $$('.wrow').forEach((row) => {
