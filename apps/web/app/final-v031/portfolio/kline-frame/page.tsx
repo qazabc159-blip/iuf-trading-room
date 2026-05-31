@@ -24,6 +24,15 @@ function firstPositiveNumber(value: unknown) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+function taipeiDateString(date = new Date()) {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 export default async function TradingRoomKlineFramePage({
   searchParams,
 }: {
@@ -58,16 +67,24 @@ export default async function TradingRoomKlineFramePage({
     );
   }
 
-  let ohlcvError: string | null = null;
   const from = new Date();
   from.setFullYear(from.getFullYear() - 3);
-  const bars: OhlcvBar[] = await getCompanyOhlcv(company.id, {
-    interval: "1d",
-    from: from.toISOString().slice(0, 10),
-  }).catch((error) => {
-    ohlcvError = friendlyError(error);
-    return [];
-  });
+  let ohlcvError: string | null = null;
+  let kbarError: string | null = null;
+  const requestedKbarDate = taipeiDateString();
+  const [ohlcvResult, kbarResult] = await Promise.allSettled([
+    getCompanyOhlcv(company.id, {
+      interval: "1d",
+      from: from.toISOString().slice(0, 10),
+    }),
+    getCompanyKBar(company.id, requestedKbarDate, { days: 5 }),
+  ]);
+
+  const bars: OhlcvBar[] = ohlcvResult.status === "fulfilled" ? ohlcvResult.value : [];
+  if (ohlcvResult.status === "rejected") ohlcvError = friendlyError(ohlcvResult.reason);
+
+  const kbarEnvelope = kbarResult.status === "fulfilled" ? kbarResult.value : null;
+  if (kbarResult.status === "rejected") kbarError = friendlyError(kbarResult.reason);
 
   const officialBars = bars.filter((bar) => bar.source !== "mock");
   const sourceState = ohlcvError ? "BLOCKED" : officialBars.length > 0 ? "LIVE" : "EMPTY";
@@ -77,13 +94,8 @@ export default async function TradingRoomKlineFramePage({
       ? "交易室已接公司頁正式 OHLCV 圖表核心。"
       : "公司頁資料源沒有回傳可驗證日線，交易室不會補假圖。";
 
-  const kbarDate = officialBars.at(-1)?.dt ?? new Date().toISOString().slice(0, 10);
-  let kbarError: string | null = null;
-  const kbarEnvelope = await getCompanyKBar(company.id, kbarDate, { days: 5 }).catch((error) => {
-    kbarError = friendlyError(error);
-    return null;
-  });
   const kbarView: FinMindKBarView | null = kbarEnvelope?.data ?? null;
+  const kbarDate = kbarView?.date ?? officialBars.at(-1)?.dt ?? requestedKbarDate;
   const kbarState = kbarError ? "BLOCKED" : kbarView?.state ?? "EMPTY";
   const kbarReason = kbarError
     ? `分K資料讀取失敗：${kbarError}`
@@ -158,6 +170,7 @@ const frameCss = `
   }
 
   .kline-frame-note {
+    display: none;
     box-sizing: border-box;
     width: 100%;
     display: flex;
@@ -204,13 +217,13 @@ const frameCss = `
 
   .trading-room-kline-host .panel-head {
     order: 1;
-    padding: 10px 12px;
+    display: none;
   }
 
   .trading-room-kline-host .kline-chart-shell,
   .trading-room-kline-host .terminal-note,
   .trading-room-kline-host .kline-insufficient {
-    order: 2;
+    order: 6;
   }
 
   .trading-room-kline-host .kline-chart-shell {
@@ -226,18 +239,7 @@ const frameCss = `
   }
 
   .trading-room-kline-host .kline-readout-ribbon {
-    position: relative;
-    inset: auto;
-    order: 2;
-    z-index: 1;
-    min-width: 0;
-    max-width: none;
-    width: auto;
-    margin: 0;
-    border-right: 0;
-    border-left: 0;
-    border-bottom: 0;
-    background: rgba(4, 8, 13, 0.82);
+    display: none;
   }
 
   .trading-room-kline-host .kline-chart-canvas {
@@ -253,20 +255,74 @@ const frameCss = `
   .trading-room-kline-host ._ind-toggle-bar {
     order: 3;
     flex: 0 0 auto;
-    padding: 8px 10px;
-    gap: 6px;
+    padding: 4px 10px !important;
+    gap: 4px !important;
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+  }
+
+  .trading-room-kline-host ._ind-toggle-bar-label,
+  .trading-room-kline-host .kline-toolbar-label {
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .trading-room-kline-host ._ind-ma-expand {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .trading-room-kline-host ._ind-toggle-btn,
+  .trading-room-kline-host .kline-tab {
+    min-height: 24px;
+    padding: 4px 7px;
+    font-size: 10px;
   }
 
   .trading-room-kline-host ._ind-level-readout {
-    order: 4;
-    flex: 0 0 auto;
-    margin: 0 10px 8px;
+    order: 5;
+    display: none;
   }
 
   .trading-room-kline-host .kline-toolbar {
-    order: 5;
+    order: 2;
     flex: 0 0 auto;
-    padding: 8px 10px;
+    margin: 0 !important;
+    padding: 4px 10px !important;
+    display: flex !important;
+    align-items: center;
+    gap: 5px !important;
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+  }
+
+  .trading-room-kline-host .kline-control-group {
+    display: flex !important;
+    align-items: center;
+    gap: 3px !important;
+    min-width: 0;
+    width: auto !important;
+    flex: 0 0 auto !important;
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+    min-height: 24px !important;
+    padding: 1px !important;
+  }
+
+  .trading-room-kline-host .kline-signal-strip {
+    order: 7;
+    flex: 0 0 auto;
+    margin: 0 10px 5px;
+    padding: 4px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .trading-room-kline-host .kline-signal-chip {
+    padding: 4px 6px;
+  }
+
+  .trading-room-kline-host .kline-signal-chip small {
+    display: none;
   }
 
   .trading-room-kline-host .kline-pending-line {

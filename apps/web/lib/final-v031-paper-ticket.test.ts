@@ -91,7 +91,23 @@ describe("final-v031 paper ticket price gate", () => {
   });
 
   it("keeps compact trading-room K-line height inside the frame instead of clipping the readout", () => {
-    expect(klineChartSource).toContain("const chartHeight = compactTradingRoom ? 430");
+    expect(klineChartSource).toContain("const chartHeight = compactTradingRoom ? 300");
+  });
+
+  it("shows a real loading state for the embedded K-line instead of a blank iframe", () => {
+    expect(ticketHtml).toContain("real-kline-loading-overlay");
+    expect(ticketHtml).toContain("正在載入真實 K 線");
+    expect(ticketHtml).toContain("classList.add('is-loaded')");
+    expect(tradingRoomKlineFrameSource).toContain("Promise.allSettled");
+  });
+
+  it("keeps trading-room K-line controls actionable and data-driven", () => {
+    expect(klineChartSource).toContain("handleScroll");
+    expect(klineChartSource).toContain("handleScale");
+    expect(klineChartSource).toContain("buildIndicatorSignals");
+    expect(klineChartSource).toContain("trading-room-kline-signal-strip");
+    expect(tradingRoomKlineFrameSource).toContain(".trading-room-kline-host .kline-toolbar");
+    expect(tradingRoomKlineFrameSource).toContain("order: 2;");
   });
 
   it("keeps trading-room real chart symbol and plan levels synchronized", () => {
