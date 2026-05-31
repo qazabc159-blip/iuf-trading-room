@@ -405,24 +405,29 @@ export default async function BriefDetailPage({
   }
 
   const brief = result.data;
+  const quality = evaluateBriefQuality(brief);
+  const displayTitle = quality.displayable ? safeHeadline(brief.title) : "每日簡報內容暫停展示";
   const isPublished = brief.status === "published";
   const totalSections = brief.sections.length;
 
   return (
     <PageFrame
       code="BRF-D"
-      title={safeHeadline(brief.title)}
+      title={displayTitle}
       sub={`${brief.date} / 正式簡報`}
       note="此頁顯示單份簡報內容、政策檢查、風險審核與事實查核，不提供買賣建議。"
     >
       {/* parity-hero: title + status hero */}
       <div className="parity-hero">
         <div className="parity-hero-eyebrow">DAILY BRIEF — {brief.date}</div>
-        <h2>{safeHeadline(brief.title)}</h2>
+        <h2>{displayTitle}</h2>
         <p style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
           <span className={`parity-badge ${statusParityClass(brief.status)}`}>
             {statusLabel(brief.status)}
           </span>
+          {!quality.displayable && (
+            <span className="parity-badge bad">模板未通過 — 舊標題已隱藏</span>
+          )}
           <span style={{ color: "var(--tac-fg-3)", fontSize: 13 }}>建立 {formatDateTime(brief.createdAt)}</span>
           {!isPublished && (
             <span className="parity-badge bad">尚未發布 — 請勿視為正式內容</span>
