@@ -222,19 +222,34 @@ function dispatcherResultLabel(value: OpenAliceDispatcherDebug["lastTickResult"]
   return "等待檢查";
 }
 
-function dispatcherResultTone(value: OpenAliceDispatcherDebug["lastTickResult"]) {
+function dispatcherDisplayLabel(
+  value: OpenAliceDispatcherDebug["lastTickResult"],
+  surfaceState: DailyBriefSurface["state"]
+) {
+  if (surfaceState === "TEMPLATE_BLOCKED" && value === "skipped_existing_brief") return "需重產";
+  return dispatcherResultLabel(value);
+}
+
+function dispatcherResultTone(
+  value: OpenAliceDispatcherDebug["lastTickResult"],
+  surfaceState: DailyBriefSurface["state"] = "MISSING"
+) {
+  if (surfaceState === "TEMPLATE_BLOCKED" && value === "skipped_existing_brief") return "gold";
   if (value === "enqueued" || value === "pipeline_triggered" || value === "skipped_existing_brief") return "status-ok";
   if (value === "skipped_existing_job" || value === "pipeline_skipped") return "gold";
   if (value === "enqueue_failed" || value === "no_workspace" || value === "no_db") return "status-bad";
   return "muted";
 }
 
-function dispatcherNextStep(debug: OpenAliceDispatcherDebug | null) {
+function dispatcherNextStep(debug: OpenAliceDispatcherDebug | null, surfaceState: DailyBriefSurface["state"] = "MISSING") {
   if (!debug) return "今日簡報排程尚未回報，等待下一輪檢查。";
   if (debug.lastTickResult === "enqueued") return "今日簡報已排入工作流，等待整理、審核與發布。";
   if (debug.lastTickResult === "pipeline_triggered") return "09:00 排程已改走新版 v2 模板流程，等待整理、審核與發布。";
   if (debug.lastTickResult === "pipeline_skipped") return `新版流程已略過：${debug.lastEnqueueError ?? "請看已發布簡報或資料狀態"}`;
   if (debug.lastTickResult === "skipped_existing_job") return "今日已有簡報工作正在處理，請看草稿或發布狀態。";
+  if (debug.lastTickResult === "skipped_existing_brief" && surfaceState === "TEMPLATE_BLOCKED") {
+    return "今日 DB 有已發布紀錄，但模板未通過，不能視為正式完成；下一步要用新版 v2 模板重產。";
+  }
   if (debug.lastTickResult === "skipped_existing_brief") return "今日正式簡報已發布，請檢查內容與來源紀錄。";
   if (debug.lastTickResult === "no_workspace" || debug.lastTickResult === "no_db") return "今日簡報流程需要處理，請檢查資料通道狀態。";
   if (debug.lastTickResult === "enqueue_failed") return "今日簡報排程未完成，請檢查每日簡報流程。";
@@ -381,16 +396,24 @@ function OpenAlicePanel({ openAlice }: { openAlice: LoadState<OpenAliceObservabi
   );
 }
 
-function DispatcherDebugPanel({ dispatcher }: { dispatcher: LoadState<OpenAliceDispatcherDebug | null> }) {
+function DispatcherDebugPanel({
+  dispatcher,
+  surfaceState,
+}: {
+  dispatcher: LoadState<OpenAliceDispatcherDebug | null>;
+  surfaceState: DailyBriefSurface["state"];
+}) {
   const debug = dispatcher.data;
-  const tone = dispatcher.state === "LIVE" ? dispatcherResultTone(debug?.lastTickResult ?? null) : "status-bad";
+  const result = debug?.lastTickResult ?? null;
+  const label = dispatcherDisplayLabel(result, surfaceState);
+  const tone = dispatcher.state === "LIVE" ? dispatcherResultTone(result, surfaceState) : "status-bad";
   return (
-    <Panel code="BRF-DSP" title="今日簡報排程" sub="今天是否已排入工作流" right={dispatcher.state === "LIVE" ? dispatcherResultLabel(debug?.lastTickResult ?? null) : "需處理"}>
+    <Panel code="BRF-DSP" title="今日簡報排程" sub="今天是否已排入工作流" right={dispatcher.state === "LIVE" ? label : "需處理"}>
       <SourceLine state={dispatcher} label="用來確認今日簡報是否已進入整理與審核流程" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 1, background: "var(--night-rule-strong)", margin: "12px 0" }}>
         {[
           { l: "最近檢查", v: formatDateTime(debug?.lastTickAt), c: "dim" },
-          { l: "結果", v: dispatcherResultLabel(debug?.lastTickResult ?? null), c: tone === "status-ok" ? "ok" : tone === "gold" ? "warn" : "bad" },
+          { l: "結果", v: label, c: tone === "status-ok" ? "ok" : tone === "gold" ? "warn" : "bad" },
           { l: "需處理", v: debug?.lastEnqueueError ? "是" : "否", c: debug?.lastEnqueueError ? "bad" : "ok" },
         ].map(({ l, v, c }) => (
           <div key={l} style={{ padding: "10px 14px", background: "var(--night-1)" }}>
@@ -401,7 +424,7 @@ function DispatcherDebugPanel({ dispatcher }: { dispatcher: LoadState<OpenAliceD
       </div>
       <div className="terminal-note compact">
         <span className={`tg ${tone}`}>下一步</span>
-        {dispatcherNextStep(debug ?? null)}
+        {dispatcherNextStep(debug ?? null, surfaceState)}
       </div>
     </Panel>
   );
@@ -633,7 +656,7 @@ export default async function BriefsPage() {
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">排程</span>
           <span className={`parity-kpi-value ${dispatcher.state === "LIVE" ? "ok" : "bad"}`}>
-            {dispatcher.state === "LIVE" ? dispatcherResultLabel(dispatcher.data?.lastTickResult ?? null) : "需處理"}
+            {dispatcher.state === "LIVE" ? dispatcherDisplayLabel(dispatcher.data?.lastTickResult ?? null, surface.state) : "需處理"}
           </span>
           <span className="parity-kpi-sub">每日排程</span>
         </div>
@@ -682,7 +705,7 @@ export default async function BriefsPage() {
       <section className="brief-overview-grid">
         <BriefStatePanel surface={surface} />
         <OpenAlicePanel openAlice={openAlice} />
-        <DispatcherDebugPanel dispatcher={dispatcher} />
+        <DispatcherDebugPanel dispatcher={dispatcher} surfaceState={surface.state} />
       </section>
 
       <section className="brief-workflow-note">
