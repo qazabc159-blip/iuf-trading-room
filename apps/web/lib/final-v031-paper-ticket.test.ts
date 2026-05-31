@@ -168,7 +168,11 @@ describe("final-v031 paper ticket price gate", () => {
     const routeSource = readFileSync(new URL("../app/api/ui-final-v031/[screen]/route.ts", import.meta.url), "utf8");
     expect(routeSource).toContain("height: 100dvh !important;");
     expect(routeSource).toContain("overflow: hidden !important;");
+    expect(routeSource).toContain("height: 34px;");
+    expect(routeSource).toContain("overflow: hidden;");
     expect(routeSource).toContain("height: calc(100dvh - 34px) !important;");
+    expect(ticketHtml).toContain("overflow-y:hidden;");
+    expect(ticketHtml).toContain("gap:10px;");
   });
 
   it("draws real volume-price indicators instead of decorative technical labels", () => {

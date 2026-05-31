@@ -73,6 +73,9 @@ function contentShellOverrides(screen: ScreenKey) {
     position: sticky;
     top: 0;
     z-index: 30;
+    height: 34px;
+    min-height: 34px;
+    overflow: hidden;
   }
 
   .troom {
