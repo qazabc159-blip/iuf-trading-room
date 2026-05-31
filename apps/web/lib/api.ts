@@ -683,6 +683,8 @@ export type OpenAliceObservability = {
 
 export type OpenAliceDispatcherTickResult =
   | "enqueued"
+  | "pipeline_triggered"
+  | "pipeline_skipped"
   | "skipped_existing_job"
   | "skipped_existing_brief"
   | "no_workspace"
