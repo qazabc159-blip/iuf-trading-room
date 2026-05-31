@@ -4307,6 +4307,217 @@ app.get("/api/v1/internal/kgi/sim/daily-smoke-status", async (c) => {
   });
 });
 
+// ── S1 SIM Observation Endpoints (/api/v1/internal/s1-sim/*) ─────────────────
+//
+// Owner-only read-only endpoints for the S1 IUF_LS_OMNI pipeline observation.
+// Data source: Railway volume disk JSON files written by s1-sim-runner.ts.
+// Hard lines:
+//   - Owner-only (楊董 only)
+//   - File not found → 200 with empty/null state (never 500)
+//   - No credentials, no PII in response
+//   - Read-only: no writes triggered
+
+/** Resolve the Railway volume base path (mirrors s1-sim-runner.ts reportsBase()) */
+function _s1ReportsBase(): string {
+  const mount = process.env["RAILWAY_VOLUME_MOUNT_PATH"] ?? process.env["DATA_DIR"] ?? "runtime-data";
+  // Use simple forward-slash join — works on Linux (Railway) and Windows dev
+  return `${mount}/trading_room`;
+}
+
+/** Safe JSON file read — returns null instead of throwing */
+async function _readJsonSafe<T>(path: string): Promise<T | null> {
+  try {
+    const { promises: nodeFs } = await import("node:fs");
+    const raw = await nodeFs.readFile(path, "utf-8");
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Taipei date string YYYY-MM-DD (server-side helper, mirrors s1-sim-runner) */
+function _s1TaipeiDateStr(offsetDays = 0): string {
+  const d = new Date(Date.now() + offsetDays * 86_400_000);
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+}
+
+function _isValidS1DateParam(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [yearRaw, monthRaw, dayRaw] = value.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
+// GET /api/v1/internal/s1-sim/status — S1 pipeline observation status (Owner only)
+//
+// Returns:
+//   - today's window flags (signal/order/eod)
+//   - latest available basket date + regime
+//   - latest order submit date + counts
+//   - latest eod report date + unrealized PnL
+//   - gateway connectivity (KGI_GATEWAY_URL env presence)
+//   - today's order count from latest submit file
+app.get("/api/v1/internal/s1-sim/status", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const { join: pathJoin } = await import("node:path");
+  const base = _s1ReportsBase();
+  const todayTst = _s1TaipeiDateStr();
+
+  // Import s1-sim-runner window checkers (read-only, no side-effects)
+  const { isS1SignalWindow, isS1OrderSubmitWindow, isS1EodWindow } =
+    await import("./s1-sim-runner.js");
+
+  // Read today's basket (try today, yesterday, day-before)
+  type S1BasketLite = { signal_date: string; regime: string; exposure_weight: number; basket: unknown[]; generated_at_tst: string };
+  let latestBasket: S1BasketLite | null = null;
+  let latestBasketDate: string | null = null;
+  for (const tryDate of [todayTst, _s1TaipeiDateStr(-1), _s1TaipeiDateStr(-2)]) {
+    const p = pathJoin(base, "s1_sim_basket", `${tryDate}.json`);
+    const d = await _readJsonSafe<S1BasketLite>(p);
+    if (d) { latestBasket = d; latestBasketDate = tryDate; break; }
+  }
+
+  // Read today's order submit file (today only — no fallback for status)
+  type S1OrderLite = { submitted_at_tst: string; trading_date: string; orders_attempted: number; orders_accepted: number; orders_rejected: number };
+  const orderPath = pathJoin(base, "s1_sim_daily", `${todayTst}_orders.json`);
+  const latestOrders = await _readJsonSafe<S1OrderLite>(orderPath);
+
+  // Read today's EOD report
+  type S1EodLite = { trading_date: string; generated_at_tst: string; total_unrealized_pnl_twd: number | null; total_market_value_twd: number | null; data_source: string; positions: unknown[] };
+  const eodPath = pathJoin(base, "s1_sim_daily", `${todayTst}.json`);
+  const latestEod = await _readJsonSafe<S1EodLite>(eodPath);
+
+  return c.json({
+    sim_only: true,
+    prod_write_blocked: true,
+    as_of: new Date().toISOString(),
+    today_tst: todayTst,
+    windows: {
+      signal_open: isS1SignalWindow(),
+      order_submit_open: isS1OrderSubmitWindow(),
+      eod_open: isS1EodWindow(),
+    },
+    gateway_url_configured: !!(process.env["KGI_GATEWAY_URL"] ?? process.env["KGI_GATEWAY_BASE_URL"]),
+    latest_basket: latestBasket ? {
+      date: latestBasketDate,
+      regime: latestBasket.regime,
+      exposure_weight: latestBasket.exposure_weight,
+      basket_size: Array.isArray(latestBasket.basket) ? latestBasket.basket.length : 0,
+      generated_at_tst: latestBasket.generated_at_tst,
+    } : null,
+    today_orders: latestOrders ? {
+      submitted_at_tst: latestOrders.submitted_at_tst,
+      orders_attempted: latestOrders.orders_attempted,
+      orders_accepted: latestOrders.orders_accepted,
+      orders_rejected: latestOrders.orders_rejected,
+    } : null,
+    today_eod: latestEod ? {
+      generated_at_tst: latestEod.generated_at_tst,
+      total_unrealized_pnl_twd: latestEod.total_unrealized_pnl_twd,
+      total_market_value_twd: latestEod.total_market_value_twd,
+      position_count: Array.isArray(latestEod.positions) ? latestEod.positions.length : 0,
+      data_source: latestEod.data_source,
+    } : null,
+  });
+});
+
+// GET /api/v1/internal/s1-sim/eod-report?date=YYYY-MM-DD — S1 EOD report (Owner only)
+//
+// Returns the full S1EodReport JSON for the requested date.
+// date param defaults to today (Asia/Taipei). Returns empty state if file not found.
+app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const { join: pathJoin } = await import("node:path");
+  const dateParam = c.req.query("date") ?? _s1TaipeiDateStr();
+
+  if (!_isValidS1DateParam(dateParam)) {
+    return c.json({ error: "INVALID_DATE", message: "date must be a valid YYYY-MM-DD calendar date" }, 400);
+  }
+
+  const base = _s1ReportsBase();
+  const path = pathJoin(base, "s1_sim_daily", `${dateParam}.json`);
+
+  // Import S1EodReport type (dynamic, type-only at runtime)
+  type S1EodReport = import("./s1-sim-runner.js").S1EodReport;
+  const report = await _readJsonSafe<S1EodReport>(path);
+
+  if (!report) {
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      date: dateParam,
+      found: false,
+      report: null,
+    });
+  }
+
+  return c.json({
+    sim_only: true,
+    prod_write_blocked: true,
+    date: dateParam,
+    found: true,
+    report,
+  });
+});
+
+// GET /api/v1/internal/s1-sim/basket?date=YYYY-MM-DD — S1 basket (Owner only)
+//
+// Returns the full S1Basket JSON for the requested date.
+// date param defaults to today (Asia/Taipei). Returns empty state if file not found.
+app.get("/api/v1/internal/s1-sim/basket", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const { join: pathJoin } = await import("node:path");
+  const dateParam = c.req.query("date") ?? _s1TaipeiDateStr();
+
+  if (!_isValidS1DateParam(dateParam)) {
+    return c.json({ error: "INVALID_DATE", message: "date must be a valid YYYY-MM-DD calendar date" }, 400);
+  }
+
+  const base = _s1ReportsBase();
+  const path = pathJoin(base, "s1_sim_basket", `${dateParam}.json`);
+
+  type S1Basket = import("./s1-sim-runner.js").S1Basket;
+  const basket = await _readJsonSafe<S1Basket>(path);
+
+  if (!basket) {
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      date: dateParam,
+      found: false,
+      basket: null,
+    });
+  }
+
+  return c.json({
+    sim_only: true,
+    prod_write_blocked: true,
+    date: dateParam,
+    found: true,
+    basket,
+  });
+});
+
 // ── KGI SIM Account Data Proxy (/api/v1/kgi/sim/positions, /orders, /balance) ──
 //
 // Owner-only read-only proxy to KGI gateway account endpoints.
@@ -7779,26 +7990,63 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   const client = getKgiQuoteClient();
   const updatedAt = new Date().toISOString();
 
-  // 2. Whitelist check — surface BLOCKED early (no network call)
+  // Helper: TWSE OpenAPI EOD fallback for quote/realtime
+  // Returns { lastPrice, volume, source, state } from STOCK_DAY_ALL when KGI unavailable.
+  async function _twseRealtimeFallback(sym: string): Promise<{
+    lastPrice: number | null;
+    volume: number | null;
+    source: "twse_openapi_eod";
+    state: "STALE" | "NO_DATA";
+    freshness: "stale" | "not-available";
+    note: string;
+  }> {
+    try {
+      const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+      const rows = await getStockDayAllRows();
+      const row = rows.find((r) => r.Code === sym);
+      if (!row) {
+        return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all" };
+      }
+      const closeRaw = row.ClosingPrice?.replace(/,/g, "").trim();
+      const volRaw = row.TradeVolume?.replace(/,/g, "").trim();
+      const close = closeRaw && !isNaN(Number(closeRaw)) ? Number(closeRaw) : null;
+      const vol = volRaw && !isNaN(Number(volRaw)) ? Number(volRaw) : null;
+      return {
+        lastPrice: close,
+        volume: vol,
+        source: "twse_openapi_eod",
+        state: close !== null ? "STALE" : "NO_DATA",
+        freshness: close !== null ? "stale" : "not-available",
+        note: `twse_eod date=${row.Date ?? "unknown"}`,
+      };
+    } catch (e) {
+      console.warn(`[realtime] TWSE fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
+      return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed" };
+    }
+  }
+
+  // 2. Whitelist check — KGI not available for this symbol → TWSE EOD fallback
   if (!client.isSymbolAllowed(symbol)) {
+    const fb = await _twseRealtimeFallback(symbol);
     return c.json({
       data: {
         symbol,
-        lastPrice: null,
+        lastPrice: fb.lastPrice,
         bid: null,
         ask: null,
-        volume: null,
-        freshness: "not-available" as const,
-        state: "BLOCKED" as const,
-        reason: "symbol_not_whitelisted",
-        source: "kgi-gateway" as const,
+        volume: fb.volume,
+        freshness: fb.freshness,
+        state: fb.state,
+        reason: fb.state === "NO_DATA" ? fb.note : undefined,
+        source: fb.source,
+        note: fb.note,
         updatedAt
       }
     });
   }
 
   // 3. Subscribe tick + bidask (idempotent on gateway; cache prevents redundant calls)
-  //    Tick subscribe failure → BLOCKED immediately (no data to return).
+  //    Tick subscribe failure → TWSE fallback.
   //    Bidask subscribe failure → non-fatal (tick-only data is still useful).
   if (!_realtimeSubscribedSymbols.has(symbol)) {
     const [subTickResult, subBidAskResult] = await Promise.allSettled([
@@ -7813,17 +8061,20 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       else if (err instanceof KgiQuoteAuthError) subscribeBlockReason = "gateway_auth_error";
       else if (err instanceof KgiQuoteDisabledError) subscribeBlockReason = "quote_disabled";
 
+      // KGI subscribe failed → try TWSE fallback
+      const fb = await _twseRealtimeFallback(symbol);
       return c.json({
         data: {
           symbol,
-          lastPrice: null,
+          lastPrice: fb.lastPrice,
           bid: null,
           ask: null,
-          volume: null,
-          freshness: "not-available" as const,
-          state: "BLOCKED" as const,
+          volume: fb.volume,
+          freshness: fb.freshness,
+          state: fb.state,
           reason: subscribeBlockReason,
-          source: "kgi-gateway" as const,
+          source: fb.source,
+          note: `kgi_subscribe_failed:${subscribeBlockReason} → ${fb.note}`,
           updatedAt
         }
       });
@@ -7889,10 +8140,26 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     }
   }
 
-  // 5. Determine state
+  // 5. Determine state — if KGI tick failed, try TWSE fallback
   let state: "LIVE" | "STALE" | "BLOCKED" | "NO_DATA";
   if (blockedReason) {
-    state = "BLOCKED";
+    // KGI tick failed — try TWSE EOD fallback before returning BLOCKED
+    const fb = await _twseRealtimeFallback(symbol);
+    return c.json({
+      data: {
+        symbol,
+        lastPrice: fb.lastPrice,
+        bid: null,
+        ask: null,
+        volume: fb.volume,
+        freshness: fb.freshness,
+        state: fb.state,
+        reason: blockedReason,
+        source: fb.source,
+        note: `kgi_blocked:${blockedReason} → ${fb.note}`,
+        updatedAt
+      }
+    });
   } else if (freshness === "fresh" && lastPrice !== null) {
     state = "LIVE";
   } else if (freshness === "stale" && lastPrice !== null) {
@@ -7910,7 +8177,6 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       volume,
       freshness,
       state,
-      ...(blockedReason ? { reason: blockedReason } : {}),
       source: "kgi-gateway" as const,
       updatedAt
     }
@@ -17339,13 +17605,14 @@ app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
-serve(
-  {
-    fetch: app.fetch,
-    port,
-    hostname: host
-  },
-  async (info) => {
+if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT === "1") {
+  serve(
+    {
+      fetch: app.fetch,
+      port,
+      hostname: host
+    },
+    async (info) => {
     console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
     const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
     await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
@@ -17425,5 +17692,6 @@ serve(
           console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
         );
     }, 10_000);
-  }
-);
+    }
+  );
+}

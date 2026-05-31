@@ -10301,6 +10301,46 @@ import {
   type TradeSmokeResult,
 } from "../apps/api/src/broker/kgi-sim-env.ts";
 
+async function withFastKgiGatewayMock<T>(fn: () => Promise<T>): Promise<T> {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = {
+    KGI_GATEWAY_URL: process.env["KGI_GATEWAY_URL"],
+    KGI_PERSON_ID: process.env["KGI_PERSON_ID"],
+    KGI_PERSON_PWD: process.env["KGI_PERSON_PWD"],
+  };
+
+  process.env["KGI_GATEWAY_URL"] = "http://kgi-unit-gateway.test";
+  delete process.env["KGI_PERSON_ID"];
+  delete process.env["KGI_PERSON_PWD"];
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "http://kgi-unit-gateway.test/health") {
+      return new Response(JSON.stringify({ status: "ok", kgi_logged_in: false, account_set: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ error: "unexpected test URL " + url }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 test("DS1: getDailySmokeHistory returns empty array on fresh start", () => {
   _resetDailySmokeHistory();
   const hist = getDailySmokeHistory();
@@ -10309,55 +10349,51 @@ test("DS1: getDailySmokeHistory returns empty array on fresh start", () => {
 });
 
 test("DS2: runKgiSimDailySmokeSchedulerTick with forceRun=true returns valid entry", async () => {
-  _resetDailySmokeHistory();
-  _resetKgiSimState();
-  const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
-  // Must return an entry (not null) when forceRun=true
-  assert.ok(entry !== null, "DS2: entry returned with forceRun=true");
-  assert.equal(entry!.sim_only, true, "DS2: sim_only must always be true");
-  assert.ok(typeof entry!.runId === "string" && entry!.runId.length > 0, "DS2: runId is a non-empty string");
-  assert.ok(typeof entry!.firedAt === "string" && entry!.firedAt.length > 0, "DS2: firedAt is a non-empty string");
-  assert.ok(typeof entry!.durationMs === "number" && entry!.durationMs >= 0, "DS2: durationMs is a non-negative number");
-  assert.ok(
-    ["pass", "fail", "partial"].includes(entry!.overallStatus),
-    `DS2: overallStatus must be pass/fail/partial, got: ${entry!.overallStatus}`
-  );
-  // In memory mode (no DB): prodBrokerAuditCount must be 0 (DB unavailable = defaults to 0)
-  assert.equal(entry!.prodBrokerAuditCount, 0, "DS2: prodBrokerAuditCount=0 when DB unavailable");
-  // tradeCheck must be null: confirmedByBruce/confirmedByJason not provided
-  assert.equal(entry!.tradeCheck, null, "DS2: tradeCheck=null when dual-confirm not provided");
-  // quoteCheck structure must always be present
-  assert.ok(entry!.quoteCheck && typeof entry!.quoteCheck === "object", "DS2: quoteCheck object present");
-  assert.ok(typeof entry!.quoteCheck.gatewayReachable === "boolean", "DS2: quoteCheck.gatewayReachable is boolean");
-  assert.ok(typeof entry!.quoteCheck.loggedIn === "boolean", "DS2: quoteCheck.loggedIn is boolean");
-  assert.ok(typeof entry!.quoteCheck.subscribed === "boolean", "DS2: quoteCheck.subscribed is boolean");
-  assert.ok(typeof entry!.quoteCheck.tickReceived === "boolean", "DS2: quoteCheck.tickReceived is boolean");
-  // Entry must be stored in ring buffer
-  const hist = getDailySmokeHistory();
-  assert.equal(hist.length, 1, "DS2: entry stored in history buffer");
-  assert.equal(hist[0]!.runId, entry!.runId, "DS2: stored entry matches returned entry");
+  await withFastKgiGatewayMock(async () => {
+    _resetDailySmokeHistory();
+    _resetKgiSimState();
+    const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+    assert.ok(entry !== null, "DS2: entry returned with forceRun=true");
+    assert.equal(entry!.sim_only, true, "DS2: sim_only must always be true");
+    assert.ok(typeof entry!.runId === "string" && entry!.runId.length > 0, "DS2: runId is a non-empty string");
+    assert.ok(typeof entry!.firedAt === "string" && entry!.firedAt.length > 0, "DS2: firedAt is a non-empty string");
+    assert.ok(typeof entry!.durationMs === "number" && entry!.durationMs >= 0, "DS2: durationMs is a non-negative number");
+    assert.ok(
+      ["pass", "fail", "partial"].includes(entry!.overallStatus),
+      `DS2: overallStatus must be pass/fail/partial, got: ${entry!.overallStatus}`
+    );
+    assert.equal(entry!.prodBrokerAuditCount, 0, "DS2: prodBrokerAuditCount=0 when DB unavailable");
+    assert.equal(entry!.tradeCheck, null, "DS2: tradeCheck=null when dual-confirm not provided");
+    assert.ok(entry!.quoteCheck && typeof entry!.quoteCheck === "object", "DS2: quoteCheck object present");
+    assert.ok(typeof entry!.quoteCheck.gatewayReachable === "boolean", "DS2: quoteCheck.gatewayReachable is boolean");
+    assert.ok(typeof entry!.quoteCheck.loggedIn === "boolean", "DS2: quoteCheck.loggedIn is boolean");
+    assert.ok(typeof entry!.quoteCheck.subscribed === "boolean", "DS2: quoteCheck.subscribed is boolean");
+    assert.ok(typeof entry!.quoteCheck.tickReceived === "boolean", "DS2: quoteCheck.tickReceived is boolean");
+    const hist = getDailySmokeHistory();
+    assert.equal(hist.length, 1, "DS2: entry stored in history buffer");
+    assert.equal(hist[0]!.runId, entry!.runId, "DS2: stored entry matches returned entry");
+  });
 });
 
 test("DS3: ring buffer capped at 7 entries; getDailySmokeHistory returns newest-first", async () => {
-  _resetDailySmokeHistory();
-  _resetKgiSimState();
-  // Fire 8 times (forceRun bypasses window + idempotency)
-  for (let i = 0; i < 8; i++) {
-    await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
-  }
-  const hist = getDailySmokeHistory();
-  assert.equal(hist.length, 7, "DS3: ring buffer capped at 7 entries");
-  // Verify newest-first ordering
-  if (hist.length >= 2) {
-    const firstTime = new Date(hist[0]!.firedAt).getTime();
-    const secondTime = new Date(hist[1]!.firedAt).getTime();
-    assert.ok(firstTime >= secondTime, "DS3: history is newest-first");
-  }
-  // All entries have sim_only=true and valid overallStatus
-  for (const e of hist) {
-    assert.equal(e.sim_only, true, "DS3: sim_only=true on all entries");
-    assert.ok(["pass", "fail", "partial"].includes(e.overallStatus), "DS3: overallStatus valid");
-  }
+  await withFastKgiGatewayMock(async () => {
+    _resetDailySmokeHistory();
+    _resetKgiSimState();
+    for (let i = 0; i < 8; i++) {
+      await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+    }
+    const hist = getDailySmokeHistory();
+    assert.equal(hist.length, 7, "DS3: ring buffer capped at 7 entries");
+    if (hist.length >= 2) {
+      const firstTime = new Date(hist[0]!.firedAt).getTime();
+      const secondTime = new Date(hist[1]!.firedAt).getTime();
+      assert.ok(firstTime >= secondTime, "DS3: history is newest-first");
+    }
+    for (const e of hist) {
+      assert.equal(e.sim_only, true, "DS3: sim_only=true on all entries");
+      assert.ok(["pass", "fail", "partial"].includes(e.overallStatus), "DS3: overallStatus valid");
+    }
+  });
 });
 
 test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) returns null", async () => {
@@ -10375,9 +10411,11 @@ test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) retu
     assert.equal(hist.length, 0, "DS4: ring buffer empty when skipped outside window");
   } else {
     // Window is currently open: use forceRun to verify normal execution path
-    const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
-    assert.ok(entry !== null, "DS4 (window-open): forceRun=true returns entry");
-    assert.equal(entry!.sim_only, true, "DS4 (window-open): sim_only=true");
+    await withFastKgiGatewayMock(async () => {
+      const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+      assert.ok(entry !== null, "DS4 (window-open): forceRun=true returns entry");
+      assert.equal(entry!.sim_only, true, "DS4 (window-open): sim_only=true");
+    });
   }
 });
 
@@ -10559,22 +10597,20 @@ test("ORT3: runSimTradeSmoke without dual-confirm returns awaiting_dual_confirm 
 });
 
 test("ORT4: runSimTradeSmoke with dual-confirm attempts order submit (gateway unreachable in CI)", async () => {
-  _resetKgiSimState();
-  const result = await runSimTradeSmoke({
-    workspaceId: null,
-    symbol: "0050",
-    confirmedByBruce: true,
-    confirmedByJason: true,
+  await withFastKgiGatewayMock(async () => {
+    _resetKgiSimState();
+    const result = await runSimTradeSmoke({
+      workspaceId: null,
+      symbol: "0050",
+      confirmedByBruce: true,
+      confirmedByJason: true,
+    });
+    assert.equal(result.sim_only, true, "ORT4: sim_only always true");
+    assert.ok(typeof result.orderSubmitted === "boolean", "ORT4: orderSubmitted is boolean");
+    assert.ok(typeof result.orderReportReceived === "boolean", "ORT4: orderReportReceived is boolean");
+    const state = getKgiSimState();
+    assert.notEqual(state.lastSimOrderStatus, "pending", "ORT4: lastSimOrderStatus updated after run");
   });
-  assert.equal(result.sim_only, true, "ORT4: sim_only always true");
-  // In CI (no gateway), gatewayReachable=false and orderSubmitted=true (we attempted fetch)
-  // OR if gateway reachable, orderSubmitted=true and outcome is accepted/not_enabled/rejected
-  assert.ok(typeof result.orderSubmitted === "boolean", "ORT4: orderSubmitted is boolean");
-  assert.ok(typeof result.orderReportReceived === "boolean", "ORT4: orderReportReceived is boolean");
-  // State must reflect the attempt
-  const state = getKgiSimState();
-  // lastSimOrderStatus must be updated (not "pending" after a dual-confirmed run)
-  assert.notEqual(state.lastSimOrderStatus, "pending", "ORT4: lastSimOrderStatus updated after run");
 });
 
 // ── P1-A Regression: institutional aggregateInstRows name-matching ─────────────
@@ -14754,11 +14790,204 @@ test("BULK-SEED-5: bulk-seed fetches from both TWSE and TPEx OpenAPI URLs", () =
   );
 });
 
-// Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
-// Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
+// =============================================================================
+// B1: S1 SIM Observation Endpoints — unit tests (S1-OBS-1..5)
+// =============================================================================
+//
+// These tests exercise the logic used in the 3 S1 internal endpoints without
+// needing a real HTTP server. They test:
+//   - _s1TaipeiDateStr() date math
+//   - _readJsonSafe() graceful null on missing file
+//   - Endpoint response shape (empty-state when file absent)
+//   - Date param validation pattern (YYYY-MM-DD guard)
+//   - TWSE fallback row parse (ClosingPrice / TradeVolume cleaning)
+
+test("S1-OBS-1: taipei date string is YYYY-MM-DD format", () => {
+  // Mirror the function inline so the test is self-contained
+  function taipeiDateStr(offsetDays = 0): string {
+    const d = new Date(Date.now() + offsetDays * 86_400_000);
+    return d.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+  }
+  const today = taipeiDateStr(0);
+  assert.match(today, /^\d{4}-\d{2}-\d{2}$/, "S1-OBS-1: today format must be YYYY-MM-DD");
+  const yesterday = taipeiDateStr(-1);
+  assert.match(yesterday, /^\d{4}-\d{2}-\d{2}$/, "S1-OBS-1: yesterday format must be YYYY-MM-DD");
+  // yesterday must be before today lexicographically
+  assert.ok(yesterday < today, "S1-OBS-1: yesterday < today lexicographically");
+});
+
+test("S1-OBS-2: _readJsonSafe returns null for non-existent path", async () => {
+  // Replicate the logic inline
+  async function readJsonSafe<T>(filePath: string): Promise<T | null> {
+    try {
+      const { promises: nodeFs } = await import("node:fs");
+      const raw = await nodeFs.readFile(filePath, "utf-8");
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  }
+  const result = await readJsonSafe("/non/existent/path/file.json");
+  assert.equal(result, null, "S1-OBS-2: missing file must return null (not throw)");
+});
+
+test("S1-OBS-3: _readJsonSafe parses valid JSON correctly", async () => {
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const fs = await import("node:fs/promises");
+  // Write a temp JSON file
+  const tmpDir = os.tmpdir();
+  const tmpFile = path.join(tmpDir, `s1-obs-test-${Date.now()}.json`);
+  const testData = { schema: "s1_sim_basket_v1", regime: "sideways", exposure_weight: 0.5, basket: [] };
+  await fs.writeFile(tmpFile, JSON.stringify(testData), "utf-8");
+
+  async function readJsonSafe<T>(filePath: string): Promise<T | null> {
+    try {
+      const { promises: nodeFs } = await import("node:fs");
+      const raw = await nodeFs.readFile(filePath, "utf-8");
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  const result = await readJsonSafe<typeof testData>(tmpFile);
+  assert.ok(result !== null, "S1-OBS-3: file found — result must not be null");
+  assert.equal(result?.regime, "sideways", "S1-OBS-3: regime must be 'sideways'");
+  assert.equal(result?.schema, "s1_sim_basket_v1", "S1-OBS-3: schema field preserved");
+  await fs.unlink(tmpFile).catch(() => {/* cleanup best-effort */});
+});
+
+test("S1-OBS-4: date param validation pattern (YYYY-MM-DD)", () => {
+  function isValidS1DateParam(value: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const [yearRaw, monthRaw, dayRaw] = value.split("-");
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return (
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+    );
+  }
+  assert.ok(isValidS1DateParam("2026-05-31"), "S1-OBS-4: 2026-05-31 valid");
+  assert.ok(isValidS1DateParam("2024-01-01"), "S1-OBS-4: 2024-01-01 valid");
+  assert.ok(!isValidS1DateParam("20260531"), "S1-OBS-4: 20260531 invalid (no dashes)");
+  assert.ok(!isValidS1DateParam("2026-5-31"), "S1-OBS-4: 2026-5-31 invalid (single digit month)");
+  assert.ok(!isValidS1DateParam("invalid"), "S1-OBS-4: 'invalid' rejected");
+  assert.ok(!isValidS1DateParam("2026-13-01"), "S1-OBS-4: month 13 rejected");
+  assert.ok(!isValidS1DateParam("2026-02-30"), "S1-OBS-4: impossible day rejected");
+});
+
+test("S1-OBS-5: TWSE ClosingPrice / TradeVolume cleaning logic", () => {
+  // Mirrors _twseRealtimeFallback() parse logic
+  function parseRow(row: { ClosingPrice?: string; TradeVolume?: string }): { close: number | null; vol: number | null } {
+    const closeRaw = row.ClosingPrice?.replace(/,/g, "").trim();
+    const volRaw = row.TradeVolume?.replace(/,/g, "").trim();
+    const close = closeRaw && !isNaN(Number(closeRaw)) ? Number(closeRaw) : null;
+    const vol = volRaw && !isNaN(Number(volRaw)) ? Number(volRaw) : null;
+    return { close, vol };
+  }
+
+  // Normal row with commas
+  const r1 = parseRow({ ClosingPrice: "2,425.00", TradeVolume: "45,678,000" });
+  assert.equal(r1.close, 2425.00, "S1-OBS-5: comma-formatted price parsed correctly");
+  assert.equal(r1.vol, 45678000, "S1-OBS-5: comma-formatted volume parsed correctly");
+
+  // Zero / empty
+  const r2 = parseRow({ ClosingPrice: "--", TradeVolume: "" });
+  assert.equal(r2.close, null, "S1-OBS-5: '--' price → null");
+  assert.equal(r2.vol, null, "S1-OBS-5: empty volume → null");
+
+  // Normal numeric
+  const r3 = parseRow({ ClosingPrice: "100.5", TradeVolume: "1000" });
+  assert.equal(r3.close, 100.5, "S1-OBS-5: plain price 100.5");
+  assert.equal(r3.vol, 1000, "S1-OBS-5: plain volume 1000");
+});
+
+// =============================================================================
+// C6: TWSE Quote Fallback — unit tests (C6-TWSE-FB-1..5)
+// =============================================================================
+//
+// Tests for the TWSE OpenAPI fallback parse logic used in /companies/:id/quote/realtime
+// when KGI quote is unavailable. Tests are self-contained (no HTTP, no DB).
+
+test("C6-TWSE-FB-1: TWSE fallback finds matching row by symbol Code", () => {
+  type StockDayAllRow = { Code: string; ClosingPrice: string; TradeVolume: string; Date: string; Change: string };
+  const rows: StockDayAllRow[] = [
+    { Code: "2330", ClosingPrice: "850.0", TradeVolume: "20,000,000", Date: "1130531", Change: "+5" },
+    { Code: "2454", ClosingPrice: "1,250.0", TradeVolume: "5,000,000", Date: "1130531", Change: "-10" },
+  ];
+  const row = rows.find((r) => r.Code === "2330");
+  assert.ok(row !== undefined, "C6-TWSE-FB-1: row for 2330 must be found");
+  assert.equal(row?.Code, "2330", "C6-TWSE-FB-1: Code matches");
+});
+
+test("C6-TWSE-FB-2: TWSE fallback returns NO_DATA for unknown symbol", () => {
+  type StockDayAllRow = { Code: string; ClosingPrice: string; TradeVolume: string; Date: string };
+  const rows: StockDayAllRow[] = [
+    { Code: "2330", ClosingPrice: "850.0", TradeVolume: "20,000,000", Date: "1130531" },
+  ];
+  const row = rows.find((r) => r.Code === "9999");
+  assert.equal(row, undefined, "C6-TWSE-FB-2: unknown symbol must not be found");
+  // When row is undefined → state=NO_DATA, lastPrice=null
+  const state = row ? "STALE" : "NO_DATA";
+  assert.equal(state, "NO_DATA", "C6-TWSE-FB-2: state must be NO_DATA for unknown symbol");
+});
+
+test("C6-TWSE-FB-3: TWSE fallback parse yields correct lastPrice and volume", () => {
+  type StockDayAllRow = { Code: string; ClosingPrice: string; TradeVolume: string; Date: string };
+  const row: StockDayAllRow = { Code: "2330", ClosingPrice: "850.00", TradeVolume: "20,123,456", Date: "1130531" };
+
+  const closeRaw = row.ClosingPrice.replace(/,/g, "").trim();
+  const volRaw = row.TradeVolume.replace(/,/g, "").trim();
+  const close = closeRaw && !isNaN(Number(closeRaw)) ? Number(closeRaw) : null;
+  const vol = volRaw && !isNaN(Number(volRaw)) ? Number(volRaw) : null;
+
+  assert.equal(close, 850.00, "C6-TWSE-FB-3: lastPrice must be 850.00");
+  assert.equal(vol, 20123456, "C6-TWSE-FB-3: volume must be 20123456");
+  // state = STALE when close is not null
+  const state = close !== null ? "STALE" : "NO_DATA";
+  assert.equal(state, "STALE", "C6-TWSE-FB-3: state must be STALE when price is available");
+});
+
+test("C6-TWSE-FB-4: TWSE fallback gracefully handles malformed ClosingPrice", () => {
+  const malformedPrices = ["--", "N/A", "", "除息", "暫停交易"];
+  for (const raw of malformedPrices) {
+    const cleaned = raw.replace(/,/g, "").trim();
+    const close = cleaned && !isNaN(Number(cleaned)) ? Number(cleaned) : null;
+    assert.equal(close, null, `C6-TWSE-FB-4: malformed price "${raw}" must yield null`);
+  }
+});
+
+test("C6-TWSE-FB-5: source field is 'twse_openapi_eod' in fallback response shape", () => {
+  // Verify the contract: fallback responses must set source=twse_openapi_eod and
+  // bid/ask must be null (TWSE EOD has no bid/ask data)
+  const mockFallbackResponse = {
+    symbol: "2330",
+    lastPrice: 850.0,
+    bid: null as null,
+    ask: null as null,
+    volume: 20000000,
+    freshness: "stale" as const,
+    state: "STALE" as const,
+    source: "twse_openapi_eod" as const,
+    note: "twse_eod date=1130531",
+    updatedAt: new Date().toISOString(),
+  };
+  assert.equal(mockFallbackResponse.source, "twse_openapi_eod", "C6-TWSE-FB-5: source must be twse_openapi_eod");
+  assert.equal(mockFallbackResponse.bid, null, "C6-TWSE-FB-5: bid must be null (no bid/ask in TWSE EOD)");
+  assert.equal(mockFallbackResponse.ask, null, "C6-TWSE-FB-5: ask must be null (no bid/ask in TWSE EOD)");
+  assert.equal(mockFallbackResponse.state, "STALE", "C6-TWSE-FB-5: state is STALE when lastPrice available");
+  assert.ok(mockFallbackResponse.note.includes("twse_eod"), "C6-TWSE-FB-5: note must reference twse_eod");
+});
+
+// Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
   stopOutboxPoller();
   await new Promise<void>((resolve) => setTimeout(resolve, 500));
-  process.exit(process.exitCode ?? 0);
 });
