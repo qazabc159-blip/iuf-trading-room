@@ -10756,6 +10756,70 @@ test("SIM4: kgiSimOrderBodySchema — LOT quantityUnit accepted; market order pr
 });
 
 // =============================================================================
+// B2-MANUAL-SIM: kgiSimOrderBodySchema B2 extensions — timeInForce / orderCond / priceType
+// =============================================================================
+
+test("B2-MANUAL-SIM-1: schema defaults timeInForce=ROD and orderCond=Cash when not provided", () => {
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "2330",
+    side: "buy",
+    qty: 1,
+    price: 900,
+  });
+  assert.equal(result.timeInForce, "ROD", "B2-MANUAL-SIM-1: timeInForce defaults to ROD");
+  assert.equal(result.orderCond, "Cash", "B2-MANUAL-SIM-1: orderCond defaults to Cash");
+  assert.equal(result.priceType, undefined, "B2-MANUAL-SIM-1: priceType undefined when not provided");
+});
+
+test("B2-MANUAL-SIM-2: schema accepts explicit timeInForce=IOC and orderCond=Margin", () => {
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "2330",
+    side: "buy",
+    qty: 1,
+    price: 900,
+    timeInForce: "IOC",
+    orderCond: "Margin",
+  });
+  assert.equal(result.timeInForce, "IOC", "B2-MANUAL-SIM-2: timeInForce=IOC accepted");
+  assert.equal(result.orderCond, "Margin", "B2-MANUAL-SIM-2: orderCond=Margin accepted");
+});
+
+test("B2-MANUAL-SIM-3: schema accepts priceType=LimitUp (overrides numeric price)", () => {
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "0050",
+    side: "buy",
+    qty: 1,
+    priceType: "LimitUp",
+  });
+  assert.equal(result.priceType, "LimitUp", "B2-MANUAL-SIM-3: priceType=LimitUp accepted");
+  assert.equal(result.price, undefined, "B2-MANUAL-SIM-3: numeric price not required when priceType set");
+});
+
+test("B2-MANUAL-SIM-4: schema rejects invalid timeInForce value", () => {
+  assert.throws(() => {
+    kgiSimOrderBodySchema.parse({
+      symbol: "2330",
+      side: "buy",
+      qty: 1,
+      price: 900,
+      timeInForce: "GTC", // not in ROD|IOC|FOK
+    });
+  }, { name: "ZodError" }, "B2-MANUAL-SIM-4: unknown timeInForce should throw ZodError");
+});
+
+test("B2-MANUAL-SIM-5: schema rejects invalid orderCond value", () => {
+  assert.throws(() => {
+    kgiSimOrderBodySchema.parse({
+      symbol: "2330",
+      side: "buy",
+      qty: 1,
+      price: 900,
+      orderCond: "Delivery", // not in allowed set
+    });
+  }, { name: "ZodError" }, "B2-MANUAL-SIM-5: unknown orderCond should throw ZodError");
+});
+
+// =============================================================================
 // Recommendation Orchestrator — schema contract tests (REC1–REC5, REC10–REC12)
 // =============================================================================
 import {
