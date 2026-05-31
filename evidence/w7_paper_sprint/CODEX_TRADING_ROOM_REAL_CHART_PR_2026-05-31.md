@@ -42,3 +42,12 @@
 - Local browser smoke screenshot: `C:\Users\User\Desktop\小楊機密\交易\IUF_TRADING_ROOM_APP_trading_room_indicators_20260531\evidence\w7_paper_sprint\trading-room-real-chart-local-20260531.png`
 - Local browser smoke report: `C:\Users\User\Desktop\小楊機密\交易\IUF_TRADING_ROOM_APP_trading_room_indicators_20260531\evidence\w7_paper_sprint\trading-room-real-chart-local-20260531.json`
 - Local limitation: owner session is not available on `127.0.0.1`, so local smoke verifies formal blocked state, symbol/header/ticket sync, and no fake chart. Production browser verification after deploy must confirm live canvas plus indicator readout.
+
+## 2026-05-31 Follow-up: Recommendation Prefill Symbol Guard
+- Fixed a safety issue found in production screenshots: after entering from `6202` with recommendation plan levels, switching to `2330` could leave the old `6202` recommendation box and plan prices visible.
+- The trading room now clears stale `entry` / `stop` / `tp` / recommendation URL params when the user switches to a different symbol.
+- The paper ticket no longer keeps the previous recommendation entry price when the selected symbol changes.
+- The real K-line iframe no longer receives stale plan levels for the previous recommendation after symbol switching.
+- Local browser guard screenshot: `C:\Users\User\Desktop\小楊機密\交易\IUF_TRADING_ROOM_APP_trading_room_indicators_20260531\evidence\w7_paper_sprint\trading-room-prefill-symbol-guard-local-20260531.png`
+- Local browser guard report: `C:\Users\User\Desktop\小楊機密\交易\IUF_TRADING_ROOM_APP_trading_room_indicators_20260531\evidence\w7_paper_sprint\trading-room-prefill-symbol-guard-local-20260531.json`
+- Guard assertions: after switching `6202 -> 2330`, `stalePrefillText=""`, `ticketPrice=""`, page URL is `symbol=2330` without stale plan params, and iframe src is `symbol=2330` without stale plan params.

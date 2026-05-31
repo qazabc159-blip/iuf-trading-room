@@ -104,6 +104,8 @@ await page.waitForTimeout(900);
 const updatedFrameSrc = await iframe.getAttribute("src");
 const outerHeaderSymbol = await hostFrame.locator(".symhead .sym").innerText().catch(() => "");
 const ticketSymbol = await hostFrame.locator("#t-sym").inputValue().catch(() => "");
+const stalePrefillText = await hostFrame.locator("#rec-prefill-box").innerText().catch(() => "");
+const ticketPrice = await hostFrame.locator("#t-price").inputValue().catch(() => "");
 
 await page.screenshot({ path: screenshotPath, fullPage: true });
 
@@ -121,6 +123,8 @@ const report = {
   indicatorReadout,
   outerHeaderSymbol,
   ticketSymbol,
+  stalePrefillText,
+  ticketPrice,
   consoleEvents,
   requestFailures,
   storageState,
@@ -139,6 +143,9 @@ if (!String(frameSrc || "").includes("/final-v031/portfolio/kline-frame")) {
 }
 if (!String(updatedFrameSrc || "").includes("symbol=2330")) {
   throw new Error(`symbol switch did not refresh real chart frame: ${updatedFrameSrc}`);
+}
+if (String(updatedFrameSrc || "").includes(`entry=${planEntry}`) || String(updatedFrameSrc || "").includes(`stop=${planStop}`) || String(updatedFrameSrc || "").includes(`tp=${planTarget}`)) {
+  throw new Error(`real chart frame still used the previous recommendation plan after switching symbols: ${updatedFrameSrc}`);
 }
 if (canvasCount === 0 && emptyState === 0) {
   throw new Error("real chart frame neither rendered chart canvas nor an explicit empty state");
@@ -164,4 +171,12 @@ if (!outerHeaderSymbol.includes("2330")) {
 }
 if (!ticketSymbol.includes("2330")) {
   throw new Error(`ticket symbol did not sync after symbol click: ${ticketSymbol}`);
+}
+if (stalePrefillText.includes(initialSymbol) || stalePrefillText.includes(planEntry) || stalePrefillText.includes(planStop) || stalePrefillText.includes(planTarget)) {
+  throw new Error(`stale recommendation prefill remained after switching symbols: ${stalePrefillText}`);
+}
+const stalePlanNumbers = [planEntry, planStop, planTarget].map((value) => Number(value)).filter(Number.isFinite);
+const ticketPriceNumber = Number(ticketPrice);
+if (Number.isFinite(ticketPriceNumber) && stalePlanNumbers.some((value) => ticketPriceNumber === value)) {
+  throw new Error(`ticket price still used the previous recommendation plan after switching symbols: ${ticketPrice}`);
 }
