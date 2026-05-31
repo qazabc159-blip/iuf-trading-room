@@ -1276,14 +1276,54 @@ async def create_order(body: Optional[Any] = Body(default=None)) -> JSONResponse
         )
 
     try:
+        # kgisuperpy Order.create_order expects SDK enum types, not raw strings.
+        # Passing strings triggers AttributeError: 'str' object has no attribute 'value'
+        # inside the SDK. Map the validated request strings to the SDK enums here.
+        from kgisuperpy.trading._trade_base import (
+            Action as _Act,
+            TimeInForce as _TIF,
+            OrderCond as _OC,
+            OddLot as _OL,
+            PriceType as _PT,
+        )
+        _act = _Act.Buy if order_req.action == "Buy" else _Act.Sell
+        _tif = {"ROD": _TIF.ROD, "IOC": _TIF.IOC, "FOK": _TIF.FOK}[order_req.time_in_force]
+        _oc = {
+            "Cash": _OC.CASH,
+            "CashSelling": _OC.CASH_SELLING,
+            "Margin": _OC.MARGIN,
+            "MarginDayTrade": _OC.MARGIN_DayTrade,
+            "ShortSelling": _OC.SHORT_SELLING,
+            "LendSelling": _OC.Lend_SELLING,
+        }[order_req.order_cond]
+        _ol = (
+            order_req.odd_lot
+            if isinstance(order_req.odd_lot, bool)
+            else {
+                "Common": _OL.Common,
+                "Fixing": _OL.Fixing,
+                "Odd": _OL.Odd,
+                "OddAfterMarket": _OL.Odd_AfterMarket,
+            }[order_req.odd_lot]
+        )
+        _price = (
+            order_req.price
+            if not isinstance(order_req.price, str)
+            else {
+                "MKT": _PT.MKT,
+                "Reference": _PT.Reference,
+                "LimitUp": _PT.LimitUp,
+                "LimitDown": _PT.LimitDown,
+            }[order_req.price]
+        )
         sdk_response = session.api.Order.create_order(
-            action=order_req.action,
+            action=_act,
             symbol=order_req.symbol,
             qty=order_req.qty,
-            price=order_req.price,
-            time_in_force=order_req.time_in_force,
-            order_cond=order_req.order_cond,
-            odd_lot=order_req.odd_lot,
+            price=_price,
+            time_in_force=_tif,
+            order_cond=_oc,
+            odd_lot=_ol,
             name=order_req.name,
         )
         logger.info(
