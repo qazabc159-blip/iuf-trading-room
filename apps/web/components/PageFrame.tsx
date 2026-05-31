@@ -72,6 +72,7 @@ function displayCode(code: string) {
     MEM: "記憶",
     MKT: "市場情報",
     OPS: "營運",
+    FAUTO: "F-AUTO SIM",
     ORD: "委託",
     PLAN: "交易計畫",
     PLN: "交易計畫",
