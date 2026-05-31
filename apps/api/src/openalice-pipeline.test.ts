@@ -11,6 +11,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildDailyBriefContractInstructions,
+  buildSourceOnlyBriefPayload,
   classifyDraftTier,
   DAILY_BRIEF_REQUIRED_SECTION_IDS,
   evaluatePublishGate,
@@ -70,6 +72,35 @@ test("daily brief contract rejects missing required section ids", () => {
     }));
 
   assert.deepEqual(validateDailyBriefSectionsContract(sections), { ok: false, missing: ["risk_watch"] });
+});
+
+test("daily brief instructions advertise only the v2 five-section contract", () => {
+  const instructions = buildDailyBriefContractInstructions();
+  for (const sectionId of DAILY_BRIEF_REQUIRED_SECTION_IDS) {
+    assert.match(instructions, new RegExp(sectionId));
+  }
+  for (const heading of ["市場總覽", "AI 精選重點", "產業與主題", "風險觀察", "資料來源狀態"]) {
+    assert.match(instructions, new RegExp(heading));
+  }
+  for (const legacyHeading of ["技術觀察", "風控警示", "策略觀察", "今日資料狀態", "資料品質提醒"]) {
+    assert.equal(instructions.includes(legacyHeading), false, `legacy heading leaked into contract: ${legacyHeading}`);
+  }
+});
+
+test("source-only fallback also satisfies the v2 five-section contract", () => {
+  const payload = buildSourceOnlyBriefPayload(makePack()) as {
+    sections: Array<{ heading: string; body: string }>;
+  };
+
+  assert.deepEqual(validateDailyBriefSectionsContract(payload.sections), { ok: true, missing: [] });
+  assert.equal(payload.sections.length, 5);
+  for (const legacyHeading of ["技術觀察", "風控警示", "策略觀察", "今日資料狀態", "資料品質提醒", "下一步工作"]) {
+    assert.equal(
+      payload.sections.some((section) => section.heading === legacyHeading),
+      false,
+      `legacy heading leaked into source-only fallback: ${legacyHeading}`
+    );
+  }
 });
 
 // ── Test 1: scheduler tick skips non-trading days (memory mode) ───────────────
