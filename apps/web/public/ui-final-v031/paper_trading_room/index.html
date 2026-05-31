@@ -690,6 +690,10 @@ body[data-screen-label="Trading Room v1"] .tnote{
           <span>送出紙上單　<b style="font-weight:600" id="submit-btn-label">選擇股票與方向</b></span>
           <span class="sub">PAPER</span>
         </button>
+        <button class="submit buy" type="button" id="submit-kgi-sim-btn" disabled aria-disabled="true">
+          <span>送出 KGI SIM　<b style="font-weight:600" id="submit-kgi-sim-label">先通過風控預覽</b></span>
+          <span class="sub">KGI SIM</span>
+        </button>
         <div class="liveex">
           <i></i><b>實盤通道</b>　目前停用 · 解鎖須另行授權
           <span class="lockico">🔒 LOCKED</span>
@@ -861,6 +865,8 @@ document.querySelectorAll('#side button').forEach(b=>b.addEventListener('click',
   b.classList.add('on');
   const sub=document.getElementById('submit-btn');
   sub.className='submit '+b.dataset.side;
+  const sim=document.getElementById('submit-kgi-sim-btn');
+  if(sim) sim.className='submit '+b.dataset.side;
   updPreview();
 }));
 
@@ -899,6 +905,8 @@ function updPreview(){
   const validTicket=validQty&&validPrice&&!lockReason;
   const submitBtn=document.getElementById('submit-btn');
   const sub=submitBtn.querySelector('span');
+  const kgiBtn=document.getElementById('submit-kgi-sim-btn');
+  const kgiLabel=document.getElementById('submit-kgi-sim-label');
   const avail=Number(window.__IUF_AVAIL_CASH__||0);
   document.getElementById('p-avail').textContent=avail.toLocaleString('zh-TW');
 
@@ -915,7 +923,14 @@ function updPreview(){
     submitBtn.classList.add('is-blocked');
     submitBtn.setAttribute('aria-disabled','true');
     submitBtn.dataset.blocked='invalid_ticket';
+    if(kgiBtn){
+      kgiBtn.disabled=true;
+      kgiBtn.classList.add('is-blocked');
+      kgiBtn.setAttribute('aria-disabled','true');
+      kgiBtn.dataset.blocked='invalid_ticket';
+    }
     sub.innerHTML='紙上單未就緒　<b style="font-weight:600">'+reason+'</b>';
+    if(kgiLabel)kgiLabel.textContent=reason;
     const gate=document.querySelector('.gate .h .v');
     if(gate)gate.textContent=reason;
     const pv=document.getElementById('preview');pv.classList.add('calc');clearTimeout(window.__pvt);window.__pvt=setTimeout(()=>pv.classList.remove('calc'),250);
@@ -925,6 +940,19 @@ function updPreview(){
   submitBtn.classList.remove('is-blocked');
   submitBtn.removeAttribute('aria-disabled');
   delete submitBtn.dataset.blocked;
+  if(kgiBtn){
+    const kgiBlocked=orderType==='stop';
+    kgiBtn.disabled=kgiBlocked;
+    kgiBtn.classList.toggle('is-blocked',kgiBlocked);
+    if(kgiBlocked){
+      kgiBtn.setAttribute('aria-disabled','true');
+      kgiBtn.dataset.blocked='stop_not_supported';
+    }else{
+      kgiBtn.removeAttribute('aria-disabled');
+      delete kgiBtn.dataset.blocked;
+    }
+    if(kgiLabel)kgiLabel.textContent=kgiBlocked?'KGI SIM 不支援停損單':sym+' '+(side==='buy'?'買進':'賣出')+' '+qty+' '+unitLabel+' @ '+px.toFixed(2);
+  }
   const notion=Math.round(shares*px);
   const fee=Math.round(notion*0.001425);
   document.getElementById('p-notional').innerHTML=notion.toLocaleString('zh-TW')+' <small>NTD</small>';
@@ -1214,6 +1242,12 @@ document.getElementById('submit-btn').addEventListener('click',()=>{
   // switch ledger tab to events
   document.querySelector('.lhead .tb[data-lt="events"]').click();
   // briefly highlight first row
+  setTimeout(()=>{const row=document.querySelector('.ltab.on tbody tr');if(row){row.style.background='var(--brand-bg)';setTimeout(()=>row.style.background='',900);}},100);
+});
+document.getElementById('submit-kgi-sim-btn')?.addEventListener('click',()=>{
+  const btn=document.getElementById('submit-kgi-sim-btn');
+  btn.style.transform='scale(.98)';setTimeout(()=>btn.style.transform='',140);
+  document.querySelector('.lhead .tb[data-lt="events"]').click();
   setTimeout(()=>{const row=document.querySelector('.ltab.on tbody tr');if(row){row.style.background='var(--brand-bg)';setTimeout(()=>row.style.background='',900);}},100);
 });
 

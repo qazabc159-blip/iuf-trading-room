@@ -12,13 +12,16 @@ import {
 } from "@/lib/api";
 import {
   cancelPaperOrder,
+  formatKgiSimOrderError,
   formatPaperOrderError,
   getPaperOrder,
   isCancellablePaperOrder,
   isTerminalPaperOrder,
   listPaperOrders,
   previewPaperOrder,
+  submitKgiSimOrder,
   submitPaperOrder,
+  type KgiSimOrderResponse,
   type PaperOrderInput,
   type PaperOrderState,
 } from "@/lib/paper-orders-api";
@@ -65,6 +68,12 @@ type SubmitState =
   | { status: "loading" }
   | { status: "live"; state: PaperOrderState }
   | { status: "blocked"; state: PaperOrderState }
+  | { status: "error"; message: string };
+
+type KgiSimSubmitState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "live"; result: KgiSimOrderResponse }
   | { status: "error"; message: string };
 
 type OrdersState =
@@ -138,6 +147,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
   });
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
+  const [kgiSimSubmit, setKgiSimSubmit] = useState<KgiSimSubmitState>({ status: "idle" });
   const [orders, setOrders] = useState<OrdersState>({ status: "loading" });
   const [marketPreview, setMarketPreview] = useState<MarketPreviewState>({
     status: "idle",
@@ -155,6 +165,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
     }));
     setPreview({ status: "idle" });
     setSubmit({ status: "idle" });
+    setKgiSimSubmit({ status: "idle" });
   }, [handoff]);
 
   const parsed = useMemo(() => {
@@ -295,6 +306,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
     setDraft((current) => ({ ...current, ...patch }));
     setPreview({ status: "idle" });
     setSubmit({ status: "idle" });
+    setKgiSimSubmit({ status: "idle" });
     setReviewOpen(false);
   };
 
@@ -320,6 +332,13 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
               : preview.status === "error"
                 ? "風控預覽失敗。"
                 : null;
+
+  const kgiSimDisabledReason =
+    submitDisabledReason
+      ? submitDisabledReason
+      : orderInput && (orderInput.orderType === "stop" || orderInput.orderType === "stop_limit")
+        ? "KGI SIM 手動送單目前只支援市價與限價；停損單仍留在平台 Paper 預覽。"
+        : null;
 
   const ledgerState =
     orders.status === "blocked"
@@ -372,6 +391,32 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
     }
   };
 
+  const runKgiSimSubmit = async () => {
+    if (!orderInput || kgiSimDisabledReason !== null) return;
+    if (orderInput.orderType !== "market" && orderInput.orderType !== "limit") {
+      setKgiSimSubmit({ status: "error", message: "KGI SIM 手動送單目前只支援市價與限價。" });
+      return;
+    }
+    setKgiSimSubmit({ status: "loading" });
+    try {
+      const result = await submitKgiSimOrder({
+        symbol: orderInput.symbol,
+        side: orderInput.side,
+        qty: orderInput.qty,
+        price: orderInput.orderType === "market" ? null : orderInput.price,
+        orderType: orderInput.orderType,
+        quantityUnit: orderInput.quantity_unit,
+        timeInForce: "ROD",
+        orderCond: "Cash",
+        priceType: orderInput.orderType === "market" ? "MKT" : undefined,
+      });
+      setReviewOpen(false);
+      setKgiSimSubmit({ status: "live", result });
+    } catch (error) {
+      setKgiSimSubmit({ status: "error", message: formatKgiSimOrderError(error) });
+    }
+  };
+
   const runCancel = async (orderId: string) => {
     setCancellingId(orderId);
     try {
@@ -393,6 +438,7 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
 
   const canPreview = orderInput !== null && preview.status !== "loading";
   const canSubmit = submitDisabledReason === null && submit.status !== "loading";
+  const canKgiSimSubmit = orderInput !== null && kgiSimDisabledReason === null && kgiSimSubmit.status !== "loading";
 
   return (
     <div>
@@ -526,17 +572,35 @@ export function OrderTicketForm({ killMode }: { killMode: KillMode }) {
         >
           {submit.status === "loading" ? "建立中" : "檢查並建立 SIM 紀錄"}
         </button>
+        <button
+          onClick={() => void runKgiSimSubmit()}
+          disabled={!canKgiSimSubmit}
+          title={kgiSimDisabledReason ?? "送到 KGI SIM：只走券商模擬環境，正式下單永久鎖住。"}
+          style={{
+            ...actionButtonStyle,
+            color: canKgiSimSubmit ? "var(--tw-dn-bright)" : "var(--exec-soft)",
+            borderColor: canKgiSimSubmit ? "rgba(255,70,92,0.55)" : "var(--exec-rule-strong)",
+          }}
+          type="button"
+        >
+          {kgiSimSubmit.status === "loading" ? "KGI SIM 送單中" : "送出 KGI SIM"}
+        </button>
       </div>
 
       {submitDisabledReason && <TruthNote state="BLOCKED" text={submitDisabledReason} />}
+      {kgiSimDisabledReason && kgiSimDisabledReason !== submitDisabledReason && (
+        <TruthNote state="BLOCKED" text={kgiSimDisabledReason} />
+      )}
       {preview.status === "live" && !submitDisabledReason && (
-        <TruthNote state="LIVE" text="預檢通過。下一步只會建立 SIM 委託紀錄，不會送往正式券商；正式券商寫入維持關閉，需產品與風控驗收後另行啟用。" />
+        <TruthNote state="LIVE" text="風控已通過；下一步可建立平台 SIM 紀錄，或送到 KGI SIM 券商模擬環境。正式實單仍永久鎖住。" />
       )}
 
       {(submit.status === "live" || submit.status === "blocked") && (
         <OrderOutcome state={submit.state} />
       )}
       {submit.status === "error" && <TruthNote state="BLOCKED" text={submit.message} />}
+      {kgiSimSubmit.status === "live" && <KgiSimOrderOutcome result={kgiSimSubmit.result} />}
+      {kgiSimSubmit.status === "error" && <TruthNote state="BLOCKED" text={kgiSimSubmit.message} />}
 
       {reviewOpen && orderInput && (
         <OrderReviewModal
@@ -910,6 +974,30 @@ function OrderOutcome({ state }: { state: PaperOrderState }) {
         <KV k="價格" v={state.intent.price === null ? "市價" : String(state.intent.price)} />
         <KV k="更新" v={formatTime(state.intent.updatedAt)} />
         {state.fill && <KV k="成交" v={`${state.fill.fillQty.toLocaleString()} @ ${state.fill.fillPrice}`} />}
+      </div>
+    </div>
+  );
+}
+
+function KgiSimOrderOutcome({ result }: { result: KgiSimOrderResponse }) {
+  const order = result.data;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <TruthNote
+        state="LIVE"
+        text={`KGI SIM 已送出：${order.symbol} ${sideLabel(order.side)} ${order.effectiveQtyShares.toLocaleString("zh-TW")} 股，狀態 ${order.status}。正式實單維持封鎖。`}
+      />
+      <div style={kvListStyle}>
+        <KV k="券商模擬單號" v={order.tradeId ?? "等待 KGI 回報"} />
+        <KV k="標的" v={order.symbol} />
+        <KV k="方向" v={sideLabel(order.side)} />
+        <KV k="單位" v={quantityUnitLabel(order.quantityUnit)} />
+        <KV k="有效股數" v={`${order.effectiveQtyShares.toLocaleString("zh-TW")} 股`} />
+        <KV k="委託別" v={`${order.orderType}${order.priceType ? ` / ${order.priceType}` : ""}`} />
+        <KV k="價格" v={order.price === null ? "市價 / KGI 特殊價格" : String(order.price)} />
+        <KV k="時效" v={order.timeInForce ?? "ROD"} />
+        <KV k="條件" v={order.orderCond ?? "Cash"} />
+        <KV k="送出時間" v={formatTime(order.submittedAt)} />
       </div>
     </div>
   );

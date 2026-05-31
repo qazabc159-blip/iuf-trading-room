@@ -199,6 +199,16 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain('soft(apiGet("/api/v1/kgi/status"))');
     expect(backendProxy).toContain("^\\/api\\/v1\\/kgi\\/status");
   });
+
+  it("wires the final-v031 trading room manual ticket to KGI SIM only", () => {
+    expect(ticketHtml).toContain('id="submit-kgi-sim-btn"');
+    expect(ticketHtml).toContain("送出 KGI SIM");
+    expect(liveHydration).toContain('fetch("/api/ui-final-v031/backend?path=/api/v1/kgi/sim/order"');
+    expect(liveHydration).toContain('priceType: orderType === "market" ? "MKT" : undefined');
+    expect(liveHydration).toContain("正式實單仍鎖定");
+    expect(backendProxy).toContain("^\\/api\\/v1\\/kgi\\/sim\\/order");
+  });
+
   it("uses Taiwan heatmap polarity in the market-intel industry heatmap", () => {
     const marketIntelHtml = readFileSync(new URL("../public/ui-final-v031/market_intel/index.html", import.meta.url), "utf8");
     expect(liveHydration).toContain('? "rgba(230,57,70," + alpha + ")"');
