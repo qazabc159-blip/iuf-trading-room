@@ -1,0 +1,55 @@
+{
+  "url": "http://127.0.0.1:3322/api/ui-final-v031/paper-trading-room?symbol=1514",
+  "before": {
+    "rowCount": 8,
+    "symbols": [
+      "2330",
+      "1514",
+      "1560",
+      "1590",
+      "1721",
+      "1723",
+      "1809",
+      "2066"
+    ],
+    "header": "2330",
+    "selected": "2330",
+    "iframe": "/final-v031/portfolio/kline-frame?symbol=2330",
+    "bodyScrollWidth": 1440,
+    "bodyClientWidth": 1440
+  },
+  "after": {
+    "rowCount": 8,
+    "symbols": [
+      "2330",
+      "1514",
+      "1560",
+      "1590",
+      "1721",
+      "1723",
+      "1809",
+      "2066"
+    ],
+    "header": "1514",
+    "selected": "1514",
+    "iframe": "/final-v031/portfolio/kline-frame?symbol=1514",
+    "mutationCount": 1,
+    "bodyScrollWidth": 1440,
+    "bodyClientWidth": 1440,
+    "ticketScrollWidth": 350,
+    "ticketClientWidth": 350
+  },
+  "checks": {
+    "quickSwitchRowsKept": true,
+    "includes1514": true,
+    "selectedHeaderSynced": true,
+    "selectedRowSynced": true,
+    "frameSrcSwitched": true,
+    "singleFrameMutationOnPick": true,
+    "noBodyHorizontalOverflow": true,
+    "noTicketHorizontalOverflow": true
+  },
+  "consoleEvents": [],
+  "requestFailures": [],
+  "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_trading_room_hardening_20260531\\evidence\\w7_paper_sprint\\trading-room-watchlist-hydration-local-20260531.png"
+}

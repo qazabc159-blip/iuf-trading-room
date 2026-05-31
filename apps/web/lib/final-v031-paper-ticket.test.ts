@@ -143,6 +143,16 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("紙上單預覽");
   });
 
+  it("keeps the trading-room quick-switch watchlist available after live hydration", () => {
+    expect(liveHydration).toContain("DEFAULT_TRADING_ROOM_WATCHLIST");
+    expect(liveHydration).toContain('symbol:"1514", name:"亞力"');
+    expect(liveHydration).toContain('symbol:"2066", name:"世德"');
+    expect(liveHydration).toContain(".concat(defaultWatchlist)");
+    expect(liveHydration).toContain("sameSym(other.symbol, item.symbol)");
+    expect(liveHydration).toContain('if (typeof window.pickRow === "function")');
+    expect(liveHydration).toContain("window.pickRow(sym)");
+  });
+
   it("draws real volume-price indicators instead of decorative technical labels", () => {
     expect(klineChartSource).toContain("function calcVolumePriceLevels");
     expect(klineChartSource).toContain("量價支撐");
