@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { shouldReuseExistingContentDraftForDedupe } from "./content-draft-store.js";
 import {
   buildDailyBriefContractInstructions,
   buildSourceOnlyBriefPayload,
@@ -129,6 +130,40 @@ test("source-only fallback also satisfies the v2 five-section contract", () => {
       `legacy heading leaked into source-only fallback: ${legacyHeading}`
     );
   }
+});
+
+test("daily brief dedupe allows regenerating approved drafts that lack sourceTrail", () => {
+  const nextPayload = buildSourceOnlyBriefPayload(makePack());
+  const existingWithoutTrail = {
+    date: "2026-05-06",
+    marketState: "Balanced",
+    sections: [{ heading: "市場總覽", body: "舊簡報內容。" }]
+  };
+
+  assert.equal(
+    shouldReuseExistingContentDraftForDedupe({
+      targetTable: "daily_briefs",
+      nextPayload,
+      existingPayload: existingWithoutTrail
+    }),
+    false
+  );
+  assert.equal(
+    shouldReuseExistingContentDraftForDedupe({
+      targetTable: "daily_briefs",
+      nextPayload,
+      existingPayload: nextPayload
+    }),
+    true
+  );
+  assert.equal(
+    shouldReuseExistingContentDraftForDedupe({
+      targetTable: "company_notes",
+      nextPayload,
+      existingPayload: existingWithoutTrail
+    }),
+    true
+  );
 });
 
 // ── Test 1: scheduler tick skips non-trading days (memory mode) ───────────────
