@@ -35,6 +35,13 @@ type VolumePriceLevels = {
   resistanceVolume: number | null;
   sampleSize: number;
 };
+type IndicatorSignal = {
+  key: string;
+  label: string;
+  value: string;
+  tone: "up" | "down" | "muted";
+  detail: string;
+};
 
 const MA_CONFIG: ReadonlyArray<{ key: MaKey; period: number; color: string; label: string }> = [
   { key: "ma5",  period: 5,  color: "#FFD600", label: "MA5"  },
@@ -557,6 +564,84 @@ function toneClass(value: number | null | undefined) {
   return "muted";
 }
 
+function latestFinite(values: Array<number | null | undefined>) {
+  for (let i = values.length - 1; i >= 0; i--) {
+    const value = values[i];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function relationSignal(label: string, price: number | null | undefined, base: number | null | undefined, key: string): IndicatorSignal | null {
+  if (typeof price !== "number" || !Number.isFinite(price) || typeof base !== "number" || !Number.isFinite(base) || base <= 0) return null;
+  const diffPct = ((price - base) / base) * 100;
+  return {
+    key,
+    label,
+    value: `${diffPct >= 0 ? "+" : ""}${diffPct.toFixed(1)}%`,
+    tone: diffPct > 0 ? "up" : diffPct < 0 ? "down" : "muted",
+    detail: price >= base ? `收盤高於 ${label} ${formatNumber(base)}` : `收盤低於 ${label} ${formatNumber(base)}`,
+  };
+}
+
+function buildIndicatorSignals(input: {
+  lastClose: number | null | undefined;
+  ma20: number | null | undefined;
+  ma60: number | null | undefined;
+  vwap: number | null | undefined;
+  rsi: number | null | undefined;
+  macdHist: number | null | undefined;
+  support: number | null | undefined;
+  resistance: number | null | undefined;
+}): IndicatorSignal[] {
+  const signals: IndicatorSignal[] = [];
+  const ma20 = relationSignal("MA20", input.lastClose, input.ma20, "ma20");
+  const ma60 = relationSignal("MA60", input.lastClose, input.ma60, "ma60");
+  const vwap = relationSignal("VWAP", input.lastClose, input.vwap, "vwap");
+  if (ma20) signals.push(ma20);
+  if (ma60) signals.push(ma60);
+  if (vwap) signals.push(vwap);
+  if (typeof input.rsi === "number" && Number.isFinite(input.rsi)) {
+    signals.push({
+      key: "rsi",
+      label: "RSI14",
+      value: input.rsi.toFixed(1),
+      tone: input.rsi >= 70 ? "up" : input.rsi <= 30 ? "down" : "muted",
+      detail: input.rsi >= 70 ? "偏熱" : input.rsi <= 30 ? "偏冷" : "中性",
+    });
+  }
+  if (typeof input.macdHist === "number" && Number.isFinite(input.macdHist)) {
+    signals.push({
+      key: "macd",
+      label: "MACD",
+      value: input.macdHist >= 0 ? "多方" : "空方",
+      tone: input.macdHist > 0 ? "up" : input.macdHist < 0 ? "down" : "muted",
+      detail: `柱狀 ${input.macdHist.toFixed(3)}`,
+    });
+  }
+  if (typeof input.lastClose === "number" && typeof input.support === "number" && Number.isFinite(input.support) && input.support > 0) {
+    const gap = ((input.lastClose - input.support) / input.support) * 100;
+    signals.push({
+      key: "support-gap",
+      label: "量價支撐",
+      value: `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%`,
+      tone: gap >= 0 ? "up" : "down",
+      detail: `支撐 ${formatNumber(input.support)}`,
+    });
+  }
+  if (typeof input.lastClose === "number" && typeof input.resistance === "number" && Number.isFinite(input.resistance) && input.resistance > 0) {
+    const gap = ((input.resistance - input.lastClose) / input.lastClose) * 100;
+    signals.push({
+      key: "resistance-gap",
+      label: "量價壓力",
+      value: `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%`,
+      tone: gap > 0 ? "muted" : "up",
+      detail: `壓力 ${formatNumber(input.resistance)}`,
+    });
+  }
+  return signals.slice(0, 6);
+}
+
 // ── RSI Sub-chart SVG ────────────────────────────────────────────────────────
 
 function RsiSubChart({ rsiValues, n }: { rsiValues: (number | null)[]; n: number }) {
@@ -776,6 +861,42 @@ const INDICATOR_CSS = `
 }
 ._ind-level-readout b { color: rgba(236,201,75,0.94); }
 ._ind-level-readout ._plan { color: rgba(72,187,120,0.94); }
+.kline-signal-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(220,228,240,0.06);
+  background: rgba(3, 7, 12, 0.38);
+}
+.kline-signal-chip {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(148,163,184,0.14);
+  border-radius: 6px;
+  background: rgba(15,23,34,0.72);
+  color: rgba(203,213,225,0.72);
+  font: 800 10px/1.35 var(--mono, monospace);
+}
+.kline-signal-chip span,
+.kline-signal-chip small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kline-signal-chip b {
+  display: block;
+  margin: 2px 0;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+.kline-signal-chip.up b { color: #e63946; }
+.kline-signal-chip.down b { color: #2ecc71; }
+.kline-signal-chip.muted b { color: #f0bd62; }
+@media (max-width: 900px) {
+  .kline-signal-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (prefers-reduced-motion: reduce) {
   ._ind-toggle-btn { transition: none; }
 }
@@ -842,7 +963,7 @@ export function OhlcvCandlestickChart({
 
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
-  const chartHeight = compactTradingRoom ? 430 : isIntraday ? 460 : 440;
+  const chartHeight = compactTradingRoom ? 300 : isIntraday ? 460 : 440;
   const activeIntradayMinutes = activeMeta?.kind === "intraday" ? activeMeta.minutes ?? 1 : 1;
   const chartBars = useMemo(() => {
     const meta = ENABLED_INTERVALS.find((item) => item.value === interval);
@@ -896,6 +1017,19 @@ export function OhlcvCandlestickChart({
   const rsiValues = useMemo(() => calcRSI(closes, 14), [closes]);
 
   const macdResult = useMemo(() => calcMACD(closes), [closes]);
+  const indicatorSignals = useMemo(() => {
+    const lastClose = chartBars.at(-1)?.close ?? null;
+    return buildIndicatorSignals({
+      lastClose,
+      ma20: latestFinite(maValues.ma20),
+      ma60: latestFinite(maValues.ma60),
+      vwap: latestFinite(vwapValues),
+      rsi: latestFinite(rsiValues),
+      macdHist: latestFinite(macdResult.hist),
+      support: volumePriceLevels.support,
+      resistance: volumePriceLevels.resistance,
+    });
+  }, [chartBars, maValues, macdResult.hist, rsiValues, volumePriceLevels.resistance, volumePriceLevels.support, vwapValues]);
 
   const selectInterval = (nextInterval: EnabledInterval) => {
     const nextMeta = ENABLED_INTERVALS.find((item) => item.value === nextInterval);
@@ -959,6 +1093,17 @@ export function OhlcvCandlestickChart({
           },
           crosshair: { mode: 1 },
           rightPriceScale: { borderColor: "rgba(255,255,255,0.14)", scaleMargins: { top: 0.08, bottom: 0.22 } },
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: false,
+          },
+          handleScale: {
+            axisPressedMouseMove: true,
+            mouseWheel: true,
+            pinch: true,
+          },
           timeScale: {
             borderColor: "rgba(255,255,255,0.14)",
             timeVisible: isIntraday || interval === "1d",
@@ -1282,6 +1427,18 @@ export function OhlcvCandlestickChart({
           {planLevels?.entry ? <span className="_plan">進場 <b>{formatNumber(planLevels.entry)}</b></span> : null}
           {planLevels?.stop ? <span className="_plan">停損 <b>{formatNumber(planLevels.stop)}</b></span> : null}
           {planLevels?.target ? <span className="_plan">目標 <b>{formatNumber(planLevels.target)}</b></span> : null}
+        </div>
+      )}
+
+      {compactTradingRoom && indicatorSignals.length > 0 && (
+        <div className="kline-signal-strip" data-testid="trading-room-kline-signal-strip" aria-label="交易室量價指標摘要">
+          {indicatorSignals.map((signal) => (
+            <div key={signal.key} className={`kline-signal-chip ${signal.tone}`}>
+              <span>{signal.label}</span>
+              <b>{signal.value}</b>
+              <small>{signal.detail}</small>
+            </div>
+          ))}
         </div>
       )}
 

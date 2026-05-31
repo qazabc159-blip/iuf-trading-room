@@ -1,0 +1,69 @@
+{
+  "url": "http://127.0.0.1:3021/api/ui-final-v031/paper-trading-room?symbol=2330",
+  "baseUrl": "http://127.0.0.1:3021",
+  "symbol": "2330",
+  "domContentLoadedMs": 4586,
+  "firstChartVisibleMs": 6865,
+  "loadingOverlayVisibleAtStart": true,
+  "beforeSrc": "/final-v031/portfolio/kline-frame?symbol=2330",
+  "afterSrc": "/final-v031/portfolio/kline-frame?symbol=2330",
+  "klineSrcStable": true,
+  "metrics": {
+    "toolbar": {
+      "x": 16,
+      "y": 53.796875,
+      "width": 734,
+      "height": 37,
+      "top": 53.796875,
+      "bottom": 90.796875
+    },
+    "signalStrip": {
+      "x": 26,
+      "y": 437.59375,
+      "width": 714,
+      "height": 52.6875,
+      "top": 437.59375,
+      "bottom": 490.28125
+    },
+    "canvas": {
+      "x": 26,
+      "y": 127.59375,
+      "width": 714,
+      "height": 300,
+      "top": 127.59375,
+      "bottom": 427.59375
+    },
+    "readout": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0,
+      "top": 0,
+      "bottom": 0
+    },
+    "tabTexts": [
+      "日K",
+      "週K",
+      "月K",
+      "1分",
+      "5分",
+      "15分",
+      "60分",
+      "3月",
+      "6月",
+      "1年",
+      "2年",
+      "全部"
+    ],
+    "signalText": "MA20+4.1%收盤高於 MA20 2,263.25MA60+14.8%收盤高於 MA60 2,050.75VWAP+120.5%收盤高於 VWAP 1,068.01RSI1464.7中性MACD空方柱狀 -1.763量價支撐+33.8%支撐 1,760",
+    "activeTab": "日K"
+  },
+  "fiveMinuteText": [
+    "1 分 K 彙整54 根顯示 1 / 5 個交易日原始 1 分 K 266 根成交覆蓋 99%空窗不補假線，可拖曳回看05-29 09:00 - 05-29 13:30收 2,355量 50,967",
+    "成交密度足夠成交分鐘266 / 約 270彙整後54 根 5分視窗手動1日"
+  ],
+  "consoleEvents": [],
+  "requestFailures": [],
+  "mirroredCookieCount": 1,
+  "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_trading_room_perf_indicators_20260531\\evidence\\w7_paper_sprint\\trading-room-perf-indicators-local-20260531.png"
+}

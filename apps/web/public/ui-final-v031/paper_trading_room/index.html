@@ -179,12 +179,37 @@ body[data-screen-label="Trading Room v1"] .tnote{
 .chart-panel.is-real-chart .chart-state,
 .chart-panel.is-real-chart .chart-wrap{display:none!important}
 .real-kline-frame-shell{
+  position:relative;
   flex:1 1 auto;
   min-height:0;
   height:auto;
   overflow:hidden;
   border-top:1px solid rgba(148,163,184,.14);
   background:#080b10;
+}
+.real-kline-loading-overlay{
+  position:absolute;
+  inset:0;
+  z-index:1;
+  display:grid;
+  place-items:center;
+  padding:20px;
+  background:linear-gradient(180deg,rgba(8,11,16,.98),rgba(8,11,16,.92));
+  color:var(--fg-2);
+  font:800 12px/1.7 var(--mono);
+  letter-spacing:.04em;
+  text-align:center;
+  transition:opacity .16s ease;
+}
+.real-kline-loading-overlay b{
+  display:block;
+  color:var(--brand);
+  font-size:14px;
+  margin-bottom:4px;
+}
+.real-kline-frame-shell.is-loaded .real-kline-loading-overlay{
+  opacity:0;
+  pointer-events:none;
 }
 .real-kline-frame-shell iframe{
   display:block;
@@ -398,12 +423,16 @@ body[data-screen-label="Trading Room v1"] .tnote{
       </div>
 
       <div class="real-kline-frame-shell">
+        <div class="real-kline-loading-overlay" id="real-kline-loading" role="status">
+          <span><b>正在載入真實 K 線</b>讀取公司 OHLCV、分 K 與量價指標，不使用假線補圖。</span>
+        </div>
         <iframe
           id="real-kline-frame"
           title="交易室真實 K 線"
           src="/final-v031/portfolio/kline-frame?symbol=2330"
           loading="eager"
           referrerpolicy="same-origin"
+          onload="this.closest('.real-kline-frame-shell')?.classList.add('is-loaded')"
         ></iframe>
       </div>
 
