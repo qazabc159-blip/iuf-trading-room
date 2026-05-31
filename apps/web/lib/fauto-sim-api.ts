@@ -39,11 +39,17 @@ async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<{ ok: true; data: T } | { ok: false; status: number; error: string }> {
-  if (!API_BASE) return { ok: false, status: 503, error: "API_BASE_UNCONFIGURED" };
+  const method = (init?.method ?? "GET").toUpperCase();
+  const browserProxyUrl =
+    typeof window !== "undefined" && method === "GET"
+      ? `/api/ui-final-v031/backend?path=${encodeURIComponent(path)}`
+      : null;
+  const url = browserProxyUrl ?? (API_BASE ? `${API_BASE}${path}` : null);
+  if (!url) return { ok: false, status: 503, error: "API_BASE_UNCONFIGURED" };
 
   const cookie = await ssrCookieHeader();
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const requestInit = {
       credentials: "include",
       cache: "no-store",
       ...init,
@@ -53,7 +59,17 @@ async function apiFetch<T>(
         ...(cookie ? { Cookie: cookie } : {}),
         ...(init?.headers ?? {}),
       },
-    });
+    } satisfies RequestInit;
+
+    let res = await fetch(url, requestInit);
+    if (
+      browserProxyUrl &&
+      API_BASE &&
+      method === "GET" &&
+      (res.status === 401 || res.status === 403)
+    ) {
+      res = await fetch(`${API_BASE}${path}`, requestInit);
+    }
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");

@@ -613,13 +613,23 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   const price = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? "—" : (Number(value) >= 1000 ? Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 1 }) : Number(value).toFixed(2));
   const cls = (status) => status === "ok" || status === "allow" ? "ok" : status === "block" || status === "bad" ? "bad" : "warn";
   const unwrap = (json) => json && typeof json === "object" && Object.prototype.hasOwnProperty.call(json, "data") ? json.data : json;
-  const apiUrl = (path) => apiBase ? apiBase + path : apiProxy + encodeURIComponent(path);
-  const apiFetch = async (path, init={}) => fetch(apiUrl(path), {
-    credentials: "include",
-    cache: "no-store",
-    ...init,
-    headers: { "Content-Type": "application/json", "x-workspace-slug": workspaceSlug, ...(init.headers || {}) }
-  });
+  const apiUrl = (path) => apiProxy + encodeURIComponent(path);
+  const directApiUrl = (path) => apiBase ? apiBase + path : null;
+  const apiFetch = async (path, init={}) => {
+    const method = (init.method || "GET").toUpperCase();
+    const requestInit = {
+      credentials: "include",
+      cache: "no-store",
+      ...init,
+      headers: { "Content-Type": "application/json", "x-workspace-slug": workspaceSlug, ...(init.headers || {}) }
+    };
+    const res = await fetch(apiUrl(path), requestInit);
+    const direct = directApiUrl(path);
+    if (method === "GET" && direct && (res.status === 401 || res.status === 403)) {
+      return fetch(direct, requestInit);
+    }
+    return res;
+  };
   const apiGetRaw = async (path) => {
     const res = await apiFetch(path, {
       credentials: "include",
