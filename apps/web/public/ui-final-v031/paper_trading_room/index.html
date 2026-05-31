@@ -38,7 +38,7 @@ body[data-screen-label="Trading Room v1"] .troom{
   min-height:0;
   overflow:hidden;
   align-items:stretch;
-  grid-template-columns:minmax(236px,260px) minmax(0,1fr) minmax(318px,352px);
+  grid-template-columns:minmax(232px,252px) minmax(0,1fr) minmax(322px,352px);
 }
 body[data-screen-label="Trading Room v1"] .lpane,
 body[data-screen-label="Trading Room v1"] .rpane{
@@ -55,13 +55,15 @@ body[data-screen-label="Trading Room v1"] .wlist{
 }
 body[data-screen-label="Trading Room v1"] .rpane{
   overflow-x:hidden;
+  min-width:0;
 }
 body[data-screen-label="Trading Room v1"] .tform{
   flex:1;
   min-height:0;
   overflow-y:auto;
-  overflow-x:hidden;
-  padding-right:14px;
+  overflow-x:clip;
+  padding:12px 12px 10px;
+  scrollbar-width:thin;
 }
 body[data-screen-label="Trading Room v1"] .tform,
 body[data-screen-label="Trading Room v1"] .tform *{
@@ -72,21 +74,34 @@ body[data-screen-label="Trading Room v1"] .tform .field.row2{
 }
 body[data-screen-label="Trading Room v1"] .tform .field .step{
   display:grid;
-  grid-template-columns:36px minmax(0,1fr) 36px;
+  grid-template-columns:32px minmax(0,1fr) 32px;
+  gap:5px;
 }
 body[data-screen-label="Trading Room v1"] .tform .field .step .stepbtn{
-  width:36px;
+  width:32px;
+  height:34px;
 }
 body[data-screen-label="Trading Room v1"] .preview{
   grid-template-columns:repeat(2,minmax(0,1fr));
+  padding:10px 11px;
+  gap:8px 10px;
 }
 body[data-screen-label="Trading Room v1"] .tactions,
 body[data-screen-label="Trading Room v1"] .tfoot{
-  padding-right:14px;
+  padding-left:12px;
+  padding-right:12px;
 }
 body[data-screen-label="Trading Room v1"] .tactions .submit{
   white-space:normal;
   line-height:1.35;
+}
+body[data-screen-label="Trading Room v1"] .tactions .liveex{
+  flex-wrap:wrap;
+  gap:6px 8px;
+  min-width:0;
+}
+body[data-screen-label="Trading Room v1"] .tactions .liveex .lockico{
+  margin-left:0;
 }
 body[data-screen-label="Trading Room v1"] .cpane{
   min-height:0;
@@ -776,7 +791,6 @@ function pickRow(sym){
   drawChart(sym);
   updPreview();
 }
-document.querySelectorAll('.wrow').forEach(r=>r.addEventListener('click',()=>pickRow(r.dataset.sym)));
 
 let __realChartSymbol='';
 function buildRealChartFrameSrc(sym){
@@ -806,7 +820,10 @@ function updateRealChartFrame(sym){
     const url=new URL(frame.getAttribute('src')||'',window.location.origin);
     current=url.pathname+url.search;
   }catch{}
-  if(current!==nextSrc)frame.setAttribute('src',nextSrc);
+  if(current!==nextSrc){
+    frame.closest('.real-kline-frame-shell')?.classList.remove('is-loaded');
+    frame.setAttribute('src',nextSrc);
+  }
 }
 window.updateRealChartFrame=updateRealChartFrame;
 
@@ -818,7 +835,6 @@ document.addEventListener('click',(event)=>{
   const row=event.target&&event.target.closest?event.target.closest('.wrow[data-sym]'):null;
   if(row&&row.dataset&&row.dataset.sym){
     pickRow(row.dataset.sym);
-    updateRealChartFrame(row.dataset.sym);
     if(row.dataset.iufEnhanced!=='1'&&typeof window.__IUF_SELECT_PAPER_SYMBOL__==='function'){
       window.__IUF_SELECT_PAPER_SYMBOL__(row.dataset.sym).catch(()=>{});
     }

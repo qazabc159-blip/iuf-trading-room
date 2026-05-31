@@ -1570,14 +1570,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           }
         }));
       } else {
-        wl.innerHTML = '<div class="group">'+esc(wlItems.length)+' 檔自選 / 候選</div>' + wlItems.map((item, i) => '<div class="wrow '+(i===0?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
-        // Re-attach click listeners for freshly rendered rows
-        wl.querySelectorAll(".wrow").forEach((r) => r.addEventListener("click", () => {
-          const sym = r.dataset.sym;
-          if (sym && typeof window.pickRow === "function") {
-            window.pickRow(sym);
-          }
-        }));
+        wl.innerHTML = '<div class="group">'+esc(wlItems.length)+' 檔自選 / 候選</div>' + wlItems.map((item) => '<div class="wrow '+(sameSym(item.symbol, selected.symbol)?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
       }
     }
     attachPaperRowHandlers();
@@ -1863,17 +1856,12 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       if (wlSigGroup) wlSigGroup.textContent = "策略候選 · " + ideas.length + " 檔";
       // Remove old static rows (keep only group div)
       Array.from(wlSig.querySelectorAll(".wrow")).forEach((el) => el.remove());
-      ideas.forEach((idea, i) => {
+      ideas.forEach((idea) => {
         const div = document.createElement("div");
-        div.className = "wrow" + (i === 0 ? " on" : "");
+        div.className = "wrow" + (sameSym(idea.symbol, selected.symbol) ? " on" : "");
         div.dataset.sym = String(idea.symbol || "");
         const tone = String(idea.statusClass || "") === "allow" ? "ok" : String(idea.statusClass || "") === "block" ? "bad" : "warn";
         div.innerHTML = '<span class="sym">' + esc(String(idea.symbol || "—")) + '</span><div class="body"><div class="nm">' + esc(String(idea.companyName || idea.symbol || "—")) + '</div><div class="meta">' + esc(String(idea.signalCount || 0)) + ' 訊號 · ' + esc(String(idea.completeness || 0)) + '%</div></div><div class="price"><span class="v">—</span><span class="d ' + tone + '">' + esc(String(idea.status || "—")) + '</span></div>';
-        div.addEventListener("click", () => {
-          if (typeof window.pickRow === "function") {
-            window.pickRow(String(idea.symbol || ""));
-          }
-        });
         wlSig.appendChild(div);
       });
     } else if (wlSig) {
@@ -1892,16 +1880,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (wlPaper && allowIdeas.length) {
       if (wlPaperGroup) wlPaperGroup.textContent = "可觀察 · 來自策略想法 · " + allowIdeas.length + " 檔";
       Array.from(wlPaper.querySelectorAll(".wrow")).forEach((el) => el.remove());
-      allowIdeas.slice(0, 6).forEach((idea, i) => {
+      allowIdeas.slice(0, 6).forEach((idea) => {
         const div = document.createElement("div");
-        div.className = "wrow" + (i === 0 ? " on" : "");
+        div.className = "wrow" + (sameSym(idea.symbol, selected.symbol) ? " on" : "");
         div.dataset.sym = String(idea.symbol || "");
         div.innerHTML = '<span class="sym">' + esc(String(idea.symbol || "—")) + '</span><div class="body"><div class="nm">' + esc(String(idea.companyName || idea.symbol || "—")) + '</div><div class="meta">AI 評分 ' + esc(String(idea.score || "—")) + ' · ' + esc(String(idea.confidence || "—")) + '</div></div><div class="price"><span class="v">—</span><span class="d ok">' + esc(String(idea.status || "—")) + '</span></div>';
-        div.addEventListener("click", () => {
-          if (typeof window.pickRow === "function") {
-            window.pickRow(String(idea.symbol || ""));
-          }
-        });
         wlPaper.appendChild(div);
       });
     } else if (wlPaper) {
