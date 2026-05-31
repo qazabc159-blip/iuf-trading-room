@@ -112,11 +112,16 @@ test("daily brief instructions advertise only the v2 five-section contract", () 
 
 test("source-only fallback also satisfies the v2 five-section contract", () => {
   const payload = buildSourceOnlyBriefPayload(makePack()) as {
-    sections: Array<{ heading: string; body: string }>;
+    sections: Array<{ heading: string; body: string; sourceTrail?: string | null }>;
   };
 
   assert.deepEqual(validateDailyBriefSectionsContract(payload.sections), { ok: true, missing: [] });
   assert.equal(payload.sections.length, 5);
+  for (const section of payload.sections) {
+    assert.equal(typeof section.sourceTrail, "string");
+    assert.match(section.sourceTrail ?? "", /source_pack=test-pack-001/);
+    assert.match(section.sourceTrail ?? "", /法人籌碼資料=LIVE/);
+  }
   for (const legacyHeading of ["技術觀察", "風控警示", "策略觀察", "今日資料狀態", "資料品質提醒", "下一步工作"]) {
     assert.equal(
       payload.sections.some((section) => section.heading === legacyHeading),
