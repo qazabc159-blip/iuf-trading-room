@@ -220,9 +220,15 @@ describe("final-v031 paper ticket price gate", () => {
   });
 
   it("keeps final-v031 live GET hydration readable when app-domain proxy auth is absent", () => {
-    expect(liveHydration).toContain('const apiBase = String(window.__IUF_FINAL_V031_API_BASE__ || "").replace');
+    expect(liveHydration).toContain('const apiBaseRaw = String(window.__IUF_FINAL_V031_API_BASE__ || "")');
+    expect(liveHydration).toContain('const apiBase = apiBaseRaw.endsWith("/") ? apiBaseRaw.slice(0, -1) : apiBaseRaw');
     expect(liveHydration).toContain('if (method === "GET" && direct && (res.status === 401 || res.status === 403))');
     expect(liveHydration).toContain("return fetch(direct, requestInit)");
+  });
+
+  it("keeps browser hydration script free of TypeScript-only parameter annotations", () => {
+    expect(liveHydration).not.toMatch(/\([A-Za-z_$][\w$]*:\s*(?:string|number|boolean|unknown|any)\)\s*=>/);
+    expect(liveHydration).not.toContain("(message: string)");
   });
 
   it("uses Taiwan heatmap polarity in the market-intel industry heatmap", () => {
