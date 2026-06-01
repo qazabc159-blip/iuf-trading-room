@@ -14881,6 +14881,75 @@ test("BULK-SEED-5: bulk-seed fetches from both TWSE and TPEx OpenAPI URLs", () =
   );
 });
 
+// ── AI-REC-V3-CRON (daily scheduler — PR feat/api-ai-rec-v3-daily-cron) ────
+// Verifies the v3 daily cron infrastructure is correctly wired in server.ts
+// and orchestrator-v3.ts. No LLM calls; pure source-code assertions.
+
+test("AI-REC-V3-CRON-1: _runAiRecV3Cron shared function exists and sets cron state flags", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes("_runAiRecV3Cron"),
+    "AI-REC-V3-CRON-1: server.ts must define _runAiRecV3Cron shared function"
+  );
+  assert.ok(
+    src.includes("_aiRecV3CronRunning = true") && src.includes("_aiRecV3CronLastFiredAt = new Date().toISOString()"),
+    "AI-REC-V3-CRON-1: _runAiRecV3Cron must set _aiRecV3CronRunning and _aiRecV3CronLastFiredAt on entry"
+  );
+  assert.ok(
+    src.includes("_aiRecV3CronRunning = false"),
+    "AI-REC-V3-CRON-1: _runAiRecV3Cron must reset _aiRecV3CronRunning in finally block"
+  );
+});
+
+test("AI-REC-V3-CRON-2: AI-REC-V3-CRON block exists in startSchedulers with 24h interval and boot-fire", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes("AI-REC-V3-CRON"),
+    "AI-REC-V3-CRON-2: startSchedulers must contain AI-REC-V3-CRON block comment"
+  );
+  assert.ok(
+    src.includes("AI_REC_V3_CRON_INTERVAL_MS") && src.includes("24 * 60 * 60 * 1000"),
+    "AI-REC-V3-CRON-2: v3 cron must use 24h interval"
+  );
+  assert.ok(
+    src.includes("isAiRecV3CronWindow"),
+    "AI-REC-V3-CRON-2: v3 cron must have a window guard function"
+  );
+  assert.ok(
+    src.includes("90_000"),
+    "AI-REC-V3-CRON-2: v3 cron must have a boot-fire setTimeout at 90s"
+  );
+  assert.ok(
+    src.includes("_aiRecV3LastCronFireDate"),
+    "AI-REC-V3-CRON-2: v3 cron must have a once-per-day date guard"
+  );
+});
+
+test("AI-REC-V3-CRON-3: AiRecTrigger type includes cron_daily and manual refresh handler uses _runAiRecV3Cron", () => {
+  const orchestratorSrc = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  assert.ok(
+    orchestratorSrc.includes('"cron_daily"'),
+    "AI-REC-V3-CRON-3: AiRecTrigger must include cron_daily value"
+  );
+  const serverSrc = readFileSync("apps/api/src/server.ts", "utf8");
+  // manual refresh handler must delegate to _runAiRecV3Cron (not inline the run logic)
+  // Search for app.post("...v3/refresh") to find the actual POST handler (not the hint string)
+  const postRefreshIdx = serverSrc.indexOf('app.post("/api/v1/admin/ai-recommendations/v3/refresh"');
+  assert.ok(postRefreshIdx !== -1, "AI-REC-V3-CRON-3: v3 refresh POST handler must exist");
+  const handlerSlice = serverSrc.slice(postRefreshIdx, postRefreshIdx + 600);
+  assert.ok(
+    handlerSlice.includes("_runAiRecV3Cron"),
+    "AI-REC-V3-CRON-3: manual refresh handler must call _runAiRecV3Cron (not inline the run)"
+  );
+  // status endpoint must expose cron_last_fired_at
+  assert.ok(
+    serverSrc.includes("cron_last_fired_at: _aiRecV3CronLastFiredAt"),
+    "AI-REC-V3-CRON-3: status endpoint must surface cron_last_fired_at from shared module var"
+  );
+});
+
+// Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
+// Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 // =============================================================================
 // B1: S1 SIM Observation Endpoints — unit tests (S1-OBS-1..5)
 // =============================================================================
