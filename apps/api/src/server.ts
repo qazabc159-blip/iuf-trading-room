@@ -3862,7 +3862,7 @@ import {
   runSimQuoteSmoke,
   runSimTradeSmoke,
   runKgiSimDailySmokeSchedulerTick,
-  getDailySmokeHistory,
+  getDailySmokeHistoryDurable,
   resolveKgiEnv,
   maskAccount,
 } from "./broker/kgi-sim-env.js";
@@ -4313,7 +4313,7 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
 });
 
 // GET /api/v1/internal/kgi/sim/daily-smoke-status
-// Owner-only. Returns last 7 daily smoke run results (in-memory ring buffer).
+// Owner-only. Returns last 7 daily smoke run results (memory + audit_logs fallback).
 // Shows: overall pass/fail per day, quote check, prod-broker audit count.
 // Hard lines: no credentials, no prod broker writes surfaced.
 app.get("/api/v1/internal/kgi/sim/daily-smoke-status", async (c) => {
@@ -4322,7 +4322,7 @@ app.get("/api/v1/internal/kgi/sim/daily-smoke-status", async (c) => {
     return c.json({ error: "OWNER_ONLY" }, 403);
   }
 
-  const history = getDailySmokeHistory();
+  const history = await getDailySmokeHistoryDurable(session.workspace.id);
   const last = history[0] ?? null;
 
   return c.json({
