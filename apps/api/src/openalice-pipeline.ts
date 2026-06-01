@@ -1517,6 +1517,14 @@ ${sourceContext}${liveSnapshotBlock}`;
 
   if (!draft) return null;
 
+  const sourceSummary = input.sourcePack.sources
+    .map((s) => `${s.source}(${s.status})`)
+    .join(", ");
+  registerJobSourcePackSummary(draft.id, sourceSummary);
+  registerJobSourcePack(draft.id, input.sourcePack);
+  registerJobSourcePackSummary(`direct:${draft.id}`, sourceSummary);
+  registerJobSourcePack(`direct:${draft.id}`, input.sourcePack);
+
   if (input.reason === "historical_backfill") {
     const publishResult = await tryPublishSourceOnlyBackfillDraft({
       workspaceId: input.workspaceId,
