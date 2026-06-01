@@ -564,6 +564,72 @@ function formatLiveMarketSnapshotForPrompt(snap: LiveMarketSnapshot): string {
   return lines.length > 0 ? lines.join("\n") : "(未能取得即時市場數據，以下僅供資料狀態參考)";
 }
 
+function latestSnapshotDate(snap: LiveMarketSnapshot): string | null {
+  const dates = [
+    snap.taiex.asOf,
+    snap.institutional.date,
+    snap.margin.date,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  return dates.sort().at(-1) ?? null;
+}
+
+export function buildMarketOverviewSourceEntryFromSnapshot(
+  snap: LiveMarketSnapshot,
+  staleThreshold: Date
+): SourcePackEntry {
+  const availableBlocks = [
+    snap.taiex.value !== null,
+    snap.heatmapTop3.length > 0,
+    snap.topGainers.length > 0 || snap.topLosers.length > 0,
+    snap.institutional.date !== null,
+    snap.margin.date !== null,
+  ].filter(Boolean).length;
+  const latestDate = latestSnapshotDate(snap);
+  const isStale = latestDate ? new Date(latestDate) < staleThreshold : false;
+  const status: SourceStatus =
+    availableBlocks === 0
+      ? "EMPTY"
+      : isStale || snap.taiex.sourceState === "lkg"
+      ? "STALE"
+      : snap.taiex.value === null
+      ? "DEGRADED"
+      : "LIVE";
+
+  return {
+    source: "market_overview",
+    status,
+    rowCount: availableBlocks,
+    latestDate,
+    note:
+      availableBlocks === 0
+        ? "live_market_snapshot_empty"
+        : [
+            `taiex=${snap.taiex.sourceState ?? "missing"}`,
+            `heatmap=${snap.heatmapTop3.length}`,
+            `leaders=${snap.topGainers.length + snap.topLosers.length}`,
+            `institutional=${snap.institutional.date ?? "missing"}`,
+            `margin=${snap.margin.date ?? "missing"}`,
+          ].join(";"),
+    sampleRows:
+      availableBlocks === 0
+        ? null
+        : [
+            {
+              taiexValue: snap.taiex.value,
+              taiexChangePct: snap.taiex.changePct,
+              taiexAsOf: snap.taiex.asOf,
+              taiexSourceState: snap.taiex.sourceState,
+              heatmapTop3: snap.heatmapTop3,
+              topGainers: snap.topGainers,
+              topLosers: snap.topLosers,
+              institutional: snap.institutional,
+              margin: snap.margin,
+            },
+          ],
+  };
+}
+
 // ── Source pack collector ─────────────────────────────────────────────────────
 
 const STALE_DAYS_THRESHOLD = 2; // rows older than this many days are STALE
@@ -684,25 +750,12 @@ async function collectSourcePack(
   // 4. Margin/short (tw_margin_short — DEGRADED OK)
   await collectTableSource(db, sources, "tw_margin_short", workspaceId, staleThreshold, 5);
 
-  // 5. Market overview (no dedicated table — derive from daily_briefs recency)
+  // 5. Market overview. This must be a real market snapshot, not "a brief
+  // exists" recency. The generator separately injects the same snapshot into
+  // the prompt; keeping it in sourcePack makes the brief auditable afterwards.
   try {
-    const briefRows = await db
-      .select({ id: dailyBriefs.id, date: dailyBriefs.date })
-      .from(dailyBriefs)
-      .where(and(eq(dailyBriefs.workspaceId, workspaceId), visibleDailyBriefCondition()))
-      .orderBy(desc(dailyBriefs.date))
-      .limit(1);
-
-    const latestBrief = briefRows[0];
-    const overviewStatus: SourceStatus = latestBrief ? "LIVE" : "EMPTY";
-    sources.push({
-      source: "market_overview",
-      status: overviewStatus,
-      rowCount: latestBrief ? 1 : 0,
-      latestDate: latestBrief?.date ?? null,
-      note: null,
-      sampleRows: null  // market_overview derives from brief recency; no raw row sample applicable
-    });
+    const snapshot = await collectLiveMarketSnapshot(workspaceId);
+    sources.push(buildMarketOverviewSourceEntryFromSnapshot(snapshot, staleThreshold));
   } catch (e) {
     sources.push({
       source: "market_overview",
