@@ -35,6 +35,13 @@ import {
   getNewsTop10,
 } from "../tools/market-data-tools.js";
 
+export type AiStockRecommendationV3Card = AiStockRecommendationV2 & {
+  entry?: string;
+  stop?: number | null;
+  reason?: string;
+  risk?: string;
+};
+
 // ── F1: Programmatic risk_off_score (deterministic — LLM cannot override) ─────
 
 /**
@@ -712,14 +719,15 @@ function formatRiskAlias(item: AiStockRecommendationV2): string {
       : "模型未明列額外風險；請先確認資料完整度再操作");
 }
 
-function withV3ContractAliases(item: AiStockRecommendationV2): AiStockRecommendationV2 {
+function withV3ContractAliases(item: AiStockRecommendationV2): AiStockRecommendationV3Card {
+  const aliased = item as AiStockRecommendationV3Card;
   const stop = toFiniteNumber(item.stopLossStructured?.price ?? item.stopLoss);
   return {
     ...item,
-    entry: item.entry ?? formatEntryAlias(item),
-    stop: item.stop ?? stop,
-    reason: item.reason ?? item.whyBuyBrief ?? item.rationale,
-    risk: item.risk ?? formatRiskAlias(item),
+    entry: aliased.entry ?? formatEntryAlias(item),
+    stop: aliased.stop ?? stop,
+    reason: aliased.reason ?? item.whyBuyBrief ?? item.rationale,
+    risk: aliased.risk ?? formatRiskAlias(item),
   };
 }
 
@@ -1390,7 +1398,7 @@ export function parseAiReportToRecommendationsV3(
 export function enrichV3Items(
   items: AiStockRecommendationV2[],
   trace: V3ReActStep[]
-): AiStockRecommendationV2[] {
+): AiStockRecommendationV3Card[] {
   const withFlag = applyIncompleteFlag(items);
   return withFlag.map(item => withV3ContractAliases({
     ...item,

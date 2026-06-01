@@ -21,7 +21,7 @@
 
 import { randomUUID } from "node:crypto";
 import { isDatabaseMode, getDb, auditLogs } from "@iuf-trading-room/db";
-import { and, eq, gte, like } from "drizzle-orm";
+import { and, desc, eq, gte, like } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Env helpers — never export raw credentials
@@ -772,6 +772,82 @@ export function getDailySmokeHistory(): DailySmokeHistoryEntry[] {
   return [..._dailySmokeHistory].reverse();
 }
 
+function parseDailySmokeAuditPayload(payload: unknown): DailySmokeHistoryEntry | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  const entry = p["entry"] && typeof p["entry"] === "object"
+    ? p["entry"] as Record<string, unknown>
+    : p;
+  const runId = String(entry["runId"] ?? p["run_id"] ?? "");
+  const firedAt = String(entry["firedAt"] ?? p["fired_at"] ?? "");
+  const overallStatus = String(entry["overallStatus"] ?? p["overall_status"] ?? "");
+  if (!runId || !firedAt || !["pass", "fail", "partial"].includes(overallStatus)) return null;
+  const quoteCheck = entry["quoteCheck"] && typeof entry["quoteCheck"] === "object"
+    ? entry["quoteCheck"] as Record<string, unknown>
+    : {
+        gatewayReachable: p["quote_gateway_reachable"],
+        loggedIn: p["quote_logged_in"],
+        subscribed: p["quote_subscribed"],
+        tickReceived: p["quote_tick_received"],
+        error: p["quote_error"],
+      };
+  const tradeCheckRaw = entry["tradeCheck"] ?? p["trade_check"];
+  const tradeCheck = tradeCheckRaw && typeof tradeCheckRaw === "object"
+    ? tradeCheckRaw as DailySmokeHistoryEntry["tradeCheck"]
+    : null;
+  return {
+    sim_only: true,
+    runId,
+    firedAt,
+    overallStatus: overallStatus as DailySmokeHistoryEntry["overallStatus"],
+    quoteCheck: {
+      gatewayReachable: quoteCheck["gatewayReachable"] === true,
+      loggedIn: quoteCheck["loggedIn"] === true,
+      subscribed: quoteCheck["subscribed"] === true,
+      tickReceived: quoteCheck["tickReceived"] === true,
+      error: typeof quoteCheck["error"] === "string" ? quoteCheck["error"] : null,
+    },
+    tradeCheck,
+    prodBrokerAuditCount: Number(entry["prodBrokerAuditCount"] ?? p["prod_broker_audit_count"] ?? 0),
+    durationMs: Number(entry["durationMs"] ?? p["duration_ms"] ?? 0),
+  };
+}
+
+/** Returns last daily smoke runs, merging memory with audit_logs so deploys do not wipe status. */
+export async function getDailySmokeHistoryDurable(workspaceId?: string | null): Promise<DailySmokeHistoryEntry[]> {
+  const memoryRows = getDailySmokeHistory();
+  if (!isDatabaseMode() || !workspaceId) return memoryRows;
+
+  const db = getDb();
+  if (!db) return memoryRows;
+
+  const auditRows = await db
+    .select({ payload: auditLogs.payload })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.workspaceId, workspaceId),
+        eq(auditLogs.action, "kgi.sim.daily_smoke")
+      )
+    )
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(7)
+    .catch(() => [] as Array<{ payload: unknown }>);
+
+  const merged = new Map<string, DailySmokeHistoryEntry>();
+  for (const row of auditRows) {
+    const parsed = parseDailySmokeAuditPayload(row.payload);
+    if (parsed) merged.set(parsed.runId, parsed);
+  }
+  for (const row of memoryRows) {
+    merged.set(row.runId, row);
+  }
+
+  return [...merged.values()]
+    .sort((a, b) => Date.parse(b.firedAt) - Date.parse(a.firedAt))
+    .slice(0, 7);
+}
+
 /** For test reset only. */
 export function _resetDailySmokeHistory(): void {
   _dailySmokeHistory.length = 0;
@@ -949,6 +1025,7 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
       trade_check: tradeCheck,
       prod_broker_audit_count: prodBrokerAuditCount,
       duration_ms: durationMs,
+      entry,
     },
   });
 

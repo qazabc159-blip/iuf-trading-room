@@ -10299,6 +10299,7 @@ test("V47-1: mapSnapshotToV47 contract — no compoundReturn in output; returns 
 import {
   runKgiSimDailySmokeSchedulerTick,
   getDailySmokeHistory,
+  getDailySmokeHistoryDurable,
   _resetDailySmokeHistory,
   _resetKgiSimState,
   getKgiSimState,
@@ -10352,6 +10353,18 @@ test("DS1: getDailySmokeHistory returns empty array on fresh start", () => {
   const hist = getDailySmokeHistory();
   assert.ok(Array.isArray(hist), "DS1: getDailySmokeHistory returns array");
   assert.equal(hist.length, 0, "DS1: no entries before first run");
+});
+
+test("DS1b: daily smoke status can recover from audit_logs after deploy", async () => {
+  _resetDailySmokeHistory();
+  const hist = await getDailySmokeHistoryDurable(null);
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  const kgiSource = readFileSync(path.join(process.cwd(), "apps/api/src/broker/kgi-sim-env.ts"), "utf8");
+  assert.ok(Array.isArray(hist), "DS1b: durable history returns an array in non-DB mode");
+  assert.match(serverSource, /getDailySmokeHistoryDurable\(session\.workspace\.id\)/);
+  assert.match(kgiSource, /eq\(auditLogs\.action,\s*"kgi\.sim\.daily_smoke"\)/);
+  assert.match(kgiSource, /parseDailySmokeAuditPayload/);
+  assert.match(kgiSource, /entry,/);
 });
 
 test("DS2: runKgiSimDailySmokeSchedulerTick with forceRun=true returns valid entry", async () => {
@@ -12797,6 +12810,15 @@ test("NEWS-CRON-P13-1: rank dedup — duplicate LLM id skipped + final re-assign
   assert.equal(uniqueRanks.size, 10, `NEWS-CRON-P13-1: rank 1..10 must all be unique, got ${JSON.stringify(ranks)}`);
   assert.equal(ranks[9], 10, "NEWS-CRON-P13-1: pad item (1326) must be rank=10, not colliding with AI items");
   assert.equal(ranks[0], 1, "NEWS-CRON-P13-1: first AI item (1101) must be rank=1 (deduplicated correctly)");
+});
+
+test("NEWS-P0-TOP10-1: news selector expands the real-data window when 6h rows are too short", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/news-ai-selector.ts"), "utf8");
+  assert.match(source, /for \(const hours of \[windowHours, EXPANDED_WINDOW_HOURS, LAST_RESORT_WINDOW_HOURS\]\)/);
+  assert.match(source, /await appendRowsFromWindow\(rows, hours\)/);
+  assert.match(source, /if \(rows\.length >= TOP_N\) break/);
+  assert.match(source, /appendUniqueRealNewsRows\(target, sanitizeRawRows\(rawRows, \{ dropLowQualityStockNews: true \}\)\)/);
+  assert.match(source, /appendUniqueRealNewsRows\(target, sanitizeRawRows\(rawRows, \{ dropLowQualityStockNews: false \}\)\)/);
 });
 
 // =============================================================================
