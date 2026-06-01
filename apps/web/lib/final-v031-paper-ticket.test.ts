@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const ticketHtml = readFileSync(new URL("../public/ui-final-v031/paper_trading_room/index.html", import.meta.url), "utf8");
 const liveHydration = readFileSync(new URL("./final-v031-live.ts", import.meta.url), "utf8");
 const backendProxy = readFileSync(new URL("../app/api/ui-final-v031/backend/route.ts", import.meta.url), "utf8");
+const fautoSimApi = readFileSync(new URL("./fauto-sim-api.ts", import.meta.url), "utf8");
 const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "utf8");
 const klineChartSource = readFileSync(new URL("../app/companies/[symbol]/OhlcvCandlestickChart.tsx", import.meta.url), "utf8");
 const tradingRoomKlineFrameSource = readFileSync(new URL("../app/final-v031/portfolio/kline-frame/page.tsx", import.meta.url), "utf8");
@@ -207,6 +208,21 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain('priceType: orderType === "market" ? "MKT" : undefined');
     expect(liveHydration).toContain("正式實單仍鎖定");
     expect(backendProxy).toContain("^\\/api\\/v1\\/kgi\\/sim\\/order");
+  });
+
+  it("routes the F-AUTO owner dashboard through the same-origin backend proxy", () => {
+    expect(fautoSimApi).toContain("/api/ui-final-v031/backend?path=${encodeURIComponent(path)}");
+    expect(fautoSimApi).toContain("res.status === 401 || res.status === 403");
+    expect(backendProxy).toContain("^\\/api\\/v1\\/paper\\/(?:health|fills|orders|portfolio|positions|funds)");
+    expect(backendProxy).toContain("^\\/api\\/v1\\/kgi\\/sim\\/(?:positions|orders|balance)");
+    expect(backendProxy).toContain("^\\/api\\/v1\\/internal\\/kgi\\/sim\\/daily-smoke-status");
+    expect(backendProxy).toContain("^\\/api\\/v1\\/internal\\/s1-sim\\/(?:status|basket|eod-report)");
+  });
+
+  it("keeps final-v031 live GET hydration readable when app-domain proxy auth is absent", () => {
+    expect(liveHydration).toContain('const apiBase = String(window.__IUF_FINAL_V031_API_BASE__ || "").replace');
+    expect(liveHydration).toContain('if (method === "GET" && direct && (res.status === 401 || res.status === 403))');
+    expect(liveHydration).toContain("return fetch(direct, requestInit)");
   });
 
   it("uses Taiwan heatmap polarity in the market-intel industry heatmap", () => {
