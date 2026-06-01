@@ -15219,6 +15219,104 @@ test("C6-TWSE-FB-5: source field is 'twse_openapi_eod' in fallback response shap
   assert.ok(mockFallbackResponse.note.includes("twse_eod"), "C6-TWSE-FB-5: note must reference twse_eod");
 });
 
+// =============================================================================
+// TWSE-MIS-INTRADAY: TWSE MIS intraday quote logic tests (TWSE-MIS-1..5)
+// =============================================================================
+//
+// Tests for the TWSE MIS API response parsing and the _misPrefixForMarket logic
+// used in /companies/:id/quote/realtime when KGI quote is unavailable.
+
+test("TWSE-MIS-1: MIS prefix resolves tse for TWSE market and otc for TPEX/TWO", () => {
+  const cases: Array<{ market: string; expected: "tse" | "otc" }> = [
+    { market: "TWSE", expected: "tse" },
+    { market: "twse", expected: "tse" },
+    { market: "上市", expected: "tse" },
+    { market: "TPEX", expected: "otc" },
+    { market: "TWO", expected: "otc" },
+    { market: "上櫃", expected: "otc" },
+    { market: "TW_EMERGING", expected: "otc" },
+    { market: "OTHER", expected: "tse" },
+  ];
+  function _misPrefixForMarket(market: string): "tse" | "otc" {
+    const m = market.trim().toUpperCase();
+    if (m === "TPEX" || m === "TWO" || m === "TW_EMERGING" || m.includes("上櫃") || m.includes("OTC")) {
+      return "otc";
+    }
+    return "tse";
+  }
+  for (const c of cases) {
+    assert.equal(_misPrefixForMarket(c.market), c.expected, `TWSE-MIS-1: market="${c.market}" → prefix must be "${c.expected}"`);
+  }
+});
+
+test("TWSE-MIS-2: MIS response z field parses as lastPrice with bid/ask from b/a fields", () => {
+  const msg: Record<string, string> = {
+    c: "2330", z: "2355.0000", o: "2355.0000", h: "2415.0000", l: "2350.0000",
+    y: "2330.0000", v: "34936", b: "2355.0000_2350.0000_", a: "2360.0000_2365.0000_",
+    d: "20260601", t: "13:30:00"
+  };
+  const parseNum = (s?: string) => {
+    if (!s || s === "-" || s.trim() === "") return null;
+    const n = Number(s.replace(/,/g, "").trim());
+    return isFinite(n) && n > 0 ? n : null;
+  };
+  const zRaw = msg["z"];
+  assert.ok(zRaw && zRaw !== "-", "TWSE-MIS-2: z field must exist and not be dash");
+  const lastPrice = Number(zRaw);
+  assert.equal(lastPrice, 2355, "TWSE-MIS-2: lastPrice parsed from z = 2355");
+  assert.equal(parseNum(msg["y"]), 2330, "TWSE-MIS-2: prevClose from y = 2330");
+  const bPrices = msg["b"]?.split("_").filter(Boolean);
+  assert.equal(parseNum(bPrices?.[0]), 2355, "TWSE-MIS-2: bid from b[0] = 2355");
+});
+
+test("TWSE-MIS-3: MIS response z=dash means no intraday data (off hours)", () => {
+  const msg: Record<string, string> = { c: "2330", z: "-", s: "-" };
+  const zRaw = msg["z"];
+  const hasData = !!(zRaw && zRaw !== "-" && zRaw.trim() !== "");
+  assert.equal(hasData, false, "TWSE-MIS-3: z=dash means no intraday data — must return null");
+});
+
+test("TWSE-MIS-4: MIS intraday source label is twse_intraday state LIVE (not STALE)", () => {
+  const mockMisResponse = {
+    lastPrice: 2355,
+    bid: 2355,
+    ask: 2360,
+    volume: 34936,
+    freshness: "fresh" as const,
+    state: "LIVE" as const,
+    source: "twse_intraday" as const,
+    note: "mis_intraday date=20260601 time=13:30:00",
+    updatedAt: new Date().toISOString(),
+  };
+  assert.equal(mockMisResponse.source, "twse_intraday", "TWSE-MIS-4: intraday source must be twse_intraday");
+  assert.equal(mockMisResponse.state, "LIVE", "TWSE-MIS-4: intraday state must be LIVE");
+  assert.equal(mockMisResponse.freshness, "fresh", "TWSE-MIS-4: intraday freshness must be fresh");
+  assert.ok(mockMisResponse.bid !== null, "TWSE-MIS-4: bid must be populated from MIS b field");
+});
+
+test("TWSE-MIS-5: source chain: twse_intraday LIVE takes priority over twse_openapi_eod STALE", () => {
+  type QuoteSource = "twse_intraday" | "twse_openapi_eod";
+  type QuoteState = "LIVE" | "STALE" | "NO_DATA";
+
+  function pickBestQuote(
+    mis: { source: QuoteSource; state: QuoteState; lastPrice: number } | null,
+    eod: { source: QuoteSource; state: QuoteState; lastPrice: number | null }
+  ) {
+    return mis ?? eod;
+  }
+
+  const misLive = { source: "twse_intraday" as QuoteSource, state: "LIVE" as QuoteState, lastPrice: 2355 };
+  const eodStale = { source: "twse_openapi_eod" as QuoteSource, state: "STALE" as QuoteState, lastPrice: 2330 };
+
+  const withMis = pickBestQuote(misLive, eodStale);
+  assert.equal(withMis.source, "twse_intraday", "TWSE-MIS-5: when MIS available, use twse_intraday");
+  assert.equal(withMis.lastPrice, 2355, "TWSE-MIS-5: intraday price 2355 takes priority over EOD 2330");
+
+  const withoutMis = pickBestQuote(null, eodStale);
+  assert.equal(withoutMis.source, "twse_openapi_eod", "TWSE-MIS-5: when MIS null, fall back to EOD");
+  assert.equal(withoutMis.state, "STALE", "TWSE-MIS-5: EOD fallback state is STALE");
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");

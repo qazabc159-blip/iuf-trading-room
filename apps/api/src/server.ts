@@ -8205,9 +8205,82 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   const client = getKgiQuoteClient();
   const updatedAt = new Date().toISOString();
 
-  // Helper: TWSE OpenAPI EOD fallback for quote/realtime
-  // Returns { lastPrice, volume, source, state } from STOCK_DAY_ALL when KGI unavailable.
-  async function _twseRealtimeFallback(sym: string): Promise<{
+  // Helper: determine MIS ex prefix (tse/otc) from company market string.
+  // Strategy: if market field contains recognizable TPEX/OTC indicator → otc, else → tse.
+  function _misPrefixForMarket(market: string): "tse" | "otc" {
+    const m = market.trim().toUpperCase();
+    if (m === "TPEX" || m === "TWO" || m === "TW_EMERGING" || m.includes("上櫃") || m.includes("OTC")) {
+      return "otc";
+    }
+    return "tse";
+  }
+
+  // Helper: TWSE MIS intraday quote fetch (mis.twse.com.tw getStockInfo).
+  // Returns live intraday price when market is open and z != "-".
+  // Returns null when market is closed / symbol not found / fetch fails.
+  async function _twseMisIntradayFetch(sym: string, market: string): Promise<{
+    lastPrice: number;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    prevClose: number | null;
+    volume: number | null;
+    bid: number | null;
+    ask: number | null;
+    tradeTime: string;
+    tradeDate: string;
+    source: "twse_intraday";
+    state: "LIVE";
+  } | null> {
+    try {
+      const prefix = _misPrefixForMarket(market);
+      const exCh = `${prefix}_${sym}.tw`;
+      const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(exCh)}&json=1&delay=0`;
+      const resp = await fetch(url, {
+        signal: AbortSignal.timeout(4000),
+        headers: { "Accept": "application/json" }
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json() as { msgArray?: Array<Record<string, string>>; rtcode?: string };
+      if (data.rtcode !== "0000" || !data.msgArray?.length) return null;
+      const msg = data.msgArray[0];
+      if (!msg) return null;
+
+      // z = current trade price; "-" means no data (closed / not traded)
+      const zRaw = msg["z"];
+      if (!zRaw || zRaw === "-" || zRaw.trim() === "") return null;
+      const lastPrice = Number(zRaw);
+      if (!isFinite(lastPrice) || lastPrice <= 0) return null;
+
+      // Parse optional fields
+      const parseNum = (s?: string) => {
+        if (!s || s === "-" || s.trim() === "") return null;
+        const n = Number(s.replace(/,/g, "").trim());
+        return isFinite(n) && n > 0 ? n : null;
+      };
+
+      const open = parseNum(msg["o"]);
+      const high = parseNum(msg["h"]);
+      const low = parseNum(msg["l"]);
+      const prevClose = parseNum(msg["y"]);
+      const volume = parseNum(msg["v"]); // accumulated trade volume (lots)
+      // b = underscore-separated ask prices; a = bid prices (MIS convention reversed)
+      const bPrices = msg["b"]?.split("_").filter(Boolean);
+      const aPrices = msg["a"]?.split("_").filter(Boolean);
+      const bid = parseNum(bPrices?.[0]);
+      const ask = parseNum(aPrices?.[0]);
+      const tradeTime = msg["t"] ?? msg["%"] ?? "";
+      const tradeDate = msg["d"] ?? "";
+
+      return { lastPrice, open, high, low, prevClose, volume, bid, ask, tradeTime, tradeDate, source: "twse_intraday", state: "LIVE" };
+    } catch {
+      return null;
+    }
+  }
+
+  // Helper: TWSE OpenAPI EOD fallback for quote/realtime (昨收 / EOD price).
+  // Used when both KGI and MIS intraday are unavailable.
+  async function _twseEodFallback(sym: string): Promise<{
     lastPrice: number | null;
     volume: number | null;
     source: "twse_openapi_eod";
@@ -8235,13 +8308,33 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         note: `twse_eod date=${row.Date ?? "unknown"}`,
       };
     } catch (e) {
-      console.warn(`[realtime] TWSE fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
+      console.warn(`[realtime] TWSE EOD fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
       return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed" };
     }
   }
 
-  // 2. Whitelist check — KGI not available for this symbol → TWSE EOD fallback
+  // Legacy alias — used in KGI blocked paths below (kept for call-site brevity).
+  const _twseRealtimeFallback = _twseEodFallback;
+
+  // 2. Whitelist check — KGI not available for this symbol → try TWSE MIS intraday first, then EOD
   if (!client.isSymbolAllowed(symbol)) {
+    const mis = await _twseMisIntradayFetch(symbol, company.market);
+    if (mis) {
+      return c.json({
+        data: {
+          symbol,
+          lastPrice: mis.lastPrice,
+          bid: mis.bid,
+          ask: mis.ask,
+          volume: mis.volume,
+          freshness: "fresh" as const,
+          state: mis.state,
+          source: mis.source,
+          note: `mis_intraday date=${mis.tradeDate} time=${mis.tradeTime}`,
+          updatedAt
+        }
+      });
+    }
     const fb = await _twseRealtimeFallback(symbol);
     return c.json({
       data: {
@@ -8276,7 +8369,25 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       else if (err instanceof KgiQuoteAuthError) subscribeBlockReason = "gateway_auth_error";
       else if (err instanceof KgiQuoteDisabledError) subscribeBlockReason = "quote_disabled";
 
-      // KGI subscribe failed → try TWSE fallback
+      // KGI subscribe failed → try TWSE MIS intraday first, then EOD fallback
+      const mis = await _twseMisIntradayFetch(symbol, company.market);
+      if (mis) {
+        return c.json({
+          data: {
+            symbol,
+            lastPrice: mis.lastPrice,
+            bid: mis.bid,
+            ask: mis.ask,
+            volume: mis.volume,
+            freshness: "fresh" as const,
+            state: mis.state,
+            reason: subscribeBlockReason,
+            source: mis.source,
+            note: `kgi_subscribe_failed:${subscribeBlockReason} → mis_intraday date=${mis.tradeDate} time=${mis.tradeTime}`,
+            updatedAt
+          }
+        });
+      }
       const fb = await _twseRealtimeFallback(symbol);
       return c.json({
         data: {
@@ -8355,10 +8466,29 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     }
   }
 
-  // 5. Determine state — if KGI tick failed, try TWSE fallback
+  // 5. Determine state — if KGI tick failed, try TWSE MIS intraday, then EOD fallback
   let state: "LIVE" | "STALE" | "BLOCKED" | "NO_DATA";
   if (blockedReason) {
-    // KGI tick failed — try TWSE EOD fallback before returning BLOCKED
+    // KGI tick failed — try TWSE MIS intraday first
+    const mis = await _twseMisIntradayFetch(symbol, company.market);
+    if (mis) {
+      return c.json({
+        data: {
+          symbol,
+          lastPrice: mis.lastPrice,
+          bid: mis.bid,
+          ask: mis.ask,
+          volume: mis.volume,
+          freshness: "fresh" as const,
+          state: mis.state,
+          reason: blockedReason,
+          source: mis.source,
+          note: `kgi_blocked:${blockedReason} → mis_intraday date=${mis.tradeDate} time=${mis.tradeTime}`,
+          updatedAt
+        }
+      });
+    }
+    // MIS also unavailable (e.g. non-trading hours) — fall back to EOD
     const fb = await _twseRealtimeFallback(symbol);
     return c.json({
       data: {
@@ -14515,6 +14645,11 @@ let _briefDispatcherLastFiredDate = "";
 let _marketOverviewCronLastFiredAt: string | null = null;
 let _marketOverviewCronLastError: string | null = null;
 
+// Module-level: TWSE MIS intraday quote cron state.
+let _tsweMisQuoteCronLastFiredAt: string | null = null;
+let _tsweMisQuoteCronLastError: string | null = null;
+let _tsweMisQuoteCronLastCount = 0;
+
 /**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: fixed 09:00 TST daily (cycle13 fix).
@@ -15114,6 +15249,184 @@ function startSchedulers(workspaceSlug: string): void {
     }, 20_000);
   }
 
+  // TWSE-MIS-QUOTE-CRON: During trading hours (08:55–14:35 TST weekdays), fetch intraday
+  // quotes from TWSE MIS API for all workspace companies every 45s and inject into the
+  // manual quote cache. This ensures getMarketDataDecisionSummary sees fresh quotes →
+  // strategy ideas decision upgrades from "block" to "review/allow" during market hours.
+  // Batch: up to 20 symbols per request (using | separator). No auth required.
+  {
+    const TWSE_MIS_CRON_MS = 45 * 1000; // 45s — keeps manual quotes fresh (staleMs=60s)
+
+    /** Returns true if current Taipei time is in 08:55–14:35 window on a weekday. */
+    function isTwseMisQuoteCronWindow(): boolean {
+      const hhmm = getTaipeiHHMM();
+      if (hhmm < 855 || hhmm >= 1435) return false;
+      const taipeiDate = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const dayOfWeek = taipeiDate.getUTCDay();
+      return dayOfWeek >= 1 && dayOfWeek <= 5;
+    }
+
+    /** Map company market string to MIS exchange prefix. */
+    function _misExPrefix(market: string): "tse" | "otc" {
+      const m = market.trim().toUpperCase();
+      if (m === "TPEX" || m === "TWO" || m === "TW_EMERGING" || m.includes("上櫃") || m.includes("OTC")) {
+        return "otc";
+      }
+      return "tse";
+    }
+
+    async function _runTwseMisQuoteCron(): Promise<void> {
+      if (!isTwseMisQuoteCronWindow()) return;
+      try {
+        // Build minimal cron session for upsertManualQuotes
+        const cronSession = {
+          workspace: { id: "00000000-0000-0000-0000-000000000000", name: workspaceSlug, slug: workspaceSlug },
+          user: { id: "00000000-0000-0000-0000-000000000001", name: "twse-mis-cron", email: "cron@system", role: "Owner" as const },
+          persistenceMode: (isDatabaseMode() ? "database" : "memory") as "database" | "memory"
+        };
+
+        // Get companies lite (cached, 5min TTL) — only need ticker + market
+        // We need a repo for this; skip if DB unavailable
+        const db = getDb();
+        if (!db) return;
+
+        // Direct query: SELECT ticker, market FROM companies WHERE workspace_id = ?
+        // Use drizzle companies table (already imported)
+        const workspaceRows = await db
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.slug, workspaceSlug))
+          .limit(1);
+        const wsId = workspaceRows[0]?.id;
+        if (!wsId) return;
+
+        const companyRows = await db
+          .select({ ticker: companies.ticker, market: companies.market })
+          .from(companies)
+          .where(eq(companies.workspaceId, wsId))
+          .limit(200);
+
+        if (!companyRows.length) return;
+
+        // Build MIS batch query: up to 20 symbols per request
+        const BATCH_SIZE = 20;
+        const allQuotes: Array<{
+          symbol: string;
+          market: "TWSE" | "TPEX" | "TWO" | "TW_EMERGING" | "TW_INDEX" | "OTHER";
+          source: "manual";
+          last: number | null;
+          bid: number | null;
+          ask: number | null;
+          open: number | null;
+          high: number | null;
+          low: number | null;
+          prevClose: number | null;
+          volume: number | null;
+          changePct: number | null;
+          timestamp: string;
+        }> = [];
+
+        const parseNum = (s?: string) => {
+          if (!s || s === "-" || s.trim() === "") return null;
+          const n = Number(s.replace(/,/g, "").trim());
+          return isFinite(n) && n > 0 ? n : null;
+        };
+
+        const mapMktField = (m: string): "TWSE" | "TPEX" | "TWO" | "TW_EMERGING" | "TW_INDEX" | "OTHER" => {
+          const upper = m.trim().toUpperCase();
+          if (upper === "TWSE" || upper.includes("上市")) return "TWSE";
+          if (upper === "TPEX" || upper.includes("上櫃")) return "TPEX";
+          if (upper === "TWO") return "TWO";
+          if (upper === "TW_EMERGING" || upper.includes("EMERGING")) return "TW_EMERGING";
+          return "OTHER";
+        };
+
+        for (let i = 0; i < companyRows.length; i += BATCH_SIZE) {
+          const batch = companyRows.slice(i, i + BATCH_SIZE);
+          const exChParts = batch.map((c) => `${_misExPrefix(c.market)}_${c.ticker}.tw`);
+          const exCh = exChParts.join("|");
+          const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(exCh)}&json=1&delay=0`;
+
+          try {
+            const resp = await fetch(url, {
+              signal: AbortSignal.timeout(5000),
+              headers: { "Accept": "application/json" }
+            });
+            if (!resp.ok) continue;
+            const data = await resp.json() as { msgArray?: Array<Record<string, string>>; rtcode?: string };
+            if (data.rtcode !== "0000" || !data.msgArray) continue;
+
+            const now = new Date().toISOString();
+            for (const msg of data.msgArray) {
+              const ticker = msg["c"];
+              if (!ticker) continue;
+              const zRaw = msg["z"];
+              if (!zRaw || zRaw === "-" || zRaw.trim() === "") continue;
+              const last = Number(zRaw);
+              if (!isFinite(last) || last <= 0) continue;
+
+              const companyRow = batch.find((r) => r.ticker === ticker);
+              const market = mapMktField(companyRow?.market ?? "");
+
+              const open = parseNum(msg["o"]);
+              const high = parseNum(msg["h"]);
+              const low = parseNum(msg["l"]);
+              const prevClose = parseNum(msg["y"]);
+              const vol = parseNum(msg["v"]);
+              const bPrices = msg["b"]?.split("_").filter(Boolean);
+              const aPrices = msg["a"]?.split("_").filter(Boolean);
+              const bid = parseNum(bPrices?.[0]);
+              const ask = parseNum(aPrices?.[0]);
+
+              // Calculate changePct vs prevClose
+              const changePct =
+                prevClose && prevClose > 0
+                  ? ((last - prevClose) / prevClose) * 100
+                  : null;
+
+              allQuotes.push({
+                symbol: ticker,
+                market,
+                source: "manual",
+                last,
+                bid,
+                ask,
+                open,
+                high,
+                low,
+                prevClose,
+                volume: vol,
+                changePct,
+                timestamp: now
+              });
+            }
+          } catch {
+            // batch fail is non-fatal — skip
+          }
+        }
+
+        if (!allQuotes.length) return;
+
+        await upsertManualQuotes({ session: cronSession, quotes: allQuotes });
+        _tsweMisQuoteCronLastFiredAt = new Date().toISOString();
+        _tsweMisQuoteCronLastCount = allQuotes.length;
+        _tsweMisQuoteCronLastError = null;
+        console.log(`[twse-mis-cron] injected ${allQuotes.length} intraday quotes into manual cache`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        _tsweMisQuoteCronLastError = msg;
+        console.warn("[twse-mis-cron] tick failed:", msg);
+      }
+    }
+
+    ui(_runTwseMisQuoteCron, TWSE_MIS_CRON_MS);
+
+    // Boot fire: 30s after startup so DB is warm and companies are seeded
+    setTimeout(() => {
+      void _runTwseMisQuoteCron();
+    }, 30_000);
+  }
+
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
@@ -15129,6 +15442,7 @@ function startSchedulers(workspaceSlug: string): void {
     "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) + " +
     "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
     "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) + " +
+    "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 08:55-14:35 TST weekdays) + " +
     "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) + " +
     "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) started"
   );
