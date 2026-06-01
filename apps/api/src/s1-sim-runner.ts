@@ -98,6 +98,17 @@ export interface S1CapitalConfig {
   createdAt: string | null;
 }
 
+export const S1_AUTO_SCHEDULER_POLICY = {
+  enabled: true,
+  mode: "weekly_monday_kgi_sim",
+  signalWindowTst: "Monday 08:30-08:55",
+  orderSubmitWindowTst: "Monday 09:00-09:20",
+  eodWindowTst: "Weekdays 14:00-14:30",
+  pollIntervalMs: 15 * 60 * 1000,
+  signalCatchupBeforeOrder: true,
+  manualTriggerRole: "owner_backup_only",
+} as const;
+
 // ---------------------------------------------------------------------------
 // Config & helpers
 // ---------------------------------------------------------------------------
@@ -244,6 +255,26 @@ async function writeMd(path: string, content: string): Promise<void> {
   await fs.writeFile(path, content, "utf-8");
 }
 
+async function readS1BasketForDate(date: string): Promise<S1Basket | null> {
+  const p = join(reportsBase(), "s1_sim_basket", `${date}.json`);
+  try {
+    const raw = await fs.readFile(p, "utf-8");
+    return JSON.parse(raw) as S1Basket;
+  } catch {
+    return null;
+  }
+}
+
+export async function hasS1BasketForDate(date = taipeiDateStr()): Promise<boolean> {
+  return (await readS1BasketForDate(date)) !== null;
+}
+
+export type S1SignalCatchupResult =
+  | "existing_today_basket"
+  | "generated_today_basket"
+  | "skipped_outside_order_window"
+  | "missing_after_signal";
+
 // ---------------------------------------------------------------------------
 // Module-level dedup guards (prevent multi-fire within same day/window)
 // ---------------------------------------------------------------------------
@@ -251,6 +282,7 @@ async function writeMd(path: string, content: string): Promise<void> {
 let _signalLastFiredDate = "";
 let _orderSubmitLastFiredDate = "";
 let _eodLastFiredDate = "";
+let _signalRunInFlight: Promise<void> | null = null;
 
 // ---------------------------------------------------------------------------
 // A. cont_liq signal runner + regime classifier + order sizing
@@ -261,10 +293,24 @@ let _eodLastFiredDate = "";
  * Universe: uses workspace companies from DB (already liquidity-filtered).
  * If fewer than 8 symbols have data, basket is truncated (skip halted stocks).
  */
-export async function runS1SignalTick(): Promise<void> {
+export async function runS1SignalTick(options: { force?: boolean } = {}): Promise<void> {
+  if (_signalRunInFlight) {
+    console.log("[s1-signal] signal run already in flight, waiting");
+    await _signalRunInFlight;
+    return;
+  }
+
+  _signalRunInFlight = runS1SignalTickOnce(options).finally(() => {
+    _signalRunInFlight = null;
+  });
+
+  await _signalRunInFlight;
+}
+
+async function runS1SignalTickOnce(options: { force?: boolean } = {}): Promise<void> {
   const todayTst = taipeiDateStr();
 
-  if (_signalLastFiredDate === todayTst) {
+  if (!options.force && _signalLastFiredDate === todayTst) {
     console.log("[s1-signal] already fired today, skipping");
     return;
   }
@@ -511,13 +557,31 @@ export async function runS1SignalTick(): Promise<void> {
   console.log(`[s1-signal] DONE regime=${regime} top8=[${top8.map((s) => s.symbol).join(",")}]`);
 }
 
+export async function ensureS1BasketBeforeOrderSubmit(): Promise<S1SignalCatchupResult> {
+  const todayTst = taipeiDateStr();
+  const existing = await readS1BasketForDate(todayTst);
+  if (existing) return "existing_today_basket";
+
+  if (!isS1OrderSubmitWindow()) {
+    return "skipped_outside_order_window";
+  }
+
+  console.warn("[s1-order] today basket missing inside order window; auto-generating signal before SIM submit");
+  await runS1SignalTick({ force: true });
+
+  const generated = await readS1BasketForDate(todayTst);
+  return generated ? "generated_today_basket" : "missing_after_signal";
+}
+
 // ---------------------------------------------------------------------------
 // B. KGI SIM order submitter
 // ---------------------------------------------------------------------------
 
 /**
- * Read the most recent basket for today (or yesterday as fallback) and submit
- * each entry to KGI SIM via the gateway client.
+ * Read today's basket and submit each entry to KGI SIM via the gateway client.
+ * If the signal window was missed but the Monday order window is open, the
+ * runner generates today's basket first. It never submits stale prior-day
+ * baskets.
  *
  * Retry: 3x exponential backoff per order (200ms, 400ms, 800ms).
  * Fail-safe: rejection → log + NO auto-retry (per Athena spec).
@@ -534,30 +598,21 @@ export async function runS1OrderSubmitTick(): Promise<void> {
   const failsafe_notes: string[] = [];
   console.log(`[s1-order] START trading_date=${todayTst}`);
 
-  // 1. Find basket for today (fallback to yesterday)
-  const basketDir = join(reportsBase(), "s1_sim_basket");
-  let basket: S1Basket | null = null;
-  let basketDate = todayTst;
+  // 1. Ensure today's basket exists through the automatic path.
+  const catchupResult = await ensureS1BasketBeforeOrderSubmit();
+  failsafe_notes.push(`signal_catchup:${catchupResult}`);
 
-  for (const tryDate of [todayTst, taipeiDateStr(-1), taipeiDateStr(-2)]) {
-    const p = join(basketDir, `${tryDate}.json`);
-    try {
-      const raw = await fs.readFile(p, "utf-8");
-      basket = JSON.parse(raw) as S1Basket;
-      basketDate = tryDate;
-      console.log(`[s1-order] using basket from ${tryDate}`);
-      break;
-    } catch {
-      // not found — try next
-    }
-  }
+  let basket: S1Basket | null = await readS1BasketForDate(todayTst);
+  const basketDate = todayTst;
 
   if (!basket) {
-    console.warn("[s1-order] no basket found (today/yesterday/day-before) — skipping order submit");
-    failsafe_notes.push("no_basket_found: signal runner may not have fired yet");
+    console.warn("[s1-order] no today basket found after auto catch-up — skipping order submit");
+    failsafe_notes.push("no_today_basket_found: signal runner did not produce today's basket");
     _orderSubmitLastFiredDate = ""; // allow retry
     return;
   }
+
+  console.log(`[s1-order] using basket from ${basketDate}`);
 
   if (basket.basket.length === 0) {
     console.warn("[s1-order] basket is empty (likely crisis regime / no exposure) — skipping");

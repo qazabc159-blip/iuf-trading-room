@@ -215,6 +215,16 @@ export type DailySmokeHistory = {
 export type S1SimStatus = {
   asOf: string | null;
   todayTst: string | null;
+  automaticScheduler: {
+    enabled: boolean;
+    mode: string | null;
+    signalWindowTst: string | null;
+    orderSubmitWindowTst: string | null;
+    eodWindowTst: string | null;
+    pollIntervalMs: number | null;
+    signalCatchupBeforeOrder: boolean;
+    manualTriggerRole: string | null;
+  };
   lastSignalDate: string | null;
   lastOrderDate: string | null;
   lastEodDate: string | null;
@@ -290,6 +300,16 @@ type S1StatusRaw = {
     signal_open?: boolean;
     order_submit_open?: boolean;
     eod_open?: boolean;
+  };
+  automatic_scheduler?: {
+    enabled?: boolean;
+    mode?: string | null;
+    signal_window_tst?: string | null;
+    order_submit_window_tst?: string | null;
+    eod_window_tst?: string | null;
+    poll_interval_ms?: number | null;
+    signal_catchup_before_order?: boolean;
+    manual_trigger_role?: string | null;
   };
   gateway_url_configured?: boolean;
   configured_capital_twd?: number | null;
@@ -473,6 +493,16 @@ export async function getS1SimStatus() {
     data: {
       asOf: raw.as_of ?? null,
       todayTst: raw.today_tst ?? null,
+      automaticScheduler: {
+        enabled: raw.automatic_scheduler?.enabled === true,
+        mode: raw.automatic_scheduler?.mode ?? null,
+        signalWindowTst: raw.automatic_scheduler?.signal_window_tst ?? null,
+        orderSubmitWindowTst: raw.automatic_scheduler?.order_submit_window_tst ?? null,
+        eodWindowTst: raw.automatic_scheduler?.eod_window_tst ?? null,
+        pollIntervalMs: raw.automatic_scheduler?.poll_interval_ms ?? null,
+        signalCatchupBeforeOrder: raw.automatic_scheduler?.signal_catchup_before_order === true,
+        manualTriggerRole: raw.automatic_scheduler?.manual_trigger_role ?? null,
+      },
       lastSignalDate: latestBasket?.date ?? null,
       lastOrderDate: todayOrders?.submitted_at_tst ?? null,
       lastEodDate: todayEod?.generated_at_tst ?? null,
