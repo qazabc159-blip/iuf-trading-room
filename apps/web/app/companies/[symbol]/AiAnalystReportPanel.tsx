@@ -187,7 +187,19 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
         setPhase({ kind: "not-owner" });
         return;
       }
-      setPhase({ kind: "idle" });
+      try {
+        const latest = await apiFetch<ReactRunResult | null>(
+          `/api/v1/admin/brain/react/company-report/${encodeURIComponent(ticker)}`
+        );
+        if (cancelled) return;
+        if (latest?.report_md) {
+          setPhase({ kind: "complete", result: latest });
+          return;
+        }
+      } catch {
+        // If the persisted-report lookup is unavailable, keep the generator usable.
+      }
+      if (!cancelled) setPhase({ kind: "idle" });
     }
     void checkRole();
     return () => { cancelled = true; };

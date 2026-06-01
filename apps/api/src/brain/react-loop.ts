@@ -726,6 +726,34 @@ export interface DecisionDetail extends DecisionListItem {
   finalReport: string | null;
 }
 
+function promptIntent(prompt: unknown): string {
+  if (!prompt || typeof prompt !== "object" || Array.isArray(prompt)) return "";
+  const intent = (prompt as { intent?: unknown }).intent;
+  return typeof intent === "string" ? intent : "";
+}
+
+function isCompanyAiAnalystDecisionPrompt(prompt: unknown, ticker: string): boolean {
+  const intent = promptIntent(prompt);
+  if (!isCompanyAiAnalystPrompt(intent)) return false;
+  return extractCompanyAiAnalystTicker(intent) === ticker.trim().toUpperCase();
+}
+
+function mapDecisionDetail(r: typeof brainDecisions.$inferSelect): DecisionDetail {
+  return {
+    id: r.id,
+    runId: r.runId,
+    workspaceId: r.workspaceId ?? null,
+    status: r.status,
+    totalTokens: r.totalTokens,
+    totalCostUsd: r.totalCostUsd ?? "0",
+    createdAt: r.createdAt.toISOString(),
+    completedAt: r.completedAt?.toISOString() ?? null,
+    prompt: r.prompt,
+    reactTrace: Array.isArray(r.reactTrace) ? r.reactTrace as unknown[] : [],
+    finalReport: r.finalReport ?? null
+  };
+}
+
 export async function listRecentDecisions(limit = 20): Promise<DecisionListItem[]> {
   if (!isDatabaseMode()) return [];
   const db = getDb();
@@ -739,16 +767,19 @@ export async function listRecentDecisions(limit = 20): Promise<DecisionListItem[
       .orderBy(desc(brainDecisions.createdAt))
       .limit(Math.min(limit, 100));
 
-    return rows.map((r) => ({
-      id: r.id,
-      runId: r.runId,
-      workspaceId: r.workspaceId ?? null,
-      status: r.status,
-      totalTokens: r.totalTokens,
-      totalCostUsd: r.totalCostUsd ?? "0",
-      createdAt: r.createdAt.toISOString(),
-      completedAt: r.completedAt?.toISOString() ?? null
-    }));
+    return rows.map((r) => {
+      const detail = mapDecisionDetail(r);
+      return {
+        id: detail.id,
+        runId: detail.runId,
+        workspaceId: detail.workspaceId,
+        status: detail.status,
+        totalTokens: detail.totalTokens,
+        totalCostUsd: detail.totalCostUsd,
+        createdAt: detail.createdAt,
+        completedAt: detail.completedAt
+      };
+    });
   } catch (e) {
     console.warn("[react-loop] listRecentDecisions failed:", e instanceof Error ? e.message : e);
     return [];
@@ -770,21 +801,38 @@ export async function getDecisionByRunId(runId: string): Promise<DecisionDetail 
     const r = rows[0];
     if (!r) return null;
 
-    return {
-      id: r.id,
-      runId: r.runId,
-      workspaceId: r.workspaceId ?? null,
-      status: r.status,
-      totalTokens: r.totalTokens,
-      totalCostUsd: r.totalCostUsd ?? "0",
-      createdAt: r.createdAt.toISOString(),
-      completedAt: r.completedAt?.toISOString() ?? null,
-      prompt: r.prompt,
-      reactTrace: Array.isArray(r.reactTrace) ? r.reactTrace as unknown[] : [],
-      finalReport: r.finalReport ?? null
-    };
+    return mapDecisionDetail(r);
   } catch (e) {
     console.warn("[react-loop] getDecisionByRunId failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+export async function getLatestCompanyAiAnalystDecision(ticker: string, workspaceId?: string | null): Promise<DecisionDetail | null> {
+  if (!isDatabaseMode()) return null;
+  const db = getDb();
+  if (!db) return null;
+
+  try {
+    const { desc } = await import("drizzle-orm");
+    const rows = await db
+      .select()
+      .from(brainDecisions)
+      .orderBy(desc(brainDecisions.createdAt))
+      .limit(100);
+
+    const normalizedWorkspaceId = workspaceId ?? null;
+    const row = rows.find((r) => {
+      const sameWorkspace = (r.workspaceId ?? null) === normalizedWorkspaceId;
+      return sameWorkspace
+        && r.status === "complete"
+        && Boolean(r.finalReport?.trim())
+        && isCompanyAiAnalystDecisionPrompt(r.prompt, ticker);
+    });
+
+    return row ? mapDecisionDetail(row) : null;
+  } catch (e) {
+    console.warn("[react-loop] getLatestCompanyAiAnalystDecision failed:", e instanceof Error ? e.message : e);
     return null;
   }
 }
