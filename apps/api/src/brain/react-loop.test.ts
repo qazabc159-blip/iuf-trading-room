@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildCompanyAiAnalystContractFallbackReport,
   COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
   validateCompanyAiAnalystSections,
   validateSynthesisSections,
@@ -46,4 +47,36 @@ test("company AI analyst validator accepts the fixed 9-section contract", () => 
 test("company AI analyst validator rejects missing contract sections", () => {
   const brokenReport = completeCompanyReport.replace("## 8. AI 結論與觀察等級", "## 8. 結論");
   assert.deepEqual(validateSynthesisSections(brokenReport, companyPrompt), [8]);
+});
+
+test("company AI analyst fallback is honest and still satisfies the 9-section contract", () => {
+  const fallback = buildCompanyAiAnalystContractFallbackReport(
+    [
+      {
+        round: 1,
+        thought: "Fetch technical data",
+        toolName: "get_company_technical",
+        toolInput: { ticker: "2330" },
+        observation: { lastPrice: 1000 },
+        tokensUsed: 10,
+      },
+      {
+        round: 2,
+        thought: "Fetch news",
+        toolName: "get_news_top10",
+        toolInput: null,
+        observation: { rows: [] },
+        tokensUsed: 8,
+      },
+    ],
+    companyPrompt,
+    [3, 8],
+    "2026-06-01T00:00:00.000Z"
+  );
+
+  assert.deepEqual(validateSynthesisSections(fallback, companyPrompt), []);
+  assert.match(fallback, /資料不足/);
+  assert.match(fallback, /缺少段落 3, 8/);
+  assert.match(fallback, /get_company_technical \/ get_news_top10/);
+  assert.doesNotMatch(fallback, /必漲|重倉|All in/i);
 });
