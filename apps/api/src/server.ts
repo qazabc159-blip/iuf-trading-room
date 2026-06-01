@@ -4572,16 +4572,44 @@ app.post("/api/v1/internal/s1-sim/manual-run", async (c) => {
     }, 400);
   }
 
+  const {
+    isS1SignalWindow,
+    isS1OrderSubmitWindow,
+    isS1EodWindow,
+    runS1SignalTick,
+    runS1OrderSubmitTick,
+    runS1EodReportTick,
+    S1_AUTO_SCHEDULER_POLICY,
+  } = await import("./s1-sim-runner.js");
+
+  const windows = {
+    signal_open: isS1SignalWindow(),
+    order_submit_open: isS1OrderSubmitWindow(),
+    eod_open: isS1EodWindow(),
+  };
+  const windowOpen =
+    action === "signal" ? windows.signal_open :
+    action === "order_submit" ? windows.order_submit_open :
+    windows.eod_open;
+  const outsideWindowConfirm = raw["outsideWindowConfirm"];
+  if (!windowOpen && outsideWindowConfirm !== "ALLOW_S1_SIM_OUTSIDE_WINDOW") {
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      error: "OUTSIDE_AUTOMATIC_WINDOW",
+      message: "S1 SIM manual-run is owner backup only. Outside the automatic window, pass outsideWindowConfirm='ALLOW_S1_SIM_OUTSIDE_WINDOW' to make the override explicit.",
+      action,
+      windows,
+      automatic_scheduler: S1_AUTO_SCHEDULER_POLICY,
+      required_outside_window_confirm: "ALLOW_S1_SIM_OUTSIDE_WINDOW",
+      result_path: "/api/v1/internal/s1-sim/status",
+    }, 409);
+  }
+
   const triggerId = crypto.randomUUID();
   const acceptedAt = new Date().toISOString();
   void (async () => {
     try {
-      const {
-        runS1SignalTick,
-        runS1OrderSubmitTick,
-        runS1EodReportTick,
-      } = await import("./s1-sim-runner.js");
-
       if (action === "signal") {
         await runS1SignalTick();
       } else if (action === "order_submit") {
