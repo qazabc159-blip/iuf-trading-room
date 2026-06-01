@@ -602,7 +602,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   let live = window.__IUF_FINAL_V031_LIVE__;
   if (!live || !live.screen) return;
   let currentPaperSymbol = null;
-  const apiBase = String(window.__IUF_FINAL_V031_API_BASE__ || "").replace(/\/$/, "");
+  const apiBaseRaw = String(window.__IUF_FINAL_V031_API_BASE__ || "");
+  const apiBase = apiBaseRaw.endsWith("/") ? apiBaseRaw.slice(0, -1) : apiBaseRaw;
   const apiProxy = window.__IUF_FINAL_V031_API_PROXY__;
   const workspaceSlug = window.__IUF_FINAL_V031_WORKSPACE_SLUG__;
   const industryLabels = window.__IUF_FINAL_V031_INDUSTRY_LABELS__ || {};
