@@ -19,9 +19,9 @@
 
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getFinMindClient } from "./data-sources/finmind-client.js";
-import { getDb, companies, workspaces } from "@iuf-trading-room/db";
+import { auditLogs, companies, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,9 +89,93 @@ export interface S1EodReport {
   notes: string[];
 }
 
+export type S1CapitalSource = "latest_subscription" | "env" | "default";
+
+export interface S1CapitalConfig {
+  capitalTwd: number;
+  source: S1CapitalSource;
+  subscriptionId: string | null;
+  createdAt: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Config & helpers
 // ---------------------------------------------------------------------------
+
+export const S1_DEFAULT_CAPITAL_TWD = 10_000_000;
+export const S1_MIN_CAPITAL_TWD = 50_000;
+export const S1_MAX_CAPITAL_TWD = 10_000_000;
+
+function normalizeS1Capital(value: unknown): number | null {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.replace(/,/g, "")) : NaN;
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.floor(n);
+  if (rounded < S1_MIN_CAPITAL_TWD || rounded > S1_MAX_CAPITAL_TWD) return null;
+  return rounded;
+}
+
+function envS1Capital(): S1CapitalConfig | null {
+  const capital = normalizeS1Capital(process.env["S1_SIM_CAPITAL_TWD"]);
+  if (capital === null) return null;
+  return {
+    capitalTwd: capital,
+    source: "env",
+    subscriptionId: null,
+    createdAt: null,
+  };
+}
+
+export async function resolveS1SimCapitalTwd(workspaceId: string): Promise<S1CapitalConfig> {
+  const envConfig = envS1Capital();
+
+  if (isDatabaseMode()) {
+    const db = getDb();
+    if (db) {
+      try {
+        const rows = await db
+          .select({
+            id: auditLogs.id,
+            createdAt: auditLogs.createdAt,
+            payload: auditLogs.payload,
+          })
+          .from(auditLogs)
+          .where(
+            and(
+              eq(auditLogs.workspaceId, workspaceId),
+              eq(auditLogs.action, "quant_strategy.subscribe"),
+              eq(auditLogs.entityId, "cont_liq_v36"),
+            ),
+          )
+          .orderBy(desc(auditLogs.createdAt))
+          .limit(1);
+
+        const row = rows[0];
+        const payload =
+          row?.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+            ? row.payload as Record<string, unknown>
+            : {};
+        const latestCapital = normalizeS1Capital(payload["capital_twd"]);
+        if (row && latestCapital !== null) {
+          return {
+            capitalTwd: latestCapital,
+            source: "latest_subscription",
+            subscriptionId: typeof payload["subscription_id"] === "string" ? payload["subscription_id"] : row.id,
+            createdAt: row.createdAt.toISOString(),
+          };
+        }
+      } catch (e) {
+        console.warn("[s1-capital] failed to read latest quant subscription:", e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+
+  return envConfig ?? {
+    capitalTwd: S1_DEFAULT_CAPITAL_TWD,
+    source: "default",
+    subscriptionId: null,
+    createdAt: null,
+  };
+}
 
 /** Volume-mount path for persistent reports. Railway: /data, local: runtime-data */
 function reportsBase(): string {
@@ -353,8 +437,13 @@ export async function runS1SignalTick(): Promise<void> {
   // 5. Top-8 selection
   const top8 = [...scored].sort((a, b) => b.score_cont_liq - a.score_cont_liq).slice(0, 8);
 
-  // 6. Order sizing (per Athena packet)
-  const CAPITAL_TWD = 10_000_000;
+  // 6. Order sizing (per Athena packet + latest S1 SIM capital subscription)
+  const capitalConfig = await resolveS1SimCapitalTwd(workspaceId);
+  const CAPITAL_TWD = capitalConfig.capitalTwd;
+  failsafe_notes.push(
+    `capital_source:${capitalConfig.source}` +
+      (capitalConfig.subscriptionId ? ` subscription:${capitalConfig.subscriptionId}` : ""),
+  );
   const longTarget = CAPITAL_TWD * exposureWeight;
   const perNameTarget = top8.length > 0 ? longTarget / top8.length : 0;
 
@@ -688,7 +777,7 @@ export async function runS1EodReportTick(): Promise<void> {
     : null;
 
   // Estimated cash residual from basket (best effort)
-  let cashResidual = 10_000_000; // assume full capital undeployed until basket found
+  let cashResidual = S1_DEFAULT_CAPITAL_TWD; // assume default capital undeployed until basket found
   try {
     const basketPath = join(reportsBase(), "s1_sim_basket", `${todayTst}.json`);
     const raw = await fs.readFile(basketPath, "utf-8");

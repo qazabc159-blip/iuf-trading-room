@@ -1,10 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import type { CSSProperties } from "react";
+import { useMemo, useState } from "react";
 
 import type { QuantStrategy, StrategyCurvePoint } from "../strategy-data";
 import styles from "../QuantStrategies.module.css";
+
+const MIN_SIM_CAPITAL = 50_000;
+const MAX_SIM_CAPITAL = 10_000_000;
+
+type SubscribeResponse = {
+  subscription_id?: string;
+  status?: string;
+  warning?: string;
+  error?: string;
+  message?: string;
+  reason?: string;
+};
 
 function accentColor(accent: QuantStrategy["accent"]) {
   if (accent === "cyan") return "#5cc8ff";
@@ -20,37 +32,12 @@ function money(value: number) {
   return Math.round(value).toLocaleString("zh-TW");
 }
 
-const MIN_SIM_CAPITAL = 50_000;
-const MAX_SIM_CAPITAL = 1_000_000;
-
-const BACKEND_STRATEGY_IDS: Record<string, string> = {
-  cont_liq_v36: "cont_liq_v36",
-  class5_revenue_momentum: "strategy_002",
-  family_c_sbl_overlay: "strategy_003",
-};
-
-type SubscribeResponse = {
-  subscription_id?: string;
-  status?: string;
-  warning?: string;
-  error?: string;
-  message?: string;
-  reason?: string;
-};
-
-function backendStrategyIdFor(strategy: QuantStrategy) {
-  return BACKEND_STRATEGY_IDS[strategy.id] ?? strategy.id;
-}
-
 function formatSubscribeFailure(status: number, body: SubscribeResponse) {
   const code = body.error ?? body.message ?? "SUBSCRIBE_FAILED";
-  if (status === 410 || code === "STRATEGY_RETIRED") {
-    const reason = typeof body.reason === "string" && body.reason.trim() ? ` ${body.reason.trim()}` : "";
-    return `策略已退役，不再接受 SIM 訂閱。${reason}`;
-  }
-  if (status === 401 || status === 403) return `訂閱失敗：權限或 SIM-only 風控未通過（${code}）。`;
-  if (status === 400) return `訂閱失敗：投入金額或策略參數不正確（${code}）。`;
-  return `訂閱失敗：後端暫時無法建立策略訂閱（${status} / ${code}）。`;
+  if (status === 401 || status === 403) return `Owner 權限不足或登入逾時，後端拒絕寫入 S1 資金設定。(${code})`;
+  if (status === 400) return `資金格式或範圍不合法，請輸入 ${money(MIN_SIM_CAPITAL)} 到 ${money(MAX_SIM_CAPITAL)} TWD。(${code})`;
+  if (status === 410) return `策略已退役，不能配置 SIM 資金。${body.reason ?? code}`;
+  return `S1 資金設定失敗：HTTP ${status} / ${code}`;
 }
 
 function LineChart({ points, color }: { points: StrategyCurvePoint[]; color: string }) {
@@ -70,16 +57,11 @@ function LineChart({ points, color }: { points: StrategyCurvePoint[]; color: str
   const area = `${line} ${coords.at(-1)?.x ?? pad},${height - pad} ${pad},${height - pad}`;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="230" role="img" aria-label="累積報酬曲線">
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="230" role="img" aria-label="S1 forward observation equity curve">
       <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="rgba(220,228,240,.14)" />
       <polygon points={area} fill={color} opacity="0.12" />
       <polyline points={line} fill="none" stroke={color} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
-      {coords.map(({ x, y, p }) => (
-        <g key={`${p.date}-${p.value}`}>
-          <circle cx={x} cy={y} r="3" fill={color} />
-        </g>
-      ))}
-      <text x={pad} y={18} fill="#91a0b5" fontSize="12" fontFamily="monospace">累積報酬</text>
+      <text x={pad} y={18} fill="#91a0b5" fontSize="12" fontFamily="monospace">Forward observation curve</text>
       <text x={width - pad} y={18} fill="#91a0b5" fontSize="12" fontFamily="monospace" textAnchor="end">
         {pct(points.at(-1)?.value ?? 0)}
       </text>
@@ -97,44 +79,46 @@ function BarChart({ points, color }: { points: StrategyCurvePoint[]; color: stri
   const barW = (width - pad * 2) / points.length - 6;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="220" role="img" aria-label="分期報酬長條圖">
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="220" role="img" aria-label="S1 monthly return bars">
       <line x1={pad} y1={zeroY} x2={width - pad} y2={zeroY} stroke="rgba(220,228,240,.14)" />
       {points.map((p, index) => {
         const x = pad + index * ((width - pad * 2) / points.length) + 3;
         const h = Math.abs(p.value) / maxAbs * (height / 2 - pad);
         const y = p.value >= 0 ? zeroY - h : zeroY;
         return (
-          <g key={`${p.date}-${p.value}`}>
-            <rect x={x} y={y} width={barW} height={h} rx="4" fill={p.value >= 0 ? color : "#e63946"} opacity="0.82" />
-          </g>
+          <rect
+            key={`${p.date}-${p.value}`}
+            x={x}
+            y={y}
+            width={Math.max(3, barW)}
+            height={h}
+            rx="4"
+            fill={p.value >= 0 ? color : "#e63946"}
+            opacity="0.82"
+          />
         );
       })}
-      <text x={pad} y={18} fill="#91a0b5" fontSize="12" fontFamily="monospace">每期淨報酬</text>
+      <text x={pad} y={18} fill="#91a0b5" fontSize="12" fontFamily="monospace">Monthly returns</text>
     </svg>
   );
 }
 
 function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: string }) {
-  const [capital, setCapital] = useState("100000");
+  const [capital, setCapital] = useState("10000000");
   const [confirmed, setConfirmed] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-  const openButtonRef = useRef<HTMLButtonElement | null>(null);
-  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
-  const confirmDialogRef = useRef<HTMLDivElement | null>(null);
-  const busyRef = useRef(false);
 
   const budget = useMemo(() => Number(capital.replace(/,/g, "")), [capital]);
   const capitalValid = Number.isFinite(budget) && budget >= MIN_SIM_CAPITAL && budget <= MAX_SIM_CAPITAL;
   const capitalMessage = !Number.isFinite(budget) || budget <= 0
-    ? "請輸入投入金額。"
+    ? "請輸入要給 S1/F-AUTO 使用的 SIM 資金。"
     : budget < MIN_SIM_CAPITAL
-      ? `投入金額需至少 ${money(MIN_SIM_CAPITAL)} TWD。`
+      ? `資金至少 ${money(MIN_SIM_CAPITAL)} TWD。`
       : budget > MAX_SIM_CAPITAL
-        ? `投入金額不可超過 ${money(MAX_SIM_CAPITAL)} TWD。`
+        ? `目前 S1 上限為 ${money(MAX_SIM_CAPITAL)} TWD。`
         : null;
 
   const preview = useMemo(() => {
@@ -142,110 +126,12 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
     return strategy.holdings.map((holding) => {
       const target = budget * holding.weight;
       const qty = Math.floor(target / holding.price);
-      return {
-        ...holding,
-        target,
-        qty,
-        notional: qty * holding.price,
-      };
+      return { ...holding, target, qty, notional: qty * holding.price };
     });
   }, [budget, strategy.holdings]);
 
   const executable = preview.filter((row) => row.qty > 0);
   const totalNotional = executable.reduce((sum, row) => sum + row.notional, 0);
-
-  useEffect(() => {
-    busyRef.current = busy;
-  }, [busy]);
-
-  useEffect(() => {
-    if (!confirmOpen) return;
-
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusTimer = window.setTimeout(() => cancelButtonRef.current?.focus(), 0);
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || busyRef.current) return;
-      event.preventDefault();
-      setConfirmOpen(false);
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.clearTimeout(focusTimer);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.setTimeout(() => {
-        if (previousFocus && document.contains(previousFocus)) {
-          previousFocus.focus();
-          return;
-        }
-        openButtonRef.current?.focus();
-      }, 0);
-    };
-  }, [confirmOpen]);
-
-  function closeConfirmDialog() {
-    if (busyRef.current) return;
-    setConfirmOpen(false);
-  }
-
-  function getFocusableDialogControls() {
-    const dialog = confirmDialogRef.current;
-    if (!dialog) return [];
-
-    const controls = dialog.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-
-    return Array.from(controls).filter((control) => control.tabIndex >= 0 && control.offsetParent !== null);
-  }
-
-  function focusDialogEdge(edge: "first" | "last") {
-    const controls = getFocusableDialogControls();
-    if (controls.length === 0) {
-      confirmDialogRef.current?.focus();
-      return;
-    }
-
-    controls[edge === "first" ? 0 : controls.length - 1]?.focus();
-  }
-
-  function handleConfirmDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeConfirmDialog();
-      return;
-    }
-
-    if (event.key !== "Tab") return;
-
-    const dialog = confirmDialogRef.current;
-    if (!dialog) return;
-
-    const controls = getFocusableDialogControls();
-    if (controls.length === 0) {
-      event.preventDefault();
-      dialog.focus();
-      return;
-    }
-
-    const first = controls[0];
-    const last = controls[controls.length - 1];
-    const active = document.activeElement;
-
-    if (event.shiftKey) {
-      if (active === first || !dialog.contains(active)) {
-        event.preventDefault();
-        focusDialogEdge("last");
-      }
-      return;
-    }
-
-    if (active === last) {
-      event.preventDefault();
-      focusDialogEdge("first");
-    }
-  }
 
   async function subscribeStrategy() {
     if (!confirmed || busy || executable.length === 0 || !capitalValid) return;
@@ -254,8 +140,7 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
     setError(null);
     setWarning(null);
     try {
-      const backendStrategyId = backendStrategyIdFor(strategy);
-      const response = await fetch(`/api/quant-strategies/${encodeURIComponent(backendStrategyId)}/subscribe`, {
+      const response = await fetch(`/api/quant-strategies/${encodeURIComponent(strategy.id)}/subscribe`, {
         method: "POST",
         cache: "no-store",
         credentials: "include",
@@ -277,29 +162,23 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
         throw new Error(formatSubscribeFailure(response.status, body));
       }
 
-      const subscriptionLabel = typeof body.subscription_id === "string"
-        ? ` (${body.subscription_id.slice(0, 8)})`
-        : "";
-      const readinessWarning = typeof body.warning === "string" && body.warning.trim()
-        ? body.warning.trim()
-        : null;
-      setResult(`SIM-only 策略訂閱已建立${subscriptionLabel}，配置資金 ${money(budget)} TWD；不直接送出個股委託。`);
-      setWarning(readinessWarning);
-      setConfirmOpen(false);
+      const subscriptionLabel = body.subscription_id ? ` (${body.subscription_id.slice(0, 8)})` : "";
+      setResult(`S1 SIM 資金已寫入後端${subscriptionLabel}：${money(budget)} TWD。下一次 S1 signal run 會用這個金額計算 basket 與委託股數。`);
+      setWarning(body.warning?.trim() || null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "策略訂閱建立失敗。");
+      setError(err instanceof Error ? err.message : "S1 SIM 資金設定失敗。");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <aside className={styles.launcher} style={{ "--accent": color } as React.CSSProperties}>
-      <h2>SIM 策略訂閱</h2>
+    <aside className={styles.launcher} style={{ "--accent": color } as CSSProperties}>
+      <h2>S1 SIM 資金配置</h2>
       <p className={styles.sub} style={{ margin: "0 0 12px", fontSize: 13 }}>
-        建立 SIM-only 策略訂閱紀錄；此動作不直接送出個股委託，也不開啟正式券商交易。
+        這裡不是展示用設定。送出後會寫進後端 audit log，S1 runner 產生 basket 時會讀最新一筆 S1 配置。
       </p>
-      <label htmlFor="capital" className={styles.eyebrow}>CAPITAL TWD / 50,000 - 1,000,000</label>
+      <label htmlFor="capital" className={styles.eyebrow}>CAPITAL TWD / 50,000 - 10,000,000</label>
       <input
         id="capital"
         className={styles.input}
@@ -313,75 +192,33 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
         {preview.map((row) => (
           <div className={styles.previewRow} key={row.symbol}>
             <strong>{row.symbol}</strong>
-            <span>{row.qty > 0 ? `${row.qty.toLocaleString("zh-TW")} 股` : "資金不足略過"}</span>
+            <span>{row.qty > 0 ? `${row.qty.toLocaleString("zh-TW")} 股預估` : "資金不足"}</span>
             <span className={styles.num}>{money(row.notional)}</span>
           </div>
         ))}
       </div>
 
       <div className={styles.notice}>
-        預估配置 {executable.length} / {strategy.holdings.length} 檔，名目金額 {money(totalNotional)} TWD。
+        預估可配置 {executable.length} / {strategy.holdings.length} 檔，名目金額約 {money(totalNotional)} TWD。實際下單 basket 會由 runner 重新依最新價格與流動性計算。
       </div>
 
       <label style={{ display: "flex", gap: 10, alignItems: "flex-start", margin: "14px 0", color: "#cdd5df", fontSize: 13 }}>
         <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
-        我確認這是 SIM-only 策略訂閱，不會送出正式券商委託。
+        我確認這是 KGI SIM / paper isolated 資金設定，不會開啟真實下單。
       </label>
 
       <button
-        ref={openButtonRef}
         className={styles.button}
         type="button"
         disabled={!confirmed || busy || executable.length === 0 || !capitalValid}
-        onClick={() => setConfirmOpen(true)}
+        onClick={subscribeStrategy}
       >
-        {busy ? "建立中" : "建立 SIM 訂閱"}
+        {busy ? "寫入中..." : "寫入 S1 SIM 資金"}
       </button>
 
       {result && <div className={styles.notice} style={{ marginTop: 12 }}>{result}</div>}
-      {warning && (
-        <div className={styles.notice} style={{ marginTop: 12 }}>
-          <strong>READINESS WARNING</strong> / {warning}
-        </div>
-      )}
+      {warning && <div className={styles.notice} style={{ marginTop: 12 }}><strong>觀察窗提醒</strong> / {warning}</div>}
       {error && <div className={`${styles.notice} ${styles.error}`} style={{ marginTop: 12 }}>{error}</div>}
-
-      {confirmOpen &&
-        createPortal(
-          <div
-            className={styles.modalBackdrop}
-            role="presentation"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) closeConfirmDialog();
-            }}
-          >
-            <div
-              ref={confirmDialogRef}
-              className={styles.confirmModal}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="sim-confirm-title"
-              aria-describedby="sim-confirm-description"
-              tabIndex={-1}
-              onKeyDown={handleConfirmDialogKeyDown}
-            >
-              <h3 id="sim-confirm-title">確認 SIM 策略訂閱</h3>
-              <p id="sim-confirm-description">
-                將建立 {strategy.shortName} 的 SIM-only 策略訂閱，配置資金 {money(budget)} TWD，
-                目前預估 {executable.length} 檔、名目金額 {money(totalNotional)} TWD。這不會直接送出個股委託。
-              </p>
-              <div className={styles.confirmActions}>
-                <button ref={cancelButtonRef} type="button" className={styles.buttonGhost} onClick={closeConfirmDialog} disabled={busy}>
-                  取消
-                </button>
-                <button type="button" className={styles.button} onClick={subscribeStrategy} disabled={busy}>
-                  {busy ? "建立中" : "確認建立"}
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
     </aside>
   );
 }
@@ -389,10 +226,10 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
 export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) {
   const color = accentColor(strategy.accent);
   return (
-    <div className={styles.detailLayout} style={{ "--accent": color } as React.CSSProperties}>
+    <div className={styles.detailLayout} style={{ "--accent": color } as CSSProperties}>
       <div>
         <div className={styles.notice} style={{ marginBottom: 16 }}>
-          <strong>SIM-only 策略訂閱</strong> / 此頁不直接送出個股委託，也沒有正式交易按鈕。
+          <strong>S1 是目前唯一正式量化策略。</strong> 本頁的資金設定會接到後端 S1 runner；其他研究策略先不放進正式產品頁。
         </div>
 
         <section className={styles.band}>
@@ -404,11 +241,11 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
         </section>
 
         <section className={styles.band}>
-          <h2>核心數據</h2>
+          <h2>觀察指標</h2>
           <div className={styles.metricGrid}>
-            <div className={styles.metric}><span>淨報酬</span><strong>{pct(strategy.metrics.netReturnPct)}</strong></div>
-            <div className={styles.metric}><span>基準 / 超額</span><strong>{strategy.metrics.excessPct === undefined ? "NA" : pct(strategy.metrics.excessPct)}</strong></div>
-            <div className={styles.metric}><span>Sharpe / IR</span><strong>{strategy.metrics.sharpe === null ? strategy.metrics.sharpeLabel ?? "NA" : strategy.metrics.sharpe.toFixed(2)}</strong></div>
+            <div className={styles.metric}><span>研究期淨值曲線</span><strong>{pct(strategy.metrics.netReturnPct)}</strong></div>
+            <div className={styles.metric}><span>相對 0050</span><strong>{strategy.metrics.excessPct === undefined ? "NA" : pct(strategy.metrics.excessPct)}</strong></div>
+            <div className={styles.metric}><span>Sharpe</span><strong>{strategy.metrics.sharpe === null ? strategy.metrics.sharpeLabel ?? "NA" : strategy.metrics.sharpe.toFixed(2)}</strong></div>
             <div className={styles.metric}><span>最大回撤</span><strong>{pct(strategy.metrics.maxDrawdownPct)}</strong></div>
             <div className={styles.metric}><span>命中率</span><strong>{pct(strategy.metrics.hitRatePct)}</strong></div>
             <div className={styles.metric}><span>樣本數</span><strong>{strategy.metrics.sampleCount}</strong></div>
@@ -416,33 +253,31 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
         </section>
 
         <section className={styles.band}>
-          <h2>統計圖表</h2>
+          <h2>研究曲線</h2>
           <div className={styles.chartPanel}>
-            <div className={styles.chartBox}>
-              <LineChart points={strategy.curve} color={color} />
-            </div>
-            <div className={styles.chartBox}>
-              <BarChart points={strategy.bars} color={color} />
-            </div>
+            <div className={styles.chartBox}><LineChart points={strategy.curve} color={color} /></div>
+            <div className={styles.chartBox}><BarChart points={strategy.bars} color={color} /></div>
           </div>
         </section>
 
         <section className={styles.band}>
-          <h2>目前籃子</h2>
-          <div className={styles.holdingsScroll} tabIndex={0} aria-label="目前籃子持股表，可左右捲動">
+          <h2>預估配置預覽</h2>
+          <div className={styles.holdingsScroll} tabIndex={0} aria-label="S1 preview holdings">
             <table className={styles.holdings}>
               <thead>
                 <tr>
-                  <th scope="col">Symbol</th>
-                  <th scope="col">Weight</th>
-                  <th scope="col">Price</th>
-                  <th scope="col">Note</th>
+                  <th scope="col">代號</th>
+                  <th scope="col">名稱</th>
+                  <th scope="col">權重</th>
+                  <th scope="col">參考價</th>
+                  <th scope="col">說明</th>
                 </tr>
               </thead>
               <tbody>
                 {strategy.holdings.map((holding) => (
                   <tr key={holding.symbol}>
                     <td className={styles.num}>{holding.symbol}</td>
+                    <td>{holding.name ?? "--"}</td>
                     <td className={styles.num}>{pct(holding.weight * 100)}</td>
                     <td className={styles.num}>{holding.price.toLocaleString("zh-TW")}</td>
                     <td>{holding.note}</td>
@@ -454,7 +289,7 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
         </section>
 
         <section className={styles.band}>
-          <h2>資金與風控</h2>
+          <h2>部位與風控</h2>
           <ul className={styles.list}>
             {strategy.sizing.map((item) => <li key={item}>{item}</li>)}
             {strategy.riskControls.map((item) => <li key={item}>{item}</li>)}
@@ -462,7 +297,7 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
         </section>
 
         <section className={styles.band}>
-          <h2>限制與備註</h2>
+          <h2>限制與下一步</h2>
           <ul className={styles.list}>
             {strategy.caveats.map((item) => <li key={item}>{item}</li>)}
           </ul>
@@ -473,4 +308,3 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
     </div>
   );
 }
-

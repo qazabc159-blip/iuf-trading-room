@@ -230,6 +230,10 @@ export type S1SimStatus = {
   orderSubmitWindowOpen: boolean;
   eodWindowOpen: boolean;
   gatewayUrlConfigured: boolean;
+  configuredCapitalTwd: number | null;
+  capitalSource: string | null;
+  capitalSubscriptionId: string | null;
+  capitalSubscriptionCreatedAt: string | null;
   eodPositionCount: number | null;
   eodDataSource: string | null;
   eodMarketValueTwd: number | null;
@@ -288,6 +292,10 @@ type S1StatusRaw = {
     eod_open?: boolean;
   };
   gateway_url_configured?: boolean;
+  configured_capital_twd?: number | null;
+  capital_source?: string | null;
+  capital_subscription_id?: string | null;
+  capital_subscription_created_at?: string | null;
   latest_basket?: {
     date?: string | null;
     regime?: string | null;
@@ -480,6 +488,10 @@ export async function getS1SimStatus() {
       orderSubmitWindowOpen: raw.windows?.order_submit_open === true,
       eodWindowOpen: raw.windows?.eod_open === true,
       gatewayUrlConfigured: raw.gateway_url_configured === true,
+      configuredCapitalTwd: raw.configured_capital_twd ?? null,
+      capitalSource: raw.capital_source ?? null,
+      capitalSubscriptionId: raw.capital_subscription_id ?? null,
+      capitalSubscriptionCreatedAt: raw.capital_subscription_created_at ?? null,
       eodPositionCount: todayEod?.position_count ?? null,
       eodDataSource: todayEod?.data_source ?? null,
       eodMarketValueTwd: todayEod?.total_market_value_twd ?? null,

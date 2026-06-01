@@ -190,6 +190,10 @@ import {
   listAdversarialWarnEvents,
 } from "../apps/api/src/admin-openalice-adversarial-warns.ts";
 import {
+  resolveS1SimCapitalTwd,
+  S1_DEFAULT_CAPITAL_TWD,
+} from "../apps/api/src/s1-sim-runner.ts";
+import {
   seedCompanyThemeLinks,
   type SeedThemeLinksResult,
 } from "../apps/api/src/seed/seed-company-theme-links.ts";
@@ -11175,7 +11179,7 @@ test("QS-SUB-2: capital below 50k returns CAPITAL_BELOW_MIN 400", async () => {
   assert.equal(result.http_status, 400, "QS-SUB-2: http_status must be 400");
 });
 
-test("QS-SUB-3: capital above 1M returns CAPITAL_EXCEEDED_CAP 400", async () => {
+test("QS-SUB-3: capital above max returns CAPITAL_EXCEEDED_CAP 400", async () => {
   const result = await subscribeQuantStrategy({
     session: _mockQsSession,
     strategyId: "cont_liq_v36",
@@ -11186,6 +11190,15 @@ test("QS-SUB-3: capital above 1M returns CAPITAL_EXCEEDED_CAP 400", async () => 
   if (result.ok) return;
   assert.equal(result.error, "CAPITAL_EXCEEDED_CAP", "QS-SUB-3: error code must be CAPITAL_EXCEEDED_CAP");
   assert.equal(result.http_status, 400, "QS-SUB-3: http_status must be 400");
+});
+
+test("S1-CAPITAL-1: S1 runner defaults to 10M in non-DB mode", async () => {
+  const previous = process.env["S1_SIM_CAPITAL_TWD"];
+  delete process.env["S1_SIM_CAPITAL_TWD"];
+  const config = await resolveS1SimCapitalTwd(_mockQsSession.workspace.id);
+  assert.equal(config.capitalTwd, S1_DEFAULT_CAPITAL_TWD);
+  assert.equal(config.source, "default");
+  if (previous !== undefined) process.env["S1_SIM_CAPITAL_TWD"] = previous;
 });
 
 test("QS-SUB-4: non-existent strategy returns STRATEGY_NOT_FOUND 404", async () => {
@@ -11338,7 +11351,7 @@ test("QS-READINESS-1: strategy_003 subscribe returns forward_obs warning (Truth 
   );
 });
 
-test("QS-READINESS-2: cont_liq_v36 subscribe returns forward_obs warning (v14 §3 Phase 1 pre-reg pending)", async () => {
+test("QS-READINESS-2: cont_liq_v36 subscribe is accepted after S1 KGI SIM ACK", async () => {
   // cont_liq_v36 demoted from paper_ready to forward_obs per Truth Board v14 §3.
   // Phase 1 pre-reg requires explicit Yang ACK (楊董 3 天不在 / 不 lock / 不真單).
   const result = await subscribeQuantStrategy({
@@ -11347,17 +11360,9 @@ test("QS-READINESS-2: cont_liq_v36 subscribe returns forward_obs warning (v14 §
     capitalTwd: 100_000,
     executionMode: "paper",
   });
-  assert.ok(result.ok, "QS-READINESS-2: cont_liq_v36 subscribe must succeed (forward obs accepted)");
+  assert.ok(result.ok, "QS-READINESS-2: cont_liq_v36 subscribe must succeed");
   if (!result.ok) return;
-  assert.ok(
-    typeof result.warning === "string" && result.warning.length > 0,
-    "QS-READINESS-2: cont_liq_v36 must return forward_obs warning (not paper_ready)"
-  );
-  assert.equal(
-    result.warning,
-    FORWARD_OBS_WARNING,
-    "QS-READINESS-2: warning must match FORWARD_OBS_WARNING constant"
-  );
+  assert.equal(result.warning, undefined, "QS-READINESS-2: S1 paper_ready should not return forward_obs warning");
 });
 
 test("QS-READINESS-3: STRATEGY_READINESS map has entries for all VALID_QUANT_STRATEGY_IDS", () => {
@@ -11384,11 +11389,11 @@ test("QS-READINESS-4: rs_20_60 is retired — subscribeQuantStrategy returns STR
   assert.equal(result.http_status, 410, "QS-READINESS-4: http_status must be 410 Gone");
 });
 
-test("QS-READINESS-5: cont_liq_v36 is forward_obs — FORWARD_OBS_WARNING constant exists and is non-empty", () => {
+test("QS-READINESS-5: readiness map marks S1 paper_ready and keeps research strategies forward_obs", () => {
   assert.ok(typeof FORWARD_OBS_WARNING === "string" && FORWARD_OBS_WARNING.length > 0,
     "QS-READINESS-5: FORWARD_OBS_WARNING must be a non-empty string");
-  assert.ok(STRATEGY_READINESS["cont_liq_v36"] === "forward_obs",
-    "QS-READINESS-5: cont_liq_v36 must be forward_obs in STRATEGY_READINESS (v14 §3 alignment)");
+  assert.ok(STRATEGY_READINESS["cont_liq_v36"] === "paper_ready",
+    "QS-READINESS-5: cont_liq_v36 must be paper_ready for S1 KGI SIM observation");
   assert.ok(STRATEGY_READINESS["strategy_003"] === "forward_obs",
     "QS-READINESS-5: strategy_003 must be forward_obs in STRATEGY_READINESS (Truth Board v14)");
 });
