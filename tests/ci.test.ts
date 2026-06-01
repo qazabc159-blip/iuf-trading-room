@@ -14182,6 +14182,26 @@ test("BRAIN-REACT-ANALYST-5: getMarketOverview returns valid shape (fail-open, n
     "BRAIN-REACT-ANALYST-5: source must be string");
 });
 
+test("BRAIN-REACT-ANALYST-6: company page reloads latest persisted AI analyst report", () => {
+  const repoRoot = process.cwd();
+  const serverSource = readFileSync(path.join(repoRoot, "apps/api/src/server.ts"), "utf8");
+  const panelSource = readFileSync(path.join(repoRoot, "apps/web/app/companies/[symbol]/AiAnalystReportPanel.tsx"), "utf8");
+  const helperSource = readFileSync(path.join(repoRoot, "apps/api/src/brain/react-loop.ts"), "utf8");
+
+  const latestRouteRegistration = 'app.get("/api/v1/admin/brain/react/company-report/:ticker"';
+  const decisionRouteRegistration = 'app.get("/api/v1/admin/brain/react/decisions/:run_id"';
+  assert.match(serverSource, /app\.get\("\/api\/v1\/admin\/brain\/react\/company-report\/:ticker"/,
+    "BRAIN-REACT-ANALYST-6: API must expose latest company AI report route");
+  assert.ok(
+    serverSource.indexOf(latestRouteRegistration) < serverSource.indexOf(decisionRouteRegistration),
+    "BRAIN-REACT-ANALYST-6: latest company report route must be registered before :run_id catch-all"
+  );
+  assert.match(helperSource, /getLatestCompanyAiAnalystDecision/,
+    "BRAIN-REACT-ANALYST-6: backend must query latest persisted company analyst decision");
+  assert.match(panelSource, /\/api\/v1\/admin\/brain\/react\/company-report\/\$\{encodeURIComponent\(ticker\)\}/,
+    "BRAIN-REACT-ANALYST-6: company panel must load the latest persisted report on mount");
+});
+
 // =============================================================================
 // PR #731 follow-up: tool-boot-seed (b) + event-streams graceful (c) (2026-05-19)
 // =============================================================================

@@ -17731,6 +17731,41 @@ app.get("/api/v1/admin/brain/react/decisions", async (c) => {
   return c.json({ data: decisions, count: decisions.length });
 });
 
+// GET /api/v1/admin/brain/react/company-report/:ticker — latest persisted company-page AI analyst report
+app.get("/api/v1/admin/brain/react/company-report/:ticker", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const ticker = c.req.param("ticker")?.trim().toUpperCase();
+  if (!ticker || !/^[0-9A-Z._-]{2,12}$/.test(ticker)) {
+    return c.json({ error: "INVALID_TICKER" }, 400);
+  }
+
+  const { getLatestCompanyAiAnalystDecision } = await import("./brain/react-loop.js");
+  const decision = await getLatestCompanyAiAnalystDecision(ticker, session.workspace?.id ?? null);
+  if (!decision) {
+    return c.json({ data: null });
+  }
+
+  return c.json({
+    data: {
+      run_id: decision.runId,
+      status: decision.status,
+      prompt_tokens: null,
+      completion_tokens: null,
+      cost_usd: parseFloat(decision.totalCostUsd ?? "0"),
+      budget_usd: null,
+      report_md: decision.finalReport ?? null,
+      trace: Array.isArray(decision.reactTrace) ? decision.reactTrace : [],
+      started_at: decision.createdAt,
+      completed_at: decision.completedAt ?? null,
+      error_message: null
+    }
+  });
+});
+
 // GET /api/v1/admin/brain/react/decisions/:run_id — single decision trace
 app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
   const session = c.get("session");
