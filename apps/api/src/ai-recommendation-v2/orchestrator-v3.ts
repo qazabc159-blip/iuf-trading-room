@@ -166,7 +166,7 @@ async function computeTaiexEma60FromDb(): Promise<number | null> {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type AiRecTrigger = "cron_0930" | "cron_1300" | "manual_refresh" | "test";
+export type AiRecTrigger = "cron_0930" | "cron_1300" | "cron_daily" | "manual_refresh" | "test";
 
 export interface AiRecommendationV3RunOptions {
   workspaceId?: string | null;

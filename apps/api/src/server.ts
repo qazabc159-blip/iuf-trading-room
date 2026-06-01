@@ -14477,7 +14477,8 @@ function startSchedulers(workspaceSlug: string): void {
     "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) + " +
     "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
     "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) + " +
-    "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) started"
+    "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) + " +
+    "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) started"
   );
 
   // AI-REC-V2-CRON: Fire Brain ReAct AI recommendation at 09:30 and 13:00 TST weekdays.
@@ -14516,6 +14517,46 @@ function startSchedulers(workspaceSlug: string): void {
         _aiRecV2CronRunning = false;
       }
     }, AI_REC_V2_CRON_INTERVAL_MS);
+  }
+
+  // AI-REC-V3-CRON: Daily AI Recommendation v3 (Yang SOP / 7-axis ReAct).
+  // Cadence: 24h loose — window guard fires once per day in 08:30–09:15 TST (before market open).
+  // This avoids contending with v2 (09:30) and respects the 24h cost budget.
+  // Boot fire at 90s — allows DB pool warm-up and v2 boot fire (60s) to complete first.
+  // State: shared _aiRecV3Cron* module-level vars (also used by manual POST endpoint).
+  {
+    const AI_REC_V3_CRON_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
+    let _aiRecV3LastCronFireDate: string | null = null; // YYYY-MM-DD Taipei date guard
+
+    /** Returns true if current Taipei time is in the 08:30–09:15 window on a weekday. */
+    function isAiRecV3CronWindow(): boolean {
+      const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const day = taipeiNow.getUTCDay();
+      if (day === 0 || day === 6) return false;
+      const hhmm = taipeiNow.getUTCHours() * 100 + taipeiNow.getUTCMinutes();
+      return hhmm >= 830 && hhmm <= 915;
+    }
+
+    ui(async () => {
+      if (!isAiRecV3CronWindow()) return;
+      if (_aiRecV3CronRunning) return;
+
+      // Once-per-day guard: use Taipei calendar date
+      const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const todayDate = taipeiNow.toISOString().slice(0, 10); // YYYY-MM-DD
+      if (_aiRecV3LastCronFireDate === todayDate) return;
+
+      _aiRecV3LastCronFireDate = todayDate;
+      console.info(`[ai-rec-v3-cron] firing daily cron for date=${todayDate}`);
+      void _runAiRecV3Cron({ trigger: "cron_daily", workspaceId: null });
+    }, AI_REC_V3_CRON_INTERVAL_MS);
+
+    // Boot fire: pre-warm at 90s so first day always has a v3 run after deploy.
+    setTimeout(() => {
+      if (_aiRecV3CronRunning) return;
+      console.info("[ai-rec-v3-cron] boot-fire at 90s");
+      void _runAiRecV3Cron({ trigger: "cron_daily", workspaceId: null });
+    }, 90_000);
   }
 
   // =============================================================================
@@ -15572,6 +15613,39 @@ let _aiRecV3CronRunning = false;
 let _aiRecV3CronLastFiredAt: string | null = null;
 let _aiRecV3CronLastError: string | null = null;
 
+/**
+ * Shared execution function for both manual refresh and the daily cron.
+ * Guards against concurrent runs via _aiRecV3CronRunning.
+ * Sets _aiRecV3CronLastFiredAt on start, _aiRecV3CronLastError on result.
+ * Returns false if already running; true if successfully queued.
+ */
+async function _runAiRecV3Cron(opts: {
+  trigger: "cron_0930" | "cron_1300" | "cron_daily" | "manual_refresh" | "test";
+  runId?: string;
+  workspaceId?: string | null;
+}): Promise<boolean> {
+  if (_aiRecV3CronRunning) return false;
+  _aiRecV3CronRunning = true;
+  _aiRecV3CronLastFiredAt = new Date().toISOString();
+  try {
+    const { runAiRecommendationV3 } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+    await runAiRecommendationV3({
+      trigger: opts.trigger,
+      maxRounds: 10,
+      costCapUsd: 2.0,
+      runId: opts.runId,
+      workspaceId: opts.workspaceId ?? null,
+    });
+    _aiRecV3CronLastError = null;
+  } catch (err) {
+    _aiRecV3CronLastError = err instanceof Error ? err.message : String(err);
+    console.error("[ai-rec-v3] run error:", _aiRecV3CronLastError);
+  } finally {
+    _aiRecV3CronRunning = false;
+  }
+  return true;
+}
+
 // GET /api/v1/ai-recommendations/v3
 // F4: Exposes reactTrace + finalReportMarkdown for debug; fallback shows raw markdown when items=0
 app.get("/api/v1/ai-recommendations/v3", async (c) => {
@@ -15665,25 +15739,11 @@ app.post("/api/v1/admin/ai-recommendations/v3/refresh", async (c) => {
     return c.json({ ok: false, error: "already_running" }, 429);
   }
 
-  const trigger = "manual_refresh" as const;
   const runId = crypto.randomUUID();
-  _aiRecV3CronRunning = true;
-  _aiRecV3CronLastFiredAt = new Date().toISOString();
+  // Fire async — do not await (same pattern as v2)
+  void _runAiRecV3Cron({ trigger: "manual_refresh", runId, workspaceId: session.workspace?.id ?? null });
 
-  void (async () => {
-    try {
-      const { runAiRecommendationV3 } = await import("./ai-recommendation-v2/orchestrator-v3.js");
-      await runAiRecommendationV3({ trigger, maxRounds: 10, costCapUsd: 2.0, runId, workspaceId: session.workspace?.id ?? null });
-      _aiRecV3CronLastError = null;
-    } catch (err) {
-      _aiRecV3CronLastError = err instanceof Error ? err.message : String(err);
-      console.error("[ai-rec-v3] refresh error:", _aiRecV3CronLastError);
-    } finally {
-      _aiRecV3CronRunning = false;
-    }
-  })();
-
-  return c.json({ ok: true, runId, trigger, queuedAt: new Date().toISOString() });
+  return c.json({ ok: true, runId, trigger: "manual_refresh", queuedAt: new Date().toISOString() });
 });
 
 // GET /api/v1/admin/ai-recommendations/v3/status
