@@ -15072,6 +15072,9 @@ test("S1-MANUAL-1: server exposes owner-only manual S1 SIM trigger with confirma
   const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
   assert.match(serverSource, /app\.post\("\/api\/v1\/internal\/s1-sim\/manual-run"/);
   assert.match(serverSource, /RUN_S1_SIM_MANUAL/);
+  assert.match(serverSource, /ALLOW_S1_SIM_OUTSIDE_WINDOW/);
+  assert.match(serverSource, /OUTSIDE_AUTOMATIC_WINDOW/);
+  assert.match(serverSource, /isS1OrderSubmitWindow/);
   assert.match(serverSource, /runS1SignalTick/);
   assert.match(serverSource, /runS1OrderSubmitTick/);
   assert.match(serverSource, /runS1EodReportTick/);
