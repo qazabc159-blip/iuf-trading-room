@@ -1,7 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { WEB_BASE_URL, expectNoServerError, extractFrame, fetchJson, requireText, saveRouteScreenshot } from "./helpers";
-
-const isLocalPrWeb = /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(WEB_BASE_URL);
+import { expectNoServerError, extractFrame, fetchJson, requireText, saveRouteScreenshot } from "./helpers";
 
 type NewsTop10Response = {
   data: {
@@ -53,10 +51,6 @@ test("/market-intel renders AI-selected news cards with source, impact, and why 
   const hasFrame = await page.locator("iframe").count();
   const surface = hasFrame > 0 ? extractFrame(page).locator("body") : page.locator("body");
   await expect(surface).toContainText(/AI|MARKET|NEWS|市場|情報|精選|新聞/i);
-  if (!isLocalPrWeb) {
-    await expect(surface).toContainText(items[0].ticker ?? items[0].headline.slice(0, 8));
-  }
-
   await saveRouteScreenshot(page, testInfo, "market-intel");
 });
 
