@@ -98,6 +98,59 @@ const COMPANY_AI_ANALYST_REQUIRED_SECTION_PATTERNS = [
   { n: 9, pattern: /##\s*9[.\s]*資料來源與生成時間/u },
 ];
 
+function isCompanyAiAnalystPrompt(initialPrompt: string): boolean {
+  return initialPrompt.includes(COMPANY_AI_ANALYST_TEMPLATE_MARKER);
+}
+
+function extractCompanyAiAnalystTicker(initialPrompt: string): string {
+  const match = initialPrompt.match(/分析標的:\s*([A-Z0-9._-]+)/iu);
+  return match?.[1]?.trim().toUpperCase() || "UNKNOWN";
+}
+
+function summarizeTraceSources(trace: ReactStep[]): string {
+  const tools = Array.from(new Set(trace.map((step) => step.toolName).filter((tool): tool is string => Boolean(tool))));
+  if (tools.length === 0) return "未取得可用工具觀察";
+  return tools.join(" / ");
+}
+
+export function buildCompanyAiAnalystContractFallbackReport(
+  trace: ReactStep[],
+  initialPrompt: string,
+  missingSections: number[],
+  now = new Date().toISOString()
+): string {
+  const ticker = extractCompanyAiAnalystTicker(initialPrompt);
+  const sourceSummary = summarizeTraceSources(trace);
+  const missing = missingSections.length ? missingSections.join(", ") : "未知";
+
+  return `## 1. 公司概況與定位
+資料不足：${ticker} 的 AI 分析回覆未通過固定 9 段模板檢查，缺少段落 ${missing}。系統已停止展示原始破格式內容。
+
+## 2. 今日/最近資料狀態
+資料不足：本次工具觀察來源為 ${sourceSummary}，但最終彙整文字未符合產品模板，因此不把行情判斷包裝成正式分析。
+
+## 3. 近期事件與新聞
+資料不足：新聞與事件內容需要重新生成並通過模板檢查後才可展示。不可 raw dump 新聞，也不可補故事。
+
+## 4. 技術結構
+資料不足：技術結構需由 quote / kline / get_company_technical 等來源生成並通過固定段落檢查。
+
+## 5. 籌碼與法人
+資料不足：籌碼與法人資料需由 institutional / margin / FinMind 等來源生成並通過固定段落檢查。
+
+## 6. 主題與產業鏈位置
+資料不足：主題與產業鏈描述需由 company_profile / theme / news 等來源生成並通過固定段落檢查。
+
+## 7. 主要風險
+資料風險：AI 回覆格式不合格。價格風險：本頁不提供下單建議。事件風險：事件與新聞需重新確認。
+
+## 8. AI 結論與觀察等級
+觀察等級：資料不足。這不是下單建議；請重新生成，直到報告通過固定 9 段模板與來源檢查。
+
+## 9. 資料來源與生成時間
+資料來源：${sourceSummary}。模板版本：${COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION}。生成時間：${now}。`;
+}
+
 // ── System prompt template ─────────────────────────────────────────────────────
 
 function buildSystemPrompt(toolWhitelist: string[], contextData?: string): string {
@@ -174,7 +227,7 @@ function buildSynthesisPrompt(trace: ReactStep[], initialPrompt: string): string
 
   const now = new Date().toISOString();
 
-  if (initialPrompt.includes(COMPANY_AI_ANALYST_TEMPLATE_MARKER)) {
+  if (isCompanyAiAnalystPrompt(initialPrompt)) {
     return buildCompanyAiAnalystSynthesisPrompt(traceText, initialPrompt, now);
   }
 
@@ -236,7 +289,7 @@ export function validateCompanyAiAnalystSections(report: string): number[] {
 }
 
 export function validateSynthesisSections(report: string, initialPrompt = ""): number[] {
-  if (initialPrompt.includes(COMPANY_AI_ANALYST_TEMPLATE_MARKER)) {
+  if (isCompanyAiAnalystPrompt(initialPrompt)) {
     return validateCompanyAiAnalystSections(report);
   }
 
@@ -601,7 +654,9 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
 
     let synthesisContent = await runSynthesis();
 
-    // Validate 9 sections — retry once if any missing
+    // Validate 9 sections — retry once if any missing. If the company-page
+    // report still misses sections, return an honest 9-section degraded report
+    // instead of exposing broken LLM prose as a finished analyst report.
     if (synthesisContent) {
       const missingSections = validateSynthesisSections(synthesisContent, opts.initialPrompt);
       if (missingSections.length > 0) {
@@ -609,6 +664,11 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
         const retryContent = await runSynthesis();
         if (retryContent) {
           synthesisContent = retryContent;
+        }
+        const finalMissing = validateSynthesisSections(synthesisContent, opts.initialPrompt);
+        if (finalMissing.length > 0 && isCompanyAiAnalystPrompt(opts.initialPrompt)) {
+          console.warn(`[react-loop] company AI analyst synthesis still missing sections ${finalMissing.join(",")} — using contract fallback`);
+          synthesisContent = buildCompanyAiAnalystContractFallbackReport(trace, opts.initialPrompt, finalMissing);
         }
       }
     }
