@@ -418,25 +418,49 @@ export function sanitizeRawRows(rows: RawNewsRow[], opts: { dropLowQualityStockN
   return result;
 }
 
+function appendUniqueRealNewsRows(target: RawNewsRow[], rows: RawNewsRow[]): void {
+  const seen = new Set(target.map((row) => `${row.source}:${newsDedupeKey(row) || (row.title ?? "")}`));
+  const stockNewsPerTicker = new Map<string, number>();
+  for (const row of target) {
+    if (row.source !== "finmind_stock_news" || !row.ticker) continue;
+    stockNewsPerTicker.set(row.ticker, (stockNewsPerTicker.get(row.ticker) ?? 0) + 1);
+  }
+
+  for (const row of rows) {
+    if (target.length >= TOP_N) break;
+    const title = (row.title ?? "").trim();
+    if (!title) continue;
+    if (isLowQualityStockNews(row)) continue;
+    if (row.source === "finmind_stock_news" && row.ticker) {
+      const count = stockNewsPerTicker.get(row.ticker) ?? 0;
+      if (count >= MAX_STOCK_NEWS_PER_TICKER) continue;
+      stockNewsPerTicker.set(row.ticker, count + 1);
+    }
+    const key = `${row.source}:${newsDedupeKey(row) || title}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    target.push({ ...row, title });
+  }
+}
+
+async function appendRowsFromWindow(target: RawNewsRow[], windowHours: number): Promise<void> {
+  const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
+  const rawRows = await fetchRawNewsRowsSince(since);
+  appendUniqueRealNewsRows(target, sanitizeRawRows(rawRows, { dropLowQualityStockNews: true }));
+  if (target.length >= TOP_N) return;
+
+  // Refill with real rows from softer sources only after the strict pass.
+  // Still hard-block the sources Yang already rejected (CMoney/Yahoo/UDN/PChome/etc.).
+  appendUniqueRealNewsRows(target, sanitizeRawRows(rawRows, { dropLowQualityStockNews: false }));
+}
+
 async function fetchRawNewsRows(windowHours: number): Promise<RawNewsRow[]> {
-  const primarySince = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
-  const primaryRows = sanitizeRawRows(await fetchRawNewsRowsSince(primarySince), {
-    dropLowQualityStockNews: true
-  });
-  if (primaryRows.length > 0) return primaryRows;
-
-  const expandedSince = new Date(Date.now() - EXPANDED_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
-  const expandedRows = sanitizeRawRows(await fetchRawNewsRowsSince(expandedSince), {
-    dropLowQualityStockNews: true
-  });
-  if (expandedRows.length > 0) return expandedRows;
-
-  // Last resort still keeps the quality filter on. Empty is preferable to
-  // publishing retail-media duplicates as if they were AI-curated market intel.
-  const lastResortSince = new Date(Date.now() - LAST_RESORT_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
-  return sanitizeRawRows(await fetchRawNewsRowsSince(lastResortSince), {
-    dropLowQualityStockNews: true
-  });
+  const rows: RawNewsRow[] = [];
+  for (const hours of [windowHours, EXPANDED_WINDOW_HOURS, LAST_RESORT_WINDOW_HOURS]) {
+    await appendRowsFromWindow(rows, hours);
+    if (rows.length >= TOP_N) break;
+  }
+  return rows;
 }
 
 // ── Deterministic fallback ranker ─────────────────────────────────────────────

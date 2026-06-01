@@ -250,7 +250,12 @@ export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | 
 
 const V3_TRIGGER_SUFFIX = ":v3";
 
-function v3DbTrigger(trigger: AiRecTrigger): string {
+export function v3DbTrigger(trigger: AiRecTrigger): string {
+  // 0042 allows the historical morning/afternoon/manual/test v3 trigger set.
+  // The new once-daily scheduler is the same pre-market product run, so store it
+  // under the allowed morning v3 bucket instead of creating an env-sensitive
+  // migration just to add cron_daily:v3.
+  if (trigger === "cron_daily") return "cron_0930:v3";
   return `${trigger}${V3_TRIGGER_SUFFIX}`;
 }
 
