@@ -3022,6 +3022,31 @@ export async function runPipelineBackfillRange(
           } else {
             console.log(`[admin/brief/backfill] force=true, no existing brief to delete for date=${date}`);
           }
+
+          const existingDraftRows = await db
+            .select({ id: contentDrafts.id })
+            .from(contentDrafts)
+            .where(
+              and(
+                eq(contentDrafts.workspaceId, ws.id),
+                eq(contentDrafts.targetTable, "daily_briefs"),
+                eq(contentDrafts.targetEntityId, date)
+              )
+            );
+
+          if (existingDraftRows.length > 0) {
+            const draftIds = existingDraftRows.map((r) => r.id);
+            await db.delete(contentDrafts).where(
+              and(
+                eq(contentDrafts.workspaceId, ws.id),
+                eq(contentDrafts.targetTable, "daily_briefs"),
+                eq(contentDrafts.targetEntityId, date)
+              )
+            );
+            const draftIdList = draftIds.join(",");
+            console.log(`[admin/brief/backfill] force=true, deleted draft_id=${draftIdList} for date=${date}`);
+            deleted.push(`${date}:drafts:${draftIdList}`);
+          }
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
