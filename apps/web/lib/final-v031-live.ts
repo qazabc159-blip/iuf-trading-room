@@ -1827,7 +1827,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       const invalidPrice = priceRequired && (!Number.isFinite(rawPx) || rawPx <= 0);
       const invalidMarketPrice = !priceRequired && (!Number.isFinite(selectedPx) || selectedPx <= 0);
       const kgiLabel = getKgiSubmitLabel();
-      const setGate = (message: string) => { const gate = $(".gate .h .v"); if (gate) gate.textContent = message; };
+      const setGate = (message) => { const gate = $(".gate .h .v"); if (gate) gate.textContent = message; };
       if (orderType !== "market" && orderType !== "limit") {
         if (kgiLabel) kgiLabel.textContent = "KGI SIM 不支援停損單";
         setGate("KGI SIM 只支援市價 / 限價");
