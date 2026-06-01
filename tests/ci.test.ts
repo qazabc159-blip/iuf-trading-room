@@ -15044,6 +15044,17 @@ test("S1-OBS-6: S1 observations are mirrored to audit_logs and status can recove
 // Tests for the TWSE OpenAPI fallback parse logic used in /companies/:id/quote/realtime
 // when KGI quote is unavailable. Tests are self-contained (no HTTP, no DB).
 
+test("S1-OBS-7: S1 signal basket excludes zero-share board-lot candidates", () => {
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+
+  assert.match(runnerSource, /desiredBasketSize\s*=\s*exposureWeight\s*>\s*0\s*\?\s*8\s*:\s*0/);
+  assert.match(runnerSource, /rankedCandidates/);
+  assert.match(runnerSource, /entry\.target_shares\s*<=\s*0/);
+  assert.match(runnerSource, /skipped_untradable_zero_share/);
+  assert.match(runnerSource, /tradable_basket_shortfall/);
+  assert.doesNotMatch(runnerSource, /const top8 = .*slice\(0,\s*8\)/);
+});
+
 test("C6-TWSE-FB-1: TWSE fallback finds matching row by symbol Code", () => {
   type StockDayAllRow = { Code: string; ClosingPrice: string; TradeVolume: string; Date: string; Change: string };
   const rows: StockDayAllRow[] = [

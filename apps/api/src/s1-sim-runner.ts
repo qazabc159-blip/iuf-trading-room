@@ -559,8 +559,15 @@ async function runS1SignalTickOnce(options: { force?: boolean } = {}): Promise<v
 
   console.log(`[s1-signal] regime=${regime} exposureWeight=${exposureWeight} marketRet20d=${marketRet20d.toFixed(4)}`);
 
-  // 5. Top-8 selection
-  const top8 = [...scored].sort((a, b) => b.score_cont_liq - a.score_cont_liq).slice(0, 8);
+  // 5. Top-8 tradable selection
+  //
+  // Board-lot sizing can turn a high-priced candidate into 0 shares
+  // (for example when one 1,000-share lot costs more than the per-name
+  // target). The production basket must not count those as usable S1
+  // positions, so keep walking the ranked list until we have eight entries
+  // that can actually submit at least one board lot.
+  const desiredBasketSize = exposureWeight > 0 ? 8 : 0;
+  const rankedCandidates = [...scored].sort((a, b) => b.score_cont_liq - a.score_cont_liq);
 
   // 6. Order sizing (per Athena packet + latest S1 SIM capital subscription)
   const capitalConfig = await resolveS1SimCapitalTwd(workspaceId);
@@ -570,9 +577,12 @@ async function runS1SignalTickOnce(options: { force?: boolean } = {}): Promise<v
       (capitalConfig.subscriptionId ? ` subscription:${capitalConfig.subscriptionId}` : ""),
   );
   const longTarget = CAPITAL_TWD * exposureWeight;
-  const perNameTarget = top8.length > 0 ? longTarget / top8.length : 0;
+  const perNameTarget = desiredBasketSize > 0 ? longTarget / desiredBasketSize : 0;
 
-  const basket: S1BasketEntry[] = top8.map((s, i) => {
+  const basket: S1BasketEntry[] = [];
+  const skippedUntradable: string[] = [];
+
+  for (const s of desiredBasketSize > 0 ? rankedCandidates : []) {
     const price = s.latestPrice ?? 0;
     const rawShares = price > 0 ? perNameTarget / price : 0;
     const boardLotShares = roundDownBoardLot(rawShares);
@@ -597,8 +607,8 @@ async function runS1SignalTickOnce(options: { force?: boolean } = {}): Promise<v
       sizingNote = "SOFT_FLAG_2PCT_ADV";
     }
 
-    return {
-      rank: i + 1,
+    const entry: S1BasketEntry = {
+      rank: basket.length + 1,
       symbol: s.symbol,
       score_cont_liq: parseFloat(s.score_cont_liq.toFixed(4)),
       z_volratio: parseFloat(s.z_volratio.toFixed(4)),
@@ -608,7 +618,22 @@ async function runS1SignalTickOnce(options: { force?: boolean } = {}): Promise<v
       target_shares: finalShares,
       sizing_note: sizingNote
     };
-  });
+
+    if (exposureWeight > 0 && entry.target_shares <= 0) {
+      skippedUntradable.push(`${entry.symbol}:zero_board_lot price=${price} per_name_target=${perNameTarget.toFixed(0)} note=${sizingNote}`);
+      continue;
+    }
+
+    basket.push(entry);
+    if (basket.length >= desiredBasketSize) break;
+  }
+
+  if (skippedUntradable.length > 0) {
+    failsafe_notes.push(`skipped_untradable_zero_share:${skippedUntradable.join("|")}`);
+  }
+  if (exposureWeight > 0 && basket.length < desiredBasketSize) {
+    failsafe_notes.push(`tradable_basket_shortfall:${basket.length}/${desiredBasketSize}`);
+  }
 
   // 7. Write basket JSON
   const basketObj: S1Basket = {
@@ -639,7 +664,7 @@ async function runS1SignalTickOnce(options: { force?: boolean } = {}): Promise<v
     data: basketObj,
   });
 
-  console.log(`[s1-signal] DONE regime=${regime} top8=[${top8.map((s) => s.symbol).join(",")}]`);
+  console.log(`[s1-signal] DONE regime=${regime} basket=[${basket.map((s) => s.symbol).join(",")}] skipped=${skippedUntradable.length}`);
 }
 
 export async function ensureS1BasketBeforeOrderSubmit(): Promise<S1SignalCatchupResult> {
