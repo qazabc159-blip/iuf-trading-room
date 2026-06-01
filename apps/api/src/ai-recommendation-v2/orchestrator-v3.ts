@@ -676,6 +676,48 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
+function joinAliasLines(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    const joined = value
+      .map(line => String(line ?? "").trim())
+      .filter(Boolean)
+      .join("; ");
+    return joined || undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  return undefined;
+}
+
+function formatEntryAlias(item: AiStockRecommendationV2): string | undefined {
+  const low = toFiniteNumber(item.entryZone?.low ?? item.entryPriceRange?.low);
+  const high = toFiniteNumber(item.entryZone?.high ?? item.entryPriceRange?.high);
+  if (low !== null && high !== null) return low === high ? String(low) : `${low}-${high}`;
+  if (low !== null) return String(low);
+  if (high !== null) return String(high);
+  return undefined;
+}
+
+function formatRiskAlias(item: AiStockRecommendationV2): string {
+  return joinAliasLines(item.why_not_buy)
+    ?? (item.stopLossStructured?.price || item.stopLoss
+      ? "模型未明列額外風險；請以停損價與部位控管執行"
+      : "模型未明列額外風險；請先確認資料完整度再操作");
+}
+
+function withV3ContractAliases(item: AiStockRecommendationV2): AiStockRecommendationV2 {
+  const stop = toFiniteNumber(item.stopLossStructured?.price ?? item.stopLoss);
+  return {
+    ...item,
+    entry: item.entry ?? formatEntryAlias(item),
+    stop: item.stop ?? stop,
+    reason: item.reason ?? item.whyBuyBrief ?? item.rationale,
+    risk: item.risk ?? formatRiskAlias(item),
+  };
+}
+
 function withCanonicalCompanyName(
   item: AiStockRecommendationV2,
   namesByTicker: Map<string, string>
@@ -1345,7 +1387,7 @@ export function enrichV3Items(
   trace: V3ReActStep[]
 ): AiStockRecommendationV2[] {
   const withFlag = applyIncompleteFlag(items);
-  return withFlag.map(item => ({
+  return withFlag.map(item => withV3ContractAliases({
     ...item,
     sourceTrail: buildSourceTrailForTicker(trace, item.ticker),
   }));

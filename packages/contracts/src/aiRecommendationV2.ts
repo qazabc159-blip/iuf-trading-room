@@ -101,6 +101,14 @@ export const aiStockRecommendationV2Schema = z.object({
   tp2: z.number().nullable().optional(),
   stopLoss: z.number().nullable().optional(),
   rationale: z.string(),
+  /** PR-A API alias: plain entry range shown on recommendation cards */
+  entry: z.string().optional(),
+  /** PR-A API alias: stop price shown on recommendation cards */
+  stop: z.number().nullable().optional(),
+  /** PR-A API alias: concise buy rationale shown on recommendation cards */
+  reason: z.string().optional(),
+  /** PR-A API alias: concise risk rationale shown on recommendation cards */
+  risk: z.string().optional(),
   /** Always true for v2 — distinguishes from v1 Athena-fixture recommendations */
   aiGenerated: z.literal(true),
   source: z.literal("brain_react_v2"),
